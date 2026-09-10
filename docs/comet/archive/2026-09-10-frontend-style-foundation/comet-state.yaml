@@ -2,8 +2,8 @@ schema: comet.native.v4
 name: frontend-style-foundation
 language: zh-CN
 phase: archive
-status: active
-state_version: 17
+status: done
+state_version: 18
 brief: brief.md
 shape_confirmation_hash: 19c5feb7eaf79483502c2b5951e3bb0626929acdeaf74ed69b0b7e6827a445ff
 spec_changes:
@@ -16,7 +16,7 @@ workspace:
   target_branch: main
   finish: null
 loop:
-  stage: archive-ready
+  stage: done
   goal_cycle: 4
   iteration: 1
   attempt: 1
@@ -25,7 +25,7 @@ loop:
   no_progress_count: 0
   execution_failure_count: 0
   previous_unresolved_ids: []
-  next_action: archive
+  next_action: null
 acceptance:
   - id: A1
     source: brief.md
@@ -281,5 +281,5 @@ history_overflow:
     recovery: 0
 verification_result: pass
 verification_report: verification.md
-archived: false
+archived: true
 created_at: 2026-09-10T01:36:23.827Z
