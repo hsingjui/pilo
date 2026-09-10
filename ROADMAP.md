@@ -46,18 +46,9 @@ Pilo 的目标是提供一个面向 Pi Coding Agent 的桌面开发工作区，�
 
 ### Current Focus
 
-🚧 **Frontend Style Foundation**
+🚧 **P0.10 Pi Chat**
 
-Comet change: `docs/comet/changes/frontend-style-foundation/`
-
-- [ ] 建立 Lody 风格的 light / dark design tokens
-- [ ] 建立核心 shadcn/ui 风格基础组件
-- [ ] 自托管 Inter / JetBrains Mono
-- [ ] 接入统一图标体系
-- [ ] 完成 Sidebar + Main + Composer 静态布局骨架
-- [ ] 支持 Light / Dark / System 主题切换
-- [ ] `pnpm check` / `pnpm build` 通过
-- [ ] Windows 下完成一次视觉验证
+继续按 P0.10 清单补齐 Pi RPC 聊天能力，当前从消息队列与运行状态交互开始。
 
 ---
 
@@ -239,7 +230,7 @@ indexed_at
 - [x] Thinking 展示
 - [x] Tool call / tool result 展示
 - [x] `abort`
-- [ ] `follow_up`
+- [x] `follow_up`
 - [ ] `steer`
 - [ ] Model selector
 - [ ] Thinking level selector

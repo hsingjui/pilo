@@ -95,6 +95,11 @@ export type PiloRuntimeEvent =
 			message: unknown;
 	  }
 	| {
+			type: "user_message_start";
+			generation: number;
+			text: string;
+	  }
+	| {
 			type: "assistant_message_start";
 			generation: number;
 	  }
@@ -149,6 +154,12 @@ export type PiloRuntimeEvent =
 			generation: number;
 			stopReason: string | null;
 			errorMessage: string | null;
+	  }
+	| {
+			type: "queue_update";
+			generation: number;
+			steering: string[];
+			followUp: string[];
 	  }
 	| {
 			type: "runtime_log";
@@ -316,6 +327,13 @@ export function sendPiPrompt(message: string): Promise<void> {
 			type: "prompt",
 			message,
 		},
+	});
+}
+
+export function sendPiFollowUp(message: string): Promise<void> {
+	return requestPiRpc<void>({
+		type: "follow_up",
+		message,
 	});
 }
 

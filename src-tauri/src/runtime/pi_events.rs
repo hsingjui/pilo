@@ -12,18 +12,22 @@ pub struct PiEventAdapter {
 impl PiEventAdapter {
     pub fn adapt(&mut self, generation: u64, message: &Value) -> Vec<RuntimeEvent> {
         match message.get("type").and_then(Value::as_str) {
-            Some("message_start") => adapt_message_start(generation, message),
+            Some("message_start") => self.adapt_message_start(generation, message),
             Some("message_update") => adapt_message_update(generation, message),
             Some("message_end") => self.adapt_message_end(generation, message),
             Some("tool_execution_start") => adapt_tool_execution_start(generation, message),
             Some("tool_execution_update") => adapt_tool_execution_update(generation, message),
             Some("tool_execution_end") => adapt_tool_execution_end(generation, message),
+            Some("queue_update") => adapt_queue_update(generation, message),
             Some("agent_end") => {
                 self.remember_agent_end(message);
                 Vec::new()
             }
             Some("agent_settled") => self.adapt_agent_settled(generation),
-            Some("response") if message.get("success").and_then(Value::as_bool) == Some(false) => {
+            Some("response")
+                if message.get("success").and_then(Value::as_bool) == Some(false)
+                    && !is_pilo_correlated_response(message) =>
+            {
                 vec![RuntimeEvent::RuntimeError {
                     generation,
                     code: RuntimeErrorCode::RpcResponse,
@@ -33,6 +37,26 @@ impl PiEventAdapter {
                         .unwrap_or("Pi RPC command failed")
                         .to_owned(),
                 }]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn adapt_message_start(&mut self, generation: u64, event: &Value) -> Vec<RuntimeEvent> {
+        let Some(message) = event.get("message") else {
+            return Vec::new();
+        };
+        match message.get("role").and_then(Value::as_str) {
+            Some("assistant") => vec![RuntimeEvent::AssistantMessageStart { generation }],
+            Some("user") => {
+                self.finalized_text.clear();
+                self.stop_reason = None;
+                self.error_message = None;
+                message_text(message)
+                    .filter(|text| !text.is_empty())
+                    .map(|text| RuntimeEvent::UserMessageStart { generation, text })
+                    .into_iter()
+                    .collect()
             }
             _ => Vec::new(),
         }
@@ -95,16 +119,50 @@ impl PiEventAdapter {
     }
 }
 
-fn adapt_message_start(generation: u64, event: &Value) -> Vec<RuntimeEvent> {
-    let is_assistant = event
-        .get("message")
-        .and_then(|message| message.get("role"))
+fn is_pilo_correlated_response(message: &Value) -> bool {
+    message
+        .get("id")
         .and_then(Value::as_str)
-        == Some("assistant");
-    is_assistant
-        .then_some(RuntimeEvent::AssistantMessageStart { generation })
-        .into_iter()
-        .collect()
+        .is_some_and(|id| id.starts_with("pilo-"))
+}
+
+fn adapt_queue_update(generation: u64, message: &Value) -> Vec<RuntimeEvent> {
+    vec![RuntimeEvent::QueueUpdate {
+        generation,
+        steering: string_array(message.get("steering")),
+        follow_up: string_array(message.get("followUp")),
+    }]
+}
+
+fn string_array(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn message_text(message: &Value) -> Option<String> {
+    match message.get("content")? {
+        Value::String(text) => Some(text.clone()),
+        Value::Array(content) => {
+            let mut text = String::new();
+            for block in content {
+                if block.get("type").and_then(Value::as_str) == Some("text") {
+                    if let Some(value) = block.get("text").and_then(Value::as_str) {
+                        text.push_str(value);
+                    }
+                }
+            }
+            Some(text)
+        }
+        _ => None,
+    }
 }
 
 fn adapt_message_update(generation: u64, message: &Value) -> Vec<RuntimeEvent> {
@@ -294,6 +352,81 @@ mod tests {
     }
 
     #[test]
+    fn user_message_start_begins_a_new_conversation_turn() {
+        let mut adapter = PiEventAdapter::default();
+        assert_eq!(
+            adapter.adapt(
+                4,
+                &serde_json::json!({
+                    "type": "message_end",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{ "type": "text", "text": "first reply" }],
+                        "stopReason": "stop"
+                    }
+                })
+            ),
+            [RuntimeEvent::AssistantTextSnapshot {
+                generation: 4,
+                text: "first reply".to_owned(),
+            }]
+        );
+        assert_eq!(
+            adapter.adapt(
+                4,
+                &serde_json::json!({
+                    "type": "message_start",
+                    "message": {
+                        "role": "user",
+                        "content": [{ "type": "text", "text": "follow up" }]
+                    }
+                })
+            ),
+            [RuntimeEvent::UserMessageStart {
+                generation: 4,
+                text: "follow up".to_owned(),
+            }]
+        );
+        assert_eq!(
+            adapter.adapt(
+                4,
+                &serde_json::json!({
+                    "type": "message_end",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{ "type": "text", "text": "second reply" }],
+                        "stopReason": "stop"
+                    }
+                })
+            ),
+            [RuntimeEvent::AssistantTextSnapshot {
+                generation: 4,
+                text: "second reply".to_owned(),
+            }]
+        );
+    }
+
+    #[test]
+    fn maps_queue_update_for_follow_up_ui() {
+        let mut adapter = PiEventAdapter::default();
+        assert_eq!(
+            adapter.adapt(
+                7,
+                &serde_json::json!({
+                    "type": "queue_update",
+                    "steering": ["change direction"],
+                    "followUp": ["then summarize", "then test"]
+                })
+            ),
+            [RuntimeEvent::QueueUpdate {
+                generation: 7,
+                steering: vec!["change direction".to_owned()],
+                follow_up: vec!["then summarize".to_owned(), "then test".to_owned()],
+            }]
+        );
+    }
+
+    #[test]
     fn maps_thinking_stream_lifecycle() {
         let mut adapter = PiEventAdapter::default();
         assert_eq!(
@@ -478,5 +611,22 @@ mod tests {
                 message: "Agent is already streaming".to_owned(),
             }]
         );
+    }
+
+    #[test]
+    fn correlated_rpc_failure_is_handled_by_the_request_caller() {
+        let mut adapter = PiEventAdapter::default();
+        assert!(adapter
+            .adapt(
+                6,
+                &serde_json::json!({
+                    "id": "pilo-123-1",
+                    "type": "response",
+                    "command": "follow_up",
+                    "success": false,
+                    "error": "Extension commands cannot be queued"
+                })
+            )
+            .is_empty());
     }
 }

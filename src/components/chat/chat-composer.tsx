@@ -48,11 +48,13 @@ type ChatComposerProps = {
 	value: string;
 	onChange: (value: string) => void;
 	onSubmit?: (value: string) => void;
+	onFollowUp?: (value: string) => void;
 	variant?: "landing" | "session";
 	placeholder?: string;
 	disabled?: boolean;
 	running?: boolean;
 	onStop?: () => void;
+	pendingFollowUps?: number;
 	modelLabel?: string;
 	modeLabel?: string;
 	suggestions?: readonly ComposerSuggestion[];
@@ -176,11 +178,13 @@ export function ChatComposer({
 	value,
 	onChange,
 	onSubmit,
+	onFollowUp,
 	variant = "session",
 	placeholder = "按 @ 提及文件，/ 使用命令，$ 使用技能",
 	disabled = false,
 	running = false,
 	onStop,
+	pendingFollowUps = 0,
 	modelLabel = "pi / default",
 	modeLabel = "默认",
 	suggestions = DEFAULT_SUGGESTIONS,
@@ -236,7 +240,11 @@ export function ChatComposer({
 
 	const submit = () => {
 		const trimmed = value.trim();
-		if (!trimmed || disabled || running) return;
+		if (!trimmed || disabled) return;
+		if (running) {
+			onFollowUp?.(trimmed);
+			return;
+		}
 		onSubmit?.(trimmed);
 	};
 
@@ -492,24 +500,51 @@ export function ChatComposer({
 						{modeLabel}
 						<ChevronDown className="size-3" />
 					</button>
+					{pendingFollowUps > 0 ? (
+						<span className="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">
+							已排队 {pendingFollowUps}
+						</span>
+					) : null}
 
 					<div className="ml-auto flex shrink-0 items-center gap-1.5">
 						{running ? (
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<Button
-										type="button"
-										variant="outline"
-										size="icon"
-										className="size-6 rounded-md active:scale-[0.96]"
-										aria-label="停止"
-										onClick={onStop}
-									>
-										<Square className="size-2.5 fill-current" />
-									</Button>
-								</TooltipTrigger>
-								<TooltipContent>停止</TooltipContent>
-							</Tooltip>
+							<>
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<Button
+											type="button"
+											variant="outline"
+											size="icon"
+											className="size-6 rounded-md active:scale-[0.96]"
+											aria-label="停止"
+											onClick={onStop}
+										>
+											<Square className="size-2.5 fill-current" />
+										</Button>
+									</TooltipTrigger>
+									<TooltipContent>停止</TooltipContent>
+								</Tooltip>
+								{value.trim() ? (
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												size="icon"
+												className={cn(
+													"size-6 rounded-full bg-foreground text-background disabled:bg-muted-foreground",
+													"transition-[background-color,scale] duration-100 enabled:hover:bg-foreground/85 active:scale-[0.96]",
+												)}
+												aria-label="排队发送"
+												disabled={!onFollowUp}
+												onClick={submit}
+											>
+												<ArrowUp className="size-3.5" />
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>当前回复结束后发送</TooltipContent>
+									</Tooltip>
+								) : null}
+							</>
 						) : (
 							<Tooltip>
 								<TooltipTrigger asChild>

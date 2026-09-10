@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, Copy, PanelLeft, PanelRight } from "lucide-react";
+import { toast } from "sonner";
 
 import {
 	AssistantActivityView,
@@ -43,6 +44,7 @@ import {
 	getPiState,
 	listenRuntimeEvents,
 	runtimeErrorMessage,
+	sendPiFollowUp,
 	sendPiPrompt,
 	startNewPiSession,
 	switchPiSession,
@@ -68,7 +70,7 @@ export type ChatSession = {
 };
 
 type ChatMessage =
-	| { id: string; role: "user"; text: string; time: string }
+	| { id: string; role: "user"; text: string; time: string; queued?: boolean }
 	| {
 			id: string;
 			role: "assistant";
@@ -392,8 +394,9 @@ function UserMessage({
 		<ConversationColumn className="py-3 sm:py-4">
 			<div className="flex w-full justify-end">
 				<div className="group flex min-w-0 max-w-[80%] flex-col items-end gap-1.5 sm:max-w-[70%]">
-					<div className="text-[11px] tabular-nums text-muted-foreground">
-						{message.time}
+					<div className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
+						{message.queued ? <span>已排队</span> : null}
+						{message.time ? <span>{message.time}</span> : null}
 					</div>
 					<div className="flex min-w-0 max-w-full items-end gap-1">
 						<MessageAction
@@ -686,6 +689,8 @@ type ActiveTurn = {
 	sessionId: string;
 	sessionTitle: string;
 	generation: number | null;
+	currentUserText: string;
+	currentUserStarted: boolean;
 	assistantMessageId: string;
 	startedAtMs: number;
 	replyRunwayPx?: number;
@@ -842,6 +847,10 @@ export function ChatPage({
 	const [activeTurnSessionId, setActiveTurnSessionId] = useState<string | null>(
 		null,
 	);
+	const [activeTurnGeneration, setActiveTurnGeneration] = useState<
+		number | null
+	>(null);
+	const [pendingFollowUps, setPendingFollowUps] = useState(0);
 	const localSessionMessages = localMessages[session.id] ?? EMPTY_MESSAGES;
 	const messages = useMemo(
 		() => [...baseMessages, ...localSessionMessages],
@@ -954,26 +963,25 @@ export function ChatPage({
 	);
 
 	const startAssistantMessage = useCallback((turn: ActiveTurn) => {
+		const { sessionId, assistantMessageId, replyRunwayPx } = turn;
 		setLocalMessages((current) => {
-			const sessionMessages = current[turn.sessionId] ?? EMPTY_MESSAGES;
+			const sessionMessages = current[sessionId] ?? EMPTY_MESSAGES;
 			if (
-				sessionMessages.some(
-					(message) => message.id === turn.assistantMessageId,
-				)
+				sessionMessages.some((message) => message.id === assistantMessageId)
 			) {
 				return current;
 			}
 			return {
 				...current,
-				[turn.sessionId]: [
+				[sessionId]: [
 					...sessionMessages,
 					{
-						id: turn.assistantMessageId,
+						id: assistantMessageId,
 						role: "assistant",
 						text: "",
 						time: formatTime(),
 						streaming: true,
-						replyRunwayPx: turn.replyRunwayPx,
+						replyRunwayPx,
 					},
 				],
 			};
@@ -1238,6 +1246,7 @@ export function ChatPage({
 			turn: ActiveTurn,
 			stopReason?: string | null,
 			errorMessage?: string | null,
+			notifyCompletion = true,
 		) => {
 			const workDurationMs = Math.max(0, Date.now() - turn.startedAtMs);
 			const visibleError =
@@ -1285,6 +1294,7 @@ export function ChatPage({
 				return { ...current, [turn.sessionId]: nextMessages };
 			});
 			if (
+				notifyCompletion &&
 				desktopNotifications &&
 				stopReason !== "aborted" &&
 				stopReason !== "error" &&
@@ -1300,6 +1310,8 @@ export function ChatPage({
 		if (activeTurnRef.current !== turn) return;
 		activeTurnRef.current = null;
 		setActiveTurnSessionId(null);
+		setActiveTurnGeneration(null);
+		setPendingFollowUps(0);
 	}, []);
 
 	const failActiveTurn = useCallback(
@@ -1309,6 +1321,67 @@ export function ChatPage({
 			releaseActiveTurn(turn);
 		},
 		[finishAssistantMessage, releaseActiveTurn],
+	);
+
+	const beginFollowUpMessage = useCallback(
+		(turn: ActiveTurn, text: string) => {
+			if (!turn.currentUserStarted) {
+				turn.currentUserStarted = true;
+				turn.currentUserText = text;
+				return;
+			}
+
+			finishAssistantMessage(turn, undefined, undefined, false);
+			const nextTurn: ActiveTurn = {
+				...turn,
+				currentUserText: text,
+				currentUserStarted: true,
+				assistantMessageId: createLocalMessageId("assistant"),
+				startedAtMs: Date.now(),
+				replyRunwayPx: undefined,
+			};
+			activeTurnRef.current = nextTurn;
+			const assistantMessage: AssistantChatMessage = {
+				id: nextTurn.assistantMessageId,
+				role: "assistant",
+				text: "",
+				time: formatTime(),
+				streaming: true,
+			};
+
+			setLocalMessages((current) => {
+				const sessionMessages = current[nextTurn.sessionId] ?? EMPTY_MESSAGES;
+				const queuedIndex = sessionMessages.findIndex(
+					(message) =>
+						message.role === "user" && message.queued && message.text === text,
+				);
+				if (queuedIndex >= 0) {
+					const nextMessages = [...sessionMessages];
+					const queuedMessage = nextMessages[queuedIndex];
+					if (queuedMessage.role === "user") {
+						nextMessages[queuedIndex] = { ...queuedMessage, queued: false };
+					}
+					nextMessages.splice(queuedIndex + 1, 0, assistantMessage);
+					return { ...current, [nextTurn.sessionId]: nextMessages };
+				}
+
+				return {
+					...current,
+					[nextTurn.sessionId]: [
+						...sessionMessages,
+						{
+							id: createLocalMessageId("user"),
+							role: "user",
+							text,
+							time: formatTime(),
+						},
+						assistantMessage,
+					],
+				};
+			});
+			requestAnimationFrame(() => scrollToBottom(false));
+		},
+		[finishAssistantMessage, scrollToBottom],
 	);
 
 	const handleRuntimeEvent = useCallback(
@@ -1324,6 +1397,9 @@ export function ChatPage({
 
 			switch (event.type) {
 				case "rpc_message":
+					break;
+				case "user_message_start":
+					beginFollowUpMessage(turn, event.text);
 					break;
 				case "assistant_message_start":
 					startAssistantMessage(turn);
@@ -1373,6 +1449,9 @@ export function ChatPage({
 					finishAssistantMessage(turn, event.stopReason, event.errorMessage);
 					releaseActiveTurn(turn);
 					break;
+				case "queue_update":
+					setPendingFollowUps(event.followUp.length);
+					break;
 				case "runtime_error":
 					failActiveTurn(turn, event.message);
 					break;
@@ -1393,6 +1472,7 @@ export function ChatPage({
 		[
 			appendAssistantDelta,
 			appendAssistantThinkingDelta,
+			beginFollowUpMessage,
 			failActiveTurn,
 			finishAssistantMessage,
 			finishAssistantThinking,
@@ -1447,6 +1527,8 @@ export function ChatPage({
 				sessionId: session.id,
 				sessionTitle: session.title,
 				generation: null,
+				currentUserText: trimmed,
+				currentUserStarted: false,
 				assistantMessageId: createLocalMessageId("assistant"),
 				startedAtMs: Date.now(),
 				replyRunwayPx,
@@ -1480,6 +1562,7 @@ export function ChatPage({
 				const snapshot = await ensureWorkspacePi(session.workspaceRecord);
 				if (activeTurnRef.current !== turn) return;
 				turn.generation = snapshot.generation;
+				setActiveTurnGeneration(snapshot.generation);
 				if (session.sessionPath) {
 					const switched = await switchPiSession(session.sessionPath);
 					if (switched.cancelled) throw new Error("Pi 取消了会话切换。");
@@ -1509,6 +1592,51 @@ export function ChatPage({
 			void beginTurn(text);
 		},
 		[beginTurn],
+	);
+
+	const handleFollowUp = useCallback(
+		(text: string) => {
+			const trimmed = text.trim();
+			const turn = activeTurnRef.current;
+			if (
+				!trimmed ||
+				!turn ||
+				turn.sessionId !== session.id ||
+				turn.generation === null
+			) {
+				return;
+			}
+
+			const messageId = createLocalMessageId("user");
+			appendLocalMessage(turn.sessionId, {
+				id: messageId,
+				role: "user",
+				text: trimmed,
+				time: formatTime(),
+				queued: true,
+			});
+			setDrafts((current) => ({ ...current, [turn.sessionId]: "" }));
+			requestAnimationFrame(() => scrollToBottom(false));
+
+			void sendPiFollowUp(trimmed).catch((error) => {
+				setLocalMessages((current) => ({
+					...current,
+					[turn.sessionId]: (current[turn.sessionId] ?? EMPTY_MESSAGES).filter(
+						(message) => message.id !== messageId,
+					),
+				}));
+				setDrafts((current) => ({
+					...current,
+					[turn.sessionId]: current[turn.sessionId]?.trim()
+						? current[turn.sessionId]
+						: trimmed,
+				}));
+				toast.error("无法排队发送", {
+					description: runtimeErrorMessage(error),
+				});
+			});
+		},
+		[appendLocalMessage, scrollToBottom, session.id],
 	);
 
 	const handleStop = useCallback(() => {
@@ -1716,9 +1844,13 @@ export function ChatPage({
 							value={draft}
 							onChange={setDraft}
 							onSubmit={handleSubmit}
+							onFollowUp={
+								activeTurnGeneration === null ? undefined : handleFollowUp
+							}
 							disabled={runtimeBusy && !running}
 							running={running}
 							onStop={handleStop}
+							pendingFollowUps={pendingFollowUps}
 						/>
 					</ConversationColumn>
 				</div>

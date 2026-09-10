@@ -43,6 +43,10 @@ pub enum RuntimeEvent {
         generation: u64,
         message: Value,
     },
+    UserMessageStart {
+        generation: u64,
+        text: String,
+    },
     AssistantMessageStart {
         generation: u64,
     },
@@ -98,6 +102,12 @@ pub enum RuntimeEvent {
         stop_reason: Option<String>,
         #[serde(rename = "errorMessage")]
         error_message: Option<String>,
+    },
+    QueueUpdate {
+        generation: u64,
+        steering: Vec<String>,
+        #[serde(rename = "followUp")]
+        follow_up: Vec<String>,
     },
     RuntimeLog {
         generation: u64,
