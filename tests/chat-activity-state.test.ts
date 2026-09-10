@@ -11,7 +11,12 @@ import {
 	upsertToolContent,
 	type AssistantContentItem,
 } from "../src/lib/chat-activity-state.ts";
+import { buildConversationOutline } from "../src/lib/conversation-outline.ts";
 import { getReplyRunwayHeight } from "../src/lib/chat-scroll-state.ts";
+import {
+	getOutlineIndexForMessageIndex,
+	shouldVirtualizeChatMessages,
+} from "../src/lib/chat-virtualization.ts";
 import { formatWorkDuration } from "../src/lib/format-duration.ts";
 
 test("interleaved concurrent tool calls stay isolated by toolCallId", () => {
@@ -245,4 +250,48 @@ test("reply runway is only reserved for an already scrollable conversation", () 
 		getReplyRunwayHeight({ viewportHeight: 1_200, scrollHeight: 2_000 }),
 		256,
 	);
+});
+
+test("chat virtualization only turns on for long sessions", () => {
+	assert.equal(shouldVirtualizeChatMessages(0), false);
+	assert.equal(shouldVirtualizeChatMessages(39), false);
+	assert.equal(shouldVirtualizeChatMessages(40), true);
+	assert.equal(shouldVirtualizeChatMessages(400), true);
+});
+
+test("conversation outline records each round start message index", () => {
+	const entries = buildConversationOutline([
+		{ id: "u1", role: "user", text: "first" },
+		{ id: "a1", role: "assistant", text: "reply" },
+		{ id: "a2", role: "assistant", text: "more" },
+		{ id: "u2", role: "user", text: "second" },
+		{ id: "a3", role: "assistant", text: "reply 2" },
+	]);
+
+	assert.deepEqual(
+		entries.map((entry) => ({
+			key: entry.key,
+			messageIndex: entry.messageIndex,
+		})),
+		[
+			{ key: "u1", messageIndex: 0 },
+			{ key: "u2", messageIndex: 3 },
+		],
+	);
+});
+
+test("outline index follows the virtualized message at the reading line", () => {
+	const entries = [
+		{ messageIndex: 0 },
+		{ messageIndex: 3 },
+		{ messageIndex: 8 },
+		{ messageIndex: 13 },
+	];
+
+	assert.equal(getOutlineIndexForMessageIndex([], 4), -1);
+	assert.equal(getOutlineIndexForMessageIndex(entries, 0), 0);
+	assert.equal(getOutlineIndexForMessageIndex(entries, 2), 0);
+	assert.equal(getOutlineIndexForMessageIndex(entries, 3), 1);
+	assert.equal(getOutlineIndexForMessageIndex(entries, 12), 2);
+	assert.equal(getOutlineIndexForMessageIndex(entries, 99), 3);
 });
