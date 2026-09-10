@@ -6,6 +6,7 @@ import {
 	useState,
 	type ReactNode,
 } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, Copy, PanelLeft, PanelRight } from "lucide-react";
 
 import {
@@ -25,13 +26,15 @@ import {
 	type AssistantContentItem,
 } from "@/lib/chat-activity-state";
 import { getReplyRunwayHeight } from "@/lib/chat-scroll-state";
+import {
+	getOutlineIndexForMessageIndex,
+	shouldVirtualizeChatMessages,
+} from "@/lib/chat-virtualization";
 import { formatWorkDuration } from "@/lib/format-duration";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
-import {
-	buildConversationOutline,
-	ConversationOutlineRail,
-} from "@/components/chat/conversation-outline-rail";
+import { ConversationOutlineRail } from "@/components/chat/conversation-outline-rail";
+import { buildConversationOutline } from "@/lib/conversation-outline";
 import {
 	abortPiReply,
 	ensureLocalPi,
@@ -641,6 +644,42 @@ type ActiveTurn = {
 let localMessageSequence = 0;
 let localActivitySequence = 0;
 
+const CHAT_VIRTUAL_OVERSCAN = 6;
+const CHAT_VIRTUAL_SCROLL_PADDING_PX = 16;
+
+type ChatVirtualPadding = {
+	start: number;
+	end: number;
+};
+
+function getChatVirtualPadding(): ChatVirtualPadding {
+	if (
+		typeof window !== "undefined" &&
+		window.matchMedia("(min-width: 640px)").matches
+	) {
+		return { start: 24, end: 40 };
+	}
+	return { start: 16, end: 32 };
+}
+
+function useChatVirtualPadding() {
+	const [padding, setPadding] = useState<ChatVirtualPadding>(
+		getChatVirtualPadding,
+	);
+
+	useEffect(() => {
+		const media = window.matchMedia("(min-width: 640px)");
+		const sync = () =>
+			setPadding(
+				media.matches ? { start: 24, end: 40 } : { start: 16, end: 32 },
+			);
+		media.addEventListener("change", sync);
+		return () => media.removeEventListener("change", sync);
+	}, []);
+
+	return padding;
+}
+
 function createLocalMessageId(kind: "user" | "assistant") {
 	localMessageSequence += 1;
 	return `local-${kind}-${Date.now()}-${localMessageSequence}`;
@@ -726,6 +765,32 @@ export function ChatPage({
 
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const roundRefs = useRef(new Map<string, HTMLDivElement>());
+	const messagesRef = useRef(messages);
+	messagesRef.current = messages;
+	const virtualPadding = useChatVirtualPadding();
+	const virtualized =
+		loadState === "ready" && shouldVirtualizeChatMessages(messages.length);
+	const getVirtualMessageKey = useCallback(
+		(index: number) =>
+			`${session.id}:${messagesRef.current[index]?.id ?? index}`,
+		[session.id],
+	);
+	const estimateVirtualMessageSize = useCallback(
+		(index: number) => (messagesRef.current[index]?.role === "user" ? 84 : 184),
+		[],
+	);
+	/* oxlint-disable-next-line react/incompatible-library -- TanStack Virtual intentionally owns imperative measurement and scroll functions; keep the virtualizer local to this component. */
+	const messageVirtualizer = useVirtualizer({
+		count: messages.length,
+		getScrollElement: () => scrollRef.current,
+		estimateSize: estimateVirtualMessageSize,
+		getItemKey: getVirtualMessageKey,
+		overscan: CHAT_VIRTUAL_OVERSCAN,
+		paddingStart: virtualPadding.start,
+		paddingEnd: virtualPadding.end,
+		scrollPaddingStart: CHAT_VIRTUAL_SCROLL_PADDING_PX,
+		enabled: virtualized,
+	});
 	const stickyRef = useRef(true);
 	const [isSticky, setIsSticky] = useState(true);
 	const [isScrolledFromTop, setIsScrolledFromTop] = useState(false);
@@ -752,6 +817,15 @@ export function ChatPage({
 			return;
 		}
 		const readingLine = viewport.scrollTop + 72;
+		if (virtualized) {
+			const readingItem =
+				messageVirtualizer.getVirtualItemForOffset(readingLine);
+			setActiveOutlineIndex(
+				getOutlineIndexForMessageIndex(outlineEntries, readingItem?.index ?? 0),
+			);
+			return;
+		}
+
 		let nextIndex = 0;
 		for (let index = 0; index < outlineEntries.length; index += 1) {
 			const row = roundRefs.current.get(outlineEntries[index].key);
@@ -759,7 +833,7 @@ export function ChatPage({
 			nextIndex = index;
 		}
 		setActiveOutlineIndex(nextIndex);
-	}, [outlineEntries]);
+	}, [messageVirtualizer, outlineEntries, virtualized]);
 
 	const scrollToBottom = useCallback((smooth = true) => {
 		const viewport = scrollRef.current;
@@ -1363,13 +1437,20 @@ export function ChatPage({
 	const handleOutlineJump = (index: number) => {
 		const entry = outlineEntries[index];
 		const viewport = scrollRef.current;
-		const row = entry ? roundRefs.current.get(entry.key) : undefined;
-		if (!viewport || !row) return;
+		if (!entry || !viewport) return;
 		stickyRef.current = false;
 		setIsSticky(false);
 		setActiveOutlineIndex(index);
+
+		if (virtualized) {
+			messageVirtualizer.scrollToIndex(entry.messageIndex, { align: "start" });
+			return;
+		}
+
+		const row = roundRefs.current.get(entry.key);
+		if (!row) return;
 		viewport.scrollTo({
-			top: Math.max(0, row.offsetTop - 16),
+			top: Math.max(0, row.offsetTop - CHAT_VIRTUAL_SCROLL_PADDING_PX),
 			behavior: "smooth",
 		});
 	};
@@ -1392,15 +1473,17 @@ export function ChatPage({
 					onScroll={syncScrollState}
 					className="scrollbar-pro min-h-0 w-full flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
 				>
-					<div className="flex min-h-full flex-col pb-8 pt-4 sm:pb-10 sm:pt-6">
-						{loadState === "loading" ? (
+					{loadState === "loading" ? (
+						<div className="flex min-h-full flex-col pb-8 pt-4 sm:pb-10 sm:pt-6">
 							<ConversationColumn className="flex flex-1 items-center justify-center">
 								<LoadingState
 									title="正在加载会话"
 									description="正在读取消息与活动记录。"
 								/>
 							</ConversationColumn>
-						) : loadState === "error" ? (
+						</div>
+					) : loadState === "error" ? (
+						<div className="flex min-h-full flex-col pb-8 pt-4 sm:pb-10 sm:pt-6">
 							<ConversationColumn className="flex flex-1 items-center justify-center">
 								<ErrorState
 									title="会话加载失败"
@@ -1408,10 +1491,52 @@ export function ChatPage({
 									onRetry={onRetry}
 								/>
 							</ConversationColumn>
-						) : messages.length === 0 ? (
+						</div>
+					) : messages.length === 0 ? (
+						<div className="flex min-h-full flex-col pb-8 pt-4 sm:pb-10 sm:pt-6">
 							<EmptyConversation />
-						) : (
-							messages.map((message, index) => (
+						</div>
+					) : virtualized ? (
+						<div
+							className="relative min-h-full"
+							style={{ height: `${messageVirtualizer.getTotalSize()}px` }}
+						>
+							{messageVirtualizer.getVirtualItems().map((virtualMessage) => {
+								const message = messages[virtualMessage.index];
+								if (!message) return null;
+								return (
+									<div
+										key={virtualMessage.key}
+										data-index={virtualMessage.index}
+										ref={(node) => {
+											messageVirtualizer.measureElement(node);
+											if (node) roundRefs.current.set(message.id, node);
+											else roundRefs.current.delete(message.id);
+										}}
+										className="absolute left-0 top-0 w-full"
+										style={{
+											transform: `translateY(${virtualMessage.start}px)`,
+										}}
+									>
+										{message.role === "user" ? (
+											<UserMessage message={message} />
+										) : (
+											<AssistantMessage
+												message={message}
+												replyRunwayPx={
+													virtualMessage.index === messages.length - 1
+														? message.replyRunwayPx
+														: undefined
+												}
+											/>
+										)}
+									</div>
+								);
+							})}
+						</div>
+					) : (
+						<div className="flex min-h-full flex-col pb-8 pt-4 sm:pb-10 sm:pt-6">
+							{messages.map((message, index) => (
 								<div
 									key={message.id}
 									ref={(node) => {
@@ -1432,9 +1557,9 @@ export function ChatPage({
 										/>
 									)}
 								</div>
-							))
-						)}
-					</div>
+							))}
+						</div>
+					)}
 				</div>
 
 				{isScrolledFromTop ? (

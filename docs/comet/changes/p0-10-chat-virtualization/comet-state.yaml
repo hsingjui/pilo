@@ -1,0 +1,297 @@
+schema: comet.native.v4
+name: p0-10-chat-virtualization
+language: zh-CN
+phase: archive
+status: active
+state_version: 18
+brief: brief.md
+shape_confirmation_hash: bd1417fc06a4f4ad791cc3e09701c8f06cba6d02bf64a46e3d8f8f1e6abbd246
+spec_changes: []
+workspace:
+  isolation: worktree
+  change_branch: comet/p0-10-chat-virtualization
+  target_branch: main
+  finish: merge
+loop:
+  stage: archive-ready
+  goal_cycle: 1
+  iteration: 1
+  attempt: 5
+  retry_epoch: 1
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: archive
+acceptance:
+  - id: A1
+    source: brief.md
+    text: A1：消息数量低于 virtualization 阈值时保持当前直接渲染路径；达到长会话阈值后只挂载视口附近消息，并保留合理 overscan。
+    result: passed
+    reason:
+      text: Current-session review confirms shouldVirtualizeChatMessages enables
+        virtualization at 40 messages, short sessions retain the existing direct
+        messages.map render path, and TanStack Virtual is configured with
+        overscan=6 so only viewport-near rows are mounted.
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: A2：virtualized item 使用消息 id 作为稳定 key，并能根据实际 DOM 高度重新测量；包含长
+      Markdown、展开/折叠活动块以及 streaming 增长时不会依赖固定行高。
+    result: passed
+    reason:
+      text: Virtual rows use session-scoped message ids as stable keys and call
+        messageVirtualizer.measureElement on each mounted row; TanStack Virtual
+        observes real element sizes, so Markdown, thinking/tool blocks, reply
+        runway, and streaming growth are not constrained to fixed heights.
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: A3：长会话初次进入与切换 Session 后仍能定位到最新消息；sticky 状态下 assistant streaming
+      持续跟随底部，用户主动上滚后停止强制跟随，滚动到底部按钮可恢复跟随。
+    result: passed
+    reason:
+      text: Current ChatPage session switching is synchronous and the session-id
+        effect restores sticky state and scrolls to the latest message;
+        streaming updates scroll only while stickyRef remains true, onScroll
+        clears stickiness after user up-scroll, and the existing
+        scroll-to-bottom button restores it. The future Session Index
+        loading->ready path is not wired yet and is recorded as a follow-up risk
+        rather than a current regression.
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: A4：Conversation Outline 在长会话中点击任意 round 都能跳到对应消息，即使目标消息此前未挂载；当前 round
+      高亮不依赖所有消息 DOM ref 常驻。
+    result: passed
+    reason:
+      text: Outline entries now retain their starting messageIndex. Virtualized
+        active-round selection maps the reading-line virtual item index to the
+        outline via binary search, and jumps use scrollToIndex(messageIndex), so
+        the destination need not already be mounted.
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: A5：发送新消息时现有 reply runway 逻辑仍生效；composer 与消息列布局、底部自然遮挡和滚动条对齐无回归。
+    result: passed
+    reason:
+      text: Reply-runway calculation and AssistantMessage minHeight are unchanged and
+        the last virtual row still receives replyRunwayPx. Virtual padding
+        reproduces the existing responsive top/bottom spacing, while scrollbar
+        container and composer overlay/occlusion markup remain unchanged outside
+        the message-list render branch.
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: A6：改动不包含 `src-tauri/**`、Connection、WSL 或 runtime transport 文件，能够与 P0.5
+      独立合并。
+    result: passed
+    reason:
+      text: Changed code paths are limited to package metadata, chat frontend
+        components, two frontend helpers, unit tests, and Comet artifacts. No
+        src-tauri, Connection, WSL transport, or src/lib/pi-runtime files are
+        modified. The same frontend patch was previously applied over latest
+        main 08dca0f after P0.5 and passed all frontend checks; current
+        unrelated Settings dirty files do not overlap.
+      truncated: false
+  - id: A7
+    source: brief.md
+    text: A7：`pnpm check`、`pnpm build`、`pnpm test:unit` 通过；新增纯函数测试覆盖 virtualization
+      阈值及 outline/message index 映射边界。
+    result: passed
+    reason:
+      text: Fresh current-session execution passed pnpm check with zero
+        warnings/errors, pnpm test:unit with 9/9 tests including the 39/40
+        threshold and outline/message-index mapping cases, pnpm build, and git
+        diff --check.
+      truncated: false
+builder_handoff:
+  candidate_id: df2b20e8-79d2-48ca-af05-4629721fa64b
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:a79dfcf5-402d-4fc2-be6b-bf16c14163c0
+  iteration: 1
+  summary:
+    text: P0.10 长 Session 消息 virtualization 已完成：40 条消息起使用
+      @tanstack/react-virtual，仅挂载视口附近 variable-height 行；消息 id 作为 session-scoped
+      稳定 key，ResizeObserver 动态测量 Markdown/Thinking/Tool Result/streaming
+      高度；Outline 使用 round 起始 messageIndex 进行虚拟跳转与 active round
+      推导，短会话保留原直接渲染路径，现有 sticky scroll、reply runway、composer 布局保持不变。实现已在最新完成
+      P0.5 的 main 08dca0f 上额外叠加验证通过。
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+  checks:
+    - name:
+        text: pnpm check
+        truncated: false
+      result: passed
+      note:
+        text: oxfmt check + oxlint --deny-warnings passed
+        truncated: false
+    - name:
+        text: pnpm test:unit
+        truncated: false
+      result: passed
+      note:
+        text: 9 tests passed, including 39/40 virtualization threshold and
+          outline/message index mapping
+        truncated: false
+    - name:
+        text: pnpm build
+        truncated: false
+      result: passed
+      note:
+        text: TypeScript + Vite production build passed
+        truncated: false
+    - name:
+        text: git diff --check
+        truncated: false
+      result: passed
+      note:
+        text: No whitespace errors
+        truncated: false
+    - name:
+        text: latest main integration check
+        truncated: false
+      result: passed
+      note:
+        text: Applied P0.10 frontend files over main 08dca0f (including completed P0.5
+          pi-runtime changes) in a temporary detached worktree; pnpm check, pnpm
+          test:unit and pnpm build all passed
+        truncated: false
+    - name:
+        text: P0.5 overlap check
+        truncated: false
+      result: passed
+      note:
+        text: Parallel change does not modify src-tauri/**, Connection, WSL transport,
+          or src/lib/pi-runtime.ts
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: Windows pnpm tauri dev visual/scroll-feel validation remains a
+        target-environment manual check; automated validation covers
+        type/lint/unit/build and compatibility with latest main.
+      truncated: false
+  known_limits_truncated: false
+  review:
+    status: passed
+    summary:
+      text: Independent read-only pre-handoff inspection found no P0.5 file overlap or
+        blocking code issue. The virtualized path keeps stable session-scoped
+        keys, dynamic element measurement, index-based outline jumps for
+        unmounted rows, and preserves the non-virtual short-session path.
+      truncated: false
+    reviewer_execution_ref: agentdock:session-4da459ca7939269387b98441
+  submitted_at: 2026-09-10T09:43:44.957Z
+blockers: []
+verification:
+  candidate_id: df2b20e8-79d2-48ca-af05-4629721fa64b
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:b5e3862e-5462-4b54-ba0e-ee401481aa37
+  iteration: 1
+  attempt: 5
+  assurance: skill-coordinated
+  verdict: pass
+  checks: []
+  summary:
+    text: Per the user's explicit instruction, independent external Verify was
+      skipped. The current session performed direct semantic review of A1-A7
+      plus fresh automated checks and latest-main conflict review; all
+      current-scope acceptance criteria pass with only target-environment visual
+      validation and future async Session loading noted as residual risks.
+    truncated: false
+  risks:
+    - text: Windows/Tauri visual scroll feel has not been manually exercised in this
+        self-validation pass; type/lint/unit/build and latest-main compatibility
+        are green.
+      truncated: false
+    - text: When a future Session Index introduces real asynchronous loading for the
+        same session id, the loading->ready initial-bottom behavior should be
+        rechecked because loadState is currently not driven by App.
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-09-10T09:56:45.640Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: execution-error
+    unresolved_ids: []
+    summary:
+      text: Independent Codex verifier failed before starting semantic review because
+        this installed CLI rejected the exec-level -a option placement.
+        Candidate files and checks were unchanged; retry with approval/sandbox
+        options at the top-level CLI invocation.
+      truncated: false
+    completed_at: 2026-09-10T09:44:42.971Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 2
+    outcome: execution-error
+    unresolved_ids: []
+    summary:
+      text: Independent Codex verifier started in read-only sandbox but its configured
+        model provider failed with repeated HTTP 503 responses before producing
+        any semantic review result. Candidate files and automated checks remain
+        unchanged.
+      truncated: false
+    completed_at: 2026-09-10T09:45:38.199Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 3
+    outcome: execution-error
+    unresolved_ids: []
+    summary:
+      text: Independent Pi verifier was launched with read-only built-in tools only,
+        but the execution channel failed with an upstream HTTP 502 before a
+        semantic result was returned. Candidate files and automated checks
+        remain unchanged.
+      truncated: false
+    completed_at: 2026-09-10T09:49:18.551Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 4
+    outcome: execution-error
+    unresolved_ids: []
+    summary:
+      text: Independent Codex verifier started correctly in read-only mode, but its
+        configured upstream provider returned HTTP 503 after all reconnect
+        attempts, so no semantic result was produced. Candidate remains
+        unchanged.
+      truncated: false
+    completed_at: 2026-09-10T09:54:44.688Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 5
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: Per the user's explicit instruction, independent external Verify was
+        skipped. The current session performed direct semantic review of A1-A7
+        plus fresh automated checks and latest-main conflict review; all
+        current-scope acceptance criteria pass with only target-environment
+        visual validation and future async Session loading noted as residual
+        risks.
+      truncated: false
+    completed_at: 2026-09-10T09:56:45.640Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: false
+created_at: 2026-09-10T09:30:22.974Z
