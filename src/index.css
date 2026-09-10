@@ -1,0 +1,325 @@
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/700.css";
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens ported from Lody (packages/components/src/tailwind/index.css).
+ * Raw HSL triplets in :root / .dark; Tailwind 4 color mapping in @theme below.
+ */
+@theme inline {
+	--color-background: hsl(var(--background));
+	--color-foreground: hsl(var(--foreground));
+	--color-card: hsl(var(--card));
+	--color-card-foreground: hsl(var(--card-foreground));
+	--color-popover: hsl(var(--popover));
+	--color-popover-foreground: hsl(var(--popover-foreground));
+	--color-primary: hsl(var(--primary));
+	--color-primary-foreground: hsl(var(--primary-foreground));
+	--color-secondary: hsl(var(--secondary));
+	--color-secondary-foreground: hsl(var(--secondary-foreground));
+	--color-muted: hsl(var(--muted));
+	--color-muted-foreground: hsl(var(--muted-foreground));
+	--color-highlight: hsl(var(--highlight));
+	--color-highlight-foreground: hsl(var(--highlight-foreground));
+	--color-hover: hsl(var(--hover));
+	--color-hover-foreground: hsl(var(--hover-foreground));
+	--color-selection: hsl(var(--selection));
+	--color-selection-foreground: hsl(var(--selection-foreground));
+	--color-destructive: hsl(var(--destructive));
+	--color-destructive-foreground: hsl(var(--destructive-foreground));
+	--color-border: hsl(var(--border));
+	--color-input: hsl(var(--input));
+	--color-input-field: hsl(var(--input-field));
+	--color-input-foreground: hsl(var(--input-foreground));
+	--color-input-placeholder: hsl(var(--input-placeholder));
+	--color-input-border: hsl(var(--input-border));
+	--color-switch-track: hsl(var(--switch-track));
+	--color-ring: hsl(var(--ring));
+	--color-sidebar: hsl(var(--sidebar-background));
+	--color-sidebar-foreground: hsl(var(--sidebar-foreground));
+	--color-sidebar-foreground-muted: hsl(var(--sidebar-foreground-muted));
+	--color-sidebar-primary: hsl(var(--sidebar-primary));
+	--color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+	--color-sidebar-hover: hsl(var(--sidebar-hover));
+	--color-sidebar-hover-foreground: hsl(var(--sidebar-hover-foreground));
+	--color-sidebar-selection: hsl(var(--sidebar-selection));
+	--color-sidebar-selection-foreground: hsl(
+		var(--sidebar-selection-foreground)
+	);
+	--color-sidebar-border: hsl(var(--sidebar-border));
+	--color-sidebar-ring: hsl(var(--sidebar-ring));
+	--color-bottom-bar: hsl(var(--bottom-bar));
+	--color-bottom-bar-foreground: hsl(var(--bottom-bar-foreground));
+	--color-status-info: hsl(var(--status-info));
+	--color-status-success: hsl(var(--status-success));
+	--color-status-warning: hsl(var(--status-warning));
+	--color-status-danger: hsl(var(--status-danger));
+	--color-status-merged: hsl(var(--status-merged));
+	--color-github-open: hsl(var(--github-open));
+	--color-github-merged: hsl(var(--github-merged));
+	--color-github-closed: hsl(var(--github-closed));
+	--color-github-draft: hsl(var(--github-draft));
+	--color-github-addition: hsl(var(--github-addition));
+	--color-github-deletion: hsl(var(--github-deletion));
+	--color-modified-file: hsl(var(--modified-file));
+	--color-code: hsl(var(--code-background));
+	--color-code-foreground: hsl(var(--code-foreground));
+	--color-code-border: hsl(var(--code-border));
+	--color-code-added: hsl(var(--code-added));
+	--color-code-removed: hsl(var(--code-removed));
+	--color-syntax-keyword: hsl(var(--syntax-keyword));
+	--color-syntax-string: hsl(var(--syntax-string));
+	--color-syntax-number: hsl(var(--syntax-number));
+	--color-syntax-comment: hsl(var(--syntax-comment));
+	--color-syntax-function: hsl(var(--syntax-function));
+	--color-syntax-variable: hsl(var(--syntax-variable));
+	--color-syntax-title: hsl(var(--syntax-title));
+	--color-syntax-attr: hsl(var(--syntax-attr));
+	--color-syntax-builtin: hsl(var(--syntax-builtin));
+
+	--radius-xs: 0.125rem;
+	--radius-sm: 0.25rem;
+	--radius-md: 0.375rem;
+	--radius-lg: 0.5rem;
+	--radius-xl: 0.75rem;
+
+	--shadow-2xs: 0px 2px 4px 0px hsl(0 0% 0% / 0.05);
+	--shadow-xs: 0px 2px 4px 0px hsl(0 0% 0% / 0.05);
+	--shadow-sm:
+		0px 2px 4px 0px hsl(0 0% 0% / 0.1), 0px 1px 2px -1px hsl(0 0% 0% / 0.1);
+	--shadow-md:
+		0px 2px 4px 0px hsl(0 0% 0% / 0.1), 0px 2px 4px -1px hsl(0 0% 0% / 0.1);
+	--shadow-lg:
+		0px 2px 4px 0px hsl(0 0% 0% / 0.1), 0px 4px 6px -1px hsl(0 0% 0% / 0.1);
+	--shadow-xl:
+		0px 2px 4px 0px hsl(0 0% 0% / 0.1), 0px 8px 10px -1px hsl(0 0% 0% / 0.1);
+	--shadow-2xl: 0px 2px 4px 0px hsl(0 0% 0% / 0.25);
+	--shadow-panel: 0 1px 2px hsl(0 0% 0% / 0.08), 0 10px 30px hsl(0 0% 0% / 0.1);
+	--shadow-popover:
+		0 2px 6px hsl(0 0% 0% / 0.1), 0 18px 50px hsl(0 0% 0% / 0.14);
+
+	--font-sans:
+		"Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+		"Helvetica Neue", Arial, "Noto Sans SC", "PingFang SC", "Microsoft YaHei",
+		"Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+	--font-mono:
+		"JetBrains Mono", ui-monospace, "SF Mono", "SFMono-Regular", "Monaco",
+		"Menlo", "Consolas", "Liberation Mono", "Courier New", monospace;
+}
+
+@layer base {
+	:root {
+		/*
+		 * Lody Light，解析自内置主题 lody-light.json（经 Lody LODY_ALIAS_RULES
+		 * 解析后的生效值；-ring 因 focusBorder 全透明回落到主色）。
+		 * 侧栏 #F7F8FA / 选中 #E8EAEF / 主色 #5B8DEF。
+		 */
+		--background: 0 0% 100%;
+		--foreground: 225 7.1% 11%;
+		--card: 220 23.1% 97.5%;
+		--card-foreground: 220 7.5% 39%;
+		--popover: 0 0% 100%;
+		--popover-foreground: 225 7.1% 11%;
+		--primary: 219.7 82.2% 64.7%;
+		--primary-foreground: 0 0% 100%;
+		--secondary: 216 17.2% 94.3%;
+		--secondary-foreground: 225 7.1% 11%;
+		--muted: 216 17.2% 94.3%;
+		--muted-foreground: 220 8.9% 46.1%;
+		--highlight: 218.6 65.3% 57.1%;
+		--highlight-foreground: 0 0% 100%;
+		--hover: 225 15.4% 94.9%;
+		--hover-foreground: 225 7.1% 11%;
+		--selection: 222.9 17.9% 92.4%;
+		--selection-foreground: 225 7.1% 11%;
+		--selection-inactive: 216 17.2% 94.3%;
+		--selection-inactive-foreground: 225 7.1% 11%;
+		--destructive: 355.8 71.8% 47.3%;
+		--destructive-foreground: 0 0% 100%;
+		--border: 222.9 16.3% 91.6%;
+		--input: 216 12.2% 92%;
+		--input-foreground: 225 7.1% 11%;
+		--input-placeholder: 216 6.9% 57.5%;
+		--input-border: 222 14.7% 86.7%;
+		/* Fill of an editable control; stays white on a light canvas. */
+		--input-field: 0 0% 100%;
+		--switch-track: 222 14.7% 86.7%;
+		--ring: 219.7 82.2% 64.7%;
+		--sidebar-background: 220 23.1% 97.5%;
+		--sidebar-foreground: 220 7.5% 39%;
+		--sidebar-foreground-muted: 216 6.9% 57.5%;
+		--sidebar-primary: 219.7 82.2% 64.7%;
+		--sidebar-primary-foreground: 0 0% 100%;
+		--sidebar-hover: 225 15.4% 94.9%;
+		--sidebar-hover-foreground: 225 7.1% 11%;
+		--sidebar-selection: 222.9 17.9% 92.4%;
+		--sidebar-selection-foreground: 225 7.1% 11%;
+		--sidebar-border: 222 13.5% 85.5%;
+		--sidebar-ring: 219.7 82.2% 64.7%;
+		--button-hover: 218.6 65.3% 57.1%;
+		--button-secondary: 216 12.2% 92%;
+		--button-secondary-foreground: 225 7.1% 11%;
+		--button-secondary-hover: 225 15.4% 94.9%;
+		--bottom-bar: 0 0% 100%;
+		--bottom-bar-foreground: 220 7.5% 39%;
+		--status-info: 218.6 65.3% 57.1%;
+		--status-success: 137.2 66% 30%;
+		--status-warning: 24.9 58.9% 41%;
+		--status-danger: 355.8 71.8% 47.3%;
+		--status-merged: 334.3 48.4% 42.5%;
+		--github-open: 137 66% 30%;
+		--github-merged: 261 69% 59%;
+		--github-closed: 356 72% 47%;
+		--github-draft: 213 8% 47%;
+		--github-addition: var(--github-open);
+		--github-deletion: var(--github-closed);
+		--modified-file: 40.1 100% 30.2%;
+		--scrollbar-thumb: 220 6.1% 90.4%;
+		--scrollbar-thumb-hover: 220 3.5% 83.3%;
+		--scrollbar-thumb-active: 225 3.1% 74.9%;
+		--code-background: 220 23.1% 97.5%;
+		--code-foreground: 225 7.1% 11%;
+		--code-border: 222 14.7% 86.7%;
+		--code-added: var(--github-addition);
+		--code-removed: var(--github-deletion);
+		--syntax-keyword: 230.9 60.9% 63.9%;
+		--syntax-string: 10.4 38.3% 52.9%;
+		--syntax-number: 191.2 49.2% 36.3%;
+		--syntax-comment: 120 7.3% 65.3%;
+		--syntax-function: 95.8 39.9% 37.8%;
+		--syntax-variable: 30.6 41.9% 48.6%;
+		--syntax-title: 172 51.3% 37.1%;
+		--syntax-attr: 30.6 41.9% 48.6%;
+		--syntax-builtin: 50.2 72.9% 34.7%;
+
+		/* Sizing / motion */
+		--control-h: 36px;
+		--dur-1: 120ms;
+		--dur-2: 180ms;
+		--ease: cubic-bezier(0.2, 0, 0, 1);
+
+		/* Overlay stacking */
+		--z-dialog-overlay: 70;
+		--z-dialog: 80;
+		--z-popover: 80;
+		--z-tooltip: 90;
+		--z-toast: 100;
+	}
+
+	.dark {
+		/* Lody dark (Vesper-like blue-navy) */
+		--background: 222 55% 9.6%;
+		--foreground: 210 40% 96%;
+		--card: 220 54% 11.5%;
+		--card-foreground: 210 40% 96%;
+		--popover: 220 54% 11.5%;
+		--popover-foreground: 210 40% 96%;
+		--primary: 210 90% 62%;
+		--primary-foreground: 220 50% 12%;
+		--secondary: 222 40% 16%;
+		--secondary-foreground: 210 40% 96%;
+		--muted: 220 38% 14%;
+		--muted-foreground: 216 18% 70%;
+		--highlight: var(--primary);
+		--highlight-foreground: var(--primary-foreground);
+		--hover: 219 42% 18%;
+		--hover-foreground: var(--foreground);
+		--selection: 219 42% 22%;
+		--selection-foreground: var(--foreground);
+		--selection-inactive: var(--selection);
+		--selection-inactive-foreground: var(--selection-foreground);
+		--destructive: 0 72% 52%;
+		--destructive-foreground: 0 0% 98%;
+		--border: 220 32% 18%;
+		--input: 220 32% 18%;
+		--input-foreground: var(--foreground);
+		--input-placeholder: var(--muted-foreground);
+		--input-border: var(--border);
+		--input-field: var(--input);
+		--switch-track: 220 13% 40%;
+		--ring: 210 90% 62%;
+		--sidebar-background: 222 55% 9.6%;
+		--sidebar-foreground: 210 40% 96%;
+		--sidebar-foreground-muted: 216 18% 70%;
+		--sidebar-primary: 210 90% 62%;
+		--sidebar-primary-foreground: 220 50% 12%;
+		--sidebar-hover: 220 44% 14%;
+		--sidebar-hover-foreground: var(--sidebar-foreground);
+		--sidebar-selection: 220 44% 20%;
+		--sidebar-selection-foreground: var(--sidebar-foreground);
+		--sidebar-border: 220 32% 18%;
+		--sidebar-ring: 210 90% 62%;
+		--button-hover: 220 44% 18%;
+		--button-secondary: var(--secondary);
+		--button-secondary-foreground: var(--secondary-foreground);
+		--button-secondary-hover: var(--hover);
+		--bottom-bar: 222 40% 12%;
+		--bottom-bar-foreground: 210 40% 96%;
+		--status-info: var(--primary);
+		--status-success: 151 60% 52%;
+		--status-warning: 43 96% 56%;
+		--status-danger: var(--destructive);
+		--status-merged: 262 90% 74%;
+		--github-open: 128 49% 49%;
+		--github-merged: 262 89% 71%;
+		--github-closed: 3 93% 63%;
+		--github-draft: 212 8% 58%;
+		--github-addition: var(--github-open);
+		--github-deletion: var(--github-closed);
+		--modified-file: 43 96% 56%;
+		--scrollbar-thumb: var(--muted-foreground);
+		--scrollbar-thumb-hover: var(--muted-foreground);
+		--scrollbar-thumb-active: var(--muted-foreground);
+		--code-background: 220 48% 12%;
+		--code-foreground: 210 40% 96%;
+		--code-border: 220 32% 20%;
+		--code-added: var(--github-addition);
+		--code-removed: var(--github-deletion);
+		--syntax-keyword: 262 90% 74%;
+		--syntax-string: 154 68% 55%;
+		--syntax-number: 28 88% 62%;
+		--syntax-comment: 216 18% 70%;
+		--syntax-function: 197 85% 58%;
+		--syntax-variable: 330 78% 70%;
+		--syntax-title: 330 78% 70%;
+		--syntax-attr: 28 88% 62%;
+		--syntax-builtin: 262 90% 74%;
+	}
+
+	* {
+		border-color: hsl(var(--border));
+	}
+
+	html,
+	body,
+	#root {
+		height: 100%;
+	}
+
+	body {
+		margin: 0;
+		font-family: var(--font-sans);
+		font-size: 14px;
+		line-height: 1.45;
+		background-color: hsl(var(--background));
+		color: hsl(var(--foreground));
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+		-webkit-text-size-adjust: 100%;
+	}
+
+	code,
+	pre,
+	.font-mono {
+		font-family: var(--font-mono);
+		font-variant-ligatures: contextual;
+	}
+}
