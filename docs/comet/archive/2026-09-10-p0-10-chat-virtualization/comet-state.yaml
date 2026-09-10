@@ -2,8 +2,8 @@ schema: comet.native.v4
 name: p0-10-chat-virtualization
 language: zh-CN
 phase: archive
-status: active
-state_version: 18
+status: done
+state_version: 20
 brief: brief.md
 shape_confirmation_hash: bd1417fc06a4f4ad791cc3e09701c8f06cba6d02bf64a46e3d8f8f1e6abbd246
 spec_changes: []
@@ -13,7 +13,7 @@ workspace:
   target_branch: main
   finish: merge
 loop:
-  stage: archive-ready
+  stage: done
   goal_cycle: 1
   iteration: 1
   attempt: 5
@@ -22,7 +22,7 @@ loop:
   no_progress_count: 0
   execution_failure_count: 0
   previous_unresolved_ids: []
-  next_action: archive
+  next_action: null
 acceptance:
   - id: A1
     source: brief.md
@@ -293,5 +293,5 @@ history_overflow:
     recovery: 0
 verification_result: pass
 verification_report: verification.md
-archived: false
+archived: true
 created_at: 2026-09-10T09:30:22.974Z
