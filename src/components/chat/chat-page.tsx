@@ -46,6 +46,7 @@ import {
 	runtimeErrorMessage,
 	sendPiFollowUp,
 	sendPiPrompt,
+	sendPiSteer,
 	startNewPiSession,
 	switchPiSession,
 	type PiloRuntimeEvent,
@@ -70,7 +71,13 @@ export type ChatSession = {
 };
 
 type ChatMessage =
-	| { id: string; role: "user"; text: string; time: string; queued?: boolean }
+	| {
+			id: string;
+			role: "user";
+			text: string;
+			time: string;
+			queued?: "steer" | "follow_up";
+	  }
 	| {
 			id: string;
 			role: "assistant";
@@ -395,7 +402,9 @@ function UserMessage({
 			<div className="flex w-full justify-end">
 				<div className="group flex min-w-0 max-w-[80%] flex-col items-end gap-1.5 sm:max-w-[70%]">
 					<div className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
-						{message.queued ? <span>已排队</span> : null}
+						{message.queued ? (
+							<span>{message.queued === "steer" ? "待调整" : "已排队"}</span>
+						) : null}
 						{message.time ? <span>{message.time}</span> : null}
 					</div>
 					<div className="flex min-w-0 max-w-full items-end gap-1">
@@ -850,6 +859,7 @@ export function ChatPage({
 	const [activeTurnGeneration, setActiveTurnGeneration] = useState<
 		number | null
 	>(null);
+	const [pendingSteering, setPendingSteering] = useState(0);
 	const [pendingFollowUps, setPendingFollowUps] = useState(0);
 	const localSessionMessages = localMessages[session.id] ?? EMPTY_MESSAGES;
 	const messages = useMemo(
@@ -1311,6 +1321,7 @@ export function ChatPage({
 		activeTurnRef.current = null;
 		setActiveTurnSessionId(null);
 		setActiveTurnGeneration(null);
+		setPendingSteering(0);
 		setPendingFollowUps(0);
 	}, []);
 
@@ -1323,7 +1334,7 @@ export function ChatPage({
 		[finishAssistantMessage, releaseActiveTurn],
 	);
 
-	const beginFollowUpMessage = useCallback(
+	const beginQueuedMessage = useCallback(
 		(turn: ActiveTurn, text: string) => {
 			if (!turn.currentUserStarted) {
 				turn.currentUserStarted = true;
@@ -1359,7 +1370,7 @@ export function ChatPage({
 					const nextMessages = [...sessionMessages];
 					const queuedMessage = nextMessages[queuedIndex];
 					if (queuedMessage.role === "user") {
-						nextMessages[queuedIndex] = { ...queuedMessage, queued: false };
+						nextMessages[queuedIndex] = { ...queuedMessage, queued: undefined };
 					}
 					nextMessages.splice(queuedIndex + 1, 0, assistantMessage);
 					return { ...current, [nextTurn.sessionId]: nextMessages };
@@ -1399,7 +1410,7 @@ export function ChatPage({
 				case "rpc_message":
 					break;
 				case "user_message_start":
-					beginFollowUpMessage(turn, event.text);
+					beginQueuedMessage(turn, event.text);
 					break;
 				case "assistant_message_start":
 					startAssistantMessage(turn);
@@ -1450,6 +1461,7 @@ export function ChatPage({
 					releaseActiveTurn(turn);
 					break;
 				case "queue_update":
+					setPendingSteering(event.steering.length);
 					setPendingFollowUps(event.followUp.length);
 					break;
 				case "runtime_error":
@@ -1472,7 +1484,7 @@ export function ChatPage({
 		[
 			appendAssistantDelta,
 			appendAssistantThinkingDelta,
-			beginFollowUpMessage,
+			beginQueuedMessage,
 			failActiveTurn,
 			finishAssistantMessage,
 			finishAssistantThinking,
@@ -1594,8 +1606,8 @@ export function ChatPage({
 		[beginTurn],
 	);
 
-	const handleFollowUp = useCallback(
-		(text: string) => {
+	const queueMessage = useCallback(
+		(text: string, queued: "steer" | "follow_up") => {
 			const trimmed = text.trim();
 			const turn = activeTurnRef.current;
 			if (
@@ -1613,12 +1625,14 @@ export function ChatPage({
 				role: "user",
 				text: trimmed,
 				time: formatTime(),
-				queued: true,
+				queued,
 			});
 			setDrafts((current) => ({ ...current, [turn.sessionId]: "" }));
 			requestAnimationFrame(() => scrollToBottom(false));
 
-			void sendPiFollowUp(trimmed).catch((error) => {
+			const request =
+				queued === "steer" ? sendPiSteer(trimmed) : sendPiFollowUp(trimmed);
+			void request.catch((error) => {
 				setLocalMessages((current) => ({
 					...current,
 					[turn.sessionId]: (current[turn.sessionId] ?? EMPTY_MESSAGES).filter(
@@ -1631,12 +1645,22 @@ export function ChatPage({
 						? current[turn.sessionId]
 						: trimmed,
 				}));
-				toast.error("无法排队发送", {
+				toast.error(queued === "steer" ? "无法调整当前回复" : "无法排队发送", {
 					description: runtimeErrorMessage(error),
 				});
 			});
 		},
 		[appendLocalMessage, scrollToBottom, session.id],
+	);
+
+	const handleSteer = useCallback(
+		(text: string) => queueMessage(text, "steer"),
+		[queueMessage],
+	);
+
+	const handleFollowUp = useCallback(
+		(text: string) => queueMessage(text, "follow_up"),
+		[queueMessage],
 	);
 
 	const handleStop = useCallback(() => {
@@ -1844,12 +1868,14 @@ export function ChatPage({
 							value={draft}
 							onChange={setDraft}
 							onSubmit={handleSubmit}
+							onSteer={activeTurnGeneration === null ? undefined : handleSteer}
 							onFollowUp={
 								activeTurnGeneration === null ? undefined : handleFollowUp
 							}
 							disabled={runtimeBusy && !running}
 							running={running}
 							onStop={handleStop}
+							pendingSteering={pendingSteering}
 							pendingFollowUps={pendingFollowUps}
 						/>
 					</ConversationColumn>

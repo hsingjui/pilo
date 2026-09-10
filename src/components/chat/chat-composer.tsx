@@ -11,6 +11,7 @@ import {
 	ChevronDown,
 	FileCode2,
 	FileText,
+	ListPlus,
 	Paperclip,
 	Plus,
 	Sparkles,
@@ -48,12 +49,14 @@ type ChatComposerProps = {
 	value: string;
 	onChange: (value: string) => void;
 	onSubmit?: (value: string) => void;
+	onSteer?: (value: string) => void;
 	onFollowUp?: (value: string) => void;
 	variant?: "landing" | "session";
 	placeholder?: string;
 	disabled?: boolean;
 	running?: boolean;
 	onStop?: () => void;
+	pendingSteering?: number;
 	pendingFollowUps?: number;
 	modelLabel?: string;
 	modeLabel?: string;
@@ -178,12 +181,14 @@ export function ChatComposer({
 	value,
 	onChange,
 	onSubmit,
+	onSteer,
 	onFollowUp,
 	variant = "session",
 	placeholder = "按 @ 提及文件，/ 使用命令，$ 使用技能",
 	disabled = false,
 	running = false,
 	onStop,
+	pendingSteering = 0,
 	pendingFollowUps = 0,
 	modelLabel = "pi / default",
 	modeLabel = "默认",
@@ -242,10 +247,16 @@ export function ChatComposer({
 		const trimmed = value.trim();
 		if (!trimmed || disabled) return;
 		if (running) {
-			onFollowUp?.(trimmed);
+			onSteer?.(trimmed);
 			return;
 		}
 		onSubmit?.(trimmed);
+	};
+
+	const submitFollowUp = () => {
+		const trimmed = value.trim();
+		if (!trimmed || disabled || !running) return;
+		onFollowUp?.(trimmed);
 	};
 
 	const selectSuggestion = (suggestion: ComposerSuggestion) => {
@@ -267,6 +278,24 @@ export function ChatComposer({
 	};
 
 	const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+		const primaryShortcutModifierMatches =
+			sendMessageShortcut === "enter"
+				? !event.ctrlKey && !event.metaKey
+				: event.ctrlKey || event.metaKey;
+		const shouldFollowUpWithEnter =
+			running &&
+			event.key === "Enter" &&
+			event.altKey &&
+			!event.shiftKey &&
+			!isImeComposingKeyboardEvent(event) &&
+			primaryShortcutModifierMatches;
+
+		if (shouldFollowUpWithEnter) {
+			event.preventDefault();
+			submitFollowUp();
+			return;
+		}
+
 		if (suggestionMenuOpen && !isImeComposingKeyboardEvent(event)) {
 			if (event.key === "ArrowDown" && filteredSuggestions.length > 0) {
 				event.preventDefault();
@@ -304,9 +333,7 @@ export function ChatComposer({
 			!event.shiftKey &&
 			!event.altKey &&
 			!isImeComposingKeyboardEvent(event) &&
-			(sendMessageShortcut === "enter"
-				? !event.ctrlKey && !event.metaKey
-				: event.ctrlKey || event.metaKey);
+			primaryShortcutModifierMatches;
 
 		if (shouldSubmitWithEnter) {
 			event.preventDefault();
@@ -500,9 +527,11 @@ export function ChatComposer({
 						{modeLabel}
 						<ChevronDown className="size-3" />
 					</button>
-					{pendingFollowUps > 0 ? (
+					{pendingSteering > 0 || pendingFollowUps > 0 ? (
 						<span className="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">
-							已排队 {pendingFollowUps}
+							{pendingSteering > 0 ? `调整 ${pendingSteering}` : null}
+							{pendingSteering > 0 && pendingFollowUps > 0 ? " · " : null}
+							{pendingFollowUps > 0 ? `稍后 ${pendingFollowUps}` : null}
 						</span>
 					) : null}
 
@@ -525,24 +554,52 @@ export function ChatComposer({
 									<TooltipContent>停止</TooltipContent>
 								</Tooltip>
 								{value.trim() ? (
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<Button
-												type="button"
-												size="icon"
-												className={cn(
-													"size-6 rounded-full bg-foreground text-background disabled:bg-muted-foreground",
-													"transition-[background-color,scale] duration-100 enabled:hover:bg-foreground/85 active:scale-[0.96]",
-												)}
-												aria-label="排队发送"
-												disabled={!onFollowUp}
-												onClick={submit}
-											>
-												<ArrowUp className="size-3.5" />
-											</Button>
-										</TooltipTrigger>
-										<TooltipContent>当前回复结束后发送</TooltipContent>
-									</Tooltip>
+									<>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													type="button"
+													variant="outline"
+													size="icon"
+													className="size-6 rounded-md active:scale-[0.96]"
+													aria-label="回复结束后发送"
+													disabled={!onFollowUp}
+													onClick={submitFollowUp}
+												>
+													<ListPlus className="size-3.5" />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												回复完成后发送 ·{" "}
+												{sendMessageShortcut === "enter"
+													? "Alt Enter"
+													: "Ctrl/⌘ Alt Enter"}
+											</TooltipContent>
+										</Tooltip>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													type="button"
+													size="icon"
+													className={cn(
+														"size-6 rounded-full bg-foreground text-background disabled:bg-muted-foreground",
+														"transition-[background-color,scale] duration-100 enabled:hover:bg-foreground/85 active:scale-[0.96]",
+													)}
+													aria-label="调整当前回复"
+													disabled={!onSteer}
+													onClick={submit}
+												>
+													<ArrowUp className="size-3.5" />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>
+												调整当前回复 ·{" "}
+												{sendMessageShortcut === "enter"
+													? "Enter"
+													: "Ctrl/⌘ Enter"}
+											</TooltipContent>
+										</Tooltip>
+									</>
 								) : null}
 							</>
 						) : (

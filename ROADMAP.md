@@ -231,7 +231,7 @@ indexed_at
 - [x] Tool call / tool result 展示
 - [x] `abort`
 - [x] `follow_up`
-- [ ] `steer`
+- [x] `steer`
 - [ ] Model selector
 - [ ] Thinking level selector
 - [ ] Session name / state

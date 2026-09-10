@@ -337,6 +337,13 @@ export function sendPiFollowUp(message: string): Promise<void> {
 	});
 }
 
+export function sendPiSteer(message: string): Promise<void> {
+	return requestPiRpc<void>({
+		type: "steer",
+		message,
+	});
+}
+
 export function abortPiReply(): Promise<void> {
 	return invoke("runtime_abort_pi");
 }
