@@ -18,6 +18,17 @@ pub struct SessionIndexEntry {
     pub file_mtime_ns: u64,
     pub last_offset: u64,
     pub indexed_at_ms: u64,
+    pub pinned: bool,
+    pub archived: bool,
+    pub title_override: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionUiStateUpdate {
+    pub pinned: bool,
+    pub archived: bool,
+    pub title_override: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -39,9 +39,13 @@ import { ConversationOutlineRail } from "@/components/chat/conversation-outline-
 import { buildConversationOutline } from "@/lib/conversation-outline";
 import {
 	abortPiReply,
+	getPiMessages,
+	getPiState,
 	listenRuntimeEvents,
 	runtimeErrorMessage,
 	sendPiPrompt,
+	startNewPiSession,
+	switchPiSession,
 	type PiloRuntimeEvent,
 } from "@/lib/pi-runtime";
 import { ensureWorkspacePi, type Workspace } from "@/lib/workspaces";
@@ -60,6 +64,7 @@ export type ChatSession = {
 	id: string;
 	title: string;
 	workspaceRecord: Workspace;
+	sessionPath?: string;
 };
 
 type ChatMessage =
@@ -641,6 +646,42 @@ function formatTime() {
 	}).format(new Date());
 }
 
+function historyText(content: unknown): string {
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	return content
+		.map((part) => {
+			if (!part || typeof part !== "object") return "";
+			const value = part as Record<string, unknown>;
+			return value.type === "text" && typeof value.text === "string"
+				? value.text
+				: "";
+		})
+		.filter(Boolean)
+		.join("");
+}
+
+function mapPiHistoryMessages(
+	messages: unknown[],
+	sessionId: string,
+): ChatMessage[] {
+	return messages.flatMap((message, index) => {
+		if (!message || typeof message !== "object") return [];
+		const value = message as Record<string, unknown>;
+		if (value.role !== "user" && value.role !== "assistant") return [];
+		const text = historyText(value.content);
+		if (!text) return [];
+		return [
+			{
+				id: `${sessionId}-history-${index}`,
+				role: value.role,
+				text,
+				time: "",
+			} as ChatMessage,
+		];
+	});
+}
+
 type ActiveTurn = {
 	sessionId: string;
 	sessionTitle: string;
@@ -731,6 +772,13 @@ export function ChatPage({
 	sidebarCollapsed?: boolean;
 }) {
 	const { desktopNotifications } = usePreferences();
+	const [historyMessages, setHistoryMessages] = useState<
+		Record<string, ChatMessage[]>
+	>({});
+	const [historyLoadState, setHistoryLoadState] = useState<
+		"ready" | "loading" | "error"
+	>(session.sessionPath ? "loading" : "ready");
+	const effectiveLoadState = session.sessionPath ? historyLoadState : loadState;
 	const baseMessages = useMemo<ChatMessage[]>(() => {
 		if (initialMessage) {
 			return [
@@ -742,12 +790,47 @@ export function ChatPage({
 				},
 			];
 		}
+		if (session.sessionPath)
+			return historyMessages[session.id] ?? EMPTY_MESSAGES;
 		return MOCK_CONVERSATIONS[session.id] ?? EMPTY_MESSAGES;
-	}, [initialMessage, session.id]);
+	}, [historyMessages, initialMessage, session.id, session.sessionPath]);
 	const [drafts, setDrafts] = useState<Record<string, string>>({});
 	const [localMessages, setLocalMessages] = useState<
 		Record<string, ChatMessage[]>
 	>({});
+
+	useEffect(() => {
+		if (!session.sessionPath) {
+			setHistoryLoadState("ready");
+			return;
+		}
+		let cancelled = false;
+		const loadHistory = async () => {
+			setHistoryLoadState("loading");
+			try {
+				await ensureWorkspacePi(session.workspaceRecord);
+				const switched = await switchPiSession(session.sessionPath!);
+				if (switched.cancelled) throw new Error("Pi 取消了会话切换。");
+				const result = await getPiMessages();
+				if (cancelled) return;
+				setHistoryMessages((current) => ({
+					...current,
+					[session.id]: mapPiHistoryMessages(result.messages, session.id),
+				}));
+				setLocalMessages((current) => ({ ...current, [session.id]: [] }));
+				setHistoryLoadState("ready");
+			} catch (error) {
+				if (cancelled) return;
+				console.error("Failed to resume Pi session", error);
+				setHistoryLoadState("error");
+			}
+		};
+		void loadHistory();
+		return () => {
+			cancelled = true;
+		};
+	}, [session.id, session.sessionPath, session.workspaceRecord]);
+
 	const activeTurnRef = useRef<ActiveTurn | null>(null);
 	const runtimeListenerRef = useRef<ReturnType<
 		typeof listenRuntimeEvents
@@ -779,7 +862,8 @@ export function ChatPage({
 	messagesRef.current = messages;
 	const virtualPadding = useChatVirtualPadding();
 	const virtualized =
-		loadState === "ready" && shouldVirtualizeChatMessages(messages.length);
+		effectiveLoadState === "ready" &&
+		shouldVirtualizeChatMessages(messages.length);
 	const getVirtualMessageKey = useCallback(
 		(index: number) =>
 			`${session.id}:${messagesRef.current[index]?.id ?? index}`,
@@ -1388,9 +1472,21 @@ export function ChatPage({
 					throw new Error("Pi Runtime 事件通道尚未就绪。");
 				}
 				await subscription;
+				const before = await getPiState();
+				const shouldStartNewSession =
+					!session.sessionPath &&
+					before.state === "running" &&
+					before.workspaceId === session.workspaceRecord.id;
 				const snapshot = await ensureWorkspacePi(session.workspaceRecord);
 				if (activeTurnRef.current !== turn) return;
 				turn.generation = snapshot.generation;
+				if (session.sessionPath) {
+					const switched = await switchPiSession(session.sessionPath);
+					if (switched.cancelled) throw new Error("Pi 取消了会话切换。");
+				} else if (shouldStartNewSession) {
+					const created = await startNewPiSession();
+					if (created.cancelled) throw new Error("Pi 取消了新建会话。");
+				}
 				await sendPiPrompt(trimmed);
 			} catch (error) {
 				failActiveTurn(turn, runtimeErrorMessage(error));
@@ -1401,6 +1497,7 @@ export function ChatPage({
 			failActiveTurn,
 			scrollToBottom,
 			session.id,
+			session.sessionPath,
 			session.title,
 			session.workspaceRecord,
 			startAssistantMessage,
@@ -1493,7 +1590,7 @@ export function ChatPage({
 					onScroll={syncScrollState}
 					className="scrollbar-pro min-h-0 w-full flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
 				>
-					{loadState === "loading" ? (
+					{effectiveLoadState === "loading" ? (
 						<div className="flex min-h-full flex-col pb-8 pt-4 sm:pb-10 sm:pt-6">
 							<ConversationColumn className="flex flex-1 items-center justify-center">
 								<LoadingState
@@ -1502,7 +1599,7 @@ export function ChatPage({
 								/>
 							</ConversationColumn>
 						</div>
-					) : loadState === "error" ? (
+					) : effectiveLoadState === "error" ? (
 						<div className="flex min-h-full flex-col pb-8 pt-4 sm:pb-10 sm:pt-6">
 							<ConversationColumn className="flex flex-1 items-center justify-center">
 								<ErrorState

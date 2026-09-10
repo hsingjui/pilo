@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
 	Activity,
-	FolderOpen,
 	Info,
 	Keyboard,
 	MessagesSquare,
@@ -39,7 +38,6 @@ import {
 	PiSettings,
 	SessionSettings,
 	SettingsStatus,
-	WorkspaceSettings,
 } from "./project-settings-placeholders";
 
 type SettingsTabId =
@@ -47,7 +45,6 @@ type SettingsTabId =
 	| "appearance"
 	| "shortcuts"
 	| "connections"
-	| "workspaces"
 	| "sessions"
 	| "pi"
 	| "diagnostics"
@@ -77,12 +74,6 @@ const SETTINGS_TABS = [
 		section: "工作区",
 		label: "连接",
 		icon: Plug,
-	},
-	{
-		id: "workspaces" as const,
-		section: "工作区",
-		label: "工作区",
-		icon: FolderOpen,
 	},
 	{
 		id: "sessions" as const,
@@ -461,7 +452,6 @@ export function SettingsDialog({
 									<KeyboardShortcutsSettings />
 								) : null}
 								{activeTab === "connections" ? <ConnectionsSettings /> : null}
-								{activeTab === "workspaces" ? <WorkspaceSettings /> : null}
 								{activeTab === "sessions" ? <SessionSettings /> : null}
 								{activeTab === "pi" ? <PiSettings /> : null}
 								{activeTab === "diagnostics" ? <DiagnosticsSettings /> : null}

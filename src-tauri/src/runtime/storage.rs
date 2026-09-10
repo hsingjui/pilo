@@ -7,7 +7,9 @@ use std::{
 use rusqlite::{params, Connection as SqliteConnection, OptionalExtension};
 use tauri::{AppHandle, Manager};
 
-use crate::domain::{Connection, SessionIndexEntry, Workspace, WorkspaceMetadata};
+use crate::domain::{
+    Connection, SessionIndexEntry, SessionUiStateUpdate, Workspace, WorkspaceMetadata,
+};
 
 const DB_FILE_NAME: &str = "pilo.sqlite3";
 const LEGACY_WORKSPACES_FILE_NAME: &str = "workspaces.json";
@@ -75,7 +77,14 @@ pub fn open(app: &AppHandle) -> Result<SqliteConnection, String> {
                indexed_at_ms INTEGER NOT NULL
              );
              CREATE INDEX IF NOT EXISTS idx_sessions_workspace_updated ON sessions(workspace_id, updated_at DESC);
-             CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_workspace_pi_id ON sessions(workspace_id, pi_session_id);",
+             CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_workspace_pi_id ON sessions(workspace_id, pi_session_id);
+             CREATE TABLE IF NOT EXISTS session_ui_state (
+               session_path TEXT PRIMARY KEY,
+               pinned INTEGER NOT NULL DEFAULT 0,
+               archived INTEGER NOT NULL DEFAULT 0,
+               title_override TEXT,
+               updated_at_ms INTEGER NOT NULL
+             );",
         )
         .map_err(|error| format!("failed to initialize Pilo SQLite schema: {error}"))?;
     migrate_legacy_workspaces(&connection, &dir)?;
@@ -207,8 +216,10 @@ pub fn list_sessions(
     workspace_id: &str,
 ) -> Result<Vec<SessionIndexEntry>, String> {
     let mut statement = db.prepare(
-        "SELECT connection_id,workspace_id,pi_session_id,session_path,name,cwd,created_at,updated_at,message_count,last_message_at,first_user_message_preview,file_size,file_mtime_ns,last_offset,indexed_at_ms
-         FROM sessions WHERE workspace_id=?1 ORDER BY updated_at DESC"
+        "SELECT s.connection_id,s.workspace_id,s.pi_session_id,s.session_path,s.name,s.cwd,s.created_at,s.updated_at,s.message_count,s.last_message_at,s.first_user_message_preview,s.file_size,s.file_mtime_ns,s.last_offset,s.indexed_at_ms,
+                COALESCE(u.pinned,0),COALESCE(u.archived,0),u.title_override
+         FROM sessions s LEFT JOIN session_ui_state u ON u.session_path=s.session_path
+         WHERE s.workspace_id=?1 ORDER BY s.updated_at DESC"
     ).map_err(|error| error.to_string())?;
     let rows = statement
         .query_map(params![workspace_id], |row| {
@@ -228,6 +239,9 @@ pub fn list_sessions(
                 file_mtime_ns: row.get::<_, i64>(12)? as u64,
                 last_offset: row.get::<_, i64>(13)? as u64,
                 indexed_at_ms: row.get::<_, i64>(14)? as u64,
+                pinned: row.get::<_, i64>(15)? != 0,
+                archived: row.get::<_, i64>(16)? != 0,
+                title_override: row.get(17)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -240,10 +254,45 @@ pub fn get_session(
     session_path: &str,
 ) -> Result<Option<SessionIndexEntry>, String> {
     db.query_row(
-        "SELECT connection_id,workspace_id,pi_session_id,session_path,name,cwd,created_at,updated_at,message_count,last_message_at,first_user_message_preview,file_size,file_mtime_ns,last_offset,indexed_at_ms FROM sessions WHERE session_path=?1",
+        "SELECT s.connection_id,s.workspace_id,s.pi_session_id,s.session_path,s.name,s.cwd,s.created_at,s.updated_at,s.message_count,s.last_message_at,s.first_user_message_preview,s.file_size,s.file_mtime_ns,s.last_offset,s.indexed_at_ms,COALESCE(u.pinned,0),COALESCE(u.archived,0),u.title_override
+         FROM sessions s LEFT JOIN session_ui_state u ON u.session_path=s.session_path WHERE s.session_path=?1",
         params![session_path],
-        |row| Ok(SessionIndexEntry { connection_id: row.get(0)?, workspace_id: row.get(1)?, pi_session_id: row.get(2)?, session_path: row.get(3)?, name: row.get(4)?, cwd: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)?, message_count: row.get::<_, i64>(8)? as u64, last_message_at: row.get(9)?, first_user_message_preview: row.get(10)?, file_size: row.get::<_, i64>(11)? as u64, file_mtime_ns: row.get::<_, i64>(12)? as u64, last_offset: row.get::<_, i64>(13)? as u64, indexed_at_ms: row.get::<_, i64>(14)? as u64 })
+        |row| Ok(SessionIndexEntry { connection_id: row.get(0)?, workspace_id: row.get(1)?, pi_session_id: row.get(2)?, session_path: row.get(3)?, name: row.get(4)?, cwd: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)?, message_count: row.get::<_, i64>(8)? as u64, last_message_at: row.get(9)?, first_user_message_preview: row.get(10)?, file_size: row.get::<_, i64>(11)? as u64, file_mtime_ns: row.get::<_, i64>(12)? as u64, last_offset: row.get::<_, i64>(13)? as u64, indexed_at_ms: row.get::<_, i64>(14)? as u64, pinned: row.get::<_, i64>(15)? != 0, archived: row.get::<_, i64>(16)? != 0, title_override: row.get(17)? })
     ).optional().map_err(|error| error.to_string())
+}
+
+pub fn update_session_ui_state(
+    db: &SqliteConnection,
+    session_path: &str,
+    update: &SessionUiStateUpdate,
+) -> Result<SessionIndexEntry, String> {
+    let exists = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sessions WHERE session_path=?1)",
+            params![session_path],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| error.to_string())?
+        != 0;
+    if !exists {
+        return Err(format!("session '{session_path}' is not indexed"));
+    }
+
+    db.execute(
+        "INSERT INTO session_ui_state(session_path,pinned,archived,title_override,updated_at_ms)
+         VALUES(?1,?2,?3,?4,?5)
+         ON CONFLICT(session_path) DO UPDATE SET pinned=excluded.pinned,archived=excluded.archived,title_override=excluded.title_override,updated_at_ms=excluded.updated_at_ms",
+        params![
+            session_path,
+            i64::from(update.pinned),
+            i64::from(update.archived),
+            update.title_override,
+            now_ms() as i64,
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+
+    get_session(db, session_path)?.ok_or_else(|| format!("session '{session_path}' disappeared"))
 }
 
 pub fn upsert_session(db: &SqliteConnection, session: &SessionIndexEntry) -> Result<(), String> {

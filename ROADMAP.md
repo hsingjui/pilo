@@ -220,17 +220,17 @@ indexed_at
 
 ## P0.9 Session UI
 
-- [ ] Sidebar 默认展示当前 Workspace 全部 Pi Sessions
-- [ ] 按 Today / This Week / Older 分组
-- [ ] Session title / preview / updated time
-- [ ] Pin
-- [ ] Archive / Hide（Pilo UI 状态，不修改 conversation truth）
-- [ ] Session Search（metadata）
-- [ ] 新建 Session
-- [ ] Resume Session
-- [ ] Session rename
-- [ ] Session switch
-- [ ] Session list virtualization
+- [x] Sidebar 默认展示当前 Workspace 全部 Pi Sessions
+- [x] 按 Today / This Week / Older 分组
+- [x] Session title / preview / updated time
+- [x] Pin
+- [x] Archive / Hide（Pilo UI 状态，不修改 conversation truth）
+- [x] Session Search（metadata）
+- [x] 新建 Session
+- [x] Resume Session
+- [x] Session rename
+- [x] Session switch
+- [x] Session list virtualization
 
 ## P0.10 Pi Chat
 

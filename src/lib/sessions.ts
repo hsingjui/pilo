@@ -18,6 +18,15 @@ export type SessionIndexEntry = {
 	fileMtimeNs: number;
 	lastOffset: number;
 	indexedAtMs: number;
+	pinned: boolean;
+	archived: boolean;
+	titleOverride: string | null;
+};
+
+export type SessionUiStateUpdate = {
+	pinned: boolean;
+	archived: boolean;
+	titleOverride: string | null;
 };
 
 export type SessionReconcileResult = {
@@ -38,6 +47,16 @@ export function reconcileSessions(
 	workspaceId: string,
 ): Promise<SessionReconcileResult> {
 	return invoke<SessionReconcileResult>("session_reconcile", { workspaceId });
+}
+
+export function updateSessionUiState(
+	sessionPath: string,
+	update: SessionUiStateUpdate,
+): Promise<SessionIndexEntry> {
+	return invoke<SessionIndexEntry>("session_update_ui_state", {
+		sessionPath,
+		update,
+	});
 }
 
 export function notifySessionsChanged() {

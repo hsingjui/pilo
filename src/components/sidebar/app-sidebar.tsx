@@ -2,11 +2,22 @@
 import {
 	useCallback,
 	useEffect,
+	useLayoutEffect,
+	useMemo,
 	useRef,
 	useState,
 	type PointerEvent as ReactPointerEvent,
+	type ReactNode,
+	type RefObject,
 } from "react";
-import { PanelLeft, SquarePen } from "lucide-react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import {
+	Archive,
+	FolderPlus,
+	PanelLeft,
+	Search,
+	SquarePen,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, ScrollArea } from "@/ui";
 import { EnvRow, SessionRow, WorkspaceRow } from "./rows";
@@ -33,21 +44,87 @@ const DEFAULT_SIDEBAR_WIDTH = 292;
 /** 侧栏宽度持久化 key。 */
 const SIDEBAR_WIDTH_STORAGE_KEY = "pilo.sidebarWidth";
 
+const SESSION_ROW_ESTIMATE = 48;
+
+function VirtualSessionRows({
+	sessions,
+	scrollViewportRef,
+	renderSession,
+}: {
+	sessions: SidebarSession[];
+	scrollViewportRef: RefObject<HTMLDivElement | null>;
+	renderSession: (session: SidebarSession) => ReactNode;
+}) {
+	const listRef = useRef<HTMLDivElement>(null);
+	const [scrollMargin, setScrollMargin] = useState(0);
+	useLayoutEffect(() => {
+		const list = listRef.current;
+		const viewport = scrollViewportRef.current;
+		if (!list || !viewport) return;
+		const listRect = list.getBoundingClientRect();
+		const viewportRect = viewport.getBoundingClientRect();
+		setScrollMargin(listRect.top - viewportRect.top + viewport.scrollTop);
+	}, [scrollViewportRef, sessions.length]);
+
+	/* oxlint-disable-next-line react/incompatible-library -- TanStack Virtual intentionally owns imperative measurement for long session lists. */
+	const virtualizer = useVirtualizer({
+		count: sessions.length,
+		getScrollElement: () => scrollViewportRef.current,
+		estimateSize: () => SESSION_ROW_ESTIMATE,
+		overscan: 8,
+		scrollMargin,
+		getItemKey: (index) => sessions[index]?.id ?? index,
+	});
+
+	if (sessions.length < 40) {
+		return <>{sessions.map(renderSession)}</>;
+	}
+
+	return (
+		<div
+			ref={listRef}
+			className="relative w-full"
+			style={{ height: `${virtualizer.getTotalSize()}px` }}
+		>
+			{virtualizer.getVirtualItems().map((item) => {
+				const session = sessions[item.index];
+				if (!session) return null;
+				return (
+					<div
+						key={item.key}
+						data-index={item.index}
+						ref={virtualizer.measureElement}
+						className="absolute left-0 top-0 w-full"
+						style={{
+							transform: `translateY(${item.start - scrollMargin}px)`,
+						}}
+					>
+						{renderSession(session)}
+					</div>
+				);
+			})}
+		</div>
+	);
+}
+
 export function AppSidebar({
 	envs,
 	workspaces,
 	sessions,
 	collapsed = false,
 	onCollapse,
-	onArchiveSession,
+	onUpdateSession,
 	onArchiveWorkspaceSessions,
 	onRefreshWorkspaceSessions,
 	selectedSessionId,
 	onSelectSession,
 	onNewChat,
 	onNewChatInWorkspace,
+	onAddWorkspace,
 	footer,
 }: AppSidebarProps) {
+	const [searchQuery, setSearchQuery] = useState("");
+	const [showArchived, setShowArchived] = useState(false);
 	const [collapsedSections, setCollapsedSections] = useState<
 		Record<string, boolean>
 	>({});
@@ -67,6 +144,7 @@ export function AppSidebar({
 
 	// 拖拽右边缘调整宽度；拖到最小宽度以下即折叠。
 	const asideRef = useRef<HTMLElement>(null);
+	const scrollViewportRef = useRef<HTMLDivElement>(null);
 	const [sidebarWidth, setSidebarWidth] = useState(() => {
 		const stored = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
 		if (!stored) return DEFAULT_SIDEBAR_WIDTH;
@@ -125,6 +203,95 @@ export function AppSidebar({
 		setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
 	}, []);
 
+	const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
+	const visibleSessions = useMemo(
+		() =>
+			sessions.filter((session) => {
+				if (session.archived !== showArchived) return false;
+				if (!normalizedSearch) return true;
+				return [session.title, session.preview ?? "", session.sessionPath]
+					.join("\n")
+					.toLocaleLowerCase()
+					.includes(normalizedSearch);
+			}),
+		[normalizedSearch, sessions, showArchived],
+	);
+
+	const renderSession = (
+		session: SidebarSession,
+		workspace: SidebarWorkspace,
+		env: SidebarEnv,
+	) => (
+		<SessionRow
+			key={session.id}
+			session={session}
+			workspace={workspace}
+			env={env}
+			now={now}
+			selected={activeSessionId === session.id}
+			onSelect={() => {
+				if (selectedSessionId === undefined) {
+					setInternalSelectedSessionId(session.id);
+				}
+				onSelectSession?.(session.id);
+			}}
+			onTogglePin={(id, pinned) => onUpdateSession?.(id, { pinned })}
+			onArchive={(id) => onUpdateSession?.(id, { archived: true })}
+			onRestore={(id) => onUpdateSession?.(id, { archived: false })}
+			onRename={(id, title) => onUpdateSession?.(id, { title })}
+		/>
+	);
+
+	const renderSessionGroups = (
+		workspaceSessions: SidebarSession[],
+		workspace: SidebarWorkspace,
+		env: SidebarEnv,
+	) => {
+		const today = new Date(
+			now.getFullYear(),
+			now.getMonth(),
+			now.getDate(),
+		).getTime();
+		const week = today - 6 * 24 * 60 * 60 * 1000;
+		const pinned = workspaceSessions.filter((session) => session.pinned);
+		const unpinned = workspaceSessions.filter((session) => !session.pinned);
+		const groups = [
+			["置顶", pinned],
+			[
+				"今天",
+				unpinned.filter(
+					(session) => session.latestMessageAt.getTime() >= today,
+				),
+			],
+			[
+				"本周",
+				unpinned.filter((session) => {
+					const time = session.latestMessageAt.getTime();
+					return time >= week && time < today;
+				}),
+			],
+			[
+				"更早",
+				unpinned.filter((session) => session.latestMessageAt.getTime() < week),
+			],
+		] as const;
+
+		return groups
+			.filter(([, groupSessions]) => groupSessions.length > 0)
+			.map(([label, groupSessions]) => (
+				<div key={label} className="grid gap-px">
+					<div className="px-7 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground-muted/70">
+						{label}
+					</div>
+					<VirtualSessionRows
+						sessions={[...groupSessions]}
+						scrollViewportRef={scrollViewportRef}
+						renderSession={(session) => renderSession(session, workspace, env)}
+					/>
+				</div>
+			));
+	};
+
 	return (
 		<aside
 			ref={asideRef}
@@ -170,9 +337,44 @@ export function AppSidebar({
 						</span>
 						<span className="truncate">新对话</span>
 					</button>
+					<button
+						type="button"
+						className="group flex w-full select-none items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring/30 dark:text-sidebar-foreground/75"
+						onClick={() => onAddWorkspace?.()}
+					>
+						<span className="flex h-5 w-5 shrink-0 items-center justify-center text-current">
+							<FolderPlus className="h-4 w-4" />
+						</span>
+						<span className="truncate">添加工作区</span>
+					</button>
+					<div className="mt-1 flex items-center gap-1">
+						<label className="relative min-w-0 flex-1">
+							<Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-sidebar-foreground-muted" />
+							<input
+								value={searchQuery}
+								onChange={(event) => setSearchQuery(event.target.value)}
+								placeholder="搜索会话"
+								className="h-7 w-full rounded-md border border-sidebar-border/70 bg-transparent pl-7 pr-2 text-xs outline-none placeholder:text-sidebar-foreground-muted focus:border-sidebar-ring/50"
+							/>
+						</label>
+						<button
+							type="button"
+							aria-label={showArchived ? "显示活动会话" : "显示已归档会话"}
+							aria-pressed={showArchived}
+							onClick={() => setShowArchived((value) => !value)}
+							className={cn(
+								"flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground",
+								showArchived &&
+									"bg-sidebar-hover text-sidebar-hover-foreground",
+							)}
+						>
+							<Archive className="h-3.5 w-3.5" />
+						</button>
+					</div>
 				</div>
 				<ScrollArea
 					className="mt-2 min-h-0 flex-1"
+					viewportRef={scrollViewportRef}
 					viewportClassName="pl-1.5 pr-2.5 pb-3"
 					scrollbarClassName="w-2 p-px"
 					scrollbarThumbClassName="bg-[hsl(var(--muted-foreground)/0.35)] hover:bg-[hsl(var(--muted-foreground)/0.45)] active:bg-[hsl(var(--muted-foreground)/0.55)]"
@@ -189,12 +391,13 @@ export function AppSidebar({
 										env={env}
 										collapsed={envCollapsed}
 										onToggle={() => toggleSection(`env:${env.id}`)}
+										onAddWorkspace={onAddWorkspace}
 									/>
 									{!envCollapsed &&
 										envWorkspaces.map((workspace) => {
 											const workspaceCollapsed =
 												collapsedSections[`ws:${workspace.id}`] ?? false;
-											const workspaceSessions = sessions.filter(
+											const workspaceSessions = visibleSessions.filter(
 												(session) => session.workspaceId === workspace.id,
 											);
 											return (
@@ -223,23 +426,11 @@ export function AppSidebar({
 														hasSessions={workspaceSessions.length > 0}
 													/>
 													{!workspaceCollapsed &&
-														workspaceSessions.map((session) => (
-															<SessionRow
-																key={session.id}
-																session={session}
-																workspace={workspace}
-																env={env}
-																now={now}
-																selected={activeSessionId === session.id}
-																onSelect={() => {
-																	if (selectedSessionId === undefined) {
-																		setInternalSelectedSessionId(session.id);
-																	}
-																	onSelectSession?.(session.id);
-																}}
-																onArchive={onArchiveSession}
-															/>
-														))}
+														renderSessionGroups(
+															workspaceSessions,
+															workspace,
+															env,
+														)}
 												</div>
 											);
 										})}

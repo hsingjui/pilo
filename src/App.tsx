@@ -7,6 +7,7 @@ import {
 } from "react-resizable-panels";
 
 import { AppSidebar } from "@/components/sidebar/app-sidebar";
+import { AddWorkspaceDialog } from "@/components/sidebar/add-workspace-dialog";
 import type { SidebarSession } from "@/components/sidebar/types";
 import { ChatPage, type ChatSession } from "@/components/chat/chat-page";
 import { NewChatLanding } from "@/components/new-chat-landing";
@@ -17,6 +18,7 @@ import { listenRuntimeEvents } from "@/lib/pi-runtime";
 import {
 	listSessions,
 	reconcileSessions,
+	updateSessionUiState,
 	type SessionIndexEntry,
 } from "@/lib/sessions";
 import {
@@ -40,9 +42,20 @@ function sessionDate(session: SessionIndexEntry) {
 function toSidebarSession(session: SessionIndexEntry): SidebarSession {
 	return {
 		id: session.piSessionId,
-		title: session.name ?? session.firstUserMessagePreview ?? "新对话",
+		title:
+			session.titleOverride ??
+			session.name ??
+			session.firstUserMessagePreview ??
+			"新对话",
+		preview:
+			session.titleOverride || session.name
+				? session.firstUserMessagePreview
+				: null,
+		sessionPath: session.sessionPath,
 		workspaceId: session.workspaceId,
 		latestMessageAt: sessionDate(session),
+		pinned: session.pinned,
+		archived: session.archived,
 	};
 }
 
@@ -64,6 +77,13 @@ function App() {
 	);
 	const [draftSessionId, setDraftSessionId] = useState(createDraftSessionId);
 	const [draftWorkspaceId, setDraftWorkspaceId] = useState<string | null>(null);
+	const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
+		null,
+	);
+	const [addWorkspaceOpen, setAddWorkspaceOpen] = useState(false);
+	const [addWorkspaceConnectionId, setAddWorkspaceConnectionId] = useState<
+		string | null
+	>(null);
 
 	useEffect(() => {
 		let active = true;
@@ -182,26 +202,90 @@ function App() {
 		[indexedSessions],
 	);
 
+	const selectedIndexedSession =
+		indexedSessions.find(
+			(session) => session.piSessionId === selectedSessionId,
+		) ?? null;
+	const selectedWorkspace = selectedIndexedSession
+		? (workspaces.find(
+				(workspace) => workspace.id === selectedIndexedSession.workspaceId,
+			) ?? null)
+		: null;
 	const chatSession: ChatSession | null =
-		activeWorkspace && draftSessionPrompt !== null
+		selectedIndexedSession && selectedWorkspace
 			? {
-					id: draftSessionId,
-					title: "新对话",
-					workspaceRecord: activeWorkspace,
+					id: selectedIndexedSession.piSessionId,
+					title:
+						selectedIndexedSession.titleOverride ??
+						selectedIndexedSession.name ??
+						selectedIndexedSession.firstUserMessagePreview ??
+						"新对话",
+					workspaceRecord: selectedWorkspace,
+					sessionPath: selectedIndexedSession.sessionPath,
 				}
-			: null;
+			: activeWorkspace && draftSessionPrompt !== null
+				? {
+						id: draftSessionId,
+						title: "新对话",
+						workspaceRecord: activeWorkspace,
+					}
+				: null;
 
 	const startNewChat = (workspaceId?: string) => {
 		const targetWorkspaceId = workspaceId ?? firstWorkspace?.id ?? null;
 		setDraftSessionPrompt(null);
 		setDraftSessionId(createDraftSessionId());
 		setDraftWorkspaceId(targetWorkspaceId);
+		setSelectedSessionId(null);
 		if (targetWorkspaceId) {
 			void touchWorkspace(targetWorkspaceId)
 				.then(() => notifyWorkspacesChanged())
 				.catch((error) =>
 					console.error("Failed to update recent workspace", error),
 				);
+		}
+	};
+
+	const selectSession = (sessionId: string) => {
+		const session = indexedSessions.find(
+			(candidate) => candidate.piSessionId === sessionId,
+		);
+		if (!session) return;
+		setSelectedSessionId(sessionId);
+		setDraftSessionPrompt(null);
+		setDraftWorkspaceId(session.workspaceId);
+		void touchWorkspace(session.workspaceId)
+			.then(() => notifyWorkspacesChanged())
+			.catch((error) =>
+				console.error("Failed to update recent workspace", error),
+			);
+	};
+
+	const updateSession = async (
+		sessionId: string,
+		update: { pinned?: boolean; archived?: boolean; title?: string },
+	) => {
+		const session = indexedSessions.find(
+			(candidate) => candidate.piSessionId === sessionId,
+		);
+		if (!session) return;
+		try {
+			const next = await updateSessionUiState(session.sessionPath, {
+				pinned: update.pinned ?? session.pinned,
+				archived: update.archived ?? session.archived,
+				titleOverride:
+					update.title === undefined ? session.titleOverride : update.title,
+			});
+			setIndexedSessions((current) =>
+				current.map((candidate) =>
+					candidate.sessionPath === next.sessionPath ? next : candidate,
+				),
+			);
+			if (next.archived && selectedSessionId === next.piSessionId) {
+				setSelectedSessionId(null);
+			}
+		} catch (error) {
+			console.error("Failed to update session UI state", error);
 		}
 	};
 
@@ -214,8 +298,22 @@ function App() {
 					envs={envs}
 					workspaces={sidebarWorkspaces}
 					sessions={sidebarSessions}
+					selectedSessionId={selectedSessionId}
+					onSelectSession={selectSession}
+					onUpdateSession={(sessionId, update) => {
+						void updateSession(sessionId, update);
+					}}
+					onArchiveWorkspaceSessions={(sessionIds) => {
+						for (const sessionId of sessionIds) {
+							void updateSession(sessionId, { archived: true });
+						}
+					}}
 					onNewChat={() => startNewChat()}
 					onNewChatInWorkspace={(workspaceId) => startNewChat(workspaceId)}
+					onAddWorkspace={(connectionId) => {
+						setAddWorkspaceConnectionId(connectionId ?? null);
+						setAddWorkspaceOpen(true);
+					}}
 					onRefreshWorkspaceSessions={(workspaceId) => {
 						void refreshWorkspaceSessions(workspaceId).catch((error) =>
 							console.error("Failed to refresh sessions", error),
@@ -260,6 +358,13 @@ function App() {
 					</Group>
 				</main>
 			</div>
+			{addWorkspaceOpen ? (
+				<AddWorkspaceDialog
+					open
+					onOpenChange={setAddWorkspaceOpen}
+					initialConnectionId={addWorkspaceConnectionId}
+				/>
+			) : null}
 		</TooltipProvider>
 	);
 }

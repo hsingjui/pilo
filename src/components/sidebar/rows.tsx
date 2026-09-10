@@ -2,10 +2,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	Archive,
+	ArchiveRestore,
 	ChevronDown,
 	Folder,
 	Monitor,
 	MoreHorizontal,
+	Pencil,
+	Pin,
+	PinOff,
+	Plus,
 	RefreshCw,
 	SlidersHorizontal,
 	SquarePen,
@@ -124,10 +129,12 @@ export function EnvRow({
 	env,
 	collapsed,
 	onToggle,
+	onAddWorkspace,
 }: {
 	env: SidebarEnv;
 	collapsed: boolean;
 	onToggle: () => void;
+	onAddWorkspace?: (connectionId: string) => void;
 }) {
 	const toggleLabel = collapsed ? "展开环境" : "折叠环境";
 	return (
@@ -154,6 +161,22 @@ export function EnvRow({
 					)}
 				/>
 			</button>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<button
+						type="button"
+						className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground/80 transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/60"
+						aria-label={`在 ${env.name} 添加工作区`}
+						onClick={(event) => {
+							event.stopPropagation();
+							onAddWorkspace?.(env.id);
+						}}
+					>
+						<Plus className="h-3.5 w-3.5" />
+					</button>
+				</TooltipTrigger>
+				<TooltipContent side="right">添加工作区</TooltipContent>
+			</Tooltip>
 			<Tooltip>
 				<TooltipTrigger asChild>
 					<button
@@ -302,7 +325,10 @@ export function SessionRow({
 	now,
 	selected,
 	onSelect,
+	onTogglePin,
 	onArchive,
+	onRestore,
+	onRename,
 }: {
 	session: SidebarSession;
 	workspace?: SidebarWorkspace;
@@ -310,9 +336,23 @@ export function SessionRow({
 	now: Date;
 	selected: boolean;
 	onSelect: () => void;
+	onTogglePin?: (sessionId: string, pinned: boolean) => void;
 	onArchive?: (sessionId: string) => void;
+	onRestore?: (sessionId: string) => void;
+	onRename?: (sessionId: string, title: string) => void;
 }) {
 	const [menuOpen, setMenuOpen] = useState(false);
+	const [renaming, setRenaming] = useState(false);
+	const [renameValue, setRenameValue] = useState(session.title);
+	const renameInputRef = useRef<HTMLInputElement>(null);
+	useEffect(() => {
+		if (renaming) renameInputRef.current?.focus();
+	}, [renaming]);
+	const submitRename = () => {
+		const title = renameValue.trim();
+		if (title && title !== session.title) onRename?.(session.id, title);
+		setRenaming(false);
+	};
 	return (
 		<SessionInfoHoverCard
 			now={now}
@@ -363,23 +403,68 @@ export function SessionRow({
 								</button>
 							</DropdownMenuTrigger>
 							<DropdownMenuContent align="start">
-								<DropdownMenuItem onSelect={() => onArchive?.(session.id)}>
-									<Archive className={menuItemIconClassName} />
-									归档
+								<DropdownMenuItem
+									onSelect={() => onTogglePin?.(session.id, !session.pinned)}
+								>
+									{session.pinned ? (
+										<PinOff className={menuItemIconClassName} />
+									) : (
+										<Pin className={menuItemIconClassName} />
+									)}
+									{session.pinned ? "取消置顶" : "置顶"}
 								</DropdownMenuItem>
+								<DropdownMenuItem
+									onSelect={() => {
+										setRenameValue(session.title);
+										setRenaming(true);
+									}}
+								>
+									<Pencil className={menuItemIconClassName} />
+									重命名
+								</DropdownMenuItem>
+								{session.archived ? (
+									<DropdownMenuItem onSelect={() => onRestore?.(session.id)}>
+										<ArchiveRestore className={menuItemIconClassName} />
+										恢复
+									</DropdownMenuItem>
+								) : (
+									<DropdownMenuItem onSelect={() => onArchive?.(session.id)}>
+										<Archive className={menuItemIconClassName} />
+										归档
+									</DropdownMenuItem>
+								)}
 							</DropdownMenuContent>
 						</DropdownMenu>
 					</div>
-					<span
-						className={cn(
-							"min-w-0 flex-1 truncate text-sm",
-							selected
-								? "text-sidebar-selection-foreground"
-								: "text-sidebar-foreground dark:text-sidebar-foreground/75",
-						)}
-					>
-						{session.title}
-					</span>
+					{renaming ? (
+						<input
+							ref={renameInputRef}
+							value={renameValue}
+							onClick={(event) => event.stopPropagation()}
+							onChange={(event) => setRenameValue(event.target.value)}
+							onBlur={submitRename}
+							onKeyDown={(event) => {
+								event.stopPropagation();
+								if (event.key === "Enter") submitRename();
+								if (event.key === "Escape") {
+									setRenameValue(session.title);
+									setRenaming(false);
+								}
+							}}
+							className="min-w-0 flex-1 rounded-sm bg-transparent px-1 text-sm outline-none ring-1 ring-sidebar-ring/50"
+						/>
+					) : (
+						<span
+							className={cn(
+								"min-w-0 flex-1 truncate text-sm",
+								selected
+									? "text-sidebar-selection-foreground"
+									: "text-sidebar-foreground dark:text-sidebar-foreground/75",
+							)}
+						>
+							{session.title}
+						</span>
+					)}
 					<div className="relative flex h-5 min-w-5 shrink-0 items-center justify-center pointer-events-none">
 						<span
 							aria-hidden="true"
@@ -393,18 +478,25 @@ export function SessionRow({
 								</span>
 							)}
 						</span>
-						<ConfirmArchiveButton
-							label="归档"
-							confirmLabel="确认归档"
-							className={cn(
-								"absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2",
-								"opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100",
-								"group-data-[menu-open]:pointer-events-auto group-data-[menu-open]:opacity-100",
-							)}
-							onConfirm={() => onArchive?.(session.id)}
-						/>
+						{!session.archived ? (
+							<ConfirmArchiveButton
+								label="归档"
+								confirmLabel="确认归档"
+								className={cn(
+									"absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2",
+									"opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100",
+									"group-data-[menu-open]:pointer-events-auto group-data-[menu-open]:opacity-100",
+								)}
+								onConfirm={() => onArchive?.(session.id)}
+							/>
+						) : null}
 					</div>
 				</div>
+				{session.preview ? (
+					<div className="truncate pl-5 pr-6 text-[11px] leading-4 text-sidebar-foreground-muted/80">
+						{session.preview}
+					</div>
+				) : null}
 			</div>
 		</SessionInfoHoverCard>
 	);

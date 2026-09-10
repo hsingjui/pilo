@@ -337,6 +337,9 @@ fn parse_file(
         file_mtime_ns: file.mtime_ns,
         last_offset: parsed_offset,
         indexed_at_ms: storage::now_ms(),
+        pinned: previous.is_some_and(|value| value.pinned),
+        archived: previous.is_some_and(|value| value.archived),
+        title_override: previous.and_then(|value| value.title_override.clone()),
     })
 }
 

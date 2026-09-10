@@ -171,6 +171,76 @@ export function listenRuntimeEvents(
 	});
 }
 
+let rpcRequestSequence = 0;
+
+type PiRpcResponse<T> = {
+	type: "response";
+	id?: string;
+	command: string;
+	success: boolean;
+	data?: T;
+	error?: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+export async function requestPiRpc<T>(
+	command: Record<string, unknown>,
+	timeoutMs = 10_000,
+): Promise<T> {
+	rpcRequestSequence += 1;
+	const id = `pilo-${Date.now()}-${rpcRequestSequence}`;
+	let timer: number | undefined;
+	let unlisten: UnlistenFn | undefined;
+	let resolveResponse: ((value: PiRpcResponse<T>) => void) | undefined;
+	let rejectResponse: ((reason?: unknown) => void) | undefined;
+	const response = new Promise<PiRpcResponse<T>>((resolve, reject) => {
+		resolveResponse = resolve;
+		rejectResponse = reject;
+	});
+
+	try {
+		unlisten = await listenRuntimeEvents((event) => {
+			if (event.type !== "rpc_message" || !isRecord(event.message)) return;
+			if (event.message.type !== "response" || event.message.id !== id) return;
+			resolveResponse?.(event.message as PiRpcResponse<T>);
+		});
+		timer = window.setTimeout(
+			() => rejectResponse?.(new Error("Pi RPC 请求超时。")),
+			timeoutMs,
+		);
+		await invoke("runtime_send_rpc", { command: { ...command, id } });
+		const result = await response;
+		if (!result.success) {
+			throw new Error(result.error || `Pi RPC ${result.command} 执行失败。`);
+		}
+		return result.data as T;
+	} finally {
+		if (timer !== undefined) window.clearTimeout(timer);
+		unlisten?.();
+	}
+}
+
+export function getPiState(): Promise<PiSessionSnapshot> {
+	return invoke<PiSessionSnapshot>("runtime_get_pi_state");
+}
+
+export function switchPiSession(
+	sessionPath: string,
+): Promise<{ cancelled: boolean }> {
+	return requestPiRpc({ type: "switch_session", sessionPath });
+}
+
+export function startNewPiSession(): Promise<{ cancelled: boolean }> {
+	return requestPiRpc({ type: "new_session" });
+}
+
+export function getPiMessages(): Promise<{ messages: unknown[] }> {
+	return requestPiRpc({ type: "get_messages" });
+}
+
 export async function ensureLocalPi(
 	workspace: string,
 ): Promise<PiSessionSnapshot> {

@@ -6,8 +6,8 @@ use tauri::{AppHandle, State};
 
 use crate::domain::{
     Connection, DiscoveredWorkspace, LocalConnection, LocalEnvironmentInfo, SessionIndexEntry,
-    SessionReconcileResult, SshConnection, SshEnvironmentInfo, SshTarget, Workspace, WslConnection,
-    WslDistribution, WslEnvironmentInfo,
+    SessionReconcileResult, SessionUiStateUpdate, SshConnection, SshEnvironmentInfo, SshTarget,
+    Workspace, WslConnection, WslDistribution, WslEnvironmentInfo,
 };
 
 use super::{
@@ -19,7 +19,7 @@ use super::{
     process::ProcessSpec,
     session_index,
     ssh::{prepare_ssh_launch, probe_ssh_connection, SshConnectionError, SshConnectionProbe},
-    workspace,
+    storage, workspace,
     wsl::{
         list_wsl_distributions, prepare_wsl_launch, probe_wsl_connection, WslConnectionError,
         WslConnectionProbe,
@@ -227,6 +227,15 @@ pub async fn session_reconcile(
 ) -> Result<SessionReconcileResult, String> {
     let workspace = workspace::get(&app, &workspace_id)?;
     session_index::reconcile(&app, &workspace).await
+}
+
+#[tauri::command]
+pub fn session_update_ui_state(
+    app: AppHandle,
+    session_path: String,
+    update: SessionUiStateUpdate,
+) -> Result<SessionIndexEntry, String> {
+    storage::update_session_ui_state(&storage::open(&app)?, &session_path, &update)
 }
 
 #[tauri::command]
