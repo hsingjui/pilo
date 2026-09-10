@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
 	Group,
 	Panel,
@@ -7,150 +7,125 @@ import {
 } from "react-resizable-panels";
 
 import { AppSidebar } from "@/components/sidebar/app-sidebar";
+import type { SidebarSession } from "@/components/sidebar/types";
 import { ChatPage, type ChatSession } from "@/components/chat/chat-page";
 import { NewChatLanding } from "@/components/new-chat-landing";
 import { RightSidebar } from "@/components/right-sidebar";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import { CUSTOM_TITLEBAR, TitleBar } from "@/components/title-bar";
+import {
+	connectionLabel,
+	listWorkspaces,
+	notifyWorkspacesChanged,
+	touchWorkspace,
+	WORKSPACES_CHANGED_EVENT,
+	type Workspace,
+} from "@/lib/workspaces";
 import { TooltipProvider } from "@/ui";
 
-const HOUR = 60 * 60 * 1000;
+const EMPTY_SESSIONS: SidebarSession[] = [];
+let draftSessionSequence = 0;
 
-// 模板占位数据：接入 Pi RPC 后由真实 session / workspace 状态替换。
-const PLACEHOLDER_ENVS = [{ id: "local", name: "本地" }];
-const PLACEHOLDER_WORKSPACES = [
-	{ id: "pilo", name: "pilo", path: "/root/code/pilo", envId: "local" },
-];
-const INITIAL_PLACEHOLDER_SESSIONS = [
-	{
-		id: "s1",
-		title: "初始化前端风格体系",
-		workspaceId: "pilo",
-		latestMessageAt: new Date(Date.now() - 1 * HOUR),
-		active: true,
-	},
-	{
-		id: "s2",
-		title: "连接管理实现讨论",
-		workspaceId: "pilo",
-		latestMessageAt: new Date(Date.now() - 3 * HOUR),
-		active: true,
-	},
-	{
-		id: "s3",
-		title: "Pi RPC 接入方案",
-		workspaceId: "pilo",
-		latestMessageAt: new Date(Date.now() - 21 * HOUR),
-	},
-	{
-		id: "s4",
-		title: "Workspace 索引设计",
-		workspaceId: "pilo",
-		latestMessageAt: new Date(Date.now() - 2 * 24 * HOUR),
-	},
-	{
-		id: "s5",
-		title: "远程开发环境调研",
-		workspaceId: "pilo",
-		latestMessageAt: new Date(Date.now() - 4 * 24 * HOUR),
-	},
-	{
-		id: "s6",
-		title: "会话列表持久化",
-		workspaceId: "pilo",
-		latestMessageAt: new Date(Date.now() - 6 * 24 * HOUR),
-	},
-];
-
-function Sidebar({
-	collapsed,
-	onToggle,
-	selectedSessionId,
-	onSelectSession,
-	onNewChat,
-}: {
-	collapsed: boolean;
-	onToggle: () => void;
-	selectedSessionId: string | null;
-	onSelectSession: (sessionId: string) => void;
-	onNewChat: () => void;
-}) {
-	const [sessions, setSessions] = useState(INITIAL_PLACEHOLDER_SESSIONS);
-	return (
-		<AppSidebar
-			collapsed={collapsed}
-			onCollapse={onToggle}
-			envs={PLACEHOLDER_ENVS}
-			workspaces={PLACEHOLDER_WORKSPACES}
-			sessions={sessions}
-			selectedSessionId={selectedSessionId}
-			onSelectSession={onSelectSession}
-			onNewChat={onNewChat}
-			onNewChatInWorkspace={onNewChat}
-			onArchiveSession={(sessionId) =>
-				setSessions((prev) =>
-					prev.filter((session) => session.id !== sessionId),
-				)
-			}
-			onArchiveWorkspaceSessions={(sessionIds) =>
-				setSessions((prev) =>
-					prev.filter((session) => !sessionIds.includes(session.id)),
-				)
-			}
-			footer={<SidebarFooter />}
-		/>
-	);
+function createDraftSessionId() {
+	draftSessionSequence += 1;
+	return `draft-session-${Date.now()}-${draftSessionSequence}`;
 }
 
 function App() {
 	const rightPanelRef = useRef<PanelImperativeHandle>(null);
 	const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
 	const [isResizing, setIsResizing] = useState(false);
-	const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
-		"s1",
-	);
+	const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
 	const [draftSessionPrompt, setDraftSessionPrompt] = useState<string | null>(
 		null,
 	);
+	const [draftSessionId, setDraftSessionId] = useState(createDraftSessionId);
+	const [draftWorkspaceId, setDraftWorkspaceId] = useState<string | null>(null);
 
-	const selectedSession = INITIAL_PLACEHOLDER_SESSIONS.find(
-		(session) => session.id === selectedSessionId,
-	);
-	const chatSession: ChatSession | null = selectedSession
-		? {
-				id: selectedSession.id,
-				title: selectedSession.title,
-				workspace: "pilo",
-				workspacePath: ".",
-				environment: "本地",
-				branch: "main",
+	useEffect(() => {
+		let active = true;
+		const load = async () => {
+			try {
+				const next = await listWorkspaces();
+				if (active) setWorkspaces(next);
+			} catch (error) {
+				console.error("Failed to load workspaces", error);
 			}
-		: draftSessionPrompt !== null
+		};
+		void load();
+		const handleChanged = () => void load();
+		window.addEventListener(WORKSPACES_CHANGED_EVENT, handleChanged);
+		return () => {
+			active = false;
+			window.removeEventListener(WORKSPACES_CHANGED_EVENT, handleChanged);
+		};
+	}, []);
+
+	const envs = useMemo(() => {
+		const seen = new Set<string>();
+		return workspaces.flatMap((workspace) => {
+			if (seen.has(workspace.connection.id)) return [];
+			seen.add(workspace.connection.id);
+			return [
+				{
+					id: workspace.connection.id,
+					name: connectionLabel(workspace.connection),
+				},
+			];
+		});
+	}, [workspaces]);
+
+	const sidebarWorkspaces = useMemo(
+		() =>
+			workspaces.map((workspace) => ({
+				id: workspace.id,
+				name: workspace.name,
+				path: workspace.metadata.cwd,
+				envId: workspace.connection.id,
+			})),
+		[workspaces],
+	);
+
+	const firstWorkspace = workspaces[0] ?? null;
+	const activeWorkspace =
+		workspaces.find((workspace) => workspace.id === draftWorkspaceId) ??
+		firstWorkspace;
+
+	const chatSession: ChatSession | null =
+		activeWorkspace && draftSessionPrompt !== null
 			? {
-					id: "draft-session",
+					id: draftSessionId,
 					title: "新对话",
-					workspace: "pilo",
-					workspacePath: ".",
-					environment: "本地",
-					branch: "main",
+					workspaceRecord: activeWorkspace,
 				}
 			: null;
+
+	const startNewChat = (workspaceId?: string) => {
+		const targetWorkspaceId = workspaceId ?? firstWorkspace?.id ?? null;
+		setDraftSessionPrompt(null);
+		setDraftSessionId(createDraftSessionId());
+		setDraftWorkspaceId(targetWorkspaceId);
+		if (targetWorkspaceId) {
+			void touchWorkspace(targetWorkspaceId)
+				.then(() => notifyWorkspacesChanged())
+				.catch((error) =>
+					console.error("Failed to update recent workspace", error),
+				);
+		}
+	};
 
 	return (
 		<TooltipProvider>
 			<div className="flex h-full bg-background text-foreground">
-				<Sidebar
+				<AppSidebar
 					collapsed={leftSidebarCollapsed}
-					onToggle={() => setLeftSidebarCollapsed(true)}
-					selectedSessionId={selectedSessionId}
-					onSelectSession={(sessionId) => {
-						setDraftSessionPrompt(null);
-						setSelectedSessionId(sessionId);
-					}}
-					onNewChat={() => {
-						setSelectedSessionId(null);
-						setDraftSessionPrompt(null);
-					}}
+					onCollapse={() => setLeftSidebarCollapsed(true)}
+					envs={envs}
+					workspaces={sidebarWorkspaces}
+					sessions={EMPTY_SESSIONS}
+					onNewChat={() => startNewChat()}
+					onNewChatInWorkspace={(workspaceId) => startNewChat(workspaceId)}
+					footer={<SidebarFooter />}
 				/>
 				<main className="relative flex min-w-0 flex-1 flex-col">
 					{CUSTOM_TITLEBAR && <TitleBar />}
@@ -159,11 +134,7 @@ function App() {
 							{chatSession ? (
 								<ChatPage
 									session={chatSession}
-									initialMessage={
-										selectedSession
-											? undefined
-											: (draftSessionPrompt ?? undefined)
-									}
+									initialMessage={draftSessionPrompt ?? undefined}
 									onOpenChanges={() => rightPanelRef.current?.expand()}
 									onExpandSidebar={() => setLeftSidebarCollapsed(false)}
 									reserveWindowControls={CUSTOM_TITLEBAR}
@@ -171,7 +142,12 @@ function App() {
 								/>
 							) : (
 								<NewChatLanding
-									onStartSession={(prompt) => setDraftSessionPrompt(prompt)}
+									workspaceAvailable={Boolean(activeWorkspace)}
+									onStartSession={(prompt) => {
+										if (!activeWorkspace) return;
+										setDraftWorkspaceId(activeWorkspace.id);
+										setDraftSessionPrompt(prompt);
+									}}
 									onExpandSidebar={() => setLeftSidebarCollapsed(false)}
 									reserveWindowControls={CUSTOM_TITLEBAR}
 									sidebarCollapsed={leftSidebarCollapsed}

@@ -108,6 +108,20 @@ pub async fn probe_ssh_connection(
     })
 }
 
+pub async fn discover_ssh_session_headers(
+    target: SshTarget,
+) -> Result<Vec<u8>, SshConnectionError> {
+    let target = normalize_target(target)?;
+    let script = r#"
+sessions_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions"
+[ -d "$sessions_dir" ] || exit 0
+find "$sessions_dir" -type f -name '*.jsonl' -exec sed -n '1p' {} \; 2>/dev/null | head -n 500
+"#;
+    let remote_command = wrap_posix_script(script);
+    let output = run_ssh_probe(&target, &remote_command, "SSH workspace discovery").await?;
+    Ok(output.stdout)
+}
+
 pub(crate) async fn prepare_ssh_launch(
     target: SshTarget,
     workspace: String,

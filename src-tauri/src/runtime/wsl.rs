@@ -138,6 +138,25 @@ pub async fn probe_wsl_connection(
     })
 }
 
+pub async fn discover_wsl_session_headers(distro: String) -> Result<Vec<u8>, WslConnectionError> {
+    let distro = normalize_distro(&distro)?;
+    ensure_distro_exists(&distro).await?;
+    let script = r#"
+sessions_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions"
+[ -d "$sessions_dir" ] || exit 0
+find "$sessions_dir" -type f -name '*.jsonl' -exec sed -n '1p' {} \; 2>/dev/null | head -n 500
+"#;
+    let args = vec![
+        "--distribution".to_owned(),
+        distro,
+        "--exec".to_owned(),
+        "/bin/sh".to_owned(),
+        "-c".to_owned(),
+        script.to_owned(),
+    ];
+    run_wsl_probe(&args).await
+}
+
 pub(crate) async fn prepare_wsl_launch(
     distro: String,
     workspace: String,

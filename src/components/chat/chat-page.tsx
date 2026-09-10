@@ -39,12 +39,12 @@ import { ConversationOutlineRail } from "@/components/chat/conversation-outline-
 import { buildConversationOutline } from "@/lib/conversation-outline";
 import {
 	abortPiReply,
-	ensureLocalPi,
 	listenRuntimeEvents,
 	runtimeErrorMessage,
 	sendPiPrompt,
 	type PiloRuntimeEvent,
 } from "@/lib/pi-runtime";
+import { ensureWorkspacePi, type Workspace } from "@/lib/workspaces";
 import { cn } from "@/lib/utils";
 import {
 	Button,
@@ -59,10 +59,7 @@ import {
 export type ChatSession = {
 	id: string;
 	title: string;
-	workspace: string;
-	workspacePath: string;
-	environment: string;
-	branch: string;
+	workspaceRecord: Workspace;
 };
 
 type ChatMessage =
@@ -1391,7 +1388,7 @@ export function ChatPage({
 					throw new Error("Pi Runtime 事件通道尚未就绪。");
 				}
 				await subscription;
-				const snapshot = await ensureLocalPi(session.workspacePath);
+				const snapshot = await ensureWorkspacePi(session.workspaceRecord);
 				if (activeTurnRef.current !== turn) return;
 				turn.generation = snapshot.generation;
 				await sendPiPrompt(trimmed);
@@ -1405,7 +1402,7 @@ export function ChatPage({
 			scrollToBottom,
 			session.id,
 			session.title,
-			session.workspacePath,
+			session.workspaceRecord,
 			startAssistantMessage,
 		],
 	);

@@ -5,8 +5,8 @@ use serde_json::Value;
 use tauri::{AppHandle, State};
 
 use crate::domain::{
-    Connection, LocalConnection, LocalEnvironmentInfo, SshConnection, SshEnvironmentInfo,
-    SshTarget, WslConnection, WslDistribution, WslEnvironmentInfo,
+    Connection, DiscoveredWorkspace, LocalConnection, LocalEnvironmentInfo, SshConnection,
+    SshEnvironmentInfo, SshTarget, Workspace, WslConnection, WslDistribution, WslEnvironmentInfo,
 };
 
 use super::{
@@ -17,6 +17,7 @@ use super::{
     pi_session::PiSessionSnapshot,
     process::ProcessSpec,
     ssh::{prepare_ssh_launch, probe_ssh_connection, SshConnectionError, SshConnectionProbe},
+    workspace,
     wsl::{
         list_wsl_distributions, prepare_wsl_launch, probe_wsl_connection, WslConnectionError,
         WslConnectionProbe,
@@ -78,6 +79,7 @@ pub async fn local_start_pi(
         .spawn(
             TauriEventSink::new(app),
             Connection::from(connection.clone()),
+            None,
             launch.process,
         )
         .await
@@ -120,6 +122,7 @@ pub async fn wsl_start_pi(
         .spawn(
             TauriEventSink::new(app),
             Connection::from(connection.clone()),
+            None,
             launch.process,
         )
         .await
@@ -157,6 +160,7 @@ pub async fn ssh_start_pi(
         .spawn(
             TauriEventSink::new(app),
             Connection::from(connection.clone()),
+            None,
             launch.process,
         )
         .await
@@ -167,6 +171,81 @@ pub async fn ssh_start_pi(
         environment,
         session,
     })
+}
+
+#[tauri::command]
+pub fn workspace_list(app: AppHandle) -> Result<Vec<Workspace>, String> {
+    workspace::list(&app)
+}
+
+#[tauri::command]
+pub async fn workspace_add(
+    app: AppHandle,
+    connection: Connection,
+    path: String,
+) -> Result<Workspace, String> {
+    workspace::add(&app, connection, path).await
+}
+
+#[tauri::command]
+pub async fn workspace_refresh(app: AppHandle, id: String) -> Result<Workspace, String> {
+    workspace::refresh(&app, &id).await
+}
+
+#[tauri::command]
+pub fn workspace_touch(app: AppHandle, id: String) -> Result<Workspace, String> {
+    workspace::touch(&app, &id)
+}
+
+#[tauri::command]
+pub fn workspace_remove(app: AppHandle, id: String) -> Result<Vec<Workspace>, String> {
+    workspace::remove(&app, &id)
+}
+
+#[tauri::command]
+pub async fn workspace_discover(
+    app: AppHandle,
+    connection: Connection,
+) -> Result<Vec<DiscoveredWorkspace>, String> {
+    workspace::discover(&app, connection).await
+}
+
+#[tauri::command]
+pub async fn workspace_start_pi(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+) -> Result<PiSessionSnapshot, String> {
+    let workspace = workspace::get(&app, &id)?;
+    let (connection, process) = match workspace.connection.kind.clone() {
+        crate::domain::ConnectionKind::Local => {
+            let launch = prepare_local_launch(PathBuf::from(&workspace.path))
+                .await
+                .map_err(|error| error.to_string())?;
+            (Connection::from(launch.connection), launch.process)
+        }
+        crate::domain::ConnectionKind::Wsl { distro } => {
+            let launch = prepare_wsl_launch(distro, workspace.path.clone())
+                .await
+                .map_err(|error| error.to_string())?;
+            (Connection::from(launch.connection), launch.process)
+        }
+        crate::domain::ConnectionKind::Ssh { target } => {
+            let launch = prepare_ssh_launch(target, workspace.path.clone())
+                .await
+                .map_err(|error| error.to_string())?;
+            (Connection::from(launch.connection), launch.process)
+        }
+    };
+
+    workspace::touch(&app, &workspace.id)?;
+    runtime
+        .pi_session
+        .lock()
+        .await
+        .spawn(TauriEventSink::new(app), connection, Some(id), process)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -189,6 +268,7 @@ pub async fn runtime_spawn_pi(
         .spawn(
             TauriEventSink::new(app),
             request.connection,
+            None,
             request.process,
         )
         .await

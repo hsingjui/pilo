@@ -52,6 +52,7 @@ pub struct PiSessionSnapshot {
     pub generation: u64,
     pub state: PiProcessState,
     pub connection: Option<Connection>,
+    pub workspace_id: Option<String>,
 }
 
 #[derive(Default)]
@@ -119,6 +120,7 @@ const fn state_to_u8(state: PiProcessState) -> u8 {
 #[derive(Clone)]
 struct LaunchConfig {
     connection: Connection,
+    workspace_id: Option<String>,
     process: ProcessSpec,
 }
 
@@ -161,6 +163,10 @@ impl PiSession {
             generation: self.generations.last(),
             state: self.process_state.get(),
             connection: self.launch.as_ref().map(|launch| launch.connection.clone()),
+            workspace_id: self
+                .launch
+                .as_ref()
+                .and_then(|launch| launch.workspace_id.clone()),
         }
     }
 
@@ -168,6 +174,7 @@ impl PiSession {
         &mut self,
         sink: S,
         connection: Connection,
+        workspace_id: Option<String>,
         process_spec: ProcessSpec,
     ) -> Result<PiSessionSnapshot, RuntimeError> {
         self.prune_finished_control();
@@ -187,6 +194,7 @@ impl PiSession {
 
         let launch = LaunchConfig {
             connection,
+            workspace_id,
             process: process_spec,
         };
         let process_result = ManagedProcess::spawn(&launch.process);
@@ -285,7 +293,8 @@ impl PiSession {
     ) -> Result<PiSessionSnapshot, RuntimeError> {
         let launch = self.launch.clone().ok_or(RuntimeError::NoPreviousLaunch)?;
         self.stop().await?;
-        self.spawn(sink, launch.connection, launch.process).await
+        self.spawn(sink, launch.connection, launch.workspace_id, launch.process)
+            .await
     }
 
     pub async fn abort(&self) -> Result<(), RuntimeError> {
@@ -883,7 +892,7 @@ mod tests {
         };
 
         let generation = session
-            .spawn(sink.clone(), connection, process)
+            .spawn(sink.clone(), connection, None, process)
             .await
             .unwrap()
             .generation;
@@ -936,7 +945,7 @@ mod tests {
         };
 
         let first = session
-            .spawn(sink.clone(), connection, process)
+            .spawn(sink.clone(), connection, None, process)
             .await
             .unwrap();
         assert_eq!(first.state, PiProcessState::Running);

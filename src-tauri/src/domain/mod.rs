@@ -1,6 +1,8 @@
 mod connection;
+mod workspace;
 
 pub use connection::{
-    Connection, LocalConnection, LocalEnvironmentInfo, SshConnection, SshEnvironmentInfo,
-    SshTarget, WslConnection, WslDistribution, WslEnvironmentInfo,
+    Connection, ConnectionKind, LocalConnection, LocalEnvironmentInfo, SshConnection,
+    SshEnvironmentInfo, SshTarget, WslConnection, WslDistribution, WslEnvironmentInfo,
 };
+pub use workspace::{DiscoveredWorkspace, Workspace, WorkspaceMetadata};

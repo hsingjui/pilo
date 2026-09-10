@@ -44,6 +44,7 @@ export type PiSessionSnapshot = {
 	generation: number;
 	state: PiProcessState;
 	connection: Connection | null;
+	workspaceId: string | null;
 };
 
 type LocalStartPiResponse = {

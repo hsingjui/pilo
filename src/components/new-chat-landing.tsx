@@ -9,11 +9,13 @@ export function NewChatLanding({
 	onExpandSidebar,
 	reserveWindowControls = false,
 	sidebarCollapsed = false,
+	workspaceAvailable = true,
 }: {
 	onStartSession: (prompt: string) => void;
 	onExpandSidebar?: () => void;
 	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
+	workspaceAvailable?: boolean;
 }) {
 	const [draft, setDraft] = useState("");
 	return (
@@ -54,7 +56,7 @@ export function NewChatLanding({
 					/>
 				</svg>
 				<h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-					今天想做点什么？
+					{workspaceAvailable ? "今天想做点什么？" : "先添加一个工作区"}
 				</h1>
 			</div>
 			<div className="mx-auto w-full max-w-[46rem] px-3 pb-2 sm:px-4">
@@ -63,6 +65,12 @@ export function NewChatLanding({
 					value={draft}
 					onChange={setDraft}
 					onSubmit={onStartSession}
+					disabled={!workspaceAvailable}
+					placeholder={
+						workspaceAvailable
+							? undefined
+							: "请先在设置 → 工作区中添加 Local、WSL 或 SSH 工作区"
+					}
 				/>
 			</div>
 		</div>

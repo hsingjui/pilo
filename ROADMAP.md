@@ -159,15 +159,14 @@ pi --mode rpc
 
 ## P0.7 Workspace
 
-- [ ] Workspace 数据模型
-- [ ] Connection → Workspace 层级
-- [ ] Local Folder 添加 Workspace
-- [ ] WSL Workspace 添加 / 最近使用
-- [ ] SSH Workspace 添加 / 最近使用
-- [ ] Workspace metadata 本地缓存
-- [ ] Recent Workspaces
-- [ ] 环境指示器：Connection / cwd / branch / Pi version
-- [ ] Discover existing Pi Workspaces
+- [x] Workspace 数据模型
+- [x] Connection → Workspace 层级
+- [x] Local Folder 添加 Workspace
+- [x] WSL Workspace 添加 / 最近使用
+- [x] SSH Workspace 添加 / 最近使用
+- [x] Workspace metadata 本地缓存
+- [x] Recent Workspaces
+- [x] Discover existing Pi Workspaces
 
 原则：
 
