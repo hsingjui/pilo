@@ -746,6 +746,58 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn nonzero_process_exit_emits_crash_error_and_failed_state() {
+        let mut session = PiSession::default();
+        let sink = TestSink::default();
+        let connection: Connection = serde_json::from_value(serde_json::json!({
+            "id": "local-crash-test",
+            "name": "Local Crash Test",
+            "kind": { "type": "local" }
+        }))
+        .unwrap();
+        let process = ProcessSpec {
+            program: "sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                "printf 'fixture crash\n' >&2; exit 7".to_owned(),
+            ],
+            cwd: None,
+            env: BTreeMap::new(),
+        };
+
+        let generation = session
+            .spawn(sink.clone(), connection, process)
+            .await
+            .unwrap()
+            .generation;
+
+        sink.wait_for(|event| {
+            matches!(
+                event,
+                RuntimeEvent::RuntimeError {
+                    generation: event_generation,
+                    code: RuntimeErrorCode::ProcessExit,
+                    message,
+                } if *event_generation == generation && message.contains("status")
+            )
+        })
+        .await;
+        sink.wait_for(|event| {
+            matches!(
+                event,
+                RuntimeEvent::ProcessState {
+                    generation: event_generation,
+                    state: PiProcessState::Failed,
+                } if *event_generation == generation
+            )
+        })
+        .await;
+
+        assert_eq!(session.snapshot().state, PiProcessState::Failed);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn process_lifecycle_routes_rpc_and_stderr_separately() {
         let mut session = PiSession::default();
         let sink = TestSink::default();

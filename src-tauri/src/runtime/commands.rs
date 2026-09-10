@@ -1,11 +1,19 @@
-use serde::Deserialize;
+use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, State};
 
-use crate::domain::Connection;
+use crate::domain::{Connection, LocalConnection, LocalEnvironmentInfo};
 
 use super::{
-    events::TauriEventSink, pi_session::PiSessionSnapshot, process::ProcessSpec, PiloRuntime,
+    events::TauriEventSink,
+    local::{
+        prepare_local_launch, probe_local_connection, LocalConnectionError, LocalConnectionProbe,
+    },
+    pi_session::PiSessionSnapshot,
+    process::ProcessSpec,
+    PiloRuntime,
 };
 
 #[derive(Debug, Deserialize)]
@@ -13,6 +21,49 @@ use super::{
 pub struct SpawnPiSessionRequest {
     pub connection: Connection,
     pub process: ProcessSpec,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalStartPiResponse {
+    pub connection: LocalConnection,
+    pub environment: LocalEnvironmentInfo,
+    pub session: PiSessionSnapshot,
+}
+
+#[tauri::command]
+pub async fn local_probe_connection(
+    workspace: PathBuf,
+) -> Result<LocalConnectionProbe, LocalConnectionError> {
+    probe_local_connection(workspace).await
+}
+
+#[tauri::command]
+pub async fn local_start_pi(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    workspace: PathBuf,
+) -> Result<LocalStartPiResponse, LocalConnectionError> {
+    let launch = prepare_local_launch(workspace).await?;
+    let connection = launch.connection.clone();
+    let environment = launch.environment;
+    let session = runtime
+        .pi_session
+        .lock()
+        .await
+        .spawn(
+            TauriEventSink::new(app),
+            Connection::from(connection.clone()),
+            launch.process,
+        )
+        .await
+        .map_err(LocalConnectionError::pi_spawn)?;
+
+    Ok(LocalStartPiResponse {
+        connection,
+        environment,
+        session,
+    })
 }
 
 #[tauri::command]

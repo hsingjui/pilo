@@ -1,5 +1,6 @@
 pub mod commands;
 mod events;
+mod local;
 mod pi_session;
 mod process;
 mod rpc;

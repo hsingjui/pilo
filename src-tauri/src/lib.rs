@@ -3,8 +3,8 @@ mod runtime;
 
 use runtime::{
     commands::{
-        runtime_abort_pi, runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc,
-        runtime_spawn_pi, runtime_stop_pi,
+        local_probe_connection, local_start_pi, runtime_abort_pi, runtime_get_pi_state,
+        runtime_restart_pi, runtime_send_rpc, runtime_spawn_pi, runtime_stop_pi,
     },
     PiloRuntime,
 };
@@ -37,6 +37,8 @@ pub fn run() {
         .manage(PiloRuntime::default())
         .invoke_handler(tauri::generate_handler![
             greet,
+            local_probe_connection,
+            local_start_pi,
             runtime_get_pi_state,
             runtime_spawn_pi,
             runtime_stop_pi,

@@ -110,12 +110,12 @@ PiTransport
 
 ## P0.3 Local Connection
 
-- [ ] Local Connection 数据模型
-- [ ] 检测本机 Pi 可执行文件
-- [ ] 检测 Pi 版本
-- [ ] 在指定 Workspace 启动 `pi --mode rpc`
-- [ ] 展示 cwd / Git branch / Pi version 等环境信息
-- [ ] 对启动失败、Pi 不存在、RPC crash 给出明确错误
+- [x] Local Connection 数据模型
+- [x] 检测本机 Pi 可执行文件
+- [x] 检测 Pi 版本
+- [x] 在指定 Workspace 启动 `pi --mode rpc`
+- [x] 展示 cwd / Git branch / Pi version 等环境信息
+- [x] 对启动失败、Pi 不存在、RPC crash 给出明确错误
 
 ## P0.4 WSL Connection
 
