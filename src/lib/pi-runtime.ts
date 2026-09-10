@@ -19,12 +19,12 @@ export type RuntimeErrorCode =
 	| "process_exit"
 	| "process_wait";
 
-type ConnectionKind =
+export type ConnectionKind =
 	| { type: "local" }
 	| { type: "wsl"; distro: string }
 	| { type: "ssh"; host: string };
 
-type Connection = {
+export type Connection = {
 	id: string;
 	name: string;
 	kind: ConnectionKind;
@@ -37,6 +37,38 @@ export type PiSessionSnapshot = {
 };
 
 type LocalStartPiResponse = {
+	session: PiSessionSnapshot;
+};
+
+export type WslDistribution = {
+	name: string;
+};
+
+export type WslConnection = {
+	id: string;
+	name: string;
+	distro: string;
+};
+
+export type WslEnvironmentInfo = {
+	cwd: string;
+	gitBranch: string | null;
+	piExecutable: string;
+	piVersion: string;
+	nodeExecutable: string;
+	nodeVersion: string;
+	gitExecutable: string;
+	gitVersion: string;
+};
+
+export type WslConnectionProbe = {
+	connection: WslConnection;
+	environment: WslEnvironmentInfo;
+};
+
+type WslStartPiResponse = {
+	connection: WslConnection;
+	environment: WslEnvironmentInfo;
 	session: PiSessionSnapshot;
 };
 
@@ -149,6 +181,52 @@ export async function ensureLocalPi(
 		workspace,
 	});
 	return started.session;
+}
+
+export function listWslDistributions(): Promise<WslDistribution[]> {
+	return invoke<WslDistribution[]>("wsl_list_distributions");
+}
+
+export function probeWslConnection(
+	distro: string,
+	workspace: string,
+): Promise<WslConnectionProbe> {
+	return invoke<WslConnectionProbe>("wsl_probe_connection", {
+		distro,
+		workspace,
+	});
+}
+
+export async function ensureWslPi(
+	distro: string,
+	workspace: string,
+): Promise<PiSessionSnapshot> {
+	const current = await invoke<PiSessionSnapshot>("runtime_get_pi_state");
+	if (current.state === "running") {
+		if (
+			current.connection?.kind.type !== "wsl" ||
+			current.connection.kind.distro !== distro
+		) {
+			throw new Error(
+				`Pi Runtime 当前连接到 ${current.connection?.name ?? "其他环境"}，无法复用为 WSL ${distro} 会话。`,
+			);
+		}
+		return current;
+	}
+
+	if (current.state === "starting" || current.state === "stopping") {
+		throw new Error(`Pi Runtime 当前处于 ${current.state} 状态，请稍后重试。`);
+	}
+
+	const started = await invoke<WslStartPiResponse>("wsl_start_pi", {
+		distro,
+		workspace,
+	});
+	return started.session;
+}
+
+export function restartPi(): Promise<PiSessionSnapshot> {
+	return invoke<PiSessionSnapshot>("runtime_restart_pi");
 }
 
 export function sendPiPrompt(message: string): Promise<void> {

@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, State};
 
-use crate::domain::{Connection, LocalConnection, LocalEnvironmentInfo};
+use crate::domain::{
+    Connection, LocalConnection, LocalEnvironmentInfo, WslConnection, WslDistribution,
+    WslEnvironmentInfo,
+};
 
 use super::{
     events::TauriEventSink,
@@ -13,6 +16,10 @@ use super::{
     },
     pi_session::PiSessionSnapshot,
     process::ProcessSpec,
+    wsl::{
+        list_wsl_distributions, prepare_wsl_launch, probe_wsl_connection, WslConnectionError,
+        WslConnectionProbe,
+    },
     PiloRuntime,
 };
 
@@ -28,6 +35,14 @@ pub struct SpawnPiSessionRequest {
 pub struct LocalStartPiResponse {
     pub connection: LocalConnection,
     pub environment: LocalEnvironmentInfo,
+    pub session: PiSessionSnapshot,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslStartPiResponse {
+    pub connection: WslConnection,
+    pub environment: WslEnvironmentInfo,
     pub session: PiSessionSnapshot,
 }
 
@@ -60,6 +75,48 @@ pub async fn local_start_pi(
         .map_err(LocalConnectionError::pi_spawn)?;
 
     Ok(LocalStartPiResponse {
+        connection,
+        environment,
+        session,
+    })
+}
+
+#[tauri::command]
+pub async fn wsl_list_distributions() -> Result<Vec<WslDistribution>, WslConnectionError> {
+    list_wsl_distributions().await
+}
+
+#[tauri::command]
+pub async fn wsl_probe_connection(
+    distro: String,
+    workspace: String,
+) -> Result<WslConnectionProbe, WslConnectionError> {
+    probe_wsl_connection(distro, workspace).await
+}
+
+#[tauri::command]
+pub async fn wsl_start_pi(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    distro: String,
+    workspace: String,
+) -> Result<WslStartPiResponse, WslConnectionError> {
+    let launch = prepare_wsl_launch(distro, workspace).await?;
+    let connection = launch.connection.clone();
+    let environment = launch.environment;
+    let session = runtime
+        .pi_session
+        .lock()
+        .await
+        .spawn(
+            TauriEventSink::new(app),
+            Connection::from(connection.clone()),
+            launch.process,
+        )
+        .await
+        .map_err(WslConnectionError::pi_spawn)?;
+
+    Ok(WslStartPiResponse {
         connection,
         environment,
         session,

@@ -128,13 +128,13 @@ PiTransport
 
 ## P0.5 WSL Connection
 
-- [ ] WSL distro 枚举
-- [ ] WSL Connection 数据模型
-- [ ] 通过 `wsl.exe` 在目标 distro / cwd 启动 Pi RPC
-- [ ] RPC stdio 正确桥接到 Windows Tauri
-- [ ] 获取 WSL 内 Pi / Node / Git 环境信息
-- [ ] 支持 WSL Connection 重连
-- [ ] 验证当前主要开发环境 Debian
+- [x] WSL distro 枚举
+- [x] WSL Connection 数据模型
+- [x] 通过 `wsl.exe` 在目标 distro / cwd 启动 Pi RPC
+- [x] RPC stdio 正确桥接到 Windows Tauri
+- [x] 获取 WSL 内 Pi / Node / Git 环境信息
+- [x] 支持 WSL Connection 重连
+- [x] 验证当前主要开发环境 Debian
 
 示意：
 

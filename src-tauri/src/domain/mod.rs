@@ -1,3 +1,6 @@
 mod connection;
 
-pub use connection::{Connection, LocalConnection, LocalEnvironmentInfo};
+pub use connection::{
+    Connection, LocalConnection, LocalEnvironmentInfo, WslConnection, WslDistribution,
+    WslEnvironmentInfo,
+};

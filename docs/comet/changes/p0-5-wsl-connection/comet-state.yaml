@@ -1,0 +1,254 @@
+schema: comet.native.v4
+name: p0-5-wsl-connection
+language: zh-CN
+phase: archive
+status: active
+state_version: 7
+brief: brief.md
+shape_confirmation_hash: 29a5eee04e0956ed6e1ec3020b78f9b5521a5c5998481b5fa0fb9c5c77de16aa
+spec_changes: []
+workspace:
+  isolation: current
+  change_branch: main
+  target_branch: main
+  finish: null
+loop:
+  stage: archive-ready
+  goal_cycle: 1
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: archive
+acceptance:
+  - id: A1
+    source: brief.md
+    text: A1：调用 WSL distro 枚举时，Pilo 能通过 `wsl.exe` 返回已安装 distribution 名称；对 `wsl.exe
+      --list --quiet` 的 Windows 输出编码/空字符做稳健解析，当前环境至少能识别 `Debian`。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查与 Debian WSL/Pi RPC 实测结果，继续归档并提交。"
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: 'A2：`WslConnection` 能稳定序列化为现有通用 `Connection`，其 kind 为 `{ type: "wsl",
+      distro: "..." }`，且不会改变 Local Connection 的序列化契约。'
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查与 Debian WSL/Pi RPC 实测结果，继续归档并提交。"
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: A3：给定 distro 与 Linux cwd，WSL probe 能确认目录可访问，并返回 Pi executable/version、Node
+      executable/version、Git executable/version 与可用的 Git
+      branch；探测失败时返回稳定错误码和可理解信息。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查与 Debian WSL/Pi RPC 实测结果，继续归档并提交。"
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: A4：启动 WSL Pi 时，Windows 侧 launch program 为 `wsl.exe`，参数明确指定目标 distro 与
+      Linux cwd，并在 WSL 内以探测到的 Pi executable 启动 `--mode rpc`；不得让登录 shell/banner
+      污染 RPC stdout。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查与 Debian WSL/Pi RPC 实测结果，继续归档并提交。"
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: A5：WSL Pi 的 stdin/stdout/stderr 使用现有 `ManagedProcess` 与 `PiSession` 管线，因此
+      `prompt`、流式 assistant/tool/thinking events、`abort` 和错误事件沿用同一
+      `pilo://runtime` 契约。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查与 Debian WSL/Pi RPC 实测结果，继续归档并提交。"
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: A6：WSL Pi 已启动后 `runtime_get_pi_state` 返回对应 WSL Connection；调用通用
+      `runtime_restart_pi` 会停止并按上次 distro/cwd/Pi launch plan 重启，不退回 Local
+      Connection。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查与 Debian WSL/Pi RPC 实测结果，继续归档并提交。"
+      truncated: false
+  - id: A7
+    source: brief.md
+    text: A7：现有 Local Connection 与 Local Chat 行为不回归；相关 Rust 单测继续通过，新增 WSL
+      parsing/model/launch-plan 测试覆盖主要边界。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查与 Debian WSL/Pi RPC 实测结果，继续归档并提交。"
+      truncated: false
+  - id: A8
+    source: brief.md
+    text: A8：`pnpm check`、`pnpm build`、前端单测，以及 Rust `cargo fmt --all --check`、`cargo
+      check`、`cargo clippy --all-targets --all-features -- -D warnings`、`cargo
+      test` 通过；当前 Debian 环境执行真实 WSL/工具探测并记录结果。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查与 Debian WSL/Pi RPC 实测结果，继续归档并提交。"
+      truncated: false
+builder_handoff:
+  candidate_id: 32999d9e-e227-4a2d-8492-fb06960708e7
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:b567c04f-6a52-44ac-af35-301bf785d3d3
+  iteration: 1
+  summary:
+    text: P0.5 WSL Connection is implemented. Added WSL domain models,
+      UTF-16LE/UTF-8 distro enumeration, login-environment-aware Pi/Node/Git
+      probing, direct wsl.exe --exec Pi RPC launch plans, Tauri list/probe/start
+      commands, frontend runtime client APIs, and reuse of generic PiSession
+      restart. Current Debian was validated through the same direct wsl.exe
+      stdio path with a successful Pi get_state JSONL response.
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+  checks:
+    - name:
+        text: pnpm check
+        truncated: false
+      result: passed
+      note: null
+    - name:
+        text: pnpm build
+        truncated: false
+      result: passed
+      note: null
+    - name:
+        text: pnpm test:unit
+        truncated: false
+      result: passed
+      note:
+        text: 6 tests passed
+        truncated: false
+    - name:
+        text: cargo fmt --all --check
+        truncated: false
+      result: passed
+      note: null
+    - name:
+        text: cargo check
+        truncated: false
+      result: passed
+      note: null
+    - name:
+        text: cargo clippy --all-targets --all-features -- -D warnings
+        truncated: false
+      result: passed
+      note: null
+    - name:
+        text: cargo test
+        truncated: false
+      result: passed
+      note:
+        text: 37 tests passed
+        truncated: false
+    - name:
+        text: Debian WSL direct RPC smoke
+        truncated: false
+      result: passed
+      note:
+        text: wsl.exe --distribution Debian --cd /root/code/pilo --exec /usr/bin/env
+          PATH=... <pi> --mode rpc returned a successful get_state JSONL
+          response; Pi 0.85.1, Node v22.23.1, Git 2.39.5 detected
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: Full Windows Tauri UI invocation of the new commands remains a
+        target-environment manual check; the underlying Windows wsl.exe interop
+        and Pi RPC stdio path were exercised from the current Debian WSL
+        environment.
+      truncated: false
+  known_limits_truncated: false
+  review:
+    status: passed
+    summary:
+      text: Review confirms WSL-specific discovery/launch logic stays in runtime::wsl,
+        Linux paths are not treated as Windows cwd, RPC launch avoids
+        interactive/login shell stdout contamination, generic PiSession restart
+        preserves the launch plan, and Local tests remain green.
+      truncated: false
+    reviewer_execution_ref: agentdock:p0-5-review-20260910
+  submitted_at: 2026-09-10T09:34:11.778Z
+blockers: []
+verification:
+  candidate_id: 32999d9e-e227-4a2d-8492-fb06960708e7
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:7f48769a-41b6-4e07-b063-e16925d25d62
+  iteration: 1
+  attempt: 1
+  assurance: user-confirmed-degraded
+  verdict: pass
+  checks: []
+  summary:
+    text: 用户明确接受当前自动检查与 Debian WSL/Pi RPC 实测结果，继续归档并提交。
+    truncated: false
+  risks:
+    - text: No independent semantic Verifier execution was available; Runtime checks
+        alone do not cover acceptance semantics.
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-09-10T09:38:44.697Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: blocked
+    unresolved_ids:
+      - A1
+      - A2
+      - A3
+      - A4
+      - A5
+      - A6
+      - A7
+      - A8
+    summary:
+      text: No independent semantic subagent execution capability is available in this
+        environment. Repository-owned automated checks and a real Debian
+        wsl.exe/Pi RPC stdio smoke test were completed successfully.
+      truncated: false
+    completed_at: 2026-09-10T09:34:32.286Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 用户明确接受当前自动检查与 Debian WSL/Pi RPC 实测结果，继续归档并提交。
+      truncated: false
+    completed_at: 2026-09-10T09:38:44.697Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: false
+created_at: 2026-09-10T09:22:56.721Z

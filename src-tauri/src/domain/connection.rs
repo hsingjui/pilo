@@ -46,6 +46,55 @@ impl From<LocalConnection> for Connection {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct WslDistribution {
+    pub name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslConnection {
+    pub id: String,
+    pub name: String,
+    pub distro: String,
+}
+
+impl WslConnection {
+    pub fn new(distro: String) -> Self {
+        Self {
+            id: format!("wsl:{distro}"),
+            name: format!("WSL · {distro}"),
+            distro,
+        }
+    }
+}
+
+impl From<WslConnection> for Connection {
+    fn from(connection: WslConnection) -> Self {
+        Self {
+            id: connection.id,
+            name: connection.name,
+            kind: ConnectionKind::Wsl {
+                distro: connection.distro,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslEnvironmentInfo {
+    pub cwd: String,
+    pub git_branch: Option<String>,
+    pub pi_executable: String,
+    pub pi_version: String,
+    pub node_executable: String,
+    pub node_version: String,
+    pub git_executable: String,
+    pub git_version: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalEnvironmentInfo {
     pub cwd: PathBuf,
     pub git_branch: Option<String>,
@@ -90,6 +139,28 @@ mod tests {
         assert_eq!(connection.id, "local");
         assert_eq!(connection.name, "Local");
         assert_eq!(connection.kind, ConnectionKind::Local);
+    }
+
+    #[test]
+    fn wsl_connection_maps_to_generic_connection() {
+        let connection = Connection::from(WslConnection::new("Debian".to_owned()));
+
+        assert_eq!(connection.id, "wsl:Debian");
+        assert_eq!(connection.name, "WSL · Debian");
+        assert_eq!(
+            connection.kind,
+            ConnectionKind::Wsl {
+                distro: "Debian".to_owned()
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(&connection).unwrap(),
+            serde_json::json!({
+                "id": "wsl:Debian",
+                "name": "WSL · Debian",
+                "kind": { "type": "wsl", "distro": "Debian" }
+            })
+        );
     }
 
     #[test]
