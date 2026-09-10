@@ -63,6 +63,7 @@ export {
 export { Separator } from "./separator";
 export { Skeleton } from "./skeleton";
 export { Toaster } from "./sonner";
+export { EmptyState, ErrorState, LoadingState } from "./state-view";
 export { Switch } from "./switch";
 export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";
 export { Textarea } from "./textarea";

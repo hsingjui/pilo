@@ -4,7 +4,7 @@ import { FileCode, PanelRight } from "lucide-react";
 
 import { CUSTOM_TITLEBAR } from "@/components/title-bar";
 import { cn } from "@/lib/utils";
-import { Button, Separator } from "@/ui";
+import { Button, EmptyState, Separator } from "@/ui";
 
 const PLACEHOLDER_CHANGES = [
 	{ name: "src/App.tsx", add: 12, del: 3 },
@@ -54,26 +54,34 @@ export function RightSidebar({
 				</header>
 				<Separator className="bg-sidebar-border" />
 				<div className="min-h-0 flex-1 overflow-y-auto p-2">
-					<ul className="grid gap-0.5">
-						{PLACEHOLDER_CHANGES.map((change) => (
-							<li
-								key={change.name}
-								className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm"
-							>
-								<FileCode
-									size={14}
-									className="shrink-0 text-sidebar-foreground-muted"
-								/>
-								<span className="min-w-0 flex-1 truncate">{change.name}</span>
-								<span className="font-mono text-xs text-primary">
-									+{change.add}
-								</span>
-								<span className="font-mono text-xs text-destructive">
-									-{change.del}
-								</span>
-							</li>
-						))}
-					</ul>
+					{PLACEHOLDER_CHANGES.length === 0 ? (
+						<EmptyState
+							variant="compact"
+							title="暂无变更"
+							description="当前工作区没有待查看的文件变更。"
+						/>
+					) : (
+						<ul className="grid gap-0.5">
+							{PLACEHOLDER_CHANGES.map((change) => (
+								<li
+									key={change.name}
+									className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm"
+								>
+									<FileCode
+										size={14}
+										className="shrink-0 text-sidebar-foreground-muted"
+									/>
+									<span className="min-w-0 flex-1 truncate">{change.name}</span>
+									<span className="font-mono text-xs text-primary">
+										+{change.add}
+									</span>
+									<span className="font-mono text-xs text-destructive">
+										-{change.del}
+									</span>
+								</li>
+							))}
+						</ul>
+					)}
 				</div>
 			</aside>
 		</Panel>

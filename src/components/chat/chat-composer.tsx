@@ -513,8 +513,8 @@ export function ChatComposer({
 										type="button"
 										size="icon"
 										className={cn(
-											"size-6 rounded-full bg-[#8c8d8e] text-white",
-											"transition-[background-color,scale] duration-100 enabled:bg-[#303134] enabled:hover:bg-[#3c3d40] active:scale-[0.96]",
+											"size-6 rounded-full bg-foreground text-background disabled:bg-muted-foreground",
+											"transition-[background-color,scale] duration-100 enabled:hover:bg-foreground/85 active:scale-[0.96]",
 										)}
 										aria-label="发送"
 										disabled={!value.trim() || disabled}

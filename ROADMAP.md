@@ -68,12 +68,12 @@ Comet change: `docs/comet/changes/frontend-style-foundation/`
 ## P0.1 UI Foundation
 
 - [x] 拆分巨型组件文件：`app-sidebar.tsx` (857 行) → `src/components/sidebar/`，`App.tsx` (583 行) → `title-bar` / `sidebar-footer` / `new-chat-landing` / `right-sidebar`
-- [ ] 完成 Frontend Style Foundation
-- [ ] 建立应用主布局
-- [ ] 建立 Sidebar / Workspace / Session 基础组件
-- [ ] 建立 Chat Message / Thinking / Tool Call 基础视觉
-- [ ] 建立统一 Toast / Dialog / Dropdown / Tooltip 等基础交互
-- [ ] 建立基础空状态、加载状态和错误状态
+- [x] 完成 Frontend Style Foundation
+- [x] 建立应用主布局
+- [x] 建立 Sidebar / Workspace / Session 基础组件
+- [x] 建立 Chat Message / Thinking / Tool Call 基础视觉
+- [x] 建立统一 Toast / Dialog / Dropdown / Tooltip 等基础交互
+- [x] 建立基础空状态、加载状态和错误状态
 
 ## P0.2 Runtime Foundation
 

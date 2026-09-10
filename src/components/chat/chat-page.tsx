@@ -8,14 +8,18 @@ import {
 } from "react";
 import {
 	ArrowDown,
-	ChevronRight,
 	Copy,
-	FileCode2,
 	LoaderCircle,
 	PanelLeft,
 	PanelRight,
 } from "lucide-react";
 
+import {
+	ThinkingActivityView,
+	ToolCallActivityView,
+	type ThinkingActivity,
+	type ToolCallActivity,
+} from "@/components/chat/chat-activity";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import {
@@ -23,7 +27,15 @@ import {
 	ConversationOutlineRail,
 } from "@/components/chat/conversation-outline-rail";
 import { cn } from "@/lib/utils";
-import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
+import {
+	Button,
+	EmptyState,
+	ErrorState,
+	LoadingState,
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/ui";
 
 export type ChatSession = {
 	id: string;
@@ -33,13 +45,6 @@ export type ChatSession = {
 	branch: string;
 };
 
-type ChatActivity = {
-	label: string;
-	items: string[];
-	duration: string;
-	status?: "complete" | "running";
-};
-
 type ChatMessage =
 	| { id: string; role: "user"; text: string; time: string }
 	| {
@@ -47,7 +52,8 @@ type ChatMessage =
 			role: "assistant";
 			text: string;
 			time: string;
-			activity?: ChatActivity;
+			thinking?: ThinkingActivity;
+			activity?: ToolCallActivity;
 			streaming?: boolean;
 	  };
 
@@ -66,6 +72,12 @@ const MOCK_CONVERSATIONS: Record<string, ChatMessage[]> = {
 			role: "assistant",
 			text: "已经把基础视觉体系迁到 Pilo。聊天页继续沿用 Lody 的单列阅读布局：\n\n- 用户消息靠右使用轻量气泡\n- Pi 回复保持无外框正文\n- 工具活动收在正文之间\n- 输入区固定在底部并和消息列使用同一宽度\n\n这样后续接真实 RPC streaming 时只需要替换数据源。",
 			time: "11:19",
+			thinking: {
+				summary: "分析 Lody 的聊天布局",
+				detail:
+					"对比了消息列、活动信息和输入区的层级关系，保留低对比度与单列阅读结构。",
+				duration: "2s",
+			},
 			activity: {
 				label: "检查了 4 个 UI 文件",
 				items: [
@@ -359,48 +371,6 @@ function UserMessage({
 	);
 }
 
-function ActivitySummary({ activity }: { activity: ChatActivity }) {
-	const [open, setOpen] = useState(false);
-	const running = activity.status === "running";
-
-	return (
-		<div className="my-2.5 w-full text-xs text-muted-foreground">
-			<button
-				type="button"
-				className="group/activity flex items-center gap-1.5 rounded-md py-1 text-left transition-colors duration-100 hover:text-foreground"
-				onClick={() => setOpen((value) => !value)}
-				aria-expanded={open}
-			>
-				{running ? (
-					<LoaderCircle className="size-3.5 animate-spin" />
-				) : (
-					<ChevronRight
-						className={cn(
-							"size-3.5 transition-transform duration-150",
-							open && "rotate-90",
-						)}
-					/>
-				)}
-				<span>{activity.label}</span>
-				<span className="text-muted-foreground/60">· {activity.duration}</span>
-			</button>
-			{open ? (
-				<div className="ml-1.5 mt-1 border-l border-border/80 pl-4">
-					{activity.items.map((item) => (
-						<div
-							key={item}
-							className="flex items-center gap-2 py-1 font-mono text-[11px]"
-						>
-							<FileCode2 className="size-3.5 shrink-0 opacity-70" />
-							<span className="truncate">{item}</span>
-						</div>
-					))}
-				</div>
-			) : null}
-		</div>
-	);
-}
-
 function AssistantMessage({
 	message,
 }: {
@@ -409,8 +379,11 @@ function AssistantMessage({
 	return (
 		<ConversationColumn className="group py-3 sm:py-4">
 			<div className="w-full text-foreground">
+				{message.thinking ? (
+					<ThinkingActivityView activity={message.thinking} />
+				) : null}
 				{message.activity ? (
-					<ActivitySummary activity={message.activity} />
+					<ToolCallActivityView activity={message.activity} />
 				) : null}
 				<div className="relative">
 					<ChatMarkdown text={message.text} isStreaming={message.streaming} />
@@ -438,21 +411,24 @@ function AssistantMessage({
 
 function EmptyConversation() {
 	return (
-		<ConversationColumn className="flex flex-1 flex-col items-center justify-center gap-4">
-			<svg viewBox="0 0 800 800" className="h-20 w-20" aria-hidden="true">
-				<path
-					className="fill-foreground"
-					fillRule="evenodd"
-					d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
-				/>
-				<path
-					className="fill-foreground"
-					d="M517.36 400H634.72V634.72H517.36Z"
-				/>
-			</svg>
-			<h1 className="text-3xl font-semibold tracking-tight">
-				今天想做点什么？
-			</h1>
+		<ConversationColumn className="flex flex-1 items-center justify-center">
+			<EmptyState
+				variant="hero"
+				title="今天想做点什么？"
+				icon={
+					<svg viewBox="0 0 800 800" className="h-20 w-20" aria-hidden="true">
+						<path
+							className="fill-current"
+							fillRule="evenodd"
+							d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
+						/>
+						<path
+							className="fill-current"
+							d="M517.36 400H634.72V634.72H517.36Z"
+						/>
+					</svg>
+				}
+			/>
 		</ConversationColumn>
 	);
 }
@@ -489,13 +465,17 @@ function SessionHeader({
 					<PanelLeft className="size-4" />
 				</Button>
 			)}
-			<svg viewBox="0 0 800 800" className="size-5 shrink-0" aria-hidden="true">
+			<svg
+				viewBox="0 0 800 800"
+				className="size-5 shrink-0 text-muted-foreground"
+				aria-hidden="true"
+			>
 				<path
-					fill="#767678"
+					className="fill-current"
 					fillRule="evenodd"
 					d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
 				/>
-				<path fill="#767678" d="M517.36 400H634.72V634.72H517.36Z" />
+				<path className="fill-current" d="M517.36 400H634.72V634.72H517.36Z" />
 			</svg>
 			<h1 className="min-w-0 flex-1 truncate text-sm font-medium">
 				{session.title}
@@ -533,6 +513,8 @@ export function ChatPage({
 	onOpenChanges,
 	onExpandSidebar,
 	initialMessage,
+	loadState = "ready",
+	onRetry,
 	reserveWindowControls = false,
 	sidebarCollapsed = false,
 }: {
@@ -540,6 +522,8 @@ export function ChatPage({
 	onOpenChanges?: () => void;
 	onExpandSidebar?: () => void;
 	initialMessage?: string;
+	loadState?: "ready" | "loading" | "error";
+	onRetry?: () => void;
 	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
 }) {
@@ -689,7 +673,22 @@ export function ChatPage({
 					className="scrollbar-pro min-h-0 w-full flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
 				>
 					<div className="flex min-h-full flex-col pb-8 pt-4 sm:pb-10 sm:pt-6">
-						{messages.length === 0 ? (
+						{loadState === "loading" ? (
+							<ConversationColumn className="flex flex-1 items-center justify-center">
+								<LoadingState
+									title="正在加载会话"
+									description="正在读取消息与活动记录。"
+								/>
+							</ConversationColumn>
+						) : loadState === "error" ? (
+							<ConversationColumn className="flex flex-1 items-center justify-center">
+								<ErrorState
+									title="会话加载失败"
+									description="暂时无法读取这段会话。"
+									onRetry={onRetry}
+								/>
+							</ConversationColumn>
+						) : messages.length === 0 ? (
 							<EmptyConversation />
 						) : (
 							messages.map((message) => (
