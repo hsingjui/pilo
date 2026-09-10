@@ -656,3 +656,68 @@
 		background-clip: padding-box;
 	}
 }
+
+@keyframes chat-agent-activity-dot-pulse {
+	0%,
+	100% {
+		opacity: 0.35;
+		transform: scale(0.7);
+	}
+	50% {
+		opacity: 0.8;
+		transform: scale(1);
+	}
+}
+
+@keyframes chat-agent-activity-label-highlight {
+	0%,
+	12% {
+		opacity: 0;
+		transform: translateX(-0.08em);
+	}
+	24%,
+	42% {
+		opacity: 1;
+		transform: translateX(0);
+	}
+	58%,
+	100% {
+		opacity: 0;
+		transform: translateX(0.08em);
+	}
+}
+
+.chat-agent-activity-dot-pulse {
+	animation: chat-agent-activity-dot-pulse 3.5s ease-in-out infinite;
+	will-change: opacity, transform;
+}
+
+.chat-agent-activity-label {
+	color: hsl(var(--primary) / 0.68);
+}
+
+.chat-agent-activity-label::after {
+	position: absolute;
+	inset: 0;
+	color: hsl(var(--primary) / 0.96);
+	content: attr(data-highlight-label);
+	opacity: 0;
+	pointer-events: none;
+	text-shadow: 0 0 0.7rem hsl(var(--primary) / 0.2);
+	transform: translateX(-0.08em);
+	animation: chat-agent-activity-label-highlight
+		var(--chat-agent-activity-label-duration) ease-in-out infinite;
+	will-change: opacity, transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.chat-agent-activity-dot-pulse,
+	.chat-agent-activity-label::after {
+		animation: none;
+	}
+
+	.chat-agent-activity-dot-pulse {
+		opacity: 0.6;
+		transform: scale(0.85);
+	}
+}

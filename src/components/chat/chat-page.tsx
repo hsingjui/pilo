@@ -6,26 +6,40 @@ import {
 	useState,
 	type ReactNode,
 } from "react";
-import {
-	ArrowDown,
-	Copy,
-	LoaderCircle,
-	PanelLeft,
-	PanelRight,
-} from "lucide-react";
+import { ArrowDown, Copy, PanelLeft, PanelRight } from "lucide-react";
 
 import {
-	ThinkingActivityView,
-	ToolCallActivityView,
-	type ThinkingActivity,
-	type ToolCallActivity,
+	AssistantActivityView,
+	type AssistantActivity,
 } from "@/components/chat/chat-activity";
+import { ChatAgentActivityIndicator } from "@/components/chat/chat-agent-activity";
+import {
+	appendAssistantTextContent,
+	appendAssistantThinkingContent,
+	finishAssistantThinkingContent,
+	getAssistantActivities,
+	getAssistantStreamingLabel,
+	reconcileAssistantTextContent,
+	startAssistantThinkingContent,
+	upsertToolContent,
+	type AssistantContentItem,
+} from "@/lib/chat-activity-state";
+import { getReplyRunwayHeight } from "@/lib/chat-scroll-state";
+import { formatWorkDuration } from "@/lib/format-duration";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import {
 	buildConversationOutline,
 	ConversationOutlineRail,
 } from "@/components/chat/conversation-outline-rail";
+import {
+	abortPiReply,
+	ensureLocalPi,
+	listenRuntimeEvents,
+	runtimeErrorMessage,
+	sendPiPrompt,
+	type PiloRuntimeEvent,
+} from "@/lib/pi-runtime";
 import { cn } from "@/lib/utils";
 import {
 	Button,
@@ -41,6 +55,7 @@ export type ChatSession = {
 	id: string;
 	title: string;
 	workspace: string;
+	workspacePath: string;
 	environment: string;
 	branch: string;
 };
@@ -52,10 +67,16 @@ type ChatMessage =
 			role: "assistant";
 			text: string;
 			time: string;
-			thinking?: ThinkingActivity;
-			activity?: ToolCallActivity;
+			content?: AssistantContentItem[];
+			activity?: AssistantActivity[];
 			streaming?: boolean;
+			workDurationMs?: number;
+			replyRunwayPx?: number;
+			stopReason?: string;
+			errorMessage?: string;
 	  };
+
+type AssistantChatMessage = Extract<ChatMessage, { role: "assistant" }>;
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
@@ -72,22 +93,26 @@ const MOCK_CONVERSATIONS: Record<string, ChatMessage[]> = {
 			role: "assistant",
 			text: "已经把基础视觉体系迁到 Pilo。聊天页继续沿用 Lody 的单列阅读布局：\n\n- 用户消息靠右使用轻量气泡\n- Pi 回复保持无外框正文\n- 工具活动收在正文之间\n- 输入区固定在底部并和消息列使用同一宽度\n\n这样后续接真实 RPC streaming 时只需要替换数据源。",
 			time: "11:19",
-			thinking: {
-				summary: "分析 Lody 的聊天布局",
-				detail:
-					"对比了消息列、活动信息和输入区的层级关系，保留低对比度与单列阅读结构。",
-				duration: "2s",
-			},
-			activity: {
-				label: "检查了 4 个 UI 文件",
-				items: [
+			activity: [
+				{
+					id: "s1-a1-thinking",
+					type: "thinking",
+					text: "对比了消息列、活动信息和输入区的层级关系，保留低对比度与单列阅读结构。",
+					status: "complete",
+				},
+				...[
 					"src/App.tsx",
 					"src/index.css",
 					"src/ui/button.tsx",
 					"src/ui/textarea.tsx",
-				],
-				duration: "4s",
-			},
+				].map((path, index) => ({
+					id: `s1-a1-tool-${index}`,
+					type: "tool" as const,
+					toolName: "read",
+					args: { path },
+					status: "complete" as const,
+				})),
+			],
 		},
 		{
 			id: "s1-u2",
@@ -152,11 +177,15 @@ const MOCK_CONVERSATIONS: Record<string, ChatMessage[]> = {
 			role: "assistant",
 			text: "`pnpm format`、`pnpm check`、`pnpm build` 全部通过。构建只有一个已有的 chunk 体积警告，和这次改动无关。视觉效果需要你这边 `pnpm tauri dev` 确认。",
 			time: "11:32",
-			activity: {
-				label: "执行了 3 个验证命令",
-				items: ["pnpm format", "pnpm check", "pnpm build"],
-				duration: "9s",
-			},
+			activity: ["pnpm format", "pnpm check", "pnpm build"].map(
+				(command, index) => ({
+					id: `s1-a4-tool-${index}`,
+					type: "tool" as const,
+					toolName: "bash",
+					args: { command },
+					status: "complete" as const,
+				}),
+			),
 		},
 		{
 			id: "s1-u5",
@@ -221,14 +250,15 @@ const MOCK_CONVERSATIONS: Record<string, ChatMessage[]> = {
 				"验证命令都过了，`tauri dev` 里重点看两处：快速滚动时 outline 高亮是否跟手，以及窄窗口下用户气泡换行观感。",
 			].join("\n"),
 			time: "11:49",
-			activity: {
-				label: "修改了 2 处样式逻辑",
-				items: [
-					"src/components/chat/chat-page.tsx",
-					"src/components/chat/chat-page.tsx",
-				],
-				duration: "3s",
-			},
+			activity: [
+				{
+					id: "s1-a7-tool-1",
+					type: "tool",
+					toolName: "edit",
+					args: { path: "src/components/chat/chat-page.tsx" },
+					status: "complete",
+				},
+			],
 		},
 		{
 			id: "s1-u8",
@@ -275,11 +305,15 @@ const MOCK_CONVERSATIONS: Record<string, ChatMessage[]> = {
 			role: "assistant",
 			text: "Connection 只描述运行位置，PiSession 管进程生命周期和 RPC；Local / WSL / SSH 各自负责把连接和 workspace 转成 `ProcessSpec`。这样 Runtime 不需要知道具体 transport。",
 			time: "09:44",
-			activity: {
-				label: "分析 Runtime Foundation",
-				items: ["connection.rs", "pi_session.rs", "process.rs"],
-				duration: "6s",
-			},
+			activity: ["connection.rs", "pi_session.rs", "process.rs"].map(
+				(path, index) => ({
+					id: `s2-a1-tool-${index}`,
+					type: "tool" as const,
+					toolName: "read",
+					args: { path },
+					status: "complete" as const,
+				}),
+			),
 		},
 	],
 	s3: [
@@ -371,37 +405,125 @@ function UserMessage({
 	);
 }
 
+function getAssistantMessageContent(
+	message: Extract<ChatMessage, { role: "assistant" }>,
+): AssistantContentItem[] {
+	if (message.content) return message.content;
+
+	const content: AssistantContentItem[] = [];
+	if (message.activity) content.push(...message.activity);
+	if (message.text) {
+		content.push({
+			id: `${message.id}-text`,
+			type: "text",
+			text: message.text,
+		});
+	}
+	return content;
+}
+
 function AssistantMessage({
 	message,
+	replyRunwayPx,
 }: {
 	message: Extract<ChatMessage, { role: "assistant" }>;
+	replyRunwayPx?: number;
 }) {
+	const content = getAssistantMessageContent(message);
+	const activity = getAssistantActivities(content);
+	const streamingLabel = getAssistantStreamingLabel({
+		text: message.text,
+		activity,
+		streaming: message.streaming,
+	});
+	const hasWorkActivity = activity.length > 0;
+	const footerDuration =
+		!hasWorkActivity && message.workDurationMs !== undefined
+			? formatWorkDuration(message.workDurationMs)
+			: "";
+	const contentNodes: ReactNode[] = [];
+	let firstActivityGroup = true;
+
+	for (let index = 0; index < content.length; index += 1) {
+		const item = content[index];
+		if (item.type === "text") {
+			if (item.text) {
+				contentNodes.push(
+					<ChatMarkdown
+						key={item.id}
+						text={item.text}
+						isStreaming={
+							message.streaming === true && index === content.length - 1
+						}
+					/>,
+				);
+			}
+			continue;
+		}
+
+		const group: AssistantActivity[] = [];
+		const groupStart = index;
+		while (index < content.length && content[index].type !== "text") {
+			group.push(content[index] as AssistantActivity);
+			index += 1;
+		}
+		index -= 1;
+		const groupKey = group[0]?.id ?? `activity-${groupStart}`;
+		contentNodes.push(
+			<AssistantActivityView
+				key={`${message.id}-${groupKey}-${message.streaming ? "running" : "complete"}`}
+				activity={group}
+				streaming={message.streaming === true}
+				durationMs={firstActivityGroup ? message.workDurationMs : undefined}
+			/>,
+		);
+		firstActivityGroup = false;
+	}
+
 	return (
 		<ConversationColumn className="group py-3 sm:py-4">
-			<div className="w-full text-foreground">
-				{message.thinking ? (
-					<ThinkingActivityView activity={message.thinking} />
-				) : null}
-				{message.activity ? (
-					<ToolCallActivityView activity={message.activity} />
-				) : null}
+			<div
+				className="w-full text-foreground"
+				style={
+					replyRunwayPx === undefined
+						? undefined
+						: { minHeight: `${replyRunwayPx}px` }
+				}
+			>
 				<div className="relative">
-					<ChatMarkdown text={message.text} isStreaming={message.streaming} />
+					{contentNodes}
+					{message.errorMessage ? (
+						<div
+							role="alert"
+							className="mt-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs leading-5 text-destructive"
+						>
+							{message.errorMessage}
+						</div>
+					) : null}
 					<div className="mt-1.5 flex h-6 items-center gap-1 text-[11px] text-muted-foreground">
-						{message.streaming ? (
-							<span className="inline-flex items-center gap-1.5">
-								<LoaderCircle className="size-3 animate-spin" />
-								Pi 正在响应
-							</span>
+						{streamingLabel ? (
+							<ChatAgentActivityIndicator label={streamingLabel} />
+						) : message.errorMessage ? (
+							<span className="text-destructive">Pi 响应失败</span>
+						) : message.stopReason === "aborted" ? (
+							<span>已停止</span>
+						) : footerDuration ? (
+							<>
+								<span>工作了 {footerDuration}</span>
+								<span aria-hidden="true">·</span>
+								<span className="tabular-nums">{message.time}</span>
+							</>
 						) : (
 							<span className="tabular-nums">{message.time}</span>
 						)}
-						<MessageAction
-							label="复制"
-							onClick={() => void navigator.clipboard.writeText(message.text)}
-						>
-							<Copy className="size-3.5" />
-						</MessageAction>
+						{message.text && !message.streaming ? (
+							<MessageAction
+								label="复制"
+								onClick={() => void navigator.clipboard.writeText(message.text)}
+							>
+								<Copy className="size-3.5" />
+							</MessageAction>
+						) : null}
 					</div>
 				</div>
 			</div>
@@ -508,6 +630,39 @@ function formatTime() {
 	}).format(new Date());
 }
 
+type ActiveTurn = {
+	sessionId: string;
+	generation: number | null;
+	assistantMessageId: string;
+	startedAtMs: number;
+	replyRunwayPx?: number;
+};
+
+let localMessageSequence = 0;
+let localActivitySequence = 0;
+
+function createLocalMessageId(kind: "user" | "assistant") {
+	localMessageSequence += 1;
+	return `local-${kind}-${Date.now()}-${localMessageSequence}`;
+}
+
+function createLocalContentId(kind: "thinking" | "text") {
+	localActivitySequence += 1;
+	return `local-${kind}-${Date.now()}-${localActivitySequence}`;
+}
+
+function finishActivityItem(activity: AssistantActivity): AssistantActivity {
+	return activity.status === "running"
+		? { ...activity, status: "complete" }
+		: activity;
+}
+
+function finishAssistantContentItem(
+	item: AssistantContentItem,
+): AssistantContentItem {
+	return item.type === "text" ? item : finishActivityItem(item);
+}
+
 export function ChatPage({
 	session,
 	onOpenChanges,
@@ -544,6 +699,17 @@ export function ChatPage({
 	const [localMessages, setLocalMessages] = useState<
 		Record<string, ChatMessage[]>
 	>({});
+	const activeTurnRef = useRef<ActiveTurn | null>(null);
+	const runtimeListenerRef = useRef<ReturnType<
+		typeof listenRuntimeEvents
+	> | null>(null);
+	const runtimeEventHandlerRef = useRef<(event: PiloRuntimeEvent) => void>(
+		() => {},
+	);
+	const sentInitialPromptsRef = useRef(new Set<string>());
+	const [activeTurnSessionId, setActiveTurnSessionId] = useState<string | null>(
+		null,
+	);
 	const localSessionMessages = localMessages[session.id] ?? EMPTY_MESSAGES;
 	const messages = useMemo(
 		() => [...baseMessages, ...localSessionMessages],
@@ -606,6 +772,575 @@ export function ChatPage({
 		setIsSticky(true);
 	}, []);
 
+	const appendLocalMessage = useCallback(
+		(targetSessionId: string, message: ChatMessage) => {
+			setLocalMessages((current) => ({
+				...current,
+				[targetSessionId]: [
+					...(current[targetSessionId] ?? EMPTY_MESSAGES),
+					message,
+				],
+			}));
+		},
+		[],
+	);
+
+	const startAssistantMessage = useCallback((turn: ActiveTurn) => {
+		setLocalMessages((current) => {
+			const sessionMessages = current[turn.sessionId] ?? EMPTY_MESSAGES;
+			if (
+				sessionMessages.some(
+					(message) => message.id === turn.assistantMessageId,
+				)
+			) {
+				return current;
+			}
+			return {
+				...current,
+				[turn.sessionId]: [
+					...sessionMessages,
+					{
+						id: turn.assistantMessageId,
+						role: "assistant",
+						text: "",
+						time: formatTime(),
+						streaming: true,
+						replyRunwayPx: turn.replyRunwayPx,
+					},
+				],
+			};
+		});
+	}, []);
+
+	const reconcileAssistantText = useCallback(
+		(turn: ActiveTurn, text: string) => {
+			const contentId = createLocalContentId("text");
+			setLocalMessages((current) => {
+				const sessionMessages = current[turn.sessionId] ?? EMPTY_MESSAGES;
+				const index = sessionMessages.findIndex(
+					(message) => message.id === turn.assistantMessageId,
+				);
+				if (index < 0) {
+					return {
+						...current,
+						[turn.sessionId]: [
+							...sessionMessages,
+							{
+								id: turn.assistantMessageId,
+								role: "assistant",
+								text,
+								time: formatTime(),
+								content: reconcileAssistantTextContent(
+									[],
+									text,
+									() => contentId,
+								),
+								streaming: true,
+								replyRunwayPx: turn.replyRunwayPx,
+							},
+						],
+					};
+				}
+
+				const message = sessionMessages[index];
+				if (message.role !== "assistant") return current;
+				const content = reconcileAssistantTextContent(
+					message.content,
+					text,
+					() => contentId,
+				);
+				if (message.text === text && content === message.content)
+					return current;
+				const nextMessages = [...sessionMessages];
+				nextMessages[index] = { ...message, text, content, streaming: true };
+				return { ...current, [turn.sessionId]: nextMessages };
+			});
+		},
+		[],
+	);
+
+	const appendAssistantDelta = useCallback(
+		(turn: ActiveTurn, delta: string) => {
+			if (!delta) return;
+			const contentId = createLocalContentId("text");
+			setLocalMessages((current) => {
+				const sessionMessages = current[turn.sessionId] ?? EMPTY_MESSAGES;
+				const index = sessionMessages.findIndex(
+					(message) => message.id === turn.assistantMessageId,
+				);
+				if (index < 0) {
+					return {
+						...current,
+						[turn.sessionId]: [
+							...sessionMessages,
+							{
+								id: turn.assistantMessageId,
+								role: "assistant",
+								text: delta,
+								time: formatTime(),
+								content: appendAssistantTextContent([], delta, () => contentId),
+								streaming: true,
+								replyRunwayPx: turn.replyRunwayPx,
+							},
+						],
+					};
+				}
+
+				const message = sessionMessages[index];
+				if (message.role !== "assistant") return current;
+				const nextMessages = [...sessionMessages];
+				nextMessages[index] = {
+					...message,
+					text: `${message.text}${delta}`,
+					content: appendAssistantTextContent(
+						message.content,
+						delta,
+						() => contentId,
+					),
+					streaming: true,
+				};
+				return { ...current, [turn.sessionId]: nextMessages };
+			});
+		},
+		[],
+	);
+
+	const updateAssistantContent = useCallback(
+		(
+			turn: ActiveTurn,
+			update: (content: AssistantContentItem[]) => AssistantContentItem[],
+		) => {
+			setLocalMessages((current) => {
+				const sessionMessages = current[turn.sessionId] ?? EMPTY_MESSAGES;
+				const index = sessionMessages.findIndex(
+					(message) => message.id === turn.assistantMessageId,
+				);
+				if (index < 0) {
+					const message: AssistantChatMessage = {
+						id: turn.assistantMessageId,
+						role: "assistant",
+						text: "",
+						time: formatTime(),
+						content: update([]),
+						streaming: true,
+						replyRunwayPx: turn.replyRunwayPx,
+					};
+					return {
+						...current,
+						[turn.sessionId]: [...sessionMessages, message],
+					};
+				}
+
+				const message = sessionMessages[index];
+				if (message.role !== "assistant") return current;
+				const nextMessages = [...sessionMessages];
+				nextMessages[index] = {
+					...message,
+					content: update(message.content ?? []),
+					streaming: true,
+				};
+				return { ...current, [turn.sessionId]: nextMessages };
+			});
+		},
+		[],
+	);
+
+	const startAssistantThinking = useCallback(
+		(turn: ActiveTurn) => {
+			const contentId = createLocalContentId("thinking");
+			updateAssistantContent(turn, (content) =>
+				startAssistantThinkingContent(content, () => contentId),
+			);
+		},
+		[updateAssistantContent],
+	);
+
+	const appendAssistantThinkingDelta = useCallback(
+		(turn: ActiveTurn, delta: string) => {
+			if (!delta) return;
+			const contentId = createLocalContentId("thinking");
+			updateAssistantContent(turn, (content) =>
+				appendAssistantThinkingContent(content, delta, () => contentId),
+			);
+		},
+		[updateAssistantContent],
+	);
+
+	const finishAssistantThinking = useCallback(
+		(turn: ActiveTurn) => {
+			updateAssistantContent(turn, finishAssistantThinkingContent);
+		},
+		[updateAssistantContent],
+	);
+
+	const startToolExecution = useCallback(
+		(turn: ActiveTurn, toolCallId: string, toolName: string, args: unknown) => {
+			updateAssistantContent(turn, (activity) =>
+				upsertToolContent(
+					activity,
+					toolCallId,
+					() => ({
+						id: toolCallId,
+						type: "tool",
+						toolName,
+						args,
+						status: "running",
+					}),
+					(current) => ({
+						...current,
+						toolName,
+						args,
+						status: "running",
+						isError: false,
+					}),
+				),
+			);
+		},
+		[updateAssistantContent],
+	);
+
+	const updateToolExecution = useCallback(
+		(
+			turn: ActiveTurn,
+			toolCallId: string,
+			toolName: string,
+			args: unknown,
+			partialResult: unknown,
+		) => {
+			updateAssistantContent(turn, (activity) =>
+				upsertToolContent(
+					activity,
+					toolCallId,
+					() => ({
+						id: toolCallId,
+						type: "tool",
+						toolName,
+						args,
+						result: partialResult,
+						status: "running",
+					}),
+					(current) => ({
+						...current,
+						toolName,
+						args,
+						result: partialResult,
+						status: "running",
+					}),
+				),
+			);
+		},
+		[updateAssistantContent],
+	);
+
+	const finishToolExecution = useCallback(
+		(
+			turn: ActiveTurn,
+			toolCallId: string,
+			toolName: string,
+			result: unknown,
+			isError: boolean,
+		) => {
+			updateAssistantContent(turn, (activity) =>
+				upsertToolContent(
+					activity,
+					toolCallId,
+					() => ({
+						id: toolCallId,
+						type: "tool",
+						toolName,
+						result,
+						status: "complete",
+						isError,
+					}),
+					(current) => ({
+						...current,
+						toolName,
+						result,
+						status: "complete",
+						isError,
+					}),
+				),
+			);
+		},
+		[updateAssistantContent],
+	);
+
+	const finishAssistantMessage = useCallback(
+		(
+			turn: ActiveTurn,
+			stopReason?: string | null,
+			errorMessage?: string | null,
+		) => {
+			const workDurationMs = Math.max(0, Date.now() - turn.startedAtMs);
+			const visibleError =
+				stopReason === "aborted"
+					? undefined
+					: errorMessage?.trim() ||
+						(stopReason === "error" ? "Pi 返回了错误结果。" : undefined);
+			setLocalMessages((current) => {
+				const sessionMessages = current[turn.sessionId] ?? EMPTY_MESSAGES;
+				const index = sessionMessages.findIndex(
+					(message) => message.id === turn.assistantMessageId,
+				);
+				if (index < 0) {
+					if (!visibleError) return current;
+					return {
+						...current,
+						[turn.sessionId]: [
+							...sessionMessages,
+							{
+								id: turn.assistantMessageId,
+								role: "assistant",
+								text: "",
+								time: formatTime(),
+								streaming: false,
+								workDurationMs,
+								stopReason: stopReason ?? undefined,
+								errorMessage: visibleError,
+							},
+						],
+					};
+				}
+
+				const message = sessionMessages[index];
+				if (message.role !== "assistant") return current;
+				const nextMessages = [...sessionMessages];
+				nextMessages[index] = {
+					...message,
+					content: message.content?.map(finishAssistantContentItem),
+					activity: message.activity?.map(finishActivityItem),
+					streaming: false,
+					workDurationMs,
+					stopReason: stopReason ?? undefined,
+					errorMessage: visibleError,
+				};
+				return { ...current, [turn.sessionId]: nextMessages };
+			});
+		},
+		[],
+	);
+
+	const releaseActiveTurn = useCallback((turn: ActiveTurn) => {
+		if (activeTurnRef.current !== turn) return;
+		activeTurnRef.current = null;
+		setActiveTurnSessionId(null);
+	}, []);
+
+	const failActiveTurn = useCallback(
+		(turn: ActiveTurn, message: string) => {
+			if (activeTurnRef.current !== turn) return;
+			finishAssistantMessage(turn, "error", message);
+			releaseActiveTurn(turn);
+		},
+		[finishAssistantMessage, releaseActiveTurn],
+	);
+
+	const handleRuntimeEvent = useCallback(
+		(event: PiloRuntimeEvent) => {
+			const turn = activeTurnRef.current;
+			if (
+				!turn ||
+				turn.generation === null ||
+				event.generation !== turn.generation
+			) {
+				return;
+			}
+
+			switch (event.type) {
+				case "rpc_message":
+					break;
+				case "assistant_message_start":
+					startAssistantMessage(turn);
+					break;
+				case "assistant_text_delta":
+					appendAssistantDelta(turn, event.delta);
+					break;
+				case "assistant_text_snapshot":
+					reconcileAssistantText(turn, event.text);
+					break;
+				case "assistant_thinking_start":
+					startAssistantThinking(turn);
+					break;
+				case "assistant_thinking_delta":
+					appendAssistantThinkingDelta(turn, event.delta);
+					break;
+				case "assistant_thinking_end":
+					finishAssistantThinking(turn);
+					break;
+				case "tool_execution_start":
+					startToolExecution(
+						turn,
+						event.toolCallId,
+						event.toolName,
+						event.args,
+					);
+					break;
+				case "tool_execution_update":
+					updateToolExecution(
+						turn,
+						event.toolCallId,
+						event.toolName,
+						event.args,
+						event.partialResult,
+					);
+					break;
+				case "tool_execution_end":
+					finishToolExecution(
+						turn,
+						event.toolCallId,
+						event.toolName,
+						event.result,
+						event.isError,
+					);
+					break;
+				case "assistant_message_end":
+					finishAssistantMessage(turn, event.stopReason, event.errorMessage);
+					releaseActiveTurn(turn);
+					break;
+				case "runtime_error":
+					failActiveTurn(turn, event.message);
+					break;
+				case "process_state":
+					if (event.state === "failed" || event.state === "stopped") {
+						failActiveTurn(
+							turn,
+							event.state === "failed"
+								? "Pi 进程运行失败。"
+								: "Pi 进程在回复完成前已停止。",
+						);
+					}
+					break;
+				case "runtime_log":
+					break;
+			}
+		},
+		[
+			appendAssistantDelta,
+			appendAssistantThinkingDelta,
+			failActiveTurn,
+			finishAssistantMessage,
+			finishAssistantThinking,
+			finishToolExecution,
+			reconcileAssistantText,
+			releaseActiveTurn,
+			startAssistantMessage,
+			startAssistantThinking,
+			startToolExecution,
+			updateToolExecution,
+		],
+	);
+	useEffect(() => {
+		runtimeEventHandlerRef.current = handleRuntimeEvent;
+	}, [handleRuntimeEvent]);
+
+	useEffect(() => {
+		let disposed = false;
+		const subscription = listenRuntimeEvents((event) => {
+			runtimeEventHandlerRef.current(event);
+		});
+		runtimeListenerRef.current = subscription;
+		void subscription.catch((error) => {
+			if (disposed) return;
+			const turn = activeTurnRef.current;
+			if (turn) failActiveTurn(turn, runtimeErrorMessage(error));
+		});
+
+		return () => {
+			disposed = true;
+			if (runtimeListenerRef.current === subscription) {
+				runtimeListenerRef.current = null;
+			}
+			void subscription.then((unlisten) => unlisten()).catch(() => undefined);
+		};
+	}, [failActiveTurn]);
+
+	const beginTurn = useCallback(
+		async (text: string, appendUserMessage = true) => {
+			const trimmed = text.trim();
+			if (!trimmed || activeTurnRef.current) return;
+			const viewport = scrollRef.current;
+			const replyRunwayPx = viewport
+				? getReplyRunwayHeight({
+						viewportHeight: viewport.clientHeight,
+						scrollHeight: viewport.scrollHeight,
+						enabled: appendUserMessage,
+					})
+				: undefined;
+
+			const turn: ActiveTurn = {
+				sessionId: session.id,
+				generation: null,
+				assistantMessageId: createLocalMessageId("assistant"),
+				startedAtMs: Date.now(),
+				replyRunwayPx,
+			};
+			activeTurnRef.current = turn;
+			setActiveTurnSessionId(turn.sessionId);
+
+			if (appendUserMessage) {
+				appendLocalMessage(turn.sessionId, {
+					id: createLocalMessageId("user"),
+					role: "user",
+					text: trimmed,
+					time: formatTime(),
+				});
+			}
+			startAssistantMessage(turn);
+			setDrafts((current) => ({ ...current, [turn.sessionId]: "" }));
+			requestAnimationFrame(() => scrollToBottom(false));
+
+			try {
+				const subscription = runtimeListenerRef.current;
+				if (!subscription) {
+					throw new Error("Pi Runtime 事件通道尚未就绪。");
+				}
+				await subscription;
+				const snapshot = await ensureLocalPi(session.workspacePath);
+				if (activeTurnRef.current !== turn) return;
+				turn.generation = snapshot.generation;
+				await sendPiPrompt(trimmed);
+			} catch (error) {
+				failActiveTurn(turn, runtimeErrorMessage(error));
+			}
+		},
+		[
+			appendLocalMessage,
+			failActiveTurn,
+			scrollToBottom,
+			session.id,
+			session.workspacePath,
+			startAssistantMessage,
+		],
+	);
+
+	const handleSubmit = useCallback(
+		(text: string) => {
+			void beginTurn(text);
+		},
+		[beginTurn],
+	);
+
+	const handleStop = useCallback(() => {
+		const turn = activeTurnRef.current;
+		if (!turn || turn.sessionId !== session.id) return;
+		if (turn.generation === null) {
+			finishAssistantMessage(turn, "aborted");
+			releaseActiveTurn(turn);
+			return;
+		}
+		void abortPiReply().catch((error) => {
+			failActiveTurn(turn, runtimeErrorMessage(error));
+		});
+	}, [failActiveTurn, finishAssistantMessage, releaseActiveTurn, session.id]);
+
+	useEffect(() => {
+		if (!initialMessage || activeTurnSessionId !== null) return;
+		const key = `${session.id}:${initialMessage}`;
+		if (sentInitialPromptsRef.current.has(key)) return;
+		sentInitialPromptsRef.current.add(key);
+		void beginTurn(initialMessage, false);
+	}, [activeTurnSessionId, beginTurn, initialMessage, session.id]);
+
 	const sessionId = session.id;
 	useEffect(() => {
 		if (!sessionId) return;
@@ -615,30 +1350,15 @@ export function ChatPage({
 	}, [sessionId, scrollToBottom]);
 
 	const lastMessage = messages[messages.length - 1];
-	const streamingText =
+	const streamingMessage =
 		lastMessage?.role === "assistant" && lastMessage.streaming
-			? lastMessage.text
+			? lastMessage
 			: null;
 	useEffect(() => {
-		if (!stickyRef.current || streamingText === null) return;
+		if (!stickyRef.current || streamingMessage === null) return;
 		const frame = requestAnimationFrame(() => scrollToBottom(false));
 		return () => cancelAnimationFrame(frame);
-	}, [streamingText, scrollToBottom]);
-
-	const handleSubmit = (text: string) => {
-		const next: ChatMessage = {
-			id: `local-${Date.now()}`,
-			role: "user",
-			text,
-			time: formatTime(),
-		};
-		setLocalMessages((current) => ({
-			...current,
-			[session.id]: [...(current[session.id] ?? []), next],
-		}));
-		setDraft("");
-		requestAnimationFrame(() => scrollToBottom(true));
-	};
+	}, [streamingMessage, scrollToBottom]);
 
 	const handleOutlineJump = (index: number) => {
 		const entry = outlineEntries[index];
@@ -654,8 +1374,8 @@ export function ChatPage({
 		});
 	};
 
-	const running =
-		lastMessage?.role === "assistant" && lastMessage.streaming === true;
+	const running = activeTurnSessionId === session.id;
+	const runtimeBusy = activeTurnSessionId !== null;
 
 	return (
 		<div className="flex h-full min-w-0 flex-col bg-background">
@@ -691,7 +1411,7 @@ export function ChatPage({
 						) : messages.length === 0 ? (
 							<EmptyConversation />
 						) : (
-							messages.map((message) => (
+							messages.map((message, index) => (
 								<div
 									key={message.id}
 									ref={(node) => {
@@ -702,7 +1422,14 @@ export function ChatPage({
 									{message.role === "user" ? (
 										<UserMessage message={message} />
 									) : (
-										<AssistantMessage message={message} />
+										<AssistantMessage
+											message={message}
+											replyRunwayPx={
+												index === messages.length - 1
+													? message.replyRunwayPx
+													: undefined
+											}
+										/>
 									)}
 								</div>
 							))
@@ -747,7 +1474,9 @@ export function ChatPage({
 							value={draft}
 							onChange={setDraft}
 							onSubmit={handleSubmit}
+							disabled={runtimeBusy && !running}
 							running={running}
+							onStop={handleStop}
 						/>
 					</ConversationColumn>
 				</div>

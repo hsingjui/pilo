@@ -89,7 +89,7 @@ Comet change: `docs/comet/changes/frontend-style-foundation/`
 
 实现约束：
 
-- P0.3–P0.5 的 Local / WSL / SSH launcher 必须保留 Pi 正常的 user/global/project extensions 加载语义，生产启动参数不得使用 `--no-extensions`。
+- Local / WSL / SSH launcher 必须保留 Pi 正常的 user/global/project extensions 加载语义，生产启动参数不得使用 `--no-extensions`。
 
 目标架构：
 
@@ -117,7 +117,16 @@ PiTransport
 - [x] 展示 cwd / Git branch / Pi version 等环境信息
 - [x] 对启动失败、Pi 不存在、RPC crash 给出明确错误
 
-## P0.4 WSL Connection
+## P0.4 Chat Runtime Integration
+
+- [x] Local Chat 接入真实 `pi --mode rpc`
+- [x] Pi 原始事件适配为稳定的 Pilo Runtime Event
+- [x] `prompt` 与 assistant 文本流式输出
+- [x] 同一 Pi process / session 连续多轮复用
+- [x] `abort` 停止当前回复但保留 Pi process
+- [x] Runtime / RPC 错误在 Chat 内可见，未知 Pi event 安全忽略
+
+## P0.5 WSL Connection
 
 - [ ] WSL distro 枚举
 - [ ] WSL Connection 数据模型
@@ -137,7 +146,7 @@ WSL Debian
 pi --mode rpc
 ```
 
-## P0.5 SSH Connection
+## P0.6 SSH Connection
 
 - [ ] SSH Connection 数据模型
 - [ ] 使用系统 OpenSSH `ssh`
@@ -148,7 +157,7 @@ pi --mode rpc
 - [ ] SSH 断线状态与重连
 - [ ] 基础连接测试和环境诊断
 
-## P0.6 Workspace
+## P0.7 Workspace
 
 - [ ] Workspace 数据模型
 - [ ] Connection → Workspace 层级
@@ -172,7 +181,7 @@ Session
 Pi RPC Process
 ```
 
-## P0.7 Session Index
+## P0.8 Session Index
 
 - [ ] 引入本地 SQLite
 - [ ] `connections` 表
@@ -210,7 +219,7 @@ indexed_at
 
 不把完整 conversation 作为 authoritative SQLite 数据保存。
 
-## P0.8 Session UI
+## P0.9 Session UI
 
 - [ ] Sidebar 默认展示当前 Workspace 全部 Pi Sessions
 - [ ] 按 Today / This Week / Older 分组
@@ -224,13 +233,13 @@ indexed_at
 - [ ] Session switch
 - [ ] Session list virtualization
 
-## P0.9 Pi Chat
+## P0.10 Pi Chat
 
-- [ ] `prompt`
-- [ ] Streaming assistant output
-- [ ] Thinking 展示
-- [ ] Tool call / tool result 展示
-- [ ] `abort`
+- [x] `prompt`
+- [x] Streaming assistant output
+- [x] Thinking 展示
+- [x] Tool call / tool result 展示
+- [x] `abort`
 - [ ] `follow_up`
 - [ ] `steer`
 - [ ] Model selector
@@ -241,7 +250,7 @@ indexed_at
 - [ ] 大消息与 Tool Result 折叠
 - [ ] 长 Session 渲染 virtualization
 
-## P0.10 Pi Extension UI Bridge
+## P0.11 Pi Extension UI Bridge
 
 - [ ] `select`
 - [ ] `confirm`

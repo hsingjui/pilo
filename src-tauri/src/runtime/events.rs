@@ -27,6 +27,7 @@ pub enum RuntimeErrorCode {
     ProcessIo,
     RpcDecode,
     RpcFraming,
+    RpcResponse,
     ProcessExit,
     ProcessWait,
 }
@@ -41,6 +42,62 @@ pub enum RuntimeEvent {
     RpcMessage {
         generation: u64,
         message: Value,
+    },
+    AssistantMessageStart {
+        generation: u64,
+    },
+    AssistantTextDelta {
+        generation: u64,
+        delta: String,
+    },
+    AssistantTextSnapshot {
+        generation: u64,
+        text: String,
+    },
+    AssistantThinkingStart {
+        generation: u64,
+    },
+    AssistantThinkingDelta {
+        generation: u64,
+        delta: String,
+    },
+    AssistantThinkingEnd {
+        generation: u64,
+    },
+    ToolExecutionStart {
+        generation: u64,
+        #[serde(rename = "toolCallId")]
+        tool_call_id: String,
+        #[serde(rename = "toolName")]
+        tool_name: String,
+        args: Value,
+    },
+    ToolExecutionUpdate {
+        generation: u64,
+        #[serde(rename = "toolCallId")]
+        tool_call_id: String,
+        #[serde(rename = "toolName")]
+        tool_name: String,
+        args: Value,
+        #[serde(rename = "partialResult")]
+        partial_result: Value,
+    },
+    ToolExecutionEnd {
+        generation: u64,
+        #[serde(rename = "toolCallId")]
+        tool_call_id: String,
+        #[serde(rename = "toolName")]
+        tool_name: String,
+        result: Value,
+        #[serde(rename = "isError")]
+        is_error: bool,
+    },
+    AssistantMessageEnd {
+        generation: u64,
+        #[serde(rename = "stopReason")]
+        stop_reason: Option<String>,
+        #[serde(rename = "errorMessage")]
+        error_message: Option<String>,
     },
     RuntimeLog {
         generation: u64,
@@ -80,18 +137,60 @@ mod tests {
     use super::*;
 
     #[test]
-    fn runtime_event_has_stable_type_tag() {
-        let event = RuntimeEvent::RpcMessage {
+    fn runtime_event_has_stable_chat_shape() {
+        let event = RuntimeEvent::AssistantMessageEnd {
             generation: 7,
-            message: serde_json::json!({ "type": "response", "success": true }),
+            stop_reason: Some("stop".to_owned()),
+            error_message: None,
+        };
+
+        assert_eq!(
+            serde_json::to_value(event).unwrap(),
+            serde_json::json!({
+                "type": "assistant_message_end",
+                "generation": 7,
+                "stopReason": "stop",
+                "errorMessage": null
+            })
+        );
+    }
+
+    #[test]
+    fn raw_rpc_event_keeps_runtime_foundation_contract() {
+        let event = RuntimeEvent::RpcMessage {
+            generation: 8,
+            message: serde_json::json!({ "type": "queue_update" }),
         };
 
         assert_eq!(
             serde_json::to_value(event).unwrap(),
             serde_json::json!({
                 "type": "rpc_message",
-                "generation": 7,
-                "message": { "type": "response", "success": true }
+                "generation": 8,
+                "message": { "type": "queue_update" }
+            })
+        );
+    }
+
+    #[test]
+    fn tool_execution_event_keeps_frontend_field_names() {
+        let event = RuntimeEvent::ToolExecutionEnd {
+            generation: 9,
+            tool_call_id: "call-1".to_owned(),
+            tool_name: "bash".to_owned(),
+            result: serde_json::json!({ "content": [] }),
+            is_error: false,
+        };
+
+        assert_eq!(
+            serde_json::to_value(event).unwrap(),
+            serde_json::json!({
+                "type": "tool_execution_end",
+                "generation": 9,
+                "toolCallId": "call-1",
+                "toolName": "bash",
+                "result": { "content": [] },
+                "isError": false
             })
         );
     }

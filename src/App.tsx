@@ -121,6 +121,7 @@ function App() {
 				id: selectedSession.id,
 				title: selectedSession.title,
 				workspace: "pilo",
+				workspacePath: ".",
 				environment: "本地",
 				branch: "main",
 			}
@@ -129,6 +130,7 @@ function App() {
 					id: "draft-session",
 					title: "新对话",
 					workspace: "pilo",
+					workspacePath: ".",
 					environment: "本地",
 					branch: "main",
 				}

@@ -19,6 +19,7 @@ use crate::domain::Connection;
 
 use super::{
     events::{PiProcessState, RuntimeErrorCode, RuntimeEvent, RuntimeEventSink, RuntimeLogStream},
+    pi_events::PiEventAdapter,
     process::{ManagedProcess, ProcessSpec},
     rpc::{JsonlCodec, RpcCodecError},
 };
@@ -502,6 +503,7 @@ async fn read_stdout<S: RuntimeEventSink>(
     sink: S,
 ) {
     let mut codec = JsonlCodec::new();
+    let mut adapter = PiEventAdapter::default();
     let mut buffer = [0_u8; 8192];
 
     loop {
@@ -522,9 +524,12 @@ async fn read_stdout<S: RuntimeEventSink>(
                                 generation,
                                 RuntimeEvent::RpcMessage {
                                     generation,
-                                    message,
+                                    message: message.clone(),
                                 },
                             );
+                            for event in adapter.adapt(generation, &message) {
+                                send_if_current(&generations, &sink, generation, event);
+                            }
                         }
                         Err(error) => send_codec_error(&generations, &sink, generation, error),
                     }
@@ -625,8 +630,11 @@ fn send_if_current<S: RuntimeEventSink>(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, sync::Mutex as StdMutex, time::Duration};
+    use std::sync::Mutex as StdMutex;
 
+    #[cfg(unix)]
+    use std::{collections::BTreeMap, time::Duration};
+    #[cfg(unix)]
     use tokio::sync::Notify;
 
     use super::*;
@@ -634,16 +642,19 @@ mod tests {
     #[derive(Clone, Default)]
     struct TestSink {
         events: Arc<StdMutex<Vec<RuntimeEvent>>>,
+        #[cfg(unix)]
         notify: Arc<Notify>,
     }
 
     impl RuntimeEventSink for TestSink {
         fn send(&self, event: RuntimeEvent) {
             self.events.lock().unwrap().push(event);
+            #[cfg(unix)]
             self.notify.notify_one();
         }
     }
 
+    #[cfg(unix)]
     impl TestSink {
         async fn wait_for(&self, predicate: impl Fn(&RuntimeEvent) -> bool) {
             tokio::time::timeout(Duration::from_secs(2), async {
@@ -669,9 +680,9 @@ mod tests {
             &generations,
             &sink,
             first,
-            RuntimeEvent::RpcMessage {
+            RuntimeEvent::AssistantTextDelta {
                 generation: first,
-                message: serde_json::json!({ "seq": 1 }),
+                delta: "first".to_owned(),
             },
         ));
 
@@ -681,18 +692,18 @@ mod tests {
             &generations,
             &sink,
             first,
-            RuntimeEvent::RpcMessage {
+            RuntimeEvent::AssistantTextDelta {
                 generation: first,
-                message: serde_json::json!({ "seq": "stale" }),
+                delta: "stale".to_owned(),
             },
         ));
         assert!(send_if_current(
             &generations,
             &sink,
             second,
-            RuntimeEvent::RpcMessage {
+            RuntimeEvent::AssistantTextDelta {
                 generation: second,
-                message: serde_json::json!({ "seq": 2 }),
+                delta: "second".to_owned(),
             },
         ));
 
@@ -700,9 +711,9 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert_eq!(
             events[1],
-            RuntimeEvent::RpcMessage {
+            RuntimeEvent::AssistantTextDelta {
                 generation: second,
-                message: serde_json::json!({ "seq": 2 }),
+                delta: "second".to_owned(),
             }
         );
     }
@@ -811,7 +822,7 @@ mod tests {
             program: "sh".to_owned(),
             args: vec![
                 "-c".to_owned(),
-                "while IFS= read -r line; do printf '%s\\n' \"$line\"; printf '%s\\n' 'fixture stderr' >&2; done".to_owned(),
+                "while IFS= read -r line; do printf '%s\\n' \"$line\"; printf '%s\\n' '{\"type\":\"agent_end\",\"willRetry\":false,\"messages\":[{\"role\":\"assistant\",\"stopReason\":\"aborted\"}]}'; printf '%s\\n' '{\"type\":\"agent_settled\"}'; printf '%s\\n' 'fixture stderr' >&2; done".to_owned(),
             ],
             cwd: None,
             env: BTreeMap::new(),
@@ -831,6 +842,17 @@ mod tests {
                 RuntimeEvent::RpcMessage { generation, message }
                     if *generation == first.generation
                         && message.get("type").and_then(Value::as_str) == Some("abort")
+            )
+        })
+        .await;
+        sink.wait_for(|event| {
+            matches!(
+                event,
+                RuntimeEvent::AssistantMessageEnd {
+                    generation,
+                    stop_reason: Some(stop_reason),
+                    ..
+                } if *generation == first.generation && stop_reason == "aborted"
             )
         })
         .await;

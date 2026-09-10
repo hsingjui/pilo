@@ -12,7 +12,8 @@
 		"lint": "oxlint . --react-plugin --jsx-a11y-plugin --deny-warnings",
 		"format": "oxfmt --write .",
 		"format:check": "oxfmt --check .",
-		"check": "pnpm format:check && pnpm lint"
+		"check": "pnpm format:check && pnpm lint",
+		"test:unit": "node --experimental-strip-types --test tests/chat-activity-state.test.ts"
 	},
 	"dependencies": {
 		"@fontsource/inter": "^5.3.0",

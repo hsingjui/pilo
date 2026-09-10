@@ -165,19 +165,24 @@ fn executable_candidate_names(
         return vec![OsString::from(program)];
     }
 
-    let mut names = vec![OsString::from(program)];
     let extensions = pathext
         .and_then(OsStr::to_str)
+        .filter(|extensions| !extensions.trim().is_empty())
         .unwrap_or(".COM;.EXE;.BAT;.CMD");
 
-    for extension in extensions
+    extensions
         .split(';')
+        .map(str::trim)
         .filter(|extension| !extension.is_empty())
-    {
-        names.push(OsString::from(format!("{program}{extension}")));
-    }
-
-    names
+        .map(|extension| {
+            let extension = if extension.starts_with('.') {
+                extension.to_owned()
+            } else {
+                format!(".{extension}")
+            };
+            OsString::from(format!("{program}{extension}"))
+        })
+        .collect()
 }
 
 fn is_executable_file(path: &Path) -> bool {
@@ -367,11 +372,46 @@ mod tests {
         let names = executable_candidate_names("pi", Some(OsStr::new(".EXE;.CMD")), true);
         assert_eq!(
             names,
-            vec![
-                OsString::from("pi"),
-                OsString::from("pi.EXE"),
-                OsString::from("pi.CMD")
-            ]
+            vec![OsString::from("pi.EXE"), OsString::from("pi.CMD")]
         );
+    }
+
+    #[test]
+    fn windows_probe_prefers_cmd_shim_over_extensionless_posix_shim() {
+        let directory = unique_temp_dir("windows-pnpm-shim");
+        let posix_shim = directory.join("pi");
+        let cmd_shim = directory.join("pi.CMD");
+        fs::write(&posix_shim, "#!/bin/sh\n").unwrap();
+        fs::write(&cmd_shim, "@echo off\r\n").unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for path in [&posix_shim, &cmd_shim] {
+                let mut permissions = fs::metadata(path).unwrap().permissions();
+                permissions.set_mode(0o755);
+                fs::set_permissions(path, permissions).unwrap();
+            }
+        }
+
+        let found =
+            find_executable_in_path(Some(directory.as_os_str()), Some(OsStr::new(".CMD")), true)
+                .unwrap();
+
+        assert_eq!(found, fs::canonicalize(&cmd_shim).unwrap());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn windows_cmd_shim_can_be_used_for_version_probe() {
+        let directory = unique_temp_dir("windows-version-probe");
+        let executable = directory.join("pi.cmd");
+        fs::write(&executable, "@echo off\r\necho 0.85.1\r\n").unwrap();
+
+        let version = detect_pi_version(&executable).await.unwrap();
+        assert_eq!(version, "0.85.1");
+
+        fs::remove_dir_all(directory).unwrap();
     }
 }
