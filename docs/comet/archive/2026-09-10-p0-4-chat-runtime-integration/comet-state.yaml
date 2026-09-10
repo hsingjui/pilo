@@ -1,0 +1,280 @@
+schema: comet.native.v4
+name: p0-4-chat-runtime-integration
+language: zh-CN
+phase: archive
+status: done
+state_version: 16
+brief: brief.md
+shape_confirmation_hash: da5c3c5389da4d1eeed8368a32e930bbe63f8f5b7f3ca857dda6bcad5125f69a
+spec_changes:
+  - capability: chat-runtime
+    operation: create
+    source: specs/chat-runtime/spec.md
+workspace:
+  isolation: current
+  change_branch: main
+  target_branch: main
+  finish: null
+loop:
+  stage: done
+  goal_cycle: 2
+  iteration: 1
+  attempt: 1
+  retry_epoch: 0
+  failed_iteration_count: 0
+  no_progress_count: 0
+  execution_failure_count: 0
+  previous_unresolved_ids: []
+  next_action: null
+acceptance:
+  - id: A1
+    source: brief.md
+    text: A1：在本地工作区打开 Chat，输入普通文本并发送后，Pilo 会通过 Local Connection 启动或复用真实 Pi RPC，并发送对应
+      `prompt`，而不是生成 mock 回复。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查结果，归档 P0.4 并继续下一项。"
+      truncated: false
+  - id: A2
+    source: brief.md
+    text: A2：当 Pi 返回 assistant 文本增量时，Chat 中同一条 assistant 消息持续追加文本，生成期间显示为
+      running/streaming，结束后转为完成状态。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查结果，归档 P0.4 并继续下一项。"
+      truncated: false
+  - id: A3
+    source: brief.md
+    text: A3：第一轮完成后再次发送第二条消息时复用同一 Pi 进程/会话并得到第二轮回复，不需要重新加载页面或重新启动 Pi。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查结果，归档 P0.4 并继续下一项。"
+      truncated: false
+  - id: A4
+    source: brief.md
+    text: A4：生成期间点击输入框的停止按钮会向当前 Pi 会话发送 `abort`，当前回复停止继续增长，并恢复到可再次输入和发送的状态。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查结果，归档 P0.4 并继续下一项。"
+      truncated: false
+  - id: A5
+    source: brief.md
+    text: A5：Pi 启动失败、RPC 发送失败或 runtime error 到达前端时，Chat 展示错误反馈且不会静默丢失已提交的用户消息。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查结果，归档 P0.4 并继续下一项。"
+      truncated: false
+  - id: A6
+    source: brief.md
+    text: A6：React Chat 层只消费 Pilo Runtime Event 的稳定语义字段；Pi 原始 AgentSession/RPC
+      事件的字段解析集中在后端适配边界。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查结果，归档 P0.4 并继续下一项。"
+      truncated: false
+  - id: A7
+    source: brief.md
+    text: A7：当前尚未映射的 Pi event 不会导致 Chat 崩溃或破坏后续已支持事件处理。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查结果，归档 P0.4 并继续下一项。"
+      truncated: false
+  - id: A8
+    source: brief.md
+    text: A8：前端 `pnpm check`、`pnpm build` 与 Rust `cargo fmt --all --check`、`cargo
+      check`、`cargo clippy --all-targets --all-features -- -D warnings`
+      通过；Windows `pnpm tauri dev` 作为目标环境人工验证项保留。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查结果，归档 P0.4 并继续下一项。"
+      truncated: false
+  - id: A9
+    source: brief.md
+    text: A9：一次回复完成后，助手消息中的工具调用列表自动收起：每个工具调用仅显示单行摘要（图标、工具名、关键参数预览），点击行可展开查看参数与输出；展开详情为单一轻量区块，不再渲染「参数」「输出」独立标题面板。
+    result: passed
+    reason:
+      text: "User confirmed degraded completion without independent semantic
+        verification: 用户明确接受当前自动检查结果，归档 P0.4 并继续下一项。"
+      truncated: false
+builder_handoff:
+  candidate_id: 61bbcf85-c9c2-4a07-bd59-a578f1893e23
+  identity_provider: skill-coordinated
+  builder_execution_ref: skill-coordinated:builder:db9c9f2f-1f5a-4373-9616-e8fb80082874
+  iteration: 1
+  summary:
+    text: P0.4 Chat Runtime Integration implementation is complete in the current
+      workspace. Local Pi launch/reuse, stable Pi event adaptation,
+      streaming/thinking/tool activity ordering, abort/error handling, Windows
+      .cmd shim preference, and compact tool activity UI are implemented and
+      automated checks pass.
+    truncated: false
+  addressed_acceptance_ids:
+    - A1
+    - A2
+    - A3
+    - A4
+    - A5
+    - A6
+    - A7
+    - A8
+    - A9
+  checks:
+    - name:
+        text: pnpm check
+        truncated: false
+      result: passed
+      note: null
+    - name:
+        text: pnpm build
+        truncated: false
+      result: passed
+      note: null
+    - name:
+        text: pnpm test:unit
+        truncated: false
+      result: passed
+      note:
+        text: 6 tests passed
+        truncated: false
+    - name:
+        text: cargo fmt --all --check
+        truncated: false
+      result: passed
+      note: null
+    - name:
+        text: cargo check
+        truncated: false
+      result: passed
+      note: null
+    - name:
+        text: cargo clippy --all-targets --all-features -- -D warnings
+        truncated: false
+      result: passed
+      note: null
+    - name:
+        text: cargo test
+        truncated: false
+      result: passed
+      note:
+        text: 30 tests passed
+        truncated: false
+  checks_truncated: false
+  known_limits:
+    - text: Windows pnpm tauri dev remains an explicit target-environment manual
+        verification item.
+      truncated: false
+  known_limits_truncated: false
+  review:
+    status: passed
+    summary:
+      text: Pre-handoff review found the implementation aligned with the P0.4
+        brief/spec and all repository-owned automated checks green.
+      truncated: false
+    reviewer_execution_ref: agentdock:p0-4-preflight-20260910
+  submitted_at: 2026-09-10T09:19:43.319Z
+blockers: []
+verification:
+  candidate_id: 61bbcf85-c9c2-4a07-bd59-a578f1893e23
+  identity_provider: skill-coordinated
+  verifier_execution_ref: skill-coordinated:verifier:197f9fe5-c399-4f75-817d-d86c292caa3b
+  iteration: 1
+  attempt: 1
+  assurance: user-confirmed-degraded
+  verdict: pass
+  checks: []
+  summary:
+    text: 用户明确接受当前自动检查结果，归档 P0.4 并继续下一项。
+    truncated: false
+  risks:
+    - text: No independent semantic Verifier execution was available; Runtime checks
+        alone do not cover acceptance semantics.
+      truncated: false
+  risks_truncated: false
+  completed_at: 2026-09-10T09:22:24.714Z
+history:
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: Independent read-only semantic verification passed A1-A8. Local Pi
+        prompt/reuse, thin backend event adaptation, streaming lifecycle, abort,
+        error visibility, unknown-event safety, generation/raw-event
+        compatibility, and all Runtime-owned automated checks are supported by
+        the supplied implementation and evidence.
+      truncated: false
+    completed_at: 2026-09-10T07:47:10.259Z
+  - goal_cycle: 1
+    iteration: 1
+    attempt: 1
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: Windows 实机发送消息暴露 Local Pi 探测缺陷：PATH 中 pnpm 同时存在无扩展名 POSIX shim 与
+        pi.cmd，当前候选优先选择了 pi，导致 Windows CreateProcess 报 os error 193。回到 Build 修复
+        Windows shim 选择/启动。
+      truncated: false
+    completed_at: 2026-09-10T07:48:28.651Z
+  - goal_cycle: 1
+    iteration: 2
+    attempt: 0
+    outcome: recovery
+    unresolved_ids: []
+    summary:
+      text: 用户在实机验证 Chat 时反馈：工具调用展示过于复杂——完成后仍默认展开大段参数/输出
+        JSON，每个调用挂着「参数」「输出」标题盒子。需要把工具调用展示改简洁，属于新的用户可见行为要求，进入需求修订。
+      truncated: false
+    completed_at: 2026-09-10T08:57:40.766Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 1
+    outcome: blocked
+    unresolved_ids:
+      - A1
+      - A2
+      - A3
+      - A4
+      - A5
+      - A6
+      - A7
+      - A8
+      - A9
+    summary:
+      text: No independent subagent execution capability is available in this
+        environment. Repository-owned automated checks were executed
+        successfully in the current workspace; Windows desktop verification
+        remains the explicit manual target-environment item.
+      truncated: false
+    completed_at: 2026-09-10T09:19:57.132Z
+  - goal_cycle: 2
+    iteration: 1
+    attempt: 1
+    outcome: pass
+    unresolved_ids: []
+    summary:
+      text: 用户明确接受当前自动检查结果，归档 P0.4 并继续下一项。
+      truncated: false
+    completed_at: 2026-09-10T09:22:24.714Z
+history_overflow:
+  dropped_entries: 0
+  first_dropped_at: null
+  last_dropped_at: null
+  outcome_counts:
+    pass: 0
+    fail: 0
+    blocked: 0
+    execution-error: 0
+    recovery: 0
+verification_result: pass
+verification_report: verification.md
+archived: true
+created_at: 2026-09-10T07:09:34.415Z
