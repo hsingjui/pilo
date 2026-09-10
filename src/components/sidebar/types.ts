@@ -27,6 +27,7 @@ export type AppSidebarProps = {
 	onCollapse?: () => void;
 	onArchiveSession?: (sessionId: string) => void;
 	onArchiveWorkspaceSessions?: (sessionIds: string[]) => void;
+	onRefreshWorkspaceSessions?: (workspaceId: string) => void;
 	selectedSessionId?: string | null;
 	onSelectSession?: (sessionId: string) => void;
 	onNewChat?: () => void;

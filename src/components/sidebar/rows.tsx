@@ -6,6 +6,7 @@ import {
 	Folder,
 	Monitor,
 	MoreHorizontal,
+	RefreshCw,
 	SlidersHorizontal,
 	SquarePen,
 } from "lucide-react";
@@ -179,6 +180,7 @@ export function WorkspaceRow({
 	onToggle,
 	onNewChat,
 	onArchiveSessions,
+	onRefreshSessions,
 	hasSessions,
 }: {
 	workspace: SidebarWorkspace;
@@ -187,6 +189,7 @@ export function WorkspaceRow({
 	onToggle: () => void;
 	onNewChat?: (workspaceId: string) => void;
 	onArchiveSessions?: () => void;
+	onRefreshSessions?: () => void;
 	hasSessions: boolean;
 }) {
 	const [menuOpen, setMenuOpen] = useState(false);
@@ -250,6 +253,10 @@ export function WorkspaceRow({
 								</button>
 							</DropdownMenuTrigger>
 							<DropdownMenuContent align="start">
+								<DropdownMenuItem onSelect={() => onRefreshSessions?.()}>
+									<RefreshCw className={menuItemIconClassName} />
+									刷新对话
+								</DropdownMenuItem>
 								<DropdownMenuItem
 									disabled={!hasSessions}
 									onSelect={() => onArchiveSessions?.()}

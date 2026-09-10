@@ -1,14 +1,12 @@
 use std::{
     collections::BTreeSet,
     env, fs,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    sync::{Mutex, MutexGuard},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::Deserialize;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::domain::{
     Connection, ConnectionKind, DiscoveredWorkspace, Workspace, WorkspaceMetadata,
@@ -17,90 +15,19 @@ use crate::domain::{
 use super::{
     local::probe_local_connection,
     ssh::{discover_ssh_session_headers, probe_ssh_connection},
+    storage,
     wsl::{discover_wsl_session_headers, probe_wsl_connection},
 };
 
-const WORKSPACES_FILE_NAME: &str = "workspaces.json";
 const MAX_DISCOVERED_WORKSPACES: usize = 200;
-static WORKSPACE_STORE_LOCK: Mutex<()> = Mutex::new(());
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
-
-fn workspace_file(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())?;
-    fs::create_dir_all(&dir).map_err(|error| {
-        format!(
-            "failed to create Pilo app data directory '{}': {error}",
-            dir.display()
-        )
-    })?;
-    Ok(dir.join(WORKSPACES_FILE_NAME))
-}
-
-fn lock_store() -> Result<MutexGuard<'static, ()>, String> {
-    WORKSPACE_STORE_LOCK
-        .lock()
-        .map_err(|_| "Workspace cache lock is poisoned".to_owned())
-}
-
-fn list_unlocked(app: &AppHandle) -> Result<Vec<Workspace>, String> {
-    let path = workspace_file(app)?;
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let value = fs::read_to_string(&path)
-        .map_err(|error| format!("failed to read '{}': {error}", path.display()))?;
-    let mut workspaces: Vec<Workspace> = serde_json::from_str(&value)
-        .map_err(|error| format!("failed to parse '{}': {error}", path.display()))?;
-    sort_recent(&mut workspaces);
-    Ok(workspaces)
-}
 
 pub fn list(app: &AppHandle) -> Result<Vec<Workspace>, String> {
-    let _guard = lock_store()?;
-    list_unlocked(app)
+    storage::list_workspaces(&storage::open(app)?)
 }
 
 pub fn get(app: &AppHandle, id: &str) -> Result<Workspace, String> {
-    let _guard = lock_store()?;
-    list_unlocked(app)?
-        .into_iter()
-        .find(|workspace| workspace.id == id)
+    storage::get_workspace(&storage::open(app)?, id)?
         .ok_or_else(|| format!("Workspace '{id}' was not found"))
-}
-
-fn save_unlocked(app: &AppHandle, workspaces: &[Workspace]) -> Result<(), String> {
-    let path = workspace_file(app)?;
-    let temp_path = path.with_extension("json.tmp");
-    let bytes = serde_json::to_vec_pretty(workspaces)
-        .map_err(|error| format!("failed to encode Workspace cache: {error}"))?;
-
-    let mut file = fs::File::create(&temp_path)
-        .map_err(|error| format!("failed to create '{}': {error}", temp_path.display()))?;
-    file.write_all(&bytes)
-        .map_err(|error| format!("failed to write '{}': {error}", temp_path.display()))?;
-    file.sync_all()
-        .map_err(|error| format!("failed to sync '{}': {error}", temp_path.display()))?;
-    if path.exists() {
-        fs::remove_file(&path)
-            .map_err(|error| format!("failed to replace '{}': {error}", path.display()))?;
-    }
-    fs::rename(&temp_path, &path).map_err(|error| {
-        format!(
-            "failed to move Workspace cache '{}' to '{}': {error}",
-            temp_path.display(),
-            path.display()
-        )
-    })
 }
 
 pub async fn add(
@@ -111,34 +38,21 @@ pub async fn add(
     let (connection, metadata) = inspect(connection, path).await?;
     let normalized_path = metadata.cwd.clone();
     let id = Workspace::stable_id(&connection.id, &normalized_path);
-    let _guard = lock_store()?;
-    let mut all = list_unlocked(app)?;
-    let now = now_ms();
-
-    if let Some(existing) = all.iter_mut().find(|workspace| workspace.id == id) {
-        existing.name = Workspace::name_from_path(&normalized_path);
-        existing.path = normalized_path;
-        existing.connection = connection;
-        existing.metadata = metadata;
-        existing.last_opened_at_ms = now;
-        let result = existing.clone();
-        sort_recent(&mut all);
-        save_unlocked(app, &all)?;
-        return Ok(result);
-    }
-
+    let db = storage::open(app)?;
+    let now = storage::now_ms();
+    let created_at_ms = storage::get_workspace(&db, &id)?
+        .map(|workspace| workspace.created_at_ms)
+        .unwrap_or(now);
     let workspace = Workspace {
         id,
         name: Workspace::name_from_path(&normalized_path),
         path: normalized_path,
         connection,
         metadata,
-        created_at_ms: now,
+        created_at_ms,
         last_opened_at_ms: now,
     };
-    all.push(workspace.clone());
-    sort_recent(&mut all);
-    save_unlocked(app, &all)?;
+    storage::upsert_workspace(&db, &workspace)?;
     Ok(workspace)
 }
 
@@ -146,49 +60,32 @@ pub async fn refresh(app: &AppHandle, id: &str) -> Result<Workspace, String> {
     let current = get(app, id)?;
     let (connection, metadata) = inspect(current.connection, current.path).await?;
     let normalized_path = metadata.cwd.clone();
-
-    let _guard = lock_store()?;
-    let mut all = list_unlocked(app)?;
-    let index = all
-        .iter()
-        .position(|workspace| workspace.id == id)
-        .ok_or_else(|| format!("Workspace '{id}' was not found"))?;
-
-    all[index].connection = connection;
-    all[index].path = normalized_path.clone();
-    all[index].name = Workspace::name_from_path(&normalized_path);
-    all[index].metadata = metadata;
-    let result = all[index].clone();
-    sort_recent(&mut all);
-    save_unlocked(app, &all)?;
-    Ok(result)
+    let workspace = Workspace {
+        id: current.id,
+        name: Workspace::name_from_path(&normalized_path),
+        path: normalized_path,
+        connection,
+        metadata,
+        created_at_ms: current.created_at_ms,
+        last_opened_at_ms: current.last_opened_at_ms,
+    };
+    storage::upsert_workspace(&storage::open(app)?, &workspace)?;
+    Ok(workspace)
 }
 
 pub fn touch(app: &AppHandle, id: &str) -> Result<Workspace, String> {
-    let _guard = lock_store()?;
-    let mut all = list_unlocked(app)?;
-    let workspace = all
-        .iter_mut()
-        .find(|workspace| workspace.id == id)
-        .ok_or_else(|| format!("Workspace '{id}' was not found"))?;
-    workspace.last_opened_at_ms = now_ms();
-    let result = workspace.clone();
-    sort_recent(&mut all);
-    save_unlocked(app, &all)?;
-    Ok(result)
+    let mut workspace = get(app, id)?;
+    workspace.last_opened_at_ms = storage::now_ms();
+    storage::upsert_workspace(&storage::open(app)?, &workspace)?;
+    Ok(workspace)
 }
 
 pub fn remove(app: &AppHandle, id: &str) -> Result<Vec<Workspace>, String> {
-    let _guard = lock_store()?;
-    let mut all = list_unlocked(app)?;
-    let previous_len = all.len();
-    all.retain(|workspace| workspace.id != id);
-    if all.len() == previous_len {
+    let db = storage::open(app)?;
+    if !storage::remove_workspace(&db, id)? {
         return Err(format!("Workspace '{id}' was not found"));
     }
-    sort_recent(&mut all);
-    save_unlocked(app, &all)?;
-    Ok(all)
+    storage::list_workspaces(&db)
 }
 
 pub async fn discover(
@@ -229,7 +126,7 @@ async fn inspect(
     connection: Connection,
     path: String,
 ) -> Result<(Connection, WorkspaceMetadata), String> {
-    let refreshed_at_ms = now_ms();
+    let refreshed_at_ms = storage::now_ms();
     match connection.kind {
         ConnectionKind::Local => {
             let probe = probe_local_connection(PathBuf::from(path))
@@ -275,15 +172,6 @@ async fn inspect(
             ))
         }
     }
-}
-
-fn sort_recent(workspaces: &mut [Workspace]) {
-    workspaces.sort_by(|left, right| {
-        right
-            .last_opened_at_ms
-            .cmp(&left.last_opened_at_ms)
-            .then_with(|| left.name.cmp(&right.name))
-    });
 }
 
 fn local_pi_agent_dir() -> Option<PathBuf> {

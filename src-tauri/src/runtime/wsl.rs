@@ -157,6 +157,51 @@ find "$sessions_dir" -type f -name '*.jsonl' -exec sed -n '1p' {} \; 2>/dev/null
     run_wsl_probe(&args).await
 }
 
+pub async fn scan_wsl_session_files(distro: String) -> Result<Vec<u8>, WslConnectionError> {
+    let distro = normalize_distro(&distro)?;
+    ensure_distro_exists(&distro).await?;
+    let script = r#"
+sessions_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions"
+[ -d "$sessions_dir" ] || exit 0
+find "$sessions_dir" -type f -name '*.jsonl' | while IFS= read -r file; do
+  size="$(stat -c %s "$file" 2>/dev/null || printf 0)"
+  mtime="$(date -d "$(stat -c %y "$file" 2>/dev/null)" +%s%N 2>/dev/null || printf 0)"
+  printf '\036%s\t%s\t%s\n' "$file" "$size" "$mtime"
+  sed -n '1p' "$file" 2>/dev/null || true
+done
+"#;
+    let args = vec![
+        "--distribution".to_owned(),
+        distro,
+        "--exec".to_owned(),
+        "/bin/sh".to_owned(),
+        "-c".to_owned(),
+        script.to_owned(),
+    ];
+    run_wsl_probe(&args).await
+}
+
+pub async fn read_wsl_session_file(
+    distro: String,
+    path: String,
+    offset: u64,
+) -> Result<Vec<u8>, WslConnectionError> {
+    let distro = normalize_distro(&distro)?;
+    ensure_distro_exists(&distro).await?;
+    let start = offset.saturating_add(1);
+    let args = vec![
+        "--distribution".to_owned(),
+        distro,
+        "--exec".to_owned(),
+        "tail".to_owned(),
+        "-c".to_owned(),
+        format!("+{start}"),
+        "--".to_owned(),
+        path,
+    ];
+    run_wsl_probe(&args).await
+}
+
 pub(crate) async fn prepare_wsl_launch(
     distro: String,
     workspace: String,

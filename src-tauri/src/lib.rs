@@ -4,9 +4,9 @@ mod runtime;
 use runtime::{
     commands::{
         local_probe_connection, local_start_pi, runtime_abort_pi, runtime_get_pi_state,
-        runtime_restart_pi, runtime_send_rpc, runtime_spawn_pi, runtime_stop_pi,
-        ssh_probe_connection, ssh_start_pi, workspace_add, workspace_discover, workspace_list,
-        workspace_refresh, workspace_remove, workspace_start_pi, workspace_touch,
+        runtime_restart_pi, runtime_send_rpc, runtime_spawn_pi, runtime_stop_pi, session_list,
+        session_reconcile, ssh_probe_connection, ssh_start_pi, workspace_add, workspace_discover,
+        workspace_list, workspace_refresh, workspace_remove, workspace_start_pi, workspace_touch,
         wsl_list_distributions, wsl_probe_connection, wsl_start_pi,
     },
     PiloRuntime,
@@ -53,6 +53,8 @@ pub fn run() {
             workspace_touch,
             workspace_remove,
             workspace_discover,
+            session_list,
+            session_reconcile,
             workspace_start_pi,
             runtime_get_pi_state,
             runtime_spawn_pi,

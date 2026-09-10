@@ -182,21 +182,21 @@ Pi RPC Process
 
 ## P0.8 Session Index
 
-- [ ] 引入本地 SQLite
-- [ ] `connections` 表
-- [ ] `workspaces` 表
-- [ ] `sessions` 派生索引表
-- [ ] Workspace 打开时先读 SQLite，立即展示缓存
-- [ ] 后台扫描 Pi Session JSONL metadata
-- [ ] 使用 `session_path + file_size + file_mtime_ns` 判断 stale
-- [ ] 新 Session 自动加入索引
-- [ ] 删除 Session 自动移除索引
-- [ ] changed Session 增量重新解析
-- [ ] 保存 `last_offset`，对 append-only JSONL 做增量解析
-- [ ] Workspace focus / reconnect 时 reconcile
-- [ ] 保留手动 Refresh Sessions
+- [x] 引入本地 SQLite
+- [x] `connections` 表
+- [x] `workspaces` 表
+- [x] `sessions` 派生索引表
+- [x] Workspace 打开时先读 SQLite，立即展示缓存
+- [x] 后台扫描 Pi Session JSONL metadata
+- [x] 使用 `session_path + file_size + file_mtime_ns` 判断 stale
+- [x] 新 Session 自动加入索引
+- [x] 删除 Session 自动移除索引
+- [x] changed Session 增量重新解析
+- [x] 保存 `last_offset`，对 append-only JSONL 做增量解析
+- [x] Workspace focus / reconnect 时 reconcile
+- [x] 保留手动 Refresh Sessions
 
-SQLite 只保存可重建 metadata，例如：
+Pilo 本地数据统一存入 SQLite；其中 `sessions` 是可从 Pi JSONL 重建的派生索引，例如：
 
 ```text
 connection_id
@@ -269,7 +269,7 @@ indexed_at
 - [ ] SSH Pi 可以完成完整聊天流程
 - [ ] CLI 新建/修改 Session 后 Pilo 能自动看到变化
 - [ ] 退出 Pilo 后 Pi JSONL 不受破坏
-- [ ] 删除 Pilo SQLite 后可完整重建 Session 列表
+- [ ] 清空 `sessions` 派生索引后可从 Pi JSONL 完整重建 Session 列表
 - [ ] Windows 端可连续稳定使用作为日常 Pi Client
 
 ---

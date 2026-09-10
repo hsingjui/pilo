@@ -41,6 +41,7 @@ export function AppSidebar({
 	onCollapse,
 	onArchiveSession,
 	onArchiveWorkspaceSessions,
+	onRefreshWorkspaceSessions,
 	selectedSessionId,
 	onSelectSession,
 	onNewChat,
@@ -212,6 +213,11 @@ export function AppSidebar({
 																				(session) => session.id,
 																			),
 																		)
+																: undefined
+														}
+														onRefreshSessions={
+															onRefreshWorkspaceSessions
+																? () => onRefreshWorkspaceSessions(workspace.id)
 																: undefined
 														}
 														hasSessions={workspaceSessions.length > 0}

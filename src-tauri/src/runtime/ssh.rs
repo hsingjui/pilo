@@ -122,6 +122,36 @@ find "$sessions_dir" -type f -name '*.jsonl' -exec sed -n '1p' {} \; 2>/dev/null
     Ok(output.stdout)
 }
 
+pub async fn scan_ssh_session_files(target: SshTarget) -> Result<Vec<u8>, SshConnectionError> {
+    let target = normalize_target(target)?;
+    let script = r#"
+sessions_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions"
+[ -d "$sessions_dir" ] || exit 0
+find "$sessions_dir" -type f -name '*.jsonl' | while IFS= read -r file; do
+  size="$(stat -c %s "$file" 2>/dev/null || printf 0)"
+  mtime="$(date -d "$(stat -c %y "$file" 2>/dev/null)" +%s%N 2>/dev/null || printf 0)"
+  printf '\036%s\t%s\t%s\n' "$file" "$size" "$mtime"
+  sed -n '1p' "$file" 2>/dev/null || true
+done
+"#;
+    let remote_command = wrap_posix_script(script);
+    let output = run_ssh_probe(&target, &remote_command, "SSH session metadata scan").await?;
+    Ok(output.stdout)
+}
+
+pub async fn read_ssh_session_file(
+    target: SshTarget,
+    path: String,
+    offset: u64,
+) -> Result<Vec<u8>, SshConnectionError> {
+    let target = normalize_target(target)?;
+    let start = offset.saturating_add(1);
+    let script = format!("tail -c +{start} -- {}", shell_quote(&path));
+    let remote_command = wrap_posix_script(&script);
+    let output = run_ssh_probe(&target, &remote_command, "SSH session read").await?;
+    Ok(output.stdout)
+}
+
 pub(crate) async fn prepare_ssh_launch(
     target: SshTarget,
     workspace: String,

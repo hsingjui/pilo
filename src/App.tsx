@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	Group,
 	Panel,
@@ -13,6 +13,12 @@ import { NewChatLanding } from "@/components/new-chat-landing";
 import { RightSidebar } from "@/components/right-sidebar";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import { CUSTOM_TITLEBAR, TitleBar } from "@/components/title-bar";
+import { listenRuntimeEvents } from "@/lib/pi-runtime";
+import {
+	listSessions,
+	reconcileSessions,
+	type SessionIndexEntry,
+} from "@/lib/sessions";
 import {
 	connectionLabel,
 	listWorkspaces,
@@ -23,8 +29,22 @@ import {
 } from "@/lib/workspaces";
 import { TooltipProvider } from "@/ui";
 
-const EMPTY_SESSIONS: SidebarSession[] = [];
 let draftSessionSequence = 0;
+
+function sessionDate(session: SessionIndexEntry) {
+	const value = session.lastMessageAt ?? session.updatedAt ?? session.createdAt;
+	const date = new Date(value);
+	return Number.isNaN(date.getTime()) ? new Date(session.indexedAtMs) : date;
+}
+
+function toSidebarSession(session: SessionIndexEntry): SidebarSession {
+	return {
+		id: session.piSessionId,
+		title: session.name ?? session.firstUserMessagePreview ?? "新对话",
+		workspaceId: session.workspaceId,
+		latestMessageAt: sessionDate(session),
+	};
+}
 
 function createDraftSessionId() {
 	draftSessionSequence += 1;
@@ -36,6 +56,9 @@ function App() {
 	const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
 	const [isResizing, setIsResizing] = useState(false);
 	const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+	const [indexedSessions, setIndexedSessions] = useState<SessionIndexEntry[]>(
+		[],
+	);
 	const [draftSessionPrompt, setDraftSessionPrompt] = useState<string | null>(
 		null,
 	);
@@ -90,6 +113,74 @@ function App() {
 	const activeWorkspace =
 		workspaces.find((workspace) => workspace.id === draftWorkspaceId) ??
 		firstWorkspace;
+	const activeWorkspaceId = activeWorkspace?.id ?? null;
+
+	const replaceWorkspaceSessions = useCallback(
+		(workspaceId: string, sessions: SessionIndexEntry[]) => {
+			setIndexedSessions((current) => [
+				...current.filter((session) => session.workspaceId !== workspaceId),
+				...sessions,
+			]);
+		},
+		[],
+	);
+
+	const refreshWorkspaceSessions = useCallback(
+		async (workspaceId: string) => {
+			const result = await reconcileSessions(workspaceId);
+			replaceWorkspaceSessions(workspaceId, result.sessions);
+		},
+		[replaceWorkspaceSessions],
+	);
+
+	useEffect(() => {
+		if (!activeWorkspaceId) return;
+		let disposed = false;
+		let unlistenRuntime: (() => void) | undefined;
+
+		const refresh = () => {
+			void refreshWorkspaceSessions(activeWorkspaceId).catch((error) =>
+				console.error("Failed to reconcile sessions", error),
+			);
+		};
+		const hydrateThenRefresh = async () => {
+			try {
+				const cached = await listSessions(activeWorkspaceId);
+				if (!disposed) replaceWorkspaceSessions(activeWorkspaceId, cached);
+			} catch (error) {
+				console.error("Failed to load cached sessions", error);
+			}
+			if (!disposed) refresh();
+		};
+
+		void hydrateThenRefresh();
+		window.addEventListener("focus", refresh);
+		void listenRuntimeEvents((event) => {
+			if (
+				event.type === "assistant_message_end" ||
+				(event.type === "process_state" && event.state === "running")
+			) {
+				refresh();
+			}
+		})
+			.then((unlisten) => {
+				if (disposed) unlisten();
+				else unlistenRuntime = unlisten;
+			})
+			.catch((error) =>
+				console.error("Failed to listen for runtime events", error),
+			);
+		return () => {
+			disposed = true;
+			window.removeEventListener("focus", refresh);
+			unlistenRuntime?.();
+		};
+	}, [activeWorkspaceId, refreshWorkspaceSessions, replaceWorkspaceSessions]);
+
+	const sidebarSessions = useMemo(
+		() => indexedSessions.map(toSidebarSession),
+		[indexedSessions],
+	);
 
 	const chatSession: ChatSession | null =
 		activeWorkspace && draftSessionPrompt !== null
@@ -122,9 +213,14 @@ function App() {
 					onCollapse={() => setLeftSidebarCollapsed(true)}
 					envs={envs}
 					workspaces={sidebarWorkspaces}
-					sessions={EMPTY_SESSIONS}
+					sessions={sidebarSessions}
 					onNewChat={() => startNewChat()}
 					onNewChatInWorkspace={(workspaceId) => startNewChat(workspaceId)}
+					onRefreshWorkspaceSessions={(workspaceId) => {
+						void refreshWorkspaceSessions(workspaceId).catch((error) =>
+							console.error("Failed to refresh sessions", error),
+						);
+					}}
 					footer={<SidebarFooter />}
 				/>
 				<main className="relative flex min-w-0 flex-1 flex-col">

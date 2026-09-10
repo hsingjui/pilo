@@ -5,8 +5,9 @@ use serde_json::Value;
 use tauri::{AppHandle, State};
 
 use crate::domain::{
-    Connection, DiscoveredWorkspace, LocalConnection, LocalEnvironmentInfo, SshConnection,
-    SshEnvironmentInfo, SshTarget, Workspace, WslConnection, WslDistribution, WslEnvironmentInfo,
+    Connection, DiscoveredWorkspace, LocalConnection, LocalEnvironmentInfo, SessionIndexEntry,
+    SessionReconcileResult, SshConnection, SshEnvironmentInfo, SshTarget, Workspace, WslConnection,
+    WslDistribution, WslEnvironmentInfo,
 };
 
 use super::{
@@ -16,6 +17,7 @@ use super::{
     },
     pi_session::PiSessionSnapshot,
     process::ProcessSpec,
+    session_index,
     ssh::{prepare_ssh_launch, probe_ssh_connection, SshConnectionError, SshConnectionProbe},
     workspace,
     wsl::{
@@ -208,6 +210,23 @@ pub async fn workspace_discover(
     connection: Connection,
 ) -> Result<Vec<DiscoveredWorkspace>, String> {
     workspace::discover(&app, connection).await
+}
+
+#[tauri::command]
+pub fn session_list(
+    app: AppHandle,
+    workspace_id: String,
+) -> Result<Vec<SessionIndexEntry>, String> {
+    session_index::list_cached(&app, &workspace_id)
+}
+
+#[tauri::command]
+pub async fn session_reconcile(
+    app: AppHandle,
+    workspace_id: String,
+) -> Result<SessionReconcileResult, String> {
+    let workspace = workspace::get(&app, &workspace_id)?;
+    session_index::reconcile(&app, &workspace).await
 }
 
 #[tauri::command]

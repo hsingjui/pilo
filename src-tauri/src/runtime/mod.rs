@@ -5,7 +5,9 @@ mod pi_events;
 mod pi_session;
 mod process;
 mod rpc;
+mod session_index;
 mod ssh;
+mod storage;
 pub mod workspace;
 mod wsl;
 
