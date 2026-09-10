@@ -1,29 +1,9 @@
+import { useEffect, useState } from "react";
 import { Clock, HelpCircle, Monitor, Moon, Settings, Sun } from "lucide-react";
+
+import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { nextCycledTheme, useTheme, type Theme } from "@/lib/theme-provider";
-import {
-	Button,
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-	Checkbox,
-	Dialog,
-	DialogContent,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-	Input,
-	Label,
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-	Switch,
-	Tooltip,
-	TooltipContent,
-	TooltipTrigger,
-} from "@/ui";
+import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
 
 const THEME_LABELS: Record<Theme, string> = {
 	light: "亮色",
@@ -57,78 +37,35 @@ function ThemeCycleButton() {
 	);
 }
 
-function SettingsDialog() {
-	const { theme, setTheme } = useTheme();
+export function SidebarFooter() {
+	const [settingsOpen, setSettingsOpen] = useState(false);
+
+	useEffect(() => {
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (!(event.ctrlKey || event.metaKey) || event.key !== ",") return;
+			event.preventDefault();
+			setSettingsOpen(true);
+		};
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, []);
+
 	return (
-		<Dialog>
+		<>
 			<Tooltip>
 				<TooltipTrigger asChild>
-					<span>
-						<DialogTrigger asChild>
-							<Button variant="ghost" size="icon" aria-label="设置">
-								<Settings />
-							</Button>
-						</DialogTrigger>
-					</span>
+					<Button
+						variant="ghost"
+						size="icon"
+						aria-label="设置"
+						onClick={() => setSettingsOpen(true)}
+					>
+						<Settings />
+					</Button>
 				</TooltipTrigger>
 				<TooltipContent>设置</TooltipContent>
 			</Tooltip>
-			<DialogContent>
-				<DialogHeader>
-					<DialogTitle>设置</DialogTitle>
-				</DialogHeader>
-				<Card>
-					<CardHeader>
-						<CardTitle className="text-base">外观</CardTitle>
-					</CardHeader>
-					<CardContent className="flex items-center justify-between gap-4">
-						<Label htmlFor="theme-select">主题</Label>
-						<Select value={theme} onValueChange={(v) => setTheme(v as Theme)}>
-							<SelectTrigger id="theme-select" className="w-40">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{(Object.keys(THEME_LABELS) as Theme[]).map((t) => (
-									<SelectItem key={t} value={t}>
-										{THEME_LABELS[t]}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardHeader>
-						<CardTitle className="text-base">通用</CardTitle>
-					</CardHeader>
-					<CardContent className="grid gap-4">
-						<div className="flex items-center justify-between gap-4">
-							<Label htmlFor="display-name">昵称</Label>
-							<Input
-								id="display-name"
-								placeholder="Pilo 用户"
-								className="w-40"
-							/>
-						</div>
-						<div className="flex items-center justify-between gap-4">
-							<Label htmlFor="notifications">启用通知</Label>
-							<Switch id="notifications" />
-						</div>
-						<div className="flex items-center justify-between gap-4">
-							<Label htmlFor="auto-update">自动检查更新</Label>
-							<Checkbox id="auto-update" defaultChecked />
-						</div>
-					</CardContent>
-				</Card>
-			</DialogContent>
-		</Dialog>
-	);
-}
-
-export function SidebarFooter() {
-	return (
-		<>
-			<SettingsDialog />
+			<SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 			<Tooltip>
 				<TooltipTrigger asChild>
 					<Button variant="ghost" size="icon" aria-label="帮助">

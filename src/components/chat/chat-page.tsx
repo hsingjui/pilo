@@ -25,7 +25,9 @@ import {
 	type AssistantContentItem,
 } from "@/lib/chat-activity-state";
 import { getReplyRunwayHeight } from "@/lib/chat-scroll-state";
+import { notifyReplyCompleted } from "@/lib/desktop-notifications";
 import { formatWorkDuration } from "@/lib/format-duration";
+import { usePreferences } from "@/lib/preferences-provider";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import {
@@ -379,6 +381,8 @@ function UserMessage({
 }: {
 	message: Extract<ChatMessage, { role: "user" }>;
 }) {
+	const { conversationFontSize } = usePreferences();
+
 	return (
 		<ConversationColumn className="py-3 sm:py-4">
 			<div className="flex w-full justify-end">
@@ -393,7 +397,10 @@ function UserMessage({
 						>
 							<Copy className="size-3.5" />
 						</MessageAction>
-						<div className="min-w-0 max-w-full rounded-[1.15rem] border border-foreground/[0.08] bg-foreground/[0.05] px-3.5 py-2 text-sm leading-6 text-foreground sm:rounded-2xl sm:px-4 sm:py-2.5">
+						<div
+							className="min-w-0 max-w-full rounded-[1.15rem] border border-foreground/[0.08] bg-foreground/[0.05] px-3.5 py-2 leading-6 text-foreground sm:rounded-2xl sm:px-4 sm:py-2.5"
+							style={{ fontSize: `${conversationFontSize}px` }}
+						>
 							<p className="whitespace-pre-wrap [overflow-wrap:anywhere]">
 								{message.text}
 							</p>
@@ -429,6 +436,7 @@ function AssistantMessage({
 	message: Extract<ChatMessage, { role: "assistant" }>;
 	replyRunwayPx?: number;
 }) {
+	const { conversationFontSize, showWorkDuration } = usePreferences();
 	const content = getAssistantMessageContent(message);
 	const activity = getAssistantActivities(content);
 	const streamingLabel = getAssistantStreamingLabel({
@@ -438,7 +446,7 @@ function AssistantMessage({
 	});
 	const hasWorkActivity = activity.length > 0;
 	const footerDuration =
-		!hasWorkActivity && message.workDurationMs !== undefined
+		showWorkDuration && !hasWorkActivity && message.workDurationMs !== undefined
 			? formatWorkDuration(message.workDurationMs)
 			: "";
 	const contentNodes: ReactNode[] = [];
@@ -486,8 +494,11 @@ function AssistantMessage({
 				className="w-full text-foreground"
 				style={
 					replyRunwayPx === undefined
-						? undefined
-						: { minHeight: `${replyRunwayPx}px` }
+						? { fontSize: `${conversationFontSize}px` }
+						: {
+								fontSize: `${conversationFontSize}px`,
+								minHeight: `${replyRunwayPx}px`,
+							}
 				}
 			>
 				<div className="relative">
@@ -632,6 +643,7 @@ function formatTime() {
 
 type ActiveTurn = {
 	sessionId: string;
+	sessionTitle: string;
 	generation: number | null;
 	assistantMessageId: string;
 	startedAtMs: number;
@@ -682,6 +694,7 @@ export function ChatPage({
 	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
 }) {
+	const { desktopNotifications } = usePreferences();
 	const baseMessages = useMemo<ChatMessage[]>(() => {
 		if (initialMessage) {
 			return [
@@ -1116,8 +1129,16 @@ export function ChatPage({
 				};
 				return { ...current, [turn.sessionId]: nextMessages };
 			});
+			if (
+				desktopNotifications &&
+				stopReason !== "aborted" &&
+				stopReason !== "error" &&
+				!visibleError
+			) {
+				notifyReplyCompleted(turn.sessionTitle);
+			}
 		},
-		[],
+		[desktopNotifications],
 	);
 
 	const releaseActiveTurn = useCallback((turn: ActiveTurn) => {
@@ -1269,6 +1290,7 @@ export function ChatPage({
 
 			const turn: ActiveTurn = {
 				sessionId: session.id,
+				sessionTitle: session.title,
 				generation: null,
 				assistantMessageId: createLocalMessageId("assistant"),
 				startedAtMs: Date.now(),
@@ -1308,6 +1330,7 @@ export function ChatPage({
 			failActiveTurn,
 			scrollToBottom,
 			session.id,
+			session.title,
 			session.workspacePath,
 			startAssistantMessage,
 		],

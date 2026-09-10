@@ -14,6 +14,7 @@ import {
 
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import { formatWorkDuration } from "@/lib/format-duration";
+import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
 
 export type ChatActivityStatus = "complete" | "running";
@@ -312,7 +313,8 @@ export function AssistantActivityView({
 	streaming: boolean;
 	durationMs?: number;
 }) {
-	const [open, setOpen] = useState(streaming);
+	const { collapseCompletedActivity, showWorkDuration } = usePreferences();
+	const [open, setOpen] = useState(streaming || !collapseCompletedActivity);
 	const running = activity.some((item) => item.status === "running");
 	if (activity.length === 0) return null;
 
@@ -335,7 +337,11 @@ export function AssistantActivityView({
 					)}
 				/>
 				<span className="min-w-0 flex-1 truncate">
-					{activityLabel(activity, running, durationMs)}
+					{activityLabel(
+						activity,
+						running,
+						showWorkDuration ? durationMs : undefined,
+					)}
 				</span>
 				{running ? (
 					<LoaderCircle className="size-3.5 shrink-0 animate-spin" />

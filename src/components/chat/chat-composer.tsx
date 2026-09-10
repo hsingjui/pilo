@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { isImeComposingKeyboardEvent } from "@/lib/ime";
+import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
 import {
 	Button,
@@ -185,6 +186,7 @@ export function ChatComposer({
 	suggestions = DEFAULT_SUGGESTIONS,
 	className,
 }: ChatComposerProps) {
+	const { sendMessageShortcut } = usePreferences();
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
@@ -289,14 +291,16 @@ export function ChatComposer({
 			}
 		}
 
-		if (
+		const shouldSubmitWithEnter =
 			event.key === "Enter" &&
 			!event.shiftKey &&
 			!event.altKey &&
-			!event.ctrlKey &&
-			!event.metaKey &&
-			!isImeComposingKeyboardEvent(event)
-		) {
+			!isImeComposingKeyboardEvent(event) &&
+			(sendMessageShortcut === "enter"
+				? !event.ctrlKey && !event.metaKey
+				: event.ctrlKey || event.metaKey);
+
+		if (shouldSubmitWithEnter) {
 			event.preventDefault();
 			submit();
 		}
@@ -523,7 +527,10 @@ export function ChatComposer({
 										<ArrowUp className="size-3.5" />
 									</Button>
 								</TooltipTrigger>
-								<TooltipContent>发送 · Enter</TooltipContent>
+								<TooltipContent>
+									发送 ·{" "}
+									{sendMessageShortcut === "enter" ? "Enter" : "Ctrl/⌘ Enter"}
+								</TooltipContent>
 							</Tooltip>
 						)}
 					</div>
