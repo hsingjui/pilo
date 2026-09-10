@@ -67,6 +67,7 @@ Comet change: `docs/comet/changes/frontend-style-foundation/`
 
 ## P0.1 UI Foundation
 
+- [x] 拆分巨型组件文件：`app-sidebar.tsx` (857 行) → `src/components/sidebar/`，`App.tsx` (583 行) → `title-bar` / `sidebar-footer` / `new-chat-landing` / `right-sidebar`
 - [ ] 完成 Frontend Style Foundation
 - [ ] 建立应用主布局
 - [ ] 建立 Sidebar / Workspace / Session 基础组件
@@ -76,15 +77,19 @@ Comet change: `docs/comet/changes/frontend-style-foundation/`
 
 ## P0.2 Runtime Foundation
 
-- [ ] 建立 Tauri Command / Event 边界
-- [ ] 建立 `Connection` domain model
-- [ ] 建立可复用的 process execution abstraction
-- [ ] 建立 Pi process lifecycle manager
-- [ ] 建立 Pi RPC JSONL codec
-- [ ] 严格按 LF (`\n`) 拆分 RPC JSONL
-- [ ] stdout 仅处理 RPC，stderr 单独作为运行日志
-- [ ] 使用 generation id 忽略旧 Pi process 的 stale events
-- [ ] 支持 Pi process spawn / stop / restart / abort
+- [x] 建立 Tauri Command / Event 边界
+- [x] 建立 `Connection` domain model
+- [x] 建立可复用的 process execution abstraction
+- [x] 建立 Pi process lifecycle manager
+- [x] 建立 Pi RPC JSONL codec
+- [x] 严格按 LF (`\n`) 拆分 RPC JSONL
+- [x] stdout 仅处理 RPC，stderr 单独作为运行日志
+- [x] 使用 generation id 忽略旧 Pi process 的 stale events
+- [x] 支持 Pi process spawn / stop / restart / abort
+
+实现约束：
+
+- P0.3–P0.5 的 Local / WSL / SSH launcher 必须保留 Pi 正常的 user/global/project extensions 加载语义，生产启动参数不得使用 `--no-extensions`。
 
 目标架构：
 
