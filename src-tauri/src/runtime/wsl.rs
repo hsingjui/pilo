@@ -390,6 +390,7 @@ fn wsl_process_spec(distro: &str, cwd: &str, path: &str, pi_executable: &str) ->
         ],
         cwd: None,
         env: Default::default(),
+        stdout_ready_marker: None,
     }
 }
 

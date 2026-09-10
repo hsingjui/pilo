@@ -19,10 +19,20 @@ export type RuntimeErrorCode =
 	| "process_exit"
 	| "process_wait";
 
+export type SshTarget =
+	| { type: "config_host"; host: string }
+	| {
+			type: "direct";
+			hostname: string;
+			port: number | null;
+			user: string | null;
+			identityFile: string | null;
+	  };
+
 export type ConnectionKind =
 	| { type: "local" }
 	| { type: "wsl"; distro: string }
-	| { type: "ssh"; host: string };
+	| { type: "ssh"; target: SshTarget };
 
 export type Connection = {
 	id: string;
@@ -250,4 +260,61 @@ export function runtimeErrorMessage(error: unknown): string {
 		if (typeof message === "string" && message.trim()) return message;
 	}
 	return "Pi Runtime 请求失败";
+}
+
+export type SshEnvironmentInfo = {
+	cwd: string;
+	gitBranch: string | null;
+	piExecutable: string;
+	piVersion: string;
+	nodeExecutable: string;
+	nodeVersion: string;
+	gitExecutable: string;
+	gitVersion: string;
+};
+
+export type SshConnectionProbe = {
+	connection: {
+		id: string;
+		name: string;
+		target: SshTarget;
+	};
+	environment: SshEnvironmentInfo;
+};
+
+export type SshStartPiResponse = {
+	connection: SshConnectionProbe["connection"];
+	environment: SshEnvironmentInfo;
+	session: PiSessionSnapshot;
+};
+
+export function probeSshConnection(
+	target: SshTarget,
+	workspace: string,
+): Promise<SshConnectionProbe> {
+	return invoke<SshConnectionProbe>("ssh_probe_connection", {
+		target,
+		workspace,
+	});
+}
+
+export async function ensureSshPi(
+	target: SshTarget,
+	workspace: string,
+): Promise<PiSessionSnapshot> {
+	const current = await invoke<PiSessionSnapshot>("runtime_get_pi_state");
+	if (current.state === "running") {
+		if (current.connection?.kind.type !== "ssh") {
+			throw new Error(
+				`Pi Runtime 当前连接到 ${current.connection?.name ?? "其他环境"}，无法复用为 SSH 会话。`,
+			);
+		}
+		return current;
+	}
+
+	const started = await invoke<SshStartPiResponse>("ssh_start_pi", {
+		target,
+		workspace,
+	});
+	return started.session;
 }

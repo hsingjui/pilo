@@ -5,6 +5,7 @@ mod pi_events;
 mod pi_session;
 mod process;
 mod rpc;
+mod ssh;
 mod wsl;
 
 use tokio::sync::Mutex;

@@ -286,6 +286,7 @@ fn local_process_spec(pi_executable: &Path, cwd: &Path) -> ProcessSpec {
         args: vec!["--mode".to_owned(), "rpc".to_owned()],
         cwd: Some(cwd.to_path_buf()),
         env: Default::default(),
+        stdout_ready_marker: None,
     }
 }
 

@@ -148,14 +148,14 @@ pi --mode rpc
 
 ## P0.6 SSH Connection
 
-- [ ] SSH Connection 数据模型
-- [ ] 使用系统 OpenSSH `ssh`
-- [ ] 兼容 `~/.ssh/config` host alias
-- [ ] 兼容 SSH Agent / IdentityFile / ProxyJump / known_hosts
-- [ ] Pi RPC 使用 non-interactive、no-PTY 模式
-- [ ] 防止 banner / MOTD / shell stdout 污染 RPC JSONL
-- [ ] SSH 断线状态与重连
-- [ ] 基础连接测试和环境诊断
+- [x] SSH Connection 数据模型
+- [x] 使用系统 OpenSSH `ssh`
+- [x] 兼容 `~/.ssh/config` host alias
+- [x] 兼容 SSH Agent / IdentityFile / ProxyJump / known_hosts
+- [x] Pi RPC 使用 non-interactive、no-PTY 模式
+- [x] 防止 banner / MOTD / shell stdout 污染 RPC JSONL
+- [x] SSH 断线状态与重连
+- [x] 基础连接测试和环境诊断
 
 ## P0.7 Workspace
 

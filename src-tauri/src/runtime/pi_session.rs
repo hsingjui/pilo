@@ -190,6 +190,7 @@ impl PiSession {
             process: process_spec,
         };
         let process_result = ManagedProcess::spawn(&launch.process);
+        let stdout_ready_marker = launch.process.stdout_ready_marker.clone();
         self.launch = Some(launch);
         let process = match process_result {
             Ok(process) => process,
@@ -223,6 +224,7 @@ impl PiSession {
             generation,
             Arc::clone(&self.generations),
             sink.clone(),
+            stdout_ready_marker,
         ));
         let stderr_task = tokio::spawn(read_stderr(
             stderr,
@@ -496,12 +498,86 @@ async fn await_reader(task: &mut Option<JoinHandle<()>>) {
     }
 }
 
+const MAX_STDOUT_READY_PREAMBLE_BYTES: usize = 256 * 1024;
+
+#[derive(Debug)]
+struct StdoutReadyGate {
+    marker: Option<Vec<u8>>,
+    buffered: Vec<u8>,
+    ready: bool,
+}
+
+impl StdoutReadyGate {
+    fn new(marker: Option<String>) -> Self {
+        let ready = marker.is_none();
+        Self {
+            marker: marker.map(String::into_bytes),
+            buffered: Vec::new(),
+            ready,
+        }
+    }
+
+    fn push(&mut self, chunk: &[u8]) -> Result<Option<Vec<u8>>, String> {
+        if self.ready {
+            return Ok(Some(chunk.to_vec()));
+        }
+
+        self.buffered.extend_from_slice(chunk);
+        if self.buffered.len() > MAX_STDOUT_READY_PREAMBLE_BYTES {
+            return Err(format!(
+                "Pi RPC stdout ready marker was not found within {MAX_STDOUT_READY_PREAMBLE_BYTES} bytes"
+            ));
+        }
+
+        let marker = self
+            .marker
+            .as_deref()
+            .expect("unready gate requires marker");
+        let Some(index) = find_subslice(&self.buffered, marker) else {
+            return Ok(None);
+        };
+        let after_marker = index + marker.len();
+        let payload_start = if self.buffered.get(after_marker) == Some(&b'\n') {
+            after_marker + 1
+        } else if self.buffered.get(after_marker..after_marker + 2) == Some(b"\r\n") {
+            after_marker + 2
+        } else {
+            return Ok(None);
+        };
+
+        self.ready = true;
+        self.marker = None;
+        let payload = self.buffered[payload_start..].to_vec();
+        self.buffered.clear();
+        Ok(Some(payload))
+    }
+
+    fn finish(&self) -> Result<(), String> {
+        if self.ready {
+            Ok(())
+        } else {
+            Err("Pi RPC stdout ended before the transport ready marker was received".to_owned())
+        }
+    }
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
 async fn read_stdout<S: RuntimeEventSink>(
     mut stdout: ChildStdout,
     generation: u64,
     generations: Arc<GenerationClock>,
     sink: S,
+    stdout_ready_marker: Option<String>,
 ) {
+    let mut gate = StdoutReadyGate::new(stdout_ready_marker);
     let mut codec = JsonlCodec::new();
     let mut adapter = PiEventAdapter::default();
     let mut buffer = [0_u8; 8192];
@@ -509,13 +585,42 @@ async fn read_stdout<S: RuntimeEventSink>(
     loop {
         match stdout.read(&mut buffer).await {
             Ok(0) => {
-                if let Err(error) = codec.finish() {
+                if let Err(message) = gate.finish() {
+                    send_if_current(
+                        &generations,
+                        &sink,
+                        generation,
+                        RuntimeEvent::RuntimeError {
+                            generation,
+                            code: RuntimeErrorCode::RpcFraming,
+                            message,
+                        },
+                    );
+                } else if let Err(error) = codec.finish() {
                     send_codec_error(&generations, &sink, generation, error);
                 }
                 break;
             }
             Ok(read) => {
-                for frame in codec.push(&buffer[..read]) {
+                let payload = match gate.push(&buffer[..read]) {
+                    Ok(Some(payload)) => payload,
+                    Ok(None) => continue,
+                    Err(message) => {
+                        send_if_current(
+                            &generations,
+                            &sink,
+                            generation,
+                            RuntimeEvent::RuntimeError {
+                                generation,
+                                code: RuntimeErrorCode::RpcFraming,
+                                message,
+                            },
+                        );
+                        break;
+                    }
+                };
+
+                for frame in codec.push(&payload) {
                     match frame {
                         Ok(message) => {
                             send_if_current(
@@ -774,6 +879,7 @@ mod tests {
             ],
             cwd: None,
             env: BTreeMap::new(),
+            stdout_ready_marker: None,
         };
 
         let generation = session
@@ -826,6 +932,7 @@ mod tests {
             ],
             cwd: None,
             env: BTreeMap::new(),
+            stdout_ready_marker: None,
         };
 
         let first = session

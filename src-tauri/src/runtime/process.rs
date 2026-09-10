@@ -12,6 +12,8 @@ pub struct ProcessSpec {
     pub cwd: Option<PathBuf>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stdout_ready_marker: Option<String>,
 }
 
 pub struct ManagedProcess {
@@ -77,6 +79,7 @@ mod tests {
             args: vec!["--mode".to_owned(), "rpc".to_owned()],
             cwd: Some(PathBuf::from("/workspace")),
             env: BTreeMap::from([("PI_OFFLINE".to_owned(), "1".to_owned())]),
+            stdout_ready_marker: Some("ready".to_owned()),
         };
 
         let encoded = serde_json::to_value(&spec).unwrap();

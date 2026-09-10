@@ -15,7 +15,7 @@ pub struct Connection {
 pub enum ConnectionKind {
     Local,
     Wsl { distro: String },
-    Ssh { host: String },
+    Ssh { target: SshTarget },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,7 +82,89 @@ impl From<WslConnection> for Connection {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SshConnection {
+    pub id: String,
+    pub name: String,
+    pub target: SshTarget,
+}
+
+impl SshConnection {
+    pub fn from_target(target: SshTarget) -> Self {
+        let (id, name) = match &target {
+            SshTarget::ConfigHost { host } => {
+                (format!("ssh:config:{host}"), format!("SSH · {host}"))
+            }
+            SshTarget::Direct {
+                hostname,
+                port,
+                user,
+                ..
+            } => {
+                let destination = match user.as_deref() {
+                    Some(user) => format!("{user}@{hostname}"),
+                    None => hostname.clone(),
+                };
+                let endpoint = match port {
+                    Some(port) => format!("{destination}:{port}"),
+                    None => destination,
+                };
+                (
+                    format!("ssh:direct:{endpoint}"),
+                    format!("SSH · {endpoint}"),
+                )
+            }
+        };
+
+        Self { id, name, target }
+    }
+}
+
+impl From<SshConnection> for Connection {
+    fn from(connection: SshConnection) -> Self {
+        Self {
+            id: connection.id,
+            name: connection.name,
+            kind: ConnectionKind::Ssh {
+                target: connection.target,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum SshTarget {
+    ConfigHost {
+        host: String,
+    },
+    Direct {
+        hostname: String,
+        port: Option<u16>,
+        user: Option<String>,
+        identity_file: Option<String>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WslEnvironmentInfo {
+    pub cwd: String,
+    pub git_branch: Option<String>,
+    pub pi_executable: String,
+    pub pi_version: String,
+    pub node_executable: String,
+    pub node_version: String,
+    pub git_executable: String,
+    pub git_version: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshEnvironmentInfo {
     pub cwd: String,
     pub git_branch: Option<String>,
     pub pi_executable: String,
@@ -121,9 +203,14 @@ mod tests {
             ),
             (
                 ConnectionKind::Ssh {
-                    host: "devbox".to_owned(),
+                    target: SshTarget::ConfigHost {
+                        host: "devbox".to_owned(),
+                    },
                 },
-                serde_json::json!({ "type": "ssh", "host": "devbox" }),
+                serde_json::json!({
+                    "type": "ssh",
+                    "target": { "type": "config_host", "host": "devbox" }
+                }),
             ),
         ];
 
@@ -159,6 +246,58 @@ mod tests {
                 "id": "wsl:Debian",
                 "name": "WSL · Debian",
                 "kind": { "type": "wsl", "distro": "Debian" }
+            })
+        );
+    }
+
+    #[test]
+    fn ssh_config_host_connection_maps_to_generic_connection() {
+        let connection = Connection::from(SshConnection::from_target(SshTarget::ConfigHost {
+            host: "devbox".to_owned(),
+        }));
+
+        assert_eq!(connection.id, "ssh:config:devbox");
+        assert_eq!(connection.name, "SSH · devbox");
+        assert_eq!(
+            connection.kind,
+            ConnectionKind::Ssh {
+                target: SshTarget::ConfigHost {
+                    host: "devbox".to_owned()
+                }
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(&connection).unwrap(),
+            serde_json::json!({
+                "id": "ssh:config:devbox",
+                "name": "SSH · devbox",
+                "kind": {
+                    "type": "ssh",
+                    "target": { "type": "config_host", "host": "devbox" }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn ssh_direct_connection_keeps_explicit_options() {
+        let connection = SshConnection::from_target(SshTarget::Direct {
+            hostname: "192.0.2.10".to_owned(),
+            port: Some(2222),
+            user: Some("deploy".to_owned()),
+            identity_file: Some("~/.ssh/deploy".to_owned()),
+        });
+
+        assert_eq!(connection.id, "ssh:direct:deploy@192.0.2.10:2222");
+        assert_eq!(connection.name, "SSH · deploy@192.0.2.10:2222");
+        assert_eq!(
+            serde_json::to_value(connection.target).unwrap(),
+            serde_json::json!({
+                "type": "direct",
+                "hostname": "192.0.2.10",
+                "port": 2222,
+                "user": "deploy",
+                "identityFile": "~/.ssh/deploy"
             })
         );
     }

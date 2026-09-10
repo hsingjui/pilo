@@ -5,8 +5,8 @@ use serde_json::Value;
 use tauri::{AppHandle, State};
 
 use crate::domain::{
-    Connection, LocalConnection, LocalEnvironmentInfo, WslConnection, WslDistribution,
-    WslEnvironmentInfo,
+    Connection, LocalConnection, LocalEnvironmentInfo, SshConnection, SshEnvironmentInfo,
+    SshTarget, WslConnection, WslDistribution, WslEnvironmentInfo,
 };
 
 use super::{
@@ -16,6 +16,7 @@ use super::{
     },
     pi_session::PiSessionSnapshot,
     process::ProcessSpec,
+    ssh::{prepare_ssh_launch, probe_ssh_connection, SshConnectionError, SshConnectionProbe},
     wsl::{
         list_wsl_distributions, prepare_wsl_launch, probe_wsl_connection, WslConnectionError,
         WslConnectionProbe,
@@ -43,6 +44,14 @@ pub struct LocalStartPiResponse {
 pub struct WslStartPiResponse {
     pub connection: WslConnection,
     pub environment: WslEnvironmentInfo,
+    pub session: PiSessionSnapshot,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshStartPiResponse {
+    pub connection: SshConnection,
+    pub environment: SshEnvironmentInfo,
     pub session: PiSessionSnapshot,
 }
 
@@ -117,6 +126,43 @@ pub async fn wsl_start_pi(
         .map_err(WslConnectionError::pi_spawn)?;
 
     Ok(WslStartPiResponse {
+        connection,
+        environment,
+        session,
+    })
+}
+
+#[tauri::command]
+pub async fn ssh_probe_connection(
+    target: SshTarget,
+    workspace: String,
+) -> Result<SshConnectionProbe, SshConnectionError> {
+    probe_ssh_connection(target, workspace).await
+}
+
+#[tauri::command]
+pub async fn ssh_start_pi(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    target: SshTarget,
+    workspace: String,
+) -> Result<SshStartPiResponse, SshConnectionError> {
+    let launch = prepare_ssh_launch(target, workspace).await?;
+    let connection = launch.connection.clone();
+    let environment = launch.environment;
+    let session = runtime
+        .pi_session
+        .lock()
+        .await
+        .spawn(
+            TauriEventSink::new(app),
+            Connection::from(connection.clone()),
+            launch.process,
+        )
+        .await
+        .map_err(SshConnectionError::pi_spawn)?;
+
+    Ok(SshStartPiResponse {
         connection,
         environment,
         session,
