@@ -44,7 +44,7 @@ const DEFAULT_SIDEBAR_WIDTH = 292;
 /** 侧栏宽度持久化 key。 */
 const SIDEBAR_WIDTH_STORAGE_KEY = "pilo.sidebarWidth";
 
-const SESSION_ROW_ESTIMATE = 48;
+const SESSION_ROW_ESTIMATE = 30;
 
 function VirtualSessionRows({
 	sessions,
@@ -83,7 +83,7 @@ function VirtualSessionRows({
 	return (
 		<div
 			ref={listRef}
-			className="relative w-full"
+			className="relative w-full min-w-0 overflow-hidden"
 			style={{ height: `${virtualizer.getTotalSize()}px` }}
 		>
 			{virtualizer.getVirtualItems().map((item) => {
@@ -94,7 +94,7 @@ function VirtualSessionRows({
 						key={item.key}
 						data-index={item.index}
 						ref={virtualizer.measureElement}
-						className="absolute left-0 top-0 w-full"
+						className="absolute left-0 top-0 w-full min-w-0 overflow-hidden"
 						style={{
 							transform: `translateY(${item.start - scrollMargin}px)`,
 						}}
@@ -242,54 +242,22 @@ export function AppSidebar({
 		/>
 	);
 
-	const renderSessionGroups = (
+	const renderSessionList = (
 		workspaceSessions: SidebarSession[],
 		workspace: SidebarWorkspace,
 		env: SidebarEnv,
 	) => {
-		const today = new Date(
-			now.getFullYear(),
-			now.getMonth(),
-			now.getDate(),
-		).getTime();
-		const week = today - 6 * 24 * 60 * 60 * 1000;
 		const pinned = workspaceSessions.filter((session) => session.pinned);
 		const unpinned = workspaceSessions.filter((session) => !session.pinned);
-		const groups = [
-			["置顶", pinned],
-			[
-				"今天",
-				unpinned.filter(
-					(session) => session.latestMessageAt.getTime() >= today,
-				),
-			],
-			[
-				"本周",
-				unpinned.filter((session) => {
-					const time = session.latestMessageAt.getTime();
-					return time >= week && time < today;
-				}),
-			],
-			[
-				"更早",
-				unpinned.filter((session) => session.latestMessageAt.getTime() < week),
-			],
-		] as const;
+		const orderedSessions = [...pinned, ...unpinned];
 
-		return groups
-			.filter(([, groupSessions]) => groupSessions.length > 0)
-			.map(([label, groupSessions]) => (
-				<div key={label} className="grid gap-px">
-					<div className="px-7 pb-0.5 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground-muted/70">
-						{label}
-					</div>
-					<VirtualSessionRows
-						sessions={[...groupSessions]}
-						scrollViewportRef={scrollViewportRef}
-						renderSession={(session) => renderSession(session, workspace, env)}
-					/>
-				</div>
-			));
+		return (
+			<VirtualSessionRows
+				sessions={orderedSessions}
+				scrollViewportRef={scrollViewportRef}
+				renderSession={(session) => renderSession(session, workspace, env)}
+			/>
+		);
 	};
 
 	return (
@@ -373,20 +341,23 @@ export function AppSidebar({
 					</div>
 				</div>
 				<ScrollArea
-					className="mt-2 min-h-0 flex-1"
+					className="mt-2 min-h-0 min-w-0 flex-1 overflow-x-hidden"
 					viewportRef={scrollViewportRef}
-					viewportClassName="pl-1.5 pr-2.5 pb-3"
+					viewportClassName="min-w-0 overflow-x-hidden pl-1.5 pr-2.5 pb-3"
 					scrollbarClassName="w-2 p-px"
 					scrollbarThumbClassName="bg-[hsl(var(--muted-foreground)/0.35)] hover:bg-[hsl(var(--muted-foreground)/0.45)] active:bg-[hsl(var(--muted-foreground)/0.55)]"
 				>
-					<div className="relative pt-1">
+					<div className="relative w-full min-w-0 overflow-x-hidden pt-1">
 						{envs.map((env) => {
 							const envCollapsed = collapsedSections[`env:${env.id}`] ?? false;
 							const envWorkspaces = workspaces.filter(
 								(workspace) => workspace.envId === env.id,
 							);
 							return (
-								<section key={env.id} className="mb-3 space-y-0.5 last:mb-0">
+								<section
+									key={env.id}
+									className="mb-3 w-full min-w-0 space-y-0.5 overflow-hidden last:mb-0"
+								>
 									<EnvRow
 										env={env}
 										collapsed={envCollapsed}
@@ -401,7 +372,10 @@ export function AppSidebar({
 												(session) => session.workspaceId === workspace.id,
 											);
 											return (
-												<div key={workspace.id} className="grid gap-px">
+												<div
+													key={workspace.id}
+													className="grid w-full min-w-0 gap-px overflow-hidden"
+												>
 													<WorkspaceRow
 														workspace={workspace}
 														env={env}
@@ -426,7 +400,7 @@ export function AppSidebar({
 														hasSessions={workspaceSessions.length > 0}
 													/>
 													{!workspaceCollapsed &&
-														renderSessionGroups(
+														renderSessionList(
 															workspaceSessions,
 															workspace,
 															env,

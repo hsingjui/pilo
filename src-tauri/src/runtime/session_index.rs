@@ -1,23 +1,12 @@
-use std::{
-    env, fs,
-    io::{BufRead, BufReader, Read, Seek, SeekFrom},
-    path::{Path, PathBuf},
-    time::UNIX_EPOCH,
-};
-
+use pilo_protocol::SessionFile;
 use serde_json::Value;
 use tauri::AppHandle;
 
-use crate::domain::{ConnectionKind, SessionIndexEntry, SessionReconcileResult, Workspace};
+use crate::domain::{SessionIndexEntry, SessionReconcileResult, Workspace};
 
-use super::{
-    ssh::{read_ssh_session_file, scan_ssh_session_files},
-    storage,
-    wsl::{read_wsl_session_file, scan_wsl_session_files},
-};
+use super::{server_client::ServerManager, storage};
 
 const PREVIEW_CHARS: usize = 160;
-const FILE_MARKER: u8 = 0x1e;
 
 #[derive(Debug)]
 struct SessionFileMeta {
@@ -33,9 +22,10 @@ pub fn list_cached(app: &AppHandle, workspace_id: &str) -> Result<Vec<SessionInd
 
 pub async fn reconcile(
     app: &AppHandle,
+    servers: &ServerManager,
     workspace: &Workspace,
 ) -> Result<SessionReconcileResult, String> {
-    let files = scan_files(workspace).await?;
+    let files = scan_files(servers, workspace).await?;
     let db = storage::open(app)?;
     let mut result = SessionReconcileResult::default();
     let mut seen = Vec::new();
@@ -71,7 +61,7 @@ pub async fn reconcile(
             })
             .map(|cached| cached.last_offset)
             .unwrap_or(0);
-        let bytes = read_file(workspace, &file.path, append_offset).await?;
+        let bytes = read_file(servers, workspace, &file.path, append_offset).await?;
         let entry = parse_file(workspace, file, previous.as_ref(), append_offset, &bytes)?;
         storage::upsert_session(&db, &entry)?;
         if previous.is_some() {
@@ -86,145 +76,41 @@ pub async fn reconcile(
     Ok(result)
 }
 
-async fn scan_files(workspace: &Workspace) -> Result<Vec<SessionFileMeta>, String> {
-    match &workspace.connection.kind {
-        ConnectionKind::Local => scan_local(),
-        ConnectionKind::Wsl { distro } => {
-            let blob = scan_wsl_session_files(distro.clone())
-                .await
-                .map_err(|error| error.to_string())?;
-            parse_remote_metadata(&blob)
-        }
-        ConnectionKind::Ssh { target } => {
-            let blob = scan_ssh_session_files(target.clone())
-                .await
-                .map_err(|error| error.to_string())?;
-            parse_remote_metadata(&blob)
-        }
-    }
+async fn scan_files(
+    servers: &ServerManager,
+    workspace: &Workspace,
+) -> Result<Vec<SessionFileMeta>, String> {
+    let files: Vec<SessionFile> = servers
+        .request_typed(
+            &workspace.connection,
+            "session.scan",
+            serde_json::json!({ "workspace": workspace.path }),
+        )
+        .await?;
+    Ok(files
+        .into_iter()
+        .map(|file| SessionFileMeta {
+            path: file.path,
+            size: file.size,
+            mtime_ns: file.mtime_ns,
+            header: file.header,
+        })
+        .collect())
 }
 
-async fn read_file(workspace: &Workspace, path: &str, offset: u64) -> Result<Vec<u8>, String> {
-    match &workspace.connection.kind {
-        ConnectionKind::Local => read_local_file(path, offset),
-        ConnectionKind::Wsl { distro } => {
-            read_wsl_session_file(distro.clone(), path.to_owned(), offset)
-                .await
-                .map_err(|error| error.to_string())
-        }
-        ConnectionKind::Ssh { target } => {
-            read_ssh_session_file(target.clone(), path.to_owned(), offset)
-                .await
-                .map_err(|error| error.to_string())
-        }
-    }
-}
-
-fn local_agent_dir() -> Option<PathBuf> {
-    env::var_os("PI_CODING_AGENT_DIR")
-        .map(PathBuf::from)
-        .or_else(|| env::var_os("HOME").map(|value| PathBuf::from(value).join(".pi/agent")))
-        .or_else(|| env::var_os("USERPROFILE").map(|value| PathBuf::from(value).join(".pi/agent")))
-}
-
-fn scan_local() -> Result<Vec<SessionFileMeta>, String> {
-    let Some(root) = local_agent_dir().map(|value| value.join("sessions")) else {
-        return Ok(Vec::new());
-    };
-    let mut paths = Vec::new();
-    collect_jsonl(&root, &mut paths)?;
-    paths.sort();
-    paths.into_iter().filter_map(read_local_metadata).collect()
-}
-
-fn collect_jsonl(dir: &Path, paths: &mut Vec<PathBuf>) -> Result<(), String> {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return Ok(());
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_jsonl(&path, paths)?;
-        } else if path.extension().and_then(|value| value.to_str()) == Some("jsonl") {
-            paths.push(path);
-        }
-    }
-    Ok(())
-}
-
-fn read_local_metadata(path: PathBuf) -> Option<Result<SessionFileMeta, String>> {
-    let metadata = match fs::metadata(&path) {
-        Ok(metadata) => metadata,
-        Err(error) => return Some(Err(format!("failed to stat '{}': {error}", path.display()))),
-    };
-    let file = match fs::File::open(&path) {
-        Ok(file) => file,
-        Err(error) => return Some(Err(format!("failed to open '{}': {error}", path.display()))),
-    };
-    let mut line = String::new();
-    if BufReader::new(file).read_line(&mut line).is_err() || line.trim().is_empty() {
-        return None;
-    }
-    let header = match serde_json::from_str(line.trim()) {
-        Ok(header) => header,
-        Err(_) => return None,
-    };
-    let mtime_ns = metadata
-        .modified()
-        .ok()
-        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-        .map(|value| value.as_nanos() as u64)
-        .unwrap_or(0);
-    Some(Ok(SessionFileMeta {
-        path: path.to_string_lossy().into_owned(),
-        size: metadata.len(),
-        mtime_ns,
-        header,
-    }))
-}
-
-fn read_local_file(path: &str, offset: u64) -> Result<Vec<u8>, String> {
-    let mut file =
-        fs::File::open(path).map_err(|error| format!("failed to open '{path}': {error}"))?;
-    file.seek(SeekFrom::Start(offset))
-        .map_err(|error| format!("failed to seek '{path}' to {offset}: {error}"))?;
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
-        .map_err(|error| format!("failed to read '{path}': {error}"))?;
-    Ok(bytes)
-}
-
-fn parse_remote_metadata(blob: &[u8]) -> Result<Vec<SessionFileMeta>, String> {
-    let mut files = Vec::new();
-    for chunk in blob.split(|byte| *byte == FILE_MARKER).skip(1) {
-        let mut lines = chunk.splitn(3, |byte| *byte == b'\n');
-        let metadata_line = lines.next().unwrap_or_default();
-        let header_line = lines.next().unwrap_or_default();
-        let metadata = String::from_utf8_lossy(metadata_line);
-        let mut parts = metadata.split('\t');
-        let path = parts.next().unwrap_or_default().to_owned();
-        let size = parts
-            .next()
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(0);
-        let mtime_ns = parts
-            .next()
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(0);
-        if path.is_empty() || header_line.is_empty() {
-            continue;
-        }
-        let Ok(header) = serde_json::from_slice(header_line) else {
-            continue;
-        };
-        files.push(SessionFileMeta {
-            path,
-            size,
-            mtime_ns,
-            header,
-        });
-    }
-    Ok(files)
+async fn read_file(
+    servers: &ServerManager,
+    workspace: &Workspace,
+    path: &str,
+    offset: u64,
+) -> Result<Vec<u8>, String> {
+    servers
+        .request_typed(
+            &workspace.connection,
+            "session.read",
+            serde_json::json!({ "path": path, "offset": offset }),
+        )
+        .await
 }
 
 fn parse_file(
@@ -295,10 +181,10 @@ fn parse_file(
         let Ok(value) = serde_json::from_slice::<Value>(line) else {
             continue;
         };
-        if let Some(timestamp) = value.get("timestamp").and_then(Value::as_str) {
-            if timestamp > updated_at.as_str() {
-                updated_at = timestamp.to_owned();
-            }
+        if let Some(timestamp) = value.get("timestamp").and_then(Value::as_str)
+            && timestamp > updated_at.as_str()
+        {
+            updated_at = timestamp.to_owned();
         }
         match value.get("type").and_then(Value::as_str) {
             Some("session_info") => {
@@ -364,7 +250,7 @@ fn extract_preview(content: Option<&Value>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Connection, WorkspaceMetadata};
+    use crate::domain::{Connection, ConnectionKind, WorkspaceMetadata};
 
     fn test_workspace() -> Workspace {
         Workspace {
@@ -397,16 +283,6 @@ mod tests {
             extract_preview(Some(&value)).as_deref(),
             Some("hello world")
         );
-    }
-
-    #[test]
-    fn remote_metadata_protocol_parses_nanosecond_mtime() {
-        let blob = b"\x1e/home/a.jsonl\t42\t123456789\n{\"type\":\"session\",\"id\":\"a\",\"timestamp\":\"2026-01-01T00:00:00Z\",\"cwd\":\"/work\"}\n";
-        let files = parse_remote_metadata(blob).unwrap();
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].size, 42);
-        assert_eq!(files[0].mtime_ns, 123456789);
-        assert_eq!(files[0].header["id"], "a");
     }
 
     #[test]

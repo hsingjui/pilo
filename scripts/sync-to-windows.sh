@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd -P)/"
 TARGET_DIR="${TARGET_DIR:-/mnt/d/Code/pilo/}"
 DEBOUNCE_SECONDS="${DEBOUNCE_SECONDS:-0.15}"
+SERVER_RESOURCE="$SOURCE_DIR/src-tauri/resources/pilo-server-linux-x86_64"
 
 RSYNC_EXCLUDES=(
   "--exclude=.git/"
@@ -30,6 +31,13 @@ require_command() {
 }
 
 sync_once() {
+  if [[ ! -f "$SERVER_RESOURCE" ]] ||
+    find "$SOURCE_DIR/crates/pilo-protocol" "$SOURCE_DIR/crates/pilo-server" \
+      -type f \( -name '*.rs' -o -name 'Cargo.toml' \) \
+      -newer "$SERVER_RESOURCE" -print -quit 2>/dev/null | grep -q .; then
+    "$SCRIPT_DIR/build-pilo-server.sh"
+  fi
+
   mkdir -p -- "$TARGET_DIR"
 
   rsync \

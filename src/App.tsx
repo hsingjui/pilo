@@ -14,10 +14,21 @@ import { NewChatLanding } from "@/components/new-chat-landing";
 import { RightSidebar } from "@/components/right-sidebar";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import { CUSTOM_TITLEBAR, TitleBar } from "@/components/title-bar";
-import { listenRuntimeEvents } from "@/lib/pi-runtime";
+import {
+	WorkspaceEditor,
+	type EditorOpenRequest,
+} from "@/components/workspace-editor";
+import {
+	listenRuntimeEvents,
+	type PiModel,
+	type PiThinkingLevel,
+} from "@/lib/pi-runtime";
 import {
 	listSessions,
+	listenSessionWatchEvents,
 	reconcileSessions,
+	startSessionWatch,
+	stopSessionWatch,
 	updateSessionUiState,
 	type SessionIndexEntry,
 } from "@/lib/sessions";
@@ -32,6 +43,7 @@ import {
 import { TooltipProvider } from "@/ui";
 
 let draftSessionSequence = 0;
+let editorRequestSequence = 0;
 
 function sessionDate(session: SessionIndexEntry) {
 	const value = session.lastMessageAt ?? session.updatedAt ?? session.createdAt;
@@ -64,17 +76,92 @@ function createDraftSessionId() {
 	return `draft-session-${Date.now()}-${draftSessionSequence}`;
 }
 
+function workspaceRelativePath(workspace: Workspace, candidate: string) {
+	const root = workspace.path.replace(/\\/g, "/").replace(/\/+$/, "");
+	const path = candidate.trim().replace(/\\/g, "/");
+	if (!path || path === root) return null;
+	if (path.startsWith(`${root}/`)) return path.slice(root.length + 1);
+	if (path.startsWith("./")) return path.slice(2);
+	if (path.startsWith("/") || /^[A-Za-z]:\//.test(path)) return null;
+	if (path.split("/").some((part) => part === "..")) return null;
+	return path;
+}
+
+type OpenChat = {
+	session: ChatSession;
+	initialMessage?: string;
+	piSessionId?: string;
+};
+
+function indexedChatSession(
+	session: SessionIndexEntry,
+	workspace: Workspace,
+): ChatSession {
+	return {
+		id: session.piSessionId,
+		title:
+			session.titleOverride ??
+			session.name ??
+			session.firstUserMessagePreview ??
+			"新对话",
+		workspaceRecord: workspace,
+		sessionPath: session.sessionPath,
+	};
+}
+
+function upsertOpenedChat(
+	current: OpenChat[],
+	session: ChatSession,
+	initialMessage?: string,
+): OpenChat[] {
+	const index = current.findIndex(
+		(entry) =>
+			entry.session.workspaceRecord.id === session.workspaceRecord.id &&
+			(entry.session.id === session.id || entry.piSessionId === session.id),
+	);
+	if (index < 0) return [...current, { session, initialMessage }];
+
+	const existing = current[index];
+	const nextInitialMessage = existing.initialMessage ?? initialMessage;
+	const sessionChanged =
+		existing.session.title !== session.title ||
+		existing.session.workspaceRecord !== session.workspaceRecord;
+	if (!sessionChanged && nextInitialMessage === existing.initialMessage)
+		return current;
+
+	const next = current.slice();
+	next[index] = {
+		...existing,
+		initialMessage: nextInitialMessage,
+		session: sessionChanged
+			? {
+					...existing.session,
+					title: session.title,
+					workspaceRecord: session.workspaceRecord,
+				}
+			: existing.session,
+	};
+	return next;
+}
+
 function App() {
 	const rightPanelRef = useRef<PanelImperativeHandle>(null);
 	const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
 	const [isResizing, setIsResizing] = useState(false);
 	const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+	const [openedChats, setOpenedChats] = useState<OpenChat[]>([]);
 	const [indexedSessions, setIndexedSessions] = useState<SessionIndexEntry[]>(
 		[],
 	);
 	const [draftSessionPrompt, setDraftSessionPrompt] = useState<string | null>(
 		null,
 	);
+	const [draftSessionModel, setDraftSessionModel] = useState<PiModel | null>(
+		null,
+	);
+	const [draftSessionThinkingLevel, setDraftSessionThinkingLevel] =
+		useState<PiThinkingLevel | null>(null);
+	const [draftSessionStarted, setDraftSessionStarted] = useState(false);
 	const [draftSessionId, setDraftSessionId] = useState(createDraftSessionId);
 	const [draftWorkspaceId, setDraftWorkspaceId] = useState<string | null>(null);
 	const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
@@ -84,13 +171,27 @@ function App() {
 	const [addWorkspaceConnectionId, setAddWorkspaceConnectionId] = useState<
 		string | null
 	>(null);
+	const [editorRequest, setEditorRequest] = useState<EditorOpenRequest | null>(
+		null,
+	);
+	const [editorVisible, setEditorVisible] = useState(false);
 
 	useEffect(() => {
 		let active = true;
 		const load = async () => {
 			try {
 				const next = await listWorkspaces();
-				if (active) setWorkspaces(next);
+				if (active) {
+					setWorkspaces(next);
+					setOpenedChats((current) =>
+						current.filter((entry) =>
+							next.some(
+								(workspace) =>
+									workspace.id === entry.session.workspaceRecord.id,
+							),
+						),
+					);
+				}
 			} catch (error) {
 				console.error("Failed to load workspaces", error);
 			}
@@ -134,6 +235,21 @@ function App() {
 		workspaces.find((workspace) => workspace.id === draftWorkspaceId) ??
 		firstWorkspace;
 	const activeWorkspaceId = activeWorkspace?.id ?? null;
+	const openEditorFile = useCallback(
+		(candidate: string) => {
+			if (!activeWorkspace) return;
+			const path = workspaceRelativePath(activeWorkspace, candidate);
+			if (!path) return;
+			editorRequestSequence += 1;
+			setEditorRequest({
+				id: editorRequestSequence,
+				workspaceId: activeWorkspace.id,
+				path,
+			});
+			setEditorVisible(true);
+		},
+		[activeWorkspace],
+	);
 
 	const replaceWorkspaceSessions = useCallback(
 		(workspaceId: string, sessions: SessionIndexEntry[]) => {
@@ -156,12 +272,18 @@ function App() {
 	useEffect(() => {
 		if (!activeWorkspaceId) return;
 		let disposed = false;
+		let refreshTimer: number | undefined;
 		let unlistenRuntime: (() => void) | undefined;
+		let unlistenSessionWatch: (() => void) | undefined;
 
 		const refresh = () => {
 			void refreshWorkspaceSessions(activeWorkspaceId).catch((error) =>
 				console.error("Failed to reconcile sessions", error),
 			);
+		};
+		const queueRefresh = () => {
+			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+			refreshTimer = window.setTimeout(refresh, 120);
 		};
 		const hydrateThenRefresh = async () => {
 			try {
@@ -174,13 +296,21 @@ function App() {
 		};
 
 		void hydrateThenRefresh();
-		window.addEventListener("focus", refresh);
+		window.addEventListener("focus", queueRefresh);
 		void listenRuntimeEvents((event) => {
+			if (event.workspaceId && event.workspaceId !== activeWorkspaceId) {
+				if (event.type === "assistant_message_end") {
+					void refreshWorkspaceSessions(event.workspaceId).catch((error) =>
+						console.error("Failed to refresh background sessions", error),
+					);
+				}
+				return;
+			}
 			if (
 				event.type === "assistant_message_end" ||
 				(event.type === "process_state" && event.state === "running")
 			) {
-				refresh();
+				queueRefresh();
 			}
 		})
 			.then((unlisten) => {
@@ -190,10 +320,31 @@ function App() {
 			.catch((error) =>
 				console.error("Failed to listen for runtime events", error),
 			);
+		void listenSessionWatchEvents((event) => {
+			if (event.workspaceId !== activeWorkspaceId) return;
+			if (event.type === "changed") queueRefresh();
+			if (event.type === "error") {
+				console.warn("Session watcher fallback active", event.message);
+			}
+		})
+			.then(async (unlisten) => {
+				if (disposed) {
+					unlisten();
+					return;
+				}
+				unlistenSessionWatch = unlisten;
+				await startSessionWatch(activeWorkspaceId);
+			})
+			.catch((error) =>
+				console.error("Failed to start session watcher", error),
+			);
 		return () => {
 			disposed = true;
-			window.removeEventListener("focus", refresh);
+			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+			window.removeEventListener("focus", queueRefresh);
 			unlistenRuntime?.();
+			unlistenSessionWatch?.();
+			void stopSessionWatch(activeWorkspaceId).catch(() => undefined);
 		};
 	}, [activeWorkspaceId, refreshWorkspaceSessions, replaceWorkspaceSessions]);
 
@@ -211,29 +362,47 @@ function App() {
 				(workspace) => workspace.id === selectedIndexedSession.workspaceId,
 			) ?? null)
 		: null;
-	const chatSession: ChatSession | null =
-		selectedIndexedSession && selectedWorkspace
-			? {
-					id: selectedIndexedSession.piSessionId,
-					title:
-						selectedIndexedSession.titleOverride ??
-						selectedIndexedSession.name ??
-						selectedIndexedSession.firstUserMessagePreview ??
-						"新对话",
-					workspaceRecord: selectedWorkspace,
-					sessionPath: selectedIndexedSession.sessionPath,
-				}
-			: activeWorkspace && draftSessionPrompt !== null
-				? {
-						id: draftSessionId,
-						title: "新对话",
-						workspaceRecord: activeWorkspace,
-					}
-				: null;
+	const chatSession = useMemo<ChatSession | null>(
+		() =>
+			selectedIndexedSession && selectedWorkspace
+				? indexedChatSession(selectedIndexedSession, selectedWorkspace)
+				: activeWorkspace && draftSessionStarted
+					? {
+							id: draftSessionId,
+							title: "新对话",
+							workspaceRecord: activeWorkspace,
+							initialModel: draftSessionModel ?? undefined,
+							initialThinkingLevel: draftSessionThinkingLevel ?? undefined,
+						}
+					: null,
+		[
+			selectedIndexedSession,
+			selectedWorkspace,
+			activeWorkspace,
+			draftSessionStarted,
+			draftSessionId,
+			draftSessionModel,
+			draftSessionThinkingLevel,
+		],
+	);
+	const renderedOpenedChats = useMemo(
+		() =>
+			chatSession
+				? upsertOpenedChat(
+						openedChats,
+						chatSession,
+						draftSessionPrompt ?? undefined,
+					)
+				: openedChats,
+		[chatSession, draftSessionPrompt, openedChats],
+	);
 
 	const startNewChat = (workspaceId?: string) => {
 		const targetWorkspaceId = workspaceId ?? firstWorkspace?.id ?? null;
+		setDraftSessionStarted(false);
 		setDraftSessionPrompt(null);
+		setDraftSessionModel(null);
+		setDraftSessionThinkingLevel(null);
 		setDraftSessionId(createDraftSessionId());
 		setDraftWorkspaceId(targetWorkspaceId);
 		setSelectedSessionId(null);
@@ -251,8 +420,18 @@ function App() {
 			(candidate) => candidate.piSessionId === sessionId,
 		);
 		if (!session) return;
+		const workspace = workspaces.find(
+			(candidate) => candidate.id === session.workspaceId,
+		);
+		if (workspace) {
+			const nextChat = indexedChatSession(session, workspace);
+			setOpenedChats((current) => upsertOpenedChat(current, nextChat));
+		}
 		setSelectedSessionId(sessionId);
+		setDraftSessionStarted(false);
 		setDraftSessionPrompt(null);
+		setDraftSessionModel(null);
+		setDraftSessionThinkingLevel(null);
 		setDraftWorkspaceId(session.workspaceId);
 		void touchWorkspace(session.workspaceId)
 			.then(() => notifyWorkspacesChanged())
@@ -324,29 +503,95 @@ function App() {
 				<main className="relative flex min-w-0 flex-1 flex-col">
 					{CUSTOM_TITLEBAR && <TitleBar />}
 					<Group orientation="horizontal" className="min-h-0 flex-1">
-						<Panel defaultSize={560} minSize={400} className="min-w-0">
-							{chatSession ? (
-								<ChatPage
-									session={chatSession}
-									initialMessage={draftSessionPrompt ?? undefined}
-									onOpenChanges={() => rightPanelRef.current?.expand()}
-									onExpandSidebar={() => setLeftSidebarCollapsed(false)}
-									reserveWindowControls={CUSTOM_TITLEBAR}
-									sidebarCollapsed={leftSidebarCollapsed}
-								/>
-							) : (
+						<Panel defaultSize={560} minSize={400} className="relative min-w-0">
+							{renderedOpenedChats.map((entry) => {
+								const visible =
+									chatSession !== null &&
+									entry.session.workspaceRecord.id ===
+										chatSession.workspaceRecord.id &&
+									(entry.session.id === chatSession.id ||
+										entry.piSessionId === chatSession.id);
+								return (
+									<div
+										key={`${entry.session.workspaceRecord.id}:${entry.session.id}`}
+										className={visible ? "h-full min-h-0" : "hidden"}
+									>
+										<ChatPage
+											session={entry.session}
+											active={visible}
+											initialMessage={entry.initialMessage}
+											onSessionIdentified={(piSessionId) => {
+												setOpenedChats((current) =>
+													current.map((chat) =>
+														chat.session.id === entry.session.id &&
+														chat.session.workspaceRecord.id ===
+															entry.session.workspaceRecord.id &&
+														chat.piSessionId !== piSessionId
+															? { ...chat, piSessionId }
+															: chat,
+													),
+												);
+											}}
+											onOpenChanges={() => rightPanelRef.current?.expand()}
+											onExpandSidebar={() => setLeftSidebarCollapsed(false)}
+											onOpenFile={openEditorFile}
+											onSessionChanged={() => {
+												void refreshWorkspaceSessions(
+													entry.session.workspaceRecord.id,
+												).catch((error) =>
+													console.error("Failed to refresh sessions", error),
+												);
+											}}
+											reserveWindowControls={CUSTOM_TITLEBAR}
+											sidebarCollapsed={leftSidebarCollapsed}
+										/>
+									</div>
+								);
+							})}
+							{!chatSession ? (
 								<NewChatLanding
+									key={`landing:${activeWorkspace?.id ?? "no-workspace"}`}
 									workspaceAvailable={Boolean(activeWorkspace)}
-									onStartSession={(prompt) => {
+									workspace={activeWorkspace}
+									onStartSession={(prompt, model, thinkingLevel) => {
 										if (!activeWorkspace) return;
+										const nextChat: ChatSession = {
+											id: draftSessionId,
+											title: "新对话",
+											workspaceRecord: activeWorkspace,
+											initialModel: model ?? undefined,
+											initialThinkingLevel: thinkingLevel ?? undefined,
+										};
+										setOpenedChats((current) =>
+											upsertOpenedChat(current, nextChat, prompt),
+										);
 										setDraftWorkspaceId(activeWorkspace.id);
+										setDraftSessionModel(model);
+										setDraftSessionThinkingLevel(thinkingLevel);
 										setDraftSessionPrompt(prompt);
+										setDraftSessionStarted(true);
 									}}
 									onExpandSidebar={() => setLeftSidebarCollapsed(false)}
 									reserveWindowControls={CUSTOM_TITLEBAR}
 									sidebarCollapsed={leftSidebarCollapsed}
 								/>
-							)}
+							) : null}
+							{activeWorkspace ? (
+								<WorkspaceEditor
+									key={`editor:${activeWorkspace.id}`}
+									workspace={activeWorkspace}
+									request={
+										editorRequest?.workspaceId === activeWorkspace.id
+											? editorRequest
+											: undefined
+									}
+									visible={
+										editorVisible &&
+										editorRequest?.workspaceId === activeWorkspace.id
+									}
+									onClose={() => setEditorVisible(false)}
+								/>
+							) : null}
 						</Panel>
 						<ResizeSeparator
 							className="w-1 bg-transparent transition-colors hover:bg-sidebar-border"
@@ -354,7 +599,12 @@ function App() {
 							onPointerUp={() => setIsResizing(false)}
 							onPointerCancel={() => setIsResizing(false)}
 						/>
-						<RightSidebar panelRef={rightPanelRef} resizing={isResizing} />
+						<RightSidebar
+							panelRef={rightPanelRef}
+							resizing={isResizing}
+							workspace={activeWorkspace ?? undefined}
+							onOpenFile={openEditorFile}
+						/>
 					</Group>
 				</main>
 			</div>

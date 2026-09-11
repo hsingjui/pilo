@@ -7,7 +7,14 @@ import {
 	type ReactNode,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, Copy, PanelLeft, PanelRight } from "lucide-react";
+import {
+	ArrowDown,
+	ChevronDown,
+	Copy,
+	PanelLeft,
+	PanelRight,
+	PencilLine,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -38,20 +45,15 @@ import { ChatComposer } from "@/components/chat/chat-composer";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import { ConversationOutlineRail } from "@/components/chat/conversation-outline-rail";
 import { buildConversationOutline } from "@/lib/conversation-outline";
+import { createChatSessionClient } from "@/lib/chat-session-client";
 import {
-	abortPiReply,
-	getPiMessages,
-	getPiState,
-	listenRuntimeEvents,
 	runtimeErrorMessage,
-	sendPiFollowUp,
-	sendPiPrompt,
-	sendPiSteer,
-	startNewPiSession,
-	switchPiSession,
+	type PiAgentState,
+	type PiModel,
+	type PiThinkingLevel,
 	type PiloRuntimeEvent,
 } from "@/lib/pi-runtime";
-import { ensureWorkspacePi, type Workspace } from "@/lib/workspaces";
+import type { Workspace } from "@/lib/workspaces";
 import { cn } from "@/lib/utils";
 import {
 	Button,
@@ -68,7 +70,68 @@ export type ChatSession = {
 	title: string;
 	workspaceRecord: Workspace;
 	sessionPath?: string;
+	initialModel?: PiModel;
+	initialThinkingLevel?: PiThinkingLevel;
 };
+
+type ChatSessionRuntimeState = {
+	name?: string;
+	messageCount?: number;
+	tokens?: number;
+	cost?: number;
+	contextTokens?: number | null;
+	contextWindow?: number;
+	contextPercent?: number | null;
+};
+
+async function readCurrentPiSessionState(
+	client: ReturnType<typeof createChatSessionClient>,
+	agentState?: PiAgentState,
+): Promise<ChatSessionRuntimeState> {
+	const [state, stats] = await Promise.all([
+		agentState ?? client.getPiAgentState(),
+		client.getPiSessionStats(),
+	]);
+	return {
+		name: state.sessionName,
+		messageCount: state.messageCount,
+		tokens: stats.tokens?.total,
+		cost: stats.cost,
+		contextTokens: stats.contextUsage?.tokens,
+		contextWindow: stats.contextUsage?.contextWindow,
+		contextPercent: stats.contextUsage?.percent,
+	};
+}
+
+const compactNumberFormatter = new Intl.NumberFormat("en", {
+	notation: "compact",
+	maximumFractionDigits: 1,
+});
+
+function formatSessionUsage(state: ChatSessionRuntimeState | null): string {
+	if (!state) return "";
+	const parts: string[] = [];
+	if (state.contextPercent !== null && state.contextPercent !== undefined) {
+		parts.push(`${Math.round(state.contextPercent)}% 上下文`);
+	} else if (
+		state.contextTokens !== null &&
+		state.contextTokens !== undefined &&
+		state.contextWindow
+	) {
+		parts.push(
+			`${compactNumberFormatter.format(state.contextTokens)}/${compactNumberFormatter.format(state.contextWindow)} 上下文`,
+		);
+	}
+	if (state.tokens !== undefined) {
+		parts.push(`${compactNumberFormatter.format(state.tokens)} tokens`);
+	}
+	if (state.cost !== undefined) {
+		parts.push(
+			`$${state.cost < 0.01 ? state.cost.toFixed(4) : state.cost.toFixed(2)}`,
+		);
+	}
+	return parts.join(" · ");
+}
 
 type ChatMessage =
 	| {
@@ -319,9 +382,9 @@ const MOCK_CONVERSATIONS: Record<string, ChatMessage[]> = {
 		{
 			id: "s2-a1",
 			role: "assistant",
-			text: "Connection 只描述运行位置，PiSession 管进程生命周期和 RPC；Local / WSL / SSH 各自负责把连接和 workspace 转成 `ProcessSpec`。这样 Runtime 不需要知道具体 transport。",
+			text: "Connection 只描述运行位置；Local / WSL / SSH 都由 `ServerManager` 建立对应的 `pilo-server`，Pi、文件、Git、Session 和 Terminal 再通过统一 RPC 调用目标环境。上层 Runtime 不需要区分具体 transport。",
 			time: "09:44",
-			activity: ["connection.rs", "pi_session.rs", "process.rs"].map(
+			activity: ["connection.rs", "server_client.rs", "server_pi.rs"].map(
 				(path, index) => ({
 					id: `s2-a1-tool-${index}`,
 					type: "tool" as const,
@@ -390,6 +453,60 @@ function MessageAction({
 	);
 }
 
+const LARGE_MESSAGE_PREVIEW_CHARS = 8_000;
+
+function markdownPreview(text: string) {
+	let preview = text.slice(0, LARGE_MESSAGE_PREVIEW_CHARS);
+	const lastLineBreak = preview.lastIndexOf("\n");
+	if (lastLineBreak > LARGE_MESSAGE_PREVIEW_CHARS * 0.75) {
+		preview = preview.slice(0, lastLineBreak);
+	}
+	const fenceCount = preview.match(/```/g)?.length ?? 0;
+	if (fenceCount % 2 === 1) preview += "\n```";
+	return `${preview}\n\n…`;
+}
+
+function CollapsibleMessageBody({
+	text,
+	markdown = false,
+	streaming = false,
+}: {
+	text: string;
+	markdown?: boolean;
+	streaming?: boolean;
+}) {
+	const collapsible = !streaming && text.length > LARGE_MESSAGE_PREVIEW_CHARS;
+	const [expanded, setExpanded] = useState(false);
+	const visibleText = collapsible && !expanded ? markdownPreview(text) : text;
+
+	return (
+		<div className="min-w-0">
+			{markdown ? (
+				<ChatMarkdown text={visibleText} isStreaming={streaming} />
+			) : (
+				<p className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+					{visibleText}
+				</p>
+			)}
+			{collapsible ? (
+				<button
+					type="button"
+					className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+					onClick={() => setExpanded((value) => !value)}
+				>
+					<ChevronDown
+						className={cn(
+							"size-3 transition-transform",
+							expanded && "rotate-180",
+						)}
+					/>
+					{expanded ? "收起消息" : "展开完整消息"}
+				</button>
+			) : null}
+		</div>
+	);
+}
+
 function UserMessage({
 	message,
 }: {
@@ -418,9 +535,7 @@ function UserMessage({
 							className="min-w-0 max-w-full rounded-[1.15rem] border border-foreground/[0.08] bg-foreground/[0.05] px-3.5 py-2 leading-6 text-foreground sm:rounded-2xl sm:px-4 sm:py-2.5"
 							style={{ fontSize: `${conversationFontSize}px` }}
 						>
-							<p className="whitespace-pre-wrap [overflow-wrap:anywhere]">
-								{message.text}
-							</p>
+							<CollapsibleMessageBody text={message.text} />
 						</div>
 					</div>
 				</div>
@@ -449,9 +564,11 @@ function getAssistantMessageContent(
 function AssistantMessage({
 	message,
 	replyRunwayPx,
+	onOpenFile,
 }: {
 	message: Extract<ChatMessage, { role: "assistant" }>;
 	replyRunwayPx?: number;
+	onOpenFile?: (path: string) => void;
 }) {
 	const { conversationFontSize, showWorkDuration } = usePreferences();
 	const content = getAssistantMessageContent(message);
@@ -474,10 +591,11 @@ function AssistantMessage({
 		if (item.type === "text") {
 			if (item.text) {
 				contentNodes.push(
-					<ChatMarkdown
+					<CollapsibleMessageBody
 						key={item.id}
 						text={item.text}
-						isStreaming={
+						markdown
+						streaming={
 							message.streaming === true && index === content.length - 1
 						}
 					/>,
@@ -500,6 +618,7 @@ function AssistantMessage({
 				activity={group}
 				streaming={message.streaming === true}
 				durationMs={firstActivityGroup ? message.workDurationMs : undefined}
+				onOpenPath={onOpenFile}
 			/>,
 		);
 		firstActivityGroup = false;
@@ -585,12 +704,16 @@ function EmptyConversation() {
 
 function SessionHeader({
 	session,
+	sessionState,
+	onRename,
 	onOpenChanges,
 	onExpandSidebar,
 	reserveWindowControls = false,
 	sidebarCollapsed = false,
 }: {
 	session: ChatSession;
+	sessionState?: ChatSessionRuntimeState;
+	onRename?: () => void;
 	onOpenChanges?: () => void;
 	onExpandSidebar?: () => void;
 	reserveWindowControls?: boolean;
@@ -628,8 +751,24 @@ function SessionHeader({
 				<path className="fill-current" d="M517.36 400H634.72V634.72H517.36Z" />
 			</svg>
 			<h1 className="min-w-0 flex-1 truncate text-sm font-medium">
-				{session.title}
+				{sessionState?.name || session.title}
 			</h1>
+			{sessionState ? (
+				<span className="hidden max-w-52 truncate text-[11px] text-muted-foreground lg:inline">
+					{sessionState.messageCount
+						? `${sessionState.messageCount} messages`
+						: ""}
+				</span>
+			) : null}
+			<Button
+				variant="ghost"
+				size="icon"
+				className="size-7"
+				aria-label="重命名 Session"
+				onClick={onRename}
+			>
+				<PencilLine className="size-4" />
+			</Button>
 			<div className="flex shrink-0 items-center gap-0.5">
 				<Tooltip>
 					<TooltipTrigger asChild>
@@ -676,6 +815,7 @@ function historyText(content: unknown): string {
 function mapPiHistoryMessages(
 	messages: unknown[],
 	sessionId: string,
+	offset = 0,
 ): ChatMessage[] {
 	return messages.flatMap((message, index) => {
 		if (!message || typeof message !== "object") return [];
@@ -685,7 +825,7 @@ function mapPiHistoryMessages(
 		if (!text) return [];
 		return [
 			{
-				id: `${sessionId}-history-${index}`,
+				id: `${sessionId}-history-${offset + index}`,
 				role: value.role,
 				text,
 				time: "",
@@ -698,6 +838,7 @@ type ActiveTurn = {
 	sessionId: string;
 	sessionTitle: string;
 	generation: number | null;
+	promptSent: boolean;
 	currentUserText: string;
 	currentUserStarted: boolean;
 	assistantMessageId: string;
@@ -768,8 +909,12 @@ function finishAssistantContentItem(
 
 export function ChatPage({
 	session,
+	active = true,
+	onSessionIdentified,
 	onOpenChanges,
 	onExpandSidebar,
+	onSessionChanged,
+	onOpenFile,
 	initialMessage,
 	loadState = "ready",
 	onRetry,
@@ -777,8 +922,12 @@ export function ChatPage({
 	sidebarCollapsed = false,
 }: {
 	session: ChatSession;
+	active?: boolean;
+	onSessionIdentified?: (sessionId: string) => void;
 	onOpenChanges?: () => void;
 	onExpandSidebar?: () => void;
+	onSessionChanged?: () => void;
+	onOpenFile?: (path: string) => void;
 	initialMessage?: string;
 	loadState?: "ready" | "loading" | "error";
 	onRetry?: () => void;
@@ -786,13 +935,25 @@ export function ChatPage({
 	sidebarCollapsed?: boolean;
 }) {
 	const { desktopNotifications } = usePreferences();
+	const client = useMemo(
+		() =>
+			createChatSessionClient(
+				session.workspaceRecord.id,
+				session.id,
+				session.sessionPath,
+			),
+		[session.workspaceRecord.id, session.id, session.sessionPath],
+	);
+	const identifiedRef = useRef(onSessionIdentified);
+	identifiedRef.current = onSessionIdentified;
 	const [historyMessages, setHistoryMessages] = useState<
 		Record<string, ChatMessage[]>
 	>({});
 	const [historyLoadState, setHistoryLoadState] = useState<
 		"ready" | "loading" | "error"
 	>(session.sessionPath ? "loading" : "ready");
-	const effectiveLoadState = session.sessionPath ? historyLoadState : loadState;
+	const [historyRetry, setHistoryRetry] = useState(0);
+	const [historyProgress, setHistoryProgress] = useState("");
 	const baseMessages = useMemo<ChatMessage[]>(() => {
 		if (initialMessage) {
 			return [
@@ -808,10 +969,62 @@ export function ChatPage({
 			return historyMessages[session.id] ?? EMPTY_MESSAGES;
 		return MOCK_CONVERSATIONS[session.id] ?? EMPTY_MESSAGES;
 	}, [historyMessages, initialMessage, session.id, session.sessionPath]);
+	const effectiveLoadState = session.sessionPath
+		? historyLoadState === "loading" && baseMessages.length > 0
+			? "ready"
+			: historyLoadState
+		: loadState;
 	const [drafts, setDrafts] = useState<Record<string, string>>({});
 	const [localMessages, setLocalMessages] = useState<
 		Record<string, ChatMessage[]>
 	>({});
+	const [modelOptions, setModelOptions] = useState<PiModel[]>([]);
+	const [selectedModel, setSelectedModel] = useState<PiModel | null>(
+		session.initialModel ?? null,
+	);
+	const [modelLoadState, setModelLoadState] = useState<
+		"idle" | "loading" | "ready" | "error"
+	>("idle");
+	const [modelError, setModelError] = useState<string | null>(null);
+	const [modelChanging, setModelChanging] = useState(false);
+	const modelRequestRef = useRef(0);
+	const [thinkingLevels, setThinkingLevels] = useState<PiThinkingLevel[]>([]);
+	const [selectedThinkingLevel, setSelectedThinkingLevel] =
+		useState<PiThinkingLevel>("off");
+	const [thinkingLoading, setThinkingLoading] = useState(false);
+	const [thinkingChanging, setThinkingChanging] = useState(false);
+	const [sessionState, setSessionState] =
+		useState<ChatSessionRuntimeState | null>(null);
+	const initialConfigAppliedRef = useRef(new Set<string>());
+
+	const handleRenameSession = useCallback(async () => {
+		const name = window
+			.prompt("Session name", sessionState?.name || session.title)
+			?.trim();
+		if (!name) return;
+		try {
+			await client.ensure();
+			await client.setPiSessionName(name);
+			setSessionState((current) => ({ ...current, name }));
+			onSessionChanged?.();
+		} catch (error) {
+			toast.error("无法重命名 Session", {
+				description: runtimeErrorMessage(error),
+			});
+		}
+	}, [session.title, client, sessionState?.name, onSessionChanged]);
+
+	useEffect(() => {
+		modelRequestRef.current += 1;
+		setSessionState(null);
+		setModelOptions([]);
+		setSelectedModel(session.initialModel ?? null);
+		setModelLoadState("idle");
+		setModelError(null);
+		setModelChanging(false);
+		setThinkingLevels([]);
+		setSelectedThinkingLevel(session.initialThinkingLevel ?? "off");
+	}, [session.id, session.initialModel, session.initialThinkingLevel]);
 
 	useEffect(() => {
 		if (!session.sessionPath) {
@@ -820,22 +1033,80 @@ export function ChatPage({
 		}
 		let cancelled = false;
 		const loadHistory = async () => {
+			const startedAt = performance.now();
+			let stageStartedAt = startedAt;
+			const recordTiming = (stage: string) => {
+				const now = performance.now();
+				console.info("[Pilo history]", stage, {
+					durationMs: Math.round(now - stageStartedAt),
+					totalMs: Math.round(now - startedAt),
+				});
+				stageStartedAt = now;
+			};
 			setHistoryLoadState("loading");
+			setHistoryProgress("正在连接 Pi");
 			try {
-				await ensureWorkspacePi(session.workspaceRecord);
-				const switched = await switchPiSession(session.sessionPath!);
-				if (switched.cancelled) throw new Error("Pi 取消了会话切换。");
-				const result = await getPiMessages();
+				await client.ensure();
 				if (cancelled) return;
-				setHistoryMessages((current) => ({
-					...current,
-					[session.id]: mapPiHistoryMessages(result.messages, session.id),
-				}));
+				recordTiming("ensure_session_pi");
+				setHistoryProgress("正在读取历史消息");
+				void client
+					.getPiAgentState()
+					.then(async (state) => {
+						if (cancelled) return;
+						setSelectedModel(state.model);
+						setSelectedThinkingLevel(state.thinkingLevel);
+						setSessionState({
+							name: state.sessionName,
+							messageCount: state.messageCount,
+						});
+						const runtimeState = await readCurrentPiSessionState(client, state);
+						if (!cancelled) setSessionState(runtimeState);
+					})
+					.catch(() => undefined);
+				const result = await client.getPiMessages();
+				if (cancelled) return;
+				recordTiming("get_messages");
 				setLocalMessages((current) => ({ ...current, [session.id]: [] }));
+				// ponytail: RPC is still all-at-once; transport pagination is needed for very large histories.
+				const publishHistoryBatch = async (
+					offset: number,
+					mapped: ChatMessage[],
+				): Promise<ChatMessage[]> => {
+					if (cancelled || offset >= result.messages.length) return mapped;
+					const nextMapped = mapped.concat(
+						mapPiHistoryMessages(
+							result.messages.slice(offset, offset + 100),
+							session.id,
+							offset,
+						),
+					);
+					setHistoryMessages((current) => ({
+						...current,
+						[session.id]: nextMapped,
+					}));
+					const nextOffset = offset + 100;
+					setHistoryProgress(
+						`正在加载历史消息 ${Math.min(nextOffset, result.messages.length)}/${result.messages.length}`,
+					);
+					if (nextOffset < result.messages.length) {
+						await new Promise<void>((resolve) =>
+							window.setTimeout(resolve, 16),
+						);
+					}
+					return publishHistoryBatch(nextOffset, nextMapped);
+				};
+				const mapped = await publishHistoryBatch(0, []);
+				if (cancelled) return;
+				setHistoryMessages((current) => ({ ...current, [session.id]: mapped }));
+				setHistoryProgress("");
 				setHistoryLoadState("ready");
+				recordTiming("publish_history");
 			} catch (error) {
 				if (cancelled) return;
+				recordTiming("failed");
 				console.error("Failed to resume Pi session", error);
+				setHistoryProgress("");
 				setHistoryLoadState("error");
 			}
 		};
@@ -843,12 +1114,12 @@ export function ChatPage({
 		return () => {
 			cancelled = true;
 		};
-	}, [session.id, session.sessionPath, session.workspaceRecord]);
+	}, [client, session.id, session.sessionPath, historyRetry]);
 
 	const activeTurnRef = useRef<ActiveTurn | null>(null);
-	const runtimeListenerRef = useRef<ReturnType<
-		typeof listenRuntimeEvents
-	> | null>(null);
+	const runtimeListenerRef = useRef<ReturnType<typeof client.listen> | null>(
+		null,
+	);
 	const runtimeEventHandlerRef = useRef<(event: PiloRuntimeEvent) => void>(
 		() => {},
 	);
@@ -876,11 +1147,13 @@ export function ChatPage({
 	};
 
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const scrollPositionRef = useRef(0);
 	const roundRefs = useRef(new Map<string, HTMLDivElement>());
 	const messagesRef = useRef(messages);
 	messagesRef.current = messages;
 	const virtualPadding = useChatVirtualPadding();
 	const virtualized =
+		active &&
 		effectiveLoadState === "ready" &&
 		shouldVirtualizeChatMessages(messages.length);
 	const getVirtualMessageKey = useCallback(
@@ -914,6 +1187,7 @@ export function ChatPage({
 	const syncScrollState = useCallback(() => {
 		const viewport = scrollRef.current;
 		if (!viewport) return;
+		scrollPositionRef.current = viewport.scrollTop;
 		const distanceFromBottom =
 			viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
 		const nextSticky = distanceFromBottom <= 72;
@@ -1458,6 +1732,9 @@ export function ChatPage({
 					break;
 				case "assistant_message_end":
 					finishAssistantMessage(turn, event.stopReason, event.errorMessage);
+					void readCurrentPiSessionState(client)
+						.then((state) => setSessionState(state))
+						.catch(() => undefined);
 					releaseActiveTurn(turn);
 					break;
 				case "queue_update":
@@ -1482,6 +1759,7 @@ export function ChatPage({
 			}
 		},
 		[
+			client,
 			appendAssistantDelta,
 			appendAssistantThinkingDelta,
 			beginQueuedMessage,
@@ -1503,7 +1781,7 @@ export function ChatPage({
 
 	useEffect(() => {
 		let disposed = false;
-		const subscription = listenRuntimeEvents((event) => {
+		const subscription = client.listen((event) => {
 			runtimeEventHandlerRef.current(event);
 		});
 		runtimeListenerRef.current = subscription;
@@ -1520,7 +1798,113 @@ export function ChatPage({
 			}
 			void subscription.then((unlisten) => unlisten()).catch(() => undefined);
 		};
-	}, [failActiveTurn]);
+	}, [client, failActiveTurn]);
+
+	const loadModelOptions = useCallback(async () => {
+		if (modelLoadState === "loading" || modelChanging) return;
+		const requestId = ++modelRequestRef.current;
+		setModelLoadState("loading");
+		setModelError(null);
+		try {
+			await client.ensure();
+			const [state, result, thinking] = await Promise.all([
+				client.getPiAgentState(),
+				client.getAvailablePiModels(),
+				client.getAvailablePiThinkingLevels(),
+			]);
+			if (modelRequestRef.current !== requestId) return;
+			setSelectedModel(state.model);
+			setModelOptions(result.models);
+			setSelectedThinkingLevel(state.thinkingLevel);
+			setThinkingLevels(thinking.levels);
+			setModelLoadState("ready");
+		} catch (error) {
+			if (modelRequestRef.current !== requestId) return;
+			setModelError(runtimeErrorMessage(error));
+			setModelLoadState("error");
+		}
+	}, [modelChanging, modelLoadState, client]);
+
+	const handleModelChange = useCallback(
+		(model: PiModel | null) => {
+			if (!model || modelChanging) return;
+			const previousModel = selectedModel;
+			const requestId = ++modelRequestRef.current;
+			setSelectedModel(model);
+			setModelChanging(true);
+			setModelError(null);
+
+			void (async () => {
+				try {
+					await client.ensure();
+					const applied = await client.setPiModel(model);
+					const [state, thinking] = await Promise.all([
+						client.getPiAgentState(),
+						client.getAvailablePiThinkingLevels(),
+					]);
+					if (modelRequestRef.current !== requestId) return;
+					setSelectedModel(state.model ?? applied);
+					setSelectedThinkingLevel(state.thinkingLevel);
+					setThinkingLevels(thinking.levels);
+					setModelLoadState("ready");
+				} catch (error) {
+					if (modelRequestRef.current !== requestId) return;
+					setSelectedModel(previousModel);
+					toast.error("无法切换模型", {
+						description: runtimeErrorMessage(error),
+					});
+				} finally {
+					if (modelRequestRef.current === requestId) setModelChanging(false);
+				}
+			})();
+		},
+		[modelChanging, selectedModel, client],
+	);
+
+	const loadThinkingLevels = useCallback(async () => {
+		if (thinkingLoading || thinkingChanging) return;
+		setThinkingLoading(true);
+		try {
+			await client.ensure();
+			const [levels, state] = await Promise.all([
+				client.getAvailablePiThinkingLevels(),
+				client.getPiAgentState(),
+			]);
+			setThinkingLevels(levels.levels);
+			setSelectedThinkingLevel(state.thinkingLevel);
+		} catch (error) {
+			toast.error("无法读取思考等级", {
+				description: runtimeErrorMessage(error),
+			});
+		} finally {
+			setThinkingLoading(false);
+		}
+	}, [client, thinkingChanging, thinkingLoading]);
+
+	const handleThinkingChange = useCallback(
+		(level: PiThinkingLevel | null) => {
+			if (!level || thinkingChanging || level === selectedThinkingLevel) return;
+			const previous = selectedThinkingLevel;
+			setSelectedThinkingLevel(level);
+			setThinkingChanging(true);
+			void (async () => {
+				try {
+					await client.ensure();
+					await client.setPiThinkingLevel(level);
+					const state = await client.getPiAgentState();
+					setSelectedThinkingLevel(state.thinkingLevel);
+				} catch (error) {
+					setSelectedThinkingLevel(previous);
+					toast.error("无法切换思考等级", {
+						description: runtimeErrorMessage(error),
+					});
+				} finally {
+					setThinkingChanging(false);
+				}
+			})();
+		},
+		[selectedThinkingLevel, client, thinkingChanging],
+	);
 
 	const beginTurn = useCallback(
 		async (text: string, appendUserMessage = true) => {
@@ -1539,6 +1923,7 @@ export function ChatPage({
 				sessionId: session.id,
 				sessionTitle: session.title,
 				generation: null,
+				promptSent: false,
 				currentUserText: trimmed,
 				currentUserStarted: false,
 				assistantMessageId: createLocalMessageId("assistant"),
@@ -1566,23 +1951,35 @@ export function ChatPage({
 					throw new Error("Pi Runtime 事件通道尚未就绪。");
 				}
 				await subscription;
-				const before = await getPiState();
-				const shouldStartNewSession =
-					!session.sessionPath &&
-					before.state === "running" &&
-					before.workspaceId === session.workspaceRecord.id;
-				const snapshot = await ensureWorkspacePi(session.workspaceRecord);
+				const snapshot = await client.ensure();
 				if (activeTurnRef.current !== turn) return;
 				turn.generation = snapshot.generation;
 				setActiveTurnGeneration(snapshot.generation);
-				if (session.sessionPath) {
-					const switched = await switchPiSession(session.sessionPath);
-					if (switched.cancelled) throw new Error("Pi 取消了会话切换。");
-				} else if (shouldStartNewSession) {
-					const created = await startNewPiSession();
-					if (created.cancelled) throw new Error("Pi 取消了新建会话。");
+				const agentState = await client.getPiAgentState();
+				if (activeTurnRef.current !== turn) return;
+				if (agentState.sessionId) identifiedRef.current?.(agentState.sessionId);
+				if (!initialConfigAppliedRef.current.has(session.id)) {
+					if (session.initialModel) {
+						await client.setPiModel(session.initialModel);
+					}
+					if (session.initialThinkingLevel) {
+						await client.setPiThinkingLevel(session.initialThinkingLevel);
+					}
+					if (session.initialModel || session.initialThinkingLevel) {
+						const [state, thinking] = await Promise.all([
+							client.getPiAgentState(),
+							client.getAvailablePiThinkingLevels(),
+						]);
+						if (activeTurnRef.current !== turn) return;
+						setSelectedModel(state.model);
+						setSelectedThinkingLevel(state.thinkingLevel);
+						setThinkingLevels(thinking.levels);
+					}
+					initialConfigAppliedRef.current.add(session.id);
 				}
-				await sendPiPrompt(trimmed);
+				if (activeTurnRef.current !== turn) return;
+				turn.promptSent = true;
+				await client.sendPiPrompt(trimmed);
 			} catch (error) {
 				failActiveTurn(turn, runtimeErrorMessage(error));
 			}
@@ -1592,9 +1989,10 @@ export function ChatPage({
 			failActiveTurn,
 			scrollToBottom,
 			session.id,
-			session.sessionPath,
+			session.initialModel,
+			session.initialThinkingLevel,
 			session.title,
-			session.workspaceRecord,
+			client,
 			startAssistantMessage,
 		],
 	);
@@ -1631,7 +2029,9 @@ export function ChatPage({
 			requestAnimationFrame(() => scrollToBottom(false));
 
 			const request =
-				queued === "steer" ? sendPiSteer(trimmed) : sendPiFollowUp(trimmed);
+				queued === "steer"
+					? client.sendPiSteer(trimmed)
+					: client.sendPiFollowUp(trimmed);
 			void request.catch((error) => {
 				setLocalMessages((current) => ({
 					...current,
@@ -1650,7 +2050,7 @@ export function ChatPage({
 				});
 			});
 		},
-		[appendLocalMessage, scrollToBottom, session.id],
+		[client, appendLocalMessage, scrollToBottom, session.id],
 	);
 
 	const handleSteer = useCallback(
@@ -1666,15 +2066,21 @@ export function ChatPage({
 	const handleStop = useCallback(() => {
 		const turn = activeTurnRef.current;
 		if (!turn || turn.sessionId !== session.id) return;
-		if (turn.generation === null) {
+		if (turn.generation === null || !turn.promptSent) {
 			finishAssistantMessage(turn, "aborted");
 			releaseActiveTurn(turn);
 			return;
 		}
-		void abortPiReply().catch((error) => {
+		void client.abortPiReply().catch((error) => {
 			failActiveTurn(turn, runtimeErrorMessage(error));
 		});
-	}, [failActiveTurn, finishAssistantMessage, releaseActiveTurn, session.id]);
+	}, [
+		client,
+		failActiveTurn,
+		finishAssistantMessage,
+		releaseActiveTurn,
+		session.id,
+	]);
 
 	useEffect(() => {
 		if (!initialMessage || activeTurnSessionId !== null) return;
@@ -1686,11 +2092,19 @@ export function ChatPage({
 
 	const sessionId = session.id;
 	useEffect(() => {
-		if (!sessionId) return;
-		stickyRef.current = true;
+		if (!sessionId || !active) return;
+		const frame = requestAnimationFrame(() => {
+			if (stickyRef.current) scrollToBottom(false);
+			else scrollRef.current?.scrollTo({ top: scrollPositionRef.current });
+		});
+		return () => cancelAnimationFrame(frame);
+	}, [active, sessionId, scrollToBottom]);
+
+	useEffect(() => {
+		if (!session.sessionPath || !stickyRef.current) return;
 		const frame = requestAnimationFrame(() => scrollToBottom(false));
 		return () => cancelAnimationFrame(frame);
-	}, [sessionId, scrollToBottom]);
+	}, [baseMessages, session.sessionPath, scrollToBottom]);
 
 	const lastMessage = messages[messages.length - 1];
 	const streamingMessage =
@@ -1726,11 +2140,19 @@ export function ChatPage({
 
 	const running = activeTurnSessionId === session.id;
 	const runtimeBusy = activeTurnSessionId !== null;
+	const historyPending =
+		session.sessionPath !== undefined && historyLoadState !== "ready";
+	const sessionUsageText = formatSessionUsage(sessionState);
+
+	// Keep the session controller subscribed while its view is in the background.
+	if (!active) return null;
 
 	return (
 		<div className="flex h-full min-w-0 flex-col bg-background">
 			<SessionHeader
 				session={session}
+				sessionState={sessionState ?? undefined}
+				onRename={handleRenameSession}
 				onOpenChanges={onOpenChanges}
 				onExpandSidebar={onExpandSidebar}
 				reserveWindowControls={reserveWindowControls}
@@ -1747,7 +2169,7 @@ export function ChatPage({
 							<ConversationColumn className="flex flex-1 items-center justify-center">
 								<LoadingState
 									title="正在加载会话"
-									description="正在读取消息与活动记录。"
+									description={historyProgress || "正在读取消息与活动记录。"}
 								/>
 							</ConversationColumn>
 						</div>
@@ -1757,7 +2179,11 @@ export function ChatPage({
 								<ErrorState
 									title="会话加载失败"
 									description="暂时无法读取这段会话。"
-									onRetry={onRetry}
+									onRetry={
+										session.sessionPath
+											? () => setHistoryRetry((value) => value + 1)
+											: onRetry
+									}
 								/>
 							</ConversationColumn>
 						</div>
@@ -1792,6 +2218,7 @@ export function ChatPage({
 										) : (
 											<AssistantMessage
 												message={message}
+												onOpenFile={onOpenFile}
 												replyRunwayPx={
 													virtualMessage.index === messages.length - 1
 														? message.replyRunwayPx
@@ -1818,6 +2245,7 @@ export function ChatPage({
 									) : (
 										<AssistantMessage
 											message={message}
+											onOpenFile={onOpenFile}
 											replyRunwayPx={
 												index === messages.length - 1
 													? message.replyRunwayPx
@@ -1872,11 +2300,31 @@ export function ChatPage({
 							onFollowUp={
 								activeTurnGeneration === null ? undefined : handleFollowUp
 							}
-							disabled={runtimeBusy && !running}
+							disabled={
+								(runtimeBusy && !running) ||
+								effectiveLoadState !== "ready" ||
+								historyPending
+							}
 							running={running}
 							onStop={handleStop}
 							pendingSteering={pendingSteering}
 							pendingFollowUps={pendingFollowUps}
+							statusText={historyProgress || sessionUsageText}
+							models={modelOptions}
+							selectedModel={selectedModel}
+							modelLoading={modelLoadState === "loading"}
+							modelError={modelError}
+							modelDisabled={modelChanging || runtimeBusy || historyPending}
+							onModelMenuOpen={() => void loadModelOptions()}
+							onModelChange={handleModelChange}
+							thinkingLevels={thinkingLevels}
+							selectedThinkingLevel={selectedThinkingLevel}
+							thinkingLoading={thinkingLoading}
+							thinkingDisabled={
+								thinkingChanging || runtimeBusy || historyPending
+							}
+							onThinkingMenuOpen={() => void loadThinkingLevels()}
+							onThinkingChange={handleThinkingChange}
 						/>
 					</ConversationColumn>
 				</div>

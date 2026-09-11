@@ -4,7 +4,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use rusqlite::{params, Connection as SqliteConnection, OptionalExtension};
+use rusqlite::{Connection as SqliteConnection, OptionalExtension, params};
 use tauri::{AppHandle, Manager};
 
 use crate::domain::{

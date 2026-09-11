@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+src-tauri/resources/pilo-server-linux-*
+/target/
 
 # Editor directories and files
 .vscode/*

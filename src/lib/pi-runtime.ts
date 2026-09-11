@@ -47,43 +47,55 @@ export type PiSessionSnapshot = {
 	workspaceId: string | null;
 };
 
-type LocalStartPiResponse = {
-	session: PiSessionSnapshot;
+export type PiThinkingLevel =
+	| "off"
+	| "minimal"
+	| "low"
+	| "medium"
+	| "high"
+	| "xhigh"
+	| "max";
+
+export const PI_THINKING_LEVELS: PiThinkingLevel[] = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+];
+
+export type PiModel = {
+	id: string;
+	name: string;
+	provider: string;
+	reasoning: boolean;
+	input?: string[];
+	contextWindow?: number;
+	maxTokens?: number;
+};
+
+export type PiAgentState = {
+	model: PiModel | null;
+	thinkingLevel: PiThinkingLevel;
+	isStreaming: boolean;
+	isCompacting: boolean;
+	sessionFile?: string;
+	sessionId?: string;
+	sessionName?: string;
+	messageCount: number;
+	pendingMessageCount: number;
 };
 
 export type WslDistribution = {
 	name: string;
 };
 
-export type WslConnection = {
-	id: string;
-	name: string;
-	distro: string;
-};
-
-export type WslEnvironmentInfo = {
-	cwd: string;
-	gitBranch: string | null;
-	piExecutable: string;
-	piVersion: string;
-	nodeExecutable: string;
-	nodeVersion: string;
-	gitExecutable: string;
-	gitVersion: string;
-};
-
-export type WslConnectionProbe = {
-	connection: WslConnection;
-	environment: WslEnvironmentInfo;
-};
-
-type WslStartPiResponse = {
-	connection: WslConnection;
-	environment: WslEnvironmentInfo;
-	session: PiSessionSnapshot;
-};
-
-export type PiloRuntimeEvent =
+export type PiloRuntimeEvent = {
+	sessionKey?: string;
+	workspaceId?: string;
+} & (
 	| {
 			type: "process_state";
 			generation: number;
@@ -172,7 +184,8 @@ export type PiloRuntimeEvent =
 			generation: number;
 			code: RuntimeErrorCode;
 			message: string;
-	  };
+	  }
+);
 
 export function listenRuntimeEvents(
 	handler: (event: PiloRuntimeEvent) => void,
@@ -200,6 +213,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export async function requestPiRpc<T>(
 	command: Record<string, unknown>,
 	timeoutMs = 10_000,
+	sessionKey?: string,
 ): Promise<T> {
 	rpcRequestSequence += 1;
 	const id = `pilo-${Date.now()}-${rpcRequestSequence}`;
@@ -214,6 +228,7 @@ export async function requestPiRpc<T>(
 
 	try {
 		unlisten = await listenRuntimeEvents((event) => {
+			if (event.sessionKey !== sessionKey) return;
 			if (event.type !== "rpc_message" || !isRecord(event.message)) return;
 			if (event.message.type !== "response" || event.message.id !== id) return;
 			resolveResponse?.(event.message as PiRpcResponse<T>);
@@ -222,7 +237,10 @@ export async function requestPiRpc<T>(
 			() => rejectResponse?.(new Error("Pi RPC 请求超时。")),
 			timeoutMs,
 		);
-		await invoke("runtime_send_rpc", { command: { ...command, id } });
+		await invoke(sessionKey ? "chat_session_send_rpc" : "runtime_send_rpc", {
+			sessionKey,
+			command: { ...command, id },
+		});
 		const result = await response;
 		if (!result.success) {
 			throw new Error(result.error || `Pi RPC ${result.command} 执行失败。`);
@@ -252,69 +270,71 @@ export function getPiMessages(): Promise<{ messages: unknown[] }> {
 	return requestPiRpc({ type: "get_messages" });
 }
 
-export async function ensureLocalPi(
-	workspace: string,
-): Promise<PiSessionSnapshot> {
-	const current = await invoke<PiSessionSnapshot>("runtime_get_pi_state");
-	if (current.state === "running") {
-		if (current.connection?.kind.type !== "local") {
-			throw new Error(
-				`Pi Runtime 当前连接到 ${current.connection?.name ?? "其他环境"}，无法复用为本地会话。`,
-			);
-		}
-		return current;
-	}
+export function getPiAgentState(): Promise<PiAgentState> {
+	return requestPiRpc({ type: "get_state" });
+}
 
-	if (current.state === "starting" || current.state === "stopping") {
-		throw new Error(`Pi Runtime 当前处于 ${current.state} 状态，请稍后重试。`);
-	}
+export function getAvailablePiModels(): Promise<{ models: PiModel[] }> {
+	return requestPiRpc({ type: "get_available_models" });
+}
 
-	const started = await invoke<LocalStartPiResponse>("local_start_pi", {
-		workspace,
+export function setPiModel(
+	model: Pick<PiModel, "id" | "provider">,
+): Promise<PiModel> {
+	return requestPiRpc({
+		type: "set_model",
+		provider: model.provider,
+		modelId: model.id,
 	});
-	return started.session;
+}
+
+export function getAvailablePiThinkingLevels(): Promise<{
+	levels: PiThinkingLevel[];
+}> {
+	return requestPiRpc({ type: "get_available_thinking_levels" });
+}
+
+export function setPiThinkingLevel(level: PiThinkingLevel): Promise<void> {
+	return requestPiRpc({
+		type: "set_thinking_level",
+		level,
+	});
+}
+
+export function setPiSessionName(name: string): Promise<void> {
+	return requestPiRpc({
+		type: "set_session_name",
+		name,
+	});
+}
+
+export type PiSessionStats = {
+	userMessages?: number;
+	assistantMessages?: number;
+	toolCalls?: number;
+	toolResults?: number;
+	totalMessages?: number;
+	tokens?: {
+		input?: number;
+		output?: number;
+		cacheRead?: number;
+		cacheWrite?: number;
+		total?: number;
+	};
+	cost?: number;
+	contextUsage?: {
+		tokens?: number | null;
+		contextWindow?: number;
+		percent?: number | null;
+	};
+};
+
+export function getPiSessionStats(): Promise<PiSessionStats> {
+	return requestPiRpc({ type: "get_session_stats" });
 }
 
 export function listWslDistributions(): Promise<WslDistribution[]> {
 	return invoke<WslDistribution[]>("wsl_list_distributions");
-}
-
-export function probeWslConnection(
-	distro: string,
-	workspace: string,
-): Promise<WslConnectionProbe> {
-	return invoke<WslConnectionProbe>("wsl_probe_connection", {
-		distro,
-		workspace,
-	});
-}
-
-export async function ensureWslPi(
-	distro: string,
-	workspace: string,
-): Promise<PiSessionSnapshot> {
-	const current = await invoke<PiSessionSnapshot>("runtime_get_pi_state");
-	if (current.state === "running") {
-		if (
-			current.connection?.kind.type !== "wsl" ||
-			current.connection.kind.distro !== distro
-		) {
-			throw new Error(
-				`Pi Runtime 当前连接到 ${current.connection?.name ?? "其他环境"}，无法复用为 WSL ${distro} 会话。`,
-			);
-		}
-		return current;
-	}
-
-	if (current.state === "starting" || current.state === "stopping") {
-		throw new Error(`Pi Runtime 当前处于 ${current.state} 状态，请稍后重试。`);
-	}
-
-	const started = await invoke<WslStartPiResponse>("wsl_start_pi", {
-		distro,
-		workspace,
-	});
-	return started.session;
 }
 
 export function restartPi(): Promise<PiSessionSnapshot> {
@@ -356,61 +376,4 @@ export function runtimeErrorMessage(error: unknown): string {
 		if (typeof message === "string" && message.trim()) return message;
 	}
 	return "Pi Runtime 请求失败";
-}
-
-export type SshEnvironmentInfo = {
-	cwd: string;
-	gitBranch: string | null;
-	piExecutable: string;
-	piVersion: string;
-	nodeExecutable: string;
-	nodeVersion: string;
-	gitExecutable: string;
-	gitVersion: string;
-};
-
-export type SshConnectionProbe = {
-	connection: {
-		id: string;
-		name: string;
-		target: SshTarget;
-	};
-	environment: SshEnvironmentInfo;
-};
-
-export type SshStartPiResponse = {
-	connection: SshConnectionProbe["connection"];
-	environment: SshEnvironmentInfo;
-	session: PiSessionSnapshot;
-};
-
-export function probeSshConnection(
-	target: SshTarget,
-	workspace: string,
-): Promise<SshConnectionProbe> {
-	return invoke<SshConnectionProbe>("ssh_probe_connection", {
-		target,
-		workspace,
-	});
-}
-
-export async function ensureSshPi(
-	target: SshTarget,
-	workspace: string,
-): Promise<PiSessionSnapshot> {
-	const current = await invoke<PiSessionSnapshot>("runtime_get_pi_state");
-	if (current.state === "running") {
-		if (current.connection?.kind.type !== "ssh") {
-			throw new Error(
-				`Pi Runtime 当前连接到 ${current.connection?.name ?? "其他环境"}，无法复用为 SSH 会话。`,
-			);
-		}
-		return current;
-	}
-
-	const started = await invoke<SshStartPiResponse>("ssh_start_pi", {
-		target,
-		workspace,
-	});
-	return started.session;
 }

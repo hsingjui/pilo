@@ -76,11 +76,23 @@ export function discoverWorkspaces(
 	return invoke<DiscoveredWorkspace[]>("workspace_discover", { connection });
 }
 
-export async function ensureWorkspacePi(
-	workspace: Workspace,
+const pendingPiStarts = new Map<string, Promise<PiSessionSnapshot>>();
+
+export function ensureWorkspacePi(
+	workspace: Pick<Workspace, "id">,
 ): Promise<PiSessionSnapshot> {
+	const pending = pendingPiStarts.get(workspace.id);
+	if (pending) return pending;
+	const request = startWorkspacePi(workspace.id).finally(() => {
+		pendingPiStarts.delete(workspace.id);
+	});
+	pendingPiStarts.set(workspace.id, request);
+	return request;
+}
+
+async function startWorkspacePi(id: string): Promise<PiSessionSnapshot> {
 	const current = await invoke<PiSessionSnapshot>("runtime_get_pi_state");
-	if (current.state === "running" && current.workspaceId === workspace.id) {
+	if (current.state === "running" && current.workspaceId === id) {
 		return current;
 	}
 	if (current.state === "starting" || current.state === "stopping") {
@@ -89,7 +101,7 @@ export async function ensureWorkspacePi(
 	if (current.state === "running") {
 		await invoke("runtime_stop_pi");
 	}
-	return invoke<PiSessionSnapshot>("workspace_start_pi", { id: workspace.id });
+	return invoke<PiSessionSnapshot>("workspace_start_pi", { id });
 }
 
 export function notifyWorkspacesChanged() {

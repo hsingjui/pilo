@@ -15,7 +15,6 @@ import {
 	SlidersHorizontal,
 	SquarePen,
 } from "lucide-react";
-import { formatCompactRelativeTime } from "@/lib/relative-time";
 import { cn } from "@/lib/utils";
 import {
 	DropdownMenu,
@@ -76,7 +75,7 @@ function ConfirmArchiveButton({
 				"inline-flex items-center justify-center rounded-sm",
 				"focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring/40",
 				confirming
-					? "relative z-10 h-5 min-w-14 overflow-hidden whitespace-nowrap rounded-full border border-destructive/20 bg-sidebar px-2 text-[11px] font-medium leading-none text-destructive shadow-xs transition-none hover:bg-sidebar hover:text-destructive"
+					? "relative z-10 h-5 min-w-10 overflow-hidden whitespace-nowrap rounded-full border border-destructive/20 bg-sidebar px-2 text-[11px] font-medium leading-none text-destructive shadow-xs transition-none hover:bg-sidebar hover:text-destructive"
 					: "h-5 w-5 text-sidebar-foreground-muted/80 transition-[opacity,color,background-color] duration-100 hover:text-sidebar-foreground",
 				className,
 			)}
@@ -376,14 +375,14 @@ export function SessionRow({
 					onSelect();
 				}}
 				className={cn(
-					"group relative w-full cursor-pointer select-none rounded-md border border-transparent bg-transparent px-2 py-1 text-left transition-colors",
+					"group relative w-full min-w-0 cursor-pointer select-none rounded-md border border-transparent bg-transparent px-2 py-1 text-left transition-colors",
 					"hover:bg-sidebar-hover hover:text-sidebar-hover-foreground data-[menu-open]:bg-sidebar-hover",
 					"focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-sidebar-ring/40",
 					selected &&
 						"border-sidebar-foreground/10 bg-sidebar-foreground/10 text-sidebar-foreground hover:bg-sidebar-foreground/10",
 				)}
 			>
-				<div className="flex min-w-0 items-center gap-1.5">
+				<div className="flex w-full min-w-0 items-center gap-1.5">
 					<div className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center">
 						<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
 							<DropdownMenuTrigger asChild>
@@ -456,7 +455,7 @@ export function SessionRow({
 					) : (
 						<span
 							className={cn(
-								"min-w-0 flex-1 truncate text-sm",
+								"block min-w-0 flex-1 truncate text-sm",
 								selected
 									? "text-sidebar-selection-foreground"
 									: "text-sidebar-foreground dark:text-sidebar-foreground/75",
@@ -472,18 +471,14 @@ export function SessionRow({
 						>
 							{session.active ? (
 								<span className="size-1.5 rounded-full bg-primary" />
-							) : (
-								<span className="text-xs tabular-nums text-muted-foreground">
-									{formatCompactRelativeTime(session.latestMessageAt, now)}
-								</span>
-							)}
+							) : null}
 						</span>
 						{!session.archived ? (
 							<ConfirmArchiveButton
 								label="归档"
-								confirmLabel="确认归档"
+								confirmLabel="确认"
 								className={cn(
-									"absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2",
+									"absolute right-0 top-0 z-20",
 									"opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100",
 									"group-data-[menu-open]:pointer-events-auto group-data-[menu-open]:opacity-100",
 								)}
@@ -492,11 +487,6 @@ export function SessionRow({
 						) : null}
 					</div>
 				</div>
-				{session.preview ? (
-					<div className="truncate pl-5 pr-6 text-[11px] leading-4 text-sidebar-foreground-muted/80">
-						{session.preview}
-					</div>
-				) : null}
 			</div>
 		</SessionInfoHoverCard>
 	);

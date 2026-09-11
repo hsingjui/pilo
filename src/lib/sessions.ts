@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export const SESSIONS_CHANGED_EVENT = "pilo:sessions-changed";
 
@@ -37,6 +38,13 @@ export type SessionReconcileResult = {
 	unchanged: number;
 };
 
+export type SessionWatchEvent =
+	| { type: "changed"; workspaceId: string }
+	| { type: "backend"; workspaceId: string; backend: string }
+	| { type: "error"; workspaceId: string; message: string };
+
+const reconcileInFlight = new Map<string, Promise<SessionReconcileResult>>();
+
 export function listSessions(
 	workspaceId: string,
 ): Promise<SessionIndexEntry[]> {
@@ -46,7 +54,34 @@ export function listSessions(
 export function reconcileSessions(
 	workspaceId: string,
 ): Promise<SessionReconcileResult> {
-	return invoke<SessionReconcileResult>("session_reconcile", { workspaceId });
+	const existing = reconcileInFlight.get(workspaceId);
+	if (existing) return existing;
+
+	const request = invoke<SessionReconcileResult>("session_reconcile", {
+		workspaceId,
+	}).finally(() => {
+		if (reconcileInFlight.get(workspaceId) === request) {
+			reconcileInFlight.delete(workspaceId);
+		}
+	});
+	reconcileInFlight.set(workspaceId, request);
+	return request;
+}
+
+export function startSessionWatch(workspaceId: string): Promise<void> {
+	return invoke("session_watch_start", { workspaceId });
+}
+
+export function stopSessionWatch(workspaceId: string): Promise<void> {
+	return invoke("session_watch_stop", { workspaceId });
+}
+
+export function listenSessionWatchEvents(
+	handler: (event: SessionWatchEvent) => void,
+): Promise<UnlistenFn> {
+	return listen<SessionWatchEvent>("pilo://sessions", (event) =>
+		handler(event.payload),
+	);
 }
 
 export function updateSessionUiState(

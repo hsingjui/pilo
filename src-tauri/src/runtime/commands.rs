@@ -1,178 +1,31 @@
-use std::path::PathBuf;
+use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, State};
 
 use crate::domain::{
-    Connection, DiscoveredWorkspace, LocalConnection, LocalEnvironmentInfo, SessionIndexEntry,
-    SessionReconcileResult, SessionUiStateUpdate, SshConnection, SshEnvironmentInfo, SshTarget,
-    Workspace, WslConnection, WslDistribution, WslEnvironmentInfo,
+    Connection, DiscoveredWorkspace, SessionIndexEntry, SessionReconcileResult,
+    SessionUiStateUpdate, Workspace, WslDistribution,
 };
 
 use super::{
-    events::TauriEventSink,
-    local::{
-        prepare_local_launch, probe_local_connection, LocalConnectionError, LocalConnectionProbe,
-    },
-    pi_session::PiSessionSnapshot,
-    process::ProcessSpec,
-    session_index,
-    ssh::{prepare_ssh_launch, probe_ssh_connection, SshConnectionError, SshConnectionProbe},
-    storage, workspace,
-    wsl::{
-        list_wsl_distributions, prepare_wsl_launch, probe_wsl_connection, WslConnectionError,
-        WslConnectionProbe,
-    },
     PiloRuntime,
+    events::TauriEventSink,
+    git::{self, GitStatus},
+    parallel::ParallelAgentInfo,
+    preview::{self, PreviewInfo},
+    remote_fs::{self, FsEntry},
+    session_index,
+    session_snapshot::PiSessionSnapshot,
+    storage,
+    terminal::TerminalInfo,
+    workspace,
+    wsl::{WslConnectionError, list_wsl_distributions},
 };
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SpawnPiSessionRequest {
-    pub connection: Connection,
-    pub process: ProcessSpec,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LocalStartPiResponse {
-    pub connection: LocalConnection,
-    pub environment: LocalEnvironmentInfo,
-    pub session: PiSessionSnapshot,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WslStartPiResponse {
-    pub connection: WslConnection,
-    pub environment: WslEnvironmentInfo,
-    pub session: PiSessionSnapshot,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SshStartPiResponse {
-    pub connection: SshConnection,
-    pub environment: SshEnvironmentInfo,
-    pub session: PiSessionSnapshot,
-}
-
-#[tauri::command]
-pub async fn local_probe_connection(
-    workspace: PathBuf,
-) -> Result<LocalConnectionProbe, LocalConnectionError> {
-    probe_local_connection(workspace).await
-}
-
-#[tauri::command]
-pub async fn local_start_pi(
-    app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
-    workspace: PathBuf,
-) -> Result<LocalStartPiResponse, LocalConnectionError> {
-    let launch = prepare_local_launch(workspace).await?;
-    let connection = launch.connection.clone();
-    let environment = launch.environment;
-    let session = runtime
-        .pi_session
-        .lock()
-        .await
-        .spawn(
-            TauriEventSink::new(app),
-            Connection::from(connection.clone()),
-            None,
-            launch.process,
-        )
-        .await
-        .map_err(LocalConnectionError::pi_spawn)?;
-
-    Ok(LocalStartPiResponse {
-        connection,
-        environment,
-        session,
-    })
-}
 
 #[tauri::command]
 pub async fn wsl_list_distributions() -> Result<Vec<WslDistribution>, WslConnectionError> {
     list_wsl_distributions().await
-}
-
-#[tauri::command]
-pub async fn wsl_probe_connection(
-    distro: String,
-    workspace: String,
-) -> Result<WslConnectionProbe, WslConnectionError> {
-    probe_wsl_connection(distro, workspace).await
-}
-
-#[tauri::command]
-pub async fn wsl_start_pi(
-    app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
-    distro: String,
-    workspace: String,
-) -> Result<WslStartPiResponse, WslConnectionError> {
-    let launch = prepare_wsl_launch(distro, workspace).await?;
-    let connection = launch.connection.clone();
-    let environment = launch.environment;
-    let session = runtime
-        .pi_session
-        .lock()
-        .await
-        .spawn(
-            TauriEventSink::new(app),
-            Connection::from(connection.clone()),
-            None,
-            launch.process,
-        )
-        .await
-        .map_err(WslConnectionError::pi_spawn)?;
-
-    Ok(WslStartPiResponse {
-        connection,
-        environment,
-        session,
-    })
-}
-
-#[tauri::command]
-pub async fn ssh_probe_connection(
-    target: SshTarget,
-    workspace: String,
-) -> Result<SshConnectionProbe, SshConnectionError> {
-    probe_ssh_connection(target, workspace).await
-}
-
-#[tauri::command]
-pub async fn ssh_start_pi(
-    app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
-    target: SshTarget,
-    workspace: String,
-) -> Result<SshStartPiResponse, SshConnectionError> {
-    let launch = prepare_ssh_launch(target, workspace).await?;
-    let connection = launch.connection.clone();
-    let environment = launch.environment;
-    let session = runtime
-        .pi_session
-        .lock()
-        .await
-        .spawn(
-            TauriEventSink::new(app),
-            Connection::from(connection.clone()),
-            None,
-            launch.process,
-        )
-        .await
-        .map_err(SshConnectionError::pi_spawn)?;
-
-    Ok(SshStartPiResponse {
-        connection,
-        environment,
-        session,
-    })
 }
 
 #[tauri::command]
@@ -183,15 +36,22 @@ pub fn workspace_list(app: AppHandle) -> Result<Vec<Workspace>, String> {
 #[tauri::command]
 pub async fn workspace_add(
     app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
     connection: Connection,
     path: String,
 ) -> Result<Workspace, String> {
-    workspace::add(&app, connection, path).await
+    let workspace = workspace::add(&app, &runtime.servers, connection, path).await?;
+    runtime.chat_sessions.open_workspace(&workspace.id).await?;
+    Ok(workspace)
 }
 
 #[tauri::command]
-pub async fn workspace_refresh(app: AppHandle, id: String) -> Result<Workspace, String> {
-    workspace::refresh(&app, &id).await
+pub async fn workspace_refresh(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+) -> Result<Workspace, String> {
+    workspace::refresh(&app, &runtime.servers, &id).await
 }
 
 #[tauri::command]
@@ -200,16 +60,280 @@ pub fn workspace_touch(app: AppHandle, id: String) -> Result<Workspace, String> 
 }
 
 #[tauri::command]
-pub fn workspace_remove(app: AppHandle, id: String) -> Result<Vec<Workspace>, String> {
+pub async fn workspace_remove(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+) -> Result<Vec<Workspace>, String> {
+    runtime.chat_sessions.stop_workspace(&id).await?;
     workspace::remove(&app, &id)
+}
+
+#[tauri::command]
+pub async fn workspace_git_status(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+) -> Result<GitStatus, String> {
+    let workspace = workspace::get(&app, &id)?;
+    git::status(&runtime.servers, &workspace).await
+}
+
+#[tauri::command]
+pub async fn workspace_git_diff(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+    path: Option<String>,
+    staged: bool,
+) -> Result<String, String> {
+    let workspace = workspace::get(&app, &id)?;
+    git::diff(&runtime.servers, &workspace, path.as_deref(), staged).await
+}
+
+#[tauri::command]
+pub async fn workspace_terminal_open(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<TerminalInfo, String> {
+    let workspace = workspace::get(&app, &id)?;
+    runtime
+        .terminals
+        .lock()
+        .await
+        .open(Arc::clone(&runtime.servers), app, &workspace, cols, rows)
+        .await
+}
+
+#[tauri::command]
+pub async fn terminal_write(
+    runtime: State<'_, PiloRuntime>,
+    terminal_id: String,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    runtime
+        .terminals
+        .lock()
+        .await
+        .write(&terminal_id, &data)
+        .await
+}
+
+#[tauri::command]
+pub async fn terminal_resize(
+    runtime: State<'_, PiloRuntime>,
+    terminal_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    runtime
+        .terminals
+        .lock()
+        .await
+        .resize(&terminal_id, cols, rows)
+        .await
+}
+
+#[tauri::command]
+pub async fn terminal_close(
+    runtime: State<'_, PiloRuntime>,
+    terminal_id: String,
+) -> Result<(), String> {
+    runtime.terminals.lock().await.close(&terminal_id).await
+}
+
+#[tauri::command]
+pub async fn parallel_agent_list(
+    runtime: State<'_, PiloRuntime>,
+    workspace_id: String,
+) -> Result<Vec<ParallelAgentInfo>, String> {
+    Ok(runtime.parallel_agents.lock().await.list(&workspace_id))
+}
+
+#[tauri::command]
+pub async fn parallel_agent_create(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    workspace_id: String,
+    name: String,
+    prompt: Option<String>,
+) -> Result<ParallelAgentInfo, String> {
+    let workspace = workspace::get(&app, &workspace_id)?;
+    runtime
+        .parallel_agents
+        .lock()
+        .await
+        .create(Arc::clone(&runtime.servers), app, &workspace, name, prompt)
+        .await
+}
+
+#[tauri::command]
+pub async fn parallel_agent_send(
+    runtime: State<'_, PiloRuntime>,
+    agent_id: String,
+    message: String,
+) -> Result<(), String> {
+    runtime
+        .parallel_agents
+        .lock()
+        .await
+        .send(&agent_id, message)
+        .await
+}
+
+#[tauri::command]
+pub async fn parallel_agent_stop(
+    runtime: State<'_, PiloRuntime>,
+    agent_id: String,
+) -> Result<(), String> {
+    runtime.parallel_agents.lock().await.stop(&agent_id).await
+}
+
+#[tauri::command]
+pub async fn parallel_agent_remove(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    workspace_id: String,
+    agent_id: String,
+) -> Result<(), String> {
+    let workspace = workspace::get(&app, &workspace_id)?;
+    runtime
+        .parallel_agents
+        .lock()
+        .await
+        .remove(&runtime.servers, &workspace, &agent_id)
+        .await
+}
+
+#[tauri::command]
+pub async fn workspace_preview_ports(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    workspace_id: String,
+) -> Result<Vec<u16>, String> {
+    let workspace = workspace::get(&app, &workspace_id)?;
+    preview::detect_ports(&runtime.servers, &workspace).await
+}
+
+#[tauri::command]
+pub async fn workspace_preview_open(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    workspace_id: String,
+    port: u16,
+) -> Result<PreviewInfo, String> {
+    let workspace = workspace::get(&app, &workspace_id)?;
+    runtime.previews.lock().await.open(&workspace, port).await
+}
+
+#[tauri::command]
+pub async fn workspace_preview_close(
+    runtime: State<'_, PiloRuntime>,
+    preview_id: String,
+) -> Result<(), String> {
+    runtime.previews.lock().await.close(&preview_id).await
+}
+
+#[tauri::command]
+pub async fn workspace_fs_read_dir(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+    path: String,
+) -> Result<Vec<FsEntry>, String> {
+    let workspace = workspace::get(&app, &id)?;
+    remote_fs::read_dir(&runtime.servers, &workspace, &path).await
+}
+
+#[tauri::command]
+pub async fn workspace_fs_read_file(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+    path: String,
+) -> Result<Vec<u8>, String> {
+    let workspace = workspace::get(&app, &id)?;
+    remote_fs::read_file(&runtime.servers, &workspace, &path).await
+}
+
+#[tauri::command]
+pub async fn workspace_fs_write_file(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+    path: String,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    let workspace = workspace::get(&app, &id)?;
+    remote_fs::write_file(&runtime.servers, &workspace, &path, &data).await
+}
+
+#[tauri::command]
+pub async fn workspace_fs_stat(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+    path: String,
+) -> Result<FsEntry, String> {
+    let workspace = workspace::get(&app, &id)?;
+    remote_fs::stat(&runtime.servers, &workspace, &path).await
+}
+
+#[tauri::command]
+pub async fn workspace_fs_mkdir(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+    path: String,
+) -> Result<(), String> {
+    let workspace = workspace::get(&app, &id)?;
+    remote_fs::mkdir(&runtime.servers, &workspace, &path).await
+}
+
+#[tauri::command]
+pub async fn workspace_fs_rename(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+    from: String,
+    to: String,
+) -> Result<(), String> {
+    let workspace = workspace::get(&app, &id)?;
+    remote_fs::rename(&runtime.servers, &workspace, &from, &to).await
+}
+
+#[tauri::command]
+pub async fn workspace_fs_remove(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+    path: String,
+) -> Result<(), String> {
+    let workspace = workspace::get(&app, &id)?;
+    remote_fs::remove(&runtime.servers, &workspace, &path).await
+}
+
+#[tauri::command]
+pub async fn workspace_fs_search(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+    query: String,
+) -> Result<Vec<String>, String> {
+    let workspace = workspace::get(&app, &id)?;
+    remote_fs::search(&runtime.servers, &workspace, &query).await
 }
 
 #[tauri::command]
 pub async fn workspace_discover(
     app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
     connection: Connection,
 ) -> Result<Vec<DiscoveredWorkspace>, String> {
-    workspace::discover(&app, connection).await
+    workspace::discover(&app, &runtime.servers, connection).await
 }
 
 #[tauri::command]
@@ -223,10 +347,40 @@ pub fn session_list(
 #[tauri::command]
 pub async fn session_reconcile(
     app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
     workspace_id: String,
 ) -> Result<SessionReconcileResult, String> {
     let workspace = workspace::get(&app, &workspace_id)?;
-    session_index::reconcile(&app, &workspace).await
+    session_index::reconcile(&app, &runtime.servers, &workspace).await
+}
+
+#[tauri::command]
+pub async fn session_watch_start(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    workspace_id: String,
+) -> Result<(), String> {
+    let workspace = workspace::get(&app, &workspace_id)?;
+    runtime
+        .session_watchers
+        .lock()
+        .await
+        .start(Arc::clone(&runtime.servers), app, workspace)
+        .await
+}
+
+#[tauri::command]
+pub async fn session_watch_stop(
+    runtime: State<'_, PiloRuntime>,
+    workspace_id: String,
+) -> Result<(), String> {
+    runtime
+        .session_watchers
+        .lock()
+        .await
+        .stop(&workspace_id)
+        .await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -239,79 +393,66 @@ pub fn session_update_ui_state(
 }
 
 #[tauri::command]
+pub async fn chat_session_start(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    workspace_id: String,
+    session_key: String,
+    session_path: Option<String>,
+) -> Result<PiSessionSnapshot, String> {
+    let workspace = workspace::get(&app, &workspace_id)?;
+    runtime
+        .chat_sessions
+        .ensure(
+            Arc::clone(&runtime.servers),
+            app,
+            workspace,
+            session_key,
+            session_path,
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn chat_session_send_rpc(
+    runtime: State<'_, PiloRuntime>,
+    session_key: String,
+    command: Value,
+) -> Result<(), String> {
+    runtime.chat_sessions.send(&session_key, command).await
+}
+
+#[tauri::command]
 pub async fn workspace_start_pi(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
 ) -> Result<PiSessionSnapshot, String> {
     let workspace = workspace::get(&app, &id)?;
-    let (connection, process) = match workspace.connection.kind.clone() {
-        crate::domain::ConnectionKind::Local => {
-            let launch = prepare_local_launch(PathBuf::from(&workspace.path))
-                .await
-                .map_err(|error| error.to_string())?;
-            (Connection::from(launch.connection), launch.process)
-        }
-        crate::domain::ConnectionKind::Wsl { distro } => {
-            let launch = prepare_wsl_launch(distro, workspace.path.clone())
-                .await
-                .map_err(|error| error.to_string())?;
-            (Connection::from(launch.connection), launch.process)
-        }
-        crate::domain::ConnectionKind::Ssh { target } => {
-            let launch = prepare_ssh_launch(target, workspace.path.clone())
-                .await
-                .map_err(|error| error.to_string())?;
-            (Connection::from(launch.connection), launch.process)
-        }
-    };
-
     workspace::touch(&app, &workspace.id)?;
     runtime
-        .pi_session
+        .workspace_pi_session
         .lock()
         .await
-        .spawn(TauriEventSink::new(app), connection, Some(id), process)
+        .spawn(
+            Arc::clone(&runtime.servers),
+            TauriEventSink::new(app),
+            &workspace,
+            None,
+        )
         .await
-        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 pub async fn runtime_get_pi_state(
     runtime: State<'_, PiloRuntime>,
 ) -> Result<PiSessionSnapshot, String> {
-    Ok(runtime.pi_session.lock().await.snapshot())
-}
-
-#[tauri::command]
-pub async fn runtime_spawn_pi(
-    app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
-    request: SpawnPiSessionRequest,
-) -> Result<PiSessionSnapshot, String> {
-    runtime
-        .pi_session
-        .lock()
-        .await
-        .spawn(
-            TauriEventSink::new(app),
-            request.connection,
-            None,
-            request.process,
-        )
-        .await
-        .map_err(|error| error.to_string())
+    Ok(runtime.workspace_pi_session.lock().await.snapshot())
 }
 
 #[tauri::command]
 pub async fn runtime_stop_pi(runtime: State<'_, PiloRuntime>) -> Result<PiSessionSnapshot, String> {
-    runtime
-        .pi_session
-        .lock()
-        .await
-        .stop()
-        .await
-        .map_err(|error| error.to_string())
+    runtime.workspace_pi_session.lock().await.stop().await
 }
 
 #[tauri::command]
@@ -320,23 +461,16 @@ pub async fn runtime_restart_pi(
     runtime: State<'_, PiloRuntime>,
 ) -> Result<PiSessionSnapshot, String> {
     runtime
-        .pi_session
+        .workspace_pi_session
         .lock()
         .await
-        .restart(TauriEventSink::new(app))
+        .restart(Arc::clone(&runtime.servers), TauriEventSink::new(app))
         .await
-        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 pub async fn runtime_abort_pi(runtime: State<'_, PiloRuntime>) -> Result<(), String> {
-    runtime
-        .pi_session
-        .lock()
-        .await
-        .abort()
-        .await
-        .map_err(|error| error.to_string())
+    runtime.workspace_pi_session.lock().await.abort().await
 }
 
 #[tauri::command]
@@ -345,10 +479,9 @@ pub async fn runtime_send_rpc(
     command: Value,
 ) -> Result<(), String> {
     runtime
-        .pi_session
+        .workspace_pi_session
         .lock()
         .await
         .send_rpc(command)
         .await
-        .map_err(|error| error.to_string())
 }

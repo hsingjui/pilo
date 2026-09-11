@@ -46,17 +46,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function truncateText(value: string, limit = 8_000) {
-	return value.length <= limit ? value : `${value.slice(0, limit)}\n…`;
-}
-
 function formatUnknown(value: unknown) {
-	if (typeof value === "string") return truncateText(value);
+	if (typeof value === "string") return value;
 	try {
 		const serialized = JSON.stringify(value, null, 2);
-		return truncateText(serialized ?? String(value));
+		return serialized ?? String(value);
 	} catch {
-		return truncateText(String(value));
+		return String(value);
 	}
 }
 
@@ -69,7 +65,7 @@ function extractResultText(value: unknown): string | null {
 		})
 		.filter((part): part is string => Boolean(part))
 		.join("\n");
-	return text ? truncateText(text) : null;
+	return text || null;
 }
 
 function ToolIcon({
@@ -108,6 +104,15 @@ function toolPreview(activity: ToolCallActivity) {
 		"pattern",
 		"url",
 	]) {
+		const value = activity.args[key];
+		if (typeof value === "string" && value.trim()) return value.trim();
+	}
+	return null;
+}
+
+function toolFilePath(activity: ToolCallActivity) {
+	if (!isRecord(activity.args)) return null;
+	for (const key of ["path", "filePath"]) {
 		const value = activity.args[key];
 		if (typeof value === "string" && value.trim()) return value.trim();
 	}
@@ -220,11 +225,18 @@ function ToolDetail({ activity }: { activity: ToolCallActivity }) {
 	);
 }
 
-function ToolCallActivityView({ activity }: { activity: ToolCallActivity }) {
+function ToolCallActivityView({
+	activity,
+	onOpenPath,
+}: {
+	activity: ToolCallActivity;
+	onOpenPath?: (path: string) => void;
+}) {
 	const running = activity.status === "running";
 	// 详情默认收起（含运行中），点击行切换；key 含 status，完成后 remount 自动收起
 	const [open, setOpen] = useState(false);
 	const preview = toolPreview(activity);
+	const filePath = toolFilePath(activity);
 	const hasDetails =
 		(activity.args !== undefined && activity.args !== null) ||
 		(activity.result !== undefined && activity.result !== null);
@@ -242,6 +254,8 @@ function ToolCallActivityView({ activity }: { activity: ToolCallActivity }) {
 					activity.isError && "text-destructive",
 				)}
 				onClick={() => hasDetails && setOpen((value) => !value)}
+				onDoubleClick={() => filePath && onOpenPath?.(filePath)}
+				title={filePath && onOpenPath ? "双击打开文件" : undefined}
 				aria-expanded={hasDetails ? open : undefined}
 			>
 				<ToolIcon
@@ -308,10 +322,12 @@ export function AssistantActivityView({
 	activity,
 	streaming,
 	durationMs,
+	onOpenPath,
 }: {
 	activity: AssistantActivity[];
 	streaming: boolean;
 	durationMs?: number;
+	onOpenPath?: (path: string) => void;
 }) {
 	const { collapseCompletedActivity, showWorkDuration } = usePreferences();
 	const [open, setOpen] = useState(streaming || !collapseCompletedActivity);
@@ -356,6 +372,7 @@ export function AssistantActivityView({
 							<ToolCallActivityView
 								key={`${item.id}-${item.status}`}
 								activity={item}
+								onOpenPath={onOpenPath}
 							/>
 						),
 					)}

@@ -1,7 +1,15 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { PanelLeft } from "lucide-react";
 import { ChatComposer } from "@/components/chat/chat-composer";
+import {
+	getAvailablePiModels,
+	PI_THINKING_LEVELS,
+	runtimeErrorMessage,
+	type PiModel,
+	type PiThinkingLevel,
+} from "@/lib/pi-runtime";
 import { cn } from "@/lib/utils";
+import { ensureWorkspacePi, type Workspace } from "@/lib/workspaces";
 import { Button } from "@/ui";
 
 export function NewChatLanding({
@@ -10,14 +18,48 @@ export function NewChatLanding({
 	reserveWindowControls = false,
 	sidebarCollapsed = false,
 	workspaceAvailable = true,
+	workspace = null,
 }: {
-	onStartSession: (prompt: string) => void;
+	onStartSession: (
+		prompt: string,
+		model: PiModel | null,
+		thinkingLevel: PiThinkingLevel | null,
+	) => void;
 	onExpandSidebar?: () => void;
 	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
 	workspaceAvailable?: boolean;
+	workspace?: Workspace | null;
 }) {
 	const [draft, setDraft] = useState("");
+	const [models, setModels] = useState<PiModel[]>([]);
+	const [selectedModel, setSelectedModel] = useState<PiModel | null>(null);
+	const [selectedThinkingLevel, setSelectedThinkingLevel] =
+		useState<PiThinkingLevel | null>(null);
+	const [modelLoadState, setModelLoadState] = useState<
+		"idle" | "loading" | "ready" | "error"
+	>("idle");
+	const [modelError, setModelError] = useState<string | null>(null);
+	const modelRequestRef = useRef(0);
+
+	const loadModels = useCallback(async () => {
+		if (!workspace || modelLoadState === "loading") return;
+		const requestId = ++modelRequestRef.current;
+		setModelLoadState("loading");
+		setModelError(null);
+		try {
+			await ensureWorkspacePi(workspace);
+			const result = await getAvailablePiModels();
+			if (modelRequestRef.current !== requestId) return;
+			setModels(result.models);
+			setModelLoadState("ready");
+		} catch (error) {
+			if (modelRequestRef.current !== requestId) return;
+			setModelError(runtimeErrorMessage(error));
+			setModelLoadState("error");
+		}
+	}, [modelLoadState, workspace]);
+
 	return (
 		<div className="flex h-full min-w-0 flex-col">
 			<header
@@ -64,8 +106,23 @@ export function NewChatLanding({
 					variant="landing"
 					value={draft}
 					onChange={setDraft}
-					onSubmit={onStartSession}
+					onSubmit={(prompt) =>
+						onStartSession(prompt, selectedModel, selectedThinkingLevel)
+					}
 					disabled={!workspaceAvailable}
+					models={models}
+					selectedModel={selectedModel}
+					modelLoading={modelLoadState === "loading"}
+					modelError={modelError}
+					modelDisabled={!workspaceAvailable || !workspace}
+					showDefaultModelOption
+					onModelMenuOpen={() => void loadModels()}
+					onModelChange={setSelectedModel}
+					thinkingLevels={PI_THINKING_LEVELS}
+					selectedThinkingLevel={selectedThinkingLevel}
+					thinkingDisabled={!workspaceAvailable || !workspace}
+					showDefaultThinkingOption
+					onThinkingChange={setSelectedThinkingLevel}
 					placeholder={
 						workspaceAvailable
 							? undefined

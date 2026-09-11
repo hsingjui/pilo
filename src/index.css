@@ -219,58 +219,61 @@
 	}
 
 	.dark {
-		/* Lody dark (Vesper-like blue-navy) */
-		--background: 222 55% 9.6%;
-		--foreground: 210 40% 96%;
-		--card: 220 54% 11.5%;
-		--card-foreground: 210 40% 96%;
-		--popover: 220 54% 11.5%;
-		--popover-foreground: 210 40% 96%;
-		--primary: 210 90% 62%;
-		--primary-foreground: 220 50% 12%;
-		--secondary: 222 40% 16%;
-		--secondary-foreground: 210 40% 96%;
-		--muted: 220 38% 14%;
-		--muted-foreground: 216 18% 70%;
-		--highlight: var(--primary);
-		--highlight-foreground: var(--primary-foreground);
-		--hover: 219 42% 18%;
-		--hover-foreground: var(--foreground);
-		--selection: 219 42% 22%;
-		--selection-foreground: var(--foreground);
-		--selection-inactive: var(--selection);
-		--selection-inactive-foreground: var(--selection-foreground);
-		--destructive: 0 72% 52%;
-		--destructive-foreground: 0 0% 98%;
-		--border: 220 32% 18%;
-		--input: 220 32% 18%;
+		/*
+		 * Lody Dark = bundled Vesper. Keep these values aligned with
+		 * packages/components/.../Vesper-dark-color-theme.json and Lody's alias rules.
+		 */
+		--background: 0 0% 6.3%;
+		--foreground: 0 0% 100%;
+		--card: 0 0% 8.6%;
+		--card-foreground: 0 0% 62.7%;
+		--popover: 0 0% 6.3%;
+		--popover-foreground: 0 0% 100%;
+		--primary: 27.1 100% 80%;
+		--primary-foreground: 0 0% 0%;
+		--secondary: 0 0% 13.7%;
+		--secondary-foreground: 0 0% 62.7%;
+		--muted: 0 0% 6.3%;
+		--muted-foreground: 0 0% 62.7%;
+		--highlight: 27.1 100% 80%;
+		--highlight-foreground: 0 0% 0%;
+		--hover: 0 0% 15.7%;
+		--hover-foreground: 0 0% 100%;
+		--selection: 0 0% 13.7%;
+		--selection-foreground: 27.1 100% 80%;
+		--selection-inactive: 0 0% 13.7%;
+		--selection-inactive-foreground: 27.1 100% 80%;
+		--destructive: 0 100% 75.1%;
+		--destructive-foreground: 0 0% 0%;
+		--border: 0 0% 15.7%;
+		--input: 0 0% 11%;
 		--input-foreground: var(--foreground);
 		--input-placeholder: var(--muted-foreground);
-		--input-border: var(--border);
+		--input-border: 0 0% 15.7%;
 		--input-field: var(--input);
-		--switch-track: 220 13% 40%;
-		--ring: 210 90% 62%;
-		--sidebar-background: 222 55% 9.6%;
-		--sidebar-foreground: 210 40% 96%;
-		--sidebar-foreground-muted: 216 18% 70%;
-		--sidebar-primary: 210 90% 62%;
-		--sidebar-primary-foreground: 220 50% 12%;
-		--sidebar-hover: 220 44% 14%;
-		--sidebar-hover-foreground: var(--sidebar-foreground);
-		--sidebar-selection: 220 44% 20%;
-		--sidebar-selection-foreground: var(--sidebar-foreground);
-		--sidebar-border: 220 32% 18%;
-		--sidebar-ring: 210 90% 62%;
-		--button-hover: 220 44% 18%;
-		--button-secondary: var(--secondary);
-		--button-secondary-foreground: var(--secondary-foreground);
-		--button-secondary-hover: var(--hover);
-		--bottom-bar: 222 40% 12%;
-		--bottom-bar-foreground: 210 40% 96%;
-		--status-info: var(--primary);
+		--switch-track: 0 0% 15.7%;
+		--ring: 27.1 100% 80%;
+		--sidebar-background: 0 0% 8.6%;
+		--sidebar-foreground: 0 0% 100%;
+		--sidebar-foreground-muted: 0 0% 62.7%;
+		--sidebar-primary: 27.1 100% 80%;
+		--sidebar-primary-foreground: 0 0% 0%;
+		--sidebar-hover: 0 0% 15.7%;
+		--sidebar-hover-foreground: 0 0% 62.7%;
+		--sidebar-selection: 0 0% 13.7%;
+		--sidebar-selection-foreground: 27.1 100% 80%;
+		--sidebar-border: 0 0% 15.7%;
+		--sidebar-ring: 27.1 100% 80%;
+		--button-hover: 26.9 100% 82.9%;
+		--button-secondary: 0 0% 11%;
+		--button-secondary-foreground: 0 0% 100%;
+		--button-secondary-hover: 0 0% 15.7%;
+		--bottom-bar: 0 0% 6.3%;
+		--bottom-bar-foreground: 0 0% 62.7%;
+		--status-info: 27.1 100% 80%;
 		--status-success: 151 60% 52%;
-		--status-warning: 43 96% 56%;
-		--status-danger: var(--destructive);
+		--status-warning: 27.1 100% 80%;
+		--status-danger: 0 100% 75.1%;
 		--status-merged: 262 90% 74%;
 		--github-open: 128 49% 49%;
 		--github-merged: 262 89% 71%;
@@ -278,24 +281,29 @@
 		--github-draft: 212 8% 58%;
 		--github-addition: var(--github-open);
 		--github-deletion: var(--github-closed);
-		--modified-file: 43 96% 56%;
-		--scrollbar-thumb: var(--muted-foreground);
-		--scrollbar-thumb-hover: var(--muted-foreground);
-		--scrollbar-thumb-active: var(--muted-foreground);
-		--code-background: 220 48% 12%;
-		--code-foreground: 210 40% 96%;
-		--code-border: 220 32% 20%;
-		--code-added: var(--github-addition);
-		--code-removed: var(--github-deletion);
-		--syntax-keyword: 262 90% 74%;
-		--syntax-string: 154 68% 55%;
-		--syntax-number: 28 88% 62%;
-		--syntax-comment: 216 18% 70%;
-		--syntax-function: 197 85% 58%;
-		--syntax-variable: 330 78% 70%;
-		--syntax-title: 330 78% 70%;
-		--syntax-attr: 28 88% 62%;
-		--syntax-builtin: 262 90% 74%;
+		--modified-file: 27.1 100% 80%;
+		--scrollbar-thumb: 0 0% 14.5%;
+		--scrollbar-thumb-hover: 0 0% 20.4%;
+		--scrollbar-thumb-active: 0 0% 20.4%;
+		--code-background: 0 0% 5.5%;
+		--code-foreground: 0 0% 100%;
+		--code-border: 0 0% 15.7%;
+		--code-added: 164.1 100% 80%;
+		--code-removed: 0 100% 75.1%;
+		--syntax-keyword: 0 0% 62.7%;
+		--syntax-string: 164.1 100% 80%;
+		--syntax-number: 27.1 100% 80%;
+		--syntax-comment: 0 0% 54.5%;
+		--syntax-function: 27.1 100% 80%;
+		--syntax-variable: 0 0% 100%;
+		--syntax-title: 27.1 100% 80%;
+		--syntax-attr: 0 0% 100%;
+		--syntax-builtin: 27.1 100% 80%;
+
+		--shadow-panel:
+			0 1px 1px hsl(0 0% 0% / 0.35), 0 14px 44px hsl(0 0% 0% / 0.55);
+		--shadow-popover:
+			0 2px 6px hsl(0 0% 0% / 0.45), 0 22px 70px hsl(0 0% 0% / 0.65);
 	}
 
 	* {

@@ -12,6 +12,7 @@ import {
 	FileCode2,
 	FileText,
 	ListPlus,
+	LoaderCircle,
 	Paperclip,
 	Plus,
 	Sparkles,
@@ -21,10 +22,19 @@ import {
 } from "lucide-react";
 
 import { isImeComposingKeyboardEvent } from "@/lib/ime";
+import type { PiModel, PiThinkingLevel } from "@/lib/pi-runtime";
 import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
 import {
 	Button,
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuRadioGroup,
+	DropdownMenuRadioItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
 	Textarea,
 	Tooltip,
 	TooltipContent,
@@ -58,8 +68,23 @@ type ChatComposerProps = {
 	onStop?: () => void;
 	pendingSteering?: number;
 	pendingFollowUps?: number;
+	statusText?: string;
 	modelLabel?: string;
-	modeLabel?: string;
+	models?: readonly PiModel[];
+	selectedModel?: PiModel | null;
+	modelLoading?: boolean;
+	modelError?: string | null;
+	modelDisabled?: boolean;
+	showDefaultModelOption?: boolean;
+	onModelMenuOpen?: () => void;
+	onModelChange?: (model: PiModel | null) => void;
+	thinkingLevels?: readonly PiThinkingLevel[];
+	selectedThinkingLevel?: PiThinkingLevel | null;
+	thinkingLoading?: boolean;
+	thinkingDisabled?: boolean;
+	showDefaultThinkingOption?: boolean;
+	onThinkingMenuOpen?: () => void;
+	onThinkingChange?: (level: PiThinkingLevel | null) => void;
 	suggestions?: readonly ComposerSuggestion[];
 	className?: string;
 };
@@ -75,6 +100,14 @@ type ActiveSuggestionQuery = {
 
 const MAX_ROWS = 12;
 const LINE_HEIGHT = 24;
+const DEFAULT_MODEL_VALUE = "__pilo_default_model__";
+const DEFAULT_THINKING_VALUE = "__pilo_default_thinking__";
+const EMPTY_MODELS: readonly PiModel[] = [];
+const EMPTY_THINKING_LEVELS: readonly PiThinkingLevel[] = [];
+
+function modelValue(model: PiModel) {
+	return JSON.stringify([model.provider, model.id]);
+}
 
 const DEFAULT_SUGGESTIONS: readonly ComposerSuggestion[] = [
 	{
@@ -190,8 +223,23 @@ export function ChatComposer({
 	onStop,
 	pendingSteering = 0,
 	pendingFollowUps = 0,
+	statusText = "",
 	modelLabel = "pi / default",
-	modeLabel = "默认",
+	models = EMPTY_MODELS,
+	selectedModel = null,
+	modelLoading = false,
+	modelError = null,
+	modelDisabled = false,
+	showDefaultModelOption = false,
+	onModelMenuOpen,
+	onModelChange,
+	thinkingLevels = EMPTY_THINKING_LEVELS,
+	selectedThinkingLevel = null,
+	thinkingLoading = false,
+	thinkingDisabled = false,
+	showDefaultThinkingOption = false,
+	onThinkingMenuOpen,
+	onThinkingChange,
 	suggestions = DEFAULT_SUGGESTIONS,
 	className,
 }: ChatComposerProps) {
@@ -202,6 +250,16 @@ export function ChatComposer({
 	const [caret, setCaret] = useState(value.length);
 	const [highlightedIndex, setHighlightedIndex] = useState(0);
 	const [dismissedQuery, setDismissedQuery] = useState<string | null>(null);
+	const effectiveModelLabel =
+		selectedModel?.name || selectedModel?.id || modelLabel;
+	const selectedModelValue = selectedModel
+		? modelValue(selectedModel)
+		: showDefaultModelOption
+			? DEFAULT_MODEL_VALUE
+			: "";
+	const selectedThinkingValue =
+		selectedThinkingLevel ??
+		(showDefaultThinkingOption ? DEFAULT_THINKING_VALUE : "");
 
 	useLayoutEffect(() => {
 		const textarea = textareaRef.current;
@@ -432,7 +490,7 @@ export function ChatComposer({
 					"dark:border-input-border/70",
 					isLanding
 						? "dark:bg-input/90 gap-1 rounded-xl px-4 py-1.5 shadow-[0_1px_2px_hsl(0_0%_0%/0.04),0_8px_24px_-12px_hsl(0_0%_0%/0.08)]"
-						: "dark:bg-input gap-1 rounded-xl px-2 py-1.5",
+						: "dark:bg-input/90 gap-1 rounded-xl px-2 py-1.5",
 				)}
 			>
 				{attachments.length > 0 ? (
@@ -513,25 +571,133 @@ export function ChatComposer({
 						<TooltipContent>添加附件</TooltipContent>
 					</Tooltip>
 
-					<button
-						type="button"
-						className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+					<DropdownMenu
+						onOpenChange={(open) => {
+							if (open) onModelMenuOpen?.();
+						}}
 					>
-						<span className="max-w-40 truncate font-mono">{modelLabel}</span>
-						<ChevronDown className="size-3" />
-					</button>
-					<button
-						type="button"
-						className="hidden items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground sm:flex"
+						<DropdownMenuTrigger asChild>
+							<button
+								type="button"
+								disabled={modelDisabled || !onModelChange}
+								aria-label="选择模型"
+								className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
+							>
+								<span className="max-w-40 truncate font-mono">
+									{effectiveModelLabel}
+								</span>
+								<ChevronDown className="size-3" />
+							</button>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="start" className="w-72">
+							<DropdownMenuLabel>模型</DropdownMenuLabel>
+							<DropdownMenuSeparator />
+							{modelLoading ? (
+								<DropdownMenuItem disabled>
+									<LoaderCircle className="size-3.5 animate-spin" />
+									正在读取 Pi 模型…
+								</DropdownMenuItem>
+							) : modelError ? (
+								<DropdownMenuItem onSelect={() => onModelMenuOpen?.()}>
+									<span className="min-w-0 flex-1 truncate">{modelError}</span>
+									<span className="text-[11px] text-muted-foreground">
+										重试
+									</span>
+								</DropdownMenuItem>
+							) : models.length === 0 && !showDefaultModelOption ? (
+								<DropdownMenuItem disabled>没有可用模型</DropdownMenuItem>
+							) : (
+								<DropdownMenuRadioGroup
+									value={selectedModelValue}
+									onValueChange={(nextValue) => {
+										if (nextValue === DEFAULT_MODEL_VALUE) {
+											onModelChange?.(null);
+											return;
+										}
+										const nextModel = models.find(
+											(model) => modelValue(model) === nextValue,
+										);
+										if (nextModel) onModelChange?.(nextModel);
+									}}
+								>
+									{showDefaultModelOption ? (
+										<DropdownMenuRadioItem value={DEFAULT_MODEL_VALUE}>
+											Pi 默认模型
+										</DropdownMenuRadioItem>
+									) : null}
+									{models.map((model) => (
+										<DropdownMenuRadioItem
+											key={modelValue(model)}
+											value={modelValue(model)}
+										>
+											<span className="min-w-0 flex-1 truncate">
+												{model.name || model.id}
+											</span>
+											<span className="ml-auto pl-3 text-[11px] text-muted-foreground">
+												{model.provider}
+											</span>
+										</DropdownMenuRadioItem>
+									))}
+								</DropdownMenuRadioGroup>
+							)}
+						</DropdownMenuContent>
+					</DropdownMenu>
+
+					<DropdownMenu
+						onOpenChange={(open) => {
+							if (open) onThinkingMenuOpen?.();
+						}}
 					>
-						{modeLabel}
-						<ChevronDown className="size-3" />
-					</button>
+						<DropdownMenuTrigger asChild>
+							<button
+								type="button"
+								disabled={thinkingDisabled || !onThinkingChange}
+								className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
+							>
+								思考 {selectedThinkingLevel ?? "默认"}
+								<ChevronDown className="size-3" />
+							</button>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="start">
+							<DropdownMenuLabel>思考等级</DropdownMenuLabel>
+							<DropdownMenuSeparator />
+							{thinkingLoading ? (
+								<DropdownMenuItem disabled>正在读取思考等级…</DropdownMenuItem>
+							) : (
+								<DropdownMenuRadioGroup
+									value={selectedThinkingValue}
+									onValueChange={(level) => {
+										if (level === DEFAULT_THINKING_VALUE) {
+											onThinkingChange?.(null);
+											return;
+										}
+										onThinkingChange?.(level as PiThinkingLevel);
+									}}
+								>
+									{showDefaultThinkingOption ? (
+										<DropdownMenuRadioItem value={DEFAULT_THINKING_VALUE}>
+											Pi 默认等级
+										</DropdownMenuRadioItem>
+									) : null}
+									{thinkingLevels.map((level) => (
+										<DropdownMenuRadioItem key={level} value={level}>
+											{level}
+										</DropdownMenuRadioItem>
+									))}
+								</DropdownMenuRadioGroup>
+							)}
+						</DropdownMenuContent>
+					</DropdownMenu>
 					{pendingSteering > 0 || pendingFollowUps > 0 ? (
 						<span className="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">
 							{pendingSteering > 0 ? `调整 ${pendingSteering}` : null}
 							{pendingSteering > 0 && pendingFollowUps > 0 ? " · " : null}
 							{pendingFollowUps > 0 ? `稍后 ${pendingFollowUps}` : null}
+						</span>
+					) : null}
+					{statusText ? (
+						<span className="hidden truncate text-[11px] tabular-nums text-muted-foreground md:inline">
+							{statusText}
 						</span>
 					) : null}
 

@@ -1,0 +1,326 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicU8, AtomicU64, Ordering},
+};
+
+use serde_json::{Value, json};
+use tokio::task::JoinHandle;
+
+use crate::domain::{Connection, Workspace};
+
+use super::{
+    events::{PiProcessState, RuntimeErrorCode, RuntimeEvent, RuntimeEventSink, RuntimeLogStream},
+    pi_events::PiEventAdapter,
+    server_client::{ServerClient, ServerManager},
+    session_snapshot::PiSessionSnapshot,
+};
+
+static STREAM_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+struct StateCell(AtomicU8);
+
+impl Default for StateCell {
+    fn default() -> Self {
+        Self(AtomicU8::new(state_to_u8(PiProcessState::Stopped)))
+    }
+}
+
+impl StateCell {
+    fn get(&self) -> PiProcessState {
+        match self.0.load(Ordering::Acquire) {
+            1 => PiProcessState::Starting,
+            2 => PiProcessState::Running,
+            3 => PiProcessState::Stopping,
+            4 => PiProcessState::Failed,
+            _ => PiProcessState::Stopped,
+        }
+    }
+
+    fn set(&self, state: PiProcessState) {
+        self.0.store(state_to_u8(state), Ordering::Release);
+    }
+}
+
+const fn state_to_u8(state: PiProcessState) -> u8 {
+    match state {
+        PiProcessState::Stopped => 0,
+        PiProcessState::Starting => 1,
+        PiProcessState::Running => 2,
+        PiProcessState::Stopping => 3,
+        PiProcessState::Failed => 4,
+    }
+}
+
+struct Launch {
+    connection: Connection,
+    workspace_id: Option<String>,
+    workspace: String,
+    session_path: Option<String>,
+}
+
+pub struct ServerPiSession {
+    generation: u64,
+    state: Arc<StateCell>,
+    launch: Option<Launch>,
+    client: Option<Arc<ServerClient>>,
+    stream_id: Option<String>,
+    event_task: Option<JoinHandle<()>>,
+}
+
+impl Default for ServerPiSession {
+    fn default() -> Self {
+        Self {
+            generation: 0,
+            state: Arc::new(StateCell::default()),
+            launch: None,
+            client: None,
+            stream_id: None,
+            event_task: None,
+        }
+    }
+}
+
+impl ServerPiSession {
+    pub fn snapshot(&self) -> PiSessionSnapshot {
+        PiSessionSnapshot {
+            generation: self.generation,
+            state: self.state.get(),
+            connection: self.launch.as_ref().map(|launch| launch.connection.clone()),
+            workspace_id: self
+                .launch
+                .as_ref()
+                .and_then(|launch| launch.workspace_id.clone()),
+        }
+    }
+
+    pub async fn spawn<S: RuntimeEventSink>(
+        &mut self,
+        servers: Arc<ServerManager>,
+        sink: S,
+        workspace: &Workspace,
+        session_path: Option<String>,
+    ) -> Result<PiSessionSnapshot, String> {
+        if matches!(
+            self.state.get(),
+            PiProcessState::Starting | PiProcessState::Running | PiProcessState::Stopping
+        ) {
+            return Err("Pi process is already active".to_owned());
+        }
+
+        let client = servers.client(&workspace.connection).await?;
+        let generation = self.generation.saturating_add(1);
+        self.generation = generation;
+        self.state.set(PiProcessState::Starting);
+        sink.send(RuntimeEvent::ProcessState {
+            generation,
+            state: PiProcessState::Starting,
+        });
+
+        let stream_id = format!(
+            "pi-{}-{}",
+            std::process::id(),
+            STREAM_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        );
+        let mut events = client.subscribe();
+        let event_stream_id = stream_id.clone();
+        let event_state = Arc::clone(&self.state);
+        let event_sink = sink.clone();
+        let event_task = tokio::spawn(async move {
+            let mut adapter = PiEventAdapter::default();
+            loop {
+                let event = match events.recv().await {
+                    Ok(event) => event,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        if matches!(
+                            event_state.get(),
+                            PiProcessState::Running | PiProcessState::Starting
+                        ) {
+                            event_state.set(PiProcessState::Failed);
+                            event_sink.send(RuntimeEvent::RuntimeError {
+                                generation,
+                                code: RuntimeErrorCode::ProcessIo,
+                                message: "pilo-server disconnected while Pi was running".to_owned(),
+                            });
+                            event_sink.send(RuntimeEvent::ProcessState {
+                                generation,
+                                state: PiProcessState::Failed,
+                            });
+                        }
+                        break;
+                    }
+                };
+                if event.stream_id != event_stream_id {
+                    continue;
+                }
+                match event.event.as_str() {
+                    "pi.rpc" => {
+                        event_sink.send(RuntimeEvent::RpcMessage {
+                            generation,
+                            message: event.data.clone(),
+                        });
+                        for adapted in adapter.adapt(generation, &event.data) {
+                            event_sink.send(adapted);
+                        }
+                    }
+                    "pi.stderr" => {
+                        if let Some(bytes) = event.data.get("data").and_then(Value::as_array) {
+                            let bytes = bytes
+                                .iter()
+                                .filter_map(Value::as_u64)
+                                .map(|value| value as u8)
+                                .collect::<Vec<_>>();
+                            event_sink.send(RuntimeEvent::RuntimeLog {
+                                generation,
+                                stream: RuntimeLogStream::Stderr,
+                                message: String::from_utf8_lossy(&bytes).into_owned(),
+                            });
+                        }
+                    }
+                    "pi.error" => {
+                        event_sink.send(RuntimeEvent::RuntimeError {
+                            generation,
+                            code: RuntimeErrorCode::ProcessIo,
+                            message: event
+                                .data
+                                .get("message")
+                                .and_then(Value::as_str)
+                                .unwrap_or("Pi RPC stream failed")
+                                .to_owned(),
+                        });
+                    }
+                    "pi.stdout_closed" => {
+                        if event_state.get() != PiProcessState::Stopping {
+                            event_state.set(PiProcessState::Stopped);
+                            event_sink.send(RuntimeEvent::ProcessState {
+                                generation,
+                                state: PiProcessState::Stopped,
+                            });
+                        }
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        if let Err(error) = client
+            .request(
+                "pi.start",
+                json!({
+                    "streamId": stream_id,
+                    "workspace": workspace.path,
+                    "sessionPath": session_path,
+                }),
+            )
+            .await
+        {
+            event_task.abort();
+            self.state.set(PiProcessState::Failed);
+            sink.send(RuntimeEvent::RuntimeError {
+                generation,
+                code: RuntimeErrorCode::SpawnFailed,
+                message: error.clone(),
+            });
+            sink.send(RuntimeEvent::ProcessState {
+                generation,
+                state: PiProcessState::Failed,
+            });
+            return Err(error);
+        }
+
+        self.state.set(PiProcessState::Running);
+        sink.send(RuntimeEvent::ProcessState {
+            generation,
+            state: PiProcessState::Running,
+        });
+        self.launch = Some(Launch {
+            connection: workspace.connection.clone(),
+            workspace_id: Some(workspace.id.clone()),
+            workspace: workspace.path.clone(),
+            session_path,
+        });
+        self.client = Some(client);
+        self.stream_id = Some(stream_id);
+        self.event_task = Some(event_task);
+        Ok(self.snapshot())
+    }
+
+    pub async fn send_rpc(&self, command: Value) -> Result<(), String> {
+        if !command.is_object() {
+            return Err("RPC command must be a JSON object".to_owned());
+        }
+        let client = self
+            .client
+            .as_ref()
+            .ok_or_else(|| "Pi process is not running".to_owned())?;
+        let stream_id = self
+            .stream_id
+            .as_ref()
+            .ok_or_else(|| "Pi process is not running".to_owned())?;
+        client
+            .request(
+                "pi.send",
+                json!({ "streamId": stream_id, "command": command }),
+            )
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn abort(&self) -> Result<(), String> {
+        self.send_rpc(json!({ "type": "abort" })).await
+    }
+
+    pub async fn stop(&mut self) -> Result<PiSessionSnapshot, String> {
+        let Some(client) = self.client.take() else {
+            self.state.set(PiProcessState::Stopped);
+            return Ok(self.snapshot());
+        };
+        let Some(stream_id) = self.stream_id.take() else {
+            self.state.set(PiProcessState::Stopped);
+            return Ok(self.snapshot());
+        };
+        self.state.set(PiProcessState::Stopping);
+        let result = client
+            .request("pi.stop", json!({ "streamId": stream_id }))
+            .await;
+        if let Some(task) = self.event_task.take() {
+            task.abort();
+        }
+        self.state.set(if result.is_ok() {
+            PiProcessState::Stopped
+        } else {
+            PiProcessState::Failed
+        });
+        result?;
+        Ok(self.snapshot())
+    }
+
+    pub async fn restart<S: RuntimeEventSink>(
+        &mut self,
+        servers: Arc<ServerManager>,
+        sink: S,
+    ) -> Result<PiSessionSnapshot, String> {
+        let launch = self
+            .launch
+            .as_ref()
+            .ok_or_else(|| "no previous Pi launch configuration is available".to_owned())?;
+        let workspace = Workspace {
+            id: launch.workspace_id.clone().unwrap_or_default(),
+            name: String::new(),
+            path: launch.workspace.clone(),
+            connection: launch.connection.clone(),
+            metadata: crate::domain::WorkspaceMetadata {
+                cwd: launch.workspace.clone(),
+                git_branch: None,
+                pi_version: String::new(),
+                refreshed_at_ms: 0,
+            },
+            created_at_ms: 0,
+            last_opened_at_ms: 0,
+        };
+        let session_path = launch.session_path.clone();
+        let _ = self.stop().await;
+        self.spawn(servers, sink, &workspace, session_path).await
+    }
+}

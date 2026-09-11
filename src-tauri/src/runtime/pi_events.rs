@@ -153,10 +153,10 @@ fn message_text(message: &Value) -> Option<String> {
         Value::Array(content) => {
             let mut text = String::new();
             for block in content {
-                if block.get("type").and_then(Value::as_str) == Some("text") {
-                    if let Some(value) = block.get("text").and_then(Value::as_str) {
-                        text.push_str(value);
-                    }
+                if block.get("type").and_then(Value::as_str) == Some("text")
+                    && let Some(value) = block.get("text").and_then(Value::as_str)
+                {
+                    text.push_str(value);
                 }
             }
             Some(text)
@@ -253,10 +253,10 @@ fn assistant_text(message: &Value) -> Option<String> {
     let content = message.get("content")?.as_array()?;
     let mut text = String::new();
     for block in content {
-        if block.get("type").and_then(Value::as_str) == Some("text") {
-            if let Some(value) = block.get("text").and_then(Value::as_str) {
-                text.push_str(value);
-            }
+        if block.get("type").and_then(Value::as_str) == Some("text")
+            && let Some(value) = block.get("text").and_then(Value::as_str)
+        {
+            text.push_str(value);
         }
     }
     Some(text)
@@ -269,9 +269,11 @@ mod tests {
     #[test]
     fn maps_assistant_message_start_instead_of_agent_start() {
         let mut adapter = PiEventAdapter::default();
-        assert!(adapter
-            .adapt(3, &serde_json::json!({ "type": "agent_start" }))
-            .is_empty());
+        assert!(
+            adapter
+                .adapt(3, &serde_json::json!({ "type": "agent_start" }))
+                .is_empty()
+        );
         assert_eq!(
             adapter.adapt(
                 3,
@@ -514,20 +516,22 @@ mod tests {
     #[test]
     fn agent_end_does_not_finish_until_agent_settled() {
         let mut adapter = PiEventAdapter::default();
-        assert!(adapter
-            .adapt(
-                5,
-                &serde_json::json!({
-                    "type": "agent_end",
-                    "willRetry": false,
-                    "messages": [{
-                        "role": "assistant",
-                        "content": [],
-                        "stopReason": "toolUse"
-                    }]
-                })
-            )
-            .is_empty());
+        assert!(
+            adapter
+                .adapt(
+                    5,
+                    &serde_json::json!({
+                        "type": "agent_end",
+                        "willRetry": false,
+                        "messages": [{
+                            "role": "assistant",
+                            "content": [],
+                            "stopReason": "toolUse"
+                        }]
+                    })
+                )
+                .is_empty()
+        );
 
         assert_eq!(
             adapter.adapt(
@@ -558,20 +562,22 @@ mod tests {
     #[test]
     fn settled_uses_latest_error_metadata_and_resets_state() {
         let mut adapter = PiEventAdapter::default();
-        assert!(adapter
-            .adapt(
-                5,
-                &serde_json::json!({
-                    "type": "agent_end",
-                    "messages": [{
-                        "role": "assistant",
-                        "content": [],
-                        "stopReason": "error",
-                        "errorMessage": "provider failed"
-                    }]
-                })
-            )
-            .is_empty());
+        assert!(
+            adapter
+                .adapt(
+                    5,
+                    &serde_json::json!({
+                        "type": "agent_end",
+                        "messages": [{
+                            "role": "assistant",
+                            "content": [],
+                            "stopReason": "error",
+                            "errorMessage": "provider failed"
+                        }]
+                    })
+                )
+                .is_empty()
+        );
         assert_eq!(
             adapter.adapt(5, &serde_json::json!({ "type": "agent_settled" })),
             [RuntimeEvent::AssistantMessageEnd {
@@ -616,17 +622,19 @@ mod tests {
     #[test]
     fn correlated_rpc_failure_is_handled_by_the_request_caller() {
         let mut adapter = PiEventAdapter::default();
-        assert!(adapter
-            .adapt(
-                6,
-                &serde_json::json!({
-                    "id": "pilo-123-1",
-                    "type": "response",
-                    "command": "follow_up",
-                    "success": false,
-                    "error": "Extension commands cannot be queued"
-                })
-            )
-            .is_empty());
+        assert!(
+            adapter
+                .adapt(
+                    6,
+                    &serde_json::json!({
+                        "id": "pilo-123-1",
+                        "type": "response",
+                        "command": "follow_up",
+                        "success": false,
+                        "error": "Extension commands cannot be queued"
+                    })
+                )
+                .is_empty()
+        );
     }
 }

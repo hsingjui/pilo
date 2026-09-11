@@ -2,7 +2,7 @@
 
 > Pi-native desktop workspace for local, WSL, and SSH development.
 
-Last updated: 2026-09-10
+Last updated: 2026-09-11
 
 ## Status
 
@@ -46,9 +46,9 @@ Pilo 的目标是提供一个面向 Pi Coding Agent 的桌面开发工作区，�
 
 ### Current Focus
 
-🚧 **P0.10 Pi Chat**
+🚧 **P3 Productization**
 
-继续按 P0.10 清单补齐 Pi RPC 聊天能力，当前从消息队列与运行状态交互开始。
+P0/P1 核心工作区与 P2 Remote/Parallel 基础能力已经落地，当前进入可靠性、设置与发布质量完善阶段。
 
 ---
 
@@ -232,26 +232,26 @@ indexed_at
 - [x] `abort`
 - [x] `follow_up`
 - [x] `steer`
-- [ ] Model selector
-- [ ] Thinking level selector
-- [ ] Session name / state
-- [ ] Token / cost / context 基础状态
-- [ ] Markdown / code block 渲染
-- [ ] 大消息与 Tool Result 折叠
-- [ ] 长 Session 渲染 virtualization
+- [x] Model selector
+- [x] Thinking level selector
+- [x] Session name / state
+- [x] Token / cost / context 基础状态
+- [x] Markdown / code block 渲染
+- [x] 大消息与 Tool Result 折叠
+- [x] 长 Session 渲染 virtualization
 
-## P0.11 Pi Extension UI Bridge
+## P0.11 Pi Extension UI Bridge ⏸ Deferred
 
-- [ ] `select`
-- [ ] `confirm`
-- [ ] `input`
-- [ ] `editor`
-- [ ] `notify`
-- [ ] `status`
-- [ ] `widget`
-- [ ] `title`
+- ⏸ `select`
+- ⏸ `confirm`
+- ⏸ `input`
+- ⏸ `editor`
+- ⏸ `notify`
+- ⏸ `status`
+- ⏸ `widget`
+- ⏸ `title`
 
-目标是尽量不牺牲 Pi extension 生态兼容性。
+当前阶段暂不实现；后续恢复时目标仍是尽量不牺牲 Pi extension 生态兼容性。
 
 ## P0 Exit Criteria
 
@@ -271,49 +271,49 @@ indexed_at
 
 ## P1.1 Git
 
-- [ ] Remote-aware `git status --porcelain`
-- [ ] Branch 信息
-- [ ] Changed files 列表
-- [ ] Working tree diff
-- [ ] Staged diff
-- [ ] Diff viewer
-- [ ] File ↔ Diff 快速跳转
+- [x] Remote-aware `git status --porcelain`
+- [x] Branch 信息
+- [x] Changed files 列表
+- [x] Working tree diff
+- [x] Staged diff
+- [x] Diff viewer
+- [x] File ↔ Diff 快速跳转
 
 ## P1.2 Terminal
 
-- [ ] Terminal dock
-- [ ] Local shell
-- [ ] WSL shell
-- [ ] SSH shell
-- [ ] Terminal 与当前 Connection / Workspace 绑定
-- [ ] 多 Terminal tab
-- [ ] Terminal resize / persistence
+- [x] Terminal dock
+- [x] Local shell
+- [x] WSL shell
+- [x] SSH shell
+- [x] Terminal 与当前 Connection / Workspace 绑定
+- [x] 多 Terminal tab
+- [x] Terminal resize / persistence
 
 ## P1.3 Files
 
-- [ ] RemoteFs abstraction
-- [ ] `readDir`
-- [ ] `readFile`
-- [ ] `writeFile`
-- [ ] `stat`
-- [ ] `mkdir`
-- [ ] `rename`
-- [ ] `remove`
-- [ ] File Tree
-- [ ] 文件搜索
+- [x] RemoteFs abstraction
+- [x] `readDir`
+- [x] `readFile`
+- [x] `writeFile`
+- [x] `stat`
+- [x] `mkdir`
+- [x] `rename`
+- [x] `remove`
+- [x] File Tree
+- [x] 文件搜索
 
 ## P1.4 Editor
 
-- [ ] Monaco editor
-- [ ] 文件 tab
-- [ ] Dirty state
-- [ ] Save
-- [ ] Diff → Editor
-- [ ] Tool call 中的文件路径可直接打开
+- [x] Monaco editor
+- [x] 文件 tab
+- [x] Dirty state
+- [x] Save
+- [x] Diff → Editor
+- [x] Tool call 中的文件路径可直接打开
 
 ## P1 Exit Criteria
 
-- [ ] 不离开 Pilo 即可完成常规查看代码 / Git diff / Terminal 操作
+- [x] 不离开 Pilo 即可完成常规查看代码 / Git diff / Terminal 操作
 - [ ] Local / WSL / SSH 三种环境的 Git / Terminal / File 基础能力行为一致
 
 ---
@@ -324,40 +324,40 @@ indexed_at
 
 ## P2.1 Remote Helper
 
-- [ ] 定义 helper protocol
-- [ ] WSL helper deployment
-- [ ] SSH helper deployment
-- [ ] `session.scan`
-- [ ] `session.stat`
-- [ ] `session.watch`
-- [ ] `fs.*`
-- [ ] `git.*`
-- [ ] helper version negotiation / upgrade
+- [x] 定义 helper protocol
+- [x] WSL helper deployment
+- [x] SSH helper deployment
+- [x] `session.scan`
+- [x] `session.stat`
+- [x] `session.watch`
+- [x] `fs.*`
+- [x] `git.*`
+- [x] helper version negotiation / upgrade
 
 ## P2.2 Session Watcher
 
-- [ ] Local filesystem watcher
-- [ ] WSL inotify watcher
-- [ ] SSH remote watcher
-- [ ] watcher disconnect fallback 到 reconcile
-- [ ] reconnect 后 full metadata reconciliation
+- [x] Local filesystem watcher
+- [x] WSL inotify watcher
+- [x] SSH remote watcher
+- [x] watcher disconnect fallback 到 reconcile
+- [x] reconnect 后 full metadata reconciliation
 
 ## P2.3 Worktree & Parallel Agents
 
-- [ ] Git worktree 管理
-- [ ] 一个 Workspace 多 Pi Session 并行运行
-- [ ] Parallel Agent overview
-- [ ] Agent state / busy / waiting / failed
-- [ ] 快速切换并行任务
-- [ ] Worktree cleanup
+- [x] Git worktree 管理
+- [x] 一个 Workspace 多 Pi Session 并行运行
+- [x] Parallel Agent overview
+- [x] Agent state / busy / waiting / failed
+- [x] 快速切换并行任务
+- [x] Worktree cleanup
 
 ## P2.4 Remote Preview
 
-- [ ] Remote port detection
-- [ ] SSH port forwarding
-- [ ] WSL localhost mapping
-- [ ] Preview panel / external browser open
-- [ ] Preview lifecycle
+- [x] Remote port detection
+- [x] SSH port forwarding
+- [x] WSL localhost mapping
+- [x] Preview panel / external browser open
+- [x] Preview lifecycle
 
 ---
 
@@ -403,13 +403,15 @@ indexed_at
 
 按时间记录重要阶段即可，不需要记录每个 commit。
 
-| Date       | Milestone                 | Status      | Notes                            |
-| ---------- | ------------------------- | ----------- | -------------------------------- |
-| 2026-09-10 | Project initialized       | Done        | Tauri 2 + React 19 + Vite        |
-| 2026-09-10 | WSL → Windows workflow    | Done        | rsync + inotify, Windows runtime |
-| 2026-09-10 | Comet Native workflow     | Done        | Pi project integration           |
-| 2026-09-10 | Oxc toolchain             | Done        | oxfmt + oxlint                   |
-| 2026-09-10 | Frontend Style Foundation | In progress | Lody-based UI foundation         |
+| Date       | Milestone                 | Status | Notes                               |
+| ---------- | ------------------------- | ------ | ----------------------------------- |
+| 2026-09-10 | Project initialized       | Done   | Tauri 2 + React 19 + Vite           |
+| 2026-09-10 | WSL → Windows workflow    | Done   | rsync + inotify, Windows runtime    |
+| 2026-09-10 | Comet Native workflow     | Done   | Pi project integration              |
+| 2026-09-10 | Oxc toolchain             | Done   | oxfmt + oxlint                      |
+| 2026-09-10 | Frontend Style Foundation | Done   | Lody-based UI foundation            |
+| 2026-09-11 | Developer Workspace       | Done   | Git / Terminal / Files / Editor     |
+| 2026-09-11 | Remote & Parallel Power   | Done   | Helper / Watcher / Agents / Preview |
 
 ---
 

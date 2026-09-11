@@ -150,7 +150,11 @@ export function SessionInfoHoverCard({
 			}}
 		>
 			<PopoverAnchor asChild>
-				<div onPointerEnter={requestOpen} onPointerLeave={scheduleClose}>
+				<div
+					className="w-full min-w-0 overflow-hidden"
+					onPointerEnter={requestOpen}
+					onPointerLeave={scheduleClose}
+				>
 					{children}
 				</div>
 			</PopoverAnchor>
