@@ -64,7 +64,7 @@ const DropdownMenuSubContent = React.forwardRef<
 		sideOffset={sideOffset}
 		style={{ ...menuSurfaceStyle, ...style }}
 		className={cn(
-			"z-[var(--z-popover)] max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto overflow-x-hidden",
+			"scroll-pro scrollbar-pro [scrollbar-gutter:auto] z-[var(--z-popover)] max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto overflow-x-hidden",
 			menuSurfaceClassName,
 			className,
 		)}
@@ -89,7 +89,7 @@ const DropdownMenuContent = React.forwardRef<
 				collisionPadding={collisionPadding}
 				style={{ ...menuSurfaceStyle, ...style }}
 				className={cn(
-					"z-[var(--z-popover)] max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto overflow-x-hidden",
+					"scroll-pro scrollbar-pro [scrollbar-gutter:auto] z-[var(--z-popover)] max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto overflow-x-hidden",
 					menuSurfaceClassName,
 					className,
 				)}

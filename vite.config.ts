@@ -16,22 +16,6 @@ export default defineConfig(() => ({
 			"@": path.resolve(import.meta.dirname, "./src"),
 		},
 	},
-	build: {
-		rolldownOptions: {
-			output: {
-				codeSplitting: {
-					groups: [
-						{
-							name: "vendor",
-							test: /node_modules[\\/]/,
-							tags: ["$initial"],
-							maxSize: 350 * 1024,
-						},
-					],
-				},
-			},
-		},
-	},
 
 	// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
 	//

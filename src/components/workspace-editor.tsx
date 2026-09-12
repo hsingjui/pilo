@@ -7,6 +7,7 @@ import { readWorkspaceFile, writeWorkspaceFile } from "@/lib/files";
 import "@/lib/monaco-setup";
 import { cn } from "@/lib/utils";
 import type { Workspace } from "@/lib/workspaces";
+import { TRAFFIC_LIGHT_GUTTER } from "@/components/title-bar";
 import { Button, EmptyState } from "@/ui";
 
 export type EditorOpenRequest = {
@@ -92,11 +93,14 @@ export function WorkspaceEditor({
 	request,
 	visible,
 	onClose,
+	reserveTrafficLights = false,
 }: {
 	workspace: Workspace;
 	request?: EditorOpenRequest;
 	visible: boolean;
 	onClose: () => void;
+	/** macOS 侧边栏折叠时红绿灯覆盖主区左上角，顶部需要避让。 */
+	reserveTrafficLights?: boolean;
 }) {
 	const [tabs, setTabs] = useState<EditorTab[]>([]);
 	const [activePath, setActivePath] = useState<string | null>(null);
@@ -231,7 +235,12 @@ export function WorkspaceEditor({
 				!visible && "hidden",
 			)}
 		>
-			<header className="flex h-10 shrink-0 items-center border-b border-border bg-muted/20">
+			<header
+				className={cn(
+					"flex h-10 shrink-0 items-center border-b border-border bg-muted/20",
+					reserveTrafficLights && TRAFFIC_LIGHT_GUTTER,
+				)}
+			>
 				<Button
 					variant="ghost"
 					size="sm"

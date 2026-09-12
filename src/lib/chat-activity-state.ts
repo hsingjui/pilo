@@ -10,6 +10,81 @@ export type AssistantContentItem = AssistantTextContent | AssistantActivity;
 
 type ToolActivity = Extract<AssistantActivity, { type: "tool" }>;
 
+export type AssistantActivitySummary = {
+	hasThought: boolean;
+	readFileCount: number;
+	createFileCount: number;
+	editFileCount: number;
+	commandCount: number;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function toolFilePaths(activity: ToolActivity): string[] {
+	if (!isRecord(activity.args)) return [];
+	const paths = new Set<string>();
+	for (const key of ["path", "filePath"]) {
+		const value = activity.args[key];
+		if (typeof value === "string" && value.trim()) paths.add(value.trim());
+	}
+	for (const key of ["paths", "filePaths"]) {
+		const value = activity.args[key];
+		if (!Array.isArray(value)) continue;
+		for (const item of value) {
+			if (typeof item === "string" && item.trim()) paths.add(item.trim());
+		}
+	}
+	return [...paths];
+}
+
+export function summarizeAssistantActivity(
+	activity: readonly AssistantActivity[],
+): AssistantActivitySummary {
+	const readPaths = new Set<string>();
+	const createPaths = new Set<string>();
+	const editPaths = new Set<string>();
+	let readCallsWithoutPath = 0;
+	let createCallsWithoutPath = 0;
+	let editCallsWithoutPath = 0;
+	let commandCount = 0;
+	let hasThought = false;
+
+	for (const item of activity) {
+		if (item.type === "thinking") {
+			hasThought = true;
+			continue;
+		}
+
+		const paths = toolFilePaths(item);
+		switch (item.toolName.toLowerCase()) {
+			case "read":
+				if (paths.length === 0) readCallsWithoutPath += 1;
+				else for (const path of paths) readPaths.add(path);
+				break;
+			case "write":
+				if (paths.length === 0) createCallsWithoutPath += 1;
+				else for (const path of paths) createPaths.add(path);
+				break;
+			case "edit":
+				if (paths.length === 0) editCallsWithoutPath += 1;
+				else for (const path of paths) editPaths.add(path);
+				break;
+			default:
+				commandCount += 1;
+		}
+	}
+
+	return {
+		hasThought,
+		readFileCount: readPaths.size + readCallsWithoutPath,
+		createFileCount: createPaths.size + createCallsWithoutPath,
+		editFileCount: editPaths.size + editCallsWithoutPath,
+		commandCount,
+	};
+}
+
 export function getAssistantActivities(
 	content: AssistantContentItem[] | undefined,
 ): AssistantActivity[] {

@@ -13,15 +13,20 @@ const DialogPortal = DialogPrimitive.Portal;
 
 const DialogClose = DialogPrimitive.Close;
 
+const dialogOverlayAnimationClasses =
+	"data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0";
+
 const DialogOverlay = React.forwardRef<
 	React.ElementRef<typeof DialogPrimitive.Overlay>,
-	React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
->(({ className, ...props }, ref) => (
+	React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay> & {
+		noAnimation?: boolean;
+	}
+>(({ className, noAnimation, ...props }, ref) => (
 	<DialogPrimitive.Overlay
 		ref={ref}
 		className={cn(
 			"fixed inset-0 z-[var(--z-dialog-overlay)] bg-black/80",
-			"data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+			!noAnimation && dialogOverlayAnimationClasses,
 			className,
 		)}
 		{...props}
@@ -29,23 +34,37 @@ const DialogOverlay = React.forwardRef<
 ));
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
+const dialogBaseClasses =
+	"fixed left-[50%] top-[calc(50%+(var(--safe-area-top,0px)-var(--safe-area-bottom,0px))/2)] z-[var(--z-dialog)] grid w-[calc(100vw-4rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-border bg-background p-4 shadow-lg rounded-lg max-h-[calc(100vh-2rem-var(--safe-area-top,0px)-var(--safe-area-bottom,0px))] sm:p-6";
+
+const dialogAnimationClasses =
+	"duration-100 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0";
+
 const DialogContent = React.forwardRef<
 	React.ElementRef<typeof DialogPrimitive.Content>,
 	React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
 		overlayClassName?: string;
+		noAnimation?: boolean;
 	}
 >(
 	(
-		{ className, overlayClassName, children, onEscapeKeyDown, ...props },
+		{
+			className,
+			overlayClassName,
+			noAnimation,
+			children,
+			onEscapeKeyDown,
+			...props
+		},
 		ref,
 	) => (
 		<DialogPortal>
-			<DialogOverlay className={overlayClassName} />
+			<DialogOverlay className={overlayClassName} noAnimation={noAnimation} />
 			<DialogPrimitive.Content
 				ref={ref}
 				className={cn(
-					"fixed left-[50%] top-[50%] z-[var(--z-dialog)] grid w-[calc(100vw-4rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-border bg-background p-6 shadow-lg rounded-lg max-h-[calc(100vh-2rem)]",
-					"duration-100 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+					dialogBaseClasses,
+					!noAnimation && dialogAnimationClasses,
 					className,
 				)}
 				onEscapeKeyDown={(event) => {
@@ -68,6 +87,49 @@ const DialogContent = React.forwardRef<
 	),
 );
 DialogContent.displayName = DialogPrimitive.Content.displayName;
+
+const DialogContentWithoutClose = React.forwardRef<
+	React.ElementRef<typeof DialogPrimitive.Content>,
+	React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+		overlayClassName?: string;
+		noAnimation?: boolean;
+	}
+>(
+	(
+		{
+			className,
+			overlayClassName,
+			noAnimation,
+			children,
+			onEscapeKeyDown,
+			...props
+		},
+		ref,
+	) => (
+		<DialogPortal>
+			<DialogOverlay className={overlayClassName} noAnimation={noAnimation} />
+			<DialogPrimitive.Content
+				ref={ref}
+				className={cn(
+					dialogBaseClasses,
+					!noAnimation && dialogAnimationClasses,
+					className,
+				)}
+				onEscapeKeyDown={(event) => {
+					if (isImeComposingNativeKeyboardEvent(event)) {
+						event.preventDefault();
+						return;
+					}
+					onEscapeKeyDown?.(event);
+				}}
+				{...props}
+			>
+				{children}
+			</DialogPrimitive.Content>
+		</DialogPortal>
+	),
+);
+DialogContentWithoutClose.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({
 	className,
@@ -128,6 +190,7 @@ export {
 	DialogTrigger,
 	DialogClose,
 	DialogContent,
+	DialogContentWithoutClose,
 	DialogHeader,
 	DialogFooter,
 	DialogTitle,

@@ -1,4 +1,5 @@
 import {
+	memo,
 	useCallback,
 	useEffect,
 	useMemo,
@@ -13,7 +14,6 @@ import {
 	Copy,
 	PanelLeft,
 	PanelRight,
-	PencilLine,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -23,16 +23,21 @@ import {
 } from "@/components/chat/chat-activity";
 import { ChatAgentActivityIndicator } from "@/components/chat/chat-agent-activity";
 import {
-	appendAssistantTextContent,
-	appendAssistantThinkingContent,
-	finishAssistantThinkingContent,
 	getAssistantActivities,
 	getAssistantStreamingLabel,
-	reconcileAssistantTextContent,
-	startAssistantThinkingContent,
-	upsertToolContent,
 	type AssistantContentItem,
 } from "@/lib/chat-activity-state";
+import {
+	createConversationState,
+	reduceConversation,
+	replayConversationEventsBatched,
+} from "@/lib/conversation-reducer";
+import { toConversationAction } from "@/lib/conversation-runtime-adapter";
+import type {
+	ChatMessage,
+	ConversationAction,
+	ConversationState,
+} from "@/lib/conversation-types";
 import { getReplyRunwayHeight } from "@/lib/chat-scroll-state";
 import {
 	getOutlineIndexForMessageIndex,
@@ -45,16 +50,30 @@ import { ChatComposer } from "@/components/chat/chat-composer";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import { ConversationOutlineRail } from "@/components/chat/conversation-outline-rail";
 import { buildConversationOutline } from "@/lib/conversation-outline";
+import {
+	logChatPerformanceInstructions,
+	recordChatMessageRender,
+	recordChatPageRender,
+	recordScrollEvent,
+	recordVirtualChange,
+} from "@/lib/chat-performance";
 import { createChatSessionClient } from "@/lib/chat-session-client";
 import {
+	cacheWorkspacePiModels,
+	getCachedWorkspacePiModels,
+} from "@/lib/pi-models";
+import {
+	PI_THINKING_LEVELS,
 	runtimeErrorMessage,
 	type PiAgentState,
 	type PiModel,
 	type PiThinkingLevel,
 	type PiloRuntimeEvent,
 } from "@/lib/pi-runtime";
+import { loadSessionHistory } from "@/lib/sessions";
 import type { Workspace } from "@/lib/workspaces";
 import { cn } from "@/lib/utils";
+import { IS_MACOS, TRAFFIC_LIGHT_GUTTER } from "@/components/title-bar";
 import {
 	Button,
 	EmptyState,
@@ -70,6 +89,8 @@ export type ChatSession = {
 	title: string;
 	workspaceRecord: Workspace;
 	sessionPath?: string;
+	historyFileSize?: number;
+	historyFileMtimeNs?: number;
 	initialModel?: PiModel;
 	initialThinkingLevel?: PiThinkingLevel;
 };
@@ -132,30 +153,6 @@ function formatSessionUsage(state: ChatSessionRuntimeState | null): string {
 	}
 	return parts.join(" · ");
 }
-
-type ChatMessage =
-	| {
-			id: string;
-			role: "user";
-			text: string;
-			time: string;
-			queued?: "steer" | "follow_up";
-	  }
-	| {
-			id: string;
-			role: "assistant";
-			text: string;
-			time: string;
-			content?: AssistantContentItem[];
-			activity?: AssistantActivity[];
-			streaming?: boolean;
-			workDurationMs?: number;
-			replyRunwayPx?: number;
-			stopReason?: string;
-			errorMessage?: string;
-	  };
-
-type AssistantChatMessage = Extract<ChatMessage, { role: "assistant" }>;
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
@@ -441,7 +438,7 @@ function MessageAction({
 					type="button"
 					variant="ghost"
 					size="icon"
-					className="size-6 rounded-md text-muted-foreground opacity-0 transition-opacity duration-100 group-hover:opacity-100 focus-visible:opacity-100"
+					className="size-7 rounded-md text-muted-foreground opacity-0 transition-opacity duration-100 group-hover:opacity-100 focus-visible:opacity-100"
 					aria-label={label}
 					onClick={onClick}
 				>
@@ -480,7 +477,7 @@ function CollapsibleMessageBody({
 	const visibleText = collapsible && !expanded ? markdownPreview(text) : text;
 
 	return (
-		<div className="min-w-0">
+		<div className="min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_96px]">
 			{markdown ? (
 				<ChatMarkdown text={visibleText} isStreaming={streaming} />
 			) : (
@@ -507,15 +504,16 @@ function CollapsibleMessageBody({
 	);
 }
 
-function UserMessage({
+const UserMessage = memo(function UserMessage({
 	message,
 }: {
 	message: Extract<ChatMessage, { role: "user" }>;
 }) {
+	recordChatMessageRender("user");
 	const { conversationFontSize } = usePreferences();
 
 	return (
-		<ConversationColumn className="py-3 sm:py-4">
+		<ConversationColumn className="py-2 sm:py-3">
 			<div className="flex w-full justify-end">
 				<div className="group flex min-w-0 max-w-[80%] flex-col items-end gap-1.5 sm:max-w-[70%]">
 					<div className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
@@ -524,13 +522,7 @@ function UserMessage({
 						) : null}
 						{message.time ? <span>{message.time}</span> : null}
 					</div>
-					<div className="flex min-w-0 max-w-full items-end gap-1">
-						<MessageAction
-							label="复制"
-							onClick={() => void navigator.clipboard.writeText(message.text)}
-						>
-							<Copy className="size-3.5" />
-						</MessageAction>
+					<div className="flex min-w-0 max-w-full justify-end">
 						<div
 							className="min-w-0 max-w-full rounded-[1.15rem] border border-foreground/[0.08] bg-foreground/[0.05] px-3.5 py-2 leading-6 text-foreground sm:rounded-2xl sm:px-4 sm:py-2.5"
 							style={{ fontSize: `${conversationFontSize}px` }}
@@ -538,11 +530,19 @@ function UserMessage({
 							<CollapsibleMessageBody text={message.text} />
 						</div>
 					</div>
+					<div className="flex gap-0.5">
+						<MessageAction
+							label="复制"
+							onClick={() => void navigator.clipboard.writeText(message.text)}
+						>
+							<Copy className="size-3.5" />
+						</MessageAction>
+					</div>
 				</div>
 			</div>
 		</ConversationColumn>
 	);
-}
+});
 
 function getAssistantMessageContent(
 	message: Extract<ChatMessage, { role: "assistant" }>,
@@ -561,7 +561,7 @@ function getAssistantMessageContent(
 	return content;
 }
 
-function AssistantMessage({
+const AssistantMessage = memo(function AssistantMessage({
 	message,
 	replyRunwayPx,
 	onOpenFile,
@@ -570,6 +570,7 @@ function AssistantMessage({
 	replyRunwayPx?: number;
 	onOpenFile?: (path: string) => void;
 }) {
+	recordChatMessageRender("assistant");
 	const { conversationFontSize, showWorkDuration } = usePreferences();
 	const content = getAssistantMessageContent(message);
 	const activity = getAssistantActivities(content);
@@ -625,7 +626,7 @@ function AssistantMessage({
 	}
 
 	return (
-		<ConversationColumn className="group py-3 sm:py-4">
+		<ConversationColumn className="group py-2 sm:py-3">
 			<div
 				className="w-full text-foreground"
 				style={
@@ -647,36 +648,47 @@ function AssistantMessage({
 							{message.errorMessage}
 						</div>
 					) : null}
-					<div className="mt-1.5 flex h-6 items-center gap-1 text-[11px] text-muted-foreground">
-						{streamingLabel ? (
-							<ChatAgentActivityIndicator label={streamingLabel} />
-						) : message.errorMessage ? (
-							<span className="text-destructive">Pi 响应失败</span>
-						) : message.stopReason === "aborted" ? (
-							<span>已停止</span>
-						) : footerDuration ? (
-							<>
-								<span>工作了 {footerDuration}</span>
-								<span aria-hidden="true">·</span>
+					{streamingLabel ||
+					message.errorMessage ||
+					message.stopReason === "aborted" ? (
+						<div className="mt-1 flex min-h-6 items-center gap-1 text-[11px] text-muted-foreground">
+							{streamingLabel ? (
+								<ChatAgentActivityIndicator label={streamingLabel} />
+							) : message.errorMessage ? (
+								<span className="text-destructive">Pi 响应失败</span>
+							) : (
+								<span>已停止</span>
+							)}
+						</div>
+					) : !message.streaming &&
+					  (message.text || message.time || footerDuration) ? (
+						<div className="mt-0.5 flex min-h-7 flex-wrap items-center gap-2 text-[11px] text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
+							{message.text ? (
+								<MessageAction
+									label="复制"
+									onClick={() =>
+										void navigator.clipboard.writeText(message.text)
+									}
+								>
+									<Copy className="size-3.5" />
+								</MessageAction>
+							) : null}
+							{message.time ? (
 								<span className="tabular-nums">{message.time}</span>
-							</>
-						) : (
-							<span className="tabular-nums">{message.time}</span>
-						)}
-						{message.text && !message.streaming ? (
-							<MessageAction
-								label="复制"
-								onClick={() => void navigator.clipboard.writeText(message.text)}
-							>
-								<Copy className="size-3.5" />
-							</MessageAction>
-						) : null}
-					</div>
+							) : null}
+							{message.time && footerDuration ? (
+								<span aria-hidden="true">·</span>
+							) : null}
+							{footerDuration ? (
+								<span className="font-mono tabular-nums">{footerDuration}</span>
+							) : null}
+						</div>
+					) : null}
 				</div>
 			</div>
 		</ConversationColumn>
 	);
-}
+});
 
 function EmptyConversation() {
 	return (
@@ -723,53 +735,58 @@ function SessionHeader({
 		<header
 			data-tauri-drag-region="deep"
 			className={cn(
-				"flex h-10 shrink-0 items-center gap-2 px-3",
+				"mt-0.5 flex h-11 shrink-0 items-center bg-background",
+				IS_MACOS && sidebarCollapsed && TRAFFIC_LIGHT_GUTTER,
 				reserveWindowControls && "pr-[7.75rem]",
 			)}
 		>
-			{sidebarCollapsed && (
-				<Button
-					variant="ghost"
-					size="icon"
-					className="size-7 shrink-0"
-					aria-label="展开侧边栏"
-					onClick={onExpandSidebar}
-				>
-					<PanelLeft className="size-4" />
-				</Button>
-			)}
-			<svg
-				viewBox="0 0 800 800"
-				className="size-5 shrink-0 text-muted-foreground"
-				aria-hidden="true"
-			>
-				<path
-					className="fill-current"
-					fillRule="evenodd"
-					d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
-				/>
-				<path className="fill-current" d="M517.36 400H634.72V634.72H517.36Z" />
-			</svg>
-			<h1 className="min-w-0 flex-1 truncate text-sm font-medium">
-				{sessionState?.name || session.title}
-			</h1>
-			{sessionState ? (
-				<span className="hidden max-w-52 truncate text-[11px] text-muted-foreground lg:inline">
-					{sessionState.messageCount
-						? `${sessionState.messageCount} messages`
-						: ""}
-				</span>
+			{sidebarCollapsed ? (
+				<div className="flex shrink-0 items-center pl-3">
+					<Button
+						variant="ghost"
+						size="icon"
+						className="size-7 shrink-0 text-muted-foreground"
+						aria-label="展开侧边栏"
+						onClick={onExpandSidebar}
+					>
+						<PanelLeft className="size-4" />
+					</Button>
+				</div>
 			) : null}
-			<Button
-				variant="ghost"
-				size="icon"
-				className="size-7"
-				aria-label="重命名 Session"
-				onClick={onRename}
+			<div
+				role="tablist"
+				aria-label="会话"
+				className="flex min-w-0 flex-1 items-center px-1"
 			>
-				<PencilLine className="size-4" />
-			</Button>
-			<div className="flex shrink-0 items-center gap-0.5">
+				<div
+					role="tab"
+					aria-selected="true"
+					tabIndex={0}
+					className="group flex h-8 w-full min-w-0 items-center gap-1.5 rounded-md border border-transparent px-3 text-[13px] text-foreground outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+					onDoubleClick={onRename}
+					title={onRename ? "双击重命名" : undefined}
+				>
+					<svg
+						viewBox="0 0 800 800"
+						className="size-3 shrink-0 text-muted-foreground opacity-60"
+						aria-hidden="true"
+					>
+						<path
+							className="fill-current"
+							fillRule="evenodd"
+							d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
+						/>
+						<path
+							className="fill-current"
+							d="M517.36 400H634.72V634.72H517.36Z"
+						/>
+					</svg>
+					<span className="truncate">
+						{sessionState?.name || session.title}
+					</span>
+				</div>
+			</div>
+			<div className="flex shrink-0 items-center gap-1 pr-2">
 				<Tooltip>
 					<TooltipTrigger asChild>
 						<Button
@@ -789,49 +806,23 @@ function SessionHeader({
 	);
 }
 
-function formatTime() {
+function formatTime(timestampMs = Date.now()) {
 	return new Intl.DateTimeFormat("zh-CN", {
 		hour: "2-digit",
 		minute: "2-digit",
 		hour12: false,
-	}).format(new Date());
+	}).format(new Date(timestampMs));
 }
 
-function historyText(content: unknown): string {
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return "";
-	return content
-		.map((part) => {
-			if (!part || typeof part !== "object") return "";
-			const value = part as Record<string, unknown>;
-			return value.type === "text" && typeof value.text === "string"
-				? value.text
-				: "";
-		})
-		.filter(Boolean)
-		.join("");
-}
-
-function mapPiHistoryMessages(
-	messages: unknown[],
-	sessionId: string,
-	offset = 0,
-): ChatMessage[] {
-	return messages.flatMap((message, index) => {
-		if (!message || typeof message !== "object") return [];
-		const value = message as Record<string, unknown>;
-		if (value.role !== "user" && value.role !== "assistant") return [];
-		const text = historyText(value.content);
-		if (!text) return [];
-		return [
-			{
-				id: `${sessionId}-history-${offset + index}`,
-				role: value.role,
-				text,
-				time: "",
-			} as ChatMessage,
-		];
-	});
+function getSessionHistoryFingerprint(session: ChatSession) {
+	if (
+		!session.sessionPath ||
+		session.historyFileSize === undefined ||
+		session.historyFileMtimeNs === undefined
+	) {
+		return null;
+	}
+	return `${session.historyFileSize}:${session.historyFileMtimeNs}`;
 }
 
 type ActiveTurn = {
@@ -839,11 +830,6 @@ type ActiveTurn = {
 	sessionTitle: string;
 	generation: number | null;
 	promptSent: boolean;
-	currentUserText: string;
-	currentUserStarted: boolean;
-	assistantMessageId: string;
-	startedAtMs: number;
-	replyRunwayPx?: number;
 };
 
 let localMessageSequence = 0;
@@ -895,32 +881,14 @@ function createLocalContentId(kind: "thinking" | "text") {
 	return `local-${kind}-${Date.now()}-${localActivitySequence}`;
 }
 
-function finishActivityItem(activity: AssistantActivity): AssistantActivity {
-	return activity.status === "running"
-		? { ...activity, status: "complete" }
-		: activity;
-}
+const conversationReducerContext = {
+	createMessageId: createLocalMessageId,
+	createContentId: createLocalContentId,
+	now: () => Date.now(),
+	formatTime,
+};
 
-function finishAssistantContentItem(
-	item: AssistantContentItem,
-): AssistantContentItem {
-	return item.type === "text" ? item : finishActivityItem(item);
-}
-
-export function ChatPage({
-	session,
-	active = true,
-	onSessionIdentified,
-	onOpenChanges,
-	onExpandSidebar,
-	onSessionChanged,
-	onOpenFile,
-	initialMessage,
-	loadState = "ready",
-	onRetry,
-	reserveWindowControls = false,
-	sidebarCollapsed = false,
-}: {
+type ChatPageProps = {
 	session: ChatSession;
 	active?: boolean;
 	onSessionIdentified?: (sessionId: string) => void;
@@ -933,7 +901,22 @@ export function ChatPage({
 	onRetry?: () => void;
 	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
-}) {
+};
+
+function ChatPageImpl({
+	session,
+	active = true,
+	onSessionIdentified,
+	onOpenChanges,
+	onExpandSidebar,
+	onSessionChanged,
+	onOpenFile,
+	initialMessage,
+	loadState = "ready",
+	onRetry,
+	reserveWindowControls = false,
+	sidebarCollapsed = false,
+}: ChatPageProps) {
 	const { desktopNotifications } = usePreferences();
 	const client = useMemo(
 		() =>
@@ -946,14 +929,18 @@ export function ChatPage({
 	);
 	const identifiedRef = useRef(onSessionIdentified);
 	identifiedRef.current = onSessionIdentified;
-	const [historyMessages, setHistoryMessages] = useState<
-		Record<string, ChatMessage[]>
+	const [conversationStates, setConversationStates] = useState<
+		Record<string, ConversationState>
 	>({});
 	const [historyLoadState, setHistoryLoadState] = useState<
 		"ready" | "loading" | "error"
 	>(session.sessionPath ? "loading" : "ready");
 	const [historyRetry, setHistoryRetry] = useState(0);
 	const [historyProgress, setHistoryProgress] = useState("");
+	const sessionHistoryFingerprint = getSessionHistoryFingerprint(session);
+	const historyFingerprintRef = useRef(sessionHistoryFingerprint);
+	historyFingerprintRef.current = sessionHistoryFingerprint;
+	const loadedHistoryFingerprintRef = useRef<string | null>(null);
 	const baseMessages = useMemo<ChatMessage[]>(() => {
 		if (initialMessage) {
 			return [
@@ -965,19 +952,10 @@ export function ChatPage({
 				},
 			];
 		}
-		if (session.sessionPath)
-			return historyMessages[session.id] ?? EMPTY_MESSAGES;
+		if (session.sessionPath) return EMPTY_MESSAGES;
 		return MOCK_CONVERSATIONS[session.id] ?? EMPTY_MESSAGES;
-	}, [historyMessages, initialMessage, session.id, session.sessionPath]);
-	const effectiveLoadState = session.sessionPath
-		? historyLoadState === "loading" && baseMessages.length > 0
-			? "ready"
-			: historyLoadState
-		: loadState;
+	}, [initialMessage, session.id, session.sessionPath]);
 	const [drafts, setDrafts] = useState<Record<string, string>>({});
-	const [localMessages, setLocalMessages] = useState<
-		Record<string, ChatMessage[]>
-	>({});
 	const [modelOptions, setModelOptions] = useState<PiModel[]>([]);
 	const [selectedModel, setSelectedModel] = useState<PiModel | null>(
 		session.initialModel ?? null,
@@ -998,6 +976,12 @@ export function ChatPage({
 	const initialConfigAppliedRef = useRef(new Set<string>());
 
 	const handleRenameSession = useCallback(async () => {
+		if (session.sessionPath) {
+			toast.info(
+				"历史 Session 在查看时保持只读。继续对话后再由 Pi 管理 Session 元数据。",
+			);
+			return;
+		}
 		const name = window
 			.prompt("Session name", sessionState?.name || session.title)
 			?.trim();
@@ -1012,100 +996,116 @@ export function ChatPage({
 				description: runtimeErrorMessage(error),
 			});
 		}
-	}, [session.title, client, sessionState?.name, onSessionChanged]);
+	}, [
+		session.sessionPath,
+		session.title,
+		client,
+		sessionState?.name,
+		onSessionChanged,
+	]);
 
 	useEffect(() => {
 		modelRequestRef.current += 1;
 		setSessionState(null);
-		setModelOptions([]);
+		setModelOptions(
+			getCachedWorkspacePiModels(session.workspaceRecord.id)?.models ?? [],
+		);
 		setSelectedModel(session.initialModel ?? null);
 		setModelLoadState("idle");
 		setModelError(null);
 		setModelChanging(false);
 		setThinkingLevels([]);
 		setSelectedThinkingLevel(session.initialThinkingLevel ?? "off");
-	}, [session.id, session.initialModel, session.initialThinkingLevel]);
+	}, [
+		session.id,
+		session.initialModel,
+		session.initialThinkingLevel,
+		session.workspaceRecord.id,
+	]);
 
 	useEffect(() => {
-		if (!session.sessionPath) {
+		const sessionPath = session.sessionPath;
+		if (!sessionPath) {
+			loadedHistoryFingerprintRef.current = null;
 			setHistoryLoadState("ready");
 			return;
 		}
+		const requestedFingerprint = historyFingerprintRef.current;
 		let cancelled = false;
 		const loadHistory = async () => {
 			const startedAt = performance.now();
-			let stageStartedAt = startedAt;
-			const recordTiming = (stage: string) => {
-				const now = performance.now();
-				console.info("[Pilo history]", stage, {
-					durationMs: Math.round(now - stageStartedAt),
-					totalMs: Math.round(now - startedAt),
-				});
-				stageStartedAt = now;
-			};
 			setHistoryLoadState("loading");
-			setHistoryProgress("正在连接 Pi");
+			setHistoryProgress("正在读取历史消息");
 			try {
-				await client.ensure();
+				const result = await loadSessionHistory(
+					session.workspaceRecord.id,
+					sessionPath,
+				);
 				if (cancelled) return;
-				recordTiming("ensure_session_pi");
-				setHistoryProgress("正在读取历史消息");
-				void client
-					.getPiAgentState()
-					.then(async (state) => {
-						if (cancelled) return;
-						setSelectedModel(state.model);
-						setSelectedThinkingLevel(state.thinkingLevel);
-						setSessionState({
-							name: state.sessionName,
-							messageCount: state.messageCount,
-						});
-						const runtimeState = await readCurrentPiSessionState(client, state);
-						if (!cancelled) setSessionState(runtimeState);
-					})
-					.catch(() => undefined);
-				const result = await client.getPiMessages();
+				console.info("[Pilo history] read_session_file", {
+					durationMs: Math.round(performance.now() - startedAt),
+					eventCount: result.events.length,
+				});
+				const cachedModels =
+					getCachedWorkspacePiModels(session.workspaceRecord.id)?.models ?? [];
+				if (result.model) {
+					const historicalModel = cachedModels.find(
+						(model) =>
+							model.provider === result.model?.provider &&
+							model.id === result.model?.id,
+					) ?? {
+						provider: result.model.provider,
+						id: result.model.id,
+						name: result.model.id,
+						reasoning: false,
+					};
+					setSelectedModel(historicalModel);
+				}
+				if (
+					result.thinkingLevel &&
+					PI_THINKING_LEVELS.includes(result.thinkingLevel as PiThinkingLevel)
+				) {
+					setSelectedThinkingLevel(result.thinkingLevel as PiThinkingLevel);
+				}
+				setThinkingLevels(PI_THINKING_LEVELS);
+				setSessionState({
+					name: result.name ?? undefined,
+					messageCount: result.sourceMessageCount,
+				});
+				const replayStartedAt = performance.now();
+				const finalState = await replayConversationEventsBatched(
+					result.events,
+					conversationReducerContext,
+					{
+						maxEventsPerBatch: 400,
+						onBatch: (state) => {
+							if (cancelled) return;
+							setConversationStates((current) => ({
+								...current,
+								[session.id]: state,
+							}));
+							setHistoryProgress(
+								`正在恢复历史消息 ${state.messages.length} 条`,
+							);
+						},
+					},
+				);
 				if (cancelled) return;
-				recordTiming("get_messages");
-				setLocalMessages((current) => ({ ...current, [session.id]: [] }));
-				// ponytail: RPC is still all-at-once; transport pagination is needed for very large histories.
-				const publishHistoryBatch = async (
-					offset: number,
-					mapped: ChatMessage[],
-				): Promise<ChatMessage[]> => {
-					if (cancelled || offset >= result.messages.length) return mapped;
-					const nextMapped = mapped.concat(
-						mapPiHistoryMessages(
-							result.messages.slice(offset, offset + 100),
-							session.id,
-							offset,
-						),
-					);
-					setHistoryMessages((current) => ({
-						...current,
-						[session.id]: nextMapped,
-					}));
-					const nextOffset = offset + 100;
-					setHistoryProgress(
-						`正在加载历史消息 ${Math.min(nextOffset, result.messages.length)}/${result.messages.length}`,
-					);
-					if (nextOffset < result.messages.length) {
-						await new Promise<void>((resolve) =>
-							window.setTimeout(resolve, 16),
-						);
-					}
-					return publishHistoryBatch(nextOffset, nextMapped);
-				};
-				const mapped = await publishHistoryBatch(0, []);
-				if (cancelled) return;
-				setHistoryMessages((current) => ({ ...current, [session.id]: mapped }));
+				setConversationStates((current) => ({
+					...current,
+					[session.id]: finalState,
+				}));
+				console.info("[Pilo history] conversation_replay", {
+					durationMs: Math.round(performance.now() - replayStartedAt),
+					eventCount: result.events.length,
+					messageCount: finalState.messages.length,
+				});
+				loadedHistoryFingerprintRef.current = requestedFingerprint;
 				setHistoryProgress("");
 				setHistoryLoadState("ready");
-				recordTiming("publish_history");
 			} catch (error) {
 				if (cancelled) return;
-				recordTiming("failed");
-				console.error("Failed to resume Pi session", error);
+				console.error("Failed to read session history", error);
 				setHistoryProgress("");
 				setHistoryLoadState("error");
 			}
@@ -1114,7 +1114,12 @@ export function ChatPage({
 		return () => {
 			cancelled = true;
 		};
-	}, [client, session.id, session.sessionPath, historyRetry]);
+	}, [
+		session.id,
+		session.sessionPath,
+		session.workspaceRecord.id,
+		historyRetry,
+	]);
 
 	const activeTurnRef = useRef<ActiveTurn | null>(null);
 	const runtimeListenerRef = useRef<ReturnType<typeof client.listen> | null>(
@@ -1132,11 +1137,41 @@ export function ChatPage({
 	>(null);
 	const [pendingSteering, setPendingSteering] = useState(0);
 	const [pendingFollowUps, setPendingFollowUps] = useState(0);
-	const localSessionMessages = localMessages[session.id] ?? EMPTY_MESSAGES;
-	const messages = useMemo(
-		() => [...baseMessages, ...localSessionMessages],
-		[baseMessages, localSessionMessages],
-	);
+
+	useEffect(() => {
+		if (
+			!active ||
+			!session.sessionPath ||
+			sessionHistoryFingerprint === null ||
+			historyLoadState === "loading"
+		) {
+			return;
+		}
+		const loadedFingerprint = loadedHistoryFingerprintRef.current;
+		if (
+			loadedFingerprint === null ||
+			loadedFingerprint === sessionHistoryFingerprint ||
+			activeTurnSessionId === session.id
+		) {
+			return;
+		}
+		setHistoryRetry((value) => value + 1);
+	}, [
+		active,
+		activeTurnSessionId,
+		historyLoadState,
+		session.id,
+		session.sessionPath,
+		sessionHistoryFingerprint,
+	]);
+
+	const conversationState = conversationStates[session.id];
+	const messages = conversationState?.messages ?? baseMessages;
+	const effectiveLoadState = session.sessionPath
+		? historyLoadState === "loading" && messages.length > 0
+			? "ready"
+			: historyLoadState
+		: loadState;
 	const outlineEntries = useMemo(
 		() => buildConversationOutline(messages),
 		[messages],
@@ -1156,6 +1191,7 @@ export function ChatPage({
 		active &&
 		effectiveLoadState === "ready" &&
 		shouldVirtualizeChatMessages(messages.length);
+	recordChatPageRender(session.id, messages.length, virtualized);
 	const getVirtualMessageKey = useCallback(
 		(index: number) =>
 			`${session.id}:${messagesRef.current[index]?.id ?? index}`,
@@ -1175,52 +1211,112 @@ export function ChatPage({
 		paddingStart: virtualPadding.start,
 		paddingEnd: virtualPadding.end,
 		scrollPaddingStart: CHAT_VIRTUAL_SCROLL_PADDING_PX,
+		useAnimationFrameWithResizeObserver: true,
+		directDomUpdates: true,
+		onChange: (instance, sync) => {
+			const range = instance.range;
+			recordVirtualChange({
+				sync,
+				startIndex: range?.startIndex ?? null,
+				endIndex: range?.endIndex ?? null,
+				totalSize: instance.getTotalSize(),
+			});
+		},
 		enabled: virtualized,
 	});
 	const stickyRef = useRef(true);
+	const scrollSyncFrameRef = useRef<number | null>(null);
 	const [isSticky, setIsSticky] = useState(true);
+	const isScrolledFromTopRef = useRef(false);
 	const [isScrolledFromTop, setIsScrolledFromTop] = useState(false);
 	const [activeOutlineIndex, setActiveOutlineIndex] = useState(
 		outlineEntries.length ? outlineEntries.length - 1 : -1,
 	);
+	const activeOutlineIndexRef = useRef(activeOutlineIndex);
+	activeOutlineIndexRef.current = activeOutlineIndex;
 
 	const syncScrollState = useCallback(() => {
+		recordScrollEvent();
 		const viewport = scrollRef.current;
 		if (!viewport) return;
 		scrollPositionRef.current = viewport.scrollTop;
-		const distanceFromBottom =
-			viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
-		const nextSticky = distanceFromBottom <= 72;
-		stickyRef.current = nextSticky;
-		setIsSticky(nextSticky);
-		setIsScrolledFromTop(viewport.scrollTop > 16);
+		if (scrollSyncFrameRef.current !== null) return;
 
-		if (outlineEntries.length === 0) {
-			setActiveOutlineIndex(-1);
-			return;
-		}
-		if (distanceFromBottom <= 2) {
-			setActiveOutlineIndex(outlineEntries.length - 1);
-			return;
-		}
-		const readingLine = viewport.scrollTop + 72;
-		if (virtualized) {
-			const readingItem =
-				messageVirtualizer.getVirtualItemForOffset(readingLine);
-			setActiveOutlineIndex(
-				getOutlineIndexForMessageIndex(outlineEntries, readingItem?.index ?? 0),
-			);
-			return;
-		}
+		scrollSyncFrameRef.current = requestAnimationFrame(() => {
+			scrollSyncFrameRef.current = null;
+			const currentViewport = scrollRef.current;
+			if (!currentViewport) return;
 
-		let nextIndex = 0;
-		for (let index = 0; index < outlineEntries.length; index += 1) {
-			const row = roundRefs.current.get(outlineEntries[index].key);
-			if (!row || row.offsetTop > readingLine) break;
-			nextIndex = index;
-		}
-		setActiveOutlineIndex(nextIndex);
+			const distanceFromBottom =
+				currentViewport.scrollHeight -
+				currentViewport.clientHeight -
+				currentViewport.scrollTop;
+			const nextSticky = distanceFromBottom <= 72;
+			if (stickyRef.current !== nextSticky) {
+				stickyRef.current = nextSticky;
+				setIsSticky(nextSticky);
+			}
+			const nextScrolledFromTop = currentViewport.scrollTop > 16;
+			if (isScrolledFromTopRef.current !== nextScrolledFromTop) {
+				isScrolledFromTopRef.current = nextScrolledFromTop;
+				setIsScrolledFromTop(nextScrolledFromTop);
+			}
+
+			if (outlineEntries.length === 0) {
+				if (activeOutlineIndexRef.current !== -1) {
+					activeOutlineIndexRef.current = -1;
+					setActiveOutlineIndex(-1);
+				}
+				return;
+			}
+			if (distanceFromBottom <= 2) {
+				const nextIndex = outlineEntries.length - 1;
+				if (activeOutlineIndexRef.current !== nextIndex) {
+					activeOutlineIndexRef.current = nextIndex;
+					setActiveOutlineIndex(nextIndex);
+				}
+				return;
+			}
+			const readingLine = currentViewport.scrollTop + 72;
+			if (virtualized) {
+				const readingItem =
+					messageVirtualizer.getVirtualItemForOffset(readingLine);
+				const nextIndex = getOutlineIndexForMessageIndex(
+					outlineEntries,
+					readingItem?.index ?? 0,
+				);
+				if (activeOutlineIndexRef.current !== nextIndex) {
+					activeOutlineIndexRef.current = nextIndex;
+					setActiveOutlineIndex(nextIndex);
+				}
+				return;
+			}
+
+			let nextIndex = 0;
+			for (let index = 0; index < outlineEntries.length; index += 1) {
+				const row = roundRefs.current.get(outlineEntries[index].key);
+				if (!row || row.offsetTop > readingLine) break;
+				nextIndex = index;
+			}
+			if (activeOutlineIndexRef.current !== nextIndex) {
+				activeOutlineIndexRef.current = nextIndex;
+				setActiveOutlineIndex(nextIndex);
+			}
+		});
 	}, [messageVirtualizer, outlineEntries, virtualized]);
+
+	useEffect(() => {
+		logChatPerformanceInstructions();
+	}, []);
+
+	useEffect(
+		() => () => {
+			if (scrollSyncFrameRef.current !== null) {
+				cancelAnimationFrame(scrollSyncFrameRef.current);
+			}
+		},
+		[],
+	);
 
 	const scrollToBottom = useCallback((smooth = true) => {
 		const viewport = scrollRef.current;
@@ -1233,361 +1329,24 @@ export function ChatPage({
 		setIsSticky(true);
 	}, []);
 
-	const appendLocalMessage = useCallback(
-		(targetSessionId: string, message: ChatMessage) => {
-			setLocalMessages((current) => ({
-				...current,
-				[targetSessionId]: [
-					...(current[targetSessionId] ?? EMPTY_MESSAGES),
-					message,
-				],
-			}));
-		},
-		[],
-	);
-
-	const startAssistantMessage = useCallback((turn: ActiveTurn) => {
-		const { sessionId, assistantMessageId, replyRunwayPx } = turn;
-		setLocalMessages((current) => {
-			const sessionMessages = current[sessionId] ?? EMPTY_MESSAGES;
-			if (
-				sessionMessages.some((message) => message.id === assistantMessageId)
-			) {
-				return current;
-			}
-			return {
-				...current,
-				[sessionId]: [
-					...sessionMessages,
-					{
-						id: assistantMessageId,
-						role: "assistant",
-						text: "",
-						time: formatTime(),
-						streaming: true,
-						replyRunwayPx,
-					},
-				],
-			};
-		});
-	}, []);
-
-	const reconcileAssistantText = useCallback(
-		(turn: ActiveTurn, text: string) => {
-			const contentId = createLocalContentId("text");
-			setLocalMessages((current) => {
-				const sessionMessages = current[turn.sessionId] ?? EMPTY_MESSAGES;
-				const index = sessionMessages.findIndex(
-					(message) => message.id === turn.assistantMessageId,
+	const dispatchConversation = useCallback(
+		(targetSessionId: string, action: ConversationAction) => {
+			setConversationStates((current) => {
+				const existing =
+					current[targetSessionId] ??
+					createConversationState(
+						targetSessionId === session.id ? messagesRef.current : [],
+					);
+				const next = reduceConversation(
+					existing,
+					action,
+					conversationReducerContext,
 				);
-				if (index < 0) {
-					return {
-						...current,
-						[turn.sessionId]: [
-							...sessionMessages,
-							{
-								id: turn.assistantMessageId,
-								role: "assistant",
-								text,
-								time: formatTime(),
-								content: reconcileAssistantTextContent(
-									[],
-									text,
-									() => contentId,
-								),
-								streaming: true,
-								replyRunwayPx: turn.replyRunwayPx,
-							},
-						],
-					};
-				}
-
-				const message = sessionMessages[index];
-				if (message.role !== "assistant") return current;
-				const content = reconcileAssistantTextContent(
-					message.content,
-					text,
-					() => contentId,
-				);
-				if (message.text === text && content === message.content)
-					return current;
-				const nextMessages = [...sessionMessages];
-				nextMessages[index] = { ...message, text, content, streaming: true };
-				return { ...current, [turn.sessionId]: nextMessages };
+				if (next === existing) return current;
+				return { ...current, [targetSessionId]: next };
 			});
 		},
-		[],
-	);
-
-	const appendAssistantDelta = useCallback(
-		(turn: ActiveTurn, delta: string) => {
-			if (!delta) return;
-			const contentId = createLocalContentId("text");
-			setLocalMessages((current) => {
-				const sessionMessages = current[turn.sessionId] ?? EMPTY_MESSAGES;
-				const index = sessionMessages.findIndex(
-					(message) => message.id === turn.assistantMessageId,
-				);
-				if (index < 0) {
-					return {
-						...current,
-						[turn.sessionId]: [
-							...sessionMessages,
-							{
-								id: turn.assistantMessageId,
-								role: "assistant",
-								text: delta,
-								time: formatTime(),
-								content: appendAssistantTextContent([], delta, () => contentId),
-								streaming: true,
-								replyRunwayPx: turn.replyRunwayPx,
-							},
-						],
-					};
-				}
-
-				const message = sessionMessages[index];
-				if (message.role !== "assistant") return current;
-				const nextMessages = [...sessionMessages];
-				nextMessages[index] = {
-					...message,
-					text: `${message.text}${delta}`,
-					content: appendAssistantTextContent(
-						message.content,
-						delta,
-						() => contentId,
-					),
-					streaming: true,
-				};
-				return { ...current, [turn.sessionId]: nextMessages };
-			});
-		},
-		[],
-	);
-
-	const updateAssistantContent = useCallback(
-		(
-			turn: ActiveTurn,
-			update: (content: AssistantContentItem[]) => AssistantContentItem[],
-		) => {
-			setLocalMessages((current) => {
-				const sessionMessages = current[turn.sessionId] ?? EMPTY_MESSAGES;
-				const index = sessionMessages.findIndex(
-					(message) => message.id === turn.assistantMessageId,
-				);
-				if (index < 0) {
-					const message: AssistantChatMessage = {
-						id: turn.assistantMessageId,
-						role: "assistant",
-						text: "",
-						time: formatTime(),
-						content: update([]),
-						streaming: true,
-						replyRunwayPx: turn.replyRunwayPx,
-					};
-					return {
-						...current,
-						[turn.sessionId]: [...sessionMessages, message],
-					};
-				}
-
-				const message = sessionMessages[index];
-				if (message.role !== "assistant") return current;
-				const nextMessages = [...sessionMessages];
-				nextMessages[index] = {
-					...message,
-					content: update(message.content ?? []),
-					streaming: true,
-				};
-				return { ...current, [turn.sessionId]: nextMessages };
-			});
-		},
-		[],
-	);
-
-	const startAssistantThinking = useCallback(
-		(turn: ActiveTurn) => {
-			const contentId = createLocalContentId("thinking");
-			updateAssistantContent(turn, (content) =>
-				startAssistantThinkingContent(content, () => contentId),
-			);
-		},
-		[updateAssistantContent],
-	);
-
-	const appendAssistantThinkingDelta = useCallback(
-		(turn: ActiveTurn, delta: string) => {
-			if (!delta) return;
-			const contentId = createLocalContentId("thinking");
-			updateAssistantContent(turn, (content) =>
-				appendAssistantThinkingContent(content, delta, () => contentId),
-			);
-		},
-		[updateAssistantContent],
-	);
-
-	const finishAssistantThinking = useCallback(
-		(turn: ActiveTurn) => {
-			updateAssistantContent(turn, finishAssistantThinkingContent);
-		},
-		[updateAssistantContent],
-	);
-
-	const startToolExecution = useCallback(
-		(turn: ActiveTurn, toolCallId: string, toolName: string, args: unknown) => {
-			updateAssistantContent(turn, (activity) =>
-				upsertToolContent(
-					activity,
-					toolCallId,
-					() => ({
-						id: toolCallId,
-						type: "tool",
-						toolName,
-						args,
-						status: "running",
-					}),
-					(current) => ({
-						...current,
-						toolName,
-						args,
-						status: "running",
-						isError: false,
-					}),
-				),
-			);
-		},
-		[updateAssistantContent],
-	);
-
-	const updateToolExecution = useCallback(
-		(
-			turn: ActiveTurn,
-			toolCallId: string,
-			toolName: string,
-			args: unknown,
-			partialResult: unknown,
-		) => {
-			updateAssistantContent(turn, (activity) =>
-				upsertToolContent(
-					activity,
-					toolCallId,
-					() => ({
-						id: toolCallId,
-						type: "tool",
-						toolName,
-						args,
-						result: partialResult,
-						status: "running",
-					}),
-					(current) => ({
-						...current,
-						toolName,
-						args,
-						result: partialResult,
-						status: "running",
-					}),
-				),
-			);
-		},
-		[updateAssistantContent],
-	);
-
-	const finishToolExecution = useCallback(
-		(
-			turn: ActiveTurn,
-			toolCallId: string,
-			toolName: string,
-			result: unknown,
-			isError: boolean,
-		) => {
-			updateAssistantContent(turn, (activity) =>
-				upsertToolContent(
-					activity,
-					toolCallId,
-					() => ({
-						id: toolCallId,
-						type: "tool",
-						toolName,
-						result,
-						status: "complete",
-						isError,
-					}),
-					(current) => ({
-						...current,
-						toolName,
-						result,
-						status: "complete",
-						isError,
-					}),
-				),
-			);
-		},
-		[updateAssistantContent],
-	);
-
-	const finishAssistantMessage = useCallback(
-		(
-			turn: ActiveTurn,
-			stopReason?: string | null,
-			errorMessage?: string | null,
-			notifyCompletion = true,
-		) => {
-			const workDurationMs = Math.max(0, Date.now() - turn.startedAtMs);
-			const visibleError =
-				stopReason === "aborted"
-					? undefined
-					: errorMessage?.trim() ||
-						(stopReason === "error" ? "Pi 返回了错误结果。" : undefined);
-			setLocalMessages((current) => {
-				const sessionMessages = current[turn.sessionId] ?? EMPTY_MESSAGES;
-				const index = sessionMessages.findIndex(
-					(message) => message.id === turn.assistantMessageId,
-				);
-				if (index < 0) {
-					if (!visibleError) return current;
-					return {
-						...current,
-						[turn.sessionId]: [
-							...sessionMessages,
-							{
-								id: turn.assistantMessageId,
-								role: "assistant",
-								text: "",
-								time: formatTime(),
-								streaming: false,
-								workDurationMs,
-								stopReason: stopReason ?? undefined,
-								errorMessage: visibleError,
-							},
-						],
-					};
-				}
-
-				const message = sessionMessages[index];
-				if (message.role !== "assistant") return current;
-				const nextMessages = [...sessionMessages];
-				nextMessages[index] = {
-					...message,
-					content: message.content?.map(finishAssistantContentItem),
-					activity: message.activity?.map(finishActivityItem),
-					streaming: false,
-					workDurationMs,
-					stopReason: stopReason ?? undefined,
-					errorMessage: visibleError,
-				};
-				return { ...current, [turn.sessionId]: nextMessages };
-			});
-			if (
-				notifyCompletion &&
-				desktopNotifications &&
-				stopReason !== "aborted" &&
-				stopReason !== "error" &&
-				!visibleError
-			) {
-				notifyReplyCompleted(turn.sessionTitle);
-			}
-		},
-		[desktopNotifications],
+		[session.id],
 	);
 
 	const releaseActiveTurn = useCallback((turn: ActiveTurn) => {
@@ -1602,71 +1361,14 @@ export function ChatPage({
 	const failActiveTurn = useCallback(
 		(turn: ActiveTurn, message: string) => {
 			if (activeTurnRef.current !== turn) return;
-			finishAssistantMessage(turn, "error", message);
+			dispatchConversation(turn.sessionId, {
+				type: "conversation_runtime_error",
+				message,
+				timestampMs: Date.now(),
+			});
 			releaseActiveTurn(turn);
 		},
-		[finishAssistantMessage, releaseActiveTurn],
-	);
-
-	const beginQueuedMessage = useCallback(
-		(turn: ActiveTurn, text: string) => {
-			if (!turn.currentUserStarted) {
-				turn.currentUserStarted = true;
-				turn.currentUserText = text;
-				return;
-			}
-
-			finishAssistantMessage(turn, undefined, undefined, false);
-			const nextTurn: ActiveTurn = {
-				...turn,
-				currentUserText: text,
-				currentUserStarted: true,
-				assistantMessageId: createLocalMessageId("assistant"),
-				startedAtMs: Date.now(),
-				replyRunwayPx: undefined,
-			};
-			activeTurnRef.current = nextTurn;
-			const assistantMessage: AssistantChatMessage = {
-				id: nextTurn.assistantMessageId,
-				role: "assistant",
-				text: "",
-				time: formatTime(),
-				streaming: true,
-			};
-
-			setLocalMessages((current) => {
-				const sessionMessages = current[nextTurn.sessionId] ?? EMPTY_MESSAGES;
-				const queuedIndex = sessionMessages.findIndex(
-					(message) =>
-						message.role === "user" && message.queued && message.text === text,
-				);
-				if (queuedIndex >= 0) {
-					const nextMessages = [...sessionMessages];
-					const queuedMessage = nextMessages[queuedIndex];
-					if (queuedMessage.role === "user") {
-						nextMessages[queuedIndex] = { ...queuedMessage, queued: undefined };
-					}
-					nextMessages.splice(queuedIndex + 1, 0, assistantMessage);
-					return { ...current, [nextTurn.sessionId]: nextMessages };
-				}
-
-				return {
-					...current,
-					[nextTurn.sessionId]: [
-						...sessionMessages,
-						{
-							id: createLocalMessageId("user"),
-							role: "user",
-							text,
-							time: formatTime(),
-						},
-						assistantMessage,
-					],
-				};
-			});
-			requestAnimationFrame(() => scrollToBottom(false));
-		},
-		[finishAssistantMessage, scrollToBottom],
+		[dispatchConversation, releaseActiveTurn],
 	);
 
 	const handleRuntimeEvent = useCallback(
@@ -1680,62 +1382,28 @@ export function ChatPage({
 				return;
 			}
 
+			const action = toConversationAction(event);
+			if (action) {
+				dispatchConversation(turn.sessionId, action);
+			}
+
 			switch (event.type) {
-				case "rpc_message":
-					break;
-				case "user_message_start":
-					beginQueuedMessage(turn, event.text);
-					break;
-				case "assistant_message_start":
-					startAssistantMessage(turn);
-					break;
-				case "assistant_text_delta":
-					appendAssistantDelta(turn, event.delta);
-					break;
-				case "assistant_text_snapshot":
-					reconcileAssistantText(turn, event.text);
-					break;
-				case "assistant_thinking_start":
-					startAssistantThinking(turn);
-					break;
-				case "assistant_thinking_delta":
-					appendAssistantThinkingDelta(turn, event.delta);
-					break;
-				case "assistant_thinking_end":
-					finishAssistantThinking(turn);
-					break;
-				case "tool_execution_start":
-					startToolExecution(
-						turn,
-						event.toolCallId,
-						event.toolName,
-						event.args,
-					);
-					break;
-				case "tool_execution_update":
-					updateToolExecution(
-						turn,
-						event.toolCallId,
-						event.toolName,
-						event.args,
-						event.partialResult,
-					);
-					break;
-				case "tool_execution_end":
-					finishToolExecution(
-						turn,
-						event.toolCallId,
-						event.toolName,
-						event.result,
-						event.isError,
-					);
-					break;
 				case "assistant_message_end":
-					finishAssistantMessage(turn, event.stopReason, event.errorMessage);
+					if (
+						desktopNotifications &&
+						event.stopReason !== "aborted" &&
+						event.stopReason !== "error" &&
+						!event.errorMessage?.trim()
+					) {
+						notifyReplyCompleted(turn.sessionTitle);
+					}
 					void readCurrentPiSessionState(client)
 						.then((state) => setSessionState(state))
 						.catch(() => undefined);
 					releaseActiveTurn(turn);
+					break;
+				case "user_message_start":
+					requestAnimationFrame(() => scrollToBottom(false));
 					break;
 				case "queue_update":
 					setPendingSteering(event.steering.length);
@@ -1754,27 +1422,30 @@ export function ChatPage({
 						);
 					}
 					break;
+				case "rpc_message":
+				case "assistant_message_start":
+				case "assistant_text_delta":
+				case "assistant_text_snapshot":
+				case "assistant_thinking_start":
+				case "assistant_thinking_delta":
+				case "assistant_thinking_end":
+				case "tool_execution_start":
+				case "tool_execution_update":
+				case "tool_execution_end":
 				case "runtime_log":
 					break;
 			}
 		},
 		[
 			client,
-			appendAssistantDelta,
-			appendAssistantThinkingDelta,
-			beginQueuedMessage,
+			desktopNotifications,
+			dispatchConversation,
 			failActiveTurn,
-			finishAssistantMessage,
-			finishAssistantThinking,
-			finishToolExecution,
-			reconcileAssistantText,
 			releaseActiveTurn,
-			startAssistantMessage,
-			startAssistantThinking,
-			startToolExecution,
-			updateToolExecution,
+			scrollToBottom,
 		],
 	);
+
 	useEffect(() => {
 		runtimeEventHandlerRef.current = handleRuntimeEvent;
 	}, [handleRuntimeEvent]);
@@ -1805,6 +1476,23 @@ export function ChatPage({
 		const requestId = ++modelRequestRef.current;
 		setModelLoadState("loading");
 		setModelError(null);
+		if (session.sessionPath) {
+			const cached =
+				getCachedWorkspacePiModels(session.workspaceRecord.id)?.models ?? [];
+			const options =
+				selectedModel &&
+				!cached.some(
+					(model) =>
+						model.provider === selectedModel.provider &&
+						model.id === selectedModel.id,
+				)
+					? [selectedModel, ...cached]
+					: cached;
+			setModelOptions(options);
+			setThinkingLevels(PI_THINKING_LEVELS);
+			setModelLoadState("ready");
+			return;
+		}
 		try {
 			await client.ensure();
 			const [state, result, thinking] = await Promise.all([
@@ -1815,6 +1503,7 @@ export function ChatPage({
 			if (modelRequestRef.current !== requestId) return;
 			setSelectedModel(state.model);
 			setModelOptions(result.models);
+			cacheWorkspacePiModels(session.workspaceRecord.id, result.models);
 			setSelectedThinkingLevel(state.thinkingLevel);
 			setThinkingLevels(thinking.levels);
 			setModelLoadState("ready");
@@ -1823,11 +1512,23 @@ export function ChatPage({
 			setModelError(runtimeErrorMessage(error));
 			setModelLoadState("error");
 		}
-	}, [modelChanging, modelLoadState, client]);
+	}, [
+		modelChanging,
+		modelLoadState,
+		client,
+		selectedModel,
+		session.sessionPath,
+		session.workspaceRecord.id,
+	]);
 
 	const handleModelChange = useCallback(
 		(model: PiModel | null) => {
 			if (!model || modelChanging) return;
+			if (session.sessionPath) {
+				setSelectedModel(model);
+				setModelError(null);
+				return;
+			}
 			const previousModel = selectedModel;
 			const requestId = ++modelRequestRef.current;
 			setSelectedModel(model);
@@ -1858,11 +1559,15 @@ export function ChatPage({
 				}
 			})();
 		},
-		[modelChanging, selectedModel, client],
+		[modelChanging, selectedModel, client, session.sessionPath],
 	);
 
 	const loadThinkingLevels = useCallback(async () => {
 		if (thinkingLoading || thinkingChanging) return;
+		if (session.sessionPath) {
+			setThinkingLevels(PI_THINKING_LEVELS);
+			return;
+		}
 		setThinkingLoading(true);
 		try {
 			await client.ensure();
@@ -1879,11 +1584,15 @@ export function ChatPage({
 		} finally {
 			setThinkingLoading(false);
 		}
-	}, [client, thinkingChanging, thinkingLoading]);
+	}, [client, session.sessionPath, thinkingChanging, thinkingLoading]);
 
 	const handleThinkingChange = useCallback(
 		(level: PiThinkingLevel | null) => {
 			if (!level || thinkingChanging || level === selectedThinkingLevel) return;
+			if (session.sessionPath) {
+				setSelectedThinkingLevel(level);
+				return;
+			}
 			const previous = selectedThinkingLevel;
 			setSelectedThinkingLevel(level);
 			setThinkingChanging(true);
@@ -1903,7 +1612,7 @@ export function ChatPage({
 				}
 			})();
 		},
-		[selectedThinkingLevel, client, thinkingChanging],
+		[selectedThinkingLevel, client, session.sessionPath, thinkingChanging],
 	);
 
 	const beginTurn = useCallback(
@@ -1924,24 +1633,25 @@ export function ChatPage({
 				sessionTitle: session.title,
 				generation: null,
 				promptSent: false,
-				currentUserText: trimmed,
-				currentUserStarted: false,
-				assistantMessageId: createLocalMessageId("assistant"),
-				startedAtMs: Date.now(),
-				replyRunwayPx,
 			};
 			activeTurnRef.current = turn;
 			setActiveTurnSessionId(turn.sessionId);
 
-			if (appendUserMessage) {
-				appendLocalMessage(turn.sessionId, {
-					id: createLocalMessageId("user"),
-					role: "user",
-					text: trimmed,
-					time: formatTime(),
-				});
-			}
-			startAssistantMessage(turn);
+			const submittedAtMs = Date.now();
+			const clientMessageId = createLocalMessageId("user");
+			dispatchConversation(turn.sessionId, {
+				type: "local_user_submit",
+				clientMessageId,
+				text: trimmed,
+				timestampMs: submittedAtMs,
+				replyRunwayPx,
+				appendMessage: appendUserMessage,
+			});
+			dispatchConversation(turn.sessionId, {
+				type: "local_assistant_pending",
+				timestampMs: submittedAtMs,
+				replyRunwayPx,
+			});
 			setDrafts((current) => ({ ...current, [turn.sessionId]: "" }));
 			requestAnimationFrame(() => scrollToBottom(false));
 
@@ -1958,7 +1668,31 @@ export function ChatPage({
 				const agentState = await client.getPiAgentState();
 				if (activeTurnRef.current !== turn) return;
 				if (agentState.sessionId) identifiedRef.current?.(agentState.sessionId);
-				if (!initialConfigAppliedRef.current.has(session.id)) {
+				if (session.sessionPath) {
+					let configChanged = false;
+					if (
+						selectedModel &&
+						(agentState.model?.provider !== selectedModel.provider ||
+							agentState.model?.id !== selectedModel.id)
+					) {
+						await client.setPiModel(selectedModel);
+						configChanged = true;
+					}
+					if (agentState.thinkingLevel !== selectedThinkingLevel) {
+						await client.setPiThinkingLevel(selectedThinkingLevel);
+						configChanged = true;
+					}
+					if (configChanged) {
+						const [state, thinking] = await Promise.all([
+							client.getPiAgentState(),
+							client.getAvailablePiThinkingLevels(),
+						]);
+						if (activeTurnRef.current !== turn) return;
+						setSelectedModel(state.model);
+						setSelectedThinkingLevel(state.thinkingLevel);
+						setThinkingLevels(thinking.levels);
+					}
+				} else if (!initialConfigAppliedRef.current.has(session.id)) {
 					if (session.initialModel) {
 						await client.setPiModel(session.initialModel);
 					}
@@ -1985,15 +1719,17 @@ export function ChatPage({
 			}
 		},
 		[
-			appendLocalMessage,
+			dispatchConversation,
 			failActiveTurn,
 			scrollToBottom,
+			selectedModel,
+			selectedThinkingLevel,
 			session.id,
 			session.initialModel,
 			session.initialThinkingLevel,
+			session.sessionPath,
 			session.title,
 			client,
-			startAssistantMessage,
 		],
 	);
 
@@ -2018,12 +1754,12 @@ export function ChatPage({
 			}
 
 			const messageId = createLocalMessageId("user");
-			appendLocalMessage(turn.sessionId, {
-				id: messageId,
-				role: "user",
+			dispatchConversation(turn.sessionId, {
+				type: "local_user_queue",
+				clientMessageId: messageId,
 				text: trimmed,
-				time: formatTime(),
-				queued,
+				queueKind: queued,
+				timestampMs: Date.now(),
 			});
 			setDrafts((current) => ({ ...current, [turn.sessionId]: "" }));
 			requestAnimationFrame(() => scrollToBottom(false));
@@ -2033,12 +1769,10 @@ export function ChatPage({
 					? client.sendPiSteer(trimmed)
 					: client.sendPiFollowUp(trimmed);
 			void request.catch((error) => {
-				setLocalMessages((current) => ({
-					...current,
-					[turn.sessionId]: (current[turn.sessionId] ?? EMPTY_MESSAGES).filter(
-						(message) => message.id !== messageId,
-					),
-				}));
+				dispatchConversation(turn.sessionId, {
+					type: "local_user_queue_failed",
+					clientMessageId: messageId,
+				});
 				setDrafts((current) => ({
 					...current,
 					[turn.sessionId]: current[turn.sessionId]?.trim()
@@ -2050,7 +1784,7 @@ export function ChatPage({
 				});
 			});
 		},
-		[client, appendLocalMessage, scrollToBottom, session.id],
+		[client, dispatchConversation, scrollToBottom, session.id],
 	);
 
 	const handleSteer = useCallback(
@@ -2067,7 +1801,10 @@ export function ChatPage({
 		const turn = activeTurnRef.current;
 		if (!turn || turn.sessionId !== session.id) return;
 		if (turn.generation === null || !turn.promptSent) {
-			finishAssistantMessage(turn, "aborted");
+			dispatchConversation(turn.sessionId, {
+				type: "local_turn_abort",
+				timestampMs: Date.now(),
+			});
 			releaseActiveTurn(turn);
 			return;
 		}
@@ -2076,8 +1813,8 @@ export function ChatPage({
 		});
 	}, [
 		client,
+		dispatchConversation,
 		failActiveTurn,
-		finishAssistantMessage,
 		releaseActiveTurn,
 		session.id,
 	]);
@@ -2117,26 +1854,32 @@ export function ChatPage({
 		return () => cancelAnimationFrame(frame);
 	}, [streamingMessage, scrollToBottom]);
 
-	const handleOutlineJump = (index: number) => {
-		const entry = outlineEntries[index];
-		const viewport = scrollRef.current;
-		if (!entry || !viewport) return;
-		stickyRef.current = false;
-		setIsSticky(false);
-		setActiveOutlineIndex(index);
+	const handleOutlineJump = useCallback(
+		(index: number) => {
+			const entry = outlineEntries[index];
+			const viewport = scrollRef.current;
+			if (!entry || !viewport) return;
+			stickyRef.current = false;
+			if (isSticky) setIsSticky(false);
+			activeOutlineIndexRef.current = index;
+			setActiveOutlineIndex(index);
 
-		if (virtualized) {
-			messageVirtualizer.scrollToIndex(entry.messageIndex, { align: "start" });
-			return;
-		}
+			if (virtualized) {
+				messageVirtualizer.scrollToIndex(entry.messageIndex, {
+					align: "start",
+				});
+				return;
+			}
 
-		const row = roundRefs.current.get(entry.key);
-		if (!row) return;
-		viewport.scrollTo({
-			top: Math.max(0, row.offsetTop - CHAT_VIRTUAL_SCROLL_PADDING_PX),
-			behavior: "smooth",
-		});
-	};
+			const row = roundRefs.current.get(entry.key);
+			if (!row) return;
+			viewport.scrollTo({
+				top: Math.max(0, row.offsetTop - CHAT_VIRTUAL_SCROLL_PADDING_PX),
+				behavior: "smooth",
+			});
+		},
+		[isSticky, messageVirtualizer, outlineEntries, virtualized],
+	);
 
 	const running = activeTurnSessionId === session.id;
 	const runtimeBusy = activeTurnSessionId !== null;
@@ -2193,8 +1936,8 @@ export function ChatPage({
 						</div>
 					) : virtualized ? (
 						<div
+							ref={messageVirtualizer.containerRef}
 							className="relative min-h-full"
-							style={{ height: `${messageVirtualizer.getTotalSize()}px` }}
 						>
 							{messageVirtualizer.getVirtualItems().map((virtualMessage) => {
 								const message = messages[virtualMessage.index];
@@ -2203,15 +1946,8 @@ export function ChatPage({
 									<div
 										key={virtualMessage.key}
 										data-index={virtualMessage.index}
-										ref={(node) => {
-											messageVirtualizer.measureElement(node);
-											if (node) roundRefs.current.set(message.id, node);
-											else roundRefs.current.delete(message.id);
-										}}
+										ref={messageVirtualizer.measureElement}
 										className="absolute left-0 top-0 w-full"
-										style={{
-											transform: `translateY(${virtualMessage.start}px)`,
-										}}
 									>
 										{message.role === "user" ? (
 											<UserMessage message={message} />
@@ -2332,3 +2068,17 @@ export function ChatPage({
 		</div>
 	);
 }
+
+function chatPagePropsEqual(previous: ChatPageProps, next: ChatPageProps) {
+	const previousActive = previous.active ?? true;
+	const nextActive = next.active ?? true;
+
+	// Keep inactive conversations mounted so their controller/local state survives,
+	// but do not let unrelated App updates execute the entire ChatPage function.
+	// React compares again when active changes, so reopening uses the latest props.
+	if (!previousActive && !nextActive) return true;
+
+	return false;
+}
+
+export const ChatPage = memo(ChatPageImpl, chatPagePropsEqual);

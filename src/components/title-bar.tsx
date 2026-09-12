@@ -2,9 +2,19 @@ import { useEffect, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, SquareSquare, X } from "lucide-react";
 
-// 自定义标题栏仅在 Windows 且运行于 Tauri 时启用（macOS 保留原生窗口装饰）
+// 仅在 Tauri 环境生效的标记，避免普通浏览器里出现无意义的留白。
+const IS_TAURI = "__TAURI_INTERNALS__" in window;
+
+// macOS：保留原生红绿灯，仅隐藏标题栏文本（tauri.conf.json 的 hiddenTitle + Overlay），
+// 内容延伸至窗口顶部，因此侧边栏/顶栏需要为红绿灯预留左侧安全区。
+export const IS_MACOS = IS_TAURI && navigator.userAgent.includes("Mac");
+
+/** macOS 侧栏收起时，通用顶栏避让原生交通灯簇；会话顶栏与 Lody 一致使用 4.5rem。 */
+export const TRAFFIC_LIGHT_GUTTER = "pl-[4.5rem]";
+
+// 自定义标题栏仅在 Windows 且运行于 Tauri 时启用（Windows 无边框 + 自绘控制按钮）
 export const CUSTOM_TITLEBAR =
-	navigator.userAgent.includes("Windows") && "__TAURI_INTERNALS__" in window;
+	IS_TAURI && navigator.userAgent.includes("Windows");
 
 const CAPTION_BUTTON =
 	"mx-1 my-1 flex h-[calc(100%-0.5rem)] w-8 items-center justify-center rounded-md text-foreground/75 transition-colors hover:bg-foreground/5 hover:text-foreground";

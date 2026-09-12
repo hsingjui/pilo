@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+import type { ConversationEvent } from "@/lib/conversation-types";
+
 export const SESSIONS_CHANGED_EVENT = "pilo:sessions-changed";
 
 export type SessionIndexEntry = {
@@ -38,6 +40,14 @@ export type SessionReconcileResult = {
 	unchanged: number;
 };
 
+export type SessionHistory = {
+	events: ConversationEvent[];
+	model: { provider: string; id: string } | null;
+	thinkingLevel: string | null;
+	name: string | null;
+	sourceMessageCount: number;
+};
+
 export type SessionWatchEvent =
 	| { type: "changed"; workspaceId: string }
 	| { type: "backend"; workspaceId: string; backend: string }
@@ -49,6 +59,16 @@ export function listSessions(
 	workspaceId: string,
 ): Promise<SessionIndexEntry[]> {
 	return invoke<SessionIndexEntry[]>("session_list", { workspaceId });
+}
+
+export function loadSessionHistory(
+	workspaceId: string,
+	sessionPath: string,
+): Promise<SessionHistory> {
+	return invoke<SessionHistory>("session_history", {
+		workspaceId,
+		sessionPath,
+	});
 }
 
 export function reconcileSessions(

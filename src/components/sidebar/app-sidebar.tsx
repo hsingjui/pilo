@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, ScrollArea } from "@/ui";
+import { IS_MACOS } from "@/components/title-bar";
 import { EnvRow, SessionRow, WorkspaceRow } from "./rows";
 import {
 	AppSidebarProps,
@@ -265,16 +266,21 @@ export function AppSidebar({
 			ref={asideRef}
 			style={collapsed ? undefined : { width: sidebarWidth }}
 			className={cn(
-				"relative h-full shrink-0 overflow-hidden transition-[width,opacity] duration-200 ease-out",
+				"relative h-full shrink-0 transition-[width,opacity] duration-200 ease-out",
 				// 拖拽时关闭宽度过渡，避免动画跟不上指针（与右侧 Panel 一致）
 				resizing && "transition-none",
-				collapsed ? "w-0 opacity-0" : "opacity-100",
+				collapsed
+					? "w-0 overflow-hidden opacity-0"
+					: "overflow-visible opacity-100",
 			)}
 		>
-			<div className="relative mb-2 ml-2 mr-1 mt-2 flex h-[calc(100%_-_1rem)] w-[calc(100%-12px)] flex-col overflow-hidden rounded-xl border border-sidebar-border/80 bg-sidebar text-sidebar-foreground shadow-[0_1px_4px_-1px_rgba(0,0,0,0.18)]">
+			<div className="relative mb-2 ml-2 mr-1 mt-2 flex h-[calc(100%_-_1rem)] w-[calc(100%-12px)] flex-col overflow-hidden rounded-xl border border-sidebar-border/80 bg-sidebar p-[2px] text-sidebar-foreground shadow-[0_1px_4px_-1px_rgba(0,0,0,0.18)]">
 				<header
 					data-tauri-drag-region="deep"
-					className="group/sidebar-header relative flex h-11 shrink-0 items-center justify-between gap-2 px-1.5"
+					className={cn(
+						"group/sidebar-header relative flex shrink-0 items-center justify-between gap-2 px-1.5",
+						IS_MACOS ? "h-[72px] pt-7" : "h-11",
+					)}
 				>
 					<div className="grid h-8 w-full min-w-0 select-none grid-cols-[20px_1fr_16px] items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground dark:text-sidebar-foreground/75">
 						<Avatar className="h-5 w-5 rounded-md text-[10px]">
@@ -287,7 +293,10 @@ export function AppSidebar({
 					</div>
 					<button
 						type="button"
-						className="absolute right-1.5 top-2 flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-sidebar-ring/40"
+						className={cn(
+							"absolute right-1.5 flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-sidebar-ring/40",
+							IS_MACOS ? "-top-0.5" : "top-2",
+						)}
 						aria-label="收起侧边栏"
 						onClick={() => onCollapse?.()}
 					>
@@ -417,16 +426,17 @@ export function AppSidebar({
 					{footer}
 				</footer>
 			</div>
-			{/* 拖拽手柄：占用内层面板右侧 mr-1 的空隙，横向拖动调整宽度 */}
 			<div
 				role="separator"
 				aria-orientation="vertical"
 				aria-label="调整侧边栏宽度"
 				onPointerDown={startResize}
 				className={cn(
-					"absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize",
-					"transition-colors duration-150 hover:bg-sidebar-border",
-					resizing && "bg-sidebar-border",
+					"absolute -right-0.5 top-2 z-20 h-[calc(100%-1rem)] w-3 cursor-col-resize bg-transparent",
+					"after:absolute after:right-[5px] after:top-3 after:bottom-3 after:w-[2px] after:rounded-full after:bg-transparent after:transition-colors after:duration-150",
+					resizing
+						? "after:bg-sidebar-ring/70"
+						: "hover:after:bg-sidebar-ring/50 hover:after:delay-150",
 				)}
 			/>
 		</aside>

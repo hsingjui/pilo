@@ -8,12 +8,12 @@ import {
 } from "react";
 import {
 	ArrowUp,
-	ChevronDown,
+	Bot,
+	Check,
 	FileCode2,
 	FileText,
 	ListPlus,
 	LoaderCircle,
-	Paperclip,
 	Plus,
 	Sparkles,
 	Square,
@@ -30,10 +30,9 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
-	DropdownMenuLabel,
-	DropdownMenuRadioGroup,
-	DropdownMenuRadioItem,
-	DropdownMenuSeparator,
+	DropdownMenuSub,
+	DropdownMenuSubContent,
+	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 	Textarea,
 	Tooltip,
@@ -104,6 +103,19 @@ const DEFAULT_MODEL_VALUE = "__pilo_default_model__";
 const DEFAULT_THINKING_VALUE = "__pilo_default_thinking__";
 const EMPTY_MODELS: readonly PiModel[] = [];
 const EMPTY_THINKING_LEVELS: readonly PiThinkingLevel[] = [];
+const THINKING_LEVEL_LABELS: Record<PiThinkingLevel, string> = {
+	off: "关闭",
+	minimal: "最低",
+	low: "低",
+	medium: "中",
+	high: "高",
+	xhigh: "极高",
+	max: "最大",
+};
+
+function thinkingLevelLabel(level: PiThinkingLevel | null) {
+	return level ? THINKING_LEVEL_LABELS[level] : "默认";
+}
 
 function modelValue(model: PiModel) {
 	return JSON.stringify([model.provider, model.id]);
@@ -216,7 +228,7 @@ export function ChatComposer({
 	onSubmit,
 	onSteer,
 	onFollowUp,
-	variant = "session",
+	variant: _variant = "session",
 	placeholder = "按 @ 提及文件，/ 使用命令，$ 使用技能",
 	disabled = false,
 	running = false,
@@ -224,7 +236,7 @@ export function ChatComposer({
 	pendingSteering = 0,
 	pendingFollowUps = 0,
 	statusText = "",
-	modelLabel = "pi / default",
+	modelLabel = "Pi 默认",
 	models = EMPTY_MODELS,
 	selectedModel = null,
 	modelLoading = false,
@@ -260,6 +272,10 @@ export function ChatComposer({
 	const selectedThinkingValue =
 		selectedThinkingLevel ??
 		(showDefaultThinkingOption ? DEFAULT_THINKING_VALUE : "");
+	const effectiveThinkingLabel = thinkingLevelLabel(selectedThinkingLevel);
+	const runConfigDisabled =
+		(modelDisabled || !onModelChange) &&
+		(thinkingDisabled || !onThinkingChange);
 
 	useLayoutEffect(() => {
 		const textarea = textareaRef.current;
@@ -418,8 +434,6 @@ export function ChatComposer({
 		setCaret(textarea.selectionStart ?? value.length);
 	};
 
-	const isLanding = variant === "landing";
-
 	return (
 		<div className={cn("relative w-full", className)}>
 			{suggestionMenuOpen ? (
@@ -485,12 +499,12 @@ export function ChatComposer({
 
 			<div
 				className={cn(
-					"group relative flex w-full flex-col border bg-background transition-[border-color,box-shadow]",
-					"border-foreground/[0.10] focus-within:border-ring/40 focus-within:ring-1 focus-within:ring-ring/20",
+					"group relative flex w-full flex-col border bg-background transition-colors duration-150",
+					"border-foreground/[0.10] focus-within:border-ring/40",
 					"dark:border-input-border/70",
-					isLanding
-						? "dark:bg-input/90 gap-1 rounded-xl px-4 py-1.5 shadow-[0_1px_2px_hsl(0_0%_0%/0.04),0_8px_24px_-12px_hsl(0_0%_0%/0.08)]"
-						: "dark:bg-input/90 gap-1 rounded-xl px-2 py-1.5",
+					// Lody 桌面端 Landing 实际复用 session composer 的紧凑壳；
+					// landing 这里只保留交互语义（例如附件入口图标），不再放大输入框。
+					"gap-1 rounded-xl px-2 py-1.5 dark:bg-input/90",
 				)}
 			>
 				{attachments.length > 0 ? (
@@ -539,7 +553,7 @@ export function ChatComposer({
 						"input-scrollbar resize-none border-transparent bg-transparent text-sm leading-6 shadow-none",
 						"focus-visible:ring-0 focus-visible:ring-offset-0",
 						"text-input-foreground placeholder:text-input-placeholder",
-						isLanding ? "min-h-12 px-0 py-0" : "min-h-12 px-1 py-0",
+						"min-h-12 px-1 py-0",
 					)}
 				/>
 
@@ -561,11 +575,7 @@ export function ChatComposer({
 								aria-label="添加附件"
 								onClick={() => fileInputRef.current?.click()}
 							>
-								{isLanding ? (
-									<Plus className="size-4" />
-								) : (
-									<Paperclip className="size-3.5" />
-								)}
+								<Plus className="size-4" />
 							</Button>
 						</TooltipTrigger>
 						<TooltipContent>添加附件</TooltipContent>
@@ -573,121 +583,165 @@ export function ChatComposer({
 
 					<DropdownMenu
 						onOpenChange={(open) => {
-							if (open) onModelMenuOpen?.();
+							if (!open) return;
+							onModelMenuOpen?.();
+							onThinkingMenuOpen?.();
 						}}
 					>
 						<DropdownMenuTrigger asChild>
 							<button
 								type="button"
-								disabled={modelDisabled || !onModelChange}
-								aria-label="选择模型"
-								className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
+								disabled={runConfigDisabled}
+								aria-label="运行配置"
+								className={cn(
+									"inline-flex h-7 min-w-0 select-none items-center gap-1.5 rounded-[4px] px-2 text-xs leading-tight",
+									"text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+									"data-[state=open]:bg-muted data-[state=open]:text-foreground disabled:cursor-default disabled:opacity-70",
+								)}
 							>
-								<span className="max-w-40 truncate font-mono">
+								<Bot className="size-4 shrink-0" />
+								<span className="block min-w-0 max-w-40 truncate text-left">
 									{effectiveModelLabel}
 								</span>
-								<ChevronDown className="size-3" />
+								<span
+									aria-hidden="true"
+									className="shrink-0 text-muted-foreground/60"
+								>
+									·
+								</span>
+								<span className="shrink-0">{effectiveThinkingLabel}</span>
 							</button>
 						</DropdownMenuTrigger>
-						<DropdownMenuContent align="start" className="w-72">
-							<DropdownMenuLabel>模型</DropdownMenuLabel>
-							<DropdownMenuSeparator />
-							{modelLoading ? (
-								<DropdownMenuItem disabled>
-									<LoaderCircle className="size-3.5 animate-spin" />
-									正在读取 Pi 模型…
-								</DropdownMenuItem>
-							) : modelError ? (
-								<DropdownMenuItem onSelect={() => onModelMenuOpen?.()}>
-									<span className="min-w-0 flex-1 truncate">{modelError}</span>
-									<span className="text-[11px] text-muted-foreground">
-										重试
-									</span>
-								</DropdownMenuItem>
-							) : models.length === 0 && !showDefaultModelOption ? (
-								<DropdownMenuItem disabled>没有可用模型</DropdownMenuItem>
-							) : (
-								<DropdownMenuRadioGroup
-									value={selectedModelValue}
-									onValueChange={(nextValue) => {
-										if (nextValue === DEFAULT_MODEL_VALUE) {
-											onModelChange?.(null);
-											return;
-										}
-										const nextModel = models.find(
-											(model) => modelValue(model) === nextValue,
-										);
-										if (nextModel) onModelChange?.(nextModel);
-									}}
+						<DropdownMenuContent align="start" className="min-w-56">
+							<DropdownMenuSub>
+								<DropdownMenuSubTrigger
+									className="pr-1.5"
+									disabled={modelDisabled || !onModelChange}
 								>
-									{showDefaultModelOption ? (
-										<DropdownMenuRadioItem value={DEFAULT_MODEL_VALUE}>
-											Pi 默认模型
-										</DropdownMenuRadioItem>
-									) : null}
-									{models.map((model) => (
-										<DropdownMenuRadioItem
-											key={modelValue(model)}
-											value={modelValue(model)}
+									<span className="min-w-0 flex-1 truncate">模型</span>
+									<span className="ml-4 max-w-40 truncate text-xs text-muted-foreground">
+										{modelLoading ? "加载中…" : effectiveModelLabel}
+									</span>
+								</DropdownMenuSubTrigger>
+								<DropdownMenuSubContent className="max-h-80 min-w-64 overflow-y-auto">
+									{modelLoading ? (
+										<DropdownMenuItem disabled>
+											<LoaderCircle className="size-3.5 animate-spin" />
+											正在读取 Pi 模型…
+										</DropdownMenuItem>
+									) : modelError ? (
+										<DropdownMenuItem
+											onSelect={(event) => {
+												event.preventDefault();
+												onModelMenuOpen?.();
+											}}
 										>
 											<span className="min-w-0 flex-1 truncate">
-												{model.name || model.id}
+												{modelError}
 											</span>
-											<span className="ml-auto pl-3 text-[11px] text-muted-foreground">
-												{model.provider}
+											<span className="text-xs text-muted-foreground">
+												重试
 											</span>
-										</DropdownMenuRadioItem>
-									))}
-								</DropdownMenuRadioGroup>
-							)}
+										</DropdownMenuItem>
+									) : models.length === 0 && !showDefaultModelOption ? (
+										<DropdownMenuItem disabled>没有可用模型</DropdownMenuItem>
+									) : (
+										<>
+											{showDefaultModelOption ? (
+												<DropdownMenuItem
+													onSelect={(event) => {
+														event.preventDefault();
+														onModelChange?.(null);
+													}}
+													className="justify-between"
+												>
+													<span>Pi 默认模型</span>
+													{selectedModelValue === DEFAULT_MODEL_VALUE ? (
+														<Check className="size-3.5 opacity-70" />
+													) : null}
+												</DropdownMenuItem>
+											) : null}
+											{models.map((model) => {
+												const optionValue = modelValue(model);
+												return (
+													<DropdownMenuItem
+														key={optionValue}
+														onSelect={(event) => {
+															event.preventDefault();
+															onModelChange?.(model);
+														}}
+														className="gap-2"
+													>
+														<span className="min-w-0 flex-1 truncate">
+															{model.name || model.id}
+														</span>
+														<span className="shrink-0 text-xs text-muted-foreground">
+															{model.provider}
+														</span>
+														{selectedModelValue === optionValue ? (
+															<Check className="size-3.5 shrink-0 opacity-70" />
+														) : null}
+													</DropdownMenuItem>
+												);
+											})}
+										</>
+									)}
+								</DropdownMenuSubContent>
+							</DropdownMenuSub>
+
+							<DropdownMenuSub>
+								<DropdownMenuSubTrigger
+									className="pr-1.5"
+									disabled={thinkingDisabled || !onThinkingChange}
+								>
+									<span className="min-w-0 flex-1 truncate">推理</span>
+									<span className="ml-4 max-w-40 truncate text-xs text-muted-foreground">
+										{thinkingLoading ? "加载中…" : effectiveThinkingLabel}
+									</span>
+								</DropdownMenuSubTrigger>
+								<DropdownMenuSubContent className="min-w-40">
+									{thinkingLoading ? (
+										<DropdownMenuItem disabled>
+											正在读取推理等级…
+										</DropdownMenuItem>
+									) : (
+										<>
+											{showDefaultThinkingOption ? (
+												<DropdownMenuItem
+													onSelect={(event) => {
+														event.preventDefault();
+														onThinkingChange?.(null);
+													}}
+													className="justify-between"
+												>
+													<span>Pi 默认等级</span>
+													{selectedThinkingValue === DEFAULT_THINKING_VALUE ? (
+														<Check className="size-3.5 opacity-70" />
+													) : null}
+												</DropdownMenuItem>
+											) : null}
+											{thinkingLevels.map((level) => (
+												<DropdownMenuItem
+													key={level}
+													onSelect={(event) => {
+														event.preventDefault();
+														onThinkingChange?.(level);
+													}}
+													className="justify-between"
+												>
+													<span>{thinkingLevelLabel(level)}</span>
+													{selectedThinkingValue === level ? (
+														<Check className="size-3.5 opacity-70" />
+													) : null}
+												</DropdownMenuItem>
+											))}
+										</>
+									)}
+								</DropdownMenuSubContent>
+							</DropdownMenuSub>
 						</DropdownMenuContent>
 					</DropdownMenu>
 
-					<DropdownMenu
-						onOpenChange={(open) => {
-							if (open) onThinkingMenuOpen?.();
-						}}
-					>
-						<DropdownMenuTrigger asChild>
-							<button
-								type="button"
-								disabled={thinkingDisabled || !onThinkingChange}
-								className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
-							>
-								思考 {selectedThinkingLevel ?? "默认"}
-								<ChevronDown className="size-3" />
-							</button>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="start">
-							<DropdownMenuLabel>思考等级</DropdownMenuLabel>
-							<DropdownMenuSeparator />
-							{thinkingLoading ? (
-								<DropdownMenuItem disabled>正在读取思考等级…</DropdownMenuItem>
-							) : (
-								<DropdownMenuRadioGroup
-									value={selectedThinkingValue}
-									onValueChange={(level) => {
-										if (level === DEFAULT_THINKING_VALUE) {
-											onThinkingChange?.(null);
-											return;
-										}
-										onThinkingChange?.(level as PiThinkingLevel);
-									}}
-								>
-									{showDefaultThinkingOption ? (
-										<DropdownMenuRadioItem value={DEFAULT_THINKING_VALUE}>
-											Pi 默认等级
-										</DropdownMenuRadioItem>
-									) : null}
-									{thinkingLevels.map((level) => (
-										<DropdownMenuRadioItem key={level} value={level}>
-											{level}
-										</DropdownMenuRadioItem>
-									))}
-								</DropdownMenuRadioGroup>
-							)}
-						</DropdownMenuContent>
-					</DropdownMenu>
 					{pendingSteering > 0 || pendingFollowUps > 0 ? (
 						<span className="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">
 							{pendingSteering > 0 ? `调整 ${pendingSteering}` : null}
@@ -708,9 +762,9 @@ export function ChatComposer({
 									<TooltipTrigger asChild>
 										<Button
 											type="button"
-											variant="outline"
+											variant="ghost"
 											size="icon"
-											className="size-6 rounded-md active:scale-[0.96]"
+											className="size-7 rounded-full bg-foreground text-background shadow-xs transition-all hover:bg-foreground/90 hover:text-background active:translate-y-px"
 											aria-label="停止"
 											onClick={onStop}
 										>
@@ -727,7 +781,7 @@ export function ChatComposer({
 													type="button"
 													variant="outline"
 													size="icon"
-													className="size-6 rounded-md active:scale-[0.96]"
+													className="size-7 rounded-md active:scale-[0.96]"
 													aria-label="回复结束后发送"
 													disabled={!onFollowUp}
 													onClick={submitFollowUp}
@@ -748,14 +802,14 @@ export function ChatComposer({
 													type="button"
 													size="icon"
 													className={cn(
-														"size-6 rounded-full bg-foreground text-background disabled:bg-muted-foreground",
+														"size-7 rounded-full bg-foreground text-background disabled:bg-muted-foreground",
 														"transition-[background-color,scale] duration-100 enabled:hover:bg-foreground/85 active:scale-[0.96]",
 													)}
 													aria-label="调整当前回复"
 													disabled={!onSteer}
 													onClick={submit}
 												>
-													<ArrowUp className="size-3.5" />
+													<ArrowUp className="size-4" />
 												</Button>
 											</TooltipTrigger>
 											<TooltipContent>
@@ -775,14 +829,14 @@ export function ChatComposer({
 										type="button"
 										size="icon"
 										className={cn(
-											"size-6 rounded-full bg-foreground text-background disabled:bg-muted-foreground",
+											"size-7 rounded-full bg-foreground text-background disabled:bg-muted-foreground",
 											"transition-[background-color,scale] duration-100 enabled:hover:bg-foreground/85 active:scale-[0.96]",
 										)}
 										aria-label="发送"
 										disabled={!value.trim() || disabled}
 										onClick={submit}
 									>
-										<ArrowUp className="size-3.5" />
+										<ArrowUp className="size-4" />
 									</Button>
 								</TooltipTrigger>
 								<TooltipContent>

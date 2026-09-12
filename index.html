@@ -2,13 +2,67 @@
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
-		<link rel="icon" type="image/svg+xml" href="/vite.svg" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta name="theme-color" content="#ffffff" />
 		<title>Pilo</title>
+		<script>
+			(() => {
+				const stored = localStorage.getItem("pilo-ui-theme");
+				const dark =
+					stored === "dark" ||
+					(stored !== "light" &&
+						window.matchMedia("(prefers-color-scheme: dark)").matches);
+				if (dark) document.documentElement.classList.add("dark");
+				document.documentElement.style.colorScheme = dark ? "dark" : "light";
+			})();
+		</script>
+		<style>
+			html,
+			body,
+			#root {
+				width: 100%;
+				height: 100%;
+				margin: 0;
+			}
+			body {
+				background: #ffffff;
+				overflow: hidden;
+			}
+			.dark body {
+				background: #101010;
+			}
+			#pilo-boot-shell {
+				display: grid;
+				width: 100%;
+				height: 100%;
+				grid-template-columns: 292px 1fr;
+				background: #ffffff;
+			}
+			#pilo-boot-shell::before {
+				content: "";
+				background: #f7f8fa;
+				border-right: 1px solid #dadde3;
+			}
+			.dark #pilo-boot-shell {
+				background: #101010;
+			}
+			.dark #pilo-boot-shell::before {
+				background: #161616;
+				border-right-color: #282828;
+			}
+			@media (max-width: 767px) {
+				#pilo-boot-shell {
+					grid-template-columns: 1fr;
+				}
+				#pilo-boot-shell::before {
+					display: none;
+				}
+			}
+		</style>
 	</head>
 
 	<body>
-		<div id="root"></div>
+		<div id="root"><div id="pilo-boot-shell" aria-hidden="true"></div></div>
 		<script type="module" src="/src/main.tsx"></script>
 	</body>
 </html>

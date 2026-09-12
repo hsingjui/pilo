@@ -1,4 +1,5 @@
 import {
+	memo,
 	useEffect,
 	useMemo,
 	useRef,
@@ -17,7 +18,10 @@ const HOVER_WIDTH = 38;
 const BELL_BASE_WIDTH = 15;
 const BELL_SIGMA = 1.8;
 const BELL_RADIUS = 4;
-const TRACK_WIDTH = 50;
+const ACTIVE_BAR_OVERHANG = ACTIVE_TICK_WIDTH - Math.max(...TICK_WIDTHS);
+const TRACK_WIDTH = HOVER_WIDTH + ACTIVE_BAR_OVERHANG;
+const TRACK_INSET = 8;
+const RAIL_WIDTH = TRACK_WIDTH + TRACK_INSET;
 const HOVER_DELAY_MS = 200;
 
 function tickWidth(resting: number, index: number, hoveredIndex: number) {
@@ -29,7 +33,7 @@ function tickWidth(resting: number, index: number, hoveredIndex: number) {
 	return resting * (1 - bell) + target * bell;
 }
 
-export function ConversationOutlineRail({
+export const ConversationOutlineRail = memo(function ConversationOutlineRail({
 	entries,
 	activeIndex,
 	onJumpToRound,
@@ -99,11 +103,15 @@ export function ConversationOutlineRail({
 			ref={railRef}
 			aria-label="消息导航"
 			className={cn(
-				"group/outline pointer-events-none absolute inset-y-0 left-0 z-20 hidden w-[54px] items-center min-[860px]:flex",
+				"group/outline pointer-events-none absolute inset-y-0 left-0 z-20 hidden items-center min-[860px]:flex",
 				className,
 			)}
+			style={{ width: RAIL_WIDTH }}
 		>
-			<div className="pointer-events-auto max-h-1/2 overflow-y-auto py-2 pl-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+			<div
+				className="pointer-events-auto max-h-1/2 overflow-y-auto py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+				style={{ paddingLeft: TRACK_INSET }}
+			>
 				<div className="relative" style={{ width: TRACK_WIDTH }}>
 					<ol className="m-0 flex list-none flex-col p-0">
 						{entries.map((entry, index) => (
@@ -187,4 +195,4 @@ export function ConversationOutlineRail({
 			) : null}
 		</nav>
 	);
-}
+});

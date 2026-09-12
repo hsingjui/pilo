@@ -355,6 +355,23 @@ pub async fn session_reconcile(
 }
 
 #[tauri::command]
+pub async fn session_history(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    workspace_id: String,
+    session_path: String,
+) -> Result<super::session_history::SessionHistory, String> {
+    let workspace = workspace::get(&app, &workspace_id)?;
+    super::session_history::read_history(
+        &runtime.servers,
+        &runtime.session_history_cache,
+        &workspace,
+        &session_path,
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn session_watch_start(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
@@ -420,6 +437,14 @@ pub async fn chat_session_send_rpc(
     command: Value,
 ) -> Result<(), String> {
     runtime.chat_sessions.send(&session_key, command).await
+}
+
+#[tauri::command]
+pub async fn chat_session_stop(
+    runtime: State<'_, PiloRuntime>,
+    session_key: String,
+) -> Result<(), String> {
+    runtime.chat_sessions.stop(&session_key).await
 }
 
 #[tauri::command]

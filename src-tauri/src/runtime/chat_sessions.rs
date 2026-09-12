@@ -218,6 +218,19 @@ impl ChatSessions {
         session.send_rpc(command).await
     }
 
+    pub async fn stop(&self, session_key: &str) -> Result<(), String> {
+        let process = {
+            let mut registry = self.registry.lock().await;
+            registry.processes.remove(session_key)
+        };
+        let Some(process) = process else {
+            return Ok(());
+        };
+        process.closed.store(true, Ordering::Release);
+        process.session.lock().await.stop().await?;
+        Ok(())
+    }
+
     pub async fn open_workspace(&self, workspace_id: &str) -> Result<(), String> {
         let mut registry = self.registry.lock().await;
         if registry.shutting_down

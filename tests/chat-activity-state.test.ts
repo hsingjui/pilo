@@ -8,6 +8,7 @@ import {
 	getAssistantStreamingLabel,
 	reconcileAssistantTextContent,
 	startAssistantThinkingContent,
+	summarizeAssistantActivity,
 	upsertToolContent,
 	type AssistantContentItem,
 } from "../src/lib/chat-activity-state.ts";
@@ -223,6 +224,69 @@ test("work duration uses the same compact shape as Lody", () => {
 	assert.equal(formatWorkDuration(11_999), "11秒");
 	assert.equal(formatWorkDuration(65_999), "1分 05秒");
 	assert.equal(formatWorkDuration(3_723_999), "1小时 02分 03秒");
+});
+
+test("assistant activity summary groups file work and other tools", () => {
+	const summary = summarizeAssistantActivity([
+		{ id: "think-1", type: "thinking", text: "plan", status: "complete" },
+		{
+			id: "read-1",
+			type: "tool",
+			toolName: "read",
+			args: { path: "src/a.ts" },
+			status: "complete",
+		},
+		{
+			id: "read-2",
+			type: "tool",
+			toolName: "read",
+			args: { path: "src/a.ts" },
+			status: "complete",
+		},
+		{
+			id: "read-3",
+			type: "tool",
+			toolName: "read",
+			args: { filePath: "src/b.ts" },
+			status: "complete",
+		},
+		{
+			id: "write-1",
+			type: "tool",
+			toolName: "write",
+			args: { path: "src/new.ts" },
+			status: "complete",
+		},
+		{
+			id: "edit-1",
+			type: "tool",
+			toolName: "edit",
+			args: { paths: ["src/a.ts", "src/c.ts"] },
+			status: "complete",
+		},
+		{
+			id: "bash-1",
+			type: "tool",
+			toolName: "bash",
+			args: { command: "pnpm check" },
+			status: "complete",
+		},
+		{
+			id: "search-1",
+			type: "tool",
+			toolName: "grep",
+			args: { pattern: "foo" },
+			status: "complete",
+		},
+	]);
+
+	assert.deepEqual(summary, {
+		hasThought: true,
+		readFileCount: 2,
+		createFileCount: 1,
+		editFileCount: 2,
+		commandCount: 2,
+	});
 });
 
 test("reply runway is only reserved for an already scrollable conversation", () => {

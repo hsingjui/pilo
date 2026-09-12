@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
 
+import { refreshWorkspacePiModels } from "@/lib/pi-models";
 import type { Connection } from "@/lib/pi-runtime";
 import {
 	addWorkspace,
@@ -82,6 +83,12 @@ export function AddWorkspaceDialog({
 		setBusy(true);
 		try {
 			const workspace = await addWorkspace(connection, workspacePath.trim());
+			void refreshWorkspacePiModels(workspace.id).catch((error) => {
+				console.warn(
+					"Failed to refresh Pi models after adding workspace",
+					error,
+				);
+			});
 			notifyWorkspacesChanged();
 			toast.success(`已添加 ${workspace.name}`, {
 				description: `${workspace.connection.name} · ${workspace.metadata.cwd}`,

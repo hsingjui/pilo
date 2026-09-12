@@ -1,4 +1,5 @@
-import { useMemo, type ComponentPropsWithoutRef } from "react";
+import { memo, useMemo, type ComponentPropsWithoutRef } from "react";
+import "katex/dist/katex.min.css";
 import { createMathPlugin } from "@streamdown/math";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
@@ -23,6 +24,8 @@ import {
 	normalizeTexMathDelimiters,
 	remarkSingleDollarTextMath,
 } from "@/lib/markdown-single-dollar-math";
+import { recordMarkdownRender } from "@/lib/chat-performance";
+import { useResolvedTheme } from "@/lib/theme-provider";
 import { cn } from "@/lib/utils";
 
 type ShikiHighlighter = Awaited<
@@ -33,6 +36,13 @@ type MarkdownHighlightResult = NonNullable<
 >;
 
 type MarkdownLinkProps = ComponentPropsWithoutRef<"a"> & {
+	node?: unknown;
+};
+type MarkdownCodeProps = ComponentPropsWithoutRef<"code"> & {
+	node?: unknown;
+	inline?: boolean;
+};
+type MarkdownTableProps = ComponentPropsWithoutRef<"table"> & {
 	node?: unknown;
 };
 
@@ -283,24 +293,32 @@ const MARKDOWN_NO_REHYPE_PLUGINS: [] = [];
 
 const MARKDOWN_BASE_CLASSNAME =
 	"markdown-renderer max-w-none text-foreground leading-[1.75] " +
-	"[&_p]:!mt-0 [&_p]:!mb-3 [&_p:last-child]:!mb-0 [&_p:first-child]:!mt-0 " +
-	"[&_ul]:!my-2 [&_ul]:pl-0 [&_ul]:list-none " +
+	"[&_p]:!mt-0 [&_p]:!mb-3 [&_p:has(+ul)]:!mb-2 [&_p:last-child]:!mb-0 [&_p:first-child]:!mt-0 " +
+	"[&_ul]:!my-2 [&_ul]:pl-3 [&_ul]:list-disc " +
+	"[&_ul:not(.contains-task-list)]:pl-0 [&_ul:not(.contains-task-list)]:list-none " +
 	"[&_ul:not(.contains-task-list)>li]:relative [&_ul:not(.contains-task-list)>li]:pl-6 " +
 	"[&_ul:not(.contains-task-list)>li]:before:absolute [&_ul:not(.contains-task-list)>li]:before:left-[10px] [&_ul:not(.contains-task-list)>li]:before:top-[0.75em] [&_ul:not(.contains-task-list)>li]:before:size-1 [&_ul:not(.contains-task-list)>li]:before:-translate-y-1/2 [&_ul:not(.contains-task-list)>li]:before:rounded-full [&_ul:not(.contains-task-list)>li]:before:bg-current [&_ul:not(.contains-task-list)>li]:before:content-[''] " +
 	"[&_ol]:!my-2 [&_ol]:pl-0 [&_ol]:list-none [&_ol>li]:relative [&_ol>li]:pl-6 " +
 	"[&_ol>li]:before:absolute [&_ol>li]:before:left-0 [&_ol>li]:before:w-[18px] [&_ol>li]:before:whitespace-nowrap [&_ol>li]:before:text-right [&_ol>li]:before:content-[counter(list-item)'.'] " +
-	"[&_li]:!my-0 [&_li]:!py-0 [&_li:not(:first-child)]:!mt-1 " +
+	"[&_li]:!my-0 [&_li]:!py-0 [&_li:not(:first-child)]:!mt-2 [&_ul>li:not(:first-child)]:!mt-1 [&_ol>li:not(:first-child)]:!mt-1 [&_li>ul]:!my-1 [&_li>ol]:!my-1 " +
 	"[&_blockquote]:!my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:not-italic [&_blockquote]:text-muted-foreground " +
 	"[&_hr]:!my-4 [&_hr]:border-0 [&_hr]:border-t [&_hr]:border-border " +
-	"[&_h1]:!mt-6 [&_h1]:!mb-2 [&_h1]:text-xl [&_h1]:font-semibold [&_h1]:tracking-tight " +
-	"[&_h2]:!mt-5 [&_h2]:!mb-2 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:tracking-tight " +
-	"[&_h3]:!mt-4 [&_h3]:!mb-2 [&_h3]:font-semibold [&_:is(h1,h2,h3):first-child]:!mt-0 " +
+	"[&_h1]:!mt-6 [&_h1]:!mb-2 [&_h1]:text-[1.3em] [&_h1]:font-semibold [&_h1]:tracking-tight " +
+	"[&_h2]:!mt-5 [&_h2]:!mb-2 [&_h2]:text-[1.15em] [&_h2]:font-semibold [&_h2]:tracking-tight " +
+	"[&_h3]:!mt-4 [&_h3]:!mb-2 [&_h3]:text-[1em] [&_h3]:font-semibold " +
+	"[&_h4]:!mt-4 [&_h4]:!mb-1.5 [&_h4]:text-[1em] [&_h4]:font-semibold " +
+	"[&_h5]:!mt-3 [&_h5]:!mb-1.5 [&_h5]:text-[0.92em] [&_h5]:font-semibold [&_h5]:uppercase [&_h5]:tracking-wide " +
+	"[&_h6]:!mt-3 [&_h6]:!mb-1.5 [&_h6]:text-[0.92em] [&_h6]:font-semibold [&_h6]:uppercase [&_h6]:tracking-wide [&_h6]:text-muted-foreground " +
+	"[&_:is(h1,h2,h3,h4,h5,h6):first-child]:!mt-0 " +
 	"[&_a]:underline [&_a]:underline-offset-2 [&_a]:decoration-muted-foreground/40 [&_a:hover]:decoration-muted-foreground " +
 	"[&_.katex-display]:!my-5 [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden [&_.katex-display]:py-1 " +
 	"[&_[data-streamdown='mermaid-block']]:!my-5 [&_[data-streamdown='code-block']]:!my-4 " +
 	"[&_table]:!my-0 [&_table]:w-full [&_table]:border-collapse [&_table]:text-[0.92em] [&_table]:leading-[1.5] " +
-	"[&_th]:border-b [&_th]:border-border/70 [&_th]:bg-muted/45 [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold " +
-	"[&_td]:border-b [&_td]:border-border/45 [&_td]:px-2.5 [&_td]:py-1.5 [&_td]:align-top [&_tbody_tr:nth-child(even)]:bg-muted/15";
+	"[&_th]:border-b [&_th]:border-border/70 [&_th]:bg-muted/45 [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold [&_th]:text-foreground/80 " +
+	"[&_td]:border-b [&_td]:border-border/45 [&_td]:px-2.5 [&_td]:py-1.5 [&_td]:align-top " +
+	"[&_tbody_tr:nth-child(even)]:bg-muted/15 [&_tbody_tr:last-child_td]:border-b-0 " +
+	"[&_:is(th,td):first-child]:w-px [&_:is(th,td):first-child]:whitespace-nowrap " +
+	"[&_tbody_td:first-child]:font-medium [&_tbody_td:first-child]:text-foreground/75 [&_table_code]:!bg-muted/55 [&_table_code]:!ring-0";
 
 function MarkdownLink({ children, rel, ...props }: MarkdownLinkProps) {
 	return (
@@ -314,16 +332,45 @@ function MarkdownLink({ children, rel, ...props }: MarkdownLinkProps) {
 	);
 }
 
-const MARKDOWN_COMPONENTS = {
-	a: MarkdownLink,
-} satisfies Components;
-
-function currentMarkdownTheme(): MarkdownTheme {
-	if (typeof document === "undefined") return "light";
-	return document.documentElement.classList.contains("dark") ? "dark" : "light";
+function MarkdownInlineCode({
+	className,
+	children,
+	style: _style,
+	node: _node,
+	inline: _inline,
+	...props
+}: MarkdownCodeProps) {
+	return (
+		<code
+			{...props}
+			className={cn(
+				"rounded-sm bg-code px-1 py-px font-mono text-[0.85em] text-code-foreground ring-1 ring-inset ring-border/50",
+				className,
+			)}
+		>
+			{children}
+		</code>
+	);
 }
 
-export function ChatMarkdown({
+function MarkdownTable({ node: _node, ...props }: MarkdownTableProps) {
+	return (
+		<div
+			data-markdown-table
+			className="scrollbar-pro my-3 overflow-x-auto rounded-lg border border-border/70 bg-background"
+		>
+			<table {...props} />
+		</div>
+	);
+}
+
+const MARKDOWN_COMPONENTS = {
+	a: MarkdownLink,
+	inlineCode: MarkdownInlineCode,
+	table: MarkdownTable,
+} satisfies Components;
+
+export const ChatMarkdown = memo(function ChatMarkdown({
 	text,
 	isStreaming = false,
 	allowHtml = false,
@@ -334,7 +381,8 @@ export function ChatMarkdown({
 	allowHtml?: boolean;
 	className?: string;
 }) {
-	const theme = currentMarkdownTheme();
+	recordMarkdownRender(text.length);
+	const theme: MarkdownTheme = useResolvedTheme();
 	const normalizedText = useMemo(
 		() => normalizeTexMathDelimiters(text),
 		[text],
@@ -364,4 +412,4 @@ export function ChatMarkdown({
 			</Streamdown>
 		</div>
 	);
-}
+});

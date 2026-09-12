@@ -8,6 +8,7 @@ mod preview;
 mod remote_fs;
 mod server_client;
 mod server_pi;
+mod session_history;
 mod session_index;
 mod session_snapshot;
 mod session_watcher;
@@ -28,6 +29,7 @@ use parallel::ParallelAgentManager;
 use preview::PreviewManager;
 use server_client::ServerManager;
 use server_pi::ServerPiSession;
+use session_history::SessionHistoryCache;
 use session_watcher::SessionWatcherManager;
 use terminal::TerminalManager;
 
@@ -37,6 +39,7 @@ pub struct PiloRuntime {
     pub(crate) parallel_agents: Mutex<ParallelAgentManager>,
     pub(crate) previews: Mutex<PreviewManager>,
     pub(crate) servers: Arc<ServerManager>,
+    pub(crate) session_history_cache: Mutex<SessionHistoryCache>,
     pub(crate) session_watchers: Mutex<SessionWatcherManager>,
     pub(crate) terminals: Mutex<TerminalManager>,
 }
@@ -49,6 +52,7 @@ impl Default for PiloRuntime {
             parallel_agents: Mutex::new(ParallelAgentManager::default()),
             previews: Mutex::new(PreviewManager::default()),
             servers: Arc::new(ServerManager::default()),
+            session_history_cache: Mutex::new(SessionHistoryCache::default()),
             session_watchers: Mutex::new(SessionWatcherManager::default()),
             terminals: Mutex::new(TerminalManager::default()),
         }

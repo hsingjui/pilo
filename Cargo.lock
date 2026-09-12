@@ -2774,6 +2774,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-window-state",
  "thiserror 2.0.20",
+ "time",
  "tokio",
 ]
 

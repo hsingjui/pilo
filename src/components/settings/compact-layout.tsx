@@ -1,12 +1,15 @@
-import type { ReactNode } from "react";
+import React, { type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
 type SettingsSectionProps = {
 	title?: string;
 	description?: string;
+	actions?: ReactNode;
+	headerRight?: ReactNode;
 	children: ReactNode;
 	className?: string;
+	contentClassName?: string;
 };
 
 type SettingsRowProps = {
@@ -14,13 +17,17 @@ type SettingsRowProps = {
 	helper?: ReactNode;
 	children?: ReactNode;
 	className?: string;
+	alignTop?: boolean;
 };
 
 export function SettingsSection({
 	title,
 	description,
+	actions,
+	headerRight,
 	children,
 	className,
+	contentClassName,
 }: SettingsSectionProps) {
 	return (
 		<section
@@ -29,21 +36,44 @@ export function SettingsSection({
 				className,
 			)}
 		>
-			{title ? (
-				<header className="flex min-h-10 items-center border-b border-border/70 bg-muted/40 px-3 py-1.5">
-					<div className="min-w-0 leading-tight">
-						<p className="text-xs font-semibold text-muted-foreground">
-							{title}
-						</p>
+			{title || headerRight ? (
+				<header className="flex min-h-10 items-center justify-between gap-2 border-b border-border/70 bg-muted/40 px-3 py-1.5">
+					<div className="min-w-0 flex-1 leading-tight">
+						{title ? (
+							<p className="text-xs font-semibold text-muted-foreground">
+								{title}
+							</p>
+						) : null}
 						{description ? (
 							<p className="text-[11px] text-muted-foreground/90">
 								{description}
 							</p>
 						) : null}
 					</div>
+					{headerRight ? (
+						<div className="min-w-0 shrink truncate text-right text-[11px] text-muted-foreground">
+							{headerRight}
+						</div>
+					) : null}
+					{actions ? (
+						<div className="flex shrink-0 items-center gap-1.5">
+							{React.Children.map(actions, (child) => {
+								if (!React.isValidElement<{ className?: string }>(child))
+									return child;
+								return React.cloneElement(child, {
+									className: cn(
+										"h-7 w-7 rounded-md shadow-xs focus-visible:ring-1 focus-visible:ring-ring/60",
+										child.props.className,
+									),
+								});
+							})}
+						</div>
+					) : null}
 				</header>
 			) : null}
-			<div className="divide-y divide-border/60">{children}</div>
+			<div className={cn("divide-y divide-border/60", contentClassName)}>
+				{children}
+			</div>
 		</section>
 	);
 }
@@ -53,15 +83,19 @@ export function SettingsRow({
 	helper,
 	children,
 	className,
+	alignTop = false,
 }: SettingsRowProps) {
 	return (
 		<div
 			className={cn(
-				"grid min-h-[58px] grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-3 py-2",
+				"flex flex-col gap-2 px-3 py-2 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4",
+				alignTop
+					? "sm:items-start sm:[&>div:last-child]:self-start"
+					: "sm:items-center",
 				className,
 			)}
 		>
-			<div className="min-w-0 sm:max-w-[520px]">
+			<div className={cn("min-w-0", helper && "sm:max-w-[520px]")}>
 				<p className="font-medium leading-tight text-foreground">{label}</p>
 				{helper ? (
 					<p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
@@ -70,7 +104,7 @@ export function SettingsRow({
 				) : null}
 			</div>
 			{children ? (
-				<div className="flex min-w-0 items-center justify-end gap-2 pl-4 text-sm">
+				<div className="flex min-w-0 flex-wrap items-center gap-2 text-sm sm:justify-end sm:pl-4">
 					{children}
 				</div>
 			) : null}

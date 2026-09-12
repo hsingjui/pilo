@@ -5,7 +5,6 @@
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/500.css";
 @import "@fontsource/jetbrains-mono/700.css";
-@import "katex/dist/katex.min.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -314,6 +313,8 @@
 	body,
 	#root {
 		height: 100%;
+		/* 禁用 macOS WKWebView 弹性滚动：两指拖动不再能把整页拉走 */
+		overscroll-behavior: none;
 	}
 
 	body {

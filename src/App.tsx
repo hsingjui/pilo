@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	lazy,
+	Suspense,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import {
 	Group,
 	Panel,
@@ -9,15 +17,11 @@ import {
 import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { AddWorkspaceDialog } from "@/components/sidebar/add-workspace-dialog";
 import type { SidebarSession } from "@/components/sidebar/types";
-import { ChatPage, type ChatSession } from "@/components/chat/chat-page";
+import type { ChatSession } from "@/components/chat/chat-page";
 import { NewChatLanding } from "@/components/new-chat-landing";
-import { RightSidebar } from "@/components/right-sidebar";
 import { SidebarFooter } from "@/components/sidebar-footer";
-import { CUSTOM_TITLEBAR, TitleBar } from "@/components/title-bar";
-import {
-	WorkspaceEditor,
-	type EditorOpenRequest,
-} from "@/components/workspace-editor";
+import { CUSTOM_TITLEBAR, IS_MACOS, TitleBar } from "@/components/title-bar";
+import type { EditorOpenRequest } from "@/components/workspace-editor";
 import {
 	listenRuntimeEvents,
 	type PiModel,
@@ -41,6 +45,22 @@ import {
 	type Workspace,
 } from "@/lib/workspaces";
 import { TooltipProvider } from "@/ui";
+
+const ChatPage = lazy(() =>
+	import("@/components/chat/chat-page").then((module) => ({
+		default: module.ChatPage,
+	})),
+);
+const WorkspaceEditor = lazy(() =>
+	import("@/components/workspace-editor").then((module) => ({
+		default: module.WorkspaceEditor,
+	})),
+);
+const RightSidebar = lazy(() =>
+	import("@/components/right-sidebar").then((module) => ({
+		default: module.RightSidebar,
+	})),
+);
 
 let draftSessionSequence = 0;
 let editorRequestSequence = 0;
@@ -106,6 +126,8 @@ function indexedChatSession(
 			"新对话",
 		workspaceRecord: workspace,
 		sessionPath: session.sessionPath,
+		historyFileSize: session.fileSize,
+		historyFileMtimeNs: session.fileMtimeNs,
 	};
 }
 
@@ -125,7 +147,10 @@ function upsertOpenedChat(
 	const nextInitialMessage = existing.initialMessage ?? initialMessage;
 	const sessionChanged =
 		existing.session.title !== session.title ||
-		existing.session.workspaceRecord !== session.workspaceRecord;
+		existing.session.workspaceRecord !== session.workspaceRecord ||
+		existing.session.sessionPath !== session.sessionPath ||
+		existing.session.historyFileSize !== session.historyFileSize ||
+		existing.session.historyFileMtimeNs !== session.historyFileMtimeNs;
 	if (!sessionChanged && nextInitialMessage === existing.initialMessage)
 		return current;
 
@@ -136,8 +161,7 @@ function upsertOpenedChat(
 		session: sessionChanged
 			? {
 					...existing.session,
-					title: session.title,
-					workspaceRecord: session.workspaceRecord,
+					...session,
 				}
 			: existing.session,
 	};
@@ -516,41 +540,45 @@ function App() {
 										key={`${entry.session.workspaceRecord.id}:${entry.session.id}`}
 										className={visible ? "h-full min-h-0" : "hidden"}
 									>
-										<ChatPage
-											session={entry.session}
-											active={visible}
-											initialMessage={entry.initialMessage}
-											onSessionIdentified={(piSessionId) => {
-												setOpenedChats((current) =>
-													current.map((chat) =>
-														chat.session.id === entry.session.id &&
-														chat.session.workspaceRecord.id ===
-															entry.session.workspaceRecord.id &&
-														chat.piSessionId !== piSessionId
-															? { ...chat, piSessionId }
-															: chat,
-													),
-												);
-											}}
-											onOpenChanges={() => rightPanelRef.current?.expand()}
-											onExpandSidebar={() => setLeftSidebarCollapsed(false)}
-											onOpenFile={openEditorFile}
-											onSessionChanged={() => {
-												void refreshWorkspaceSessions(
-													entry.session.workspaceRecord.id,
-												).catch((error) =>
-													console.error("Failed to refresh sessions", error),
-												);
-											}}
-											reserveWindowControls={CUSTOM_TITLEBAR}
-											sidebarCollapsed={leftSidebarCollapsed}
-										/>
+										<Suspense
+											fallback={<div className="h-full bg-background" />}
+										>
+											<ChatPage
+												session={entry.session}
+												active={visible}
+												initialMessage={entry.initialMessage}
+												onSessionIdentified={(piSessionId) => {
+													setOpenedChats((current) =>
+														current.map((chat) =>
+															chat.session.id === entry.session.id &&
+															chat.session.workspaceRecord.id ===
+																entry.session.workspaceRecord.id &&
+															chat.piSessionId !== piSessionId
+																? { ...chat, piSessionId }
+																: chat,
+														),
+													);
+												}}
+												onOpenChanges={() => rightPanelRef.current?.expand()}
+												onExpandSidebar={() => setLeftSidebarCollapsed(false)}
+												onOpenFile={openEditorFile}
+												onSessionChanged={() => {
+													void refreshWorkspaceSessions(
+														entry.session.workspaceRecord.id,
+													).catch((error) =>
+														console.error("Failed to refresh sessions", error),
+													);
+												}}
+												reserveWindowControls={CUSTOM_TITLEBAR}
+												sidebarCollapsed={leftSidebarCollapsed}
+											/>
+										</Suspense>
 									</div>
 								);
 							})}
 							{!chatSession ? (
 								<NewChatLanding
-									key={`landing:${activeWorkspace?.id ?? "no-workspace"}`}
+									key={`landing:${activeWorkspace?.id ?? "no-workspace"}:${draftSessionId}`}
 									workspaceAvailable={Boolean(activeWorkspace)}
 									workspace={activeWorkspace}
 									onStartSession={(prompt, model, thinkingLevel) => {
@@ -576,21 +604,24 @@ function App() {
 									sidebarCollapsed={leftSidebarCollapsed}
 								/>
 							) : null}
-							{activeWorkspace ? (
-								<WorkspaceEditor
-									key={`editor:${activeWorkspace.id}`}
-									workspace={activeWorkspace}
-									request={
-										editorRequest?.workspaceId === activeWorkspace.id
-											? editorRequest
-											: undefined
-									}
-									visible={
-										editorVisible &&
-										editorRequest?.workspaceId === activeWorkspace.id
-									}
-									onClose={() => setEditorVisible(false)}
-								/>
+							{activeWorkspace && editorRequest ? (
+								<Suspense fallback={null}>
+									<WorkspaceEditor
+										key={`editor:${activeWorkspace.id}`}
+										workspace={activeWorkspace}
+										request={
+											editorRequest?.workspaceId === activeWorkspace.id
+												? editorRequest
+												: undefined
+										}
+										visible={
+											editorVisible &&
+											editorRequest?.workspaceId === activeWorkspace.id
+										}
+										reserveTrafficLights={IS_MACOS && leftSidebarCollapsed}
+										onClose={() => setEditorVisible(false)}
+									/>
+								</Suspense>
 							) : null}
 						</Panel>
 						<ResizeSeparator
@@ -599,12 +630,23 @@ function App() {
 							onPointerUp={() => setIsResizing(false)}
 							onPointerCancel={() => setIsResizing(false)}
 						/>
-						<RightSidebar
-							panelRef={rightPanelRef}
-							resizing={isResizing}
-							workspace={activeWorkspace ?? undefined}
-							onOpenFile={openEditorFile}
-						/>
+						<Suspense
+							fallback={
+								<Panel
+									defaultSize={0}
+									minSize={280}
+									collapsible
+									collapsedSize={0}
+								/>
+							}
+						>
+							<RightSidebar
+								panelRef={rightPanelRef}
+								resizing={isResizing}
+								workspace={activeWorkspace ?? undefined}
+								onOpenFile={openEditorFile}
+							/>
+						</Suspense>
 					</Group>
 				</main>
 			</div>

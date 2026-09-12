@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
+import { summarizeAssistantActivity } from "@/lib/chat-activity-state";
 import { formatWorkDuration } from "@/lib/format-duration";
 import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
@@ -56,16 +57,101 @@ function formatUnknown(value: unknown) {
 	}
 }
 
-function extractResultText(value: unknown): string | null {
-	if (!isRecord(value) || !Array.isArray(value.content)) return null;
-	const text = value.content
-		.map((block) => {
-			if (!isRecord(block) || block.type !== "text") return null;
-			return typeof block.text === "string" ? block.text : null;
-		})
-		.filter((part): part is string => Boolean(part))
-		.join("\n");
-	return text || null;
+function resultContent(value: unknown): {
+	blocks: unknown[];
+	metadata: Record<string, unknown> | null;
+	fallback: string | null;
+} {
+	if (!isRecord(value)) {
+		return { blocks: [], metadata: null, fallback: formatUnknown(value) };
+	}
+	const blocks = Array.isArray(value.content) ? value.content : [];
+	const metadata = Object.fromEntries(
+		Object.entries(value).filter(([key]) => key !== "content"),
+	);
+	return {
+		blocks,
+		metadata: Object.keys(metadata).length > 0 ? metadata : null,
+		fallback:
+			blocks.length === 0 && Object.keys(metadata).length === 0
+				? formatUnknown(value)
+				: null,
+	};
+}
+
+function toolResultBlockKey(block: unknown): string {
+	if (typeof block === "string") return `text:${block.slice(0, 96)}`;
+	if (
+		isRecord(block) &&
+		block.type === "text" &&
+		typeof block.text === "string"
+	) {
+		return `text:${block.text.slice(0, 96)}`;
+	}
+	if (
+		isRecord(block) &&
+		block.type === "image" &&
+		typeof block.data === "string"
+	) {
+		return `image:${String(block.mimeType)}:${block.data.length}:${block.data.slice(0, 32)}`;
+	}
+	return `value:${formatUnknown(block).slice(0, 128)}`;
+}
+
+function keyedToolResultBlocks(blocks: unknown[]) {
+	const occurrences = new Map<string, number>();
+	return blocks.map((block) => {
+		const baseKey = toolResultBlockKey(block);
+		const occurrence = (occurrences.get(baseKey) ?? 0) + 1;
+		occurrences.set(baseKey, occurrence);
+		return { block, key: `${baseKey}:${occurrence}` };
+	});
+}
+
+function ToolResultBlock({ block }: { block: unknown }) {
+	if (typeof block === "string") {
+		return (
+			<pre className="scrollbar-pro max-h-56 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[10.5px] leading-4 [overflow-wrap:anywhere]">
+				{block}
+			</pre>
+		);
+	}
+	if (
+		isRecord(block) &&
+		block.type === "text" &&
+		typeof block.text === "string"
+	) {
+		return (
+			<pre className="scrollbar-pro max-h-56 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[10.5px] leading-4 [overflow-wrap:anywhere]">
+				{block.text}
+			</pre>
+		);
+	}
+	if (
+		isRecord(block) &&
+		block.type === "image" &&
+		typeof block.data === "string" &&
+		typeof block.mimeType === "string" &&
+		block.mimeType.startsWith("image/")
+	) {
+		return (
+			<div className="space-y-1.5 p-2.5">
+				<img
+					src={`data:${block.mimeType};base64,${block.data}`}
+					alt="工具结果图像"
+					className="max-h-80 max-w-full rounded-md object-contain"
+				/>
+				<div className="font-mono text-[10px] text-muted-foreground/70">
+					{block.mimeType}
+				</div>
+			</div>
+		);
+	}
+	return (
+		<pre className="scrollbar-pro max-h-56 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[10.5px] leading-4 [overflow-wrap:anywhere]">
+			{formatUnknown(block)}
+		</pre>
+	);
 }
 
 function ToolIcon({
@@ -92,6 +178,32 @@ function ToolIcon({
 		default:
 			return <Wrench className={className} />;
 	}
+}
+
+function toolLabel(toolName: string) {
+	switch (toolName.toLowerCase()) {
+		case "bash":
+		case "execute":
+			return "运行";
+		case "read":
+			return "读取";
+		case "write":
+			return "写入";
+		case "edit":
+			return "编辑";
+		case "search":
+		case "grep":
+		case "find":
+			return "搜索";
+		default:
+			return toolName;
+	}
+}
+
+function fileBasename(path: string) {
+	const normalized = path.replace(/[\\/]+$/, "");
+	const parts = normalized.split(/[\\/]/);
+	return parts[parts.length - 1] || path;
 }
 
 function toolPreview(activity: ToolCallActivity) {
@@ -129,7 +241,7 @@ function ActivityProcessStep({
 	return (
 		<div
 			className={cn(
-				"flex min-h-7 w-full items-start gap-1.5 py-1",
+				"flex min-h-7 w-full items-start gap-1.5 py-1 [content-visibility:auto] [contain-intrinsic-size:auto_32px]",
 				PROCESS_TEXT_CLASS,
 			)}
 		>
@@ -141,84 +253,73 @@ function ActivityProcessStep({
 
 function ThinkingActivityView({ activity }: { activity: ThinkingActivity }) {
 	const running = activity.status === "running";
-	const expandable = running || Boolean(activity.text);
-	const [open, setOpen] = useState(running);
-
 	return (
-		<div className="w-full">
-			<button
-				type="button"
-				className={cn(
-					"group/thinking -mx-1 flex min-h-7 w-[calc(100%+0.5rem)] items-center gap-1.5 rounded-md px-1 py-1 text-left transition-colors",
-					PROCESS_TEXT_CLASS,
-					expandable
-						? "hover:bg-muted/40 hover:text-foreground"
-						: "cursor-default",
-				)}
-				onClick={() => expandable && setOpen((value) => !value)}
-				aria-expanded={expandable ? open : undefined}
-			>
-				{expandable ? (
-					<ChevronRight
-						className={cn(
-							PROCESS_ICON_CLASS,
-							"transition-transform duration-150",
-							open && "rotate-90",
-						)}
-					/>
-				) : (
-					<span className={PROCESS_ICON_CLASS} />
-				)}
-				<span className="min-w-0 flex-1 truncate">思考过程</span>
-			</button>
-			{expandable && open ? (
-				<ActivityProcessStep icon={<Sparkles className={PROCESS_ICON_CLASS} />}>
-					{activity.text ? (
-						<ChatMarkdown
-							text={activity.text}
-							isStreaming={running}
-							className={cn(
-								"!text-[12.5px] !leading-[1.55] !text-muted-foreground",
-								"[&_p]:!mb-1.5 [&_li:not(:first-child)]:!mt-0.5",
-								"[&_:is(h1,h2,h3)]:!my-1 [&_:is(h1,h2,h3)]:!text-[12.5px] [&_:is(h1,h2,h3)]:!font-medium",
-								"[&_[data-streamdown='code-block']]:!my-2",
-							)}
-						/>
-					) : (
-						<span>思考中…</span>
+		<ActivityProcessStep
+			icon={<Sparkles className={cn(PROCESS_ICON_CLASS, "mt-0.5")} />}
+		>
+			{activity.text ? (
+				<ChatMarkdown
+					text={activity.text}
+					isStreaming={running}
+					className={cn(
+						"!text-[12.5px] !leading-[1.5] !text-muted-foreground",
+						"[&_p]:!mb-1 [&_li:not(:first-child)]:!mt-0.5",
+						"[&_:is(h1,h2,h3,h4,h5,h6)]:!my-1 [&_:is(h1,h2,h3,h4,h5,h6)]:!text-[12.5px] [&_:is(h1,h2,h3,h4,h5,h6)]:!font-medium",
+						"[&_[data-streamdown='code-block']]:!my-2",
 					)}
-				</ActivityProcessStep>
-			) : null}
-		</div>
+				/>
+			) : (
+				<span>思考中…</span>
+			)}
+		</ActivityProcessStep>
 	);
 }
 
 function ToolDetail({ activity }: { activity: ToolCallActivity }) {
 	const hasArgs = activity.args !== undefined && activity.args !== null;
 	const hasResult = activity.result !== undefined && activity.result !== null;
-	const resultText = hasResult
-		? (extractResultText(activity.result) ?? formatUnknown(activity.result))
-		: null;
+	const preview = toolPreview(activity);
+	const showArgs = hasArgs && preview === null;
+	const result = hasResult ? resultContent(activity.result) : null;
 
-	if (!hasArgs && !hasResult) return null;
+	if (!showArgs && !hasResult) return null;
 
 	return (
 		<div className="w-full pb-1 pt-0.5 text-[11px] font-normal text-muted-foreground/85">
 			<div className="overflow-hidden rounded-md border border-border/60 bg-muted/20">
-				{hasArgs ? (
+				{showArgs ? (
 					<pre className="scrollbar-pro max-h-44 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[10.5px] leading-4 [overflow-wrap:anywhere]">
 						{formatUnknown(activity.args)}
 					</pre>
 				) : null}
-				{resultText ? (
-					<pre
-						className={cn(
-							"scrollbar-pro max-h-56 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[10.5px] leading-4 [overflow-wrap:anywhere]",
-							hasArgs && "border-t border-border/50",
+				{result ? (
+					<div className={cn(showArgs && "border-t border-border/50")}>
+						{keyedToolResultBlocks(result.blocks).map(
+							({ block, key }, index) => (
+								<div
+									key={key}
+									className={cn(index > 0 && "border-t border-border/40")}
+								>
+									<ToolResultBlock block={block} />
+								</div>
+							),
 						)}
-					>
-						{resultText}
-					</pre>
+						{result.metadata ? (
+							<pre
+								className={cn(
+									"scrollbar-pro max-h-44 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[10.5px] leading-4 [overflow-wrap:anywhere]",
+									result.blocks.length > 0 && "border-t border-border/40",
+								)}
+							>
+								{formatUnknown(result.metadata)}
+							</pre>
+						) : null}
+						{result.fallback ? (
+							<pre className="scrollbar-pro max-h-56 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[10.5px] leading-4 [overflow-wrap:anywhere]">
+								{result.fallback}
+							</pre>
+						) : null}
+					</div>
 				) : null}
 			</div>
 		</div>
@@ -237,12 +338,15 @@ function ToolCallActivityView({
 	const [open, setOpen] = useState(false);
 	const preview = toolPreview(activity);
 	const filePath = toolFilePath(activity);
+	const previewLabel = filePath ? fileBasename(filePath) : preview;
 	const hasDetails =
-		(activity.args !== undefined && activity.args !== null) ||
+		(activity.args !== undefined &&
+			activity.args !== null &&
+			preview === null) ||
 		(activity.result !== undefined && activity.result !== null);
 
 	return (
-		<div className="w-full">
+		<div className="w-full [content-visibility:auto] [contain-intrinsic-size:auto_32px]">
 			<button
 				type="button"
 				className={cn(
@@ -267,10 +371,13 @@ function ToolCallActivityView({
 					)}
 				/>
 				<span className="min-w-0 flex-1 truncate">
-					<span>{activity.toolName}</span>
-					{preview ? (
-						<span className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground/70">
-							{preview}
+					<span>{toolLabel(activity.toolName)}</span>
+					{previewLabel ? (
+						<span
+							className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground/70"
+							title={preview ?? undefined}
+						>
+							{previewLabel}
 						</span>
 					) : null}
 				</span>
@@ -278,13 +385,6 @@ function ToolCallActivityView({
 					<CircleAlert className="mt-0.5 size-3.5 shrink-0" />
 				) : running ? (
 					<LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin" />
-				) : hasDetails ? (
-					<ChevronRight
-						className={cn(
-							"mt-0.5 size-3.5 shrink-0 transition-transform duration-150",
-							open && "rotate-90",
-						)}
-					/>
 				) : null}
 			</button>
 			{hasDetails && open ? <ToolDetail activity={activity} /> : null}
@@ -292,12 +392,7 @@ function ToolCallActivityView({
 	);
 }
 
-function activityLabel(
-	activity: AssistantActivity[],
-	running: boolean,
-	durationMs?: number,
-) {
-	const toolCount = activity.filter((item) => item.type === "tool").length;
+function activityLabel(activity: AssistantActivity[], running: boolean) {
 	if (running) {
 		let current: AssistantActivity | undefined;
 		for (let index = activity.length - 1; index >= 0; index -= 1) {
@@ -306,16 +401,27 @@ function activityLabel(
 				break;
 			}
 		}
-		if (current?.type === "tool") return `正在运行 ${current.toolName}…`;
+		if (current?.type === "tool") return `正在${toolLabel(current.toolName)}…`;
 		if (current?.type === "thinking") return "思考中…";
 		return "正在处理…";
 	}
-	if (durationMs !== undefined) {
-		const duration = formatWorkDuration(durationMs);
-		if (duration) return `工作了 ${duration}`;
+
+	const summary = summarizeAssistantActivity(activity);
+	const parts: string[] = [];
+	if (summary.hasThought) parts.push("思考过程");
+	if (summary.readFileCount > 0) {
+		parts.push(`读取了 ${summary.readFileCount} 个文件`);
 	}
-	if (toolCount === 0) return "已完成思考";
-	return `已完成工作 · ${toolCount} 次工具调用`;
+	if (summary.createFileCount > 0) {
+		parts.push(`新增了 ${summary.createFileCount} 个文件`);
+	}
+	if (summary.editFileCount > 0) {
+		parts.push(`修改了 ${summary.editFileCount} 个文件`);
+	}
+	if (summary.commandCount > 0) {
+		parts.push(`调用了 ${summary.commandCount} 个命令`);
+	}
+	return parts.join(" · ") || "已完成";
 }
 
 export function AssistantActivityView({
@@ -330,41 +436,45 @@ export function AssistantActivityView({
 	onOpenPath?: (path: string) => void;
 }) {
 	const { collapseCompletedActivity, showWorkDuration } = usePreferences();
-	const [open, setOpen] = useState(streaming || !collapseCompletedActivity);
 	const running = activity.some((item) => item.status === "running");
+	const durationLabel =
+		!running && showWorkDuration && durationMs !== undefined
+			? formatWorkDuration(durationMs)
+			: "";
+	const hasWorkSummary = Boolean(durationLabel);
+	const [workOpen, setWorkOpen] = useState(
+		streaming || !collapseCompletedActivity,
+	);
+	const [groupOpen, setGroupOpen] = useState(streaming);
 	if (activity.length === 0) return null;
 
-	return (
-		<div className="mb-2 mt-0.5 w-full text-muted-foreground">
+	const group = (
+		<div>
 			<button
 				type="button"
 				className={cn(
-					"group/activity flex w-full items-center gap-1.5 rounded-md py-1 pr-1 text-left transition-colors hover:bg-muted/40 hover:text-foreground",
+					"group/activity flex w-full items-center gap-1.5 rounded-md py-0.5 pr-1 text-left transition-colors hover:bg-muted/40 hover:text-foreground",
 					PROCESS_TEXT_CLASS,
 				)}
-				onClick={() => setOpen((value) => !value)}
-				aria-expanded={open}
+				onClick={() => setGroupOpen((value) => !value)}
+				aria-expanded={groupOpen}
 			>
 				<ChevronRight
 					className={cn(
 						PROCESS_ICON_CLASS,
 						"transition-transform duration-200",
-						open && "rotate-90",
+						groupOpen && "rotate-90",
 					)}
 				/>
 				<span className="min-w-0 flex-1 truncate">
-					{activityLabel(
-						activity,
-						running,
-						showWorkDuration ? durationMs : undefined,
-					)}
+					{activityLabel(activity, running)}
 				</span>
 				{running ? (
 					<LoaderCircle className="size-3.5 shrink-0 animate-spin" />
 				) : null}
 			</button>
-			{open ? (
-				<div className="space-y-0.5 pt-0.5">
+			{groupOpen ? (
+				<div className="space-y-0 pt-0.5">
 					{activity.map((item) =>
 						item.type === "thinking" ? (
 							<ThinkingActivityView key={item.id} activity={item} />
@@ -378,6 +488,35 @@ export function AssistantActivityView({
 					)}
 				</div>
 			) : null}
+		</div>
+	);
+
+	return (
+		<div className="mb-1 mt-0.5 w-full text-muted-foreground [content-visibility:auto] [contain-intrinsic-size:auto_40px]">
+			{hasWorkSummary ? (
+				<>
+					<button
+						type="button"
+						className="group flex w-full items-center gap-1.5 rounded-md py-0.5 pr-1 text-left text-[12.5px] font-medium leading-snug text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+						onClick={() => setWorkOpen((value) => !value)}
+						aria-expanded={workOpen}
+					>
+						<ChevronRight
+							className={cn(
+								PROCESS_ICON_CLASS,
+								"transition-transform duration-200",
+								workOpen && "rotate-90",
+							)}
+						/>
+						<span className="min-w-0 flex-1 truncate">
+							工作了 {durationLabel}
+						</span>
+					</button>
+					{workOpen ? group : null}
+				</>
+			) : (
+				group
+			)}
 		</div>
 	);
 }

@@ -1183,7 +1183,14 @@ fn session_read(params: SessionReadParams) -> Result<(Value, Vec<u8>), String> {
     let path = checked_session_file(&params.path)?;
     let mut file = std::fs::File::open(&path)
         .map_err(|error| format!("failed to open session '{}': {error}", path.display()))?;
-    let file_size = file.metadata().map_err(|error| error.to_string())?.len();
+    let metadata = file.metadata().map_err(|error| error.to_string())?;
+    let file_size = metadata.len();
+    let file_mtime_ns = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|value| value.as_nanos() as u64)
+        .unwrap_or(0);
     use std::io::{Read as _, Seek as _, SeekFrom};
     file.seek(SeekFrom::Start(params.offset))
         .map_err(|error| error.to_string())?;
@@ -1197,6 +1204,8 @@ fn session_read(params: SessionReadParams) -> Result<(Value, Vec<u8>), String> {
         json!({
             "nextOffset": next_offset,
             "eof": next_offset >= file_size,
+            "fileSize": file_size,
+            "fileMtimeNs": file_mtime_ns,
         }),
         data,
     ))

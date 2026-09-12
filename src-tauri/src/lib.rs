@@ -4,18 +4,20 @@ mod runtime;
 use runtime::{
     PiloRuntime,
     commands::{
-        chat_session_send_rpc, chat_session_start, parallel_agent_create, parallel_agent_list,
-        parallel_agent_remove, parallel_agent_send, parallel_agent_stop, runtime_abort_pi,
-        runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc, runtime_stop_pi, session_list,
-        session_reconcile, session_update_ui_state, session_watch_start, session_watch_stop,
-        terminal_close, terminal_resize, terminal_write, workspace_add, workspace_discover,
-        workspace_fs_mkdir, workspace_fs_read_dir, workspace_fs_read_file, workspace_fs_remove,
-        workspace_fs_rename, workspace_fs_search, workspace_fs_stat, workspace_fs_write_file,
-        workspace_git_diff, workspace_git_status, workspace_list, workspace_preview_close,
-        workspace_preview_open, workspace_preview_ports, workspace_refresh, workspace_remove,
-        workspace_start_pi, workspace_terminal_open, workspace_touch, wsl_list_distributions,
+        chat_session_send_rpc, chat_session_start, chat_session_stop, parallel_agent_create,
+        parallel_agent_list, parallel_agent_remove, parallel_agent_send, parallel_agent_stop,
+        runtime_abort_pi, runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc,
+        runtime_stop_pi, session_history, session_list, session_reconcile, session_update_ui_state,
+        session_watch_start, session_watch_stop, terminal_close, terminal_resize, terminal_write,
+        workspace_add, workspace_discover, workspace_fs_mkdir, workspace_fs_read_dir,
+        workspace_fs_read_file, workspace_fs_remove, workspace_fs_rename, workspace_fs_search,
+        workspace_fs_stat, workspace_fs_write_file, workspace_git_diff, workspace_git_status,
+        workspace_list, workspace_preview_close, workspace_preview_open, workspace_preview_ports,
+        workspace_refresh, workspace_remove, workspace_start_pi, workspace_terminal_open,
+        workspace_touch, wsl_list_distributions,
     },
 };
+use std::{fs::OpenOptions, io::Write};
 use tauri_plugin_window_state::StateFlags;
 
 fn persisted_window_state_flags() -> StateFlags {
@@ -26,6 +28,17 @@ fn persisted_window_state_flags() -> StateFlags {
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+fn debug_chat_performance_log(payload: &str) -> Result<(), String> {
+    let path = std::env::temp_dir().join("pilo-chat-performance.jsonl");
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    writeln!(file, "{payload}").map_err(|error| error.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -45,8 +58,10 @@ pub fn run() {
         .manage(PiloRuntime::default())
         .invoke_handler(tauri::generate_handler![
             greet,
+            debug_chat_performance_log,
             chat_session_start,
             chat_session_send_rpc,
+            chat_session_stop,
             wsl_list_distributions,
             workspace_list,
             workspace_add,
@@ -78,6 +93,7 @@ pub fn run() {
             workspace_fs_search,
             session_list,
             session_reconcile,
+            session_history,
             session_watch_start,
             session_watch_stop,
             session_update_ui_state,
@@ -96,7 +112,9 @@ pub fn run() {
                 .get_webview_window("main")
                 .expect("main window not found");
 
-            // 自定义标题栏仅在 Windows 启用；macOS 保留原生窗口装饰
+            // Windows 移除原生装饰、使用前端自绘标题栏；
+            // macOS 保留原生红绿灯：tauri.conf.json 的 hiddenTitle + Overlay 隐藏标题栏文本，
+            // 内容延伸至窗口顶部（侧边栏贴顶，标题行位于红绿灯右侧）。
             #[cfg(target_os = "windows")]
             {
                 window.set_decorations(false)?;

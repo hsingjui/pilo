@@ -39,6 +39,7 @@ export function createChatSessionClient(
 			});
 			return pending;
 		},
+		stop: () => invoke<void>("chat_session_stop", { sessionKey }),
 		listen: (handler: (event: PiloRuntimeEvent) => void) =>
 			listenRuntimeEvents((event) => {
 				if (event.sessionKey === sessionKey) handler(event);
