@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
 
 import App from "./App";
@@ -8,12 +8,23 @@ import { Toaster } from "@/ui";
 
 import "./index.css";
 
+function BootShellRemover() {
+	useEffect(() => {
+		const frame = window.requestAnimationFrame(() => {
+			document.getElementById("pilo-boot-shell")?.remove();
+		});
+		return () => window.cancelAnimationFrame(frame);
+	}, []);
+	return null;
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 	<React.StrictMode>
 		<ThemeProvider>
 			<PreferencesProvider>
 				<App />
 				<Toaster />
+				<BootShellRemover />
 			</PreferencesProvider>
 		</ThemeProvider>
 	</React.StrictMode>,

@@ -1,9 +1,14 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Clock, HelpCircle, Monitor, Moon, Settings, Sun } from "lucide-react";
 
-import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { nextCycledTheme, useTheme, type Theme } from "@/lib/theme-provider";
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
+
+const SettingsDialog = lazy(() =>
+	import("@/components/settings/settings-dialog").then((module) => ({
+		default: module.SettingsDialog,
+	})),
+);
 
 const THEME_LABELS: Record<Theme, string> = {
 	light: "亮色",
@@ -65,7 +70,11 @@ export function SidebarFooter() {
 				</TooltipTrigger>
 				<TooltipContent>设置</TooltipContent>
 			</Tooltip>
-			<SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+			{settingsOpen ? (
+				<Suspense fallback={null}>
+					<SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+				</Suspense>
+			) : null}
 			<Tooltip>
 				<TooltipTrigger asChild>
 					<Button variant="ghost" size="icon" aria-label="帮助">
