@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package pilo.protocol;
+
+message Envelope {
+  oneof payload {
+    Request request = 1;
+    Response response = 2;
+    Event event = 3;
+  }
+}
+
+message Request {
+  uint64 id = 1;
+  string method = 2;
+  bytes json = 3;
+  repeated bytes binary = 4;
+}
+
+message Response {
+  uint64 id = 1;
+  bytes json = 2;
+  repeated bytes binary = 3;
+  optional RpcError error = 4;
+}
+
+message Event {
+  string stream_id = 1;
+  string event = 2;
+  bytes json = 3;
+  repeated bytes binary = 4;
+}
+
+message RpcError {
+  string code = 1;
+  string message = 2;
+}

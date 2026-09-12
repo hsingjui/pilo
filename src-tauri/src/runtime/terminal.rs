@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 
 use crate::domain::Workspace;
 
-use super::server_client::{ServerClient, ServerManager};
+use super::server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager};
 
 pub const TERMINAL_EVENT_NAME: &str = "pilo://terminal";
 
@@ -71,14 +71,29 @@ impl TerminalManager {
             std::process::id(),
             TERMINAL_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         );
-        let mut events = client.subscribe();
+        let mut events = client.subscribe(&terminal_id);
         let event_terminal_id = terminal_id.clone();
         let event_app = app.clone();
+        let event_client = Arc::clone(&client);
         let task = tokio::spawn(async move {
             loop {
                 let event = match events.recv().await {
                     Ok(event) => event,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        let _ = event_app.emit(
+                            TERMINAL_EVENT_NAME,
+                            TerminalEvent::Error {
+                                terminal_id: event_terminal_id.clone(),
+                                message: format!(
+                                    "pilo-server terminal event stream overflowed and dropped {skipped} chunks"
+                                ),
+                            },
+                        );
+                        let _ = event_client
+                            .request("terminal.close", json!({ "streamId": event_terminal_id }))
+                            .await;
+                        break;
+                    }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         let _ = event_app.emit(
                             TERMINAL_EVENT_NAME,
@@ -90,23 +105,27 @@ impl TerminalManager {
                         break;
                     }
                 };
+                if event.event == SERVER_DISCONNECTED_EVENT {
+                    let _ = event_app.emit(
+                        TERMINAL_EVENT_NAME,
+                        TerminalEvent::Error {
+                            terminal_id: event_terminal_id.clone(),
+                            message: event
+                                .data
+                                .get("message")
+                                .and_then(Value::as_str)
+                                .unwrap_or("pilo-server terminal connection closed")
+                                .to_owned(),
+                        },
+                    );
+                    break;
+                }
                 if event.stream_id != event_terminal_id {
                     continue;
                 }
                 match event.event.as_str() {
                     "terminal.output" => {
-                        let data = event
-                            .data
-                            .get("data")
-                            .and_then(Value::as_array)
-                            .map(|values| {
-                                values
-                                    .iter()
-                                    .filter_map(Value::as_u64)
-                                    .map(|value| value as u8)
-                                    .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_default();
+                        let data = event.binary.into_iter().next().unwrap_or_default();
                         let _ = event_app.emit(
                             TERMINAL_EVENT_NAME,
                             TerminalEvent::Output {
@@ -174,9 +193,10 @@ impl TerminalManager {
             .ok_or_else(|| format!("terminal '{terminal_id}' is not running"))?;
         session
             .client
-            .request(
+            .request_with_binary(
                 "terminal.write",
-                json!({ "streamId": terminal_id, "data": data }),
+                json!({ "streamId": terminal_id }),
+                vec![data.to_vec()],
             )
             .await
             .map(|_| ())

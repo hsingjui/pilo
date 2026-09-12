@@ -104,13 +104,53 @@ async fn read_file(
     path: &str,
     offset: u64,
 ) -> Result<Vec<u8>, String> {
-    servers
-        .request_typed(
-            &workspace.connection,
-            "session.read",
-            serde_json::json!({ "path": path, "offset": offset }),
-        )
-        .await
+    const CHUNK_BYTES: usize = 8 * 1024 * 1024;
+
+    let mut cursor = offset;
+    let mut data = Vec::new();
+    loop {
+        let (metadata, binary) = servers
+            .request_with_binary(
+                &workspace.connection,
+                "session.read",
+                serde_json::json!({
+                    "path": path,
+                    "offset": cursor,
+                    "limit": CHUNK_BYTES,
+                }),
+                Vec::new(),
+            )
+            .await?;
+        if binary.len() != 1 {
+            return Err(format!(
+                "session.read expected one binary attachment, got {}",
+                binary.len()
+            ));
+        }
+        let chunk = binary.into_iter().next().expect("binary length checked");
+        let next_offset = metadata
+            .get("nextOffset")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| "pilo-server session chunk is missing nextOffset".to_owned())?;
+        let eof = metadata
+            .get("eof")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| "pilo-server session chunk is missing eof".to_owned())?;
+        let expected_offset = cursor.saturating_add(chunk.len() as u64);
+        if next_offset != expected_offset {
+            return Err(format!(
+                "invalid pilo-server session chunk offset: expected {expected_offset}, got {next_offset}"
+            ));
+        }
+        data.extend_from_slice(&chunk);
+        if eof {
+            return Ok(data);
+        }
+        if chunk.is_empty() {
+            return Err("pilo-server returned an empty non-terminal session chunk".to_owned());
+        }
+        cursor = next_offset;
+    }
 }
 
 fn parse_file(

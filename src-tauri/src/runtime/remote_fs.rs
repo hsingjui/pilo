@@ -1,4 +1,5 @@
 pub use pilo_protocol::FsEntry;
+use pilo_protocol::MAX_BINARY_PAYLOAD_BYTES;
 use serde_json::json;
 
 use crate::domain::Workspace;
@@ -24,13 +25,21 @@ pub async fn read_file(
     workspace: &Workspace,
     path: &str,
 ) -> Result<Vec<u8>, String> {
-    servers
-        .request_typed(
+    let (_, binary) = servers
+        .request_with_binary(
             &workspace.connection,
             "fs.read_file",
             json!({ "workspace": workspace.path, "path": path }),
+            Vec::new(),
         )
-        .await
+        .await?;
+    if binary.len() != 1 {
+        return Err(format!(
+            "fs.read_file expected one binary attachment, got {}",
+            binary.len()
+        ));
+    }
+    Ok(binary.into_iter().next().expect("binary length checked"))
 }
 
 pub async fn write_file(
@@ -39,11 +48,22 @@ pub async fn write_file(
     path: &str,
     data: &[u8],
 ) -> Result<(), String> {
+    if data.len() > MAX_BINARY_PAYLOAD_BYTES {
+        return Err(format!(
+            "file write is {} bytes; pilo-server limit is {} bytes",
+            data.len(),
+            MAX_BINARY_PAYLOAD_BYTES
+        ));
+    }
     servers
-        .request(
+        .request_with_binary(
             &workspace.connection,
             "fs.write_file",
-            json!({ "workspace": workspace.path, "path": path, "data": data }),
+            json!({
+                "workspace": workspace.path,
+                "path": path,
+            }),
+            vec![data.to_vec()],
         )
         .await
         .map(|_| ())

@@ -11,7 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
-src-tauri/resources/pilo-server-linux-*
+src-tauri/resources/pilo-server-*
 /target/
 
 # Editor directories and files

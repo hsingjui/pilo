@@ -3,13 +3,17 @@ use std::{
     io::{self, Read, Write},
     path::{Path, PathBuf},
     process::Stdio,
-    sync::{Arc, Mutex as StdMutex},
-    time::UNIX_EPOCH,
+    sync::{
+        Arc, Mutex as StdMutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
+    time::{Instant, UNIX_EPOCH},
 };
 
+use notify::{Event, EventKind, RecursiveMode, Watcher};
 use pilo_protocol::{
-    CommandOutput, Envelope, EnvironmentInfo, FsEntry, FsEntryKind, PROTOCOL_VERSION, ServerHello,
-    SessionFile, read_frame, write_frame,
+    Envelope, EnvironmentInfo, FsEntry, FsEntryKind, MAX_BINARY_PAYLOAD_BYTES, PROTOCOL_VERSION,
+    SERVER_CAPABILITIES, ServerHello, ServerStatus, SessionFile, read_frame, write_frame,
 };
 use portable_pty::{Child as PtyChild, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::Deserialize;
@@ -17,11 +21,13 @@ use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, Command},
-    sync::{Mutex, OnceCell, mpsc},
+    sync::{Mutex, OnceCell, Semaphore, mpsc},
     task::JoinHandle,
 };
 
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
+const MAX_IN_FLIGHT_REQUESTS: usize = 64;
+const SESSION_WATCH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(150);
 
 pub fn binary_fingerprint(path: &Path) -> io::Result<String> {
     const FNV_OFFSET: u64 = 0xcbf29ce484222325;
@@ -46,6 +52,8 @@ pub fn binary_fingerprint(path: &Path) -> io::Result<String> {
 #[derive(Clone)]
 struct ServerState {
     writer: mpsc::Sender<Envelope>,
+    request_slots: Arc<Semaphore>,
+    started_at: Instant,
     pi: Arc<Mutex<HashMap<String, PiProcess>>>,
     session_watchers: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
     terminals: Arc<StdMutex<HashMap<String, TerminalSession>>>,
@@ -55,7 +63,7 @@ struct ServerState {
 
 struct PiProcess {
     child: Child,
-    stdin: ChildStdin,
+    stdin: Arc<Mutex<ChildStdin>>,
 }
 
 struct TerminalSession {
@@ -80,6 +88,8 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
     let (writer_tx, mut writer_rx) = mpsc::channel::<Envelope>(256);
     let state = ServerState {
         writer: writer_tx,
+        request_slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
+        started_at: Instant::now(),
         pi: Arc::new(Mutex::new(HashMap::new())),
         session_watchers: Arc::new(Mutex::new(HashMap::new())),
         terminals: Arc::new(StdMutex::new(HashMap::new())),
@@ -100,13 +110,23 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
     let stdin = tokio::io::stdin();
     let mut stdin = stdin;
     while let Some(message) = read_frame(&mut stdin).await? {
-        let Envelope::Request { id, method, params } = message else {
+        let Envelope::Request {
+            id,
+            method,
+            params,
+            binary,
+        } = message
+        else {
             continue;
+        };
+        let Ok(permit) = Arc::clone(&state.request_slots).acquire_owned().await else {
+            break;
         };
         let state = state.clone();
         tokio::spawn(async move {
-            let response = match dispatch(&state, &method, params).await {
-                Ok(value) => Envelope::response(id, value),
+            let _permit = permit;
+            let response = match dispatch(&state, &method, params, binary).await {
+                Ok(reply) => Envelope::response_with_binary(id, reply.value, reply.binary),
                 Err(error) => Envelope::error(id, "request_failed", error),
             };
             let _ = state.writer.send(response).await;
@@ -132,38 +152,132 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn dispatch(state: &ServerState, method: &str, params: Value) -> Result<Value, String> {
+struct ServerReply {
+    value: Value,
+    binary: Vec<Vec<u8>>,
+}
+
+impl ServerReply {
+    fn json(value: Value) -> Self {
+        Self {
+            value,
+            binary: Vec::new(),
+        }
+    }
+
+    fn with_binary(value: Value, binary: Vec<Vec<u8>>) -> Self {
+        Self { value, binary }
+    }
+}
+
+async fn dispatch(
+    state: &ServerState,
+    method: &str,
+    params: Value,
+    binary: Vec<Vec<u8>>,
+) -> Result<ServerReply, String> {
+    if !matches!(method, "command.run" | "fs.write_file" | "terminal.write") && !binary.is_empty() {
+        return Err(format!(
+            "pilo-server method '{method}' does not accept binary attachments"
+        ));
+    }
     match method {
         "hello" => to_value(ServerHello {
             protocol_version: PROTOCOL_VERSION,
             server_version: SERVER_VERSION.to_owned(),
             os: std::env::consts::OS.to_owned(),
             arch: std::env::consts::ARCH.to_owned(),
-        }),
-        "environment.inspect" => environment_inspect(state, from_params(params)?).await,
-        "command.run" => command_run(state, from_params(params)?).await,
-        "fs.read_dir" => fs_read_dir(from_params(params)?),
-        "fs.read_file" => fs_read_file(from_params(params)?),
-        "fs.write_file" => fs_write_file(from_params(params)?),
-        "fs.stat" => fs_stat(from_params(params)?),
-        "fs.mkdir" => fs_mkdir(from_params(params)?),
-        "fs.mkdir_absolute" => fs_mkdir_absolute(from_params(params)?),
-        "fs.rename" => fs_rename(from_params(params)?),
-        "fs.remove" => fs_remove(from_params(params)?),
-        "fs.search" => fs_search(from_params(params)?),
-        "session.scan" => session_scan(from_params(params)?),
-        "session.read" => session_read(from_params(params)?),
-        "session.discover" => session_discover(),
-        "session.watch_start" => session_watch_start(state, from_params(params)?).await,
-        "session.watch_stop" => session_watch_stop(state, from_params(params)?).await,
-        "preview.ports" => preview_ports().await,
-        "terminal.open" => terminal_open(state, from_params(params)?).await,
-        "terminal.write" => terminal_write(state, from_params(params)?),
-        "terminal.resize" => terminal_resize(state, from_params(params)?),
-        "terminal.close" => terminal_close(state, from_params(params)?),
-        "pi.start" => pi_start(state, from_params(params)?).await,
-        "pi.send" => pi_send(state, from_params(params)?).await,
-        "pi.stop" => pi_stop(state, from_params(params)?).await,
+            capabilities: SERVER_CAPABILITIES
+                .iter()
+                .map(|capability| (*capability).to_owned())
+                .collect(),
+        })
+        .map(ServerReply::json),
+        "server.ping" => Ok(ServerReply::json(json!({
+            "protocolVersion": PROTOCOL_VERSION,
+            "serverVersion": SERVER_VERSION,
+        }))),
+        "server.status" => server_status(state).await.map(ServerReply::json),
+        "environment.inspect" => environment_inspect(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
+        "command.run" => {
+            command_run(state, from_params(params)?, one_binary(binary, method)?).await
+        }
+        "fs.read_dir" => blocking(move || fs_read_dir(from_params(params)?))
+            .await
+            .map(ServerReply::json),
+        "fs.read_file" => {
+            let data = tokio::task::spawn_blocking(move || fs_read_file(from_params(params)?))
+                .await
+                .map_err(|error| format!("pilo-server blocking task failed: {error}"))??;
+            Ok(ServerReply::with_binary(Value::Null, vec![data]))
+        }
+        "fs.write_file" => {
+            let data = one_binary(binary, method)?;
+            blocking(move || fs_write_file(from_params(params)?, data))
+                .await
+                .map(ServerReply::json)
+        }
+        "fs.stat" => blocking(move || fs_stat(from_params(params)?))
+            .await
+            .map(ServerReply::json),
+        "fs.mkdir" => blocking(move || fs_mkdir(from_params(params)?))
+            .await
+            .map(ServerReply::json),
+        "fs.mkdir_absolute" => blocking(move || fs_mkdir_absolute(from_params(params)?))
+            .await
+            .map(ServerReply::json),
+        "fs.rename" => blocking(move || fs_rename(from_params(params)?))
+            .await
+            .map(ServerReply::json),
+        "fs.remove" => blocking(move || fs_remove(from_params(params)?))
+            .await
+            .map(ServerReply::json),
+        "fs.search" => blocking(move || fs_search(from_params(params)?))
+            .await
+            .map(ServerReply::json),
+        "session.scan" => blocking(move || session_scan(from_params(params)?))
+            .await
+            .map(ServerReply::json),
+        "session.read" => {
+            let (metadata, data) =
+                tokio::task::spawn_blocking(move || session_read(from_params(params)?))
+                    .await
+                    .map_err(|error| format!("pilo-server blocking task failed: {error}"))??;
+            Ok(ServerReply::with_binary(metadata, vec![data]))
+        }
+        "session.discover" => blocking(session_discover).await.map(ServerReply::json),
+        "session.watch_start" => session_watch_start(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
+        "session.watch_stop" => session_watch_stop(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
+        "preview.ports" => preview_ports().await.map(ServerReply::json),
+        "terminal.open" => terminal_open(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
+        "terminal.write" => {
+            terminal_write(state, from_params(params)?, one_binary(binary, method)?)
+                .await
+                .map(ServerReply::json)
+        }
+        "terminal.resize" => terminal_resize(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
+        "terminal.close" => terminal_close(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
+        "pi.start" => pi_start(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
+        "pi.send" => pi_send(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
+        "pi.stop" => pi_stop(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
         _ => Err(format!("unknown pilo-server method '{method}'")),
     }
 }
@@ -176,22 +290,124 @@ fn to_value<T: serde::Serialize>(value: T) -> Result<Value, String> {
     serde_json::to_value(value).map_err(|error| error.to_string())
 }
 
+fn one_binary(mut binary: Vec<Vec<u8>>, context: &str) -> Result<Vec<u8>, String> {
+    if binary.len() != 1 {
+        return Err(format!(
+            "{context} expected exactly one binary attachment, got {}",
+            binary.len()
+        ));
+    }
+    let data = binary.remove(0);
+    if data.len() > MAX_BINARY_PAYLOAD_BYTES {
+        return Err(format!(
+            "{context} binary attachment is {} bytes; pilo-server limit is {} bytes",
+            data.len(),
+            MAX_BINARY_PAYLOAD_BYTES
+        ));
+    }
+    Ok(data)
+}
+
+async fn blocking<F>(operation: F) -> Result<Value, String>
+where
+    F: FnOnce() -> Result<Value, String> + Send + 'static,
+{
+    tokio::task::spawn_blocking(operation)
+        .await
+        .map_err(|error| format!("pilo-server blocking task failed: {error}"))?
+}
+
+async fn server_status(state: &ServerState) -> Result<Value, String> {
+    let pi_processes = state.pi.lock().await.len();
+    let session_watchers = state.session_watchers.lock().await.len();
+    let terminals = state
+        .terminals
+        .lock()
+        .map_err(|_| "terminal registry is poisoned".to_owned())?
+        .len();
+    let uptime_ms = u64::try_from(state.started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+    let available_requests = state.request_slots.available_permits();
+    to_value(ServerStatus {
+        protocol_version: PROTOCOL_VERSION,
+        server_version: SERVER_VERSION.to_owned(),
+        pid: std::process::id(),
+        uptime_ms,
+        active_requests: MAX_IN_FLIGHT_REQUESTS.saturating_sub(available_requests),
+        max_in_flight_requests: MAX_IN_FLIGHT_REQUESTS,
+        pi_processes,
+        terminals,
+        session_watchers,
+    })
+}
+
 #[derive(Deserialize)]
 struct WorkspaceParams {
     workspace: String,
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CommandParams {
     workspace: String,
     program: String,
     #[serde(default)]
     args: Vec<String>,
-    #[serde(default)]
-    input: Vec<u8>,
+    #[serde(default = "default_command_timeout_ms")]
+    timeout_ms: u64,
 }
 
-async fn command_run(state: &ServerState, params: CommandParams) -> Result<Value, String> {
+const fn default_command_timeout_ms() -> u64 {
+    60_000
+}
+
+async fn read_bounded_output<R>(
+    mut reader: R,
+    used: Arc<AtomicUsize>,
+    overflowed: Arc<AtomicBool>,
+    limit: usize,
+) -> Result<Vec<u8>, String>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut output = Vec::new();
+    let mut buffer = [0_u8; 16 * 1024];
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .await
+            .map_err(|error| error.to_string())?;
+        if read == 0 {
+            return Ok(output);
+        }
+        let previous = used
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                Some(value.saturating_add(read))
+            })
+            .unwrap_or_else(|value| value);
+        if previous < limit {
+            let keep = read.min(limit - previous);
+            output.extend_from_slice(&buffer[..keep]);
+            if keep < read {
+                overflowed.store(true, Ordering::Release);
+            }
+        } else {
+            overflowed.store(true, Ordering::Release);
+        }
+    }
+}
+
+async fn command_run(
+    state: &ServerState,
+    params: CommandParams,
+    input: Vec<u8>,
+) -> Result<ServerReply, String> {
+    if input.len() > MAX_BINARY_PAYLOAD_BYTES {
+        return Err(format!(
+            "command input is {} bytes; pilo-server limit is {} bytes",
+            input.len(),
+            MAX_BINARY_PAYLOAD_BYTES
+        ));
+    }
     let path = cached_login_path(state).await;
     let program = resolve_program(&path, &params.program);
     let mut command = process_command(&program, &params.args, &path);
@@ -199,47 +415,97 @@ async fn command_run(state: &ServerState, params: CommandParams) -> Result<Value
         .current_dir(&params.workspace)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
     let mut child = command
         .spawn()
         .map_err(|error| format!("failed to run '{program}': {error}"))?;
-    if !params.input.is_empty() {
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "command stdin unavailable".to_owned())?;
-        stdin
-            .write_all(&params.input)
-            .await
-            .map_err(|error| error.to_string())?;
-    }
-    let output = child
-        .wait_with_output()
-        .await
-        .map_err(|error| error.to_string())?;
-    to_value(CommandOutput {
-        code: output.status.code(),
-        stdout: output.stdout,
-        stderr: output.stderr,
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "command stdin unavailable".to_owned())?;
+    let stdin_write = async move {
+        if !input.is_empty() {
+            stdin
+                .write_all(&input)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+        drop(stdin);
+        Ok::<(), String>(())
+    };
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "command stdout unavailable".to_owned())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "command stderr unavailable".to_owned())?;
+    let used = Arc::new(AtomicUsize::new(0));
+    let overflowed = Arc::new(AtomicBool::new(false));
+    let stdout_read = read_bounded_output(
+        stdout,
+        Arc::clone(&used),
+        Arc::clone(&overflowed),
+        MAX_BINARY_PAYLOAD_BYTES,
+    );
+    let stderr_read = read_bounded_output(
+        stderr,
+        Arc::clone(&used),
+        Arc::clone(&overflowed),
+        MAX_BINARY_PAYLOAD_BYTES,
+    );
+    let timeout_ms = params.timeout_ms.clamp(1, 10 * 60 * 1000);
+    let result = tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), async {
+        tokio::join!(stdin_write, stdout_read, stderr_read, child.wait())
     })
+    .await;
+    let (stdout, stderr, status) = match result {
+        Ok((stdin, stdout, stderr, status)) => {
+            stdin.map_err(|error| format!("failed to write command stdin: {error}"))?;
+            (
+                stdout.map_err(|error| format!("failed to read command stdout: {error}"))?,
+                stderr.map_err(|error| format!("failed to read command stderr: {error}"))?,
+                status.map_err(|error| error.to_string())?,
+            )
+        }
+        Err(_) => {
+            let _ = child.kill().await;
+            return Err(format!(
+                "command '{}' timed out after {timeout_ms} ms",
+                params.program
+            ));
+        }
+    };
+    if overflowed.load(Ordering::Acquire) {
+        return Err(format!(
+            "command '{}' produced more than {} bytes; output was discarded after the limit",
+            params.program, MAX_BINARY_PAYLOAD_BYTES
+        ));
+    }
+    Ok(ServerReply::with_binary(
+        json!({ "code": status.code() }),
+        vec![stdout, stderr],
+    ))
 }
 
 async fn environment_inspect(
     state: &ServerState,
     params: WorkspaceParams,
 ) -> Result<Value, String> {
-    let cwd = std::fs::canonicalize(&params.workspace).map_err(|error| {
-        format!(
-            "workspace '{}' is not accessible: {error}",
-            params.workspace
-        )
-    })?;
-    if !cwd.is_dir() {
-        return Err(format!(
-            "workspace '{}' is not a directory",
-            params.workspace
-        ));
-    }
+    let probe_workspace = params.workspace;
+    let cwd = tokio::task::spawn_blocking(move || {
+        let cwd = std::fs::canonicalize(&probe_workspace)
+            .map_err(|error| format!("workspace '{probe_workspace}' is not accessible: {error}"))?;
+        if !cwd.is_dir() {
+            return Err(format!("workspace '{probe_workspace}' is not a directory"));
+        }
+        Ok::<_, String>(cwd)
+    })
+    .await
+    .map_err(|error| format!("workspace probe task failed: {error}"))??;
     let toolchain = cached_toolchain(state).await?;
     let git_branch = if toolchain.git_executable.is_empty() {
         None
@@ -297,10 +563,13 @@ async fn login_path(shell: &str) -> Option<String> {
         return std::env::var("PATH").ok();
     }
     const MARKER: &str = "__PILO_LOGIN_PATH__";
-    let output = Command::new(shell)
+    let mut command = Command::new(shell);
+    command
         .args(["-ilc", &format!("printf '{MARKER}%s' \"$PATH\"")])
-        .output()
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(5), command.output())
         .await
+        .ok()?
         .ok()?;
     if !output.status.success() {
         return None;
@@ -515,7 +784,6 @@ struct FsPathParams {
 struct FsWriteParams {
     workspace: String,
     path: String,
-    data: Vec<u8>,
 }
 #[derive(Deserialize)]
 struct FsRenameParams {
@@ -534,26 +802,103 @@ struct AbsolutePathParams {
     path: String,
 }
 
-fn checked_path(workspace: &str, relative: &str, allow_root: bool) -> Result<PathBuf, String> {
-    let relative = Path::new(relative);
-    if relative.is_absolute() {
-        return Err("path must stay inside the workspace".to_owned());
+fn canonical_workspace(workspace: &str) -> Result<PathBuf, String> {
+    let root = std::fs::canonicalize(workspace)
+        .map_err(|error| format!("workspace '{workspace}' is not accessible: {error}"))?;
+    if !root.is_dir() {
+        return Err(format!("workspace '{workspace}' is not a directory"));
     }
-    for component in relative.components() {
-        if !matches!(
-            component,
-            std::path::Component::Normal(_) | std::path::Component::CurDir
-        ) {
-            return Err("path must stay inside the workspace".to_owned());
-        }
+    Ok(root)
+}
+
+fn relative_workspace_path(relative: &str, allow_root: bool) -> Result<PathBuf, String> {
+    let relative = Path::new(relative);
+    if relative.is_absolute()
+        || relative.components().any(|component| {
+            !matches!(
+                component,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        })
+    {
+        return Err("path must stay inside the workspace".to_owned());
     }
     if relative.as_os_str().is_empty() && !allow_root {
         return Err("workspace root is not valid for this operation".to_owned());
     }
-    Ok(Path::new(workspace).join(relative))
+    Ok(relative.to_path_buf())
 }
 
-fn fs_entry(workspace: &str, path: &Path) -> Result<FsEntry, String> {
+fn ensure_inside_workspace(root: &Path, path: &Path) -> Result<(), String> {
+    if path == root || path.starts_with(root) {
+        Ok(())
+    } else {
+        Err("path resolves outside the workspace".to_owned())
+    }
+}
+
+fn checked_existing_path(
+    workspace: &str,
+    relative: &str,
+    allow_root: bool,
+) -> Result<(PathBuf, PathBuf), String> {
+    let root = canonical_workspace(workspace)?;
+    let relative = relative_workspace_path(relative, allow_root)?;
+    let path = root
+        .join(&relative)
+        .canonicalize()
+        .map_err(|error| format!("path '{}' is not accessible: {error}", relative.display()))?;
+    ensure_inside_workspace(&root, &path)?;
+    Ok((root, path))
+}
+
+fn checked_entry_path(
+    workspace: &str,
+    relative: &str,
+    allow_root: bool,
+) -> Result<(PathBuf, PathBuf), String> {
+    let root = canonical_workspace(workspace)?;
+    let relative = relative_workspace_path(relative, allow_root)?;
+    let candidate = root.join(relative);
+    if candidate == root {
+        return Ok((root.clone(), root));
+    }
+    let parent = candidate
+        .parent()
+        .ok_or_else(|| "path has no parent directory".to_owned())?
+        .canonicalize()
+        .map_err(|error| format!("path parent is not accessible: {error}"))?;
+    ensure_inside_workspace(&root, &parent)?;
+    let name = candidate
+        .file_name()
+        .ok_or_else(|| "path has no file name".to_owned())?;
+    Ok((root, parent.join(name)))
+}
+
+fn checked_mutation_path(workspace: &str, relative: &str) -> Result<(PathBuf, PathBuf), String> {
+    let root = canonical_workspace(workspace)?;
+    let relative = relative_workspace_path(relative, false)?;
+    let candidate = root.join(relative);
+    if std::fs::symlink_metadata(&candidate).is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
+        return Err("mutating a symlink path is not allowed".to_owned());
+    }
+
+    let ancestor = candidate
+        .ancestors()
+        .find(|path| path.exists())
+        .ok_or_else(|| "path has no accessible parent directory".to_owned())?;
+    let canonical_ancestor = ancestor
+        .canonicalize()
+        .map_err(|error| format!("path parent is not accessible: {error}"))?;
+    ensure_inside_workspace(&root, &canonical_ancestor)?;
+    let suffix = candidate
+        .strip_prefix(ancestor)
+        .map_err(|error| error.to_string())?;
+    Ok((root, canonical_ancestor.join(suffix)))
+}
+
+fn fs_entry(workspace: &Path, path: &Path) -> Result<FsEntry, String> {
     let metadata = std::fs::symlink_metadata(path).map_err(|error| error.to_string())?;
     let file_type = metadata.file_type();
     let kind = if file_type.is_symlink() {
@@ -576,7 +921,7 @@ fn fs_entry(workspace: &str, path: &Path) -> Result<FsEntry, String> {
         .file_name()
         .map(|value| value.to_string_lossy().into_owned())
         .unwrap_or_else(|| {
-            Path::new(workspace)
+            workspace
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
@@ -597,12 +942,12 @@ fn fs_entry(workspace: &str, path: &Path) -> Result<FsEntry, String> {
 }
 
 fn fs_read_dir(params: FsPathParams) -> Result<Value, String> {
-    let root = checked_path(&params.workspace, &params.path, true)?;
+    let (workspace_root, root) = checked_existing_path(&params.workspace, &params.path, true)?;
     let mut entries = std::fs::read_dir(root)
         .map_err(|error| error.to_string())?
         .map(|entry| {
             let entry = entry.map_err(|error| error.to_string())?;
-            fs_entry(&params.workspace, &entry.path())
+            fs_entry(&workspace_root, &entry.path())
         })
         .collect::<Result<Vec<_>, String>>()?;
     entries.sort_by(|a, b| {
@@ -618,29 +963,38 @@ fn fs_read_dir(params: FsPathParams) -> Result<Value, String> {
     to_value(entries)
 }
 
-fn fs_read_file(params: FsPathParams) -> Result<Value, String> {
-    to_value(
-        std::fs::read(checked_path(&params.workspace, &params.path, false)?)
-            .map_err(|error| error.to_string())?,
-    )
+fn fs_read_file(params: FsPathParams) -> Result<Vec<u8>, String> {
+    let (_, path) = checked_existing_path(&params.workspace, &params.path, false)?;
+    let size = std::fs::metadata(&path)
+        .map_err(|error| error.to_string())?
+        .len();
+    if size > MAX_BINARY_PAYLOAD_BYTES as u64 {
+        return Err(format!(
+            "file '{}' is {size} bytes; pilo-server read limit is {} bytes",
+            params.path, MAX_BINARY_PAYLOAD_BYTES
+        ));
+    }
+    std::fs::read(path).map_err(|error| error.to_string())
 }
-fn fs_write_file(params: FsWriteParams) -> Result<Value, String> {
-    std::fs::write(
-        checked_path(&params.workspace, &params.path, false)?,
-        params.data,
-    )
-    .map_err(|error| error.to_string())?;
+fn fs_write_file(params: FsWriteParams, data: Vec<u8>) -> Result<Value, String> {
+    if data.len() > MAX_BINARY_PAYLOAD_BYTES {
+        return Err(format!(
+            "file write is {} bytes; pilo-server limit is {} bytes",
+            data.len(),
+            MAX_BINARY_PAYLOAD_BYTES
+        ));
+    }
+    let (_, path) = checked_mutation_path(&params.workspace, &params.path)?;
+    std::fs::write(path, data).map_err(|error| error.to_string())?;
     Ok(Value::Null)
 }
 fn fs_stat(params: FsPathParams) -> Result<Value, String> {
-    to_value(fs_entry(
-        &params.workspace,
-        &checked_path(&params.workspace, &params.path, true)?,
-    )?)
+    let (workspace_root, path) = checked_entry_path(&params.workspace, &params.path, true)?;
+    to_value(fs_entry(&workspace_root, &path)?)
 }
 fn fs_mkdir(params: FsPathParams) -> Result<Value, String> {
-    std::fs::create_dir_all(checked_path(&params.workspace, &params.path, false)?)
-        .map_err(|error| error.to_string())?;
+    let (_, path) = checked_mutation_path(&params.workspace, &params.path)?;
+    std::fs::create_dir_all(path).map_err(|error| error.to_string())?;
     Ok(Value::Null)
 }
 
@@ -654,15 +1008,13 @@ fn fs_mkdir_absolute(params: AbsolutePathParams) -> Result<Value, String> {
 }
 
 fn fs_rename(params: FsRenameParams) -> Result<Value, String> {
-    std::fs::rename(
-        checked_path(&params.workspace, &params.from, false)?,
-        checked_path(&params.workspace, &params.to, false)?,
-    )
-    .map_err(|error| error.to_string())?;
+    let (_, from) = checked_entry_path(&params.workspace, &params.from, false)?;
+    let (_, to) = checked_mutation_path(&params.workspace, &params.to)?;
+    std::fs::rename(from, to).map_err(|error| error.to_string())?;
     Ok(Value::Null)
 }
 fn fs_remove(params: FsPathParams) -> Result<Value, String> {
-    let path = checked_path(&params.workspace, &params.path, false)?;
+    let (_, path) = checked_entry_path(&params.workspace, &params.path, false)?;
     let metadata = std::fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
     if metadata.is_dir() {
         std::fs::remove_dir_all(path)
@@ -687,12 +1039,16 @@ fn fs_search(params: FsSearchParams) -> Result<Value, String> {
             let entry = entry.map_err(|error| error.to_string())?;
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
-            if path.is_dir() {
+            let file_type = entry.file_type().map_err(|error| error.to_string())?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
                 if matches!(name.as_str(), ".git" | "node_modules" | "target" | "dist") {
                     continue;
                 }
                 visit(root, &path, query, result)?;
-            } else if path.is_file() {
+            } else if file_type.is_file() {
                 let relative = path
                     .strip_prefix(root)
                     .map_err(|error| error.to_string())?
@@ -705,7 +1061,7 @@ fn fs_search(params: FsSearchParams) -> Result<Value, String> {
         }
         Ok(())
     }
-    let root = PathBuf::from(&params.workspace);
+    let root = canonical_workspace(&params.workspace)?;
     let mut result = Vec::new();
     visit(
         &root,
@@ -784,6 +1140,12 @@ struct SessionReadParams {
     path: String,
     #[serde(default)]
     offset: u64,
+    #[serde(default = "default_session_read_limit")]
+    limit: usize,
+}
+
+const fn default_session_read_limit() -> usize {
+    8 * 1024 * 1024
 }
 
 #[derive(Deserialize)]
@@ -798,15 +1160,46 @@ struct SessionWatchParams {
 struct SessionWatchStopParams {
     stream_id: String,
 }
-fn session_read(params: SessionReadParams) -> Result<Value, String> {
-    let mut file = std::fs::File::open(&params.path).map_err(|error| error.to_string())?;
+fn checked_session_file(path: &str) -> Result<PathBuf, String> {
+    let requested = PathBuf::from(path);
+    if requested.extension().and_then(|value| value.to_str()) != Some("jsonl") {
+        return Err("session path must point to a JSONL file".to_owned());
+    }
+    let sessions_root = agent_dir()
+        .map(|root| root.join("sessions"))
+        .ok_or_else(|| "Pi agent directory is unavailable".to_owned())?
+        .canonicalize()
+        .map_err(|error| format!("Pi session directory is not accessible: {error}"))?;
+    let canonical = requested
+        .canonicalize()
+        .map_err(|error| format!("session file '{path}' is not accessible: {error}"))?;
+    if !canonical.starts_with(&sessions_root) {
+        return Err("session path must stay inside the Pi session directory".to_owned());
+    }
+    Ok(canonical)
+}
+
+fn session_read(params: SessionReadParams) -> Result<(Value, Vec<u8>), String> {
+    let path = checked_session_file(&params.path)?;
+    let mut file = std::fs::File::open(&path)
+        .map_err(|error| format!("failed to open session '{}': {error}", path.display()))?;
+    let file_size = file.metadata().map_err(|error| error.to_string())?.len();
     use std::io::{Read as _, Seek as _, SeekFrom};
     file.seek(SeekFrom::Start(params.offset))
         .map_err(|error| error.to_string())?;
-    let mut data = Vec::new();
-    file.read_to_end(&mut data)
+    let limit = params.limit.clamp(1, MAX_BINARY_PAYLOAD_BYTES);
+    let mut data = Vec::with_capacity(limit.min(1024 * 1024));
+    file.take(limit as u64)
+        .read_to_end(&mut data)
         .map_err(|error| error.to_string())?;
-    to_value(data)
+    let next_offset = params.offset.saturating_add(data.len() as u64);
+    Ok((
+        json!({
+            "nextOffset": next_offset,
+            "eof": next_offset >= file_size,
+        }),
+        data,
+    ))
 }
 
 fn session_discover() -> Result<Value, String> {
@@ -845,33 +1238,35 @@ fn session_discover() -> Result<Value, String> {
     to_value(headers)
 }
 
-fn session_fingerprint(workspace: &str) -> String {
-    let Some(root) = agent_dir().map(|root| root.join("sessions").join(session_dir_key(workspace)))
-    else {
-        return "missing".to_owned();
+fn session_watch_paths(workspace: &str) -> Result<(PathBuf, PathBuf), String> {
+    let agent = agent_dir().ok_or_else(|| "Pi agent directory is unavailable".to_owned())?;
+    let sessions = agent.join("sessions");
+    let target = sessions.join(session_dir_key(workspace));
+    let watch_root = if sessions.is_dir() {
+        sessions
+    } else if agent.is_dir() {
+        agent
+    } else {
+        return Err(format!(
+            "Pi agent directory '{}' is not accessible",
+            agent.display()
+        ));
     };
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return "missing".to_owned();
-    };
-    let mut items = entries
-        .flatten()
-        .filter_map(|entry| {
-            let path = entry.path();
-            if path.extension().and_then(|value| value.to_str()) != Some("jsonl") {
-                return None;
-            }
-            let metadata = entry.metadata().ok()?;
-            let modified = metadata
-                .modified()
-                .ok()
-                .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-                .map(|value| value.as_nanos())
-                .unwrap_or(0);
-            Some(format!("{}:{}:{modified}", path.display(), metadata.len()))
-        })
-        .collect::<Vec<_>>();
-    items.sort();
-    items.join("|")
+    Ok((target, watch_root))
+}
+
+fn is_session_change(event: &Event, target: &Path) -> bool {
+    if !matches!(
+        event.kind,
+        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+    ) {
+        return false;
+    }
+    event.paths.iter().any(|path| {
+        path == target
+            || (path.starts_with(target)
+                && path.extension().and_then(|value| value.to_str()) == Some("jsonl"))
+    })
 }
 
 async fn session_watch_start(
@@ -886,33 +1281,89 @@ async fn session_watch_start(
     {
         task.abort();
     }
+
+    let (target, watch_root) = session_watch_paths(&params.workspace)?;
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let mut watcher = notify::recommended_watcher(move |event| {
+        let _ = event_tx.send(event);
+    })
+    .map_err(|error| format!("failed to create session watcher: {error}"))?;
+    watcher
+        .watch(&watch_root, RecursiveMode::Recursive)
+        .map_err(|error| {
+            format!(
+                "failed to watch Pi session directory '{}': {error}",
+                watch_root.display()
+            )
+        })?;
+
     let stream_id = params.stream_id.clone();
-    let workspace = params.workspace;
     let writer = state.writer.clone();
     let task = tokio::spawn(async move {
-        let _ = writer
+        let _watcher = watcher;
+        if writer
             .send(Envelope::event(
                 stream_id.clone(),
                 "session.backend",
-                json!({ "backend": "server-poll" }),
+                json!({
+                    "backend": "server-native",
+                    "root": watch_root.to_string_lossy(),
+                }),
             ))
-            .await;
-        let mut previous = session_fingerprint(&workspace);
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            let current = session_fingerprint(&workspace);
-            if current != previous {
-                previous = current;
-                if writer
-                    .send(Envelope::event(
-                        stream_id.clone(),
-                        "session.changed",
-                        Value::Null,
-                    ))
-                    .await
-                    .is_err()
-                {
-                    break;
+            .await
+            .is_err()
+        {
+            return;
+        }
+
+        'events: while let Some(event) = event_rx.recv().await {
+            match event {
+                Ok(event) if is_session_change(&event, &target) => {
+                    tokio::time::sleep(SESSION_WATCH_DEBOUNCE).await;
+                    let mut errors = Vec::new();
+                    while let Ok(event) = event_rx.try_recv() {
+                        if let Err(error) = event {
+                            errors.push(error.to_string());
+                        }
+                    }
+                    for message in errors {
+                        if writer
+                            .send(Envelope::event(
+                                stream_id.clone(),
+                                "session.error",
+                                json!({ "message": message }),
+                            ))
+                            .await
+                            .is_err()
+                        {
+                            break 'events;
+                        }
+                    }
+                    if writer
+                        .send(Envelope::event(
+                            stream_id.clone(),
+                            "session.changed",
+                            Value::Null,
+                        ))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    if writer
+                        .send(Envelope::event(
+                            stream_id.clone(),
+                            "session.error",
+                            json!({ "message": error.to_string() }),
+                        ))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
             }
         }
@@ -943,10 +1394,13 @@ async fn session_watch_stop(
 async fn preview_ports() -> Result<Value, String> {
     if cfg!(windows) {
         let script = "Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort | Sort-Object -Unique";
-        let output = Command::new("powershell.exe")
+        let mut command = Command::new("powershell.exe");
+        command
             .args(["-NoProfile", "-NonInteractive", "-Command", script])
-            .output()
+            .kill_on_drop(true);
+        let output = tokio::time::timeout(std::time::Duration::from_secs(3), command.output())
             .await
+            .map_err(|_| "timed out while listing preview ports".to_owned())?
             .map_err(|error| error.to_string())?;
         let ports = String::from_utf8_lossy(&output.stdout)
             .lines()
@@ -955,10 +1409,11 @@ async fn preview_ports() -> Result<Value, String> {
         return to_value(ports);
     }
     let script = "if command -v ss >/dev/null 2>&1; then ss -ltnH | awk '{a=$4; sub(/^.*:/,\"\",a); if(a ~ /^[0-9]+$/) print a}' | sort -nu; elif command -v netstat >/dev/null 2>&1; then netstat -lnt 2>/dev/null | awk 'NR>2 {a=$4; sub(/^.*:/,\"\",a); if(a ~ /^[0-9]+$/) print a}' | sort -nu; fi";
-    let output = Command::new("/bin/sh")
-        .args(["-c", script])
-        .output()
+    let mut command = Command::new("/bin/sh");
+    command.args(["-c", script]).kill_on_drop(true);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(3), command.output())
         .await
+        .map_err(|_| "timed out while listing preview ports".to_owned())?
         .map_err(|error| error.to_string())?;
     let ports = String::from_utf8_lossy(&output.stdout)
         .lines()
@@ -980,7 +1435,6 @@ struct TerminalOpenParams {
 #[serde(rename_all = "camelCase")]
 struct TerminalWriteParams {
     stream_id: String,
-    data: Vec<u8>,
 }
 
 #[derive(Deserialize)]
@@ -1026,10 +1480,30 @@ async fn terminal_open(state: &ServerState, params: TerminalOpenParams) -> Resul
         .take_writer()
         .map_err(|error| format!("failed to open terminal writer: {error}"))?;
 
-    let stream_id = params.stream_id.clone();
+    let stream_id = params.stream_id;
+    {
+        let mut terminals = state
+            .terminals
+            .lock()
+            .map_err(|_| "terminal registry is poisoned".to_owned())?;
+        if let Some(mut previous) = terminals.remove(&stream_id) {
+            let _ = previous.child.kill();
+            let _ = previous.child.wait();
+        }
+        terminals.insert(
+            stream_id.clone(),
+            TerminalSession {
+                master: pair.master,
+                writer,
+                child,
+            },
+        );
+    }
+
     let event_stream_id = stream_id.clone();
     let event_writer = state.writer.clone();
-    std::thread::Builder::new()
+    let terminals = Arc::clone(&state.terminals);
+    if let Err(error) = std::thread::Builder::new()
         .name(format!("pilo-{stream_id}-reader"))
         .spawn(move || {
             let mut buffer = [0_u8; 16 * 1024];
@@ -1045,10 +1519,11 @@ async fn terminal_open(state: &ServerState, params: TerminalOpenParams) -> Resul
                     }
                     Ok(read) => {
                         if event_writer
-                            .blocking_send(Envelope::event(
+                            .blocking_send(Envelope::event_with_binary(
                                 event_stream_id.clone(),
                                 "terminal.output",
-                                json!({ "data": buffer[..read].to_vec() }),
+                                Value::Null,
+                                vec![buffer[..read].to_vec()],
                             ))
                             .is_err()
                         {
@@ -1065,75 +1540,94 @@ async fn terminal_open(state: &ServerState, params: TerminalOpenParams) -> Resul
                     }
                 }
             }
+            if let Ok(mut terminals) = terminals.lock()
+                && let Some(mut terminal) = terminals.remove(&event_stream_id)
+            {
+                let _ = terminal.child.kill();
+                let _ = terminal.child.wait();
+            }
         })
-        .map_err(|error| format!("failed to start terminal reader: {error}"))?;
-
-    state
-        .terminals
-        .lock()
-        .map_err(|_| "terminal registry is poisoned".to_owned())?
-        .insert(
-            params.stream_id,
-            TerminalSession {
-                master: pair.master,
-                writer,
-                child,
-            },
-        );
+    {
+        if let Ok(mut terminals) = state.terminals.lock()
+            && let Some(mut terminal) = terminals.remove(&stream_id)
+        {
+            let _ = terminal.child.kill();
+            let _ = terminal.child.wait();
+        }
+        return Err(format!("failed to start terminal reader: {error}"));
+    }
     Ok(Value::Null)
 }
 
-fn terminal_write(state: &ServerState, params: TerminalWriteParams) -> Result<Value, String> {
-    let mut terminals = state
-        .terminals
-        .lock()
-        .map_err(|_| "terminal registry is poisoned".to_owned())?;
-    let terminal = terminals
-        .get_mut(&params.stream_id)
-        .ok_or_else(|| format!("terminal '{}' is not running", params.stream_id))?;
-    terminal
-        .writer
-        .write_all(&params.data)
-        .and_then(|_| terminal.writer.flush())
-        .map_err(|error| format!("failed to write terminal '{}': {error}", params.stream_id))?;
-    Ok(Value::Null)
+async fn terminal_write(
+    state: &ServerState,
+    params: TerminalWriteParams,
+    data: Vec<u8>,
+) -> Result<Value, String> {
+    let terminals = Arc::clone(&state.terminals);
+    blocking(move || {
+        let mut terminals = terminals
+            .lock()
+            .map_err(|_| "terminal registry is poisoned".to_owned())?;
+        let terminal = terminals
+            .get_mut(&params.stream_id)
+            .ok_or_else(|| format!("terminal '{}' is not running", params.stream_id))?;
+        terminal
+            .writer
+            .write_all(&data)
+            .and_then(|_| terminal.writer.flush())
+            .map_err(|error| format!("failed to write terminal '{}': {error}", params.stream_id))?;
+        Ok(Value::Null)
+    })
+    .await
 }
 
-fn terminal_resize(state: &ServerState, params: TerminalResizeParams) -> Result<Value, String> {
-    let terminals = state
-        .terminals
-        .lock()
-        .map_err(|_| "terminal registry is poisoned".to_owned())?;
-    let terminal = terminals
-        .get(&params.stream_id)
-        .ok_or_else(|| format!("terminal '{}' is not running", params.stream_id))?;
-    terminal
-        .master
-        .resize(PtySize {
-            rows: params.rows.max(1),
-            cols: params.cols.max(1),
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|error| format!("failed to resize terminal '{}': {error}", params.stream_id))?;
-    Ok(Value::Null)
+async fn terminal_resize(
+    state: &ServerState,
+    params: TerminalResizeParams,
+) -> Result<Value, String> {
+    let terminals = Arc::clone(&state.terminals);
+    blocking(move || {
+        let terminals = terminals
+            .lock()
+            .map_err(|_| "terminal registry is poisoned".to_owned())?;
+        let terminal = terminals
+            .get(&params.stream_id)
+            .ok_or_else(|| format!("terminal '{}' is not running", params.stream_id))?;
+        terminal
+            .master
+            .resize(PtySize {
+                rows: params.rows.max(1),
+                cols: params.cols.max(1),
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|error| {
+                format!("failed to resize terminal '{}': {error}", params.stream_id)
+            })?;
+        Ok(Value::Null)
+    })
+    .await
 }
 
-fn terminal_close(state: &ServerState, params: TerminalCloseParams) -> Result<Value, String> {
-    let Some(mut terminal) = state
-        .terminals
-        .lock()
-        .map_err(|_| "terminal registry is poisoned".to_owned())?
-        .remove(&params.stream_id)
-    else {
-        return Ok(Value::Null);
-    };
-    terminal
-        .child
-        .kill()
-        .map_err(|error| format!("failed to stop terminal '{}': {error}", params.stream_id))?;
-    let _ = terminal.child.wait();
-    Ok(Value::Null)
+async fn terminal_close(state: &ServerState, params: TerminalCloseParams) -> Result<Value, String> {
+    let terminals = Arc::clone(&state.terminals);
+    blocking(move || {
+        let Some(mut terminal) = terminals
+            .lock()
+            .map_err(|_| "terminal registry is poisoned".to_owned())?
+            .remove(&params.stream_id)
+        else {
+            return Ok(Value::Null);
+        };
+        terminal
+            .child
+            .kill()
+            .map_err(|error| format!("failed to stop terminal '{}': {error}", params.stream_id))?;
+        let _ = terminal.child.wait();
+        Ok(Value::Null)
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -1178,10 +1672,12 @@ async fn pi_start(state: &ServerState, params: PiStartParams) -> Result<Value, S
     let mut child = command
         .spawn()
         .map_err(|error| format!("failed to start Pi RPC: {error}"))?;
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "Pi stdin unavailable".to_owned())?;
+    let stdin = Arc::new(Mutex::new(
+        child
+            .stdin
+            .take()
+            .ok_or_else(|| "Pi stdin unavailable".to_owned())?,
+    ));
     let stdout = child
         .stdout
         .take()
@@ -1200,17 +1696,32 @@ async fn pi_start(state: &ServerState, params: PiStartParams) -> Result<Value, S
         let mut lines = BufReader::new(stdout).lines();
         loop {
             match lines.next_line().await {
-                Ok(Some(line)) => {
-                    let data = serde_json::from_str::<Value>(&line)
-                        .unwrap_or_else(|_| json!({ "raw": line }));
-                    if writer
-                        .send(Envelope::event(stream_id.clone(), "pi.rpc", data))
-                        .await
-                        .is_err()
-                    {
-                        break;
+                Ok(Some(line)) => match serde_json::from_str::<Value>(&line) {
+                    Ok(data) => {
+                        if writer
+                            .send(Envelope::event(stream_id.clone(), "pi.rpc", data))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
                     }
-                }
+                    Err(error) => {
+                        if writer
+                            .send(Envelope::event(
+                                stream_id.clone(),
+                                "pi.error",
+                                json!({
+                                    "message": format!("Pi stdout emitted invalid RPC JSON: {error}"),
+                                }),
+                            ))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                },
                 Ok(None) => break,
                 Err(error) => {
                     let _ = writer
@@ -1224,9 +1735,30 @@ async fn pi_start(state: &ServerState, params: PiStartParams) -> Result<Value, S
                 }
             }
         }
-        pi.lock().await.remove(&stream_id);
+        let process = pi.lock().await.remove(&stream_id);
+        let exit_status = if let Some(process) = process {
+            let PiProcess { mut child, stdin } = process;
+            drop(stdin);
+            match tokio::time::timeout(std::time::Duration::from_secs(2), child.wait()).await {
+                Ok(Ok(status)) => Some(status),
+                Ok(Err(_)) => None,
+                Err(_) => {
+                    let _ = child.kill().await;
+                    child.wait().await.ok()
+                }
+            }
+        } else {
+            None
+        };
         let _ = writer
-            .send(Envelope::event(stream_id, "pi.stdout_closed", Value::Null))
+            .send(Envelope::event(
+                stream_id,
+                "pi.stdout_closed",
+                json!({
+                    "code": exit_status.as_ref().and_then(|status| status.code()),
+                    "success": exit_status.as_ref().is_some_and(|status| status.success()),
+                }),
+            ))
             .await;
     });
     let stream_id = params.stream_id.clone();
@@ -1239,10 +1771,11 @@ async fn pi_start(state: &ServerState, params: PiStartParams) -> Result<Value, S
                 Ok(0) => break,
                 Ok(read) => {
                     if writer
-                        .send(Envelope::event(
+                        .send(Envelope::event_with_binary(
                             stream_id.clone(),
                             "pi.stderr",
-                            json!({ "data": buffer[..read].to_vec() }),
+                            Value::Null,
+                            vec![buffer[..read].to_vec()],
                         ))
                         .await
                         .is_err()
@@ -1261,22 +1794,32 @@ async fn pi_send(state: &ServerState, params: PiSendParams) -> Result<Value, Str
     if !params.command.is_object() {
         return Err("Pi RPC command must be a JSON object".to_owned());
     }
-    let mut processes = state.pi.lock().await;
-    let process = processes
-        .get_mut(&params.stream_id)
-        .ok_or_else(|| format!("Pi stream '{}' is not running", params.stream_id))?;
+    let stdin = {
+        let processes = state.pi.lock().await;
+        Arc::clone(
+            &processes
+                .get(&params.stream_id)
+                .ok_or_else(|| format!("Pi stream '{}' is not running", params.stream_id))?
+                .stdin,
+        )
+    };
     let mut bytes = serde_json::to_vec(&params.command).map_err(|error| error.to_string())?;
+    if bytes.len() > MAX_BINARY_PAYLOAD_BYTES {
+        return Err(format!(
+            "Pi RPC command is {} bytes; pilo-server limit is {} bytes",
+            bytes.len(),
+            MAX_BINARY_PAYLOAD_BYTES
+        ));
+    }
     bytes.push(b'\n');
-    process
-        .stdin
-        .write_all(&bytes)
-        .await
-        .map_err(|error| error.to_string())?;
-    process
-        .stdin
-        .flush()
-        .await
-        .map_err(|error| error.to_string())?;
+    let mut stdin = stdin.lock().await;
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        stdin.write_all(&bytes).await?;
+        stdin.flush().await
+    })
+    .await
+    .map_err(|_| format!("timed out while writing Pi stream '{}'", params.stream_id))?
+    .map_err(|error| error.to_string())?;
     Ok(Value::Null)
 }
 
@@ -1287,4 +1830,79 @@ async fn pi_stop(state: &ServerState, params: PiStopParams) -> Result<Value, Str
     let _ = process.child.kill().await;
     let _ = process.child.wait().await;
     Ok(Value::Null)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn bounded_output_discards_bytes_after_shared_limit() {
+        let (mut writer, reader) = tokio::io::duplex(64);
+        let write_task = tokio::spawn(async move {
+            writer.write_all(b"0123456789").await.unwrap();
+        });
+        let used = Arc::new(AtomicUsize::new(0));
+        let overflowed = Arc::new(AtomicBool::new(false));
+        let output = read_bounded_output(reader, Arc::clone(&used), Arc::clone(&overflowed), 4)
+            .await
+            .unwrap();
+        write_task.await.unwrap();
+
+        assert_eq!(output, b"0123");
+        assert_eq!(used.load(Ordering::Acquire), 10);
+        assert!(overflowed.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn session_watcher_filters_to_jsonl_changes_in_target() {
+        let target = PathBuf::from("sessions/workspace");
+        let changed = Event::new(EventKind::Modify(notify::event::ModifyKind::Any))
+            .add_path(target.join("session.jsonl"));
+        let unrelated = Event::new(EventKind::Modify(notify::event::ModifyKind::Any))
+            .add_path(PathBuf::from("sessions/other/session.jsonl"));
+        let non_session = Event::new(EventKind::Modify(notify::event::ModifyKind::Any))
+            .add_path(target.join("notes.txt"));
+        let access = Event::new(EventKind::Access(notify::event::AccessKind::Any))
+            .add_path(target.join("session.jsonl"));
+
+        assert!(is_session_change(&changed, &target));
+        assert!(!is_session_change(&unrelated, &target));
+        assert!(!is_session_change(&non_session, &target));
+        assert!(!is_session_change(&access, &target));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remote_fs_does_not_follow_symlinks_outside_workspace() {
+        use std::os::unix::fs::symlink;
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let base = std::env::temp_dir().join(format!(
+            "pilo-server-fs-test-{}-{unique}",
+            std::process::id()
+        ));
+        let workspace = base.join("workspace");
+        let outside = base.join("outside");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.txt"), b"secret").unwrap();
+        symlink(&outside, workspace.join("escape")).unwrap();
+
+        let workspace_text = workspace.to_string_lossy();
+        assert!(checked_existing_path(&workspace_text, "escape/secret.txt", false).is_err());
+        assert!(checked_mutation_path(&workspace_text, "escape/new.txt").is_err());
+
+        let search = fs_search(FsSearchParams {
+            workspace: workspace_text.into_owned(),
+            query: "secret".to_owned(),
+        })
+        .unwrap();
+        assert_eq!(search, json!([]));
+
+        std::fs::remove_dir_all(base).unwrap();
+    }
 }

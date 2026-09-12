@@ -6,7 +6,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 SOURCE_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd -P)/"
 TARGET_DIR="${TARGET_DIR:-/mnt/d/Code/pilo/}"
 DEBOUNCE_SECONDS="${DEBOUNCE_SECONDS:-0.15}"
-SERVER_RESOURCE="$SOURCE_DIR/src-tauri/resources/pilo-server-linux-x86_64"
+SERVER_RESOURCE_NAME="$("$SCRIPT_DIR/build-pilo-server.sh" --print-resource-name)"
+SERVER_RESOURCE="$SOURCE_DIR/src-tauri/resources/$SERVER_RESOURCE_NAME"
 
 RSYNC_EXCLUDES=(
   "--exclude=.git/"

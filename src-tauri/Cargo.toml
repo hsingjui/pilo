@@ -29,6 +29,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 tauri-plugin-notification = "2.4.0"
 thiserror = "2"
 tokio = { version = "1", features = [
+	"fs",
 	"io-util",
 	"macros",
 	"process",

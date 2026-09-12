@@ -133,18 +133,34 @@ pub async fn run(
     args: &[String],
     input: &[u8],
 ) -> Result<CommandOutput, String> {
-    servers
-        .request_typed(
+    let (value, mut binary) = servers
+        .request_with_binary(
             &workspace.connection,
             "command.run",
             json!({
                 "workspace": workspace.path,
                 "program": program,
                 "args": args,
-                "input": input,
             }),
+            vec![input.to_vec()],
         )
-        .await
+        .await?;
+    if binary.len() != 2 {
+        return Err(format!(
+            "command.run expected stdout/stderr attachments, got {}",
+            binary.len()
+        ));
+    }
+    let stderr = binary.pop().expect("binary length checked");
+    let stdout = binary.pop().expect("binary length checked");
+    Ok(CommandOutput {
+        code: value
+            .get("code")
+            .and_then(serde_json::Value::as_i64)
+            .map(|code| code as i32),
+        stdout,
+        stderr,
+    })
 }
 
 async fn branch(servers: &ServerManager, workspace: &Workspace) -> Option<String> {

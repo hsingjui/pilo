@@ -11,7 +11,7 @@ use crate::domain::{Connection, Workspace};
 use super::{
     events::{PiProcessState, RuntimeErrorCode, RuntimeEvent, RuntimeEventSink, RuntimeLogStream},
     pi_events::PiEventAdapter,
-    server_client::{ServerClient, ServerManager},
+    server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager},
     session_snapshot::PiSessionSnapshot,
 };
 
@@ -121,16 +121,39 @@ impl ServerPiSession {
             std::process::id(),
             STREAM_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         );
-        let mut events = client.subscribe();
+        let mut events = client.subscribe(&stream_id);
         let event_stream_id = stream_id.clone();
         let event_state = Arc::clone(&self.state);
         let event_sink = sink.clone();
+        let event_client = Arc::clone(&client);
         let event_task = tokio::spawn(async move {
             let mut adapter = PiEventAdapter::default();
             loop {
                 let event = match events.recv().await {
                     Ok(event) => event,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        if matches!(
+                            event_state.get(),
+                            PiProcessState::Running | PiProcessState::Starting
+                        ) {
+                            event_state.set(PiProcessState::Failed);
+                            event_sink.send(RuntimeEvent::RuntimeError {
+                                generation,
+                                code: RuntimeErrorCode::ProcessIo,
+                                message: format!(
+                                    "pilo-server Pi event stream overflowed and dropped {skipped} events"
+                                ),
+                            });
+                            event_sink.send(RuntimeEvent::ProcessState {
+                                generation,
+                                state: PiProcessState::Failed,
+                            });
+                            let _ = event_client
+                                .request("pi.stop", json!({ "streamId": event_stream_id }))
+                                .await;
+                        }
+                        break;
+                    }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         if matches!(
                             event_state.get(),
@@ -150,6 +173,29 @@ impl ServerPiSession {
                         break;
                     }
                 };
+                if event.event == SERVER_DISCONNECTED_EVENT {
+                    if matches!(
+                        event_state.get(),
+                        PiProcessState::Running | PiProcessState::Starting
+                    ) {
+                        event_state.set(PiProcessState::Failed);
+                        event_sink.send(RuntimeEvent::RuntimeError {
+                            generation,
+                            code: RuntimeErrorCode::ProcessIo,
+                            message: event
+                                .data
+                                .get("message")
+                                .and_then(Value::as_str)
+                                .unwrap_or("pilo-server disconnected while Pi was running")
+                                .to_owned(),
+                        });
+                        event_sink.send(RuntimeEvent::ProcessState {
+                            generation,
+                            state: PiProcessState::Failed,
+                        });
+                    }
+                    break;
+                }
                 if event.stream_id != event_stream_id {
                     continue;
                 }
@@ -164,16 +210,11 @@ impl ServerPiSession {
                         }
                     }
                     "pi.stderr" => {
-                        if let Some(bytes) = event.data.get("data").and_then(Value::as_array) {
-                            let bytes = bytes
-                                .iter()
-                                .filter_map(Value::as_u64)
-                                .map(|value| value as u8)
-                                .collect::<Vec<_>>();
+                        if let Some(bytes) = event.binary.first() {
                             event_sink.send(RuntimeEvent::RuntimeLog {
                                 generation,
                                 stream: RuntimeLogStream::Stderr,
-                                message: String::from_utf8_lossy(&bytes).into_owned(),
+                                message: String::from_utf8_lossy(bytes).into_owned(),
                             });
                         }
                     }
@@ -191,10 +232,29 @@ impl ServerPiSession {
                     }
                     "pi.stdout_closed" => {
                         if event_state.get() != PiProcessState::Stopping {
-                            event_state.set(PiProcessState::Stopped);
+                            let success = event
+                                .data
+                                .get("success")
+                                .and_then(Value::as_bool)
+                                .unwrap_or(false);
+                            let next_state = if success {
+                                PiProcessState::Stopped
+                            } else {
+                                let code = event.data.get("code").and_then(Value::as_i64);
+                                event_sink.send(RuntimeEvent::RuntimeError {
+                                    generation,
+                                    code: RuntimeErrorCode::ProcessIo,
+                                    message: code.map_or_else(
+                                        || "Pi RPC exited unexpectedly".to_owned(),
+                                        |code| format!("Pi RPC exited with code {code}"),
+                                    ),
+                                });
+                                PiProcessState::Failed
+                            };
+                            event_state.set(next_state);
                             event_sink.send(RuntimeEvent::ProcessState {
                                 generation,
-                                state: PiProcessState::Stopped,
+                                state: next_state,
                             });
                         }
                         break;
