@@ -4,7 +4,9 @@ import { FileCode, MessageSquare, Save, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { readProjectFile, writeProjectFile } from "@/lib/files";
+import { getMonospaceFontFamilyStack } from "@/lib/font-settings";
 import "@/lib/monaco-setup";
+import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/projects";
 import { TRAFFIC_LIGHT_GUTTER } from "@/components/title-bar";
@@ -102,6 +104,8 @@ export function ProjectEditor({
 	/** macOS 侧边栏折叠时红绿灯覆盖主区左上角，顶部需要避让。 */
 	reserveTrafficLights?: boolean;
 }) {
+	const { codeFontFamily, codeCustomFontFamily, codeFontSize } =
+		usePreferences();
 	const [tabs, setTabs] = useState<EditorTab[]>([]);
 	const [activePath, setActivePath] = useState<string | null>(null);
 	const [savingPath, setSavingPath] = useState<string | null>(null);
@@ -329,8 +333,11 @@ export function ProjectEditor({
 						}}
 						options={{
 							automaticLayout: true,
-							fontFamily: '"JetBrains Mono", ui-monospace, monospace',
-							fontSize: 12,
+							fontFamily: getMonospaceFontFamilyStack(
+								codeFontFamily,
+								codeCustomFontFamily,
+							),
+							fontSize: codeFontSize,
 							minimap: { enabled: false },
 							scrollBeyondLastLine: false,
 							padding: { top: 10 },

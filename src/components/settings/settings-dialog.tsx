@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
 	Activity,
+	Bell,
 	Info,
 	Keyboard,
 	MessagesSquare,
@@ -11,19 +12,37 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { ensureDesktopNotificationPermission } from "@/lib/desktop-notifications";
+import {
+	ensureDesktopNotificationPermission,
+	getDesktopNotificationPermission,
+	sendDesktopNotificationTest,
+	type DesktopNotificationPermission,
+} from "@/lib/desktop-notifications";
+import {
+	CODE_FONT_SIZES,
+	MONOSPACE_FONT_OPTIONS,
+	PAGE_FONT_OPTIONS,
+	PAGE_FONT_SIZES,
+	TERMINAL_FONT_SIZES,
+	type CodeFontSize,
+	type MonospaceFontFamily,
+	type PageFontFamily,
+	type PageFontSize,
+	type TerminalFontSize,
+} from "@/lib/font-settings";
 import {
 	usePreferences,
-	type ConversationFontSize,
 	type SendMessageShortcut,
 } from "@/lib/preferences-provider";
 import { useTheme, type Theme } from "@/lib/theme-provider";
 import { cn } from "@/lib/utils";
 import {
+	Button,
 	Dialog,
 	DialogContent,
 	DialogDescription,
 	DialogTitle,
+	Input,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -42,6 +61,7 @@ import {
 
 type SettingsTabId =
 	| "preferences"
+	| "notifications"
 	| "appearance"
 	| "shortcuts"
 	| "connections"
@@ -62,6 +82,12 @@ const SETTINGS_TABS = [
 		section: "个人",
 		label: "外观",
 		icon: Palette,
+	},
+	{
+		id: "notifications" as const,
+		section: "个人",
+		label: "通知",
+		icon: Bell,
 	},
 	{
 		id: "shortcuts" as const,
@@ -107,12 +133,8 @@ const THEME_LABELS: Record<Theme, string> = {
 	system: "跟随系统",
 };
 
-const FONT_SIZE_LABELS: Record<ConversationFontSize, string> = {
-	13: "小 · 13px",
-	14: "默认 · 14px",
-	15: "大 · 15px",
-	16: "较大 · 16px",
-};
+const FONT_SETTINGS_ROW_CLASS =
+	"sm:grid-cols-[minmax(180px,1fr)_minmax(280px,1.35fr)]";
 
 function PreferencesSettings() {
 	const {
@@ -122,29 +144,7 @@ function PreferencesSettings() {
 		setCollapseCompletedActivity,
 		showWorkDuration,
 		setShowWorkDuration,
-		desktopNotifications,
-		setDesktopNotifications,
 	} = usePreferences();
-
-	const handleDesktopNotificationsChange = async (enabled: boolean) => {
-		if (!enabled) {
-			setDesktopNotifications(false);
-			return;
-		}
-
-		try {
-			const granted = await ensureDesktopNotificationPermission();
-			setDesktopNotifications(granted);
-			if (!granted) {
-				toast.error("未能启用桌面通知", {
-					description: "请在 Windows 通知设置中允许 Pilo 发送通知。",
-				});
-			}
-		} catch {
-			setDesktopNotifications(false);
-			toast.error("桌面通知当前不可用");
-		}
-	};
 
 	return (
 		<div className="space-y-3">
@@ -170,7 +170,7 @@ function PreferencesSettings() {
 				</SettingsRow>
 				<SettingsRow
 					label="回复完成后收起工作详情"
-					helper="完成回复时自动收起思考与工具调用列表，减少长会话占用空间。"
+					helper="完成回复时自动收起中间回复、思考与工具调用，只保留最终回答展开。"
 				>
 					<Switch
 						checked={collapseCompletedActivity}
@@ -184,17 +184,6 @@ function PreferencesSettings() {
 					<Switch
 						checked={showWorkDuration}
 						onCheckedChange={setShowWorkDuration}
-					/>
-				</SettingsRow>
-				<SettingsRow
-					label="启用桌面通知"
-					helper="当 Pilo 不在前台且 Pi 完成回复时发送系统通知。"
-				>
-					<Switch
-						checked={desktopNotifications}
-						onCheckedChange={(enabled) =>
-							void handleDesktopNotificationsChange(enabled)
-						}
 					/>
 				</SettingsRow>
 			</SettingsSection>
@@ -217,9 +206,150 @@ function PreferencesSettings() {
 	);
 }
 
+const NOTIFICATION_PERMISSION_LABELS: Record<
+	DesktopNotificationPermission,
+	string
+> = {
+	granted: "已允许",
+	denied: "已拒绝",
+	default: "未请求",
+	unsupported: "不可用",
+};
+
+function NotificationSettings() {
+	const { desktopNotifications, setDesktopNotifications } = usePreferences();
+	const [permission, setPermission] =
+		useState<DesktopNotificationPermission>("default");
+	const [checking, setChecking] = useState(true);
+	const [testing, setTesting] = useState(false);
+
+	const refreshPermission = async () => {
+		setChecking(true);
+		const next = await getDesktopNotificationPermission();
+		setPermission(next);
+		setChecking(false);
+		if (next !== "granted" && desktopNotifications)
+			setDesktopNotifications(false);
+	};
+
+	useEffect(() => {
+		let active = true;
+		void getDesktopNotificationPermission().then((next) => {
+			if (!active) return;
+			setPermission(next);
+			setChecking(false);
+		});
+		return () => {
+			active = false;
+		};
+	}, []);
+
+	const handleNotificationsChange = async (enabled: boolean) => {
+		if (!enabled) {
+			setDesktopNotifications(false);
+			return;
+		}
+		const granted = await ensureDesktopNotificationPermission();
+		setPermission(await getDesktopNotificationPermission());
+		setDesktopNotifications(granted);
+		if (!granted) {
+			toast.error("未能启用系统通知", {
+				description: "请在系统通知设置中允许 Pilo 发送通知。",
+			});
+		}
+	};
+
+	const handleTestNotification = async () => {
+		setTesting(true);
+		const sent = await sendDesktopNotificationTest();
+		setPermission(await getDesktopNotificationPermission());
+		setTesting(false);
+		if (!sent) toast.error("测试通知发送失败");
+	};
+
+	return (
+		<div className="space-y-3">
+			<SettingsSection title="系统通知">
+				<SettingsRow label="通知权限" helper="检测 Pilo 当前的系统通知权限。">
+					<div className="flex items-center gap-2">
+						<SettingsStatus muted={permission !== "granted"}>
+							{checking ? "检测中" : NOTIFICATION_PERMISSION_LABELS[permission]}
+						</SettingsStatus>
+						<Button
+							variant="outline"
+							size="sm"
+							disabled={checking}
+							onClick={() => void refreshPermission()}
+						>
+							重新检测
+						</Button>
+					</div>
+				</SettingsRow>
+				<SettingsRow
+					label="启用通知"
+					helper="Agent 运行完成或出错时发送系统通知。"
+				>
+					<Switch
+						checked={desktopNotifications}
+						onCheckedChange={(enabled) =>
+							void handleNotificationsChange(enabled)
+						}
+					/>
+				</SettingsRow>
+				<SettingsRow
+					label="发送测试通知"
+					helper="立即发送一条测试通知；未授权时会先请求系统权限。"
+				>
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={testing}
+						onClick={() => void handleTestNotification()}
+					>
+						{testing ? "发送中" : "发送测试通知"}
+					</Button>
+				</SettingsRow>
+			</SettingsSection>
+			<SettingsSection title="触发时机">
+				<SettingsRow
+					label="Agent 运行完成"
+					helper="点击通知后直接打开对应会话。"
+				>
+					<SettingsStatus>已启用</SettingsStatus>
+				</SettingsRow>
+				<SettingsRow
+					label="Agent 运行出错"
+					helper="运行时错误或 Pi 进程异常时通知。"
+				>
+					<SettingsStatus>已启用</SettingsStatus>
+				</SettingsRow>
+			</SettingsSection>
+		</div>
+	);
+}
+
 function AppearanceSettings() {
 	const { theme, setTheme } = useTheme();
-	const { conversationFontSize, setConversationFontSize } = usePreferences();
+	const {
+		pageFontFamily,
+		setPageFontFamily,
+		pageCustomFontFamily,
+		setPageCustomFontFamily,
+		pageFontSize,
+		setPageFontSize,
+		codeFontFamily,
+		setCodeFontFamily,
+		codeCustomFontFamily,
+		setCodeCustomFontFamily,
+		codeFontSize,
+		setCodeFontSize,
+		terminalFontFamily,
+		setTerminalFontFamily,
+		terminalCustomFontFamily,
+		setTerminalCustomFontFamily,
+		terminalFontSize,
+		setTerminalFontSize,
+	} = usePreferences();
 
 	return (
 		<div className="space-y-3">
@@ -244,40 +374,180 @@ function AppearanceSettings() {
 						</SelectContent>
 					</Select>
 				</SettingsRow>
+			</SettingsSection>
+
+			<SettingsSection title="字体">
 				<SettingsRow
-					label="对话字号"
-					helper="调整用户消息和 Pi 回复正文的字号，不影响代码与工具详情。"
+					label="页面字体"
+					helper="用于页面和对话正文。自定义字体可用逗号分隔。"
+					alignTop
+					className={FONT_SETTINGS_ROW_CLASS}
 				>
 					<Select
-						value={String(conversationFontSize)}
+						value={pageFontFamily}
 						onValueChange={(value) =>
-							setConversationFontSize(Number(value) as ConversationFontSize)
+							setPageFontFamily(value as PageFontFamily)
 						}
 					>
-						<SelectTrigger className="w-[220px]">
+						<SelectTrigger className="w-[176px]">
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
-							{(
-								Object.keys(
-									FONT_SIZE_LABELS,
-								) as unknown as ConversationFontSize[]
-							).map((value) => (
-								<SelectItem key={value} value={String(value)}>
-									{FONT_SIZE_LABELS[value]}
+							{PAGE_FONT_OPTIONS.map((option) => (
+								<SelectItem key={option.value} value={option.value}>
+									{option.label}
 								</SelectItem>
 							))}
 						</SelectContent>
 					</Select>
+					<Select
+						value={String(pageFontSize)}
+						onValueChange={(value) =>
+							setPageFontSize(Number(value) as PageFontSize)
+						}
+					>
+						<SelectTrigger className="w-[104px]">
+							<SelectValue>{pageFontSize}px</SelectValue>
+						</SelectTrigger>
+						<SelectContent>
+							{PAGE_FONT_SIZES.map((size) => (
+								<SelectItem key={size} value={String(size)}>
+									<span className="inline-flex items-center gap-2">
+										{size}px
+										{size === 14 ? (
+											<span
+												className="size-1.5 rounded-full bg-muted-foreground"
+												aria-label="默认字号"
+											/>
+										) : null}
+									</span>
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+					<Input
+						value={pageCustomFontFamily}
+						onChange={(event) => setPageCustomFontFamily(event.target.value)}
+						placeholder="如 Inter, PingFang SC"
+						aria-label="自定义页面字体列表"
+						className="w-[288px] max-w-full"
+					/>
 				</SettingsRow>
-			</SettingsSection>
 
-			<SettingsSection title="终端">
 				<SettingsRow
-					label="终端字体与字号"
-					helper="Terminal 接入后提供独立的等宽字体、字号和显示设置。"
+					label="代码字体"
+					helper="用于 Markdown 代码和文件编辑器。自定义字体可用逗号分隔。"
+					alignTop
+					className={FONT_SETTINGS_ROW_CLASS}
 				>
-					<SettingsStatus muted>Terminal 接入后开放</SettingsStatus>
+					<Select
+						value={codeFontFamily}
+						onValueChange={(value) =>
+							setCodeFontFamily(value as MonospaceFontFamily)
+						}
+					>
+						<SelectTrigger className="w-[176px] font-mono">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{MONOSPACE_FONT_OPTIONS.map((option) => (
+								<SelectItem key={option.value} value={option.value}>
+									{option.label}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+					<Select
+						value={String(codeFontSize)}
+						onValueChange={(value) =>
+							setCodeFontSize(Number(value) as CodeFontSize)
+						}
+					>
+						<SelectTrigger className="w-[104px]">
+							<SelectValue>{codeFontSize}px</SelectValue>
+						</SelectTrigger>
+						<SelectContent>
+							{CODE_FONT_SIZES.map((size) => (
+								<SelectItem key={size} value={String(size)}>
+									<span className="inline-flex items-center gap-2">
+										{size}px
+										{size === 12 ? (
+											<span
+												className="size-1.5 rounded-full bg-muted-foreground"
+												aria-label="默认字号"
+											/>
+										) : null}
+									</span>
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+					<Input
+						value={codeCustomFontFamily}
+						onChange={(event) => setCodeCustomFontFamily(event.target.value)}
+						placeholder="如 Maple Mono, Consolas"
+						aria-label="自定义代码字体列表"
+						className="w-[288px] max-w-full font-mono"
+					/>
+				</SettingsRow>
+
+				<SettingsRow
+					label="终端字体"
+					helper="仅影响 Terminal。自定义字体可用逗号分隔。"
+					alignTop
+					className={FONT_SETTINGS_ROW_CLASS}
+				>
+					<Select
+						value={terminalFontFamily}
+						onValueChange={(value) =>
+							setTerminalFontFamily(value as MonospaceFontFamily)
+						}
+					>
+						<SelectTrigger className="w-[176px]">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{MONOSPACE_FONT_OPTIONS.map((option) => (
+								<SelectItem key={option.value} value={option.value}>
+									{option.label}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+					<Select
+						value={String(terminalFontSize)}
+						onValueChange={(value) =>
+							setTerminalFontSize(Number(value) as TerminalFontSize)
+						}
+					>
+						<SelectTrigger className="w-[104px]">
+							<SelectValue>{terminalFontSize}px</SelectValue>
+						</SelectTrigger>
+						<SelectContent>
+							{TERMINAL_FONT_SIZES.map((size) => (
+								<SelectItem key={size} value={String(size)}>
+									<span className="inline-flex items-center gap-2">
+										{size}px
+										{size === 12 ? (
+											<span
+												className="size-1.5 rounded-full bg-muted-foreground"
+												aria-label="默认字号"
+											/>
+										) : null}
+									</span>
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+					<Input
+						value={terminalCustomFontFamily}
+						onChange={(event) =>
+							setTerminalCustomFontFamily(event.target.value)
+						}
+						placeholder="如 Maple Mono, Consolas"
+						aria-label="自定义终端字体列表"
+						className="w-[288px] max-w-full font-mono"
+					/>
 				</SettingsRow>
 			</SettingsSection>
 		</div>
@@ -447,6 +717,9 @@ export function SettingsDialog({
 						<div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
 							<div className="mx-auto max-w-5xl">
 								{activeTab === "preferences" ? <PreferencesSettings /> : null}
+								{activeTab === "notifications" ? (
+									<NotificationSettings />
+								) : null}
 								{activeTab === "appearance" ? <AppearanceSettings /> : null}
 								{activeTab === "shortcuts" ? (
 									<KeyboardShortcutsSettings />

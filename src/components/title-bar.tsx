@@ -9,6 +9,9 @@ const IS_TAURI = "__TAURI_INTERNALS__" in window;
 // 内容延伸至窗口顶部，因此侧边栏/顶栏需要为红绿灯预留左侧安全区。
 export const IS_MACOS = IS_TAURI && navigator.userAgent.includes("Mac");
 
+// Windows：WSL 与自绘标题栏依赖该平台判断。
+export const IS_WINDOWS = IS_TAURI && navigator.userAgent.includes("Windows");
+
 /** macOS 侧栏收起时，通用顶栏避让原生交通灯簇；会话顶栏与 Lody 一致使用 4.5rem。 */
 export const TRAFFIC_LIGHT_GUTTER = "pl-[4.5rem]";
 

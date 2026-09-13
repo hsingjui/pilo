@@ -11,6 +11,8 @@ import "@xterm/xterm/css/xterm.css";
 import { ChevronDown, ChevronUp, Plus, TerminalSquare, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { getMonospaceFontFamilyStack } from "@/lib/font-settings";
+import { usePreferences } from "@/lib/preferences-provider";
 import {
 	closeTerminal,
 	listenTerminalEvents,
@@ -69,6 +71,13 @@ function TerminalViewport({
 	active: boolean;
 	onRegister: (terminalId: string, terminal: Terminal | null) => void;
 }) {
+	const { terminalFontFamily, terminalCustomFontFamily, terminalFontSize } =
+		usePreferences();
+	const initialTerminalFontRef = useRef({
+		terminalFontFamily,
+		terminalCustomFontFamily,
+		terminalFontSize,
+	});
 	const hostRef = useRef<HTMLDivElement>(null);
 	const fitRef = useRef<FitAddon | null>(null);
 	const terminalRef = useRef<Terminal | null>(null);
@@ -77,10 +86,14 @@ function TerminalViewport({
 		const host = hostRef.current;
 		if (!host) return;
 		const style = window.getComputedStyle(host);
+		const initialFont = initialTerminalFontRef.current;
 		const terminal = new Terminal({
 			cursorBlink: true,
-			fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, monospace',
-			fontSize: 12,
+			fontFamily: getMonospaceFontFamilyStack(
+				initialFont.terminalFontFamily,
+				initialFont.terminalCustomFontFamily,
+			),
+			fontSize: initialFont.terminalFontSize,
 			lineHeight: 1.15,
 			scrollback: 10_000,
 			allowTransparency: true,
@@ -120,6 +133,27 @@ function TerminalViewport({
 			fitRef.current = null;
 		};
 	}, [onRegister, tab.id]);
+
+	useEffect(() => {
+		const terminal = terminalRef.current;
+		const fit = fitRef.current;
+		const host = hostRef.current;
+		if (!terminal) return;
+		terminal.options.fontFamily = getMonospaceFontFamilyStack(
+			terminalFontFamily,
+			terminalCustomFontFamily,
+		);
+		terminal.options.fontSize = terminalFontSize;
+		if (!fit || !host || host.clientWidth <= 0 || host.clientHeight <= 0)
+			return;
+		const frame = window.requestAnimationFrame(() => {
+			fit.fit();
+			void resizeTerminal(tab.id, terminal.cols, terminal.rows).catch(
+				() => undefined,
+			);
+		});
+		return () => window.cancelAnimationFrame(frame);
+	}, [terminalCustomFontFamily, terminalFontFamily, terminalFontSize, tab.id]);
 
 	useEffect(() => {
 		if (!active) return;
