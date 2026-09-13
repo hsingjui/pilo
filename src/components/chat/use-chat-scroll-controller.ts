@@ -11,12 +11,13 @@ import type { VirtualizerHandle } from "virtua";
 import { useChatStickyScroll } from "@/components/chat/use-chat-sticky-scroll";
 import { useChatVirtualPadding } from "@/components/chat/use-chat-virtual-padding";
 import {
+	isChatPerformanceDebugEnabled,
 	logChatPerformanceInstructions,
 	recordChatPageRender,
 	recordScrollEvent,
 	recordVirtualChange,
 } from "@/lib/chat-performance";
-import { getOutlineIndexForMessageIndex } from "@/lib/chat-virtualization";
+import { getOutlineIndexForScrollOffset } from "@/lib/chat-virtualization";
 import { buildConversationOutline } from "@/lib/conversation-outline";
 import type { ChatMessage } from "@/lib/conversation-types";
 
@@ -146,7 +147,7 @@ export function useChatScrollController({
 					setIsScrolledFromTop(nextScrolledFromTop);
 				}
 
-				if (vlist && messages.length > 0) {
+				if (vlist && messages.length > 0 && isChatPerformanceDebugEnabled()) {
 					const relativeStart = Math.max(
 						0,
 						scrollOffset - itemOffsetDeltaRef.current,
@@ -168,26 +169,22 @@ export function useChatScrollController({
 					}
 					return;
 				}
-				const maxScrollOffset = scrollSize - viewportSize;
-				if (maxScrollOffset > 0 && scrollOffset >= maxScrollOffset - 2) {
-					const nextIndex = outlineEntries.length - 1;
-					if (activeOutlineIndexRef.current !== nextIndex) {
-						activeOutlineIndexRef.current = nextIndex;
-						setActiveOutlineIndex(nextIndex);
-					}
-					return;
-				}
+				if (!vlist) return;
 
+				const maxScrollOffset = scrollSize - viewportSize;
+				const isAtEnd =
+					maxScrollOffset > 0 && scrollOffset >= maxScrollOffset - 2;
 				const readingOffset = Math.max(
 					0,
 					scrollOffset -
 						itemOffsetDeltaRef.current +
 						CHAT_OUTLINE_READING_OFFSET_PX,
 				);
-				const messageIndex = vlist?.findItemIndex(readingOffset) ?? 0;
-				const nextIndex = getOutlineIndexForMessageIndex(
+				const nextIndex = getOutlineIndexForScrollOffset(
 					outlineEntries,
-					messageIndex,
+					(messageIndex) => vlist.getItemOffset(messageIndex),
+					readingOffset,
+					isAtEnd,
 				);
 				if (activeOutlineIndexRef.current !== nextIndex) {
 					activeOutlineIndexRef.current = nextIndex;

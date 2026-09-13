@@ -16,7 +16,10 @@ import {
 } from "../src/lib/chat-activity-state.ts";
 import { buildConversationOutline } from "../src/lib/conversation-outline.ts";
 import { getReplyRunwayHeight } from "../src/lib/chat-scroll-state.ts";
-import { getOutlineIndexForMessageIndex } from "../src/lib/chat-virtualization.ts";
+import {
+	getOutlineIndexForMessageIndex,
+	getOutlineIndexForScrollOffset,
+} from "../src/lib/chat-virtualization.ts";
 import { formatWorkDuration } from "../src/lib/format-duration.ts";
 
 test("chat bottom clamp targets Virtua and the real DOM bottom once", () => {
@@ -433,4 +436,40 @@ test("outline index follows the virtualized message at the reading line", () => 
 	assert.equal(getOutlineIndexForMessageIndex(entries, 3), 1);
 	assert.equal(getOutlineIndexForMessageIndex(entries, 12), 2);
 	assert.equal(getOutlineIndexForMessageIndex(entries, 99), 3);
+});
+
+test("outline index resolves directly from Virtua item offsets", () => {
+	const entries = [
+		{ messageIndex: 0 },
+		{ messageIndex: 3 },
+		{ messageIndex: 8 },
+		{ messageIndex: 13 },
+	];
+	const offsets = new Map([
+		[0, 0],
+		[3, 360],
+		[8, 920],
+		[13, 1_480],
+	]);
+	const getMessageOffset = (messageIndex: number) =>
+		offsets.get(messageIndex) ?? Number.POSITIVE_INFINITY;
+
+	assert.equal(getOutlineIndexForScrollOffset([], getMessageOffset, 500), -1);
+	assert.equal(getOutlineIndexForScrollOffset(entries, getMessageOffset, 0), 0);
+	assert.equal(
+		getOutlineIndexForScrollOffset(entries, getMessageOffset, 359),
+		1,
+	);
+	assert.equal(
+		getOutlineIndexForScrollOffset(entries, getMessageOffset, 918),
+		1,
+	);
+	assert.equal(
+		getOutlineIndexForScrollOffset(entries, getMessageOffset, 919),
+		2,
+	);
+	assert.equal(
+		getOutlineIndexForScrollOffset(entries, getMessageOffset, 200, true),
+		3,
+	);
 });
