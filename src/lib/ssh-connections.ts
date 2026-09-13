@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import { notifyConnectionsChanged } from "@/lib/connection-events";
 import type { Connection } from "@/lib/pi-runtime";
 import type { ConnectionTestResult } from "@/lib/connections";
 
@@ -13,17 +14,20 @@ export function listSshConnections(): Promise<SshConnectionInfo[]> {
 	return invoke<SshConnectionInfo[]>("ssh_connection_list");
 }
 
-export function saveSshConnection(
+export async function saveSshConnection(
 	connection: Connection,
 	password?: string,
 ): Promise<SshConnectionInfo> {
-	return invoke<SshConnectionInfo>("ssh_connection_save", {
+	const info = await invoke<SshConnectionInfo>("ssh_connection_save", {
 		request: { connection, password: password || null },
 	});
+	notifyConnectionsChanged();
+	return info;
 }
 
-export function removeSshConnection(id: string): Promise<void> {
-	return invoke("ssh_connection_remove", { id });
+export async function removeSshConnection(id: string): Promise<void> {
+	await invoke("ssh_connection_remove", { id });
+	notifyConnectionsChanged();
 }
 
 export function testSshConnection(id: string): Promise<ConnectionTestResult> {

@@ -27,13 +27,18 @@ pub(super) fn retryable_read_method(method: &str) -> bool {
 
 #[derive(Default)]
 pub struct ServerManager {
-    clients: Mutex<HashMap<String, Arc<ServerClient>>>,
+    clients: Mutex<HashMap<String, CachedServerClient>>,
     connection_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+}
+
+struct CachedServerClient {
+    connection: Connection,
+    client: Arc<ServerClient>,
 }
 
 impl ServerManager {
     pub async fn client(&self, connection: &Connection) -> Result<Arc<ServerClient>, String> {
-        if let Some(client) = self.cached_client(&connection.id).await {
+        if let Some(client) = self.cached_client(connection).await {
             return Ok(client);
         }
 
@@ -46,24 +51,32 @@ impl ServerManager {
             )
         };
         let _connection_guard = connection_lock.lock().await;
-        if let Some(client) = self.cached_client(&connection.id).await {
+        if let Some(client) = self.cached_client(connection).await {
             return Ok(client);
         }
 
         let client = ServerClient::connect(connection).await?;
-        self.clients
-            .lock()
-            .await
-            .insert(connection.id.clone(), Arc::clone(&client));
+        self.clients.lock().await.insert(
+            connection.id.clone(),
+            CachedServerClient {
+                connection: connection.clone(),
+                client: Arc::clone(&client),
+            },
+        );
         Ok(client)
     }
 
-    async fn cached_client(&self, connection_id: &str) -> Option<Arc<ServerClient>> {
+    async fn cached_client(&self, connection: &Connection) -> Option<Arc<ServerClient>> {
         let stale = {
             let mut clients = self.clients.lock().await;
-            match clients.get(connection_id).cloned() {
-                Some(client) if !client.is_closed() => return Some(client),
-                Some(_) => clients.remove(connection_id),
+            match clients.get(&connection.id) {
+                Some(cached)
+                    if cached.connection.kind.eq(&connection.kind)
+                        && !cached.client.is_closed() =>
+                {
+                    return Some(Arc::clone(&cached.client));
+                }
+                Some(_) => clients.remove(&connection.id).map(|cached| cached.client),
                 None => None,
             }
         };
@@ -77,7 +90,9 @@ impl ServerManager {
         let removed = {
             let mut clients = self.clients.lock().await;
             match clients.get(connection_id) {
-                Some(current) if Arc::ptr_eq(current, failed) => clients.remove(connection_id),
+                Some(current) if Arc::ptr_eq(&current.client, failed) => {
+                    clients.remove(connection_id).map(|cached| cached.client)
+                }
                 _ => None,
             }
         };
@@ -168,7 +183,7 @@ impl ServerManager {
             .lock()
             .await
             .drain()
-            .map(|(_, client)| client)
+            .map(|(_, cached)| cached.client)
             .collect::<Vec<_>>();
         for client in clients {
             client.stop().await;

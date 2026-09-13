@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { FsEntry } from "@/lib/files";
 import type { Connection, PiSessionSnapshot } from "@/lib/pi-runtime";
 
 export const PROJECTS_CHANGED_EVENT = "pilo:projects-changed";
@@ -54,11 +55,19 @@ export function listProjects(): Promise<Project[]> {
 	return invoke<Project[]>("project_list");
 }
 
-export function addProject(
-	connection: Connection,
-	path: string,
-): Promise<Project> {
-	return invoke<Project>("project_add", { connection, path });
+export function addProject(connectionId: string, path: string): Promise<Project> {
+	return invoke<Project>("project_add", { connectionId, path });
+}
+
+export function pickLocalProjectDirectory(): Promise<string | null> {
+	return invoke<string | null>("local_pick_project_directory");
+}
+
+export function readConnectionDir(
+	connectionId: string,
+	path = "/",
+): Promise<FsEntry[]> {
+	return invoke<FsEntry[]>("connection_fs_read_dir", { connectionId, path });
 }
 
 export function refreshProject(id: string): Promise<Project> {
@@ -73,10 +82,8 @@ export function removeProject(id: string): Promise<Project[]> {
 	return invoke<Project[]>("project_remove", { id });
 }
 
-export function discoverProjects(
-	connection: Connection,
-): Promise<DiscoveredProject[]> {
-	return invoke<DiscoveredProject[]>("project_discover", { connection });
+export function discoverProjects(connectionId: string): Promise<DiscoveredProject[]> {
+	return invoke<DiscoveredProject[]>("project_discover", { connectionId });
 }
 
 const pendingPiStarts = new Map<string, Promise<PiSessionSnapshot>>();

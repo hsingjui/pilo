@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tauri::AppHandle;
 
-use crate::domain::{Connection, DiscoveredProject, Project, ProjectMetadata};
+use crate::domain::{Connection, ConnectionKind, DiscoveredProject, Project, ProjectMetadata};
 
 use super::{server_client::ServerManager, storage};
 
@@ -23,9 +23,10 @@ pub fn get(app: &AppHandle, id: &str) -> Result<Project, String> {
 pub async fn add(
     app: &AppHandle,
     servers: &ServerManager,
-    connection: Connection,
+    connection_id: String,
     path: String,
 ) -> Result<Project, String> {
+    let connection = resolve_connection(app, &connection_id)?;
     let (connection, metadata) = inspect(servers, connection, path).await?;
     let normalized_path = metadata.cwd.clone();
     let id = Project::stable_id(&connection.id, &normalized_path);
@@ -86,8 +87,9 @@ pub fn remove(app: &AppHandle, id: &str) -> Result<Vec<Project>, String> {
 pub async fn discover(
     app: &AppHandle,
     servers: &ServerManager,
-    connection: Connection,
+    connection_id: String,
 ) -> Result<Vec<DiscoveredProject>, String> {
+    let connection = resolve_connection(app, &connection_id)?;
     let headers: Vec<Value> = servers
         .request_typed(&connection, "session.discover", Value::Null)
         .await?;
@@ -109,6 +111,21 @@ pub async fn discover(
             }
         })
         .collect())
+}
+
+pub fn resolve_connection(app: &AppHandle, connection_id: &str) -> Result<Connection, String> {
+    let db = storage::open(app)?;
+    if connection_id == "local" {
+        let connection = Connection {
+            id: "local".to_owned(),
+            name: "Local".to_owned(),
+            kind: ConnectionKind::Local,
+        };
+        storage::upsert_connection(&db, &connection)?;
+        return Ok(connection);
+    }
+    storage::get_connection(&db, connection_id)?
+        .ok_or_else(|| format!("Connection '{connection_id}' was not found"))
 }
 
 async fn inspect(

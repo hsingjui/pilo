@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 
-use crate::domain::{Connection, DiscoveredProject, Project};
+use crate::domain::{DiscoveredProject, Project, ProjectModelCache};
 
 use super::super::{
     PiloRuntime,
@@ -11,6 +11,7 @@ use super::super::{
     preview::{self, PreviewInfo},
     project,
     remote_fs::{self, FsEntry},
+    storage,
     terminal::TerminalInfo,
 };
 
@@ -20,13 +21,38 @@ pub fn project_list(app: AppHandle) -> Result<Vec<Project>, String> {
 }
 
 #[tauri::command]
+pub fn project_model_cache_list(app: AppHandle) -> Result<Vec<ProjectModelCache>, String> {
+    storage::list_project_model_cache(&storage::open(&app)?)
+}
+
+#[tauri::command]
+pub fn project_model_cache_set(
+    app: AppHandle,
+    project_id: String,
+    models: Vec<serde_json::Value>,
+    default_model: Option<serde_json::Value>,
+    default_thinking_level: Option<String>,
+    refreshed_at_ms: u64,
+) -> Result<ProjectModelCache, String> {
+    let cache = ProjectModelCache {
+        project_id,
+        models,
+        default_model,
+        default_thinking_level,
+        refreshed_at_ms,
+    };
+    storage::upsert_project_model_cache(&storage::open(&app)?, &cache)?;
+    Ok(cache)
+}
+
+#[tauri::command]
 pub async fn project_add(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
-    connection: Connection,
+    connection_id: String,
     path: String,
 ) -> Result<Project, String> {
-    let project = project::add(&app, &runtime.servers, connection, path).await?;
+    let project = project::add(&app, &runtime.servers, connection_id, path).await?;
     runtime.chat_sessions.open_project(&project.id).await?;
     Ok(project)
 }
@@ -235,6 +261,27 @@ pub async fn project_fs_read_dir(
 }
 
 #[tauri::command]
+pub fn local_pick_project_directory() -> Option<String> {
+    rfd::FileDialog::new()
+        .pick_folder()
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub async fn connection_fs_read_dir(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    connection_id: String,
+    path: String,
+) -> Result<Vec<FsEntry>, String> {
+    let connection = project::resolve_connection(&app, &connection_id)?;
+    if matches!(connection.kind, crate::domain::ConnectionKind::Local) {
+        return Err("local connection should use the native directory picker".to_owned());
+    }
+    remote_fs::read_connection_dir(&runtime.servers, &connection, &path).await
+}
+
+#[tauri::command]
 pub async fn project_fs_read_file(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
@@ -317,7 +364,7 @@ pub async fn project_fs_search(
 pub async fn project_discover(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
-    connection: Connection,
+    connection_id: String,
 ) -> Result<Vec<DiscoveredProject>, String> {
-    project::discover(&app, &runtime.servers, connection).await
+    project::discover(&app, &runtime.servers, connection_id).await
 }

@@ -2,7 +2,7 @@ pub use pilo_protocol::FsEntry;
 use pilo_protocol::MAX_BINARY_PAYLOAD_BYTES;
 use serde_json::json;
 
-use crate::domain::Project;
+use crate::domain::{Connection, Project};
 
 use super::server_client::ServerManager;
 
@@ -16,6 +16,21 @@ pub async fn read_dir(
             &project.connection,
             "fs.read_dir",
             json!({ "project": project.path, "path": path }),
+        )
+        .await
+}
+
+pub async fn read_connection_dir(
+    servers: &ServerManager,
+    connection: &Connection,
+    path: &str,
+) -> Result<Vec<FsEntry>, String> {
+    let relative = path.trim().trim_start_matches('/');
+    servers
+        .request_typed(
+            connection,
+            "fs.read_dir",
+            json!({ "project": "/", "path": relative }),
         )
         .await
 }

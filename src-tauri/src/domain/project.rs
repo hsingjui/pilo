@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::Connection;
 
@@ -20,6 +21,16 @@ pub struct ProjectMetadata {
     pub cwd: String,
     pub git_branch: Option<String>,
     pub pi_version: String,
+    pub refreshed_at_ms: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectModelCache {
+    pub project_id: String,
+    pub models: Vec<Value>,
+    pub default_model: Option<Value>,
+    pub default_thinking_level: Option<String>,
     pub refreshed_at_ms: u64,
 }
 

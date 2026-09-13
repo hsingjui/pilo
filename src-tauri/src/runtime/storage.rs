@@ -10,7 +10,8 @@ use rusqlite::{Connection as SqliteConnection, OptionalExtension, params};
 use tauri::{AppHandle, Manager};
 
 use crate::domain::{
-    Connection, Project, ProjectMetadata, SessionIndexEntry, SessionUiStateUpdate,
+    Connection, Project, ProjectMetadata, ProjectModelCache, SessionIndexEntry,
+    SessionUiStateUpdate,
 };
 
 const DB_FILE_NAME: &str = "pilo.sqlite3";
@@ -86,6 +87,13 @@ fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            last_opened_at_ms INTEGER NOT NULL
          );
          CREATE INDEX IF NOT EXISTS idx_projects_recent ON projects(last_opened_at_ms DESC);
+         CREATE TABLE IF NOT EXISTS project_model_cache (
+           project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+           models_json TEXT NOT NULL,
+           default_model_json TEXT,
+           default_thinking_level TEXT,
+           refreshed_at_ms INTEGER NOT NULL
+         );
          CREATE TABLE IF NOT EXISTS sessions (
            session_path TEXT PRIMARY KEY,
            connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
@@ -114,6 +122,28 @@ fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
          );",
     )
     .map_err(|error| format!("failed to initialize Pilo SQLite schema: {error}"))?;
+    ensure_project_model_cache_columns(db)?;
+    Ok(())
+}
+
+fn ensure_project_model_cache_columns(db: &SqliteConnection) -> Result<(), String> {
+    let has_column = |name: &str| {
+        db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('project_model_cache') WHERE name=?1)",
+            params![name],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|exists| exists != 0)
+        .map_err(|error| error.to_string())
+    };
+    if !has_column("default_model_json")? {
+        db.execute_batch("ALTER TABLE project_model_cache ADD COLUMN default_model_json TEXT;")
+            .map_err(|error| error.to_string())?;
+    }
+    if !has_column("default_thinking_level")? {
+        db.execute_batch("ALTER TABLE project_model_cache ADD COLUMN default_thinking_level TEXT;")
+            .map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 
@@ -240,7 +270,6 @@ pub fn remove_connection(db: &SqliteConnection, id: &str) -> Result<bool, String
 }
 
 pub fn upsert_project(db: &SqliteConnection, project: &Project) -> Result<(), String> {
-    upsert_connection(db, &project.connection)?;
     let metadata_json =
         serde_json::to_string(&project.metadata).map_err(|error| error.to_string())?;
     db.execute(
@@ -335,6 +364,74 @@ pub fn get_project(db: &SqliteConnection, id: &str) -> Result<Option<Project>, S
     )
     .optional()
     .map_err(|error| error.to_string())
+}
+
+pub fn list_project_model_cache(db: &SqliteConnection) -> Result<Vec<ProjectModelCache>, String> {
+    let mut statement = db
+        .prepare(
+            "SELECT project_id,models_json,default_model_json,default_thinking_level,refreshed_at_ms FROM project_model_cache ORDER BY refreshed_at_ms DESC",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            let models_json: String = row.get(1)?;
+            let models = serde_json::from_str(&models_json).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    1,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
+            let default_model_json: Option<String> = row.get(2)?;
+            let default_model = default_model_json
+                .map(|json| {
+                    serde_json::from_str(&json).map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            2,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })
+                })
+                .transpose()?;
+            Ok(ProjectModelCache {
+                project_id: row.get(0)?,
+                models,
+                default_model,
+                default_thinking_level: row.get(3)?,
+                refreshed_at_ms: row.get::<_, i64>(4)? as u64,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
+pub fn upsert_project_model_cache(
+    db: &SqliteConnection,
+    cache: &ProjectModelCache,
+) -> Result<(), String> {
+    let models_json = serde_json::to_string(&cache.models).map_err(|error| error.to_string())?;
+    let default_model_json = cache
+        .default_model
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|error| error.to_string())?;
+    db.execute(
+        "INSERT INTO project_model_cache(project_id,models_json,default_model_json,default_thinking_level,refreshed_at_ms) VALUES(?1,?2,?3,?4,?5)
+         ON CONFLICT(project_id) DO UPDATE SET models_json=excluded.models_json, default_model_json=excluded.default_model_json, default_thinking_level=excluded.default_thinking_level, refreshed_at_ms=excluded.refreshed_at_ms
+         WHERE excluded.refreshed_at_ms >= project_model_cache.refreshed_at_ms",
+        params![
+            cache.project_id,
+            models_json,
+            default_model_json,
+            cache.default_thinking_level,
+            cache.refreshed_at_ms as i64
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 pub fn remove_project(db: &SqliteConnection, id: &str) -> Result<bool, String> {
@@ -477,6 +574,49 @@ pub fn remove_missing_sessions(
 mod tests {
     use super::*;
 
+    #[test]
+    fn upsert_project_does_not_overwrite_connection_configuration() {
+        let db = SqliteConnection::open_in_memory().expect("open in-memory SQLite");
+        db.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        initialize_schema(&db).expect("initialize schema");
+
+        let current_connection = Connection {
+            id: "wsl:Debian".to_owned(),
+            name: "Current Debian".to_owned(),
+            kind: crate::domain::ConnectionKind::Wsl {
+                distro: "Debian".to_owned(),
+            },
+        };
+        upsert_connection(&db, &current_connection).expect("persist current connection");
+
+        let project = Project {
+            id: "project:wsl:Debian:/code/demo".to_owned(),
+            name: "demo".to_owned(),
+            path: "/code/demo".to_owned(),
+            connection: Connection {
+                id: current_connection.id.clone(),
+                name: "Stale Debian".to_owned(),
+                kind: crate::domain::ConnectionKind::Wsl {
+                    distro: "Debian-old".to_owned(),
+                },
+            },
+            metadata: ProjectMetadata {
+                cwd: "/code/demo".to_owned(),
+                git_branch: Some("main".to_owned()),
+                pi_version: "1.0.0".to_owned(),
+                refreshed_at_ms: 1,
+            },
+            created_at_ms: 1,
+            last_opened_at_ms: 2,
+        };
+        upsert_project(&db, &project).expect("persist project");
+
+        assert_eq!(
+            get_connection(&db, &current_connection.id).expect("read connection"),
+            Some(current_connection)
+        );
+    }
+
     const LEGACY_SCHEMA: &str = "CREATE TABLE connections (
            id TEXT PRIMARY KEY,
            name TEXT NOT NULL,
@@ -519,6 +659,87 @@ mod tests {
            title_override TEXT,
            updated_at_ms INTEGER NOT NULL
          );";
+
+    #[test]
+    fn upgrades_existing_project_model_cache_with_default_state_columns() {
+        let db = SqliteConnection::open_in_memory().expect("open in-memory SQLite");
+        db.execute_batch(
+            "PRAGMA foreign_keys = ON;
+             CREATE TABLE connections (
+               id TEXT PRIMARY KEY,
+               name TEXT NOT NULL,
+               kind_json TEXT NOT NULL,
+               updated_at_ms INTEGER NOT NULL
+             );
+             CREATE TABLE projects (
+               id TEXT PRIMARY KEY,
+               connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+               name TEXT NOT NULL,
+               path TEXT NOT NULL,
+               metadata_json TEXT NOT NULL,
+               created_at_ms INTEGER NOT NULL,
+               last_opened_at_ms INTEGER NOT NULL
+             );
+             CREATE TABLE project_model_cache (
+               project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+               models_json TEXT NOT NULL,
+               refreshed_at_ms INTEGER NOT NULL
+             );",
+        )
+        .expect("create previous model-cache schema");
+
+        initialize_schema(&db).expect("upgrade model-cache schema");
+
+        let has_column = |name: &str| {
+            db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_table_info('project_model_cache') WHERE name=?1)",
+                params![name],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
+                != 0
+        };
+        assert!(has_column("default_model_json"));
+        assert!(has_column("default_thinking_level"));
+    }
+
+    #[test]
+    fn persists_project_model_cache_and_cascades_on_project_delete() {
+        let db = SqliteConnection::open_in_memory().expect("open in-memory SQLite");
+        db.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        initialize_schema(&db).expect("initialize schema");
+        db.execute_batch(
+            "INSERT INTO connections(id,name,kind_json,updated_at_ms) VALUES('local','Local','{\"type\":\"local\"}',1);
+             INSERT INTO projects(id,connection_id,name,path,metadata_json,created_at_ms,last_opened_at_ms)
+               VALUES('project:local:/code/demo','local','demo','/code/demo','{\"cwd\":\"/code/demo\",\"gitBranch\":\"main\",\"piVersion\":\"1.0.0\",\"refreshedAtMs\":5}',10,20);",
+        )
+        .expect("seed project");
+
+        let cache = ProjectModelCache {
+            project_id: "project:local:/code/demo".to_owned(),
+            models: vec![serde_json::json!({
+                "provider": "pivia",
+                "id": "gpt-5.6-sol",
+                "name": "gpt-5.6-sol",
+                "reasoning": true
+            })],
+            default_model: Some(serde_json::json!({
+                "provider": "pivia",
+                "id": "gpt-5.6-sol",
+                "name": "gpt-5.6-sol",
+                "reasoning": true
+            })),
+            default_thinking_level: Some("high".to_owned()),
+            refreshed_at_ms: 42,
+        };
+        upsert_project_model_cache(&db, &cache).expect("persist model cache");
+
+        let snapshots = list_project_model_cache(&db).expect("read model cache");
+        assert_eq!(snapshots, vec![cache]);
+
+        remove_project(&db, "project:local:/code/demo").expect("remove project");
+        assert!(list_project_model_cache(&db).unwrap().is_empty());
+    }
 
     #[test]
     fn migrates_legacy_workspaces_schema_in_place() {

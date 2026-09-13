@@ -45,27 +45,55 @@ pub struct WslConnectionInfo {
 }
 
 #[tauri::command]
-pub async fn wsl_connection_list(app: AppHandle) -> Result<Vec<WslConnectionInfo>, String> {
-    let distributions = list_wsl_distributions()
-        .await
-        .map_err(|error| error.to_string())?;
+pub fn wsl_connection_list(app: AppHandle) -> Result<Vec<WslConnectionInfo>, String> {
     let db = storage::open(&app)?;
-    distributions
+    storage::list_connections(&db)?
         .into_iter()
-        .map(|distribution| {
-            let connection = Connection {
-                id: format!("wsl:{}", distribution.name),
-                name: format!("WSL · {}", distribution.name),
-                kind: ConnectionKind::Wsl {
-                    distro: distribution.name,
-                },
-            };
+        .filter(|connection| matches!(connection.kind, ConnectionKind::Wsl { .. }))
+        .map(|connection| {
             Ok(WslConnectionInfo {
                 project_count: storage::connection_project_count(&db, &connection.id)?,
                 connection,
             })
         })
         .collect()
+}
+
+fn ensure_wsl_connection(connection: &Connection) -> Result<(), String> {
+    if !matches!(connection.kind, ConnectionKind::Wsl { .. }) {
+        return Err("only WSL connections can be managed here".to_owned());
+    }
+    if connection.id.trim().is_empty() || connection.name.trim().is_empty() {
+        return Err("WSL connection id and name are required".to_owned());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn wsl_connection_save(
+    app: AppHandle,
+    connection: Connection,
+) -> Result<WslConnectionInfo, String> {
+    ensure_wsl_connection(&connection)?;
+    let db = storage::open(&app)?;
+    storage::upsert_connection(&db, &connection)?;
+    Ok(WslConnectionInfo {
+        project_count: storage::connection_project_count(&db, &connection.id)?,
+        connection,
+    })
+}
+
+#[tauri::command]
+pub fn wsl_connection_remove(app: AppHandle, id: String) -> Result<(), String> {
+    let db = storage::open(&app)?;
+    let count = storage::connection_project_count(&db, &id)?;
+    if count > 0 {
+        return Err(format!(
+            "该 WSL 连接仍被 {count} 个项目使用，请先移除或迁移这些项目。"
+        ));
+    }
+    storage::remove_connection(&db, &id)?;
+    Ok(())
 }
 
 #[tauri::command]
