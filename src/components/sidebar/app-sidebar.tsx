@@ -9,13 +9,7 @@ import {
 	useState,
 	type PointerEvent as ReactPointerEvent,
 } from "react";
-import {
-	Archive,
-	FolderPlus,
-	PanelLeft,
-	Search,
-	SquarePen,
-} from "lucide-react";
+import { Archive, PanelLeft, Search, SquarePen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, ScrollArea } from "@/ui";
 import { IS_MACOS } from "@/components/title-bar";
@@ -185,29 +179,56 @@ export function AppSidebar({
 		return grouped;
 	}, [visibleSessions]);
 
-	const renderSession = (
-		session: SidebarSession,
-		project: SidebarProject,
-		env: SidebarEnv,
-	) => (
-		<SessionRow
-			key={session.id}
-			session={session}
-			project={project}
-			env={env}
-			now={now}
-			selected={activeSessionId === session.id}
-			onSelect={() => {
-				if (selectedSessionId === undefined) {
-					setInternalSelectedSessionId(session.id);
-				}
-				onSelectSession?.(session.id);
-			}}
-			onTogglePin={(id, pinned) => onUpdateSession?.(id, { pinned })}
-			onArchive={(id) => onUpdateSession?.(id, { archived: true })}
-			onRestore={(id) => onUpdateSession?.(id, { archived: false })}
-			onRename={(id, title) => onUpdateSession?.(id, { title })}
-		/>
+	const handleSelectSession = useCallback(
+		(sessionId: string) => {
+			if (selectedSessionId === undefined) {
+				setInternalSelectedSessionId(sessionId);
+			}
+			onSelectSession?.(sessionId);
+		},
+		[onSelectSession, selectedSessionId],
+	);
+	const handleToggleSessionPin = useCallback(
+		(id: string, pinned: boolean) => onUpdateSession?.(id, { pinned }),
+		[onUpdateSession],
+	);
+	const handleArchiveSession = useCallback(
+		(id: string) => onUpdateSession?.(id, { archived: true }),
+		[onUpdateSession],
+	);
+	const handleRestoreSession = useCallback(
+		(id: string) => onUpdateSession?.(id, { archived: false }),
+		[onUpdateSession],
+	);
+	const handleRenameSession = useCallback(
+		(id: string, title: string) => onUpdateSession?.(id, { title }),
+		[onUpdateSession],
+	);
+	const renderSession = useCallback(
+		(session: SidebarSession, project: SidebarProject, env: SidebarEnv) => (
+			<SessionRow
+				key={session.id}
+				session={session}
+				project={project}
+				env={env}
+				now={now}
+				selected={activeSessionId === session.id}
+				onSelect={handleSelectSession}
+				onTogglePin={handleToggleSessionPin}
+				onArchive={handleArchiveSession}
+				onRestore={handleRestoreSession}
+				onRename={handleRenameSession}
+			/>
+		),
+		[
+			activeSessionId,
+			handleArchiveSession,
+			handleRenameSession,
+			handleRestoreSession,
+			handleSelectSession,
+			handleToggleSessionPin,
+			now,
+		],
 	);
 
 	const renderSessionList = (
@@ -288,16 +309,6 @@ export function AppSidebar({
 							<SquarePen className="h-4 w-4" />
 						</span>
 						<span className="truncate">新对话</span>
-					</button>
-					<button
-						type="button"
-						className="group flex w-full select-none items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring/30 dark:text-sidebar-foreground/75"
-						onClick={() => onAddProject?.()}
-					>
-						<span className="flex h-5 w-5 shrink-0 items-center justify-center text-current">
-							<FolderPlus className="h-4 w-4" />
-						</span>
-						<span className="truncate">添加项目</span>
 					</button>
 					<div className="mt-1 flex items-center gap-1">
 						<label className="relative min-w-0 flex-1">

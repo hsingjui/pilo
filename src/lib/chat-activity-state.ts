@@ -8,6 +8,12 @@ export type AssistantTextContent = {
 
 export type AssistantContentItem = AssistantTextContent | AssistantActivity;
 
+export type AssistantContentDisplaySections = {
+	work: AssistantContentItem[];
+	final: AssistantContentItem[];
+	hasCollapsedWork: boolean;
+};
+
 type ToolActivity = Extract<AssistantActivity, { type: "tool" }>;
 
 export type AssistantActivitySummary = {
@@ -91,6 +97,47 @@ export function getAssistantActivities(
 	return (content ?? []).filter(
 		(item): item is AssistantActivity => item.type !== "text",
 	);
+}
+
+/**
+ * Finished turns keep only the final contiguous text run expanded. Everything
+ * before that run is prior work (intermediate prose, thinking and tool calls)
+ * and can be mounted lazily behind one disclosure. If a turn has no genuine
+ * text tail, keep it fully visible so interrupted/tool-only turns never collapse
+ * to an empty shell.
+ */
+export function splitAssistantContentForDisplay(
+	content: AssistantContentItem[] | undefined,
+	isTurnFinished: boolean,
+): AssistantContentDisplaySections {
+	const items = content ?? [];
+	if (!isTurnFinished || items.length <= 1) {
+		return { work: [], final: items, hasCollapsedWork: false };
+	}
+
+	let finalTextStart = items.length;
+	for (let index = items.length - 1; index >= 0; index -= 1) {
+		if (items[index]?.type !== "text") break;
+		finalTextStart = index;
+	}
+
+	if (finalTextStart === 0 || finalTextStart === items.length) {
+		return { work: [], final: items, hasCollapsedWork: false };
+	}
+
+	const final = items.slice(finalTextStart);
+	const hasVisibleFinalText = final.some(
+		(item) => item.type === "text" && item.text.trim().length > 0,
+	);
+	if (!hasVisibleFinalText) {
+		return { work: [], final: items, hasCollapsedWork: false };
+	}
+
+	return {
+		work: items.slice(0, finalTextStart),
+		final,
+		hasCollapsedWork: true,
+	};
 }
 
 export function appendAssistantTextContent(

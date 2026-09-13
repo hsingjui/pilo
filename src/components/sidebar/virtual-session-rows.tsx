@@ -1,4 +1,5 @@
 import {
+	useCallback,
 	useLayoutEffect,
 	useRef,
 	useState,
@@ -39,14 +40,22 @@ export function VirtualSessionRows({
 		overscan: 8,
 		scrollMargin,
 		getItemKey: (index) => sessions[index]?.id ?? index,
+		useAnimationFrameWithResizeObserver: true,
+		// Keep scroll-offset updates out of React when the visible range has not
+		// changed. The virtualizer writes transforms/size directly to the DOM.
+		directDomUpdates: true,
+		useFlushSync: false,
 	});
+	const setListRef = useCallback(
+		(node: HTMLDivElement | null) => {
+			listRef.current = node;
+			virtualizer.containerRef(node);
+		},
+		[virtualizer],
+	);
 
 	return (
-		<div
-			ref={listRef}
-			className="relative w-full min-w-0 overflow-hidden"
-			style={{ height: `${virtualizer.getTotalSize()}px` }}
-		>
+		<div ref={setListRef} className="relative w-full min-w-0 overflow-hidden">
 			{virtualizer.getVirtualItems().map((item) => {
 				const session = sessions[item.index];
 				if (!session) return null;
@@ -56,9 +65,6 @@ export function VirtualSessionRows({
 						data-index={item.index}
 						ref={virtualizer.measureElement}
 						className="absolute left-0 top-0 w-full min-w-0 overflow-hidden"
-						style={{
-							transform: `translateY(${item.start - scrollMargin}px)`,
-						}}
 					>
 						{renderSession(session)}
 					</div>

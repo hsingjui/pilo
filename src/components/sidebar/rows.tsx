@@ -1,5 +1,5 @@
 /* oxlint-disable jsx-a11y/prefer-tag-over-role -- sidebar rows contain independent action buttons; native outer buttons would create invalid nested interactive controls. */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
 	Archive,
 	ArchiveRestore,
@@ -318,7 +318,7 @@ export function ProjectRow({
 
 // ---- 会话行 ---------------------------------------------------------------
 
-export function SessionRow({
+export const SessionRow = memo(function SessionRow({
 	session,
 	project,
 	env,
@@ -335,7 +335,7 @@ export function SessionRow({
 	env?: SidebarEnv;
 	now: Date;
 	selected: boolean;
-	onSelect: () => void;
+	onSelect: (sessionId: string) => void;
 	onTogglePin?: (sessionId: string, pinned: boolean) => void;
 	onArchive?: (sessionId: string) => void;
 	onRestore?: (sessionId: string) => void;
@@ -368,12 +368,12 @@ export function SessionRow({
 				aria-label={session.title}
 				aria-current={selected ? "page" : undefined}
 				data-menu-open={menuOpen || undefined}
-				onClick={onSelect}
+				onClick={() => onSelect(session.id)}
 				onKeyDown={(event) => {
 					if (event.target !== event.currentTarget) return;
 					if (event.key !== "Enter" && event.key !== " ") return;
 					event.preventDefault();
-					onSelect();
+					onSelect(session.id);
 				}}
 				className={cn(
 					"group relative w-full min-w-0 cursor-pointer select-none rounded-md border border-transparent bg-transparent px-2 py-1 text-left transition-colors",
@@ -491,4 +491,4 @@ export function SessionRow({
 			</div>
 		</SessionInfoHoverCard>
 	);
-}
+});

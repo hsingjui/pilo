@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { scrollChatViewportToRealBottom } from "../src/components/chat/chat-sticky-scroll-dom.ts";
 import {
 	appendAssistantTextContent,
 	appendAssistantThinkingContent,
 	finishAssistantThinkingContent,
 	getAssistantStreamingLabel,
 	reconcileAssistantTextContent,
+	splitAssistantContentForDisplay,
 	startAssistantThinkingContent,
 	summarizeAssistantActivity,
 	upsertToolContent,
@@ -14,11 +16,31 @@ import {
 } from "../src/lib/chat-activity-state.ts";
 import { buildConversationOutline } from "../src/lib/conversation-outline.ts";
 import { getReplyRunwayHeight } from "../src/lib/chat-scroll-state.ts";
-import {
-	getOutlineIndexForMessageIndex,
-	shouldVirtualizeChatMessages,
-} from "../src/lib/chat-virtualization.ts";
+import { getOutlineIndexForMessageIndex } from "../src/lib/chat-virtualization.ts";
 import { formatWorkDuration } from "../src/lib/format-duration.ts";
+
+test("chat bottom clamp targets Virtua and the real DOM bottom once", () => {
+	const calls: Array<{ index: number; align?: string; offset?: number }> = [];
+	const scrollElement = {
+		clientHeight: 400,
+		scrollHeight: 1_000,
+		scrollTop: 540,
+	};
+
+	scrollChatViewportToRealBottom({
+		itemCount: 8,
+		vlist: {
+			scrollToIndex(index, options) {
+				calls.push({ index, align: options?.align, offset: options?.offset });
+			},
+		},
+		scrollElement,
+		bottomOffset: 40,
+	});
+
+	assert.deepEqual(calls, [{ index: 7, align: "end", offset: 40 }]);
+	assert.equal(scrollElement.scrollTop, 600);
+});
 
 test("interleaved concurrent tool calls stay isolated by toolCallId", () => {
 	let activity: AssistantContentItem[] = [];
@@ -289,6 +311,66 @@ test("assistant activity summary groups file work and other tools", () => {
 	});
 });
 
+test("finished assistant turns keep only the final contiguous text run expanded", () => {
+	const content: AssistantContentItem[] = [
+		{ id: "draft", type: "text", text: "I will inspect the files first." },
+		{
+			id: "think",
+			type: "thinking",
+			text: "Need to compare both implementations.",
+			status: "complete",
+		},
+		{
+			id: "read",
+			type: "tool",
+			toolName: "read",
+			args: { path: "src/app.ts" },
+			status: "complete",
+		},
+		{ id: "final-a", type: "text", text: "Implemented the change." },
+		{ id: "final-b", type: "text", text: " Tests pass." },
+	];
+
+	const sections = splitAssistantContentForDisplay(content, true);
+	assert.equal(sections.hasCollapsedWork, true);
+	assert.deepEqual(
+		sections.work.map((item) => item.id),
+		["draft", "think", "read"],
+	);
+	assert.deepEqual(
+		sections.final.map((item) => item.id),
+		["final-a", "final-b"],
+	);
+});
+
+test("streaming and tool-only assistant turns stay fully expanded", () => {
+	const content: AssistantContentItem[] = [
+		{
+			id: "think",
+			type: "thinking",
+			text: "Still working",
+			status: "running",
+		},
+		{
+			id: "tool",
+			type: "tool",
+			toolName: "bash",
+			status: "running",
+		},
+	];
+
+	assert.deepEqual(splitAssistantContentForDisplay(content, false), {
+		work: [],
+		final: content,
+		hasCollapsedWork: false,
+	});
+	assert.deepEqual(splitAssistantContentForDisplay(content, true), {
+		work: [],
+		final: content,
+		hasCollapsedWork: false,
+	});
+});
+
 test("reply runway is only reserved for an already scrollable conversation", () => {
 	assert.equal(
 		getReplyRunwayHeight({ viewportHeight: 600, scrollHeight: 620 }),
@@ -314,13 +396,6 @@ test("reply runway is only reserved for an already scrollable conversation", () 
 		getReplyRunwayHeight({ viewportHeight: 1_200, scrollHeight: 2_000 }),
 		256,
 	);
-});
-
-test("chat virtualization only turns on for long sessions", () => {
-	assert.equal(shouldVirtualizeChatMessages(0), false);
-	assert.equal(shouldVirtualizeChatMessages(39), false);
-	assert.equal(shouldVirtualizeChatMessages(40), true);
-	assert.equal(shouldVirtualizeChatMessages(400), true);
 });
 
 test("conversation outline records each round start message index", () => {

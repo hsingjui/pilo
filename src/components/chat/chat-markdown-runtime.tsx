@@ -362,7 +362,7 @@ function MarkdownInlineCode({
 		<code
 			{...props}
 			className={cn(
-				"rounded-sm bg-code px-1 py-px font-mono text-[0.85em] text-code-foreground ring-1 ring-inset ring-border/50",
+				"rounded-sm bg-code px-1 py-px font-mono [font-size:var(--pilo-code-font-size)] text-code-foreground ring-1 ring-inset ring-border/50",
 				className,
 			)}
 		>

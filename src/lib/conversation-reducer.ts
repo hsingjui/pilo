@@ -106,7 +106,7 @@ function endTurn(
 	stopReason: string | null | undefined,
 	errorMessage: string | null | undefined,
 	timestampMs: number,
-	completion: "complete" | "interrupted" = "complete",
+	completion: "complete" | "interrupted" | "continued" = "complete",
 ): ConversationState {
 	if (!state.active?.assistantMessageId) return { ...state, active: null };
 	const index = state.messages.findIndex(
@@ -151,7 +151,7 @@ function endTurn(
 		),
 		streaming: false,
 		workDurationMs:
-			startedAt === undefined
+			completion === "continued" || startedAt === undefined
 				? undefined
 				: Math.max(0, timestampMs - startedAt),
 		stopReason: stopReason ?? undefined,
@@ -188,29 +188,23 @@ export function reduceConversation(
 				},
 				pendingUsers: [
 					...state.pendingUsers,
-					{ clientMessageId: action.clientMessageId, text: action.text },
+					{
+						clientMessageId: action.clientMessageId,
+						text: action.text,
+						timestampMs: action.timestampMs,
+					},
 				],
 			};
 		}
 		case "local_user_queue":
 			return {
 				...state,
-				messages: [
-					...state.messages,
-					{
-						id: action.clientMessageId,
-						role: "user",
-						text: action.text,
-						time: context.formatTime(action.timestampMs),
-						timestampMs: action.timestampMs,
-						queued: action.queueKind,
-					},
-				],
 				pendingUsers: [
 					...state.pendingUsers,
 					{
 						clientMessageId: action.clientMessageId,
 						text: action.text,
+						timestampMs: action.timestampMs,
 						queueKind: action.queueKind,
 					},
 				],
@@ -249,23 +243,36 @@ export function reduceConversation(
 				let next = state;
 				if (pending.queueKind) {
 					const currentActive = state.active;
+					let replyRunwayPx: number | undefined;
 					if (currentActive?.assistantMessageId) {
+						const currentAssistant = state.messages.find(
+							(message) => message.id === currentActive.assistantMessageId,
+						);
+						if (currentAssistant?.role === "assistant") {
+							replyRunwayPx = currentAssistant.replyRunwayPx;
+						}
 						next = endTurn(
 							state,
 							undefined,
 							undefined,
-							action.timestampMs ?? context.now(),
+							action.timestampMs ?? pending.timestampMs ?? context.now(),
+							"continued",
 						);
 					}
-					const messages = next.messages.map((message) =>
-						message.id === pending.clientMessageId && message.role === "user"
-							? { ...message, queued: undefined }
-							: message,
-					);
-					const startedAtMs = action.timestampMs ?? context.now();
+					const startedAtMs =
+						action.timestampMs ?? pending.timestampMs ?? context.now();
 					next = {
 						...next,
-						messages,
+						messages: [
+							...next.messages,
+							{
+								id: pending.clientMessageId,
+								role: "user",
+								text: action.text,
+								time: context.formatTime(startedAtMs),
+								timestampMs: startedAtMs,
+							},
+						],
 						active: {
 							turnStartedAtMs: startedAtMs,
 							assistantUpdatedAtMs: action.timestampMs,
@@ -275,6 +282,7 @@ export function reduceConversation(
 					next = withAssistant(next, context, startedAtMs, (message) => ({
 						...message,
 						streaming: true,
+						replyRunwayPx,
 					}));
 				}
 				if (!pending.queueKind) {
@@ -294,7 +302,7 @@ export function reduceConversation(
 			const timestampMs = action.timestampMs ?? context.now();
 			let next = state;
 			if (state.active?.assistantMessageId) {
-				next = endTurn(state, undefined, undefined, timestampMs);
+				next = endTurn(state, undefined, undefined, timestampMs, "continued");
 			}
 			return {
 				...next,
@@ -593,6 +601,16 @@ export function replayConversationEvents(
 	return reduceConversationActions(initialState, events, context);
 }
 
+function yieldReplayWork(): Promise<void> {
+	const scheduler = (
+		globalThis as typeof globalThis & {
+			scheduler?: { yield?: () => Promise<void> };
+		}
+	).scheduler;
+	if (scheduler?.yield) return scheduler.yield();
+	return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 export async function replayConversationEventsBatched(
 	events: ConversationEvent[],
 	context: ConversationReducerContext,
@@ -617,7 +635,7 @@ export async function replayConversationEventsBatched(
 		);
 		options.onBatch?.(next);
 		if (end >= events.length) return next;
-		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		await yieldReplayWork();
 		return replayBatch(end, next);
 	};
 

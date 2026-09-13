@@ -214,12 +214,9 @@ test("queued messages use client ids so duplicate text can fail independently", 
 		{ type: "local_user_queue_failed", clientMessageId: "q2" },
 		context(),
 	);
-	const queued = state.messages.filter(
-		(message) => message.role === "user" && message.queued,
-	);
-	assert.deepEqual(
-		queued.map((message) => message.id),
-		["q1"],
+	assert.equal(
+		state.messages.some((message) => message.role === "user" && message.queued),
+		false,
 	);
 	assert.deepEqual(
 		state.pendingUsers.map((item) => item.clientMessageId),
@@ -265,8 +262,9 @@ test("queued acknowledgement creates the next pending assistant and ignores late
 			text: "start",
 			timestampMs: 1,
 		},
-		{ type: "local_assistant_pending", timestampMs: 1 },
+		{ type: "local_assistant_pending", timestampMs: 1, replyRunwayPx: 192 },
 		{ type: "user_message_start", text: "start", timestampMs: 2 },
+		{ type: "assistant_text_delta", delta: "working", timestampMs: 2 },
 		{
 			type: "local_user_queue",
 			clientMessageId: "q1",
@@ -280,6 +278,19 @@ test("queued acknowledgement creates the next pending assistant and ignores late
 	}
 	assert.equal(state.pendingUsers.length, 0);
 	assert.equal(state.messages.at(-1)?.role, "assistant");
+	const queuedUser = state.messages.at(-2);
+	assert.equal(queuedUser?.role, "user");
+	assert.equal(queuedUser?.id, "q1");
+	const continuedAssistant = state.messages.find(
+		(message) => message.role === "assistant" && message.text === "working",
+	);
+	assert.equal(continuedAssistant?.role, "assistant");
+	if (continuedAssistant?.role === "assistant") {
+		assert.equal(continuedAssistant.completion, "continued");
+	}
+	const nextAssistant = state.messages.at(-1);
+	if (nextAssistant?.role !== "assistant") throw new Error("assistant missing");
+	assert.equal(nextAssistant.replyRunwayPx, 192);
 	const before = state;
 	state = reduceConversation(
 		state,
@@ -287,6 +298,23 @@ test("queued acknowledgement creates the next pending assistant and ignores late
 		ctx,
 	);
 	assert.equal(state, before);
+});
+
+test("an in-turn user message keeps the preceding assistant segment marked as continued", () => {
+	const state = reduce([
+		{ type: "user_message_start", text: "start", timestampMs: 1 },
+		{ type: "assistant_message_start", timestampMs: 2 },
+		{ type: "assistant_text_delta", delta: "working", timestampMs: 3 },
+		{ type: "user_message_start", text: "adjust", timestampMs: 4 },
+	]);
+	const previousAssistant = state.messages[1];
+	assert.equal(previousAssistant?.role, "assistant");
+	if (previousAssistant?.role !== "assistant") {
+		throw new Error("assistant missing");
+	}
+	assert.equal(previousAssistant.completion, "continued");
+	assert.equal(previousAssistant.streaming, false);
+	assert.equal(state.messages[2]?.role, "user");
 });
 
 test("batched replay preserves the provided initial state", async () => {

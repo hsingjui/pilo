@@ -1,44 +1,38 @@
 import {
 	memo,
+	useCallback,
 	useEffect,
 	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
 } from "react";
-import { ArrowDown } from "lucide-react";
 
 import type {
 	ChatUiState,
 	ChatUiStatePatch,
 } from "@/components/app/chat-ui-state-cache";
 import { ChatComposer } from "@/components/chat/chat-composer";
-import { ChatHistorySkeleton } from "@/components/chat/chat-history-skeleton";
+import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import {
-	AssistantMessage,
-	ConversationColumn,
-	EmptyConversation,
-	UserMessage,
-} from "@/components/chat/chat-message";
+	ChatConversationViewport,
+	type ChatConversationViewportHandle,
+} from "@/components/chat/chat-conversation-viewport";
+import { ChatPendingQueue } from "@/components/chat/chat-pending-queue";
 import { SessionHeader } from "@/components/chat/chat-session-header";
 import {
 	formatSessionUsage,
 	type ChatSession,
 } from "@/components/chat/chat-page-utils";
-import { ConversationOutlineRail } from "@/components/chat/conversation-outline-rail";
+import {
+	routeInitialDeferredSubmissions,
+	shouldDeferSubmissionUntilHistoryReady,
+} from "@/components/chat/chat-submission-state";
 import { useChatConversation } from "@/components/chat/use-chat-conversation";
 import { useChatRuntime } from "@/components/chat/use-chat-runtime";
-import { useChatScrollController } from "@/components/chat/use-chat-scroll-controller";
 import { useChatSessionConfig } from "@/components/chat/use-chat-session-config";
 import { createChatSessionClient } from "@/lib/chat-session-client";
 import { usePreferences } from "@/lib/preferences-provider";
-import {
-	Button,
-	ErrorState,
-	Tooltip,
-	TooltipContent,
-	TooltipTrigger,
-} from "@/ui";
 
 export type { ChatSession } from "@/components/chat/chat-page-utils";
 
@@ -85,8 +79,34 @@ function ChatPageImpl({
 	const [initialUiState] = useState<ChatUiState>(() =>
 		uiStateKey && readUiState
 			? readUiState(uiStateKey)
-			: { draft: "", scrollTop: 0, sticky: true },
+			: { draft: "", scrollTop: 0, sticky: true, deferredSubmissions: [] },
 	);
+	const initialDeferredSubmissions = useMemo(
+		() =>
+			routeInitialDeferredSubmissions(
+				session.sessionPath,
+				initialUiState.deferredSubmissions,
+			),
+		[initialUiState.deferredSubmissions, session.sessionPath],
+	);
+	useEffect(() => {
+		if (
+			session.sessionPath ||
+			!uiStateKey ||
+			!writeUiState ||
+			initialUiState.deferredSubmissions.length === 0
+		) {
+			return;
+		}
+		// New chats hand the fallback queue directly to the runtime. Existing-session
+		// queues stay persisted until history is ready and the page actually drains them.
+		writeUiState(uiStateKey, { deferredSubmissions: [] });
+	}, [
+		initialUiState.deferredSubmissions,
+		session.sessionPath,
+		uiStateKey,
+		writeUiState,
+	]);
 	const persistDraft = useMemo(
 		() =>
 			uiStateKey && writeUiState
@@ -94,12 +114,10 @@ function ChatPageImpl({
 				: undefined,
 		[uiStateKey, writeUiState],
 	);
-	const persistScrollState = useMemo(
-		() =>
-			uiStateKey && writeUiState
-				? (state: { scrollTop: number; sticky: boolean }) =>
-						writeUiState(uiStateKey, state)
-				: undefined,
+	const persistScrollState = useCallback(
+		(state: { scrollTop: number; sticky: boolean }) => {
+			if (uiStateKey && writeUiState) writeUiState(uiStateKey, state);
+		},
 		[uiStateKey, writeUiState],
 	);
 	const activeTurnSessionIdRef = useRef<string | null>(null);
@@ -137,8 +155,8 @@ function ChatPageImpl({
 		onSessionChanged,
 	});
 	const {
-		baseMessages,
 		messages,
+		pendingUsers,
 		activeAssistantMessageId,
 		draft,
 		setDraft,
@@ -159,30 +177,11 @@ function ChatPageImpl({
 		onDraftChange: persistDraft,
 		onHistoryMetadata: applyHistoryMetadata,
 	});
-	const {
-		outlineEntries,
-		scrollRef,
-		roundRefs,
-		virtualized,
-		messageVirtualizer,
-		isSticky,
-		isScrolledFromTop,
-		activeOutlineIndex,
-		syncScrollState,
-		scrollToBottom,
-		handleOutlineJump,
-	} = useChatScrollController({
-		active,
-		sessionId: session.id,
-		sessionPath: session.sessionPath,
-		messages,
-		baseMessages,
-		activeAssistantMessageId,
-		effectiveLoadState,
-		initialScrollTop: initialUiState.scrollTop,
-		initialSticky: initialUiState.sticky,
-		onScrollStateChange: persistScrollState,
-	});
+	const scrollRef = useRef<HTMLDivElement>(null);
+	const conversationViewportRef = useRef<ChatConversationViewportHandle>(null);
+	const scrollToBottom = useCallback((smooth = true) => {
+		conversationViewportRef.current?.scrollToBottom(smooth);
+	}, []);
 	// 输入区不在滚动容器内，需要补上与滚动条等宽的内边距才能和消息列左右对齐。
 	// 固定值在不同平台（overlay / thin / DPI 缩放）下并不一致，所以实测。
 	const [scrollbarWidth, setScrollbarWidth] = useState(0);
@@ -197,9 +196,11 @@ function ChatPageImpl({
 		observer.observe(viewport);
 		return () => observer.disconnect();
 	}, [active, scrollRef]);
+	const pendingHistorySubmissionsRef = useRef<string[]>(
+		initialDeferredSubmissions.history,
+	);
 	const {
 		activeTurnSessionId,
-		activeTurnGeneration,
 		pendingSteering,
 		pendingFollowUps,
 		running,
@@ -213,6 +214,7 @@ function ChatPageImpl({
 		client,
 		activeTurnSessionIdRef,
 		initialMessage,
+		initialQueuedMessages: initialDeferredSubmissions.runtime,
 		desktopNotifications,
 		onSessionIdentified,
 		dispatchConversationBatch,
@@ -223,6 +225,54 @@ function ChatPageImpl({
 		prepareRuntimeConfiguration,
 		refreshSessionState,
 	});
+
+	const historySubmissionBlocked = shouldDeferSubmissionUntilHistoryReady(
+		session.sessionPath,
+		effectiveLoadState,
+	);
+	const persistDeferredHistorySubmissions = useCallback(
+		(submissions: string[]) => {
+			if (uiStateKey && writeUiState) {
+				writeUiState(uiStateKey, { deferredSubmissions: submissions });
+			}
+		},
+		[uiStateKey, writeUiState],
+	);
+	const handleComposerSubmit = useCallback(
+		(text: string) => {
+			if (!historySubmissionBlocked) {
+				handleSubmit(text);
+				return;
+			}
+			const trimmed = text.trim();
+			if (!trimmed) return;
+			const next = [...pendingHistorySubmissionsRef.current, trimmed];
+			pendingHistorySubmissionsRef.current = next;
+			persistDeferredHistorySubmissions(next);
+			clearDraft();
+		},
+		[
+			clearDraft,
+			handleSubmit,
+			historySubmissionBlocked,
+			persistDeferredHistorySubmissions,
+		],
+	);
+	useEffect(() => {
+		if (historySubmissionBlocked || running) return;
+		const [first, ...rest] = pendingHistorySubmissionsRef.current;
+		if (!first) return;
+		pendingHistorySubmissionsRef.current = [];
+		persistDeferredHistorySubmissions([]);
+		handleSubmit(first);
+		for (const message of rest) handleFollowUp(message);
+	}, [
+		handleFollowUp,
+		handleSubmit,
+		historySubmissionBlocked,
+		persistDeferredHistorySubmissions,
+		running,
+	]);
 
 	useEffect(() => {
 		if (controllerId) onRuntimeBusyChange?.(controllerId, runtimeBusy);
@@ -247,43 +297,22 @@ function ChatPageImpl({
 		refreshHistoryIfStale(active, activeTurnSessionId);
 	}, [active, activeTurnSessionId, refreshHistoryIfStale]);
 
+	// 输入框要显示 Pi 真实使用的模型与推理强度，而不是占位文案；
+	// 每个会话在首次激活时读取一次 agent 状态。
+	const loadedModelSessionRef = useRef<string | null>(null);
+	useEffect(() => {
+		if (!active) return;
+		if (loadedModelSessionRef.current === session.id) return;
+		loadedModelSessionRef.current = session.id;
+		void loadModelOptions();
+	}, [active, session.id, loadModelOptions]);
+
 	const sessionUsageText = formatSessionUsage(sessionState);
-	/* oxlint-disable react/refs -- TanStack Virtual intentionally exposes imperative render refs/items; isolate that API at this boundary. */
-	const virtualItems = messageVirtualizer.getVirtualItems();
-	const virtualizedMessageList = (
-		<div ref={messageVirtualizer.containerRef} className="relative min-h-full">
-			{virtualItems.map((virtualMessage) => {
-				const message = messages[virtualMessage.index];
-				if (!message) return null;
-				return (
-					<div
-						key={virtualMessage.key}
-						data-index={virtualMessage.index}
-						ref={messageVirtualizer.measureElement}
-						className="absolute left-0 top-0 w-full"
-					>
-						{message.role === "user" ? (
-							<UserMessage message={message} />
-						) : (
-							<AssistantMessage
-								message={message}
-								onOpenFile={onOpenFile}
-								replyRunwayPx={
-									virtualMessage.index === messages.length - 1
-										? message.replyRunwayPx
-										: undefined
-								}
-							/>
-						)}
-					</div>
-				);
-			})}
-		</div>
-	);
-	/* oxlint-enable react/refs */
 
 	// Keep the session controller subscribed while its view is in the background.
 	if (!active) return null;
+	const viewportUiState =
+		uiStateKey && readUiState ? readUiState(uiStateKey) : initialUiState;
 
 	return (
 		<div className="flex h-full min-w-0 flex-col bg-background">
@@ -297,66 +326,21 @@ function ChatPageImpl({
 				sidebarCollapsed={sidebarCollapsed}
 			/>
 			<div className="relative flex min-h-0 flex-1 flex-col">
-				<div
-					ref={scrollRef}
-					onScroll={syncScrollState}
-					className="scrollbar-pro min-h-0 w-full flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
-				>
-					{effectiveLoadState === "loading" ? (
-						<ChatHistorySkeleton />
-					) : effectiveLoadState === "error" ? (
-						<div className="flex min-h-full flex-col pb-8 pt-4 sm:pb-10 sm:pt-6">
-							<ConversationColumn className="flex flex-1 items-center justify-center">
-								<ErrorState
-									title="会话加载失败"
-									description="暂时无法读取这段会话。"
-									onRetry={session.sessionPath ? retryHistory : onRetry}
-								/>
-							</ConversationColumn>
-						</div>
-					) : messages.length === 0 ? (
-						<div className="flex min-h-full flex-col pb-8 pt-4 sm:pb-10 sm:pt-6">
-							<EmptyConversation />
-						</div>
-					) : virtualized ? (
-						virtualizedMessageList
-					) : (
-						<div className="flex min-h-full flex-col pb-8 pt-4 sm:pb-10 sm:pt-6">
-							{messages.map((message, index) => (
-								<div
-									key={message.id}
-									ref={(node) => {
-										if (node) roundRefs.current.set(message.id, node);
-										else roundRefs.current.delete(message.id);
-									}}
-								>
-									{message.role === "user" ? (
-										<UserMessage message={message} />
-									) : (
-										<AssistantMessage
-											message={message}
-											onOpenFile={onOpenFile}
-											replyRunwayPx={
-												index === messages.length - 1
-													? message.replyRunwayPx
-													: undefined
-											}
-										/>
-									)}
-								</div>
-							))}
-						</div>
-					)}
-				</div>
-
-				{isScrolledFromTop ? (
-					<div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-background to-transparent" />
-				) : null}
-
-				<ConversationOutlineRail
-					entries={outlineEntries}
-					activeIndex={activeOutlineIndex}
-					onJumpToRound={handleOutlineJump}
+				<ChatConversationViewport
+					ref={conversationViewportRef}
+					active={active}
+					sessionId={session.id}
+					sessionPath={session.sessionPath}
+					messages={messages}
+					activeAssistantMessageId={activeAssistantMessageId}
+					effectiveLoadState={effectiveLoadState}
+					initialScrollTop={viewportUiState.scrollTop}
+					initialSticky={viewportUiState.sticky}
+					onScrollStateChange={persistScrollState}
+					runtimeScrollRef={scrollRef}
+					onOpenFile={onOpenFile}
+					onRetry={onRetry}
+					onRetryHistory={retryHistory}
 				/>
 
 				{/* -mt-4 让滚动区底部上探 16px，消息在输入卡背后被自然裁切；
@@ -366,38 +350,14 @@ function ChatPageImpl({
 					style={{ paddingRight: scrollbarWidth }}
 				>
 					<ConversationColumn className="relative">
-						{!isSticky && messages.length > 0 ? (
-							<div className="absolute -top-10 right-3 sm:right-4">
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<Button
-											type="button"
-											variant="secondary"
-											size="icon"
-											className="size-8 rounded-full border border-border/70 shadow-lg transition-[scale] duration-100 active:scale-[0.96]"
-											onClick={() => scrollToBottom(true)}
-											aria-label="滚动到最新消息"
-										>
-											<ArrowDown className="size-4" />
-										</Button>
-									</TooltipTrigger>
-									<TooltipContent>滚动到最新消息</TooltipContent>
-								</Tooltip>
-							</div>
-						) : null}
+						<ChatPendingQueue items={pendingUsers} />
 						<ChatComposer
 							value={draft}
 							onChange={setDraft}
-							onSubmit={handleSubmit}
-							onSteer={activeTurnGeneration === null ? undefined : handleSteer}
-							onFollowUp={
-								activeTurnGeneration === null ? undefined : handleFollowUp
-							}
-							disabled={
-								(runtimeBusy && !running) ||
-								effectiveLoadState !== "ready" ||
-								historyPending
-							}
+							onSubmit={handleComposerSubmit}
+							onSteer={running ? handleSteer : undefined}
+							onFollowUp={running ? handleFollowUp : undefined}
+							disabled={false}
 							running={running}
 							onStop={handleStop}
 							pendingSteering={pendingSteering}
@@ -409,6 +369,7 @@ function ChatPageImpl({
 							modelError={modelError}
 							modelDisabled={modelChanging || runtimeBusy || historyPending}
 							onModelMenuOpen={() => void loadModelOptions()}
+							onModelRefresh={() => void loadModelOptions(true)}
 							onModelChange={handleModelChange}
 							thinkingLevels={thinkingLevels}
 							selectedThinkingLevel={selectedThinkingLevel}

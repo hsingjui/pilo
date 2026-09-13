@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PanelLeft } from "lucide-react";
 import { ChatComposer } from "@/components/chat/chat-composer";
+import { PiLogo } from "@/components/pi-logo";
 import {
 	PI_THINKING_LEVELS,
 	runtimeErrorMessage,
@@ -9,12 +10,19 @@ import {
 } from "@/lib/pi-runtime";
 import {
 	getCachedProjectPiModels,
+	hydrateProjectPiModels,
+	isProjectPiModelsStale,
 	refreshProjectPiModels,
+	subscribeProjectPiModels,
 } from "@/lib/pi-models";
 import { cn } from "@/lib/utils";
 import { IS_MACOS } from "@/components/title-bar";
 import type { Project } from "@/lib/projects";
 import { Button } from "@/ui";
+
+function modelKey(model: PiModel | null): string | null {
+	return model ? `${model.provider}\0${model.id}` : null;
+}
 
 export function NewChatLanding({
 	onStartSession,
@@ -39,47 +47,122 @@ export function NewChatLanding({
 	const cachedModels = projectId ? getCachedProjectPiModels(projectId) : null;
 	const [draft, setDraft] = useState("");
 	const [models, setModels] = useState<PiModel[]>(cachedModels?.models ?? []);
-	const [selectedModel, setSelectedModel] = useState<PiModel | null>(null);
+	const [selectedModel, setSelectedModel] = useState<PiModel | null>(
+		cachedModels?.defaultModel ?? null,
+	);
 	const [selectedThinkingLevel, setSelectedThinkingLevel] =
-		useState<PiThinkingLevel | null>(null);
+		useState<PiThinkingLevel | null>(
+			cachedModels?.defaultThinkingLevel ?? null,
+		);
 	const [modelLoadState, setModelLoadState] = useState<
 		"idle" | "loading" | "ready" | "error"
 	>(cachedModels ? "ready" : "idle");
 	const [modelError, setModelError] = useState<string | null>(null);
 	const modelRequestRef = useRef(0);
 	const modelLoadingRef = useRef(false);
+	const modelSelectionDirtyRef = useRef(false);
+	const thinkingSelectionDirtyRef = useRef(false);
+	const selectedModelKeyRef = useRef(
+		modelKey(cachedModels?.defaultModel ?? null),
+	);
 
-	const loadModels = useCallback(async () => {
-		if (!projectId || modelLoadingRef.current) return;
-		const requestId = ++modelRequestRef.current;
-		modelLoadingRef.current = true;
-		setModelLoadState("loading");
-		setModelError(null);
-		try {
-			const result = await refreshProjectPiModels(projectId);
-			if (modelRequestRef.current !== requestId) return;
-			setModels(result.models);
-			setModelLoadState("ready");
-		} catch (error) {
-			if (modelRequestRef.current !== requestId) return;
-			setModelError(runtimeErrorMessage(error));
-			setModelLoadState("error");
-		} finally {
-			if (modelRequestRef.current === requestId) {
-				modelLoadingRef.current = false;
+	const applyModelSnapshot = useCallback(
+		(snapshot: NonNullable<ReturnType<typeof getCachedProjectPiModels>>) => {
+			setModels(snapshot.models);
+			if (!modelSelectionDirtyRef.current) {
+				selectedModelKeyRef.current = modelKey(snapshot.defaultModel);
+				setSelectedModel(snapshot.defaultModel);
+				if (!thinkingSelectionDirtyRef.current) {
+					setSelectedThinkingLevel(snapshot.defaultThinkingLevel);
+				}
+			} else {
+				const selectedKey = selectedModelKeyRef.current;
+				const refreshedSelectedModel = selectedKey
+					? snapshot.models.find((model) => modelKey(model) === selectedKey)
+					: null;
+				if (refreshedSelectedModel) {
+					setSelectedModel(refreshedSelectedModel);
+					if (!thinkingSelectionDirtyRef.current) {
+						setSelectedThinkingLevel(
+							refreshedSelectedModel.defaultThinkingLevel ?? null,
+						);
+					}
+				}
 			}
-		}
+			setModelLoadState("ready");
+			setModelError(null);
+		},
+		[
+			setModelError,
+			setModelLoadState,
+			setModels,
+			setSelectedModel,
+			setSelectedThinkingLevel,
+		],
+	);
+
+	const loadModels = useCallback(
+		async (force = false) => {
+			if (!projectId || modelLoadingRef.current) return;
+			const cached = getCachedProjectPiModels(projectId);
+			if (!force && cached && !isProjectPiModelsStale(cached)) {
+				applyModelSnapshot(cached);
+				return;
+			}
+			const requestId = ++modelRequestRef.current;
+			modelLoadingRef.current = true;
+			if (force || !cached) setModelLoadState("loading");
+			setModelError(null);
+			try {
+				const result = await refreshProjectPiModels(projectId);
+				if (modelRequestRef.current !== requestId) return;
+				applyModelSnapshot(result);
+			} catch (error) {
+				if (modelRequestRef.current !== requestId) return;
+				setModelError(runtimeErrorMessage(error));
+				setModelLoadState(cached ? "ready" : "error");
+			} finally {
+				if (modelRequestRef.current === requestId) {
+					modelLoadingRef.current = false;
+				}
+			}
+		},
+		[applyModelSnapshot, projectId, setModelError, setModelLoadState],
+	);
+
+	/* oxlint-disable react/set-state-in-effect -- Changing project identity intentionally resets the draft run configuration to that project's cached Pi defaults. */
+	useEffect(() => {
+		modelSelectionDirtyRef.current = false;
+		thinkingSelectionDirtyRef.current = false;
+		const cached = projectId ? getCachedProjectPiModels(projectId) : null;
+		setModels(cached?.models ?? []);
+		selectedModelKeyRef.current = modelKey(cached?.defaultModel ?? null);
+		setSelectedModel(cached?.defaultModel ?? null);
+		setSelectedThinkingLevel(cached?.defaultThinkingLevel ?? null);
+		setModelLoadState(cached ? "ready" : "idle");
+		setModelError(null);
 	}, [projectId]);
+	/* oxlint-enable react/set-state-in-effect */
 
 	useEffect(() => {
 		if (!projectId) return;
-		const timer = window.setTimeout(() => void loadModels(), 0);
+		const unsubscribe = subscribeProjectPiModels(projectId, applyModelSnapshot);
+		void hydrateProjectPiModels()
+			.then(() => {
+				const cached = getCachedProjectPiModels(projectId);
+				if (cached) applyModelSnapshot(cached);
+				if (!cached || isProjectPiModelsStale(cached)) void loadModels();
+			})
+			.catch((error) => {
+				console.warn("Failed to hydrate Pi models", error);
+				void loadModels();
+			});
 		return () => {
-			window.clearTimeout(timer);
+			unsubscribe();
 			modelRequestRef.current += 1;
 			modelLoadingRef.current = false;
 		};
-	}, [loadModels, projectId]);
+	}, [applyModelSnapshot, loadModels, projectId]);
 
 	return (
 		<div className="relative flex h-full min-w-0 flex-col">
@@ -108,19 +191,9 @@ export function NewChatLanding({
 			)}
 			<div className="flex min-h-0 flex-1 items-center justify-center overflow-auto px-4">
 				<div className="flex flex-col items-center justify-center gap-3 text-center">
-					<svg viewBox="0 0 800 800" className="h-16 w-16" aria-hidden="true">
-						<path
-							className="fill-foreground"
-							fillRule="evenodd"
-							d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
-						/>
-						<path
-							className="fill-foreground"
-							d="M517.36 400H634.72V634.72H517.36Z"
-						/>
-					</svg>
+					<PiLogo className="h-16 w-16 text-foreground" />
 					<h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-						{projectAvailable ? "今天想做点什么？" : "先添加一个项目"}
+						今天想做点什么？
 					</h1>
 				</div>
 			</div>
@@ -132,29 +205,28 @@ export function NewChatLanding({
 					onSubmit={(prompt) =>
 						onStartSession(prompt, selectedModel, selectedThinkingLevel)
 					}
-					disabled={!projectAvailable}
+					disabled={false}
 					models={models}
 					selectedModel={selectedModel}
 					modelLoading={modelLoadState === "loading"}
 					modelError={modelError}
 					modelDisabled={!projectAvailable || !project}
-					showDefaultModelOption
-					onModelMenuOpen={() => {
-						if (modelLoadState === "idle" || modelLoadState === "error") {
-							void loadModels();
-						}
+					onModelMenuOpen={() => void loadModels()}
+					onModelRefresh={() => void loadModels(true)}
+					onModelChange={(model) => {
+						modelSelectionDirtyRef.current = true;
+						thinkingSelectionDirtyRef.current = false;
+						selectedModelKeyRef.current = modelKey(model);
+						setSelectedModel(model);
+						setSelectedThinkingLevel(model?.defaultThinkingLevel ?? null);
 					}}
-					onModelChange={setSelectedModel}
-					thinkingLevels={PI_THINKING_LEVELS}
+					thinkingLevels={selectedModel?.thinkingLevels ?? PI_THINKING_LEVELS}
 					selectedThinkingLevel={selectedThinkingLevel}
 					thinkingDisabled={!projectAvailable || !project}
-					showDefaultThinkingOption
-					onThinkingChange={setSelectedThinkingLevel}
-					placeholder={
-						projectAvailable
-							? undefined
-							: "请先在设置 → 项目中添加 Local、WSL 或 SSH 项目"
-					}
+					onThinkingChange={(level) => {
+						thinkingSelectionDirtyRef.current = true;
+						setSelectedThinkingLevel(level);
+					}}
 				/>
 			</div>
 		</div>

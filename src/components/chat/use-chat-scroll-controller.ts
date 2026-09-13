@@ -6,31 +6,28 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import type { VirtualizerHandle } from "virtua";
 
-import type { ChatMessage } from "@/lib/conversation-types";
-import { buildConversationOutline } from "@/lib/conversation-outline";
-import {
-	getOutlineIndexForMessageIndex,
-	shouldVirtualizeChatMessages,
-} from "@/lib/chat-virtualization";
+import { useChatStickyScroll } from "@/components/chat/use-chat-sticky-scroll";
+import { useChatVirtualPadding } from "@/components/chat/use-chat-virtual-padding";
 import {
 	logChatPerformanceInstructions,
 	recordChatPageRender,
 	recordScrollEvent,
 	recordVirtualChange,
 } from "@/lib/chat-performance";
-import { useChatVirtualPadding } from "@/components/chat/use-chat-virtual-padding";
+import { getOutlineIndexForMessageIndex } from "@/lib/chat-virtualization";
+import { buildConversationOutline } from "@/lib/conversation-outline";
+import type { ChatMessage } from "@/lib/conversation-types";
 
-const CHAT_VIRTUAL_OVERSCAN = 6;
-const CHAT_VIRTUAL_SCROLL_PADDING_PX = 16;
+const CHAT_OUTLINE_READING_OFFSET_PX = 72;
+const OUTLINE_JUMP_TOLERANCE_PX = 2;
+const OUTLINE_JUMP_MAX_CORRECTIONS = 3;
 
 type UseChatScrollControllerOptions = {
 	active: boolean;
 	sessionId: string;
-	sessionPath?: string;
 	messages: ChatMessage[];
-	baseMessages: ChatMessage[];
 	activeAssistantMessageId: string | null;
 	effectiveLoadState: "ready" | "loading" | "error";
 	initialScrollTop?: number;
@@ -41,9 +38,7 @@ type UseChatScrollControllerOptions = {
 export function useChatScrollController({
 	active,
 	sessionId,
-	sessionPath,
 	messages,
-	baseMessages,
 	activeAssistantMessageId,
 	effectiveLoadState,
 	initialScrollTop = 0,
@@ -61,59 +56,15 @@ export function useChatScrollController({
 		[outlineRevision],
 	);
 	/* oxlint-enable react-hooks/exhaustive-deps */
-	const scrollRef = useRef<HTMLDivElement>(null);
-	const scrollPositionRef = useRef(initialScrollTop);
-	const restoreScrollPendingRef = useRef(
-		!initialSticky && initialScrollTop > 0,
-	);
-	const roundRefs = useRef(new Map<string, HTMLDivElement>());
-	const messagesRef = useRef(messages);
-	useLayoutEffect(() => {
-		messagesRef.current = messages;
-	}, [messages]);
+
+	const virtualizerRef = useRef<VirtualizerHandle>(null);
 	const virtualPadding = useChatVirtualPadding();
-	const virtualized =
-		active &&
-		effectiveLoadState === "ready" &&
-		shouldVirtualizeChatMessages(messages.length);
-	recordChatPageRender(sessionId, messages.length, virtualized);
-	const getVirtualMessageKey = useCallback(
-		(index: number) =>
-			`${sessionId}:${messagesRef.current[index]?.id ?? index}`,
-		[sessionId],
-	);
-	const estimateVirtualMessageSize = useCallback(
-		(index: number) => (messagesRef.current[index]?.role === "user" ? 84 : 184),
-		[],
-	);
-	/* oxlint-disable-next-line react/incompatible-library -- TanStack Virtual intentionally owns imperative measurement and scroll functions; keep the virtualizer local to this hook. */
-	const messageVirtualizer = useVirtualizer({
-		count: messages.length,
-		getScrollElement: () => scrollRef.current,
-		estimateSize: estimateVirtualMessageSize,
-		getItemKey: getVirtualMessageKey,
-		overscan: CHAT_VIRTUAL_OVERSCAN,
-		paddingStart: virtualPadding.start,
-		paddingEnd: virtualPadding.end,
-		scrollPaddingStart: CHAT_VIRTUAL_SCROLL_PADDING_PX,
-		useAnimationFrameWithResizeObserver: true,
-		directDomUpdates: true,
-		onChange: (instance, sync) => {
-			const range = instance.range;
-			recordVirtualChange({
-				sync,
-				startIndex: range?.startIndex ?? null,
-				endIndex: range?.endIndex ?? null,
-				totalSize: instance.getTotalSize(),
-			});
-		},
-		enabled: virtualized,
-	});
-	const stickyRef = useRef(initialSticky);
-	const onScrollStateChangeRef = useRef(onScrollStateChange);
-	onScrollStateChangeRef.current = onScrollStateChange;
+	const itemOffsetDeltaRef = useRef(virtualPadding.start);
+	const pendingOutlineJumpRef = useRef<{
+		messageIndex: number;
+		attempts: number;
+	} | null>(null);
 	const scrollSyncFrameRef = useRef<number | null>(null);
-	const [isSticky, setIsSticky] = useState(initialSticky);
 	const isScrolledFromTopRef = useRef(initialScrollTop > 16);
 	const [isScrolledFromTop, setIsScrolledFromTop] = useState(
 		initialScrollTop > 16,
@@ -124,79 +75,128 @@ export function useChatScrollController({
 	const activeOutlineIndexRef = useRef(activeOutlineIndex);
 	activeOutlineIndexRef.current = activeOutlineIndex;
 
-	const syncScrollState = useCallback(() => {
-		recordScrollEvent();
-		const viewport = scrollRef.current;
+	const virtualized =
+		active && effectiveLoadState === "ready" && messages.length > 0;
+	const {
+		scrollRef,
+		scrollElement,
+		scrollElementRef,
+		isSticky,
+		initialScrollRestored,
+		handleScroll: handleStickyScroll,
+		scrollToBottom,
+		stopScroll,
+	} = useChatStickyScroll({
+		enabled: virtualized,
+		vlistRef: virtualizerRef,
+		itemCount: messages.length,
+		initialScrollTop,
+		initialSticky,
+		onScrollStateChange,
+	});
+	recordChatPageRender(sessionId, messages.length, virtualized);
+
+	const measureItemOffsetDelta = useCallback(() => {
+		const viewport = scrollElementRef.current;
+		const content = viewport?.firstElementChild;
+		if (!viewport || !(content instanceof HTMLElement)) {
+			itemOffsetDeltaRef.current = virtualPadding.start;
+			return;
+		}
+		itemOffsetDeltaRef.current =
+			content.getBoundingClientRect().top -
+			viewport.getBoundingClientRect().top +
+			viewport.scrollTop;
+	}, [scrollElementRef, virtualPadding.start]);
+
+	useLayoutEffect(() => {
+		if (!virtualized) return;
+		const viewport = scrollElementRef.current;
 		if (!viewport) return;
-		scrollPositionRef.current = viewport.scrollTop;
-		if (scrollSyncFrameRef.current !== null) return;
+		const measure = () => measureItemOffsetDelta();
+		measure();
+		const observer = new ResizeObserver(() => {
+			requestAnimationFrame(measure);
+		});
+		observer.observe(viewport);
+		return () => observer.disconnect();
+	}, [measureItemOffsetDelta, scrollElementRef, virtualized]);
 
-		scrollSyncFrameRef.current = requestAnimationFrame(() => {
-			scrollSyncFrameRef.current = null;
-			const currentViewport = scrollRef.current;
-			if (!currentViewport) return;
+	const syncScrollState = useCallback(
+		(offset?: number) => {
+			recordScrollEvent();
+			const viewport = scrollElementRef.current;
+			if (!viewport) return;
+			handleStickyScroll(offset ?? viewport.scrollTop);
+			if (scrollSyncFrameRef.current !== null) return;
 
-			const distanceFromBottom =
-				currentViewport.scrollHeight -
-				currentViewport.clientHeight -
-				currentViewport.scrollTop;
-			const nextSticky = distanceFromBottom <= 72;
-			if (stickyRef.current !== nextSticky) {
-				stickyRef.current = nextSticky;
-				setIsSticky(nextSticky);
-			}
-			onScrollStateChangeRef.current?.({
-				scrollTop: currentViewport.scrollTop,
-				sticky: nextSticky,
-			});
-			const nextScrolledFromTop = currentViewport.scrollTop > 16;
-			if (isScrolledFromTopRef.current !== nextScrolledFromTop) {
-				isScrolledFromTopRef.current = nextScrolledFromTop;
-				setIsScrolledFromTop(nextScrolledFromTop);
-			}
+			scrollSyncFrameRef.current = requestAnimationFrame(() => {
+				scrollSyncFrameRef.current = null;
+				const currentViewport = scrollElementRef.current;
+				if (!currentViewport) return;
 
-			if (outlineEntries.length === 0) {
-				if (activeOutlineIndexRef.current !== -1) {
-					activeOutlineIndexRef.current = -1;
-					setActiveOutlineIndex(-1);
+				const vlist = virtualizerRef.current;
+				const scrollOffset = vlist?.scrollOffset ?? currentViewport.scrollTop;
+				const scrollSize = vlist?.scrollSize ?? currentViewport.scrollHeight;
+				const viewportSize =
+					vlist?.viewportSize ?? currentViewport.clientHeight;
+				const nextScrolledFromTop = currentViewport.scrollTop > 16;
+				if (isScrolledFromTopRef.current !== nextScrolledFromTop) {
+					isScrolledFromTopRef.current = nextScrolledFromTop;
+					setIsScrolledFromTop(nextScrolledFromTop);
 				}
-				return;
-			}
-			if (distanceFromBottom <= 2) {
-				const nextIndex = outlineEntries.length - 1;
-				if (activeOutlineIndexRef.current !== nextIndex) {
-					activeOutlineIndexRef.current = nextIndex;
-					setActiveOutlineIndex(nextIndex);
+
+				if (vlist && messages.length > 0) {
+					const relativeStart = Math.max(
+						0,
+						scrollOffset - itemOffsetDeltaRef.current,
+					);
+					const startIndex = vlist.findItemIndex(relativeStart);
+					const endIndex = vlist.findItemIndex(relativeStart + viewportSize);
+					recordVirtualChange({
+						sync: true,
+						startIndex,
+						endIndex,
+						totalSize: scrollSize,
+					});
 				}
-				return;
-			}
-			const readingLine = currentViewport.scrollTop + 72;
-			if (virtualized) {
-				const readingItem =
-					messageVirtualizer.getVirtualItemForOffset(readingLine);
+
+				if (outlineEntries.length === 0) {
+					if (activeOutlineIndexRef.current !== -1) {
+						activeOutlineIndexRef.current = -1;
+						setActiveOutlineIndex(-1);
+					}
+					return;
+				}
+				const maxScrollOffset = scrollSize - viewportSize;
+				if (maxScrollOffset > 0 && scrollOffset >= maxScrollOffset - 2) {
+					const nextIndex = outlineEntries.length - 1;
+					if (activeOutlineIndexRef.current !== nextIndex) {
+						activeOutlineIndexRef.current = nextIndex;
+						setActiveOutlineIndex(nextIndex);
+					}
+					return;
+				}
+
+				const readingOffset = Math.max(
+					0,
+					scrollOffset -
+						itemOffsetDeltaRef.current +
+						CHAT_OUTLINE_READING_OFFSET_PX,
+				);
+				const messageIndex = vlist?.findItemIndex(readingOffset) ?? 0;
 				const nextIndex = getOutlineIndexForMessageIndex(
 					outlineEntries,
-					readingItem?.index ?? 0,
+					messageIndex,
 				);
 				if (activeOutlineIndexRef.current !== nextIndex) {
 					activeOutlineIndexRef.current = nextIndex;
 					setActiveOutlineIndex(nextIndex);
 				}
-				return;
-			}
-
-			let nextIndex = 0;
-			for (let index = 0; index < outlineEntries.length; index += 1) {
-				const row = roundRefs.current.get(outlineEntries[index].key);
-				if (!row || row.offsetTop > readingLine) break;
-				nextIndex = index;
-			}
-			if (activeOutlineIndexRef.current !== nextIndex) {
-				activeOutlineIndexRef.current = nextIndex;
-				setActiveOutlineIndex(nextIndex);
-			}
-		});
-	}, [messageVirtualizer, outlineEntries, virtualized]);
+			});
+		},
+		[handleStickyScroll, messages.length, outlineEntries, scrollElementRef],
+	);
 
 	useEffect(() => {
 		logChatPerformanceInstructions();
@@ -207,108 +207,92 @@ export function useChatScrollController({
 			if (scrollSyncFrameRef.current !== null) {
 				cancelAnimationFrame(scrollSyncFrameRef.current);
 			}
-			onScrollStateChangeRef.current?.({
-				scrollTop: scrollPositionRef.current,
-				sticky: stickyRef.current,
-			});
 		},
 		[],
 	);
 
-	const scrollToBottom = useCallback((smooth = true) => {
-		const viewport = scrollRef.current;
-		if (!viewport) return;
-		viewport.scrollTo({
-			top: viewport.scrollHeight,
-			behavior: smooth ? "smooth" : "auto",
+	const scrollMessageToTop = useCallback((messageIndex: number) => {
+		virtualizerRef.current?.scrollToIndex(messageIndex, {
+			align: "start",
+			offset: itemOffsetDeltaRef.current,
 		});
-		stickyRef.current = true;
-		setIsSticky(true);
 	}, []);
 
-	useEffect(() => {
-		if (!sessionId || !active) return;
-		const frame = requestAnimationFrame(() => {
-			if (stickyRef.current) scrollToBottom(false);
-			else scrollRef.current?.scrollTo({ top: scrollPositionRef.current });
-		});
-		return () => cancelAnimationFrame(frame);
-	}, [active, sessionId, scrollToBottom]);
-
-	useEffect(() => {
-		if (
-			!active ||
-			!restoreScrollPendingRef.current ||
-			effectiveLoadState !== "ready" ||
-			messages.length === 0
-		) {
-			return;
-		}
-		const frame = requestAnimationFrame(() => {
-			const viewport = scrollRef.current;
-			if (!viewport) return;
-			viewport.scrollTo({ top: scrollPositionRef.current });
-			restoreScrollPendingRef.current = false;
-			syncScrollState();
-		});
-		return () => cancelAnimationFrame(frame);
-	}, [active, effectiveLoadState, messages.length, syncScrollState]);
-
-	useEffect(() => {
-		if (!sessionPath || !stickyRef.current) return;
-		const frame = requestAnimationFrame(() => scrollToBottom(false));
-		return () => cancelAnimationFrame(frame);
-	}, [baseMessages, sessionPath, scrollToBottom]);
-
-	const lastMessage = messages[messages.length - 1];
-	const streamingMessage =
-		lastMessage?.role === "assistant" && lastMessage.streaming
-			? lastMessage
-			: null;
-	useEffect(() => {
-		if (!stickyRef.current || streamingMessage === null) return;
-		const frame = requestAnimationFrame(() => scrollToBottom(false));
-		return () => cancelAnimationFrame(frame);
-	}, [streamingMessage, scrollToBottom]);
+	const outlineJumpDrift = useCallback((messageIndex: number) => {
+		const vlist = virtualizerRef.current;
+		if (!vlist) return 0;
+		return Math.abs(
+			vlist.scrollOffset -
+				itemOffsetDeltaRef.current -
+				vlist.getItemOffset(messageIndex),
+		);
+	}, []);
 
 	const handleOutlineJump = useCallback(
 		(index: number) => {
 			const entry = outlineEntries[index];
-			const viewport = scrollRef.current;
-			if (!entry || !viewport) return;
-			stickyRef.current = false;
-			if (isSticky) setIsSticky(false);
+			if (!entry || !virtualizerRef.current) return;
+			stopScroll();
 			activeOutlineIndexRef.current = index;
 			setActiveOutlineIndex(index);
-
-			if (virtualized) {
-				messageVirtualizer.scrollToIndex(entry.messageIndex, {
-					align: "start",
-				});
-				return;
+			pendingOutlineJumpRef.current = {
+				messageIndex: entry.messageIndex,
+				attempts: 0,
+			};
+			scrollMessageToTop(entry.messageIndex);
+			if (outlineJumpDrift(entry.messageIndex) <= OUTLINE_JUMP_TOLERANCE_PX) {
+				pendingOutlineJumpRef.current = null;
 			}
-
-			const row = roundRefs.current.get(entry.key);
-			if (!row) return;
-			viewport.scrollTo({
-				top: Math.max(0, row.offsetTop - CHAT_VIRTUAL_SCROLL_PADDING_PX),
-				behavior: "smooth",
-			});
 		},
-		[isSticky, messageVirtualizer, outlineEntries, virtualized],
+		[outlineEntries, outlineJumpDrift, scrollMessageToTop, stopScroll],
 	);
+
+	const handleScrollEnd = useCallback(() => {
+		const pending = pendingOutlineJumpRef.current;
+		if (!pending) return;
+		if (
+			outlineJumpDrift(pending.messageIndex) <= OUTLINE_JUMP_TOLERANCE_PX ||
+			pending.attempts >= OUTLINE_JUMP_MAX_CORRECTIONS
+		) {
+			pendingOutlineJumpRef.current = null;
+			return;
+		}
+		pendingOutlineJumpRef.current = {
+			messageIndex: pending.messageIndex,
+			attempts: pending.attempts + 1,
+		};
+		scrollMessageToTop(pending.messageIndex);
+	}, [outlineJumpDrift, scrollMessageToTop]);
+
+	useEffect(() => {
+		const viewport = scrollElement;
+		if (!viewport) return;
+		const abandonPendingOutlineJump = () => {
+			pendingOutlineJumpRef.current = null;
+		};
+		const options = { passive: true } as const;
+		viewport.addEventListener("wheel", abandonPendingOutlineJump, options);
+		viewport.addEventListener("touchstart", abandonPendingOutlineJump, options);
+		viewport.addEventListener("keydown", abandonPendingOutlineJump, options);
+		return () => {
+			viewport.removeEventListener("wheel", abandonPendingOutlineJump);
+			viewport.removeEventListener("touchstart", abandonPendingOutlineJump);
+			viewport.removeEventListener("keydown", abandonPendingOutlineJump);
+		};
+	}, [scrollElement]);
 
 	return {
 		outlineEntries,
 		scrollRef,
-		roundRefs,
-		virtualized,
-		messageVirtualizer,
+		virtualizerRef,
+		virtualPadding,
 		isSticky,
+		initialScrollRestored,
 		isScrolledFromTop,
 		activeOutlineIndex,
 		syncScrollState,
 		scrollToBottom,
 		handleOutlineJump,
+		handleScrollEnd,
 	};
 }

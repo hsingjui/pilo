@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
 	BookOpen,
 	ChevronRight,
@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
+import { useChatExpansionState } from "@/components/chat/chat-expansion-state";
 import { summarizeAssistantActivity } from "@/lib/chat-activity-state";
 import { formatWorkDuration } from "@/lib/format-duration";
 import { usePreferences } from "@/lib/preferences-provider";
@@ -241,7 +242,7 @@ function ActivityProcessStep({
 	return (
 		<div
 			className={cn(
-				"flex min-h-7 w-full items-start gap-1.5 py-1 [content-visibility:auto] [contain-intrinsic-size:auto_32px]",
+				"flex min-h-7 w-full items-start gap-1.5 py-1",
 				PROCESS_TEXT_CLASS,
 			)}
 		>
@@ -328,14 +329,16 @@ function ToolDetail({ activity }: { activity: ToolCallActivity }) {
 
 function ToolCallActivityView({
 	activity,
+	expansionKey,
 	onOpenPath,
 }: {
 	activity: ToolCallActivity;
+	expansionKey: string;
 	onOpenPath?: (path: string) => void;
 }) {
 	const running = activity.status === "running";
 	// 详情默认收起（含运行中），点击行切换；key 含 status，完成后 remount 自动收起
-	const [open, setOpen] = useState(false);
+	const [open, setOpen] = useChatExpansionState(expansionKey, false);
 	const preview = toolPreview(activity);
 	const filePath = toolFilePath(activity);
 	const previewLabel = filePath ? fileBasename(filePath) : preview;
@@ -346,7 +349,7 @@ function ToolCallActivityView({
 		(activity.result !== undefined && activity.result !== null);
 
 	return (
-		<div className="w-full [content-visibility:auto] [contain-intrinsic-size:auto_32px]">
+		<div className="w-full">
 			<button
 				type="button"
 				className={cn(
@@ -427,11 +430,15 @@ function activityLabel(activity: AssistantActivity[], running: boolean) {
 export function AssistantActivityView({
 	activity,
 	streaming,
+	preserveExpanded = false,
+	expansionKey,
 	durationMs,
 	onOpenPath,
 }: {
 	activity: AssistantActivity[];
 	streaming: boolean;
+	preserveExpanded?: boolean;
+	expansionKey: string;
 	durationMs?: number;
 	onOpenPath?: (path: string) => void;
 }) {
@@ -442,10 +449,14 @@ export function AssistantActivityView({
 			? formatWorkDuration(durationMs)
 			: "";
 	const hasWorkSummary = Boolean(durationLabel);
-	const [workOpen, setWorkOpen] = useState(
-		streaming || !collapseCompletedActivity,
+	const [workOpen, setWorkOpen] = useChatExpansionState(
+		`${expansionKey}:work`,
+		streaming || preserveExpanded || !collapseCompletedActivity,
 	);
-	const [groupOpen, setGroupOpen] = useState(streaming);
+	const [groupOpen, setGroupOpen] = useChatExpansionState(
+		`${expansionKey}:group`,
+		streaming || preserveExpanded,
+	);
 	if (activity.length === 0) return null;
 
 	const group = (
@@ -482,6 +493,7 @@ export function AssistantActivityView({
 							<ToolCallActivityView
 								key={`${item.id}-${item.status}`}
 								activity={item}
+								expansionKey={`${expansionKey}:tool:${item.id}:${item.status}`}
 								onOpenPath={onOpenPath}
 							/>
 						),
@@ -492,7 +504,7 @@ export function AssistantActivityView({
 	);
 
 	return (
-		<div className="mb-1 mt-0.5 w-full text-muted-foreground [content-visibility:auto] [contain-intrinsic-size:auto_40px]">
+		<div className="mb-1 mt-0.5 w-full text-muted-foreground">
 			{hasWorkSummary ? (
 				<>
 					<button

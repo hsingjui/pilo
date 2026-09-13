@@ -23,7 +23,7 @@ export type ChatMessage =
 			replyRunwayPx?: number;
 			stopReason?: string;
 			errorMessage?: string;
-			completion?: "complete" | "interrupted";
+			completion?: "complete" | "interrupted" | "continued";
 	  };
 
 export type ConversationEventMeta = {
@@ -113,6 +113,7 @@ export type ConversationState = {
 	pendingUsers: Array<{
 		clientMessageId: string;
 		text: string;
+		timestampMs?: number;
 		queueKind?: "steer" | "follow_up";
 	}>;
 };

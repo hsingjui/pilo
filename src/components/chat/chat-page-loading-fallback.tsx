@@ -1,20 +1,18 @@
-import { ArrowUp, Bot, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
 
-import {
-	CHAT_COMPOSER_ATTACHMENT_BUTTON_CLASS_NAME,
-	CHAT_COMPOSER_RUN_CONFIG_TRIGGER_CLASS_NAME,
-	CHAT_COMPOSER_SEND_BUTTON_CLASS_NAME,
-	CHAT_COMPOSER_TEXTAREA_CLASS_NAME,
-	CHAT_COMPOSER_TOOLBAR_CLASS_NAME,
-	DEFAULT_CHAT_COMPOSER_PLACEHOLDER,
-	ChatComposerRoot,
-	ChatComposerSurface,
-} from "@/components/chat/chat-composer-frame";
+import type {
+	ChatUiState,
+	ChatUiStatePatch,
+} from "@/components/app/chat-ui-state-cache";
+import { ChatComposer } from "@/components/chat/chat-composer";
 import { ChatHistorySkeleton } from "@/components/chat/chat-history-skeleton";
-import type { ChatSession } from "@/components/chat/chat-page-utils";
+import {
+	formatTime,
+	type ChatSession,
+} from "@/components/chat/chat-page-utils";
+import { UserMessage } from "@/components/chat/chat-user-message";
 import { IS_MACOS, TRAFFIC_LIGHT_GUTTER } from "@/components/title-bar";
 import { cn } from "@/lib/utils";
-import { Button, Textarea } from "@/ui";
 
 function LoadingHeader({
 	session,
@@ -60,63 +58,39 @@ function LoadingHeader({
 	);
 }
 
-function LoadingComposer() {
+function LoadingComposer({
+	uiStateKey,
+	readUiState,
+	writeUiState,
+}: {
+	uiStateKey: string;
+	readUiState: (key: string) => ChatUiState;
+	writeUiState: (key: string, patch: ChatUiStatePatch) => void;
+}) {
+	const [draft, setDraft] = useState(() => readUiState(uiStateKey).draft);
+	const updateDraft = (value: string) => {
+		setDraft(value);
+		writeUiState(uiStateKey, { draft: value });
+	};
+	const deferSubmission = (value: string) => {
+		const trimmed = value.trim();
+		if (!trimmed) return;
+		const current = readUiState(uiStateKey);
+		writeUiState(uiStateKey, {
+			draft: "",
+			deferredSubmissions: [...current.deferredSubmissions, trimmed],
+		});
+		setDraft("");
+	};
+
 	return (
 		<div className="relative -mt-4 w-full shrink-0 pb-4 pr-2">
 			<div className="mx-auto w-full max-w-[46rem] px-3 sm:px-4">
-				<ChatComposerRoot>
-					<ChatComposerSurface>
-						<Textarea
-							value=""
-							readOnly
-							disabled
-							rows={2}
-							placeholder={DEFAULT_CHAT_COMPOSER_PLACEHOLDER}
-							className={CHAT_COMPOSER_TEXTAREA_CLASS_NAME}
-						/>
-						<div className={CHAT_COMPOSER_TOOLBAR_CLASS_NAME}>
-							<Button
-								type="button"
-								variant="ghost"
-								size="icon"
-								className={CHAT_COMPOSER_ATTACHMENT_BUTTON_CLASS_NAME}
-								aria-label="添加附件"
-								tabIndex={-1}
-							>
-								<Plus className="size-4" />
-							</Button>
-							<button
-								type="button"
-								disabled
-								tabIndex={-1}
-								aria-label="运行配置"
-								className={CHAT_COMPOSER_RUN_CONFIG_TRIGGER_CLASS_NAME}
-							>
-								<Bot className="size-4 shrink-0" />
-								<span className="block min-w-0 max-w-40 truncate text-left">
-									Pi 默认
-								</span>
-								<span
-									aria-hidden="true"
-									className="shrink-0 text-muted-foreground/60"
-								>
-									·
-								</span>
-								<span className="shrink-0">关闭</span>
-							</button>
-							<Button
-								type="button"
-								size="icon"
-								className={CHAT_COMPOSER_SEND_BUTTON_CLASS_NAME}
-								aria-label="发送"
-								disabled
-								tabIndex={-1}
-							>
-								<ArrowUp className="size-4" />
-							</Button>
-						</div>
-					</ChatComposerSurface>
-				</ChatComposerRoot>
+				<ChatComposer
+					value={draft}
+					onChange={updateDraft}
+					onSubmit={deferSubmission}
+				/>
 			</div>
 		</div>
 	);
@@ -124,13 +98,34 @@ function LoadingComposer() {
 
 export function ChatPageLoadingFallback({
 	session,
+	initialMessage,
+	uiStateKey,
+	readUiState,
+	writeUiState,
 	reserveWindowControls = false,
 	sidebarCollapsed = false,
 }: {
 	session: ChatSession;
+	initialMessage?: string;
+	uiStateKey: string;
+	readUiState: (key: string) => ChatUiState;
+	writeUiState: (key: string, patch: ChatUiStatePatch) => void;
 	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
 }) {
+	const pendingMessage = useMemo(
+		() =>
+			initialMessage
+				? {
+						id: `${session.id}-initial-fallback`,
+						role: "user" as const,
+						text: initialMessage,
+						time: formatTime(),
+					}
+				: null,
+		[initialMessage, session.id],
+	);
+
 	return (
 		<div className="flex h-full min-w-0 flex-col bg-background">
 			<LoadingHeader
@@ -140,9 +135,20 @@ export function ChatPageLoadingFallback({
 			/>
 			<div className="relative flex min-h-0 flex-1 flex-col">
 				<div className="scrollbar-pro min-h-0 w-full flex-1 overflow-hidden [scrollbar-gutter:stable]">
-					<ChatHistorySkeleton />
+					{session.sessionPath ? (
+						<ChatHistorySkeleton />
+					) : pendingMessage ? (
+						/* 新会话没有历史可读，直接复用正式消息组件呈现真实首帧。 */
+						<div className="pt-4 sm:pt-6">
+							<UserMessage message={pendingMessage} recordRender={false} />
+						</div>
+					) : null}
 				</div>
-				<LoadingComposer />
+				<LoadingComposer
+					uiStateKey={uiStateKey}
+					readUiState={readUiState}
+					writeUiState={writeUiState}
+				/>
 			</div>
 		</div>
 	);

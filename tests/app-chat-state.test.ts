@@ -16,6 +16,10 @@ import {
 	type OpenChat,
 } from "../src/components/app/app-chat-state.ts";
 import type { ChatSession } from "../src/components/chat/chat-page-utils.ts";
+import {
+	routeInitialDeferredSubmissions,
+	shouldDeferSubmissionUntilHistoryReady,
+} from "../src/components/chat/chat-submission-state.ts";
 import type { Project } from "../src/lib/projects.ts";
 import type { SessionIndexEntry } from "../src/lib/sessions.ts";
 
@@ -249,6 +253,7 @@ test("chat UI state cache preserves draft and scroll state across session rekey"
 		draft: "unsent draft",
 		scrollTop: 480,
 		sticky: false,
+		deferredSubmissions: ["queued while loading"],
 	});
 
 	cache.rekey(draftKey, sessionKey);
@@ -257,6 +262,7 @@ test("chat UI state cache preserves draft and scroll state across session rekey"
 		draft: "unsent draft",
 		scrollTop: 480,
 		sticky: false,
+		deferredSubmissions: ["queued while loading"],
 	});
 	assert.equal(cache.size(), 1);
 });
@@ -272,4 +278,37 @@ test("chat UI state cache stays bounded and uses LRU eviction", () => {
 	assert.equal(cache.get("a").draft, "a");
 	assert.equal(cache.get("b").draft, "");
 	assert.equal(cache.get("c").draft, "c");
+});
+
+test("fallback submissions for existing sessions wait for history", () => {
+	assert.deepEqual(
+		routeInitialDeferredSubmissions("/sessions/existing.jsonl", ["one", "two"]),
+		{ runtime: [], history: ["one", "two"] },
+	);
+	assert.equal(
+		shouldDeferSubmissionUntilHistoryReady(
+			"/sessions/existing.jsonl",
+			"loading",
+		),
+		true,
+	);
+	assert.equal(
+		shouldDeferSubmissionUntilHistoryReady("/sessions/existing.jsonl", "error"),
+		true,
+	);
+	assert.equal(
+		shouldDeferSubmissionUntilHistoryReady("/sessions/existing.jsonl", "ready"),
+		false,
+	);
+});
+
+test("fallback submissions for new sessions can go directly to runtime", () => {
+	assert.deepEqual(routeInitialDeferredSubmissions(undefined, ["one", "two"]), {
+		runtime: ["one", "two"],
+		history: [],
+	});
+	assert.equal(
+		shouldDeferSubmissionUntilHistoryReady(undefined, "loading"),
+		false,
+	);
 });

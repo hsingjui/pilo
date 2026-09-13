@@ -6,7 +6,7 @@ import { getReplyRunwayHeight } from "@/lib/chat-scroll-state";
 import { toConversationAction } from "@/lib/conversation-runtime-adapter";
 import { coalesceConversationActions } from "@/lib/conversation-reducer";
 import type { ConversationAction } from "@/lib/conversation-types";
-import { notifyReplyCompleted } from "@/lib/desktop-notifications";
+import { notifyAgentResult } from "@/lib/desktop-notifications";
 import {
 	runtimeErrorMessage,
 	type PiAgentState,
@@ -20,8 +20,18 @@ type ChatSessionClient = ReturnType<typeof createChatSessionClient>;
 type ActiveTurn = {
 	sessionId: string;
 	sessionTitle: string;
+	projectId: string;
+	notificationSessionId: string;
 	generation: number | null;
 	promptSent: boolean;
+	queueReady: boolean;
+};
+
+type BufferedQueuedMessage = {
+	turn: ActiveTurn;
+	clientMessageId: string;
+	text: string;
+	queued: "steer" | "follow_up";
 };
 
 function isFrameBatchedAction(action: ConversationAction) {
@@ -37,6 +47,7 @@ type UseChatRuntimeOptions = {
 	client: ChatSessionClient;
 	activeTurnSessionIdRef?: { current: string | null };
 	initialMessage?: string;
+	initialQueuedMessages?: readonly string[];
 	desktopNotifications: boolean;
 	onSessionIdentified?: (sessionId: string) => void;
 	dispatchConversationBatch: (
@@ -56,6 +67,7 @@ export function useChatRuntime({
 	client,
 	activeTurnSessionIdRef,
 	initialMessage,
+	initialQueuedMessages = [],
 	desktopNotifications,
 	onSessionIdentified,
 	dispatchConversationBatch,
@@ -71,6 +83,8 @@ export function useChatRuntime({
 		identifiedRef.current = onSessionIdentified;
 	}, [onSessionIdentified]);
 	const activeTurnRef = useRef<ActiveTurn | null>(null);
+	const bufferedQueuedMessagesRef = useRef<BufferedQueuedMessage[]>([]);
+	const initialQueuedMessagesRef = useRef(initialQueuedMessages);
 	const runtimeListenerRef = useRef<ReturnType<typeof client.listen> | null>(
 		null,
 	);
@@ -81,9 +95,6 @@ export function useChatRuntime({
 	const [activeTurnSessionId, setActiveTurnSessionId] = useState<string | null>(
 		null,
 	);
-	const [activeTurnGeneration, setActiveTurnGeneration] = useState<
-		number | null
-	>(null);
 	const [pendingSteering, setPendingSteering] = useState(0);
 	const [pendingFollowUps, setPendingFollowUps] = useState(0);
 
@@ -152,19 +163,38 @@ export function useChatRuntime({
 		[],
 	);
 
+	const discardBufferedQueuedMessages = useCallback(
+		(turn: ActiveTurn) => {
+			const discarded = bufferedQueuedMessagesRef.current.filter(
+				(item) => item.turn === turn,
+			);
+			if (discarded.length === 0) return;
+			bufferedQueuedMessagesRef.current =
+				bufferedQueuedMessagesRef.current.filter((item) => item.turn !== turn);
+			for (const item of discarded) {
+				dispatchConversation(turn.sessionId, {
+					type: "local_user_queue_failed",
+					clientMessageId: item.clientMessageId,
+				});
+			}
+			restoreDraftIfEmpty(discarded.map((item) => item.text).join("\n\n"));
+		},
+		[dispatchConversation, restoreDraftIfEmpty],
+	);
+
 	const releaseActiveTurn = useCallback(
 		(turn: ActiveTurn) => {
 			if (activeTurnRef.current !== turn) return;
+			discardBufferedQueuedMessages(turn);
 			activeTurnRef.current = null;
 			if (activeTurnSessionIdRef?.current === turn.sessionId) {
 				activeTurnSessionIdRef.current = null;
 			}
 			setActiveTurnSessionId(null);
-			setActiveTurnGeneration(null);
 			setPendingSteering(0);
 			setPendingFollowUps(0);
 		},
-		[activeTurnSessionIdRef],
+		[activeTurnSessionIdRef, discardBufferedQueuedMessages],
 	);
 
 	const failActiveTurn = useCallback(
@@ -175,9 +205,18 @@ export function useChatRuntime({
 				message,
 				timestampMs: Date.now(),
 			});
+			if (desktopNotifications) {
+				void notifyAgentResult({
+					status: "error",
+					projectId: turn.projectId,
+					sessionId: turn.notificationSessionId,
+					sessionTitle: turn.sessionTitle,
+					errorMessage: message,
+				});
+			}
 			releaseActiveTurn(turn);
 		},
-		[dispatchConversation, releaseActiveTurn],
+		[desktopNotifications, dispatchConversation, releaseActiveTurn],
 	);
 
 	const handleRuntimeEvent = useCallback(
@@ -202,19 +241,39 @@ export function useChatRuntime({
 
 			switch (event.type) {
 				case "assistant_message_end":
+					if (event.stopReason === "error" || event.errorMessage?.trim()) {
+						if (desktopNotifications) {
+							void notifyAgentResult({
+								status: "error",
+								projectId: turn.projectId,
+								sessionId: turn.notificationSessionId,
+								sessionTitle: turn.sessionTitle,
+								errorMessage: event.errorMessage ?? undefined,
+							});
+						}
+						void refreshSessionState().catch(() => undefined);
+						releaseActiveTurn(turn);
+						break;
+					}
 					if (
 						desktopNotifications &&
 						event.stopReason !== "aborted" &&
-						event.stopReason !== "error" &&
 						!event.errorMessage?.trim()
 					) {
-						notifyReplyCompleted(turn.sessionTitle);
+						void notifyAgentResult({
+							status: "completed",
+							projectId: turn.projectId,
+							sessionId: turn.notificationSessionId,
+							sessionTitle: turn.sessionTitle,
+						});
 					}
 					void refreshSessionState().catch(() => undefined);
 					releaseActiveTurn(turn);
 					break;
 				case "user_message_start":
-					requestAnimationFrame(() => scrollToBottom(false));
+					// The local submit / queue path already positioned the viewport. This
+					// runtime echo can arrive after the reader has started scrolling up;
+					// forcing bottom here would re-enable sticky follow and yank the page.
 					break;
 				case "queue_update":
 					setPendingSteering(event.steering.length);
@@ -254,7 +313,6 @@ export function useChatRuntime({
 			queueRuntimeAction,
 			refreshSessionState,
 			releaseActiveTurn,
-			scrollToBottom,
 		],
 	);
 
@@ -283,6 +341,40 @@ export function useChatRuntime({
 		};
 	}, [client, failActiveTurn]);
 
+	const sendQueuedMessage = useCallback(
+		(item: BufferedQueuedMessage) => {
+			const request =
+				item.queued === "steer"
+					? client.sendPiSteer(item.text)
+					: client.sendPiFollowUp(item.text);
+			void request.catch((error) => {
+				dispatchConversation(item.turn.sessionId, {
+					type: "local_user_queue_failed",
+					clientMessageId: item.clientMessageId,
+				});
+				restoreDraftIfEmpty(item.text);
+				toast.error(
+					item.queued === "steer" ? "无法调整当前回复" : "无法排队发送",
+					{ description: runtimeErrorMessage(error) },
+				);
+			});
+		},
+		[client, dispatchConversation, restoreDraftIfEmpty],
+	);
+
+	const flushBufferedQueuedMessages = useCallback(
+		(turn: ActiveTurn) => {
+			const ready = bufferedQueuedMessagesRef.current.filter(
+				(item) => item.turn === turn,
+			);
+			if (ready.length === 0) return;
+			bufferedQueuedMessagesRef.current =
+				bufferedQueuedMessagesRef.current.filter((item) => item.turn !== turn);
+			for (const item of ready) sendQueuedMessage(item);
+		},
+		[sendQueuedMessage],
+	);
+
 	const beginTurn = useCallback(
 		async (text: string, appendUserMessage = true) => {
 			const trimmed = text.trim();
@@ -299,8 +391,11 @@ export function useChatRuntime({
 			const turn: ActiveTurn = {
 				sessionId: session.id,
 				sessionTitle: session.title,
+				projectId: session.projectRecord.id,
+				notificationSessionId: session.id,
 				generation: null,
 				promptSent: false,
+				queueReady: false,
 			};
 			activeTurnRef.current = turn;
 			if (activeTurnSessionIdRef) {
@@ -337,14 +432,19 @@ export function useChatRuntime({
 				const snapshot = await client.ensure();
 				if (activeTurnRef.current !== turn) return;
 				turn.generation = snapshot.generation;
-				setActiveTurnGeneration(snapshot.generation);
 				const agentState = await client.getPiAgentState();
 				if (activeTurnRef.current !== turn) return;
-				if (agentState.sessionId) identifiedRef.current?.(agentState.sessionId);
+				if (agentState.sessionId) {
+					turn.notificationSessionId = agentState.sessionId;
+					identifiedRef.current?.(agentState.sessionId);
+				}
 				await prepareRuntimeConfiguration(agentState);
 				if (activeTurnRef.current !== turn) return;
 				turn.promptSent = true;
 				await client.sendPiPrompt(trimmed);
+				if (activeTurnRef.current !== turn) return;
+				turn.queueReady = true;
+				flushBufferedQueuedMessages(turn);
 			} catch (error) {
 				failActiveTurn(turn, runtimeErrorMessage(error));
 			}
@@ -355,10 +455,12 @@ export function useChatRuntime({
 			client,
 			dispatchConversationActions,
 			failActiveTurn,
+			flushBufferedQueuedMessages,
 			prepareRuntimeConfiguration,
 			scrollRef,
 			scrollToBottom,
 			session.id,
+			session.projectRecord.id,
 			session.title,
 		],
 	);
@@ -374,12 +476,7 @@ export function useChatRuntime({
 		(text: string, queued: "steer" | "follow_up") => {
 			const trimmed = text.trim();
 			const turn = activeTurnRef.current;
-			if (
-				!trimmed ||
-				!turn ||
-				turn.sessionId !== session.id ||
-				turn.generation === null
-			) {
+			if (!trimmed || !turn || turn.sessionId !== session.id) {
 				return;
 			}
 
@@ -392,31 +489,20 @@ export function useChatRuntime({
 				timestampMs: Date.now(),
 			});
 			clearDraft();
-			requestAnimationFrame(() => scrollToBottom(false));
 
-			const request =
-				queued === "steer"
-					? client.sendPiSteer(trimmed)
-					: client.sendPiFollowUp(trimmed);
-			void request.catch((error) => {
-				dispatchConversation(turn.sessionId, {
-					type: "local_user_queue_failed",
-					clientMessageId: messageId,
-				});
-				restoreDraftIfEmpty(trimmed);
-				toast.error(queued === "steer" ? "无法调整当前回复" : "无法排队发送", {
-					description: runtimeErrorMessage(error),
-				});
-			});
+			const item: BufferedQueuedMessage = {
+				turn,
+				clientMessageId: messageId,
+				text: trimmed,
+				queued,
+			};
+			if (turn.generation === null || !turn.queueReady) {
+				bufferedQueuedMessagesRef.current.push(item);
+				return;
+			}
+			sendQueuedMessage(item);
 		},
-		[
-			clearDraft,
-			client,
-			dispatchConversation,
-			restoreDraftIfEmpty,
-			scrollToBottom,
-			session.id,
-		],
+		[clearDraft, dispatchConversation, sendQueuedMessage, session.id],
 	);
 
 	const handleSteer = useCallback(
@@ -452,16 +538,33 @@ export function useChatRuntime({
 	]);
 
 	useEffect(() => {
-		if (!initialMessage || activeTurnSessionId !== null) return;
-		const key = `${session.id}:${initialMessage}`;
-		if (sentInitialPromptsRef.current.has(key)) return;
-		sentInitialPromptsRef.current.add(key);
-		void beginTurn(initialMessage, false);
-	}, [activeTurnSessionId, beginTurn, initialMessage, session.id]);
+		if (activeTurnSessionId !== null) return;
+		const deferred = initialQueuedMessagesRef.current;
+		initialQueuedMessagesRef.current = [];
+
+		if (initialMessage) {
+			const key = `${session.id}:${initialMessage}`;
+			if (sentInitialPromptsRef.current.has(key)) return;
+			sentInitialPromptsRef.current.add(key);
+			void beginTurn(initialMessage, false);
+			for (const message of deferred) queueMessage(message, "follow_up");
+			return;
+		}
+
+		const [first, ...rest] = deferred;
+		if (!first) return;
+		void beginTurn(first);
+		for (const message of rest) queueMessage(message, "follow_up");
+	}, [
+		activeTurnSessionId,
+		beginTurn,
+		initialMessage,
+		queueMessage,
+		session.id,
+	]);
 
 	return {
 		activeTurnSessionId,
-		activeTurnGeneration,
 		pendingSteering,
 		pendingFollowUps,
 		running: activeTurnSessionId === session.id,

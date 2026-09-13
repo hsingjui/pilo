@@ -1,12 +1,6 @@
-export const CHAT_VIRTUALIZATION_THRESHOLD = 40;
-
 export type OutlineIndexedEntry = {
 	messageIndex: number;
 };
-
-export function shouldVirtualizeChatMessages(messageCount: number) {
-	return messageCount >= CHAT_VIRTUALIZATION_THRESHOLD;
-}
 
 export function getOutlineIndexForMessageIndex(
 	entries: readonly OutlineIndexedEntry[],

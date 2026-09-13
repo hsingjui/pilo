@@ -4,6 +4,7 @@ export type ChatUiState = {
 	draft: string;
 	scrollTop: number;
 	sticky: boolean;
+	deferredSubmissions: string[];
 };
 
 export type ChatUiStatePatch = Partial<ChatUiState>;
@@ -12,6 +13,7 @@ const EMPTY_CHAT_UI_STATE: ChatUiState = {
 	draft: "",
 	scrollTop: 0,
 	sticky: true,
+	deferredSubmissions: [],
 };
 
 export type ChatUiStateCache = ReturnType<typeof createChatUiStateCache>;

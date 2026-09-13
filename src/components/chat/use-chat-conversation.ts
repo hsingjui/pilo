@@ -155,22 +155,15 @@ export function useChatConversation({
 				});
 				onHistoryMetadata(history);
 				const replayStartedAt = performance.now();
+				setHistoryProgress("正在恢复历史消息");
+				// Replay cooperatively so large JSONL histories do not monopolize the main
+				// thread, but do not publish every partial state to React. Mounting Markdown
+				// and re-measuring the virtual list after each 400-event batch was materially
+				// slower than the reducer itself and made the loading skeleton linger.
 				const finalState = await replayConversationEventsBatched(
 					history.events,
 					conversationReducerContext,
-					{
-						maxEventsPerBatch: 400,
-						onBatch: (state) => {
-							if (cancelled) return;
-							setConversationStates((current) => ({
-								...current,
-								[session.id]: state,
-							}));
-							setHistoryProgress(
-								`正在恢复历史消息 ${state.messages.length} 条`,
-							);
-						},
-					},
+					{ maxEventsPerBatch: 400 },
 				);
 				if (cancelled) return;
 				setConversationStates((current) => ({
@@ -211,6 +204,7 @@ export function useChatConversation({
 
 	const conversationState = conversationStates[session.id];
 	const messages = conversationState?.messages ?? baseMessages;
+	const pendingUsers = conversationState?.pendingUsers ?? [];
 	const activeAssistantMessageId =
 		conversationState?.active?.assistantMessageId ?? null;
 	const messagesRef = useRef(messages);
@@ -302,6 +296,7 @@ export function useChatConversation({
 	return {
 		baseMessages,
 		messages,
+		pendingUsers,
 		activeAssistantMessageId,
 		draft,
 		setDraft,

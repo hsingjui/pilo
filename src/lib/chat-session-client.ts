@@ -4,6 +4,7 @@ import {
 	requestPiRpc,
 	type PiAgentState,
 	type PiModel,
+	type PiModelCycleResult,
 	type PiSessionSnapshot,
 	type PiSessionStats,
 	type PiThinkingLevel,
@@ -62,6 +63,7 @@ export function createChatSessionClient(
 				provider: model.provider,
 				modelId: model.id,
 			}),
+		cyclePiModel: () => rpc<PiModelCycleResult | null>({ type: "cycle_model" }),
 		setPiThinkingLevel: (level: PiThinkingLevel) =>
 			rpc<void>({ type: "set_thinking_level", level }),
 		setPiSessionName: (name: string) =>

@@ -60,20 +60,18 @@ type ChatComposerProps = {
 	pendingSteering?: number;
 	pendingFollowUps?: number;
 	statusText?: string;
-	modelLabel?: string;
 	models?: readonly PiModel[];
 	selectedModel?: PiModel | null;
 	modelLoading?: boolean;
 	modelError?: string | null;
 	modelDisabled?: boolean;
-	showDefaultModelOption?: boolean;
 	onModelMenuOpen?: () => void;
+	onModelRefresh?: () => void;
 	onModelChange?: (model: PiModel | null) => void;
 	thinkingLevels?: readonly PiThinkingLevel[];
 	selectedThinkingLevel?: PiThinkingLevel | null;
 	thinkingLoading?: boolean;
 	thinkingDisabled?: boolean;
-	showDefaultThinkingOption?: boolean;
 	onThinkingMenuOpen?: () => void;
 	onThinkingChange?: (level: PiThinkingLevel | null) => void;
 	suggestions?: readonly ComposerSuggestion[];
@@ -99,20 +97,18 @@ export function ChatComposer({
 	pendingSteering = 0,
 	pendingFollowUps = 0,
 	statusText = "",
-	modelLabel = "Pi 默认",
 	models = EMPTY_MODELS,
 	selectedModel = null,
 	modelLoading = false,
 	modelError = null,
 	modelDisabled = false,
-	showDefaultModelOption = false,
 	onModelMenuOpen,
+	onModelRefresh,
 	onModelChange,
 	thinkingLevels = EMPTY_THINKING_LEVELS,
 	selectedThinkingLevel = null,
 	thinkingLoading = false,
 	thinkingDisabled = false,
-	showDefaultThinkingOption = false,
 	onThinkingMenuOpen,
 	onThinkingChange,
 	suggestions = DEFAULT_SUGGESTIONS,
@@ -368,20 +364,18 @@ export function ChatComposer({
 					</Tooltip>
 
 					<ComposerRunConfig
-						modelLabel={modelLabel}
 						models={models}
 						selectedModel={selectedModel}
 						modelLoading={modelLoading}
 						modelError={modelError}
 						modelDisabled={modelDisabled}
-						showDefaultModelOption={showDefaultModelOption}
 						onModelMenuOpen={onModelMenuOpen}
+						onModelRefresh={onModelRefresh}
 						onModelChange={onModelChange}
 						thinkingLevels={thinkingLevels}
 						selectedThinkingLevel={selectedThinkingLevel}
 						thinkingLoading={thinkingLoading}
 						thinkingDisabled={thinkingDisabled}
-						showDefaultThinkingOption={showDefaultThinkingOption}
 						onThinkingMenuOpen={onThinkingMenuOpen}
 						onThinkingChange={onThinkingChange}
 					/>
