@@ -1,5 +1,6 @@
 mod chat_sessions;
 pub mod commands;
+mod credentials;
 mod events;
 mod git;
 mod parallel;
@@ -13,7 +14,7 @@ mod session_index;
 mod session_snapshot;
 mod session_watcher;
 #[allow(dead_code)]
-mod ssh;
+pub(crate) mod ssh;
 mod storage;
 mod terminal;
 pub mod workspace;
@@ -57,4 +58,8 @@ impl Default for PiloRuntime {
             terminals: Mutex::new(TerminalManager::default()),
         }
     }
+}
+
+pub(crate) fn print_askpass_password_from_environment() -> bool {
+    ssh::print_askpass_password_from_environment()
 }

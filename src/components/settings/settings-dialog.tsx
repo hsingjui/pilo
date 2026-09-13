@@ -32,8 +32,8 @@ import {
 	Switch,
 } from "@/ui";
 import { SettingsRow, SettingsSection } from "./compact-layout";
+import { ConnectionsSettings } from "./connections-settings";
 import {
-	ConnectionsSettings,
 	DiagnosticsSettings,
 	PiSettings,
 	SessionSettings,

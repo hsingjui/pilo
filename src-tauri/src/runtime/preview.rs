@@ -1,11 +1,11 @@
 use std::{collections::HashMap, net::TcpListener, process::Stdio, time::Duration};
 
 use serde::Serialize;
-use tokio::{process::Command, time::sleep};
+use tokio::time::sleep;
 
 use crate::domain::{ConnectionKind, Workspace};
 
-use super::{server_client::ServerManager, ssh::ssh_tunnel_args};
+use super::{server_client::ServerManager, ssh::ssh_tunnel_command};
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,11 +43,9 @@ impl PreviewManager {
         }
 
         let (local_port, tunnel) = match &workspace.connection.kind {
-            ConnectionKind::Ssh { target } => {
+            ConnectionKind::Ssh { .. } => {
                 let local_port = reserve_local_port()?;
-                let args = ssh_tunnel_args(target, local_port, remote_port)?;
-                let mut child = Command::new("ssh")
-                    .args(args)
+                let mut child = ssh_tunnel_command(&workspace.connection, local_port, remote_port)?
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())

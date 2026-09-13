@@ -43,7 +43,10 @@ export function sshConfigConnection(host: string): Connection {
 	return {
 		id: `ssh:config:${host}`,
 		name: `SSH · ${host}`,
-		kind: { type: "ssh", target: { type: "config_host", host } },
+		kind: {
+			type: "ssh",
+			target: { type: "config_host", host, authMethod: "agent" },
+		},
 	};
 }
 

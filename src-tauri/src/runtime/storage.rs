@@ -141,6 +141,72 @@ pub fn upsert_connection(db: &SqliteConnection, connection: &Connection) -> Resu
     Ok(())
 }
 
+pub fn list_connections(db: &SqliteConnection) -> Result<Vec<Connection>, String> {
+    let mut statement = db
+        .prepare("SELECT id,name,kind_json FROM connections ORDER BY name COLLATE NOCASE ASC")
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            let kind_json: String = row.get(2)?;
+            let kind = serde_json::from_str(&kind_json).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    2,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
+            Ok(Connection {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                kind,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
+pub fn get_connection(db: &SqliteConnection, id: &str) -> Result<Option<Connection>, String> {
+    db.query_row(
+        "SELECT id,name,kind_json FROM connections WHERE id=?1",
+        params![id],
+        |row| {
+            let kind_json: String = row.get(2)?;
+            let kind = serde_json::from_str(&kind_json).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    2,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
+            Ok(Connection {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                kind,
+            })
+        },
+    )
+    .optional()
+    .map_err(|error| error.to_string())
+}
+
+pub fn connection_workspace_count(db: &SqliteConnection, id: &str) -> Result<u64, String> {
+    db.query_row(
+        "SELECT COUNT(*) FROM workspaces WHERE connection_id=?1",
+        params![id],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|count| count as u64)
+    .map_err(|error| error.to_string())
+}
+
+pub fn remove_connection(db: &SqliteConnection, id: &str) -> Result<bool, String> {
+    Ok(db
+        .execute("DELETE FROM connections WHERE id=?1", params![id])
+        .map_err(|error| error.to_string())?
+        > 0)
+}
+
 pub fn upsert_workspace(db: &SqliteConnection, workspace: &Workspace) -> Result<(), String> {
     upsert_connection(db, &workspace.connection)?;
     let metadata_json =

@@ -4,21 +4,27 @@ mod runtime;
 use runtime::{
     PiloRuntime,
     commands::{
-        chat_session_send_rpc, chat_session_start, chat_session_stop, parallel_agent_create,
-        parallel_agent_list, parallel_agent_remove, parallel_agent_send, parallel_agent_stop,
-        runtime_abort_pi, runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc,
-        runtime_stop_pi, session_history, session_list, session_reconcile, session_update_ui_state,
-        session_watch_start, session_watch_stop, terminal_close, terminal_resize, terminal_write,
-        workspace_add, workspace_discover, workspace_fs_mkdir, workspace_fs_read_dir,
-        workspace_fs_read_file, workspace_fs_remove, workspace_fs_rename, workspace_fs_search,
-        workspace_fs_stat, workspace_fs_write_file, workspace_git_diff, workspace_git_status,
-        workspace_list, workspace_preview_close, workspace_preview_open, workspace_preview_ports,
-        workspace_refresh, workspace_remove, workspace_start_pi, workspace_terminal_open,
-        workspace_touch, wsl_list_distributions,
+        chat_session_send_rpc, chat_session_start, chat_session_stop, local_connection_test,
+        parallel_agent_create, parallel_agent_list, parallel_agent_remove, parallel_agent_send,
+        parallel_agent_stop, runtime_abort_pi, runtime_get_pi_state, runtime_restart_pi,
+        runtime_send_rpc, runtime_stop_pi, session_history, session_list, session_reconcile,
+        session_update_ui_state, session_watch_start, session_watch_stop, ssh_connection_list,
+        ssh_connection_remove, ssh_connection_save, ssh_connection_test, terminal_close,
+        terminal_resize, terminal_write, workspace_add, workspace_discover, workspace_fs_mkdir,
+        workspace_fs_read_dir, workspace_fs_read_file, workspace_fs_remove, workspace_fs_rename,
+        workspace_fs_search, workspace_fs_stat, workspace_fs_write_file, workspace_git_diff,
+        workspace_git_status, workspace_list, workspace_preview_close, workspace_preview_open,
+        workspace_preview_ports, workspace_refresh, workspace_remove, workspace_start_pi,
+        workspace_terminal_open, workspace_touch, wsl_connection_list, wsl_connection_test,
+        wsl_list_distributions,
     },
 };
 use std::{fs::OpenOptions, io::Write};
 use tauri_plugin_window_state::StateFlags;
+
+pub fn handle_ssh_askpass() -> bool {
+    runtime::print_askpass_password_from_environment()
+}
 
 fn persisted_window_state_flags() -> StateFlags {
     StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED
@@ -62,6 +68,13 @@ pub fn run() {
             chat_session_start,
             chat_session_send_rpc,
             chat_session_stop,
+            ssh_connection_list,
+            ssh_connection_save,
+            ssh_connection_remove,
+            ssh_connection_test,
+            wsl_connection_list,
+            wsl_connection_test,
+            local_connection_test,
             wsl_list_distributions,
             workspace_list,
             workspace_add,

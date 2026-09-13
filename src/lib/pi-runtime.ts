@@ -19,14 +19,18 @@ export type RuntimeErrorCode =
 	| "process_exit"
 	| "process_wait";
 
+export type SshAuthMethod = "agent" | "password" | "key";
+
 export type SshTarget =
-	| { type: "config_host"; host: string }
+	| { type: "config_host"; host: string; authMethod: SshAuthMethod }
 	| {
 			type: "direct";
 			hostname: string;
 			port: number | null;
 			user: string | null;
 			identityFile: string | null;
+			authMethod: SshAuthMethod;
+			proxyJump: string | null;
 	  };
 
 export type ConnectionKind =

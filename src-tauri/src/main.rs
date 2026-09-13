@@ -2,6 +2,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    if pilo_lib::handle_ssh_askpass() {
+        return;
+    }
     if std::env::args().any(|arg| arg == "--pilo-server") {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()

@@ -20,9 +20,9 @@ use tokio::{
     task::JoinHandle,
 };
 
-use crate::domain::{Connection, ConnectionKind, SshTarget};
+use crate::domain::{Connection, ConnectionKind};
 
-use super::ssh::{ssh_base_args, wrap_posix_script};
+use super::ssh::{ssh_command, wrap_posix_script};
 
 const SERVER_REMOTE_DIR: &str = ".cache/pilo/server-v3";
 const REQUEST_CAPACITY: usize = 256;
@@ -620,6 +620,13 @@ impl ServerManager {
         Ok(value)
     }
 
+    pub async fn test_connection(&self, connection: &Connection) -> Result<Value, String> {
+        let client = ServerClient::connect(connection).await?;
+        let result = client.request("server.ping", Value::Null).await;
+        client.stop().await;
+        result
+    }
+
     pub async fn request_with_binary(
         &self,
         connection: &Connection,
@@ -696,15 +703,13 @@ async fn spawn_wsl_server(connection: &Connection) -> Result<SpawnedServer, Stri
 }
 
 async fn spawn_ssh_server(connection: &Connection) -> Result<SpawnedServer, String> {
-    let ConnectionKind::Ssh { target } = &connection.kind else {
+    let ConnectionKind::Ssh { target: _ } = &connection.kind else {
         return Err("SSH pilo-server spawn requires an SSH connection".to_owned());
     };
-    let server_target = probe_ssh_target(target).await?;
+    let server_target = probe_ssh_target(connection).await?;
     let remote_path = deploy_server(connection, server_target).await?;
-    let mut args = ssh_base_args(target)?;
-    args.push(wrap_posix_script(&format!("exec \"$HOME/{remote_path}\"")));
-    let mut command = Command::new("ssh");
-    command.args(args);
+    let mut command = ssh_command(connection)?;
+    command.arg(wrap_posix_script(&format!("exec \"$HOME/{remote_path}\"")));
     spawn_piped_server(command, &connection.name)
 }
 
@@ -779,18 +784,15 @@ async fn probe_wsl_target(distro: &str) -> Result<ServerTarget, String> {
     Ok(target)
 }
 
-async fn probe_ssh_target(target: &SshTarget) -> Result<ServerTarget, String> {
-    let mut args = ssh_base_args(target)?;
-    args.push(wrap_posix_script(
+async fn probe_ssh_target(connection: &Connection) -> Result<ServerTarget, String> {
+    let mut command = ssh_command(connection)?;
+    command.arg(wrap_posix_script(
         "printf '%s\\t%s\\n' \"$(uname -s)\" \"$(uname -m)\"",
     ));
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(15),
-        Command::new("ssh").args(args).stdin(Stdio::null()).output(),
-    )
-    .await
-    .map_err(|_| "timed out while probing remote pilo-server platform".to_owned())?
-    .map_err(|error| format!("failed to probe remote pilo-server platform: {error}"))?;
+    let output = tokio::time::timeout(std::time::Duration::from_secs(15), command.output())
+        .await
+        .map_err(|_| "timed out while probing remote pilo-server platform".to_owned())?
+        .map_err(|error| format!("failed to probe remote pilo-server platform: {error}"))?;
     if !output.status.success() {
         return Err(format!(
             "failed to probe remote pilo-server platform: {}",
@@ -910,11 +912,9 @@ async fn deploy_server(connection: &Connection, target: ServerTarget) -> Result<
     );
     let mut command = match &connection.kind {
         ConnectionKind::Wsl { .. } => unreachable!("WSL deployment is handled before upload"),
-        ConnectionKind::Ssh { target } => {
-            let mut args = ssh_base_args(target)?;
-            args.push(wrap_posix_script(&install_script));
-            let mut command = Command::new("ssh");
-            command.args(args);
+        ConnectionKind::Ssh { .. } => {
+            let mut command = ssh_command(connection)?;
+            command.arg(wrap_posix_script(&install_script));
             command
         }
         ConnectionKind::Local => return Ok(String::new()),
