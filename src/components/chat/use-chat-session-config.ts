@@ -3,8 +3,11 @@ import { toast } from "sonner";
 
 import { createChatSessionClient } from "@/lib/chat-session-client";
 import {
-	cacheProjectPiModels,
 	getCachedProjectPiModels,
+	hydrateProjectPiModels,
+	isProjectPiModelsStale,
+	refreshProjectPiModels,
+	subscribeProjectPiModels,
 } from "@/lib/pi-models";
 import {
 	PI_THINKING_LEVELS,
@@ -33,9 +36,17 @@ export function useChatSessionConfig({
 	client,
 	onSessionChanged,
 }: UseChatSessionConfigOptions) {
-	const [modelOptions, setModelOptions] = useState<PiModel[]>([]);
+	const initialCachedModels = getCachedProjectPiModels(
+		session.projectRecord.id,
+	);
+	const [modelOptions, setModelOptions] = useState<PiModel[]>(
+		initialCachedModels?.models ?? [],
+	);
 	const [selectedModel, setSelectedModel] = useState<PiModel | null>(
-		session.initialModel ?? null,
+		session.initialModel ??
+			(session.sessionPath
+				? null
+				: (initialCachedModels?.defaultModel ?? null)),
 	);
 	const [modelLoadState, setModelLoadState] = useState<
 		"idle" | "loading" | "ready" | "error"
@@ -43,9 +54,19 @@ export function useChatSessionConfig({
 	const [modelError, setModelError] = useState<string | null>(null);
 	const [modelChanging, setModelChanging] = useState(false);
 	const modelRequestRef = useRef(0);
-	const [thinkingLevels, setThinkingLevels] = useState<PiThinkingLevel[]>([]);
+	const modelSelectionDirtyRef = useRef(false);
+	const thinkingSelectionDirtyRef = useRef(false);
+	const [thinkingLevels, setThinkingLevels] = useState<PiThinkingLevel[]>(
+		(session.initialModel ?? initialCachedModels?.defaultModel)
+			?.thinkingLevels ?? [],
+	);
 	const [selectedThinkingLevel, setSelectedThinkingLevel] =
-		useState<PiThinkingLevel>(session.initialThinkingLevel ?? "off");
+		useState<PiThinkingLevel>(
+			session.initialThinkingLevel ??
+				(session.sessionPath
+					? "off"
+					: (initialCachedModels?.defaultThinkingLevel ?? "off")),
+		);
 	const [thinkingLoading, setThinkingLoading] = useState(false);
 	const [thinkingChanging, setThinkingChanging] = useState(false);
 	const [sessionState, setSessionState] =
@@ -56,23 +77,86 @@ export function useChatSessionConfig({
 	useEffect(() => {
 		void session.id;
 		modelRequestRef.current += 1;
+		modelSelectionDirtyRef.current = false;
+		thinkingSelectionDirtyRef.current = false;
 		setSessionState(null);
-		setModelOptions(
-			getCachedProjectPiModels(session.projectRecord.id)?.models ?? [],
-		);
-		setSelectedModel(session.initialModel ?? null);
+		const cached = getCachedProjectPiModels(session.projectRecord.id);
+		const initialModel =
+			session.initialModel ??
+			(session.sessionPath ? null : (cached?.defaultModel ?? null));
+		setModelOptions(cached?.models ?? []);
+		setSelectedModel(initialModel);
 		setModelLoadState("idle");
 		setModelError(null);
 		setModelChanging(false);
-		setThinkingLevels([]);
-		setSelectedThinkingLevel(session.initialThinkingLevel ?? "off");
+		setThinkingLevels(initialModel?.thinkingLevels ?? []);
+		setSelectedThinkingLevel(
+			session.initialThinkingLevel ??
+				(session.sessionPath ? "off" : (cached?.defaultThinkingLevel ?? "off")),
+		);
 	}, [
 		session.id,
 		session.initialModel,
 		session.initialThinkingLevel,
 		session.projectRecord.id,
+		session.sessionPath,
 	]);
 	/* oxlint-enable react/set-state-in-effect, react/exhaustive-effect-dependencies */
+
+	useEffect(() => {
+		const projectId = session.projectRecord.id;
+		const unsubscribe = subscribeProjectPiModels(projectId, (snapshot) => {
+			setModelOptions(snapshot.models);
+			if (
+				!session.sessionPath &&
+				!session.initialModel &&
+				!modelSelectionDirtyRef.current
+			) {
+				setSelectedModel(snapshot.defaultModel);
+				setThinkingLevels(snapshot.defaultModel?.thinkingLevels ?? []);
+			}
+			if (
+				!session.sessionPath &&
+				!session.initialThinkingLevel &&
+				!thinkingSelectionDirtyRef.current &&
+				snapshot.defaultThinkingLevel
+			) {
+				setSelectedThinkingLevel(snapshot.defaultThinkingLevel);
+			}
+			setModelLoadState("ready");
+			setModelError(null);
+		});
+		void hydrateProjectPiModels()
+			.then(() => {
+				const cached = getCachedProjectPiModels(projectId);
+				if (!cached) return;
+				setModelOptions(cached.models);
+				if (
+					!session.sessionPath &&
+					!session.initialModel &&
+					!modelSelectionDirtyRef.current
+				) {
+					setSelectedModel(cached.defaultModel);
+					setThinkingLevels(cached.defaultModel?.thinkingLevels ?? []);
+				}
+				if (
+					!session.sessionPath &&
+					!session.initialThinkingLevel &&
+					!thinkingSelectionDirtyRef.current &&
+					cached.defaultThinkingLevel
+				) {
+					setSelectedThinkingLevel(cached.defaultThinkingLevel);
+				}
+				setModelLoadState("ready");
+			})
+			.catch((error) => console.warn("Failed to hydrate Pi models", error));
+		return unsubscribe;
+	}, [
+		session.initialModel,
+		session.initialThinkingLevel,
+		session.projectRecord.id,
+		session.sessionPath,
+	]);
 
 	const applyHistoryMetadata = useCallback(
 		(result: SessionHistory) => {
@@ -135,61 +219,102 @@ export function useChatSessionConfig({
 		sessionState?.name,
 	]);
 
-	const loadModelOptions = useCallback(async () => {
-		if (modelLoadState === "loading" || modelChanging) return;
-		const requestId = ++modelRequestRef.current;
-		setModelLoadState("loading");
-		setModelError(null);
-		if (session.sessionPath) {
-			const cached =
-				getCachedProjectPiModels(session.projectRecord.id)?.models ?? [];
-			const options =
-				selectedModel &&
-				!cached.some(
-					(model) =>
-						model.provider === selectedModel.provider &&
-						model.id === selectedModel.id,
-				)
-					? [selectedModel, ...cached]
-					: cached;
-			setModelOptions(options);
-			setThinkingLevels(PI_THINKING_LEVELS);
-			setModelLoadState("ready");
-			return;
-		}
-		try {
-			await client.ensure();
-			const [state, result, thinking] = await Promise.all([
-				client.getPiAgentState(),
-				client.getAvailablePiModels(),
-				client.getAvailablePiThinkingLevels(),
-			]);
-			if (modelRequestRef.current !== requestId) return;
-			setSelectedModel(state.model);
-			setModelOptions(result.models);
-			cacheProjectPiModels(session.projectRecord.id, result.models);
-			setSelectedThinkingLevel(state.thinkingLevel);
-			setThinkingLevels(thinking.levels);
-			setModelLoadState("ready");
-		} catch (error) {
-			if (modelRequestRef.current !== requestId) return;
-			setModelError(runtimeErrorMessage(error));
-			setModelLoadState("error");
-		}
-	}, [
-		client,
-		modelChanging,
-		modelLoadState,
-		selectedModel,
-		session.projectRecord.id,
-		session.sessionPath,
-	]);
+	const loadModelOptions = useCallback(
+		async (force = false) => {
+			if (modelLoadState === "loading" || modelChanging) return;
+			const projectId = session.projectRecord.id;
+			const cached = getCachedProjectPiModels(projectId);
+			if (session.sessionPath) {
+				const options =
+					selectedModel &&
+					!cached?.models.some(
+						(model) =>
+							model.provider === selectedModel.provider &&
+							model.id === selectedModel.id,
+					)
+						? [selectedModel, ...(cached?.models ?? [])]
+						: (cached?.models ?? []);
+				setModelOptions(options);
+				setThinkingLevels(selectedModel?.thinkingLevels ?? PI_THINKING_LEVELS);
+				setModelLoadState("ready");
+				if (force || !cached || isProjectPiModelsStale(cached)) {
+					setModelError(null);
+					if (force || !cached) setModelLoadState("loading");
+					void refreshProjectPiModels(projectId)
+						.catch((error) => {
+							setModelError(runtimeErrorMessage(error));
+						})
+						.finally(() => setModelLoadState("ready"));
+				}
+				return;
+			}
+			if (!force && cached && !isProjectPiModelsStale(cached)) {
+				setModelOptions(cached.models);
+				if (!session.initialModel && !modelSelectionDirtyRef.current) {
+					setSelectedModel(cached.defaultModel);
+					setThinkingLevels(cached.defaultModel?.thinkingLevels ?? []);
+				}
+				if (
+					!session.initialThinkingLevel &&
+					!thinkingSelectionDirtyRef.current &&
+					cached.defaultThinkingLevel
+				) {
+					setSelectedThinkingLevel(cached.defaultThinkingLevel);
+				}
+				setModelLoadState("ready");
+				setModelError(null);
+				return;
+			}
+			const requestId = ++modelRequestRef.current;
+			if (force || !cached) setModelLoadState("loading");
+			setModelError(null);
+			try {
+				const result = await refreshProjectPiModels(projectId);
+				if (modelRequestRef.current !== requestId) return;
+				setModelOptions(result.models);
+				if (!session.initialModel && !modelSelectionDirtyRef.current) {
+					setSelectedModel(result.defaultModel);
+					setThinkingLevels(result.defaultModel?.thinkingLevels ?? []);
+				}
+				if (
+					!session.initialThinkingLevel &&
+					!thinkingSelectionDirtyRef.current &&
+					result.defaultThinkingLevel
+				) {
+					setSelectedThinkingLevel(result.defaultThinkingLevel);
+				}
+				setModelLoadState("ready");
+			} catch (error) {
+				if (modelRequestRef.current !== requestId) return;
+				setModelError(runtimeErrorMessage(error));
+				setModelLoadState(cached ? "ready" : "error");
+			}
+		},
+		[
+			modelChanging,
+			modelLoadState,
+			selectedModel,
+			session.initialModel,
+			session.initialThinkingLevel,
+			session.projectRecord.id,
+			session.sessionPath,
+		],
+	);
 
 	const handleModelChange = useCallback(
 		(model: PiModel | null) => {
 			if (!model || modelChanging) return;
+			modelSelectionDirtyRef.current = true;
+			thinkingSelectionDirtyRef.current = false;
 			if (session.sessionPath) {
+				const cached = getCachedProjectPiModels(session.projectRecord.id);
 				setSelectedModel(model);
+				setThinkingLevels(model.thinkingLevels ?? PI_THINKING_LEVELS);
+				setSelectedThinkingLevel(
+					model.defaultThinkingLevel ??
+						cached?.defaultThinkingLevel ??
+						selectedThinkingLevel,
+				);
 				setModelError(null);
 				return;
 			}
@@ -223,13 +348,20 @@ export function useChatSessionConfig({
 				}
 			})();
 		},
-		[client, modelChanging, selectedModel, session.sessionPath],
+		[
+			client,
+			modelChanging,
+			selectedModel,
+			selectedThinkingLevel,
+			session.projectRecord.id,
+			session.sessionPath,
+		],
 	);
 
 	const loadThinkingLevels = useCallback(async () => {
 		if (thinkingLoading || thinkingChanging) return;
 		if (session.sessionPath) {
-			setThinkingLevels(PI_THINKING_LEVELS);
+			setThinkingLevels(selectedModel?.thinkingLevels ?? PI_THINKING_LEVELS);
 			return;
 		}
 		setThinkingLoading(true);
@@ -248,11 +380,18 @@ export function useChatSessionConfig({
 		} finally {
 			setThinkingLoading(false);
 		}
-	}, [client, session.sessionPath, thinkingChanging, thinkingLoading]);
+	}, [
+		client,
+		selectedModel,
+		session.sessionPath,
+		thinkingChanging,
+		thinkingLoading,
+	]);
 
 	const handleThinkingChange = useCallback(
 		(level: PiThinkingLevel | null) => {
 			if (!level || thinkingChanging || level === selectedThinkingLevel) return;
+			thinkingSelectionDirtyRef.current = true;
 			if (session.sessionPath) {
 				setSelectedThinkingLevel(level);
 				return;

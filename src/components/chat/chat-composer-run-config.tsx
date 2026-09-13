@@ -1,32 +1,31 @@
-import { Bot, Check, LoaderCircle } from "lucide-react";
+import { Check, LoaderCircle, RefreshCw } from "lucide-react";
 
 import { CHAT_COMPOSER_RUN_CONFIG_TRIGGER_CLASS_NAME } from "@/components/chat/chat-composer-frame";
+import { PiLogo } from "@/components/pi-logo";
 import type { PiModel, PiThinkingLevel } from "@/lib/pi-runtime";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSeparator,
 	DropdownMenuSub,
 	DropdownMenuSubContent,
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "@/ui";
 
-const DEFAULT_MODEL_VALUE = "__pilo_default_model__";
-const DEFAULT_THINKING_VALUE = "__pilo_default_thinking__";
-
 const THINKING_LEVEL_LABELS: Record<PiThinkingLevel, string> = {
-	off: "关闭",
-	minimal: "最低",
-	low: "低",
-	medium: "中",
-	high: "高",
-	xhigh: "极高",
-	max: "最大",
+	off: "Off",
+	minimal: "Minimal",
+	low: "Low",
+	medium: "Medium",
+	high: "High",
+	xhigh: "XHigh",
+	max: "Max",
 };
 
 function thinkingLevelLabel(level: PiThinkingLevel | null) {
-	return level ? THINKING_LEVEL_LABELS[level] : "默认";
+	return level ? THINKING_LEVEL_LABELS[level] : "—";
 }
 
 function modelValue(model: PiModel) {
@@ -34,53 +33,66 @@ function modelValue(model: PiModel) {
 }
 
 type ComposerRunConfigProps = {
-	modelLabel: string;
 	models: readonly PiModel[];
 	selectedModel: PiModel | null;
 	modelLoading: boolean;
 	modelError: string | null;
 	modelDisabled: boolean;
-	showDefaultModelOption: boolean;
 	onModelMenuOpen?: () => void;
+	onModelRefresh?: () => void;
 	onModelChange?: (model: PiModel | null) => void;
 	thinkingLevels: readonly PiThinkingLevel[];
 	selectedThinkingLevel: PiThinkingLevel | null;
 	thinkingLoading: boolean;
 	thinkingDisabled: boolean;
-	showDefaultThinkingOption: boolean;
 	onThinkingMenuOpen?: () => void;
 	onThinkingChange?: (level: PiThinkingLevel | null) => void;
 };
 
 export function ComposerRunConfig({
-	modelLabel,
 	models,
 	selectedModel,
 	modelLoading,
 	modelError,
 	modelDisabled,
-	showDefaultModelOption,
 	onModelMenuOpen,
+	onModelRefresh,
 	onModelChange,
 	thinkingLevels,
 	selectedThinkingLevel,
 	thinkingLoading,
 	thinkingDisabled,
-	showDefaultThinkingOption,
 	onThinkingMenuOpen,
 	onThinkingChange,
 }: ComposerRunConfigProps) {
-	const effectiveModelLabel =
-		selectedModel?.name || selectedModel?.id || modelLabel;
-	const selectedModelValue = selectedModel
-		? modelValue(selectedModel)
-		: showDefaultModelOption
-			? DEFAULT_MODEL_VALUE
-			: "";
-	const selectedThinkingValue =
-		selectedThinkingLevel ??
-		(showDefaultThinkingOption ? DEFAULT_THINKING_VALUE : "");
+	const effectiveModelLabel = selectedModel?.name || selectedModel?.id || "—";
+	const selectedModelValue = selectedModel ? modelValue(selectedModel) : "";
+	const selectedThinkingValue = selectedThinkingLevel ?? "";
 	const effectiveThinkingLabel = thinkingLevelLabel(selectedThinkingLevel);
+	const renderModelItems = (items: readonly PiModel[]) =>
+		items.map((model) => {
+			const optionValue = modelValue(model);
+			return (
+				<DropdownMenuItem
+					key={optionValue}
+					onSelect={(event) => {
+						event.preventDefault();
+						onModelChange?.(model);
+					}}
+					className="gap-2"
+				>
+					<span className="min-w-0 flex-1 truncate">
+						{model.name || model.id}
+					</span>
+					<span className="shrink-0 text-xs text-muted-foreground">
+						{model.provider}
+					</span>
+					{selectedModelValue === optionValue ? (
+						<Check className="size-3.5 shrink-0 opacity-70" />
+					) : null}
+				</DropdownMenuItem>
+			);
+		});
 	const disabled =
 		(modelDisabled || !onModelChange) &&
 		(thinkingDisabled || !onThinkingChange);
@@ -100,7 +112,7 @@ export function ComposerRunConfig({
 					aria-label="运行配置"
 					className={CHAT_COMPOSER_RUN_CONFIG_TRIGGER_CLASS_NAME}
 				>
-					<Bot className="size-4 shrink-0" />
+					<PiLogo className="size-4 text-current" />
 					<span className="block min-w-0 max-w-40 truncate text-left">
 						{effectiveModelLabel}
 					</span>
@@ -124,65 +136,39 @@ export function ComposerRunConfig({
 							{modelLoading ? "加载中…" : effectiveModelLabel}
 						</span>
 					</DropdownMenuSubTrigger>
-					<DropdownMenuSubContent className="max-h-80 min-w-64 overflow-y-auto">
-						{modelLoading ? (
-							<DropdownMenuItem disabled>
+					<DropdownMenuSubContent className="w-72 max-w-[calc(100vw-2rem)] overflow-hidden">
+						<DropdownMenuItem
+							onSelect={(event) => {
+								event.preventDefault();
+								onModelRefresh?.();
+							}}
+							disabled={!onModelRefresh || modelLoading}
+							className="gap-2"
+						>
+							{modelLoading ? (
 								<LoaderCircle className="size-3.5 animate-spin" />
-								正在读取 Pi 模型…
-							</DropdownMenuItem>
-						) : modelError ? (
-							<DropdownMenuItem
-								onSelect={(event) => {
-									event.preventDefault();
-									onModelMenuOpen?.();
-								}}
-							>
-								<span className="min-w-0 flex-1 truncate">{modelError}</span>
-								<span className="text-xs text-muted-foreground">重试</span>
-							</DropdownMenuItem>
-						) : models.length === 0 && !showDefaultModelOption ? (
-							<DropdownMenuItem disabled>没有可用模型</DropdownMenuItem>
-						) : (
-							<>
-								{showDefaultModelOption ? (
-									<DropdownMenuItem
-										onSelect={(event) => {
-											event.preventDefault();
-											onModelChange?.(null);
-										}}
-										className="justify-between"
-									>
-										<span>Pi 默认模型</span>
-										{selectedModelValue === DEFAULT_MODEL_VALUE ? (
-											<Check className="size-3.5 opacity-70" />
-										) : null}
-									</DropdownMenuItem>
-								) : null}
-								{models.map((model) => {
-									const optionValue = modelValue(model);
-									return (
-										<DropdownMenuItem
-											key={optionValue}
-											onSelect={(event) => {
-												event.preventDefault();
-												onModelChange?.(model);
-											}}
-											className="gap-2"
-										>
-											<span className="min-w-0 flex-1 truncate">
-												{model.name || model.id}
-											</span>
-											<span className="shrink-0 text-xs text-muted-foreground">
-												{model.provider}
-											</span>
-											{selectedModelValue === optionValue ? (
-												<Check className="size-3.5 shrink-0 opacity-70" />
-											) : null}
-										</DropdownMenuItem>
-									);
-								})}
-							</>
-						)}
+							) : (
+								<RefreshCw className="size-3.5" />
+							)}
+							刷新模型
+						</DropdownMenuItem>
+						<DropdownMenuSeparator />
+						<div className="max-h-[min(20rem,calc(70vh-3rem))] overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+							{modelError ? (
+								<DropdownMenuItem disabled>
+									<span className="min-w-0 flex-1 truncate text-destructive">
+										{modelError}
+									</span>
+								</DropdownMenuItem>
+							) : null}
+							{models.length === 0 ? (
+								<DropdownMenuItem disabled>
+									{modelLoading ? "正在读取 Pi 模型…" : "没有可用模型"}
+								</DropdownMenuItem>
+							) : (
+								renderModelItems(models)
+							)}
+						</div>
 					</DropdownMenuSubContent>
 				</DropdownMenuSub>
 
@@ -201,20 +187,6 @@ export function ComposerRunConfig({
 							<DropdownMenuItem disabled>正在读取推理等级…</DropdownMenuItem>
 						) : (
 							<>
-								{showDefaultThinkingOption ? (
-									<DropdownMenuItem
-										onSelect={(event) => {
-											event.preventDefault();
-											onThinkingChange?.(null);
-										}}
-										className="justify-between"
-									>
-										<span>Pi 默认等级</span>
-										{selectedThinkingValue === DEFAULT_THINKING_VALUE ? (
-											<Check className="size-3.5 opacity-70" />
-										) : null}
-									</DropdownMenuItem>
-								) : null}
 								{thinkingLevels.map((level) => (
 									<DropdownMenuItem
 										key={level}

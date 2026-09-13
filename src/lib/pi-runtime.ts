@@ -78,6 +78,18 @@ export type PiModel = {
 	input?: string[];
 	contextWindow?: number;
 	maxTokens?: number;
+	/** Pi-resolved default for this model (per-model override > global default, clamped). */
+	defaultThinkingLevel?: PiThinkingLevel;
+	/** Thinking levels Pi reports as available after this model is selected. */
+	thinkingLevels?: PiThinkingLevel[];
+	/** Pi scoped-model cycle order. null means scope was resolved and this model is outside it. */
+	scopeOrder?: number | null;
+};
+
+export type PiModelCycleResult = {
+	model: PiModel;
+	thinkingLevel: PiThinkingLevel;
+	isScoped: boolean;
 };
 
 export type PiAgentState = {
@@ -356,6 +368,10 @@ export function setPiModel(
 		provider: model.provider,
 		modelId: model.id,
 	});
+}
+
+export function cyclePiModel(): Promise<PiModelCycleResult | null> {
+	return requestPiRpc({ type: "cycle_model" });
 }
 
 export function getAvailablePiThinkingLevels(): Promise<{
