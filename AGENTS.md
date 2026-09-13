@@ -9,7 +9,7 @@ Pilo 是一个面向 Pi Coding Agent 的桌面工作区客户端。
 - SSH 远程开发环境
 - Pi Session
 - Agent 工具调用
-- 项目与工作区
+- 项目
 
 Pilo 不重新实现 Agent 能力，而是作为 Pi 的桌面入口。
 

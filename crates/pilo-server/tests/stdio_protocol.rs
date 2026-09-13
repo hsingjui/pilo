@@ -21,7 +21,7 @@ async fn stdio_server_speaks_protobuf_and_preserves_binary_bytes() {
     let mut stdin = child.stdin.take().expect("missing server stdin");
     let mut stdout = child.stdout.take().expect("missing server stdout");
 
-    write_frame(&mut stdin, &Envelope::request(1, "hello", Value::Null))
+    write_frame(&mut stdin, Envelope::request(1, "hello", Value::Null))
         .await
         .unwrap();
     let hello = read_frame(&mut stdout).await.unwrap().unwrap();
@@ -44,7 +44,7 @@ async fn stdio_server_speaks_protobuf_and_preserves_binary_bytes() {
     let input = vec![0, 1, 2, 3, 254, 255];
     write_frame(
         &mut stdin,
-        &Envelope::request_with_binary(
+        Envelope::request_with_binary(
             2,
             "command.run",
             json!({
@@ -108,7 +108,7 @@ async fn session_read_returns_file_fingerprint() {
 
     write_frame(
         &mut stdin,
-        &Envelope::request(
+        Envelope::request(
             1,
             "session.read",
             json!({

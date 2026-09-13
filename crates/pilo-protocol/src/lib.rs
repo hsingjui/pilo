@@ -243,7 +243,7 @@ fn decode_json(bytes: &[u8]) -> io::Result<Value> {
     serde_json::from_slice(bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
 }
 
-fn to_wire(envelope: &Envelope) -> io::Result<wire::Envelope> {
+fn into_wire(envelope: Envelope) -> io::Result<wire::Envelope> {
     use wire::envelope::Payload;
     let payload = match envelope {
         Envelope::Request {
@@ -252,10 +252,10 @@ fn to_wire(envelope: &Envelope) -> io::Result<wire::Envelope> {
             params,
             binary,
         } => Payload::Request(wire::Request {
-            id: *id,
-            method: method.clone(),
-            json: encode_json(params)?,
-            binary: binary.clone(),
+            id,
+            method,
+            json: encode_json(&params)?,
+            binary,
         }),
         Envelope::Response {
             id,
@@ -263,16 +263,16 @@ fn to_wire(envelope: &Envelope) -> io::Result<wire::Envelope> {
             binary,
             error,
         } => Payload::Response(wire::Response {
-            id: *id,
+            id,
             json: result
                 .as_ref()
                 .map(encode_json)
                 .transpose()?
                 .unwrap_or_default(),
-            binary: binary.clone(),
-            error: error.as_ref().map(|error| wire::RpcError {
-                code: error.code.clone(),
-                message: error.message.clone(),
+            binary,
+            error: error.map(|error| wire::RpcError {
+                code: error.code,
+                message: error.message,
             }),
         }),
         Envelope::Event {
@@ -281,10 +281,10 @@ fn to_wire(envelope: &Envelope) -> io::Result<wire::Envelope> {
             data,
             binary,
         } => Payload::Event(wire::Event {
-            stream_id: stream_id.clone(),
-            event: event.clone(),
-            json: encode_json(data)?,
-            binary: binary.clone(),
+            stream_id,
+            event,
+            json: encode_json(&data)?,
+            binary,
         }),
     };
     Ok(wire::Envelope {
@@ -352,11 +352,11 @@ where
     from_wire(wire).map(Some)
 }
 
-pub async fn write_frame<W>(writer: &mut W, envelope: &Envelope) -> io::Result<()>
+pub async fn write_frame<W>(writer: &mut W, envelope: Envelope) -> io::Result<()>
 where
     W: AsyncWrite + Unpin,
 {
-    let wire = to_wire(envelope)?;
+    let wire = into_wire(envelope)?;
     let length = wire.encoded_len();
     if length == 0 || length > MAX_FRAME_BYTES {
         return Err(io::Error::new(
@@ -385,7 +385,7 @@ mod tests {
             vec![vec![0, 1, 2, 254, 255]],
         );
         let (mut client, mut server) = tokio::io::duplex(4096);
-        let write = tokio::spawn(async move { write_frame(&mut client, &expected).await.unwrap() });
+        let write = tokio::spawn(async move { write_frame(&mut client, expected).await.unwrap() });
         let decoded = read_frame(&mut server).await.unwrap().unwrap();
         write.await.unwrap();
         assert_eq!(
@@ -402,7 +402,7 @@ mod tests {
     #[test]
     fn wire_binary_is_not_json_or_base64() {
         let bytes = vec![0, 1, 2, 254, 255];
-        let wire = to_wire(&Envelope::event_with_binary(
+        let wire = into_wire(Envelope::event_with_binary(
             "terminal:1",
             "terminal.output",
             Value::Null,

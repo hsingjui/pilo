@@ -18,7 +18,7 @@ export type SidebarSession = {
 	latestMessageAt: Date;
 	pinned: boolean;
 	archived: boolean;
-	/** Agent 正在运行 / 有未读消息时在行尾显示状态点。 */
+	/** Agent 正在运行时在行尾显示加载状态。 */
 	active?: boolean;
 };
 

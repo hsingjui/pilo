@@ -80,6 +80,24 @@ impl Default for ServerPiSession {
     }
 }
 
+fn forward_pi_rpc<S: RuntimeEventSink>(
+    adapter: &mut PiEventAdapter,
+    sink: &S,
+    generation: u64,
+    data: Value,
+) {
+    let adapted = adapter.adapt(generation, &data);
+    if data.get("type").and_then(Value::as_str) == Some("response") {
+        sink.send(RuntimeEvent::RpcMessage {
+            generation,
+            message: data,
+        });
+    }
+    for event in adapted {
+        sink.send(event);
+    }
+}
+
 impl ServerPiSession {
     pub fn snapshot(&self) -> PiSessionSnapshot {
         PiSessionSnapshot {
@@ -201,12 +219,24 @@ impl ServerPiSession {
                 }
                 match event.event.as_str() {
                     "pi.rpc" => {
-                        event_sink.send(RuntimeEvent::RpcMessage {
-                            generation,
-                            message: event.data.clone(),
-                        });
-                        for adapted in adapter.adapt(generation, &event.data) {
-                            event_sink.send(adapted);
+                        forward_pi_rpc(&mut adapter, &event_sink, generation, event.data.clone());
+                    }
+                    "pi.rpc_json" => {
+                        let Some(bytes) = event.binary.first() else {
+                            event_sink.send(RuntimeEvent::RuntimeError {
+                                generation,
+                                code: RuntimeErrorCode::RpcFraming,
+                                message: "pilo-server Pi RPC event had no JSON payload".to_owned(),
+                            });
+                            continue;
+                        };
+                        match serde_json::from_slice::<Value>(bytes) {
+                            Ok(data) => forward_pi_rpc(&mut adapter, &event_sink, generation, data),
+                            Err(error) => event_sink.send(RuntimeEvent::RuntimeError {
+                                generation,
+                                code: RuntimeErrorCode::RpcDecode,
+                                message: format!("Pi stdout emitted invalid RPC JSON: {error}"),
+                            }),
                         }
                     }
                     "pi.stderr" => {

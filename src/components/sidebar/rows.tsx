@@ -5,6 +5,7 @@ import {
 	ArchiveRestore,
 	ChevronDown,
 	Folder,
+	LoaderCircle,
 	Monitor,
 	MoreHorizontal,
 	Pencil,
@@ -165,7 +166,7 @@ export function EnvRow({
 					<button
 						type="button"
 						className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground/80 transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/60"
-						aria-label={`在 ${env.name} 添加工作区`}
+						aria-label={`在 ${env.name} 添加项目`}
 						onClick={(event) => {
 							event.stopPropagation();
 							onAddProject?.(env.id);
@@ -174,7 +175,7 @@ export function EnvRow({
 						<Plus className="h-3.5 w-3.5" />
 					</button>
 				</TooltipTrigger>
-				<TooltipContent side="right">添加工作区</TooltipContent>
+				<TooltipContent side="right">添加项目</TooltipContent>
 			</Tooltip>
 			<Tooltip>
 				<TooltipTrigger asChild>
@@ -193,7 +194,7 @@ export function EnvRow({
 	);
 }
 
-// ---- 工作区行 -------------------------------------------------------------
+// ---- 项目行 -------------------------------------------------------------
 
 export function ProjectRow({
 	project,
@@ -215,7 +216,7 @@ export function ProjectRow({
 	hasSessions: boolean;
 }) {
 	const [menuOpen, setMenuOpen] = useState(false);
-	const toggleLabel = collapsed ? "展开工作区" : "折叠工作区";
+	const toggleLabel = collapsed ? "展开项目" : "折叠项目";
 	return (
 		<Tooltip delayDuration={600}>
 			<TooltipTrigger asChild>
@@ -267,7 +268,7 @@ export function ProjectRow({
 							<DropdownMenuTrigger asChild>
 								<button
 									type="button"
-									aria-label="工作区菜单"
+									aria-label="项目菜单"
 									className={HOVER_ACTION}
 									onClick={(event) => event.stopPropagation()}
 								>
@@ -470,7 +471,7 @@ export function SessionRow({
 							className="flex items-center justify-center transition-opacity duration-100 group-hover:opacity-0 group-data-[menu-open]:opacity-0"
 						>
 							{session.active ? (
-								<span className="size-1.5 rounded-full bg-primary" />
+								<LoaderCircle className="size-3 animate-spin text-sidebar-primary" />
 							) : null}
 						</span>
 						{!session.archived ? (

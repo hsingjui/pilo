@@ -120,7 +120,7 @@ export function NewChatLanding({
 						/>
 					</svg>
 					<h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-						{projectAvailable ? "今天想做点什么？" : "先添加一个工作区"}
+						{projectAvailable ? "今天想做点什么？" : "先添加一个项目"}
 					</h1>
 				</div>
 			</div>
@@ -153,7 +153,7 @@ export function NewChatLanding({
 					placeholder={
 						projectAvailable
 							? undefined
-							: "请先在设置 → 工作区中添加 Local、WSL 或 SSH 工作区"
+							: "请先在设置 → 项目中添加 Local、WSL 或 SSH 项目"
 					}
 				/>
 			</div>

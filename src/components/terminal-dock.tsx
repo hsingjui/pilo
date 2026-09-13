@@ -374,8 +374,8 @@ export function TerminalDock({ project }: { project?: Project }) {
 					{tabs.length === 0 ? (
 						<div className="flex h-full items-center justify-center text-xs text-muted-foreground">
 							{project
-								? "点击 + 新建当前工作区 Terminal"
-								: "选择工作区后可打开 Terminal"}
+								? "点击 + 在当前项目新建 Terminal"
+								: "选择项目后可打开 Terminal"}
 						</div>
 					) : (
 						tabs.map((tab) => (

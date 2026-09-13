@@ -146,18 +146,44 @@ export function AppSidebar({
 	}, []);
 
 	const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
+	const searchableSessions = useMemo(
+		() =>
+			sessions.map((session) => ({
+				session,
+				searchText: [session.title, session.preview ?? "", session.sessionPath]
+					.join("\n")
+					.toLocaleLowerCase(),
+			})),
+		[sessions],
+	);
 	const visibleSessions = useMemo(
 		() =>
-			sessions.filter((session) => {
-				if (session.archived !== showArchived) return false;
-				if (!normalizedSearch) return true;
-				return [session.title, session.preview ?? "", session.sessionPath]
-					.join("\n")
-					.toLocaleLowerCase()
-					.includes(normalizedSearch);
+			searchableSessions.flatMap(({ session, searchText }) => {
+				if (session.archived !== showArchived) return [];
+				if (normalizedSearch && !searchText.includes(normalizedSearch))
+					return [];
+				return [session];
 			}),
-		[normalizedSearch, sessions, showArchived],
+		[normalizedSearch, searchableSessions, showArchived],
 	);
+	const projectsByEnv = useMemo(() => {
+		const grouped = new Map<string, SidebarProject[]>();
+		for (const project of projects) {
+			const items = grouped.get(project.envId);
+			if (items) items.push(project);
+			else grouped.set(project.envId, [project]);
+		}
+		return grouped;
+	}, [projects]);
+	const sessionsByProject = useMemo(() => {
+		const grouped = new Map<string, SidebarSession[]>();
+		for (const session of visibleSessions) {
+			const items = grouped.get(session.projectId);
+			if (items) items.push(session);
+			else grouped.set(session.projectId, [session]);
+		}
+		return grouped;
+	}, [visibleSessions]);
 
 	const renderSession = (
 		session: SidebarSession,
@@ -271,7 +297,7 @@ export function AppSidebar({
 						<span className="flex h-5 w-5 shrink-0 items-center justify-center text-current">
 							<FolderPlus className="h-4 w-4" />
 						</span>
-						<span className="truncate">添加工作区</span>
+						<span className="truncate">添加项目</span>
 					</button>
 					<div className="mt-1 flex items-center gap-1">
 						<label className="relative min-w-0 flex-1">
@@ -308,9 +334,7 @@ export function AppSidebar({
 					<div className="relative w-full min-w-0 overflow-x-hidden pt-1">
 						{envs.map((env) => {
 							const envCollapsed = collapsedSections[`env:${env.id}`] ?? false;
-							const envProjects = projects.filter(
-								(project) => project.envId === env.id,
-							);
+							const envProjects = projectsByEnv.get(env.id) ?? [];
 							return (
 								<section
 									key={env.id}
@@ -326,9 +350,8 @@ export function AppSidebar({
 										envProjects.map((project) => {
 											const projectCollapsed =
 												collapsedSections[`ws:${project.id}`] ?? false;
-											const projectSessions = visibleSessions.filter(
-												(session) => session.projectId === project.id,
-											);
+											const projectSessions =
+												sessionsByProject.get(project.id) ?? [];
 											return (
 												<div
 													key={project.id}

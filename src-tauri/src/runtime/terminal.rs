@@ -125,7 +125,7 @@ impl TerminalManager {
                 }
                 match event.event.as_str() {
                     "terminal.output" => {
-                        let data = event.binary.into_iter().next().unwrap_or_default();
+                        let data = event.binary.first().cloned().unwrap_or_default();
                         let _ = event_app.emit(
                             TERMINAL_EVENT_NAME,
                             TerminalEvent::Output {

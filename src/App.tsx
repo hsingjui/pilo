@@ -14,28 +14,35 @@ import {
 	type PanelImperativeHandle,
 } from "react-resizable-panels";
 
+import {
+	createChatUiStateCache,
+	type ChatUiStateCache,
+	type ChatUiStatePatch,
+} from "@/components/app/chat-ui-state-cache";
 import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { AddProjectDialog } from "@/components/sidebar/add-project-dialog";
-import type { SidebarSession } from "@/components/sidebar/types";
+import {
+	chatUiStateKey,
+	createDraftSessionId,
+	identifyOpenedChat,
+	indexedChatSession,
+	mergeSidebarSessionsWithOpenChats,
+	projectRelativePath,
+	syncOpenedChatSessionMetadata,
+	touchOpenedChat,
+	trimOpenedChats,
+	upsertOpenedChat,
+	type OpenChat,
+} from "@/components/app/app-chat-state";
+import { useAppSessionIndex } from "@/components/app/use-app-session-index";
+import { ChatPageLoadingFallback } from "@/components/chat/chat-page-loading-fallback";
 import type { ChatSession } from "@/components/chat/chat-page";
 import { NewChatLanding } from "@/components/new-chat-landing";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import { CUSTOM_TITLEBAR, IS_MACOS, TitleBar } from "@/components/title-bar";
 import type { EditorOpenRequest } from "@/components/project-editor";
-import {
-	listenRuntimeEvents,
-	type PiModel,
-	type PiThinkingLevel,
-} from "@/lib/pi-runtime";
-import {
-	listSessions,
-	listenSessionWatchEvents,
-	reconcileSessions,
-	startSessionWatch,
-	stopSessionWatch,
-	updateSessionUiState,
-	type SessionIndexEntry,
-} from "@/lib/sessions";
+import { stopChatSession } from "@/lib/chat-session-client";
+import type { PiModel, PiThinkingLevel } from "@/lib/pi-runtime";
 import {
 	connectionLabel,
 	listProjects,
@@ -62,114 +69,7 @@ const RightSidebar = lazy(() =>
 	})),
 );
 
-let draftSessionSequence = 0;
 let editorRequestSequence = 0;
-
-function sessionDate(session: SessionIndexEntry) {
-	if (session.fileMtimeNs > 0) {
-		return new Date(session.fileMtimeNs / 1_000_000);
-	}
-	const value = session.lastMessageAt ?? session.updatedAt ?? session.createdAt;
-	const date = new Date(value);
-	return Number.isNaN(date.getTime()) ? new Date(session.indexedAtMs) : date;
-}
-
-function toSidebarSession(session: SessionIndexEntry): SidebarSession {
-	return {
-		id: session.piSessionId,
-		title:
-			session.titleOverride ??
-			session.name ??
-			session.firstUserMessagePreview ??
-			"新对话",
-		preview:
-			session.titleOverride || session.name
-				? session.firstUserMessagePreview
-				: null,
-		sessionPath: session.sessionPath,
-		projectId: session.projectId,
-		latestMessageAt: sessionDate(session),
-		pinned: session.pinned,
-		archived: session.archived,
-	};
-}
-
-function createDraftSessionId() {
-	draftSessionSequence += 1;
-	return `draft-session-${Date.now()}-${draftSessionSequence}`;
-}
-
-function projectRelativePath(project: Project, candidate: string) {
-	const root = project.path.replace(/\\/g, "/").replace(/\/+$/, "");
-	const path = candidate.trim().replace(/\\/g, "/");
-	if (!path || path === root) return null;
-	if (path.startsWith(`${root}/`)) return path.slice(root.length + 1);
-	if (path.startsWith("./")) return path.slice(2);
-	if (path.startsWith("/") || /^[A-Za-z]:\//.test(path)) return null;
-	if (path.split("/").some((part) => part === "..")) return null;
-	return path;
-}
-
-type OpenChat = {
-	session: ChatSession;
-	initialMessage?: string;
-	piSessionId?: string;
-};
-
-function indexedChatSession(
-	session: SessionIndexEntry,
-	project: Project,
-): ChatSession {
-	return {
-		id: session.piSessionId,
-		title:
-			session.titleOverride ??
-			session.name ??
-			session.firstUserMessagePreview ??
-			"新对话",
-		projectRecord: project,
-		sessionPath: session.sessionPath,
-		historyFileSize: session.fileSize,
-		historyFileMtimeNs: session.fileMtimeNs,
-	};
-}
-
-function upsertOpenedChat(
-	current: OpenChat[],
-	session: ChatSession,
-	initialMessage?: string,
-): OpenChat[] {
-	const index = current.findIndex(
-		(entry) =>
-			entry.session.projectRecord.id === session.projectRecord.id &&
-			(entry.session.id === session.id || entry.piSessionId === session.id),
-	);
-	if (index < 0) return [...current, { session, initialMessage }];
-
-	const existing = current[index];
-	const nextInitialMessage = existing.initialMessage ?? initialMessage;
-	const sessionChanged =
-		existing.session.title !== session.title ||
-		existing.session.projectRecord !== session.projectRecord ||
-		existing.session.sessionPath !== session.sessionPath ||
-		existing.session.historyFileSize !== session.historyFileSize ||
-		existing.session.historyFileMtimeNs !== session.historyFileMtimeNs;
-	if (!sessionChanged && nextInitialMessage === existing.initialMessage)
-		return current;
-
-	const next = current.slice();
-	next[index] = {
-		...existing,
-		initialMessage: nextInitialMessage,
-		session: sessionChanged
-			? {
-					...existing.session,
-					...session,
-				}
-			: existing.session,
-	};
-	return next;
-}
 
 function App() {
 	const rightPanelRef = useRef<PanelImperativeHandle>(null);
@@ -177,7 +77,38 @@ function App() {
 	const [isResizing, setIsResizing] = useState(false);
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [openedChats, setOpenedChats] = useState<OpenChat[]>([]);
-	const [indexedSessions, setIndexedSessions] = useState<SessionIndexEntry[]>(
+	const chatUiStateCacheRef = useRef<ChatUiStateCache | null>(null);
+	if (chatUiStateCacheRef.current === null) {
+		chatUiStateCacheRef.current = createChatUiStateCache();
+	}
+	const readChatUiState = useCallback(
+		(key: string) => chatUiStateCacheRef.current!.get(key),
+		[],
+	);
+	const writeChatUiState = useCallback(
+		(key: string, patch: ChatUiStatePatch) => {
+			chatUiStateCacheRef.current!.patch(key, patch);
+		},
+		[],
+	);
+	const previousOpenedChatsRef = useRef(new Map<string, OpenChat>());
+	const busyChatControllersRef = useRef(new Set<string>());
+	const [busyChatControllerIds, setBusyChatControllerIds] = useState<
+		ReadonlySet<string>
+	>(() => new Set());
+	const handleChatRuntimeBusyChange = useCallback(
+		(controllerId: string, busy: boolean) => {
+			const busyControllers = busyChatControllersRef.current;
+			const changed = busy
+				? !busyControllers.has(controllerId)
+				: busyControllers.has(controllerId);
+			if (busy) busyControllers.add(controllerId);
+			else busyControllers.delete(controllerId);
+			if (changed) setBusyChatControllerIds(new Set(busyControllers));
+			if (!busy) {
+				setOpenedChats((current) => trimOpenedChats(current, busyControllers));
+			}
+		},
 		[],
 	);
 	const [draftSessionPrompt, setDraftSessionPrompt] = useState<string | null>(
@@ -202,6 +133,28 @@ function App() {
 		null,
 	);
 	const [editorVisible, setEditorVisible] = useState(false);
+
+	useEffect(() => {
+		const next = new Map(
+			openedChats.map((entry) => [entry.controllerId, entry] as const),
+		);
+		let busyChanged = false;
+		for (const [controllerId, entry] of previousOpenedChatsRef.current) {
+			if (next.has(controllerId)) continue;
+			busyChanged =
+				busyChatControllersRef.current.delete(controllerId) || busyChanged;
+			void stopChatSession(
+				entry.session.projectRecord.id,
+				entry.session.id,
+			).catch((error) =>
+				console.warn("Failed to stop evicted chat session", error),
+			);
+		}
+		if (busyChanged) {
+			setBusyChatControllerIds(new Set(busyChatControllersRef.current));
+		}
+		previousOpenedChatsRef.current = next;
+	}, [openedChats]);
 
 	useEffect(() => {
 		let active = true;
@@ -260,6 +213,29 @@ function App() {
 	const activeProject =
 		projects.find((project) => project.id === draftProjectId) ?? firstProject;
 	const activeProjectId = activeProject?.id ?? null;
+	const {
+		indexedSessions,
+		refreshProjectSessions,
+		sidebarSessions: indexedSidebarSessions,
+		updateSession: updateIndexedSession,
+	} = useAppSessionIndex(activeProjectId);
+	useEffect(() => {
+		setOpenedChats((current) =>
+			trimOpenedChats(
+				syncOpenedChatSessionMetadata(current, indexedSessions),
+				busyChatControllersRef.current,
+			),
+		);
+	}, [indexedSessions]);
+	const sidebarSessions = useMemo(
+		() =>
+			mergeSidebarSessionsWithOpenChats(
+				indexedSidebarSessions,
+				openedChats,
+				busyChatControllerIds,
+			),
+		[indexedSidebarSessions, openedChats, busyChatControllerIds],
+	);
 	const openEditorFile = useCallback(
 		(candidate: string) => {
 			if (!activeProject) return;
@@ -276,149 +252,56 @@ function App() {
 		[activeProject],
 	);
 
-	const replaceProjectSessions = useCallback(
-		(projectId: string, sessions: SessionIndexEntry[]) => {
-			setIndexedSessions((current) => [
-				...current.filter((session) => session.projectId !== projectId),
-				...sessions,
-			]);
-		},
-		[],
-	);
-
-	const refreshProjectSessions = useCallback(
-		async (projectId: string) => {
-			const result = await reconcileSessions(projectId);
-			replaceProjectSessions(projectId, result.sessions);
-		},
-		[replaceProjectSessions],
-	);
-
-	useEffect(() => {
-		if (!activeProjectId) return;
-		let disposed = false;
-		let refreshTimer: number | undefined;
-		let unlistenRuntime: (() => void) | undefined;
-		let unlistenSessionWatch: (() => void) | undefined;
-
-		const refresh = () => {
-			void refreshProjectSessions(activeProjectId).catch((error) =>
-				console.error("Failed to reconcile sessions", error),
-			);
-		};
-		const queueRefresh = () => {
-			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
-			refreshTimer = window.setTimeout(refresh, 120);
-		};
-		const hydrateThenRefresh = async () => {
-			try {
-				const cached = await listSessions(activeProjectId);
-				if (!disposed) replaceProjectSessions(activeProjectId, cached);
-			} catch (error) {
-				console.error("Failed to load cached sessions", error);
-			}
-			if (!disposed) refresh();
-		};
-
-		void hydrateThenRefresh();
-		window.addEventListener("focus", queueRefresh);
-		void listenRuntimeEvents((event) => {
-			if (event.projectId && event.projectId !== activeProjectId) {
-				if (event.type === "assistant_message_end") {
-					void refreshProjectSessions(event.projectId).catch((error) =>
-						console.error("Failed to refresh background sessions", error),
-					);
-				}
-				return;
-			}
-			if (
-				event.type === "assistant_message_end" ||
-				(event.type === "process_state" && event.state === "running")
-			) {
-				queueRefresh();
-			}
-		})
-			.then((unlisten) => {
-				if (disposed) unlisten();
-				else unlistenRuntime = unlisten;
-			})
-			.catch((error) =>
-				console.error("Failed to listen for runtime events", error),
-			);
-		void listenSessionWatchEvents((event) => {
-			if (event.projectId !== activeProjectId) return;
-			if (event.type === "changed") queueRefresh();
-			if (event.type === "indexed") {
-				void listSessions(activeProjectId)
-					.then((sessions) => {
-						if (!disposed) replaceProjectSessions(activeProjectId, sessions);
-					})
-					.catch((error) =>
-						console.error("Failed to load background-indexed sessions", error),
-					);
-			}
-			if (event.type === "error") {
-				console.warn("Session watcher fallback active", event.message);
-			}
-		})
-			.then(async (unlisten) => {
-				if (disposed) {
-					unlisten();
-					return;
-				}
-				unlistenSessionWatch = unlisten;
-				await startSessionWatch(activeProjectId);
-			})
-			.catch((error) =>
-				console.error("Failed to start session watcher", error),
-			);
-		return () => {
-			disposed = true;
-			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
-			window.removeEventListener("focus", queueRefresh);
-			unlistenRuntime?.();
-			unlistenSessionWatch?.();
-			void stopSessionWatch(activeProjectId).catch(() => undefined);
-		};
-	}, [activeProjectId, refreshProjectSessions, replaceProjectSessions]);
-
-	const sidebarSessions = useMemo(
-		() => indexedSessions.map(toSidebarSession),
-		[indexedSessions],
-	);
-
 	const selectedIndexedSession =
 		indexedSessions.find(
 			(session) => session.piSessionId === selectedSessionId,
 		) ?? null;
+	const selectedOpenedChat = selectedSessionId
+		? (openedChats.find(
+				(entry) =>
+					entry.session.id === selectedSessionId ||
+					entry.piSessionId === selectedSessionId,
+			) ?? null)
+		: null;
+	const selectedOpenedChatBusy = selectedOpenedChat
+		? busyChatControllerIds.has(selectedOpenedChat.controllerId)
+		: false;
 	const selectedProject = selectedIndexedSession
 		? (projects.find(
 				(project) => project.id === selectedIndexedSession.projectId,
 			) ?? null)
 		: null;
-	const chatSession = useMemo<ChatSession | null>(
-		() =>
-			selectedIndexedSession && selectedProject
-				? indexedChatSession(selectedIndexedSession, selectedProject)
-				: activeProject && draftSessionStarted
-					? {
-							id: draftSessionId,
-							title: "新对话",
-							projectRecord: activeProject,
-							initialModel: draftSessionModel ?? undefined,
-							initialThinkingLevel: draftSessionThinkingLevel ?? undefined,
-						}
-					: null,
-		[
-			selectedIndexedSession,
-			selectedProject,
-			activeProject,
-			draftSessionStarted,
-			draftSessionId,
-			draftSessionModel,
-			draftSessionThinkingLevel,
-		],
-	);
+	const chatSession = useMemo<ChatSession | null>(() => {
+		if (
+			selectedOpenedChat &&
+			(selectedOpenedChatBusy || !selectedIndexedSession)
+		) {
+			return selectedOpenedChat.session;
+		}
+		if (selectedIndexedSession && selectedProject) {
+			return indexedChatSession(selectedIndexedSession, selectedProject);
+		}
+		if (activeProject && draftSessionStarted) {
+			return {
+				id: draftSessionId,
+				title: "新对话",
+				projectRecord: activeProject,
+				initialModel: draftSessionModel ?? undefined,
+				initialThinkingLevel: draftSessionThinkingLevel ?? undefined,
+			};
+		}
+		return null;
+	}, [
+		selectedOpenedChat,
+		selectedOpenedChatBusy,
+		selectedIndexedSession,
+		selectedProject,
+		activeProject,
+		draftSessionStarted,
+		draftSessionId,
+		draftSessionModel,
+		draftSessionThinkingLevel,
+	]);
 	const renderedOpenedChats = useMemo(
 		() =>
 			chatSession
@@ -450,16 +333,49 @@ function App() {
 	};
 
 	const selectSession = (sessionId: string) => {
+		const opened = openedChats.find(
+			(entry) =>
+				entry.session.id === sessionId || entry.piSessionId === sessionId,
+		);
 		const session = indexedSessions.find(
 			(candidate) => candidate.piSessionId === sessionId,
 		);
+		const openedIsBusy = opened
+			? busyChatControllersRef.current.has(opened.controllerId)
+			: false;
+		if (opened && (openedIsBusy || !session)) {
+			const projectId = opened.session.projectRecord.id;
+			setOpenedChats((current) =>
+				trimOpenedChats(
+					touchOpenedChat(current, opened.session, opened.initialMessage),
+					busyChatControllersRef.current,
+				),
+			);
+			setSelectedSessionId(sessionId);
+			setDraftSessionStarted(false);
+			setDraftSessionPrompt(null);
+			setDraftSessionModel(null);
+			setDraftSessionThinkingLevel(null);
+			setDraftProjectId(projectId);
+			void touchProject(projectId)
+				.then(() => notifyProjectsChanged())
+				.catch((error) =>
+					console.error("Failed to update recent project", error),
+				);
+			return;
+		}
 		if (!session) return;
 		const project = projects.find(
 			(candidate) => candidate.id === session.projectId,
 		);
 		if (project) {
 			const nextChat = indexedChatSession(session, project);
-			setOpenedChats((current) => upsertOpenedChat(current, nextChat));
+			setOpenedChats((current) =>
+				trimOpenedChats(
+					touchOpenedChat(current, nextChat),
+					busyChatControllersRef.current,
+				),
+			);
 		}
 		setSelectedSessionId(sessionId);
 		setDraftSessionStarted(false);
@@ -478,27 +394,9 @@ function App() {
 		sessionId: string,
 		update: { pinned?: boolean; archived?: boolean; title?: string },
 	) => {
-		const session = indexedSessions.find(
-			(candidate) => candidate.piSessionId === sessionId,
-		);
-		if (!session) return;
-		try {
-			const next = await updateSessionUiState(session.sessionPath, {
-				pinned: update.pinned ?? session.pinned,
-				archived: update.archived ?? session.archived,
-				titleOverride:
-					update.title === undefined ? session.titleOverride : update.title,
-			});
-			setIndexedSessions((current) =>
-				current.map((candidate) =>
-					candidate.sessionPath === next.sessionPath ? next : candidate,
-				),
-			);
-			if (next.archived && selectedSessionId === next.piSessionId) {
-				setSelectedSessionId(null);
-			}
-		} catch (error) {
-			console.error("Failed to update session UI state", error);
+		const next = await updateIndexedSession(sessionId, update);
+		if (next?.archived && selectedSessionId === next.piSessionId) {
+			setSelectedSessionId(null);
 		}
 	};
 
@@ -547,26 +445,48 @@ function App() {
 										entry.piSessionId === chatSession.id);
 								return (
 									<div
-										key={`${entry.session.projectRecord.id}:${entry.session.id}`}
+										key={entry.controllerId}
 										className={visible ? "h-full min-h-0" : "hidden"}
 									>
 										<Suspense
-											fallback={<div className="h-full bg-background" />}
+											fallback={
+												<ChatPageLoadingFallback
+													session={entry.session}
+													reserveWindowControls={CUSTOM_TITLEBAR}
+													sidebarCollapsed={leftSidebarCollapsed}
+												/>
+											}
 										>
 											<ChatPage
 												session={entry.session}
+												controllerId={entry.controllerId}
+												uiStateKey={entry.uiStateKey}
+												readUiState={readChatUiState}
+												writeUiState={writeChatUiState}
+												onRuntimeBusyChange={handleChatRuntimeBusyChange}
 												active={visible}
 												initialMessage={entry.initialMessage}
 												onSessionIdentified={(piSessionId) => {
+													const nextUiStateKey = chatUiStateKey(
+														entry.session.projectRecord.id,
+														piSessionId,
+													);
+													chatUiStateCacheRef.current!.rekey(
+														entry.uiStateKey,
+														nextUiStateKey,
+													);
 													setOpenedChats((current) =>
-														current.map((chat) =>
-															chat.session.id === entry.session.id &&
-															chat.session.projectRecord.id ===
-																entry.session.projectRecord.id &&
-															chat.piSessionId !== piSessionId
-																? { ...chat, piSessionId }
-																: chat,
+														identifyOpenedChat(
+															current,
+															entry.controllerId,
+															piSessionId,
 														),
+													);
+													setSelectedSessionId((current) =>
+														current === entry.session.id ||
+														current === entry.piSessionId
+															? piSessionId
+															: current,
 													);
 												}}
 												onOpenChanges={() => rightPanelRef.current?.expand()}
@@ -601,9 +521,13 @@ function App() {
 											initialThinkingLevel: thinkingLevel ?? undefined,
 										};
 										setOpenedChats((current) =>
-											upsertOpenedChat(current, nextChat, prompt),
+											trimOpenedChats(
+												touchOpenedChat(current, nextChat, prompt),
+												busyChatControllersRef.current,
+											),
 										);
 										setDraftProjectId(activeProject.id);
+										setSelectedSessionId(draftSessionId);
 										setDraftSessionModel(model);
 										setDraftSessionThinkingLevel(thinkingLevel);
 										setDraftSessionPrompt(prompt);

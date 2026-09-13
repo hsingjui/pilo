@@ -246,8 +246,8 @@ export function RightSidebar({
 					) : (
 						<EmptyState
 							variant="compact"
-							title="未选择工作区"
-							description="选择工作区后可创建并行 Agent。"
+							title="未选择项目"
+							description="选择项目后可创建并行 Agent。"
 						/>
 					)
 				) : view === "preview" ? (
@@ -256,8 +256,8 @@ export function RightSidebar({
 					) : (
 						<EmptyState
 							variant="compact"
-							title="未选择工作区"
-							description="选择工作区后可打开 Preview。"
+							title="未选择项目"
+							description="选择项目后可打开 Preview。"
 						/>
 					)
 				) : view === "files" ? (
@@ -270,21 +270,21 @@ export function RightSidebar({
 					) : (
 						<EmptyState
 							variant="compact"
-							title="未选择工作区"
-							description="选择工作区后可浏览文件。"
+							title="未选择项目"
+							description="选择项目后可浏览文件。"
 						/>
 					)
 				) : !project ? (
 					<EmptyState
 						variant="compact"
-						title="未选择工作区"
-						description="选择工作区后可查看 Git 变更。"
+						title="未选择项目"
+						description="选择项目后可查看 Git 变更。"
 					/>
 				) : loadState === "error" ? (
 					<ErrorState
 						variant="compact"
 						title="无法读取 Git 状态"
-						description={error ?? "请检查当前工作区是否为 Git 仓库。"}
+						description={error ?? "请检查当前项目是否为 Git 仓库。"}
 						onRetry={() => void refresh()}
 					/>
 				) : (

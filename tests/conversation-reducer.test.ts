@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+	coalesceConversationActions,
 	createConversationState,
 	reduceConversation,
+	reduceConversationActions,
 	replayConversationEvents,
 	replayConversationEventsBatched,
 } from "../src/lib/conversation-reducer.ts";
@@ -311,5 +313,133 @@ test("batched replay preserves the provided initial state", async () => {
 	assert.deepEqual(
 		state.messages.map((message) => message.text),
 		["existing", "next"],
+	);
+});
+
+test("batched assistant updates preserve sequential reducer semantics", () => {
+	const ctx = context();
+	let initial = createConversationState();
+	for (const action of [
+		{
+			type: "local_user_submit",
+			clientMessageId: "u1",
+			text: "run",
+			timestampMs: 1,
+		},
+		{ type: "local_assistant_pending", timestampMs: 1 },
+		{ type: "user_message_start", text: "run", timestampMs: 2 },
+	] satisfies ConversationAction[]) {
+		initial = reduceConversation(initial, action, ctx);
+	}
+
+	const updates = [
+		{ type: "assistant_message_start", timestampMs: 3 },
+		{ type: "assistant_text_delta", delta: "hel", timestampMs: 4 },
+		{ type: "assistant_text_delta", delta: "lo", timestampMs: 5 },
+		{ type: "assistant_thinking_start", timestampMs: 6 },
+		{ type: "assistant_thinking_delta", delta: "a", timestampMs: 7 },
+		{ type: "assistant_thinking_delta", delta: "b", timestampMs: 8 },
+		{ type: "assistant_thinking_end", timestampMs: 9 },
+		{
+			type: "tool_execution_start",
+			toolCallId: "t1",
+			toolName: "bash",
+			args: { command: "pwd" },
+			timestampMs: 10,
+		},
+		{
+			type: "tool_execution_update",
+			toolCallId: "t1",
+			toolName: "bash",
+			args: { command: "pwd" },
+			partialResult: " /",
+			timestampMs: 11,
+		},
+		{
+			type: "tool_execution_end",
+			toolCallId: "t1",
+			toolName: "bash",
+			result: "/repo",
+			isError: false,
+			timestampMs: 12,
+		},
+		{
+			type: "assistant_turn_end",
+			stopReason: "stop",
+			completion: "complete",
+			timestampMs: 13,
+		},
+	] satisfies ConversationAction[];
+	const sequential = updates.reduce(
+		(state, action) => reduceConversation(state, action, ctx),
+		initial,
+	);
+	const batched = reduceConversationActions(initial, updates, ctx);
+	assert.deepEqual(semanticMessages(batched), semanticMessages(sequential));
+	assert.deepEqual(batched.active, sequential.active);
+	assert.deepEqual(batched.pendingUsers, sequential.pendingUsers);
+});
+
+test("frame coalescing merges only compatible high-frequency actions", () => {
+	const actions = [
+		{
+			type: "assistant_text_delta",
+			delta: "a",
+			sourceEntryId: "a1",
+			sourceContentIndex: 0,
+		},
+		{
+			type: "assistant_text_delta",
+			delta: "b",
+			sourceEntryId: "a1",
+			sourceContentIndex: 0,
+		},
+		{
+			type: "assistant_text_delta",
+			delta: "c",
+			sourceEntryId: "a2",
+			sourceContentIndex: 0,
+		},
+		{ type: "assistant_thinking_delta", delta: "x" },
+		{ type: "assistant_thinking_delta", delta: "y" },
+		{
+			type: "tool_execution_update",
+			toolCallId: "t1",
+			toolName: "bash",
+			args: {},
+			partialResult: "old",
+		},
+		{
+			type: "tool_execution_update",
+			toolCallId: "t1",
+			toolName: "bash",
+			args: {},
+			partialResult: "latest",
+		},
+	] satisfies ConversationAction[];
+	const result = coalesceConversationActions(actions);
+	assert.equal(result.length, 4);
+	assert.deepEqual(
+		result.map((action) => action.type),
+		[
+			"assistant_text_delta",
+			"assistant_text_delta",
+			"assistant_thinking_delta",
+			"tool_execution_update",
+		],
+	);
+	assert.equal(
+		result[0]?.type === "assistant_text_delta" ? result[0].delta : null,
+		"ab",
+	);
+	assert.equal(
+		result[2]?.type === "assistant_thinking_delta" ? result[2].delta : null,
+		"xy",
+	);
+	assert.equal(
+		result[3]?.type === "tool_execution_update"
+			? result[3].partialResult
+			: null,
+		"latest",
 	);
 });

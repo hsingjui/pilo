@@ -71,19 +71,19 @@ const SETTINGS_TABS = [
 	},
 	{
 		id: "connections" as const,
-		section: "工作区",
+		section: "项目",
 		label: "连接",
 		icon: Plug,
 	},
 	{
 		id: "sessions" as const,
-		section: "工作区",
+		section: "项目",
 		label: "会话",
 		icon: MessagesSquare,
 	},
 	{
 		id: "pi" as const,
-		section: "工作区",
+		section: "项目",
 		label: "Pi",
 		icon: SquareTerminal,
 	},
@@ -202,7 +202,7 @@ function PreferencesSettings() {
 			<SettingsSection title="桌面端">
 				<SettingsRow
 					label="开机自动启动"
-					helper="登录 Windows 后自动启动 Pilo，并恢复上次打开的工作区。"
+					helper="登录 Windows 后自动启动 Pilo，并恢复上次打开的项目。"
 				>
 					<SettingsStatus muted>规划中</SettingsStatus>
 				</SettingsRow>
@@ -379,7 +379,7 @@ export function SettingsDialog({
 	const [activeTab, setActiveTab] = useState<SettingsTabId>("preferences");
 	const activeTabConfig =
 		SETTINGS_TABS.find((tab) => tab.id === activeTab) ?? SETTINGS_TABS[0];
-	const sections = ["个人", "工作区", "其他"] as const;
+	const sections = ["个人", "项目", "其他"] as const;
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>

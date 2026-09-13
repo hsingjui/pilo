@@ -10,6 +10,11 @@ import {
 	type PiloRuntimeEvent,
 } from "@/lib/pi-runtime";
 
+export function stopChatSession(projectId: string, sessionId: string) {
+	const sessionKey = JSON.stringify([projectId, sessionId]);
+	return invoke<void>("chat_session_stop", { sessionKey });
+}
+
 export function createChatSessionClient(
 	projectId: string,
 	sessionId: string,
@@ -41,9 +46,7 @@ export function createChatSessionClient(
 		},
 		stop: () => invoke<void>("chat_session_stop", { sessionKey }),
 		listen: (handler: (event: PiloRuntimeEvent) => void) =>
-			listenRuntimeEvents((event) => {
-				if (event.sessionKey === sessionKey) handler(event);
-			}),
+			listenRuntimeEvents(handler, { sessionKey }),
 		getPiAgentState,
 		getPiMessages: () => rpc<{ messages: unknown[] }>({ type: "get_messages" }),
 		getPiSessionStats: () => rpc<PiSessionStats>({ type: "get_session_stats" }),

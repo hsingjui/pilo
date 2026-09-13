@@ -1,13 +1,16 @@
 use std::{collections::HashMap, sync::Arc};
 
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter};
 use tokio::{sync::Mutex as AsyncMutex, task::JoinHandle};
 
 use crate::domain::Project;
 
-use super::server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager};
+use super::{
+    server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager},
+    session_index,
+};
 
 pub const SESSION_WATCH_EVENT_NAME: &str = "pilo://sessions";
 
@@ -15,6 +18,10 @@ pub const SESSION_WATCH_EVENT_NAME: &str = "pilo://sessions";
 #[serde(tag = "type", rename_all = "snake_case")]
 enum SessionWatchEvent {
     Changed {
+        #[serde(rename = "projectId")]
+        project_id: String,
+    },
+    Indexed {
         #[serde(rename = "projectId")]
         project_id: String,
     },
@@ -63,6 +70,7 @@ impl SessionWatcherManager {
         let project_id = project.id.clone();
         let project_path = project.path.clone();
         let connection = project.connection.clone();
+        let event_project = project.clone();
         let event_app = app.clone();
         let event_servers = Arc::clone(&servers);
         let event_client = Arc::clone(&current_client);
@@ -80,7 +88,43 @@ impl SessionWatcherManager {
                             continue;
                         }
                         match event.event.as_str() {
-                            "session.changed" => emit_changed(&event_app, &project_id),
+                            "session.changed" => {
+                                let paths = string_array(&event.data, "paths");
+                                let removed_paths = string_array(&event.data, "removedPaths");
+                                let full_refresh = event
+                                    .data
+                                    .get("full")
+                                    .and_then(Value::as_bool)
+                                    .unwrap_or(paths.is_empty() && removed_paths.is_empty());
+                                if full_refresh {
+                                    emit_changed(&event_app, &project_id);
+                                } else {
+                                    match session_index::reconcile_paths(
+                                        &event_app,
+                                        &event_servers,
+                                        &event_project,
+                                        &paths,
+                                        &removed_paths,
+                                    )
+                                    .await
+                                    {
+                                        Ok(changed) if changed > 0 => {
+                                            emit_indexed(&event_app, &project_id)
+                                        }
+                                        Ok(_) => {}
+                                        Err(error) => {
+                                            emit_error(
+                                                &event_app,
+                                                &project_id,
+                                                format!(
+                                                    "targeted session indexing failed: {error}"
+                                                ),
+                                            );
+                                            emit_changed(&event_app, &project_id);
+                                        }
+                                    }
+                                }
+                            }
                             "session.backend" => emit_backend(
                                 &event_app,
                                 &project_id,
@@ -184,6 +228,25 @@ fn emit_changed(app: &AppHandle, project_id: &str) {
             project_id: project_id.to_owned(),
         },
     );
+}
+
+fn emit_indexed(app: &AppHandle, project_id: &str) {
+    let _ = app.emit(
+        SESSION_WATCH_EVENT_NAME,
+        SessionWatchEvent::Indexed {
+            project_id: project_id.to_owned(),
+        },
+    );
+}
+
+fn string_array(data: &Value, key: &str) -> Vec<String> {
+    data.get(key)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
 }
 
 fn emit_backend(app: &AppHandle, project_id: &str, backend: &str) {

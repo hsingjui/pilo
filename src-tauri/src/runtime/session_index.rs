@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, HashMap};
+
 use pilo_protocol::SessionFile;
 use serde_json::Value;
 use tauri::AppHandle;
@@ -7,7 +9,87 @@ use crate::domain::{Project, SessionIndexEntry, SessionReconcileResult};
 use super::{server_client::ServerManager, storage};
 
 const INITIAL_SESSION_INDEX_LIMIT: usize = 20;
-pub const BACKGROUND_SESSION_INDEX_BATCH: usize = 20;
+pub const BACKGROUND_SESSION_INDEX_BATCH: usize = 64;
+
+#[derive(Default)]
+pub struct BackgroundSessionIndexManager {
+    projects: HashMap<String, BackgroundSessionIndexProject>,
+}
+
+#[derive(Default)]
+struct BackgroundSessionIndexProject {
+    running: bool,
+    generation: u64,
+    pending_paths: BTreeMap<String, u64>,
+}
+
+impl BackgroundSessionIndexManager {
+    pub fn enqueue(&mut self, project_id: &str, paths: Vec<String>) -> bool {
+        if paths.is_empty() {
+            return false;
+        }
+        let state = self.projects.entry(project_id.to_owned()).or_default();
+        state.generation = state.generation.wrapping_add(1).max(1);
+        let generation = state.generation;
+        for path in paths {
+            state.pending_paths.insert(path, generation);
+        }
+        if state.running {
+            false
+        } else {
+            state.running = true;
+            true
+        }
+    }
+
+    pub fn next_batch_or_finish(
+        &mut self,
+        project_id: &str,
+        limit: usize,
+    ) -> Option<Vec<(String, u64)>> {
+        let empty = self
+            .projects
+            .get(project_id)
+            .is_none_or(|state| state.pending_paths.is_empty());
+        if empty {
+            self.projects.remove(project_id);
+            return None;
+        }
+        let state = self.projects.get(project_id)?;
+        Some(
+            state
+                .pending_paths
+                .iter()
+                .take(limit)
+                .map(|(path, generation)| (path.clone(), *generation))
+                .collect(),
+        )
+    }
+
+    pub fn complete_batch(&mut self, project_id: &str, batch: &[(String, u64)]) {
+        let Some(state) = self.projects.get_mut(project_id) else {
+            return;
+        };
+        for (path, completed_generation) in batch {
+            if state.pending_paths.get(path) == Some(completed_generation) {
+                state.pending_paths.remove(path);
+            }
+        }
+    }
+
+    pub fn worker_aborted(&mut self, project_id: &str) {
+        let remove = match self.projects.get_mut(project_id) {
+            Some(state) => {
+                state.running = false;
+                state.pending_paths.is_empty()
+            }
+            None => false,
+        };
+        if remove {
+            self.projects.remove(project_id);
+        }
+    }
+}
 
 #[derive(Debug)]
 struct SessionFileMeta {
@@ -35,7 +117,7 @@ pub async fn reconcile(
     servers: &ServerManager,
     project: &Project,
 ) -> Result<SessionReconcileWork, String> {
-    let db = storage::open(app)?;
+    let mut db = storage::open(app)?;
     let cached = storage::list_sessions(&db, &project.id)?;
     let files = scan_files(
         servers,
@@ -52,6 +134,7 @@ pub async fn reconcile(
     let mut result = SessionReconcileResult::default();
     let mut seen = Vec::with_capacity(files.len());
     let mut deferred_paths = Vec::new();
+    let transaction = db.transaction().map_err(|error| error.to_string())?;
 
     for file in files {
         let previous = cached_by_path.get(file.path.as_str()).copied();
@@ -76,7 +159,7 @@ pub async fn reconcile(
 
         seen.push(file.path.clone());
         let entry = build_index_entry(project, file, previous)?;
-        storage::upsert_session(&db, &entry)?;
+        storage::upsert_session(&transaction, &entry)?;
         if previous.is_some() {
             result.updated += 1;
         } else {
@@ -84,7 +167,8 @@ pub async fn reconcile(
         }
     }
 
-    result.removed = storage::remove_missing_sessions(&db, &project.id, &seen)?;
+    result.removed = storage::remove_missing_sessions(&transaction, &project.id, &seen)?;
+    transaction.commit().map_err(|error| error.to_string())?;
     result.sessions = storage::list_sessions(&db, &project.id)?;
     Ok(SessionReconcileWork {
         result,
@@ -98,17 +182,28 @@ pub async fn index_paths(
     project: &Project,
     paths: &[String],
 ) -> Result<usize, String> {
-    if paths.is_empty() {
+    reconcile_paths(app, servers, project, paths, &[]).await
+}
+
+pub async fn reconcile_paths(
+    app: &AppHandle,
+    servers: &ServerManager,
+    project: &Project,
+    paths: &[String],
+    removed_paths: &[String],
+) -> Result<usize, String> {
+    if paths.is_empty() && removed_paths.is_empty() {
         return Ok(0);
     }
-    let db = storage::open(app)?;
-    let cached = storage::list_sessions(&db, &project.id)?;
-    let cached_by_path = cached
-        .iter()
-        .map(|session| (session.session_path.as_str(), session))
-        .collect::<std::collections::HashMap<_, _>>();
     let files = scan_files(servers, project, &[], None, paths).await?;
-    let mut indexed = 0_usize;
+    let mut db = storage::open(app)?;
+    let transaction = db.transaction().map_err(|error| error.to_string())?;
+    let mut changed = 0_usize;
+    for path in removed_paths {
+        if storage::remove_session_for_project(&transaction, &project.id, path)? {
+            changed += 1;
+        }
+    }
     for file in files {
         if file.unchanged || file.deferred {
             continue;
@@ -119,12 +214,13 @@ pub async fn index_paths(
         if file.header.get("cwd").and_then(Value::as_str) != Some(project.path.as_str()) {
             continue;
         }
-        let previous = cached_by_path.get(file.path.as_str()).copied();
-        let entry = build_index_entry(project, file, previous)?;
-        storage::upsert_session(&db, &entry)?;
-        indexed += 1;
+        let previous = storage::get_session(&transaction, &file.path)?;
+        let entry = build_index_entry(project, file, previous.as_ref())?;
+        storage::upsert_session(&transaction, &entry)?;
+        changed += 1;
     }
-    Ok(indexed)
+    transaction.commit().map_err(|error| error.to_string())?;
+    Ok(changed)
 }
 
 async fn scan_files(
@@ -339,5 +435,53 @@ mod tests {
         assert_eq!(entry.last_message_at, previous.last_message_at);
         assert_eq!(entry.last_offset, 200);
         assert!(entry.pinned);
+    }
+
+    #[test]
+    fn background_index_manager_merges_pending_paths_without_starting_a_second_worker() {
+        let mut manager = BackgroundSessionIndexManager::default();
+        assert!(manager.enqueue("project", vec!["b".to_owned(), "a".to_owned()]));
+        assert!(!manager.enqueue("project", vec!["c".to_owned()]));
+
+        let first = manager.next_batch_or_finish("project", 2).unwrap();
+        assert_eq!(
+            first
+                .iter()
+                .map(|(path, _)| path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "b"]
+        );
+
+        assert!(!manager.enqueue("project", vec!["a".to_owned()]));
+        manager.complete_batch("project", &first);
+        let second = manager.next_batch_or_finish("project", 8).unwrap();
+        assert_eq!(
+            second
+                .iter()
+                .map(|(path, _)| path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "c"]
+        );
+        manager.complete_batch("project", &second);
+        assert!(manager.next_batch_or_finish("project", 8).is_none());
+    }
+
+    #[test]
+    fn background_index_manager_keeps_inflight_paths_after_worker_abort() {
+        let mut manager = BackgroundSessionIndexManager::default();
+        assert!(manager.enqueue("project", vec!["a".to_owned()]));
+        let first = manager.next_batch_or_finish("project", 8).unwrap();
+        assert_eq!(first[0].0, "a");
+
+        manager.worker_aborted("project");
+        assert!(manager.enqueue("project", vec!["b".to_owned()]));
+        let retried = manager.next_batch_or_finish("project", 8).unwrap();
+        assert_eq!(
+            retried
+                .iter()
+                .map(|(path, _)| path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "b"]
+        );
     }
 }

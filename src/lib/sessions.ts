@@ -18,7 +18,7 @@ export type SessionIndexEntry = {
 	lastMessageAt: string | null;
 	firstUserMessagePreview: string | null;
 	fileSize: number;
-	fileMtimeNs: number;
+	fileMtimeNs: string;
 	lastOffset: number;
 	indexedAtMs: number;
 	pinned: boolean;
@@ -48,6 +48,16 @@ export type SessionHistory = {
 	sourceMessageCount: number;
 };
 
+export type SessionHistoryFingerprint = {
+	fileSize: number;
+	fileMtimeNs: string;
+};
+
+export type SessionHistoryResult = {
+	history: SessionHistory;
+	fingerprint: SessionHistoryFingerprint | null;
+};
+
 export type SessionWatchEvent =
 	| { type: "changed"; projectId: string }
 	| { type: "indexed"; projectId: string }
@@ -60,14 +70,73 @@ export function listSessions(projectId: string): Promise<SessionIndexEntry[]> {
 	return invoke<SessionIndexEntry[]>("session_list", { projectId });
 }
 
+const sessionHistoryDecoder = new TextDecoder();
+const sessionHistoryInFlight = new Map<string, Promise<SessionHistoryResult>>();
+
+function normalizeSessionHistoryResponse(
+	value: SessionHistory | SessionHistoryResult,
+): SessionHistoryResult {
+	if ("history" in value) return value;
+	return { history: value, fingerprint: null };
+}
+
+function decodeSessionHistoryResponse(
+	response:
+		| ArrayBuffer
+		| Uint8Array
+		| number[]
+		| SessionHistory
+		| SessionHistoryResult,
+): SessionHistoryResult {
+	if (response instanceof ArrayBuffer) {
+		return normalizeSessionHistoryResponse(
+			JSON.parse(sessionHistoryDecoder.decode(new Uint8Array(response))) as
+				| SessionHistory
+				| SessionHistoryResult,
+		);
+	}
+	if (response instanceof Uint8Array) {
+		return normalizeSessionHistoryResponse(
+			JSON.parse(sessionHistoryDecoder.decode(response)) as
+				| SessionHistory
+				| SessionHistoryResult,
+		);
+	}
+	if (Array.isArray(response)) {
+		return normalizeSessionHistoryResponse(
+			JSON.parse(sessionHistoryDecoder.decode(Uint8Array.from(response))) as
+				| SessionHistory
+				| SessionHistoryResult,
+		);
+	}
+	return normalizeSessionHistoryResponse(response);
+}
+
 export function loadSessionHistory(
 	projectId: string,
 	sessionPath: string,
-): Promise<SessionHistory> {
-	return invoke<SessionHistory>("session_history", {
+	fingerprint?: { fileSize: number; fileMtimeNs: string },
+): Promise<SessionHistoryResult> {
+	const requestKey = `${projectId}\0${sessionPath}\0${fingerprint?.fileSize ?? "?"}\0${fingerprint?.fileMtimeNs ?? "?"}`;
+	const existing = sessionHistoryInFlight.get(requestKey);
+	if (existing) return existing;
+
+	const request = invoke<
+		ArrayBuffer | Uint8Array | number[] | SessionHistory | SessionHistoryResult
+	>("session_history", {
 		projectId,
 		sessionPath,
-	});
+		expectedFileSize: fingerprint?.fileSize,
+		expectedFileMtimeNs: fingerprint?.fileMtimeNs,
+	})
+		.then(decodeSessionHistoryResponse)
+		.finally(() => {
+			if (sessionHistoryInFlight.get(requestKey) === request) {
+				sessionHistoryInFlight.delete(requestKey);
+			}
+		});
+	sessionHistoryInFlight.set(requestKey, request);
+	return request;
 }
 
 export function reconcileSessions(

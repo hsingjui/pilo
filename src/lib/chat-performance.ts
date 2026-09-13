@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 const CHAT_PERF_STORAGE_KEY = "pilo.debug.chatPerformance";
 const REPORT_INTERVAL_MS = 1_000;
 const SCROLL_ACTIVE_MS = 180;
+let debugEnabled: boolean | undefined;
 
 type Counters = {
 	chatRenders: number;
@@ -78,10 +79,8 @@ const state: ChatPerfState = {
 
 export function isChatPerformanceDebugEnabled() {
 	if (typeof window === "undefined") return false;
-	return (
-		import.meta.env.DEV ||
-		window.localStorage.getItem(CHAT_PERF_STORAGE_KEY) === "1"
-	);
+	debugEnabled ??= window.localStorage.getItem(CHAT_PERF_STORAGE_KEY) === "1";
+	return debugEnabled;
 }
 
 function ensureLongTaskObserver() {

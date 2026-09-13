@@ -193,6 +193,8 @@
 		--code-border: 222 14.7% 86.7%;
 		--code-added: var(--github-addition);
 		--code-removed: var(--github-deletion);
+		--skeleton-line: #e8eaef;
+		--skeleton-line-strong: #dfe2e8;
 		--syntax-keyword: 230.9 60.9% 63.9%;
 		--syntax-string: 10.4 38.3% 52.9%;
 		--syntax-number: 191.2 49.2% 36.3%;
@@ -289,6 +291,8 @@
 		--code-border: 0 0% 15.7%;
 		--code-added: 164.1 100% 80%;
 		--code-removed: 0 100% 75.1%;
+		--skeleton-line: #232323;
+		--skeleton-line-strong: #2a2a2a;
 		--syntax-keyword: 0 0% 62.7%;
 		--syntax-string: 164.1 100% 80%;
 		--syntax-number: 27.1 100% 80%;
@@ -666,6 +670,27 @@
 	}
 }
 
+@keyframes pilo-skeleton-breathe {
+	from {
+		opacity: 0.72;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+.pilo-skeleton-breathe {
+	animation: pilo-skeleton-breathe 1.65s ease-in-out infinite alternate;
+}
+
+.pilo-skeleton-line {
+	background: var(--skeleton-line);
+}
+
+.pilo-skeleton-strong {
+	background: var(--skeleton-line-strong);
+}
+
 @keyframes chat-agent-activity-dot-pulse {
 	0%,
 	100% {
@@ -720,6 +745,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+	.pilo-skeleton-breathe,
 	.chat-agent-activity-dot-pulse,
 	.chat-agent-activity-label::after {
 		animation: none;

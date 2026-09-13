@@ -191,12 +191,75 @@ export type PiloRuntimeEvent = {
 	  }
 );
 
-export function listenRuntimeEvents(
-	handler: (event: PiloRuntimeEvent) => void,
+type RuntimeEventHandler = (event: PiloRuntimeEvent) => void;
+
+const globalRuntimeEventHandlers = new Set<RuntimeEventHandler>();
+const runtimeEventHandlersBySession = new Map<
+	string | undefined,
+	Set<RuntimeEventHandler>
+>();
+let runtimeListenerReady: Promise<void> | null = null;
+
+function invokeRuntimeEventHandlers(
+	handlers: Iterable<RuntimeEventHandler>,
+	event: PiloRuntimeEvent,
+) {
+	for (const handler of handlers) {
+		try {
+			handler(event);
+		} catch (error) {
+			console.error("Runtime event handler failed", error);
+		}
+	}
+}
+
+function ensureRuntimeEventListener() {
+	if (runtimeListenerReady) return runtimeListenerReady;
+	runtimeListenerReady = listen<PiloRuntimeEvent>(
+		RUNTIME_EVENT_NAME,
+		({ payload }) => {
+			invokeRuntimeEventHandlers(globalRuntimeEventHandlers, payload);
+			const scoped = runtimeEventHandlersBySession.get(payload.sessionKey);
+			if (scoped) invokeRuntimeEventHandlers(scoped, payload);
+		},
+	)
+		.then(() => undefined)
+		.catch((error) => {
+			runtimeListenerReady = null;
+			throw error;
+		});
+	return runtimeListenerReady;
+}
+
+export async function listenRuntimeEvents(
+	handler: RuntimeEventHandler,
+	scope?: { sessionKey: string | undefined },
 ): Promise<UnlistenFn> {
-	return listen<PiloRuntimeEvent>(RUNTIME_EVENT_NAME, ({ payload }) => {
-		handler(payload);
-	});
+	const handlers = scope
+		? (runtimeEventHandlersBySession.get(scope.sessionKey) ?? new Set())
+		: globalRuntimeEventHandlers;
+	if (scope && !runtimeEventHandlersBySession.has(scope.sessionKey)) {
+		runtimeEventHandlersBySession.set(scope.sessionKey, handlers);
+	}
+	handlers.add(handler);
+	try {
+		await ensureRuntimeEventListener();
+	} catch (error) {
+		handlers.delete(handler);
+		if (scope && handlers.size === 0) {
+			runtimeEventHandlersBySession.delete(scope.sessionKey);
+		}
+		throw error;
+	}
+	let active = true;
+	return () => {
+		if (!active) return;
+		active = false;
+		handlers.delete(handler);
+		if (scope && handlers.size === 0) {
+			runtimeEventHandlersBySession.delete(scope.sessionKey);
+		}
+	};
 }
 
 let rpcRequestSequence = 0;
@@ -231,12 +294,15 @@ export async function requestPiRpc<T>(
 	});
 
 	try {
-		unlisten = await listenRuntimeEvents((event) => {
-			if (event.sessionKey !== sessionKey) return;
-			if (event.type !== "rpc_message" || !isRecord(event.message)) return;
-			if (event.message.type !== "response" || event.message.id !== id) return;
-			resolveResponse?.(event.message as PiRpcResponse<T>);
-		});
+		unlisten = await listenRuntimeEvents(
+			(event) => {
+				if (event.type !== "rpc_message" || !isRecord(event.message)) return;
+				if (event.message.type !== "response" || event.message.id !== id)
+					return;
+				resolveResponse?.(event.message as PiRpcResponse<T>);
+			},
+			{ sessionKey },
+		);
 		timer = window.setTimeout(
 			() => rejectResponse?.(new Error("Pi RPC 请求超时。")),
 			timeoutMs,

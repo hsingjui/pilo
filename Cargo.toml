@@ -8,3 +8,6 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+[profile.dev.package.serde_json]
+opt-level = 3

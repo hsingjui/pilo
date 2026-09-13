@@ -70,7 +70,7 @@ export function SessionSettings() {
 			>
 				<SettingsRow
 					label="Session Index"
-					helper="使用 SQLite 缓存 session metadata，加快工作区打开和历史列表加载。"
+					helper="使用 SQLite 缓存 session metadata，加快项目打开和历史列表加载。"
 				>
 					<SettingsStatus>已启用</SettingsStatus>
 				</SettingsRow>

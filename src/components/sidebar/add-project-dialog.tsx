@@ -143,7 +143,7 @@ export function AddProjectDialog({
 			});
 			onOpenChange(false);
 		} catch (error) {
-			toast.error("添加工作区失败", { description: String(error) });
+			toast.error("添加项目失败", { description: String(error) });
 		} finally {
 			setBusy(false);
 		}
@@ -156,7 +156,7 @@ export function AddProjectDialog({
 			setDiscovered(await discoverProjects(connection));
 		} catch (error) {
 			setDiscovered([]);
-			toast.error("发现工作区失败", { description: String(error) });
+			toast.error("发现项目失败", { description: String(error) });
 		} finally {
 			setBusy(false);
 		}
@@ -166,7 +166,7 @@ export function AddProjectDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="max-w-xl gap-5">
 				<DialogHeader>
-					<DialogTitle>添加工作区</DialogTitle>
+					<DialogTitle>添加项目</DialogTitle>
 					<DialogDescription>
 						选择 Pi 运行环境和项目目录。添加时会探测 cwd、Git branch 与 Pi
 						version。
@@ -304,7 +304,7 @@ export function AddProjectDialog({
 					<div className="border-t pt-4">
 						<div className="mb-2 flex items-center justify-between gap-3">
 							<div>
-								<div className="text-sm font-medium">发现已有 Pi 工作区</div>
+								<div className="text-sm font-medium">发现已有 Pi 项目</div>
 								<div className="text-xs text-muted-foreground">
 									从 Session header 读取真实 cwd。
 								</div>

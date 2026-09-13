@@ -272,7 +272,7 @@ export function FileExplorer({
 						正在读取文件…
 					</div>
 				) : rootEntries.length === 0 ? (
-					<EmptyState variant="compact" title="工作区为空" />
+					<EmptyState variant="compact" title="项目目录为空" />
 				) : (
 					rootEntries.map((entry) => (
 						<FileTreeRow

@@ -1,0 +1,187 @@
+use std::sync::Arc;
+
+use super::{
+    cache::{
+        SESSION_HISTORY_CACHE_CAPACITY, SESSION_HISTORY_CACHE_MAX_ESTIMATED_BYTES,
+        SessionFileFingerprint, SessionHistoryCache, fingerprint_from_metadata,
+    },
+    parser::{HistoryParser, parse_history},
+    types::{ConversationEventDto, TurnCompletion},
+};
+
+#[test]
+fn history_cache_reuses_matching_fingerprint_without_dropping_valid_entry() {
+    let mut cache = SessionHistoryCache::default();
+    let first_fingerprint = SessionFileFingerprint {
+        file_size: 100,
+        file_mtime_ns: 200,
+    };
+    let changed_fingerprint = SessionFileFingerprint {
+        file_size: 101,
+        file_mtime_ns: 201,
+    };
+    let serialized = Arc::new(vec![1, 2, 3]);
+
+    cache.insert_serialized(
+        "project\0session".to_owned(),
+        first_fingerprint,
+        Arc::clone(&serialized),
+    );
+    assert!(Arc::ptr_eq(
+        &cache
+            .get_serialized("project\0session", first_fingerprint)
+            .unwrap(),
+        &serialized
+    ));
+    assert_eq!(
+        cache.get_serialized("project\0session", changed_fingerprint),
+        None
+    );
+    assert!(cache.entries.contains_key("project\0session"));
+    assert!(Arc::ptr_eq(
+        &cache
+            .get_serialized("project\0session", first_fingerprint)
+            .unwrap(),
+        &serialized
+    ));
+}
+
+#[test]
+fn history_cache_evicts_least_recently_used_entries() {
+    let mut cache = SessionHistoryCache::default();
+    let fingerprint = SessionFileFingerprint {
+        file_size: 1,
+        file_mtime_ns: 1,
+    };
+    for index in 0..SESSION_HISTORY_CACHE_CAPACITY {
+        cache.insert_serialized(
+            format!("session-{index}"),
+            fingerprint,
+            Arc::new(vec![index as u8]),
+        );
+    }
+
+    assert!(cache.get_serialized("session-0", fingerprint).is_some());
+    cache.insert_serialized("session-new".to_owned(), fingerprint, Arc::new(vec![255]));
+
+    assert!(cache.entries.contains_key("session-0"));
+    assert!(!cache.entries.contains_key("session-1"));
+    assert!(cache.entries.contains_key("session-new"));
+}
+
+#[test]
+fn history_cache_respects_estimated_byte_budget() {
+    let mut cache = SessionHistoryCache::default();
+    let file_size = (SESSION_HISTORY_CACHE_MAX_ESTIMATED_BYTES / 4) as u64;
+    for index in 0..3 {
+        cache.insert_serialized(
+            format!("large-{index}"),
+            SessionFileFingerprint {
+                file_size,
+                file_mtime_ns: index,
+            },
+            Arc::new(vec![index as u8]),
+        );
+    }
+
+    assert!(!cache.entries.contains_key("large-0"));
+    assert!(cache.entries.contains_key("large-1"));
+    assert!(cache.entries.contains_key("large-2"));
+}
+
+#[test]
+fn history_cache_skips_single_entry_larger_than_byte_budget() {
+    let mut cache = SessionHistoryCache::default();
+    cache.insert_serialized(
+        "too-large".to_owned(),
+        SessionFileFingerprint {
+            file_size: SESSION_HISTORY_CACHE_MAX_ESTIMATED_BYTES as u64,
+            file_mtime_ns: 1,
+        },
+        Arc::new(vec![1]),
+    );
+
+    assert!(!cache.entries.contains_key("too-large"));
+}
+
+#[test]
+fn session_read_fingerprint_is_optional_for_older_servers() {
+    assert_eq!(
+        fingerprint_from_metadata(&serde_json::json!({
+            "fileSize": 123,
+            "fileMtimeNs": 456,
+        })),
+        Some(SessionFileFingerprint {
+            file_size: 123,
+            file_mtime_ns: 456,
+        })
+    );
+    assert_eq!(
+        fingerprint_from_metadata(&serde_json::json!({
+            "nextOffset": 1,
+            "eof": false,
+        })),
+        None
+    );
+}
+
+#[test]
+fn incremental_history_parser_matches_whole_file_across_chunk_boundaries() {
+    let bytes = concat!(
+        "{\"type\":\"session\",\"version\":3,\"id\":\"session-a\"}\n",
+        "{\"type\":\"message\",\"id\":\"u1\",\"parentId\":null,\"message\":{\"role\":\"user\",\"content\":\"你好 world\"}}\n",
+        "{\"type\":\"message\",\"id\":\"a1\",\"parentId\":\"u1\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stopReason\":\"stop\"}}\n"
+    ).as_bytes();
+    let expected = parse_history(bytes);
+
+    for chunk_size in [1, 2, 7, 31, 128] {
+        let mut parser = HistoryParser::default();
+        for chunk in bytes.chunks(chunk_size) {
+            parser.push(chunk);
+        }
+        assert_eq!(parser.finish(), expected, "chunk size {chunk_size}");
+    }
+}
+
+#[test]
+fn selects_only_the_active_session_branch() {
+    let bytes = concat!(
+        "{\"type\":\"session\",\"version\":3,\"id\":\"session-a\"}\n",
+        "{\"type\":\"message\",\"id\":\"u1\",\"parentId\":null,\"timestamp\":\"2026-01-01T00:00:00Z\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}\n",
+        "{\"type\":\"message\",\"id\":\"a-old\",\"parentId\":\"u1\",\"timestamp\":\"2026-01-01T00:00:01Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"old\"}],\"stopReason\":\"stop\"}}\n",
+        "{\"type\":\"message\",\"id\":\"a-new\",\"parentId\":\"u1\",\"timestamp\":\"2026-01-01T00:00:02Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"new\"}],\"stopReason\":\"stop\"}}\n"
+    ).as_bytes();
+    let history = parse_history(bytes);
+    let serialized = serde_json::to_string(&history.events).unwrap();
+    assert!(serialized.contains("new"));
+    assert!(!serialized.contains("old"));
+    assert_eq!(history.source_message_count, 2);
+}
+
+#[test]
+fn branch_metadata_follows_selected_parent_chain() {
+    let bytes = concat!(
+        "{\"type\":\"session\",\"version\":3,\"id\":\"session-a\"}\n",
+        "{\"type\":\"model_change\",\"id\":\"m1\",\"parentId\":null,\"provider\":\"p\",\"modelId\":\"base\"}\n",
+        "{\"type\":\"model_change\",\"id\":\"m-old\",\"parentId\":\"m1\",\"provider\":\"p\",\"modelId\":\"old\"}\n",
+        "{\"type\":\"model_change\",\"id\":\"m-new\",\"parentId\":\"m1\",\"provider\":\"p\",\"modelId\":\"new\"}\n"
+    ).as_bytes();
+    let history = parse_history(bytes);
+    assert_eq!(history.model.unwrap().id, "new");
+}
+
+#[test]
+fn eof_after_tool_use_is_interrupted() {
+    let bytes = concat!(
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n",
+        "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"t1\",\"name\":\"bash\",\"arguments\":{}}],\"stopReason\":\"toolUse\"}}\n"
+    ).as_bytes();
+    let history = parse_history(bytes);
+    assert!(matches!(
+        history.events.last(),
+        Some(ConversationEventDto::AssistantTurnEnd {
+            completion: TurnCompletion::Interrupted,
+            ..
+        })
+    ));
+}

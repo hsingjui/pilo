@@ -17,7 +17,7 @@
 		"format": "oxfmt --write .",
 		"format:check": "oxfmt --check .",
 		"check": "pnpm format:check && pnpm lint",
-		"test:unit": "node --experimental-strip-types --test tests/chat-activity-state.test.ts tests/conversation-reducer.test.ts"
+		"test:unit": "node --experimental-strip-types --test tests/chat-activity-state.test.ts tests/conversation-reducer.test.ts tests/app-chat-state.test.ts"
 	},
 	"dependencies": {
 		"@fontsource/inter": "^5.3.0",
