@@ -53,7 +53,7 @@ export function SessionHeader({
 					role="tab"
 					aria-selected="true"
 					tabIndex={0}
-					className="group flex h-8 w-full min-w-0 items-center gap-1.5 rounded-md border border-transparent px-3 text-[13px] text-foreground outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+					className="group flex h-8 w-fit max-w-[66.666667%] min-w-0 items-center gap-1.5 overflow-hidden rounded-md border border-transparent px-3 text-[13px] text-foreground outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
 					onDoubleClick={onRename}
 					title={onRename ? "双击重命名" : undefined}
 				>
@@ -72,27 +72,29 @@ export function SessionHeader({
 							d="M517.36 400H634.72V634.72H517.36Z"
 						/>
 					</svg>
-					<span className="truncate">
+					<span className="min-w-0 flex-1 truncate">
 						{sessionState?.name || session.title}
 					</span>
 				</div>
 			</div>
-			<div className="flex shrink-0 items-center gap-1 pr-2">
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<Button
-							variant="ghost"
-							size="icon"
-							className="size-7"
-							aria-label="显示变更"
-							onClick={onOpenChanges}
-						>
-							<PanelRight className="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>显示变更</TooltipContent>
-				</Tooltip>
-			</div>
+			{onOpenChanges ? (
+				<div className="flex shrink-0 items-center gap-1 pr-2">
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<Button
+								variant="ghost"
+								size="icon"
+								className="size-7"
+								aria-label="显示变更"
+								onClick={onOpenChanges}
+							>
+								<PanelRight className="size-4" />
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent>显示变更</TooltipContent>
+					</Tooltip>
+				</div>
+			) : null}
 		</header>
 	);
 }

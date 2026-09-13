@@ -90,6 +90,10 @@ const RightSidebar = lazy(() =>
 	})),
 );
 
+// Keep the existing right-sidebar implementation available for future work,
+// but do not render or reserve layout space for it for now.
+const RIGHT_SIDEBAR_ENABLED = false;
+
 let editorRequestSequence = 0;
 
 function App() {
@@ -680,7 +684,11 @@ function App() {
 				<main className="relative flex min-w-0 flex-1 flex-col">
 					{CUSTOM_TITLEBAR && <TitleBar />}
 					<Group orientation="horizontal" className="min-h-0 flex-1">
-						<Panel defaultSize={560} minSize={400} className="relative min-w-0">
+						<Panel
+							defaultSize={RIGHT_SIDEBAR_ENABLED ? 560 : "100"}
+							minSize={400}
+							className="relative min-w-0"
+						>
 							{renderedOpenedChats.map((entry) => {
 								const visible =
 									chatSession !== null &&
@@ -738,7 +746,11 @@ function App() {
 															: current,
 													);
 												}}
-												onOpenChanges={() => rightPanelRef.current?.expand()}
+												onOpenChanges={
+													RIGHT_SIDEBAR_ENABLED
+														? () => rightPanelRef.current?.expand()
+														: undefined
+												}
 												onExpandSidebar={() => setLeftSidebarCollapsed(false)}
 												onOpenFile={openEditorFile}
 												onSessionChanged={() => {
@@ -807,29 +819,33 @@ function App() {
 								</Suspense>
 							) : null}
 						</Panel>
-						<ResizeSeparator
-							className="w-1 bg-transparent transition-colors hover:bg-sidebar-border"
-							onPointerDown={() => setIsResizing(true)}
-							onPointerUp={() => setIsResizing(false)}
-							onPointerCancel={() => setIsResizing(false)}
-						/>
-						<Suspense
-							fallback={
-								<Panel
-									defaultSize={0}
-									minSize={280}
-									collapsible
-									collapsedSize={0}
+						{RIGHT_SIDEBAR_ENABLED ? (
+							<>
+								<ResizeSeparator
+									className="w-1 bg-transparent transition-colors hover:bg-sidebar-border"
+									onPointerDown={() => setIsResizing(true)}
+									onPointerUp={() => setIsResizing(false)}
+									onPointerCancel={() => setIsResizing(false)}
 								/>
-							}
-						>
-							<RightSidebar
-								panelRef={rightPanelRef}
-								resizing={isResizing}
-								project={activeProject ?? undefined}
-								onOpenFile={openEditorFile}
-							/>
-						</Suspense>
+								<Suspense
+									fallback={
+										<Panel
+											defaultSize={0}
+											minSize={280}
+											collapsible
+											collapsedSize={0}
+										/>
+									}
+								>
+									<RightSidebar
+										panelRef={rightPanelRef}
+										resizing={isResizing}
+										project={activeProject ?? undefined}
+										onOpenFile={openEditorFile}
+									/>
+								</Suspense>
+							</>
+						) : null}
 					</Group>
 				</main>
 			</div>
