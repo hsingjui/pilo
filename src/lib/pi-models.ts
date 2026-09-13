@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { createChatSessionClient } from "@/lib/chat-session-client";
 import {
-	PI_THINKING_LEVELS,
 	type PiAgentState,
 	type PiModel,
 	type PiThinkingLevel,
@@ -66,7 +65,9 @@ export function isProjectPiModelsStale(
 			(model) =>
 				model.defaultThinkingLevel === undefined ||
 				model.thinkingLevels === undefined ||
-				model.scopeOrder === undefined,
+				(model.reasoning && model.thinkingLevels.length === 0) ||
+				model.scopeOrder === undefined ||
+				model.scopeThinkingLevel === undefined,
 		) ||
 		now - snapshot.refreshedAtMs >= PROJECT_PI_MODELS_TTL_MS
 	);
@@ -103,35 +104,51 @@ function modelsMatch(a: PiModel | null, b: PiModel | null): boolean {
 }
 
 function fallbackThinkingLevels(model: PiModel): PiThinkingLevel[] {
-	return model.reasoning ? [...PI_THINKING_LEVELS] : ["off"];
+	return model.reasoning ? [] : ["off"];
 }
 
 function modelKey(model: Pick<PiModel, "provider" | "id">): string {
 	return `${model.provider}\0${model.id}`;
 }
 
-async function resolveScopedModelOrder(
+type ScopedModelProfile = {
+	order: number | null;
+	thinkingLevel: PiThinkingLevel | null;
+};
+
+async function resolveScopedModelProfiles(
 	client: ReturnType<typeof createChatSessionClient>,
 	models: PiModel[],
 	baseline: PiAgentState,
-): Promise<Map<string, number | null>> {
-	const scopeOrder = new Map<string, number | null>(
-		models.map((model) => [modelKey(model), null]),
+): Promise<Map<string, ScopedModelProfile>> {
+	const profiles = new Map<string, ScopedModelProfile>(
+		models.map((model) => [
+			modelKey(model),
+			{ order: null, thinkingLevel: null },
+		]),
 	);
-	if (!baseline.model || models.length === 0) return scopeOrder;
+	if (!baseline.model || models.length === 0) return profiles;
 
 	try {
 		const first = await client.cyclePiModel();
 		if (!first) {
 			// With more than one available model, a null cycle result means Pi has a
 			// one-model scope. New RPC sessions start on that scoped model.
-			if (models.length > 1) scopeOrder.set(modelKey(baseline.model), 0);
-			return scopeOrder;
+			if (models.length > 1) {
+				profiles.set(modelKey(baseline.model), {
+					order: 0,
+					thinkingLevel: baseline.thinkingLevel,
+				});
+			}
+			return profiles;
 		}
 
-		if (!first.isScoped) return scopeOrder;
+		if (!first.isScoped) return profiles;
 
 		const scopedKeys: string[] = [modelKey(first.model)];
+		const scopedThinkingLevels = new Map<string, PiThinkingLevel>([
+			[modelKey(first.model), first.thinkingLevel],
+		]);
 		const collect = async (): Promise<void> => {
 			if (scopedKeys.length > models.length) return;
 			const next = await client.cyclePiModel();
@@ -139,6 +156,7 @@ async function resolveScopedModelOrder(
 			const key = modelKey(next.model);
 			if (scopedKeys.includes(key)) return;
 			scopedKeys.push(key);
+			scopedThinkingLevels.set(key, next.thinkingLevel);
 			return collect();
 		};
 		await collect();
@@ -155,12 +173,15 @@ async function resolveScopedModelOrder(
 					]
 				: scopedKeys;
 		for (const [index, key] of orderedKeys.entries()) {
-			scopeOrder.set(key, index);
+			profiles.set(key, {
+				order: index,
+				thinkingLevel: scopedThinkingLevels.get(key) ?? null,
+			});
 		}
-		return scopeOrder;
+		return profiles;
 	} catch (error) {
 		console.warn("Failed to resolve Pi scoped models", error);
-		return scopeOrder;
+		return profiles;
 	} finally {
 		try {
 			await client.setPiModel(baseline.model);
@@ -175,7 +196,7 @@ async function resolveModelThinkingProfiles(
 	client: ReturnType<typeof createChatSessionClient>,
 	models: PiModel[],
 	baseline: PiAgentState,
-	scopeOrder: ReadonlyMap<string, number | null>,
+	scopeProfiles: ReadonlyMap<string, ScopedModelProfile>,
 ): Promise<PiModel[]> {
 	if (!baseline.model || models.length === 0) return models;
 
@@ -202,7 +223,9 @@ async function resolveModelThinkingProfiles(
 				...model,
 				defaultThinkingLevel: state.thinkingLevel,
 				thinkingLevels: thinking.levels,
-				scopeOrder: scopeOrder.get(modelKey(model)) ?? null,
+				scopeOrder: scopeProfiles.get(modelKey(model))?.order ?? null,
+				scopeThinkingLevel:
+					scopeProfiles.get(modelKey(model))?.thinkingLevel ?? null,
 			});
 		} catch (error) {
 			console.warn(
@@ -213,7 +236,9 @@ async function resolveModelThinkingProfiles(
 				...model,
 				defaultThinkingLevel: baseline.thinkingLevel,
 				thinkingLevels: fallbackThinkingLevels(model),
-				scopeOrder: scopeOrder.get(modelKey(model)) ?? null,
+				scopeOrder: scopeProfiles.get(modelKey(model))?.order ?? null,
+				scopeThinkingLevel:
+					scopeProfiles.get(modelKey(model))?.thinkingLevel ?? null,
 			});
 		}
 
@@ -239,7 +264,7 @@ export function refreshProjectPiModels(
 				client.getAvailablePiModels(),
 				client.getPiAgentState(),
 			]);
-			const scopeOrder = await resolveScopedModelOrder(
+			const scopeProfiles = await resolveScopedModelProfiles(
 				client,
 				result.models,
 				state,
@@ -248,7 +273,7 @@ export function refreshProjectPiModels(
 				client,
 				result.models,
 				state,
-				scopeOrder,
+				scopeProfiles,
 			);
 			const defaultModel =
 				models.find((model) => modelsMatch(model, state.model)) ?? state.model;

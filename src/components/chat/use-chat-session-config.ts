@@ -10,6 +10,12 @@ import {
 	subscribeProjectPiModels,
 } from "@/lib/pi-models";
 import {
+	findMatchingPiModel,
+	getNextPiQuickCycleModel,
+	getPiModelThinkingLevels,
+	getPiQuickCycleThinkingLevel,
+} from "@/lib/pi-model-selection";
+import {
 	PI_THINKING_LEVELS,
 	runtimeErrorMessage,
 	type PiAgentState,
@@ -158,16 +164,23 @@ export function useChatSessionConfig({
 		session.sessionPath,
 	]);
 
+	/* oxlint-disable react/set-state-in-effect -- Cached model profiles can arrive after history metadata; enrich the selected historical model without starting Pi. */
+	useEffect(() => {
+		if (!session.sessionPath || !selectedModel) return;
+		const profiledModel = findMatchingPiModel(modelOptions, selectedModel);
+		if (!profiledModel) return;
+		if (profiledModel !== selectedModel) setSelectedModel(profiledModel);
+		setThinkingLevels([...getPiModelThinkingLevels(profiledModel)]);
+	}, [modelOptions, selectedModel, session.sessionPath]);
+	/* oxlint-enable react/set-state-in-effect */
+
 	const applyHistoryMetadata = useCallback(
 		(result: SessionHistory) => {
 			const cachedModels =
 				getCachedProjectPiModels(session.projectRecord.id)?.models ?? [];
+			let historicalModel: PiModel | null = null;
 			if (result.model) {
-				const historicalModel = cachedModels.find(
-					(model) =>
-						model.provider === result.model?.provider &&
-						model.id === result.model?.id,
-				) ?? {
+				historicalModel = findMatchingPiModel(cachedModels, result.model) ?? {
 					provider: result.model.provider,
 					id: result.model.id,
 					name: result.model.id,
@@ -181,7 +194,7 @@ export function useChatSessionConfig({
 			) {
 				setSelectedThinkingLevel(result.thinkingLevel as PiThinkingLevel);
 			}
-			setThinkingLevels(PI_THINKING_LEVELS);
+			setThinkingLevels([...getPiModelThinkingLevels(historicalModel)]);
 			setSessionState({
 				name: result.name ?? undefined,
 				messageCount: result.sourceMessageCount,
@@ -225,17 +238,21 @@ export function useChatSessionConfig({
 			const projectId = session.projectRecord.id;
 			const cached = getCachedProjectPiModels(projectId);
 			if (session.sessionPath) {
+				const profiledSelectedModel =
+					findMatchingPiModel(cached?.models ?? [], selectedModel) ??
+					selectedModel;
 				const options =
-					selectedModel &&
+					profiledSelectedModel &&
 					!cached?.models.some(
 						(model) =>
-							model.provider === selectedModel.provider &&
-							model.id === selectedModel.id,
+							model.provider === profiledSelectedModel.provider &&
+							model.id === profiledSelectedModel.id,
 					)
-						? [selectedModel, ...(cached?.models ?? [])]
+						? [profiledSelectedModel, ...(cached?.models ?? [])]
 						: (cached?.models ?? []);
 				setModelOptions(options);
-				setThinkingLevels(selectedModel?.thinkingLevels ?? PI_THINKING_LEVELS);
+				if (profiledSelectedModel) setSelectedModel(profiledSelectedModel);
+				setThinkingLevels([...getPiModelThinkingLevels(profiledSelectedModel)]);
 				setModelLoadState("ready");
 				if (force || !cached || isProjectPiModelsStale(cached)) {
 					setModelError(null);
@@ -307,13 +324,10 @@ export function useChatSessionConfig({
 			modelSelectionDirtyRef.current = true;
 			thinkingSelectionDirtyRef.current = false;
 			if (session.sessionPath) {
-				const cached = getCachedProjectPiModels(session.projectRecord.id);
 				setSelectedModel(model);
-				setThinkingLevels(model.thinkingLevels ?? PI_THINKING_LEVELS);
+				setThinkingLevels([...getPiModelThinkingLevels(model)]);
 				setSelectedThinkingLevel(
-					model.defaultThinkingLevel ??
-						cached?.defaultThinkingLevel ??
-						selectedThinkingLevel,
+					model.defaultThinkingLevel ?? selectedThinkingLevel,
 				);
 				setModelError(null);
 				return;
@@ -353,15 +367,87 @@ export function useChatSessionConfig({
 			modelChanging,
 			selectedModel,
 			selectedThinkingLevel,
-			session.projectRecord.id,
 			session.sessionPath,
 		],
 	);
 
+	const handleQuickCycleModel = useCallback(() => {
+		if (modelChanging) return;
+
+		if (session.sessionPath) {
+			if (modelOptions.length === 0) {
+				void loadModelOptions();
+				return;
+			}
+			const nextModel = getNextPiQuickCycleModel(modelOptions, selectedModel);
+			if (!nextModel) return;
+			modelSelectionDirtyRef.current = true;
+			thinkingSelectionDirtyRef.current = false;
+			setSelectedModel(nextModel);
+			setThinkingLevels([...getPiModelThinkingLevels(nextModel)]);
+			const nextThinkingLevel = getPiQuickCycleThinkingLevel(nextModel);
+			if (nextThinkingLevel) setSelectedThinkingLevel(nextThinkingLevel);
+			setModelError(null);
+			return;
+		}
+
+		const previousModel = selectedModel;
+		const previousThinkingLevel = selectedThinkingLevel;
+		const requestId = ++modelRequestRef.current;
+		setModelChanging(true);
+		setModelError(null);
+		void (async () => {
+			try {
+				await client.ensure();
+				const result = await client.cyclePiModel();
+				if (!result) return;
+				const cachedModels =
+					getCachedProjectPiModels(session.projectRecord.id)?.models ?? [];
+				const profiledModel =
+					findMatchingPiModel(cachedModels, result.model) ?? result.model;
+				let supportedLevels = [...getPiModelThinkingLevels(profiledModel)];
+				try {
+					supportedLevels = (await client.getAvailablePiThinkingLevels())
+						.levels;
+				} catch (error) {
+					console.warn(
+						"Failed to refresh thinking levels after model cycle",
+						error,
+					);
+				}
+				if (modelRequestRef.current !== requestId) return;
+				modelSelectionDirtyRef.current = true;
+				thinkingSelectionDirtyRef.current = false;
+				setSelectedModel({ ...profiledModel, thinkingLevels: supportedLevels });
+				setSelectedThinkingLevel(result.thinkingLevel);
+				setThinkingLevels(supportedLevels);
+				setModelLoadState("ready");
+			} catch (error) {
+				if (modelRequestRef.current !== requestId) return;
+				setSelectedModel(previousModel);
+				setSelectedThinkingLevel(previousThinkingLevel);
+				toast.error("无法快速切换模型", {
+					description: runtimeErrorMessage(error),
+				});
+			} finally {
+				if (modelRequestRef.current === requestId) setModelChanging(false);
+			}
+		})();
+	}, [
+		client,
+		loadModelOptions,
+		modelChanging,
+		modelOptions,
+		selectedModel,
+		selectedThinkingLevel,
+		session.projectRecord.id,
+		session.sessionPath,
+	]);
+
 	const loadThinkingLevels = useCallback(async () => {
 		if (thinkingLoading || thinkingChanging) return;
 		if (session.sessionPath) {
-			setThinkingLevels(selectedModel?.thinkingLevels ?? PI_THINKING_LEVELS);
+			setThinkingLevels([...getPiModelThinkingLevels(selectedModel)]);
 			return;
 		}
 		setThinkingLoading(true);
@@ -390,7 +476,13 @@ export function useChatSessionConfig({
 
 	const handleThinkingChange = useCallback(
 		(level: PiThinkingLevel | null) => {
-			if (!level || thinkingChanging || level === selectedThinkingLevel) return;
+			if (
+				!level ||
+				thinkingChanging ||
+				level === selectedThinkingLevel ||
+				!thinkingLevels.includes(level)
+			)
+				return;
 			thinkingSelectionDirtyRef.current = true;
 			if (session.sessionPath) {
 				setSelectedThinkingLevel(level);
@@ -415,7 +507,13 @@ export function useChatSessionConfig({
 				}
 			})();
 		},
-		[client, selectedThinkingLevel, session.sessionPath, thinkingChanging],
+		[
+			client,
+			selectedThinkingLevel,
+			session.sessionPath,
+			thinkingChanging,
+			thinkingLevels,
+		],
 	);
 
 	const prepareRuntimeConfiguration = useCallback(
@@ -495,6 +593,7 @@ export function useChatSessionConfig({
 		handleRenameSession,
 		loadModelOptions,
 		handleModelChange,
+		handleQuickCycleModel,
 		loadThinkingLevels,
 		handleThinkingChange,
 		prepareRuntimeConfiguration,

@@ -84,6 +84,8 @@ export type PiModel = {
 	thinkingLevels?: PiThinkingLevel[];
 	/** Pi scoped-model cycle order. null means scope was resolved and this model is outside it. */
 	scopeOrder?: number | null;
+	/** Thinking level Pi applies when this model is selected through the scoped-model cycle. */
+	scopeThinkingLevel?: PiThinkingLevel | null;
 };
 
 export type PiModelCycleResult = {

@@ -185,6 +185,10 @@ export function ComposerRunConfig({
 					<DropdownMenuSubContent className="min-w-40">
 						{thinkingLoading ? (
 							<DropdownMenuItem disabled>正在读取推理等级…</DropdownMenuItem>
+						) : thinkingLevels.length === 0 ? (
+							<DropdownMenuItem disabled>
+								当前模型没有可用推理等级
+							</DropdownMenuItem>
 						) : (
 							<>
 								{thinkingLevels.map((level) => (
