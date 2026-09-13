@@ -22,13 +22,11 @@ export type SessionIndexEntry = {
 	lastOffset: number;
 	indexedAtMs: number;
 	pinned: boolean;
-	archived: boolean;
 	titleOverride: string | null;
 };
 
 export type SessionUiStateUpdate = {
 	pinned: boolean;
-	archived: boolean;
 	titleOverride: string | null;
 };
 
@@ -51,6 +49,10 @@ export type SessionHistory = {
 export type SessionHistoryFingerprint = {
 	fileSize: number;
 	fileMtimeNs: string;
+};
+
+export type SessionDeleteResult = {
+	method: "trash" | "unlink";
 };
 
 export type SessionHistoryResult = {
@@ -137,6 +139,16 @@ export function loadSessionHistory(
 		});
 	sessionHistoryInFlight.set(requestKey, request);
 	return request;
+}
+
+export function deleteSession(
+	projectId: string,
+	sessionPath: string,
+): Promise<SessionDeleteResult> {
+	return invoke<SessionDeleteResult>("session_delete", {
+		projectId,
+		sessionPath,
+	});
 }
 
 export function reconcileSessions(

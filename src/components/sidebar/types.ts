@@ -17,7 +17,6 @@ export type SidebarSession = {
 	projectId: string;
 	latestMessageAt: Date;
 	pinned: boolean;
-	archived: boolean;
 	/** Agent 正在运行时在行尾显示加载状态。 */
 	active?: boolean;
 };
@@ -31,9 +30,9 @@ export type AppSidebarProps = {
 	onCollapse?: () => void;
 	onUpdateSession?: (
 		sessionId: string,
-		update: { pinned?: boolean; archived?: boolean; title?: string },
+		update: { pinned?: boolean; title?: string },
 	) => void;
-	onArchiveProjectSessions?: (sessionIds: string[]) => void;
+	onDeleteSession?: (sessionId: string) => void;
 	onRefreshProjectSessions?: (projectId: string) => void;
 	selectedSessionId?: string | null;
 	onSelectSession?: (sessionId: string) => void;

@@ -189,6 +189,7 @@ fn reconnect_retry_is_limited_to_read_only_methods() {
         "fs.write_file",
         "fs.rename",
         "fs.remove",
+        "session.delete",
         "session.watch_start",
         "terminal.open",
         "pi.start",

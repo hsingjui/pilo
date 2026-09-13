@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toSidebarSession } from "@/components/app/app-chat-state";
 import { listenRuntimeEvents } from "@/lib/pi-runtime";
 import {
+	deleteSession,
 	listSessions,
 	listenSessionWatchEvents,
 	reconcileSessions,
@@ -14,7 +15,6 @@ import {
 
 type SessionUiUpdate = {
 	pinned?: boolean;
-	archived?: boolean;
 	title?: string;
 };
 
@@ -148,7 +148,6 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 			try {
 				const next = await updateSessionUiState(session.sessionPath, {
 					pinned: update.pinned ?? session.pinned,
-					archived: update.archived ?? session.archived,
 					titleOverride:
 						update.title === undefined ? session.titleOverride : update.title,
 				});
@@ -166,10 +165,31 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 		[indexedSessions],
 	);
 
+	const removeSession = useCallback(
+		async (sessionId: string) => {
+			const session = indexedSessions.find(
+				(candidate) => candidate.piSessionId === sessionId,
+			);
+			if (!session) return null;
+			const result = await deleteSession(
+				session.projectId,
+				session.sessionPath,
+			);
+			setIndexedSessions((current) =>
+				current.filter(
+					(candidate) => candidate.sessionPath !== session.sessionPath,
+				),
+			);
+			return { session, result };
+		},
+		[indexedSessions],
+	);
+
 	return {
 		indexedSessions,
 		refreshProjectSessions,
 		sidebarSessions,
 		updateSession,
+		removeSession,
 	};
 }

@@ -88,6 +88,10 @@ impl SessionHistoryCache {
         }
     }
 
+    pub(crate) fn invalidate(&mut self, project: &Project, path: &str) {
+        self.remove(&cache_key(project, path));
+    }
+
     fn remove(&mut self, key: &str) {
         self.remove_entry(key);
         self.order.retain(|candidate| candidate != key);

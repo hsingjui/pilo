@@ -317,7 +317,6 @@ fn build_index_entry(
         last_offset: file.size,
         indexed_at_ms: storage::now_ms(),
         pinned: previous.is_some_and(|value| value.pinned),
-        archived: previous.is_some_and(|value| value.archived),
         title_override: previous.and_then(|value| value.title_override.clone()),
     })
 }
@@ -402,7 +401,6 @@ mod tests {
             last_offset: 100,
             indexed_at_ms: 1,
             pinned: true,
-            archived: false,
             title_override: None,
         };
         let entry = build_index_entry(

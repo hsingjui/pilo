@@ -23,6 +23,6 @@ pub use runtime::{
     runtime_abort_pi, runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc, runtime_stop_pi,
 };
 pub use sessions::{
-    session_history, session_list, session_reconcile, session_update_ui_state, session_watch_start,
-    session_watch_stop,
+    session_delete, session_history, session_list, session_reconcile, session_update_ui_state,
+    session_watch_start, session_watch_stop,
 };

@@ -9,7 +9,7 @@ import {
 	useState,
 	type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Archive, PanelLeft, Search, SquarePen } from "lucide-react";
+import { PanelLeft, Search, SquarePen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, ScrollArea } from "@/ui";
 import { IS_MACOS } from "@/components/title-bar";
@@ -50,7 +50,7 @@ export function AppSidebar({
 	collapsed = false,
 	onCollapse,
 	onUpdateSession,
-	onArchiveProjectSessions,
+	onDeleteSession,
 	onRefreshProjectSessions,
 	selectedSessionId,
 	onSelectSession,
@@ -60,7 +60,6 @@ export function AppSidebar({
 	footer,
 }: AppSidebarProps) {
 	const [searchQuery, setSearchQuery] = useState("");
-	const [showArchived, setShowArchived] = useState(false);
 	const [collapsedSections, setCollapsedSections] = useState<
 		Record<string, boolean>
 	>({});
@@ -153,12 +152,11 @@ export function AppSidebar({
 	const visibleSessions = useMemo(
 		() =>
 			searchableSessions.flatMap(({ session, searchText }) => {
-				if (session.archived !== showArchived) return [];
 				if (normalizedSearch && !searchText.includes(normalizedSearch))
 					return [];
 				return [session];
 			}),
-		[normalizedSearch, searchableSessions, showArchived],
+		[normalizedSearch, searchableSessions],
 	);
 	const projectsByEnv = useMemo(() => {
 		const grouped = new Map<string, SidebarProject[]>();
@@ -192,14 +190,6 @@ export function AppSidebar({
 		(id: string, pinned: boolean) => onUpdateSession?.(id, { pinned }),
 		[onUpdateSession],
 	);
-	const handleArchiveSession = useCallback(
-		(id: string) => onUpdateSession?.(id, { archived: true }),
-		[onUpdateSession],
-	);
-	const handleRestoreSession = useCallback(
-		(id: string) => onUpdateSession?.(id, { archived: false }),
-		[onUpdateSession],
-	);
 	const handleRenameSession = useCallback(
 		(id: string, title: string) => onUpdateSession?.(id, { title }),
 		[onUpdateSession],
@@ -215,19 +205,17 @@ export function AppSidebar({
 				selected={activeSessionId === session.id}
 				onSelect={handleSelectSession}
 				onTogglePin={handleToggleSessionPin}
-				onArchive={handleArchiveSession}
-				onRestore={handleRestoreSession}
+				onDelete={session.sessionPath ? onDeleteSession : undefined}
 				onRename={handleRenameSession}
 			/>
 		),
 		[
 			activeSessionId,
-			handleArchiveSession,
 			handleRenameSession,
-			handleRestoreSession,
 			handleSelectSession,
 			handleToggleSessionPin,
 			now,
+			onDeleteSession,
 		],
 	);
 
@@ -320,19 +308,6 @@ export function AppSidebar({
 								className="h-7 w-full rounded-md border border-sidebar-border/70 bg-transparent pl-7 pr-2 text-xs outline-none placeholder:text-sidebar-foreground-muted focus:border-sidebar-ring/50"
 							/>
 						</label>
-						<button
-							type="button"
-							aria-label={showArchived ? "显示活动会话" : "显示已归档会话"}
-							aria-pressed={showArchived}
-							onClick={() => setShowArchived((value) => !value)}
-							className={cn(
-								"flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground",
-								showArchived &&
-									"bg-sidebar-hover text-sidebar-hover-foreground",
-							)}
-						>
-							<Archive className="h-3.5 w-3.5" />
-						</button>
 					</div>
 				</div>
 				<ScrollArea
@@ -379,22 +354,11 @@ export function AppSidebar({
 																onRefreshProjectSessions?.(project.id);
 														}}
 														onNewChat={onNewChatInProject}
-														onArchiveSessions={
-															onArchiveProjectSessions
-																? () =>
-																		onArchiveProjectSessions(
-																			projectSessions.map(
-																				(session) => session.id,
-																			),
-																		)
-																: undefined
-														}
 														onRefreshSessions={
 															onRefreshProjectSessions
 																? () => onRefreshProjectSessions(project.id)
 																: undefined
 														}
-														hasSessions={projectSessions.length > 0}
 													/>
 													{!projectCollapsed &&
 														renderSessionList(projectSessions, project, env)}

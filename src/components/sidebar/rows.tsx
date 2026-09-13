@@ -1,8 +1,6 @@
 /* oxlint-disable jsx-a11y/prefer-tag-over-role -- sidebar rows contain independent action buttons; native outer buttons would create invalid nested interactive controls. */
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
-	Archive,
-	ArchiveRestore,
 	ChevronDown,
 	Folder,
 	LoaderCircle,
@@ -15,6 +13,7 @@ import {
 	RefreshCw,
 	SlidersHorizontal,
 	SquarePen,
+	Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -41,10 +40,10 @@ const HOVER_ACTION = cn(
 );
 
 /**
- * 两步确认的归档按钮（移植自 Lody sidebar-confirm-archive-button）：
+ * 两步确认的删除按钮：
  * 第一次点击进入 Confirm 状态，再次点击才执行，失焦 / 移出 / Esc 复位。
  */
-function ConfirmArchiveButton({
+function ConfirmDeleteButton({
 	label,
 	confirmLabel,
 	className,
@@ -117,7 +116,7 @@ function ConfirmArchiveButton({
 					<span className="relative z-10">{confirmLabel}</span>
 				</>
 			) : (
-				<Archive className="h-3.5 w-3.5" />
+				<Trash2 className="h-3.5 w-3.5" />
 			)}
 		</button>
 	);
@@ -202,18 +201,14 @@ export function ProjectRow({
 	collapsed,
 	onToggle,
 	onNewChat,
-	onArchiveSessions,
 	onRefreshSessions,
-	hasSessions,
 }: {
 	project: SidebarProject;
 	env: SidebarEnv;
 	collapsed: boolean;
 	onToggle: () => void;
 	onNewChat?: (projectId: string) => void;
-	onArchiveSessions?: () => void;
 	onRefreshSessions?: () => void;
-	hasSessions: boolean;
 }) {
 	const [menuOpen, setMenuOpen] = useState(false);
 	const toggleLabel = collapsed ? "展开项目" : "折叠项目";
@@ -280,13 +275,6 @@ export function ProjectRow({
 									<RefreshCw className={menuItemIconClassName} />
 									刷新对话
 								</DropdownMenuItem>
-								<DropdownMenuItem
-									disabled={!hasSessions}
-									onSelect={() => onArchiveSessions?.()}
-								>
-									<Archive className={menuItemIconClassName} />
-									归档对话
-								</DropdownMenuItem>
 							</DropdownMenuContent>
 						</DropdownMenu>
 						<button
@@ -326,8 +314,7 @@ export const SessionRow = memo(function SessionRow({
 	selected,
 	onSelect,
 	onTogglePin,
-	onArchive,
-	onRestore,
+	onDelete,
 	onRename,
 }: {
 	session: SidebarSession;
@@ -337,11 +324,11 @@ export const SessionRow = memo(function SessionRow({
 	selected: boolean;
 	onSelect: (sessionId: string) => void;
 	onTogglePin?: (sessionId: string, pinned: boolean) => void;
-	onArchive?: (sessionId: string) => void;
-	onRestore?: (sessionId: string) => void;
+	onDelete?: (sessionId: string) => void;
 	onRename?: (sessionId: string, title: string) => void;
 }) {
 	const [menuOpen, setMenuOpen] = useState(false);
+	const [confirmingDeleteMenu, setConfirmingDeleteMenu] = useState(false);
 	const [renaming, setRenaming] = useState(false);
 	const [renameValue, setRenameValue] = useState(session.title);
 	const renameInputRef = useRef<HTMLInputElement>(null);
@@ -385,7 +372,13 @@ export const SessionRow = memo(function SessionRow({
 			>
 				<div className="flex w-full min-w-0 items-center gap-1.5">
 					<div className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-						<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+						<DropdownMenu
+							open={menuOpen}
+							onOpenChange={(open) => {
+								setMenuOpen(open);
+								if (!open) setConfirmingDeleteMenu(false);
+							}}
+						>
 							<DropdownMenuTrigger asChild>
 								<button
 									type="button"
@@ -422,17 +415,22 @@ export const SessionRow = memo(function SessionRow({
 									<Pencil className={menuItemIconClassName} />
 									重命名
 								</DropdownMenuItem>
-								{session.archived ? (
-									<DropdownMenuItem onSelect={() => onRestore?.(session.id)}>
-										<ArchiveRestore className={menuItemIconClassName} />
-										恢复
+								{onDelete ? (
+									<DropdownMenuItem
+										className="text-destructive focus:text-destructive"
+										onSelect={(event) => {
+											if (!confirmingDeleteMenu) {
+												event.preventDefault();
+												setConfirmingDeleteMenu(true);
+												return;
+											}
+											onDelete(session.id);
+										}}
+									>
+										<Trash2 className={menuItemIconClassName} />
+										{confirmingDeleteMenu ? "确认删除" : "删除"}
 									</DropdownMenuItem>
-								) : (
-									<DropdownMenuItem onSelect={() => onArchive?.(session.id)}>
-										<Archive className={menuItemIconClassName} />
-										归档
-									</DropdownMenuItem>
-								)}
+								) : null}
 							</DropdownMenuContent>
 						</DropdownMenu>
 					</div>
@@ -474,16 +472,16 @@ export const SessionRow = memo(function SessionRow({
 								<LoaderCircle className="size-3 animate-spin text-sidebar-primary" />
 							) : null}
 						</span>
-						{!session.archived ? (
-							<ConfirmArchiveButton
-								label="归档"
+						{onDelete ? (
+							<ConfirmDeleteButton
+								label="删除"
 								confirmLabel="确认"
 								className={cn(
 									"absolute right-0 top-0 z-20",
 									"opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100",
 									"group-data-[menu-open]:pointer-events-auto group-data-[menu-open]:opacity-100",
 								)}
-								onConfirm={() => onArchive?.(session.id)}
+								onConfirm={() => onDelete(session.id)}
 							/>
 						) : null}
 					</div>

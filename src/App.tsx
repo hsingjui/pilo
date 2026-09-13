@@ -301,6 +301,7 @@ function App() {
 		refreshProjectSessions,
 		sidebarSessions: indexedSidebarSessions,
 		updateSession: updateIndexedSession,
+		removeSession: removeIndexedSession,
 	} = useAppSessionIndex(activeProjectId);
 	useEffect(() => {
 		setOpenedChats((current) =>
@@ -607,11 +608,34 @@ function App() {
 
 	const updateSession = async (
 		sessionId: string,
-		update: { pinned?: boolean; archived?: boolean; title?: string },
+		update: { pinned?: boolean; title?: string },
 	) => {
-		const next = await updateIndexedSession(sessionId, update);
-		if (next?.archived && selectedSessionId === next.piSessionId) {
-			setSelectedSessionId(null);
+		await updateIndexedSession(sessionId, update);
+	};
+
+	const deleteSession = async (sessionId: string) => {
+		const session = indexedSessions.find(
+			(candidate) => candidate.piSessionId === sessionId,
+		);
+		if (!session) return;
+		try {
+			await stopChatSession(session.projectId, sessionId);
+			const deleted = await removeIndexedSession(sessionId);
+			if (!deleted) return;
+			setOpenedChats((current) =>
+				current.filter(
+					(entry) =>
+						entry.session.id !== sessionId && entry.piSessionId !== sessionId,
+				),
+			);
+			setSelectedSessionId((current) =>
+				current === sessionId ? null : current,
+			);
+			toast.success(
+				deleted.result.method === "trash" ? "会话已移到回收站" : "会话已删除",
+			);
+		} catch (error) {
+			toast.error("删除会话失败", { description: String(error) });
 		}
 	};
 
@@ -629,10 +653,8 @@ function App() {
 					onUpdateSession={(sessionId, update) => {
 						void updateSession(sessionId, update);
 					}}
-					onArchiveProjectSessions={(sessionIds) => {
-						for (const sessionId of sessionIds) {
-							void updateSession(sessionId, { archived: true });
-						}
+					onDeleteSession={(sessionId) => {
+						void deleteSession(sessionId);
 					}}
 					onNewChat={() => startNewChat()}
 					onNewChatInProject={(projectId) => startNewChat(projectId)}

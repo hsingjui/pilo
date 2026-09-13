@@ -48,7 +48,6 @@ pub struct SessionIndexEntry {
     pub last_offset: u64,
     pub indexed_at_ms: u64,
     pub pinned: bool,
-    pub archived: bool,
     pub title_override: Option<String>,
 }
 
@@ -56,7 +55,6 @@ pub struct SessionIndexEntry {
 #[serde(rename_all = "camelCase")]
 pub struct SessionUiStateUpdate {
     pub pinned: bool,
-    pub archived: bool,
     pub title_override: Option<String>,
 }
 
@@ -92,7 +90,6 @@ mod tests {
             last_offset: 0,
             indexed_at_ms: 0,
             pinned: false,
-            archived: false,
             title_override: None,
         }
     }

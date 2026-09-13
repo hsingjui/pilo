@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::domain::{SessionIndexEntry, SessionReconcileResult, SessionUiStateUpdate};
+use serde::Serialize;
 
 use super::super::{PiloRuntime, project, session_history, session_index, storage};
 
@@ -195,6 +196,49 @@ pub async fn session_watch_stop(
         .stop(&project_id)
         .await;
     Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionDeleteResult {
+    method: String,
+}
+
+#[tauri::command]
+pub async fn session_delete(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    project_id: String,
+    session_path: String,
+) -> Result<SessionDeleteResult, String> {
+    let project = project::get(&app, &project_id)?;
+    let db = storage::open(&app)?;
+    let indexed = storage::get_session(&db, &session_path)?
+        .ok_or_else(|| format!("session '{session_path}' is not indexed"))?;
+    if indexed.project_id != project.id {
+        return Err("session belongs to a different project".to_owned());
+    }
+
+    let value = runtime
+        .servers
+        .request(
+            &project.connection,
+            "session.delete",
+            serde_json::json!({ "path": session_path }),
+        )
+        .await?;
+    let method = value
+        .get("method")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unlink")
+        .to_owned();
+    storage::remove_session_for_project(&db, &project.id, &indexed.session_path)?;
+    runtime
+        .session_history_cache
+        .lock()
+        .await
+        .invalidate(&project, &indexed.session_path);
+    Ok(SessionDeleteResult { method })
 }
 
 #[tauri::command]

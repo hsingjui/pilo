@@ -31,7 +31,6 @@ export function toSidebarSession(session: SessionIndexEntry): SidebarSession {
 		projectId: session.projectId,
 		latestMessageAt: sessionDate(session),
 		pinned: session.pinned,
-		archived: session.archived,
 	};
 }
 
@@ -73,7 +72,6 @@ export function mergeSidebarSessionsWithOpenChats(
 			projectId: entry.session.projectRecord.id,
 			latestMessageAt: now,
 			pinned: false,
-			archived: false,
 			active: busyControllerIds.has(entry.controllerId),
 		});
 	}

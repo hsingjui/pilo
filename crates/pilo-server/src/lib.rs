@@ -29,7 +29,8 @@ use runtime_streams::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use session::{
-    session_discover, session_read, session_scan, session_watch_start, session_watch_stop,
+    session_delete, session_discover, session_read, session_scan, session_watch_start,
+    session_watch_stop,
 };
 use tokio::{
     sync::{Mutex, OnceCell, Semaphore, mpsc},
@@ -234,6 +235,9 @@ async fn dispatch(
                     .map_err(|error| format!("pilo-server blocking task failed: {error}"))??;
             Ok(ServerReply::with_binary(metadata, vec![data]))
         }
+        "session.delete" => blocking(move || session_delete(from_params(params)?))
+            .await
+            .map(ServerReply::json),
         "session.discover" => blocking(session_discover).await.map(ServerReply::json),
         "session.watch_start" => session_watch_start(state, from_params(params)?)
             .await

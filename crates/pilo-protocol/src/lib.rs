@@ -28,6 +28,7 @@ pub const SERVER_CAPABILITIES: &[&str] = &[
     "fs.search",
     "session.scan",
     "session.read",
+    "session.delete",
     "session.discover",
     "session.watch_start",
     "session.watch_stop",

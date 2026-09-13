@@ -116,7 +116,6 @@ fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
          CREATE TABLE IF NOT EXISTS session_ui_state (
            session_path TEXT PRIMARY KEY,
            pinned INTEGER NOT NULL DEFAULT 0,
-           archived INTEGER NOT NULL DEFAULT 0,
            title_override TEXT,
            updated_at_ms INTEGER NOT NULL
          );",
@@ -447,7 +446,7 @@ pub fn list_sessions(
 ) -> Result<Vec<SessionIndexEntry>, String> {
     let mut statement = db.prepare(
         "SELECT s.connection_id,s.project_id,s.pi_session_id,s.session_path,s.name,s.cwd,s.created_at,s.updated_at,s.message_count,s.last_message_at,s.first_user_message_preview,s.file_size,s.file_mtime_ns,s.last_offset,s.indexed_at_ms,
-                COALESCE(u.pinned,0),COALESCE(u.archived,0),u.title_override
+                COALESCE(u.pinned,0),u.title_override
          FROM sessions s LEFT JOIN session_ui_state u ON u.session_path=s.session_path
          WHERE s.project_id=?1 ORDER BY s.file_mtime_ns DESC"
     ).map_err(|error| error.to_string())?;
@@ -470,8 +469,7 @@ pub fn list_sessions(
                 last_offset: row.get::<_, i64>(13)? as u64,
                 indexed_at_ms: row.get::<_, i64>(14)? as u64,
                 pinned: row.get::<_, i64>(15)? != 0,
-                archived: row.get::<_, i64>(16)? != 0,
-                title_override: row.get(17)?,
+                title_override: row.get(16)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -484,10 +482,10 @@ pub fn get_session(
     session_path: &str,
 ) -> Result<Option<SessionIndexEntry>, String> {
     db.query_row(
-        "SELECT s.connection_id,s.project_id,s.pi_session_id,s.session_path,s.name,s.cwd,s.created_at,s.updated_at,s.message_count,s.last_message_at,s.first_user_message_preview,s.file_size,s.file_mtime_ns,s.last_offset,s.indexed_at_ms,COALESCE(u.pinned,0),COALESCE(u.archived,0),u.title_override
+        "SELECT s.connection_id,s.project_id,s.pi_session_id,s.session_path,s.name,s.cwd,s.created_at,s.updated_at,s.message_count,s.last_message_at,s.first_user_message_preview,s.file_size,s.file_mtime_ns,s.last_offset,s.indexed_at_ms,COALESCE(u.pinned,0),u.title_override
          FROM sessions s LEFT JOIN session_ui_state u ON u.session_path=s.session_path WHERE s.session_path=?1",
         params![session_path],
-        |row| Ok(SessionIndexEntry { connection_id: row.get(0)?, project_id: row.get(1)?, pi_session_id: row.get(2)?, session_path: row.get(3)?, name: row.get(4)?, cwd: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)?, message_count: row.get::<_, i64>(8)? as u64, last_message_at: row.get(9)?, first_user_message_preview: row.get(10)?, file_size: row.get::<_, i64>(11)? as u64, file_mtime_ns: row.get::<_, i64>(12)? as u64, last_offset: row.get::<_, i64>(13)? as u64, indexed_at_ms: row.get::<_, i64>(14)? as u64, pinned: row.get::<_, i64>(15)? != 0, archived: row.get::<_, i64>(16)? != 0, title_override: row.get(17)? })
+        |row| Ok(SessionIndexEntry { connection_id: row.get(0)?, project_id: row.get(1)?, pi_session_id: row.get(2)?, session_path: row.get(3)?, name: row.get(4)?, cwd: row.get(5)?, created_at: row.get(6)?, updated_at: row.get(7)?, message_count: row.get::<_, i64>(8)? as u64, last_message_at: row.get(9)?, first_user_message_preview: row.get(10)?, file_size: row.get::<_, i64>(11)? as u64, file_mtime_ns: row.get::<_, i64>(12)? as u64, last_offset: row.get::<_, i64>(13)? as u64, indexed_at_ms: row.get::<_, i64>(14)? as u64, pinned: row.get::<_, i64>(15)? != 0, title_override: row.get(16)? })
     ).optional().map_err(|error| error.to_string())
 }
 
@@ -509,13 +507,12 @@ pub fn update_session_ui_state(
     }
 
     db.execute(
-        "INSERT INTO session_ui_state(session_path,pinned,archived,title_override,updated_at_ms)
-         VALUES(?1,?2,?3,?4,?5)
-         ON CONFLICT(session_path) DO UPDATE SET pinned=excluded.pinned,archived=excluded.archived,title_override=excluded.title_override,updated_at_ms=excluded.updated_at_ms",
+        "INSERT INTO session_ui_state(session_path,pinned,title_override,updated_at_ms)
+         VALUES(?1,?2,?3,?4)
+         ON CONFLICT(session_path) DO UPDATE SET pinned=excluded.pinned,title_override=excluded.title_override,updated_at_ms=excluded.updated_at_ms",
         params![
             session_path,
             i64::from(update.pinned),
-            i64::from(update.archived),
             update.title_override,
             now_ms() as i64,
         ],
@@ -540,13 +537,21 @@ pub fn remove_session_for_project(
     project_id: &str,
     session_path: &str,
 ) -> Result<bool, String> {
-    Ok(db
+    let removed = db
         .execute(
             "DELETE FROM sessions WHERE project_id=?1 AND session_path=?2",
             params![project_id, session_path],
         )
         .map_err(|error| error.to_string())?
-        > 0)
+        > 0;
+    if removed {
+        db.execute(
+            "DELETE FROM session_ui_state WHERE session_path=?1",
+            params![session_path],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(removed)
 }
 
 pub fn remove_missing_sessions(
@@ -655,7 +660,6 @@ mod tests {
          CREATE TABLE session_ui_state (
            session_path TEXT PRIMARY KEY,
            pinned INTEGER NOT NULL DEFAULT 0,
-           archived INTEGER NOT NULL DEFAULT 0,
            title_override TEXT,
            updated_at_ms INTEGER NOT NULL
          );";

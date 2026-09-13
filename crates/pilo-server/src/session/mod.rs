@@ -5,7 +5,7 @@ mod watch;
 use std::path::PathBuf;
 
 pub(crate) use index::session_scan;
-pub(crate) use io::{session_discover, session_read};
+pub(crate) use io::{session_delete, session_discover, session_read};
 pub(crate) use watch::{session_watch_start, session_watch_stop};
 
 #[cfg(test)]
