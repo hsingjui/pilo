@@ -21,7 +21,7 @@ import {
 	type ParallelAgentStatus,
 } from "@/lib/parallel";
 import { cn } from "@/lib/utils";
-import type { Workspace } from "@/lib/workspaces";
+import type { Project } from "@/lib/projects";
 import { Button, EmptyState, Input, Textarea } from "@/ui";
 
 function statusLabel(status: ParallelAgentStatus) {
@@ -53,7 +53,7 @@ function statusDot(status: ParallelAgentStatus) {
 	);
 }
 
-export function ParallelAgentsPanel({ workspace }: { workspace: Workspace }) {
+export function ParallelAgentsPanel({ project }: { project: Project }) {
 	const [agents, setAgents] = useState<ParallelAgentInfo[]>([]);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [name, setName] = useState("");
@@ -64,12 +64,12 @@ export function ParallelAgentsPanel({ workspace }: { workspace: Workspace }) {
 
 	const refresh = useCallback(async () => {
 		try {
-			const next = await listParallelAgents(workspace.id);
+			const next = await listParallelAgents(project.id);
 			setAgents(next);
 		} catch (error) {
 			console.error("Failed to list parallel agents", error);
 		}
-	}, [workspace.id]);
+	}, [project.id]);
 
 	useEffect(() => {
 		const timer = window.setTimeout(() => void refresh(), 0);
@@ -106,7 +106,7 @@ export function ParallelAgentsPanel({ workspace }: { workspace: Workspace }) {
 		setCreating(true);
 		try {
 			const agent = await createParallelAgent(
-				workspace.id,
+				project.id,
 				trimmedName,
 				initialPrompt.trim() || undefined,
 			);
@@ -121,7 +121,7 @@ export function ParallelAgentsPanel({ workspace }: { workspace: Workspace }) {
 		} finally {
 			setCreating(false);
 		}
-	}, [agents.length, initialPrompt, name, workspace.id]);
+	}, [agents.length, initialPrompt, name, project.id]);
 
 	const send = useCallback(async () => {
 		if (!selected || !message.trim()) return;
@@ -165,7 +165,7 @@ export function ParallelAgentsPanel({ workspace }: { workspace: Workspace }) {
 		}
 		setActing(true);
 		try {
-			await removeParallelAgent(workspace.id, selected.id);
+			await removeParallelAgent(project.id, selected.id);
 			setSelectedId(null);
 			await refresh();
 		} catch (error) {
@@ -175,7 +175,7 @@ export function ParallelAgentsPanel({ workspace }: { workspace: Workspace }) {
 		} finally {
 			setActing(false);
 		}
-	}, [refresh, selected, workspace.id]);
+	}, [refresh, selected, project.id]);
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">

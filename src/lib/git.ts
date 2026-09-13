@@ -15,16 +15,16 @@ export type GitStatus = {
 	files: GitFileStatus[];
 };
 
-export function getWorkspaceGitStatus(workspaceId: string): Promise<GitStatus> {
-	return invoke("workspace_git_status", { id: workspaceId });
+export function getProjectGitStatus(projectId: string): Promise<GitStatus> {
+	return invoke("project_git_status", { id: projectId });
 }
 
-export function getWorkspaceGitDiff(
-	workspaceId: string,
+export function getProjectGitDiff(
+	projectId: string,
 	options: { path?: string; staged: boolean },
 ): Promise<string> {
-	return invoke("workspace_git_diff", {
-		id: workspaceId,
+	return invoke("project_git_diff", {
+		id: projectId,
 		path: options.path ?? null,
 		staged: options.staged,
 	});

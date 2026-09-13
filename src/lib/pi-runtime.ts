@@ -48,7 +48,7 @@ export type PiSessionSnapshot = {
 	generation: number;
 	state: PiProcessState;
 	connection: Connection | null;
-	workspaceId: string | null;
+	projectId: string | null;
 };
 
 export type PiThinkingLevel =
@@ -98,7 +98,7 @@ export type WslDistribution = {
 
 export type PiloRuntimeEvent = {
 	sessionKey?: string;
-	workspaceId?: string;
+	projectId?: string;
 } & (
 	| {
 			type: "process_state";

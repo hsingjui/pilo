@@ -10,15 +10,15 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 
 import {
-	closeWorkspacePreview,
-	detectWorkspacePreviewPorts,
-	openWorkspacePreview,
+	closeProjectPreview,
+	detectProjectPreviewPorts,
+	openProjectPreview,
 	type PreviewInfo,
 } from "@/lib/preview";
-import type { Workspace } from "@/lib/workspaces";
+import type { Project } from "@/lib/projects";
 import { Button, EmptyState, Input } from "@/ui";
 
-export function PreviewPanel({ workspace }: { workspace: Workspace }) {
+export function PreviewPanel({ project }: { project: Project }) {
 	const [ports, setPorts] = useState<number[]>([]);
 	const [portText, setPortText] = useState("");
 	const [preview, setPreview] = useState<PreviewInfo | null>(null);
@@ -29,7 +29,7 @@ export function PreviewPanel({ workspace }: { workspace: Workspace }) {
 	const detect = useCallback(async () => {
 		setLoadingPorts(true);
 		try {
-			const next = await detectWorkspacePreviewPorts(workspace.id);
+			const next = await detectProjectPreviewPorts(project.id);
 			setPorts(next);
 			if (!portText && next.length === 1) setPortText(String(next[0]));
 		} catch (error) {
@@ -39,7 +39,7 @@ export function PreviewPanel({ workspace }: { workspace: Workspace }) {
 		} finally {
 			setLoadingPorts(false);
 		}
-	}, [portText, workspace.id]);
+	}, [portText, project.id]);
 
 	useEffect(() => {
 		const timer = window.setTimeout(() => void detect(), 0);
@@ -48,8 +48,7 @@ export function PreviewPanel({ workspace }: { workspace: Workspace }) {
 
 	useEffect(() => {
 		return () => {
-			if (preview)
-				void closeWorkspacePreview(preview.id).catch(() => undefined);
+			if (preview) void closeProjectPreview(preview.id).catch(() => undefined);
 		};
 	}, [preview]);
 
@@ -62,8 +61,8 @@ export function PreviewPanel({ workspace }: { workspace: Workspace }) {
 			}
 			setOpening(true);
 			try {
-				if (preview) await closeWorkspacePreview(preview.id);
-				const next = await openWorkspacePreview(workspace.id, port);
+				if (preview) await closeProjectPreview(preview.id);
+				const next = await openProjectPreview(project.id, port);
 				setPreview(next);
 				setPortText(String(port));
 				setFrameKey((value) => value + 1);
@@ -75,14 +74,14 @@ export function PreviewPanel({ workspace }: { workspace: Workspace }) {
 				setOpening(false);
 			}
 		},
-		[portText, preview, workspace.id],
+		[portText, preview, project.id],
 	);
 
 	const close = useCallback(async () => {
 		if (!preview) return;
 		const current = preview;
 		setPreview(null);
-		await closeWorkspacePreview(current.id).catch(() => undefined);
+		await closeProjectPreview(current.id).catch(() => undefined);
 	}, [preview]);
 
 	return (

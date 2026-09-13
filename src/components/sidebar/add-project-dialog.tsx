@@ -1,18 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
 
-import { refreshWorkspacePiModels } from "@/lib/pi-models";
+import { listWslConnections, type WslConnectionInfo } from "@/lib/connections";
+import { refreshProjectPiModels } from "@/lib/pi-models";
 import type { Connection } from "@/lib/pi-runtime";
 import {
-	addWorkspace,
-	discoverWorkspaces,
+	addProject,
+	discoverProjects,
 	localConnection,
-	notifyWorkspacesChanged,
-	sshConfigConnection,
+	notifyProjectsChanged,
 	wslConnection,
-	type DiscoveredWorkspace,
-} from "@/lib/workspaces";
+	type DiscoveredProject,
+} from "@/lib/projects";
+import {
+	listSshConnections,
+	type SshConnectionInfo,
+} from "@/lib/ssh-connections";
 import {
 	Button,
 	Dialog,
@@ -32,22 +36,27 @@ type ConnectionMode = "local" | "wsl" | "ssh";
 
 function initialConnectionState(connectionId?: string | null) {
 	if (connectionId?.startsWith("wsl:")) {
-		return { mode: "wsl" as const, distro: connectionId.slice(4), host: "" };
+		return {
+			mode: "wsl" as const,
+			distro: connectionId.slice(4),
+			sshConnectionId: "",
+		};
 	}
-	if (connectionId?.startsWith("ssh:config:")) {
+	if (connectionId?.startsWith("ssh:")) {
 		return {
 			mode: "ssh" as const,
 			distro: "Debian",
-			host: connectionId.slice(11),
+			sshConnectionId: connectionId,
 		};
 	}
-	return { mode: "local" as const, distro: "Debian", host: "" };
+	return { mode: "local" as const, distro: "Debian", sshConnectionId: "" };
 }
 
 function connectionFor(
 	mode: ConnectionMode,
 	distro: string,
-	host: string,
+	sshConnectionId: string,
+	sshConnections: SshConnectionInfo[],
 ): Connection | null {
 	switch (mode) {
 		case "local":
@@ -55,11 +64,14 @@ function connectionFor(
 		case "wsl":
 			return distro.trim() ? wslConnection(distro.trim()) : null;
 		case "ssh":
-			return host.trim() ? sshConfigConnection(host.trim()) : null;
+			return (
+				sshConnections.find((item) => item.connection.id === sshConnectionId)
+					?.connection ?? null
+			);
 	}
 }
 
-export function AddWorkspaceDialog({
+export function AddProjectDialog({
 	open,
 	onOpenChange,
 	initialConnectionId,
@@ -71,27 +83,63 @@ export function AddWorkspaceDialog({
 	const [initial] = useState(() => initialConnectionState(initialConnectionId));
 	const [mode, setMode] = useState<ConnectionMode>(initial.mode);
 	const [distro, setDistro] = useState(initial.distro);
-	const [host, setHost] = useState(initial.host);
+	const [sshConnectionId, setSshConnectionId] = useState(
+		initial.sshConnectionId,
+	);
+	const [sshConnections, setSshConnections] = useState<SshConnectionInfo[]>([]);
+	const [wslConnections, setWslConnections] = useState<WslConnectionInfo[]>([]);
 	const [path, setPath] = useState("");
 	const [busy, setBusy] = useState(false);
-	const [discovered, setDiscovered] = useState<DiscoveredWorkspace[]>([]);
+	const [discovered, setDiscovered] = useState<DiscoveredProject[]>([]);
 
-	const connection = connectionFor(mode, distro, host);
+	const connection = connectionFor(
+		mode,
+		distro,
+		sshConnectionId,
+		sshConnections,
+	);
 
-	const add = async (workspacePath: string) => {
-		if (!connection || !workspacePath.trim()) return;
+	useEffect(() => {
+		if (!open) return;
+		void Promise.allSettled([listSshConnections(), listWslConnections()]).then(
+			([sshResult, wslResult]) => {
+				if (sshResult.status === "fulfilled") {
+					setSshConnections(sshResult.value);
+					setSshConnectionId(
+						(current) => current || sshResult.value[0]?.connection.id || "",
+					);
+				}
+				if (wslResult.status === "fulfilled") {
+					setWslConnections(wslResult.value);
+					setDistro((current) => {
+						if (
+							wslResult.value.some(
+								(item) =>
+									item.connection.kind.type === "wsl" &&
+									item.connection.kind.distro === current,
+							)
+						) {
+							return current;
+						}
+						const first = wslResult.value[0]?.connection;
+						return first?.kind.type === "wsl" ? first.kind.distro : current;
+					});
+				}
+			},
+		);
+	}, [open]);
+
+	const add = async (projectPath: string) => {
+		if (!connection || !projectPath.trim()) return;
 		setBusy(true);
 		try {
-			const workspace = await addWorkspace(connection, workspacePath.trim());
-			void refreshWorkspacePiModels(workspace.id).catch((error) => {
-				console.warn(
-					"Failed to refresh Pi models after adding workspace",
-					error,
-				);
+			const project = await addProject(connection, projectPath.trim());
+			void refreshProjectPiModels(project.id).catch((error) => {
+				console.warn("Failed to refresh Pi models after adding project", error);
 			});
-			notifyWorkspacesChanged();
-			toast.success(`已添加 ${workspace.name}`, {
-				description: `${workspace.connection.name} · ${workspace.metadata.cwd}`,
+			notifyProjectsChanged();
+			toast.success(`已添加 ${project.name}`, {
+				description: `${project.connection.name} · ${project.metadata.cwd}`,
 			});
 			onOpenChange(false);
 		} catch (error) {
@@ -105,7 +153,7 @@ export function AddWorkspaceDialog({
 		if (!connection) return;
 		setBusy(true);
 		try {
-			setDiscovered(await discoverWorkspaces(connection));
+			setDiscovered(await discoverProjects(connection));
 		} catch (error) {
 			setDiscovered([]);
 			toast.error("发现工作区失败", { description: String(error) });
@@ -128,7 +176,7 @@ export function AddWorkspaceDialog({
 				<div className="grid gap-4">
 					<div className="grid gap-1.5">
 						<label
-							htmlFor="workspace-connection"
+							htmlFor="project-connection"
 							className="text-xs font-medium text-muted-foreground"
 						>
 							Connection
@@ -140,7 +188,7 @@ export function AddWorkspaceDialog({
 								setDiscovered([]);
 							}}
 						>
-							<SelectTrigger id="workspace-connection">
+							<SelectTrigger id="project-connection">
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>
@@ -154,47 +202,80 @@ export function AddWorkspaceDialog({
 					{mode === "wsl" ? (
 						<div className="grid gap-1.5">
 							<label
-								htmlFor="workspace-wsl-distro"
+								htmlFor="project-wsl-distro"
 								className="text-xs font-medium text-muted-foreground"
 							>
 								WSL 发行版
 							</label>
-							<Input
-								id="workspace-wsl-distro"
-								value={distro}
-								onChange={(event) => setDistro(event.target.value)}
-								placeholder="Debian"
-							/>
+							<Select value={distro} onValueChange={setDistro}>
+								<SelectTrigger id="project-wsl-distro">
+									<SelectValue placeholder="选择 WSL 发行版" />
+								</SelectTrigger>
+								<SelectContent>
+									{wslConnections.map((item) => {
+										if (item.connection.kind.type !== "wsl") return null;
+										return (
+											<SelectItem
+												key={item.connection.id}
+												value={item.connection.kind.distro}
+											>
+												{item.connection.kind.distro}
+											</SelectItem>
+										);
+									})}
+								</SelectContent>
+							</Select>
 						</div>
 					) : null}
 
 					{mode === "ssh" ? (
 						<div className="grid gap-1.5">
 							<label
-								htmlFor="workspace-ssh-host"
+								htmlFor="project-ssh-connection"
 								className="text-xs font-medium text-muted-foreground"
 							>
-								SSH Host
+								SSH 连接
 							</label>
-							<Input
-								id="workspace-ssh-host"
-								value={host}
-								onChange={(event) => setHost(event.target.value)}
-								placeholder="~/.ssh/config 中的 Host alias"
-							/>
+							{sshConnections.length > 0 ? (
+								<Select
+									value={sshConnectionId}
+									onValueChange={(value) => {
+										setSshConnectionId(value);
+										setDiscovered([]);
+									}}
+								>
+									<SelectTrigger id="project-ssh-connection">
+										<SelectValue placeholder="选择 SSH 连接" />
+									</SelectTrigger>
+									<SelectContent>
+										{sshConnections.map((item) => (
+											<SelectItem
+												key={item.connection.id}
+												value={item.connection.id}
+											>
+												{item.connection.name}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							) : (
+								<p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+									请先在“设置 → 连接”中添加 SSH 连接。
+								</p>
+							)}
 						</div>
 					) : null}
 
 					<div className="grid gap-1.5">
 						<label
-							htmlFor="workspace-path"
+							htmlFor="project-path"
 							className="text-xs font-medium text-muted-foreground"
 						>
 							项目目录
 						</label>
 						<div className="flex gap-2">
 							<Input
-								id="workspace-path"
+								id="project-path"
 								value={path}
 								onChange={(event) => setPath(event.target.value)}
 								placeholder={
@@ -241,26 +322,26 @@ export function AddWorkspaceDialog({
 
 						{discovered.length > 0 ? (
 							<div className="max-h-52 space-y-1 overflow-y-auto rounded-md border p-1">
-								{discovered.map((workspace) => (
+								{discovered.map((project) => (
 									<div
-										key={workspace.path}
+										key={project.path}
 										className="flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted/40"
 									>
 										<div className="min-w-0 flex-1">
 											<div className="truncate text-sm font-medium">
-												{workspace.name}
+												{project.name}
 											</div>
 											<div className="truncate font-mono text-[11px] text-muted-foreground">
-												{workspace.path}
+												{project.path}
 											</div>
 										</div>
 										<Button
 											size="sm"
 											variant="outline"
-											disabled={busy || workspace.alreadyAdded}
-											onClick={() => void add(workspace.path)}
+											disabled={busy || project.alreadyAdded}
+											onClick={() => void add(project.path)}
 										>
-											{workspace.alreadyAdded ? "已添加" : "添加"}
+											{project.alreadyAdded ? "已添加" : "添加"}
 										</Button>
 									</div>
 								))}

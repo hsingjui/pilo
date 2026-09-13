@@ -341,14 +341,34 @@ async fn server_status(state: &ServerState) -> Result<Value, String> {
 }
 
 #[derive(Deserialize)]
-struct WorkspaceParams {
-    workspace: String,
+struct ProjectParams {
+    project: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionScanParams {
+    project: String,
+    #[serde(default)]
+    known: Vec<SessionScanKnownFile>,
+    #[serde(default)]
+    summary_limit: Option<usize>,
+    #[serde(default)]
+    paths: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionScanKnownFile {
+    path: String,
+    size: u64,
+    mtime_ns: u64,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CommandParams {
-    workspace: String,
+    project: String,
     program: String,
     #[serde(default)]
     args: Vec<String>,
@@ -412,7 +432,7 @@ async fn command_run(
     let program = resolve_program(&path, &params.program);
     let mut command = process_command(&program, &params.args, &path);
     command
-        .current_dir(&params.workspace)
+        .current_dir(&params.project)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -491,21 +511,18 @@ async fn command_run(
     ))
 }
 
-async fn environment_inspect(
-    state: &ServerState,
-    params: WorkspaceParams,
-) -> Result<Value, String> {
-    let probe_workspace = params.workspace;
+async fn environment_inspect(state: &ServerState, params: ProjectParams) -> Result<Value, String> {
+    let probe_project = params.project;
     let cwd = tokio::task::spawn_blocking(move || {
-        let cwd = std::fs::canonicalize(&probe_workspace)
-            .map_err(|error| format!("workspace '{probe_workspace}' is not accessible: {error}"))?;
+        let cwd = std::fs::canonicalize(&probe_project)
+            .map_err(|error| format!("project '{probe_project}' is not accessible: {error}"))?;
         if !cwd.is_dir() {
-            return Err(format!("workspace '{probe_workspace}' is not a directory"));
+            return Err(format!("project '{probe_project}' is not a directory"));
         }
         Ok::<_, String>(cwd)
     })
     .await
-    .map_err(|error| format!("workspace probe task failed: {error}"))??;
+    .map_err(|error| format!("project probe task failed: {error}"))??;
     let toolchain = cached_toolchain(state).await?;
     let git_branch = if toolchain.git_executable.is_empty() {
         None
@@ -777,23 +794,23 @@ fn command_output_text(stdout: &[u8], stderr: &[u8], success: bool) -> Result<St
 
 #[derive(Deserialize)]
 struct FsPathParams {
-    workspace: String,
+    project: String,
     path: String,
 }
 #[derive(Deserialize)]
 struct FsWriteParams {
-    workspace: String,
+    project: String,
     path: String,
 }
 #[derive(Deserialize)]
 struct FsRenameParams {
-    workspace: String,
+    project: String,
     from: String,
     to: String,
 }
 #[derive(Deserialize)]
 struct FsSearchParams {
-    workspace: String,
+    project: String,
     query: String,
 }
 
@@ -802,16 +819,16 @@ struct AbsolutePathParams {
     path: String,
 }
 
-fn canonical_workspace(workspace: &str) -> Result<PathBuf, String> {
-    let root = std::fs::canonicalize(workspace)
-        .map_err(|error| format!("workspace '{workspace}' is not accessible: {error}"))?;
+fn canonical_project(project: &str) -> Result<PathBuf, String> {
+    let root = std::fs::canonicalize(project)
+        .map_err(|error| format!("project '{project}' is not accessible: {error}"))?;
     if !root.is_dir() {
-        return Err(format!("workspace '{workspace}' is not a directory"));
+        return Err(format!("project '{project}' is not a directory"));
     }
     Ok(root)
 }
 
-fn relative_workspace_path(relative: &str, allow_root: bool) -> Result<PathBuf, String> {
+fn relative_project_path(relative: &str, allow_root: bool) -> Result<PathBuf, String> {
     let relative = Path::new(relative);
     if relative.is_absolute()
         || relative.components().any(|component| {
@@ -821,44 +838,44 @@ fn relative_workspace_path(relative: &str, allow_root: bool) -> Result<PathBuf, 
             )
         })
     {
-        return Err("path must stay inside the workspace".to_owned());
+        return Err("path must stay inside the project".to_owned());
     }
     if relative.as_os_str().is_empty() && !allow_root {
-        return Err("workspace root is not valid for this operation".to_owned());
+        return Err("project root is not valid for this operation".to_owned());
     }
     Ok(relative.to_path_buf())
 }
 
-fn ensure_inside_workspace(root: &Path, path: &Path) -> Result<(), String> {
+fn ensure_inside_project(root: &Path, path: &Path) -> Result<(), String> {
     if path == root || path.starts_with(root) {
         Ok(())
     } else {
-        Err("path resolves outside the workspace".to_owned())
+        Err("path resolves outside the project".to_owned())
     }
 }
 
 fn checked_existing_path(
-    workspace: &str,
+    project: &str,
     relative: &str,
     allow_root: bool,
 ) -> Result<(PathBuf, PathBuf), String> {
-    let root = canonical_workspace(workspace)?;
-    let relative = relative_workspace_path(relative, allow_root)?;
+    let root = canonical_project(project)?;
+    let relative = relative_project_path(relative, allow_root)?;
     let path = root
         .join(&relative)
         .canonicalize()
         .map_err(|error| format!("path '{}' is not accessible: {error}", relative.display()))?;
-    ensure_inside_workspace(&root, &path)?;
+    ensure_inside_project(&root, &path)?;
     Ok((root, path))
 }
 
 fn checked_entry_path(
-    workspace: &str,
+    project: &str,
     relative: &str,
     allow_root: bool,
 ) -> Result<(PathBuf, PathBuf), String> {
-    let root = canonical_workspace(workspace)?;
-    let relative = relative_workspace_path(relative, allow_root)?;
+    let root = canonical_project(project)?;
+    let relative = relative_project_path(relative, allow_root)?;
     let candidate = root.join(relative);
     if candidate == root {
         return Ok((root.clone(), root));
@@ -868,16 +885,16 @@ fn checked_entry_path(
         .ok_or_else(|| "path has no parent directory".to_owned())?
         .canonicalize()
         .map_err(|error| format!("path parent is not accessible: {error}"))?;
-    ensure_inside_workspace(&root, &parent)?;
+    ensure_inside_project(&root, &parent)?;
     let name = candidate
         .file_name()
         .ok_or_else(|| "path has no file name".to_owned())?;
     Ok((root, parent.join(name)))
 }
 
-fn checked_mutation_path(workspace: &str, relative: &str) -> Result<(PathBuf, PathBuf), String> {
-    let root = canonical_workspace(workspace)?;
-    let relative = relative_workspace_path(relative, false)?;
+fn checked_mutation_path(project: &str, relative: &str) -> Result<(PathBuf, PathBuf), String> {
+    let root = canonical_project(project)?;
+    let relative = relative_project_path(relative, false)?;
     let candidate = root.join(relative);
     if std::fs::symlink_metadata(&candidate).is_ok_and(|metadata| metadata.file_type().is_symlink())
     {
@@ -891,14 +908,14 @@ fn checked_mutation_path(workspace: &str, relative: &str) -> Result<(PathBuf, Pa
     let canonical_ancestor = ancestor
         .canonicalize()
         .map_err(|error| format!("path parent is not accessible: {error}"))?;
-    ensure_inside_workspace(&root, &canonical_ancestor)?;
+    ensure_inside_project(&root, &canonical_ancestor)?;
     let suffix = candidate
         .strip_prefix(ancestor)
         .map_err(|error| error.to_string())?;
     Ok((root, canonical_ancestor.join(suffix)))
 }
 
-fn fs_entry(workspace: &Path, path: &Path) -> Result<FsEntry, String> {
+fn fs_entry(project: &Path, path: &Path) -> Result<FsEntry, String> {
     let metadata = std::fs::symlink_metadata(path).map_err(|error| error.to_string())?;
     let file_type = metadata.file_type();
     let kind = if file_type.is_symlink() {
@@ -911,7 +928,7 @@ fn fs_entry(workspace: &Path, path: &Path) -> Result<FsEntry, String> {
         FsEntryKind::Other
     };
     let relative = path
-        .strip_prefix(workspace)
+        .strip_prefix(project)
         .unwrap_or(path)
         .to_string_lossy()
         .replace('\\', "/")
@@ -921,7 +938,7 @@ fn fs_entry(workspace: &Path, path: &Path) -> Result<FsEntry, String> {
         .file_name()
         .map(|value| value.to_string_lossy().into_owned())
         .unwrap_or_else(|| {
-            workspace
+            project
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
@@ -942,12 +959,12 @@ fn fs_entry(workspace: &Path, path: &Path) -> Result<FsEntry, String> {
 }
 
 fn fs_read_dir(params: FsPathParams) -> Result<Value, String> {
-    let (workspace_root, root) = checked_existing_path(&params.workspace, &params.path, true)?;
+    let (project_root, root) = checked_existing_path(&params.project, &params.path, true)?;
     let mut entries = std::fs::read_dir(root)
         .map_err(|error| error.to_string())?
         .map(|entry| {
             let entry = entry.map_err(|error| error.to_string())?;
-            fs_entry(&workspace_root, &entry.path())
+            fs_entry(&project_root, &entry.path())
         })
         .collect::<Result<Vec<_>, String>>()?;
     entries.sort_by(|a, b| {
@@ -964,7 +981,7 @@ fn fs_read_dir(params: FsPathParams) -> Result<Value, String> {
 }
 
 fn fs_read_file(params: FsPathParams) -> Result<Vec<u8>, String> {
-    let (_, path) = checked_existing_path(&params.workspace, &params.path, false)?;
+    let (_, path) = checked_existing_path(&params.project, &params.path, false)?;
     let size = std::fs::metadata(&path)
         .map_err(|error| error.to_string())?
         .len();
@@ -984,16 +1001,16 @@ fn fs_write_file(params: FsWriteParams, data: Vec<u8>) -> Result<Value, String> 
             MAX_BINARY_PAYLOAD_BYTES
         ));
     }
-    let (_, path) = checked_mutation_path(&params.workspace, &params.path)?;
+    let (_, path) = checked_mutation_path(&params.project, &params.path)?;
     std::fs::write(path, data).map_err(|error| error.to_string())?;
     Ok(Value::Null)
 }
 fn fs_stat(params: FsPathParams) -> Result<Value, String> {
-    let (workspace_root, path) = checked_entry_path(&params.workspace, &params.path, true)?;
-    to_value(fs_entry(&workspace_root, &path)?)
+    let (project_root, path) = checked_entry_path(&params.project, &params.path, true)?;
+    to_value(fs_entry(&project_root, &path)?)
 }
 fn fs_mkdir(params: FsPathParams) -> Result<Value, String> {
-    let (_, path) = checked_mutation_path(&params.workspace, &params.path)?;
+    let (_, path) = checked_mutation_path(&params.project, &params.path)?;
     std::fs::create_dir_all(path).map_err(|error| error.to_string())?;
     Ok(Value::Null)
 }
@@ -1008,13 +1025,13 @@ fn fs_mkdir_absolute(params: AbsolutePathParams) -> Result<Value, String> {
 }
 
 fn fs_rename(params: FsRenameParams) -> Result<Value, String> {
-    let (_, from) = checked_entry_path(&params.workspace, &params.from, false)?;
-    let (_, to) = checked_mutation_path(&params.workspace, &params.to)?;
+    let (_, from) = checked_entry_path(&params.project, &params.from, false)?;
+    let (_, to) = checked_mutation_path(&params.project, &params.to)?;
     std::fs::rename(from, to).map_err(|error| error.to_string())?;
     Ok(Value::Null)
 }
 fn fs_remove(params: FsPathParams) -> Result<Value, String> {
-    let (_, path) = checked_entry_path(&params.workspace, &params.path, false)?;
+    let (_, path) = checked_entry_path(&params.project, &params.path, false)?;
     let metadata = std::fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
     if metadata.is_dir() {
         std::fs::remove_dir_all(path)
@@ -1061,7 +1078,7 @@ fn fs_search(params: FsSearchParams) -> Result<Value, String> {
         }
         Ok(())
     }
-    let root = canonical_workspace(&params.workspace)?;
+    let root = canonical_project(&params.project)?;
     let mut result = Vec::new();
     visit(
         &root,
@@ -1072,8 +1089,8 @@ fn fs_search(params: FsSearchParams) -> Result<Value, String> {
     to_value(result)
 }
 
-fn session_dir_key(workspace: &str) -> String {
-    let normalized = workspace.trim().trim_start_matches(['/', '\\']);
+fn session_dir_key(project: &str) -> String {
+    let normalized = project.trim().trim_start_matches(['/', '\\']);
     format!("--{}--", normalized.replace(['/', '\\', ':'], "-"))
 }
 
@@ -1086,53 +1103,368 @@ fn agent_dir() -> Option<PathBuf> {
         })
 }
 
-fn session_scan(params: WorkspaceParams) -> Result<Value, String> {
-    let Some(root) = agent_dir().map(|root| {
-        root.join("sessions")
-            .join(session_dir_key(&params.workspace))
-    }) else {
+const SESSION_INDEX_HEADER_BYTES: usize = 16 * 1024;
+const SESSION_INDEX_PREFIX_BYTES: usize = 32 * 1024;
+const SESSION_INDEX_TAIL_BYTES: usize = 32 * 1024;
+const SESSION_INDEX_PREVIEW_CHARS: usize = 160;
+
+fn session_scan(params: SessionScanParams) -> Result<Value, String> {
+    let known = params
+        .known
+        .into_iter()
+        .map(|file| (file.path, (file.size, file.mtime_ns)))
+        .collect::<HashMap<_, _>>();
+    let Some(root) =
+        agent_dir().map(|root| root.join("sessions").join(session_dir_key(&params.project)))
+    else {
         return to_value(Vec::<SessionFile>::new());
     };
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return to_value(Vec::<SessionFile>::new());
+
+    let explicit_paths = !params.paths.is_empty();
+    let mut paths = if !explicit_paths {
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            return to_value(Vec::<SessionFile>::new());
+        };
+        entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("jsonl"))
+            .collect::<Vec<_>>()
+    } else {
+        params
+            .paths
+            .into_iter()
+            .map(PathBuf::from)
+            .filter(|path| path.parent() == Some(root.as_path()))
+            .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("jsonl"))
+            .collect::<Vec<_>>()
     };
-    let mut files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|value| value.to_str()) != Some("jsonl") {
-            continue;
+
+    if !explicit_paths && known.is_empty() {
+        if let Some(summary_limit) = params.summary_limit {
+            paths.sort_by(|left, right| right.file_name().cmp(&left.file_name()));
+            let deferred_paths = if paths.len() > summary_limit {
+                paths.split_off(summary_limit)
+            } else {
+                Vec::new()
+            };
+            let mut files = summarize_session_files(session_file_stats(paths))?;
+            files.extend(deferred_paths.into_iter().map(|path| SessionFile {
+                path: path.to_string_lossy().into_owned(),
+                size: 0,
+                mtime_ns: 0,
+                header: Value::Null,
+                unchanged: false,
+                deferred: true,
+                name: None,
+                first_user_message_preview: None,
+            }));
+            return to_value(files);
         }
-        let metadata = match std::fs::metadata(&path) {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        let file = match std::fs::File::open(&path) {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        let mut reader = std::io::BufReader::new(file);
-        let mut line = String::new();
-        use std::io::BufRead as _;
-        if reader.read_line(&mut line).is_err() {
-            continue;
-        }
-        let Ok(header) = serde_json::from_str(line.trim()) else {
-            continue;
-        };
-        let mtime_ns = metadata
-            .modified()
-            .ok()
-            .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-            .map(|value| value.as_nanos() as u64)
-            .unwrap_or(0);
-        files.push(SessionFile {
-            path: path.to_string_lossy().into_owned(),
-            size: metadata.len(),
-            mtime_ns,
-            header,
-        });
     }
-    to_value(files)
+
+    let mut candidates = session_file_stats(paths);
+
+    candidates.sort_by(|left, right| {
+        right
+            .mtime_ns
+            .cmp(&left.mtime_ns)
+            .then_with(|| right.path_text.cmp(&left.path_text))
+    });
+
+    let summary_limit = params.summary_limit.unwrap_or(usize::MAX);
+    let mut summaries_started = 0_usize;
+    let mut files = vec![None; candidates.len()];
+    let mut summarize_indices = Vec::new();
+    for (index, candidate) in candidates.iter().enumerate() {
+        let unchanged = known
+            .get(&candidate.path_text)
+            .is_some_and(|fingerprint| *fingerprint == (candidate.size, candidate.mtime_ns));
+        if unchanged {
+            files[index] = Some(SessionFile {
+                path: candidate.path_text.clone(),
+                size: candidate.size,
+                mtime_ns: candidate.mtime_ns,
+                header: Value::Null,
+                unchanged: true,
+                deferred: false,
+                name: None,
+                first_user_message_preview: None,
+            });
+            continue;
+        }
+
+        if summaries_started >= summary_limit {
+            files[index] = Some(SessionFile {
+                path: candidate.path_text.clone(),
+                size: candidate.size,
+                mtime_ns: candidate.mtime_ns,
+                header: Value::Null,
+                unchanged: false,
+                deferred: true,
+                name: None,
+                first_user_message_preview: None,
+            });
+            continue;
+        }
+        summaries_started += 1;
+        summarize_indices.push(index);
+    }
+
+    if !summarize_indices.is_empty() {
+        let worker_count = std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(4)
+            .min(8)
+            .min(summarize_indices.len());
+        let next = AtomicUsize::new(0);
+        let results = StdMutex::new(Vec::with_capacity(summarize_indices.len()));
+        std::thread::scope(|scope| {
+            for _ in 0..worker_count {
+                scope.spawn(|| {
+                    loop {
+                        let work_index = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(candidate_index) = summarize_indices.get(work_index).copied()
+                        else {
+                            break;
+                        };
+                        let result = summarize_session_file(&candidates[candidate_index]);
+                        results
+                            .lock()
+                            .expect("session summary results poisoned")
+                            .push((candidate_index, result));
+                    }
+                });
+            }
+        });
+        for (index, result) in results
+            .into_inner()
+            .expect("session summary results poisoned")
+        {
+            files[index] = result?;
+        }
+    }
+
+    to_value(files.into_iter().flatten().collect::<Vec<_>>())
+}
+
+struct SessionFileStat {
+    path: PathBuf,
+    path_text: String,
+    size: u64,
+    mtime_ns: u64,
+}
+
+fn session_file_stats(paths: Vec<PathBuf>) -> Vec<SessionFileStat> {
+    if paths.is_empty() {
+        return Vec::new();
+    }
+    let worker_count = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(4)
+        .min(8)
+        .min(paths.len());
+    let next = AtomicUsize::new(0);
+    let results = StdMutex::new(Vec::with_capacity(paths.len()));
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            scope.spawn(|| {
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(path) = paths.get(index) else {
+                        break;
+                    };
+                    if let Some(stat) = session_file_stat(path.clone()) {
+                        results
+                            .lock()
+                            .expect("session stat results poisoned")
+                            .push(stat);
+                    }
+                }
+            });
+        }
+    });
+    results.into_inner().expect("session stat results poisoned")
+}
+
+fn summarize_session_files(candidates: Vec<SessionFileStat>) -> Result<Vec<SessionFile>, String> {
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+    let worker_count = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(4)
+        .min(8)
+        .min(candidates.len());
+    let next = AtomicUsize::new(0);
+    let results = StdMutex::new(Vec::with_capacity(candidates.len()));
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            scope.spawn(|| {
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(candidate) = candidates.get(index) else {
+                        break;
+                    };
+                    let result = summarize_session_file(candidate);
+                    results
+                        .lock()
+                        .expect("session summary results poisoned")
+                        .push((index, result));
+                }
+            });
+        }
+    });
+    let mut results = results
+        .into_inner()
+        .expect("session summary results poisoned");
+    results.sort_by_key(|(index, _)| *index);
+    let mut files = Vec::with_capacity(results.len());
+    for (_, result) in results {
+        if let Some(file) = result? {
+            files.push(file);
+        }
+    }
+    Ok(files)
+}
+
+fn session_file_stat(path: PathBuf) -> Option<SessionFileStat> {
+    let metadata = std::fs::metadata(&path).ok()?;
+    let size = metadata.len();
+    let mtime_ns = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|value| value.as_nanos() as u64)
+        .unwrap_or(0);
+    Some(SessionFileStat {
+        path_text: path.to_string_lossy().into_owned(),
+        path,
+        size,
+        mtime_ns,
+    })
+}
+
+fn summarize_session_file(candidate: &SessionFileStat) -> Result<Option<SessionFile>, String> {
+    use std::io::{BufRead as _, Seek as _, SeekFrom};
+
+    let file = match std::fs::File::open(&candidate.path) {
+        Ok(value) => value,
+        Err(_) => return Ok(None),
+    };
+    let mut reader = std::io::BufReader::new(file);
+    let mut line = String::new();
+    {
+        let mut limited_header = reader.by_ref().take(SESSION_INDEX_HEADER_BYTES as u64);
+        if limited_header.read_line(&mut line).is_err() {
+            return Ok(None);
+        }
+    }
+    if !line.ends_with('\n') && candidate.size > line.len() as u64 {
+        return Ok(None);
+    }
+    let Ok(header) = serde_json::from_str(line.trim()) else {
+        return Ok(None);
+    };
+
+    let mut prefix = Vec::with_capacity(SESSION_INDEX_PREFIX_BYTES);
+    reader
+        .by_ref()
+        .take(SESSION_INDEX_PREFIX_BYTES as u64)
+        .read_to_end(&mut prefix)
+        .map_err(|error| format!("failed to read session index prefix: {error}"))?;
+
+    let mut tail = Vec::new();
+    if candidate.size > SESSION_INDEX_TAIL_BYTES as u64 {
+        let mut file = reader.into_inner();
+        file.seek(SeekFrom::Start(
+            candidate.size - SESSION_INDEX_TAIL_BYTES as u64,
+        ))
+        .map_err(|error| format!("failed to seek session index tail: {error}"))?;
+        file.take(SESSION_INDEX_TAIL_BYTES as u64)
+            .read_to_end(&mut tail)
+            .map_err(|error| format!("failed to read session index tail: {error}"))?;
+    }
+    let (name, first_user_message_preview) = summarize_session_index(&prefix, &tail);
+    Ok(Some(SessionFile {
+        path: candidate.path_text.clone(),
+        size: candidate.size,
+        mtime_ns: candidate.mtime_ns,
+        header,
+        unchanged: false,
+        deferred: false,
+        name,
+        first_user_message_preview,
+    }))
+}
+
+fn summarize_session_index(prefix: &[u8], tail: &[u8]) -> (Option<String>, Option<String>) {
+    let mut name = None;
+    let mut first_user_message_preview = None;
+    for value in complete_json_lines(prefix, false) {
+        update_session_index_summary(&value, &mut name, &mut first_user_message_preview);
+    }
+    for value in complete_json_lines(tail, true) {
+        update_session_index_summary(&value, &mut name, &mut first_user_message_preview);
+    }
+    (name, first_user_message_preview)
+}
+
+fn complete_json_lines(bytes: &[u8], drop_first_partial: bool) -> impl Iterator<Item = Value> + '_ {
+    let start = if drop_first_partial {
+        bytes
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map(|index| index + 1)
+            .unwrap_or(bytes.len())
+    } else {
+        0
+    };
+    let end = bytes[start..]
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .map(|index| start + index + 1)
+        .unwrap_or(start);
+    bytes[start..end]
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| serde_json::from_slice::<Value>(line).ok())
+}
+
+fn update_session_index_summary(
+    value: &Value,
+    name: &mut Option<String>,
+    first_user_message_preview: &mut Option<String>,
+) {
+    match value.get("type").and_then(Value::as_str) {
+        Some("session_info") => {
+            if let Some(next) = value.get("name").and_then(Value::as_str) {
+                *name = Some(next.to_owned());
+            }
+        }
+        Some("message") if first_user_message_preview.is_none() => {
+            if value.pointer("/message/role").and_then(Value::as_str) != Some("user") {
+                return;
+            }
+            *first_user_message_preview =
+                extract_session_preview(value.pointer("/message/content"));
+        }
+        _ => {}
+    }
+}
+
+fn extract_session_preview(content: Option<&Value>) -> Option<String> {
+    let text = match content? {
+        Value::String(text) => text.clone(),
+        Value::Array(parts) => parts
+            .iter()
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join(" "),
+        _ => return None,
+    };
+    let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!compact.is_empty()).then(|| compact.chars().take(SESSION_INDEX_PREVIEW_CHARS).collect())
 }
 
 #[derive(Deserialize)]
@@ -1152,7 +1484,7 @@ const fn default_session_read_limit() -> usize {
 #[serde(rename_all = "camelCase")]
 struct SessionWatchParams {
     stream_id: String,
-    workspace: String,
+    project: String,
 }
 
 #[derive(Deserialize)]
@@ -1216,11 +1548,11 @@ fn session_discover() -> Result<Value, String> {
         return to_value(Vec::<Value>::new());
     };
     let mut headers = Vec::new();
-    let Ok(workspaces) = std::fs::read_dir(root) else {
+    let Ok(projects) = std::fs::read_dir(root) else {
         return to_value(headers);
     };
-    'outer: for workspace in workspaces.flatten() {
-        let Ok(files) = std::fs::read_dir(workspace.path()) else {
+    'outer: for project in projects.flatten() {
+        let Ok(files) = std::fs::read_dir(project.path()) else {
             continue;
         };
         for entry in files.flatten() {
@@ -1247,10 +1579,10 @@ fn session_discover() -> Result<Value, String> {
     to_value(headers)
 }
 
-fn session_watch_paths(workspace: &str) -> Result<(PathBuf, PathBuf), String> {
+fn session_watch_paths(project: &str) -> Result<(PathBuf, PathBuf), String> {
     let agent = agent_dir().ok_or_else(|| "Pi agent directory is unavailable".to_owned())?;
     let sessions = agent.join("sessions");
-    let target = sessions.join(session_dir_key(workspace));
+    let target = sessions.join(session_dir_key(project));
     let watch_root = if sessions.is_dir() {
         sessions
     } else if agent.is_dir() {
@@ -1291,7 +1623,7 @@ async fn session_watch_start(
         task.abort();
     }
 
-    let (target, watch_root) = session_watch_paths(&params.workspace)?;
+    let (target, watch_root) = session_watch_paths(&params.project)?;
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let mut watcher = notify::recommended_watcher(move |event| {
         let _ = event_tx.send(event);
@@ -1435,7 +1767,7 @@ async fn preview_ports() -> Result<Value, String> {
 #[serde(rename_all = "camelCase")]
 struct TerminalOpenParams {
     stream_id: String,
-    workspace: String,
+    project: String,
     cols: u16,
     rows: u16,
 }
@@ -1473,7 +1805,7 @@ async fn terminal_open(state: &ServerState, params: TerminalOpenParams) -> Resul
 
     let shell = default_shell();
     let mut command = CommandBuilder::new(shell);
-    command.cwd(&params.workspace);
+    command.cwd(&params.project);
     command.env("PATH", cached_login_path(state).await);
     let child = pair
         .slave
@@ -1643,7 +1975,7 @@ async fn terminal_close(state: &ServerState, params: TerminalCloseParams) -> Res
 #[serde(rename_all = "camelCase")]
 struct PiStartParams {
     stream_id: String,
-    workspace: String,
+    project: String,
     #[serde(default)]
     session_path: Option<String>,
 }
@@ -1673,7 +2005,7 @@ async fn pi_start(state: &ServerState, params: PiStartParams) -> Result<Value, S
     }
     let mut command = process_command(&pi_executable, &args, &path);
     command
-        .current_dir(&params.workspace)
+        .current_dir(&params.project)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1864,8 +2196,36 @@ mod tests {
     }
 
     #[test]
+    fn session_index_summary_reads_preview_from_prefix_and_latest_name_from_tail() {
+        let prefix = concat!(
+            "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hello world\"}]}}\n",
+            "{\"type\":\"session_info\",\"name\":\"Initial\"}\n"
+        );
+        let tail = concat!(
+            "partial line that must be ignored\n",
+            "{\"type\":\"session_info\",\"name\":\"Renamed\"}\n"
+        );
+        let (name, preview) = summarize_session_index(prefix.as_bytes(), tail.as_bytes());
+        assert_eq!(name.as_deref(), Some("Renamed"));
+        assert_eq!(preview.as_deref(), Some("hello world"));
+    }
+
+    #[test]
+    fn session_index_io_is_bounded_per_changed_file() {
+        assert_eq!(SESSION_INDEX_HEADER_BYTES, 16 * 1024);
+        assert_eq!(SESSION_INDEX_PREFIX_BYTES, 32 * 1024);
+        assert_eq!(SESSION_INDEX_TAIL_BYTES, 32 * 1024);
+        const {
+            assert!(
+                SESSION_INDEX_HEADER_BYTES + SESSION_INDEX_PREFIX_BYTES + SESSION_INDEX_TAIL_BYTES
+                    <= 80 * 1024
+            );
+        }
+    }
+
+    #[test]
     fn session_watcher_filters_to_jsonl_changes_in_target() {
-        let target = PathBuf::from("sessions/workspace");
+        let target = PathBuf::from("sessions/project");
         let changed = Event::new(EventKind::Modify(notify::event::ModifyKind::Any))
             .add_path(target.join("session.jsonl"));
         let unrelated = Event::new(EventKind::Modify(notify::event::ModifyKind::Any))
@@ -1883,7 +2243,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn remote_fs_does_not_follow_symlinks_outside_workspace() {
+    fn remote_fs_does_not_follow_symlinks_outside_project() {
         use std::os::unix::fs::symlink;
 
         let unique = std::time::SystemTime::now()
@@ -1894,19 +2254,19 @@ mod tests {
             "pilo-server-fs-test-{}-{unique}",
             std::process::id()
         ));
-        let workspace = base.join("workspace");
+        let project = base.join("project");
         let outside = base.join("outside");
-        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
         std::fs::create_dir_all(&outside).unwrap();
         std::fs::write(outside.join("secret.txt"), b"secret").unwrap();
-        symlink(&outside, workspace.join("escape")).unwrap();
+        symlink(&outside, project.join("escape")).unwrap();
 
-        let workspace_text = workspace.to_string_lossy();
-        assert!(checked_existing_path(&workspace_text, "escape/secret.txt", false).is_err());
-        assert!(checked_mutation_path(&workspace_text, "escape/new.txt").is_err());
+        let project_text = project.to_string_lossy();
+        assert!(checked_existing_path(&project_text, "escape/secret.txt", false).is_err());
+        assert!(checked_mutation_path(&project_text, "escape/new.txt").is_err());
 
         let search = fs_search(FsSearchParams {
-            workspace: workspace_text.into_owned(),
+            project: project_text.into_owned(),
             query: "secret".to_owned(),
         })
         .unwrap();

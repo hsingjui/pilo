@@ -356,7 +356,7 @@ function AboutSettings() {
 			<SettingsSection>
 				<SettingsRow
 					label="Pilo"
-					helper="Pi-native desktop workspace for local, WSL, and SSH development."
+					helper="Pi-native desktop project for local, WSL, and SSH development."
 				>
 					<span className="text-xs text-muted-foreground">0.1.0</span>
 				</SettingsRow>

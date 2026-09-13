@@ -3,16 +3,16 @@ import Editor from "@monaco-editor/react";
 import { FileCode, MessageSquare, Save, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { readWorkspaceFile, writeWorkspaceFile } from "@/lib/files";
+import { readProjectFile, writeProjectFile } from "@/lib/files";
 import "@/lib/monaco-setup";
 import { cn } from "@/lib/utils";
-import type { Workspace } from "@/lib/workspaces";
+import type { Project } from "@/lib/projects";
 import { TRAFFIC_LIGHT_GUTTER } from "@/components/title-bar";
 import { Button, EmptyState } from "@/ui";
 
 export type EditorOpenRequest = {
 	id: number;
-	workspaceId: string;
+	projectId: string;
 	path: string;
 };
 
@@ -88,14 +88,14 @@ function fileName(path: string) {
 	return path.split("/").pop() || path;
 }
 
-export function WorkspaceEditor({
-	workspace,
+export function ProjectEditor({
+	project,
 	request,
 	visible,
 	onClose,
 	reserveTrafficLights = false,
 }: {
-	workspace: Workspace;
+	project: Project;
 	request?: EditorOpenRequest;
 	visible: boolean;
 	onClose: () => void;
@@ -112,7 +112,7 @@ export function WorkspaceEditor({
 	);
 
 	useEffect(() => {
-		if (!request || request.workspaceId !== workspace.id) return;
+		if (!request || request.projectId !== project.id) return;
 		const path = request.path;
 		const timer = window.setTimeout(() => {
 			const alreadyOpen = openedPathsRef.current.has(path);
@@ -125,7 +125,7 @@ export function WorkspaceEditor({
 					{ path, content: "", savedContent: "", loading: true },
 				];
 			});
-			void readWorkspaceFile(workspace.id, path)
+			void readProjectFile(project.id, path)
 				.then((data) => decodeFile(data))
 				.then((content) => {
 					setTabs((current) =>
@@ -158,7 +158,7 @@ export function WorkspaceEditor({
 				});
 		}, 0);
 		return () => window.clearTimeout(timer);
-	}, [request, workspace.id]);
+	}, [request, project.id]);
 
 	const saveTab = useCallback(
 		async (path: string) => {
@@ -167,8 +167,8 @@ export function WorkspaceEditor({
 				return;
 			setSavingPath(path);
 			try {
-				await writeWorkspaceFile(
-					workspace.id,
+				await writeProjectFile(
+					project.id,
 					path,
 					new TextEncoder().encode(tab.content),
 				);
@@ -188,7 +188,7 @@ export function WorkspaceEditor({
 				setSavingPath(null);
 			}
 		},
-		[tabs, workspace.id],
+		[tabs, project.id],
 	);
 
 	useEffect(() => {
@@ -315,7 +315,7 @@ export function WorkspaceEditor({
 					<EmptyState title="无法打开文件" description={activeTab.error} />
 				) : (
 					<Editor
-						path={`${workspace.id}:${activeTab.path}`}
+						path={`${project.id}:${activeTab.path}`}
 						language={languageForPath(activeTab.path)}
 						value={activeTab.content}
 						onChange={(value) => {

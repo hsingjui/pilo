@@ -26,7 +26,7 @@ import {
 	TooltipTrigger,
 } from "@/ui";
 import { menuItemIconClassName } from "@/ui/menu-styles";
-import type { SidebarEnv, SidebarSession, SidebarWorkspace } from "./types";
+import type { SidebarEnv, SidebarSession, SidebarProject } from "./types";
 import { SessionInfoHoverCard } from "./session-info-hover-card";
 
 // 悬浮时才出现的行内操作按钮（Lody loro-app-sidebar 的 hoverActionClassName）。
@@ -128,12 +128,12 @@ export function EnvRow({
 	env,
 	collapsed,
 	onToggle,
-	onAddWorkspace,
+	onAddProject,
 }: {
 	env: SidebarEnv;
 	collapsed: boolean;
 	onToggle: () => void;
-	onAddWorkspace?: (connectionId: string) => void;
+	onAddProject?: (connectionId: string) => void;
 }) {
 	const toggleLabel = collapsed ? "展开环境" : "折叠环境";
 	return (
@@ -168,7 +168,7 @@ export function EnvRow({
 						aria-label={`在 ${env.name} 添加工作区`}
 						onClick={(event) => {
 							event.stopPropagation();
-							onAddWorkspace?.(env.id);
+							onAddProject?.(env.id);
 						}}
 					>
 						<Plus className="h-3.5 w-3.5" />
@@ -195,8 +195,8 @@ export function EnvRow({
 
 // ---- 工作区行 -------------------------------------------------------------
 
-export function WorkspaceRow({
-	workspace,
+export function ProjectRow({
+	project,
 	env,
 	collapsed,
 	onToggle,
@@ -205,11 +205,11 @@ export function WorkspaceRow({
 	onRefreshSessions,
 	hasSessions,
 }: {
-	workspace: SidebarWorkspace;
+	project: SidebarProject;
 	env: SidebarEnv;
 	collapsed: boolean;
 	onToggle: () => void;
-	onNewChat?: (workspaceId: string) => void;
+	onNewChat?: (projectId: string) => void;
 	onArchiveSessions?: () => void;
 	onRefreshSessions?: () => void;
 	hasSessions: boolean;
@@ -260,7 +260,7 @@ export function WorkspaceRow({
 						/>
 					</button>
 					<span className="min-w-0 flex-1 truncate text-left">
-						{workspace.name}
+						{project.name}
 					</span>
 					<div className="flex shrink-0 items-center gap-0.5">
 						<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
@@ -295,7 +295,7 @@ export function WorkspaceRow({
 							onClick={(event) => {
 								event.preventDefault();
 								event.stopPropagation();
-								onNewChat?.(workspace.id);
+								onNewChat?.(project.id);
 							}}
 						>
 							<SquarePen className="h-3.5 w-3.5" />
@@ -307,7 +307,7 @@ export function WorkspaceRow({
 				<div className="flex flex-col gap-0.5 text-xs">
 					<span>{env.name}</span>
 					<span className="break-all font-mono text-[11px] leading-snug">
-						{workspace.path}
+						{project.path}
 					</span>
 				</div>
 			</TooltipContent>
@@ -319,7 +319,7 @@ export function WorkspaceRow({
 
 export function SessionRow({
 	session,
-	workspace,
+	project,
 	env,
 	now,
 	selected,
@@ -330,7 +330,7 @@ export function SessionRow({
 	onRename,
 }: {
 	session: SidebarSession;
-	workspace?: SidebarWorkspace;
+	project?: SidebarProject;
 	env?: SidebarEnv;
 	now: Date;
 	selected: boolean;
@@ -357,7 +357,7 @@ export function SessionRow({
 			now={now}
 			title={session.title}
 			latestMessageAt={session.latestMessageAt}
-			workspaceName={workspace?.name}
+			projectName={project?.name}
 			envName={env?.name}
 		>
 			{/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- 内嵌图标按钮，不能用原生 button */}

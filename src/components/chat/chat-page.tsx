@@ -59,8 +59,8 @@ import {
 } from "@/lib/chat-performance";
 import { createChatSessionClient } from "@/lib/chat-session-client";
 import {
-	cacheWorkspacePiModels,
-	getCachedWorkspacePiModels,
+	cacheProjectPiModels,
+	getCachedProjectPiModels,
 } from "@/lib/pi-models";
 import {
 	PI_THINKING_LEVELS,
@@ -71,7 +71,7 @@ import {
 	type PiloRuntimeEvent,
 } from "@/lib/pi-runtime";
 import { loadSessionHistory } from "@/lib/sessions";
-import type { Workspace } from "@/lib/workspaces";
+import type { Project } from "@/lib/projects";
 import { cn } from "@/lib/utils";
 import { IS_MACOS, TRAFFIC_LIGHT_GUTTER } from "@/components/title-bar";
 import {
@@ -87,7 +87,7 @@ import {
 export type ChatSession = {
 	id: string;
 	title: string;
-	workspaceRecord: Workspace;
+	projectRecord: Project;
 	sessionPath?: string;
 	historyFileSize?: number;
 	historyFileMtimeNs?: number;
@@ -921,11 +921,11 @@ function ChatPageImpl({
 	const client = useMemo(
 		() =>
 			createChatSessionClient(
-				session.workspaceRecord.id,
+				session.projectRecord.id,
 				session.id,
 				session.sessionPath,
 			),
-		[session.workspaceRecord.id, session.id, session.sessionPath],
+		[session.projectRecord.id, session.id, session.sessionPath],
 	);
 	const identifiedRef = useRef(onSessionIdentified);
 	identifiedRef.current = onSessionIdentified;
@@ -1008,7 +1008,7 @@ function ChatPageImpl({
 		modelRequestRef.current += 1;
 		setSessionState(null);
 		setModelOptions(
-			getCachedWorkspacePiModels(session.workspaceRecord.id)?.models ?? [],
+			getCachedProjectPiModels(session.projectRecord.id)?.models ?? [],
 		);
 		setSelectedModel(session.initialModel ?? null);
 		setModelLoadState("idle");
@@ -1020,7 +1020,7 @@ function ChatPageImpl({
 		session.id,
 		session.initialModel,
 		session.initialThinkingLevel,
-		session.workspaceRecord.id,
+		session.projectRecord.id,
 	]);
 
 	useEffect(() => {
@@ -1038,7 +1038,7 @@ function ChatPageImpl({
 			setHistoryProgress("正在读取历史消息");
 			try {
 				const result = await loadSessionHistory(
-					session.workspaceRecord.id,
+					session.projectRecord.id,
 					sessionPath,
 				);
 				if (cancelled) return;
@@ -1047,7 +1047,7 @@ function ChatPageImpl({
 					eventCount: result.events.length,
 				});
 				const cachedModels =
-					getCachedWorkspacePiModels(session.workspaceRecord.id)?.models ?? [];
+					getCachedProjectPiModels(session.projectRecord.id)?.models ?? [];
 				if (result.model) {
 					const historicalModel = cachedModels.find(
 						(model) =>
@@ -1114,12 +1114,7 @@ function ChatPageImpl({
 		return () => {
 			cancelled = true;
 		};
-	}, [
-		session.id,
-		session.sessionPath,
-		session.workspaceRecord.id,
-		historyRetry,
-	]);
+	}, [session.id, session.sessionPath, session.projectRecord.id, historyRetry]);
 
 	const activeTurnRef = useRef<ActiveTurn | null>(null);
 	const runtimeListenerRef = useRef<ReturnType<typeof client.listen> | null>(
@@ -1478,7 +1473,7 @@ function ChatPageImpl({
 		setModelError(null);
 		if (session.sessionPath) {
 			const cached =
-				getCachedWorkspacePiModels(session.workspaceRecord.id)?.models ?? [];
+				getCachedProjectPiModels(session.projectRecord.id)?.models ?? [];
 			const options =
 				selectedModel &&
 				!cached.some(
@@ -1503,7 +1498,7 @@ function ChatPageImpl({
 			if (modelRequestRef.current !== requestId) return;
 			setSelectedModel(state.model);
 			setModelOptions(result.models);
-			cacheWorkspacePiModels(session.workspaceRecord.id, result.models);
+			cacheProjectPiModels(session.projectRecord.id, result.models);
 			setSelectedThinkingLevel(state.thinkingLevel);
 			setThinkingLevels(thinking.levels);
 			setModelLoadState("ready");
@@ -1518,7 +1513,7 @@ function ChatPageImpl({
 		client,
 		selectedModel,
 		session.sessionPath,
-		session.workspaceRecord.id,
+		session.projectRecord.id,
 	]);
 
 	const handleModelChange = useCallback(

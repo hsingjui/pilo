@@ -4,7 +4,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-use crate::domain::Workspace;
+use crate::domain::Project;
 
 use super::server_client::ServerManager;
 
@@ -194,8 +194,8 @@ impl SessionHistoryCache {
     }
 }
 
-fn cache_key(workspace: &Workspace, path: &str) -> String {
-    format!("{}\0{path}", workspace.id)
+fn cache_key(project: &Project, path: &str) -> String {
+    format!("{}\0{path}", project.id)
 }
 
 fn fingerprint_from_metadata(metadata: &Value) -> Option<SessionFileFingerprint> {
@@ -207,12 +207,12 @@ fn fingerprint_from_metadata(metadata: &Value) -> Option<SessionFileFingerprint>
 
 async fn read_fingerprint(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     path: &str,
 ) -> Result<Option<SessionFileFingerprint>, String> {
     let (metadata, binary) = servers
         .request_with_binary(
-            &workspace.connection,
+            &project.connection,
             "session.read",
             serde_json::json!({ "path": path, "offset": 0, "limit": 1 }),
             Vec::new(),
@@ -230,17 +230,17 @@ async fn read_fingerprint(
 pub async fn read_history(
     servers: &ServerManager,
     cache: &tokio::sync::Mutex<SessionHistoryCache>,
-    workspace: &Workspace,
+    project: &Project,
     path: &str,
 ) -> Result<SessionHistory, String> {
-    let key = cache_key(workspace, path);
-    if let Some(fingerprint) = read_fingerprint(servers, workspace, path).await? {
-        if let Some(history) = cache.lock().await.get(&key, fingerprint) {
-            return Ok(history);
-        }
+    let key = cache_key(project, path);
+    if let Some(fingerprint) = read_fingerprint(servers, project, path).await?
+        && let Some(history) = cache.lock().await.get(&key, fingerprint)
+    {
+        return Ok(history);
     }
 
-    let (bytes, fingerprint) = read_file(servers, workspace, path).await?;
+    let (bytes, fingerprint) = read_file(servers, project, path).await?;
     let history = parse_history(&bytes);
     if let Some(fingerprint) = fingerprint {
         cache.lock().await.insert(key, fingerprint, history.clone());
@@ -250,7 +250,7 @@ pub async fn read_history(
 
 async fn read_file(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     path: &str,
 ) -> Result<(Vec<u8>, Option<SessionFileFingerprint>), String> {
     const CHUNK_BYTES: usize = 8 * 1024 * 1024;
@@ -260,7 +260,7 @@ async fn read_file(
     loop {
         let (metadata, binary) = servers
             .request_with_binary(
-                &workspace.connection,
+                &project.connection,
                 "session.read",
                 serde_json::json!({ "path": path, "offset": cursor, "limit": CHUNK_BYTES }),
                 Vec::new(),
@@ -780,16 +780,16 @@ mod tests {
         };
 
         cache.insert(
-            "workspace\0session".to_owned(),
+            "project\0session".to_owned(),
             first_fingerprint,
             history.clone(),
         );
         assert_eq!(
-            cache.get("workspace\0session", first_fingerprint),
+            cache.get("project\0session", first_fingerprint),
             Some(history)
         );
-        assert_eq!(cache.get("workspace\0session", changed_fingerprint), None);
-        assert!(!cache.entries.contains_key("workspace\0session"));
+        assert_eq!(cache.get("project\0session", changed_fingerprint), None);
+        assert!(!cache.entries.contains_key("project\0session"));
     }
 
     #[test]

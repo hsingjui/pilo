@@ -13,13 +13,13 @@ import { ParallelAgentsPanel } from "@/components/parallel-agents-panel";
 import { PreviewPanel } from "@/components/preview-panel";
 import { CUSTOM_TITLEBAR } from "@/components/title-bar";
 import {
-	getWorkspaceGitDiff,
-	getWorkspaceGitStatus,
+	getProjectGitDiff,
+	getProjectGitStatus,
 	type GitFileStatus,
 	type GitStatus,
 } from "@/lib/git";
 import { cn } from "@/lib/utils";
-import type { Workspace } from "@/lib/workspaces";
+import type { Project } from "@/lib/projects";
 import { Button, EmptyState, ErrorState, Separator } from "@/ui";
 
 type DiffMode = "working" | "staged";
@@ -75,12 +75,12 @@ function DiffViewer({ diff }: { diff: string }) {
 export function RightSidebar({
 	panelRef,
 	resizing,
-	workspace,
+	project,
 	onOpenFile,
 }: {
 	panelRef: RefObject<PanelImperativeHandle | null>;
 	resizing: boolean;
-	workspace?: Workspace;
+	project?: Project;
 	onOpenFile?: (path: string) => void;
 }) {
 	const [view, setView] = useState<SidebarView>("changes");
@@ -105,7 +105,7 @@ export function RightSidebar({
 		: (visibleFiles[0]?.path ?? null);
 
 	const refresh = useCallback(async () => {
-		if (!workspace) {
+		if (!project) {
 			setStatus(null);
 			setSelectedPath(null);
 			setLoadState("idle");
@@ -114,7 +114,7 @@ export function RightSidebar({
 		setLoadState("loading");
 		setError(null);
 		try {
-			const next = await getWorkspaceGitStatus(workspace.id);
+			const next = await getProjectGitStatus(project.id);
 			setStatus(next);
 			setLoadState("ready");
 		} catch (loadError) {
@@ -124,7 +124,7 @@ export function RightSidebar({
 				loadError instanceof Error ? loadError.message : String(loadError),
 			);
 		}
-	}, [workspace]);
+	}, [project]);
 
 	useEffect(() => {
 		const timer = window.setTimeout(() => void refresh(), 0);
@@ -132,12 +132,12 @@ export function RightSidebar({
 	}, [refresh]);
 
 	useEffect(() => {
-		if (!workspace || !effectiveSelectedPath) return;
+		if (!project || !effectiveSelectedPath) return;
 		let cancelled = false;
 		const timer = window.setTimeout(() => {
 			if (cancelled) return;
 			setDiffLoading(true);
-			void getWorkspaceGitDiff(workspace.id, {
+			void getProjectGitDiff(project.id, {
 				path: effectiveSelectedPath,
 				staged: mode === "staged",
 			})
@@ -159,7 +159,7 @@ export function RightSidebar({
 			cancelled = true;
 			window.clearTimeout(timer);
 		};
-	}, [effectiveSelectedPath, mode, workspace]);
+	}, [effectiveSelectedPath, mode, project]);
 
 	return (
 		<Panel
@@ -217,7 +217,7 @@ export function RightSidebar({
 							className="ms-auto size-7"
 							aria-label="刷新 Git 状态"
 							onClick={() => void refresh()}
-							disabled={!workspace || loadState === "loading"}
+							disabled={!project || loadState === "loading"}
 						>
 							<RefreshCw
 								className={cn(
@@ -241,8 +241,8 @@ export function RightSidebar({
 				</header>
 				<Separator className="bg-sidebar-border" />
 				{view === "agents" ? (
-					workspace ? (
-						<ParallelAgentsPanel key={workspace.id} workspace={workspace} />
+					project ? (
+						<ParallelAgentsPanel key={project.id} project={project} />
 					) : (
 						<EmptyState
 							variant="compact"
@@ -251,8 +251,8 @@ export function RightSidebar({
 						/>
 					)
 				) : view === "preview" ? (
-					workspace ? (
-						<PreviewPanel key={workspace.id} workspace={workspace} />
+					project ? (
+						<PreviewPanel key={project.id} project={project} />
 					) : (
 						<EmptyState
 							variant="compact"
@@ -261,10 +261,10 @@ export function RightSidebar({
 						/>
 					)
 				) : view === "files" ? (
-					workspace ? (
+					project ? (
 						<FileExplorer
-							key={workspace.id}
-							workspace={workspace}
+							key={project.id}
+							project={project}
 							onOpenFile={(path) => onOpenFile?.(path)}
 						/>
 					) : (
@@ -274,7 +274,7 @@ export function RightSidebar({
 							description="选择工作区后可浏览文件。"
 						/>
 					)
-				) : !workspace ? (
+				) : !project ? (
 					<EmptyState
 						variant="compact"
 						title="未选择工作区"

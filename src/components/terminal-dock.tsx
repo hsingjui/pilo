@@ -14,14 +14,14 @@ import { toast } from "sonner";
 import {
 	closeTerminal,
 	listenTerminalEvents,
-	openWorkspaceTerminal,
+	openProjectTerminal,
 	resizeTerminal,
 	writeTerminal,
 	type TerminalEvent,
 	type TerminalInfo,
 } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
-import type { Workspace } from "@/lib/workspaces";
+import type { Project } from "@/lib/projects";
 import { Button } from "@/ui";
 
 type TerminalTab = TerminalInfo & {
@@ -156,7 +156,7 @@ function TerminalViewport({
 	);
 }
 
-export function TerminalDock({ workspace }: { workspace?: Workspace }) {
+export function TerminalDock({ project }: { project?: Project }) {
 	const [layout, setLayout] = useState<TerminalLayout>(readTerminalLayout);
 	const [tabs, setTabs] = useState<TerminalTab[]>([]);
 	const [activeId, setActiveId] = useState<string | null>(null);
@@ -229,11 +229,11 @@ export function TerminalDock({ workspace }: { workspace?: Workspace }) {
 	}, []);
 
 	const openTab = useCallback(async () => {
-		if (!workspace || opening || !listenerReady) return;
+		if (!project || opening || !listenerReady) return;
 		setOpening(true);
 		updateLayout({ ...layout, expanded: true });
 		try {
-			const info = await openWorkspaceTerminal(workspace.id);
+			const info = await openProjectTerminal(project.id);
 			setTabs((current) => [...current, info]);
 			setActiveId(info.id);
 		} catch (error) {
@@ -243,7 +243,7 @@ export function TerminalDock({ workspace }: { workspace?: Workspace }) {
 		} finally {
 			setOpening(false);
 		}
-	}, [layout, listenerReady, opening, updateLayout, workspace]);
+	}, [layout, listenerReady, opening, updateLayout, project]);
 
 	const closeTab = useCallback(
 		(terminalId: string) => {
@@ -358,14 +358,14 @@ export function TerminalDock({ workspace }: { workspace?: Workspace }) {
 					size="icon"
 					className="size-7"
 					aria-label="新建 Terminal"
-					disabled={!workspace || opening || !listenerReady}
+					disabled={!project || opening || !listenerReady}
 					onClick={() => void openTab()}
 				>
 					<Plus className="size-3.5" />
 				</Button>
-				{workspace ? (
+				{project ? (
 					<span className="ml-auto hidden max-w-56 truncate text-[10px] text-muted-foreground lg:block">
-						{workspace.connection.name} · {workspace.path}
+						{project.connection.name} · {project.path}
 					</span>
 				) : null}
 			</header>
@@ -373,7 +373,7 @@ export function TerminalDock({ workspace }: { workspace?: Workspace }) {
 				<div className="min-h-0 flex-1">
 					{tabs.length === 0 ? (
 						<div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-							{workspace
+							{project
 								? "点击 + 新建当前工作区 Terminal"
 								: "选择工作区后可打开 Terminal"}
 						</div>

@@ -2,34 +2,34 @@ pub use pilo_protocol::FsEntry;
 use pilo_protocol::MAX_BINARY_PAYLOAD_BYTES;
 use serde_json::json;
 
-use crate::domain::Workspace;
+use crate::domain::Project;
 
 use super::server_client::ServerManager;
 
 pub async fn read_dir(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     path: &str,
 ) -> Result<Vec<FsEntry>, String> {
     servers
         .request_typed(
-            &workspace.connection,
+            &project.connection,
             "fs.read_dir",
-            json!({ "workspace": workspace.path, "path": path }),
+            json!({ "project": project.path, "path": path }),
         )
         .await
 }
 
 pub async fn read_file(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     path: &str,
 ) -> Result<Vec<u8>, String> {
     let (_, binary) = servers
         .request_with_binary(
-            &workspace.connection,
+            &project.connection,
             "fs.read_file",
-            json!({ "workspace": workspace.path, "path": path }),
+            json!({ "project": project.path, "path": path }),
             Vec::new(),
         )
         .await?;
@@ -44,7 +44,7 @@ pub async fn read_file(
 
 pub async fn write_file(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     path: &str,
     data: &[u8],
 ) -> Result<(), String> {
@@ -57,10 +57,10 @@ pub async fn write_file(
     }
     servers
         .request_with_binary(
-            &workspace.connection,
+            &project.connection,
             "fs.write_file",
             json!({
-                "workspace": workspace.path,
+                "project": project.path,
                 "path": path,
             }),
             vec![data.to_vec()],
@@ -71,28 +71,24 @@ pub async fn write_file(
 
 pub async fn stat(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     path: &str,
 ) -> Result<FsEntry, String> {
     servers
         .request_typed(
-            &workspace.connection,
+            &project.connection,
             "fs.stat",
-            json!({ "workspace": workspace.path, "path": path }),
+            json!({ "project": project.path, "path": path }),
         )
         .await
 }
 
-pub async fn mkdir(
-    servers: &ServerManager,
-    workspace: &Workspace,
-    path: &str,
-) -> Result<(), String> {
+pub async fn mkdir(servers: &ServerManager, project: &Project, path: &str) -> Result<(), String> {
     servers
         .request(
-            &workspace.connection,
+            &project.connection,
             "fs.mkdir",
-            json!({ "workspace": workspace.path, "path": path }),
+            json!({ "project": project.path, "path": path }),
         )
         .await
         .map(|_| ())
@@ -100,30 +96,26 @@ pub async fn mkdir(
 
 pub async fn rename(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     from: &str,
     to: &str,
 ) -> Result<(), String> {
     servers
         .request(
-            &workspace.connection,
+            &project.connection,
             "fs.rename",
-            json!({ "workspace": workspace.path, "from": from, "to": to }),
+            json!({ "project": project.path, "from": from, "to": to }),
         )
         .await
         .map(|_| ())
 }
 
-pub async fn remove(
-    servers: &ServerManager,
-    workspace: &Workspace,
-    path: &str,
-) -> Result<(), String> {
+pub async fn remove(servers: &ServerManager, project: &Project, path: &str) -> Result<(), String> {
     servers
         .request(
-            &workspace.connection,
+            &project.connection,
             "fs.remove",
-            json!({ "workspace": workspace.path, "path": path }),
+            json!({ "project": project.path, "path": path }),
         )
         .await
         .map(|_| ())
@@ -131,7 +123,7 @@ pub async fn remove(
 
 pub async fn search(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     query: &str,
 ) -> Result<Vec<String>, String> {
     if query.trim().is_empty() {
@@ -139,9 +131,9 @@ pub async fn search(
     }
     servers
         .request_typed(
-            &workspace.connection,
+            &project.connection,
             "fs.search",
-            json!({ "workspace": workspace.path, "query": query }),
+            json!({ "project": project.path, "query": query }),
         )
         .await
 }

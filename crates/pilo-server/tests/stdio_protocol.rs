@@ -48,7 +48,7 @@ async fn stdio_server_speaks_protobuf_and_preserves_binary_bytes() {
             2,
             "command.run",
             json!({
-                "workspace": "/tmp",
+                "project": "/tmp",
                 "program": "/bin/cat",
                 "args": [],
                 "timeoutMs": 5_000,

@@ -2,26 +2,26 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { Connection, PiSessionSnapshot } from "@/lib/pi-runtime";
 
-export const WORKSPACES_CHANGED_EVENT = "pilo:workspaces-changed";
+export const PROJECTS_CHANGED_EVENT = "pilo:projects-changed";
 
-export type WorkspaceMetadata = {
+export type ProjectMetadata = {
 	cwd: string;
 	gitBranch: string | null;
 	piVersion: string;
 	refreshedAtMs: number;
 };
 
-export type Workspace = {
+export type Project = {
 	id: string;
 	name: string;
 	path: string;
 	connection: Connection;
-	metadata: WorkspaceMetadata;
+	metadata: ProjectMetadata;
 	createdAtMs: number;
 	lastOpenedAtMs: number;
 };
 
-export type DiscoveredWorkspace = {
+export type DiscoveredProject = {
 	name: string;
 	path: string;
 	alreadyAdded: boolean;
@@ -50,52 +50,52 @@ export function sshConfigConnection(host: string): Connection {
 	};
 }
 
-export function listWorkspaces(): Promise<Workspace[]> {
-	return invoke<Workspace[]>("workspace_list");
+export function listProjects(): Promise<Project[]> {
+	return invoke<Project[]>("project_list");
 }
 
-export function addWorkspace(
+export function addProject(
 	connection: Connection,
 	path: string,
-): Promise<Workspace> {
-	return invoke<Workspace>("workspace_add", { connection, path });
+): Promise<Project> {
+	return invoke<Project>("project_add", { connection, path });
 }
 
-export function refreshWorkspace(id: string): Promise<Workspace> {
-	return invoke<Workspace>("workspace_refresh", { id });
+export function refreshProject(id: string): Promise<Project> {
+	return invoke<Project>("project_refresh", { id });
 }
 
-export function touchWorkspace(id: string): Promise<Workspace> {
-	return invoke<Workspace>("workspace_touch", { id });
+export function touchProject(id: string): Promise<Project> {
+	return invoke<Project>("project_touch", { id });
 }
 
-export function removeWorkspace(id: string): Promise<Workspace[]> {
-	return invoke<Workspace[]>("workspace_remove", { id });
+export function removeProject(id: string): Promise<Project[]> {
+	return invoke<Project[]>("project_remove", { id });
 }
 
-export function discoverWorkspaces(
+export function discoverProjects(
 	connection: Connection,
-): Promise<DiscoveredWorkspace[]> {
-	return invoke<DiscoveredWorkspace[]>("workspace_discover", { connection });
+): Promise<DiscoveredProject[]> {
+	return invoke<DiscoveredProject[]>("project_discover", { connection });
 }
 
 const pendingPiStarts = new Map<string, Promise<PiSessionSnapshot>>();
 
-export function ensureWorkspacePi(
-	workspace: Pick<Workspace, "id">,
+export function ensureProjectPi(
+	project: Pick<Project, "id">,
 ): Promise<PiSessionSnapshot> {
-	const pending = pendingPiStarts.get(workspace.id);
+	const pending = pendingPiStarts.get(project.id);
 	if (pending) return pending;
-	const request = startWorkspacePi(workspace.id).finally(() => {
-		pendingPiStarts.delete(workspace.id);
+	const request = startProjectPi(project.id).finally(() => {
+		pendingPiStarts.delete(project.id);
 	});
-	pendingPiStarts.set(workspace.id, request);
+	pendingPiStarts.set(project.id, request);
 	return request;
 }
 
-async function startWorkspacePi(id: string): Promise<PiSessionSnapshot> {
+async function startProjectPi(id: string): Promise<PiSessionSnapshot> {
 	const current = await invoke<PiSessionSnapshot>("runtime_get_pi_state");
-	if (current.state === "running" && current.workspaceId === id) {
+	if (current.state === "running" && current.projectId === id) {
 		return current;
 	}
 	if (current.state === "starting" || current.state === "stopping") {
@@ -104,11 +104,11 @@ async function startWorkspacePi(id: string): Promise<PiSessionSnapshot> {
 	if (current.state === "running") {
 		await invoke("runtime_stop_pi");
 	}
-	return invoke<PiSessionSnapshot>("workspace_start_pi", { id });
+	return invoke<PiSessionSnapshot>("project_start_pi", { id });
 }
 
-export function notifyWorkspacesChanged() {
-	window.dispatchEvent(new Event(WORKSPACES_CHANGED_EVENT));
+export function notifyProjectsChanged() {
+	window.dispatchEvent(new Event(PROJECTS_CHANGED_EVENT));
 }
 
 export function connectionLabel(connection: Connection): string {

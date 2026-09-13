@@ -5,7 +5,7 @@ import type { ConnectionTestResult } from "@/lib/connections";
 
 export type SshConnectionInfo = {
 	connection: Connection;
-	workspaceCount: number;
+	projectCount: number;
 	hasPassword: boolean;
 };
 

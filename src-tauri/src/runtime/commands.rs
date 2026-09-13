@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::domain::{
-    Connection, ConnectionKind, DiscoveredWorkspace, SessionIndexEntry, SessionReconcileResult,
-    SessionUiStateUpdate, Workspace, WslDistribution,
+    Connection, ConnectionKind, DiscoveredProject, Project, SessionIndexEntry,
+    SessionReconcileResult, SessionUiStateUpdate, WslDistribution,
 };
 
 use super::{
@@ -15,12 +15,12 @@ use super::{
     git::{self, GitStatus},
     parallel::ParallelAgentInfo,
     preview::{self, PreviewInfo},
+    project,
     remote_fs::{self, FsEntry},
     session_index,
     session_snapshot::PiSessionSnapshot,
     storage,
     terminal::TerminalInfo,
-    workspace,
     wsl::{WslConnectionError, list_wsl_distributions},
 };
 
@@ -56,7 +56,7 @@ fn connection_test_result(value: Value) -> Result<ConnectionTestResult, String> 
 #[serde(rename_all = "camelCase")]
 pub struct WslConnectionInfo {
     pub connection: Connection,
-    pub workspace_count: u64,
+    pub project_count: u64,
 }
 
 #[tauri::command]
@@ -76,7 +76,7 @@ pub async fn wsl_connection_list(app: AppHandle) -> Result<Vec<WslConnectionInfo
                 },
             };
             Ok(WslConnectionInfo {
-                workspace_count: storage::connection_workspace_count(&db, &connection.id)?,
+                project_count: storage::connection_project_count(&db, &connection.id)?,
                 connection,
             })
         })
@@ -118,7 +118,7 @@ pub async fn local_connection_test(
 #[serde(rename_all = "camelCase")]
 pub struct SshConnectionInfo {
     pub connection: Connection,
-    pub workspace_count: u64,
+    pub project_count: u64,
     pub has_password: bool,
 }
 
@@ -147,7 +147,7 @@ pub fn ssh_connection_list(app: AppHandle) -> Result<Vec<SshConnectionInfo>, Str
         .filter(|connection| matches!(connection.kind, ConnectionKind::Ssh { .. }))
         .map(|connection| {
             Ok(SshConnectionInfo {
-                workspace_count: storage::connection_workspace_count(&db, &connection.id)?,
+                project_count: storage::connection_project_count(&db, &connection.id)?,
                 has_password: super::credentials::has_ssh_password(&connection.id),
                 connection,
             })
@@ -179,7 +179,7 @@ pub fn ssh_connection_save(
     }
     storage::upsert_connection(&db, &request.connection)?;
     Ok(SshConnectionInfo {
-        workspace_count: storage::connection_workspace_count(&db, &request.connection.id)?,
+        project_count: storage::connection_project_count(&db, &request.connection.id)?,
         has_password: super::credentials::has_ssh_password(&request.connection.id),
         connection: request.connection,
     })
@@ -188,10 +188,10 @@ pub fn ssh_connection_save(
 #[tauri::command]
 pub fn ssh_connection_remove(app: AppHandle, id: String) -> Result<(), String> {
     let db = storage::open(&app)?;
-    let count = storage::connection_workspace_count(&db, &id)?;
+    let count = storage::connection_project_count(&db, &id)?;
     if count > 0 {
         return Err(format!(
-            "该 SSH 连接仍被 {count} 个工作区使用，请先移除或迁移这些工作区。"
+            "该 SSH 连接仍被 {count} 个项目使用，请先移除或迁移这些项目。"
         ));
     }
     storage::remove_connection(&db, &id)?;
@@ -213,82 +213,82 @@ pub async fn ssh_connection_test(
 }
 
 #[tauri::command]
-pub fn workspace_list(app: AppHandle) -> Result<Vec<Workspace>, String> {
-    workspace::list(&app)
+pub fn project_list(app: AppHandle) -> Result<Vec<Project>, String> {
+    project::list(&app)
 }
 
 #[tauri::command]
-pub async fn workspace_add(
+pub async fn project_add(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     connection: Connection,
     path: String,
-) -> Result<Workspace, String> {
-    let workspace = workspace::add(&app, &runtime.servers, connection, path).await?;
-    runtime.chat_sessions.open_workspace(&workspace.id).await?;
-    Ok(workspace)
+) -> Result<Project, String> {
+    let project = project::add(&app, &runtime.servers, connection, path).await?;
+    runtime.chat_sessions.open_project(&project.id).await?;
+    Ok(project)
 }
 
 #[tauri::command]
-pub async fn workspace_refresh(
+pub async fn project_refresh(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
-) -> Result<Workspace, String> {
-    workspace::refresh(&app, &runtime.servers, &id).await
+) -> Result<Project, String> {
+    project::refresh(&app, &runtime.servers, &id).await
 }
 
 #[tauri::command]
-pub fn workspace_touch(app: AppHandle, id: String) -> Result<Workspace, String> {
-    workspace::touch(&app, &id)
+pub fn project_touch(app: AppHandle, id: String) -> Result<Project, String> {
+    project::touch(&app, &id)
 }
 
 #[tauri::command]
-pub async fn workspace_remove(
+pub async fn project_remove(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
-) -> Result<Vec<Workspace>, String> {
-    runtime.chat_sessions.stop_workspace(&id).await?;
-    workspace::remove(&app, &id)
+) -> Result<Vec<Project>, String> {
+    runtime.chat_sessions.stop_project(&id).await?;
+    project::remove(&app, &id)
 }
 
 #[tauri::command]
-pub async fn workspace_git_status(
+pub async fn project_git_status(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
 ) -> Result<GitStatus, String> {
-    let workspace = workspace::get(&app, &id)?;
-    git::status(&runtime.servers, &workspace).await
+    let project = project::get(&app, &id)?;
+    git::status(&runtime.servers, &project).await
 }
 
 #[tauri::command]
-pub async fn workspace_git_diff(
+pub async fn project_git_diff(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
     path: Option<String>,
     staged: bool,
 ) -> Result<String, String> {
-    let workspace = workspace::get(&app, &id)?;
-    git::diff(&runtime.servers, &workspace, path.as_deref(), staged).await
+    let project = project::get(&app, &id)?;
+    git::diff(&runtime.servers, &project, path.as_deref(), staged).await
 }
 
 #[tauri::command]
-pub async fn workspace_terminal_open(
+pub async fn project_terminal_open(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
     cols: u16,
     rows: u16,
 ) -> Result<TerminalInfo, String> {
-    let workspace = workspace::get(&app, &id)?;
+    let project = project::get(&app, &id)?;
     runtime
         .terminals
         .lock()
         .await
-        .open(Arc::clone(&runtime.servers), app, &workspace, cols, rows)
+        .open(Arc::clone(&runtime.servers), app, &project, cols, rows)
         .await
 }
 
@@ -332,25 +332,25 @@ pub async fn terminal_close(
 #[tauri::command]
 pub async fn parallel_agent_list(
     runtime: State<'_, PiloRuntime>,
-    workspace_id: String,
+    project_id: String,
 ) -> Result<Vec<ParallelAgentInfo>, String> {
-    Ok(runtime.parallel_agents.lock().await.list(&workspace_id))
+    Ok(runtime.parallel_agents.lock().await.list(&project_id))
 }
 
 #[tauri::command]
 pub async fn parallel_agent_create(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
-    workspace_id: String,
+    project_id: String,
     name: String,
     prompt: Option<String>,
 ) -> Result<ParallelAgentInfo, String> {
-    let workspace = workspace::get(&app, &workspace_id)?;
+    let project = project::get(&app, &project_id)?;
     runtime
         .parallel_agents
         .lock()
         .await
-        .create(Arc::clone(&runtime.servers), app, &workspace, name, prompt)
+        .create(Arc::clone(&runtime.servers), app, &project, name, prompt)
         .await
 }
 
@@ -380,41 +380,41 @@ pub async fn parallel_agent_stop(
 pub async fn parallel_agent_remove(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
-    workspace_id: String,
+    project_id: String,
     agent_id: String,
 ) -> Result<(), String> {
-    let workspace = workspace::get(&app, &workspace_id)?;
+    let project = project::get(&app, &project_id)?;
     runtime
         .parallel_agents
         .lock()
         .await
-        .remove(&runtime.servers, &workspace, &agent_id)
+        .remove(&runtime.servers, &project, &agent_id)
         .await
 }
 
 #[tauri::command]
-pub async fn workspace_preview_ports(
+pub async fn project_preview_ports(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
-    workspace_id: String,
+    project_id: String,
 ) -> Result<Vec<u16>, String> {
-    let workspace = workspace::get(&app, &workspace_id)?;
-    preview::detect_ports(&runtime.servers, &workspace).await
+    let project = project::get(&app, &project_id)?;
+    preview::detect_ports(&runtime.servers, &project).await
 }
 
 #[tauri::command]
-pub async fn workspace_preview_open(
+pub async fn project_preview_open(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
-    workspace_id: String,
+    project_id: String,
     port: u16,
 ) -> Result<PreviewInfo, String> {
-    let workspace = workspace::get(&app, &workspace_id)?;
-    runtime.previews.lock().await.open(&workspace, port).await
+    let project = project::get(&app, &project_id)?;
+    runtime.previews.lock().await.open(&project, port).await
 }
 
 #[tauri::command]
-pub async fn workspace_preview_close(
+pub async fn project_preview_close(
     runtime: State<'_, PiloRuntime>,
     preview_id: String,
 ) -> Result<(), String> {
@@ -422,134 +422,173 @@ pub async fn workspace_preview_close(
 }
 
 #[tauri::command]
-pub async fn workspace_fs_read_dir(
+pub async fn project_fs_read_dir(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
     path: String,
 ) -> Result<Vec<FsEntry>, String> {
-    let workspace = workspace::get(&app, &id)?;
-    remote_fs::read_dir(&runtime.servers, &workspace, &path).await
+    let project = project::get(&app, &id)?;
+    remote_fs::read_dir(&runtime.servers, &project, &path).await
 }
 
 #[tauri::command]
-pub async fn workspace_fs_read_file(
+pub async fn project_fs_read_file(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
     path: String,
 ) -> Result<Vec<u8>, String> {
-    let workspace = workspace::get(&app, &id)?;
-    remote_fs::read_file(&runtime.servers, &workspace, &path).await
+    let project = project::get(&app, &id)?;
+    remote_fs::read_file(&runtime.servers, &project, &path).await
 }
 
 #[tauri::command]
-pub async fn workspace_fs_write_file(
+pub async fn project_fs_write_file(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
     path: String,
     data: Vec<u8>,
 ) -> Result<(), String> {
-    let workspace = workspace::get(&app, &id)?;
-    remote_fs::write_file(&runtime.servers, &workspace, &path, &data).await
+    let project = project::get(&app, &id)?;
+    remote_fs::write_file(&runtime.servers, &project, &path, &data).await
 }
 
 #[tauri::command]
-pub async fn workspace_fs_stat(
+pub async fn project_fs_stat(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
     path: String,
 ) -> Result<FsEntry, String> {
-    let workspace = workspace::get(&app, &id)?;
-    remote_fs::stat(&runtime.servers, &workspace, &path).await
+    let project = project::get(&app, &id)?;
+    remote_fs::stat(&runtime.servers, &project, &path).await
 }
 
 #[tauri::command]
-pub async fn workspace_fs_mkdir(
+pub async fn project_fs_mkdir(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
     path: String,
 ) -> Result<(), String> {
-    let workspace = workspace::get(&app, &id)?;
-    remote_fs::mkdir(&runtime.servers, &workspace, &path).await
+    let project = project::get(&app, &id)?;
+    remote_fs::mkdir(&runtime.servers, &project, &path).await
 }
 
 #[tauri::command]
-pub async fn workspace_fs_rename(
+pub async fn project_fs_rename(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
     from: String,
     to: String,
 ) -> Result<(), String> {
-    let workspace = workspace::get(&app, &id)?;
-    remote_fs::rename(&runtime.servers, &workspace, &from, &to).await
+    let project = project::get(&app, &id)?;
+    remote_fs::rename(&runtime.servers, &project, &from, &to).await
 }
 
 #[tauri::command]
-pub async fn workspace_fs_remove(
+pub async fn project_fs_remove(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
     path: String,
 ) -> Result<(), String> {
-    let workspace = workspace::get(&app, &id)?;
-    remote_fs::remove(&runtime.servers, &workspace, &path).await
+    let project = project::get(&app, &id)?;
+    remote_fs::remove(&runtime.servers, &project, &path).await
 }
 
 #[tauri::command]
-pub async fn workspace_fs_search(
+pub async fn project_fs_search(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
     query: String,
 ) -> Result<Vec<String>, String> {
-    let workspace = workspace::get(&app, &id)?;
-    remote_fs::search(&runtime.servers, &workspace, &query).await
+    let project = project::get(&app, &id)?;
+    remote_fs::search(&runtime.servers, &project, &query).await
 }
 
 #[tauri::command]
-pub async fn workspace_discover(
+pub async fn project_discover(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     connection: Connection,
-) -> Result<Vec<DiscoveredWorkspace>, String> {
-    workspace::discover(&app, &runtime.servers, connection).await
+) -> Result<Vec<DiscoveredProject>, String> {
+    project::discover(&app, &runtime.servers, connection).await
 }
 
 #[tauri::command]
-pub fn session_list(
-    app: AppHandle,
-    workspace_id: String,
-) -> Result<Vec<SessionIndexEntry>, String> {
-    session_index::list_cached(&app, &workspace_id)
+pub fn session_list(app: AppHandle, project_id: String) -> Result<Vec<SessionIndexEntry>, String> {
+    session_index::list_cached(&app, &project_id)
 }
 
 #[tauri::command]
 pub async fn session_reconcile(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
-    workspace_id: String,
+    project_id: String,
 ) -> Result<SessionReconcileResult, String> {
-    let workspace = workspace::get(&app, &workspace_id)?;
-    session_index::reconcile(&app, &runtime.servers, &workspace).await
+    let project = project::get(&app, &project_id)?;
+    let work = session_index::reconcile(&app, &runtime.servers, &project).await?;
+    if !work.deferred_paths.is_empty() {
+        let background_app = app.clone();
+        let background_servers = Arc::clone(&runtime.servers);
+        let background_project = project.clone();
+        let deferred_paths = work.deferred_paths;
+        tokio::spawn(async move {
+            for batch in deferred_paths.chunks(session_index::BACKGROUND_SESSION_INDEX_BATCH) {
+                match session_index::index_paths(
+                    &background_app,
+                    &background_servers,
+                    &background_project,
+                    batch,
+                )
+                .await
+                {
+                    Ok(indexed) if indexed > 0 => {
+                        let _ = background_app.emit(
+                            "pilo://sessions",
+                            serde_json::json!({
+                                "type": "indexed",
+                                "projectId": background_project.id,
+                            }),
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        let _ = background_app.emit(
+                            "pilo://sessions",
+                            serde_json::json!({
+                                "type": "error",
+                                "projectId": background_project.id,
+                                "message": format!("background session indexing failed: {error}"),
+                            }),
+                        );
+                        break;
+                    }
+                }
+                tokio::task::yield_now().await;
+            }
+        });
+    }
+    Ok(work.result)
 }
 
 #[tauri::command]
 pub async fn session_history(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
-    workspace_id: String,
+    project_id: String,
     session_path: String,
 ) -> Result<super::session_history::SessionHistory, String> {
-    let workspace = workspace::get(&app, &workspace_id)?;
+    let project = project::get(&app, &project_id)?;
     super::session_history::read_history(
         &runtime.servers,
         &runtime.session_history_cache,
-        &workspace,
+        &project,
         &session_path,
     )
     .await
@@ -559,27 +598,27 @@ pub async fn session_history(
 pub async fn session_watch_start(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
-    workspace_id: String,
+    project_id: String,
 ) -> Result<(), String> {
-    let workspace = workspace::get(&app, &workspace_id)?;
+    let project = project::get(&app, &project_id)?;
     runtime
         .session_watchers
         .lock()
         .await
-        .start(Arc::clone(&runtime.servers), app, workspace)
+        .start(Arc::clone(&runtime.servers), app, project)
         .await
 }
 
 #[tauri::command]
 pub async fn session_watch_stop(
     runtime: State<'_, PiloRuntime>,
-    workspace_id: String,
+    project_id: String,
 ) -> Result<(), String> {
     runtime
         .session_watchers
         .lock()
         .await
-        .stop(&workspace_id)
+        .stop(&project_id)
         .await;
     Ok(())
 }
@@ -597,17 +636,17 @@ pub fn session_update_ui_state(
 pub async fn chat_session_start(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
-    workspace_id: String,
+    project_id: String,
     session_key: String,
     session_path: Option<String>,
 ) -> Result<PiSessionSnapshot, String> {
-    let workspace = workspace::get(&app, &workspace_id)?;
+    let project = project::get(&app, &project_id)?;
     runtime
         .chat_sessions
         .ensure(
             Arc::clone(&runtime.servers),
             app,
-            workspace,
+            project,
             session_key,
             session_path,
         )
@@ -632,21 +671,21 @@ pub async fn chat_session_stop(
 }
 
 #[tauri::command]
-pub async fn workspace_start_pi(
+pub async fn project_start_pi(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     id: String,
 ) -> Result<PiSessionSnapshot, String> {
-    let workspace = workspace::get(&app, &id)?;
-    workspace::touch(&app, &workspace.id)?;
+    let project = project::get(&app, &id)?;
+    project::touch(&app, &project.id)?;
     runtime
-        .workspace_pi_session
+        .project_pi_session
         .lock()
         .await
         .spawn(
             Arc::clone(&runtime.servers),
             TauriEventSink::new(app),
-            &workspace,
+            &project,
             None,
         )
         .await
@@ -656,12 +695,12 @@ pub async fn workspace_start_pi(
 pub async fn runtime_get_pi_state(
     runtime: State<'_, PiloRuntime>,
 ) -> Result<PiSessionSnapshot, String> {
-    Ok(runtime.workspace_pi_session.lock().await.snapshot())
+    Ok(runtime.project_pi_session.lock().await.snapshot())
 }
 
 #[tauri::command]
 pub async fn runtime_stop_pi(runtime: State<'_, PiloRuntime>) -> Result<PiSessionSnapshot, String> {
-    runtime.workspace_pi_session.lock().await.stop().await
+    runtime.project_pi_session.lock().await.stop().await
 }
 
 #[tauri::command]
@@ -670,7 +709,7 @@ pub async fn runtime_restart_pi(
     runtime: State<'_, PiloRuntime>,
 ) -> Result<PiSessionSnapshot, String> {
     runtime
-        .workspace_pi_session
+        .project_pi_session
         .lock()
         .await
         .restart(Arc::clone(&runtime.servers), TauriEventSink::new(app))
@@ -679,7 +718,7 @@ pub async fn runtime_restart_pi(
 
 #[tauri::command]
 pub async fn runtime_abort_pi(runtime: State<'_, PiloRuntime>) -> Result<(), String> {
-    runtime.workspace_pi_session.lock().await.abort().await
+    runtime.project_pi_session.lock().await.abort().await
 }
 
 #[tauri::command]
@@ -688,7 +727,7 @@ pub async fn runtime_send_rpc(
     command: Value,
 ) -> Result<(), String> {
     runtime
-        .workspace_pi_session
+        .project_pi_session
         .lock()
         .await
         .send_rpc(command)

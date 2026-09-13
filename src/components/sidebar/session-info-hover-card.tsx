@@ -20,21 +20,21 @@ function SessionInfoCard({
 	title,
 	latestMessageAt,
 	now,
-	workspaceName,
+	projectName,
 	envName,
 }: {
 	title: string;
 	latestMessageAt: Date;
 	now: Date;
-	workspaceName?: string;
+	projectName?: string;
 	envName?: string;
 }) {
 	const rows: Array<{ key: string; icon: ReactNode; value: string }> = [];
-	if (workspaceName) {
+	if (projectName) {
 		rows.push({
-			key: "workspace",
+			key: "project",
 			icon: <Folder className="h-3.5 w-3.5" />,
-			value: workspaceName,
+			value: projectName,
 		});
 	}
 	if (envName) {
@@ -79,7 +79,7 @@ export function SessionInfoHoverCard({
 	now: Date;
 	title: string;
 	latestMessageAt: Date;
-	workspaceName?: string;
+	projectName?: string;
 	envName?: string;
 }) {
 	const [open, setOpen] = useState(false);

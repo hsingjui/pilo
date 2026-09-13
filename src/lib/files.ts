@@ -10,67 +10,67 @@ export type FsEntry = {
 	modifiedAtMs?: number;
 };
 
-export function readWorkspaceDir(
-	workspaceId: string,
+export function readProjectDir(
+	projectId: string,
 	path = "",
 ): Promise<FsEntry[]> {
-	return invoke("workspace_fs_read_dir", { id: workspaceId, path });
+	return invoke("project_fs_read_dir", { id: projectId, path });
 }
 
-export function readWorkspaceFile(
-	workspaceId: string,
+export function readProjectFile(
+	projectId: string,
 	path: string,
 ): Promise<Uint8Array> {
-	return invoke<number[]>("workspace_fs_read_file", {
-		id: workspaceId,
+	return invoke<number[]>("project_fs_read_file", {
+		id: projectId,
 		path,
 	}).then((data) => new Uint8Array(data));
 }
 
-export function writeWorkspaceFile(
-	workspaceId: string,
+export function writeProjectFile(
+	projectId: string,
 	path: string,
 	data: Uint8Array,
 ): Promise<void> {
-	return invoke("workspace_fs_write_file", {
-		id: workspaceId,
+	return invoke("project_fs_write_file", {
+		id: projectId,
 		path,
 		data: Array.from(data),
 	});
 }
 
-export function statWorkspacePath(
-	workspaceId: string,
+export function statProjectPath(
+	projectId: string,
 	path = "",
 ): Promise<FsEntry> {
-	return invoke("workspace_fs_stat", { id: workspaceId, path });
+	return invoke("project_fs_stat", { id: projectId, path });
 }
 
-export function createWorkspaceDir(
-	workspaceId: string,
+export function createProjectDir(
+	projectId: string,
 	path: string,
 ): Promise<void> {
-	return invoke("workspace_fs_mkdir", { id: workspaceId, path });
+	return invoke("project_fs_mkdir", { id: projectId, path });
 }
 
-export function renameWorkspacePath(
-	workspaceId: string,
+export function renameProjectPath(
+	projectId: string,
 	from: string,
 	to: string,
 ): Promise<void> {
-	return invoke("workspace_fs_rename", { id: workspaceId, from, to });
+	return invoke("project_fs_rename", { id: projectId, from, to });
 }
 
-export function removeWorkspacePath(
-	workspaceId: string,
+export function removeProjectPath(
+	projectId: string,
 	path: string,
 ): Promise<void> {
-	return invoke("workspace_fs_remove", { id: workspaceId, path });
+	return invoke("project_fs_remove", { id: projectId, path });
 }
 
-export function searchWorkspaceFiles(
-	workspaceId: string,
+export function searchProjectFiles(
+	projectId: string,
 	query: string,
 ): Promise<string[]> {
-	return invoke("workspace_fs_search", { id: workspaceId, query });
+	return invoke("project_fs_search", { id: projectId, query });
 }

@@ -5,19 +5,19 @@ use serde::Deserialize;
 use serde_json::Value;
 use tauri::AppHandle;
 
-use crate::domain::{Connection, DiscoveredWorkspace, Workspace, WorkspaceMetadata};
+use crate::domain::{Connection, DiscoveredProject, Project, ProjectMetadata};
 
 use super::{server_client::ServerManager, storage};
 
-const MAX_DISCOVERED_WORKSPACES: usize = 200;
+const MAX_DISCOVERED_PROJECTS: usize = 200;
 
-pub fn list(app: &AppHandle) -> Result<Vec<Workspace>, String> {
-    storage::list_workspaces(&storage::open(app)?)
+pub fn list(app: &AppHandle) -> Result<Vec<Project>, String> {
+    storage::list_projects(&storage::open(app)?)
 }
 
-pub fn get(app: &AppHandle, id: &str) -> Result<Workspace, String> {
-    storage::get_workspace(&storage::open(app)?, id)?
-        .ok_or_else(|| format!("Workspace '{id}' was not found"))
+pub fn get(app: &AppHandle, id: &str) -> Result<Project, String> {
+    storage::get_project(&storage::open(app)?, id)?
+        .ok_or_else(|| format!("Project '{id}' was not found"))
 }
 
 pub async fn add(
@@ -25,85 +25,85 @@ pub async fn add(
     servers: &ServerManager,
     connection: Connection,
     path: String,
-) -> Result<Workspace, String> {
+) -> Result<Project, String> {
     let (connection, metadata) = inspect(servers, connection, path).await?;
     let normalized_path = metadata.cwd.clone();
-    let id = Workspace::stable_id(&connection.id, &normalized_path);
+    let id = Project::stable_id(&connection.id, &normalized_path);
     let db = storage::open(app)?;
     let now = storage::now_ms();
-    let created_at_ms = storage::get_workspace(&db, &id)?
-        .map(|workspace| workspace.created_at_ms)
+    let created_at_ms = storage::get_project(&db, &id)?
+        .map(|project| project.created_at_ms)
         .unwrap_or(now);
-    let workspace = Workspace {
+    let project = Project {
         id,
-        name: Workspace::name_from_path(&normalized_path),
+        name: Project::name_from_path(&normalized_path),
         path: normalized_path,
         connection,
         metadata,
         created_at_ms,
         last_opened_at_ms: now,
     };
-    storage::upsert_workspace(&db, &workspace)?;
-    Ok(workspace)
+    storage::upsert_project(&db, &project)?;
+    Ok(project)
 }
 
 pub async fn refresh(
     app: &AppHandle,
     servers: &ServerManager,
     id: &str,
-) -> Result<Workspace, String> {
+) -> Result<Project, String> {
     let current = get(app, id)?;
     let (connection, metadata) = inspect(servers, current.connection, current.path).await?;
     let normalized_path = metadata.cwd.clone();
-    let workspace = Workspace {
+    let project = Project {
         id: current.id,
-        name: Workspace::name_from_path(&normalized_path),
+        name: Project::name_from_path(&normalized_path),
         path: normalized_path,
         connection,
         metadata,
         created_at_ms: current.created_at_ms,
         last_opened_at_ms: current.last_opened_at_ms,
     };
-    storage::upsert_workspace(&storage::open(app)?, &workspace)?;
-    Ok(workspace)
+    storage::upsert_project(&storage::open(app)?, &project)?;
+    Ok(project)
 }
 
-pub fn touch(app: &AppHandle, id: &str) -> Result<Workspace, String> {
-    let mut workspace = get(app, id)?;
-    workspace.last_opened_at_ms = storage::now_ms();
-    storage::upsert_workspace(&storage::open(app)?, &workspace)?;
-    Ok(workspace)
+pub fn touch(app: &AppHandle, id: &str) -> Result<Project, String> {
+    let mut project = get(app, id)?;
+    project.last_opened_at_ms = storage::now_ms();
+    storage::upsert_project(&storage::open(app)?, &project)?;
+    Ok(project)
 }
 
-pub fn remove(app: &AppHandle, id: &str) -> Result<Vec<Workspace>, String> {
+pub fn remove(app: &AppHandle, id: &str) -> Result<Vec<Project>, String> {
     let db = storage::open(app)?;
-    if !storage::remove_workspace(&db, id)? {
-        return Err(format!("Workspace '{id}' was not found"));
+    if !storage::remove_project(&db, id)? {
+        return Err(format!("Project '{id}' was not found"));
     }
-    storage::list_workspaces(&db)
+    storage::list_projects(&db)
 }
 
 pub async fn discover(
     app: &AppHandle,
     servers: &ServerManager,
     connection: Connection,
-) -> Result<Vec<DiscoveredWorkspace>, String> {
+) -> Result<Vec<DiscoveredProject>, String> {
     let headers: Vec<Value> = servers
         .request_typed(&connection, "session.discover", Value::Null)
         .await?;
     let existing = list(app)?;
     let added_ids = existing
         .iter()
-        .map(|workspace| workspace.id.as_str())
+        .map(|project| project.id.as_str())
         .collect::<BTreeSet<_>>();
     let mut paths = parse_session_headers(&headers);
-    paths.truncate(MAX_DISCOVERED_WORKSPACES);
+    paths.truncate(MAX_DISCOVERED_PROJECTS);
     Ok(paths
         .into_iter()
         .map(|path| {
-            let id = Workspace::stable_id(&connection.id, &path);
-            DiscoveredWorkspace {
-                name: Workspace::name_from_path(&path),
+            let id = Project::stable_id(&connection.id, &path);
+            DiscoveredProject {
+                name: Project::name_from_path(&path),
                 path,
                 already_added: added_ids.contains(id.as_str()),
             }
@@ -115,17 +115,17 @@ async fn inspect(
     servers: &ServerManager,
     connection: Connection,
     path: String,
-) -> Result<(Connection, WorkspaceMetadata), String> {
+) -> Result<(Connection, ProjectMetadata), String> {
     let environment: EnvironmentInfo = servers
         .request_typed(
             &connection,
             "environment.inspect",
-            serde_json::json!({ "workspace": path }),
+            serde_json::json!({ "project": path }),
         )
         .await?;
     Ok((
         connection,
-        WorkspaceMetadata {
+        ProjectMetadata {
             cwd: environment.cwd,
             git_branch: environment.git_branch,
             pi_version: environment.pi_version,
@@ -159,7 +159,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_unique_workspace_paths_from_session_headers() {
+    fn parses_unique_project_paths_from_session_headers() {
         let headers = vec![
             serde_json::json!({"type":"session","version":3,"cwd":"/root/code/pilo"}),
             serde_json::json!({"type":"session","version":3,"cwd":"/root/code/pi"}),

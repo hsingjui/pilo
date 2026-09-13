@@ -15,13 +15,13 @@ import {
 } from "react-resizable-panels";
 
 import { AppSidebar } from "@/components/sidebar/app-sidebar";
-import { AddWorkspaceDialog } from "@/components/sidebar/add-workspace-dialog";
+import { AddProjectDialog } from "@/components/sidebar/add-project-dialog";
 import type { SidebarSession } from "@/components/sidebar/types";
 import type { ChatSession } from "@/components/chat/chat-page";
 import { NewChatLanding } from "@/components/new-chat-landing";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import { CUSTOM_TITLEBAR, IS_MACOS, TitleBar } from "@/components/title-bar";
-import type { EditorOpenRequest } from "@/components/workspace-editor";
+import type { EditorOpenRequest } from "@/components/project-editor";
 import {
 	listenRuntimeEvents,
 	type PiModel,
@@ -38,12 +38,12 @@ import {
 } from "@/lib/sessions";
 import {
 	connectionLabel,
-	listWorkspaces,
-	notifyWorkspacesChanged,
-	touchWorkspace,
-	WORKSPACES_CHANGED_EVENT,
-	type Workspace,
-} from "@/lib/workspaces";
+	listProjects,
+	notifyProjectsChanged,
+	touchProject,
+	PROJECTS_CHANGED_EVENT,
+	type Project,
+} from "@/lib/projects";
 import { TooltipProvider } from "@/ui";
 
 const ChatPage = lazy(() =>
@@ -51,9 +51,9 @@ const ChatPage = lazy(() =>
 		default: module.ChatPage,
 	})),
 );
-const WorkspaceEditor = lazy(() =>
-	import("@/components/workspace-editor").then((module) => ({
-		default: module.WorkspaceEditor,
+const ProjectEditor = lazy(() =>
+	import("@/components/project-editor").then((module) => ({
+		default: module.ProjectEditor,
 	})),
 );
 const RightSidebar = lazy(() =>
@@ -66,6 +66,9 @@ let draftSessionSequence = 0;
 let editorRequestSequence = 0;
 
 function sessionDate(session: SessionIndexEntry) {
+	if (session.fileMtimeNs > 0) {
+		return new Date(session.fileMtimeNs / 1_000_000);
+	}
 	const value = session.lastMessageAt ?? session.updatedAt ?? session.createdAt;
 	const date = new Date(value);
 	return Number.isNaN(date.getTime()) ? new Date(session.indexedAtMs) : date;
@@ -84,7 +87,7 @@ function toSidebarSession(session: SessionIndexEntry): SidebarSession {
 				? session.firstUserMessagePreview
 				: null,
 		sessionPath: session.sessionPath,
-		workspaceId: session.workspaceId,
+		projectId: session.projectId,
 		latestMessageAt: sessionDate(session),
 		pinned: session.pinned,
 		archived: session.archived,
@@ -96,8 +99,8 @@ function createDraftSessionId() {
 	return `draft-session-${Date.now()}-${draftSessionSequence}`;
 }
 
-function workspaceRelativePath(workspace: Workspace, candidate: string) {
-	const root = workspace.path.replace(/\\/g, "/").replace(/\/+$/, "");
+function projectRelativePath(project: Project, candidate: string) {
+	const root = project.path.replace(/\\/g, "/").replace(/\/+$/, "");
 	const path = candidate.trim().replace(/\\/g, "/");
 	if (!path || path === root) return null;
 	if (path.startsWith(`${root}/`)) return path.slice(root.length + 1);
@@ -115,7 +118,7 @@ type OpenChat = {
 
 function indexedChatSession(
 	session: SessionIndexEntry,
-	workspace: Workspace,
+	project: Project,
 ): ChatSession {
 	return {
 		id: session.piSessionId,
@@ -124,7 +127,7 @@ function indexedChatSession(
 			session.name ??
 			session.firstUserMessagePreview ??
 			"新对话",
-		workspaceRecord: workspace,
+		projectRecord: project,
 		sessionPath: session.sessionPath,
 		historyFileSize: session.fileSize,
 		historyFileMtimeNs: session.fileMtimeNs,
@@ -138,7 +141,7 @@ function upsertOpenedChat(
 ): OpenChat[] {
 	const index = current.findIndex(
 		(entry) =>
-			entry.session.workspaceRecord.id === session.workspaceRecord.id &&
+			entry.session.projectRecord.id === session.projectRecord.id &&
 			(entry.session.id === session.id || entry.piSessionId === session.id),
 	);
 	if (index < 0) return [...current, { session, initialMessage }];
@@ -147,7 +150,7 @@ function upsertOpenedChat(
 	const nextInitialMessage = existing.initialMessage ?? initialMessage;
 	const sessionChanged =
 		existing.session.title !== session.title ||
-		existing.session.workspaceRecord !== session.workspaceRecord ||
+		existing.session.projectRecord !== session.projectRecord ||
 		existing.session.sessionPath !== session.sessionPath ||
 		existing.session.historyFileSize !== session.historyFileSize ||
 		existing.session.historyFileMtimeNs !== session.historyFileMtimeNs;
@@ -172,7 +175,7 @@ function App() {
 	const rightPanelRef = useRef<PanelImperativeHandle>(null);
 	const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
 	const [isResizing, setIsResizing] = useState(false);
-	const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+	const [projects, setProjects] = useState<Project[]>([]);
 	const [openedChats, setOpenedChats] = useState<OpenChat[]>([]);
 	const [indexedSessions, setIndexedSessions] = useState<SessionIndexEntry[]>(
 		[],
@@ -187,12 +190,12 @@ function App() {
 		useState<PiThinkingLevel | null>(null);
 	const [draftSessionStarted, setDraftSessionStarted] = useState(false);
 	const [draftSessionId, setDraftSessionId] = useState(createDraftSessionId);
-	const [draftWorkspaceId, setDraftWorkspaceId] = useState<string | null>(null);
+	const [draftProjectId, setDraftProjectId] = useState<string | null>(null);
 	const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
 		null,
 	);
-	const [addWorkspaceOpen, setAddWorkspaceOpen] = useState(false);
-	const [addWorkspaceConnectionId, setAddWorkspaceConnectionId] = useState<
+	const [addProjectOpen, setAddProjectOpen] = useState(false);
+	const [addProjectConnectionId, setAddProjectConnectionId] = useState<
 		string | null
 	>(null);
 	const [editorRequest, setEditorRequest] = useState<EditorOpenRequest | null>(
@@ -204,104 +207,102 @@ function App() {
 		let active = true;
 		const load = async () => {
 			try {
-				const next = await listWorkspaces();
+				const next = await listProjects();
 				if (active) {
-					setWorkspaces(next);
+					setProjects(next);
 					setOpenedChats((current) =>
 						current.filter((entry) =>
 							next.some(
-								(workspace) =>
-									workspace.id === entry.session.workspaceRecord.id,
+								(project) => project.id === entry.session.projectRecord.id,
 							),
 						),
 					);
 				}
 			} catch (error) {
-				console.error("Failed to load workspaces", error);
+				console.error("Failed to load projects", error);
 			}
 		};
 		void load();
 		const handleChanged = () => void load();
-		window.addEventListener(WORKSPACES_CHANGED_EVENT, handleChanged);
+		window.addEventListener(PROJECTS_CHANGED_EVENT, handleChanged);
 		return () => {
 			active = false;
-			window.removeEventListener(WORKSPACES_CHANGED_EVENT, handleChanged);
+			window.removeEventListener(PROJECTS_CHANGED_EVENT, handleChanged);
 		};
 	}, []);
 
 	const envs = useMemo(() => {
 		const seen = new Set<string>();
-		return workspaces.flatMap((workspace) => {
-			if (seen.has(workspace.connection.id)) return [];
-			seen.add(workspace.connection.id);
+		return projects.flatMap((project) => {
+			if (seen.has(project.connection.id)) return [];
+			seen.add(project.connection.id);
 			return [
 				{
-					id: workspace.connection.id,
-					name: connectionLabel(workspace.connection),
+					id: project.connection.id,
+					name: connectionLabel(project.connection),
 				},
 			];
 		});
-	}, [workspaces]);
+	}, [projects]);
 
-	const sidebarWorkspaces = useMemo(
+	const sidebarProjects = useMemo(
 		() =>
-			workspaces.map((workspace) => ({
-				id: workspace.id,
-				name: workspace.name,
-				path: workspace.metadata.cwd,
-				envId: workspace.connection.id,
+			projects.map((project) => ({
+				id: project.id,
+				name: project.name,
+				path: project.metadata.cwd,
+				envId: project.connection.id,
 			})),
-		[workspaces],
+		[projects],
 	);
 
-	const firstWorkspace = workspaces[0] ?? null;
-	const activeWorkspace =
-		workspaces.find((workspace) => workspace.id === draftWorkspaceId) ??
-		firstWorkspace;
-	const activeWorkspaceId = activeWorkspace?.id ?? null;
+	const firstProject = projects[0] ?? null;
+	const activeProject =
+		projects.find((project) => project.id === draftProjectId) ?? firstProject;
+	const activeProjectId = activeProject?.id ?? null;
 	const openEditorFile = useCallback(
 		(candidate: string) => {
-			if (!activeWorkspace) return;
-			const path = workspaceRelativePath(activeWorkspace, candidate);
+			if (!activeProject) return;
+			const path = projectRelativePath(activeProject, candidate);
 			if (!path) return;
 			editorRequestSequence += 1;
 			setEditorRequest({
 				id: editorRequestSequence,
-				workspaceId: activeWorkspace.id,
+				projectId: activeProject.id,
 				path,
 			});
 			setEditorVisible(true);
 		},
-		[activeWorkspace],
+		[activeProject],
 	);
 
-	const replaceWorkspaceSessions = useCallback(
-		(workspaceId: string, sessions: SessionIndexEntry[]) => {
+	const replaceProjectSessions = useCallback(
+		(projectId: string, sessions: SessionIndexEntry[]) => {
 			setIndexedSessions((current) => [
-				...current.filter((session) => session.workspaceId !== workspaceId),
+				...current.filter((session) => session.projectId !== projectId),
 				...sessions,
 			]);
 		},
 		[],
 	);
 
-	const refreshWorkspaceSessions = useCallback(
-		async (workspaceId: string) => {
-			const result = await reconcileSessions(workspaceId);
-			replaceWorkspaceSessions(workspaceId, result.sessions);
+	const refreshProjectSessions = useCallback(
+		async (projectId: string) => {
+			const result = await reconcileSessions(projectId);
+			replaceProjectSessions(projectId, result.sessions);
 		},
-		[replaceWorkspaceSessions],
+		[replaceProjectSessions],
 	);
 
 	useEffect(() => {
-		if (!activeWorkspaceId) return;
+		if (!activeProjectId) return;
 		let disposed = false;
 		let refreshTimer: number | undefined;
 		let unlistenRuntime: (() => void) | undefined;
 		let unlistenSessionWatch: (() => void) | undefined;
 
 		const refresh = () => {
-			void refreshWorkspaceSessions(activeWorkspaceId).catch((error) =>
+			void refreshProjectSessions(activeProjectId).catch((error) =>
 				console.error("Failed to reconcile sessions", error),
 			);
 		};
@@ -311,8 +312,8 @@ function App() {
 		};
 		const hydrateThenRefresh = async () => {
 			try {
-				const cached = await listSessions(activeWorkspaceId);
-				if (!disposed) replaceWorkspaceSessions(activeWorkspaceId, cached);
+				const cached = await listSessions(activeProjectId);
+				if (!disposed) replaceProjectSessions(activeProjectId, cached);
 			} catch (error) {
 				console.error("Failed to load cached sessions", error);
 			}
@@ -322,9 +323,9 @@ function App() {
 		void hydrateThenRefresh();
 		window.addEventListener("focus", queueRefresh);
 		void listenRuntimeEvents((event) => {
-			if (event.workspaceId && event.workspaceId !== activeWorkspaceId) {
+			if (event.projectId && event.projectId !== activeProjectId) {
 				if (event.type === "assistant_message_end") {
-					void refreshWorkspaceSessions(event.workspaceId).catch((error) =>
+					void refreshProjectSessions(event.projectId).catch((error) =>
 						console.error("Failed to refresh background sessions", error),
 					);
 				}
@@ -345,8 +346,17 @@ function App() {
 				console.error("Failed to listen for runtime events", error),
 			);
 		void listenSessionWatchEvents((event) => {
-			if (event.workspaceId !== activeWorkspaceId) return;
+			if (event.projectId !== activeProjectId) return;
 			if (event.type === "changed") queueRefresh();
+			if (event.type === "indexed") {
+				void listSessions(activeProjectId)
+					.then((sessions) => {
+						if (!disposed) replaceProjectSessions(activeProjectId, sessions);
+					})
+					.catch((error) =>
+						console.error("Failed to load background-indexed sessions", error),
+					);
+			}
 			if (event.type === "error") {
 				console.warn("Session watcher fallback active", event.message);
 			}
@@ -357,7 +367,7 @@ function App() {
 					return;
 				}
 				unlistenSessionWatch = unlisten;
-				await startSessionWatch(activeWorkspaceId);
+				await startSessionWatch(activeProjectId);
 			})
 			.catch((error) =>
 				console.error("Failed to start session watcher", error),
@@ -368,9 +378,9 @@ function App() {
 			window.removeEventListener("focus", queueRefresh);
 			unlistenRuntime?.();
 			unlistenSessionWatch?.();
-			void stopSessionWatch(activeWorkspaceId).catch(() => undefined);
+			void stopSessionWatch(activeProjectId).catch(() => undefined);
 		};
-	}, [activeWorkspaceId, refreshWorkspaceSessions, replaceWorkspaceSessions]);
+	}, [activeProjectId, refreshProjectSessions, replaceProjectSessions]);
 
 	const sidebarSessions = useMemo(
 		() => indexedSessions.map(toSidebarSession),
@@ -381,28 +391,28 @@ function App() {
 		indexedSessions.find(
 			(session) => session.piSessionId === selectedSessionId,
 		) ?? null;
-	const selectedWorkspace = selectedIndexedSession
-		? (workspaces.find(
-				(workspace) => workspace.id === selectedIndexedSession.workspaceId,
+	const selectedProject = selectedIndexedSession
+		? (projects.find(
+				(project) => project.id === selectedIndexedSession.projectId,
 			) ?? null)
 		: null;
 	const chatSession = useMemo<ChatSession | null>(
 		() =>
-			selectedIndexedSession && selectedWorkspace
-				? indexedChatSession(selectedIndexedSession, selectedWorkspace)
-				: activeWorkspace && draftSessionStarted
+			selectedIndexedSession && selectedProject
+				? indexedChatSession(selectedIndexedSession, selectedProject)
+				: activeProject && draftSessionStarted
 					? {
 							id: draftSessionId,
 							title: "新对话",
-							workspaceRecord: activeWorkspace,
+							projectRecord: activeProject,
 							initialModel: draftSessionModel ?? undefined,
 							initialThinkingLevel: draftSessionThinkingLevel ?? undefined,
 						}
 					: null,
 		[
 			selectedIndexedSession,
-			selectedWorkspace,
-			activeWorkspace,
+			selectedProject,
+			activeProject,
 			draftSessionStarted,
 			draftSessionId,
 			draftSessionModel,
@@ -421,20 +431,20 @@ function App() {
 		[chatSession, draftSessionPrompt, openedChats],
 	);
 
-	const startNewChat = (workspaceId?: string) => {
-		const targetWorkspaceId = workspaceId ?? firstWorkspace?.id ?? null;
+	const startNewChat = (projectId?: string) => {
+		const targetProjectId = projectId ?? firstProject?.id ?? null;
 		setDraftSessionStarted(false);
 		setDraftSessionPrompt(null);
 		setDraftSessionModel(null);
 		setDraftSessionThinkingLevel(null);
 		setDraftSessionId(createDraftSessionId());
-		setDraftWorkspaceId(targetWorkspaceId);
+		setDraftProjectId(targetProjectId);
 		setSelectedSessionId(null);
-		if (targetWorkspaceId) {
-			void touchWorkspace(targetWorkspaceId)
-				.then(() => notifyWorkspacesChanged())
+		if (targetProjectId) {
+			void touchProject(targetProjectId)
+				.then(() => notifyProjectsChanged())
 				.catch((error) =>
-					console.error("Failed to update recent workspace", error),
+					console.error("Failed to update recent project", error),
 				);
 		}
 	};
@@ -444,11 +454,11 @@ function App() {
 			(candidate) => candidate.piSessionId === sessionId,
 		);
 		if (!session) return;
-		const workspace = workspaces.find(
-			(candidate) => candidate.id === session.workspaceId,
+		const project = projects.find(
+			(candidate) => candidate.id === session.projectId,
 		);
-		if (workspace) {
-			const nextChat = indexedChatSession(session, workspace);
+		if (project) {
+			const nextChat = indexedChatSession(session, project);
 			setOpenedChats((current) => upsertOpenedChat(current, nextChat));
 		}
 		setSelectedSessionId(sessionId);
@@ -456,11 +466,11 @@ function App() {
 		setDraftSessionPrompt(null);
 		setDraftSessionModel(null);
 		setDraftSessionThinkingLevel(null);
-		setDraftWorkspaceId(session.workspaceId);
-		void touchWorkspace(session.workspaceId)
-			.then(() => notifyWorkspacesChanged())
+		setDraftProjectId(session.projectId);
+		void touchProject(session.projectId)
+			.then(() => notifyProjectsChanged())
 			.catch((error) =>
-				console.error("Failed to update recent workspace", error),
+				console.error("Failed to update recent project", error),
 			);
 	};
 
@@ -499,26 +509,26 @@ function App() {
 					collapsed={leftSidebarCollapsed}
 					onCollapse={() => setLeftSidebarCollapsed(true)}
 					envs={envs}
-					workspaces={sidebarWorkspaces}
+					projects={sidebarProjects}
 					sessions={sidebarSessions}
 					selectedSessionId={selectedSessionId}
 					onSelectSession={selectSession}
 					onUpdateSession={(sessionId, update) => {
 						void updateSession(sessionId, update);
 					}}
-					onArchiveWorkspaceSessions={(sessionIds) => {
+					onArchiveProjectSessions={(sessionIds) => {
 						for (const sessionId of sessionIds) {
 							void updateSession(sessionId, { archived: true });
 						}
 					}}
 					onNewChat={() => startNewChat()}
-					onNewChatInWorkspace={(workspaceId) => startNewChat(workspaceId)}
-					onAddWorkspace={(connectionId) => {
-						setAddWorkspaceConnectionId(connectionId ?? null);
-						setAddWorkspaceOpen(true);
+					onNewChatInProject={(projectId) => startNewChat(projectId)}
+					onAddProject={(connectionId) => {
+						setAddProjectConnectionId(connectionId ?? null);
+						setAddProjectOpen(true);
 					}}
-					onRefreshWorkspaceSessions={(workspaceId) => {
-						void refreshWorkspaceSessions(workspaceId).catch((error) =>
+					onRefreshProjectSessions={(projectId) => {
+						void refreshProjectSessions(projectId).catch((error) =>
 							console.error("Failed to refresh sessions", error),
 						);
 					}}
@@ -531,13 +541,13 @@ function App() {
 							{renderedOpenedChats.map((entry) => {
 								const visible =
 									chatSession !== null &&
-									entry.session.workspaceRecord.id ===
-										chatSession.workspaceRecord.id &&
+									entry.session.projectRecord.id ===
+										chatSession.projectRecord.id &&
 									(entry.session.id === chatSession.id ||
 										entry.piSessionId === chatSession.id);
 								return (
 									<div
-										key={`${entry.session.workspaceRecord.id}:${entry.session.id}`}
+										key={`${entry.session.projectRecord.id}:${entry.session.id}`}
 										className={visible ? "h-full min-h-0" : "hidden"}
 									>
 										<Suspense
@@ -551,8 +561,8 @@ function App() {
 													setOpenedChats((current) =>
 														current.map((chat) =>
 															chat.session.id === entry.session.id &&
-															chat.session.workspaceRecord.id ===
-																entry.session.workspaceRecord.id &&
+															chat.session.projectRecord.id ===
+																entry.session.projectRecord.id &&
 															chat.piSessionId !== piSessionId
 																? { ...chat, piSessionId }
 																: chat,
@@ -563,8 +573,8 @@ function App() {
 												onExpandSidebar={() => setLeftSidebarCollapsed(false)}
 												onOpenFile={openEditorFile}
 												onSessionChanged={() => {
-													void refreshWorkspaceSessions(
-														entry.session.workspaceRecord.id,
+													void refreshProjectSessions(
+														entry.session.projectRecord.id,
 													).catch((error) =>
 														console.error("Failed to refresh sessions", error),
 													);
@@ -578,22 +588,22 @@ function App() {
 							})}
 							{!chatSession ? (
 								<NewChatLanding
-									key={`landing:${activeWorkspace?.id ?? "no-workspace"}:${draftSessionId}`}
-									workspaceAvailable={Boolean(activeWorkspace)}
-									workspace={activeWorkspace}
+									key={`landing:${activeProject?.id ?? "no-project"}:${draftSessionId}`}
+									projectAvailable={Boolean(activeProject)}
+									project={activeProject}
 									onStartSession={(prompt, model, thinkingLevel) => {
-										if (!activeWorkspace) return;
+										if (!activeProject) return;
 										const nextChat: ChatSession = {
 											id: draftSessionId,
 											title: "新对话",
-											workspaceRecord: activeWorkspace,
+											projectRecord: activeProject,
 											initialModel: model ?? undefined,
 											initialThinkingLevel: thinkingLevel ?? undefined,
 										};
 										setOpenedChats((current) =>
 											upsertOpenedChat(current, nextChat, prompt),
 										);
-										setDraftWorkspaceId(activeWorkspace.id);
+										setDraftProjectId(activeProject.id);
 										setDraftSessionModel(model);
 										setDraftSessionThinkingLevel(thinkingLevel);
 										setDraftSessionPrompt(prompt);
@@ -604,19 +614,19 @@ function App() {
 									sidebarCollapsed={leftSidebarCollapsed}
 								/>
 							) : null}
-							{activeWorkspace && editorRequest ? (
+							{activeProject && editorRequest ? (
 								<Suspense fallback={null}>
-									<WorkspaceEditor
-										key={`editor:${activeWorkspace.id}`}
-										workspace={activeWorkspace}
+									<ProjectEditor
+										key={`editor:${activeProject.id}`}
+										project={activeProject}
 										request={
-											editorRequest?.workspaceId === activeWorkspace.id
+											editorRequest?.projectId === activeProject.id
 												? editorRequest
 												: undefined
 										}
 										visible={
 											editorVisible &&
-											editorRequest?.workspaceId === activeWorkspace.id
+											editorRequest?.projectId === activeProject.id
 										}
 										reserveTrafficLights={IS_MACOS && leftSidebarCollapsed}
 										onClose={() => setEditorVisible(false)}
@@ -643,18 +653,18 @@ function App() {
 							<RightSidebar
 								panelRef={rightPanelRef}
 								resizing={isResizing}
-								workspace={activeWorkspace ?? undefined}
+								project={activeProject ?? undefined}
 								onOpenFile={openEditorFile}
 							/>
 						</Suspense>
 					</Group>
 				</main>
 			</div>
-			{addWorkspaceOpen ? (
-				<AddWorkspaceDialog
+			{addProjectOpen ? (
+				<AddProjectDialog
 					open
-					onOpenChange={setAddWorkspaceOpen}
-					initialConnectionId={addWorkspaceConnectionId}
+					onOpenChange={setAddProjectOpen}
+					initialConnectionId={addProjectConnectionId}
 				/>
 			) : null}
 		</TooltipProvider>

@@ -10,5 +10,5 @@ pub struct PiSessionSnapshot {
     pub generation: u64,
     pub state: PiProcessState,
     pub connection: Option<Connection>,
-    pub workspace_id: Option<String>,
+    pub project_id: Option<String>,
 }

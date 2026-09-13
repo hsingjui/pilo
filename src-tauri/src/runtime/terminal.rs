@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter};
 use tokio::task::JoinHandle;
 
-use crate::domain::Workspace;
+use crate::domain::Project;
 
 use super::server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager};
 
@@ -23,7 +23,7 @@ static TERMINAL_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 #[serde(rename_all = "camelCase")]
 pub struct TerminalInfo {
     pub id: String,
-    pub workspace_id: String,
+    pub project_id: String,
     pub title: String,
 }
 
@@ -61,11 +61,11 @@ impl TerminalManager {
         &mut self,
         servers: Arc<ServerManager>,
         app: AppHandle,
-        workspace: &Workspace,
+        project: &Project,
         cols: u16,
         rows: u16,
     ) -> Result<TerminalInfo, String> {
-        let client = servers.client(&workspace.connection).await?;
+        let client = servers.client(&project.connection).await?;
         let terminal_id = format!(
             "terminal-{}-{}",
             std::process::id(),
@@ -167,7 +167,7 @@ impl TerminalManager {
                 "terminal.open",
                 json!({
                     "streamId": terminal_id,
-                    "workspace": workspace.path,
+                    "project": project.path,
                     "cols": cols,
                     "rows": rows,
                 }),
@@ -181,8 +181,8 @@ impl TerminalManager {
             .insert(terminal_id.clone(), TerminalSession { client, task });
         Ok(TerminalInfo {
             id: terminal_id,
-            workspace_id: workspace.id.clone(),
-            title: workspace.name.clone(),
+            project_id: project.id.clone(),
+            title: project.name.clone(),
         })
     }
 

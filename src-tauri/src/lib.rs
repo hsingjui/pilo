@@ -6,17 +6,16 @@ use runtime::{
     commands::{
         chat_session_send_rpc, chat_session_start, chat_session_stop, local_connection_test,
         parallel_agent_create, parallel_agent_list, parallel_agent_remove, parallel_agent_send,
-        parallel_agent_stop, runtime_abort_pi, runtime_get_pi_state, runtime_restart_pi,
-        runtime_send_rpc, runtime_stop_pi, session_history, session_list, session_reconcile,
-        session_update_ui_state, session_watch_start, session_watch_stop, ssh_connection_list,
-        ssh_connection_remove, ssh_connection_save, ssh_connection_test, terminal_close,
-        terminal_resize, terminal_write, workspace_add, workspace_discover, workspace_fs_mkdir,
-        workspace_fs_read_dir, workspace_fs_read_file, workspace_fs_remove, workspace_fs_rename,
-        workspace_fs_search, workspace_fs_stat, workspace_fs_write_file, workspace_git_diff,
-        workspace_git_status, workspace_list, workspace_preview_close, workspace_preview_open,
-        workspace_preview_ports, workspace_refresh, workspace_remove, workspace_start_pi,
-        workspace_terminal_open, workspace_touch, wsl_connection_list, wsl_connection_test,
-        wsl_list_distributions,
+        parallel_agent_stop, project_add, project_discover, project_fs_mkdir, project_fs_read_dir,
+        project_fs_read_file, project_fs_remove, project_fs_rename, project_fs_search,
+        project_fs_stat, project_fs_write_file, project_git_diff, project_git_status, project_list,
+        project_preview_close, project_preview_open, project_preview_ports, project_refresh,
+        project_remove, project_start_pi, project_terminal_open, project_touch, runtime_abort_pi,
+        runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc, runtime_stop_pi,
+        session_history, session_list, session_reconcile, session_update_ui_state,
+        session_watch_start, session_watch_stop, ssh_connection_list, ssh_connection_remove,
+        ssh_connection_save, ssh_connection_test, terminal_close, terminal_resize, terminal_write,
+        wsl_connection_list, wsl_connection_test, wsl_list_distributions,
     },
 };
 use std::{fs::OpenOptions, io::Write};
@@ -76,15 +75,15 @@ pub fn run() {
             wsl_connection_test,
             local_connection_test,
             wsl_list_distributions,
-            workspace_list,
-            workspace_add,
-            workspace_refresh,
-            workspace_touch,
-            workspace_remove,
-            workspace_discover,
-            workspace_git_status,
-            workspace_git_diff,
-            workspace_terminal_open,
+            project_list,
+            project_add,
+            project_refresh,
+            project_touch,
+            project_remove,
+            project_discover,
+            project_git_status,
+            project_git_diff,
+            project_terminal_open,
             terminal_write,
             terminal_resize,
             terminal_close,
@@ -93,24 +92,24 @@ pub fn run() {
             parallel_agent_send,
             parallel_agent_stop,
             parallel_agent_remove,
-            workspace_preview_ports,
-            workspace_preview_open,
-            workspace_preview_close,
-            workspace_fs_read_dir,
-            workspace_fs_read_file,
-            workspace_fs_write_file,
-            workspace_fs_stat,
-            workspace_fs_mkdir,
-            workspace_fs_rename,
-            workspace_fs_remove,
-            workspace_fs_search,
+            project_preview_ports,
+            project_preview_open,
+            project_preview_close,
+            project_fs_read_dir,
+            project_fs_read_file,
+            project_fs_write_file,
+            project_fs_stat,
+            project_fs_mkdir,
+            project_fs_rename,
+            project_fs_remove,
+            project_fs_search,
             session_list,
             session_reconcile,
             session_history,
             session_watch_start,
             session_watch_stop,
             session_update_ui_state,
-            workspace_start_pi,
+            project_start_pi,
             runtime_get_pi_state,
             runtime_stop_pi,
             runtime_restart_pi,
@@ -138,6 +137,34 @@ pub fn run() {
                 eprintln!("[window-state] failed to restore main window: {error}");
             }
 
+            let app_handle = app.handle().clone();
+            let servers = std::sync::Arc::clone(&app.state::<PiloRuntime>().servers);
+            tauri::async_runtime::spawn(async move {
+                let projects = match runtime::project::list(&app_handle) {
+                    Ok(projects) => projects,
+                    Err(error) => {
+                        eprintln!("[server-prewarm] failed to load projects: {error}");
+                        return;
+                    }
+                };
+                let mut seen_connections = std::collections::HashSet::new();
+                for connection in projects
+                    .into_iter()
+                    .map(|project| project.connection)
+                    .filter(|connection| seen_connections.insert(connection.id.clone()))
+                {
+                    let servers = std::sync::Arc::clone(&servers);
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(error) = servers.client(&connection).await {
+                            eprintln!(
+                                "[server-prewarm] failed for connection '{}': {error}",
+                                connection.id
+                            );
+                        }
+                    });
+                }
+            });
+
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -148,7 +175,7 @@ pub fn run() {
                 let runtime = app.state::<PiloRuntime>();
                 tauri::async_runtime::block_on(async {
                     runtime.chat_sessions.stop_all().await;
-                    let _ = runtime.workspace_pi_session.lock().await.stop().await;
+                    let _ = runtime.project_pi_session.lock().await.stop().await;
                     runtime.session_watchers.lock().await.stop_all().await;
                     runtime.terminals.lock().await.close_all().await;
                     runtime.servers.stop_all().await;

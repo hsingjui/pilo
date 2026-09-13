@@ -12,7 +12,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex, oneshot};
 
-use crate::domain::Workspace;
+use crate::domain::Project;
 
 use super::{
     events::{PiProcessState, RUNTIME_EVENT_NAME, RuntimeEvent, RuntimeEventSink},
@@ -22,7 +22,7 @@ use super::{
 };
 
 struct ChatProcess {
-    workspace_id: String,
+    project_id: String,
     session: Mutex<ServerPiSession>,
     session_path: Arc<StdMutex<Option<String>>>,
     closed: AtomicBool,
@@ -31,8 +31,8 @@ struct ChatProcess {
 #[derive(Default)]
 struct ChatRegistry {
     processes: HashMap<String, Arc<ChatProcess>>,
-    // true while stopping, false once closed; re-adding may only reopen a closed workspace.
-    unavailable_workspaces: HashMap<String, bool>,
+    // true while stopping, false once closed; re-adding may only reopen a closed project.
+    unavailable_projects: HashMap<String, bool>,
     shutting_down: bool,
 }
 
@@ -47,7 +47,7 @@ type InitializationReply = oneshot::Sender<Result<(), String>>;
 struct ChatEventSink {
     app: AppHandle,
     session_key: String,
-    workspace_id: String,
+    project_id: String,
     initialized: Arc<StdMutex<Option<InitializationReply>>>,
     session_path: Arc<StdMutex<Option<String>>>,
 }
@@ -56,7 +56,7 @@ struct ChatEventSink {
 #[serde(rename_all = "camelCase")]
 struct ChatEvent<'a> {
     session_key: &'a str,
-    workspace_id: &'a str,
+    project_id: &'a str,
     #[serde(flatten)]
     event: RuntimeEvent,
 }
@@ -103,7 +103,7 @@ impl RuntimeEventSink for ChatEventSink {
             RUNTIME_EVENT_NAME,
             ChatEvent {
                 session_key: &self.session_key,
-                workspace_id: &self.workspace_id,
+                project_id: &self.project_id,
                 event,
             },
         );
@@ -115,7 +115,7 @@ impl ChatSessions {
         &self,
         servers: Arc<ServerManager>,
         app: AppHandle,
-        workspace: Workspace,
+        project: Project,
         session_key: String,
         session_path: Option<String>,
     ) -> Result<PiSessionSnapshot, String> {
@@ -124,9 +124,8 @@ impl ChatSessions {
         }
         let process = {
             let mut registry = self.registry.lock().await;
-            if registry.shutting_down || registry.unavailable_workspaces.contains_key(&workspace.id)
-            {
-                return Err("workspace is closing".to_owned());
+            if registry.shutting_down || registry.unavailable_projects.contains_key(&project.id) {
+                return Err("project is closing".to_owned());
             }
             Arc::clone(
                 registry
@@ -134,7 +133,7 @@ impl ChatSessions {
                     .entry(session_key.clone())
                     .or_insert_with(|| {
                         Arc::new(ChatProcess {
-                            workspace_id: workspace.id.clone(),
+                            project_id: project.id.clone(),
                             session: Mutex::new(ServerPiSession::default()),
                             session_path: Arc::new(StdMutex::new(session_path.clone())),
                             closed: AtomicBool::new(false),
@@ -142,20 +141,20 @@ impl ChatSessions {
                     }),
             )
         };
-        if process.workspace_id != workspace.id {
-            return Err("session belongs to a different workspace".to_owned());
+        if process.project_id != project.id {
+            return Err("session belongs to a different project".to_owned());
         }
         // Only this session is locked during server startup and Pi initialization.
         let mut session = process.session.lock().await;
         if process.closed.load(Ordering::Acquire) {
-            return Err("workspace is closing".to_owned());
+            return Err("project is closing".to_owned());
         }
         let snapshot = session.snapshot();
         if snapshot.state == PiProcessState::Running {
             return Ok(snapshot);
         }
         if process.closed.load(Ordering::Acquire) {
-            return Err("workspace is closing".to_owned());
+            return Err("project is closing".to_owned());
         }
         let (sender, response) = oneshot::channel();
         let snapshot = session
@@ -164,11 +163,11 @@ impl ChatSessions {
                 ChatEventSink {
                     app,
                     session_key,
-                    workspace_id: workspace.id.clone(),
+                    project_id: project.id.clone(),
                     initialized: Arc::new(StdMutex::new(Some(sender))),
                     session_path: Arc::clone(&process.session_path),
                 },
-                &workspace,
+                &project,
                 session_path.clone(),
             )
             .await?;
@@ -213,7 +212,7 @@ impl ChatSessions {
             .ok_or_else(|| format!("session '{session_key}' is not running"))?;
         let session = process.session.lock().await;
         if process.closed.load(Ordering::Acquire) {
-            return Err("workspace is closing".to_owned());
+            return Err("project is closing".to_owned());
         }
         session.send_rpc(command).await
     }
@@ -231,27 +230,25 @@ impl ChatSessions {
         Ok(())
     }
 
-    pub async fn open_workspace(&self, workspace_id: &str) -> Result<(), String> {
+    pub async fn open_project(&self, project_id: &str) -> Result<(), String> {
         let mut registry = self.registry.lock().await;
-        if registry.shutting_down
-            || registry.unavailable_workspaces.get(workspace_id) == Some(&true)
-        {
-            return Err("workspace is still closing".to_owned());
+        if registry.shutting_down || registry.unavailable_projects.get(project_id) == Some(&true) {
+            return Err("project is still closing".to_owned());
         }
-        registry.unavailable_workspaces.remove(workspace_id);
+        registry.unavailable_projects.remove(project_id);
         Ok(())
     }
 
-    pub async fn stop_workspace(&self, workspace_id: &str) -> Result<(), String> {
+    pub async fn stop_project(&self, project_id: &str) -> Result<(), String> {
         let processes = {
             let mut registry = self.registry.lock().await;
             registry
-                .unavailable_workspaces
-                .insert(workspace_id.to_owned(), true);
+                .unavailable_projects
+                .insert(project_id.to_owned(), true);
             registry
                 .processes
                 .values()
-                .filter(|process| process.workspace_id == workspace_id)
+                .filter(|process| process.project_id == project_id)
                 .map(|process| {
                     process.closed.store(true, Ordering::Release);
                     Arc::clone(process)
@@ -264,10 +261,10 @@ impl ChatSessions {
         let mut registry = self.registry.lock().await;
         registry
             .processes
-            .retain(|_, process| process.workspace_id != workspace_id);
+            .retain(|_, process| process.project_id != project_id);
         registry
-            .unavailable_workspaces
-            .insert(workspace_id.to_owned(), false);
+            .unavailable_projects
+            .insert(project_id.to_owned(), false);
         Ok(())
     }
 

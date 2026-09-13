@@ -3,7 +3,7 @@ use std::{collections::HashMap, net::TcpListener, process::Stdio, time::Duration
 use serde::Serialize;
 use tokio::time::sleep;
 
-use crate::domain::{ConnectionKind, Workspace};
+use crate::domain::{ConnectionKind, Project};
 
 use super::{server_client::ServerManager, ssh::ssh_tunnel_command};
 
@@ -11,7 +11,7 @@ use super::{server_client::ServerManager, ssh::ssh_tunnel_command};
 #[serde(rename_all = "camelCase")]
 pub struct PreviewInfo {
     pub id: String,
-    pub workspace_id: String,
+    pub project_id: String,
     pub remote_port: u16,
     pub local_port: u16,
     pub url: String,
@@ -31,21 +31,21 @@ pub struct PreviewManager {
 impl PreviewManager {
     pub async fn open(
         &mut self,
-        workspace: &Workspace,
+        project: &Project,
         remote_port: u16,
     ) -> Result<PreviewInfo, String> {
         if remote_port == 0 {
             return Err("preview port must be between 1 and 65535".to_owned());
         }
-        let id = format!("preview:{}:{remote_port}", workspace.id);
+        let id = format!("preview:{}:{remote_port}", project.id);
         if let Some(existing) = self.sessions.get(&id) {
             return Ok(existing.info.clone());
         }
 
-        let (local_port, tunnel) = match &workspace.connection.kind {
+        let (local_port, tunnel) = match &project.connection.kind {
             ConnectionKind::Ssh { .. } => {
                 let local_port = reserve_local_port()?;
-                let mut child = ssh_tunnel_command(&workspace.connection, local_port, remote_port)?
+                let mut child = ssh_tunnel_command(&project.connection, local_port, remote_port)?
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
@@ -66,7 +66,7 @@ impl PreviewManager {
 
         let info = PreviewInfo {
             id: id.clone(),
-            workspace_id: workspace.id.clone(),
+            project_id: project.id.clone(),
             remote_port,
             local_port,
             url: format!("http://127.0.0.1:{local_port}"),
@@ -97,13 +97,10 @@ impl PreviewManager {
     }
 }
 
-pub async fn detect_ports(
-    servers: &ServerManager,
-    workspace: &Workspace,
-) -> Result<Vec<u16>, String> {
+pub async fn detect_ports(servers: &ServerManager, project: &Project) -> Result<Vec<u16>, String> {
     let mut ports: Vec<u16> = servers
         .request_typed(
-            &workspace.connection,
+            &project.connection,
             "preview.ports",
             serde_json::Value::Null,
         )

@@ -84,7 +84,7 @@ pi --mode rpc
 - WSL
 - SSH
 
-### Workspace
+### Project
 
 表示开发目录：
 
@@ -115,7 +115,7 @@ Connection
  ↓
 Local / WSL / SSH
  ↓
-Workspace
+Project
  ↓
 Pi RPC
 ```

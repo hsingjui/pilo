@@ -5,7 +5,7 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::{sync::Mutex as AsyncMutex, task::JoinHandle};
 
-use crate::domain::Workspace;
+use crate::domain::Project;
 
 use super::server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager};
 
@@ -15,17 +15,17 @@ pub const SESSION_WATCH_EVENT_NAME: &str = "pilo://sessions";
 #[serde(tag = "type", rename_all = "snake_case")]
 enum SessionWatchEvent {
     Changed {
-        #[serde(rename = "workspaceId")]
-        workspace_id: String,
+        #[serde(rename = "projectId")]
+        project_id: String,
     },
     Backend {
-        #[serde(rename = "workspaceId")]
-        workspace_id: String,
+        #[serde(rename = "projectId")]
+        project_id: String,
         backend: String,
     },
     Error {
-        #[serde(rename = "workspaceId")]
-        workspace_id: String,
+        #[serde(rename = "projectId")]
+        project_id: String,
         message: String,
     },
 }
@@ -46,23 +46,23 @@ impl SessionWatcherManager {
         &mut self,
         servers: Arc<ServerManager>,
         app: AppHandle,
-        workspace: Workspace,
+        project: Project,
     ) -> Result<(), String> {
-        self.stop(&workspace.id).await;
-        let client = servers.client(&workspace.connection).await?;
-        let stream_id = format!("session-watch:{}", workspace.id);
+        self.stop(&project.id).await;
+        let client = servers.client(&project.connection).await?;
+        let stream_id = format!("session-watch:{}", project.id);
         let mut events = client.subscribe(&stream_id);
         client
             .request(
                 "session.watch_start",
-                json!({ "streamId": stream_id, "workspace": workspace.path }),
+                json!({ "streamId": stream_id, "project": project.path }),
             )
             .await?;
         let current_client = Arc::new(AsyncMutex::new(Arc::clone(&client)));
         let event_stream_id = stream_id.clone();
-        let workspace_id = workspace.id.clone();
-        let workspace_path = workspace.path.clone();
-        let connection = workspace.connection.clone();
+        let project_id = project.id.clone();
+        let project_path = project.path.clone();
+        let connection = project.connection.clone();
         let event_app = app.clone();
         let event_servers = Arc::clone(&servers);
         let event_client = Arc::clone(&current_client);
@@ -80,10 +80,10 @@ impl SessionWatcherManager {
                             continue;
                         }
                         match event.event.as_str() {
-                            "session.changed" => emit_changed(&event_app, &workspace_id),
+                            "session.changed" => emit_changed(&event_app, &project_id),
                             "session.backend" => emit_backend(
                                 &event_app,
-                                &workspace_id,
+                                &project_id,
                                 event
                                     .data
                                     .get("backend")
@@ -92,7 +92,7 @@ impl SessionWatcherManager {
                             ),
                             "session.error" => emit_error(
                                 &event_app,
-                                &workspace_id,
+                                &project_id,
                                 event
                                     .data
                                     .get("message")
@@ -104,7 +104,7 @@ impl SessionWatcherManager {
                         continue;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        emit_changed(&event_app, &workspace_id);
+                        emit_changed(&event_app, &project_id);
                         continue;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
@@ -114,7 +114,7 @@ impl SessionWatcherManager {
 
                 emit_error(
                     &event_app,
-                    &workspace_id,
+                    &project_id,
                     format!("{disconnect_message}; reconnecting session watcher"),
                 );
                 let mut delay = std::time::Duration::from_millis(250);
@@ -128,14 +128,14 @@ impl SessionWatcherManager {
                                 "session.watch_start",
                                 json!({
                                     "streamId": event_stream_id,
-                                    "workspace": workspace_path,
+                                    "project": project_path,
                                 }),
                             )
                             .await
                             .is_ok()
                         {
                             events = next_events;
-                            emit_changed(&event_app, &workspace_id);
+                            emit_changed(&event_app, &project_id);
                             break;
                         }
                     }
@@ -146,7 +146,7 @@ impl SessionWatcherManager {
             }
         });
         self.watchers.insert(
-            workspace.id,
+            project.id,
             WatchHandle {
                 current_client,
                 stream_id,
@@ -156,8 +156,8 @@ impl SessionWatcherManager {
         Ok(())
     }
 
-    pub async fn stop(&mut self, workspace_id: &str) {
-        if let Some(handle) = self.watchers.remove(workspace_id) {
+    pub async fn stop(&mut self, project_id: &str) {
+        if let Some(handle) = self.watchers.remove(project_id) {
             handle.task.abort();
             let client = handle.current_client.lock().await.clone();
             let _ = client
@@ -177,30 +177,30 @@ impl SessionWatcherManager {
     }
 }
 
-fn emit_changed(app: &AppHandle, workspace_id: &str) {
+fn emit_changed(app: &AppHandle, project_id: &str) {
     let _ = app.emit(
         SESSION_WATCH_EVENT_NAME,
         SessionWatchEvent::Changed {
-            workspace_id: workspace_id.to_owned(),
+            project_id: project_id.to_owned(),
         },
     );
 }
 
-fn emit_backend(app: &AppHandle, workspace_id: &str, backend: &str) {
+fn emit_backend(app: &AppHandle, project_id: &str, backend: &str) {
     let _ = app.emit(
         SESSION_WATCH_EVENT_NAME,
         SessionWatchEvent::Backend {
-            workspace_id: workspace_id.to_owned(),
+            project_id: project_id.to_owned(),
             backend: backend.to_owned(),
         },
     );
 }
 
-fn emit_error(app: &AppHandle, workspace_id: &str, message: impl Into<String>) {
+fn emit_error(app: &AppHandle, project_id: &str, message: impl Into<String>) {
     let _ = app.emit(
         SESSION_WATCH_EVENT_NAME,
         SessionWatchEvent::Error {
-            workspace_id: workspace_id.to_owned(),
+            project_id: project_id.to_owned(),
             message: message.into(),
         },
     );

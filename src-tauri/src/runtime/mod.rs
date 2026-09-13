@@ -6,8 +6,9 @@ mod git;
 mod parallel;
 mod pi_events;
 mod preview;
+pub mod project;
 mod remote_fs;
-mod server_client;
+pub(crate) mod server_client;
 mod server_pi;
 mod session_history;
 mod session_index;
@@ -17,7 +18,6 @@ mod session_watcher;
 pub(crate) mod ssh;
 mod storage;
 mod terminal;
-pub mod workspace;
 #[allow(dead_code)]
 mod wsl;
 
@@ -36,7 +36,7 @@ use terminal::TerminalManager;
 
 pub struct PiloRuntime {
     pub(crate) chat_sessions: ChatSessions,
-    pub(crate) workspace_pi_session: Mutex<ServerPiSession>,
+    pub(crate) project_pi_session: Mutex<ServerPiSession>,
     pub(crate) parallel_agents: Mutex<ParallelAgentManager>,
     pub(crate) previews: Mutex<PreviewManager>,
     pub(crate) servers: Arc<ServerManager>,
@@ -49,7 +49,7 @@ impl Default for PiloRuntime {
     fn default() -> Self {
         Self {
             chat_sessions: ChatSessions::default(),
-            workspace_pi_session: Mutex::new(ServerPiSession::default()),
+            project_pi_session: Mutex::new(ServerPiSession::default()),
             parallel_agents: Mutex::new(ParallelAgentManager::default()),
             previews: Mutex::new(PreviewManager::default()),
             servers: Arc::new(ServerManager::default()),

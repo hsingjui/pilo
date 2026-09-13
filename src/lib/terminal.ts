@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type TerminalInfo = {
 	id: string;
-	workspaceId: string;
+	projectId: string;
 	title: string;
 };
 
@@ -12,12 +12,12 @@ export type TerminalEvent =
 	| { type: "exit"; terminalId: string }
 	| { type: "error"; terminalId: string; message: string };
 
-export function openWorkspaceTerminal(
-	workspaceId: string,
+export function openProjectTerminal(
+	projectId: string,
 	cols = 80,
 	rows = 24,
 ): Promise<TerminalInfo> {
-	return invoke("workspace_terminal_open", { id: workspaceId, cols, rows });
+	return invoke("project_terminal_open", { id: projectId, cols, rows });
 }
 
 export function writeTerminal(

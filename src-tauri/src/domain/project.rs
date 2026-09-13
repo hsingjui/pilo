@@ -4,19 +4,19 @@ use super::Connection;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Workspace {
+pub struct Project {
     pub id: String,
     pub name: String,
     pub path: String,
     pub connection: Connection,
-    pub metadata: WorkspaceMetadata,
+    pub metadata: ProjectMetadata,
     pub created_at_ms: u64,
     pub last_opened_at_ms: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct WorkspaceMetadata {
+pub struct ProjectMetadata {
     pub cwd: String,
     pub git_branch: Option<String>,
     pub pi_version: String,
@@ -25,15 +25,15 @@ pub struct WorkspaceMetadata {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DiscoveredWorkspace {
+pub struct DiscoveredProject {
     pub name: String,
     pub path: String,
     pub already_added: bool,
 }
 
-impl Workspace {
+impl Project {
     pub fn stable_id(connection_id: &str, path: &str) -> String {
-        format!("workspace:{connection_id}:{path}")
+        format!("project:{connection_id}:{path}")
     }
 
     pub fn name_from_path(path: &str) -> String {
@@ -55,17 +55,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn derives_workspace_name_from_posix_and_windows_paths() {
-        assert_eq!(Workspace::name_from_path("/root/code/pilo"), "pilo");
-        assert_eq!(Workspace::name_from_path("C:\\Code\\pilo\\"), "pilo");
-        assert_eq!(Workspace::name_from_path("/"), "/");
+    fn derives_project_name_from_posix_and_windows_paths() {
+        assert_eq!(Project::name_from_path("/root/code/pilo"), "pilo");
+        assert_eq!(Project::name_from_path("C:\\Code\\pilo\\"), "pilo");
+        assert_eq!(Project::name_from_path("/"), "/");
     }
 
     #[test]
     fn stable_id_keeps_connection_and_path_identity() {
         assert_eq!(
-            Workspace::stable_id("wsl:Debian", "/root/code/pilo"),
-            "workspace:wsl:Debian:/root/code/pilo"
+            Project::stable_id("wsl:Debian", "/root/code/pilo"),
+            "project:wsl:Debian:/root/code/pilo"
         );
     }
 }

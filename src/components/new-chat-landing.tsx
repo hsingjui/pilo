@@ -8,12 +8,12 @@ import {
 	type PiThinkingLevel,
 } from "@/lib/pi-runtime";
 import {
-	getCachedWorkspacePiModels,
-	refreshWorkspacePiModels,
+	getCachedProjectPiModels,
+	refreshProjectPiModels,
 } from "@/lib/pi-models";
 import { cn } from "@/lib/utils";
 import { IS_MACOS } from "@/components/title-bar";
-import type { Workspace } from "@/lib/workspaces";
+import type { Project } from "@/lib/projects";
 import { Button } from "@/ui";
 
 export function NewChatLanding({
@@ -21,8 +21,8 @@ export function NewChatLanding({
 	onExpandSidebar,
 	reserveWindowControls = false,
 	sidebarCollapsed = false,
-	workspaceAvailable = true,
-	workspace = null,
+	projectAvailable = true,
+	project = null,
 }: {
 	onStartSession: (
 		prompt: string,
@@ -32,13 +32,11 @@ export function NewChatLanding({
 	onExpandSidebar?: () => void;
 	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
-	workspaceAvailable?: boolean;
-	workspace?: Workspace | null;
+	projectAvailable?: boolean;
+	project?: Project | null;
 }) {
-	const workspaceId = workspace?.id ?? null;
-	const cachedModels = workspaceId
-		? getCachedWorkspacePiModels(workspaceId)
-		: null;
+	const projectId = project?.id ?? null;
+	const cachedModels = projectId ? getCachedProjectPiModels(projectId) : null;
 	const [draft, setDraft] = useState("");
 	const [models, setModels] = useState<PiModel[]>(cachedModels?.models ?? []);
 	const [selectedModel, setSelectedModel] = useState<PiModel | null>(null);
@@ -52,13 +50,13 @@ export function NewChatLanding({
 	const modelLoadingRef = useRef(false);
 
 	const loadModels = useCallback(async () => {
-		if (!workspaceId || modelLoadingRef.current) return;
+		if (!projectId || modelLoadingRef.current) return;
 		const requestId = ++modelRequestRef.current;
 		modelLoadingRef.current = true;
 		setModelLoadState("loading");
 		setModelError(null);
 		try {
-			const result = await refreshWorkspacePiModels(workspaceId);
+			const result = await refreshProjectPiModels(projectId);
 			if (modelRequestRef.current !== requestId) return;
 			setModels(result.models);
 			setModelLoadState("ready");
@@ -71,17 +69,17 @@ export function NewChatLanding({
 				modelLoadingRef.current = false;
 			}
 		}
-	}, [workspaceId]);
+	}, [projectId]);
 
 	useEffect(() => {
-		if (!workspaceId) return;
+		if (!projectId) return;
 		const timer = window.setTimeout(() => void loadModels(), 0);
 		return () => {
 			window.clearTimeout(timer);
 			modelRequestRef.current += 1;
 			modelLoadingRef.current = false;
 		};
-	}, [loadModels, workspaceId]);
+	}, [loadModels, projectId]);
 
 	return (
 		<div className="relative flex h-full min-w-0 flex-col">
@@ -122,7 +120,7 @@ export function NewChatLanding({
 						/>
 					</svg>
 					<h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-						{workspaceAvailable ? "今天想做点什么？" : "先添加一个工作区"}
+						{projectAvailable ? "今天想做点什么？" : "先添加一个工作区"}
 					</h1>
 				</div>
 			</div>
@@ -134,12 +132,12 @@ export function NewChatLanding({
 					onSubmit={(prompt) =>
 						onStartSession(prompt, selectedModel, selectedThinkingLevel)
 					}
-					disabled={!workspaceAvailable}
+					disabled={!projectAvailable}
 					models={models}
 					selectedModel={selectedModel}
 					modelLoading={modelLoadState === "loading"}
 					modelError={modelError}
-					modelDisabled={!workspaceAvailable || !workspace}
+					modelDisabled={!projectAvailable || !project}
 					showDefaultModelOption
 					onModelMenuOpen={() => {
 						if (modelLoadState === "idle" || modelLoadState === "error") {
@@ -149,11 +147,11 @@ export function NewChatLanding({
 					onModelChange={setSelectedModel}
 					thinkingLevels={PI_THINKING_LEVELS}
 					selectedThinkingLevel={selectedThinkingLevel}
-					thinkingDisabled={!workspaceAvailable || !workspace}
+					thinkingDisabled={!projectAvailable || !project}
 					showDefaultThinkingOption
 					onThinkingChange={setSelectedThinkingLevel}
 					placeholder={
-						workspaceAvailable
+						projectAvailable
 							? undefined
 							: "请先在设置 → 工作区中添加 Local、WSL 或 SSH 工作区"
 					}

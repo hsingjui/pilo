@@ -818,7 +818,7 @@ SessionHistory {
 Tauri command 仍然是：
 
 ```text
-session_history(workspaceId, sessionPath)
+session_history(projectId, sessionPath)
 ```
 
 它仍然只调用：

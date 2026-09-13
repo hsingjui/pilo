@@ -319,9 +319,9 @@ export function ConnectionsSettings() {
 										{info.connection.name}
 									</div>
 									<div className="text-[11px] text-muted-foreground">
-										{info.workspaceCount > 0
-											? `${info.workspaceCount} 个工作区`
-											: "未关联工作区"}
+										{info.projectCount > 0
+											? `${info.projectCount} 个项目`
+											: "未关联项目"}
 									</div>
 								</div>
 								<Button
@@ -385,8 +385,8 @@ export function ConnectionsSettings() {
 										{target.type === "direct" && target.proxyJump ? (
 											<span>经 {target.proxyJump}</span>
 										) : null}
-										{info.workspaceCount > 0 ? (
-											<span>{info.workspaceCount} 个工作区</span>
+										{info.projectCount > 0 ? (
+											<span>{info.projectCount} 个项目</span>
 										) : null}
 									</div>
 								</div>
@@ -410,7 +410,7 @@ export function ConnectionsSettings() {
 									<Button
 										variant="ghost"
 										size="icon"
-										disabled={busy || info.workspaceCount > 0}
+										disabled={busy || info.projectCount > 0}
 										onClick={() => void remove(info)}
 									>
 										<Trash2 />
@@ -442,7 +442,7 @@ export function ConnectionsSettings() {
 							{editing?.name ? "编辑 SSH 连接" : "添加 SSH 连接"}
 						</DialogTitle>
 						<DialogDescription>
-							使用系统 OpenSSH 建立连接，Pilo 不复制远程工作区到本地。
+							使用系统 OpenSSH 建立连接，Pilo 不复制远程项目到本地。
 						</DialogDescription>
 					</DialogHeader>
 					{editing ? (

@@ -11,7 +11,7 @@ export type ParallelAgentStatus =
 
 export type ParallelAgentInfo = {
 	id: string;
-	workspaceId: string;
+	projectId: string;
 	name: string;
 	branch: string;
 	worktreePath: string;
@@ -25,18 +25,18 @@ export type ParallelAgentEvent = {
 };
 
 export function listParallelAgents(
-	workspaceId: string,
+	projectId: string,
 ): Promise<ParallelAgentInfo[]> {
-	return invoke("parallel_agent_list", { workspaceId });
+	return invoke("parallel_agent_list", { projectId });
 }
 
 export function createParallelAgent(
-	workspaceId: string,
+	projectId: string,
 	name: string,
 	prompt?: string,
 ): Promise<ParallelAgentInfo> {
 	return invoke("parallel_agent_create", {
-		workspaceId,
+		projectId,
 		name,
 		prompt: prompt?.trim() || null,
 	});
@@ -54,10 +54,10 @@ export function stopParallelAgent(agentId: string): Promise<void> {
 }
 
 export function removeParallelAgent(
-	workspaceId: string,
+	projectId: string,
 	agentId: string,
 ): Promise<void> {
-	return invoke("parallel_agent_remove", { workspaceId, agentId });
+	return invoke("parallel_agent_remove", { projectId, agentId });
 }
 
 export function listenParallelAgentEvents(

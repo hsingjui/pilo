@@ -1,43 +1,43 @@
 import { createChatSessionClient } from "@/lib/chat-session-client";
 import type { PiModel } from "@/lib/pi-runtime";
 
-export type WorkspacePiModels = {
+export type ProjectPiModels = {
 	models: PiModel[];
 	refreshedAtMs: number;
 };
 
-const modelCache = new Map<string, WorkspacePiModels>();
-const pendingRefreshes = new Map<string, Promise<WorkspacePiModels>>();
+const modelCache = new Map<string, ProjectPiModels>();
+const pendingRefreshes = new Map<string, Promise<ProjectPiModels>>();
 let probeSequence = 0;
 
-export function getCachedWorkspacePiModels(
-	workspaceId: string,
-): WorkspacePiModels | null {
-	return modelCache.get(workspaceId) ?? null;
+export function getCachedProjectPiModels(
+	projectId: string,
+): ProjectPiModels | null {
+	return modelCache.get(projectId) ?? null;
 }
 
-export function cacheWorkspacePiModels(
-	workspaceId: string,
+export function cacheProjectPiModels(
+	projectId: string,
 	models: PiModel[],
-): WorkspacePiModels {
+): ProjectPiModels {
 	const snapshot = { models, refreshedAtMs: Date.now() };
-	modelCache.set(workspaceId, snapshot);
+	modelCache.set(projectId, snapshot);
 	return snapshot;
 }
 
-export function refreshWorkspacePiModels(
-	workspaceId: string,
-): Promise<WorkspacePiModels> {
-	const pending = pendingRefreshes.get(workspaceId);
+export function refreshProjectPiModels(
+	projectId: string,
+): Promise<ProjectPiModels> {
+	const pending = pendingRefreshes.get(projectId);
 	if (pending) return pending;
 
-	const sessionKey = `model-probe:${workspaceId}:${Date.now()}:${++probeSequence}`;
-	const client = createChatSessionClient(workspaceId, sessionKey);
+	const sessionKey = `model-probe:${projectId}:${Date.now()}:${++probeSequence}`;
+	const client = createChatSessionClient(projectId, sessionKey);
 	const refresh = (async () => {
 		try {
 			await client.ensure();
 			const result = await client.getAvailablePiModels();
-			return cacheWorkspacePiModels(workspaceId, result.models);
+			return cacheProjectPiModels(projectId, result.models);
 		} finally {
 			await client.stop().catch((error) => {
 				console.warn("Failed to stop Pi model probe session", error);
@@ -45,10 +45,10 @@ export function refreshWorkspacePiModels(
 		}
 	})();
 
-	pendingRefreshes.set(workspaceId, refresh);
+	pendingRefreshes.set(projectId, refresh);
 	const clearPending = () => {
-		if (pendingRefreshes.get(workspaceId) === refresh) {
-			pendingRefreshes.delete(workspaceId);
+		if (pendingRefreshes.get(projectId) === refresh) {
+			pendingRefreshes.delete(projectId);
 		}
 	};
 	void refresh.then(clearPending, clearPending);

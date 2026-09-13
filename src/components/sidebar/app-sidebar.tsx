@@ -19,15 +19,15 @@ import {
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, ScrollArea } from "@/ui";
 import { IS_MACOS } from "@/components/title-bar";
-import { EnvRow, SessionRow, WorkspaceRow } from "./rows";
+import { EnvRow, SessionRow, ProjectRow } from "./rows";
 import {
 	AppSidebarProps,
 	SidebarEnv,
 	SidebarSession,
-	SidebarWorkspace,
+	SidebarProject,
 } from "./types";
 
-export type { AppSidebarProps, SidebarEnv, SidebarSession, SidebarWorkspace };
+export type { AppSidebarProps, SidebarEnv, SidebarSession, SidebarProject };
 
 // ---- 侧边栏 ---------------------------------------------------------------
 
@@ -51,18 +51,18 @@ const VirtualSessionRows = lazy(() =>
 
 export function AppSidebar({
 	envs,
-	workspaces,
+	projects,
 	sessions,
 	collapsed = false,
 	onCollapse,
 	onUpdateSession,
-	onArchiveWorkspaceSessions,
-	onRefreshWorkspaceSessions,
+	onArchiveProjectSessions,
+	onRefreshProjectSessions,
 	selectedSessionId,
 	onSelectSession,
 	onNewChat,
-	onNewChatInWorkspace,
-	onAddWorkspace,
+	onNewChatInProject,
+	onAddProject,
 	footer,
 }: AppSidebarProps) {
 	const [searchQuery, setSearchQuery] = useState("");
@@ -161,13 +161,13 @@ export function AppSidebar({
 
 	const renderSession = (
 		session: SidebarSession,
-		workspace: SidebarWorkspace,
+		project: SidebarProject,
 		env: SidebarEnv,
 	) => (
 		<SessionRow
 			key={session.id}
 			session={session}
-			workspace={workspace}
+			project={project}
 			env={env}
 			now={now}
 			selected={activeSessionId === session.id}
@@ -185,16 +185,16 @@ export function AppSidebar({
 	);
 
 	const renderSessionList = (
-		workspaceSessions: SidebarSession[],
-		workspace: SidebarWorkspace,
+		projectSessions: SidebarSession[],
+		project: SidebarProject,
 		env: SidebarEnv,
 	) => {
-		const pinned = workspaceSessions.filter((session) => session.pinned);
-		const unpinned = workspaceSessions.filter((session) => !session.pinned);
+		const pinned = projectSessions.filter((session) => session.pinned);
+		const unpinned = projectSessions.filter((session) => !session.pinned);
 		const orderedSessions = [...pinned, ...unpinned];
 
 		const renderRow = (session: SidebarSession) =>
-			renderSession(session, workspace, env);
+			renderSession(session, project, env);
 		if (orderedSessions.length < 40) {
 			return <>{orderedSessions.map(renderRow)}</>;
 		}
@@ -266,7 +266,7 @@ export function AppSidebar({
 					<button
 						type="button"
 						className="group flex w-full select-none items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring/30 dark:text-sidebar-foreground/75"
-						onClick={() => onAddWorkspace?.()}
+						onClick={() => onAddProject?.()}
 					>
 						<span className="flex h-5 w-5 shrink-0 items-center justify-center text-current">
 							<FolderPlus className="h-4 w-4" />
@@ -308,8 +308,8 @@ export function AppSidebar({
 					<div className="relative w-full min-w-0 overflow-x-hidden pt-1">
 						{envs.map((env) => {
 							const envCollapsed = collapsedSections[`env:${env.id}`] ?? false;
-							const envWorkspaces = workspaces.filter(
-								(workspace) => workspace.envId === env.id,
+							const envProjects = projects.filter(
+								(project) => project.envId === env.id,
 							);
 							return (
 								<section
@@ -320,49 +320,50 @@ export function AppSidebar({
 										env={env}
 										collapsed={envCollapsed}
 										onToggle={() => toggleSection(`env:${env.id}`)}
-										onAddWorkspace={onAddWorkspace}
+										onAddProject={onAddProject}
 									/>
 									{!envCollapsed &&
-										envWorkspaces.map((workspace) => {
-											const workspaceCollapsed =
-												collapsedSections[`ws:${workspace.id}`] ?? false;
-											const workspaceSessions = visibleSessions.filter(
-												(session) => session.workspaceId === workspace.id,
+										envProjects.map((project) => {
+											const projectCollapsed =
+												collapsedSections[`ws:${project.id}`] ?? false;
+											const projectSessions = visibleSessions.filter(
+												(session) => session.projectId === project.id,
 											);
 											return (
 												<div
-													key={workspace.id}
+													key={project.id}
 													className="grid w-full min-w-0 gap-px overflow-hidden"
 												>
-													<WorkspaceRow
-														workspace={workspace}
+													<ProjectRow
+														project={project}
 														env={env}
-														collapsed={workspaceCollapsed}
-														onToggle={() => toggleSection(`ws:${workspace.id}`)}
-														onNewChat={onNewChatInWorkspace}
+														collapsed={projectCollapsed}
+														onToggle={() => {
+															const key = `ws:${project.id}`;
+															toggleSection(key);
+															if (projectCollapsed)
+																onRefreshProjectSessions?.(project.id);
+														}}
+														onNewChat={onNewChatInProject}
 														onArchiveSessions={
-															onArchiveWorkspaceSessions
+															onArchiveProjectSessions
 																? () =>
-																		onArchiveWorkspaceSessions(
-																			workspaceSessions.map(
+																		onArchiveProjectSessions(
+																			projectSessions.map(
 																				(session) => session.id,
 																			),
 																		)
 																: undefined
 														}
 														onRefreshSessions={
-															onRefreshWorkspaceSessions
-																? () => onRefreshWorkspaceSessions(workspace.id)
+															onRefreshProjectSessions
+																? () => onRefreshProjectSessions(project.id)
 																: undefined
 														}
-														hasSessions={workspaceSessions.length > 0}
+														hasSessions={projectSessions.length > 0}
 													/>
-													{!workspaceCollapsed &&
-														renderSessionList(
-															workspaceSessions,
-															workspace,
-															env,
-														)}
+													{!projectCollapsed &&
+														renderSessionList(projectSessions, project, env)}
 												</div>
 											);
 										})}

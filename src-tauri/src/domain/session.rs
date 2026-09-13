@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct SessionIndexEntry {
     pub connection_id: String,
-    pub workspace_id: String,
+    pub project_id: String,
     pub pi_session_id: String,
     pub session_path: String,
     pub name: Option<String>,

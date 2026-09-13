@@ -7,7 +7,7 @@ export const SESSIONS_CHANGED_EVENT = "pilo:sessions-changed";
 
 export type SessionIndexEntry = {
 	connectionId: string;
-	workspaceId: string;
+	projectId: string;
 	piSessionId: string;
 	sessionPath: string;
 	name: string | null;
@@ -49,51 +49,50 @@ export type SessionHistory = {
 };
 
 export type SessionWatchEvent =
-	| { type: "changed"; workspaceId: string }
-	| { type: "backend"; workspaceId: string; backend: string }
-	| { type: "error"; workspaceId: string; message: string };
+	| { type: "changed"; projectId: string }
+	| { type: "indexed"; projectId: string }
+	| { type: "backend"; projectId: string; backend: string }
+	| { type: "error"; projectId: string; message: string };
 
 const reconcileInFlight = new Map<string, Promise<SessionReconcileResult>>();
 
-export function listSessions(
-	workspaceId: string,
-): Promise<SessionIndexEntry[]> {
-	return invoke<SessionIndexEntry[]>("session_list", { workspaceId });
+export function listSessions(projectId: string): Promise<SessionIndexEntry[]> {
+	return invoke<SessionIndexEntry[]>("session_list", { projectId });
 }
 
 export function loadSessionHistory(
-	workspaceId: string,
+	projectId: string,
 	sessionPath: string,
 ): Promise<SessionHistory> {
 	return invoke<SessionHistory>("session_history", {
-		workspaceId,
+		projectId,
 		sessionPath,
 	});
 }
 
 export function reconcileSessions(
-	workspaceId: string,
+	projectId: string,
 ): Promise<SessionReconcileResult> {
-	const existing = reconcileInFlight.get(workspaceId);
+	const existing = reconcileInFlight.get(projectId);
 	if (existing) return existing;
 
 	const request = invoke<SessionReconcileResult>("session_reconcile", {
-		workspaceId,
+		projectId,
 	}).finally(() => {
-		if (reconcileInFlight.get(workspaceId) === request) {
-			reconcileInFlight.delete(workspaceId);
+		if (reconcileInFlight.get(projectId) === request) {
+			reconcileInFlight.delete(projectId);
 		}
 	});
-	reconcileInFlight.set(workspaceId, request);
+	reconcileInFlight.set(projectId, request);
 	return request;
 }
 
-export function startSessionWatch(workspaceId: string): Promise<void> {
-	return invoke("session_watch_start", { workspaceId });
+export function startSessionWatch(projectId: string): Promise<void> {
+	return invoke("session_watch_start", { projectId });
 }
 
-export function stopSessionWatch(workspaceId: string): Promise<void> {
-	return invoke("session_watch_stop", { workspaceId });
+export function stopSessionWatch(projectId: string): Promise<void> {
+	return invoke("session_watch_stop", { projectId });
 }
 
 export function listenSessionWatchEvents(

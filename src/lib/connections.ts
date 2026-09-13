@@ -9,7 +9,7 @@ export type ConnectionTestResult = {
 
 export type WslConnectionInfo = {
 	connection: Connection;
-	workspaceCount: number;
+	projectCount: number;
 };
 
 export function listWslConnections(): Promise<WslConnectionInfo[]> {

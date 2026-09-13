@@ -9,13 +9,9 @@ import {
 	Search,
 } from "lucide-react";
 
-import {
-	readWorkspaceDir,
-	searchWorkspaceFiles,
-	type FsEntry,
-} from "@/lib/files";
+import { readProjectDir, searchProjectFiles, type FsEntry } from "@/lib/files";
 import { cn } from "@/lib/utils";
-import type { Workspace } from "@/lib/workspaces";
+import type { Project } from "@/lib/projects";
 import { Button, EmptyState, ErrorState, Input } from "@/ui";
 
 type DirectoryState = {
@@ -125,10 +121,10 @@ function FileTreeRow({
 }
 
 export function FileExplorer({
-	workspace,
+	project,
 	onOpenFile,
 }: {
-	workspace: Workspace;
+	project: Project;
 	onOpenFile: (path: string) => void;
 }) {
 	const [directories, setDirectories] = useState<Map<string, DirectoryState>>(
@@ -153,7 +149,7 @@ export function FileExplorer({
 				return next;
 			});
 			try {
-				const entries = await readWorkspaceDir(workspace.id, path);
+				const entries = await readProjectDir(project.id, path);
 				setDirectories((current) => {
 					const next = new Map(current);
 					next.set(path, { entries, loading: false });
@@ -171,7 +167,7 @@ export function FileExplorer({
 				});
 			}
 		},
-		[workspace.id],
+		[project.id],
 	);
 
 	useEffect(() => {
@@ -190,13 +186,13 @@ export function FileExplorer({
 		}
 		const timer = window.setTimeout(() => {
 			setSearching(true);
-			void searchWorkspaceFiles(workspace.id, value)
+			void searchProjectFiles(project.id, value)
 				.then(setSearchResults)
 				.catch(() => setSearchResults([]))
 				.finally(() => setSearching(false));
 		}, 180);
 		return () => window.clearTimeout(timer);
-	}, [query, workspace.id]);
+	}, [query, project.id]);
 
 	const toggleDirectory = useCallback(
 		(entry: FsEntry) => {

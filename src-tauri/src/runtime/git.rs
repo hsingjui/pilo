@@ -2,7 +2,7 @@ use pilo_protocol::CommandOutput;
 use serde::Serialize;
 use serde_json::json;
 
-use crate::domain::{ConnectionKind, Workspace};
+use crate::domain::{ConnectionKind, Project};
 
 use super::server_client::ServerManager;
 
@@ -25,11 +25,11 @@ pub struct GitStatus {
     pub files: Vec<GitFileStatus>,
 }
 
-pub async fn status(servers: &ServerManager, workspace: &Workspace) -> Result<GitStatus, String> {
-    let branch = branch(servers, workspace).await;
+pub async fn status(servers: &ServerManager, project: &Project) -> Result<GitStatus, String> {
+    let branch = branch(servers, project).await;
     let output = run_checked(
         servers,
-        workspace,
+        project,
         "git",
         &[
             "--no-optional-locks",
@@ -48,7 +48,7 @@ pub async fn status(servers: &ServerManager, workspace: &Workspace) -> Result<Gi
 
 pub async fn diff(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     path: Option<&str>,
     staged: bool,
 ) -> Result<String, String> {
@@ -66,7 +66,7 @@ pub async fn diff(
         args.extend(["--".to_owned(), path.to_owned()]);
     }
 
-    let output = run_checked_owned(servers, workspace, "git", &args).await?;
+    let output = run_checked_owned(servers, project, "git", &args).await?;
     if !output.is_empty() || staged || path.is_none() {
         return Ok(String::from_utf8_lossy(&output).into_owned());
     }
@@ -74,7 +74,7 @@ pub async fn diff(
     let Some(path) = path else {
         return Ok(String::new());
     };
-    if !is_untracked(servers, workspace, path).await? {
+    if !is_untracked(servers, project, path).await? {
         return Ok(String::new());
     }
 
@@ -85,14 +85,14 @@ pub async fn diff(
         "--no-color".to_owned(),
         "--unified=3".to_owned(),
         "--".to_owned(),
-        if cfg!(windows) && matches!(workspace.connection.kind, ConnectionKind::Local) {
+        if cfg!(windows) && matches!(project.connection.kind, ConnectionKind::Local) {
             "NUL".to_owned()
         } else {
             "/dev/null".to_owned()
         },
         path.to_owned(),
     ];
-    let output = run(servers, workspace, "git", &args, &[]).await?;
+    let output = run(servers, project, "git", &args, &[]).await?;
     if output.code == Some(0) || output.code == Some(1) {
         return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
     }
@@ -101,11 +101,11 @@ pub async fn diff(
 
 pub async fn run_checked_owned(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     program: &str,
     args: &[String],
 ) -> Result<Vec<u8>, String> {
-    let output = run(servers, workspace, program, args, &[]).await?;
+    let output = run(servers, project, program, args, &[]).await?;
     if output.code == Some(0) {
         Ok(output.stdout)
     } else {
@@ -115,7 +115,7 @@ pub async fn run_checked_owned(
 
 pub async fn run_checked(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     program: &str,
     args: &[&str],
 ) -> Result<Vec<u8>, String> {
@@ -123,22 +123,22 @@ pub async fn run_checked(
         .iter()
         .map(|value| (*value).to_owned())
         .collect::<Vec<_>>();
-    run_checked_owned(servers, workspace, program, &args).await
+    run_checked_owned(servers, project, program, &args).await
 }
 
 pub async fn run(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     program: &str,
     args: &[String],
     input: &[u8],
 ) -> Result<CommandOutput, String> {
     let (value, mut binary) = servers
         .request_with_binary(
-            &workspace.connection,
+            &project.connection,
             "command.run",
             json!({
-                "workspace": workspace.path,
+                "project": project.path,
                 "program": program,
                 "args": args,
             }),
@@ -163,10 +163,10 @@ pub async fn run(
     })
 }
 
-async fn branch(servers: &ServerManager, workspace: &Workspace) -> Option<String> {
+async fn branch(servers: &ServerManager, project: &Project) -> Option<String> {
     if let Ok(output) = run_checked(
         servers,
-        workspace,
+        project,
         "git",
         &["symbolic-ref", "--quiet", "--short", "HEAD"],
     )
@@ -177,7 +177,7 @@ async fn branch(servers: &ServerManager, workspace: &Workspace) -> Option<String
             return Some(value);
         }
     }
-    let output = run_checked(servers, workspace, "git", &["rev-parse", "--short", "HEAD"])
+    let output = run_checked(servers, project, "git", &["rev-parse", "--short", "HEAD"])
         .await
         .ok()?;
     let value = String::from_utf8_lossy(&output).trim().to_owned();
@@ -186,12 +186,12 @@ async fn branch(servers: &ServerManager, workspace: &Workspace) -> Option<String
 
 async fn is_untracked(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     path: &str,
 ) -> Result<bool, String> {
     let output = run_checked_owned(
         servers,
-        workspace,
+        project,
         "git",
         &[
             "ls-files".to_owned(),

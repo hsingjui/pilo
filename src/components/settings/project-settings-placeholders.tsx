@@ -27,7 +27,7 @@ export function ConnectionsSettings() {
 		<div className="space-y-3">
 			<SettingsSection
 				title="连接环境"
-				description="Connection 只描述 Pi 的运行位置；Workspace 与 Session 保持独立。"
+				description="Connection 只描述 Pi 的运行位置；Project 与 Session 保持独立。"
 			>
 				<SettingsRow
 					label="Local"
@@ -51,7 +51,7 @@ export function ConnectionsSettings() {
 
 			<SettingsSection title="默认行为">
 				<SettingsRow
-					label="按 Workspace 选择 Connection"
+					label="按 Project 选择 Connection"
 					helper="Pi 始终在代码所在环境运行，不在 Local / WSL / SSH 之间跨环境复用进程。"
 				>
 					<SettingsStatus>固定策略</SettingsStatus>
@@ -76,7 +76,7 @@ export function SessionSettings() {
 				</SettingsRow>
 				<SettingsRow
 					label="自动刷新"
-					helper="打开 Workspace、窗口重新获得焦点或 Pi 运行状态更新时 reconcile Session JSONL。"
+					helper="打开 Project、窗口重新获得焦点或 Pi 运行状态更新时 reconcile Session JSONL。"
 				>
 					<SettingsStatus>已启用</SettingsStatus>
 				</SettingsRow>
@@ -151,7 +151,7 @@ export function DiagnosticsSettings() {
 				</SettingsRow>
 				<SettingsRow
 					label="Crash Recovery"
-					helper="保存必要桌面状态，并在异常退出后安全恢复 Workspace 与 Session。"
+					helper="保存必要桌面状态，并在异常退出后安全恢复 Project 与 Session。"
 				>
 					<SettingsStatus muted>规划中</SettingsStatus>
 				</SettingsRow>

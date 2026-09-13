@@ -12,7 +12,7 @@ use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
 
-use crate::domain::{ConnectionKind, Workspace, WorkspaceMetadata};
+use crate::domain::{ConnectionKind, Project, ProjectMetadata};
 
 use super::{
     events::{PiProcessState, RuntimeEvent, RuntimeEventSink},
@@ -39,7 +39,7 @@ pub enum ParallelAgentStatus {
 #[serde(rename_all = "camelCase")]
 pub struct ParallelAgentInfo {
     pub id: String,
-    pub workspace_id: String,
+    pub project_id: String,
     pub name: String,
     pub branch: String,
     pub worktree_path: String,
@@ -66,11 +66,11 @@ pub struct ParallelAgentManager {
 }
 
 impl ParallelAgentManager {
-    pub fn list(&self, workspace_id: &str) -> Vec<ParallelAgentInfo> {
+    pub fn list(&self, project_id: &str) -> Vec<ParallelAgentInfo> {
         let mut result = self
             .agents
             .values()
-            .filter(|agent| agent.info.workspace_id == workspace_id)
+            .filter(|agent| agent.info.project_id == project_id)
             .map(|agent| {
                 let mut info = agent.info.clone();
                 info.status = status_from_u8(agent.status.load(Ordering::Acquire));
@@ -85,7 +85,7 @@ impl ParallelAgentManager {
         &mut self,
         servers: Arc<ServerManager>,
         app: AppHandle,
-        workspace: &Workspace,
+        project: &Project,
         name: String,
         prompt: Option<String>,
     ) -> Result<ParallelAgentInfo, String> {
@@ -93,9 +93,9 @@ impl ParallelAgentManager {
         let id = format!("agent-{sequence}");
         let slug = slugify(&name);
         let branch = format!("pilo/{slug}-{sequence}");
-        let worktree_path = worktree_path(workspace, &id)?;
-        create_worktree_parent(&servers, workspace, &worktree_path).await?;
-        create_worktree(&servers, workspace, &branch, &worktree_path).await?;
+        let worktree_path = worktree_path(project, &id)?;
+        create_worktree_parent(&servers, project, &worktree_path).await?;
+        create_worktree(&servers, project, &branch, &worktree_path).await?;
 
         let status = Arc::new(AtomicU8::new(status_to_u8(ParallelAgentStatus::Starting)));
         let sink = ParallelEventSink {
@@ -104,31 +104,31 @@ impl ParallelAgentManager {
             status: Arc::clone(&status),
         };
         let mut session = ServerPiSession::default();
-        let worktree_workspace = Workspace {
-            id: workspace.id.clone(),
-            name: workspace.name.clone(),
+        let worktree_project = Project {
+            id: project.id.clone(),
+            name: project.name.clone(),
             path: worktree_path.clone(),
-            connection: workspace.connection.clone(),
-            metadata: WorkspaceMetadata {
+            connection: project.connection.clone(),
+            metadata: ProjectMetadata {
                 cwd: worktree_path.clone(),
                 git_branch: Some(branch.clone()),
-                pi_version: workspace.metadata.pi_version.clone(),
-                refreshed_at_ms: workspace.metadata.refreshed_at_ms,
+                pi_version: project.metadata.pi_version.clone(),
+                refreshed_at_ms: project.metadata.refreshed_at_ms,
             },
-            created_at_ms: workspace.created_at_ms,
-            last_opened_at_ms: workspace.last_opened_at_ms,
+            created_at_ms: project.created_at_ms,
+            last_opened_at_ms: project.last_opened_at_ms,
         };
         if let Err(error) = session
-            .spawn(Arc::clone(&servers), sink, &worktree_workspace, None)
+            .spawn(Arc::clone(&servers), sink, &worktree_project, None)
             .await
         {
-            let _ = remove_worktree(&servers, workspace, &branch, &worktree_path).await;
+            let _ = remove_worktree(&servers, project, &branch, &worktree_path).await;
             return Err(error);
         }
 
         let info = ParallelAgentInfo {
             id: id.clone(),
-            workspace_id: workspace.id.clone(),
+            project_id: project.id.clone(),
             name: if name.trim().is_empty() {
                 format!("Agent {sequence}")
             } else {
@@ -195,7 +195,7 @@ impl ParallelAgentManager {
     pub async fn remove(
         &mut self,
         servers: &ServerManager,
-        workspace: &Workspace,
+        project: &Project,
         agent_id: &str,
     ) -> Result<(), String> {
         let Some(mut agent) = self.agents.remove(agent_id) else {
@@ -204,7 +204,7 @@ impl ParallelAgentManager {
         let _ = agent.session.stop().await;
         if let Err(error) = remove_worktree(
             servers,
-            workspace,
+            project,
             &agent.info.branch,
             &agent.info.worktree_path,
         )
@@ -259,7 +259,7 @@ impl RuntimeEventSink for ParallelEventSink {
 
 async fn create_worktree(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     branch: &str,
     path: &str,
 ) -> Result<(), String> {
@@ -271,14 +271,14 @@ async fn create_worktree(
         path.to_owned(),
         "HEAD".to_owned(),
     ];
-    git::run_checked_owned(servers, workspace, "git", &args)
+    git::run_checked_owned(servers, project, "git", &args)
         .await
         .map(|_| ())
 }
 
 async fn remove_worktree(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     branch: &str,
     path: &str,
 ) -> Result<(), String> {
@@ -288,22 +288,22 @@ async fn remove_worktree(
         "--force".to_owned(),
         path.to_owned(),
     ];
-    git::run_checked_owned(servers, workspace, "git", &remove_args).await?;
+    git::run_checked_owned(servers, project, "git", &remove_args).await?;
     let branch_args = vec!["branch".to_owned(), "-D".to_owned(), branch.to_owned()];
-    let _ = git::run(servers, workspace, "git", &branch_args, &[]).await;
+    let _ = git::run(servers, project, "git", &branch_args, &[]).await;
     Ok(())
 }
 
 async fn create_worktree_parent(
     servers: &ServerManager,
-    workspace: &Workspace,
+    project: &Project,
     worktree_path: &str,
 ) -> Result<(), String> {
     let parent = parent_string(worktree_path)
         .ok_or_else(|| format!("invalid worktree path '{worktree_path}'"))?;
     servers
         .request(
-            &workspace.connection,
+            &project.connection,
             "fs.mkdir_absolute",
             json!({ "path": parent }),
         )
@@ -311,17 +311,17 @@ async fn create_worktree_parent(
         .map(|_| ())
 }
 
-fn worktree_path(workspace: &Workspace, agent_id: &str) -> Result<String, String> {
-    match workspace.connection.kind {
+fn worktree_path(project: &Project, agent_id: &str) -> Result<String, String> {
+    match project.connection.kind {
         ConnectionKind::Local => {
-            let path = Path::new(&workspace.path);
+            let path = Path::new(&project.path);
             let parent = path
                 .parent()
-                .ok_or_else(|| "workspace has no parent directory".to_owned())?;
+                .ok_or_else(|| "project has no parent directory".to_owned())?;
             let repo = path
                 .file_name()
                 .and_then(|value| value.to_str())
-                .unwrap_or("workspace");
+                .unwrap_or("project");
             Ok(parent
                 .join(".pilo-worktrees")
                 .join(repo)
@@ -330,10 +330,10 @@ fn worktree_path(workspace: &Workspace, agent_id: &str) -> Result<String, String
                 .into_owned())
         }
         _ => {
-            let workspace_path = workspace.path.trim_end_matches('/');
-            let (parent, repo) = workspace_path
+            let project_path = project.path.trim_end_matches('/');
+            let (parent, repo) = project_path
                 .rsplit_once('/')
-                .ok_or_else(|| "remote workspace path must be absolute".to_owned())?;
+                .ok_or_else(|| "remote project path must be absolute".to_owned())?;
             Ok(format!("{parent}/.pilo-worktrees/{repo}/{agent_id}"))
         }
     }
@@ -413,7 +413,7 @@ mod tests {
 
     #[test]
     fn remote_worktree_path_is_sibling_scoped() {
-        let workspace = Workspace {
+        let project = Project {
             id: "w".to_owned(),
             name: "repo".to_owned(),
             path: "/srv/code/repo".to_owned(),
@@ -424,7 +424,7 @@ mod tests {
                     distro: "Ubuntu".to_owned(),
                 },
             },
-            metadata: crate::domain::WorkspaceMetadata {
+            metadata: crate::domain::ProjectMetadata {
                 cwd: "/srv/code/repo".to_owned(),
                 git_branch: None,
                 pi_version: String::new(),
@@ -434,7 +434,7 @@ mod tests {
             last_opened_at_ms: 0,
         };
         assert_eq!(
-            worktree_path(&workspace, "agent-7").unwrap(),
+            worktree_path(&project, "agent-7").unwrap(),
             "/srv/code/.pilo-worktrees/repo/agent-7"
         );
     }

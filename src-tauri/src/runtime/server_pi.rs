@@ -6,7 +6,7 @@ use std::sync::{
 use serde_json::{Value, json};
 use tokio::task::JoinHandle;
 
-use crate::domain::{Connection, Workspace};
+use crate::domain::{Connection, Project};
 
 use super::{
     events::{PiProcessState, RuntimeErrorCode, RuntimeEvent, RuntimeEventSink, RuntimeLogStream},
@@ -53,8 +53,8 @@ const fn state_to_u8(state: PiProcessState) -> u8 {
 
 struct Launch {
     connection: Connection,
-    workspace_id: Option<String>,
-    workspace: String,
+    project_id: Option<String>,
+    project: String,
     session_path: Option<String>,
 }
 
@@ -86,10 +86,10 @@ impl ServerPiSession {
             generation: self.generation,
             state: self.state.get(),
             connection: self.launch.as_ref().map(|launch| launch.connection.clone()),
-            workspace_id: self
+            project_id: self
                 .launch
                 .as_ref()
-                .and_then(|launch| launch.workspace_id.clone()),
+                .and_then(|launch| launch.project_id.clone()),
         }
     }
 
@@ -97,7 +97,7 @@ impl ServerPiSession {
         &mut self,
         servers: Arc<ServerManager>,
         sink: S,
-        workspace: &Workspace,
+        project: &Project,
         session_path: Option<String>,
     ) -> Result<PiSessionSnapshot, String> {
         if matches!(
@@ -107,7 +107,7 @@ impl ServerPiSession {
             return Err("Pi process is already active".to_owned());
         }
 
-        let client = servers.client(&workspace.connection).await?;
+        let client = servers.client(&project.connection).await?;
         let generation = self.generation.saturating_add(1);
         self.generation = generation;
         self.state.set(PiProcessState::Starting);
@@ -269,7 +269,7 @@ impl ServerPiSession {
                 "pi.start",
                 json!({
                     "streamId": stream_id,
-                    "workspace": workspace.path,
+                    "project": project.path,
                     "sessionPath": session_path,
                 }),
             )
@@ -295,9 +295,9 @@ impl ServerPiSession {
             state: PiProcessState::Running,
         });
         self.launch = Some(Launch {
-            connection: workspace.connection.clone(),
-            workspace_id: Some(workspace.id.clone()),
-            workspace: workspace.path.clone(),
+            connection: project.connection.clone(),
+            project_id: Some(project.id.clone()),
+            project: project.path.clone(),
             session_path,
         });
         self.client = Some(client);
@@ -365,13 +365,13 @@ impl ServerPiSession {
             .launch
             .as_ref()
             .ok_or_else(|| "no previous Pi launch configuration is available".to_owned())?;
-        let workspace = Workspace {
-            id: launch.workspace_id.clone().unwrap_or_default(),
+        let project = Project {
+            id: launch.project_id.clone().unwrap_or_default(),
             name: String::new(),
-            path: launch.workspace.clone(),
+            path: launch.project.clone(),
             connection: launch.connection.clone(),
-            metadata: crate::domain::WorkspaceMetadata {
-                cwd: launch.workspace.clone(),
+            metadata: crate::domain::ProjectMetadata {
+                cwd: launch.project.clone(),
                 git_branch: None,
                 pi_version: String::new(),
                 refreshed_at_ms: 0,
@@ -381,6 +381,6 @@ impl ServerPiSession {
         };
         let session_path = launch.session_path.clone();
         let _ = self.stop().await;
-        self.spawn(servers, sink, &workspace, session_path).await
+        self.spawn(servers, sink, &project, session_path).await
     }
 }

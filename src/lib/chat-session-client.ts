@@ -11,11 +11,11 @@ import {
 } from "@/lib/pi-runtime";
 
 export function createChatSessionClient(
-	workspaceId: string,
+	projectId: string,
 	sessionId: string,
 	sessionPath?: string,
 ) {
-	const sessionKey = JSON.stringify([workspaceId, sessionId]);
+	const sessionKey = JSON.stringify([projectId, sessionId]);
 	let resumePath = sessionPath;
 	let pending: Promise<PiSessionSnapshot> | undefined;
 	const rpc = <T>(command: Record<string, unknown>) =>
@@ -31,7 +31,7 @@ export function createChatSessionClient(
 		ensure: (): Promise<PiSessionSnapshot> => {
 			if (pending) return pending;
 			pending = invoke<PiSessionSnapshot>("chat_session_start", {
-				workspaceId,
+				projectId,
 				sessionKey,
 				sessionPath: resumePath,
 			}).finally(() => {

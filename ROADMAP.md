@@ -1,6 +1,6 @@
 # Pilo Roadmap
 
-> Pi-native desktop workspace for local, WSL, and SSH development.
+> Pi-native desktop project for local, WSL, and SSH development.
 
 Last updated: 2026-09-11
 
@@ -16,7 +16,7 @@ Last updated: 2026-09-11
 Pilo 的目标是提供一个面向 Pi Coding Agent 的桌面开发工作区，在不复制 Pi runtime 能力的前提下，统一管理：
 
 - Local / WSL / SSH 开发环境
-- Workspace 与项目上下文
+- Project 与项目上下文
 - Pi Session 与历史记录
 - Chat / Thinking / Tool Call
 - Git / Diff / Terminal / File Explorer
@@ -26,8 +26,8 @@ Pilo 的目标是提供一个面向 Pi Coding Agent 的桌面开发工作区，�
 
 1. **Pi owns conversations.** Pi JSONL 是 Session 的唯一事实来源。
 2. **Pilo owns presentation and indexes.** SQLite 只保存可重建的索引、缓存和桌面状态。
-3. **Pi runs where the workspace lives.** Local、WSL、SSH 都在代码所在环境运行 Pi。
-4. **Connection、Workspace、Session 分离。** 不把环境、目录和 Pi Session 混成一个概念。
+3. **Pi runs where the project lives.** Local、WSL、SSH 都在代码所在环境运行 Pi。
+4. **Connection、Project、Session 分离。** 不把环境、目录和 Pi Session 混成一个概念。
 5. **Remote first.** 新能力优先考虑是否适用于 Local / WSL / SSH。
 
 ---
@@ -61,7 +61,7 @@ P0/P1 核心工作区与 P2 Remote/Parallel 基础能力已经落地，当前进
 - [x] 拆分巨型组件文件：`app-sidebar.tsx` (857 行) → `src/components/sidebar/`，`App.tsx` (583 行) → `title-bar` / `sidebar-footer` / `new-chat-landing` / `right-sidebar`
 - [x] 完成 Frontend Style Foundation
 - [x] 建立应用主布局
-- [x] 建立 Sidebar / Workspace / Session 基础组件
+- [x] 建立 Sidebar / Project / Session 基础组件
 - [x] 建立 Chat Message / Thinking / Tool Call 基础视觉
 - [x] 建立统一 Toast / Dialog / Dropdown / Tooltip 等基础交互
 - [x] 建立基础空状态、加载状态和错误状态
@@ -104,7 +104,7 @@ PiTransport
 - [x] Local Connection 数据模型
 - [x] 检测本机 Pi 可执行文件
 - [x] 检测 Pi 版本
-- [x] 在指定 Workspace 启动 `pi --mode rpc`
+- [x] 在指定 Project 启动 `pi --mode rpc`
 - [x] 展示 cwd / Git branch / Pi version 等环境信息
 - [x] 对启动失败、Pi 不存在、RPC crash 给出明确错误
 
@@ -148,23 +148,23 @@ pi --mode rpc
 - [x] SSH 断线状态与重连
 - [x] 基础连接测试和环境诊断
 
-## P0.7 Workspace
+## P0.7 Project
 
-- [x] Workspace 数据模型
-- [x] Connection → Workspace 层级
-- [x] Local Folder 添加 Workspace
-- [x] WSL Workspace 添加 / 最近使用
-- [x] SSH Workspace 添加 / 最近使用
-- [x] Workspace metadata 本地缓存
-- [x] Recent Workspaces
-- [x] Discover existing Pi Workspaces
+- [x] Project 数据模型
+- [x] Connection → Project 层级
+- [x] Local Folder 添加 Project
+- [x] WSL Project 添加 / 最近使用
+- [x] SSH Project 添加 / 最近使用
+- [x] Project metadata 本地缓存
+- [x] Recent Projects
+- [x] Discover existing Pi Projects
 
 原则：
 
 ```text
 Connection
     ↓
-Workspace
+Project
     ↓
 Session
     ↓
@@ -175,23 +175,23 @@ Pi RPC Process
 
 - [x] 引入本地 SQLite
 - [x] `connections` 表
-- [x] `workspaces` 表
+- [x] `projects` 表
 - [x] `sessions` 派生索引表
-- [x] Workspace 打开时先读 SQLite，立即展示缓存
+- [x] Project 打开时先读 SQLite，立即展示缓存
 - [x] 后台扫描 Pi Session JSONL metadata
 - [x] 使用 `session_path + file_size + file_mtime_ns` 判断 stale
 - [x] 新 Session 自动加入索引
 - [x] 删除 Session 自动移除索引
 - [x] changed Session 增量重新解析
 - [x] 保存 `last_offset`，对 append-only JSONL 做增量解析
-- [x] Workspace focus / reconnect 时 reconcile
+- [x] Project focus / reconnect 时 reconcile
 - [x] 保留手动 Refresh Sessions
 
 Pilo 本地数据统一存入 SQLite；其中 `sessions` 是可从 Pi JSONL 重建的派生索引，例如：
 
 ```text
 connection_id
-workspace_id
+project_id
 pi_session_id
 session_path
 name
@@ -211,7 +211,7 @@ indexed_at
 
 ## P0.9 Session UI
 
-- [x] Sidebar 默认展示当前 Workspace 全部 Pi Sessions
+- [x] Sidebar 默认展示当前 Project 全部 Pi Sessions
 - [x] 按 Today / This Week / Older 分组
 - [x] Session title / preview / updated time
 - [x] Pin
@@ -265,9 +265,9 @@ indexed_at
 
 ---
 
-# P1 — Developer Workspace
+# P1 — Developer Project
 
-目标：从“Pi Chat 客户端”升级为完整 Coding Workspace。
+目标：从“Pi Chat 客户端”升级为完整 Coding Project。
 
 ## P1.1 Git
 
@@ -285,7 +285,7 @@ indexed_at
 - [x] Local shell
 - [x] WSL shell
 - [x] SSH shell
-- [x] Terminal 与当前 Connection / Workspace 绑定
+- [x] Terminal 与当前 Connection / Project 绑定
 - [x] 多 Terminal tab
 - [x] Terminal resize / persistence
 
@@ -345,7 +345,7 @@ indexed_at
 ## P2.3 Worktree & Parallel Agents
 
 - [x] Git worktree 管理
-- [x] 一个 Workspace 多 Pi Session 并行运行
+- [x] 一个 Project 多 Pi Session 并行运行
 - [x] Parallel Agent overview
 - [x] Agent state / busy / waiting / failed
 - [x] 快速切换并行任务
@@ -374,7 +374,7 @@ indexed_at
 - [ ] Keyboard shortcuts
 - [ ] Command palette
 - [ ] Session full-text search（派生 FTS index）
-- [ ] Import / Discover existing Pi workspaces UX
+- [ ] Import / Discover existing Pi projects UX
 - [ ] Export session
 - [ ] Auto update
 - [ ] Windows installer
@@ -383,7 +383,7 @@ indexed_at
 - [ ] 大 Session performance 基准
 - [ ] 大量 Session（1k+）索引性能基准
 - [ ] SSH 高延迟环境测试
-- [ ] Offline / disconnected Workspace UX
+- [ ] Offline / disconnected Project UX
 
 ---
 
@@ -410,7 +410,7 @@ indexed_at
 | 2026-09-10 | Comet Native workflow     | Done   | Pi project integration              |
 | 2026-09-10 | Oxc toolchain             | Done   | oxfmt + oxlint                      |
 | 2026-09-10 | Frontend Style Foundation | Done   | Lody-based UI foundation            |
-| 2026-09-11 | Developer Workspace       | Done   | Git / Terminal / Files / Editor     |
+| 2026-09-11 | Developer Project         | Done   | Git / Terminal / Files / Editor     |
 | 2026-09-11 | Remote & Parallel Power   | Done   | Helper / Watcher / Agents / Preview |
 
 ---

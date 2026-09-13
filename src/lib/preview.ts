@@ -2,26 +2,26 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type PreviewInfo = {
 	id: string;
-	workspaceId: string;
+	projectId: string;
 	remotePort: number;
 	localPort: number;
 	url: string;
 	tunneled: boolean;
 };
 
-export function detectWorkspacePreviewPorts(
-	workspaceId: string,
+export function detectProjectPreviewPorts(
+	projectId: string,
 ): Promise<number[]> {
-	return invoke("workspace_preview_ports", { workspaceId });
+	return invoke("project_preview_ports", { projectId });
 }
 
-export function openWorkspacePreview(
-	workspaceId: string,
+export function openProjectPreview(
+	projectId: string,
 	port: number,
 ): Promise<PreviewInfo> {
-	return invoke("workspace_preview_open", { workspaceId, port });
+	return invoke("project_preview_open", { projectId, port });
 }
 
-export function closeWorkspacePreview(previewId: string): Promise<void> {
-	return invoke("workspace_preview_close", { previewId });
+export function closeProjectPreview(previewId: string): Promise<void> {
+	return invoke("project_preview_close", { previewId });
 }

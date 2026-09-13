@@ -5,7 +5,7 @@ Pilo 是一个面向 Pi Coding Agent 的桌面工作区客户端，提供类似�
 ## 功能
 
 - 统一管理 Local / WSL / SSH 三种开发环境
-- Workspace 与 Session 管理
+- Project 与 Session 管理
 - 通过 Pi RPC（`pi --mode rpc`）与 Pi 集成，Pi JSONL 是唯一事实来源
 - Agent 工具调用与 Extension UI Bridge
 
