@@ -33,6 +33,7 @@ import { useChatRuntime } from "@/components/chat/use-chat-runtime";
 import { useChatSessionConfig } from "@/components/chat/use-chat-session-config";
 import { createChatSessionClient } from "@/lib/chat-session-client";
 import { usePreferences } from "@/lib/preferences-provider";
+import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 
 export type { ChatSession } from "@/components/chat/chat-page-utils";
 
@@ -75,7 +76,7 @@ function ChatPageImpl({
 	reserveWindowControls = false,
 	sidebarCollapsed = false,
 }: ChatPageProps) {
-	const { desktopNotifications } = usePreferences();
+	const { desktopNotifications, keyboardShortcuts } = usePreferences();
 	const [initialUiState] = useState<ChatUiState>(() =>
 		uiStateKey && readUiState
 			? readUiState(uiStateKey)
@@ -145,6 +146,7 @@ function ChatPageImpl({
 		handleRenameSession,
 		loadModelOptions,
 		handleModelChange,
+		handleQuickCycleModel,
 		loadThinkingLevels,
 		handleThinkingChange,
 		prepareRuntimeConfiguration,
@@ -307,6 +309,46 @@ function ChatPageImpl({
 		void loadModelOptions();
 	}, [active, session.id, loadModelOptions]);
 
+	useKeyboardShortcut(
+		keyboardShortcuts["cycle-model"],
+		() => {
+			if (modelOptions.length === 0) {
+				void loadModelOptions();
+				return;
+			}
+			const currentIndex = selectedModel
+				? modelOptions.findIndex(
+						(model) =>
+							model.provider === selectedModel.provider &&
+							model.id === selectedModel.id,
+					)
+				: -1;
+			const nextModel = modelOptions[(currentIndex + 1) % modelOptions.length];
+			if (nextModel) handleModelChange(nextModel);
+		},
+		{
+			enabled:
+				active &&
+				!modelChanging &&
+				modelLoadState !== "loading" &&
+				!runtimeBusy &&
+				!historyPending,
+		},
+	);
+
+	useKeyboardShortcut(
+		keyboardShortcuts["cycle-scoped-model"],
+		handleQuickCycleModel,
+		{
+			enabled:
+				active &&
+				!modelChanging &&
+				modelLoadState !== "loading" &&
+				!runtimeBusy &&
+				!historyPending,
+		},
+	);
+
 	const sessionUsageText = formatSessionUsage(sessionState);
 
 	// Keep the session controller subscribed while its view is in the background.
@@ -375,7 +417,10 @@ function ChatPageImpl({
 							selectedThinkingLevel={selectedThinkingLevel}
 							thinkingLoading={thinkingLoading}
 							thinkingDisabled={
-								thinkingChanging || runtimeBusy || historyPending
+								thinkingChanging ||
+								runtimeBusy ||
+								historyPending ||
+								thinkingLevels.length === 0
 							}
 							onThinkingMenuOpen={() => void loadThinkingLevels()}
 							onThinkingChange={handleThinkingChange}

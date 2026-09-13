@@ -3,11 +3,15 @@ import { PanelLeft } from "lucide-react";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { PiLogo } from "@/components/pi-logo";
 import {
-	PI_THINKING_LEVELS,
 	runtimeErrorMessage,
 	type PiModel,
 	type PiThinkingLevel,
 } from "@/lib/pi-runtime";
+import {
+	getNextPiQuickCycleModel,
+	getPiModelThinkingLevels,
+	getPiQuickCycleThinkingLevel,
+} from "@/lib/pi-model-selection";
 import {
 	getCachedProjectPiModels,
 	hydrateProjectPiModels,
@@ -15,9 +19,11 @@ import {
 	refreshProjectPiModels,
 	subscribeProjectPiModels,
 } from "@/lib/pi-models";
+import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
 import { IS_MACOS } from "@/components/title-bar";
 import type { Project } from "@/lib/projects";
+import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { Button } from "@/ui";
 
 function modelKey(model: PiModel | null): string | null {
@@ -43,6 +49,7 @@ export function NewChatLanding({
 	projectAvailable?: boolean;
 	project?: Project | null;
 }) {
+	const { keyboardShortcuts } = usePreferences();
 	const projectId = project?.id ?? null;
 	const cachedModels = projectId ? getCachedProjectPiModels(projectId) : null;
 	const [draft, setDraft] = useState("");
@@ -164,6 +171,55 @@ export function NewChatLanding({
 		};
 	}, [applyModelSnapshot, loadModels, projectId]);
 
+	const selectDraftModel = (
+		model: PiModel,
+		thinkingLevel = model.defaultThinkingLevel ?? null,
+	) => {
+		modelSelectionDirtyRef.current = true;
+		thinkingSelectionDirtyRef.current = false;
+		selectedModelKeyRef.current = modelKey(model);
+		setSelectedModel(model);
+		setSelectedThinkingLevel(thinkingLevel);
+	};
+
+	useKeyboardShortcut(
+		keyboardShortcuts["cycle-model"],
+		() => {
+			if (models.length === 0) {
+				void loadModels();
+				return;
+			}
+			const currentKey = modelKey(selectedModel);
+			const currentIndex = currentKey
+				? models.findIndex((model) => modelKey(model) === currentKey)
+				: -1;
+			const nextModel = models[(currentIndex + 1) % models.length];
+			if (!nextModel) return;
+			selectDraftModel(nextModel);
+		},
+		{
+			enabled:
+				Boolean(project) && projectAvailable && modelLoadState !== "loading",
+		},
+	);
+
+	useKeyboardShortcut(
+		keyboardShortcuts["cycle-scoped-model"],
+		() => {
+			if (models.length === 0) {
+				void loadModels();
+				return;
+			}
+			const nextModel = getNextPiQuickCycleModel(models, selectedModel);
+			if (!nextModel) return;
+			selectDraftModel(nextModel, getPiQuickCycleThinkingLevel(nextModel));
+		},
+		{
+			enabled:
+				Boolean(project) && projectAvailable && modelLoadState !== "loading",
+		},
+	);
+
 	return (
 		<div className="relative flex h-full min-w-0 flex-col">
 			{/* 与 Lody 一样，桌面拖拽条悬浮在内容之上，不占 Landing 的垂直布局。 */}
@@ -214,15 +270,15 @@ export function NewChatLanding({
 					onModelMenuOpen={() => void loadModels()}
 					onModelRefresh={() => void loadModels(true)}
 					onModelChange={(model) => {
-						modelSelectionDirtyRef.current = true;
-						thinkingSelectionDirtyRef.current = false;
-						selectedModelKeyRef.current = modelKey(model);
-						setSelectedModel(model);
-						setSelectedThinkingLevel(model?.defaultThinkingLevel ?? null);
+						if (model) selectDraftModel(model);
 					}}
-					thinkingLevels={selectedModel?.thinkingLevels ?? PI_THINKING_LEVELS}
+					thinkingLevels={getPiModelThinkingLevels(selectedModel)}
 					selectedThinkingLevel={selectedThinkingLevel}
-					thinkingDisabled={!projectAvailable || !project}
+					thinkingDisabled={
+						!projectAvailable ||
+						!project ||
+						getPiModelThinkingLevels(selectedModel).length === 0
+					}
 					onThinkingChange={(level) => {
 						thinkingSelectionDirtyRef.current = true;
 						setSelectedThinkingLevel(level);

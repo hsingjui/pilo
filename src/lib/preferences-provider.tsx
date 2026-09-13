@@ -30,11 +30,19 @@ import {
 	type PageFontSize,
 	type TerminalFontSize,
 } from "@/lib/font-settings";
+import {
+	DEFAULT_KEYBOARD_SHORTCUTS,
+	normalizeKeyboardShortcut,
+	normalizeKeyboardShortcutMap,
+	type KeyboardShortcutMap,
+	type ShortcutCommandId,
+} from "@/lib/keyboard-shortcuts";
 
 export type SendMessageShortcut = "enter" | "mod-enter";
 
 export type PiloPreferences = {
 	sendMessageShortcut: SendMessageShortcut;
+	keyboardShortcuts: KeyboardShortcutMap;
 	collapseCompletedActivity: boolean;
 	showWorkDuration: boolean;
 	desktopNotifications: boolean;
@@ -51,6 +59,9 @@ export type PiloPreferences = {
 
 type PreferencesContextValue = PiloPreferences & {
 	setSendMessageShortcut: (value: SendMessageShortcut) => void;
+	setKeyboardShortcut: (commandId: ShortcutCommandId, value: string) => void;
+	resetKeyboardShortcut: (commandId: ShortcutCommandId) => void;
+	resetKeyboardShortcuts: () => void;
 	setCollapseCompletedActivity: (value: boolean) => void;
 	setShowWorkDuration: (value: boolean) => void;
 	setDesktopNotifications: (value: boolean) => void;
@@ -65,7 +76,8 @@ type PreferencesContextValue = PiloPreferences & {
 	setTerminalFontSize: (value: TerminalFontSize) => void;
 };
 
-type StoredPreferences = Partial<PiloPreferences> & {
+type StoredPreferences = Partial<Omit<PiloPreferences, "keyboardShortcuts">> & {
+	keyboardShortcuts?: unknown;
 	conversationFontSize?: unknown;
 };
 
@@ -73,6 +85,7 @@ const STORAGE_KEY = "pilo.preferences.v1";
 
 const DEFAULT_PREFERENCES: PiloPreferences = {
 	sendMessageShortcut: "enter",
+	keyboardShortcuts: { ...DEFAULT_KEYBOARD_SHORTCUTS },
 	collapseCompletedActivity: true,
 	showWorkDuration: true,
 	desktopNotifications: false,
@@ -106,6 +119,7 @@ function readStoredPreferences(): PiloPreferences {
 				parsed.sendMessageShortcut === "mod-enter"
 					? "mod-enter"
 					: DEFAULT_PREFERENCES.sendMessageShortcut,
+			keyboardShortcuts: normalizeKeyboardShortcutMap(parsed.keyboardShortcuts),
 			collapseCompletedActivity:
 				typeof parsed.collapseCompletedActivity === "boolean"
 					? parsed.collapseCompletedActivity
@@ -207,6 +221,35 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 	const setSendMessageShortcut = useCallback((value: SendMessageShortcut) => {
 		setPreferences((current) => ({ ...current, sendMessageShortcut: value }));
 	}, []);
+	const setKeyboardShortcut = useCallback(
+		(commandId: ShortcutCommandId, value: string) => {
+			const normalized = normalizeKeyboardShortcut(value);
+			if (!normalized) return;
+			setPreferences((current) => ({
+				...current,
+				keyboardShortcuts: {
+					...current.keyboardShortcuts,
+					[commandId]: normalized,
+				},
+			}));
+		},
+		[],
+	);
+	const resetKeyboardShortcut = useCallback((commandId: ShortcutCommandId) => {
+		setPreferences((current) => ({
+			...current,
+			keyboardShortcuts: {
+				...current.keyboardShortcuts,
+				[commandId]: DEFAULT_KEYBOARD_SHORTCUTS[commandId],
+			},
+		}));
+	}, []);
+	const resetKeyboardShortcuts = useCallback(() => {
+		setPreferences((current) => ({
+			...current,
+			keyboardShortcuts: { ...DEFAULT_KEYBOARD_SHORTCUTS },
+		}));
+	}, []);
 	const setCollapseCompletedActivity = useCallback((value: boolean) => {
 		setPreferences((current) => ({
 			...current,
@@ -272,6 +315,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 		() => ({
 			...preferences,
 			setSendMessageShortcut,
+			setKeyboardShortcut,
+			resetKeyboardShortcut,
+			resetKeyboardShortcuts,
 			setCollapseCompletedActivity,
 			setShowWorkDuration,
 			setDesktopNotifications,
@@ -287,6 +333,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 		}),
 		[
 			preferences,
+			resetKeyboardShortcut,
+			resetKeyboardShortcuts,
 			setCodeFontFamily,
 			setCodeCustomFontFamily,
 			setCodeFontSize,
@@ -295,6 +343,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 			setPageFontFamily,
 			setPageCustomFontFamily,
 			setPageFontSize,
+			setKeyboardShortcut,
 			setSendMessageShortcut,
 			setShowWorkDuration,
 			setTerminalFontFamily,

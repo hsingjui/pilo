@@ -1,7 +1,9 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Clock, HelpCircle, Monitor, Moon, Settings, Sun } from "lucide-react";
 
+import { usePreferences } from "@/lib/preferences-provider";
 import { nextCycledTheme, useTheme, type Theme } from "@/lib/theme-provider";
+import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
 
 const SettingsDialog = lazy(() =>
@@ -44,16 +46,10 @@ function ThemeCycleButton() {
 
 export function SidebarFooter() {
 	const [settingsOpen, setSettingsOpen] = useState(false);
-
-	useEffect(() => {
-		const handleKeyDown = (event: KeyboardEvent) => {
-			if (!(event.ctrlKey || event.metaKey) || event.key !== ",") return;
-			event.preventDefault();
-			setSettingsOpen(true);
-		};
-		window.addEventListener("keydown", handleKeyDown);
-		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, []);
+	const { keyboardShortcuts } = usePreferences();
+	useKeyboardShortcut(keyboardShortcuts["open-settings"], () => {
+		setSettingsOpen(true);
+	});
 
 	return (
 		<>

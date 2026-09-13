@@ -52,6 +52,7 @@ import {
 } from "@/ui";
 import { SettingsRow, SettingsSection } from "./compact-layout";
 import { ConnectionsSettings } from "./connections-settings";
+import { KeyboardShortcutsSettings } from "./keyboard-shortcuts-settings";
 import {
 	DiagnosticsSettings,
 	PiSettings,
@@ -548,72 +549,6 @@ function AppearanceSettings() {
 						aria-label="自定义终端字体列表"
 						className="w-[288px] max-w-full font-mono"
 					/>
-				</SettingsRow>
-			</SettingsSection>
-		</div>
-	);
-}
-
-function ShortcutKeys({ children }: { children: string }) {
-	return (
-		<span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground">
-			{children.split("+").map((key, index) => (
-				<span key={key.trim()} className="flex items-center gap-1">
-					{index > 0 ? <span className="text-muted-foreground">+</span> : null}
-					<kbd className="min-w-6 rounded border border-border/80 bg-muted/55 px-1.5 py-0.5 text-center shadow-xs">
-						{key.trim()}
-					</kbd>
-				</span>
-			))}
-		</span>
-	);
-}
-
-function KeyboardShortcutsSettings() {
-	const { sendMessageShortcut } = usePreferences();
-	const sendKeys = sendMessageShortcut === "enter" ? "Enter" : "Ctrl/⌘ + Enter";
-	const newlineKeys =
-		sendMessageShortcut === "enter" ? "Shift + Enter" : "Enter";
-
-	return (
-		<div className="space-y-3">
-			<SettingsSection title="应用">
-				<SettingsRow label="打开设置">
-					<ShortcutKeys>Ctrl/⌘ + ,</ShortcutKeys>
-				</SettingsRow>
-				<SettingsRow label="关闭当前弹层">
-					<ShortcutKeys>Esc</ShortcutKeys>
-				</SettingsRow>
-			</SettingsSection>
-
-			<SettingsSection title="输入框">
-				<SettingsRow label="发送消息">
-					<ShortcutKeys>{sendKeys}</ShortcutKeys>
-				</SettingsRow>
-				<SettingsRow label="换行">
-					<ShortcutKeys>{newlineKeys}</ShortcutKeys>
-				</SettingsRow>
-				<SettingsRow
-					label="切换输入建议"
-					helper="在 @、/、$ 建议列表中移动选择。"
-				>
-					<div className="flex items-center gap-1.5">
-						<ShortcutKeys>↑</ShortcutKeys>
-						<span className="text-xs text-muted-foreground">/</span>
-						<ShortcutKeys>↓</ShortcutKeys>
-					</div>
-				</SettingsRow>
-				<SettingsRow label="插入选中的建议">
-					<ShortcutKeys>Enter</ShortcutKeys>
-				</SettingsRow>
-			</SettingsSection>
-
-			<SettingsSection title="自定义">
-				<SettingsRow
-					label="快捷键编辑器"
-					helper="后续与 Command Palette 使用同一套命令 ID 和快捷键映射。"
-				>
-					<SettingsStatus muted>规划中</SettingsStatus>
 				</SettingsRow>
 			</SettingsSection>
 		</div>

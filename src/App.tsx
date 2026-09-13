@@ -58,6 +58,7 @@ import {
 	refreshAllProjectPiModels,
 	refreshProjectPiModels,
 } from "@/lib/pi-models";
+import { usePreferences } from "@/lib/preferences-provider";
 import type { Connection, PiModel, PiThinkingLevel } from "@/lib/pi-runtime";
 import {
 	addProject,
@@ -69,6 +70,7 @@ import {
 	PROJECTS_CHANGED_EVENT,
 	type Project,
 } from "@/lib/projects";
+import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { TooltipProvider } from "@/ui";
 
 const importChatPage = () => import("@/components/chat/chat-page");
@@ -91,6 +93,7 @@ const RightSidebar = lazy(() =>
 let editorRequestSequence = 0;
 
 function App() {
+	const { keyboardShortcuts } = usePreferences();
 	const rightPanelRef = useRef<PanelImperativeHandle>(null);
 	const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
 	const [isResizing, setIsResizing] = useState(false);
@@ -453,23 +456,31 @@ function App() {
 		void importChatPage().catch(() => undefined);
 	}, [activeProject, chatSession]);
 
-	const startNewChat = (projectId?: string) => {
-		const targetProjectId = projectId ?? firstProject?.id ?? null;
-		setDraftSessionStarted(false);
-		setDraftSessionPrompt(null);
-		setDraftSessionModel(null);
-		setDraftSessionThinkingLevel(null);
-		setDraftSessionId(createDraftSessionId());
-		setDraftProjectId(targetProjectId);
-		setSelectedSessionId(null);
-		if (targetProjectId) {
-			void touchProject(targetProjectId)
-				.then(() => notifyProjectsChanged())
-				.catch((error) =>
-					console.error("Failed to update recent project", error),
-				);
-		}
-	};
+	const startNewChat = useCallback(
+		(projectId?: string) => {
+			const targetProjectId = projectId ?? firstProject?.id ?? null;
+			setDraftSessionStarted(false);
+			setDraftSessionPrompt(null);
+			setDraftSessionModel(null);
+			setDraftSessionThinkingLevel(null);
+			setDraftSessionId(createDraftSessionId());
+			setDraftProjectId(targetProjectId);
+			setSelectedSessionId(null);
+			if (targetProjectId) {
+				void touchProject(targetProjectId)
+					.then(() => notifyProjectsChanged())
+					.catch((error) =>
+						console.error("Failed to update recent project", error),
+					);
+			}
+		},
+		[firstProject?.id],
+	);
+
+	useKeyboardShortcut(keyboardShortcuts["new-chat"], () => startNewChat());
+	useKeyboardShortcut(keyboardShortcuts["toggle-sidebar"], () => {
+		setLeftSidebarCollapsed((collapsed) => !collapsed);
+	});
 
 	const selectSession = useCallback(
 		(sessionId: string) => {
