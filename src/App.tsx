@@ -13,6 +13,7 @@ import {
 	Separator as ResizeSeparator,
 	type PanelImperativeHandle,
 } from "react-resizable-panels";
+import { toast } from "sonner";
 
 import {
 	createChatUiStateCache,
@@ -42,19 +43,37 @@ import { SidebarFooter } from "@/components/sidebar-footer";
 import { CUSTOM_TITLEBAR, IS_MACOS, TitleBar } from "@/components/title-bar";
 import type { EditorOpenRequest } from "@/components/project-editor";
 import { stopChatSession } from "@/lib/chat-session-client";
-import type { PiModel, PiThinkingLevel } from "@/lib/pi-runtime";
+import { CONNECTIONS_CHANGED_EVENT } from "@/lib/connection-events";
+import { listConnectionCatalog } from "@/lib/connections";
 import {
+	listenForDesktopNotificationActions,
+	type DesktopNotificationSessionTarget,
+} from "@/lib/desktop-notifications";
+import {
+	HOME_CONNECTIONS_CHANGED_EVENT,
+	listHomeConnectionIds,
+} from "@/lib/home-connections";
+import {
+	hydrateProjectPiModels,
+	refreshAllProjectPiModels,
+	refreshProjectPiModels,
+} from "@/lib/pi-models";
+import type { Connection, PiModel, PiThinkingLevel } from "@/lib/pi-runtime";
+import {
+	addProject,
 	connectionLabel,
 	listProjects,
 	notifyProjectsChanged,
+	pickLocalProjectDirectory,
 	touchProject,
 	PROJECTS_CHANGED_EVENT,
 	type Project,
 } from "@/lib/projects";
 import { TooltipProvider } from "@/ui";
 
+const importChatPage = () => import("@/components/chat/chat-page");
 const ChatPage = lazy(() =>
-	import("@/components/chat/chat-page").then((module) => ({
+	importChatPage().then((module) => ({
 		default: module.ChatPage,
 	})),
 );
@@ -76,6 +95,7 @@ function App() {
 	const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
 	const [isResizing, setIsResizing] = useState(false);
 	const [projects, setProjects] = useState<Project[]>([]);
+	const [projectsReady, setProjectsReady] = useState(false);
 	const [openedChats, setOpenedChats] = useState<OpenChat[]>([]);
 	const chatUiStateCacheRef = useRef<ChatUiStateCache | null>(null);
 	if (chatUiStateCacheRef.current === null) {
@@ -92,6 +112,7 @@ function App() {
 		[],
 	);
 	const previousOpenedChatsRef = useRef(new Map<string, OpenChat>());
+	const startupModelRefreshStartedRef = useRef(false);
 	const busyChatControllersRef = useRef(new Set<string>());
 	const [busyChatControllerIds, setBusyChatControllerIds] = useState<
 		ReadonlySet<string>
@@ -119,6 +140,11 @@ function App() {
 	);
 	const [draftSessionThinkingLevel, setDraftSessionThinkingLevel] =
 		useState<PiThinkingLevel | null>(null);
+	const pendingLandingSubmissionRef = useRef<{
+		prompt: string;
+		model: PiModel | null;
+		thinkingLevel: PiThinkingLevel | null;
+	} | null>(null);
 	const [draftSessionStarted, setDraftSessionStarted] = useState(false);
 	const [draftSessionId, setDraftSessionId] = useState(createDraftSessionId);
 	const [draftProjectId, setDraftProjectId] = useState<string | null>(null);
@@ -129,6 +155,7 @@ function App() {
 	const [addProjectConnectionId, setAddProjectConnectionId] = useState<
 		string | null
 	>(null);
+	const localProjectPickerPendingRef = useRef(false);
 	const [editorRequest, setEditorRequest] = useState<EditorOpenRequest | null>(
 		null,
 	);
@@ -157,12 +184,22 @@ function App() {
 	}, [openedChats]);
 
 	useEffect(() => {
+		void hydrateProjectPiModels().catch((error) => {
+			console.warn("Failed to hydrate Pi model cache", error);
+		});
+	}, []);
+
+	useEffect(() => {
 		let active = true;
 		const load = async () => {
 			try {
 				const next = await listProjects();
 				if (active) {
 					setProjects(next);
+					if (!startupModelRefreshStartedRef.current) {
+						startupModelRefreshStartedRef.current = true;
+						void refreshAllProjectPiModels(next.map((project) => project.id));
+					}
 					setOpenedChats((current) =>
 						current.filter((entry) =>
 							next.some(
@@ -173,30 +210,76 @@ function App() {
 				}
 			} catch (error) {
 				console.error("Failed to load projects", error);
+			} finally {
+				if (active) setProjectsReady(true);
 			}
 		};
 		void load();
 		const handleChanged = () => void load();
 		window.addEventListener(PROJECTS_CHANGED_EVENT, handleChanged);
+		window.addEventListener(CONNECTIONS_CHANGED_EVENT, handleChanged);
 		return () => {
 			active = false;
 			window.removeEventListener(PROJECTS_CHANGED_EVENT, handleChanged);
+			window.removeEventListener(CONNECTIONS_CHANGED_EVENT, handleChanged);
 		};
 	}, []);
 
-	const envs = useMemo(() => {
-		const seen = new Set<string>();
-		return projects.flatMap((project) => {
-			if (seen.has(project.connection.id)) return [];
-			seen.add(project.connection.id);
-			return [
-				{
-					id: project.connection.id,
-					name: connectionLabel(project.connection),
-				},
-			];
-		});
+	// 首页环境列表除了项目所属连接，还包含被显式标记「显示在首页」的连接。
+	const [connectionCatalog, setConnectionCatalog] = useState<Connection[]>([]);
+	useEffect(() => {
+		let active = true;
+		const load = async () => {
+			try {
+				const next = await listConnectionCatalog();
+				if (active) setConnectionCatalog(next);
+			} catch (error) {
+				console.error("Failed to load connections", error);
+			}
+		};
+		void load();
+		const handleChanged = () => void load();
+		window.addEventListener(HOME_CONNECTIONS_CHANGED_EVENT, handleChanged);
+		window.addEventListener(CONNECTIONS_CHANGED_EVENT, handleChanged);
+		return () => {
+			active = false;
+			window.removeEventListener(HOME_CONNECTIONS_CHANGED_EVENT, handleChanged);
+			window.removeEventListener(CONNECTIONS_CHANGED_EVENT, handleChanged);
+		};
+	}, []);
+
+	useEffect(() => {
+		if (projects.length === 0) return;
+		const timer = window.setInterval(
+			() => {
+				void refreshAllProjectPiModels(projects.map((project) => project.id));
+			},
+			60 * 60 * 1000,
+		);
+		return () => window.clearInterval(timer);
 	}, [projects]);
+
+	const envs = useMemo(() => {
+		const byId = new Map<string, { id: string; name: string }>();
+		for (const project of projects) {
+			byId.set(project.connection.id, {
+				id: project.connection.id,
+				name: connectionLabel(project.connection),
+			});
+		}
+		const shown = listHomeConnectionIds();
+		for (const connection of connectionCatalog) {
+			if (!shown.has(connection.id) || byId.has(connection.id)) continue;
+			byId.set(connection.id, {
+				id: connection.id,
+				name: connectionLabel(connection),
+			});
+		}
+		const list = [...byId.values()];
+		// Local 始终置顶；其余保持稳定的插入顺序。
+		list.sort((a, b) => (a.id === "local" ? -1 : b.id === "local" ? 1 : 0));
+		return list;
+	}, [projects, connectionCatalog]);
 
 	const sidebarProjects = useMemo(
 		() =>
@@ -313,6 +396,61 @@ function App() {
 				: openedChats,
 		[chatSession, draftSessionPrompt, openedChats],
 	);
+	const startDraftSession = useCallback(
+		(
+			project: Project,
+			prompt: string,
+			model: PiModel | null,
+			thinkingLevel: PiThinkingLevel | null,
+		) => {
+			const nextChat: ChatSession = {
+				id: draftSessionId,
+				title: "新对话",
+				projectRecord: project,
+				initialModel: model ?? undefined,
+				initialThinkingLevel: thinkingLevel ?? undefined,
+			};
+			setOpenedChats((current) =>
+				trimOpenedChats(
+					touchOpenedChat(current, nextChat, prompt),
+					busyChatControllersRef.current,
+				),
+			);
+			setDraftProjectId(project.id);
+			setSelectedSessionId(draftSessionId);
+			setDraftSessionModel(model);
+			setDraftSessionThinkingLevel(thinkingLevel);
+			setDraftSessionPrompt(prompt);
+			setDraftSessionStarted(true);
+		},
+		[draftSessionId],
+	);
+
+	// 刷新后的首个项目读取是异步的，但 Landing 不应该因此禁用输入框。
+	// 如果用户恰好在项目列表返回前发送，先记住这次提交，项目就绪后立即继续。
+	useEffect(() => {
+		if (!projectsReady) return;
+		const pending = pendingLandingSubmissionRef.current;
+		if (!pending) return;
+		pendingLandingSubmissionRef.current = null;
+		if (!activeProject) {
+			toast.info("请先新增项目");
+			return;
+		}
+		startDraftSession(
+			activeProject,
+			pending.prompt,
+			pending.model,
+			pending.thinkingLevel,
+		);
+	}, [activeProject, projectsReady, startDraftSession]);
+
+	// 落地页提交第一条消息后会立即切到 lazy ChatPage。项目可用后就预热该 chunk，
+	// 避免它与真正的发送动作竞争，同时不让无项目的首屏承担这部分加载成本。
+	useEffect(() => {
+		if (chatSession || !activeProject) return;
+		void importChatPage().catch(() => undefined);
+	}, [activeProject, chatSession]);
 
 	const startNewChat = (projectId?: string) => {
 		const targetProjectId = projectId ?? firstProject?.id ?? null;
@@ -332,63 +470,140 @@ function App() {
 		}
 	};
 
-	const selectSession = (sessionId: string) => {
-		const opened = openedChats.find(
-			(entry) =>
-				entry.session.id === sessionId || entry.piSessionId === sessionId,
-		);
-		const session = indexedSessions.find(
-			(candidate) => candidate.piSessionId === sessionId,
-		);
-		const openedIsBusy = opened
-			? busyChatControllersRef.current.has(opened.controllerId)
-			: false;
-		if (opened && (openedIsBusy || !session)) {
-			const projectId = opened.session.projectRecord.id;
-			setOpenedChats((current) =>
-				trimOpenedChats(
-					touchOpenedChat(current, opened.session, opened.initialMessage),
-					busyChatControllersRef.current,
-				),
+	const selectSession = useCallback(
+		(sessionId: string) => {
+			const opened = openedChats.find(
+				(entry) =>
+					entry.session.id === sessionId || entry.piSessionId === sessionId,
 			);
+			const session = indexedSessions.find(
+				(candidate) => candidate.piSessionId === sessionId,
+			);
+			const openedIsBusy = opened
+				? busyChatControllersRef.current.has(opened.controllerId)
+				: false;
+			if (opened && (openedIsBusy || !session)) {
+				const projectId = opened.session.projectRecord.id;
+				setOpenedChats((current) =>
+					trimOpenedChats(
+						touchOpenedChat(current, opened.session, opened.initialMessage),
+						busyChatControllersRef.current,
+					),
+				);
+				setSelectedSessionId(sessionId);
+				setDraftSessionStarted(false);
+				setDraftSessionPrompt(null);
+				setDraftSessionModel(null);
+				setDraftSessionThinkingLevel(null);
+				setDraftProjectId(projectId);
+				void touchProject(projectId)
+					.then(() => notifyProjectsChanged())
+					.catch((error) =>
+						console.error("Failed to update recent project", error),
+					);
+				return;
+			}
+			if (!session) return;
+			const project = projects.find(
+				(candidate) => candidate.id === session.projectId,
+			);
+			if (project) {
+				const nextChat = indexedChatSession(session, project);
+				setOpenedChats((current) =>
+					trimOpenedChats(
+						touchOpenedChat(current, nextChat),
+						busyChatControllersRef.current,
+					),
+				);
+			}
 			setSelectedSessionId(sessionId);
 			setDraftSessionStarted(false);
 			setDraftSessionPrompt(null);
 			setDraftSessionModel(null);
 			setDraftSessionThinkingLevel(null);
-			setDraftProjectId(projectId);
-			void touchProject(projectId)
+			setDraftProjectId(session.projectId);
+			void touchProject(session.projectId)
 				.then(() => notifyProjectsChanged())
 				.catch((error) =>
 					console.error("Failed to update recent project", error),
 				);
-			return;
-		}
-		if (!session) return;
-		const project = projects.find(
-			(candidate) => candidate.id === session.projectId,
-		);
-		if (project) {
-			const nextChat = indexedChatSession(session, project);
-			setOpenedChats((current) =>
-				trimOpenedChats(
-					touchOpenedChat(current, nextChat),
-					busyChatControllersRef.current,
-				),
-			);
-		}
-		setSelectedSessionId(sessionId);
-		setDraftSessionStarted(false);
-		setDraftSessionPrompt(null);
-		setDraftSessionModel(null);
-		setDraftSessionThinkingLevel(null);
-		setDraftProjectId(session.projectId);
-		void touchProject(session.projectId)
-			.then(() => notifyProjectsChanged())
+		},
+		[indexedSessions, openedChats, projects],
+	);
+
+	const openNotificationSession = useCallback(
+		(target: DesktopNotificationSessionTarget) => {
+			setDraftProjectId(target.projectId);
+			setSelectedSessionId(target.sessionId);
+			setDraftSessionStarted(false);
+			setDraftSessionPrompt(null);
+			setDraftSessionModel(null);
+			setDraftSessionThinkingLevel(null);
+			void touchProject(target.projectId)
+				.then(() => notifyProjectsChanged())
+				.catch((error) =>
+					console.error("Failed to update recent project", error),
+				);
+		},
+		[],
+	);
+
+	useEffect(() => {
+		let disposed = false;
+		let unlisten: (() => void) | undefined;
+		void listenForDesktopNotificationActions(openNotificationSession)
+			.then((cleanup) => {
+				if (disposed) cleanup();
+				else unlisten = cleanup;
+			})
 			.catch((error) =>
-				console.error("Failed to update recent project", error),
+				console.warn("Failed to listen for notification actions", error),
 			);
-	};
+		return () => {
+			disposed = true;
+			unlisten?.();
+		};
+	}, [openNotificationSession]);
+
+	const handleAddProject = useCallback(
+		async (connectionId?: string) => {
+			const connection =
+				connectionCatalog.find((item) => item.id === connectionId) ??
+				projects.find((project) => project.connection.id === connectionId)
+					?.connection ??
+				null;
+			if (!connection) return;
+
+			if (connection.kind.type !== "local") {
+				setAddProjectConnectionId(connection.id);
+				setAddProjectOpen(true);
+				return;
+			}
+
+			if (localProjectPickerPendingRef.current) return;
+			localProjectPickerPendingRef.current = true;
+			try {
+				const selectedPath = await pickLocalProjectDirectory();
+				if (!selectedPath) return;
+				const project = await addProject(connection.id, selectedPath);
+				void refreshProjectPiModels(project.id).catch((error) => {
+					console.warn(
+						"Failed to refresh Pi models after adding project",
+						error,
+					);
+				});
+				notifyProjectsChanged();
+				toast.success(`已添加 ${project.name}`, {
+					description: `${project.connection.name} · ${project.metadata.cwd}`,
+				});
+			} catch (error) {
+				toast.error("添加项目失败", { description: String(error) });
+			} finally {
+				localProjectPickerPendingRef.current = false;
+			}
+		},
+		[connectionCatalog, projects],
+	);
 
 	const updateSession = async (
 		sessionId: string,
@@ -421,10 +636,7 @@ function App() {
 					}}
 					onNewChat={() => startNewChat()}
 					onNewChatInProject={(projectId) => startNewChat(projectId)}
-					onAddProject={(connectionId) => {
-						setAddProjectConnectionId(connectionId ?? null);
-						setAddProjectOpen(true);
-					}}
+					onAddProject={(connectionId) => void handleAddProject(connectionId)}
 					onRefreshProjectSessions={(projectId) => {
 						void refreshProjectSessions(projectId).catch((error) =>
 							console.error("Failed to refresh sessions", error),
@@ -452,6 +664,10 @@ function App() {
 											fallback={
 												<ChatPageLoadingFallback
 													session={entry.session}
+													initialMessage={entry.initialMessage}
+													uiStateKey={entry.uiStateKey}
+													readUiState={readChatUiState}
+													writeUiState={writeChatUiState}
 													reserveWindowControls={CUSTOM_TITLEBAR}
 													sidebarCollapsed={leftSidebarCollapsed}
 												/>
@@ -508,30 +724,30 @@ function App() {
 							})}
 							{!chatSession ? (
 								<NewChatLanding
-									key={`landing:${activeProject?.id ?? "no-project"}:${draftSessionId}`}
-									projectAvailable={Boolean(activeProject)}
+									key={`landing:${draftSessionId}`}
+									projectAvailable={
+										projectsReady ? Boolean(activeProject) : true
+									}
 									project={activeProject}
 									onStartSession={(prompt, model, thinkingLevel) => {
-										if (!activeProject) return;
-										const nextChat: ChatSession = {
-											id: draftSessionId,
-											title: "新对话",
-											projectRecord: activeProject,
-											initialModel: model ?? undefined,
-											initialThinkingLevel: thinkingLevel ?? undefined,
-										};
-										setOpenedChats((current) =>
-											trimOpenedChats(
-												touchOpenedChat(current, nextChat, prompt),
-												busyChatControllersRef.current,
-											),
+										if (!projectsReady) {
+											pendingLandingSubmissionRef.current = {
+												prompt,
+												model,
+												thinkingLevel,
+											};
+											return;
+										}
+										if (!activeProject) {
+											toast.info("请先新增项目");
+											return;
+										}
+										startDraftSession(
+											activeProject,
+											prompt,
+											model,
+											thinkingLevel,
 										);
-										setDraftProjectId(activeProject.id);
-										setSelectedSessionId(draftSessionId);
-										setDraftSessionModel(model);
-										setDraftSessionThinkingLevel(thinkingLevel);
-										setDraftSessionPrompt(prompt);
-										setDraftSessionStarted(true);
 									}}
 									onExpandSidebar={() => setLeftSidebarCollapsed(false)}
 									reserveWindowControls={CUSTOM_TITLEBAR}
@@ -588,7 +804,15 @@ function App() {
 				<AddProjectDialog
 					open
 					onOpenChange={setAddProjectOpen}
-					initialConnectionId={addProjectConnectionId}
+					connection={
+						connectionCatalog.find(
+							(connection) => connection.id === addProjectConnectionId,
+						) ??
+						projects.find(
+							(project) => project.connection.id === addProjectConnectionId,
+						)?.connection ??
+						null
+					}
 				/>
 			) : null}
 		</TooltipProvider>
