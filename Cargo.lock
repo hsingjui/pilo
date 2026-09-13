@@ -2827,6 +2827,7 @@ name = "pilo"
 version = "0.1.0"
 dependencies = [
  "keyring",
+ "mac-notification-sys",
  "pilo-protocol",
  "pilo-server",
  "rfd",

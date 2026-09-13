@@ -1,6 +1,10 @@
+mod desktop_notifications;
 mod domain;
 mod runtime;
 
+use desktop_notifications::{
+    initialize_macos_notification_application, send_macos_desktop_notification,
+};
 use runtime::{
     PiloRuntime,
     commands::{
@@ -67,6 +71,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             debug_chat_performance_log,
+            send_macos_desktop_notification,
             chat_session_start,
             chat_session_send_rpc,
             chat_session_stop,
@@ -129,6 +134,8 @@ pub fn run() {
         .setup(|app| {
             use tauri::Manager;
             use tauri_plugin_window_state::WindowExt;
+
+            initialize_macos_notification_application(app);
 
             let window = app
                 .get_webview_window("main")

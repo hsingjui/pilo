@@ -549,6 +549,20 @@ function App() {
 
 	const openNotificationSession = useCallback(
 		(target: DesktopNotificationSessionTarget) => {
+			const opened = openedChats.find(
+				(entry) =>
+					entry.session.projectRecord.id === target.projectId &&
+					(entry.session.id === target.sessionId ||
+						entry.piSessionId === target.sessionId),
+			);
+			if (opened) {
+				setOpenedChats((current) =>
+					trimOpenedChats(
+						touchOpenedChat(current, opened.session, opened.initialMessage),
+						busyChatControllersRef.current,
+					),
+				);
+			}
 			setDraftProjectId(target.projectId);
 			setSelectedSessionId(target.sessionId);
 			setDraftSessionStarted(false);
@@ -561,7 +575,7 @@ function App() {
 					console.error("Failed to update recent project", error),
 				);
 		},
-		[],
+		[openedChats],
 	);
 
 	useEffect(() => {

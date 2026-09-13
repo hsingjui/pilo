@@ -1,4 +1,5 @@
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
 	isPermissionGranted,
@@ -26,12 +27,37 @@ const AGENT_RESULT_ACTION_TYPE = "pilo-agent-result";
 const OPEN_SESSION_ACTION = "open-session";
 const SESSION_TARGET_KIND = "session";
 const MACOS_DEFAULT_NOTIFICATION_SOUND = "NSUserNotificationDefaultSoundName";
+const NOTIFICATION_OPEN_SESSION_EVENT = "pilo://notification-open-session";
+
+function isMacOS() {
+	return (
+		typeof navigator !== "undefined" && navigator.userAgent.includes("Mac")
+	);
+}
 
 function defaultNotificationSound(): Pick<NotificationOptions, "sound"> {
-	if (typeof navigator !== "undefined" && navigator.userAgent.includes("Mac")) {
+	if (isMacOS()) {
 		return { sound: MACOS_DEFAULT_NOTIFICATION_SOUND };
 	}
 	return {};
+}
+
+async function sendMacOSNotification({
+	title,
+	body,
+	target,
+}: {
+	title: string;
+	body: string;
+	target?: DesktopNotificationSessionTarget;
+}) {
+	await invoke("send_macos_desktop_notification", {
+		request: {
+			title,
+			body,
+			target: target ?? null,
+		},
+	});
 }
 
 export async function getDesktopNotificationPermission(): Promise<DesktopNotificationPermission> {
@@ -87,6 +113,13 @@ export async function listenForDesktopNotificationActions(
 	onOpenSession: (target: DesktopNotificationSessionTarget) => void,
 ): Promise<() => void> {
 	if (!isTauri()) return () => undefined;
+	if (isMacOS()) {
+		const unlisten = await listen<DesktopNotificationSessionTarget>(
+			NOTIFICATION_OPEN_SESSION_EVENT,
+			(event) => onOpenSession(event.payload),
+		);
+		return unlisten;
+	}
 
 	try {
 		await registerActionTypes([
@@ -121,6 +154,13 @@ export async function sendDesktopNotificationTest(): Promise<boolean> {
 	if (!(await ensureDesktopNotificationPermission())) return false;
 
 	try {
+		if (isMacOS()) {
+			await sendMacOSNotification({
+				title: "Pilo 测试通知",
+				body: "通知工作正常。Agent 完成或出错时会在这里提醒你。",
+			});
+			return true;
+		}
 		sendNotification({
 			title: "Pilo 测试通知",
 			body: "通知工作正常。Agent 完成或出错时会在这里提醒你。",
@@ -158,6 +198,14 @@ export async function notifyAgentResult({
 				: `${fallbackSessionTitle} 运行出错。`;
 
 	try {
+		if (isMacOS()) {
+			await sendMacOSNotification({
+				title,
+				body,
+				target: { projectId, sessionId },
+			});
+			return true;
+		}
 		sendNotification({
 			title,
 			body,
