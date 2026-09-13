@@ -7,6 +7,8 @@ import {
 	MessagesSquare,
 	Palette,
 	Plug,
+	RefreshCw,
+	Send,
 	SlidersHorizontal,
 	SquareTerminal,
 } from "lucide-react";
@@ -270,25 +272,13 @@ function NotificationSettings() {
 
 	return (
 		<div className="space-y-3">
-			<SettingsSection title="系统通知">
-				<SettingsRow label="通知权限" helper="检测 Pilo 当前的系统通知权限。">
-					<div className="flex items-center gap-2">
-						<SettingsStatus muted={permission !== "granted"}>
-							{checking ? "检测中" : NOTIFICATION_PERMISSION_LABELS[permission]}
-						</SettingsStatus>
-						<Button
-							variant="outline"
-							size="sm"
-							disabled={checking}
-							onClick={() => void refreshPermission()}
-						>
-							重新检测
-						</Button>
-					</div>
-				</SettingsRow>
+			<SettingsSection
+				title="系统通知"
+				description="Agent 完成或运行出错时提醒你，点击通知可直接打开对应会话。"
+			>
 				<SettingsRow
-					label="启用通知"
-					helper="Agent 运行完成或出错时发送系统通知。"
+					label="桌面通知"
+					helper="关闭后不会发送完成或错误提醒。"
 				>
 					<Switch
 						checked={desktopNotifications}
@@ -297,32 +287,53 @@ function NotificationSettings() {
 						}
 					/>
 				</SettingsRow>
+
 				<SettingsRow
-					label="发送测试通知"
-					helper="立即发送一条测试通知；未授权时会先请求系统权限。"
+					label="系统权限"
+					helper={
+						permission === "denied"
+							? "系统已拒绝通知权限，请在系统设置中允许 Pilo 发送通知。"
+							: "Pilo 需要系统通知权限才能发送提醒。"
+					}
+				>
+					<div className="flex items-center gap-1.5">
+						<span
+							className={cn(
+								"text-xs",
+								permission === "granted"
+									? "text-foreground/80"
+									: "text-muted-foreground",
+							)}
+						>
+							{checking ? "检测中…" : NOTIFICATION_PERMISSION_LABELS[permission]}
+						</span>
+						<Button
+							variant="ghost"
+							size="icon"
+							className="h-7 w-7 text-muted-foreground hover:text-foreground"
+							disabled={checking}
+							onClick={() => void refreshPermission()}
+							title="重新检测通知权限"
+						>
+							<RefreshCw className={cn("size-3.5", checking && "animate-spin")} />
+						</Button>
+					</div>
+				</SettingsRow>
+
+				<SettingsRow
+					label="测试通知"
+					helper="发送一条通知，确认系统权限和提醒声音工作正常。"
 				>
 					<Button
-						variant="outline"
+						variant="ghost"
 						size="sm"
+						className="h-7 gap-1.5 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
 						disabled={testing}
 						onClick={() => void handleTestNotification()}
 					>
-						{testing ? "发送中" : "发送测试通知"}
+						<Send className="size-3.5" />
+						{testing ? "发送中…" : "发送测试通知"}
 					</Button>
-				</SettingsRow>
-			</SettingsSection>
-			<SettingsSection title="触发时机">
-				<SettingsRow
-					label="Agent 运行完成"
-					helper="点击通知后直接打开对应会话。"
-				>
-					<SettingsStatus>已启用</SettingsStatus>
-				</SettingsRow>
-				<SettingsRow
-					label="Agent 运行出错"
-					helper="运行时错误或 Pi 进程异常时通知。"
-				>
-					<SettingsStatus>已启用</SettingsStatus>
 				</SettingsRow>
 			</SettingsSection>
 		</div>
