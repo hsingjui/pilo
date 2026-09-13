@@ -619,7 +619,7 @@ function App() {
 
 	const updateSession = async (
 		sessionId: string,
-		update: { pinned?: boolean; title?: string },
+		update: { title?: string },
 	) => {
 		await updateIndexedSession(sessionId, update);
 	};

@@ -70,16 +70,43 @@ export function AppSidebar({
 		selectedSessionId === undefined
 			? internalSelectedSessionId
 			: selectedSessionId;
-	// 相对时间标签共享一个低频时钟，避免每行各自定时刷新。
-	const [now, setNow] = useState(() => new Date());
+	const onSelectSessionRef = useRef(onSelectSession);
+	const onUpdateSessionRef = useRef(onUpdateSession);
+	const onDeleteSessionRef = useRef(onDeleteSession);
 	useEffect(() => {
-		const timer = window.setInterval(() => setNow(new Date()), 60_000);
-		return () => window.clearInterval(timer);
-	}, []);
+		onSelectSessionRef.current = onSelectSession;
+		onUpdateSessionRef.current = onUpdateSession;
+		onDeleteSessionRef.current = onDeleteSession;
+	}, [onDeleteSession, onSelectSession, onUpdateSession]);
 
 	// 拖拽右边缘调整宽度；拖到最小宽度以下即折叠。
 	const asideRef = useRef<HTMLElement>(null);
 	const scrollViewportRef = useRef<HTMLDivElement>(null);
+	useEffect(() => {
+		const viewport = scrollViewportRef.current;
+		if (!viewport) return;
+
+		const stopBoundaryBounce = (event: WheelEvent) => {
+			if (event.ctrlKey || event.deltaY === 0) return;
+			const maxScrollTop = Math.max(
+				0,
+				viewport.scrollHeight - viewport.clientHeight,
+			);
+			if (maxScrollTop <= 0) {
+				event.preventDefault();
+				return;
+			}
+
+			const atTop = viewport.scrollTop <= 0.5;
+			const atBottom = viewport.scrollTop >= maxScrollTop - 0.5;
+			if ((event.deltaY < 0 && atTop) || (event.deltaY > 0 && atBottom)) {
+				event.preventDefault();
+			}
+		};
+
+		viewport.addEventListener("wheel", stopBoundaryBounce, { passive: false });
+		return () => viewport.removeEventListener("wheel", stopBoundaryBounce);
+	}, []);
 	const [sidebarWidth, setSidebarWidth] = useState(() => {
 		const stored = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
 		if (!stored) return DEFAULT_SIDEBAR_WIDTH;
@@ -182,64 +209,50 @@ export function AppSidebar({
 			if (selectedSessionId === undefined) {
 				setInternalSelectedSessionId(sessionId);
 			}
-			onSelectSession?.(sessionId);
+			onSelectSessionRef.current?.(sessionId);
 		},
-		[onSelectSession, selectedSessionId],
-	);
-	const handleToggleSessionPin = useCallback(
-		(id: string, pinned: boolean) => onUpdateSession?.(id, { pinned }),
-		[onUpdateSession],
+		[selectedSessionId],
 	);
 	const handleRenameSession = useCallback(
-		(id: string, title: string) => onUpdateSession?.(id, { title }),
-		[onUpdateSession],
+		(id: string, title: string) => onUpdateSessionRef.current?.(id, { title }),
+		[],
+	);
+	const handleDeleteSession = useCallback(
+		(id: string) => onDeleteSessionRef.current?.(id),
+		[],
 	);
 	const renderSession = useCallback(
-		(session: SidebarSession, project: SidebarProject, env: SidebarEnv) => (
+		(session: SidebarSession) => (
 			<SessionRow
 				key={session.id}
 				session={session}
-				project={project}
-				env={env}
-				now={now}
 				selected={activeSessionId === session.id}
 				onSelect={handleSelectSession}
-				onTogglePin={handleToggleSessionPin}
-				onDelete={session.sessionPath ? onDeleteSession : undefined}
+				onDelete={session.sessionPath ? handleDeleteSession : undefined}
 				onRename={handleRenameSession}
 			/>
 		),
 		[
 			activeSessionId,
+			handleDeleteSession,
 			handleRenameSession,
 			handleSelectSession,
-			handleToggleSessionPin,
-			now,
-			onDeleteSession,
 		],
 	);
 
-	const renderSessionList = (
-		projectSessions: SidebarSession[],
-		project: SidebarProject,
-		env: SidebarEnv,
-	) => {
-		const pinned = projectSessions.filter((session) => session.pinned);
-		const unpinned = projectSessions.filter((session) => !session.pinned);
-		const orderedSessions = [...pinned, ...unpinned];
-
-		const renderRow = (session: SidebarSession) =>
-			renderSession(session, project, env);
-		if (orderedSessions.length < 40) {
-			return <>{orderedSessions.map(renderRow)}</>;
+	const renderSessionList = (projectSessions: SidebarSession[]) => {
+		if (projectSessions.length < 40) {
+			return <>{projectSessions.map(renderSession)}</>;
 		}
 
 		return (
-			<Suspense fallback={<>{orderedSessions.slice(0, 40).map(renderRow)}</>}>
+			<Suspense
+				fallback={<>{projectSessions.slice(0, 40).map(renderSession)}</>}
+			>
 				<VirtualSessionRows
-					sessions={orderedSessions}
+					sessions={projectSessions}
 					scrollViewportRef={scrollViewportRef}
-					renderSession={renderRow}
+					renderSession={renderSession}
 				/>
 			</Suspense>
 		);
@@ -313,7 +326,7 @@ export function AppSidebar({
 				<ScrollArea
 					className="mt-2 min-h-0 min-w-0 flex-1 overflow-x-hidden"
 					viewportRef={scrollViewportRef}
-					viewportClassName="min-w-0 overflow-x-hidden pl-1.5 pr-2.5 pb-3"
+					viewportClassName="min-w-0 overflow-x-hidden overscroll-y-none pl-1.5 pr-2.5 pb-3"
 					scrollbarClassName="w-2 p-px"
 					scrollbarThumbClassName="bg-[hsl(var(--muted-foreground)/0.35)] hover:bg-[hsl(var(--muted-foreground)/0.45)] active:bg-[hsl(var(--muted-foreground)/0.55)]"
 				>
@@ -361,7 +374,7 @@ export function AppSidebar({
 														}
 													/>
 													{!projectCollapsed &&
-														renderSessionList(projectSessions, project, env)}
+														renderSessionList(projectSessions)}
 												</div>
 											);
 										})}

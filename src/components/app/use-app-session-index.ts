@@ -14,9 +14,29 @@ import {
 } from "@/lib/sessions";
 
 type SessionUiUpdate = {
-	pinned?: boolean;
 	title?: string;
 };
+
+function sameSessionIndexEntry(a: SessionIndexEntry, b: SessionIndexEntry) {
+	return (
+		a.connectionId === b.connectionId &&
+		a.projectId === b.projectId &&
+		a.piSessionId === b.piSessionId &&
+		a.sessionPath === b.sessionPath &&
+		a.name === b.name &&
+		a.cwd === b.cwd &&
+		a.createdAt === b.createdAt &&
+		a.updatedAt === b.updatedAt &&
+		a.messageCount === b.messageCount &&
+		a.lastMessageAt === b.lastMessageAt &&
+		a.firstUserMessagePreview === b.firstUserMessagePreview &&
+		a.fileSize === b.fileSize &&
+		a.fileMtimeNs === b.fileMtimeNs &&
+		a.lastOffset === b.lastOffset &&
+		a.pinned === b.pinned &&
+		a.titleOverride === b.titleOverride
+	);
+}
 
 export function useAppSessionIndex(activeProjectId: string | null) {
 	const [indexedSessions, setIndexedSessions] = useState<SessionIndexEntry[]>(
@@ -25,10 +45,30 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 
 	const replaceProjectSessions = useCallback(
 		(projectId: string, sessions: SessionIndexEntry[]) => {
-			setIndexedSessions((current) => [
-				...current.filter((session) => session.projectId !== projectId),
-				...sessions,
-			]);
+			setIndexedSessions((current) => {
+				const previousByPath = new Map(
+					current
+						.filter((session) => session.projectId === projectId)
+						.map((session) => [session.sessionPath, session] as const),
+				);
+				const nextProjectSessions = sessions.map((session) => {
+					const previous = previousByPath.get(session.sessionPath);
+					return previous && sameSessionIndexEntry(previous, session)
+						? previous
+						: session;
+				});
+				const next = [
+					...current.filter((session) => session.projectId !== projectId),
+					...nextProjectSessions,
+				];
+				if (
+					next.length === current.length &&
+					next.every((session, index) => session === current[index])
+				) {
+					return current;
+				}
+				return next;
+			});
 		},
 		[],
 	);
@@ -147,7 +187,7 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 			if (!session) return null;
 			try {
 				const next = await updateSessionUiState(session.sessionPath, {
-					pinned: update.pinned ?? session.pinned,
+					pinned: session.pinned,
 					titleOverride:
 						update.title === undefined ? session.titleOverride : update.title,
 				});

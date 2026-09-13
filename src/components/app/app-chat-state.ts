@@ -4,6 +4,7 @@ import type { Project } from "@/lib/projects";
 import type { SessionIndexEntry } from "@/lib/sessions";
 
 let draftSessionSequence = 0;
+const sidebarSessionCache = new WeakMap<SessionIndexEntry, SidebarSession>();
 
 function sessionDate(session: SessionIndexEntry) {
 	const fileMtimeMs = Number(session.fileMtimeNs) / 1_000_000;
@@ -16,7 +17,9 @@ function sessionDate(session: SessionIndexEntry) {
 }
 
 export function toSidebarSession(session: SessionIndexEntry): SidebarSession {
-	return {
+	const cached = sidebarSessionCache.get(session);
+	if (cached) return cached;
+	const sidebarSession: SidebarSession = {
 		id: session.piSessionId,
 		title:
 			session.titleOverride ??
@@ -30,8 +33,9 @@ export function toSidebarSession(session: SessionIndexEntry): SidebarSession {
 		sessionPath: session.sessionPath,
 		projectId: session.projectId,
 		latestMessageAt: sessionDate(session),
-		pinned: session.pinned,
 	};
+	sidebarSessionCache.set(session, sidebarSession);
+	return sidebarSession;
 }
 
 export function mergeSidebarSessionsWithOpenChats(
@@ -55,7 +59,9 @@ export function mergeSidebarSessionsWithOpenChats(
 		indexedKeys.add(key);
 		const opened = openedByIndexedSession.get(key);
 		const active = opened ? busyControllerIds.has(opened.controllerId) : false;
-		return session.active === active ? session : { ...session, active };
+		return Boolean(session.active) === active
+			? session
+			: { ...session, active };
 	});
 
 	const pending: SidebarSession[] = [];
@@ -71,7 +77,6 @@ export function mergeSidebarSessionsWithOpenChats(
 			sessionPath: entry.session.sessionPath ?? "",
 			projectId: entry.session.projectRecord.id,
 			latestMessageAt: now,
-			pinned: false,
 			active: busyControllerIds.has(entry.controllerId),
 		});
 	}

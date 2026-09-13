@@ -7,8 +7,6 @@ import {
 	Monitor,
 	MoreHorizontal,
 	Pencil,
-	Pin,
-	PinOff,
 	Plus,
 	RefreshCw,
 	SlidersHorizontal,
@@ -27,7 +25,6 @@ import {
 } from "@/ui";
 import { menuItemIconClassName } from "@/ui/menu-styles";
 import type { SidebarEnv, SidebarSession, SidebarProject } from "./types";
-import { SessionInfoHoverCard } from "./session-info-hover-card";
 
 // 悬浮时才出现的行内操作按钮（Lody loro-app-sidebar 的 hoverActionClassName）。
 const HOVER_ACTION = cn(
@@ -308,22 +305,14 @@ export function ProjectRow({
 
 export const SessionRow = memo(function SessionRow({
 	session,
-	project,
-	env,
-	now,
 	selected,
 	onSelect,
-	onTogglePin,
 	onDelete,
 	onRename,
 }: {
 	session: SidebarSession;
-	project?: SidebarProject;
-	env?: SidebarEnv;
-	now: Date;
 	selected: boolean;
 	onSelect: (sessionId: string) => void;
-	onTogglePin?: (sessionId: string, pinned: boolean) => void;
 	onDelete?: (sessionId: string) => void;
 	onRename?: (sessionId: string, title: string) => void;
 }) {
@@ -332,6 +321,7 @@ export const SessionRow = memo(function SessionRow({
 	const [renaming, setRenaming] = useState(false);
 	const [renameValue, setRenameValue] = useState(session.title);
 	const renameInputRef = useRef<HTMLInputElement>(null);
+	const suppressSelectRef = useRef(false);
 	useEffect(() => {
 		if (renaming) renameInputRef.current?.focus();
 	}, [renaming]);
@@ -341,152 +331,143 @@ export const SessionRow = memo(function SessionRow({
 		setRenaming(false);
 	};
 	return (
-		<SessionInfoHoverCard
-			now={now}
-			title={session.title}
-			latestMessageAt={session.latestMessageAt}
-			projectName={project?.name}
-			envName={env?.name}
+		/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- 内嵌图标按钮，不能用原生 button */
+		<div
+			role="button"
+			tabIndex={0}
+			aria-label={session.title}
+			aria-current={selected ? "page" : undefined}
+			data-menu-open={menuOpen || undefined}
+			onClick={() => {
+				if (!renaming && !suppressSelectRef.current) onSelect(session.id);
+			}}
+			onKeyDown={(event) => {
+				if (renaming || event.target !== event.currentTarget) return;
+				if (event.key !== "Enter" && event.key !== " ") return;
+				event.preventDefault();
+				onSelect(session.id);
+			}}
+			className={cn(
+				"group relative w-full min-w-0 cursor-pointer select-none rounded-md border border-transparent bg-transparent px-2 py-1 text-left transition-colors",
+				"hover:bg-sidebar-hover hover:text-sidebar-hover-foreground data-[menu-open]:bg-sidebar-hover",
+				"focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-sidebar-ring/40",
+				selected &&
+					"border-sidebar-foreground/10 bg-sidebar-foreground/10 text-sidebar-foreground hover:bg-sidebar-foreground/10",
+			)}
 		>
-			{/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- 内嵌图标按钮，不能用原生 button */}
-			<div
-				role="button"
-				tabIndex={0}
-				aria-label={session.title}
-				aria-current={selected ? "page" : undefined}
-				data-menu-open={menuOpen || undefined}
-				onClick={() => onSelect(session.id)}
-				onKeyDown={(event) => {
-					if (event.target !== event.currentTarget) return;
-					if (event.key !== "Enter" && event.key !== " ") return;
-					event.preventDefault();
-					onSelect(session.id);
-				}}
-				className={cn(
-					"group relative w-full min-w-0 cursor-pointer select-none rounded-md border border-transparent bg-transparent px-2 py-1 text-left transition-colors",
-					"hover:bg-sidebar-hover hover:text-sidebar-hover-foreground data-[menu-open]:bg-sidebar-hover",
-					"focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-sidebar-ring/40",
-					selected &&
-						"border-sidebar-foreground/10 bg-sidebar-foreground/10 text-sidebar-foreground hover:bg-sidebar-foreground/10",
-				)}
-			>
-				<div className="flex w-full min-w-0 items-center gap-1.5">
-					<div className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-						<DropdownMenu
-							open={menuOpen}
-							onOpenChange={(open) => {
-								setMenuOpen(open);
-								if (!open) setConfirmingDeleteMenu(false);
-							}}
-						>
-							<DropdownMenuTrigger asChild>
-								<button
-									type="button"
-									aria-label="更多操作"
-									onClick={(event) => event.stopPropagation()}
-									className={cn(
-										"absolute left-1/2 top-1/2 z-20 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md opacity-0 pointer-events-none",
-										"group-hover:pointer-events-auto group-hover:opacity-100 group-data-[menu-open]:pointer-events-auto group-data-[menu-open]:opacity-100",
-										"text-sidebar-foreground-muted transition-[opacity,color,background-color] duration-100",
-										"hover:bg-sidebar-foreground/15 hover:text-sidebar-foreground",
-										"group-data-[menu-open]:bg-sidebar-foreground/15 group-data-[menu-open]:text-sidebar-foreground",
-									)}
-								>
-									<MoreHorizontal className="h-3.5 w-3.5" />
-								</button>
-							</DropdownMenuTrigger>
-							<DropdownMenuContent align="start">
+			<div className="flex w-full min-w-0 items-center gap-1.5">
+				<div className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+					<DropdownMenu
+						open={menuOpen}
+						onOpenChange={(open) => {
+							setMenuOpen(open);
+							if (!open) setConfirmingDeleteMenu(false);
+						}}
+					>
+						<DropdownMenuTrigger asChild>
+							<button
+								type="button"
+								aria-label="更多操作"
+								onClick={(event) => event.stopPropagation()}
+								className={cn(
+									"absolute left-1/2 top-1/2 z-20 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md opacity-0 pointer-events-none",
+									"group-hover:pointer-events-auto group-hover:opacity-100 group-data-[menu-open]:pointer-events-auto group-data-[menu-open]:opacity-100",
+									"text-sidebar-foreground-muted transition-[opacity,color,background-color] duration-100",
+									"hover:bg-sidebar-foreground/15 hover:text-sidebar-foreground",
+									"group-data-[menu-open]:bg-sidebar-foreground/15 group-data-[menu-open]:text-sidebar-foreground",
+								)}
+							>
+								<MoreHorizontal className="h-3.5 w-3.5" />
+							</button>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="start">
+							<DropdownMenuItem
+								onSelect={() => {
+									setRenameValue(session.title);
+									setRenaming(true);
+								}}
+							>
+								<Pencil className={menuItemIconClassName} />
+								重命名
+							</DropdownMenuItem>
+							{onDelete ? (
 								<DropdownMenuItem
-									onSelect={() => onTogglePin?.(session.id, !session.pinned)}
-								>
-									{session.pinned ? (
-										<PinOff className={menuItemIconClassName} />
-									) : (
-										<Pin className={menuItemIconClassName} />
-									)}
-									{session.pinned ? "取消置顶" : "置顶"}
-								</DropdownMenuItem>
-								<DropdownMenuItem
-									onSelect={() => {
-										setRenameValue(session.title);
-										setRenaming(true);
+									className="text-destructive focus:text-destructive"
+									onSelect={(event) => {
+										if (!confirmingDeleteMenu) {
+											event.preventDefault();
+											setConfirmingDeleteMenu(true);
+											return;
+										}
+										onDelete(session.id);
 									}}
 								>
-									<Pencil className={menuItemIconClassName} />
-									重命名
+									<Trash2 className={menuItemIconClassName} />
+									{confirmingDeleteMenu ? "确认删除" : "删除"}
 								</DropdownMenuItem>
-								{onDelete ? (
-									<DropdownMenuItem
-										className="text-destructive focus:text-destructive"
-										onSelect={(event) => {
-											if (!confirmingDeleteMenu) {
-												event.preventDefault();
-												setConfirmingDeleteMenu(true);
-												return;
-											}
-											onDelete(session.id);
-										}}
-									>
-										<Trash2 className={menuItemIconClassName} />
-										{confirmingDeleteMenu ? "确认删除" : "删除"}
-									</DropdownMenuItem>
-								) : null}
-							</DropdownMenuContent>
-						</DropdownMenu>
-					</div>
-					{renaming ? (
-						<input
-							ref={renameInputRef}
-							value={renameValue}
-							onClick={(event) => event.stopPropagation()}
-							onChange={(event) => setRenameValue(event.target.value)}
-							onBlur={submitRename}
-							onKeyDown={(event) => {
-								event.stopPropagation();
-								if (event.key === "Enter") submitRename();
-								if (event.key === "Escape") {
-									setRenameValue(session.title);
-									setRenaming(false);
-								}
-							}}
-							className="min-w-0 flex-1 rounded-sm bg-transparent px-1 text-sm outline-none ring-1 ring-sidebar-ring/50"
-						/>
-					) : (
-						<span
-							className={cn(
-								"block min-w-0 flex-1 truncate text-sm",
-								selected
-									? "text-sidebar-selection-foreground"
-									: "text-sidebar-foreground dark:text-sidebar-foreground/75",
-							)}
-						>
-							{session.title}
-						</span>
-					)}
-					<div className="relative flex h-5 min-w-5 shrink-0 items-center justify-center pointer-events-none">
-						<span
-							aria-hidden="true"
-							className="flex items-center justify-center transition-opacity duration-100 group-hover:opacity-0 group-data-[menu-open]:opacity-0"
-						>
-							{session.active ? (
-								<LoaderCircle className="size-3 animate-spin text-sidebar-primary" />
 							) : null}
-						</span>
-						{onDelete ? (
-							<ConfirmDeleteButton
-								label="删除"
-								confirmLabel="确认"
-								className={cn(
-									"absolute right-0 top-0 z-20",
-									"opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100",
-									"group-data-[menu-open]:pointer-events-auto group-data-[menu-open]:opacity-100",
-								)}
-								onConfirm={() => onDelete(session.id)}
-							/>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</div>
+				{renaming ? (
+					<input
+						ref={renameInputRef}
+						value={renameValue}
+						aria-label="修改会话标题"
+						onClick={(event) => event.stopPropagation()}
+						onChange={(event) => setRenameValue(event.target.value)}
+						onBlur={() => {
+							suppressSelectRef.current = true;
+							window.setTimeout(() => {
+								suppressSelectRef.current = false;
+							}, 0);
+							submitRename();
+						}}
+						onKeyDown={(event) => {
+							event.stopPropagation();
+							if (event.key === "Enter") submitRename();
+							if (event.key === "Escape") {
+								setRenameValue(session.title);
+								setRenaming(false);
+							}
+						}}
+						className="min-w-0 flex-1 rounded-sm bg-transparent px-1 text-sm outline-none ring-1 ring-sidebar-ring/50"
+					/>
+				) : (
+					<span
+						className={cn(
+							"block min-w-0 flex-1 truncate text-sm",
+							selected
+								? "text-sidebar-selection-foreground"
+								: "text-sidebar-foreground dark:text-sidebar-foreground/75",
+						)}
+					>
+						{session.title}
+					</span>
+				)}
+				<div className="relative flex h-5 min-w-5 shrink-0 items-center justify-center pointer-events-none">
+					<span
+						aria-hidden="true"
+						className="flex items-center justify-center transition-opacity duration-100 group-hover:opacity-0 group-data-[menu-open]:opacity-0"
+					>
+						{session.active ? (
+							<LoaderCircle className="size-3 animate-spin text-sidebar-primary" />
 						) : null}
-					</div>
+					</span>
+					{onDelete ? (
+						<ConfirmDeleteButton
+							label="删除"
+							confirmLabel="确认"
+							className={cn(
+								"absolute right-0 top-0 z-20",
+								"opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100",
+								"group-data-[menu-open]:pointer-events-auto group-data-[menu-open]:opacity-100",
+							)}
+							onConfirm={() => onDelete(session.id)}
+						/>
+					) : null}
 				</div>
 			</div>
-		</SessionInfoHoverCard>
+		</div>
 	);
 });

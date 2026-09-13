@@ -1,4 +1,5 @@
 import {
+	memo,
 	useCallback,
 	useLayoutEffect,
 	useRef,
@@ -12,7 +13,7 @@ import type { SidebarSession } from "./types";
 
 const SESSION_ROW_ESTIMATE = 30;
 
-export function VirtualSessionRows({
+export const VirtualSessionRows = memo(function VirtualSessionRows({
 	sessions,
 	scrollViewportRef,
 	renderSession,
@@ -72,4 +73,4 @@ export function VirtualSessionRows({
 			})}
 		</div>
 	);
-}
+});

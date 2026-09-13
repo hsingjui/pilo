@@ -72,7 +72,6 @@ function indexedSession(
 		lastOffset: 0,
 		indexedAtMs: 1,
 		pinned: false,
-		archived: false,
 		titleOverride: null,
 	};
 }
@@ -224,6 +223,16 @@ test("identified open chat merges with its indexed sidebar session and keeps act
 	assert.equal(sidebar.length, 1);
 	assert.equal(sidebar[0].id, "pi-1");
 	assert.equal(sidebar[0].active, true);
+});
+
+test("inactive indexed sidebar sessions preserve object identity", () => {
+	const entry = indexedSession("pi-1", 1024);
+	const indexed = toSidebarSession(entry);
+	const cached = toSidebarSession(entry);
+	const sidebar = mergeSidebarSessionsWithOpenChats([indexed], [], new Set());
+
+	assert.equal(cached, indexed);
+	assert.equal(sidebar[0], indexed);
 });
 
 test("sidebar activity stays isolated across concurrently opened chats", () => {

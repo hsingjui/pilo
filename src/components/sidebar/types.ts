@@ -16,7 +16,6 @@ export type SidebarSession = {
 	sessionPath: string;
 	projectId: string;
 	latestMessageAt: Date;
-	pinned: boolean;
 	/** Agent 正在运行时在行尾显示加载状态。 */
 	active?: boolean;
 };
@@ -28,10 +27,7 @@ export type AppSidebarProps = {
 	/** 由 App 控制的整体收起（宽度过渡动画）。 */
 	collapsed?: boolean;
 	onCollapse?: () => void;
-	onUpdateSession?: (
-		sessionId: string,
-		update: { pinned?: boolean; title?: string },
-	) => void;
+	onUpdateSession?: (sessionId: string, update: { title?: string }) => void;
 	onDeleteSession?: (sessionId: string) => void;
 	onRefreshProjectSessions?: (projectId: string) => void;
 	selectedSessionId?: string | null;
