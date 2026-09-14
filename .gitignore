@@ -24,8 +24,3 @@ src-tauri/resources/pilo-server-*
 *.njsproj
 *.sln
 *.sw?
-# >>> Comet managed project state >>>
-!/.comet/
-/.comet/*
-!/.comet/config.yaml
-# <<< Comet managed project state <<<

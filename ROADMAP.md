@@ -40,7 +40,6 @@ Pilo 的目标是提供一个面向 Pi Coding Agent 的桌面开发工作区，�
 - [x] 建立 WSL 开发、Windows 运行的开发模式
 - [x] 添加 WSL → `D:\Code\pilo` 实时同步脚本
 - [x] 初始化 Git 仓库
-- [x] 接入 Comet Native workflow（Pi）
 - [x] 使用 `oxfmt + oxlint` 替代 Biome
 - [x] 配置 `pnpm format` / `pnpm check` / `pnpm build`
 
@@ -407,7 +406,6 @@ indexed_at
 | ---------- | ------------------------- | ------ | ----------------------------------- |
 | 2026-09-10 | Project initialized       | Done   | Tauri 2 + React 19 + Vite           |
 | 2026-09-10 | WSL → Windows workflow    | Done   | rsync + inotify, Windows runtime    |
-| 2026-09-10 | Comet Native workflow     | Done   | Pi project integration              |
 | 2026-09-10 | Oxc toolchain             | Done   | oxfmt + oxlint                      |
 | 2026-09-10 | Frontend Style Foundation | Done   | Lody-based UI foundation            |
 | 2026-09-11 | Developer Project         | Done   | Git / Terminal / Files / Editor     |
@@ -422,6 +420,6 @@ indexed_at
 1. 完成一个可验证的功能后，把对应 `[ ]` 改成 `[x]`。
 2. 当前正在做的一级功能在标题或说明中标记 `🚧`。
 3. 新需求优先放进已有阶段，不轻易增加新的 P-level。
-4. Comet change 可以记录在对应任务下面，但 `ROADMAP.md` 是长期产品路线图，不依赖 Comet 状态文件。
+4. `ROADMAP.md` 只记录长期产品路线与可验证的里程碑，不依赖临时任务状态文件。
 5. 每完成一个 milestone，在 `Progress Log` 增加一行。
-6. Roadmap 记录“做什么”和“做到什么程度”，具体设计和实现细节放进 Comet change / spec。
+6. Roadmap 记录“做什么”和“做到什么程度”，具体设计和实现细节放在对应代码、文档或任务记录中。
