@@ -1,8 +1,8 @@
-import { FileCode2, Sparkles, TerminalSquare } from "lucide-react";
+import { FileCode2, TerminalSquare } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-export type ComposerSuggestionKind = "file" | "command" | "skill";
+export type ComposerSuggestionKind = "file" | "command";
 
 export type ComposerSuggestion = {
 	kind: ComposerSuggestionKind;
@@ -11,7 +11,7 @@ export type ComposerSuggestion = {
 	detail?: string;
 };
 
-export type SuggestionTrigger = "@" | "/" | "$";
+export type SuggestionTrigger = "@" | "/";
 
 export type ActiveSuggestionQuery = {
 	trigger: SuggestionTrigger;
@@ -20,72 +20,14 @@ export type ActiveSuggestionQuery = {
 	end: number;
 };
 
-export const DEFAULT_SUGGESTIONS: readonly ComposerSuggestion[] = [
-	{
-		kind: "file",
-		value: "@src/App.tsx",
-		label: "src/App.tsx",
-		detail: "应用入口",
-	},
-	{
-		kind: "file",
-		value: "@src/components/chat/chat-page.tsx",
-		label: "src/components/chat/chat-page.tsx",
-		detail: "聊天页面",
-	},
-	{
-		kind: "file",
-		value: "@src/components/chat/chat-composer.tsx",
-		label: "src/components/chat/chat-composer.tsx",
-		detail: "输入框",
-	},
-	{
-		kind: "file",
-		value: "@src-tauri/src/lib.rs",
-		label: "src-tauri/src/lib.rs",
-		detail: "Tauri Runtime",
-	},
-	{
-		kind: "command",
-		value: "/model",
-		label: "/model",
-		detail: "切换模型",
-	},
+export const DEFAULT_SUGGESTIONS: readonly ComposerSuggestion[] = [];
+
+export const PI_SESSION_SUGGESTIONS: readonly ComposerSuggestion[] = [
 	{
 		kind: "command",
 		value: "/compact",
 		label: "/compact",
 		detail: "压缩当前上下文",
-	},
-	{
-		kind: "command",
-		value: "/new",
-		label: "/new",
-		detail: "新建会话",
-	},
-	{
-		kind: "command",
-		value: "/help",
-		label: "/help",
-		detail: "查看 Pi 命令",
-	},
-	{
-		kind: "skill",
-		value: "$review",
-		label: "review",
-		detail: "代码审查",
-	},
-	{
-		kind: "skill",
-		value: "$frontend",
-		label: "frontend",
-		detail: "前端实现",
-	},
-	{
-		kind: "skill",
-		value: "$debug",
-		label: "debug",
-		detail: "问题排查",
 	},
 ];
 
@@ -94,8 +36,11 @@ export const TRIGGER_META: Record<
 	{ kind: ComposerSuggestionKind; title: string; hint: string }
 > = {
 	"@": { kind: "file", title: "文件", hint: "输入路径筛选" },
-	"/": { kind: "command", title: "命令", hint: "Pi commands" },
-	$: { kind: "skill", title: "技能", hint: "Pi skills" },
+	"/": {
+		kind: "command",
+		title: "Pi 命令",
+		hint: "Extensions · Prompts · Skills",
+	},
 };
 
 export function activeSuggestionQuery(
@@ -103,22 +48,27 @@ export function activeSuggestionQuery(
 	caret: number,
 ): ActiveSuggestionQuery | null {
 	const beforeCaret = value.slice(0, caret);
-	const match = /(^|\s)([@/$])([^\s]*)$/.exec(beforeCaret);
-	if (!match) return null;
-	const trigger = match[2] as SuggestionTrigger;
-	const query = match[3] ?? "";
+	const tokenStart =
+		Math.max(
+			beforeCaret.lastIndexOf(" "),
+			beforeCaret.lastIndexOf("\n"),
+			beforeCaret.lastIndexOf("\t"),
+		) + 1;
+	const token = beforeCaret.slice(tokenStart);
+	const trigger = token[0];
+	if (trigger !== "@" && trigger !== "/") return null;
+	if (token.slice(1).includes(" ")) return null;
 	return {
 		trigger,
-		query,
-		start: caret - query.length - 1,
+		query: token.slice(1),
+		start: tokenStart,
 		end: caret,
 	};
 }
 
 function SuggestionIcon({ kind }: { kind: ComposerSuggestionKind }) {
 	if (kind === "file") return <FileCode2 className="size-3.5" />;
-	if (kind === "command") return <TerminalSquare className="size-3.5" />;
-	return <Sparkles className="size-3.5" />;
+	return <TerminalSquare className="size-3.5" />;
 }
 
 type ComposerSuggestionMenuProps = {

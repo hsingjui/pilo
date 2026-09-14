@@ -48,6 +48,14 @@ export function toConversationAction(
 		case "process_state":
 		case "rpc_message":
 		case "queue_update":
+		case "compaction_start":
+		case "compaction_end":
+		case "auto_retry_start":
+		case "auto_retry_end":
+		case "summarization_retry_scheduled":
+		case "summarization_retry_attempt_start":
+		case "summarization_retry_finished":
+		case "extension_ui_request":
 		case "runtime_log":
 		case "runtime_error":
 			return null;

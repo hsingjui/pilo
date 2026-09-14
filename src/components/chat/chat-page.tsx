@@ -19,6 +19,9 @@ import {
 	type ChatConversationViewportHandle,
 } from "@/components/chat/chat-conversation-viewport";
 import { ChatPendingQueue } from "@/components/chat/chat-pending-queue";
+import { PI_SESSION_SUGGESTIONS } from "@/components/chat/chat-composer-suggestions";
+import { PiExtensionNotifications } from "@/components/chat/pi-extension-notifications";
+import { PiExtensionUiDialog } from "@/components/chat/pi-extension-ui-dialog";
 import { SessionHeader } from "@/components/chat/chat-session-header";
 import type { ChatSession } from "@/components/chat/chat-page-utils";
 import {
@@ -28,6 +31,7 @@ import {
 import { useChatConversation } from "@/components/chat/use-chat-conversation";
 import { useChatRuntime } from "@/components/chat/use-chat-runtime";
 import { useChatSessionConfig } from "@/components/chat/use-chat-session-config";
+import { usePiSessionFeatures } from "@/components/chat/use-pi-session-features";
 import { userErrorMessage } from "@/lib/app-error";
 import { createChatSessionClient } from "@/lib/chat-session-client";
 import {
@@ -39,6 +43,15 @@ import { resolveAssistantForkTarget } from "@/lib/pi-session-fork";
 import { usePreferences } from "@/lib/preferences-provider";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { toast } from "sonner";
+
+function keyedWidgetLines(lines: readonly string[]) {
+	const counts = new Map<string, number>();
+	return lines.map((line) => {
+		const count = counts.get(line) ?? 0;
+		counts.set(line, count + 1);
+		return { key: `${line}:${count}`, line };
+	});
+}
 
 export type { ChatSession } from "@/components/chat/chat-page-utils";
 
@@ -309,6 +322,28 @@ function ChatPageImpl({
 		prepareRuntimeConfiguration,
 		refreshSessionState,
 	});
+	const {
+		commandSuggestions,
+		loadCommands,
+		compact,
+		retryState,
+		abortRetry,
+		extensionDialog,
+		respondToExtensionDialog,
+		statusText: piStatusText,
+		widgets: extensionWidgets,
+		extensionNotifications,
+		dismissExtensionNotification,
+	} = usePiSessionFeatures({
+		client,
+		active,
+		onSetEditorText: setDraft,
+		onRefreshSessionState: refreshSessionState,
+	});
+	const composerSuggestions = useMemo(
+		() => [...PI_SESSION_SUGGESTIONS, ...commandSuggestions],
+		[commandSuggestions],
+	);
 
 	const historySubmissionBlocked = shouldDeferSubmissionUntilHistoryReady(
 		session.sessionPath,
@@ -324,6 +359,18 @@ function ChatPageImpl({
 	);
 	const handleComposerSubmit = useCallback(
 		(submission: ChatSubmission) => {
+			const command = submission.text.trim();
+			if (command === "/compact" || command.startsWith("/compact ")) {
+				if (running) {
+					toast.info("当前回复完成后再压缩上下文");
+					return;
+				}
+				const customInstructions = command.slice("/compact".length).trim();
+				clearDraft();
+				setComposerImages([]);
+				void compact(customInstructions || undefined);
+				return;
+			}
 			if (!historySubmissionBlocked) {
 				handleSubmit(submission);
 				setComposerImages([]);
@@ -342,9 +389,11 @@ function ChatPageImpl({
 		},
 		[
 			clearDraft,
+			compact,
 			handleSubmit,
 			historySubmissionBlocked,
 			persistDeferredHistorySubmissions,
+			running,
 		],
 	);
 
@@ -558,12 +607,28 @@ function ChatPageImpl({
 					}}
 				>
 					<ConversationColumn className="relative">
+						{extensionWidgets
+							.filter((widget) => widget.placement === "aboveEditor")
+							.map((widget) => (
+								<div
+									key={widget.key}
+									className="mb-2 rounded-lg border border-border/70 bg-muted/35 px-3 py-2 font-mono text-[11px] leading-5 text-muted-foreground"
+								>
+									{keyedWidgetLines(widget.lines).map(({ key, line }) => (
+										<div key={`${widget.key}:${key}`}>{line}</div>
+									))}
+								</div>
+							))}
 						<ChatPendingQueue
 							items={pendingUsers}
 							onEdit={(item) => void handleEditQueued(item.clientMessageId)}
 							onSendNow={(item) =>
 								void handleSendQueuedNow(item.clientMessageId)
 							}
+						/>
+						<PiExtensionNotifications
+							notifications={extensionNotifications}
+							onDismiss={dismissExtensionNotification}
 						/>
 						<ChatComposer
 							value={draft}
@@ -592,8 +657,16 @@ function ChatPageImpl({
 							onStop={handleStop}
 							pendingSteering={pendingSteering}
 							pendingFollowUps={pendingFollowUps}
-							statusText={historyProgress}
+							statusText={[historyProgress, piStatusText]
+								.filter(Boolean)
+								.join(" · ")}
+							retrying={retryState?.kind === "agent"}
+							onAbortRetry={() => void abortRetry()}
 							contextUsage={sessionState}
+							suggestions={composerSuggestions}
+							onSuggestionTrigger={(trigger) => {
+								if (trigger === "/") void loadCommands();
+							}}
 							models={modelOptions}
 							selectedModel={selectedModel}
 							modelLoading={modelLoadState === "loading"}
@@ -614,9 +687,25 @@ function ChatPageImpl({
 							onThinkingMenuOpen={() => void loadThinkingLevels()}
 							onThinkingChange={handleThinkingChange}
 						/>
+						{extensionWidgets
+							.filter((widget) => widget.placement === "belowEditor")
+							.map((widget) => (
+								<div
+									key={widget.key}
+									className="mt-2 rounded-lg border border-border/70 bg-muted/35 px-3 py-2 font-mono text-[11px] leading-5 text-muted-foreground"
+								>
+									{keyedWidgetLines(widget.lines).map(({ key, line }) => (
+										<div key={`${widget.key}:${key}`}>{line}</div>
+									))}
+								</div>
+							))}
 					</ConversationColumn>
 				</div>
 			</div>
+			<PiExtensionUiDialog
+				request={extensionDialog}
+				onRespond={(response) => void respondToExtensionDialog(response)}
+			/>
 		</div>
 	);
 }

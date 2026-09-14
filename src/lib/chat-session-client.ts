@@ -7,6 +7,8 @@ import {
 	listenRuntimeEvents,
 	requestPiRpc,
 	type PiAgentState,
+	type PiCommand,
+	type PiCompactionResult,
 	type PiModel,
 	type PiModelCycleResult,
 	type PiSessionEntries,
@@ -15,6 +17,9 @@ import {
 	type PiThinkingLevel,
 	type PiloRuntimeEvent,
 } from "@/lib/pi-runtime";
+
+const DEFAULT_PI_RPC_TIMEOUT_MS = 10_000;
+const COMPACTION_PI_RPC_TIMEOUT_MS = 120_000;
 
 export type ChatSessionRuntimeState = {
 	projectId: string;
@@ -40,8 +45,10 @@ export function createChatSessionClient(
 	let resumePath = sessionPath;
 	let pendingPrepare: Promise<PiSessionSnapshot> | undefined;
 	let pendingEnsure: Promise<PiSessionSnapshot> | undefined;
-	const rpc = <T>(command: Record<string, unknown>) =>
-		requestPiRpc<T>(command, 10_000, sessionKey);
+	const rpc = <T>(
+		command: Record<string, unknown>,
+		timeoutMs = DEFAULT_PI_RPC_TIMEOUT_MS,
+	) => requestPiRpc<T>(command, timeoutMs, sessionKey);
 	const getPiAgentState = async () => {
 		const state = await rpc<PiAgentState>({ type: "get_state" });
 		if (state.sessionFile) resumePath = state.sessionFile;
@@ -86,6 +93,8 @@ export function createChatSessionClient(
 		getPiMessages: () => rpc<{ messages: unknown[] }>({ type: "get_messages" }),
 		getPiEntries: () => rpc<PiSessionEntries>({ type: "get_entries" }),
 		getPiSessionStats: () => rpc<PiSessionStats>({ type: "get_session_stats" }),
+		getPiCommands: () =>
+			rpc<{ commands: PiCommand[] }>({ type: "get_commands" }),
 		getAvailablePiModels: () =>
 			rpc<{ models: PiModel[] }>({ type: "get_available_models" }),
 		getAvailablePiThinkingLevels: () =>
@@ -143,6 +152,25 @@ export function createChatSessionClient(
 				...(images.length > 0 ? { images: toPiImageContents(images) } : {}),
 			}),
 		abortPiReply: () => rpc<void>({ type: "abort" }),
+		compactPiSession: (customInstructions?: string) =>
+			rpc<PiCompactionResult>(
+				{
+					type: "compact",
+					...(customInstructions?.trim()
+						? { customInstructions: customInstructions.trim() }
+						: {}),
+				},
+				COMPACTION_PI_RPC_TIMEOUT_MS,
+			),
+		abortPiRetry: () => rpc<void>({ type: "abort_retry" }),
+		respondToExtensionUi: (
+			id: string,
+			response: { value?: string; confirmed?: boolean; cancelled?: boolean },
+		) =>
+			invoke<void>("chat_session_send_rpc", {
+				sessionKey,
+				command: { type: "extension_ui_response", id, ...response },
+			}),
 		clearPiQueue: () => rpc<void>({ type: "clear_queue" }),
 	};
 }

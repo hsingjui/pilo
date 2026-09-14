@@ -34,6 +34,26 @@ pub enum RuntimeErrorCode {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionUiRequestPayload {
+    pub id: String,
+    pub method: String,
+    pub title: Option<String>,
+    pub message: Option<String>,
+    pub options: Vec<String>,
+    pub placeholder: Option<String>,
+    pub prefill: Option<String>,
+    pub timeout: Option<u64>,
+    pub notify_type: Option<String>,
+    pub status_key: Option<String>,
+    pub status_text: Option<String>,
+    pub widget_key: Option<String>,
+    pub widget_lines: Option<Vec<String>>,
+    pub widget_placement: Option<String>,
+    pub text: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RuntimeEvent {
     ProcessState {
@@ -109,6 +129,60 @@ pub enum RuntimeEvent {
         steering: Vec<String>,
         #[serde(rename = "followUp")]
         follow_up: Vec<String>,
+    },
+    CompactionStart {
+        generation: u64,
+        reason: String,
+    },
+    CompactionEnd {
+        generation: u64,
+        reason: String,
+        result: Option<Value>,
+        aborted: bool,
+        #[serde(rename = "willRetry")]
+        will_retry: bool,
+        #[serde(rename = "errorMessage")]
+        error_message: Option<String>,
+    },
+    AutoRetryStart {
+        generation: u64,
+        attempt: u64,
+        #[serde(rename = "maxAttempts")]
+        max_attempts: u64,
+        #[serde(rename = "delayMs")]
+        delay_ms: u64,
+        #[serde(rename = "errorMessage")]
+        error_message: String,
+    },
+    AutoRetryEnd {
+        generation: u64,
+        success: bool,
+        attempt: u64,
+        #[serde(rename = "finalError")]
+        final_error: Option<String>,
+    },
+    SummarizationRetryScheduled {
+        generation: u64,
+        attempt: u64,
+        #[serde(rename = "maxAttempts")]
+        max_attempts: u64,
+        #[serde(rename = "delayMs")]
+        delay_ms: u64,
+        #[serde(rename = "errorMessage")]
+        error_message: String,
+    },
+    SummarizationRetryAttemptStart {
+        generation: u64,
+        source: String,
+        reason: Option<String>,
+    },
+    SummarizationRetryFinished {
+        generation: u64,
+    },
+    ExtensionUiRequest {
+        generation: u64,
+        #[serde(flatten)]
+        request: Box<ExtensionUiRequestPayload>,
     },
     RuntimeLog {
         generation: u64,

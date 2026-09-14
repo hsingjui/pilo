@@ -27,7 +27,7 @@ export const CHAT_COMPOSER_SEND_BUTTON_CLASS_NAME = cn(
 );
 
 export const DEFAULT_CHAT_COMPOSER_PLACEHOLDER =
-	"按 @ 提及文件，/ 使用命令，$ 使用技能";
+	"按 @ 提及文件，/ 使用 Pi 命令";
 
 export function ChatComposerRoot({
 	children,

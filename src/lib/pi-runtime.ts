@@ -107,6 +107,27 @@ export type PiAgentState = {
 	sessionName?: string;
 	messageCount: number;
 	pendingMessageCount: number;
+	autoCompactionEnabled?: boolean;
+};
+
+export type PiCommand = {
+	name: string;
+	description?: string;
+	source: "extension" | "prompt" | "skill";
+	sourceInfo: {
+		path: string;
+		source: string;
+		scope: "user" | "project" | "temporary";
+		origin: "package" | "top-level";
+		baseDir?: string;
+	};
+};
+
+export type PiCompactionResult = {
+	summary: string;
+	firstKeptEntryId: string;
+	tokensBefore: number;
+	estimatedTokensAfter: number;
 };
 
 export type PiSessionEntry = {
@@ -207,6 +228,65 @@ export type PiloRuntimeEvent = {
 			generation: number;
 			steering: string[];
 			followUp: string[];
+	  }
+	| { type: "compaction_start"; generation: number; reason: string }
+	| {
+			type: "compaction_end";
+			generation: number;
+			reason: string;
+			result: PiCompactionResult | null;
+			aborted: boolean;
+			willRetry: boolean;
+			errorMessage: string | null;
+	  }
+	| {
+			type: "auto_retry_start";
+			generation: number;
+			attempt: number;
+			maxAttempts: number;
+			delayMs: number;
+			errorMessage: string;
+	  }
+	| {
+			type: "auto_retry_end";
+			generation: number;
+			success: boolean;
+			attempt: number;
+			finalError: string | null;
+	  }
+	| {
+			type: "summarization_retry_scheduled";
+			generation: number;
+			attempt: number;
+			maxAttempts: number;
+			delayMs: number;
+			errorMessage: string;
+	  }
+	| {
+			type: "summarization_retry_attempt_start";
+			generation: number;
+			source: string;
+			reason: string | null;
+	  }
+	| { type: "summarization_retry_finished"; generation: number }
+	| {
+			type: "extension_ui_request";
+			generation: number;
+			id: string;
+			method: string;
+			title: string | null;
+			message: string | null;
+			options: string[];
+			placeholder: string | null;
+			prefill: string | null;
+			timeout: number | null;
+			notifyType: "info" | "warning" | "error" | null;
+			statusKey: string | null;
+			statusText: string | null;
+			widgetKey: string | null;
+			widgetLines: string[] | null;
+			widgetPlacement: string | null;
+			text: string | null;
 	  }
 	| {
 			type: "runtime_log";

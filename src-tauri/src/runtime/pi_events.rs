@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::events::{RuntimeErrorCode, RuntimeEvent};
+use super::events::{ExtensionUiRequestPayload, RuntimeErrorCode, RuntimeEvent};
 
 #[derive(Default)]
 pub struct PiEventAdapter {
@@ -19,6 +19,20 @@ impl PiEventAdapter {
             Some("tool_execution_update") => adapt_tool_execution_update(generation, message),
             Some("tool_execution_end") => adapt_tool_execution_end(generation, message),
             Some("queue_update") => adapt_queue_update(generation, message),
+            Some("compaction_start") => adapt_compaction_start(generation, message),
+            Some("compaction_end") => adapt_compaction_end(generation, message),
+            Some("auto_retry_start") => adapt_auto_retry_start(generation, message),
+            Some("auto_retry_end") => adapt_auto_retry_end(generation, message),
+            Some("summarization_retry_scheduled") => {
+                adapt_summarization_retry_scheduled(generation, message)
+            }
+            Some("summarization_retry_attempt_start") => {
+                adapt_summarization_retry_attempt_start(generation, message)
+            }
+            Some("summarization_retry_finished") => {
+                vec![RuntimeEvent::SummarizationRetryFinished { generation }]
+            }
+            Some("extension_ui_request") => adapt_extension_ui_request(generation, message),
             Some("agent_end") => {
                 self.remember_agent_end(message);
                 Vec::new()
@@ -132,6 +146,126 @@ fn adapt_queue_update(generation: u64, message: &Value) -> Vec<RuntimeEvent> {
         steering: string_array(message.get("steering")),
         follow_up: string_array(message.get("followUp")),
     }]
+}
+
+fn adapt_compaction_start(generation: u64, message: &Value) -> Vec<RuntimeEvent> {
+    vec![RuntimeEvent::CompactionStart {
+        generation,
+        reason: string_field(message, "reason").unwrap_or_else(|| "manual".to_owned()),
+    }]
+}
+
+fn adapt_compaction_end(generation: u64, message: &Value) -> Vec<RuntimeEvent> {
+    vec![RuntimeEvent::CompactionEnd {
+        generation,
+        reason: string_field(message, "reason").unwrap_or_else(|| "manual".to_owned()),
+        result: message
+            .get("result")
+            .filter(|value| !value.is_null())
+            .cloned(),
+        aborted: message
+            .get("aborted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        will_retry: message
+            .get("willRetry")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        error_message: string_field(message, "errorMessage"),
+    }]
+}
+
+fn adapt_auto_retry_start(generation: u64, message: &Value) -> Vec<RuntimeEvent> {
+    vec![RuntimeEvent::AutoRetryStart {
+        generation,
+        attempt: u64_field(message, "attempt"),
+        max_attempts: u64_field(message, "maxAttempts"),
+        delay_ms: u64_field(message, "delayMs"),
+        error_message: string_field(message, "errorMessage").unwrap_or_default(),
+    }]
+}
+
+fn adapt_auto_retry_end(generation: u64, message: &Value) -> Vec<RuntimeEvent> {
+    vec![RuntimeEvent::AutoRetryEnd {
+        generation,
+        success: message
+            .get("success")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        attempt: u64_field(message, "attempt"),
+        final_error: string_field(message, "finalError"),
+    }]
+}
+
+fn adapt_summarization_retry_scheduled(generation: u64, message: &Value) -> Vec<RuntimeEvent> {
+    vec![RuntimeEvent::SummarizationRetryScheduled {
+        generation,
+        attempt: u64_field(message, "attempt"),
+        max_attempts: u64_field(message, "maxAttempts"),
+        delay_ms: u64_field(message, "delayMs"),
+        error_message: string_field(message, "errorMessage").unwrap_or_default(),
+    }]
+}
+
+fn adapt_summarization_retry_attempt_start(generation: u64, message: &Value) -> Vec<RuntimeEvent> {
+    vec![RuntimeEvent::SummarizationRetryAttemptStart {
+        generation,
+        source: string_field(message, "source").unwrap_or_else(|| "compaction".to_owned()),
+        reason: string_field(message, "reason"),
+    }]
+}
+
+fn adapt_extension_ui_request(generation: u64, message: &Value) -> Vec<RuntimeEvent> {
+    let Some(id) = string_field(message, "id") else {
+        return Vec::new();
+    };
+    let Some(method) = string_field(message, "method") else {
+        return Vec::new();
+    };
+    vec![RuntimeEvent::ExtensionUiRequest {
+        generation,
+        request: Box::new(ExtensionUiRequestPayload {
+            id,
+            method,
+            title: string_field(message, "title"),
+            message: string_field(message, "message"),
+            options: string_array(message.get("options")),
+            placeholder: string_field(message, "placeholder"),
+            prefill: string_field(message, "prefill"),
+            timeout: optional_u64_field(message, "timeout"),
+            notify_type: string_field(message, "notifyType"),
+            status_key: string_field(message, "statusKey"),
+            status_text: string_field(message, "statusText"),
+            widget_key: string_field(message, "widgetKey"),
+            widget_lines: message
+                .get("widgetLines")
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                }),
+            widget_placement: string_field(message, "widgetPlacement"),
+            text: string_field(message, "text"),
+        }),
+    }]
+}
+
+fn string_field(message: &Value, field: &str) -> Option<String> {
+    message
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
+fn optional_u64_field(message: &Value, field: &str) -> Option<u64> {
+    message.get(field).and_then(Value::as_u64)
+}
+
+fn u64_field(message: &Value, field: &str) -> u64 {
+    optional_u64_field(message, field).unwrap_or_default()
 }
 
 fn string_array(value: Option<&Value>) -> Vec<String> {
@@ -635,6 +769,118 @@ mod tests {
                     })
                 )
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn maps_compaction_and_retry_events() {
+        let mut adapter = PiEventAdapter::default();
+        assert_eq!(
+            adapter.adapt(
+                9,
+                &serde_json::json!({
+                    "type": "compaction_start",
+                    "reason": "threshold"
+                })
+            ),
+            [RuntimeEvent::CompactionStart {
+                generation: 9,
+                reason: "threshold".to_owned(),
+            }]
+        );
+        assert_eq!(
+            adapter.adapt(
+                9,
+                &serde_json::json!({
+                    "type": "auto_retry_start",
+                    "attempt": 2,
+                    "maxAttempts": 3,
+                    "delayMs": 4000,
+                    "errorMessage": "overloaded"
+                })
+            ),
+            [RuntimeEvent::AutoRetryStart {
+                generation: 9,
+                attempt: 2,
+                max_attempts: 3,
+                delay_ms: 4000,
+                error_message: "overloaded".to_owned(),
+            }]
+        );
+    }
+
+    #[test]
+    fn maps_extension_ui_request_fields() {
+        let mut adapter = PiEventAdapter::default();
+        assert_eq!(
+            adapter.adapt(
+                11,
+                &serde_json::json!({
+                    "type": "extension_ui_request",
+                    "id": "ui-1",
+                    "method": "select",
+                    "title": "Choose",
+                    "options": ["A", "B"],
+                    "timeout": 5000
+                })
+            ),
+            [RuntimeEvent::ExtensionUiRequest {
+                generation: 11,
+                request: Box::new(ExtensionUiRequestPayload {
+                    id: "ui-1".to_owned(),
+                    method: "select".to_owned(),
+                    title: Some("Choose".to_owned()),
+                    message: None,
+                    options: vec!["A".to_owned(), "B".to_owned()],
+                    placeholder: None,
+                    prefill: None,
+                    timeout: Some(5000),
+                    notify_type: None,
+                    status_key: None,
+                    status_text: None,
+                    widget_key: None,
+                    widget_lines: None,
+                    widget_placement: None,
+                    text: None,
+                }),
+            }]
+        );
+    }
+
+    #[test]
+    fn maps_extension_notify_request() {
+        let mut adapter = PiEventAdapter::default();
+        assert_eq!(
+            adapter.adapt(
+                12,
+                &serde_json::json!({
+                    "type": "extension_ui_request",
+                    "id": "ui-notify-1",
+                    "method": "notify",
+                    "message": "Command blocked by user",
+                    "notifyType": "warning"
+                })
+            ),
+            [RuntimeEvent::ExtensionUiRequest {
+                generation: 12,
+                request: Box::new(ExtensionUiRequestPayload {
+                    id: "ui-notify-1".to_owned(),
+                    method: "notify".to_owned(),
+                    title: None,
+                    message: Some("Command blocked by user".to_owned()),
+                    options: Vec::new(),
+                    placeholder: None,
+                    prefill: None,
+                    timeout: None,
+                    notify_type: Some("warning".to_owned()),
+                    status_key: None,
+                    status_text: None,
+                    widget_key: None,
+                    widget_lines: None,
+                    widget_placement: None,
+                    text: None,
+                }),
+            }]
         );
     }
 }

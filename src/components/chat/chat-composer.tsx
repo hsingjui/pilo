@@ -1,5 +1,6 @@
 import {
 	useLayoutEffect,
+	useEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -76,6 +77,8 @@ type ChatComposerProps = {
 	pendingSteering?: number;
 	pendingFollowUps?: number;
 	statusText?: string;
+	retrying?: boolean;
+	onAbortRetry?: () => void;
 	contextUsage?: ChatSessionRuntimeState | null;
 	models?: readonly PiModel[];
 	selectedModel?: PiModel | null;
@@ -92,6 +95,7 @@ type ChatComposerProps = {
 	onThinkingMenuOpen?: () => void;
 	onThinkingChange?: (level: PiThinkingLevel | null) => void;
 	suggestions?: readonly ComposerSuggestion[];
+	onSuggestionTrigger?: (trigger: "@" | "/") => void;
 	className?: string;
 };
 
@@ -144,6 +148,8 @@ export function ChatComposer({
 	pendingSteering = 0,
 	pendingFollowUps = 0,
 	statusText = "",
+	retrying = false,
+	onAbortRetry,
 	contextUsage = null,
 	models = EMPTY_MODELS,
 	selectedModel = null,
@@ -160,6 +166,7 @@ export function ChatComposer({
 	onThinkingMenuOpen,
 	onThinkingChange,
 	suggestions = DEFAULT_SUGGESTIONS,
+	onSuggestionTrigger,
 	className,
 }: ChatComposerProps) {
 	const { sendMessageShortcut, keyboardShortcuts } = usePreferences();
@@ -195,6 +202,10 @@ export function ChatComposer({
 		() => activeSuggestionQuery(value, Math.min(caret, value.length)),
 		[value, caret],
 	);
+	const activeTrigger = activeQuery?.trigger ?? null;
+	useEffect(() => {
+		if (activeTrigger) onSuggestionTrigger?.(activeTrigger);
+	}, [activeTrigger, onSuggestionTrigger]);
 	const activeKey = activeQuery
 		? `${activeQuery.start}:${activeQuery.trigger}:${activeQuery.query}`
 		: null;
@@ -213,7 +224,9 @@ export function ChatComposer({
 			.slice(0, 9);
 	}, [activeQuery, queryMeta, suggestions]);
 	const suggestionMenuOpen = Boolean(
-		activeQuery && activeKey !== dismissedQuery,
+		activeQuery &&
+		activeKey !== dismissedQuery &&
+		(activeQuery.trigger !== "@" || filteredSuggestions.length > 0),
 	);
 	const effectiveHighlightedIndex =
 		filteredSuggestions.length > 0
@@ -554,6 +567,17 @@ export function ChatComposer({
 						<span className="hidden truncate text-[11px] tabular-nums text-muted-foreground md:inline">
 							{statusText}
 						</span>
+					) : null}
+					{retrying && onAbortRetry ? (
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							className="h-7 px-2 text-[11px] text-muted-foreground"
+							onClick={onAbortRetry}
+						>
+							停止重试
+						</Button>
 					) : null}
 
 					<ComposerContextUsage
