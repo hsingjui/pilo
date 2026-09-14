@@ -12,7 +12,10 @@ import type {
 	ChatUiState,
 	ChatUiStatePatch,
 } from "@/components/app/chat-ui-state-cache";
-import { ChatComposer } from "@/components/chat/chat-composer";
+import {
+	ChatComposer,
+	type ComposerSuggestion,
+} from "@/components/chat/chat-composer";
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import {
 	ChatConversationViewport,
@@ -20,7 +23,10 @@ import {
 } from "@/components/chat/chat-conversation-viewport";
 import { ChatPendingQueue } from "@/components/chat/chat-pending-queue";
 import { ChatRuntimeRecoveryNotice } from "@/components/chat/chat-runtime-recovery-notice";
-import { PI_SESSION_SUGGESTIONS } from "@/components/chat/chat-composer-suggestions";
+import {
+	FILE_SUGGESTION_LIMIT,
+	PI_SESSION_SUGGESTIONS,
+} from "@/components/chat/chat-composer-suggestions";
 import { PiExtensionNotifications } from "@/components/chat/pi-extension-notifications";
 import { PiExtensionUiDialog } from "@/components/chat/pi-extension-ui-dialog";
 import { SessionHeader } from "@/components/chat/chat-session-header";
@@ -40,6 +46,7 @@ import {
 	type ChatImageAttachment,
 	type ChatSubmission,
 } from "@/lib/chat-submission";
+import { searchProjectFiles } from "@/lib/files";
 import { resolveAssistantForkTarget } from "@/lib/pi-session-fork";
 import { usePreferences } from "@/lib/preferences-provider";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
@@ -57,6 +64,74 @@ function keyedWidgetLines(lines: readonly string[]) {
 export type { ChatSession } from "@/components/chat/chat-page-utils";
 
 const EMPTY_CHAT_IMAGES: readonly ChatImageAttachment[] = [];
+const FILE_SUGGESTION_DEBOUNCE_MS = 180;
+const FILE_SUGGESTION_CACHE_TTL_MS = 10_000;
+const FILE_SUGGESTION_CACHE_MAX_ENTRIES = 24;
+
+type FileSuggestionCacheEntry = {
+	expiresAt: number;
+	suggestions: ComposerSuggestion[];
+};
+
+function fileSuggestionScore(path: string, query: string) {
+	if (!query) return 1;
+	const normalizedPath = path.toLowerCase();
+	const fileName = normalizedPath.slice(normalizedPath.lastIndexOf("/") + 1);
+	const normalizedQuery = query.toLowerCase();
+	if (fileName === normalizedQuery) return 100;
+	if (fileName.startsWith(normalizedQuery)) return 80;
+	if (fileName.includes(normalizedQuery)) return 50;
+	if (normalizedPath.includes(normalizedQuery)) return 30;
+	return 0;
+}
+
+function fileSuggestionDepth(path: string) {
+	return path.split("/").filter(Boolean).length;
+}
+
+function fileMentionValue(path: string) {
+	return path.includes(" ") ? `@"${path}"` : `@${path}`;
+}
+
+function compareFileSuggestionEntries(
+	a: { path: string; score: number },
+	b: { path: string; score: number },
+) {
+	const scoreDiff = b.score - a.score;
+	if (scoreDiff !== 0) return scoreDiff;
+	const depthDiff = fileSuggestionDepth(a.path) - fileSuggestionDepth(b.path);
+	if (depthDiff !== 0) return depthDiff;
+	const lengthDiff = a.path.length - b.path.length;
+	if (lengthDiff !== 0) return lengthDiff;
+	return a.path.localeCompare(b.path);
+}
+
+function createFileSuggestions(
+	paths: readonly string[],
+	query: string,
+): ComposerSuggestion[] {
+	const ranked: Array<{ path: string; score: number }> = [];
+	for (const path of paths) {
+		const entry = { path, score: fileSuggestionScore(path, query) };
+		if (entry.score <= 0) continue;
+		const insertAt = ranked.findIndex(
+			(current) => compareFileSuggestionEntries(entry, current) < 0,
+		);
+		if (insertAt < 0) ranked.push(entry);
+		else ranked.splice(insertAt, 0, entry);
+		if (ranked.length > FILE_SUGGESTION_LIMIT) ranked.pop();
+	}
+
+	return ranked.map(({ path }) => {
+		const separator = path.lastIndexOf("/");
+		return {
+			kind: "file" as const,
+			value: fileMentionValue(path),
+			label: separator >= 0 ? path.slice(separator + 1) : path,
+			detail: separator >= 0 ? path.slice(0, separator) : undefined,
+		};
+	});
+}
 
 type ChatPageProps = {
 	session: ChatSession;
@@ -343,9 +418,94 @@ function ChatPageImpl({
 		onSetEditorText: setDraft,
 		onRefreshSessionState: refreshSessionState,
 	});
+	const [fileSuggestions, setFileSuggestions] = useState<ComposerSuggestion[]>(
+		[],
+	);
+	const fileSuggestionTimerRef = useRef<number | null>(null);
+	const fileSuggestionRequestRef = useRef(0);
+	const fileSuggestionCacheRef = useRef<Map<string, FileSuggestionCacheEntry>>(
+		new Map(),
+	);
+	const handleSuggestionTrigger = useCallback(
+		(trigger: "@" | "/" | null, query: string) => {
+			fileSuggestionRequestRef.current += 1;
+			const requestId = fileSuggestionRequestRef.current;
+			if (fileSuggestionTimerRef.current !== null) {
+				window.clearTimeout(fileSuggestionTimerRef.current);
+				fileSuggestionTimerRef.current = null;
+			}
+			if (trigger === "/") {
+				setFileSuggestions([]);
+				void loadCommands();
+				return;
+			}
+			if (trigger !== "@") {
+				setFileSuggestions([]);
+				return;
+			}
+			const normalizedQuery = query.trim();
+			if (!normalizedQuery) {
+				setFileSuggestions([]);
+				return;
+			}
+
+			const cacheKey = `${session.projectRecord.id}\0${normalizedQuery.toLowerCase()}`;
+			const cached = fileSuggestionCacheRef.current.get(cacheKey);
+			if (cached && cached.expiresAt > Date.now()) {
+				fileSuggestionCacheRef.current.delete(cacheKey);
+				fileSuggestionCacheRef.current.set(cacheKey, cached);
+				setFileSuggestions(cached.suggestions);
+				return;
+			}
+			if (cached) fileSuggestionCacheRef.current.delete(cacheKey);
+
+			fileSuggestionTimerRef.current = window.setTimeout(() => {
+				fileSuggestionTimerRef.current = null;
+				void searchProjectFiles(session.projectRecord.id, normalizedQuery)
+					.then((paths) => {
+						if (fileSuggestionRequestRef.current !== requestId) return;
+						const suggestions = createFileSuggestions(paths, normalizedQuery);
+						fileSuggestionCacheRef.current.set(cacheKey, {
+							expiresAt: Date.now() + FILE_SUGGESTION_CACHE_TTL_MS,
+							suggestions,
+						});
+						while (
+							fileSuggestionCacheRef.current.size >
+							FILE_SUGGESTION_CACHE_MAX_ENTRIES
+						) {
+							const oldestKey = fileSuggestionCacheRef.current
+								.keys()
+								.next().value;
+							if (oldestKey === undefined) break;
+							fileSuggestionCacheRef.current.delete(oldestKey);
+						}
+						setFileSuggestions(suggestions);
+					})
+					.catch((error) => {
+						if (fileSuggestionRequestRef.current !== requestId) return;
+						console.warn("Failed to load file suggestions", error);
+						setFileSuggestions([]);
+					});
+			}, FILE_SUGGESTION_DEBOUNCE_MS);
+		},
+		[loadCommands, session.projectRecord.id],
+	);
+	useEffect(
+		() => () => {
+			fileSuggestionRequestRef.current += 1;
+			if (fileSuggestionTimerRef.current !== null) {
+				window.clearTimeout(fileSuggestionTimerRef.current);
+			}
+		},
+		[],
+	);
 	const composerSuggestions = useMemo(
-		() => [...PI_SESSION_SUGGESTIONS, ...commandSuggestions],
-		[commandSuggestions],
+		() => [
+			...fileSuggestions,
+			...PI_SESSION_SUGGESTIONS,
+			...commandSuggestions,
+		],
+		[commandSuggestions, fileSuggestions],
 	);
 
 	const historySubmissionBlocked = shouldDeferSubmissionUntilHistoryReady(
@@ -674,9 +834,7 @@ function ChatPageImpl({
 							onAbortRetry={() => void abortRetry()}
 							contextUsage={sessionState}
 							suggestions={composerSuggestions}
-							onSuggestionTrigger={(trigger) => {
-								if (trigger === "/") void loadCommands();
-							}}
+							onSuggestionTrigger={handleSuggestionTrigger}
 							models={modelOptions}
 							selectedModel={selectedModel}
 							modelLoading={modelLoadState === "loading"}

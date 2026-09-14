@@ -273,6 +273,9 @@ pub(crate) fn fs_search(params: FsSearchParams) -> Result<Value, String> {
             return Ok(());
         }
         for entry in std::fs::read_dir(current).map_err(|error| error.to_string())? {
+            if result.len() >= 200 {
+                break;
+            }
             let entry = entry.map_err(|error| error.to_string())?;
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -299,12 +302,11 @@ pub(crate) fn fs_search(params: FsSearchParams) -> Result<Value, String> {
         Ok(())
     }
     let root = canonical_project(&params.project)?;
+    let query = params.query.trim().to_lowercase();
+    if query.is_empty() {
+        return to_value(Vec::<String>::new());
+    }
     let mut result = Vec::new();
-    visit(
-        &root,
-        &root,
-        &params.query.trim().to_lowercase(),
-        &mut result,
-    )?;
+    visit(&root, &root, &query, &mut result)?;
     to_value(result)
 }

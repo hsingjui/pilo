@@ -52,6 +52,7 @@ import { ComposerRunConfig } from "@/components/chat/chat-composer-run-config";
 import {
 	ComposerSuggestionMenu,
 	DEFAULT_SUGGESTIONS,
+	FILE_SUGGESTION_LIMIT,
 	TRIGGER_META,
 	activeSuggestionQuery,
 	type ComposerSuggestion,
@@ -95,7 +96,7 @@ type ChatComposerProps = {
 	onThinkingMenuOpen?: () => void;
 	onThinkingChange?: (level: PiThinkingLevel | null) => void;
 	suggestions?: readonly ComposerSuggestion[];
-	onSuggestionTrigger?: (trigger: "@" | "/") => void;
+	onSuggestionTrigger?: (trigger: "@" | "/" | null, query: string) => void;
 	className?: string;
 };
 
@@ -203,9 +204,10 @@ export function ChatComposer({
 		[value, caret],
 	);
 	const activeTrigger = activeQuery?.trigger ?? null;
+	const activeSuggestionText = activeQuery?.query ?? "";
 	useEffect(() => {
-		if (activeTrigger) onSuggestionTrigger?.(activeTrigger);
-	}, [activeTrigger, onSuggestionTrigger]);
+		onSuggestionTrigger?.(activeTrigger, activeSuggestionText);
+	}, [activeSuggestionText, activeTrigger, onSuggestionTrigger]);
 	const activeKey = activeQuery
 		? `${activeQuery.start}:${activeQuery.trigger}:${activeQuery.query}`
 		: null;
@@ -213,6 +215,7 @@ export function ChatComposer({
 	const filteredSuggestions = useMemo(() => {
 		if (!activeQuery || !queryMeta) return [];
 		const query = activeQuery.query.toLowerCase();
+		const limit = activeQuery.trigger === "@" ? FILE_SUGGESTION_LIMIT : 9;
 		return suggestions
 			.filter((suggestion) => suggestion.kind === queryMeta.kind)
 			.filter((suggestion) => {
@@ -221,7 +224,7 @@ export function ChatComposer({
 					.filter(Boolean)
 					.some((part) => part!.toLowerCase().includes(query));
 			})
-			.slice(0, 9);
+			.slice(0, limit);
 	}, [activeQuery, queryMeta, suggestions]);
 	const suggestionMenuOpen = Boolean(
 		activeQuery &&

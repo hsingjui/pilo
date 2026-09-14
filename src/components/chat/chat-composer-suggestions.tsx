@@ -21,6 +21,7 @@ export type ActiveSuggestionQuery = {
 };
 
 export const DEFAULT_SUGGESTIONS: readonly ComposerSuggestion[] = [];
+export const FILE_SUGGESTION_LIMIT = 5;
 
 export const PI_SESSION_SUGGESTIONS: readonly ComposerSuggestion[] = [
 	{
