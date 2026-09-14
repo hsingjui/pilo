@@ -48,7 +48,7 @@ import type {
 	ChatSubmission,
 } from "@/lib/chat-submission";
 import { CONNECTIONS_CHANGED_EVENT } from "@/lib/connection-events";
-import { listConnectionCatalog } from "@/lib/connections";
+import { listConnectionCatalog, removeWslConnection } from "@/lib/connections";
 import {
 	listenForDesktopNotificationActions,
 	type DesktopNotificationSessionTarget,
@@ -56,6 +56,7 @@ import {
 import {
 	HOME_CONNECTIONS_CHANGED_EVENT,
 	listHomeConnectionIds,
+	setConnectionShownInHome,
 } from "@/lib/home-connections";
 import {
 	hydrateProjectPiModels,
@@ -70,10 +71,12 @@ import {
 	listProjects,
 	notifyProjectsChanged,
 	pickLocalProjectDirectory,
+	removeProject,
 	touchProject,
 	PROJECTS_CHANGED_EVENT,
 	type Project,
 } from "@/lib/projects";
+import { removeSshConnection } from "@/lib/ssh-connections";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { TooltipProvider } from "@/ui";
 
@@ -313,6 +316,7 @@ function App() {
 	const {
 		indexedSessions,
 		refreshProjectSessions,
+		refreshingProjectIds,
 		sidebarSessions: indexedSidebarSessions,
 		updateSession: updateIndexedSession,
 		removeSession: removeIndexedSession,
@@ -649,6 +653,88 @@ function App() {
 		[connectionCatalog, projects],
 	);
 
+	const handleDeleteProject = useCallback(
+		async (projectId: string) => {
+			const project = projects.find((candidate) => candidate.id === projectId);
+			if (!project) return;
+			try {
+				const next = await removeProject(projectId);
+				setProjects(next);
+				setOpenedChats((current) =>
+					current.filter(
+						(entry) => entry.session.projectRecord.id !== projectId,
+					),
+				);
+				if (draftProjectId === projectId) {
+					setDraftProjectId(next[0]?.id ?? null);
+					setSelectedSessionId(null);
+					setDraftSessionStarted(false);
+					setDraftSessionPrompt(null);
+					setDraftSessionImages([]);
+					setDraftSessionModel(null);
+					setDraftSessionThinkingLevel(null);
+				}
+				notifyProjectsChanged();
+				toast.success(`已从 Pilo 移除 ${project.name}`, {
+					description: "实际项目文件未删除",
+				});
+			} catch (error) {
+				toast.error("删除项目记录失败", { description: String(error) });
+			}
+		},
+		[draftProjectId, projects],
+	);
+
+	const handleDeleteConnection = useCallback(
+		async (connectionId: string) => {
+			if (connectionId === "local") return;
+			const connection =
+				connectionCatalog.find((candidate) => candidate.id === connectionId) ??
+				projects.find((project) => project.connection.id === connectionId)
+					?.connection;
+			if (!connection) return;
+			const affectedProjectIds = new Set(
+				projects
+					.filter((project) => project.connection.id === connectionId)
+					.map((project) => project.id),
+			);
+			try {
+				await Promise.all(
+					[...affectedProjectIds].map((projectId) => removeProject(projectId)),
+				);
+				if (connection.kind.type === "wsl") {
+					await removeWslConnection(connectionId);
+				} else if (connection.kind.type === "ssh") {
+					await removeSshConnection(connectionId);
+				}
+				const nextProjects = await listProjects();
+				setConnectionShownInHome(connectionId, false);
+				setProjects(nextProjects);
+				setOpenedChats((current) =>
+					current.filter(
+						(entry) => !affectedProjectIds.has(entry.session.projectRecord.id),
+					),
+				);
+				if (draftProjectId && affectedProjectIds.has(draftProjectId)) {
+					setDraftProjectId(nextProjects[0]?.id ?? null);
+					setSelectedSessionId(null);
+					setDraftSessionStarted(false);
+					setDraftSessionPrompt(null);
+					setDraftSessionImages([]);
+					setDraftSessionModel(null);
+					setDraftSessionThinkingLevel(null);
+				}
+				notifyProjectsChanged();
+				toast.success(`已从 Pilo 删除 ${connectionLabel(connection)}`, {
+					description: "关联项目记录已移除，实际文件未删除",
+				});
+			} catch (error) {
+				toast.error("删除连接记录失败", { description: String(error) });
+			}
+		},
+		[connectionCatalog, draftProjectId, projects],
+	);
+
 	const updateSession = async (
 		sessionId: string,
 		update: { title?: string },
@@ -699,14 +785,19 @@ function App() {
 					onDeleteSession={(sessionId) => {
 						void deleteSession(sessionId);
 					}}
+					onDeleteProject={(projectId) => void handleDeleteProject(projectId)}
+					onDeleteConnection={(connectionId) =>
+						void handleDeleteConnection(connectionId)
+					}
 					onNewChat={() => startNewChat()}
 					onNewChatInProject={(projectId) => startNewChat(projectId)}
 					onAddProject={(connectionId) => void handleAddProject(connectionId)}
 					onRefreshProjectSessions={(projectId) => {
-						void refreshProjectSessions(projectId).catch((error) =>
+						void refreshProjectSessions(projectId, true).catch((error) =>
 							console.error("Failed to refresh sessions", error),
 						);
 					}}
+					refreshingProjectIds={refreshingProjectIds}
 					footer={<SidebarFooter />}
 				/>
 				<main className="relative flex min-w-0 flex-1 flex-col">

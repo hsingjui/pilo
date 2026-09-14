@@ -36,6 +36,7 @@ const DEFAULT_SIDEBAR_WIDTH = 292;
 
 /** 侧栏宽度持久化 key。 */
 const SIDEBAR_WIDTH_STORAGE_KEY = "pilo.sidebarWidth";
+const EMPTY_REFRESHING_PROJECT_IDS: ReadonlySet<string> = new Set();
 
 const VirtualSessionRows = lazy(() =>
 	import("./virtual-session-rows").then((module) => ({
@@ -52,10 +53,13 @@ export function AppSidebar({
 	onUpdateSession,
 	onDeleteSession,
 	onRefreshProjectSessions,
+	refreshingProjectIds = EMPTY_REFRESHING_PROJECT_IDS,
 	selectedSessionId,
 	onSelectSession,
 	onNewChat,
 	onNewChatInProject,
+	onDeleteProject,
+	onDeleteConnection,
 	onAddProject,
 	footer,
 }: AppSidebarProps) {
@@ -344,6 +348,7 @@ export function AppSidebar({
 										collapsed={envCollapsed}
 										onToggle={() => toggleSection(`env:${env.id}`)}
 										onAddProject={onAddProject}
+										onDeleteConnection={onDeleteConnection}
 									/>
 									{!envCollapsed &&
 										envProjects.map((project) => {
@@ -360,6 +365,7 @@ export function AppSidebar({
 														project={project}
 														env={env}
 														collapsed={projectCollapsed}
+														refreshing={refreshingProjectIds.has(project.id)}
 														onToggle={() => {
 															const key = `ws:${project.id}`;
 															toggleSection(key);
@@ -367,6 +373,7 @@ export function AppSidebar({
 																onRefreshProjectSessions?.(project.id);
 														}}
 														onNewChat={onNewChatInProject}
+														onDelete={onDeleteProject}
 														onRefreshSessions={
 															onRefreshProjectSessions
 																? () => onRefreshProjectSessions(project.id)

@@ -38,47 +38,79 @@ function sameSessionIndexEntry(a: SessionIndexEntry, b: SessionIndexEntry) {
 	);
 }
 
+function mergeProjectSessions(
+	current: SessionIndexEntry[],
+	projectId: string,
+	sessions: SessionIndexEntry[],
+) {
+	const previousByPath = new Map(
+		current
+			.filter((session) => session.projectId === projectId)
+			.map((session) => [session.sessionPath, session] as const),
+	);
+	const nextProjectSessions = sessions.map((session) => {
+		const previous = previousByPath.get(session.sessionPath);
+		return previous && sameSessionIndexEntry(previous, session)
+			? previous
+			: session;
+	});
+	const next = [
+		...current.filter((session) => session.projectId !== projectId),
+		...nextProjectSessions,
+	];
+	if (
+		next.length === current.length &&
+		next.every((session, index) => session === current[index])
+	) {
+		return current;
+	}
+	return next;
+}
+
 export function useAppSessionIndex(activeProjectId: string | null) {
 	const [indexedSessions, setIndexedSessions] = useState<SessionIndexEntry[]>(
 		[],
 	);
+	const [refreshingProjectIds, setRefreshingProjectIds] = useState<
+		ReadonlySet<string>
+	>(() => new Set());
 
 	const replaceProjectSessions = useCallback(
 		(projectId: string, sessions: SessionIndexEntry[]) => {
-			setIndexedSessions((current) => {
-				const previousByPath = new Map(
-					current
-						.filter((session) => session.projectId === projectId)
-						.map((session) => [session.sessionPath, session] as const),
-				);
-				const nextProjectSessions = sessions.map((session) => {
-					const previous = previousByPath.get(session.sessionPath);
-					return previous && sameSessionIndexEntry(previous, session)
-						? previous
-						: session;
-				});
-				const next = [
-					...current.filter((session) => session.projectId !== projectId),
-					...nextProjectSessions,
-				];
-				if (
-					next.length === current.length &&
-					next.every((session, index) => session === current[index])
-				) {
-					return current;
-				}
-				return next;
-			});
+			setIndexedSessions((current) =>
+				mergeProjectSessions(current, projectId, sessions),
+			);
 		},
 		[],
 	);
 
 	const refreshProjectSessions = useCallback(
-		async (projectId: string) => {
-			const result = await reconcileSessions(projectId);
-			replaceProjectSessions(projectId, result.sessions);
+		async (projectId: string, showProgress = false) => {
+			if (showProgress) {
+				setRefreshingProjectIds((current) => {
+					if (current.has(projectId)) return current;
+					const next = new Set(current);
+					next.add(projectId);
+					return next;
+				});
+			}
+			try {
+				const result = await reconcileSessions(projectId);
+				setIndexedSessions((current) =>
+					mergeProjectSessions(current, projectId, result.sessions),
+				);
+			} finally {
+				if (showProgress) {
+					setRefreshingProjectIds((current) => {
+						if (!current.has(projectId)) return current;
+						const next = new Set(current);
+						next.delete(projectId);
+						return next;
+					});
+				}
+			}
 		},
-		[replaceProjectSessions],
+		[],
 	);
 
 	useEffect(() => {
@@ -228,6 +260,7 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 	return {
 		indexedSessions,
 		refreshProjectSessions,
+		refreshingProjectIds,
 		sidebarSessions,
 		updateSession,
 		removeSession,

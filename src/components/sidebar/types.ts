@@ -30,10 +30,13 @@ export type AppSidebarProps = {
 	onUpdateSession?: (sessionId: string, update: { title?: string }) => void;
 	onDeleteSession?: (sessionId: string) => void;
 	onRefreshProjectSessions?: (projectId: string) => void;
+	refreshingProjectIds?: ReadonlySet<string>;
 	selectedSessionId?: string | null;
 	onSelectSession?: (sessionId: string) => void;
 	onNewChat?: () => void;
 	onNewChatInProject?: (projectId: string) => void;
+	onDeleteProject?: (projectId: string) => void;
+	onDeleteConnection?: (connectionId: string) => void;
 	onAddProject?: (connectionId?: string) => void;
 	/** 底部操作区（设置 / 帮助 / 主题等），由 App 组合。 */
 	footer?: ReactNode;
