@@ -1071,6 +1071,36 @@ function App() {
 															: current,
 													);
 												}}
+												onForkSessionCreated={({ sessionId, sessionPath }) => {
+													const project = entry.session.projectRecord;
+													const forkedSession: ChatSession = {
+														id: sessionId,
+														title: entry.session.title || "新对话",
+														projectRecord: project,
+														sessionPath,
+													};
+													setOpenedChats((current) =>
+														trimOpenedChats(
+															touchOpenedChat(current, forkedSession),
+															busyChatControllersRef.current,
+														),
+													);
+													setSelectedSessionId(sessionId);
+													setDraftSessionStarted(false);
+													setDraftSessionPrompt(null);
+													setDraftSessionImages([]);
+													setDraftSessionModel(null);
+													setDraftSessionThinkingLevel(null);
+													setDraftProjectId(project.id);
+													setFocusedProjectId(project.id);
+													void refreshProjectSessions(project.id, true).catch(
+														(error) =>
+															console.error(
+																"Failed to index forked session",
+																error,
+															),
+													);
+												}}
 												onOpenChanges={
 													RIGHT_SIDEBAR_ENABLED
 														? () => rightPanelRef.current?.expand()

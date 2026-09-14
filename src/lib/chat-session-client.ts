@@ -9,6 +9,7 @@ import {
 	type PiAgentState,
 	type PiModel,
 	type PiModelCycleResult,
+	type PiSessionEntries,
 	type PiSessionSnapshot,
 	type PiSessionStats,
 	type PiThinkingLevel,
@@ -83,6 +84,7 @@ export function createChatSessionClient(
 			listenRuntimeEvents(handler, { sessionKey }),
 		getPiAgentState,
 		getPiMessages: () => rpc<{ messages: unknown[] }>({ type: "get_messages" }),
+		getPiEntries: () => rpc<PiSessionEntries>({ type: "get_entries" }),
 		getPiSessionStats: () => rpc<PiSessionStats>({ type: "get_session_stats" }),
 		getAvailablePiModels: () =>
 			rpc<{ models: PiModel[] }>({ type: "get_available_models" }),
@@ -101,6 +103,15 @@ export function createChatSessionClient(
 			rpc<void>({ type: "set_thinking_level", level }),
 		setPiSessionName: (name: string) =>
 			rpc<void>({ type: "set_session_name", name }),
+		forkPiSession: (entryId: string) =>
+			rpc<{ text: string; cancelled: boolean }>({
+				type: "fork",
+				entryId,
+			}),
+		clonePiSession: () =>
+			rpc<{ cancelled: boolean }>({
+				type: "clone",
+			}),
 		sendPiPrompt: (
 			message: string,
 			images: readonly ChatImageAttachment[] = [],

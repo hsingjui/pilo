@@ -109,6 +109,20 @@ export type PiAgentState = {
 	pendingMessageCount: number;
 };
 
+export type PiSessionEntry = {
+	id: string;
+	parentId: string | null;
+	type: string;
+	message?: {
+		role?: string;
+	};
+};
+
+export type PiSessionEntries = {
+	entries: PiSessionEntry[];
+	leafId: string | null;
+};
+
 export type WslDistribution = {
 	name: string;
 };

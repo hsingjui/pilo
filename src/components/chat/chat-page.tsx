@@ -28,12 +28,14 @@ import {
 import { useChatConversation } from "@/components/chat/use-chat-conversation";
 import { useChatRuntime } from "@/components/chat/use-chat-runtime";
 import { useChatSessionConfig } from "@/components/chat/use-chat-session-config";
+import { userErrorMessage } from "@/lib/app-error";
 import { createChatSessionClient } from "@/lib/chat-session-client";
 import {
 	createChatSubmission,
 	type ChatImageAttachment,
 	type ChatSubmission,
 } from "@/lib/chat-submission";
+import { resolveAssistantForkTarget } from "@/lib/pi-session-fork";
 import { usePreferences } from "@/lib/preferences-provider";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { toast } from "sonner";
@@ -59,6 +61,10 @@ type ChatPageProps = {
 	writeUiState?: (key: string, patch: ChatUiStatePatch) => void;
 	onRuntimeBusyChange?: (controllerId: string, busy: boolean) => void;
 	onOpenFile?: (path: string) => void;
+	onForkSessionCreated?: (session: {
+		sessionId: string;
+		sessionPath: string;
+	}) => void;
 	initialMessage?: string;
 	initialImages?: readonly ChatImageAttachment[];
 	loadState?: "ready" | "loading" | "error";
@@ -84,6 +90,7 @@ function ChatPageImpl({
 	writeUiState,
 	onRuntimeBusyChange,
 	onOpenFile,
+	onForkSessionCreated,
 	initialMessage,
 	initialImages = EMPTY_CHAT_IMAGES,
 	loadState = "ready",
@@ -208,6 +215,7 @@ function ChatPageImpl({
 		onHistoryMetadata: applyHistoryMetadata,
 	});
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
 	const conversationViewportRef = useRef<ChatConversationViewportHandle>(null);
 	const scrollToBottom = useCallback((smooth = true) => {
 		conversationViewportRef.current?.scrollToBottom(smooth);
@@ -339,6 +347,78 @@ function ChatPageImpl({
 			persistDeferredHistorySubmissions,
 		],
 	);
+
+	const handleForkAssistant = useCallback(
+		async (messageId: string) => {
+			if (
+				forkingMessageId ||
+				runtimeBusy ||
+				historyPending ||
+				session.temporary
+			) {
+				return;
+			}
+
+			setForkingMessageId(messageId);
+			let forkClient: ReturnType<typeof createChatSessionClient> | null = null;
+			let forkedSession: { sessionId: string; sessionPath: string } | null =
+				null;
+			try {
+				await client.ensure();
+				const [sourceState, entries] = await Promise.all([
+					client.getPiAgentState(),
+					client.getPiEntries(),
+				]);
+				if (!sourceState.sessionFile) {
+					throw new Error("当前会话尚未保存，暂时无法 Fork。");
+				}
+				const target = resolveAssistantForkTarget(messages, messageId, entries);
+				const forkRuntimeId = `fork-runtime-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+				forkClient = createChatSessionClient(
+					session.projectRecord.id,
+					forkRuntimeId,
+					sourceState.sessionFile,
+				);
+				await forkClient.ensure();
+				const result =
+					target.type === "clone"
+						? await forkClient.clonePiSession()
+						: await forkClient.forkPiSession(target.entryId);
+				if (result.cancelled) {
+					toast.info("Fork 已取消");
+					return;
+				}
+
+				const state = await forkClient.getPiAgentState();
+				if (!state.sessionId || !state.sessionFile) {
+					throw new Error("Pi 未返回 Fork 后的新会话信息。");
+				}
+				forkedSession = {
+					sessionId: state.sessionId,
+					sessionPath: state.sessionFile,
+				};
+			} catch (error) {
+				toast.error("Fork 新对话失败", {
+					description: userErrorMessage(error),
+				});
+			} finally {
+				await forkClient?.stop().catch(() => undefined);
+				setForkingMessageId(null);
+			}
+			if (forkedSession) onForkSessionCreated?.(forkedSession);
+		},
+		[
+			client,
+			forkingMessageId,
+			historyPending,
+			messages,
+			onForkSessionCreated,
+			runtimeBusy,
+			session.projectRecord.id,
+			session.temporary,
+		],
+	);
+
 	useEffect(() => {
 		if (historySubmissionBlocked || running) return;
 		const [first, ...rest] = pendingHistorySubmissionsRef.current;
@@ -457,6 +537,11 @@ function ChatPageImpl({
 					onScrollStateChange={persistScrollState}
 					runtimeScrollRef={scrollRef}
 					onOpenFile={onOpenFile}
+					onForkAssistant={!session.temporary ? handleForkAssistant : undefined}
+					forkingMessageId={forkingMessageId}
+					forkDisabled={
+						runtimeBusy || historyPending || Boolean(forkingMessageId)
+					}
 					onRetry={onRetry}
 					onRetryHistory={retryHistory}
 				/>

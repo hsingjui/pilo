@@ -45,6 +45,9 @@ type ChatConversationViewportProps = {
 	onScrollStateChange?: (state: { scrollTop: number; sticky: boolean }) => void;
 	runtimeScrollRef: MutableRefObject<HTMLDivElement | null>;
 	onOpenFile?: (path: string) => void;
+	onForkAssistant?: (messageId: string) => void;
+	forkingMessageId?: string | null;
+	forkDisabled?: boolean;
 	onRetry?: () => void;
 	onRetryHistory: () => void;
 };
@@ -54,6 +57,9 @@ type MessageRowProps = {
 	index: number;
 	messageCount: number;
 	onOpenFile?: (path: string) => void;
+	onForkAssistant?: (messageId: string) => void;
+	forkingMessageId?: string | null;
+	forkDisabled?: boolean;
 };
 
 const MessageRow = memo(function MessageRow({
@@ -61,6 +67,9 @@ const MessageRow = memo(function MessageRow({
 	index,
 	messageCount,
 	onOpenFile,
+	onForkAssistant,
+	forkingMessageId,
+	forkDisabled,
 }: MessageRowProps) {
 	return message.role === "user" ? (
 		<UserMessage message={message} />
@@ -68,6 +77,9 @@ const MessageRow = memo(function MessageRow({
 		<AssistantMessage
 			message={message}
 			onOpenFile={onOpenFile}
+			onFork={onForkAssistant}
+			forking={forkingMessageId === message.id}
+			forkDisabled={forkDisabled}
 			replyRunwayPx={
 				index === messageCount - 1 ? message.replyRunwayPx : undefined
 			}
@@ -91,6 +103,9 @@ const ChatConversationViewportImpl = forwardRef<
 		onScrollStateChange,
 		runtimeScrollRef,
 		onOpenFile,
+		onForkAssistant,
+		forkingMessageId,
+		forkDisabled,
 		onRetry,
 		onRetryHistory,
 	},
@@ -140,9 +155,18 @@ const ChatConversationViewportImpl = forwardRef<
 				index={index}
 				messageCount={messages.length}
 				onOpenFile={onOpenFile}
+				onForkAssistant={onForkAssistant}
+				forkingMessageId={forkingMessageId}
+				forkDisabled={forkDisabled}
 			/>
 		),
-		[messages.length, onOpenFile],
+		[
+			forkDisabled,
+			forkingMessageId,
+			messages.length,
+			onForkAssistant,
+			onOpenFile,
+		],
 	);
 
 	return (

@@ -1,5 +1,11 @@
 import { memo, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Copy } from "lucide-react";
+import {
+	ChevronDown,
+	ChevronRight,
+	Copy,
+	GitFork,
+	LoaderCircle,
+} from "lucide-react";
 
 import {
 	AssistantActivityView,
@@ -27,10 +33,12 @@ function MessageAction({
 	label,
 	children,
 	onClick,
+	disabled = false,
 }: {
 	label: string;
 	children: ReactNode;
 	onClick?: () => void;
+	disabled?: boolean;
 }) {
 	return (
 		<Tooltip>
@@ -41,6 +49,7 @@ function MessageAction({
 					size="icon"
 					className="size-7 rounded-md text-muted-foreground opacity-0 transition-opacity duration-100 group-hover:opacity-100 focus-visible:opacity-100"
 					aria-label={label}
+					disabled={disabled}
 					onClick={onClick}
 				>
 					{children}
@@ -241,10 +250,16 @@ export const AssistantMessage = memo(function AssistantMessage({
 	message,
 	replyRunwayPx,
 	onOpenFile,
+	onFork,
+	forking = false,
+	forkDisabled = false,
 }: {
 	message: Extract<ChatMessage, { role: "assistant" }>;
 	replyRunwayPx?: number;
 	onOpenFile?: (path: string) => void;
+	onFork?: (messageId: string) => void;
+	forking?: boolean;
+	forkDisabled?: boolean;
 }) {
 	recordChatMessageRender("assistant");
 	const { pageFontSize, showWorkDuration } = usePreferences();
@@ -277,6 +292,12 @@ export const AssistantMessage = memo(function AssistantMessage({
 		message.workDurationMs !== undefined
 			? formatWorkDuration(message.workDurationMs)
 			: "";
+	const canFork =
+		Boolean(onFork) &&
+		message.streaming !== true &&
+		message.completion !== "continued" &&
+		!message.errorMessage &&
+		message.stopReason !== "aborted";
 	const contentNodes = displaySections.hasCollapsedWork
 		? [
 				<AssistantWorkedRegion
@@ -338,7 +359,10 @@ export const AssistantMessage = memo(function AssistantMessage({
 							)}
 						</div>
 					) : !message.streaming &&
-					  (visibleAssistantText || message.time || footerDuration) ? (
+					  (visibleAssistantText ||
+							message.time ||
+							footerDuration ||
+							canFork) ? (
 						<div className="mt-0.5 flex min-h-7 flex-wrap items-center gap-2 text-[11px] text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
 							{visibleAssistantText ? (
 								<MessageAction
@@ -348,6 +372,19 @@ export const AssistantMessage = memo(function AssistantMessage({
 									}
 								>
 									<Copy className="size-3.5" />
+								</MessageAction>
+							) : null}
+							{canFork ? (
+								<MessageAction
+									label={forking ? "正在 Fork" : "Fork 新对话"}
+									disabled={forkDisabled || forking}
+									onClick={() => onFork?.(message.id)}
+								>
+									{forking ? (
+										<LoaderCircle className="size-3.5 animate-spin" />
+									) : (
+										<GitFork className="size-3.5" />
+									)}
 								</MessageAction>
 							) : null}
 							{message.time ? (
