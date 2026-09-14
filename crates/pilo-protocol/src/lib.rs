@@ -189,6 +189,13 @@ pub struct EnvironmentInfo {
     pub git_branch: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiExecutableInfo {
+    pub executable: String,
+    pub version: String,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FsEntryKind {

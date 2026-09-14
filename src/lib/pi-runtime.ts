@@ -41,6 +41,7 @@ export type ConnectionKind =
 export type Connection = {
 	id: string;
 	name: string;
+	piExecutable?: string | null;
 	kind: ConnectionKind;
 };
 

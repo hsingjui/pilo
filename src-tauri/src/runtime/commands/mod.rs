@@ -5,9 +5,10 @@ mod sessions;
 
 pub use connections::{
     connection_naming_model_get, connection_naming_model_list, connection_naming_model_set,
-    local_connection_test, ssh_connection_list, ssh_connection_remove, ssh_connection_save,
-    ssh_connection_test, wsl_connection_list, wsl_connection_remove, wsl_connection_save,
-    wsl_connection_test, wsl_list_distributions,
+    connection_pi_probe, connection_settings_update, local_connection_get, local_connection_test,
+    ssh_connection_list, ssh_connection_remove, ssh_connection_save, ssh_connection_test,
+    wsl_connection_list, wsl_connection_remove, wsl_connection_save, wsl_connection_test,
+    wsl_list_distributions,
 };
 pub use projects::{
     connection_fs_read_dir, local_pick_project_directory, parallel_agent_create,

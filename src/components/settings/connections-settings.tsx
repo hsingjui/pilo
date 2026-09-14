@@ -2,18 +2,27 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import {
+	getLocalConnection,
 	listWslConnections,
+	probeConnectionPi,
 	removeWslConnection,
 	saveWslConnection,
 	testLocalConnection,
 	testWslConnection,
+	updateConnectionSettings,
 	type WslConnectionInfo,
 } from "@/lib/connections";
 import {
 	listHomeConnectionIds,
 	setConnectionShownInHome,
 } from "@/lib/home-connections";
-import { listProjects, localConnection, wslConnection } from "@/lib/projects";
+import type { Connection } from "@/lib/pi-runtime";
+import {
+	connectionLabel,
+	listProjects,
+	localConnection,
+	wslConnection,
+} from "@/lib/projects";
 import {
 	listSshConnections,
 	removeSshConnection,
@@ -30,14 +39,18 @@ import {
 } from "./connection-form";
 import {
 	ConnectionRow,
+	ConnectionSettingsDialog,
 	ConnectionsHelpSection,
 	ConnectionsSection,
 	WslDistributionDialog,
 	sshConnectionDescription,
+	type ConnectionSettingsDraft,
 } from "./connection-sections";
+import { SettingsConfirmDialog } from "./settings-confirm-dialog";
 import { SshConnectionEditor } from "./ssh-connection-editor";
 
 export function ConnectionsSettings() {
+	const [local, setLocal] = useState<Connection>(() => localConnection());
 	const [wslItems, setWslItems] = useState<WslConnectionInfo[]>([]);
 	const [sshItems, setSshItems] = useState<SshConnectionInfo[]>([]);
 	const [projectCounts, setProjectCounts] = useState<Map<string, number>>(
@@ -49,14 +62,22 @@ export function ConnectionsSettings() {
 	const [loading, setLoading] = useState(true);
 	const [busy, setBusy] = useState(false);
 	const [editing, setEditing] = useState<SshConnectionFormState | null>(null);
+	const [connectionSettings, setConnectionSettings] =
+		useState<ConnectionSettingsDraft | null>(null);
+	const [probingPi, setProbingPi] = useState(false);
 	const [wslPickerOpen, setWslPickerOpen] = useState(false);
+	const [removingConnection, setRemovingConnection] =
+		useState<Connection | null>(null);
 
 	const refresh = useCallback(async () => {
-		const [sshResult, wslResult, projectsResult] = await Promise.allSettled([
-			listSshConnections(),
-			listWslConnections(),
-			listProjects(),
-		]);
+		const [localResult, sshResult, wslResult, projectsResult] =
+			await Promise.allSettled([
+				getLocalConnection(),
+				listSshConnections(),
+				listWslConnections(),
+				listProjects(),
+			]);
+		if (localResult.status === "fulfilled") setLocal(localResult.value);
 		if (sshResult.status === "fulfilled") {
 			setSshItems(sshResult.value);
 		} else {
@@ -111,6 +132,61 @@ export function ConnectionsSettings() {
 		}
 	};
 
+	const openConnectionSettings = (connection: Connection) => {
+		setConnectionSettings({
+			connection,
+			name: connection.name,
+			piExecutable: connection.piExecutable ?? "",
+		});
+	};
+
+	const probePi = async (
+		connection: Connection,
+		executable?: string | null,
+		updateDraft = false,
+	) => {
+		setProbingPi(true);
+		try {
+			const result = await probeConnectionPi(connection.id, executable);
+			if (updateDraft) {
+				setConnectionSettings((current) =>
+					current?.connection.id === connection.id
+						? { ...current, piExecutable: result.executable }
+						: current,
+				);
+			}
+			toast.success(`${connectionLabel(connection)} 的 PI 可用`, {
+				description: [result.executable, result.version]
+					.filter(Boolean)
+					.join(" · "),
+			});
+		} catch (error) {
+			toast.error("未检测到可用 PI", { description: String(error) });
+		} finally {
+			setProbingPi(false);
+		}
+	};
+
+	const saveConnectionSettings = async () => {
+		const draft = connectionSettings;
+		if (!draft?.name.trim()) return;
+		setBusy(true);
+		try {
+			await updateConnectionSettings(
+				draft.connection.id,
+				draft.name.trim(),
+				draft.piExecutable.trim() || null,
+			);
+			setConnectionSettings(null);
+			await refresh();
+			toast.success("连接设置已保存");
+		} catch (error) {
+			toast.error("保存连接设置失败", { description: String(error) });
+		} finally {
+			setBusy(false);
+		}
+	};
+
 	const addWsl = async (distro: string) => {
 		setBusy(true);
 		try {
@@ -119,21 +195,6 @@ export function ConnectionsSettings() {
 			toast.success(`已添加 WSL · ${distro}`);
 		} catch (error) {
 			toast.error("添加 WSL 发行版失败", { description: String(error) });
-		} finally {
-			setBusy(false);
-		}
-	};
-
-	const removeWsl = async (info: WslConnectionInfo) => {
-		if (!window.confirm(`移除 WSL 连接“${info.connection.name}”？`)) return;
-		setBusy(true);
-		try {
-			await removeWslConnection(info.connection.id);
-			setConnectionShownInHome(info.connection.id, false);
-			await refresh();
-			toast.success("WSL 连接已移除");
-		} catch (error) {
-			toast.error("移除 WSL 连接失败", { description: String(error) });
 		} finally {
 			setBusy(false);
 		}
@@ -173,22 +234,29 @@ export function ConnectionsSettings() {
 		}
 	};
 
-	const removeSsh = async (info: SshConnectionInfo) => {
-		if (!window.confirm(`删除 SSH 连接“${info.connection.name}”？`)) return;
+	const removeConnection = async () => {
+		const connection = removingConnection;
+		if (!connection || connection.kind.type === "local") return;
 		setBusy(true);
 		try {
-			await removeSshConnection(info.connection.id);
-			setConnectionShownInHome(info.connection.id, false);
+			if (connection.kind.type === "wsl") {
+				await removeWslConnection(connection.id);
+			} else {
+				await removeSshConnection(connection.id);
+			}
+			setConnectionShownInHome(connection.id, false);
 			await refresh();
-			toast.success("SSH 连接已删除");
+			setRemovingConnection(null);
+			toast.success(
+				connection.kind.type === "wsl" ? "WSL 连接已移除" : "SSH 连接已删除",
+			);
 		} catch (error) {
-			toast.error("删除 SSH 连接失败", { description: String(error) });
+			toast.error("删除连接失败", { description: String(error) });
 		} finally {
 			setBusy(false);
 		}
 	};
 
-	const local = localConnection();
 	const addedDistros = new Set(
 		wslItems.flatMap((info) =>
 			info.connection.kind.type === "wsl" ? [info.connection.kind.distro] : [],
@@ -206,9 +274,13 @@ export function ConnectionsSettings() {
 					description="当前系统环境"
 					projectCount={projectCount(local.id)}
 					shownInHome={shownIds.has(local.id)}
-					busy={busy}
+					busy={busy || probingPi}
 					onToggleShown={(shown) => toggleShown(local.id, shown)}
-					onTest={() => void testConnection("Local", testLocalConnection)}
+					onTest={() =>
+						void testConnection(connectionLabel(local), testLocalConnection)
+					}
+					onProbePi={() => void probePi(local, local.piExecutable)}
+					onConfigure={() => openConnectionSettings(local)}
 				/>
 				{loading ? (
 					<div className="px-3 py-5 text-xs text-muted-foreground">
@@ -229,7 +301,7 @@ export function ConnectionsSettings() {
 										info.projectCount,
 									)}
 									shownInHome={shownIds.has(info.connection.id)}
-									busy={busy}
+									busy={busy || probingPi}
 									onToggleShown={(shown) =>
 										toggleShown(info.connection.id, shown)
 									}
@@ -238,7 +310,11 @@ export function ConnectionsSettings() {
 											testWslConnection(distro),
 										)
 									}
-									onRemove={() => void removeWsl(info)}
+									onProbePi={() =>
+										void probePi(info.connection, info.connection.piExecutable)
+									}
+									onConfigure={() => openConnectionSettings(info.connection)}
+									onRemove={() => setRemovingConnection(info.connection)}
 								/>
 							);
 						})}
@@ -253,7 +329,7 @@ export function ConnectionsSettings() {
 										info.projectCount,
 									)}
 									shownInHome={shownIds.has(info.connection.id)}
-									busy={busy}
+									busy={busy || probingPi}
 									onToggleShown={(shown) =>
 										toggleShown(info.connection.id, shown)
 									}
@@ -262,8 +338,12 @@ export function ConnectionsSettings() {
 											testSshConnection(info.connection.id),
 										)
 									}
+									onProbePi={() =>
+										void probePi(info.connection, info.connection.piExecutable)
+									}
+									onConfigure={() => openConnectionSettings(info.connection)}
 									onEdit={() => setEditing(sshConnectionFormFromInfo(info))}
-									onRemove={() => void removeSsh(info)}
+									onRemove={() => setRemovingConnection(info.connection)}
 								/>
 							) : null,
 						)}
@@ -271,6 +351,20 @@ export function ConnectionsSettings() {
 				)}
 			</ConnectionsSection>
 			<ConnectionsHelpSection />
+			<ConnectionSettingsDialog
+				draft={connectionSettings}
+				busy={busy}
+				probing={probingPi}
+				onChange={setConnectionSettings}
+				onClose={() => setConnectionSettings(null)}
+				onProbe={() => {
+					const draft = connectionSettings;
+					if (draft) {
+						void probePi(draft.connection, draft.piExecutable || null, true);
+					}
+				}}
+				onSave={() => void saveConnectionSettings()}
+			/>
 			<SshConnectionEditor
 				editing={editing}
 				busy={busy}
@@ -284,6 +378,32 @@ export function ConnectionsSettings() {
 				addedDistros={addedDistros}
 				onOpenChange={setWslPickerOpen}
 				onAdd={(distro) => void addWsl(distro)}
+			/>
+			<SettingsConfirmDialog
+				open={removingConnection !== null}
+				title="删除连接？"
+				description={
+					removingConnection ? (
+						<>
+							将从 Pilo 中删除
+							<span className="font-medium text-foreground">
+								“{connectionLabel(removingConnection)}”
+							</span>
+							。关联项目记录也会移除，但不会删除实际项目文件。
+							{removingConnection.kind.type === "ssh"
+								? " 已保存的 SSH 凭据也会一并删除。"
+								: null}
+						</>
+					) : null
+				}
+				confirmLabel="删除连接"
+				busyLabel="正在删除…"
+				busy={busy}
+				destructive
+				onOpenChange={(open) => {
+					if (!open) setRemovingConnection(null);
+				}}
+				onConfirm={() => void removeConnection()}
 			/>
 		</div>
 	);

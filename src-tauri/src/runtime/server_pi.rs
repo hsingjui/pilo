@@ -318,6 +318,7 @@ impl ServerPiSession {
                     "model": options.model,
                     "thinking": options.thinking,
                     "systemPrompt": options.system_prompt,
+                    "piExecutable": project.connection.pi_executable,
                 }),
             )
             .await

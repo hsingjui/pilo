@@ -4,12 +4,14 @@ mod runtime;
 
 use desktop_notifications::{
     initialize_macos_notification_application, send_macos_desktop_notification,
+    send_windows_desktop_notification,
 };
 use runtime::{
     PiloRuntime,
     commands::{
         chat_session_send_rpc, chat_session_start, chat_session_stop, connection_fs_read_dir,
         connection_naming_model_get, connection_naming_model_list, connection_naming_model_set,
+        connection_pi_probe, connection_settings_update, local_connection_get,
         local_connection_test, local_pick_project_directory, parallel_agent_create,
         parallel_agent_list, parallel_agent_remove, parallel_agent_send, parallel_agent_stop,
         project_add, project_discover, project_fs_mkdir, project_fs_read_dir, project_fs_read_file,
@@ -73,12 +75,16 @@ pub fn run() {
             greet,
             debug_chat_performance_log,
             send_macos_desktop_notification,
+            send_windows_desktop_notification,
             chat_session_start,
             chat_session_send_rpc,
             chat_session_stop,
             connection_naming_model_list,
             connection_naming_model_get,
             connection_naming_model_set,
+            connection_pi_probe,
+            connection_settings_update,
+            local_connection_get,
             ssh_connection_list,
             ssh_connection_save,
             ssh_connection_remove,

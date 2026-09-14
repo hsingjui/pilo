@@ -20,10 +20,7 @@ import {
 } from "@/components/chat/chat-conversation-viewport";
 import { ChatPendingQueue } from "@/components/chat/chat-pending-queue";
 import { SessionHeader } from "@/components/chat/chat-session-header";
-import {
-	formatSessionUsage,
-	type ChatSession,
-} from "@/components/chat/chat-page-utils";
+import type { ChatSession } from "@/components/chat/chat-page-utils";
 import {
 	routeInitialDeferredSubmissions,
 	shouldDeferSubmissionUntilHistoryReady,
@@ -369,8 +366,6 @@ function ChatPageImpl({
 		},
 	);
 
-	const sessionUsageText = formatSessionUsage(sessionState);
-
 	// Keep the session controller subscribed while its view is in the background.
 	if (!active) return null;
 	const viewportUiState =
@@ -440,7 +435,8 @@ function ChatPageImpl({
 							onStop={handleStop}
 							pendingSteering={pendingSteering}
 							pendingFollowUps={pendingFollowUps}
-							statusText={historyProgress || sessionUsageText}
+							statusText={historyProgress}
+							contextUsage={sessionState}
 							models={modelOptions}
 							selectedModel={selectedModel}
 							modelLoading={modelLoadState === "loading"}

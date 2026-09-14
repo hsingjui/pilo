@@ -3,7 +3,7 @@ use std::path::Path;
 #[cfg(windows)]
 use std::process::Stdio;
 
-use pilo_protocol::EnvironmentInfo;
+use pilo_protocol::{EnvironmentInfo, PiExecutableInfo};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::process::Command;
@@ -11,8 +11,17 @@ use tokio::process::Command;
 use crate::{ServerState, to_value};
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ProjectParams {
     pub(crate) project: String,
+    #[serde(default)]
+    pub(crate) pi_executable: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct PiProbeParams {
+    #[serde(default)]
+    pub(crate) executable: Option<String>,
 }
 
 pub(crate) struct ToolchainInfo {
@@ -43,6 +52,7 @@ pub(crate) async fn environment_inspect(
     .await
     .map_err(|error| format!("project probe task failed: {error}"))??;
     let toolchain = cached_toolchain(state).await?;
+    let pi = probe_pi_executable(state, params.pi_executable.as_deref()).await?;
     let git_branch = if toolchain.git_executable.is_empty() {
         None
     } else {
@@ -61,13 +71,45 @@ pub(crate) async fn environment_inspect(
         path: toolchain.path.clone(),
         home: toolchain.home.clone(),
         shell: toolchain.shell.clone(),
-        pi_executable: toolchain.pi_executable.clone(),
-        pi_version: toolchain.pi_version.clone(),
+        pi_executable: pi.executable,
+        pi_version: pi.version,
         node_executable: toolchain.node_executable.clone(),
         node_version: toolchain.node_version.clone(),
         git_executable: toolchain.git_executable.clone(),
         git_version: toolchain.git_version.clone(),
         git_branch,
+    })
+}
+
+pub(crate) async fn environment_pi_probe(
+    state: &ServerState,
+    params: PiProbeParams,
+) -> Result<Value, String> {
+    to_value(probe_pi_executable(state, params.executable.as_deref()).await?)
+}
+
+async fn probe_pi_executable(
+    state: &ServerState,
+    requested: Option<&str>,
+) -> Result<PiExecutableInfo, String> {
+    let requested = requested.map(str::trim).filter(|value| !value.is_empty());
+    if requested.is_none() {
+        let toolchain = cached_toolchain(state).await?;
+        if toolchain.pi_executable.is_empty() {
+            return Err("Pi executable 'pi' was not found in PATH".to_owned());
+        }
+        return Ok(PiExecutableInfo {
+            executable: toolchain.pi_executable.clone(),
+            version: toolchain.pi_version.clone(),
+        });
+    }
+
+    let path = cached_login_path(state).await;
+    let executable = resolve_program(&path, requested.expect("requested path checked"));
+    let version = command_text(&executable, &["--version"], None, &path).await?;
+    Ok(PiExecutableInfo {
+        executable,
+        version,
     })
 }
 
@@ -139,12 +181,17 @@ pub(crate) async fn cached_toolchain(state: &ServerState) -> Result<&ToolchainIn
             let home = std::env::var("HOME")
                 .or_else(|_| std::env::var("USERPROFILE"))
                 .unwrap_or_default();
-            let pi_executable = find_command(&path, "pi")
-                .ok_or_else(|| "Pi executable 'pi' was not found in PATH".to_owned())?;
+            let pi_executable = find_command(&path, "pi").unwrap_or_default();
             let node_executable = find_command(&path, "node").unwrap_or_default();
             let git_executable = find_command(&path, "git").unwrap_or_default();
 
-            let pi_version_probe = command_text(&pi_executable, &["--version"], None, &path);
+            let pi_version_probe = async {
+                if pi_executable.is_empty() {
+                    Ok(String::new())
+                } else {
+                    command_text(&pi_executable, &["--version"], None, &path).await
+                }
+            };
             let node_version_probe = async {
                 if node_executable.is_empty() {
                     String::new()

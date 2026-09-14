@@ -10,7 +10,7 @@ use rusqlite::{Connection as SqliteConnection, OptionalExtension, params};
 use tauri::{AppHandle, Manager};
 
 use crate::domain::{
-    Connection, ConnectionNamingModel, Project, ProjectMetadata, ProjectModelCache,
+    Connection, ConnectionKind, ConnectionNamingModel, Project, ProjectMetadata, ProjectModelCache,
     SessionIndexEntry, SessionUiStateUpdate,
 };
 
@@ -75,6 +75,7 @@ fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            id TEXT PRIMARY KEY,
            name TEXT NOT NULL,
            kind_json TEXT NOT NULL,
+           pi_executable TEXT,
            updated_at_ms INTEGER NOT NULL
          );
          CREATE TABLE IF NOT EXISTS connection_naming_models (
@@ -127,7 +128,27 @@ fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
          );",
     )
     .map_err(|error| format!("failed to initialize Pilo SQLite schema: {error}"))?;
+    ensure_connection_columns(db)?;
     ensure_project_model_cache_columns(db)?;
+    Ok(())
+}
+
+fn ensure_connection_columns(db: &SqliteConnection) -> Result<(), String> {
+    let has_pi_executable = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('connections') WHERE name='pi_executable')",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|exists| exists != 0)
+        .map_err(|error| error.to_string())?;
+    if !has_pi_executable {
+        db.execute_batch(
+            "ALTER TABLE connections ADD COLUMN pi_executable TEXT;
+             UPDATE connections SET name='本地' WHERE id='local' AND name='Local';",
+        )
+        .map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 
@@ -271,16 +292,22 @@ pub fn clear_connection_naming_model(
 pub fn upsert_connection(db: &SqliteConnection, connection: &Connection) -> Result<(), String> {
     let kind_json = serde_json::to_string(&connection.kind).map_err(|error| error.to_string())?;
     db.execute(
-        "INSERT INTO connections(id,name,kind_json,updated_at_ms) VALUES(?1,?2,?3,?4)
-         ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind_json=excluded.kind_json, updated_at_ms=excluded.updated_at_ms",
-        params![connection.id, connection.name, kind_json, now_ms() as i64],
+        "INSERT INTO connections(id,name,kind_json,pi_executable,updated_at_ms) VALUES(?1,?2,?3,?4,?5)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind_json=excluded.kind_json, pi_executable=excluded.pi_executable, updated_at_ms=excluded.updated_at_ms",
+        params![
+            connection.id,
+            connection.name,
+            kind_json,
+            connection.pi_executable,
+            now_ms() as i64
+        ],
     ).map_err(|error| error.to_string())?;
     Ok(())
 }
 
 pub fn list_connections(db: &SqliteConnection) -> Result<Vec<Connection>, String> {
     let mut statement = db
-        .prepare("SELECT id,name,kind_json FROM connections ORDER BY name COLLATE NOCASE ASC")
+        .prepare("SELECT id,name,kind_json,pi_executable FROM connections ORDER BY name COLLATE NOCASE ASC")
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
@@ -295,6 +322,7 @@ pub fn list_connections(db: &SqliteConnection) -> Result<Vec<Connection>, String
             Ok(Connection {
                 id: row.get(0)?,
                 name: row.get(1)?,
+                pi_executable: row.get(3)?,
                 kind,
             })
         })
@@ -305,7 +333,7 @@ pub fn list_connections(db: &SqliteConnection) -> Result<Vec<Connection>, String
 
 pub fn get_connection(db: &SqliteConnection, id: &str) -> Result<Option<Connection>, String> {
     db.query_row(
-        "SELECT id,name,kind_json FROM connections WHERE id=?1",
+        "SELECT id,name,kind_json,pi_executable FROM connections WHERE id=?1",
         params![id],
         |row| {
             let kind_json: String = row.get(2)?;
@@ -319,12 +347,27 @@ pub fn get_connection(db: &SqliteConnection, id: &str) -> Result<Option<Connecti
             Ok(Connection {
                 id: row.get(0)?,
                 name: row.get(1)?,
+                pi_executable: row.get(3)?,
                 kind,
             })
         },
     )
     .optional()
     .map_err(|error| error.to_string())
+}
+
+pub fn ensure_local_connection(db: &SqliteConnection) -> Result<Connection, String> {
+    if let Some(connection) = get_connection(db, "local")? {
+        return Ok(connection);
+    }
+    let connection = Connection {
+        id: "local".to_owned(),
+        name: "本地".to_owned(),
+        pi_executable: None,
+        kind: ConnectionKind::Local,
+    };
+    upsert_connection(db, &connection)?;
+    Ok(connection)
 }
 
 pub fn connection_project_count(db: &SqliteConnection, id: &str) -> Result<u64, String> {
@@ -359,7 +402,7 @@ pub fn upsert_project(db: &SqliteConnection, project: &Project) -> Result<(), St
 
 pub fn list_projects(db: &SqliteConnection) -> Result<Vec<Project>, String> {
     let mut statement = db.prepare(
-        "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json
+        "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable
          FROM projects p JOIN connections c ON c.id=p.connection_id
          ORDER BY p.last_opened_at_ms DESC,p.name ASC"
     ).map_err(|error| error.to_string())?;
@@ -392,6 +435,7 @@ pub fn list_projects(db: &SqliteConnection) -> Result<Vec<Project>, String> {
                 connection: Connection {
                     id: row.get(6)?,
                     name: row.get(7)?,
+                    pi_executable: row.get(9)?,
                     kind,
                 },
             })
@@ -403,7 +447,7 @@ pub fn list_projects(db: &SqliteConnection) -> Result<Vec<Project>, String> {
 
 pub fn get_project(db: &SqliteConnection, id: &str) -> Result<Option<Project>, String> {
     db.query_row(
-        "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json
+        "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable
          FROM projects p JOIN connections c ON c.id=p.connection_id WHERE p.id=?1",
         params![id],
         |row| {
@@ -433,6 +477,7 @@ pub fn get_project(db: &SqliteConnection, id: &str) -> Result<Option<Project>, S
                 connection: Connection {
                     id: row.get(6)?,
                     name: row.get(7)?,
+                    pi_executable: row.get(9)?,
                     kind,
                 },
             })
@@ -665,6 +710,7 @@ mod tests {
         let current_connection = Connection {
             id: "wsl:Debian".to_owned(),
             name: "Current Debian".to_owned(),
+            pi_executable: Some("/opt/pi/bin/pi".to_owned()),
             kind: crate::domain::ConnectionKind::Wsl {
                 distro: "Debian".to_owned(),
             },
@@ -678,6 +724,7 @@ mod tests {
             connection: Connection {
                 id: current_connection.id.clone(),
                 name: "Stale Debian".to_owned(),
+                pi_executable: None,
                 kind: crate::domain::ConnectionKind::Wsl {
                     distro: "Debian-old".to_owned(),
                 },
@@ -849,6 +896,25 @@ mod tests {
 
         remove_project(&db, "project:local:/code/demo").expect("remove project");
         assert!(list_project_model_cache(&db).unwrap().is_empty());
+    }
+
+    #[test]
+    fn removing_connection_cascades_project_records() {
+        let db = SqliteConnection::open_in_memory().expect("open in-memory SQLite");
+        db.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        initialize_schema(&db).expect("initialize schema");
+        db.execute_batch(
+            "INSERT INTO connections(id,name,kind_json,updated_at_ms)
+               VALUES('wsl:Debian','Debian','{\"type\":\"wsl\",\"distro\":\"Debian\"}',1);
+             INSERT INTO projects(id,connection_id,name,path,metadata_json,created_at_ms,last_opened_at_ms)
+               VALUES('project:wsl:Debian:/code/demo','wsl:Debian','demo','/code/demo','{\"cwd\":\"/code/demo\",\"gitBranch\":null,\"piVersion\":\"1.0.0\",\"refreshedAtMs\":5}',10,20);",
+        )
+        .expect("seed connection and project");
+
+        assert_eq!(connection_project_count(&db, "wsl:Debian").unwrap(), 1);
+        assert!(remove_connection(&db, "wsl:Debian").expect("remove connection"));
+        assert_eq!(connection_project_count(&db, "wsl:Debian").unwrap(), 0);
+        assert!(list_projects(&db).expect("list projects").is_empty());
     }
 
     #[test]

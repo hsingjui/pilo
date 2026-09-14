@@ -13,7 +13,7 @@ use std::{
 };
 
 use command::command_run;
-use environment::{ToolchainInfo, environment_inspect};
+use environment::{ToolchainInfo, environment_inspect, environment_pi_probe};
 use fs_ops::{
     fs_mkdir, fs_mkdir_absolute, fs_read_dir, fs_read_file, fs_remove, fs_rename, fs_search,
     fs_stat, fs_write_file,
@@ -187,6 +187,9 @@ async fn dispatch(
         }))),
         "server.status" => server_status(state).await.map(ServerReply::json),
         "environment.inspect" => environment_inspect(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
+        "environment.pi_probe" => environment_pi_probe(state, from_params(params)?)
             .await
             .map(ServerReply::json),
         "command.run" => {

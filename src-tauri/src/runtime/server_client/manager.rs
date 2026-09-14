@@ -14,6 +14,7 @@ pub(super) fn retryable_read_method(method: &str) -> bool {
         "server.ping"
             | "server.status"
             | "environment.inspect"
+            | "environment.pi_probe"
             | "fs.read_dir"
             | "fs.read_file"
             | "fs.stat"

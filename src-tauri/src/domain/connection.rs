@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 pub struct Connection {
     pub id: String,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pi_executable: Option<String>,
     pub kind: ConnectionKind,
 }
 

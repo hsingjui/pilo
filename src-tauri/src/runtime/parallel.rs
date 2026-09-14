@@ -425,6 +425,7 @@ mod tests {
             connection: crate::domain::Connection {
                 id: "wsl".to_owned(),
                 name: "WSL".to_owned(),
+                pi_executable: None,
                 kind: ConnectionKind::Wsl {
                     distro: "Ubuntu".to_owned(),
                 },

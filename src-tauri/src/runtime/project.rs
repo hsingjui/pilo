@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tauri::AppHandle;
 
-use crate::domain::{Connection, ConnectionKind, DiscoveredProject, Project, ProjectMetadata};
+use crate::domain::{Connection, DiscoveredProject, Project, ProjectMetadata};
 
 use super::{server_client::ServerManager, storage};
 
@@ -116,13 +116,7 @@ pub async fn discover(
 pub fn resolve_connection(app: &AppHandle, connection_id: &str) -> Result<Connection, String> {
     let db = storage::open(app)?;
     if connection_id == "local" {
-        let connection = Connection {
-            id: "local".to_owned(),
-            name: "Local".to_owned(),
-            kind: ConnectionKind::Local,
-        };
-        storage::upsert_connection(&db, &connection)?;
-        return Ok(connection);
+        return storage::ensure_local_connection(&db);
     }
     storage::get_connection(&db, connection_id)?
         .ok_or_else(|| format!("Connection '{connection_id}' was not found"))
@@ -137,7 +131,10 @@ async fn inspect(
         .request_typed(
             &connection,
             "environment.inspect",
-            serde_json::json!({ "project": path }),
+            serde_json::json!({
+                "project": path,
+                "piExecutable": connection.pi_executable.clone(),
+            }),
         )
         .await?;
     Ok((

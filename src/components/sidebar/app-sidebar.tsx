@@ -363,7 +363,6 @@ export function AppSidebar({
 												>
 													<ProjectRow
 														project={project}
-														env={env}
 														collapsed={projectCollapsed}
 														refreshing={refreshingProjectIds.has(project.id)}
 														onToggle={() => {

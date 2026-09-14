@@ -1,10 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
 	isPermissionGranted,
-	onAction,
-	registerActionTypes,
 	requestPermission,
 	sendNotification,
 	type Options as NotificationOptions,
@@ -23,15 +20,24 @@ export type DesktopNotificationSessionTarget = {
 
 export type AgentNotificationStatus = "completed" | "error";
 
-const AGENT_RESULT_ACTION_TYPE = "pilo-agent-result";
-const OPEN_SESSION_ACTION = "open-session";
 const SESSION_TARGET_KIND = "session";
 const MACOS_DEFAULT_NOTIFICATION_SOUND = "NSUserNotificationDefaultSoundName";
 const NOTIFICATION_OPEN_SESSION_EVENT = "pilo://notification-open-session";
+const NOTIFICATION_TITLE_MAX_LENGTH = 72;
+const NOTIFICATION_BODY_MAX_LENGTH = 220;
+const TEST_NOTIFICATION_TITLE = "Pilo 通知测试";
+const TEST_NOTIFICATION_BODY =
+	"通知已正常送达。Agent 完成或出错时会在这里提醒你。";
 
 function isMacOS() {
 	return (
 		typeof navigator !== "undefined" && navigator.userAgent.includes("Mac")
+	);
+}
+
+function isWindows() {
+	return (
+		typeof navigator !== "undefined" && navigator.userAgent.includes("Windows")
 	);
 }
 
@@ -40,6 +46,54 @@ function defaultNotificationSound(): Pick<NotificationOptions, "sound"> {
 		return { sound: MACOS_DEFAULT_NOTIFICATION_SOUND };
 	}
 	return {};
+}
+
+function compactNotificationText(text: string, maxLength: number): string {
+	const normalized = text.replace(/\s+/g, " ").trim();
+	const characters = Array.from(normalized);
+	if (characters.length <= maxLength) return normalized;
+	return `${characters.slice(0, Math.max(0, maxLength - 1)).join("")}…`;
+}
+
+function agentNotificationContent({
+	status,
+	sessionTitle,
+	errorMessage,
+}: {
+	status: AgentNotificationStatus;
+	sessionTitle: string;
+	errorMessage?: string;
+}) {
+	const statusLabel = status === "completed" ? "已完成" : "运行出错";
+	const fallbackTitle =
+		status === "completed" ? "Agent 已完成" : "Agent 运行出错";
+	const normalizedSessionTitle = compactNotificationText(sessionTitle, 120);
+	const suffix = ` · ${statusLabel}`;
+	const availableSessionLength =
+		NOTIFICATION_TITLE_MAX_LENGTH - Array.from(suffix).length;
+	const title = normalizedSessionTitle
+		? `${compactNotificationText(normalizedSessionTitle, availableSessionLength)}${suffix}`
+		: fallbackTitle;
+
+	if (status === "completed") {
+		return {
+			title,
+			body: "Agent 已完成本轮任务，点击查看结果。",
+		};
+	}
+
+	const normalizedError = errorMessage
+		? compactNotificationText(errorMessage, NOTIFICATION_BODY_MAX_LENGTH - 10)
+		: "";
+	return {
+		title,
+		body: normalizedError
+			? compactNotificationText(
+					`错误详情：${normalizedError}`,
+					NOTIFICATION_BODY_MAX_LENGTH,
+				)
+			: "Agent 运行出错，点击查看详情。",
+	};
 }
 
 async function sendMacOSNotification({
@@ -60,8 +114,31 @@ async function sendMacOSNotification({
 	});
 }
 
+async function sendWindowsNotification({
+	title,
+	body,
+	target,
+}: {
+	title: string;
+	body: string;
+	target?: DesktopNotificationSessionTarget;
+}) {
+	await invoke("send_windows_desktop_notification", {
+		request: {
+			title,
+			body,
+			target: target ?? null,
+		},
+	});
+}
+
+export function isDesktopNotificationPermissionSystemManaged(): boolean {
+	return isTauri() && isWindows();
+}
+
 export async function getDesktopNotificationPermission(): Promise<DesktopNotificationPermission> {
 	if (!isTauri()) return "unsupported";
+	if (isWindows()) return "granted";
 
 	try {
 		if (await isPermissionGranted()) return "granted";
@@ -78,6 +155,7 @@ export async function getDesktopNotificationPermission(): Promise<DesktopNotific
 }
 
 export async function ensureDesktopNotificationPermission(): Promise<boolean> {
+	if (isWindows()) return true;
 	const permission = await getDesktopNotificationPermission();
 	if (permission === "granted") return true;
 	if (permission === "unsupported") return false;
@@ -89,65 +167,17 @@ export async function ensureDesktopNotificationPermission(): Promise<boolean> {
 	}
 }
 
-function notificationTarget(
-	notification: NotificationOptions,
-): DesktopNotificationSessionTarget | null {
-	const extra = notification.extra;
-	if (!extra || extra.piloTarget !== SESSION_TARGET_KIND) return null;
-	const projectId = extra.projectId;
-	const sessionId = extra.sessionId;
-	if (typeof projectId !== "string" || typeof sessionId !== "string")
-		return null;
-	if (!projectId || !sessionId) return null;
-	return { projectId, sessionId };
-}
-
-async function focusPiloWindow() {
-	const window = getCurrentWindow();
-	await window.unminimize().catch(() => undefined);
-	await window.show().catch(() => undefined);
-	await window.setFocus().catch(() => undefined);
-}
-
 export async function listenForDesktopNotificationActions(
 	onOpenSession: (target: DesktopNotificationSessionTarget) => void,
 ): Promise<() => void> {
 	if (!isTauri()) return () => undefined;
-	if (isMacOS()) {
-		const unlisten = await listen<DesktopNotificationSessionTarget>(
+	if (isMacOS() || isWindows()) {
+		return listen<DesktopNotificationSessionTarget>(
 			NOTIFICATION_OPEN_SESSION_EVENT,
 			(event) => onOpenSession(event.payload),
 		);
-		return unlisten;
 	}
-
-	try {
-		await registerActionTypes([
-			{
-				id: AGENT_RESULT_ACTION_TYPE,
-				actions: [
-					{
-						id: OPEN_SESSION_ACTION,
-						title: "打开会话",
-						foreground: true,
-					},
-				],
-			},
-		]);
-	} catch (error) {
-		console.warn("Failed to register notification actions", error);
-	}
-
-	const listener = await onAction((notification) => {
-		const target = notificationTarget(notification);
-		if (!target) return;
-		void focusPiloWindow();
-		onOpenSession(target);
-	});
-
-	return () => {
-		void listener.unregister();
-	};
+	return () => undefined;
 }
 
 export async function sendDesktopNotificationTest(): Promise<boolean> {
@@ -156,14 +186,21 @@ export async function sendDesktopNotificationTest(): Promise<boolean> {
 	try {
 		if (isMacOS()) {
 			await sendMacOSNotification({
-				title: "Pilo 测试通知",
-				body: "通知工作正常。Agent 完成或出错时会在这里提醒你。",
+				title: TEST_NOTIFICATION_TITLE,
+				body: TEST_NOTIFICATION_BODY,
+			});
+			return true;
+		}
+		if (isWindows()) {
+			await sendWindowsNotification({
+				title: TEST_NOTIFICATION_TITLE,
+				body: TEST_NOTIFICATION_BODY,
 			});
 			return true;
 		}
 		sendNotification({
-			title: "Pilo 测试通知",
-			body: "通知工作正常。Agent 完成或出错时会在这里提醒你。",
+			title: TEST_NOTIFICATION_TITLE,
+			body: TEST_NOTIFICATION_BODY,
 			autoCancel: true,
 			...defaultNotificationSound(),
 		});
@@ -188,14 +225,11 @@ export async function notifyAgentResult({
 }): Promise<boolean> {
 	if ((await getDesktopNotificationPermission()) !== "granted") return false;
 
-	const title = status === "completed" ? "Agent 运行完成" : "Agent 运行出错";
-	const fallbackSessionTitle = sessionTitle.trim() || "当前会话";
-	const body =
-		status === "completed"
-			? `${fallbackSessionTitle} 已完成运行。`
-			: errorMessage?.trim()
-				? `${fallbackSessionTitle}：${errorMessage.trim()}`
-				: `${fallbackSessionTitle} 运行出错。`;
+	const { title, body } = agentNotificationContent({
+		status,
+		sessionTitle,
+		errorMessage,
+	});
 
 	try {
 		if (isMacOS()) {
@@ -206,10 +240,17 @@ export async function notifyAgentResult({
 			});
 			return true;
 		}
+		if (isWindows()) {
+			await sendWindowsNotification({
+				title,
+				body,
+				target: { projectId, sessionId },
+			});
+			return true;
+		}
 		sendNotification({
 			title,
 			body,
-			actionTypeId: AGENT_RESULT_ACTION_TYPE,
 			autoCancel: true,
 			...defaultNotificationSound(),
 			extra: {

@@ -19,6 +19,7 @@ export type SshConnectionFormState = {
 	password: string;
 	proxyJump: string;
 	hasPassword: boolean;
+	piExecutable: string;
 };
 
 export function emptySshConnectionForm(): SshConnectionFormState {
@@ -34,6 +35,7 @@ export function emptySshConnectionForm(): SshConnectionFormState {
 		password: "",
 		proxyJump: "",
 		hasPassword: false,
+		piExecutable: "",
 	};
 }
 
@@ -52,6 +54,7 @@ export function sshConnectionFormFromInfo(
 			hostname: target.host,
 			authMethod: target.authMethod,
 			hasPassword: info.hasPassword,
+			piExecutable: info.connection.piExecutable ?? "",
 		};
 	}
 	return {
@@ -66,6 +69,7 @@ export function sshConnectionFormFromInfo(
 		identityFile: target.identityFile ?? "",
 		proxyJump: target.proxyJump ?? "",
 		hasPassword: info.hasPassword,
+		piExecutable: info.connection.piExecutable ?? "",
 	};
 }
 
@@ -94,6 +98,7 @@ export function connectionFromSshForm(
 	return {
 		id: form.id,
 		name: form.name.trim(),
+		piExecutable: form.piExecutable.trim() || null,
 		kind: { type: "ssh", target },
 	};
 }

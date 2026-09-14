@@ -242,7 +242,7 @@ function App() {
 		};
 	}, []);
 
-	// 首页环境列表除了项目所属连接，还包含被显式标记「显示在首页」的连接。
+	// 首页环境列表只遵循用户的「显示在首页」偏好，和项目关联数量无关。
 	const [connectionCatalog, setConnectionCatalog] = useState<Connection[]>([]);
 	useEffect(() => {
 		let active = true;
@@ -277,26 +277,20 @@ function App() {
 	}, [projects]);
 
 	const envs = useMemo(() => {
-		const byId = new Map<string, { id: string; name: string }>();
-		for (const project of projects) {
-			byId.set(project.connection.id, {
-				id: project.connection.id,
-				name: connectionLabel(project.connection),
-			});
-		}
 		const shown = listHomeConnectionIds();
+		const byId = new Map<string, { id: string; name: string }>();
 		for (const connection of connectionCatalog) {
-			if (!shown.has(connection.id) || byId.has(connection.id)) continue;
+			if (!shown.has(connection.id)) continue;
 			byId.set(connection.id, {
 				id: connection.id,
 				name: connectionLabel(connection),
 			});
 		}
 		const list = [...byId.values()];
-		// Local 始终置顶；其余保持稳定的插入顺序。
+		// Local 仅在显示时置顶；其余保持稳定的插入顺序。
 		list.sort((a, b) => (a.id === "local" ? -1 : b.id === "local" ? 1 : 0));
 		return list;
-	}, [projects, connectionCatalog]);
+	}, [connectionCatalog]);
 
 	const sidebarProjects = useMemo(
 		() =>
@@ -699,9 +693,6 @@ function App() {
 					.map((project) => project.id),
 			);
 			try {
-				await Promise.all(
-					[...affectedProjectIds].map((projectId) => removeProject(projectId)),
-				);
 				if (connection.kind.type === "wsl") {
 					await removeWslConnection(connectionId);
 				} else if (connection.kind.type === "ssh") {

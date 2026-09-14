@@ -1,3 +1,4 @@
+use pilo_protocol::PiExecutableInfo;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, State};
@@ -56,6 +57,62 @@ pub fn connection_naming_model_set(
         }
         _ => Err("provider and model id must be set together".to_owned()),
     }
+}
+
+#[tauri::command]
+pub fn local_connection_get(app: AppHandle) -> Result<Connection, String> {
+    storage::ensure_local_connection(&storage::open(&app)?)
+}
+
+#[tauri::command]
+pub fn connection_settings_update(
+    app: AppHandle,
+    id: String,
+    name: String,
+    pi_executable: Option<String>,
+) -> Result<Connection, String> {
+    let id = id.trim();
+    let name = name.trim();
+    if id.is_empty() || name.is_empty() {
+        return Err("connection id and name are required".to_owned());
+    }
+    let db = storage::open(&app)?;
+    let mut connection = if id == "local" {
+        storage::ensure_local_connection(&db)?
+    } else {
+        storage::get_connection(&db, id)?
+            .ok_or_else(|| format!("Connection '{id}' was not found"))?
+    };
+    connection.name = name.to_owned();
+    connection.pi_executable = pi_executable
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty());
+    storage::upsert_connection(&db, &connection)?;
+    Ok(connection)
+}
+
+#[tauri::command]
+pub async fn connection_pi_probe(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+    executable: Option<String>,
+) -> Result<PiExecutableInfo, String> {
+    let db = storage::open(&app)?;
+    let connection = if id == "local" {
+        storage::ensure_local_connection(&db)?
+    } else {
+        storage::get_connection(&db, &id)?
+            .ok_or_else(|| format!("Connection '{id}' was not found"))?
+    };
+    runtime
+        .servers
+        .request_typed(
+            &connection,
+            "environment.pi_probe",
+            serde_json::json!({ "executable": executable }),
+        )
+        .await
 }
 
 #[tauri::command]
@@ -135,12 +192,6 @@ pub fn wsl_connection_save(
 #[tauri::command]
 pub fn wsl_connection_remove(app: AppHandle, id: String) -> Result<(), String> {
     let db = storage::open(&app)?;
-    let count = storage::connection_project_count(&db, &id)?;
-    if count > 0 {
-        return Err(format!(
-            "该 WSL 连接仍被 {count} 个项目使用，请先移除或迁移这些项目。"
-        ));
-    }
     storage::remove_connection(&db, &id)?;
     Ok(())
 }
@@ -157,6 +208,7 @@ pub async fn wsl_connection_test(
     let connection = Connection {
         id: format!("wsl:{distro}"),
         name: format!("WSL · {distro}"),
+        pi_executable: None,
         kind: ConnectionKind::Wsl {
             distro: distro.to_owned(),
         },
@@ -171,6 +223,7 @@ pub async fn local_connection_test(
     let connection = Connection {
         id: "local".to_owned(),
         name: "Local".to_owned(),
+        pi_executable: None,
         kind: ConnectionKind::Local,
     };
     connection_test_result(runtime.servers.test_connection(&connection).await?)
@@ -250,12 +303,6 @@ pub fn ssh_connection_save(
 #[tauri::command]
 pub fn ssh_connection_remove(app: AppHandle, id: String) -> Result<(), String> {
     let db = storage::open(&app)?;
-    let count = storage::connection_project_count(&db, &id)?;
-    if count > 0 {
-        return Err(format!(
-            "该 SSH 连接仍被 {count} 个项目使用，请先移除或迁移这些项目。"
-        ));
-    }
     storage::remove_connection(&db, &id)?;
     credentials::delete_ssh_password(&id)?;
     Ok(())

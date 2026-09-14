@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import {
 	ensureDesktopNotificationPermission,
 	getDesktopNotificationPermission,
+	isDesktopNotificationPermissionSystemManaged,
 	sendDesktopNotificationTest,
 	type DesktopNotificationPermission,
 } from "@/lib/desktop-notifications";
@@ -46,6 +47,7 @@ import {
 	DialogDescription,
 	DialogTitle,
 	Input,
+	ScrollArea,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -53,7 +55,13 @@ import {
 	SelectValue,
 	Switch,
 } from "@/ui";
-import { SettingsRow, SettingsSection } from "./compact-layout";
+import {
+	SETTINGS_CONTAINER_CLASS,
+	SETTINGS_ICON_BUTTON_CLASS,
+	SETTINGS_TEXT_BUTTON_CLASS,
+	SettingsRow,
+	SettingsSection,
+} from "./compact-layout";
 import { ConnectionsSettings } from "./connections-settings";
 import { KeyboardShortcutsSettings } from "./keyboard-shortcuts-settings";
 import { SessionNamingSettings } from "./session-naming-settings";
@@ -159,7 +167,7 @@ function PreferencesSettings() {
 	} = usePreferences();
 
 	return (
-		<div className="space-y-3">
+		<div className={SETTINGS_CONTAINER_CLASS}>
 			<SettingsSection title="对话">
 				<SettingsRow
 					label="发送消息"
@@ -230,9 +238,12 @@ const NOTIFICATION_PERMISSION_LABELS: Record<
 
 function NotificationSettings() {
 	const { desktopNotifications, setDesktopNotifications } = usePreferences();
-	const [permission, setPermission] =
-		useState<DesktopNotificationPermission>("default");
-	const [checking, setChecking] = useState(true);
+	const permissionSystemManaged =
+		isDesktopNotificationPermissionSystemManaged();
+	const [permission, setPermission] = useState<DesktopNotificationPermission>(
+		permissionSystemManaged ? "granted" : "default",
+	);
+	const [checking, setChecking] = useState(!permissionSystemManaged);
 	const [testing, setTesting] = useState(false);
 
 	const refreshPermission = async () => {
@@ -245,6 +256,8 @@ function NotificationSettings() {
 	};
 
 	useEffect(() => {
+		if (permissionSystemManaged) return;
+
 		let active = true;
 		void getDesktopNotificationPermission().then((next) => {
 			if (!active) return;
@@ -254,7 +267,7 @@ function NotificationSettings() {
 		return () => {
 			active = false;
 		};
-	}, []);
+	}, [permissionSystemManaged]);
 
 	const handleNotificationsChange = async (enabled: boolean) => {
 		if (!enabled) {
@@ -280,7 +293,7 @@ function NotificationSettings() {
 	};
 
 	return (
-		<div className="space-y-3">
+		<div className={SETTINGS_CONTAINER_CLASS}>
 			<SettingsSection
 				title="系统通知"
 				description="Agent 完成或运行出错时提醒你，点击通知可直接打开对应会话。"
@@ -297,9 +310,11 @@ function NotificationSettings() {
 				<SettingsRow
 					label="系统权限"
 					helper={
-						permission === "denied"
-							? "系统已拒绝通知权限，请在系统设置中允许 Pilo 发送通知。"
-							: "Pilo 需要系统通知权限才能发送提醒。"
+						permissionSystemManaged
+							? "Windows 无需在 Pilo 内单独申请通知权限，由系统通知设置统一管理。"
+							: permission === "denied"
+								? "系统已拒绝通知权限，请在系统设置中允许 Pilo 发送通知。"
+								: "Pilo 需要系统通知权限才能发送提醒。"
 					}
 				>
 					<div className="flex items-center gap-1.5">
@@ -313,20 +328,24 @@ function NotificationSettings() {
 						>
 							{checking
 								? "检测中…"
-								: NOTIFICATION_PERMISSION_LABELS[permission]}
+								: permissionSystemManaged
+									? "系统管理"
+									: NOTIFICATION_PERMISSION_LABELS[permission]}
 						</span>
-						<Button
-							variant="ghost"
-							size="icon"
-							className="h-7 w-7 text-muted-foreground hover:text-foreground"
-							disabled={checking}
-							onClick={() => void refreshPermission()}
-							title="重新检测通知权限"
-						>
-							<RefreshCw
-								className={cn("size-3.5", checking && "animate-spin")}
-							/>
-						</Button>
+						{!permissionSystemManaged ? (
+							<Button
+								variant="ghost"
+								size="icon"
+								className={SETTINGS_ICON_BUTTON_CLASS}
+								disabled={checking}
+								onClick={() => void refreshPermission()}
+								title="重新检测通知权限"
+							>
+								<RefreshCw
+									className={cn("size-3.5", checking && "animate-spin")}
+								/>
+							</Button>
+						) : null}
 					</div>
 				</SettingsRow>
 
@@ -337,7 +356,10 @@ function NotificationSettings() {
 					<Button
 						variant="ghost"
 						size="sm"
-						className="h-7 gap-1.5 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+						className={cn(
+							SETTINGS_TEXT_BUTTON_CLASS,
+							"text-muted-foreground hover:text-foreground",
+						)}
 						disabled={testing}
 						onClick={() => void handleTestNotification()}
 					>
@@ -374,7 +396,7 @@ function AppearanceSettings() {
 	} = usePreferences();
 
 	return (
-		<div className="space-y-3">
+		<div className={SETTINGS_CONTAINER_CLASS}>
 			<SettingsSection>
 				<SettingsRow
 					label="主题"
@@ -578,7 +600,7 @@ function AppearanceSettings() {
 
 function AboutSettings() {
 	return (
-		<div className="space-y-3">
+		<div className={SETTINGS_CONTAINER_CLASS}>
 			<SettingsSection>
 				<SettingsRow
 					label="Pilo"
@@ -610,8 +632,8 @@ export function SettingsDialog({
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent
-				overlayClassName="bg-black/75"
-				className="flex h-[min(90vh,950px)] w-[84vw] max-w-[1100px] flex-col gap-0 overflow-hidden rounded-xl p-0 sm:p-0"
+				noAnimation
+				className="flex h-[min(90vh,950px)] w-[84vw] max-w-[1100px] flex-col gap-0 overflow-hidden p-0 sm:p-0"
 			>
 				<DialogDescription className="sr-only">Pilo 设置</DialogDescription>
 				<div className="flex min-h-0 flex-1 overflow-hidden">
@@ -619,7 +641,7 @@ export function SettingsDialog({
 						aria-label="设置"
 						className="flex w-60 shrink-0 flex-col border-e bg-background"
 					>
-						<div className="min-h-0 flex-1 overflow-y-auto p-3 pt-4">
+						<div className="min-h-0 flex-1 overflow-y-auto p-3">
 							<div className="space-y-4">
 								{sections.map((section) => {
 									const tabs = SETTINGS_TABS.filter(
@@ -641,7 +663,7 @@ export function SettingsDialog({
 																activeTab === tab.id ? "page" : undefined
 															}
 															className={cn(
-																"flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-start text-sm font-medium transition-colors",
+																"flex w-full items-center gap-2.5 rounded-md px-2.5 py-1 text-start text-sm font-medium transition-colors",
 																activeTab === tab.id
 																	? "bg-secondary text-secondary-foreground"
 																	: "text-muted-foreground hover:bg-secondary/50 hover:text-secondary-foreground",
@@ -670,25 +692,35 @@ export function SettingsDialog({
 								{activeTabConfig.label}
 							</DialogTitle>
 						</header>
-						<div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
-							<div className="mx-auto max-w-5xl">
-								{activeTab === "preferences" ? <PreferencesSettings /> : null}
-								{activeTab === "notifications" ? (
-									<NotificationSettings />
-								) : null}
-								{activeTab === "appearance" ? <AppearanceSettings /> : null}
-								{activeTab === "shortcuts" ? (
-									<KeyboardShortcutsSettings />
-								) : null}
-								{activeTab === "connections" ? <ConnectionsSettings /> : null}
-								{activeTab === "session-naming" ? (
-									<SessionNamingSettings />
-								) : null}
-								{activeTab === "sessions" ? <SessionSettings /> : null}
-								{activeTab === "pi" ? <PiSettings /> : null}
-								{activeTab === "diagnostics" ? <DiagnosticsSettings /> : null}
-								{activeTab === "about" ? <AboutSettings /> : null}
-							</div>
+						<div className="min-h-0 flex-1">
+							<ScrollArea className="h-full">
+								<div className="px-6 pb-6">
+									<div className="mx-auto max-w-5xl">
+										{activeTab === "preferences" ? (
+											<PreferencesSettings />
+										) : null}
+										{activeTab === "notifications" ? (
+											<NotificationSettings />
+										) : null}
+										{activeTab === "appearance" ? <AppearanceSettings /> : null}
+										{activeTab === "shortcuts" ? (
+											<KeyboardShortcutsSettings />
+										) : null}
+										{activeTab === "connections" ? (
+											<ConnectionsSettings />
+										) : null}
+										{activeTab === "session-naming" ? (
+											<SessionNamingSettings />
+										) : null}
+										{activeTab === "sessions" ? <SessionSettings /> : null}
+										{activeTab === "pi" ? <PiSettings /> : null}
+										{activeTab === "diagnostics" ? (
+											<DiagnosticsSettings />
+										) : null}
+										{activeTab === "about" ? <AboutSettings /> : null}
+									</div>
+								</div>
+							</ScrollArea>
 						</div>
 					</main>
 				</div>

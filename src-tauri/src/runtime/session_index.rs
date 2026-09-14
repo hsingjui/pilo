@@ -334,6 +334,7 @@ mod tests {
             connection: Connection {
                 id: "local".to_owned(),
                 name: "Local".to_owned(),
+                pi_executable: None,
                 kind: ConnectionKind::Local,
             },
             metadata: ProjectMetadata {

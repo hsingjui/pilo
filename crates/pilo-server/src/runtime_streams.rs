@@ -15,7 +15,9 @@ use tokio::{
 };
 
 use super::{ServerState, blocking, to_value};
-use crate::environment::{cached_login_path, cached_toolchain, default_shell, process_command};
+use crate::environment::{
+    cached_login_path, cached_toolchain, default_shell, process_command, resolve_program,
+};
 
 pub(super) struct PiProcess {
     pub(super) child: Child,
@@ -292,6 +294,8 @@ pub(super) struct PiStartParams {
     thinking: Option<String>,
     #[serde(default)]
     system_prompt: Option<String>,
+    #[serde(default)]
+    pi_executable: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -308,7 +312,16 @@ pub(super) struct PiStopParams {
 pub(super) async fn pi_start(state: &ServerState, params: PiStartParams) -> Result<Value, String> {
     let toolchain = cached_toolchain(state).await?;
     let path = toolchain.path.clone();
-    let pi_executable = toolchain.pi_executable.clone();
+    let pi_executable = params
+        .pi_executable
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| resolve_program(&path, value))
+        .unwrap_or_else(|| toolchain.pi_executable.clone());
+    if pi_executable.is_empty() {
+        return Err("Pi executable 'pi' was not found in PATH".to_owned());
+    }
     let mut processes = state.pi.lock().await;
     if processes.contains_key(&params.stream_id) {
         return Ok(json!({ "alreadyRunning": true }));

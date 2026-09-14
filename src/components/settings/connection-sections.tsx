@@ -4,7 +4,9 @@ import {
 	Monitor,
 	Pencil,
 	Plus,
+	Search,
 	Server,
+	Settings2,
 	Trash2,
 	Wifi,
 } from "lucide-react";
@@ -23,6 +25,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 	DropdownMenu,
+	Input,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
@@ -30,14 +33,18 @@ import {
 } from "@/ui";
 
 import { AUTH_LABELS, sshTargetLabel } from "./connection-form";
-import { SettingsSection } from "./compact-layout";
+import {
+	SETTINGS_ICON_BUTTON_CLASS,
+	SETTINGS_NESTED_DIALOG_OVERLAY_CLASS,
+	SettingsSection,
+} from "./compact-layout";
 
 function ConnectionIcon({ kind }: { kind: Connection["kind"] }) {
 	if (kind.type === "local")
-		return <Laptop className="size-4 text-muted-foreground" />;
+		return <Laptop className="size-4" strokeWidth={1.75} aria-hidden="true" />;
 	if (kind.type === "wsl")
-		return <Monitor className="size-4 text-muted-foreground" />;
-	return <Server className="size-4 text-muted-foreground" />;
+		return <Monitor className="size-4" strokeWidth={1.75} aria-hidden="true" />;
+	return <Server className="size-4" strokeWidth={1.75} aria-hidden="true" />;
 }
 
 type ConnectionRowProps = {
@@ -48,6 +55,8 @@ type ConnectionRowProps = {
 	busy: boolean;
 	onToggleShown: (shown: boolean) => void;
 	onTest: () => void;
+	onProbePi: () => void;
+	onConfigure: () => void;
 	onEdit?: () => void;
 	onRemove?: () => void;
 };
@@ -60,13 +69,14 @@ export function ConnectionRow({
 	busy,
 	onToggleShown,
 	onTest,
+	onProbePi,
+	onConfigure,
 	onEdit,
 	onRemove,
 }: ConnectionRowProps) {
-	const visibleBecauseProject = projectCount > 0;
 	return (
-		<div className="flex items-center gap-3 px-3 py-2.5">
-			<div className="flex size-8 shrink-0 items-center justify-center rounded-md border bg-muted/35">
+		<div className="flex items-center gap-2.5 px-3 py-2.5 transition-colors hover:bg-hover/30">
+			<div className="flex size-6 shrink-0 items-center justify-center text-foreground/70">
 				<ConnectionIcon kind={connection.kind} />
 			</div>
 			<div className="min-w-0 flex-1">
@@ -80,37 +90,72 @@ export function ConnectionRow({
 					</span>
 				</div>
 			</div>
-			<div className="flex shrink-0 items-center gap-1.5">
-				<span
-					className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
-					title={
-						visibleBecauseProject ? "有关联项目时始终显示在首页" : undefined
-					}
-				>
+			<div className="flex shrink-0 items-center gap-1">
+				<span className="mr-1 flex items-center gap-2 text-[11px] text-muted-foreground">
 					首页
 					<Switch
 						aria-label="显示在首页"
-						checked={visibleBecauseProject || shownInHome}
-						disabled={busy || visibleBecauseProject}
+						checked={shownInHome}
+						disabled={busy}
 						onCheckedChange={onToggleShown}
 					/>
 				</span>
-				<Button variant="ghost" size="sm" disabled={busy} onClick={onTest}>
+				<Button
+					variant="ghost"
+					size="icon"
+					className={SETTINGS_ICON_BUTTON_CLASS}
+					disabled={busy}
+					onClick={onTest}
+					aria-label="测试连接"
+					title="测试连接"
+				>
 					<Wifi />
-					测试
+				</Button>
+				<Button
+					variant="ghost"
+					size="icon"
+					className={SETTINGS_ICON_BUTTON_CLASS}
+					disabled={busy}
+					onClick={onProbePi}
+					aria-label="检测 PI"
+					title="检测 PI"
+				>
+					<Search />
+				</Button>
+				<Button
+					variant="ghost"
+					size="icon"
+					className={SETTINGS_ICON_BUTTON_CLASS}
+					disabled={busy}
+					onClick={onConfigure}
+					title="连接设置"
+				>
+					<Pencil />
+					<span className="sr-only">连接设置</span>
 				</Button>
 				{onEdit ? (
-					<Button variant="ghost" size="icon" onClick={onEdit}>
-						<Pencil />
-						<span className="sr-only">编辑连接</span>
+					<Button
+						variant="ghost"
+						size="icon"
+						className={SETTINGS_ICON_BUTTON_CLASS}
+						onClick={onEdit}
+						title="编辑 SSH 参数"
+					>
+						<Settings2 />
+						<span className="sr-only">编辑 SSH 参数</span>
 					</Button>
 				) : null}
 				{onRemove ? (
 					<Button
 						variant="ghost"
 						size="icon"
-						disabled={busy || projectCount > 0}
+						className={cn(
+							SETTINGS_ICON_BUTTON_CLASS,
+							"hover:bg-destructive/10 hover:text-destructive",
+						)}
+						disabled={busy}
 						onClick={onRemove}
+						title="删除连接"
 					>
 						<Trash2 />
 						<span className="sr-only">删除连接</span>
@@ -144,6 +189,93 @@ export function ConnectionsSection({
 		>
 			{children}
 		</SettingsSection>
+	);
+}
+
+export type ConnectionSettingsDraft = {
+	connection: Connection;
+	name: string;
+	piExecutable: string;
+};
+
+export function ConnectionSettingsDialog({
+	draft,
+	busy,
+	probing,
+	onChange,
+	onClose,
+	onProbe,
+	onSave,
+}: {
+	draft: ConnectionSettingsDraft | null;
+	busy: boolean;
+	probing: boolean;
+	onChange: (draft: ConnectionSettingsDraft) => void;
+	onClose: () => void;
+	onProbe: () => void;
+	onSave: () => void;
+}) {
+	return (
+		<Dialog open={draft !== null} onOpenChange={(open) => !open && onClose()}>
+			<DialogContent
+				overlayClassName={SETTINGS_NESTED_DIALOG_OVERLAY_CLASS}
+				className="max-w-md gap-4 shadow-popover"
+			>
+				<DialogHeader>
+					<DialogTitle>连接设置</DialogTitle>
+					<DialogDescription>
+						修改显示名称，并为这个连接指定 PI 可执行文件。留空时自动从目标环境
+						PATH 检测。
+					</DialogDescription>
+				</DialogHeader>
+				{draft ? (
+					<div className="grid gap-3">
+						<label htmlFor="connection-name" className="grid gap-1 text-xs">
+							名称
+							<Input
+								id="connection-name"
+								value={draft.name}
+								onChange={(event) =>
+									onChange({ ...draft, name: event.target.value })
+								}
+							/>
+						</label>
+						<label htmlFor="connection-pi-path" className="grid gap-1 text-xs">
+							PI 路径
+							<div className="flex gap-2">
+								<Input
+									id="connection-pi-path"
+									className="font-mono text-xs"
+									value={draft.piExecutable}
+									onChange={(event) =>
+										onChange({ ...draft, piExecutable: event.target.value })
+									}
+									placeholder="自动检测"
+								/>
+								<Button
+									variant="outline"
+									disabled={busy || probing}
+									onClick={onProbe}
+								>
+									{probing ? "检测中…" : "检测"}
+								</Button>
+							</div>
+							<span className="text-[11px] text-muted-foreground">
+								可填写绝对路径，也可填写目标环境 PATH 中可解析的命令名。
+							</span>
+						</label>
+						<div className="mt-1 flex justify-end gap-2">
+							<Button variant="outline" disabled={busy} onClick={onClose}>
+								取消
+							</Button>
+							<Button disabled={busy || !draft.name.trim()} onClick={onSave}>
+								{busy ? "保存中…" : "保存"}
+							</Button>
+						</div>
+					</div>
+				) : null}
+			</DialogContent>
+		</Dialog>
 	);
 }
 
@@ -218,7 +350,10 @@ export function WslDistributionDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="max-w-md gap-4">
+			<DialogContent
+				overlayClassName={SETTINGS_NESTED_DIALOG_OVERLAY_CLASS}
+				className="max-w-md gap-4 shadow-popover"
+			>
 				<DialogHeader>
 					<DialogTitle>添加 WSL 发行版</DialogTitle>
 					<DialogDescription>

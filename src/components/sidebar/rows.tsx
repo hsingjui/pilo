@@ -221,7 +221,6 @@ export function EnvRow({
 
 export function ProjectRow({
 	project,
-	env,
 	collapsed,
 	refreshing,
 	onToggle,
@@ -230,7 +229,6 @@ export function ProjectRow({
 	onRefreshSessions,
 }: {
 	project: SidebarProject;
-	env: SidebarEnv;
 	collapsed: boolean;
 	refreshing: boolean;
 	onToggle: () => void;
@@ -242,138 +240,124 @@ export function ProjectRow({
 	const [confirmingDelete, setConfirmingDelete] = useState(false);
 	const toggleLabel = collapsed ? "展开项目" : "折叠项目";
 	return (
-		<Tooltip delayDuration={600}>
-			<TooltipTrigger asChild>
-				{/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- 内嵌图标按钮，不能用原生 button */}
-				<div
-					role="button"
-					tabIndex={0}
-					aria-label={
-						refreshing ? `${project.name} 正在刷新` : `打开项目 ${project.name}`
-					}
-					aria-disabled={refreshing || undefined}
-					data-menu-open={menuOpen || undefined}
-					onClick={() => {
-						if (refreshing) return;
-						if (onNewChat) onNewChat(project.id);
-						else onToggle();
+		// oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- 内嵌图标按钮，不能用原生 button
+		<div
+			role="button"
+			tabIndex={0}
+			aria-label={
+				refreshing ? `${project.name} 正在刷新` : `打开项目 ${project.name}`
+			}
+			aria-disabled={refreshing || undefined}
+			data-menu-open={menuOpen || undefined}
+			onClick={() => {
+				if (refreshing) return;
+				if (onNewChat) onNewChat(project.id);
+				else onToggle();
+			}}
+			onKeyDown={(event) => {
+				if (event.target !== event.currentTarget) return;
+				if (event.key !== "Enter" && event.key !== " ") return;
+				event.preventDefault();
+				if (refreshing) return;
+				if (onNewChat) onNewChat(project.id);
+				else onToggle();
+			}}
+			className={cn(
+				"group relative flex min-w-0 w-full cursor-pointer select-none items-center gap-2 rounded-md border border-transparent bg-transparent py-1 pl-2 pr-3 text-left text-xs font-semibold transition-colors",
+				"text-sidebar-foreground dark:text-sidebar-foreground/75",
+				"hover:bg-sidebar-hover hover:text-sidebar-hover-foreground data-[menu-open]:bg-sidebar-hover data-[menu-open]:text-sidebar-hover-foreground",
+				"focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-sidebar-ring/40",
+				refreshing &&
+					"cursor-default text-sidebar-foreground-muted hover:bg-transparent hover:text-sidebar-foreground-muted",
+			)}
+		>
+			<button
+				type="button"
+				className="relative -mr-1.5 flex h-5 w-5 shrink-0 items-center justify-center"
+				aria-label={toggleLabel}
+				aria-expanded={!collapsed}
+				disabled={refreshing}
+				onClick={(event) => {
+					event.preventDefault();
+					event.stopPropagation();
+					onToggle();
+				}}
+			>
+				{refreshing ? (
+					<LoaderCircle className="h-3.5 w-3.5 animate-spin text-current" />
+				) : (
+					<>
+						<Folder className="absolute left-0 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-current opacity-80 transition-opacity duration-100 group-hover:opacity-0" />
+						<ChevronDown
+							className={cn(
+								"absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 text-current transition-[opacity,transform] duration-100",
+								"opacity-0 group-hover:opacity-100",
+								collapsed ? "-rotate-90" : "rotate-0",
+							)}
+						/>
+					</>
+				)}
+			</button>
+			<span className="min-w-0 flex-1 truncate text-left">{project.name}</span>
+			<div className="flex shrink-0 items-center gap-0.5">
+				<DropdownMenu
+					open={menuOpen}
+					onOpenChange={(open) => {
+						setMenuOpen(open);
+						if (!open) setConfirmingDelete(false);
 					}}
-					onKeyDown={(event) => {
-						if (event.target !== event.currentTarget) return;
-						if (event.key !== "Enter" && event.key !== " ") return;
-						event.preventDefault();
-						if (refreshing) return;
-						if (onNewChat) onNewChat(project.id);
-						else onToggle();
-					}}
-					className={cn(
-						"group relative flex min-w-0 w-full cursor-pointer select-none items-center gap-2 rounded-md border border-transparent bg-transparent py-1 pl-2 pr-3 text-left text-xs font-semibold transition-colors",
-						"text-sidebar-foreground dark:text-sidebar-foreground/75",
-						"hover:bg-sidebar-hover hover:text-sidebar-hover-foreground data-[menu-open]:bg-sidebar-hover data-[menu-open]:text-sidebar-hover-foreground",
-						"focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-sidebar-ring/40",
-						refreshing &&
-							"cursor-default text-sidebar-foreground-muted hover:bg-transparent hover:text-sidebar-foreground-muted",
-					)}
 				>
-					<button
-						type="button"
-						className="relative -mr-1.5 flex h-5 w-5 shrink-0 items-center justify-center"
-						aria-label={toggleLabel}
-						aria-expanded={!collapsed}
-						disabled={refreshing}
-						onClick={(event) => {
-							event.preventDefault();
-							event.stopPropagation();
-							onToggle();
-						}}
-					>
-						{refreshing ? (
-							<LoaderCircle className="h-3.5 w-3.5 animate-spin text-current" />
-						) : (
-							<>
-								<Folder className="absolute left-0 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-current opacity-80 transition-opacity duration-100 group-hover:opacity-0" />
-								<ChevronDown
-									className={cn(
-										"absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 text-current transition-[opacity,transform] duration-100",
-										"opacity-0 group-hover:opacity-100",
-										collapsed ? "-rotate-90" : "rotate-0",
-									)}
-								/>
-							</>
-						)}
-					</button>
-					<span className="min-w-0 flex-1 truncate text-left">
-						{project.name}
-					</span>
-					<div className="flex shrink-0 items-center gap-0.5">
-						<DropdownMenu
-							open={menuOpen}
-							onOpenChange={(open) => {
-								setMenuOpen(open);
-								if (!open) setConfirmingDelete(false);
-							}}
-						>
-							<DropdownMenuTrigger asChild>
-								<button
-									type="button"
-									aria-label="项目菜单"
-									className={HOVER_ACTION}
-									onClick={(event) => event.stopPropagation()}
-								>
-									<MoreHorizontal className="h-3.5 w-3.5" />
-								</button>
-							</DropdownMenuTrigger>
-							<DropdownMenuContent align="start" className="min-w-0 w-32">
-								<DropdownMenuItem
-									disabled={refreshing}
-									onSelect={() => onRefreshSessions?.()}
-								>
-									<RefreshCw className={menuItemIconClassName} />
-									刷新对话
-								</DropdownMenuItem>
-								{onDelete ? (
-									<DropdownMenuItem
-										variant="destructive"
-										disabled={refreshing}
-										onSelect={(event) => {
-											if (!confirmingDelete) {
-												event.preventDefault();
-												setConfirmingDelete(true);
-												return;
-											}
-											onDelete(project.id);
-										}}
-									>
-										<Trash2 className={menuItemIconClassName} />
-										{confirmingDelete ? "确认删除" : "删除项目"}
-									</DropdownMenuItem>
-								) : null}
-							</DropdownMenuContent>
-						</DropdownMenu>
+					<DropdownMenuTrigger asChild>
 						<button
 							type="button"
-							aria-label="新建对话"
+							aria-label="项目菜单"
 							className={HOVER_ACTION}
-							onClick={(event) => {
-								event.preventDefault();
-								event.stopPropagation();
-								onNewChat?.(project.id);
-							}}
+							onClick={(event) => event.stopPropagation()}
 						>
-							<SquarePen className="h-3.5 w-3.5" />
+							<MoreHorizontal className="h-3.5 w-3.5" />
 						</button>
-					</div>
-				</div>
-			</TooltipTrigger>
-			<TooltipContent side="right" align="start" className="max-w-[420px]">
-				<div className="flex flex-col gap-0.5 text-xs">
-					<span>{env.name}</span>
-					<span className="break-all font-mono text-[11px] leading-snug">
-						{project.path}
-					</span>
-				</div>
-			</TooltipContent>
-		</Tooltip>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="start" className="min-w-0 w-32">
+						<DropdownMenuItem
+							disabled={refreshing}
+							onSelect={() => onRefreshSessions?.()}
+						>
+							<RefreshCw className={menuItemIconClassName} />
+							刷新对话
+						</DropdownMenuItem>
+						{onDelete ? (
+							<DropdownMenuItem
+								variant="destructive"
+								disabled={refreshing}
+								onSelect={(event) => {
+									if (!confirmingDelete) {
+										event.preventDefault();
+										setConfirmingDelete(true);
+										return;
+									}
+									onDelete(project.id);
+								}}
+							>
+								<Trash2 className={menuItemIconClassName} />
+								{confirmingDelete ? "确认删除" : "删除项目"}
+							</DropdownMenuItem>
+						) : null}
+					</DropdownMenuContent>
+				</DropdownMenu>
+				<button
+					type="button"
+					aria-label="新建对话"
+					className={HOVER_ACTION}
+					onClick={(event) => {
+						event.preventDefault();
+						event.stopPropagation();
+						onNewChat?.(project.id);
+					}}
+				>
+					<SquarePen className="h-3.5 w-3.5" />
+				</button>
+			</div>
+		</div>
 	);
 }
 

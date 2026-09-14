@@ -33,6 +33,8 @@ import {
 	TooltipTrigger,
 } from "@/ui";
 import { ComposerActions } from "@/components/chat/chat-composer-actions";
+import { ComposerContextUsage } from "@/components/chat/composer-context-usage";
+import type { ChatSessionRuntimeState } from "@/components/chat/chat-page-utils";
 import {
 	CHAT_COMPOSER_ATTACHMENT_BUTTON_CLASS_NAME,
 	CHAT_COMPOSER_TEXTAREA_CLASS_NAME,
@@ -71,6 +73,7 @@ type ChatComposerProps = {
 	pendingSteering?: number;
 	pendingFollowUps?: number;
 	statusText?: string;
+	contextUsage?: ChatSessionRuntimeState | null;
 	models?: readonly PiModel[];
 	selectedModel?: PiModel | null;
 	modelLoading?: boolean;
@@ -131,7 +134,7 @@ export function ChatComposer({
 	onSubmit,
 	onSteer,
 	onFollowUp,
-	variant: _variant = "session",
+	variant = "session",
 	placeholder = DEFAULT_CHAT_COMPOSER_PLACEHOLDER,
 	disabled = false,
 	running = false,
@@ -139,6 +142,7 @@ export function ChatComposer({
 	pendingSteering = 0,
 	pendingFollowUps = 0,
 	statusText = "",
+	contextUsage = null,
 	models = EMPTY_MODELS,
 	selectedModel = null,
 	modelLoading = false,
@@ -518,6 +522,13 @@ export function ChatComposer({
 						<span className="hidden truncate text-[11px] tabular-nums text-muted-foreground md:inline">
 							{statusText}
 						</span>
+					) : null}
+
+					{variant === "session" ? (
+						<ComposerContextUsage
+							usage={contextUsage}
+							contextWindow={selectedModel?.contextWindow}
+						/>
 					) : null}
 
 					<ComposerActions

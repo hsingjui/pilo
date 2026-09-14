@@ -16,7 +16,18 @@ export type ChatSession = {
 export type ChatSessionRuntimeState = {
 	name?: string;
 	messageCount?: number;
-	tokens?: number;
+	userMessages?: number;
+	assistantMessages?: number;
+	toolCalls?: number;
+	toolResults?: number;
+	totalMessages?: number;
+	tokens?: {
+		input?: number;
+		output?: number;
+		cacheRead?: number;
+		cacheWrite?: number;
+		total?: number;
+	};
 	cost?: number;
 	contextTokens?: number | null;
 	contextWindow?: number;
@@ -34,44 +45,17 @@ export async function readCurrentPiSessionState(
 	return {
 		name: state.sessionName,
 		messageCount: state.messageCount,
-		tokens: stats.tokens?.total,
+		userMessages: stats.userMessages,
+		assistantMessages: stats.assistantMessages,
+		toolCalls: stats.toolCalls,
+		toolResults: stats.toolResults,
+		totalMessages: stats.totalMessages,
+		tokens: stats.tokens,
 		cost: stats.cost,
 		contextTokens: stats.contextUsage?.tokens,
 		contextWindow: stats.contextUsage?.contextWindow,
 		contextPercent: stats.contextUsage?.percent,
 	};
-}
-
-const compactNumberFormatter = new Intl.NumberFormat("en", {
-	notation: "compact",
-	maximumFractionDigits: 1,
-});
-
-export function formatSessionUsage(
-	state: ChatSessionRuntimeState | null,
-): string {
-	if (!state) return "";
-	const parts: string[] = [];
-	if (state.contextPercent !== null && state.contextPercent !== undefined) {
-		parts.push(`${Math.round(state.contextPercent)}% 上下文`);
-	} else if (
-		state.contextTokens !== null &&
-		state.contextTokens !== undefined &&
-		state.contextWindow
-	) {
-		parts.push(
-			`${compactNumberFormatter.format(state.contextTokens)}/${compactNumberFormatter.format(state.contextWindow)} 上下文`,
-		);
-	}
-	if (state.tokens !== undefined) {
-		parts.push(`${compactNumberFormatter.format(state.tokens)} tokens`);
-	}
-	if (state.cost !== undefined) {
-		parts.push(
-			`$${state.cost < 0.01 ? state.cost.toFixed(4) : state.cost.toFixed(2)}`,
-		);
-	}
-	return parts.join(" · ");
 }
 
 export function formatTime(timestampMs = Date.now()) {

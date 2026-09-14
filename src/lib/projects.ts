@@ -29,7 +29,7 @@ export type DiscoveredProject = {
 };
 
 export function localConnection(): Connection {
-	return { id: "local", name: "Local", kind: { type: "local" } };
+	return { id: "local", name: "本地", kind: { type: "local" } };
 }
 
 export function wslConnection(distro: string): Connection {
@@ -124,12 +124,5 @@ export function notifyProjectsChanged() {
 }
 
 export function connectionLabel(connection: Connection): string {
-	switch (connection.kind.type) {
-		case "local":
-			return "本地";
-		case "wsl":
-			return `WSL · ${connection.kind.distro}`;
-		case "ssh":
-			return connection.name;
-	}
+	return connection.name;
 }

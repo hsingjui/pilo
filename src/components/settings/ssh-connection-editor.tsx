@@ -17,6 +17,7 @@ import {
 } from "@/ui";
 
 import type { SshConnectionFormState } from "./connection-form";
+import { SETTINGS_NESTED_DIALOG_OVERLAY_CLASS } from "./compact-layout";
 
 type SshConnectionEditorProps = {
 	editing: SshConnectionFormState | null;
@@ -35,7 +36,10 @@ export function SshConnectionEditor({
 }: SshConnectionEditorProps) {
 	return (
 		<Dialog open={editing !== null} onOpenChange={(open) => !open && onClose()}>
-			<DialogContent className="max-w-lg gap-4">
+			<DialogContent
+				overlayClassName={SETTINGS_NESTED_DIALOG_OVERLAY_CLASS}
+				className="max-w-lg gap-4 shadow-popover"
+			>
 				<DialogHeader>
 					<DialogTitle>
 						{editing?.name ? "编辑 SSH 连接" : "添加 SSH 连接"}

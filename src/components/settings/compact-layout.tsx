@@ -2,6 +2,18 @@ import React, { type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
+export const SETTINGS_CONTAINER_CLASS =
+	"space-y-3 overflow-x-hidden px-4 py-2 md:mx-auto md:max-w-4xl md:px-2";
+
+export const SETTINGS_ICON_BUTTON_CLASS =
+	"h-7 w-7 rounded-md text-muted-foreground hover:text-foreground [&_svg]:size-3.5";
+
+export const SETTINGS_TEXT_BUTTON_CLASS =
+	"h-7 gap-1.5 px-2 text-xs font-normal [&_svg]:size-3.5";
+
+export const SETTINGS_NESTED_DIALOG_OVERLAY_CLASS =
+	"z-[var(--z-dialog)] bg-black/20";
+
 type SettingsSectionProps = {
 	title?: string;
 	description?: string;
@@ -58,11 +70,19 @@ export function SettingsSection({
 					{actions ? (
 						<div className="flex shrink-0 items-center gap-1.5">
 							{React.Children.map(actions, (child) => {
-								if (!React.isValidElement<{ className?: string }>(child))
+								if (
+									!React.isValidElement<{
+										size?: string;
+										variant?: string;
+										className?: string;
+									}>(child)
+								)
 									return child;
 								return React.cloneElement(child, {
+									size: child.props.size ?? "icon",
+									variant: child.props.variant ?? "default",
 									className: cn(
-										"h-7 w-7 rounded-md shadow-xs focus-visible:ring-1 focus-visible:ring-ring/60",
+										"h-7 w-7 rounded-md shadow-xs focus-visible:ring-1 focus-visible:ring-ring/60 [&_svg]:size-3.5",
 										child.props.className,
 									),
 								});
@@ -98,7 +118,7 @@ export function SettingsRow({
 			<div className={cn("min-w-0", helper && "sm:max-w-[520px]")}>
 				<p className="font-medium leading-tight text-foreground">{label}</p>
 				{helper ? (
-					<p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
+					<p className="text-[11px] leading-tight text-muted-foreground">
 						{helper}
 					</p>
 				) : null}
