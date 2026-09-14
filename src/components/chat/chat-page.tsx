@@ -47,6 +47,9 @@ type ChatPageProps = {
 	active?: boolean;
 	onSessionIdentified?: (sessionId: string) => void;
 	onOpenChanges?: () => void;
+	onOpenTerminal?: () => void;
+	terminalRunning?: boolean;
+	terminalVisible?: boolean;
 	onNewTemporaryChat?: () => void;
 	onExpandSidebar?: () => void;
 	onSessionChanged?: () => void;
@@ -69,6 +72,9 @@ function ChatPageImpl({
 	active = true,
 	onSessionIdentified,
 	onOpenChanges,
+	onOpenTerminal,
+	terminalRunning = false,
+	terminalVisible = false,
 	onNewTemporaryChat,
 	onExpandSidebar,
 	onSessionChanged,
@@ -428,6 +434,9 @@ function ChatPageImpl({
 				sessionState={sessionState ?? undefined}
 				onRename={session.temporary ? undefined : handleRenameSession}
 				onOpenChanges={onOpenChanges}
+				onOpenTerminal={onOpenTerminal}
+				terminalRunning={terminalRunning}
+				terminalVisible={terminalVisible}
 				onNewTemporaryChat={onNewTemporaryChat}
 				onExpandSidebar={onExpandSidebar}
 				reserveWindowControls={reserveWindowControls}

@@ -10,7 +10,7 @@ import {
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { ChevronDown, ChevronUp, Plus, TerminalSquare, X } from "lucide-react";
+import { Plus, TerminalSquare, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { userErrorMessage } from "@/lib/app-error";
@@ -34,7 +34,6 @@ type TerminalTab = TerminalInfo & {
 };
 
 type TerminalLayout = {
-	expanded: boolean;
 	height: number;
 };
 
@@ -42,7 +41,6 @@ const TERMINAL_LAYOUT_KEY = "pilo.terminal.layout.v1";
 const DEFAULT_TERMINAL_HEIGHT = 260;
 const MIN_TERMINAL_HEIGHT = 140;
 const MAX_TERMINAL_HEIGHT = 640;
-const TERMINAL_HEADER_HEIGHT = 34;
 
 /** 方向键每次调整的高度。 */
 const TERMINAL_RESIZE_STEP = 16;
@@ -50,17 +48,16 @@ const TERMINAL_RESIZE_STEP = 16;
 function readTerminalLayout(): TerminalLayout {
 	try {
 		const raw = window.localStorage.getItem(TERMINAL_LAYOUT_KEY);
-		if (!raw) return { expanded: false, height: DEFAULT_TERMINAL_HEIGHT };
+		if (!raw) return { height: DEFAULT_TERMINAL_HEIGHT };
 		const value = JSON.parse(raw) as Partial<TerminalLayout>;
 		return {
-			expanded: value.expanded === true,
 			height: Math.min(
 				MAX_TERMINAL_HEIGHT,
 				Math.max(MIN_TERMINAL_HEIGHT, value.height ?? DEFAULT_TERMINAL_HEIGHT),
 			),
 		};
 	} catch {
-		return { expanded: false, height: DEFAULT_TERMINAL_HEIGHT };
+		return { height: DEFAULT_TERMINAL_HEIGHT };
 	}
 }
 
@@ -196,12 +193,25 @@ function TerminalViewport({
 	);
 }
 
-export function TerminalDock({ project }: { project?: Project }) {
+export function TerminalDock({
+	project,
+	visible,
+	openRequest = 0,
+	onRunningChange,
+	onDestroy,
+}: {
+	project?: Project;
+	visible: boolean;
+	openRequest?: number;
+	onRunningChange?: (running: boolean) => void;
+	onDestroy?: () => void;
+}) {
 	const [layout, setLayout] = useState<TerminalLayout>(readTerminalLayout);
 	const [tabs, setTabs] = useState<TerminalTab[]>([]);
 	const [activeId, setActiveId] = useState<string | null>(null);
 	const [opening, setOpening] = useState(false);
 	const [listenerReady, setListenerReady] = useState(false);
+	const lastOpenRequestRef = useRef(0);
 	const terminalsRef = useRef(new Map<string, Terminal>());
 	const pendingOutputRef = useRef(new Map<string, Uint8Array[]>());
 	const exitedRef = useRef(new Set<string>());
@@ -244,6 +254,10 @@ export function TerminalDock({ project }: { project?: Project }) {
 		};
 	}, [handleTerminalEvent]);
 
+	useEffect(() => {
+		onRunningChange?.(tabs.some((tab) => !tab.exited));
+	}, [onRunningChange, tabs]);
+
 	const registerTerminal = useCallback(
 		(terminalId: string, terminal: Terminal | null) => {
 			if (!terminal) {
@@ -271,7 +285,6 @@ export function TerminalDock({ project }: { project?: Project }) {
 	const openTab = useCallback(async () => {
 		if (!project || opening || !listenerReady) return;
 		setOpening(true);
-		updateLayout({ ...layout, expanded: true });
 		try {
 			const info = await openProjectTerminal(project.id);
 			setTabs((current) => [...current, info]);
@@ -283,7 +296,41 @@ export function TerminalDock({ project }: { project?: Project }) {
 		} finally {
 			setOpening(false);
 		}
-	}, [layout, listenerReady, opening, updateLayout, project]);
+	}, [listenerReady, opening, project]);
+
+	useEffect(() => {
+		if (
+			openRequest <= lastOpenRequestRef.current ||
+			!project ||
+			!listenerReady ||
+			opening
+		) {
+			return;
+		}
+
+		const frame = window.requestAnimationFrame(() => {
+			lastOpenRequestRef.current = openRequest;
+
+			let existing: TerminalTab | undefined;
+			for (let index = tabs.length - 1; index >= 0; index -= 1) {
+				const tab = tabs[index];
+				if (tab?.projectId === project.id && !tab.exited) {
+					existing = tab;
+					break;
+				}
+			}
+			if (existing) {
+				setActiveId(existing.id);
+				window.requestAnimationFrame(() => {
+					terminalsRef.current.get(existing.id)?.focus();
+				});
+				return;
+			}
+
+			void openTab();
+		});
+		return () => window.cancelAnimationFrame(frame);
+	}, [listenerReady, openRequest, opening, openTab, project, tabs]);
 
 	const closeTab = useCallback(
 		(terminalId: string) => {
@@ -302,9 +349,26 @@ export function TerminalDock({ project }: { project?: Project }) {
 		[activeId],
 	);
 
+	const destroyAll = useCallback(async () => {
+		const ids = tabs.map((tab) => tab.id);
+		const results = await Promise.allSettled(
+			ids.map((id) => closeTerminal(id)),
+		);
+		pendingOutputRef.current.clear();
+		exitedRef.current.clear();
+		setTabs([]);
+		setActiveId(null);
+		onRunningChange?.(false);
+		onDestroy?.();
+
+		const failed = results.filter((result) => result.status === "rejected");
+		if (failed.length > 0) {
+			toast.error("部分 Terminal 未能正常关闭");
+		}
+	}, [onDestroy, onRunningChange, tabs]);
+
 	const handleResizeStart = useCallback(
 		(event: ReactPointerEvent<HTMLDivElement>) => {
-			if (!layout.expanded) return;
 			event.preventDefault();
 			const startY = event.clientY;
 			const startHeight = layout.height;
@@ -327,16 +391,14 @@ export function TerminalDock({ project }: { project?: Project }) {
 			window.addEventListener("pointermove", onMove);
 			window.addEventListener("pointerup", onUp, { once: true });
 		},
-		[layout.expanded, layout.height],
+		[layout.height],
 	);
 
 	const handleResizeKeyDown = useCallback(
 		(event: ReactKeyboardEvent<HTMLDivElement>) => {
 			if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
 			event.preventDefault();
-			if (!layout.expanded) return;
 			updateLayout({
-				expanded: true,
 				height: Math.min(
 					MAX_TERMINAL_HEIGHT,
 					Math.max(
@@ -349,49 +411,34 @@ export function TerminalDock({ project }: { project?: Project }) {
 				),
 			});
 		},
-		[layout.expanded, layout.height, updateLayout],
+		[layout.height, updateLayout],
 	);
-
-	const toggleExpanded = useCallback(() => {
-		const next = { ...layout, expanded: !layout.expanded };
-		updateLayout(next);
-	}, [layout, updateLayout]);
 
 	return (
 		<section
-			className="relative flex shrink-0 flex-col border-t border-border bg-background"
-			style={{
-				height: layout.expanded ? layout.height : TERMINAL_HEADER_HEIGHT,
-			}}
+			className={cn(
+				"relative shrink-0 flex-col border-t border-border bg-background",
+				visible ? "flex" : "hidden",
+			)}
+			style={{ height: layout.height }}
 		>
-			{layout.expanded ? (
-				<div
-					role="separator"
-					aria-orientation="horizontal"
-					aria-label="调整终端高度"
-					tabIndex={0}
-					aria-valuemin={MIN_TERMINAL_HEIGHT}
-					aria-valuemax={MAX_TERMINAL_HEIGHT}
-					aria-valuenow={Math.round(layout.height)}
-					onPointerDown={handleResizeStart}
-					onKeyDown={handleResizeKeyDown}
-					className="absolute -top-1 left-0 right-0 z-10 h-2 cursor-row-resize focus-visible:outline-hidden after:absolute after:inset-x-0 after:top-1/2 after:h-[2px] after:-translate-y-1/2 after:bg-transparent hover:after:bg-sidebar-ring/50 focus-visible:after:bg-sidebar-ring"
-				/>
-			) : null}
+			<div
+				role="separator"
+				aria-orientation="horizontal"
+				aria-label="调整终端高度"
+				tabIndex={0}
+				aria-valuemin={MIN_TERMINAL_HEIGHT}
+				aria-valuemax={MAX_TERMINAL_HEIGHT}
+				aria-valuenow={Math.round(layout.height)}
+				onPointerDown={handleResizeStart}
+				onKeyDown={handleResizeKeyDown}
+				className="absolute -top-1 left-0 right-0 z-10 h-2 cursor-row-resize focus-visible:outline-hidden after:absolute after:inset-x-0 after:top-1/2 after:h-[2px] after:-translate-y-1/2 after:bg-transparent hover:after:bg-sidebar-ring/50 focus-visible:after:bg-sidebar-ring"
+			/>
 			<header className="flex h-[34px] shrink-0 select-none items-center gap-1 border-b border-border/70 px-2">
-				<button
-					type="button"
-					className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-					onClick={toggleExpanded}
-				>
+				<div className="flex h-7 shrink-0 items-center gap-1.5 px-1.5 text-xs text-muted-foreground">
 					<TerminalSquare className="size-3.5" />
 					Terminal
-					{layout.expanded ? (
-						<ChevronDown className="size-3" />
-					) : (
-						<ChevronUp className="size-3" />
-					)}
-				</button>
+				</div>
 				{tabs.map((tab, index) => (
 					<div
 						key={tab.id}
@@ -405,8 +452,6 @@ export function TerminalDock({ project }: { project?: Project }) {
 							className="min-w-0 flex-1 truncate px-2 py-1"
 							onClick={() => {
 								setActiveId(tab.id);
-								if (!layout.expanded)
-									updateLayout({ ...layout, expanded: true });
 							}}
 						>
 							{tab.title} {index + 1}
@@ -433,32 +478,36 @@ export function TerminalDock({ project }: { project?: Project }) {
 				>
 					<Plus className="size-3.5" />
 				</Button>
-				{project ? (
-					<span className="ml-auto hidden max-w-56 truncate text-[11px] text-muted-foreground lg:block">
-						{project.connection.name} · {project.path}
-					</span>
-				) : null}
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon"
+					className="ml-auto size-7"
+					aria-label="关闭并销毁 Terminal"
+					disabled={opening}
+					onClick={() => void destroyAll()}
+				>
+					<X className="size-3.5" />
+				</Button>
 			</header>
-			{layout.expanded ? (
-				<div className="min-h-0 flex-1">
-					{tabs.length === 0 ? (
-						<div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-							{project
-								? "点击 + 在当前项目新建 Terminal"
-								: "选择项目后可打开 Terminal"}
-						</div>
-					) : (
-						tabs.map((tab) => (
-							<TerminalViewport
-								key={tab.id}
-								tab={tab}
-								active={tab.id === activeId}
-								onRegister={registerTerminal}
-							/>
-						))
-					)}
-				</div>
-			) : null}
+			<div className="min-h-0 flex-1">
+				{tabs.length === 0 ? (
+					<div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+						{project
+							? "点击 + 在当前项目新建 Terminal"
+							: "选择项目后可打开 Terminal"}
+					</div>
+				) : (
+					tabs.map((tab) => (
+						<TerminalViewport
+							key={tab.id}
+							tab={tab}
+							active={visible && tab.id === activeId}
+							onRegister={registerTerminal}
+						/>
+					))
+				)}
+			</div>
 		</section>
 	);
 }

@@ -1,4 +1,9 @@
-import { MessageSquareDashed, PanelLeft, PanelRight } from "lucide-react";
+import {
+	MessageSquareDashed,
+	PanelLeft,
+	PanelRight,
+	TerminalSquare,
+} from "lucide-react";
 
 import { IS_MACOS, TRAFFIC_LIGHT_GUTTER } from "@/components/title-bar";
 import { cn } from "@/lib/utils";
@@ -10,6 +15,9 @@ export function SessionHeader({
 	sessionState,
 	onRename,
 	onOpenChanges,
+	onOpenTerminal,
+	terminalRunning = false,
+	terminalVisible = false,
 	onNewTemporaryChat,
 	onExpandSidebar,
 	reserveWindowControls = false,
@@ -20,6 +28,9 @@ export function SessionHeader({
 	sessionState?: ChatSessionRuntimeState;
 	onRename?: () => void;
 	onOpenChanges?: () => void;
+	onOpenTerminal?: () => void;
+	terminalRunning?: boolean;
+	terminalVisible?: boolean;
 	onNewTemporaryChat?: () => void;
 	onExpandSidebar?: () => void;
 	reserveWindowControls?: boolean;
@@ -95,13 +106,37 @@ export function SessionHeader({
 				/* 落地页没有会话：用占位保证顶栏几何与有会话时完全一致 */
 				<div className="min-w-0 flex-1" />
 			)}
-			{onNewTemporaryChat || onOpenChanges ? (
+			{onNewTemporaryChat || onOpenChanges || onOpenTerminal ? (
 				<div
 					className={cn(
 						"flex shrink-0 items-center gap-1 pr-2",
 						reserveWindowControls && "-translate-y-1",
 					)}
 				>
+					{onOpenTerminal ? (
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button
+									variant="ghost"
+									size="icon"
+									className="size-7"
+									aria-pressed={terminalVisible}
+									aria-label={terminalVisible ? "隐藏终端" : "显示终端"}
+									onClick={onOpenTerminal}
+								>
+									<TerminalSquare
+										className={cn(
+											"size-4 transition-colors",
+											terminalRunning && "text-primary",
+										)}
+									/>
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent>
+								{terminalVisible ? "隐藏终端" : "显示终端"}
+							</TooltipContent>
+						</Tooltip>
+					) : null}
 					{onNewTemporaryChat ? (
 						<Tooltip>
 							<TooltipTrigger asChild>

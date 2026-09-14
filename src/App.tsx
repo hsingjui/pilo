@@ -103,6 +103,11 @@ const RightSidebar = lazy(() =>
 		default: module.RightSidebar,
 	})),
 );
+const TerminalDock = lazy(() =>
+	import("@/components/terminal-dock").then((module) => ({
+		default: module.TerminalDock,
+	})),
+);
 
 // Keep the existing right-sidebar implementation available for future work,
 // but do not render or reserve layout space for it for now.
@@ -188,6 +193,10 @@ function App() {
 		null,
 	);
 	const [editorVisible, setEditorVisible] = useState(false);
+	const [terminalOpenRequest, setTerminalOpenRequest] = useState(0);
+	const [terminalMounted, setTerminalMounted] = useState(false);
+	const [terminalVisible, setTerminalVisible] = useState(false);
+	const [terminalRunning, setTerminalRunning] = useState(false);
 
 	useEffect(() => {
 		const next = new Map(
@@ -336,6 +345,24 @@ function App() {
 	const activeProject =
 		projects.find((project) => project.id === draftProjectId) ?? firstProject;
 	const activeProjectId = activeProject?.id ?? null;
+	const toggleTerminal = useCallback(() => {
+		if (terminalVisible) {
+			setTerminalVisible(false);
+			return;
+		}
+		if (!activeProject) {
+			toast.info("请先新增项目");
+			return;
+		}
+		setTerminalMounted(true);
+		setTerminalVisible(true);
+		setTerminalOpenRequest((request) => request + 1);
+	}, [activeProject, terminalVisible]);
+	const destroyTerminalDock = useCallback(() => {
+		setTerminalVisible(false);
+		setTerminalMounted(false);
+		setTerminalRunning(false);
+	}, []);
 	const {
 		indexedSessions,
 		refreshProjectSessions,
@@ -955,6 +982,9 @@ function App() {
 													writeUiState={writeChatUiState}
 													reserveWindowControls={CUSTOM_TITLEBAR}
 													sidebarCollapsed={leftSidebarCollapsed}
+													onOpenTerminal={toggleTerminal}
+													terminalRunning={terminalRunning}
+													terminalVisible={terminalVisible}
 													onNewTemporaryChat={() =>
 														startTemporaryChat(entry.session.projectRecord.id)
 													}
@@ -1000,6 +1030,9 @@ function App() {
 														? () => rightPanelRef.current?.expand()
 														: undefined
 												}
+												onOpenTerminal={toggleTerminal}
+												terminalRunning={terminalRunning}
+												terminalVisible={terminalVisible}
 												onNewTemporaryChat={() =>
 													startTemporaryChat(entry.session.projectRecord.id)
 												}
@@ -1026,6 +1059,9 @@ function App() {
 										projectsReady ? Boolean(activeProject) : true
 									}
 									project={activeProject}
+									onOpenTerminal={toggleTerminal}
+									terminalRunning={terminalRunning}
+									terminalVisible={terminalVisible}
 									onNewTemporaryChat={() =>
 										startTemporaryChat(activeProject?.id)
 									}
@@ -1102,6 +1138,17 @@ function App() {
 							</>
 						) : null}
 					</Group>
+					{terminalMounted ? (
+						<Suspense fallback={null}>
+							<TerminalDock
+								project={activeProject ?? undefined}
+								visible={terminalVisible}
+								openRequest={terminalOpenRequest}
+								onRunningChange={setTerminalRunning}
+								onDestroy={destroyTerminalDock}
+							/>
+						</Suspense>
+					) : null}
 				</main>
 			</div>
 			{addProjectOpen ? (

@@ -31,6 +31,9 @@ function modelKey(model: PiModel | null): string | null {
 
 export function NewChatLanding({
 	onStartSession,
+	onOpenTerminal,
+	terminalRunning = false,
+	terminalVisible = false,
 	onNewTemporaryChat,
 	onExpandSidebar,
 	reserveWindowControls = false,
@@ -43,6 +46,9 @@ export function NewChatLanding({
 		model: PiModel | null,
 		thinkingLevel: PiThinkingLevel | null,
 	) => void;
+	onOpenTerminal?: () => void;
+	terminalRunning?: boolean;
+	terminalVisible?: boolean;
 	onNewTemporaryChat?: () => void;
 	onExpandSidebar?: () => void;
 	reserveWindowControls?: boolean;
@@ -225,6 +231,9 @@ export function NewChatLanding({
 		<div className="relative flex h-full min-w-0 flex-col">
 			<SessionHeader
 				overlay
+				onOpenTerminal={onOpenTerminal}
+				terminalRunning={terminalRunning}
+				terminalVisible={terminalVisible}
 				onNewTemporaryChat={onNewTemporaryChat}
 				onExpandSidebar={onExpandSidebar}
 				reserveWindowControls={reserveWindowControls}

@@ -74,6 +74,9 @@ export function ChatPageLoadingFallback({
 	writeUiState,
 	reserveWindowControls = false,
 	sidebarCollapsed = false,
+	onOpenTerminal,
+	terminalRunning = false,
+	terminalVisible = false,
 	onNewTemporaryChat,
 	onExpandSidebar,
 }: {
@@ -85,6 +88,9 @@ export function ChatPageLoadingFallback({
 	writeUiState: (key: string, patch: ChatUiStatePatch) => void;
 	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
+	onOpenTerminal?: () => void;
+	terminalRunning?: boolean;
+	terminalVisible?: boolean;
 	onNewTemporaryChat?: () => void;
 	onExpandSidebar?: () => void;
 }) {
@@ -106,6 +112,9 @@ export function ChatPageLoadingFallback({
 		<div className="flex h-full min-w-0 flex-col bg-background">
 			<SessionHeader
 				session={session}
+				onOpenTerminal={onOpenTerminal}
+				terminalRunning={terminalRunning}
+				terminalVisible={terminalVisible}
 				onNewTemporaryChat={onNewTemporaryChat}
 				onExpandSidebar={onExpandSidebar}
 				reserveWindowControls={reserveWindowControls}
