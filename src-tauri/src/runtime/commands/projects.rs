@@ -72,6 +72,15 @@ pub fn project_touch(app: AppHandle, id: String) -> Result<Project, String> {
 }
 
 #[tauri::command]
+pub fn project_reorder(
+    app: AppHandle,
+    connection_id: String,
+    project_ids: Vec<String>,
+) -> Result<Vec<Project>, String> {
+    project::reorder(&app, &connection_id, &project_ids)
+}
+
+#[tauri::command]
 pub async fn project_remove(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,

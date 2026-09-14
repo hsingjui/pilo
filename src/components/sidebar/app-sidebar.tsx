@@ -77,6 +77,8 @@ export function AppSidebar({
 	onSelectSession,
 	onNewChat,
 	onNewChatInProject,
+	onFocusProject,
+	onReorderProjects,
 	onDeleteProject,
 	onDeleteConnection,
 	onAddProject,
@@ -142,6 +144,10 @@ export function AppSidebar({
 		return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, parsed));
 	});
 	const [resizing, setResizing] = useState(false);
+	const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+	const [projectOrderPreview, setProjectOrderPreview] = useState<
+		Record<string, string[]>
+	>({});
 
 	useEffect(() => {
 		window.localStorage.setItem(
@@ -226,8 +232,58 @@ export function AppSidebar({
 			if (items) items.push(project);
 			else grouped.set(project.envId, [project]);
 		}
+		for (const [envId, items] of grouped) {
+			const preview = projectOrderPreview[envId];
+			if (!preview) continue;
+			const rank = new Map(preview.map((id, index) => [id, index]));
+			items.sort(
+				(a, b) =>
+					(rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+					(rank.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+			);
+		}
 		return grouped;
-	}, [projects]);
+	}, [projectOrderPreview, projects]);
+
+	const reorderProject = useCallback(
+		(target: SidebarProject) => {
+			if (!draggedProjectId || draggedProjectId === target.id) return;
+			const dragged = projects.find(
+				(project) => project.id === draggedProjectId,
+			);
+			if (!dragged || dragged.envId !== target.envId) return;
+			const current = projectsByEnv.get(target.envId) ?? [];
+			const fromIndex = current.findIndex(
+				(project) => project.id === draggedProjectId,
+			);
+			const toIndex = current.findIndex((project) => project.id === target.id);
+			if (fromIndex < 0 || toIndex < 0) return;
+			const next = [...current];
+			const [moved] = next.splice(fromIndex, 1);
+			if (!moved) return;
+			next.splice(toIndex, 0, moved);
+			setProjectOrderPreview((preview) => ({
+				...preview,
+				[target.envId]: next.map((project) => project.id),
+			}));
+		},
+		[draggedProjectId, projects, projectsByEnv],
+	);
+
+	const finishProjectReorder = useCallback(
+		(project: SidebarProject) => {
+			const order = projectOrderPreview[project.envId];
+			setDraggedProjectId(null);
+			if (!order) return;
+			setProjectOrderPreview((current) => {
+				const next = { ...current };
+				delete next[project.envId];
+				return next;
+			});
+			onReorderProjects?.(project.envId, order);
+		},
+		[onReorderProjects, projectOrderPreview],
+	);
 	const sessionsByProject = useMemo(() => {
 		const grouped = new Map<string, SidebarSession[]>();
 		for (const session of sessions) {
@@ -386,27 +442,53 @@ export function AppSidebar({
 												return (
 													<div
 														key={project.id}
-														className="grid w-full min-w-0 gap-px overflow-hidden"
+														className="grid w-full min-w-0 gap-px overflow-hidden rounded-md"
 													>
-														<ProjectRow
-															project={project}
-															env={env}
-															collapsed={projectCollapsed}
-															refreshing={refreshingProjectIds.has(project.id)}
-															onToggle={() => {
-																const key = `ws:${project.id}`;
-																toggleSection(key, true);
-																if (projectCollapsed)
-																	onRefreshProjectSessions?.(project.id);
+														<div
+															draggable
+															onDragStart={(event) => {
+																setDraggedProjectId(project.id);
+																event.dataTransfer.effectAllowed = "move";
+																event.dataTransfer.setData(
+																	"text/plain",
+																	project.id,
+																);
 															}}
-															onNewChat={onNewChatInProject}
-															onDelete={onDeleteProject}
-															onRefreshSessions={
-																onRefreshProjectSessions
-																	? () => onRefreshProjectSessions(project.id)
-																	: undefined
-															}
-														/>
+															onDragOver={(event) => {
+																if (!draggedProjectId) return;
+																event.preventDefault();
+																reorderProject(project);
+															}}
+															onDrop={(event) => event.preventDefault()}
+															onDragEnd={() => finishProjectReorder(project)}
+															className={cn(
+																"rounded-md",
+																draggedProjectId === project.id && "opacity-60",
+															)}
+														>
+															<ProjectRow
+																project={project}
+																env={env}
+																collapsed={projectCollapsed}
+																refreshing={refreshingProjectIds.has(
+																	project.id,
+																)}
+																onToggle={() => {
+																	onFocusProject?.(project.id);
+																	const key = `ws:${project.id}`;
+																	toggleSection(key, true);
+																	if (projectCollapsed)
+																		onRefreshProjectSessions?.(project.id);
+																}}
+																onNewChat={onNewChatInProject}
+																onDelete={onDeleteProject}
+																onRefreshSessions={
+																	onRefreshProjectSessions
+																		? () => onRefreshProjectSessions(project.id)
+																		: undefined
+																}
+															/>
+														</div>
 														{!projectCollapsed &&
 															renderSessionList(projectSessions)}
 													</div>

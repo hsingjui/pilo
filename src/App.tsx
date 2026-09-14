@@ -79,6 +79,7 @@ import {
 	notifyProjectsChanged,
 	pickLocalProjectDirectory,
 	removeProject,
+	reorderProjects,
 	touchProject,
 	PROJECTS_CHANGED_EVENT,
 	type Project,
@@ -181,6 +182,7 @@ function App() {
 	const [draftSessionStarted, setDraftSessionStarted] = useState(false);
 	const [draftSessionId, setDraftSessionId] = useState(createDraftSessionId);
 	const [draftProjectId, setDraftProjectId] = useState<string | null>(null);
+	const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null);
 	const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
 		null,
 	);
@@ -344,6 +346,9 @@ function App() {
 	const firstProject = projects[0] ?? null;
 	const activeProject =
 		projects.find((project) => project.id === draftProjectId) ?? firstProject;
+	const focusedProject =
+		projects.find((project) => project.id === focusedProjectId) ??
+		activeProject;
 	const activeProjectId = activeProject?.id ?? null;
 	const toggleTerminal = useCallback(() => {
 		if (terminalVisible) {
@@ -571,7 +576,7 @@ function App() {
 
 	const startNewChat = useCallback(
 		(projectId?: string) => {
-			const targetProjectId = projectId ?? firstProject?.id ?? null;
+			const targetProjectId = projectId ?? focusedProject?.id ?? null;
 			setOpenedChats((current) =>
 				current.filter((entry) => !entry.session.temporary),
 			);
@@ -582,6 +587,7 @@ function App() {
 			setDraftSessionThinkingLevel(null);
 			setDraftSessionId(createDraftSessionId());
 			setDraftProjectId(targetProjectId);
+			setFocusedProjectId(targetProjectId);
 			setSelectedSessionId(null);
 			if (targetProjectId) {
 				void touchProject(targetProjectId)
@@ -591,7 +597,7 @@ function App() {
 					);
 			}
 		},
-		[firstProject?.id],
+		[focusedProject?.id],
 	);
 
 	const startTemporaryChat = useCallback(
@@ -670,6 +676,7 @@ function App() {
 				setDraftSessionModel(null);
 				setDraftSessionThinkingLevel(null);
 				setDraftProjectId(projectId);
+				setFocusedProjectId(projectId);
 				void touchProject(projectId)
 					.then(() => notifyProjectsChanged())
 					.catch((error) =>
@@ -697,6 +704,7 @@ function App() {
 			setDraftSessionModel(null);
 			setDraftSessionThinkingLevel(null);
 			setDraftProjectId(session.projectId);
+			setFocusedProjectId(session.projectId);
 			void touchProject(session.projectId)
 				.then(() => notifyProjectsChanged())
 				.catch((error) =>
@@ -731,6 +739,7 @@ function App() {
 				);
 			}
 			setDraftProjectId(target.projectId);
+			setFocusedProjectId(target.projectId);
 			setSelectedSessionId(target.sessionId);
 			setDraftSessionStarted(false);
 			setDraftSessionPrompt(null);
@@ -801,6 +810,39 @@ function App() {
 			}
 		},
 		[connectionCatalog, projects],
+	);
+
+	const handleReorderProjects = useCallback(
+		async (connectionId: string, projectIds: string[]) => {
+			const previous = projects;
+			const rank = new Map(projectIds.map((id, index) => [id, index]));
+			setProjects((current) => {
+				const reordered = current.filter(
+					(project) => project.connection.id === connectionId,
+				);
+				reordered.sort(
+					(a, b) =>
+						(rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+						(rank.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+				);
+				let index = 0;
+				return current.map((project) =>
+					project.connection.id === connectionId
+						? (reordered[index++] ?? project)
+						: project,
+				);
+			});
+			try {
+				const next = await reorderProjects(connectionId, projectIds);
+				setProjects(next);
+			} catch (error) {
+				setProjects(previous);
+				toast.error("项目排序保存失败", {
+					description: userErrorMessage(error),
+				});
+			}
+		},
+		[projects],
 	);
 
 	const handleDeleteProject = useCallback(
@@ -942,6 +984,10 @@ function App() {
 					}
 					onNewChat={() => startNewChat()}
 					onNewChatInProject={(projectId) => startNewChat(projectId)}
+					onFocusProject={setFocusedProjectId}
+					onReorderProjects={(connectionId, projectIds) =>
+						void handleReorderProjects(connectionId, projectIds)
+					}
 					onAddProject={(connectionId) => void handleAddProject(connectionId)}
 					onRefreshProjectSessions={(projectId) => {
 						void refreshProjectSessions(projectId, true).catch((error) =>

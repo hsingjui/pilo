@@ -91,7 +91,8 @@ fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            path TEXT NOT NULL,
            metadata_json TEXT NOT NULL,
            created_at_ms INTEGER NOT NULL,
-           last_opened_at_ms INTEGER NOT NULL
+           last_opened_at_ms INTEGER NOT NULL,
+           sort_order INTEGER NOT NULL DEFAULT 0
          );
          CREATE INDEX IF NOT EXISTS idx_projects_recent ON projects(last_opened_at_ms DESC);
          CREATE TABLE IF NOT EXISTS project_model_cache (
@@ -129,6 +130,7 @@ fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
     )
     .map_err(|error| format!("failed to initialize Pilo SQLite schema: {error}"))?;
     ensure_connection_columns(db)?;
+    ensure_project_columns(db)?;
     ensure_project_model_cache_columns(db)?;
     Ok(())
 }
@@ -149,6 +151,42 @@ fn ensure_connection_columns(db: &SqliteConnection) -> Result<(), String> {
         )
         .map_err(|error| error.to_string())?;
     }
+    Ok(())
+}
+
+fn ensure_project_columns(db: &SqliteConnection) -> Result<(), String> {
+    let has_sort_order = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('projects') WHERE name='sort_order')",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|exists| exists != 0)
+        .map_err(|error| error.to_string())?;
+    if !has_sort_order {
+        db.execute_batch(
+            "ALTER TABLE projects ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+             UPDATE projects
+             SET sort_order=(
+               SELECT COUNT(*)
+               FROM projects newer
+               WHERE newer.connection_id=projects.connection_id
+                 AND (
+                   newer.last_opened_at_ms>projects.last_opened_at_ms
+                   OR (
+                     newer.last_opened_at_ms=projects.last_opened_at_ms
+                     AND newer.name<projects.name
+                   )
+                 )
+             );",
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    db.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_projects_connection_sort
+         ON projects(connection_id,sort_order,name);",
+    )
+    .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -392,8 +430,8 @@ pub fn upsert_project(db: &SqliteConnection, project: &Project) -> Result<(), St
     let metadata_json =
         serde_json::to_string(&project.metadata).map_err(|error| error.to_string())?;
     db.execute(
-        "INSERT INTO projects(id,connection_id,name,path,metadata_json,created_at_ms,last_opened_at_ms)
-         VALUES(?1,?2,?3,?4,?5,?6,?7)
+        "INSERT INTO projects(id,connection_id,name,path,metadata_json,created_at_ms,last_opened_at_ms,sort_order)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,COALESCE((SELECT MAX(sort_order)+1 FROM projects WHERE connection_id=?2),0))
          ON CONFLICT(id) DO UPDATE SET connection_id=excluded.connection_id,name=excluded.name,path=excluded.path,metadata_json=excluded.metadata_json,last_opened_at_ms=excluded.last_opened_at_ms",
         params![project.id, project.connection.id, project.name, project.path, metadata_json, project.created_at_ms as i64, project.last_opened_at_ms as i64],
     ).map_err(|error| error.to_string())?;
@@ -404,7 +442,7 @@ pub fn list_projects(db: &SqliteConnection) -> Result<Vec<Project>, String> {
     let mut statement = db.prepare(
         "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable
          FROM projects p JOIN connections c ON c.id=p.connection_id
-         ORDER BY p.last_opened_at_ms DESC,p.name ASC"
+         ORDER BY p.connection_id ASC,p.sort_order ASC,p.name ASC"
     ).map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
@@ -443,6 +481,45 @@ pub fn list_projects(db: &SqliteConnection) -> Result<Vec<Project>, String> {
         .map_err(|error| error.to_string())?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|error| error.to_string())
+}
+
+pub fn reorder_projects(
+    db: &mut SqliteConnection,
+    connection_id: &str,
+    project_ids: &[String],
+) -> Result<(), String> {
+    let existing = {
+        let mut statement = db
+            .prepare("SELECT id FROM projects WHERE connection_id=?1")
+            .map_err(|error| error.to_string())?;
+        statement
+            .query_map(params![connection_id], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?
+    };
+    let existing_ids = existing.iter().collect::<HashSet<_>>();
+    let requested_ids = project_ids.iter().collect::<HashSet<_>>();
+    if existing.len() != project_ids.len()
+        || requested_ids.len() != project_ids.len()
+        || existing_ids != requested_ids
+    {
+        return Err(format!(
+            "Project order for connection '{connection_id}' does not match the current project set"
+        ));
+    }
+
+    let transaction = db.transaction().map_err(|error| error.to_string())?;
+    for (index, project_id) in project_ids.iter().enumerate() {
+        transaction
+            .execute(
+                "UPDATE projects SET sort_order=?1 WHERE id=?2 AND connection_id=?3",
+                params![index as i64, project_id, connection_id],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    transaction.commit().map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 pub fn get_project(db: &SqliteConnection, id: &str) -> Result<Option<Project>, String> {
@@ -896,6 +973,37 @@ mod tests {
 
         remove_project(&db, "project:local:/code/demo").expect("remove project");
         assert!(list_project_model_cache(&db).unwrap().is_empty());
+    }
+
+    #[test]
+    fn project_order_round_trips_and_rejects_incomplete_orders() {
+        let mut db = SqliteConnection::open_in_memory().expect("open in-memory SQLite");
+        db.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        initialize_schema(&db).expect("initialize schema");
+        db.execute_batch(
+            "INSERT INTO connections(id,name,kind_json,updated_at_ms) VALUES('local','Local','{\"type\":\"local\"}',1);
+             INSERT INTO projects(id,connection_id,name,path,metadata_json,created_at_ms,last_opened_at_ms,sort_order) VALUES
+               ('project:local:/code/a','local','a','/code/a','{\"cwd\":\"/code/a\",\"gitBranch\":null,\"piVersion\":\"1\",\"refreshedAtMs\":1}',1,3,0),
+               ('project:local:/code/b','local','b','/code/b','{\"cwd\":\"/code/b\",\"gitBranch\":null,\"piVersion\":\"1\",\"refreshedAtMs\":1}',1,2,1),
+               ('project:local:/code/c','local','c','/code/c','{\"cwd\":\"/code/c\",\"gitBranch\":null,\"piVersion\":\"1\",\"refreshedAtMs\":1}',1,1,2);",
+        )
+        .expect("seed projects");
+
+        let order = vec![
+            "project:local:/code/c".to_owned(),
+            "project:local:/code/a".to_owned(),
+            "project:local:/code/b".to_owned(),
+        ];
+        reorder_projects(&mut db, "local", &order).expect("reorder projects");
+        assert_eq!(
+            list_projects(&db)
+                .unwrap()
+                .into_iter()
+                .map(|project| project.id)
+                .collect::<Vec<_>>(),
+            order
+        );
+        assert!(reorder_projects(&mut db, "local", &["project:local:/code/a".to_owned()]).is_err());
     }
 
     #[test]

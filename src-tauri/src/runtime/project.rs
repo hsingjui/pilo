@@ -84,6 +84,16 @@ pub fn remove(app: &AppHandle, id: &str) -> Result<Vec<Project>, String> {
     storage::list_projects(&db)
 }
 
+pub fn reorder(
+    app: &AppHandle,
+    connection_id: &str,
+    project_ids: &[String],
+) -> Result<Vec<Project>, String> {
+    let mut db = storage::open(app)?;
+    storage::reorder_projects(&mut db, connection_id, project_ids)?;
+    storage::list_projects(&db)
+}
+
 pub async fn discover(
     app: &AppHandle,
     servers: &ServerManager,

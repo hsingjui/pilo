@@ -81,6 +81,13 @@ export function touchProject(id: string): Promise<Project> {
 	return invoke<Project>("project_touch", { id });
 }
 
+export function reorderProjects(
+	connectionId: string,
+	projectIds: string[],
+): Promise<Project[]> {
+	return invoke<Project[]>("project_reorder", { connectionId, projectIds });
+}
+
 export function removeProject(id: string): Promise<Project[]> {
 	return invoke<Project[]>("project_remove", { id });
 }
