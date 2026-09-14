@@ -569,9 +569,7 @@ export function ChatComposer({
 						sendMessageShortcut={sendMessageShortcut}
 						onStop={onStop}
 						canSteer={Boolean(onSteer)}
-						canFollowUp={Boolean(onFollowUp)}
 						onPrimary={submit}
-						onFollowUp={submitFollowUp}
 					/>
 				</div>
 			</ChatComposerSurface>
