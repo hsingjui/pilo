@@ -20,6 +20,10 @@ import type {
 import type { SessionHistory } from "@/lib/sessions";
 import { loadSessionHistory } from "@/lib/sessions";
 import {
+	summarizeChatImages,
+	type ChatImageAttachment,
+} from "@/lib/chat-submission";
+import {
 	EMPTY_MESSAGES,
 	MOCK_CONVERSATIONS,
 } from "@/components/chat/chat-mock-conversations";
@@ -53,6 +57,7 @@ type UseChatConversationOptions = {
 	session: ChatSession;
 	activeTurnSessionIdRef?: { current: string | null };
 	initialMessage?: string;
+	initialImages?: readonly ChatImageAttachment[];
 	initialDraft?: string;
 	loadState: "ready" | "loading" | "error";
 	onDraftChange?: (value: string) => void;
@@ -63,6 +68,7 @@ export function useChatConversation({
 	session,
 	activeTurnSessionIdRef,
 	initialMessage,
+	initialImages = [],
 	initialDraft = "",
 	loadState,
 	onDraftChange,
@@ -99,19 +105,20 @@ export function useChatConversation({
 	);
 	const historyDeferredRef = useRef(false);
 	const baseMessages = useMemo<ChatMessage[]>(() => {
-		if (initialMessage) {
+		if (initialMessage || initialImages.length > 0) {
 			return [
 				{
 					id: `${session.id}-initial`,
 					role: "user",
-					text: initialMessage,
+					text: initialMessage ?? "",
+					images: summarizeChatImages(initialImages),
 					time: formatTime(),
 				},
 			];
 		}
 		if (session.sessionPath) return EMPTY_MESSAGES;
 		return MOCK_CONVERSATIONS[session.id] ?? EMPTY_MESSAGES;
-	}, [initialMessage, session.id, session.sessionPath]);
+	}, [initialImages, initialMessage, session.id, session.sessionPath]);
 	const [draft, setDraftState] = useState(initialDraft);
 
 	useEffect(() => {

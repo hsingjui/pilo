@@ -5,6 +5,7 @@ import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
 
 type ComposerActionsProps = {
 	value: string;
+	hasAttachments: boolean;
 	disabled: boolean;
 	running: boolean;
 	sendMessageShortcut: "enter" | "mod-enter";
@@ -17,6 +18,7 @@ type ComposerActionsProps = {
 
 export function ComposerActions({
 	value,
+	hasAttachments,
 	disabled,
 	running,
 	sendMessageShortcut,
@@ -26,7 +28,7 @@ export function ComposerActions({
 	onPrimary,
 	onFollowUp,
 }: ComposerActionsProps) {
-	const hasValue = Boolean(value.trim());
+	const hasValue = Boolean(value.trim()) || hasAttachments;
 	return (
 		<div className="ml-auto flex shrink-0 items-center gap-1.5">
 			{running ? (

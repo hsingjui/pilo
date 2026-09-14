@@ -9,6 +9,13 @@ import type { ConversationAction } from "@/lib/conversation-types";
 import { notifyAgentResult } from "@/lib/desktop-notifications";
 import { requestSessionTitle } from "@/lib/sessions";
 import {
+	chatSubmissionHasContent,
+	createChatSubmission,
+	summarizeChatImages,
+	type ChatImageAttachment,
+	type ChatSubmission,
+} from "@/lib/chat-submission";
+import {
 	runtimeErrorMessage,
 	type PiAgentState,
 	type PiloRuntimeEvent,
@@ -31,7 +38,7 @@ type ActiveTurn = {
 type BufferedQueuedMessage = {
 	turn: ActiveTurn;
 	clientMessageId: string;
-	text: string;
+	submission: ChatSubmission;
 	queued: "steer" | "follow_up";
 };
 
@@ -48,6 +55,7 @@ type UseChatRuntimeOptions = {
 	client: ChatSessionClient;
 	activeTurnSessionIdRef?: { current: string | null };
 	initialMessage?: string;
+	initialImages?: readonly ChatImageAttachment[];
 	initialQueuedMessages?: readonly string[];
 	desktopNotifications: boolean;
 	onSessionIdentified?: (sessionId: string) => void;
@@ -68,6 +76,7 @@ export function useChatRuntime({
 	client,
 	activeTurnSessionIdRef,
 	initialMessage,
+	initialImages = [],
 	initialQueuedMessages = [],
 	desktopNotifications,
 	onSessionIdentified,
@@ -179,7 +188,12 @@ export function useChatRuntime({
 					clientMessageId: item.clientMessageId,
 				});
 			}
-			restoreDraftIfEmpty(discarded.map((item) => item.text).join("\n\n"));
+			restoreDraftIfEmpty(
+				discarded
+					.map((item) => item.submission.text)
+					.filter(Boolean)
+					.join("\n\n"),
+			);
 		},
 		[dispatchConversation, restoreDraftIfEmpty],
 	);
@@ -347,14 +361,14 @@ export function useChatRuntime({
 		(item: BufferedQueuedMessage) => {
 			const request =
 				item.queued === "steer"
-					? client.sendPiSteer(item.text)
-					: client.sendPiFollowUp(item.text);
+					? client.sendPiSteer(item.submission.text, item.submission.images)
+					: client.sendPiFollowUp(item.submission.text, item.submission.images);
 			void request.catch((error) => {
 				dispatchConversation(item.turn.sessionId, {
 					type: "local_user_queue_failed",
 					clientMessageId: item.clientMessageId,
 				});
-				restoreDraftIfEmpty(item.text);
+				restoreDraftIfEmpty(item.submission.text);
 				toast.error(
 					item.queued === "steer" ? "无法调整当前回复" : "无法排队发送",
 					{ description: runtimeErrorMessage(error) },
@@ -405,9 +419,14 @@ export function useChatRuntime({
 	);
 
 	const beginTurn = useCallback(
-		async (text: string, appendUserMessage = true) => {
-			const trimmed = text.trim();
-			if (!trimmed || activeTurnRef.current) return;
+		async (submission: ChatSubmission, appendUserMessage = true) => {
+			const normalized = createChatSubmission(
+				submission.text,
+				submission.images,
+			);
+			if (!chatSubmissionHasContent(normalized) || activeTurnRef.current)
+				return;
+			const trimmed = normalized.text;
 			const viewport = scrollRef.current;
 			const replyRunwayPx = viewport
 				? getReplyRunwayHeight({
@@ -439,6 +458,7 @@ export function useChatRuntime({
 					type: "local_user_submit",
 					clientMessageId,
 					text: trimmed,
+					images: summarizeChatImages(normalized.images),
 					timestampMs: submittedAtMs,
 					replyRunwayPx,
 					appendMessage: appendUserMessage,
@@ -470,7 +490,7 @@ export function useChatRuntime({
 				await prepareRuntimeConfiguration(agentState);
 				if (activeTurnRef.current !== turn) return;
 				turn.promptSent = true;
-				await client.sendPiPrompt(trimmed);
+				await client.sendPiPrompt(trimmed, normalized.images);
 				if (activeTurnRef.current !== turn) return;
 				requestAutoTitle(trimmed);
 				turn.queueReady = true;
@@ -497,17 +517,24 @@ export function useChatRuntime({
 	);
 
 	const handleSubmit = useCallback(
-		(text: string) => {
-			void beginTurn(text);
+		(submission: ChatSubmission) => {
+			void beginTurn(submission);
 		},
 		[beginTurn],
 	);
 
 	const queueMessage = useCallback(
-		(text: string, queued: "steer" | "follow_up") => {
-			const trimmed = text.trim();
+		(submission: ChatSubmission, queued: "steer" | "follow_up") => {
+			const normalized = createChatSubmission(
+				submission.text,
+				submission.images,
+			);
 			const turn = activeTurnRef.current;
-			if (!trimmed || !turn || turn.sessionId !== session.id) {
+			if (
+				!chatSubmissionHasContent(normalized) ||
+				!turn ||
+				turn.sessionId !== session.id
+			) {
 				return;
 			}
 
@@ -515,7 +542,8 @@ export function useChatRuntime({
 			dispatchConversation(turn.sessionId, {
 				type: "local_user_queue",
 				clientMessageId: messageId,
-				text: trimmed,
+				text: normalized.text,
+				images: summarizeChatImages(normalized.images),
 				queueKind: queued,
 				timestampMs: Date.now(),
 			});
@@ -524,7 +552,7 @@ export function useChatRuntime({
 			const item: BufferedQueuedMessage = {
 				turn,
 				clientMessageId: messageId,
-				text: trimmed,
+				submission: normalized,
 				queued,
 			};
 			if (turn.generation === null || !turn.queueReady) {
@@ -537,12 +565,12 @@ export function useChatRuntime({
 	);
 
 	const handleSteer = useCallback(
-		(text: string) => queueMessage(text, "steer"),
+		(submission: ChatSubmission) => queueMessage(submission, "steer"),
 		[queueMessage],
 	);
 
 	const handleFollowUp = useCallback(
-		(text: string) => queueMessage(text, "follow_up"),
+		(submission: ChatSubmission) => queueMessage(submission, "follow_up"),
 		[queueMessage],
 	);
 
@@ -573,22 +601,29 @@ export function useChatRuntime({
 		const deferred = initialQueuedMessagesRef.current;
 		initialQueuedMessagesRef.current = [];
 
-		if (initialMessage) {
-			const key = `${session.id}:${initialMessage}`;
+		const initialSubmission = createChatSubmission(
+			initialMessage ?? "",
+			initialImages,
+		);
+		if (chatSubmissionHasContent(initialSubmission)) {
+			const key = `${session.id}:${initialMessage ?? ""}:${initialImages.map((image) => image.id).join(",")}`;
 			if (sentInitialPromptsRef.current.has(key)) return;
 			sentInitialPromptsRef.current.add(key);
-			void beginTurn(initialMessage, false);
-			for (const message of deferred) queueMessage(message, "follow_up");
+			void beginTurn(initialSubmission, false);
+			for (const message of deferred)
+				queueMessage(createChatSubmission(message), "follow_up");
 			return;
 		}
 
 		const [first, ...rest] = deferred;
 		if (!first) return;
-		void beginTurn(first);
-		for (const message of rest) queueMessage(message, "follow_up");
+		void beginTurn(createChatSubmission(first));
+		for (const message of rest)
+			queueMessage(createChatSubmission(message), "follow_up");
 	}, [
 		activeTurnSessionId,
 		beginTurn,
+		initialImages,
 		initialMessage,
 		queueMessage,
 		session.id,

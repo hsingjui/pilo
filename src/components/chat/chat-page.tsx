@@ -32,10 +32,18 @@ import { useChatConversation } from "@/components/chat/use-chat-conversation";
 import { useChatRuntime } from "@/components/chat/use-chat-runtime";
 import { useChatSessionConfig } from "@/components/chat/use-chat-session-config";
 import { createChatSessionClient } from "@/lib/chat-session-client";
+import {
+	createChatSubmission,
+	type ChatImageAttachment,
+	type ChatSubmission,
+} from "@/lib/chat-submission";
 import { usePreferences } from "@/lib/preferences-provider";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
+import { toast } from "sonner";
 
 export type { ChatSession } from "@/components/chat/chat-page-utils";
+
+const EMPTY_CHAT_IMAGES: readonly ChatImageAttachment[] = [];
 
 type ChatPageProps = {
 	session: ChatSession;
@@ -51,6 +59,7 @@ type ChatPageProps = {
 	onRuntimeBusyChange?: (controllerId: string, busy: boolean) => void;
 	onOpenFile?: (path: string) => void;
 	initialMessage?: string;
+	initialImages?: readonly ChatImageAttachment[];
 	loadState?: "ready" | "loading" | "error";
 	onRetry?: () => void;
 	reserveWindowControls?: boolean;
@@ -71,6 +80,7 @@ function ChatPageImpl({
 	onRuntimeBusyChange,
 	onOpenFile,
 	initialMessage,
+	initialImages = EMPTY_CHAT_IMAGES,
 	loadState = "ready",
 	onRetry,
 	reserveWindowControls = false,
@@ -174,6 +184,7 @@ function ChatPageImpl({
 		session,
 		activeTurnSessionIdRef,
 		initialMessage,
+		initialImages,
 		initialDraft: initialUiState.draft,
 		loadState,
 		onDraftChange: persistDraft,
@@ -201,6 +212,9 @@ function ChatPageImpl({
 	const pendingHistorySubmissionsRef = useRef<string[]>(
 		initialDeferredSubmissions.history,
 	);
+	const [composerImages, setComposerImages] = useState<ChatImageAttachment[]>(
+		[],
+	);
 	const {
 		activeTurnSessionId,
 		pendingSteering,
@@ -216,6 +230,7 @@ function ChatPageImpl({
 		client,
 		activeTurnSessionIdRef,
 		initialMessage,
+		initialImages,
 		initialQueuedMessages: initialDeferredSubmissions.runtime,
 		desktopNotifications,
 		onSessionIdentified,
@@ -241,12 +256,17 @@ function ChatPageImpl({
 		[uiStateKey, writeUiState],
 	);
 	const handleComposerSubmit = useCallback(
-		(text: string) => {
+		(submission: ChatSubmission) => {
 			if (!historySubmissionBlocked) {
-				handleSubmit(text);
+				handleSubmit(submission);
+				setComposerImages([]);
 				return;
 			}
-			const trimmed = text.trim();
+			if (submission.images.length > 0) {
+				toast.info("历史消息加载完成后再发送图片");
+				return;
+			}
+			const trimmed = submission.text.trim();
 			if (!trimmed) return;
 			const next = [...pendingHistorySubmissionsRef.current, trimmed];
 			pendingHistorySubmissionsRef.current = next;
@@ -266,8 +286,8 @@ function ChatPageImpl({
 		if (!first) return;
 		pendingHistorySubmissionsRef.current = [];
 		persistDeferredHistorySubmissions([]);
-		handleSubmit(first);
-		for (const message of rest) handleFollowUp(message);
+		handleSubmit(createChatSubmission(first));
+		for (const message of rest) handleFollowUp(createChatSubmission(message));
 	}, [
 		handleFollowUp,
 		handleSubmit,
@@ -396,9 +416,25 @@ function ChatPageImpl({
 						<ChatComposer
 							value={draft}
 							onChange={setDraft}
+							images={composerImages}
+							onImagesChange={setComposerImages}
 							onSubmit={handleComposerSubmit}
-							onSteer={running ? handleSteer : undefined}
-							onFollowUp={running ? handleFollowUp : undefined}
+							onSteer={
+								running
+									? (submission) => {
+											setComposerImages([]);
+											handleSteer(submission);
+										}
+									: undefined
+							}
+							onFollowUp={
+								running
+									? (submission) => {
+											setComposerImages([]);
+											handleFollowUp(submission);
+										}
+									: undefined
+							}
 							disabled={false}
 							running={running}
 							onStop={handleStop}

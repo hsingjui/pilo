@@ -1,4 +1,5 @@
 import type { ChatSession } from "@/components/chat/chat-page";
+import type { ChatImageAttachment } from "@/lib/chat-submission";
 import type { SidebarSession } from "@/components/sidebar/types";
 import type { Project } from "@/lib/projects";
 import type { SessionIndexEntry } from "@/lib/sessions";
@@ -119,6 +120,7 @@ export type OpenChat = {
 	uiStateKey: string;
 	session: ChatSession;
 	initialMessage?: string;
+	initialImages?: ChatImageAttachment[];
 	piSessionId?: string;
 };
 
@@ -144,6 +146,7 @@ export function upsertOpenedChat(
 	current: OpenChat[],
 	session: ChatSession,
 	initialMessage?: string,
+	initialImages?: readonly ChatImageAttachment[],
 ): OpenChat[] {
 	const index = current.findIndex(
 		(entry) =>
@@ -159,12 +162,15 @@ export function upsertOpenedChat(
 				uiStateKey: controllerId,
 				session,
 				initialMessage,
+				initialImages: initialImages ? [...initialImages] : undefined,
 			},
 		];
 	}
 
 	const existing = current[index];
 	const nextInitialMessage = existing.initialMessage ?? initialMessage;
+	const nextInitialImages =
+		existing.initialImages ?? (initialImages ? [...initialImages] : undefined);
 	const identifiedDraftMatch =
 		existing.piSessionId === session.id && existing.session.id !== session.id;
 	const nextSession = identifiedDraftMatch
@@ -186,7 +192,11 @@ export function upsertOpenedChat(
 		existing.session.sessionPath !== nextSession.sessionPath ||
 		existing.session.historyFileSize !== nextSession.historyFileSize ||
 		existing.session.historyFileMtimeNs !== nextSession.historyFileMtimeNs;
-	if (!sessionChanged && nextInitialMessage === existing.initialMessage) {
+	if (
+		!sessionChanged &&
+		nextInitialMessage === existing.initialMessage &&
+		nextInitialImages === existing.initialImages
+	) {
 		return current;
 	}
 
@@ -194,6 +204,7 @@ export function upsertOpenedChat(
 	next[index] = {
 		...existing,
 		initialMessage: nextInitialMessage,
+		initialImages: nextInitialImages,
 		session: sessionChanged ? nextSession : existing.session,
 	};
 	return next;
@@ -267,8 +278,14 @@ export function touchOpenedChat(
 	current: OpenChat[],
 	session: ChatSession,
 	initialMessage?: string,
+	initialImages?: readonly ChatImageAttachment[],
 ): OpenChat[] {
-	const next = upsertOpenedChat(current, session, initialMessage);
+	const next = upsertOpenedChat(
+		current,
+		session,
+		initialMessage,
+		initialImages,
+	);
 	const index = next.findIndex(
 		(entry) =>
 			entry.session.projectRecord.id === session.projectRecord.id &&

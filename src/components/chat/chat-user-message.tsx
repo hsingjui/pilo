@@ -1,5 +1,5 @@
 import { memo, useState } from "react";
-import { ChevronDown, Copy } from "lucide-react";
+import { ChevronDown, Copy, Image as ImageIcon } from "lucide-react";
 
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import type { ChatMessage } from "@/lib/conversation-types";
@@ -75,7 +75,25 @@ export const UserMessage = memo(function UserMessage({
 							className="min-w-0 max-w-full rounded-[1.15rem] border border-foreground/[0.08] bg-foreground/[0.05] px-3.5 py-2 leading-6 text-foreground sm:rounded-2xl sm:px-4 sm:py-2.5"
 							style={{ fontSize: `${pageFontSize}px` }}
 						>
-							<UserMessageBody text={message.text} />
+							{message.images && message.images.length > 0 ? (
+								<div
+									className={cn(
+										"flex flex-wrap gap-1.5",
+										message.text && "mb-2",
+									)}
+								>
+									{message.images.map((image) => (
+										<span
+											key={image.id}
+											className="inline-flex max-w-52 items-center gap-1.5 rounded-md border border-foreground/10 bg-background/40 px-2 py-1 text-xs"
+										>
+											<ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />
+											<span className="truncate">{image.name}</span>
+										</span>
+									))}
+								</div>
+							) : null}
+							{message.text ? <UserMessageBody text={message.text} /> : null}
 						</div>
 					</div>
 					<div className="flex gap-0.5">

@@ -18,22 +18,28 @@ export function ChatPendingQueue({ items }: { items: readonly PendingUser[] }) {
 				<span className="tabular-nums">{queued.length}</span>
 			</div>
 			<div className="max-h-[min(25vh,240px)] divide-y divide-border/30 overflow-y-auto">
-				{queued.map((item) => (
-					<div
-						key={item.clientMessageId}
-						className="flex min-w-0 items-center gap-2 px-3 py-2"
-					>
-						<span className="shrink-0 text-[11px]">
-							{item.queueKind === "steer" ? "调整" : "稍后"}
-						</span>
-						<span
-							className="min-w-0 flex-1 truncate text-foreground/80"
-							title={item.text}
+				{queued.map((item) => {
+					const imageLabel = item.images?.length
+						? `${item.images.length} 张图片`
+						: "";
+					const label = item.text || imageLabel;
+					return (
+						<div
+							key={item.clientMessageId}
+							className="flex min-w-0 items-center gap-2 px-3 py-2"
 						>
-							{item.text}
-						</span>
-					</div>
-				))}
+							<span className="shrink-0 text-[11px]">
+								{item.queueKind === "steer" ? "调整" : "稍后"}
+							</span>
+							<span
+								className="min-w-0 flex-1 truncate text-foreground/80"
+								title={label}
+							>
+								{label}
+							</span>
+						</div>
+					);
+				})}
 			</div>
 		</div>
 	);

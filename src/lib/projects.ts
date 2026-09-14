@@ -55,7 +55,10 @@ export function listProjects(): Promise<Project[]> {
 	return invoke<Project[]>("project_list");
 }
 
-export function addProject(connectionId: string, path: string): Promise<Project> {
+export function addProject(
+	connectionId: string,
+	path: string,
+): Promise<Project> {
 	return invoke<Project>("project_add", { connectionId, path });
 }
 
@@ -82,7 +85,9 @@ export function removeProject(id: string): Promise<Project[]> {
 	return invoke<Project[]>("project_remove", { id });
 }
 
-export function discoverProjects(connectionId: string): Promise<DiscoveredProject[]> {
+export function discoverProjects(
+	connectionId: string,
+): Promise<DiscoveredProject[]> {
 	return invoke<DiscoveredProject[]>("project_discover", { connectionId });
 }
 

@@ -30,7 +30,9 @@ export function listWslDistributions(): Promise<WslDistribution[]> {
 export async function saveWslConnection(
 	connection: Connection,
 ): Promise<WslConnectionInfo> {
-	const info = await invoke<WslConnectionInfo>("wsl_connection_save", { connection });
+	const info = await invoke<WslConnectionInfo>("wsl_connection_save", {
+		connection,
+	});
 	notifyConnectionsChanged();
 	return info;
 }

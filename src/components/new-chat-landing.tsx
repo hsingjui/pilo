@@ -23,6 +23,7 @@ import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
 import { IS_MACOS } from "@/components/title-bar";
 import type { Project } from "@/lib/projects";
+import type { ChatSubmission } from "@/lib/chat-submission";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { Button } from "@/ui";
 
@@ -39,7 +40,7 @@ export function NewChatLanding({
 	project = null,
 }: {
 	onStartSession: (
-		prompt: string,
+		submission: ChatSubmission,
 		model: PiModel | null,
 		thinkingLevel: PiThinkingLevel | null,
 	) => void;
@@ -258,8 +259,8 @@ export function NewChatLanding({
 					variant="landing"
 					value={draft}
 					onChange={setDraft}
-					onSubmit={(prompt) =>
-						onStartSession(prompt, selectedModel, selectedThinkingLevel)
+					onSubmit={(submission) =>
+						onStartSession(submission, selectedModel, selectedThinkingLevel)
 					}
 					disabled={false}
 					models={models}

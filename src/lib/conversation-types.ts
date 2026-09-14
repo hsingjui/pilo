@@ -1,11 +1,13 @@
 import type { AssistantActivity } from "@/components/chat/chat-activity";
 import type { AssistantContentItem } from "@/lib/chat-activity-state";
+import type { ChatImageSummary } from "@/lib/chat-submission";
 
 export type ChatMessage =
 	| {
 			id: string;
 			role: "user";
 			text: string;
+			images?: ChatImageSummary[];
 			time: string;
 			timestampMs?: number;
 			queued?: "steer" | "follow_up";
@@ -75,6 +77,7 @@ export type ConversationAction =
 			type: "local_user_submit";
 			clientMessageId: string;
 			text: string;
+			images?: ChatImageSummary[];
 			timestampMs: number;
 			replyRunwayPx?: number;
 			appendMessage?: boolean;
@@ -83,6 +86,7 @@ export type ConversationAction =
 			type: "local_user_queue";
 			clientMessageId: string;
 			text: string;
+			images?: ChatImageSummary[];
 			queueKind: "steer" | "follow_up";
 			timestampMs: number;
 	  }
@@ -113,6 +117,7 @@ export type ConversationState = {
 	pendingUsers: Array<{
 		clientMessageId: string;
 		text: string;
+		images?: ChatImageSummary[];
 		timestampMs?: number;
 		queueKind?: "steer" | "follow_up";
 	}>;

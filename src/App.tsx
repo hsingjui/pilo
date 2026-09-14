@@ -43,6 +43,10 @@ import { SidebarFooter } from "@/components/sidebar-footer";
 import { CUSTOM_TITLEBAR, IS_MACOS, TitleBar } from "@/components/title-bar";
 import type { EditorOpenRequest } from "@/components/project-editor";
 import { stopChatSession } from "@/lib/chat-session-client";
+import type {
+	ChatImageAttachment,
+	ChatSubmission,
+} from "@/lib/chat-submission";
 import { CONNECTIONS_CHANGED_EVENT } from "@/lib/connection-events";
 import { listConnectionCatalog } from "@/lib/connections";
 import {
@@ -142,13 +146,16 @@ function App() {
 	const [draftSessionPrompt, setDraftSessionPrompt] = useState<string | null>(
 		null,
 	);
+	const [draftSessionImages, setDraftSessionImages] = useState<
+		ChatImageAttachment[]
+	>([]);
 	const [draftSessionModel, setDraftSessionModel] = useState<PiModel | null>(
 		null,
 	);
 	const [draftSessionThinkingLevel, setDraftSessionThinkingLevel] =
 		useState<PiThinkingLevel | null>(null);
 	const pendingLandingSubmissionRef = useRef<{
-		prompt: string;
+		submission: ChatSubmission;
 		model: PiModel | null;
 		thinkingLevel: PiThinkingLevel | null;
 	} | null>(null);
@@ -400,17 +407,19 @@ function App() {
 						openedChats,
 						chatSession,
 						draftSessionPrompt ?? undefined,
+						draftSessionImages,
 					)
 				: openedChats,
-		[chatSession, draftSessionPrompt, openedChats],
+		[chatSession, draftSessionImages, draftSessionPrompt, openedChats],
 	);
 	const startDraftSession = useCallback(
 		(
 			project: Project,
-			prompt: string,
+			submission: ChatSubmission,
 			model: PiModel | null,
 			thinkingLevel: PiThinkingLevel | null,
 		) => {
+			const prompt = submission.text;
 			const nextChat: ChatSession = {
 				id: draftSessionId,
 				title: "新对话",
@@ -420,7 +429,7 @@ function App() {
 			};
 			setOpenedChats((current) =>
 				trimOpenedChats(
-					touchOpenedChat(current, nextChat, prompt),
+					touchOpenedChat(current, nextChat, prompt, submission.images),
 					busyChatControllersRef.current,
 				),
 			);
@@ -429,6 +438,7 @@ function App() {
 			setDraftSessionModel(model);
 			setDraftSessionThinkingLevel(thinkingLevel);
 			setDraftSessionPrompt(prompt);
+			setDraftSessionImages(submission.images);
 			setDraftSessionStarted(true);
 		},
 		[draftSessionId],
@@ -447,7 +457,7 @@ function App() {
 		}
 		startDraftSession(
 			activeProject,
-			pending.prompt,
+			pending.submission,
 			pending.model,
 			pending.thinkingLevel,
 		);
@@ -465,6 +475,7 @@ function App() {
 			const targetProjectId = projectId ?? firstProject?.id ?? null;
 			setDraftSessionStarted(false);
 			setDraftSessionPrompt(null);
+			setDraftSessionImages([]);
 			setDraftSessionModel(null);
 			setDraftSessionThinkingLevel(null);
 			setDraftSessionId(createDraftSessionId());
@@ -509,6 +520,7 @@ function App() {
 				setSelectedSessionId(sessionId);
 				setDraftSessionStarted(false);
 				setDraftSessionPrompt(null);
+				setDraftSessionImages([]);
 				setDraftSessionModel(null);
 				setDraftSessionThinkingLevel(null);
 				setDraftProjectId(projectId);
@@ -535,6 +547,7 @@ function App() {
 			setSelectedSessionId(sessionId);
 			setDraftSessionStarted(false);
 			setDraftSessionPrompt(null);
+			setDraftSessionImages([]);
 			setDraftSessionModel(null);
 			setDraftSessionThinkingLevel(null);
 			setDraftProjectId(session.projectId);
@@ -567,6 +580,7 @@ function App() {
 			setSelectedSessionId(target.sessionId);
 			setDraftSessionStarted(false);
 			setDraftSessionPrompt(null);
+			setDraftSessionImages([]);
 			setDraftSessionModel(null);
 			setDraftSessionThinkingLevel(null);
 			void touchProject(target.projectId)
@@ -720,6 +734,7 @@ function App() {
 												<ChatPageLoadingFallback
 													session={entry.session}
 													initialMessage={entry.initialMessage}
+													initialImages={entry.initialImages}
 													uiStateKey={entry.uiStateKey}
 													readUiState={readChatUiState}
 													writeUiState={writeChatUiState}
@@ -737,6 +752,7 @@ function App() {
 												onRuntimeBusyChange={handleChatRuntimeBusyChange}
 												active={visible}
 												initialMessage={entry.initialMessage}
+												initialImages={entry.initialImages}
 												onSessionIdentified={(piSessionId) => {
 													const nextUiStateKey = chatUiStateKey(
 														entry.session.projectRecord.id,
@@ -788,10 +804,10 @@ function App() {
 										projectsReady ? Boolean(activeProject) : true
 									}
 									project={activeProject}
-									onStartSession={(prompt, model, thinkingLevel) => {
+									onStartSession={(submission, model, thinkingLevel) => {
 										if (!projectsReady) {
 											pendingLandingSubmissionRef.current = {
-												prompt,
+												submission,
 												model,
 												thinkingLevel,
 											};
@@ -803,7 +819,7 @@ function App() {
 										}
 										startDraftSession(
 											activeProject,
-											prompt,
+											submission,
 											model,
 											thinkingLevel,
 										);

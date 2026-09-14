@@ -172,6 +172,7 @@ export function reduceConversation(
 				id: action.clientMessageId,
 				role: "user",
 				text: action.text,
+				images: action.images,
 				time: context.formatTime(action.timestampMs),
 				timestampMs: action.timestampMs,
 			};
@@ -191,6 +192,7 @@ export function reduceConversation(
 					{
 						clientMessageId: action.clientMessageId,
 						text: action.text,
+						images: action.images,
 						timestampMs: action.timestampMs,
 					},
 				],
@@ -204,6 +206,7 @@ export function reduceConversation(
 					{
 						clientMessageId: action.clientMessageId,
 						text: action.text,
+						images: action.images,
 						timestampMs: action.timestampMs,
 						queueKind: action.queueKind,
 					},
@@ -269,6 +272,7 @@ export function reduceConversation(
 								id: pending.clientMessageId,
 								role: "user",
 								text: action.text,
+								images: pending.images,
 								time: context.formatTime(startedAtMs),
 								timestampMs: startedAtMs,
 							},

@@ -475,6 +475,9 @@ fn user_text(value: Option<&Value>) -> String {
                         .unwrap_or("")
                         .to_owned();
                 }
+                if part.get("type").and_then(Value::as_str) == Some("image") {
+                    return "[图片]".to_owned();
+                }
                 fallback_text("User content", part)
             })
             .collect::<Vec<_>>()

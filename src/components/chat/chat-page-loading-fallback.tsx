@@ -13,6 +13,14 @@ import {
 import { UserMessage } from "@/components/chat/chat-user-message";
 import { IS_MACOS, TRAFFIC_LIGHT_GUTTER } from "@/components/title-bar";
 import { cn } from "@/lib/utils";
+import {
+	summarizeChatImages,
+	type ChatImageAttachment,
+	type ChatSubmission,
+} from "@/lib/chat-submission";
+import { toast } from "sonner";
+
+const EMPTY_CHAT_IMAGES: readonly ChatImageAttachment[] = [];
 
 function LoadingHeader({
 	session,
@@ -72,8 +80,12 @@ function LoadingComposer({
 		setDraft(value);
 		writeUiState(uiStateKey, { draft: value });
 	};
-	const deferSubmission = (value: string) => {
-		const trimmed = value.trim();
+	const deferSubmission = (submission: ChatSubmission) => {
+		if (submission.images.length > 0) {
+			toast.info("历史消息加载完成后再发送图片");
+			return;
+		}
+		const trimmed = submission.text.trim();
 		if (!trimmed) return;
 		const current = readUiState(uiStateKey);
 		writeUiState(uiStateKey, {
@@ -99,6 +111,7 @@ function LoadingComposer({
 export function ChatPageLoadingFallback({
 	session,
 	initialMessage,
+	initialImages = EMPTY_CHAT_IMAGES,
 	uiStateKey,
 	readUiState,
 	writeUiState,
@@ -107,6 +120,7 @@ export function ChatPageLoadingFallback({
 }: {
 	session: ChatSession;
 	initialMessage?: string;
+	initialImages?: readonly ChatImageAttachment[];
 	uiStateKey: string;
 	readUiState: (key: string) => ChatUiState;
 	writeUiState: (key: string, patch: ChatUiStatePatch) => void;
@@ -115,15 +129,16 @@ export function ChatPageLoadingFallback({
 }) {
 	const pendingMessage = useMemo(
 		() =>
-			initialMessage
+			initialMessage || initialImages.length > 0
 				? {
 						id: `${session.id}-initial-fallback`,
 						role: "user" as const,
-						text: initialMessage,
+						text: initialMessage ?? "",
+						images: summarizeChatImages(initialImages),
 						time: formatTime(),
 					}
 				: null,
-		[initialMessage, session.id],
+		[initialImages, initialMessage, session.id],
 	);
 
 	return (

@@ -1,5 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
+	toPiImageContents,
+	type ChatImageAttachment,
+} from "@/lib/chat-submission";
+import {
 	listenRuntimeEvents,
 	requestPiRpc,
 	type PiAgentState,
@@ -68,14 +72,36 @@ export function createChatSessionClient(
 			rpc<void>({ type: "set_thinking_level", level }),
 		setPiSessionName: (name: string) =>
 			rpc<void>({ type: "set_session_name", name }),
-		sendPiPrompt: (message: string) =>
+		sendPiPrompt: (
+			message: string,
+			images: readonly ChatImageAttachment[] = [],
+		) =>
 			invoke<void>("chat_session_send_rpc", {
 				sessionKey,
-				command: { type: "prompt", message },
+				command: {
+					type: "prompt",
+					message,
+					...(images.length > 0 ? { images: toPiImageContents(images) } : {}),
+				},
 			}),
-		sendPiSteer: (message: string) => rpc<void>({ type: "steer", message }),
-		sendPiFollowUp: (message: string) =>
-			rpc<void>({ type: "follow_up", message }),
+		sendPiSteer: (
+			message: string,
+			images: readonly ChatImageAttachment[] = [],
+		) =>
+			rpc<void>({
+				type: "steer",
+				message,
+				...(images.length > 0 ? { images: toPiImageContents(images) } : {}),
+			}),
+		sendPiFollowUp: (
+			message: string,
+			images: readonly ChatImageAttachment[] = [],
+		) =>
+			rpc<void>({
+				type: "follow_up",
+				message,
+				...(images.length > 0 ? { images: toPiImageContents(images) } : {}),
+			}),
 		abortPiReply: () => rpc<void>({ type: "abort" }),
 	};
 }

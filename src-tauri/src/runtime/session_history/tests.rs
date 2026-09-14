@@ -159,6 +159,21 @@ fn selects_only_the_active_session_branch() {
 }
 
 #[test]
+fn user_image_content_does_not_expand_base64_into_history_text() {
+    let bytes = concat!(
+        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[",
+        "{\"type\":\"text\",\"text\":\"看这张图\"},",
+        "{\"type\":\"image\",\"data\":\"VERY_LARGE_BASE64_PAYLOAD\",\"mimeType\":\"image/png\"}]}}\n"
+    )
+    .as_bytes();
+    let history = parse_history(bytes);
+    let serialized = serde_json::to_string(&history.events).unwrap();
+    assert!(serialized.contains("看这张图"));
+    assert!(serialized.contains("[图片]"));
+    assert!(!serialized.contains("VERY_LARGE_BASE64_PAYLOAD"));
+}
+
+#[test]
 fn branch_metadata_follows_selected_parent_chain() {
     let bytes = concat!(
         "{\"type\":\"session\",\"version\":3,\"id\":\"session-a\"}\n",
