@@ -21,10 +21,24 @@ use super::{
     session_snapshot::PiSessionSnapshot,
 };
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSessionState {
+    pub project_id: String,
+    pub session_path: Option<String>,
+    pub prepared: bool,
+    pub initialized: bool,
+    pub snapshot: PiSessionSnapshot,
+}
+
 struct ChatProcess {
     project_id: String,
+    no_session: bool,
     session: Mutex<ServerPiSession>,
     session_path: Arc<StdMutex<Option<String>>>,
+    control_reply: Arc<StdMutex<Option<InitializationReply>>>,
+    prepared: AtomicBool,
+    initialized: AtomicBool,
     closed: AtomicBool,
 }
 
@@ -48,7 +62,7 @@ struct ChatEventSink {
     app: AppHandle,
     session_key: String,
     project_id: String,
-    initialized: Arc<StdMutex<Option<InitializationReply>>>,
+    control_reply: Arc<StdMutex<Option<InitializationReply>>>,
     session_path: Arc<StdMutex<Option<String>>>,
 }
 
@@ -63,41 +77,46 @@ struct ChatEvent<'a> {
 
 impl RuntimeEventSink for ChatEventSink {
     fn send(&self, event: RuntimeEvent) {
-        if let RuntimeEvent::RpcMessage { message, .. } = &event
-            && message.get("type").and_then(Value::as_str) == Some("response")
-            && message.get("command").and_then(Value::as_str) == Some("get_state")
-            && message.get("success").and_then(Value::as_bool) == Some(true)
-            && let Some(path) = message.pointer("/data/sessionFile").and_then(Value::as_str)
-        {
-            *self
-                .session_path
-                .lock()
-                .unwrap_or_else(|error| error.into_inner()) = Some(path.to_owned());
-        }
-        if let RuntimeEvent::RpcMessage { message, .. } = &event
-            && message.get("type").and_then(Value::as_str) == Some("response")
-            && message.get("id").and_then(Value::as_str) == Some("pilo-session-init")
-        {
-            if let Some(sender) = self
-                .initialized
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .take()
+        if let RuntimeEvent::RpcMessage { message, .. } = &event {
+            let response_id = message.get("id").and_then(Value::as_str);
+            if message.get("type").and_then(Value::as_str) == Some("response")
+                && message.get("command").and_then(Value::as_str) == Some("get_state")
+                && message.get("success").and_then(Value::as_bool) == Some(true)
+                && response_id != Some("pilo-session-prepare")
+                && let Some(path) = message.pointer("/data/sessionFile").and_then(Value::as_str)
             {
-                let result = if message.get("success").and_then(Value::as_bool) == Some(true)
-                    && message.pointer("/data/cancelled").and_then(Value::as_bool) != Some(true)
-                {
-                    Ok(())
-                } else {
-                    Err(message
-                        .get("error")
-                        .and_then(Value::as_str)
-                        .unwrap_or("Pi session initialization was cancelled")
-                        .to_owned())
-                };
-                let _ = sender.send(result);
+                *self
+                    .session_path
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner()) = Some(path.to_owned());
             }
-            return;
+            if message.get("type").and_then(Value::as_str) == Some("response")
+                && matches!(
+                    response_id,
+                    Some("pilo-session-prepare") | Some("pilo-session-init")
+                )
+            {
+                if let Some(sender) = self
+                    .control_reply
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .take()
+                {
+                    let result = if message.get("success").and_then(Value::as_bool) == Some(true)
+                        && message.pointer("/data/cancelled").and_then(Value::as_bool) != Some(true)
+                    {
+                        Ok(())
+                    } else {
+                        Err(message
+                            .get("error")
+                            .and_then(Value::as_str)
+                            .unwrap_or("Pi session initialization was cancelled")
+                            .to_owned())
+                    };
+                    let _ = sender.send(result);
+                }
+                return;
+            }
         }
         let _ = self.app.emit(
             RUNTIME_EVENT_NAME,
@@ -111,16 +130,44 @@ impl RuntimeEventSink for ChatEventSink {
 }
 
 impl ChatSessions {
-    pub async fn ensure(
+    pub async fn state(&self, session_key: &str) -> Option<ChatSessionState> {
+        let process = self
+            .registry
+            .lock()
+            .await
+            .processes
+            .get(session_key)
+            .cloned()?;
+        if process.closed.load(Ordering::Acquire) {
+            return None;
+        }
+        let session_path = process
+            .session_path
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        let snapshot = process.session.lock().await.snapshot();
+        Some(ChatSessionState {
+            project_id: process.project_id.clone(),
+            session_path,
+            prepared: process.prepared.load(Ordering::Acquire),
+            initialized: process.initialized.load(Ordering::Acquire),
+            snapshot,
+        })
+    }
+
+    async fn process(
         &self,
-        servers: Arc<ServerManager>,
-        app: AppHandle,
-        project: Project,
-        session_key: String,
+        project: &Project,
+        session_key: &str,
         session_path: Option<String>,
-    ) -> Result<PiSessionSnapshot, String> {
+        no_session: bool,
+    ) -> Result<Arc<ChatProcess>, String> {
         if session_key.trim().is_empty() {
             return Err("session key cannot be empty".to_owned());
+        }
+        if no_session && session_path.is_some() {
+            return Err("temporary session cannot resume a persisted session".to_owned());
         }
         let process = {
             let mut registry = self.registry.lock().await;
@@ -130,12 +177,16 @@ impl ChatSessions {
             Arc::clone(
                 registry
                     .processes
-                    .entry(session_key.clone())
+                    .entry(session_key.to_owned())
                     .or_insert_with(|| {
                         Arc::new(ChatProcess {
                             project_id: project.id.clone(),
+                            no_session,
                             session: Mutex::new(ServerPiSession::default()),
                             session_path: Arc::new(StdMutex::new(session_path.clone())),
+                            control_reply: Arc::new(StdMutex::new(None)),
+                            prepared: AtomicBool::new(false),
+                            initialized: AtomicBool::new(false),
                             closed: AtomicBool::new(false),
                         })
                     }),
@@ -144,36 +195,157 @@ impl ChatSessions {
         if process.project_id != project.id {
             return Err("session belongs to a different project".to_owned());
         }
-        // Only this session is locked during server startup and Pi initialization.
-        let mut session = process.session.lock().await;
-        if process.closed.load(Ordering::Acquire) {
-            return Err("project is closing".to_owned());
+        if process.no_session != no_session {
+            return Err("session persistence mode changed while running".to_owned());
         }
+        if let Some(path) = session_path {
+            let mut current = process
+                .session_path
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if current.is_none() {
+                *current = Some(path);
+            }
+        }
+        Ok(process)
+    }
+
+    async fn spawn_if_needed(
+        process: &Arc<ChatProcess>,
+        session: &mut ServerPiSession,
+        servers: Arc<ServerManager>,
+        app: AppHandle,
+        project: &Project,
+        session_key: &str,
+    ) -> Result<PiSessionSnapshot, String> {
         let snapshot = session.snapshot();
         if snapshot.state == PiProcessState::Running {
             return Ok(snapshot);
         }
-        if process.closed.load(Ordering::Acquire) {
-            return Err("project is closing".to_owned());
-        }
-        let (sender, response) = oneshot::channel();
-        let snapshot = session
+        process.prepared.store(false, Ordering::Release);
+        process.initialized.store(false, Ordering::Release);
+        *process
+            .control_reply
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = None;
+        let session_path = process
+            .session_path
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        session
             .spawn(
                 servers,
                 ChatEventSink {
                     app,
-                    session_key,
+                    session_key: session_key.to_owned(),
                     project_id: project.id.clone(),
-                    initialized: Arc::new(StdMutex::new(Some(sender))),
+                    control_reply: Arc::clone(&process.control_reply),
                     session_path: Arc::clone(&process.session_path),
                 },
-                &project,
+                project,
                 PiLaunchOptions {
-                    session_path: session_path.clone(),
+                    session_path,
+                    no_session: process.no_session,
                     ..PiLaunchOptions::default()
                 },
             )
+            .await
+    }
+
+    async fn wait_for_control_response(
+        process: &Arc<ChatProcess>,
+        session: &ServerPiSession,
+        command: Value,
+    ) -> Result<(), String> {
+        let (sender, response) = oneshot::channel();
+        *process
+            .control_reply
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(sender);
+        let result = async {
+            session.send_rpc(command).await?;
+            tokio::time::timeout(Duration::from_secs(30), response)
+                .await
+                .map_err(|_| "Pi session initialization timed out".to_owned())?
+                .map_err(|_| "Pi session initialization channel closed".to_owned())?
+        }
+        .await;
+        if result.is_err() {
+            *process
+                .control_reply
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = None;
+        }
+        result
+    }
+
+    pub async fn prepare(
+        &self,
+        servers: Arc<ServerManager>,
+        app: AppHandle,
+        project: Project,
+        session_key: String,
+        session_path: Option<String>,
+        no_session: bool,
+    ) -> Result<PiSessionSnapshot, String> {
+        let process = self
+            .process(&project, &session_key, session_path.clone(), no_session)
             .await?;
+        let mut session = process.session.lock().await;
+        if process.closed.load(Ordering::Acquire) {
+            return Err("project is closing".to_owned());
+        }
+        let snapshot =
+            Self::spawn_if_needed(&process, &mut session, servers, app, &project, &session_key)
+                .await?;
+        if process.prepared.load(Ordering::Acquire) {
+            return Ok(snapshot);
+        }
+        let prepared = Self::wait_for_control_response(
+            &process,
+            &session,
+            serde_json::json!({ "id": "pilo-session-prepare", "type": "get_state" }),
+        )
+        .await;
+        if let Err(error) = prepared {
+            process.prepared.store(false, Ordering::Release);
+            process.initialized.store(false, Ordering::Release);
+            let _ = session.stop().await;
+            return Err(error);
+        }
+        process.prepared.store(true, Ordering::Release);
+        if session_path.is_some() || process.no_session {
+            // Pi was launched with --session, so the readiness get_state also proves
+            // the requested historical session is fully loaded. --no-session starts
+            // with an in-memory session that needs no additional new_session RPC.
+            process.initialized.store(true, Ordering::Release);
+        }
+        Ok(session.snapshot())
+    }
+
+    pub async fn ensure(
+        &self,
+        servers: Arc<ServerManager>,
+        app: AppHandle,
+        project: Project,
+        session_key: String,
+        session_path: Option<String>,
+        no_session: bool,
+    ) -> Result<PiSessionSnapshot, String> {
+        let process = self
+            .process(&project, &session_key, session_path.clone(), no_session)
+            .await?;
+        let mut session = process.session.lock().await;
+        if process.closed.load(Ordering::Acquire) {
+            return Err("project is closing".to_owned());
+        }
+        let snapshot =
+            Self::spawn_if_needed(&process, &mut session, servers, app, &project, &session_key)
+                .await?;
+        if process.initialized.load(Ordering::Acquire) {
+            return Ok(snapshot);
+        }
         let resume_path = process
             .session_path
             .lock()
@@ -189,19 +361,16 @@ impl ChatSessions {
                 None => serde_json::json!({ "id": "pilo-session-init", "type": "new_session" }),
             }
         };
-        let initialized = async {
-            session.send_rpc(command).await?;
-            tokio::time::timeout(Duration::from_secs(30), response)
-                .await
-                .map_err(|_| "Pi session initialization timed out".to_owned())?
-                .map_err(|_| "Pi session initialization channel closed".to_owned())?
-        }
-        .await;
+        let initialized = Self::wait_for_control_response(&process, &session, command).await;
         if let Err(error) = initialized {
+            process.prepared.store(false, Ordering::Release);
+            process.initialized.store(false, Ordering::Release);
             let _ = session.stop().await;
             return Err(error);
         }
-        Ok(snapshot)
+        process.prepared.store(true, Ordering::Release);
+        process.initialized.store(true, Ordering::Release);
+        Ok(session.snapshot())
     }
 
     pub async fn send(&self, session_key: &str, command: Value) -> Result<(), String> {

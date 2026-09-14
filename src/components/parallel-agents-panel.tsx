@@ -20,6 +20,7 @@ import {
 	type ParallelAgentInfo,
 	type ParallelAgentStatus,
 } from "@/lib/parallel";
+import { userErrorMessage } from "@/lib/app-error";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/projects";
 import { Button, EmptyState, Input, Textarea } from "@/ui";
@@ -116,7 +117,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 			setInitialPrompt("");
 		} catch (error) {
 			toast.error("无法创建并行 Agent", {
-				description: error instanceof Error ? error.message : String(error),
+				description: userErrorMessage(error),
 			});
 		} finally {
 			setCreating(false);
@@ -132,7 +133,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 			await refresh();
 		} catch (error) {
 			toast.error("发送失败", {
-				description: error instanceof Error ? error.message : String(error),
+				description: userErrorMessage(error),
 			});
 		} finally {
 			setActing(false);
@@ -147,7 +148,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 			await refresh();
 		} catch (error) {
 			toast.error("停止 Agent 失败", {
-				description: error instanceof Error ? error.message : String(error),
+				description: userErrorMessage(error),
 			});
 		} finally {
 			setActing(false);
@@ -170,7 +171,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 			await refresh();
 		} catch (error) {
 			toast.error("清理 Agent 失败", {
-				description: error instanceof Error ? error.message : String(error),
+				description: userErrorMessage(error),
 			});
 		} finally {
 			setActing(false);
@@ -184,12 +185,14 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 					value={name}
 					onChange={(event) => setName(event.target.value)}
 					placeholder="任务名称"
+					aria-label="任务名称"
 					className="h-7 text-xs"
 				/>
 				<Textarea
 					value={initialPrompt}
 					onChange={(event) => setInitialPrompt(event.target.value)}
 					placeholder="初始指令（可选）"
+					aria-label="初始指令（可选）"
 					className="min-h-16 resize-none text-xs"
 				/>
 				<Button
@@ -233,11 +236,11 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 											{agent.name}
 										</span>
 										<span className={statusDot(agent.status)} />
-										<span className="text-[10px] text-muted-foreground">
+										<span className="text-[11px] text-muted-foreground">
 											{statusLabel(agent.status)}
 										</span>
 									</div>
-									<div className="mt-1.5 flex items-center gap-1 truncate font-mono text-[10px] text-muted-foreground">
+									<div className="mt-1.5 flex items-center gap-1 truncate font-mono text-[11px] text-muted-foreground">
 										<GitBranch className="size-3 shrink-0" />
 										<span className="truncate">{agent.branch}</span>
 									</div>
@@ -251,7 +254,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 			{selected ? (
 				<div className="grid shrink-0 gap-2 border-t border-sidebar-border p-2">
 					<div
-						className="truncate font-mono text-[10px] text-muted-foreground"
+						className="truncate font-mono text-[11px] text-muted-foreground"
 						title={selected.worktreePath}
 					>
 						{selected.worktreePath}
@@ -260,6 +263,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 						value={message}
 						onChange={(event) => setMessage(event.target.value)}
 						placeholder="继续给当前 Agent 指令"
+						aria-label="继续给当前 Agent 指令"
 						className="min-h-14 resize-none text-xs"
 						disabled={
 							selected.status === "stopped" || selected.status === "failed"

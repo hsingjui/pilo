@@ -10,8 +10,12 @@ import {
 import { Image as ImageIcon, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { userErrorMessage } from "@/lib/app-error";
 import { isImeComposingKeyboardEvent } from "@/lib/ime";
+import { formatKeyboardShortcut } from "@/lib/keyboard-shortcuts";
+import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import type { PiModel, PiThinkingLevel } from "@/lib/pi-runtime";
+import { cn } from "@/lib/utils";
 import { usePreferences } from "@/lib/preferences-provider";
 import {
 	CHAT_IMAGE_ACCEPT,
@@ -65,7 +69,6 @@ type ChatComposerProps = {
 	onSubmit?: (submission: ChatSubmission) => void;
 	onSteer?: (submission: ChatSubmission) => void;
 	onFollowUp?: (submission: ChatSubmission) => void;
-	variant?: "landing" | "session";
 	placeholder?: string;
 	disabled?: boolean;
 	running?: boolean;
@@ -134,7 +137,6 @@ export function ChatComposer({
 	onSubmit,
 	onSteer,
 	onFollowUp,
-	variant = "session",
 	placeholder = DEFAULT_CHAT_COMPOSER_PLACEHOLDER,
 	disabled = false,
 	running = false,
@@ -160,7 +162,7 @@ export function ChatComposer({
 	suggestions = DEFAULT_SUGGESTIONS,
 	className,
 }: ChatComposerProps) {
-	const { sendMessageShortcut } = usePreferences();
+	const { sendMessageShortcut, keyboardShortcuts } = usePreferences();
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const [localImages, setLocalImages] = useState<ChatImageAttachment[]>([]);
@@ -168,6 +170,15 @@ export function ChatComposer({
 	const [caret, setCaret] = useState(value.length);
 	const [highlightedIndex, setHighlightedIndex] = useState(0);
 	const [dismissedQuery, setDismissedQuery] = useState<string | null>(null);
+
+	useKeyboardShortcut(
+		keyboardShortcuts["focus-composer"],
+		() => textareaRef.current?.focus(),
+		{ enabled: !disabled },
+	);
+
+	const showFocusHint =
+		!disabled && value.length === 0 && attachments.length === 0;
 
 	useLayoutEffect(() => {
 		const textarea = textareaRef.current;
@@ -376,7 +387,7 @@ export function ChatComposer({
 			);
 			updateImages([...attachments, ...added]);
 		} catch (error) {
-			toast.error("无法读取图片", { description: String(error) });
+			toast.error("无法读取图片", { description: userErrorMessage(error) });
 		}
 	};
 
@@ -429,7 +440,7 @@ export function ChatComposer({
 							>
 								<ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />
 								<span className="min-w-0 truncate">{attachment.name}</span>
-								<span className="shrink-0 text-[10px] text-muted-foreground">
+								<span className="shrink-0 text-[11px] text-muted-foreground">
 									{formatChatImageSize(attachment.size)}
 								</span>
 								<button
@@ -466,8 +477,29 @@ export function ChatComposer({
 					disabled={disabled}
 					rows={2}
 					placeholder={placeholder}
-					className={CHAT_COMPOSER_TEXTAREA_CLASS_NAME}
+					className={cn(
+						CHAT_COMPOSER_TEXTAREA_CLASS_NAME,
+						showFocusHint && "pr-16",
+					)}
 				/>
+
+				{showFocusHint ? (
+					<div
+						className="pointer-events-none absolute right-2 top-1.5 z-10 flex items-center gap-0.5 font-mono text-[11px] text-muted-foreground opacity-70 transition-opacity group-focus-within:opacity-0"
+						aria-hidden="true"
+					>
+						{formatKeyboardShortcut(keyboardShortcuts["focus-composer"]).map(
+							(label, index) => (
+								<span key={label} className="flex items-center gap-0.5">
+									{index > 0 ? <span>+</span> : null}
+									<kbd className="rounded border border-border/70 bg-muted/50 px-1 py-px">
+										{label}
+									</kbd>
+								</span>
+							),
+						)}
+					</div>
+				) : null}
 
 				<div className={CHAT_COMPOSER_TOOLBAR_CLASS_NAME}>
 					<input
@@ -524,12 +556,10 @@ export function ChatComposer({
 						</span>
 					) : null}
 
-					{variant === "session" ? (
-						<ComposerContextUsage
-							usage={contextUsage}
-							contextWindow={selectedModel?.contextWindow}
-						/>
-					) : null}
+					<ComposerContextUsage
+						usage={contextUsage}
+						contextWindow={selectedModel?.contextWindow}
+					/>
 
 					<ComposerActions
 						value={value}

@@ -21,6 +21,13 @@ export const SHORTCUT_COMMANDS = [
 		defaultShortcut: "mod+,",
 	},
 	{
+		id: "open-command-palette",
+		section: "应用",
+		label: "打开命令面板",
+		description: "搜索并跳转到会话。",
+		defaultShortcut: "mod+k",
+	},
+	{
 		id: "cycle-model",
 		section: "会话",
 		label: "切换全部模型",
@@ -33,6 +40,13 @@ export const SHORTCUT_COMMANDS = [
 		label: "快速切换模型（Scope）",
 		description: "与 Pi 的 Ctrl+P 一致：优先按 --models Scope 顺序切换。",
 		defaultShortcut: "ctrl+p",
+	},
+	{
+		id: "focus-composer",
+		section: "会话",
+		label: "聚焦输入框",
+		description: "将焦点移回消息输入框。",
+		defaultShortcut: "mod+l",
 	},
 ] as const;
 

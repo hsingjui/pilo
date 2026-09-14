@@ -17,7 +17,7 @@
 		"format": "oxfmt --write .",
 		"format:check": "oxfmt --check .",
 		"check": "pnpm format:check && pnpm lint",
-		"test:unit": "node --experimental-strip-types --test tests/chat-activity-state.test.ts tests/chat-submission.test.ts tests/conversation-reducer.test.ts tests/app-chat-state.test.ts tests/pi-model-selection.test.ts"
+		"test:unit": "node --experimental-strip-types --test tests/app-error.test.ts tests/chat-activity-state.test.ts tests/chat-submission.test.ts tests/conversation-reducer.test.ts tests/app-chat-state.test.ts tests/pi-model-selection.test.ts"
 	},
 	"dependencies": {
 		"@fontsource/inter": "^5.3.0",
@@ -46,6 +46,7 @@
 		"@xterm/xterm": "^6.0.0",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
+		"cmdk": "^1.1.1",
 		"highlight.js": "^11.12.0",
 		"katex": "^0.16.47",
 		"lucide-react": "^1.43.0",

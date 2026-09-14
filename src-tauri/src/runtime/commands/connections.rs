@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use pilo_protocol::PiExecutableInfo;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -127,6 +129,27 @@ pub struct ConnectionTestResult {
     pub server_version: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectionHealth {
+    pub reachable: bool,
+    pub latency_ms: u64,
+    pub protocol_version: Option<u64>,
+    pub server_version: Option<String>,
+    pub pi: Option<PiExecutableInfo>,
+    pub error: Option<String>,
+    pub pi_error: Option<String>,
+}
+
+fn get_connection(app: &AppHandle, id: &str) -> Result<Connection, String> {
+    let db = storage::open(app)?;
+    if id == "local" {
+        storage::ensure_local_connection(&db)
+    } else {
+        storage::get_connection(&db, id)?.ok_or_else(|| format!("Connection '{id}' was not found"))
+    }
+}
+
 fn connection_test_result(value: Value) -> Result<ConnectionTestResult, String> {
     let protocol_version = value
         .get("protocolVersion")
@@ -140,6 +163,71 @@ fn connection_test_result(value: Value) -> Result<ConnectionTestResult, String> 
     Ok(ConnectionTestResult {
         protocol_version,
         server_version,
+    })
+}
+
+#[tauri::command]
+pub async fn connection_health_get(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+) -> Result<ConnectionHealth, String> {
+    let connection = get_connection(&app, id.trim())?;
+    // Warm the pooled client first so the measured latency is the ping round
+    // trip, not the one-off cost of spawning pilo-server (WSL/SSH especially).
+    let started = Instant::now();
+    if let Err(error) = runtime.servers.client(&connection).await {
+        return Ok(ConnectionHealth {
+            reachable: false,
+            latency_ms: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+            protocol_version: None,
+            server_version: None,
+            pi: None,
+            error: Some(error),
+            pi_error: None,
+        });
+    }
+    let started = Instant::now();
+    let ping = runtime
+        .servers
+        .request(&connection, "server.ping", Value::Null)
+        .await;
+    let latency_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+    let ping = match ping {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(ConnectionHealth {
+                reachable: false,
+                latency_ms,
+                protocol_version: None,
+                server_version: None,
+                pi: None,
+                error: Some(error),
+                pi_error: None,
+            });
+        }
+    };
+    let test = connection_test_result(ping)?;
+    let pi = runtime
+        .servers
+        .request_typed::<PiExecutableInfo>(
+            &connection,
+            "environment.pi_probe",
+            serde_json::json!({ "executable": connection.pi_executable }),
+        )
+        .await;
+    let (pi, pi_error) = match pi {
+        Ok(info) => (Some(info), None),
+        Err(error) => (None, Some(error)),
+    };
+    Ok(ConnectionHealth {
+        reachable: true,
+        latency_ms,
+        protocol_version: Some(test.protocol_version),
+        server_version: Some(test.server_version),
+        pi,
+        error: None,
+        pi_error,
     })
 }
 

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -61,13 +61,14 @@
 				background: #101010;
 			}
 			#pilo-boot-shell {
+				/* token 快照，供 index.css 加载前使用；改动 tokens 时同步这里 */
 				--boot-bg: #ffffff;
-				--boot-panel: #f7f8fa;
-				--boot-panel-border: #dadde3;
-				--boot-line: #e8eaef;
-				--boot-line-strong: #dfe2e8;
-				--boot-input: #ffffff;
-				--boot-input-border: #d9dde4;
+				--boot-panel: #f7f8fa; /* --sidebar-background */
+				--boot-panel-border: #d5d8df; /* --sidebar-border */
+				--boot-line: #e8eaef; /* --skeleton-line */
+				--boot-line-strong: #dfe2e8; /* --skeleton-line-strong */
+				--boot-input: #ffffff; /* --input-field */
+				--boot-input-border: #d9dde4; /* --input-border */
 				position: fixed;
 				inset: 0;
 				z-index: 2147483647;
@@ -81,13 +82,13 @@
 				pointer-events: none;
 			}
 			.dark #pilo-boot-shell {
-				--boot-bg: #101010;
-				--boot-panel: #161616;
-				--boot-panel-border: #282828;
-				--boot-line: #232323;
-				--boot-line-strong: #2a2a2a;
-				--boot-input: #1c1c1c;
-				--boot-input-border: #303030;
+				--boot-bg: #101010; /* --background */
+				--boot-panel: #161616; /* --sidebar-background */
+				--boot-panel-border: #282828; /* --sidebar-border */
+				--boot-line: #232323; /* --skeleton-line */
+				--boot-line-strong: #2a2a2a; /* --skeleton-line-strong */
+				--boot-input: #1c1c1c; /* --input */
+				--boot-input-border: #282828; /* --input-border */
 				color-scheme: dark;
 			}
 			.pilo-boot-sidebar {

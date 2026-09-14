@@ -1,7 +1,14 @@
 import { memo } from "react";
 
 import type { ChatSessionRuntimeState } from "@/components/chat/chat-page-utils";
-import { Popover, PopoverContent, PopoverTrigger } from "@/ui";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/ui";
 
 const numberFormatter = new Intl.NumberFormat("zh-CN");
 const compactNumberFormatter = new Intl.NumberFormat("en", {
@@ -70,7 +77,7 @@ function StatRow({
 			<span className="shrink-0 tabular-nums text-foreground">
 				{value}
 				{suffix ? (
-					<span className="ml-1.5 text-[10px] text-muted-foreground">
+					<span className="ml-1.5 text-[11px] text-muted-foreground">
 						{suffix}
 					</span>
 				) : null}
@@ -87,13 +94,15 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 	const contextWindow =
 		finiteNumber(usage?.contextWindow) ?? finiteNumber(modelContextWindow);
 	const reportedPercent = finiteNumber(usage?.contextPercent);
+	const emptyContextPercent =
+		!usage && contextWindow !== undefined && contextWindow > 0 ? 0 : undefined;
 	const contextPercent =
 		reportedPercent ??
 		(contextTokens !== undefined &&
 		contextWindow !== undefined &&
 		contextWindow > 0
 			? (contextTokens / contextWindow) * 100
-			: undefined);
+			: emptyContextPercent);
 
 	const tokens = usage?.tokens;
 	const input = finiteNumber(tokens?.input);
@@ -115,8 +124,6 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 			? Math.max(0, contextWindow - contextTokens)
 			: undefined;
 
-	if (!usage && contextWindow === undefined) return null;
-
 	const ringPercent = Math.min(100, Math.max(0, contextPercent ?? 0));
 	const dashOffset = RING_CIRCUMFERENCE * (1 - ringPercent / 100);
 	const contextSummary =
@@ -133,48 +140,59 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 
 	return (
 		<Popover>
-			<PopoverTrigger asChild>
-				<button
-					type="button"
-					className="relative flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
-					aria-label={contextSummary}
-					title={contextSummary}
-				>
-					<svg
-						viewBox="0 0 20 20"
-						className="size-5 -rotate-90"
-						aria-hidden="true"
-					>
-						<circle
-							cx="10"
-							cy="10"
-							r={RING_RADIUS}
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="2"
-							className="opacity-20"
-						/>
-						{contextPercent !== undefined ? (
-							<circle
-								cx="10"
-								cy="10"
-								r={RING_RADIUS}
-								fill="none"
-								stroke="currentColor"
-								strokeWidth="2"
-								strokeLinecap="round"
-								strokeDasharray={RING_CIRCUMFERENCE}
-								strokeDashoffset={dashOffset}
-							/>
-						) : null}
-					</svg>
-					{contextPercent === undefined ? (
-						<span className="absolute inset-0 flex items-center justify-center text-[9px] font-medium leading-none">
-							?
-						</span>
-					) : null}
-				</button>
-			</PopoverTrigger>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<PopoverTrigger asChild>
+						<button
+							type="button"
+							className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
+							aria-label={contextSummary}
+						>
+							<span className="relative flex size-5 items-center justify-center">
+								<svg
+									viewBox="0 0 20 20"
+									className="size-5 -rotate-90"
+									aria-hidden="true"
+								>
+									<circle
+										cx="10"
+										cy="10"
+										r={RING_RADIUS}
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="2"
+										className="opacity-20"
+									/>
+									{contextPercent !== undefined ? (
+										<circle
+											cx="10"
+											cy="10"
+											r={RING_RADIUS}
+											fill="none"
+											stroke="currentColor"
+											strokeWidth="2"
+											strokeLinecap="round"
+											strokeDasharray={RING_CIRCUMFERENCE}
+											strokeDashoffset={dashOffset}
+										/>
+									) : null}
+								</svg>
+								{contextPercent === undefined ? (
+									<span className="absolute inset-0 flex items-center justify-center text-[11px] font-medium leading-none">
+										?
+									</span>
+								) : null}
+							</span>
+							<span className="text-xs font-medium tabular-nums leading-none">
+								{contextPercent === undefined
+									? "—%"
+									: formatPercent(contextPercent)}
+							</span>
+						</button>
+					</PopoverTrigger>
+				</TooltipTrigger>
+				<TooltipContent>{contextSummary}</TooltipContent>
+			</Tooltip>
 
 			<PopoverContent
 				side="top"
@@ -196,7 +214,7 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 									? "—"
 									: formatPercent(contextPercent)}
 							</div>
-							<div className="mt-1 text-[10px] tabular-nums text-muted-foreground">
+							<div className="mt-1 text-[11px] tabular-nums text-muted-foreground">
 								{formatCompactTokens(contextTokens)} /{" "}
 								{formatCompactTokens(contextWindow)}
 							</div>
@@ -209,7 +227,7 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 						/>
 					</div>
 					{contextPercent === undefined ? (
-						<p className="mt-2 text-[10px] leading-4 text-muted-foreground">
+						<p className="mt-2 text-[11px] leading-4 text-muted-foreground">
 							当前占用尚不可确定；首次回复或压缩后的下一次模型响应完成后会更新。
 						</p>
 					) : null}

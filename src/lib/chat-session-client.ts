@@ -15,6 +15,14 @@ import {
 	type PiloRuntimeEvent,
 } from "@/lib/pi-runtime";
 
+export type ChatSessionRuntimeState = {
+	projectId: string;
+	sessionPath?: string | null;
+	prepared: boolean;
+	initialized: boolean;
+	snapshot: PiSessionSnapshot;
+};
+
 export function stopChatSession(projectId: string, sessionId: string) {
 	const sessionKey = JSON.stringify([projectId, sessionId]);
 	return invoke<void>("chat_session_stop", { sessionKey });
@@ -24,10 +32,13 @@ export function createChatSessionClient(
 	projectId: string,
 	sessionId: string,
 	sessionPath?: string,
+	options: { noSession?: boolean } = {},
 ) {
 	const sessionKey = JSON.stringify([projectId, sessionId]);
+	const noSession = options.noSession ?? false;
 	let resumePath = sessionPath;
-	let pending: Promise<PiSessionSnapshot> | undefined;
+	let pendingPrepare: Promise<PiSessionSnapshot> | undefined;
+	let pendingEnsure: Promise<PiSessionSnapshot> | undefined;
 	const rpc = <T>(command: Record<string, unknown>) =>
 		requestPiRpc<T>(command, 10_000, sessionKey);
 	const getPiAgentState = async () => {
@@ -38,16 +49,34 @@ export function createChatSessionClient(
 
 	return {
 		sessionKey,
-		ensure: (): Promise<PiSessionSnapshot> => {
-			if (pending) return pending;
-			pending = invoke<PiSessionSnapshot>("chat_session_start", {
+		state: () =>
+			invoke<ChatSessionRuntimeState | null>("chat_session_state", {
+				sessionKey,
+			}),
+		prepare: (): Promise<PiSessionSnapshot> => {
+			if (pendingEnsure) return pendingEnsure;
+			if (pendingPrepare) return pendingPrepare;
+			pendingPrepare = invoke<PiSessionSnapshot>("chat_session_prepare", {
 				projectId,
 				sessionKey,
 				sessionPath: resumePath,
+				noSession,
 			}).finally(() => {
-				pending = undefined;
+				pendingPrepare = undefined;
 			});
-			return pending;
+			return pendingPrepare;
+		},
+		ensure: (): Promise<PiSessionSnapshot> => {
+			if (pendingEnsure) return pendingEnsure;
+			pendingEnsure = invoke<PiSessionSnapshot>("chat_session_start", {
+				projectId,
+				sessionKey,
+				sessionPath: resumePath,
+				noSession,
+			}).finally(() => {
+				pendingEnsure = undefined;
+			});
+			return pendingEnsure;
 		},
 		stop: () => invoke<void>("chat_session_stop", { sessionKey }),
 		listen: (handler: (event: PiloRuntimeEvent) => void) =>
@@ -103,5 +132,6 @@ export function createChatSessionClient(
 				...(images.length > 0 ? { images: toPiImageContents(images) } : {}),
 			}),
 		abortPiReply: () => rpc<void>({ type: "abort" }),
+		clearPiQueue: () => rpc<void>({ type: "clear_queue" }),
 	};
 }

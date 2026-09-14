@@ -11,11 +11,5 @@
 	"arrowParens": "always",
 	"bracketSameLine": false,
 	"bracketSpacing": true,
-	"ignorePatterns": [
-		".pi/**",
-		".comet/**",
-		"docs/comet/**",
-		"dist/**",
-		"target/**"
-	]
+	"ignorePatterns": [".pi/**", "dist/**", "target/**"]
 }

@@ -14,14 +14,7 @@ import {
 } from "@/lib/keyboard-shortcuts";
 import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
-import {
-	Button,
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/ui";
+import { Button } from "@/ui";
 import { SettingsRow, SettingsSection } from "./compact-layout";
 
 function ShortcutKeys({ shortcut }: { shortcut: string }) {
@@ -31,11 +24,14 @@ function ShortcutKeys({ shortcut }: { shortcut: string }) {
 		token: tokens[index] ?? label,
 	}));
 	return (
-		<span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground">
+		<span className="inline-flex items-center gap-1 whitespace-nowrap font-mono text-[11px] text-foreground">
 			{keys.map((key, index) => (
-				<span key={key.token} className="flex items-center gap-1">
+				<span
+					key={key.token}
+					className="flex items-center gap-1 whitespace-nowrap"
+				>
 					{index > 0 ? <span className="text-muted-foreground">+</span> : null}
-					<kbd className="min-w-6 rounded border border-border/80 bg-muted/55 px-1.5 py-0.5 text-center shadow-xs">
+					<kbd className="min-w-6 whitespace-nowrap rounded border border-border/80 bg-muted/55 px-1.5 py-0.5 text-center shadow-xs">
 						{key.label}
 					</kbd>
 				</span>
@@ -109,7 +105,7 @@ function ShortcutEditor({
 				type="button"
 				data-shortcut-recording={recording ? "true" : undefined}
 				className={cn(
-					"min-w-[132px] rounded-md border px-2.5 py-1.5 text-left transition-colors outline-none",
+					"min-w-[132px] shrink-0 whitespace-nowrap rounded-md border px-2.5 py-1.5 text-left transition-colors outline-none",
 					recording
 						? "border-ring bg-accent/60 ring-2 ring-ring/20"
 						: "border-border/80 bg-background hover:bg-muted/55 focus-visible:ring-2 focus-visible:ring-ring/30",
@@ -206,28 +202,7 @@ export function KeyboardShortcutsSettings() {
 				</SettingsSection>
 			))}
 
-			<SettingsSection
-				title="输入框"
-				description="输入行为沿用偏好设置中的发送方式。"
-			>
-				<SettingsRow label="发送消息" helper="选择 Enter 或组合键发送。">
-					<Select
-						value={sendMessageShortcut}
-						onValueChange={(value) =>
-							setSendMessageShortcut(
-								value === "mod-enter" ? "mod-enter" : "enter",
-							)
-						}
-					>
-						<SelectTrigger className="w-[180px]">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem value="enter">Enter 发送</SelectItem>
-							<SelectItem value="mod-enter">Ctrl/⌘ + Enter 发送</SelectItem>
-						</SelectContent>
-					</Select>
-				</SettingsRow>
+			<SettingsSection title="输入框">
 				<SettingsRow label="换行">
 					<ShortcutKeys shortcut={newlineKeys} />
 				</SettingsRow>

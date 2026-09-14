@@ -9,6 +9,7 @@ import {
 	Search,
 } from "lucide-react";
 
+import { userErrorMessage } from "@/lib/app-error";
 import { readProjectDir, searchProjectFiles, type FsEntry } from "@/lib/files";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/projects";
@@ -161,7 +162,7 @@ export function FileExplorer({
 					next.set(path, {
 						entries: current.get(path)?.entries ?? [],
 						loading: false,
-						error: error instanceof Error ? error.message : String(error),
+						error: userErrorMessage(error),
 					});
 					return next;
 				});
@@ -221,6 +222,7 @@ export function FileExplorer({
 						value={query}
 						onChange={(event) => setQuery(event.target.value)}
 						placeholder="搜索文件"
+						aria-label="搜索文件"
 						className="h-7 pl-7 text-xs"
 					/>
 				</div>

@@ -152,6 +152,8 @@ impl ServerManager {
     }
 
     pub async fn test_connection(&self, connection: &Connection) -> Result<Value, String> {
+        // Connection tests must validate the current configuration and credentials,
+        // so do not reuse a pooled client that may have been created before edits.
         let client = ServerClient::connect(connection).await?;
         let result = client.request("server.ping", Value::Null).await;
         client.stop().await;

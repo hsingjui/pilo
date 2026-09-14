@@ -15,6 +15,7 @@ import {
 	openProjectPreview,
 	type PreviewInfo,
 } from "@/lib/preview";
+import { userErrorMessage } from "@/lib/app-error";
 import type { Project } from "@/lib/projects";
 import { Button, EmptyState, Input } from "@/ui";
 
@@ -34,7 +35,7 @@ export function PreviewPanel({ project }: { project: Project }) {
 			if (!portText && next.length === 1) setPortText(String(next[0]));
 		} catch (error) {
 			toast.error("无法检测预览端口", {
-				description: error instanceof Error ? error.message : String(error),
+				description: userErrorMessage(error),
 			});
 		} finally {
 			setLoadingPorts(false);
@@ -68,7 +69,7 @@ export function PreviewPanel({ project }: { project: Project }) {
 				setFrameKey((value) => value + 1);
 			} catch (error) {
 				toast.error("无法打开 Preview", {
-					description: error instanceof Error ? error.message : String(error),
+					description: userErrorMessage(error),
 				});
 			} finally {
 				setOpening(false);
@@ -129,7 +130,7 @@ export function PreviewPanel({ project }: { project: Project }) {
 							<button
 								key={port}
 								type="button"
-								className="rounded-md border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+								className="rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
 								onClick={() => void open(port)}
 							>
 								:{port}
@@ -142,7 +143,7 @@ export function PreviewPanel({ project }: { project: Project }) {
 			{preview ? (
 				<>
 					<div className="flex h-8 shrink-0 items-center gap-1 border-b border-sidebar-border px-2">
-						<span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
+						<span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
 							{preview.url}
 							{preview.tunneled ? " · SSH tunnel" : ""}
 						</span>

@@ -7,12 +7,16 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	type KeyboardEvent as ReactKeyboardEvent,
 	type PointerEvent as ReactPointerEvent,
 } from "react";
 import { PanelLeft, Search, SquarePen } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Avatar, AvatarFallback, ScrollArea } from "@/ui";
+import { usePreferences } from "@/lib/preferences-provider";
+import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
+import { ScrollArea } from "@/ui";
 import { IS_MACOS } from "@/components/title-bar";
+import { CommandPalette } from "@/components/command-palette";
 import { EnvRow, SessionRow, ProjectRow } from "./rows";
 import {
 	AppSidebarProps,
@@ -34,9 +38,24 @@ const MAX_SIDEBAR_WIDTH = 480;
 /** 侧栏默认宽度。 */
 const DEFAULT_SIDEBAR_WIDTH = 292;
 
+/** 方向键每次调整的宽度。 */
+const RESIZE_STEP = 16;
+
 /** 侧栏宽度持久化 key。 */
 const SIDEBAR_WIDTH_STORAGE_KEY = "pilo.sidebarWidth";
+
+/** 环境/项目折叠状态持久化 key。 */
+const COLLAPSED_SECTIONS_STORAGE_KEY = "pilo.collapsedSections";
 const EMPTY_REFRESHING_PROJECT_IDS: ReadonlySet<string> = new Set();
+
+function readCollapsedSections(): Record<string, boolean> {
+	try {
+		const stored = window.localStorage.getItem(COLLAPSED_SECTIONS_STORAGE_KEY);
+		return stored ? (JSON.parse(stored) as Record<string, boolean>) : {};
+	} catch {
+		return {};
+	}
+}
 
 const VirtualSessionRows = lazy(() =>
 	import("./virtual-session-rows").then((module) => ({
@@ -63,10 +82,14 @@ export function AppSidebar({
 	onAddProject,
 	footer,
 }: AppSidebarProps) {
-	const [searchQuery, setSearchQuery] = useState("");
+	const [paletteOpen, setPaletteOpen] = useState(false);
+	const { keyboardShortcuts } = usePreferences();
+	useKeyboardShortcut(keyboardShortcuts["open-command-palette"], () =>
+		setPaletteOpen((open) => !open),
+	);
 	const [collapsedSections, setCollapsedSections] = useState<
 		Record<string, boolean>
-	>({});
+	>(readCollapsedSections);
 	const [internalSelectedSessionId, setInternalSelectedSessionId] = useState<
 		string | null
 	>(null);
@@ -165,30 +188,37 @@ export function AppSidebar({
 		[onCollapse],
 	);
 
-	const toggleSection = useCallback((key: string) => {
-		setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+	// 键盘路径：←/→ 每次调 16px；已到最小宽度时继续 ← 则折叠，与拖拽一致。
+	const handleResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+		if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+		event.preventDefault();
+		if (event.key === "ArrowLeft" && sidebarWidth <= MIN_SIDEBAR_WIDTH) {
+			onCollapse?.();
+			return;
+		}
+		const delta = event.key === "ArrowRight" ? RESIZE_STEP : -RESIZE_STEP;
+		setSidebarWidth(
+			Math.min(
+				MAX_SIDEBAR_WIDTH,
+				Math.max(MIN_SIDEBAR_WIDTH, sidebarWidth + delta),
+			),
+		);
+	};
+
+	useEffect(() => {
+		window.localStorage.setItem(
+			COLLAPSED_SECTIONS_STORAGE_KEY,
+			JSON.stringify(collapsedSections),
+		);
+	}, [collapsedSections]);
+
+	const toggleSection = useCallback((key: string, defaultCollapsed = false) => {
+		setCollapsedSections((prev) => ({
+			...prev,
+			[key]: !(prev[key] ?? defaultCollapsed),
+		}));
 	}, []);
 
-	const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
-	const searchableSessions = useMemo(
-		() =>
-			sessions.map((session) => ({
-				session,
-				searchText: [session.title, session.preview ?? "", session.sessionPath]
-					.join("\n")
-					.toLocaleLowerCase(),
-			})),
-		[sessions],
-	);
-	const visibleSessions = useMemo(
-		() =>
-			searchableSessions.flatMap(({ session, searchText }) => {
-				if (normalizedSearch && !searchText.includes(normalizedSearch))
-					return [];
-				return [session];
-			}),
-		[normalizedSearch, searchableSessions],
-	);
 	const projectsByEnv = useMemo(() => {
 		const grouped = new Map<string, SidebarProject[]>();
 		for (const project of projects) {
@@ -200,13 +230,13 @@ export function AppSidebar({
 	}, [projects]);
 	const sessionsByProject = useMemo(() => {
 		const grouped = new Map<string, SidebarSession[]>();
-		for (const session of visibleSessions) {
+		for (const session of sessions) {
 			const items = grouped.get(session.projectId);
 			if (items) items.push(session);
 			else grouped.set(session.projectId, [session]);
 		}
 		return grouped;
-	}, [visibleSessions]);
+	}, [sessions]);
 
 	const handleSelectSession = useCallback(
 		(sessionId: string) => {
@@ -263,149 +293,163 @@ export function AppSidebar({
 	};
 
 	return (
-		<aside
-			ref={asideRef}
-			style={collapsed ? undefined : { width: sidebarWidth }}
-			className={cn(
-				"relative h-full shrink-0 transition-[width,opacity] duration-200 ease-out",
-				// 拖拽时关闭宽度过渡，避免动画跟不上指针（与右侧 Panel 一致）
-				resizing && "transition-none",
-				collapsed
-					? "w-0 overflow-hidden opacity-0"
-					: "overflow-visible opacity-100",
-			)}
-		>
-			<div className="relative mb-2 ml-2 mr-1 mt-2 flex h-[calc(100%_-_1rem)] w-[calc(100%-12px)] flex-col overflow-hidden rounded-xl border border-sidebar-border/80 bg-sidebar p-[2px] text-sidebar-foreground shadow-[0_1px_4px_-1px_rgba(0,0,0,0.18)]">
-				<header
-					data-tauri-drag-region="deep"
-					className={cn(
-						"group/sidebar-header relative flex shrink-0 items-center justify-between gap-2 px-1.5",
-						IS_MACOS ? "h-[72px] pt-7" : "h-11",
-					)}
-				>
-					<div className="grid h-8 w-full min-w-0 select-none grid-cols-[20px_1fr_16px] items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground dark:text-sidebar-foreground/75">
-						<Avatar className="h-5 w-5 rounded-md text-[10px]">
-							<AvatarFallback className="rounded-md bg-sidebar-hover/60 text-[10px] font-semibold text-sidebar-foreground">
-								P
-							</AvatarFallback>
-						</Avatar>
-						<span className="min-w-0 flex-1 truncate font-medium">Pilo</span>
-						<span aria-hidden="true" />
-					</div>
-					<button
-						type="button"
-						className={cn(
-							"absolute right-1.5 flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-sidebar-ring/40",
-							IS_MACOS ? "-top-0.5" : "top-2",
-						)}
-						aria-label="收起侧边栏"
-						onClick={() => onCollapse?.()}
-					>
-						<PanelLeft className="h-4 w-4" />
-					</button>
-				</header>
-				<div className="-mt-1 flex shrink-0 flex-col gap-px px-1.5">
-					<button
-						type="button"
-						className="group flex w-full select-none items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring/30 dark:text-sidebar-foreground/75"
-						onClick={() => onNewChat?.()}
-					>
-						<span className="flex h-5 w-5 shrink-0 items-center justify-center text-current">
-							<SquarePen className="h-4 w-4" />
-						</span>
-						<span className="truncate">新对话</span>
-					</button>
-					<div className="mt-1 flex items-center gap-1">
-						<label className="relative min-w-0 flex-1">
-							<Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-sidebar-foreground-muted" />
-							<input
-								value={searchQuery}
-								onChange={(event) => setSearchQuery(event.target.value)}
-								placeholder="搜索会话"
-								className="h-7 w-full rounded-md border border-sidebar-border/70 bg-transparent pl-7 pr-2 text-xs outline-none placeholder:text-sidebar-foreground-muted focus:border-sidebar-ring/50"
-							/>
-						</label>
-					</div>
-				</div>
-				<ScrollArea
-					className="mt-2 min-h-0 min-w-0 flex-1 overflow-x-hidden"
-					viewportRef={scrollViewportRef}
-					viewportClassName="min-w-0 overflow-x-hidden overscroll-y-none pl-1.5 pr-2.5 pb-3"
-					scrollbarClassName="w-2 p-px"
-					scrollbarThumbClassName="bg-[hsl(var(--muted-foreground)/0.35)] hover:bg-[hsl(var(--muted-foreground)/0.45)] active:bg-[hsl(var(--muted-foreground)/0.55)]"
-				>
-					<div className="relative w-full min-w-0 overflow-x-hidden pt-1">
-						{envs.map((env) => {
-							const envCollapsed = collapsedSections[`env:${env.id}`] ?? false;
-							const envProjects = projectsByEnv.get(env.id) ?? [];
-							return (
-								<section
-									key={env.id}
-									className="mb-3 w-full min-w-0 space-y-0.5 overflow-hidden last:mb-0"
-								>
-									<EnvRow
-										env={env}
-										collapsed={envCollapsed}
-										onToggle={() => toggleSection(`env:${env.id}`)}
-										onAddProject={onAddProject}
-										onDeleteConnection={onDeleteConnection}
-									/>
-									{!envCollapsed &&
-										envProjects.map((project) => {
-											const projectCollapsed =
-												collapsedSections[`ws:${project.id}`] ?? false;
-											const projectSessions =
-												sessionsByProject.get(project.id) ?? [];
-											return (
-												<div
-													key={project.id}
-													className="grid w-full min-w-0 gap-px overflow-hidden"
-												>
-													<ProjectRow
-														project={project}
-														collapsed={projectCollapsed}
-														refreshing={refreshingProjectIds.has(project.id)}
-														onToggle={() => {
-															const key = `ws:${project.id}`;
-															toggleSection(key);
-															if (projectCollapsed)
-																onRefreshProjectSessions?.(project.id);
-														}}
-														onNewChat={onNewChatInProject}
-														onDelete={onDeleteProject}
-														onRefreshSessions={
-															onRefreshProjectSessions
-																? () => onRefreshProjectSessions(project.id)
-																: undefined
-														}
-													/>
-													{!projectCollapsed &&
-														renderSessionList(projectSessions)}
-												</div>
-											);
-										})}
-								</section>
-							);
-						})}
-					</div>
-				</ScrollArea>
-				<footer className="flex shrink-0 items-center gap-1 border-t border-sidebar-border px-1.5 py-1">
-					{footer}
-				</footer>
-			</div>
-			<div
-				role="separator"
-				aria-orientation="vertical"
-				aria-label="调整侧边栏宽度"
-				onPointerDown={startResize}
+		<>
+			<aside
+				ref={asideRef}
+				style={collapsed ? undefined : { width: sidebarWidth }}
 				className={cn(
-					"absolute -right-0.5 top-2 z-20 h-[calc(100%-1rem)] w-3 cursor-col-resize bg-transparent",
-					"after:absolute after:right-[5px] after:top-3 after:bottom-3 after:w-[2px] after:rounded-full after:bg-transparent after:transition-colors after:duration-150",
-					resizing
-						? "after:bg-sidebar-ring/70"
-						: "hover:after:bg-sidebar-ring/50 hover:after:delay-150",
+					"relative h-full shrink-0 transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none",
+					// 拖拽时关闭宽度过渡，避免动画跟不上指针（与右侧 Panel 一致）
+					resizing && "transition-none",
+					collapsed
+						? "w-0 overflow-hidden opacity-0"
+						: "overflow-visible opacity-100",
 				)}
+			>
+				<div className="relative mb-2 ml-2 mr-1 mt-2 flex h-[calc(100%_-_1rem)] w-[calc(100%-12px)] flex-col overflow-hidden rounded-xl border border-sidebar-border/80 bg-sidebar p-[2px] text-sidebar-foreground shadow-[0_1px_4px_-1px_rgba(0,0,0,0.18)]">
+					<header
+						data-tauri-drag-region="deep"
+						className={cn(
+							"group/sidebar-header relative flex shrink-0 items-center px-1.5",
+							IS_MACOS ? "h-[72px] pt-7" : "h-11",
+						)}
+					>
+						<span className="min-w-0 select-none truncate px-2 text-lg font-semibold tracking-tight text-sidebar-foreground">
+							Pilo
+						</span>
+						<div
+							className={cn(
+								"absolute right-1.5 flex items-center gap-0.5",
+								IS_MACOS ? "-top-0.5" : "top-2",
+							)}
+						>
+							<button
+								type="button"
+								className="flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+								aria-label="搜索会话"
+								onClick={() => setPaletteOpen(true)}
+							>
+								<Search className="h-4 w-4" />
+							</button>
+							<button
+								type="button"
+								className="flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+								aria-label="收起侧边栏"
+								onClick={() => onCollapse?.()}
+							>
+								<PanelLeft className="h-4 w-4" />
+							</button>
+						</div>
+					</header>
+					<div className="-mt-1 flex shrink-0 flex-col gap-px px-1.5">
+						<button
+							type="button"
+							className="group flex w-full select-none items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring dark:text-sidebar-foreground/75"
+							onClick={() => onNewChat?.()}
+						>
+							<span className="flex h-5 w-5 shrink-0 items-center justify-center text-current">
+								<SquarePen className="h-4 w-4" />
+							</span>
+							<span className="truncate">新对话</span>
+						</button>
+					</div>
+					<ScrollArea
+						className="mt-2 min-h-0 min-w-0 flex-1 overflow-x-hidden"
+						viewportRef={scrollViewportRef}
+						viewportClassName="min-w-0 overflow-x-hidden overscroll-y-none pl-1.5 pr-2.5 pb-3"
+						scrollbarClassName="w-2 p-px"
+						scrollbarThumbClassName="bg-[hsl(var(--muted-foreground)/0.35)] hover:bg-[hsl(var(--muted-foreground)/0.45)] active:bg-[hsl(var(--muted-foreground)/0.55)]"
+					>
+						<div className="relative w-full min-w-0 overflow-x-hidden pt-1">
+							{envs.map((env) => {
+								const envCollapsed =
+									collapsedSections[`env:${env.id}`] ?? false;
+								const envProjects = projectsByEnv.get(env.id) ?? [];
+								return (
+									<section
+										key={env.id}
+										className="mb-3 w-full min-w-0 space-y-0.5 overflow-hidden last:mb-0"
+									>
+										<EnvRow
+											env={env}
+											collapsed={envCollapsed}
+											onToggle={() => toggleSection(`env:${env.id}`)}
+											onAddProject={onAddProject}
+											onDeleteConnection={onDeleteConnection}
+										/>
+										{!envCollapsed &&
+											envProjects.map((project) => {
+												const projectCollapsed =
+													collapsedSections[`ws:${project.id}`] ?? true;
+												const projectSessions =
+													sessionsByProject.get(project.id) ?? [];
+												return (
+													<div
+														key={project.id}
+														className="grid w-full min-w-0 gap-px overflow-hidden"
+													>
+														<ProjectRow
+															project={project}
+															env={env}
+															collapsed={projectCollapsed}
+															refreshing={refreshingProjectIds.has(project.id)}
+															onToggle={() => {
+																const key = `ws:${project.id}`;
+																toggleSection(key, true);
+																if (projectCollapsed)
+																	onRefreshProjectSessions?.(project.id);
+															}}
+															onNewChat={onNewChatInProject}
+															onDelete={onDeleteProject}
+															onRefreshSessions={
+																onRefreshProjectSessions
+																	? () => onRefreshProjectSessions(project.id)
+																	: undefined
+															}
+														/>
+														{!projectCollapsed &&
+															renderSessionList(projectSessions)}
+													</div>
+												);
+											})}
+									</section>
+								);
+							})}
+						</div>
+					</ScrollArea>
+					<footer className="flex shrink-0 items-center gap-1 border-t border-sidebar-border px-1.5 py-1">
+						{footer}
+					</footer>
+				</div>
+				{/* 折叠时侧栏宽为 0，手柄没有可拖的内容，也不该出现在 Tab 顺序里。 */}
+				{collapsed ? null : (
+					<div
+						role="separator"
+						aria-orientation="vertical"
+						aria-label="调整侧边栏宽度"
+						tabIndex={0}
+						aria-valuemin={MIN_SIDEBAR_WIDTH}
+						aria-valuemax={MAX_SIDEBAR_WIDTH}
+						aria-valuenow={Math.round(sidebarWidth)}
+						onPointerDown={startResize}
+						onKeyDown={handleResizeKeyDown}
+						className={cn(
+							"absolute -right-0.5 top-2 z-20 h-[calc(100%-1rem)] w-3 cursor-col-resize bg-transparent",
+							"focus-visible:outline-hidden",
+							"after:absolute after:right-[5px] after:top-3 after:bottom-3 after:w-[2px] after:rounded-full after:bg-transparent after:transition-colors after:duration-150",
+							resizing
+								? "after:bg-sidebar-ring/70"
+								: "hover:after:bg-sidebar-ring/50 hover:after:delay-150 focus-visible:after:bg-sidebar-ring",
+						)}
+					/>
+				)}
+			</aside>
+			<CommandPalette
+				open={paletteOpen}
+				onOpenChange={setPaletteOpen}
+				sessions={sessions}
+				onSelectSession={handleSelectSession}
 			/>
-		</aside>
+		</>
 	);
 }

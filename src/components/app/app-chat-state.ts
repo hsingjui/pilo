@@ -68,6 +68,7 @@ export function mergeSidebarSessionsWithOpenChats(
 	const pending: SidebarSession[] = [];
 	for (let index = openedChats.length - 1; index >= 0; index -= 1) {
 		const entry = openedChats[index];
+		if (entry.session.temporary) continue;
 		const sessionId = entry.piSessionId ?? entry.session.id;
 		const key = chatUiStateKey(entry.session.projectRecord.id, sessionId);
 		if (indexedKeys.has(key)) continue;
@@ -88,6 +89,11 @@ export function mergeSidebarSessionsWithOpenChats(
 export function createDraftSessionId() {
 	draftSessionSequence += 1;
 	return `draft-session-${Date.now()}-${draftSessionSequence}`;
+}
+
+export function createTemporarySessionId() {
+	draftSessionSequence += 1;
+	return `temporary-session-${Date.now()}-${draftSessionSequence}`;
 }
 
 export function projectRelativePath(project: Project, candidate: string) {
@@ -188,6 +194,7 @@ export function upsertOpenedChat(
 	const sessionChanged =
 		existing.session.id !== nextSession.id ||
 		existing.session.title !== nextSession.title ||
+		existing.session.temporary !== nextSession.temporary ||
 		existing.session.projectRecord !== nextSession.projectRecord ||
 		existing.session.sessionPath !== nextSession.sessionPath ||
 		existing.session.historyFileSize !== nextSession.historyFileSize ||

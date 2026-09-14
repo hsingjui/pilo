@@ -200,3 +200,45 @@ fn eof_after_tool_use_is_interrupted() {
         })
     ));
 }
+
+#[test]
+fn history_stats_restore_token_breakdown_and_context_usage() {
+    let bytes = concat!(
+        "{\"type\":\"session\",\"version\":3,\"id\":\"session-a\"}\n",
+        "{\"type\":\"message\",\"id\":\"u1\",\"parentId\":null,\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n",
+        "{\"type\":\"message\",\"id\":\"a1\",\"parentId\":\"u1\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"call-1\",\"name\":\"read\",\"arguments\":{}}],\"usage\":{\"input\":10,\"output\":5,\"cacheRead\":20,\"cacheWrite\":2,\"totalTokens\":37,\"cost\":{\"total\":0.01}},\"stopReason\":\"toolUse\"}}\n",
+        "{\"type\":\"message\",\"id\":\"t1\",\"parentId\":\"a1\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call-1\",\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"usage\":{\"input\":1,\"output\":2,\"cacheRead\":3,\"cacheWrite\":4,\"totalTokens\":10,\"cost\":{\"total\":0.002}}}}\n",
+        "{\"type\":\"message\",\"id\":\"a2\",\"parentId\":\"t1\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"usage\":{\"input\":3,\"output\":7,\"cacheRead\":40,\"cacheWrite\":0,\"totalTokens\":50,\"cost\":{\"total\":0.02}},\"stopReason\":\"stop\"}}\n"
+    )
+    .as_bytes();
+
+    let history = parse_history(bytes);
+    assert_eq!(history.stats.user_messages, 1);
+    assert_eq!(history.stats.assistant_messages, 2);
+    assert_eq!(history.stats.tool_calls, 1);
+    assert_eq!(history.stats.tool_results, 1);
+    assert_eq!(history.stats.total_messages, 4);
+    assert_eq!(history.stats.tokens.input, 14);
+    assert_eq!(history.stats.tokens.output, 14);
+    assert_eq!(history.stats.tokens.cache_read, 63);
+    assert_eq!(history.stats.tokens.cache_write, 6);
+    assert_eq!(history.stats.tokens.total, 97);
+    assert!((history.stats.cost - 0.032).abs() < f64::EPSILON);
+    assert_eq!(history.stats.context_tokens, Some(50));
+}
+
+#[test]
+fn context_usage_is_unknown_after_compaction_until_next_assistant_usage() {
+    let bytes = concat!(
+        "{\"type\":\"session\",\"version\":3,\"id\":\"session-a\"}\n",
+        "{\"type\":\"message\",\"id\":\"u1\",\"parentId\":null,\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n",
+        "{\"type\":\"message\",\"id\":\"a1\",\"parentId\":\"u1\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"usage\":{\"input\":10,\"output\":5,\"cacheRead\":20,\"cacheWrite\":0,\"totalTokens\":35,\"cost\":{\"total\":0.01}},\"stopReason\":\"stop\"}}\n",
+        "{\"type\":\"compaction\",\"id\":\"c1\",\"parentId\":\"a1\",\"summary\":\"compact\",\"firstKeptEntryId\":\"u1\"}\n",
+        "{\"type\":\"message\",\"id\":\"u2\",\"parentId\":\"c1\",\"message\":{\"role\":\"user\",\"content\":\"continue\"}}\n"
+    )
+    .as_bytes();
+
+    let history = parse_history(bytes);
+    assert_eq!(history.stats.context_tokens, None);
+    assert_eq!(history.stats.tokens.total, 35);
+}

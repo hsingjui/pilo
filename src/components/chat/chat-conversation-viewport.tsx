@@ -150,15 +150,19 @@ const ChatConversationViewportImpl = forwardRef<
 			<div className="relative min-h-0 w-full flex-1">
 				<div
 					ref={bindScrollRef}
-					className="chat-scrollbar h-full w-full overflow-x-hidden overflow-y-auto overscroll-none [contain:strict] [scrollbar-gutter:stable]"
-					style={
-						effectiveLoadState === "ready" && messages.length > 0
+					className="chat-scrollbar h-full w-full overflow-x-hidden overflow-y-auto overscroll-none [contain:strict]"
+					style={{
+						scrollbarGutter:
+							effectiveLoadState === "ready" && messages.length === 0
+								? "auto"
+								: "stable",
+						...(effectiveLoadState === "ready" && messages.length > 0
 							? {
 									paddingTop: virtualPadding.start,
 									paddingBottom: virtualPadding.end,
 								}
-							: undefined
-					}
+							: {}),
+					}}
 				>
 					{effectiveLoadState === "loading" ? (
 						<ChatHistorySkeleton />
@@ -173,7 +177,7 @@ const ChatConversationViewportImpl = forwardRef<
 							</ConversationColumn>
 						</div>
 					) : messages.length === 0 ? (
-						<div className="flex min-h-full flex-col pb-8 pt-4 sm:pb-10 sm:pt-6">
+						<div className="flex min-h-full flex-col">
 							<EmptyConversation />
 						</div>
 					) : (

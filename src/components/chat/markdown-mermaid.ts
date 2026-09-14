@@ -15,45 +15,39 @@ const MERMAID_BASE_CONFIG = {
 	theme: "base",
 } satisfies MermaidConfig;
 
-const MERMAID_LIGHT_THEME_VARIABLES = {
-	background: "#ffffff",
-	mainBkg: "#f7f8fa",
-	secondaryColor: "#eef0f3",
-	tertiaryColor: "#f0f1f4",
-	primaryColor: "#eef0f3",
-	primaryBorderColor: "#5b8def",
-	primaryTextColor: "#1a1b1e",
-	secondaryTextColor: "#1a1b1e",
-	tertiaryTextColor: "#1a1b1e",
-	lineColor: "#6b7280",
-	textColor: "#1a1b1e",
-	titleColor: "#1a1b1e",
-	defaultLinkColor: "#6b7280",
-	edgeLabelBackground: "#ffffff",
-	nodeBorder: "#5b8def",
-	clusterBkg: "#f7f8fa",
-	clusterBorder: "#d5d8df",
+/*
+ * Mermaid 主题变量不写死颜色：直接读 CSS token，主题切换时随 token 一起变。
+ * token 是空格分隔的 HSL 三元组，这里转成 khroma（mermaid 内部）能解析的逗号语法。
+ */
+const MERMAID_TOKEN_VARIABLES = {
+	background: "--background",
+	mainBkg: "--card",
+	secondaryColor: "--secondary",
+	tertiaryColor: "--hover",
+	primaryColor: "--secondary",
+	primaryBorderColor: "--ring",
+	primaryTextColor: "--foreground",
+	secondaryTextColor: "--foreground",
+	tertiaryTextColor: "--foreground",
+	lineColor: "--muted-foreground",
+	textColor: "--foreground",
+	titleColor: "--foreground",
+	defaultLinkColor: "--muted-foreground",
+	edgeLabelBackground: "--background",
+	nodeBorder: "--ring",
+	clusterBkg: "--card",
+	clusterBorder: "--sidebar-border",
 };
 
-const MERMAID_DARK_THEME_VARIABLES = {
-	background: "#101010",
-	mainBkg: "#161616",
-	secondaryColor: "#232323",
-	tertiaryColor: "#282828",
-	primaryColor: "#232323",
-	primaryBorderColor: "#ffc799",
-	primaryTextColor: "#ffffff",
-	secondaryTextColor: "#ffffff",
-	tertiaryTextColor: "#ffffff",
-	lineColor: "#a0a0a0",
-	textColor: "#ffffff",
-	titleColor: "#ffffff",
-	defaultLinkColor: "#a0a0a0",
-	edgeLabelBackground: "#101010",
-	nodeBorder: "#ffc799",
-	clusterBkg: "#161616",
-	clusterBorder: "#282828",
-};
+function readMermaidThemeVariables(): Record<string, string> {
+	const tokens = getComputedStyle(document.documentElement);
+	const variables: Record<string, string> = {};
+	for (const [key, token] of Object.entries(MERMAID_TOKEN_VARIABLES)) {
+		const value = tokens.getPropertyValue(token).trim();
+		if (value) variables[key] = `hsl(${value.split(/\s+/).join(", ")})`;
+	}
+	return variables;
+}
 
 export function createMarkdownMermaidConfig(
 	theme: MarkdownTheme,
@@ -61,10 +55,7 @@ export function createMarkdownMermaidConfig(
 	return {
 		...MERMAID_BASE_CONFIG,
 		darkMode: theme === "dark",
-		themeVariables:
-			theme === "dark"
-				? { ...MERMAID_DARK_THEME_VARIABLES }
-				: { ...MERMAID_LIGHT_THEME_VARIABLES },
+		themeVariables: readMermaidThemeVariables(),
 	};
 }
 

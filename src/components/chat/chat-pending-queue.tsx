@@ -1,11 +1,24 @@
+import { Pencil, Send } from "lucide-react";
+
 import type { ConversationState } from "@/lib/conversation-types";
+import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
 
 type PendingUser = ConversationState["pendingUsers"][number];
 type PendingQueueItem = PendingUser & {
 	queueKind: "steer" | "follow_up";
 };
 
-export function ChatPendingQueue({ items }: { items: readonly PendingUser[] }) {
+type ChatPendingQueueProps = {
+	items: readonly PendingUser[];
+	onEdit?: (item: PendingQueueItem) => void;
+	onSendNow?: (item: PendingQueueItem) => void;
+};
+
+export function ChatPendingQueue({
+	items,
+	onEdit,
+	onSendNow,
+}: ChatPendingQueueProps) {
 	const queued = items.filter(
 		(item): item is PendingQueueItem => item.queueKind !== undefined,
 	);
@@ -37,6 +50,38 @@ export function ChatPendingQueue({ items }: { items: readonly PendingUser[] }) {
 							>
 								{label}
 							</span>
+							<div className="flex shrink-0 items-center gap-1">
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											className="size-6 rounded-md"
+											aria-label="取回编辑"
+											onClick={() => onEdit?.(item)}
+										>
+											<Pencil className="size-3" />
+										</Button>
+									</TooltipTrigger>
+									<TooltipContent>取回编辑</TooltipContent>
+								</Tooltip>
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											className="size-6 rounded-md"
+											aria-label="立即发送"
+											onClick={() => onSendNow?.(item)}
+										>
+											<Send className="size-3" />
+										</Button>
+									</TooltipTrigger>
+									<TooltipContent>打断当前 Agent 并立即发送</TooltipContent>
+								</Tooltip>
+							</div>
 						</div>
 					);
 				})}

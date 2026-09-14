@@ -51,6 +51,22 @@ export type SessionHistory = {
 	thinkingLevel: string | null;
 	name: string | null;
 	sourceMessageCount: number;
+	stats?: {
+		userMessages: number;
+		assistantMessages: number;
+		toolCalls: number;
+		toolResults: number;
+		totalMessages: number;
+		tokens: {
+			input: number;
+			output: number;
+			cacheRead: number;
+			cacheWrite: number;
+			total: number;
+		};
+		cost: number;
+		contextTokens: number | null;
+	};
 };
 
 export type SessionHistoryFingerprint = {

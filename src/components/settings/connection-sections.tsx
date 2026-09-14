@@ -34,6 +34,7 @@ import {
 
 import { AUTH_LABELS, sshTargetLabel } from "./connection-form";
 import {
+	SETTINGS_CONTROL_CLASS,
 	SETTINGS_ICON_BUTTON_CLASS,
 	SETTINGS_NESTED_DIALOG_OVERLAY_CLASS,
 	SettingsSection,
@@ -41,10 +42,14 @@ import {
 
 function ConnectionIcon({ kind }: { kind: Connection["kind"] }) {
 	if (kind.type === "local")
-		return <Laptop className="size-4" strokeWidth={1.75} aria-hidden="true" />;
+		return (
+			<Laptop className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+		);
 	if (kind.type === "wsl")
-		return <Monitor className="size-4" strokeWidth={1.75} aria-hidden="true" />;
-	return <Server className="size-4" strokeWidth={1.75} aria-hidden="true" />;
+		return (
+			<Monitor className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+		);
+	return <Server className="size-3.5" strokeWidth={1.75} aria-hidden="true" />;
 }
 
 type ConnectionRowProps = {
@@ -234,6 +239,7 @@ export function ConnectionSettingsDialog({
 							名称
 							<Input
 								id="connection-name"
+								className={SETTINGS_CONTROL_CLASS}
 								value={draft.name}
 								onChange={(event) =>
 									onChange({ ...draft, name: event.target.value })
@@ -245,7 +251,7 @@ export function ConnectionSettingsDialog({
 							<div className="flex gap-2">
 								<Input
 									id="connection-pi-path"
-									className="font-mono text-xs"
+									className={cn(SETTINGS_CONTROL_CLASS, "font-mono")}
 									value={draft.piExecutable}
 									onChange={(event) =>
 										onChange({ ...draft, piExecutable: event.target.value })
@@ -254,6 +260,7 @@ export function ConnectionSettingsDialog({
 								/>
 								<Button
 									variant="outline"
+									size="sm"
 									disabled={busy || probing}
 									onClick={onProbe}
 								>
@@ -265,10 +272,19 @@ export function ConnectionSettingsDialog({
 							</span>
 						</label>
 						<div className="mt-1 flex justify-end gap-2">
-							<Button variant="outline" disabled={busy} onClick={onClose}>
+							<Button
+								size="sm"
+								variant="outline"
+								disabled={busy}
+								onClick={onClose}
+							>
 								取消
 							</Button>
-							<Button disabled={busy || !draft.name.trim()} onClick={onSave}>
+							<Button
+								size="sm"
+								disabled={busy || !draft.name.trim()}
+								onClick={onSave}
+							>
 								{busy ? "保存中…" : "保存"}
 							</Button>
 						</div>

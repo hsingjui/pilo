@@ -9,13 +9,7 @@
 	"rules": {
 		"react/react-in-jsx-scope": "off"
 	},
-	"ignorePatterns": [
-		".pi/**",
-		".comet/**",
-		"docs/comet/**",
-		"dist/**",
-		"target/**"
-	],
+	"ignorePatterns": [".pi/**", "dist/**", "target/**"],
 	"env": {
 		"builtin": true,
 		"browser": true

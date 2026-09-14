@@ -4,11 +4,11 @@ mod runtime;
 mod sessions;
 
 pub use connections::{
-    connection_naming_model_get, connection_naming_model_list, connection_naming_model_set,
-    connection_pi_probe, connection_settings_update, local_connection_get, local_connection_test,
-    ssh_connection_list, ssh_connection_remove, ssh_connection_save, ssh_connection_test,
-    wsl_connection_list, wsl_connection_remove, wsl_connection_save, wsl_connection_test,
-    wsl_list_distributions,
+    connection_health_get, connection_naming_model_get, connection_naming_model_list,
+    connection_naming_model_set, connection_pi_probe, connection_settings_update,
+    local_connection_get, local_connection_test, ssh_connection_list, ssh_connection_remove,
+    ssh_connection_save, ssh_connection_test, wsl_connection_list, wsl_connection_remove,
+    wsl_connection_save, wsl_connection_test, wsl_list_distributions,
 };
 pub use projects::{
     connection_fs_read_dir, local_pick_project_directory, parallel_agent_create,
@@ -21,8 +21,9 @@ pub use projects::{
     terminal_close, terminal_resize, terminal_write,
 };
 pub use runtime::{
-    chat_session_send_rpc, chat_session_start, chat_session_stop, project_start_pi,
-    runtime_abort_pi, runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc, runtime_stop_pi,
+    chat_session_prepare, chat_session_send_rpc, chat_session_start, chat_session_state,
+    chat_session_stop, project_start_pi, runtime_abort_pi, runtime_get_pi_state,
+    runtime_restart_pi, runtime_send_rpc, runtime_stop_pi,
 };
 pub use sessions::{
     session_delete, session_generate_title, session_history, session_list, session_reconcile,

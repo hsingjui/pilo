@@ -8,7 +8,7 @@ import {
 } from "@/lib/pi-runtime";
 
 export const PROJECT_PI_MODELS_TTL_MS = 60 * 60 * 1000;
-const STARTUP_REFRESH_CONCURRENCY = 2;
+const STARTUP_REFRESH_CONCURRENCY = 1;
 
 export type ProjectPiModels = {
 	projectId: string;

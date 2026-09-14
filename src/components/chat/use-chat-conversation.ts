@@ -231,16 +231,6 @@ export function useChatConversation({
 		[onDraftChange],
 	);
 	const clearDraft = useCallback(() => setDraft(""), [setDraft]);
-	const restoreDraftIfEmpty = useCallback(
-		(value: string) => {
-			setDraftState((current) => {
-				if (current.trim()) return current;
-				onDraftChange?.(value);
-				return value;
-			});
-		},
-		[onDraftChange],
-	);
 
 	const dispatchConversationBatch = useCallback(
 		(targetSessionId: string, actions: readonly ConversationAction[]) => {
@@ -308,7 +298,6 @@ export function useChatConversation({
 		draft,
 		setDraft,
 		clearDraft,
-		restoreDraftIfEmpty,
 		dispatchConversation,
 		dispatchConversationBatch,
 		historyLoadState,

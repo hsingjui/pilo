@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+import { userErrorMessage } from "@/lib/app-error";
+
 export const RUNTIME_EVENT_NAME = "pilo://runtime";
 
 export type PiProcessState =
@@ -458,11 +460,5 @@ export function abortPiReply(): Promise<void> {
 }
 
 export function runtimeErrorMessage(error: unknown): string {
-	if (typeof error === "string" && error.trim()) return error;
-	if (error instanceof Error && error.message.trim()) return error.message;
-	if (error && typeof error === "object") {
-		const message = Reflect.get(error, "message");
-		if (typeof message === "string" && message.trim()) return message;
-	}
-	return "Pi Runtime 请求失败";
+	return userErrorMessage(error);
 }

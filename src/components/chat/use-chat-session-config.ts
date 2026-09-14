@@ -195,9 +195,18 @@ export function useChatSessionConfig({
 				setSelectedThinkingLevel(result.thinkingLevel as PiThinkingLevel);
 			}
 			setThinkingLevels([...getPiModelThinkingLevels(historicalModel)]);
+			const stats = result.stats;
 			setSessionState({
 				name: result.name ?? undefined,
 				messageCount: result.sourceMessageCount,
+				userMessages: stats?.userMessages,
+				assistantMessages: stats?.assistantMessages,
+				toolCalls: stats?.toolCalls,
+				toolResults: stats?.toolResults,
+				totalMessages: stats?.totalMessages,
+				tokens: stats?.tokens,
+				cost: stats?.cost,
+				contextTokens: stats?.contextTokens,
 			});
 		},
 		[session.projectRecord.id],
@@ -545,13 +554,23 @@ export function useChatSessionConfig({
 			}
 
 			if (initialConfigAppliedRef.current.has(session.id)) return;
-			if (session.initialModel) {
+			let configChanged = false;
+			if (
+				session.initialModel &&
+				(agentState.model?.provider !== session.initialModel.provider ||
+					agentState.model?.id !== session.initialModel.id)
+			) {
 				await client.setPiModel(session.initialModel);
+				configChanged = true;
 			}
-			if (session.initialThinkingLevel) {
+			if (
+				session.initialThinkingLevel &&
+				agentState.thinkingLevel !== session.initialThinkingLevel
+			) {
 				await client.setPiThinkingLevel(session.initialThinkingLevel);
+				configChanged = true;
 			}
-			if (session.initialModel || session.initialThinkingLevel) {
+			if (configChanged) {
 				const [state, thinking] = await Promise.all([
 					client.getPiAgentState(),
 					client.getAvailablePiThinkingLevels(),

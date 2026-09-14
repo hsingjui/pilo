@@ -9,7 +9,8 @@ use desktop_notifications::{
 use runtime::{
     PiloRuntime,
     commands::{
-        chat_session_send_rpc, chat_session_start, chat_session_stop, connection_fs_read_dir,
+        chat_session_prepare, chat_session_send_rpc, chat_session_start, chat_session_state,
+        chat_session_stop, connection_fs_read_dir, connection_health_get,
         connection_naming_model_get, connection_naming_model_list, connection_naming_model_set,
         connection_pi_probe, connection_settings_update, local_connection_get,
         local_connection_test, local_pick_project_directory, parallel_agent_create,
@@ -76,9 +77,12 @@ pub fn run() {
             debug_chat_performance_log,
             send_macos_desktop_notification,
             send_windows_desktop_notification,
+            chat_session_prepare,
             chat_session_start,
             chat_session_send_rpc,
+            chat_session_state,
             chat_session_stop,
+            connection_health_get,
             connection_naming_model_list,
             connection_naming_model_get,
             connection_naming_model_set,

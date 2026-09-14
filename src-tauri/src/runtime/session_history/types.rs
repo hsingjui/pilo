@@ -8,6 +8,29 @@ pub struct SessionHistoryModel {
     pub id: String,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionHistoryTokenStats {
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub cache_write: u64,
+    pub total: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionHistoryStats {
+    pub user_messages: usize,
+    pub assistant_messages: usize,
+    pub tool_calls: usize,
+    pub tool_results: usize,
+    pub total_messages: usize,
+    pub tokens: SessionHistoryTokenStats,
+    pub cost: f64,
+    pub context_tokens: Option<u64>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionHistory {
@@ -16,6 +39,7 @@ pub struct SessionHistory {
     pub thinking_level: Option<String>,
     pub name: Option<String>,
     pub source_message_count: usize,
+    pub stats: SessionHistoryStats,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

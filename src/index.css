@@ -30,12 +30,8 @@
 	--color-secondary-foreground: hsl(var(--secondary-foreground));
 	--color-muted: hsl(var(--muted));
 	--color-muted-foreground: hsl(var(--muted-foreground));
-	--color-highlight: hsl(var(--highlight));
-	--color-highlight-foreground: hsl(var(--highlight-foreground));
 	--color-hover: hsl(var(--hover));
 	--color-hover-foreground: hsl(var(--hover-foreground));
-	--color-selection: hsl(var(--selection));
-	--color-selection-foreground: hsl(var(--selection-foreground));
 	--color-destructive: hsl(var(--destructive));
 	--color-destructive-foreground: hsl(var(--destructive-foreground));
 	--color-border: hsl(var(--border));
@@ -50,29 +46,16 @@
 	--color-sidebar-foreground: hsl(var(--sidebar-foreground));
 	--color-sidebar-foreground-muted: hsl(var(--sidebar-foreground-muted));
 	--color-sidebar-primary: hsl(var(--sidebar-primary));
-	--color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
 	--color-sidebar-hover: hsl(var(--sidebar-hover));
 	--color-sidebar-hover-foreground: hsl(var(--sidebar-hover-foreground));
-	--color-sidebar-selection: hsl(var(--sidebar-selection));
 	--color-sidebar-selection-foreground: hsl(
 		var(--sidebar-selection-foreground)
 	);
 	--color-sidebar-border: hsl(var(--sidebar-border));
 	--color-sidebar-ring: hsl(var(--sidebar-ring));
-	--color-bottom-bar: hsl(var(--bottom-bar));
-	--color-bottom-bar-foreground: hsl(var(--bottom-bar-foreground));
-	--color-status-info: hsl(var(--status-info));
 	--color-status-success: hsl(var(--status-success));
 	--color-status-warning: hsl(var(--status-warning));
 	--color-status-danger: hsl(var(--status-danger));
-	--color-status-merged: hsl(var(--status-merged));
-	--color-github-open: hsl(var(--github-open));
-	--color-github-merged: hsl(var(--github-merged));
-	--color-github-closed: hsl(var(--github-closed));
-	--color-github-draft: hsl(var(--github-draft));
-	--color-github-addition: hsl(var(--github-addition));
-	--color-github-deletion: hsl(var(--github-deletion));
-	--color-modified-file: hsl(var(--modified-file));
 	--color-code: hsl(var(--code-background));
 	--color-code-foreground: hsl(var(--code-foreground));
 	--color-code-border: hsl(var(--code-border));
@@ -128,7 +111,7 @@
 		/*
 		 * Lody Light，解析自内置主题 lody-light.json（经 Lody LODY_ALIAS_RULES
 		 * 解析后的生效值；-ring 因 focusBorder 全透明回落到主色）。
-		 * 侧栏 #F7F8FA / 选中 #E8EAEF / 主色 #5B8DEF。
+		 * 侧栏 #F7F8FA。文本色按各自实际渲染的底校准到 ≥4.5:1（含 12px 代码）。
 		 */
 		--background: 0 0% 100%;
 		--foreground: 225 7.1% 11%;
@@ -136,79 +119,63 @@
 		--card-foreground: 220 7.5% 39%;
 		--popover: 0 0% 100%;
 		--popover-foreground: 225 7.1% 11%;
-		--primary: 219.7 82.2% 64.7%;
+		--primary: 219.7 82.2% 54%; /* Lody #5B8DEF 压暗一档：白字 4.8:1（AA 正文） */
 		--primary-foreground: 0 0% 100%;
 		--secondary: 216 17.2% 94.3%;
 		--secondary-foreground: 225 7.1% 11%;
 		--muted: 216 17.2% 94.3%;
-		--muted-foreground: 220 8.9% 46.1%;
-		--highlight: 218.6 65.3% 57.1%;
-		--highlight-foreground: 0 0% 100%;
+		/* 按 muted 面 #eef0f3 校准：4.6:1；白底 5.3:1、card 底 5.0:1 */
+		--muted-foreground: 220 8.9% 43.8%;
 		--hover: 225 15.4% 94.9%;
 		--hover-foreground: 225 7.1% 11%;
-		--selection: 222.9 17.9% 92.4%;
-		--selection-foreground: 225 7.1% 11%;
-		--selection-inactive: 216 17.2% 94.3%;
-		--selection-inactive-foreground: 225 7.1% 11%;
 		--destructive: 355.8 71.8% 47.3%;
 		--destructive-foreground: 0 0% 100%;
 		--border: 222.9 16.3% 91.6%;
 		--input: 216 12.2% 92%;
 		--input-foreground: 225 7.1% 11%;
-		--input-placeholder: 216 6.9% 57.5%;
+		--input-placeholder: var(--muted-foreground);
 		--input-border: 222 14.7% 86.7%;
 		/* Fill of an editable control; stays white on a light canvas. */
 		--input-field: 0 0% 100%;
 		--switch-track: 222 14.7% 86.7%;
 		--ring: 219.7 82.2% 64.7%;
 		--sidebar-background: 220 23.1% 97.5%;
-		--sidebar-foreground: 220 7.5% 39%;
-		--sidebar-foreground-muted: 216 6.9% 57.5%;
+		--sidebar-foreground: var(--card-foreground);
+		/* 环境名/占位符/图标：与二级文本同色，侧栏底 5.0:1 */
+		--sidebar-foreground-muted: var(--muted-foreground);
 		--sidebar-primary: 219.7 82.2% 64.7%;
-		--sidebar-primary-foreground: 0 0% 100%;
 		--sidebar-hover: 225 15.4% 94.9%;
 		--sidebar-hover-foreground: 225 7.1% 11%;
-		--sidebar-selection: 222.9 17.9% 92.4%;
 		--sidebar-selection-foreground: 225 7.1% 11%;
 		--sidebar-border: 222 13.5% 85.5%;
 		--sidebar-ring: 219.7 82.2% 64.7%;
-		--button-hover: 218.6 65.3% 57.1%;
+		--button-hover: 218.6 65.3% 47%; /* 主按钮 hover 底，白字 5.8:1 */
 		--button-secondary: 216 12.2% 92%;
 		--button-secondary-foreground: 225 7.1% 11%;
 		--button-secondary-hover: 225 15.4% 94.9%;
-		--bottom-bar: 0 0% 100%;
-		--bottom-bar-foreground: 220 7.5% 39%;
-		--status-info: 218.6 65.3% 57.1%;
 		--status-success: 137.2 66% 30%;
 		--status-warning: 24.9 58.9% 41%;
 		--status-danger: 355.8 71.8% 47.3%;
-		--status-merged: 334.3 48.4% 42.5%;
-		--github-open: 137 66% 30%;
-		--github-merged: 261 69% 59%;
-		--github-closed: 356 72% 47%;
-		--github-draft: 213 8% 47%;
-		--github-addition: var(--github-open);
-		--github-deletion: var(--github-closed);
-		--modified-file: 40.1 100% 30.2%;
 		--scrollbar-thumb: 220 6.1% 90.4%;
 		--scrollbar-thumb-hover: 220 3.5% 83.3%;
 		--scrollbar-thumb-active: 225 3.1% 74.9%;
 		--code-background: 220 23.1% 97.5%;
 		--code-foreground: 225 7.1% 11%;
 		--code-border: 222 14.7% 86.7%;
-		--code-added: var(--github-addition);
-		--code-removed: var(--github-deletion);
-		--skeleton-line: #e8eaef;
-		--skeleton-line-strong: #dfe2e8;
-		--syntax-keyword: 230.9 60.9% 63.9%;
-		--syntax-string: 10.4 38.3% 52.9%;
+		--code-added: 137.2 66% 30%; /* = status-success */
+		--code-removed: 355.8 71.8% 47.3%; /* = status-danger */
+		--skeleton-line: 222.9 17.9% 92.4%;
+		--skeleton-line-strong: 220 16.3% 89.2%;
+		/* 代码底 #f7f8fa 上全部 ≥4.5:1（12px 代码也是正文） */
+		--syntax-keyword: 230.9 60.9% 58.2%;
+		--syntax-string: 10.4 38.3% 47.8%;
 		--syntax-number: 191.2 49.2% 36.3%;
-		--syntax-comment: 120 7.3% 65.3%;
-		--syntax-function: 95.8 39.9% 37.8%;
-		--syntax-variable: 30.6 41.9% 48.6%;
-		--syntax-title: 172 51.3% 37.1%;
-		--syntax-attr: 30.6 41.9% 48.6%;
-		--syntax-builtin: 50.2 72.9% 34.7%;
+		--syntax-comment: 120 7.3% 41%;
+		--syntax-function: 95.8 39.9% 34.8%;
+		--syntax-variable: 30.6 41.9% 40.6%;
+		--syntax-title: 172 51.3% 32.5%;
+		--syntax-attr: 30.6 41.9% 40.6%;
+		--syntax-builtin: 50.2 72.9% 29.5%;
 
 		/* Sizing / motion */
 		--control-h: 36px;
@@ -228,6 +195,7 @@
 		/*
 		 * Lody Dark = bundled Vesper. Keep these values aligned with
 		 * packages/components/.../Vesper-dark-color-theme.json and Lody's alias rules.
+		 * 例外：Vesper 只有一个橙，status-warning 本地改成 50° 黄，否则警告与主色/焦点环同色。
 		 */
 		--background: 0 0% 6.3%;
 		--foreground: 0 0% 100%;
@@ -239,16 +207,11 @@
 		--primary-foreground: 0 0% 0%;
 		--secondary: 0 0% 13.7%;
 		--secondary-foreground: 0 0% 62.7%;
-		--muted: 0 0% 6.3%;
+		/* 与页面底 #101010 拉开一档，选中/悬停底在深色下才可见 */
+		--muted: 0 0% 13.7%;
 		--muted-foreground: 0 0% 62.7%;
-		--highlight: 27.1 100% 80%;
-		--highlight-foreground: 0 0% 0%;
 		--hover: 0 0% 15.7%;
 		--hover-foreground: 0 0% 100%;
-		--selection: 0 0% 13.7%;
-		--selection-foreground: 27.1 100% 80%;
-		--selection-inactive: 0 0% 13.7%;
-		--selection-inactive-foreground: 27.1 100% 80%;
 		--destructive: 0 100% 75.1%;
 		--destructive-foreground: 0 0% 0%;
 		--border: 0 0% 15.7%;
@@ -263,10 +226,8 @@
 		--sidebar-foreground: 0 0% 100%;
 		--sidebar-foreground-muted: 0 0% 62.7%;
 		--sidebar-primary: 27.1 100% 80%;
-		--sidebar-primary-foreground: 0 0% 0%;
 		--sidebar-hover: 0 0% 15.7%;
 		--sidebar-hover-foreground: 0 0% 62.7%;
-		--sidebar-selection: 0 0% 13.7%;
 		--sidebar-selection-foreground: 27.1 100% 80%;
 		--sidebar-border: 0 0% 15.7%;
 		--sidebar-ring: 27.1 100% 80%;
@@ -274,20 +235,10 @@
 		--button-secondary: 0 0% 11%;
 		--button-secondary-foreground: 0 0% 100%;
 		--button-secondary-hover: 0 0% 15.7%;
-		--bottom-bar: 0 0% 6.3%;
-		--bottom-bar-foreground: 0 0% 62.7%;
-		--status-info: 27.1 100% 80%;
 		--status-success: 151 60% 52%;
-		--status-warning: 27.1 100% 80%;
+		/* 主色是 27° 橙，警告取 50° 黄：并排时不会与主色/焦点环混淆 */
+		--status-warning: 50 100% 72%;
 		--status-danger: 0 100% 75.1%;
-		--status-merged: 262 90% 74%;
-		--github-open: 128 49% 49%;
-		--github-merged: 262 89% 71%;
-		--github-closed: 3 93% 63%;
-		--github-draft: 212 8% 58%;
-		--github-addition: var(--github-open);
-		--github-deletion: var(--github-closed);
-		--modified-file: 27.1 100% 80%;
 		--scrollbar-thumb: 0 0% 14.5%;
 		--scrollbar-thumb-hover: 0 0% 20.4%;
 		--scrollbar-thumb-active: 0 0% 20.4%;
@@ -296,8 +247,8 @@
 		--code-border: 0 0% 15.7%;
 		--code-added: 164.1 100% 80%;
 		--code-removed: 0 100% 75.1%;
-		--skeleton-line: #232323;
-		--skeleton-line-strong: #2a2a2a;
+		--skeleton-line: 0 0% 13.7%;
+		--skeleton-line-strong: 0 0% 16.5%;
 		--syntax-keyword: 0 0% 62.7%;
 		--syntax-string: 164.1 100% 80%;
 		--syntax-number: 27.1 100% 80%;
@@ -371,7 +322,6 @@
 		--pilo-shiki-token-link: hsl(var(--syntax-title));
 		--pilo-shiki-token-inserted: hsl(var(--code-added));
 		--pilo-shiki-token-deleted: hsl(var(--code-removed));
-		--pilo-shiki-token-changed: hsl(var(--modified-file));
 		position: relative;
 		display: block !important;
 		width: 100%;
@@ -764,7 +714,7 @@
 }
 
 .chat-agent-activity-label {
-	color: hsl(var(--primary) / 0.68);
+	color: hsl(var(--primary));
 }
 
 .chat-agent-activity-label::after {

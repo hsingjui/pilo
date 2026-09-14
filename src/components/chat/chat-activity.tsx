@@ -142,7 +142,7 @@ function ToolResultBlock({ block }: { block: unknown }) {
 					alt="工具结果图像"
 					className="max-h-80 max-w-full rounded-md object-contain"
 				/>
-				<div className="font-mono text-[10px] text-muted-foreground/70">
+				<div className="font-mono text-[11px] text-muted-foreground">
 					{block.mimeType}
 				</div>
 			</div>
@@ -286,7 +286,7 @@ function ToolDetail({ activity }: { activity: ToolCallActivity }) {
 	if (!showArgs && !hasResult) return null;
 
 	return (
-		<div className="w-full pb-1 pt-0.5 text-[11px] font-normal text-muted-foreground/85">
+		<div className="w-full pb-1 pt-0.5 text-[11px] font-normal text-muted-foreground">
 			<div className="overflow-hidden rounded-md border border-border/60 bg-muted/20">
 				{showArgs ? (
 					<pre className="scrollbar-pro max-h-44 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[10.5px] leading-4 [overflow-wrap:anywhere]">
@@ -377,7 +377,7 @@ function ToolCallActivityView({
 					<span>{toolLabel(activity.toolName)}</span>
 					{previewLabel ? (
 						<span
-							className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground/70"
+							className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground"
 							title={preview ?? undefined}
 						>
 							{previewLabel}

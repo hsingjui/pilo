@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PanelLeft } from "lucide-react";
 import { ChatComposer } from "@/components/chat/chat-composer";
-import { PiLogo } from "@/components/pi-logo";
+import { ChatEmptyHero } from "@/components/chat/chat-empty-hero";
+import { ConversationColumn } from "@/components/chat/chat-conversation-column";
+import { SessionHeader } from "@/components/chat/chat-session-header";
 import {
 	runtimeErrorMessage,
 	type PiModel,
@@ -20,12 +21,9 @@ import {
 	subscribeProjectPiModels,
 } from "@/lib/pi-models";
 import { usePreferences } from "@/lib/preferences-provider";
-import { cn } from "@/lib/utils";
-import { IS_MACOS } from "@/components/title-bar";
 import type { Project } from "@/lib/projects";
 import type { ChatSubmission } from "@/lib/chat-submission";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
-import { Button } from "@/ui";
 
 function modelKey(model: PiModel | null): string | null {
 	return model ? `${model.provider}\0${model.id}` : null;
@@ -33,6 +31,7 @@ function modelKey(model: PiModel | null): string | null {
 
 export function NewChatLanding({
 	onStartSession,
+	onNewTemporaryChat,
 	onExpandSidebar,
 	reserveWindowControls = false,
 	sidebarCollapsed = false,
@@ -44,6 +43,7 @@ export function NewChatLanding({
 		model: PiModel | null,
 		thinkingLevel: PiThinkingLevel | null,
 	) => void;
+	onNewTemporaryChat?: () => void;
 	onExpandSidebar?: () => void;
 	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
@@ -159,7 +159,7 @@ export function NewChatLanding({
 			.then(() => {
 				const cached = getCachedProjectPiModels(projectId);
 				if (cached) applyModelSnapshot(cached);
-				if (!cached || isProjectPiModelsStale(cached)) void loadModels();
+				if (!cached) void loadModels();
 			})
 			.catch((error) => {
 				console.warn("Failed to hydrate Pi models", error);
@@ -223,68 +223,52 @@ export function NewChatLanding({
 
 	return (
 		<div className="relative flex h-full min-w-0 flex-col">
-			{/* 与 Lody 一样，桌面拖拽条悬浮在内容之上，不占 Landing 的垂直布局。 */}
-			<div
-				aria-hidden="true"
-				data-tauri-drag-region="deep"
-				className={cn(
-					"absolute inset-x-0 top-0 z-10 h-11",
-					reserveWindowControls && "pr-[7.75rem]",
-				)}
+			<SessionHeader
+				overlay
+				onNewTemporaryChat={onNewTemporaryChat}
+				onExpandSidebar={onExpandSidebar}
+				reserveWindowControls={reserveWindowControls}
+				sidebarCollapsed={sidebarCollapsed}
 			/>
-			{sidebarCollapsed && (
-				<Button
-					variant="ghost"
-					size="icon"
-					className={cn(
-						"absolute z-20 size-7 shrink-0",
-						IS_MACOS ? "left-24 top-[9px]" : "left-3 top-2",
-					)}
-					aria-label="展开侧边栏"
-					onClick={onExpandSidebar}
-				>
-					<PanelLeft className="size-4" />
-				</Button>
-			)}
-			<div className="flex min-h-0 flex-1 items-center justify-center overflow-auto px-4">
-				<div className="flex flex-col items-center justify-center gap-3 text-center">
-					<PiLogo className="h-16 w-16 text-foreground" />
-					<h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-						今天想做点什么？
-					</h1>
+			<div className="relative flex min-h-0 flex-1 flex-col">
+				<div className="flex min-h-0 w-full flex-1 flex-col">
+					<ConversationColumn className="flex flex-1 items-center justify-center">
+						<ChatEmptyHero />
+					</ConversationColumn>
 				</div>
-			</div>
-			<div className="mx-auto w-full max-w-[46rem] px-3 pb-2 sm:px-4">
-				<ChatComposer
-					variant="landing"
-					value={draft}
-					onChange={setDraft}
-					onSubmit={(submission) =>
-						onStartSession(submission, selectedModel, selectedThinkingLevel)
-					}
-					disabled={false}
-					models={models}
-					selectedModel={selectedModel}
-					modelLoading={modelLoadState === "loading"}
-					modelError={modelError}
-					modelDisabled={!projectAvailable || !project}
-					onModelMenuOpen={() => void loadModels()}
-					onModelRefresh={() => void loadModels(true)}
-					onModelChange={(model) => {
-						if (model) selectDraftModel(model);
-					}}
-					thinkingLevels={getPiModelThinkingLevels(selectedModel)}
-					selectedThinkingLevel={selectedThinkingLevel}
-					thinkingDisabled={
-						!projectAvailable ||
-						!project ||
-						getPiModelThinkingLevels(selectedModel).length === 0
-					}
-					onThinkingChange={(level) => {
-						thinkingSelectionDirtyRef.current = true;
-						setSelectedThinkingLevel(level);
-					}}
-				/>
+				<div className="relative -mt-4 w-full shrink-0 pb-4">
+					<ConversationColumn className="relative">
+						<ChatComposer
+							value={draft}
+							onChange={setDraft}
+							onSubmit={(submission) =>
+								onStartSession(submission, selectedModel, selectedThinkingLevel)
+							}
+							disabled={false}
+							models={models}
+							selectedModel={selectedModel}
+							modelLoading={modelLoadState === "loading"}
+							modelError={modelError}
+							modelDisabled={!projectAvailable || !project}
+							onModelMenuOpen={() => void loadModels()}
+							onModelRefresh={() => void loadModels(true)}
+							onModelChange={(model) => {
+								if (model) selectDraftModel(model);
+							}}
+							thinkingLevels={getPiModelThinkingLevels(selectedModel)}
+							selectedThinkingLevel={selectedThinkingLevel}
+							thinkingDisabled={
+								!projectAvailable ||
+								!project ||
+								getPiModelThinkingLevels(selectedModel).length === 0
+							}
+							onThinkingChange={(level) => {
+								thinkingSelectionDirtyRef.current = true;
+								setSelectedThinkingLevel(level);
+							}}
+						/>
+					</ConversationColumn>
+				</div>
 			</div>
 		</div>
 	);

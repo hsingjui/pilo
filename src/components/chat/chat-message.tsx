@@ -6,6 +6,7 @@ import {
 	type AssistantActivity,
 } from "@/components/chat/chat-activity";
 import { ChatAgentActivityIndicator } from "@/components/chat/chat-agent-activity";
+import { ChatEmptyHero } from "@/components/chat/chat-empty-hero";
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import { useChatExpansionState } from "@/components/chat/chat-expansion-state";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
@@ -20,13 +21,7 @@ import { recordChatMessageRender } from "@/lib/chat-performance";
 import { formatWorkDuration } from "@/lib/format-duration";
 import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
-import {
-	Button,
-	EmptyState,
-	Tooltip,
-	TooltipContent,
-	TooltipTrigger,
-} from "@/ui";
+import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
 
 function MessageAction({
 	label,
@@ -375,23 +370,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 export function EmptyConversation() {
 	return (
 		<ConversationColumn className="flex flex-1 items-center justify-center">
-			<EmptyState
-				variant="hero"
-				title="今天想做点什么？"
-				icon={
-					<svg viewBox="0 0 800 800" className="h-20 w-20" aria-hidden="true">
-						<path
-							className="fill-current"
-							fillRule="evenodd"
-							d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
-						/>
-						<path
-							className="fill-current"
-							d="M517.36 400H634.72V634.72H517.36Z"
-						/>
-					</svg>
-				}
-			/>
+			<ChatEmptyHero />
 		</ConversationColumn>
 	);
 }

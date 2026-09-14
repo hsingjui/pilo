@@ -58,10 +58,12 @@ function DiffViewer({ diff }: { diff: string }) {
 					key={key}
 					className={cn(
 						"block min-w-max px-3",
-						line.startsWith("+") && !line.startsWith("+++") && "bg-primary/10",
+						line.startsWith("+") &&
+							!line.startsWith("+++") &&
+							"bg-status-success/12",
 						line.startsWith("-") &&
 							!line.startsWith("---") &&
-							"bg-destructive/10",
+							"bg-status-danger/12",
 						line.startsWith("@@") && "bg-muted/70 text-muted-foreground",
 					)}
 				>
@@ -187,9 +189,10 @@ export function RightSidebar({
 								<button
 									key={value}
 									type="button"
+									aria-pressed={view === value}
 									className={cn(
 										"rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
-										view === value && "bg-muted text-foreground",
+										view === value && "bg-muted font-medium text-foreground",
 									)}
 									onClick={() => setView(value)}
 								>
@@ -294,9 +297,10 @@ export function RightSidebar({
 								<button
 									key={value}
 									type="button"
+									aria-pressed={mode === value}
 									className={cn(
 										"rounded-md px-2 py-1 text-xs text-muted-foreground",
-										mode === value && "bg-muted text-foreground",
+										mode === value && "bg-muted font-medium text-foreground",
 									)}
 									onClick={() => setMode(value)}
 								>
@@ -304,7 +308,7 @@ export function RightSidebar({
 								</button>
 							))}
 							<span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
-								{visibleFiles.length} files
+								{visibleFiles.length} 个文件
 							</span>
 						</div>
 						<Separator className="bg-sidebar-border" />

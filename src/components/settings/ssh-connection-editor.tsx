@@ -17,7 +17,10 @@ import {
 } from "@/ui";
 
 import type { SshConnectionFormState } from "./connection-form";
-import { SETTINGS_NESTED_DIALOG_OVERLAY_CLASS } from "./compact-layout";
+import {
+	SETTINGS_CONTROL_CLASS,
+	SETTINGS_NESTED_DIALOG_OVERLAY_CLASS,
+} from "./compact-layout";
 
 type SshConnectionEditorProps = {
 	editing: SshConnectionFormState | null;
@@ -55,6 +58,7 @@ export function SshConnectionEditor({
 								名称
 								<Input
 									id="ssh-name"
+									className={SETTINGS_CONTROL_CLASS}
 									value={editing.name}
 									onChange={(event) =>
 										onChange({ ...editing, name: event.target.value })
@@ -73,7 +77,7 @@ export function SshConnectionEditor({
 										})
 									}
 								>
-									<SelectTrigger>
+									<SelectTrigger className={SETTINGS_CONTROL_CLASS}>
 										<SelectValue />
 									</SelectTrigger>
 									<SelectContent>
@@ -87,6 +91,7 @@ export function SshConnectionEditor({
 							{editing.mode === "config" ? "Host alias" : "主机"}
 							<Input
 								id="ssh-host"
+								className={SETTINGS_CONTROL_CLASS}
 								value={editing.hostname}
 								onChange={(event) =>
 									onChange({ ...editing, hostname: event.target.value })
@@ -102,6 +107,7 @@ export function SshConnectionEditor({
 									用户名
 									<Input
 										id="ssh-user"
+										className={SETTINGS_CONTROL_CLASS}
 										value={editing.user}
 										onChange={(event) =>
 											onChange({ ...editing, user: event.target.value })
@@ -113,6 +119,7 @@ export function SshConnectionEditor({
 									端口
 									<Input
 										id="ssh-port"
+										className={SETTINGS_CONTROL_CLASS}
 										type="number"
 										min={1}
 										max={65535}
@@ -135,7 +142,7 @@ export function SshConnectionEditor({
 									})
 								}
 							>
-								<SelectTrigger>
+								<SelectTrigger className={SETTINGS_CONTROL_CLASS}>
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
@@ -152,6 +159,7 @@ export function SshConnectionEditor({
 								密码
 								<Input
 									id="ssh-password"
+									className={SETTINGS_CONTROL_CLASS}
 									type="password"
 									value={editing.password}
 									onChange={(event) =>
@@ -171,6 +179,7 @@ export function SshConnectionEditor({
 								</span>
 								<Input
 									id="ssh-key"
+									className={SETTINGS_CONTROL_CLASS}
 									value={editing.identityFile}
 									onChange={(event) =>
 										onChange({ ...editing, identityFile: event.target.value })
@@ -184,6 +193,7 @@ export function SshConnectionEditor({
 								代理 / 跳板机（可选）
 								<Input
 									id="ssh-proxy"
+									className={SETTINGS_CONTROL_CLASS}
 									value={editing.proxyJump}
 									onChange={(event) =>
 										onChange({ ...editing, proxyJump: event.target.value })
@@ -196,10 +206,11 @@ export function SshConnectionEditor({
 							</label>
 						) : null}
 						<div className="mt-1 flex justify-end gap-2">
-							<Button variant="outline" onClick={onClose}>
+							<Button size="sm" variant="outline" onClick={onClose}>
 								取消
 							</Button>
 							<Button
+								size="sm"
 								disabled={
 									busy || !editing.name.trim() || !editing.hostname.trim()
 								}

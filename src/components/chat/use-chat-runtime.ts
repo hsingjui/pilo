@@ -1,3 +1,4 @@
+/* oxlint-disable no-await-in-loop */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -33,6 +34,7 @@ type ActiveTurn = {
 	generation: number | null;
 	promptSent: boolean;
 	queueReady: boolean;
+	preserveQueuedOnRelease: boolean;
 };
 
 type BufferedQueuedMessage = {
@@ -40,7 +42,20 @@ type BufferedQueuedMessage = {
 	clientMessageId: string;
 	submission: ChatSubmission;
 	queued: "steer" | "follow_up";
+	timestampMs: number;
 };
+
+function combineQueuedSubmissions(
+	items: readonly BufferedQueuedMessage[],
+): ChatSubmission {
+	return createChatSubmission(
+		items
+			.map((item) => item.submission.text)
+			.filter(Boolean)
+			.join("\n\n"),
+		items.flatMap((item) => item.submission.images),
+	);
+}
 
 function isFrameBatchedAction(action: ConversationAction) {
 	return (
@@ -66,7 +81,8 @@ type UseChatRuntimeOptions = {
 	scrollRef: { current: HTMLDivElement | null };
 	scrollToBottom: (smooth?: boolean) => void;
 	clearDraft: () => void;
-	restoreDraftIfEmpty: (value: string) => void;
+	restoreSubmission: (submission: ChatSubmission) => void;
+	recoverSubmission: (submission: ChatSubmission) => void;
 	prepareRuntimeConfiguration: (agentState: PiAgentState) => Promise<void>;
 	refreshSessionState: () => Promise<void>;
 };
@@ -84,7 +100,8 @@ export function useChatRuntime({
 	scrollRef,
 	scrollToBottom,
 	clearDraft,
-	restoreDraftIfEmpty,
+	restoreSubmission,
+	recoverSubmission,
 	prepareRuntimeConfiguration,
 	refreshSessionState,
 }: UseChatRuntimeOptions) {
@@ -94,6 +111,7 @@ export function useChatRuntime({
 	}, [onSessionIdentified]);
 	const activeTurnRef = useRef<ActiveTurn | null>(null);
 	const bufferedQueuedMessagesRef = useRef<BufferedQueuedMessage[]>([]);
+	const queuedMessagesRef = useRef(new Map<string, BufferedQueuedMessage>());
 	const initialQueuedMessagesRef = useRef(initialQueuedMessages);
 	const runtimeListenerRef = useRef<ReturnType<typeof client.listen> | null>(
 		null,
@@ -174,34 +192,52 @@ export function useChatRuntime({
 		[],
 	);
 
-	const discardBufferedQueuedMessages = useCallback(
-		(turn: ActiveTurn) => {
-			const discarded = bufferedQueuedMessagesRef.current.filter(
-				(item) => item.turn === turn,
+	const takeQueuedMessages = useCallback((turn: ActiveTurn) => {
+		const queued = [...queuedMessagesRef.current.values()].filter(
+			(item) => item.turn === turn,
+		);
+		if (queued.length === 0) return queued;
+		for (const item of queued) {
+			if (queuedMessagesRef.current.get(item.clientMessageId) === item) {
+				queuedMessagesRef.current.delete(item.clientMessageId);
+			}
+		}
+		const queuedIds = new Set(queued.map((item) => item.clientMessageId));
+		bufferedQueuedMessagesRef.current =
+			bufferedQueuedMessagesRef.current.filter(
+				(item) => !queuedIds.has(item.clientMessageId),
 			);
-			if (discarded.length === 0) return;
-			bufferedQueuedMessagesRef.current =
-				bufferedQueuedMessagesRef.current.filter((item) => item.turn !== turn);
-			for (const item of discarded) {
+		return queued;
+	}, []);
+
+	const removeQueuedMessagesFromConversation = useCallback(
+		(turn: ActiveTurn, items: readonly BufferedQueuedMessage[]) => {
+			for (const item of items) {
 				dispatchConversation(turn.sessionId, {
 					type: "local_user_queue_failed",
 					clientMessageId: item.clientMessageId,
 				});
 			}
-			restoreDraftIfEmpty(
-				discarded
-					.map((item) => item.submission.text)
-					.filter(Boolean)
-					.join("\n\n"),
-			);
 		},
-		[dispatchConversation, restoreDraftIfEmpty],
+		[dispatchConversation],
+	);
+
+	const restoreQueuedMessages = useCallback(
+		(items: readonly BufferedQueuedMessage[]) => {
+			if (items.length === 0) return;
+			recoverSubmission(combineQueuedSubmissions(items));
+		},
+		[recoverSubmission],
 	);
 
 	const releaseActiveTurn = useCallback(
-		(turn: ActiveTurn) => {
+		(turn: ActiveTurn, options: { preserveQueued?: boolean } = {}) => {
 			if (activeTurnRef.current !== turn) return;
-			discardBufferedQueuedMessages(turn);
+			if (!options.preserveQueued && !turn.preserveQueuedOnRelease) {
+				const discarded = takeQueuedMessages(turn);
+				removeQueuedMessagesFromConversation(turn, discarded);
+				restoreQueuedMessages(discarded);
+			}
 			activeTurnRef.current = null;
 			if (activeTurnSessionIdRef?.current === turn.sessionId) {
 				activeTurnSessionIdRef.current = null;
@@ -210,7 +246,12 @@ export function useChatRuntime({
 			setPendingSteering(0);
 			setPendingFollowUps(0);
 		},
-		[activeTurnSessionIdRef, discardBufferedQueuedMessages],
+		[
+			activeTurnSessionIdRef,
+			removeQueuedMessagesFromConversation,
+			restoreQueuedMessages,
+			takeQueuedMessages,
+		],
 	);
 
 	const failActiveTurn = useCallback(
@@ -287,6 +328,12 @@ export function useChatRuntime({
 					releaseActiveTurn(turn);
 					break;
 				case "user_message_start":
+					for (const [id, item] of queuedMessagesRef.current) {
+						if (item.turn === turn && item.submission.text === event.text) {
+							queuedMessagesRef.current.delete(id);
+							break;
+						}
+					}
 					// The local submit / queue path already positioned the viewport. This
 					// runtime echo can arrive after the reader has started scrolling up;
 					// forcing bottom here would re-enable sticky follow and yank the page.
@@ -357,6 +404,63 @@ export function useChatRuntime({
 		};
 	}, [client, failActiveTurn]);
 
+	useEffect(() => {
+		let cancelled = false;
+		const recover = async () => {
+			try {
+				const subscription = runtimeListenerRef.current;
+				if (!subscription) return;
+				await subscription;
+				const runtimeState = await client.state();
+				if (
+					cancelled ||
+					!runtimeState ||
+					!runtimeState.initialized ||
+					runtimeState.snapshot.state !== "running" ||
+					activeTurnRef.current
+				) {
+					return;
+				}
+				const agentState = await client.getPiAgentState();
+				if (cancelled || !agentState.isStreaming || activeTurnRef.current)
+					return;
+				const turn: ActiveTurn = {
+					sessionId: session.id,
+					sessionTitle: session.title,
+					projectId: session.projectRecord.id,
+					notificationSessionId: session.temporary
+						? session.id
+						: (agentState.sessionId ?? session.id),
+					generation: runtimeState.snapshot.generation,
+					promptSent: true,
+					queueReady: true,
+					preserveQueuedOnRelease: false,
+				};
+				activeTurnRef.current = turn;
+				if (activeTurnSessionIdRef)
+					activeTurnSessionIdRef.current = turn.sessionId;
+				setActiveTurnSessionId(turn.sessionId);
+				setPendingSteering(agentState.pendingMessageCount ?? 0);
+				if (!session.temporary) {
+					identifiedRef.current?.(agentState.sessionId ?? session.id);
+				}
+			} catch (error) {
+				if (!cancelled) console.warn("Failed to recover active Pi turn", error);
+			}
+		};
+		void recover();
+		return () => {
+			cancelled = true;
+		};
+	}, [
+		client,
+		activeTurnSessionIdRef,
+		session.id,
+		session.projectRecord.id,
+		session.temporary,
+		session.title,
+	]);
+
 	const sendQueuedMessage = useCallback(
 		(item: BufferedQueuedMessage) => {
 			const request =
@@ -364,18 +468,27 @@ export function useChatRuntime({
 					? client.sendPiSteer(item.submission.text, item.submission.images)
 					: client.sendPiFollowUp(item.submission.text, item.submission.images);
 			void request.catch((error) => {
+				// A stale RPC from an older turn must not delete a message that has
+				// already been rebound to a newer turn.
+				if (queuedMessagesRef.current.get(item.clientMessageId) !== item)
+					return;
+				queuedMessagesRef.current.delete(item.clientMessageId);
+				bufferedQueuedMessagesRef.current =
+					bufferedQueuedMessagesRef.current.filter(
+						(candidate) => candidate.clientMessageId !== item.clientMessageId,
+					);
 				dispatchConversation(item.turn.sessionId, {
 					type: "local_user_queue_failed",
 					clientMessageId: item.clientMessageId,
 				});
-				restoreDraftIfEmpty(item.submission.text);
+				recoverSubmission(item.submission);
 				toast.error(
 					item.queued === "steer" ? "无法调整当前回复" : "无法排队发送",
 					{ description: runtimeErrorMessage(error) },
 				);
 			});
 		},
-		[client, dispatchConversation, restoreDraftIfEmpty],
+		[client, dispatchConversation, recoverSubmission],
 	);
 
 	const flushBufferedQueuedMessages = useCallback(
@@ -394,7 +507,12 @@ export function useChatRuntime({
 	const requestAutoTitle = useCallback(
 		(message: string) => {
 			const prompt = message.trim();
-			if (session.sessionPath || autoTitleRequestedRef.current || !prompt) {
+			if (
+				session.temporary ||
+				session.sessionPath ||
+				autoTitleRequestedRef.current ||
+				!prompt
+			) {
 				return;
 			}
 			autoTitleRequestedRef.current = true;
@@ -415,6 +533,7 @@ export function useChatRuntime({
 			refreshSessionState,
 			session.projectRecord.id,
 			session.sessionPath,
+			session.temporary,
 		],
 	);
 
@@ -444,6 +563,7 @@ export function useChatRuntime({
 				generation: null,
 				promptSent: false,
 				queueReady: false,
+				preserveQueuedOnRelease: false,
 			};
 			activeTurnRef.current = turn;
 			if (activeTurnSessionIdRef) {
@@ -483,7 +603,7 @@ export function useChatRuntime({
 				turn.generation = snapshot.generation;
 				const agentState = await client.getPiAgentState();
 				if (activeTurnRef.current !== turn) return;
-				if (agentState.sessionId) {
+				if (agentState.sessionId && !session.temporary) {
 					turn.notificationSessionId = agentState.sessionId;
 					identifiedRef.current?.(agentState.sessionId);
 				}
@@ -512,6 +632,7 @@ export function useChatRuntime({
 			scrollToBottom,
 			session.id,
 			session.projectRecord.id,
+			session.temporary,
 			session.title,
 		],
 	);
@@ -539,13 +660,14 @@ export function useChatRuntime({
 			}
 
 			const messageId = createLocalMessageId("user");
+			const timestampMs = Date.now();
 			dispatchConversation(turn.sessionId, {
 				type: "local_user_queue",
 				clientMessageId: messageId,
 				text: normalized.text,
 				images: summarizeChatImages(normalized.images),
 				queueKind: queued,
-				timestampMs: Date.now(),
+				timestampMs,
 			});
 			clearDraft();
 
@@ -554,7 +676,9 @@ export function useChatRuntime({
 				clientMessageId: messageId,
 				submission: normalized,
 				queued,
+				timestampMs,
 			};
+			queuedMessagesRef.current.set(messageId, item);
 			if (turn.generation === null || !turn.queueReady) {
 				bufferedQueuedMessagesRef.current.push(item);
 				return;
@@ -562,6 +686,182 @@ export function useChatRuntime({
 			sendQueuedMessage(item);
 		},
 		[clearDraft, dispatchConversation, sendQueuedMessage, session.id],
+	);
+
+	const replayQueuedMessages = useCallback(
+		async (turn: ActiveTurn, excludedId?: string) => {
+			const queued = [...queuedMessagesRef.current.values()].filter(
+				(item) => item.turn === turn && item.clientMessageId !== excludedId,
+			);
+			await client.clearPiQueue();
+			for (const item of queued) {
+				if (item.queued === "steer") {
+					await client.sendPiSteer(
+						item.submission.text,
+						item.submission.images,
+					);
+				} else {
+					await client.sendPiFollowUp(
+						item.submission.text,
+						item.submission.images,
+					);
+				}
+			}
+		},
+		[client],
+	);
+
+	const handleEditQueued = useCallback(
+		async (clientMessageId: string) => {
+			const item = queuedMessagesRef.current.get(clientMessageId);
+			const turn = activeTurnRef.current;
+			if (!item || !turn || item.turn !== turn || turn.sessionId !== session.id)
+				return;
+			try {
+				if (turn.queueReady) await replayQueuedMessages(turn, clientMessageId);
+				bufferedQueuedMessagesRef.current =
+					bufferedQueuedMessagesRef.current.filter(
+						(candidate) => candidate.clientMessageId !== clientMessageId,
+					);
+				queuedMessagesRef.current.delete(clientMessageId);
+				dispatchConversation(turn.sessionId, {
+					type: "local_user_queue_failed",
+					clientMessageId,
+				});
+				restoreSubmission(item.submission);
+			} catch (error) {
+				const remaining = takeQueuedMessages(turn);
+				try {
+					await client.clearPiQueue();
+				} catch {
+					// The runtime may already be unavailable. Local state still needs to
+					// become authoritative instead of leaving a half-replayed queue visible.
+				}
+				removeQueuedMessagesFromConversation(turn, remaining);
+				restoreQueuedMessages(remaining);
+				toast.error("无法取回待处理消息，已将队列恢复到输入框", {
+					description: runtimeErrorMessage(error),
+				});
+			}
+		},
+		[
+			client,
+			dispatchConversation,
+			removeQueuedMessagesFromConversation,
+			replayQueuedMessages,
+			restoreQueuedMessages,
+			restoreSubmission,
+			session.id,
+			takeQueuedMessages,
+		],
+	);
+
+	const handleSendQueuedNow = useCallback(
+		async (clientMessageId: string) => {
+			const item = queuedMessagesRef.current.get(clientMessageId);
+			const turn = activeTurnRef.current;
+			if (!item || !turn || item.turn !== turn || turn.sessionId !== session.id)
+				return;
+
+			const queued = [...queuedMessagesRef.current.values()].filter(
+				(candidate) => candidate.turn === turn,
+			);
+			const remaining = queued.filter(
+				(candidate) => candidate.clientMessageId !== clientMessageId,
+			);
+			turn.preserveQueuedOnRelease = true;
+
+			try {
+				let runtimeStopped = false;
+				let piQueueCleared = false;
+				if (turn.queueReady) {
+					try {
+						await client.clearPiQueue();
+						piQueueCleared = true;
+					} catch (error) {
+						if (session.temporary) throw error;
+						console.warn(
+							"Pi queue clear failed; restarting runtime before send-now",
+							error,
+						);
+						await client.stop();
+						runtimeStopped = true;
+					}
+				}
+				if (!runtimeStopped && turn.generation !== null && turn.promptSent) {
+					try {
+						await client.abortPiReply();
+					} catch (error) {
+						if (session.temporary) {
+							if (piQueueCleared) await replayQueuedMessages(turn);
+							throw error;
+						}
+						console.warn(
+							"Pi abort failed; restarting runtime before send-now",
+							error,
+						);
+						await client.stop();
+					}
+				}
+
+				const detached = takeQueuedMessages(turn);
+				removeQueuedMessagesFromConversation(turn, detached);
+				dispatchConversation(turn.sessionId, {
+					type: "local_turn_abort",
+					timestampMs: Date.now(),
+				});
+				releaseActiveTurn(turn, { preserveQueued: true });
+
+				const nextTurnPromise = beginTurn(item.submission);
+				const nextTurn = activeTurnRef.current;
+				if (!nextTurn) {
+					restoreQueuedMessages(remaining);
+					await nextTurnPromise;
+					return;
+				}
+
+				for (const queuedItem of remaining) {
+					const rebound: BufferedQueuedMessage = {
+						...queuedItem,
+						turn: nextTurn,
+					};
+					queuedMessagesRef.current.set(rebound.clientMessageId, rebound);
+					bufferedQueuedMessagesRef.current.push(rebound);
+					dispatchConversation(nextTurn.sessionId, {
+						type: "local_user_queue",
+						clientMessageId: rebound.clientMessageId,
+						text: rebound.submission.text,
+						images: summarizeChatImages(rebound.submission.images),
+						queueKind: rebound.queued,
+						timestampMs: rebound.timestampMs,
+					});
+				}
+				await nextTurnPromise;
+			} catch (error) {
+				if (activeTurnRef.current === turn) {
+					turn.preserveQueuedOnRelease = false;
+				} else {
+					const stranded = takeQueuedMessages(turn);
+					removeQueuedMessagesFromConversation(turn, stranded);
+					restoreQueuedMessages(stranded);
+				}
+				toast.error("无法立即发送消息", {
+					description: runtimeErrorMessage(error),
+				});
+			}
+		},
+		[
+			beginTurn,
+			client,
+			dispatchConversation,
+			releaseActiveTurn,
+			removeQueuedMessagesFromConversation,
+			replayQueuedMessages,
+			restoreQueuedMessages,
+			session.id,
+			session.temporary,
+			takeQueuedMessages,
+		],
 	);
 
 	const handleSteer = useCallback(
@@ -577,23 +877,51 @@ export function useChatRuntime({
 	const handleStop = useCallback(() => {
 		const turn = activeTurnRef.current;
 		if (!turn || turn.sessionId !== session.id) return;
-		if (turn.generation === null || !turn.promptSent) {
-			dispatchConversation(turn.sessionId, {
-				type: "local_turn_abort",
-				timestampMs: Date.now(),
-			});
-			releaseActiveTurn(turn);
-			return;
-		}
-		void client.abortPiReply().catch((error) => {
-			failActiveTurn(turn, runtimeErrorMessage(error));
+		const queued = takeQueuedMessages(turn);
+		removeQueuedMessagesFromConversation(turn, queued);
+		restoreQueuedMessages(queued);
+		dispatchConversation(turn.sessionId, {
+			type: "local_turn_abort",
+			timestampMs: Date.now(),
 		});
+		releaseActiveTurn(turn, { preserveQueued: true });
+		if (turn.generation === null || !turn.promptSent) return;
+
+		void (async () => {
+			let mustStopRuntime = false;
+			if (turn.queueReady) {
+				try {
+					await client.clearPiQueue();
+				} catch (error) {
+					console.warn("Pi queue clear failed while stopping", error);
+					mustStopRuntime = true;
+				}
+			}
+			if (!mustStopRuntime) {
+				try {
+					await client.abortPiReply();
+				} catch (error) {
+					console.warn("Pi abort failed; stopping chat runtime", error);
+					mustStopRuntime = true;
+				}
+			}
+			if (!mustStopRuntime) return;
+			try {
+				await client.stop();
+			} catch (stopError) {
+				toast.error("停止 Pi 失败", {
+					description: runtimeErrorMessage(stopError),
+				});
+			}
+		})();
 	}, [
 		client,
 		dispatchConversation,
-		failActiveTurn,
 		releaseActiveTurn,
+		removeQueuedMessagesFromConversation,
+		restoreQueuedMessages,
 		session.id,
+		takeQueuedMessages,
 	]);
 
 	useEffect(() => {
@@ -638,6 +966,8 @@ export function useChatRuntime({
 		handleSubmit,
 		handleSteer,
 		handleFollowUp,
+		handleEditQueued,
+		handleSendQueuedNow,
 		handleStop,
 	};
 }

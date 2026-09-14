@@ -25,6 +25,7 @@ import { AddProjectDialog } from "@/components/sidebar/add-project-dialog";
 import {
 	chatUiStateKey,
 	createDraftSessionId,
+	createTemporarySessionId,
 	identifyOpenedChat,
 	indexedChatSession,
 	mergeSidebarSessionsWithOpenChats,
@@ -42,11 +43,15 @@ import { NewChatLanding } from "@/components/new-chat-landing";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import { CUSTOM_TITLEBAR, IS_MACOS, TitleBar } from "@/components/title-bar";
 import type { EditorOpenRequest } from "@/components/project-editor";
-import { stopChatSession } from "@/lib/chat-session-client";
+import {
+	createChatSessionClient,
+	stopChatSession,
+} from "@/lib/chat-session-client";
 import type {
 	ChatImageAttachment,
 	ChatSubmission,
 } from "@/lib/chat-submission";
+import { userErrorMessage } from "@/lib/app-error";
 import { CONNECTIONS_CHANGED_EVENT } from "@/lib/connection-events";
 import { listConnectionCatalog, removeWslConnection } from "@/lib/connections";
 import {
@@ -59,7 +64,9 @@ import {
 	setConnectionShownInHome,
 } from "@/lib/home-connections";
 import {
+	getCachedProjectPiModels,
 	hydrateProjectPiModels,
+	isProjectPiModelsStale,
 	refreshAllProjectPiModels,
 	refreshProjectPiModels,
 } from "@/lib/pi-models";
@@ -126,7 +133,11 @@ function App() {
 		[],
 	);
 	const previousOpenedChatsRef = useRef(new Map<string, OpenChat>());
-	const startupModelRefreshStartedRef = useRef(false);
+	const landingPrewarmRef = useRef<{
+		projectId: string;
+		sessionId: string;
+		client: ReturnType<typeof createChatSessionClient>;
+	} | null>(null);
 	const busyChatControllersRef = useRef(new Set<string>());
 	const [busyChatControllerIds, setBusyChatControllerIds] = useState<
 		ReadonlySet<string>
@@ -213,10 +224,6 @@ function App() {
 				const next = await listProjects();
 				if (active) {
 					setProjects(next);
-					if (!startupModelRefreshStartedRef.current) {
-						startupModelRefreshStartedRef.current = true;
-						void refreshAllProjectPiModels(next.map((project) => project.id));
-					}
 					setOpenedChats((current) =>
 						current.filter((entry) =>
 							next.some(
@@ -264,6 +271,28 @@ function App() {
 			window.removeEventListener(CONNECTIONS_CHANGED_EVENT, handleChanged);
 		};
 	}, []);
+
+	useEffect(() => {
+		if (projects.length === 0) return;
+		const timer = window.setTimeout(() => {
+			void hydrateProjectPiModels()
+				.then(() => {
+					const staleProjectIds = projects
+						.filter((project) => {
+							const cached = getCachedProjectPiModels(project.id);
+							return !cached || isProjectPiModelsStale(cached);
+						})
+						.map((project) => project.id);
+					if (staleProjectIds.length > 0) {
+						void refreshAllProjectPiModels(staleProjectIds);
+					}
+				})
+				.catch((error) =>
+					console.warn("Failed to schedule Pi model refresh", error),
+				);
+		}, 15_000);
+		return () => window.clearTimeout(timer);
+	}, [projects]);
 
 	useEffect(() => {
 		if (projects.length === 0) return;
@@ -461,6 +490,51 @@ function App() {
 		);
 	}, [activeProject, projectsReady, startDraftSession]);
 
+	// 新对话停留在 Landing 时就把 Pi 冷启动完成；这里只 prepare，不创建空 Session。
+	// 用 ref 做幂等切换，避免 React StrictMode 的 effect cleanup 把刚预热好的 Pi 杀掉。
+	useEffect(() => {
+		const current = landingPrewarmRef.current;
+		const prewarmWasClaimedByChat =
+			current !== null &&
+			openedChats.some(
+				(entry) =>
+					entry.session.projectRecord.id === current.projectId &&
+					entry.session.id === current.sessionId,
+			);
+		if (prewarmWasClaimedByChat) {
+			// ChatPage uses the same backend session key. Transfer ownership without
+			// stopping the already-warm Pi process when indexing replaces chatSession.
+			landingPrewarmRef.current = null;
+			return;
+		}
+		const keepForDraftChat = chatSession?.id === draftSessionId;
+		if (!activeProjectId || (chatSession && !keepForDraftChat)) {
+			if (current) {
+				landingPrewarmRef.current = null;
+				void current.client.stop().catch(() => undefined);
+			}
+			return;
+		}
+		if (
+			current?.projectId === activeProjectId &&
+			current.sessionId === draftSessionId
+		) {
+			return;
+		}
+		if (current) void current.client.stop().catch(() => undefined);
+		const client = createChatSessionClient(activeProjectId, draftSessionId);
+		landingPrewarmRef.current = {
+			projectId: activeProjectId,
+			sessionId: draftSessionId,
+			client,
+		};
+		void client.prepare().catch((error) => {
+			if (landingPrewarmRef.current?.client === client) {
+				console.warn("Failed to prewarm Pi runtime", error);
+			}
+		});
+	}, [activeProjectId, chatSession, draftSessionId, openedChats]);
+
 	// 落地页提交第一条消息后会立即切到 lazy ChatPage。项目可用后就预热该 chunk，
 	// 避免它与真正的发送动作竞争，同时不让无项目的首屏承担这部分加载成本。
 	useEffect(() => {
@@ -471,6 +545,9 @@ function App() {
 	const startNewChat = useCallback(
 		(projectId?: string) => {
 			const targetProjectId = projectId ?? firstProject?.id ?? null;
+			setOpenedChats((current) =>
+				current.filter((entry) => !entry.session.temporary),
+			);
 			setDraftSessionStarted(false);
 			setDraftSessionPrompt(null);
 			setDraftSessionImages([]);
@@ -490,6 +567,42 @@ function App() {
 		[firstProject?.id],
 	);
 
+	const startTemporaryChat = useCallback(
+		(projectId?: string) => {
+			const project =
+				projects.find((candidate) => candidate.id === projectId) ??
+				activeProject;
+			if (!project) {
+				toast.info("请先新增项目");
+				return;
+			}
+			const sessionId = createTemporarySessionId();
+			const session: ChatSession = {
+				id: sessionId,
+				title: "临时会话",
+				projectRecord: project,
+				temporary: true,
+			};
+			setOpenedChats((current) =>
+				trimOpenedChats(
+					touchOpenedChat(
+						current.filter((entry) => !entry.session.temporary),
+						session,
+					),
+					busyChatControllersRef.current,
+				),
+			);
+			setDraftSessionStarted(false);
+			setDraftSessionPrompt(null);
+			setDraftSessionImages([]);
+			setDraftSessionModel(null);
+			setDraftSessionThinkingLevel(null);
+			setDraftProjectId(project.id);
+			setSelectedSessionId(sessionId);
+		},
+		[activeProject, projects],
+	);
+
 	useKeyboardShortcut(keyboardShortcuts["new-chat"], () => startNewChat());
 	useKeyboardShortcut(keyboardShortcuts["toggle-sidebar"], () => {
 		setLeftSidebarCollapsed((collapsed) => !collapsed);
@@ -497,6 +610,14 @@ function App() {
 
 	const selectSession = useCallback(
 		(sessionId: string) => {
+			setOpenedChats((current) =>
+				current.filter(
+					(entry) =>
+						!entry.session.temporary ||
+						entry.session.id === sessionId ||
+						entry.piSessionId === sessionId,
+				),
+			);
 			const opened = openedChats.find(
 				(entry) =>
 					entry.session.id === sessionId || entry.piSessionId === sessionId,
@@ -560,6 +681,14 @@ function App() {
 
 	const openNotificationSession = useCallback(
 		(target: DesktopNotificationSessionTarget) => {
+			setOpenedChats((current) =>
+				current.filter(
+					(entry) =>
+						!entry.session.temporary ||
+						entry.session.id === target.sessionId ||
+						entry.piSessionId === target.sessionId,
+				),
+			);
 			const opened = openedChats.find(
 				(entry) =>
 					entry.session.projectRecord.id === target.projectId &&
@@ -639,7 +768,7 @@ function App() {
 					description: `${project.connection.name} · ${project.metadata.cwd}`,
 				});
 			} catch (error) {
-				toast.error("添加项目失败", { description: String(error) });
+				toast.error("添加项目失败", { description: userErrorMessage(error) });
 			} finally {
 				localProjectPickerPendingRef.current = false;
 			}
@@ -673,7 +802,9 @@ function App() {
 					description: "实际项目文件未删除",
 				});
 			} catch (error) {
-				toast.error("删除项目记录失败", { description: String(error) });
+				toast.error("删除项目记录失败", {
+					description: userErrorMessage(error),
+				});
 			}
 		},
 		[draftProjectId, projects],
@@ -720,7 +851,9 @@ function App() {
 					description: "关联项目记录已移除，实际文件未删除",
 				});
 			} catch (error) {
-				toast.error("删除连接记录失败", { description: String(error) });
+				toast.error("删除连接记录失败", {
+					description: userErrorMessage(error),
+				});
 			}
 		},
 		[connectionCatalog, draftProjectId, projects],
@@ -755,7 +888,7 @@ function App() {
 				deleted.result.method === "trash" ? "会话已移到回收站" : "会话已删除",
 			);
 		} catch (error) {
-			toast.error("删除会话失败", { description: String(error) });
+			toast.error("删除会话失败", { description: userErrorMessage(error) });
 		}
 	};
 
@@ -822,6 +955,10 @@ function App() {
 													writeUiState={writeChatUiState}
 													reserveWindowControls={CUSTOM_TITLEBAR}
 													sidebarCollapsed={leftSidebarCollapsed}
+													onNewTemporaryChat={() =>
+														startTemporaryChat(entry.session.projectRecord.id)
+													}
+													onExpandSidebar={() => setLeftSidebarCollapsed(false)}
 												/>
 											}
 										>
@@ -863,6 +1000,9 @@ function App() {
 														? () => rightPanelRef.current?.expand()
 														: undefined
 												}
+												onNewTemporaryChat={() =>
+													startTemporaryChat(entry.session.projectRecord.id)
+												}
 												onExpandSidebar={() => setLeftSidebarCollapsed(false)}
 												onOpenFile={openEditorFile}
 												onSessionChanged={() => {
@@ -886,6 +1026,9 @@ function App() {
 										projectsReady ? Boolean(activeProject) : true
 									}
 									project={activeProject}
+									onNewTemporaryChat={() =>
+										startTemporaryChat(activeProject?.id)
+									}
 									onStartSession={(submission, model, thinkingLevel) => {
 										if (!projectsReady) {
 											pendingLandingSubmissionRef.current = {

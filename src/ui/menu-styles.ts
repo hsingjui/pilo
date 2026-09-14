@@ -35,10 +35,10 @@ export const menuItemDestructiveClassName =
 
 /** Trailing metadata: a shortcut, a count, a hint. */
 export const menuItemExtraClassName =
-	"ms-auto ps-4 font-mono text-xs text-muted-foreground/80";
+	"ms-auto ps-4 font-mono text-xs text-muted-foreground";
 
 export const menuGroupLabelClassName =
-	"select-none px-3 pb-1 pt-2 text-[10px] font-semibold uppercase leading-[14px] tracking-[0.6px] text-muted-foreground/80";
+	"select-none px-3 pb-1 pt-2 text-[11px] font-semibold uppercase leading-[14px] tracking-[0.6px] text-muted-foreground";
 
 export const menuSeparatorClassName = "my-1 h-px";
 

@@ -210,6 +210,21 @@ test("newly opened draft appears in the sidebar before it is indexed", () => {
 	assert.equal(sidebar[0].latestMessageAt, now);
 });
 
+test("temporary opened chat never appears in the sidebar", () => {
+	const temporary = upsertOpenedChat(
+		[],
+		{ ...chat("temporary-1"), temporary: true },
+		"one-off prompt",
+	);
+	const sidebar = mergeSidebarSessionsWithOpenChats(
+		[],
+		temporary,
+		new Set([temporary[0].controllerId]),
+	);
+
+	assert.deepEqual(sidebar, []);
+});
+
 test("identified open chat merges with its indexed sidebar session and keeps activity", () => {
 	const draft = upsertOpenedChat([], chat("draft-1"), "first prompt");
 	const identified = identifyOpenedChat(draft, draft[0].controllerId, "pi-1");

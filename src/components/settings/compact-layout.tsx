@@ -2,17 +2,39 @@ import React, { type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-export const SETTINGS_CONTAINER_CLASS =
-	"space-y-3 overflow-x-hidden px-4 py-2 md:mx-auto md:max-w-4xl md:px-2";
+export const SETTINGS_CONTAINER_CLASS = "space-y-3";
+
+export const SETTINGS_CONTROL_CLASS = "h-8 px-2.5 py-0 text-sm md:text-sm";
 
 export const SETTINGS_ICON_BUTTON_CLASS =
-	"h-7 w-7 rounded-md text-muted-foreground hover:text-foreground [&_svg]:size-3.5";
+	"h-8 w-8 rounded-md text-muted-foreground hover:text-foreground [&_svg]:size-4";
 
 export const SETTINGS_TEXT_BUTTON_CLASS =
-	"h-7 gap-1.5 px-2 text-xs font-normal [&_svg]:size-3.5";
+	"h-8 gap-1.5 px-2 text-xs font-normal [&_svg]:size-3.5";
 
 export const SETTINGS_NESTED_DIALOG_OVERLAY_CLASS =
 	"z-[var(--z-dialog)] bg-black/20";
+
+export function SettingsStatus({
+	children,
+	muted = false,
+}: {
+	children: ReactNode;
+	muted?: boolean;
+}) {
+	return (
+		<span
+			className={cn(
+				"inline-flex h-6 items-center rounded-md border px-2 text-[11px] font-medium",
+				muted
+					? "border-border/60 bg-muted/35 text-muted-foreground"
+					: "border-border/70 bg-background text-foreground/80",
+			)}
+		>
+			{children}
+		</span>
+	);
+}
 
 type SettingsSectionProps = {
 	title?: string;
@@ -29,7 +51,6 @@ type SettingsRowProps = {
 	helper?: ReactNode;
 	children?: ReactNode;
 	className?: string;
-	alignTop?: boolean;
 };
 
 export function SettingsSection({
@@ -103,15 +124,11 @@ export function SettingsRow({
 	helper,
 	children,
 	className,
-	alignTop = false,
 }: SettingsRowProps) {
 	return (
 		<div
 			className={cn(
-				"flex flex-col gap-2 px-3 py-2 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4",
-				alignTop
-					? "sm:items-start sm:[&>div:last-child]:self-start"
-					: "sm:items-center",
+				"flex flex-col gap-2 px-3 py-2 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4",
 				className,
 			)}
 		>

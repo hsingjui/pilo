@@ -14,6 +14,7 @@ import {
 	listConnectionNamingModels,
 	setConnectionNamingModel,
 } from "@/lib/sessions";
+import { cn } from "@/lib/utils";
 import {
 	Button,
 	Select,
@@ -23,7 +24,12 @@ import {
 	SelectValue,
 } from "@/ui";
 
-import { SettingsRow, SettingsSection } from "./compact-layout";
+import {
+	SETTINGS_CONTROL_CLASS,
+	SettingsRow,
+	SettingsSection,
+	SETTINGS_ICON_BUTTON_CLASS,
+} from "./compact-layout";
 
 type NamingSelection = Pick<PiModel, "provider" | "id">;
 
@@ -182,7 +188,12 @@ export function SessionNamingSettings() {
 										if (model) void saveModel(connection.id, model);
 									}}
 								>
-									<SelectTrigger className="w-[320px] max-w-full">
+									<SelectTrigger
+										className={cn(
+											SETTINGS_CONTROL_CLASS,
+											"w-[320px] max-w-full",
+										)}
+									>
 										<SelectValue placeholder="选择命名模型" />
 									</SelectTrigger>
 									<SelectContent className="max-h-80">
@@ -197,10 +208,11 @@ export function SessionNamingSettings() {
 								<Button
 									variant="ghost"
 									size="icon"
-									className="h-8 w-8"
+									className={SETTINGS_ICON_BUTTON_CLASS}
 									disabled={busy || projectCount === 0}
 									onClick={() => void refreshModels(connection.id)}
 									title="刷新该连接的模型"
+									aria-label="刷新该连接的模型"
 								>
 									<RefreshCw className={busy ? "animate-spin" : undefined} />
 								</Button>
@@ -208,13 +220,6 @@ export function SessionNamingSettings() {
 						);
 					})
 				)}
-			</SettingsSection>
-
-			<SettingsSection title="临时请求">
-				<SettingsRow
-					label="最小 Pi 环境"
-					helper="命名请求使用独立临时 Pi 进程，不创建 Session，并禁用工具、扩展、Skills、Prompt Templates、Themes 与 Context Files；请求 Off 推理强度，若模型不支持则由 Pi 按模型能力钳制。"
-				/>
 			</SettingsSection>
 		</div>
 	);

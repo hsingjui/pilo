@@ -1,16 +1,13 @@
 import { useEffect, useState } from "react";
 import {
-	Activity,
 	Bell,
 	Info,
 	Keyboard,
-	MessagesSquare,
 	Palette,
 	Plug,
 	RefreshCw,
 	Send,
 	SlidersHorizontal,
-	SquareTerminal,
 	Type,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -57,20 +54,16 @@ import {
 } from "@/ui";
 import {
 	SETTINGS_CONTAINER_CLASS,
+	SETTINGS_CONTROL_CLASS,
 	SETTINGS_ICON_BUTTON_CLASS,
 	SETTINGS_TEXT_BUTTON_CLASS,
 	SettingsRow,
 	SettingsSection,
+	SettingsStatus,
 } from "./compact-layout";
 import { ConnectionsSettings } from "./connections-settings";
 import { KeyboardShortcutsSettings } from "./keyboard-shortcuts-settings";
 import { SessionNamingSettings } from "./session-naming-settings";
-import {
-	DiagnosticsSettings,
-	PiSettings,
-	SessionSettings,
-	SettingsStatus,
-} from "./project-settings-placeholders";
 
 type SettingsTabId =
 	| "preferences"
@@ -79,9 +72,6 @@ type SettingsTabId =
 	| "shortcuts"
 	| "connections"
 	| "session-naming"
-	| "sessions"
-	| "pi"
-	| "diagnostics"
 	| "about";
 
 const SETTINGS_TABS = [
@@ -122,24 +112,6 @@ const SETTINGS_TABS = [
 		icon: Type,
 	},
 	{
-		id: "sessions" as const,
-		section: "项目",
-		label: "会话",
-		icon: MessagesSquare,
-	},
-	{
-		id: "pi" as const,
-		section: "项目",
-		label: "Pi",
-		icon: SquareTerminal,
-	},
-	{
-		id: "diagnostics" as const,
-		section: "其他",
-		label: "诊断",
-		icon: Activity,
-	},
-	{
 		id: "about" as const,
 		section: "其他",
 		label: "关于",
@@ -153,33 +125,22 @@ const THEME_LABELS: Record<Theme, string> = {
 	system: "跟随系统",
 };
 
-const FONT_SETTINGS_ROW_CLASS =
-	"sm:grid-cols-[minmax(180px,1fr)_minmax(280px,1.35fr)]";
+const FONT_SETTINGS_ROW_CLASS = "sm:grid-cols-[160px_1fr]";
 
 function PreferencesSettings() {
-	const {
-		sendMessageShortcut,
-		setSendMessageShortcut,
-		collapseCompletedActivity,
-		setCollapseCompletedActivity,
-		showWorkDuration,
-		setShowWorkDuration,
-	} = usePreferences();
+	const { sendMessageShortcut, setSendMessageShortcut } = usePreferences();
 
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
 			<SettingsSection title="对话">
-				<SettingsRow
-					label="发送消息"
-					helper="选择输入框中用于发送消息的快捷键。"
-				>
+				<SettingsRow label="发送消息">
 					<Select
 						value={sendMessageShortcut}
 						onValueChange={(value) =>
 							setSendMessageShortcut(value as SendMessageShortcut)
 						}
 					>
-						<SelectTrigger className="w-[220px]">
+						<SelectTrigger className={cn(SETTINGS_CONTROL_CLASS, "w-[180px]")}>
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
@@ -187,39 +148,6 @@ function PreferencesSettings() {
 							<SelectItem value="mod-enter">Ctrl/⌘ + Enter 发送</SelectItem>
 						</SelectContent>
 					</Select>
-				</SettingsRow>
-				<SettingsRow
-					label="回复完成后收起工作详情"
-					helper="完成回复时自动收起中间回复、思考与工具调用，只保留最终回答展开。"
-				>
-					<Switch
-						checked={collapseCompletedActivity}
-						onCheckedChange={setCollapseCompletedActivity}
-					/>
-				</SettingsRow>
-				<SettingsRow
-					label="显示工作耗时"
-					helper="在回复完成后显示 Pi 本轮实际工作的时间。"
-				>
-					<Switch
-						checked={showWorkDuration}
-						onCheckedChange={setShowWorkDuration}
-					/>
-				</SettingsRow>
-			</SettingsSection>
-
-			<SettingsSection title="桌面端">
-				<SettingsRow
-					label="开机自动启动"
-					helper="登录 Windows 后自动启动 Pilo，并恢复上次打开的项目。"
-				>
-					<SettingsStatus muted>规划中</SettingsStatus>
-				</SettingsRow>
-				<SettingsRow
-					label="自动检查更新"
-					helper="使用 Tauri updater 检查新版本，安装行为由用户确认。"
-				>
-					<SettingsStatus muted>规划中</SettingsStatus>
 				</SettingsRow>
 			</SettingsSection>
 		</div>
@@ -296,9 +224,9 @@ function NotificationSettings() {
 		<div className={SETTINGS_CONTAINER_CLASS}>
 			<SettingsSection
 				title="系统通知"
-				description="Agent 完成或运行出错时提醒你，点击通知可直接打开对应会话。"
+				description="Agent 完成或运行出错时发送提醒。"
 			>
-				<SettingsRow label="桌面通知" helper="关闭后不会发送完成或错误提醒。">
+				<SettingsRow label="桌面通知">
 					<Switch
 						checked={desktopNotifications}
 						onCheckedChange={(enabled) =>
@@ -310,28 +238,21 @@ function NotificationSettings() {
 				<SettingsRow
 					label="系统权限"
 					helper={
-						permissionSystemManaged
-							? "Windows 无需在 Pilo 内单独申请通知权限，由系统通知设置统一管理。"
-							: permission === "denied"
-								? "系统已拒绝通知权限，请在系统设置中允许 Pilo 发送通知。"
-								: "Pilo 需要系统通知权限才能发送提醒。"
+						permission === "denied"
+							? "系统已拒绝通知权限，请在系统设置中允许 Pilo 发送通知。"
+							: undefined
 					}
 				>
 					<div className="flex items-center gap-1.5">
-						<span
-							className={cn(
-								"text-xs",
-								permission === "granted"
-									? "text-foreground/80"
-									: "text-muted-foreground",
-							)}
+						<SettingsStatus
+							muted={permission !== "granted" && !permissionSystemManaged}
 						>
 							{checking
 								? "检测中…"
 								: permissionSystemManaged
 									? "系统管理"
 									: NOTIFICATION_PERMISSION_LABELS[permission]}
-						</span>
+						</SettingsStatus>
 						{!permissionSystemManaged ? (
 							<Button
 								variant="ghost"
@@ -349,10 +270,7 @@ function NotificationSettings() {
 					</div>
 				</SettingsRow>
 
-				<SettingsRow
-					label="测试通知"
-					helper="发送一条通知，确认系统权限和提醒声音工作正常。"
-				>
+				<SettingsRow label="测试通知">
 					<Button
 						variant="ghost"
 						size="sm"
@@ -398,15 +316,12 @@ function AppearanceSettings() {
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
 			<SettingsSection>
-				<SettingsRow
-					label="主题"
-					helper="设置 Pilo 的界面主题，跟随系统时会自动响应操作系统外观变化。"
-				>
+				<SettingsRow label="主题">
 					<Select
 						value={theme}
 						onValueChange={(value) => setTheme(value as Theme)}
 					>
-						<SelectTrigger className="w-[220px]">
+						<SelectTrigger className={cn(SETTINGS_CONTROL_CLASS, "w-[220px]")}>
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
@@ -421,19 +336,14 @@ function AppearanceSettings() {
 			</SettingsSection>
 
 			<SettingsSection title="字体">
-				<SettingsRow
-					label="页面字体"
-					helper="用于页面和对话正文。自定义字体可用逗号分隔。"
-					alignTop
-					className={FONT_SETTINGS_ROW_CLASS}
-				>
+				<SettingsRow label="页面字体" className={FONT_SETTINGS_ROW_CLASS}>
 					<Select
 						value={pageFontFamily}
 						onValueChange={(value) =>
 							setPageFontFamily(value as PageFontFamily)
 						}
 					>
-						<SelectTrigger className="w-[176px]">
+						<SelectTrigger className={cn(SETTINGS_CONTROL_CLASS, "w-[176px]")}>
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
@@ -450,7 +360,7 @@ function AppearanceSettings() {
 							setPageFontSize(Number(value) as PageFontSize)
 						}
 					>
-						<SelectTrigger className="w-[104px]">
+						<SelectTrigger className={cn(SETTINGS_CONTROL_CLASS, "w-[104px]")}>
 							<SelectValue>{pageFontSize}px</SelectValue>
 						</SelectTrigger>
 						<SelectContent>
@@ -474,23 +384,20 @@ function AppearanceSettings() {
 						onChange={(event) => setPageCustomFontFamily(event.target.value)}
 						placeholder="如 Inter, PingFang SC"
 						aria-label="自定义页面字体列表"
-						className="w-[288px] max-w-full"
+						className={cn(SETTINGS_CONTROL_CLASS, "w-[288px] max-w-full")}
 					/>
 				</SettingsRow>
 
-				<SettingsRow
-					label="代码字体"
-					helper="用于 Markdown 代码和文件编辑器。自定义字体可用逗号分隔。"
-					alignTop
-					className={FONT_SETTINGS_ROW_CLASS}
-				>
+				<SettingsRow label="代码字体" className={FONT_SETTINGS_ROW_CLASS}>
 					<Select
 						value={codeFontFamily}
 						onValueChange={(value) =>
 							setCodeFontFamily(value as MonospaceFontFamily)
 						}
 					>
-						<SelectTrigger className="w-[176px] font-mono">
+						<SelectTrigger
+							className={cn(SETTINGS_CONTROL_CLASS, "w-[176px] font-mono")}
+						>
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
@@ -507,7 +414,7 @@ function AppearanceSettings() {
 							setCodeFontSize(Number(value) as CodeFontSize)
 						}
 					>
-						<SelectTrigger className="w-[104px]">
+						<SelectTrigger className={cn(SETTINGS_CONTROL_CLASS, "w-[104px]")}>
 							<SelectValue>{codeFontSize}px</SelectValue>
 						</SelectTrigger>
 						<SelectContent>
@@ -531,23 +438,21 @@ function AppearanceSettings() {
 						onChange={(event) => setCodeCustomFontFamily(event.target.value)}
 						placeholder="如 Maple Mono, Consolas"
 						aria-label="自定义代码字体列表"
-						className="w-[288px] max-w-full font-mono"
+						className={cn(
+							SETTINGS_CONTROL_CLASS,
+							"w-[288px] max-w-full font-mono",
+						)}
 					/>
 				</SettingsRow>
 
-				<SettingsRow
-					label="终端字体"
-					helper="仅影响 Terminal。自定义字体可用逗号分隔。"
-					alignTop
-					className={FONT_SETTINGS_ROW_CLASS}
-				>
+				<SettingsRow label="终端字体" className={FONT_SETTINGS_ROW_CLASS}>
 					<Select
 						value={terminalFontFamily}
 						onValueChange={(value) =>
 							setTerminalFontFamily(value as MonospaceFontFamily)
 						}
 					>
-						<SelectTrigger className="w-[176px]">
+						<SelectTrigger className={cn(SETTINGS_CONTROL_CLASS, "w-[176px]")}>
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
@@ -564,7 +469,7 @@ function AppearanceSettings() {
 							setTerminalFontSize(Number(value) as TerminalFontSize)
 						}
 					>
-						<SelectTrigger className="w-[104px]">
+						<SelectTrigger className={cn(SETTINGS_CONTROL_CLASS, "w-[104px]")}>
 							<SelectValue>{terminalFontSize}px</SelectValue>
 						</SelectTrigger>
 						<SelectContent>
@@ -590,7 +495,10 @@ function AppearanceSettings() {
 						}
 						placeholder="如 Maple Mono, Consolas"
 						aria-label="自定义终端字体列表"
-						className="w-[288px] max-w-full font-mono"
+						className={cn(
+							SETTINGS_CONTROL_CLASS,
+							"w-[288px] max-w-full font-mono",
+						)}
 					/>
 				</SettingsRow>
 			</SettingsSection>
@@ -602,16 +510,9 @@ function AboutSettings() {
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
 			<SettingsSection>
-				<SettingsRow
-					label="Pilo"
-					helper="Pi-native desktop project for local, WSL, and SSH development."
-				>
+				<SettingsRow label="Pilo">
 					<span className="text-xs text-muted-foreground">0.1.0</span>
 				</SettingsRow>
-				<SettingsRow
-					label="运行方式"
-					helper="Pilo 负责桌面体验与索引，Pi 负责会话与 Agent runtime。"
-				/>
 			</SettingsSection>
 		</div>
 	);
@@ -627,31 +528,38 @@ export function SettingsDialog({
 	const [activeTab, setActiveTab] = useState<SettingsTabId>("preferences");
 	const activeTabConfig =
 		SETTINGS_TABS.find((tab) => tab.id === activeTab) ?? SETTINGS_TABS[0];
-	const sections = ["个人", "项目", "其他"] as const;
+	const sections = [
+		{ id: "个人", label: null },
+		{ id: "项目", label: "项目" },
+		{ id: "其他", label: "其他" },
+	] as const;
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent
 				noAnimation
+				overlayClassName="bg-black/40 backdrop-blur-sm"
 				className="flex h-[min(90vh,950px)] w-[84vw] max-w-[1100px] flex-col gap-0 overflow-hidden p-0 sm:p-0"
 			>
 				<DialogDescription className="sr-only">Pilo 设置</DialogDescription>
 				<div className="flex min-h-0 flex-1 overflow-hidden">
 					<nav
 						aria-label="设置"
-						className="flex w-60 shrink-0 flex-col border-e bg-background"
+						className="flex w-48 shrink-0 flex-col border-e bg-background"
 					>
 						<div className="min-h-0 flex-1 overflow-y-auto p-3">
 							<div className="space-y-4">
 								{sections.map((section) => {
 									const tabs = SETTINGS_TABS.filter(
-										(tab) => tab.section === section,
+										(tab) => tab.section === section.id,
 									);
 									return (
-										<section key={section} aria-label={section}>
-											<h2 className="px-2.5 pb-1 text-xs font-medium text-muted-foreground/55">
-												{section}
-											</h2>
+										<section key={section.id} aria-label={section.id}>
+											{section.label ? (
+												<h2 className="px-2.5 pb-1 text-xs font-medium text-muted-foreground/55">
+													{section.label}
+												</h2>
+											) : null}
 											<div className="space-y-0.5">
 												{tabs.map((tab) => {
 													const Icon = tab.icon;
@@ -663,7 +571,7 @@ export function SettingsDialog({
 																activeTab === tab.id ? "page" : undefined
 															}
 															className={cn(
-																"flex w-full items-center gap-2.5 rounded-md px-2.5 py-1 text-start text-sm font-medium transition-colors",
+																"flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-start text-sm font-medium transition-colors",
 																activeTab === tab.id
 																	? "bg-secondary text-secondary-foreground"
 																	: "text-muted-foreground hover:bg-secondary/50 hover:text-secondary-foreground",
@@ -711,11 +619,6 @@ export function SettingsDialog({
 										) : null}
 										{activeTab === "session-naming" ? (
 											<SessionNamingSettings />
-										) : null}
-										{activeTab === "sessions" ? <SessionSettings /> : null}
-										{activeTab === "pi" ? <PiSettings /> : null}
-										{activeTab === "diagnostics" ? (
-											<DiagnosticsSettings />
 										) : null}
 										{activeTab === "about" ? <AboutSettings /> : null}
 									</div>

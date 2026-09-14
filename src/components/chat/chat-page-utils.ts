@@ -6,6 +6,7 @@ export type ChatSession = {
 	id: string;
 	title: string;
 	projectRecord: Project;
+	temporary?: boolean;
 	sessionPath?: string;
 	historyFileSize?: number;
 	historyFileMtimeNs?: string;

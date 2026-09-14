@@ -1,8 +1,10 @@
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- 终端高度拖拽手柄是水平分割线，role=separator 语义正确，无对应语义 HTML 元素 */
 import {
 	useCallback,
 	useEffect,
 	useRef,
 	useState,
+	type KeyboardEvent as ReactKeyboardEvent,
 	type PointerEvent as ReactPointerEvent,
 } from "react";
 import { FitAddon } from "@xterm/addon-fit";
@@ -11,6 +13,7 @@ import "@xterm/xterm/css/xterm.css";
 import { ChevronDown, ChevronUp, Plus, TerminalSquare, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { userErrorMessage } from "@/lib/app-error";
 import { getMonospaceFontFamilyStack } from "@/lib/font-settings";
 import { usePreferences } from "@/lib/preferences-provider";
 import {
@@ -40,6 +43,9 @@ const DEFAULT_TERMINAL_HEIGHT = 260;
 const MIN_TERMINAL_HEIGHT = 140;
 const MAX_TERMINAL_HEIGHT = 640;
 const TERMINAL_HEADER_HEIGHT = 34;
+
+/** 方向键每次调整的高度。 */
+const TERMINAL_RESIZE_STEP = 16;
 
 function readTerminalLayout(): TerminalLayout {
 	try {
@@ -272,7 +278,7 @@ export function TerminalDock({ project }: { project?: Project }) {
 			setActiveId(info.id);
 		} catch (error) {
 			toast.error("无法打开 Terminal", {
-				description: error instanceof Error ? error.message : String(error),
+				description: userErrorMessage(error),
 			});
 		} finally {
 			setOpening(false);
@@ -324,6 +330,28 @@ export function TerminalDock({ project }: { project?: Project }) {
 		[layout.expanded, layout.height],
 	);
 
+	const handleResizeKeyDown = useCallback(
+		(event: ReactKeyboardEvent<HTMLDivElement>) => {
+			if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+			event.preventDefault();
+			if (!layout.expanded) return;
+			updateLayout({
+				expanded: true,
+				height: Math.min(
+					MAX_TERMINAL_HEIGHT,
+					Math.max(
+						MIN_TERMINAL_HEIGHT,
+						layout.height +
+							(event.key === "ArrowUp"
+								? TERMINAL_RESIZE_STEP
+								: -TERMINAL_RESIZE_STEP),
+					),
+				),
+			});
+		},
+		[layout.expanded, layout.height, updateLayout],
+	);
+
 	const toggleExpanded = useCallback(() => {
 		const next = { ...layout, expanded: !layout.expanded };
 		updateLayout(next);
@@ -338,8 +366,16 @@ export function TerminalDock({ project }: { project?: Project }) {
 		>
 			{layout.expanded ? (
 				<div
-					className="absolute -top-1 left-0 right-0 z-10 h-2 cursor-row-resize"
+					role="separator"
+					aria-orientation="horizontal"
+					aria-label="调整终端高度"
+					tabIndex={0}
+					aria-valuemin={MIN_TERMINAL_HEIGHT}
+					aria-valuemax={MAX_TERMINAL_HEIGHT}
+					aria-valuenow={Math.round(layout.height)}
 					onPointerDown={handleResizeStart}
+					onKeyDown={handleResizeKeyDown}
+					className="absolute -top-1 left-0 right-0 z-10 h-2 cursor-row-resize focus-visible:outline-hidden after:absolute after:inset-x-0 after:top-1/2 after:h-[2px] after:-translate-y-1/2 after:bg-transparent hover:after:bg-sidebar-ring/50 focus-visible:after:bg-sidebar-ring"
 				/>
 			) : null}
 			<header className="flex h-[34px] shrink-0 select-none items-center gap-1 border-b border-border/70 px-2">
@@ -378,7 +414,7 @@ export function TerminalDock({ project }: { project?: Project }) {
 						</button>
 						<button
 							type="button"
-							className="mr-1 rounded p-0.5 opacity-0 hover:bg-background group-hover/tab:opacity-100 focus-visible:opacity-100"
+							className="mr-1 rounded p-1.5 opacity-0 hover:bg-background group-hover/tab:opacity-100 focus-visible:opacity-100"
 							aria-label="关闭 Terminal"
 							onClick={() => closeTab(tab.id)}
 						>
@@ -398,7 +434,7 @@ export function TerminalDock({ project }: { project?: Project }) {
 					<Plus className="size-3.5" />
 				</Button>
 				{project ? (
-					<span className="ml-auto hidden max-w-56 truncate text-[10px] text-muted-foreground lg:block">
+					<span className="ml-auto hidden max-w-56 truncate text-[11px] text-muted-foreground lg:block">
 						{project.connection.name} · {project.path}
 					</span>
 				) : null}

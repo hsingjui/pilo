@@ -9,12 +9,36 @@ use super::super::{
 };
 
 #[tauri::command]
+pub async fn chat_session_prepare(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    project_id: String,
+    session_key: String,
+    session_path: Option<String>,
+    no_session: bool,
+) -> Result<PiSessionSnapshot, String> {
+    let project = project::get(&app, &project_id)?;
+    runtime
+        .chat_sessions
+        .prepare(
+            Arc::clone(&runtime.servers),
+            app,
+            project,
+            session_key,
+            session_path,
+            no_session,
+        )
+        .await
+}
+
+#[tauri::command]
 pub async fn chat_session_start(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
     project_id: String,
     session_key: String,
     session_path: Option<String>,
+    no_session: bool,
 ) -> Result<PiSessionSnapshot, String> {
     let project = project::get(&app, &project_id)?;
     runtime
@@ -25,6 +49,7 @@ pub async fn chat_session_start(
             project,
             session_key,
             session_path,
+            no_session,
         )
         .await
 }
@@ -44,6 +69,14 @@ pub async fn chat_session_stop(
     session_key: String,
 ) -> Result<(), String> {
     runtime.chat_sessions.stop(&session_key).await
+}
+
+#[tauri::command]
+pub async fn chat_session_state(
+    runtime: State<'_, PiloRuntime>,
+    session_key: String,
+) -> Result<Option<super::super::chat_sessions::ChatSessionState>, String> {
+    Ok(runtime.chat_sessions.state(&session_key).await)
 }
 
 #[tauri::command]

@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { ChevronLeft, Folder, FolderOpen, Search } from "lucide-react";
 import { toast } from "sonner";
 
+import { userErrorMessage } from "@/lib/app-error";
 import type { FsEntry } from "@/lib/files";
 import { refreshProjectPiModels } from "@/lib/pi-models";
 import type { Connection } from "@/lib/pi-runtime";
@@ -78,7 +79,7 @@ export function AddProjectDialog({
 				});
 				onOpenChange(false);
 			} catch (error) {
-				toast.error("添加项目失败", { description: String(error) });
+				toast.error("添加项目失败", { description: userErrorMessage(error) });
 			} finally {
 				setBusy(false);
 			}
@@ -95,7 +96,7 @@ export function AddProjectDialog({
 			setBrowserPath(normalized);
 			setFilter("");
 		} catch (error) {
-			toast.error("读取远程目录失败", { description: String(error) });
+			toast.error("读取远程目录失败", { description: userErrorMessage(error) });
 		} finally {
 			setLoadingEntries(false);
 		}

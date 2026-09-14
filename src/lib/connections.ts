@@ -15,6 +15,16 @@ export type PiExecutableInfo = {
 	version: string;
 };
 
+export type ConnectionHealth = {
+	reachable: boolean;
+	latencyMs: number;
+	protocolVersion?: number | null;
+	serverVersion?: string | null;
+	pi?: PiExecutableInfo | null;
+	error?: string | null;
+	piError?: string | null;
+};
+
 export type WslConnectionInfo = {
 	connection: Connection;
 	projectCount: number;
@@ -56,6 +66,10 @@ export function testWslConnection(
 
 export function testLocalConnection(): Promise<ConnectionTestResult> {
 	return invoke<ConnectionTestResult>("local_connection_test");
+}
+
+export function getConnectionHealth(id: string): Promise<ConnectionHealth> {
+	return invoke<ConnectionHealth>("connection_health_get", { id });
 }
 
 export function getLocalConnection(): Promise<Connection> {

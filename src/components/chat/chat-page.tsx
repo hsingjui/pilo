@@ -47,6 +47,7 @@ type ChatPageProps = {
 	active?: boolean;
 	onSessionIdentified?: (sessionId: string) => void;
 	onOpenChanges?: () => void;
+	onNewTemporaryChat?: () => void;
 	onExpandSidebar?: () => void;
 	onSessionChanged?: () => void;
 	controllerId?: string;
@@ -68,6 +69,7 @@ function ChatPageImpl({
 	active = true,
 	onSessionIdentified,
 	onOpenChanges,
+	onNewTemporaryChat,
 	onExpandSidebar,
 	onSessionChanged,
 	controllerId,
@@ -135,9 +137,22 @@ function ChatPageImpl({
 				session.projectRecord.id,
 				session.id,
 				session.sessionPath,
+				{ noSession: session.temporary },
 			),
-		[session.projectRecord.id, session.id, session.sessionPath],
+		[
+			session.projectRecord.id,
+			session.id,
+			session.sessionPath,
+			session.temporary,
+		],
 	);
+	useEffect(() => {
+		if (!active || session.sessionPath) return;
+		void client.prepare().catch((error) => {
+			console.warn("Failed to prewarm active Pi session", error);
+		});
+	}, [active, client, session.sessionPath]);
+
 	const {
 		sessionState,
 		modelOptions,
@@ -170,7 +185,6 @@ function ChatPageImpl({
 		draft,
 		setDraft,
 		clearDraft,
-		restoreDraftIfEmpty,
 		dispatchConversationBatch,
 		historyProgress,
 		effectiveLoadState,
@@ -212,6 +226,45 @@ function ChatPageImpl({
 	const [composerImages, setComposerImages] = useState<ChatImageAttachment[]>(
 		[],
 	);
+	const draftRef = useRef(draft);
+	const composerImagesRef = useRef(composerImages);
+	useLayoutEffect(() => {
+		draftRef.current = draft;
+	}, [draft]);
+	useLayoutEffect(() => {
+		composerImagesRef.current = composerImages;
+	}, [composerImages]);
+	const restoreSubmission = useCallback(
+		(submission: ChatSubmission) => {
+			draftRef.current = submission.text;
+			composerImagesRef.current = [...submission.images];
+			setDraft(submission.text);
+			setComposerImages([...submission.images]);
+		},
+		[setDraft],
+	);
+	const recoverSubmission = useCallback(
+		(submission: ChatSubmission) => {
+			const currentText = draftRef.current.trim();
+			const nextText = [currentText, submission.text]
+				.filter(Boolean)
+				.join("\n\n");
+			const seenImageIds = new Set<string>();
+			const nextImages = [
+				...composerImagesRef.current,
+				...submission.images,
+			].filter((image) => {
+				if (seenImageIds.has(image.id)) return false;
+				seenImageIds.add(image.id);
+				return true;
+			});
+			draftRef.current = nextText;
+			composerImagesRef.current = nextImages;
+			setDraft(nextText);
+			setComposerImages(nextImages);
+		},
+		[setDraft],
+	);
 	const {
 		activeTurnSessionId,
 		pendingSteering,
@@ -221,6 +274,8 @@ function ChatPageImpl({
 		handleSubmit,
 		handleSteer,
 		handleFollowUp,
+		handleEditQueued,
+		handleSendQueuedNow,
 		handleStop,
 	} = useChatRuntime({
 		session,
@@ -235,7 +290,8 @@ function ChatPageImpl({
 		scrollRef,
 		scrollToBottom,
 		clearDraft,
-		restoreDraftIfEmpty,
+		restoreSubmission,
+		recoverSubmission,
 		prepareRuntimeConfiguration,
 		refreshSessionState,
 	});
@@ -316,16 +372,6 @@ function ChatPageImpl({
 		refreshHistoryIfStale(active, activeTurnSessionId);
 	}, [active, activeTurnSessionId, refreshHistoryIfStale]);
 
-	// 输入框要显示 Pi 真实使用的模型与推理强度，而不是占位文案；
-	// 每个会话在首次激活时读取一次 agent 状态。
-	const loadedModelSessionRef = useRef<string | null>(null);
-	useEffect(() => {
-		if (!active) return;
-		if (loadedModelSessionRef.current === session.id) return;
-		loadedModelSessionRef.current = session.id;
-		void loadModelOptions();
-	}, [active, session.id, loadModelOptions]);
-
 	useKeyboardShortcut(
 		keyboardShortcuts["cycle-model"],
 		() => {
@@ -370,17 +416,23 @@ function ChatPageImpl({
 	if (!active) return null;
 	const viewportUiState =
 		uiStateKey && readUiState ? readUiState(uiStateKey) : initialUiState;
+	const emptyTemporarySession =
+		Boolean(session.temporary) &&
+		effectiveLoadState === "ready" &&
+		messages.length === 0;
 
 	return (
 		<div className="flex h-full min-w-0 flex-col bg-background">
 			<SessionHeader
 				session={session}
 				sessionState={sessionState ?? undefined}
-				onRename={handleRenameSession}
+				onRename={session.temporary ? undefined : handleRenameSession}
 				onOpenChanges={onOpenChanges}
+				onNewTemporaryChat={onNewTemporaryChat}
 				onExpandSidebar={onExpandSidebar}
 				reserveWindowControls={reserveWindowControls}
 				sidebarCollapsed={sidebarCollapsed}
+				overlay={emptyTemporarySession}
 			/>
 			<div className="relative flex min-h-0 flex-1 flex-col">
 				<ChatConversationViewport
@@ -404,10 +456,21 @@ function ChatPageImpl({
 				    裁切线藏在卡片圆角(12px)以内，输入框下方缝隙不会露出消息 */}
 				<div
 					className="relative -mt-4 w-full shrink-0 pb-4"
-					style={{ paddingRight: scrollbarWidth }}
+					style={{
+						paddingRight:
+							effectiveLoadState === "ready" && messages.length === 0
+								? 0
+								: scrollbarWidth,
+					}}
 				>
 					<ConversationColumn className="relative">
-						<ChatPendingQueue items={pendingUsers} />
+						<ChatPendingQueue
+							items={pendingUsers}
+							onEdit={(item) => void handleEditQueued(item.clientMessageId)}
+							onSendNow={(item) =>
+								void handleSendQueuedNow(item.clientMessageId)
+							}
+						/>
 						<ChatComposer
 							value={draft}
 							onChange={setDraft}

@@ -3,10 +3,12 @@ import Editor from "@monaco-editor/react";
 import { FileCode, MessageSquare, Save, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { userErrorMessage } from "@/lib/app-error";
 import { readProjectFile, writeProjectFile } from "@/lib/files";
 import { getMonospaceFontFamilyStack } from "@/lib/font-settings";
 import "@/lib/monaco-setup";
 import { usePreferences } from "@/lib/preferences-provider";
+import { useResolvedTheme } from "@/lib/theme-provider";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/projects";
 import { TRAFFIC_LIGHT_GUTTER } from "@/components/title-bar";
@@ -106,6 +108,7 @@ export function ProjectEditor({
 }) {
 	const { codeFontFamily, codeCustomFontFamily, codeFontSize } =
 		usePreferences();
+	const resolvedTheme = useResolvedTheme();
 	const [tabs, setTabs] = useState<EditorTab[]>([]);
 	const [activePath, setActivePath] = useState<string | null>(null);
 	const [savingPath, setSavingPath] = useState<string | null>(null);
@@ -153,8 +156,7 @@ export function ProjectEditor({
 								? {
 										...tab,
 										loading: false,
-										error:
-											error instanceof Error ? error.message : String(error),
+										error: userErrorMessage(error),
 									}
 								: tab,
 						),
@@ -186,7 +188,7 @@ export function ProjectEditor({
 				toast.success(`已保存 ${fileName(path)}`);
 			} catch (error) {
 				toast.error("保存文件失败", {
-					description: error instanceof Error ? error.message : String(error),
+					description: userErrorMessage(error),
 				});
 			} finally {
 				setSavingPath(null);
@@ -321,6 +323,7 @@ export function ProjectEditor({
 					<Editor
 						path={`${project.id}:${activeTab.path}`}
 						language={languageForPath(activeTab.path)}
+						theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
 						value={activeTab.content}
 						onChange={(value) => {
 							setTabs((current) =>

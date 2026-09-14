@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from "react";
-import { Clock, HelpCircle, Monitor, Moon, Settings, Sun } from "lucide-react";
+import { Monitor, Moon, Settings, Sun } from "lucide-react";
 
 import { usePreferences } from "@/lib/preferences-provider";
 import { nextCycledTheme, useTheme, type Theme } from "@/lib/theme-provider";
@@ -71,22 +71,6 @@ export function SidebarFooter() {
 					<SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 				</Suspense>
 			) : null}
-			<Tooltip>
-				<TooltipTrigger asChild>
-					<Button variant="ghost" size="icon" aria-label="帮助">
-						<HelpCircle />
-					</Button>
-				</TooltipTrigger>
-				<TooltipContent>帮助</TooltipContent>
-			</Tooltip>
-			<Tooltip>
-				<TooltipTrigger asChild>
-					<Button variant="ghost" size="icon" aria-label="历史">
-						<Clock />
-					</Button>
-				</TooltipTrigger>
-				<TooltipContent>历史</TooltipContent>
-			</Tooltip>
 			<span className="ms-auto">
 				<ThemeCycleButton />
 			</span>
