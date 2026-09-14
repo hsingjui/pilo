@@ -51,11 +51,22 @@ const fn state_to_u8(state: PiProcessState) -> u8 {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct PiLaunchOptions {
+    pub session_path: Option<String>,
+    pub no_session: bool,
+    pub disable_resources: bool,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub thinking: Option<String>,
+    pub system_prompt: Option<String>,
+}
+
 struct Launch {
     connection: Connection,
     project_id: Option<String>,
     project: String,
-    session_path: Option<String>,
+    options: PiLaunchOptions,
 }
 
 pub struct ServerPiSession {
@@ -116,7 +127,7 @@ impl ServerPiSession {
         servers: Arc<ServerManager>,
         sink: S,
         project: &Project,
-        session_path: Option<String>,
+        options: PiLaunchOptions,
     ) -> Result<PiSessionSnapshot, String> {
         if matches!(
             self.state.get(),
@@ -300,7 +311,13 @@ impl ServerPiSession {
                 json!({
                     "streamId": stream_id,
                     "project": project.path,
-                    "sessionPath": session_path,
+                    "sessionPath": options.session_path,
+                    "noSession": options.no_session,
+                    "disableResources": options.disable_resources,
+                    "provider": options.provider,
+                    "model": options.model,
+                    "thinking": options.thinking,
+                    "systemPrompt": options.system_prompt,
                 }),
             )
             .await
@@ -328,7 +345,7 @@ impl ServerPiSession {
             connection: project.connection.clone(),
             project_id: Some(project.id.clone()),
             project: project.path.clone(),
-            session_path,
+            options: options.clone(),
         });
         self.client = Some(client);
         self.stream_id = Some(stream_id);
@@ -409,8 +426,8 @@ impl ServerPiSession {
             created_at_ms: 0,
             last_opened_at_ms: 0,
         };
-        let session_path = launch.session_path.clone();
+        let options = launch.options.clone();
         let _ = self.stop().await;
-        self.spawn(servers, sink, &project, session_path).await
+        self.spawn(servers, sink, &project, options).await
     }
 }

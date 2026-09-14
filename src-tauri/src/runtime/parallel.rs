@@ -18,7 +18,7 @@ use super::{
     events::{PiProcessState, RuntimeEvent, RuntimeEventSink},
     git,
     server_client::ServerManager,
-    server_pi::ServerPiSession,
+    server_pi::{PiLaunchOptions, ServerPiSession},
 };
 
 pub const PARALLEL_EVENT_NAME: &str = "pilo://parallel-agent";
@@ -119,7 +119,12 @@ impl ParallelAgentManager {
             last_opened_at_ms: project.last_opened_at_ms,
         };
         if let Err(error) = session
-            .spawn(Arc::clone(&servers), sink, &worktree_project, None)
+            .spawn(
+                Arc::clone(&servers),
+                sink,
+                &worktree_project,
+                PiLaunchOptions::default(),
+            )
             .await
         {
             let _ = remove_worktree(&servers, project, &branch, &worktree_path).await;

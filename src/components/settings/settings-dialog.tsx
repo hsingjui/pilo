@@ -11,6 +11,7 @@ import {
 	Send,
 	SlidersHorizontal,
 	SquareTerminal,
+	Type,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -55,6 +56,7 @@ import {
 import { SettingsRow, SettingsSection } from "./compact-layout";
 import { ConnectionsSettings } from "./connections-settings";
 import { KeyboardShortcutsSettings } from "./keyboard-shortcuts-settings";
+import { SessionNamingSettings } from "./session-naming-settings";
 import {
 	DiagnosticsSettings,
 	PiSettings,
@@ -68,6 +70,7 @@ type SettingsTabId =
 	| "appearance"
 	| "shortcuts"
 	| "connections"
+	| "session-naming"
 	| "sessions"
 	| "pi"
 	| "diagnostics"
@@ -103,6 +106,12 @@ const SETTINGS_TABS = [
 		section: "项目",
 		label: "连接",
 		icon: Plug,
+	},
+	{
+		id: "session-naming" as const,
+		section: "项目",
+		label: "会话命名",
+		icon: Type,
 	},
 	{
 		id: "sessions" as const,
@@ -276,10 +285,7 @@ function NotificationSettings() {
 				title="系统通知"
 				description="Agent 完成或运行出错时提醒你，点击通知可直接打开对应会话。"
 			>
-				<SettingsRow
-					label="桌面通知"
-					helper="关闭后不会发送完成或错误提醒。"
-				>
+				<SettingsRow label="桌面通知" helper="关闭后不会发送完成或错误提醒。">
 					<Switch
 						checked={desktopNotifications}
 						onCheckedChange={(enabled) =>
@@ -305,7 +311,9 @@ function NotificationSettings() {
 									: "text-muted-foreground",
 							)}
 						>
-							{checking ? "检测中…" : NOTIFICATION_PERMISSION_LABELS[permission]}
+							{checking
+								? "检测中…"
+								: NOTIFICATION_PERMISSION_LABELS[permission]}
 						</span>
 						<Button
 							variant="ghost"
@@ -315,7 +323,9 @@ function NotificationSettings() {
 							onClick={() => void refreshPermission()}
 							title="重新检测通知权限"
 						>
-							<RefreshCw className={cn("size-3.5", checking && "animate-spin")} />
+							<RefreshCw
+								className={cn("size-3.5", checking && "animate-spin")}
+							/>
 						</Button>
 					</div>
 				</SettingsRow>
@@ -671,6 +681,9 @@ export function SettingsDialog({
 									<KeyboardShortcutsSettings />
 								) : null}
 								{activeTab === "connections" ? <ConnectionsSettings /> : null}
+								{activeTab === "session-naming" ? (
+									<SessionNamingSettings />
+								) : null}
 								{activeTab === "sessions" ? <SessionSettings /> : null}
 								{activeTab === "pi" ? <PiSettings /> : null}
 								{activeTab === "diagnostics" ? <DiagnosticsSettings /> : null}

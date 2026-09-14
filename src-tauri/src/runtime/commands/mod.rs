@@ -4,6 +4,7 @@ mod runtime;
 mod sessions;
 
 pub use connections::{
+    connection_naming_model_get, connection_naming_model_list, connection_naming_model_set,
     local_connection_test, ssh_connection_list, ssh_connection_remove, ssh_connection_save,
     ssh_connection_test, wsl_connection_list, wsl_connection_remove, wsl_connection_save,
     wsl_connection_test, wsl_list_distributions,
@@ -23,6 +24,6 @@ pub use runtime::{
     runtime_abort_pi, runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc, runtime_stop_pi,
 };
 pub use sessions::{
-    session_delete, session_history, session_list, session_reconcile, session_update_ui_state,
-    session_watch_start, session_watch_stop,
+    session_delete, session_generate_title, session_history, session_list, session_reconcile,
+    session_update_ui_state, session_watch_start, session_watch_stop,
 };

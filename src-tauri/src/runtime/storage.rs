@@ -10,8 +10,8 @@ use rusqlite::{Connection as SqliteConnection, OptionalExtension, params};
 use tauri::{AppHandle, Manager};
 
 use crate::domain::{
-    Connection, Project, ProjectMetadata, ProjectModelCache, SessionIndexEntry,
-    SessionUiStateUpdate,
+    Connection, ConnectionNamingModel, Project, ProjectMetadata, ProjectModelCache,
+    SessionIndexEntry, SessionUiStateUpdate,
 };
 
 const DB_FILE_NAME: &str = "pilo.sqlite3";
@@ -75,6 +75,12 @@ fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            id TEXT PRIMARY KEY,
            name TEXT NOT NULL,
            kind_json TEXT NOT NULL,
+           updated_at_ms INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS connection_naming_models (
+           connection_id TEXT PRIMARY KEY,
+           provider TEXT NOT NULL,
+           model_id TEXT NOT NULL,
            updated_at_ms INTEGER NOT NULL
          );
          CREATE TABLE IF NOT EXISTS projects (
@@ -192,6 +198,76 @@ fn table_exists(db: &SqliteConnection, name: &str) -> Result<bool, String> {
     .map_err(|error| error.to_string())
 }
 
+pub fn list_connection_naming_models(
+    db: &SqliteConnection,
+) -> Result<Vec<ConnectionNamingModel>, String> {
+    let mut statement = db
+        .prepare(
+            "SELECT connection_id,provider,model_id FROM connection_naming_models ORDER BY connection_id ASC",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(ConnectionNamingModel {
+                connection_id: row.get(0)?,
+                provider: row.get(1)?,
+                model_id: row.get(2)?,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
+pub fn get_connection_naming_model(
+    db: &SqliteConnection,
+    connection_id: &str,
+) -> Result<Option<ConnectionNamingModel>, String> {
+    db.query_row(
+        "SELECT connection_id,provider,model_id FROM connection_naming_models WHERE connection_id=?1",
+        params![connection_id],
+        |row| {
+            Ok(ConnectionNamingModel {
+                connection_id: row.get(0)?,
+                provider: row.get(1)?,
+                model_id: row.get(2)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|error| error.to_string())
+}
+
+pub fn upsert_connection_naming_model(
+    db: &SqliteConnection,
+    model: &ConnectionNamingModel,
+) -> Result<(), String> {
+    db.execute(
+        "INSERT INTO connection_naming_models(connection_id,provider,model_id,updated_at_ms) VALUES(?1,?2,?3,?4)
+         ON CONFLICT(connection_id) DO UPDATE SET provider=excluded.provider, model_id=excluded.model_id, updated_at_ms=excluded.updated_at_ms",
+        params![
+            model.connection_id,
+            model.provider,
+            model.model_id,
+            now_ms() as i64
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub fn clear_connection_naming_model(
+    db: &SqliteConnection,
+    connection_id: &str,
+) -> Result<(), String> {
+    db.execute(
+        "DELETE FROM connection_naming_models WHERE connection_id=?1",
+        params![connection_id],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 pub fn upsert_connection(db: &SqliteConnection, connection: &Connection) -> Result<(), String> {
     let kind_json = serde_json::to_string(&connection.kind).map_err(|error| error.to_string())?;
     db.execute(
@@ -262,6 +338,7 @@ pub fn connection_project_count(db: &SqliteConnection, id: &str) -> Result<u64, 
 }
 
 pub fn remove_connection(db: &SqliteConnection, id: &str) -> Result<bool, String> {
+    clear_connection_naming_model(db, id)?;
     Ok(db
         .execute("DELETE FROM connections WHERE id=?1", params![id])
         .map_err(|error| error.to_string())?
@@ -619,6 +696,35 @@ mod tests {
         assert_eq!(
             get_connection(&db, &current_connection.id).expect("read connection"),
             Some(current_connection)
+        );
+    }
+
+    #[test]
+    fn connection_naming_model_round_trips_and_clears() {
+        let db = SqliteConnection::open_in_memory().expect("open in-memory SQLite");
+        initialize_schema(&db).expect("initialize schema");
+
+        let model = ConnectionNamingModel {
+            connection_id: "wsl:Debian".to_owned(),
+            provider: "openai".to_owned(),
+            model_id: "gpt-5.6-mini".to_owned(),
+        };
+        upsert_connection_naming_model(&db, &model).expect("persist naming model");
+
+        assert_eq!(
+            get_connection_naming_model(&db, &model.connection_id).expect("read naming model"),
+            Some(model.clone())
+        );
+        assert_eq!(
+            list_connection_naming_models(&db).expect("list naming models"),
+            vec![model.clone()]
+        );
+
+        clear_connection_naming_model(&db, &model.connection_id).expect("clear naming model");
+        assert!(
+            get_connection_naming_model(&db, &model.connection_id)
+                .unwrap()
+                .is_none()
         );
     }
 

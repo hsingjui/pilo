@@ -280,6 +280,18 @@ pub(super) struct PiStartParams {
     project: String,
     #[serde(default)]
     session_path: Option<String>,
+    #[serde(default)]
+    no_session: bool,
+    #[serde(default)]
+    disable_resources: bool,
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    thinking: Option<String>,
+    #[serde(default)]
+    system_prompt: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -302,8 +314,33 @@ pub(super) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
         return Ok(json!({ "alreadyRunning": true }));
     }
     let mut args = vec!["--mode".to_owned(), "rpc".to_owned()];
-    if let Some(path) = params.session_path.as_ref() {
+    if params.no_session {
+        args.push("--no-session".to_owned());
+    } else if let Some(path) = params.session_path.as_ref() {
         args.extend(["--session".to_owned(), path.clone()]);
+    }
+    if params.disable_resources {
+        args.extend([
+            "--no-tools".to_owned(),
+            "--no-extensions".to_owned(),
+            "--no-skills".to_owned(),
+            "--no-prompt-templates".to_owned(),
+            "--no-themes".to_owned(),
+            "--no-context-files".to_owned(),
+            "--no-approve".to_owned(),
+        ]);
+    }
+    if let Some(provider) = params.provider.as_ref() {
+        args.extend(["--provider".to_owned(), provider.clone()]);
+    }
+    if let Some(model) = params.model.as_ref() {
+        args.extend(["--model".to_owned(), model.clone()]);
+    }
+    if let Some(thinking) = params.thinking.as_ref() {
+        args.extend(["--thinking".to_owned(), thinking.clone()]);
+    }
+    if let Some(system_prompt) = params.system_prompt.as_ref() {
+        args.extend(["--system-prompt".to_owned(), system_prompt.clone()]);
     }
     let mut command = process_command(&pi_executable, &args, &path);
     command

@@ -4,7 +4,8 @@ use serde_json::Value;
 use tauri::{AppHandle, State};
 
 use super::super::{
-    PiloRuntime, events::TauriEventSink, project, session_snapshot::PiSessionSnapshot,
+    PiloRuntime, events::TauriEventSink, project, server_pi::PiLaunchOptions,
+    session_snapshot::PiSessionSnapshot,
 };
 
 #[tauri::command]
@@ -61,7 +62,7 @@ pub async fn project_start_pi(
             Arc::clone(&runtime.servers),
             TauriEventSink::new(app),
             &project,
-            None,
+            PiLaunchOptions::default(),
         )
         .await
 }

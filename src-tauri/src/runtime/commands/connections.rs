@@ -2,12 +2,61 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, State};
 
-use crate::domain::{Connection, ConnectionKind, WslDistribution};
+use crate::domain::{Connection, ConnectionKind, ConnectionNamingModel, WslDistribution};
 
 use super::super::{
     PiloRuntime, credentials, storage,
     wsl::{WslConnectionError, list_wsl_distributions},
 };
+
+#[tauri::command]
+pub fn connection_naming_model_list(app: AppHandle) -> Result<Vec<ConnectionNamingModel>, String> {
+    storage::list_connection_naming_models(&storage::open(&app)?)
+}
+
+#[tauri::command]
+pub fn connection_naming_model_get(
+    app: AppHandle,
+    connection_id: String,
+) -> Result<Option<ConnectionNamingModel>, String> {
+    storage::get_connection_naming_model(&storage::open(&app)?, &connection_id)
+}
+
+#[tauri::command]
+pub fn connection_naming_model_set(
+    app: AppHandle,
+    connection_id: String,
+    provider: Option<String>,
+    model_id: Option<String>,
+) -> Result<Option<ConnectionNamingModel>, String> {
+    let connection_id = connection_id.trim();
+    if connection_id.is_empty() {
+        return Err("connection id cannot be empty".to_owned());
+    }
+
+    let db = storage::open(&app)?;
+    match (provider, model_id) {
+        (None, None) => {
+            storage::clear_connection_naming_model(&db, connection_id)?;
+            Ok(None)
+        }
+        (Some(provider), Some(model_id)) => {
+            let provider = provider.trim();
+            let model_id = model_id.trim();
+            if provider.is_empty() || model_id.is_empty() {
+                return Err("provider and model id cannot be empty".to_owned());
+            }
+            let model = ConnectionNamingModel {
+                connection_id: connection_id.to_owned(),
+                provider: provider.to_owned(),
+                model_id: model_id.to_owned(),
+            };
+            storage::upsert_connection_naming_model(&db, &model)?;
+            Ok(Some(model))
+        }
+        _ => Err("provider and model id must be set together".to_owned()),
+    }
+}
 
 #[tauri::command]
 pub async fn wsl_list_distributions() -> Result<Vec<WslDistribution>, WslConnectionError> {

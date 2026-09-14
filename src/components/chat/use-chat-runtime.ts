@@ -7,6 +7,7 @@ import { toConversationAction } from "@/lib/conversation-runtime-adapter";
 import { coalesceConversationActions } from "@/lib/conversation-reducer";
 import type { ConversationAction } from "@/lib/conversation-types";
 import { notifyAgentResult } from "@/lib/desktop-notifications";
+import { requestSessionTitle } from "@/lib/sessions";
 import {
 	runtimeErrorMessage,
 	type PiAgentState,
@@ -92,6 +93,7 @@ export function useChatRuntime({
 		() => {},
 	);
 	const sentInitialPromptsRef = useRef(new Set<string>());
+	const autoTitleRequestedRef = useRef(false);
 	const [activeTurnSessionId, setActiveTurnSessionId] = useState<string | null>(
 		null,
 	);
@@ -375,6 +377,33 @@ export function useChatRuntime({
 		[sendQueuedMessage],
 	);
 
+	const requestAutoTitle = useCallback(
+		(message: string) => {
+			const prompt = message.trim();
+			if (session.sessionPath || autoTitleRequestedRef.current || !prompt) {
+				return;
+			}
+			autoTitleRequestedRef.current = true;
+			void requestSessionTitle(session.projectRecord.id, prompt)
+				.then(async (title) => {
+					if (!title) return;
+					const state = await client.getPiAgentState();
+					if (state.sessionName?.trim()) return;
+					await client.setPiSessionName(title);
+					await refreshSessionState();
+				})
+				.catch((error) => {
+					console.warn("Failed to generate session title", error);
+				});
+		},
+		[
+			client,
+			refreshSessionState,
+			session.projectRecord.id,
+			session.sessionPath,
+		],
+	);
+
 	const beginTurn = useCallback(
 		async (text: string, appendUserMessage = true) => {
 			const trimmed = text.trim();
@@ -443,6 +472,7 @@ export function useChatRuntime({
 				turn.promptSent = true;
 				await client.sendPiPrompt(trimmed);
 				if (activeTurnRef.current !== turn) return;
+				requestAutoTitle(trimmed);
 				turn.queueReady = true;
 				flushBufferedQueuedMessages(turn);
 			} catch (error) {
@@ -457,6 +487,7 @@ export function useChatRuntime({
 			failActiveTurn,
 			flushBufferedQueuedMessages,
 			prepareRuntimeConfiguration,
+			requestAutoTitle,
 			scrollRef,
 			scrollToBottom,
 			session.id,

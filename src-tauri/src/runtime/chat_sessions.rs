@@ -17,7 +17,7 @@ use crate::domain::Project;
 use super::{
     events::{PiProcessState, RUNTIME_EVENT_NAME, RuntimeEvent, RuntimeEventSink},
     server_client::ServerManager,
-    server_pi::ServerPiSession,
+    server_pi::{PiLaunchOptions, ServerPiSession},
     session_snapshot::PiSessionSnapshot,
 };
 
@@ -168,7 +168,10 @@ impl ChatSessions {
                     session_path: Arc::clone(&process.session_path),
                 },
                 &project,
-                session_path.clone(),
+                PiLaunchOptions {
+                    session_path: session_path.clone(),
+                    ..PiLaunchOptions::default()
+                },
             )
             .await?;
         let resume_path = process

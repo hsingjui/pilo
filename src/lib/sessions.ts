@@ -2,8 +2,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { ConversationEvent } from "@/lib/conversation-types";
+import type { PiModel } from "@/lib/pi-runtime";
 
 export const SESSIONS_CHANGED_EVENT = "pilo:sessions-changed";
+
+export type ConnectionNamingModel = {
+	connectionId: string;
+	provider: string;
+	modelId: string;
+};
 
 export type SessionIndexEntry = {
 	connectionId: string;
@@ -70,6 +77,31 @@ const reconcileInFlight = new Map<string, Promise<SessionReconcileResult>>();
 
 export function listSessions(projectId: string): Promise<SessionIndexEntry[]> {
 	return invoke<SessionIndexEntry[]>("session_list", { projectId });
+}
+
+export function listConnectionNamingModels(): Promise<ConnectionNamingModel[]> {
+	return invoke<ConnectionNamingModel[]>("connection_naming_model_list");
+}
+
+export function setConnectionNamingModel(
+	connectionId: string,
+	model: Pick<PiModel, "provider" | "id"> | null,
+): Promise<ConnectionNamingModel | null> {
+	return invoke<ConnectionNamingModel | null>("connection_naming_model_set", {
+		connectionId,
+		provider: model ? model.provider : null,
+		modelId: model ? model.id : null,
+	});
+}
+
+export function requestSessionTitle(
+	projectId: string,
+	message: string,
+): Promise<string | null> {
+	return invoke<string | null>("session_generate_title", {
+		projectId,
+		message,
+	});
 }
 
 const sessionHistoryDecoder = new TextDecoder();
