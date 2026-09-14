@@ -19,6 +19,7 @@ import {
 	type ChatConversationViewportHandle,
 } from "@/components/chat/chat-conversation-viewport";
 import { ChatPendingQueue } from "@/components/chat/chat-pending-queue";
+import { ChatRuntimeRecoveryNotice } from "@/components/chat/chat-runtime-recovery-notice";
 import { PI_SESSION_SUGGESTIONS } from "@/components/chat/chat-composer-suggestions";
 import { PiExtensionNotifications } from "@/components/chat/pi-extension-notifications";
 import { PiExtensionUiDialog } from "@/components/chat/pi-extension-ui-dialog";
@@ -298,6 +299,8 @@ function ChatPageImpl({
 		pendingFollowUps,
 		running,
 		runtimeBusy,
+		recoveryState,
+		handleReconnect,
 		handleSubmit,
 		handleSteer,
 		handleFollowUp,
@@ -626,6 +629,13 @@ function ChatPageImpl({
 								void handleSendQueuedNow(item.clientMessageId)
 							}
 						/>
+						<ChatRuntimeRecoveryNotice
+							state={recoveryState}
+							onReconnect={() => void handleReconnect()}
+							onNewTemporaryChat={
+								session.temporary ? onNewTemporaryChat : undefined
+							}
+						/>
 						<PiExtensionNotifications
 							notifications={extensionNotifications}
 							onDismiss={dismissExtensionNotification}
@@ -652,7 +662,7 @@ function ChatPageImpl({
 										}
 									: undefined
 							}
-							disabled={false}
+							disabled={recoveryState.status === "reconnecting"}
 							running={running}
 							onStop={handleStop}
 							pendingSteering={pendingSteering}

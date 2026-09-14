@@ -37,6 +37,12 @@ type ActiveTurn = {
 	preserveQueuedOnRelease: boolean;
 };
 
+export type ChatRuntimeRecoveryState =
+	| { status: "idle"; recoverable: boolean; message: string }
+	| { status: "reconnecting"; recoverable: true; message: string }
+	| { status: "recovered"; recoverable: true; message: string }
+	| { status: "failed"; recoverable: boolean; message: string };
+
 type BufferedQueuedMessage = {
 	turn: ActiveTurn;
 	clientMessageId: string;
@@ -126,6 +132,12 @@ export function useChatRuntime({
 	);
 	const [pendingSteering, setPendingSteering] = useState(0);
 	const [pendingFollowUps, setPendingFollowUps] = useState(0);
+	const [recoveryState, setRecoveryState] = useState<ChatRuntimeRecoveryState>({
+		status: "idle",
+		recoverable: !session.temporary,
+		message: "",
+	});
+	const recoveryPromiseRef = useRef<Promise<boolean> | null>(null);
 
 	const pendingRuntimeActionsRef = useRef<{
 		sessionId: string;
@@ -276,8 +288,114 @@ export function useChatRuntime({
 		[desktopNotifications, dispatchConversation, releaseActiveTurn],
 	);
 
+	const recoverRuntime = useCallback(async () => {
+		if (session.temporary) {
+			setRecoveryState({
+				status: "failed",
+				recoverable: false,
+				message:
+					"临时会话不会写入 Session 文件，Pi 进程中断后无法恢复原上下文。",
+			});
+			return false;
+		}
+		if (recoveryPromiseRef.current) return recoveryPromiseRef.current;
+
+		const recovery = (async () => {
+			setRecoveryState({
+				status: "reconnecting",
+				recoverable: true,
+				message: "正在重新连接运行环境并载入原 Session…",
+			});
+			try {
+				const runtimeState = await client.state();
+				const resumePath = runtimeState?.sessionPath ?? session.sessionPath;
+				if (!resumePath) {
+					throw new Error("当前 Session 尚未持久化，无法安全恢复连接。");
+				}
+
+				const snapshot = await client.ensure();
+				if (snapshot.state !== "running") {
+					throw new Error(`Pi Runtime 恢复后状态异常：${snapshot.state}`);
+				}
+				const agentState = await client.getPiAgentState();
+				if (!agentState.sessionFile) {
+					throw new Error("Pi 未返回恢复后的 Session 路径。");
+				}
+				if (agentState.sessionId) identifiedRef.current?.(agentState.sessionId);
+				await refreshSessionState();
+				setRecoveryState({
+					status: "recovered",
+					recoverable: true,
+					message:
+						"已重新连接原 Session。中断的上一轮不会自动重放，可直接继续发送消息。",
+				});
+				return true;
+			} catch (error) {
+				setRecoveryState({
+					status: "failed",
+					recoverable: true,
+					message: runtimeErrorMessage(error),
+				});
+				return false;
+			}
+		})();
+		recoveryPromiseRef.current = recovery;
+		try {
+			return await recovery;
+		} finally {
+			if (recoveryPromiseRef.current === recovery) {
+				recoveryPromiseRef.current = null;
+			}
+		}
+	}, [client, refreshSessionState, session.sessionPath, session.temporary]);
+
+	useEffect(() => {
+		if (recoveryState.status !== "recovered") return;
+		const timer = window.setTimeout(() => {
+			setRecoveryState((current) =>
+				current.status === "recovered"
+					? { status: "idle", recoverable: true, message: "" }
+					: current,
+			);
+		}, 5000);
+		return () => window.clearTimeout(timer);
+	}, [recoveryState.status]);
+
 	const handleRuntimeEvent = useCallback(
 		(event: PiloRuntimeEvent) => {
+			if (
+				event.type === "process_state" &&
+				(event.state === "failed" || event.state === "stopped")
+			) {
+				const interruptedTurn = activeTurnRef.current;
+				const interruptedActiveTurn =
+					interruptedTurn?.generation !== null &&
+					interruptedTurn?.generation === event.generation;
+				if (interruptedTurn && interruptedActiveTurn) {
+					failActiveTurn(
+						interruptedTurn,
+						event.state === "failed"
+							? "Pi 进程运行失败。"
+							: "Pi 进程在回复完成前已停止。",
+					);
+				}
+				// `stopped` is also emitted for intentional client.stop() calls (for
+				// example when replacing a controller). Only an active turn makes that
+				// state unexpected enough to reconnect automatically.
+				if (event.state === "stopped" && !interruptedActiveTurn) return;
+				if (session.temporary) {
+					setRecoveryState({
+						status: "failed",
+						recoverable: false,
+						message:
+							"临时会话不会写入 Session 文件，Pi 进程中断后无法恢复原上下文。",
+					});
+				} else {
+					void recoverRuntime();
+				}
+				return;
+			}
+
 			const turn = activeTurnRef.current;
 			if (
 				!turn ||
@@ -346,14 +464,6 @@ export function useChatRuntime({
 					failActiveTurn(turn, event.message);
 					break;
 				case "process_state":
-					if (event.state === "failed" || event.state === "stopped") {
-						failActiveTurn(
-							turn,
-							event.state === "failed"
-								? "Pi 进程运行失败。"
-								: "Pi 进程在回复完成前已停止。",
-						);
-					}
 					break;
 				case "rpc_message":
 				case "assistant_message_start":
@@ -374,8 +484,10 @@ export function useChatRuntime({
 			dispatchConversation,
 			failActiveTurn,
 			queueRuntimeAction,
+			recoverRuntime,
 			refreshSessionState,
 			releaseActiveTurn,
+			session.temporary,
 		],
 	);
 
@@ -393,6 +505,16 @@ export function useChatRuntime({
 			if (disposed) return;
 			const turn = activeTurnRef.current;
 			if (turn) failActiveTurn(turn, runtimeErrorMessage(error));
+			if (session.temporary) {
+				setRecoveryState({
+					status: "failed",
+					recoverable: false,
+					message:
+						"临时会话不会写入 Session 文件，运行环境断开后无法恢复原上下文。",
+				});
+			} else {
+				void recoverRuntime();
+			}
 		});
 
 		return () => {
@@ -402,7 +524,7 @@ export function useChatRuntime({
 			}
 			void subscription.then((unlisten) => unlisten()).catch(() => undefined);
 		};
-	}, [client, failActiveTurn]);
+	}, [client, failActiveTurn, recoverRuntime, session.temporary]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -444,6 +566,11 @@ export function useChatRuntime({
 				if (!session.temporary) {
 					identifiedRef.current?.(agentState.sessionId ?? session.id);
 				}
+				setRecoveryState({
+					status: "recovered",
+					recoverable: true,
+					message: "已重新连接正在进行的 Pi 回复。",
+				});
 			} catch (error) {
 				if (!cancelled) console.warn("Failed to recover active Pi turn", error);
 			}
@@ -615,6 +742,11 @@ export function useChatRuntime({
 				requestAutoTitle(trimmed);
 				turn.queueReady = true;
 				flushBufferedQueuedMessages(turn);
+				setRecoveryState({
+					status: "idle",
+					recoverable: !session.temporary,
+					message: "",
+				});
 			} catch (error) {
 				failActiveTurn(turn, runtimeErrorMessage(error));
 			}
@@ -962,7 +1094,10 @@ export function useChatRuntime({
 		pendingSteering,
 		pendingFollowUps,
 		running: activeTurnSessionId === session.id,
-		runtimeBusy: activeTurnSessionId !== null,
+		runtimeBusy:
+			activeTurnSessionId !== null || recoveryState.status === "reconnecting",
+		recoveryState,
+		handleReconnect: recoverRuntime,
 		handleSubmit,
 		handleSteer,
 		handleFollowUp,
