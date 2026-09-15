@@ -73,6 +73,7 @@ type ChatComposerProps = {
 	onFollowUp?: (submission: ChatSubmission) => void;
 	placeholder?: string;
 	disabled?: boolean;
+	muted?: boolean;
 	running?: boolean;
 	onStop?: () => void;
 	pendingSteering?: number;
@@ -144,6 +145,7 @@ export function ChatComposer({
 	onFollowUp,
 	placeholder = DEFAULT_CHAT_COMPOSER_PLACEHOLDER,
 	disabled = false,
+	muted = false,
 	running = false,
 	onStop,
 	pendingSteering = 0,
@@ -312,6 +314,18 @@ export function ChatComposer({
 		}
 
 		if (suggestionMenuOpen && !isImeComposingKeyboardEvent(event)) {
+			if (
+				event.key === "Tab" &&
+				!event.shiftKey &&
+				!event.ctrlKey &&
+				!event.metaKey &&
+				!event.altKey &&
+				filteredSuggestions[effectiveHighlightedIndex]
+			) {
+				event.preventDefault();
+				selectSuggestion(filteredSuggestions[effectiveHighlightedIndex]);
+				return;
+			}
 			if (event.key === "ArrowDown" && filteredSuggestions.length > 0) {
 				event.preventDefault();
 				setHighlightedIndex(
@@ -446,7 +460,7 @@ export function ChatComposer({
 				/>
 			) : null}
 
-			<ChatComposerSurface>
+			<ChatComposerSurface muted={muted}>
 				{attachments.length > 0 ? (
 					<div className="flex flex-wrap gap-1.5 px-1 pb-1">
 						{attachments.map((attachment) => (
@@ -461,6 +475,7 @@ export function ChatComposer({
 								</span>
 								<button
 									type="button"
+									disabled={disabled}
 									aria-label={`移除 ${attachment.name}`}
 									className="ml-1 rounded-sm text-muted-foreground hover:text-foreground"
 									onClick={() =>
@@ -521,6 +536,7 @@ export function ChatComposer({
 					<input
 						ref={fileInputRef}
 						type="file"
+						disabled={disabled}
 						accept={CHAT_IMAGE_ACCEPT}
 						multiple
 						className="hidden"
@@ -530,6 +546,7 @@ export function ChatComposer({
 						<TooltipTrigger asChild>
 							<Button
 								type="button"
+								disabled={disabled}
 								variant="ghost"
 								size="icon"
 								className={CHAT_COMPOSER_ATTACHMENT_BUTTON_CLASS_NAME}

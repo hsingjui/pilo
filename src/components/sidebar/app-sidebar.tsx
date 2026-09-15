@@ -7,9 +7,25 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	type ReactNode,
 	type KeyboardEvent as ReactKeyboardEvent,
 	type PointerEvent as ReactPointerEvent,
 } from "react";
+import {
+	closestCenter,
+	DndContext,
+	PointerSensor,
+	type DragEndEvent,
+	useSensor,
+	useSensors,
+} from "@dnd-kit/core";
+import {
+	arrayMove,
+	SortableContext,
+	useSortable,
+	verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { PanelLeft, Search, SquarePen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/lib/preferences-provider";
@@ -63,6 +79,78 @@ const VirtualSessionRows = lazy(() =>
 	})),
 );
 
+function SortableProjectBlock({
+	id,
+	disabled,
+	row,
+	children,
+}: {
+	id: string;
+	disabled: boolean;
+	row: ReactNode;
+	children?: ReactNode;
+}) {
+	const {
+		isDragging,
+		listeners,
+		setActivatorNodeRef,
+		setNodeRef,
+		transform,
+		transition,
+	} = useSortable({
+		id,
+		disabled,
+		transition: {
+			duration: 180,
+			easing: "cubic-bezier(0.2, 0, 0, 1)",
+		},
+	});
+	const pointerDown = listeners?.onPointerDown;
+
+	return (
+		<div
+			ref={setNodeRef}
+			style={{
+				transform: CSS.Transform.toString(transform),
+				transition,
+				position: "relative",
+				zIndex: isDragging ? 20 : undefined,
+			}}
+			className="grid w-full min-w-0 gap-px overflow-visible rounded-md will-change-transform"
+		>
+			<div
+				ref={setActivatorNodeRef}
+				{...listeners}
+				onPointerDown={(event) => {
+					const target = event.target as HTMLElement;
+					if (
+						target.closest(
+							"button, input, textarea, select, a, [role='menuitem']",
+						)
+					) {
+						return;
+					}
+					pointerDown?.(event);
+				}}
+				className={cn(
+					"rounded-md touch-none",
+					disabled ? "cursor-default" : "cursor-grab active:cursor-grabbing",
+				)}
+			>
+				<div
+					className={cn(
+						"rounded-md transition-[transform,opacity,box-shadow] duration-150 ease-out",
+						isDragging && "scale-[0.99] opacity-80 shadow-sm",
+					)}
+				>
+					{row}
+				</div>
+			</div>
+			{children}
+		</div>
+	);
+}
+
 export function AppSidebar({
 	envs,
 	projects,
@@ -73,8 +161,10 @@ export function AppSidebar({
 	onDeleteSession,
 	onRefreshProjectSessions,
 	refreshingProjectIds = EMPTY_REFRESHING_PROJECT_IDS,
+	selectedProjectId,
 	selectedSessionId,
 	onSelectSession,
+	onOpenSearchSession,
 	onNewChat,
 	onNewChatInProject,
 	onFocusProject,
@@ -144,10 +234,12 @@ export function AppSidebar({
 		return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, parsed));
 	});
 	const [resizing, setResizing] = useState(false);
-	const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
-	const [projectOrderPreview, setProjectOrderPreview] = useState<
-		Record<string, string[]>
-	>({});
+	const suppressProjectClickRef = useRef(false);
+	const projectDragSensors = useSensors(
+		useSensor(PointerSensor, {
+			activationConstraint: { distance: 6 },
+		}),
+	);
 
 	useEffect(() => {
 		window.localStorage.setItem(
@@ -232,57 +324,22 @@ export function AppSidebar({
 			if (items) items.push(project);
 			else grouped.set(project.envId, [project]);
 		}
-		for (const [envId, items] of grouped) {
-			const preview = projectOrderPreview[envId];
-			if (!preview) continue;
-			const rank = new Map(preview.map((id, index) => [id, index]));
-			items.sort(
-				(a, b) =>
-					(rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
-					(rank.get(b.id) ?? Number.MAX_SAFE_INTEGER),
-			);
-		}
 		return grouped;
-	}, [projectOrderPreview, projects]);
+	}, [projects]);
 
-	const reorderProject = useCallback(
-		(target: SidebarProject) => {
-			if (!draggedProjectId || draggedProjectId === target.id) return;
-			const dragged = projects.find(
-				(project) => project.id === draggedProjectId,
+	const handleProjectDragEnd = useCallback(
+		(envId: string, event: DragEndEvent) => {
+			const { active, over } = event;
+			if (!over || active.id === over.id) return;
+			const order = (projectsByEnv.get(envId) ?? []).map(
+				(project) => project.id,
 			);
-			if (!dragged || dragged.envId !== target.envId) return;
-			const current = projectsByEnv.get(target.envId) ?? [];
-			const fromIndex = current.findIndex(
-				(project) => project.id === draggedProjectId,
-			);
-			const toIndex = current.findIndex((project) => project.id === target.id);
+			const fromIndex = order.indexOf(String(active.id));
+			const toIndex = order.indexOf(String(over.id));
 			if (fromIndex < 0 || toIndex < 0) return;
-			const next = [...current];
-			const [moved] = next.splice(fromIndex, 1);
-			if (!moved) return;
-			next.splice(toIndex, 0, moved);
-			setProjectOrderPreview((preview) => ({
-				...preview,
-				[target.envId]: next.map((project) => project.id),
-			}));
+			onReorderProjects?.(envId, arrayMove(order, fromIndex, toIndex));
 		},
-		[draggedProjectId, projects, projectsByEnv],
-	);
-
-	const finishProjectReorder = useCallback(
-		(project: SidebarProject) => {
-			const order = projectOrderPreview[project.envId];
-			setDraggedProjectId(null);
-			if (!order) return;
-			setProjectOrderPreview((current) => {
-				const next = { ...current };
-				delete next[project.envId];
-				return next;
-			});
-			onReorderProjects?.(project.envId, order);
-		},
-		[onReorderProjects, projectOrderPreview],
+		[onReorderProjects, projectsByEnv],
 	);
 	const sessionsByProject = useMemo(() => {
 		const grouped = new Map<string, SidebarSession[]>();
@@ -433,67 +490,85 @@ export function AppSidebar({
 											onAddProject={onAddProject}
 											onDeleteConnection={onDeleteConnection}
 										/>
-										{!envCollapsed &&
-											envProjects.map((project) => {
-												const projectCollapsed =
-													collapsedSections[`ws:${project.id}`] ?? true;
-												const projectSessions =
-													sessionsByProject.get(project.id) ?? [];
-												return (
-													<div
-														key={project.id}
-														className="grid w-full min-w-0 gap-px overflow-hidden rounded-md"
-													>
-														<div
-															draggable
-															onDragStart={(event) => {
-																setDraggedProjectId(project.id);
-																event.dataTransfer.effectAllowed = "move";
-																event.dataTransfer.setData(
-																	"text/plain",
-																	project.id,
-																);
-															}}
-															onDragOver={(event) => {
-																if (!draggedProjectId) return;
-																event.preventDefault();
-																reorderProject(project);
-															}}
-															onDrop={(event) => event.preventDefault()}
-															onDragEnd={() => finishProjectReorder(project)}
-															className={cn(
-																"rounded-md",
-																draggedProjectId === project.id && "opacity-60",
-															)}
-														>
-															<ProjectRow
-																project={project}
-																env={env}
-																collapsed={projectCollapsed}
-																refreshing={refreshingProjectIds.has(
-																	project.id,
-																)}
-																onToggle={() => {
-																	onFocusProject?.(project.id);
-																	const key = `ws:${project.id}`;
-																	toggleSection(key, true);
-																	if (projectCollapsed)
-																		onRefreshProjectSessions?.(project.id);
-																}}
-																onNewChat={onNewChatInProject}
-																onDelete={onDeleteProject}
-																onRefreshSessions={
-																	onRefreshProjectSessions
-																		? () => onRefreshProjectSessions(project.id)
-																		: undefined
+										{!envCollapsed && (
+											<DndContext
+												sensors={projectDragSensors}
+												collisionDetection={closestCenter}
+												onDragStart={() => {
+													suppressProjectClickRef.current = true;
+												}}
+												onDragCancel={() => {
+													window.setTimeout(() => {
+														suppressProjectClickRef.current = false;
+													}, 0);
+												}}
+												onDragEnd={(event) => {
+													handleProjectDragEnd(env.id, event);
+													window.setTimeout(() => {
+														suppressProjectClickRef.current = false;
+													}, 0);
+												}}
+											>
+												<SortableContext
+													items={envProjects.map((project) => project.id)}
+													strategy={verticalListSortingStrategy}
+												>
+													{envProjects.map((project) => {
+														const projectCollapsed =
+															collapsedSections[`ws:${project.id}`] ?? true;
+														const projectSessions =
+															sessionsByProject.get(project.id) ?? [];
+														return (
+															<SortableProjectBlock
+																key={project.id}
+																id={project.id}
+																disabled={
+																	refreshingProjectIds.has(project.id) ||
+																	envProjects.length < 2
 																}
-															/>
-														</div>
-														{!projectCollapsed &&
-															renderSessionList(projectSessions)}
-													</div>
-												);
-											})}
+																row={
+																	<ProjectRow
+																		project={project}
+																		env={env}
+																		collapsed={projectCollapsed}
+																		selected={
+																			activeSessionId === null &&
+																			selectedProjectId === project.id
+																		}
+																		refreshing={refreshingProjectIds.has(
+																			project.id,
+																		)}
+																		onSelect={() => {
+																			if (suppressProjectClickRef.current)
+																				return;
+																			onFocusProject?.(project.id);
+																			onNewChatInProject?.(project.id);
+																		}}
+																		onToggle={() => {
+																			const key = `ws:${project.id}`;
+																			toggleSection(key, true);
+																			if (projectCollapsed)
+																				onRefreshProjectSessions?.(project.id);
+																		}}
+																		onNewChat={onNewChatInProject}
+																		onDelete={onDeleteProject}
+																		onRefreshSessions={
+																			onRefreshProjectSessions
+																				? () =>
+																						onRefreshProjectSessions(project.id)
+																				: undefined
+																		}
+																	/>
+																}
+															>
+																{!projectCollapsed &&
+																	renderSessionList(projectSessions)}
+															</SortableProjectBlock>
+														);
+													})}
+												</SortableContext>
+											</DndContext>
+										)}
 									</section>
 								);
 							})}
@@ -526,12 +601,20 @@ export function AppSidebar({
 					/>
 				)}
 			</aside>
-			<CommandPalette
-				open={paletteOpen}
-				onOpenChange={setPaletteOpen}
-				sessions={sessions}
-				onSelectSession={handleSelectSession}
-			/>
+			{paletteOpen ? (
+				<CommandPalette
+					open
+					onOpenChange={setPaletteOpen}
+					projects={projects}
+					sessions={sessions}
+					onSelectProject={(projectId) => onNewChatInProject?.(projectId)}
+					onSelectSession={(target) =>
+						onOpenSearchSession
+							? onOpenSearchSession(target)
+							: handleSelectSession(target.sessionId)
+					}
+				/>
+			) : null}
 		</>
 	);
 }

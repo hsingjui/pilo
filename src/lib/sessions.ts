@@ -45,6 +45,19 @@ export type SessionReconcileResult = {
 	unchanged: number;
 };
 
+export type SessionExternalActivity = {
+	path: string;
+	turnOpen: boolean;
+};
+
+export type SessionSearchMatch = {
+	sessionPath: string;
+	sessionId: string;
+	role: "user" | "assistant";
+	snippet: string;
+	timestamp: string | number | null;
+};
+
 export type SessionHistory = {
 	events: ConversationEvent[];
 	model: { provider: string; id: string } | null;
@@ -187,6 +200,26 @@ export function loadSessionHistory(
 		});
 	sessionHistoryInFlight.set(requestKey, request);
 	return request;
+}
+
+export function getExternalSessionActivity(
+	projectId: string,
+): Promise<SessionExternalActivity[]> {
+	return invoke<SessionExternalActivity[]>("session_external_activity", {
+		projectId,
+	});
+}
+
+export function searchSessions(
+	projectId: string,
+	query: string,
+	limit = 24,
+): Promise<SessionSearchMatch[]> {
+	return invoke<SessionSearchMatch[]>("session_search", {
+		projectId,
+		query,
+		limit,
+	});
 }
 
 export function deleteSession(

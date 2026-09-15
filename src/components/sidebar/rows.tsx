@@ -228,7 +228,9 @@ export function ProjectRow({
 	project,
 	env,
 	collapsed,
+	selected,
 	refreshing,
+	onSelect,
 	onToggle,
 	onNewChat,
 	onDelete,
@@ -237,7 +239,9 @@ export function ProjectRow({
 	project: SidebarProject;
 	env: SidebarEnv;
 	collapsed: boolean;
+	selected: boolean;
 	refreshing: boolean;
+	onSelect: () => void;
 	onToggle: () => void;
 	onNewChat?: (projectId: string) => void;
 	onDelete?: (projectId: string) => void;
@@ -253,29 +257,28 @@ export function ProjectRow({
 				<div
 					role="button"
 					tabIndex={0}
-					aria-label={
-						refreshing
-							? `${project.name} 正在刷新`
-							: `${toggleLabel} ${project.name}`
-					}
+					aria-label={refreshing ? `${project.name} 正在刷新` : project.name}
+					aria-current={selected ? "page" : undefined}
 					aria-disabled={refreshing || undefined}
 					data-menu-open={menuOpen || undefined}
 					onClick={() => {
 						if (refreshing) return;
-						onToggle();
+						onSelect();
 					}}
 					onKeyDown={(event) => {
 						if (event.target !== event.currentTarget) return;
 						if (event.key !== "Enter" && event.key !== " ") return;
 						event.preventDefault();
 						if (refreshing) return;
-						onToggle();
+						onSelect();
 					}}
 					className={cn(
 						"group relative flex min-w-0 w-full cursor-pointer select-none items-center gap-2 rounded-md border border-transparent bg-transparent py-1 pl-2 pr-3 text-left text-xs font-semibold transition-colors",
 						"text-sidebar-foreground dark:text-sidebar-foreground/75",
 						"hover:bg-sidebar-hover hover:text-sidebar-hover-foreground data-[menu-open]:bg-sidebar-hover data-[menu-open]:text-sidebar-hover-foreground",
 						"focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+						selected &&
+							"border-sidebar-foreground/10 bg-sidebar-foreground/10 text-sidebar-foreground hover:bg-sidebar-foreground/10",
 						refreshing &&
 							"cursor-default text-sidebar-foreground-muted hover:bg-transparent hover:text-sidebar-foreground-muted",
 					)}
@@ -292,25 +295,27 @@ export function ProjectRow({
 							onToggle();
 						}}
 					>
-						{refreshing ? (
-							<LoaderCircle className="h-3.5 w-3.5 animate-spin text-current" />
-						) : (
-							<>
-								<Folder className="absolute left-0 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-current opacity-80 transition-opacity duration-100 group-hover:opacity-0" />
-								<ChevronDown
-									className={cn(
-										"absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 text-current transition-[opacity,transform] duration-100",
-										"opacity-0 group-hover:opacity-100",
-										collapsed ? "-rotate-90" : "rotate-0",
-									)}
-								/>
-							</>
-						)}
+						<Folder className="absolute left-0 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-current opacity-80 transition-opacity duration-100 group-hover:opacity-0" />
+						<ChevronDown
+							className={cn(
+								"absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 text-current transition-[opacity,transform] duration-100",
+								"opacity-0 group-hover:opacity-100",
+								collapsed ? "-rotate-90" : "rotate-0",
+							)}
+						/>
 					</button>
 					<span className="min-w-0 flex-1 truncate text-left">
 						{project.name}
 					</span>
 					<div className="flex shrink-0 items-center gap-0.5">
+						{refreshing ? (
+							<span
+								className="flex h-5 w-5 items-center justify-center text-muted-foreground"
+								aria-label="正在刷新对话"
+							>
+								<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+							</span>
+						) : null}
 						<DropdownMenu
 							open={menuOpen}
 							onOpenChange={(open) => {
@@ -536,7 +541,14 @@ export const SessionRow = memo(function SessionRow({
 								className="flex items-center justify-center transition-opacity duration-100 group-hover:opacity-0 group-data-[menu-open]:opacity-0"
 							>
 								{session.active ? (
-									<LoaderCircle className="size-3 animate-spin text-sidebar-primary" />
+									<LoaderCircle
+										className={cn(
+											"size-3 animate-spin",
+											session.externalActive
+												? "text-muted-foreground"
+												: "text-sidebar-primary",
+										)}
+									/>
 								) : null}
 							</span>
 							{onDelete ? (

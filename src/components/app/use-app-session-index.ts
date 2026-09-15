@@ -4,6 +4,7 @@ import { toSidebarSession } from "@/components/app/app-chat-state";
 import { listenRuntimeEvents } from "@/lib/pi-runtime";
 import {
 	deleteSession,
+	getExternalSessionActivity,
 	listSessions,
 	listenSessionWatchEvents,
 	reconcileSessions,
@@ -15,6 +16,14 @@ import {
 
 type SessionUiUpdate = {
 	title?: string;
+};
+
+type IdleCapableWindow = Window & {
+	requestIdleCallback?: (
+		callback: () => void,
+		options?: { timeout: number },
+	) => number;
+	cancelIdleCallback?: (handle: number) => void;
 };
 
 function sameSessionIndexEntry(a: SessionIndexEntry, b: SessionIndexEntry) {
@@ -71,6 +80,11 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 	const [indexedSessions, setIndexedSessions] = useState<SessionIndexEntry[]>(
 		[],
 	);
+	const [externalActivity, setExternalActivity] = useState<{
+		projectId: string;
+		sessionPaths: ReadonlySet<string>;
+		openTurnPaths: ReadonlySet<string>;
+	} | null>(null);
 	const [refreshingProjectIds, setRefreshingProjectIds] = useState<
 		ReadonlySet<string>
 	>(() => new Set());
@@ -113,13 +127,22 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 		[],
 	);
 
+	const refreshExternalActivity = useCallback(
+		(projectId: string) => getExternalSessionActivity(projectId),
+		[],
+	);
+
 	useEffect(() => {
 		if (!activeProjectId) return;
 		let disposed = false;
 		let refreshTimer: number | undefined;
+		let initialRefreshTimer: number | undefined;
+		let initialRefreshIdleId: number | undefined;
 		let watcherReady = false;
 		let unlistenRuntime: (() => void) | undefined;
 		let unlistenSessionWatch: (() => void) | undefined;
+		let activityTimer: number | undefined;
+		const idleWindow = window as IdleCapableWindow;
 
 		const refresh = () => {
 			void refreshProjectSessions(activeProjectId).catch((error) =>
@@ -130,6 +153,45 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
 			refreshTimer = window.setTimeout(refresh, 120);
 		};
+		const scheduleInitialRefresh = () => {
+			const run = () => {
+				initialRefreshTimer = undefined;
+				initialRefreshIdleId = undefined;
+				if (!disposed) refresh();
+			};
+			if (idleWindow.requestIdleCallback) {
+				initialRefreshIdleId = idleWindow.requestIdleCallback(run, {
+					timeout: 1200,
+				});
+				return;
+			}
+			initialRefreshTimer = window.setTimeout(run, 0);
+		};
+		const refreshActivity = () => {
+			void refreshExternalActivity(activeProjectId)
+				.then((activities) => {
+					if (disposed) return;
+					setExternalActivity({
+						projectId: activeProjectId,
+						sessionPaths: new Set(activities.map((activity) => activity.path)),
+						openTurnPaths: new Set(
+							activities
+								.filter((activity) => activity.turnOpen)
+								.map((activity) => activity.path),
+						),
+					});
+				})
+				.catch((error) =>
+					console.debug("Failed to inspect external Pi activity", error),
+				);
+		};
+		const scheduleActivityPoll = () => {
+			if (activityTimer !== undefined) window.clearTimeout(activityTimer);
+			activityTimer = window.setTimeout(() => {
+				refreshActivity();
+				scheduleActivityPoll();
+			}, 1500);
+		};
 		const hydrateThenRefresh = async () => {
 			try {
 				const cached = await listSessions(activeProjectId);
@@ -137,10 +199,12 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 			} catch (error) {
 				console.error("Failed to load cached sessions", error);
 			}
-			if (!disposed) refresh();
+			if (!disposed) scheduleInitialRefresh();
 		};
 
 		void hydrateThenRefresh();
+		refreshActivity();
+		scheduleActivityPoll();
 		window.addEventListener("focus", queueRefresh);
 		void listenRuntimeEvents((event) => {
 			if (event.projectId && event.projectId !== activeProjectId) {
@@ -165,7 +229,10 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 		void listenSessionWatchEvents((event) => {
 			if (event.projectId !== activeProjectId) return;
 			if (event.type === "backend") watcherReady = true;
-			if (event.type === "changed") queueRefresh();
+			if (event.type === "changed") {
+				queueRefresh();
+				refreshActivity();
+			}
 			if (event.type === "indexed") {
 				void listSessions(activeProjectId)
 					.then((sessions) => {
@@ -199,16 +266,48 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 		return () => {
 			disposed = true;
 			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+			if (initialRefreshTimer !== undefined)
+				window.clearTimeout(initialRefreshTimer);
+			if (initialRefreshIdleId !== undefined && idleWindow.cancelIdleCallback) {
+				idleWindow.cancelIdleCallback(initialRefreshIdleId);
+			}
+			if (activityTimer !== undefined) window.clearTimeout(activityTimer);
 			window.removeEventListener("focus", queueRefresh);
 			unlistenRuntime?.();
 			unlistenSessionWatch?.();
 			void stopSessionWatch(activeProjectId).catch(() => undefined);
 		};
-	}, [activeProjectId, refreshProjectSessions, replaceProjectSessions]);
+	}, [
+		activeProjectId,
+		refreshExternalActivity,
+		refreshProjectSessions,
+		replaceProjectSessions,
+	]);
+
+	const externalSessionPaths = useMemo<ReadonlySet<string>>(
+		() =>
+			externalActivity?.projectId === activeProjectId
+				? externalActivity.sessionPaths
+				: new Set(),
+		[activeProjectId, externalActivity],
+	);
+	const externalOpenTurnPaths = useMemo<ReadonlySet<string>>(
+		() =>
+			externalActivity?.projectId === activeProjectId
+				? externalActivity.openTurnPaths
+				: new Set(),
+		[activeProjectId, externalActivity],
+	);
 
 	const sidebarSessions = useMemo(
-		() => indexedSessions.map(toSidebarSession),
-		[indexedSessions],
+		() =>
+			indexedSessions.map((session) => {
+				const sidebar = toSidebarSession(session);
+				return externalOpenTurnPaths.has(session.sessionPath)
+					? { ...sidebar, active: true, externalActive: true }
+					: sidebar;
+			}),
+		[indexedSessions, externalOpenTurnPaths],
 	);
 
 	const updateSession = useCallback(
@@ -259,6 +358,8 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 
 	return {
 		indexedSessions,
+		externalSessionPaths,
+		externalOpenTurnPaths,
 		refreshProjectSessions,
 		refreshingProjectIds,
 		sidebarSessions,

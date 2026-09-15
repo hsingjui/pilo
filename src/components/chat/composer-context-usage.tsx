@@ -1,3 +1,4 @@
+import { LoaderCircle } from "lucide-react";
 import { memo } from "react";
 
 import type { ChatSessionRuntimeState } from "@/components/chat/chat-page-utils";
@@ -148,46 +149,46 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 							className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
 							aria-label={contextSummary}
 						>
-							<span className="relative flex size-5 items-center justify-center">
-								<svg
-									viewBox="0 0 20 20"
-									className="size-5 -rotate-90"
+							{contextPercent === undefined ? (
+								<LoaderCircle
+									className="size-4 animate-spin"
 									aria-hidden="true"
-								>
-									<circle
-										cx="10"
-										cy="10"
-										r={RING_RADIUS}
-										fill="none"
-										stroke="currentColor"
-										strokeWidth="2"
-										className="opacity-20"
-									/>
-									{contextPercent !== undefined ? (
-										<circle
-											cx="10"
-											cy="10"
-											r={RING_RADIUS}
-											fill="none"
-											stroke="currentColor"
-											strokeWidth="2"
-											strokeLinecap="round"
-											strokeDasharray={RING_CIRCUMFERENCE}
-											strokeDashoffset={dashOffset}
-										/>
-									) : null}
-								</svg>
-								{contextPercent === undefined ? (
-									<span className="absolute inset-0 flex items-center justify-center text-[11px] font-medium leading-none">
-										?
+								/>
+							) : (
+								<>
+									<span className="relative flex size-5 items-center justify-center">
+										<svg
+											viewBox="0 0 20 20"
+											className="size-5 -rotate-90"
+											aria-hidden="true"
+										>
+											<circle
+												cx="10"
+												cy="10"
+												r={RING_RADIUS}
+												fill="none"
+												stroke="currentColor"
+												strokeWidth="2"
+												className="opacity-20"
+											/>
+											<circle
+												cx="10"
+												cy="10"
+												r={RING_RADIUS}
+												fill="none"
+												stroke="currentColor"
+												strokeWidth="2"
+												strokeLinecap="round"
+												strokeDasharray={RING_CIRCUMFERENCE}
+												strokeDashoffset={dashOffset}
+											/>
+										</svg>
 									</span>
-								) : null}
-							</span>
-							<span className="text-xs font-medium tabular-nums leading-none">
-								{contextPercent === undefined
-									? "—%"
-									: formatPercent(contextPercent)}
-							</span>
+									<span className="text-xs font-medium tabular-nums leading-none">
+										{formatPercent(contextPercent)}
+									</span>
+								</>
+							)}
 						</button>
 					</PopoverTrigger>
 				</TooltipTrigger>

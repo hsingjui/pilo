@@ -59,7 +59,9 @@ export function mergeSidebarSessionsWithOpenChats(
 		const key = chatUiStateKey(session.projectId, session.id);
 		indexedKeys.add(key);
 		const opened = openedByIndexedSession.get(key);
-		const active = opened ? busyControllerIds.has(opened.controllerId) : false;
+		const active =
+			Boolean(session.externalActive) ||
+			(opened ? busyControllerIds.has(opened.controllerId) : false);
 		return Boolean(session.active) === active
 			? session
 			: { ...session, active };
@@ -94,6 +96,19 @@ export function createDraftSessionId() {
 export function createTemporarySessionId() {
 	draftSessionSequence += 1;
 	return `temporary-session-${Date.now()}-${draftSessionSequence}`;
+}
+
+export function firstProjectInConnectionOrder(
+	projects: readonly Project[],
+	connectionIds: readonly string[],
+): Project | null {
+	for (const connectionId of connectionIds) {
+		const project = projects.find(
+			(candidate) => candidate.connection.id === connectionId,
+		);
+		if (project) return project;
+	}
+	return projects[0] ?? null;
 }
 
 export function projectRelativePath(project: Project, candidate: string) {
@@ -133,6 +148,8 @@ export type OpenChat = {
 export function indexedChatSession(
 	session: SessionIndexEntry,
 	project: Project,
+	externalRunning = false,
+	externalTurnOpen = false,
 ): ChatSession {
 	return {
 		id: session.piSessionId,
@@ -145,6 +162,8 @@ export function indexedChatSession(
 		sessionPath: session.sessionPath,
 		historyFileSize: session.fileSize,
 		historyFileMtimeNs: session.fileMtimeNs,
+		externalRunning,
+		externalTurnOpen,
 	};
 }
 
@@ -198,7 +217,9 @@ export function upsertOpenedChat(
 		existing.session.projectRecord !== nextSession.projectRecord ||
 		existing.session.sessionPath !== nextSession.sessionPath ||
 		existing.session.historyFileSize !== nextSession.historyFileSize ||
-		existing.session.historyFileMtimeNs !== nextSession.historyFileMtimeNs;
+		existing.session.historyFileMtimeNs !== nextSession.historyFileMtimeNs ||
+		existing.session.externalRunning !== nextSession.externalRunning ||
+		existing.session.externalTurnOpen !== nextSession.externalTurnOpen;
 	if (
 		!sessionChanged &&
 		nextInitialMessage === existing.initialMessage &&

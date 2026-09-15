@@ -29,8 +29,8 @@ use runtime_streams::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use session::{
-    session_delete, session_discover, session_read, session_scan, session_watch_start,
-    session_watch_stop,
+    session_activity, session_delete, session_discover, session_read, session_scan, session_search,
+    session_watch_start, session_watch_stop,
 };
 use tokio::{
     sync::{Mutex, OnceCell, Semaphore, mpsc},
@@ -229,6 +229,21 @@ async fn dispatch(
             .await
             .map(ServerReply::json),
         "session.scan" => blocking(move || session_scan(from_params(params)?))
+            .await
+            .map(ServerReply::json),
+        "session.activity" => {
+            let owned_pids = state
+                .pi
+                .lock()
+                .await
+                .values()
+                .filter_map(|process| process.child.id())
+                .collect();
+            blocking(move || session_activity(from_params(params)?, owned_pids))
+                .await
+                .map(ServerReply::json)
+        }
+        "session.search" => blocking(move || session_search(from_params(params)?))
             .await
             .map(ServerReply::json),
         "session.read" => {

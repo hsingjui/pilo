@@ -26,6 +26,7 @@ import {
 	chatUiStateKey,
 	createDraftSessionId,
 	createTemporarySessionId,
+	firstProjectInConnectionOrder,
 	identifyOpenedChat,
 	indexedChatSession,
 	mergeSidebarSessionsWithOpenChats,
@@ -45,6 +46,7 @@ import { CUSTOM_TITLEBAR, IS_MACOS, TitleBar } from "@/components/title-bar";
 import type { EditorOpenRequest } from "@/components/project-editor";
 import {
 	createChatSessionClient,
+	listChatSessionRuntimeStates,
 	stopChatSession,
 } from "@/lib/chat-session-client";
 import type {
@@ -52,6 +54,7 @@ import type {
 	ChatSubmission,
 } from "@/lib/chat-submission";
 import { userErrorMessage } from "@/lib/app-error";
+import { listSessions } from "@/lib/sessions";
 import { CONNECTIONS_CHANGED_EVENT } from "@/lib/connection-events";
 import { listConnectionCatalog, removeWslConnection } from "@/lib/connections";
 import {
@@ -145,6 +148,7 @@ function App() {
 		client: ReturnType<typeof createChatSessionClient>;
 	} | null>(null);
 	const busyChatControllersRef = useRef(new Set<string>());
+	const restoredRuntimeSessionKeysRef = useRef(new Set<string>());
 	const [busyChatControllerIds, setBusyChatControllerIds] = useState<
 		ReadonlySet<string>
 	>(() => new Set());
@@ -260,8 +264,97 @@ function App() {
 		};
 	}, []);
 
+	useEffect(() => {
+		if (!projectsReady || projects.length === 0) return;
+		let disposed = false;
+		void listChatSessionRuntimeStates()
+			.then(async (states) => {
+				const active = states.filter(
+					(state) => state.activeTurn && state.snapshot.state === "running",
+				);
+				if (active.length === 0) return;
+				const projectIds = [...new Set(active.map((state) => state.projectId))];
+				const indexedByProject = new Map<
+					string,
+					Awaited<ReturnType<typeof listSessions>>
+				>();
+				await Promise.all(
+					projectIds.map(async (projectId) => {
+						try {
+							indexedByProject.set(projectId, await listSessions(projectId));
+						} catch {
+							indexedByProject.set(projectId, []);
+						}
+					}),
+				);
+				if (disposed) return;
+				const restored = active.flatMap((state) => {
+					if (restoredRuntimeSessionKeysRef.current.has(state.sessionKey)) {
+						return [];
+					}
+					let parsed: unknown;
+					try {
+						parsed = JSON.parse(state.sessionKey);
+					} catch {
+						return [];
+					}
+					if (
+						!Array.isArray(parsed) ||
+						parsed.length !== 2 ||
+						typeof parsed[0] !== "string" ||
+						parsed[0] !== state.projectId ||
+						typeof parsed[1] !== "string"
+					) {
+						return [];
+					}
+					const project = projects.find(
+						(candidate) => candidate.id === state.projectId,
+					);
+					if (!project) return [];
+					const indexed = state.sessionPath
+						? indexedByProject
+								.get(state.projectId)
+								?.find((session) => session.sessionPath === state.sessionPath)
+						: undefined;
+					const sessionId = parsed[1];
+					const session: ChatSession = {
+						id: sessionId,
+						title:
+							indexed?.titleOverride ??
+							indexed?.name ??
+							indexed?.firstUserMessagePreview ??
+							"正在进行的对话",
+						projectRecord: project,
+						sessionPath: state.sessionPath ?? undefined,
+					};
+					return [{ sessionKey: state.sessionKey, session }];
+				});
+				if (restored.length === 0) return;
+				setOpenedChats((current) => {
+					let next = current;
+					for (const entry of restored) {
+						next = upsertOpenedChat(next, entry.session);
+					}
+					// Do not trim here: these entries represent live Pi turns and have not
+					// mounted their ChatPage controllers yet, so the frontend busy set is
+					// intentionally one render behind the backend registry.
+					return next;
+				});
+				for (const entry of restored) {
+					restoredRuntimeSessionKeysRef.current.add(entry.sessionKey);
+				}
+			})
+			.catch((error) =>
+				console.warn("Failed to restore active chat runtimes", error),
+			);
+		return () => {
+			disposed = true;
+		};
+	}, [projects, projectsReady]);
+
 	// 首页环境列表只遵循用户的「显示在首页」偏好，和项目关联数量无关。
 	const [connectionCatalog, setConnectionCatalog] = useState<Connection[]>([]);
+	const [connectionsReady, setConnectionsReady] = useState(false);
 	useEffect(() => {
 		let active = true;
 		const load = async () => {
@@ -270,6 +363,8 @@ function App() {
 				if (active) setConnectionCatalog(next);
 			} catch (error) {
 				console.error("Failed to load connections", error);
+			} finally {
+				if (active) setConnectionsReady(true);
 			}
 		};
 		void load();
@@ -343,7 +438,16 @@ function App() {
 		[projects],
 	);
 
-	const firstProject = projects[0] ?? null;
+	const firstProject = useMemo(
+		() =>
+			connectionsReady
+				? firstProjectInConnectionOrder(
+						projects,
+						envs.map((env) => env.id),
+					)
+				: null,
+		[connectionsReady, envs, projects],
+	);
 	const activeProject =
 		projects.find((project) => project.id === draftProjectId) ?? firstProject;
 	const focusedProject =
@@ -370,6 +474,7 @@ function App() {
 	}, []);
 	const {
 		indexedSessions,
+		externalOpenTurnPaths,
 		refreshProjectSessions,
 		refreshingProjectIds,
 		sidebarSessions: indexedSidebarSessions,
@@ -433,10 +538,24 @@ function App() {
 			selectedOpenedChat &&
 			(selectedOpenedChatBusy || !selectedIndexedSession)
 		) {
-			return selectedOpenedChat.session;
+			const sessionPath = selectedOpenedChat.session.sessionPath;
+			return {
+				...selectedOpenedChat.session,
+				externalRunning: sessionPath
+					? externalOpenTurnPaths.has(sessionPath)
+					: false,
+				externalTurnOpen: sessionPath
+					? externalOpenTurnPaths.has(sessionPath)
+					: false,
+			};
 		}
 		if (selectedIndexedSession && selectedProject) {
-			return indexedChatSession(selectedIndexedSession, selectedProject);
+			return indexedChatSession(
+				selectedIndexedSession,
+				selectedProject,
+				externalOpenTurnPaths.has(selectedIndexedSession.sessionPath),
+				externalOpenTurnPaths.has(selectedIndexedSession.sessionPath),
+			);
 		}
 		if (activeProject && draftSessionStarted) {
 			return {
@@ -453,6 +572,7 @@ function App() {
 		selectedOpenedChatBusy,
 		selectedIndexedSession,
 		selectedProject,
+		externalOpenTurnPaths,
 		activeProject,
 		draftSessionStarted,
 		draftSessionId,
@@ -714,6 +834,49 @@ function App() {
 		[indexedSessions, openedChats, projects],
 	);
 
+	const openSearchSession = useCallback(
+		(target: {
+			sessionId: string;
+			projectId: string;
+			sessionPath: string;
+			title: string;
+		}) => {
+			const project = projects.find(
+				(candidate) => candidate.id === target.projectId,
+			);
+			if (!project) return;
+			const session: ChatSession = {
+				id: target.sessionId,
+				title: target.title || "新对话",
+				projectRecord: project,
+				sessionPath: target.sessionPath,
+			};
+			setOpenedChats((current) =>
+				trimOpenedChats(
+					touchOpenedChat(current, session),
+					busyChatControllersRef.current,
+				),
+			);
+			setSelectedSessionId(target.sessionId);
+			setDraftSessionStarted(false);
+			setDraftSessionPrompt(null);
+			setDraftSessionImages([]);
+			setDraftSessionModel(null);
+			setDraftSessionThinkingLevel(null);
+			setDraftProjectId(target.projectId);
+			setFocusedProjectId(target.projectId);
+			void refreshProjectSessions(target.projectId).catch((error) =>
+				console.error("Failed to refresh searched session project", error),
+			);
+			void touchProject(target.projectId)
+				.then(() => notifyProjectsChanged())
+				.catch((error) =>
+					console.error("Failed to update recent project", error),
+				);
+		},
+		[projects, refreshProjectSessions],
+	);
+
 	const openNotificationSession = useCallback(
 		(target: DesktopNotificationSessionTarget) => {
 			setOpenedChats((current) =>
@@ -970,8 +1133,10 @@ function App() {
 					envs={envs}
 					projects={sidebarProjects}
 					sessions={sidebarSessions}
+					selectedProjectId={activeProjectId}
 					selectedSessionId={selectedSessionId}
 					onSelectSession={selectSession}
+					onOpenSearchSession={openSearchSession}
 					onUpdateSession={(sessionId, update) => {
 						void updateSession(sessionId, update);
 					}}
@@ -1134,8 +1299,12 @@ function App() {
 							{!chatSession ? (
 								<NewChatLanding
 									key={`landing:${draftSessionId}`}
+									sessionId={draftSessionId}
+									onNewChat={() => startNewChat(activeProject?.id)}
 									projectAvailable={
-										projectsReady ? Boolean(activeProject) : true
+										projectsReady && connectionsReady
+											? Boolean(activeProject)
+											: true
 									}
 									project={activeProject}
 									onOpenTerminal={toggleTerminal}

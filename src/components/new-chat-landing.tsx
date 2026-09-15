@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ChatComposer } from "@/components/chat/chat-composer";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import {
+	ChatComposer,
+	type ComposerSuggestion,
+} from "@/components/chat/chat-composer";
+import { PI_SESSION_SUGGESTIONS } from "@/components/chat/chat-composer-suggestions";
+import { createFileSuggestions } from "@/components/chat/chat-file-suggestions";
 import { ChatEmptyHero } from "@/components/chat/chat-empty-hero";
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import { SessionHeader } from "@/components/chat/chat-session-header";
@@ -8,6 +14,9 @@ import {
 	type PiModel,
 	type PiThinkingLevel,
 } from "@/lib/pi-runtime";
+import { createChatSessionClient } from "@/lib/chat-session-client";
+import { createPiCommandSuggestions } from "@/lib/pi-command-suggestions";
+import { searchProjectFiles } from "@/lib/files";
 import {
 	getNextPiQuickCycleModel,
 	getPiModelThinkingLevels,
@@ -29,8 +38,12 @@ function modelKey(model: PiModel | null): string | null {
 	return model ? `${model.provider}\0${model.id}` : null;
 }
 
+const FILE_SUGGESTION_DEBOUNCE_MS = 180;
+
 export function NewChatLanding({
+	sessionId,
 	onStartSession,
+	onNewChat,
 	onOpenTerminal,
 	terminalRunning = false,
 	terminalVisible = false,
@@ -41,11 +54,13 @@ export function NewChatLanding({
 	projectAvailable = true,
 	project = null,
 }: {
+	sessionId: string;
 	onStartSession: (
 		submission: ChatSubmission,
 		model: PiModel | null,
 		thinkingLevel: PiThinkingLevel | null,
 	) => void;
+	onNewChat?: () => void;
 	onOpenTerminal?: () => void;
 	terminalRunning?: boolean;
 	terminalVisible?: boolean;
@@ -72,12 +87,84 @@ export function NewChatLanding({
 		"idle" | "loading" | "ready" | "error"
 	>(cachedModels ? "ready" : "idle");
 	const [modelError, setModelError] = useState<string | null>(null);
+	const [commandSuggestions, setCommandSuggestions] = useState<
+		ComposerSuggestion[]
+	>([]);
+	const [fileSuggestions, setFileSuggestions] = useState<ComposerSuggestion[]>(
+		[],
+	);
+	const fileSuggestionTimerRef = useRef<number | null>(null);
+	const fileSuggestionRequestRef = useRef(0);
+	const commandLoadingRef = useRef(false);
+	const commandsLoadedRef = useRef(false);
 	const modelRequestRef = useRef(0);
 	const modelLoadingRef = useRef(false);
 	const modelSelectionDirtyRef = useRef(false);
 	const thinkingSelectionDirtyRef = useRef(false);
 	const selectedModelKeyRef = useRef(
 		modelKey(cachedModels?.defaultModel ?? null),
+	);
+	const composerSuggestions = useMemo(
+		() => [
+			...fileSuggestions,
+			...PI_SESSION_SUGGESTIONS,
+			...commandSuggestions,
+		],
+		[commandSuggestions, fileSuggestions],
+	);
+
+	const loadCommands = useCallback(async () => {
+		if (!projectId || commandLoadingRef.current || commandsLoadedRef.current) {
+			return;
+		}
+		commandLoadingRef.current = true;
+		try {
+			const client = createChatSessionClient(projectId, sessionId);
+			await client.prepare();
+			const result = await client.getPiCommands();
+			setCommandSuggestions(createPiCommandSuggestions(result.commands));
+			commandsLoadedRef.current = true;
+		} catch (error) {
+			console.warn("Failed to load Pi commands for new chat", error);
+		} finally {
+			commandLoadingRef.current = false;
+		}
+	}, [projectId, sessionId, setCommandSuggestions]);
+
+	const handleSuggestionTrigger = useCallback(
+		(trigger: "@" | "/" | null, query: string) => {
+			fileSuggestionRequestRef.current += 1;
+			const requestId = fileSuggestionRequestRef.current;
+			if (fileSuggestionTimerRef.current !== null) {
+				window.clearTimeout(fileSuggestionTimerRef.current);
+				fileSuggestionTimerRef.current = null;
+			}
+			if (trigger === "/") {
+				setFileSuggestions([]);
+				void loadCommands();
+				return;
+			}
+			if (trigger !== "@" || !projectId) {
+				setFileSuggestions([]);
+				return;
+			}
+
+			const normalizedQuery = query.trim();
+			fileSuggestionTimerRef.current = window.setTimeout(() => {
+				fileSuggestionTimerRef.current = null;
+				void searchProjectFiles(projectId, normalizedQuery)
+					.then((paths) => {
+						if (fileSuggestionRequestRef.current !== requestId) return;
+						setFileSuggestions(createFileSuggestions(paths, normalizedQuery));
+					})
+					.catch((error) => {
+						if (fileSuggestionRequestRef.current !== requestId) return;
+						console.warn("Failed to load file suggestions for new chat", error);
+						setFileSuggestions([]);
+					});
+			}, FILE_SUGGESTION_DEBOUNCE_MS);
+		},
+		[loadCommands, projectId, setFileSuggestions],
 	);
 
 	const applyModelSnapshot = useCallback(
@@ -148,6 +235,15 @@ export function NewChatLanding({
 	useEffect(() => {
 		modelSelectionDirtyRef.current = false;
 		thinkingSelectionDirtyRef.current = false;
+		commandsLoadedRef.current = false;
+		commandLoadingRef.current = false;
+		fileSuggestionRequestRef.current += 1;
+		if (fileSuggestionTimerRef.current !== null) {
+			window.clearTimeout(fileSuggestionTimerRef.current);
+			fileSuggestionTimerRef.current = null;
+		}
+		setCommandSuggestions([]);
+		setFileSuggestions([]);
 		const cached = projectId ? getCachedProjectPiModels(projectId) : null;
 		setModels(cached?.models ?? []);
 		selectedModelKeyRef.current = modelKey(cached?.defaultModel ?? null);
@@ -227,6 +323,28 @@ export function NewChatLanding({
 		},
 	);
 
+	const handleSubmit = useCallback(
+		(submission: ChatSubmission) => {
+			const command = submission.text.trim();
+			if (command.startsWith("/")) {
+				const commandName = command.slice(1).split(/\s+/, 1)[0];
+				if (commandName === "new") {
+					setDraft("");
+					onNewChat?.();
+					return;
+				}
+				if (commandName === "compact") {
+					setDraft("");
+					toast.info("当前没有可压缩的上下文");
+					return;
+				}
+			}
+
+			onStartSession(submission, selectedModel, selectedThinkingLevel);
+		},
+		[onNewChat, onStartSession, selectedModel, selectedThinkingLevel, setDraft],
+	);
+
 	return (
 		<div className="relative flex h-full min-w-0 flex-col">
 			<SessionHeader
@@ -250,9 +368,7 @@ export function NewChatLanding({
 						<ChatComposer
 							value={draft}
 							onChange={setDraft}
-							onSubmit={(submission) =>
-								onStartSession(submission, selectedModel, selectedThinkingLevel)
-							}
+							onSubmit={handleSubmit}
 							disabled={false}
 							models={models}
 							selectedModel={selectedModel}
@@ -275,6 +391,8 @@ export function NewChatLanding({
 								thinkingSelectionDirtyRef.current = true;
 								setSelectedThinkingLevel(level);
 							}}
+							suggestions={composerSuggestions}
+							onSuggestionTrigger={handleSuggestionTrigger}
 						/>
 					</ConversationColumn>
 				</div>

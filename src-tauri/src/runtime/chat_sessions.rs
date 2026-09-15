@@ -24,10 +24,12 @@ use super::{
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatSessionState {
+    pub session_key: String,
     pub project_id: String,
     pub session_path: Option<String>,
     pub prepared: bool,
     pub initialized: bool,
+    pub active_turn: bool,
     pub snapshot: PiSessionSnapshot,
 }
 
@@ -39,6 +41,7 @@ struct ChatProcess {
     control_reply: Arc<StdMutex<Option<InitializationReply>>>,
     prepared: AtomicBool,
     initialized: AtomicBool,
+    active_turn: Arc<AtomicBool>,
     closed: AtomicBool,
 }
 
@@ -64,6 +67,7 @@ struct ChatEventSink {
     project_id: String,
     control_reply: Arc<StdMutex<Option<InitializationReply>>>,
     session_path: Arc<StdMutex<Option<String>>>,
+    active_turn: Arc<AtomicBool>,
 }
 
 #[derive(Clone, Serialize)]
@@ -77,6 +81,20 @@ struct ChatEvent<'a> {
 
 impl RuntimeEventSink for ChatEventSink {
     fn send(&self, event: RuntimeEvent) {
+        match &event {
+            RuntimeEvent::UserMessageStart { .. } | RuntimeEvent::AssistantMessageStart { .. } => {
+                self.active_turn.store(true, Ordering::Release);
+            }
+            RuntimeEvent::AssistantMessageEnd { .. }
+            | RuntimeEvent::RuntimeError { .. }
+            | RuntimeEvent::ProcessState {
+                state: PiProcessState::Failed | PiProcessState::Stopped,
+                ..
+            } => {
+                self.active_turn.store(false, Ordering::Release);
+            }
+            _ => {}
+        }
         if let RuntimeEvent::RpcMessage { message, .. } = &event {
             let response_id = message.get("id").and_then(Value::as_str);
             if message.get("type").and_then(Value::as_str) == Some("response")
@@ -148,12 +166,47 @@ impl ChatSessions {
             .clone();
         let snapshot = process.session.lock().await.snapshot();
         Some(ChatSessionState {
+            session_key: session_key.to_owned(),
             project_id: process.project_id.clone(),
             session_path,
             prepared: process.prepared.load(Ordering::Acquire),
             initialized: process.initialized.load(Ordering::Acquire),
+            active_turn: process.active_turn.load(Ordering::Acquire),
             snapshot,
         })
+    }
+
+    pub async fn states(&self) -> Vec<ChatSessionState> {
+        let processes = {
+            let registry = self.registry.lock().await;
+            registry
+                .processes
+                .iter()
+                .map(|(session_key, process)| (session_key.clone(), Arc::clone(process)))
+                .collect::<Vec<_>>()
+        };
+        let mut states = Vec::with_capacity(processes.len());
+        for (session_key, process) in processes {
+            if process.closed.load(Ordering::Acquire) {
+                continue;
+            }
+            let session_path = process
+                .session_path
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone();
+            let snapshot = process.session.lock().await.snapshot();
+            states.push(ChatSessionState {
+                session_key,
+                project_id: process.project_id.clone(),
+                session_path,
+                prepared: process.prepared.load(Ordering::Acquire),
+                initialized: process.initialized.load(Ordering::Acquire),
+                active_turn: process.active_turn.load(Ordering::Acquire),
+                snapshot,
+            });
+        }
+        states
     }
 
     async fn process(
@@ -187,6 +240,7 @@ impl ChatSessions {
                             control_reply: Arc::new(StdMutex::new(None)),
                             prepared: AtomicBool::new(false),
                             initialized: AtomicBool::new(false),
+                            active_turn: Arc::new(AtomicBool::new(false)),
                             closed: AtomicBool::new(false),
                         })
                     }),
@@ -242,6 +296,7 @@ impl ChatSessions {
                     project_id: project.id.clone(),
                     control_reply: Arc::clone(&process.control_reply),
                     session_path: Arc::clone(&process.session_path),
+                    active_turn: Arc::clone(&process.active_turn),
                 },
                 project,
                 PiLaunchOptions {

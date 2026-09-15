@@ -14,10 +14,10 @@ test("normalizes Pi lookup failures", () => {
 });
 
 test("normalizes connection and timeout failures as retryable", () => {
-	assert.equal(
-		toAppError("SSH connection refused").code,
-		"connection_unavailable",
-	);
+	const connection = toAppError("SSH connection refused");
+	assert.equal(connection.code, "connection_unavailable");
+	assert.equal(connection.area, "connection");
+	assert.equal(connection.action, "reconnect");
 	assert.equal(toAppError("Pi RPC request timed out").code, "timeout");
 	assert.equal(toAppError("Pi RPC request timed out").retryable, true);
 });

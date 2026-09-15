@@ -10,6 +10,8 @@ export type ChatSession = {
 	sessionPath?: string;
 	historyFileSize?: number;
 	historyFileMtimeNs?: string;
+	externalRunning?: boolean;
+	externalTurnOpen?: boolean;
 	initialModel?: PiModel;
 	initialThinkingLevel?: PiThinkingLevel;
 };

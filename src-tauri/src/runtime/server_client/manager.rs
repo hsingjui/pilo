@@ -20,6 +20,8 @@ pub(super) fn retryable_read_method(method: &str) -> bool {
             | "fs.stat"
             | "fs.search"
             | "session.scan"
+            | "session.activity"
+            | "session.search"
             | "session.read"
             | "session.discover"
             | "preview.ports"

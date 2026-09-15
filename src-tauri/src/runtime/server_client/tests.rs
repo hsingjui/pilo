@@ -176,6 +176,7 @@ fn reconnect_retry_is_limited_to_read_only_methods() {
         "fs.read_file",
         "fs.search",
         "session.scan",
+        "session.search",
         "session.read",
         "preview.ports",
     ] {

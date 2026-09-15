@@ -253,6 +253,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 	onFork,
 	forking = false,
 	forkDisabled = false,
+	suppressInterruptedError = false,
 }: {
 	message: Extract<ChatMessage, { role: "assistant" }>;
 	replyRunwayPx?: number;
@@ -260,6 +261,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 	onFork?: (messageId: string) => void;
 	forking?: boolean;
 	forkDisabled?: boolean;
+	suppressInterruptedError?: boolean;
 }) {
 	recordChatMessageRender("assistant");
 	const { pageFontSize, showWorkDuration } = usePreferences();
@@ -292,6 +294,10 @@ export const AssistantMessage = memo(function AssistantMessage({
 		message.workDurationMs !== undefined
 			? formatWorkDuration(message.workDurationMs)
 			: "";
+	const visibleErrorMessage =
+		suppressInterruptedError && message.completion === "interrupted"
+			? undefined
+			: message.errorMessage;
 	const canFork =
 		Boolean(onFork) &&
 		message.streaming !== true &&
@@ -338,21 +344,21 @@ export const AssistantMessage = memo(function AssistantMessage({
 			>
 				<div className="relative">
 					{contentNodes}
-					{message.errorMessage ? (
+					{visibleErrorMessage ? (
 						<div
 							role="alert"
 							className="mt-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs leading-5 text-destructive"
 						>
-							{message.errorMessage}
+							{visibleErrorMessage}
 						</div>
 					) : null}
 					{streamingLabel ||
-					message.errorMessage ||
+					visibleErrorMessage ||
 					message.stopReason === "aborted" ? (
 						<div className="mt-1 flex min-h-6 items-center gap-1 text-[11px] text-muted-foreground">
 							{streamingLabel ? (
 								<ChatAgentActivityIndicator label={streamingLabel} />
-							) : message.errorMessage ? (
+							) : visibleErrorMessage ? (
 								<span className="text-destructive">Pi 响应失败</span>
 							) : (
 								<span>已停止</span>

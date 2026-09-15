@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { createChatSessionClient } from "@/lib/chat-session-client";
+import { toAppError, type AppError } from "@/lib/app-error";
 import { getReplyRunwayHeight } from "@/lib/chat-scroll-state";
 import { toConversationAction } from "@/lib/conversation-runtime-adapter";
 import { coalesceConversationActions } from "@/lib/conversation-reducer";
@@ -41,7 +42,12 @@ export type ChatRuntimeRecoveryState =
 	| { status: "idle"; recoverable: boolean; message: string }
 	| { status: "reconnecting"; recoverable: true; message: string }
 	| { status: "recovered"; recoverable: true; message: string }
-	| { status: "failed"; recoverable: boolean; message: string };
+	| {
+			status: "failed";
+			recoverable: boolean;
+			message: string;
+			error?: AppError;
+	  };
 
 type BufferedQueuedMessage = {
 	turn: ActiveTurn;
@@ -331,10 +337,12 @@ export function useChatRuntime({
 				});
 				return true;
 			} catch (error) {
+				const appError = toAppError(error);
 				setRecoveryState({
 					status: "failed",
-					recoverable: true,
-					message: runtimeErrorMessage(error),
+					recoverable: appError.retryable,
+					message: appError.message,
+					error: appError,
 				});
 				return false;
 			}

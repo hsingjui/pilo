@@ -6,6 +6,7 @@ import {
 	MAX_OPEN_CHAT_CONTROLLERS,
 	MAX_OPEN_CHAT_ESTIMATED_HISTORY_BYTES,
 	chatUiStateKey,
+	firstProjectInConnectionOrder,
 	identifyOpenedChat,
 	mergeSidebarSessionsWithOpenChats,
 	syncOpenedChatSessionMetadata,
@@ -75,6 +76,29 @@ function indexedSession(
 		titleOverride: null,
 	};
 }
+
+test("default draft project follows sidebar connection order", () => {
+	const wslProject: Project = {
+		...project,
+		id: "project:wsl:/workspace",
+		name: "workspace",
+		path: "/workspace",
+		connection: {
+			id: "wsl:Ubuntu",
+			name: "Ubuntu",
+			kind: { type: "wsl", distro: "Ubuntu" },
+		},
+		metadata: { ...project.metadata, cwd: "/workspace" },
+	};
+
+	assert.equal(
+		firstProjectInConnectionOrder(
+			[project, wslProject],
+			["wsl:Ubuntu", "local"],
+		)?.id,
+		wslProject.id,
+	);
+});
 
 test("touching an opened chat moves it to the most-recent position", () => {
 	const initial = opened(4);
@@ -248,6 +272,46 @@ test("inactive indexed sidebar sessions preserve object identity", () => {
 
 	assert.equal(cached, indexed);
 	assert.equal(sidebar[0], indexed);
+});
+
+test("opened chat updates external observer flags without unrelated metadata changes", () => {
+	const base = chat("chat-a");
+	let chats = upsertOpenedChat([], base);
+	chats = upsertOpenedChat(chats, {
+		...base,
+		externalRunning: true,
+		externalTurnOpen: true,
+	});
+	assert.equal(chats[0].session.externalRunning, true);
+	assert.equal(chats[0].session.externalTurnOpen, true);
+
+	chats = upsertOpenedChat(chats, {
+		...base,
+		externalRunning: false,
+		externalTurnOpen: false,
+	});
+	assert.equal(chats[0].session.externalRunning, false);
+	assert.equal(chats[0].session.externalTurnOpen, false);
+});
+
+test("idle external ownership does not make the sidebar session active", () => {
+	const indexed = toSidebarSession(indexedSession("pi-external-idle", 1024));
+	const sidebar = mergeSidebarSessionsWithOpenChats([indexed], [], new Set());
+
+	assert.equal(sidebar[0].active, undefined);
+});
+
+test("external sidebar activity stays active without a Pilo controller", () => {
+	const indexed = {
+		...toSidebarSession(indexedSession("pi-external", 1024)),
+		active: true,
+		externalActive: true,
+	};
+	const sidebar = mergeSidebarSessionsWithOpenChats([indexed], [], new Set());
+
+	assert.equal(sidebar[0], indexed);
+	assert.equal(sidebar[0].active, true);
+	assert.equal(sidebar[0].externalActive, true);
 });
 
 test("sidebar activity stays isolated across concurrently opened chats", () => {

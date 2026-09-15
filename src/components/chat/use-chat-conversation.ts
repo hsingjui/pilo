@@ -53,6 +53,46 @@ const conversationReducerContext = {
 	formatTime,
 };
 
+function reviveExternalActivity<
+	T extends {
+		type: string;
+		status?: "complete" | "running";
+		result?: unknown;
+	},
+>(item: T): T {
+	return item.type === "tool" && item.result === undefined
+		? { ...item, status: "running" }
+		: item;
+}
+
+function markExternalTurnLive(state: ConversationState): ConversationState {
+	for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+		const message = state.messages[index];
+		if (!message || message.role !== "assistant") continue;
+		if (message.completion !== "interrupted") return state;
+		const messages = state.messages.slice();
+		messages[index] = {
+			...message,
+			content: message.content?.map(reviveExternalActivity),
+			activity: message.activity?.map(reviveExternalActivity),
+			streaming: true,
+			completion: undefined,
+			errorMessage: undefined,
+		};
+		return {
+			...state,
+			messages,
+			active: {
+				turnStartedAtMs: message.timestampMs,
+				assistantUpdatedAtMs: message.timestampMs,
+				assistantMessageId: message.id,
+				firstRuntimeUserSeen: false,
+			},
+		};
+	}
+	return state;
+}
+
 type UseChatConversationOptions = {
 	session: ChatSession;
 	activeTurnSessionIdRef?: { current: string | null };
@@ -167,12 +207,15 @@ export function useChatConversation({
 				// thread, but do not publish every partial state to React. Mounting Markdown
 				// and re-measuring the virtual list after each 400-event batch was materially
 				// slower than the reducer itself and made the loading skeleton linger.
-				const finalState = await replayConversationEventsBatched(
+				let finalState = await replayConversationEventsBatched(
 					history.events,
 					conversationReducerContext,
 					{ maxEventsPerBatch: 400 },
 				);
 				if (cancelled) return;
+				if (session.externalRunning && session.externalTurnOpen) {
+					finalState = markExternalTurnLive(finalState);
+				}
 				setConversationStates((current) => ({
 					...current,
 					[session.id]: finalState,
@@ -204,6 +247,8 @@ export function useChatConversation({
 		activeTurnSessionIdRef,
 		historyRetry,
 		onHistoryMetadata,
+		session.externalRunning,
+		session.externalTurnOpen,
 		session.id,
 		session.projectRecord.id,
 		session.sessionPath,
@@ -212,6 +257,14 @@ export function useChatConversation({
 	const conversationState = conversationStates[session.id];
 	const messages = conversationState?.messages ?? baseMessages;
 	const pendingUsers = conversationState?.pendingUsers ?? [];
+	const latestTurnInterrupted = useMemo(() => {
+		for (let index = messages.length - 1; index >= 0; index -= 1) {
+			const message = messages[index];
+			if (message?.role === "assistant")
+				return message.completion === "interrupted";
+		}
+		return false;
+	}, [messages]);
 	const activeAssistantMessageId =
 		conversationState?.active?.assistantMessageId ?? null;
 	const messagesRef = useRef(messages);
@@ -294,6 +347,7 @@ export function useChatConversation({
 		baseMessages,
 		messages,
 		pendingUsers,
+		latestTurnInterrupted,
 		activeAssistantMessageId,
 		draft,
 		setDraft,

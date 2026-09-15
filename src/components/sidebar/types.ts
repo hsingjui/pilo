@@ -18,6 +18,7 @@ export type SidebarSession = {
 	latestMessageAt: Date;
 	/** Agent 正在运行时在行尾显示加载状态。 */
 	active?: boolean;
+	externalActive?: boolean;
 };
 
 export type AppSidebarProps = {
@@ -31,8 +32,15 @@ export type AppSidebarProps = {
 	onDeleteSession?: (sessionId: string) => void;
 	onRefreshProjectSessions?: (projectId: string) => void;
 	refreshingProjectIds?: ReadonlySet<string>;
+	selectedProjectId?: string | null;
 	selectedSessionId?: string | null;
 	onSelectSession?: (sessionId: string) => void;
+	onOpenSearchSession?: (target: {
+		sessionId: string;
+		projectId: string;
+		sessionPath: string;
+		title: string;
+	}) => void;
 	onNewChat?: () => void;
 	onNewChatInProject?: (projectId: string) => void;
 	onFocusProject?: (projectId: string) => void;

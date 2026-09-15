@@ -8,8 +8,20 @@ export type AppErrorCode =
 	| "runtime_failed"
 	| "unknown";
 
+export type AppErrorArea =
+	| "connection"
+	| "runtime"
+	| "session"
+	| "model"
+	| "extension"
+	| "unknown";
+
+export type AppErrorAction = "retry" | "reconnect" | "settings" | "none";
+
 export type AppError = {
 	code: AppErrorCode;
+	area: AppErrorArea;
+	action: AppErrorAction;
 	message: string;
 	detail?: string;
 	retryable: boolean;
@@ -26,6 +38,17 @@ function rawErrorMessage(error: unknown): string {
 	return "请求失败";
 }
 
+function appError(
+	code: AppErrorCode,
+	area: AppErrorArea,
+	action: AppErrorAction,
+	message: string,
+	detail: string,
+	retryable: boolean,
+): AppError {
+	return { code, area, action, message, detail, retryable };
+}
+
 export function toAppError(error: unknown): AppError {
 	const detail = rawErrorMessage(error);
 	const text = detail.toLowerCase();
@@ -34,12 +57,14 @@ export function toAppError(error: unknown): AppError {
 		text.includes("pi was not found") ||
 		text.includes("not found in path")
 	) {
-		return {
-			code: "pi_not_found",
-			message: "未检测到可用的 Pi。请确认当前环境已安装 Pi，然后重试。",
+		return appError(
+			"pi_not_found",
+			"runtime",
+			"settings",
+			"未检测到可用的 Pi。请确认当前环境已安装 Pi，然后重试。",
 			detail,
-			retryable: false,
-		};
+			false,
+		);
 	}
 	const looksLikeSshAuthenticationFailure =
 		(text.includes("ssh") ||
@@ -49,46 +74,56 @@ export function toAppError(error: unknown): AppError {
 			text.includes("authentication") ||
 			text.includes("password"));
 	if (looksLikeSshAuthenticationFailure) {
-		return {
-			code: "authentication_failed",
-			message: "连接认证失败。请检查密码或私钥后重试。",
+		return appError(
+			"authentication_failed",
+			"connection",
+			"reconnect",
+			"连接认证失败。请检查密码或私钥后重试。",
 			detail,
-			retryable: true,
-		};
+			true,
+		);
 	}
 	if (
 		text.includes("timed out") ||
 		text.includes("timeout") ||
 		text.includes("请求超时")
 	) {
-		return {
-			code: "timeout",
-			message: "请求超时。请重试。",
+		return appError(
+			"timeout",
+			"runtime",
+			"retry",
+			"请求超时。请重试。",
 			detail,
-			retryable: true,
-		};
+			true,
+		);
 	}
 	if (
 		text.includes("no such file") ||
 		(text.includes("path") && text.includes("not found"))
 	) {
-		return {
-			code: "path_not_found",
-			message: "目标路径不存在或不可访问。请确认路径后重试。",
+		return appError(
+			"path_not_found",
+			"session",
+			"none",
+			"目标路径不存在或不可访问。请确认路径后重试。",
 			detail,
-			retryable: false,
-		};
+			false,
+		);
 	}
 	if (
 		text.includes("session") &&
-		(text.includes("not running") || text.includes("closing"))
+		(text.includes("not running") ||
+			text.includes("closing") ||
+			text.includes("changed while history"))
 	) {
-		return {
-			code: "session_unavailable",
-			message: "会话运行环境当前不可用。请重试。",
+		return appError(
+			"session_unavailable",
+			"session",
+			"retry",
+			"会话运行环境当前不可用。请重试。",
 			detail,
-			retryable: true,
-		};
+			true,
+		);
 	}
 	if (
 		text.includes("ssh") ||
@@ -97,32 +132,49 @@ export function toAppError(error: unknown): AppError {
 		text.includes("connection refused") ||
 		text.includes("connection reset")
 	) {
-		return {
-			code: "connection_unavailable",
-			message: "连接当前不可用。请检查连接设置后重试。",
+		return appError(
+			"connection_unavailable",
+			"connection",
+			"reconnect",
+			"连接当前不可用。请检查连接设置后重试。",
 			detail,
-			retryable: true,
-		};
+			true,
+		);
+	}
+	if (text.includes("model") || text.includes("provider")) {
+		return appError("unknown", "model", "retry", detail, detail, true);
+	}
+	if (text.includes("extension") || text.includes("mcp")) {
+		return appError("unknown", "extension", "retry", detail, detail, true);
 	}
 	if (
 		text.includes("pi runtime") ||
 		text.includes("pi rpc") ||
 		text.includes("process")
 	) {
-		return {
-			code: "runtime_failed",
-			message: "Pi Runtime 运行失败。请重试，仍失败请查看诊断。",
+		return appError(
+			"runtime_failed",
+			"runtime",
+			"retry",
+			"Pi Runtime 运行失败。请重试，仍失败请查看诊断。",
 			detail,
-			retryable: true,
-		};
+			true,
+		);
 	}
-	// 未识别的错误没有中文映射，继续把原始文本作为最后手段展示。
-	return {
-		code: "unknown",
-		message: detail,
-		detail,
-		retryable: true,
-	};
+	return appError("unknown", "unknown", "retry", detail, detail, true);
+}
+
+export function appErrorActionLabel(error: AppError): string | null {
+	switch (error.action) {
+		case "retry":
+			return "重试";
+		case "reconnect":
+			return "重新连接";
+		case "settings":
+			return "检查设置";
+		case "none":
+			return null;
+	}
 }
 
 /** 面向用户的错误文案：只说能做什么，原始异常留在 AppError.detail 里。 */

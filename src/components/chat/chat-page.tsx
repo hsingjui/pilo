@@ -23,10 +23,9 @@ import {
 } from "@/components/chat/chat-conversation-viewport";
 import { ChatPendingQueue } from "@/components/chat/chat-pending-queue";
 import { ChatRuntimeRecoveryNotice } from "@/components/chat/chat-runtime-recovery-notice";
-import {
-	FILE_SUGGESTION_LIMIT,
-	PI_SESSION_SUGGESTIONS,
-} from "@/components/chat/chat-composer-suggestions";
+import { ChatInterruptedTurnNotice } from "@/components/chat/chat-interrupted-turn-notice";
+import { PI_SESSION_SUGGESTIONS } from "@/components/chat/chat-composer-suggestions";
+import { createFileSuggestions } from "@/components/chat/chat-file-suggestions";
 import { PiExtensionNotifications } from "@/components/chat/pi-extension-notifications";
 import { PiExtensionUiDialog } from "@/components/chat/pi-extension-ui-dialog";
 import { SessionHeader } from "@/components/chat/chat-session-header";
@@ -72,66 +71,6 @@ type FileSuggestionCacheEntry = {
 	expiresAt: number;
 	suggestions: ComposerSuggestion[];
 };
-
-function fileSuggestionScore(path: string, query: string) {
-	if (!query) return 1;
-	const normalizedPath = path.toLowerCase();
-	const fileName = normalizedPath.slice(normalizedPath.lastIndexOf("/") + 1);
-	const normalizedQuery = query.toLowerCase();
-	if (fileName === normalizedQuery) return 100;
-	if (fileName.startsWith(normalizedQuery)) return 80;
-	if (fileName.includes(normalizedQuery)) return 50;
-	if (normalizedPath.includes(normalizedQuery)) return 30;
-	return 0;
-}
-
-function fileSuggestionDepth(path: string) {
-	return path.split("/").filter(Boolean).length;
-}
-
-function fileMentionValue(path: string) {
-	return path.includes(" ") ? `@"${path}"` : `@${path}`;
-}
-
-function compareFileSuggestionEntries(
-	a: { path: string; score: number },
-	b: { path: string; score: number },
-) {
-	const scoreDiff = b.score - a.score;
-	if (scoreDiff !== 0) return scoreDiff;
-	const depthDiff = fileSuggestionDepth(a.path) - fileSuggestionDepth(b.path);
-	if (depthDiff !== 0) return depthDiff;
-	const lengthDiff = a.path.length - b.path.length;
-	if (lengthDiff !== 0) return lengthDiff;
-	return a.path.localeCompare(b.path);
-}
-
-function createFileSuggestions(
-	paths: readonly string[],
-	query: string,
-): ComposerSuggestion[] {
-	const ranked: Array<{ path: string; score: number }> = [];
-	for (const path of paths) {
-		const entry = { path, score: fileSuggestionScore(path, query) };
-		if (entry.score <= 0) continue;
-		const insertAt = ranked.findIndex(
-			(current) => compareFileSuggestionEntries(entry, current) < 0,
-		);
-		if (insertAt < 0) ranked.push(entry);
-		else ranked.splice(insertAt, 0, entry);
-		if (ranked.length > FILE_SUGGESTION_LIMIT) ranked.pop();
-	}
-
-	return ranked.map(({ path }) => {
-		const separator = path.lastIndexOf("/");
-		return {
-			kind: "file" as const,
-			value: fileMentionValue(path),
-			label: separator >= 0 ? path.slice(separator + 1) : path,
-			detail: separator >= 0 ? path.slice(0, separator) : undefined,
-		};
-	});
-}
 
 type ChatPageProps = {
 	session: ChatSession;
@@ -285,6 +224,7 @@ function ChatPageImpl({
 	const {
 		messages,
 		pendingUsers,
+		latestTurnInterrupted,
 		activeAssistantMessageId,
 		draft,
 		setDraft,
@@ -418,6 +358,7 @@ function ChatPageImpl({
 	} = usePiSessionFeatures({
 		client,
 		active,
+		readOnly: session.externalRunning,
 		onSetEditorText: setDraft,
 		onRefreshSessionState: refreshSessionState,
 	});
@@ -439,7 +380,7 @@ function ChatPageImpl({
 			}
 			if (trigger === "/") {
 				setFileSuggestions([]);
-				void loadCommands();
+				if (!session.externalRunning) void loadCommands();
 				return;
 			}
 			if (trigger !== "@") {
@@ -447,11 +388,6 @@ function ChatPageImpl({
 				return;
 			}
 			const normalizedQuery = query.trim();
-			if (!normalizedQuery) {
-				setFileSuggestions([]);
-				return;
-			}
-
 			const cacheKey = `${session.projectRecord.id}\0${normalizedQuery.toLowerCase()}`;
 			const cached = fileSuggestionCacheRef.current.get(cacheKey);
 			if (cached && cached.expiresAt > Date.now()) {
@@ -491,7 +427,7 @@ function ChatPageImpl({
 					});
 			}, FILE_SUGGESTION_DEBOUNCE_MS);
 		},
-		[loadCommands, session.projectRecord.id],
+		[loadCommands, session.externalRunning, session.projectRecord.id],
 	);
 	useEffect(
 		() => () => {
@@ -527,6 +463,10 @@ function ChatPageImpl({
 				onNewChat?.();
 				return true;
 			}
+			if (session.externalRunning) {
+				toast.info("外部 Pi 正在运行，当前会话为只读观察模式");
+				return true;
+			}
 			if (commandName === "compact") {
 				if (running) {
 					toast.info("当前回复完成后再压缩上下文");
@@ -545,7 +485,14 @@ function ChatPageImpl({
 			}
 			return false;
 		},
-		[clearDraft, compact, onNewChat, running, tryExecuteExtensionCommand],
+		[
+			clearDraft,
+			compact,
+			onNewChat,
+			running,
+			session.externalRunning,
+			tryExecuteExtensionCommand,
+		],
 	);
 	const persistDeferredHistorySubmissions = useCallback(
 		(submissions: string[]) => {
@@ -558,6 +505,10 @@ function ChatPageImpl({
 	const handleComposerSubmit = useCallback(
 		(submission: ChatSubmission) => {
 			void (async () => {
+				if (session.externalRunning && submission.text.trim() !== "/new") {
+					toast.info("外部 Pi 正在运行，当前会话为只读观察模式");
+					return;
+				}
 				if (await tryHandleComposerCommand(submission)) return;
 				if (!historySubmissionBlocked) {
 					handleSubmit(submission);
@@ -581,6 +532,7 @@ function ChatPageImpl({
 			handleSubmit,
 			historySubmissionBlocked,
 			persistDeferredHistorySubmissions,
+			session.externalRunning,
 			tryHandleComposerCommand,
 		],
 	);
@@ -591,7 +543,8 @@ function ChatPageImpl({
 				forkingMessageId ||
 				runtimeBusy ||
 				historyPending ||
-				session.temporary
+				session.temporary ||
+				session.externalRunning
 			) {
 				return;
 			}
@@ -653,6 +606,7 @@ function ChatPageImpl({
 			runtimeBusy,
 			session.projectRecord.id,
 			session.temporary,
+			session.externalRunning,
 		],
 	);
 
@@ -749,7 +703,11 @@ function ChatPageImpl({
 			<SessionHeader
 				session={session}
 				sessionState={sessionState ?? undefined}
-				onRename={session.temporary ? undefined : handleRenameSession}
+				onRename={
+					session.temporary || session.externalRunning
+						? undefined
+						: handleRenameSession
+				}
 				onOpenChanges={onOpenChanges}
 				onOpenTerminal={onOpenTerminal}
 				terminalRunning={terminalRunning}
@@ -779,6 +737,7 @@ function ChatPageImpl({
 					forkDisabled={
 						runtimeBusy || historyPending || Boolean(forkingMessageId)
 					}
+					suppressInterruptedError={session.externalRunning || running}
 					onRetry={onRetry}
 					onRetryHistory={retryHistory}
 				/>
@@ -814,6 +773,12 @@ function ChatPageImpl({
 								void handleSendQueuedNow(item.clientMessageId)
 							}
 						/>
+						{recoveryState.status === "idle" &&
+						!session.externalRunning &&
+						!running &&
+						latestTurnInterrupted ? (
+							<ChatInterruptedTurnNotice />
+						) : null}
 						<ChatRuntimeRecoveryNotice
 							state={recoveryState}
 							onReconnect={() => void handleReconnect()}
@@ -826,7 +791,12 @@ function ChatPageImpl({
 							onDismiss={dismissExtensionNotification}
 						/>
 						<ChatComposer
-							value={draft}
+							value={session.externalRunning ? "" : draft}
+							placeholder={
+								session.externalRunning
+									? "外部 Pi 正在运行，当前会话暂不可输入"
+									: undefined
+							}
 							onChange={setDraft}
 							images={composerImages}
 							onImagesChange={setComposerImages}
@@ -850,12 +820,19 @@ function ChatPageImpl({
 										}
 									: undefined
 							}
-							disabled={recoveryState.status === "reconnecting"}
+							disabled={
+								recoveryState.status === "reconnecting" ||
+								Boolean(session.externalRunning)
+							}
+							muted={Boolean(session.externalRunning)}
 							running={running}
 							onStop={handleStop}
 							pendingSteering={pendingSteering}
 							pendingFollowUps={pendingFollowUps}
-							statusText={[historyProgress, piStatusText]
+							statusText={[
+								session.externalRunning ? "" : historyProgress,
+								piStatusText,
+							]
 								.filter(Boolean)
 								.join(" · ")}
 							retrying={retryState?.kind === "agent"}
@@ -867,7 +844,12 @@ function ChatPageImpl({
 							selectedModel={selectedModel}
 							modelLoading={modelLoadState === "loading"}
 							modelError={modelError}
-							modelDisabled={modelChanging || runtimeBusy || historyPending}
+							modelDisabled={
+								modelChanging ||
+								runtimeBusy ||
+								historyPending ||
+								session.externalRunning
+							}
 							onModelMenuOpen={() => void loadModelOptions()}
 							onModelRefresh={() => void loadModelOptions(true)}
 							onModelChange={handleModelChange}
@@ -878,6 +860,7 @@ function ChatPageImpl({
 								thinkingChanging ||
 								runtimeBusy ||
 								historyPending ||
+								session.externalRunning ||
 								thinkingLevels.length === 0
 							}
 							onThinkingMenuOpen={() => void loadThinkingLevels()}

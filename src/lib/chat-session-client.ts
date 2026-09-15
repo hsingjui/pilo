@@ -22,12 +22,18 @@ const DEFAULT_PI_RPC_TIMEOUT_MS = 10_000;
 const COMPACTION_PI_RPC_TIMEOUT_MS = 120_000;
 
 export type ChatSessionRuntimeState = {
+	sessionKey: string;
 	projectId: string;
 	sessionPath?: string | null;
 	prepared: boolean;
 	initialized: boolean;
+	activeTurn: boolean;
 	snapshot: PiSessionSnapshot;
 };
+
+export function listChatSessionRuntimeStates() {
+	return invoke<ChatSessionRuntimeState[]>("chat_session_states");
+}
 
 export function stopChatSession(projectId: string, sessionId: string) {
 	const sessionKey = JSON.stringify([projectId, sessionId]);

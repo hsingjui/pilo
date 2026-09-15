@@ -5,10 +5,10 @@ import type { ComposerSuggestion } from "@/components/chat/chat-composer";
 import type { PiExtensionNotification } from "@/components/chat/pi-extension-notifications";
 import { createChatSessionClient } from "@/lib/chat-session-client";
 import {
-	runtimeErrorMessage,
-	type PiCommand,
-	type PiloRuntimeEvent,
-} from "@/lib/pi-runtime";
+	createPiCommandSuggestions,
+	createPiExtensionCommandNames,
+} from "@/lib/pi-command-suggestions";
+import { runtimeErrorMessage, type PiloRuntimeEvent } from "@/lib/pi-runtime";
 
 type ChatSessionClient = ReturnType<typeof createChatSessionClient>;
 
@@ -34,52 +34,18 @@ type ExtensionWidget = {
 const MAX_EXTENSION_NOTIFICATIONS = 3;
 const INFO_NOTIFICATION_DURATION_MS = 5_000;
 const WARNING_NOTIFICATION_DURATION_MS = 10_000;
-const RESERVED_NATIVE_COMMANDS = new Set(["new", "compact"]);
-
 type UsePiSessionFeaturesOptions = {
 	client: ChatSessionClient;
 	active: boolean;
+	readOnly?: boolean;
 	onSetEditorText: (text: string) => void;
 	onRefreshSessionState: () => Promise<void>;
 };
 
-function commandDetail(command: {
-	description?: string;
-	source: string;
-	sourceInfo: { scope: string };
-}) {
-	return (
-		command.description ||
-		[command.source, command.sourceInfo.scope].filter(Boolean).join(" · ")
-	);
-}
-
-function availablePiCommands(commands: readonly PiCommand[]) {
-	return commands.filter(
-		(command) => !RESERVED_NATIVE_COMMANDS.has(command.name),
-	);
-}
-
-function createCommandSuggestions(commands: readonly PiCommand[]) {
-	return availablePiCommands(commands).map((command) => ({
-		kind: "command" as const,
-		value: `/${command.name}`,
-		label: `/${command.name}`,
-		detail: commandDetail(command),
-	}));
-}
-
-function createExtensionCommandNames(commands: readonly PiCommand[]) {
-	return new Set(
-		availablePiCommands(commands)
-			.filter((command) => command.source === "extension")
-			.map((command) => command.name),
-	);
-}
-
 export function usePiSessionFeatures({
 	client,
 	active,
+	readOnly = false,
 	onSetEditorText,
 	onRefreshSessionState,
 }: UsePiSessionFeaturesOptions) {
@@ -324,13 +290,13 @@ export function usePiSessionFeatures({
 	}, [client, handleExtensionRequest, onRefreshSessionState]);
 
 	const loadCommands = useCallback(async () => {
-		if (commandsLoaded || loadingCommandsRef.current) return;
+		if (readOnly || commandsLoaded || loadingCommandsRef.current) return;
 		loadingCommandsRef.current = true;
 		try {
 			await client.ensure();
 			const result = await client.getPiCommands();
-			setExtensionCommandNames(createExtensionCommandNames(result.commands));
-			setCommandSuggestions(createCommandSuggestions(result.commands));
+			setExtensionCommandNames(createPiExtensionCommandNames(result.commands));
+			setCommandSuggestions(createPiCommandSuggestions(result.commands));
 			setCommandsLoaded(true);
 		} catch (error) {
 			toast.error("无法读取 Pi 命令", {
@@ -339,10 +305,11 @@ export function usePiSessionFeatures({
 		} finally {
 			loadingCommandsRef.current = false;
 		}
-	}, [client, commandsLoaded]);
+	}, [client, commandsLoaded, readOnly]);
 
 	const tryExecuteExtensionCommand = useCallback(
 		async (message: string) => {
+			if (readOnly) return false;
 			const trimmed = message.trim();
 			if (!trimmed.startsWith("/")) return false;
 			const commandName = trimmed.slice(1).split(/\s+/, 1)[0];
@@ -352,9 +319,11 @@ export function usePiSessionFeatures({
 				let knownExtensionCommands = extensionCommandNames;
 				if (!commandsLoaded) {
 					const result = await client.getPiCommands();
-					knownExtensionCommands = createExtensionCommandNames(result.commands);
+					knownExtensionCommands = createPiExtensionCommandNames(
+						result.commands,
+					);
 					setExtensionCommandNames(knownExtensionCommands);
-					setCommandSuggestions(createCommandSuggestions(result.commands));
+					setCommandSuggestions(createPiCommandSuggestions(result.commands));
 					setCommandsLoaded(true);
 				}
 				if (!knownExtensionCommands.has(commandName)) return false;
@@ -368,12 +337,12 @@ export function usePiSessionFeatures({
 				return matchedExtension;
 			}
 		},
-		[client, commandsLoaded, extensionCommandNames],
+		[client, commandsLoaded, extensionCommandNames, readOnly],
 	);
 
 	const compact = useCallback(
 		async (customInstructions?: string) => {
-			if (compacting) return;
+			if (readOnly || compacting) return;
 			setCompacting(true);
 			try {
 				await client.ensure();
@@ -390,7 +359,7 @@ export function usePiSessionFeatures({
 				setCompacting(false);
 			}
 		},
-		[client, compacting, onRefreshSessionState],
+		[client, compacting, onRefreshSessionState, readOnly],
 	);
 
 	const abortRetry = useCallback(async () => {

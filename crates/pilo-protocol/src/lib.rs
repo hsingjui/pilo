@@ -27,6 +27,8 @@ pub const SERVER_CAPABILITIES: &[&str] = &[
     "fs.remove",
     "fs.search",
     "session.scan",
+    "session.activity",
+    "session.search",
     "session.read",
     "session.delete",
     "session.discover",

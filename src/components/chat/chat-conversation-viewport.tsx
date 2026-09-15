@@ -48,6 +48,7 @@ type ChatConversationViewportProps = {
 	onForkAssistant?: (messageId: string) => void;
 	forkingMessageId?: string | null;
 	forkDisabled?: boolean;
+	suppressInterruptedError?: boolean;
 	onRetry?: () => void;
 	onRetryHistory: () => void;
 };
@@ -60,6 +61,7 @@ type MessageRowProps = {
 	onForkAssistant?: (messageId: string) => void;
 	forkingMessageId?: string | null;
 	forkDisabled?: boolean;
+	suppressInterruptedError?: boolean;
 };
 
 const MessageRow = memo(function MessageRow({
@@ -70,6 +72,7 @@ const MessageRow = memo(function MessageRow({
 	onForkAssistant,
 	forkingMessageId,
 	forkDisabled,
+	suppressInterruptedError,
 }: MessageRowProps) {
 	return message.role === "user" ? (
 		<UserMessage message={message} />
@@ -80,6 +83,9 @@ const MessageRow = memo(function MessageRow({
 			onFork={onForkAssistant}
 			forking={forkingMessageId === message.id}
 			forkDisabled={forkDisabled}
+			suppressInterruptedError={
+				Boolean(suppressInterruptedError) && index === messageCount - 1
+			}
 			replyRunwayPx={
 				index === messageCount - 1 ? message.replyRunwayPx : undefined
 			}
@@ -106,6 +112,7 @@ const ChatConversationViewportImpl = forwardRef<
 		onForkAssistant,
 		forkingMessageId,
 		forkDisabled,
+		suppressInterruptedError,
 		onRetry,
 		onRetryHistory,
 	},
@@ -158,6 +165,7 @@ const ChatConversationViewportImpl = forwardRef<
 				onForkAssistant={onForkAssistant}
 				forkingMessageId={forkingMessageId}
 				forkDisabled={forkDisabled}
+				suppressInterruptedError={suppressInterruptedError}
 			/>
 		),
 		[
@@ -166,6 +174,7 @@ const ChatConversationViewportImpl = forwardRef<
 			messages.length,
 			onForkAssistant,
 			onOpenFile,
+			suppressInterruptedError,
 		],
 	);
 

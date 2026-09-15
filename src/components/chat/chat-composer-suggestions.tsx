@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { FileCode2, TerminalSquare } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -74,8 +75,8 @@ export function activeSuggestionQuery(
 }
 
 function SuggestionIcon({ kind }: { kind: ComposerSuggestionKind }) {
-	if (kind === "file") return <FileCode2 className="size-3.5" />;
-	return <TerminalSquare className="size-3.5" />;
+	if (kind === "file") return <FileCode2 className="size-3" />;
+	return <TerminalSquare className="size-3" />;
 }
 
 type ComposerSuggestionMenuProps = {
@@ -97,23 +98,51 @@ export function ComposerSuggestionMenu({
 	onHighlight,
 	onSelect,
 }: ComposerSuggestionMenuProps) {
+	const listRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		const list = listRef.current;
+		if (!list || suggestions.length === 0) return;
+		const item = list.querySelector<HTMLElement>(
+			`[data-suggestion-index="${highlightedIndex}"]`,
+		);
+		if (!item) return;
+
+		const listRect = list.getBoundingClientRect();
+		const itemRect = item.getBoundingClientRect();
+		if (itemRect.top < listRect.top) {
+			list.scrollTop -= listRect.top - itemRect.top;
+		} else if (itemRect.bottom > listRect.bottom) {
+			list.scrollTop += itemRect.bottom - listRect.bottom;
+		}
+	}, [highlightedIndex, suggestions.length]);
+
 	return (
 		<div
 			role="menu"
 			aria-label={`${title}建议`}
-			className="absolute bottom-[calc(100%+8px)] left-0 z-40 w-full max-w-[640px] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
+			className={cn(
+				"absolute bottom-[calc(100%+6px)] left-0 z-40 w-full overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-md",
+				activeQuery.trigger === "/" ? "max-w-[520px]" : "max-w-[600px]",
+			)}
 		>
-			<div className="flex h-8 items-center gap-2 border-b border-border/70 px-2.5 text-[11px] text-muted-foreground">
-				<span className="flex size-5 items-center justify-center rounded bg-muted font-mono text-foreground">
+			<div className="flex h-7 items-center gap-1.5 border-b border-border/70 px-2 text-[10px] text-muted-foreground">
+				<span className="flex size-4.5 items-center justify-center rounded bg-muted font-mono text-foreground">
 					{activeQuery.trigger}
 				</span>
 				<span className="font-medium text-foreground/85">{title}</span>
 				<span className="truncate">{hint}</span>
 				<span className="ml-auto hidden sm:inline">
-					↑↓ 选择 · Enter 插入 · Esc 关闭
+					↑↓ 选择 · Tab / Enter 补全 · Esc 关闭
 				</span>
 			</div>
-			<div className="scrollbar-pro max-h-60 overflow-y-auto p-1">
+			<div
+				ref={listRef}
+				className={cn(
+					"scrollbar-pro overflow-y-auto p-1",
+					activeQuery.trigger === "/" ? "max-h-44" : "max-h-52",
+				)}
+			>
 				{suggestions.length > 0 ? (
 					suggestions.map((suggestion, index) => (
 						<button
@@ -121,9 +150,10 @@ export function ComposerSuggestionMenu({
 							type="button"
 							role="menuitem"
 							aria-current={index === highlightedIndex ? "true" : undefined}
+							data-suggestion-index={index}
 							tabIndex={-1}
 							className={cn(
-								"flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs outline-hidden transition-colors",
+								"flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs outline-hidden transition-colors",
 								index === highlightedIndex
 									? "bg-hover text-hover-foreground"
 									: "text-popover-foreground hover:bg-hover/70",
@@ -132,21 +162,21 @@ export function ComposerSuggestionMenu({
 							onPointerMove={() => onHighlight(index)}
 							onClick={() => onSelect(suggestion)}
 						>
-							<span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted/35 text-muted-foreground">
+							<span className="flex size-5 shrink-0 items-center justify-center rounded border border-border/60 bg-muted/35 text-muted-foreground">
 								<SuggestionIcon kind={suggestion.kind} />
 							</span>
-							<span className="min-w-0 flex-1 truncate font-mono text-[11px]">
+							<span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-5">
 								{suggestion.label}
 							</span>
 							{suggestion.detail ? (
-								<span className="max-w-44 shrink-0 truncate text-[11px] text-muted-foreground">
+								<span className="max-w-40 shrink-0 truncate text-[10px] text-muted-foreground">
 									{suggestion.detail}
 								</span>
 							) : null}
 						</button>
 					))
 				) : (
-					<div className="px-3 py-5 text-center text-xs text-muted-foreground">
+					<div className="px-3 py-4 text-center text-xs text-muted-foreground">
 						没有匹配的{title}
 					</div>
 				)}

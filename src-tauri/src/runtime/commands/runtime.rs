@@ -7,6 +7,34 @@ use super::super::{
     PiloRuntime, events::TauriEventSink, project, server_pi::PiLaunchOptions,
     session_snapshot::PiSessionSnapshot,
 };
+use super::sessions::{SessionExternalActivity, external_session_activities_for_project};
+
+fn session_has_external_open_turn(
+    activities: &[SessionExternalActivity],
+    session_path: &str,
+) -> bool {
+    activities
+        .iter()
+        .any(|activity| activity.turn_open && activity.path == session_path)
+}
+
+async fn reject_external_session_owner(
+    runtime: &PiloRuntime,
+    project: &crate::domain::Project,
+    session_path: Option<&str>,
+) -> Result<(), String> {
+    let Some(session_path) = session_path else {
+        return Ok(());
+    };
+    let activities = external_session_activities_for_project(runtime, project).await?;
+    if session_has_external_open_turn(&activities, session_path) {
+        return Err(
+            "session is currently owned by an external Pi process; Pilo opened it in read-only observer mode"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn chat_session_prepare(
@@ -18,6 +46,7 @@ pub async fn chat_session_prepare(
     no_session: bool,
 ) -> Result<PiSessionSnapshot, String> {
     let project = project::get(&app, &project_id)?;
+    reject_external_session_owner(&runtime, &project, session_path.as_deref()).await?;
     runtime
         .chat_sessions
         .prepare(
@@ -41,6 +70,7 @@ pub async fn chat_session_start(
     no_session: bool,
 ) -> Result<PiSessionSnapshot, String> {
     let project = project::get(&app, &project_id)?;
+    reject_external_session_owner(&runtime, &project, session_path.as_deref()).await?;
     runtime
         .chat_sessions
         .ensure(
@@ -77,6 +107,13 @@ pub async fn chat_session_state(
     session_key: String,
 ) -> Result<Option<super::super::chat_sessions::ChatSessionState>, String> {
     Ok(runtime.chat_sessions.state(&session_key).await)
+}
+
+#[tauri::command]
+pub async fn chat_session_states(
+    runtime: State<'_, PiloRuntime>,
+) -> Result<Vec<super::super::chat_sessions::ChatSessionState>, String> {
+    Ok(runtime.chat_sessions.states().await)
 }
 
 #[tauri::command]
@@ -141,4 +178,36 @@ pub async fn runtime_send_rpc(
         .await
         .send_rpc(command)
         .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SessionExternalActivity, session_has_external_open_turn};
+
+    #[test]
+    fn only_open_external_turns_block_session_ownership() {
+        let activities = vec![
+            SessionExternalActivity {
+                path: "/tmp/idle.jsonl".to_owned(),
+                turn_open: false,
+            },
+            SessionExternalActivity {
+                path: "/tmp/running.jsonl".to_owned(),
+                turn_open: true,
+            },
+        ];
+
+        assert!(!session_has_external_open_turn(
+            &activities,
+            "/tmp/idle.jsonl"
+        ));
+        assert!(session_has_external_open_turn(
+            &activities,
+            "/tmp/running.jsonl"
+        ));
+        assert!(!session_has_external_open_turn(
+            &activities,
+            "/tmp/unknown.jsonl"
+        ));
+    }
 }

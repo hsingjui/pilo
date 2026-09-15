@@ -22,10 +22,11 @@ pub use projects::{
 };
 pub use runtime::{
     chat_session_prepare, chat_session_send_rpc, chat_session_start, chat_session_state,
-    chat_session_stop, project_start_pi, runtime_abort_pi, runtime_get_pi_state,
-    runtime_restart_pi, runtime_send_rpc, runtime_stop_pi,
+    chat_session_states, chat_session_stop, project_start_pi, runtime_abort_pi,
+    runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc, runtime_stop_pi,
 };
 pub use sessions::{
-    session_delete, session_generate_title, session_history, session_list, session_reconcile,
-    session_update_ui_state, session_watch_start, session_watch_stop,
+    session_delete, session_external_activity, session_generate_title, session_history,
+    session_list, session_reconcile, session_search, session_update_ui_state, session_watch_start,
+    session_watch_stop,
 };

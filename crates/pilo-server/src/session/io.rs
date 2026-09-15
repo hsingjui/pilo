@@ -60,8 +60,10 @@ pub(crate) fn session_read(params: SessionReadParams) -> Result<(Value, Vec<u8>)
     file.seek(SeekFrom::Start(params.offset))
         .map_err(|error| error.to_string())?;
     let limit = params.limit.min(MAX_BINARY_PAYLOAD_BYTES);
-    let mut data = Vec::with_capacity(limit.min(1024 * 1024));
-    file.take(limit as u64)
+    let snapshot_remaining = file_size.saturating_sub(params.offset);
+    let read_limit = (limit as u64).min(snapshot_remaining);
+    let mut data = Vec::with_capacity((read_limit as usize).min(1024 * 1024));
+    file.take(read_limit)
         .read_to_end(&mut data)
         .map_err(|error| error.to_string())?;
     let next_offset = params.offset.saturating_add(data.len() as u64);

@@ -267,13 +267,13 @@ pub(crate) fn fs_search(params: FsSearchParams) -> Result<Value, String> {
         root: &Path,
         current: &Path,
         query: &str,
-        result: &mut Vec<String>,
+        result: &mut Vec<(String, u128)>,
     ) -> Result<(), String> {
-        if result.len() >= 200 {
+        if !query.is_empty() && result.len() >= 200 {
             return Ok(());
         }
         for entry in std::fs::read_dir(current).map_err(|error| error.to_string())? {
-            if result.len() >= 200 {
+            if !query.is_empty() && result.len() >= 200 {
                 break;
             }
             let entry = entry.map_err(|error| error.to_string())?;
@@ -294,8 +294,19 @@ pub(crate) fn fs_search(params: FsSearchParams) -> Result<Value, String> {
                     .map_err(|error| error.to_string())?
                     .to_string_lossy()
                     .replace('\\', "/");
-                if relative.to_lowercase().contains(query) {
-                    result.push(relative);
+                if query.is_empty() || relative.to_lowercase().contains(query) {
+                    let modified = entry
+                        .metadata()
+                        .ok()
+                        .and_then(|metadata| metadata.modified().ok())
+                        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                        .map(|value| value.as_millis())
+                        .unwrap_or_default();
+                    result.push((relative, modified));
+                    if query.is_empty() {
+                        result.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+                        result.truncate(5);
+                    }
                 }
             }
         }
@@ -303,10 +314,15 @@ pub(crate) fn fs_search(params: FsSearchParams) -> Result<Value, String> {
     }
     let root = canonical_project(&params.project)?;
     let query = params.query.trim().to_lowercase();
-    if query.is_empty() {
-        return to_value(Vec::<String>::new());
-    }
     let mut result = Vec::new();
     visit(&root, &root, &query, &mut result)?;
-    to_value(result)
+    if query.is_empty() {
+        result.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    }
+    let paths = result
+        .into_iter()
+        .take(200)
+        .map(|(path, _)| path)
+        .collect::<Vec<_>>();
+    to_value(paths)
 }

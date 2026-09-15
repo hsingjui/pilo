@@ -7,7 +7,7 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::sync::mpsc;
 
 use crate::domain::{SessionIndexEntry, SessionReconcileResult, SessionUiStateUpdate};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::super::{
     PiloRuntime,
@@ -267,6 +267,85 @@ pub async fn session_reconcile(
         }
     }
     Ok(work.result)
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionExternalActivity {
+    pub path: String,
+    pub turn_open: bool,
+}
+
+pub(crate) async fn external_session_activities_for_project(
+    runtime: &PiloRuntime,
+    project: &crate::domain::Project,
+) -> Result<Vec<SessionExternalActivity>, String> {
+    let owned_session_paths = runtime
+        .chat_sessions
+        .states()
+        .await
+        .into_iter()
+        .filter(|state| state.project_id == project.id)
+        .filter_map(|state| state.session_path)
+        .collect::<Vec<_>>();
+    runtime
+        .servers
+        .request_typed(
+            &project.connection,
+            "session.activity",
+            serde_json::json!({
+                "project": project.path,
+                "ownedSessionPaths": owned_session_paths,
+            }),
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn session_external_activity(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    project_id: String,
+) -> Result<Vec<SessionExternalActivity>, String> {
+    let project = project::get(&app, &project_id)?;
+    external_session_activities_for_project(&runtime, &project).await
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSearchMatch {
+    pub session_path: String,
+    pub session_id: String,
+    pub role: String,
+    pub snippet: String,
+    pub timestamp: Option<serde_json::Value>,
+}
+
+#[tauri::command]
+pub async fn session_search(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    project_id: String,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<SessionSearchMatch>, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let project = project::get(&app, &project_id)?;
+    runtime
+        .servers
+        .request_typed(
+            &project.connection,
+            "session.search",
+            serde_json::json!({
+                "project": project.path,
+                "query": query,
+                "limit": limit.unwrap_or(24),
+            }),
+        )
+        .await
 }
 
 #[tauri::command]

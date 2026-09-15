@@ -141,9 +141,6 @@ pub async fn search(
     project: &Project,
     query: &str,
 ) -> Result<Vec<String>, String> {
-    if query.trim().is_empty() {
-        return Ok(Vec::new());
-    }
     servers
         .request_typed(
             &project.connection,
