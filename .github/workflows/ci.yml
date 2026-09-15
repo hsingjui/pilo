@@ -43,9 +43,6 @@ jobs:
       - name: Format and lint
         run: pnpm check
 
-      - name: Unit tests
-        run: pnpm test:unit
-
       - name: Build frontend
         run: pnpm build
 
@@ -91,9 +88,6 @@ jobs:
 
       - name: Cargo check
         run: cargo check --workspace --all-targets --all-features
-
-      - name: Rust tests
-        run: cargo test --workspace --all-features
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings

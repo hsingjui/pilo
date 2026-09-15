@@ -2974,7 +2974,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-protocol"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "prost",
  "prost-build",
@@ -2986,7 +2986,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-server"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "notify",
  "pilo-protocol",

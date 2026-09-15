@@ -28,44 +28,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-
       - name: Resolve and validate version
         id: version
         shell: bash
         run: |
           set -euo pipefail
 
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          TAURI_VERSION=$(node -e "const fs=require('fs'); process.stdout.write(JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8')).version)")
-          CARGO_VERSION=$(awk '
-            /^\[package\]$/ { in_package=1; next }
+          VERSION=$(awk '
+            /^\[workspace\.package\]$/ { in_package=1; next }
             /^\[/ && in_package { exit }
             in_package && /^version = / {
               gsub(/^version = \"|\"$/, "")
               print
               exit
             }
-          ' src-tauri/Cargo.toml)
+          ' Cargo.toml)
 
-          if [ "$PACKAGE_VERSION" != "$TAURI_VERSION" ] || [ "$PACKAGE_VERSION" != "$CARGO_VERSION" ]; then
-            echo "Version mismatch: package.json=$PACKAGE_VERSION tauri.conf.json=$TAURI_VERSION src-tauri/Cargo.toml=$CARGO_VERSION" >&2
+          if [ -z "$VERSION" ]; then
+            echo "Missing [workspace.package].version in Cargo.toml" >&2
             exit 1
           fi
 
           if [ "${{ github.event_name }}" = "push" ]; then
             TAG_VERSION="${GITHUB_REF_NAME#v}"
-            if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
-              echo "Release tag $GITHUB_REF_NAME does not match app version $PACKAGE_VERSION" >&2
+            if [ "$TAG_VERSION" != "$VERSION" ]; then
+              echo "Release tag $GITHUB_REF_NAME does not match app version $VERSION" >&2
               exit 1
             fi
           fi
 
-          echo "version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building Pilo $PACKAGE_VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building Pilo $VERSION"
 
   runtimes:
     name: Build server runtimes
@@ -272,3 +265,50 @@ jobs:
           files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Append download section to release body
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG='${{ github.ref_name }}'
+          VERSION='${{ needs.preflight.outputs.version }}'
+          REPO='${{ github.repository }}'
+
+          EXISTING_BODY=$(gh release view "$TAG" --repo "$REPO" --json body --jq '.body // ""')
+
+          if echo "$EXISTING_BODY" | grep -q '### Download / 下载'; then
+            echo "Download section already exists, skipping."
+            exit 0
+          fi
+
+          cat > download_section.md <<EOF
+
+          ---
+
+          ### Download / 下载
+
+          | Platform | File | Notes |
+          | --- | --- | --- |
+          | Windows x64 | [Pilo-v${VERSION}-x64-setup.exe](https://github.com/${REPO}/releases/download/${TAG}/Pilo-v${VERSION}-x64-setup.exe) | NSIS installer |
+          | macOS (Apple Silicon) | [Pilo-v${VERSION}-arm64.dmg](https://github.com/${REPO}/releases/download/${TAG}/Pilo-v${VERSION}-arm64.dmg) | Apple Silicon |
+
+          #### macOS installation note
+
+          Pilo is not currently signed and notarized with an Apple Developer certificate. If macOS blocks the app after installation, run:
+
+          \`\`\`bash
+          xattr -rd com.apple.quarantine /Applications/Pilo.app
+          \`\`\`
+
+          > \`.app.tar.gz\`, \`.sig\`, and \`latest.json\` are used by Tauri auto-update and do not need to be downloaded manually.
+          EOF
+
+          printf '%s\n' "$EXISTING_BODY" > release_body.md
+          cat download_section.md >> release_body.md
+
+          gh release edit "$TAG" --repo "$REPO" --notes-file release_body.md
+
+          echo "Updated release body:"
+          cat release_body.md

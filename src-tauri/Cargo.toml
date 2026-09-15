@@ -1,6 +1,6 @@
 [package]
 name = "pilo"
-version = "0.0.1"
+version.workspace = true
 description = "A Tauri App"
 authors = ["you"]
 edition = "2024"

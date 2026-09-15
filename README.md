@@ -22,14 +22,14 @@ Pilo is a desktop client for [Pi Coding Agent](https://pi.dev/), not a separate 
 
 ## Highlights
 
-| Highlight | Why it matters |
-| --- | --- |
-| Local, WSL, and SSH in one workspace | Projects stay in their original environments. Pilo runs `pilo-server` in the selected environment instead of copying remote projects to the desktop. |
-| Pi runs where the project lives | The server starts `pi --mode rpc` with the project directory as its working directory for Local, WSL, and SSH connections. |
-| Pi stays the source of truth | Sessions are read from Pi JSONL files; SQLite only stores rebuildable indexes, caches, and desktop state. |
-| Chat, tools, terminals, files, and diffs together | Pilo renders Pi thinking and tool calls alongside PTY terminals, file operations, preview ports, and Git status/diffs. |
-| Parallel agents | Multiple agent streams can run for a project and can be listed, messaged, or stopped independently. |
-| Native desktop updates | Release builds produce updater artifacts for Windows x64 and macOS arm64, and Pilo can check for updates from GitHub Releases. |
+| Highlight                                         | Why it matters                                                                                                                                       |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local, WSL, and SSH in one workspace              | Projects stay in their original environments. Pilo runs `pilo-server` in the selected environment instead of copying remote projects to the desktop. |
+| Pi runs where the project lives                   | The server starts `pi --mode rpc` with the project directory as its working directory for Local, WSL, and SSH connections.                           |
+| Pi stays the source of truth                      | Sessions are read from Pi JSONL files; SQLite only stores rebuildable indexes, caches, and desktop state.                                            |
+| Chat, tools, terminals, files, and diffs together | Pilo renders Pi thinking and tool calls alongside PTY terminals, file operations, preview ports, and Git status/diffs.                               |
+| Parallel agents                                   | Multiple agent streams can run for a project and can be listed, messaged, or stopped independently.                                                  |
+| Native desktop updates                            | Release builds produce updater artifacts for Windows x64 and macOS arm64, and Pilo can check for updates from GitHub Releases.                       |
 
 ## Architecture
 
@@ -95,28 +95,28 @@ For WSL or SSH, Pilo probes the target platform and deploys the matching `pilo-s
 
 ## Development
 
-| Command | Purpose |
-| --- | --- |
-| `pnpm check` | Run oxfmt format checks and oxlint |
-| `pnpm format` | Format the frontend with oxfmt |
-| `pnpm build` | Type-check and build the frontend |
-| `pnpm test:unit` | Run frontend unit tests |
-| `cargo fmt --all --check` | Check Rust formatting |
-| `cargo check --workspace --all-targets --all-features` | Check the Rust workspace |
-| `cargo test --workspace --all-features` | Run Rust workspace tests |
-| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Run Rust lints |
-| `pnpm server:verify` | Verify the complete six-target `pilo-server` release resource set |
+| Command                                                                | Purpose                                                           |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `pnpm check`                                                           | Run oxfmt format checks and oxlint                                |
+| `pnpm format`                                                          | Format the frontend with oxfmt                                    |
+| `pnpm build`                                                           | Type-check and build the frontend                                 |
+| `pnpm test:unit`                                                       | Run frontend unit tests                                           |
+| `cargo fmt --all --check`                                              | Check Rust formatting                                             |
+| `cargo check --workspace --all-targets --all-features`                 | Check the Rust workspace                                          |
+| `cargo test --workspace --all-features`                                | Run Rust workspace tests                                          |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Run Rust lints                                                    |
+| `pnpm server:verify`                                                   | Verify the complete six-target `pilo-server` release resource set |
 
 ## Repository layout
 
-| Path | Contents |
-| --- | --- |
-| `src/` | React UI: chat, sessions, sidebar, settings, terminals, and project interactions |
-| `src-tauri/` | Tauri app: commands, runtime managers, connection/project state, and SQLite indexes |
-| `crates/pilo-protocol/` | Wire protocol shared by the desktop app and `pilo-server` |
-| `crates/pilo-server/` | Pi streams, terminals, filesystem operations, preview ports, and session indexing inside the target environment |
-| `scripts/` | Runtime build and verification scripts |
-| `docs/` | Design notes |
+| Path                    | Contents                                                                                                        |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `src/`                  | React UI: chat, sessions, sidebar, settings, terminals, and project interactions                                |
+| `src-tauri/`            | Tauri app: commands, runtime managers, connection/project state, and SQLite indexes                             |
+| `crates/pilo-protocol/` | Wire protocol shared by the desktop app and `pilo-server`                                                       |
+| `crates/pilo-server/`   | Pi streams, terminals, filesystem operations, preview ports, and session indexing inside the target environment |
+| `scripts/`              | Runtime build and verification scripts                                                                          |
+| `docs/`                 | Design notes                                                                                                    |
 
 ## Third-Party Notices
 

@@ -22,14 +22,14 @@ Pilo 是 [Pi Coding Agent](https://pi.dev/) 的桌面客户端，不重新实现
 
 ## 核心能力
 
-| 能力 | 为什么重要 |
-| --- | --- |
-| Local、WSL、SSH 统一工作区 | 项目保留在原本的环境中；Pilo 会在所选环境中运行 `pilo-server`，不需要先把远程项目复制到桌面端。 |
-| Pi 运行在代码所在环境 | 服务端以项目目录为工作目录启动 `pi --mode rpc`，Local、WSL 与 SSH 使用一致的交互方式。 |
-| Pi 保持事实来源 | Session 直接读取 Pi 的 JSONL 文件；SQLite 只保存可重建的索引、缓存和桌面状态。 |
-| Chat、工具、终端、文件与 Diff 同窗 | Pilo 展示 Pi 的思考与工具调用，并整合 PTY 终端、文件操作、预览端口以及 Git 状态/Diff。 |
-| 并行 Agent | 同一项目可以运行多个 Agent 流，并分别列出、发送消息或停止。 |
-| 原生桌面更新 | Release 构建会为 Windows x64 与 macOS arm64 生成 updater 产物，Pilo 可以从 GitHub Releases 检查更新。 |
+| 能力                               | 为什么重要                                                                                            |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Local、WSL、SSH 统一工作区         | 项目保留在原本的环境中；Pilo 会在所选环境中运行 `pilo-server`，不需要先把远程项目复制到桌面端。       |
+| Pi 运行在代码所在环境              | 服务端以项目目录为工作目录启动 `pi --mode rpc`，Local、WSL 与 SSH 使用一致的交互方式。                |
+| Pi 保持事实来源                    | Session 直接读取 Pi 的 JSONL 文件；SQLite 只保存可重建的索引、缓存和桌面状态。                        |
+| Chat、工具、终端、文件与 Diff 同窗 | Pilo 展示 Pi 的思考与工具调用，并整合 PTY 终端、文件操作、预览端口以及 Git 状态/Diff。                |
+| 并行 Agent                         | 同一项目可以运行多个 Agent 流，并分别列出、发送消息或停止。                                           |
+| 原生桌面更新                       | Release 构建会为 Windows x64 与 macOS arm64 生成 updater 产物，Pilo 可以从 GitHub Releases 检查更新。 |
 
 ## 架构
 
@@ -95,28 +95,28 @@ bash scripts/build-pilo-server.sh <target>
 
 ## 开发
 
-| 命令 | 用途 |
-| --- | --- |
-| `pnpm check` | 运行 oxfmt 格式检查和 oxlint |
-| `pnpm format` | 使用 oxfmt 格式化前端代码 |
-| `pnpm build` | TypeScript 类型检查并构建前端 |
-| `pnpm test:unit` | 运行前端单元测试 |
-| `cargo fmt --all --check` | Rust 格式检查 |
-| `cargo check --workspace --all-targets --all-features` | Rust workspace 检查 |
-| `cargo test --workspace --all-features` | Rust workspace 测试 |
-| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Rust lint |
-| `pnpm server:verify` | 校验发布所需的完整六平台 `pilo-server` 资源集 |
+| 命令                                                                   | 用途                                          |
+| ---------------------------------------------------------------------- | --------------------------------------------- |
+| `pnpm check`                                                           | 运行 oxfmt 格式检查和 oxlint                  |
+| `pnpm format`                                                          | 使用 oxfmt 格式化前端代码                     |
+| `pnpm build`                                                           | TypeScript 类型检查并构建前端                 |
+| `pnpm test:unit`                                                       | 运行前端单元测试                              |
+| `cargo fmt --all --check`                                              | Rust 格式检查                                 |
+| `cargo check --workspace --all-targets --all-features`                 | Rust workspace 检查                           |
+| `cargo test --workspace --all-features`                                | Rust workspace 测试                           |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Rust lint                                     |
+| `pnpm server:verify`                                                   | 校验发布所需的完整六平台 `pilo-server` 资源集 |
 
 ## 目录结构
 
-| 路径 | 内容 |
-| --- | --- |
-| `src/` | React UI：聊天、Session、侧边栏、设置、终端与项目交互 |
-| `src-tauri/` | Tauri 应用：命令、运行时管理、Connection/Project 状态与 SQLite 索引 |
-| `crates/pilo-protocol/` | 桌面应用与 `pilo-server` 共用的通信协议 |
-| `crates/pilo-server/` | 运行在目标环境中的 Pi 流、终端、文件系统、预览端口与 Session 索引 |
-| `scripts/` | 运行时构建与资源校验脚本 |
-| `docs/` | 设计文档 |
+| 路径                    | 内容                                                                |
+| ----------------------- | ------------------------------------------------------------------- |
+| `src/`                  | React UI：聊天、Session、侧边栏、设置、终端与项目交互               |
+| `src-tauri/`            | Tauri 应用：命令、运行时管理、Connection/Project 状态与 SQLite 索引 |
+| `crates/pilo-protocol/` | 桌面应用与 `pilo-server` 共用的通信协议                             |
+| `crates/pilo-server/`   | 运行在目标环境中的 Pi 流、终端、文件系统、预览端口与 Session 索引   |
+| `scripts/`              | 运行时构建与资源校验脚本                                            |
+| `docs/`                 | 设计文档                                                            |
 
 ## 第三方开源声明
 

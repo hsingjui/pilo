@@ -1,7 +1,6 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
 	"productName": "Pilo",
-	"version": "0.0.1",
 	"identifier": "app.hsingjui.pilo",
 	"build": {
 		"beforeDevCommand": "pnpm dev",

@@ -2,6 +2,9 @@
 members = ["src-tauri", "crates/pilo-protocol", "crates/pilo-server"]
 resolver = "2"
 
+[workspace.package]
+version = "0.0.1"
+
 [profile.release]
 codegen-units = 1
 lto = true
