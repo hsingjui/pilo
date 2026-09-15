@@ -14,6 +14,9 @@ dist-ssr
 src-tauri/resources/pilo-server-*
 /target/
 
+# Local design notes
+docs/remote-webui-architecture.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
