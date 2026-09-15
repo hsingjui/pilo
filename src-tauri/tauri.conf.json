@@ -30,6 +30,7 @@
 	"bundle": {
 		"active": true,
 		"targets": "all",
+		"createUpdaterArtifacts": true,
 		"resources": {
 			"resources/": "runtime/",
 			"icons/128x128.png": "icons/128x128.png"
@@ -41,5 +42,16 @@
 			"icons/icon.icns",
 			"icons/icon.ico"
 		]
+	},
+	"plugins": {
+		"updater": {
+			"pubkey": "",
+			"endpoints": [
+				"https://github.com/hsingjui/pilo/releases/latest/download/latest.json"
+			],
+			"windows": {
+				"installMode": "passive"
+			}
+		}
 	}
 }

@@ -91,14 +91,13 @@ jobs:
             args: --target aarch64-apple-darwin
             arch: arm64
             artifact: Pilo-macos-arm64
-          - platform: macos-14
-            target: x86_64-apple-darwin
-            args: --target x86_64-apple-darwin
-            arch: x64
-            artifact: Pilo-macos-x64
 
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      PILO_UPDATER_PUBLIC_KEY: ${{ vars.PILO_UPDATER_PUBLIC_KEY }}
 
     steps:
       - name: Checkout
@@ -148,6 +147,19 @@ jobs:
         shell: bash
         run: bash scripts/verify-pilo-server-resources.sh
 
+      - name: Validate updater signing configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "Missing GitHub Actions secret: TAURI_SIGNING_PRIVATE_KEY" >&2
+            exit 1
+          fi
+          if [ -z "${PILO_UPDATER_PUBLIC_KEY:-}" ]; then
+            echo "Missing GitHub Actions variable: PILO_UPDATER_PUBLIC_KEY" >&2
+            exit 1
+          fi
+
       - name: Build Tauri app
         shell: bash
         run: pnpm tauri build ${{ matrix.args }}
@@ -160,13 +172,13 @@ jobs:
           $version = '${{ needs.preflight.outputs.version }}'
           New-Item -ItemType Directory -Force -Path release-assets | Out-Null
 
-          $msi = Get-ChildItem -Path 'target/release/bundle/msi' -Filter '*.msi' -Recurse | Select-Object -First 1
-          if (-not $msi) { throw 'MSI bundle was not produced' }
-          Copy-Item $msi.FullName "release-assets/Pilo-v$version-x64.msi"
-
           $nsis = Get-ChildItem -Path 'target/release/bundle/nsis' -Filter '*-setup.exe' -Recurse | Select-Object -First 1
           if (-not $nsis) { throw 'NSIS bundle was not produced' }
           Copy-Item $nsis.FullName "release-assets/Pilo-v$version-x64-setup.exe"
+
+          $nsisSig = Get-Item "$($nsis.FullName).sig" -ErrorAction SilentlyContinue
+          if (-not $nsisSig) { throw 'NSIS updater signature was not produced' }
+          Copy-Item $nsisSig.FullName "release-assets/Pilo-v$version-x64-setup.exe.sig"
 
       - name: Prepare macOS assets
         if: runner.os == 'macOS'
@@ -185,6 +197,18 @@ jobs:
             exit 1
           fi
           cp "$DMG" "release-assets/Pilo-v${VERSION}-${ARCH}.dmg"
+
+          UPDATER=$(find "$BUNDLE_DIR/macos" -type f -name '*.app.tar.gz' -print -quit)
+          if [ -z "$UPDATER" ]; then
+            echo "macOS updater bundle was not produced under $BUNDLE_DIR" >&2
+            exit 1
+          fi
+          if [ ! -f "${UPDATER}.sig" ]; then
+            echo "macOS updater signature was not produced for $UPDATER" >&2
+            exit 1
+          fi
+          cp "$UPDATER" "release-assets/Pilo-v${VERSION}-${ARCH}.app.tar.gz"
+          cp "${UPDATER}.sig" "release-assets/Pilo-v${VERSION}-${ARCH}.app.tar.gz.sig"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
@@ -210,6 +234,35 @@ jobs:
           pattern: Pilo-*
           path: release-assets
           merge-multiple: true
+
+      - name: Generate updater manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION='${{ needs.preflight.outputs.version }}'
+          TAG='${{ github.ref_name }}'
+          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+
+          WIN_SIG=$(cat "release-assets/Pilo-v${VERSION}-x64-setup.exe.sig")
+          MAC_ARM_SIG=$(cat "release-assets/Pilo-v${VERSION}-arm64.app.tar.gz.sig")
+
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "Pilo ${TAG}" \
+            --arg pub_date "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --arg win_url "$BASE_URL/Pilo-v${VERSION}-x64-setup.exe" \
+            --arg win_sig "$WIN_SIG" \
+            --arg mac_arm_url "$BASE_URL/Pilo-v${VERSION}-arm64.app.tar.gz" \
+            --arg mac_arm_sig "$MAC_ARM_SIG" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: {
+                "windows-x86_64": { url: $win_url, signature: $win_sig },
+                "darwin-aarch64": { url: $mac_arm_url, signature: $mac_arm_sig }
+              }
+            }' > release-assets/latest.json
 
       - name: List release assets
         run: ls -lah release-assets

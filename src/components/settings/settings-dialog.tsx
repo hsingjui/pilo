@@ -61,6 +61,7 @@ import {
 	SettingsSection,
 	SettingsStatus,
 } from "./compact-layout";
+import { AboutSettings } from "./about-settings";
 import { ConnectionsSettings } from "./connections-settings";
 import { KeyboardShortcutsSettings } from "./keyboard-shortcuts-settings";
 import { SessionNamingSettings } from "./session-naming-settings";
@@ -500,18 +501,6 @@ function AppearanceSettings() {
 							"w-[288px] max-w-full font-mono",
 						)}
 					/>
-				</SettingsRow>
-			</SettingsSection>
-		</div>
-	);
-}
-
-function AboutSettings() {
-	return (
-		<div className={SETTINGS_CONTAINER_CLASS}>
-			<SettingsSection>
-				<SettingsRow label="Pilo">
-					<span className="text-xs text-muted-foreground">0.1.0</span>
 				</SettingsRow>
 			</SettingsSection>
 		</div>
