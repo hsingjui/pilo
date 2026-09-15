@@ -1,41 +1,50 @@
 <p align="center">
-  <img src="./icon.png" width="128" alt="Pilo 应用图标">
+  <img src="./assets/branding/icon.png" width="128" alt="Pilo 应用图标">
 </p>
 
 <h1 align="center">Pilo</h1>
 
-<p align="center">面向 Pi Coding Agent 的桌面工作区客户端：在一个窗口中管理 Local、WSL 与 SSH 项目，同时让 Pi 始终运行在代码所在的环境。</p>
+<p align="center">简洁的 Pi Coding Agent 桌面客户端：在一个工作区中管理 Local、WSL 与 SSH 项目，同时让 Pi 始终运行在代码所在的环境。</p>
 
 <p align="center">
   <a href="./README.md">English</a> | <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
-Pilo 是 <a href="https://pi.dev/">Pi Coding Agent</a> 的桌面客户端，不重新实现 Agent。它把 Connection、Project、Session 与终端放进统一工作区，并通过 Pi 的 RPC 模式驱动实际 Agent 进程。
+<p align="center">
+  <a href="https://github.com/hsingjui/pilo/actions/workflows/ci.yml"><img src="https://github.com/hsingjui/pilo/actions/workflows/ci.yml/badge.svg" alt="CI 状态"></a>
+  <img src="https://img.shields.io/badge/Desktop-Windows%20x64%20%7C%20macOS%20arm64-4B5563?style=flat-square" alt="桌面发行平台：Windows x64 与 macOS arm64">
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2024-3776AB?style=flat-square" alt="Rust 2024 edition"></a>
+  <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Tauri-2-3776AB?style=flat-square" alt="Tauri 2"></a>
+  <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-3776AB?style=flat-square" alt="React 19"></a>
+</p>
+
+Pilo 是 [Pi Coding Agent](https://pi.dev/) 的桌面客户端，不重新实现 Agent。它负责在统一工作区中呈现 Connection、Project 与 Pi Session，而会话状态和 Agent 行为仍由 Pi 负责。
 
 ## 核心能力
 
 | 能力 | 为什么重要 |
 | --- | --- |
-| Local、WSL、SSH 统一工作区 | 项目保留在原本的环境中；Pilo 为对应连接启动或部署 `pilo-server`，不需要先把远程项目复制到桌面端。 |
-| Pi 运行在代码所在环境 | `pilo-server` 以项目目录为工作目录启动 `pi --mode rpc`，Local、WSL 与 SSH 使用同一套交互模型。 |
-| Pi Session 保持事实来源 | Pilo 围绕 Pi 的 Session 与 JSONL 数据工作，而不是维护一套独立的对话格式。 |
-| 集成终端与运行环境能力 | `pilo-server` 提供 PTY 终端、文件操作与预览端口探测等能力，操作发生在项目实际所在的环境。 |
-| 独立运行时部署 | WSL 与 SSH 会根据目标 OS/架构选择对应的 `pilo-server` 运行时并部署到目标环境。 |
+| Local、WSL、SSH 统一工作区 | 项目保留在原本的环境中；Pilo 会在所选环境中运行 `pilo-server`，不需要先把远程项目复制到桌面端。 |
+| Pi 运行在代码所在环境 | 服务端以项目目录为工作目录启动 `pi --mode rpc`，Local、WSL 与 SSH 使用一致的交互方式。 |
+| Pi 保持事实来源 | Session 直接读取 Pi 的 JSONL 文件；SQLite 只保存可重建的索引、缓存和桌面状态。 |
+| Chat、工具、终端、文件与 Diff 同窗 | Pilo 展示 Pi 的思考与工具调用，并整合 PTY 终端、文件操作、预览端口以及 Git 状态/Diff。 |
+| 并行 Agent | 同一项目可以运行多个 Agent 流，并分别列出、发送消息或停止。 |
+| 原生桌面更新 | Release 构建会为 Windows x64 与 macOS arm64 生成 updater 产物，Pilo 可以从 GitHub Releases 检查更新。 |
 
 ## 架构
 
-Pilo 分为桌面应用与连接环境中的 `pilo-server`。桌面端负责 UI、Connection 与 Project 管理；`pilo-server` 负责在目标环境中访问文件、终端和 Pi。WSL 通过 `wsl.exe` 启动服务端，SSH 则部署并远程启动匹配目标平台的服务端二进制。
+Pilo 由桌面应用和运行在目标 Connection 环境中的 `pilo-server` 组成。Local 直接运行，WSL 通过 `wsl.exe`，SSH 则向远端部署匹配平台的服务端二进制。桌面端与服务端通过 `crates/pilo-protocol` 定义的 protobuf `Envelope` 帧在 stdio 上通信。
 
 ```text
 ┌──────────────────────────────┐
 │        Pilo Desktop          │
-│       React + Tauri          │
+│       React + Tauri 2        │
 └──────────────┬───────────────┘
                │ pilo-protocol / stdio
                ▼
 ┌──────────────────────────────┐
 │          pilo-server         │
-│ Local | WSL | SSH environment│
+│   Local | WSL | SSH target   │
 └──────────────┬───────────────┘
                │ pi --mode rpc
                ▼
@@ -46,14 +55,9 @@ Pilo 分为桌面应用与连接环境中的 `pilo-server`。桌面端负责 UI�
 
 ## 快速安装
 
-当前仓库以源码构建为主。开发前需要：
+Pilo 当前以源码构建为主。开发需要 Node.js 22、pnpm（CI 使用 10.12.3）、Rust stable 工具链，以及在每个准备使用的环境中安装 Pi。
 
-- Node.js 与 pnpm
-- Rust stable 工具链
-- 在每个要使用的环境中安装并完成 Pi 的认证
-- Pi 可执行文件 `pi` 能从该环境的 `PATH` 中找到
-
-Pi 官方安装与认证说明见 [Pi Quickstart](https://pi.dev/docs/latest/quickstart)。
+Pilo 默认从 `PATH` 自动发现 `pi`。也可以在 Settings 中为每个 Connection 单独指定 Pi 可执行文件路径。
 
 ### Windows
 
@@ -71,27 +75,32 @@ pnpm server:build
 pnpm tauri dev
 ```
 
-`server:build` / `server:build:win` 只准备当前主机对应的 `pilo-server`。如果开发时要连接不同 OS 或架构的 WSL/SSH 环境，还需要在 `src-tauri/resources/` 中准备目标环境匹配的运行时。
+上面的命令只会构建当前主机对应的 `pilo-server`。WSL 和 SSH Connection 还需要在 `src-tauri/resources/` 中准备与目标 OS/架构匹配的运行时；Release 打包流程会自动准备完整运行时集合。
 
-仓库的 `Server runtimes` GitHub Actions 工作流会构建完整的六个平台运行时：Linux x64/arm64、Windows x64/arm64、macOS x64/arm64。也可以使用 `scripts/build-pilo-server.sh <target>` 显式构建受支持的目标。
+支持的服务端运行时目标为 Linux x64/arm64、Windows x64/arm64 和 macOS x64/arm64。也可以显式构建指定目标：
+
+```bash
+bash scripts/build-pilo-server.sh <target>
+```
 
 ## 快速开始
 
-1. 确认目标环境中的 `pi` 已安装、已认证，并且可从 `PATH` 找到。
-2. 使用上面的命令启动 Pilo。
-3. 选择 Local、WSL 或 SSH Connection，并添加项目目录。
-4. 打开项目 Session 并发送消息。Pilo 会在该项目目录中启动 `pi --mode rpc` 并把事件流呈现在桌面界面中。
+1. 使用 `pnpm tauri dev` 启动 Pilo。
+2. 使用默认的 Local Connection，或添加 WSL / SSH Connection。
+3. 如果 `pi` 不在 `PATH` 中，在 Settings 中为对应 Connection 指定 Pi 可执行文件路径并执行探测。
+4. 添加项目目录并打开 Session。
+5. 发送消息。Pilo 会在项目目录中启动 `pi --mode rpc`，并把会话流式呈现在工作区中。
 
-如果 WSL 或 SSH 的目标平台缺少对应 `pilo-server` 运行时，Pilo 会在部署阶段报告缺失的运行时文件；这时需要先构建或准备对应目标的资源。
+对于 WSL 或 SSH，Pilo 会先探测目标平台并部署匹配的 `pilo-server` 运行时。如果对应运行时尚未准备，Pilo 会明确报告缺失的资源，而不是使用不兼容的二进制。
 
 ## 开发
 
 | 命令 | 用途 |
 | --- | --- |
-| `pnpm check` | oxfmt 格式检查与 oxlint |
+| `pnpm check` | 运行 oxfmt 格式检查和 oxlint |
 | `pnpm format` | 使用 oxfmt 格式化前端代码 |
 | `pnpm build` | TypeScript 类型检查并构建前端 |
-| `pnpm test:unit` | 前端单元测试 |
+| `pnpm test:unit` | 运行前端单元测试 |
 | `cargo fmt --all --check` | Rust 格式检查 |
 | `cargo check --workspace --all-targets --all-features` | Rust workspace 检查 |
 | `cargo test --workspace --all-features` | Rust workspace 测试 |
@@ -102,9 +111,9 @@ pnpm tauri dev
 
 | 路径 | 内容 |
 | --- | --- |
-| `src/` | React 前端与桌面交互界面 |
-| `src-tauri/` | Tauri 应用、Connection/Project 管理与桌面运行时 |
-| `crates/pilo-protocol/` | 桌面端与 `pilo-server` 共享的通信协议 |
-| `crates/pilo-server/` | 运行在目标环境中的 Pi、终端、文件系统与 Session 服务 |
-| `scripts/` | `pilo-server` 构建与资源校验脚本 |
-| `docs/` | 项目设计文档 |
+| `src/` | React UI：聊天、Session、侧边栏、设置、终端与项目交互 |
+| `src-tauri/` | Tauri 应用：命令、运行时管理、Connection/Project 状态与 SQLite 索引 |
+| `crates/pilo-protocol/` | 桌面应用与 `pilo-server` 共用的通信协议 |
+| `crates/pilo-server/` | 运行在目标环境中的 Pi 流、终端、文件系统、预览端口与 Session 索引 |
+| `scripts/` | 运行时构建与资源校验脚本 |
+| `docs/` | 设计文档 |
