@@ -88,9 +88,11 @@ fn decode_wsl_text(bytes: &[u8]) -> String {
         bytes.len() >= 2 && (bytes.starts_with(&[0xff, 0xfe]) || bytes.contains(&0));
     if looks_utf16_le {
         let offset = usize::from(bytes.starts_with(&[0xff, 0xfe])) * 2;
-        let units = bytes[offset..]
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        let (pairs, _) = bytes[offset..].as_chunks::<2>();
+        let units = pairs
+            .iter()
+            .copied()
+            .map(u16::from_le_bytes)
             .collect::<Vec<_>>();
         return String::from_utf16_lossy(&units)
             .trim_matches('\0')
