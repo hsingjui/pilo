@@ -117,3 +117,13 @@ For WSL or SSH, Pilo probes the target platform and deploys the matching `pilo-s
 | `crates/pilo-server/` | Pi streams, terminals, filesystem operations, preview ports, and session indexing inside the target environment |
 | `scripts/` | Runtime build and verification scripts |
 | `docs/` | Design notes |
+
+## Third-Party Notices
+
+Some parts of Pilo are derived from third-party open-source software, including Lody. See [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for source and license details.
+
+## License
+
+Pilo is licensed under the [Apache License 2.0](./LICENSE).
+
+Third-party source and attribution notices are listed in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).

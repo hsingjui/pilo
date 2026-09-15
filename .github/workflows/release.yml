@@ -97,7 +97,6 @@ jobs:
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      PILO_UPDATER_PUBLIC_KEY: ${{ vars.PILO_UPDATER_PUBLIC_KEY }}
 
     steps:
       - name: Checkout
@@ -153,10 +152,6 @@ jobs:
           set -euo pipefail
           if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
             echo "Missing GitHub Actions secret: TAURI_SIGNING_PRIVATE_KEY" >&2
-            exit 1
-          fi
-          if [ -z "${PILO_UPDATER_PUBLIC_KEY:-}" ]; then
-            echo "Missing GitHub Actions variable: PILO_UPDATER_PUBLIC_KEY" >&2
             exit 1
           fi
 

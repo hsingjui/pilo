@@ -117,3 +117,13 @@ bash scripts/build-pilo-server.sh <target>
 | `crates/pilo-server/` | 运行在目标环境中的 Pi 流、终端、文件系统、预览端口与 Session 索引 |
 | `scripts/` | 运行时构建与资源校验脚本 |
 | `docs/` | 设计文档 |
+
+## 第三方开源声明
+
+Pilo 的部分代码派生或改编自第三方开源软件，包括 Lody。来源与许可证详情见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
+
+## 开源许可证
+
+Pilo 使用 [Apache License 2.0](./LICENSE) 开源。
+
+第三方代码来源与署名信息见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。

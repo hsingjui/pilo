@@ -45,7 +45,7 @@
 	},
 	"plugins": {
 		"updater": {
-			"pubkey": "",
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY0QTRGQjk4NDA5Q0Q5QTMKUldTajJaeEFtUHVrOU9XVDFzSXNuNzRLTE4rWDNPRVg1RkJJV2tFWnBGQy8yd0tEbUNFVGI4MjgK",
 			"endpoints": [
 				"https://github.com/hsingjui/pilo/releases/latest/download/latest.json"
 			],

@@ -192,6 +192,7 @@ fn external_pi_processes(_project: &Path, _owned_pids: &HashSet<u32>) -> Vec<Ext
     Vec::new()
 }
 
+#[cfg(target_os = "linux")]
 fn command_args(command: &[u8]) -> Vec<String> {
     command
         .split(|byte| *byte == 0)
@@ -200,6 +201,7 @@ fn command_args(command: &[u8]) -> Vec<String> {
         .collect()
 }
 
+#[cfg(target_os = "linux")]
 fn explicit_session_path(command: &[u8], cwd: &Path) -> Option<PathBuf> {
     let args = command_args(command);
     let value = args.windows(2).find_map(|window| {
@@ -216,6 +218,7 @@ fn explicit_session_path(command: &[u8], cwd: &Path) -> Option<PathBuf> {
     })
 }
 
+#[cfg(target_os = "linux")]
 fn looks_like_pi_command(command: &[u8]) -> bool {
     let args = command_args(command)
         .into_iter()
@@ -230,7 +233,7 @@ fn looks_like_pi_command(command: &[u8]) -> bool {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use std::path::{Path, PathBuf};
 

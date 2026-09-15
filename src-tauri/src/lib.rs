@@ -73,11 +73,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(
-            tauri_plugin_updater::Builder::new()
-                .pubkey(option_env!("PILO_UPDATER_PUBLIC_KEY").unwrap_or_default())
-                .build(),
-        )
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PiloRuntime::default())
         .invoke_handler(tauri::generate_handler![
             greet,
