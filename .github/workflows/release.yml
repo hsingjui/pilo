@@ -1,0 +1,226 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  preflight:
+    name: Release preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Resolve and validate version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          TAURI_VERSION=$(node -e "const fs=require('fs'); process.stdout.write(JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8')).version)")
+          CARGO_VERSION=$(awk '
+            /^\[package\]$/ { in_package=1; next }
+            /^\[/ && in_package { exit }
+            in_package && /^version = / {
+              gsub(/^version = \"|\"$/, "")
+              print
+              exit
+            }
+          ' src-tauri/Cargo.toml)
+
+          if [ "$PACKAGE_VERSION" != "$TAURI_VERSION" ] || [ "$PACKAGE_VERSION" != "$CARGO_VERSION" ]; then
+            echo "Version mismatch: package.json=$PACKAGE_VERSION tauri.conf.json=$TAURI_VERSION src-tauri/Cargo.toml=$CARGO_VERSION" >&2
+            exit 1
+          fi
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+              echo "Release tag $GITHUB_REF_NAME does not match app version $PACKAGE_VERSION" >&2
+              exit 1
+            fi
+          fi
+
+          echo "version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building Pilo $PACKAGE_VERSION"
+
+  runtimes:
+    name: Build server runtimes
+    needs: preflight
+    uses: ./.github/workflows/server-runtimes.yml
+    permissions:
+      contents: read
+
+  build:
+    name: Build ${{ matrix.artifact }}
+    needs: [preflight, runtimes]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-2022
+            target: ""
+            args: ""
+            arch: x64
+            artifact: Pilo-windows-x64
+          - platform: macos-14
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+            arch: arm64
+            artifact: Pilo-macos-arm64
+          - platform: macos-14
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+            arch: x64
+            artifact: Pilo-macos-x64
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.12.3
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust target
+        if: matrix.target != ''
+        shell: bash
+        run: rustup target add "${{ matrix.target }}"
+
+      - name: Cache Cargo
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: desktop-${{ matrix.artifact }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download server runtimes
+        uses: actions/download-artifact@v8
+        with:
+          name: pilo-server-runtimes
+          path: src-tauri/resources
+
+      - name: Restore Unix runtime executable bits
+        if: runner.os != 'Windows'
+        shell: bash
+        run: chmod 755 src-tauri/resources/pilo-server-linux-* src-tauri/resources/pilo-server-darwin-*
+
+      - name: Verify server runtimes
+        shell: bash
+        run: bash scripts/verify-pilo-server-resources.sh
+
+      - name: Build Tauri app
+        shell: bash
+        run: pnpm tauri build ${{ matrix.args }}
+
+      - name: Prepare Windows assets
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ needs.preflight.outputs.version }}'
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+
+          $msi = Get-ChildItem -Path 'target/release/bundle/msi' -Filter '*.msi' -Recurse | Select-Object -First 1
+          if (-not $msi) { throw 'MSI bundle was not produced' }
+          Copy-Item $msi.FullName "release-assets/Pilo-v$version-x64.msi"
+
+          $nsis = Get-ChildItem -Path 'target/release/bundle/nsis' -Filter '*-setup.exe' -Recurse | Select-Object -First 1
+          if (-not $nsis) { throw 'NSIS bundle was not produced' }
+          Copy-Item $nsis.FullName "release-assets/Pilo-v$version-x64-setup.exe"
+
+      - name: Prepare macOS assets
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION='${{ needs.preflight.outputs.version }}'
+          TARGET='${{ matrix.target }}'
+          ARCH='${{ matrix.arch }}'
+          BUNDLE_DIR="target/${TARGET}/release/bundle"
+          mkdir -p release-assets
+
+          DMG=$(find "$BUNDLE_DIR/dmg" -type f -name '*.dmg' -print -quit)
+          if [ -z "$DMG" ]; then
+            echo "DMG bundle was not produced under $BUNDLE_DIR" >&2
+            exit 1
+          fi
+          cp "$DMG" "release-assets/Pilo-v${VERSION}-${ARCH}.dmg"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [preflight, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: Pilo-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -lah release-assets
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Pilo ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,22 +1,29 @@
 name: Server runtimes
 
 on:
+  workflow_call:
   workflow_dispatch:
   push:
+    branches:
+      - "**"
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/pilo-protocol/**"
       - "crates/pilo-server/**"
       - "scripts/build-pilo-server.sh"
+      - "scripts/verify-pilo-server-resources.sh"
       - ".github/workflows/server-runtimes.yml"
 
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   build:
-    name: ${{ matrix.target }}
+    name: Build ${{ matrix.target }}
     strategy:
       fail-fast: false
       matrix:
@@ -47,13 +54,16 @@ jobs:
             resource: pilo-server-darwin-aarch64
 
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v6
 
-      - name: Install Rust target
-        shell: bash
-        run: rustup target add "${{ matrix.rust_target }}"
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
 
       - name: Install Linux ARM64 linker
         if: matrix.target == 'linux-aarch64'
@@ -62,6 +72,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes gcc-aarch64-linux-gnu libc6-dev-arm64-cross
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+
+      - name: Cache Cargo
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: pilo-server-${{ matrix.rust_target }}
 
       - name: Build runtime
         shell: bash
@@ -73,7 +89,8 @@ jobs:
           test -s "src-tauri/resources/${{ matrix.resource }}"
           wc -c "src-tauri/resources/${{ matrix.resource }}"
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload runtime
+        uses: actions/upload-artifact@v7
         with:
           name: pilo-server-${{ matrix.target }}
           path: src-tauri/resources/${{ matrix.resource }}
@@ -84,11 +101,14 @@ jobs:
     name: Bundle runtime set
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v6
 
-      - uses: actions/download-artifact@v4
+      - name: Download runtimes
+        uses: actions/download-artifact@v8
         with:
           pattern: pilo-server-*
           path: src-tauri/resources
@@ -98,7 +118,8 @@ jobs:
         shell: bash
         run: bash scripts/verify-pilo-server-resources.sh
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload runtime set
+        uses: actions/upload-artifact@v7
         with:
           name: pilo-server-runtimes
           path: src-tauri/resources/pilo-server-*
