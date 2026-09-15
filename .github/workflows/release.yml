@@ -207,7 +207,7 @@ jobs:
           retention-days: 14
 
   publish:
-    name: Publish GitHub Release
+    name: Prepare GitHub Release draft
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: [preflight, build]
     runs-on: ubuntu-latest
@@ -255,12 +255,13 @@ jobs:
       - name: List release assets
         run: ls -lah release-assets
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Create draft GitHub Release
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: Pilo ${{ github.ref_name }}
           generate_release_notes: true
+          draft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: release-assets/*
         env:
