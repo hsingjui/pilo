@@ -1,0 +1,15 @@
+.project-file-highlight .shiki {
+	min-height: 100%;
+	min-width: max-content;
+	margin: 0;
+	padding: 0.75rem;
+	background: transparent !important;
+	font-family: inherit;
+	font-size: inherit;
+	line-height: 1.55;
+	tab-size: 4;
+}
+
+.project-file-highlight code {
+	font-family: inherit;
+}

@@ -21,7 +21,7 @@ import { ChatPageLoadingFallback } from "@/components/chat/chat-page-loading-fal
 import { NewChatLanding } from "@/components/new-chat-landing";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import { CUSTOM_TITLEBAR, IS_MACOS, TitleBar } from "@/components/title-bar";
-import type { EditorOpenRequest } from "@/components/project-editor";
+import type { ViewerOpenRequest } from "@/components/project-viewer";
 import { usePreferences } from "@/lib/preferences-provider";
 import type { Project } from "@/lib/projects";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
@@ -33,9 +33,9 @@ const ChatPage = lazy(() =>
 		default: module.ChatPage,
 	})),
 );
-const ProjectEditor = lazy(() =>
-	import("@/components/project-editor").then((module) => ({
-		default: module.ProjectEditor,
+const ProjectViewer = lazy(() =>
+	import("@/components/project-viewer").then((module) => ({
+		default: module.ProjectViewer,
 	})),
 );
 const RightSidebar = lazy(() =>
@@ -53,7 +53,7 @@ const TerminalDock = lazy(() =>
 // but do not render or reserve layout space for it for now.
 const RIGHT_SIDEBAR_ENABLED = false;
 
-let editorRequestSequence = 0;
+let viewerRequestSequence = 0;
 
 function App() {
 	const { keyboardShortcuts } = usePreferences();
@@ -137,10 +137,10 @@ function App() {
 		connectionCatalog,
 		onProjectsRemoved: handleProjectsRemoved,
 	});
-	const [editorRequest, setEditorRequest] = useState<EditorOpenRequest | null>(
+	const [viewerRequest, setViewerRequest] = useState<ViewerOpenRequest | null>(
 		null,
 	);
-	const [editorVisible, setEditorVisible] = useState(false);
+	const [viewerVisible, setViewerVisible] = useState(false);
 	const [terminalOpenRequest, setTerminalOpenRequest] = useState(0);
 	const [terminalMounted, setTerminalMounted] = useState(false);
 	const [terminalVisible, setTerminalVisible] = useState(false);
@@ -164,18 +164,18 @@ function App() {
 		setTerminalMounted(false);
 		setTerminalRunning(false);
 	}, []);
-	const openEditorFile = useCallback(
+	const openViewerFile = useCallback(
 		(candidate: string) => {
 			if (!activeProject) return;
 			const path = projectRelativePath(activeProject, candidate);
 			if (!path) return;
-			editorRequestSequence += 1;
-			setEditorRequest({
-				id: editorRequestSequence,
+			viewerRequestSequence += 1;
+			setViewerRequest({
+				id: viewerRequestSequence,
 				projectId: activeProject.id,
 				path,
 			});
-			setEditorVisible(true);
+			setViewerVisible(true);
 		},
 		[activeProject],
 	);
@@ -295,7 +295,7 @@ function App() {
 													startTemporaryChat(entry.session.projectRecord.id)
 												}
 												onExpandSidebar={() => setLeftSidebarCollapsed(false)}
-												onOpenFile={openEditorFile}
+												onOpenFile={openViewerFile}
 												onSessionChanged={() => {
 													void refreshProjectSessions(
 														entry.session.projectRecord.id,
@@ -333,22 +333,22 @@ function App() {
 									sidebarCollapsed={leftSidebarCollapsed}
 								/>
 							) : null}
-							{activeProject && editorRequest ? (
+							{activeProject && viewerRequest ? (
 								<Suspense fallback={null}>
-									<ProjectEditor
-										key={`editor:${activeProject.id}`}
+									<ProjectViewer
+										key={`viewer:${activeProject.id}`}
 										project={activeProject}
 										request={
-											editorRequest?.projectId === activeProject.id
-												? editorRequest
+											viewerRequest?.projectId === activeProject.id
+												? viewerRequest
 												: undefined
 										}
 										visible={
-											editorVisible &&
-											editorRequest?.projectId === activeProject.id
+											viewerVisible &&
+											viewerRequest?.projectId === activeProject.id
 										}
 										reserveTrafficLights={IS_MACOS && leftSidebarCollapsed}
-										onClose={() => setEditorVisible(false)}
+										onClose={() => setViewerVisible(false)}
 									/>
 								</Suspense>
 							) : null}
@@ -375,7 +375,7 @@ function App() {
 										panelRef={rightPanelRef}
 										resizing={isResizing}
 										project={activeProject ?? undefined}
-										onOpenFile={openEditorFile}
+										onOpenFile={openViewerFile}
 									/>
 								</Suspense>
 							</>
