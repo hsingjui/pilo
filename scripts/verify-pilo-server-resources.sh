@@ -8,10 +8,8 @@ RESOURCE_DIR="$ROOT_DIR/src-tauri/resources"
 
 REQUIRED=(
   pilo-server-windows-x86_64.exe
-  pilo-server-windows-aarch64.exe
   pilo-server-linux-x86_64
   pilo-server-linux-aarch64
-  pilo-server-darwin-x86_64
   pilo-server-darwin-aarch64
 )
 

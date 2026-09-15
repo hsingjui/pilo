@@ -5,9 +5,8 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - "**"
+      - main
     paths:
-      - "Cargo.toml"
       - "Cargo.lock"
       - "crates/pilo-protocol/**"
       - "crates/pilo-server/**"
@@ -40,14 +39,6 @@ jobs:
             runner: windows-latest
             rust_target: x86_64-pc-windows-msvc
             resource: pilo-server-windows-x86_64.exe
-          - target: windows-aarch64
-            runner: windows-latest
-            rust_target: aarch64-pc-windows-msvc
-            resource: pilo-server-windows-aarch64.exe
-          - target: darwin-x86_64
-            runner: macos-latest
-            rust_target: x86_64-apple-darwin
-            resource: pilo-server-darwin-x86_64
           - target: darwin-aarch64
             runner: macos-latest
             rust_target: aarch64-apple-darwin

@@ -38,22 +38,8 @@ fn bundled_server_targets_have_stable_resource_names() {
             },
             "pilo-server-windows-x86_64.exe",
         ),
-        (
-            ServerTarget {
-                platform: ServerPlatform::Windows,
-                arch: ServerArch::Aarch64,
-            },
-            "pilo-server-windows-aarch64.exe",
-        ),
         (LINUX_X86_64, "pilo-server-linux-x86_64"),
         (LINUX_AARCH64, "pilo-server-linux-aarch64"),
-        (
-            ServerTarget {
-                platform: ServerPlatform::Darwin,
-                arch: ServerArch::X86_64,
-            },
-            "pilo-server-darwin-x86_64",
-        ),
         (
             ServerTarget {
                 platform: ServerPlatform::Darwin,
@@ -63,8 +49,25 @@ fn bundled_server_targets_have_stable_resource_names() {
         ),
     ];
     for (target, expected) in cases {
-        assert_eq!(target.resource_name(), expected);
+        assert_eq!(target.resource_name().unwrap(), expected);
     }
+
+    assert!(
+        ServerTarget {
+            platform: ServerPlatform::Windows,
+            arch: ServerArch::Aarch64,
+        }
+        .resource_name()
+        .is_err()
+    );
+    assert!(
+        ServerTarget {
+            platform: ServerPlatform::Darwin,
+            arch: ServerArch::X86_64,
+        }
+        .resource_name()
+        .is_err()
+    );
 }
 
 #[test]
@@ -84,6 +87,7 @@ fn platform_probe_maps_linux_and_macos_architectures() {
             arch: ServerArch::Aarch64,
         }
     );
+    assert!(parse_target_probe(b"Darwin\tx86_64\n", "test").is_err());
     assert!(parse_target_probe(b"FreeBSD\tx86_64\n", "test").is_err());
     assert!(parse_target_probe(b"Linux\triscv64\n", "test").is_err());
 }
@@ -95,7 +99,7 @@ fn current_platform_resolves_its_staged_server_runtime() {
     assert!(path.is_file());
     assert_eq!(
         path.file_name().and_then(|name| name.to_str()),
-        Some(target.resource_name())
+        Some(target.resource_name().unwrap())
     );
 }
 

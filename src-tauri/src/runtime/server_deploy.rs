@@ -44,14 +44,15 @@ pub(super) struct ServerTarget {
 }
 
 impl ServerTarget {
-    pub(super) fn resource_name(self) -> &'static str {
+    pub(super) fn resource_name(self) -> Result<&'static str, String> {
         match (self.platform, self.arch) {
-            (ServerPlatform::Windows, ServerArch::X86_64) => "pilo-server-windows-x86_64.exe",
-            (ServerPlatform::Windows, ServerArch::Aarch64) => "pilo-server-windows-aarch64.exe",
-            (ServerPlatform::Linux, ServerArch::X86_64) => "pilo-server-linux-x86_64",
-            (ServerPlatform::Linux, ServerArch::Aarch64) => "pilo-server-linux-aarch64",
-            (ServerPlatform::Darwin, ServerArch::X86_64) => "pilo-server-darwin-x86_64",
-            (ServerPlatform::Darwin, ServerArch::Aarch64) => "pilo-server-darwin-aarch64",
+            (ServerPlatform::Windows, ServerArch::X86_64) => Ok("pilo-server-windows-x86_64.exe"),
+            (ServerPlatform::Linux, ServerArch::X86_64) => Ok("pilo-server-linux-x86_64"),
+            (ServerPlatform::Linux, ServerArch::Aarch64) => Ok("pilo-server-linux-aarch64"),
+            (ServerPlatform::Darwin, ServerArch::Aarch64) => Ok("pilo-server-darwin-aarch64"),
+            (platform, arch) => Err(format!(
+                "pilo-server runtime is not bundled for {platform:?} {arch:?}"
+            )),
         }
     }
 
@@ -66,7 +67,9 @@ impl ServerTarget {
             }
         };
         let arch = parse_server_arch(arch)?;
-        Ok(Self { platform, arch })
+        let target = Self { platform, arch };
+        target.resource_name()?;
+        Ok(target)
     }
 
     pub(super) fn current() -> Result<Self, String> {
@@ -83,7 +86,9 @@ impl ServerTarget {
             ));
         };
         let arch = parse_server_arch(std::env::consts::ARCH)?;
-        Ok(Self { platform, arch })
+        let target = Self { platform, arch };
+        target.resource_name()?;
+        Ok(target)
     }
 }
 
@@ -473,7 +478,7 @@ pub(super) fn installed_server_candidates(exe: &Path, resource_name: &str) -> Ve
 }
 
 pub(super) fn server_binary(target: ServerTarget) -> Result<PathBuf, String> {
-    let resource_name = target.resource_name();
+    let resource_name = target.resource_name()?;
     if let Some(path) = std::env::var_os("PILO_SERVER_PATH")
         .map(PathBuf::from)
         .filter(|path| path.is_file())

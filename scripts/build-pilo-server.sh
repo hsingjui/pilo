@@ -65,18 +65,6 @@ case "$TARGET" in
     RESOURCE_NAME='pilo-server-windows-x86_64.exe'
     STATIC_CRT=0
     ;;
-  windows-aarch64)
-    RUST_TARGET='aarch64-pc-windows-msvc'
-    SOURCE_NAME='pilo-server.exe'
-    RESOURCE_NAME='pilo-server-windows-aarch64.exe'
-    STATIC_CRT=0
-    ;;
-  darwin-x86_64)
-    RUST_TARGET='x86_64-apple-darwin'
-    SOURCE_NAME='pilo-server'
-    RESOURCE_NAME='pilo-server-darwin-x86_64'
-    STATIC_CRT=0
-    ;;
   darwin-aarch64)
     RUST_TARGET='aarch64-apple-darwin'
     SOURCE_NAME='pilo-server'
@@ -85,7 +73,7 @@ case "$TARGET" in
     ;;
   *)
     printf 'Unsupported Pilo server target: %s\n' "$TARGET" >&2
-    printf 'Supported targets: linux-x86_64 linux-aarch64 windows-x86_64 windows-aarch64 darwin-x86_64 darwin-aarch64\n' >&2
+    printf 'Supported targets: linux-x86_64 linux-aarch64 windows-x86_64 darwin-aarch64\n' >&2
     exit 2
     ;;
 esac
