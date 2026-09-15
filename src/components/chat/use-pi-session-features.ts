@@ -4,7 +4,11 @@ import { toast } from "sonner";
 import type { ComposerSuggestion } from "@/components/chat/chat-composer";
 import type { PiExtensionNotification } from "@/components/chat/pi-extension-notifications";
 import { createChatSessionClient } from "@/lib/chat-session-client";
-import { runtimeErrorMessage, type PiloRuntimeEvent } from "@/lib/pi-runtime";
+import {
+	runtimeErrorMessage,
+	type PiCommand,
+	type PiloRuntimeEvent,
+} from "@/lib/pi-runtime";
 
 type ChatSessionClient = ReturnType<typeof createChatSessionClient>;
 
@@ -30,6 +34,7 @@ type ExtensionWidget = {
 const MAX_EXTENSION_NOTIFICATIONS = 3;
 const INFO_NOTIFICATION_DURATION_MS = 5_000;
 const WARNING_NOTIFICATION_DURATION_MS = 10_000;
+const RESERVED_NATIVE_COMMANDS = new Set(["new", "compact"]);
 
 type UsePiSessionFeaturesOptions = {
 	client: ChatSessionClient;
@@ -49,6 +54,29 @@ function commandDetail(command: {
 	);
 }
 
+function availablePiCommands(commands: readonly PiCommand[]) {
+	return commands.filter(
+		(command) => !RESERVED_NATIVE_COMMANDS.has(command.name),
+	);
+}
+
+function createCommandSuggestions(commands: readonly PiCommand[]) {
+	return availablePiCommands(commands).map((command) => ({
+		kind: "command" as const,
+		value: `/${command.name}`,
+		label: `/${command.name}`,
+		detail: commandDetail(command),
+	}));
+}
+
+function createExtensionCommandNames(commands: readonly PiCommand[]) {
+	return new Set(
+		availablePiCommands(commands)
+			.filter((command) => command.source === "extension")
+			.map((command) => command.name),
+	);
+}
+
 export function usePiSessionFeatures({
 	client,
 	active,
@@ -58,6 +86,9 @@ export function usePiSessionFeatures({
 	const [commandSuggestions, setCommandSuggestions] = useState<
 		ComposerSuggestion[]
 	>([]);
+	const [extensionCommandNames, setExtensionCommandNames] = useState<
+		Set<string>
+	>(() => new Set());
 	const [commandsLoaded, setCommandsLoaded] = useState(false);
 	const loadingCommandsRef = useRef(false);
 	const [compacting, setCompacting] = useState(false);
@@ -298,14 +329,8 @@ export function usePiSessionFeatures({
 		try {
 			await client.ensure();
 			const result = await client.getPiCommands();
-			setCommandSuggestions(
-				result.commands.map((command) => ({
-					kind: "command" as const,
-					value: `/${command.name}`,
-					label: `/${command.name}`,
-					detail: commandDetail(command),
-				})),
-			);
+			setExtensionCommandNames(createExtensionCommandNames(result.commands));
+			setCommandSuggestions(createCommandSuggestions(result.commands));
 			setCommandsLoaded(true);
 		} catch (error) {
 			toast.error("无法读取 Pi 命令", {
@@ -315,6 +340,36 @@ export function usePiSessionFeatures({
 			loadingCommandsRef.current = false;
 		}
 	}, [client, commandsLoaded]);
+
+	const tryExecuteExtensionCommand = useCallback(
+		async (message: string) => {
+			const trimmed = message.trim();
+			if (!trimmed.startsWith("/")) return false;
+			const commandName = trimmed.slice(1).split(/\s+/, 1)[0];
+			let matchedExtension = false;
+			try {
+				await client.ensure();
+				let knownExtensionCommands = extensionCommandNames;
+				if (!commandsLoaded) {
+					const result = await client.getPiCommands();
+					knownExtensionCommands = createExtensionCommandNames(result.commands);
+					setExtensionCommandNames(knownExtensionCommands);
+					setCommandSuggestions(createCommandSuggestions(result.commands));
+					setCommandsLoaded(true);
+				}
+				if (!knownExtensionCommands.has(commandName)) return false;
+				matchedExtension = true;
+				await client.executePiCommand(trimmed);
+				return true;
+			} catch (error) {
+				toast.error("无法执行 Pi Extension 命令", {
+					description: runtimeErrorMessage(error),
+				});
+				return matchedExtension;
+			}
+		},
+		[client, commandsLoaded, extensionCommandNames],
+	);
 
 	const compact = useCallback(
 		async (customInstructions?: string) => {
@@ -385,6 +440,7 @@ export function usePiSessionFeatures({
 	return {
 		commandSuggestions,
 		loadCommands,
+		tryExecuteExtensionCommand,
 		compacting,
 		compact,
 		retryState,

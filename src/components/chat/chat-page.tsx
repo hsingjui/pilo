@@ -141,6 +141,7 @@ type ChatPageProps = {
 	onOpenTerminal?: () => void;
 	terminalRunning?: boolean;
 	terminalVisible?: boolean;
+	onNewChat?: () => void;
 	onNewTemporaryChat?: () => void;
 	onExpandSidebar?: () => void;
 	onSessionChanged?: () => void;
@@ -170,6 +171,7 @@ function ChatPageImpl({
 	onOpenTerminal,
 	terminalRunning = false,
 	terminalVisible = false,
+	onNewChat,
 	onNewTemporaryChat,
 	onExpandSidebar,
 	onSessionChanged,
@@ -403,6 +405,7 @@ function ChatPageImpl({
 	const {
 		commandSuggestions,
 		loadCommands,
+		tryExecuteExtensionCommand,
 		compact,
 		retryState,
 		abortRetry,
@@ -512,6 +515,38 @@ function ChatPageImpl({
 		session.sessionPath,
 		effectiveLoadState,
 	);
+	const tryHandleComposerCommand = useCallback(
+		async (submission: ChatSubmission) => {
+			const command = submission.text.trim();
+			if (!command.startsWith("/")) return false;
+			const commandName = command.slice(1).split(/\s+/, 1)[0];
+
+			if (commandName === "new") {
+				clearDraft();
+				setComposerImages([]);
+				onNewChat?.();
+				return true;
+			}
+			if (commandName === "compact") {
+				if (running) {
+					toast.info("当前回复完成后再压缩上下文");
+					return true;
+				}
+				const customInstructions = command.slice("/compact".length).trim();
+				clearDraft();
+				setComposerImages([]);
+				void compact(customInstructions || undefined);
+				return true;
+			}
+			if (await tryExecuteExtensionCommand(command)) {
+				clearDraft();
+				setComposerImages([]);
+				return true;
+			}
+			return false;
+		},
+		[clearDraft, compact, onNewChat, running, tryExecuteExtensionCommand],
+	);
 	const persistDeferredHistorySubmissions = useCallback(
 		(submissions: string[]) => {
 			if (uiStateKey && writeUiState) {
@@ -522,41 +557,31 @@ function ChatPageImpl({
 	);
 	const handleComposerSubmit = useCallback(
 		(submission: ChatSubmission) => {
-			const command = submission.text.trim();
-			if (command === "/compact" || command.startsWith("/compact ")) {
-				if (running) {
-					toast.info("当前回复完成后再压缩上下文");
+			void (async () => {
+				if (await tryHandleComposerCommand(submission)) return;
+				if (!historySubmissionBlocked) {
+					handleSubmit(submission);
+					setComposerImages([]);
 					return;
 				}
-				const customInstructions = command.slice("/compact".length).trim();
+				if (submission.images.length > 0) {
+					toast.info("历史消息加载完成后再发送图片");
+					return;
+				}
+				const trimmed = submission.text.trim();
+				if (!trimmed) return;
+				const next = [...pendingHistorySubmissionsRef.current, trimmed];
+				pendingHistorySubmissionsRef.current = next;
+				persistDeferredHistorySubmissions(next);
 				clearDraft();
-				setComposerImages([]);
-				void compact(customInstructions || undefined);
-				return;
-			}
-			if (!historySubmissionBlocked) {
-				handleSubmit(submission);
-				setComposerImages([]);
-				return;
-			}
-			if (submission.images.length > 0) {
-				toast.info("历史消息加载完成后再发送图片");
-				return;
-			}
-			const trimmed = submission.text.trim();
-			if (!trimmed) return;
-			const next = [...pendingHistorySubmissionsRef.current, trimmed];
-			pendingHistorySubmissionsRef.current = next;
-			persistDeferredHistorySubmissions(next);
-			clearDraft();
+			})();
 		},
 		[
 			clearDraft,
-			compact,
 			handleSubmit,
 			historySubmissionBlocked,
 			persistDeferredHistorySubmissions,
-			running,
+			tryHandleComposerCommand,
 		],
 	);
 
@@ -809,8 +834,11 @@ function ChatPageImpl({
 							onSteer={
 								running
 									? (submission) => {
-											setComposerImages([]);
-											handleSteer(submission);
+											void (async () => {
+												if (await tryHandleComposerCommand(submission)) return;
+												setComposerImages([]);
+												handleSteer(submission);
+											})();
 										}
 									: undefined
 							}

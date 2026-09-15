@@ -1109,6 +1109,9 @@ function App() {
 												onOpenTerminal={toggleTerminal}
 												terminalRunning={terminalRunning}
 												terminalVisible={terminalVisible}
+												onNewChat={() =>
+													startNewChat(entry.session.projectRecord.id)
+												}
 												onNewTemporaryChat={() =>
 													startTemporaryChat(entry.session.projectRecord.id)
 												}

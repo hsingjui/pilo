@@ -26,6 +26,12 @@ export const FILE_SUGGESTION_LIMIT = 5;
 export const PI_SESSION_SUGGESTIONS: readonly ComposerSuggestion[] = [
 	{
 		kind: "command",
+		value: "/new",
+		label: "/new",
+		detail: "新建对话",
+	},
+	{
+		kind: "command",
 		value: "/compact",
 		label: "/compact",
 		detail: "压缩当前上下文",

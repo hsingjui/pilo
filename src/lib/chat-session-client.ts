@@ -95,6 +95,11 @@ export function createChatSessionClient(
 		getPiSessionStats: () => rpc<PiSessionStats>({ type: "get_session_stats" }),
 		getPiCommands: () =>
 			rpc<{ commands: PiCommand[] }>({ type: "get_commands" }),
+		executePiCommand: (message: string) =>
+			invoke<void>("chat_session_send_rpc", {
+				sessionKey,
+				command: { type: "prompt", message },
+			}),
 		getAvailablePiModels: () =>
 			rpc<{ models: PiModel[] }>({ type: "get_available_models" }),
 		getAvailablePiThinkingLevels: () =>
