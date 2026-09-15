@@ -12,6 +12,12 @@ import { Image as ImageIcon, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { userErrorMessage } from "@/lib/app-error";
+import {
+	appendChatInputHistory,
+	isChatInputHistoryCursorValid,
+	moveChatInputHistory,
+	readChatInputHistory,
+} from "@/lib/chat-input-history";
 import { isImeComposingKeyboardEvent } from "@/lib/ime";
 import { formatKeyboardShortcut } from "@/lib/keyboard-shortcuts";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
@@ -98,6 +104,7 @@ type ChatComposerProps = {
 	onThinkingChange?: (level: PiThinkingLevel | null) => void;
 	suggestions?: readonly ComposerSuggestion[];
 	onSuggestionTrigger?: (trigger: "@" | "/" | null, query: string) => void;
+	historyKey?: string | null;
 	className?: string;
 };
 
@@ -170,6 +177,7 @@ export function ChatComposer({
 	onThinkingChange,
 	suggestions = DEFAULT_SUGGESTIONS,
 	onSuggestionTrigger,
+	historyKey,
 	className,
 }: ChatComposerProps) {
 	const { sendMessageShortcut, keyboardShortcuts } = usePreferences();
@@ -180,6 +188,20 @@ export function ChatComposer({
 	const [caret, setCaret] = useState(value.length);
 	const [highlightedIndex, setHighlightedIndex] = useState(0);
 	const [dismissedQuery, setDismissedQuery] = useState<string | null>(null);
+	const historyEntriesRef = useRef<string[]>([]);
+	const historyCursorRef = useRef<number | null>(null);
+
+	const resetHistoryNavigation = () => {
+		historyEntriesRef.current = [];
+		historyCursorRef.current = null;
+	};
+
+	useEffect(() => {
+		historyEntriesRef.current = historyKey
+			? readChatInputHistory(historyKey)
+			: [];
+		historyCursorRef.current = null;
+	}, [historyKey]);
 
 	useKeyboardShortcut(
 		keyboardShortcuts["focus-composer"],
@@ -245,6 +267,11 @@ export function ChatComposer({
 
 	const createSubmission = () => createChatSubmission(value, attachments);
 
+	const rememberSubmission = (submission: ChatSubmission) => {
+		if (submission.text) appendChatInputHistory(historyKey, submission.text);
+		resetHistoryNavigation();
+	};
+
 	const canSendImages = () => {
 		if (attachments.length === 0) return true;
 		if (!selectedModel?.input || selectedModel.input.includes("image"))
@@ -258,10 +285,14 @@ export function ChatComposer({
 		if (!chatSubmissionHasContent(submission) || disabled || !canSendImages())
 			return;
 		if (running) {
-			onSteer?.(submission);
+			if (!onSteer) return;
+			rememberSubmission(submission);
+			onSteer(submission);
 			return;
 		}
-		onSubmit?.(submission);
+		if (!onSubmit) return;
+		rememberSubmission(submission);
+		onSubmit(submission);
 	};
 
 	const submitFollowUp = () => {
@@ -270,10 +301,72 @@ export function ChatComposer({
 			!chatSubmissionHasContent(submission) ||
 			disabled ||
 			!running ||
+			!onFollowUp ||
 			!canSendImages()
 		)
 			return;
-		onFollowUp?.(submission);
+		rememberSubmission(submission);
+		onFollowUp(submission);
+	};
+
+	const applyHistoryValue = (nextValue: string) => {
+		onChange(nextValue);
+		setCaret(nextValue.length);
+		setHighlightedIndex(0);
+		setDismissedQuery(null);
+		requestAnimationFrame(() => {
+			const textarea = textareaRef.current;
+			if (!textarea) return;
+			textarea.focus();
+			textarea.setSelectionRange(nextValue.length, nextValue.length);
+		});
+	};
+
+	const handleHistoryNavigation = (
+		event: KeyboardEvent<HTMLTextAreaElement>,
+	) => {
+		if (
+			(event.key !== "ArrowUp" && event.key !== "ArrowDown") ||
+			event.shiftKey ||
+			event.ctrlKey ||
+			event.metaKey ||
+			event.altKey ||
+			isImeComposingKeyboardEvent(event) ||
+			!historyKey
+		) {
+			return false;
+		}
+
+		const browsingHistory = historyCursorRef.current !== null;
+		if (
+			browsingHistory &&
+			!isChatInputHistoryCursorValid(
+				historyEntriesRef.current,
+				historyCursorRef.current,
+				value,
+			)
+		) {
+			resetHistoryNavigation();
+			return false;
+		}
+		if (!browsingHistory && value.length > 0) return false;
+
+		if (!browsingHistory) {
+			if (event.key === "ArrowDown") return false;
+			historyEntriesRef.current = readChatInputHistory(historyKey);
+		}
+
+		const result = moveChatInputHistory(
+			historyEntriesRef.current,
+			historyCursorRef.current,
+			event.key === "ArrowUp" ? "older" : "newer",
+		);
+		if (!result.handled) return false;
+
+		event.preventDefault();
+		historyCursorRef.current = result.cursor;
+		applyHistoryValue(result.value);
+		return true;
 	};
 
 	const selectSuggestion = (suggestion: ComposerSuggestion) => {
@@ -281,6 +374,7 @@ export function ChatComposer({
 		const inserted = `${suggestion.value} `;
 		const nextValue = `${value.slice(0, activeQuery.start)}${inserted}${value.slice(activeQuery.end)}`;
 		const nextCaret = activeQuery.start + inserted.length;
+		resetHistoryNavigation();
 		onChange(nextValue);
 		setCaret(nextCaret);
 		setDismissedQuery(
@@ -310,6 +404,14 @@ export function ChatComposer({
 		if (shouldFollowUpWithEnter) {
 			event.preventDefault();
 			submitFollowUp();
+			return;
+		}
+
+		if (
+			historyCursorRef.current !== null &&
+			(event.key === "ArrowUp" || event.key === "ArrowDown") &&
+			handleHistoryNavigation(event)
+		) {
 			return;
 		}
 
@@ -356,6 +458,8 @@ export function ChatComposer({
 				return;
 			}
 		}
+
+		if (handleHistoryNavigation(event)) return;
 
 		const shouldSubmitWithEnter =
 			event.key === "Enter" &&
@@ -495,6 +599,7 @@ export function ChatComposer({
 					ref={textareaRef}
 					value={value}
 					onChange={(event) => {
+						resetHistoryNavigation();
 						onChange(event.target.value);
 						setCaret(event.target.selectionStart ?? event.target.value.length);
 						setHighlightedIndex(0);

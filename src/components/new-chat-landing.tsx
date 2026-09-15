@@ -367,6 +367,7 @@ export function NewChatLanding({
 					<ConversationColumn className="relative">
 						<ChatComposer
 							value={draft}
+							historyKey={projectId}
 							onChange={setDraft}
 							onSubmit={handleSubmit}
 							disabled={false}

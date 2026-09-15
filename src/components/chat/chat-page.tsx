@@ -51,15 +51,6 @@ import { usePreferences } from "@/lib/preferences-provider";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { toast } from "sonner";
 
-function keyedWidgetLines(lines: readonly string[]) {
-	const counts = new Map<string, number>();
-	return lines.map((line) => {
-		const count = counts.get(line) ?? 0;
-		counts.set(line, count + 1);
-		return { key: `${line}:${count}`, line };
-	});
-}
-
 export type { ChatSession } from "@/components/chat/chat-page-utils";
 
 const EMPTY_CHAT_IMAGES: readonly ChatImageAttachment[] = [];
@@ -352,7 +343,6 @@ function ChatPageImpl({
 		extensionDialog,
 		respondToExtensionDialog,
 		statusText: piStatusText,
-		widgets: extensionWidgets,
 		extensionNotifications,
 		dismissExtensionNotification,
 	} = usePiSessionFeatures({
@@ -754,18 +744,6 @@ function ChatPageImpl({
 					}}
 				>
 					<ConversationColumn className="relative">
-						{extensionWidgets
-							.filter((widget) => widget.placement === "aboveEditor")
-							.map((widget) => (
-								<div
-									key={widget.key}
-									className="mb-2 rounded-lg border border-border/70 bg-muted/35 px-3 py-2 font-mono text-[11px] leading-5 text-muted-foreground"
-								>
-									{keyedWidgetLines(widget.lines).map(({ key, line }) => (
-										<div key={`${widget.key}:${key}`}>{line}</div>
-									))}
-								</div>
-							))}
 						<ChatPendingQueue
 							items={pendingUsers}
 							onEdit={(item) => void handleEditQueued(item.clientMessageId)}
@@ -792,6 +770,7 @@ function ChatPageImpl({
 						/>
 						<ChatComposer
 							value={session.externalRunning ? "" : draft}
+							historyKey={session.projectRecord.id}
 							placeholder={
 								session.externalRunning
 									? "外部 Pi 正在运行，当前会话暂不可输入"
@@ -829,12 +808,11 @@ function ChatPageImpl({
 							onStop={handleStop}
 							pendingSteering={pendingSteering}
 							pendingFollowUps={pendingFollowUps}
-							statusText={[
-								session.externalRunning ? "" : historyProgress,
-								piStatusText,
-							]
-								.filter(Boolean)
-								.join(" · ")}
+							statusText={
+								session.externalRunning
+									? ""
+									: [historyProgress, piStatusText].filter(Boolean).join(" · ")
+							}
 							retrying={retryState?.kind === "agent"}
 							onAbortRetry={() => void abortRetry()}
 							contextUsage={sessionState}
@@ -866,18 +844,6 @@ function ChatPageImpl({
 							onThinkingMenuOpen={() => void loadThinkingLevels()}
 							onThinkingChange={handleThinkingChange}
 						/>
-						{extensionWidgets
-							.filter((widget) => widget.placement === "belowEditor")
-							.map((widget) => (
-								<div
-									key={widget.key}
-									className="mt-2 rounded-lg border border-border/70 bg-muted/35 px-3 py-2 font-mono text-[11px] leading-5 text-muted-foreground"
-								>
-									{keyedWidgetLines(widget.lines).map(({ key, line }) => (
-										<div key={`${widget.key}:${key}`}>{line}</div>
-									))}
-								</div>
-							))}
 					</ConversationColumn>
 				</div>
 			</div>

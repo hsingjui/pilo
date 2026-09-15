@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { ComposerSuggestion } from "@/components/chat/chat-composer";
@@ -23,12 +23,6 @@ type RetryState = {
 	maxAttempts: number;
 	delayMs: number;
 	errorMessage: string;
-};
-
-type ExtensionWidget = {
-	key: string;
-	lines: string[];
-	placement: "aboveEditor" | "belowEditor";
 };
 
 const MAX_EXTENSION_NOTIFICATIONS = 3;
@@ -62,13 +56,6 @@ export function usePiSessionFeatures({
 	const [extensionDialogQueue, setExtensionDialogQueue] = useState<
 		PiExtensionDialogRequest[]
 	>([]);
-	const [extensionStatuses, setExtensionStatuses] = useState<
-		Record<string, string>
-	>({});
-	const [extensionWidgets, setExtensionWidgets] = useState<
-		Record<string, ExtensionWidget>
-	>({});
-	const [extensionTitle, setExtensionTitle] = useState<string | null>(null);
 	const [extensionNotifications, setExtensionNotifications] = useState<
 		PiExtensionNotification[]
 	>([]);
@@ -168,15 +155,6 @@ export function usePiSessionFeatures({
 		[],
 	);
 
-	useEffect(() => {
-		if (!active || extensionTitle === null) return;
-		const previousTitle = document.title;
-		document.title = extensionTitle;
-		return () => {
-			if (document.title === extensionTitle) document.title = previousTitle;
-		};
-	}, [active, extensionTitle]);
-
 	const handleExtensionRequest = useCallback(
 		(event: PiExtensionDialogRequest) => {
 			switch (event.method) {
@@ -188,37 +166,6 @@ export function usePiSessionFeatures({
 					break;
 				case "notify":
 					showExtensionNotification(event);
-					break;
-				case "setStatus":
-					if (!event.statusKey) break;
-					setExtensionStatuses((current) => {
-						const next = { ...current };
-						delete next[event.statusKey!];
-						if (event.statusText) next[event.statusKey!] = event.statusText;
-						return next;
-					});
-					break;
-				case "setWidget":
-					if (!event.widgetKey) break;
-					setExtensionWidgets((current) => {
-						const next = { ...current };
-						if (event.widgetLines) {
-							next[event.widgetKey!] = {
-								key: event.widgetKey!,
-								lines: event.widgetLines,
-								placement:
-									event.widgetPlacement === "belowEditor"
-										? "belowEditor"
-										: "aboveEditor",
-							};
-						} else {
-							delete next[event.widgetKey!];
-						}
-						return next;
-					});
-					break;
-				case "setTitle":
-					setExtensionTitle(event.title);
 					break;
 				case "set_editor_text":
 					if (event.text !== null) onSetEditorText(event.text);
@@ -392,19 +339,9 @@ export function usePiSessionFeatures({
 		[client, extensionDialogQueue],
 	);
 
-	const statusText = useMemo(() => {
-		if (retryState) {
-			const target = retryState.kind === "summary" ? "摘要" : "请求";
-			return `${target}重试 ${retryState.attempt}/${retryState.maxAttempts}`;
-		}
-		const statuses = Object.values(extensionStatuses);
-		return statuses[statuses.length - 1] ?? "";
-	}, [extensionStatuses, retryState]);
-
-	const widgets = useMemo(
-		() => Object.values(extensionWidgets),
-		[extensionWidgets],
-	);
+	const statusText = retryState
+		? `${retryState.kind === "summary" ? "摘要" : "请求"}重试 ${retryState.attempt}/${retryState.maxAttempts}`
+		: "";
 
 	return {
 		commandSuggestions,
@@ -417,7 +354,6 @@ export function usePiSessionFeatures({
 		extensionDialog,
 		respondToExtensionDialog,
 		statusText,
-		widgets,
 		extensionNotifications,
 		dismissExtensionNotification,
 	};

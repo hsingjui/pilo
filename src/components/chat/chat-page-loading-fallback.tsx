@@ -24,10 +24,12 @@ import { toast } from "sonner";
 const EMPTY_CHAT_IMAGES: readonly ChatImageAttachment[] = [];
 
 function LoadingComposer({
+	projectId,
 	uiStateKey,
 	readUiState,
 	writeUiState,
 }: {
+	projectId: string;
 	uiStateKey: string;
 	readUiState: (key: string) => ChatUiState;
 	writeUiState: (key: string, patch: ChatUiStatePatch) => void;
@@ -57,6 +59,7 @@ function LoadingComposer({
 			<ConversationColumn className="relative">
 				<ChatComposer
 					value={draft}
+					historyKey={projectId}
 					onChange={updateDraft}
 					onSubmit={deferSubmission}
 				/>
@@ -139,6 +142,7 @@ export function ChatPageLoadingFallback({
 					)}
 				</div>
 				<LoadingComposer
+					projectId={session.projectRecord.id}
 					uiStateKey={uiStateKey}
 					readUiState={readUiState}
 					writeUiState={writeUiState}
