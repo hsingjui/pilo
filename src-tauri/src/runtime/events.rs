@@ -1,8 +1,10 @@
-use serde::Serialize;
-use serde_json::Value;
-use tauri::{AppHandle, Emitter};
+use std::sync::{Arc, Mutex as StdMutex};
 
-pub const RUNTIME_EVENT_NAME: &str = "pilo://runtime";
+use serde::Serialize;
+use serde_json::{Value, json};
+use tauri::{AppHandle, Manager, ipc::Channel};
+
+use super::debug_trace::runtime_trace;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -196,24 +198,253 @@ pub enum RuntimeEvent {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeEventEnvelope {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    #[serde(flatten)]
+    pub event: RuntimeEvent,
+}
+
+impl RuntimeEventEnvelope {
+    pub fn global(event: RuntimeEvent) -> Self {
+        Self {
+            session_key: None,
+            project_id: None,
+            event,
+        }
+    }
+
+    pub fn session(session_key: String, project_id: String, event: RuntimeEvent) -> Self {
+        Self {
+            session_key: Some(session_key),
+            project_id: Some(project_id),
+            event,
+        }
+    }
+}
+
+fn traceable_runtime_event(event: &RuntimeEvent) -> Option<(&'static str, Value)> {
+    match event {
+        RuntimeEvent::ProcessState { generation, state } => Some((
+            "process_state",
+            json!({ "generation": generation, "state": state }),
+        )),
+        RuntimeEvent::RpcMessage {
+            generation,
+            message,
+        } if message.get("type").and_then(Value::as_str) == Some("response") => Some((
+            "rpc_message",
+            json!({
+                "generation": generation,
+                "id": message.get("id"),
+                "command": message.get("command"),
+                "success": message.get("success"),
+            }),
+        )),
+        RuntimeEvent::UserMessageStart { generation, .. } => {
+            Some(("user_message_start", json!({ "generation": generation })))
+        }
+        RuntimeEvent::AssistantMessageStart { generation } => Some((
+            "assistant_message_start",
+            json!({ "generation": generation }),
+        )),
+        RuntimeEvent::AssistantMessageEnd {
+            generation,
+            stop_reason,
+            error_message,
+        } => Some((
+            "assistant_message_end",
+            json!({
+                "generation": generation,
+                "stopReason": stop_reason,
+                "hasError": error_message.as_ref().is_some_and(|value| !value.is_empty()),
+            }),
+        )),
+        RuntimeEvent::ToolExecutionStart {
+            generation,
+            tool_call_id,
+            tool_name,
+            ..
+        } => Some((
+            "tool_execution_start",
+            json!({
+                "generation": generation,
+                "toolCallId": tool_call_id,
+                "toolName": tool_name,
+            }),
+        )),
+        RuntimeEvent::ToolExecutionEnd {
+            generation,
+            tool_call_id,
+            tool_name,
+            is_error,
+            ..
+        } => Some((
+            "tool_execution_end",
+            json!({
+                "generation": generation,
+                "toolCallId": tool_call_id,
+                "toolName": tool_name,
+                "isError": is_error,
+            }),
+        )),
+        RuntimeEvent::QueueUpdate {
+            generation,
+            steering,
+            follow_up,
+        } => Some((
+            "queue_update",
+            json!({
+                "generation": generation,
+                "steering": steering.len(),
+                "followUp": follow_up.len(),
+            }),
+        )),
+        RuntimeEvent::CompactionStart { generation, reason } => Some((
+            "compaction_start",
+            json!({ "generation": generation, "reason": reason }),
+        )),
+        RuntimeEvent::CompactionEnd {
+            generation,
+            reason,
+            aborted,
+            will_retry,
+            ..
+        } => Some((
+            "compaction_end",
+            json!({
+                "generation": generation,
+                "reason": reason,
+                "aborted": aborted,
+                "willRetry": will_retry,
+            }),
+        )),
+        RuntimeEvent::AutoRetryStart {
+            generation,
+            attempt,
+            max_attempts,
+            ..
+        } => Some((
+            "auto_retry_start",
+            json!({
+                "generation": generation,
+                "attempt": attempt,
+                "maxAttempts": max_attempts,
+            }),
+        )),
+        RuntimeEvent::AutoRetryEnd {
+            generation,
+            success,
+            attempt,
+            ..
+        } => Some((
+            "auto_retry_end",
+            json!({
+                "generation": generation,
+                "success": success,
+                "attempt": attempt,
+            }),
+        )),
+        RuntimeEvent::RuntimeError {
+            generation,
+            code,
+            message,
+        } => Some((
+            "runtime_error",
+            json!({
+                "generation": generation,
+                "code": code,
+                "message": message,
+            }),
+        )),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct RuntimeEventBus {
+    channel: Arc<StdMutex<Option<Channel<RuntimeEventEnvelope>>>>,
+}
+
+impl RuntimeEventBus {
+    pub fn subscribe(&self, channel: Channel<RuntimeEventEnvelope>) {
+        *self
+            .channel
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(channel);
+        runtime_trace("channel.subscribe", None, None, Value::Null);
+    }
+
+    pub fn send(&self, event: RuntimeEventEnvelope) {
+        let trace = traceable_runtime_event(&event.event);
+        let session_key = event.session_key.clone();
+        let channel = self
+            .channel
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let Some(channel) = channel else {
+            if let Some((event_type, detail)) = trace {
+                runtime_trace(
+                    "channel.drop_no_subscriber",
+                    session_key.as_deref(),
+                    None,
+                    json!({ "event": event_type, "eventDetail": detail }),
+                );
+            }
+            return;
+        };
+
+        if let Some((event_type, detail)) = trace.as_ref() {
+            runtime_trace(
+                "channel.send",
+                session_key.as_deref(),
+                None,
+                json!({ "event": event_type, "eventDetail": detail }),
+            );
+        }
+        if let Err(error) = channel.send(event) {
+            if let Some((event_type, detail)) = trace {
+                runtime_trace(
+                    "channel.send_error",
+                    session_key.as_deref(),
+                    None,
+                    json!({
+                        "event": event_type,
+                        "eventDetail": detail,
+                        "error": error.to_string(),
+                    }),
+                );
+            }
+            eprintln!("[runtime-events] failed to send Tauri channel event: {error}");
+        }
+    }
+}
+
 pub trait RuntimeEventSink: Clone + Send + Sync + 'static {
     fn send(&self, event: RuntimeEvent);
 }
 
 #[derive(Clone)]
 pub struct TauriEventSink {
-    app: AppHandle,
+    events: RuntimeEventBus,
 }
 
 impl TauriEventSink {
     pub fn new(app: AppHandle) -> Self {
-        Self { app }
+        Self {
+            events: app.state::<RuntimeEventBus>().inner().clone(),
+        }
     }
 }
 
 impl RuntimeEventSink for TauriEventSink {
     fn send(&self, event: RuntimeEvent) {
-        let _ = self.app.emit(RUNTIME_EVENT_NAME, event);
+        self.events.send(RuntimeEventEnvelope::global(event));
     }
 }
 
@@ -236,6 +467,29 @@ mod tests {
                 "generation": 7,
                 "stopReason": "stop",
                 "errorMessage": null
+            })
+        );
+    }
+
+    #[test]
+    fn session_envelope_keeps_routing_metadata_and_event_shape() {
+        let envelope = RuntimeEventEnvelope::session(
+            "chat-1".to_owned(),
+            "project-1".to_owned(),
+            RuntimeEvent::AssistantTextDelta {
+                generation: 4,
+                delta: "hello".to_owned(),
+            },
+        );
+
+        assert_eq!(
+            serde_json::to_value(envelope).unwrap(),
+            serde_json::json!({
+                "sessionKey": "chat-1",
+                "projectId": "project-1",
+                "type": "assistant_text_delta",
+                "generation": 4,
+                "delta": "hello"
             })
         );
     }

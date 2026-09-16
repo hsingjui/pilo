@@ -11,6 +11,8 @@ export type ChatMessage =
 			time: string;
 			timestampMs?: number;
 			queued?: "steer" | "follow_up";
+			historyPlaceholder?: boolean;
+			historyEstimatedChars?: number;
 	  }
 	| {
 			id: string;
@@ -26,6 +28,8 @@ export type ChatMessage =
 			stopReason?: string;
 			errorMessage?: string;
 			completion?: "complete" | "interrupted" | "continued";
+			historyPlaceholder?: boolean;
+			historyEstimatedChars?: number;
 	  };
 
 export type ConversationEventMeta = {

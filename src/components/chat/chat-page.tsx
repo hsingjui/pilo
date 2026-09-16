@@ -6,6 +6,7 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	type ReactNode,
 } from "react";
 
 import type {
@@ -34,12 +35,19 @@ import {
 	routeInitialDeferredSubmissions,
 	shouldDeferSubmissionUntilHistoryReady,
 } from "@/components/chat/chat-submission-state";
-import { useChatConversation } from "@/components/chat/use-chat-conversation";
+import {
+	useChatConversation,
+	useChatConversationView,
+} from "@/components/chat/use-chat-conversation";
 import { useChatRuntime } from "@/components/chat/use-chat-runtime";
 import { useChatSessionConfig } from "@/components/chat/use-chat-session-config";
 import { usePiSessionFeatures } from "@/components/chat/use-pi-session-features";
 import { userErrorMessage } from "@/lib/app-error";
 import { createChatSessionClient } from "@/lib/chat-session-client";
+import {
+	getActiveStreamingPresentationChars,
+	getStreamingPresentationIntervalMs,
+} from "@/lib/chat-stream-presentation";
 import {
 	createChatSubmission,
 	type ChatImageAttachment,
@@ -47,6 +55,11 @@ import {
 } from "@/lib/chat-submission";
 import { searchProjectFiles } from "@/lib/files";
 import { resolveAssistantForkTarget } from "@/lib/pi-session-fork";
+import type { CacheSnapshot } from "virtua";
+import type { ChatConversationStore } from "@/components/chat/chat-conversation-store";
+import type { ChatHistoryWindowStore } from "@/components/chat/chat-history-window-store";
+import type { ChatMessage } from "@/lib/conversation-types";
+
 import { usePreferences } from "@/lib/preferences-provider";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { toast } from "sonner";
@@ -76,6 +89,7 @@ type ChatPageProps = {
 	onExpandSidebar?: () => void;
 	onSessionChanged?: () => void;
 	controllerId?: string;
+	performanceSessionId?: string;
 	uiStateKey?: string;
 	readUiState?: (key: string) => ChatUiState;
 	writeUiState?: (key: string, patch: ChatUiStatePatch) => void;
@@ -93,32 +107,62 @@ type ChatPageProps = {
 	sidebarCollapsed?: boolean;
 };
 
-function ChatPageImpl({
-	session,
-	active = true,
-	onSessionIdentified,
-	onOpenChanges,
-	onOpenTerminal,
-	terminalRunning = false,
-	terminalVisible = false,
-	onNewChat,
-	onNewTemporaryChat,
-	onExpandSidebar,
-	onSessionChanged,
-	controllerId,
-	uiStateKey,
-	readUiState,
-	writeUiState,
-	onRuntimeBusyChange,
-	onOpenFile,
-	onForkSessionCreated,
-	initialMessage,
-	initialImages = EMPTY_CHAT_IMAGES,
-	loadState = "ready",
-	onRetry,
-	reserveWindowControls = false,
-	sidebarCollapsed = false,
-}: ChatPageProps) {
+function ChatConversationSubscriber({
+	conversationStore,
+	historyStore,
+	baseMessages,
+	sessionPath,
+	historyLoadState,
+	loadState,
+	children,
+}: {
+	conversationStore: ChatConversationStore;
+	historyStore: ChatHistoryWindowStore;
+	baseMessages: ChatMessage[];
+	sessionPath?: string;
+	historyLoadState: "ready" | "loading" | "error";
+	loadState: "ready" | "loading" | "error";
+	children: (view: ReturnType<typeof useChatConversationView>) => ReactNode;
+}) {
+	const view = useChatConversationView({
+		conversationStore,
+		historyStore,
+		baseMessages,
+		sessionPath,
+		historyLoadState,
+		loadState,
+	});
+	return children(view);
+}
+
+function ChatPageImpl(props: ChatPageProps) {
+	const {
+		session,
+		active = true,
+		onSessionIdentified,
+		onOpenChanges,
+		onOpenTerminal,
+		terminalRunning = false,
+		terminalVisible = false,
+		onNewChat,
+		onNewTemporaryChat,
+		onExpandSidebar,
+		onSessionChanged,
+		controllerId,
+		performanceSessionId,
+		uiStateKey,
+		readUiState,
+		writeUiState,
+		onRuntimeBusyChange,
+		onOpenFile,
+		onForkSessionCreated,
+		initialMessage,
+		initialImages = EMPTY_CHAT_IMAGES,
+		loadState = "ready",
+		onRetry,
+		reserveWindowControls = false,
+		sidebarCollapsed = false,
+	} = props;
 	const { desktopNotifications, keyboardShortcuts } = usePreferences();
 	const [initialUiState] = useState<ChatUiState>(() =>
 		uiStateKey && readUiState
@@ -164,22 +208,28 @@ function ChatPageImpl({
 		},
 		[uiStateKey, writeUiState],
 	);
+	const persistVirtualizerCache = useCallback(
+		(cache: CacheSnapshot, messageCount: number) => {
+			if (!uiStateKey || !writeUiState) return;
+			writeUiState(uiStateKey, {
+				virtualizerCache: cache,
+				virtualizerMessageCount: messageCount,
+			});
+		},
+		[uiStateKey, writeUiState],
+	);
 	const activeTurnSessionIdRef = useRef<string | null>(null);
 	const client = useMemo(
 		() =>
-			createChatSessionClient(
-				session.projectRecord.id,
-				session.id,
-				session.sessionPath,
-				{ noSession: session.temporary },
-			),
-		[
-			session.projectRecord.id,
-			session.id,
-			session.sessionPath,
-			session.temporary,
-		],
+			createChatSessionClient(session.projectRecord.id, session.id, undefined, {
+				noSession: session.temporary,
+				owner: "chat_controller",
+			}),
+		[session.projectRecord.id, session.id, session.temporary],
 	);
+	useEffect(() => {
+		client.updateSessionPath(session.sessionPath);
+	}, [client, session.sessionPath]);
 	useEffect(() => {
 		if (!active || session.sessionPath) return;
 		void client.prepare().catch((error) => {
@@ -187,6 +237,11 @@ function ChatPageImpl({
 		});
 	}, [active, client, session.sessionPath]);
 
+	const sessionConfig = useChatSessionConfig({
+		session,
+		client,
+		onSessionChanged,
+	});
 	const {
 		sessionState,
 		modelOptions,
@@ -207,35 +262,39 @@ function ChatPageImpl({
 		handleThinkingChange,
 		prepareRuntimeConfiguration,
 		refreshSessionState,
-	} = useChatSessionConfig({
-		session,
-		client,
-		onSessionChanged,
-	});
-	const {
-		messages,
-		pendingUsers,
-		latestTurnInterrupted,
-		activeAssistantMessageId,
-		draft,
-		setDraft,
-		clearDraft,
-		dispatchConversationBatch,
-		historyProgress,
-		effectiveLoadState,
-		historyPending,
-		retryHistory,
-		refreshHistoryIfStale,
-	} = useChatConversation({
+	} = sessionConfig;
+	const conversation = useChatConversation({
 		session,
 		activeTurnSessionIdRef,
 		initialMessage,
 		initialImages,
 		initialDraft: initialUiState.draft,
-		loadState,
 		onDraftChange: persistDraft,
 		onHistoryMetadata: applyHistoryMetadata,
 	});
+	const {
+		conversationStore,
+		historyStore,
+		baseMessages,
+		draft,
+		setDraft,
+		clearDraft,
+		dispatchConversationBatch,
+		getConversationMessages,
+		requestHistoryRange,
+		historyLoadState,
+		historyProgress,
+		historyPending,
+		retryHistory,
+		refreshHistoryIfStale,
+	} = conversation;
+	const getActivePresentationIntervalMs = useCallback(
+		() =>
+			getStreamingPresentationIntervalMs(
+				getActiveStreamingPresentationChars(conversationStore.getSnapshot()),
+			),
+		[conversationStore],
+	);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
 	const conversationViewportRef = useRef<ChatConversationViewportHandle>(null);
@@ -301,6 +360,26 @@ function ChatPageImpl({
 		},
 		[setDraft],
 	);
+	const runtime = useChatRuntime({
+		active,
+		session,
+		client,
+		activeTurnSessionIdRef,
+		initialMessage,
+		initialImages,
+		initialQueuedMessages: initialDeferredSubmissions.runtime,
+		desktopNotifications,
+		onSessionIdentified,
+		dispatchConversationBatch,
+		getActivePresentationIntervalMs,
+		scrollRef,
+		scrollToBottom,
+		clearDraft,
+		restoreSubmission,
+		recoverSubmission,
+		prepareRuntimeConfiguration,
+		refreshSessionState,
+	});
 	const {
 		activeTurnSessionId,
 		pendingSteering,
@@ -315,23 +394,13 @@ function ChatPageImpl({
 		handleEditQueued,
 		handleSendQueuedNow,
 		handleStop,
-	} = useChatRuntime({
-		session,
+	} = runtime;
+	const piFeatures = usePiSessionFeatures({
 		client,
-		activeTurnSessionIdRef,
-		initialMessage,
-		initialImages,
-		initialQueuedMessages: initialDeferredSubmissions.runtime,
-		desktopNotifications,
-		onSessionIdentified,
-		dispatchConversationBatch,
-		scrollRef,
-		scrollToBottom,
-		clearDraft,
-		restoreSubmission,
-		recoverSubmission,
-		prepareRuntimeConfiguration,
-		refreshSessionState,
+		active,
+		readOnly: session.externalRunning,
+		onSetEditorText: setDraft,
+		onRefreshSessionState: refreshSessionState,
 	});
 	const {
 		commandSuggestions,
@@ -345,13 +414,7 @@ function ChatPageImpl({
 		statusText: piStatusText,
 		extensionNotifications,
 		dismissExtensionNotification,
-	} = usePiSessionFeatures({
-		client,
-		active,
-		readOnly: session.externalRunning,
-		onSetEditorText: setDraft,
-		onRefreshSessionState: refreshSessionState,
-	});
+	} = piFeatures;
 	const [fileSuggestions, setFileSuggestions] = useState<ComposerSuggestion[]>(
 		[],
 	);
@@ -437,9 +500,16 @@ function ChatPageImpl({
 		[commandSuggestions, fileSuggestions],
 	);
 
+	const controllerMessageCount =
+		conversationStore.getSnapshot()?.messages.length ?? baseMessages.length;
+	const controllerEffectiveLoadState = session.sessionPath
+		? historyLoadState === "loading" && controllerMessageCount > 0
+			? "ready"
+			: historyLoadState
+		: loadState;
 	const historySubmissionBlocked = shouldDeferSubmissionUntilHistoryReady(
 		session.sessionPath,
-		effectiveLoadState,
+		controllerEffectiveLoadState,
 	);
 	const tryHandleComposerCommand = useCallback(
 		async (submission: ChatSubmission) => {
@@ -552,12 +622,17 @@ function ChatPageImpl({
 				if (!sourceState.sessionFile) {
 					throw new Error("当前会话尚未保存，暂时无法 Fork。");
 				}
-				const target = resolveAssistantForkTarget(messages, messageId, entries);
+				const target = resolveAssistantForkTarget(
+					getConversationMessages(),
+					messageId,
+					entries,
+				);
 				const forkRuntimeId = `fork-runtime-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 				forkClient = createChatSessionClient(
 					session.projectRecord.id,
 					forkRuntimeId,
 					sourceState.sessionFile,
+					{ owner: "fork" },
 				);
 				await forkClient.ensure();
 				const result =
@@ -582,7 +657,7 @@ function ChatPageImpl({
 					description: userErrorMessage(error),
 				});
 			} finally {
-				await forkClient?.stop().catch(() => undefined);
+				await forkClient?.dispose("fork_cleanup").catch(() => undefined);
 				setForkingMessageId(null);
 			}
 			if (forkedSession) onForkSessionCreated?.(forkedSession);
@@ -591,7 +666,7 @@ function ChatPageImpl({
 			client,
 			forkingMessageId,
 			historyPending,
-			messages,
+			getConversationMessages,
 			onForkSessionCreated,
 			runtimeBusy,
 			session.projectRecord.id,
@@ -619,14 +694,6 @@ function ChatPageImpl({
 	useEffect(() => {
 		if (controllerId) onRuntimeBusyChange?.(controllerId, runtimeBusy);
 	}, [controllerId, onRuntimeBusyChange, runtimeBusy]);
-
-	const previousClientRef = useRef(client);
-	useEffect(() => {
-		const previousClient = previousClientRef.current;
-		if (previousClient === client) return;
-		previousClientRef.current = client;
-		void previousClient.stop().catch(() => undefined);
-	}, [client]);
 
 	useEffect(
 		() => () => {
@@ -679,179 +746,213 @@ function ChatPageImpl({
 		},
 	);
 
-	// Keep the session controller subscribed while its view is in the background.
+	// The controller stays mounted for busy/background sessions. Keep the visual
+	// tree active-only so background Pi output never drives Markdown/Virtua work.
 	if (!active) return null;
-	const viewportUiState =
-		uiStateKey && readUiState ? readUiState(uiStateKey) : initialUiState;
-	const emptyTemporarySession =
-		Boolean(session.temporary) &&
-		effectiveLoadState === "ready" &&
-		messages.length === 0;
 
 	return (
-		<div className="flex h-full min-w-0 flex-col bg-background">
-			<SessionHeader
-				session={session}
-				sessionState={sessionState ?? undefined}
-				onRename={
-					session.temporary || session.externalRunning
-						? undefined
-						: handleRenameSession
-				}
-				onOpenChanges={onOpenChanges}
-				onOpenTerminal={onOpenTerminal}
-				terminalRunning={terminalRunning}
-				terminalVisible={terminalVisible}
-				onNewTemporaryChat={onNewTemporaryChat}
-				onExpandSidebar={onExpandSidebar}
-				reserveWindowControls={reserveWindowControls}
-				sidebarCollapsed={sidebarCollapsed}
-				overlay={emptyTemporarySession}
-			/>
-			<div className="relative flex min-h-0 flex-1 flex-col">
-				<ChatConversationViewport
-					ref={conversationViewportRef}
-					active={active}
-					sessionId={session.id}
-					sessionPath={session.sessionPath}
-					messages={messages}
-					activeAssistantMessageId={activeAssistantMessageId}
-					effectiveLoadState={effectiveLoadState}
-					initialScrollTop={viewportUiState.scrollTop}
-					initialSticky={viewportUiState.sticky}
-					onScrollStateChange={persistScrollState}
-					runtimeScrollRef={scrollRef}
-					onOpenFile={onOpenFile}
-					onForkAssistant={!session.temporary ? handleForkAssistant : undefined}
-					forkingMessageId={forkingMessageId}
-					forkDisabled={
-						runtimeBusy || historyPending || Boolean(forkingMessageId)
-					}
-					suppressInterruptedError={session.externalRunning || running}
-					onRetry={onRetry}
-					onRetryHistory={retryHistory}
-				/>
+		<ChatConversationSubscriber
+			conversationStore={conversationStore}
+			historyStore={historyStore}
+			baseMessages={baseMessages}
+			sessionPath={session.sessionPath}
+			historyLoadState={historyLoadState}
+			loadState={loadState}
+		>
+			{({
+				messages,
+				pendingUsers,
+				latestTurnInterrupted,
+				activeAssistantMessageId,
+				effectiveLoadState,
+			}) => {
+				const viewportUiState =
+					uiStateKey && readUiState ? readUiState(uiStateKey) : initialUiState;
+				const emptyTemporarySession =
+					Boolean(session.temporary) &&
+					effectiveLoadState === "ready" &&
+					messages.length === 0;
+				return (
+					<div className="flex h-full min-w-0 flex-col bg-background">
+						<SessionHeader
+							session={session}
+							sessionState={sessionState ?? undefined}
+							onRename={
+								session.temporary || session.externalRunning
+									? undefined
+									: handleRenameSession
+							}
+							onOpenChanges={onOpenChanges}
+							onOpenTerminal={onOpenTerminal}
+							terminalRunning={terminalRunning}
+							terminalVisible={terminalVisible}
+							onNewTemporaryChat={onNewTemporaryChat}
+							onExpandSidebar={onExpandSidebar}
+							reserveWindowControls={reserveWindowControls}
+							sidebarCollapsed={sidebarCollapsed}
+							overlay={emptyTemporarySession}
+						/>
+						<div className="relative flex min-h-0 flex-1 flex-col">
+							<ChatConversationViewport
+								ref={conversationViewportRef}
+								active={active}
+								sessionId={performanceSessionId ?? session.id}
+								sessionPath={session.sessionPath}
+								messages={messages}
+								onVisibleRangeChange={requestHistoryRange}
+								activeAssistantMessageId={activeAssistantMessageId}
+								effectiveLoadState={effectiveLoadState}
+								initialScrollTop={viewportUiState.scrollTop}
+								initialSticky={viewportUiState.sticky}
+								initialVirtualizerCache={
+									viewportUiState.virtualizerMessageCount === messages.length
+										? viewportUiState.virtualizerCache
+										: undefined
+								}
+								onScrollStateChange={persistScrollState}
+								onVirtualizerCacheChange={persistVirtualizerCache}
+								runtimeScrollRef={scrollRef}
+								onOpenFile={onOpenFile}
+								onForkAssistant={
+									!session.temporary ? handleForkAssistant : undefined
+								}
+								forkingMessageId={forkingMessageId}
+								forkDisabled={
+									runtimeBusy || historyPending || Boolean(forkingMessageId)
+								}
+								suppressInterruptedError={session.externalRunning || running}
+								onRetry={onRetry}
+								onRetryHistory={retryHistory}
+							/>
 
-				{/* -mt-4 让滚动区底部上探 16px，消息在输入卡背后被自然裁切；
-				    裁切线藏在卡片圆角(12px)以内，输入框下方缝隙不会露出消息 */}
-				<div
-					className="relative -mt-4 w-full shrink-0 pb-4"
-					style={{
-						paddingRight:
-							effectiveLoadState === "ready" && messages.length === 0
-								? 0
-								: scrollbarWidth,
-					}}
-				>
-					<ConversationColumn className="relative">
-						<ChatPendingQueue
-							items={pendingUsers}
-							onEdit={(item) => void handleEditQueued(item.clientMessageId)}
-							onSendNow={(item) =>
-								void handleSendQueuedNow(item.clientMessageId)
-							}
-						/>
-						{recoveryState.status === "idle" &&
-						!session.externalRunning &&
-						!running &&
-						latestTurnInterrupted ? (
-							<ChatInterruptedTurnNotice />
-						) : null}
-						<ChatRuntimeRecoveryNotice
-							state={recoveryState}
-							onReconnect={() => void handleReconnect()}
-							onNewTemporaryChat={
-								session.temporary ? onNewTemporaryChat : undefined
-							}
-						/>
-						<PiExtensionNotifications
-							notifications={extensionNotifications}
-							onDismiss={dismissExtensionNotification}
-						/>
-						<ChatComposer
-							value={session.externalRunning ? "" : draft}
-							historyKey={session.projectRecord.id}
-							placeholder={
-								session.externalRunning
-									? "外部 Pi 正在运行，当前会话暂不可输入"
-									: undefined
-							}
-							onChange={setDraft}
-							images={composerImages}
-							onImagesChange={setComposerImages}
-							onSubmit={handleComposerSubmit}
-							onSteer={
-								running
-									? (submission) => {
-											void (async () => {
-												if (await tryHandleComposerCommand(submission)) return;
-												setComposerImages([]);
-												handleSteer(submission);
-											})();
+							{/* -mt-4 让滚动区底部上探 16px，消息在输入卡背后被自然裁切；
+						    裁切线藏在卡片圆角(12px)以内，输入框下方缝隙不会露出消息 */}
+							<div
+								className="relative -mt-4 w-full shrink-0 pb-4"
+								style={{
+									paddingRight:
+										effectiveLoadState === "ready" && messages.length === 0
+											? 0
+											: scrollbarWidth,
+								}}
+							>
+								<ConversationColumn className="relative">
+									<ChatPendingQueue
+										items={pendingUsers}
+										onEdit={(item) =>
+											void handleEditQueued(item.clientMessageId)
 										}
-									: undefined
-							}
-							onFollowUp={
-								running
-									? (submission) => {
-											setComposerImages([]);
-											handleFollowUp(submission);
+										onSendNow={(item) =>
+											void handleSendQueuedNow(item.clientMessageId)
 										}
-									: undefined
-							}
-							disabled={
-								recoveryState.status === "reconnecting" ||
-								Boolean(session.externalRunning)
-							}
-							muted={Boolean(session.externalRunning)}
-							running={running}
-							onStop={handleStop}
-							pendingSteering={pendingSteering}
-							pendingFollowUps={pendingFollowUps}
-							statusText={
-								session.externalRunning
-									? ""
-									: [historyProgress, piStatusText].filter(Boolean).join(" · ")
-							}
-							retrying={retryState?.kind === "agent"}
-							onAbortRetry={() => void abortRetry()}
-							contextUsage={sessionState}
-							suggestions={composerSuggestions}
-							onSuggestionTrigger={handleSuggestionTrigger}
-							models={modelOptions}
-							selectedModel={selectedModel}
-							modelLoading={modelLoadState === "loading"}
-							modelError={modelError}
-							modelDisabled={
-								modelChanging ||
-								runtimeBusy ||
-								historyPending ||
-								session.externalRunning
-							}
-							onModelMenuOpen={() => void loadModelOptions()}
-							onModelRefresh={() => void loadModelOptions(true)}
-							onModelChange={handleModelChange}
-							thinkingLevels={thinkingLevels}
-							selectedThinkingLevel={selectedThinkingLevel}
-							thinkingLoading={thinkingLoading}
-							thinkingDisabled={
-								thinkingChanging ||
-								runtimeBusy ||
-								historyPending ||
-								session.externalRunning ||
-								thinkingLevels.length === 0
-							}
-							onThinkingMenuOpen={() => void loadThinkingLevels()}
-							onThinkingChange={handleThinkingChange}
+									/>
+									{recoveryState.status === "idle" &&
+									!session.externalRunning &&
+									!running &&
+									latestTurnInterrupted ? (
+										<ChatInterruptedTurnNotice />
+									) : null}
+									<ChatRuntimeRecoveryNotice
+										state={recoveryState}
+										onReconnect={() => void handleReconnect()}
+										onNewTemporaryChat={
+											session.temporary ? onNewTemporaryChat : undefined
+										}
+									/>
+									<PiExtensionNotifications
+										notifications={extensionNotifications}
+										onDismiss={dismissExtensionNotification}
+									/>
+									<ChatComposer
+										value={session.externalRunning ? "" : draft}
+										historyKey={session.projectRecord.id}
+										placeholder={
+											session.externalRunning
+												? "外部 Pi 正在运行，当前会话暂不可输入"
+												: undefined
+										}
+										onChange={setDraft}
+										images={composerImages}
+										onImagesChange={setComposerImages}
+										onSubmit={handleComposerSubmit}
+										onSteer={
+											running
+												? (submission) => {
+														void (async () => {
+															if (await tryHandleComposerCommand(submission))
+																return;
+															setComposerImages([]);
+															handleSteer(submission);
+														})();
+													}
+												: undefined
+										}
+										onFollowUp={
+											running
+												? (submission) => {
+														setComposerImages([]);
+														handleFollowUp(submission);
+													}
+												: undefined
+										}
+										disabled={
+											recoveryState.status === "reconnecting" ||
+											Boolean(session.externalRunning)
+										}
+										muted={Boolean(session.externalRunning)}
+										running={running}
+										onStop={handleStop}
+										pendingSteering={pendingSteering}
+										pendingFollowUps={pendingFollowUps}
+										statusText={
+											session.externalRunning
+												? ""
+												: [historyProgress, piStatusText]
+														.filter(Boolean)
+														.join(" · ")
+										}
+										retrying={retryState?.kind === "agent"}
+										onAbortRetry={() => void abortRetry()}
+										contextUsage={sessionState}
+										suggestions={composerSuggestions}
+										onSuggestionTrigger={handleSuggestionTrigger}
+										models={modelOptions}
+										selectedModel={selectedModel}
+										modelLoading={modelLoadState === "loading"}
+										modelError={modelError}
+										modelDisabled={
+											modelChanging ||
+											runtimeBusy ||
+											historyPending ||
+											session.externalRunning
+										}
+										onModelMenuOpen={() => void loadModelOptions()}
+										onModelRefresh={() => void loadModelOptions(true)}
+										onModelChange={handleModelChange}
+										thinkingLevels={thinkingLevels}
+										selectedThinkingLevel={selectedThinkingLevel}
+										thinkingLoading={thinkingLoading}
+										thinkingDisabled={
+											thinkingChanging ||
+											runtimeBusy ||
+											historyPending ||
+											session.externalRunning ||
+											thinkingLevels.length === 0
+										}
+										onThinkingMenuOpen={() => void loadThinkingLevels()}
+										onThinkingChange={handleThinkingChange}
+									/>
+								</ConversationColumn>
+							</div>
+						</div>
+						<PiExtensionUiDialog
+							request={extensionDialog}
+							onRespond={(response) => void respondToExtensionDialog(response)}
 						/>
-					</ConversationColumn>
-				</div>
-			</div>
-			<PiExtensionUiDialog
-				request={extensionDialog}
-				onRespond={(response) => void respondToExtensionDialog(response)}
-			/>
-		</div>
+					</div>
+				);
+			}}
+		</ChatConversationSubscriber>
 	);
 }
 

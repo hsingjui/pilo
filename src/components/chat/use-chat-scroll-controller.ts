@@ -6,7 +6,7 @@ import {
 	useRef,
 	useState,
 } from "react";
-import type { VirtualizerHandle } from "virtua";
+import type { CacheSnapshot, VirtualizerHandle } from "virtua";
 
 import { useChatStickyScroll } from "@/components/chat/use-chat-sticky-scroll";
 import { useChatVirtualPadding } from "@/components/chat/use-chat-virtual-padding";
@@ -24,27 +24,38 @@ import type { ChatMessage } from "@/lib/conversation-types";
 const CHAT_OUTLINE_READING_OFFSET_PX = 72;
 const OUTLINE_JUMP_TOLERANCE_PX = 2;
 const OUTLINE_JUMP_MAX_CORRECTIONS = 3;
+const SKIP_PROGRAMMATIC_FOLLOW_SYNC =
+	import.meta.env.VITE_PILO_SKIP_PROGRAMMATIC_SCROLL_SYNC === "1";
 
 type UseChatScrollControllerOptions = {
 	active: boolean;
 	sessionId: string;
 	messages: ChatMessage[];
+	virtualizerEnabled?: boolean;
 	activeAssistantMessageId: string | null;
 	effectiveLoadState: "ready" | "loading" | "error";
 	initialScrollTop?: number;
 	initialSticky?: boolean;
 	onScrollStateChange?: (state: { scrollTop: number; sticky: boolean }) => void;
+	onVisibleRangeChange?: (startIndex: number, endIndex: number) => void;
+	onVirtualizerCacheChange?: (
+		cache: CacheSnapshot,
+		messageCount: number,
+	) => void;
 };
 
 export function useChatScrollController({
 	active,
 	sessionId,
 	messages,
+	virtualizerEnabled = true,
 	activeAssistantMessageId,
 	effectiveLoadState,
 	initialScrollTop = 0,
 	initialSticky = true,
 	onScrollStateChange,
+	onVisibleRangeChange,
+	onVirtualizerCacheChange,
 }: UseChatScrollControllerOptions) {
 	const outlineRevision = activeAssistantMessageId
 		? `${messages.length}:${activeAssistantMessageId}`
@@ -66,6 +77,8 @@ export function useChatScrollController({
 		attempts: number;
 	} | null>(null);
 	const scrollSyncFrameRef = useRef<number | null>(null);
+	const visibleRangeRef = useRef<{ start: number; end: number } | null>(null);
+	const lastVirtualizerCachePersistAtRef = useRef(0);
 	const isScrolledFromTopRef = useRef(initialScrollTop > 16);
 	const [isScrolledFromTop, setIsScrolledFromTop] = useState(
 		initialScrollTop > 16,
@@ -76,8 +89,9 @@ export function useChatScrollController({
 	const activeOutlineIndexRef = useRef(activeOutlineIndex);
 	activeOutlineIndexRef.current = activeOutlineIndex;
 
-	const virtualized =
+	const scrollEnabled =
 		active && effectiveLoadState === "ready" && messages.length > 0;
+	const virtualized = scrollEnabled && virtualizerEnabled;
 	const {
 		scrollRef,
 		scrollElement,
@@ -88,7 +102,7 @@ export function useChatScrollController({
 		scrollToBottom,
 		stopScroll,
 	} = useChatStickyScroll({
-		enabled: virtualized,
+		enabled: scrollEnabled,
 		vlistRef: virtualizerRef,
 		itemCount: messages.length,
 		initialScrollTop,
@@ -96,6 +110,24 @@ export function useChatScrollController({
 		onScrollStateChange,
 	});
 	recordChatPageRender(sessionId, messages.length, virtualized);
+
+	const persistVirtualizerCache = useCallback(
+		(force = false) => {
+			const vlist = virtualizerRef.current;
+			if (!vlist || !onVirtualizerCacheChange || messages.length === 0) return;
+			const now = performance.now();
+			if (!force && now - lastVirtualizerCachePersistAtRef.current < 250)
+				return;
+			lastVirtualizerCachePersistAtRef.current = now;
+			onVirtualizerCacheChange(vlist.cache, messages.length);
+		},
+		[messages.length, onVirtualizerCacheChange],
+	);
+
+	useEffect(() => {
+		if (!virtualized || !initialScrollRestored) return;
+		persistVirtualizerCache(true);
+	}, [initialScrollRestored, persistVirtualizerCache, virtualized]);
 
 	const measureItemOffsetDelta = useCallback(() => {
 		const viewport = scrollElementRef.current;
@@ -128,7 +160,16 @@ export function useChatScrollController({
 			recordScrollEvent();
 			const viewport = scrollElementRef.current;
 			if (!viewport) return;
-			handleStickyScroll(offset ?? viewport.scrollTop);
+			const programmaticFollow = handleStickyScroll(
+				offset ?? viewport.scrollTop,
+			);
+			if (
+				SKIP_PROGRAMMATIC_FOLLOW_SYNC &&
+				programmaticFollow &&
+				activeAssistantMessageId
+			) {
+				return;
+			}
 			if (scrollSyncFrameRef.current !== null) return;
 
 			scrollSyncFrameRef.current = requestAnimationFrame(() => {
@@ -137,6 +178,7 @@ export function useChatScrollController({
 				if (!currentViewport) return;
 
 				const vlist = virtualizerRef.current;
+				if (vlist) persistVirtualizerCache();
 				const scrollOffset = vlist?.scrollOffset ?? currentViewport.scrollTop;
 				const scrollSize = vlist?.scrollSize ?? currentViewport.scrollHeight;
 				const viewportSize =
@@ -147,19 +189,30 @@ export function useChatScrollController({
 					setIsScrolledFromTop(nextScrolledFromTop);
 				}
 
-				if (vlist && messages.length > 0 && isChatPerformanceDebugEnabled()) {
+				if (vlist && messages.length > 0) {
 					const relativeStart = Math.max(
 						0,
 						scrollOffset - itemOffsetDeltaRef.current,
 					);
 					const startIndex = vlist.findItemIndex(relativeStart);
 					const endIndex = vlist.findItemIndex(relativeStart + viewportSize);
-					recordVirtualChange({
-						sync: true,
-						startIndex,
-						endIndex,
-						totalSize: scrollSize,
-					});
+					const previousRange = visibleRangeRef.current;
+					if (
+						!previousRange ||
+						previousRange.start !== startIndex ||
+						previousRange.end !== endIndex
+					) {
+						visibleRangeRef.current = { start: startIndex, end: endIndex };
+						onVisibleRangeChange?.(startIndex, endIndex);
+					}
+					if (isChatPerformanceDebugEnabled()) {
+						recordVirtualChange({
+							sync: true,
+							startIndex,
+							endIndex,
+							totalSize: scrollSize,
+						});
+					}
 				}
 
 				if (outlineEntries.length === 0) {
@@ -192,8 +245,21 @@ export function useChatScrollController({
 				}
 			});
 		},
-		[handleStickyScroll, messages.length, outlineEntries, scrollElementRef],
+		[
+			activeAssistantMessageId,
+			handleStickyScroll,
+			messages.length,
+			outlineEntries,
+			onVisibleRangeChange,
+			persistVirtualizerCache,
+			scrollElementRef,
+		],
 	);
+
+	useEffect(() => {
+		if (!scrollEnabled || !initialScrollRestored) return;
+		syncScrollState();
+	}, [initialScrollRestored, scrollEnabled, syncScrollState]);
 
 	useEffect(() => {
 		logChatPerformanceInstructions();
@@ -245,6 +311,7 @@ export function useChatScrollController({
 	);
 
 	const handleScrollEnd = useCallback(() => {
+		persistVirtualizerCache(true);
 		const pending = pendingOutlineJumpRef.current;
 		if (!pending) return;
 		if (
@@ -259,7 +326,7 @@ export function useChatScrollController({
 			attempts: pending.attempts + 1,
 		};
 		scrollMessageToTop(pending.messageIndex);
-	}, [outlineJumpDrift, scrollMessageToTop]);
+	}, [outlineJumpDrift, persistVirtualizerCache, scrollMessageToTop]);
 
 	useEffect(() => {
 		const viewport = scrollElement;

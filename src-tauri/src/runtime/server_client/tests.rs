@@ -8,7 +8,7 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use tokio::sync::{Mutex, broadcast, oneshot};
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 use super::transport::{
     PendingRequest, PendingRequests, ServerEvent, ServerEventHub, mark_disconnected,
@@ -168,8 +168,54 @@ async fn event_hub_routes_only_to_matching_stream() {
     assert_eq!(event.binary, vec![vec![1, 2, 3]]);
     assert!(matches!(
         second.try_recv(),
-        Err(broadcast::error::TryRecvError::Empty)
+        Err(mpsc::error::TryRecvError::Empty)
     ));
+}
+
+#[tokio::test]
+async fn event_hub_preserves_large_interleaved_stream_bursts() {
+    let events = ServerEventHub::default();
+    let mut first = events.subscribe("stream:first");
+    let mut second = events.subscribe("stream:second");
+    const EVENT_COUNT: usize = 2_048;
+
+    for index in 0..EVENT_COUNT {
+        for stream_id in ["stream:first", "stream:second"] {
+            events.send(ServerEvent {
+                stream_id: stream_id.to_owned(),
+                event: "pi.rpc".to_owned(),
+                data: json!({ "index": index }),
+                binary: Vec::new(),
+            });
+        }
+    }
+
+    for index in 0..EVENT_COUNT {
+        let first_event = first.recv().await.unwrap();
+        let second_event = second.recv().await.unwrap();
+        assert_eq!(first_event.data, json!({ "index": index }));
+        assert_eq!(second_event.data, json!({ "index": index }));
+    }
+}
+
+#[tokio::test]
+async fn resubscribing_stream_closes_the_stale_receiver() {
+    let events = ServerEventHub::default();
+    let mut stale = events.subscribe("pi:test");
+    let mut current = events.subscribe("pi:test");
+
+    assert!(stale.recv().await.is_none());
+
+    events.send(ServerEvent {
+        stream_id: "pi:test".to_owned(),
+        event: "pi.rpc".to_owned(),
+        data: json!({ "type": "agent_settled" }),
+        binary: Vec::new(),
+    });
+
+    let event = current.recv().await.unwrap();
+    assert_eq!(event.event, "pi.rpc");
+    assert_eq!(event.data, json!({ "type": "agent_settled" }));
 }
 
 #[test]

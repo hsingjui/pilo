@@ -1,10 +1,10 @@
 import {
 	useCallback,
 	useEffect,
-	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
+	useSyncExternalStore,
 } from "react";
 
 import {
@@ -17,8 +17,12 @@ import type {
 	ConversationAction,
 	ConversationState,
 } from "@/lib/conversation-types";
-import type { SessionHistory } from "@/lib/sessions";
-import { loadSessionHistory } from "@/lib/sessions";
+import {
+	loadSessionHistoryWindow,
+	type SessionHistory,
+	type SessionHistoryFingerprint,
+	type SessionHistoryMessageIndexEntry,
+} from "@/lib/sessions";
 import {
 	summarizeChatImages,
 	type ChatImageAttachment,
@@ -32,9 +36,25 @@ import {
 	getSessionHistoryFingerprint,
 	type ChatSession,
 } from "@/components/chat/chat-page-utils";
+import {
+	recordHistoryHydration,
+	recordHistoryWindowLoad,
+} from "@/lib/chat-performance";
+import {
+	createChatConversationStore,
+	type ChatConversationStore,
+} from "@/components/chat/chat-conversation-store";
+import {
+	createChatHistoryWindowStore,
+	type ChatHistoryWindowStore,
+} from "@/components/chat/chat-history-window-store";
 
 let localMessageSequence = 0;
 let localActivitySequence = 0;
+const EMPTY_PENDING_USERS: ConversationState["pendingUsers"] = [];
+const INITIAL_HISTORY_MESSAGE_COUNT = 80;
+const HISTORY_PAGE_MESSAGE_COUNT = 48;
+const HISTORY_PREFETCH_MESSAGES = 16;
 
 export function createLocalMessageId(kind: "user" | "assistant") {
 	localMessageSequence += 1;
@@ -93,13 +113,81 @@ function markExternalTurnLive(state: ConversationState): ConversationState {
 	return state;
 }
 
+function historyPlaceholderMessage(
+	descriptor: SessionHistoryMessageIndexEntry,
+): ChatMessage {
+	const common = {
+		id: descriptor.id,
+		text: descriptor.preview,
+		time:
+			descriptor.timestampMs === undefined
+				? ""
+				: formatTime(descriptor.timestampMs),
+		timestampMs: descriptor.timestampMs,
+		historyPlaceholder: true as const,
+		historyEstimatedChars: descriptor.estimatedChars,
+	};
+	return descriptor.role === "user"
+		? { ...common, role: "user" }
+		: { ...common, role: "assistant" };
+}
+
+function alignHistoryMessages(
+	state: ConversationState,
+	directory: readonly SessionHistoryMessageIndexEntry[],
+	startIndex: number,
+): ConversationState {
+	if (state.messages.length === 0) return state;
+	let activeAssistantMessageId = state.active?.assistantMessageId;
+	const messages = state.messages.map((message, offset) => {
+		const descriptor = directory[startIndex + offset];
+		if (!descriptor || descriptor.role !== message.role) return message;
+		if (activeAssistantMessageId === message.id) {
+			activeAssistantMessageId = descriptor.id;
+		}
+		return message.id === descriptor.id
+			? message
+			: { ...message, id: descriptor.id };
+	});
+	return {
+		...state,
+		messages,
+		active: state.active
+			? { ...state.active, assistantMessageId: activeAssistantMessageId }
+			: null,
+	};
+}
+
+function sameHistoryFingerprint(
+	left: SessionHistoryFingerprint | null,
+	right: SessionHistoryFingerprint | null,
+) {
+	return (
+		left?.fileSize === right?.fileSize &&
+		left?.fileMtimeNs === right?.fileMtimeNs
+	);
+}
+
+function buildHistoryPrefix(
+	snapshot: ReturnType<ChatHistoryWindowStore["getSnapshot"]>,
+) {
+	const messages: ChatMessage[] = [];
+	for (let index = 0; index < snapshot.runtimeBaseStart; index += 1) {
+		const descriptor = snapshot.directory[index];
+		if (!descriptor) continue;
+		messages.push(
+			snapshot.hydrated.get(index) ?? historyPlaceholderMessage(descriptor),
+		);
+	}
+	return messages;
+}
+
 type UseChatConversationOptions = {
 	session: ChatSession;
 	activeTurnSessionIdRef?: { current: string | null };
 	initialMessage?: string;
 	initialImages?: readonly ChatImageAttachment[];
 	initialDraft?: string;
-	loadState: "ready" | "loading" | "error";
 	onDraftChange?: (value: string) => void;
 	onHistoryMetadata: (history: SessionHistory) => void;
 };
@@ -110,13 +198,16 @@ export function useChatConversation({
 	initialMessage,
 	initialImages = [],
 	initialDraft = "",
-	loadState,
 	onDraftChange,
 	onHistoryMetadata,
 }: UseChatConversationOptions) {
-	const [conversationStates, setConversationStates] = useState<
-		Record<string, ConversationState>
-	>({});
+	const [conversationStore] = useState(createChatConversationStore);
+	const [historyStore] = useState(createChatHistoryWindowStore);
+	const historyPageRequestsRef = useRef(new Set<number>());
+	const loadedWindowFingerprintRef = useRef<SessionHistoryFingerprint | null>(
+		null,
+	);
+	const historyReloadScheduledRef = useRef(false);
 	const [historyLoadState, setHistoryLoadState] = useState<
 		"ready" | "loading" | "error"
 	>(session.sessionPath ? "loading" : "ready");
@@ -165,8 +256,12 @@ export function useChatConversation({
 		const sessionPath = session.sessionPath;
 		if (!sessionPath) {
 			loadedHistoryFingerprintRef.current = null;
+			loadedWindowFingerprintRef.current = null;
 			failedHistoryFingerprintRef.current = undefined;
 			historyDeferredRef.current = false;
+			historyPageRequestsRef.current.clear();
+			historyReloadScheduledRef.current = false;
+			historyStore.initialize([], 0);
 			return;
 		}
 		if (activeTurnSessionIdRef?.current === session.id) {
@@ -176,54 +271,75 @@ export function useChatConversation({
 		historyDeferredRef.current = false;
 		const requestedHistory = historyFingerprintRef.current;
 		const requestedFingerprint = requestedHistory.fingerprint;
+		const requestFingerprint =
+			requestedHistory.fileSize !== undefined &&
+			requestedHistory.fileMtimeNs !== undefined
+				? {
+						fileSize: requestedHistory.fileSize,
+						fileMtimeNs: requestedHistory.fileMtimeNs,
+					}
+				: undefined;
 		let cancelled = false;
 		const loadHistory = async (retryAttempt: number) => {
 			const startedAt = performance.now();
 			setHistoryLoadState("loading");
 			setHistoryProgress("正在读取历史消息");
 			try {
-				const result = await loadSessionHistory(
+				const result = await loadSessionHistoryWindow(
 					session.projectRecord.id,
 					sessionPath,
-					requestedHistory.fileSize !== undefined &&
-						requestedHistory.fileMtimeNs !== undefined
-						? {
-								fileSize: requestedHistory.fileSize,
-								fileMtimeNs: requestedHistory.fileMtimeNs,
-							}
-						: undefined,
+					{
+						messageLimit: INITIAL_HISTORY_MESSAGE_COUNT,
+						includeMessageIndex: true,
+						fingerprint: requestFingerprint,
+					},
 				);
 				if (cancelled) return;
 				const history = result.history;
-				console.info("[Pilo history] read_session_file", {
+				const directory = history.messageIndex;
+				const windowStart = history.windowStartMessage;
+				if (!directory || windowStart === undefined) {
+					throw new Error(
+						"Session history window is missing its message index.",
+					);
+				}
+				console.info("[Pilo history] read_session_window", {
 					durationMs: Math.round(performance.now() - startedAt),
 					eventCount: history.events.length,
+					windowStart,
+					windowMessageCount: history.windowMessageCount,
+					totalMessages: history.totalMessages,
 					retryAttempt,
 				});
 				onHistoryMetadata(history);
 				const replayStartedAt = performance.now();
 				setHistoryProgress("正在恢复历史消息");
-				// Replay cooperatively so large JSONL histories do not monopolize the main
-				// thread, but do not publish every partial state to React. Mounting Markdown
-				// and re-measuring the virtual list after each 400-event batch was materially
-				// slower than the reducer itself and made the loading skeleton linger.
 				let finalState = await replayConversationEventsBatched(
 					history.events,
 					conversationReducerContext,
 					{ maxEventsPerBatch: 400 },
 				);
 				if (cancelled) return;
+				finalState = alignHistoryMessages(finalState, directory, windowStart);
 				if (session.externalRunning && session.externalTurnOpen) {
 					finalState = markExternalTurnLive(finalState);
 				}
-				setConversationStates((current) => ({
-					...current,
-					[session.id]: finalState,
-				}));
-				console.info("[Pilo history] conversation_replay", {
+				historyStore.initialize(directory, windowStart);
+				conversationStore.setSnapshot(finalState);
+				recordHistoryWindowLoad({
+					durationMs: performance.now() - startedAt,
+					messageCount: finalState.messages.length,
+					directoryMessages: directory.length,
+					hydratedMessages: finalState.messages.length,
+				});
+				loadedWindowFingerprintRef.current = result.fingerprint;
+				historyPageRequestsRef.current.clear();
+				historyReloadScheduledRef.current = false;
+				console.info("[Pilo history] conversation_window_replay", {
 					durationMs: Math.round(performance.now() - replayStartedAt),
 					eventCount: history.events.length,
 					messageCount: finalState.messages.length,
+					totalMessages: directory.length,
 				});
 				loadedHistoryFingerprintRef.current = result.fingerprint
 					? `${result.fingerprint.fileSize}:${result.fingerprint.fileMtimeNs}`
@@ -245,7 +361,9 @@ export function useChatConversation({
 		};
 	}, [
 		activeTurnSessionIdRef,
+		conversationStore,
 		historyRetry,
+		historyStore,
 		onHistoryMetadata,
 		session.externalRunning,
 		session.externalTurnOpen,
@@ -254,28 +372,6 @@ export function useChatConversation({
 		session.sessionPath,
 	]);
 
-	const conversationState = conversationStates[session.id];
-	const messages = conversationState?.messages ?? baseMessages;
-	const pendingUsers = conversationState?.pendingUsers ?? [];
-	const latestTurnInterrupted = useMemo(() => {
-		for (let index = messages.length - 1; index >= 0; index -= 1) {
-			const message = messages[index];
-			if (message?.role === "assistant")
-				return message.completion === "interrupted";
-		}
-		return false;
-	}, [messages]);
-	const activeAssistantMessageId =
-		conversationState?.active?.assistantMessageId ?? null;
-	const messagesRef = useRef(messages);
-	useLayoutEffect(() => {
-		messagesRef.current = messages;
-	}, [messages]);
-	const effectiveLoadState = session.sessionPath
-		? historyLoadState === "loading" && messages.length > 0
-			? "ready"
-			: historyLoadState
-		: loadState;
 	const setDraft = useCallback(
 		(value: string) => {
 			setDraftState(value);
@@ -287,23 +383,18 @@ export function useChatConversation({
 
 	const dispatchConversationBatch = useCallback(
 		(targetSessionId: string, actions: readonly ConversationAction[]) => {
-			if (actions.length === 0) return;
-			setConversationStates((current) => {
-				const existing =
-					current[targetSessionId] ??
-					createConversationState(
-						targetSessionId === session.id ? messagesRef.current : [],
-					);
-				const next = reduceConversationActions(
-					existing,
-					actions,
-					conversationReducerContext,
-				);
-				if (next === existing) return current;
-				return { ...current, [targetSessionId]: next };
-			});
+			if (actions.length === 0 || targetSessionId !== session.id) return;
+			const existing =
+				conversationStore.getSnapshot() ??
+				createConversationState(baseMessages);
+			const next = reduceConversationActions(
+				existing,
+				actions,
+				conversationReducerContext,
+			);
+			if (next !== existing) conversationStore.setSnapshot(next);
 		},
-		[session.id],
+		[baseMessages, conversationStore, session.id],
 	);
 	const dispatchConversation = useCallback(
 		(targetSessionId: string, action: ConversationAction) => {
@@ -312,9 +403,111 @@ export function useChatConversation({
 		[dispatchConversationBatch],
 	);
 
+	const getConversationMessages = useCallback(() => {
+		const runtimeMessages =
+			conversationStore.getSnapshot()?.messages ?? baseMessages;
+		const historySnapshot = historyStore.getSnapshot();
+		if (!session.sessionPath || historySnapshot.directory.length === 0) {
+			return runtimeMessages;
+		}
+		return [...buildHistoryPrefix(historySnapshot), ...runtimeMessages];
+	}, [baseMessages, conversationStore, historyStore, session.sessionPath]);
+
+	const requestHistoryRange = useCallback(
+		(startIndex: number, endIndex: number) => {
+			const sessionPath = session.sessionPath;
+			if (!sessionPath || historyLoadState !== "ready") return;
+			const snapshot = historyStore.getSnapshot();
+			if (snapshot.runtimeBaseStart <= 0) return;
+
+			const prefetchStart = Math.max(0, startIndex - HISTORY_PREFETCH_MESSAGES);
+			const prefetchEnd = Math.min(
+				snapshot.runtimeBaseStart - 1,
+				endIndex + HISTORY_PREFETCH_MESSAGES,
+			);
+			historyStore.setPinnedRange(prefetchStart, prefetchEnd);
+			if (prefetchEnd < prefetchStart) return;
+
+			const firstPage =
+				Math.floor(prefetchStart / HISTORY_PAGE_MESSAGE_COUNT) *
+				HISTORY_PAGE_MESSAGE_COUNT;
+			const lastPage =
+				Math.floor(prefetchEnd / HISTORY_PAGE_MESSAGE_COUNT) *
+				HISTORY_PAGE_MESSAGE_COUNT;
+			for (
+				let pageStart = firstPage;
+				pageStart <= lastPage;
+				pageStart += HISTORY_PAGE_MESSAGE_COUNT
+			) {
+				const pageEnd = Math.min(
+					snapshot.runtimeBaseStart - 1,
+					pageStart + HISTORY_PAGE_MESSAGE_COUNT - 1,
+				);
+				if (
+					historyStore.isRangeHydrated(pageStart, pageEnd) ||
+					historyPageRequestsRef.current.has(pageStart)
+				) {
+					continue;
+				}
+				historyPageRequestsRef.current.add(pageStart);
+				const windowStartedAt = performance.now();
+				const loadedFingerprint = loadedWindowFingerprintRef.current;
+				void loadSessionHistoryWindow(session.projectRecord.id, sessionPath, {
+					startMessage: pageStart,
+					messageLimit: pageEnd - pageStart + 1,
+					fingerprint: loadedFingerprint ?? undefined,
+				})
+					.then(async (result) => {
+						if (
+							!sameHistoryFingerprint(loadedFingerprint, result.fingerprint)
+						) {
+							if (!historyReloadScheduledRef.current) {
+								historyReloadScheduledRef.current = true;
+								setHistoryRetry((value) => value + 1);
+							}
+							return;
+						}
+						const history = result.history;
+						const actualStart = history.windowStartMessage ?? pageStart;
+						let state = await replayConversationEventsBatched(
+							history.events,
+							conversationReducerContext,
+							{ maxEventsPerBatch: 400 },
+						);
+						const currentDirectory = historyStore.getSnapshot().directory;
+						state = alignHistoryMessages(state, currentDirectory, actualStart);
+						historyStore.hydrate(actualStart, state.messages);
+						const hydratedSnapshot = historyStore.getSnapshot();
+						const runtimeMessageCount =
+							conversationStore.getSnapshot()?.messages.length ?? 0;
+						recordHistoryWindowLoad({
+							durationMs: performance.now() - windowStartedAt,
+							messageCount: state.messages.length,
+							directoryMessages: hydratedSnapshot.directory.length,
+							hydratedMessages:
+								hydratedSnapshot.hydrated.size + runtimeMessageCount,
+						});
+					})
+					.catch((error) =>
+						console.warn("Failed to hydrate history window", error),
+					)
+					.finally(() => {
+						historyPageRequestsRef.current.delete(pageStart);
+					});
+			}
+		},
+		[
+			conversationStore,
+			historyLoadState,
+			historyStore,
+			session.projectRecord.id,
+			session.sessionPath,
+		],
+	);
+
 	const refreshHistoryIfStale = useCallback(
-		(active: boolean, activeTurnSessionId: string | null) => {
-			if (!active || !session.sessionPath || historyLoadState === "loading") {
+		(isActive: boolean, activeTurnSessionId: string | null) => {
+			if (!isActive || !session.sessionPath || historyLoadState === "loading") {
 				return;
 			}
 			if (activeTurnSessionId === session.id) return;
@@ -344,22 +537,87 @@ export function useChatConversation({
 	);
 
 	return {
+		conversationStore,
+		historyStore,
 		baseMessages,
-		messages,
-		pendingUsers,
-		latestTurnInterrupted,
-		activeAssistantMessageId,
 		draft,
 		setDraft,
 		clearDraft,
 		dispatchConversation,
 		dispatchConversationBatch,
+		getConversationMessages,
+		requestHistoryRange,
 		historyLoadState,
 		historyProgress,
-		effectiveLoadState,
 		historyPending:
 			session.sessionPath !== undefined && historyLoadState !== "ready",
 		retryHistory: () => setHistoryRetry((value) => value + 1),
 		refreshHistoryIfStale,
+	};
+}
+
+export function useChatConversationView({
+	conversationStore,
+	historyStore,
+	baseMessages,
+	sessionPath,
+	historyLoadState,
+	loadState,
+}: {
+	conversationStore: ChatConversationStore;
+	historyStore: ChatHistoryWindowStore;
+	baseMessages: ChatMessage[];
+	sessionPath?: string;
+	historyLoadState: "ready" | "loading" | "error";
+	loadState: "ready" | "loading" | "error";
+}) {
+	const conversationState = useSyncExternalStore(
+		conversationStore.subscribe,
+		conversationStore.getSnapshot,
+		conversationStore.getSnapshot,
+	);
+	const historySnapshot = useSyncExternalStore(
+		historyStore.subscribe,
+		historyStore.getSnapshot,
+		historyStore.getSnapshot,
+	);
+	const runtimeMessages = conversationState?.messages ?? baseMessages;
+	useEffect(() => {
+		recordHistoryHydration(
+			historySnapshot.directory.length,
+			historySnapshot.hydrated.size + runtimeMessages.length,
+		);
+	}, [historySnapshot, runtimeMessages.length]);
+	const messages = useMemo(
+		() =>
+			sessionPath && historySnapshot.directory.length > 0
+				? [...buildHistoryPrefix(historySnapshot), ...runtimeMessages]
+				: runtimeMessages,
+		[historySnapshot, runtimeMessages, sessionPath],
+	);
+	const pendingUsers = conversationState?.pendingUsers ?? EMPTY_PENDING_USERS;
+	const latestTurnInterrupted = useMemo(() => {
+		for (let index = messages.length - 1; index >= 0; index -= 1) {
+			const message = messages[index];
+			if (message?.role === "assistant" && !message.historyPlaceholder) {
+				return message.completion === "interrupted";
+			}
+		}
+		return false;
+	}, [messages]);
+	const activeAssistantMessageId =
+		conversationState?.active?.assistantMessageId ?? null;
+	const effectiveLoadState = sessionPath
+		? historyLoadState === "loading" && messages.length > 0
+			? "ready"
+			: historyLoadState
+		: loadState;
+
+	return {
+		messages,
+		pendingUsers,
+		latestTurnInterrupted,
+		activeAssistantMessageId,
+		effectiveLoadState,
 	};
 }

@@ -119,7 +119,9 @@ export function NewChatLanding({
 		}
 		commandLoadingRef.current = true;
 		try {
-			const client = createChatSessionClient(projectId, sessionId);
+			const client = createChatSessionClient(projectId, sessionId, undefined, {
+				owner: "landing_commands",
+			});
 			await client.prepare();
 			const result = await client.getPiCommands();
 			setCommandSuggestions(createPiCommandSuggestions(result.commands));

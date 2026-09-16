@@ -1,5 +1,12 @@
 use std::{process::Stdio, sync::Arc};
 
+#[cfg(debug_assertions)]
+use std::{
+    fs::OpenOptions,
+    io::Write,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 use pilo_protocol::{Envelope, MAX_BINARY_PAYLOAD_BYTES};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -50,6 +57,89 @@ pub(crate) struct PiStopParams {
     stream_id: String,
 }
 
+#[cfg(debug_assertions)]
+fn trace_pi(stage: &str, stream_id: &str, detail: Value) {
+    let ts_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default();
+    let record = json!({
+        "tsMs": ts_ms,
+        "pid": std::process::id(),
+        "source": "pilo-server",
+        "stage": stage,
+        "sessionKey": Value::Null,
+        "streamId": stream_id,
+        "detail": detail,
+    });
+    let path =
+        std::env::temp_dir().join(format!("pilo-runtime-trace-{}.jsonl", std::process::id()));
+    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
+        return;
+    };
+    let mut line = record.to_string();
+    line.push('\n');
+    let _ = file.write_all(line.as_bytes());
+}
+
+#[cfg(not(debug_assertions))]
+fn trace_pi(_stage: &str, _stream_id: &str, _detail: Value) {}
+
+fn trace_pi_rpc_line(stream_id: &str, bytes: &[u8]) {
+    #[cfg(debug_assertions)]
+    {
+        let Ok(message) = serde_json::from_slice::<Value>(bytes) else {
+            return;
+        };
+        let Some(event_type) = message.get("type").and_then(Value::as_str) else {
+            return;
+        };
+        let traceable = matches!(
+            event_type,
+            "response"
+                | "agent_start"
+                | "agent_end"
+                | "agent_settled"
+                | "turn_start"
+                | "turn_end"
+                | "message_start"
+                | "message_end"
+                | "tool_execution_start"
+                | "tool_execution_end"
+                | "queue_update"
+                | "compaction_start"
+                | "compaction_end"
+                | "auto_retry_start"
+                | "auto_retry_end"
+        );
+        if !traceable {
+            return;
+        }
+        let role = message.pointer("/message/role").and_then(Value::as_str);
+        let stop_reason = message
+            .pointer("/message/stopReason")
+            .and_then(Value::as_str);
+        trace_pi(
+            "pi.stdout",
+            stream_id,
+            json!({
+                "event": event_type,
+                "id": message.get("id"),
+                "command": message.get("command"),
+                "success": message.get("success"),
+                "role": role,
+                "stopReason": stop_reason,
+                "willRetry": message.get("willRetry"),
+                "toolCallId": message.get("toolCallId"),
+                "toolName": message.get("toolName"),
+            }),
+        );
+    }
+
+    #[cfg(not(debug_assertions))]
+    let _ = (stream_id, bytes);
+}
+
 pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Result<Value, String> {
     let toolchain = cached_toolchain(state).await?;
     let path = toolchain.path.clone();
@@ -65,6 +155,11 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
     }
     let mut processes = state.pi.lock().await;
     if processes.contains_key(&params.stream_id) {
+        trace_pi(
+            "pi.start",
+            &params.stream_id,
+            json!({ "alreadyRunning": true }),
+        );
         return Ok(json!({ "alreadyRunning": true }));
     }
     let mut args = vec!["--mode".to_owned(), "rpc".to_owned()];
@@ -120,6 +215,17 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
         .stderr
         .take()
         .ok_or_else(|| "Pi stderr unavailable".to_owned())?;
+    let child_pid = child.id();
+    trace_pi(
+        "pi.start",
+        &params.stream_id,
+        json!({
+            "alreadyRunning": false,
+            "childPid": child_pid,
+            "hasSessionPath": params.session_path.is_some(),
+            "noSession": params.no_session,
+        }),
+    );
     processes.insert(params.stream_id.clone(), PiProcess { child, stdin });
     drop(processes);
 
@@ -152,6 +258,7 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
                         }
                         continue;
                     }
+                    trace_pi_rpc_line(&stream_id, &bytes);
                     if writer
                         .send(Envelope::event_with_binary(
                             stream_id.clone(),
@@ -193,14 +300,18 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
         } else {
             None
         };
+        let code = exit_status.as_ref().and_then(|status| status.code());
+        let success = exit_status.as_ref().is_some_and(|status| status.success());
+        trace_pi(
+            "pi.stdout_closed",
+            &stream_id,
+            json!({ "code": code, "success": success }),
+        );
         let _ = writer
             .send(Envelope::event(
                 stream_id,
                 "pi.stdout_closed",
-                json!({
-                    "code": exit_status.as_ref().and_then(|status| status.code()),
-                    "success": exit_status.as_ref().is_some_and(|status| status.success()),
-                }),
+                json!({ "code": code, "success": success }),
             ))
             .await;
     });
@@ -237,6 +348,14 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
     if !params.command.is_object() {
         return Err("Pi RPC command must be a JSON object".to_owned());
     }
+    trace_pi(
+        "pi.send",
+        &params.stream_id,
+        json!({
+            "command": params.command.get("type"),
+            "id": params.command.get("id"),
+        }),
+    );
     let stdin = {
         let processes = state.pi.lock().await;
         Arc::clone(
@@ -268,8 +387,14 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
 
 pub(crate) async fn pi_stop(state: &ServerState, params: PiStopParams) -> Result<Value, String> {
     let Some(mut process) = state.pi.lock().await.remove(&params.stream_id) else {
+        trace_pi("pi.stop", &params.stream_id, json!({ "found": false }));
         return Ok(Value::Null);
     };
+    trace_pi(
+        "pi.stop",
+        &params.stream_id,
+        json!({ "found": true, "childPid": process.child.id() }),
+    );
     let _ = process.child.kill().await;
     let _ = process.child.wait().await;
     Ok(Value::Null)

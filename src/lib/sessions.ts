@@ -58,12 +58,24 @@ export type SessionSearchMatch = {
 	timestamp: string | number | null;
 };
 
+export type SessionHistoryMessageIndexEntry = {
+	id: string;
+	role: "user" | "assistant";
+	timestampMs?: number;
+	preview: string;
+	estimatedChars: number;
+};
+
 export type SessionHistory = {
 	events: ConversationEvent[];
 	model: { provider: string; id: string } | null;
 	thinkingLevel: string | null;
 	name: string | null;
 	sourceMessageCount: number;
+	windowStartMessage?: number;
+	windowMessageCount?: number;
+	totalMessages?: number;
+	messageIndex?: SessionHistoryMessageIndexEntry[];
 	stats?: {
 		userMessages: number;
 		assistantMessages: number;
@@ -191,6 +203,41 @@ export function loadSessionHistory(
 		sessionPath,
 		expectedFileSize: fingerprint?.fileSize,
 		expectedFileMtimeNs: fingerprint?.fileMtimeNs,
+	})
+		.then(decodeSessionHistoryResponse)
+		.finally(() => {
+			if (sessionHistoryInFlight.get(requestKey) === request) {
+				sessionHistoryInFlight.delete(requestKey);
+			}
+		});
+	sessionHistoryInFlight.set(requestKey, request);
+	return request;
+}
+
+export function loadSessionHistoryWindow(
+	projectId: string,
+	sessionPath: string,
+	options: {
+		startMessage?: number;
+		messageLimit: number;
+		includeMessageIndex?: boolean;
+		fingerprint?: { fileSize: number; fileMtimeNs: string };
+	},
+): Promise<SessionHistoryResult> {
+	const requestKey = `${projectId}\0${sessionPath}\0window:${options.startMessage ?? "tail"}:${options.messageLimit}:${options.includeMessageIndex ? 1 : 0}\0${options.fingerprint?.fileSize ?? "?"}\0${options.fingerprint?.fileMtimeNs ?? "?"}`;
+	const existing = sessionHistoryInFlight.get(requestKey);
+	if (existing) return existing;
+
+	const request = invoke<
+		ArrayBuffer | Uint8Array | number[] | SessionHistory | SessionHistoryResult
+	>("session_history", {
+		projectId,
+		sessionPath,
+		expectedFileSize: options.fingerprint?.fileSize,
+		expectedFileMtimeNs: options.fingerprint?.fileMtimeNs,
+		startMessage: options.startMessage,
+		messageLimit: options.messageLimit,
+		includeMessageIndex: options.includeMessageIndex ?? false,
 	})
 		.then(decodeSessionHistoryResponse)
 		.finally(() => {

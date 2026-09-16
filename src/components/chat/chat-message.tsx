@@ -316,7 +316,8 @@ export const AssistantMessage = memo(function AssistantMessage({
 				...renderAssistantContentNodes({
 					messageId: message.id,
 					content: displaySections.final,
-					streaming: false,
+					streaming: message.streaming === true,
+					preserveActivityExpanded: message.streaming === true,
 					onOpenFile,
 				}),
 			]

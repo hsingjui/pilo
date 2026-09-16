@@ -6,7 +6,7 @@ import type {
 	ChatSessionClient,
 } from "@/components/chat/chat-runtime-types";
 import type { ChatSession } from "@/components/chat/chat-page-utils";
-import { isFrameBatchedAction } from "@/components/chat/use-runtime-conversation-dispatch";
+import { isPresentationBatchedAction } from "@/components/chat/use-runtime-conversation-dispatch";
 import { toAppError } from "@/lib/app-error";
 import { toConversationAction } from "@/lib/conversation-runtime-adapter";
 import type { ConversationAction } from "@/lib/conversation-types";
@@ -227,7 +227,7 @@ export function useChatRuntimeEvents({
 
 			const action = toConversationAction(event);
 			if (action) {
-				if (isFrameBatchedAction(action)) {
+				if (isPresentationBatchedAction(action)) {
 					queueRuntimeAction(turn.sessionId, action);
 				} else {
 					dispatchConversation(turn.sessionId, action);

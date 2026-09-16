@@ -22,12 +22,12 @@ use runtime::{
         project_preview_open, project_preview_ports, project_refresh, project_remove,
         project_reorder, project_start_pi, project_terminal_open, project_touch, runtime_abort_pi,
         runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc, runtime_stop_pi,
-        session_delete, session_external_activity, session_generate_title, session_history,
-        session_list, session_reconcile, session_search, session_update_ui_state,
-        session_watch_start, session_watch_stop, ssh_connection_list, ssh_connection_remove,
-        ssh_connection_save, ssh_connection_test, terminal_close, terminal_resize, terminal_write,
-        wsl_connection_list, wsl_connection_remove, wsl_connection_save, wsl_connection_test,
-        wsl_list_distributions,
+        runtime_subscribe_events, session_delete, session_external_activity,
+        session_generate_title, session_history, session_list, session_reconcile, session_search,
+        session_update_ui_state, session_watch_start, session_watch_stop, ssh_connection_list,
+        ssh_connection_remove, ssh_connection_save, ssh_connection_test, terminal_close,
+        terminal_resize, terminal_write, wsl_connection_list, wsl_connection_remove,
+        wsl_connection_save, wsl_connection_test, wsl_list_distributions,
     },
 };
 use std::{fs::OpenOptions, io::Write};
@@ -58,6 +58,11 @@ fn debug_chat_performance_log(payload: &str) -> Result<(), String> {
     writeln!(file, "{payload}").map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn debug_runtime_trace_log(payload: &str) -> Result<(), String> {
+    runtime::debug_trace::append_frontend_trace(payload)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -75,9 +80,11 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PiloRuntime::default())
+        .manage(runtime::RuntimeEventBus::default())
         .invoke_handler(tauri::generate_handler![
             greet,
             debug_chat_performance_log,
+            debug_runtime_trace_log,
             send_macos_desktop_notification,
             send_windows_desktop_notification,
             chat_session_prepare,
@@ -152,6 +159,7 @@ pub fn run() {
             runtime_restart_pi,
             runtime_abort_pi,
             runtime_send_rpc,
+            runtime_subscribe_events,
         ])
         .setup(|app| {
             use tauri::Manager;

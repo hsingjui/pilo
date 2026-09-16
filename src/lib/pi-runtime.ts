@@ -1,9 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 import { userErrorMessage } from "@/lib/app-error";
 
-export const RUNTIME_EVENT_NAME = "pilo://runtime";
+type UnlistenFn = () => void;
 
 export type PiProcessState =
 	| "stopped"
@@ -310,6 +309,7 @@ const runtimeEventHandlersBySession = new Map<
 	Set<RuntimeEventHandler>
 >();
 let runtimeListenerReady: Promise<void> | null = null;
+let runtimeEventChannel: Channel<PiloRuntimeEvent> | null = null;
 
 function invokeRuntimeEventHandlers(
 	handlers: Iterable<RuntimeEventHandler>,
@@ -324,18 +324,99 @@ function invokeRuntimeEventHandlers(
 	}
 }
 
+function traceRuntimeDebug(stage: string, detail: Record<string, unknown>) {
+	if (!import.meta.env.DEV) return;
+	void invoke("debug_runtime_trace_log", {
+		payload: JSON.stringify({ stage, ...detail }),
+	}).catch(() => undefined);
+}
+
+function traceRuntimeLifecycle(event: PiloRuntimeEvent) {
+	if (!import.meta.env.DEV) return;
+	const detail: Record<string, unknown> = {
+		sessionKey: event.sessionKey,
+		event: event.type,
+		generation: event.generation,
+	};
+	switch (event.type) {
+		case "process_state":
+			detail.state = event.state;
+			break;
+		case "rpc_message": {
+			if (typeof event.message !== "object" || event.message === null) return;
+			const message = event.message as Record<string, unknown>;
+			if (message.type !== "response") return;
+			detail.id = message.id;
+			detail.command = message.command;
+			detail.success = message.success;
+			break;
+		}
+		case "assistant_message_start":
+		case "user_message_start":
+			break;
+		case "assistant_message_end":
+			detail.stopReason = event.stopReason;
+			detail.hasError = Boolean(event.errorMessage?.trim());
+			break;
+		case "tool_execution_start":
+		case "tool_execution_end":
+			detail.toolCallId = event.toolCallId;
+			detail.toolName = event.toolName;
+			if (event.type === "tool_execution_end") detail.isError = event.isError;
+			break;
+		case "queue_update":
+			detail.steering = event.steering.length;
+			detail.followUp = event.followUp.length;
+			break;
+		case "compaction_start":
+			detail.reason = event.reason;
+			break;
+		case "compaction_end":
+			detail.reason = event.reason;
+			detail.aborted = event.aborted;
+			detail.willRetry = event.willRetry;
+			break;
+		case "auto_retry_start":
+			detail.attempt = event.attempt;
+			detail.maxAttempts = event.maxAttempts;
+			break;
+		case "auto_retry_end":
+			detail.attempt = event.attempt;
+			detail.success = event.success;
+			break;
+		case "runtime_error":
+			detail.code = event.code;
+			break;
+		default:
+			return;
+	}
+	void invoke("debug_runtime_trace_log", {
+		payload: JSON.stringify(detail),
+	}).catch(() => undefined);
+}
+
+function dispatchRuntimeEvent(event: PiloRuntimeEvent) {
+	traceRuntimeLifecycle(event);
+	invokeRuntimeEventHandlers(globalRuntimeEventHandlers, event);
+	const scoped = runtimeEventHandlersBySession.get(event.sessionKey);
+	if (scoped) invokeRuntimeEventHandlers(scoped, event);
+}
+
 function ensureRuntimeEventListener() {
 	if (runtimeListenerReady) return runtimeListenerReady;
-	runtimeListenerReady = listen<PiloRuntimeEvent>(
-		RUNTIME_EVENT_NAME,
-		({ payload }) => {
-			invokeRuntimeEventHandlers(globalRuntimeEventHandlers, payload);
-			const scoped = runtimeEventHandlersBySession.get(payload.sessionKey);
-			if (scoped) invokeRuntimeEventHandlers(scoped, payload);
-		},
-	)
-		.then(() => undefined)
+	traceRuntimeDebug("webview.channel.subscribe.begin", {});
+	const channel = new Channel<PiloRuntimeEvent>(dispatchRuntimeEvent);
+	runtimeEventChannel = channel;
+	runtimeListenerReady = invoke("runtime_subscribe_events", { channel })
+		.then(() => {
+			traceRuntimeDebug("webview.channel.subscribe.end", { ok: true });
+		})
 		.catch((error) => {
+			traceRuntimeDebug("webview.channel.subscribe.end", {
+				ok: false,
+				error: String(error),
+			});
+			if (runtimeEventChannel === channel) runtimeEventChannel = null;
 			runtimeListenerReady = null;
 			throw error;
 		});
@@ -353,10 +434,21 @@ export async function listenRuntimeEvents(
 		runtimeEventHandlersBySession.set(scope.sessionKey, handlers);
 	}
 	handlers.add(handler);
+	traceRuntimeDebug("webview.listener.add", {
+		sessionKey: scope?.sessionKey,
+		scoped: Boolean(scope),
+		handlerCount: handlers.size,
+	});
 	try {
 		await ensureRuntimeEventListener();
 	} catch (error) {
 		handlers.delete(handler);
+		traceRuntimeDebug("webview.listener.remove", {
+			sessionKey: scope?.sessionKey,
+			scoped: Boolean(scope),
+			handlerCount: handlers.size,
+			reason: "subscribe_failed",
+		});
 		if (scope && handlers.size === 0) {
 			runtimeEventHandlersBySession.delete(scope.sessionKey);
 		}
@@ -367,6 +459,12 @@ export async function listenRuntimeEvents(
 		if (!active) return;
 		active = false;
 		handlers.delete(handler);
+		traceRuntimeDebug("webview.listener.remove", {
+			sessionKey: scope?.sessionKey,
+			scoped: Boolean(scope),
+			handlerCount: handlers.size,
+			reason: "unlisten",
+		});
 		if (scope && handlers.size === 0) {
 			runtimeEventHandlersBySession.delete(scope.sessionKey);
 		}
@@ -395,6 +493,14 @@ export async function requestPiRpc<T>(
 ): Promise<T> {
 	rpcRequestSequence += 1;
 	const id = `pilo-${Date.now()}-${rpcRequestSequence}`;
+	const commandType =
+		typeof command.type === "string" ? command.type : "unknown";
+	traceRuntimeDebug("webview.rpc.begin", {
+		sessionKey,
+		id,
+		command: commandType,
+		timeoutMs,
+	});
 	let timer: number | undefined;
 	let unlisten: UnlistenFn | undefined;
 	let resolveResponse: ((value: PiRpcResponse<T>) => void) | undefined;
@@ -426,7 +532,22 @@ export async function requestPiRpc<T>(
 		if (!result.success) {
 			throw new Error(result.error || `Pi RPC ${result.command} 执行失败。`);
 		}
+		traceRuntimeDebug("webview.rpc.end", {
+			sessionKey,
+			id,
+			command: commandType,
+			ok: true,
+		});
 		return result.data as T;
+	} catch (error) {
+		traceRuntimeDebug("webview.rpc.end", {
+			sessionKey,
+			id,
+			command: commandType,
+			ok: false,
+			error: String(error),
+		});
+		throw error;
 	} finally {
 		if (timer !== undefined) window.clearTimeout(timer);
 		unlisten?.();

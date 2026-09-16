@@ -20,6 +20,23 @@ import {
 
 const DEFAULT_PI_RPC_TIMEOUT_MS = 10_000;
 const COMPACTION_PI_RPC_TIMEOUT_MS = 120_000;
+let chatClientSequence = 0;
+
+export type ChatSessionClientOptions = {
+	noSession?: boolean;
+	owner?: string;
+};
+
+function traceChatClient(
+	stage: string,
+	sessionKey: string,
+	detail: Record<string, unknown> = {},
+) {
+	if (!import.meta.env.DEV) return;
+	void invoke("debug_runtime_trace_log", {
+		payload: JSON.stringify({ stage, sessionKey, ...detail }),
+	}).catch(() => undefined);
+}
 
 export type ChatSessionRuntimeState = {
 	sessionKey: string;
@@ -35,19 +52,20 @@ export function listChatSessionRuntimeStates() {
 	return invoke<ChatSessionRuntimeState[]>("chat_session_states");
 }
 
-export function stopChatSession(projectId: string, sessionId: string) {
-	const sessionKey = JSON.stringify([projectId, sessionId]);
-	return invoke<void>("chat_session_stop", { sessionKey });
+function chatSessionKey(projectId: string, sessionId: string) {
+	return JSON.stringify([projectId, sessionId]);
 }
 
-export function createChatSessionClient(
+function createRegisteredChatSessionClient(
 	projectId: string,
 	sessionId: string,
 	sessionPath?: string,
-	options: { noSession?: boolean } = {},
+	options: ChatSessionClientOptions = {},
 ) {
-	const sessionKey = JSON.stringify([projectId, sessionId]);
+	const sessionKey = chatSessionKey(projectId, sessionId);
 	const noSession = options.noSession ?? false;
+	chatClientSequence += 1;
+	const clientId = chatClientSequence;
 	let resumePath = sessionPath;
 	let pendingPrepare: Promise<PiSessionSnapshot> | undefined;
 	let pendingEnsure: Promise<PiSessionSnapshot> | undefined;
@@ -61,13 +79,31 @@ export function createChatSessionClient(
 		return state;
 	};
 
-	return {
+	const client = {
+		clientId,
 		sessionKey,
+		projectId,
+		sessionId,
+		noSession,
+		updateSessionPath(nextSessionPath?: string) {
+			if (!nextSessionPath || nextSessionPath === resumePath) return;
+			traceChatClient("client.path.update", sessionKey, {
+				clientId,
+				hadResumePath: Boolean(resumePath),
+			});
+			resumePath = nextSessionPath;
+		},
 		state: () =>
 			invoke<ChatSessionRuntimeState | null>("chat_session_state", {
 				sessionKey,
 			}),
 		prepare: (): Promise<PiSessionSnapshot> => {
+			traceChatClient("client.prepare.request", sessionKey, {
+				clientId,
+				hasResumePath: Boolean(resumePath),
+				pendingEnsure: Boolean(pendingEnsure),
+				pendingPrepare: Boolean(pendingPrepare),
+			});
 			if (pendingEnsure) return pendingEnsure;
 			if (pendingPrepare) return pendingPrepare;
 			pendingPrepare = invoke<PiSessionSnapshot>("chat_session_prepare", {
@@ -81,6 +117,11 @@ export function createChatSessionClient(
 			return pendingPrepare;
 		},
 		ensure: (): Promise<PiSessionSnapshot> => {
+			traceChatClient("client.ensure.request", sessionKey, {
+				clientId,
+				hasResumePath: Boolean(resumePath),
+				pendingEnsure: Boolean(pendingEnsure),
+			});
 			if (pendingEnsure) return pendingEnsure;
 			pendingEnsure = invoke<PiSessionSnapshot>("chat_session_start", {
 				projectId,
@@ -92,7 +133,15 @@ export function createChatSessionClient(
 			});
 			return pendingEnsure;
 		},
-		stop: () => invoke<void>("chat_session_stop", { sessionKey }),
+		stop: (reason = "client_stop") => {
+			traceChatClient("client.stop.request", sessionKey, { clientId, reason });
+			return invoke<void>("chat_session_stop", { sessionKey, reason });
+		},
+		dispose: (reason = "client_dispose") => {
+			releaseChatSessionClient(sessionKey, client, reason);
+			traceChatClient("client.stop.request", sessionKey, { clientId, reason });
+			return invoke<void>("chat_session_stop", { sessionKey, reason });
+		},
 		listen: (handler: (event: PiloRuntimeEvent) => void) =>
 			listenRuntimeEvents(handler, { sessionKey }),
 		getPiAgentState,
@@ -162,7 +211,14 @@ export function createChatSessionClient(
 				message,
 				...(images.length > 0 ? { images: toPiImageContents(images) } : {}),
 			}),
-		abortPiReply: () => rpc<void>({ type: "abort" }),
+		abortPiReply: (reason = "abort_reply") => {
+			traceChatClient("client.abort.request", sessionKey, {
+				clientId,
+				reason,
+				command: "abort",
+			});
+			return rpc<void>({ type: "abort" });
+		},
 		compactPiSession: (customInstructions?: string) =>
 			rpc<PiCompactionResult>(
 				{
@@ -173,7 +229,14 @@ export function createChatSessionClient(
 				},
 				COMPACTION_PI_RPC_TIMEOUT_MS,
 			),
-		abortPiRetry: () => rpc<void>({ type: "abort_retry" }),
+		abortPiRetry: (reason = "abort_retry") => {
+			traceChatClient("client.abort.request", sessionKey, {
+				clientId,
+				reason,
+				command: "abort_retry",
+			});
+			return rpc<void>({ type: "abort_retry" });
+		},
 		respondToExtensionUi: (
 			id: string,
 			response: { value?: string; confirmed?: boolean; cancelled?: boolean },
@@ -184,4 +247,81 @@ export function createChatSessionClient(
 			}),
 		clearPiQueue: () => rpc<void>({ type: "clear_queue" }),
 	};
+
+	return client;
+}
+
+export type ChatSessionClient = ReturnType<
+	typeof createRegisteredChatSessionClient
+>;
+
+const chatSessionClientRegistry = new Map<string, ChatSessionClient>();
+
+function releaseChatSessionClient(
+	sessionKey: string,
+	expected: ChatSessionClient | undefined,
+	reason: string,
+) {
+	const current = chatSessionClientRegistry.get(sessionKey);
+	if (!current || (expected && current !== expected)) return false;
+	chatSessionClientRegistry.delete(sessionKey);
+	traceChatClient("client.release", sessionKey, {
+		clientId: current.clientId,
+		reason,
+		registrySize: chatSessionClientRegistry.size,
+	});
+	return true;
+}
+
+export function stopChatSession(
+	projectId: string,
+	sessionId: string,
+	reason = "stop_chat_session",
+) {
+	const sessionKey = chatSessionKey(projectId, sessionId);
+	releaseChatSessionClient(sessionKey, undefined, reason);
+	traceChatClient("client.stop.request", sessionKey, { reason });
+	return invoke<void>("chat_session_stop", { sessionKey, reason });
+}
+
+export function createChatSessionClient(
+	projectId: string,
+	sessionId: string,
+	sessionPath?: string,
+	options: ChatSessionClientOptions = {},
+): ChatSessionClient {
+	const sessionKey = chatSessionKey(projectId, sessionId);
+	const noSession = options.noSession ?? false;
+	const owner = options.owner ?? "unspecified";
+	const existing = chatSessionClientRegistry.get(sessionKey);
+	if (existing) {
+		existing.updateSessionPath(sessionPath);
+		traceChatClient("client.reuse", sessionKey, {
+			clientId: existing.clientId,
+			owner,
+			hasSessionPath: Boolean(sessionPath),
+			noSession,
+			noSessionMismatch: existing.noSession !== noSession,
+			registrySize: chatSessionClientRegistry.size,
+		});
+		return existing;
+	}
+
+	const client = createRegisteredChatSessionClient(
+		projectId,
+		sessionId,
+		sessionPath,
+		options,
+	);
+	chatSessionClientRegistry.set(sessionKey, client);
+	traceChatClient("client.create", sessionKey, {
+		clientId: client.clientId,
+		owner,
+		projectId,
+		sessionId,
+		hasSessionPath: Boolean(sessionPath),
+		noSession,
+		registrySize: chatSessionClientRegistry.size,
+	});
+	return client;
 }

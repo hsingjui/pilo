@@ -347,13 +347,13 @@ export function useChatRuntimeQueue({
 							"Pi queue clear failed; restarting runtime before send-now",
 							error,
 						);
-						await client.stop();
+						await client.stop("send_now_queue_clear_failed");
 						runtimeStopped = true;
 					}
 				}
 				if (!runtimeStopped && turn.generation !== null && turn.promptSent) {
 					try {
-						await client.abortPiReply();
+						await client.abortPiReply("send_now");
 					} catch (error) {
 						if (session.temporary) {
 							if (piQueueCleared) await replayQueuedMessages(turn);
@@ -363,7 +363,7 @@ export function useChatRuntimeQueue({
 							"Pi abort failed; restarting runtime before send-now",
 							error,
 						);
-						await client.stop();
+						await client.stop("send_now_abort_failed");
 					}
 				}
 
@@ -463,7 +463,7 @@ export function useChatRuntimeQueue({
 			}
 			if (!mustStopRuntime) {
 				try {
-					await client.abortPiReply();
+					await client.abortPiReply("stop_turn");
 				} catch (error) {
 					console.warn("Pi abort failed; stopping chat runtime", error);
 					mustStopRuntime = true;
@@ -471,7 +471,7 @@ export function useChatRuntimeQueue({
 			}
 			if (!mustStopRuntime) return;
 			try {
-				await client.stop();
+				await client.stop("stop_turn_abort_failed");
 			} catch (stopError) {
 				toast.error("停止 Pi 失败", {
 					description: runtimeErrorMessage(stopError),

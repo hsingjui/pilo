@@ -2,6 +2,12 @@ import type { VirtualizerHandle } from "virtua";
 
 const SCROLL_EPSILON_PX = 1;
 
+export type ChatStickyScrollCorrectionMode =
+	| "baseline"
+	| "dom-only"
+	| "virtua-only"
+	| "none";
+
 export type ChatScrollElementLike = Pick<
 	HTMLElement,
 	"clientHeight" | "scrollHeight" | "scrollTop"
@@ -28,23 +34,39 @@ export function scrollChatViewportToRealBottom({
 	vlist,
 	scrollElement,
 	bottomOffset = 0,
+	mode = "baseline",
 }: {
 	itemCount: number;
 	vlist: Pick<VirtualizerHandle, "scrollToIndex"> | null;
 	scrollElement: ChatScrollElementLike | null;
 	bottomOffset?: number;
+	mode?: ChatStickyScrollCorrectionMode;
 }) {
-	if (itemCount <= 0) return;
+	if (itemCount <= 0) {
+		return { virtuaScrolled: false, domScrolled: false };
+	}
 
-	vlist?.scrollToIndex(itemCount - 1, {
-		align: "end",
-		offset: bottomOffset,
-	});
+	let virtuaScrolled = false;
+	let domScrolled = false;
 
-	if (!scrollElement) return;
+	if (mode === "baseline" || mode === "virtua-only") {
+		if (vlist) {
+			vlist.scrollToIndex(itemCount - 1, {
+				align: "end",
+				offset: bottomOffset,
+			});
+			virtuaScrolled = true;
+		}
+	}
+
+	if (mode === "virtua-only" || mode === "none" || !scrollElement) {
+		return { virtuaScrolled, domScrolled };
+	}
 	const maxScrollTop = getChatScrollMaxOffset(scrollElement);
 	if (Math.abs(scrollElement.scrollTop - maxScrollTop) <= SCROLL_EPSILON_PX) {
-		return;
+		return { virtuaScrolled, domScrolled };
 	}
 	scrollElement.scrollTop = maxScrollTop;
+	domScrolled = true;
+	return { virtuaScrolled, domScrolled };
 }

@@ -15,6 +15,15 @@ export const IS_WINDOWS = IS_TAURI && navigator.userAgent.includes("Windows");
 /** macOS 侧栏收起时，通用顶栏避让原生交通灯簇；会话顶栏与 Lody 一致使用 4.5rem。 */
 export const TRAFFIC_LIGHT_GUTTER = "pl-[4.5rem]";
 
+/**
+ * macOS 顶栏内容与红绿灯圆心对齐用的上边距。
+ * tauri.conf.json 的 trafficLightPosition.y = 25：tao 会把标题栏容器高度设为 12 + y、
+ * 按钮保持距容器底部 4px，实测圆心落在窗口顶部下 27px。h-11 顶栏内容居中
+ * （圆心 = 上边距 + 22）因此取 5px；侧栏卡片头部（顶边距 11px）的收起按钮对应
+ * top-0.5（11 + 2 + 14 = 27），两者圆心一致，收起/展开时控件不会跳动。
+ */
+export const TRAFFIC_LIGHT_ALIGNED_HEADER = "mt-[5px]";
+
 // 自定义标题栏仅在 Windows 且运行于 Tauri 时启用（Windows 无边框 + 自绘控制按钮）
 export const CUSTOM_TITLEBAR =
 	IS_TAURI && navigator.userAgent.includes("Windows");

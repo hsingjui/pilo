@@ -14,7 +14,7 @@ use std::{
 use pilo_protocol::{Envelope, PROTOCOL_VERSION, SERVER_CAPABILITIES, ServerHello};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 use crate::domain::Connection;
 
@@ -203,7 +203,7 @@ impl ServerClient {
             .map_err(|error| format!("invalid pilo-server response for {method}: {error}"))
     }
 
-    pub fn subscribe(&self, stream_id: &str) -> broadcast::Receiver<Arc<ServerEvent>> {
+    pub fn subscribe(&self, stream_id: &str) -> mpsc::UnboundedReceiver<ServerEvent> {
         self.events.subscribe(stream_id)
     }
 

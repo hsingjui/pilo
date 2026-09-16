@@ -356,6 +356,9 @@ pub async fn session_history(
     session_path: String,
     expected_file_size: Option<u64>,
     expected_file_mtime_ns: Option<String>,
+    start_message: Option<usize>,
+    message_limit: Option<usize>,
+    include_message_index: Option<bool>,
 ) -> Result<tauri::ipc::Response, String> {
     let project = project::get(&app, &project_id)?;
     let expected_file_mtime_ns = expected_file_mtime_ns
@@ -365,14 +368,29 @@ pub async fn session_history(
                 .map_err(|error| format!("invalid expected session mtime '{value}': {error}"))
         })
         .transpose()?;
-    let serialized = session_history::read_history_json(
-        &runtime.servers,
-        &runtime.session_history_cache,
-        &project,
-        &session_path,
-        expected_file_size.zip(expected_file_mtime_ns),
-    )
-    .await?;
+    let expected_fingerprint = expected_file_size.zip(expected_file_mtime_ns);
+    let serialized = if let Some(message_limit) = message_limit {
+        session_history::read_history_window_json(
+            &runtime.servers,
+            &runtime.session_history_cache,
+            &project,
+            &session_path,
+            expected_fingerprint,
+            start_message,
+            message_limit,
+            include_message_index.unwrap_or(false),
+        )
+        .await?
+    } else {
+        session_history::read_history_json(
+            &runtime.servers,
+            &runtime.session_history_cache,
+            &project,
+            &session_path,
+            expected_fingerprint,
+        )
+        .await?
+    };
     Ok(tauri::ipc::Response::new(serialized))
 }
 

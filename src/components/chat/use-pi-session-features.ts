@@ -311,7 +311,7 @@ export function usePiSessionFeatures({
 
 	const abortRetry = useCallback(async () => {
 		try {
-			await client.abortPiRetry();
+			await client.abortPiRetry("user_abort_retry");
 			setRetryState(null);
 		} catch (error) {
 			toast.error("无法停止重试", { description: runtimeErrorMessage(error) });

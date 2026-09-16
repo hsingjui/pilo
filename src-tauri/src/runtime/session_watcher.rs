@@ -77,13 +77,13 @@ impl SessionWatcherManager {
         let task = tokio::spawn(async move {
             loop {
                 let disconnect_message = match events.recv().await {
-                    Ok(event) if event.event == SERVER_DISCONNECTED_EVENT => event
+                    Some(event) if event.event == SERVER_DISCONNECTED_EVENT => event
                         .data
                         .get("message")
                         .and_then(serde_json::Value::as_str)
                         .unwrap_or("pilo-server session watcher disconnected")
                         .to_owned(),
-                    Ok(event) => {
+                    Some(event) => {
                         if event.stream_id != event_stream_id {
                             continue;
                         }
@@ -147,13 +147,7 @@ impl SessionWatcherManager {
                         }
                         continue;
                     }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        emit_changed(&event_app, &project_id);
-                        continue;
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        "pilo-server session watcher event channel closed".to_owned()
-                    }
+                    None => "pilo-server session watcher event channel closed".to_owned(),
                 };
 
                 emit_error(

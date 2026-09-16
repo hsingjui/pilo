@@ -8,14 +8,17 @@ use std::{
 };
 
 use serde::Serialize;
-use serde_json::Value;
-use tauri::{AppHandle, Emitter};
+use serde_json::{Value, json};
+use tauri::{AppHandle, Manager};
 use tokio::sync::{Mutex, oneshot};
 
 use crate::domain::Project;
 
 use super::{
-    events::{PiProcessState, RUNTIME_EVENT_NAME, RuntimeEvent, RuntimeEventSink},
+    debug_trace::runtime_trace,
+    events::{
+        PiProcessState, RuntimeEvent, RuntimeEventBus, RuntimeEventEnvelope, RuntimeEventSink,
+    },
     server_client::ServerManager,
     server_pi::{PiLaunchOptions, ServerPiSession},
     session_snapshot::PiSessionSnapshot,
@@ -62,21 +65,12 @@ type InitializationReply = oneshot::Sender<Result<(), String>>;
 
 #[derive(Clone)]
 struct ChatEventSink {
-    app: AppHandle,
+    events: RuntimeEventBus,
     session_key: String,
     project_id: String,
     control_reply: Arc<StdMutex<Option<InitializationReply>>>,
     session_path: Arc<StdMutex<Option<String>>>,
     active_turn: Arc<AtomicBool>,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ChatEvent<'a> {
-    session_key: &'a str,
-    project_id: &'a str,
-    #[serde(flatten)]
-    event: RuntimeEvent,
 }
 
 impl RuntimeEventSink for ChatEventSink {
@@ -136,14 +130,11 @@ impl RuntimeEventSink for ChatEventSink {
                 return;
             }
         }
-        let _ = self.app.emit(
-            RUNTIME_EVENT_NAME,
-            ChatEvent {
-                session_key: &self.session_key,
-                project_id: &self.project_id,
-                event,
-            },
-        );
+        self.events.send(RuntimeEventEnvelope::session(
+            self.session_key.clone(),
+            self.project_id.clone(),
+            event,
+        ));
     }
 }
 
@@ -287,11 +278,21 @@ impl ChatSessions {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .clone();
-        session
+        runtime_trace(
+            "chat.spawn.begin",
+            Some(session_key),
+            None,
+            json!({
+                "projectId": project.id,
+                "hasSessionPath": session_path.is_some(),
+                "noSession": process.no_session,
+            }),
+        );
+        let result = session
             .spawn(
                 servers,
                 ChatEventSink {
-                    app,
+                    events: app.state::<RuntimeEventBus>().inner().clone(),
                     session_key: session_key.to_owned(),
                     project_id: project.id.clone(),
                     control_reply: Arc::clone(&process.control_reply),
@@ -305,7 +306,26 @@ impl ChatSessions {
                     ..PiLaunchOptions::default()
                 },
             )
-            .await
+            .await;
+        match &result {
+            Ok(snapshot) => runtime_trace(
+                "chat.spawn.end",
+                Some(session_key),
+                session.stream_id(),
+                json!({
+                    "ok": true,
+                    "generation": snapshot.generation,
+                    "state": snapshot.state,
+                }),
+            ),
+            Err(error) => runtime_trace(
+                "chat.spawn.end",
+                Some(session_key),
+                session.stream_id(),
+                json!({ "ok": false, "error": error }),
+            ),
+        }
+        result
     }
 
     async fn wait_for_control_response(
@@ -344,6 +364,12 @@ impl ChatSessions {
         session_path: Option<String>,
         no_session: bool,
     ) -> Result<PiSessionSnapshot, String> {
+        runtime_trace(
+            "chat.prepare.begin",
+            Some(&session_key),
+            None,
+            json!({ "hasSessionPath": session_path.is_some(), "noSession": no_session }),
+        );
         let process = self
             .process(&project, &session_key, session_path.clone(), no_session)
             .await?;
@@ -355,6 +381,12 @@ impl ChatSessions {
             Self::spawn_if_needed(&process, &mut session, servers, app, &project, &session_key)
                 .await?;
         if process.prepared.load(Ordering::Acquire) {
+            runtime_trace(
+                "chat.prepare.end",
+                Some(&session_key),
+                session.stream_id(),
+                json!({ "ok": true, "cached": true, "generation": snapshot.generation }),
+            );
             return Ok(snapshot);
         }
         let prepared = Self::wait_for_control_response(
@@ -364,6 +396,12 @@ impl ChatSessions {
         )
         .await;
         if let Err(error) = prepared {
+            runtime_trace(
+                "chat.prepare.end",
+                Some(&session_key),
+                session.stream_id(),
+                json!({ "ok": false, "error": error }),
+            );
             process.prepared.store(false, Ordering::Release);
             process.initialized.store(false, Ordering::Release);
             let _ = session.stop().await;
@@ -376,7 +414,14 @@ impl ChatSessions {
             // with an in-memory session that needs no additional new_session RPC.
             process.initialized.store(true, Ordering::Release);
         }
-        Ok(session.snapshot())
+        let snapshot = session.snapshot();
+        runtime_trace(
+            "chat.prepare.end",
+            Some(&session_key),
+            session.stream_id(),
+            json!({ "ok": true, "cached": false, "generation": snapshot.generation }),
+        );
+        Ok(snapshot)
     }
 
     pub async fn ensure(
@@ -388,6 +433,12 @@ impl ChatSessions {
         session_path: Option<String>,
         no_session: bool,
     ) -> Result<PiSessionSnapshot, String> {
+        runtime_trace(
+            "chat.ensure.begin",
+            Some(&session_key),
+            None,
+            json!({ "hasSessionPath": session_path.is_some(), "noSession": no_session }),
+        );
         let process = self
             .process(&project, &session_key, session_path.clone(), no_session)
             .await?;
@@ -399,6 +450,12 @@ impl ChatSessions {
             Self::spawn_if_needed(&process, &mut session, servers, app, &project, &session_key)
                 .await?;
         if process.initialized.load(Ordering::Acquire) {
+            runtime_trace(
+                "chat.ensure.end",
+                Some(&session_key),
+                session.stream_id(),
+                json!({ "ok": true, "cached": true, "generation": snapshot.generation }),
+            );
             return Ok(snapshot);
         }
         let resume_path = process
@@ -418,6 +475,12 @@ impl ChatSessions {
         };
         let initialized = Self::wait_for_control_response(&process, &session, command).await;
         if let Err(error) = initialized {
+            runtime_trace(
+                "chat.ensure.end",
+                Some(&session_key),
+                session.stream_id(),
+                json!({ "ok": false, "error": error }),
+            );
             process.prepared.store(false, Ordering::Release);
             process.initialized.store(false, Ordering::Release);
             let _ = session.stop().await;
@@ -425,10 +488,23 @@ impl ChatSessions {
         }
         process.prepared.store(true, Ordering::Release);
         process.initialized.store(true, Ordering::Release);
-        Ok(session.snapshot())
+        let snapshot = session.snapshot();
+        runtime_trace(
+            "chat.ensure.end",
+            Some(&session_key),
+            session.stream_id(),
+            json!({ "ok": true, "cached": false, "generation": snapshot.generation }),
+        );
+        Ok(snapshot)
     }
 
     pub async fn send(&self, session_key: &str, command: Value) -> Result<(), String> {
+        let command_type = command
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_owned();
+        let command_id = command.get("id").and_then(Value::as_str).map(str::to_owned);
         let process = self
             .registry
             .lock()
@@ -441,19 +517,72 @@ impl ChatSessions {
         if process.closed.load(Ordering::Acquire) {
             return Err("project is closing".to_owned());
         }
-        session.send_rpc(command).await
+        runtime_trace(
+            "chat.send.begin",
+            Some(session_key),
+            session.stream_id(),
+            json!({ "command": command_type, "id": command_id }),
+        );
+        let result = session.send_rpc(command).await;
+        runtime_trace(
+            "chat.send.end",
+            Some(session_key),
+            session.stream_id(),
+            json!({
+                "command": command_type,
+                "id": command_id,
+                "ok": result.is_ok(),
+                "error": result.as_ref().err(),
+            }),
+        );
+        result
     }
 
-    pub async fn stop(&self, session_key: &str) -> Result<(), String> {
+    pub async fn stop(&self, session_key: &str, reason: Option<&str>) -> Result<(), String> {
         let process = {
             let mut registry = self.registry.lock().await;
             registry.processes.remove(session_key)
         };
         let Some(process) = process else {
+            runtime_trace(
+                "chat.stop",
+                Some(session_key),
+                None,
+                json!({ "found": false, "reason": reason }),
+            );
             return Ok(());
         };
         process.closed.store(true, Ordering::Release);
-        process.session.lock().await.stop().await?;
+        let mut session = process.session.lock().await;
+        runtime_trace(
+            "chat.stop.begin",
+            Some(session_key),
+            session.stream_id(),
+            json!({
+                "found": true,
+                "reason": reason,
+                "prepared": process.prepared.load(Ordering::Acquire),
+                "initialized": process.initialized.load(Ordering::Acquire),
+                "activeTurn": process.active_turn.load(Ordering::Acquire),
+                "hasSessionPath": process
+                    .session_path
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .is_some(),
+            }),
+        );
+        let result = session.stop().await;
+        runtime_trace(
+            "chat.stop.end",
+            Some(session_key),
+            session.stream_id(),
+            json!({
+                "ok": result.is_ok(),
+                "reason": reason,
+                "error": result.as_ref().err(),
+            }),
+        );
+        result?;
         Ok(())
     }
 

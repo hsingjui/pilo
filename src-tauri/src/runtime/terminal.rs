@@ -74,36 +74,17 @@ impl TerminalManager {
         let mut events = client.subscribe(&terminal_id);
         let event_terminal_id = terminal_id.clone();
         let event_app = app.clone();
-        let event_client = Arc::clone(&client);
         let task = tokio::spawn(async move {
             loop {
-                let event = match events.recv().await {
-                    Ok(event) => event,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                        let _ = event_app.emit(
-                            TERMINAL_EVENT_NAME,
-                            TerminalEvent::Error {
-                                terminal_id: event_terminal_id.clone(),
-                                message: format!(
-                                    "pilo-server terminal event stream overflowed and dropped {skipped} chunks"
-                                ),
-                            },
-                        );
-                        let _ = event_client
-                            .request("terminal.close", json!({ "streamId": event_terminal_id }))
-                            .await;
-                        break;
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        let _ = event_app.emit(
-                            TERMINAL_EVENT_NAME,
-                            TerminalEvent::Error {
-                                terminal_id: event_terminal_id.clone(),
-                                message: "pilo-server terminal connection closed".to_owned(),
-                            },
-                        );
-                        break;
-                    }
+                let Some(event) = events.recv().await else {
+                    let _ = event_app.emit(
+                        TERMINAL_EVENT_NAME,
+                        TerminalEvent::Error {
+                            terminal_id: event_terminal_id.clone(),
+                            message: "pilo-server terminal connection closed".to_owned(),
+                        },
+                    );
+                    break;
                 };
                 if event.event == SERVER_DISCONNECTED_EVENT {
                     let _ = event_app.emit(

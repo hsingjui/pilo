@@ -25,6 +25,7 @@ import { requestSessionTitle } from "@/lib/sessions";
 export type { ChatRuntimeRecoveryState } from "@/components/chat/chat-runtime-types";
 
 type UseChatRuntimeOptions = {
+	active: boolean;
 	session: ChatSession;
 	client: ChatSessionClient;
 	activeTurnSessionIdRef?: { current: string | null };
@@ -37,6 +38,7 @@ type UseChatRuntimeOptions = {
 		targetSessionId: string,
 		actions: readonly ConversationAction[],
 	) => void;
+	getActivePresentationIntervalMs: () => number;
 	scrollRef: { current: HTMLDivElement | null };
 	scrollToBottom: (smooth?: boolean) => void;
 	clearDraft: () => void;
@@ -47,6 +49,7 @@ type UseChatRuntimeOptions = {
 };
 
 export function useChatRuntime({
+	active,
 	session,
 	client,
 	activeTurnSessionIdRef,
@@ -56,6 +59,7 @@ export function useChatRuntime({
 	desktopNotifications,
 	onSessionIdentified,
 	dispatchConversationBatch,
+	getActivePresentationIntervalMs,
 	scrollRef,
 	scrollToBottom,
 	clearDraft,
@@ -82,7 +86,11 @@ export function useChatRuntime({
 		queueRuntimeAction,
 		dispatchConversationActions,
 		dispatchConversation,
-	} = useRuntimeConversationDispatch(dispatchConversationBatch);
+	} = useRuntimeConversationDispatch(
+		active,
+		dispatchConversationBatch,
+		getActivePresentationIntervalMs,
+	);
 
 	const {
 		pendingSteering,

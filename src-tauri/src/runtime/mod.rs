@@ -1,6 +1,7 @@
 mod chat_sessions;
 pub mod commands;
 mod credentials;
+pub(crate) mod debug_trace;
 mod events;
 mod git;
 mod parallel;
@@ -27,6 +28,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex;
 
 use chat_sessions::ChatSessions;
+pub(crate) use events::RuntimeEventBus;
 use parallel::ParallelAgentManager;
 use preview::PreviewManager;
 use server_client::ServerManager;

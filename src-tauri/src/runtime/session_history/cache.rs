@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
+    ops::Range,
     sync::Arc,
 };
 
@@ -17,10 +18,19 @@ pub(super) struct SessionFileFingerprint {
     pub(super) file_mtime_ns: u64,
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct SessionHistoryWindowIndex {
+    pub(super) events_content_start: usize,
+    pub(super) events_content_end: usize,
+    pub(super) message_ranges: Vec<Range<usize>>,
+    pub(super) message_index_json: Arc<Vec<u8>>,
+}
+
 #[derive(Clone)]
 pub(super) struct CachedSessionHistory {
     fingerprint: SessionFileFingerprint,
     serialized_json: Arc<Vec<u8>>,
+    window_index: Option<Arc<SessionHistoryWindowIndex>>,
     estimated_bytes: usize,
 }
 
@@ -46,11 +56,49 @@ impl SessionHistoryCache {
         Some(serialized)
     }
 
+    pub(super) fn get_windowed(
+        &mut self,
+        key: &str,
+        fingerprint: SessionFileFingerprint,
+    ) -> Option<(Arc<Vec<u8>>, Arc<SessionHistoryWindowIndex>)> {
+        let (serialized, index) = match self.entries.get(key) {
+            Some(entry) if entry.fingerprint == fingerprint => (
+                Arc::clone(&entry.serialized_json),
+                Arc::clone(entry.window_index.as_ref()?),
+            ),
+            Some(_) => return None,
+            None => return None,
+        };
+        self.touch(key);
+        Some((serialized, index))
+    }
+
+    #[cfg(test)]
     pub(super) fn insert_serialized(
         &mut self,
         key: String,
         fingerprint: SessionFileFingerprint,
         serialized_json: Arc<Vec<u8>>,
+    ) {
+        self.insert_entry(key, fingerprint, serialized_json, None);
+    }
+
+    pub(super) fn insert_windowed(
+        &mut self,
+        key: String,
+        fingerprint: SessionFileFingerprint,
+        serialized_json: Arc<Vec<u8>>,
+        window_index: Arc<SessionHistoryWindowIndex>,
+    ) {
+        self.insert_entry(key, fingerprint, serialized_json, Some(window_index));
+    }
+
+    fn insert_entry(
+        &mut self,
+        key: String,
+        fingerprint: SessionFileFingerprint,
+        serialized_json: Arc<Vec<u8>>,
+        window_index: Option<Arc<SessionHistoryWindowIndex>>,
     ) {
         self.remove(&key);
         let estimated_bytes = estimated_history_bytes(fingerprint);
@@ -62,6 +110,7 @@ impl SessionHistoryCache {
             CachedSessionHistory {
                 fingerprint,
                 serialized_json,
+                window_index,
                 estimated_bytes,
             },
         );

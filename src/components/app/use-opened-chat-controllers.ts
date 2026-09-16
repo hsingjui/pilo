@@ -65,6 +65,7 @@ export function useOpenedChatControllers({
 			void stopChatSession(
 				entry.session.projectRecord.id,
 				entry.session.id,
+				`controller_evicted:${controllerId}`,
 			).catch((error) =>
 				console.warn("Failed to stop evicted chat session", error),
 			);

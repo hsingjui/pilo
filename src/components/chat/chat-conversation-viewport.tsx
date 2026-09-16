@@ -3,10 +3,11 @@ import {
 	memo,
 	useCallback,
 	useImperativeHandle,
+	useLayoutEffect,
 	type MutableRefObject,
 } from "react";
 import { ArrowDown } from "lucide-react";
-import { Virtualizer } from "virtua";
+import { Virtualizer, type CacheSnapshot } from "virtua";
 
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import { ChatExpansionStateProvider } from "@/components/chat/chat-expansion-state";
@@ -19,6 +20,7 @@ import { UserMessage } from "@/components/chat/chat-user-message";
 import { ConversationOutlineRail } from "@/components/chat/conversation-outline-rail";
 import { useChatScrollController } from "@/components/chat/use-chat-scroll-controller";
 import type { ChatMessage } from "@/lib/conversation-types";
+import { recordChatSessionSwitchReady } from "@/lib/chat-performance";
 import {
 	Button,
 	ErrorState,
@@ -28,6 +30,9 @@ import {
 } from "@/ui";
 
 const CHAT_VIRTUA_BUFFER_PX = 800;
+const USE_PLAIN_SHORT_CHAT_EXPERIMENT =
+	import.meta.env.VITE_PILO_PLAIN_SHORT_CHAT === "1";
+const PLAIN_SHORT_CHAT_MAX_MESSAGES = 8;
 
 export type ChatConversationViewportHandle = {
 	scrollToBottom: (smooth?: boolean) => void;
@@ -38,11 +43,17 @@ type ChatConversationViewportProps = {
 	sessionId: string;
 	sessionPath?: string;
 	messages: ChatMessage[];
+	onVisibleRangeChange?: (startIndex: number, endIndex: number) => void;
 	activeAssistantMessageId: string | null;
 	effectiveLoadState: "ready" | "loading" | "error";
 	initialScrollTop: number;
 	initialSticky: boolean;
+	initialVirtualizerCache?: CacheSnapshot;
 	onScrollStateChange?: (state: { scrollTop: number; sticky: boolean }) => void;
+	onVirtualizerCacheChange?: (
+		cache: CacheSnapshot,
+		messageCount: number,
+	) => void;
 	runtimeScrollRef: MutableRefObject<HTMLDivElement | null>;
 	onOpenFile?: (path: string) => void;
 	onForkAssistant?: (messageId: string) => void;
@@ -55,8 +66,7 @@ type ChatConversationViewportProps = {
 
 type MessageRowProps = {
 	message: ChatMessage;
-	index: number;
-	messageCount: number;
+	isLastMessage: boolean;
 	onOpenFile?: (path: string) => void;
 	onForkAssistant?: (messageId: string) => void;
 	forkingMessageId?: string | null;
@@ -64,16 +74,39 @@ type MessageRowProps = {
 	suppressInterruptedError?: boolean;
 };
 
+function HistoryMessagePlaceholder({ message }: { message: ChatMessage }) {
+	const estimatedChars = message.historyEstimatedChars ?? message.text.length;
+	const estimatedHeight =
+		message.role === "user"
+			? Math.min(152, 52 + Math.ceil(estimatedChars / 90) * 20)
+			: Math.min(360, 72 + Math.ceil(estimatedChars / 110) * 20);
+	return (
+		<ConversationColumn className="py-2 sm:py-3">
+			<div
+				className={
+					message.role === "user"
+						? "ml-auto w-[min(70%,28rem)] rounded-2xl border border-foreground/[0.05] bg-foreground/[0.025]"
+						: "w-full rounded-lg bg-foreground/[0.018]"
+				}
+				style={{ minHeight: estimatedHeight }}
+				aria-hidden="true"
+			/>
+		</ConversationColumn>
+	);
+}
+
 const MessageRow = memo(function MessageRow({
 	message,
-	index,
-	messageCount,
+	isLastMessage,
 	onOpenFile,
 	onForkAssistant,
 	forkingMessageId,
 	forkDisabled,
 	suppressInterruptedError,
 }: MessageRowProps) {
+	if (message.historyPlaceholder) {
+		return <HistoryMessagePlaceholder message={message} />;
+	}
 	return message.role === "user" ? (
 		<UserMessage message={message} />
 	) : (
@@ -84,11 +117,9 @@ const MessageRow = memo(function MessageRow({
 			forking={forkingMessageId === message.id}
 			forkDisabled={forkDisabled}
 			suppressInterruptedError={
-				Boolean(suppressInterruptedError) && index === messageCount - 1
+				Boolean(suppressInterruptedError) && isLastMessage
 			}
-			replyRunwayPx={
-				index === messageCount - 1 ? message.replyRunwayPx : undefined
-			}
+			replyRunwayPx={isLastMessage ? message.replyRunwayPx : undefined}
 		/>
 	);
 });
@@ -102,11 +133,14 @@ const ChatConversationViewportImpl = forwardRef<
 		sessionId,
 		sessionPath,
 		messages,
+		onVisibleRangeChange,
 		activeAssistantMessageId,
 		effectiveLoadState,
 		initialScrollTop,
 		initialSticky,
+		initialVirtualizerCache,
 		onScrollStateChange,
+		onVirtualizerCacheChange,
 		runtimeScrollRef,
 		onOpenFile,
 		onForkAssistant,
@@ -118,6 +152,10 @@ const ChatConversationViewportImpl = forwardRef<
 	},
 	ref,
 ) {
+	const plainShortChat =
+		USE_PLAIN_SHORT_CHAT_EXPERIMENT &&
+		activeAssistantMessageId !== null &&
+		messages.length <= PLAIN_SHORT_CHAT_MAX_MESSAGES;
 	const {
 		outlineEntries,
 		scrollRef,
@@ -134,12 +172,21 @@ const ChatConversationViewportImpl = forwardRef<
 		active,
 		sessionId,
 		messages,
+		virtualizerEnabled: !plainShortChat,
 		activeAssistantMessageId,
 		effectiveLoadState,
 		initialScrollTop,
 		initialSticky,
 		onScrollStateChange,
+		onVisibleRangeChange,
+		onVirtualizerCacheChange,
 	});
+
+	useLayoutEffect(() => {
+		if (active && effectiveLoadState === "ready") {
+			recordChatSessionSwitchReady(sessionId);
+		}
+	}, [active, effectiveLoadState, sessionId]);
 
 	useImperativeHandle(ref, () => ({ scrollToBottom }), [scrollToBottom]);
 
@@ -159,8 +206,7 @@ const ChatConversationViewportImpl = forwardRef<
 			<MessageRow
 				key={message.id}
 				message={message}
-				index={index}
-				messageCount={messages.length}
+				isLastMessage={index === messages.length - 1}
 				onOpenFile={onOpenFile}
 				onForkAssistant={onForkAssistant}
 				forkingMessageId={forkingMessageId}
@@ -183,6 +229,7 @@ const ChatConversationViewportImpl = forwardRef<
 			<div className="relative min-h-0 w-full flex-1">
 				<div
 					ref={bindScrollRef}
+					onScroll={plainShortChat ? () => syncScrollState() : undefined}
 					className="chat-scrollbar h-full w-full overflow-x-hidden overflow-y-auto overscroll-none [contain:strict]"
 					style={{
 						scrollbarGutter:
@@ -213,6 +260,12 @@ const ChatConversationViewportImpl = forwardRef<
 						<div className="flex min-h-full flex-col">
 							<EmptyConversation />
 						</div>
+					) : plainShortChat ? (
+						<div>
+							{messages.map((message, index) =>
+								renderMessage(message, index),
+							)}
+						</div>
 					) : (
 						// Virtua already removes off-screen rows. Do not add content-visibility:auto
 						// inside message rows: its intrinsic-size placeholders change measured row
@@ -220,6 +273,7 @@ const ChatConversationViewportImpl = forwardRef<
 						<Virtualizer
 							ref={virtualizerRef}
 							data={messages}
+							cache={initialVirtualizerCache}
 							shift={false}
 							bufferSize={CHAT_VIRTUA_BUFFER_PX}
 							onScroll={handleVirtualScroll}

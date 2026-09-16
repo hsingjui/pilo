@@ -11,11 +11,10 @@ use serde_json::{Value, json};
 use tokio::{
     io::BufReader,
     process::{Child, ChildStdin, ChildStdout},
-    sync::{Mutex, broadcast, mpsc, oneshot},
+    sync::{Mutex, mpsc, oneshot},
     task::JoinHandle,
 };
 
-const STREAM_EVENT_CAPACITY: usize = 512;
 pub const SERVER_DISCONNECTED_EVENT: &str = "server.disconnected";
 
 pub(super) struct ServerResponse {
@@ -39,53 +38,55 @@ pub struct ServerEvent {
 
 #[derive(Default)]
 pub(super) struct ServerEventHub {
-    streams: StdMutex<HashMap<String, broadcast::Sender<Arc<ServerEvent>>>>,
+    streams: StdMutex<HashMap<String, mpsc::UnboundedSender<ServerEvent>>>,
 }
 
 impl ServerEventHub {
-    pub(super) fn subscribe(&self, stream_id: &str) -> broadcast::Receiver<Arc<ServerEvent>> {
+    pub(super) fn subscribe(&self, stream_id: &str) -> mpsc::UnboundedReceiver<ServerEvent> {
+        // The protocol has one shared stdout reader for every logical stream. This
+        // mailbox is intentionally unbounded so a slow consumer cannot apply
+        // head-of-line backpressure to unrelated streams. Pi runtime events are
+        // coalesced after semantic adaptation before they cross into the WebView.
+        let (sender, receiver) = mpsc::unbounded_channel();
         let mut streams = self
             .streams
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        streams.retain(|_, sender| sender.receiver_count() > 0);
-        streams
-            .entry(stream_id.to_owned())
-            .or_insert_with(|| broadcast::channel(STREAM_EVENT_CAPACITY).0)
-            .subscribe()
+        streams.retain(|_, sender| !sender.is_closed());
+        // A server stream has exactly one owner in the desktop runtime. Replacing
+        // an existing sender closes the stale receiver instead of broadcasting
+        // duplicate events to multiple consumers.
+        streams.insert(stream_id.to_owned(), sender);
+        receiver
     }
 
     pub(super) fn send(&self, event: ServerEvent) {
-        let sender = {
-            let mut streams = self
-                .streams
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let Some(sender) = streams.get(&event.stream_id).cloned() else {
-                return;
-            };
-            if sender.receiver_count() == 0 {
-                streams.remove(&event.stream_id);
-                return;
-            }
-            sender
+        let stream_id = event.stream_id.clone();
+        let mut streams = self
+            .streams
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(sender) = streams.get(&stream_id) else {
+            return;
         };
-        let _ = sender.send(Arc::new(event));
+        if sender.send(event).is_err() {
+            streams.remove(&stream_id);
+        }
     }
 
     fn disconnect(&self, message: String) {
-        let event = Arc::new(ServerEvent {
+        let event = ServerEvent {
             stream_id: String::new(),
             event: SERVER_DISCONNECTED_EVENT.to_owned(),
             data: json!({ "message": message }),
             binary: Vec::new(),
-        });
+        };
         let senders = {
             let mut streams = self
                 .streams
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            streams.retain(|_, sender| sender.receiver_count() > 0);
+            streams.retain(|_, sender| !sender.is_closed());
             streams.values().cloned().collect::<Vec<_>>()
         };
         for sender in senders {

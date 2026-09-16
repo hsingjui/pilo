@@ -256,7 +256,9 @@ export function refreshProjectPiModels(
 	if (pending) return pending;
 
 	const sessionKey = `model-probe:${projectId}:${Date.now()}:${++probeSequence}`;
-	const client = createChatSessionClient(projectId, sessionKey);
+	const client = createChatSessionClient(projectId, sessionKey, undefined, {
+		owner: "model_probe",
+	});
 	const refresh = (async () => {
 		try {
 			await client.ensure();
@@ -291,7 +293,7 @@ export function refreshProjectPiModels(
 			}
 			return snapshot;
 		} finally {
-			await client.stop().catch((error) => {
+			await client.dispose("model_probe_cleanup").catch((error) => {
 				console.warn("Failed to stop Pi model probe session", error);
 			});
 		}

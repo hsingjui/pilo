@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
 use serde_json::Value;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, State, ipc::Channel};
 
 use super::super::{
-    PiloRuntime, events::TauriEventSink, project, server_pi::PiLaunchOptions,
+    PiloRuntime,
+    events::{RuntimeEventBus, RuntimeEventEnvelope, TauriEventSink},
+    project,
+    server_pi::PiLaunchOptions,
     session_snapshot::PiSessionSnapshot,
 };
 use super::sessions::{SessionExternalActivity, external_session_activities_for_project};
@@ -34,6 +37,14 @@ async fn reject_external_session_owner(
         );
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn runtime_subscribe_events(
+    events: State<'_, RuntimeEventBus>,
+    channel: Channel<RuntimeEventEnvelope>,
+) {
+    events.subscribe(channel);
 }
 
 #[tauri::command]
@@ -97,8 +108,12 @@ pub async fn chat_session_send_rpc(
 pub async fn chat_session_stop(
     runtime: State<'_, PiloRuntime>,
     session_key: String,
+    reason: Option<String>,
 ) -> Result<(), String> {
-    runtime.chat_sessions.stop(&session_key).await
+    runtime
+        .chat_sessions
+        .stop(&session_key, reason.as_deref())
+        .await
 }
 
 #[tauri::command]

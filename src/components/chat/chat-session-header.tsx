@@ -5,7 +5,11 @@ import {
 	TerminalSquare,
 } from "lucide-react";
 
-import { IS_MACOS, TRAFFIC_LIGHT_GUTTER } from "@/components/title-bar";
+import {
+	IS_MACOS,
+	TRAFFIC_LIGHT_ALIGNED_HEADER,
+	TRAFFIC_LIGHT_GUTTER,
+} from "@/components/title-bar";
 import { cn } from "@/lib/utils";
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
 import type { ChatSession, ChatSessionRuntimeState } from "./chat-page-utils";
@@ -41,7 +45,8 @@ export function SessionHeader({
 		<header
 			data-tauri-drag-region="deep"
 			className={cn(
-				"mt-0.5 flex h-11 shrink-0 items-center bg-background",
+				"flex h-11 shrink-0 items-center bg-background",
+				IS_MACOS ? TRAFFIC_LIGHT_ALIGNED_HEADER : "mt-0.5",
 				overlay && "absolute inset-x-0 top-0 z-30",
 				IS_MACOS && sidebarCollapsed && TRAFFIC_LIGHT_GUTTER,
 				reserveWindowControls && "pr-[7.75rem]",

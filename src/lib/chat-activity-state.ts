@@ -100,18 +100,45 @@ export function getAssistantActivities(
 }
 
 /**
- * Finished turns keep only the final contiguous text run expanded. Everything
- * before that run is prior work (intermediate prose, thinking and tool calls)
- * and can be mounted lazily behind one disclosure. If a turn has no genuine
- * text tail, keep it fully visible so interrupted/tool-only turns never collapse
- * to an empty shell.
+ * Keep the expensive assistant work log bounded while a turn is still running.
+ * During streaming, completed phases are folded behind the work disclosure and
+ * only the latest activity group plus its trailing text remain live. Finished
+ * turns keep the existing behavior: only the final contiguous text run stays
+ * expanded. This makes A/B switching proportional to the live tail instead of
+ * the entire accumulated tool/reasoning transcript.
  */
 export function splitAssistantContentForDisplay(
 	content: AssistantContentItem[] | undefined,
 	isTurnFinished: boolean,
 ): AssistantContentDisplaySections {
 	const items = content ?? [];
-	if (!isTurnFinished || items.length <= 1) {
+	if (items.length <= 1) {
+		return { work: [], final: items, hasCollapsedWork: false };
+	}
+
+	if (!isTurnFinished) {
+		let liveStart = items.length;
+
+		// Keep the current trailing text run.
+		while (liveStart > 0 && items[liveStart - 1]?.type === "text") {
+			liveStart -= 1;
+		}
+		// Keep the activity group immediately preceding that text, or the current
+		// trailing activity group when no text has started yet.
+		while (liveStart > 0 && items[liveStart - 1]?.type !== "text") {
+			liveStart -= 1;
+		}
+
+		if (
+			liveStart > 0 &&
+			items.slice(0, liveStart).some((item) => item.type !== "text")
+		) {
+			return {
+				work: items.slice(0, liveStart),
+				final: items.slice(liveStart),
+				hasCollapsedWork: true,
+			};
+		}
 		return { work: [], final: items, hasCollapsedWork: false };
 	}
 

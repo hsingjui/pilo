@@ -354,7 +354,9 @@ export function useAppChatWorkspace({
 		if (!activeProjectId || (chatSession && !keepForDraftChat)) {
 			if (current) {
 				landingPrewarmRef.current = null;
-				void current.client.stop().catch(() => undefined);
+				void current.client
+					.dispose("landing_prewarm_release")
+					.catch(() => undefined);
 			}
 			return;
 		}
@@ -364,8 +366,19 @@ export function useAppChatWorkspace({
 		) {
 			return;
 		}
-		if (current) void current.client.stop().catch(() => undefined);
-		const client = createChatSessionClient(activeProjectId, draftSessionId);
+		if (current) {
+			void current.client
+				.dispose("landing_prewarm_replace")
+				.catch(() => undefined);
+		}
+		const client = createChatSessionClient(
+			activeProjectId,
+			draftSessionId,
+			undefined,
+			{
+				owner: "landing_prewarm",
+			},
+		);
 		landingPrewarmRef.current = {
 			projectId: activeProjectId,
 			sessionId: draftSessionId,
@@ -623,7 +636,7 @@ export function useAppChatWorkspace({
 			);
 			if (!session) return;
 			try {
-				await stopChatSession(session.projectId, sessionId);
+				await stopChatSession(session.projectId, sessionId, "session_delete");
 				const deleted = await removeIndexedSession(sessionId);
 				if (!deleted) return;
 				setOpenedChats((current) =>

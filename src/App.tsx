@@ -18,10 +18,12 @@ import { useAppChatWorkspace } from "@/components/app/use-app-chat-workspace";
 import { useAppProjectActions } from "@/components/app/use-app-project-actions";
 import { useOpenedChatControllers } from "@/components/app/use-opened-chat-controllers";
 import { ChatPageLoadingFallback } from "@/components/chat/chat-page-loading-fallback";
+import { DevPerformanceMonitor } from "@/components/dev-performance-monitor";
 import { NewChatLanding } from "@/components/new-chat-landing";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import { CUSTOM_TITLEBAR, IS_MACOS, TitleBar } from "@/components/title-bar";
 import type { ViewerOpenRequest } from "@/components/project-viewer";
+import { recordChatSessionSwitchStart } from "@/lib/chat-performance";
 import { usePreferences } from "@/lib/preferences-provider";
 import type { Project } from "@/lib/projects";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
@@ -123,6 +125,20 @@ function App() {
 		busyChatControllerIds,
 		preloadChatPage: importChatPage,
 	});
+	const monitoredSelectSession = useCallback(
+		(sessionId: string) => {
+			recordChatSessionSwitchStart(selectedSessionId ?? null, sessionId);
+			selectSession(sessionId);
+		},
+		[selectSession, selectedSessionId],
+	);
+	const monitoredOpenSearchSession = useCallback(
+		(target: Parameters<typeof openSearchSession>[0]) => {
+			recordChatSessionSwitchStart(selectedSessionId ?? null, target.sessionId);
+			openSearchSession(target);
+		},
+		[openSearchSession, selectedSessionId],
+	);
 	const {
 		addProjectOpen,
 		setAddProjectOpen,
@@ -196,8 +212,8 @@ function App() {
 					sessions={sidebarSessions}
 					selectedProjectId={activeProjectId}
 					selectedSessionId={selectedSessionId}
-					onSelectSession={selectSession}
-					onOpenSearchSession={openSearchSession}
+					onSelectSession={monitoredSelectSession}
+					onOpenSearchSession={monitoredOpenSearchSession}
 					onUpdateSession={(sessionId, update) => {
 						void updateSession(sessionId, update);
 					}}
@@ -267,6 +283,9 @@ function App() {
 											<ChatPage
 												session={entry.session}
 												controllerId={entry.controllerId}
+												performanceSessionId={
+													entry.piSessionId ?? entry.session.id
+												}
 												uiStateKey={entry.uiStateKey}
 												readUiState={readChatUiState}
 												writeUiState={writeChatUiState}
@@ -394,6 +413,7 @@ function App() {
 					) : null}
 				</main>
 			</div>
+			{import.meta.env.DEV ? <DevPerformanceMonitor /> : null}
 			{addProjectOpen ? (
 				<AddProjectDialog
 					open

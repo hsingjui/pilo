@@ -248,7 +248,7 @@ export const MOCK_CONVERSATIONS: Record<string, ChatMessage[]> = {
 		{
 			id: "s3-a1",
 			role: "assistant",
-			text: "前端只监听统一的 `pilo://runtime` event，再按 `type` 分发。Runtime 自己负责 generation 过滤，所以 React 不需要知道旧进程的事件。\n\n当前代际关系可以写成 $g_{next} > g_{active}$，旧 generation 的事件直接丢弃。\n\n```mermaid\nflowchart LR\n  Pi[Pi RPC] --> Runtime[Pilo Runtime]\n  Runtime --> Event[pilo://runtime]\n  Event --> React[React UI]\n```",
+			text: "前端通过统一的 Tauri `Channel` 接收 RuntimeEvent，再按 `type` 分发。Runtime 自己负责 generation 过滤，所以 React 不需要知道旧进程的事件。\n\n当前代际关系可以写成 $g_{next} > g_{active}$，旧 generation 的事件直接丢弃。\n\n```mermaid\nflowchart LR\n  Pi[Pi RPC] --> Runtime[Pilo Runtime]\n  Runtime --> Channel[Tauri IPC Channel]\n  Channel --> React[React UI]\n```",
 			time: "16:09",
 		},
 	],

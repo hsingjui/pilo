@@ -1,3 +1,5 @@
+import type { CacheSnapshot } from "virtua";
+
 export const MAX_CHAT_UI_STATE_CACHE_ENTRIES = 64;
 
 export type ChatUiState = {
@@ -5,6 +7,8 @@ export type ChatUiState = {
 	scrollTop: number;
 	sticky: boolean;
 	deferredSubmissions: string[];
+	virtualizerCache?: CacheSnapshot;
+	virtualizerMessageCount?: number;
 };
 
 export type ChatUiStatePatch = Partial<ChatUiState>;

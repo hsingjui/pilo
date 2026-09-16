@@ -45,6 +45,45 @@ test("chat bottom clamp targets Virtua and the real DOM bottom once", () => {
 	assert.equal(scrollElement.scrollTop, 600);
 });
 
+test("chat bottom clamp experiment modes isolate scroll owners", () => {
+	const run = (mode: "dom-only" | "virtua-only" | "none") => {
+		const calls: number[] = [];
+		const scrollElement = {
+			clientHeight: 400,
+			scrollHeight: 1_000,
+			scrollTop: 540,
+		};
+		const result = scrollChatViewportToRealBottom({
+			itemCount: 8,
+			vlist: {
+				scrollToIndex(index) {
+					calls.push(index);
+				},
+			},
+			scrollElement,
+			bottomOffset: 40,
+			mode,
+		});
+		return { calls, scrollTop: scrollElement.scrollTop, result };
+	};
+
+	assert.deepEqual(run("dom-only"), {
+		calls: [],
+		scrollTop: 600,
+		result: { virtuaScrolled: false, domScrolled: true },
+	});
+	assert.deepEqual(run("virtua-only"), {
+		calls: [7],
+		scrollTop: 540,
+		result: { virtuaScrolled: true, domScrolled: false },
+	});
+	assert.deepEqual(run("none"), {
+		calls: [],
+		scrollTop: 540,
+		result: { virtuaScrolled: false, domScrolled: false },
+	});
+});
+
 test("interleaved concurrent tool calls stay isolated by toolCallId", () => {
 	let activity: AssistantContentItem[] = [];
 
@@ -346,7 +385,7 @@ test("finished assistant turns keep only the final contiguous text run expanded"
 	);
 });
 
-test("streaming and tool-only assistant turns stay fully expanded", () => {
+test("short streaming and tool-only assistant turns stay fully expanded", () => {
 	const content: AssistantContentItem[] = [
 		{
 			id: "think",
@@ -372,6 +411,56 @@ test("streaming and tool-only assistant turns stay fully expanded", () => {
 		final: content,
 		hasCollapsedWork: false,
 	});
+});
+
+test("a single streaming work phase remains fully visible", () => {
+	const content: AssistantContentItem[] = [
+		{ id: "intro", type: "text", text: "I will inspect this first." },
+		{
+			id: "tool",
+			type: "tool",
+			toolName: "read",
+			status: "complete",
+		},
+		{ id: "live", type: "text", text: "The first result is useful." },
+	];
+
+	assert.deepEqual(splitAssistantContentForDisplay(content, false), {
+		work: [],
+		final: content,
+		hasCollapsedWork: false,
+	});
+});
+
+test("streaming assistant turns collapse completed phases and keep only the live tail", () => {
+	const content: AssistantContentItem[] = [
+		{ id: "intro", type: "text", text: "I will inspect the runtime." },
+		{
+			id: "tool-1",
+			type: "tool",
+			toolName: "read",
+			status: "complete",
+		},
+		{ id: "checkpoint", type: "text", text: "The first path looks safe." },
+		{
+			id: "tool-2",
+			type: "tool",
+			toolName: "bash",
+			status: "running",
+		},
+		{ id: "live", type: "text", text: "Now checking transport." },
+	];
+
+	const sections = splitAssistantContentForDisplay(content, false);
+	assert.equal(sections.hasCollapsedWork, true);
+	assert.deepEqual(
+		sections.work.map((item) => item.id),
+		["intro", "tool-1", "checkpoint"],
+	);
+	assert.deepEqual(
+		sections.final.map((item) => item.id),
+		["tool-2", "live"],
+	);
 });
 
 test("reply runway is only reserved for an already scrollable conversation", () => {
