@@ -6,7 +6,6 @@
 	"permissions": [
 		"core:default",
 		"opener:default",
-		"wdio-webdriver:default",
 		"notification:default",
 		"updater:default",
 		"process:allow-restart",

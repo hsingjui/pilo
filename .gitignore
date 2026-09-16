@@ -16,6 +16,7 @@ src-tauri/resources/pilo-server-*
 
 # Local design notes
 docs/remote-webui-architecture.md
+docs/chat-streaming-performance-design.md
 
 # Editor directories and files
 .vscode/*

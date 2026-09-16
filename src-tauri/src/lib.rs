@@ -67,8 +67,8 @@ fn debug_runtime_trace_log(payload: &str) -> Result<(), String> {
 pub fn run() {
     let builder = tauri::Builder::default();
 
-    // Embedded WebDriver (port via TAURI_WEBDRIVER_PORT, default 4445).
-    #[cfg(debug_assertions)]
+    // Embedded WebDriver is opt-in for development: `tauri dev --features webdriver`.
+    #[cfg(all(debug_assertions, feature = "webdriver"))]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
     builder
