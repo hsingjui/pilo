@@ -9,10 +9,34 @@ import type { ChatSession } from "@/components/chat/chat-page-utils";
 import { isPresentationBatchedAction } from "@/components/chat/use-runtime-conversation-dispatch";
 import { toAppError } from "@/lib/app-error";
 import { recordChatRuntimeEvent } from "@/lib/chat-performance";
+import { recordChatRuntimeTraceEvent } from "@/lib/chat-runtime-trace";
 import { toConversationAction } from "@/lib/conversation-runtime-adapter";
 import type { ConversationAction } from "@/lib/conversation-types";
 import { notifyAgentResult } from "@/lib/desktop-notifications";
 import { runtimeErrorMessage, type PiloRuntimeEvent } from "@/lib/pi-runtime";
+
+export function dispatchRuntimeEventToConversation(
+	event: PiloRuntimeEvent,
+	targetSessionId: string,
+	dispatchConversation: (
+		targetSessionId: string,
+		action: ConversationAction,
+	) => void,
+	queueRuntimeAction: (
+		targetSessionId: string,
+		action: ConversationAction,
+	) => void,
+	recordMetric = true,
+) {
+	if (recordMetric) recordChatRuntimeEvent();
+	const action = toConversationAction(event);
+	if (!action) return;
+	if (isPresentationBatchedAction(action)) {
+		queueRuntimeAction(targetSessionId, action);
+		return;
+	}
+	dispatchConversation(targetSessionId, action);
+}
 
 type UseChatRuntimeEventsOptions = {
 	session: ChatSession;
@@ -227,14 +251,13 @@ export function useChatRuntimeEvents({
 				return;
 			}
 
-			const action = toConversationAction(event);
-			if (action) {
-				if (isPresentationBatchedAction(action)) {
-					queueRuntimeAction(turn.sessionId, action);
-				} else {
-					dispatchConversation(turn.sessionId, action);
-				}
-			}
+			dispatchRuntimeEventToConversation(
+				event,
+				turn.sessionId,
+				dispatchConversation,
+				queueRuntimeAction,
+				false,
+			);
 
 			switch (event.type) {
 				case "assistant_message_end":
@@ -314,6 +337,9 @@ export function useChatRuntimeEvents({
 	useEffect(() => {
 		let disposed = false;
 		const subscription = client.listen((event) => {
+			if (import.meta.env.DEV) {
+				recordChatRuntimeTraceEvent(session.id, event);
+			}
 			runtimeEventHandlerRef.current(event);
 		});
 		runtimeListenerRef.current = subscription;
@@ -345,6 +371,7 @@ export function useChatRuntimeEvents({
 		client,
 		failActiveTurn,
 		recoverRuntime,
+		session.id,
 		session.temporary,
 	]);
 

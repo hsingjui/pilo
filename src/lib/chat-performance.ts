@@ -156,7 +156,6 @@ const state: ChatPerfState = {
 
 export function isChatPerformanceDebugEnabled() {
 	if (typeof window === "undefined") return false;
-	if (import.meta.env.DEV) return true;
 	debugEnabled ??= window.localStorage.getItem(CHAT_PERF_STORAGE_KEY) === "1";
 	return debugEnabled;
 }
@@ -499,9 +498,9 @@ function sampleScrollFrame(now: number) {
 }
 
 export function logChatPerformanceInstructions() {
-	if (import.meta.env.DEV) {
+	if (isChatPerformanceDebugEnabled() && import.meta.env.DEV) {
 		console.info(
-			"[Pilo perf] dev monitoring enabled; JSONL: /tmp/pilo-chat-performance.jsonl",
+			"[Pilo perf] monitoring enabled; JSONL: /tmp/pilo-chat-performance.jsonl",
 		);
 		return;
 	}

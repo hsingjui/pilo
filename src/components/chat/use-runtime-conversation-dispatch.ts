@@ -51,6 +51,12 @@ export function useRuntimeConversationDispatch(
 		return pending;
 	}, [cancelScheduledFlush]);
 
+	const discardRuntimeActions = useCallback(() => {
+		cancelScheduledFlush();
+		pendingRuntimeActionsRef.current = null;
+		lastPresentationFlushAtRef.current = 0;
+	}, [cancelScheduledFlush]);
+
 	const flushRuntimeActions = useCallback(() => {
 		const pending = takePendingRuntimeActions();
 		if (!pending || pending.actions.length === 0) return;
@@ -153,18 +159,14 @@ export function useRuntimeConversationDispatch(
 		if (active) flushRuntimeActions();
 	}, [active, flushRuntimeActions]);
 
-	useEffect(
-		() => () => {
-			cancelScheduledFlush();
-			pendingRuntimeActionsRef.current = null;
-		},
-		[cancelScheduledFlush],
-	);
+	useEffect(() => () => discardRuntimeActions(), [discardRuntimeActions]);
 
 	return {
 		queueRuntimeAction,
 		dispatchConversationActions,
 		dispatchConversation,
+		flushRuntimeActions,
+		discardRuntimeActions,
 	};
 }
 

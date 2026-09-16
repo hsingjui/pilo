@@ -58,6 +58,7 @@ import { resolveAssistantForkTarget } from "@/lib/pi-session-fork";
 import type { CacheSnapshot } from "virtua";
 import type { ChatConversationStore } from "@/components/chat/chat-conversation-store";
 import type { ChatHistoryWindowStore } from "@/components/chat/chat-history-window-store";
+import { createConversationState } from "@/lib/conversation-reducer";
 import type { ChatMessage } from "@/lib/conversation-types";
 
 import { usePreferences } from "@/lib/preferences-provider";
@@ -394,6 +395,9 @@ function ChatPageImpl(props: ChatPageProps) {
 		},
 		[setDraft],
 	);
+	const resetConversation = useCallback(() => {
+		conversationStore.setSnapshot(createConversationState([]));
+	}, [conversationStore]);
 	const runtime = useChatRuntime({
 		active,
 		session,
@@ -405,6 +409,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		desktopNotifications,
 		onSessionIdentified,
 		dispatchConversationBatch,
+		resetConversation,
 		getActivePresentationIntervalMs,
 		scrollRef,
 		scrollToBottom,

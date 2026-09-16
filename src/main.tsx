@@ -2,11 +2,14 @@ import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
 
 import App from "./App";
+import { installChatRuntimeTraceDebugApi } from "@/lib/chat-runtime-trace-debug";
 import { PreferencesProvider } from "@/lib/preferences-provider";
 import { ThemeProvider } from "@/lib/theme-provider";
 import { Toaster } from "@/ui";
 
 import "./index.css";
+
+installChatRuntimeTraceDebugApi();
 
 function BootShellRemover() {
 	useEffect(() => {

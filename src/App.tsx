@@ -24,7 +24,10 @@ import { NewChatLanding } from "@/components/new-chat-landing";
 import { SidebarFooter } from "@/components/sidebar-footer";
 import { CUSTOM_TITLEBAR, IS_MACOS, TitleBar } from "@/components/title-bar";
 import type { ViewerOpenRequest } from "@/components/project-viewer";
-import { recordChatSessionSwitchStart } from "@/lib/chat-performance";
+import {
+	isChatPerformanceDebugEnabled,
+	recordChatSessionSwitchStart,
+} from "@/lib/chat-performance";
 import { usePreferences } from "@/lib/preferences-provider";
 import type { Project } from "@/lib/projects";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
@@ -437,7 +440,9 @@ function App() {
 					) : null}
 				</main>
 			</div>
-			{import.meta.env.DEV ? <DevPerformanceMonitor /> : null}
+			{import.meta.env.DEV && isChatPerformanceDebugEnabled() ? (
+				<DevPerformanceMonitor />
+			) : null}
 			{addProjectOpen ? (
 				<AddProjectDialog
 					open

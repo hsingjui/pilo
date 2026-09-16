@@ -6,11 +6,15 @@ import type {
 	BeginTurn,
 	ChatSessionClient,
 } from "@/components/chat/chat-runtime-types";
-import { useChatRuntimeEvents } from "@/components/chat/use-chat-runtime-events";
+import {
+	dispatchRuntimeEventToConversation,
+	useChatRuntimeEvents,
+} from "@/components/chat/use-chat-runtime-events";
 import { useChatRuntimeQueue } from "@/components/chat/use-chat-runtime-queue";
 import { createLocalMessageId } from "@/components/chat/use-chat-conversation";
 import { useRuntimeConversationDispatch } from "@/components/chat/use-runtime-conversation-dispatch";
 import { getReplyRunwayHeight } from "@/lib/chat-scroll-state";
+import { registerChatRuntimeReplayTarget } from "@/lib/chat-runtime-replay";
 import {
 	chatSubmissionHasContent,
 	createChatSubmission,
@@ -38,6 +42,7 @@ type UseChatRuntimeOptions = {
 		targetSessionId: string,
 		actions: readonly ConversationAction[],
 	) => void;
+	resetConversation: () => void;
 	getActivePresentationIntervalMs: () => number;
 	scrollRef: { current: HTMLDivElement | null };
 	scrollToBottom: (smooth?: boolean) => void;
@@ -59,6 +64,7 @@ export function useChatRuntime({
 	desktopNotifications,
 	onSessionIdentified,
 	dispatchConversationBatch,
+	resetConversation,
 	getActivePresentationIntervalMs,
 	scrollRef,
 	scrollToBottom,
@@ -86,6 +92,8 @@ export function useChatRuntime({
 		queueRuntimeAction,
 		dispatchConversationActions,
 		dispatchConversation,
+		flushRuntimeActions,
+		discardRuntimeActions,
 	} = useRuntimeConversationDispatch(
 		active,
 		dispatchConversationBatch,
@@ -141,6 +149,40 @@ export function useChatRuntime({
 		releaseActiveTurn,
 		refreshSessionState,
 	});
+
+	useEffect(() => {
+		if (!import.meta.env.DEV) return;
+		return registerChatRuntimeReplayTarget({
+			projectId: session.projectRecord.id,
+			sessionId: session.id,
+			isActive: () => active,
+			isBusy: () =>
+				activeTurnRef.current !== null ||
+				recoveryState.status === "reconnecting",
+			dispatchEvent: (event) =>
+				dispatchRuntimeEventToConversation(
+					event,
+					session.id,
+					dispatchConversation,
+					queueRuntimeAction,
+				),
+			flush: flushRuntimeActions,
+			reset: () => {
+				discardRuntimeActions();
+				resetConversation();
+			},
+		});
+	}, [
+		active,
+		discardRuntimeActions,
+		dispatchConversation,
+		flushRuntimeActions,
+		queueRuntimeAction,
+		recoveryState.status,
+		resetConversation,
+		session.id,
+		session.projectRecord.id,
+	]);
 
 	const requestAutoTitle = useCallback(
 		(message: string) => {
