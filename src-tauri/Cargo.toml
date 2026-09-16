@@ -46,5 +46,10 @@ tauri-plugin-process = "2"
 [target.'cfg(target_os = "macos")'.dependencies]
 mac-notification-sys = "0.6.15"
 
+# Embedded WebDriver for Agent-driven UI debugging (see AGENTS.md).
+# debug_assertions only: never linked into release builds.
+[target.'cfg(debug_assertions)'.dependencies]
+tauri-plugin-wdio-webdriver = "1"
+
 [target.'cfg(target_os = "windows")'.dependencies]
 tauri-winrt-notification = "0.7.3"
