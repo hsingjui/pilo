@@ -6,12 +6,12 @@ import {
 	normalizeTexMathDelimitersWithMetadata,
 } from "./markdown-single-dollar-math.ts";
 
-const CROSS_BLOCK_SCAN_OVERLAP_CHARS = 256;
 const LIVE_SUBSTANTIVE_BLOCKS = 2;
 const FOOTNOTE_REFERENCE = /\[\^[\w-]{1,200}\](?!:)/;
 const FOOTNOTE_DEFINITION = /\[\^[\w-]{1,200}\]:/;
 const REFERENCE_DEFINITION = /^[ \t]{0,3}\[(?!\^)[^\]\n]{1,200}\]:/m;
 const REFERENCE_USE = /!?\[[^\]\n]{1,200}\]\[(?!\^)[^\]\n]{0,200}\]/;
+const FENCED_CODE_START = /^[ \t]{0,3}(`{3,}|~{3,})/;
 
 export type StreamingMarkdownParseMetrics = {
 	sourceChars: number;
@@ -22,6 +22,7 @@ export type StreamingMarkdownParseMetrics = {
 	liveBlocks: number;
 	fullParse: boolean;
 	footnoteFallback: boolean;
+	referenceFallback: boolean;
 	durationMs: number;
 };
 
@@ -36,6 +37,78 @@ function hasFootnoteMarkup(value: string) {
 
 function hasCrossBlockReferenceMarkup(value: string) {
 	return REFERENCE_DEFINITION.test(value) || REFERENCE_USE.test(value);
+}
+
+function stripInlineCodeSpans(value: string) {
+	let result = "";
+	let index = 0;
+	while (index < value.length) {
+		if (value[index] !== "`") {
+			result += value[index];
+			index += 1;
+			continue;
+		}
+
+		let runEnd = index + 1;
+		while (runEnd < value.length && value[runEnd] === "`") runEnd += 1;
+		const delimiter = value.slice(index, runEnd);
+		const closingIndex = value.indexOf(delimiter, runEnd);
+		if (closingIndex < 0) {
+			result += value.slice(index);
+			break;
+		}
+		result += " ".repeat(closingIndex + delimiter.length - index);
+		index = closingIndex + delimiter.length;
+	}
+	return result;
+}
+
+/**
+ * Cross-block syntax detection runs on the small unfrozen tail. Ignore fenced,
+ * indented and inline code so source examples such as `m[2][0]` do not promote
+ * an otherwise incremental message into permanent whole-document parsing.
+ */
+function markdownSourceForCrossBlockScan(value: string) {
+	const output: string[] = [];
+	let fence: { marker: string; length: number } | null = null;
+
+	for (const line of value.split("\n")) {
+		const fenceMatch = FENCED_CODE_START.exec(line);
+		if (fence) {
+			if (
+				fenceMatch &&
+				fenceMatch[1][0] === fence.marker &&
+				fenceMatch[1].length >= fence.length &&
+				line.slice(fenceMatch[0].length).trim().length === 0
+			) {
+				fence = null;
+			}
+			output.push("");
+			continue;
+		}
+
+		if (fenceMatch) {
+			fence = { marker: fenceMatch[1][0], length: fenceMatch[1].length };
+			output.push("");
+			continue;
+		}
+
+		if (/^(?: {4}|\t)/.test(line)) {
+			output.push("");
+			continue;
+		}
+		output.push(stripInlineCodeSpans(line));
+	}
+
+	return output.join("\n");
+}
+
+function parseCrossBlockSemanticTail(
+	markdown: string,
+	options?: RemendOptions,
+) {
+	const normalized = remend(normalizeTexMathDelimiters(markdown), options);
+	return normalized.length > 0 ? [normalized] : [];
 }
 
 function parseStreamingTail(markdown: string, options?: RemendOptions) {
@@ -94,9 +167,11 @@ function stableCutoffForTail(
  *
  * Pilo's `\\(`/`\\[` preprocessing can also change earlier source once its closing
  * delimiter arrives, so an unterminated TeX opener is a hard freeze boundary.
- * Footnotes and reference-style links/images have whole-document semantics in
- * Streamdown; when one appears we intentionally fall back to the exact
- * full-document path for that message.
+ * Footnotes and reference-style links/images have cross-block semantics. When
+ * one appears in the live tail, stable blocks before that point stay frozen and
+ * only the semantic suffix remains grouped into one live block. Code examples
+ * are excluded from detection so bracket-heavy source code cannot accidentally
+ * disable incremental parsing for the rest of a long answer.
  */
 export function createStreamingMarkdownBlockParser(
 	options: StreamingMarkdownParserOptions = {},
@@ -106,6 +181,8 @@ export function createStreamingMarkdownBlockParser(
 	let previousSource = "";
 	let documentFallback = false;
 	let footnoteFallback = false;
+	let referenceFallback = false;
+	let fallbackSourceLength = 0;
 
 	const resetIncrementalState = () => {
 		stableBlocks = [];
@@ -113,6 +190,8 @@ export function createStreamingMarkdownBlockParser(
 		previousSource = "";
 		documentFallback = false;
 		footnoteFallback = false;
+		referenceFallback = false;
+		fallbackSourceLength = 0;
 	};
 
 	const rememberSource = (source: string) => {
@@ -126,37 +205,39 @@ export function createStreamingMarkdownBlockParser(
 			previousSourceLength === 0 || markdown.startsWith(previousSource);
 		if (!canContinue) resetIncrementalState();
 
+		let tailSource = markdown.slice(stableSourceLength);
 		if (!documentFallback) {
-			const scanStart = canContinue
-				? Math.max(0, previousSourceLength - CROSS_BLOCK_SCAN_OVERLAP_CHARS)
-				: 0;
-			const scanSource = markdown.slice(scanStart);
+			const scanSource = markdownSourceForCrossBlockScan(tailSource);
 			footnoteFallback = hasFootnoteMarkup(scanSource);
-			documentFallback =
-				footnoteFallback || hasCrossBlockReferenceMarkup(scanSource);
+			referenceFallback = hasCrossBlockReferenceMarkup(scanSource);
+			documentFallback = footnoteFallback || referenceFallback;
+			if (documentFallback) fallbackSourceLength = stableSourceLength;
 		}
 
 		if (documentFallback) {
-			const blocks = parseStreamingTail(markdown, options.remend);
-			stableBlocks = [];
-			stableSourceLength = 0;
+			const fallbackTail = markdown.slice(fallbackSourceLength);
+			const liveBlocks = parseCrossBlockSemanticTail(
+				fallbackTail,
+				options.remend,
+			);
+			const blocks = [...stableBlocks, ...liveBlocks];
 			rememberSource(markdown);
 			options.onMetrics?.({
 				sourceChars: markdown.length,
-				parsedChars: markdown.length,
-				reusedChars: 0,
-				liveTailChars: markdown.length,
-				stableBlocks: 0,
-				liveBlocks: blocks.length,
-				fullParse: true,
+				parsedChars: fallbackTail.length,
+				reusedChars: fallbackSourceLength,
+				liveTailChars: fallbackTail.length,
+				stableBlocks: stableBlocks.length,
+				liveBlocks: liveBlocks.length,
+				fullParse: fallbackSourceLength === 0,
 				footnoteFallback,
+				referenceFallback,
 				durationMs: performance.now() - startedAt,
 			});
 			return blocks;
 		}
 
 		const reusedChars = stableSourceLength;
-		let tailSource = markdown.slice(stableSourceLength);
 		const normalizedTail = normalizeTexMathDelimitersWithMetadata(tailSource);
 		const cutoff = stableCutoffForTail(
 			normalizedTail.text,
@@ -184,6 +265,7 @@ export function createStreamingMarkdownBlockParser(
 			liveBlocks: liveBlocks.length,
 			fullParse: reusedChars === 0,
 			footnoteFallback: false,
+			referenceFallback: false,
 			durationMs: performance.now() - startedAt,
 		});
 		return blocks;
@@ -194,5 +276,12 @@ export function parseFinalMarkdownIntoBlocks(
 	markdown: string,
 	options?: RemendOptions,
 ) {
+	const scanSource = markdownSourceForCrossBlockScan(markdown);
+	if (
+		hasFootnoteMarkup(scanSource) ||
+		hasCrossBlockReferenceMarkup(scanSource)
+	) {
+		return parseCrossBlockSemanticTail(markdown, options);
+	}
 	return parseStreamingTail(markdown, options);
 }

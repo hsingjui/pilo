@@ -107,6 +107,7 @@ test("streaming parser keeps parse work bounded to the live tail", () => {
 	assert.ok(metrics.parsedChars < 1_000);
 	assert.ok(metrics.liveTailChars < 1_000);
 	assert.equal(metrics.footnoteFallback, false);
+	assert.equal(metrics.referenceFallback, false);
 });
 
 test("footnotes deliberately use full-document parsing", () => {
@@ -121,10 +122,11 @@ test("footnotes deliberately use full-document parsing", () => {
 	assert.ok(latest);
 	const metrics = latest as StreamingMarkdownParseMetrics;
 	assert.equal(metrics.footnoteFallback, true);
+	assert.equal(metrics.referenceFallback, false);
 	assert.equal(metrics.parsedChars, source.length);
 });
 
-test("reference links use full-document parsing without footnote metrics", () => {
+test("reference links retain cross-block semantics without footnote metrics", () => {
 	let latest: StreamingMarkdownParseMetrics | null = null;
 	const parser = createStreamingMarkdownBlockParser({
 		onMetrics: (metrics) => {
@@ -138,5 +140,106 @@ test("reference links use full-document parsing without footnote metrics", () =>
 	const metrics = latest as StreamingMarkdownParseMetrics;
 	assert.equal(metrics.fullParse, true);
 	assert.equal(metrics.footnoteFallback, false);
+	assert.equal(metrics.referenceFallback, true);
 	assert.equal(metrics.parsedChars, source.length);
+});
+
+test("reference-like bracket indexing inside fenced code does not trigger fallback", () => {
+	let latest: StreamingMarkdownParseMetrics | null = null;
+	const parser = createStreamingMarkdownBlockParser({
+		onMetrics: (metrics) => {
+			latest = metrics;
+		},
+	});
+	let source = "";
+	for (let index = 0; index < 120; index += 1) {
+		source += `## Stable ${index}\n\n第 ${index} 段稳定正文。\n\n`;
+		parser(source);
+	}
+	source += [
+		"## Parser example",
+		"",
+		"```ts",
+		"const m = /^(\\s{0,3})(`{3,}|~{3,})/.exec(line)",
+		"if (m[2][0] === fence) flush(true)",
+		"const matrix = values[project][index]",
+		"```",
+		"",
+		"代码示例之后继续输出。",
+		"",
+	].join("\n");
+	parser(source);
+
+	assert.ok(latest);
+	const metrics = latest as StreamingMarkdownParseMetrics;
+	assert.equal(metrics.referenceFallback, false);
+	assert.equal(metrics.footnoteFallback, false);
+	assert.ok(metrics.reusedChars > source.length * 0.8);
+	assert.ok(metrics.parsedChars < source.length * 0.2);
+	assert.deepEqual(parser(source), parseFinalMarkdownIntoBlocks(source));
+});
+
+test("reference-like bracket indexing inside inline code does not trigger fallback", () => {
+	let latest: StreamingMarkdownParseMetrics | null = null;
+	const parser = createStreamingMarkdownBlockParser({
+		onMetrics: (metrics) => {
+			latest = metrics;
+		},
+	});
+	const source =
+		"第一段。\n\n第二段。\n\n第三段。\n\n代码表达式 `matrix[2][0]` 不应该被识别成引用链接。\n";
+	parser(source);
+
+	assert.ok(latest);
+	const metrics = latest as StreamingMarkdownParseMetrics;
+	assert.equal(metrics.referenceFallback, false);
+	assert.deepEqual(parser(source), parseFinalMarkdownIntoBlocks(source));
+});
+
+test("unclosed inline backticks do not hide real reference markup", () => {
+	let latest: StreamingMarkdownParseMetrics | null = null;
+	const parser = createStreamingMarkdownBlockParser({
+		onMetrics: (metrics) => {
+			latest = metrics;
+		},
+	});
+	const source =
+		"未闭合反引号 ` literal text [Pilo][project]\n\n[project]: https://example.com/pilo\n";
+	parser(source);
+
+	assert.ok(latest);
+	const metrics = latest as StreamingMarkdownParseMetrics;
+	assert.equal(metrics.referenceFallback, true);
+});
+
+test("late reference fallback keeps the already stable prefix reusable", () => {
+	let latest: StreamingMarkdownParseMetrics | null = null;
+	const parser = createStreamingMarkdownBlockParser({
+		onMetrics: (metrics) => {
+			latest = metrics;
+		},
+	});
+	let source = "";
+	for (let index = 0; index < 120; index += 1) {
+		source += `## Stable ${index}\n\n第 ${index} 段稳定正文。\n\n`;
+		parser(source);
+	}
+	const stablePrefixLength = source.length;
+	source +=
+		"## References\n\n项目地址见 [Pilo][project]。\n\n补充说明。\n\n[project]: https://example.com/pilo\n";
+	const blocks = parser(source);
+
+	assert.ok(latest);
+	const metrics = latest as StreamingMarkdownParseMetrics;
+	assert.equal(metrics.referenceFallback, true);
+	assert.equal(metrics.footnoteFallback, false);
+	assert.equal(metrics.fullParse, false);
+	assert.ok(metrics.reusedChars > stablePrefixLength * 0.9);
+	assert.ok(metrics.parsedChars < source.length * 0.2);
+	assert.equal(blocks.join(""), parseFinalMarkdownIntoBlocks(source).join(""));
+	assert.match(blocks.at(-1) ?? "", /\[Pilo\]\[project\]/);
+	assert.match(
+		blocks.at(-1) ?? "",
+		/^\[project\]: https:\/\/example\.com\/pilo$/m,
+	);
 });

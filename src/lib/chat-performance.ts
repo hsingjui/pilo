@@ -21,6 +21,7 @@ type Counters = {
 	markdownReusedChars: number;
 	markdownFullParses: number;
 	markdownFootnoteFallbacks: number;
+	markdownReferenceFallbacks: number;
 	markdownParseMs: number;
 	markdownMaxLiveTailChars: number;
 	virtualChanges: number;
@@ -103,6 +104,7 @@ const EMPTY_COUNTERS = (): Counters => ({
 	markdownReusedChars: 0,
 	markdownFullParses: 0,
 	markdownFootnoteFallbacks: 0,
+	markdownReferenceFallbacks: 0,
 	markdownParseMs: 0,
 	markdownMaxLiveTailChars: 0,
 	virtualChanges: 0,
@@ -387,6 +389,7 @@ export function recordMarkdownParse({
 	liveTailChars,
 	fullParse,
 	footnoteFallback,
+	referenceFallback,
 	durationMs,
 }: {
 	parsedChars: number;
@@ -394,6 +397,7 @@ export function recordMarkdownParse({
 	liveTailChars: number;
 	fullParse: boolean;
 	footnoteFallback: boolean;
+	referenceFallback: boolean;
 	durationMs: number;
 }) {
 	if (!isChatPerformanceDebugEnabled()) return;
@@ -407,6 +411,7 @@ export function recordMarkdownParse({
 	);
 	if (fullParse) state.counters.markdownFullParses += 1;
 	if (footnoteFallback) state.counters.markdownFootnoteFallbacks += 1;
+	if (referenceFallback) state.counters.markdownReferenceFallbacks += 1;
 }
 
 export function recordVirtualChange({

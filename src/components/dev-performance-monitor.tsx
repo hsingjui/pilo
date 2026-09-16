@@ -87,7 +87,7 @@ export function DevPerformanceMonitor() {
 						<span className="text-muted-foreground">md parse</span>
 						<span>
 							{report
-								? `${report.markdownParses} · ${compactNumber(report.markdownParsedChars)}/${compactNumber(report.markdownReusedChars)} · tail ${compactNumber(report.markdownMaxLiveTailChars)} · ${report.markdownParseMs} ms`
+								? `${report.markdownParses} · ${compactNumber(report.markdownParsedChars)}/${compactNumber(report.markdownReusedChars)} · tail ${compactNumber(report.markdownMaxLiveTailChars)} · fb ${report.markdownFullParses}/${report.markdownFootnoteFallbacks}/${report.markdownReferenceFallbacks} · ${report.markdownParseMs} ms`
 								: "-"}
 						</span>
 						<span className="text-muted-foreground">virtua</span>
