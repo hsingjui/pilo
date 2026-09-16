@@ -422,7 +422,7 @@ class MarkdownPresentationBoundary extends Component<
 		return (
 			<ChatMarkdownBody
 				text={this.state.presentedText}
-				sourceText={this.props.text}
+				presentationLagging={this.state.catchingUp}
 				isStreaming={this.props.isStreaming}
 				className={this.props.className}
 			/>
@@ -532,19 +532,18 @@ const MARKDOWN_COMPONENTS = {
 
 const ChatMarkdownBody = memo(function ChatMarkdownBody({
 	text,
-	sourceText,
+	presentationLagging,
 	isStreaming,
 	className,
 }: {
 	text: string;
-	sourceText: string;
+	presentationLagging: boolean;
 	isStreaming: boolean;
 	className?: string;
 }) {
 	recordMarkdownRender(text.length);
 	const theme: MarkdownTheme = useResolvedTheme();
-	const caughtUp = text === sourceText;
-	const streamingVisual = isStreaming || !caughtUp;
+	const streamingVisual = isStreaming || presentationLagging;
 	const needsMath = useMemo(() => hasPotentialMathMarkup(text), [text]);
 	const blockParser = useMemo(
 		() =>
