@@ -5,10 +5,12 @@ import { createChatUiStateCache } from "../src/components/app/chat-ui-state-cach
 import {
 	MAX_OPEN_CHAT_CONTROLLERS,
 	MAX_OPEN_CHAT_ESTIMATED_HISTORY_BYTES,
+	MAX_RETAINED_BACKGROUND_CHAT_VISUALS,
 	chatUiStateKey,
 	firstProjectInConnectionOrder,
 	identifyOpenedChat,
 	mergeSidebarSessionsWithOpenChats,
+	retainedBackgroundChatVisualControllerIds,
 	syncOpenedChatSessionMetadata,
 	toSidebarSession,
 	touchOpenedChat,
@@ -130,6 +132,47 @@ test("small history chats can stay resident beyond the old eight-controller cap"
 	const trimmed = trimOpenedChats(initial, new Set());
 
 	assert.equal(trimmed.length, 10);
+});
+
+test("background visual retention prefers busy chats and stays bounded", () => {
+	const initial = opened(8);
+	const busy = new Set([
+		initial[1].controllerId,
+		initial[3].controllerId,
+		initial[6].controllerId,
+	]);
+	const retained = retainedBackgroundChatVisualControllerIds(
+		initial,
+		initial[7].controllerId,
+		busy,
+		MAX_RETAINED_BACKGROUND_CHAT_VISUALS,
+	);
+
+	assert.deepEqual(
+		[...retained],
+		[
+			initial[6].controllerId,
+			initial[3].controllerId,
+			initial[1].controllerId,
+			initial[5].controllerId,
+		],
+	);
+});
+
+test("background visual retention never spends a slot on the active chat", () => {
+	const initial = opened(4);
+	const activeControllerId = initial[3].controllerId;
+	const retained = retainedBackgroundChatVisualControllerIds(
+		initial,
+		activeControllerId,
+		new Set([activeControllerId, initial[2].controllerId]),
+		2,
+	);
+
+	assert.deepEqual(
+		[...retained],
+		[initial[2].controllerId, initial[1].controllerId],
+	);
 });
 
 test("history memory budget evicts the oldest idle controllers first", () => {

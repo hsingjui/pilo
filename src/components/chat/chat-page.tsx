@@ -70,6 +70,7 @@ const EMPTY_CHAT_IMAGES: readonly ChatImageAttachment[] = [];
 const FILE_SUGGESTION_DEBOUNCE_MS = 180;
 const FILE_SUGGESTION_CACHE_TTL_MS = 10_000;
 const FILE_SUGGESTION_CACHE_MAX_ENTRIES = 24;
+const BACKGROUND_VISUAL_RETENTION_MS = 60_000;
 
 type FileSuggestionCacheEntry = {
 	expiresAt: number;
@@ -79,6 +80,7 @@ type FileSuggestionCacheEntry = {
 type ChatPageProps = {
 	session: ChatSession;
 	active?: boolean;
+	retainBackgroundVisual?: boolean;
 	onSessionIdentified?: (sessionId: string) => void;
 	onOpenChanges?: () => void;
 	onOpenTerminal?: () => void;
@@ -107,15 +109,8 @@ type ChatPageProps = {
 	sidebarCollapsed?: boolean;
 };
 
-function ChatConversationSubscriber({
-	conversationStore,
-	historyStore,
-	baseMessages,
-	sessionPath,
-	historyLoadState,
-	loadState,
-	children,
-}: {
+type ChatConversationSubscriberProps = {
+	active: boolean;
 	conversationStore: ChatConversationStore;
 	historyStore: ChatHistoryWindowStore;
 	baseMessages: ChatMessage[];
@@ -123,22 +118,48 @@ function ChatConversationSubscriber({
 	historyLoadState: "ready" | "loading" | "error";
 	loadState: "ready" | "loading" | "error";
 	children: (view: ReturnType<typeof useChatConversationView>) => ReactNode;
-}) {
-	const view = useChatConversationView({
+};
+
+const ChatConversationSubscriber = memo(
+	function ChatConversationSubscriber({
+		active,
 		conversationStore,
 		historyStore,
 		baseMessages,
 		sessionPath,
 		historyLoadState,
 		loadState,
-	});
-	return children(view);
-}
+		children,
+	}: ChatConversationSubscriberProps) {
+		// Keep the last visual snapshot mounted while this controller is hidden, but
+		// disconnect it from background store updates. On reactivation we first paint
+		// the frozen DOM, then reconnect on the next frame so session switching is an
+		// urgent, bounded operation rather than a full hidden-output catch-up render.
+		const [live, setLive] = useState(active);
+		useEffect(() => {
+			if (active === live) return;
+			const frame = requestAnimationFrame(() => setLive(active));
+			return () => cancelAnimationFrame(frame);
+		}, [active, live]);
+		const view = useChatConversationView({
+			conversationStore,
+			historyStore,
+			baseMessages,
+			sessionPath,
+			historyLoadState,
+			loadState,
+			live,
+		});
+		return children(view);
+	},
+	(previous, next) => !previous.active && !next.active,
+);
 
 function ChatPageImpl(props: ChatPageProps) {
 	const {
 		session,
 		active = true,
+		retainBackgroundVisual = true,
 		onSessionIdentified,
 		onOpenChanges,
 		onOpenTerminal,
@@ -308,12 +329,25 @@ function ChatPageImpl(props: ChatPageProps) {
 		if (!active) return;
 		const viewport = scrollRef.current;
 		if (!viewport) return;
-		const measure = () =>
-			setScrollbarWidth(viewport.offsetWidth - viewport.clientWidth);
+		let frame: number | null = null;
+		const measure = () => {
+			frame = null;
+			const nextWidth = viewport.offsetWidth - viewport.clientWidth;
+			setScrollbarWidth((currentWidth) =>
+				currentWidth === nextWidth ? currentWidth : nextWidth,
+			);
+		};
+		const scheduleMeasure = () => {
+			if (frame !== null) return;
+			frame = requestAnimationFrame(measure);
+		};
 		measure();
-		const observer = new ResizeObserver(measure);
+		const observer = new ResizeObserver(scheduleMeasure);
 		observer.observe(viewport);
-		return () => observer.disconnect();
+		return () => {
+			observer.disconnect();
+			if (frame !== null) cancelAnimationFrame(frame);
+		};
 	}, [active, scrollRef]);
 	const pendingHistorySubmissionsRef = useRef<string[]>(
 		initialDeferredSubmissions.history,
@@ -395,6 +429,34 @@ function ChatPageImpl(props: ChatPageProps) {
 		handleSendQueuedNow,
 		handleStop,
 	} = runtime;
+	const [backgroundVisualRetained, setBackgroundVisualRetained] =
+		useState(active);
+	useEffect(() => {
+		if (active) {
+			if (backgroundVisualRetained) return;
+			const frame = requestAnimationFrame(() =>
+				setBackgroundVisualRetained(true),
+			);
+			return () => cancelAnimationFrame(frame);
+		}
+		if (!retainBackgroundVisual) {
+			if (!backgroundVisualRetained) return;
+			const frame = requestAnimationFrame(() =>
+				setBackgroundVisualRetained(false),
+			);
+			return () => cancelAnimationFrame(frame);
+		}
+		// A controller that was visible stays frozen for its whole background run.
+		// Do not create a hidden visual tree for a session that was never opened.
+		if (runtimeBusy || !backgroundVisualRetained) return;
+		const timer = window.setTimeout(
+			() => setBackgroundVisualRetained(false),
+			BACKGROUND_VISUAL_RETENTION_MS,
+		);
+		return () => window.clearTimeout(timer);
+	}, [active, backgroundVisualRetained, retainBackgroundVisual, runtimeBusy]);
+	const renderVisual =
+		active || (retainBackgroundVisual && backgroundVisualRetained);
 	const piFeatures = usePiSessionFeatures({
 		client,
 		active,
@@ -746,12 +808,15 @@ function ChatPageImpl(props: ChatPageProps) {
 		},
 	);
 
-	// The controller stays mounted for busy/background sessions. Keep the visual
-	// tree active-only so background Pi output never drives Markdown/Virtua work.
-	if (!active) return null;
+	// Preserve the last painted visual tree for a busy/recent background chat so
+	// switching back can reveal existing DOM immediately. The subscriber below is
+	// frozen while inactive, so background Pi output still drives zero Markdown or
+	// Virtua work. Idle snapshots expire to keep hidden DOM memory bounded.
+	if (!renderVisual) return null;
 
 	return (
 		<ChatConversationSubscriber
+			active={active}
 			conversationStore={conversationStore}
 			historyStore={historyStore}
 			baseMessages={baseMessages}
@@ -963,7 +1028,12 @@ function chatPagePropsEqual(previous: ChatPageProps, next: ChatPageProps) {
 	// Keep inactive conversations mounted so their controller/local state survives,
 	// but do not let unrelated App updates execute the entire ChatPage function.
 	// React compares again when active changes, so reopening uses the latest props.
-	if (!previousActive && !nextActive) return true;
+	if (!previousActive && !nextActive) {
+		return (
+			(previous.retainBackgroundVisual ?? true) ===
+			(next.retainBackgroundVisual ?? true)
+		);
+	}
 
 	return false;
 }

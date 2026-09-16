@@ -2,8 +2,12 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 import { coalesceConversationActions } from "@/lib/conversation-reducer";
 import type { ConversationAction } from "@/lib/conversation-types";
+import {
+	recordChatPresentationFlush,
+	recordChatPresentationInterval,
+} from "@/lib/chat-performance";
 
-const INACTIVE_RUNTIME_FLUSH_MS = 100;
+const INACTIVE_RUNTIME_FLUSH_MS = 150;
 
 function isPresentationBatchedAction(action: ConversationAction) {
 	return (
@@ -50,17 +54,21 @@ export function useRuntimeConversationDispatch(
 	const flushRuntimeActions = useCallback(() => {
 		const pending = takePendingRuntimeActions();
 		if (!pending || pending.actions.length === 0) return;
-		dispatchConversationBatch(
-			pending.sessionId,
-			coalesceConversationActions(pending.actions),
-		);
+		const coalesced = coalesceConversationActions(pending.actions);
+		recordChatPresentationFlush({
+			active,
+			inputActions: pending.actions.length,
+			coalescedActions: coalesced.length,
+		});
+		dispatchConversationBatch(pending.sessionId, coalesced);
 		lastPresentationFlushAtRef.current = performance.now();
-	}, [dispatchConversationBatch, takePendingRuntimeActions]);
+	}, [active, dispatchConversationBatch, takePendingRuntimeActions]);
 
 	const scheduleRuntimeFlush = useCallback(() => {
 		if (scheduledFlushRef.current !== null) return;
 		if (active) {
 			const intervalMs = Math.max(16, getActiveFlushIntervalMs());
+			recordChatPresentationInterval(intervalMs);
 			const elapsedMs = performance.now() - lastPresentationFlushAtRef.current;
 			const delayMs = Math.max(0, intervalMs - elapsedMs);
 			if (delayMs <= 8) {
@@ -108,16 +116,19 @@ export function useRuntimeConversationDispatch(
 		(targetSessionId: string, actions: readonly ConversationAction[]) => {
 			const pending = takePendingRuntimeActions();
 			if (pending?.actions.length) {
+				const coalescedPending = coalesceConversationActions(pending.actions);
+				recordChatPresentationFlush({
+					active,
+					inputActions: pending.actions.length,
+					coalescedActions: coalescedPending.length,
+				});
 				if (pending.sessionId === targetSessionId) {
-					dispatchConversationBatch(
-						targetSessionId,
-						coalesceConversationActions([...pending.actions, ...actions]),
-					);
+					dispatchConversationBatch(targetSessionId, [
+						...coalescedPending,
+						...actions,
+					]);
 				} else {
-					dispatchConversationBatch(
-						pending.sessionId,
-						coalesceConversationActions(pending.actions),
-					);
+					dispatchConversationBatch(pending.sessionId, coalescedPending);
 					dispatchConversationBatch(targetSessionId, actions);
 				}
 			} else if (actions.length > 0) {
@@ -125,7 +136,7 @@ export function useRuntimeConversationDispatch(
 			}
 			lastPresentationFlushAtRef.current = performance.now();
 		},
-		[dispatchConversationBatch, takePendingRuntimeActions],
+		[active, dispatchConversationBatch, takePendingRuntimeActions],
 	);
 
 	const dispatchConversation = useCallback(

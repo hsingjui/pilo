@@ -199,6 +199,39 @@ async fn event_hub_preserves_large_interleaved_stream_bursts() {
 }
 
 #[tokio::test]
+async fn event_hub_disconnects_a_stream_when_its_buffer_overflows() {
+    let events = ServerEventHub::default();
+    let mut subscriber = events.subscribe("stream:overflow");
+    const EVENT_COUNT: usize = 2_048;
+
+    for index in 0..=EVENT_COUNT {
+        events.send(ServerEvent {
+            stream_id: "stream:overflow".to_owned(),
+            event: "pi.rpc".to_owned(),
+            data: json!({ "index": index }),
+            binary: Vec::new(),
+        });
+    }
+
+    for index in 0..EVENT_COUNT {
+        let event = subscriber.recv().await.unwrap();
+        assert_eq!(event.data, json!({ "index": index }));
+    }
+
+    let overflow = subscriber.recv().await.unwrap();
+    assert_eq!(overflow.event, SERVER_DISCONNECTED_EVENT);
+    assert_eq!(overflow.stream_id, "stream:overflow");
+    assert_eq!(
+        overflow.data,
+        json!({
+            "message": "server event stream overflowed",
+            "overflow": true,
+        })
+    );
+    assert!(subscriber.recv().await.is_none());
+}
+
+#[tokio::test]
 async fn resubscribing_stream_closes_the_stale_receiver() {
     let events = ServerEventHub::default();
     let mut stale = events.subscribe("pi:test");

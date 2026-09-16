@@ -301,6 +301,7 @@ impl ServerPiSession {
         let event_stream_id = stream_id.clone();
         let event_state = Arc::clone(&self.state);
         let event_sink = sink.clone();
+        let event_client = Arc::clone(&client);
         let event_task = tokio::spawn(async move {
             let mut adapter = PiEventAdapter::default();
             let mut buffered_runtime_events = Vec::new();
@@ -358,6 +359,11 @@ impl ServerPiSession {
                             generation,
                             state: PiProcessState::Failed,
                         });
+                    }
+                    if event.data.get("overflow").and_then(Value::as_bool) == Some(true) {
+                        let _ = event_client
+                            .request("pi.stop", json!({ "streamId": &event_stream_id }))
+                            .await;
                     }
                     break;
                 }

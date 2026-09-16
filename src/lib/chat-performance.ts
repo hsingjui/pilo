@@ -6,11 +6,23 @@ const SCROLL_ACTIVE_MS = 180;
 let debugEnabled: boolean | undefined;
 
 type Counters = {
+	runtimeEvents: number;
+	presentationFlushes: number;
+	presentationInputActions: number;
+	presentationCoalescedActions: number;
+	backgroundPresentationFlushes: number;
 	chatRenders: number;
 	userMessageRenders: number;
 	assistantMessageRenders: number;
 	markdownRenders: number;
 	markdownChars: number;
+	markdownParses: number;
+	markdownParsedChars: number;
+	markdownReusedChars: number;
+	markdownFullParses: number;
+	markdownFootnoteFallbacks: number;
+	markdownParseMs: number;
+	markdownMaxLiveTailChars: number;
 	virtualChanges: number;
 	virtualSyncChanges: number;
 	virtualRangeChanges: number;
@@ -33,6 +45,7 @@ type Counters = {
 
 type ChatPerfContext = {
 	sessionId: string;
+	activePresentationIntervalMs: number | null;
 	messageCount: number;
 	virtualized: boolean;
 	visibleStart: number | null;
@@ -75,11 +88,23 @@ type ChatPerfState = {
 };
 
 const EMPTY_COUNTERS = (): Counters => ({
+	runtimeEvents: 0,
+	presentationFlushes: 0,
+	presentationInputActions: 0,
+	presentationCoalescedActions: 0,
+	backgroundPresentationFlushes: 0,
 	chatRenders: 0,
 	userMessageRenders: 0,
 	assistantMessageRenders: 0,
 	markdownRenders: 0,
 	markdownChars: 0,
+	markdownParses: 0,
+	markdownParsedChars: 0,
+	markdownReusedChars: 0,
+	markdownFullParses: 0,
+	markdownFootnoteFallbacks: 0,
+	markdownParseMs: 0,
+	markdownMaxLiveTailChars: 0,
 	virtualChanges: 0,
 	virtualSyncChanges: 0,
 	virtualRangeChanges: 0,
@@ -104,6 +129,7 @@ const state: ChatPerfState = {
 	counters: EMPTY_COUNTERS(),
 	context: {
 		sessionId: "",
+		activePresentationIntervalMs: null,
 		messageCount: 0,
 		virtualized: false,
 		visibleStart: null,
@@ -188,6 +214,7 @@ function maybeReport(now = performance.now(), force = false) {
 		...state.context,
 		...counters,
 		longTaskMs: Math.round(counters.longTaskMs),
+		markdownParseMs: Math.round(counters.markdownParseMs * 10) / 10,
 		historyWindowMs: Math.round(counters.historyWindowMs),
 		avgMarkdownChars,
 		jsHeapUsedMb: heap.used,
@@ -304,6 +331,32 @@ export function recordHistoryHydration(
 	maybeReport();
 }
 
+export function recordChatRuntimeEvent() {
+	if (!isChatPerformanceDebugEnabled()) return;
+	state.counters.runtimeEvents += 1;
+}
+
+export function recordChatPresentationInterval(intervalMs: number) {
+	if (!isChatPerformanceDebugEnabled()) return;
+	state.context.activePresentationIntervalMs = intervalMs;
+}
+
+export function recordChatPresentationFlush({
+	active,
+	inputActions,
+	coalescedActions,
+}: {
+	active: boolean;
+	inputActions: number;
+	coalescedActions: number;
+}) {
+	if (!isChatPerformanceDebugEnabled()) return;
+	state.counters.presentationFlushes += 1;
+	state.counters.presentationInputActions += inputActions;
+	state.counters.presentationCoalescedActions += coalescedActions;
+	if (!active) state.counters.backgroundPresentationFlushes += 1;
+}
+
 export function recordChatPageRender(
 	sessionId: string,
 	messageCount: number,
@@ -314,21 +367,46 @@ export function recordChatPageRender(
 	state.context.messageCount = messageCount;
 	state.context.virtualized = virtualized;
 	state.counters.chatRenders += 1;
-	maybeReport();
 }
 
 export function recordChatMessageRender(role: "user" | "assistant") {
 	if (!isChatPerformanceDebugEnabled()) return;
 	if (role === "user") state.counters.userMessageRenders += 1;
 	else state.counters.assistantMessageRenders += 1;
-	maybeReport();
 }
 
 export function recordMarkdownRender(charCount: number) {
 	if (!isChatPerformanceDebugEnabled()) return;
 	state.counters.markdownRenders += 1;
 	state.counters.markdownChars += charCount;
-	maybeReport();
+}
+
+export function recordMarkdownParse({
+	parsedChars,
+	reusedChars,
+	liveTailChars,
+	fullParse,
+	footnoteFallback,
+	durationMs,
+}: {
+	parsedChars: number;
+	reusedChars: number;
+	liveTailChars: number;
+	fullParse: boolean;
+	footnoteFallback: boolean;
+	durationMs: number;
+}) {
+	if (!isChatPerformanceDebugEnabled()) return;
+	state.counters.markdownParses += 1;
+	state.counters.markdownParsedChars += parsedChars;
+	state.counters.markdownReusedChars += reusedChars;
+	state.counters.markdownParseMs += durationMs;
+	state.counters.markdownMaxLiveTailChars = Math.max(
+		state.counters.markdownMaxLiveTailChars,
+		liveTailChars,
+	);
+	if (fullParse) state.counters.markdownFullParses += 1;
+	if (footnoteFallback) state.counters.markdownFootnoteFallbacks += 1;
 }
 
 export function recordVirtualChange({
@@ -353,7 +431,6 @@ export function recordVirtualChange({
 	state.context.visibleStart = startIndex;
 	state.context.visibleEnd = endIndex;
 	state.context.virtualTotalSize = Math.round(totalSize);
-	maybeReport();
 }
 
 export function recordScrollEvent() {
@@ -365,7 +442,6 @@ export function recordScrollEvent() {
 		state.lastScrollFrameAt = now;
 		requestAnimationFrame(sampleScrollFrame);
 	}
-	maybeReport(now);
 }
 
 export function recordStickyScrollMetric(
@@ -398,7 +474,6 @@ export function recordStickyScrollMetric(
 			state.counters.stickyDomScrollWrites += 1;
 			break;
 	}
-	maybeReport();
 }
 
 function sampleScrollFrame(now: number) {
@@ -414,7 +489,6 @@ function sampleScrollFrame(now: number) {
 		if (delta >= 50) state.counters.verySlowScrollFrames += 1;
 	}
 	state.lastScrollFrameAt = now;
-	maybeReport(now);
 	if (now < state.scrollActiveUntil) requestAnimationFrame(sampleScrollFrame);
 	else state.lastScrollFrameAt = null;
 }

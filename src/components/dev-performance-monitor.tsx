@@ -46,13 +46,26 @@ export function DevPerformanceMonitor() {
 				PERF {report?.lastSwitchMs != null ? `${report.lastSwitchMs}ms` : "DEV"}
 			</button>
 			{!collapsed ? (
-				<div className="w-[282px] rounded-md border border-border/80 bg-background/95 p-2 shadow-xl backdrop-blur">
+				<div className="w-[360px] rounded-md border border-border/80 bg-background/95 p-2 shadow-xl backdrop-blur">
 					<div className="grid grid-cols-[88px_1fr] gap-x-2 gap-y-0.5 tabular-nums">
 						<span className="text-muted-foreground">session</span>
 						<span className="truncate">{report?.sessionId || "-"}</span>
 						<span className="text-muted-foreground">switch</span>
 						<span>
 							{report?.lastSwitchMs != null ? `${report.lastSwitchMs} ms` : "-"}
+						</span>
+						<span className="text-muted-foreground">runtime</span>
+						<span>
+							{report
+								? metricRate(report.runtimeEvents, report.intervalMs)
+								: "-"}
+							ev/s
+						</span>
+						<span className="text-muted-foreground">present</span>
+						<span>
+							{report
+								? `${report.presentationFlushes} · ${report.presentationInputActions}/${report.presentationCoalescedActions} · bg ${report.backgroundPresentationFlushes} · ${report.activePresentationIntervalMs ?? "-"} ms`
+								: "-"}
 						</span>
 						<span className="text-muted-foreground">chat render</span>
 						<span>
@@ -71,10 +84,22 @@ export function DevPerformanceMonitor() {
 								? `${report.markdownRenders} · ${compactNumber(report.markdownChars)} chars`
 								: "-"}
 						</span>
+						<span className="text-muted-foreground">md parse</span>
+						<span>
+							{report
+								? `${report.markdownParses} · ${compactNumber(report.markdownParsedChars)}/${compactNumber(report.markdownReusedChars)} · tail ${compactNumber(report.markdownMaxLiveTailChars)} · ${report.markdownParseMs} ms`
+								: "-"}
+						</span>
 						<span className="text-muted-foreground">virtua</span>
 						<span>
 							{report
 								? `${report.virtualChanges} · ${report.visibleStart ?? "-"}-${report.visibleEnd ?? "-"}`
+								: "-"}
+						</span>
+						<span className="text-muted-foreground">sticky</span>
+						<span>
+							{report
+								? `${report.stickyContentResizes}/${report.stickyFollowFrames}/${report.stickyDomScrollWrites} · v ${report.stickyVirtuaScrollCalls}`
 								: "-"}
 						</span>
 						<span className="text-muted-foreground">scroll</span>

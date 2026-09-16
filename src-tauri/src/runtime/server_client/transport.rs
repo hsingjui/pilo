@@ -15,6 +15,7 @@ use tokio::{
     task::JoinHandle,
 };
 
+const STREAM_EVENT_BUFFER_CAPACITY: usize = 2_048;
 pub const SERVER_DISCONNECTED_EVENT: &str = "server.disconnected";
 
 pub(super) struct ServerResponse {
@@ -38,16 +39,15 @@ pub struct ServerEvent {
 
 #[derive(Default)]
 pub(super) struct ServerEventHub {
-    streams: StdMutex<HashMap<String, mpsc::UnboundedSender<ServerEvent>>>,
+    streams: StdMutex<HashMap<String, mpsc::Sender<ServerEvent>>>,
 }
 
 impl ServerEventHub {
-    pub(super) fn subscribe(&self, stream_id: &str) -> mpsc::UnboundedReceiver<ServerEvent> {
-        // The protocol has one shared stdout reader for every logical stream. This
-        // mailbox is intentionally unbounded so a slow consumer cannot apply
-        // head-of-line backpressure to unrelated streams. Pi runtime events are
-        // coalesced after semantic adaptation before they cross into the WebView.
-        let (sender, receiver) = mpsc::unbounded_channel();
+    pub(super) fn subscribe(&self, stream_id: &str) -> mpsc::Receiver<ServerEvent> {
+        // Keep one slot for a terminal control event. A slow consumer can therefore
+        // be disconnected without allowing an unbounded queue to retain terminal
+        // output or Pi payloads indefinitely.
+        let (sender, receiver) = mpsc::channel(STREAM_EVENT_BUFFER_CAPACITY + 1);
         let mut streams = self
             .streams
             .lock()
@@ -69,7 +69,20 @@ impl ServerEventHub {
         let Some(sender) = streams.get(&stream_id) else {
             return;
         };
-        if sender.send(event).is_err() {
+        if sender.capacity() <= 1 {
+            let _ = sender.try_send(ServerEvent {
+                stream_id: stream_id.clone(),
+                event: SERVER_DISCONNECTED_EVENT.to_owned(),
+                data: json!({
+                    "message": "server event stream overflowed",
+                    "overflow": true,
+                }),
+                binary: Vec::new(),
+            });
+            streams.remove(&stream_id);
+            return;
+        }
+        if sender.try_send(event).is_err() {
             streams.remove(&stream_id);
         }
     }
@@ -87,10 +100,12 @@ impl ServerEventHub {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             streams.retain(|_, sender| !sender.is_closed());
-            streams.values().cloned().collect::<Vec<_>>()
+            std::mem::take(&mut *streams)
+                .into_values()
+                .collect::<Vec<_>>()
         };
         for sender in senders {
-            let _ = sender.send(event.clone());
+            let _ = sender.try_send(event.clone());
         }
     }
 }

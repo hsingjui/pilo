@@ -4,6 +4,7 @@ import {
 	useCallback,
 	useImperativeHandle,
 	useLayoutEffect,
+	useMemo,
 	type MutableRefObject,
 } from "react";
 import { ArrowDown } from "lucide-react";
@@ -30,8 +31,10 @@ import {
 } from "@/ui";
 
 const CHAT_VIRTUA_BUFFER_PX = 800;
-const USE_PLAIN_SHORT_CHAT_EXPERIMENT =
-	import.meta.env.VITE_PILO_PLAIN_SHORT_CHAT === "1";
+// Virtualization pays off for long history, but a short conversation with one
+// rapidly growing assistant row is cheaper and more stable in normal document
+// flow. Keep an opt-out for regression comparisons.
+const USE_PLAIN_SHORT_CHAT = import.meta.env.VITE_PILO_PLAIN_SHORT_CHAT !== "0";
 const PLAIN_SHORT_CHAT_MAX_MESSAGES = 8;
 
 export type ChatConversationViewportHandle = {
@@ -153,9 +156,17 @@ const ChatConversationViewportImpl = forwardRef<
 	ref,
 ) {
 	const plainShortChat =
-		USE_PLAIN_SHORT_CHAT_EXPERIMENT &&
-		activeAssistantMessageId !== null &&
-		messages.length <= PLAIN_SHORT_CHAT_MAX_MESSAGES;
+		USE_PLAIN_SHORT_CHAT && messages.length <= PLAIN_SHORT_CHAT_MAX_MESSAGES;
+	const keepMounted = useMemo(() => {
+		if (!activeAssistantMessageId) return undefined;
+		const lastIndex = messages.length - 1;
+		if (messages[lastIndex]?.id === activeAssistantMessageId)
+			return [lastIndex];
+		const index = messages.findIndex(
+			(message) => message.id === activeAssistantMessageId,
+		);
+		return index >= 0 ? [index] : undefined;
+	}, [activeAssistantMessageId, messages]);
 	const {
 		outlineEntries,
 		scrollRef,
@@ -229,7 +240,11 @@ const ChatConversationViewportImpl = forwardRef<
 			<div className="relative min-h-0 w-full flex-1">
 				<div
 					ref={bindScrollRef}
-					onScroll={plainShortChat ? () => syncScrollState() : undefined}
+					onScroll={
+						plainShortChat
+							? (event) => syncScrollState(event.currentTarget.scrollTop)
+							: undefined
+					}
 					className="chat-scrollbar h-full w-full overflow-x-hidden overflow-y-auto overscroll-none [contain:strict]"
 					style={{
 						scrollbarGutter:
@@ -262,9 +277,7 @@ const ChatConversationViewportImpl = forwardRef<
 						</div>
 					) : plainShortChat ? (
 						<div>
-							{messages.map((message, index) =>
-								renderMessage(message, index),
-							)}
+							{messages.map((message, index) => renderMessage(message, index))}
 						</div>
 					) : (
 						// Virtua already removes off-screen rows. Do not add content-visibility:auto
@@ -276,6 +289,7 @@ const ChatConversationViewportImpl = forwardRef<
 							cache={initialVirtualizerCache}
 							shift={false}
 							bufferSize={CHAT_VIRTUA_BUFFER_PX}
+							keepMounted={keepMounted}
 							onScroll={handleVirtualScroll}
 							onScrollEnd={handleScrollEnd}
 						>

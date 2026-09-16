@@ -124,6 +124,7 @@ export function projectRelativePath(project: Project, candidate: string) {
 
 export const MAX_OPEN_CHAT_CONTROLLERS = 16;
 export const MAX_OPEN_CHAT_ESTIMATED_HISTORY_BYTES = 64 * 1024 * 1024;
+export const MAX_RETAINED_BACKGROUND_CHAT_VISUALS = 4;
 const OPEN_CHAT_HISTORY_MEMORY_MULTIPLIER = 2;
 
 function estimatedOpenChatHistoryBytes(entry: OpenChat) {
@@ -134,6 +135,36 @@ function estimatedOpenChatHistoryBytes(entry: OpenChat) {
 
 export function chatUiStateKey(projectId: string, sessionId: string) {
 	return `${projectId}:${sessionId}`;
+}
+
+/**
+ * Keep only a small number of inactive transcript DOM trees resident. Busy
+ * sessions are preferred because they are the most likely switch targets while
+ * multiple agents are running; remaining slots go to the most recently used
+ * idle chats. Runtime controllers are unaffected by this visual-only budget.
+ */
+export function retainedBackgroundChatVisualControllerIds(
+	openedChats: readonly OpenChat[],
+	activeControllerId: string | null,
+	busyControllerIds: ReadonlySet<string>,
+	limit = MAX_RETAINED_BACKGROUND_CHAT_VISUALS,
+) {
+	const retained = new Set<string>();
+	if (limit <= 0) return retained;
+
+	const addNewestMatching = (busy: boolean) => {
+		for (let index = openedChats.length - 1; index >= 0; index -= 1) {
+			if (retained.size >= limit) return;
+			const controllerId = openedChats[index]?.controllerId;
+			if (!controllerId || controllerId === activeControllerId) continue;
+			if (busyControllerIds.has(controllerId) !== busy) continue;
+			retained.add(controllerId);
+		}
+	};
+
+	addNewestMatching(true);
+	addNewestMatching(false);
+	return retained;
 }
 
 export type OpenChat = {

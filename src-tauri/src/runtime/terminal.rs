@@ -74,6 +74,7 @@ impl TerminalManager {
         let mut events = client.subscribe(&terminal_id);
         let event_terminal_id = terminal_id.clone();
         let event_app = app.clone();
+        let event_client = Arc::clone(&client);
         let task = tokio::spawn(async move {
             loop {
                 let Some(event) = events.recv().await else {
@@ -99,6 +100,11 @@ impl TerminalManager {
                                 .to_owned(),
                         },
                     );
+                    if event.data.get("overflow").and_then(Value::as_bool) == Some(true) {
+                        let _ = event_client
+                            .request("terminal.close", json!({ "streamId": &event_terminal_id }))
+                            .await;
+                    }
                     break;
                 }
                 if event.stream_id != event_terminal_id {

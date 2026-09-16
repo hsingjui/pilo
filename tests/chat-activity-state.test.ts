@@ -22,6 +22,27 @@ import {
 } from "../src/lib/chat-virtualization.ts";
 import { formatWorkDuration } from "../src/lib/format-duration.ts";
 
+function runBottomClampMode(mode: "dom-only" | "virtua-only" | "none") {
+	const calls: number[] = [];
+	const scrollElement = {
+		clientHeight: 400,
+		scrollHeight: 1_000,
+		scrollTop: 540,
+	};
+	const result = scrollChatViewportToRealBottom({
+		itemCount: 8,
+		vlist: {
+			scrollToIndex(index) {
+				calls.push(index);
+			},
+		},
+		scrollElement,
+		bottomOffset: 40,
+		mode,
+	});
+	return { calls, scrollTop: scrollElement.scrollTop, result };
+}
+
 test("chat bottom clamp targets Virtua and the real DOM bottom once", () => {
 	const calls: Array<{ index: number; align?: string; offset?: number }> = [];
 	const scrollElement = {
@@ -46,38 +67,17 @@ test("chat bottom clamp targets Virtua and the real DOM bottom once", () => {
 });
 
 test("chat bottom clamp experiment modes isolate scroll owners", () => {
-	const run = (mode: "dom-only" | "virtua-only" | "none") => {
-		const calls: number[] = [];
-		const scrollElement = {
-			clientHeight: 400,
-			scrollHeight: 1_000,
-			scrollTop: 540,
-		};
-		const result = scrollChatViewportToRealBottom({
-			itemCount: 8,
-			vlist: {
-				scrollToIndex(index) {
-					calls.push(index);
-				},
-			},
-			scrollElement,
-			bottomOffset: 40,
-			mode,
-		});
-		return { calls, scrollTop: scrollElement.scrollTop, result };
-	};
-
-	assert.deepEqual(run("dom-only"), {
+	assert.deepEqual(runBottomClampMode("dom-only"), {
 		calls: [],
 		scrollTop: 600,
 		result: { virtuaScrolled: false, domScrolled: true },
 	});
-	assert.deepEqual(run("virtua-only"), {
+	assert.deepEqual(runBottomClampMode("virtua-only"), {
 		calls: [7],
 		scrollTop: 540,
 		result: { virtuaScrolled: true, domScrolled: false },
 	});
-	assert.deepEqual(run("none"), {
+	assert.deepEqual(runBottomClampMode("none"), {
 		calls: [],
 		scrollTop: 540,
 		result: { virtuaScrolled: false, domScrolled: false },

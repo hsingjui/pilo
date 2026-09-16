@@ -7,27 +7,15 @@ import {
 	type RefCallback,
 	type RefObject,
 } from "react";
-import { useStickToBottom } from "use-stick-to-bottom";
 import type { VirtualizerHandle } from "virtua";
 
-import {
-	getChatScrollBottomPadding,
-	scrollChatViewportToRealBottom,
-	type ChatStickyScrollCorrectionMode,
-} from "@/components/chat/chat-sticky-scroll-dom";
+import { getChatScrollMaxOffset } from "@/components/chat/chat-sticky-scroll-dom";
 import { recordStickyScrollMetric } from "@/lib/chat-performance";
 
-function getStickyScrollCorrectionMode(): ChatStickyScrollCorrectionMode {
-	const mode = import.meta.env.VITE_PILO_STICKY_SCROLL_MODE;
-	if (mode === "dom-only" || mode === "virtua-only" || mode === "none") {
-		return mode;
-	}
-	return "baseline";
-}
+const BOTTOM_THRESHOLD_PX = 4;
+const SCROLL_WRITE_EPSILON_PX = 1;
 
-const STICKY_SCROLL_CORRECTION_MODE = getStickyScrollCorrectionMode();
-const USE_PILO_RESIZE_OWNER =
-	import.meta.env.VITE_PILO_STICKY_SCROLL_OWNER === "pilo";
+type ScrollOwnership = "following" | "reading";
 
 type ChatScrollState = {
 	scrollTop: number;
@@ -43,6 +31,14 @@ type UseChatStickyScrollOptions = {
 	onScrollStateChange?: (state: ChatScrollState) => void;
 };
 
+/**
+ * Owns bottom-following for the chat viewport.
+ *
+ * There is intentionally one resize owner. Content/viewport ResizeObserver
+ * notifications are coalesced into one rAF and perform one direct DOM bottom
+ * clamp. Virtua is only asked to find the final row for initial restoration;
+ * streaming growth never bounces through both Virtua and DOM corrections.
+ */
 export function useChatStickyScroll({
 	enabled,
 	vlistRef,
@@ -64,280 +60,295 @@ export function useChatStickyScroll({
 		itemCountRef.current = itemCount;
 	}, [itemCount]);
 
-	const stickToBottom = useStickToBottom({
-		initial: initialSticky ? "instant" : false,
-		resize: "instant",
-	});
-	const {
-		contentRef,
-		scrollRef: stickToBottomScrollRef,
-		scrollToBottom: scrollToBottomWithLock,
-		state,
-		stopScroll,
-	} = stickToBottom;
-	const isSticky = state.isAtBottom;
-	const stickyRef = useRef(isSticky);
-	useLayoutEffect(() => {
-		stickyRef.current = isSticky;
-	}, [isSticky]);
-
 	const scrollElementRef = useRef<HTMLDivElement | null>(null);
 	const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(
 		null,
 	);
 	const scrollPositionRef = useRef(initialScrollTop);
+	const ownershipRef = useRef<ScrollOwnership>(
+		initialSticky ? "following" : "reading",
+	);
+	const [isSticky, setIsSticky] = useState(initialSticky);
 	const initialScrollRestoredRef = useRef(false);
 	const [initialScrollRestored, setInitialScrollRestored] = useState(false);
-	const lastProgrammaticFollowAtRef = useRef(Number.NEGATIVE_INFINITY);
+	const followFrameRef = useRef<number | null>(null);
+	const touchStartYRef = useRef<number | null>(null);
 
-	const handleWheelUp = useCallback(
+	const commitOwnership = useCallback((nextOwnership: ScrollOwnership) => {
+		if (ownershipRef.current === nextOwnership) return;
+		ownershipRef.current = nextOwnership;
+		setIsSticky(nextOwnership === "following");
+	}, []);
+
+	const clampToBottom = useCallback(() => {
+		const viewport = scrollElementRef.current;
+		if (!viewport || itemCountRef.current <= 0) return false;
+		recordStickyScrollMetric("follow-request");
+		const target = getChatScrollMaxOffset(viewport);
+		if (Math.abs(viewport.scrollTop - target) <= SCROLL_WRITE_EPSILON_PX) {
+			return false;
+		}
+		viewport.scrollTop = target;
+		scrollPositionRef.current = target;
+		recordStickyScrollMetric("dom-scroll-write");
+		return true;
+	}, []);
+
+	const scheduleFollow = useCallback(() => {
+		if (ownershipRef.current !== "following" || itemCountRef.current <= 0)
+			return;
+		if (followFrameRef.current !== null) return;
+		followFrameRef.current = requestAnimationFrame(() => {
+			followFrameRef.current = null;
+			recordStickyScrollMetric("follow-frame");
+			if (ownershipRef.current === "following") clampToBottom();
+		});
+	}, [clampToBottom]);
+
+	const stopScroll = useCallback(() => {
+		commitOwnership("reading");
+		const viewport = scrollElementRef.current;
+		onScrollStateChangeRef.current?.({
+			scrollTop: viewport?.scrollTop ?? scrollPositionRef.current,
+			sticky: false,
+		});
+	}, [commitOwnership]);
+
+	const handleWheel = useCallback(
 		(event: WheelEvent) => {
 			if (event.deltaY < 0) stopScroll();
+		},
+		[stopScroll],
+	);
+	const handleTouchStart = useCallback((event: TouchEvent) => {
+		touchStartYRef.current = event.touches[0]?.clientY ?? null;
+	}, []);
+	const handleTouchMove = useCallback(
+		(event: TouchEvent) => {
+			const startY = touchStartYRef.current;
+			const currentY = event.touches[0]?.clientY;
+			if (startY === null || currentY === undefined) return;
+			if (currentY - startY < 8) return;
+			touchStartYRef.current = null;
+			stopScroll();
+		},
+		[stopScroll],
+	);
+	const handleTouchEnd = useCallback(() => {
+		touchStartYRef.current = null;
+	}, []);
+	const handleKeyDown = useCallback(
+		(event: KeyboardEvent) => {
+			if (
+				event.key === "ArrowUp" ||
+				event.key === "PageUp" ||
+				event.key === "Home"
+			) {
+				stopScroll();
+			}
+		},
+		[stopScroll],
+	);
+	const handlePointerDown = useCallback(
+		(event: PointerEvent) => {
+			const viewport = scrollElementRef.current;
+			if (!viewport || event.button !== 0) return;
+			const scrollbarWidth = viewport.offsetWidth - viewport.clientWidth;
+			if (scrollbarWidth <= 0) return;
+			const rect = viewport.getBoundingClientRect();
+			if (event.clientX >= rect.right - scrollbarWidth) stopScroll();
 		},
 		[stopScroll],
 	);
 
 	const setScrollRef = useCallback<RefCallback<HTMLDivElement>>(
 		(nextScrollElement) => {
-			const previousScrollElement = scrollElementRef.current;
-			if (previousScrollElement === nextScrollElement) return;
-
-			if (previousScrollElement) {
-				previousScrollElement.removeEventListener("wheel", handleWheelUp);
+			const previous = scrollElementRef.current;
+			if (previous === nextScrollElement) return;
+			if (previous) {
+				previous.removeEventListener("wheel", handleWheel);
+				previous.removeEventListener("touchstart", handleTouchStart);
+				previous.removeEventListener("touchmove", handleTouchMove);
+				previous.removeEventListener("touchend", handleTouchEnd);
+				previous.removeEventListener("touchcancel", handleTouchEnd);
+				previous.removeEventListener("keydown", handleKeyDown);
+				previous.removeEventListener("pointerdown", handlePointerDown);
 			}
-			contentRef(null);
-			stickToBottomScrollRef(null);
-
 			scrollElementRef.current = nextScrollElement;
 			setScrollElement(nextScrollElement);
 			if (!nextScrollElement) return;
-
-			stickToBottomScrollRef(nextScrollElement);
-			if (enabled) {
-				const contentElement = nextScrollElement.firstElementChild;
-				if (contentElement instanceof HTMLElement) {
-					if (USE_PILO_RESIZE_OWNER) contentRef.current = contentElement;
-					else contentRef(contentElement);
-				}
-			}
-			nextScrollElement.addEventListener("wheel", handleWheelUp, {
+			nextScrollElement.addEventListener("wheel", handleWheel, {
+				passive: true,
+			});
+			nextScrollElement.addEventListener("touchstart", handleTouchStart, {
+				passive: true,
+			});
+			nextScrollElement.addEventListener("touchmove", handleTouchMove, {
+				passive: true,
+			});
+			nextScrollElement.addEventListener("touchend", handleTouchEnd, {
+				passive: true,
+			});
+			nextScrollElement.addEventListener("touchcancel", handleTouchEnd, {
+				passive: true,
+			});
+			nextScrollElement.addEventListener("keydown", handleKeyDown, {
+				passive: true,
+			});
+			nextScrollElement.addEventListener("pointerdown", handlePointerDown, {
 				passive: true,
 			});
 		},
-		[contentRef, enabled, handleWheelUp, stickToBottomScrollRef],
+		[
+			handleKeyDown,
+			handlePointerDown,
+			handleTouchEnd,
+			handleTouchMove,
+			handleTouchStart,
+			handleWheel,
+		],
 	);
 
-	// Pilo keeps the scroll viewport mounted while loading/history states swap the
-	// first child. Rebind the content observer when the Virtua surface appears.
-	useLayoutEffect(() => {
-		contentRef(null);
-		if (!enabled) return;
-		const contentElement = scrollElementRef.current?.firstElementChild;
-		if (contentElement instanceof HTMLElement) {
-			if (USE_PILO_RESIZE_OWNER) contentRef.current = contentElement;
-			else contentRef(contentElement);
-		}
-	}, [contentRef, enabled]);
-
-	const scrollToRealBottom = useCallback(() => {
-		recordStickyScrollMetric("follow-request");
-		const currentScrollElement = scrollElementRef.current;
-		if (USE_PILO_RESIZE_OWNER) {
-			// WebKit may dispatch the resulting scroll event synchronously. Mark
-			// the write before touching scrollTop so the controller can recognize
-			// this event as presentation follow rather than user navigation.
-			lastProgrammaticFollowAtRef.current = performance.now();
-		}
-		const result = scrollChatViewportToRealBottom({
-			itemCount: itemCountRef.current,
-			vlist: vlistRef.current,
-			scrollElement: currentScrollElement,
-			bottomOffset: getChatScrollBottomPadding(currentScrollElement),
-			mode: USE_PILO_RESIZE_OWNER
-				? "dom-only"
-				: STICKY_SCROLL_CORRECTION_MODE,
-		});
-		if (USE_PILO_RESIZE_OWNER && !result.domScrolled) {
-			lastProgrammaticFollowAtRef.current = Number.NEGATIVE_INFINITY;
-		}
-		if (result.virtuaScrolled) recordStickyScrollMetric("virtua-scroll");
-		if (result.domScrolled) recordStickyScrollMetric("dom-scroll-write");
-	}, [vlistRef]);
-
-	// Baseline: observe only while use-stick-to-bottom owns resize following.
-	// Experiment: the same ResizeObserver becomes the single resize owner and
-	// coalesces growth to at most one direct bottom clamp per animation frame.
+	// One ResizeObserver owns both content growth and viewport-size changes. A
+	// burst of measurements can schedule at most one bottom clamp per frame.
 	useEffect(() => {
-		if (!enabled || itemCount === 0 || typeof ResizeObserver === "undefined") {
+		if (
+			!enabled ||
+			itemCount === 0 ||
+			!scrollElement ||
+			typeof ResizeObserver === "undefined"
+		) {
 			return;
 		}
-		const contentElement = scrollElementRef.current?.firstElementChild;
+		const contentElement = scrollElement.firstElementChild;
 		if (!(contentElement instanceof HTMLElement)) return;
-		let previousHeight = contentElement.getBoundingClientRect().height;
-		let frame: number | null = null;
+		let viewportHeight = scrollElement.getBoundingClientRect().height;
+		let contentHeight = contentElement.getBoundingClientRect().height;
 		const observer = new ResizeObserver((entries) => {
+			let verticalLayoutChanged = false;
 			for (const entry of entries) {
-				const { height } = entry.contentRect;
-				if (height === previousHeight) continue;
-				previousHeight = height;
-				recordStickyScrollMetric("content-resize");
-				if (
-					!USE_PILO_RESIZE_OWNER ||
-					!stickyRef.current ||
-					itemCountRef.current <= 0 ||
-					frame !== null
-				) {
-					continue;
+				if (entry.target === scrollElement) {
+					if (Math.abs(entry.contentRect.height - viewportHeight) < 0.5)
+						continue;
+					viewportHeight = entry.contentRect.height;
+					recordStickyScrollMetric("viewport-resize");
+				} else {
+					if (Math.abs(entry.contentRect.height - contentHeight) < 0.5)
+						continue;
+					contentHeight = entry.contentRect.height;
+					recordStickyScrollMetric("content-resize");
 				}
-				frame = requestAnimationFrame(() => {
-					frame = null;
-					recordStickyScrollMetric("follow-frame");
-					if (stickyRef.current) scrollToRealBottom();
-				});
+				verticalLayoutChanged = true;
 			}
+			if (verticalLayoutChanged) scheduleFollow();
 		});
+		observer.observe(scrollElement);
 		observer.observe(contentElement);
-		return () => {
-			observer.disconnect();
-			if (frame !== null) cancelAnimationFrame(frame);
-		};
-	}, [enabled, itemCount, scrollToRealBottom]);
+		return () => observer.disconnect();
+	}, [enabled, itemCount, scheduleFollow, scrollElement]);
 
 	useEffect(() => {
 		if (!enabled || initialScrollRestoredRef.current || itemCount === 0) return;
-		if (!vlistRef.current && !USE_PILO_RESIZE_OWNER) return;
-
 		const initialState = initialStateRef.current;
+		let secondFrame: number | null = null;
 		const frame = requestAnimationFrame(() => {
 			recordStickyScrollMetric("follow-frame");
-			const currentVlist = vlistRef.current;
-
+			const viewport = scrollElementRef.current;
+			if (!viewport) return;
 			if (!initialState.sticky) {
-				stopScroll();
-				if (currentVlist) currentVlist.scrollTo(initialState.scrollTop);
-				else if (scrollElementRef.current) {
-					scrollElementRef.current.scrollTop = initialState.scrollTop;
-				}
+				commitOwnership("reading");
+				if (vlistRef.current) vlistRef.current.scrollTo(initialState.scrollTop);
+				else viewport.scrollTop = initialState.scrollTop;
 				scrollPositionRef.current = initialState.scrollTop;
 			} else {
-				void scrollToBottomWithLock({ animation: "instant" });
-				scrollToRealBottom();
+				commitOwnership("following");
+				// A single index jump teaches a long virtualized history which end to
+				// mount. Subsequent streaming growth is DOM-only.
+				if (vlistRef.current && itemCountRef.current > 0) {
+					vlistRef.current.scrollToIndex(itemCountRef.current - 1, {
+						align: "end",
+					});
+					recordStickyScrollMetric("virtua-scroll");
+				}
+				secondFrame = requestAnimationFrame(() => {
+					secondFrame = null;
+					clampToBottom();
+				});
 			}
 			initialScrollRestoredRef.current = true;
 			setInitialScrollRestored(true);
 		});
-		return () => cancelAnimationFrame(frame);
-	}, [
-		enabled,
-		itemCount,
-		scrollToBottomWithLock,
-		scrollToRealBottom,
-		stopScroll,
-		vlistRef,
-	]);
+		return () => {
+			cancelAnimationFrame(frame);
+			if (secondFrame !== null) cancelAnimationFrame(secondFrame);
+		};
+	}, [clampToBottom, commitOwnership, enabled, itemCount, vlistRef]);
 
-	// Background chats stay mounted. When a followed chat becomes visible again,
-	// clamp it to the actual end after any hidden content growth.
+	// When a followed conversation becomes visible again, one frame is enough to
+	// catch up with content that grew while its visual tree was inactive.
 	useEffect(() => {
-		if (!enabled || !initialScrollRestored || !stickyRef.current) return;
-		const frame = requestAnimationFrame(() => {
-			recordStickyScrollMetric("follow-frame");
-			scrollToRealBottom();
-		});
-		return () => cancelAnimationFrame(frame);
-	}, [enabled, initialScrollRestored, scrollToRealBottom]);
+		if (
+			!enabled ||
+			!initialScrollRestored ||
+			ownershipRef.current !== "following"
+		) {
+			return;
+		}
+		scheduleFollow();
+	}, [enabled, initialScrollRestored, scheduleFollow]);
 
 	const scrollToBottom = useCallback(
 		(smooth = false) => {
-			if (itemCountRef.current <= 0) return;
-			if (smooth) {
-				const result = scrollToBottomWithLock({ animation: "smooth" });
-				if (result instanceof Promise) {
-					void result.then((atBottom) => {
-						if (atBottom) scrollToRealBottom();
-					});
-				}
-				return;
-			}
-			void scrollToBottomWithLock({ animation: "instant" });
-			scrollToRealBottom();
+			const viewport = scrollElementRef.current;
+			if (!viewport || itemCountRef.current <= 0) return;
+			commitOwnership("following");
+			const target = getChatScrollMaxOffset(viewport);
+			if (smooth) viewport.scrollTo({ top: target, behavior: "smooth" });
+			else viewport.scrollTop = target;
+			scrollPositionRef.current = target;
+			recordStickyScrollMetric("follow-request");
+			recordStickyScrollMetric("dom-scroll-write");
 		},
-		[scrollToBottomWithLock, scrollToRealBottom],
+		[commitOwnership],
 	);
 
 	const handleScroll = useCallback(
 		(offset: number) => {
 			const viewport = scrollElementRef.current;
-			const scrollTop = viewport?.scrollTop ?? offset;
+			if (!viewport) return false;
+			const scrollTop = viewport.scrollTop ?? offset;
 			scrollPositionRef.current = scrollTop;
-			onScrollStateChangeRef.current?.({
-				scrollTop,
-				sticky: state.isAtBottom,
-			});
-			if (!USE_PILO_RESIZE_OWNER || !viewport) return false;
-			const distanceFromBottom = Math.abs(
+			const distanceFromBottom = Math.max(
+				0,
 				viewport.scrollHeight - viewport.clientHeight - scrollTop,
 			);
-			return (
-				distanceFromBottom <= 2 &&
-				performance.now() - lastProgrammaticFollowAtRef.current <= 250
-			);
+			if (
+				ownershipRef.current === "reading" &&
+				distanceFromBottom <= BOTTOM_THRESHOLD_PX
+			) {
+				commitOwnership("following");
+			}
+			const following = ownershipRef.current === "following";
+			onScrollStateChangeRef.current?.({ scrollTop, sticky: following });
+			return following;
 		},
-		[state],
+		[commitOwnership],
 	);
-
-	const previousStickyRef = useRef(isSticky);
-	useEffect(() => {
-		if (previousStickyRef.current === isSticky) return;
-		previousStickyRef.current = isSticky;
-		onScrollStateChangeRef.current?.({
-			scrollTop:
-				scrollElementRef.current?.scrollTop ?? scrollPositionRef.current,
-			sticky: isSticky,
-		});
-	}, [isSticky]);
 
 	useEffect(
 		() => () => {
+			if (followFrameRef.current !== null) {
+				cancelAnimationFrame(followFrameRef.current);
+				followFrameRef.current = null;
+			}
+			const viewport = scrollElementRef.current;
 			onScrollStateChangeRef.current?.({
-				scrollTop:
-					scrollElementRef.current?.scrollTop ?? scrollPositionRef.current,
-				sticky: stickyRef.current,
+				scrollTop: viewport?.scrollTop ?? scrollPositionRef.current,
+				sticky: ownershipRef.current === "following",
 			});
 		},
 		[],
 	);
-
-	// Keep a followed conversation pinned when the available viewport height
-	// changes (window resize, composer resize, docked panels), without polling.
-	useEffect(() => {
-		if (!enabled || !scrollElement || typeof ResizeObserver === "undefined") {
-			return;
-		}
-		let previousHeight = scrollElement.getBoundingClientRect().height;
-		let frame: number | null = null;
-		const observer = new ResizeObserver((entries) => {
-			for (const entry of entries) {
-				const { height } = entry.contentRect;
-				if (height === previousHeight) continue;
-				previousHeight = height;
-				recordStickyScrollMetric("viewport-resize");
-				if (!stickyRef.current || itemCountRef.current <= 0 || frame !== null) {
-					continue;
-				}
-				frame = requestAnimationFrame(() => {
-					frame = null;
-					recordStickyScrollMetric("follow-frame");
-					if (stickyRef.current) scrollToRealBottom();
-				});
-			}
-		});
-		observer.observe(scrollElement);
-		return () => {
-			observer.disconnect();
-			if (frame !== null) cancelAnimationFrame(frame);
-		};
-	}, [enabled, scrollElement, scrollToRealBottom]);
 
 	return {
 		scrollRef: setScrollRef,

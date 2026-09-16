@@ -203,7 +203,7 @@ impl ServerClient {
             .map_err(|error| format!("invalid pilo-server response for {method}: {error}"))
     }
 
-    pub fn subscribe(&self, stream_id: &str) -> mpsc::UnboundedReceiver<ServerEvent> {
+    pub fn subscribe(&self, stream_id: &str) -> mpsc::Receiver<ServerEvent> {
         self.events.subscribe(stream_id)
     }
 

@@ -1,4 +1,5 @@
 import {
+	Component,
 	memo,
 	useEffect,
 	useMemo,
@@ -22,11 +23,12 @@ import {
 	createMarkdownMermaidPlugin,
 	type MarkdownTheme,
 } from "@/components/chat/markdown-mermaid";
+import { remarkSingleDollarTextMath } from "@/lib/markdown-single-dollar-math";
 import {
-	normalizeTexMathDelimiters,
-	remarkSingleDollarTextMath,
-} from "@/lib/markdown-single-dollar-math";
-import { recordMarkdownRender } from "@/lib/chat-performance";
+	recordMarkdownParse,
+	recordMarkdownRender,
+} from "@/lib/chat-performance";
+import { createStreamingMarkdownBlockParser } from "@/lib/chat-streaming-markdown";
 import { useResolvedTheme } from "@/lib/theme-provider";
 import { cn } from "@/lib/utils";
 
@@ -266,7 +268,18 @@ function createLazyShikiCodePlugin(): CodeHighlighterPlugin {
 }
 
 const MARKDOWN_CODE_PLUGIN = createLazyShikiCodePlugin();
+const MARKDOWN_STREAMING_CODE_PLUGIN: CodeHighlighterPlugin = {
+	name: "shiki",
+	type: "code-highlighter",
+	getSupportedLanguages: () => [...MARKDOWN_CODE_LANGUAGES],
+	getThemes: () => [...MARKDOWN_CODE_THEMES],
+	highlight: (options) => createPlainHighlightResult(options.code),
+	supportsLanguage: (language) => normalizeCodeLanguage(language) !== null,
+};
 const MARKDOWN_MERMAID_PLUGIN = createMarkdownMermaidPlugin();
+const MARKDOWN_CATCH_UP_CHUNK_CHARS = 2_000;
+const MARKDOWN_CATCH_UP_THRESHOLD_CHARS = 4_000;
+const MAX_ANIMATED_STREAMING_CHARS = 64 * 1024;
 type MarkdownMathPlugin = NonNullable<PluginConfig["math"]>;
 let cachedMathPlugin: MarkdownMathPlugin | null = null;
 let mathPluginPromise: Promise<MarkdownMathPlugin> | null = null;
@@ -288,9 +301,133 @@ function loadMarkdownMathPlugin() {
 	return mathPluginPromise;
 }
 
-function hasMathMarkup(value: string) {
-	if (/(^|[^\\])\$\$/.test(value)) return true;
-	return /(^|[^\\$])\$(?![$\s])[^$\n]+\$(?!\$)/.test(value);
+function hasPotentialMathMarkup(value: string) {
+	return value.includes("$") || value.includes("\\(") || value.includes("\\[");
+}
+
+function markdownCatchUpSlice(value: string, end: number) {
+	let safeEnd = Math.min(value.length, end);
+	if (
+		safeEnd < value.length &&
+		safeEnd > 0 &&
+		/[\uD800-\uDBFF]/.test(value[safeEnd - 1])
+	) {
+		safeEnd += 1;
+	}
+	return value.slice(0, safeEnd);
+}
+
+/**
+ * A hidden running session can accumulate tens of thousands of characters while
+ * its visual snapshot is frozen. Reconnecting that source in one React commit
+ * turns session switching into a multi-second DOM mount. Reveal the append-only
+ * backlog in bounded animation-frame chunks instead; ordinary streaming deltas
+ * are normally smaller than one chunk and incur only a single-frame handoff.
+ */
+type MarkdownPresentationBoundaryProps = {
+	text: string;
+	isStreaming: boolean;
+	className?: string;
+};
+
+type MarkdownPresentationBoundaryState = {
+	sourceText: string;
+	presentedText: string;
+	catchingUp: boolean;
+};
+
+class MarkdownPresentationBoundary extends Component<
+	MarkdownPresentationBoundaryProps,
+	MarkdownPresentationBoundaryState
+> {
+	state: MarkdownPresentationBoundaryState = {
+		sourceText: this.props.text,
+		presentedText: this.props.text,
+		catchingUp: false,
+	};
+
+	private frame: number | null = null;
+
+	static getDerivedStateFromProps(
+		props: MarkdownPresentationBoundaryProps,
+		state: MarkdownPresentationBoundaryState,
+	): Partial<MarkdownPresentationBoundaryState> | null {
+		if (props.text === state.sourceText) return null;
+		if (state.catchingUp) {
+			if (props.text.startsWith(state.presentedText)) {
+				return { sourceText: props.text };
+			}
+			return {
+				sourceText: props.text,
+				presentedText: props.text,
+				catchingUp: false,
+			};
+		}
+
+		const appendOnly = props.text.startsWith(state.sourceText);
+		const backlogChars = props.text.length - state.sourceText.length;
+		if (appendOnly && backlogChars > MARKDOWN_CATCH_UP_THRESHOLD_CHARS) {
+			return {
+				sourceText: props.text,
+				presentedText: state.sourceText,
+				catchingUp: true,
+			};
+		}
+		return {
+			sourceText: props.text,
+			presentedText: props.text,
+			catchingUp: false,
+		};
+	}
+
+	componentDidMount() {
+		this.scheduleCatchUp();
+	}
+
+	componentDidUpdate() {
+		this.scheduleCatchUp();
+	}
+
+	componentWillUnmount() {
+		if (this.frame !== null) cancelAnimationFrame(this.frame);
+	}
+
+	private scheduleCatchUp() {
+		if (!this.state.catchingUp || this.frame !== null) return;
+		this.frame = requestAnimationFrame(() => {
+			this.frame = null;
+			this.setState((state) => {
+				const sourceText = this.props.text;
+				if (!sourceText.startsWith(state.presentedText)) {
+					return {
+						sourceText,
+						presentedText: sourceText,
+						catchingUp: false,
+					};
+				}
+				const presentedText = markdownCatchUpSlice(
+					sourceText,
+					state.presentedText.length + MARKDOWN_CATCH_UP_CHUNK_CHARS,
+				);
+				return {
+					sourceText,
+					presentedText,
+					catchingUp: presentedText !== sourceText,
+				};
+			});
+		});
+	}
+
+	render() {
+		return (
+			<ChatMarkdownBody
+				text={this.state.presentedText}
+				sourceText={this.props.text}
+				isStreaming={this.props.isStreaming}
+				className={this.props.className}
+			/>
+		);
+	}
 }
 
 const STREAMDOWN_CONTROLS = {
@@ -306,6 +443,11 @@ const STREAMDOWN_CONTROLS = {
 	},
 	table: false,
 } satisfies ControlsConfig;
+
+const STREAMDOWN_TRANSLATIONS = {
+	copied: "已复制",
+	copyCode: "复制代码",
+} as const;
 
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm, remarkSingleDollarTextMath];
 
@@ -388,31 +530,61 @@ const MARKDOWN_COMPONENTS = {
 	table: MarkdownTable,
 } satisfies Components;
 
-export const ChatMarkdown = memo(function ChatMarkdown({
+const ChatMarkdownBody = memo(function ChatMarkdownBody({
 	text,
-	isStreaming = false,
+	sourceText,
+	isStreaming,
 	className,
 }: {
 	text: string;
-	isStreaming?: boolean;
+	sourceText: string;
+	isStreaming: boolean;
 	className?: string;
 }) {
 	recordMarkdownRender(text.length);
 	const theme: MarkdownTheme = useResolvedTheme();
-	const normalizedText = useMemo(
-		() => normalizeTexMathDelimiters(text),
-		[text],
+	const caughtUp = text === sourceText;
+	const streamingVisual = isStreaming || !caughtUp;
+	const needsMath = useMemo(() => hasPotentialMathMarkup(text), [text]);
+	const blockParser = useMemo(
+		() =>
+			createStreamingMarkdownBlockParser({ onMetrics: recordMarkdownParse }),
+		[],
 	);
-	const needsMath = useMemo(
-		() => hasMathMarkup(normalizedText),
-		[normalizedText],
+	const mermaidOptions = useMemo(
+		() => ({ config: createMarkdownMermaidConfig(theme) }),
+		[theme],
 	);
+	const [enhanceRichContent, setEnhanceRichContent] = useState(false);
 	const [mathPlugin, setMathPlugin] = useState<MarkdownMathPlugin | null>(() =>
-		needsMath ? cachedMathPlugin : null,
+		!streamingVisual && needsMath ? cachedMathPlugin : null,
 	);
 
+	// Streaming uses only cheap code rendering and treats Mermaid as a code fence.
+	// Once the final source is visible, upgrade expensive rendering during idle time
+	// so completion and session-switch frames stay bounded.
 	useEffect(() => {
-		if (!needsMath || mathPlugin) return;
+		if (streamingVisual || enhanceRichContent) return;
+		const idleWindow = window as Window & {
+			requestIdleCallback?: (
+				callback: () => void,
+				options?: { timeout: number },
+			) => number;
+			cancelIdleCallback?: (handle: number) => void;
+		};
+		if (idleWindow.requestIdleCallback) {
+			const handle = idleWindow.requestIdleCallback(
+				() => setEnhanceRichContent(true),
+				{ timeout: 1_000 },
+			);
+			return () => idleWindow.cancelIdleCallback?.(handle);
+		}
+		const timer = window.setTimeout(() => setEnhanceRichContent(true), 300);
+		return () => window.clearTimeout(timer);
+	}, [enhanceRichContent, streamingVisual]);
+
+	useEffect(() => {
+		if (streamingVisual || !needsMath || mathPlugin) return;
 		let cancelled = false;
 		void loadMarkdownMathPlugin()
 			.then((plugin) => {
@@ -424,36 +596,64 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 		return () => {
 			cancelled = true;
 		};
-	}, [mathPlugin, needsMath]);
+	}, [mathPlugin, needsMath, streamingVisual]);
 
 	const plugins = useMemo(
 		() =>
 			({
-				code: MARKDOWN_CODE_PLUGIN,
-				mermaid: MARKDOWN_MERMAID_PLUGIN,
-				...(needsMath && mathPlugin ? { math: mathPlugin } : {}),
+				code:
+					!streamingVisual && enhanceRichContent
+						? MARKDOWN_CODE_PLUGIN
+						: MARKDOWN_STREAMING_CODE_PLUGIN,
+				...(!streamingVisual && enhanceRichContent
+					? { mermaid: MARKDOWN_MERMAID_PLUGIN }
+					: {}),
+				...(!streamingVisual && needsMath && mathPlugin
+					? { math: mathPlugin }
+					: {}),
 			}) satisfies PluginConfig,
-		[mathPlugin, needsMath],
+		[enhanceRichContent, mathPlugin, needsMath, streamingVisual],
 	);
+	const shouldAnimate =
+		isStreaming && text.length < MAX_ANIMATED_STREAMING_CHARS;
 
 	return (
 		<div className={cn(MARKDOWN_BASE_CLASSNAME, className)}>
 			<Streamdown
-				key={`${needsMath && mathPlugin ? "math" : "markdown"}-${theme}`}
 				mode="streaming"
 				className="space-y-0"
 				controls={STREAMDOWN_CONTROLS}
-				isAnimating={isStreaming}
+				isAnimating={shouldAnimate}
 				lineNumbers={false}
-				mermaid={{ config: createMarkdownMermaidConfig(theme) }}
+				mermaid={mermaidOptions}
+				parseIncompleteMarkdown={false}
+				parseMarkdownIntoBlocksFn={blockParser}
 				plugins={plugins}
 				remarkPlugins={MARKDOWN_REMARK_PLUGINS}
 				components={MARKDOWN_COMPONENTS}
-				translations={{ copied: "已复制", copyCode: "复制代码" }}
+				translations={STREAMDOWN_TRANSLATIONS}
 				urlTransform={defaultUrlTransform}
 			>
-				{normalizedText}
+				{text}
 			</Streamdown>
 		</div>
+	);
+});
+
+export const ChatMarkdown = memo(function ChatMarkdown({
+	text,
+	isStreaming = false,
+	className,
+}: {
+	text: string;
+	isStreaming?: boolean;
+	className?: string;
+}) {
+	return (
+		<MarkdownPresentationBoundary
+			text={text}
+			isStreaming={isStreaming}
+			className={className}
+		/>
 	);
 });

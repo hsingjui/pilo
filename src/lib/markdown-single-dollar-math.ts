@@ -268,7 +268,21 @@ const slashRunLength = (value: string, start: number): number => {
  * delimiter remains two characters wide, so source offsets used by later
  * Markdown transforms stay valid.
  */
-export const normalizeTexMathDelimiters = (value: string): string => {
+export type TexMathNormalizationResult = {
+	text: string;
+	pendingDelimiterIndex: number | null;
+};
+
+/**
+ * Same normalization as `normalizeTexMathDelimiters`, plus the source offset of
+ * an unterminated TeX delimiter. Streaming Markdown uses that offset as a hard
+ * stability boundary: text before it may be frozen, text at/after it must stay
+ * in the live tail because a later `\\)` / `\\]` can retroactively turn the
+ * opener into math.
+ */
+export const normalizeTexMathDelimitersWithMetadata = (
+	value: string,
+): TexMathNormalizationResult => {
 	const replacements: number[] = [];
 	let opening: TexMathDelimiter | null = null;
 	let cursor = 0;
@@ -350,15 +364,26 @@ export const normalizeTexMathDelimiters = (value: string): string => {
 		cursor = delimiterIndex + 2;
 	}
 
-	if (replacements.length === 0) return value;
+	if (replacements.length === 0) {
+		return {
+			text: value,
+			pendingDelimiterIndex: opening?.index ?? null,
+		};
+	}
 
 	const normalized = value.split("");
 	replacements.forEach((index) => {
 		normalized[index] = "$";
 		normalized[index + 1] = "$";
 	});
-	return normalized.join("");
+	return {
+		text: normalized.join(""),
+		pendingDelimiterIndex: opening?.index ?? null,
+	};
 };
+
+export const normalizeTexMathDelimiters = (value: string): string =>
+	normalizeTexMathDelimitersWithMetadata(value).text;
 
 const SKIP_CHILDREN_NODE_TYPES = new Set([
 	"code",

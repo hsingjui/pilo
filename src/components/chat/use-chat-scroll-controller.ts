@@ -24,8 +24,6 @@ import type { ChatMessage } from "@/lib/conversation-types";
 const CHAT_OUTLINE_READING_OFFSET_PX = 72;
 const OUTLINE_JUMP_TOLERANCE_PX = 2;
 const OUTLINE_JUMP_MAX_CORRECTIONS = 3;
-const SKIP_PROGRAMMATIC_FOLLOW_SYNC =
-	import.meta.env.VITE_PILO_SKIP_PROGRAMMATIC_SCROLL_SYNC === "1";
 
 type UseChatScrollControllerOptions = {
 	active: boolean;
@@ -146,30 +144,36 @@ export function useChatScrollController({
 		if (!virtualized) return;
 		const viewport = scrollElementRef.current;
 		if (!viewport) return;
-		const measure = () => measureItemOffsetDelta();
+		let frame: number | null = null;
+		const measure = () => {
+			frame = null;
+			measureItemOffsetDelta();
+		};
+		const scheduleMeasure = () => {
+			if (frame !== null) return;
+			frame = requestAnimationFrame(measure);
+		};
 		measure();
-		const observer = new ResizeObserver(() => {
-			requestAnimationFrame(measure);
-		});
+		const observer = new ResizeObserver(scheduleMeasure);
 		observer.observe(viewport);
-		return () => observer.disconnect();
+		return () => {
+			observer.disconnect();
+			if (frame !== null) cancelAnimationFrame(frame);
+		};
 	}, [measureItemOffsetDelta, scrollElementRef, virtualized]);
 
 	const syncScrollState = useCallback(
-		(offset?: number) => {
-			recordScrollEvent();
+		(offset?: number, force = false) => {
 			const viewport = scrollElementRef.current;
 			if (!viewport) return;
 			const programmaticFollow = handleStickyScroll(
 				offset ?? viewport.scrollTop,
 			);
-			if (
-				SKIP_PROGRAMMATIC_FOLLOW_SYNC &&
-				programmaticFollow &&
-				activeAssistantMessageId
-			) {
-				return;
-			}
+			// Bottom-follow scrolls are presentation work. Re-running virtual range,
+			// cache and outline synchronization for every streaming resize just feeds
+			// the layout loop. The explicit initial sync below is the only exception.
+			if (programmaticFollow && !force) return;
+			recordScrollEvent();
 			if (scrollSyncFrameRef.current !== null) return;
 
 			scrollSyncFrameRef.current = requestAnimationFrame(() => {
@@ -246,7 +250,6 @@ export function useChatScrollController({
 			});
 		},
 		[
-			activeAssistantMessageId,
 			handleStickyScroll,
 			messages.length,
 			outlineEntries,
@@ -258,7 +261,7 @@ export function useChatScrollController({
 
 	useEffect(() => {
 		if (!scrollEnabled || !initialScrollRestored) return;
-		syncScrollState();
+		syncScrollState(undefined, true);
 	}, [initialScrollRestored, scrollEnabled, syncScrollState]);
 
 	useEffect(() => {

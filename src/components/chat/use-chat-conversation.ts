@@ -1,6 +1,7 @@
 import {
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -55,6 +56,7 @@ const EMPTY_PENDING_USERS: ConversationState["pendingUsers"] = [];
 const INITIAL_HISTORY_MESSAGE_COUNT = 80;
 const HISTORY_PAGE_MESSAGE_COUNT = 48;
 const HISTORY_PREFETCH_MESSAGES = 16;
+const NOOP_EXTERNAL_STORE_SUBSCRIBE = () => () => undefined;
 
 export function createLocalMessageId(kind: "user" | "assistant") {
 	localMessageSequence += 1;
@@ -563,6 +565,7 @@ export function useChatConversationView({
 	sessionPath,
 	historyLoadState,
 	loadState,
+	live = true,
 }: {
 	conversationStore: ChatConversationStore;
 	historyStore: ChatHistoryWindowStore;
@@ -570,17 +573,30 @@ export function useChatConversationView({
 	sessionPath?: string;
 	historyLoadState: "ready" | "loading" | "error";
 	loadState: "ready" | "loading" | "error";
+	live?: boolean;
 }) {
+	const frozenConversationRef = useRef(conversationStore.getSnapshot());
+	const frozenHistoryRef = useRef(historyStore.getSnapshot());
+	const frozenConversationSnapshot = useCallback(
+		() => frozenConversationRef.current,
+		[],
+	);
+	const frozenHistorySnapshot = useCallback(() => frozenHistoryRef.current, []);
 	const conversationState = useSyncExternalStore(
-		conversationStore.subscribe,
-		conversationStore.getSnapshot,
-		conversationStore.getSnapshot,
+		live ? conversationStore.subscribe : NOOP_EXTERNAL_STORE_SUBSCRIBE,
+		live ? conversationStore.getSnapshot : frozenConversationSnapshot,
+		live ? conversationStore.getSnapshot : frozenConversationSnapshot,
 	);
 	const historySnapshot = useSyncExternalStore(
-		historyStore.subscribe,
-		historyStore.getSnapshot,
-		historyStore.getSnapshot,
+		live ? historyStore.subscribe : NOOP_EXTERNAL_STORE_SUBSCRIBE,
+		live ? historyStore.getSnapshot : frozenHistorySnapshot,
+		live ? historyStore.getSnapshot : frozenHistorySnapshot,
 	);
+	useLayoutEffect(() => {
+		if (!live) return;
+		frozenConversationRef.current = conversationState;
+		frozenHistoryRef.current = historySnapshot;
+	}, [conversationState, historySnapshot, live]);
 	const runtimeMessages = conversationState?.messages ?? baseMessages;
 	useEffect(() => {
 		recordHistoryHydration(
@@ -588,12 +604,22 @@ export function useChatConversationView({
 			historySnapshot.hydrated.size + runtimeMessages.length,
 		);
 	}, [historySnapshot, runtimeMessages.length]);
-	const messages = useMemo(
+	// History changes only when its window/hydration state changes. Keep the
+	// potentially large placeholder prefix stable while the runtime tail streams,
+	// instead of rebuilding 0..runtimeBaseStart for every presentation flush.
+	const historyPrefix = useMemo(
 		() =>
 			sessionPath && historySnapshot.directory.length > 0
-				? [...buildHistoryPrefix(historySnapshot), ...runtimeMessages]
+				? buildHistoryPrefix(historySnapshot)
+				: EMPTY_MESSAGES,
+		[historySnapshot, sessionPath],
+	);
+	const messages = useMemo(
+		() =>
+			historyPrefix.length > 0
+				? [...historyPrefix, ...runtimeMessages]
 				: runtimeMessages,
-		[historySnapshot, runtimeMessages, sessionPath],
+		[historyPrefix, runtimeMessages],
 	);
 	const pendingUsers = conversationState?.pendingUsers ?? EMPTY_PENDING_USERS;
 	const latestTurnInterrupted = useMemo(() => {

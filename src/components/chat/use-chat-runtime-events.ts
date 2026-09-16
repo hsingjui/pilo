@@ -8,6 +8,7 @@ import type {
 import type { ChatSession } from "@/components/chat/chat-page-utils";
 import { isPresentationBatchedAction } from "@/components/chat/use-runtime-conversation-dispatch";
 import { toAppError } from "@/lib/app-error";
+import { recordChatRuntimeEvent } from "@/lib/chat-performance";
 import { toConversationAction } from "@/lib/conversation-runtime-adapter";
 import type { ConversationAction } from "@/lib/conversation-types";
 import { notifyAgentResult } from "@/lib/desktop-notifications";
@@ -186,6 +187,7 @@ export function useChatRuntimeEvents({
 
 	const handleRuntimeEvent = useCallback(
 		(event: PiloRuntimeEvent) => {
+			recordChatRuntimeEvent();
 			if (
 				event.type === "process_state" &&
 				(event.state === "failed" || event.state === "stopped")

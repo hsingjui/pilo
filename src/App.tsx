@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
 import {
 	Group,
 	Panel,
@@ -11,6 +11,7 @@ import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { AddProjectDialog } from "@/components/sidebar/add-project-dialog";
 import {
 	projectRelativePath,
+	retainedBackgroundChatVisualControllerIds,
 	type OpenChat,
 } from "@/components/app/app-chat-state";
 import { useAppCatalog } from "@/components/app/use-app-catalog";
@@ -125,6 +126,26 @@ function App() {
 		busyChatControllerIds,
 		preloadChatPage: importChatPage,
 	});
+	const activeChatControllerId = useMemo(() => {
+		if (!chatSession) return null;
+		return (
+			renderedOpenedChats.find(
+				(entry) =>
+					entry.session.projectRecord.id === chatSession.projectRecord.id &&
+					(entry.session.id === chatSession.id ||
+						entry.piSessionId === chatSession.id),
+			)?.controllerId ?? null
+		);
+	}, [chatSession, renderedOpenedChats]);
+	const retainedBackgroundVisualControllerIds = useMemo(
+		() =>
+			retainedBackgroundChatVisualControllerIds(
+				renderedOpenedChats,
+				activeChatControllerId,
+				busyChatControllerIds,
+			),
+		[activeChatControllerId, busyChatControllerIds, renderedOpenedChats],
+	);
 	const monitoredSelectSession = useCallback(
 		(sessionId: string) => {
 			recordChatSessionSwitchStart(selectedSessionId ?? null, sessionId);
@@ -291,6 +312,9 @@ function App() {
 												writeUiState={writeChatUiState}
 												onRuntimeBusyChange={handleChatRuntimeBusyChange}
 												active={visible}
+												retainBackgroundVisual={retainedBackgroundVisualControllerIds.has(
+													entry.controllerId,
+												)}
 												initialMessage={entry.initialMessage}
 												initialImages={entry.initialImages}
 												onSessionIdentified={(piSessionId) =>
