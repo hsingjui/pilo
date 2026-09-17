@@ -1,7 +1,8 @@
-import { LoaderCircle } from "lucide-react";
+import { CircleDashed } from "lucide-react";
 import { memo } from "react";
 
 import type { ChatSessionRuntimeState } from "@/components/chat/chat-page-utils";
+import { cn } from "@/lib/utils";
 import {
 	Popover,
 	PopoverContent,
@@ -95,6 +96,7 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 	const contextWindow =
 		finiteNumber(usage?.contextWindow) ?? finiteNumber(modelContextWindow);
 	const reportedPercent = finiteNumber(usage?.contextPercent);
+	const contextStale = usage?.contextStale === true;
 	const emptyContextPercent =
 		!usage && contextWindow !== undefined && contextWindow > 0 ? 0 : undefined;
 	const contextPercent =
@@ -130,7 +132,9 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 	const contextSummary =
 		contextPercent === undefined
 			? "上下文占用待更新"
-			: `上下文占用 ${formatPercent(contextPercent)}`;
+			: contextStale
+				? "上下文占用待更新（显示上次已知值）"
+				: `上下文占用 ${formatPercent(contextPercent)}`;
 	const hasActivityStats = [
 		usage?.totalMessages ?? usage?.messageCount,
 		usage?.userMessages,
@@ -146,14 +150,14 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 					<PopoverTrigger asChild>
 						<button
 							type="button"
-							className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
+							className={cn(
+								"flex h-7 shrink-0 items-center gap-1 rounded-md px-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground",
+								contextStale && "opacity-60",
+							)}
 							aria-label={contextSummary}
 						>
 							{contextPercent === undefined ? (
-								<LoaderCircle
-									className="size-4 animate-spin"
-									aria-hidden="true"
-								/>
+								<CircleDashed className="size-4" aria-hidden="true" />
 							) : (
 								<>
 									<span className="relative flex size-5 items-center justify-center">
@@ -230,6 +234,10 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 					{contextPercent === undefined ? (
 						<p className="mt-2 text-[11px] leading-4 text-muted-foreground">
 							当前占用尚不可确定；首次回复或压缩后的下一次模型响应完成后会更新。
+						</p>
+					) : contextStale ? (
+						<p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+							压缩后占用待下一次模型响应更新，当前显示上一次已知值。
 						</p>
 					) : null}
 				</div>

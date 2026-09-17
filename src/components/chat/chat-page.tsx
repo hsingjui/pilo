@@ -97,6 +97,8 @@ type ChatPageProps = {
 	readUiState?: (key: string) => ChatUiState;
 	writeUiState?: (key: string, patch: ChatUiStatePatch) => void;
 	onRuntimeBusyChange?: (controllerId: string, busy: boolean) => void;
+	onVisualReadyChange?: (ready: boolean) => void;
+	showSwitchSkeleton?: boolean;
 	onOpenFile?: (path: string) => void;
 	onForkSessionCreated?: (session: {
 		sessionId: string;
@@ -118,7 +120,10 @@ type ChatConversationSubscriberProps = {
 	sessionPath?: string;
 	historyLoadState: "ready" | "loading" | "error";
 	loadState: "ready" | "loading" | "error";
-	children: (view: ReturnType<typeof useChatConversationView>) => ReactNode;
+	children: (
+		view: ReturnType<typeof useChatConversationView>,
+		live: boolean,
+	) => ReactNode;
 };
 
 const ChatConversationSubscriber = memo(
@@ -151,7 +156,7 @@ const ChatConversationSubscriber = memo(
 			loadState,
 			live,
 		});
-		return children(view);
+		return children(view, live);
 	},
 	(previous, next) => !previous.active && !next.active,
 );
@@ -176,6 +181,8 @@ function ChatPageImpl(props: ChatPageProps) {
 		readUiState,
 		writeUiState,
 		onRuntimeBusyChange,
+		onVisualReadyChange,
+		showSwitchSkeleton = false,
 		onOpenFile,
 		onForkSessionCreated,
 		initialMessage,
@@ -226,19 +233,20 @@ function ChatPageImpl(props: ChatPageProps) {
 	);
 	const persistScrollState = useCallback(
 		(state: { scrollTop: number; sticky: boolean }) => {
-			if (uiStateKey && writeUiState) writeUiState(uiStateKey, state);
+			if (!active || !uiStateKey || !writeUiState) return;
+			writeUiState(uiStateKey, state);
 		},
-		[uiStateKey, writeUiState],
+		[active, uiStateKey, writeUiState],
 	);
 	const persistVirtualizerCache = useCallback(
 		(cache: CacheSnapshot, messageCount: number) => {
-			if (!uiStateKey || !writeUiState) return;
+			if (!active || !uiStateKey || !writeUiState) return;
 			writeUiState(uiStateKey, {
 				virtualizerCache: cache,
 				virtualizerMessageCount: messageCount,
 			});
 		},
-		[uiStateKey, writeUiState],
+		[active, uiStateKey, writeUiState],
 	);
 	const activeTurnSessionIdRef = useRef<string | null>(null);
 	const client = useMemo(
@@ -284,6 +292,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		handleThinkingChange,
 		prepareRuntimeConfiguration,
 		refreshSessionState,
+		refreshSessionStateIfContextStale,
 	} = sessionConfig;
 	const conversation = useChatConversation({
 		session,
@@ -418,6 +427,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		recoverSubmission,
 		prepareRuntimeConfiguration,
 		refreshSessionState,
+		refreshSessionStateIfContextStale,
 	});
 	const {
 		activeTurnSessionId,
@@ -434,6 +444,18 @@ function ChatPageImpl(props: ChatPageProps) {
 		handleSendQueuedNow,
 		handleStop,
 	} = runtime;
+	useEffect(() => {
+		if (active || !runtimeBusy || !uiStateKey || !writeUiState) return;
+		// A frozen background transcript deliberately stops consuming store
+		// updates. The assistant can therefore grow without changing message count,
+		// making a previously persisted Virtua height cache stale even though the
+		// old count still matches. Drop only the measurement cache when background
+		// work starts; draft/scroll ownership remain available for the next reveal.
+		writeUiState(uiStateKey, {
+			virtualizerCache: undefined,
+			virtualizerMessageCount: undefined,
+		});
+	}, [active, runtimeBusy, uiStateKey, writeUiState]);
 	const [backgroundVisualRetained, setBackgroundVisualRetained] =
 		useState(active);
 	useEffect(() => {
@@ -462,6 +484,31 @@ function ChatPageImpl(props: ChatPageProps) {
 	}, [active, backgroundVisualRetained, retainBackgroundVisual, runtimeBusy]);
 	const renderVisual =
 		active || (retainBackgroundVisual && backgroundVisualRetained);
+	const visualReadyRef = useRef(false);
+	const onVisualReadyChangeRef = useRef(onVisualReadyChange);
+	useLayoutEffect(() => {
+		onVisualReadyChangeRef.current = onVisualReadyChange;
+	}, [onVisualReadyChange]);
+	const handleVisualReady = useCallback(() => {
+		if (visualReadyRef.current) return;
+		visualReadyRef.current = true;
+		onVisualReadyChange?.(true);
+	}, [onVisualReadyChange]);
+	useEffect(
+		() => () => {
+			if (visualReadyRef.current) onVisualReadyChangeRef.current?.(false);
+		},
+		[],
+	);
+	useLayoutEffect(() => {
+		if (!visualReadyRef.current) return;
+		// A retained, idle visual tree is still a valid warm cache. Invalidate it
+		// only when the DOM is actually evicted or when a background run can make
+		// the frozen transcript stale.
+		if (renderVisual && (active || !runtimeBusy)) return;
+		visualReadyRef.current = false;
+		onVisualReadyChange?.(false);
+	}, [active, onVisualReadyChange, renderVisual, runtimeBusy]);
 	const piFeatures = usePiSessionFeatures({
 		client,
 		active,
@@ -474,6 +521,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		loadCommands,
 		tryExecuteExtensionCommand,
 		compact,
+		compacting,
 		retryState,
 		abortRetry,
 		extensionDialog,
@@ -829,13 +877,16 @@ function ChatPageImpl(props: ChatPageProps) {
 			historyLoadState={historyLoadState}
 			loadState={loadState}
 		>
-			{({
-				messages,
-				pendingUsers,
-				latestTurnInterrupted,
-				activeAssistantMessageId,
-				effectiveLoadState,
-			}) => {
+			{(
+				{
+					messages,
+					pendingUsers,
+					latestTurnInterrupted,
+					activeAssistantMessageId,
+					effectiveLoadState,
+				},
+				live,
+			) => {
 				const viewportUiState =
 					uiStateKey && readUiState ? readUiState(uiStateKey) : initialUiState;
 				const emptyTemporarySession =
@@ -866,11 +917,14 @@ function ChatPageImpl(props: ChatPageProps) {
 							<ChatConversationViewport
 								ref={conversationViewportRef}
 								active={active}
+								visualLive={live}
+								showSwitchSkeleton={showSwitchSkeleton}
 								sessionId={performanceSessionId ?? session.id}
 								sessionPath={session.sessionPath}
 								messages={messages}
 								onVisibleRangeChange={requestHistoryRange}
 								activeAssistantMessageId={activeAssistantMessageId}
+								compacting={compacting}
 								effectiveLoadState={effectiveLoadState}
 								initialScrollTop={viewportUiState.scrollTop}
 								initialSticky={viewportUiState.sticky}
@@ -891,6 +945,7 @@ function ChatPageImpl(props: ChatPageProps) {
 									runtimeBusy || historyPending || Boolean(forkingMessageId)
 								}
 								suppressInterruptedError={session.externalRunning || running}
+								onVisualReady={handleVisualReady}
 								onRetry={onRetry}
 								onRetryHistory={retryHistory}
 							/>
@@ -981,6 +1036,7 @@ function ChatPageImpl(props: ChatPageProps) {
 														.filter(Boolean)
 														.join(" · ")
 										}
+										compacting={compacting}
 										retrying={retryState?.kind === "agent"}
 										onAbortRetry={() => void abortRetry()}
 										contextUsage={sessionState}

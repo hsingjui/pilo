@@ -2,15 +2,19 @@ import {
 	forwardRef,
 	memo,
 	useCallback,
+	useEffect,
 	useImperativeHandle,
 	useLayoutEffect,
 	useMemo,
+	useRef,
+	useState,
 	type MutableRefObject,
 } from "react";
 import { ArrowDown } from "lucide-react";
 import { Virtualizer, type CacheSnapshot } from "virtua";
 
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
+import { ChatAgentActivityIndicator } from "@/components/chat/chat-agent-activity";
 import { ChatExpansionStateProvider } from "@/components/chat/chat-expansion-state";
 import { ChatHistorySkeleton } from "@/components/chat/chat-history-skeleton";
 import {
@@ -18,10 +22,17 @@ import {
 	EmptyConversation,
 } from "@/components/chat/chat-message";
 import { UserMessage } from "@/components/chat/chat-user-message";
+import { CompactionMessage } from "@/components/chat/compaction-message";
 import { ConversationOutlineRail } from "@/components/chat/conversation-outline-rail";
 import { useChatScrollController } from "@/components/chat/use-chat-scroll-controller";
 import type { ChatMessage } from "@/lib/conversation-types";
 import { recordChatSessionSwitchReady } from "@/lib/chat-performance";
+import { cn } from "@/lib/utils";
+import {
+	shouldInitializeShortChatPromoted,
+	shouldPromoteShortChatVirtualization,
+	shouldRenderPlainShortChat,
+} from "@/lib/chat-virtualization";
 import {
 	Button,
 	ErrorState,
@@ -35,7 +46,6 @@ const CHAT_VIRTUA_BUFFER_PX = 800;
 // rapidly growing assistant row is cheaper and more stable in normal document
 // flow. Keep an opt-out for regression comparisons.
 const USE_PLAIN_SHORT_CHAT = import.meta.env.VITE_PILO_PLAIN_SHORT_CHAT !== "0";
-const PLAIN_SHORT_CHAT_MAX_MESSAGES = 8;
 
 export type ChatConversationViewportHandle = {
 	scrollToBottom: (smooth?: boolean) => void;
@@ -43,11 +53,14 @@ export type ChatConversationViewportHandle = {
 
 type ChatConversationViewportProps = {
 	active: boolean;
+	visualLive: boolean;
+	showSwitchSkeleton?: boolean;
 	sessionId: string;
 	sessionPath?: string;
 	messages: ChatMessage[];
 	onVisibleRangeChange?: (startIndex: number, endIndex: number) => void;
 	activeAssistantMessageId: string | null;
+	compacting?: boolean;
 	effectiveLoadState: "ready" | "loading" | "error";
 	initialScrollTop: number;
 	initialSticky: boolean;
@@ -63,6 +76,7 @@ type ChatConversationViewportProps = {
 	forkingMessageId?: string | null;
 	forkDisabled?: boolean;
 	suppressInterruptedError?: boolean;
+	onVisualReady?: () => void;
 	onRetry?: () => void;
 	onRetryHistory: () => void;
 };
@@ -82,7 +96,9 @@ function HistoryMessagePlaceholder({ message }: { message: ChatMessage }) {
 	const estimatedHeight =
 		message.role === "user"
 			? Math.min(152, 52 + Math.ceil(estimatedChars / 90) * 20)
-			: Math.min(360, 72 + Math.ceil(estimatedChars / 110) * 20);
+			: message.role === "compaction"
+				? 40
+				: Math.min(360, 72 + Math.ceil(estimatedChars / 110) * 20);
 	return (
 		<ConversationColumn className="py-2 sm:py-3">
 			<div
@@ -92,6 +108,7 @@ function HistoryMessagePlaceholder({ message }: { message: ChatMessage }) {
 						: "w-full rounded-lg bg-foreground/[0.018]"
 				}
 				style={{ minHeight: estimatedHeight }}
+				data-history-placeholder="true"
 				aria-hidden="true"
 			/>
 		</ConversationColumn>
@@ -109,6 +126,9 @@ const MessageRow = memo(function MessageRow({
 }: MessageRowProps) {
 	if (message.historyPlaceholder) {
 		return <HistoryMessagePlaceholder message={message} />;
+	}
+	if (message.role === "compaction") {
+		return <CompactionMessage message={message} />;
 	}
 	return message.role === "user" ? (
 		<UserMessage message={message} />
@@ -133,11 +153,14 @@ const ChatConversationViewportImpl = forwardRef<
 >(function ChatConversationViewport(
 	{
 		active,
+		visualLive,
+		showSwitchSkeleton = false,
 		sessionId,
 		sessionPath,
 		messages,
 		onVisibleRangeChange,
 		activeAssistantMessageId,
+		compacting = false,
 		effectiveLoadState,
 		initialScrollTop,
 		initialSticky,
@@ -150,13 +173,76 @@ const ChatConversationViewportImpl = forwardRef<
 		forkingMessageId,
 		forkDisabled,
 		suppressInterruptedError,
+		onVisualReady,
 		onRetry,
 		onRetryHistory,
 	},
 	ref,
 ) {
-	const plainShortChat =
-		USE_PLAIN_SHORT_CHAT && messages.length <= PLAIN_SHORT_CHAT_MAX_MESSAGES;
+	const [shortChatPromoted, setShortChatPromoted] = useState(() =>
+		shouldInitializeShortChatPromoted({
+			enabled: USE_PLAIN_SHORT_CHAT,
+			messageCount: messages.length,
+			streaming: activeAssistantMessageId !== null,
+		}),
+	);
+	const [viewportSticky, setViewportSticky] = useState(initialSticky);
+	const viewportStickyRef = useRef(initialSticky);
+	const visualReadyReportedRef = useRef(false);
+	const plainShortChat = shouldRenderPlainShortChat({
+		enabled: USE_PLAIN_SHORT_CHAT,
+		promoted: shortChatPromoted,
+	});
+	const handleScrollStateChange = useCallback(
+		(state: { scrollTop: number; sticky: boolean }) => {
+			if (viewportStickyRef.current !== state.sticky) {
+				viewportStickyRef.current = state.sticky;
+				setViewportSticky(state.sticky);
+			}
+			onScrollStateChange?.(state);
+		},
+		[onScrollStateChange],
+	);
+	const shortChatPromotionPending = shouldPromoteShortChatVirtualization({
+		enabled: USE_PLAIN_SHORT_CHAT,
+		promoted: shortChatPromoted,
+		active,
+		ready: effectiveLoadState === "ready",
+		messageCount: messages.length,
+		streaming: activeAssistantMessageId !== null,
+		sticky: viewportSticky,
+		preparingVisual: showSwitchSkeleton,
+	});
+
+	useEffect(() => {
+		if (!shortChatPromotionPending) return;
+		// A cold visual is hidden behind the switch skeleton, so finish the
+		// plain-chat -> Virtua handoff immediately while it is still invisible.
+		// Warm/live chats keep the idle promotion path to avoid disturbing an
+		// interaction that is already visible to the user.
+		if (showSwitchSkeleton) {
+			const frame = requestAnimationFrame(() => setShortChatPromoted(true));
+			return () => cancelAnimationFrame(frame);
+		}
+
+		const idleWindow = window as Window & {
+			requestIdleCallback?: (
+				callback: () => void,
+				options?: { timeout: number },
+			) => number;
+			cancelIdleCallback?: (handle: number) => void;
+		};
+		if (idleWindow.requestIdleCallback) {
+			const handle = idleWindow.requestIdleCallback(
+				() => setShortChatPromoted(true),
+				{ timeout: 750 },
+			);
+			return () => idleWindow.cancelIdleCallback?.(handle);
+		}
+		const timer = window.setTimeout(() => setShortChatPromoted(true), 200);
+		return () => window.clearTimeout(timer);
+	}, [shortChatPromotionPending, showSwitchSkeleton]);
+
 	const keepMounted = useMemo(() => {
 		if (!activeAssistantMessageId) return undefined;
 		const lastIndex = messages.length - 1;
@@ -188,16 +274,82 @@ const ChatConversationViewportImpl = forwardRef<
 		effectiveLoadState,
 		initialScrollTop,
 		initialSticky,
-		onScrollStateChange,
+		onScrollStateChange: handleScrollStateChange,
 		onVisibleRangeChange,
 		onVirtualizerCacheChange,
 	});
 
 	useLayoutEffect(() => {
-		if (active && effectiveLoadState === "ready") {
-			recordChatSessionSwitchReady(sessionId);
+		if (!active || !visualLive) {
+			visualReadyReportedRef.current = false;
+			return;
 		}
-	}, [active, effectiveLoadState, sessionId]);
+		if (visualReadyReportedRef.current) return;
+		if (effectiveLoadState === "loading" || shortChatPromotionPending) return;
+
+		const reportReady = () => {
+			if (visualReadyReportedRef.current) return;
+			visualReadyReportedRef.current = true;
+			recordChatSessionSwitchReady(sessionId);
+			onVisualReady?.();
+		};
+		if (effectiveLoadState === "error" || messages.length === 0) {
+			reportReady();
+			return;
+		}
+
+		const viewport = runtimeScrollRef.current;
+		if (!viewport) return;
+		let frame: number | null = null;
+		let stableFrames = 0;
+		let previousGeometry = "";
+		const checkReady = () => {
+			const childCount = viewport.firstElementChild?.childElementCount ?? 0;
+			const hasPaintableRows = childCount > 0;
+			const visibleHistoryPending = Boolean(
+				viewport.querySelector('[data-history-placeholder="true"]'),
+			);
+			const maxScrollTop = Math.max(
+				0,
+				viewport.scrollHeight - viewport.clientHeight,
+			);
+			const targetScrollTop = initialSticky
+				? maxScrollTop
+				: Math.min(initialScrollTop, maxScrollTop);
+			const scrollRestored =
+				Math.abs(viewport.scrollTop - targetScrollTop) <= 2;
+			const geometry = `${Math.round(viewport.scrollTop)}:${Math.round(
+				viewport.scrollHeight,
+			)}:${childCount}`;
+			if (hasPaintableRows && scrollRestored && !visibleHistoryPending) {
+				stableFrames = geometry === previousGeometry ? stableFrames + 1 : 1;
+				previousGeometry = geometry;
+				if (stableFrames >= 2) {
+					reportReady();
+					return;
+				}
+			} else {
+				stableFrames = 0;
+				previousGeometry = "";
+			}
+			frame = requestAnimationFrame(checkReady);
+		};
+		frame = requestAnimationFrame(checkReady);
+		return () => {
+			if (frame !== null) cancelAnimationFrame(frame);
+		};
+	}, [
+		active,
+		effectiveLoadState,
+		initialScrollTop,
+		initialSticky,
+		messages.length,
+		onVisualReady,
+		runtimeScrollRef,
+		sessionId,
+		shortChatPromotionPending,
+		visualLive,
+	]);
 
 	useImperativeHandle(ref, () => ({ scrollToBottom }), [scrollToBottom]);
 
@@ -240,12 +392,16 @@ const ChatConversationViewportImpl = forwardRef<
 			<div className="relative min-h-0 w-full flex-1">
 				<div
 					ref={bindScrollRef}
+					aria-hidden={showSwitchSkeleton || undefined}
 					onScroll={
 						plainShortChat
 							? (event) => syncScrollState(event.currentTarget.scrollTop)
 							: undefined
 					}
-					className="chat-scrollbar h-full w-full overflow-x-hidden overflow-y-auto overscroll-none [contain:strict]"
+					className={cn(
+						"chat-scrollbar h-full w-full overflow-x-hidden overflow-y-auto overscroll-none [contain:strict]",
+						showSwitchSkeleton && "invisible",
+					)}
 					style={{
 						scrollbarGutter:
 							effectiveLoadState === "ready" && messages.length === 0
@@ -287,6 +443,7 @@ const ChatConversationViewportImpl = forwardRef<
 							ref={virtualizerRef}
 							data={messages}
 							cache={initialVirtualizerCache}
+							startMargin={virtualPadding.start}
 							shift={false}
 							bufferSize={CHAT_VIRTUA_BUFFER_PX}
 							keepMounted={keepMounted}
@@ -296,19 +453,32 @@ const ChatConversationViewportImpl = forwardRef<
 							{renderMessage}
 						</Virtualizer>
 					)}
+					{compacting ? (
+						<ConversationColumn className="py-3">
+							<ChatAgentActivityIndicator label="正在压缩上下文" />
+						</ConversationColumn>
+					) : null}
 				</div>
 
-				{isScrolledFromTop ? (
+				{showSwitchSkeleton ? (
+					<div className="absolute inset-0 z-10 overflow-hidden bg-background">
+						<ChatHistorySkeleton />
+					</div>
+				) : null}
+
+				{!showSwitchSkeleton && isScrolledFromTop ? (
 					<div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-background to-transparent" />
 				) : null}
 
-				<ConversationOutlineRail
-					entries={outlineEntries}
-					activeIndex={activeOutlineIndex}
-					onJumpToRound={handleOutlineJump}
-				/>
+				{!showSwitchSkeleton ? (
+					<ConversationOutlineRail
+						entries={outlineEntries}
+						activeIndex={activeOutlineIndex}
+						onJumpToRound={handleOutlineJump}
+					/>
+				) : null}
 
-				{!isSticky && messages.length > 0 ? (
+				{!showSwitchSkeleton && !isSticky && messages.length > 0 ? (
 					<ConversationColumn className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-end">
 						<Tooltip>
 							<TooltipTrigger asChild>

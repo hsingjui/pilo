@@ -33,7 +33,12 @@ import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { ScrollArea } from "@/ui";
 import { IS_MACOS } from "@/components/title-bar";
 import { CommandPalette } from "@/components/command-palette";
+import { ProjectSessionsToolbar } from "./project-sessions-toolbar";
 import { EnvRow, SessionRow, ProjectRow } from "./rows";
+import {
+	filterProjectSessions,
+	summarizeProjectSessions,
+} from "./session-list";
 import {
 	AppSidebarProps,
 	SidebarEnv,
@@ -175,6 +180,10 @@ export function AppSidebar({
 	footer,
 }: AppSidebarProps) {
 	const [paletteOpen, setPaletteOpen] = useState(false);
+	const [projectSessionsViewId, setProjectSessionsViewId] = useState<
+		string | null
+	>(null);
+	const [projectSessionsQuery, setProjectSessionsQuery] = useState("");
 	const { keyboardShortcuts } = usePreferences();
 	useKeyboardShortcut(keyboardShortcuts["open-command-palette"], () =>
 		setPaletteOpen((open) => !open),
@@ -350,6 +359,44 @@ export function AppSidebar({
 		}
 		return grouped;
 	}, [sessions]);
+	const projectSessionsViewProject = useMemo(
+		() =>
+			projectSessionsViewId
+				? (projects.find((project) => project.id === projectSessionsViewId) ??
+					null)
+				: null,
+		[projectSessionsViewId, projects],
+	);
+	const projectSessionsViewSessions = useMemo(() => {
+		if (!projectSessionsViewId) return [];
+		return filterProjectSessions(
+			sessionsByProject.get(projectSessionsViewId) ?? [],
+			projectSessionsQuery,
+		);
+	}, [projectSessionsQuery, projectSessionsViewId, sessionsByProject]);
+	const projectSessionsViewTotal = projectSessionsViewId
+		? (sessionsByProject.get(projectSessionsViewId)?.length ?? 0)
+		: 0;
+
+	const resetSidebarScroll = useCallback(() => {
+		window.requestAnimationFrame(() => {
+			if (scrollViewportRef.current) scrollViewportRef.current.scrollTop = 0;
+		});
+	}, []);
+	const openProjectSessionsView = useCallback(
+		(projectId: string) => {
+			setProjectSessionsViewId(projectId);
+			setProjectSessionsQuery("");
+			resetSidebarScroll();
+			onRefreshProjectSessions?.(projectId);
+		},
+		[onRefreshProjectSessions, resetSidebarScroll],
+	);
+	const closeProjectSessionsView = useCallback(() => {
+		setProjectSessionsViewId(null);
+		setProjectSessionsQuery("");
+		resetSidebarScroll();
+	}, [resetSidebarScroll]);
 
 	const handleSelectSession = useCallback(
 		(sessionId: string) => {
@@ -455,17 +502,28 @@ export function AppSidebar({
 							</button>
 						</div>
 					</header>
-					<div className="-mt-1 flex shrink-0 flex-col gap-px px-1.5">
-						<button
-							type="button"
-							className="group flex w-full select-none items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring dark:text-sidebar-foreground/75"
-							onClick={() => onNewChat?.()}
-						>
-							<span className="flex h-5 w-5 shrink-0 items-center justify-center text-current">
-								<SquarePen className="h-4 w-4" />
-							</span>
-							<span className="truncate">新对话</span>
-						</button>
+					<div className="-mt-1 flex shrink-0 flex-col gap-1 px-1.5">
+						{projectSessionsViewProject ? (
+							<ProjectSessionsToolbar
+								project={projectSessionsViewProject}
+								totalCount={projectSessionsViewTotal}
+								query={projectSessionsQuery}
+								onQueryChange={setProjectSessionsQuery}
+								onBack={closeProjectSessionsView}
+								onNewChat={onNewChatInProject}
+							/>
+						) : (
+							<button
+								type="button"
+								className="group flex w-full select-none items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring dark:text-sidebar-foreground/75"
+								onClick={() => onNewChat?.()}
+							>
+								<span className="flex h-5 w-5 shrink-0 items-center justify-center text-current">
+									<SquarePen className="h-4 w-4" />
+								</span>
+								<span className="truncate">新对话</span>
+							</button>
+						)}
 					</div>
 					<ScrollArea
 						className="mt-2 min-h-0 min-w-0 flex-1 overflow-x-hidden"
@@ -475,104 +533,147 @@ export function AppSidebar({
 						scrollbarThumbClassName="bg-[hsl(var(--muted-foreground)/0.35)] hover:bg-[hsl(var(--muted-foreground)/0.45)] active:bg-[hsl(var(--muted-foreground)/0.55)]"
 					>
 						<div className="relative w-full min-w-0 overflow-x-hidden pt-1">
-							{envs.map((env) => {
-								const envCollapsed =
-									collapsedSections[`env:${env.id}`] ?? false;
-								const envProjects = projectsByEnv.get(env.id) ?? [];
-								return (
-									<section
-										key={env.id}
-										className="mb-3 w-full min-w-0 space-y-0.5 overflow-hidden last:mb-0"
-									>
-										<EnvRow
-											env={env}
-											collapsed={envCollapsed}
-											onToggle={() => toggleSection(`env:${env.id}`)}
-											onAddProject={onAddProject}
-											onDeleteConnection={onDeleteConnection}
-										/>
-										{!envCollapsed && (
-											<DndContext
-												sensors={projectDragSensors}
-												collisionDetection={closestCenter}
-												onDragStart={() => {
-													suppressProjectClickRef.current = true;
-												}}
-												onDragCancel={() => {
-													window.setTimeout(() => {
-														suppressProjectClickRef.current = false;
-													}, 0);
-												}}
-												onDragEnd={(event) => {
-													handleProjectDragEnd(env.id, event);
-													window.setTimeout(() => {
-														suppressProjectClickRef.current = false;
-													}, 0);
-												}}
-											>
-												<SortableContext
-													items={envProjects.map((project) => project.id)}
-													strategy={verticalListSortingStrategy}
+							{projectSessionsViewProject ? (
+								projectSessionsViewSessions.length > 0 ? (
+									renderSessionList(projectSessionsViewSessions)
+								) : (
+									<div className="px-3 py-8 text-center text-xs text-sidebar-foreground-muted">
+										{projectSessionsQuery.trim()
+											? "没有匹配的会话"
+											: "暂无会话"}
+									</div>
+								)
+							) : (
+								envs.map((env) => {
+									const envCollapsed =
+										collapsedSections[`env:${env.id}`] ?? false;
+									const envProjects = projectsByEnv.get(env.id) ?? [];
+									return (
+										<section
+											key={env.id}
+											className="mb-3 w-full min-w-0 space-y-0.5 overflow-hidden last:mb-0"
+										>
+											<EnvRow
+												env={env}
+												collapsed={envCollapsed}
+												onToggle={() => toggleSection(`env:${env.id}`)}
+												onAddProject={onAddProject}
+												onDeleteConnection={onDeleteConnection}
+											/>
+											{!envCollapsed && (
+												<DndContext
+													sensors={projectDragSensors}
+													collisionDetection={closestCenter}
+													onDragStart={() => {
+														suppressProjectClickRef.current = true;
+													}}
+													onDragCancel={() => {
+														window.setTimeout(() => {
+															suppressProjectClickRef.current = false;
+														}, 0);
+													}}
+													onDragEnd={(event) => {
+														handleProjectDragEnd(env.id, event);
+														window.setTimeout(() => {
+															suppressProjectClickRef.current = false;
+														}, 0);
+													}}
 												>
-													{envProjects.map((project) => {
-														const projectCollapsed =
-															collapsedSections[`ws:${project.id}`] ?? true;
-														const projectSessions =
-															sessionsByProject.get(project.id) ?? [];
-														return (
-															<SortableProjectBlock
-																key={project.id}
-																id={project.id}
-																disabled={
-																	refreshingProjectIds.has(project.id) ||
-																	envProjects.length < 2
-																}
-																row={
-																	<ProjectRow
-																		project={project}
-																		env={env}
-																		collapsed={projectCollapsed}
-																		selected={
-																			activeSessionId === null &&
-																			selectedProjectId === project.id
-																		}
-																		refreshing={refreshingProjectIds.has(
-																			project.id,
-																		)}
-																		onSelect={() => {
-																			if (suppressProjectClickRef.current)
-																				return;
-																			onFocusProject?.(project.id);
-																			onNewChatInProject?.(project.id);
-																		}}
-																		onToggle={() => {
-																			const key = `ws:${project.id}`;
-																			toggleSection(key, true);
-																			if (projectCollapsed)
-																				onRefreshProjectSessions?.(project.id);
-																		}}
-																		onNewChat={onNewChatInProject}
-																		onDelete={onDeleteProject}
-																		onRefreshSessions={
-																			onRefreshProjectSessions
-																				? () =>
-																						onRefreshProjectSessions(project.id)
-																				: undefined
-																		}
-																	/>
-																}
-															>
-																{!projectCollapsed &&
-																	renderSessionList(projectSessions)}
-															</SortableProjectBlock>
-														);
-													})}
-												</SortableContext>
-											</DndContext>
-										)}
-									</section>
-								);
-							})}
+													<SortableContext
+														items={envProjects.map((project) => project.id)}
+														strategy={verticalListSortingStrategy}
+													>
+														{envProjects.map((project) => {
+															const projectCollapsed =
+																collapsedSections[`ws:${project.id}`] ?? true;
+															const projectSessions =
+																sessionsByProject.get(project.id) ?? [];
+															const projectSessionSummary = projectCollapsed
+																? null
+																: summarizeProjectSessions(
+																		projectSessions,
+																		activeSessionId,
+																	);
+															return (
+																<SortableProjectBlock
+																	key={project.id}
+																	id={project.id}
+																	disabled={
+																		refreshingProjectIds.has(project.id) ||
+																		envProjects.length < 2
+																	}
+																	row={
+																		<ProjectRow
+																			project={project}
+																			env={env}
+																			collapsed={projectCollapsed}
+																			selected={
+																				activeSessionId === null &&
+																				selectedProjectId === project.id
+																			}
+																			refreshing={refreshingProjectIds.has(
+																				project.id,
+																			)}
+																			onSelect={() => {
+																				if (suppressProjectClickRef.current)
+																					return;
+																				onFocusProject?.(project.id);
+																				onNewChatInProject?.(project.id);
+																			}}
+																			onToggle={() => {
+																				const key = `ws:${project.id}`;
+																				toggleSection(key, true);
+																				if (projectCollapsed)
+																					onRefreshProjectSessions?.(
+																						project.id,
+																					);
+																			}}
+																			onNewChat={onNewChatInProject}
+																			onDelete={onDeleteProject}
+																			onRefreshSessions={
+																				onRefreshProjectSessions
+																					? () =>
+																							onRefreshProjectSessions(
+																								project.id,
+																							)
+																					: undefined
+																			}
+																		/>
+																	}
+																>
+																	{projectSessionSummary ? (
+																		<>
+																			{projectSessionSummary.visible.map(
+																				renderSession,
+																			)}
+																			{projectSessionSummary.hiddenCount > 0 ? (
+																				<button
+																					type="button"
+																					className="flex w-full items-center rounded-md py-1 pl-8 pr-2 text-left text-xs text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sidebar-ring"
+																					onClick={() =>
+																						openProjectSessionsView(project.id)
+																					}
+																				>
+																					<span className="min-w-0 flex-1 truncate">
+																						查看全部
+																					</span>
+																					<span className="ml-2 shrink-0 tabular-nums">
+																						{projectSessionSummary.totalCount}
+																					</span>
+																				</button>
+																			) : null}
+																		</>
+																	) : null}
+																</SortableProjectBlock>
+															);
+														})}
+													</SortableContext>
+												</DndContext>
+											)}
+										</section>
+									);
+								})
+							)}
 						</div>
 					</ScrollArea>
 					<footer className="flex shrink-0 items-center gap-1 border-t border-sidebar-border px-1.5 py-1">

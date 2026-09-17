@@ -19,6 +19,9 @@ import { getReplyRunwayHeight } from "../src/lib/chat-scroll-state.ts";
 import {
 	getOutlineIndexForMessageIndex,
 	getOutlineIndexForScrollOffset,
+	shouldInitializeShortChatPromoted,
+	shouldPromoteShortChatVirtualization,
+	shouldRenderPlainShortChat,
 } from "../src/lib/chat-virtualization.ts";
 import { formatWorkDuration } from "../src/lib/format-duration.ts";
 
@@ -487,6 +490,105 @@ test("reply runway is only reserved for an already scrollable conversation", () 
 	assert.equal(
 		getReplyRunwayHeight({ viewportHeight: 1_200, scrollHeight: 2_000 }),
 		256,
+	);
+});
+
+test("short chat stays plain until it is promoted", () => {
+	assert.equal(
+		shouldRenderPlainShortChat({
+			enabled: true,
+			promoted: false,
+		}),
+		true,
+	);
+	assert.equal(
+		shouldRenderPlainShortChat({
+			enabled: true,
+			promoted: true,
+		}),
+		false,
+	);
+});
+
+test("mounting an active medium chat keeps it plain until streaming finishes", () => {
+	assert.equal(
+		shouldInitializeShortChatPromoted({
+			enabled: true,
+			messageCount: 10,
+			streaming: true,
+		}),
+		false,
+	);
+	assert.equal(
+		shouldInitializeShortChatPromoted({
+			enabled: true,
+			messageCount: 10,
+			streaming: false,
+		}),
+		true,
+	);
+	assert.equal(
+		shouldInitializeShortChatPromoted({
+			enabled: true,
+			messageCount: 17,
+			streaming: true,
+		}),
+		true,
+	);
+});
+
+test("short chat virtualization waits for an idle follow state after streaming", () => {
+	const base = {
+		enabled: true,
+		promoted: false,
+		active: true,
+		ready: true,
+		messageCount: 10,
+		sticky: true,
+	};
+	assert.equal(
+		shouldPromoteShortChatVirtualization({ ...base, streaming: true }),
+		false,
+	);
+	assert.equal(
+		shouldPromoteShortChatVirtualization({
+			...base,
+			streaming: false,
+			sticky: false,
+		}),
+		false,
+	);
+	assert.equal(
+		shouldPromoteShortChatVirtualization({
+			...base,
+			streaming: false,
+			sticky: false,
+			preparingVisual: true,
+		}),
+		true,
+	);
+	assert.equal(
+		shouldPromoteShortChatVirtualization({
+			...base,
+			streaming: false,
+		}),
+		true,
+	);
+	assert.equal(
+		shouldPromoteShortChatVirtualization({
+			...base,
+			active: false,
+			streaming: false,
+		}),
+		false,
+	);
+	assert.equal(
+		shouldPromoteShortChatVirtualization({
+			...base,
+			messageCount: 17,
+			streaming: true,
+		}),
+		false,
 	);
 });
 

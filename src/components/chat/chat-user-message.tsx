@@ -22,7 +22,9 @@ function plainTextPreview(text: string) {
 }
 
 function UserMessageBody({ text }: { text: string }) {
-	const collapsible = text.length > LARGE_MESSAGE_PREVIEW_CHARS;
+	const { collapseLongMessages } = usePreferences();
+	const collapsible =
+		collapseLongMessages && text.length > LARGE_MESSAGE_PREVIEW_CHARS;
 	const [expanded, setExpanded] = useState(false);
 	const visibleText = collapsible && !expanded ? plainTextPreview(text) : text;
 

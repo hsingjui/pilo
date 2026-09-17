@@ -44,6 +44,7 @@ export type PiloPreferences = {
 	sendMessageShortcut: SendMessageShortcut;
 	keyboardShortcuts: KeyboardShortcutMap;
 	collapseCompletedActivity: boolean;
+	collapseLongMessages: boolean;
 	showWorkDuration: boolean;
 	desktopNotifications: boolean;
 	pageFontFamily: PageFontFamily;
@@ -63,6 +64,7 @@ type PreferencesContextValue = PiloPreferences & {
 	resetKeyboardShortcut: (commandId: ShortcutCommandId) => void;
 	resetKeyboardShortcuts: () => void;
 	setCollapseCompletedActivity: (value: boolean) => void;
+	setCollapseLongMessages: (value: boolean) => void;
 	setShowWorkDuration: (value: boolean) => void;
 	setDesktopNotifications: (value: boolean) => void;
 	setPageFontFamily: (value: PageFontFamily) => void;
@@ -87,6 +89,7 @@ const DEFAULT_PREFERENCES: PiloPreferences = {
 	sendMessageShortcut: "enter",
 	keyboardShortcuts: { ...DEFAULT_KEYBOARD_SHORTCUTS },
 	collapseCompletedActivity: true,
+	collapseLongMessages: true,
 	showWorkDuration: true,
 	desktopNotifications: false,
 	pageFontFamily: DEFAULT_PAGE_FONT_FAMILY,
@@ -124,6 +127,10 @@ function readStoredPreferences(): PiloPreferences {
 				typeof parsed.collapseCompletedActivity === "boolean"
 					? parsed.collapseCompletedActivity
 					: DEFAULT_PREFERENCES.collapseCompletedActivity,
+			collapseLongMessages:
+				typeof parsed.collapseLongMessages === "boolean"
+					? parsed.collapseLongMessages
+					: DEFAULT_PREFERENCES.collapseLongMessages,
 			showWorkDuration:
 				typeof parsed.showWorkDuration === "boolean"
 					? parsed.showWorkDuration
@@ -256,6 +263,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 			collapseCompletedActivity: value,
 		}));
 	}, []);
+	const setCollapseLongMessages = useCallback((value: boolean) => {
+		setPreferences((current) => ({ ...current, collapseLongMessages: value }));
+	}, []);
 	const setShowWorkDuration = useCallback((value: boolean) => {
 		setPreferences((current) => ({ ...current, showWorkDuration: value }));
 	}, []);
@@ -319,6 +329,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 			resetKeyboardShortcut,
 			resetKeyboardShortcuts,
 			setCollapseCompletedActivity,
+			setCollapseLongMessages,
 			setShowWorkDuration,
 			setDesktopNotifications,
 			setPageFontFamily,
@@ -339,6 +350,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 			setCodeCustomFontFamily,
 			setCodeFontSize,
 			setCollapseCompletedActivity,
+			setCollapseLongMessages,
 			setDesktopNotifications,
 			setPageFontFamily,
 			setPageCustomFontFamily,

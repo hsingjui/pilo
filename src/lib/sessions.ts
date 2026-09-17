@@ -60,7 +60,7 @@ export type SessionSearchMatch = {
 
 export type SessionHistoryMessageIndexEntry = {
 	id: string;
-	role: "user" | "assistant";
+	role: "user" | "assistant" | "compaction";
 	timestampMs?: number;
 	preview: string;
 	estimatedChars: number;

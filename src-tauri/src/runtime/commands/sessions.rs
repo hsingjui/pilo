@@ -349,6 +349,8 @@ pub async fn session_search(
 }
 
 #[tauri::command]
+// Tauri commands expose their arguments flat; the window options are part of the command surface.
+#[allow(clippy::too_many_arguments)]
 pub async fn session_history(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,

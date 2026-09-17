@@ -35,6 +35,8 @@ export type ChatSessionRuntimeState = {
 	contextTokens?: number | null;
 	contextWindow?: number;
 	contextPercent?: number | null;
+	/** Pi 在压缩后暂时不返回占用，此时保留上一次已知值并置为 true。 */
+	contextStale?: boolean;
 };
 
 export async function readCurrentPiSessionState(

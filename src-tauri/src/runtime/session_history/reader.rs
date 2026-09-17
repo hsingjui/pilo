@@ -40,6 +40,12 @@ fn split_history_messages(events: Vec<ConversationEventDto>) -> Vec<Vec<Conversa
 
     for event in events {
         match &event {
+            ConversationEventDto::CompactionMarker { .. } => {
+                if !current.is_empty() {
+                    messages.push(std::mem::take(&mut current));
+                }
+                messages.push(vec![event]);
+            }
             ConversationEventDto::UserMessageStart { .. } => {
                 if !current.is_empty() {
                     messages.push(std::mem::take(&mut current));
@@ -88,6 +94,22 @@ fn describe_history_message(
 
     for event in events {
         match event {
+            ConversationEventDto::CompactionMarker {
+                summary,
+                timestamp_ms: timestamp,
+                source_entry_id,
+                ..
+            } => {
+                role = "compaction";
+                source_id = source_id.clone().or_else(|| source_entry_id.clone());
+                timestamp_ms = timestamp_ms.or(*timestamp);
+                estimated_chars = estimated_chars.saturating_add(summary.chars().count());
+                preview = if summary.is_empty() {
+                    "上下文已压缩".to_owned()
+                } else {
+                    preview_text(summary)
+                };
+            }
             ConversationEventDto::UserMessageStart {
                 text,
                 timestamp_ms: timestamp,
@@ -339,6 +361,8 @@ pub async fn read_history_json(
     Ok(serialize_history_response(serialized.as_ref(), fingerprint))
 }
 
+// Thin pass-through from Tauri commands: splitting the arguments would only move them around.
+#[allow(clippy::too_many_arguments)]
 pub async fn read_history_window_json(
     servers: &ServerManager,
     cache: &tokio::sync::Mutex<SessionHistoryCache>,

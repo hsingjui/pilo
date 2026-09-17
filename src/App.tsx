@@ -140,6 +140,21 @@ function App() {
 			)?.controllerId ?? null
 		);
 	}, [chatSession, renderedOpenedChats]);
+	const [visualReadyControllerIds, setVisualReadyControllerIds] = useState<
+		ReadonlySet<string>
+	>(() => new Set());
+	const handleChatVisualReadyChange = useCallback(
+		(controllerId: string, ready: boolean) => {
+			setVisualReadyControllerIds((current) => {
+				if (current.has(controllerId) === ready) return current;
+				const next = new Set(current);
+				if (ready) next.add(controllerId);
+				else next.delete(controllerId);
+				return next;
+			});
+		},
+		[],
+	);
 	const retainedBackgroundVisualControllerIds = useMemo(
 		() =>
 			retainedBackgroundChatVisualControllerIds(
@@ -149,6 +164,20 @@ function App() {
 			),
 		[activeChatControllerId, busyChatControllerIds, renderedOpenedChats],
 	);
+	// LRU order is useful for eviction/retention, but must not become DOM order:
+	// moving an existing WebView scroll container resets its native scrollTop.
+	const mountedOpenedChats = useMemo(() => {
+		const mounted = [...renderedOpenedChats];
+		// oxlint-disable-next-line unicorn/no-array-sort -- sorting a clone keeps the LRU source immutable while giving mounted DOM a stable order. Plain codepoint comparison keeps that order locale-independent.
+		mounted.sort((left, right) =>
+			left.controllerId < right.controllerId
+				? -1
+				: left.controllerId > right.controllerId
+					? 1
+					: 0,
+		);
+		return mounted;
+	}, [renderedOpenedChats]);
 	const monitoredSelectSession = useCallback(
 		(sessionId: string) => {
 			recordChatSessionSwitchStart(selectedSessionId ?? null, sessionId);
@@ -271,17 +300,26 @@ function App() {
 							minSize={400}
 							className="relative min-w-0"
 						>
-							{renderedOpenedChats.map((entry) => {
-								const visible =
+							{mountedOpenedChats.map((entry) => {
+								const active =
 									chatSession !== null &&
 									entry.session.projectRecord.id ===
 										chatSession.projectRecord.id &&
 									(entry.session.id === chatSession.id ||
 										entry.piSessionId === chatSession.id);
+								const visualVisible =
+									entry.controllerId === activeChatControllerId;
 								return (
 									<div
 										key={entry.controllerId}
-										className={visible ? "h-full min-h-0" : "hidden"}
+										aria-hidden={!visualVisible}
+										className={
+											visualVisible
+												? active
+													? "h-full min-h-0"
+													: "pointer-events-none h-full min-h-0"
+												: "pointer-events-none invisible absolute inset-0 h-full min-h-0"
+										}
 									>
 										<Suspense
 											fallback={
@@ -314,10 +352,17 @@ function App() {
 												readUiState={readChatUiState}
 												writeUiState={writeChatUiState}
 												onRuntimeBusyChange={handleChatRuntimeBusyChange}
-												active={visible}
+												active={active}
 												retainBackgroundVisual={retainedBackgroundVisualControllerIds.has(
 													entry.controllerId,
 												)}
+												onVisualReadyChange={(ready) =>
+													handleChatVisualReadyChange(entry.controllerId, ready)
+												}
+												showSwitchSkeleton={
+													active &&
+													!visualReadyControllerIds.has(entry.controllerId)
+												}
 												initialMessage={entry.initialMessage}
 												initialImages={entry.initialImages}
 												onSessionIdentified={(piSessionId) =>

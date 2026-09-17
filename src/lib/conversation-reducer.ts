@@ -240,6 +240,26 @@ export function reduceConversation(
 			return endTurn(state, "aborted", null, action.timestampMs);
 		case "conversation_runtime_error":
 			return endTurn(state, "error", action.message, action.timestampMs);
+		case "compaction_marker": {
+			const timestampMs = action.timestampMs ?? context.now();
+			const next = state.active?.assistantMessageId
+				? endTurn(state, undefined, undefined, timestampMs, "continued")
+				: state;
+			return {
+				...next,
+				messages: [
+					...next.messages,
+					{
+						id: action.sourceEntryId ?? context.createMessageId("compaction"),
+						role: "compaction",
+						text: action.summary,
+						tokensBefore: action.tokensBefore,
+						time: context.formatTime(timestampMs),
+						timestampMs: action.timestampMs,
+					},
+				],
+			};
+		}
 		case "user_message_start": {
 			const pending = state.pendingUsers[0];
 			if (pending) {

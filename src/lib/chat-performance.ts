@@ -1,8 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { ChatSessionSwitchSample } from "@/lib/chat-performance-switch";
+
 const CHAT_PERF_STORAGE_KEY = "pilo.debug.chatPerformance";
 const REPORT_INTERVAL_MS = 1_000;
 const SCROLL_ACTIVE_MS = 180;
+const MAX_SWITCH_SAMPLES = 64;
 let debugEnabled: boolean | undefined;
 
 type Counters = {
@@ -73,6 +76,16 @@ type PendingSwitch = {
 	fromSessionId: string | null;
 	toSessionId: string;
 	startedAt: number;
+	slowScrollFrames: number;
+	verySlowScrollFrames: number;
+	longTasks: number;
+	longTaskMs: number;
+};
+
+type SwitchWindow = {
+	startedAt: number;
+	endedAt: number;
+	sample: ChatSessionSwitchSample;
 };
 
 type ChatPerfState = {
@@ -84,6 +97,7 @@ type ChatPerfState = {
 	lastVirtualRange: string;
 	observer: PerformanceObserver | null;
 	pendingSwitch: PendingSwitch | null;
+	switchSamples: SwitchWindow[];
 	lastReport: ChatPerformanceReport | null;
 	listeners: Set<() => void>;
 };
@@ -150,6 +164,7 @@ const state: ChatPerfState = {
 	lastVirtualRange: "",
 	observer: null,
 	pendingSwitch: null,
+	switchSamples: [],
 	lastReport: null,
 	listeners: new Set(),
 };
@@ -160,6 +175,36 @@ export function isChatPerformanceDebugEnabled() {
 	return debugEnabled;
 }
 
+function recordLongTaskForSwitch(entry: PerformanceEntry) {
+	const entryStart = entry.startTime;
+	const entryEnd = entry.startTime + entry.duration;
+	const pending = state.pendingSwitch;
+	if (pending && entryEnd >= pending.startedAt) {
+		pending.longTasks += 1;
+		pending.longTaskMs += entry.duration;
+		return;
+	}
+
+	for (let index = state.switchSamples.length - 1; index >= 0; index -= 1) {
+		const sample = state.switchSamples[index];
+		if (!sample) continue;
+		if (entryStart > sample.endedAt) break;
+		if (entryEnd < sample.startedAt) continue;
+		sample.sample.longTasks += 1;
+		sample.sample.longTaskMs =
+			Math.round((sample.sample.longTaskMs + entry.duration) * 10) / 10;
+		break;
+	}
+}
+
+function recordLongTaskEntries(entries: readonly PerformanceEntry[]) {
+	for (const entry of entries) {
+		state.counters.longTasks += 1;
+		state.counters.longTaskMs += entry.duration;
+		recordLongTaskForSwitch(entry);
+	}
+}
+
 function ensureLongTaskObserver() {
 	if (!isChatPerformanceDebugEnabled() || state.observer) return;
 	if (typeof PerformanceObserver === "undefined") return;
@@ -167,10 +212,7 @@ function ensureLongTaskObserver() {
 		const supported = PerformanceObserver.supportedEntryTypes ?? [];
 		if (!supported.includes("longtask")) return;
 		state.observer = new PerformanceObserver((list) => {
-			for (const entry of list.getEntries()) {
-				state.counters.longTasks += 1;
-				state.counters.longTaskMs += entry.duration;
-			}
+			recordLongTaskEntries(list.getEntries());
 		});
 		state.observer.observe({ entryTypes: ["longtask"] });
 	} catch {
@@ -240,6 +282,14 @@ export function getChatPerformanceReport() {
 	return state.lastReport;
 }
 
+export function getChatSessionSwitchSamples(): ChatSessionSwitchSample[] {
+	return state.switchSamples.map(({ sample }) => ({ ...sample }));
+}
+
+export function clearChatSessionSwitchSamples() {
+	state.switchSamples = [];
+}
+
 export function sampleChatPerformanceNow() {
 	if (!isChatPerformanceDebugEnabled()) return;
 	maybeReport(performance.now(), true);
@@ -264,6 +314,10 @@ export function recordChatSessionSwitchStart(
 		fromSessionId,
 		toSessionId,
 		startedAt: performance.now(),
+		slowScrollFrames: 0,
+		verySlowScrollFrames: 0,
+		longTasks: 0,
+		longTaskMs: 0,
 	};
 }
 
@@ -281,6 +335,7 @@ export function recordChatSessionSwitchReady(sessionId: string) {
 		}).catch(() => undefined);
 	}
 	if (!pending) return;
+	if (state.observer) recordLongTaskEntries(state.observer.takeRecords());
 	if (import.meta.env.DEV && pending.toSessionId !== sessionId) {
 		void invoke("debug_chat_performance_log", {
 			payload: JSON.stringify({
@@ -294,11 +349,38 @@ export function recordChatSessionSwitchReady(sessionId: string) {
 	// Only the active viewport reports ready, so its first ready layout after a
 	// selection is the switch completion even when a draft controller was
 	// re-keyed to the Pi session id between selection and layout.
+	const endedAt = performance.now();
+	const sample: ChatSessionSwitchSample = {
+		fromSessionId: pending.fromSessionId,
+		requestedSessionId: pending.toSessionId,
+		readySessionId: sessionId,
+		durationMs: Math.round((endedAt - pending.startedAt) * 10) / 10,
+		slowScrollFrames: pending.slowScrollFrames,
+		verySlowScrollFrames: pending.verySlowScrollFrames,
+		longTasks: pending.longTasks,
+		longTaskMs: Math.round(pending.longTaskMs * 10) / 10,
+		timestamp: new Date().toISOString(),
+	};
+	state.switchSamples.push({
+		startedAt: pending.startedAt,
+		endedAt,
+		sample,
+	});
+	if (state.switchSamples.length > MAX_SWITCH_SAMPLES) {
+		state.switchSamples.splice(
+			0,
+			state.switchSamples.length - MAX_SWITCH_SAMPLES,
+		);
+	}
 	state.pendingSwitch = null;
 	state.context.lastSwitchFrom = pending.fromSessionId;
 	state.context.lastSwitchTo = sessionId;
-	state.context.lastSwitchMs =
-		Math.round((performance.now() - pending.startedAt) * 10) / 10;
+	state.context.lastSwitchMs = sample.durationMs;
+	if (import.meta.env.DEV) {
+		void invoke("debug_chat_performance_log", {
+			payload: JSON.stringify({ type: "switch_sample", ...sample }),
+		}).catch(() => undefined);
+	}
 	maybeReport(performance.now(), true);
 }
 
@@ -489,8 +571,14 @@ function sampleScrollFrame(now: number) {
 	if (previous !== null) {
 		const delta = now - previous;
 		state.counters.scrollFrames += 1;
-		if (delta >= 25) state.counters.slowScrollFrames += 1;
-		if (delta >= 50) state.counters.verySlowScrollFrames += 1;
+		if (delta >= 25) {
+			state.counters.slowScrollFrames += 1;
+			if (state.pendingSwitch) state.pendingSwitch.slowScrollFrames += 1;
+		}
+		if (delta >= 50) {
+			state.counters.verySlowScrollFrames += 1;
+			if (state.pendingSwitch) state.pendingSwitch.verySlowScrollFrames += 1;
+		}
 	}
 	state.lastScrollFrameAt = now;
 	if (now < state.scrollActiveUntil) requestAnimationFrame(sampleScrollFrame);

@@ -3,6 +3,11 @@ import test from "node:test";
 
 import { createChatUiStateCache } from "../src/components/app/chat-ui-state-cache.ts";
 import {
+	filterProjectSessions,
+	summarizeProjectSessions,
+} from "../src/components/sidebar/session-list.ts";
+import type { SidebarSession } from "../src/components/sidebar/types.ts";
+import {
 	MAX_OPEN_CHAT_CONTROLLERS,
 	MAX_OPEN_CHAT_ESTIMATED_HISTORY_BYTES,
 	MAX_RETAINED_BACKGROUND_CHAT_VISUALS,
@@ -78,6 +83,58 @@ function indexedSession(
 		titleOverride: null,
 	};
 }
+
+function sidebarSession(
+	id: string,
+	latestMessageAt: number,
+	options: { active?: boolean; preview?: string } = {},
+): SidebarSession {
+	return {
+		id,
+		title: `Session ${id}`,
+		preview: options.preview ?? null,
+		sessionPath: `/sessions/${id}.jsonl`,
+		projectId: project.id,
+		latestMessageAt: new Date(latestMessageAt),
+		active: options.active,
+	};
+}
+
+test("sidebar project summary keeps active sessions first without moving the selected session", () => {
+	const sessions = Array.from({ length: 10 }, (_, index) =>
+		sidebarSession(`s${index}`, index, {
+			active: index === 1 || index === 2,
+		}),
+	);
+
+	const selectedRecent = summarizeProjectSessions(sessions, "s7");
+	assert.deepEqual(
+		selectedRecent.visible.map((session) => session.id),
+		["s2", "s1", "s9", "s8", "s7", "s6", "s5", "s4"],
+	);
+	assert.equal(selectedRecent.totalCount, 10);
+	assert.equal(selectedRecent.hiddenCount, 2);
+
+	// 选中超出最近窗口的旧会话时，它仍留在自己的时间位置，只是被补进可见列表。
+	const selectedOld = summarizeProjectSessions(sessions, "s0");
+	assert.deepEqual(
+		selectedOld.visible.map((session) => session.id),
+		["s2", "s1", "s9", "s8", "s7", "s6", "s5", "s0"],
+	);
+});
+
+test("sidebar project session search matches titles and previews in recent order", () => {
+	const sessions = [
+		sidebarSession("old", 1, { preview: "streaming performance" }),
+		sidebarSession("new", 3, { preview: "performance benchmark" }),
+		sidebarSession("other", 2),
+	];
+
+	assert.deepEqual(
+		filterProjectSessions(sessions, "performance").map((session) => session.id),
+		["new", "old"],
+	);
+});
 
 test("default draft project follows sidebar connection order", () => {
 	const wslProject: Project = {

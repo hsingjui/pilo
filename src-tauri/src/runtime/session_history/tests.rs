@@ -242,3 +242,40 @@ fn context_usage_is_unknown_after_compaction_until_next_assistant_usage() {
     assert_eq!(history.stats.context_tokens, None);
     assert_eq!(history.stats.tokens.total, 35);
 }
+
+#[test]
+fn compaction_entry_projects_a_marker_at_its_branch_position() {
+    let bytes = concat!(
+        "{\"type\":\"session\",\"version\":3,\"id\":\"session-a\"}\n",
+        "{\"type\":\"message\",\"id\":\"u1\",\"parentId\":null,\"message\":{\"role\":\"user\",\"content\":\"go\"}}\n",
+        "{\"type\":\"message\",\"id\":\"a1\",\"parentId\":\"u1\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stopReason\":\"stop\"}}\n",
+        "{\"type\":\"compaction\",\"id\":\"c1\",\"parentId\":\"a1\",\"timestamp\":\"2026-09-17T06:32:50.047Z\",\"summary\":\"summary text\",\"firstKeptEntryId\":\"u1\",\"tokensBefore\":217975}\n",
+        "{\"type\":\"message\",\"id\":\"u2\",\"parentId\":\"c1\",\"message\":{\"role\":\"user\",\"content\":\"continue\"}}\n"
+    )
+    .as_bytes();
+
+    let history = parse_history(bytes);
+    let marker_index = history
+        .events
+        .iter()
+        .position(|event| matches!(event, ConversationEventDto::CompactionMarker { .. }))
+        .expect("compaction marker");
+
+    assert!(matches!(
+        &history.events[marker_index],
+        ConversationEventDto::CompactionMarker {
+            summary,
+            tokens_before: Some(217_975),
+            source_entry_id: Some(id),
+            ..
+        } if summary == "summary text" && id == "c1"
+    ));
+    assert!(matches!(
+        history.events[marker_index - 1],
+        ConversationEventDto::AssistantTurnEnd { .. }
+    ));
+    assert!(matches!(
+        history.events[marker_index + 1],
+        ConversationEventDto::UserMessageStart { .. }
+    ));
+}

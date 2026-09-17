@@ -221,6 +221,10 @@ export function usePiSessionFeatures({
 					case "summarization_retry_finished":
 						setRetryState(null);
 						break;
+					case "runtime_error":
+						setCompacting(false);
+						setRetryState(null);
+						break;
 				}
 			})
 			.then((stop) => {

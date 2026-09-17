@@ -45,6 +45,15 @@ pub struct SessionHistory {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ConversationEventDto {
+    CompactionMarker {
+        summary: String,
+        #[serde(rename = "tokensBefore", skip_serializing_if = "Option::is_none")]
+        tokens_before: Option<u64>,
+        #[serde(rename = "timestampMs", skip_serializing_if = "Option::is_none")]
+        timestamp_ms: Option<i64>,
+        #[serde(rename = "sourceEntryId", skip_serializing_if = "Option::is_none")]
+        source_entry_id: Option<String>,
+    },
     UserMessageStart {
         text: String,
         #[serde(rename = "timestampMs", skip_serializing_if = "Option::is_none")]

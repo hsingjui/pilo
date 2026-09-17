@@ -325,6 +325,12 @@
 		position: relative;
 		display: block !important;
 		width: 100%;
+		/* Virtua already owns off-screen culling at the message-row level. Streamdown
+		   adds content-visibility:auto + a 200px intrinsic placeholder inline on
+		   code blocks; when a restored viewport reveals one, Chromium swaps that
+		   estimate for the real height and visibly shifts the conversation. */
+		content-visibility: visible !important;
+		contain-intrinsic-size: none !important;
 		margin-block: 0.875rem !important;
 		overflow: hidden;
 		gap: 0 !important;

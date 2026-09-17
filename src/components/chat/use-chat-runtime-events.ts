@@ -15,6 +15,30 @@ import type { ConversationAction } from "@/lib/conversation-types";
 import { notifyAgentResult } from "@/lib/desktop-notifications";
 import { runtimeErrorMessage, type PiloRuntimeEvent } from "@/lib/pi-runtime";
 
+/**
+ * Pi 在没有 Pilo 发起的 turn 时仍可能自主输出：Extension 接管压缩后自动继续、
+ * Extension 主动发消息、自动重试后的继续等。这些输出同样属于当前对话。
+ */
+function isAutonomousTurnEvent(event: PiloRuntimeEvent) {
+	switch (event.type) {
+		case "user_message_start":
+		case "assistant_message_start":
+		case "assistant_text_delta":
+		case "assistant_text_snapshot":
+		case "assistant_thinking_start":
+		case "assistant_thinking_delta":
+		case "assistant_thinking_end":
+		case "tool_execution_start":
+		case "tool_execution_update":
+		case "tool_execution_end":
+		case "assistant_message_end":
+		case "compaction_end":
+			return true;
+		default:
+			return false;
+	}
+}
+
 export function dispatchRuntimeEventToConversation(
 	event: PiloRuntimeEvent,
 	targetSessionId: string,
@@ -62,6 +86,7 @@ type UseChatRuntimeEventsOptions = {
 		options?: { preserveQueued?: boolean },
 	) => void;
 	refreshSessionState: () => Promise<void>;
+	refreshSessionStateIfContextStale: () => Promise<void>;
 };
 
 export function useChatRuntimeEvents({
@@ -79,6 +104,7 @@ export function useChatRuntimeEvents({
 	acknowledgeQueuedMessage,
 	releaseActiveTurn,
 	refreshSessionState,
+	refreshSessionStateIfContextStale,
 }: UseChatRuntimeEventsOptions) {
 	const runtimeListenerRef = useRef<ReturnType<typeof client.listen> | null>(
 		null,
@@ -243,13 +269,23 @@ export function useChatRuntimeEvents({
 			}
 
 			const turn = activeTurnRef.current;
-			if (
-				!turn ||
-				turn.generation === null ||
-				event.generation !== turn.generation
-			) {
+			if (!turn || turn.generation === null) {
+				// Only a missing turn is autonomous output: extension-driven compaction
+				// continuation, extension-initiated messages, auto-retry continuation.
+				// A generation mismatch is a stale event from an earlier process and must
+				// stay dropped, otherwise it lands in the current assistant message.
+				if (isAutonomousTurnEvent(event)) {
+					dispatchRuntimeEventToConversation(
+						event,
+						session.id,
+						dispatchConversation,
+						queueRuntimeAction,
+						false,
+					);
+				}
 				return;
 			}
+			if (event.generation !== turn.generation) return;
 
 			dispatchRuntimeEventToConversation(
 				event,
@@ -293,6 +329,11 @@ export function useChatRuntimeEvents({
 				case "user_message_start":
 					acknowledgeQueuedMessage(turn, event.text);
 					break;
+				case "assistant_text_snapshot":
+					// 每条 assistant 消息结束都可能恢复压缩后的上下文占用，但占用已知时
+					// 重复拉取代价不值得（每次刷新是 2 次 RPC）。
+					void refreshSessionStateIfContextStale().catch(() => undefined);
+					break;
 				case "queue_update":
 					setPendingQueueCounts(event.steering.length, event.followUp.length);
 					break;
@@ -304,7 +345,6 @@ export function useChatRuntimeEvents({
 				case "rpc_message":
 				case "assistant_message_start":
 				case "assistant_text_delta":
-				case "assistant_text_snapshot":
 				case "assistant_thinking_start":
 				case "assistant_thinking_delta":
 				case "assistant_thinking_end":
@@ -324,8 +364,10 @@ export function useChatRuntimeEvents({
 			queueRuntimeAction,
 			recoverRuntime,
 			refreshSessionState,
+			refreshSessionStateIfContextStale,
 			releaseActiveTurn,
 			session.temporary,
+			session.id,
 			setPendingQueueCounts,
 		],
 	);

@@ -11,6 +11,7 @@ type ComposerActionsProps = {
 	sendMessageShortcut: "enter" | "mod-enter";
 	onStop?: () => void;
 	canSteer: boolean;
+	submitBlocked?: boolean;
 	onPrimary: () => void;
 };
 
@@ -22,6 +23,7 @@ export function ComposerActions({
 	sendMessageShortcut,
 	onStop,
 	canSteer,
+	submitBlocked = false,
 	onPrimary,
 }: ComposerActionsProps) {
 	const hasValue = Boolean(value.trim()) || hasAttachments;
@@ -36,7 +38,7 @@ export function ComposerActions({
 								size="icon"
 								className={CHAT_COMPOSER_SEND_BUTTON_CLASS_NAME}
 								aria-label="调整当前回复"
-								disabled={!canSteer}
+								disabled={!canSteer || submitBlocked}
 								onClick={onPrimary}
 							>
 								<ArrowUp className="size-4" />
@@ -72,7 +74,7 @@ export function ComposerActions({
 							size="icon"
 							className={CHAT_COMPOSER_SEND_BUTTON_CLASS_NAME}
 							aria-label="发送"
-							disabled={!hasValue || disabled}
+							disabled={!hasValue || disabled || submitBlocked}
 							onClick={onPrimary}
 						>
 							<ArrowUp className="size-4" />

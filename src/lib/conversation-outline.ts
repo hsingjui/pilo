@@ -1,6 +1,6 @@
 export type ConversationOutlineMessage = {
 	id: string;
-	role: "user" | "assistant";
+	role: "user" | "assistant" | "compaction";
 	text: string;
 };
 
@@ -52,6 +52,7 @@ export function buildConversationOutline(
 	};
 
 	for (const [messageIndex, message] of messages.entries()) {
+		if (message.role === "compaction") continue;
 		const summary = plainText(message.text);
 		if (message.role === "user" || !current) {
 			closeRound();

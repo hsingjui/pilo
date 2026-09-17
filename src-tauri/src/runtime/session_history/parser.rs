@@ -275,6 +275,19 @@ fn project_branch(entries: &[Value], branch: &[usize]) -> SessionHistory {
                 history.source_message_count += 1;
                 project_message(entry, message, &mut history.events, &mut turn);
             }
+            Some("compaction") => {
+                finish_turn(&mut history.events, &mut turn, false);
+                history.events.push(ConversationEventDto::CompactionMarker {
+                    summary: entry
+                        .get("summary")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned(),
+                    tokens_before: entry.get("tokensBefore").and_then(Value::as_u64),
+                    timestamp_ms: entry_timestamp_ms(entry, None),
+                    source_entry_id: entry_id(entry),
+                });
+            }
             Some("custom_message")
                 if entry.get("display").and_then(Value::as_bool) != Some(false) =>
             {

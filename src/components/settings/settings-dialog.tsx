@@ -129,7 +129,14 @@ const THEME_LABELS: Record<Theme, string> = {
 const FONT_SETTINGS_ROW_CLASS = "sm:grid-cols-[160px_1fr]";
 
 function PreferencesSettings() {
-	const { sendMessageShortcut, setSendMessageShortcut } = usePreferences();
+	const {
+		sendMessageShortcut,
+		setSendMessageShortcut,
+		collapseCompletedActivity,
+		setCollapseCompletedActivity,
+		collapseLongMessages,
+		setCollapseLongMessages,
+	} = usePreferences();
 
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
@@ -149,6 +156,24 @@ function PreferencesSettings() {
 							<SelectItem value="mod-enter">Ctrl/⌘ + Enter 发送</SelectItem>
 						</SelectContent>
 					</Select>
+				</SettingsRow>
+				<SettingsRow
+					label="折叠超长消息"
+					helper={`超过 ${8_000} 字符的消息默认只显示开头。`}
+				>
+					<Switch
+						checked={collapseLongMessages}
+						onCheckedChange={setCollapseLongMessages}
+					/>
+				</SettingsRow>
+				<SettingsRow
+					label="折叠完成的工作过程"
+					helper="回答结束后把思考与工具调用收起成一行摘要。"
+				>
+					<Switch
+						checked={collapseCompletedActivity}
+						onCheckedChange={setCollapseCompletedActivity}
+					/>
 				</SettingsRow>
 			</SettingsSection>
 		</div>

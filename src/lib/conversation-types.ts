@@ -30,6 +30,16 @@ export type ChatMessage =
 			completion?: "complete" | "interrupted" | "continued";
 			historyPlaceholder?: boolean;
 			historyEstimatedChars?: number;
+	  }
+	| {
+			id: string;
+			role: "compaction";
+			text: string;
+			time: string;
+			timestampMs?: number;
+			tokensBefore?: number;
+			historyPlaceholder?: boolean;
+			historyEstimatedChars?: number;
 	  };
 
 export type ConversationEventMeta = {
@@ -41,6 +51,7 @@ export type ConversationEventMeta = {
 export type ConversationEvent = ConversationEventMeta &
 	(
 		| { type: "user_message_start"; text: string }
+		| { type: "compaction_marker"; summary: string; tokensBefore?: number }
 		| { type: "assistant_message_start" }
 		| { type: "assistant_text_delta"; delta: string }
 		| { type: "assistant_text_snapshot"; text: string }
@@ -128,7 +139,7 @@ export type ConversationState = {
 };
 
 export type ConversationReducerContext = {
-	createMessageId: (kind: "user" | "assistant") => string;
+	createMessageId: (kind: "user" | "assistant" | "compaction") => string;
 	createContentId: (kind: "text" | "thinking") => string;
 	now: () => number;
 	formatTime: (timestampMs: number) => string;

@@ -85,6 +85,7 @@ type ChatComposerProps = {
 	pendingSteering?: number;
 	pendingFollowUps?: number;
 	statusText?: string;
+	compacting?: boolean;
 	retrying?: boolean;
 	onAbortRetry?: () => void;
 	contextUsage?: ChatSessionRuntimeState | null;
@@ -158,6 +159,7 @@ export function ChatComposer({
 	pendingSteering = 0,
 	pendingFollowUps = 0,
 	statusText = "",
+	compacting = false,
 	retrying = false,
 	onAbortRetry,
 	contextUsage = null,
@@ -282,7 +284,12 @@ export function ChatComposer({
 
 	const submit = () => {
 		const submission = createSubmission();
-		if (!chatSubmissionHasContent(submission) || disabled || !canSendImages())
+		if (
+			!chatSubmissionHasContent(submission) ||
+			disabled ||
+			compacting ||
+			!canSendImages()
+		)
 			return;
 		if (running) {
 			if (!onSteer) return;
@@ -300,6 +307,7 @@ export function ChatComposer({
 		if (
 			!chatSubmissionHasContent(submission) ||
 			disabled ||
+			compacting ||
 			!running ||
 			!onFollowUp ||
 			!canSendImages()
@@ -718,6 +726,7 @@ export function ChatComposer({
 						sendMessageShortcut={sendMessageShortcut}
 						onStop={onStop}
 						canSteer={Boolean(onSteer)}
+						submitBlocked={compacting}
 						onPrimary={submit}
 					/>
 				</div>

@@ -116,7 +116,11 @@ function createPlainHighlightResult(code: string): MarkdownHighlightResult {
 const HIGHLIGHT_CACHE_MAX_ENTRIES = 256;
 const HIGHLIGHT_CACHE_MAX_TOTAL_CHARS = 1_000_000;
 const HIGHLIGHT_CACHE_MAX_CODE_CHARS = 20_000;
-const highlightCache = new Map<string, MarkdownHighlightResult>();
+type HighlightCacheEntry = {
+	result: MarkdownHighlightResult;
+	codeChars: number;
+};
+const highlightCache = new Map<string, HighlightCacheEntry>();
 let highlightCacheChars = 0;
 
 function readHighlightCache(key: string) {
@@ -124,7 +128,7 @@ function readHighlightCache(key: string) {
 	if (!cached) return undefined;
 	highlightCache.delete(key);
 	highlightCache.set(key, cached);
-	return cached;
+	return cached.result;
 }
 
 function writeHighlightCache(
@@ -132,7 +136,7 @@ function writeHighlightCache(
 	codeLength: number,
 	result: MarkdownHighlightResult,
 ) {
-	highlightCache.set(key, result);
+	highlightCache.set(key, { result, codeChars: codeLength });
 	highlightCacheChars += codeLength;
 	while (
 		highlightCache.size > HIGHLIGHT_CACHE_MAX_ENTRIES ||
@@ -140,8 +144,12 @@ function writeHighlightCache(
 	) {
 		const oldestKey = highlightCache.keys().next().value;
 		if (oldestKey === undefined) break;
+		const oldest = highlightCache.get(oldestKey);
 		highlightCache.delete(oldestKey);
-		highlightCacheChars = Math.max(0, highlightCacheChars - oldestKey.length);
+		highlightCacheChars = Math.max(
+			0,
+			highlightCacheChars - (oldest?.codeChars ?? 0),
+		);
 	}
 }
 
@@ -279,6 +287,7 @@ const MARKDOWN_STREAMING_CODE_PLUGIN: CodeHighlighterPlugin = {
 const MARKDOWN_MERMAID_PLUGIN = createMarkdownMermaidPlugin();
 const MARKDOWN_CATCH_UP_CHUNK_CHARS = 2_000;
 const MARKDOWN_CATCH_UP_THRESHOLD_CHARS = 4_000;
+const MARKDOWN_CATCH_UP_INTERVAL_MS = 50;
 const MAX_ANIMATED_STREAMING_CHARS = 64 * 1024;
 type MarkdownMathPlugin = NonNullable<PluginConfig["math"]>;
 let cachedMathPlugin: MarkdownMathPlugin | null = null;
@@ -347,6 +356,7 @@ class MarkdownPresentationBoundary extends Component<
 	};
 
 	private frame: number | null = null;
+	private lastCatchUpCommitAt = Number.NEGATIVE_INFINITY;
 
 	static getDerivedStateFromProps(
 		props: MarkdownPresentationBoundaryProps,
@@ -393,9 +403,37 @@ class MarkdownPresentationBoundary extends Component<
 	}
 
 	private scheduleCatchUp() {
-		if (!this.state.catchingUp || this.frame !== null) return;
-		this.frame = requestAnimationFrame(() => {
+		if (!this.state.catchingUp) {
+			if (this.frame !== null) {
+				cancelAnimationFrame(this.frame);
+				this.frame = null;
+			}
+			this.lastCatchUpCommitAt = Number.NEGATIVE_INFINITY;
+			return;
+		}
+		if (this.frame !== null) return;
+
+		// Backlog reveal is presentation work too. Advancing on every animation
+		// frame can drive a growing Virtua row through synchronous ResizeObserver
+		// measurement at ~60 Hz, which is faster than normal active streaming.
+		// Keep the first chunk responsive, then cap subsequent catch-up commits at
+		// the fastest normal presentation cadence (20 fps).
+		const advance = (timestamp: number) => {
+			if (!this.state.catchingUp) {
+				this.frame = null;
+				this.lastCatchUpCommitAt = Number.NEGATIVE_INFINITY;
+				return;
+			}
+			if (
+				timestamp - this.lastCatchUpCommitAt <
+				MARKDOWN_CATCH_UP_INTERVAL_MS
+			) {
+				this.frame = requestAnimationFrame(advance);
+				return;
+			}
+
 			this.frame = null;
+			this.lastCatchUpCommitAt = timestamp;
 			this.setState((state) => {
 				const sourceText = this.props.text;
 				if (!sourceText.startsWith(state.presentedText)) {
@@ -415,7 +453,9 @@ class MarkdownPresentationBoundary extends Component<
 					catchingUp: presentedText !== sourceText,
 				};
 			});
-		});
+		};
+
+		this.frame = requestAnimationFrame(advance);
 	}
 
 	render() {

@@ -82,7 +82,11 @@ function CollapsibleMessageBody({
 	markdown?: boolean;
 	streaming?: boolean;
 }) {
-	const collapsible = !streaming && text.length > LARGE_MESSAGE_PREVIEW_CHARS;
+	const { collapseLongMessages } = usePreferences();
+	const collapsible =
+		collapseLongMessages &&
+		!streaming &&
+		text.length > LARGE_MESSAGE_PREVIEW_CHARS;
 	const [expanded, setExpanded] = useState(false);
 	const visibleText = collapsible && !expanded ? markdownPreview(text) : text;
 

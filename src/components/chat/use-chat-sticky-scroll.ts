@@ -26,6 +26,7 @@ type UseChatStickyScrollOptions = {
 	enabled: boolean;
 	vlistRef: RefObject<VirtualizerHandle | null>;
 	itemCount: number;
+	contentRevision: boolean;
 	initialScrollTop: number;
 	initialSticky: boolean;
 	onScrollStateChange?: (state: ChatScrollState) => void;
@@ -36,13 +37,14 @@ type UseChatStickyScrollOptions = {
  *
  * There is intentionally one resize owner. Content/viewport ResizeObserver
  * notifications are coalesced into one rAF and perform one direct DOM bottom
- * clamp. Virtua is only asked to find the final row for initial restoration;
- * streaming growth never bounces through both Virtua and DOM corrections.
+ * clamp. Streaming growth never bounces through both Virtua and DOM
+ * corrections.
  */
 export function useChatStickyScroll({
 	enabled,
 	vlistRef,
 	itemCount,
+	contentRevision,
 	initialScrollTop,
 	initialSticky,
 	onScrollStateChange,
@@ -53,6 +55,7 @@ export function useChatStickyScroll({
 	});
 	const onScrollStateChangeRef = useRef(onScrollStateChange);
 	const itemCountRef = useRef(itemCount);
+	const hasItems = itemCount > 0;
 	useLayoutEffect(() => {
 		onScrollStateChangeRef.current = onScrollStateChange;
 	}, [onScrollStateChange]);
@@ -72,6 +75,8 @@ export function useChatStickyScroll({
 	const initialScrollRestoredRef = useRef(false);
 	const [initialScrollRestored, setInitialScrollRestored] = useState(false);
 	const followFrameRef = useRef<number | null>(null);
+	const followVisibilityActiveRef = useRef(false);
+	const contentRevisionRef = useRef(contentRevision);
 	const touchStartYRef = useRef<number | null>(null);
 
 	const commitOwnership = useCallback((nextOwnership: ScrollOwnership) => {
@@ -214,7 +219,7 @@ export function useChatStickyScroll({
 	useEffect(() => {
 		if (
 			!enabled ||
-			itemCount === 0 ||
+			!hasItems ||
 			!scrollElement ||
 			typeof ResizeObserver === "undefined"
 		) {
@@ -222,17 +227,30 @@ export function useChatStickyScroll({
 		}
 		const contentElement = scrollElement.firstElementChild;
 		if (!(contentElement instanceof HTMLElement)) return;
-		let viewportHeight = scrollElement.getBoundingClientRect().height;
-		let contentHeight = contentElement.getBoundingClientRect().height;
+		const observedContentRevision = contentRevision;
+		// ResizeObserver always delivers an initial measurement after observe().
+		// Use that asynchronous notification as the baseline instead of forcing
+		// synchronous geometry reads while a conversation is mounting/switching.
+		let viewportHeight: number | null = null;
+		let contentHeight: number | null = null;
 		const observer = new ResizeObserver((entries) => {
+			if (observedContentRevision !== contentRevisionRef.current) return;
 			let verticalLayoutChanged = false;
 			for (const entry of entries) {
 				if (entry.target === scrollElement) {
+					if (viewportHeight === null) {
+						viewportHeight = entry.contentRect.height;
+						continue;
+					}
 					if (Math.abs(entry.contentRect.height - viewportHeight) < 0.5)
 						continue;
 					viewportHeight = entry.contentRect.height;
 					recordStickyScrollMetric("viewport-resize");
 				} else {
+					if (contentHeight === null) {
+						contentHeight = entry.contentRect.height;
+						continue;
+					}
 					if (Math.abs(entry.contentRect.height - contentHeight) < 0.5)
 						continue;
 					contentHeight = entry.contentRect.height;
@@ -245,48 +263,72 @@ export function useChatStickyScroll({
 		observer.observe(scrollElement);
 		observer.observe(contentElement);
 		return () => observer.disconnect();
-	}, [enabled, itemCount, scheduleFollow, scrollElement]);
+	}, [contentRevision, enabled, hasItems, scheduleFollow, scrollElement]);
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		if (!enabled || initialScrollRestoredRef.current || itemCount === 0) return;
 		const initialState = initialStateRef.current;
-		let secondFrame: number | null = null;
-		const frame = requestAnimationFrame(() => {
-			recordStickyScrollMetric("follow-frame");
-			const viewport = scrollElementRef.current;
-			if (!viewport) return;
-			if (!initialState.sticky) {
-				commitOwnership("reading");
-				if (vlistRef.current) vlistRef.current.scrollTo(initialState.scrollTop);
-				else viewport.scrollTop = initialState.scrollTop;
-				scrollPositionRef.current = initialState.scrollTop;
-			} else {
-				commitOwnership("following");
-				// A single index jump teaches a long virtualized history which end to
-				// mount. Subsequent streaming growth is DOM-only.
-				if (vlistRef.current && itemCountRef.current > 0) {
-					vlistRef.current.scrollToIndex(itemCountRef.current - 1, {
-						align: "end",
-					});
-					recordStickyScrollMetric("virtua-scroll");
-				}
-				secondFrame = requestAnimationFrame(() => {
-					secondFrame = null;
+		const viewport = scrollElementRef.current;
+		if (!viewport) return;
+		let correctionFrame: number | null = null;
+
+		if (!initialState.sticky) {
+			commitOwnership("reading");
+			// Restore the native viewport synchronously before the first visible paint.
+			// Virtua still receives the same imperative target so its internal store
+			// converges with the DOM position once its initial measurements settle.
+			viewport.scrollTop = initialState.scrollTop;
+			vlistRef.current?.scrollTo(initialState.scrollTop);
+			scrollPositionRef.current = initialState.scrollTop;
+		} else {
+			commitOwnership("following");
+			// Do the first bottom clamp in layout phase so a newly selected history
+			// never paints at scrollTop=0. Virtua is then primed with the final row and
+			// one rAF correction handles any measurement delta without exposing the
+			// old/top range as an intermediate frame.
+			clampToBottom();
+			if (vlistRef.current && itemCountRef.current > 0) {
+				vlistRef.current.scrollToIndex(itemCountRef.current - 1, {
+					align: "end",
+				});
+				recordStickyScrollMetric("virtua-scroll");
+				correctionFrame = requestAnimationFrame(() => {
+					correctionFrame = null;
+					recordStickyScrollMetric("follow-frame");
 					clampToBottom();
 				});
 			}
-			initialScrollRestoredRef.current = true;
-			setInitialScrollRestored(true);
-		});
+		}
+
+		// Mark this visibility pass as already corrected. The re-activation effect
+		// below should only schedule when a previously hidden viewport becomes
+		// enabled again, not immediately after this initial restoration.
+		followVisibilityActiveRef.current = true;
+		initialScrollRestoredRef.current = true;
+		setInitialScrollRestored(true);
 		return () => {
-			cancelAnimationFrame(frame);
-			if (secondFrame !== null) cancelAnimationFrame(secondFrame);
+			if (correctionFrame !== null) cancelAnimationFrame(correctionFrame);
 		};
 	}, [clampToBottom, commitOwnership, enabled, itemCount, vlistRef]);
 
-	// When a followed conversation becomes visible again, one frame is enough to
-	// catch up with content that grew while its visual tree was inactive.
+	// Retained background viewports stay laid out (visibility:hidden rather than
+	// display:none), so reading offsets survive natively. A followed conversation
+	// only needs one bottom convergence when it becomes active again, including
+	// content that may have grown while its subscriber was frozen.
 	useEffect(() => {
+		if (!initialScrollRestored) return;
+		if (!enabled) {
+			followVisibilityActiveRef.current = false;
+			return;
+		}
+		if (followVisibilityActiveRef.current) return;
+		followVisibilityActiveRef.current = true;
+		if (ownershipRef.current === "following") scheduleFollow();
+	}, [enabled, initialScrollRestored, scheduleFollow]);
+
+	useEffect(() => {
+		if (contentRevisionRef.current === contentRevision) return;
+		contentRevisionRef.current = contentRevision;
 		if (
 			!enabled ||
 			!initialScrollRestored ||
@@ -294,8 +336,11 @@ export function useChatStickyScroll({
 		) {
 			return;
 		}
+		// Switching between plain DOM and Virtua replaces the observed content
+		// element without changing itemCount. Rebind above, then converge the new
+		// geometry to bottom once on the next frame.
 		scheduleFollow();
-	}, [enabled, initialScrollRestored, scheduleFollow]);
+	}, [contentRevision, enabled, initialScrollRestored, scheduleFollow]);
 
 	const scrollToBottom = useCallback(
 		(smooth = false) => {

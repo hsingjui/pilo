@@ -471,3 +471,50 @@ test("frame coalescing merges only compatible high-frequency actions", () => {
 		"latest",
 	);
 });
+
+test("compaction marker closes the running turn and inserts a compaction message", () => {
+	const state = replayConversationEvents(
+		[
+			{
+				type: "user_message_start",
+				text: "go",
+				timestampMs: 1,
+				sourceEntryId: "u1",
+			},
+			{ type: "assistant_message_start", timestampMs: 2, sourceEntryId: "a1" },
+			{
+				type: "assistant_text_delta",
+				delta: "work",
+				timestampMs: 2,
+				sourceEntryId: "a1",
+				sourceContentIndex: 0,
+			},
+			{
+				type: "compaction_marker",
+				summary: "summary text",
+				tokensBefore: 217_975,
+			},
+			{
+				type: "user_message_start",
+				text: "continue",
+				timestampMs: 9,
+				sourceEntryId: "u2",
+			},
+		] satisfies ConversationEvent[],
+		context(),
+	);
+
+	assert.deepEqual(
+		state.messages.map((message) => message.role),
+		["user", "assistant", "compaction", "user"],
+	);
+	const assistant = state.messages[1];
+	assert.equal(assistant?.role, "assistant");
+	if (assistant?.role !== "assistant") throw new Error("expected assistant");
+	assert.equal(assistant.completion, "continued");
+	const compaction = state.messages[2];
+	assert.equal(compaction?.role, "compaction");
+	if (compaction?.role !== "compaction") throw new Error("expected compaction");
+	assert.equal(compaction.text, "summary text");
+	assert.equal(compaction.tokensBefore, 217_975);
+});

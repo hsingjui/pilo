@@ -1,11 +1,4 @@
-import {
-	useCallback,
-	useEffect,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CacheSnapshot, VirtualizerHandle } from "virtua";
 
 import { useChatStickyScroll } from "@/components/chat/use-chat-sticky-scroll";
@@ -69,7 +62,6 @@ export function useChatScrollController({
 
 	const virtualizerRef = useRef<VirtualizerHandle>(null);
 	const virtualPadding = useChatVirtualPadding();
-	const itemOffsetDeltaRef = useRef(virtualPadding.start);
 	const pendingOutlineJumpRef = useRef<{
 		messageIndex: number;
 		attempts: number;
@@ -89,6 +81,8 @@ export function useChatScrollController({
 
 	const scrollEnabled =
 		active && effectiveLoadState === "ready" && messages.length > 0;
+	const scrollEnabledRef = useRef(scrollEnabled);
+	scrollEnabledRef.current = scrollEnabled;
 	const virtualized = scrollEnabled && virtualizerEnabled;
 	const {
 		scrollRef,
@@ -103,6 +97,7 @@ export function useChatScrollController({
 		enabled: scrollEnabled,
 		vlistRef: virtualizerRef,
 		itemCount: messages.length,
+		contentRevision: virtualizerEnabled,
 		initialScrollTop,
 		initialSticky,
 		onScrollStateChange,
@@ -111,6 +106,7 @@ export function useChatScrollController({
 
 	const persistVirtualizerCache = useCallback(
 		(force = false) => {
+			if (!scrollEnabledRef.current) return;
 			const vlist = virtualizerRef.current;
 			if (!vlist || !onVirtualizerCacheChange || messages.length === 0) return;
 			const now = performance.now();
@@ -127,43 +123,9 @@ export function useChatScrollController({
 		persistVirtualizerCache(true);
 	}, [initialScrollRestored, persistVirtualizerCache, virtualized]);
 
-	const measureItemOffsetDelta = useCallback(() => {
-		const viewport = scrollElementRef.current;
-		const content = viewport?.firstElementChild;
-		if (!viewport || !(content instanceof HTMLElement)) {
-			itemOffsetDeltaRef.current = virtualPadding.start;
-			return;
-		}
-		itemOffsetDeltaRef.current =
-			content.getBoundingClientRect().top -
-			viewport.getBoundingClientRect().top +
-			viewport.scrollTop;
-	}, [scrollElementRef, virtualPadding.start]);
-
-	useLayoutEffect(() => {
-		if (!virtualized) return;
-		const viewport = scrollElementRef.current;
-		if (!viewport) return;
-		let frame: number | null = null;
-		const measure = () => {
-			frame = null;
-			measureItemOffsetDelta();
-		};
-		const scheduleMeasure = () => {
-			if (frame !== null) return;
-			frame = requestAnimationFrame(measure);
-		};
-		measure();
-		const observer = new ResizeObserver(scheduleMeasure);
-		observer.observe(viewport);
-		return () => {
-			observer.disconnect();
-			if (frame !== null) cancelAnimationFrame(frame);
-		};
-	}, [measureItemOffsetDelta, scrollElementRef, virtualized]);
-
 	const syncScrollState = useCallback(
 		(offset?: number, force = false) => {
+			if (!scrollEnabledRef.current) return;
 			const viewport = scrollElementRef.current;
 			if (!viewport) return;
 			const programmaticFollow = handleStickyScroll(
@@ -178,6 +140,7 @@ export function useChatScrollController({
 
 			scrollSyncFrameRef.current = requestAnimationFrame(() => {
 				scrollSyncFrameRef.current = null;
+				if (!scrollEnabledRef.current) return;
 				const currentViewport = scrollElementRef.current;
 				if (!currentViewport) return;
 
@@ -187,6 +150,10 @@ export function useChatScrollController({
 				const scrollSize = vlist?.scrollSize ?? currentViewport.scrollHeight;
 				const viewportSize =
 					vlist?.viewportSize ?? currentViewport.clientHeight;
+				const relativeScrollOffset = Math.max(
+					0,
+					scrollOffset - virtualPadding.start,
+				);
 				const nextScrolledFromTop = currentViewport.scrollTop > 16;
 				if (isScrolledFromTopRef.current !== nextScrolledFromTop) {
 					isScrolledFromTopRef.current = nextScrolledFromTop;
@@ -194,12 +161,11 @@ export function useChatScrollController({
 				}
 
 				if (vlist && messages.length > 0) {
-					const relativeStart = Math.max(
-						0,
-						scrollOffset - itemOffsetDeltaRef.current,
-					);
-					const startIndex = vlist.findItemIndex(relativeStart);
-					const endIndex = vlist.findItemIndex(relativeStart + viewportSize);
+					// Virtualizer owns the top inset through startMargin, so its public
+					// lookup accepts the real scroll offset without another DOM-derived
+					// correction layer here.
+					const startIndex = vlist.findItemIndex(scrollOffset);
+					const endIndex = vlist.findItemIndex(scrollOffset + viewportSize);
 					const previousRange = visibleRangeRef.current;
 					if (
 						!previousRange ||
@@ -229,13 +195,13 @@ export function useChatScrollController({
 				if (!vlist) return;
 
 				const maxScrollOffset = scrollSize - viewportSize;
+				// startMargin is only an item-coordinate inset. Virtua scrollSize and
+				// scrollOffset stay in the real scroll-container coordinate space.
 				const isAtEnd =
 					maxScrollOffset > 0 && scrollOffset >= maxScrollOffset - 2;
 				const readingOffset = Math.max(
 					0,
-					scrollOffset -
-						itemOffsetDeltaRef.current +
-						CHAT_OUTLINE_READING_OFFSET_PX,
+					relativeScrollOffset + CHAT_OUTLINE_READING_OFFSET_PX,
 				);
 				const nextIndex = getOutlineIndexForScrollOffset(
 					outlineEntries,
@@ -256,6 +222,7 @@ export function useChatScrollController({
 			onVisibleRangeChange,
 			persistVirtualizerCache,
 			scrollElementRef,
+			virtualPadding.start,
 		],
 	);
 
@@ -278,21 +245,21 @@ export function useChatScrollController({
 	);
 
 	const scrollMessageToTop = useCallback((messageIndex: number) => {
-		virtualizerRef.current?.scrollToIndex(messageIndex, {
-			align: "start",
-			offset: itemOffsetDeltaRef.current,
-		});
+		virtualizerRef.current?.scrollToIndex(messageIndex, { align: "start" });
 	}, []);
 
-	const outlineJumpDrift = useCallback((messageIndex: number) => {
-		const vlist = virtualizerRef.current;
-		if (!vlist) return 0;
-		return Math.abs(
-			vlist.scrollOffset -
-				itemOffsetDeltaRef.current -
-				vlist.getItemOffset(messageIndex),
-		);
-	}, []);
+	const outlineJumpDrift = useCallback(
+		(messageIndex: number) => {
+			const vlist = virtualizerRef.current;
+			if (!vlist) return 0;
+			return Math.abs(
+				vlist.scrollOffset -
+					virtualPadding.start -
+					vlist.getItemOffset(messageIndex),
+			);
+		},
+		[virtualPadding.start],
+	);
 
 	const handleOutlineJump = useCallback(
 		(index: number) => {
@@ -314,6 +281,7 @@ export function useChatScrollController({
 	);
 
 	const handleScrollEnd = useCallback(() => {
+		if (!scrollEnabledRef.current) return;
 		persistVirtualizerCache(true);
 		const pending = pendingOutlineJumpRef.current;
 		if (!pending) return;

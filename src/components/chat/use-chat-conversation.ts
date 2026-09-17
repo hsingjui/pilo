@@ -58,7 +58,9 @@ const HISTORY_PAGE_MESSAGE_COUNT = 48;
 const HISTORY_PREFETCH_MESSAGES = 16;
 const NOOP_EXTERNAL_STORE_SUBSCRIBE = () => () => undefined;
 
-export function createLocalMessageId(kind: "user" | "assistant") {
+export function createLocalMessageId(
+	kind: "user" | "assistant" | "compaction",
+) {
 	localMessageSequence += 1;
 	return `local-${kind}-${Date.now()}-${localMessageSequence}`;
 }
@@ -129,9 +131,10 @@ function historyPlaceholderMessage(
 		historyPlaceholder: true as const,
 		historyEstimatedChars: descriptor.estimatedChars,
 	};
-	return descriptor.role === "user"
-		? { ...common, role: "user" }
-		: { ...common, role: "assistant" };
+	if (descriptor.role === "user") return { ...common, role: "user" };
+	if (descriptor.role === "compaction")
+		return { ...common, role: "compaction" };
+	return { ...common, role: "assistant" };
 }
 
 function alignHistoryMessages(

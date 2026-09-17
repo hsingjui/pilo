@@ -49,7 +49,15 @@ export function toConversationAction(
 		case "rpc_message":
 		case "queue_update":
 		case "compaction_start":
+			return null;
 		case "compaction_end":
+			return event.result && !event.aborted
+				? {
+						type: "compaction_marker",
+						summary: event.result.summary,
+						tokensBefore: event.result.tokensBefore,
+					}
+				: null;
 		case "auto_retry_start":
 		case "auto_retry_end":
 		case "summarization_retry_scheduled":
