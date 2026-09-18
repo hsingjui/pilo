@@ -2,13 +2,22 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { createChatSessionClient } from "@/lib/chat-session-client";
 import {
+	PI_MODEL_CATALOG_COMMAND,
+	PI_MODEL_CATALOG_EXTENSION_SOURCE,
+	PI_MODEL_CATALOG_TITLE,
+} from "@/lib/pi-model-catalog-extension";
+import {
 	type PiAgentState,
 	type PiModel,
 	type PiThinkingLevel,
+	PI_THINKING_LEVELS,
 } from "@/lib/pi-runtime";
 
 export const PROJECT_PI_MODELS_TTL_MS = 60 * 60 * 1000;
 const STARTUP_REFRESH_CONCURRENCY = 1;
+/** Bounded wait for the catalog extension to answer before falling back to RPC. */
+const MODEL_CATALOG_TIMEOUT_MS = 20_000;
+const CATALOG_ERROR_TITLE = "pilo-model-catalog:error";
 
 export type ProjectPiModels = {
 	projectId: string;
@@ -17,6 +26,24 @@ export type ProjectPiModels = {
 	defaultThinkingLevel: PiThinkingLevel | null;
 	refreshedAtMs: number;
 };
+
+type PiModelCatalogEntry = PiModel & {
+	defaultThinkingLevel: PiThinkingLevel | null;
+	thinkingLevels: PiThinkingLevel[] | null;
+	scopeOrder: number | null;
+	scopeThinkingLevel: PiThinkingLevel | null;
+};
+
+type PiModelCatalogPayload = {
+	models: PiModelCatalogEntry[];
+	baselineModel: PiModel | null;
+	baselineThinkingLevel: PiThinkingLevel | null;
+};
+
+type PiModelCatalogResult = Pick<
+	ProjectPiModels,
+	"models" | "defaultModel" | "defaultThinkingLevel"
+>;
 
 type ProjectPiModelsListener = (snapshot: ProjectPiModels) => void;
 
@@ -249,6 +276,130 @@ async function resolveModelThinkingProfiles(
 	return resolved;
 }
 
+function isPiThinkingLevel(value: unknown): value is PiThinkingLevel {
+	return (
+		typeof value === "string" &&
+		(PI_THINKING_LEVELS as string[]).includes(value)
+	);
+}
+
+function parsePiModelCatalogPayload(raw: string): PiModelCatalogResult {
+	const payload = JSON.parse(raw) as PiModelCatalogPayload;
+	if (
+		!payload ||
+		!Array.isArray(payload.models) ||
+		payload.models.length === 0
+	) {
+		throw new Error("model catalog payload has no models");
+	}
+	const models = payload.models.map((entry) => {
+		if (
+			!entry ||
+			typeof entry.provider !== "string" ||
+			typeof entry.id !== "string" ||
+			!Array.isArray(entry.thinkingLevels) ||
+			!entry.thinkingLevels.every(isPiThinkingLevel) ||
+			(entry.defaultThinkingLevel !== null &&
+				!isPiThinkingLevel(entry.defaultThinkingLevel)) ||
+			(entry.scopeOrder !== null && typeof entry.scopeOrder !== "number") ||
+			(entry.scopeThinkingLevel !== null &&
+				!isPiThinkingLevel(entry.scopeThinkingLevel))
+		) {
+			throw new Error("model catalog payload entry is malformed");
+		}
+		return entry as PiModel;
+	});
+	const baselineThinkingLevel = payload.baselineThinkingLevel;
+	if (
+		baselineThinkingLevel !== null &&
+		!isPiThinkingLevel(baselineThinkingLevel)
+	) {
+		throw new Error(
+			"model catalog payload has malformed baseline thinking level",
+		);
+	}
+	return {
+		models,
+		defaultModel:
+			models.find((model) => modelsMatch(model, payload.baselineModel)) ??
+			payload.baselineModel,
+		defaultThinkingLevel: baselineThinkingLevel,
+	};
+}
+
+/**
+ * Resolve the whole model catalog in one round trip through the probe
+ * extension. Returns null whenever the extension path is unavailable (older
+ * pilo-server, Pi without the command, timeout, malformed payload) so the
+ * caller can fall back to the per-model RPC chain.
+ */
+async function fetchPiModelCatalogViaExtension(
+	client: ReturnType<typeof createChatSessionClient>,
+): Promise<PiModelCatalogResult | null> {
+	let settle: (value: PiModelCatalogResult) => void;
+	let fail: (error: unknown) => void;
+	const catalog = new Promise<PiModelCatalogResult>((resolve, reject) => {
+		settle = resolve;
+		fail = reject;
+	});
+	let settled = false;
+	const complete = (run: () => void) => {
+		if (settled) return;
+		settled = true;
+		run();
+	};
+	const timeout = setTimeout(() => {
+		complete(() => fail(new Error("model catalog extension timed out")));
+	}, MODEL_CATALOG_TIMEOUT_MS);
+
+	let unlisten: (() => void) | undefined;
+	try {
+		unlisten = await client.listen((event) => {
+			if (event.type === "runtime_error") {
+				complete(() => fail(new Error(event.message)));
+				return;
+			}
+			if (
+				event.type === "process_state" &&
+				(event.state === "failed" || event.state === "stopped")
+			) {
+				complete(() => fail(new Error("Pi probe session ended unexpectedly")));
+				return;
+			}
+			if (event.type !== "extension_ui_request") return;
+			if (event.title === PI_MODEL_CATALOG_TITLE) {
+				complete(() => {
+					try {
+						settle(parsePiModelCatalogPayload(event.message ?? ""));
+					} catch (error) {
+						fail(error);
+					} finally {
+						void client
+							.respondToExtensionUi(event.id, { confirmed: true })
+							.catch(() => undefined);
+					}
+				});
+				return;
+			}
+			if (event.title === CATALOG_ERROR_TITLE) {
+				complete(() => {
+					void client
+						.respondToExtensionUi(event.id, { confirmed: true })
+						.catch(() => undefined);
+					fail(new Error(event.message ?? "model catalog extension failed"));
+				});
+			}
+		});
+		await client.executePiCommand(PI_MODEL_CATALOG_COMMAND);
+		return await catalog;
+	} catch {
+		return null;
+	} finally {
+		clearTimeout(timeout);
+		unlisten?.();
+	}
+}
+
 export function refreshProjectPiModels(
 	projectId: string,
 ): Promise<ProjectPiModels> {
@@ -256,12 +407,38 @@ export function refreshProjectPiModels(
 	if (pending) return pending;
 
 	const sessionKey = `model-probe:${projectId}:${Date.now()}:${++probeSequence}`;
+	// noSession 是必须的：探测只读模型列表和默认思考等级，不需要持久会话。
+	// 否则 ensure() 会对无 sessionPath 的进程发 new_session，让 Pi 落盘一个
+	// 空会话文件，被 watcher 索引后侧栏凭空多出一条会话。
+	// extensions 让 pilo-server 以 --extension 只给这个探测进程加载目录扩展，
+	// 不影响用户正常的 Pi 会话；扩展不可用时回退到逐模型 RPC 链。
 	const client = createChatSessionClient(projectId, sessionKey, undefined, {
+		noSession: true,
 		owner: "model_probe",
+		extensions: [PI_MODEL_CATALOG_EXTENSION_SOURCE],
 	});
 	const refresh = (async () => {
 		try {
-			await client.ensure();
+			await client.prepare();
+			const extensionCatalog = await fetchPiModelCatalogViaExtension(client);
+			if (extensionCatalog) {
+				const snapshot = publishProjectPiModels({
+					projectId,
+					...extensionCatalog,
+					refreshedAtMs: Date.now(),
+				});
+				try {
+					await persistProjectPiModels(snapshot);
+				} catch (error) {
+					console.warn("Failed to persist refreshed Pi models", error);
+				}
+				return snapshot;
+			}
+
+			console.warn(
+				"Pi model catalog extension unavailable; falling back to RPC probing",
+			);
+			await client.prepare();
 			const [result, state] = await Promise.all([
 				client.getAvailablePiModels(),
 				client.getPiAgentState(),

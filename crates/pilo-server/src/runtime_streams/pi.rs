@@ -34,6 +34,10 @@ pub(crate) struct PiStartParams {
     no_session: bool,
     #[serde(default)]
     disable_resources: bool,
+    /// Inline extension sources materialized to temp files and loaded with
+    /// explicit `--extension` flags for this process only.
+    #[serde(default)]
+    extensions: Vec<String>,
     #[serde(default)]
     provider: Option<String>,
     #[serde(default)]
@@ -84,6 +88,21 @@ fn trace_pi(stage: &str, stream_id: &str, detail: Value) {
 
 #[cfg(not(debug_assertions))]
 fn trace_pi(_stage: &str, _stream_id: &str, _detail: Value) {}
+
+/// Write an inline extension source to a content-addressed temp file so it can
+/// be loaded with an explicit `--extension` flag. Pi runs in this environment,
+/// so the file must live on the local (possibly remote-managed) filesystem.
+fn materialize_extension(source: &str) -> Result<std::path::PathBuf, String> {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    std::hash::Hash::hash(source, &mut hasher);
+    let dir = std::env::temp_dir().join("pilo-extensions");
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| format!("failed to create extension dir: {error}"))?;
+    let path = dir.join(format!("{:016x}.js", std::hash::Hasher::finish(&hasher)));
+    std::fs::write(&path, source)
+        .map_err(|error| format!("failed to write extension file: {error}"))?;
+    Ok(path)
+}
 
 fn trace_pi_rpc_line(stream_id: &str, bytes: &[u8]) {
     #[cfg(debug_assertions)]
@@ -177,6 +196,17 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
             "--no-themes".to_owned(),
             "--no-context-files".to_owned(),
             "--no-approve".to_owned(),
+        ]);
+    }
+    for source in &params.extensions {
+        if source.trim().is_empty() {
+            continue;
+        }
+        let path = materialize_extension(source)?;
+        // Explicit --extension paths still load when discovery is disabled.
+        args.extend([
+            "--extension".to_owned(),
+            path.to_string_lossy().into_owned(),
         ]);
     }
     if let Some(provider) = params.provider.as_ref() {

@@ -25,6 +25,8 @@ let chatClientSequence = 0;
 export type ChatSessionClientOptions = {
 	noSession?: boolean;
 	owner?: string;
+	/** Inline Pi extension sources loaded via --extension for this process only. */
+	extensions?: string[];
 };
 
 function traceChatClient(
@@ -111,6 +113,7 @@ function createRegisteredChatSessionClient(
 				sessionKey,
 				sessionPath: resumePath,
 				noSession,
+				extensions: options.extensions,
 			}).finally(() => {
 				pendingPrepare = undefined;
 			});
@@ -128,6 +131,7 @@ function createRegisteredChatSessionClient(
 				sessionKey,
 				sessionPath: resumePath,
 				noSession,
+				extensions: options.extensions,
 			}).finally(() => {
 				pendingEnsure = undefined;
 			});

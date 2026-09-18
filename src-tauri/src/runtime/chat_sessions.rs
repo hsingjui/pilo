@@ -36,9 +36,17 @@ pub struct ChatSessionState {
     pub snapshot: PiSessionSnapshot,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ChatSessionLaunch {
+    pub session_path: Option<String>,
+    pub no_session: bool,
+    pub extensions: Vec<String>,
+}
+
 struct ChatProcess {
     project_id: String,
     no_session: bool,
+    extensions: Vec<String>,
     session: Mutex<ServerPiSession>,
     session_path: Arc<StdMutex<Option<String>>>,
     control_reply: Arc<StdMutex<Option<InitializationReply>>>,
@@ -204,13 +212,13 @@ impl ChatSessions {
         &self,
         project: &Project,
         session_key: &str,
-        session_path: Option<String>,
-        no_session: bool,
+        launch: &ChatSessionLaunch,
     ) -> Result<Arc<ChatProcess>, String> {
         if session_key.trim().is_empty() {
             return Err("session key cannot be empty".to_owned());
         }
-        if no_session && session_path.is_some() {
+        let session_path = launch.session_path.as_ref();
+        if launch.no_session && session_path.is_some() {
             return Err("temporary session cannot resume a persisted session".to_owned());
         }
         let process = {
@@ -225,9 +233,10 @@ impl ChatSessions {
                     .or_insert_with(|| {
                         Arc::new(ChatProcess {
                             project_id: project.id.clone(),
-                            no_session,
+                            no_session: launch.no_session,
+                            extensions: launch.extensions.clone(),
                             session: Mutex::new(ServerPiSession::default()),
-                            session_path: Arc::new(StdMutex::new(session_path.clone())),
+                            session_path: Arc::new(StdMutex::new(session_path.cloned())),
                             control_reply: Arc::new(StdMutex::new(None)),
                             prepared: AtomicBool::new(false),
                             initialized: AtomicBool::new(false),
@@ -240,8 +249,11 @@ impl ChatSessions {
         if process.project_id != project.id {
             return Err("session belongs to a different project".to_owned());
         }
-        if process.no_session != no_session {
+        if process.no_session != launch.no_session {
             return Err("session persistence mode changed while running".to_owned());
+        }
+        if process.extensions != launch.extensions {
+            return Err("session extensions changed while running".to_owned());
         }
         if let Some(path) = session_path {
             let mut current = process
@@ -249,7 +261,7 @@ impl ChatSessions {
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
             if current.is_none() {
-                *current = Some(path);
+                *current = Some(path.clone());
             }
         }
         Ok(process)
@@ -303,6 +315,7 @@ impl ChatSessions {
                 PiLaunchOptions {
                     session_path,
                     no_session: process.no_session,
+                    extensions: process.extensions.clone(),
                     ..PiLaunchOptions::default()
                 },
             )
@@ -361,18 +374,18 @@ impl ChatSessions {
         app: AppHandle,
         project: Project,
         session_key: String,
-        session_path: Option<String>,
-        no_session: bool,
+        launch: ChatSessionLaunch,
     ) -> Result<PiSessionSnapshot, String> {
         runtime_trace(
             "chat.prepare.begin",
             Some(&session_key),
             None,
-            json!({ "hasSessionPath": session_path.is_some(), "noSession": no_session }),
+            json!({
+                "hasSessionPath": launch.session_path.is_some(),
+                "noSession": launch.no_session,
+            }),
         );
-        let process = self
-            .process(&project, &session_key, session_path.clone(), no_session)
-            .await?;
+        let process = self.process(&project, &session_key, &launch).await?;
         let mut session = process.session.lock().await;
         if process.closed.load(Ordering::Acquire) {
             return Err("project is closing".to_owned());
@@ -408,7 +421,7 @@ impl ChatSessions {
             return Err(error);
         }
         process.prepared.store(true, Ordering::Release);
-        if session_path.is_some() || process.no_session {
+        if launch.session_path.is_some() || process.no_session {
             // Pi was launched with --session, so the readiness get_state also proves
             // the requested historical session is fully loaded. --no-session starts
             // with an in-memory session that needs no additional new_session RPC.
@@ -430,18 +443,18 @@ impl ChatSessions {
         app: AppHandle,
         project: Project,
         session_key: String,
-        session_path: Option<String>,
-        no_session: bool,
+        launch: ChatSessionLaunch,
     ) -> Result<PiSessionSnapshot, String> {
         runtime_trace(
             "chat.ensure.begin",
             Some(&session_key),
             None,
-            json!({ "hasSessionPath": session_path.is_some(), "noSession": no_session }),
+            json!({
+                "hasSessionPath": launch.session_path.is_some(),
+                "noSession": launch.no_session,
+            }),
         );
-        let process = self
-            .process(&project, &session_key, session_path.clone(), no_session)
-            .await?;
+        let process = self.process(&project, &session_key, &launch).await?;
         let mut session = process.session.lock().await;
         if process.closed.load(Ordering::Acquire) {
             return Err("project is closing".to_owned());
@@ -463,7 +476,7 @@ impl ChatSessions {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .clone();
-        let command = if session_path.is_some() {
+        let command = if launch.session_path.is_some() {
             serde_json::json!({ "id": "pilo-session-init", "type": "get_state" })
         } else {
             match resume_path {

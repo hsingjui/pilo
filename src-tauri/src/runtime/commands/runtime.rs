@@ -5,6 +5,7 @@ use tauri::{AppHandle, State, ipc::Channel};
 
 use super::super::{
     PiloRuntime,
+    chat_sessions::ChatSessionLaunch,
     events::{RuntimeEventBus, RuntimeEventEnvelope, TauriEventSink},
     project,
     server_pi::PiLaunchOptions,
@@ -55,6 +56,7 @@ pub async fn chat_session_prepare(
     session_key: String,
     session_path: Option<String>,
     no_session: bool,
+    extensions: Option<Vec<String>>,
 ) -> Result<PiSessionSnapshot, String> {
     let project = project::get(&app, &project_id)?;
     reject_external_session_owner(&runtime, &project, session_path.as_deref()).await?;
@@ -65,8 +67,11 @@ pub async fn chat_session_prepare(
             app,
             project,
             session_key,
-            session_path,
-            no_session,
+            ChatSessionLaunch {
+                session_path,
+                no_session,
+                extensions: extensions.unwrap_or_default(),
+            },
         )
         .await
 }
@@ -79,6 +84,7 @@ pub async fn chat_session_start(
     session_key: String,
     session_path: Option<String>,
     no_session: bool,
+    extensions: Option<Vec<String>>,
 ) -> Result<PiSessionSnapshot, String> {
     let project = project::get(&app, &project_id)?;
     reject_external_session_owner(&runtime, &project, session_path.as_deref()).await?;
@@ -89,8 +95,11 @@ pub async fn chat_session_start(
             app,
             project,
             session_key,
-            session_path,
-            no_session,
+            ChatSessionLaunch {
+                session_path,
+                no_session,
+                extensions: extensions.unwrap_or_default(),
+            },
         )
         .await
 }
