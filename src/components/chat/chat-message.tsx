@@ -424,7 +424,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 							) : null}
 							{canFork ? (
 								<MessageAction
-									label={forking ? "正在 Fork" : "Fork 新对话"}
+									label={forking ? "正在 Fork" : "Fork 新会话"}
 									disabled={forkDisabled || forking}
 									onClick={() => onFork?.(message.id)}
 								>

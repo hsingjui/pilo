@@ -145,13 +145,13 @@ export function SessionHeader({
 									variant="ghost"
 									size="icon"
 									className="size-7"
-									aria-label="打开不保存记录的会话"
+									aria-label="打开临时会话"
 									onClick={onNewTemporaryChat}
 								>
 									<MessageSquareDashed className="size-4" />
 								</Button>
 							</TooltipTrigger>
-							<TooltipContent>不保存记录</TooltipContent>
+							<TooltipContent>临时会话</TooltipContent>
 						</Tooltip>
 					) : null}
 					{onOpenChanges ? (

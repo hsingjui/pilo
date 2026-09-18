@@ -521,7 +521,7 @@ export function AppSidebar({
 								<span className="flex h-5 w-5 shrink-0 items-center justify-center text-current">
 									<SquarePen className="h-4 w-4" />
 								</span>
-								<span className="truncate">新对话</span>
+								<span className="truncate">新会话</span>
 							</button>
 						)}
 					</div>
@@ -539,7 +539,7 @@ export function AppSidebar({
 								) : (
 									<div className="px-3 py-8 text-center text-xs text-sidebar-foreground-muted">
 										{projectSessionsQuery.trim()
-											? "没有匹配的会话"
+											? `没有匹配“${projectSessionsQuery.trim()}”的会话`
 											: "暂无会话"}
 									</div>
 								)

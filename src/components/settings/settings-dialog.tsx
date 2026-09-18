@@ -243,7 +243,10 @@ function NotificationSettings() {
 		const sent = await sendDesktopNotificationTest();
 		setPermission(await getDesktopNotificationPermission());
 		setTesting(false);
-		if (!sent) toast.error("测试通知发送失败");
+		if (!sent)
+			toast.error("测试通知发送失败", {
+				description: "请检查系统通知权限后重试。",
+			});
 	};
 
 	return (

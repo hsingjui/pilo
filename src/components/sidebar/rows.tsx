@@ -311,7 +311,7 @@ export function ProjectRow({
 						{refreshing ? (
 							<span
 								className="flex h-5 w-5 items-center justify-center text-muted-foreground"
-								aria-label="正在刷新对话"
+								aria-label="正在刷新会话"
 							>
 								<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
 							</span>
@@ -339,7 +339,7 @@ export function ProjectRow({
 									onSelect={() => onRefreshSessions?.()}
 								>
 									<RefreshCw className={menuItemIconClassName} />
-									刷新对话
+									刷新会话
 								</DropdownMenuItem>
 								{onDelete ? (
 									<DropdownMenuItem
@@ -362,7 +362,7 @@ export function ProjectRow({
 						</DropdownMenu>
 						<button
 							type="button"
-							aria-label="新建对话"
+							aria-label="新建会话"
 							className={HOVER_ACTION}
 							onClick={(event) => {
 								event.preventDefault();
@@ -555,7 +555,7 @@ export const SessionRow = memo(function SessionRow({
 							{onDelete ? (
 								<ConfirmDeleteButton
 									label="删除"
-									confirmLabel="确认"
+									confirmLabel="确认删除"
 									className={cn(
 										"absolute right-0 top-0 z-20",
 										"opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100",

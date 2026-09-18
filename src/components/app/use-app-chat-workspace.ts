@@ -222,7 +222,7 @@ export function useAppChatWorkspace({
 		if (activeProject && draftSessionStarted) {
 			return {
 				id: draftSessionId,
-				title: "新对话",
+				title: "新会话",
 				projectRecord: activeProject,
 				initialModel: draftSessionModel ?? undefined,
 				initialThinkingLevel: draftSessionThinkingLevel ?? undefined,
@@ -265,7 +265,7 @@ export function useAppChatWorkspace({
 			const prompt = submission.text;
 			const nextChat: ChatSession = {
 				id: draftSessionId,
-				title: "新对话",
+				title: "新会话",
 				projectRecord: project,
 				initialModel: model ?? undefined,
 				initialThinkingLevel: thinkingLevel ?? undefined,
@@ -474,7 +474,7 @@ export function useAppChatWorkspace({
 			if (!project) return;
 			const session: ChatSession = {
 				id: target.sessionId,
-				title: target.title || "新对话",
+				title: target.title || "新会话",
 				projectRecord: project,
 				sessionPath: target.sessionPath,
 			};
@@ -620,7 +620,7 @@ export function useAppChatWorkspace({
 			const project = entry.session.projectRecord;
 			const forkedSession: ChatSession = {
 				id: sessionId,
-				title: entry.session.title || "新对话",
+				title: entry.session.title || "新会话",
 				projectRecord: project,
 				sessionPath,
 			};

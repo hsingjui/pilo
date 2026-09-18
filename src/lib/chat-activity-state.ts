@@ -282,7 +282,7 @@ export function getAssistantStreamingLabel({
 }): string | null {
 	if (!streaming) return null;
 	const items = activity ?? [];
-	if (!text && items.length === 0) return "启动中...";
+	if (!text && items.length === 0) return "启动中…";
 	if (
 		items.some((item) => item.type === "thinking" && item.status === "running")
 	) {

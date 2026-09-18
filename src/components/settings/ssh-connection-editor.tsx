@@ -22,9 +22,15 @@ import {
 	SETTINGS_NESTED_DIALOG_OVERLAY_CLASS,
 } from "./compact-layout";
 
+type SshFieldError = {
+	field: "identityFile" | "password";
+	message: string;
+};
+
 type SshConnectionEditorProps = {
 	editing: SshConnectionFormState | null;
 	busy: boolean;
+	fieldError?: SshFieldError | null;
 	onChange: (editing: SshConnectionFormState) => void;
 	onClose: () => void;
 	onSave: () => void;
@@ -33,6 +39,7 @@ type SshConnectionEditorProps = {
 export function SshConnectionEditor({
 	editing,
 	busy,
+	fieldError,
 	onChange,
 	onClose,
 	onSave,
@@ -168,7 +175,21 @@ export function SshConnectionEditor({
 									placeholder={
 										editing.hasPassword ? "已保存；留空保持不变" : "SSH 密码"
 									}
+									aria-invalid={fieldError?.field === "password" || undefined}
+									aria-describedby={
+										fieldError?.field === "password"
+											? "ssh-password-error"
+											: undefined
+									}
 								/>
+								{fieldError?.field === "password" ? (
+									<span
+										id="ssh-password-error"
+										className="text-[11px] text-destructive"
+									>
+										{fieldError.message}
+									</span>
+								) : null}
 							</label>
 						) : null}
 						{editing.mode === "direct" && editing.authMethod === "key" ? (
@@ -185,7 +206,23 @@ export function SshConnectionEditor({
 										onChange({ ...editing, identityFile: event.target.value })
 									}
 									placeholder="~/.ssh/id_ed25519"
+									aria-invalid={
+										fieldError?.field === "identityFile" || undefined
+									}
+									aria-describedby={
+										fieldError?.field === "identityFile"
+											? "ssh-key-error"
+											: undefined
+									}
 								/>
+								{fieldError?.field === "identityFile" ? (
+									<span
+										id="ssh-key-error"
+										className="text-[11px] text-destructive"
+									>
+										{fieldError.message}
+									</span>
+								) : null}
 							</label>
 						) : null}
 						{editing.mode === "direct" ? (

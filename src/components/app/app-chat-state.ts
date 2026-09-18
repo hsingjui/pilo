@@ -26,7 +26,7 @@ export function toSidebarSession(session: SessionIndexEntry): SidebarSession {
 			session.titleOverride ??
 			session.name ??
 			session.firstUserMessagePreview ??
-			"新对话",
+			"新会话",
 		preview:
 			session.titleOverride || session.name
 				? session.firstUserMessagePreview
@@ -76,7 +76,7 @@ export function mergeSidebarSessionsWithOpenChats(
 		if (indexedKeys.has(key)) continue;
 		pending.push({
 			id: sessionId,
-			title: entry.session.title || "新对话",
+			title: entry.session.title || "新会话",
 			preview: entry.initialMessage?.trim() || null,
 			sessionPath: entry.session.sessionPath ?? "",
 			projectId: entry.session.projectRecord.id,
@@ -188,7 +188,7 @@ export function indexedChatSession(
 			session.titleOverride ??
 			session.name ??
 			session.firstUserMessagePreview ??
-			"新对话",
+			"新会话",
 		projectRecord: project,
 		sessionPath: session.sessionPath,
 		historyFileSize: session.fileSize,
@@ -305,7 +305,7 @@ export function syncOpenedChatSessionMetadata(
 			indexed.titleOverride ??
 			indexed.name ??
 			indexed.firstUserMessagePreview ??
-			"新对话";
+			"新会话";
 		const sessionPath =
 			entry.session.sessionPath ??
 			(entry.piSessionId ? undefined : indexed.sessionPath);

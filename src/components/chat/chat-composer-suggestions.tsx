@@ -29,7 +29,7 @@ export const PI_SESSION_SUGGESTIONS: readonly ComposerSuggestion[] = [
 		kind: "command",
 		value: "/new",
 		label: "/new",
-		detail: "新建对话",
+		detail: "新建会话",
 	},
 	{
 		kind: "command",
@@ -177,7 +177,9 @@ export function ComposerSuggestionMenu({
 					))
 				) : (
 					<div className="px-3 py-4 text-center text-xs text-muted-foreground">
-						没有匹配的{title}
+						{activeQuery.query
+							? `没有匹配“${activeQuery.query}”的${title}`
+							: `没有匹配的${title}`}
 					</div>
 				)}
 			</div>

@@ -34,7 +34,7 @@ export function ProjectSessionsToolbar({
 				<button
 					type="button"
 					className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-					aria-label={`在 ${project.name} 新建对话`}
+					aria-label={`在 ${project.name} 新建会话`}
 					onClick={() => onNewChat?.(project.id)}
 				>
 					<SquarePen className="h-4 w-4" />

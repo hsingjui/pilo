@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { userErrorMessage } from "@/lib/app-error";
 import {
 	getLocalConnection,
 	listWslConnections,
@@ -68,6 +69,10 @@ export function ConnectionsSettings() {
 	const [wslPickerOpen, setWslPickerOpen] = useState(false);
 	const [removingConnection, setRemovingConnection] =
 		useState<Connection | null>(null);
+	const [sshFieldError, setSshFieldError] = useState<{
+		field: "identityFile" | "password";
+		message: string;
+	} | null>(null);
 
 	const refresh = useCallback(async () => {
 		const [localResult, sshResult, wslResult, projectsResult] =
@@ -82,7 +87,7 @@ export function ConnectionsSettings() {
 			setSshItems(sshResult.value);
 		} else {
 			toast.error("读取 SSH 连接失败", {
-				description: String(sshResult.reason),
+				description: userErrorMessage(sshResult.reason),
 			});
 		}
 		if (wslResult.status === "fulfilled") setWslItems(wslResult.value);
@@ -126,7 +131,9 @@ export function ConnectionsSettings() {
 				description: `pilo-server ${result.serverVersion} · protocol ${result.protocolVersion}`,
 			});
 		} catch (error) {
-			toast.error(`${label} 连接失败`, { description: String(error) });
+			toast.error(`${label} 连接失败`, {
+				description: userErrorMessage(error),
+			});
 		} finally {
 			setBusy(false);
 		}
@@ -155,13 +162,15 @@ export function ConnectionsSettings() {
 						: current,
 				);
 			}
-			toast.success(`${connectionLabel(connection)} 的 PI 可用`, {
+			toast.success(`${connectionLabel(connection)} 的 Pi 可用`, {
 				description: [result.executable, result.version]
 					.filter(Boolean)
 					.join(" · "),
 			});
 		} catch (error) {
-			toast.error("未检测到可用 PI", { description: String(error) });
+			toast.error("未检测到可用 Pi", {
+				description: userErrorMessage(error),
+			});
 		} finally {
 			setProbingPi(false);
 		}
@@ -181,7 +190,9 @@ export function ConnectionsSettings() {
 			await refresh();
 			toast.success("连接设置已保存");
 		} catch (error) {
-			toast.error("保存连接设置失败", { description: String(error) });
+			toast.error("保存连接设置失败", {
+				description: userErrorMessage(error),
+			});
 		} finally {
 			setBusy(false);
 		}
@@ -194,7 +205,9 @@ export function ConnectionsSettings() {
 			await refresh();
 			toast.success(`已添加 WSL · ${distro}`);
 		} catch (error) {
-			toast.error("添加 WSL 发行版失败", { description: String(error) });
+			toast.error("添加 WSL 发行版失败", {
+				description: userErrorMessage(error),
+			});
 		} finally {
 			setBusy(false);
 		}
@@ -207,7 +220,10 @@ export function ConnectionsSettings() {
 			editing.authMethod === "key" &&
 			!editing.identityFile.trim()
 		) {
-			toast.error("请选择或填写私钥路径");
+			setSshFieldError({
+				field: "identityFile",
+				message: "请选择或填写私钥路径。",
+			});
 			return;
 		}
 		if (
@@ -215,7 +231,7 @@ export function ConnectionsSettings() {
 			!editing.password &&
 			!editing.hasPassword
 		) {
-			toast.error("请输入 SSH 密码");
+			setSshFieldError({ field: "password", message: "请输入 SSH 密码。" });
 			return;
 		}
 		setBusy(true);
@@ -228,7 +244,9 @@ export function ConnectionsSettings() {
 			await refresh();
 			toast.success("SSH 连接已保存");
 		} catch (error) {
-			toast.error("保存 SSH 连接失败", { description: String(error) });
+			toast.error("保存 SSH 连接失败", {
+				description: userErrorMessage(error),
+			});
 		} finally {
 			setBusy(false);
 		}
@@ -247,11 +265,11 @@ export function ConnectionsSettings() {
 			setConnectionShownInHome(connection.id, false);
 			await refresh();
 			setRemovingConnection(null);
-			toast.success(
-				connection.kind.type === "wsl" ? "WSL 连接已移除" : "SSH 连接已删除",
-			);
+			toast.success(`已删除 ${connectionLabel(connection)}`);
 		} catch (error) {
-			toast.error("删除连接失败", { description: String(error) });
+			toast.error("删除连接失败", {
+				description: userErrorMessage(error),
+			});
 		} finally {
 			setBusy(false);
 		}
@@ -266,7 +284,10 @@ export function ConnectionsSettings() {
 	return (
 		<div className="space-y-3">
 			<ConnectionsSection
-				onAddSsh={() => setEditing(emptySshConnectionForm())}
+				onAddSsh={() => {
+					setSshFieldError(null);
+					setEditing(emptySshConnectionForm());
+				}}
 				onAddWsl={() => setWslPickerOpen(true)}
 			>
 				<ConnectionRow
@@ -342,7 +363,10 @@ export function ConnectionsSettings() {
 										void probePi(info.connection, info.connection.piExecutable)
 									}
 									onConfigure={() => openConnectionSettings(info.connection)}
-									onEdit={() => setEditing(sshConnectionFormFromInfo(info))}
+									onEdit={() => {
+										setSshFieldError(null);
+										setEditing(sshConnectionFormFromInfo(info));
+									}}
 									onRemove={() => setRemovingConnection(info.connection)}
 								/>
 							) : null,
@@ -368,8 +392,15 @@ export function ConnectionsSettings() {
 			<SshConnectionEditor
 				editing={editing}
 				busy={busy}
-				onChange={setEditing}
-				onClose={() => setEditing(null)}
+				fieldError={sshFieldError}
+				onChange={(next) => {
+					setEditing(next);
+					if (sshFieldError) setSshFieldError(null);
+				}}
+				onClose={() => {
+					setEditing(null);
+					setSshFieldError(null);
+				}}
 				onSave={() => void saveSsh()}
 			/>
 			<WslDistributionDialog

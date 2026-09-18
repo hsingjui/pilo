@@ -739,7 +739,7 @@ function ChatPageImpl(props: ChatPageProps) {
 					sessionPath: state.sessionFile,
 				};
 			} catch (error) {
-				toast.error("Fork 新对话失败", {
+				toast.error("Fork 新会话失败", {
 					description: userErrorMessage(error),
 				});
 			} finally {

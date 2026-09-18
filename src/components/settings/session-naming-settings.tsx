@@ -3,6 +3,7 @@ import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { listConnectionCatalog } from "@/lib/connections";
+import { userErrorMessage } from "@/lib/app-error";
 import {
 	getCachedProjectPiModels,
 	hydrateProjectPiModels,
@@ -72,7 +73,7 @@ export function SessionNamingSettings() {
 			.catch((error) => {
 				if (active) {
 					toast.error("读取会话命名设置失败", {
-						description: String(error),
+						description: userErrorMessage(error),
 					});
 				}
 			})
@@ -116,7 +117,9 @@ export function SessionNamingSettings() {
 				return next;
 			});
 		} catch (error) {
-			toast.error("保存会话命名模型失败", { description: String(error) });
+			toast.error("保存会话命名模型失败", {
+				description: userErrorMessage(error),
+			});
 		} finally {
 			setBusyConnectionId(null);
 		}
@@ -136,7 +139,9 @@ export function SessionNamingSettings() {
 			setModelRevision((value) => value + 1);
 			toast.success("模型列表已刷新");
 		} catch (error) {
-			toast.error("刷新模型失败", { description: String(error) });
+			toast.error("刷新模型失败", {
+				description: userErrorMessage(error),
+			});
 		} finally {
 			setBusyConnectionId(null);
 		}

@@ -22,6 +22,7 @@ import { Button, EmptyState, Input } from "@/ui";
 export function PreviewPanel({ project }: { project: Project }) {
 	const [ports, setPorts] = useState<number[]>([]);
 	const [portText, setPortText] = useState("");
+	const [portError, setPortError] = useState<string | null>(null);
 	const [preview, setPreview] = useState<PreviewInfo | null>(null);
 	const [loadingPorts, setLoadingPorts] = useState(false);
 	const [opening, setOpening] = useState(false);
@@ -57,9 +58,10 @@ export function PreviewPanel({ project }: { project: Project }) {
 		async (portOverride?: number) => {
 			const port = portOverride ?? Number(portText);
 			if (!Number.isInteger(port) || port < 1 || port > 65535) {
-				toast.error("请输入有效端口");
+				setPortError("端口需为 1–65535 之间的整数。");
 				return;
 			}
+			setPortError(null);
 			setOpening(true);
 			try {
 				if (preview) await closeProjectPreview(preview.id);
@@ -94,8 +96,13 @@ export function PreviewPanel({ project }: { project: Project }) {
 						min={1}
 						max={65535}
 						value={portText}
-						onChange={(event) => setPortText(event.target.value)}
+						onChange={(event) => {
+							setPortText(event.target.value);
+							if (portError) setPortError(null);
+						}}
 						placeholder="端口，例如 3000"
+						aria-invalid={portError ? true : undefined}
+						aria-describedby={portError ? "preview-port-error" : undefined}
 						className="h-7 min-w-0 flex-1 text-xs"
 					/>
 					<Button
@@ -124,7 +131,15 @@ export function PreviewPanel({ project }: { project: Project }) {
 						/>
 					</Button>
 				</div>
-				{ports.length > 0 ? (
+				{portError ? (
+					<p
+						id="preview-port-error"
+						className="text-xs text-destructive"
+						role="alert"
+					>
+						{portError}
+					</p>
+				) : ports.length > 0 ? (
 					<div className="flex flex-wrap gap-1">
 						{ports.map((port) => (
 							<button

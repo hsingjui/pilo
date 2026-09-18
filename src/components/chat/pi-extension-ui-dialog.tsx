@@ -90,10 +90,9 @@ function PiExtensionUiDialogContent({
 				) : null}
 
 				<DialogFooter>
-					<Button variant="ghost" onClick={cancel}>
-						取消
-					</Button>
 					{request.method === "confirm" ? (
+						/* confirm 协议需要区分“显式否”（confirmed: false）与“直接关闭”
+						   （cancelled），否不能合并进取消；取消由 Esc / 关闭按钮承担。 */
 						<>
 							<Button
 								variant="outline"
@@ -103,9 +102,16 @@ function PiExtensionUiDialogContent({
 							</Button>
 							<Button onClick={() => onRespond({ confirmed: true })}>是</Button>
 						</>
-					) : request.method === "input" || request.method === "editor" ? (
-						<Button onClick={() => onRespond({ value })}>确定</Button>
-					) : null}
+					) : (
+						<>
+							<Button variant="ghost" onClick={cancel}>
+								取消
+							</Button>
+							{request.method === "input" || request.method === "editor" ? (
+								<Button onClick={() => onRespond({ value })}>确定</Button>
+							) : null}
+						</>
+					)}
 				</DialogFooter>
 			</DialogContent>
 		</Dialog>

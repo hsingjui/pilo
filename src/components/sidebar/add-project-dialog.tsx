@@ -205,7 +205,9 @@ export function AddProjectDialog({
 									</div>
 								) : directories.length === 0 ? (
 									<div className="px-3 py-6 text-center text-xs text-muted-foreground">
-										没有匹配的文件夹
+										{filter.trim()
+											? `没有匹配“${filter.trim()}”的文件夹`
+											: "没有文件夹"}
 									</div>
 								) : (
 									directories.map((entry) => {

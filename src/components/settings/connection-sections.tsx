@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 
 import { listWslDistributions, type WslDistribution } from "@/lib/connections";
+import { userErrorMessage } from "@/lib/app-error";
 import type { Connection } from "@/lib/pi-runtime";
 import { connectionLabel } from "@/lib/projects";
 import { IS_WINDOWS } from "@/components/title-bar";
@@ -118,8 +119,8 @@ export function ConnectionRow({
 					className={SETTINGS_ICON_BUTTON_CLASS}
 					disabled={busy}
 					onClick={onProbePi}
-					aria-label="检测 PI"
-					title="检测 PI"
+					aria-label="检测 Pi"
+					title="检测 Pi"
 				>
 					<Search />
 				</Button>
@@ -225,7 +226,7 @@ export function ConnectionSettingsDialog({
 				<DialogHeader>
 					<DialogTitle>连接设置</DialogTitle>
 					<DialogDescription>
-						修改显示名称，并为这个连接指定 PI 可执行文件。留空时自动从目标环境
+						修改显示名称，并为这个连接指定 Pi 可执行文件。留空时自动从目标环境
 						PATH 检测。
 					</DialogDescription>
 				</DialogHeader>
@@ -243,7 +244,7 @@ export function ConnectionSettingsDialog({
 							/>
 						</label>
 						<label htmlFor="connection-pi-path" className="grid gap-1 text-xs">
-							PI 路径
+							Pi 路径
 							<div className="flex gap-2">
 								<Input
 									id="connection-pi-path"
@@ -353,7 +354,9 @@ export function WslDistributionDialog({
 			.catch((error) => {
 				if (cancelled) return;
 				setDistributions([]);
-				toast.error("读取 WSL 发行版失败", { description: String(error) });
+				toast.error("读取 WSL 发行版失败", {
+					description: userErrorMessage(error),
+				});
 			});
 		return () => {
 			cancelled = true;

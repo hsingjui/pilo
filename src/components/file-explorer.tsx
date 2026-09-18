@@ -260,7 +260,11 @@ export function FileExplorer({
 							))}
 						</ul>
 					) : (
-						<EmptyState variant="compact" title="没有匹配文件" />
+						<EmptyState
+							variant="compact"
+							title="没有匹配文件"
+							description={`未找到与“${query.trim()}”匹配的文件`}
+						/>
 					)
 				) : root?.error ? (
 					<ErrorState

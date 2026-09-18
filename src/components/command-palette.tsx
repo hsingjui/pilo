@@ -61,7 +61,7 @@ function indexedTitle(session: SessionIndexEntry) {
 		session.titleOverride ??
 		session.name ??
 		session.firstUserMessagePreview ??
-		"新对话"
+		"新会话"
 	);
 }
 
