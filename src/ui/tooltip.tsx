@@ -7,7 +7,26 @@ const TooltipProvider = TooltipPrimitive.Provider;
 
 const Tooltip = TooltipPrimitive.Root;
 
-const TooltipTrigger = TooltipPrimitive.Trigger;
+// Radix 在 trigger 聚焦时会零延迟打开 tooltip（绕过 delayDuration）。
+// 浏览器切回窗口时会给原聚焦元素补发 focus，鼠标点击留下的焦点同理，
+// 导致切回应用时 tooltip 自动弹出。这里只放行键盘焦点（focus-visible），
+// 其余 focus 通过 preventDefault 阻止 Radix 内部的打开逻辑。
+const TooltipTrigger = React.forwardRef<
+	React.ElementRef<typeof TooltipPrimitive.Trigger>,
+	React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Trigger>
+>((props, ref) => (
+	<TooltipPrimitive.Trigger
+		ref={ref}
+		{...props}
+		onFocus={(event) => {
+			if (!event.currentTarget.matches(":focus-visible")) {
+				event.preventDefault();
+			}
+			props.onFocus?.(event);
+		}}
+	/>
+));
+TooltipTrigger.displayName = TooltipPrimitive.Trigger.displayName;
 
 const TooltipContent = React.forwardRef<
 	React.ElementRef<typeof TooltipPrimitive.Content>,
