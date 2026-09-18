@@ -32,6 +32,8 @@
 	--color-muted-foreground: hsl(var(--muted-foreground));
 	--color-hover: hsl(var(--hover));
 	--color-hover-foreground: hsl(var(--hover-foreground));
+	--color-accent: hsl(var(--hover));
+	--color-sidebar-accent: hsl(var(--sidebar-hover));
 	--color-destructive: hsl(var(--destructive));
 	--color-destructive-foreground: hsl(var(--destructive-foreground));
 	--color-border: hsl(var(--border));
@@ -275,6 +277,14 @@
 		height: 100%;
 		/* 禁用 macOS WKWebView 弹性滚动：两指拖动不再能把整页拉走 */
 		overscroll-behavior: none;
+	}
+
+	/* 换肤瞬间挂到 <html> 上：颜色/边框/阴影过渡全部禁用一帧，避免整页拖影。 */
+	.pilo-theme-switch,
+	.pilo-theme-switch *,
+	.pilo-theme-switch *::before,
+	.pilo-theme-switch *::after {
+		transition: none !important;
 	}
 
 	body {

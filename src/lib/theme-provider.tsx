@@ -5,6 +5,7 @@ import {
 	useEffect,
 	useLayoutEffect,
 	useMemo,
+	useRef,
 	useState,
 } from "react";
 
@@ -55,6 +56,9 @@ export function ThemeProvider({
 
 	const resolvedTheme: ResolvedTheme = theme === "system" ? systemTheme : theme;
 
+	// null = 尚未应用过主题（首次挂载不做过渡抑制）。
+	const appliedThemeRef = useRef<ResolvedTheme | null>(null);
+
 	useEffect(() => {
 		const media = window.matchMedia("(prefers-color-scheme: dark)");
 		const onChange = () => setSystemTheme(getSystemTheme());
@@ -64,9 +68,29 @@ export function ThemeProvider({
 
 	useLayoutEffect(() => {
 		const root = window.document.documentElement;
+		// 主题翻转会让几乎所有元素的颜色/边框/阴影同时变化，任由过渡播放会整页拖影。
+		// 先挂上禁用类、强制 reflow，翻转后在下一帧移除，让后续交互恢复过渡。
+		const switching =
+			appliedThemeRef.current !== null &&
+			appliedThemeRef.current !== resolvedTheme;
+		appliedThemeRef.current = resolvedTheme;
+
+		if (switching) {
+			root.classList.add("pilo-theme-switch");
+			void document.body.offsetWidth;
+		}
+
 		root.classList.remove("light", "dark");
 		root.classList.add(resolvedTheme);
 		root.style.colorScheme = theme === "system" ? "light dark" : resolvedTheme;
+
+		if (switching) {
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => {
+					root.classList.remove("pilo-theme-switch");
+				});
+			});
+		}
 	}, [resolvedTheme, theme]);
 
 	const setTheme = useCallback(

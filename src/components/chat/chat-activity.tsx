@@ -367,7 +367,7 @@ function ToolDetail({ activity }: { activity: ToolCallActivity }) {
 							key={image.key}
 							src={`data:${image.mimeType};base64,${image.data}`}
 							alt="工具结果图像"
-							className="max-h-80 max-w-full rounded-md object-contain"
+							className="max-h-80 max-w-full rounded-md object-contain outline-1 outline-black/10 dark:outline-white/10"
 						/>
 					))}
 		</div>
@@ -525,7 +525,7 @@ export function AssistantActivityView({
 				<ChevronRight
 					className={cn(
 						PROCESS_ICON_CLASS,
-						"transition-transform duration-200",
+						"transition-transform duration-150 ease-out",
 						groupOpen && "rotate-90",
 					)}
 				/>
@@ -575,7 +575,7 @@ export function AssistantActivityView({
 						<ChevronRight
 							className={cn(
 								PROCESS_ICON_CLASS,
-								"transition-transform duration-200",
+								"transition-transform duration-150 ease-out",
 								workOpen && "rotate-90",
 							)}
 						/>

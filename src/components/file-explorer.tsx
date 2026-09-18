@@ -76,7 +76,7 @@ function FileTreeRow({
 				{directory ? (
 					<ChevronRight
 						className={cn(
-							"size-3 shrink-0 transition-transform",
+							"size-3 shrink-0 transition-transform duration-150 ease-out",
 							expanded && "rotate-90",
 						)}
 					/>

@@ -35,7 +35,7 @@ const CommandDialog = ({
 		>
 			<Command
 				shouldFilter={shouldFilter}
-				className="rounded-xl border border-border/60 shadow-2xl"
+				className="rounded-xl border border-border shadow-popover"
 			>
 				{children}
 			</Command>

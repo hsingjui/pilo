@@ -56,11 +56,11 @@ export function ComposerActions({
 								type="button"
 								variant="ghost"
 								size="icon"
-								className="size-7 rounded-full bg-foreground text-background shadow-xs transition-all hover:bg-foreground/90 hover:text-background active:translate-y-px"
+								className="size-7 rounded-full bg-foreground text-background transition-[background-color,scale] duration-100 enabled:hover:bg-foreground/85 active:scale-[0.96]"
 								aria-label="停止"
 								onClick={onStop}
 							>
-								<Square className="size-2.5 fill-current" />
+								<Square className="size-3 fill-current" />
 							</Button>
 						</TooltipTrigger>
 						<TooltipContent>停止</TooltipContent>

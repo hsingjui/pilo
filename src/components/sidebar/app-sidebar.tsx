@@ -121,7 +121,7 @@ function SortableProjectBlock({
 				position: "relative",
 				zIndex: isDragging ? 20 : undefined,
 			}}
-			className="grid w-full min-w-0 gap-px overflow-visible rounded-md will-change-transform"
+			className="grid w-full min-w-0 gap-px overflow-visible rounded-md"
 		>
 			<div
 				ref={setActivatorNodeRef}
@@ -466,7 +466,7 @@ export function AppSidebar({
 						: "overflow-visible opacity-100",
 				)}
 			>
-				<div className="relative mb-2 ml-2 mr-1 mt-2 flex h-[calc(100%_-_1rem)] w-[calc(100%-12px)] flex-col overflow-hidden rounded-xl border border-sidebar-border/80 bg-sidebar p-[2px] text-sidebar-foreground shadow-[0_1px_4px_-1px_rgba(0,0,0,0.18)]">
+				<div className="relative mb-2 ml-2 mr-1 mt-2 flex h-[calc(100%_-_1rem)] w-[calc(100%-12px)] flex-col overflow-hidden rounded-xl border border-sidebar-border/80 bg-sidebar p-[2px] text-sidebar-foreground shadow-sm">
 					<header
 						data-tauri-drag-region="deep"
 						className={cn(
@@ -515,7 +515,7 @@ export function AppSidebar({
 						) : (
 							<button
 								type="button"
-								className="group flex w-full select-none items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring dark:text-sidebar-foreground/75"
+								className="group flex w-full select-none items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring dark:text-sidebar-foreground/75"
 								onClick={() => onNewChat?.()}
 							>
 								<span className="flex h-5 w-5 shrink-0 items-center justify-center text-current">
@@ -695,10 +695,10 @@ export function AppSidebar({
 						className={cn(
 							"absolute -right-0.5 top-2 z-20 h-[calc(100%-1rem)] w-3 cursor-col-resize bg-transparent",
 							"focus-visible:outline-hidden",
-							"after:absolute after:right-[5px] after:top-3 after:bottom-3 after:w-[2px] after:rounded-full after:bg-transparent after:transition-colors after:duration-150",
+							"after:absolute after:right-[5px] after:top-3 after:bottom-3 after:w-[2px] after:rounded-full after:bg-transparent",
 							resizing
 								? "after:bg-sidebar-ring/70"
-								: "hover:after:bg-sidebar-ring/50 hover:after:delay-150 focus-visible:after:bg-sidebar-ring",
+								: "hover:after:bg-sidebar-ring/50 focus-visible:after:bg-sidebar-ring",
 						)}
 					/>
 				)}

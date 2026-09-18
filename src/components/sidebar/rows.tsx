@@ -298,7 +298,7 @@ export function ProjectRow({
 						<Folder className="absolute left-0 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-current opacity-80 transition-opacity duration-100 group-hover:opacity-0" />
 						<ChevronDown
 							className={cn(
-								"absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 text-current transition-[opacity,transform] duration-100",
+								"absolute left-0 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-current transition-[opacity,transform] duration-150 ease-out",
 								"opacity-0 group-hover:opacity-100",
 								collapsed ? "-rotate-90" : "rotate-0",
 							)}
@@ -543,7 +543,7 @@ export const SessionRow = memo(function SessionRow({
 								{session.active ? (
 									<LoaderCircle
 										className={cn(
-											"size-3 animate-spin",
+											"size-3.5 animate-spin",
 											session.externalActive
 												? "text-muted-foreground"
 												: "text-sidebar-primary",

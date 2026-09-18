@@ -22,7 +22,7 @@ export function ProjectSessionsToolbar({
 			<div className="flex min-w-0 items-center gap-1">
 				<button
 					type="button"
-					className="group flex min-w-0 flex-1 select-none items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring dark:text-sidebar-foreground/75"
+					className="group flex min-w-0 flex-1 select-none items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring dark:text-sidebar-foreground/75"
 					onClick={onBack}
 				>
 					<ArrowLeft className="h-4 w-4 shrink-0" />

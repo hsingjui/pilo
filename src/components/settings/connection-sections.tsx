@@ -42,14 +42,10 @@ import {
 
 function ConnectionIcon({ kind }: { kind: Connection["kind"] }) {
 	if (kind.type === "local")
-		return (
-			<Laptop className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-		);
+		return <Laptop className="size-3.5" aria-hidden="true" />;
 	if (kind.type === "wsl")
-		return (
-			<Monitor className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-		);
-	return <Server className="size-3.5" strokeWidth={1.75} aria-hidden="true" />;
+		return <Monitor className="size-3.5" aria-hidden="true" />;
+	return <Server className="size-3.5" aria-hidden="true" />;
 }
 
 type ConnectionRowProps = {
@@ -224,7 +220,7 @@ export function ConnectionSettingsDialog({
 		<Dialog open={draft !== null} onOpenChange={(open) => !open && onClose()}>
 			<DialogContent
 				overlayClassName={SETTINGS_NESTED_DIALOG_OVERLAY_CLASS}
-				className="max-w-md gap-4 shadow-popover"
+				className="max-w-md gap-4"
 			>
 				<DialogHeader>
 					<DialogTitle>连接设置</DialogTitle>
@@ -368,7 +364,7 @@ export function WslDistributionDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent
 				overlayClassName={SETTINGS_NESTED_DIALOG_OVERLAY_CLASS}
-				className="max-w-md gap-4 shadow-popover"
+				className="max-w-md gap-4"
 			>
 				<DialogHeader>
 					<DialogTitle>添加 WSL 发行版</DialogTitle>

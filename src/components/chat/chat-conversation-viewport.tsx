@@ -486,7 +486,7 @@ const ChatConversationViewportImpl = forwardRef<
 									type="button"
 									variant="secondary"
 									size="icon"
-									className="pointer-events-auto size-8 rounded-full border border-border/70 shadow-lg transition-[scale] duration-100 active:scale-[0.96]"
+									className="pointer-events-auto size-8 rounded-full border border-border/70 shadow-md transition-[scale] duration-100 active:scale-[0.96]"
 									onClick={() => scrollToBottom(false)}
 									aria-label="滚动到最新消息"
 								>

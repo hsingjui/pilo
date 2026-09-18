@@ -224,7 +224,7 @@ export function RightSidebar({
 						>
 							<RefreshCw
 								className={cn(
-									"size-3.5",
+									"size-4",
 									loadState === "loading" && "animate-spin",
 								)}
 							/>
@@ -299,7 +299,7 @@ export function RightSidebar({
 									type="button"
 									aria-pressed={mode === value}
 									className={cn(
-										"rounded-md px-2 py-1 text-xs text-muted-foreground",
+										"rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
 										mode === value && "bg-muted font-medium text-foreground",
 									)}
 									onClick={() => setMode(value)}

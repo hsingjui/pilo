@@ -592,10 +592,7 @@ export function SettingsDialog({
 															)}
 															onClick={() => setActiveTab(tab.id)}
 														>
-															<Icon
-																className="h-4 w-4 shrink-0 opacity-80"
-																strokeWidth={1.75}
-															/>
+															<Icon className="h-4 w-4 shrink-0 opacity-80" />
 															<span className="truncate">{tab.label}</span>
 														</button>
 													);

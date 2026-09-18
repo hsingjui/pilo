@@ -174,7 +174,7 @@ export function AboutSettings() {
 		<div className={SETTINGS_CONTAINER_CLASS}>
 			<section className="overflow-hidden rounded-lg border border-border/70 bg-card/60 text-sm shadow-none">
 				<div className="flex items-center gap-4 px-4 py-4 sm:px-5 sm:py-5">
-					<div className="size-16 shrink-0 overflow-hidden rounded-[18px] border border-border/60 bg-background shadow-sm">
+					<div className="size-16 shrink-0 overflow-hidden rounded-2xl border border-border/60 bg-background shadow-sm">
 						<img
 							src={appIconUrl}
 							alt="Pilo Logo"

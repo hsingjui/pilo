@@ -214,7 +214,7 @@ export function AddProjectDialog({
 											<button
 												type="button"
 												key={entry.path}
-												className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted/50"
+												className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted/50"
 												onClick={() => void loadDirectory(entryPath)}
 											>
 												<Folder className="h-4 w-4 shrink-0 text-muted-foreground" />

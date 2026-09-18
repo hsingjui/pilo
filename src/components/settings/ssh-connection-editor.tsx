@@ -41,7 +41,7 @@ export function SshConnectionEditor({
 		<Dialog open={editing !== null} onOpenChange={(open) => !open && onClose()}>
 			<DialogContent
 				overlayClassName={SETTINGS_NESTED_DIALOG_OVERLAY_CLASS}
-				className="max-w-lg gap-4 shadow-popover"
+				className="max-w-lg gap-4"
 			>
 				<DialogHeader>
 					<DialogTitle>

@@ -115,7 +115,7 @@ function CollapsibleMessageBody({
 				>
 					<ChevronDown
 						className={cn(
-							"size-3 transition-transform",
+							"size-3 transition-transform duration-150 ease-out",
 							expanded && "rotate-180",
 						)}
 					/>
@@ -250,7 +250,7 @@ function AssistantWorkedRegion({
 			>
 				<ChevronRight
 					className={cn(
-						"size-3.5 shrink-0 transition-transform duration-200",
+						"size-3.5 shrink-0 transition-transform duration-150 ease-out",
 						open && "rotate-90",
 					)}
 				/>

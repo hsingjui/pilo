@@ -41,7 +41,7 @@ function UserMessageBody({ text }: { text: string }) {
 				>
 					<ChevronDown
 						className={cn(
-							"size-3 transition-transform",
+							"size-3 transition-transform duration-150 ease-out",
 							expanded && "rotate-180",
 						)}
 					/>
@@ -74,7 +74,7 @@ export const UserMessage = memo(function UserMessage({
 					</div>
 					<div className="flex min-w-0 max-w-full justify-end">
 						<div
-							className="min-w-0 max-w-full rounded-[1.15rem] border border-foreground/[0.08] bg-foreground/[0.05] px-3.5 py-2 leading-6 text-foreground sm:rounded-2xl sm:px-4 sm:py-2.5"
+							className="min-w-0 max-w-full rounded-2xl border border-foreground/[0.08] bg-foreground/[0.05] px-3.5 py-2 leading-6 text-foreground sm:px-4 sm:py-2.5"
 							style={{ fontSize: `${pageFontSize}px` }}
 						>
 							{message.images && message.images.length > 0 ? (

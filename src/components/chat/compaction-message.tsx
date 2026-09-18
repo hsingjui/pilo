@@ -42,7 +42,7 @@ export const CompactionMessage = memo(function CompactionMessage({
 						{summary.length > 0 ? (
 							<ChevronRight
 								className={cn(
-									"size-3.5 shrink-0 transition-transform",
+									"size-3.5 shrink-0 transition-transform duration-150 ease-out",
 									expanded && "rotate-90",
 								)}
 							/>

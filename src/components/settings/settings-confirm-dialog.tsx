@@ -45,7 +45,7 @@ export function SettingsConfirmDialog({
 		>
 			<DialogContentWithoutClose
 				overlayClassName={SETTINGS_NESTED_DIALOG_OVERLAY_CLASS}
-				className="w-[min(400px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden p-0 shadow-popover sm:max-w-none sm:p-0"
+				className="w-[min(400px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none sm:p-0"
 			>
 				<DialogHeader className="px-5 pb-3 pt-4 text-left">
 					<DialogTitle className="text-sm font-semibold">{title}</DialogTitle>

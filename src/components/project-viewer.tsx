@@ -187,7 +187,7 @@ export function ProjectViewer({
 							</button>
 							<button
 								type="button"
-								className="mr-1 rounded p-0.5 opacity-0 hover:bg-muted group-hover/tab:opacity-100 focus-visible:opacity-100"
+								className="mr-1 rounded p-0.5 opacity-0 transition-opacity duration-100 hover:bg-muted group-hover/tab:opacity-100 focus-visible:opacity-100"
 								aria-label={`关闭 ${fileName(tab.path)}`}
 								onClick={() => closeTab(tab.path)}
 							>

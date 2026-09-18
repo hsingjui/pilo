@@ -35,7 +35,7 @@ const DialogOverlay = React.forwardRef<
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const dialogBaseClasses =
-	"fixed left-[50%] top-[calc(50%+(var(--safe-area-top,0px)-var(--safe-area-bottom,0px))/2)] z-[var(--z-dialog)] grid w-[calc(100vw-4rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-border bg-background p-4 shadow-lg rounded-lg max-h-[calc(100vh-2rem-var(--safe-area-top,0px)-var(--safe-area-bottom,0px))] sm:p-6";
+	"fixed left-[50%] top-[calc(50%+(var(--safe-area-top,0px)-var(--safe-area-bottom,0px))/2)] z-[var(--z-dialog)] grid w-[calc(100vw-4rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border border-border bg-background p-4 shadow-popover rounded-lg max-h-[calc(100vh-2rem-var(--safe-area-top,0px)-var(--safe-area-bottom,0px))] sm:p-6";
 
 const dialogAnimationClasses =
 	"duration-100 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0";

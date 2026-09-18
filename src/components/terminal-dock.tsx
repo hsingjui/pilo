@@ -459,7 +459,7 @@ export function TerminalDock({
 						</button>
 						<button
 							type="button"
-							className="mr-1 rounded p-1.5 opacity-0 hover:bg-background group-hover/tab:opacity-100 focus-visible:opacity-100"
+							className="mr-1 rounded p-1.5 opacity-0 transition-opacity duration-100 hover:bg-background group-hover/tab:opacity-100 focus-visible:opacity-100"
 							aria-label="关闭 Terminal"
 							onClick={() => closeTab(tab.id)}
 						>

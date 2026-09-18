@@ -57,11 +57,11 @@ export function ChatPendingQueue({
 											type="button"
 											variant="ghost"
 											size="icon"
-											className="size-6 rounded-md"
+											className="size-7 rounded-md"
 											aria-label="取回编辑"
 											onClick={() => onEdit?.(item)}
 										>
-											<Pencil className="size-3" />
+											<Pencil className="size-3.5" />
 										</Button>
 									</TooltipTrigger>
 									<TooltipContent>取回编辑</TooltipContent>
@@ -72,11 +72,11 @@ export function ChatPendingQueue({
 											type="button"
 											variant="ghost"
 											size="icon"
-											className="size-6 rounded-md"
+											className="size-7 rounded-md"
 											aria-label="立即发送"
 											onClick={() => onSendNow?.(item)}
 										>
-											<Send className="size-3" />
+											<Send className="size-3.5" />
 										</Button>
 									</TooltipTrigger>
 									<TooltipContent>打断当前 Agent 并立即发送</TooltipContent>

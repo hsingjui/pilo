@@ -55,6 +55,9 @@ const DropdownMenuSubTrigger = React.forwardRef<
 DropdownMenuSubTrigger.displayName =
 	DropdownMenuPrimitive.SubTrigger.displayName;
 
+const dropdownMenuAnimationClasses =
+	"data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 motion-safe:data-[state=closed]:zoom-out-95 motion-safe:data-[state=open]:zoom-in-95 motion-safe:data-[side=bottom]:slide-in-from-top-2 motion-safe:data-[side=left]:slide-in-from-right-2 motion-safe:data-[side=right]:slide-in-from-left-2 motion-safe:data-[side=top]:slide-in-from-bottom-2 origin-(--radix-dropdown-menu-content-transform-origin)";
+
 const DropdownMenuSubContent = React.forwardRef<
 	React.ElementRef<typeof DropdownMenuPrimitive.SubContent>,
 	React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>
@@ -65,6 +68,7 @@ const DropdownMenuSubContent = React.forwardRef<
 		style={{ ...menuSurfaceStyle, ...style }}
 		className={cn(
 			"scroll-pro scrollbar-pro [scrollbar-gutter:auto] z-[var(--z-popover)] max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto overflow-x-hidden",
+			dropdownMenuAnimationClasses,
 			menuSurfaceClassName,
 			className,
 		)}
@@ -90,6 +94,7 @@ const DropdownMenuContent = React.forwardRef<
 				style={{ ...menuSurfaceStyle, ...style }}
 				className={cn(
 					"scroll-pro scrollbar-pro [scrollbar-gutter:auto] z-[var(--z-popover)] max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto overflow-x-hidden",
+					dropdownMenuAnimationClasses,
 					menuSurfaceClassName,
 					className,
 				)}
