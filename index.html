@@ -98,29 +98,63 @@
 				border-radius: 12px;
 				background: var(--boot-panel);
 				box-shadow: 0 1px 4px -1px rgb(0 0 0 / 0.12);
+				box-sizing: border-box;
 				overflow: hidden;
 			}
 			.pilo-boot-sidebar-inner {
 				display: flex;
 				height: 100%;
 				flex-direction: column;
-				padding: 10px 9px 9px;
+				padding: 2px;
 				box-sizing: border-box;
 			}
-			.pilo-macos .pilo-boot-sidebar-inner {
-				padding-top: 34px;
+			.pilo-boot-sidebar-header {
+				position: relative;
+				display: flex;
+				flex: 0 0 auto;
+				align-items: center;
+				height: 44px;
+				padding: 0 6px;
+				box-sizing: border-box;
 			}
-			.pilo-boot-sidebar-top {
+			.pilo-macos .pilo-boot-sidebar-header {
+				height: 72px;
+				padding-top: 28px;
+			}
+			.pilo-boot-brand {
+				width: 36px;
+				height: 16px;
+				margin-left: 8px;
+				border-radius: 5px;
+				background: var(--boot-line-strong);
+			}
+			.pilo-boot-header-actions {
+				position: absolute;
+				right: 6px;
+				top: 8px;
 				display: flex;
 				align-items: center;
-				gap: 8px;
-				height: 34px;
-				padding: 0 7px;
+				gap: 2px;
 			}
-			.pilo-boot-avatar {
-				width: 20px;
-				height: 20px;
-				border-radius: 6px;
+			.pilo-macos .pilo-boot-header-actions {
+				top: -2px;
+			}
+			.pilo-boot-header-button,
+			.pilo-boot-footer-button {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				box-sizing: border-box;
+			}
+			.pilo-boot-header-button {
+				width: 28px;
+				height: 28px;
+			}
+			.pilo-boot-header-icon,
+			.pilo-boot-footer-icon {
+				width: 16px;
+				height: 16px;
+				border-radius: 5px;
 				background: var(--boot-line-strong);
 			}
 			.pilo-boot-line {
@@ -128,82 +162,141 @@
 				border-radius: 999px;
 				background: var(--boot-line);
 			}
-			.pilo-boot-sidebar-top .pilo-boot-line {
-				width: 72px;
+			.pilo-boot-new-chat-wrap {
+				margin-top: -4px;
+				padding: 0 6px;
 			}
-			.pilo-boot-actions {
-				display: grid;
-				gap: 5px;
-				margin-top: 7px;
-			}
-			.pilo-boot-action,
-			.pilo-boot-session {
+			.pilo-boot-new-chat {
 				display: flex;
 				align-items: center;
 				gap: 8px;
-				height: 30px;
+				height: 32px;
 				padding: 0 8px;
 				box-sizing: border-box;
 			}
-			.pilo-boot-icon {
+			.pilo-boot-row-icon {
 				width: 16px;
 				height: 16px;
 				border-radius: 5px;
 				background: var(--boot-line-strong);
 				flex: 0 0 auto;
 			}
-			.pilo-boot-action .pilo-boot-line {
-				width: 86px;
+			.pilo-boot-new-chat .pilo-boot-line {
+				width: 64px;
 			}
-			.pilo-boot-search {
-				height: 30px;
-				margin: 7px 2px 10px;
-				border: 1px solid var(--boot-panel-border);
-				border-radius: 8px;
-				background: var(--boot-bg);
-			}
-			.pilo-boot-section-title {
-				width: 54px;
-				margin: 8px 8px 5px;
-			}
-			.pilo-boot-sessions {
-				display: grid;
-				gap: 2px;
-			}
-			.pilo-boot-session .pilo-boot-line:nth-child(2) {
-				width: 124px;
-			}
-			.pilo-boot-session:nth-child(2) .pilo-boot-line:nth-child(2) {
-				width: 152px;
-			}
-			.pilo-boot-session:nth-child(3) .pilo-boot-line:nth-child(2) {
-				width: 96px;
-			}
-			.pilo-boot-session:nth-child(4) .pilo-boot-line:nth-child(2) {
-				width: 138px;
-			}
-			.pilo-boot-sidebar-spacer {
+			.pilo-boot-sidebar-scroll {
+				min-height: 0;
+				min-width: 0;
 				flex: 1;
+				margin-top: 8px;
+				padding: 0 10px 12px 6px;
+				box-sizing: border-box;
+				overflow: hidden;
+			}
+			.pilo-boot-sidebar-list {
+				padding-top: 4px;
+			}
+			.pilo-boot-env-row,
+			.pilo-boot-project-row,
+			.pilo-boot-session-row {
+				display: flex;
+				width: 100%;
+				align-items: center;
+				box-sizing: border-box;
+			}
+			.pilo-boot-env-row {
+				height: 28px;
+				gap: 8px;
+				padding: 0 8px;
+			}
+			.pilo-boot-env-row .pilo-boot-line {
+				width: 34px;
+			}
+			.pilo-boot-project-row {
+				height: 30px;
+				margin-top: 2px;
+				gap: 8px;
+				padding: 0 12px 0 8px;
+			}
+			.pilo-boot-project-row .pilo-boot-line {
+				width: 76px;
+			}
+			.pilo-boot-session-row {
+				height: 30px;
+				gap: 6px;
+				padding: 0 8px;
+			}
+			.pilo-boot-session-slot {
+				width: 16px;
+				height: 16px;
+				flex: 0 0 auto;
+			}
+			.pilo-boot-session-row .pilo-boot-line {
+				width: 116px;
+			}
+			.pilo-boot-session-row:nth-of-type(4) .pilo-boot-line {
+				width: 148px;
+			}
+			.pilo-boot-session-row:nth-of-type(5) .pilo-boot-line {
+				width: 92px;
+			}
+			.pilo-boot-project-row-secondary {
+				margin-top: 10px;
 			}
 			.pilo-boot-footer {
 				display: flex;
-				gap: 8px;
-				padding: 5px 6px 2px;
+				flex: 0 0 auto;
+				align-items: center;
+				gap: 4px;
+				border-top: 1px solid var(--boot-panel-border);
+				padding: 4px 6px;
+				box-sizing: border-box;
 			}
-			.pilo-boot-footer .pilo-boot-icon {
-				width: 26px;
-				height: 26px;
-				border-radius: 7px;
+			.pilo-boot-footer-button {
+				width: 36px;
+				height: 36px;
+			}
+			.pilo-boot-footer-button:last-child {
+				margin-left: auto;
 			}
 			.pilo-boot-main {
 				position: relative;
+				display: flex;
 				min-width: 0;
+				flex-direction: column;
+				container-type: inline-size;
 				background: var(--boot-bg);
 			}
-			.pilo-boot-center {
-				position: absolute;
-				inset: 0 0 100px;
+			.pilo-boot-page {
+				position: relative;
 				display: flex;
+				min-height: 0;
+				flex: 1;
+				flex-direction: column;
+			}
+			.pilo-boot-content {
+				display: flex;
+				min-height: 0;
+				width: 100%;
+				flex: 1;
+				flex-direction: column;
+			}
+			.pilo-boot-center-column,
+			.pilo-boot-composer-column {
+				width: 80%;
+				margin-inline: auto;
+				box-sizing: border-box;
+				padding-inline: 16px;
+			}
+			.pilo-boot-center-column {
+				display: flex;
+				flex: 1;
+				align-items: center;
+				justify-content: center;
+			}
+			.pilo-boot-center {
+				display: flex;
+				width: min(234px, 100%);
 				flex-direction: column;
 				align-items: center;
 				justify-content: center;
@@ -220,43 +313,54 @@
 				fill: currentColor;
 			}
 			.pilo-boot-heading {
-				width: min(240px, 52%);
+				width: 100%;
 				height: 36px;
 				border-radius: 8px;
 				background: var(--boot-line);
 			}
+			.pilo-boot-composer-dock {
+				position: relative;
+				width: 100%;
+				flex: 0 0 auto;
+				margin-top: -16px;
+				box-sizing: border-box;
+				padding-bottom: 16px;
+			}
 			.pilo-boot-composer {
-				position: absolute;
-				left: 50%;
-				bottom: 8px;
-				width: min(44rem, calc(100% - 32px));
-				height: 92px;
-				transform: translateX(-50%);
+				position: relative;
+				display: flex;
+				width: 100%;
+				flex-direction: column;
+				gap: 4px;
 				border: 1px solid var(--boot-input-border);
 				border-radius: 12px;
 				background: var(--boot-input);
 				box-shadow: 0 1px 2px rgb(0 0 0 / 0.035);
 				box-sizing: border-box;
-				padding: 14px 12px 9px;
+				padding: 6px 8px;
+			}
+			.pilo-boot-composer-input {
+				height: 48px;
+				flex: 0 0 48px;
 			}
 			.pilo-boot-composer-line {
 				width: 42%;
 				height: 9px;
+				margin: 8px 4px 0;
 				border-radius: 999px;
 				background: var(--boot-line);
 			}
 			.pilo-boot-composer-toolbar {
-				position: absolute;
-				left: 10px;
-				right: 10px;
-				bottom: 8px;
 				display: flex;
+				height: 30px;
+				box-sizing: border-box;
 				align-items: center;
 				gap: 8px;
+				padding-top: 2px;
 			}
 			.pilo-boot-composer-button {
-				width: 27px;
-				height: 27px;
+				width: 28px;
+				height: 28px;
 				border-radius: 8px;
 				background: var(--boot-line);
 			}
@@ -268,15 +372,16 @@
 			}
 			.pilo-boot-composer-send {
 				margin-left: auto;
-				width: 27px;
-				height: 27px;
+				width: 28px;
+				height: 28px;
 				border-radius: 999px;
 				background: var(--boot-line-strong);
 			}
 			.pilo-boot-line,
-			.pilo-boot-icon,
-			.pilo-boot-avatar,
-			.pilo-boot-search,
+			.pilo-boot-brand,
+			.pilo-boot-header-icon,
+			.pilo-boot-row-icon,
+			.pilo-boot-footer-icon,
 			.pilo-boot-composer-line,
 			.pilo-boot-composer-button,
 			.pilo-boot-composer-model,
@@ -298,9 +403,10 @@
 					animation: none !important;
 				}
 			}
-			@media (max-width: 767px) {
-				.pilo-boot-composer {
-					width: calc(100% - 24px);
+			@container (max-width: 639px) {
+				.pilo-boot-center-column,
+				.pilo-boot-composer-column {
+					padding-inline: 12px;
 				}
 			}
 			@media (max-width: 639px) {
@@ -316,65 +422,92 @@
 		<div id="pilo-boot-shell" aria-hidden="true">
 			<aside class="pilo-boot-sidebar">
 				<div class="pilo-boot-sidebar-inner">
-					<div class="pilo-boot-sidebar-top">
-						<div class="pilo-boot-avatar"></div>
-						<div class="pilo-boot-line"></div>
-					</div>
-					<div class="pilo-boot-actions">
-						<div class="pilo-boot-action">
-							<div class="pilo-boot-icon"></div>
-							<div class="pilo-boot-line"></div>
+					<header class="pilo-boot-sidebar-header">
+						<div class="pilo-boot-brand"></div>
+						<div class="pilo-boot-header-actions">
+							<div class="pilo-boot-header-button">
+								<div class="pilo-boot-header-icon"></div>
+							</div>
+							<div class="pilo-boot-header-button">
+								<div class="pilo-boot-header-icon"></div>
+							</div>
 						</div>
-						<div class="pilo-boot-action">
-							<div class="pilo-boot-icon"></div>
-							<div class="pilo-boot-line"></div>
-						</div>
-					</div>
-					<div class="pilo-boot-search"></div>
-					<div class="pilo-boot-section-title pilo-boot-line"></div>
-					<div class="pilo-boot-sessions">
-						<div class="pilo-boot-session">
-							<div class="pilo-boot-icon"></div>
-							<div class="pilo-boot-line"></div>
-						</div>
-						<div class="pilo-boot-session">
-							<div class="pilo-boot-icon"></div>
-							<div class="pilo-boot-line"></div>
-						</div>
-						<div class="pilo-boot-session">
-							<div class="pilo-boot-icon"></div>
-							<div class="pilo-boot-line"></div>
-						</div>
-						<div class="pilo-boot-session">
-							<div class="pilo-boot-icon"></div>
+					</header>
+					<div class="pilo-boot-new-chat-wrap">
+						<div class="pilo-boot-new-chat">
+							<div class="pilo-boot-row-icon"></div>
 							<div class="pilo-boot-line"></div>
 						</div>
 					</div>
-					<div class="pilo-boot-sidebar-spacer"></div>
-					<div class="pilo-boot-footer">
-						<div class="pilo-boot-icon"></div>
-						<div class="pilo-boot-icon"></div>
-						<div class="pilo-boot-icon"></div>
+					<div class="pilo-boot-sidebar-scroll">
+						<div class="pilo-boot-sidebar-list">
+							<div class="pilo-boot-env-row">
+								<div class="pilo-boot-row-icon"></div>
+								<div class="pilo-boot-line"></div>
+							</div>
+							<div class="pilo-boot-project-row">
+								<div class="pilo-boot-row-icon"></div>
+								<div class="pilo-boot-line"></div>
+							</div>
+							<div class="pilo-boot-session-row">
+								<div class="pilo-boot-session-slot"></div>
+								<div class="pilo-boot-line"></div>
+							</div>
+							<div class="pilo-boot-session-row">
+								<div class="pilo-boot-session-slot"></div>
+								<div class="pilo-boot-line"></div>
+							</div>
+							<div class="pilo-boot-session-row">
+								<div class="pilo-boot-session-slot"></div>
+								<div class="pilo-boot-line"></div>
+							</div>
+							<div
+								class="pilo-boot-project-row pilo-boot-project-row-secondary"
+							>
+								<div class="pilo-boot-row-icon"></div>
+								<div class="pilo-boot-line"></div>
+							</div>
+						</div>
 					</div>
+					<footer class="pilo-boot-footer">
+						<div class="pilo-boot-footer-button">
+							<div class="pilo-boot-footer-icon"></div>
+						</div>
+						<div class="pilo-boot-footer-button">
+							<div class="pilo-boot-footer-icon"></div>
+						</div>
+					</footer>
 				</div>
 			</aside>
 			<main class="pilo-boot-main">
-				<div class="pilo-boot-center">
-					<svg class="pilo-boot-mark" viewBox="0 0 800 800">
-						<path
-							fill-rule="evenodd"
-							d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
-						></path>
-						<path d="M517.36 400H634.72V634.72H517.36Z"></path>
-					</svg>
-					<div class="pilo-boot-heading"></div>
-				</div>
-				<div class="pilo-boot-composer">
-					<div class="pilo-boot-composer-line"></div>
-					<div class="pilo-boot-composer-toolbar">
-						<div class="pilo-boot-composer-button"></div>
-						<div class="pilo-boot-composer-model"></div>
-						<div class="pilo-boot-composer-send"></div>
+				<div class="pilo-boot-page">
+					<div class="pilo-boot-content">
+						<div class="pilo-boot-center-column">
+							<div class="pilo-boot-center">
+								<svg class="pilo-boot-mark" viewBox="0 0 800 800">
+									<path
+										fill-rule="evenodd"
+										d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
+									></path>
+									<path d="M517.36 400H634.72V634.72H517.36Z"></path>
+								</svg>
+								<div class="pilo-boot-heading"></div>
+							</div>
+						</div>
+					</div>
+					<div class="pilo-boot-composer-dock">
+						<div class="pilo-boot-composer-column">
+							<div class="pilo-boot-composer">
+								<div class="pilo-boot-composer-input">
+									<div class="pilo-boot-composer-line"></div>
+								</div>
+								<div class="pilo-boot-composer-toolbar">
+									<div class="pilo-boot-composer-button"></div>
+									<div class="pilo-boot-composer-model"></div>
+									<div class="pilo-boot-composer-send"></div>
+								</div>
+							</div>
+						</div>
 					</div>
 				</div>
 			</main>

@@ -352,7 +352,7 @@ export function NewChatLanding({
 	);
 
 	return (
-		<div className="relative flex h-full min-w-0 flex-col">
+		<div className="@container relative flex h-full min-w-0 flex-col">
 			<SessionHeader
 				overlay
 				onOpenTerminal={onOpenTerminal}

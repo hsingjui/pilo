@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import type {
 	ChatUiState,
@@ -14,6 +14,7 @@ import {
 	type ChatSession,
 } from "@/components/chat/chat-page-utils";
 import { UserMessage } from "@/components/chat/chat-user-message";
+import { useScrollbarGutterWidth } from "@/components/chat/use-scrollbar-gutter";
 import {
 	summarizeChatImages,
 	type ChatImageAttachment,
@@ -28,11 +29,13 @@ function LoadingComposer({
 	uiStateKey,
 	readUiState,
 	writeUiState,
+	scrollbarWidth,
 }: {
 	projectId: string;
 	uiStateKey: string;
 	readUiState: (key: string) => ChatUiState;
 	writeUiState: (key: string, patch: ChatUiStatePatch) => void;
+	scrollbarWidth: number;
 }) {
 	const [draft, setDraft] = useState(() => readUiState(uiStateKey).draft);
 	const updateDraft = (value: string) => {
@@ -55,7 +58,10 @@ function LoadingComposer({
 	};
 
 	return (
-		<div className="relative -mt-4 w-full shrink-0 pb-4">
+		<div
+			className="relative z-20 -mt-4 w-full shrink-0 pb-4"
+			style={{ paddingRight: scrollbarWidth }}
+		>
 			<ConversationColumn className="relative">
 				<ChatComposer
 					value={draft}
@@ -97,6 +103,11 @@ export function ChatPageLoadingFallback({
 	onNewTemporaryChat?: () => void;
 	onExpandSidebar?: () => void;
 }) {
+	const scrollRef = useRef<HTMLDivElement>(null);
+	// 滚动区与真实页同样恒定预留 stable gutter，输入区同样补偿，
+	// 骨架 → 正文首帧切换才不会横向跳动。
+	const scrollbarWidth = useScrollbarGutterWidth(scrollRef);
+
 	const pendingMessage = useMemo(
 		() =>
 			initialMessage || initialImages.length > 0
@@ -112,7 +123,7 @@ export function ChatPageLoadingFallback({
 	);
 
 	return (
-		<div className="flex h-full min-w-0 flex-col bg-background">
+		<div className="@container flex h-full min-w-0 flex-col bg-background">
 			<SessionHeader
 				session={session}
 				onOpenTerminal={onOpenTerminal}
@@ -127,7 +138,10 @@ export function ChatPageLoadingFallback({
 				}
 			/>
 			<div className="relative flex min-h-0 flex-1 flex-col">
-				<div className="scrollbar-pro flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+				<div
+					ref={scrollRef}
+					className="chat-scrollbar flex min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto"
+				>
 					{session.sessionPath ? (
 						<ChatHistorySkeleton />
 					) : pendingMessage ? (
@@ -146,6 +160,7 @@ export function ChatPageLoadingFallback({
 					uiStateKey={uiStateKey}
 					readUiState={readUiState}
 					writeUiState={writeUiState}
+					scrollbarWidth={scrollbarWidth}
 				/>
 			</div>
 		</div>

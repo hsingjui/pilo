@@ -42,6 +42,7 @@ import {
 import { useChatRuntime } from "@/components/chat/use-chat-runtime";
 import { useChatSessionConfig } from "@/components/chat/use-chat-session-config";
 import { usePiSessionFeatures } from "@/components/chat/use-pi-session-features";
+import { useScrollbarGutterWidth } from "@/components/chat/use-scrollbar-gutter";
 import { userErrorMessage } from "@/lib/app-error";
 import { createChatSessionClient } from "@/lib/chat-session-client";
 import {
@@ -328,33 +329,7 @@ function ChatPageImpl(props: ChatPageProps) {
 	const scrollToBottom = useCallback((smooth = true) => {
 		conversationViewportRef.current?.scrollToBottom(smooth);
 	}, []);
-	// 输入区不在滚动容器内，需要补上与滚动条等宽的内边距才能和消息列左右对齐。
-	// 固定值在不同平台（overlay / thin / DPI 缩放）下并不一致，所以实测。
-	const [scrollbarWidth, setScrollbarWidth] = useState(0);
-	useLayoutEffect(() => {
-		if (!active) return;
-		const viewport = scrollRef.current;
-		if (!viewport) return;
-		let frame: number | null = null;
-		const measure = () => {
-			frame = null;
-			const nextWidth = viewport.offsetWidth - viewport.clientWidth;
-			setScrollbarWidth((currentWidth) =>
-				currentWidth === nextWidth ? currentWidth : nextWidth,
-			);
-		};
-		const scheduleMeasure = () => {
-			if (frame !== null) return;
-			frame = requestAnimationFrame(measure);
-		};
-		measure();
-		const observer = new ResizeObserver(scheduleMeasure);
-		observer.observe(viewport);
-		return () => {
-			observer.disconnect();
-			if (frame !== null) cancelAnimationFrame(frame);
-		};
-	}, [active, scrollRef]);
+	const scrollbarWidth = useScrollbarGutterWidth(scrollRef, active);
 	const pendingHistorySubmissionsRef = useRef<string[]>(
 		initialDeferredSubmissions.history,
 	);
@@ -890,7 +865,9 @@ function ChatPageImpl(props: ChatPageProps) {
 					effectiveLoadState === "ready" &&
 					messages.length === 0;
 				return (
-					<div className="flex h-full min-w-0 flex-col bg-background">
+					// @container：面板宽度查询容器。大纲栏与本列 padding 以面板为基准，
+					// ConversationColumn 内部的断点以消息列自身宽度为基准（嵌套容器）。
+					<div className="@container flex h-full min-w-0 flex-col bg-background">
 						<SessionHeader
 							session={session}
 							sessionState={sessionState ?? undefined}
@@ -942,15 +919,12 @@ function ChatPageImpl(props: ChatPageProps) {
 							/>
 
 							{/* -mt-4 让滚动区底部上探 16px，消息在输入卡背后被自然裁切；
-						    裁切线藏在卡片圆角(12px)以内，输入框下方缝隙不会露出消息 */}
+							    裁切线藏在卡片圆角(12px)以内，输入框下方缝隙不会露出消息 */}
+							{/* 滚动区 scrollbar-gutter 恒为 stable（.chat-scrollbar），paddingRight
+							    恒补偿 gutter 宽度，空会话 → 首条消息不再横跳 */}
 							<div
-								className="relative -mt-4 w-full shrink-0 pb-4"
-								style={{
-									paddingRight:
-										effectiveLoadState === "ready" && messages.length === 0
-											? 0
-											: scrollbarWidth,
-								}}
+								className="relative z-20 -mt-4 w-full shrink-0 pb-4"
+								style={{ paddingRight: scrollbarWidth }}
 							>
 								<ConversationColumn className="relative">
 									<ChatPendingQueue

@@ -678,25 +678,43 @@
 	}
 }
 
-@keyframes pilo-skeleton-breathe {
+@keyframes pilo-skeleton-shimmer {
 	from {
-		opacity: 0.72;
+		transform: translateX(-130%);
 	}
 	to {
-		opacity: 1;
+		transform: translateX(230%);
 	}
 }
 
-.pilo-skeleton-breathe {
-	animation: pilo-skeleton-breathe 1.65s ease-in-out infinite alternate;
+/* 只让每一块骨架自身 shimmer。不要在整个消息区铺一层扫光，
+   否则切换历史会话时会像整页蒙了一层移动的灰白遮罩。 */
+.pilo-skeleton-bone {
+	position: relative;
+	overflow: hidden;
+}
+
+.pilo-skeleton-bone::after {
+	position: absolute;
+	inset: 0;
+	width: 58%;
+	content: "";
+	transform: translateX(-130%);
+	background: linear-gradient(
+		90deg,
+		transparent,
+		hsl(var(--foreground) / 0.065),
+		transparent
+	);
+	animation: pilo-skeleton-shimmer 1.35s ease-in-out infinite;
 }
 
 .pilo-skeleton-line {
-	background: var(--skeleton-line);
+	background: hsl(var(--skeleton-line));
 }
 
 .pilo-skeleton-strong {
-	background: var(--skeleton-line-strong);
+	background: hsl(var(--skeleton-line-strong));
 }
 
 @keyframes chat-agent-activity-dot-pulse {
@@ -753,7 +771,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.pilo-skeleton-breathe,
+	.pilo-skeleton-bone::after,
 	.chat-agent-activity-dot-pulse,
 	.chat-agent-activity-label::after {
 		animation: none;

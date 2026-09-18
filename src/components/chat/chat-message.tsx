@@ -372,7 +372,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 					});
 
 	return (
-		<ConversationColumn className="group py-2 sm:py-3">
+		<ConversationColumn className="group py-2 @min-[40rem]:py-3">
 			<div
 				className="w-full text-foreground"
 				style={

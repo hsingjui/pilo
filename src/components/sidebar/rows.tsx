@@ -150,7 +150,7 @@ export function EnvRow({
 				aria-expanded={!collapsed}
 				onClick={onToggle}
 				className={cn(
-					"relative flex h-7 min-w-0 flex-1 select-none items-center gap-1.5 rounded-md border border-transparent bg-transparent px-2 text-left",
+					"relative flex h-7 min-w-0 flex-1 select-none items-center gap-2 rounded-md border border-transparent bg-transparent px-2 text-left",
 					"text-[13px] font-medium text-sidebar-foreground-muted transition-colors hover:text-sidebar-foreground",
 					"focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring",
 				)}
@@ -444,7 +444,8 @@ export const SessionRow = memo(function SessionRow({
 					)}
 				>
 					<div className="flex w-full min-w-0 items-center gap-1.5">
-						<div className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+						{/* 图标槽 16px：让会话标题与项目标题共享同一条 30px 起始边 */}
+						<div className="relative flex h-4 w-4 shrink-0 items-center justify-center">
 							<DropdownMenu
 								open={menuOpen}
 								onOpenChange={(open) => {

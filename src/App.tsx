@@ -357,6 +357,7 @@ function App() {
 												}
 												showSwitchSkeleton={
 													active &&
+													Boolean(entry.session.sessionPath) &&
 													!visualReadyControllerIds.has(entry.controllerId)
 												}
 												initialMessage={entry.initialMessage}

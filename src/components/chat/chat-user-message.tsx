@@ -63,9 +63,9 @@ export const UserMessage = memo(function UserMessage({
 	const { pageFontSize } = usePreferences();
 
 	return (
-		<ConversationColumn className="py-2 sm:py-3">
+		<ConversationColumn className="py-2 @min-[40rem]:py-3">
 			<div className="flex w-full justify-end">
-				<div className="group flex min-w-0 max-w-[80%] flex-col items-end gap-1.5 sm:max-w-[70%]">
+				<div className="group flex min-w-0 max-w-[80%] flex-col items-end gap-1.5 @min-[40rem]:max-w-[70%]">
 					<div className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
 						{message.queued ? (
 							<span>{message.queued === "steer" ? "待调整" : "已排队"}</span>
@@ -74,7 +74,7 @@ export const UserMessage = memo(function UserMessage({
 					</div>
 					<div className="flex min-w-0 max-w-full justify-end">
 						<div
-							className="min-w-0 max-w-full rounded-2xl border border-foreground/[0.08] bg-foreground/[0.05] px-3.5 py-2 leading-6 text-foreground sm:px-4 sm:py-2.5"
+							className="min-w-0 max-w-full rounded-2xl border border-foreground/[0.08] bg-foreground/[0.05] px-3.5 py-2 leading-6 text-foreground @min-[40rem]:px-4 @min-[40rem]:py-2.5"
 							style={{ fontSize: `${pageFontSize}px` }}
 						>
 							{message.images && message.images.length > 0 ? (

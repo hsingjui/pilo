@@ -690,14 +690,14 @@ export function ChatComposer({
 					/>
 
 					{pendingSteering > 0 || pendingFollowUps > 0 ? (
-						<span className="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">
+						<span className="hidden text-[11px] tabular-nums text-muted-foreground @min-[40rem]:inline">
 							{pendingSteering > 0 ? `调整 ${pendingSteering}` : null}
 							{pendingSteering > 0 && pendingFollowUps > 0 ? " · " : null}
 							{pendingFollowUps > 0 ? `稍后 ${pendingFollowUps}` : null}
 						</span>
 					) : null}
 					{statusText ? (
-						<span className="hidden truncate text-[11px] tabular-nums text-muted-foreground md:inline">
+						<span className="hidden truncate text-[11px] tabular-nums text-muted-foreground @min-[48rem]:inline">
 							{statusText}
 						</span>
 					) : null}

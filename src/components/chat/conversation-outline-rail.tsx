@@ -103,7 +103,9 @@ export const ConversationOutlineRail = memo(function ConversationOutlineRail({
 			ref={railRef}
 			aria-label="消息导航"
 			className={cn(
-				"group/outline pointer-events-none absolute inset-y-0 left-0 z-20 hidden items-center min-[860px]:flex",
+				// 以聊天面板宽度为准（chat-page 根节点 @container），面板窄于 35rem 时
+				// 大纲刻度会压到居中消息列上，因此隐藏。
+				"group/outline pointer-events-none absolute inset-y-0 left-0 z-20 hidden items-center @min-[35rem]:flex",
 				className,
 			)}
 			style={{ width: RAIL_WIDTH }}

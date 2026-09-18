@@ -132,7 +132,7 @@ export function ComposerSuggestionMenu({
 				</span>
 				<span className="font-medium text-foreground/85">{title}</span>
 				<span className="truncate">{hint}</span>
-				<span className="ml-auto hidden sm:inline">
+				<span className="ml-auto hidden @min-[40rem]:inline">
 					↑↓ 选择 · Tab / Enter 补全 · Esc 关闭
 				</span>
 			</div>

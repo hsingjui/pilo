@@ -42,6 +42,9 @@ import {
 } from "@/ui";
 
 const CHAT_VIRTUA_BUFFER_PX = 800;
+// 切换骨架淡出时长：内容在骨架底下就绪后，覆盖层淡出即骨架→内容的交叉淡化，
+// 用连续运动掩盖内容替换的闪烁。淡出期间内容已可交互。
+const SWITCH_SKELETON_FADE_MS = 200;
 // Virtualization pays off for long history, but a short conversation with one
 // rapidly growing assistant row is cheaper and more stable in normal document
 // flow. Keep an opt-out for regression comparisons.
@@ -146,6 +149,40 @@ const MessageRow = memo(function MessageRow({
 		/>
 	);
 });
+
+// 切换骨架覆盖层：请求出现时立即实心（遮住切换瞬间的空白），
+// 请求消失时说明底下内容已就绪并完成滚动复位，淡出交还给真实内容。
+// 只做淡出不做淡入——骨架本身就是遮盖，淡入反而会露出背景造成闪烁。
+function SwitchSkeletonOverlay({ covering }: { covering: boolean }) {
+	const [mounted, setMounted] = useState(covering);
+	const [fading, setFading] = useState(false);
+	const [previousCovering, setPreviousCovering] = useState(covering);
+	if (covering !== previousCovering) {
+		setPreviousCovering(covering);
+		// 快速 A→B→A 时从淡出中途拉回实心，打断过渡而不是反向重放。
+		setMounted(true);
+		setFading(!covering);
+	}
+	useEffect(() => {
+		if (covering || !fading) return;
+		const timer = window.setTimeout(
+			() => setMounted(false),
+			SWITCH_SKELETON_FADE_MS + 50,
+		);
+		return () => window.clearTimeout(timer);
+	}, [covering, fading]);
+	if (!mounted) return null;
+	return (
+		<div
+			className={cn(
+				"chat-scrollbar absolute inset-0 z-10 overflow-x-hidden overflow-y-auto bg-background transition-opacity ease-out",
+				fading ? "pointer-events-none opacity-0 duration-200" : "duration-0",
+			)}
+		>
+			<ChatHistorySkeleton />
+		</div>
+	);
+}
 
 const ChatConversationViewportImpl = forwardRef<
 	ChatConversationViewportHandle,
@@ -389,7 +426,7 @@ const ChatConversationViewportImpl = forwardRef<
 
 	return (
 		<ChatExpansionStateProvider>
-			<div className="relative min-h-0 w-full flex-1">
+			<div className="relative isolate min-h-0 w-full flex-1">
 				<div
 					ref={bindScrollRef}
 					aria-hidden={showSwitchSkeleton || undefined}
@@ -402,23 +439,21 @@ const ChatConversationViewportImpl = forwardRef<
 						"chat-scrollbar h-full w-full overflow-x-hidden overflow-y-auto overscroll-none [contain:strict]",
 						showSwitchSkeleton && "invisible",
 					)}
-					style={{
-						scrollbarGutter:
-							effectiveLoadState === "ready" && messages.length === 0
-								? "auto"
-								: "stable",
-						...(effectiveLoadState === "ready" && messages.length > 0
+					// scrollbar-gutter: stable 由 .chat-scrollbar 统一提供且恒定，
+					// composer 据此对齐（chat-page.tsx）；这里不再按消息数来回切换。
+					style={
+						effectiveLoadState === "ready" && messages.length > 0
 							? {
 									paddingTop: virtualPadding.start,
 									paddingBottom: virtualPadding.end,
 								}
-							: {}),
-					}}
+							: undefined
+					}
 				>
 					{effectiveLoadState === "loading" ? (
 						<ChatHistorySkeleton />
 					) : effectiveLoadState === "error" ? (
-						<div className="flex min-h-full flex-col pb-8 pt-4 sm:pb-10 sm:pt-6">
+						<div className="flex min-h-full flex-col pb-8 pt-4 @min-[40rem]:pb-10 @min-[40rem]:pt-6">
 							<ConversationColumn className="flex flex-1 items-center justify-center">
 								<ErrorState
 									title="会话加载失败"
@@ -460,11 +495,9 @@ const ChatConversationViewportImpl = forwardRef<
 					) : null}
 				</div>
 
-				{showSwitchSkeleton ? (
-					<div className="absolute inset-0 z-10 overflow-hidden bg-background">
-						<ChatHistorySkeleton />
-					</div>
-				) : null}
+				{/* 与被覆盖的滚动区同样预留 stable gutter，切换骨架的列宽
+				    才和下方的消息列/输入框一致，撤掉覆盖层时不横跳。 */}
+				<SwitchSkeletonOverlay covering={showSwitchSkeleton} />
 
 				{!showSwitchSkeleton && isScrolledFromTop ? (
 					<div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-background to-transparent" />
