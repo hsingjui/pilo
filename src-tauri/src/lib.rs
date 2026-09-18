@@ -3,8 +3,8 @@ mod domain;
 mod runtime;
 
 use desktop_notifications::{
-    initialize_macos_notification_application, send_macos_desktop_notification,
-    send_windows_desktop_notification,
+    initialize_macos_notification_application, initialize_windows_notification_application,
+    send_macos_desktop_notification, send_windows_desktop_notification,
 };
 use runtime::{
     PiloRuntime,
@@ -172,6 +172,7 @@ pub fn run() {
             use tauri_plugin_window_state::WindowExt;
 
             initialize_macos_notification_application(app);
+            initialize_windows_notification_application(app);
 
             let window = app
                 .get_webview_window("main")

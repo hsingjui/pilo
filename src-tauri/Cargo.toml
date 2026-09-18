@@ -52,3 +52,13 @@ mac-notification-sys = "0.6.15"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 tauri-winrt-notification = "0.7.3"
+windows = { version = "0.61", features = [
+	"Win32_Foundation",
+	"Win32_Storage_EnhancedStorage",
+	"Win32_Storage_FileSystem",
+	"Win32_System_Com",
+	"Win32_System_Com_StructuredStorage",
+	"Win32_System_Variant",
+	"Win32_UI_Shell",
+	"Win32_UI_Shell_PropertiesSystem",
+] }
