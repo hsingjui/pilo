@@ -149,8 +149,8 @@ function diffLineStyle(line: string) {
 		return {
 			marker: "+",
 			content: line.slice(1),
-			className: "bg-emerald-500/[0.07] text-foreground/80",
-			markerClassName: "text-emerald-600 dark:text-emerald-400",
+			className: "bg-code-added/[0.07] text-foreground/80",
+			markerClassName: "text-code-added",
 		};
 	}
 	if (line.startsWith("-") && !line.startsWith("---")) {
@@ -158,7 +158,7 @@ function diffLineStyle(line: string) {
 			marker: "−",
 			content: line.slice(1),
 			className: "bg-destructive/[0.06] text-foreground/80",
-			markerClassName: "text-destructive/80",
+			markerClassName: "text-destructive",
 		};
 	}
 	if (
@@ -170,14 +170,14 @@ function diffLineStyle(line: string) {
 		return {
 			marker: "",
 			content: line,
-			className: "text-muted-foreground/60",
+			className: "text-muted-foreground",
 			markerClassName: "",
 		};
 	}
 	return {
 		marker: "",
 		content: line,
-		className: "text-muted-foreground/85",
+		className: "text-muted-foreground",
 		markerClassName: "",
 	};
 }

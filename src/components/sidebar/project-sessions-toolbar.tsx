@@ -52,7 +52,7 @@ export function ProjectSessionsToolbar({
 					}}
 					placeholder="搜索该项目的会话"
 					aria-label="搜索该项目的会话"
-					className="h-8 w-full rounded-lg border border-sidebar-border/70 bg-sidebar-foreground/[0.035] pl-8 pr-2 text-xs text-sidebar-foreground outline-hidden placeholder:text-sidebar-foreground-muted/70 focus:border-sidebar-ring/70 focus:ring-2 focus:ring-sidebar-ring/20"
+					className="h-8 w-full rounded-lg border border-sidebar-border/70 bg-sidebar-foreground/[0.035] pl-8 pr-2 text-xs text-sidebar-foreground outline-hidden placeholder:text-sidebar-foreground-muted focus:border-sidebar-ring/70 focus:ring-2 focus:ring-sidebar-ring/20"
 				/>
 			</div>
 		</>

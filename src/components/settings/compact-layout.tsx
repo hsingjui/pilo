@@ -78,9 +78,7 @@ export function SettingsSection({
 							</p>
 						) : null}
 						{description ? (
-							<p className="text-[11px] text-muted-foreground/90">
-								{description}
-							</p>
+							<p className="text-[11px] text-muted-foreground">{description}</p>
 						) : null}
 					</div>
 					{headerRight ? (

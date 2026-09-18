@@ -570,7 +570,7 @@ export function SettingsDialog({
 									return (
 										<section key={section.id} aria-label={section.id}>
 											{section.label ? (
-												<h2 className="px-2.5 pb-1 text-xs font-medium text-muted-foreground/55">
+												<h2 className="px-2.5 pb-1 text-xs font-medium text-muted-foreground">
 													{section.label}
 												</h2>
 											) : null}
