@@ -14,6 +14,7 @@ import {
 import { ChatAgentActivityIndicator } from "@/components/chat/chat-agent-activity";
 import { ChatEmptyHero } from "@/components/chat/chat-empty-hero";
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
+import { toggleChatExpansionWithAnchor } from "@/components/chat/chat-expansion-anchor";
 import { useChatExpansionState } from "@/components/chat/chat-expansion-state";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import {
@@ -77,21 +78,24 @@ function CollapsibleMessageBody({
 	text,
 	markdown = false,
 	streaming = false,
+	collapseDisabled = false,
 }: {
 	text: string;
 	markdown?: boolean;
 	streaming?: boolean;
+	collapseDisabled?: boolean;
 }) {
 	const { collapseLongMessages } = usePreferences();
 	const collapsible =
 		collapseLongMessages &&
+		!collapseDisabled &&
 		!streaming &&
 		text.length > LARGE_MESSAGE_PREVIEW_CHARS;
 	const [expanded, setExpanded] = useState(false);
 	const visibleText = collapsible && !expanded ? markdownPreview(text) : text;
 
 	return (
-		<div className="min-w-0">
+		<div className="min-w-0" data-chat-expansion-root>
 			{markdown ? (
 				<ChatMarkdown text={visibleText} isStreaming={streaming} />
 			) : (
@@ -103,7 +107,11 @@ function CollapsibleMessageBody({
 				<button
 					type="button"
 					className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-					onClick={() => setExpanded((value) => !value)}
+					onClick={(event) =>
+						toggleChatExpansionWithAnchor(event.currentTarget, () =>
+							setExpanded((value) => !value),
+						)
+					}
 				>
 					<ChevronDown
 						className={cn(
@@ -139,14 +147,14 @@ function renderAssistantContentNodes({
 	messageId,
 	content,
 	streaming,
-	preserveActivityExpanded = false,
+	keepTextExpanded = false,
 	durationMs,
 	onOpenFile,
 }: {
 	messageId: string;
 	content: AssistantContentItem[];
 	streaming: boolean;
-	preserveActivityExpanded?: boolean;
+	keepTextExpanded?: boolean;
 	durationMs?: number;
 	onOpenFile?: (path: string) => void;
 }) {
@@ -163,6 +171,7 @@ function renderAssistantContentNodes({
 						text={item.text}
 						markdown
 						streaming={streaming && index === content.length - 1}
+						collapseDisabled={keepTextExpanded}
 					/>,
 				);
 			}
@@ -177,14 +186,14 @@ function renderAssistantContentNodes({
 		}
 		index -= 1;
 		const groupKey = group[0]?.id ?? `activity-${groupStart}`;
-		const activityStateKey =
-			streaming || preserveActivityExpanded ? "expanded" : "complete";
+		const groupRunning = group.some(
+			(activity) => activity.status === "running",
+		);
+		const activityStateKey = groupRunning ? "running" : "complete";
 		nodes.push(
 			<div key={`${messageId}-${groupKey}-${activityStateKey}`}>
 				<AssistantActivityView
 					activity={group}
-					streaming={streaming}
-					preserveExpanded={preserveActivityExpanded}
 					expansionKey={`${messageId}:${groupKey}:${activityStateKey}`}
 					durationMs={firstActivityGroup ? durationMs : undefined}
 					onOpenPath={onOpenFile}
@@ -200,18 +209,24 @@ function renderAssistantContentNodes({
 function AssistantWorkedRegion({
 	messageId,
 	content,
+	active = false,
+	streaming = false,
+	keepTextExpanded = false,
 	durationMs,
 	onOpenFile,
 }: {
 	messageId: string;
 	content: AssistantContentItem[];
+	active?: boolean;
+	streaming?: boolean;
+	keepTextExpanded?: boolean;
 	durationMs?: number;
 	onOpenFile?: (path: string) => void;
 }) {
 	const { collapseCompletedActivity, showWorkDuration } = usePreferences();
 	const [open, setOpen] = useChatExpansionState(
-		`worked:${messageId}`,
-		!collapseCompletedActivity,
+		`worked:${messageId}:${active ? "active" : "complete"}`,
+		active || !collapseCompletedActivity,
 	);
 	const durationLabel =
 		showWorkDuration && durationMs !== undefined
@@ -219,11 +234,18 @@ function AssistantWorkedRegion({
 			: "";
 
 	return (
-		<div className="mb-1 mt-0.5 w-full text-muted-foreground">
+		<div
+			className="mb-1 mt-0.5 w-full text-muted-foreground"
+			data-chat-expansion-root
+		>
 			<button
 				type="button"
 				className="group/work flex w-full items-center gap-1.5 rounded-md py-0.5 pr-1 text-left text-[12.5px] font-medium leading-snug text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-				onClick={() => setOpen((value) => !value)}
+				onClick={(event) =>
+					toggleChatExpansionWithAnchor(event.currentTarget, () =>
+						setOpen((value) => !value),
+					)
+				}
 				aria-expanded={open}
 			>
 				<ChevronRight
@@ -241,7 +263,8 @@ function AssistantWorkedRegion({
 					{renderAssistantContentNodes({
 						messageId,
 						content,
-						streaming: false,
+						streaming,
+						keepTextExpanded,
 						onOpenFile,
 					})}
 				</div>
@@ -271,9 +294,11 @@ export const AssistantMessage = memo(function AssistantMessage({
 	const { pageFontSize, showWorkDuration } = usePreferences();
 	const content = getAssistantMessageContent(message);
 	const activity = getAssistantActivities(content);
+	const isTurnFinished =
+		message.streaming !== true && message.completion !== "continued";
 	const displaySections = splitAssistantContentForDisplay(
 		content,
-		message.streaming !== true && message.completion !== "continued",
+		isTurnFinished,
 	);
 	const streamingLabel = getAssistantStreamingLabel({
 		text: message.text,
@@ -308,31 +333,43 @@ export const AssistantMessage = memo(function AssistantMessage({
 		message.completion !== "continued" &&
 		!message.errorMessage &&
 		message.stopReason !== "aborted";
-	const contentNodes = displaySections.hasCollapsedWork
-		? [
-				<AssistantWorkedRegion
-					key={`${message.id}-worked`}
-					messageId={message.id}
-					content={displaySections.work}
-					durationMs={message.workDurationMs}
-					onOpenFile={onOpenFile}
-				/>,
-				...renderAssistantContentNodes({
-					messageId: message.id,
-					content: displaySections.final,
-					streaming: message.streaming === true,
-					preserveActivityExpanded: message.streaming === true,
-					onOpenFile,
-				}),
-			]
-		: renderAssistantContentNodes({
-				messageId: message.id,
-				content,
-				streaming: message.streaming === true,
-				preserveActivityExpanded: message.completion === "continued",
-				durationMs: message.workDurationMs,
-				onOpenFile,
-			});
+	const contentNodes =
+		!isTurnFinished && hasWorkActivity
+			? [
+					<AssistantWorkedRegion
+						key={`${message.id}-worked-active`}
+						messageId={message.id}
+						content={content}
+						active
+						streaming={message.streaming === true}
+						keepTextExpanded
+						onOpenFile={onOpenFile}
+					/>,
+				]
+			: displaySections.hasCollapsedWork
+				? [
+						<AssistantWorkedRegion
+							key={`${message.id}-worked-complete`}
+							messageId={message.id}
+							content={displaySections.work}
+							durationMs={message.workDurationMs}
+							onOpenFile={onOpenFile}
+						/>,
+						...renderAssistantContentNodes({
+							messageId: message.id,
+							content: displaySections.final,
+							streaming: message.streaming === true,
+							onOpenFile,
+						}),
+					]
+				: renderAssistantContentNodes({
+						messageId: message.id,
+						content,
+						streaming: message.streaming === true,
+						keepTextExpanded: !isTurnFinished,
+						durationMs: message.workDurationMs,
+						onOpenFile,
+					});
 
 	return (
 		<ConversationColumn className="group py-2 sm:py-3">

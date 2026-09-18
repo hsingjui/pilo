@@ -435,7 +435,7 @@ test("a single streaming work phase remains fully visible", () => {
 	});
 });
 
-test("streaming assistant turns collapse completed phases and keep only the live tail", () => {
+test("streaming assistant turns keep intermediate narration outside the top-level work disclosure", () => {
 	const content: AssistantContentItem[] = [
 		{ id: "intro", type: "text", text: "I will inspect the runtime." },
 		{
@@ -455,15 +455,9 @@ test("streaming assistant turns collapse completed phases and keep only the live
 	];
 
 	const sections = splitAssistantContentForDisplay(content, false);
-	assert.equal(sections.hasCollapsedWork, true);
-	assert.deepEqual(
-		sections.work.map((item) => item.id),
-		["intro", "tool-1", "checkpoint"],
-	);
-	assert.deepEqual(
-		sections.final.map((item) => item.id),
-		["tool-2", "live"],
-	);
+	assert.equal(sections.hasCollapsedWork, false);
+	assert.deepEqual(sections.work, []);
+	assert.deepEqual(sections.final, content);
 });
 
 test("reply runway is only reserved for an already scrollable conversation", () => {

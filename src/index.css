@@ -634,6 +634,11 @@
 	   a narrow content-box thumb. This is visual only; native scrolling stays in
 	   the browser/WebView compositor. */
 	.chat-scrollbar {
+		/* Virtua already compensates row-size changes above the viewport, and a
+		   user-clicked disclosure owns its own anchor (chat-expansion-anchor).
+		   Chromium's native scroll anchoring would add a third, conflicting
+		   scrollTop correction, so it stays disabled for this scroller. */
+		overflow-anchor: none;
 		scrollbar-width: thin;
 		scrollbar-color: hsl(var(--scrollbar-thumb) / 0.5) transparent;
 		scrollbar-gutter: stable;

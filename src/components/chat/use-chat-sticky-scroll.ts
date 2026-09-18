@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { VirtualizerHandle } from "virtua";
 
+import { CHAT_EXPANSION_TOGGLE_EVENT } from "@/components/chat/chat-expansion-anchor";
 import { getChatScrollMaxOffset } from "@/components/chat/chat-sticky-scroll-dom";
 import { recordStickyScrollMetric } from "@/lib/chat-performance";
 
@@ -165,6 +166,13 @@ export function useChatStickyScroll({
 		},
 		[stopScroll],
 	);
+	// Expanding a disclosure in the upper half is reading intent. Bottom clamping
+	// on the following resize would drag the anchored trigger upward one frame
+	// after the click, so yield ownership before that correction can run.
+	const handleExpansionToggle = useCallback(() => {
+		if (ownershipRef.current !== "following") return;
+		stopScroll();
+	}, [stopScroll]);
 
 	const setScrollRef = useCallback<RefCallback<HTMLDivElement>>(
 		(nextScrollElement) => {
@@ -178,6 +186,10 @@ export function useChatStickyScroll({
 				previous.removeEventListener("touchcancel", handleTouchEnd);
 				previous.removeEventListener("keydown", handleKeyDown);
 				previous.removeEventListener("pointerdown", handlePointerDown);
+				previous.removeEventListener(
+					CHAT_EXPANSION_TOGGLE_EVENT,
+					handleExpansionToggle,
+				);
 			}
 			scrollElementRef.current = nextScrollElement;
 			setScrollElement(nextScrollElement);
@@ -203,8 +215,13 @@ export function useChatStickyScroll({
 			nextScrollElement.addEventListener("pointerdown", handlePointerDown, {
 				passive: true,
 			});
+			nextScrollElement.addEventListener(
+				CHAT_EXPANSION_TOGGLE_EVENT,
+				handleExpansionToggle,
+			);
 		},
 		[
+			handleExpansionToggle,
 			handleKeyDown,
 			handlePointerDown,
 			handleTouchEnd,

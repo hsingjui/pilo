@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
+import { toggleChatExpansionWithAnchor } from "@/components/chat/chat-expansion-anchor";
 import { useChatExpansionState } from "@/components/chat/chat-expansion-state";
 import { summarizeAssistantActivity } from "@/lib/chat-activity-state";
 import { formatWorkDuration } from "@/lib/format-duration";
@@ -80,77 +81,130 @@ function resultContent(value: unknown): {
 	};
 }
 
-function toolResultBlockKey(block: unknown): string {
-	if (typeof block === "string") return `text:${block.slice(0, 96)}`;
-	if (
-		isRecord(block) &&
-		block.type === "text" &&
-		typeof block.text === "string"
-	) {
-		return `text:${block.text.slice(0, 96)}`;
+function flattenToolResult(result: ReturnType<typeof resultContent>) {
+	const text: string[] = [];
+	const images: Array<{ data: string; mimeType: string; key: string }> = [];
+	const imageOccurrences = new Map<string, number>();
+
+	for (const block of result.blocks) {
+		if (typeof block === "string") {
+			text.push(block);
+			continue;
+		}
+		if (
+			isRecord(block) &&
+			block.type === "text" &&
+			typeof block.text === "string"
+		) {
+			text.push(block.text);
+			continue;
+		}
+		if (
+			isRecord(block) &&
+			block.type === "image" &&
+			typeof block.data === "string" &&
+			typeof block.mimeType === "string" &&
+			block.mimeType.startsWith("image/")
+		) {
+			const baseKey = `${block.mimeType}:${block.data.length}:${block.data.slice(0, 32)}`;
+			const occurrence = (imageOccurrences.get(baseKey) ?? 0) + 1;
+			imageOccurrences.set(baseKey, occurrence);
+			images.push({
+				data: block.data,
+				mimeType: block.mimeType,
+				key: `${baseKey}:${occurrence}`,
+			});
+			continue;
+		}
+		text.push(formatUnknown(block));
 	}
-	if (
-		isRecord(block) &&
-		block.type === "image" &&
-		typeof block.data === "string"
-	) {
-		return `image:${String(block.mimeType)}:${block.data.length}:${block.data.slice(0, 32)}`;
-	}
-	return `value:${formatUnknown(block).slice(0, 128)}`;
+
+	if (result.metadata) text.push(formatUnknown(result.metadata));
+	if (result.fallback) text.push(result.fallback);
+
+	return { text: text.filter(Boolean).join("\n"), images };
 }
 
-function keyedToolResultBlocks(blocks: unknown[]) {
+function toolEditDiff(result: unknown) {
+	if (!isRecord(result)) return null;
+	const details = result.details;
+	if (!isRecord(details)) return null;
+	const diff = details.diff;
+	if (typeof diff === "string" && diff.trim()) return diff;
+	const patch = details.patch;
+	return typeof patch === "string" && patch.trim() ? patch : null;
+}
+
+function keyedDiffLines(diff: string) {
 	const occurrences = new Map<string, number>();
-	return blocks.map((block) => {
-		const baseKey = toolResultBlockKey(block);
-		const occurrence = (occurrences.get(baseKey) ?? 0) + 1;
-		occurrences.set(baseKey, occurrence);
-		return { block, key: `${baseKey}:${occurrence}` };
+	return diff.split("\n").map((line) => {
+		const occurrence = (occurrences.get(line) ?? 0) + 1;
+		occurrences.set(line, occurrence);
+		return { line, key: `${line}:${occurrence}` };
 	});
 }
 
-function ToolResultBlock({ block }: { block: unknown }) {
-	if (typeof block === "string") {
-		return (
-			<pre className="scrollbar-pro max-h-56 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[10.5px] leading-4 [overflow-wrap:anywhere]">
-				{block}
-			</pre>
-		);
+function diffLineStyle(line: string) {
+	if (line.startsWith("+") && !line.startsWith("+++")) {
+		return {
+			marker: "+",
+			content: line.slice(1),
+			className: "bg-emerald-500/[0.07] text-foreground/80",
+			markerClassName: "text-emerald-600 dark:text-emerald-400",
+		};
+	}
+	if (line.startsWith("-") && !line.startsWith("---")) {
+		return {
+			marker: "−",
+			content: line.slice(1),
+			className: "bg-destructive/[0.06] text-foreground/80",
+			markerClassName: "text-destructive/80",
+		};
 	}
 	if (
-		isRecord(block) &&
-		block.type === "text" &&
-		typeof block.text === "string"
+		line.startsWith("@@") ||
+		line.startsWith("---") ||
+		line.startsWith("+++") ||
+		line.trim() === "..."
 	) {
-		return (
-			<pre className="scrollbar-pro max-h-56 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[10.5px] leading-4 [overflow-wrap:anywhere]">
-				{block.text}
-			</pre>
-		);
+		return {
+			marker: "",
+			content: line,
+			className: "text-muted-foreground/60",
+			markerClassName: "",
+		};
 	}
-	if (
-		isRecord(block) &&
-		block.type === "image" &&
-		typeof block.data === "string" &&
-		typeof block.mimeType === "string" &&
-		block.mimeType.startsWith("image/")
-	) {
-		return (
-			<div className="space-y-1.5 p-2.5">
-				<img
-					src={`data:${block.mimeType};base64,${block.data}`}
-					alt="工具结果图像"
-					className="max-h-80 max-w-full rounded-md object-contain"
-				/>
-				<div className="font-mono text-[11px] text-muted-foreground">
-					{block.mimeType}
-				</div>
-			</div>
-		);
-	}
+	return {
+		marker: "",
+		content: line,
+		className: "text-muted-foreground/85",
+		markerClassName: "",
+	};
+}
+
+function ToolDiff({ diff }: { diff: string }) {
 	return (
-		<pre className="scrollbar-pro max-h-56 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[10.5px] leading-4 [overflow-wrap:anywhere]">
-			{formatUnknown(block)}
+		<pre className="scrollbar-pro max-h-64 overflow-auto py-1 font-mono text-[10px] leading-[14px]">
+			{keyedDiffLines(diff).map(({ line, key }) => {
+				const style = diffLineStyle(line);
+				return (
+					<span
+						key={key}
+						className={cn(
+							"grid min-h-[14px] grid-cols-[12px_minmax(0,1fr)] whitespace-pre-wrap [overflow-wrap:anywhere]",
+							style.className,
+						)}
+					>
+						<span
+							aria-hidden="true"
+							className={cn("select-none text-center", style.markerClassName)}
+						>
+							{style.marker}
+						</span>
+						<span className="min-w-0">{style.content || " "}</span>
+					</span>
+				);
+			})}
 		</pre>
 	);
 }
@@ -279,50 +333,43 @@ function ThinkingActivityView({ activity }: { activity: ThinkingActivity }) {
 function ToolDetail({ activity }: { activity: ToolCallActivity }) {
 	const hasArgs = activity.args !== undefined && activity.args !== null;
 	const hasResult = activity.result !== undefined && activity.result !== null;
+	const diff =
+		activity.toolName.toLowerCase() === "edit" && !activity.isError
+			? toolEditDiff(activity.result)
+			: null;
 	const preview = toolPreview(activity);
 	const showArgs = hasArgs && preview === null;
 	const result = hasResult ? resultContent(activity.result) : null;
+	const flattenedResult = result ? flattenToolResult(result) : null;
+	const detailText = [
+		showArgs ? formatUnknown(activity.args) : null,
+		flattenedResult?.text || null,
+	]
+		.filter((value): value is string => Boolean(value))
+		.join("\n");
+	const images = flattenedResult?.images ?? [];
 
-	if (!showArgs && !hasResult) return null;
+	if (!diff && !detailText && images.length === 0) return null;
 
 	return (
-		<div className="w-full pb-1 pt-0.5 text-[11px] font-normal text-muted-foreground">
-			<div className="overflow-hidden rounded-md border border-border/60 bg-muted/20">
-				{showArgs ? (
-					<pre className="scrollbar-pro max-h-44 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[10.5px] leading-4 [overflow-wrap:anywhere]">
-						{formatUnknown(activity.args)}
-					</pre>
-				) : null}
-				{result ? (
-					<div className={cn(showArgs && "border-t border-border/50")}>
-						{keyedToolResultBlocks(result.blocks).map(
-							({ block, key }, index) => (
-								<div
-									key={key}
-									className={cn(index > 0 && "border-t border-border/40")}
-								>
-									<ToolResultBlock block={block} />
-								</div>
-							),
-						)}
-						{result.metadata ? (
-							<pre
-								className={cn(
-									"scrollbar-pro max-h-44 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[10.5px] leading-4 [overflow-wrap:anywhere]",
-									result.blocks.length > 0 && "border-t border-border/40",
-								)}
-							>
-								{formatUnknown(result.metadata)}
-							</pre>
-						) : null}
-						{result.fallback ? (
-							<pre className="scrollbar-pro max-h-56 overflow-auto whitespace-pre-wrap px-2.5 py-2 font-mono text-[10.5px] leading-4 [overflow-wrap:anywhere]">
-								{result.fallback}
-							</pre>
-						) : null}
-					</div>
-				) : null}
-			</div>
+		<div className="w-full pb-1 pt-0.5 text-[10px] font-normal text-muted-foreground">
+			{diff ? (
+				<ToolDiff diff={diff} />
+			) : detailText ? (
+				<pre className="scrollbar-pro max-h-56 overflow-auto whitespace-pre-wrap py-0.5 pr-1 font-mono text-[10px] leading-[14px] [overflow-wrap:anywhere]">
+					{detailText}
+				</pre>
+			) : null}
+			{diff
+				? null
+				: images.map((image) => (
+						<img
+							key={image.key}
+							src={`data:${image.mimeType};base64,${image.data}`}
+							alt="工具结果图像"
+							className="max-h-80 max-w-full rounded-md object-contain"
+						/>
+					))}
 		</div>
 	);
 }
@@ -349,18 +396,23 @@ function ToolCallActivityView({
 		(activity.result !== undefined && activity.result !== null);
 
 	return (
-		<div className="w-full">
+		<div className="w-full" data-chat-expansion-root>
 			<button
 				type="button"
 				className={cn(
-					"group/tool -mx-1 flex min-h-7 w-[calc(100%+0.5rem)] items-start gap-1.5 rounded-md px-1 py-1 text-left transition-colors",
+					"group/tool -mx-1 flex min-h-6 w-[calc(100%+0.5rem)] items-start gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors",
 					PROCESS_TEXT_CLASS,
 					hasDetails
 						? "hover:bg-muted/40 hover:text-foreground"
 						: "cursor-default",
 					activity.isError && "text-destructive",
 				)}
-				onClick={() => hasDetails && setOpen((value) => !value)}
+				onClick={(event) =>
+					hasDetails &&
+					toggleChatExpansionWithAnchor(event.currentTarget, () =>
+						setOpen((value) => !value),
+					)
+				}
 				onDoubleClick={() => filePath && onOpenPath?.(filePath)}
 				title={filePath && onOpenPath ? "双击打开文件" : undefined}
 				aria-expanded={hasDetails ? open : undefined}
@@ -429,15 +481,11 @@ function activityLabel(activity: AssistantActivity[], running: boolean) {
 
 export function AssistantActivityView({
 	activity,
-	streaming,
-	preserveExpanded = false,
 	expansionKey,
 	durationMs,
 	onOpenPath,
 }: {
 	activity: AssistantActivity[];
-	streaming: boolean;
-	preserveExpanded?: boolean;
 	expansionKey: string;
 	durationMs?: number;
 	onOpenPath?: (path: string) => void;
@@ -451,23 +499,27 @@ export function AssistantActivityView({
 	const hasWorkSummary = Boolean(durationLabel);
 	const [workOpen, setWorkOpen] = useChatExpansionState(
 		`${expansionKey}:work`,
-		streaming || preserveExpanded || !collapseCompletedActivity,
+		running || !collapseCompletedActivity,
 	);
 	const [groupOpen, setGroupOpen] = useChatExpansionState(
 		`${expansionKey}:group`,
-		streaming || preserveExpanded,
+		running || !collapseCompletedActivity,
 	);
 	if (activity.length === 0) return null;
 
 	const group = (
-		<div>
+		<div data-chat-expansion-root>
 			<button
 				type="button"
 				className={cn(
 					"group/activity flex w-full items-center gap-1.5 rounded-md py-0.5 pr-1 text-left transition-colors hover:bg-muted/40 hover:text-foreground",
 					PROCESS_TEXT_CLASS,
 				)}
-				onClick={() => setGroupOpen((value) => !value)}
+				onClick={(event) =>
+					toggleChatExpansionWithAnchor(event.currentTarget, () =>
+						setGroupOpen((value) => !value),
+					)
+				}
 				aria-expanded={groupOpen}
 			>
 				<ChevronRight
@@ -504,13 +556,20 @@ export function AssistantActivityView({
 	);
 
 	return (
-		<div className="mb-1 mt-0.5 w-full text-muted-foreground">
+		<div
+			className="mb-1 mt-0.5 w-full text-muted-foreground"
+			data-chat-expansion-root
+		>
 			{hasWorkSummary ? (
 				<>
 					<button
 						type="button"
 						className="group flex w-full items-center gap-1.5 rounded-md py-0.5 pr-1 text-left text-[12.5px] font-medium leading-snug text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-						onClick={() => setWorkOpen((value) => !value)}
+						onClick={(event) =>
+							toggleChatExpansionWithAnchor(event.currentTarget, () =>
+								setWorkOpen((value) => !value),
+							)
+						}
 						aria-expanded={workOpen}
 					>
 						<ChevronRight
