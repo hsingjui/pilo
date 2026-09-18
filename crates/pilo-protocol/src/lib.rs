@@ -152,7 +152,7 @@ pub struct RpcError {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ServerHello {
+pub struct ServerPing {
     pub protocol_version: u32,
     pub server_version: String,
     pub os: String,

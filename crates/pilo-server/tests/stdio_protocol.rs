@@ -21,18 +21,18 @@ async fn stdio_server_speaks_protobuf_and_preserves_binary_bytes() {
     let mut stdin = child.stdin.take().expect("missing server stdin");
     let mut stdout = child.stdout.take().expect("missing server stdout");
 
-    write_frame(&mut stdin, Envelope::request(1, "hello", Value::Null))
+    write_frame(&mut stdin, Envelope::request(1, "server.ping", Value::Null))
         .await
         .unwrap();
-    let hello = read_frame(&mut stdout).await.unwrap().unwrap();
+    let ping = read_frame(&mut stdout).await.unwrap().unwrap();
     let Envelope::Response {
         id,
         result: Some(result),
         binary,
         error: None,
-    } = hello
+    } = ping
     else {
-        panic!("unexpected hello response: {hello:?}");
+        panic!("unexpected ping response: {ping:?}");
     };
     assert_eq!(id, 1);
     assert!(binary.is_empty());

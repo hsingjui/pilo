@@ -15,13 +15,19 @@ use crate::domain::{Connection, ConnectionKind};
 
 use super::ssh::{ssh_command, wrap_posix_script};
 
-const SERVER_REMOTE_DIR: &str = ".cache/pilo/server-v3";
+const SERVER_REMOTE_DIR: &str = ".cache/pilo/server";
+/// Pre-fingerprinted-name layout; cleaned up on install.
+const LEGACY_SERVER_REMOTE_DIR: &str = ".cache/pilo/server-v3";
 
 pub(super) struct SpawnedServer {
     pub(super) child: Child,
     pub(super) stdin: ChildStdin,
     pub(super) stdout: BufReader<ChildStdout>,
     pub(super) stderr: ChildStderr,
+    /// True when the remote binary already matched the current build's
+    /// fingerprint, so no upload happened and a protocol mismatch during hello
+    /// is worth one forced-redeploy retry.
+    pub(super) reused_deployment: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -109,7 +115,10 @@ struct ServerArtifact {
 static SERVER_ARTIFACTS: OnceCell<Mutex<HashMap<ServerTarget, Arc<ServerArtifact>>>> =
     OnceCell::const_new();
 
-pub(super) async fn spawn_server(connection: &Connection) -> Result<SpawnedServer, String> {
+pub(super) async fn spawn_server(
+    connection: &Connection,
+    force_redeploy: bool,
+) -> Result<SpawnedServer, String> {
     match &connection.kind {
         ConnectionKind::Local => {
             // Debug builds embed the current server, so prefer it over the staged
@@ -120,23 +129,26 @@ pub(super) async fn spawn_server(connection: &Connection) -> Result<SpawnedServe
                     .map_err(|error| format!("failed to locate Pilo executable: {error}"))?;
                 let mut command = Command::new(executable);
                 command.arg("--pilo-server");
-                return spawn_piped_server(command, &connection.name);
+                return spawn_piped_server(command, &connection.name, false);
             }
             let target = ServerTarget::current()?;
             let command = Command::new(server_binary(target)?);
-            spawn_piped_server(command, &connection.name)
+            spawn_piped_server(command, &connection.name, false)
         }
-        ConnectionKind::Wsl { .. } => spawn_wsl_server(connection).await,
-        ConnectionKind::Ssh { .. } => spawn_ssh_server(connection).await,
+        ConnectionKind::Wsl { .. } => spawn_wsl_server(connection, force_redeploy).await,
+        ConnectionKind::Ssh { .. } => spawn_ssh_server(connection, force_redeploy).await,
     }
 }
 
-async fn spawn_wsl_server(connection: &Connection) -> Result<SpawnedServer, String> {
+async fn spawn_wsl_server(
+    connection: &Connection,
+    force_redeploy: bool,
+) -> Result<SpawnedServer, String> {
     let ConnectionKind::Wsl { distro } = &connection.kind else {
         return Err("WSL pilo-server spawn requires a WSL connection".to_owned());
     };
     let target = probe_wsl_target(distro).await?;
-    let remote_path = deploy_server(connection, target).await?;
+    let reused_deployment = deploy_server_wsl(distro, target, force_redeploy).await?;
     let mut command = Command::new("wsl.exe");
     command.args([
         "--distribution",
@@ -144,23 +156,32 @@ async fn spawn_wsl_server(connection: &Connection) -> Result<SpawnedServer, Stri
         "--exec",
         "/bin/sh",
         "-c",
-        &format!("exec \"$HOME/{remote_path}\""),
+        &format!("exec \"$HOME/{SERVER_REMOTE_DIR}/pilo-server\""),
     ]);
-    spawn_piped_server(command, &connection.name)
+    spawn_piped_server(command, &connection.name, reused_deployment)
 }
 
-async fn spawn_ssh_server(connection: &Connection) -> Result<SpawnedServer, String> {
+async fn spawn_ssh_server(
+    connection: &Connection,
+    force_redeploy: bool,
+) -> Result<SpawnedServer, String> {
     let ConnectionKind::Ssh { target: _ } = &connection.kind else {
         return Err("SSH pilo-server spawn requires an SSH connection".to_owned());
     };
     let server_target = probe_ssh_target(connection).await?;
-    let remote_path = deploy_server(connection, server_target).await?;
+    let reused_deployment = deploy_server_ssh(connection, server_target, force_redeploy).await?;
     let mut command = ssh_command(connection)?;
-    command.arg(wrap_posix_script(&format!("exec \"$HOME/{remote_path}\"")));
-    spawn_piped_server(command, &connection.name)
+    command.arg(wrap_posix_script(&format!(
+        "exec \"$HOME/{SERVER_REMOTE_DIR}/pilo-server\""
+    )));
+    spawn_piped_server(command, &connection.name, reused_deployment)
 }
 
-fn spawn_piped_server(mut command: Command, label: &str) -> Result<SpawnedServer, String> {
+fn spawn_piped_server(
+    mut command: Command,
+    label: &str,
+    reused_deployment: bool,
+) -> Result<SpawnedServer, String> {
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -186,6 +207,7 @@ fn spawn_piped_server(mut command: Command, label: &str) -> Result<SpawnedServer
         stdin,
         stdout: BufReader::new(stdout),
         stderr,
+        reused_deployment,
     })
 }
 
@@ -249,16 +271,19 @@ async fn probe_ssh_target(connection: &Connection) -> Result<ServerTarget, Strin
     parse_target_probe(&output.stdout, "remote")
 }
 
-async fn deploy_wsl_server(
+async fn deploy_server_wsl(
     distro: &str,
-    source: &Path,
-    remote_path: &str,
-    fingerprint: &str,
-    expected_size: u64,
-) -> Result<(), String> {
-    let source = normalize_windows_path_for_wsl(&source.to_string_lossy());
+    target: ServerTarget,
+    force_redeploy: bool,
+) -> Result<bool, String> {
+    let artifact = server_artifact(target).await?;
+    let source = normalize_windows_path_for_wsl(&artifact.path.to_string_lossy());
+    // The deploy script is content-addressed: reuse requires the installed
+    // binary to fingerprint exactly like the current build, so the ready check
+    // never trusts a stale or corrupted file.
     let install_script = format!(
-        "set -e; dst=\"$HOME/{remote_path}\"; expected=\"{fingerprint}\"; expected_size={expected_size}; file_size() {{ wc -c < \"$1\" 2>/dev/null | tr -d '[:space:]'; }}; if [ -x \"$dst\" ] && [ \"$(file_size \"$dst\")\" = \"$expected_size\" ]; then printf 'ready\\n'; exit 0; fi; src=$(wslpath -u \"$1\"); [ -f \"$src\" ] || {{ printf 'source_missing\\t%s\\n' \"$src\" >&2; exit 44; }}; [ \"$(file_size \"$src\")\" = \"$expected_size\" ] || {{ printf 'source_size_mismatch\\n' >&2; exit 45; }}; mkdir -p \"$(dirname \"$dst\")\"; tmp=\"$dst.tmp.$$\"; trap 'rm -f \"$tmp\"' EXIT; cp -- \"$src\" \"$tmp\"; [ \"$(file_size \"$tmp\")\" = \"$expected_size\" ] || {{ printf 'copy_size_mismatch\\n' >&2; exit 46; }}; chmod 700 \"$tmp\"; mv -f \"$tmp\" \"$dst\"; trap - EXIT; actual=$(\"$dst\" --fingerprint 2>/dev/null || true); [ \"$actual\" = \"$expected\" ] || {{ rm -f \"$dst\"; printf 'fingerprint_mismatch\\n' >&2; exit 43; }}; printf 'installed\\n'"
+        "set -e; dst=\"$HOME/{SERVER_REMOTE_DIR}/pilo-server\"; expected=\"{fingerprint}\"; force={force_redeploy}; actual=$(\"$dst\" --fingerprint 2>/dev/null || true); if [ \"$force\" = \"false\" ] && [ \"$actual\" = \"$expected\" ]; then printf 'ready\\n'; exit 0; fi; src=$(wslpath -u \"$1\"); [ -f \"$src\" ] || {{ printf 'source_missing\\t%s\\n' \"$src\" >&2; exit 44; }}; mkdir -p \"$(dirname \"$dst\")\"; tmp=\"$dst.tmp.$$\"; trap 'rm -f \"$tmp\"' EXIT; cp -- \"$src\" \"$tmp\"; chmod 700 \"$tmp\"; actual=$(\"$tmp\" --fingerprint 2>/dev/null || true); [ \"$actual\" = \"$expected\" ] || {{ printf 'fingerprint_mismatch\\n' >&2; exit 43; }}; mv -f \"$tmp\" \"$dst\"; trap - EXIT; rm -rf \"$HOME/{LEGACY_SERVER_REMOTE_DIR}\"; printf 'installed\\n'",
+        fingerprint = artifact.fingerprint,
     );
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(20),
@@ -281,16 +306,11 @@ async fn deploy_wsl_server(
     .map_err(|error| format!("failed to deploy pilo-server to WSL '{distro}': {error}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    if output.status.success() && matches!(stdout.trim(), "ready" | "installed") {
-        return Ok(());
+    if output.status.success() && stdout.trim() == "ready" {
+        return Ok(true);
     }
-    if let Some(arch) = stdout
-        .lines()
-        .find_map(|line| line.strip_prefix("unsupported\t"))
-    {
-        return Err(format!(
-            "WSL architecture '{arch}' is not supported by the bundled Linux pilo-server"
-        ));
+    if output.status.success() && stdout.trim() == "installed" {
+        return Ok(false);
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
     Err(format!(
@@ -344,28 +364,22 @@ async fn server_artifact(target: ServerTarget) -> Result<Arc<ServerArtifact>, St
     Ok(artifact)
 }
 
-async fn deploy_server(connection: &Connection, target: ServerTarget) -> Result<String, String> {
+async fn deploy_server_ssh(
+    connection: &Connection,
+    target: ServerTarget,
+    force_redeploy: bool,
+) -> Result<bool, String> {
     let artifact = server_artifact(target).await?;
     let source = &artifact.path;
-    let fingerprint = &artifact.fingerprint;
-    let remote_path = format!("{SERVER_REMOTE_DIR}/pilo-server-{fingerprint}");
-    if let ConnectionKind::Wsl { distro } = &connection.kind {
-        deploy_wsl_server(distro, source, &remote_path, fingerprint, artifact.size).await?;
-        return Ok(remote_path);
-    }
+    // Content-addressed deploy: reuse requires the installed binary to
+    // fingerprint exactly like the current build, so the ready check never
+    // trusts a stale or corrupted file.
     let install_script = format!(
-        "set -e; dst=\"$HOME/{remote_path}\"; expected=\"{fingerprint}\"; expected_size={}; file_size() {{ wc -c < \"$1\" 2>/dev/null | tr -d '[:space:]'; }}; if [ -x \"$dst\" ] && [ \"$(file_size \"$dst\")\" = \"$expected_size\" ]; then printf 'ready\\n'; exit 0; fi; rm -f \"$dst\"; mkdir -p \"$(dirname \"$dst\")\"; printf 'upload\\n'; tmp=\"$dst.tmp.$$\"; trap 'rm -f \"$tmp\"' EXIT; cat > \"$tmp\"; [ \"$(file_size \"$tmp\")\" = \"$expected_size\" ] || {{ printf 'upload_size_mismatch\\n'; exit 45; }}; chmod 700 \"$tmp\"; mv -f \"$tmp\" \"$dst\"; trap - EXIT; actual=$(\"$dst\" --fingerprint 2>/dev/null || true); [ \"$actual\" = \"$expected\" ] || {{ rm -f \"$dst\"; printf 'fingerprint_mismatch\\n'; exit 43; }}; printf 'installed\\n'",
-        artifact.size,
+        "set -e; dst=\"$HOME/{SERVER_REMOTE_DIR}/pilo-server\"; expected=\"{fingerprint}\"; force={force_redeploy}; actual=$(\"$dst\" --fingerprint 2>/dev/null || true); if [ \"$force\" = \"false\" ] && [ \"$actual\" = \"$expected\" ]; then printf 'ready\\n'; exit 0; fi; mkdir -p \"$(dirname \"$dst\")\"; printf 'upload\\n'; tmp=\"$dst.tmp.$$\"; trap 'rm -f \"$tmp\"' EXIT; cat > \"$tmp\"; chmod 700 \"$tmp\"; actual=$(\"$tmp\" --fingerprint 2>/dev/null || true); [ \"$actual\" = \"$expected\" ] || {{ printf 'fingerprint_mismatch\\n' >&2; exit 43; }}; mv -f \"$tmp\" \"$dst\"; trap - EXIT; rm -rf \"$HOME/{LEGACY_SERVER_REMOTE_DIR}\"; printf 'installed\\n'",
+        fingerprint = artifact.fingerprint,
     );
-    let mut command = match &connection.kind {
-        ConnectionKind::Wsl { .. } => unreachable!("WSL deployment is handled before upload"),
-        ConnectionKind::Ssh { .. } => {
-            let mut command = ssh_command(connection)?;
-            command.arg(wrap_posix_script(&install_script));
-            command
-        }
-        ConnectionKind::Local => return Ok(String::new()),
-    };
+    let mut command = ssh_command(connection)?;
+    command.arg(wrap_posix_script(&install_script));
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -403,19 +417,11 @@ async fn deploy_server(connection: &Connection, target: ServerTarget) -> Result<
         let status = child.wait().await.map_err(|error| error.to_string())?;
         let stderr = stderr_task.await.unwrap_or_default();
         if status.success() {
-            return Ok(remote_path);
+            return Ok(true);
         }
         return Err(format!(
             "failed to reuse pilo-server: {}",
             String::from_utf8_lossy(&stderr).trim()
-        ));
-    }
-    if let Some(arch) = status_line.strip_prefix("unsupported\t") {
-        drop(stdin);
-        let _ = child.wait().await;
-        let _ = stderr_task.await;
-        return Err(format!(
-            "remote architecture '{arch}' is not supported by the bundled Linux pilo-server"
         ));
     }
     if status_line != "upload" {
@@ -454,7 +460,7 @@ async fn deploy_server(connection: &Connection, target: ServerTarget) -> Result<
             String::from_utf8_lossy(&stderr).trim()
         ));
     }
-    Ok(remote_path)
+    Ok(false)
 }
 
 pub(super) fn installed_server_candidates(exe: &Path, resource_name: &str) -> Vec<PathBuf> {

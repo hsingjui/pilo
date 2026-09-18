@@ -19,7 +19,7 @@ use fs_ops::{
     fs_stat, fs_write_file,
 };
 use pilo_protocol::{
-    Envelope, MAX_BINARY_PAYLOAD_BYTES, PROTOCOL_VERSION, SERVER_CAPABILITIES, ServerHello,
+    Envelope, MAX_BINARY_PAYLOAD_BYTES, PROTOCOL_VERSION, SERVER_CAPABILITIES, ServerPing,
     ServerStatus, read_frame, write_frame,
 };
 use runtime_streams::{
@@ -27,7 +27,7 @@ use runtime_streams::{
     terminal_open, terminal_resize, terminal_write,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use session::{
     session_activity, session_delete, session_discover, session_read, session_scan, session_search,
     session_watch_start, session_watch_stop,
@@ -170,7 +170,7 @@ async fn dispatch(
         ));
     }
     match method {
-        "hello" => to_value(ServerHello {
+        "server.ping" => to_value(ServerPing {
             protocol_version: PROTOCOL_VERSION,
             server_version: SERVER_VERSION.to_owned(),
             os: std::env::consts::OS.to_owned(),
@@ -181,10 +181,6 @@ async fn dispatch(
                 .collect(),
         })
         .map(ServerReply::json),
-        "server.ping" => Ok(ServerReply::json(json!({
-            "protocolVersion": PROTOCOL_VERSION,
-            "serverVersion": SERVER_VERSION,
-        }))),
         "server.status" => server_status(state).await.map(ServerReply::json),
         "environment.inspect" => environment_inspect(state, from_params(params)?)
             .await
