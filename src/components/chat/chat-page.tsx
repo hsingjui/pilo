@@ -90,7 +90,6 @@ type ChatPageProps = {
 	onNewChat?: () => void;
 	onNewTemporaryChat?: () => void;
 	onExpandSidebar?: () => void;
-	onSessionChanged?: () => void;
 	controllerId?: string;
 	performanceSessionId?: string;
 	uiStateKey?: string;
@@ -174,7 +173,6 @@ function ChatPageImpl(props: ChatPageProps) {
 		onNewChat,
 		onNewTemporaryChat,
 		onExpandSidebar,
-		onSessionChanged,
 		controllerId,
 		performanceSessionId,
 		uiStateKey,
@@ -270,7 +268,6 @@ function ChatPageImpl(props: ChatPageProps) {
 	const sessionConfig = useChatSessionConfig({
 		session,
 		client,
-		onSessionChanged,
 	});
 	const {
 		sessionState,
@@ -284,7 +281,6 @@ function ChatPageImpl(props: ChatPageProps) {
 		thinkingLoading,
 		thinkingChanging,
 		applyHistoryMetadata,
-		handleRenameSession,
 		loadModelOptions,
 		handleModelChange,
 		handleQuickCycleModel,
@@ -898,11 +894,6 @@ function ChatPageImpl(props: ChatPageProps) {
 						<SessionHeader
 							session={session}
 							sessionState={sessionState ?? undefined}
-							onRename={
-								session.temporary || session.externalRunning
-									? undefined
-									: handleRenameSession
-							}
 							onOpenChanges={onOpenChanges}
 							onOpenTerminal={onOpenTerminal}
 							terminalRunning={terminalRunning}

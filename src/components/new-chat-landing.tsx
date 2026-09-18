@@ -118,10 +118,13 @@ export function NewChatLanding({
 			return;
 		}
 		commandLoadingRef.current = true;
+		const client = createChatSessionClient(
+			projectId,
+			`${sessionId}:landing-commands`,
+			undefined,
+			{ noSession: true, owner: "landing_commands" },
+		);
 		try {
-			const client = createChatSessionClient(projectId, sessionId, undefined, {
-				owner: "landing_commands",
-			});
 			await client.prepare();
 			const result = await client.getPiCommands();
 			setCommandSuggestions(createPiCommandSuggestions(result.commands));
@@ -130,6 +133,7 @@ export function NewChatLanding({
 			console.warn("Failed to load Pi commands for new chat", error);
 		} finally {
 			commandLoadingRef.current = false;
+			await client.dispose("landing_commands").catch(() => undefined);
 		}
 	}, [projectId, sessionId, setCommandSuggestions]);
 

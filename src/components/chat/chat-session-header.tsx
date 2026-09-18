@@ -17,7 +17,6 @@ import type { ChatSession, ChatSessionRuntimeState } from "./chat-page-utils";
 export function SessionHeader({
 	session,
 	sessionState,
-	onRename,
 	onOpenChanges,
 	onOpenTerminal,
 	terminalRunning = false,
@@ -30,7 +29,6 @@ export function SessionHeader({
 }: {
 	session?: ChatSession;
 	sessionState?: ChatSessionRuntimeState;
-	onRename?: () => void;
 	onOpenChanges?: () => void;
 	onOpenTerminal?: () => void;
 	terminalRunning?: boolean;
@@ -84,8 +82,6 @@ export function SessionHeader({
 						aria-selected="true"
 						tabIndex={0}
 						className="group flex h-8 w-fit max-w-[66.666667%] min-w-0 items-center gap-1.5 overflow-hidden rounded-md border border-transparent px-3 text-[13px] text-foreground outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-						onDoubleClick={onRename}
-						title={onRename ? "双击重命名" : undefined}
 					>
 						<svg
 							viewBox="0 0 800 800"

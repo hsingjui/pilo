@@ -38,13 +38,11 @@ function isKnownContextValue(value: number | null | undefined) {
 type UseChatSessionConfigOptions = {
 	session: ChatSession;
 	client: ChatSessionClient;
-	onSessionChanged?: () => void;
 };
 
 export function useChatSessionConfig({
 	session,
 	client,
-	onSessionChanged,
 }: UseChatSessionConfigOptions) {
 	const initialCachedModels = getCachedProjectPiModels(
 		session.projectRecord.id,
@@ -219,35 +217,6 @@ export function useChatSessionConfig({
 		},
 		[session.projectRecord.id],
 	);
-
-	const handleRenameSession = useCallback(async () => {
-		if (session.sessionPath) {
-			toast.info(
-				"历史 Session 在查看时保持只读。继续对话后再由 Pi 管理 Session 元数据。",
-			);
-			return;
-		}
-		const name = window
-			.prompt("Session name", sessionState?.name || session.title)
-			?.trim();
-		if (!name) return;
-		try {
-			await client.ensure();
-			await client.setPiSessionName(name);
-			setSessionState((current) => ({ ...current, name }));
-			onSessionChanged?.();
-		} catch (error) {
-			toast.error("无法重命名 Session", {
-				description: runtimeErrorMessage(error),
-			});
-		}
-	}, [
-		client,
-		onSessionChanged,
-		session.sessionPath,
-		session.title,
-		sessionState?.name,
-	]);
 
 	const loadModelOptions = useCallback(
 		async (force = false) => {
@@ -648,7 +617,6 @@ export function useChatSessionConfig({
 		thinkingLoading,
 		thinkingChanging,
 		applyHistoryMetadata,
-		handleRenameSession,
 		loadModelOptions,
 		handleModelChange,
 		handleQuickCycleModel,

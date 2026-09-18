@@ -31,10 +31,7 @@ import { useAppSessionIndex } from "@/components/app/use-app-session-index";
 import type { BusyChatControllersRef } from "@/components/app/use-opened-chat-controllers";
 import type { ChatSession } from "@/components/chat/chat-page";
 import { userErrorMessage } from "@/lib/app-error";
-import {
-	createChatSessionClient,
-	stopChatSession,
-} from "@/lib/chat-session-client";
+import { stopChatSession } from "@/lib/chat-session-client";
 import type { ChatSubmission } from "@/lib/chat-submission";
 import {
 	listenForDesktopNotificationActions,
@@ -95,11 +92,6 @@ export function useAppChatWorkspace({
 		[],
 	);
 
-	const landingPrewarmRef = useRef<{
-		projectId: string;
-		sessionId: string;
-		client: ReturnType<typeof createChatSessionClient>;
-	} | null>(null);
 	const pendingLandingSubmissionRef = useRef<{
 		submission: ChatSubmission;
 		model: PiModel | null;
@@ -336,60 +328,6 @@ export function useAppChatWorkspace({
 		);
 	}, [activeProject, projectsReady, startDraftSession]);
 	/* oxlint-enable react/set-state-in-effect */
-
-	useEffect(() => {
-		const current = landingPrewarmRef.current;
-		const prewarmWasClaimedByChat =
-			current !== null &&
-			openedChats.some(
-				(entry) =>
-					entry.session.projectRecord.id === current.projectId &&
-					entry.session.id === current.sessionId,
-			);
-		if (prewarmWasClaimedByChat) {
-			landingPrewarmRef.current = null;
-			return;
-		}
-		const keepForDraftChat = chatSession?.id === draftSessionId;
-		if (!activeProjectId || (chatSession && !keepForDraftChat)) {
-			if (current) {
-				landingPrewarmRef.current = null;
-				void current.client
-					.dispose("landing_prewarm_release")
-					.catch(() => undefined);
-			}
-			return;
-		}
-		if (
-			current?.projectId === activeProjectId &&
-			current.sessionId === draftSessionId
-		) {
-			return;
-		}
-		if (current) {
-			void current.client
-				.dispose("landing_prewarm_replace")
-				.catch(() => undefined);
-		}
-		const client = createChatSessionClient(
-			activeProjectId,
-			draftSessionId,
-			undefined,
-			{
-				owner: "landing_prewarm",
-			},
-		);
-		landingPrewarmRef.current = {
-			projectId: activeProjectId,
-			sessionId: draftSessionId,
-			client,
-		};
-		void client.prepare().catch((error) => {
-			if (landingPrewarmRef.current?.client === client) {
-				console.warn("Failed to prewarm Pi runtime", error);
-			}
-		});
-	}, [activeProjectId, chatSession, draftSessionId, openedChats]);
 
 	useEffect(() => {
 		if (chatSession || !activeProject) return;

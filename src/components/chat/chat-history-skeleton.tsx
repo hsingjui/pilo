@@ -50,7 +50,7 @@ export function ChatHistorySkeleton() {
 			className="flex min-h-full flex-col pb-8 pt-4 sm:pb-10 sm:pt-6"
 		>
 			<span className="sr-only">正在加载会话</span>
-			<div className="mx-auto w-full max-w-[46rem] flex-1 px-3 sm:px-4">
+			<div className="mx-auto w-full max-w-[80%] flex-1 px-3 sm:px-4">
 				<AssistantSkeleton widths={["w-[82%]", "w-[68%]", "w-[48%]"]} />
 				<UserSkeleton className="w-[46%] sm:w-[38%]" />
 				<AssistantSkeleton widths={["w-[72%]", "w-[88%]", "w-[58%]"]} />

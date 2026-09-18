@@ -387,13 +387,6 @@ function App() {
 												}
 												onExpandSidebar={() => setLeftSidebarCollapsed(false)}
 												onOpenFile={openViewerFile}
-												onSessionChanged={() => {
-													void refreshProjectSessions(
-														entry.session.projectRecord.id,
-													).catch((error) =>
-														console.error("Failed to refresh sessions", error),
-													);
-												}}
 												reserveWindowControls={CUSTOM_TITLEBAR}
 												sidebarCollapsed={leftSidebarCollapsed}
 											/>

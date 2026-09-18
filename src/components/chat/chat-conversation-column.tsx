@@ -10,7 +10,7 @@ export function ConversationColumn({
 	className?: string;
 }) {
 	return (
-		<div className={cn("mx-auto w-full max-w-[46rem] px-3 sm:px-4", className)}>
+		<div className={cn("mx-auto w-full max-w-[80%] px-3 sm:px-4", className)}>
 			{children}
 		</div>
 	);

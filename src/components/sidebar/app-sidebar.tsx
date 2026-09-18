@@ -480,8 +480,8 @@ export function AppSidebar({
 						<div
 							className={cn(
 								"absolute right-1.5 flex items-center gap-0.5",
-								// 与 TRAFFIC_LIGHT_ALIGNED_HEADER 同一红绿灯圆心：11 + 2 + 14 = 27
-								IS_MACOS ? "top-0.5" : "top-2",
+								// 与 TRAFFIC_LIGHT_ALIGNED_HEADER 同一红绿灯圆心：11 - 2 + 14 = 23
+								IS_MACOS ? "-top-0.5" : "top-2",
 							)}
 						>
 							<button
