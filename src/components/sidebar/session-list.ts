@@ -33,15 +33,19 @@ export function summarizeProjectSessions(
 		if (session.active) include(session);
 	}
 
-	let recentCount = 0;
-	for (const session of ordered) {
-		if (included.has(session.id)) continue;
-		// 选中的会话留在原本的时间位置：只保证可见，不因为点击而被顶到项目第一位。
-		const selected = session.id === selectedSessionId;
-		if (!selected && recentCount >= recentLimit) continue;
-		include(session);
-		if (!selected) recentCount += 1;
+	const recent = ordered
+		.filter((session) => !included.has(session.id))
+		.slice(0, recentLimit);
+	const selected = ordered.find(
+		(session) => session.id === selectedSessionId && !included.has(session.id),
+	);
+	if (selected && !recent.some((session) => session.id === selected.id)) {
+		// 选中的旧会话需要继续可见，但不能因为一次点击把“最近 5 条”
+		// 扩成 6 条；用它替换最近窗口里最旧的一条即可。
+		if (recent.length > 0) recent[recent.length - 1] = selected;
+		else recent.push(selected);
 	}
+	for (const session of recent) include(session);
 
 	return {
 		visible,

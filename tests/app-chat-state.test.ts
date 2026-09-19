@@ -110,17 +110,37 @@ test("sidebar project summary keeps active sessions first without moving the sel
 	const selectedRecent = summarizeProjectSessions(sessions, "s7");
 	assert.deepEqual(
 		selectedRecent.visible.map((session) => session.id),
-		["s2", "s1", "s9", "s8", "s7", "s6", "s5", "s4"],
+		["s2", "s1", "s9", "s8", "s7", "s6", "s5"],
 	);
 	assert.equal(selectedRecent.totalCount, 10);
-	assert.equal(selectedRecent.hiddenCount, 2);
+	assert.equal(selectedRecent.hiddenCount, 3);
 
-	// 选中超出最近窗口的旧会话时，它仍留在自己的时间位置，只是被补进可见列表。
+	// 选中超出最近窗口的旧会话时，用它替换窗口里最旧的一条，
+	// 而不是把 5 条最近会话扩成 6 条。
 	const selectedOld = summarizeProjectSessions(sessions, "s0");
 	assert.deepEqual(
 		selectedOld.visible.map((session) => session.id),
-		["s2", "s1", "s9", "s8", "s7", "s6", "s5", "s0"],
+		["s2", "s1", "s9", "s8", "s7", "s6", "s0"],
 	);
+});
+
+test("selecting a recent sidebar session does not grow the recent window", () => {
+	const sessions = Array.from({ length: 8 }, (_, index) =>
+		sidebarSession(`s${index}`, index),
+	);
+
+	const unselected = summarizeProjectSessions(sessions, null);
+	const selected = summarizeProjectSessions(sessions, "s5");
+
+	assert.deepEqual(
+		unselected.visible.map((session) => session.id),
+		["s7", "s6", "s5", "s4", "s3"],
+	);
+	assert.deepEqual(
+		selected.visible.map((session) => session.id),
+		["s7", "s6", "s5", "s4", "s3"],
+	);
+	assert.equal(selected.hiddenCount, unselected.hiddenCount);
 });
 
 test("sidebar project session search matches titles and previews in recent order", () => {
