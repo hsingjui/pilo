@@ -83,7 +83,7 @@ export function ChatRuntimeRecoveryNotice({
 				<div className="ml-6 mt-1">
 					<button
 						type="button"
-						className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+						className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-[color,scale] duration-150 ease-out hover:text-foreground active:scale-[0.96]"
 						onClick={() => setDetailsOpen((open) => !open)}
 					>
 						{detailsOpen ? (

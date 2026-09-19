@@ -133,7 +133,7 @@ export function SettingsRow({
 			<div className={cn("min-w-0", helper && "sm:max-w-[520px]")}>
 				<p className="font-medium leading-tight text-foreground">{label}</p>
 				{helper ? (
-					<p className="text-[11px] leading-tight text-muted-foreground">
+					<p className="text-[11px] leading-[1.4] text-muted-foreground">
 						{helper}
 					</p>
 				) : null}

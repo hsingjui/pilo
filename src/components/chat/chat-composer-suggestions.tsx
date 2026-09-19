@@ -126,7 +126,7 @@ export function ComposerSuggestionMenu({
 				activeQuery.trigger === "/" ? "max-w-[520px]" : "max-w-[600px]",
 			)}
 		>
-			<div className="flex h-7 items-center gap-1.5 border-b border-border/70 px-2 text-[10px] text-muted-foreground">
+			<div className="flex h-7 items-center gap-1.5 border-b border-border/70 px-2 text-xs text-muted-foreground">
 				<span className="flex size-4.5 items-center justify-center rounded bg-muted font-mono text-foreground">
 					{activeQuery.trigger}
 				</span>
@@ -165,11 +165,11 @@ export function ComposerSuggestionMenu({
 							<span className="flex size-5 shrink-0 items-center justify-center rounded border border-border/60 bg-muted/35 text-muted-foreground">
 								<SuggestionIcon kind={suggestion.kind} />
 							</span>
-							<span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-5">
+							<span className="min-w-0 flex-1 truncate font-mono text-xs">
 								{suggestion.label}
 							</span>
 							{suggestion.detail ? (
-								<span className="max-w-40 shrink-0 truncate text-[10px] text-muted-foreground">
+								<span className="max-w-40 shrink-0 truncate text-xs text-muted-foreground">
 									{suggestion.detail}
 								</span>
 							) : null}

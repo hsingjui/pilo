@@ -38,7 +38,7 @@ export const menuItemExtraClassName =
 	"ms-auto ps-4 font-mono text-xs text-muted-foreground";
 
 export const menuGroupLabelClassName =
-	"select-none px-3 pb-1 pt-2 text-[11px] font-semibold uppercase leading-[14px] tracking-[0.6px] text-muted-foreground";
+	"select-none px-3 pb-1 pt-2 text-[11px] font-semibold uppercase leading-tight tracking-[0.6px] text-muted-foreground";
 
 export const menuSeparatorClassName = "my-1 h-px";
 

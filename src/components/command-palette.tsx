@@ -260,8 +260,13 @@ export function CommandPalette({
 								>
 									<Folder className="size-4 shrink-0 text-muted-foreground" />
 									<div className="min-w-0 flex-1">
-										<div className="truncate text-sm">{project.name}</div>
-										<div className="truncate text-[11px] text-muted-foreground">
+										<div className="truncate text-sm" title={project.name}>
+											{project.name}
+										</div>
+										<div
+											className="truncate text-[11px] text-muted-foreground"
+											title={project.path}
+										>
 											{project.path}
 										</div>
 									</div>
@@ -288,12 +293,17 @@ export function CommandPalette({
 									<MessagesSquare className="size-4 shrink-0 text-muted-foreground" />
 									<div className="min-w-0 flex-1">
 										<div className="flex min-w-0 items-center gap-2">
-											<span className="truncate text-sm">{session.title}</span>
+											<span className="truncate text-sm" title={session.title}>
+												{session.title}
+											</span>
 											{session.active ? (
 												<span className="size-1.5 shrink-0 rounded-full bg-status-success" />
 											) : null}
 										</div>
-										<div className="truncate text-[11px] text-muted-foreground">
+										<div
+											className="truncate text-[11px] text-muted-foreground"
+											title={`${projectById.get(session.projectId)?.name ?? "项目"}${session.preview ? ` · ${session.preview}` : ""}`}
+										>
 											{projectById.get(session.projectId)?.name ?? "项目"}
 											{session.preview ? ` · ${session.preview}` : ""}
 										</div>
@@ -313,13 +323,19 @@ export function CommandPalette({
 								>
 									<MessageSquareText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
 									<div className="min-w-0 flex-1">
-										<div className="truncate text-xs font-medium text-foreground/90">
+										<div
+											className="truncate text-xs font-medium text-foreground/90"
+											title={result.title}
+										>
 											{result.title}
 											<span className="ml-2 font-normal text-muted-foreground">
 												{result.role === "user" ? "你" : "Agent"}
 											</span>
 										</div>
-										<div className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-muted-foreground">
+										<div
+											className="mt-0.5 line-clamp-2 text-[11px] leading-[1.45] text-muted-foreground"
+											title={result.snippet}
+										>
 											{result.snippet}
 										</div>
 									</div>
