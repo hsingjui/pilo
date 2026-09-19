@@ -12,6 +12,12 @@ import { runtimeErrorMessage, type PiloRuntimeEvent } from "@/lib/pi-runtime";
 
 type ChatSessionClient = ReturnType<typeof createChatSessionClient>;
 
+function extensionNotificationDedupKey(
+	notification: PiExtensionNotification,
+): string {
+	return `${notification.type}:${notification.message}`;
+}
+
 export type PiExtensionDialogRequest = Extract<
 	PiloRuntimeEvent,
 	{ type: "extension_ui_request" }
@@ -28,6 +34,7 @@ type RetryState = {
 const MAX_EXTENSION_NOTIFICATIONS = 3;
 const INFO_NOTIFICATION_DURATION_MS = 5_000;
 const WARNING_NOTIFICATION_DURATION_MS = 10_000;
+const EXTENSION_NOTIFICATION_DEDUP_WINDOW_MS = 10_000;
 type UsePiSessionFeaturesOptions = {
 	client: ChatSessionClient;
 	active: boolean;
@@ -60,6 +67,7 @@ export function usePiSessionFeatures({
 		PiExtensionNotification[]
 	>([]);
 	const extensionNotificationTimersRef = useRef(new Map<string, number>());
+	const extensionNotificationLastSeenRef = useRef(new Map<string, number>());
 
 	const dismissExtensionNotification = useCallback((id: string) => {
 		const timer = extensionNotificationTimersRef.current.get(id);
@@ -105,12 +113,39 @@ export function usePiSessionFeatures({
 				type,
 			};
 
-			setExtensionNotifications((current) =>
-				[
+			const dedupKey = extensionNotificationDedupKey(notification);
+			const now = Date.now();
+			for (const [key, seenAt] of extensionNotificationLastSeenRef.current) {
+				if (now - seenAt >= EXTENSION_NOTIFICATION_DEDUP_WINDOW_MS) {
+					extensionNotificationLastSeenRef.current.delete(key);
+				}
+			}
+			const lastSeenAt = extensionNotificationLastSeenRef.current.get(dedupKey);
+			// Dropped repeats refresh the timestamp too, so a continuous burst of
+			// identical notifications only ever shows the first one.
+			extensionNotificationLastSeenRef.current.set(dedupKey, now);
+			if (
+				lastSeenAt !== undefined &&
+				now - lastSeenAt < EXTENSION_NOTIFICATION_DEDUP_WINDOW_MS
+			) {
+				return;
+			}
+
+			setExtensionNotifications((current) => {
+				// Error notifications stay on screen until dismissed, so an
+				// identical repeat outside the window must not stack either.
+				if (
+					current.some(
+						(item) => extensionNotificationDedupKey(item) === dedupKey,
+					)
+				) {
+					return current;
+				}
+				return [
 					...current.filter((item) => item.id !== notification.id),
 					notification,
-				].slice(-MAX_EXTENSION_NOTIFICATIONS),
-			);
+				].slice(-MAX_EXTENSION_NOTIFICATIONS);
+			});
 		},
 		[],
 	);
