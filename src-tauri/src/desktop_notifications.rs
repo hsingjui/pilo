@@ -457,23 +457,31 @@ pub fn send_windows_desktop_notification(
                     .map(str::to_owned)
                     .unwrap_or_else(|| Toast::POWERSHELL_APP_ID.to_owned());
 
+                let wait_for_action = target.is_some();
+                let (event_sender, event_receiver) = std::sync::mpsc::channel();
                 let click_app = app.clone();
-                let mut toast =
-                    Toast::new(&app_id)
-                        .title(&title)
-                        .text1(&body)
+                let mut toast = Toast::new(&app_id).title(&title).text1(&body);
+                if let Some(target) = target {
+                    let activation_sender = event_sender.clone();
+                    let dismissal_sender = event_sender;
+                    toast = toast
                         .on_activated(move |_| {
                             focus_main_window(&click_app);
-                            if let Some(target) = target.clone()
-                                && let Err(error) =
-                                    click_app.emit(NOTIFICATION_OPEN_SESSION_EVENT, target)
+                            if let Err(error) =
+                                click_app.emit(NOTIFICATION_OPEN_SESSION_EVENT, target.clone())
                             {
                                 eprintln!(
                                     "[notification] failed to emit notification target: {error}"
                                 );
                             }
+                            let _ = activation_sender.send(());
+                            Ok(())
+                        })
+                        .on_dismissed(move |_| {
+                            let _ = dismissal_sender.send(());
                             Ok(())
                         });
+                }
 
                 if let Some(icon_path) = windows_notification_icon_path(&app) {
                     toast = toast.icon(&icon_path, IconCrop::Square, "Pilo");
@@ -481,6 +489,11 @@ pub fn send_windows_desktop_notification(
 
                 if let Err(error) = toast.show() {
                     eprintln!("[notification] failed to show Windows notification: {error}");
+                } else if wait_for_action {
+                    // Keep the toast and its registered callbacks alive while waiting for
+                    // normal user interaction. Bound the wait so suppressed or otherwise
+                    // non-interactive notifications cannot park this worker indefinitely.
+                    let _ = event_receiver.recv_timeout(std::time::Duration::from_secs(5 * 60));
                 }
 
                 if com.is_ok() {
