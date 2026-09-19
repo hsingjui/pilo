@@ -186,15 +186,18 @@ function renderAssistantContentNodes({
 		}
 		index -= 1;
 		const groupKey = group[0]?.id ?? `activity-${groupStart}`;
-		const groupRunning = group.some(
-			(activity) => activity.status === "running",
-		);
-		const activityStateKey = groupRunning ? "running" : "complete";
+		const nextItem = content[index + 1];
+		const followedByText =
+			nextItem?.type === "text" && nextItem.text.length > 0;
+		const disclosureState = followedByText
+			? "followed-by-text"
+			: "awaiting-text";
 		nodes.push(
-			<div key={`${messageId}-${groupKey}-${activityStateKey}`}>
+			<div key={`${messageId}-${groupKey}-${disclosureState}`}>
 				<AssistantActivityView
 					activity={group}
-					expansionKey={`${messageId}:${groupKey}:${activityStateKey}`}
+					expansionKey={`${messageId}:${groupKey}:${disclosureState}`}
+					followedByText={followedByText}
 					durationMs={firstActivityGroup ? durationMs : undefined}
 					onOpenPath={onOpenFile}
 				/>

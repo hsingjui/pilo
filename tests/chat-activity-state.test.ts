@@ -8,6 +8,7 @@ import {
 	finishAssistantThinkingContent,
 	getAssistantStreamingLabel,
 	reconcileAssistantTextContent,
+	shouldInitiallyOpenAssistantActivity,
 	splitAssistantContentForDisplay,
 	startAssistantThinkingContent,
 	summarizeAssistantActivity,
@@ -260,7 +261,7 @@ test("tool updates keep their original position among ordered content", () => {
 test("assistant streaming label follows pending and active response phases", () => {
 	assert.equal(
 		getAssistantStreamingLabel({ text: "", streaming: true }),
-		"启动中...",
+		"启动中…",
 	);
 	assert.equal(
 		getAssistantStreamingLabel({
@@ -385,6 +386,33 @@ test("finished assistant turns keep only the final contiguous text run expanded"
 	assert.deepEqual(
 		sections.final.map((item) => item.id),
 		["final-a", "final-b"],
+	);
+});
+
+test("running activity stays open after following text arrives", () => {
+	assert.equal(
+		shouldInitiallyOpenAssistantActivity({
+			running: true,
+			followedByText: true,
+			collapseCompletedActivity: true,
+		}),
+		true,
+	);
+	assert.equal(
+		shouldInitiallyOpenAssistantActivity({
+			running: false,
+			followedByText: true,
+			collapseCompletedActivity: true,
+		}),
+		false,
+	);
+	assert.equal(
+		shouldInitiallyOpenAssistantActivity({
+			running: false,
+			followedByText: false,
+			collapseCompletedActivity: true,
+		}),
+		true,
 	);
 });
 

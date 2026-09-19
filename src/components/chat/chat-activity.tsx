@@ -15,7 +15,10 @@ import {
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import { toggleChatExpansionWithAnchor } from "@/components/chat/chat-expansion-anchor";
 import { useChatExpansionState } from "@/components/chat/chat-expansion-state";
-import { summarizeAssistantActivity } from "@/lib/chat-activity-state";
+import {
+	shouldInitiallyOpenAssistantActivity,
+	summarizeAssistantActivity,
+} from "@/lib/chat-activity-state";
 import { formatWorkDuration } from "@/lib/format-duration";
 import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
@@ -184,14 +187,14 @@ function diffLineStyle(line: string) {
 
 function ToolDiff({ diff }: { diff: string }) {
 	return (
-		<pre className="scrollbar-pro max-h-64 overflow-auto py-1 font-mono text-[10px] leading-[14px]">
+		<pre className="scrollbar-pro max-h-64 overflow-auto py-1 font-mono text-xs leading-[1.4]">
 			{keyedDiffLines(diff).map(({ line, key }) => {
 				const style = diffLineStyle(line);
 				return (
 					<span
 						key={key}
 						className={cn(
-							"grid min-h-[14px] grid-cols-[12px_minmax(0,1fr)] whitespace-pre-wrap [overflow-wrap:anywhere]",
+							"grid min-h-[1.4em] grid-cols-[12px_minmax(0,1fr)] whitespace-pre-wrap [overflow-wrap:anywhere]",
 							style.className,
 						)}
 					>
@@ -317,9 +320,9 @@ function ThinkingActivityView({ activity }: { activity: ThinkingActivity }) {
 					text={activity.text}
 					isStreaming={running}
 					className={cn(
-						"!text-[12.5px] !leading-[1.5] !text-muted-foreground",
+						"!text-xs !leading-[1.5] !text-muted-foreground",
 						"[&_p]:!mb-1 [&_li:not(:first-child)]:!mt-0.5",
-						"[&_:is(h1,h2,h3,h4,h5,h6)]:!my-1 [&_:is(h1,h2,h3,h4,h5,h6)]:!text-[12.5px] [&_:is(h1,h2,h3,h4,h5,h6)]:!font-medium",
+						"[&_:is(h1,h2,h3,h4,h5,h6)]:!my-1 [&_:is(h1,h2,h3,h4,h5,h6)]:!text-xs [&_:is(h1,h2,h3,h4,h5,h6)]:!font-medium",
 						"[&_[data-streamdown='code-block']]:!my-2",
 					)}
 				/>
@@ -352,11 +355,11 @@ function ToolDetail({ activity }: { activity: ToolCallActivity }) {
 	if (!diff && !detailText && images.length === 0) return null;
 
 	return (
-		<div className="w-full pb-1 pt-0.5 text-[10px] font-normal text-muted-foreground">
+		<div className="w-full pb-1 pt-0.5 text-xs font-normal text-muted-foreground">
 			{diff ? (
 				<ToolDiff diff={diff} />
 			) : detailText ? (
-				<pre className="scrollbar-pro max-h-56 overflow-auto whitespace-pre-wrap py-0.5 pr-1 font-mono text-[10px] leading-[14px] [overflow-wrap:anywhere]">
+				<pre className="scrollbar-pro max-h-56 overflow-auto whitespace-pre-wrap py-0.5 pr-1 font-mono text-xs leading-[1.4] [overflow-wrap:anywhere]">
 					{detailText}
 				</pre>
 			) : null}
@@ -482,16 +485,23 @@ function activityLabel(activity: AssistantActivity[], running: boolean) {
 export function AssistantActivityView({
 	activity,
 	expansionKey,
+	followedByText = false,
 	durationMs,
 	onOpenPath,
 }: {
 	activity: AssistantActivity[];
 	expansionKey: string;
+	followedByText?: boolean;
 	durationMs?: number;
 	onOpenPath?: (path: string) => void;
 }) {
 	const { collapseCompletedActivity, showWorkDuration } = usePreferences();
 	const running = activity.some((item) => item.status === "running");
+	const initiallyOpen = shouldInitiallyOpenAssistantActivity({
+		running,
+		followedByText,
+		collapseCompletedActivity,
+	});
 	const durationLabel =
 		!running && showWorkDuration && durationMs !== undefined
 			? formatWorkDuration(durationMs)
@@ -499,11 +509,11 @@ export function AssistantActivityView({
 	const hasWorkSummary = Boolean(durationLabel);
 	const [workOpen, setWorkOpen] = useChatExpansionState(
 		`${expansionKey}:work`,
-		running || !collapseCompletedActivity,
+		initiallyOpen,
 	);
 	const [groupOpen, setGroupOpen] = useChatExpansionState(
 		`${expansionKey}:group`,
-		running || !collapseCompletedActivity,
+		initiallyOpen,
 	);
 	if (activity.length === 0) return null;
 

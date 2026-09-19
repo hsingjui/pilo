@@ -24,6 +24,18 @@ export type AssistantActivitySummary = {
 	commandCount: number;
 };
 
+export function shouldInitiallyOpenAssistantActivity({
+	running,
+	followedByText,
+	collapseCompletedActivity,
+}: {
+	running: boolean;
+	followedByText: boolean;
+	collapseCompletedActivity: boolean;
+}) {
+	return running || !followedByText || !collapseCompletedActivity;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
