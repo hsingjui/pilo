@@ -31,7 +31,6 @@ const CommandDialog = ({
 		<DialogContentWithoutClose
 			noAnimation
 			className="top-[12%] flex h-[min(560px,72vh)] w-[640px] max-w-[calc(100vw-3rem)] translate-y-0 flex-col gap-0 overflow-hidden border-0 bg-transparent p-0 shadow-none sm:p-0"
-			overlayClassName="bg-black/40"
 		>
 			<Command
 				shouldFilter={shouldFilter}

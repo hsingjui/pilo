@@ -553,11 +553,7 @@ export function SettingsDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent
-				noAnimation
-				overlayClassName="bg-black/40 backdrop-blur-sm"
-				className="flex h-[min(90vh,950px)] w-[84vw] max-w-[1100px] flex-col gap-0 overflow-hidden p-0 sm:p-0"
-			>
+			<DialogContent className="flex h-[min(90vh,950px)] w-[84vw] max-w-[1100px] flex-col gap-0 overflow-hidden p-0 sm:p-0">
 				<DialogDescription className="sr-only">Pilo 设置</DialogDescription>
 				<div className="flex min-h-0 flex-1 overflow-hidden">
 					<nav
@@ -610,9 +606,7 @@ export function SettingsDialog({
 
 					<main className="flex min-h-0 min-w-0 flex-1 flex-col">
 						<header className="mt-2 flex h-12 shrink-0 items-center px-8">
-							<DialogTitle className="text-xl font-semibold leading-none">
-								{activeTabConfig.label}
-							</DialogTitle>
+							<DialogTitle>{activeTabConfig.label}</DialogTitle>
 						</header>
 						<div className="min-h-0 flex-1">
 							<ScrollArea className="h-full">

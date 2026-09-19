@@ -25,7 +25,7 @@ const DialogOverlay = React.forwardRef<
 	<DialogPrimitive.Overlay
 		ref={ref}
 		className={cn(
-			"fixed inset-0 z-[var(--z-dialog-overlay)] bg-black/80",
+			"fixed inset-0 z-[var(--z-dialog-overlay)] bg-black/40",
 			!noAnimation && dialogOverlayAnimationClasses,
 			className,
 		)}
@@ -163,7 +163,7 @@ const DialogTitle = React.forwardRef<
 	<DialogPrimitive.Title
 		ref={ref}
 		className={cn(
-			"text-lg font-semibold leading-none tracking-tight",
+			"text-lg font-semibold leading-tight tracking-tight",
 			className,
 		)}
 		{...props}
