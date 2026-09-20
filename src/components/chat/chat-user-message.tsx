@@ -10,6 +10,7 @@ import { usePreferences } from "@/lib/preferences-provider";
 import type { SkillInvocation } from "@/lib/skill-invocation";
 import { parseSkillInvocation } from "@/lib/skill-invocation";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui";
 
 const LARGE_MESSAGE_PREVIEW_CHARS = 8_000;
 
@@ -62,13 +63,12 @@ function UserMessageBody({ text }: { text: string }) {
 /** Skill 调用只显示紧凑占位，不回显 Pi 展开的 Skill 正文。 */
 function SkillInvocationBody({ invocation }: { invocation: SkillInvocation }) {
 	return (
-		<span
-			className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-foreground/10 bg-background/40 px-2 py-1 text-xs"
-			title={invocation.location ?? undefined}
-		>
-			<Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
-			<span className="min-w-0 truncate font-mono">{invocation.name}</span>
-		</span>
+		<Hint label={invocation.location ?? undefined}>
+			<span className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-foreground/10 bg-background/40 px-2 py-1 text-xs">
+				<Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
+				<span className="min-w-0 truncate font-mono">{invocation.name}</span>
+			</span>
+		</Hint>
 	);
 }
 

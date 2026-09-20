@@ -23,6 +23,7 @@ import {
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
+	Hint,
 } from "@/ui";
 
 import {
@@ -210,17 +211,22 @@ export function SessionNamingSettings() {
 										))}
 									</SelectContent>
 								</Select>
-								<Button
-									variant="ghost"
-									size="icon"
-									className={SETTINGS_ICON_BUTTON_CLASS}
-									disabled={busy || projectCount === 0}
-									onClick={() => void refreshModels(connection.id)}
-									title="刷新该连接的模型"
-									aria-label="刷新该连接的模型"
+								<Hint
+									label={
+										busy || projectCount === 0 ? undefined : "刷新该连接的模型"
+									}
 								>
-									<RefreshCw className={busy ? "animate-spin" : undefined} />
-								</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										className={SETTINGS_ICON_BUTTON_CLASS}
+										disabled={busy || projectCount === 0}
+										onClick={() => void refreshModels(connection.id)}
+										aria-label="刷新该连接的模型"
+									>
+										<RefreshCw className={busy ? "animate-spin" : undefined} />
+									</Button>
+								</Hint>
 							</SettingsRow>
 						);
 					})

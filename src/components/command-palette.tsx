@@ -17,6 +17,7 @@ import {
 	CommandInput,
 	CommandItem,
 	CommandList,
+	Hint,
 } from "@/ui";
 import type { SidebarProject, SidebarSession } from "./sidebar/types";
 
@@ -260,15 +261,14 @@ export function CommandPalette({
 								>
 									<Folder className="size-4 shrink-0 text-muted-foreground" />
 									<div className="min-w-0 flex-1">
-										<div className="truncate text-sm" title={project.name}>
-											{project.name}
-										</div>
-										<div
-											className="truncate text-[11px] text-muted-foreground"
-											title={project.path}
-										>
-											{project.path}
-										</div>
+										<Hint label={project.name}>
+											<div className="truncate text-sm">{project.name}</div>
+										</Hint>
+										<Hint label={project.path}>
+											<div className="truncate text-[11px] text-muted-foreground">
+												{project.path}
+											</div>
+										</Hint>
 									</div>
 								</CommandItem>
 							))}
@@ -293,20 +293,23 @@ export function CommandPalette({
 									<MessagesSquare className="size-4 shrink-0 text-muted-foreground" />
 									<div className="min-w-0 flex-1">
 										<div className="flex min-w-0 items-center gap-2">
-											<span className="truncate text-sm" title={session.title}>
-												{session.title}
-											</span>
+											<Hint label={session.title}>
+												<span className="truncate text-sm">
+													{session.title}
+												</span>
+											</Hint>
 											{session.active ? (
 												<span className="size-1.5 shrink-0 rounded-full bg-status-success" />
 											) : null}
 										</div>
-										<div
-											className="truncate text-[11px] text-muted-foreground"
-											title={`${projectById.get(session.projectId)?.name ?? "项目"}${session.preview ? ` · ${session.preview}` : ""}`}
+										<Hint
+											label={`${projectById.get(session.projectId)?.name ?? "项目"}${session.preview ? ` · ${session.preview}` : ""}`}
 										>
-											{projectById.get(session.projectId)?.name ?? "项目"}
-											{session.preview ? ` · ${session.preview}` : ""}
-										</div>
+											<div className="truncate text-[11px] text-muted-foreground">
+												{projectById.get(session.projectId)?.name ?? "项目"}
+												{session.preview ? ` · ${session.preview}` : ""}
+											</div>
+										</Hint>
 									</div>
 								</CommandItem>
 							))}
@@ -323,21 +326,19 @@ export function CommandPalette({
 								>
 									<MessageSquareText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
 									<div className="min-w-0 flex-1">
-										<div
-											className="truncate text-xs font-medium text-foreground/90"
-											title={result.title}
-										>
-											{result.title}
-											<span className="ml-2 font-normal text-muted-foreground">
-												{result.role === "user" ? "你" : "Agent"}
-											</span>
-										</div>
-										<div
-											className="mt-0.5 line-clamp-2 text-[11px] leading-[1.45] text-muted-foreground"
-											title={result.snippet}
-										>
-											{result.snippet}
-										</div>
+										<Hint label={result.title}>
+											<div className="truncate text-xs font-medium text-foreground/90">
+												{result.title}
+												<span className="ml-2 font-normal text-muted-foreground">
+													{result.role === "user" ? "你" : "Agent"}
+												</span>
+											</div>
+										</Hint>
+										<Hint label={result.snippet}>
+											<div className="mt-0.5 line-clamp-2 text-[11px] leading-[1.45] text-muted-foreground">
+												{result.snippet}
+											</div>
+										</Hint>
 									</div>
 								</CommandItem>
 							))}

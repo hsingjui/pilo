@@ -25,6 +25,7 @@ import {
 } from "@/lib/chat-submission";
 import { isImeComposingNativeKeyboardEvent } from "@/lib/ime";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui";
 
 /**
  * History images resolve through the session scope; optimistic local messages
@@ -259,48 +260,51 @@ export const ChatImageThumbnail = memo(function ChatImageThumbnail({
 	}, [image.size, label, retry, source]);
 
 	return (
-		<button
-			ref={observeRef}
-			type="button"
-			aria-label={`查看图片 ${label}`}
-			onClick={handleClick}
-			title={
+		<Hint
+			label={
 				image.size ? `${label} · ${formatChatImageSize(image.size)}` : label
 			}
-			className={cn(
-				"group relative overflow-hidden rounded-lg border border-foreground/10 bg-muted/40 transition-colors hover:border-foreground/25",
-				THUMBNAIL_SIZE_CLASS,
-				className,
-			)}
 		>
-			{source.status === "ready" ? (
-				<img
-					src={source.url}
-					alt={alt ?? label}
-					loading="lazy"
-					decoding="async"
-					draggable={false}
-					className="size-full object-cover transition-transform duration-150 ease-out group-hover:scale-[1.03]"
-				/>
-			) : source.status === "error" ? (
-				<span
-					className="flex size-full flex-col items-center justify-center gap-1 px-1 text-[10px] leading-tight text-muted-foreground"
-					role="alert"
-				>
-					<ImageOff className="size-4" />
-					<span className="line-clamp-2">
-						{retry ? "加载失败，点击重试" : source.message}
+			<button
+				ref={observeRef}
+				type="button"
+				aria-label={`查看图片 ${label}`}
+				onClick={handleClick}
+				className={cn(
+					"group relative overflow-hidden rounded-lg border border-foreground/10 bg-muted/40 transition-colors hover:border-foreground/25",
+					THUMBNAIL_SIZE_CLASS,
+					className,
+				)}
+			>
+				{source.status === "ready" ? (
+					<img
+						src={source.url}
+						alt={alt ?? label}
+						loading="lazy"
+						decoding="async"
+						draggable={false}
+						className="size-full object-cover transition-transform duration-150 ease-out group-hover:scale-[1.03]"
+					/>
+				) : source.status === "error" ? (
+					<span
+						className="flex size-full flex-col items-center justify-center gap-1 px-1 text-[10px] leading-tight text-muted-foreground"
+						role="alert"
+					>
+						<ImageOff className="size-4" />
+						<span className="line-clamp-2">
+							{retry ? "加载失败，点击重试" : source.message}
+						</span>
 					</span>
-				</span>
-			) : (
-				<span className="flex size-full items-center justify-center text-muted-foreground">
-					{lazy ? (
-						<span className="size-full animate-pulse bg-muted/70" />
-					) : (
-						<LoaderCircle className="size-4 animate-spin" />
-					)}
-				</span>
-			)}
-		</button>
+				) : (
+					<span className="flex size-full items-center justify-center text-muted-foreground">
+						{lazy ? (
+							<span className="size-full animate-pulse bg-muted/70" />
+						) : (
+							<LoaderCircle className="size-4 animate-spin" />
+						)}
+					</span>
+				)}
+			</button>
+		</Hint>
 	);
 });

@@ -14,7 +14,7 @@ import {
 } from "@/lib/keyboard-shortcuts";
 import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
-import { Button } from "@/ui";
+import { Button, Hint } from "@/ui";
 import { SettingsRow, SettingsSection } from "./compact-layout";
 
 function ShortcutKeys({ shortcut }: { shortcut: string }) {
@@ -120,18 +120,19 @@ function ShortcutEditor({
 					<ShortcutKeys shortcut={shortcut} />
 				)}
 			</button>
-			<Button
-				type="button"
-				variant="ghost"
-				size="icon"
-				className={cn("size-7", !isCustom && "invisible")}
-				disabled={!isCustom}
-				onClick={resetShortcut}
-				aria-label={`恢复${getShortcutCommand(commandId).label}默认快捷键`}
-				title="恢复默认"
-			>
-				<RotateCcw className="size-3.5" />
-			</Button>
+			<Hint label={isCustom ? "恢复默认" : undefined}>
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon"
+					className={cn("size-7", !isCustom && "invisible")}
+					disabled={!isCustom}
+					onClick={resetShortcut}
+					aria-label={`恢复${getShortcutCommand(commandId).label}默认快捷键`}
+				>
+					<RotateCcw className="size-3.5" />
+				</Button>
+			</Hint>
 		</div>
 	);
 }
@@ -165,21 +166,24 @@ export function KeyboardShortcutsSettings() {
 					}
 					actions={
 						sectionIndex === 0 ? (
-							<Button
-								type="button"
-								variant="ghost"
-								size="icon"
-								disabled={!hasCustomShortcut}
-								onClick={() => {
-									resetKeyboardShortcuts();
-									setSendMessageShortcut("enter");
-									setRecordingCommandId(null);
-								}}
-								aria-label="恢复全部默认快捷键"
-								title="恢复全部默认快捷键"
+							<Hint
+								label={hasCustomShortcut ? "恢复全部默认快捷键" : undefined}
 							>
-								<RotateCcw className="size-3.5" />
-							</Button>
+								<Button
+									type="button"
+									variant="ghost"
+									size="icon"
+									disabled={!hasCustomShortcut}
+									onClick={() => {
+										resetKeyboardShortcuts();
+										setSendMessageShortcut("enter");
+										setRecordingCommandId(null);
+									}}
+									aria-label="恢复全部默认快捷键"
+								>
+									<RotateCcw className="size-3.5" />
+								</Button>
+							</Hint>
 						) : undefined
 					}
 				>

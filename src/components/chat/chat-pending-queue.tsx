@@ -1,7 +1,7 @@
 import { Pencil, Send } from "lucide-react";
 
 import type { ConversationState } from "@/lib/conversation-types";
-import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
+import { Button, Hint, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
 
 type PendingUser = ConversationState["pendingUsers"][number];
 type PendingQueueItem = PendingUser & {
@@ -44,12 +44,11 @@ export function ChatPendingQueue({
 							<span className="shrink-0 text-[11px]">
 								{item.queueKind === "steer" ? "调整" : "稍后"}
 							</span>
-							<span
-								className="min-w-0 flex-1 truncate text-foreground/80"
-								title={label}
-							>
-								{label}
-							</span>
+							<Hint label={label}>
+								<span className="min-w-0 flex-1 truncate text-foreground/80">
+									{label}
+								</span>
+							</Hint>
 							<div className="flex shrink-0 items-center gap-1">
 								<Tooltip>
 									<TooltipTrigger asChild>

@@ -34,6 +34,7 @@ import {
 	EmptyState,
 	Input,
 	Textarea,
+	Hint,
 } from "@/ui";
 
 function statusLabel(status: ParallelAgentStatus) {
@@ -259,12 +260,11 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 
 				{selected ? (
 					<div className="grid shrink-0 gap-2 border-t border-sidebar-border p-2">
-						<div
-							className="truncate font-mono text-[11px] text-muted-foreground"
-							title={selected.worktreePath}
-						>
-							{selected.worktreePath}
-						</div>
+						<Hint label={selected.worktreePath}>
+							<div className="truncate font-mono text-[11px] text-muted-foreground">
+								{selected.worktreePath}
+							</div>
+						</Hint>
 						<Textarea
 							value={message}
 							onChange={(event) => setMessage(event.target.value)}

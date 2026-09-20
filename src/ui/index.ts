@@ -83,4 +83,5 @@ export {
 	TooltipTrigger,
 	TooltipContent,
 	TooltipProvider,
+	Hint,
 } from "./tooltip";

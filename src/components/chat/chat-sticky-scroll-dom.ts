@@ -43,8 +43,9 @@ export function shouldShowChatScrollToLatest(
 		maxScrollOffset - scrollElement.scrollTop,
 	);
 
-	return distanceFromBottom >=
-		(currentlyVisible ? hideThreshold : showThreshold);
+	return (
+		distanceFromBottom >= (currentlyVisible ? hideThreshold : showThreshold)
+	);
 }
 
 export function getChatScrollBottomPadding(

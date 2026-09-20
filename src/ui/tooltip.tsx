@@ -53,4 +53,54 @@ const TooltipContent = React.forwardRef<
 ));
 TooltipContent.displayName = TooltipPrimitive.Content.displayName;
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider };
+type HintProps = {
+	/** 提示文本；为空时不渲染气泡，children 原样保留 */
+	label: React.ReactNode;
+	side?: React.ComponentPropsWithoutRef<
+		typeof TooltipPrimitive.Content
+	>["side"];
+	align?: React.ComponentPropsWithoutRef<
+		typeof TooltipPrimitive.Content
+	>["align"];
+	sideOffset?: React.ComponentPropsWithoutRef<
+		typeof TooltipPrimitive.Content
+	>["sideOffset"];
+	/** 打开延迟，默认比 Provider 的 700ms 更快，适合截断文本的即读即显 */
+	delayDuration?: number;
+	className?: string;
+	/** 触发元素，必须是单个能接收 ref 的元素 */
+	children: React.ReactElement;
+};
+
+/**
+ * 单行文字提示，替代原生 title 属性：外观复用 TooltipContent，长文本限宽换行。
+ * 非交互元素（span/div）保持仅悬浮触发，不会新增键盘焦点。
+ */
+function Hint({
+	label,
+	side,
+	align,
+	sideOffset,
+	delayDuration = 300,
+	className,
+	children,
+}: HintProps) {
+	const hasLabel = label !== undefined && label !== null && label !== "";
+	return (
+		<Tooltip delayDuration={delayDuration}>
+			<TooltipTrigger asChild>{children}</TooltipTrigger>
+			{hasLabel ? (
+				<TooltipContent
+					side={side}
+					align={align}
+					sideOffset={sideOffset}
+					className={cn("max-w-80 break-words", className)}
+				>
+					{label}
+				</TooltipContent>
+			) : null}
+		</Tooltip>
+	);
+}
+
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider, Hint };

@@ -22,6 +22,7 @@ import {
 import { formatWorkDuration } from "@/lib/format-duration";
 import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/ui";
 
 export type ChatActivityStatus = "complete" | "running";
 
@@ -400,51 +401,51 @@ function ToolCallActivityView({
 
 	return (
 		<div className="w-full" data-chat-expansion-root>
-			<button
-				type="button"
-				className={cn(
-					"group/tool -mx-1 flex min-h-6 w-[calc(100%+0.5rem)] items-start gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors",
-					PROCESS_TEXT_CLASS,
-					hasDetails
-						? "hover:bg-muted/40 hover:text-foreground"
-						: "cursor-default",
-					activity.isError && "text-destructive",
-				)}
-				onClick={(event) =>
-					hasDetails &&
-					toggleChatExpansionWithAnchor(event.currentTarget, () =>
-						setOpen((value) => !value),
-					)
-				}
-				onDoubleClick={() => filePath && onOpenPath?.(filePath)}
-				title={filePath && onOpenPath ? "双击打开文件" : undefined}
-				aria-expanded={hasDetails ? open : undefined}
-			>
-				<ToolIcon
-					toolName={activity.toolName}
+			<Hint label={filePath && onOpenPath ? "双击打开文件" : undefined}>
+				<button
+					type="button"
 					className={cn(
-						PROCESS_ICON_CLASS,
-						"mt-0.5",
+						"group/tool -mx-1 flex min-h-6 w-[calc(100%+0.5rem)] items-start gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors",
+						PROCESS_TEXT_CLASS,
+						hasDetails
+							? "hover:bg-muted/40 hover:text-foreground"
+							: "cursor-default",
 						activity.isError && "text-destructive",
 					)}
-				/>
-				<span className="min-w-0 flex-1 truncate">
-					<span>{toolLabel(activity.toolName)}</span>
-					{previewLabel ? (
-						<span
-							className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground"
-							title={preview ?? undefined}
-						>
-							{previewLabel}
-						</span>
+					onClick={(event) =>
+						hasDetails &&
+						toggleChatExpansionWithAnchor(event.currentTarget, () =>
+							setOpen((value) => !value),
+						)
+					}
+					onDoubleClick={() => filePath && onOpenPath?.(filePath)}
+					aria-expanded={hasDetails ? open : undefined}
+				>
+					<ToolIcon
+						toolName={activity.toolName}
+						className={cn(
+							PROCESS_ICON_CLASS,
+							"mt-0.5",
+							activity.isError && "text-destructive",
+						)}
+					/>
+					<span className="min-w-0 flex-1 truncate">
+						<span>{toolLabel(activity.toolName)}</span>
+						{previewLabel ? (
+							<Hint label={preview ?? undefined}>
+								<span className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground">
+									{previewLabel}
+								</span>
+							</Hint>
+						) : null}
+					</span>
+					{activity.isError ? (
+						<CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+					) : running ? (
+						<LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin" />
 					) : null}
-				</span>
-				{activity.isError ? (
-					<CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-				) : running ? (
-					<LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin" />
-				) : null}
-			</button>
+				</button>
+			</Hint>
 			{hasDetails && open ? <ToolDetail activity={activity} /> : null}
 		</div>
 	);

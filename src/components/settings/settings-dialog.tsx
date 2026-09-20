@@ -51,6 +51,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 	Switch,
+	Hint,
 } from "@/ui";
 import {
 	SETTINGS_CONTAINER_CLASS,
@@ -283,18 +284,19 @@ function NotificationSettings() {
 									: NOTIFICATION_PERMISSION_LABELS[permission]}
 						</SettingsStatus>
 						{!permissionSystemManaged ? (
-							<Button
-								variant="ghost"
-								size="icon"
-								className={SETTINGS_ICON_BUTTON_CLASS}
-								disabled={checking}
-								onClick={() => void refreshPermission()}
-								title="重新检测通知权限"
-							>
-								<RefreshCw
-									className={cn("size-3.5", checking && "animate-spin")}
-								/>
-							</Button>
+							<Hint label={checking ? undefined : "重新检测通知权限"}>
+								<Button
+									variant="ghost"
+									size="icon"
+									className={SETTINGS_ICON_BUTTON_CLASS}
+									disabled={checking}
+									onClick={() => void refreshPermission()}
+								>
+									<RefreshCw
+										className={cn("size-3.5", checking && "animate-spin")}
+									/>
+								</Button>
+							</Hint>
 						) : null}
 					</div>
 				</SettingsRow>

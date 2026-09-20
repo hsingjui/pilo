@@ -20,7 +20,7 @@ import {
 } from "@/lib/git";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/projects";
-import { Button, EmptyState, ErrorState, Separator } from "@/ui";
+import { Button, EmptyState, ErrorState, Hint, Separator } from "@/ui";
 
 type DiffMode = "working" | "staged";
 type SidebarView = "changes" | "files" | "agents" | "preview";
@@ -331,25 +331,28 @@ export function RightSidebar({
 								<ul className="grid gap-0.5">
 									{visibleFiles.map((file) => (
 										<li key={file.path}>
-											<button
-												type="button"
-												className={cn(
-													"flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/60",
-													effectiveSelectedPath === file.path &&
-														"bg-muted text-foreground",
-												)}
-												onClick={() => setSelectedPath(file.path)}
-												onDoubleClick={() => onOpenFile?.(file.path)}
-												title={onOpenFile ? "双击在编辑器中打开" : undefined}
+											<Hint
+												label={onOpenFile ? "双击在编辑器中打开" : undefined}
 											>
-												<FileCode className="size-3.5 shrink-0 text-sidebar-foreground-muted" />
-												<span className="min-w-0 flex-1 truncate">
-													{file.path}
-												</span>
-												<span className="w-4 shrink-0 text-center font-mono text-[11px] text-muted-foreground">
-													{fileStatusLabel(file, mode)}
-												</span>
-											</button>
+												<button
+													type="button"
+													className={cn(
+														"flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/60",
+														effectiveSelectedPath === file.path &&
+															"bg-muted text-foreground",
+													)}
+													onClick={() => setSelectedPath(file.path)}
+													onDoubleClick={() => onOpenFile?.(file.path)}
+												>
+													<FileCode className="size-3.5 shrink-0 text-sidebar-foreground-muted" />
+													<span className="min-w-0 flex-1 truncate">
+														{file.path}
+													</span>
+													<span className="w-4 shrink-0 text-center font-mono text-[11px] text-muted-foreground">
+														{fileStatusLabel(file, mode)}
+													</span>
+												</button>
+											</Hint>
 										</li>
 									))}
 								</ul>
@@ -358,15 +361,16 @@ export function RightSidebar({
 						<Separator className="bg-sidebar-border" />
 						<div className="flex min-h-0 flex-1 flex-col bg-background/40">
 							{effectiveSelectedPath ? (
-								<button
-									type="button"
-									className="shrink-0 truncate border-b border-sidebar-border px-3 py-2 text-left font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-									onClick={() => onOpenFile?.(effectiveSelectedPath)}
-									disabled={!onOpenFile}
-									title={onOpenFile ? "在编辑器中打开" : undefined}
-								>
-									{effectiveSelectedPath}
-								</button>
+								<Hint label={onOpenFile ? "在编辑器中打开" : undefined}>
+									<button
+										type="button"
+										className="shrink-0 truncate border-b border-sidebar-border px-3 py-2 text-left font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+										onClick={() => onOpenFile?.(effectiveSelectedPath)}
+										disabled={!onOpenFile}
+									>
+										{effectiveSelectedPath}
+									</button>
+								</Hint>
 							) : null}
 							{diffLoading ? (
 								<div className="px-3 py-4 text-xs text-muted-foreground">
