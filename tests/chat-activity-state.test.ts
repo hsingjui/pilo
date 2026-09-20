@@ -635,6 +635,28 @@ test("conversation outline records each round start message index", () => {
 	);
 });
 
+test("conversation outline summarizes skill invocations by command name", () => {
+	const skillText = [
+		'<skill name="animate" location="/skills/animate/SKILL.md">',
+		"References are relative to /skills/animate.",
+		"",
+		"# Animate",
+		"",
+		"Build an animation from scratch.",
+		"</skill>",
+		"",
+		"",
+		"给按钮加个过渡",
+	].join("\n");
+	const entries = buildConversationOutline([
+		{ id: "u1", role: "user", text: skillText },
+		{ id: "a1", role: "assistant", text: "reply" },
+	]);
+
+	assert.equal(entries.length, 1);
+	assert.equal(entries[0].title, "/skill:animate 给按钮加个过渡");
+});
+
 test("outline index follows the virtualized message at the reading line", () => {
 	const entries = [
 		{ messageIndex: 0 },

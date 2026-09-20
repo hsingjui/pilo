@@ -1,10 +1,12 @@
 import type { PiCommand } from "@/lib/pi-runtime";
+import type { ComposerSuggestion } from "@/components/chat/chat-composer-suggestions";
 
-export type PiCommandSuggestion = {
+export type PiCommandSuggestion = ComposerSuggestion & {
 	kind: "command";
 	value: string;
 	label: string;
 	detail?: string;
+	skill?: boolean;
 };
 
 const RESERVED_NATIVE_COMMANDS = new Set(["new", "compact"]);
@@ -30,6 +32,7 @@ export function createPiCommandSuggestions(
 		value: `/${command.name}`,
 		label: `/${command.name}`,
 		detail: commandDetail(command),
+		skill: command.source === "skill",
 	}));
 }
 

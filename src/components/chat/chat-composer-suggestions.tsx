@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { FileCode2, TerminalSquare } from "lucide-react";
+import { FileCode2, Sparkles, TerminalSquare } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,8 @@ export type ComposerSuggestion = {
 	value: string;
 	label: string;
 	detail?: string;
+	/** 标记 /skill:<name> 命令，菜单中用独立图标区分。 */
+	skill?: boolean;
 };
 
 export type SuggestionTrigger = "@" | "/";
@@ -74,8 +76,15 @@ export function activeSuggestionQuery(
 	};
 }
 
-function SuggestionIcon({ kind }: { kind: ComposerSuggestionKind }) {
+function SuggestionIcon({
+	kind,
+	skill = false,
+}: {
+	kind: ComposerSuggestionKind;
+	skill?: boolean;
+}) {
 	if (kind === "file") return <FileCode2 className="size-3" />;
+	if (skill) return <Sparkles className="size-3" />;
 	return <TerminalSquare className="size-3" />;
 }
 
@@ -163,7 +172,10 @@ export function ComposerSuggestionMenu({
 							onClick={() => onSelect(suggestion)}
 						>
 							<span className="flex size-5 shrink-0 items-center justify-center rounded border border-border/60 bg-muted/35 text-muted-foreground">
-								<SuggestionIcon kind={suggestion.kind} />
+								<SuggestionIcon
+									kind={suggestion.kind}
+									skill={suggestion.skill}
+								/>
 							</span>
 							<span className="min-w-0 flex-1 truncate font-mono text-xs">
 								{suggestion.label}

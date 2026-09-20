@@ -15,7 +15,7 @@
 		"format": "oxfmt --write .",
 		"format:check": "oxfmt --check .",
 		"check": "pnpm format:check && pnpm lint",
-		"test:unit": "node --experimental-strip-types --test tests/app-error.test.ts tests/chat-activity-state.test.ts tests/chat-file-suggestions.test.ts tests/chat-input-history.test.ts tests/chat-performance-switch.test.ts tests/chat-runtime-replay.test.ts tests/chat-runtime-trace.test.ts tests/chat-stream-presentation.test.ts tests/chat-streaming-markdown.test.ts tests/chat-history-window-store.test.ts tests/chat-conversation-store.test.ts tests/chat-submission.test.ts tests/conversation-reducer.test.ts tests/app-chat-state.test.ts tests/pi-model-selection.test.ts tests/pi-session-fork.test.ts"
+		"test:unit": "node --experimental-strip-types --test tests/app-error.test.ts tests/chat-activity-state.test.ts tests/chat-file-suggestions.test.ts tests/chat-input-history.test.ts tests/chat-performance-switch.test.ts tests/chat-runtime-replay.test.ts tests/chat-runtime-trace.test.ts tests/chat-stream-presentation.test.ts tests/chat-streaming-markdown.test.ts tests/chat-history-window-store.test.ts tests/chat-conversation-store.test.ts tests/chat-submission.test.ts tests/conversation-reducer.test.ts tests/app-chat-state.test.ts tests/pi-model-selection.test.ts tests/pi-session-fork.test.ts tests/skill-invocation.test.ts"
 	},
 	"dependencies": {
 		"@dnd-kit/core": "^6.3.1",

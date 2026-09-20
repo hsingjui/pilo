@@ -1,3 +1,5 @@
+import { skillInvocationSummary } from "./skill-invocation.ts";
+
 export type ConversationOutlineMessage = {
 	id: string;
 	role: "user" | "assistant" | "compaction";
@@ -53,7 +55,12 @@ export function buildConversationOutline(
 
 	for (const [messageIndex, message] of messages.entries()) {
 		if (message.role === "compaction") continue;
-		const summary = plainText(message.text);
+		// Skill 调用被 Pi 展开成大段 <skill> 文本，大纲标题用 /skill:<name> 摘要。
+		const sourceText =
+			message.role === "user"
+				? (skillInvocationSummary(message.text) ?? message.text)
+				: message.text;
+		const summary = plainText(sourceText);
 		if (message.role === "user" || !current) {
 			closeRound();
 			current = {
