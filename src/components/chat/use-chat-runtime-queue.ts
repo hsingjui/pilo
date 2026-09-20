@@ -16,6 +16,7 @@ import {
 	summarizeChatImages,
 	type ChatSubmission,
 } from "@/lib/chat-submission";
+import { cacheLocalChatImages } from "@/lib/chat-image-media";
 import type { ConversationAction } from "@/lib/conversation-types";
 import { runtimeErrorMessage } from "@/lib/pi-runtime";
 
@@ -209,6 +210,7 @@ export function useChatRuntimeQueue({
 
 			const messageId = createLocalMessageId("user");
 			const timestampMs = Date.now();
+			cacheLocalChatImages(normalized.images);
 			dispatchConversation(turn.sessionId, {
 				type: "local_user_queue",
 				clientMessageId: messageId,

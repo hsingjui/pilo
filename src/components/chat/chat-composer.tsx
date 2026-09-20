@@ -8,10 +8,13 @@ import {
 	type ClipboardEvent,
 	type KeyboardEvent,
 } from "react";
-import { Image as ImageIcon, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { ChatImageThumbnail } from "@/components/chat/chat-image-viewer";
+
 import { userErrorMessage } from "@/lib/app-error";
+import { cacheLocalChatImages } from "@/lib/chat-image-media";
 import {
 	appendChatInputHistory,
 	isChatInputHistoryCursorValid,
@@ -263,6 +266,7 @@ export function ChatComposer({
 			: 0;
 
 	const updateImages = (next: ChatImageAttachment[]) => {
+		cacheLocalChatImages(next);
 		if (onImagesChange) onImagesChange(next);
 		else setLocalImages(next);
 	};
@@ -576,20 +580,26 @@ export function ChatComposer({
 				{attachments.length > 0 ? (
 					<div className="flex flex-wrap gap-1.5 px-1 pb-1">
 						{attachments.map((attachment) => (
-							<div
-								key={attachment.id}
-								className="flex max-w-56 items-center gap-1.5 rounded-lg border border-border/70 bg-muted/45 px-2 py-1.5 text-xs"
-							>
-								<ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />
-								<span className="min-w-0 truncate">{attachment.name}</span>
-								<span className="shrink-0 text-[11px] text-muted-foreground">
-									{formatChatImageSize(attachment.size)}
-								</span>
+							<div key={attachment.id} className="relative">
+								<ChatImageThumbnail
+									image={{
+										id: attachment.id,
+										name: attachment.name,
+										mimeType: attachment.mimeType,
+										size: attachment.size,
+										source: "local",
+									}}
+								/>
 								<button
 									type="button"
 									disabled={disabled}
 									aria-label={`移除 ${attachment.name}`}
-									className="ml-1 rounded-sm text-muted-foreground hover:text-foreground"
+									className={cn(
+										"absolute -right-1.5 -top-1.5 z-10 inline-flex size-5 items-center justify-center rounded-full",
+										"border border-border/70 bg-background text-muted-foreground shadow-sm transition-colors",
+										"hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+										disabled && "opacity-60",
+									)}
 									onClick={() =>
 										updateImages(
 											attachments.filter((item) => item.id !== attachment.id),

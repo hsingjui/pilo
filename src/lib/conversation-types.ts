@@ -1,13 +1,13 @@
 import type { AssistantActivity } from "@/components/chat/chat-activity";
 import type { AssistantContentItem } from "@/lib/chat-activity-state";
-import type { ChatImageSummary } from "@/lib/chat-submission";
+import type { ChatConversationImage } from "@/lib/chat-submission";
 
 export type ChatMessage =
 	| {
 			id: string;
 			role: "user";
 			text: string;
-			images?: ChatImageSummary[];
+			images?: ChatConversationImage[];
 			time: string;
 			timestampMs?: number;
 			queued?: "steer" | "follow_up";
@@ -50,7 +50,11 @@ export type ConversationEventMeta = {
 
 export type ConversationEvent = ConversationEventMeta &
 	(
-		| { type: "user_message_start"; text: string }
+		| {
+				type: "user_message_start";
+				text: string;
+				images?: ChatConversationImage[];
+		  }
 		| { type: "compaction_marker"; summary: string; tokensBefore?: number }
 		| { type: "assistant_message_start" }
 		| { type: "assistant_text_delta"; delta: string }
@@ -92,7 +96,7 @@ export type ConversationAction =
 			type: "local_user_submit";
 			clientMessageId: string;
 			text: string;
-			images?: ChatImageSummary[];
+			images?: ChatConversationImage[];
 			timestampMs: number;
 			replyRunwayPx?: number;
 			appendMessage?: boolean;
@@ -101,7 +105,7 @@ export type ConversationAction =
 			type: "local_user_queue";
 			clientMessageId: string;
 			text: string;
-			images?: ChatImageSummary[];
+			images?: ChatConversationImage[];
 			queueKind: "steer" | "follow_up";
 			timestampMs: number;
 	  }
@@ -132,7 +136,7 @@ export type ConversationState = {
 	pendingUsers: Array<{
 		clientMessageId: string;
 		text: string;
-		images?: ChatImageSummary[];
+		images?: ChatConversationImage[];
 		timestampMs?: number;
 		queueKind?: "steer" | "follow_up";
 	}>;

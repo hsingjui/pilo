@@ -606,13 +606,17 @@ export function useAppChatWorkspace({
 			setOpenedChats((current) =>
 				identifyOpenedChat(current, entry.controllerId, piSessionId),
 			);
+			if (entry.session.id === draftSessionId) {
+				setDraftSessionPrompt(null);
+				setDraftSessionImages([]);
+			}
 			setSelectedSessionId((current) =>
 				current === entry.session.id || current === entry.piSessionId
 					? piSessionId
 					: current,
 			);
 		},
-		[setOpenedChats],
+		[draftSessionId, setOpenedChats],
 	);
 
 	const handleForkSessionCreated = useCallback(

@@ -280,10 +280,24 @@ export function identifyOpenedChat(
 			entry.session.projectRecord.id,
 			piSessionId,
 		);
-		if (entry.piSessionId === piSessionId && entry.uiStateKey === uiStateKey) {
+		if (
+			entry.piSessionId === piSessionId &&
+			entry.uiStateKey === uiStateKey &&
+			entry.initialMessage === undefined &&
+			entry.initialImages === undefined
+		) {
 			return entry;
 		}
-		return { ...entry, piSessionId, uiStateKey };
+		// Once Pi has identified the real session, the runtime already owns the
+		// in-flight submission. Drop the bootstrap payload so opened-chat state
+		// does not retain image base64 or replay the initial prompt on remount.
+		return {
+			...entry,
+			piSessionId,
+			uiStateKey,
+			initialMessage: undefined,
+			initialImages: undefined,
+		};
 	});
 }
 

@@ -5,6 +5,7 @@ import {
 	chatSubmissionHasContent,
 	createChatSubmission,
 	resolveChatImageMimeType,
+	summarizeChatImages,
 	toPiImageContents,
 	type ChatImageAttachment,
 } from "../src/lib/chat-submission.ts";
@@ -23,6 +24,18 @@ test("image-only submissions are valid and preserve image data", () => {
 	assert.equal(chatSubmissionHasContent(submission), true);
 	assert.deepEqual(toPiImageContents(submission.images), [
 		{ type: "image", data: "YWJj", mimeType: "image/png" },
+	]);
+});
+
+test("conversation image summaries do not retain base64 payloads", () => {
+	assert.deepEqual(summarizeChatImages([image]), [
+		{
+			id: "image-1",
+			name: "screen.png",
+			mimeType: "image/png",
+			size: 3,
+			source: "local",
+		},
 	]);
 });
 

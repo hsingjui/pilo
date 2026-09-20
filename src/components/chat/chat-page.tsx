@@ -22,6 +22,7 @@ import {
 	ChatConversationViewport,
 	type ChatConversationViewportHandle,
 } from "@/components/chat/chat-conversation-viewport";
+import { ChatImageScopeProvider } from "@/components/chat/chat-image-viewer";
 import { ChatPendingQueue } from "@/components/chat/chat-pending-queue";
 import { ChatRuntimeRecoveryNotice } from "@/components/chat/chat-runtime-recovery-notice";
 import { ChatInterruptedTurnNotice } from "@/components/chat/chat-interrupted-turn-notice";
@@ -312,6 +313,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		requestHistoryRange,
 		historyLoadState,
 		historyProgress,
+		historyImageFingerprint,
 		historyPending,
 		retryHistory,
 		refreshHistoryIfStale,
@@ -326,6 +328,18 @@ function ChatPageImpl(props: ChatPageProps) {
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
 	const conversationViewportRef = useRef<ChatConversationViewportHandle>(null);
+	// 历史消息图片按 session snapshot 懒加载；本地消息由独立 Blob URL 缓存提供。
+	const historyImageScope = useMemo(
+		() =>
+			session.sessionPath
+				? {
+						projectId: session.projectRecord.id,
+						sessionPath: session.sessionPath,
+						fingerprint: historyImageFingerprint,
+					}
+				: null,
+		[historyImageFingerprint, session.projectRecord.id, session.sessionPath],
+	);
 	const scrollToBottom = useCallback((smooth = true) => {
 		conversationViewportRef.current?.scrollToBottom(smooth);
 	}, []);
@@ -882,41 +896,43 @@ function ChatPageImpl(props: ChatPageProps) {
 							overlay={emptyTemporarySession}
 						/>
 						<div className="relative flex min-h-0 flex-1 flex-col">
-							<ChatConversationViewport
-								ref={conversationViewportRef}
-								active={active}
-								visualLive={live}
-								showSwitchSkeleton={showSwitchSkeleton}
-								sessionId={performanceSessionId ?? session.id}
-								sessionPath={session.sessionPath}
-								messages={messages}
-								onVisibleRangeChange={requestHistoryRange}
-								activeAssistantMessageId={activeAssistantMessageId}
-								compacting={compacting}
-								effectiveLoadState={effectiveLoadState}
-								initialScrollTop={viewportUiState.scrollTop}
-								initialSticky={viewportUiState.sticky}
-								initialVirtualizerCache={
-									viewportUiState.virtualizerMessageCount === messages.length
-										? viewportUiState.virtualizerCache
-										: undefined
-								}
-								onScrollStateChange={persistScrollState}
-								onVirtualizerCacheChange={persistVirtualizerCache}
-								runtimeScrollRef={scrollRef}
-								onOpenFile={onOpenFile}
-								onForkAssistant={
-									!session.temporary ? handleForkAssistant : undefined
-								}
-								forkingMessageId={forkingMessageId}
-								forkDisabled={
-									runtimeBusy || historyPending || Boolean(forkingMessageId)
-								}
-								suppressInterruptedError={session.externalRunning || running}
-								onVisualReady={handleVisualReady}
-								onRetry={onRetry}
-								onRetryHistory={retryHistory}
-							/>
+							<ChatImageScopeProvider scope={historyImageScope}>
+								<ChatConversationViewport
+									ref={conversationViewportRef}
+									active={active}
+									visualLive={live}
+									showSwitchSkeleton={showSwitchSkeleton}
+									sessionId={performanceSessionId ?? session.id}
+									sessionPath={session.sessionPath}
+									messages={messages}
+									onVisibleRangeChange={requestHistoryRange}
+									activeAssistantMessageId={activeAssistantMessageId}
+									compacting={compacting}
+									effectiveLoadState={effectiveLoadState}
+									initialScrollTop={viewportUiState.scrollTop}
+									initialSticky={viewportUiState.sticky}
+									initialVirtualizerCache={
+										viewportUiState.virtualizerMessageCount === messages.length
+											? viewportUiState.virtualizerCache
+											: undefined
+									}
+									onScrollStateChange={persistScrollState}
+									onVirtualizerCacheChange={persistVirtualizerCache}
+									runtimeScrollRef={scrollRef}
+									onOpenFile={onOpenFile}
+									onForkAssistant={
+										!session.temporary ? handleForkAssistant : undefined
+									}
+									forkingMessageId={forkingMessageId}
+									forkDisabled={
+										runtimeBusy || historyPending || Boolean(forkingMessageId)
+									}
+									suppressInterruptedError={session.externalRunning || running}
+									onVisualReady={handleVisualReady}
+									onRetry={onRetry}
+									onRetryHistory={retryHistory}
+								/>
+							</ChatImageScopeProvider>
 
 							{/* -mt-4 让滚动区底部上探 16px，消息在输入卡背后被自然裁切；
 							    裁切线藏在卡片圆角(12px)以内，输入框下方缝隙不会露出消息 */}

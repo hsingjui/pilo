@@ -22,6 +22,7 @@ import {
 	type ChatImageAttachment,
 	type ChatSubmission,
 } from "@/lib/chat-submission";
+import { cacheLocalChatImages } from "@/lib/chat-image-media";
 import type { ConversationAction } from "@/lib/conversation-types";
 import { runtimeErrorMessage, type PiAgentState } from "@/lib/pi-runtime";
 import { requestSessionTitle } from "@/lib/sessions";
@@ -256,12 +257,14 @@ export function useChatRuntime({
 
 			const submittedAtMs = Date.now();
 			const clientMessageId = createLocalMessageId("user");
+			cacheLocalChatImages(normalized.images);
+			const conversationImages = summarizeChatImages(normalized.images);
 			dispatchConversationActions(turn.sessionId, [
 				{
 					type: "local_user_submit",
 					clientMessageId,
 					text: trimmed,
-					images: summarizeChatImages(normalized.images),
+					images: conversationImages,
 					timestampMs: submittedAtMs,
 					replyRunwayPx,
 					appendMessage: appendUserMessage,

@@ -336,6 +336,7 @@ export function reduceConversation(
 						id: action.sourceEntryId ?? context.createMessageId("user"),
 						role: "user",
 						text: action.text,
+						images: action.images,
 						time: context.formatTime(timestampMs),
 						timestampMs: action.timestampMs,
 					},

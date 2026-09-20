@@ -18,6 +18,7 @@ import { useAppCatalog } from "@/components/app/use-app-catalog";
 import { useAppChatWorkspace } from "@/components/app/use-app-chat-workspace";
 import { useAppProjectActions } from "@/components/app/use-app-project-actions";
 import { useOpenedChatControllers } from "@/components/app/use-opened-chat-controllers";
+import { ChatImageLightbox } from "@/components/chat/chat-image-viewer";
 import { ChatPageLoadingFallback } from "@/components/chat/chat-page-loading-fallback";
 import { NewChatLanding } from "@/components/new-chat-landing";
 import { SidebarFooter } from "@/components/sidebar-footer";
@@ -490,6 +491,7 @@ function App() {
 					}
 				/>
 			) : null}
+			<ChatImageLightbox />
 		</TooltipProvider>
 	);
 }

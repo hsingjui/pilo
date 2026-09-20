@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
-import { ChevronDown, Copy, Image as ImageIcon } from "lucide-react";
+import { ChevronDown, Copy } from "lucide-react";
 
+import { ChatImageThumbnail } from "@/components/chat/chat-image-viewer";
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import type { ChatMessage } from "@/lib/conversation-types";
 import { recordChatMessageRender } from "@/lib/chat-performance";
@@ -23,9 +24,9 @@ function plainTextPreview(text: string) {
 
 function UserMessageBody({ text }: { text: string }) {
 	const { collapseLongMessages } = usePreferences();
+	const [expanded, setExpanded] = useState(false);
 	const collapsible =
 		collapseLongMessages && text.length > LARGE_MESSAGE_PREVIEW_CHARS;
-	const [expanded, setExpanded] = useState(false);
 	const visibleText = collapsible && !expanded ? plainTextPreview(text) : text;
 
 	return (
@@ -85,13 +86,7 @@ export const UserMessage = memo(function UserMessage({
 									)}
 								>
 									{message.images.map((image) => (
-										<span
-											key={image.id}
-											className="inline-flex max-w-52 items-center gap-1.5 rounded-md border border-foreground/10 bg-background/40 px-2 py-1 text-xs"
-										>
-											<ImageIcon className="size-3.5 shrink-0 text-muted-foreground" />
-											<span className="truncate">{image.name}</span>
-										</span>
+										<ChatImageThumbnail key={image.id} image={image} />
 									))}
 								</div>
 							) : null}

@@ -218,6 +218,8 @@ export function useChatConversation({
 	>(session.sessionPath ? "loading" : "ready");
 	const [historyRetry, setHistoryRetry] = useState(0);
 	const [historyProgress, setHistoryProgress] = useState("");
+	const [historyImageFingerprint, setHistoryImageFingerprint] =
+		useState<SessionHistoryFingerprint | null>(null);
 	const sessionHistoryFingerprint = getSessionHistoryFingerprint(session);
 	const historyFingerprintRef = useRef({
 		fingerprint: sessionHistoryFingerprint,
@@ -338,6 +340,7 @@ export function useChatConversation({
 					hydratedMessages: finalState.messages.length,
 				});
 				loadedWindowFingerprintRef.current = result.fingerprint;
+				setHistoryImageFingerprint(result.fingerprint);
 				historyPageRequestsRef.current.clear();
 				historyReloadScheduledRef.current = false;
 				console.info("[Pilo history] conversation_window_replay", {
@@ -554,6 +557,7 @@ export function useChatConversation({
 		requestHistoryRange,
 		historyLoadState,
 		historyProgress,
+		historyImageFingerprint,
 		historyPending:
 			session.sessionPath !== undefined && historyLoadState !== "ready",
 		retryHistory: () => setHistoryRetry((value) => value + 1),

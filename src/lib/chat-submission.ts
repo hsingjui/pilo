@@ -26,7 +26,20 @@ export type ChatImageAttachment = {
 	data: string;
 };
 
-export type ChatImageSummary = Omit<ChatImageAttachment, "data">;
+/**
+ * Lightweight image descriptor kept in conversation state.
+ *
+ * Local images are backed by the bounded Blob URL cache; history images are
+ * loaded lazily from the session JSONL. Base64 payloads stay in submissions
+ * only for as long as they are needed to send/recover a request.
+ */
+export type ChatConversationImage = {
+	id: string;
+	name?: string;
+	mimeType: string;
+	size?: number;
+	source?: "local";
+};
 
 export type ChatSubmission = {
 	text: string;
@@ -52,8 +65,11 @@ export function chatSubmissionHasContent(submission: ChatSubmission) {
 
 export function summarizeChatImages(
 	images: readonly ChatImageAttachment[],
-): ChatImageSummary[] {
-	return images.map(({ data: _data, ...image }) => image);
+): ChatConversationImage[] {
+	return images.map(({ data: _data, ...image }) => ({
+		...image,
+		source: "local",
+	}));
 }
 
 export function toPiImageContents(

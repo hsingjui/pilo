@@ -307,6 +307,24 @@ test("identified draft receives indexed history metadata without changing contro
 	assert.equal(synchronized[0].session.historyFileMtimeNs, "456");
 });
 
+test("identifying a draft releases its bootstrap image payload", () => {
+	const draft = upsertOpenedChat([], chat("draft-1"), "look", [
+		{
+			id: "image-1",
+			name: "screen.png",
+			mimeType: "image/png",
+			size: 3,
+			data: "aGk=",
+		},
+	]);
+	assert.equal(draft[0].initialImages?.[0]?.data, "aGk=");
+
+	const identified = identifyOpenedChat(draft, draft[0].controllerId, "pi-1");
+
+	assert.equal(identified[0].initialMessage, undefined);
+	assert.equal(identified[0].initialImages, undefined);
+});
+
 test("busy chat controllers are protected while idle controllers are evicted", () => {
 	const initial = opened(MAX_OPEN_CHAT_CONTROLLERS + 2);
 	const protectedController = initial[0].controllerId;
