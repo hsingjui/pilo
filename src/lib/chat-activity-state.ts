@@ -25,15 +25,20 @@ export type AssistantActivitySummary = {
 };
 
 export function shouldInitiallyOpenAssistantActivity({
-	running,
 	followedByText,
 	collapseCompletedActivity,
 }: {
-	running: boolean;
 	followedByText: boolean;
 	collapseCompletedActivity: boolean;
 }) {
-	return running || !followedByText || !collapseCompletedActivity;
+	return !followedByText || !collapseCompletedActivity;
+}
+
+export function shouldAutoCollapseAssistantActivity(
+	previousEligible: boolean,
+	currentEligible: boolean,
+) {
+	return !previousEligible && currentEligible;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

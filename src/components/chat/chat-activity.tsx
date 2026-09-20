@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import {
 	BookOpen,
 	ChevronRight,
@@ -16,6 +16,7 @@ import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import { toggleChatExpansionWithAnchor } from "@/components/chat/chat-expansion-anchor";
 import { useChatExpansionState } from "@/components/chat/chat-expansion-state";
 import {
+	shouldAutoCollapseAssistantActivity,
 	shouldInitiallyOpenAssistantActivity,
 	summarizeAssistantActivity,
 } from "@/lib/chat-activity-state";
@@ -499,7 +500,6 @@ export function AssistantActivityView({
 	const { collapseCompletedActivity, showWorkDuration } = usePreferences();
 	const running = activity.some((item) => item.status === "running");
 	const initiallyOpen = shouldInitiallyOpenAssistantActivity({
-		running,
 		followedByText,
 		collapseCompletedActivity,
 	});
@@ -516,6 +516,22 @@ export function AssistantActivityView({
 		`${expansionKey}:group`,
 		initiallyOpen,
 	);
+	const autoCollapseEligible = followedByText && collapseCompletedActivity;
+	const previousAutoCollapseEligibleRef = useRef(autoCollapseEligible);
+	useLayoutEffect(() => {
+		const previousEligible = previousAutoCollapseEligibleRef.current;
+		previousAutoCollapseEligibleRef.current = autoCollapseEligible;
+		if (
+			!shouldAutoCollapseAssistantActivity(
+				previousEligible,
+				autoCollapseEligible,
+			)
+		) {
+			return;
+		}
+		setWorkOpen(false);
+		setGroupOpen(false);
+	}, [autoCollapseEligible, setGroupOpen, setWorkOpen]);
 	if (activity.length === 0) return null;
 
 	const group = (

@@ -11,6 +11,7 @@ import {
 	finishAssistantThinkingContent,
 	getAssistantStreamingLabel,
 	reconcileAssistantTextContent,
+	shouldAutoCollapseAssistantActivity,
 	shouldInitiallyOpenAssistantActivity,
 	splitAssistantContentForDisplay,
 	startAssistantThinkingContent,
@@ -419,18 +420,9 @@ test("finished assistant turns keep only the final contiguous text run expanded"
 	);
 });
 
-test("running activity stays open after following text arrives", () => {
+test("activity collapses as soon as following assistant text arrives", () => {
 	assert.equal(
 		shouldInitiallyOpenAssistantActivity({
-			running: true,
-			followedByText: true,
-			collapseCompletedActivity: true,
-		}),
-		true,
-	);
-	assert.equal(
-		shouldInitiallyOpenAssistantActivity({
-			running: false,
 			followedByText: true,
 			collapseCompletedActivity: true,
 		}),
@@ -438,12 +430,25 @@ test("running activity stays open after following text arrives", () => {
 	);
 	assert.equal(
 		shouldInitiallyOpenAssistantActivity({
-			running: false,
 			followedByText: false,
 			collapseCompletedActivity: true,
 		}),
 		true,
 	);
+	assert.equal(
+		shouldInitiallyOpenAssistantActivity({
+			followedByText: true,
+			collapseCompletedActivity: false,
+		}),
+		true,
+	);
+});
+
+test("activity auto-collapse is edge-triggered when following text appears", () => {
+	assert.equal(shouldAutoCollapseAssistantActivity(false, true), true);
+	assert.equal(shouldAutoCollapseAssistantActivity(false, false), false);
+	assert.equal(shouldAutoCollapseAssistantActivity(true, true), false);
+	assert.equal(shouldAutoCollapseAssistantActivity(true, false), false);
 });
 
 test("short streaming and tool-only assistant turns stay fully expanded", () => {
