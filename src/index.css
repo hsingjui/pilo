@@ -678,6 +678,45 @@
 	}
 }
 
+/*
+ * Sonner 在运行时注入未分层样式：默认 400ms ease（非前排退出 500ms），
+ * 与全局动效语言（--dur-1/--dur-2 + --ease）不一致。用更高优先级选择器
+ * 对齐，不用 !important——保留它自己的 prefers-reduced-motion 重置；
+ * 拖拽中的 toast（data-swiping）排除在外，避免过渡拖着手指。
+ */
+[data-sonner-toaster] [data-sonner-toast]:not([data-swiping="true"]) {
+	transition:
+		transform var(--dur-2) var(--ease),
+		opacity var(--dur-2) var(--ease),
+		height var(--dur-2) var(--ease),
+		box-shadow var(--dur-1) var(--ease);
+}
+
+[data-sonner-toaster]
+	[data-sonner-toast][data-removed="true"][data-front="false"][data-swipe-out="false"]:not(
+		[data-swiping="true"]
+	) {
+	transition:
+		transform var(--dur-2) var(--ease),
+		opacity var(--dur-2) var(--ease);
+}
+
+/* 堆叠收起时内容的淡出（opacity）与按钮的 hover/按压反馈。 */
+[data-sonner-toaster] [data-sonner-toast] > * {
+	transition: opacity var(--dur-2) var(--ease);
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-button],
+[data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+	transition:
+		opacity var(--dur-2) var(--ease),
+		background-color var(--dur-1) var(--ease),
+		border-color var(--dur-1) var(--ease),
+		color var(--dur-1) var(--ease),
+		box-shadow var(--dur-1) var(--ease),
+		scale var(--dur-1) var(--ease);
+}
+
 @keyframes pilo-skeleton-shimmer {
 	from {
 		transform: translateX(-130%);
@@ -770,10 +809,32 @@
 	will-change: opacity, transform;
 }
 
+/* 复制成功时勾图标入场：轻微 overshoot 的单次弹入，
+   回退（勾 → 复制图标）保持瞬时，不打扰。 */
+@keyframes chat-copy-success-pop {
+	from {
+		opacity: 0;
+		transform: scale(0.7);
+	}
+	55% {
+		opacity: 1;
+		transform: scale(1.08);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+.chat-copy-success-icon {
+	animation: chat-copy-success-pop var(--dur-2) var(--ease) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.pilo-skeleton-bone::after,
 	.chat-agent-activity-dot-pulse,
-	.chat-agent-activity-label::after {
+	.chat-agent-activity-label::after,
+	.chat-copy-success-icon {
 		animation: none;
 	}
 

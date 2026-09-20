@@ -1,13 +1,15 @@
 import { memo, useState } from "react";
-import { ChevronDown, Copy } from "lucide-react";
+import { ChevronDown, Sparkles } from "lucide-react";
 
 import { ChatImageThumbnail } from "@/components/chat/chat-image-viewer";
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
+import { ChatCopyButton } from "@/components/chat/chat-copy-button";
 import type { ChatMessage } from "@/lib/conversation-types";
 import { recordChatMessageRender } from "@/lib/chat-performance";
 import { usePreferences } from "@/lib/preferences-provider";
+import type { SkillInvocation } from "@/lib/skill-invocation";
+import { parseSkillInvocation } from "@/lib/skill-invocation";
 import { cn } from "@/lib/utils";
-import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
 
 const LARGE_MESSAGE_PREVIEW_CHARS = 8_000;
 
@@ -25,6 +27,10 @@ function plainTextPreview(text: string) {
 function UserMessageBody({ text }: { text: string }) {
 	const { collapseLongMessages } = usePreferences();
 	const [expanded, setExpanded] = useState(false);
+	const invocation = parseSkillInvocation(text);
+	if (invocation) {
+		return <SkillInvocationBody invocation={invocation} />;
+	}
 	const collapsible =
 		collapseLongMessages && text.length > LARGE_MESSAGE_PREVIEW_CHARS;
 	const visibleText = collapsible && !expanded ? plainTextPreview(text) : text;
@@ -50,6 +56,19 @@ function UserMessageBody({ text }: { text: string }) {
 				</button>
 			) : null}
 		</div>
+	);
+}
+
+/** Skill 调用只显示紧凑占位，不回显 Pi 展开的 Skill 正文。 */
+function SkillInvocationBody({ invocation }: { invocation: SkillInvocation }) {
+	return (
+		<span
+			className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-foreground/10 bg-background/40 px-2 py-1 text-xs"
+			title={invocation.location ?? undefined}
+		>
+			<Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
+			<span className="min-w-0 truncate font-mono">{invocation.name}</span>
+		</span>
 	);
 }
 
@@ -94,23 +113,7 @@ export const UserMessage = memo(function UserMessage({
 						</div>
 					</div>
 					<div className="flex gap-0.5">
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button
-									type="button"
-									variant="ghost"
-									size="icon"
-									className="size-7 rounded-md text-muted-foreground opacity-0 transition-opacity duration-100 group-hover:opacity-100 focus-visible:opacity-100"
-									aria-label="复制"
-									onClick={() =>
-										void navigator.clipboard.writeText(message.text)
-									}
-								>
-									<Copy className="size-3.5" />
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent>复制</TooltipContent>
-						</Tooltip>
+						<ChatCopyButton text={message.text} />
 					</div>
 				</div>
 			</div>

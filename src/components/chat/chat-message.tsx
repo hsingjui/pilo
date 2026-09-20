@@ -1,17 +1,12 @@
 import { memo, useState, type ReactNode } from "react";
-import {
-	ChevronDown,
-	ChevronRight,
-	Copy,
-	GitFork,
-	LoaderCircle,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, GitFork, LoaderCircle } from "lucide-react";
 
 import {
 	AssistantActivityView,
 	type AssistantActivity,
 } from "@/components/chat/chat-activity";
 import { ChatAgentActivityIndicator } from "@/components/chat/chat-agent-activity";
+import { ChatCopyButton } from "@/components/chat/chat-copy-button";
 import { ChatEmptyHero } from "@/components/chat/chat-empty-hero";
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import { toggleChatExpansionWithAnchor } from "@/components/chat/chat-expansion-anchor";
@@ -416,14 +411,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 							canFork) ? (
 						<div className="mt-0.5 flex min-h-7 flex-wrap items-center gap-2 text-[11px] text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
 							{visibleAssistantText ? (
-								<MessageAction
-									label="复制"
-									onClick={() =>
-										void navigator.clipboard.writeText(visibleAssistantText)
-									}
-								>
-									<Copy className="size-3.5" />
-								</MessageAction>
+								<ChatCopyButton text={visibleAssistantText} />
 							) : null}
 							{canFork ? (
 								<MessageAction
