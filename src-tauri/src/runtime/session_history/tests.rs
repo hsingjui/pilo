@@ -159,9 +159,31 @@ fn selects_only_the_active_session_branch() {
 }
 
 #[test]
-fn user_image_content_does_not_expand_base64_into_history_text() {
+fn system_messages_are_kept_out_of_conversation_events_and_visible_stats() {
     let bytes = concat!(
-        "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[",
+        "{\"type\":\"message\",\"id\":\"s1\",\"parentId\":null,\"message\":{\"role\":\"system\",\"content\":\"\",\"sections\":{\"cwd\":\"/root/code/project\",\"project_context\":\"secret context\"}}}\n",
+        "{\"type\":\"message\",\"id\":\"u1\",\"parentId\":\"s1\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}\n",
+        "{\"type\":\"message\",\"id\":\"a1\",\"parentId\":\"u1\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}],\"stopReason\":\"stop\"}}\n"
+    )
+    .as_bytes();
+
+    let history = parse_history(bytes);
+    let serialized = serde_json::to_string(&history.events).unwrap();
+
+    assert_eq!(history.source_message_count, 3);
+    assert_eq!(history.stats.total_messages, 2);
+    assert_eq!(history.stats.user_messages, 1);
+    assert_eq!(history.stats.assistant_messages, 1);
+    assert!(!serialized.contains("Unrecognized Session message"));
+    assert!(!serialized.contains("secret context"));
+    assert!(serialized.contains("hello"));
+    assert!(serialized.contains("done"));
+}
+
+#[test]
+fn user_image_content_is_summarized_without_inlining_base64() {
+    let bytes = concat!(
+        "{\"type\":\"message\",\"id\":\"u1\",\"message\":{\"role\":\"user\",\"content\":[",
         "{\"type\":\"text\",\"text\":\"看这张图\"},",
         "{\"type\":\"image\",\"data\":\"VERY_LARGE_BASE64_PAYLOAD\",\"mimeType\":\"image/png\"}]}}\n"
     )
@@ -169,8 +191,32 @@ fn user_image_content_does_not_expand_base64_into_history_text() {
     let history = parse_history(bytes);
     let serialized = serde_json::to_string(&history.events).unwrap();
     assert!(serialized.contains("看这张图"));
-    assert!(serialized.contains("[图片]"));
+    assert!(!serialized.contains("[图片]"));
     assert!(!serialized.contains("VERY_LARGE_BASE64_PAYLOAD"));
+    assert!(serialized.contains("\"id\":\"u1:1\""));
+    assert!(serialized.contains("\"mimeType\":\"image/png\""));
+}
+
+#[test]
+fn image_locations_record_line_byte_ranges() {
+    let first = r#"{"type":"message","id":"u1","message":{"role":"user","content":"hi"}}"#;
+    let second = r#"{"type":"message","id":"u2","message":{"role":"user","content":[{"type":"image","data":"aGk=","mimeType":"image/png"}]}}"#;
+    let bytes = format!("{first}\n{second}\n").into_bytes();
+    let history = parse_history(&bytes);
+    let location = history.image_locations.get("u2:0").copied().unwrap();
+    // The range covers the JSON line itself, without its trailing newline.
+    assert_eq!(location.byte_offset, (first.len() + 1) as u64);
+    assert_eq!(location.byte_length, second.len() as u64);
+    assert!(!history.image_locations.contains_key("u1:0"));
+}
+
+#[test]
+fn history_image_ids_skip_entries_without_ids() {
+    let bytes = b"{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]}}\n";
+    let history = parse_history(bytes);
+    assert!(history.image_locations.is_empty());
+    let serialized = serde_json::to_string(&history.events).unwrap();
+    assert!(!serialized.contains("mimeType"));
 }
 
 #[test]

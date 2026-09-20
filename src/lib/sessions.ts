@@ -99,6 +99,28 @@ export type SessionHistoryFingerprint = {
 	fileMtimeNs: string;
 };
 
+/** Raw bytes of one user-image payload from the session JSONL. */
+export async function readSessionHistoryImage(
+	projectId: string,
+	sessionPath: string,
+	imageId: string,
+	fingerprint?: SessionHistoryFingerprint,
+): Promise<Uint8Array<ArrayBuffer>> {
+	const response = await invoke<ArrayBuffer | Uint8Array | number[]>(
+		"session_history_image",
+		{
+			projectId,
+			sessionPath,
+			imageId,
+			expectedFileSize: fingerprint?.fileSize,
+			expectedFileMtimeNs: fingerprint?.fileMtimeNs,
+		},
+	);
+	if (response instanceof Uint8Array) return new Uint8Array(response);
+	if (response instanceof ArrayBuffer) return new Uint8Array(response);
+	return Uint8Array.from(response);
+}
+
 export type SessionDeleteResult = {
 	method: "trash" | "unlink";
 };

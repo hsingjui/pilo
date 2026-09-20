@@ -28,6 +28,6 @@ pub use runtime::{
 };
 pub use sessions::{
     session_delete, session_external_activity, session_generate_title, session_history,
-    session_list, session_reconcile, session_search, session_update_ui_state, session_watch_start,
-    session_watch_stop,
+    session_history_image, session_list, session_reconcile, session_search,
+    session_update_ui_state, session_watch_start, session_watch_stop,
 };

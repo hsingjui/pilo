@@ -3139,6 +3139,7 @@ dependencies = [
 name = "pilo"
 version = "0.0.1"
 dependencies = [
+ "base64 0.22.1",
  "keyring",
  "mac-notification-sys",
  "pilo-protocol",

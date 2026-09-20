@@ -8,9 +8,12 @@ use serde_json::Value;
 
 use crate::domain::Project;
 
+use super::types::ImageLocation;
+
 pub(super) const SESSION_HISTORY_CACHE_CAPACITY: usize = 8;
 pub(super) const SESSION_HISTORY_CACHE_MAX_ESTIMATED_BYTES: usize = 128 * 1024 * 1024;
 const SESSION_HISTORY_CACHE_ESTIMATE_MULTIPLIER: usize = 2;
+const IMAGE_LOCATION_CACHE_CAPACITY: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct SessionFileFingerprint {
@@ -18,12 +21,15 @@ pub(super) struct SessionFileFingerprint {
     pub(super) file_mtime_ns: u64,
 }
 
+pub(super) type ImageLocations = Arc<HashMap<String, ImageLocation>>;
+
 #[derive(Clone, Debug)]
 pub(super) struct SessionHistoryWindowIndex {
     pub(super) events_content_start: usize,
     pub(super) events_content_end: usize,
     pub(super) message_ranges: Vec<Range<usize>>,
     pub(super) message_index_json: Arc<Vec<u8>>,
+    pub(super) image_locations: ImageLocations,
 }
 
 #[derive(Clone)]
@@ -34,11 +40,19 @@ pub(super) struct CachedSessionHistory {
     estimated_bytes: usize,
 }
 
+#[derive(Clone)]
+struct CachedImageLocations {
+    fingerprint: SessionFileFingerprint,
+    locations: ImageLocations,
+}
+
 #[derive(Default)]
 pub(crate) struct SessionHistoryCache {
     pub(super) entries: HashMap<String, CachedSessionHistory>,
     order: VecDeque<String>,
     estimated_bytes: usize,
+    image_location_entries: HashMap<String, CachedImageLocations>,
+    image_location_order: VecDeque<String>,
 }
 
 impl SessionHistoryCache {
@@ -126,6 +140,61 @@ impl SessionHistoryCache {
         }
     }
 
+    /// Small dedicated LRU for image line indexes. Files whose full serialized
+    /// history exceeds the byte budget (multi-image sessions grow fast) still
+    /// get cheap lazy image reads instead of reparsing the whole JSONL.
+    pub(super) fn get_image_locations(
+        &mut self,
+        key: &str,
+        fingerprint: SessionFileFingerprint,
+    ) -> Option<ImageLocations> {
+        let locations = match self.image_location_entries.get(key) {
+            Some(entry) if entry.fingerprint == fingerprint => Arc::clone(&entry.locations),
+            Some(_) => return None,
+            None => return None,
+        };
+        self.touch_image_locations(key);
+        Some(locations)
+    }
+
+    pub(super) fn insert_image_locations(
+        &mut self,
+        key: String,
+        fingerprint: SessionFileFingerprint,
+        locations: ImageLocations,
+    ) {
+        if locations.is_empty() {
+            return;
+        }
+        self.remove_image_locations(&key);
+        self.image_location_entries.insert(
+            key.clone(),
+            CachedImageLocations {
+                fingerprint,
+                locations,
+            },
+        );
+        self.image_location_order.push_back(key);
+        while self.image_location_order.len() > IMAGE_LOCATION_CACHE_CAPACITY {
+            let Some(evicted) = self.image_location_order.pop_front() else {
+                break;
+            };
+            self.remove_image_locations(&evicted);
+        }
+    }
+
+    fn touch_image_locations(&mut self, key: &str) {
+        self.image_location_order
+            .retain(|candidate| candidate != key);
+        self.image_location_order.push_back(key.to_owned());
+    }
+
+    fn remove_image_locations(&mut self, key: &str) {
+        self.image_location_entries.remove(key);
+        self.image_location_order
+            .retain(|candidate| candidate != key);
+    }
+
     fn touch(&mut self, key: &str) {
         self.order.retain(|candidate| candidate != key);
         self.order.push_back(key.to_owned());
@@ -138,7 +207,9 @@ impl SessionHistoryCache {
     }
 
     pub(crate) fn invalidate(&mut self, project: &Project, path: &str) {
-        self.remove(&cache_key(project, path));
+        let key = cache_key(project, path);
+        self.remove(&key);
+        self.remove_image_locations(&key);
     }
 
     fn remove(&mut self, key: &str) {

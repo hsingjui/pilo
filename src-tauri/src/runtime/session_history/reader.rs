@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use base64::Engine;
+use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -17,6 +19,7 @@ use super::{
 
 const HISTORY_CHANGED_DURING_READ: &str = "session changed while history was being read";
 const HISTORY_CHANGED_READ_RETRIES: usize = 2;
+const SESSION_RANGE_CHUNK_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,6 +85,31 @@ fn preview_text(value: &str) -> String {
     }
 }
 
+/// Skill 调用被 Pi 展开成 `<skill name="…">…</skill>` 大段文本，
+/// 历史占位摘要改用 `/skill:<name> 补充指令` 的紧凑形式。
+fn skill_invocation_summary(text: &str) -> Option<String> {
+    let rest = text.strip_prefix("<skill name=\"")?;
+    let name_end = rest.find('"')?;
+    let name = &rest[..name_end];
+    if name.is_empty() {
+        return None;
+    }
+    let closing = text.find("</skill>")?;
+    let instructions = text[closing + "</skill>".len()..]
+        .trim_start_matches('\n')
+        .trim();
+    Some(if instructions.is_empty() {
+        format!("/skill:{name}")
+    } else {
+        format!("/skill:{name} {instructions}")
+    })
+}
+
+fn user_message_preview(text: &str) -> String {
+    skill_invocation_summary(text)
+        .map_or_else(|| preview_text(text), |summary| preview_text(&summary))
+}
+
 fn describe_history_message(
     index: usize,
     events: &[ConversationEventDto],
@@ -112,6 +140,7 @@ fn describe_history_message(
             }
             ConversationEventDto::UserMessageStart {
                 text,
+                images,
                 timestamp_ms: timestamp,
                 source_entry_id,
             } => {
@@ -120,7 +149,11 @@ fn describe_history_message(
                 timestamp_ms = timestamp_ms.or(*timestamp);
                 estimated_chars = estimated_chars.saturating_add(text.chars().count());
                 if preview.is_empty() {
-                    preview = preview_text(text);
+                    preview = if text.is_empty() && !images.is_empty() {
+                        "[图片]".to_owned()
+                    } else {
+                        user_message_preview(text)
+                    };
                 }
             }
             ConversationEventDto::AssistantMessageStart {
@@ -178,6 +211,7 @@ fn serialize_windowed_history(
         name,
         source_message_count,
         stats,
+        image_locations,
     } = history;
     let messages = split_history_messages(events);
     let directory = messages
@@ -229,6 +263,7 @@ fn serialize_windowed_history(
             events_content_end,
             message_ranges,
             message_index_json,
+            image_locations: Arc::new(image_locations),
         }),
     ))
 }
@@ -320,6 +355,149 @@ async fn read_fingerprint(
         ));
     }
     Ok(fingerprint_from_metadata(&metadata))
+}
+
+/// Lazily loads one user-image payload from the session JSONL. The image id is
+/// `{entryId}:{contentIndex}` as emitted on `UserMessageStart.images`.
+pub async fn read_history_image_bytes(
+    servers: &ServerManager,
+    cache: &tokio::sync::Mutex<SessionHistoryCache>,
+    project: &Project,
+    path: &str,
+    image_id: &str,
+    expected_fingerprint: Option<(u64, u64)>,
+) -> Result<Vec<u8>, String> {
+    let key = cache_key(project, path);
+    let fingerprint = match expected_fingerprint {
+        Some((file_size, file_mtime_ns)) => SessionFileFingerprint {
+            file_size,
+            file_mtime_ns,
+        },
+        None => read_fingerprint(servers, project, path)
+            .await?
+            .ok_or_else(|| "session file metadata is unavailable".to_owned())?,
+    };
+
+    let locations = if let Some((_, index)) = cache.lock().await.get_windowed(&key, fingerprint) {
+        Arc::clone(&index.image_locations)
+    } else if let Some(locations) = cache.lock().await.get_image_locations(&key, fingerprint) {
+        locations
+    } else {
+        let (history, parsed_fingerprint) = read_file(servers, project, path).await?;
+        let locations = Arc::new(history.image_locations);
+        if let Some(parsed_fingerprint) = parsed_fingerprint {
+            cache.lock().await.insert_image_locations(
+                key,
+                parsed_fingerprint,
+                Arc::clone(&locations),
+            );
+        }
+        locations
+    };
+
+    let location = locations
+        .get(image_id)
+        .ok_or_else(|| format!("session history image '{image_id}' was not found"))?;
+    let line = read_session_range(
+        servers,
+        project,
+        path,
+        location.byte_offset,
+        location.byte_length,
+    )
+    .await?;
+    extract_history_image_bytes(&line, image_id)
+}
+
+async fn read_session_range(
+    servers: &ServerManager,
+    project: &Project,
+    path: &str,
+    offset: u64,
+    length: u64,
+) -> Result<Vec<u8>, String> {
+    // The line length comes from the parsed file index, but clamp the initial
+    // allocation anyway so a corrupt index cannot request a huge buffer up front.
+    let mut out = Vec::with_capacity(
+        usize::try_from(length)
+            .unwrap_or(0)
+            .min(SESSION_RANGE_CHUNK_BYTES),
+    );
+    let mut cursor = offset;
+    let end = offset.saturating_add(length);
+    while cursor < end {
+        let chunk_limit = SESSION_RANGE_CHUNK_BYTES.min((end - cursor) as usize);
+        let (metadata, binary) = servers
+            .request_with_binary(
+                &project.connection,
+                "session.read",
+                serde_json::json!({ "path": path, "offset": cursor, "limit": chunk_limit }),
+                Vec::new(),
+            )
+            .await?;
+        if binary.len() != 1 {
+            return Err(format!(
+                "session.read expected one binary attachment, got {}",
+                binary.len()
+            ));
+        }
+        let chunk = binary.into_iter().next().expect("binary length checked");
+        let next_offset = metadata
+            .get("nextOffset")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| "pilo-server session chunk is missing nextOffset".to_owned())?;
+        let eof = metadata
+            .get("eof")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| "pilo-server session chunk is missing eof".to_owned())?;
+        if chunk.is_empty() {
+            return Err("pilo-server returned an empty non-terminal session chunk".to_owned());
+        }
+        out.extend_from_slice(&chunk);
+        if next_offset != cursor.saturating_add(chunk.len() as u64) {
+            return Err("invalid pilo-server session chunk offset".to_owned());
+        }
+        cursor = next_offset;
+        if eof && cursor < end {
+            return Err("session file ended before the image range was fully read".to_owned());
+        }
+    }
+    Ok(out)
+}
+
+fn extract_history_image_bytes(line: &[u8], image_id: &str) -> Result<Vec<u8>, String> {
+    let (base_id, content_index) = image_id
+        .rsplit_once(':')
+        .ok_or_else(|| format!("invalid session history image id '{image_id}'"))?;
+    let content_index: usize = content_index
+        .parse()
+        .map_err(|_| format!("invalid session history image id '{image_id}'"))?;
+    let entry: Value = serde_json::from_slice(line)
+        .map_err(|error| format!("failed to parse session history image line: {error}"))?;
+    if entry.get("id").and_then(Value::as_str) != Some(base_id) {
+        return Err(format!(
+            "session history image '{image_id}' points at an unrelated entry"
+        ));
+    }
+    let part = entry
+        .get("message")
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_array)
+        .and_then(|parts| parts.get(content_index))
+        .ok_or_else(|| format!("session history image '{image_id}' content is missing"))?;
+    if part.get("type").and_then(Value::as_str) != Some("image") {
+        return Err(format!(
+            "session history image '{image_id}' content is not an image"
+        ));
+    }
+    let data = part
+        .get("data")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("session history image '{image_id}' payload is missing"))?;
+    STANDARD
+        .decode(data)
+        .or_else(|_| STANDARD_NO_PAD.decode(data))
+        .map_err(|error| format!("failed to decode session history image '{image_id}': {error}"))
 }
 
 pub async fn read_history_json(
@@ -509,6 +687,49 @@ async fn read_file_once(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skill_invocation_preview_uses_compact_summary() {
+        let text = concat!(
+            "<skill name=\"animate\" location=\"/root/.agents/skills/animate/SKILL.md\">\n",
+            "References are relative to /root/.agents/skills/animate.\n\n",
+            "Make it move.\n</skill>\n\n",
+            "给按钮加个过渡"
+        );
+        assert_eq!(user_message_preview(text), "/skill:animate 给按钮加个过渡");
+    }
+
+    #[test]
+    fn skill_invocation_preview_without_instructions_keeps_command_only() {
+        let text = "<skill name=\"animate\" location=\"/x/SKILL.md\">\nbody\n</skill>";
+        assert_eq!(user_message_preview(text), "/skill:animate");
+    }
+
+    #[test]
+    fn incomplete_skill_block_falls_back_to_plain_preview() {
+        let text = "<skill name=\"animate\">仍在流式写入的半个块";
+        assert_eq!(user_message_preview(text), text);
+    }
+
+    #[test]
+    fn plain_user_message_keeps_default_preview() {
+        assert_eq!(user_message_preview("普通消息"), "普通消息");
+    }
+
+    #[test]
+    fn history_image_bytes_are_decoded_from_the_target_content_part() {
+        let line = r#"{"type":"message","id":"u2","message":{"role":"user","content":[{"type":"text","text":"看"},{"type":"image","data":"aGk=","mimeType":"image/png"}]}}"#;
+        let bytes = extract_history_image_bytes(line.as_bytes(), "u2:1").unwrap();
+        assert_eq!(bytes, b"hi");
+    }
+
+    #[test]
+    fn history_image_bytes_reject_unknown_ids_and_non_image_parts() {
+        let line = br#"{"type":"message","id":"u2","message":{"role":"user","content":[{"type":"image","data":"aGk=","mimeType":"image/png"}]}}"#;
+        assert!(extract_history_image_bytes(line, "u2").is_err());
+        assert!(extract_history_image_bytes(line, "u2:1").is_err());
+        assert!(extract_history_image_bytes(line, "other:0").is_err());
+    }
 
     #[test]
     fn history_response_includes_the_actual_file_fingerprint() {

@@ -1,5 +1,25 @@
+use std::collections::HashMap;
+
 use serde::Serialize;
 use serde_json::Value;
+
+/// Byte range of a JSONL line so a single image payload can be fetched lazily
+/// without re-reading the whole session file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ImageLocation {
+    pub byte_offset: u64,
+    pub byte_length: u64,
+}
+
+/// Image attachment summary carried on `UserMessageStart`; the payload itself
+/// stays in the JSONL and is loaded via `session_history_image`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryImage {
+    pub id: String,
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +60,9 @@ pub struct SessionHistory {
     pub name: Option<String>,
     pub source_message_count: usize,
     pub stats: SessionHistoryStats,
+    /// Image id → JSONL line range; internal only, never serialized to IPC.
+    #[serde(skip)]
+    pub image_locations: HashMap<String, ImageLocation>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -56,6 +79,8 @@ pub enum ConversationEventDto {
     },
     UserMessageStart {
         text: String,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        images: Vec<HistoryImage>,
         #[serde(rename = "timestampMs", skip_serializing_if = "Option::is_none")]
         timestamp_ms: Option<i64>,
         #[serde(rename = "sourceEntryId", skip_serializing_if = "Option::is_none")]

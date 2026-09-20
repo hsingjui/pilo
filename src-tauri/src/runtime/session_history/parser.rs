@@ -4,7 +4,8 @@ use serde_json::{Map, Value};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use super::types::{
-    ConversationEventDto, SessionHistory, SessionHistoryModel, SessionHistoryStats, TurnCompletion,
+    ConversationEventDto, HistoryImage, ImageLocation, SessionHistory, SessionHistoryModel,
+    SessionHistoryStats, TurnCompletion,
 };
 
 #[derive(Default)]
@@ -19,19 +20,32 @@ struct TurnMeta {
 pub(super) struct HistoryParser {
     entries: Vec<Value>,
     partial_line: Vec<u8>,
+    partial_line_offset: u64,
+    consumed_bytes: u64,
+    image_locations: HashMap<String, ImageLocation>,
 }
 
 impl HistoryParser {
     pub(super) fn push(&mut self, mut bytes: &[u8]) {
+        let total_bytes = bytes.len() as u64;
+        let mut absolute = self.consumed_bytes;
         if !self.partial_line.is_empty() {
             let Some(newline) = bytes.iter().position(|byte| *byte == b'\n') else {
                 self.partial_line.extend_from_slice(bytes);
+                self.consumed_bytes += total_bytes;
                 return;
             };
             self.partial_line.extend_from_slice(&bytes[..newline]);
-            push_entry(&mut self.entries, &self.partial_line);
-            self.partial_line.clear();
+            let line_offset = self.partial_line_offset;
+            let line = std::mem::take(&mut self.partial_line);
+            push_entry(
+                &mut self.entries,
+                &line,
+                line_offset,
+                &mut self.image_locations,
+            );
             bytes = &bytes[newline + 1..];
+            absolute += (newline + 1) as u64;
         }
 
         let mut start = 0;
@@ -39,19 +53,37 @@ impl HistoryParser {
             if *byte != b'\n' {
                 continue;
             }
-            push_entry(&mut self.entries, &bytes[start..index]);
+            push_entry(
+                &mut self.entries,
+                &bytes[start..index],
+                absolute + start as u64,
+                &mut self.image_locations,
+            );
             start = index + 1;
         }
         if start < bytes.len() {
+            if self.partial_line.is_empty() {
+                self.partial_line_offset = absolute + start as u64;
+            }
             self.partial_line.extend_from_slice(&bytes[start..]);
         }
+        self.consumed_bytes += total_bytes;
     }
 
     pub(super) fn finish(mut self) -> SessionHistory {
         if !self.partial_line.is_empty() {
-            push_entry(&mut self.entries, &self.partial_line);
+            let line_offset = self.partial_line_offset;
+            let line = std::mem::take(&mut self.partial_line);
+            push_entry(
+                &mut self.entries,
+                &line,
+                line_offset,
+                &mut self.image_locations,
+            );
         }
-        parse_history_entries(&self.entries)
+        let mut history = parse_history_entries(&self.entries);
+        history.image_locations = self.image_locations;
+        history
     }
 }
 
@@ -62,13 +94,68 @@ pub(super) fn parse_history(bytes: &[u8]) -> SessionHistory {
     parser.finish()
 }
 
-fn push_entry(entries: &mut Vec<Value>, line: &[u8]) {
+fn push_entry(
+    entries: &mut Vec<Value>,
+    line: &[u8],
+    line_offset: u64,
+    image_locations: &mut HashMap<String, ImageLocation>,
+) {
     if line.is_empty() {
         return;
     }
     if let Ok(value) = serde_json::from_slice::<Value>(line) {
+        record_image_locations(&value, line_offset, line.len() as u64, image_locations);
         entries.push(value);
     }
+}
+
+fn record_image_locations(
+    entry: &Value,
+    line_offset: u64,
+    line_length: u64,
+    image_locations: &mut HashMap<String, ImageLocation>,
+) {
+    if entry.get("type").and_then(Value::as_str) != Some("message") {
+        return;
+    }
+    let Some(message) = entry.get("message") else {
+        return;
+    };
+    if message.get("role").and_then(Value::as_str) != Some("user") {
+        return;
+    }
+    let Some(parts) = message.get("content").and_then(Value::as_array) else {
+        return;
+    };
+    // Entries without an id cannot be referenced from the projected events, so
+    // their images would stay unfetchable; skip indexing them.
+    let Some(base_id) = image_entry_base_id(entry) else {
+        return;
+    };
+    for (index, part) in parts.iter().enumerate() {
+        if part.get("type").and_then(Value::as_str) != Some("image") {
+            continue;
+        }
+        image_locations.insert(
+            history_image_id(&base_id, index),
+            ImageLocation {
+                byte_offset: line_offset,
+                byte_length: line_length,
+            },
+        );
+    }
+}
+
+fn image_entry_base_id(entry: &Value) -> Option<String> {
+    entry
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+}
+
+fn history_image_id(base_id: &str, content_index: usize) -> String {
+    format!("{base_id}:{content_index}")
 }
 
 fn active_branch_indices(entries: &[Value]) -> Vec<usize> {
@@ -130,8 +217,12 @@ fn collect_history_stats(entries: &[Value], branch: &[usize]) -> SessionHistoryS
                 let Some(message) = entry.get("message") else {
                     continue;
                 };
+                let role = message.get("role").and_then(Value::as_str);
+                if role == Some("system") {
+                    continue;
+                }
                 stats.total_messages += 1;
-                match message.get("role").and_then(Value::as_str) {
+                match role {
                     Some("user") => stats.user_messages += 1,
                     Some("toolResult") => {
                         stats.tool_results += 1;
@@ -327,10 +418,17 @@ fn project_message(
     let timestamp_ms = entry_timestamp_ms(entry, Some(message));
     let source_entry_id = entry_id(entry);
     match message.get("role").and_then(Value::as_str) {
+        // Pi persists structured system-prompt/tool-loadout updates in the session
+        // transcript. They affect replay context but are not conversational UI messages.
+        Some("system") => {}
         Some("user") => {
             finish_turn(events, turn, false);
             events.push(ConversationEventDto::UserMessageStart {
                 text: user_text(message.get("content")),
+                images: user_images(
+                    message.get("content"),
+                    source_entry_id.as_deref().filter(|id| !id.is_empty()),
+                ),
                 timestamp_ms,
                 source_entry_id,
             });
@@ -599,6 +697,7 @@ fn user_text(value: Option<&Value>) -> String {
         Some(Value::String(text)) => text.clone(),
         Some(Value::Array(parts)) => parts
             .iter()
+            .filter(|part| part.get("type").and_then(Value::as_str) != Some("image"))
             .map(|part| {
                 if let Some(text) = part.as_str() {
                     return text.to_owned();
@@ -610,9 +709,6 @@ fn user_text(value: Option<&Value>) -> String {
                         .unwrap_or("")
                         .to_owned();
                 }
-                if part.get("type").and_then(Value::as_str) == Some("image") {
-                    return "[图片]".to_owned();
-                }
                 fallback_text("User content", part)
             })
             .collect::<Vec<_>>()
@@ -620,6 +716,28 @@ fn user_text(value: Option<&Value>) -> String {
         Some(Value::Null) | None => String::new(),
         Some(value) => fallback_text("User content", value),
     }
+}
+
+fn user_images(value: Option<&Value>, base_id: Option<&str>) -> Vec<HistoryImage> {
+    let Some(base_id) = base_id else {
+        return Vec::new();
+    };
+    let Some(parts) = value.and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    parts
+        .iter()
+        .enumerate()
+        .filter(|(_, part)| part.get("type").and_then(Value::as_str) == Some("image"))
+        .map(|(index, part)| HistoryImage {
+            id: history_image_id(base_id, index),
+            mime_type: part
+                .get("mimeType")
+                .and_then(Value::as_str)
+                .unwrap_or("image/png")
+                .to_owned(),
+        })
+        .collect()
 }
 
 fn tool_result_payload(message: &Value) -> Value {
