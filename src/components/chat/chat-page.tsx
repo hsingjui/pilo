@@ -1002,6 +1002,9 @@ function ChatPageImpl(props: ChatPageProps) {
 												: undefined
 										}
 										disabled={
+											// 后台保留页不可见；其 focus-composer hook 先注册、先执行，
+											// 会 preventDefault 后 focus 隐藏 textarea（no-op），吞掉新会话页的 Ctrl+L。
+											!active ||
 											recoveryState.status === "reconnecting" ||
 											Boolean(session.externalRunning)
 										}

@@ -53,12 +53,6 @@ export const SHORTCUT_COMMANDS = [
 export type ShortcutCommandId = (typeof SHORTCUT_COMMANDS)[number]["id"];
 export type KeyboardShortcutMap = Record<ShortcutCommandId, string>;
 
-export const DEFAULT_KEYBOARD_SHORTCUTS = Object.freeze(
-	Object.fromEntries(
-		SHORTCUT_COMMANDS.map((command) => [command.id, command.defaultShortcut]),
-	) as KeyboardShortcutMap,
-);
-
 const MODIFIERS = new Set(["mod", "ctrl", "meta", "alt", "shift"]);
 const MODIFIER_ORDER = ["mod", "ctrl", "meta", "alt", "shift"] as const;
 const MODIFIER_KEYS = new Set([
@@ -116,8 +110,25 @@ export function normalizeKeyboardShortcut(value: unknown): string | null {
 	const orderedModifiers = MODIFIER_ORDER.filter((modifier) =>
 		modifiers.has(modifier),
 	);
-	return [...orderedModifiers, key].join("+");
+	// Windows / Linux 上物理 Ctrl 就是应用修饰键，快捷键统一落为 "mod"；
+	// "ctrl" token 只有 macOS（Ctrl 不带 Cmd）会产生，直接存会在 Windows 上永不匹配。
+	const resolvedModifiers = isMacPlatform()
+		? orderedModifiers
+		: orderedModifiers.map((modifier) =>
+				modifier === "ctrl" ? "mod" : modifier,
+			);
+	return [...resolvedModifiers, key].join("+");
 }
+
+export const DEFAULT_KEYBOARD_SHORTCUTS = Object.freeze(
+	Object.fromEntries(
+		SHORTCUT_COMMANDS.map((command) => [
+			command.id,
+			normalizeKeyboardShortcut(command.defaultShortcut) ??
+				command.defaultShortcut,
+		]),
+	) as KeyboardShortcutMap,
+);
 
 export function isSafeGlobalShortcut(shortcut: string): boolean {
 	const normalized = normalizeKeyboardShortcut(shortcut);
