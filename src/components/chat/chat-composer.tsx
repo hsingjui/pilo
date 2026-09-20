@@ -214,6 +214,27 @@ export function ChatComposer({
 		{ enabled: !disabled },
 	);
 
+	// 挂载或从后台切回该会话（新开会话、点击通知打开会话、侧边栏切换）时
+	// 聚焦输入框；disabled 变化也涵盖恢复重连/外部运行结束后的场景。
+	const prevDisabledRef = useRef(true);
+	useEffect(() => {
+		if (prevDisabledRef.current && !disabled) textareaRef.current?.focus();
+		prevDisabledRef.current = disabled;
+	}, [disabled]);
+
+	// 窗口重新获得焦点（如点击系统通知回到应用）时，若应用内没有其他焦点
+	// 元素（终端、重命名输入框等），把焦点放回输入框。
+	useEffect(() => {
+		if (disabled) return;
+		const handleWindowFocus = () => {
+			const activeElement = document.activeElement;
+			if (activeElement && activeElement !== document.body) return;
+			textareaRef.current?.focus();
+		};
+		window.addEventListener("focus", handleWindowFocus);
+		return () => window.removeEventListener("focus", handleWindowFocus);
+	}, [disabled]);
+
 	const showFocusHint =
 		!disabled && value.length === 0 && attachments.length === 0;
 
