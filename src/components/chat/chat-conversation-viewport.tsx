@@ -295,7 +295,7 @@ const ChatConversationViewportImpl = forwardRef<
 		scrollRef,
 		virtualizerRef,
 		virtualPadding,
-		isSticky,
+		showScrollToLatest,
 		isScrolledFromTop,
 		activeOutlineIndex,
 		syncScrollState,
@@ -511,7 +511,7 @@ const ChatConversationViewportImpl = forwardRef<
 					/>
 				) : null}
 
-				{!showSwitchSkeleton && !isSticky && messages.length > 0 ? (
+				{!showSwitchSkeleton && showScrollToLatest && messages.length > 0 ? (
 					<ConversationColumn className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-end">
 						<Tooltip>
 							<TooltipTrigger asChild>

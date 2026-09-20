@@ -10,7 +10,10 @@ import {
 import type { VirtualizerHandle } from "virtua";
 
 import { CHAT_EXPANSION_TOGGLE_EVENT } from "@/components/chat/chat-expansion-anchor";
-import { getChatScrollMaxOffset } from "@/components/chat/chat-sticky-scroll-dom";
+import {
+	getChatScrollMaxOffset,
+	shouldShowChatScrollToLatest,
+} from "@/components/chat/chat-sticky-scroll-dom";
 import { recordStickyScrollMetric } from "@/lib/chat-performance";
 
 const BOTTOM_THRESHOLD_PX = 4;
@@ -73,6 +76,8 @@ export function useChatStickyScroll({
 		initialSticky ? "following" : "reading",
 	);
 	const [isSticky, setIsSticky] = useState(initialSticky);
+	const scrollToLatestVisibleRef = useRef(false);
+	const [showScrollToLatest, setShowScrollToLatest] = useState(false);
 	const initialScrollRestoredRef = useRef(false);
 	const [initialScrollRestored, setInitialScrollRestored] = useState(false);
 	const followFrameRef = useRef<number | null>(null);
@@ -84,6 +89,20 @@ export function useChatStickyScroll({
 		if (ownershipRef.current === nextOwnership) return;
 		ownershipRef.current = nextOwnership;
 		setIsSticky(nextOwnership === "following");
+	}, []);
+
+	const syncScrollToLatestVisibility = useCallback(() => {
+		const viewport = scrollElementRef.current;
+		const nextVisible =
+			ownershipRef.current === "reading" && viewport
+				? shouldShowChatScrollToLatest(
+						viewport,
+						scrollToLatestVisibleRef.current,
+					)
+				: false;
+		if (scrollToLatestVisibleRef.current === nextVisible) return;
+		scrollToLatestVisibleRef.current = nextVisible;
+		setShowScrollToLatest(nextVisible);
 	}, []);
 
 	const clampToBottom = useCallback(() => {
@@ -113,12 +132,13 @@ export function useChatStickyScroll({
 
 	const stopScroll = useCallback(() => {
 		commitOwnership("reading");
+		syncScrollToLatestVisibility();
 		const viewport = scrollElementRef.current;
 		onScrollStateChangeRef.current?.({
 			scrollTop: viewport?.scrollTop ?? scrollPositionRef.current,
 			sticky: false,
 		});
-	}, [commitOwnership]);
+	}, [commitOwnership, syncScrollToLatestVisibility]);
 
 	const handleWheel = useCallback(
 		(event: WheelEvent) => {
@@ -275,12 +295,22 @@ export function useChatStickyScroll({
 				}
 				verticalLayoutChanged = true;
 			}
-			if (verticalLayoutChanged) scheduleFollow();
+			if (verticalLayoutChanged) {
+				scheduleFollow();
+				syncScrollToLatestVisibility();
+			}
 		});
 		observer.observe(scrollElement);
 		observer.observe(contentElement);
 		return () => observer.disconnect();
-	}, [contentRevision, enabled, hasItems, scheduleFollow, scrollElement]);
+	}, [
+		contentRevision,
+		enabled,
+		hasItems,
+		scheduleFollow,
+		scrollElement,
+		syncScrollToLatestVisibility,
+	]);
 
 	useLayoutEffect(() => {
 		if (!enabled || initialScrollRestoredRef.current || itemCount === 0) return;
@@ -364,6 +394,8 @@ export function useChatStickyScroll({
 			const viewport = scrollElementRef.current;
 			if (!viewport || itemCountRef.current <= 0) return;
 			commitOwnership("following");
+			scrollToLatestVisibleRef.current = false;
+			setShowScrollToLatest(false);
 			const target = getChatScrollMaxOffset(viewport);
 			if (smooth) viewport.scrollTo({ top: target, behavior: "smooth" });
 			else viewport.scrollTop = target;
@@ -390,11 +422,12 @@ export function useChatStickyScroll({
 			) {
 				commitOwnership("following");
 			}
+			syncScrollToLatestVisibility();
 			const following = ownershipRef.current === "following";
 			onScrollStateChangeRef.current?.({ scrollTop, sticky: following });
 			return following;
 		},
-		[commitOwnership],
+		[commitOwnership, syncScrollToLatestVisibility],
 	);
 
 	useEffect(
@@ -417,6 +450,7 @@ export function useChatStickyScroll({
 		scrollElement,
 		scrollElementRef,
 		isSticky,
+		showScrollToLatest,
 		initialScrollRestored,
 		handleScroll,
 		scrollToBottom,

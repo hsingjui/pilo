@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { scrollChatViewportToRealBottom } from "../src/components/chat/chat-sticky-scroll-dom.ts";
+import {
+	scrollChatViewportToRealBottom,
+	shouldShowChatScrollToLatest,
+} from "../src/components/chat/chat-sticky-scroll-dom.ts";
 import {
 	appendAssistantTextContent,
 	appendAssistantThinkingContent,
@@ -86,6 +89,33 @@ test("chat bottom clamp experiment modes isolate scroll owners", () => {
 		scrollTop: 540,
 		result: { virtuaScrolled: false, domScrolled: false },
 	});
+});
+
+test("scroll-to-latest control uses meaningful bottom distance with hysteresis", () => {
+	const viewport = {
+		clientHeight: 400,
+		scrollHeight: 1_000,
+		scrollTop: 520,
+	};
+
+	assert.equal(shouldShowChatScrollToLatest(viewport, false), false);
+	viewport.scrollTop = 480;
+	assert.equal(shouldShowChatScrollToLatest(viewport, false), true);
+
+	viewport.scrollTop = 550;
+	assert.equal(shouldShowChatScrollToLatest(viewport, true), true);
+	viewport.scrollTop = 565;
+	assert.equal(shouldShowChatScrollToLatest(viewport, true), false);
+});
+
+test("scroll-to-latest control stays hidden for short scrollable content", () => {
+	assert.equal(
+		shouldShowChatScrollToLatest(
+			{ clientHeight: 400, scrollHeight: 470, scrollTop: 0 },
+			false,
+		),
+		false,
+	);
 });
 
 test("interleaved concurrent tool calls stay isolated by toolCallId", () => {
