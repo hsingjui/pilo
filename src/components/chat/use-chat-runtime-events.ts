@@ -119,6 +119,15 @@ export function useChatRuntimeEvents({
 	});
 	const recoveryPromiseRef = useRef<Promise<boolean> | null>(null);
 
+	// 自动命名 / 会话识别会在 turn 进行中更新标题，而通知在 turn 结束时才
+	// 发出，同步 turn 的标题快照，避免通知仍显示「新会话」。
+	useEffect(() => {
+		const turn = activeTurnRef.current;
+		if (turn && turn.sessionTitle !== session.title) {
+			turn.sessionTitle = session.title;
+		}
+	}, [activeTurnRef, session.title]);
+
 	const clearRecoveryState = useCallback(() => {
 		setRecoveryState({
 			status: "idle",
