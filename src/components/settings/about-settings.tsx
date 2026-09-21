@@ -172,8 +172,8 @@ export function AboutSettings() {
 
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
-			<section className="overflow-hidden rounded-lg border border-border/70 bg-card/60 text-sm shadow-none">
-				<div className="flex items-center gap-4 px-4 py-4 sm:px-5 sm:py-5">
+			<SettingsSection contentClassName="px-4 py-4 sm:px-5 sm:py-5">
+				<div className="flex items-center gap-4">
 					<div className="size-16 shrink-0 overflow-hidden rounded-2xl border border-border/60 bg-background shadow-sm">
 						<img
 							src={appIconUrl}
@@ -193,7 +193,7 @@ export function AboutSettings() {
 						</p>
 					</div>
 				</div>
-			</section>
+			</SettingsSection>
 
 			<SettingsSection title="应用信息">
 				<SettingsRow label="版本">

@@ -15,7 +15,11 @@ import {
 import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
 import { Button, Hint } from "@/ui";
-import { SettingsRow, SettingsSection } from "./compact-layout";
+import {
+	SETTINGS_CONTAINER_CLASS,
+	SettingsRow,
+	SettingsSection,
+} from "./compact-layout";
 
 function ShortcutKeys({ shortcut }: { shortcut: string }) {
 	const tokens = shortcut.split("+");
@@ -156,7 +160,7 @@ export function KeyboardShortcutsSettings() {
 	const newlineKeys = sendMessageShortcut === "enter" ? "shift+enter" : "enter";
 
 	return (
-		<div className="space-y-3">
+		<div className={SETTINGS_CONTAINER_CLASS}>
 			{(["应用", "会话"] as const).map((section, sectionIndex) => (
 				<SettingsSection
 					key={section}

@@ -27,6 +27,7 @@ import {
 } from "@/ui";
 
 import {
+	SETTINGS_CONTAINER_CLASS,
 	SETTINGS_CONTROL_CLASS,
 	SettingsRow,
 	SettingsSection,
@@ -149,7 +150,7 @@ export function SessionNamingSettings() {
 	};
 
 	return (
-		<div className="space-y-3">
+		<div className={SETTINGS_CONTAINER_CLASS}>
 			<SettingsSection
 				title="会话命名模型"
 				description="新会话首条消息发送后，Pilo 使用对应连接指定的模型生成标题。未指定模型时不会自动命名。"
