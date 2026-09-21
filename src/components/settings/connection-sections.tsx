@@ -130,6 +130,7 @@ export function ConnectionRow({
 					className={SETTINGS_ICON_BUTTON_CLASS}
 					disabled={busy}
 					onClick={onConfigure}
+					aria-label="连接设置"
 					title="连接设置"
 				>
 					<Pencil />
@@ -141,6 +142,7 @@ export function ConnectionRow({
 						size="icon"
 						className={SETTINGS_ICON_BUTTON_CLASS}
 						onClick={onEdit}
+						aria-label="编辑 SSH 参数"
 						title="编辑 SSH 参数"
 					>
 						<Settings2 />
@@ -157,6 +159,7 @@ export function ConnectionRow({
 						)}
 						disabled={busy}
 						onClick={onRemove}
+						aria-label="删除连接"
 						title="删除连接"
 					>
 						<Trash2 />

@@ -168,7 +168,7 @@ export function ConnectionsSettings() {
 					.join(" · "),
 			});
 		} catch (error) {
-			toast.error("未检测到可用 Pi", {
+			toast.error(`未检测到 ${connectionLabel(connection)} 可用的 Pi`, {
 				description: userErrorMessage(error),
 			});
 		} finally {

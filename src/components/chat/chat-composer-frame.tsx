@@ -28,7 +28,7 @@ export const CHAT_COMPOSER_SEND_BUTTON_CLASS_NAME = cn(
 );
 
 export const DEFAULT_CHAT_COMPOSER_PLACEHOLDER =
-	"按 @ 提及文件，/ 使用 Pi 命令";
+	"向 Pi 提问或下达任务，@ 提及文件";
 
 export function ChatComposerRoot({
 	children,
