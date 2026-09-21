@@ -86,12 +86,11 @@ export const UserMessage = memo(function UserMessage({
 		<ConversationColumn className="py-2 @min-[40rem]:py-3">
 			<div className="flex w-full justify-end">
 				<div className="group flex min-w-0 max-w-[80%] flex-col items-end gap-1.5 @min-[40rem]:max-w-[70%]">
-					<div className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
-						{message.queued ? (
-							<span>{message.queued === "steer" ? "待调整" : "已排队"}</span>
-						) : null}
-						{message.time ? <span>{message.time}</span> : null}
-					</div>
+					{message.queued ? (
+						<div className="text-[11px] tabular-nums text-muted-foreground">
+							{message.queued === "steer" ? "待调整" : "已排队"}
+						</div>
+					) : null}
 					<div className="flex min-w-0 max-w-full justify-end">
 						<div
 							className="min-w-0 max-w-full rounded-2xl border border-foreground/[0.08] bg-foreground/[0.05] px-3.5 py-2 leading-6 text-foreground @min-[40rem]:px-4 @min-[40rem]:py-2.5"
@@ -112,8 +111,13 @@ export const UserMessage = memo(function UserMessage({
 							{message.text ? <UserMessageBody text={message.text} /> : null}
 						</div>
 					</div>
-					<div className="flex gap-0.5">
+					<div className="flex items-center gap-1.5">
 						<ChatCopyButton text={message.text} />
+						{message.time ? (
+							<span className="text-[11px] tabular-nums text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+								{message.time}
+							</span>
+						) : null}
 					</div>
 				</div>
 			</div>

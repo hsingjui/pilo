@@ -45,19 +45,21 @@ export function SessionHeader({
 			className={cn(
 				"flex h-11 shrink-0 items-center bg-background",
 				IS_MACOS ? TRAFFIC_LIGHT_ALIGNED_HEADER : "mt-0.5",
-				overlay && "absolute inset-x-0 top-0 z-30",
+				overlay ? "absolute inset-x-0 top-0 z-30" : "relative",
 				IS_MACOS && sidebarCollapsed && TRAFFIC_LIGHT_GUTTER,
 				reserveWindowControls && "pr-[7.75rem]",
 			)}
 		>
+			{/* 展开按钮悬浮在标题左侧 logo 位（不占布局，标题在侧栏开合全程不位移），
+			    折叠完成后（延迟 200ms 与侧栏收起过渡对齐）淡入；macOS 收起时避让交通灯 */}
 			<div
 				aria-hidden={!sidebarCollapsed}
 				className={cn(
-					"flex shrink-0 items-center overflow-hidden transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none",
-					// 折叠完成后（延迟 200ms 与侧栏收起过渡对齐）淡入，避免展开按钮提前弹出造成跳动
+					"absolute top-1/2 z-10 -translate-y-1/2 transition-opacity duration-200 ease-out motion-reduce:transition-none",
+					IS_MACOS && sidebarCollapsed ? "left-[4.875rem]" : "left-1.5",
 					sidebarCollapsed
-						? "w-10 pl-3 opacity-100 delay-200"
-						: "w-0 pl-0 opacity-0",
+						? "opacity-100 delay-200"
+						: "pointer-events-none opacity-0",
 				)}
 			>
 				<Button
@@ -81,11 +83,15 @@ export function SessionHeader({
 						role="tab"
 						aria-selected="true"
 						tabIndex={0}
-						className="group flex h-8 w-fit max-w-[66.666667%] min-w-0 items-center gap-1.5 overflow-hidden rounded-md border border-transparent px-3 text-[13px] text-foreground outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+						className="group flex h-8 w-fit max-w-[66.666667%] min-w-0 items-center gap-1.5 overflow-hidden rounded-md border border-transparent px-3 text-sm text-foreground outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
 					>
 						<svg
 							viewBox="0 0 800 800"
-							className="size-3 shrink-0 text-muted-foreground opacity-60"
+							className={cn(
+								"size-[1.15em] shrink-0 text-muted-foreground transition-opacity duration-200 motion-reduce:transition-none",
+								// 折叠时淡出，避免与悬浮的展开图标叠在一起
+								sidebarCollapsed ? "opacity-0" : "opacity-60",
+							)}
 							aria-hidden="true"
 						>
 							<path
