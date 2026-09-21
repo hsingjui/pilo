@@ -1,7 +1,10 @@
+mod appearance;
 mod connections;
 mod projects;
 mod runtime;
 mod sessions;
+
+pub use appearance::system_font_families;
 
 pub use connections::{
     connection_health_get, connection_naming_model_get, connection_naming_model_list,

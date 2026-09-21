@@ -19,11 +19,11 @@ import {
 	getMonospaceFontFamilyStack,
 	getPageFontFamilyStack,
 	isCodeFontSize,
-	isMonospaceFontFamily,
-	isPageFontFamily,
 	isPageFontSize,
 	isTerminalFontSize,
-	normalizeCustomFontFamily,
+	legacyCustomFontFamilyValue,
+	normalizeMonospaceFontFamily,
+	normalizePageFontFamily,
 	type CodeFontSize,
 	type MonospaceFontFamily,
 	type PageFontFamily,
@@ -48,13 +48,10 @@ export type PiloPreferences = {
 	showWorkDuration: boolean;
 	desktopNotifications: boolean;
 	pageFontFamily: PageFontFamily;
-	pageCustomFontFamily: string;
 	pageFontSize: PageFontSize;
 	codeFontFamily: MonospaceFontFamily;
-	codeCustomFontFamily: string;
 	codeFontSize: CodeFontSize;
 	terminalFontFamily: MonospaceFontFamily;
-	terminalCustomFontFamily: string;
 	terminalFontSize: TerminalFontSize;
 };
 
@@ -68,19 +65,20 @@ type PreferencesContextValue = PiloPreferences & {
 	setShowWorkDuration: (value: boolean) => void;
 	setDesktopNotifications: (value: boolean) => void;
 	setPageFontFamily: (value: PageFontFamily) => void;
-	setPageCustomFontFamily: (value: string) => void;
 	setPageFontSize: (value: PageFontSize) => void;
 	setCodeFontFamily: (value: MonospaceFontFamily) => void;
-	setCodeCustomFontFamily: (value: string) => void;
 	setCodeFontSize: (value: CodeFontSize) => void;
 	setTerminalFontFamily: (value: MonospaceFontFamily) => void;
-	setTerminalCustomFontFamily: (value: string) => void;
 	setTerminalFontSize: (value: TerminalFontSize) => void;
 };
 
 type StoredPreferences = Partial<Omit<PiloPreferences, "keyboardShortcuts">> & {
 	keyboardShortcuts?: unknown;
 	conversationFontSize?: unknown;
+	/** 历史版本的“自定义字体列表”输入框值，仅用于迁移。 */
+	pageCustomFontFamily?: unknown;
+	codeCustomFontFamily?: unknown;
+	terminalCustomFontFamily?: unknown;
 };
 
 const STORAGE_KEY = "pilo.preferences.v1";
@@ -93,13 +91,10 @@ const DEFAULT_PREFERENCES: PiloPreferences = {
 	showWorkDuration: true,
 	desktopNotifications: false,
 	pageFontFamily: DEFAULT_PAGE_FONT_FAMILY,
-	pageCustomFontFamily: "",
 	pageFontSize: DEFAULT_PAGE_FONT_SIZE,
 	codeFontFamily: DEFAULT_CODE_FONT_FAMILY,
-	codeCustomFontFamily: "",
 	codeFontSize: DEFAULT_CODE_FONT_SIZE,
 	terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
-	terminalCustomFontFamily: "",
 	terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
 };
 
@@ -139,29 +134,32 @@ function readStoredPreferences(): PiloPreferences {
 				typeof parsed.desktopNotifications === "boolean"
 					? parsed.desktopNotifications
 					: DEFAULT_PREFERENCES.desktopNotifications,
-			pageFontFamily: isPageFontFamily(parsed.pageFontFamily)
-				? parsed.pageFontFamily
-				: DEFAULT_PREFERENCES.pageFontFamily,
-			pageCustomFontFamily: normalizeCustomFontFamily(
-				parsed.pageCustomFontFamily,
+			pageFontFamily: normalizePageFontFamily(
+				legacyCustomFontFamilyValue(
+					parsed.pageCustomFontFamily,
+					parsed.pageFontFamily,
+				),
+				DEFAULT_PREFERENCES.pageFontFamily,
 			),
 			pageFontSize: isPageFontSize(parsed.pageFontSize)
 				? parsed.pageFontSize
 				: legacyConversationFontSize,
-			codeFontFamily: isMonospaceFontFamily(parsed.codeFontFamily)
-				? parsed.codeFontFamily
-				: DEFAULT_PREFERENCES.codeFontFamily,
-			codeCustomFontFamily: normalizeCustomFontFamily(
-				parsed.codeCustomFontFamily,
+			codeFontFamily: normalizeMonospaceFontFamily(
+				legacyCustomFontFamilyValue(
+					parsed.codeCustomFontFamily,
+					parsed.codeFontFamily,
+				),
+				DEFAULT_PREFERENCES.codeFontFamily,
 			),
 			codeFontSize: isCodeFontSize(parsed.codeFontSize)
 				? parsed.codeFontSize
 				: DEFAULT_PREFERENCES.codeFontSize,
-			terminalFontFamily: isMonospaceFontFamily(parsed.terminalFontFamily)
-				? parsed.terminalFontFamily
-				: DEFAULT_PREFERENCES.terminalFontFamily,
-			terminalCustomFontFamily: normalizeCustomFontFamily(
-				parsed.terminalCustomFontFamily,
+			terminalFontFamily: normalizeMonospaceFontFamily(
+				legacyCustomFontFamilyValue(
+					parsed.terminalCustomFontFamily,
+					parsed.terminalFontFamily,
+				),
+				DEFAULT_PREFERENCES.terminalFontFamily,
 			),
 			terminalFontSize: isTerminalFontSize(parsed.terminalFontSize)
 				? parsed.terminalFontSize
@@ -179,10 +177,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 		const root = document.documentElement;
 		root.style.setProperty(
 			"--pilo-page-font-family",
-			getPageFontFamilyStack(
-				preferences.pageFontFamily,
-				preferences.pageCustomFontFamily,
-			),
+			getPageFontFamilyStack(preferences.pageFontFamily),
 		);
 		root.style.setProperty(
 			"--pilo-page-font-size",
@@ -203,10 +198,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 		}
 		root.style.setProperty(
 			"--pilo-code-font-family",
-			getMonospaceFontFamilyStack(
-				preferences.codeFontFamily,
-				preferences.codeCustomFontFamily,
-			),
+			getMonospaceFontFamilyStack(preferences.codeFontFamily),
 		);
 		root.style.setProperty(
 			"--pilo-code-font-size",
@@ -214,10 +206,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 		);
 	}, [
 		preferences.codeFontFamily,
-		preferences.codeCustomFontFamily,
 		preferences.codeFontSize,
 		preferences.pageFontFamily,
-		preferences.pageCustomFontFamily,
 		preferences.pageFontSize,
 	]);
 
@@ -273,49 +263,19 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 		setPreferences((current) => ({ ...current, desktopNotifications: value }));
 	}, []);
 	const setPageFontFamily = useCallback((value: PageFontFamily) => {
-		setPreferences((current) => ({
-			...current,
-			pageFontFamily: value,
-			pageCustomFontFamily: "",
-		}));
-	}, []);
-	const setPageCustomFontFamily = useCallback((value: string) => {
-		setPreferences((current) => ({
-			...current,
-			pageCustomFontFamily: normalizeCustomFontFamily(value),
-		}));
+		setPreferences((current) => ({ ...current, pageFontFamily: value }));
 	}, []);
 	const setPageFontSize = useCallback((value: PageFontSize) => {
 		setPreferences((current) => ({ ...current, pageFontSize: value }));
 	}, []);
 	const setCodeFontFamily = useCallback((value: MonospaceFontFamily) => {
-		setPreferences((current) => ({
-			...current,
-			codeFontFamily: value,
-			codeCustomFontFamily: "",
-		}));
-	}, []);
-	const setCodeCustomFontFamily = useCallback((value: string) => {
-		setPreferences((current) => ({
-			...current,
-			codeCustomFontFamily: normalizeCustomFontFamily(value),
-		}));
+		setPreferences((current) => ({ ...current, codeFontFamily: value }));
 	}, []);
 	const setCodeFontSize = useCallback((value: CodeFontSize) => {
 		setPreferences((current) => ({ ...current, codeFontSize: value }));
 	}, []);
 	const setTerminalFontFamily = useCallback((value: MonospaceFontFamily) => {
-		setPreferences((current) => ({
-			...current,
-			terminalFontFamily: value,
-			terminalCustomFontFamily: "",
-		}));
-	}, []);
-	const setTerminalCustomFontFamily = useCallback((value: string) => {
-		setPreferences((current) => ({
-			...current,
-			terminalCustomFontFamily: normalizeCustomFontFamily(value),
-		}));
+		setPreferences((current) => ({ ...current, terminalFontFamily: value }));
 	}, []);
 	const setTerminalFontSize = useCallback((value: TerminalFontSize) => {
 		setPreferences((current) => ({ ...current, terminalFontSize: value }));
@@ -333,13 +293,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 			setShowWorkDuration,
 			setDesktopNotifications,
 			setPageFontFamily,
-			setPageCustomFontFamily,
 			setPageFontSize,
 			setCodeFontFamily,
-			setCodeCustomFontFamily,
 			setCodeFontSize,
 			setTerminalFontFamily,
-			setTerminalCustomFontFamily,
 			setTerminalFontSize,
 		}),
 		[
@@ -347,19 +304,16 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 			resetKeyboardShortcut,
 			resetKeyboardShortcuts,
 			setCodeFontFamily,
-			setCodeCustomFontFamily,
 			setCodeFontSize,
 			setCollapseCompletedActivity,
 			setCollapseLongMessages,
 			setDesktopNotifications,
 			setPageFontFamily,
-			setPageCustomFontFamily,
 			setPageFontSize,
 			setKeyboardShortcut,
 			setSendMessageShortcut,
 			setShowWorkDuration,
 			setTerminalFontFamily,
-			setTerminalCustomFontFamily,
 			setTerminalFontSize,
 		],
 	);

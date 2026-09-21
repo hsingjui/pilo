@@ -58,8 +58,7 @@ export function ProjectViewer({
 	/** macOS 侧边栏折叠时红绿灯覆盖主区左上角，顶部需要避让。 */
 	reserveTrafficLights?: boolean;
 }) {
-	const { codeFontFamily, codeCustomFontFamily, codeFontSize } =
-		usePreferences();
+	const { codeFontFamily, codeFontSize } = usePreferences();
 	const [tabs, setTabs] = useState<ViewerTab[]>([]);
 	const [activePath, setActivePath] = useState<string | null>(null);
 	const [highlighted, setHighlighted] = useState<{
@@ -213,10 +212,7 @@ export function ProjectViewer({
 					<div
 						className="project-file-highlight scrollbar-pro h-full overflow-auto bg-background"
 						style={{
-							fontFamily: getMonospaceFontFamilyStack(
-								codeFontFamily,
-								codeCustomFontFamily,
-							),
+							fontFamily: getMonospaceFontFamilyStack(codeFontFamily),
 							fontSize: codeFontSize,
 						}}
 						dangerouslySetInnerHTML={{ __html: highlightedHtml }}
@@ -226,10 +222,7 @@ export function ProjectViewer({
 						<pre
 							className="min-h-full min-w-max whitespace-pre p-3 text-foreground selection:bg-accent"
 							style={{
-								fontFamily: getMonospaceFontFamilyStack(
-									codeFontFamily,
-									codeCustomFontFamily,
-								),
+								fontFamily: getMonospaceFontFamilyStack(codeFontFamily),
 								fontSize: codeFontSize,
 								lineHeight: 1.55,
 								tabSize: 4,

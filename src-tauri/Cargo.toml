@@ -55,6 +55,7 @@ mac-notification-sys = "0.6.15"
 tauri-winrt-notification = "0.7.3"
 windows = { version = "0.61", features = [
 	"Win32_Foundation",
+	"Win32_Graphics_DirectWrite",
 	"Win32_Storage_EnhancedStorage",
 	"Win32_Storage_FileSystem",
 	"Win32_System_Com",

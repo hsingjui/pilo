@@ -26,8 +26,9 @@ use runtime::{
         session_generate_title, session_history, session_history_image, session_list,
         session_reconcile, session_search, session_update_ui_state, session_watch_start,
         session_watch_stop, ssh_connection_list, ssh_connection_remove, ssh_connection_save,
-        ssh_connection_test, terminal_close, terminal_resize, terminal_write, wsl_connection_list,
-        wsl_connection_remove, wsl_connection_save, wsl_connection_test, wsl_list_distributions,
+        ssh_connection_test, system_font_families, terminal_close, terminal_resize, terminal_write,
+        wsl_connection_list, wsl_connection_remove, wsl_connection_save, wsl_connection_test,
+        wsl_list_distributions,
     },
 };
 use std::{fs::OpenOptions, io::Write};
@@ -167,6 +168,7 @@ pub fn run() {
             runtime_abort_pi,
             runtime_send_rpc,
             runtime_subscribe_events,
+            system_font_families,
         ])
         .setup(|app| {
             use tauri::Manager;

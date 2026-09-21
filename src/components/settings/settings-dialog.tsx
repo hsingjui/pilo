@@ -21,13 +21,15 @@ import {
 } from "@/lib/desktop-notifications";
 import {
 	CODE_FONT_SIZES,
-	MONOSPACE_FONT_OPTIONS,
-	PAGE_FONT_OPTIONS,
+	MONOSPACE_FONT_BUILTIN_OPTIONS,
+	PAGE_FONT_BUILTIN_OPTIONS,
 	PAGE_FONT_SIZES,
 	TERMINAL_FONT_SIZES,
+	buildSystemFontOptions,
+	filterSymbolFontFamilies,
+	resolveSystemFontFamilies,
+	resolveSystemMonospaceFamilies,
 	type CodeFontSize,
-	type MonospaceFontFamily,
-	type PageFontFamily,
 	type PageFontSize,
 	type TerminalFontSize,
 } from "@/lib/font-settings";
@@ -43,7 +45,6 @@ import {
 	DialogContent,
 	DialogDescription,
 	DialogTitle,
-	Input,
 	ScrollArea,
 	Select,
 	SelectContent,
@@ -64,6 +65,7 @@ import {
 } from "./compact-layout";
 import { AboutSettings } from "./about-settings";
 import { ConnectionsSettings } from "./connections-settings";
+import { FontSelect, type FontSelectGroup } from "./font-select";
 import { KeyboardShortcutsSettings } from "./keyboard-shortcuts-settings";
 import { SessionNamingSettings } from "./session-naming-settings";
 
@@ -326,23 +328,46 @@ function AppearanceSettings() {
 	const {
 		pageFontFamily,
 		setPageFontFamily,
-		pageCustomFontFamily,
-		setPageCustomFontFamily,
 		pageFontSize,
 		setPageFontSize,
 		codeFontFamily,
 		setCodeFontFamily,
-		codeCustomFontFamily,
-		setCodeCustomFontFamily,
 		codeFontSize,
 		setCodeFontSize,
 		terminalFontFamily,
 		setTerminalFontFamily,
-		terminalCustomFontFamily,
-		setTerminalCustomFontFamily,
 		terminalFontSize,
 		setTerminalFontSize,
 	} = usePreferences();
+	const [systemPageFonts, setSystemPageFonts] = useState<readonly string[]>([]);
+	const [systemMonospaceFonts, setSystemMonospaceFonts] = useState<
+		readonly string[]
+	>([]);
+
+	useEffect(() => {
+		let cancelled = false;
+		void resolveSystemFontFamilies().then((families) => {
+			if (!cancelled) setSystemPageFonts(filterSymbolFontFamilies(families));
+		});
+		void resolveSystemMonospaceFamilies().then((families) => {
+			if (!cancelled) setSystemMonospaceFonts(families);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	const pageFontGroups: FontSelectGroup[] = [
+		{ label: "内置", options: PAGE_FONT_BUILTIN_OPTIONS },
+		{ label: "系统字体", options: buildSystemFontOptions(systemPageFonts) },
+	];
+	const monospaceFontGroups: FontSelectGroup[] = [
+		{ label: "内置", options: MONOSPACE_FONT_BUILTIN_OPTIONS },
+		{
+			label: "系统等宽",
+			options: buildSystemFontOptions(systemMonospaceFonts),
+		},
+	];
 
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
@@ -368,23 +393,11 @@ function AppearanceSettings() {
 
 			<SettingsSection title="字体">
 				<SettingsRow label="页面字体" className={FONT_SETTINGS_ROW_CLASS}>
-					<Select
+					<FontSelect
 						value={pageFontFamily}
-						onValueChange={(value) =>
-							setPageFontFamily(value as PageFontFamily)
-						}
-					>
-						<SelectTrigger className={cn(SETTINGS_CONTROL_CLASS, "w-[176px]")}>
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							{PAGE_FONT_OPTIONS.map((option) => (
-								<SelectItem key={option.value} value={option.value}>
-									{option.label}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
+						groups={pageFontGroups}
+						onChange={setPageFontFamily}
+					/>
 					<Select
 						value={String(pageFontSize)}
 						onValueChange={(value) =>
@@ -410,35 +423,15 @@ function AppearanceSettings() {
 							))}
 						</SelectContent>
 					</Select>
-					<Input
-						value={pageCustomFontFamily}
-						onChange={(event) => setPageCustomFontFamily(event.target.value)}
-						placeholder="如 Inter, PingFang SC"
-						aria-label="自定义页面字体列表"
-						className={cn(SETTINGS_CONTROL_CLASS, "w-[288px] max-w-full")}
-					/>
 				</SettingsRow>
 
 				<SettingsRow label="代码字体" className={FONT_SETTINGS_ROW_CLASS}>
-					<Select
+					<FontSelect
 						value={codeFontFamily}
-						onValueChange={(value) =>
-							setCodeFontFamily(value as MonospaceFontFamily)
-						}
-					>
-						<SelectTrigger
-							className={cn(SETTINGS_CONTROL_CLASS, "w-[176px] font-mono")}
-						>
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							{MONOSPACE_FONT_OPTIONS.map((option) => (
-								<SelectItem key={option.value} value={option.value}>
-									{option.label}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
+						groups={monospaceFontGroups}
+						onChange={setCodeFontFamily}
+						className="font-mono"
+					/>
 					<Select
 						value={String(codeFontSize)}
 						onValueChange={(value) =>
@@ -464,36 +457,14 @@ function AppearanceSettings() {
 							))}
 						</SelectContent>
 					</Select>
-					<Input
-						value={codeCustomFontFamily}
-						onChange={(event) => setCodeCustomFontFamily(event.target.value)}
-						placeholder="如 Maple Mono, Consolas"
-						aria-label="自定义代码字体列表"
-						className={cn(
-							SETTINGS_CONTROL_CLASS,
-							"w-[288px] max-w-full font-mono",
-						)}
-					/>
 				</SettingsRow>
 
 				<SettingsRow label="终端字体" className={FONT_SETTINGS_ROW_CLASS}>
-					<Select
+					<FontSelect
 						value={terminalFontFamily}
-						onValueChange={(value) =>
-							setTerminalFontFamily(value as MonospaceFontFamily)
-						}
-					>
-						<SelectTrigger className={cn(SETTINGS_CONTROL_CLASS, "w-[176px]")}>
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							{MONOSPACE_FONT_OPTIONS.map((option) => (
-								<SelectItem key={option.value} value={option.value}>
-									{option.label}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
+						groups={monospaceFontGroups}
+						onChange={setTerminalFontFamily}
+					/>
 					<Select
 						value={String(terminalFontSize)}
 						onValueChange={(value) =>
@@ -519,18 +490,6 @@ function AppearanceSettings() {
 							))}
 						</SelectContent>
 					</Select>
-					<Input
-						value={terminalCustomFontFamily}
-						onChange={(event) =>
-							setTerminalCustomFontFamily(event.target.value)
-						}
-						placeholder="如 Maple Mono, Consolas"
-						aria-label="自定义终端字体列表"
-						className={cn(
-							SETTINGS_CONTROL_CLASS,
-							"w-[288px] max-w-full font-mono",
-						)}
-					/>
 				</SettingsRow>
 			</SettingsSection>
 		</div>

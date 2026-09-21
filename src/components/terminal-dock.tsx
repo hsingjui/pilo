@@ -74,11 +74,9 @@ function TerminalViewport({
 	active: boolean;
 	onRegister: (terminalId: string, terminal: Terminal | null) => void;
 }) {
-	const { terminalFontFamily, terminalCustomFontFamily, terminalFontSize } =
-		usePreferences();
+	const { terminalFontFamily, terminalFontSize } = usePreferences();
 	const initialTerminalFontRef = useRef({
 		terminalFontFamily,
-		terminalCustomFontFamily,
 		terminalFontSize,
 	});
 	const hostRef = useRef<HTMLDivElement>(null);
@@ -92,10 +90,7 @@ function TerminalViewport({
 		const initialFont = initialTerminalFontRef.current;
 		const terminal = new Terminal({
 			cursorBlink: true,
-			fontFamily: getMonospaceFontFamilyStack(
-				initialFont.terminalFontFamily,
-				initialFont.terminalCustomFontFamily,
-			),
+			fontFamily: getMonospaceFontFamilyStack(initialFont.terminalFontFamily),
 			fontSize: initialFont.terminalFontSize,
 			lineHeight: 1.15,
 			scrollback: 10_000,
@@ -142,10 +137,8 @@ function TerminalViewport({
 		const fit = fitRef.current;
 		const host = hostRef.current;
 		if (!terminal) return;
-		terminal.options.fontFamily = getMonospaceFontFamilyStack(
-			terminalFontFamily,
-			terminalCustomFontFamily,
-		);
+		terminal.options.fontFamily =
+			getMonospaceFontFamilyStack(terminalFontFamily);
 		terminal.options.fontSize = terminalFontSize;
 		if (!fit || !host || host.clientWidth <= 0 || host.clientHeight <= 0)
 			return;
@@ -156,7 +149,7 @@ function TerminalViewport({
 			);
 		});
 		return () => window.cancelAnimationFrame(frame);
-	}, [terminalCustomFontFamily, terminalFontFamily, terminalFontSize, tab.id]);
+	}, [terminalFontFamily, terminalFontSize, tab.id]);
 
 	useEffect(() => {
 		if (!active) return;
