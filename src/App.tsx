@@ -384,7 +384,6 @@ function App() {
 													startTemporaryChat(entry.session.projectRecord.id)
 												}
 												onExpandSidebar={() => setLeftSidebarCollapsed(false)}
-												onOpenFile={openViewerFile}
 												reserveWindowControls={CUSTOM_TITLEBAR}
 												sidebarCollapsed={leftSidebarCollapsed}
 											/>

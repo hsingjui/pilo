@@ -100,7 +100,6 @@ type ChatPageProps = {
 	onRuntimeBusyChange?: (controllerId: string, busy: boolean) => void;
 	onVisualReadyChange?: (ready: boolean) => void;
 	showSwitchSkeleton?: boolean;
-	onOpenFile?: (path: string) => void;
 	onForkSessionCreated?: (session: {
 		sessionId: string;
 		sessionPath: string;
@@ -183,7 +182,6 @@ function ChatPageImpl(props: ChatPageProps) {
 		onRuntimeBusyChange,
 		onVisualReadyChange,
 		showSwitchSkeleton = false,
-		onOpenFile,
 		onForkSessionCreated,
 		initialMessage,
 		initialImages = EMPTY_CHAT_IMAGES,
@@ -290,7 +288,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		handleThinkingChange,
 		prepareRuntimeConfiguration,
 		refreshSessionState,
-		refreshSessionStateIfContextStale,
+		refreshSessionStats,
 	} = sessionConfig;
 	const conversation = useChatConversation({
 		session,
@@ -412,7 +410,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		recoverSubmission,
 		prepareRuntimeConfiguration,
 		refreshSessionState,
-		refreshSessionStateIfContextStale,
+		refreshSessionStats,
 	});
 	const {
 		activeTurnSessionId,
@@ -919,7 +917,6 @@ function ChatPageImpl(props: ChatPageProps) {
 									onScrollStateChange={persistScrollState}
 									onVirtualizerCacheChange={persistVirtualizerCache}
 									runtimeScrollRef={scrollRef}
-									onOpenFile={onOpenFile}
 									onForkAssistant={
 										!session.temporary ? handleForkAssistant : undefined
 									}

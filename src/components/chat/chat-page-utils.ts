@@ -18,18 +18,11 @@ export type ChatSession = {
 
 export type ChatSessionRuntimeState = {
 	name?: string;
-	messageCount?: number;
-	userMessages?: number;
-	assistantMessages?: number;
-	toolCalls?: number;
-	toolResults?: number;
-	totalMessages?: number;
 	tokens?: {
 		input?: number;
 		output?: number;
 		cacheRead?: number;
 		cacheWrite?: number;
-		total?: number;
 	};
 	cost?: number;
 	contextTokens?: number | null;
@@ -49,12 +42,6 @@ export async function readCurrentPiSessionState(
 	]);
 	return {
 		name: state.sessionName,
-		messageCount: state.messageCount,
-		userMessages: stats.userMessages,
-		assistantMessages: stats.assistantMessages,
-		toolCalls: stats.toolCalls,
-		toolResults: stats.toolResults,
-		totalMessages: stats.totalMessages,
 		tokens: stats.tokens,
 		cost: stats.cost,
 		contextTokens: stats.contextUsage?.tokens,

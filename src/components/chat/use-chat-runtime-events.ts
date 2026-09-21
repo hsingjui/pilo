@@ -15,6 +15,8 @@ import type { ConversationAction } from "@/lib/conversation-types";
 import { notifyAgentResult } from "@/lib/desktop-notifications";
 import { runtimeErrorMessage, type PiloRuntimeEvent } from "@/lib/pi-runtime";
 
+const CONTEXT_STATS_REFRESH_DELAY_MS = 1000;
+
 /**
  * Pi 在没有 Pilo 发起的 turn 时仍可能自主输出：Extension 接管压缩后自动继续、
  * Extension 主动发消息、自动重试后的继续等。这些输出同样属于当前对话。
@@ -86,7 +88,7 @@ type UseChatRuntimeEventsOptions = {
 		options?: { preserveQueued?: boolean },
 	) => void;
 	refreshSessionState: () => Promise<void>;
-	refreshSessionStateIfContextStale: () => Promise<void>;
+	refreshSessionStats: () => Promise<void>;
 };
 
 export function useChatRuntimeEvents({
@@ -104,7 +106,7 @@ export function useChatRuntimeEvents({
 	acknowledgeQueuedMessage,
 	releaseActiveTurn,
 	refreshSessionState,
-	refreshSessionStateIfContextStale,
+	refreshSessionStats,
 }: UseChatRuntimeEventsOptions) {
 	const runtimeListenerRef = useRef<ReturnType<typeof client.listen> | null>(
 		null,
@@ -118,6 +120,23 @@ export function useChatRuntimeEvents({
 		message: "",
 	});
 	const recoveryPromiseRef = useRef<Promise<boolean> | null>(null);
+	const contextStatsRefreshTimerRef = useRef<number | null>(null);
+
+	const cancelContextStatsRefresh = useCallback(() => {
+		if (contextStatsRefreshTimerRef.current === null) return;
+		window.clearTimeout(contextStatsRefreshTimerRef.current);
+		contextStatsRefreshTimerRef.current = null;
+	}, []);
+
+	const scheduleContextStatsRefresh = useCallback(() => {
+		cancelContextStatsRefresh();
+		contextStatsRefreshTimerRef.current = window.setTimeout(() => {
+			contextStatsRefreshTimerRef.current = null;
+			void refreshSessionStats().catch(() => undefined);
+		}, CONTEXT_STATS_REFRESH_DELAY_MS);
+	}, [cancelContextStatsRefresh, refreshSessionStats]);
+
+	useEffect(() => cancelContextStatsRefresh, [cancelContextStatsRefresh]);
 
 	// 自动命名 / 会话识别会在 turn 进行中更新标题，而通知在 turn 结束时才
 	// 发出，同步 turn 的标题快照，避免通知仍显示「新会话」。
@@ -247,6 +266,18 @@ export function useChatRuntimeEvents({
 	const handleRuntimeEvent = useCallback(
 		(event: PiloRuntimeEvent) => {
 			recordChatRuntimeEvent();
+			if (event.type === "assistant_message_start") {
+				// 连续工具循环很快进入下一次模型请求时，取消上一轮尚未执行的
+				// stats 刷新，等最新一次请求结束后再取一次即可。
+				cancelContextStatsRefresh();
+			} else if (event.type === "assistant_text_snapshot") {
+				// message_end 后允许约 1 秒延迟；连续请求会自然合并为最后一次刷新。
+				scheduleContextStatsRefresh();
+			} else if (event.type === "assistant_message_end") {
+				// agent_settled 是最终一致性点：不再等待 debounce，直接刷新完整状态。
+				cancelContextStatsRefresh();
+				void refreshSessionState().catch(() => undefined);
+			}
 			if (
 				event.type === "process_state" &&
 				(event.state === "failed" || event.state === "stopped")
@@ -316,7 +347,6 @@ export function useChatRuntimeEvents({
 								errorMessage: event.errorMessage ?? undefined,
 							});
 						}
-						void refreshSessionState().catch(() => undefined);
 						releaseActiveTurn(turn);
 						break;
 					}
@@ -332,16 +362,12 @@ export function useChatRuntimeEvents({
 							sessionTitle: turn.sessionTitle,
 						});
 					}
-					void refreshSessionState().catch(() => undefined);
 					releaseActiveTurn(turn);
 					break;
 				case "user_message_start":
 					acknowledgeQueuedMessage(turn, event.text);
 					break;
 				case "assistant_text_snapshot":
-					// 每条 assistant 消息结束都可能恢复压缩后的上下文占用，但占用已知时
-					// 重复拉取代价不值得（每次刷新是 2 次 RPC）。
-					void refreshSessionStateIfContextStale().catch(() => undefined);
 					break;
 				case "queue_update":
 					setPendingQueueCounts(event.steering.length, event.followUp.length);
@@ -367,14 +393,15 @@ export function useChatRuntimeEvents({
 		[
 			acknowledgeQueuedMessage,
 			activeTurnRef,
+			cancelContextStatsRefresh,
 			desktopNotifications,
 			dispatchConversation,
 			failActiveTurn,
 			queueRuntimeAction,
 			recoverRuntime,
 			refreshSessionState,
-			refreshSessionStateIfContextStale,
 			releaseActiveTurn,
+			scheduleContextStatsRefresh,
 			session.temporary,
 			session.id,
 			setPendingQueueCounts,

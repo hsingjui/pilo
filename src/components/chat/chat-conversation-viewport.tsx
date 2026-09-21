@@ -74,7 +74,6 @@ type ChatConversationViewportProps = {
 		messageCount: number,
 	) => void;
 	runtimeScrollRef: MutableRefObject<HTMLDivElement | null>;
-	onOpenFile?: (path: string) => void;
 	onForkAssistant?: (messageId: string) => void;
 	forkingMessageId?: string | null;
 	forkDisabled?: boolean;
@@ -87,7 +86,6 @@ type ChatConversationViewportProps = {
 type MessageRowProps = {
 	message: ChatMessage;
 	isLastMessage: boolean;
-	onOpenFile?: (path: string) => void;
 	onForkAssistant?: (messageId: string) => void;
 	forkingMessageId?: string | null;
 	forkDisabled?: boolean;
@@ -121,7 +119,6 @@ function HistoryMessagePlaceholder({ message }: { message: ChatMessage }) {
 const MessageRow = memo(function MessageRow({
 	message,
 	isLastMessage,
-	onOpenFile,
 	onForkAssistant,
 	forkingMessageId,
 	forkDisabled,
@@ -138,7 +135,6 @@ const MessageRow = memo(function MessageRow({
 	) : (
 		<AssistantMessage
 			message={message}
-			onOpenFile={onOpenFile}
 			onFork={onForkAssistant}
 			forking={forkingMessageId === message.id}
 			forkDisabled={forkDisabled}
@@ -205,7 +201,6 @@ const ChatConversationViewportImpl = forwardRef<
 		onScrollStateChange,
 		onVirtualizerCacheChange,
 		runtimeScrollRef,
-		onOpenFile,
 		onForkAssistant,
 		forkingMessageId,
 		forkDisabled,
@@ -407,7 +402,6 @@ const ChatConversationViewportImpl = forwardRef<
 				key={message.id}
 				message={message}
 				isLastMessage={index === messages.length - 1}
-				onOpenFile={onOpenFile}
 				onForkAssistant={onForkAssistant}
 				forkingMessageId={forkingMessageId}
 				forkDisabled={forkDisabled}
@@ -419,7 +413,6 @@ const ChatConversationViewportImpl = forwardRef<
 			forkingMessageId,
 			messages.length,
 			onForkAssistant,
-			onOpenFile,
 			suppressInterruptedError,
 		],
 	);

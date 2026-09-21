@@ -52,7 +52,7 @@ type UseChatRuntimeOptions = {
 	recoverSubmission: (submission: ChatSubmission) => void;
 	prepareRuntimeConfiguration: (agentState: PiAgentState) => Promise<void>;
 	refreshSessionState: () => Promise<void>;
-	refreshSessionStateIfContextStale: () => Promise<void>;
+	refreshSessionStats: () => Promise<void>;
 };
 
 export function useChatRuntime({
@@ -75,7 +75,7 @@ export function useChatRuntime({
 	recoverSubmission,
 	prepareRuntimeConfiguration,
 	refreshSessionState,
-	refreshSessionStateIfContextStale,
+	refreshSessionStats,
 }: UseChatRuntimeOptions) {
 	const identifiedRef = useRef(onSessionIdentified);
 	useEffect(() => {
@@ -151,7 +151,7 @@ export function useChatRuntime({
 		acknowledgeQueuedMessage,
 		releaseActiveTurn,
 		refreshSessionState,
-		refreshSessionStateIfContextStale,
+		refreshSessionStats,
 	});
 
 	useEffect(() => {

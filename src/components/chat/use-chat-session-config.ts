@@ -20,6 +20,7 @@ import {
 	runtimeErrorMessage,
 	type PiAgentState,
 	type PiModel,
+	type PiSessionStats,
 	type PiThinkingLevel,
 } from "@/lib/pi-runtime";
 import type { SessionHistory } from "@/lib/sessions";
@@ -33,6 +34,45 @@ type ChatSessionClient = ReturnType<typeof createChatSessionClient>;
 
 function isKnownContextValue(value: number | null | undefined) {
 	return typeof value === "number" && Number.isFinite(value);
+}
+
+function mergeRefreshedSessionState(
+	previous: ChatSessionRuntimeState | null,
+	state: ChatSessionRuntimeState,
+) {
+	// Pi 在压缩后到下一次模型响应前会返回未知的 contextUsage。保留上一次
+	// 已知占用并标记为待更新，避免占用指示器退化成未知/加载状态。
+	const contextUnknown =
+		!isKnownContextValue(state.contextPercent) &&
+		!isKnownContextValue(state.contextTokens);
+	if (
+		!contextUnknown ||
+		!previous ||
+		!isKnownContextValue(previous.contextPercent)
+	) {
+		return { ...state, contextStale: false };
+	}
+	return {
+		...state,
+		contextTokens: previous.contextTokens,
+		contextPercent: previous.contextPercent,
+		contextWindow: state.contextWindow ?? previous.contextWindow,
+		contextStale: true,
+	};
+}
+
+function mergeSessionStats(
+	previous: ChatSessionRuntimeState | null,
+	stats: PiSessionStats,
+) {
+	return mergeRefreshedSessionState(previous, {
+		...previous,
+		tokens: stats.tokens,
+		cost: stats.cost,
+		contextTokens: stats.contextUsage?.tokens,
+		contextWindow: stats.contextUsage?.contextWindow,
+		contextPercent: stats.contextUsage?.percent,
+	});
 }
 
 type UseChatSessionConfigOptions = {
@@ -79,16 +119,16 @@ export function useChatSessionConfig({
 	const [thinkingChanging, setThinkingChanging] = useState(false);
 	const [sessionState, setSessionState] =
 		useState<ChatSessionRuntimeState | null>(null);
-	const sessionStateRef = useRef<ChatSessionRuntimeState | null>(null);
-	useEffect(() => {
-		sessionStateRef.current = sessionState;
-	}, [sessionState]);
+	const sessionStateRequestRef = useRef(0);
+	const sessionStateAppliedRef = useRef(0);
 	const initialConfigAppliedRef = useRef(new Set<string>());
 
 	/* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies -- Session identity/config changes intentionally reset this controller even when the config values are otherwise equal. */
 	useEffect(() => {
 		void session.id;
 		modelRequestRef.current += 1;
+		const requestGeneration = ++sessionStateRequestRef.current;
+		sessionStateAppliedRef.current = requestGeneration;
 		modelSelectionDirtyRef.current = false;
 		thinkingSelectionDirtyRef.current = false;
 		setSessionState(null);
@@ -204,12 +244,6 @@ export function useChatSessionConfig({
 			const stats = result.stats;
 			setSessionState({
 				name: result.name ?? undefined,
-				messageCount: result.sourceMessageCount,
-				userMessages: stats?.userMessages,
-				assistantMessages: stats?.assistantMessages,
-				toolCalls: stats?.toolCalls,
-				toolResults: stats?.toolResults,
-				totalMessages: stats?.totalMessages,
 				tokens: stats?.tokens,
 				cost: stats?.cost,
 				contextTokens: stats?.contextTokens,
@@ -570,40 +604,22 @@ export function useChatSessionConfig({
 	);
 
 	const refreshSessionState = useCallback(async () => {
+		const requestId = ++sessionStateRequestRef.current;
 		const state = await readCurrentPiSessionState(client);
-		setSessionState((previous) => {
-			// Pi 在压缩后到下一次模型响应前会返回未知的 contextUsage。保留上一次
-			// 已知占用并标记为待更新，避免占用指示器退化成未知/加载状态。
-			const contextUnknown =
-				!isKnownContextValue(state.contextPercent) &&
-				!isKnownContextValue(state.contextTokens);
-			if (
-				!contextUnknown ||
-				!previous ||
-				!isKnownContextValue(previous.contextPercent)
-			) {
-				return { ...state, contextStale: false };
-			}
-			return {
-				...state,
-				contextTokens: previous.contextTokens,
-				contextPercent: previous.contextPercent,
-				contextWindow: state.contextWindow ?? previous.contextWindow,
-				contextStale: true,
-			};
-		});
+		if (requestId < sessionStateAppliedRef.current) return;
+		sessionStateAppliedRef.current = requestId;
+		setSessionState((previous) => mergeRefreshedSessionState(previous, state));
 	}, [client]);
 
-	// 占用已知时重复拉取没有收益，而每次刷新是 2 次 Pi RPC。只有压缩后 Pi 返回
-	// 未知占用、等待下一次模型响应的窗口里才值得逐条 assistant 消息重试。
-	const refreshSessionStateIfContextStale = useCallback(async () => {
-		const current = sessionStateRef.current;
-		const contextKnown =
-			isKnownContextValue(current?.contextPercent) ||
-			isKnownContextValue(current?.contextTokens);
-		if (current && !current.contextStale && contextKnown) return;
-		await refreshSessionState();
-	}, [refreshSessionState]);
+	// 每个 Pi assistant message_end 都代表一次模型请求已经结束。这里仅刷新
+	// get_session_stats，避免为了更新上下文占用额外再拉一次 get_state。
+	const refreshSessionStats = useCallback(async () => {
+		const requestId = ++sessionStateRequestRef.current;
+		const stats = await client.getPiSessionStats();
+		if (requestId < sessionStateAppliedRef.current) return;
+		sessionStateAppliedRef.current = requestId;
+		setSessionState((previous) => mergeSessionStats(previous, stats));
+	}, [client]);
 
 	return {
 		sessionState,
@@ -624,6 +640,6 @@ export function useChatSessionConfig({
 		handleThinkingChange,
 		prepareRuntimeConfiguration,
 		refreshSessionState,
-		refreshSessionStateIfContextStale,
+		refreshSessionStats,
 	};
 }

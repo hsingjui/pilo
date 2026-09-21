@@ -331,28 +331,23 @@ export function RightSidebar({
 								<ul className="grid gap-0.5">
 									{visibleFiles.map((file) => (
 										<li key={file.path}>
-											<Hint
-												label={onOpenFile ? "双击在编辑器中打开" : undefined}
+											<button
+												type="button"
+												className={cn(
+													"flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/60",
+													effectiveSelectedPath === file.path &&
+														"bg-muted text-foreground",
+												)}
+												onClick={() => setSelectedPath(file.path)}
 											>
-												<button
-													type="button"
-													className={cn(
-														"flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/60",
-														effectiveSelectedPath === file.path &&
-															"bg-muted text-foreground",
-													)}
-													onClick={() => setSelectedPath(file.path)}
-													onDoubleClick={() => onOpenFile?.(file.path)}
-												>
-													<FileCode className="size-3.5 shrink-0 text-sidebar-foreground-muted" />
-													<span className="min-w-0 flex-1 truncate">
-														{file.path}
-													</span>
-													<span className="w-4 shrink-0 text-center font-mono text-[11px] text-muted-foreground">
-														{fileStatusLabel(file, mode)}
-													</span>
-												</button>
-											</Hint>
+												<FileCode className="size-3.5 shrink-0 text-sidebar-foreground-muted" />
+												<span className="min-w-0 flex-1 truncate">
+													{file.path}
+												</span>
+												<span className="w-4 shrink-0 text-center font-mono text-[11px] text-muted-foreground">
+													{fileStatusLabel(file, mode)}
+												</span>
+											</button>
 										</li>
 									))}
 								</ul>

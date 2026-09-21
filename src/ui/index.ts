@@ -50,6 +50,7 @@ export {
 	DropdownMenuSubTrigger,
 	DropdownMenuRadioGroup,
 } from "./dropdown-menu";
+export { HoverCard, HoverCardTrigger, HoverCardContent } from "./hover-card";
 export { Input } from "./input";
 export { Label } from "./label";
 export {

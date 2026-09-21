@@ -144,14 +144,12 @@ function renderAssistantContentNodes({
 	streaming,
 	keepTextExpanded = false,
 	durationMs,
-	onOpenFile,
 }: {
 	messageId: string;
 	content: AssistantContentItem[];
 	streaming: boolean;
 	keepTextExpanded?: boolean;
 	durationMs?: number;
-	onOpenFile?: (path: string) => void;
 }) {
 	const nodes: ReactNode[] = [];
 	let firstActivityGroup = true;
@@ -191,7 +189,6 @@ function renderAssistantContentNodes({
 					expansionKey={`${messageId}:${groupKey}`}
 					followedByText={followedByText}
 					durationMs={firstActivityGroup ? durationMs : undefined}
-					onOpenPath={onOpenFile}
 				/>
 			</div>,
 		);
@@ -208,7 +205,6 @@ function AssistantWorkedRegion({
 	streaming = false,
 	keepTextExpanded = false,
 	durationMs,
-	onOpenFile,
 }: {
 	messageId: string;
 	content: AssistantContentItem[];
@@ -216,7 +212,6 @@ function AssistantWorkedRegion({
 	streaming?: boolean;
 	keepTextExpanded?: boolean;
 	durationMs?: number;
-	onOpenFile?: (path: string) => void;
 }) {
 	const { collapseCompletedActivity, showWorkDuration } = usePreferences();
 	const [open, setOpen] = useChatExpansionState(
@@ -260,7 +255,6 @@ function AssistantWorkedRegion({
 						content,
 						streaming,
 						keepTextExpanded,
-						onOpenFile,
 					})}
 				</div>
 			) : null}
@@ -271,7 +265,6 @@ function AssistantWorkedRegion({
 export const AssistantMessage = memo(function AssistantMessage({
 	message,
 	replyRunwayPx,
-	onOpenFile,
 	onFork,
 	forking = false,
 	forkDisabled = false,
@@ -279,7 +272,6 @@ export const AssistantMessage = memo(function AssistantMessage({
 }: {
 	message: Extract<ChatMessage, { role: "assistant" }>;
 	replyRunwayPx?: number;
-	onOpenFile?: (path: string) => void;
 	onFork?: (messageId: string) => void;
 	forking?: boolean;
 	forkDisabled?: boolean;
@@ -338,7 +330,6 @@ export const AssistantMessage = memo(function AssistantMessage({
 						active
 						streaming={message.streaming === true}
 						keepTextExpanded
-						onOpenFile={onOpenFile}
 					/>,
 				]
 			: displaySections.hasCollapsedWork
@@ -348,13 +339,11 @@ export const AssistantMessage = memo(function AssistantMessage({
 							messageId={message.id}
 							content={displaySections.work}
 							durationMs={message.workDurationMs}
-							onOpenFile={onOpenFile}
 						/>,
 						...renderAssistantContentNodes({
 							messageId: message.id,
 							content: displaySections.final,
 							streaming: message.streaming === true,
-							onOpenFile,
 						}),
 					]
 				: renderAssistantContentNodes({
@@ -363,7 +352,6 @@ export const AssistantMessage = memo(function AssistantMessage({
 						streaming: message.streaming === true,
 						keepTextExpanded: !isTurnFinished,
 						durationMs: message.workDurationMs,
-						onOpenFile,
 					});
 
 	return (

@@ -390,11 +390,9 @@ function ToolDetail({ activity }: { activity: ToolCallActivity }) {
 function ToolCallActivityView({
 	activity,
 	expansionKey,
-	onOpenPath,
 }: {
 	activity: ToolCallActivity;
 	expansionKey: string;
-	onOpenPath?: (path: string) => void;
 }) {
 	const running = activity.status === "running";
 	// 详情默认收起（含运行中），点击行切换；key 含 status，完成后 remount 自动收起
@@ -410,52 +408,49 @@ function ToolCallActivityView({
 
 	return (
 		<div className="w-full" data-chat-expansion-root>
-			<Hint label={filePath && onOpenPath ? "双击打开文件" : undefined}>
-				<button
-					type="button"
+			<button
+				type="button"
+				className={cn(
+					"group/tool -mx-1 flex min-h-6 w-[calc(100%+0.5rem)] items-start gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors",
+					PROCESS_TEXT_CLASS,
+					hasDetails
+						? "hover:bg-muted/40 hover:text-foreground"
+						: "cursor-default",
+					open && "bg-muted/35 text-foreground",
+					activity.isError && "text-destructive",
+				)}
+				onClick={(event) =>
+					hasDetails &&
+					toggleChatExpansionWithAnchor(event.currentTarget, () =>
+						setOpen((value) => !value),
+					)
+				}
+				aria-expanded={hasDetails ? open : undefined}
+			>
+				<ToolIcon
+					toolName={activity.toolName}
 					className={cn(
-						"group/tool -mx-1 flex min-h-6 w-[calc(100%+0.5rem)] items-start gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors",
-						PROCESS_TEXT_CLASS,
-						hasDetails
-							? "hover:bg-muted/40 hover:text-foreground"
-							: "cursor-default",
-						open && "bg-muted/35 text-foreground",
+						PROCESS_ICON_CLASS,
+						"mt-0.5",
 						activity.isError && "text-destructive",
 					)}
-					onClick={(event) =>
-						hasDetails &&
-						toggleChatExpansionWithAnchor(event.currentTarget, () =>
-							setOpen((value) => !value),
-						)
-					}
-					onDoubleClick={() => filePath && onOpenPath?.(filePath)}
-					aria-expanded={hasDetails ? open : undefined}
-				>
-					<ToolIcon
-						toolName={activity.toolName}
-						className={cn(
-							PROCESS_ICON_CLASS,
-							"mt-0.5",
-							activity.isError && "text-destructive",
-						)}
-					/>
-					<span className="min-w-0 flex-1 truncate">
-						<span>{toolLabel(activity.toolName)}</span>
-						{previewLabel ? (
-							<Hint label={preview ?? undefined}>
-								<span className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground">
-									{previewLabel}
-								</span>
-							</Hint>
-						) : null}
-					</span>
-					{activity.isError ? (
-						<CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-					) : running ? (
-						<LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin" />
+				/>
+				<span className="min-w-0 flex-1 truncate">
+					<span>{toolLabel(activity.toolName)}</span>
+					{previewLabel ? (
+						<Hint label={preview ?? undefined}>
+							<span className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground">
+								{previewLabel}
+							</span>
+						</Hint>
 					) : null}
-				</button>
-			</Hint>
+				</span>
+				{activity.isError ? (
+					<CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+				) : running ? (
+					<LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin" />
+				) : null}
+			</button>
 			{hasDetails && open ? <ToolDetail activity={activity} /> : null}
 		</div>
 	);
@@ -495,13 +490,11 @@ export function AssistantActivityView({
 	expansionKey,
 	followedByText = false,
 	durationMs,
-	onOpenPath,
 }: {
 	activity: AssistantActivity[];
 	expansionKey: string;
 	followedByText?: boolean;
 	durationMs?: number;
-	onOpenPath?: (path: string) => void;
 }) {
 	const { collapseCompletedActivity, showWorkDuration } = usePreferences();
 	const running = activity.some((item) => item.status === "running");
@@ -588,7 +581,6 @@ export function AssistantActivityView({
 								key={`${item.id}-${item.status}`}
 								activity={item}
 								expansionKey={`${expansionKey}:tool:${item.id}:${item.status}`}
-								onOpenPath={onOpenPath}
 							/>
 						),
 					)}
