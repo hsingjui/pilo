@@ -3137,7 +3137,7 @@ dependencies = [
 
 [[package]]
 name = "pilo"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "keyring",
@@ -3165,7 +3165,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-protocol"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "prost",
  "prost-build",
@@ -3177,7 +3177,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-server"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "notify",
  "pilo-protocol",
