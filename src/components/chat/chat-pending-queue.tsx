@@ -1,7 +1,15 @@
 import { Pencil, Send } from "lucide-react";
 
 import type { ConversationState } from "@/lib/conversation-types";
-import { Button, Hint, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
+import {
+	Button,
+	Hint,
+	NoticeCard,
+	NoticeCardHeader,
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/ui";
 
 type PendingUser = ConversationState["pendingUsers"][number];
 type PendingQueueItem = PendingUser & {
@@ -25,11 +33,8 @@ export function ChatPendingQueue({
 	if (queued.length === 0) return null;
 
 	return (
-		<div className="mb-1 overflow-hidden rounded-xl border border-border/60 bg-muted/30 text-xs text-muted-foreground">
-			<div className="flex items-center justify-between border-b border-border/40 px-3 py-1.5">
-				<span className="font-medium text-foreground/80">待处理消息</span>
-				<span className="tabular-nums">{queued.length}</span>
-			</div>
+		<NoticeCard className="overflow-hidden text-muted-foreground">
+			<NoticeCardHeader title="待处理消息" count={queued.length} />
 			<div className="max-h-[min(25vh,240px)] divide-y divide-border/30 overflow-y-auto">
 				{queued.map((item) => {
 					const imageLabel = item.images?.length
@@ -85,6 +90,6 @@ export function ChatPendingQueue({
 					);
 				})}
 			</div>
-		</div>
+		</NoticeCard>
 	);
 }

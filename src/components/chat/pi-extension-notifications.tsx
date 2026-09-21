@@ -1,6 +1,6 @@
 import { CircleAlert, Info, TriangleAlert, X } from "lucide-react";
 
-import { Button } from "@/ui";
+import { Button, NoticeCard, NoticeCardHeader, NoticeIcon } from "@/ui";
 
 export type PiExtensionNotification = {
 	id: string;
@@ -8,24 +8,16 @@ export type PiExtensionNotification = {
 	type: "info" | "warning" | "error";
 };
 
+const NOTIFICATION_ICON = {
+	error: { icon: CircleAlert, tone: "danger" },
+	warning: { icon: TriangleAlert, tone: "warning" },
+	info: { icon: Info, tone: "info" },
+} as const;
+
 type PiExtensionNotificationsProps = {
 	notifications: readonly PiExtensionNotification[];
 	onDismiss: (id: string) => void;
 };
-
-function NotificationIcon({ type }: { type: PiExtensionNotification["type"] }) {
-	if (type === "error") {
-		return (
-			<CircleAlert className="mt-0.5 size-3.5 shrink-0 text-status-danger" />
-		);
-	}
-	if (type === "warning") {
-		return (
-			<TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-status-warning" />
-		);
-	}
-	return <Info className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />;
-}
 
 export function PiExtensionNotifications({
 	notifications,
@@ -33,24 +25,19 @@ export function PiExtensionNotifications({
 }: PiExtensionNotificationsProps) {
 	if (notifications.length === 0) return null;
 
-	const hasMultiple = notifications.length > 1;
-
 	return (
-		<div className="mb-1 overflow-hidden rounded-xl border border-border/60 bg-muted/30 text-xs text-muted-foreground animate-in fade-in-0">
-			{hasMultiple ? (
-				<div className="flex items-center justify-between border-b border-border/40 px-3 py-1.5">
-					<span className="font-medium text-foreground/80">插件通知</span>
-					<span className="tabular-nums">{notifications.length}</span>
-				</div>
+		<NoticeCard className="animate-in fade-in-0 overflow-hidden text-muted-foreground">
+			{notifications.length > 1 ? (
+				<NoticeCardHeader title="插件通知" count={notifications.length} />
 			) : null}
 			<div className="divide-y divide-border/30">
 				{notifications.map((notification) => (
 					<div
 						key={notification.id}
-						role={notification.type === "error" ? "alert" : "status"}
 						className="flex min-w-0 items-start gap-2.5 px-3 py-2"
+						role={notification.type === "error" ? "alert" : "status"}
 					>
-						<NotificationIcon type={notification.type} />
+						<NoticeIcon {...NOTIFICATION_ICON[notification.type]} />
 						<span className="min-w-0 flex-1 break-words leading-5 text-foreground/85">
 							{notification.message}
 						</span>
@@ -67,6 +54,6 @@ export function PiExtensionNotifications({
 					</div>
 				))}
 			</div>
-		</div>
+		</NoticeCard>
 	);
 }

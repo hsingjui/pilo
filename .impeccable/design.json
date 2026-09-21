@@ -1,973 +1,973 @@
 {
-  "schemaVersion": 2,
-  "generatedAt": "2026-09-21T05:11:22Z",
-  "title": "Pilo",
-  "description": "A quiet desktop workbench for the Pi coding agent. Two themes (Lody Light, Lody Dark = bundled Vesper) register the same role names; exactly one accent hue is permitted, and every text token is calibrated to 4.5:1 against the surface it renders on.",
-  "extensions": {
-    "colorMeta": {
-      "background": {
-        "role": "Canvas",
-        "displayName": "Background",
-        "description": "The page itself.",
-        "canonical": "oklch(100.0% 0.000 89.9)",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#222222",
-          "#3a3a3a",
-          "#555555",
-          "#717171",
-          "#8f8f8f",
-          "#aeaeae",
-          "#cecece",
-          "#eeeeee"
-        ]
-      },
-      "surface": {
-        "role": "Canvas +1",
-        "displayName": "Surface",
-        "description": "Cards, the sidebar panel, code blocks.",
-        "canonical": "oklch(97.9% 0.003 264.5)",
-        "tonalRamp": [
-          "#0b0b0c",
-          "#212223",
-          "#3a3a3c",
-          "#545557",
-          "#717173",
-          "#8e8f91",
-          "#adaeb0",
-          "#cdcecf",
-          "#edeef0"
-        ]
-      },
-      "foreground": {
-        "role": "Primary text",
-        "displayName": "Foreground",
-        "description": "All body and title text.",
-        "canonical": "oklch(22.3% 0.006 271.1)",
-        "tonalRamp": [
-          "#0a0b0e",
-          "#202125",
-          "#393a3e",
-          "#545559",
-          "#707175",
-          "#8e8f93",
-          "#acaeb2",
-          "#ccced2",
-          "#edeef3"
-        ]
-      },
-      "foreground-muted": {
-        "role": "Secondary text",
-        "displayName": "Foreground Muted",
-        "description": "Card and sidebar body text, icon glyphs.",
-        "canonical": "oklch(49.2% 0.017 264.4)",
-        "tonalRamp": [
-          "#080b12",
-          "#1e222a",
-          "#363b44",
-          "#50555f",
-          "#6d727c",
-          "#8a8f9a",
-          "#a8aeb9",
-          "#c8ced9",
-          "#e9effa"
-        ]
-      },
-      "muted": {
-        "role": "Inert fill",
-        "displayName": "Muted",
-        "description": "Disabled fields, tab strips, chip backgrounds.",
-        "canonical": "oklch(95.4% 0.005 258.3)",
-        "tonalRamp": [
-          "#0a0b0d",
-          "#202224",
-          "#393b3d",
-          "#545558",
-          "#707274",
-          "#8d8f92",
-          "#acaeb1",
-          "#ccced1",
-          "#edeff2"
-        ]
-      },
-      "muted-foreground": {
-        "role": "Tertiary text",
-        "displayName": "Muted Foreground",
-        "description": "Placeholders and meta text.",
-        "canonical": "oklch(53.2% 0.022 264.4)",
-        "tonalRamp": [
-          "#070b15",
-          "#1c222d",
-          "#353b46",
-          "#4f5562",
-          "#6b727f",
-          "#888f9d",
-          "#a7aebd",
-          "#c6cedd",
-          "#e7effe"
-        ]
-      },
-      "hover": {
-        "role": "Hover fill",
-        "displayName": "Hover",
-        "description": "The one hover colour in the app.",
-        "canonical": "oklch(95.8% 0.004 271.4)",
-        "tonalRamp": [
-          "#0a0b0d",
-          "#212224",
-          "#3a3a3d",
-          "#545558",
-          "#717174",
-          "#8e8f92",
-          "#adaeb1",
-          "#cdced0",
-          "#edeef1"
-        ]
-      },
-      "border": {
-        "role": "Divider",
-        "displayName": "Border",
-        "description": "Layout dividers and resting surface edges.",
-        "canonical": "oklch(93.1% 0.007 268.6)",
-        "tonalRamp": [
-          "#0a0b0e",
-          "#202225",
-          "#393a3e",
-          "#535559",
-          "#707176",
-          "#8d8f94",
-          "#acaeb2",
-          "#ccced2",
-          "#eceef3"
-        ]
-      },
-      "border-strong": {
-        "role": "Control outline",
-        "displayName": "Border Strong",
-        "description": "Editable-control outlines, switch track.",
-        "canonical": "oklch(89.1% 0.010 267.4)",
-        "tonalRamp": [
-          "#090b10",
-          "#1f2227",
-          "#383a40",
-          "#53555b",
-          "#6f7178",
-          "#8c8f96",
-          "#abaeb5",
-          "#cbced5",
-          "#ebeef5"
-        ]
-      },
-      "field": {
-        "role": "Field fill",
-        "displayName": "Field",
-        "description": "Editable control background.",
-        "canonical": "oklch(100.0% 0.000 89.9)",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#222222",
-          "#3a3a3a",
-          "#555555",
-          "#717171",
-          "#8f8f8f",
-          "#aeaeae",
-          "#cecece",
-          "#eeeeee"
-        ]
-      },
-      "primary": {
-        "role": "Accent",
-        "displayName": "Primary",
-        "description": "Action, selection, running. Scarcity is the design.",
-        "canonical": "oklch(56.1% 0.204 261.9)",
-        "tonalRamp": [
-          "#000727",
-          "#001a57",
-          "#002f8c",
-          "#0246c4",
-          "#2667e6",
-          "#4c89ff",
-          "#81adff",
-          "#b4cfff",
-          "#e6efff"
-        ]
-      },
-      "primary-hover": {
-        "role": "Accent, pressed",
-        "displayName": "Primary Hover",
-        "description": "Pressed and hovered primary action.",
-        "canonical": "oklch(51.5% 0.168 261.1)",
-        "tonalRamp": [
-          "#000826",
-          "#001c54",
-          "#003187",
-          "#164db0",
-          "#346cd2",
-          "#518cf4",
-          "#7faeff",
-          "#b3cfff",
-          "#e6efff"
-        ]
-      },
-      "primary-foreground": {
-        "role": "On-accent text",
-        "displayName": "Primary Foreground",
-        "description": "Text on any solid accent fill.",
-        "canonical": "oklch(100.0% 0.000 89.9)",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#222222",
-          "#3a3a3a",
-          "#555555",
-          "#717171",
-          "#8f8f8f",
-          "#aeaeae",
-          "#cecece",
-          "#eeeeee"
-        ]
-      },
-      "ring": {
-        "role": "Focus ring",
-        "displayName": "Ring",
-        "description": "Visible against the page; never carries text.",
-        "canonical": "oklch(65.5% 0.156 262.5)",
-        "tonalRamp": [
-          "#000729",
-          "#00195a",
-          "#05308a",
-          "#214eaa",
-          "#3d6dcb",
-          "#5a8ced",
-          "#82adff",
-          "#b4ceff",
-          "#e6efff"
-        ]
-      },
-      "secondary": {
-        "role": "Second-rank surface",
-        "displayName": "Secondary",
-        "description": "Secondary buttons, input border in light.",
-        "canonical": "oklch(93.7% 0.005 258.3)",
-        "tonalRamp": [
-          "#0a0b0d",
-          "#202224",
-          "#393b3d",
-          "#545558",
-          "#707274",
-          "#8d8f92",
-          "#acaeb1",
-          "#ccced1",
-          "#edeff2"
-        ]
-      },
-      "destructive": {
-        "role": "Destructive",
-        "displayName": "Destructive",
-        "description": "Irreversibility only.",
-        "canonical": "oklch(55.2% 0.205 24.5)",
-        "tonalRamp": [
-          "#1f0001",
-          "#470006",
-          "#73000f",
-          "#a3001a",
-          "#ce212d",
-          "#f34a4c",
-          "#ff847d",
-          "#ffb9b3",
-          "#ffe9e6"
-        ]
-      },
-      "success": {
-        "role": "Status: success",
-        "displayName": "Success",
-        "description": "Finished, connected, added lines.",
-        "canonical": "oklch(52.4% 0.140 148.0)",
-        "tonalRamp": [
-          "#001002",
-          "#002a0b",
-          "#004818",
-          "#006826",
-          "#25873e",
-          "#49a65c",
-          "#6ac67a",
-          "#8ae799",
-          "#c8ffcf"
-        ]
-      },
-      "warning": {
-        "role": "Status: warning",
-        "displayName": "Warning",
-        "description": "Attention without failure.",
-        "canonical": "oklch(55.6% 0.114 53.1)",
-        "tonalRamp": [
-          "#170600",
-          "#381700",
-          "#5d2b00",
-          "#843f00",
-          "#a45c29",
-          "#c57a48",
-          "#e79967",
-          "#ffbd94",
-          "#ffeadd"
-        ]
-      },
-      "syntax-keyword": {
-        "role": "Syntax",
-        "displayName": "Syntax Keyword",
-        "canonical": "oklch(55.8% 0.169 272.1)",
-        "tonalRamp": [
-          "#040033",
-          "#12006c",
-          "#232690",
-          "#3846b1",
-          "#5265d3",
-          "#6d84f5",
-          "#92a8ff",
-          "#bdccff",
-          "#e9eeff"
-        ]
-      },
-      "syntax-string": {
-        "role": "Syntax",
-        "displayName": "Syntax String",
-        "canonical": "oklch(55.9% 0.105 32.9)",
-        "tonalRamp": [
-          "#1d0100",
-          "#440700",
-          "#661f12",
-          "#853c2d",
-          "#a65949",
-          "#c77665",
-          "#e89583",
-          "#ffbbab",
-          "#ffe9e4"
-        ]
-      },
-      "syntax-number": {
-        "role": "Syntax",
-        "displayName": "Syntax Number",
-        "canonical": "oklch(53.8% 0.077 215.6)",
-        "tonalRamp": [
-          "#000e12",
-          "#00272f",
-          "#00424f",
-          "#0b6070",
-          "#337d8e",
-          "#539bad",
-          "#73bbcd",
-          "#92dbee",
-          "#d3f6ff"
-        ]
-      },
-      "syntax-comment": {
-        "role": "Syntax",
-        "displayName": "Syntax Comment",
-        "canonical": "oklch(52.8% 0.030 145.1)",
-        "tonalRamp": [
-          "#040e04",
-          "#182519",
-          "#313f31",
-          "#4b5a4b",
-          "#677667",
-          "#849484",
-          "#a3b3a3",
-          "#c2d3c2",
-          "#e3f4e3"
-        ]
-      },
-      "syntax-function": {
-        "role": "Syntax",
-        "displayName": "Syntax Function",
-        "canonical": "oklch(53.9% 0.111 134.4)",
-        "tonalRamp": [
-          "#040f00",
-          "#112900",
-          "#224500",
-          "#39621a",
-          "#557f39",
-          "#729e56",
-          "#90be74",
-          "#afde93",
-          "#d1ffb6"
-        ]
-      },
-      "syntax-variable": {
-        "role": "Syntax",
-        "displayName": "Syntax Variable",
-        "canonical": "oklch(55.3% 0.081 65.9)",
-        "tonalRamp": [
-          "#140800",
-          "#331b00",
-          "#553100",
-          "#744b1e",
-          "#92683b",
-          "#b18558",
-          "#d2a476",
-          "#f3c495",
-          "#ffebd7"
-        ]
-      },
-      "syntax-title": {
-        "role": "Syntax",
-        "displayName": "Syntax Title",
-        "canonical": "oklch(53.8% 0.082 182.6)",
-        "tonalRamp": [
-          "#000f0c",
-          "#002823",
-          "#00453d",
-          "#006359",
-          "#2d8176",
-          "#4fa093",
-          "#6fbfb2",
-          "#8fe0d2",
-          "#b8fff3"
-        ]
-      },
-      "syntax-builtin": {
-        "role": "Syntax",
-        "displayName": "Syntax Builtin",
-        "canonical": "oklch(54.7% 0.106 97.1)",
-        "tonalRamp": [
-          "#0f0b00",
-          "#292100",
-          "#453a00",
-          "#645500",
-          "#837116",
-          "#a18f3b",
-          "#c1ae5b",
-          "#e1ce7b",
-          "#ffefaa"
-        ]
-      },
-      "background-dark": {
-        "role": "Canvas (dark)",
-        "displayName": "Background Dark",
-        "description": "Vesper #101010.",
-        "canonical": "oklch(17.3% 0.000 89.9)",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#222222",
-          "#3a3a3a",
-          "#555555",
-          "#717171",
-          "#8f8f8f",
-          "#aeaeae",
-          "#cecece",
-          "#eeeeee"
-        ]
-      },
-      "surface-dark": {
-        "role": "Canvas +1 (dark)",
-        "displayName": "Surface Dark",
-        "description": "Panels and cards in dark.",
-        "canonical": "oklch(20.0% 0.000 89.9)",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#222222",
-          "#3a3a3a",
-          "#555555",
-          "#717171",
-          "#8f8f8f",
-          "#aeaeae",
-          "#cecece",
-          "#eeeeee"
-        ]
-      },
-      "foreground-dark": {
-        "role": "Primary text (dark)",
-        "displayName": "Foreground Dark",
-        "description": "Pure white.",
-        "canonical": "oklch(100.0% 0.000 89.9)",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#222222",
-          "#3a3a3a",
-          "#555555",
-          "#717171",
-          "#8f8f8f",
-          "#aeaeae",
-          "#cecece",
-          "#eeeeee"
-        ]
-      },
-      "muted-dark": {
-        "role": "Inert fill (dark)",
-        "displayName": "Muted Dark",
-        "description": "One step off the canvas so hover/selection are visible.",
-        "canonical": "oklch(25.6% 0.000 89.9)",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#222222",
-          "#3a3a3a",
-          "#555555",
-          "#717171",
-          "#8f8f8f",
-          "#aeaeae",
-          "#cecece",
-          "#eeeeee"
-        ]
-      },
-      "muted-foreground-dark": {
-        "role": "Tertiary text (dark)",
-        "displayName": "Muted Foreground Dark",
-        "description": "Placeholders and meta text.",
-        "canonical": "oklch(70.5% 0.000 89.9)",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#222222",
-          "#3a3a3a",
-          "#555555",
-          "#717171",
-          "#8f8f8f",
-          "#aeaeae",
-          "#cecece",
-          "#eeeeee"
-        ]
-      },
-      "hover-dark": {
-        "role": "Hover fill (dark)",
-        "displayName": "Hover Dark",
-        "description": "Doubles as the dark border.",
-        "canonical": "oklch(27.7% 0.000 89.9)",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#222222",
-          "#3a3a3a",
-          "#555555",
-          "#717171",
-          "#8f8f8f",
-          "#aeaeae",
-          "#cecece",
-          "#eeeeee"
-        ]
-      },
-      "border-dark": {
-        "role": "Divider (dark)",
-        "displayName": "Border Dark",
-        "description": "Doubles as the dark hover fill.",
-        "canonical": "oklch(27.7% 0.000 89.9)",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#222222",
-          "#3a3a3a",
-          "#555555",
-          "#717171",
-          "#8f8f8f",
-          "#aeaeae",
-          "#cecece",
-          "#eeeeee"
-        ]
-      },
-      "field-dark": {
-        "role": "Field fill (dark)",
-        "displayName": "Field Dark",
-        "description": "Recessed below the canvas-plus-one surface.",
-        "canonical": "oklch(22.7% 0.000 89.9)",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#222222",
-          "#3a3a3a",
-          "#555555",
-          "#717171",
-          "#8f8f8f",
-          "#aeaeae",
-          "#cecece",
-          "#eeeeee"
-        ]
-      },
-      "primary-dark": {
-        "role": "Accent (dark)",
-        "displayName": "Primary Dark",
-        "description": "Vesper amber, carrying black text.",
-        "canonical": "oklch(86.9% 0.088 60.8)",
-        "tonalRamp": [
-          "#150700",
-          "#351a00",
-          "#582e00",
-          "#78481b",
-          "#976539",
-          "#b68256",
-          "#d7a174",
-          "#f9c193",
-          "#ffeada"
-        ]
-      },
-      "primary-hover-dark": {
-        "role": "Accent, pressed (dark)",
-        "displayName": "Primary Hover Dark",
-        "canonical": "oklch(88.7% 0.075 60.7)",
-        "tonalRamp": [
-          "#150700",
-          "#351a00",
-          "#563008",
-          "#734b27",
-          "#926743",
-          "#b18560",
-          "#d1a37d",
-          "#f3c39c",
-          "#ffeada"
-        ]
-      },
-      "primary-foreground-dark": {
-        "role": "On-accent text (dark)",
-        "displayName": "Primary Foreground Dark",
-        "description": "Black. Never white on the amber.",
-        "canonical": "oklch(0.0% 0.000 0.0)",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#222222",
-          "#3a3a3a",
-          "#555555",
-          "#717171",
-          "#8f8f8f",
-          "#aeaeae",
-          "#cecece",
-          "#eeeeee"
-        ]
-      },
-      "ring-dark": {
-        "role": "Focus ring (dark)",
-        "displayName": "Ring Dark",
-        "description": "Same hue as the dark accent.",
-        "canonical": "oklch(86.9% 0.088 60.8)",
-        "tonalRamp": [
-          "#150700",
-          "#351a00",
-          "#582e00",
-          "#78481b",
-          "#976539",
-          "#b68256",
-          "#d7a174",
-          "#f9c193",
-          "#ffeada"
-        ]
-      },
-      "destructive-dark": {
-        "role": "Destructive (dark)",
-        "displayName": "Destructive Dark",
-        "canonical": "oklch(74.4% 0.155 21.5)",
-        "tonalRamp": [
-          "#1f0002",
-          "#46000a",
-          "#730016",
-          "#99212c",
-          "#bb4347",
-          "#de6264",
-          "#ff8383",
-          "#ffb9b6",
-          "#ffe8e7"
-        ]
-      },
-      "success-dark": {
-        "role": "Status: success (dark)",
-        "displayName": "Success Dark",
-        "canonical": "oklch(75.8% 0.160 157.4)",
-        "tonalRamp": [
-          "#000f06",
-          "#002a16",
-          "#004729",
-          "#00663d",
-          "#008752",
-          "#00aa69",
-          "#37cb85",
-          "#61eda4",
-          "#c4ffda"
-        ]
-      },
-      "warning-dark": {
-        "role": "Status: warning (dark)",
-        "displayName": "Warning Dark",
-        "description": "50deg yellow, not Vesper's 27deg orange.",
-        "canonical": "oklch(92.5% 0.141 98.2)",
-        "tonalRamp": [
-          "#0f0b00",
-          "#282200",
-          "#453a00",
-          "#635500",
-          "#837100",
-          "#a58f00",
-          "#c6ae2f",
-          "#e6ce56",
-          "#fff0a5"
-        ]
-      },
-      "syntax-keyword-dark": {
-        "role": "Syntax",
-        "displayName": "Syntax Keyword Dark",
-        "canonical": "oklch(70.5% 0.000 89.9)",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#222222",
-          "#3a3a3a",
-          "#555555",
-          "#717171",
-          "#8f8f8f",
-          "#aeaeae",
-          "#cecece",
-          "#eeeeee"
-        ]
-      },
-      "syntax-string-dark": {
-        "role": "Syntax",
-        "displayName": "Syntax String Dark",
-        "canonical": "oklch(93.0% 0.104 175.0)",
-        "tonalRamp": [
-          "#000f0a",
-          "#002920",
-          "#004539",
-          "#006453",
-          "#01856e",
-          "#39a48c",
-          "#5dc3aa",
-          "#7ee4ca",
-          "#bcffec"
-        ]
-      },
-      "syntax-comment-dark": {
-        "role": "Syntax",
-        "displayName": "Syntax Comment Dark",
-        "canonical": "oklch(63.7% 0.000 89.9)",
-        "tonalRamp": [
-          "#0b0b0b",
-          "#222222",
-          "#3a3a3a",
-          "#555555",
-          "#717171",
-          "#8f8f8f",
-          "#aeaeae",
-          "#cecece",
-          "#eeeeee"
-        ]
-      }
-    },
-    "typographyMeta": {
-      "primaryFamily": "Inter",
-      "source": "Self-hosted via @fontsource (latin-400/500/600/700). No Google Fonts, no CDN.",
-      "cjkFallback": "\"Noto Sans SC\", \"PingFang SC\", \"Microsoft YaHei\"",
-      "monoFamily": "JetBrains Mono",
-      "monoSource": "Self-hosted via @fontsource (latin-400/500/700).",
-      "scaleNote": "Weight carries hierarchy, not size. The whole UI runs at 14px except three roles: 18px sidebar brand, 24px card title, 30px empty-state hero. There is no fourth display size."
-    },
-    "shadows": {
-      "xs": "0px 2px 4px 0px hsl(0 0% 0% / 0.05)",
-      "sm": "0px 2px 4px 0px hsl(0 0% 0% / 0.1), 0px 1px 2px -1px hsl(0 0% 0% / 0.1)",
-      "panel": "0 1px 2px hsl(0 0% 0% / 0.08), 0 10px 30px hsl(0 0% 0% / 0.1)",
-      "panelDark": "0 1px 1px hsl(0 0% 0% / 0.35), 0 14px 44px hsl(0 0% 0% / 0.55)",
-      "popover": "0 2px 6px hsl(0 0% 0% / 0.1), 0 18px 50px hsl(0 0% 0% / 0.14)",
-      "popoverDark": "0 2px 6px hsl(0 0% 0% / 0.45), 0 22px 70px hsl(0 0% 0% / 0.65)",
-      "note": "Dark needs roughly 4x the alpha of light. Floating surfaces always pair a tight contact shadow with a wide ambient one - two stops, never one, never three.",
-      "menuEdge": "0 0 0 1px color-mix(in oklab, hsl(var(--background)) 90%, hsl(var(--foreground)) 10%)"
-    },
-    "motion": {
-      "durationFast": "120ms",
-      "durationSlow": "180ms",
-      "easing": "cubic-bezier(0.2, 0, 0, 1)",
-      "animatedProperties": [
-        "color",
-        "background-color",
-        "border-color",
-        "opacity",
-        "scale"
-      ],
-      "press": "active:scale-[0.96]",
-      "themeSwitchGuard": ".pilo-theme-switch disables every transition for one frame",
-      "reducedMotion": "prefers-reduced-motion resets transitions globally"
-    },
-    "layout": {
-      "sidebarDefaultWidth": "292px",
-      "sidebarMinWidth": "240px",
-      "sidebarMaxWidth": "480px",
-      "sidebarInset": "8px top/bottom, 8px left, 4px right",
-      "sidebarInnerPadding": "2px",
-      "chatColumnMaxWidth": "min(80%, 52rem)",
-      "controlHeights": {
-        "dense": "28px",
-        "chip": "20px",
-        "small": "32px",
-        "default": "36px",
-        "large": "40px"
-      },
-      "fixedWidths": {
-        "configPopover": "248px",
-        "menuMin": "220px"
-      },
-      "grid": "Tailwind 4px grid; 8px inside a control row, 16px between groups, 24px card padding"
-    },
-    "stacking": {
-      "dialogOverlay": 70,
-      "dialog": 80,
-      "popover": 80,
-      "tooltip": 90,
-      "toast": 100
-    },
-    "radiusMeaning": {
-      "xs": "2px - hairlines and inner confirm-chip glyphs",
-      "sm": "4px - inline dense actions (hover-revealed row buttons)",
-      "md": "6px - controls: buttons, inputs, sidebar rows, chips, tabs",
-      "lg": "8px - containers: cards, menu items",
-      "xl": "12px - floating surfaces: sidebar panel, composer, menu surface",
-      "full": "999px - circular: icon-only buttons, composer send key, confirm chip"
-    },
-    "namedRules": [
-      {
-        "name": "The Scarce Accent Rule",
-        "rule": "primary is permitted on exactly four things: the primary action, the focus ring, the active selection, and a running state. Nothing else."
-      },
-      {
-        "name": "The Calibrated Text Rule",
-        "rule": "Every text token must clear 4.5:1 against the surface it actually renders on, 12px monospace included. src/index.css records the ratio in a comment beside the value."
-      },
-      {
-        "name": "The Whole-Pixel Hit Area Rule",
-        "rule": "Visual size may go below 24px; the hit area may not. Dense row actions are drawn at 20x20 and extended with after:absolute after:-inset-0.5."
-      },
-      {
-        "name": "The Two-Step Destructive Rule",
-        "rule": "Destructive list actions never fire on the first click and never open a modal. The control swaps to a rounded-full confirm chip; blur, pointer-leave, or Esc cancels."
-      },
-      {
-        "name": "The No-Transition-On-Theme-Switch Rule",
-        "rule": "Theme changes apply transition: none !important to everything for one frame via .pilo-theme-switch, so a re-light is instant and does not smear."
-      }
-    ],
-    "themes": {
-      "light": {
-        "name": "Lody Light",
-        "surface": "#ffffff",
-        "panel": "#f7f8fa",
-        "accent": "#296bea",
-        "accentOn": "#ffffff"
-      },
-      "dark": {
-        "name": "Lody Dark (bundled Vesper)",
-        "surface": "#101010",
-        "panel": "#161616",
-        "accent": "#ffc799",
-        "accentOn": "#000000"
-      },
-      "note": "Both themes register the same role names. Components carry no dark: colour overrides."
-    },
-    "codeSource": {
-      "tokens": "src/index.css",
-      "menus": "src/ui/menu-styles.ts",
-      "button": "src/ui/button.tsx",
-      "badge": "src/ui/badge.tsx",
-      "card": "src/ui/card.tsx",
-      "input": "src/ui/input.tsx",
-      "composer": "src/components/chat/chat-composer-frame.tsx",
-      "sidebar": "src/components/sidebar/app-sidebar.tsx",
-      "sidebarRows": "src/components/sidebar/rows.tsx"
-    }
-  },
-  "components": [
-    {
-      "name": "button-primary",
-      "description": "The one filled accent button. At most one per view; it is the thing the screen is about.",
-      "backgroundColor": "{colors.primary}",
-      "textColor": "{colors.primary-foreground}",
-      "typography": "{typography.body}",
-      "rounded": "{rounded.md}",
-      "padding": "16px",
-      "height": "36px",
-      "html": "<button class=\"ds-btn ds-btn--primary\" type=\"button\">\n  <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 5v14M5 12h14\"/></svg>\n  New Session\n</button>",
-      "css": ".ds-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 8px;\n  height: 36px;\n  padding: 0 16px;\n  border: 0;\n  border-radius: 6px;\n  font-family: Inter, system-ui, sans-serif;\n  font-size: 14px;\n  font-weight: 500;\n  line-height: 1.45;\n  white-space: nowrap;\n  cursor: pointer;\n  transition: color 120ms cubic-bezier(0.2, 0, 0, 1),\n              background-color 120ms cubic-bezier(0.2, 0, 0, 1),\n              border-color 120ms cubic-bezier(0.2, 0, 0, 1),\n              scale 120ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-btn:active { scale: 0.96; }\n.ds-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }\n.ds-btn svg { width: 16px; height: 16px; flex: none; }\n\n.ds-btn--primary {\n  background-color: hsl(var(--primary));\n  color: hsl(var(--primary-foreground));\n  box-shadow: 0px 2px 4px 0px hsl(0 0% 0% / 0.1), 0px 1px 2px -1px hsl(0 0% 0% / 0.1);\n}\n.ds-btn--primary:hover { background-color: hsl(var(--button-hover)); }\n\n@media (prefers-reduced-motion: reduce) {\n  .ds-btn { transition: none; }\n  .ds-btn:active { scale: 1; }\n}"
-    },
-    {
-      "name": "button-secondary",
-      "description": "Second-rank action next to a primary. Flat fill, no accent, no competition.",
-      "backgroundColor": "{colors.secondary}",
-      "textColor": "{colors.foreground}",
-      "typography": "{typography.body}",
-      "rounded": "{rounded.md}",
-      "padding": "16px",
-      "height": "36px",
-      "html": "<button class=\"ds-btn-secondary\" type=\"button\">Cancel</button>",
-      "css": ".ds-btn-secondary {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  height: 36px;\n  padding: 0 16px;\n  border: 0;\n  border-radius: 6px;\n  background-color: hsl(var(--button-secondary));\n  color: hsl(var(--button-secondary-foreground));\n  font-family: Inter, system-ui, sans-serif;\n  font-size: 14px;\n  font-weight: 500;\n  line-height: 1.45;\n  cursor: pointer;\n  box-shadow: 0px 2px 4px 0px hsl(0 0% 0% / 0.05);\n  transition: background-color 120ms cubic-bezier(0.2, 0, 0, 1), scale 120ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-btn-secondary:hover { background-color: hsl(var(--button-secondary-hover)); }\n.ds-btn-secondary:active { scale: 0.96; }\n.ds-btn-secondary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }\n\n@media (prefers-reduced-motion: reduce) {\n  .ds-btn-secondary { transition: none; }\n  .ds-btn-secondary:active { scale: 1; }\n}"
-    },
-    {
-      "name": "icon-button-outline",
-      "description": "Icon-only control. 36px square, outline variant, radius md - never a circle.",
-      "backgroundColor": "{colors.background}",
-      "textColor": "{colors.foreground}",
-      "rounded": "{rounded.md}",
-      "padding": "0px",
-      "height": "36px",
-      "width": "36px",
-      "html": "<button class=\"ds-icon-btn\" type=\"button\" aria-label=\"Refresh\">\n  <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M21 12a9 9 0 1 1-2.64-6.36\"/><path d=\"M21 3v6h-6\"/></svg>\n</button>",
-      "css": ".ds-icon-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 36px;\n  height: 36px;\n  padding: 0;\n  border: 1px solid hsl(var(--input-border));\n  border-radius: 6px;\n  background-color: hsl(var(--background));\n  color: hsl(var(--foreground));\n  cursor: pointer;\n  box-shadow: 0px 2px 4px 0px hsl(0 0% 0% / 0.05);\n  transition: background-color 120ms cubic-bezier(0.2, 0, 0, 1),\n              color 120ms cubic-bezier(0.2, 0, 0, 1),\n              border-color 120ms cubic-bezier(0.2, 0, 0, 1),\n              scale 120ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-icon-btn svg { width: 16px; height: 16px; }\n.ds-icon-btn:hover { background-color: hsl(var(--hover)); color: hsl(var(--hover-foreground)); }\n.ds-icon-btn:active { scale: 0.96; }\n.ds-icon-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }\n\n@media (prefers-reduced-motion: reduce) {\n  .ds-icon-btn { transition: none; }\n  .ds-icon-btn:active { scale: 1; }\n}"
-    },
-    {
-      "name": "text-field",
-      "description": "Editable control: outline from border-strong, fill from field, no glow on focus.",
-      "backgroundColor": "{colors.field}",
-      "textColor": "{colors.foreground}",
-      "typography": "{typography.body}",
-      "rounded": "{rounded.md}",
-      "padding": "12px",
-      "height": "36px",
-      "width": "100%",
-      "html": "<label class=\"ds-field\">\n  <span class=\"ds-field__label\">Project Path</span>\n  <input class=\"ds-field__input\" type=\"text\" placeholder=\"/root/code/pilo\" />\n</label>",
-      "css": ".ds-field { display: flex; flex-direction: column; gap: 4px; font-family: Inter, system-ui, sans-serif; }\n.ds-field__label { font-size: 12px; font-weight: 500; line-height: 1.4; color: hsl(var(--foreground)); }\n.ds-field__input {\n  height: 36px;\n  width: 100%;\n  box-sizing: border-box;\n  padding: 0 12px;\n  border: 1px solid hsl(var(--input-border));\n  border-radius: 6px;\n  background-color: hsl(var(--input-field));\n  color: hsl(var(--input-foreground));\n  font: inherit;\n  font-size: 14px;\n  box-shadow: 0px 2px 4px 0px hsl(0 0% 0% / 0.05);\n  transition: border-color 120ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-field__input::placeholder { color: hsl(var(--input-placeholder)); }\n.ds-field__input:hover { border-color: hsl(var(--muted-foreground)); }\n.ds-field__input:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -1px; border-color: hsl(var(--ring)); }\n.ds-field__input:disabled { background-color: hsl(var(--muted)); color: hsl(var(--muted-foreground)); cursor: not-allowed; }\n\n@media (prefers-reduced-motion: reduce) {\n  .ds-field__input { transition: none; }\n}"
-    },
-    {
-      "name": "chat-composer",
-      "description": "The signature surface. A rounded-xl box whose border is the only thing that changes on focus.",
-      "backgroundColor": "{colors.background}",
-      "textColor": "{colors.foreground}",
-      "typography": "{typography.body}",
-      "rounded": "{rounded.xl}",
-      "padding": "6px 8px",
-      "html": "<div class=\"ds-composer\">\n  <textarea class=\"ds-composer__input\" rows=\"1\" placeholder=\"按 @ 提及文件，/ 使用 Pi 命令\"></textarea>\n  <div class=\"ds-composer__toolbar\">\n    <button class=\"ds-composer__attach\" type=\"button\" aria-label=\"Attach file\">\n      <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48\"/></svg>\n    </button>\n    <button class=\"ds-composer__send\" type=\"button\" aria-label=\"Send\">\n      <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 19V5M5 12l7-7 7 7\"/></svg>\n    </button>\n  </div>\n</div>",
-      "css": ".ds-composer {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 6px 8px;\n  border: 1px solid hsl(var(--foreground) / 0.10);\n  border-radius: 12px;\n  background-color: hsl(var(--background));\n  font-family: Inter, system-ui, sans-serif;\n  transition: border-color 150ms cubic-bezier(0.2, 0, 0, 1);\n}\n.dark .ds-composer { border-color: hsl(var(--input-border) / 0.7); }\n.ds-composer:focus-within { border-color: hsl(var(--ring) / 0.4); }\n.ds-composer__input {\n  padding: 0 4px;\n  min-height: 48px;\n  border: 0;\n  background: transparent;\n  color: hsl(var(--input-foreground));\n  font: inherit;\n  font-size: 14px;\n  line-height: 24px;\n  resize: none;\n}\n.ds-composer__input::placeholder { color: hsl(var(--input-placeholder)); }\n.ds-composer__input:focus { outline: none; }\n.ds-composer__toolbar { display: flex; align-items: center; gap: 8px; padding-top: 2px; }\n.ds-composer__attach {\n  display: inline-flex; align-items: center; justify-content: center;\n  width: 28px; height: 28px; padding: 0;\n  border: 0; border-radius: 6px; background: transparent;\n  color: hsl(var(--muted-foreground)); cursor: pointer;\n  transition: color 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-composer__attach svg { width: 16px; height: 16px; }\n.ds-composer__attach:hover { background-color: hsl(var(--hover)); color: hsl(var(--foreground)); }\n.ds-composer__send {\n  display: inline-flex; align-items: center; justify-content: center;\n  width: 28px; height: 28px; padding: 0;\n  margin-inline-start: auto;\n  border: 0; border-radius: 999px;\n  background-color: hsl(var(--foreground)); color: hsl(var(--background));\n  cursor: pointer;\n  transition: background-color 100ms cubic-bezier(0.2, 0, 0, 1), scale 100ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-composer__send svg { width: 16px; height: 16px; }\n.ds-composer__send:hover { background-color: hsl(var(--foreground) / 0.85); }\n.ds-composer__send:active { scale: 0.96; }\n.ds-composer__send:focus-visible,\n.ds-composer__attach:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }\n\n@media (prefers-reduced-motion: reduce) {\n  .ds-composer, .ds-composer__attach, .ds-composer__send { transition: none; }\n  .ds-composer__send:active { scale: 1; }\n}"
-    },
-    {
-      "name": "sidebar-row",
-      "description": "28px dense row. Actions are invisible until the row is hovered and extend their hit area with a pseudo-element.",
-      "backgroundColor": "transparent",
-      "textColor": "{colors.foreground-muted}",
-      "typography": "{typography.body}",
-      "rounded": "{rounded.md}",
-      "padding": "8px",
-      "height": "28px",
-      "width": "100%",
-      "html": "<div class=\"ds-row group\">\n  <button class=\"ds-row__label\" type=\"button\">\n    <svg class=\"ds-row__chevron\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M6 9l6 6 6-6\"/></svg>\n    <svg class=\"ds-row__icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3 7a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.7.9l.8 1.2a2 2 0 0 0 1.7.9H19a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/></svg>\n    <span class=\"ds-row__name\">pilo</span>\n  </button>\n  <button class=\"ds-row__action\" type=\"button\" aria-label=\"More\">\n    <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"5\" cy=\"12\" r=\"1\"/><circle cx=\"12\" cy=\"12\" r=\"1\"/><circle cx=\"19\" cy=\"12\" r=\"1\"/></svg>\n  </button>\n</div>",
-      "css": ".ds-row {\n  display: flex;\n  align-items: center;\n  gap: 4px;\n  height: 28px;\n  padding-inline-end: 8px;\n  font-family: Inter, system-ui, sans-serif;\n}\n.ds-row__label {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex: 1 1 auto;\n  min-width: 0;\n  height: 28px;\n  padding: 0 8px;\n  border: 1px solid transparent;\n  border-radius: 6px;\n  background: transparent;\n  color: hsl(var(--sidebar-foreground));\n  font: inherit;\n  font-size: 14px;\n  text-align: start;\n  cursor: pointer;\n  transition: color 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-row__label:hover { background-color: hsl(var(--sidebar-hover)); color: hsl(var(--sidebar-hover-foreground)); }\n.ds-row__label:focus-visible { outline: 2px solid hsl(var(--sidebar-ring)); outline-offset: -1px; }\n.ds-row__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.ds-row__chevron, .ds-row__icon { width: 14px; height: 14px; flex: none; color: hsl(var(--sidebar-foreground-muted)); }\n\n.ds-row__action {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 20px;\n  height: 20px;\n  padding: 0;\n  border: 0;\n  border-radius: 4px;\n  background: transparent;\n  color: hsl(var(--muted-foreground));\n  opacity: 0;\n  pointer-events: none;\n  cursor: pointer;\n  transition: opacity 100ms cubic-bezier(0.2, 0, 0, 1), color 100ms cubic-bezier(0.2, 0, 0, 1), background-color 100ms cubic-bezier(0.2, 0, 0, 1);\n}\n/* drawn at 20x20, hit area 24x24 - the Whole-Pixel Hit Area Rule */\n.ds-row__action::after { content: \"\"; position: absolute; inset: -2px; }\n.ds-row__action svg { width: 14px; height: 14px; }\n.ds-row:hover .ds-row__action,\n.ds-row__action:focus-visible { opacity: 1; pointer-events: auto; }\n.ds-row__action:hover { color: hsl(var(--foreground)); background-color: hsl(var(--muted)); }\n.ds-row__action:focus-visible { outline: 2px solid hsl(var(--sidebar-ring)); outline-offset: 2px; }\n\n@media (prefers-reduced-motion: reduce) {\n  .ds-row__label, .ds-row__action { transition: none; }\n}"
-    },
-    {
-      "name": "status-chip",
-      "description": "20px chip. Status variants are the only tints in the system, so status never looks like a button.",
-      "backgroundColor": "{colors.primary}",
-      "textColor": "{colors.primary-foreground}",
-      "typography": "{typography.label}",
-      "rounded": "{rounded.md}",
-      "padding": "10px",
-      "height": "20px",
-      "html": "<div class=\"ds-chip-set\">\n  <span class=\"ds-chip ds-chip--running\">Running</span>\n  <span class=\"ds-chip ds-chip--success\">Connected</span>\n  <span class=\"ds-chip ds-chip--warning\">Degraded</span>\n</div>",
-      "css": ".ds-chip-set { display: flex; align-items: center; gap: 8px; }\n.ds-chip {\n  display: inline-flex;\n  align-items: center;\n  height: 20px;\n  padding: 0 10px;\n  border: 1px solid transparent;\n  border-radius: 6px;\n  font-family: Inter, system-ui, sans-serif;\n  font-size: 12px;\n  font-weight: 600;\n  line-height: 1.4;\n  white-space: nowrap;\n  box-shadow: 0px 2px 4px 0px hsl(0 0% 0% / 0.05);\n}\n.ds-chip--running { background-color: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }\n.ds-chip--success {\n  border-color: hsl(var(--status-success) / 0.20);\n  background-color: hsl(var(--status-success) / 0.12);\n  color: hsl(var(--status-success));\n}\n.ds-chip--warning {\n  border-color: hsl(var(--status-warning) / 0.20);\n  background-color: hsl(var(--status-warning) / 0.12);\n  color: hsl(var(--status-warning));\n}"
-    },
-    {
-      "name": "card",
-      "description": "Container, not callout. Border plus one surface step; no accent edge, no coloured header.",
-      "backgroundColor": "{colors.surface}",
-      "textColor": "{colors.foreground-muted}",
-      "rounded": "{rounded.lg}",
-      "padding": "24px",
-      "width": "100%",
-      "html": "<section class=\"ds-card\">\n  <header class=\"ds-card__header\">\n    <h3 class=\"ds-card__title\">Remote Connection</h3>\n    <p class=\"ds-card__description\">Pi runs where the code lives. Nothing is synced locally.</p>\n  </header>\n  <div class=\"ds-card__body\">\n    <span class=\"ds-card__value\">SSH · build-01.internal</span>\n  </div>\n</section>",
-      "css": ".ds-card {\n  border: 1px solid hsl(var(--border));\n  border-radius: 8px;\n  background-color: hsl(var(--card));\n  color: hsl(var(--card-foreground));\n  font-family: Inter, system-ui, sans-serif;\n  box-shadow: 0px 2px 4px 0px hsl(0 0% 0% / 0.05);\n}\n.ds-card__header { display: flex; flex-direction: column; gap: 6px; padding: 24px; }\n.ds-card__title { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -0.025em; color: hsl(var(--foreground)); }\n.ds-card__description { margin: 0; font-size: 14px; line-height: 1.45; color: hsl(var(--muted-foreground)); }\n.ds-card__body { padding: 0 24px 24px; }\n.ds-card__value { font-family: \"JetBrains Mono\", ui-monospace, monospace; font-size: 12px; line-height: 1.5; color: hsl(var(--code-foreground)); }"
-    },
-    {
-      "name": "menu-item",
-      "description": "32px row for a floating menu. Hover is the only selection state - there is no separate selected colour.",
-      "backgroundColor": "transparent",
-      "textColor": "{colors.foreground}",
-      "typography": "{typography.body}",
-      "rounded": "{rounded.lg}",
-      "padding": "12px",
-      "height": "32px",
-      "width": "100%",
-      "html": "<div class=\"ds-menu\" role=\"menu\">\n  <div class=\"ds-menu__label\">Session</div>\n  <button class=\"ds-menu__item\" type=\"button\" role=\"menuitem\">\n    <span class=\"ds-menu__icon\">\n      <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z\"/></svg>\n    </span>\n    Rename\n    <span class=\"ds-menu__extra\">R</span>\n  </button>\n  <button class=\"ds-menu__item\" type=\"button\" role=\"menuitem\" data-variant=\"destructive\">\n    <span class=\"ds-menu__icon\">\n      <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6\"/></svg>\n    </span>\n    Delete\n  </button>\n</div>",
-      "css": ".ds-menu {\n  min-width: 220px;\n  padding: 4px;\n  border-radius: 12px;\n  background-color: hsl(var(--background));\n  color: hsl(var(--foreground));\n  font-family: Inter, system-ui, sans-serif;\n  /* edge is the ring in the stack, not a border - no layout box, theme-derived color */\n  box-shadow: 0 0 0 1px color-mix(in oklab, hsl(var(--background)) 90%, hsl(var(--foreground)) 10%),\n              0 4px 12px 0 rgb(0 0 0 / 0.08),\n              0 1px 3px 0 rgb(0 0 0 / 0.06);\n}\n.ds-menu__label { padding: 6px 12px; font-size: 12px; font-weight: 500; line-height: 1.4; color: hsl(var(--muted-foreground)); }\n.ds-menu__item {\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  width: 100%;\n  min-height: 32px;\n  padding: 6px 12px;\n  border: 0;\n  border-radius: 8px;\n  background: transparent;\n  color: hsl(var(--foreground));\n  font: inherit;\n  font-size: 14px;\n  font-weight: 500;\n  line-height: 20px;\n  text-align: start;\n  cursor: default;\n  transition: color 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-menu__icon { display: flex; align-items: center; justify-content: center; width: 14px; height: 14px; flex: none; color: hsl(var(--muted-foreground)); }\n.ds-menu__icon svg { width: 100%; height: 100%; }\n.ds-menu__extra { margin-inline-start: auto; padding-inline-start: 16px; font-family: \"JetBrains Mono\", ui-monospace, monospace; font-size: 12px; color: hsl(var(--muted-foreground)); }\n.ds-menu__item:hover, .ds-menu__item:focus-visible { background-color: hsl(var(--hover)); color: hsl(var(--hover-foreground)); outline: none; }\n.ds-menu__item[data-variant=\"destructive\"] { color: hsl(var(--destructive)); }\n.ds-menu__item[data-variant=\"destructive\"] .ds-menu__icon { color: hsl(var(--destructive)); }\n.ds-menu__item[data-variant=\"destructive\"]:hover,\n.ds-menu__item[data-variant=\"destructive\"]:focus-visible { background-color: hsl(var(--destructive) / 0.10); color: hsl(var(--destructive)); }\n\n@media (prefers-reduced-motion: reduce) { .ds-menu__item { transition: none; } }"
-    }
-  ]
+	"schemaVersion": 2,
+	"generatedAt": "2026-09-21T05:11:22Z",
+	"title": "Pilo",
+	"description": "A quiet desktop workbench for the Pi coding agent. Two themes (Lody Light, Lody Dark = bundled Vesper) register the same role names; exactly one accent hue is permitted, and every text token is calibrated to 4.5:1 against the surface it renders on.",
+	"extensions": {
+		"colorMeta": {
+			"background": {
+				"role": "Canvas",
+				"displayName": "Background",
+				"description": "The page itself.",
+				"canonical": "oklch(100.0% 0.000 89.9)",
+				"tonalRamp": [
+					"#0b0b0b",
+					"#222222",
+					"#3a3a3a",
+					"#555555",
+					"#717171",
+					"#8f8f8f",
+					"#aeaeae",
+					"#cecece",
+					"#eeeeee"
+				]
+			},
+			"surface": {
+				"role": "Canvas +1",
+				"displayName": "Surface",
+				"description": "Cards, the sidebar panel, code blocks.",
+				"canonical": "oklch(97.9% 0.003 264.5)",
+				"tonalRamp": [
+					"#0b0b0c",
+					"#212223",
+					"#3a3a3c",
+					"#545557",
+					"#717173",
+					"#8e8f91",
+					"#adaeb0",
+					"#cdcecf",
+					"#edeef0"
+				]
+			},
+			"foreground": {
+				"role": "Primary text",
+				"displayName": "Foreground",
+				"description": "All body and title text.",
+				"canonical": "oklch(22.3% 0.006 271.1)",
+				"tonalRamp": [
+					"#0a0b0e",
+					"#202125",
+					"#393a3e",
+					"#545559",
+					"#707175",
+					"#8e8f93",
+					"#acaeb2",
+					"#ccced2",
+					"#edeef3"
+				]
+			},
+			"foreground-muted": {
+				"role": "Secondary text",
+				"displayName": "Foreground Muted",
+				"description": "Card and sidebar body text, icon glyphs.",
+				"canonical": "oklch(49.2% 0.017 264.4)",
+				"tonalRamp": [
+					"#080b12",
+					"#1e222a",
+					"#363b44",
+					"#50555f",
+					"#6d727c",
+					"#8a8f9a",
+					"#a8aeb9",
+					"#c8ced9",
+					"#e9effa"
+				]
+			},
+			"muted": {
+				"role": "Inert fill",
+				"displayName": "Muted",
+				"description": "Disabled fields, tab strips, chip backgrounds.",
+				"canonical": "oklch(95.4% 0.005 258.3)",
+				"tonalRamp": [
+					"#0a0b0d",
+					"#202224",
+					"#393b3d",
+					"#545558",
+					"#707274",
+					"#8d8f92",
+					"#acaeb1",
+					"#ccced1",
+					"#edeff2"
+				]
+			},
+			"muted-foreground": {
+				"role": "Tertiary text",
+				"displayName": "Muted Foreground",
+				"description": "Placeholders and meta text.",
+				"canonical": "oklch(53.2% 0.022 264.4)",
+				"tonalRamp": [
+					"#070b15",
+					"#1c222d",
+					"#353b46",
+					"#4f5562",
+					"#6b727f",
+					"#888f9d",
+					"#a7aebd",
+					"#c6cedd",
+					"#e7effe"
+				]
+			},
+			"hover": {
+				"role": "Hover fill",
+				"displayName": "Hover",
+				"description": "The one hover colour in the app.",
+				"canonical": "oklch(95.8% 0.004 271.4)",
+				"tonalRamp": [
+					"#0a0b0d",
+					"#212224",
+					"#3a3a3d",
+					"#545558",
+					"#717174",
+					"#8e8f92",
+					"#adaeb1",
+					"#cdced0",
+					"#edeef1"
+				]
+			},
+			"border": {
+				"role": "Divider",
+				"displayName": "Border",
+				"description": "Layout dividers and resting surface edges.",
+				"canonical": "oklch(93.1% 0.007 268.6)",
+				"tonalRamp": [
+					"#0a0b0e",
+					"#202225",
+					"#393a3e",
+					"#535559",
+					"#707176",
+					"#8d8f94",
+					"#acaeb2",
+					"#ccced2",
+					"#eceef3"
+				]
+			},
+			"border-strong": {
+				"role": "Control outline",
+				"displayName": "Border Strong",
+				"description": "Editable-control outlines, switch track.",
+				"canonical": "oklch(89.1% 0.010 267.4)",
+				"tonalRamp": [
+					"#090b10",
+					"#1f2227",
+					"#383a40",
+					"#53555b",
+					"#6f7178",
+					"#8c8f96",
+					"#abaeb5",
+					"#cbced5",
+					"#ebeef5"
+				]
+			},
+			"field": {
+				"role": "Field fill",
+				"displayName": "Field",
+				"description": "Editable control background.",
+				"canonical": "oklch(100.0% 0.000 89.9)",
+				"tonalRamp": [
+					"#0b0b0b",
+					"#222222",
+					"#3a3a3a",
+					"#555555",
+					"#717171",
+					"#8f8f8f",
+					"#aeaeae",
+					"#cecece",
+					"#eeeeee"
+				]
+			},
+			"primary": {
+				"role": "Accent",
+				"displayName": "Primary",
+				"description": "Action, selection, running. Scarcity is the design.",
+				"canonical": "oklch(56.1% 0.204 261.9)",
+				"tonalRamp": [
+					"#000727",
+					"#001a57",
+					"#002f8c",
+					"#0246c4",
+					"#2667e6",
+					"#4c89ff",
+					"#81adff",
+					"#b4cfff",
+					"#e6efff"
+				]
+			},
+			"primary-hover": {
+				"role": "Accent, pressed",
+				"displayName": "Primary Hover",
+				"description": "Pressed and hovered primary action.",
+				"canonical": "oklch(51.5% 0.168 261.1)",
+				"tonalRamp": [
+					"#000826",
+					"#001c54",
+					"#003187",
+					"#164db0",
+					"#346cd2",
+					"#518cf4",
+					"#7faeff",
+					"#b3cfff",
+					"#e6efff"
+				]
+			},
+			"primary-foreground": {
+				"role": "On-accent text",
+				"displayName": "Primary Foreground",
+				"description": "Text on any solid accent fill.",
+				"canonical": "oklch(100.0% 0.000 89.9)",
+				"tonalRamp": [
+					"#0b0b0b",
+					"#222222",
+					"#3a3a3a",
+					"#555555",
+					"#717171",
+					"#8f8f8f",
+					"#aeaeae",
+					"#cecece",
+					"#eeeeee"
+				]
+			},
+			"ring": {
+				"role": "Focus ring",
+				"displayName": "Ring",
+				"description": "Visible against the page; never carries text.",
+				"canonical": "oklch(65.5% 0.156 262.5)",
+				"tonalRamp": [
+					"#000729",
+					"#00195a",
+					"#05308a",
+					"#214eaa",
+					"#3d6dcb",
+					"#5a8ced",
+					"#82adff",
+					"#b4ceff",
+					"#e6efff"
+				]
+			},
+			"secondary": {
+				"role": "Second-rank surface",
+				"displayName": "Secondary",
+				"description": "Secondary buttons, input border in light.",
+				"canonical": "oklch(93.7% 0.005 258.3)",
+				"tonalRamp": [
+					"#0a0b0d",
+					"#202224",
+					"#393b3d",
+					"#545558",
+					"#707274",
+					"#8d8f92",
+					"#acaeb1",
+					"#ccced1",
+					"#edeff2"
+				]
+			},
+			"destructive": {
+				"role": "Destructive",
+				"displayName": "Destructive",
+				"description": "Irreversibility only.",
+				"canonical": "oklch(55.2% 0.205 24.5)",
+				"tonalRamp": [
+					"#1f0001",
+					"#470006",
+					"#73000f",
+					"#a3001a",
+					"#ce212d",
+					"#f34a4c",
+					"#ff847d",
+					"#ffb9b3",
+					"#ffe9e6"
+				]
+			},
+			"success": {
+				"role": "Status: success",
+				"displayName": "Success",
+				"description": "Finished, connected, added lines.",
+				"canonical": "oklch(52.4% 0.140 148.0)",
+				"tonalRamp": [
+					"#001002",
+					"#002a0b",
+					"#004818",
+					"#006826",
+					"#25873e",
+					"#49a65c",
+					"#6ac67a",
+					"#8ae799",
+					"#c8ffcf"
+				]
+			},
+			"warning": {
+				"role": "Status: warning",
+				"displayName": "Warning",
+				"description": "Attention without failure.",
+				"canonical": "oklch(55.6% 0.114 53.1)",
+				"tonalRamp": [
+					"#170600",
+					"#381700",
+					"#5d2b00",
+					"#843f00",
+					"#a45c29",
+					"#c57a48",
+					"#e79967",
+					"#ffbd94",
+					"#ffeadd"
+				]
+			},
+			"syntax-keyword": {
+				"role": "Syntax",
+				"displayName": "Syntax Keyword",
+				"canonical": "oklch(55.8% 0.169 272.1)",
+				"tonalRamp": [
+					"#040033",
+					"#12006c",
+					"#232690",
+					"#3846b1",
+					"#5265d3",
+					"#6d84f5",
+					"#92a8ff",
+					"#bdccff",
+					"#e9eeff"
+				]
+			},
+			"syntax-string": {
+				"role": "Syntax",
+				"displayName": "Syntax String",
+				"canonical": "oklch(55.9% 0.105 32.9)",
+				"tonalRamp": [
+					"#1d0100",
+					"#440700",
+					"#661f12",
+					"#853c2d",
+					"#a65949",
+					"#c77665",
+					"#e89583",
+					"#ffbbab",
+					"#ffe9e4"
+				]
+			},
+			"syntax-number": {
+				"role": "Syntax",
+				"displayName": "Syntax Number",
+				"canonical": "oklch(53.8% 0.077 215.6)",
+				"tonalRamp": [
+					"#000e12",
+					"#00272f",
+					"#00424f",
+					"#0b6070",
+					"#337d8e",
+					"#539bad",
+					"#73bbcd",
+					"#92dbee",
+					"#d3f6ff"
+				]
+			},
+			"syntax-comment": {
+				"role": "Syntax",
+				"displayName": "Syntax Comment",
+				"canonical": "oklch(52.8% 0.030 145.1)",
+				"tonalRamp": [
+					"#040e04",
+					"#182519",
+					"#313f31",
+					"#4b5a4b",
+					"#677667",
+					"#849484",
+					"#a3b3a3",
+					"#c2d3c2",
+					"#e3f4e3"
+				]
+			},
+			"syntax-function": {
+				"role": "Syntax",
+				"displayName": "Syntax Function",
+				"canonical": "oklch(53.9% 0.111 134.4)",
+				"tonalRamp": [
+					"#040f00",
+					"#112900",
+					"#224500",
+					"#39621a",
+					"#557f39",
+					"#729e56",
+					"#90be74",
+					"#afde93",
+					"#d1ffb6"
+				]
+			},
+			"syntax-variable": {
+				"role": "Syntax",
+				"displayName": "Syntax Variable",
+				"canonical": "oklch(55.3% 0.081 65.9)",
+				"tonalRamp": [
+					"#140800",
+					"#331b00",
+					"#553100",
+					"#744b1e",
+					"#92683b",
+					"#b18558",
+					"#d2a476",
+					"#f3c495",
+					"#ffebd7"
+				]
+			},
+			"syntax-title": {
+				"role": "Syntax",
+				"displayName": "Syntax Title",
+				"canonical": "oklch(53.8% 0.082 182.6)",
+				"tonalRamp": [
+					"#000f0c",
+					"#002823",
+					"#00453d",
+					"#006359",
+					"#2d8176",
+					"#4fa093",
+					"#6fbfb2",
+					"#8fe0d2",
+					"#b8fff3"
+				]
+			},
+			"syntax-builtin": {
+				"role": "Syntax",
+				"displayName": "Syntax Builtin",
+				"canonical": "oklch(54.7% 0.106 97.1)",
+				"tonalRamp": [
+					"#0f0b00",
+					"#292100",
+					"#453a00",
+					"#645500",
+					"#837116",
+					"#a18f3b",
+					"#c1ae5b",
+					"#e1ce7b",
+					"#ffefaa"
+				]
+			},
+			"background-dark": {
+				"role": "Canvas (dark)",
+				"displayName": "Background Dark",
+				"description": "Vesper #101010.",
+				"canonical": "oklch(17.3% 0.000 89.9)",
+				"tonalRamp": [
+					"#0b0b0b",
+					"#222222",
+					"#3a3a3a",
+					"#555555",
+					"#717171",
+					"#8f8f8f",
+					"#aeaeae",
+					"#cecece",
+					"#eeeeee"
+				]
+			},
+			"surface-dark": {
+				"role": "Canvas +1 (dark)",
+				"displayName": "Surface Dark",
+				"description": "Panels and cards in dark.",
+				"canonical": "oklch(20.0% 0.000 89.9)",
+				"tonalRamp": [
+					"#0b0b0b",
+					"#222222",
+					"#3a3a3a",
+					"#555555",
+					"#717171",
+					"#8f8f8f",
+					"#aeaeae",
+					"#cecece",
+					"#eeeeee"
+				]
+			},
+			"foreground-dark": {
+				"role": "Primary text (dark)",
+				"displayName": "Foreground Dark",
+				"description": "Pure white.",
+				"canonical": "oklch(100.0% 0.000 89.9)",
+				"tonalRamp": [
+					"#0b0b0b",
+					"#222222",
+					"#3a3a3a",
+					"#555555",
+					"#717171",
+					"#8f8f8f",
+					"#aeaeae",
+					"#cecece",
+					"#eeeeee"
+				]
+			},
+			"muted-dark": {
+				"role": "Inert fill (dark)",
+				"displayName": "Muted Dark",
+				"description": "One step off the canvas so hover/selection are visible.",
+				"canonical": "oklch(25.6% 0.000 89.9)",
+				"tonalRamp": [
+					"#0b0b0b",
+					"#222222",
+					"#3a3a3a",
+					"#555555",
+					"#717171",
+					"#8f8f8f",
+					"#aeaeae",
+					"#cecece",
+					"#eeeeee"
+				]
+			},
+			"muted-foreground-dark": {
+				"role": "Tertiary text (dark)",
+				"displayName": "Muted Foreground Dark",
+				"description": "Placeholders and meta text.",
+				"canonical": "oklch(70.5% 0.000 89.9)",
+				"tonalRamp": [
+					"#0b0b0b",
+					"#222222",
+					"#3a3a3a",
+					"#555555",
+					"#717171",
+					"#8f8f8f",
+					"#aeaeae",
+					"#cecece",
+					"#eeeeee"
+				]
+			},
+			"hover-dark": {
+				"role": "Hover fill (dark)",
+				"displayName": "Hover Dark",
+				"description": "Doubles as the dark border.",
+				"canonical": "oklch(27.7% 0.000 89.9)",
+				"tonalRamp": [
+					"#0b0b0b",
+					"#222222",
+					"#3a3a3a",
+					"#555555",
+					"#717171",
+					"#8f8f8f",
+					"#aeaeae",
+					"#cecece",
+					"#eeeeee"
+				]
+			},
+			"border-dark": {
+				"role": "Divider (dark)",
+				"displayName": "Border Dark",
+				"description": "Doubles as the dark hover fill.",
+				"canonical": "oklch(27.7% 0.000 89.9)",
+				"tonalRamp": [
+					"#0b0b0b",
+					"#222222",
+					"#3a3a3a",
+					"#555555",
+					"#717171",
+					"#8f8f8f",
+					"#aeaeae",
+					"#cecece",
+					"#eeeeee"
+				]
+			},
+			"field-dark": {
+				"role": "Field fill (dark)",
+				"displayName": "Field Dark",
+				"description": "Recessed below the canvas-plus-one surface.",
+				"canonical": "oklch(22.7% 0.000 89.9)",
+				"tonalRamp": [
+					"#0b0b0b",
+					"#222222",
+					"#3a3a3a",
+					"#555555",
+					"#717171",
+					"#8f8f8f",
+					"#aeaeae",
+					"#cecece",
+					"#eeeeee"
+				]
+			},
+			"primary-dark": {
+				"role": "Accent (dark)",
+				"displayName": "Primary Dark",
+				"description": "Vesper amber, carrying black text.",
+				"canonical": "oklch(86.9% 0.088 60.8)",
+				"tonalRamp": [
+					"#150700",
+					"#351a00",
+					"#582e00",
+					"#78481b",
+					"#976539",
+					"#b68256",
+					"#d7a174",
+					"#f9c193",
+					"#ffeada"
+				]
+			},
+			"primary-hover-dark": {
+				"role": "Accent, pressed (dark)",
+				"displayName": "Primary Hover Dark",
+				"canonical": "oklch(88.7% 0.075 60.7)",
+				"tonalRamp": [
+					"#150700",
+					"#351a00",
+					"#563008",
+					"#734b27",
+					"#926743",
+					"#b18560",
+					"#d1a37d",
+					"#f3c39c",
+					"#ffeada"
+				]
+			},
+			"primary-foreground-dark": {
+				"role": "On-accent text (dark)",
+				"displayName": "Primary Foreground Dark",
+				"description": "Black. Never white on the amber.",
+				"canonical": "oklch(0.0% 0.000 0.0)",
+				"tonalRamp": [
+					"#0b0b0b",
+					"#222222",
+					"#3a3a3a",
+					"#555555",
+					"#717171",
+					"#8f8f8f",
+					"#aeaeae",
+					"#cecece",
+					"#eeeeee"
+				]
+			},
+			"ring-dark": {
+				"role": "Focus ring (dark)",
+				"displayName": "Ring Dark",
+				"description": "Same hue as the dark accent.",
+				"canonical": "oklch(86.9% 0.088 60.8)",
+				"tonalRamp": [
+					"#150700",
+					"#351a00",
+					"#582e00",
+					"#78481b",
+					"#976539",
+					"#b68256",
+					"#d7a174",
+					"#f9c193",
+					"#ffeada"
+				]
+			},
+			"destructive-dark": {
+				"role": "Destructive (dark)",
+				"displayName": "Destructive Dark",
+				"canonical": "oklch(74.4% 0.155 21.5)",
+				"tonalRamp": [
+					"#1f0002",
+					"#46000a",
+					"#730016",
+					"#99212c",
+					"#bb4347",
+					"#de6264",
+					"#ff8383",
+					"#ffb9b6",
+					"#ffe8e7"
+				]
+			},
+			"success-dark": {
+				"role": "Status: success (dark)",
+				"displayName": "Success Dark",
+				"canonical": "oklch(75.8% 0.160 157.4)",
+				"tonalRamp": [
+					"#000f06",
+					"#002a16",
+					"#004729",
+					"#00663d",
+					"#008752",
+					"#00aa69",
+					"#37cb85",
+					"#61eda4",
+					"#c4ffda"
+				]
+			},
+			"warning-dark": {
+				"role": "Status: warning (dark)",
+				"displayName": "Warning Dark",
+				"description": "50deg yellow, not Vesper's 27deg orange.",
+				"canonical": "oklch(92.5% 0.141 98.2)",
+				"tonalRamp": [
+					"#0f0b00",
+					"#282200",
+					"#453a00",
+					"#635500",
+					"#837100",
+					"#a58f00",
+					"#c6ae2f",
+					"#e6ce56",
+					"#fff0a5"
+				]
+			},
+			"syntax-keyword-dark": {
+				"role": "Syntax",
+				"displayName": "Syntax Keyword Dark",
+				"canonical": "oklch(70.5% 0.000 89.9)",
+				"tonalRamp": [
+					"#0b0b0b",
+					"#222222",
+					"#3a3a3a",
+					"#555555",
+					"#717171",
+					"#8f8f8f",
+					"#aeaeae",
+					"#cecece",
+					"#eeeeee"
+				]
+			},
+			"syntax-string-dark": {
+				"role": "Syntax",
+				"displayName": "Syntax String Dark",
+				"canonical": "oklch(93.0% 0.104 175.0)",
+				"tonalRamp": [
+					"#000f0a",
+					"#002920",
+					"#004539",
+					"#006453",
+					"#01856e",
+					"#39a48c",
+					"#5dc3aa",
+					"#7ee4ca",
+					"#bcffec"
+				]
+			},
+			"syntax-comment-dark": {
+				"role": "Syntax",
+				"displayName": "Syntax Comment Dark",
+				"canonical": "oklch(63.7% 0.000 89.9)",
+				"tonalRamp": [
+					"#0b0b0b",
+					"#222222",
+					"#3a3a3a",
+					"#555555",
+					"#717171",
+					"#8f8f8f",
+					"#aeaeae",
+					"#cecece",
+					"#eeeeee"
+				]
+			}
+		},
+		"typographyMeta": {
+			"primaryFamily": "Inter",
+			"source": "Self-hosted via @fontsource (latin-400/500/600/700). No Google Fonts, no CDN.",
+			"cjkFallback": "\"Noto Sans SC\", \"PingFang SC\", \"Microsoft YaHei\"",
+			"monoFamily": "JetBrains Mono",
+			"monoSource": "Self-hosted via @fontsource (latin-400/500/700).",
+			"scaleNote": "Weight carries hierarchy, not size. The whole UI runs at 14px except three roles: 18px sidebar brand, 24px card title, 30px empty-state hero. There is no fourth display size."
+		},
+		"shadows": {
+			"xs": "0px 2px 4px 0px hsl(0 0% 0% / 0.05)",
+			"sm": "0px 2px 4px 0px hsl(0 0% 0% / 0.1), 0px 1px 2px -1px hsl(0 0% 0% / 0.1)",
+			"panel": "0 1px 2px hsl(0 0% 0% / 0.08), 0 10px 30px hsl(0 0% 0% / 0.1)",
+			"panelDark": "0 1px 1px hsl(0 0% 0% / 0.35), 0 14px 44px hsl(0 0% 0% / 0.55)",
+			"popover": "0 2px 6px hsl(0 0% 0% / 0.1), 0 18px 50px hsl(0 0% 0% / 0.14)",
+			"popoverDark": "0 2px 6px hsl(0 0% 0% / 0.45), 0 22px 70px hsl(0 0% 0% / 0.65)",
+			"note": "Dark needs roughly 4x the alpha of light. Floating surfaces always pair a tight contact shadow with a wide ambient one - two stops, never one, never three.",
+			"menuEdge": "0 0 0 1px color-mix(in oklab, hsl(var(--background)) 90%, hsl(var(--foreground)) 10%)"
+		},
+		"motion": {
+			"durationFast": "120ms",
+			"durationSlow": "180ms",
+			"easing": "cubic-bezier(0.2, 0, 0, 1)",
+			"animatedProperties": [
+				"color",
+				"background-color",
+				"border-color",
+				"opacity",
+				"scale"
+			],
+			"press": "active:scale-[0.96]",
+			"themeSwitchGuard": ".pilo-theme-switch disables every transition for one frame",
+			"reducedMotion": "prefers-reduced-motion resets transitions globally"
+		},
+		"layout": {
+			"sidebarDefaultWidth": "292px",
+			"sidebarMinWidth": "240px",
+			"sidebarMaxWidth": "480px",
+			"sidebarInset": "8px top/bottom, 8px left, 4px right",
+			"sidebarInnerPadding": "2px",
+			"chatColumnMaxWidth": "min(80%, 52rem)",
+			"controlHeights": {
+				"dense": "28px",
+				"chip": "20px",
+				"small": "32px",
+				"default": "36px",
+				"large": "40px"
+			},
+			"fixedWidths": {
+				"configPopover": "248px",
+				"menuMin": "220px"
+			},
+			"grid": "Tailwind 4px grid; 8px inside a control row, 16px between groups, 24px card padding"
+		},
+		"stacking": {
+			"dialogOverlay": 70,
+			"dialog": 80,
+			"popover": 80,
+			"tooltip": 90,
+			"toast": 100
+		},
+		"radiusMeaning": {
+			"xs": "2px - hairlines and inner confirm-chip glyphs",
+			"sm": "4px - inline dense actions (hover-revealed row buttons)",
+			"md": "6px - controls: buttons, inputs, sidebar rows, chips, tabs",
+			"lg": "8px - containers: cards, menu items",
+			"xl": "12px - floating surfaces: sidebar panel, composer, menu surface",
+			"full": "999px - circular: icon-only buttons, composer send key, confirm chip"
+		},
+		"namedRules": [
+			{
+				"name": "The Scarce Accent Rule",
+				"rule": "primary is permitted on exactly four things: the primary action, the focus ring, the active selection, and a running state. Nothing else."
+			},
+			{
+				"name": "The Calibrated Text Rule",
+				"rule": "Every text token must clear 4.5:1 against the surface it actually renders on, 12px monospace included. src/index.css records the ratio in a comment beside the value."
+			},
+			{
+				"name": "The Whole-Pixel Hit Area Rule",
+				"rule": "Visual size may go below 24px; the hit area may not. Dense row actions are drawn at 20x20 and extended with after:absolute after:-inset-0.5."
+			},
+			{
+				"name": "The Two-Step Destructive Rule",
+				"rule": "Destructive list actions never fire on the first click and never open a modal. The control swaps to a rounded-full confirm chip; blur, pointer-leave, or Esc cancels."
+			},
+			{
+				"name": "The No-Transition-On-Theme-Switch Rule",
+				"rule": "Theme changes apply transition: none !important to everything for one frame via .pilo-theme-switch, so a re-light is instant and does not smear."
+			}
+		],
+		"themes": {
+			"light": {
+				"name": "Lody Light",
+				"surface": "#ffffff",
+				"panel": "#f7f8fa",
+				"accent": "#296bea",
+				"accentOn": "#ffffff"
+			},
+			"dark": {
+				"name": "Lody Dark (bundled Vesper)",
+				"surface": "#101010",
+				"panel": "#161616",
+				"accent": "#ffc799",
+				"accentOn": "#000000"
+			},
+			"note": "Both themes register the same role names. Components carry no dark: colour overrides."
+		},
+		"codeSource": {
+			"tokens": "src/index.css",
+			"menus": "src/ui/menu-styles.ts",
+			"button": "src/ui/button.tsx",
+			"badge": "src/ui/badge.tsx",
+			"card": "src/ui/card.tsx",
+			"input": "src/ui/input.tsx",
+			"composer": "src/components/chat/chat-composer-frame.tsx",
+			"sidebar": "src/components/sidebar/app-sidebar.tsx",
+			"sidebarRows": "src/components/sidebar/rows.tsx"
+		}
+	},
+	"components": [
+		{
+			"name": "button-primary",
+			"description": "The one filled accent button. At most one per view; it is the thing the screen is about.",
+			"backgroundColor": "{colors.primary}",
+			"textColor": "{colors.primary-foreground}",
+			"typography": "{typography.body}",
+			"rounded": "{rounded.md}",
+			"padding": "16px",
+			"height": "36px",
+			"html": "<button class=\"ds-btn ds-btn--primary\" type=\"button\">\n  <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 5v14M5 12h14\"/></svg>\n  New Session\n</button>",
+			"css": ".ds-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 8px;\n  height: 36px;\n  padding: 0 16px;\n  border: 0;\n  border-radius: 6px;\n  font-family: Inter, system-ui, sans-serif;\n  font-size: 14px;\n  font-weight: 500;\n  line-height: 1.45;\n  white-space: nowrap;\n  cursor: pointer;\n  transition: color 120ms cubic-bezier(0.2, 0, 0, 1),\n              background-color 120ms cubic-bezier(0.2, 0, 0, 1),\n              border-color 120ms cubic-bezier(0.2, 0, 0, 1),\n              scale 120ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-btn:active { scale: 0.96; }\n.ds-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }\n.ds-btn svg { width: 16px; height: 16px; flex: none; }\n\n.ds-btn--primary {\n  background-color: hsl(var(--primary));\n  color: hsl(var(--primary-foreground));\n  box-shadow: 0px 2px 4px 0px hsl(0 0% 0% / 0.1), 0px 1px 2px -1px hsl(0 0% 0% / 0.1);\n}\n.ds-btn--primary:hover { background-color: hsl(var(--button-hover)); }\n\n@media (prefers-reduced-motion: reduce) {\n  .ds-btn { transition: none; }\n  .ds-btn:active { scale: 1; }\n}"
+		},
+		{
+			"name": "button-secondary",
+			"description": "Second-rank action next to a primary. Flat fill, no accent, no competition.",
+			"backgroundColor": "{colors.secondary}",
+			"textColor": "{colors.foreground}",
+			"typography": "{typography.body}",
+			"rounded": "{rounded.md}",
+			"padding": "16px",
+			"height": "36px",
+			"html": "<button class=\"ds-btn-secondary\" type=\"button\">Cancel</button>",
+			"css": ".ds-btn-secondary {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  height: 36px;\n  padding: 0 16px;\n  border: 0;\n  border-radius: 6px;\n  background-color: hsl(var(--button-secondary));\n  color: hsl(var(--button-secondary-foreground));\n  font-family: Inter, system-ui, sans-serif;\n  font-size: 14px;\n  font-weight: 500;\n  line-height: 1.45;\n  cursor: pointer;\n  box-shadow: 0px 2px 4px 0px hsl(0 0% 0% / 0.05);\n  transition: background-color 120ms cubic-bezier(0.2, 0, 0, 1), scale 120ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-btn-secondary:hover { background-color: hsl(var(--button-secondary-hover)); }\n.ds-btn-secondary:active { scale: 0.96; }\n.ds-btn-secondary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }\n\n@media (prefers-reduced-motion: reduce) {\n  .ds-btn-secondary { transition: none; }\n  .ds-btn-secondary:active { scale: 1; }\n}"
+		},
+		{
+			"name": "icon-button-outline",
+			"description": "Icon-only control. 36px square, outline variant, radius md - never a circle.",
+			"backgroundColor": "{colors.background}",
+			"textColor": "{colors.foreground}",
+			"rounded": "{rounded.md}",
+			"padding": "0px",
+			"height": "36px",
+			"width": "36px",
+			"html": "<button class=\"ds-icon-btn\" type=\"button\" aria-label=\"Refresh\">\n  <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M21 12a9 9 0 1 1-2.64-6.36\"/><path d=\"M21 3v6h-6\"/></svg>\n</button>",
+			"css": ".ds-icon-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 36px;\n  height: 36px;\n  padding: 0;\n  border: 1px solid hsl(var(--input-border));\n  border-radius: 6px;\n  background-color: hsl(var(--background));\n  color: hsl(var(--foreground));\n  cursor: pointer;\n  box-shadow: 0px 2px 4px 0px hsl(0 0% 0% / 0.05);\n  transition: background-color 120ms cubic-bezier(0.2, 0, 0, 1),\n              color 120ms cubic-bezier(0.2, 0, 0, 1),\n              border-color 120ms cubic-bezier(0.2, 0, 0, 1),\n              scale 120ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-icon-btn svg { width: 16px; height: 16px; }\n.ds-icon-btn:hover { background-color: hsl(var(--hover)); color: hsl(var(--hover-foreground)); }\n.ds-icon-btn:active { scale: 0.96; }\n.ds-icon-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }\n\n@media (prefers-reduced-motion: reduce) {\n  .ds-icon-btn { transition: none; }\n  .ds-icon-btn:active { scale: 1; }\n}"
+		},
+		{
+			"name": "text-field",
+			"description": "Editable control: outline from border-strong, fill from field, no glow on focus.",
+			"backgroundColor": "{colors.field}",
+			"textColor": "{colors.foreground}",
+			"typography": "{typography.body}",
+			"rounded": "{rounded.md}",
+			"padding": "12px",
+			"height": "36px",
+			"width": "100%",
+			"html": "<label class=\"ds-field\">\n  <span class=\"ds-field__label\">Project Path</span>\n  <input class=\"ds-field__input\" type=\"text\" placeholder=\"/root/code/pilo\" />\n</label>",
+			"css": ".ds-field { display: flex; flex-direction: column; gap: 4px; font-family: Inter, system-ui, sans-serif; }\n.ds-field__label { font-size: 12px; font-weight: 500; line-height: 1.4; color: hsl(var(--foreground)); }\n.ds-field__input {\n  height: 36px;\n  width: 100%;\n  box-sizing: border-box;\n  padding: 0 12px;\n  border: 1px solid hsl(var(--input-border));\n  border-radius: 6px;\n  background-color: hsl(var(--input-field));\n  color: hsl(var(--input-foreground));\n  font: inherit;\n  font-size: 14px;\n  box-shadow: 0px 2px 4px 0px hsl(0 0% 0% / 0.05);\n  transition: border-color 120ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-field__input::placeholder { color: hsl(var(--input-placeholder)); }\n.ds-field__input:hover { border-color: hsl(var(--muted-foreground)); }\n.ds-field__input:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -1px; border-color: hsl(var(--ring)); }\n.ds-field__input:disabled { background-color: hsl(var(--muted)); color: hsl(var(--muted-foreground)); cursor: not-allowed; }\n\n@media (prefers-reduced-motion: reduce) {\n  .ds-field__input { transition: none; }\n}"
+		},
+		{
+			"name": "chat-composer",
+			"description": "The signature surface. A rounded-xl box whose border is the only thing that changes on focus.",
+			"backgroundColor": "{colors.background}",
+			"textColor": "{colors.foreground}",
+			"typography": "{typography.body}",
+			"rounded": "{rounded.xl}",
+			"padding": "6px 8px",
+			"html": "<div class=\"ds-composer\">\n  <textarea class=\"ds-composer__input\" rows=\"1\" placeholder=\"按 @ 提及文件，/ 使用 Pi 命令\"></textarea>\n  <div class=\"ds-composer__toolbar\">\n    <button class=\"ds-composer__attach\" type=\"button\" aria-label=\"Attach file\">\n      <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48\"/></svg>\n    </button>\n    <button class=\"ds-composer__send\" type=\"button\" aria-label=\"Send\">\n      <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 19V5M5 12l7-7 7 7\"/></svg>\n    </button>\n  </div>\n</div>",
+			"css": ".ds-composer {\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 6px 8px;\n  border: 1px solid hsl(var(--foreground) / 0.10);\n  border-radius: 12px;\n  background-color: hsl(var(--background));\n  font-family: Inter, system-ui, sans-serif;\n  transition: border-color 150ms cubic-bezier(0.2, 0, 0, 1);\n}\n.dark .ds-composer { border-color: hsl(var(--input-border) / 0.7); }\n.ds-composer:focus-within { border-color: hsl(var(--ring) / 0.4); }\n.ds-composer__input {\n  padding: 0 4px;\n  min-height: 48px;\n  border: 0;\n  background: transparent;\n  color: hsl(var(--input-foreground));\n  font: inherit;\n  font-size: 14px;\n  line-height: 24px;\n  resize: none;\n}\n.ds-composer__input::placeholder { color: hsl(var(--input-placeholder)); }\n.ds-composer__input:focus { outline: none; }\n.ds-composer__toolbar { display: flex; align-items: center; gap: 8px; padding-top: 2px; }\n.ds-composer__attach {\n  display: inline-flex; align-items: center; justify-content: center;\n  width: 28px; height: 28px; padding: 0;\n  border: 0; border-radius: 6px; background: transparent;\n  color: hsl(var(--muted-foreground)); cursor: pointer;\n  transition: color 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-composer__attach svg { width: 16px; height: 16px; }\n.ds-composer__attach:hover { background-color: hsl(var(--hover)); color: hsl(var(--foreground)); }\n.ds-composer__send {\n  display: inline-flex; align-items: center; justify-content: center;\n  width: 28px; height: 28px; padding: 0;\n  margin-inline-start: auto;\n  border: 0; border-radius: 999px;\n  background-color: hsl(var(--foreground)); color: hsl(var(--background));\n  cursor: pointer;\n  transition: background-color 100ms cubic-bezier(0.2, 0, 0, 1), scale 100ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-composer__send svg { width: 16px; height: 16px; }\n.ds-composer__send:hover { background-color: hsl(var(--foreground) / 0.85); }\n.ds-composer__send:active { scale: 0.96; }\n.ds-composer__send:focus-visible,\n.ds-composer__attach:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }\n\n@media (prefers-reduced-motion: reduce) {\n  .ds-composer, .ds-composer__attach, .ds-composer__send { transition: none; }\n  .ds-composer__send:active { scale: 1; }\n}"
+		},
+		{
+			"name": "sidebar-row",
+			"description": "28px dense row. Actions are invisible until the row is hovered and extend their hit area with a pseudo-element.",
+			"backgroundColor": "transparent",
+			"textColor": "{colors.foreground-muted}",
+			"typography": "{typography.body}",
+			"rounded": "{rounded.md}",
+			"padding": "8px",
+			"height": "28px",
+			"width": "100%",
+			"html": "<div class=\"ds-row group\">\n  <button class=\"ds-row__label\" type=\"button\">\n    <svg class=\"ds-row__chevron\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M6 9l6 6 6-6\"/></svg>\n    <svg class=\"ds-row__icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3 7a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.7.9l.8 1.2a2 2 0 0 0 1.7.9H19a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/></svg>\n    <span class=\"ds-row__name\">pilo</span>\n  </button>\n  <button class=\"ds-row__action\" type=\"button\" aria-label=\"More\">\n    <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"5\" cy=\"12\" r=\"1\"/><circle cx=\"12\" cy=\"12\" r=\"1\"/><circle cx=\"19\" cy=\"12\" r=\"1\"/></svg>\n  </button>\n</div>",
+			"css": ".ds-row {\n  display: flex;\n  align-items: center;\n  gap: 4px;\n  height: 28px;\n  padding-inline-end: 8px;\n  font-family: Inter, system-ui, sans-serif;\n}\n.ds-row__label {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex: 1 1 auto;\n  min-width: 0;\n  height: 28px;\n  padding: 0 8px;\n  border: 1px solid transparent;\n  border-radius: 6px;\n  background: transparent;\n  color: hsl(var(--sidebar-foreground));\n  font: inherit;\n  font-size: 14px;\n  text-align: start;\n  cursor: pointer;\n  transition: color 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-row__label:hover { background-color: hsl(var(--sidebar-hover)); color: hsl(var(--sidebar-hover-foreground)); }\n.ds-row__label:focus-visible { outline: 2px solid hsl(var(--sidebar-ring)); outline-offset: -1px; }\n.ds-row__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }\n.ds-row__chevron, .ds-row__icon { width: 14px; height: 14px; flex: none; color: hsl(var(--sidebar-foreground-muted)); }\n\n.ds-row__action {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 20px;\n  height: 20px;\n  padding: 0;\n  border: 0;\n  border-radius: 4px;\n  background: transparent;\n  color: hsl(var(--muted-foreground));\n  opacity: 0;\n  pointer-events: none;\n  cursor: pointer;\n  transition: opacity 100ms cubic-bezier(0.2, 0, 0, 1), color 100ms cubic-bezier(0.2, 0, 0, 1), background-color 100ms cubic-bezier(0.2, 0, 0, 1);\n}\n/* drawn at 20x20, hit area 24x24 - the Whole-Pixel Hit Area Rule */\n.ds-row__action::after { content: \"\"; position: absolute; inset: -2px; }\n.ds-row__action svg { width: 14px; height: 14px; }\n.ds-row:hover .ds-row__action,\n.ds-row__action:focus-visible { opacity: 1; pointer-events: auto; }\n.ds-row__action:hover { color: hsl(var(--foreground)); background-color: hsl(var(--muted)); }\n.ds-row__action:focus-visible { outline: 2px solid hsl(var(--sidebar-ring)); outline-offset: 2px; }\n\n@media (prefers-reduced-motion: reduce) {\n  .ds-row__label, .ds-row__action { transition: none; }\n}"
+		},
+		{
+			"name": "status-chip",
+			"description": "20px chip. Status variants are the only tints in the system, so status never looks like a button.",
+			"backgroundColor": "{colors.primary}",
+			"textColor": "{colors.primary-foreground}",
+			"typography": "{typography.label}",
+			"rounded": "{rounded.md}",
+			"padding": "10px",
+			"height": "20px",
+			"html": "<div class=\"ds-chip-set\">\n  <span class=\"ds-chip ds-chip--running\">Running</span>\n  <span class=\"ds-chip ds-chip--success\">Connected</span>\n  <span class=\"ds-chip ds-chip--warning\">Degraded</span>\n</div>",
+			"css": ".ds-chip-set { display: flex; align-items: center; gap: 8px; }\n.ds-chip {\n  display: inline-flex;\n  align-items: center;\n  height: 20px;\n  padding: 0 10px;\n  border: 1px solid transparent;\n  border-radius: 6px;\n  font-family: Inter, system-ui, sans-serif;\n  font-size: 12px;\n  font-weight: 600;\n  line-height: 1.4;\n  white-space: nowrap;\n  box-shadow: 0px 2px 4px 0px hsl(0 0% 0% / 0.05);\n}\n.ds-chip--running { background-color: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }\n.ds-chip--success {\n  border-color: hsl(var(--status-success) / 0.20);\n  background-color: hsl(var(--status-success) / 0.12);\n  color: hsl(var(--status-success));\n}\n.ds-chip--warning {\n  border-color: hsl(var(--status-warning) / 0.20);\n  background-color: hsl(var(--status-warning) / 0.12);\n  color: hsl(var(--status-warning));\n}"
+		},
+		{
+			"name": "card",
+			"description": "Container, not callout. Border plus one surface step; no accent edge, no coloured header.",
+			"backgroundColor": "{colors.surface}",
+			"textColor": "{colors.foreground-muted}",
+			"rounded": "{rounded.lg}",
+			"padding": "24px",
+			"width": "100%",
+			"html": "<section class=\"ds-card\">\n  <header class=\"ds-card__header\">\n    <h3 class=\"ds-card__title\">Remote Connection</h3>\n    <p class=\"ds-card__description\">Pi runs where the code lives. Nothing is synced locally.</p>\n  </header>\n  <div class=\"ds-card__body\">\n    <span class=\"ds-card__value\">SSH · build-01.internal</span>\n  </div>\n</section>",
+			"css": ".ds-card {\n  border: 1px solid hsl(var(--border));\n  border-radius: 8px;\n  background-color: hsl(var(--card));\n  color: hsl(var(--card-foreground));\n  font-family: Inter, system-ui, sans-serif;\n  box-shadow: 0px 2px 4px 0px hsl(0 0% 0% / 0.05);\n}\n.ds-card__header { display: flex; flex-direction: column; gap: 6px; padding: 24px; }\n.ds-card__title { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -0.025em; color: hsl(var(--foreground)); }\n.ds-card__description { margin: 0; font-size: 14px; line-height: 1.45; color: hsl(var(--muted-foreground)); }\n.ds-card__body { padding: 0 24px 24px; }\n.ds-card__value { font-family: \"JetBrains Mono\", ui-monospace, monospace; font-size: 12px; line-height: 1.5; color: hsl(var(--code-foreground)); }"
+		},
+		{
+			"name": "menu-item",
+			"description": "32px row for a floating menu. Hover is the only selection state - there is no separate selected colour.",
+			"backgroundColor": "transparent",
+			"textColor": "{colors.foreground}",
+			"typography": "{typography.body}",
+			"rounded": "{rounded.lg}",
+			"padding": "12px",
+			"height": "32px",
+			"width": "100%",
+			"html": "<div class=\"ds-menu\" role=\"menu\">\n  <div class=\"ds-menu__label\">Session</div>\n  <button class=\"ds-menu__item\" type=\"button\" role=\"menuitem\">\n    <span class=\"ds-menu__icon\">\n      <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z\"/></svg>\n    </span>\n    Rename\n    <span class=\"ds-menu__extra\">R</span>\n  </button>\n  <button class=\"ds-menu__item\" type=\"button\" role=\"menuitem\" data-variant=\"destructive\">\n    <span class=\"ds-menu__icon\">\n      <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6\"/></svg>\n    </span>\n    Delete\n  </button>\n</div>",
+			"css": ".ds-menu {\n  min-width: 220px;\n  padding: 4px;\n  border-radius: 12px;\n  background-color: hsl(var(--background));\n  color: hsl(var(--foreground));\n  font-family: Inter, system-ui, sans-serif;\n  /* edge is the ring in the stack, not a border - no layout box, theme-derived color */\n  box-shadow: 0 0 0 1px color-mix(in oklab, hsl(var(--background)) 90%, hsl(var(--foreground)) 10%),\n              0 4px 12px 0 rgb(0 0 0 / 0.08),\n              0 1px 3px 0 rgb(0 0 0 / 0.06);\n}\n.ds-menu__label { padding: 6px 12px; font-size: 12px; font-weight: 500; line-height: 1.4; color: hsl(var(--muted-foreground)); }\n.ds-menu__item {\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  width: 100%;\n  min-height: 32px;\n  padding: 6px 12px;\n  border: 0;\n  border-radius: 8px;\n  background: transparent;\n  color: hsl(var(--foreground));\n  font: inherit;\n  font-size: 14px;\n  font-weight: 500;\n  line-height: 20px;\n  text-align: start;\n  cursor: default;\n  transition: color 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms cubic-bezier(0.2, 0, 0, 1);\n}\n.ds-menu__icon { display: flex; align-items: center; justify-content: center; width: 14px; height: 14px; flex: none; color: hsl(var(--muted-foreground)); }\n.ds-menu__icon svg { width: 100%; height: 100%; }\n.ds-menu__extra { margin-inline-start: auto; padding-inline-start: 16px; font-family: \"JetBrains Mono\", ui-monospace, monospace; font-size: 12px; color: hsl(var(--muted-foreground)); }\n.ds-menu__item:hover, .ds-menu__item:focus-visible { background-color: hsl(var(--hover)); color: hsl(var(--hover-foreground)); outline: none; }\n.ds-menu__item[data-variant=\"destructive\"] { color: hsl(var(--destructive)); }\n.ds-menu__item[data-variant=\"destructive\"] .ds-menu__icon { color: hsl(var(--destructive)); }\n.ds-menu__item[data-variant=\"destructive\"]:hover,\n.ds-menu__item[data-variant=\"destructive\"]:focus-visible { background-color: hsl(var(--destructive) / 0.10); color: hsl(var(--destructive)); }\n\n@media (prefers-reduced-motion: reduce) { .ds-menu__item { transition: none; } }"
+		}
+	]
 }

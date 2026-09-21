@@ -215,21 +215,21 @@ components:
 
 **Creative North Star: The Quiet Workbench.** Pilo is a place where work happens, not a place that announces itself. Chrome recedes until the only loud things on screen are the conversation and the code — which is exactly why the surfaces are near-white and cool-grey, why row actions are invisible until you hover the row, why shadows are measured in single-digit percent alpha, and why exactly one accent hue is allowed to exist.
 
-Two themes, one structure. Light is **Lody Light**: white paper, `#f7f8fa` panels, cool grey text, and a blue accent deliberately darkened to `hsl(219.7 82.2% 54%)` so white text on it reads 4.8:1. Dark is the bundled **Vesper**: a `#101010` canvas, grey ladder, and a warm amber accent `hsl(27.1 100% 80%)` carrying *black* text. Dark is not the light palette inverted — it is a second palette that happens to share the same role names.
+Two themes, one structure. Light is **Lody Light**: white paper, `#f7f8fa` panels, cool grey text, and a blue accent deliberately darkened to `hsl(219.7 82.2% 54%)` so white text on it reads 4.8:1. Dark is the bundled **Vesper**: a `#101010` canvas, grey ladder, and a warm amber accent `hsl(27.1 100% 80%)` carrying _black_ text. Dark is not the light palette inverted — it is a second palette that happens to share the same role names.
 
 The personality comes from three places, and none of them are decoration: **restraint** (one accent, four surface steps, one control height), **the two typographic voices** (Inter for chrome, JetBrains Mono for anything the user might paste into a terminal), and an **evidence-based contrast discipline** — every text token in `src/index.css` carries a comment recording the ratio it was calibrated to against the surface it actually renders on, 12px monospace included.
 
 ## Colors
 
-Tokens live as raw HSL triplets in `:root` / `.dark` in `src/index.css`, mapped to Tailwind utilities in `@theme inline`. Components reference the *roles* (`bg-background`, `text-muted-foreground`), never the values — which is what lets both themes be correct without a single `dark:` color override in application code.
+Tokens live as raw HSL triplets in `:root` / `.dark` in `src/index.css`, mapped to Tailwind utilities in `@theme inline`. Components reference the _roles_ (`bg-background`, `text-muted-foreground`), never the values — which is what lets both themes be correct without a single `dark:` color override in application code.
 
 **The accent is scarce, and that is the whole system.** `primary` appears on four things and nothing else: the primary action, the focus ring, the active sidebar selection, and a running state. A screen with two blue things in it is a screen that has not decided what it is about.
 
-- **Light accent.** `primary: hsl(219.7 82.2% 54%)` — Lody's `#5B8DEF` pushed down one step so white text clears AA. The ring is the *undarkened* `hsl(219.7 82.2% 64.7%)`, because a focus ring must be visible against the page rather than carry text — two jobs, two lightnesses.
+- **Light accent.** `primary: hsl(219.7 82.2% 54%)` — Lody's `#5B8DEF` pushed down one step so white text clears AA. The ring is the _undarkened_ `hsl(219.7 82.2% 64.7%)`, because a focus ring must be visible against the page rather than carry text — two jobs, two lightnesses.
 - **Dark accent.** `primary: hsl(27.1 100% 80%)` with `primary-foreground: hsl(0 0% 0%)`. The theme flips the foreground, not the accent. Never put white text on the amber.
 - **Surface ladder.** `background → surface → muted → hover`. Light spreads it wide (`100% / 97.5% / 94.3% / 94.9%`); dark compresses it (`6.3% / 8.6% / 13.7% / 15.7%`) because `#101010` leaves very little room below. Note that dark's `muted` is deliberately one step off the canvas — at zero step, selection and hover are invisible.
 - **Borders do not carry state.** `border` is for dividers and resting surface edges, `border-strong` for the outline of an editable control. State is expressed with the focus ring or a fill change, never with a border color.
-- **Status colors are separate from the accent.** `success` (`137.2 66% 30%`) and `warning` are *darker and duller* than `primary` in light mode, so a status chip never competes with the action next to it. In dark, `warning` departs from Vesper entirely — 50° yellow instead of 27° orange — because a warning sitting beside an amber accent must not read as the same signal.
+- **Status colors are separate from the accent.** `success` (`137.2 66% 30%`) and `warning` are _darker and duller_ than `primary` in light mode, so a status chip never competes with the action next to it. In dark, `warning` departs from Vesper entirely — 50° yellow instead of 27° orange — because a warning sitting beside an amber accent must not read as the same signal.
 - **Code has its own surface.** `code-surface` equals `surface` and `code-added`/`code-removed` are literally `success`/`danger`, so diffs inherit the status semantics for free. The light theme keeps all eight syntax hues; dark collapses to three (grey keyword, mint string, grey comment) and lets number/function/title/builtin fall to the amber, because Vesper is a one-accent theme and pretending otherwise produces rainbow soup.
 
 ## Typography
@@ -264,7 +264,7 @@ Two families, both self-hosted via `@fontsource`, both Latin-subset with a delib
 
 1. **Resting surfaces get a border.** Shadow is optional and tiny — `shadow-xs` is `0 2px 4px / 5%`. If a card feels flat, the answer is a border or a surface step, not more shadow.
 2. **Floating surfaces get a two-stop stack.** `shadow-panel` (`0 1px 2px / 8%` + `0 10px 30px / 10%`) and `shadow-popover` (`0 2px 6px / 10%` + `0 18px 50px / 14%`) each pair a tight contact shadow with a wide ambient one. Two stops, always — one shadow reads as a smudge, three reads as a mistake.
-3. **Dark mode is not a no-shadow mode; it is a heavier-shadow mode.** `shadow-panel` in dark is `0 1px 1px / 35%` + `0 14px 44px / 55%` — roughly *four times* the alpha. Black on black needs an actual pool of darkness to separate two surfaces. Copying light's shadow values into dark produces flat, stuck-together panels.
+3. **Dark mode is not a no-shadow mode; it is a heavier-shadow mode.** `shadow-panel` in dark is `0 1px 1px / 35%` + `0 14px 44px / 55%` — roughly _four times_ the alpha. Black on black needs an actual pool of darkness to separate two surfaces. Copying light's shadow values into dark produces flat, stuck-together panels.
 4. **Menus have no border at all.** The edge is the first ring in a `boxShadow` stack: `0 0 0 1px color-mix(in oklab, hsl(var(--background)) 90%, hsl(var(--foreground)) 10%)` — a color derived from the live theme, so the edge stays exactly one step off the surface in both modes, and it costs no layout box (`src/ui/menu-styles.ts`).
 5. **Never stack shadows from two different families** on the same element.
 
@@ -274,13 +274,13 @@ Two families, both self-hosted via `@fontsource`, both Latin-subset with a delib
 
 Radius is semantic, not whimsical:
 
-| Radius | Role | Examples |
-| --- | --- | --- |
-| `md` 6px | **controls** | buttons, inputs, sidebar rows, chips, tabs |
-| `lg` 8px | **containers** | cards, menu items |
-| `xl` 12px | **floating surfaces** | sidebar panel, composer surface, menu surface |
-| `sm` 4px | **inline dense actions** | hover-revealed row buttons, confirm chip's inner icon |
-| `full` | **circular** | icon-only round buttons, the composer send key, the confirm chip |
+| Radius    | Role                     | Examples                                                         |
+| --------- | ------------------------ | ---------------------------------------------------------------- |
+| `md` 6px  | **controls**             | buttons, inputs, sidebar rows, chips, tabs                       |
+| `lg` 8px  | **containers**           | cards, menu items                                                |
+| `xl` 12px | **floating surfaces**    | sidebar panel, composer surface, menu surface                    |
+| `sm` 4px  | **inline dense actions** | hover-revealed row buttons, confirm chip's inner icon            |
+| `full`    | **circular**             | icon-only round buttons, the composer send key, the confirm chip |
 
 **Concentricity is enforced by arithmetic, not by eye.** An inner radius must be smaller than its container's by at least the container's padding. The sidebar panel is `rounded-xl` with `2px` padding, so the rows inside it are `rounded-md` — never `rounded-xl` again. The composer is `rounded-xl` with `6px` padding, so its send key is `full` (a circle is always concentric) and its attachment button is `md`.
 
@@ -290,15 +290,17 @@ Radius is semantic, not whimsical:
 
 **Buttons.** Six variants on one base: `default`, `secondary`, `outline`, `ghost`, `destructive`, `link` — four sizes `default 36px`, `sm 32px`, `lg 40px`, `icon 36px square`. Every variant presses with `active:scale-[0.96]` at `--dur-1` — a 4% squash is the entire tactile vocabulary of this app, and it is enough. `shadow-sm` on the filled variants, `shadow-xs` on `secondary`/`outline`, nothing on `ghost`. `ghost` and `outline` share the same hover fill (`bg-hover`) so a toolbar of mixed variants still feels like one toolbar.
 
-**The chat composer is the signature surface.** A `rounded-xl` box with a hairline border at `foreground/[0.10]` in light and `input-border/70` in dark, over `bg-background`. It has two states and they are the same box: resting, and focused — where only the *border* changes, to `ring/40`. No ring, no glow, no shadow, no lift. Inside it: a borderless transparent textarea (`min-h-12`, no focus ring of its own), a toolbar row, and a circular send key that is filled with `foreground` and inverted (`text-background`) so the single most-pressed control in the app is achromatic and never competes with the accent (`src/components/chat/chat-composer-frame.tsx`).
+**The chat composer is the signature surface.** A `rounded-xl` box with a hairline border at `foreground/[0.10]` in light and `input-border/70` in dark, over `bg-background`. It has two states and they are the same box: resting, and focused — where only the _border_ changes, to `ring/40`. No ring, no glow, no shadow, no lift. Inside it: a borderless transparent textarea (`min-h-12`, no focus ring of its own), a toolbar row, and a circular send key that is filled with `foreground` and inverted (`text-background`) so the single most-pressed control in the app is achromatic and never competes with the accent (`src/components/chat/chat-composer-frame.tsx`).
 
 **Sidebar rows are 28px and silent until touched.** A `rounded-md` row with a transparent border that becomes visible on hover; all inline actions (rename, menu, delete) are `opacity-0 pointer-events-none` until `group-hover`. The row itself is a `div`, not a button, and the actions are independent buttons inside it — native nesting of interactive controls is invalid. The file carries an `oxlint-disable jsx-a11y/prefer-tag-over-role` for exactly this reason.
 
-**Badges are 20px chips with four fills** plus two tinted status variants: `success` and `warning` use a `12%` tint fill with a `20%` border of the same hue and the *full-strength* hue as text. That is the only place in the system where a tint is used, and it is used for status so that status never looks like a button.
+**Badges are 20px chips with four fills** plus two tinted status variants: `success` and `warning` use a `12%` tint fill with a `20%` border of the same hue and the _full-strength_ hue as text. That is the only place in the system where a tint is used, and it is used for status so that status never looks like a button.
 
 **Cards are `rounded-lg` + `border` + `bg-card` + `shadow-xs`**, padding `24px`, title at 24px/600. They are containers, not callouts: no accent left border, no colored header.
 
-**Menu items are 32px minimum** with `rounded-lg`, a `12px` leading icon slot, and a trailing `ms-auto` slot at 12px monospace for shortcuts and counts. Focus and open-state both use `bg-hover` — the menu does not have a separate "selected" color, because in a menu hover *is* selection.
+**Notices are the quietest surface in the system.** Chat-column notices — interrupted turn, runtime recovery, plugin notifications, pending queue — share one shape: `rounded-xl`, a `border-border/60` hairline, one step of `bg-muted/30`, `text-xs`, and `mb-1` to seat it in the message column. No shadow (it is inline, not floating), no accent fill. The tone lives _only_ in a 14px leading icon, colored by `NoticeIcon` from one of four tones: `info` (muted), `success`, `warning`, `danger`. A list form adds `NoticeCardHeader` — title left, `tabular-nums` count right — over a `divide-y divide-border/30` body. `NoticeCard` renders `<output>` for `announce="status"` and a `role="alert"` `<div>` for `announce="alert"`, so the status semantics are native and never a `div role="status"` (`src/ui/notice.tsx`).
+
+**Menu items are 32px minimum** with `rounded-lg`, a `12px` leading icon slot, and a trailing `ms-auto` slot at 12px monospace for shortcuts and counts. Focus and open-state both use `bg-hover` — the menu does not have a separate "selected" color, because in a menu hover _is_ selection.
 
 **Motion, in full.** The system animates only `color`, `background-color`, `border-color`, `opacity`, and `scale`. `--dur-1: 120ms` for hover, press, and focus; `--dur-2: 180ms` for entering surfaces; `--ease: cubic-bezier(0.2, 0, 0, 1)` everywhere. Nothing animates a layout property, and `prefers-reduced-motion` resets transitions globally.
 
@@ -306,7 +308,7 @@ Radius is semantic, not whimsical:
 
 **The Scarce Accent Rule.** `primary` is permitted on exactly four things: the primary action, the focus ring, the active selection, and a running/active state. No accent headings, no accent borders, no accent icons, no accent chart lines. When a screen has two attention-grabs, delete one.
 
-**The Calibrated Text Rule.** Every text token is chosen against the surface it actually renders on and must clear 4.5:1 *there* — 12px monospace counts as body text, not as decoration. `src/index.css` records the ratio in a comment beside each value (`220 8.9% 43.8%` → "4.6:1 on `#eef0f3`"). A new text token is not finished until its comment exists. When a background changes, every text token that touches it is re-checked.
+**The Calibrated Text Rule.** Every text token is chosen against the surface it actually renders on and must clear 4.5:1 _there_ — 12px monospace counts as body text, not as decoration. `src/index.css` records the ratio in a comment beside each value (`220 8.9% 43.8%` → "4.6:1 on `#eef0f3`"). A new text token is not finished until its comment exists. When a background changes, every text token that touches it is re-checked.
 
 **The Whole-Pixel Hit Area Rule.** Visual size may go below 24px; the hit area may not. Dense row actions are drawn at `20×20` and extended to `24×24` with `after:absolute after:-inset-0.5 after:content-['']` (`src/components/sidebar/rows.tsx:29-38`). The pseudo-element is not optional, and it is not a workaround — it is how a compact row stays compact and still passes a touch-target audit.
 

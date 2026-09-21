@@ -54,6 +54,12 @@ export { HoverCard, HoverCardTrigger, HoverCardContent } from "./hover-card";
 export { Input } from "./input";
 export { Label } from "./label";
 export {
+	NoticeCard,
+	NoticeCardHeader,
+	NoticeIcon,
+	type NoticeTone,
+} from "./notice";
+export {
 	Popover,
 	PopoverTrigger,
 	PopoverAnchor,

@@ -10,7 +10,7 @@ import {
 
 import type { ChatRuntimeRecoveryState } from "@/components/chat/use-chat-runtime";
 import { appErrorActionLabel } from "@/lib/app-error";
-import { Button } from "@/ui";
+import { Button, NoticeCard, NoticeIcon } from "@/ui";
 
 export function ChatRuntimeRecoveryNotice({
 	state,
@@ -39,18 +39,18 @@ export function ChatRuntimeRecoveryNotice({
 	const detail = error?.detail?.trim();
 
 	return (
-		<div
-			role={state.status === "failed" ? "alert" : "status"}
-			aria-live="polite"
-			className="mb-1 min-w-0 rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs"
+		<NoticeCard
+			announce={state.status === "failed" ? "alert" : "status"}
+			ariaLive="polite"
+			className="px-3 py-2"
 		>
 			<div className="flex min-w-0 items-start gap-2.5">
 				{recovering ? (
-					<LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin text-muted-foreground" />
+					<NoticeIcon icon={LoaderCircle} className="animate-spin" />
 				) : recovered ? (
-					<CircleCheck className="mt-0.5 size-3.5 shrink-0 text-status-success" />
+					<NoticeIcon icon={CircleCheck} tone="success" />
 				) : (
-					<TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-status-warning" />
+					<NoticeIcon icon={TriangleAlert} tone="warning" />
 				)}
 				<div className="min-w-0 flex-1">
 					<div className="font-medium text-foreground/85">
@@ -100,6 +100,6 @@ export function ChatRuntimeRecoveryNotice({
 					) : null}
 				</div>
 			) : null}
-		</div>
+		</NoticeCard>
 	);
 }
