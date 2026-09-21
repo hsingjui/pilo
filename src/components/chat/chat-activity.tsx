@@ -301,7 +301,7 @@ function ActivityProcessStep({
 	return (
 		<div
 			className={cn(
-				"flex min-h-7 w-full items-start gap-1.5 py-1",
+				"flex min-h-6 w-full items-start gap-1.5 py-0.5",
 				PROCESS_TEXT_CLASS,
 			)}
 		>
@@ -315,7 +315,15 @@ function ThinkingActivityView({ activity }: { activity: ThinkingActivity }) {
 	const running = activity.status === "running";
 	return (
 		<ActivityProcessStep
-			icon={<Sparkles className={cn(PROCESS_ICON_CLASS, "mt-0.5")} />}
+			icon={
+				<Sparkles
+					className={cn(
+						PROCESS_ICON_CLASS,
+						"mt-0.5",
+						running && "animate-pulse",
+					)}
+				/>
+			}
 		>
 			{activity.text ? (
 				<ChatMarkdown
@@ -411,6 +419,7 @@ function ToolCallActivityView({
 						hasDetails
 							? "hover:bg-muted/40 hover:text-foreground"
 							: "cursor-default",
+						open && "bg-muted/35 text-foreground",
 						activity.isError && "text-destructive",
 					)}
 					onClick={(event) =>
@@ -452,35 +461,32 @@ function ToolCallActivityView({
 	);
 }
 
-function activityLabel(activity: AssistantActivity[], running: boolean) {
-	if (running) {
-		let current: AssistantActivity | undefined;
-		for (let index = activity.length - 1; index >= 0; index -= 1) {
-			if (activity[index].status === "running") {
-				current = activity[index];
-				break;
-			}
+function runningActivityLabel(activity: AssistantActivity[]) {
+	let current: AssistantActivity | undefined;
+	for (let index = activity.length - 1; index >= 0; index -= 1) {
+		if (activity[index].status === "running") {
+			current = activity[index];
+			break;
 		}
-		if (current?.type === "tool") return `正在${toolLabel(current.toolName)}…`;
-		if (current?.type === "thinking") return "思考中…";
-		return "正在处理…";
 	}
+	if (current?.type === "tool") return `正在${toolLabel(current.toolName)}…`;
+	if (current?.type === "thinking") return "思考中…";
+	return "正在处理…";
+}
 
-	const summary = summarizeAssistantActivity(activity);
+function activitySummaryLabel(
+	summary: ReturnType<typeof summarizeAssistantActivity>,
+) {
 	const parts: string[] = [];
 	if (summary.hasThought) parts.push("思考过程");
-	if (summary.readFileCount > 0) {
-		parts.push(`读取了 ${summary.readFileCount} 个文件`);
-	}
-	if (summary.createFileCount > 0) {
-		parts.push(`新增了 ${summary.createFileCount} 个文件`);
-	}
-	if (summary.editFileCount > 0) {
-		parts.push(`修改了 ${summary.editFileCount} 个文件`);
-	}
-	if (summary.commandCount > 0) {
-		parts.push(`调用了 ${summary.commandCount} 个命令`);
-	}
+	if (summary.readFileCount > 0)
+		parts.push(`读取 ${summary.readFileCount} 个文件`);
+	if (summary.createFileCount > 0)
+		parts.push(`新增 ${summary.createFileCount} 个文件`);
+	if (summary.editFileCount > 0)
+		parts.push(`修改 ${summary.editFileCount} 个文件`);
+	if (summary.commandCount > 0)
+		parts.push(`执行 ${summary.commandCount} 个命令`);
 	return parts.join(" · ") || "已完成";
 }
 
@@ -507,11 +513,8 @@ export function AssistantActivityView({
 		!running && showWorkDuration && durationMs !== undefined
 			? formatWorkDuration(durationMs)
 			: "";
-	const hasWorkSummary = Boolean(durationLabel);
-	const [workOpen, setWorkOpen] = useChatExpansionState(
-		`${expansionKey}:work`,
-		initiallyOpen,
-	);
+	const summary = running ? null : summarizeAssistantActivity(activity);
+	const summaryLabel = summary ? activitySummaryLabel(summary) : "";
 	const [groupOpen, setGroupOpen] = useChatExpansionState(
 		`${expansionKey}:group`,
 		initiallyOpen,
@@ -529,17 +532,19 @@ export function AssistantActivityView({
 		) {
 			return;
 		}
-		setWorkOpen(false);
 		setGroupOpen(false);
-	}, [autoCollapseEligible, setGroupOpen, setWorkOpen]);
+	}, [autoCollapseEligible, setGroupOpen]);
 	if (activity.length === 0) return null;
 
-	const group = (
-		<div data-chat-expansion-root>
+	return (
+		<div
+			className="mb-1 mt-0.5 w-full text-muted-foreground"
+			data-chat-expansion-root
+		>
 			<button
 				type="button"
 				className={cn(
-					"group/activity flex w-full items-center gap-1.5 rounded-md py-0.5 pr-1 text-left transition-colors hover:bg-muted/40 hover:text-foreground",
+					"group/activity -mx-1 flex min-h-7 w-[calc(100%+0.5rem)] items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-muted/40 hover:text-foreground",
 					PROCESS_TEXT_CLASS,
 				)}
 				onClick={(event) =>
@@ -557,7 +562,17 @@ export function AssistantActivityView({
 					)}
 				/>
 				<span className="min-w-0 flex-1 truncate">
-					{activityLabel(activity, running)}
+					{running ? (
+						runningActivityLabel(activity)
+					) : durationLabel ? (
+						<>
+							<span className="text-foreground/75">工作了 {durationLabel}</span>
+							<span className="mx-1 text-muted-foreground/60">·</span>
+							<span>{summaryLabel}</span>
+						</>
+					) : (
+						summaryLabel
+					)}
 				</span>
 				{running ? (
 					<LoaderCircle className="size-3.5 shrink-0 animate-spin" />
@@ -579,42 +594,6 @@ export function AssistantActivityView({
 					)}
 				</div>
 			) : null}
-		</div>
-	);
-
-	return (
-		<div
-			className="mb-1 mt-0.5 w-full text-muted-foreground"
-			data-chat-expansion-root
-		>
-			{hasWorkSummary ? (
-				<>
-					<button
-						type="button"
-						className="group flex w-full items-center gap-1.5 rounded-md py-0.5 pr-1 text-left text-[12.5px] font-medium leading-snug text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-						onClick={(event) =>
-							toggleChatExpansionWithAnchor(event.currentTarget, () =>
-								setWorkOpen((value) => !value),
-							)
-						}
-						aria-expanded={workOpen}
-					>
-						<ChevronRight
-							className={cn(
-								PROCESS_ICON_CLASS,
-								"transition-transform duration-150 ease-out",
-								workOpen && "rotate-90",
-							)}
-						/>
-						<span className="min-w-0 flex-1 truncate">
-							工作了 {durationLabel}
-						</span>
-					</button>
-					{workOpen ? group : null}
-				</>
-			) : (
-				group
-			)}
 		</div>
 	);
 }
