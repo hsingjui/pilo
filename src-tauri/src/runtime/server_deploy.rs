@@ -182,6 +182,7 @@ fn spawn_piped_server(
     label: &str,
     reused_deployment: bool,
 ) -> Result<SpawnedServer, String> {
+    super::hide_console_window(&mut command);
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -223,19 +224,19 @@ pub(super) fn parse_target_probe(output: &[u8], label: &str) -> Result<ServerTar
 }
 
 async fn probe_wsl_target(distro: &str) -> Result<ServerTarget, String> {
+    let mut command = Command::new("wsl.exe");
+    command.args([
+        "--distribution",
+        distro,
+        "--exec",
+        "/bin/sh",
+        "-c",
+        "printf '%s\\t%s\\n' \"$(uname -s)\" \"$(uname -m)\"",
+    ]);
+    super::hide_console_window(&mut command);
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(10),
-        Command::new("wsl.exe")
-            .args([
-                "--distribution",
-                distro,
-                "--exec",
-                "/bin/sh",
-                "-c",
-                "printf '%s\\t%s\\n' \"$(uname -s)\" \"$(uname -m)\"",
-            ])
-            .stdin(Stdio::null())
-            .output(),
+        command.stdin(Stdio::null()).output(),
     )
     .await
     .map_err(|_| format!("timed out while probing WSL platform for '{distro}'"))?
@@ -285,21 +286,21 @@ async fn deploy_server_wsl(
         "set -e; dst=\"$HOME/{SERVER_REMOTE_DIR}/pilo-server\"; expected=\"{fingerprint}\"; force={force_redeploy}; actual=$(\"$dst\" --fingerprint 2>/dev/null || true); if [ \"$force\" = \"false\" ] && [ \"$actual\" = \"$expected\" ]; then printf 'ready\\n'; exit 0; fi; src=$(wslpath -u \"$1\"); [ -f \"$src\" ] || {{ printf 'source_missing\\t%s\\n' \"$src\" >&2; exit 44; }}; mkdir -p \"$(dirname \"$dst\")\"; tmp=\"$dst.tmp.$$\"; trap 'rm -f \"$tmp\"' EXIT; cp -- \"$src\" \"$tmp\"; chmod 700 \"$tmp\"; actual=$(\"$tmp\" --fingerprint 2>/dev/null || true); [ \"$actual\" = \"$expected\" ] || {{ printf 'fingerprint_mismatch\\n' >&2; exit 43; }}; mv -f \"$tmp\" \"$dst\"; trap - EXIT; rm -rf \"$HOME/{LEGACY_SERVER_REMOTE_DIR}\"; printf 'installed\\n'",
         fingerprint = artifact.fingerprint,
     );
+    let mut command = Command::new("wsl.exe");
+    command.args([
+        "--distribution",
+        distro,
+        "--exec",
+        "/bin/sh",
+        "-c",
+        &install_script,
+        "pilo-deploy",
+        &source,
+    ]);
+    super::hide_console_window(&mut command);
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(20),
-        Command::new("wsl.exe")
-            .args([
-                "--distribution",
-                distro,
-                "--exec",
-                "/bin/sh",
-                "-c",
-                &install_script,
-                "pilo-deploy",
-                &source,
-            ])
-            .stdin(Stdio::null())
-            .output(),
+        command.stdin(Stdio::null()).output(),
     )
     .await
     .map_err(|_| format!("timed out while deploying pilo-server to WSL '{distro}'"))?

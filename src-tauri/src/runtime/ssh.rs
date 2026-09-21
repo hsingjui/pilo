@@ -51,6 +51,7 @@ pub(crate) fn ssh_command(connection: &Connection) -> Result<Command, String> {
         }
         command.stdin(Stdio::null());
     }
+    super::hide_console_window(&mut command);
     Ok(command)
 }
 
@@ -77,6 +78,7 @@ pub(crate) fn ssh_tunnel_command(
         }
         command.stdin(Stdio::null());
     }
+    super::hide_console_window(&mut command);
     Ok(command)
 }
 

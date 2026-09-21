@@ -25,6 +25,7 @@ mod wsl;
 
 use std::sync::{Arc, Mutex as StdMutex};
 
+use tokio::process::Command;
 use tokio::sync::Mutex;
 
 use chat_sessions::ChatSessions;
@@ -37,6 +38,19 @@ use session_history::SessionHistoryCache;
 use session_index::BackgroundSessionIndexManager;
 use session_watcher::SessionWatcherManager;
 use terminal::TerminalManager;
+
+/// Pilo 本体是 GUI 程序（没有控制台），Windows 会为它启动的控制台子进程
+/// 分配一个新的控制台窗口（即用户看到的"终端"）。用 CREATE_NO_WINDOW
+/// 抑制该窗口；非 Windows 平台是空操作。
+pub(crate) fn hide_console_window(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = command;
+}
 
 pub struct PiloRuntime {
     pub(crate) chat_sessions: ChatSessions,

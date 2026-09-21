@@ -34,25 +34,23 @@ impl WslConnectionError {
 }
 
 pub async fn list_wsl_distributions() -> Result<Vec<WslDistribution>, WslConnectionError> {
-    let output = timeout(
-        WSL_LIST_TIMEOUT,
-        Command::new(WSL_PROGRAM)
-            .args(["--list", "--quiet"])
-            .output(),
-    )
-    .await
-    .map_err(|_| {
-        WslConnectionError::new(
-            WslConnectionErrorCode::DistroListFailed,
-            "timed out while listing WSL distributions",
-        )
-    })?
-    .map_err(|error| {
-        WslConnectionError::new(
-            WslConnectionErrorCode::WslUnavailable,
-            format!("failed to run '{WSL_PROGRAM} --list --quiet': {error}"),
-        )
-    })?;
+    let mut command = Command::new(WSL_PROGRAM);
+    command.args(["--list", "--quiet"]);
+    super::hide_console_window(&mut command);
+    let output = timeout(WSL_LIST_TIMEOUT, command.output())
+        .await
+        .map_err(|_| {
+            WslConnectionError::new(
+                WslConnectionErrorCode::DistroListFailed,
+                "timed out while listing WSL distributions",
+            )
+        })?
+        .map_err(|error| {
+            WslConnectionError::new(
+                WslConnectionErrorCode::WslUnavailable,
+                format!("failed to run '{WSL_PROGRAM} --list --quiet': {error}"),
+            )
+        })?;
 
     if !output.status.success() {
         let stderr = decode_wsl_text(&output.stderr);
