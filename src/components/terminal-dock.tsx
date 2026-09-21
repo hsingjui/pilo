@@ -10,7 +10,7 @@ import {
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { Plus, TerminalSquare, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { userErrorMessage } from "@/lib/app-error";
@@ -31,6 +31,7 @@ import { Button } from "@/ui";
 
 type TerminalTab = TerminalInfo & {
 	exited?: boolean;
+	renamed?: boolean;
 };
 
 type TerminalLayout = {
@@ -202,12 +203,16 @@ export function TerminalDock({
 	const [layout, setLayout] = useState<TerminalLayout>(readTerminalLayout);
 	const [tabs, setTabs] = useState<TerminalTab[]>([]);
 	const [activeId, setActiveId] = useState<string | null>(null);
+	const [editingId, setEditingId] = useState<string | null>(null);
+	const [titleDraft, setTitleDraft] = useState("");
 	const [opening, setOpening] = useState(false);
 	const [listenerReady, setListenerReady] = useState(false);
 	const lastOpenRequestRef = useRef(0);
 	const terminalsRef = useRef(new Map<string, Terminal>());
 	const pendingOutputRef = useRef(new Map<string, Uint8Array[]>());
 	const exitedRef = useRef(new Set<string>());
+	const renameCancelledRef = useRef(false);
+	const renameInputRef = useRef<HTMLInputElement>(null);
 
 	const handleTerminalEvent = useCallback((event: TerminalEvent) => {
 		const terminal = terminalsRef.current.get(event.terminalId);
@@ -250,6 +255,18 @@ export function TerminalDock({
 	useEffect(() => {
 		onRunningChange?.(tabs.some((tab) => !tab.exited));
 	}, [onRunningChange, tabs]);
+
+	// 关闭最后一个 tab 时收起整个终端面板。
+	const hadTabsRef = useRef(false);
+	useEffect(() => {
+		if (tabs.length > 0) {
+			hadTabsRef.current = true;
+			return;
+		}
+		if (!hadTabsRef.current || !visible) return;
+		hadTabsRef.current = false;
+		onDestroy?.();
+	}, [onDestroy, tabs.length, visible]);
 
 	const registerTerminal = useCallback(
 		(terminalId: string, terminal: Terminal | null) => {
@@ -342,6 +359,29 @@ export function TerminalDock({
 		[activeId],
 	);
 
+	const startRename = useCallback((tab: TerminalTab) => {
+		renameCancelledRef.current = false;
+		setTitleDraft(tab.title);
+		setEditingId(tab.id);
+	}, []);
+
+	useEffect(() => {
+		if (editingId) renameInputRef.current?.select();
+	}, [editingId]);
+
+	const commitRename = useCallback(() => {
+		const id = editingId;
+		setEditingId(null);
+		if (!id || renameCancelledRef.current) return;
+		const title = titleDraft.trim();
+		if (!title) return;
+		setTabs((current) =>
+			current.map((tab) =>
+				tab.id === id ? { ...tab, title, renamed: true } : tab,
+			),
+		);
+	}, [editingId, titleDraft]);
+
 	const destroyAll = useCallback(async () => {
 		const ids = tabs.map((tab) => tab.id);
 		const results = await Promise.allSettled(
@@ -427,44 +467,65 @@ export function TerminalDock({
 				onKeyDown={handleResizeKeyDown}
 				className="absolute -top-1 left-0 right-0 z-10 h-2 cursor-row-resize focus-visible:outline-hidden after:absolute after:inset-x-0 after:top-1/2 after:h-[2px] after:-translate-y-1/2 after:bg-transparent hover:after:bg-sidebar-ring/50 focus-visible:after:bg-sidebar-ring"
 			/>
-			<header className="flex h-[34px] shrink-0 select-none items-center gap-1 border-b border-border/70 px-2">
-				<div className="flex h-7 shrink-0 items-center gap-1.5 px-1.5 text-xs text-muted-foreground">
-					<TerminalSquare className="size-3.5" />
-					Terminal
+			<header className="flex h-[34px] shrink-0 select-none items-center gap-1 border-b border-border bg-muted/20 pr-1">
+				<div className="scrollbar-pro flex h-full min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+					{tabs.map((tab, index) => (
+						<div
+							key={tab.id}
+							className={cn(
+								"flex h-6 max-w-48 shrink-0 items-center rounded-md border border-transparent text-xs text-muted-foreground",
+								activeId === tab.id &&
+									"border-border bg-background text-foreground",
+							)}
+						>
+							{editingId === tab.id ? (
+								<input
+									ref={renameInputRef}
+									value={titleDraft}
+									aria-label="重命名 Terminal"
+									className="mx-1 w-28 min-w-0 rounded bg-background px-1.5 py-0.5 text-xs text-foreground outline-none ring-1 ring-sidebar-ring"
+									onChange={(event) => setTitleDraft(event.target.value)}
+									onBlur={commitRename}
+									onKeyDown={(event) => {
+										if (event.key === "Enter") commitRename();
+										if (event.key === "Escape") {
+											renameCancelledRef.current = true;
+											setEditingId(null);
+										}
+									}}
+								/>
+							) : (
+								<button
+									type="button"
+									className="min-w-0 truncate rounded-md px-2.5 py-1"
+									onClick={() => {
+										setActiveId(tab.id);
+									}}
+									onDoubleClick={() => startRename(tab)}
+								>
+									{tab.title}
+									{tab.renamed ? "" : ` ${index + 1}`}
+									{tab.exited ? " · exited" : ""}
+								</button>
+							)}
+							{editingId === tab.id ? null : (
+								<button
+									type="button"
+									className="mr-0.5 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+									aria-label="关闭 Terminal"
+									onClick={() => closeTab(tab.id)}
+								>
+									<X className="size-3" />
+								</button>
+							)}
+						</div>
+					))}
 				</div>
-				{tabs.map((tab, index) => (
-					<div
-						key={tab.id}
-						className={cn(
-							"group/tab flex min-w-0 max-w-48 items-center rounded-md text-[11px] text-muted-foreground",
-							activeId === tab.id && "bg-muted text-foreground",
-						)}
-					>
-						<button
-							type="button"
-							className="min-w-0 flex-1 truncate px-2 py-1"
-							onClick={() => {
-								setActiveId(tab.id);
-							}}
-						>
-							{tab.title} {index + 1}
-							{tab.exited ? " · exited" : ""}
-						</button>
-						<button
-							type="button"
-							className="mr-1 rounded p-1.5 opacity-0 transition-opacity duration-100 hover:bg-background group-hover/tab:opacity-100 focus-visible:opacity-100"
-							aria-label="关闭 Terminal"
-							onClick={() => closeTab(tab.id)}
-						>
-							<X className="size-3" />
-						</button>
-					</div>
-				))}
 				<Button
 					type="button"
 					variant="ghost"
 					size="icon"
-					className="size-7"
+					className="size-6"
 					aria-label="新建 Terminal"
 					disabled={!project || opening || !listenerReady}
 					onClick={() => void openTab()}
@@ -475,7 +536,7 @@ export function TerminalDock({
 					type="button"
 					variant="ghost"
 					size="icon"
-					className="ml-auto size-7"
+					className="size-6"
 					aria-label="关闭并销毁 Terminal"
 					disabled={opening}
 					onClick={() => void destroyAll()}
