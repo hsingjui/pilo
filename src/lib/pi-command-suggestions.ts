@@ -9,7 +9,8 @@ export type PiCommandSuggestion = ComposerSuggestion & {
 	skill?: boolean;
 };
 
-const RESERVED_NATIVE_COMMANDS = new Set(["new", "compact"]);
+// pi 内置 llama.cpp 扩展注册的 /llama，仅 TUI 模式可用（RPC 下直接 return），不透出。
+const RESERVED_NATIVE_COMMANDS = new Set(["new", "compact", "llama"]);
 
 function commandDetail(command: PiCommand) {
 	return (

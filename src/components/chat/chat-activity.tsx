@@ -47,7 +47,7 @@ export type ToolCallActivity = {
 export type AssistantActivity = ThinkingActivity | ToolCallActivity;
 
 const PROCESS_TEXT_CLASS =
-	"text-[12.5px] font-medium leading-snug text-muted-foreground";
+	"text-sm font-medium leading-snug text-muted-foreground";
 const PROCESS_ICON_CLASS = "size-3.5 shrink-0 text-muted-foreground";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -439,7 +439,7 @@ function ToolCallActivityView({
 					<span>{toolLabel(activity.toolName)}</span>
 					{previewLabel ? (
 						<Hint label={preview ?? undefined}>
-							<span className="ml-1.5 font-mono text-[11px] font-normal text-muted-foreground">
+							<span className="ml-1.5 font-mono text-2xs font-normal text-muted-foreground">
 								{previewLabel}
 							</span>
 						</Hint>

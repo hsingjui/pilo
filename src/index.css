@@ -98,6 +98,16 @@
 	--font-mono: var(--pilo-code-font-family);
 }
 
+/*
+ * 密集元信息字阶（11px）。刻意不放进上面的 `@theme inline`：inline 会把值直接
+ * 写进工具类（`font-size: 11px`），而这级必须保留成变量，才能被
+ * PreferencesProvider 随页面字号缩放，与其余字阶一致。无 line-height 配对，
+ * 因此 `text-2xs` 只改字号，行高沿用所在地的 leading。
+ */
+@theme {
+	--text-2xs: 11px;
+}
+
 @layer base {
 	:root {
 		--pilo-page-font-family:
@@ -366,7 +376,7 @@
 		border-end-start-radius: 0.375rem;
 		color: var(--markdown-code-block-language);
 		font-family: var(--font-mono);
-		font-size: 0.6875rem;
+		font-size: var(--text-2xs);
 		line-height: 1;
 		letter-spacing: 0.04em;
 		pointer-events: none;
@@ -513,7 +523,7 @@
 	.markdown-renderer [data-streamdown="mermaid-block-actions"] {
 		gap: 0.125rem;
 		border-color: var(--markdown-mermaid-control-border);
-		border-radius: 0.3125rem;
+		border-radius: 0.375rem;
 		background: var(--markdown-mermaid-control-bg);
 		color: var(--markdown-mermaid-muted);
 		opacity: 0;

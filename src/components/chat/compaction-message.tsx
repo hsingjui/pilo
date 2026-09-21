@@ -26,7 +26,7 @@ export const CompactionMessage = memo(function CompactionMessage({
 	return (
 		<ConversationColumn className="py-2">
 			<div data-chat-expansion-root>
-				<div className="flex items-center gap-3 text-[12px] text-muted-foreground">
+				<div className="flex items-center gap-3 text-xs text-muted-foreground">
 					<span aria-hidden="true" className="h-px flex-1 bg-border" />
 					<button
 						type="button"
@@ -55,7 +55,7 @@ export const CompactionMessage = memo(function CompactionMessage({
 					<span aria-hidden="true" className="h-px flex-1 bg-border" />
 				</div>
 				{expanded && summary.length > 0 ? (
-					<div className="mt-2 rounded-lg border border-foreground/[0.06] bg-foreground/[0.02] px-3 py-2 text-[12.5px] text-muted-foreground">
+					<div className="mt-2 rounded-lg border border-foreground/[0.06] bg-foreground/[0.02] px-3 py-2 text-sm text-muted-foreground">
 						<ChatMarkdown text={summary} isStreaming={false} />
 					</div>
 				) : null}

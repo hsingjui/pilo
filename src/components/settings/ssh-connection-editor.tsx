@@ -185,7 +185,7 @@ export function SshConnectionEditor({
 								{fieldError?.field === "password" ? (
 									<span
 										id="ssh-password-error"
-										className="text-[11px] text-destructive"
+										className="text-2xs text-destructive"
 									>
 										{fieldError.message}
 									</span>
@@ -218,7 +218,7 @@ export function SshConnectionEditor({
 								{fieldError?.field === "identityFile" ? (
 									<span
 										id="ssh-key-error"
-										className="text-[11px] text-destructive"
+										className="text-2xs text-destructive"
 									>
 										{fieldError.message}
 									</span>
@@ -237,7 +237,7 @@ export function SshConnectionEditor({
 									}
 									placeholder="user@jump.example.com:22"
 								/>
-								<span className="text-[11px] text-muted-foreground">
+								<span className="text-2xs text-muted-foreground">
 									使用 OpenSSH ProxyJump；多级跳板可用逗号分隔。
 								</span>
 							</label>

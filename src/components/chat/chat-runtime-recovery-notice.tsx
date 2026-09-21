@@ -71,7 +71,7 @@ export function ChatRuntimeRecoveryNotice({
 						type="button"
 						variant="ghost"
 						size="sm"
-						className="h-7 shrink-0 gap-1.5 px-2 text-[11px] text-muted-foreground"
+						className="h-7 shrink-0 gap-1.5 px-2 text-2xs text-muted-foreground"
 						onClick={action.onClick}
 					>
 						<RefreshCw className="size-3" />
@@ -83,7 +83,7 @@ export function ChatRuntimeRecoveryNotice({
 				<div className="ml-6 mt-1">
 					<button
 						type="button"
-						className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-[color,scale] duration-150 ease-out hover:text-foreground active:scale-[0.96]"
+						className="inline-flex items-center gap-1 text-2xs text-muted-foreground transition-[color,scale] duration-150 ease-out hover:text-foreground active:scale-[0.96]"
 						onClick={() => setDetailsOpen((open) => !open)}
 					>
 						{detailsOpen ? (
@@ -94,7 +94,7 @@ export function ChatRuntimeRecoveryNotice({
 						查看详情
 					</button>
 					{detailsOpen ? (
-						<div className="mt-1.5 max-h-24 overflow-auto rounded-md bg-background/70 px-2 py-1.5 font-mono text-[10px] leading-4 text-muted-foreground">
+						<div className="mt-1.5 max-h-24 overflow-auto rounded-md bg-background/70 px-2 py-1.5 font-mono text-2xs leading-4 text-muted-foreground">
 							{detail}
 						</div>
 					) : null}

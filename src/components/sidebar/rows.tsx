@@ -77,7 +77,7 @@ function ConfirmDeleteButton({
 				"after:absolute after:-inset-0.5 after:content-['']",
 				"focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring",
 				confirming
-					? "relative z-10 h-5 min-w-10 overflow-hidden whitespace-nowrap rounded-full border border-destructive/20 bg-sidebar px-2 text-[11px] font-medium leading-none text-destructive shadow-xs transition-none hover:bg-sidebar hover:text-destructive"
+					? "relative z-10 h-5 min-w-10 overflow-hidden whitespace-nowrap rounded-full border border-destructive/20 bg-sidebar px-2 text-2xs font-medium leading-none text-destructive shadow-xs transition-none hover:bg-sidebar hover:text-destructive"
 					: "h-5 w-5 text-sidebar-foreground-muted transition-[opacity,color,background-color] duration-100 hover:text-sidebar-foreground",
 				className,
 			)}
@@ -151,7 +151,7 @@ export function EnvRow({
 				onClick={onToggle}
 				className={cn(
 					"relative flex h-7 min-w-0 flex-1 select-none items-center gap-2 rounded-md border border-transparent bg-transparent px-2 text-left",
-					"text-[13px] font-medium text-sidebar-foreground-muted transition-colors hover:text-sidebar-foreground",
+					"text-sm font-medium text-sidebar-foreground-muted transition-colors hover:text-sidebar-foreground",
 					"focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring",
 				)}
 			>
@@ -378,7 +378,7 @@ export function ProjectRow({
 			<TooltipContent side="right" align="start" className="max-w-[420px]">
 				<div className="flex flex-col gap-0.5 text-xs">
 					<span>{env.name}</span>
-					<span className="break-all font-mono text-[11px] leading-snug">
+					<span className="break-all font-mono text-2xs leading-snug">
 						{project.path}
 					</span>
 				</div>

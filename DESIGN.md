@@ -238,9 +238,24 @@ Two families, both self-hosted via `@fontsource`, both Latin-subset with a delib
 
 **Weight carries hierarchy; size mostly does not.** The interface runs almost entirely at 14px. Emphasis is `font-weight` 400 → 500 (control labels, menu items, row names) → 600 (titles). Only three sizes exist above body, and they belong to exactly three roles: 18px (sidebar brand), 24px (card title), 30px (empty-state hero). Nothing else gets to grow.
 
-**Tracking tightens as size grows.** `-0.025em` at 24–30px, `-0.02em` at 18px, `0` at 14px and below. At 12px, negative tracking destroys legibility and is never used.
+**The ramp is closed, and every step scales.** Six steps, no seventh:
 
-**Monospace marks "this is data".** JetBrains Mono at 12px with contextual ligatures on is used for code, file paths, shell commands, counts, keyboard shortcuts, and connection targets — anywhere the user might copy a literal string. It is not used for stylistic contrast. Body code runs at 1.5 line-height rather than the UI's 1.45, because code is read line by line.
+| Step       | Default | Role                                                                      |
+| ---------- | ------- | ------------------------------------------------------------------------- |
+| `text-2xs` | 11px    | dense metadata: paths, token counts, timestamps, keycaps, hints, tooltips |
+| `text-xs`  | 12px    | second-rank text, and every monospace datum                               |
+| `text-sm`  | 14px    | body, and every label, row name, control, and prose surface               |
+| `text-lg`  | 18px    | sidebar brand, dialog title                                               |
+| `text-2xl` | 24px    | card title                                                                |
+| `text-3xl` | 30px    | empty-state hero                                                          |
+
+Two steps within 3px of each other (12 / 12.5 / 13) are not a hierarchy, they are noise. A role gets one step. The metadata step is the floor: nothing renders below 11px, and a `10px` label inside a thumbnail is a metadata label, not a new size.
+
+**Sizes are variables, not literals.** `--text-*` is declared in `src/index.css` and rescaled by `PreferencesProvider` from the page-font-size preference (`src/lib/preferences-provider.tsx:186-197`), so raising the page font size moves the entire interface together. An arbitrary `text-[11px]` was never a smaller size — it was a size that refused to scale, which is why `--text-2xs` sits in a non-`inline` `@theme` block: its utility must keep its `var()`. `text-base` is not part of the ramp; it appears only as the `md:`-down guard inside `src/ui/input.tsx`, and renders `text-sm` at any desktop window width.
+
+**Tracking tightens as size grows.** `-0.025em` at 24–30px, `-0.02em` at 18px, `0` at 14px and below. At 12px, negative tracking destroys legibility and is never used. The one exception runs the other way: an uppercase micro-label — a menu section heading (`src/ui/menu-styles.ts:43`) or the code-block language in a rendered fence (`src/index.css:381`) — gets positive tracking, because uppercase at 11px closes up without it.
+
+**Monospace marks "this is data".** JetBrains Mono at 12px with contextual ligatures on is used for code, file paths, shell commands, counts, keyboard shortcuts, and connection targets — anywhere the user might copy a literal string. It is not used for stylistic contrast. Inside a dense metadata line the same mono datum drops to `text-2xs` (`src/components/chat/chat-activity.tsx:442`, a tool argument preview nested inside its 14px label), and rendered code blocks keep their own `--pilo-code-font-size` (12px default, user-adjustable in Settings) so the fence scales independently of the page. Body code runs at 1.5 line-height rather than the UI's 1.45, because code is read line by line.
 
 **Inter is loaded at 400/500/600/700.** Nothing in the UI uses 700; it exists for markdown-rendered content inside a chat message.
 
@@ -330,6 +345,7 @@ Radius is semantic, not whimsical:
 
 - Don't add a third accent hue. Two exist (`primary`, `destructive`) plus two status colors, and the scarcity is the design.
 - Don't put a raw hex in a component. If a color needs to exist, it needs a token, and a token needs both themes.
+- Don't write a literal font size (`text-[13px]`, `font-size: 0.6875rem`) in a component or a stylesheet. Every text size is a `--text-*` step, because only the steps answer the page-font-size preference.
 - Don't animate layout properties. `transition-[width,height,margin]` is how this interface starts feeling cheap.
 - Don't apply `shadow-sm` or heavier to signal "raised" in light mode; light mode separates with borders. Reserve real shadow for things that genuinely float.
 - Don't reuse a light-mode shadow value in dark mode. Dark needs roughly 4× the alpha.

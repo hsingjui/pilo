@@ -39,7 +39,7 @@ type CommandPaletteProps = {
 
 function Kbd({ children }: { children: ReactNode }) {
 	return (
-		<kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-sm bg-muted px-1 font-sans text-[11px] font-medium text-muted-foreground select-none">
+		<kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-sm bg-muted px-1 font-sans text-2xs font-medium text-muted-foreground select-none">
 			{children}
 		</kbd>
 	);
@@ -265,7 +265,7 @@ export function CommandPalette({
 											<div className="truncate text-sm">{project.name}</div>
 										</Hint>
 										<Hint label={project.path}>
-											<div className="truncate text-[11px] text-muted-foreground">
+											<div className="truncate text-2xs text-muted-foreground">
 												{project.path}
 											</div>
 										</Hint>
@@ -305,7 +305,7 @@ export function CommandPalette({
 										<Hint
 											label={`${projectById.get(session.projectId)?.name ?? "项目"}${session.preview ? ` · ${session.preview}` : ""}`}
 										>
-											<div className="truncate text-[11px] text-muted-foreground">
+											<div className="truncate text-2xs text-muted-foreground">
 												{projectById.get(session.projectId)?.name ?? "项目"}
 												{session.preview ? ` · ${session.preview}` : ""}
 											</div>
@@ -335,7 +335,7 @@ export function CommandPalette({
 											</div>
 										</Hint>
 										<Hint label={result.snippet}>
-											<div className="mt-0.5 line-clamp-2 text-[11px] leading-[1.45] text-muted-foreground">
+											<div className="mt-0.5 line-clamp-2 text-2xs leading-[1.45] text-muted-foreground">
 												{result.snippet}
 											</div>
 										</Hint>
@@ -346,7 +346,7 @@ export function CommandPalette({
 					) : null}
 				</CommandList>
 			)}
-			<footer className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">
+			<footer className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-4 py-2.5 text-2xs text-muted-foreground">
 				{searchingContent ? (
 					<span className="flex items-center gap-1.5">
 						<LoaderCircle className="size-3 animate-spin" />

@@ -287,7 +287,7 @@ export const ChatImageThumbnail = memo(function ChatImageThumbnail({
 					/>
 				) : source.status === "error" ? (
 					<span
-						className="flex size-full flex-col items-center justify-center gap-1 px-1 text-[10px] leading-tight text-muted-foreground"
+						className="flex size-full flex-col items-center justify-center gap-1 px-1 text-2xs leading-tight text-muted-foreground"
 						role="alert"
 					>
 						<ImageOff className="size-4" />

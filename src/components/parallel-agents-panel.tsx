@@ -243,11 +243,11 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 												{agent.name}
 											</span>
 											<span className={statusDot(agent.status)} />
-											<span className="text-[11px] text-muted-foreground">
+											<span className="text-2xs text-muted-foreground">
 												{statusLabel(agent.status)}
 											</span>
 										</div>
-										<div className="mt-1.5 flex items-center gap-1 truncate font-mono text-[11px] text-muted-foreground">
+										<div className="mt-1.5 flex items-center gap-1 truncate font-mono text-2xs text-muted-foreground">
 											<GitBranch className="size-3 shrink-0" />
 											<span className="truncate">{agent.branch}</span>
 										</div>
@@ -261,7 +261,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 				{selected ? (
 					<div className="grid shrink-0 gap-2 border-t border-sidebar-border p-2">
 						<Hint label={selected.worktreePath}>
-							<div className="truncate font-mono text-[11px] text-muted-foreground">
+							<div className="truncate font-mono text-2xs text-muted-foreground">
 								{selected.worktreePath}
 							</div>
 						</Hint>

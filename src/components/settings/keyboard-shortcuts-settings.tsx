@@ -24,7 +24,7 @@ function ShortcutKeys({ shortcut }: { shortcut: string }) {
 		token: tokens[index] ?? label,
 	}));
 	return (
-		<span className="inline-flex items-center gap-1 whitespace-nowrap font-mono text-[11px] text-foreground">
+		<span className="inline-flex items-center gap-1 whitespace-nowrap font-mono text-2xs text-foreground">
 			{keys.map((key, index) => (
 				<span
 					key={key.token}

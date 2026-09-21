@@ -187,7 +187,7 @@ export const ConversationOutlineRail = memo(function ConversationOutlineRail({
 					className="pointer-events-none absolute left-[54px] w-72 -translate-y-1/2 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg"
 					style={{ top: hoverCard.top }}
 				>
-					<div className="line-clamp-3 text-[13px] font-medium leading-snug">
+					<div className="line-clamp-3 text-sm font-medium leading-snug">
 						{entries[hoverCard.index]?.title}
 					</div>
 					<div className="mt-1.5 line-clamp-6 text-xs leading-relaxed text-muted-foreground">

@@ -145,7 +145,7 @@ export function PreviewPanel({ project }: { project: Project }) {
 							<button
 								key={port}
 								type="button"
-								className="rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+								className="rounded-md border border-border px-1.5 py-0.5 font-mono text-2xs text-muted-foreground hover:bg-muted hover:text-foreground"
 								onClick={() => void open(port)}
 							>
 								:{port}
@@ -158,7 +158,7 @@ export function PreviewPanel({ project }: { project: Project }) {
 			{preview ? (
 				<>
 					<div className="flex h-8 shrink-0 items-center gap-1 border-b border-sidebar-border px-2">
-						<span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+						<span className="min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground">
 							{preview.url}
 							{preview.tunneled ? " · SSH tunnel" : ""}
 						</span>

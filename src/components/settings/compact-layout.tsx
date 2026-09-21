@@ -25,7 +25,7 @@ export function SettingsStatus({
 	return (
 		<span
 			className={cn(
-				"inline-flex h-6 items-center rounded-md border px-2 text-[11px] font-medium",
+				"inline-flex h-6 items-center rounded-md border px-2 text-2xs font-medium",
 				muted
 					? "border-border/60 bg-muted/35 text-muted-foreground"
 					: "border-border/70 bg-background text-foreground/80",
@@ -78,11 +78,11 @@ export function SettingsSection({
 							</p>
 						) : null}
 						{description ? (
-							<p className="text-[11px] text-muted-foreground">{description}</p>
+							<p className="text-2xs text-muted-foreground">{description}</p>
 						) : null}
 					</div>
 					{headerRight ? (
-						<div className="min-w-0 shrink truncate text-right text-[11px] text-muted-foreground">
+						<div className="min-w-0 shrink truncate text-right text-2xs text-muted-foreground">
 							{headerRight}
 						</div>
 					) : null}
@@ -133,7 +133,7 @@ export function SettingsRow({
 			<div className={cn("min-w-0", helper && "sm:max-w-[520px]")}>
 				<p className="font-medium leading-tight text-foreground">{label}</p>
 				{helper ? (
-					<p className="text-[11px] leading-[1.4] text-muted-foreground">
+					<p className="text-2xs leading-[1.4] text-muted-foreground">
 						{helper}
 					</p>
 				) : null}

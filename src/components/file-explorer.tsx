@@ -90,14 +90,14 @@ function FileTreeRow({
 				<div>
 					{state?.loading ? (
 						<div
-							className="py-1 text-[11px] text-muted-foreground"
+							className="py-1 text-2xs text-muted-foreground"
 							style={{ paddingLeft: `${30 + depth * 12}px` }}
 						>
 							加载中…
 						</div>
 					) : state?.error ? (
 						<div
-							className="py-1 text-[11px] text-destructive"
+							className="py-1 text-2xs text-destructive"
 							style={{ paddingLeft: `${30 + depth * 12}px` }}
 						>
 							{state.error}

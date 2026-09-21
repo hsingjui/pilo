@@ -2,6 +2,12 @@ import { useEffect, useRef } from "react";
 import { FileCode2, Sparkles, TerminalSquare } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import {
+	menuItemClassName,
+	menuItemIconClassName,
+	menuSurfaceClassName,
+	menuSurfaceStyle,
+} from "@/ui/menu-styles";
 
 export type ComposerSuggestionKind = "file" | "command";
 
@@ -43,15 +49,16 @@ export const PI_SESSION_SUGGESTIONS: readonly ComposerSuggestion[] = [
 
 export const TRIGGER_META: Record<
 	SuggestionTrigger,
-	{ kind: ComposerSuggestionKind; title: string; hint: string }
+	{ kind: ComposerSuggestionKind; title: string }
 > = {
-	"@": { kind: "file", title: "文件", hint: "输入路径筛选" },
-	"/": {
-		kind: "command",
-		title: "Pi 命令",
-		hint: "Extensions · Prompts · Skills",
-	},
+	"@": { kind: "file", title: "文件" },
+	"/": { kind: "command", title: "Pi 命令" },
 };
+
+// 中英混排：标题以 ASCII 开头时才补一个分隔空格，避免「没有可用的 文件」。
+function spacedTitle(title: string) {
+	return title.charCodeAt(0) < 0x80 ? ` ${title}` : title;
+}
 
 export function activeSuggestionQuery(
 	value: string,
@@ -91,7 +98,6 @@ function SuggestionIcon({
 type ComposerSuggestionMenuProps = {
 	activeQuery: ActiveSuggestionQuery;
 	title: string;
-	hint: string;
 	suggestions: readonly ComposerSuggestion[];
 	highlightedIndex: number;
 	onHighlight: (index: number) => void;
@@ -101,7 +107,6 @@ type ComposerSuggestionMenuProps = {
 export function ComposerSuggestionMenu({
 	activeQuery,
 	title,
-	hint,
 	suggestions,
 	highlightedIndex,
 	onHighlight,
@@ -131,25 +136,17 @@ export function ComposerSuggestionMenu({
 			role="menu"
 			aria-label={`${title}建议`}
 			className={cn(
-				"absolute bottom-[calc(100%+6px)] left-0 z-40 w-full overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-md",
+				"absolute bottom-[calc(100%+6px)] left-0 z-40 w-full overflow-hidden",
+				menuSurfaceClassName,
 				activeQuery.trigger === "/" ? "max-w-[520px]" : "max-w-[600px]",
 			)}
+			style={menuSurfaceStyle}
 		>
-			<div className="flex h-7 items-center gap-1.5 border-b border-border/70 px-2 text-xs text-muted-foreground">
-				<span className="flex size-4.5 items-center justify-center rounded bg-muted font-mono text-foreground">
-					{activeQuery.trigger}
-				</span>
-				<span className="font-medium text-foreground/85">{title}</span>
-				<span className="truncate">{hint}</span>
-				<span className="ml-auto hidden @min-[40rem]:inline">
-					↑↓ 选择 · Tab / Enter 补全 · Esc 关闭
-				</span>
-			</div>
 			<div
 				ref={listRef}
 				className={cn(
-					"scrollbar-pro overflow-y-auto p-1",
-					activeQuery.trigger === "/" ? "max-h-44" : "max-h-52",
+					"scrollbar-pro overflow-y-auto",
+					activeQuery.trigger === "/" ? "max-h-72" : "max-h-52",
 				)}
 			>
 				{suggestions.length > 0 ? (
@@ -162,16 +159,14 @@ export function ComposerSuggestionMenu({
 							data-suggestion-index={index}
 							tabIndex={-1}
 							className={cn(
-								"flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs outline-hidden transition-colors",
-								index === highlightedIndex
-									? "bg-hover text-hover-foreground"
-									: "text-popover-foreground hover:bg-hover/70",
+								menuItemClassName,
+								index === highlightedIndex && "bg-hover text-hover-foreground",
 							)}
 							onMouseDown={(event) => event.preventDefault()}
 							onPointerMove={() => onHighlight(index)}
 							onClick={() => onSelect(suggestion)}
 						>
-							<span className="flex size-5 shrink-0 items-center justify-center rounded border border-border/60 bg-muted/35 text-muted-foreground">
+							<span className={menuItemIconClassName}>
 								<SuggestionIcon
 									kind={suggestion.kind}
 									skill={suggestion.skill}
@@ -181,7 +176,7 @@ export function ComposerSuggestionMenu({
 								{suggestion.label}
 							</span>
 							{suggestion.detail ? (
-								<span className="max-w-40 shrink-0 truncate text-xs text-muted-foreground">
+								<span className="min-w-0 max-w-[45%] shrink truncate text-xs text-muted-foreground">
 									{suggestion.detail}
 								</span>
 							) : null}
@@ -190,8 +185,8 @@ export function ComposerSuggestionMenu({
 				) : (
 					<div className="px-3 py-4 text-center text-xs text-muted-foreground">
 						{activeQuery.query
-							? `没有匹配“${activeQuery.query}”的${title}`
-							: `没有匹配的${title}`}
+							? `没有匹配“${activeQuery.query}”的${spacedTitle(title)}`
+							: `没有可用${spacedTitle(title)}`}
 					</div>
 				)}
 			</div>

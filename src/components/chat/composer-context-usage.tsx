@@ -166,7 +166,7 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 						<p className="font-medium tabular-nums text-foreground">
 							{formatPercent(contextPercent)}
 						</p>
-						<p className="font-mono text-[11px] tabular-nums text-muted-foreground">
+						<p className="font-mono text-2xs tabular-nums text-muted-foreground">
 							{formatCompactTokens(contextTokens)} /{" "}
 							{formatCompactTokens(contextWindow)}
 						</p>
@@ -178,11 +178,11 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 						/>
 					</div>
 					{contextPercent === undefined ? (
-						<p className="text-[11px] leading-4 text-muted-foreground">
+						<p className="text-2xs leading-4 text-muted-foreground">
 							当前占用尚不可确定；首次回复或压缩后的下一次模型响应完成后会更新。
 						</p>
 					) : contextStale ? (
-						<p className="text-[11px] leading-4 text-muted-foreground">
+						<p className="text-2xs leading-4 text-muted-foreground">
 							压缩后占用待下一次模型响应更新，当前显示上一次已知值。
 						</p>
 					) : null}
@@ -196,7 +196,7 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 								className="flex items-center justify-between text-xs"
 							>
 								<span className="text-muted-foreground">{label}</span>
-								<span className="font-mono text-[11px] tabular-nums text-foreground">
+								<span className="font-mono text-2xs tabular-nums text-foreground">
 									{formatCompactTokens(value)}
 								</span>
 							</div>
@@ -207,7 +207,7 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 				{usage?.cost !== undefined ? (
 					<div className="flex w-full items-center justify-between gap-3 bg-muted/45 px-2.5 py-2 text-xs">
 						<span className="text-muted-foreground">总费用</span>
-						<span className="font-mono text-[11px] tabular-nums">
+						<span className="font-mono text-2xs tabular-nums">
 							{formatCost(usage.cost)}
 						</span>
 					</div>

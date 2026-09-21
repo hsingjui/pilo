@@ -101,7 +101,7 @@ function CollapsibleMessageBody({
 			{collapsible ? (
 				<button
 					type="button"
-					className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+					className="mt-2 inline-flex items-center gap-1 text-2xs text-muted-foreground transition-colors hover:text-foreground"
 					onClick={(event) =>
 						toggleChatExpansionWithAnchor(event.currentTarget, () =>
 							setExpanded((value) => !value),
@@ -230,7 +230,7 @@ function AssistantWorkedRegion({
 		>
 			<button
 				type="button"
-				className="group/work flex w-full items-center gap-1.5 rounded-md py-0.5 pr-1 text-left text-[12.5px] font-medium leading-snug text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+				className="group/work flex w-full items-center gap-1.5 rounded-md py-0.5 pr-1 text-left text-sm font-medium leading-snug text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
 				onClick={(event) =>
 					toggleChatExpansionWithAnchor(event.currentTarget, () =>
 						setOpen((value) => !value),
@@ -380,7 +380,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 					{streamingLabel ||
 					visibleErrorMessage ||
 					message.stopReason === "aborted" ? (
-						<div className="mt-1 flex min-h-6 items-center gap-1 text-[11px] text-muted-foreground">
+						<div className="mt-1 flex min-h-6 items-center gap-1 text-2xs text-muted-foreground">
 							{streamingLabel ? (
 								<ChatAgentActivityIndicator label={streamingLabel} />
 							) : visibleErrorMessage ? (
@@ -394,7 +394,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 							message.time ||
 							footerDuration ||
 							canFork) ? (
-						<div className="mt-0.5 flex min-h-7 flex-wrap items-center gap-2 text-[11px] text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
+						<div className="mt-0.5 flex min-h-7 flex-wrap items-center gap-2 text-2xs text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
 							{visibleAssistantText ? (
 								<ChatCopyButton text={visibleAssistantText} />
 							) : null}

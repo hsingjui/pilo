@@ -52,7 +52,7 @@ const Toaster = ({
 					toast: cn(
 						"group/toast font-sans overflow-hidden",
 						"rounded-xl border border-border bg-popover text-popover-foreground shadow-popover!",
-						"py-3! px-3.5! pr-8! flex items-start! gap-2.5! text-[13px] leading-snug",
+						"py-3! px-3.5! pr-8! flex items-start! gap-2.5! text-sm leading-snug",
 						toastOptions?.classNames?.toast,
 					),
 					content: cn(
@@ -60,7 +60,7 @@ const Toaster = ({
 						toastOptions?.classNames?.content,
 					),
 					title: cn(
-						"font-medium text-popover-foreground leading-5 text-[13px]",
+						"font-medium text-popover-foreground leading-5 text-sm",
 						toastOptions?.classNames?.title,
 					),
 					description: cn(

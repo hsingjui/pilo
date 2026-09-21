@@ -185,6 +185,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 		);
 		const pageFontScale = preferences.pageFontSize / DEFAULT_PAGE_FONT_SIZE;
 		for (const [token, defaultSize] of [
+			["--text-2xs", 11],
 			["--text-xs", 12],
 			["--text-sm", 14],
 			["--text-base", 16],

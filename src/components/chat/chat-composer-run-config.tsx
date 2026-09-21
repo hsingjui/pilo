@@ -109,7 +109,7 @@ export function ComposerRunConfig({
 				<button
 					type="button"
 					disabled={disabled}
-					aria-label="运行配置"
+					aria-label={`运行配置：${effectiveModelLabel} · ${effectiveThinkingLabel}`}
 					className={CHAT_COMPOSER_RUN_CONFIG_TRIGGER_CLASS_NAME}
 				>
 					<PiLogo className="size-4 text-current" />

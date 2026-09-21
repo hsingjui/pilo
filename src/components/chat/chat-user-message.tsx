@@ -44,7 +44,7 @@ function UserMessageBody({ text }: { text: string }) {
 			{collapsible ? (
 				<button
 					type="button"
-					className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+					className="mt-2 inline-flex items-center gap-1 text-2xs text-muted-foreground transition-colors hover:text-foreground"
 					onClick={() => setExpanded((value) => !value)}
 				>
 					<ChevronDown
@@ -87,7 +87,7 @@ export const UserMessage = memo(function UserMessage({
 			<div className="flex w-full justify-end">
 				<div className="group flex min-w-0 max-w-[80%] flex-col items-end gap-1.5 @min-[40rem]:max-w-[70%]">
 					{message.queued ? (
-						<div className="text-[11px] tabular-nums text-muted-foreground">
+						<div className="text-2xs tabular-nums text-muted-foreground">
 							{message.queued === "steer" ? "待调整" : "已排队"}
 						</div>
 					) : null}
@@ -114,7 +114,7 @@ export const UserMessage = memo(function UserMessage({
 					<div className="flex items-center gap-1.5">
 						<ChatCopyButton text={message.text} />
 						{message.time ? (
-							<span className="text-[11px] tabular-nums text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+							<span className="text-2xs tabular-nums text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100">
 								{message.time}
 							</span>
 						) : null}

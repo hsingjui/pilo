@@ -85,7 +85,7 @@ export function ConnectionRow({
 				<div className="truncate text-sm font-medium">
 					{connectionLabel(connection)}
 				</div>
-				<div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+				<div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted-foreground">
 					{description}
 					<span>
 						{projectCount > 0 ? `${projectCount} 个项目` : "未关联项目"}
@@ -93,7 +93,7 @@ export function ConnectionRow({
 				</div>
 			</div>
 			<div className="flex shrink-0 items-center gap-1">
-				<span className="mr-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+				<span className="mr-1 flex items-center gap-2 text-2xs text-muted-foreground">
 					首页
 					<Switch
 						aria-label="显示在首页"
@@ -264,7 +264,7 @@ export function ConnectionSettingsDialog({
 									{probing ? "检测中…" : "检测"}
 								</Button>
 							</div>
-							<span className="text-[11px] text-muted-foreground">
+							<span className="text-2xs text-muted-foreground">
 								可填写绝对路径，也可填写目标环境 PATH 中可解析的命令名。
 							</span>
 						</label>
@@ -418,7 +418,7 @@ export function WslDistributionDialog({
 export function ConnectionsHelpSection() {
 	return (
 		<SettingsSection title="说明">
-			<div className="px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
+			<div className="px-3 py-2.5 text-2xs leading-relaxed text-muted-foreground">
 				测试会实际部署并启动对应环境上的 pilo-server。SSH Agent
 				适合系统已加载密钥的环境；指定私钥会传给 OpenSSH 的{" "}
 				<span className="font-mono">-i</span>；密码认证通过 askpass

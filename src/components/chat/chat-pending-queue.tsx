@@ -46,7 +46,7 @@ export function ChatPendingQueue({
 							key={item.clientMessageId}
 							className="flex min-w-0 items-center gap-2 px-3 py-2"
 						>
-							<span className="shrink-0 text-[11px]">
+							<span className="shrink-0 text-2xs">
 								{item.queueKind === "steer" ? "调整" : "稍后"}
 							</span>
 							<Hint label={label}>

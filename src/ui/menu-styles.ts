@@ -18,8 +18,10 @@ export const menuSurfaceStyle: CSSProperties = {
 export const menuItemIconClassName =
 	"flex size-3.5 shrink-0 items-center justify-center text-[color:var(--menu-icon-color,hsl(var(--muted-foreground)))] [&>svg]:size-full";
 
+// Items render as div or button depending on the consumer; button is center-aligned
+// by default, which would center every label that does not set its own alignment.
 const menuItemBaseClassName =
-	"relative flex w-full min-h-8 cursor-default select-none items-center overflow-hidden gap-3 rounded-lg px-3 py-1.5 text-sm leading-5 outline-hidden data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5";
+	"relative flex w-full min-h-8 cursor-default select-none items-center overflow-hidden gap-3 rounded-lg px-3 py-1.5 text-start text-sm leading-5 outline-hidden data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:size-3.5";
 
 // An item that owns an open surface stays lit while that surface is open.
 const menuItemOpenStateClassName =
@@ -38,7 +40,7 @@ export const menuItemExtraClassName =
 	"ms-auto ps-4 font-mono text-xs text-muted-foreground";
 
 export const menuGroupLabelClassName =
-	"select-none px-3 pb-1 pt-2 text-[11px] font-semibold uppercase leading-tight tracking-[0.6px] text-muted-foreground";
+	"select-none px-3 pb-1 pt-2 text-2xs font-semibold uppercase leading-tight tracking-[0.6px] text-muted-foreground";
 
 export const menuSeparatorClassName = "my-1 h-px";
 

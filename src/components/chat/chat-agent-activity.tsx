@@ -19,7 +19,7 @@ export function ChatAgentActivityIndicator({ label }: { label: string }) {
 				<span className="chat-agent-activity-dot-pulse block size-[34%] rounded-full bg-primary" />
 			</span>
 			<span
-				className="chat-agent-activity-label relative inline-block text-[12.5px] font-medium leading-snug"
+				className="chat-agent-activity-label relative inline-block text-sm font-medium leading-snug"
 				data-highlight-label={label}
 				style={labelStyle}
 			>

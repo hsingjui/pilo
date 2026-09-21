@@ -52,7 +52,7 @@ function DiffViewer({ diff }: { diff: string }) {
 		});
 
 	return (
-		<pre className="scrollbar-pro min-h-0 flex-1 overflow-auto whitespace-pre font-mono text-[11px] leading-[1.55]">
+		<pre className="scrollbar-pro min-h-0 flex-1 overflow-auto whitespace-pre font-mono text-2xs leading-[1.55]">
 			{lines.map(({ key, line }) => (
 				<span
 					key={key}
@@ -208,7 +208,7 @@ export function RightSidebar({
 						)}
 					</div>
 					{view === "changes" && status?.branch ? (
-						<span className="flex min-w-0 items-center gap-1 truncate text-[11px] text-sidebar-foreground-muted">
+						<span className="flex min-w-0 items-center gap-1 truncate text-2xs text-sidebar-foreground-muted">
 							<GitBranch className="size-3" />
 							<span className="truncate">{status.branch}</span>
 						</span>
@@ -307,7 +307,7 @@ export function RightSidebar({
 									{value === "working" ? "工作区" : "暂存"}
 								</button>
 							))}
-							<span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
+							<span className="ml-auto text-2xs tabular-nums text-muted-foreground">
 								{visibleFiles.length} 个文件
 							</span>
 						</div>
@@ -344,7 +344,7 @@ export function RightSidebar({
 												<span className="min-w-0 flex-1 truncate">
 													{file.path}
 												</span>
-												<span className="w-4 shrink-0 text-center font-mono text-[11px] text-muted-foreground">
+												<span className="w-4 shrink-0 text-center font-mono text-2xs text-muted-foreground">
 													{fileStatusLabel(file, mode)}
 												</span>
 											</button>
@@ -359,7 +359,7 @@ export function RightSidebar({
 								<Hint label={onOpenFile ? "在编辑器中打开" : undefined}>
 									<button
 										type="button"
-										className="shrink-0 truncate border-b border-sidebar-border px-3 py-2 text-left font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+										className="shrink-0 truncate border-b border-sidebar-border px-3 py-2 text-left font-mono text-2xs text-muted-foreground transition-colors hover:text-foreground"
 										onClick={() => onOpenFile?.(effectiveSelectedPath)}
 										disabled={!onOpenFile}
 									>

@@ -589,7 +589,6 @@ export function ChatComposer({
 				<ComposerSuggestionMenu
 					activeQuery={activeQuery}
 					title={queryMeta.title}
-					hint={queryMeta.hint}
 					suggestions={filteredSuggestions}
 					highlightedIndex={effectiveHighlightedIndex}
 					onHighlight={setHighlightedIndex}
@@ -660,7 +659,7 @@ export function ChatComposer({
 
 				{showFocusHint ? (
 					<div
-						className="pointer-events-none absolute right-2 top-1.5 z-10 flex items-center gap-0.5 font-mono text-[11px] text-muted-foreground opacity-70 transition-opacity group-focus-within:opacity-0"
+						className="pointer-events-none absolute right-2 top-1.5 z-10 flex items-center gap-0.5 font-mono text-2xs text-muted-foreground opacity-70 transition-opacity group-focus-within:opacity-0"
 						aria-hidden="true"
 					>
 						{formatKeyboardShortcut(keyboardShortcuts["focus-composer"]).map(
@@ -721,14 +720,14 @@ export function ChatComposer({
 					/>
 
 					{pendingSteering > 0 || pendingFollowUps > 0 ? (
-						<span className="hidden text-[11px] tabular-nums text-muted-foreground @min-[40rem]:inline">
+						<span className="hidden text-2xs tabular-nums text-muted-foreground @min-[40rem]:inline">
 							{pendingSteering > 0 ? `调整 ${pendingSteering}` : null}
 							{pendingSteering > 0 && pendingFollowUps > 0 ? " · " : null}
 							{pendingFollowUps > 0 ? `稍后 ${pendingFollowUps}` : null}
 						</span>
 					) : null}
 					{statusText ? (
-						<span className="hidden truncate text-[11px] tabular-nums text-muted-foreground @min-[48rem]:inline">
+						<span className="hidden truncate text-2xs tabular-nums text-muted-foreground @min-[48rem]:inline">
 							{statusText}
 						</span>
 					) : null}
@@ -737,7 +736,7 @@ export function ChatComposer({
 							type="button"
 							variant="ghost"
 							size="sm"
-							className="h-7 px-2 text-[11px] text-muted-foreground"
+							className="h-7 px-2 text-2xs text-muted-foreground"
 							onClick={onAbortRetry}
 						>
 							停止重试
