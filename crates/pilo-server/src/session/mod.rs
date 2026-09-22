@@ -14,8 +14,8 @@ pub(crate) use watch::{session_watch_start, session_watch_stop};
 
 #[cfg(test)]
 pub(crate) use index::{
-    SESSION_INDEX_HEADER_BYTES, SESSION_INDEX_PREFIX_BYTES, SESSION_INDEX_TAIL_BYTES,
-    summarize_session_index,
+    SESSION_INDEX_HEADER_BYTES, SESSION_INDEX_PREFIX_STAGES, SESSION_INDEX_TAIL_BYTES,
+    SessionIndexSummary, scan_index, summarize_index_bytes,
 };
 #[cfg(test)]
 pub(crate) use watch::{collect_session_change_paths, is_session_change};
