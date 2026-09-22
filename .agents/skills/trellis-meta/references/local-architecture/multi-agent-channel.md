@@ -14,16 +14,16 @@ The channel runtime spans three local surfaces:
 
 ## Core Paths
 
-| Path | Purpose |
-| --- | --- |
-| `~/.trellis/channels/<project>/<channel>/events.jsonl` | Per-channel append-only event log. Sequence-locked, replay-safe. |
-| `~/.trellis/channels/<project>/<channel>/<channel>.lock` | Channel-level write lock. |
-| `~/.trellis/channels/<project>/<channel>/<worker>.spawnlock` | Per-worker spawn lock used by the OOM guard. |
-| `~/.trellis/channels/<project>/<channel>/.seq` | Sequence sidecar for ordered event assignment. |
-| `~/.trellis/channels/_global/<channel>/...` | Channels created with `--scope global`. The project bucket is replaced by a shared key. |
-| `.trellis/agents/check.md` | Default Check Agent role definition consumed by `--agent check`. |
-| `.trellis/agents/implement.md` | Default Implement Agent role definition consumed by `--agent implement`. |
-| `.trellis/config.yaml` (`channel.*` block) | Worker guard thresholds and channel defaults. |
+| Path                                                         | Purpose                                                                                 |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `~/.trellis/channels/<project>/<channel>/events.jsonl`       | Per-channel append-only event log. Sequence-locked, replay-safe.                        |
+| `~/.trellis/channels/<project>/<channel>/<channel>.lock`     | Channel-level write lock.                                                               |
+| `~/.trellis/channels/<project>/<channel>/<worker>.spawnlock` | Per-worker spawn lock used by the OOM guard.                                            |
+| `~/.trellis/channels/<project>/<channel>/.seq`               | Sequence sidecar for ordered event assignment.                                          |
+| `~/.trellis/channels/_global/<channel>/...`                  | Channels created with `--scope global`. The project bucket is replaced by a shared key. |
+| `.trellis/agents/check.md`                                   | Default Check Agent role definition consumed by `--agent check`.                        |
+| `.trellis/agents/implement.md`                               | Default Implement Agent role definition consumed by `--agent implement`.                |
+| `.trellis/config.yaml` (`channel.*` block)                   | Worker guard thresholds and channel defaults.                                           |
 
 The project bucket name is derived from the absolute project path (slashes flattened, non-alphanumerics replaced with `-`), matching Claude Code's `~/.claude/projects/<sanitized-cwd>/` convention. Override with `TRELLIS_CHANNEL_ROOT` (root directory) or `TRELLIS_CHANNEL_PROJECT` (bucket name) for testing or sandboxing.
 
@@ -44,15 +44,15 @@ Prefer cheaper primitives when:
 
 ## Customization Points
 
-| Need | Edit location |
-| --- | --- |
-| Change default channel worker idle timeout | `channel.worker_guard.idle_timeout` in `.trellis/config.yaml`. Accepts `5m`, `30s`, etc. Set `0` to disable idle cleanup. |
-| Change live worker budget | `channel.worker_guard.max_live_workers` in `.trellis/config.yaml`. Set `0` to disable the spawn-time budget check. |
-| Override worker guard per spawn | Pass `--idle-timeout` / `--max-live-workers` on `trellis channel spawn`, or set `TRELLIS_CHANNEL_WORKER_IDLE_TIMEOUT` / `TRELLIS_CHANNEL_MAX_LIVE_WORKERS` in the environment. |
-| Change what the default Check or Implement worker does | Edit `.trellis/agents/check.md` or `.trellis/agents/implement.md`. These are platform-agnostic role cards; the channel runtime injects them when `--agent check|implement` is passed. |
-| Add a new role card | Drop `<name>.md` into `.trellis/agents/`. `trellis channel spawn --agent <name>` will pick it up. |
-| Relocate channel storage (CI sandbox, ephemeral runs) | Set `TRELLIS_CHANNEL_ROOT=/path/to/dir`. Channel events move with it; existing channels stay at the old root. |
-| Switch storage scope | Pass `--scope project` (default) or `--scope global` on every channel subcommand. The bucket directory changes; nothing else does. |
+| Need                                                   | Edit location                                                                                                                                                                  |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Change default channel worker idle timeout             | `channel.worker_guard.idle_timeout` in `.trellis/config.yaml`. Accepts `5m`, `30s`, etc. Set `0` to disable idle cleanup.                                                      |
+| Change live worker budget                              | `channel.worker_guard.max_live_workers` in `.trellis/config.yaml`. Set `0` to disable the spawn-time budget check.                                                             |
+| Override worker guard per spawn                        | Pass `--idle-timeout` / `--max-live-workers` on `trellis channel spawn`, or set `TRELLIS_CHANNEL_WORKER_IDLE_TIMEOUT` / `TRELLIS_CHANNEL_MAX_LIVE_WORKERS` in the environment. |
+| Change what the default Check or Implement worker does | Edit `.trellis/agents/check.md` or `.trellis/agents/implement.md`. These are platform-agnostic role cards; the channel runtime injects them when `--agent check                | implement` is passed. |
+| Add a new role card                                    | Drop `<name>.md` into `.trellis/agents/`. `trellis channel spawn --agent <name>` will pick it up.                                                                              |
+| Relocate channel storage (CI sandbox, ephemeral runs)  | Set `TRELLIS_CHANNEL_ROOT=/path/to/dir`. Channel events move with it; existing channels stay at the old root.                                                                  |
+| Switch storage scope                                   | Pass `--scope project` (default) or `--scope global` on every channel subcommand. The bucket directory changes; nothing else does.                                             |
 
 Precedence for the worker guard is: CLI flag > environment variable > `.trellis/config.yaml` > built-in default. Built-in defaults are `idle_timeout: 5m` and `max_live_workers: 6`.
 

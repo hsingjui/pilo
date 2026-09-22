@@ -14,27 +14,27 @@ Context loading determines when AI reads workflow, task, spec, research, workspa
 
 ## Context Sources
 
-| Source | Purpose |
-| --- | --- |
-| `.trellis/workflow.md` | Workflow and next-action hints. |
-| `.trellis/tasks/<task>/prd.md` | Current task requirements. |
-| `.trellis/tasks/<task>/design.md` | Complex task technical design. |
-| `.trellis/tasks/<task>/implement.md` | Complex task execution plan. |
+| Source                                  | Purpose                                      |
+| --------------------------------------- | -------------------------------------------- |
+| `.trellis/workflow.md`                  | Workflow and next-action hints.              |
+| `.trellis/tasks/<task>/prd.md`          | Current task requirements.                   |
+| `.trellis/tasks/<task>/design.md`       | Complex task technical design.               |
+| `.trellis/tasks/<task>/implement.md`    | Complex task execution plan.                 |
 | `.trellis/tasks/<task>/implement.jsonl` | Spec/research to read before implementation. |
-| `.trellis/tasks/<task>/check.jsonl` | Spec/research to read during checking. |
-| `.trellis/spec/` | Project specs. |
-| `.trellis/workspace/` | Session records. |
-| git status | Current working tree changes. |
+| `.trellis/tasks/<task>/check.jsonl`     | Spec/research to read during checking.       |
+| `.trellis/spec/`                        | Project specs.                               |
+| `.trellis/workspace/`                   | Session records.                             |
+| git status                              | Current working tree changes.                |
 
 ## Common Needs And Edit Points
 
-| Need | Edit point |
-| --- | --- |
-| Inject more/less information in new sessions | `session_context.py` or the platform `session-start` hook. |
-| Change hints on each user input | `[workflow-state:STATUS]` block in `.trellis/workflow.md`. The `inject-workflow-state` hook is parser-only and reads the block verbatim. |
-| Agent did not read specs | Task JSONL, agent prelude, `inject-subagent-context` hook. |
-| Active task is lost | `active_task.py` and platform session identity propagation. |
-| Change JSONL validation rules | `task_context.py`. |
+| Need                                         | Edit point                                                                                                                               |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Inject more/less information in new sessions | `session_context.py` or the platform `session-start` hook.                                                                               |
+| Change hints on each user input              | `[workflow-state:STATUS]` block in `.trellis/workflow.md`. The `inject-workflow-state` hook is parser-only and reads the block verbatim. |
+| Agent did not read specs                     | Task JSONL, agent prelude, `inject-subagent-context` hook.                                                                               |
+| Active task is lost                          | `active_task.py` and platform session identity propagation.                                                                              |
+| Change JSONL validation rules                | `task_context.py`.                                                                                                                       |
 
 ## JSONL Rules
 

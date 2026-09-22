@@ -53,6 +53,7 @@ Command handlers should keep argument parsing, validation, and side effects sepa
 - Keep filesystem writes in the command or service layer, not in template helpers.
 
 Reference files:
+
 - `packages/cli/src/commands/example.ts`
 - `packages/cli/test/commands/example.test.ts`
 

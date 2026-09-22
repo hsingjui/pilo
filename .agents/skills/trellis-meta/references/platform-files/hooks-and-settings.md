@@ -14,20 +14,20 @@ settings/config files usually register:
 
 Common files:
 
-| Platform | settings/config |
-| --- | --- |
-| Claude Code | `.claude/settings.json` |
-| Cursor | `.cursor/hooks.json` |
-| Codex | `.codex/hooks.json`, `.codex/config.toml` |
-| OpenCode | `.opencode/package.json`, `.opencode/plugins/*` |
-| Kiro | `.kiro/hooks/` + platform config |
-| Gemini CLI | `.gemini/settings.json` |
-| Qoder | `.qoder/settings.json` |
-| CodeBuddy | `.codebuddy/settings.json` |
-| GitHub Copilot | `.github/copilot/hooks.json` |
-| Factory Droid | `.factory/settings.json` |
-| Pi Agent | `.pi/settings.json`, `.pi/extensions/trellis/` |
-| Trae IDE | `.trae/hooks.json` |
+| Platform       | settings/config                                 |
+| -------------- | ----------------------------------------------- |
+| Claude Code    | `.claude/settings.json`                         |
+| Cursor         | `.cursor/hooks.json`                            |
+| Codex          | `.codex/hooks.json`, `.codex/config.toml`       |
+| OpenCode       | `.opencode/package.json`, `.opencode/plugins/*` |
+| Kiro           | `.kiro/hooks/` + platform config                |
+| Gemini CLI     | `.gemini/settings.json`                         |
+| Qoder          | `.qoder/settings.json`                          |
+| CodeBuddy      | `.codebuddy/settings.json`                      |
+| GitHub Copilot | `.github/copilot/hooks.json`                    |
+| Factory Droid  | `.factory/settings.json`                        |
+| Pi Agent       | `.pi/settings.json`, `.pi/extensions/trellis/`  |
+| Trae IDE       | `.trae/hooks.json`                              |
 
 Reasonix is a pull-based platform whose agent files contain prelude instructions to read context after startup. ZCode uses `.zcode/config.json` with shared hooks, including PreToolUse for sub-agent prompt injection. Kimi Code is likewise pull-based and has no project-level settings/hooks file Trellis writes (hooks live only in the user-level `~/.kimi-code/config.toml`), so its agent prompts ship as skills and `.kimi-code/agents/` sub-agent definitions with the same prelude.
 
@@ -35,24 +35,24 @@ Whether these files exist in a project depends on which `trellis init --<platfor
 
 ## Hook Script Types
 
-| Script | Purpose |
-| --- | --- |
-| `session-start.py` | Generates session-start context. |
-| `inject-workflow-state.py` | Parses `[workflow-state:STATUS]` blocks in `.trellis/workflow.md` and emits the body matching the current task status. Falls back to `Refer to workflow.md for current step.` when no matching block exists. |
-| `inject-subagent-context.py` | Injects PRD, JSONL context, and related spec/research into sub-agents. |
-| `inject-shell-session-context.py` | Lets shell commands inherit Trellis session identity. |
+| Script                            | Purpose                                                                                                                                                                                                      |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `session-start.py`                | Generates session-start context.                                                                                                                                                                             |
+| `inject-workflow-state.py`        | Parses `[workflow-state:STATUS]` blocks in `.trellis/workflow.md` and emits the body matching the current task status. Falls back to `Refer to workflow.md for current step.` when no matching block exists. |
+| `inject-subagent-context.py`      | Injects PRD, JSONL context, and related spec/research into sub-agents.                                                                                                                                       |
+| `inject-shell-session-context.py` | Lets shell commands inherit Trellis session identity.                                                                                                                                                        |
 
 Not every platform has every hook. Do not copy files from another platform just because a platform lacks a hook; first confirm whether that platform supports the corresponding event.
 
 ## Local Change Scenarios
 
-| User need | Edit location |
-| --- | --- |
-| AI should see more/less context in a new session | Platform `session-start` hook. |
-| Per-turn hint policy should change | `[workflow-state:STATUS]` block in `.trellis/workflow.md`. The hook parses workflow.md verbatim — no script edit required. |
-| Sub-agent cannot read PRD/spec | `inject-subagent-context` hook or agent prelude. |
-| `task.py current` in shell has no active task | Shell/session bridge hook or platform environment variable configuration. |
-| Disable an automatic injection | The corresponding hook registration in settings/config. |
+| User need                                        | Edit location                                                                                                              |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| AI should see more/less context in a new session | Platform `session-start` hook.                                                                                             |
+| Per-turn hint policy should change               | `[workflow-state:STATUS]` block in `.trellis/workflow.md`. The hook parses workflow.md verbatim — no script edit required. |
+| Sub-agent cannot read PRD/spec                   | `inject-subagent-context` hook or agent prelude.                                                                           |
+| `task.py current` in shell has no active task    | Shell/session bridge hook or platform environment variable configuration.                                                  |
+| Disable an automatic injection                   | The corresponding hook registration in settings/config.                                                                    |
 
 ## Modification Principles
 

@@ -13,15 +13,15 @@ Task lifecycle includes creation, start, context configuration, finish, archive,
 
 ## Common Needs And Edit Points
 
-| Need | Edit point |
-| --- | --- |
-| Automatically sync an external system after task creation | `hooks.after_create` in `.trellis/config.yaml`. |
-| Automatically update status after task start | `hooks.after_start` in `.trellis/config.yaml`. |
-| Run a script after task finish | `hooks.after_finish` in `.trellis/config.yaml`. |
-| Clean external resources after archive | `hooks.after_archive` in `.trellis/config.yaml`. |
-| Change default task fields | `.trellis/scripts/common/task_store.py`. |
-| Change task parsing/search | `.trellis/scripts/common/task_utils.py`. |
-| Change active task behavior | `.trellis/scripts/common/active_task.py`. |
+| Need                                                      | Edit point                                       |
+| --------------------------------------------------------- | ------------------------------------------------ |
+| Automatically sync an external system after task creation | `hooks.after_create` in `.trellis/config.yaml`.  |
+| Automatically update status after task start              | `hooks.after_start` in `.trellis/config.yaml`.   |
+| Run a script after task finish                            | `hooks.after_finish` in `.trellis/config.yaml`.  |
+| Clean external resources after archive                    | `hooks.after_archive` in `.trellis/config.yaml`. |
+| Change default task fields                                | `.trellis/scripts/common/task_store.py`.         |
+| Change task parsing/search                                | `.trellis/scripts/common/task_utils.py`.         |
+| Change active task behavior                               | `.trellis/scripts/common/active_task.py`.        |
 
 ## lifecycle hooks
 

@@ -2,7 +2,7 @@
 
 Verbatim user phrasings that should make an AI reach for `trellis mem`. Calibrate instinct against these — if a user message hits one of these patterns and you do not reach for `mem`, you probably missed an obvious recall.
 
-Patterns are grouped by the *intent* behind the phrasing, not the surface words. The same intent shows up in different languages and registers.
+Patterns are grouped by the _intent_ behind the phrasing, not the surface words. The same intent shows up in different languages and registers.
 
 ## Past-solution recall
 

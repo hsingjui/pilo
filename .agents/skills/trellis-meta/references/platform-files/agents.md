@@ -10,31 +10,31 @@ File locations and formats differ by platform, but responsibility boundaries sho
 
 ## Agent Responsibilities
 
-| Agent | Responsibility |
-| --- | --- |
-| `trellis-research` | Investigate the question and write findings into the current task's `research/`. |
+| Agent               | Responsibility                                                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `trellis-research`  | Investigate the question and write findings into the current task's `research/`.                                 |
 | `trellis-implement` | Implement against `prd.md`, optional `design.md` / `implement.md`, `implement.jsonl`, and related spec/research. |
-| `trellis-check` | Review changes, fix discovered issues, and run necessary checks. |
+| `trellis-check`     | Review changes, fix discovered issues, and run necessary checks.                                                 |
 
 Agent files should not become generic chat prompts. They should define input sources, write boundaries, whether code may be changed, and how results are reported.
 
 ## Common Paths
 
-| Platform | Agent path |
-| --- | --- |
-| Claude Code | `.claude/agents/trellis-*.md` |
-| Cursor | `.cursor/agents/trellis-*.md` |
-| OpenCode | `.opencode/agents/trellis-*.md` |
-| Codex | `.codex/agents/trellis-*.toml` |
-| Kiro | `.kiro/agents/trellis-*.json` |
-| Gemini CLI | `.gemini/agents/trellis-*.md` |
-| Qoder | `.qoder/agents/trellis-*.md` |
-| CodeBuddy | `.codebuddy/agents/trellis-*.md` |
-| Factory Droid | `.factory/droids/trellis-*.md` |
-| Pi Agent | `.pi/agents/trellis-*.md` |
-| Reasonix | `.reasonix/skills/trellis-*/SKILL.md` (subagent frontmatter) |
-| ZCode | `.zcode/agents/trellis-*.md` |
-| Kimi Code | `.kimi-code/agents/trellis-*.md` (custom sub-agents; the same prompts also ship as `.kimi-code/skills/trellis-*/SKILL.md`) |
+| Platform      | Agent path                                                                                                                 |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code   | `.claude/agents/trellis-*.md`                                                                                              |
+| Cursor        | `.cursor/agents/trellis-*.md`                                                                                              |
+| OpenCode      | `.opencode/agents/trellis-*.md`                                                                                            |
+| Codex         | `.codex/agents/trellis-*.toml`                                                                                             |
+| Kiro          | `.kiro/agents/trellis-*.json`                                                                                              |
+| Gemini CLI    | `.gemini/agents/trellis-*.md`                                                                                              |
+| Qoder         | `.qoder/agents/trellis-*.md`                                                                                               |
+| CodeBuddy     | `.codebuddy/agents/trellis-*.md`                                                                                           |
+| Factory Droid | `.factory/droids/trellis-*.md`                                                                                             |
+| Pi Agent      | `.pi/agents/trellis-*.md`                                                                                                  |
+| Reasonix      | `.reasonix/skills/trellis-*/SKILL.md` (subagent frontmatter)                                                               |
+| ZCode         | `.zcode/agents/trellis-*.md`                                                                                               |
+| Kimi Code     | `.kimi-code/agents/trellis-*.md` (custom sub-agents; the same prompts also ship as `.kimi-code/skills/trellis-*/SKILL.md`) |
 
 GitHub Copilot agent/prompt support is provided by a combination of directories such as `.github/agents/`, `.github/prompts/`, and `.github/skills/`; inspect the files actually generated in the user project.
 
@@ -63,13 +63,13 @@ This mode fits platforms whose hooks cannot reliably rewrite sub-agent prompts.
 
 ## Local Change Scenarios
 
-| User need | Edit location |
-| --- | --- |
-| Implement agent must follow extra restrictions | The platform's `trellis-implement` agent file. |
-| Check agent must run project-specific commands | `trellis-check` agent file, and `.trellis/spec/` if needed. |
-| Research agent must output a fixed format | `trellis-research` agent file. |
-| Agent cannot read task context | Agent prelude or `inject-subagent-context` hook. |
-| Add a project-specific agent | Platform agent directory + related workflow/command/skill entry point. |
+| User need                                      | Edit location                                                          |
+| ---------------------------------------------- | ---------------------------------------------------------------------- |
+| Implement agent must follow extra restrictions | The platform's `trellis-implement` agent file.                         |
+| Check agent must run project-specific commands | `trellis-check` agent file, and `.trellis/spec/` if needed.            |
+| Research agent must output a fixed format      | `trellis-research` agent file.                                         |
+| Agent cannot read task context                 | Agent prelude or `inject-subagent-context` hook.                       |
+| Add a project-specific agent                   | Platform agent directory + related workflow/command/skill entry point. |
 
 ## Modification Principles
 

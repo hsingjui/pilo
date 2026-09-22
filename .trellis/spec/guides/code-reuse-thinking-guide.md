@@ -9,6 +9,7 @@
 **Duplicated code is the #1 source of inconsistency bugs.**
 
 When you copy-paste or rewrite existing logic:
+
 - Bug fixes don't propagate
 - Behavior diverges over time
 - Codebase becomes harder to understand
@@ -29,11 +30,11 @@ grep -r "keyword" .
 
 ### Step 2: Ask These Questions
 
-| Question | If Yes... |
-|----------|-----------|
-| Does a similar function exist? | Use or extend it |
-| Is this pattern used elsewhere? | Follow the existing pattern |
-| Could this be a shared utility? | Create it in the right place |
+| Question                             | If Yes...                    |
+| ------------------------------------ | ---------------------------- |
+| Does a similar function exist?       | Use or extend it             |
+| Is this pattern used elsewhere?      | Follow the existing pattern  |
+| Could this be a shared utility?      | Create it in the right place |
 | Am I copying code from another file? | **STOP** - extract to shared |
 
 ---
@@ -74,7 +75,7 @@ consumer now has its own definition of what a valid payload means.
 
 ```typescript
 if (isThreadEvent(ev)) {
-  renderThreadEvent(ev);
+	renderThreadEvent(ev);
 }
 ```
 
@@ -86,11 +87,13 @@ shared type guard / normalizer / projection before adding a third reader.
 ## When to Abstract
 
 **Abstract when**:
+
 - Same code appears 3+ times
 - Logic is complex enough to have bugs
 - Multiple people might need this
 
 **Don't abstract when**:
+
 - Only used once
 - Trivial one-liner
 - Abstraction would be more complex than duplication
@@ -151,6 +154,7 @@ of that replay model.
 **Symptom**: New platform works partially — some methods return Claude defaults instead of platform-specific values. No error is raised.
 
 **Example** (`cli_adapter.py`):
+
 ```python
 # BAD: "gemini" falls through to else, returns "claude"
 @property
@@ -182,6 +186,7 @@ def cli_name(self) -> str:
 **Symptom**: Init works perfectly, but update creates files at wrong paths or misses files entirely.
 
 **Prevention**:
+
 - **Best**: Eliminate the asymmetry — have the manual path call the automatic one (e.g., `collectTemplateFiles()` calls `getAllScripts()` instead of maintaining its own list)
 - **If asymmetry is unavoidable**: Add a regression test that compares outputs from both mechanisms
 - When migrating directory structures, search for ALL code paths that reference the old structure

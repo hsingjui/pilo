@@ -6,13 +6,13 @@ A bundled skill is a directory under `packages/cli/src/templates/common/bundled-
 
 ## What Counts As Bundled (vs. Adjacent Concepts)
 
-| Source path | Type | How it ships |
-| --- | --- | --- |
-| `templates/common/bundled-skills/<name>/` | Bundled skill (multi-file) | Whole directory copied to every platform skill root |
-| `templates/common/skills/<name>.md` | Single-file workflow skill | Wrapped with frontmatter, written as `<root>/<name>/SKILL.md` |
-| `templates/common/commands/<name>.md` | Slash command / prompt | Written to each platform's command directory (`.claude/commands/trellis/`, `.cursor/commands/trellis-*.md`, `.gemini/commands/trellis/*.toml`, etc.) |
-| `templates/<platform>/skills/` | Platform-specific skill | Written only into that platform's directory (e.g. `.codex/skills/`) |
-| User skills under `.claude/skills/<my-skill>/` etc. | Marketplace or user-authored | Not managed by Trellis at all |
+| Source path                                         | Type                         | How it ships                                                                                                                                         |
+| --------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `templates/common/bundled-skills/<name>/`           | Bundled skill (multi-file)   | Whole directory copied to every platform skill root                                                                                                  |
+| `templates/common/skills/<name>.md`                 | Single-file workflow skill   | Wrapped with frontmatter, written as `<root>/<name>/SKILL.md`                                                                                        |
+| `templates/common/commands/<name>.md`               | Slash command / prompt       | Written to each platform's command directory (`.claude/commands/trellis/`, `.cursor/commands/trellis-*.md`, `.gemini/commands/trellis/*.toml`, etc.) |
+| `templates/<platform>/skills/`                      | Platform-specific skill      | Written only into that platform's directory (e.g. `.codex/skills/`)                                                                                  |
+| User skills under `.claude/skills/<my-skill>/` etc. | Marketplace or user-authored | Not managed by Trellis at all                                                                                                                        |
 
 The Trellis CLI never touches anything that is not produced by one of its own template loaders. Anything a user drops into a platform skill root by hand is left alone.
 
@@ -20,12 +20,12 @@ The Trellis CLI never touches anything that is not produced by one of its own te
 
 The set is discovered at runtime by listing directories under `templates/common/bundled-skills/`:
 
-| Skill | Purpose |
-| --- | --- |
-| `trellis-meta` | This skill. Explains the local Trellis architecture and customization entry points to an AI working inside a user project. |
-| `trellis-session-insight` | Wraps the `trellis mem` CLI so an AI knows when and how to reach into past Claude Code / Codex / Pi Agent conversation logs. |
-| `trellis-spec-bootstrap` | Platform-neutral workflow for creating or refreshing `.trellis/spec/` from the real codebase (with optional GitNexus / ABCoder integration). |
-| `trellis-channel` | Capability skill teaching an AI when to reach for `trellis channel` for multi-agent collaboration, forum/thread persistent boards, and dispatcher-wait patterns. |
+| Skill                     | Purpose                                                                                                                                                          |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `trellis-meta`            | This skill. Explains the local Trellis architecture and customization entry points to an AI working inside a user project.                                       |
+| `trellis-session-insight` | Wraps the `trellis mem` CLI so an AI knows when and how to reach into past Claude Code / Codex / Pi Agent conversation logs.                                     |
+| `trellis-spec-bootstrap`  | Platform-neutral workflow for creating or refreshing `.trellis/spec/` from the real codebase (with optional GitNexus / ABCoder integration).                     |
+| `trellis-channel`         | Capability skill teaching an AI when to reach for `trellis channel` for multi-agent collaboration, forum/thread persistent boards, and dispatcher-wait patterns. |
 
 The list is discovered at runtime, so adding a new directory under `bundled-skills/` is the only step required to register a new skill (see "Adding a New Bundled Skill" below).
 
@@ -35,35 +35,35 @@ A platform's whole file set — commands, workflow skills, agents, hooks, bundle
 
 All 21 platforms receive the full bundled-skill set:
 
-| Platform | Bundled skill root |
-| --- | --- |
-| Claude Code | `.claude/skills/<skill>/` |
-| Cursor | `.cursor/skills/<skill>/` |
-| OpenCode | `.opencode/skills/<skill>/` |
-| Codex | `.agents/skills/<skill>/` |
-| Gemini CLI | `.agents/skills/<skill>/` |
-| Pi | `.agents/skills/<skill>/` |
-| Kimi | `.agents/skills/<skill>/` |
-| Kilo | `.kilocode/skills/<skill>/` |
-| Kiro | `.kiro/skills/<skill>/` |
-| Antigravity | `.agent/skills/<skill>/` |
-| Devin | `.devin/skills/<skill>/` |
-| Qoder | `.qoder/skills/<skill>/` |
-| Codebuddy | `.codebuddy/skills/<skill>/` |
-| Copilot | `.github/skills/<skill>/` |
-| Droid | `.factory/skills/<skill>/` |
-| Reasonix | `.reasonix/skills/<skill>/` |
-| ZCode | `.zcode/skills/<skill>/` |
-| Trae | `.trae/skills/<skill>/` |
-| OMP | `.omp/skills/<skill>/` |
-| Grok | `.grok/skills/<skill>/` |
-| Snow | `.snow/skills/<skill>/` |
+| Platform    | Bundled skill root           |
+| ----------- | ---------------------------- |
+| Claude Code | `.claude/skills/<skill>/`    |
+| Cursor      | `.cursor/skills/<skill>/`    |
+| OpenCode    | `.opencode/skills/<skill>/`  |
+| Codex       | `.agents/skills/<skill>/`    |
+| Gemini CLI  | `.agents/skills/<skill>/`    |
+| Pi          | `.agents/skills/<skill>/`    |
+| Kimi        | `.agents/skills/<skill>/`    |
+| Kilo        | `.kilocode/skills/<skill>/`  |
+| Kiro        | `.kiro/skills/<skill>/`      |
+| Antigravity | `.agent/skills/<skill>/`     |
+| Devin       | `.devin/skills/<skill>/`     |
+| Qoder       | `.qoder/skills/<skill>/`     |
+| Codebuddy   | `.codebuddy/skills/<skill>/` |
+| Copilot     | `.github/skills/<skill>/`    |
+| Droid       | `.factory/skills/<skill>/`   |
+| Reasonix    | `.reasonix/skills/<skill>/`  |
+| ZCode       | `.zcode/skills/<skill>/`     |
+| Trae        | `.trae/skills/<skill>/`      |
+| OMP         | `.omp/skills/<skill>/`       |
+| Grok        | `.grok/skills/<skill>/`      |
+| Snow        | `.snow/skills/<skill>/`      |
 
 Codex, Gemini CLI, Pi and Kimi share the `.agents/skills/` root (the upstream Agent Skills workspace alias). Their collectors are required to emit byte-identical content for every file more than one of them writes there.
 
 One description, two consumers:
 
-1. `trellis init` → `configurePlatform(platformId, cwd)` → `writeTemplateMap(cwd, collect<Platform>Templates())`. For 18 of the 21 platforms the registry entry in `configurators/index.ts` is literally `fromTemplates(collect<Platform>Templates)`, which *is* that composition. Claude Code, Codex and ZCode spell out a `configure` of their own, each for work a `Map<path, content>` cannot express (an opt-in `--with-statusline` flag, an intentionally empty `.codex/skills/` directory, a one-shot console notice) — none of them restates the file list.
+1. `trellis init` → `configurePlatform(platformId, cwd)` → `writeTemplateMap(cwd, collect<Platform>Templates())`. For 18 of the 21 platforms the registry entry in `configurators/index.ts` is literally `fromTemplates(collect<Platform>Templates)`, which _is_ that composition. Claude Code, Codex and ZCode spell out a `configure` of their own, each for work a `Map<path, content>` cannot express (an opt-in `--with-statusline` flag, an intentionally empty `.codex/skills/` directory, a one-shot console notice) — none of them restates the file list.
 2. `trellis update` → `collectPlatformTemplates(platformId)` (in `configurators/index.ts`) → the same map, used to detect drift and to populate `.trellis/.template-hashes.json`.
 
 Because both consumers read the one description, init and update cannot disagree about which files a bundled skill produces.

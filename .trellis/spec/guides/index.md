@@ -19,10 +19,10 @@ These guides help you **ask the right questions before coding**.
 
 ## Available Guides
 
-| Guide | Purpose | When to Use |
-|-------|---------|-------------|
-| [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md) | Identify patterns and reduce duplication | When you notice repeated patterns |
-| [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md) | Think through data flow across layers | Features spanning multiple layers |
+| Guide                                                         | Purpose                                  | When to Use                       |
+| ------------------------------------------------------------- | ---------------------------------------- | --------------------------------- |
+| [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md)   | Identify patterns and reduce duplication | When you notice repeated patterns |
+| [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md) | Think through data flow across layers    | Features spanning multiple layers |
 
 ---
 
@@ -59,6 +59,7 @@ These guides help you **ask the right questions before coding**.
 - [ ] Reviewer identifies a "bug" in test → Mentally delete the feature being tested — does the test still pass? If yes → tautological test
 
 **Common AI reviewer false-positive patterns**:
+
 1. **Trust boundary confusion**: Treating internal data (bundled JSON manifests) as untrusted external input
 2. **Ignoring design comments**: Flagging intentional behavior documented in code comments as bugs
 3. **Variable misreading**: Not tracing a variable to its actual definition (e.g., Map keyed by path vs name)

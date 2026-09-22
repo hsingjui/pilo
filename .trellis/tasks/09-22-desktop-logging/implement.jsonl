@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "日志约定、禁记内容、subsystem 语义"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "边界错误字符串契约与诊断边界"}

@@ -4,16 +4,16 @@ This directory is for local AI working in a user project where Trellis was insta
 
 ## First Determine What The User Actually Wants To Change
 
-| User wording | Read first |
-| --- | --- |
-| "Change the Trellis flow / phases / next prompt" | `change-workflow.md` |
-| "Change task creation, status, archive, or hooks" | `change-task-lifecycle.md` |
-| "AI did not read context / change injected content" | `change-context-loading.md` |
-| "A platform hook is not behaving as expected" | `change-hooks.md` |
-| "Change implement/check/research agent behavior" | `change-agents.md` |
-| "Add a skill/command/workflow/prompt" | `change-skills-or-commands.md` |
-| "Adjust the project spec structure" | `change-spec-structure.md` |
-| "Add team conventions and local notes" | `add-project-local-conventions.md` |
+| User wording                                        | Read first                         |
+| --------------------------------------------------- | ---------------------------------- |
+| "Change the Trellis flow / phases / next prompt"    | `change-workflow.md`               |
+| "Change task creation, status, archive, or hooks"   | `change-task-lifecycle.md`         |
+| "AI did not read context / change injected content" | `change-context-loading.md`        |
+| "A platform hook is not behaving as expected"       | `change-hooks.md`                  |
+| "Change implement/check/research agent behavior"    | `change-agents.md`                 |
+| "Add a skill/command/workflow/prompt"               | `change-skills-or-commands.md`     |
+| "Adjust the project spec structure"                 | `change-spec-structure.md`         |
+| "Add team conventions and local notes"              | `add-project-local-conventions.md` |
 
 ## General Operation Order
 
@@ -25,15 +25,15 @@ This directory is for local AI working in a user project where Trellis was insta
 
 ## Local File Priority
 
-| Layer | Files |
-| --- | --- |
-| Workflow | `.trellis/workflow.md` |
-| Project configuration | `.trellis/config.yaml` |
-| Task material | `.trellis/tasks/<task>/` |
-| Project specs | `.trellis/spec/` |
-| Runtime scripts | `.trellis/scripts/` |
-| Platform integration | `.claude/`, `.codex/`, `.cursor/`, `.opencode/`, `.zcode/`, and similar directories |
-| Shared skill | `.agents/skills/` |
+| Layer                 | Files                                                                               |
+| --------------------- | ----------------------------------------------------------------------------------- |
+| Workflow              | `.trellis/workflow.md`                                                              |
+| Project configuration | `.trellis/config.yaml`                                                              |
+| Task material         | `.trellis/tasks/<task>/`                                                            |
+| Project specs         | `.trellis/spec/`                                                                    |
+| Runtime scripts       | `.trellis/scripts/`                                                                 |
+| Platform integration  | `.claude/`, `.codex/`, `.cursor/`, `.opencode/`, `.zcode/`, and similar directories |
+| Shared skill          | `.agents/skills/`                                                                   |
 
 ## Things Not To Do By Default
 

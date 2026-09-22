@@ -14,21 +14,21 @@ Full flag reference for the five subcommands. Pin this as the authoritative sour
 
 ## Flags (apply where meaningful)
 
-| Flag                                          | Subcommands       | Meaning                                                                                                                                                    |
-| --------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--platform claude\|codex\|devin\|grok\|opencode\|pi\|zcode\|all` | all               | Default `all`. `devin` is Cognition Devin CLI (`sessions.db`), not `trellis init --devin` (Desktop). |
-| `--since YYYY-MM-DD`                          | list / search     | Inclusive lower date bound.                                                                                                                                |
-| `--until YYYY-MM-DD`                          | list / search     | Inclusive upper date bound.                                                                                                                                |
-| `--global`                                    | list / search     | Include sessions from every project on this machine. Default is the current project `cwd`.                                                                 |
-| `--cwd <path>`                                | list / search     | Force a specific project cwd instead of inferring from where you are.                                                                                      |
-| `--limit N`                                   | list / search     | Cap output rows. Default `50`.                                                                                                                             |
-| `--grep KW`                                   | extract / context | Filter turns by keyword. Multi-token AND when whitespace-separated.                                                                                        |
-| `--phase brainstorm\|implement\|all`          | extract           | Slice session by Trellis task boundaries. `brainstorm` = `[task.py create, task.py start)`. `implement` = turns outside brainstorm windows. Default `all`. |
-| `--turns N`                                   | context           | Number of hit turns to return. Default `3`.                                                                                                                |
-| `--around N`                                  | context           | Surrounding turns to include per hit. Default `1`.                                                                                                         |
-| `--max-chars N`                               | context           | Total character budget. Default `6000` (~1500 tokens).                                                                                                     |
-| `--include-children`                          | search / context  | Merge OpenCode sub-agent sessions into their parent session.                                                                                               |
-| `--json`                                      | all               | Emit machine-parseable JSON instead of human-readable output.                                                                                              |
+| Flag                                                              | Subcommands       | Meaning                                                                                                                                                    |
+| ----------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--platform claude\|codex\|devin\|grok\|opencode\|pi\|zcode\|all` | all               | Default `all`. `devin` is Cognition Devin CLI (`sessions.db`), not `trellis init --devin` (Desktop).                                                       |
+| `--since YYYY-MM-DD`                                              | list / search     | Inclusive lower date bound.                                                                                                                                |
+| `--until YYYY-MM-DD`                                              | list / search     | Inclusive upper date bound.                                                                                                                                |
+| `--global`                                                        | list / search     | Include sessions from every project on this machine. Default is the current project `cwd`.                                                                 |
+| `--cwd <path>`                                                    | list / search     | Force a specific project cwd instead of inferring from where you are.                                                                                      |
+| `--limit N`                                                       | list / search     | Cap output rows. Default `50`.                                                                                                                             |
+| `--grep KW`                                                       | extract / context | Filter turns by keyword. Multi-token AND when whitespace-separated.                                                                                        |
+| `--phase brainstorm\|implement\|all`                              | extract           | Slice session by Trellis task boundaries. `brainstorm` = `[task.py create, task.py start)`. `implement` = turns outside brainstorm windows. Default `all`. |
+| `--turns N`                                                       | context           | Number of hit turns to return. Default `3`.                                                                                                                |
+| `--around N`                                                      | context           | Surrounding turns to include per hit. Default `1`.                                                                                                         |
+| `--max-chars N`                                                   | context           | Total character budget. Default `6000` (~1500 tokens).                                                                                                     |
+| `--include-children`                                              | search / context  | Merge OpenCode sub-agent sessions into their parent session.                                                                                               |
+| `--json`                                                          | all               | Emit machine-parseable JSON instead of human-readable output.                                                                                              |
 
 ## Common one-liners
 

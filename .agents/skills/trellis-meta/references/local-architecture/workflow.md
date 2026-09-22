@@ -41,12 +41,12 @@ The bottom of `workflow.md` can contain state blocks like this:
 
 Hooks choose the right block based on current task status and inject it into the conversation. Common states include:
 
-| State | Meaning |
-| --- | --- |
-| `no_task` | The current session has no active task. |
-| `planning` | The task is still in requirements, research, or context configuration. |
-| `in_progress` | The task has entered implementation and checking. |
-| `completed` | The task is complete and waiting for wrap-up or archive. |
+| State         | Meaning                                                                |
+| ------------- | ---------------------------------------------------------------------- |
+| `no_task`     | The current session has no active task.                                |
+| `planning`    | The task is still in requirements, research, or context configuration. |
+| `in_progress` | The task has entered implementation and checking.                      |
+| `completed`   | The task is complete and waiting for wrap-up or archive.               |
 
 If the user wants to change policies such as "whether to create a task when there is no task," "when task creation may be skipped," or "whether sub-agents are required," edit these state blocks and the routing table above them.
 
@@ -54,13 +54,13 @@ If the user wants to change policies such as "whether to create a task when ther
 
 Common changes:
 
-| Goal | Edit point |
-| --- | --- |
-| Add a phase | Update the Phase Index, phase body, routing, and state blocks. |
-| Change task creation policy | Update the `no_task` state block and Phase 1 description. |
-| Change the default implementation/check path | Update Phase 2 and skill routing. |
-| Change the wrap-up flow | Update Phase 3 and `finish-work` related descriptions. Note the current split: Phase 3.4 = AI-driven code commits (batched, user-confirmed), Phase 3.5 = `/finish-work` (archive + record session). `/finish-work` refuses to run if the working tree is dirty. |
-| Change platform differences | Update routing descriptions grouped by platform. |
+| Goal                                         | Edit point                                                                                                                                                                                                                                                      |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Add a phase                                  | Update the Phase Index, phase body, routing, and state blocks.                                                                                                                                                                                                  |
+| Change task creation policy                  | Update the `no_task` state block and Phase 1 description.                                                                                                                                                                                                       |
+| Change the default implementation/check path | Update Phase 2 and skill routing.                                                                                                                                                                                                                               |
+| Change the wrap-up flow                      | Update Phase 3 and `finish-work` related descriptions. Note the current split: Phase 3.4 = AI-driven code commits (batched, user-confirmed), Phase 3.5 = `/finish-work` (archive + record session). `/finish-work` refuses to run if the working tree is dirty. |
+| Change platform differences                  | Update routing descriptions grouped by platform.                                                                                                                                                                                                                |
 
 After editing, make the AI reread `.trellis/workflow.md`; do not assume the flow from the old conversation is still valid.
 

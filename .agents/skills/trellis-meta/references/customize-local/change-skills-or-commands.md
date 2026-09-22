@@ -19,14 +19,14 @@ The remainder of this file uses "skill" for the local file; the override and con
 
 ## Which Entry Type To Choose
 
-| Goal | Recommendation |
-| --- | --- |
-| AI should automatically know a capability | Add or modify a skill. |
-| User wants to trigger manually with a command | Add or modify a command/prompt/workflow. |
-| Team project conventions | Prefer `.trellis/spec/` or a project-local skill — never a bundled skill directory. |
+| Goal                                                                     | Recommendation                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AI should automatically know a capability                                | Add or modify a skill.                                                                                                                                                                                                                |
+| User wants to trigger manually with a command                            | Add or modify a command/prompt/workflow.                                                                                                                                                                                              |
+| Team project conventions                                                 | Prefer `.trellis/spec/` or a project-local skill — never a bundled skill directory.                                                                                                                                                   |
 | Tweak a bundled skill (`trellis-meta` et al.) for the user's own project | Create a project-local sibling skill (different name) that overrides intent, or edit `.trellis/spec/`. Edits inside the bundled skill directory survive only until the next `trellis update` and will need a "keep" choice each time. |
-| Contribute the change back upstream | Edit `packages/cli/src/templates/common/bundled-skills/<name>/` in the Trellis CLI repo, not the deployed copy. |
-| Change Trellis flow semantics | Synchronize `.trellis/workflow.md`. |
+| Contribute the change back upstream                                      | Edit `packages/cli/src/templates/common/bundled-skills/<name>/` in the Trellis CLI repo, not the deployed copy.                                                                                                                       |
+| Change Trellis flow semantics                                            | Synchronize `.trellis/workflow.md`.                                                                                                                                                                                                   |
 
 ## Modify A Skill
 
@@ -52,13 +52,13 @@ Do not write vague descriptions such as "helpful project skill"; they can trigge
 
 The same directory shape is used by two very different ownership models:
 
-| Aspect | Bundled (`trellis-meta`, `trellis-spec-bootstrap`, `trellis-session-insight`, `trellis-channel`) | Project-local |
-| --- | --- | --- |
-| Source of truth | `packages/cli/src/templates/common/bundled-skills/<name>/` in Trellis CLI repo | Inside the user project itself |
-| Dispatch | Auto-dispatched to every platform skill root by `getBundledSkillTemplates()` (`packages/cli/src/templates/common/index.ts`) on `trellis init` / `trellis update` | Created by the user (or another skill) and never moved |
-| Hash tracking | Every file recorded in `.trellis/.template-hashes.json`; conflict prompt on update | Not tracked |
-| Editing locally | Allowed but will be marked "modified by user" on next update | Free editing |
-| The right way to customize | Add a *new* project-local skill with a *different* name that supplements (or supersedes) the bundled one | Edit the file directly |
+| Aspect                     | Bundled (`trellis-meta`, `trellis-spec-bootstrap`, `trellis-session-insight`, `trellis-channel`)                                                                 | Project-local                                          |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Source of truth            | `packages/cli/src/templates/common/bundled-skills/<name>/` in Trellis CLI repo                                                                                   | Inside the user project itself                         |
+| Dispatch                   | Auto-dispatched to every platform skill root by `getBundledSkillTemplates()` (`packages/cli/src/templates/common/index.ts`) on `trellis init` / `trellis update` | Created by the user (or another skill) and never moved |
+| Hash tracking              | Every file recorded in `.trellis/.template-hashes.json`; conflict prompt on update                                                                               | Not tracked                                            |
+| Editing locally            | Allowed but will be marked "modified by user" on next update                                                                                                     | Free editing                                           |
+| The right way to customize | Add a _new_ project-local skill with a _different_ name that supplements (or supersedes) the bundled one                                                         | Edit the file directly                                 |
 
 If the goal is "make my project's AI behave differently when discussing release notes," the answer is almost always a project-local skill, not surgery on `trellis-meta/`.
 
@@ -75,22 +75,22 @@ If a command only repeats workflow rules, prefer making it reference/read `.trel
 
 ## Common Paths
 
-| Platform | Entry directories |
-| --- | --- |
-| Claude Code | `.claude/skills/`, `.claude/commands/` |
-| Cursor | `.cursor/skills/`, `.cursor/commands/` |
-| OpenCode | `.opencode/skills/`, `.opencode/commands/` |
-| Codex | `.agents/skills/`, `.codex/skills/` |
-| Gemini CLI | `.agents/skills/`, `.gemini/commands/` |
-| Kiro | `.kiro/skills/` |
-| Qoder | `.qoder/skills/`, `.qoder/commands/` |
-| CodeBuddy | `.codebuddy/skills/`, `.codebuddy/commands/` |
-| GitHub Copilot | `.github/skills/`, `.github/prompts/` |
-| Factory Droid | `.factory/skills/`, `.factory/commands/` |
-| Pi Agent | `.agents/skills/` |
-| Reasonix | `.reasonix/skills/` (no separate commands dir; slash commands built into the platform) |
-| ZCode | `.zcode/skills/`, `.zcode/commands/` |
-| Kilo / Antigravity / Devin | workflows + skills |
+| Platform                   | Entry directories                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------- |
+| Claude Code                | `.claude/skills/`, `.claude/commands/`                                                 |
+| Cursor                     | `.cursor/skills/`, `.cursor/commands/`                                                 |
+| OpenCode                   | `.opencode/skills/`, `.opencode/commands/`                                             |
+| Codex                      | `.agents/skills/`, `.codex/skills/`                                                    |
+| Gemini CLI                 | `.agents/skills/`, `.gemini/commands/`                                                 |
+| Kiro                       | `.kiro/skills/`                                                                        |
+| Qoder                      | `.qoder/skills/`, `.qoder/commands/`                                                   |
+| CodeBuddy                  | `.codebuddy/skills/`, `.codebuddy/commands/`                                           |
+| GitHub Copilot             | `.github/skills/`, `.github/prompts/`                                                  |
+| Factory Droid              | `.factory/skills/`, `.factory/commands/`                                               |
+| Pi Agent                   | `.agents/skills/`                                                                      |
+| Reasonix                   | `.reasonix/skills/` (no separate commands dir; slash commands built into the platform) |
+| ZCode                      | `.zcode/skills/`, `.zcode/commands/`                                                   |
+| Kilo / Antigravity / Devin | workflows + skills                                                                     |
 
 Every directory above is a deploy target for the four bundled skills. Each platform receives a full copy on `trellis init` and refresh on `trellis update`; nothing has to be wired by hand.
 

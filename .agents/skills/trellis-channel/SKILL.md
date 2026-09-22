@@ -30,14 +30,14 @@ trellis channel context list <board> --scope global --thread <thread>
 
 ## Route By User Intent
 
-| User intent | Read |
-|---|---|
-| "和 codex/claude 讨论一下", "brainstorm with another agent" | `references/workflows.md` |
+| User intent                                                         | Read                                                    |
+| ------------------------------------------------------------------- | ------------------------------------------------------- |
+| "和 codex/claude 讨论一下", "brainstorm with another agent"         | `references/workflows.md`                               |
 | "派一个 implement/check agent", "让 agent review", "spawn a worker" | `references/workflows.md`, then `references/workers.md` |
-| "开 issue 区 / topic 群 / changelog / board", "make a forum" | `references/forum.md` |
-| "看看这个 thread / linked context", "inspect a thread" | `references/forum.md` |
-| "channel 卡住了 / 没输出 / progress 被截断", "worker stalled" | `references/progress-debugging.md` |
-| "具体命令怎么写", "what flags does X take" | `references/command-reference.md` |
+| "开 issue 区 / topic 群 / changelog / board", "make a forum"        | `references/forum.md`                                   |
+| "看看这个 thread / linked context", "inspect a thread"              | `references/forum.md`                                   |
+| "channel 卡住了 / 没输出 / progress 被截断", "worker stalled"       | `references/progress-debugging.md`                      |
+| "具体命令怎么写", "what flags does X take"                          | `references/command-reference.md`                       |
 
 ## Core Rules
 

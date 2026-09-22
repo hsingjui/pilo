@@ -1,7 +1,7 @@
 # Progress And Debugging
 
 Pretty output is for operators. Raw output is the audit log. Subcommands
-(`forum`, `thread`, `messages`, `context`) are the audit *interface* — reach
+(`forum`, `thread`, `messages`, `context`) are the audit _interface_ — reach
 for them before grepping `events.jsonl` by hand.
 
 ## Pretty vs `--raw`
@@ -192,16 +192,16 @@ diffing against `<worker>.inbox-cursor` while debugging the supervisor.
 
 ## Common Failures
 
-| Symptom | Cause | Fix |
-|---|---|---|
-| `trellis: command not found` | CLI not installed globally | `npm install -g @mindfoldhq/trellis` |
-| `wait` exits immediately | wrong filter or identity collision | use distinct `--as`, inspect raw messages |
-| zsh errors on message text | shell interpreted punctuation | use `--stdin` or `--text-file` |
-| progress line is cut off | pretty output truncation | use `messages --raw --kind progress` |
-| worker never speaks | provider startup / prompt / MCP delay | inspect `<worker>.log`, `ps`, raw events |
-| channel not found in another cwd | project bucket mismatch | `cd` to project, use `--scope global`, or `list --all-projects` |
-| ghost worker in list | supervisor died without cleanup | `trellis channel kill <name> --as <worker> --force` |
-| forum thread looks scrambled | parsed `events.jsonl` directly | use `forum`, `thread`, `messages --thread` |
+| Symptom                          | Cause                                 | Fix                                                             |
+| -------------------------------- | ------------------------------------- | --------------------------------------------------------------- |
+| `trellis: command not found`     | CLI not installed globally            | `npm install -g @mindfoldhq/trellis`                            |
+| `wait` exits immediately         | wrong filter or identity collision    | use distinct `--as`, inspect raw messages                       |
+| zsh errors on message text       | shell interpreted punctuation         | use `--stdin` or `--text-file`                                  |
+| progress line is cut off         | pretty output truncation              | use `messages --raw --kind progress`                            |
+| worker never speaks              | provider startup / prompt / MCP delay | inspect `<worker>.log`, `ps`, raw events                        |
+| channel not found in another cwd | project bucket mismatch               | `cd` to project, use `--scope global`, or `list --all-projects` |
+| ghost worker in list             | supervisor died without cleanup       | `trellis channel kill <name> --as <worker> --force`             |
+| forum thread looks scrambled     | parsed `events.jsonl` directly        | use `forum`, `thread`, `messages --thread`                      |
 
 ## Storage Layout
 

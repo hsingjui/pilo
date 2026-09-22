@@ -12,15 +12,15 @@ The goal is to discover the project's real architecture before writing rules. Do
 
 ## What To Capture
 
-| Area | Questions |
-|------|-----------|
-| Package boundaries | What does each package own? What imports cross boundaries? |
-| Runtime layers | Which code is CLI, backend, frontend, worker, shared library, test-only, or tooling? |
-| Core abstractions | Which types, services, stores, commands, routes, or adapters define the system shape? |
-| Data flow | Where does user input enter, how is it validated, and where does state persist? |
-| Error handling | How are failures represented, logged, surfaced, and tested? |
-| Configuration | Where do defaults, environment config, generated files, and templates live? |
-| Tests | Which test styles are trusted examples for new work? |
+| Area               | Questions                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| Package boundaries | What does each package own? What imports cross boundaries?                            |
+| Runtime layers     | Which code is CLI, backend, frontend, worker, shared library, test-only, or tooling?  |
+| Core abstractions  | Which types, services, stores, commands, routes, or adapters define the system shape? |
+| Data flow          | Where does user input enter, how is it validated, and where does state persist?       |
+| Error handling     | How are failures represented, logged, surfaced, and tested?                           |
+| Configuration      | Where do defaults, environment config, generated files, and templates live?           |
+| Tests              | Which test styles are trusted examples for new work?                                  |
 
 ## GitNexus Usage
 

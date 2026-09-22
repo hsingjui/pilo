@@ -192,6 +192,7 @@ Preserve existing task fields and artifacts. If the correct status cannot be det
 [/workflow-state:task_error]
 
 ### Phase 1: Plan
+
 - 1.0 Create task `[required · once]` (only when the user explicitly asks to create a task)
 - 1.1 Requirement exploration `[required · repeatable]` (`prd.md`; complex tasks also need `design.md` + `implement.md`)
 - 1.2 Research `[optional · repeatable]` (in the main session; write findings to `research/`)
@@ -222,6 +223,7 @@ Inline mode: skip jsonl curation; Phase 2 reads artifacts/specs via `trellis-bef
 [/workflow-state:planning-inline]
 
 ### Phase 2: Execute
+
 - 2.1 Implement `[required · repeatable]`
 - 2.2 Quality check `[required · repeatable]`
 - 2.3 Rollback `[on demand]`
@@ -252,6 +254,7 @@ Read context: `prd.md` -> `design.md if present` -> `implement.md if present`, p
 [/workflow-state:in_progress-inline]
 
 ### Phase 3: Finish
+
 - 3.2 Debug retrospective `[on demand]`
 - 3.3 Spec update `[required · once]`
 - 3.4 Commit changes `[required · once]`
@@ -332,6 +335,7 @@ Skip when `python3 ./.trellis/scripts/task.py current --source` already points t
 Load the `trellis-brainstorm` skill and explore requirements interactively with the user per the skill's guidance.
 
 The brainstorm skill will guide you to:
+
 - Ask one question at a time
 - Prefer researching over asking the user
 - Prefer offering options over open-ended questions
@@ -341,6 +345,7 @@ The brainstorm skill will guide you to:
 - For complex tasks, produce `design.md` and `implement.md` before implementation starts
 
 When considering a parent/child split:
+
 - Use a parent task when one request contains several independently verifiable deliverables.
 - Parent tasks own source requirements, child-task mapping, cross-child acceptance criteria, and final integration review.
 - Child tasks own actual deliverables that can be planned, implemented, checked, and archived independently.
@@ -356,6 +361,7 @@ Research can happen at any time during requirement exploration. It isn't limited
 Do the research in the main session directly and write findings into `{TASK_DIR}/research/`. Sub-agents are disabled.
 
 **Research artifact conventions**:
+
 - One file per research topic (e.g. `research/auth-library-comparison.md`)
 - Record third-party library usage examples, API references, version constraints in files
 - Note relevant spec file paths you discovered for later reference
@@ -386,14 +392,14 @@ If `task.py start` errors with a session-identity message (no context key from h
 
 #### 1.5 Completion criteria
 
-| Condition | Required |
-|------|:---:|
-| `prd.md` exists | ✅ |
-| User confirms task should enter implementation | ✅ |
-| `task.py start` has been run (status = in_progress) | ✅ |
-| `research/` has artifacts (complex tasks) | recommended |
-| `design.md` exists (complex tasks) | ✅ |
-| `implement.md` exists (complex tasks) | ✅ |
+| Condition                                           |  Required   |
+| --------------------------------------------------- | :---------: |
+| `prd.md` exists                                     |     ✅      |
+| User confirms task should enter implementation      |     ✅      |
+| `task.py start` has been run (status = in_progress) |     ✅      |
+| `research/` has artifacts (complex tasks)           | recommended |
+| `design.md` exists (complex tasks)                  |     ✅      |
+| `implement.md` exists (complex tasks)               |     ✅      |
 
 ---
 
@@ -409,13 +415,10 @@ Goal: turn reviewed planning artifacts into code that passes quality checks.
 4. Implement the code per reviewed artifacts
 5. Run project lint and type-check
 
-
-
 #### 2.2 Quality check `[required · repeatable]`
 
-
-
 Load the `trellis-check` skill and verify the code per its guidance:
+
 - Spec compliance
 - lint / type-check / tests
 - Cross-layer consistency (when changes span layers)
@@ -439,6 +442,7 @@ Goal: ensure code quality, capture lessons, record the work.
 #### 3.2 Debug retrospective `[on demand]`
 
 If this task involved repeated debugging (the same issue was fixed multiple times), load the `trellis-break-loop` skill to:
+
 - Classify the root cause
 - Explain why earlier fixes failed
 - Propose prevention
@@ -448,6 +452,7 @@ The goal is to capture debugging lessons so the same class of issue doesn't recu
 #### 3.3 Spec update `[required · once]`
 
 Load the `trellis-update-spec` skill and review whether this task produced new knowledge worth recording:
+
 - Newly discovered patterns or conventions
 - Pitfalls you hit
 - New technical decisions
@@ -463,15 +468,19 @@ The AI drives a batched commit of this task's code changes so `/finish-work` can
 **Step-by-step**:
 
 1. **Inspect dirty state**:
+
    ```bash
    git status --porcelain
    ```
+
    Snapshot every dirty path. If the working tree is clean, skip to 3.5.
 
 2. **Learn commit style** from recent history (so drafted messages blend in):
+
    ```bash
    git log --oneline -5
    ```
+
    Note the prefix convention (`feat:` / `fix:` / `chore:` / `docs:` ...), language (中文/English), and length style.
 
 3. **Classify dirty files into two groups**:
@@ -481,6 +490,7 @@ The AI drives a batched commit of this task's code changes so `/finish-work` can
 4. **Draft a commit plan**. Group AI-edited files into logical commits (1 commit per coherent change unit, not 1 commit per file). Each entry: `<commit message>` + file list. List unrecognized files separately at the bottom.
 
 5. **Present the plan once, ask for one-shot confirmation**. Format:
+
    ```
    Proposed commits (in order):
      1. <message>
@@ -501,6 +511,7 @@ The AI drives a batched commit of this task's code changes so `/finish-work` can
 7. **On rejection** (user replies "不行" / "我自己来" / "manual" / any pushback on the plan): stop. Do not attempt a second plan. The user will commit by hand; you skip ahead to 3.5 once they confirm.
 
 **Rules**:
+
 - No `git commit --amend` anywhere — three-stage three-commit flow (work commits → archive commit → journal commit).
 - Never push to remote in this step.
 - If the user wants different message wording but accepts the file grouping, edit the message and re-confirm once — but if they reject the grouping, exit to manual mode.
@@ -519,21 +530,22 @@ This section is for developers who want to modify the Trellis workflow itself. A
 ### Changing what a step means
 
 Edit the corresponding step's walkthrough body in the Phase 1 / 2 / 3 sections above. Critical invariants:
+
 - No active task must triage first and ask for task-creation consent before creating a Trellis task.
 - Planning must distinguish lightweight PRD-only tasks from complex tasks that require `prd.md`, `design.md`, and `implement.md` before start.
 - Every required execution path must keep the Phase 3.4 commit reminder reachable before `/trellis:finish-work`.
 
 All tag blocks live in the `## Phase Index` section above, immediately after each phase summary:
 
-| Scope | Corresponding tag |
-|---|---|
-| No active task (before Phase 1) | `[workflow-state:no_task]` (after the Phase Index ASCII art) |
-| Active task record unreadable | `[workflow-state:task_error]` (repair the existing task before continuing) |
-| All of Phase 1 (task created → ready for implementation) | `[workflow-state:planning]` (after Phase 1 summary) |
-| Codex inline Phase 1 | `[workflow-state:planning-inline]` |
-| Phase 2 + Phase 3.2–3.4 (implementation + check + wrap-up) | `[workflow-state:in_progress]` (after Phase 2 summary) |
-| Codex inline Phase 2 + Phase 3.2–3.4 | `[workflow-state:in_progress-inline]` |
-| After Phase 3.5 (archived) | `[workflow-state:completed]` (after Phase 3 summary; **currently DEAD**) |
+| Scope                                                      | Corresponding tag                                                          |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------- |
+| No active task (before Phase 1)                            | `[workflow-state:no_task]` (after the Phase Index ASCII art)               |
+| Active task record unreadable                              | `[workflow-state:task_error]` (repair the existing task before continuing) |
+| All of Phase 1 (task created → ready for implementation)   | `[workflow-state:planning]` (after Phase 1 summary)                        |
+| Codex inline Phase 1                                       | `[workflow-state:planning-inline]`                                         |
+| Phase 2 + Phase 3.2–3.4 (implementation + check + wrap-up) | `[workflow-state:in_progress]` (after Phase 2 summary)                     |
+| Codex inline Phase 2 + Phase 3.2–3.4                       | `[workflow-state:in_progress-inline]`                                      |
+| After Phase 3.5 (archived)                                 | `[workflow-state:completed]` (after Phase 3 summary; **currently DEAD**)   |
 
 ### Changing the per-turn prompt text
 
@@ -550,6 +562,7 @@ your per-turn prompt text
 ```
 
 Constraints:
+
 - STATUS charset: `[A-Za-z0-9_-]+` (underscores and hyphens allowed, e.g. `in-review`, `blocked-by-team`)
 - A lifecycle hook must write `task.json.status` to your custom value, otherwise the tag is never read
 - Lifecycle hooks live in `task.json.hooks.after_*` and bind to one of `after_create / after_start / after_finish / after_archive`
@@ -560,11 +573,9 @@ Add a `hooks` field to your `task.json`:
 
 ```json
 {
-  "hooks": {
-    "after_finish": [
-      "your-script-or-command-here"
-    ]
-  }
+	"hooks": {
+		"after_finish": ["your-script-or-command-here"]
+	}
 }
 ```
 

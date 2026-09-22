@@ -96,12 +96,12 @@ Strip away implementation details to one sentence.
 
 What is absolutely true (not opinion or convention)?
 
-| Category | Examples |
-|----------|----------|
+| Category                 | Examples                                 |
+| ------------------------ | ---------------------------------------- |
 | **Physical constraints** | Network latency ≥ 0, disk I/O has limits |
-| **Business rules** | "Users must see their own data" |
-| **Technical invariants** | "Data must be consistent" |
-| **User needs** | "The user wants X within Y seconds" |
+| **Business rules**       | "Users must see their own data"          |
+| **Technical invariants** | "Data must be consistent"                |
+| **User needs**           | "The user wants X within Y seconds"      |
 
 ### Step 3: Challenge Assumptions
 

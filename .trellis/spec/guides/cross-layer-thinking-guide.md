@@ -245,13 +245,13 @@ against both fresh init and upgrade paths.
 ### Checklist: After Modifying A Runtime-Parsed Template
 
 - [ ] Identify every runtime parser that reads the template, not just the file
-  writer that installs it
+      writer that installs it
 - [ ] Check whether relevant syntax lives outside obvious managed regions
-  such as tag blocks
+      such as tag blocks
 - [ ] Verify fresh `init` output and a versioned `update` scenario that writes
-  the older `.trellis/.version`
+      the older `.trellis/.version`
 - [ ] Add an upgrade regression using an older pristine template fixture, then
-  assert the installed file reaches the current packaged shape
+      assert the installed file reaches the current packaged shape
 - [ ] Update the backend spec that owns the runtime contract
 
 **Real-world example**: Codex inline mode changed workflow platform markers from
@@ -269,6 +269,7 @@ could return empty Phase 2.1 detail.
 When a CLI auto-detects a mode by probing a remote resource (e.g., checking if `index.json` exists to decide marketplace vs direct download):
 
 ### Before implementing:
+
 - [ ] Probe runs in **ALL** code paths that use the result (interactive, `-y`, `--flag` combos)
 - [ ] 404 vs transient error are distinguished — don't treat both as "not found"
 - [ ] Transient errors **abort or retry**, never silently switch modes
@@ -276,6 +277,7 @@ When a CLI auto-detects a mode by probing a remote resource (e.g., checking if `
 - [ ] **Shortcut paths** (e.g., `--template` skipping picker) must have the same error-handling quality as the probed path — check that downstream functions don't call catch-all wrappers
 
 ### After implementing:
+
 - [ ] Trace every path from probe result to the mode-decision branch — no fallthrough
 - [ ] External format contracts (giget URI, raw URLs) are tested or at least documented as comments
 - [ ] Metadata reads consume a complete response or use a streaming parser — never parse a fixed-size prefix as full JSON

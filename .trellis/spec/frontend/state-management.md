@@ -6,13 +6,13 @@
 
 ## Layers
 
-| Kind | Where | Mechanism |
-|------|-------|-----------|
+| Kind                   | Where                                                            | Mechanism                                                               |
+| ---------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | App-global prefs/theme | `src/lib/preferences-provider.tsx`, `src/lib/theme-provider.tsx` | React Context + `useState`, exposed via `usePreferences()` / theme hook |
-| App shell state | `src/App.tsx` | `useState` + orchestration hooks in `src/components/app/` |
-| Feature state | feature components | `useState` / `useReducer` |
-| Hot runtime state | `src/components/chat/chat-conversation-store.ts` | external store + `useSyncExternalStore` |
-| Server data | `src/lib/*.ts` | `invoke`/`listen`, results held in component/feature state |
+| App shell state        | `src/App.tsx`                                                    | `useState` + orchestration hooks in `src/components/app/`               |
+| Feature state          | feature components                                               | `useState` / `useReducer`                                               |
+| Hot runtime state      | `src/components/chat/chat-conversation-store.ts`                 | external store + `useSyncExternalStore`                                 |
+| Server data            | `src/lib/*.ts`                                                   | `invoke`/`listen`, results held in component/feature state              |
 
 ## Rules
 

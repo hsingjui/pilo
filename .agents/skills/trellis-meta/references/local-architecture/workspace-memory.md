@@ -13,12 +13,12 @@
     └── journal-2.md
 ```
 
-| File | Purpose |
-| --- | --- |
-| `.trellis/.developer` | Current developer identity. |
-| `.trellis/workspace/index.md` | Global workspace overview. |
-| `.trellis/workspace/<developer>/index.md` | Session index for a developer. |
-| `.trellis/workspace/<developer>/journal-N.md` | Session journal. |
+| File                                          | Purpose                        |
+| --------------------------------------------- | ------------------------------ |
+| `.trellis/.developer`                         | Current developer identity.    |
+| `.trellis/workspace/index.md`                 | Global workspace overview.     |
+| `.trellis/workspace/<developer>/index.md`     | Session index for a developer. |
+| `.trellis/workspace/<developer>/journal-N.md` | Session journal.               |
 
 ## Developer Identity
 
@@ -47,11 +47,11 @@ Planning or review work without a commit can also be recorded by using `--no-com
 
 ## Relationship Between Workspace Memory And Tasks
 
-| System | What it stores |
-| --- | --- |
-| `.trellis/tasks/` | Requirements, design, research, and state for a specific task. |
-| `.trellis/workspace/` | Work records across tasks and sessions. |
-| `.trellis/spec/` | Engineering knowledge preserved as long-term conventions. |
+| System                | What it stores                                                 |
+| --------------------- | -------------------------------------------------------------- |
+| `.trellis/tasks/`     | Requirements, design, research, and state for a specific task. |
+| `.trellis/workspace/` | Work records across tasks and sessions.                        |
+| `.trellis/spec/`      | Engineering knowledge preserved as long-term conventions.      |
 
 If information is only useful for the current task, put it in the task directory.  
 If information describes what happened in the current session, put it in the workspace journal.  
@@ -59,12 +59,12 @@ If information should be followed every time code is written in the future, put 
 
 ## Local Customization Points
 
-| Need | Edit location |
-| --- | --- |
-| Change maximum journal lines | `max_journal_lines` in `.trellis/config.yaml`. |
-| Change session auto-commit message | `session_commit_message` in `.trellis/config.yaml`. |
-| Change session content format | `.trellis/scripts/add_session.py`. |
-| Change how workspace is displayed in context | `.trellis/scripts/common/session_context.py`. |
+| Need                                         | Edit location                                       |
+| -------------------------------------------- | --------------------------------------------------- |
+| Change maximum journal lines                 | `max_journal_lines` in `.trellis/config.yaml`.      |
+| Change session auto-commit message           | `session_commit_message` in `.trellis/config.yaml`. |
+| Change session content format                | `.trellis/scripts/add_session.py`.                  |
+| Change how workspace is displayed in context | `.trellis/scripts/common/session_context.py`.       |
 
 ## AI Usage Rules
 

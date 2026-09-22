@@ -17,17 +17,17 @@ so plain `cargo check` builds the desktop app.
 
 ## `src-tauri/src/` (desktop backend)
 
-| Path | Responsibility |
-|------|----------------|
-| `main.rs` | Thin binary entry; delegates to `lib.rs`. |
-| `lib.rs` | App wiring: `Builder`, plugin registration, `.manage()` state, `invoke_handler` registration. |
-| `domain/` | Serde data types shared across the backend (`Connection`, `Project`, `SessionIndexEntry`, …). One file per concept, re-exported from `domain/mod.rs`. |
-| `runtime/` | All business logic. |
-| `runtime/commands/` | `#[tauri::command]` entry points only — thin wrappers, grouped by feature (`connections`, `projects`, `sessions`, `runtime`, `appearance`). |
-| `runtime/storage.rs` + `runtime/storage/` | SQLite index/cache (`connections`, `projects`, `sessions`, `session_ui_state`). |
-| `runtime/session_history/` | Pi JSONL parsing and reading (`parser`, `reader`, `cache`, `types`, `tests`). |
-| `runtime/server_client/` | Client side of the `pilo-server` stdio protocol (`manager`, `transport`). |
-| `runtime/*.rs` | One module per capability: `pi_workspace`, `pi_events`, `terminal`, `preview`, `git`, `ssh`, `wsl`, `parallel`, `remote_fs`, `credentials`, `events`, `debug_trace`, `desktop_notifications`. |
+| Path                                      | Responsibility                                                                                                                                                                                |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `main.rs`                                 | Thin binary entry; delegates to `lib.rs`.                                                                                                                                                     |
+| `lib.rs`                                  | App wiring: `Builder`, plugin registration, `.manage()` state, `invoke_handler` registration.                                                                                                 |
+| `domain/`                                 | Serde data types shared across the backend (`Connection`, `Project`, `SessionIndexEntry`, …). One file per concept, re-exported from `domain/mod.rs`.                                         |
+| `runtime/`                                | All business logic.                                                                                                                                                                           |
+| `runtime/commands/`                       | `#[tauri::command]` entry points only — thin wrappers, grouped by feature (`connections`, `projects`, `sessions`, `runtime`, `appearance`).                                                   |
+| `runtime/storage.rs` + `runtime/storage/` | SQLite index/cache (`connections`, `projects`, `sessions`, `session_ui_state`).                                                                                                               |
+| `runtime/session_history/`                | Pi JSONL parsing and reading (`parser`, `reader`, `cache`, `types`, `tests`).                                                                                                                 |
+| `runtime/server_client/`                  | Client side of the `pilo-server` stdio protocol (`manager`, `transport`).                                                                                                                     |
+| `runtime/*.rs`                            | One module per capability: `pi_workspace`, `pi_events`, `terminal`, `preview`, `git`, `ssh`, `wsl`, `parallel`, `remote_fs`, `credentials`, `events`, `debug_trace`, `desktop_notifications`. |
 
 ## `crates/pilo-protocol/src/`
 

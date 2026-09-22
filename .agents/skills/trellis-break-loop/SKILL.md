@@ -17,13 +17,13 @@ Analyze the bug you just fixed from these 5 dimensions:
 
 Which category does this bug belong to?
 
-| Category | Characteristics | Example |
-|----------|-----------------|---------|
-| **A. Missing Spec** | No documentation on how to do it | New feature without checklist |
-| **B. Cross-Layer Contract** | Interface between layers unclear | API returns different format than expected |
-| **C. Change Propagation Failure** | Changed one place, missed others | Changed function signature, missed call sites |
-| **D. Test Coverage Gap** | Unit test passes, integration fails | Works alone, breaks when combined |
-| **E. Implicit Assumption** | Code relies on undocumented assumption | Timestamp seconds vs milliseconds |
+| Category                          | Characteristics                        | Example                                       |
+| --------------------------------- | -------------------------------------- | --------------------------------------------- |
+| **A. Missing Spec**               | No documentation on how to do it       | New feature without checklist                 |
+| **B. Cross-Layer Contract**       | Interface between layers unclear       | API returns different format than expected    |
+| **C. Change Propagation Failure** | Changed one place, missed others       | Changed function signature, missed call sites |
+| **D. Test Coverage Gap**          | Unit test passes, integration fails    | Works alone, breaks when combined             |
+| **E. Implicit Assumption**        | Code relies on undocumented assumption | Timestamp seconds vs milliseconds             |
 
 ### 2. Why Fixes Failed (if applicable)
 
@@ -38,14 +38,14 @@ If you tried multiple fixes before succeeding, analyze each failure:
 
 What mechanisms would prevent this from happening again?
 
-| Type | Description | Example |
-|------|-------------|---------|
-| **Documentation** | Write it down so people know | Update thinking guide |
-| **Architecture** | Make the error impossible structurally | Type-safe wrappers |
-| **Compile-time** | Strict type checking, no escape hatches | Signature change causes compile error |
-| **Runtime** | Monitoring, alerts, scans | Detect orphan entities |
-| **Test Coverage** | E2E tests, integration tests | Verify full flow |
-| **Code Review** | Checklist, PR template | "Did you check X?" |
+| Type              | Description                             | Example                               |
+| ----------------- | --------------------------------------- | ------------------------------------- |
+| **Documentation** | Write it down so people know            | Update thinking guide                 |
+| **Architecture**  | Make the error impossible structurally  | Type-safe wrappers                    |
+| **Compile-time**  | Strict type checking, no escape hatches | Signature change causes compile error |
+| **Runtime**       | Monitoring, alerts, scans               | Detect orphan entities                |
+| **Test Coverage** | E2E tests, integration tests            | Verify full flow                      |
+| **Code Review**   | Checklist, PR template                  | "Did you check X?"                    |
 
 ### 4. Systematic Expansion
 
@@ -76,25 +76,30 @@ Please output analysis in this format:
 ## Bug Analysis: [Short Description]
 
 ### 1. Root Cause Category
+
 - **Category**: [A/B/C/D/E] - [Category Name]
 - **Specific Cause**: [Detailed description]
 
 ### 2. Why Fixes Failed (if applicable)
+
 1. [First attempt]: [Why it failed]
 2. [Second attempt]: [Why it failed]
-...
+   ...
 
 ### 3. Prevention Mechanisms
-| Priority | Mechanism | Specific Action | Status |
-|----------|-----------|-----------------|--------|
-| P0 | ... | ... | TODO/DONE |
+
+| Priority | Mechanism | Specific Action | Status    |
+| -------- | --------- | --------------- | --------- |
+| P0       | ...       | ...             | TODO/DONE |
 
 ### 4. Systematic Expansion
+
 - **Similar Issues**: [List places with similar problems]
 - **Design Improvement**: [Architecture-level suggestions]
 - **Process Improvement**: [Development process suggestions]
 
 ### 5. Knowledge Capture
+
 - [ ] [Documents to update / tickets to create]
 ```
 
@@ -105,6 +110,7 @@ Please output analysis in this format:
 > **The value of debugging is not in fixing the bug, but in making this class of bugs never happen again.**
 
 Three levels of insight:
+
 1. **Tactical**: How to fix THIS bug
 2. **Strategic**: How to prevent THIS CLASS of bugs
 3. **Philosophical**: How to expand thinking patterns
@@ -119,11 +125,11 @@ When multiple root causes are plausible and evidence is incomplete, update your 
 
 Before investigating, state what you believe and why:
 
-| Hypothesis | Prior | Reasoning |
-|------------|-------|-----------|
-| H1: [cause A] | 40% | Most common for this pattern |
-| H2: [cause B] | 30% | Plausible given environment |
-| H3: [other] | 30% | Catch-all |
+| Hypothesis    | Prior | Reasoning                    |
+| ------------- | ----- | ---------------------------- |
+| H1: [cause A] | 40%   | Most common for this pattern |
+| H2: [cause B] | 30%   | Plausible given environment  |
+| H3: [other]   | 30%   | Catch-all                    |
 
 Priors must sum to 100%. If you can't assign probabilities, investigate first.
 
@@ -140,6 +146,7 @@ Document what you found — be specific about reliability:
 For each hypothesis, ask: **How likely is this evidence if this hypothesis were true?**
 
 Direction of update matters more than calculation:
+
 - Evidence strongly predicted by H1 → H1 probability increases
 - Evidence contradicts H2 → H2 probability decreases
 - Evidence equally likely under all → no update
@@ -152,22 +159,22 @@ Don't gather more of the same. Find evidence that **differs strongly** between t
 
 ### Step 5: State Confidence
 
-| Confidence | Action |
-|------------|--------|
-| 90%+ | Proceed with fix, monitor |
-| 70-90% | Proceed, add fallback check |
-| 50-70% | Test hypothesis before committing |
-| <50% | Need more evidence, don't guess |
+| Confidence | Action                            |
+| ---------- | --------------------------------- |
+| 90%+       | Proceed with fix, monitor         |
+| 70-90%     | Proceed, add fallback check       |
+| 50-70%     | Test hypothesis before committing |
+| <50%       | Need more evidence, don't guess   |
 
 Never express binary certainty when evidence is incomplete. Use "most likely", "plausible but unlikely", "worth investigating".
 
 ### Common Fallacies
 
-| Fallacy | Example | Correction |
-|---------|---------|------------|
-| **Base rate neglect** | "Test failed → code is broken" | How often do tests fail for other reasons? |
-| **Confirmation bias** | "Must be a race condition, let me find race evidence" | Actively seek evidence AGAINST your top hypothesis |
-| **Anchoring** | "Last time it was caching, probably caching again" | Establish priors from current context, not yesterday's bug |
+| Fallacy               | Example                                               | Correction                                                 |
+| --------------------- | ----------------------------------------------------- | ---------------------------------------------------------- |
+| **Base rate neglect** | "Test failed → code is broken"                        | How often do tests fail for other reasons?                 |
+| **Confirmation bias** | "Must be a race condition, let me find race evidence" | Actively seek evidence AGAINST your top hypothesis         |
+| **Anchoring**         | "Last time it was caching, probably caching again"    | Establish priors from current context, not yesterday's bug |
 
 ---
 

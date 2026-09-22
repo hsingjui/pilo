@@ -11,14 +11,14 @@ When the user wants to change the engineering conventions AI follows, add new sp
 
 ## Common Needs
 
-| Need | Edit location |
-| --- | --- |
+| Need                                      | Edit location                                                  |
+| ----------------------------------------- | -------------------------------------------------------------- |
 | Add backend/frontend/docs/test spec layer | `.trellis/spec/<layer>/` or `.trellis/spec/<package>/<layer>/` |
-| Add shared thinking guides | `.trellis/spec/guides/` |
-| Adjust monorepo packages | `packages` in `.trellis/config.yaml` |
-| Change default package | `default_package` in `.trellis/config.yaml` |
-| Control spec scanning scope | `spec_scope` in `.trellis/config.yaml` |
-| Make a task read a new spec | Task `implement.jsonl` / `check.jsonl` |
+| Add shared thinking guides                | `.trellis/spec/guides/`                                        |
+| Adjust monorepo packages                  | `packages` in `.trellis/config.yaml`                           |
+| Change default package                    | `default_package` in `.trellis/config.yaml`                    |
+| Control spec scanning scope               | `spec_scope` in `.trellis/config.yaml`                         |
+| Make a task read a new spec               | Task `implement.jsonl` / `check.jsonl`                         |
 
 ## Add A Spec Layer
 

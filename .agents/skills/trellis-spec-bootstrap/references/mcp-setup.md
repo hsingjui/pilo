@@ -31,14 +31,14 @@ npx -y gitnexus mcp
 
 ### Useful Tools
 
-| Tool | Purpose |
-|------|---------|
-| `gitnexus_query` | Find execution flows and functional areas by concept |
-| `gitnexus_context` | Inspect callers, callees, references, and process participation for a symbol |
-| `gitnexus_impact` | Understand blast radius before changing a symbol |
-| `gitnexus_detect_changes` | Check changed symbols and affected flows before finishing |
-| `gitnexus_cypher` | Run direct graph queries |
-| `gitnexus_list_repos` | List indexed repositories |
+| Tool                      | Purpose                                                                      |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| `gitnexus_query`          | Find execution flows and functional areas by concept                         |
+| `gitnexus_context`        | Inspect callers, callees, references, and process participation for a symbol |
+| `gitnexus_impact`         | Understand blast radius before changing a symbol                             |
+| `gitnexus_detect_changes` | Check changed symbols and affected flows before finishing                    |
+| `gitnexus_cypher`         | Run direct graph queries                                                     |
+| `gitnexus_list_repos`     | List indexed repositories                                                    |
 
 ## ABCoder
 
@@ -72,13 +72,13 @@ abcoder mcp ~/abcoder-asts
 
 ### Useful Tools
 
-| Tool | Layer | Purpose |
-|------|-------|---------|
-| `list_repos` | 1 | List parsed repositories |
-| `get_repo_structure` | 2 | Inspect packages and files |
-| `get_package_structure` | 3 | Inspect nodes within a package |
-| `get_file_structure` | 3 | Inspect functions, classes, types, and signatures in a file |
-| `get_ast_node` | 4 | Retrieve code, dependencies, references, and implementations |
+| Tool                    | Layer | Purpose                                                      |
+| ----------------------- | ----- | ------------------------------------------------------------ |
+| `list_repos`            | 1     | List parsed repositories                                     |
+| `get_repo_structure`    | 2     | Inspect packages and files                                   |
+| `get_package_structure` | 3     | Inspect nodes within a package                               |
+| `get_file_structure`    | 3     | Inspect functions, classes, types, and signatures in a file  |
+| `get_ast_node`          | 4     | Retrieve code, dependencies, references, and implementations |
 
 ## Verification
 

@@ -25,9 +25,9 @@ workspace/
 
 ## Active Developers
 
-| Developer | Last Active | Sessions | Active File |
-|-----------|-------------|----------|-------------|
-| (none yet) | - | - | - |
+| Developer  | Last Active | Sessions | Active File |
+| ---------- | ----------- | -------- | ----------- |
+| (none yet) | -           | -        | -           |
 
 ---
 
@@ -42,6 +42,7 @@ python3 ./.trellis/scripts/init_developer.py <your-name>
 ```
 
 This will:
+
 1. Create your identity file (gitignored)
 2. Create your progress directory
 3. Create your personal index
@@ -50,6 +51,7 @@ This will:
 ### For Returning Developers
 
 1. Get your developer name:
+
    ```bash
    python3 ./.trellis/scripts/get_developer.py
    ```
@@ -72,6 +74,7 @@ This will:
 ### Session Record Format
 
 Each session should include:
+
 - Summary: One-line description
 - Branch: Which branch the work was done on
 - Main Changes: What was modified
@@ -102,8 +105,8 @@ Use this template when recording sessions:
 
 ### Git Commits
 
-| Hash | Message |
-|------|---------|
+| Hash      | Message          |
+| --------- | ---------------- |
 | `abc1234` | {commit message} |
 
 ### Testing
