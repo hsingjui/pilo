@@ -30,12 +30,13 @@ export default defineConfig(() => ({
 			? {
 					protocol: "ws",
 					host,
+
 					port: 1421,
 				}
 			: undefined,
 		watch: {
-			// 3. tell Vite to ignore watching `src-tauri`
-			ignored: ["**/src-tauri/**"],
+			// 3. tell Vite to ignore watching `src-tauri` and the workspace target dir
+			ignored: ["**/src-tauri/**", "**/target/**"],
 		},
 	},
 }));

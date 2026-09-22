@@ -8,8 +8,14 @@ const SERVER_RESOURCES: &[&str] = &[
 ];
 
 fn main() {
+    // 只对存在文件发 rerun-if-changed：cargo 把不存在的路径当作“永远变更”，
+    // 会让本 build script（以及 pilo crate）每次构建都重跑。
+    // 监听 resources 目录本身，这样后续新增运行时也能被感知。
+    println!("cargo:rerun-if-changed=resources");
     for resource in SERVER_RESOURCES {
-        println!("cargo:rerun-if-changed=resources/{resource}");
+        if Path::new("resources").join(resource).is_file() {
+            println!("cargo:rerun-if-changed=resources/{resource}");
+        }
     }
     println!("cargo:rerun-if-env-changed=PILO_ALLOW_INCOMPLETE_SERVER_BUNDLE");
 

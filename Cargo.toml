@@ -1,5 +1,6 @@
 [workspace]
 members = ["src-tauri", "crates/pilo-protocol", "crates/pilo-server"]
+default-members = ["src-tauri"]
 resolver = "2"
 
 [workspace.package]
