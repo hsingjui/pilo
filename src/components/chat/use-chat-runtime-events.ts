@@ -187,8 +187,7 @@ export function useChatRuntimeEvents({
 			setRecoveryState({
 				status: "failed",
 				recoverable: false,
-				message:
-					"临时会话不会写入 Session 文件，Pi 进程中断后无法恢复原上下文。",
+				message: "临时会话未保存，运行环境断开后无法恢复。",
 			});
 			return false;
 		}
@@ -220,8 +219,7 @@ export function useChatRuntimeEvents({
 				setRecoveryState({
 					status: "recovered",
 					recoverable: true,
-					message:
-						"已重新连接原 Session。中断的上一轮不会自动重放，可直接继续发送消息。",
+					message: "已重新连接原 Session。上一轮不会自动重放，可继续发送消息。",
 				});
 				return true;
 			} catch (error) {
@@ -299,8 +297,7 @@ export function useChatRuntimeEvents({
 					setRecoveryState({
 						status: "failed",
 						recoverable: false,
-						message:
-							"临时会话不会写入 Session 文件，Pi 进程中断后无法恢复原上下文。",
+						message: "临时会话未保存，运行环境断开后无法恢复。",
 					});
 				} else {
 					void recoverRuntime();
@@ -429,8 +426,7 @@ export function useChatRuntimeEvents({
 				setRecoveryState({
 					status: "failed",
 					recoverable: false,
-					message:
-						"临时会话不会写入 Session 文件，运行环境断开后无法恢复原上下文。",
+					message: "临时会话未保存，运行环境断开后无法恢复。",
 				});
 			} else {
 				void recoverRuntime();

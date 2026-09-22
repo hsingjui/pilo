@@ -95,7 +95,7 @@ function useChatImageSource(image: ChatConversationImage, load: boolean) {
 		return {
 			source: {
 				status: "error" as const,
-				message: "图片预览缓存已释放，重新打开会话后可从历史记录加载",
+				message: "图片预览已释放，重新打开会话即可加载",
 			},
 		};
 	}

@@ -74,7 +74,7 @@ export function SessionNamingSettings() {
 			})
 			.catch((error) => {
 				if (active) {
-					toast.error("读取会话命名设置失败", {
+					toast.error("加载命名设置失败", {
 						description: userErrorMessage(error),
 					});
 				}
@@ -119,7 +119,7 @@ export function SessionNamingSettings() {
 				return next;
 			});
 		} catch (error) {
-			toast.error("保存会话命名模型失败", {
+			toast.error("保存命名模型失败", {
 				description: userErrorMessage(error),
 			});
 		} finally {
@@ -139,7 +139,7 @@ export function SessionNamingSettings() {
 		try {
 			await refreshProjectPiModels(target.id);
 			setModelRevision((value) => value + 1);
-			toast.success("模型列表已刷新");
+			toast.success("模型已刷新");
 		} catch (error) {
 			toast.error("刷新模型失败", {
 				description: userErrorMessage(error),
@@ -151,17 +151,12 @@ export function SessionNamingSettings() {
 
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
-			<SettingsSection
-				title="会话命名模型"
-				description="新会话首条消息发送后，Pilo 使用对应连接指定的模型生成标题。未指定模型时不会自动命名。"
-			>
+			<SettingsSection title="命名模型">
 				{loading ? (
-					<div className="px-3 py-5 text-xs text-muted-foreground">
-						正在读取设置…
-					</div>
+					<div className="px-3 py-5 text-xs text-muted-foreground">加载中…</div>
 				) : connections.length === 0 ? (
 					<div className="px-3 py-5 text-xs text-muted-foreground">
-						暂无可用连接。
+						暂无连接。
 					</div>
 				) : (
 					connections.map((connection) => {
@@ -175,11 +170,6 @@ export function SessionNamingSettings() {
 							<SettingsRow
 								key={connection.id}
 								label={connectionLabel(connection)}
-								helper={
-									projectCount > 0
-										? `${projectCount} 个项目 · ${models.length} 个可用模型`
-										: "该连接暂无项目，因此没有可用的模型缓存。"
-								}
 							>
 								<Select
 									value={selected ? modelKey(selected) : "disabled"}
@@ -201,7 +191,7 @@ export function SessionNamingSettings() {
 											"w-[320px] max-w-full",
 										)}
 									>
-										<SelectValue placeholder="选择命名模型" />
+										<SelectValue placeholder="选择模型" />
 									</SelectTrigger>
 									<SelectContent className="max-h-80">
 										<SelectItem value="disabled">不自动命名</SelectItem>
@@ -213,9 +203,7 @@ export function SessionNamingSettings() {
 									</SelectContent>
 								</Select>
 								<Hint
-									label={
-										busy || projectCount === 0 ? undefined : "刷新该连接的模型"
-									}
+									label={busy || projectCount === 0 ? undefined : "刷新模型"}
 								>
 									<Button
 										variant="ghost"
@@ -223,7 +211,7 @@ export function SessionNamingSettings() {
 										className={SETTINGS_ICON_BUTTON_CLASS}
 										disabled={busy || projectCount === 0}
 										onClick={() => void refreshModels(connection.id)}
-										aria-label="刷新该连接的模型"
+										aria-label="刷新模型"
 									>
 										<RefreshCw className={busy ? "animate-spin" : undefined} />
 									</Button>

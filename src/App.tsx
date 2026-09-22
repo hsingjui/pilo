@@ -219,7 +219,7 @@ function App() {
 			return;
 		}
 		if (!activeProject) {
-			toast.info("请先新增项目");
+			toast.info("请先添加项目");
 			return;
 		}
 		setTerminalMounted(true);

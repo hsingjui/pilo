@@ -82,7 +82,7 @@ const SETTINGS_TABS = [
 	{
 		id: "preferences" as const,
 		section: "个人",
-		label: "偏好设置",
+		label: "偏好",
 		icon: SlidersHorizontal,
 	},
 	{
@@ -144,7 +144,7 @@ function PreferencesSettings() {
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
 			<SettingsSection title="对话">
-				<SettingsRow label="发送消息">
+				<SettingsRow label="发送快捷键">
 					<Select
 						value={sendMessageShortcut}
 						onValueChange={(value) =>
@@ -155,24 +155,18 @@ function PreferencesSettings() {
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
-							<SelectItem value="enter">Enter 发送</SelectItem>
-							<SelectItem value="mod-enter">Ctrl/⌘ + Enter 发送</SelectItem>
+							<SelectItem value="enter">Enter</SelectItem>
+							<SelectItem value="mod-enter">Ctrl/⌘ + Enter</SelectItem>
 						</SelectContent>
 					</Select>
 				</SettingsRow>
-				<SettingsRow
-					label="折叠超长消息"
-					helper={`超过 ${8_000} 字符的消息默认只显示开头。`}
-				>
+				<SettingsRow label="折叠长消息">
 					<Switch
 						checked={collapseLongMessages}
 						onCheckedChange={setCollapseLongMessages}
 					/>
 				</SettingsRow>
-				<SettingsRow
-					label="折叠完成的工作过程"
-					helper="回答结束后把思考与工具调用收起成一行摘要。"
-				>
+				<SettingsRow label="折叠工作过程">
 					<Switch
 						checked={collapseCompletedActivity}
 						onCheckedChange={setCollapseCompletedActivity}
@@ -254,11 +248,8 @@ function NotificationSettings() {
 
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
-			<SettingsSection
-				title="系统通知"
-				description="Agent 完成或运行出错时发送提醒。"
-			>
-				<SettingsRow label="桌面通知">
+			<SettingsSection title="系统通知">
+				<SettingsRow label="发送桌面通知">
 					<Switch
 						checked={desktopNotifications}
 						onCheckedChange={(enabled) =>
@@ -267,14 +258,7 @@ function NotificationSettings() {
 					/>
 				</SettingsRow>
 
-				<SettingsRow
-					label="系统权限"
-					helper={
-						permission === "denied"
-							? "系统已拒绝通知权限，请在系统设置中允许 Pilo 发送通知。"
-							: undefined
-					}
-				>
+				<SettingsRow label="通知权限">
 					<div className="flex items-center gap-1.5">
 						<SettingsStatus
 							muted={permission !== "granted" && !permissionSystemManaged}
@@ -286,7 +270,7 @@ function NotificationSettings() {
 									: NOTIFICATION_PERMISSION_LABELS[permission]}
 						</SettingsStatus>
 						{!permissionSystemManaged ? (
-							<Hint label={checking ? undefined : "重新检测通知权限"}>
+							<Hint label={checking ? undefined : "重新检测权限"}>
 								<Button
 									variant="ghost"
 									size="icon"

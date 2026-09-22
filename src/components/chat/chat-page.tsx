@@ -622,12 +622,12 @@ function ChatPageImpl(props: ChatPageProps) {
 				return true;
 			}
 			if (session.externalRunning) {
-				toast.info("外部 Pi 正在运行，当前会话为只读观察模式");
+				toast.info("外部 Pi 正在运行，当前会话只读");
 				return true;
 			}
 			if (commandName === "compact") {
 				if (running) {
-					toast.info("当前回复完成后再压缩上下文");
+					toast.info("当前回复完成后再压缩");
 					return true;
 				}
 				const customInstructions = command.slice("/compact".length).trim();
@@ -664,7 +664,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		(submission: ChatSubmission) => {
 			void (async () => {
 				if (session.externalRunning && submission.text.trim() !== "/new") {
-					toast.info("外部 Pi 正在运行，当前会话为只读观察模式");
+					toast.info("外部 Pi 正在运行，当前会话只读");
 					return;
 				}
 				if (await tryHandleComposerCommand(submission)) return;
@@ -674,7 +674,7 @@ function ChatPageImpl(props: ChatPageProps) {
 					return;
 				}
 				if (submission.images.length > 0) {
-					toast.info("历史消息加载完成后再发送图片");
+					toast.info("请等待历史消息加载后再发送图片");
 					return;
 				}
 				const trimmed = submission.text.trim();
@@ -971,7 +971,7 @@ function ChatPageImpl(props: ChatPageProps) {
 										historyKey={session.projectRecord.id}
 										placeholder={
 											session.externalRunning
-												? "外部 Pi 正在运行，当前会话暂不可输入"
+												? "外部 Pi 正在运行，当前会话只读"
 												: undefined
 										}
 										onChange={setDraft}

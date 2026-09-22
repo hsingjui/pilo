@@ -38,7 +38,6 @@ export function SettingsStatus({
 
 type SettingsSectionProps = {
 	title?: string;
-	description?: string;
 	actions?: ReactNode;
 	headerRight?: ReactNode;
 	children: ReactNode;
@@ -55,7 +54,6 @@ type SettingsRowProps = {
 
 export function SettingsSection({
 	title,
-	description,
 	actions,
 	headerRight,
 	children,
@@ -76,9 +74,6 @@ export function SettingsSection({
 							<p className="text-xs font-semibold text-muted-foreground">
 								{title}
 							</p>
-						) : null}
-						{description ? (
-							<p className="text-2xs text-muted-foreground">{description}</p>
 						) : null}
 					</div>
 					{headerRight ? (

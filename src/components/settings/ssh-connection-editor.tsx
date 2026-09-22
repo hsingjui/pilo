@@ -81,8 +81,8 @@ export function SshConnectionEditor({
 					<DialogTitle>
 						{editing?.name ? "编辑 SSH 连接" : "添加 SSH 连接"}
 					</DialogTitle>
-					<DialogDescription>
-						使用系统 OpenSSH 建立连接，Pilo 不复制远程项目到本地。
+					<DialogDescription className="sr-only">
+						配置 SSH 连接
 					</DialogDescription>
 				</DialogHeader>
 				{editing ? (
@@ -122,7 +122,7 @@ export function SshConnectionEditor({
 							</div>
 						</div>
 						<label htmlFor="ssh-host" className="grid gap-1 text-xs">
-							{editing.mode === "config" ? "Host alias" : "主机"}
+							{editing.mode === "config" ? "Host 别名" : "主机"}
 							<Input
 								id="ssh-host"
 								className={SETTINGS_CONTROL_CLASS}
@@ -203,17 +203,10 @@ export function SshConnectionEditor({
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="workspace">
-										远程 Pi · Pi 与工具运行在 SSH 主机
-									</SelectItem>
-									<SelectItem value="local">
-										本地 Pi · 内置工具透明路由到 SSH 工作区
-									</SelectItem>
+									<SelectItem value="workspace">远程 Pi（SSH 主机）</SelectItem>
+									<SelectItem value="local">本地 Pi（工具走 SSH）</SelectItem>
 								</SelectContent>
 							</Select>
-							<span className="text-2xs text-muted-foreground">
-								本地 Pi 在 SSH 断开时工具会直接报错，不会回退到本机文件系统。
-							</span>
 						</div>
 						{editing.authMethod === "password" ? (
 							<label htmlFor="ssh-password" className="grid gap-1 text-xs">
@@ -293,7 +286,7 @@ export function SshConnectionEditor({
 						) : null}
 						{editing.mode === "direct" ? (
 							<label htmlFor="ssh-proxy" className="grid gap-1 text-xs">
-								代理 / 跳板机（可选）
+								跳板机（可选）
 								<Input
 									id="ssh-proxy"
 									className={SETTINGS_CONTROL_CLASS}
@@ -303,9 +296,6 @@ export function SshConnectionEditor({
 									}
 									placeholder="user@jump.example.com:22"
 								/>
-								<span className="text-2xs text-muted-foreground">
-									使用 OpenSSH ProxyJump；多级跳板可用逗号分隔。
-								</span>
 							</label>
 						) : null}
 						<div className="mt-1 flex items-center justify-between gap-2">

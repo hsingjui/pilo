@@ -49,7 +49,6 @@ export function AboutSettings() {
 	const [version, setVersion] = useState<string | null>(null);
 	const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
 	const [availableVersion, setAvailableVersion] = useState<string | null>(null);
-	const [updateNotes, setUpdateNotes] = useState<string | null>(null);
 	const [updateError, setUpdateError] = useState<string | null>(null);
 	const [downloadedBytes, setDownloadedBytes] = useState(0);
 	const [downloadTotalBytes, setDownloadTotalBytes] = useState<number | null>(
@@ -80,7 +79,6 @@ export function AboutSettings() {
 		setUpdateStatus("checking");
 		setUpdateError(null);
 		setAvailableVersion(null);
-		setUpdateNotes(null);
 		setDownloadedBytes(0);
 		setDownloadTotalBytes(null);
 
@@ -97,7 +95,6 @@ export function AboutSettings() {
 
 			updateRef.current = update;
 			setAvailableVersion(update.version);
-			setUpdateNotes(update.body?.trim() || null);
 			setUpdateStatus("available");
 		} catch (error) {
 			setUpdateError(formatUpdateError(error));
@@ -147,29 +144,6 @@ export function AboutSettings() {
 			? Math.min(100, Math.round((downloadedBytes / downloadTotalBytes) * 100))
 			: null;
 
-	const updateHelper = (() => {
-		switch (updateStatus) {
-			case "checking":
-				return "正在从 GitHub Releases 检查最新版本。";
-			case "latest":
-				return "当前已经是最新版本。";
-			case "available":
-				return updateNotes
-					? `发现 v${availableVersion}：${updateNotes}`
-					: `发现新版本 v${availableVersion}。`;
-			case "downloading":
-				return downloadProgress === null
-					? "正在下载更新…"
-					: `正在下载更新… ${downloadProgress}%`;
-			case "installing":
-				return "正在安装更新，完成后 Pilo 会重新启动。";
-			case "error":
-				return updateError ?? "检查更新失败，请稍后重试。";
-			default:
-				return "通过 GitHub Releases 获取 Pilo 的正式版本更新。";
-		}
-	})();
-
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
 			<SettingsSection contentClassName="px-4 py-4 sm:px-5 sm:py-5">
@@ -189,19 +163,19 @@ export function AboutSettings() {
 							{version ? <SettingsStatus>v{version}</SettingsStatus> : null}
 						</div>
 						<p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
-							一个简洁、轻量，保留 Pi 原生体验的桌面客户端。
+							轻量的 Pi 桌面客户端。
 						</p>
 					</div>
 				</div>
 			</SettingsSection>
 
-			<SettingsSection title="应用信息">
+			<SettingsSection title="应用">
 				<SettingsRow label="版本">
 					<span className="font-mono text-xs text-muted-foreground">
 						{version ?? "—"}
 					</span>
 				</SettingsRow>
-				<SettingsRow label="项目仓库" helper="查看源代码、版本发布与问题反馈。">
+				<SettingsRow label="项目仓库">
 					<Button
 						type="button"
 						variant="ghost"
@@ -219,8 +193,11 @@ export function AboutSettings() {
 				</SettingsRow>
 			</SettingsSection>
 
-			<SettingsSection title="软件更新">
-				<SettingsRow label="检查更新" helper={updateHelper}>
+			<SettingsSection title="更新">
+				<SettingsRow
+					label="检查更新"
+					helper={updateStatus === "error" ? updateError : undefined}
+				>
 					<div className="flex items-center gap-1.5">
 						{updateStatus === "latest" ? (
 							<SettingsStatus>
@@ -277,7 +254,7 @@ export function AboutSettings() {
 						)}
 					</div>
 				</SettingsRow>
-				<SettingsRow label="发布页面" helper="查看历史版本与发行说明。">
+				<SettingsRow label="发布记录">
 					<Button
 						type="button"
 						variant="ghost"

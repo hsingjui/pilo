@@ -301,7 +301,7 @@ export function useAppChatWorkspace({
 				return;
 			}
 			if (!activeProject) {
-				toast.info("请先新增项目");
+				toast.info("请先添加项目");
 				return;
 			}
 			startDraftSession(activeProject, submission, model, thinkingLevel);
@@ -316,7 +316,7 @@ export function useAppChatWorkspace({
 		if (!pending) return;
 		pendingLandingSubmissionRef.current = null;
 		if (!activeProject) {
-			toast.info("请先新增项目");
+			toast.info("请先添加项目");
 			return;
 		}
 		startDraftSession(
@@ -361,7 +361,7 @@ export function useAppChatWorkspace({
 				projects.find((candidate) => candidate.id === projectId) ??
 				activeProject;
 			if (!project) {
-				toast.info("请先新增项目");
+				toast.info("请先添加项目");
 				return;
 			}
 			const sessionId = createTemporarySessionId();

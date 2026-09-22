@@ -44,7 +44,7 @@ function LoadingComposer({
 	};
 	const deferSubmission = (submission: ChatSubmission) => {
 		if (submission.images.length > 0) {
-			toast.info("历史消息加载完成后再发送图片");
+			toast.info("请等待历史消息加载后再发送图片");
 			return;
 		}
 		const trimmed = submission.text.trim();

@@ -91,7 +91,7 @@ export function ConnectionRow({
 			</div>
 			<div className="flex shrink-0 items-center gap-1">
 				<span className="mr-1 flex items-center gap-2 text-2xs text-muted-foreground">
-					首页
+					显示在首页
 					<Switch
 						aria-label="显示在首页"
 						checked={shownInHome}
@@ -116,11 +116,11 @@ export function ConnectionRow({
 					className={SETTINGS_ICON_BUTTON_CLASS}
 					disabled={busy}
 					onClick={onConfigure}
-					aria-label="连接设置"
-					title="连接设置"
+					aria-label="配置连接"
+					title="配置连接"
 				>
 					<Settings2 />
-					<span className="sr-only">连接设置</span>
+					<span className="sr-only">配置连接</span>
 				</Button>
 				{onEdit ? (
 					<Button
@@ -146,11 +146,11 @@ export function ConnectionRow({
 						)}
 						disabled={busy}
 						onClick={onRemove}
-						aria-label="删除连接"
-						title="删除连接"
+						aria-label="移除连接"
+						title="移除连接"
 					>
 						<Trash2 />
-						<span className="sr-only">删除连接</span>
+						<span className="sr-only">移除连接</span>
 					</Button>
 				) : null}
 			</div>
@@ -170,7 +170,6 @@ export function ConnectionsSection({
 	return (
 		<SettingsSection
 			title="连接"
-			description="连接配置保存在 Pilo；SSH 密码保存在系统凭据库。"
 			actions={
 				<AddConnectionMenu
 					canAddWsl={IS_WINDOWS}
@@ -217,12 +216,8 @@ export function ConnectionSettingsDialog({
 				className="max-w-md gap-4"
 			>
 				<DialogHeader>
-					<DialogTitle>连接设置</DialogTitle>
-					<DialogDescription>
-						{usesLocalPi
-							? "修改显示名称。该连接使用本地 Pi，Pi 运行在 Pilo 本机，请到「Local」连接的设置中配置本机 Pi。"
-							: "修改显示名称，并为这个连接指定 Pi 可执行文件。留空时自动从目标环境 PATH 检测。"}
-					</DialogDescription>
+					<DialogTitle>配置连接</DialogTitle>
+					<DialogDescription className="sr-only">配置连接</DialogDescription>
 				</DialogHeader>
 				{draft ? (
 					<div className="grid gap-3">
@@ -241,7 +236,7 @@ export function ConnectionSettingsDialog({
 							<div className="grid gap-1 text-xs">
 								Pi 运行位置
 								<span className="rounded-md border border-border/60 bg-muted/20 px-2 py-1.5 text-2xs text-muted-foreground">
-									本地 Pi · 使用本机 Pi，不检测远端可执行文件
+									本地 Pi
 								</span>
 							</div>
 						) : (
@@ -266,12 +261,9 @@ export function ConnectionSettingsDialog({
 										disabled={busy || probing}
 										onClick={onProbe}
 									>
-										{probing ? "检测中…" : "检测"}
+										{probing ? "检测中…" : "检测 Pi"}
 									</Button>
 								</div>
-								<span className="text-2xs text-muted-foreground">
-									可填写绝对路径，也可填写目标环境 PATH 中可解析的命令名。
-								</span>
 							</label>
 						)}
 						<div className="mt-1 flex justify-end gap-2">
@@ -326,7 +318,7 @@ function AddConnectionMenu({
 				) : null}
 				<DropdownMenuItem onSelect={onAddSsh}>
 					<Server />
-					添加 SSH 远程
+					添加 SSH 连接
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
@@ -360,7 +352,7 @@ export function WslDistributionDialog({
 			.catch((error) => {
 				if (cancelled) return;
 				setDistributions([]);
-				toast.error("读取 WSL 发行版失败", {
+				toast.error("加载 WSL 发行版失败", {
 					description: userErrorMessage(error),
 				});
 			});
@@ -377,15 +369,14 @@ export function WslDistributionDialog({
 			>
 				<DialogHeader>
 					<DialogTitle>添加 WSL 发行版</DialogTitle>
-					<DialogDescription>
-						选择一个 WSL
-						发行版加入连接列表；添加后可单独测试并选择是否显示在首页。
+					<DialogDescription className="sr-only">
+						选择要添加的 WSL 发行版
 					</DialogDescription>
 				</DialogHeader>
 				<div className="max-h-72 divide-y divide-border/60 overflow-auto rounded-md border">
 					{distributions === null ? (
 						<div className="px-3 py-4 text-xs text-muted-foreground">
-							正在读取 WSL 发行版…
+							加载中…
 						</div>
 					) : distributions.length === 0 ? (
 						<div className="px-3 py-4 text-xs text-muted-foreground">
@@ -418,21 +409,6 @@ export function WslDistributionDialog({
 				</div>
 			</DialogContent>
 		</Dialog>
-	);
-}
-
-export function ConnectionsHelpSection() {
-	return (
-		<SettingsSection title="说明">
-			<div className="px-3 py-2.5 text-2xs leading-relaxed text-muted-foreground">
-				测试会实际部署并启动对应环境上的 pilo-server。SSH Agent
-				适合系统已加载密钥的环境；指定私钥会传给 OpenSSH 的{" "}
-				<span className="font-mono">-i</span>；密码认证通过 askpass
-				从系统凭据库读取。代理目前使用{" "}
-				<span className="font-mono">ProxyJump (-J)</span>，可填写{" "}
-				<span className="font-mono">user@host:port</span>。
-			</div>
-		</SettingsSection>
 	);
 }
 

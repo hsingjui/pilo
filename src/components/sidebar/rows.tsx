@@ -313,7 +313,7 @@ export function EnvRow({
 							}}
 						>
 							<Trash2 className={menuItemIconClassName} />
-							{confirmingDelete ? "确认删除" : "删除连接"}
+							{confirmingDelete ? "确认移除" : "移除连接"}
 						</DropdownMenuItem>
 					) : null}
 				</DropdownMenuContent>
@@ -546,7 +546,7 @@ export function ProjectRow({
 										}}
 									>
 										<Trash2 className={menuItemIconClassName} />
-										{confirmingDelete ? "确认删除" : "删除项目"}
+										{confirmingDelete ? "确认移除" : "移除项目"}
 									</DropdownMenuItem>
 								) : null}
 							</DropdownMenuContent>

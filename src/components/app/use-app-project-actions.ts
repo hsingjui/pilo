@@ -111,7 +111,7 @@ export function useAppProjectActions({
 				setProjects(next);
 			} catch (error) {
 				setProjects(previous);
-				toast.error("项目排序保存失败", {
+				toast.error("保存项目排序失败", {
 					description: userErrorMessage(error),
 				});
 			}
@@ -129,10 +129,10 @@ export function useAppProjectActions({
 				onProjectsRemoved(new Set([projectId]), next);
 				notifyProjectsChanged();
 				toast.success(`已从 Pilo 移除 ${project.name}`, {
-					description: "实际项目文件未删除",
+					description: "项目文件保留",
 				});
 			} catch (error) {
-				toast.error("删除项目记录失败", {
+				toast.error("移除项目失败", {
 					description: userErrorMessage(error),
 				});
 			}
@@ -165,11 +165,11 @@ export function useAppProjectActions({
 				setProjects(nextProjects);
 				onProjectsRemoved(affectedProjectIds, nextProjects);
 				notifyProjectsChanged();
-				toast.success(`已从 Pilo 删除 ${connectionLabel(connection)}`, {
-					description: "关联项目记录已移除，实际文件未删除",
+				toast.success(`已从 Pilo 移除 ${connectionLabel(connection)}`, {
+					description: "关联项目记录已移除，项目文件保留",
 				});
 			} catch (error) {
-				toast.error("删除连接记录失败", {
+				toast.error("移除连接失败", {
 					description: userErrorMessage(error),
 				});
 			}

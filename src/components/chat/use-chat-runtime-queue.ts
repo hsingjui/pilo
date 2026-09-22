@@ -295,7 +295,7 @@ export function useChatRuntimeQueue({
 				}
 				removeQueuedMessagesFromConversation(turn, remaining);
 				restoreQueuedMessages(remaining);
-				toast.error("无法取回待处理消息，已将队列恢复到输入框", {
+				toast.error("取回失败，消息已恢复到输入框", {
 					description: runtimeErrorMessage(error),
 				});
 			}

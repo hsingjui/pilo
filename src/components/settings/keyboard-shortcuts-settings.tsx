@@ -95,7 +95,7 @@ function ShortcutEditor({
 		const conflictId = findShortcutConflict(keyboardShortcuts, commandId, next);
 		if (conflictId) {
 			toast.error("快捷键冲突", {
-				description: `已被“${getShortcutCommand(conflictId).label}”使用。`,
+				description: `已被“${getShortcutCommand(conflictId).label}”使用，请换一个组合键。`,
 			});
 			return;
 		}
@@ -119,7 +119,7 @@ function ShortcutEditor({
 				aria-label={`修改${getShortcutCommand(commandId).label}快捷键`}
 			>
 				{recording ? (
-					<span className="text-xs text-muted-foreground">请按新的快捷键…</span>
+					<span className="text-xs text-muted-foreground">按下新快捷键…</span>
 				) : (
 					<ShortcutKeys shortcut={shortcut} />
 				)}
@@ -165,9 +165,6 @@ export function KeyboardShortcutsSettings() {
 				<SettingsSection
 					key={section}
 					title={section}
-					description={
-						sectionIndex === 0 ? "点击快捷键后直接按下新的组合键。" : undefined
-					}
 					actions={
 						sectionIndex === 0 ? (
 							<Hint
@@ -194,11 +191,7 @@ export function KeyboardShortcutsSettings() {
 					{SHORTCUT_COMMANDS.filter(
 						(command) => command.section === section,
 					).map((command) => (
-						<SettingsRow
-							key={command.id}
-							label={command.label}
-							helper={command.description}
-						>
+						<SettingsRow key={command.id} label={command.label}>
 							<ShortcutEditor
 								commandId={command.id}
 								recording={recordingCommandId === command.id}

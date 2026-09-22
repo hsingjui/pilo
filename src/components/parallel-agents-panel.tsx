@@ -213,7 +213,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 						) : (
 							<Play className="size-3.5" />
 						)}
-						创建独立 Worktree Agent
+						创建并行 Agent
 					</Button>
 				</div>
 
@@ -221,8 +221,8 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 					{agents.length === 0 ? (
 						<EmptyState
 							variant="compact"
-							title="没有并行任务"
-							description="每个 Agent 会使用独立 Git worktree 和 Pi 进程。"
+							title="暂无并行 Agent"
+							description="创建后会显示在这里。"
 						/>
 					) : (
 						<ul className="grid gap-1">

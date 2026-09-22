@@ -199,8 +199,8 @@ export function ProjectViewer({
 			<div className="min-h-0 flex-1">
 				{!activeTab ? (
 					<EmptyState
-						title="打开文件开始查看"
-						description="可从文件引用或 Git 变更中打开文件。"
+						title="暂无打开的文件"
+						description="从文件或 Git 变更中打开。"
 					/>
 				) : activeTab.loading ? (
 					<div className="flex h-full items-center justify-center text-xs text-muted-foreground">

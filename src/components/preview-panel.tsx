@@ -192,8 +192,8 @@ export function PreviewPanel({ project }: { project: Project }) {
 			) : (
 				<EmptyState
 					variant="compact"
-					title="没有活动 Preview"
-					description="选择检测到的端口或手动输入端口。SSH 会自动建立本地转发，WSL 使用 localhost 映射。"
+					title="暂无 Preview"
+					description="选择端口打开 Preview。"
 				/>
 			)}
 		</div>

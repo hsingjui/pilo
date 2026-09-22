@@ -44,7 +44,6 @@ import {
 import {
 	ConnectionRow,
 	ConnectionSettingsDialog,
-	ConnectionsHelpSection,
 	ConnectionsSection,
 	WslDistributionDialog,
 	sshConnectionDescription,
@@ -111,7 +110,7 @@ export function ConnectionsSettings() {
 		if (sshResult.status === "fulfilled") {
 			setSshItems(sshResult.value);
 		} else {
-			toast.error("读取 SSH 连接失败", {
+			toast.error("加载 SSH 连接失败", {
 				description: userErrorMessage(sshResult.reason),
 			});
 		}
@@ -165,13 +164,13 @@ export function ConnectionsSettings() {
 					? { ...current, piExecutable: result.executable }
 					: current,
 			);
-			toast.success(`${connectionLabel(connection)} 的 Pi 可用`, {
+			toast.success(`${connectionLabel(connection)} Pi 可用`, {
 				description: [result.executable, result.version]
 					.filter(Boolean)
 					.join(" · "),
 			});
 		} catch (error) {
-			toast.error(`未检测到 ${connectionLabel(connection)} 可用的 Pi`, {
+			toast.error(`${connectionLabel(connection)} 未检测到可用 Pi`, {
 				description: userErrorMessage(error),
 			});
 		} finally {
@@ -191,9 +190,9 @@ export function ConnectionsSettings() {
 			);
 			setConnectionSettings(null);
 			await refresh();
-			toast.success("连接设置已保存");
+			toast.success("连接已保存");
 		} catch (error) {
-			toast.error("保存连接设置失败", {
+			toast.error("保存连接失败", {
 				description: userErrorMessage(error),
 			});
 		} finally {
@@ -208,7 +207,7 @@ export function ConnectionsSettings() {
 			await refresh();
 			toast.success(`已添加 WSL · ${distro}`);
 		} catch (error) {
-			toast.error("添加 WSL 发行版失败", {
+			toast.error("添加 WSL 失败", {
 				description: userErrorMessage(error),
 			});
 		} finally {
@@ -268,9 +267,9 @@ export function ConnectionsSettings() {
 			setConnectionShownInHome(connection.id, false);
 			await refresh();
 			setRemovingConnection(null);
-			toast.success(`已删除 ${connectionLabel(connection)}`);
+			toast.success(`已移除 ${connectionLabel(connection)}`);
 		} catch (error) {
-			toast.error("删除连接失败", {
+			toast.error("移除连接失败", {
 				description: userErrorMessage(error),
 			});
 		} finally {
@@ -311,7 +310,7 @@ export function ConnectionsSettings() {
 			>
 				<ConnectionRow
 					connection={local}
-					description="当前系统环境"
+					description="本机"
 					projectCount={projectCount(local.id)}
 					shownInHome={shownIds.has(local.id)}
 					busy={busy || probingPi}
@@ -326,9 +325,7 @@ export function ConnectionsSettings() {
 					onConfigure={() => openConnectionSettings(local)}
 				/>
 				{loading ? (
-					<div className="px-3 py-5 text-xs text-muted-foreground">
-						正在读取连接…
-					</div>
+					<div className="px-3 py-5 text-xs text-muted-foreground">加载中…</div>
 				) : (
 					<>
 						{wslItems.map((info) => {
@@ -338,7 +335,7 @@ export function ConnectionsSettings() {
 								<ConnectionRow
 									key={info.connection.id}
 									connection={info.connection}
-									description="WSL 发行版"
+									description="WSL"
 									projectCount={projectCount(
 										info.connection.id,
 										info.projectCount,
@@ -391,7 +388,6 @@ export function ConnectionsSettings() {
 					</>
 				)}
 			</ConnectionsSection>
-			<ConnectionsHelpSection />
 			<ConnectionSettingsDialog
 				draft={connectionSettings}
 				busy={busy}
@@ -443,23 +439,22 @@ export function ConnectionsSettings() {
 			/>
 			<SettingsConfirmDialog
 				open={removingConnection !== null}
-				title="删除连接？"
+				title="移除连接？"
 				description={
 					removingConnection ? (
 						<>
-							将从 Pilo 中删除
 							<span className="font-medium text-foreground">
 								“{connectionLabel(removingConnection)}”
 							</span>
-							。关联项目记录也会移除，但不会删除实际项目文件。
+							及关联项目记录将从 Pilo 移除，项目文件保留。
 							{removingConnection.kind.type === "ssh"
-								? " 已保存的 SSH 凭据也会一并删除。"
+								? " SSH 凭据也会删除。"
 								: null}
 						</>
 					) : null
 				}
-				confirmLabel="删除连接"
-				busyLabel="正在删除…"
+				confirmLabel="移除连接"
+				busyLabel="正在移除…"
 				busy={busy}
 				destructive
 				onOpenChange={(open) => {

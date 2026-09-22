@@ -25,9 +25,8 @@ const MACOS_DEFAULT_NOTIFICATION_SOUND = "NSUserNotificationDefaultSoundName";
 const NOTIFICATION_OPEN_SESSION_EVENT = "pilo://notification-open-session";
 const NOTIFICATION_TITLE_MAX_LENGTH = 72;
 const NOTIFICATION_BODY_MAX_LENGTH = 220;
-const TEST_NOTIFICATION_TITLE = "Pilo 通知测试";
-const TEST_NOTIFICATION_BODY =
-	"通知通道正常。Agent 完成或出错时，会以同样方式提醒你。";
+const TEST_NOTIFICATION_TITLE = "Pilo 测试通知";
+const TEST_NOTIFICATION_BODY = "通知正常。Agent 完成或出错时会提醒你。";
 
 function isMacOS() {
 	return (
@@ -78,7 +77,7 @@ function agentNotificationContent({
 	if (status === "completed") {
 		return {
 			title,
-			body: "Agent 已完成本轮任务，打开会话查看结果。",
+			body: "Agent 已完成，打开会话查看结果。",
 		};
 	}
 

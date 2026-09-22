@@ -250,7 +250,7 @@ export function RightSidebar({
 						<EmptyState
 							variant="compact"
 							title="未选择项目"
-							description="选择项目后可创建并行 Agent。"
+							description="先选择项目。"
 						/>
 					)
 				) : view === "preview" ? (
@@ -260,7 +260,7 @@ export function RightSidebar({
 						<EmptyState
 							variant="compact"
 							title="未选择项目"
-							description="选择项目后可打开 Preview。"
+							description="先选择项目。"
 						/>
 					)
 				) : view === "files" ? (
@@ -274,14 +274,14 @@ export function RightSidebar({
 						<EmptyState
 							variant="compact"
 							title="未选择项目"
-							description="选择项目后可浏览文件。"
+							description="先选择项目。"
 						/>
 					)
 				) : !project ? (
 					<EmptyState
 						variant="compact"
 						title="未选择项目"
-						description="选择项目后可查看 Git 变更。"
+						description="先选择项目。"
 					/>
 				) : loadState === "error" ? (
 					<ErrorState
