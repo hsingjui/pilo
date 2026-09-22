@@ -3,7 +3,6 @@ import test from "node:test";
 
 import { createChatUiStateCache } from "../src/components/app/chat-ui-state-cache.ts";
 import {
-	filterProjectSessions,
 	sortSidebarSessionsActiveFirst,
 	summarizeProjectSessions,
 } from "../src/components/sidebar/session-list.ts";
@@ -133,7 +132,6 @@ test("sidebar project summary keeps active sessions first without moving the sel
 		selectedRecent.visible.map((session) => session.id),
 		["s2", "s1", "s9", "s8", "s7", "s6", "s5"],
 	);
-	assert.equal(selectedRecent.totalCount, 10);
 	assert.equal(selectedRecent.hiddenCount, 3);
 
 	// 选中超出最近窗口的旧会话时，用它替换窗口里最旧的一条，
@@ -162,19 +160,6 @@ test("selecting a recent sidebar session does not grow the recent window", () =>
 		["s7", "s6", "s5", "s4", "s3"],
 	);
 	assert.equal(selected.hiddenCount, unselected.hiddenCount);
-});
-
-test("sidebar project session search matches titles and previews in recent order", () => {
-	const sessions = [
-		sidebarSession("old", 1, { preview: "streaming performance" }),
-		sidebarSession("new", 3, { preview: "performance benchmark" }),
-		sidebarSession("other", 2),
-	];
-
-	assert.deepEqual(
-		filterProjectSessions(sessions, "performance").map((session) => session.id),
-		["new", "old"],
-	);
 });
 
 test("sidebar all-sessions view sorts active sessions first then recency", () => {

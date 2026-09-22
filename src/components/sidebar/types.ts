@@ -3,7 +3,7 @@ import type { ProjectPiRuntime } from "@/lib/projects";
 
 export type SidebarEnv = { id: string; name: string };
 
-/** 侧栏组织模式：按连接分组的“项目”树，或平铺的“最新更新”会话列表。 */
+/** 侧栏组织模式：按连接分组的“项目”树，或平铺的“最近会话”会话列表。 */
 export type SidebarEnvView = "projects" | "recent";
 
 export type SidebarProject = {
@@ -40,10 +40,10 @@ export type AppSidebarProps = {
 	refreshingProjectIds?: ReadonlySet<string>;
 	selectedProjectId?: string | null;
 	selectedSessionId?: string | null;
-	/** 侧栏组织模式：按项目分组（默认）或“最新更新”平铺列表。 */
+	/** 侧栏组织模式：按项目分组（默认）或“最近会话”平铺列表。 */
 	organizeMode?: SidebarEnvView;
 	onOrganizeModeChange?: (mode: SidebarEnvView) => void;
-	/** “最新更新”模式下会话行是否显示所属项目名。 */
+	/** “最近会话”模式下会话行是否显示所属项目名。 */
 	showProjectsInRecents?: boolean;
 	onShowProjectsInRecentsChange?: (showProjects: boolean) => void;
 	onSelectSession?: (sessionId: string) => void;

@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
+import { SessionRowHighlightBlock, useSessionRowGlide } from "./rows";
 import type { SidebarSession } from "./types";
 
 const SESSION_ROW_ESTIMATE = 30;
@@ -23,6 +24,8 @@ export const VirtualSessionRows = memo(function VirtualSessionRows({
 	renderSession: (session: SidebarSession) => ReactNode;
 }) {
 	const listRef = useRef<HTMLDivElement>(null);
+	const { containerRef, highlight, onPointerOver, onPointerLeave } =
+		useSessionRowGlide();
 	const [scrollMargin, setScrollMargin] = useState(0);
 	useLayoutEffect(() => {
 		const list = listRef.current;
@@ -50,13 +53,20 @@ export const VirtualSessionRows = memo(function VirtualSessionRows({
 	const setListRef = useCallback(
 		(node: HTMLDivElement | null) => {
 			listRef.current = node;
+			containerRef.current = node;
 			virtualizer.containerRef(node);
 		},
-		[virtualizer],
+		[virtualizer, containerRef],
 	);
 
 	return (
-		<div ref={setListRef} className="relative w-full min-w-0 overflow-hidden">
+		<div
+			ref={setListRef}
+			className="group/glide relative w-full min-w-0 overflow-hidden"
+			onPointerOver={onPointerOver}
+			onPointerLeave={onPointerLeave}
+		>
+			<SessionRowHighlightBlock highlight={highlight} />
 			{virtualizer.getVirtualItems().map((item) => {
 				const session = sessions[item.index];
 				if (!session) return null;

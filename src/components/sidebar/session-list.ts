@@ -50,7 +50,6 @@ export function summarizeProjectSessions(
 	return {
 		visible,
 		hiddenCount: Math.max(0, sessions.length - visible.length),
-		totalCount: sessions.length,
 	};
 }
 
@@ -63,20 +62,5 @@ export function sortSidebarSessionsActiveFirst(
 			return a.active ? -1 : 1;
 		}
 		return b.latestMessageAt.getTime() - a.latestMessageAt.getTime();
-	});
-}
-
-export function filterProjectSessions(
-	sessions: readonly SidebarSession[],
-	query: string,
-): SidebarSession[] {
-	const normalizedQuery = query.trim().toLowerCase();
-	const ordered = sortSidebarSessionsByRecency(sessions);
-	if (!normalizedQuery) return ordered;
-
-	return ordered.filter((session) => {
-		const searchable =
-			`${session.title}\n${session.preview ?? ""}`.toLowerCase();
-		return searchable.includes(normalizedQuery);
 	});
 }

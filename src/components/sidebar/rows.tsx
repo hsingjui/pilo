@@ -1,5 +1,13 @@
 /* oxlint-disable jsx-a11y/prefer-tag-over-role -- sidebar rows contain independent action buttons; native outer buttons would create invalid nested interactive controls. */
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+	memo,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+	type PointerEvent as ReactPointerEvent,
+	type ReactNode,
+} from "react";
 import {
 	Check,
 	ChevronDown,
@@ -198,7 +206,7 @@ export function EnvRow({
 	/** 侧栏组织模式（全局）。 */
 	view: SidebarEnvView;
 	onViewChange?: (view: SidebarEnvView) => void;
-	/** 「展示项目」开关（“最新更新”模式下控制会话行是否带项目名）。 */
+	/** 「展示项目」开关（“最近会话”模式下控制会话行是否带项目名）。 */
 	showProjects: boolean;
 	onShowProjectsChange?: (showProjects: boolean) => void;
 	onAddProject?: (connectionId: string) => void;
@@ -276,7 +284,7 @@ export function EnvRow({
 							/>
 							<ViewMenuItem
 								icon={Clock}
-								label="最新更新"
+								label="最近会话"
 								selected={view === "recent"}
 								onSelect={() => onViewChange("recent")}
 							/>
@@ -318,7 +326,7 @@ export function EnvRow({
 // ---- 项目行 -------------------------------------------------------------
 
 /**
- * “最新更新”视图的分区标题（参考 Lody SidebarSectionHeader）：
+ * “最近会话”视图的分区标题（参考 Lody SidebarSectionHeader）：
  * 可折叠/展开；操作菜单融进标题行的 MoreHorizontal——连接和项目树
  * 隐藏后，这里是用户切回“项目”视图的入口。
  */
@@ -335,11 +343,11 @@ export function RecentSectionHeader({
 	/** 侧栏组织模式（全局）。 */
 	view: SidebarEnvView;
 	onViewChange?: (view: SidebarEnvView) => void;
-	/** 「展示项目」开关（“最新更新”模式下控制会话行是否带项目名）。 */
+	/** 「展示项目」开关（“最近会话”模式下控制会话行是否带项目名）。 */
 	showProjects: boolean;
 	onShowProjectsChange?: (showProjects: boolean) => void;
 }) {
-	const toggleLabel = collapsed ? "展开最新更新" : "折叠最新更新";
+	const toggleLabel = collapsed ? "展开最近会话" : "折叠最近会话";
 	return (
 		<div className="group flex h-7 items-center gap-1 rounded-md">
 			<button
@@ -354,7 +362,7 @@ export function RecentSectionHeader({
 				)}
 			>
 				<Clock className="h-3.5 w-3.5 shrink-0 opacity-80" />
-				<span className="min-w-0 truncate">最新更新</span>
+				<span className="min-w-0 truncate">最近会话</span>
 				<ChevronDown
 					className={cn(
 						"h-3.5 w-3.5 shrink-0 text-current transition-[opacity,transform] duration-150 ease-out",
@@ -369,7 +377,7 @@ export function RecentSectionHeader({
 					<button
 						type="button"
 						className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-						aria-label="最新更新菜单"
+						aria-label="最近会话菜单"
 					>
 						<MoreHorizontal className="h-3.5 w-3.5" />
 					</button>
@@ -386,7 +394,7 @@ export function RecentSectionHeader({
 							/>
 							<ViewMenuItem
 								icon={Clock}
-								label="最新更新"
+								label="最近会话"
 								selected={view === "recent"}
 								onSelect={() => onViewChange("recent")}
 							/>
@@ -591,6 +599,93 @@ export function ProjectRow({
 
 // ---- 会话行 ---------------------------------------------------------------
 
+// 会话列表的悬浮高亮：用一个高亮块在行之间平滑滑动，
+// 比每行各自 transition background-color 更跟手（参考 GlideMenu）。
+type SessionRowHighlight = { top: number; height: number };
+
+/** 滑动高亮的共享逻辑：算出悬浮行相对容器的高亮块位置。 */
+export function useSessionRowGlide() {
+	const containerRef = useRef<HTMLDivElement>(null);
+	const lastRowRef = useRef<HTMLElement | null>(null);
+	const [highlight, setHighlight] = useState<SessionRowHighlight | null>(null);
+
+	const onPointerOver = (event: ReactPointerEvent<HTMLDivElement>) => {
+		const row = (event.target as HTMLElement).closest<HTMLElement>(
+			"[data-session-row]",
+		);
+		const container = containerRef.current;
+		if (!row || !container?.contains(row)) return;
+		// 同一行内扫过子元素时不重复读取布局。
+		if (lastRowRef.current === row) return;
+		lastRowRef.current = row;
+		const rowRect = row.getBoundingClientRect();
+		const containerRect = container.getBoundingClientRect();
+		const next = {
+			top: rowRect.top - containerRect.top,
+			height: rowRect.height,
+		};
+		setHighlight((current) =>
+			current &&
+			Math.abs(current.top - next.top) < 0.5 &&
+			Math.abs(current.height - next.height) < 0.5
+				? current
+				: next,
+		);
+	};
+
+	const onPointerLeave = () => {
+		lastRowRef.current = null;
+		setHighlight(null);
+	};
+
+	return { containerRef, highlight, onPointerOver, onPointerLeave };
+}
+
+/** 滑动高亮块；放在容器内、会话行之前。 */
+export function SessionRowHighlightBlock({
+	highlight,
+}: {
+	highlight: SessionRowHighlight | null;
+}) {
+	return (
+		<div
+			aria-hidden="true"
+			className="pointer-events-none absolute inset-x-0 top-0 z-0 rounded-md bg-sidebar-hover transition-[transform,opacity] duration-150 ease-out motion-reduce:transition-none"
+			style={{
+				transform: `translateY(${highlight?.top ?? 0}px)`,
+				height: highlight?.height ?? 0,
+				opacity: highlight ? 1 : 0,
+			}}
+		/>
+	);
+}
+
+export function SessionRowGlide({
+	className,
+	children,
+}: {
+	className?: string;
+	children: ReactNode;
+}) {
+	const { containerRef, highlight, onPointerOver, onPointerLeave } =
+		useSessionRowGlide();
+
+	return (
+		<div
+			ref={containerRef}
+			className={cn(
+				"group/glide relative flex w-full min-w-0 flex-col gap-0.5",
+				className,
+			)}
+			onPointerOver={onPointerOver}
+			onPointerLeave={onPointerLeave}
+		>
+			<SessionRowHighlightBlock highlight={highlight} />
+			{children}
+		</div>
+	);
+}
+
 export const SessionRow = memo(function SessionRow({
 	session,
 	selected,
@@ -604,7 +699,7 @@ export const SessionRow = memo(function SessionRow({
 	onSelect: (sessionId: string) => void;
 	onDelete?: (sessionId: string) => void;
 	onRename?: (sessionId: string, title: string) => void;
-	/** 所属项目名；仅在“最新更新”且开启「展示项目」时传入（两行式展示）。 */
+	/** 所属项目名；仅在“最近会话”且开启「展示项目」时传入（两行式展示）。 */
 	projectName?: string;
 }) {
 	const projectContext = Boolean(projectName);
@@ -632,6 +727,7 @@ export const SessionRow = memo(function SessionRow({
 					aria-label={session.title}
 					aria-current={selected ? "page" : undefined}
 					data-menu-open={menuOpen || undefined}
+					data-session-row=""
 					onClick={() => {
 						if (!renaming && !suppressSelectRef.current) onSelect(session.id);
 					}}
@@ -643,6 +739,8 @@ export const SessionRow = memo(function SessionRow({
 					}}
 					className={cn(
 						"group relative w-full min-w-0 cursor-pointer select-none rounded-md border border-transparent bg-transparent px-2 text-left transition-colors",
+						// 在滑动的悬浮高亮列表里，让高亮块而不是行自身承载 hover 背景。
+						"group-hover/glide:hover:bg-transparent",
 						projectContext ? "py-1.5" : "py-1",
 						"hover:bg-sidebar-hover hover:text-sidebar-hover-foreground data-[menu-open]:bg-sidebar-hover",
 						"focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sidebar-ring",

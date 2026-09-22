@@ -34,10 +34,16 @@ import { ScrollArea } from "@/ui";
 import { IS_MACOS } from "@/components/title-bar";
 import { CommandPalette } from "@/components/command-palette";
 import { ProjectSessionsToolbar } from "./project-sessions-toolbar";
-import { EnvRow, RecentSectionHeader, SessionRow, ProjectRow } from "./rows";
 import {
-	filterProjectSessions,
+	EnvRow,
+	RecentSectionHeader,
+	SessionRow,
+	SessionRowGlide,
+	ProjectRow,
+} from "./rows";
+import {
 	sortSidebarSessionsActiveFirst,
+	sortSidebarSessionsByRecency,
 	summarizeProjectSessions,
 } from "./session-list";
 import {
@@ -73,11 +79,11 @@ const COLLAPSED_SECTIONS_STORAGE_KEY = "pilo.collapsedSections";
 /** 侧栏组织模式持久化 key（Lody 的 sidebarOrganizeModeAtom 等价实现）。 */
 const ORGANIZE_MODE_STORAGE_KEY = "pilo.sidebarOrganizeMode";
 
-/** “最新更新”视图是否在会话行下展示项目名。 */
+/** “最近会话”视图是否在会话行下展示项目名。 */
 const SHOW_PROJECTS_IN_RECENTS_STORAGE_KEY =
 	"pilo.sidebarShowProjectsInRecents";
 
-/** “最新更新”视图最多展示的会话数。 */
+/** “最近会话”视图最多展示的会话数。 */
 const ENV_RECENT_SESSION_LIMIT = 50;
 const EMPTY_REFRESHING_PROJECT_IDS: ReadonlySet<string> = new Set();
 
@@ -211,7 +217,6 @@ export function AppSidebar({
 	const [projectSessionsViewId, setProjectSessionsViewId] = useState<
 		string | null
 	>(null);
-	const [projectSessionsQuery, setProjectSessionsQuery] = useState("");
 	const { keyboardShortcuts } = usePreferences();
 	useKeyboardShortcut(keyboardShortcuts["open-command-palette"], () =>
 		setPaletteOpen((open) => !open),
@@ -368,7 +373,6 @@ export function AppSidebar({
 		setOrganizeMode(mode);
 		if (mode === "projects") {
 			setProjectSessionsViewId(null);
-			setProjectSessionsQuery("");
 		}
 		if (mode === "recent") {
 			setProjectSessionsViewId(null);
@@ -392,7 +396,7 @@ export function AppSidebar({
 		return grouped;
 	}, [projects]);
 
-	// “最新更新”视图：全部连接的会话合并为一条平铺列表，按更新时间排序。
+	// “最近会话”视图：全部连接的会话合并为一条平铺列表，按更新时间排序。
 	const recentSessions = useMemo(() => {
 		if (organizeMode !== "recent") return [];
 		return sortSidebarSessionsActiveFirst(sessions).slice(
@@ -437,14 +441,10 @@ export function AppSidebar({
 	);
 	const projectSessionsViewSessions = useMemo(() => {
 		if (!projectSessionsViewId) return [];
-		return filterProjectSessions(
+		return sortSidebarSessionsByRecency(
 			sessionsByProject.get(projectSessionsViewId) ?? [],
-			projectSessionsQuery,
 		);
-	}, [projectSessionsQuery, projectSessionsViewId, sessionsByProject]);
-	const projectSessionsViewTotal = projectSessionsViewId
-		? (sessionsByProject.get(projectSessionsViewId)?.length ?? 0)
-		: 0;
+	}, [projectSessionsViewId, sessionsByProject]);
 
 	const resetSidebarScroll = useCallback(() => {
 		window.requestAnimationFrame(() => {
@@ -454,7 +454,6 @@ export function AppSidebar({
 	const openProjectSessionsView = useCallback(
 		(projectId: string) => {
 			setProjectSessionsViewId(projectId);
-			setProjectSessionsQuery("");
 			resetSidebarScroll();
 			onRefreshProjectSessions?.(projectId);
 		},
@@ -462,7 +461,6 @@ export function AppSidebar({
 	);
 	const closeProjectSessionsView = useCallback(() => {
 		setProjectSessionsViewId(null);
-		setProjectSessionsQuery("");
 		resetSidebarScroll();
 	}, [resetSidebarScroll]);
 
@@ -485,7 +483,7 @@ export function AppSidebar({
 	);
 	const renderSession = useCallback(
 		(session: SidebarSession) => {
-			// 「展示项目」开启且处于“最新更新”视图时才带项目名（两行式）；
+			// 「展示项目」开启且处于“最近会话”视图时才带项目名（两行式）；
 			// 项目树视图下会话已归属项目节点，不重复展示项目名。
 			const showProjectName =
 				organizeMode === "recent" && showProjectsInRecents;
@@ -516,7 +514,9 @@ export function AppSidebar({
 
 	const renderSessionList = (projectSessions: SidebarSession[]) => {
 		if (projectSessions.length < 40) {
-			return <>{projectSessions.map(renderSession)}</>;
+			return (
+				<SessionRowGlide>{projectSessions.map(renderSession)}</SessionRowGlide>
+			);
 		}
 
 		return (
@@ -586,9 +586,6 @@ export function AppSidebar({
 						{projectSessionsViewProject ? (
 							<ProjectSessionsToolbar
 								project={projectSessionsViewProject}
-								totalCount={projectSessionsViewTotal}
-								query={projectSessionsQuery}
-								onQueryChange={setProjectSessionsQuery}
 								onBack={closeProjectSessionsView}
 								onNewChat={onNewChatInProject}
 							/>
@@ -596,10 +593,10 @@ export function AppSidebar({
 							<div className="flex items-center gap-1">
 								<button
 									type="button"
-									className="group flex min-w-0 flex-1 select-none items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring dark:text-sidebar-foreground/75"
+									className="group flex min-w-0 flex-1 select-none items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring dark:text-sidebar-foreground/75"
 									onClick={() => onNewChat?.()}
 								>
-									<span className="flex h-5 w-5 shrink-0 items-center justify-center text-current">
+									<span className="flex h-4 w-4 shrink-0 items-center justify-center text-current">
 										<SquarePen className="h-4 w-4" />
 									</span>
 									<span className="truncate">新会话</span>
@@ -640,9 +637,7 @@ export function AppSidebar({
 									renderSessionList(projectSessionsViewSessions)
 								) : (
 									<div className="px-3 py-8 text-center text-xs text-sidebar-foreground-muted">
-										{projectSessionsQuery.trim()
-											? `没有匹配“${projectSessionsQuery.trim()}”的会话`
-											: "暂无会话"}
+										暂无会话
 									</div>
 								)
 							) : (
@@ -751,25 +746,28 @@ export function AppSidebar({
 																	>
 																		{projectSessionSummary ? (
 																			<>
-																				{projectSessionSummary.visible.map(
-																					renderSession,
-																				)}
+																				<SessionRowGlide>
+																					{projectSessionSummary.visible.map(
+																						renderSession,
+																					)}
+																				</SessionRowGlide>
 																				{projectSessionSummary.hiddenCount >
 																				0 ? (
 																					<button
 																						type="button"
-																						className="flex w-full items-center rounded-md py-1 pl-8 pr-2 text-left text-xs text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sidebar-ring"
+																						className="flex w-full items-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-left text-xs text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sidebar-ring"
 																						onClick={() =>
 																							openProjectSessionsView(
 																								project.id,
 																							)
 																						}
 																					>
+																						<span
+																							aria-hidden="true"
+																							className="h-4 w-4 shrink-0"
+																						/>
 																						<span className="min-w-0 flex-1 truncate">
 																							查看全部
-																						</span>
-																						<span className="ml-2 shrink-0 tabular-nums">
-																							{projectSessionSummary.totalCount}
 																						</span>
 																					</button>
 																				) : null}
