@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import { cn } from "@/lib/utils";
 
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
@@ -46,12 +48,13 @@ function UserSkeleton({ className }: { className: string }) {
 }
 
 export function ChatHistorySkeleton() {
+	const { t } = useTranslation();
 	return (
 		<output
 			aria-live="polite"
 			className="flex min-h-full flex-col pb-8 pt-4 @min-[40rem]:pb-10 @min-[40rem]:pt-6"
 		>
-			<span className="sr-only">正在加载会话</span>
+			<span className="sr-only">{t("chat.historyLoading")}</span>
 			<ConversationColumn className="flex-1">
 				<UserSkeleton className="w-[42%] @min-[40rem]:w-[34%]" />
 				<AssistantSkeleton widths={["w-[82%]", "w-[68%]", "w-[48%]"]} />

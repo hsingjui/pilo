@@ -1,4 +1,5 @@
 import type { ChatSession } from "@/components/chat/chat-page";
+import { i18n } from "../../i18n/index.ts";
 import type { ChatImageAttachment } from "@/lib/chat-submission";
 import type { SidebarSession } from "@/components/sidebar/types";
 import type { Project } from "@/lib/projects";
@@ -26,7 +27,7 @@ export function toSidebarSession(session: SessionIndexEntry): SidebarSession {
 			session.titleOverride ??
 			session.name ??
 			session.firstUserMessagePreview ??
-			"新会话",
+			i18n.t("app.newChat"),
 		preview:
 			session.titleOverride || session.name
 				? session.firstUserMessagePreview
@@ -76,7 +77,7 @@ export function mergeSidebarSessionsWithOpenChats(
 		if (indexedKeys.has(key)) continue;
 		pending.push({
 			id: sessionId,
-			title: entry.session.title || "新会话",
+			title: entry.session.title || i18n.t("app.newChat"),
 			preview: entry.initialMessage?.trim() || null,
 			sessionPath: entry.session.sessionPath ?? "",
 			projectId: entry.session.projectRecord.id,
@@ -188,7 +189,7 @@ export function indexedChatSession(
 			session.titleOverride ??
 			session.name ??
 			session.firstUserMessagePreview ??
-			"新会话",
+			i18n.t("app.newChat"),
 		projectRecord: project,
 		sessionPath: session.sessionPath,
 		historyFileSize: session.fileSize,
@@ -319,7 +320,7 @@ export function syncOpenedChatSessionMetadata(
 			indexed.titleOverride ??
 			indexed.name ??
 			indexed.firstUserMessagePreview ??
-			"新会话";
+			i18n.t("app.newChat");
 		const sessionPath =
 			entry.session.sessionPath ??
 			(entry.piSessionId ? undefined : indexed.sessionPath);

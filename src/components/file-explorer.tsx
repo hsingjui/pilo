@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
 	ChevronRight,
 	File,
@@ -128,6 +129,7 @@ export function FileExplorer({
 	project: Project;
 	onOpenFile: (path: string) => void;
 }) {
+	const { t } = useTranslation();
 	const [directories, setDirectories] = useState<Map<string, DirectoryState>>(
 		() => new Map([["", { entries: [], loading: true }]]),
 	);
@@ -221,8 +223,8 @@ export function FileExplorer({
 					<Input
 						value={query}
 						onChange={(event) => setQuery(event.target.value)}
-						placeholder="搜索文件"
-						aria-label="搜索文件"
+						placeholder={t("file.search")}
+						aria-label={t("file.search")}
 						className="h-7 pl-7 text-xs"
 					/>
 				</div>
@@ -230,7 +232,7 @@ export function FileExplorer({
 					variant="ghost"
 					size="icon"
 					className="size-7 shrink-0"
-					aria-label="刷新文件"
+					aria-label={t("file.refresh")}
 					onClick={() => void loadDirectory("")}
 				>
 					<RefreshCw
@@ -242,7 +244,7 @@ export function FileExplorer({
 				{query.trim() ? (
 					searching ? (
 						<div className="px-2 py-4 text-center text-xs text-muted-foreground">
-							搜索中…
+							{t("file.searching")}
 						</div>
 					) : searchResults.length ? (
 						<ul className="grid gap-0.5">
@@ -262,23 +264,25 @@ export function FileExplorer({
 					) : (
 						<EmptyState
 							variant="compact"
-							title="没有匹配文件"
-							description={`未找到与“${query.trim()}”匹配的文件`}
+							title={t("file.noMatch")}
+							description={t("file.noMatchDescription", {
+								query: query.trim(),
+							})}
 						/>
 					)
 				) : root?.error ? (
 					<ErrorState
 						variant="compact"
-						title="无法读取文件"
+						title={t("file.readFailed")}
 						description={root.error}
 						onRetry={() => void loadDirectory("")}
 					/>
 				) : root?.loading && rootEntries.length === 0 ? (
 					<div className="px-2 py-4 text-center text-xs text-muted-foreground">
-						正在读取文件…
+						{t("file.reading")}
 					</div>
 				) : rootEntries.length === 0 ? (
-					<EmptyState variant="compact" title="项目目录为空" />
+					<EmptyState variant="compact" title={t("file.empty")} />
 				) : (
 					rootEntries.map((entry) => (
 						<FileTreeRow

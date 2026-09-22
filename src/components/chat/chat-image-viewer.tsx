@@ -10,6 +10,7 @@ import {
 	useSyncExternalStore,
 	type ReactNode,
 } from "react";
+import { useTranslation } from "react-i18next";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Download, ImageOff, LoaderCircle, X } from "lucide-react";
 
@@ -56,6 +57,7 @@ type RemoteImageState =
 	| { attempt: number; key: string; status: "error"; message: string };
 
 function useChatImageSource(image: ChatConversationImage, load: boolean) {
+	const { t } = useTranslation();
 	const scope = useChatImageScope();
 	const local = image.source === "local";
 	const key = local ? image.id : chatImageCacheKey(image, scope);
@@ -95,7 +97,7 @@ function useChatImageSource(image: ChatConversationImage, load: boolean) {
 		return {
 			source: {
 				status: "error" as const,
-				message: "图片预览已释放，重新打开会话即可加载",
+				message: t("chat.imagePreviewReleased"),
 			},
 		};
 	}
@@ -166,6 +168,7 @@ function useChatImageLightboxState() {
 }
 
 export const ChatImageLightbox = memo(function ChatImageLightbox() {
+	const { t } = useTranslation();
 	const state = useChatImageLightboxState();
 	return (
 		<DialogPrimitive.Root
@@ -186,7 +189,7 @@ export const ChatImageLightbox = memo(function ChatImageLightbox() {
 				>
 					<div className="flex items-center justify-between gap-3 py-1">
 						<DialogPrimitive.Title className="min-w-0 truncate text-sm text-white/90">
-							{state?.name ?? "图片"}
+							{state?.name ?? t("chat.image")}
 						</DialogPrimitive.Title>
 						<div className="flex shrink-0 items-center gap-1 text-xs text-white/70">
 							{state?.size ? (
@@ -199,14 +202,14 @@ export const ChatImageLightbox = memo(function ChatImageLightbox() {
 									href={state.url}
 									download={state.name || "image"}
 									className="inline-flex size-7 items-center justify-center rounded-md text-white/80 transition-colors hover:bg-white/15 hover:text-white"
-									aria-label="保存图片"
+									aria-label={t("chat.saveImage")}
 								>
 									<Download className="size-4" />
 								</a>
 							) : null}
 							<DialogPrimitive.Close
 								className="inline-flex size-7 items-center justify-center rounded-md text-white/80 transition-colors hover:bg-white/15 hover:text-white"
-								aria-label="关闭"
+								aria-label={t("chat.closeImage")}
 							>
 								<X className="size-4" />
 							</DialogPrimitive.Close>
@@ -217,7 +220,7 @@ export const ChatImageLightbox = memo(function ChatImageLightbox() {
 							<DialogPrimitive.Description asChild>
 								<img
 									src={state.url}
-									alt={state.name || "图片"}
+									alt={state.name || t("chat.image")}
 									draggable={false}
 									decoding="async"
 									className="max-h-full max-w-full select-none rounded-md object-contain shadow-2xl"
@@ -243,9 +246,10 @@ export const ChatImageThumbnail = memo(function ChatImageThumbnail({
 	className?: string;
 }) {
 	const lazy = image.source !== "local";
+	const { t } = useTranslation();
 	const [observeRef, visible] = useLazyImageVisible<HTMLButtonElement>(lazy);
 	const { source, retry } = useChatImageSource(image, visible);
-	const label = image.name || "图片";
+	const label = image.name || t("chat.image");
 
 	const handleClick = useCallback(() => {
 		if (source.status === "ready") {
@@ -268,7 +272,7 @@ export const ChatImageThumbnail = memo(function ChatImageThumbnail({
 			<button
 				ref={observeRef}
 				type="button"
-				aria-label={`查看图片 ${label}`}
+				aria-label={t("chat.viewImage", { name: label })}
 				onClick={handleClick}
 				className={cn(
 					"group relative overflow-hidden rounded-lg border border-foreground/10 bg-muted/40 transition-colors hover:border-foreground/25",
@@ -292,7 +296,7 @@ export const ChatImageThumbnail = memo(function ChatImageThumbnail({
 					>
 						<ImageOff className="size-4" />
 						<span className="line-clamp-2">
-							{retry ? "加载失败，点击重试" : source.message}
+							{retry ? t("chat.loadImageFailed") : source.message}
 						</span>
 					</span>
 				) : (

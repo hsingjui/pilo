@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import ReactDOM from "react-dom/client";
+import { createRoot } from "react-dom/client";
 import {
 	attachLogger,
 	error as logError,
@@ -8,6 +8,12 @@ import {
 } from "@tauri-apps/plugin-log";
 
 import App from "./App";
+import {
+	initializeI18n,
+	readStoredLocale,
+	resolveInitialLocale,
+	i18n,
+} from "@/i18n";
 import { installChatPerformanceDebugApi } from "@/lib/chat-performance-debug";
 import { installChatRuntimeTraceDebugApi } from "@/lib/chat-runtime-trace-debug";
 import { PreferencesProvider } from "@/lib/preferences-provider";
@@ -100,9 +106,11 @@ class RootErrorBoundary extends React.Component<
 		if (error) {
 			return (
 				<div className="flex h-screen flex-col items-center justify-center gap-4 bg-background p-8 text-center">
-					<p className="text-lg font-medium text-foreground">界面遇到了问题</p>
+					<p className="text-lg font-medium text-foreground">
+						{i18n.t("app.interfaceError")}
+					</p>
 					<p className="max-w-md text-sm text-muted-foreground">
-						{error.message || "发生了意外错误。"}
+						{error.message || i18n.t("app.unexpectedError")}
 					</p>
 					<div className="flex gap-2">
 						<button
@@ -110,14 +118,14 @@ class RootErrorBoundary extends React.Component<
 							className="rounded-md border border-border px-4 py-2 text-sm text-foreground hover:bg-accent"
 							onClick={() => this.setState({ error: null })}
 						>
-							重试
+							{i18n.t("common.retry")}
 						</button>
 						<button
 							type="button"
 							className="rounded-md border border-border px-4 py-2 text-sm text-foreground hover:bg-accent"
 							onClick={() => window.location.reload()}
 						>
-							重新加载
+							{i18n.t("app.reload")}
 						</button>
 					</div>
 				</div>
@@ -127,16 +135,25 @@ class RootErrorBoundary extends React.Component<
 	}
 }
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-	<React.StrictMode>
-		<RootErrorBoundary>
-			<ThemeProvider>
-				<PreferencesProvider>
-					<App />
-					<Toaster />
-					<BootShellRemover />
-				</PreferencesProvider>
-			</ThemeProvider>
-		</RootErrorBoundary>
-	</React.StrictMode>,
-);
+async function bootstrap() {
+	const locale = resolveInitialLocale(
+		readStoredLocale(),
+		typeof navigator === "undefined" ? undefined : navigator.language,
+	);
+	await initializeI18n(locale);
+	createRoot(document.getElementById("root") as HTMLElement).render(
+		<React.StrictMode>
+			<RootErrorBoundary>
+				<ThemeProvider>
+					<PreferencesProvider>
+						<App />
+						<Toaster />
+						<BootShellRemover />
+					</PreferencesProvider>
+				</ThemeProvider>
+			</RootErrorBoundary>
+		</React.StrictMode>,
+	);
+}
+
+void bootstrap();

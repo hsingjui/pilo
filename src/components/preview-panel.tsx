@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
 	ExternalLink,
 	LoaderCircle,
@@ -27,6 +28,7 @@ export function PreviewPanel({ project }: { project: Project }) {
 	const [loadingPorts, setLoadingPorts] = useState(false);
 	const [opening, setOpening] = useState(false);
 	const [frameKey, setFrameKey] = useState(0);
+	const { t } = useTranslation();
 
 	const detect = useCallback(async () => {
 		setLoadingPorts(true);
@@ -35,13 +37,13 @@ export function PreviewPanel({ project }: { project: Project }) {
 			setPorts(next);
 			if (!portText && next.length === 1) setPortText(String(next[0]));
 		} catch (error) {
-			toast.error("无法检测预览端口", {
+			toast.error(t("preview.detectPortFailed"), {
 				description: userErrorMessage(error),
 			});
 		} finally {
 			setLoadingPorts(false);
 		}
-	}, [portText, project.id]);
+	}, [portText, project.id, t]);
 
 	useEffect(() => {
 		const timer = window.setTimeout(() => void detect(), 0);
@@ -58,7 +60,7 @@ export function PreviewPanel({ project }: { project: Project }) {
 		async (portOverride?: number) => {
 			const port = portOverride ?? Number(portText);
 			if (!Number.isInteger(port) || port < 1 || port > 65535) {
-				setPortError("端口需为 1–65535 之间的整数。");
+				setPortError(t("preview.invalidPort"));
 				return;
 			}
 			setPortError(null);
@@ -70,14 +72,14 @@ export function PreviewPanel({ project }: { project: Project }) {
 				setPortText(String(port));
 				setFrameKey((value) => value + 1);
 			} catch (error) {
-				toast.error("无法打开 Preview", {
+				toast.error(t("preview.openFailed"), {
 					description: userErrorMessage(error),
 				});
 			} finally {
 				setOpening(false);
 			}
 		},
-		[portText, preview, project.id],
+		[portText, preview, project.id, t],
 	);
 
 	const close = useCallback(async () => {
@@ -100,7 +102,7 @@ export function PreviewPanel({ project }: { project: Project }) {
 							setPortText(event.target.value);
 							if (portError) setPortError(null);
 						}}
-						placeholder="端口，例如 3000"
+						placeholder={t("preview.portPlaceholder")}
 						aria-invalid={portError ? true : undefined}
 						aria-describedby={portError ? "preview-port-error" : undefined}
 						className="h-7 min-w-0 flex-1 text-xs"
@@ -116,7 +118,7 @@ export function PreviewPanel({ project }: { project: Project }) {
 						) : (
 							<MonitorPlay className="size-3.5" />
 						)}
-						打开
+						{t("preview.open")}
 					</Button>
 					<Button
 						variant="ghost"
@@ -124,7 +126,7 @@ export function PreviewPanel({ project }: { project: Project }) {
 						className="size-7"
 						disabled={loadingPorts}
 						onClick={() => void detect()}
-						aria-label="重新检测端口"
+						aria-label={t("preview.redetect")}
 					>
 						<RefreshCw
 							className={`size-3.5 ${loadingPorts ? "animate-spin" : ""}`}
@@ -166,7 +168,7 @@ export function PreviewPanel({ project }: { project: Project }) {
 							variant="ghost"
 							size="icon"
 							className="size-6"
-							aria-label="外部浏览器打开"
+							aria-label={t("preview.openExternal")}
 							onClick={() => void openUrl(preview.url)}
 						>
 							<ExternalLink className="size-3.5" />
@@ -175,7 +177,7 @@ export function PreviewPanel({ project }: { project: Project }) {
 							variant="ghost"
 							size="icon"
 							className="size-6"
-							aria-label="关闭 Preview"
+							aria-label={t("preview.close")}
 							onClick={() => void close()}
 						>
 							<X className="size-3.5" />
@@ -192,8 +194,8 @@ export function PreviewPanel({ project }: { project: Project }) {
 			) : (
 				<EmptyState
 					variant="compact"
-					title="暂无 Preview"
-					description="选择端口打开 Preview。"
+					title={t("preview.empty")}
+					description={t("preview.emptyDescription")}
 				/>
 			)}
 		</div>

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
 	Group,
 	Panel,
@@ -59,6 +60,7 @@ const RIGHT_SIDEBAR_ENABLED = false;
 let viewerRequestSequence = 0;
 
 function App() {
+	const { t } = useTranslation();
 	const { keyboardShortcuts } = usePreferences();
 	const rightPanelRef = useRef<PanelImperativeHandle>(null);
 	const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
@@ -219,13 +221,13 @@ function App() {
 			return;
 		}
 		if (!activeProject) {
-			toast.info("请先添加项目");
+			toast.info(t("app.addProjectFirst"));
 			return;
 		}
 		setTerminalMounted(true);
 		setTerminalVisible(true);
 		setTerminalOpenRequest((request) => request + 1);
-	}, [activeProject, terminalVisible]);
+	}, [activeProject, t, terminalVisible]);
 	const destroyTerminalDock = useCallback(() => {
 		setTerminalVisible(false);
 		setTerminalMounted(false);

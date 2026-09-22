@@ -10,6 +10,7 @@ import {
 	useState,
 	type MutableRefObject,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { ArrowDown } from "lucide-react";
 import { Virtualizer, type CacheSnapshot } from "virtua";
 
@@ -211,6 +212,7 @@ const ChatConversationViewportImpl = forwardRef<
 	},
 	ref,
 ) {
+	const { t } = useTranslation();
 	const [shortChatPromoted, setShortChatPromoted] = useState(() =>
 		shouldInitializeShortChatPromoted({
 			enabled: USE_PLAIN_SHORT_CHAT,
@@ -449,8 +451,8 @@ const ChatConversationViewportImpl = forwardRef<
 						<div className="flex min-h-full flex-col pb-8 pt-4 @min-[40rem]:pb-10 @min-[40rem]:pt-6">
 							<ConversationColumn className="flex flex-1 items-center justify-center">
 								<ErrorState
-									title="会话加载失败"
-									description="暂时无法读取这段会话。"
+									title={t("chat.sessionLoadFailed")}
+									description={t("chat.sessionLoadDescription")}
 									onRetry={sessionPath ? onRetryHistory : onRetry}
 								/>
 							</ConversationColumn>
@@ -483,7 +485,7 @@ const ChatConversationViewportImpl = forwardRef<
 					)}
 					{compacting ? (
 						<ConversationColumn className="py-3">
-							<ChatAgentActivityIndicator label="正在压缩上下文" />
+							<ChatAgentActivityIndicator label={t("chat.compacting")} />
 						</ConversationColumn>
 					) : null}
 				</div>
@@ -514,12 +516,12 @@ const ChatConversationViewportImpl = forwardRef<
 									size="icon"
 									className="pointer-events-auto size-8 rounded-full border border-border/70 shadow-md transition-[scale] duration-100 active:scale-[0.96]"
 									onClick={() => scrollToBottom(false)}
-									aria-label="滚动到最新消息"
+									aria-label={t("chat.scrollLatest")}
 								>
 									<ArrowDown className="size-4" />
 								</Button>
 							</TooltipTrigger>
-							<TooltipContent>滚动到最新消息</TooltipContent>
+							<TooltipContent>{t("chat.scrollLatest")}</TooltipContent>
 						</Tooltip>
 					</ConversationColumn>
 				) : null}

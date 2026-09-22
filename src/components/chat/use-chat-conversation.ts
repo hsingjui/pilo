@@ -217,7 +217,9 @@ export function useChatConversation({
 		"ready" | "loading" | "error"
 	>(session.sessionPath ? "loading" : "ready");
 	const [historyRetry, setHistoryRetry] = useState(0);
-	const [historyProgress, setHistoryProgress] = useState("");
+	const [historyProgress, setHistoryProgress] = useState<
+		"" | "chat.historyLoading" | "chat.historyRestoring"
+	>("");
 	const [historyImageFingerprint, setHistoryImageFingerprint] =
 		useState<SessionHistoryFingerprint | null>(null);
 	const sessionHistoryFingerprint = getSessionHistoryFingerprint(session);
@@ -290,7 +292,7 @@ export function useChatConversation({
 		const loadHistory = async (retryAttempt: number) => {
 			const startedAt = performance.now();
 			setHistoryLoadState("loading");
-			setHistoryProgress("正在读取历史消息");
+			setHistoryProgress("chat.historyLoading");
 			try {
 				const result = await loadSessionHistoryWindow(
 					session.projectRecord.id,
@@ -320,7 +322,7 @@ export function useChatConversation({
 				});
 				onHistoryMetadata(history);
 				const replayStartedAt = performance.now();
-				setHistoryProgress("正在恢复历史消息");
+				setHistoryProgress("chat.historyRestoring");
 				let finalState = await replayConversationEventsBatched(
 					history.events,
 					conversationReducerContext,

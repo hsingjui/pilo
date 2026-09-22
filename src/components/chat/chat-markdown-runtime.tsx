@@ -6,6 +6,7 @@ import {
 	useState,
 	type ComponentPropsWithoutRef,
 } from "react";
+import { useTranslation } from "react-i18next";
 import remarkGfm from "remark-gfm";
 import {
 	Streamdown,
@@ -484,11 +485,6 @@ const STREAMDOWN_CONTROLS = {
 	table: false,
 } satisfies ControlsConfig;
 
-const STREAMDOWN_TRANSLATIONS = {
-	copied: "已复制",
-	copyCode: "复制代码",
-} as const;
-
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm, remarkSingleDollarTextMath];
 
 const MARKDOWN_BASE_CLASSNAME =
@@ -582,6 +578,7 @@ const ChatMarkdownBody = memo(function ChatMarkdownBody({
 	className?: string;
 }) {
 	recordMarkdownRender(text.length);
+	const { t } = useTranslation();
 	const theme: MarkdownTheme = useResolvedTheme();
 	const streamingVisual = isStreaming || presentationLagging;
 	const needsMath = useMemo(() => hasPotentialMathMarkup(text), [text]);
@@ -670,7 +667,10 @@ const ChatMarkdownBody = memo(function ChatMarkdownBody({
 				plugins={plugins}
 				remarkPlugins={MARKDOWN_REMARK_PLUGINS}
 				components={MARKDOWN_COMPONENTS}
-				translations={STREAMDOWN_TRANSLATIONS}
+				translations={{
+					copied: t("chat.copied"),
+					copyCode: t("chat.copyCode"),
+				}}
 				urlTransform={defaultUrlTransform}
 			>
 				{text}

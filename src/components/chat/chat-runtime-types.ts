@@ -17,14 +17,31 @@ export type ActiveTurn = {
 	preserveQueuedOnRelease: boolean;
 };
 
+export type ChatRuntimeRecoveryMessageKey =
+	| ""
+	| "chat.temporaryNotRecoverable"
+	| "chat.reconnecting"
+	| "chat.reconnected"
+	| "chat.reconnectedActive"
+	| "chat.piProcessFailed"
+	| "chat.piProcessStopped";
+
 export type ChatRuntimeRecoveryState =
-	| { status: "idle"; recoverable: boolean; message: string }
-	| { status: "reconnecting"; recoverable: true; message: string }
-	| { status: "recovered"; recoverable: true; message: string }
+	| { status: "idle"; recoverable: boolean; messageKey: "" }
+	| {
+			status: "reconnecting";
+			recoverable: true;
+			messageKey: "chat.reconnecting";
+	  }
+	| {
+			status: "recovered";
+			recoverable: true;
+			messageKey: "chat.reconnected" | "chat.reconnectedActive";
+	  }
 	| {
 			status: "failed";
 			recoverable: boolean;
-			message: string;
+			messageKey: ChatRuntimeRecoveryMessageKey;
 			error?: AppError;
 	  };
 

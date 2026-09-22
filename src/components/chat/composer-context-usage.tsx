@@ -1,17 +1,11 @@
 import { CircleDashed } from "lucide-react";
 import { memo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
+import { i18n } from "@/i18n";
 import type { ChatSessionRuntimeState } from "@/components/chat/chat-page-utils";
 import { cn } from "@/lib/utils";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/ui";
-
-const compactNumberFormatter = new Intl.NumberFormat("en", {
-	notation: "compact",
-});
-
-const percentFormatter = new Intl.NumberFormat("en", {
-	maximumFractionDigits: 1,
-});
 
 const RING_RADIUS = 10;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
@@ -31,14 +25,18 @@ function formatCompactTokens(value: number | null | undefined) {
 	const normalized = finiteNumber(value);
 	return normalized === undefined
 		? "—"
-		: compactNumberFormatter.format(Math.max(0, normalized));
+		: new Intl.NumberFormat(i18n.language, { notation: "compact" }).format(
+				Math.max(0, normalized),
+			);
 }
 
 function formatPercent(value: number | null | undefined) {
 	const normalized = finiteNumber(value);
 	if (normalized === undefined) return "—";
 	if (normalized >= 100) return "100%";
-	return `${percentFormatter.format(Math.max(0, normalized))}%`;
+	return `${new Intl.NumberFormat(i18n.language, {
+		maximumFractionDigits: 1,
+	}).format(Math.max(0, normalized))}%`;
 }
 
 function formatCost(value: number | undefined) {
@@ -81,6 +79,7 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 	usage,
 	contextWindow: modelContextWindow,
 }: ComposerContextUsageProps) {
+	const { t } = useTranslation();
 	const contextTokens = finiteNumber(usage?.contextTokens);
 	const contextWindow =
 		finiteNumber(usage?.contextWindow) ?? finiteNumber(modelContextWindow);
@@ -99,10 +98,10 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 	const tokens = usage?.tokens;
 	const breakdownRows: Array<[string, number]> = (
 		[
-			["输入", finiteNumber(tokens?.input)],
-			["输出", finiteNumber(tokens?.output)],
-			["缓存读取", finiteNumber(tokens?.cacheRead)],
-			["缓存写入", finiteNumber(tokens?.cacheWrite)],
+			[t("chat.input"), finiteNumber(tokens?.input)],
+			[t("chat.output"), finiteNumber(tokens?.output)],
+			[t("chat.cacheRead"), finiteNumber(tokens?.cacheRead)],
+			[t("chat.cacheWrite"), finiteNumber(tokens?.cacheWrite)],
 		] as Array<[string, number | undefined]>
 	).filter(
 		(entry): entry is [string, number] =>
@@ -114,10 +113,12 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 	const [open, setOpen] = useState(false);
 	const contextSummary =
 		contextPercent === undefined
-			? "上下文占用待更新"
+			? t("chat.contextUsagePending")
 			: contextStale
-				? "上下文占用待更新（显示上次已知值）"
-				: `上下文占用 ${formatPercent(contextPercent)}`;
+				? t("chat.contextUsageKnownPending")
+				: t("chat.contextUsage", {
+						percent: formatPercent(contextPercent),
+					});
 
 	return (
 		<HoverCard
@@ -179,11 +180,11 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 					</div>
 					{contextPercent === undefined ? (
 						<p className="text-2xs leading-4 text-muted-foreground">
-							当前占用尚不可确定；首次回复或压缩后的下一次模型响应完成后会更新。
+							{t("chat.contextUsageUnknown")}
 						</p>
 					) : contextStale ? (
 						<p className="text-2xs leading-4 text-muted-foreground">
-							压缩后占用待下一次模型响应更新，当前显示上一次已知值。
+							{t("chat.contextUsageAfterCompaction")}
 						</p>
 					) : null}
 				</div>
@@ -206,7 +207,7 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 
 				{usage?.cost !== undefined ? (
 					<div className="flex w-full items-center justify-between gap-3 bg-muted/45 px-2.5 py-2 text-xs">
-						<span className="text-muted-foreground">总费用</span>
+						<span className="text-muted-foreground">{t("chat.totalCost")}</span>
 						<span className="font-mono text-2xs tabular-nums">
 							{formatCost(usage.cost)}
 						</span>

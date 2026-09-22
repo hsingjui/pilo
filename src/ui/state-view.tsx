@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { CircleAlert, Inbox, LoaderCircle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -92,17 +93,18 @@ export function EmptyState({
 }
 
 export function LoadingState({
-	title = "正在加载",
+	title,
 	description,
 	variant,
 	className,
 }: Partial<
 	Pick<StateViewProps, "title" | "description" | "variant" | "className">
 >) {
+	const { t } = useTranslation();
 	return (
 		<StateView
 			icon={<LoaderCircle className="size-4 animate-spin" />}
-			title={title}
+			title={title ?? t("common.loading")}
 			description={description}
 			variant={variant}
 			className={className}
@@ -111,10 +113,10 @@ export function LoadingState({
 }
 
 export function ErrorState({
-	title = "加载失败",
+	title,
 	description,
 	onRetry,
-	retryLabel = "重试",
+	retryLabel,
 	variant,
 	className,
 }: Partial<
@@ -123,18 +125,19 @@ export function ErrorState({
 	onRetry?: () => void;
 	retryLabel?: string;
 }) {
+	const { t } = useTranslation();
 	return (
 		<StateView
 			role="alert"
 			icon={<CircleAlert className="size-4" />}
-			title={title}
+			title={title ?? t("common.loadFailed")}
 			description={description}
 			variant={variant}
 			className={className}
 			action={
 				onRetry ? (
 					<Button type="button" variant="outline" size="sm" onClick={onRetry}>
-						{retryLabel}
+						{retryLabel ?? t("common.retry")}
 					</Button>
 				) : undefined
 			}

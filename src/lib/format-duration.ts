@@ -26,10 +26,9 @@ export function formatDurationCompact(
 	return `${seconds}${units.second}`;
 }
 
-export function formatWorkDuration(durationMs: number) {
-	return formatDurationCompact(durationMs, {
-		hour: "小时",
-		minute: "分",
-		second: "秒",
-	});
+export function formatWorkDuration(
+	durationMs: number,
+	units: DurationUnitLabels,
+) {
+	return formatDurationCompact(durationMs, units);
 }

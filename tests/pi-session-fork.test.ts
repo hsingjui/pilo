@@ -7,6 +7,9 @@ import {
 } from "../src/lib/pi-session-fork.ts";
 import type { ChatMessage } from "../src/lib/conversation-types.ts";
 import type { PiSessionEntries } from "../src/lib/pi-runtime.ts";
+import { initializeI18n, i18n } from "../src/i18n/index.ts";
+
+await initializeI18n("zh-CN");
 
 function user(id: string, text: string): ChatMessage {
 	return { id, role: "user", text, time: "" };
@@ -85,7 +88,9 @@ test("fork target fails safely when UI history and Pi branch no longer align", (
 				"ui-a2",
 				sessionEntries,
 			),
-		/无法定位该回复之后的 Pi 分支点/,
+		(error: unknown) =>
+			error instanceof Error &&
+			error.message === i18n.t("errors.forkBranchPointNotFound"),
 	);
 });
 
@@ -104,6 +109,8 @@ test("latest reply refuses to clone when Pi has a newer unseen user message", ()
 	};
 	assert.throws(
 		() => resolveAssistantForkTarget(messages, "ui-a2", staleEntries),
-		/当前会话已发生变化/,
+		(error: unknown) =>
+			error instanceof Error &&
+			error.message === i18n.t("errors.sessionChanged"),
 	);
 });

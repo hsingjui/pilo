@@ -7,10 +7,7 @@ test("normalizes Pi lookup failures", () => {
 	const error = toAppError("Pi executable was not found in PATH");
 	assert.equal(error.code, "pi_not_found");
 	assert.equal(error.retryable, false);
-	assert.match(
-		userErrorMessage("Pi executable was not found in PATH"),
-		/未检测到可用的 Pi/,
-	);
+	assert.equal(error.messageKey, "errors.piNotFound");
 });
 
 test("normalizes connection and timeout failures as retryable", () => {

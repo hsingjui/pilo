@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { FileCode2, Sparkles, TerminalSquare } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -32,33 +34,33 @@ export type ActiveSuggestionQuery = {
 export const DEFAULT_SUGGESTIONS: readonly ComposerSuggestion[] = [];
 export const FILE_SUGGESTION_LIMIT = 5;
 
-export const PI_SESSION_SUGGESTIONS: readonly ComposerSuggestion[] = [
-	{
-		kind: "command",
-		value: "/new",
-		label: "/new",
-		detail: "新建会话",
-	},
-	{
-		kind: "command",
-		value: "/compact",
-		label: "/compact",
-		detail: "压缩当前上下文",
-	},
-];
+export function piSessionSuggestions(t: TFunction): ComposerSuggestion[] {
+	return [
+		{
+			kind: "command",
+			value: "/new",
+			label: "/new",
+			detail: t("chat.newSessionDetail"),
+		},
+		{
+			kind: "command",
+			value: "/compact",
+			label: "/compact",
+			detail: t("chat.compactContextDetail"),
+		},
+	];
+}
 
 export const TRIGGER_META: Record<
 	SuggestionTrigger,
-	{ kind: ComposerSuggestionKind; title: string }
+	{
+		kind: ComposerSuggestionKind;
+		titleKey: "chat.fileSuggestion" | "chat.piCommandSuggestion";
+	}
 > = {
-	"@": { kind: "file", title: "文件" },
-	"/": { kind: "command", title: "Pi 命令" },
+	"@": { kind: "file", titleKey: "chat.fileSuggestion" },
+	"/": { kind: "command", titleKey: "chat.piCommandSuggestion" },
 };
-
-// 中英混排：标题以 ASCII 开头时才补一个分隔空格，避免「没有可用的 文件」。
-function spacedTitle(title: string) {
-	return title.charCodeAt(0) < 0x80 ? ` ${title}` : title;
-}
 
 export function activeSuggestionQuery(
 	value: string,
@@ -112,6 +114,7 @@ export function ComposerSuggestionMenu({
 	onHighlight,
 	onSelect,
 }: ComposerSuggestionMenuProps) {
+	const { t } = useTranslation();
 	const listRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
@@ -134,7 +137,7 @@ export function ComposerSuggestionMenu({
 	return (
 		<div
 			role="menu"
-			aria-label={`${title}建议`}
+			aria-label={t("chat.suggestionMenuLabel", { title })}
 			className={cn(
 				"absolute bottom-[calc(100%+6px)] left-0 z-40 w-full overflow-hidden",
 				menuSurfaceClassName,
@@ -185,8 +188,11 @@ export function ComposerSuggestionMenu({
 				) : (
 					<div className="px-3 py-4 text-center text-xs text-muted-foreground">
 						{activeQuery.query
-							? `没有匹配“${activeQuery.query}”的${spacedTitle(title)}`
-							: `没有可用${spacedTitle(title)}`}
+							? t("chat.noSuggestionMatch", {
+									query: activeQuery.query,
+									title,
+								})
+							: t("chat.noSuggestionAvailable", { title })}
 					</div>
 				)}
 			</div>

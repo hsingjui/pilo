@@ -5,6 +5,7 @@ import {
 	type Dispatch,
 	type SetStateAction,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { userErrorMessage } from "@/lib/app-error";
@@ -40,6 +41,7 @@ export function useAppProjectActions({
 	connectionCatalog,
 	onProjectsRemoved,
 }: UseAppProjectActionsOptions) {
+	const { t } = useTranslation();
 	const [addProjectOpen, setAddProjectOpen] = useState(false);
 	const [addProjectConnectionId, setAddProjectConnectionId] = useState<
 		string | null
@@ -74,16 +76,21 @@ export function useAppProjectActions({
 					);
 				});
 				notifyProjectsChanged();
-				toast.success(`已添加 ${project.name}`, {
-					description: `${project.connection.name} · ${project.metadata.cwd}`,
+				toast.success(t("project.added", { name: project.name }), {
+					description: t("project.addedDescription", {
+						connection: connectionLabel(project.connection),
+						path: project.metadata.cwd,
+					}),
 				});
 			} catch (error) {
-				toast.error("添加项目失败", { description: userErrorMessage(error) });
+				toast.error(t("project.addFailed"), {
+					description: userErrorMessage(error),
+				});
 			} finally {
 				localProjectPickerPendingRef.current = false;
 			}
 		},
-		[connectionCatalog, projects],
+		[connectionCatalog, projects, t],
 	);
 
 	const handleReorderProjects = useCallback(
@@ -111,12 +118,12 @@ export function useAppProjectActions({
 				setProjects(next);
 			} catch (error) {
 				setProjects(previous);
-				toast.error("保存项目排序失败", {
+				toast.error(t("project.sortFailed"), {
 					description: userErrorMessage(error),
 				});
 			}
 		},
-		[projects, setProjects],
+		[projects, setProjects, t],
 	);
 
 	const handleDeleteProject = useCallback(
@@ -128,16 +135,16 @@ export function useAppProjectActions({
 				setProjects(next);
 				onProjectsRemoved(new Set([projectId]), next);
 				notifyProjectsChanged();
-				toast.success(`已从 Pilo 移除 ${project.name}`, {
-					description: "项目文件保留",
+				toast.success(t("project.removed", { name: project.name }), {
+					description: t("project.filesKept"),
 				});
 			} catch (error) {
-				toast.error("移除项目失败", {
+				toast.error(t("project.removeFailed"), {
 					description: userErrorMessage(error),
 				});
 			}
 		},
-		[onProjectsRemoved, projects, setProjects],
+		[onProjectsRemoved, projects, setProjects, t],
 	);
 
 	const handleDeleteConnection = useCallback(
@@ -165,16 +172,17 @@ export function useAppProjectActions({
 				setProjects(nextProjects);
 				onProjectsRemoved(affectedProjectIds, nextProjects);
 				notifyProjectsChanged();
-				toast.success(`已从 Pilo 移除 ${connectionLabel(connection)}`, {
-					description: "关联项目记录已移除，项目文件保留",
-				});
+				toast.success(
+					t("project.removed", { name: connectionLabel(connection) }),
+					{ description: t("project.connectionRecordsRemoved") },
+				);
 			} catch (error) {
-				toast.error("移除连接失败", {
+				toast.error(t("project.removeConnectionFailed"), {
 					description: userErrorMessage(error),
 				});
 			}
 		},
-		[connectionCatalog, onProjectsRemoved, projects, setProjects],
+		[connectionCatalog, onProjectsRemoved, projects, setProjects, t],
 	);
 
 	return {

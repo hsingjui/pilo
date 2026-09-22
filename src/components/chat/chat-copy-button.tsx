@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Check, Copy } from "lucide-react";
 
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
@@ -6,6 +7,7 @@ import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
 const COPY_RESET_DELAY_MS = 1_600;
 
 export function ChatCopyButton({ text }: { text: string }) {
+	const { t } = useTranslation();
 	const [copied, setCopied] = useState(false);
 	const resetTimer = useRef<number | undefined>(undefined);
 
@@ -24,7 +26,7 @@ export function ChatCopyButton({ text }: { text: string }) {
 			.catch(() => {});
 	}
 
-	const label = copied ? "已复制" : "复制";
+	const label = copied ? t("chat.copied") : t("chat.copy");
 
 	return (
 		<Tooltip>

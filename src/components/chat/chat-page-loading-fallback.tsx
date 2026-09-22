@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type {
 	ChatUiState,
@@ -37,6 +38,7 @@ function LoadingComposer({
 	writeUiState: (key: string, patch: ChatUiStatePatch) => void;
 	scrollbarWidth: number;
 }) {
+	const { t } = useTranslation();
 	const [draft, setDraft] = useState(() => readUiState(uiStateKey).draft);
 	const updateDraft = (value: string) => {
 		setDraft(value);
@@ -44,7 +46,7 @@ function LoadingComposer({
 	};
 	const deferSubmission = (submission: ChatSubmission) => {
 		if (submission.images.length > 0) {
-			toast.info("请等待历史消息加载后再发送图片");
+			toast.info(t("chat.waitHistory"));
 			return;
 		}
 		const trimmed = submission.text.trim();

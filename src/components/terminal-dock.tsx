@@ -7,6 +7,7 @@ import {
 	type KeyboardEvent as ReactKeyboardEvent,
 	type PointerEvent as ReactPointerEvent,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -200,6 +201,7 @@ export function TerminalDock({
 	onRunningChange?: (running: boolean) => void;
 	onDestroy?: () => void;
 }) {
+	const { t } = useTranslation();
 	const [layout, setLayout] = useState<TerminalLayout>(readTerminalLayout);
 	const [tabs, setTabs] = useState<TerminalTab[]>([]);
 	const [activeId, setActiveId] = useState<string | null>(null);
@@ -300,13 +302,13 @@ export function TerminalDock({
 			setTabs((current) => [...current, info]);
 			setActiveId(info.id);
 		} catch (error) {
-			toast.error("无法打开 Terminal", {
+			toast.error(t("terminal.openFailed"), {
 				description: userErrorMessage(error),
 			});
 		} finally {
 			setOpening(false);
 		}
-	}, [listenerReady, opening, project]);
+	}, [listenerReady, opening, project, t]);
 
 	useEffect(() => {
 		if (
@@ -396,9 +398,9 @@ export function TerminalDock({
 
 		const failed = results.filter((result) => result.status === "rejected");
 		if (failed.length > 0) {
-			toast.error("部分 Terminal 未能正常关闭");
+			toast.error(t("terminal.partialCloseFailed"));
 		}
-	}, [onDestroy, onRunningChange, tabs]);
+	}, [onDestroy, onRunningChange, tabs, t]);
 
 	const handleResizeStart = useCallback(
 		(event: ReactPointerEvent<HTMLDivElement>) => {
@@ -458,7 +460,7 @@ export function TerminalDock({
 			<div
 				role="separator"
 				aria-orientation="horizontal"
-				aria-label="调整终端高度"
+				aria-label={t("terminal.resize")}
 				tabIndex={0}
 				aria-valuemin={MIN_TERMINAL_HEIGHT}
 				aria-valuemax={MAX_TERMINAL_HEIGHT}
@@ -482,7 +484,7 @@ export function TerminalDock({
 								<input
 									ref={renameInputRef}
 									value={titleDraft}
-									aria-label="重命名 Terminal"
+									aria-label={t("terminal.rename")}
 									className="mx-1 w-28 min-w-0 rounded bg-background px-1.5 py-0.5 text-xs text-foreground outline-none ring-1 ring-sidebar-ring"
 									onChange={(event) => setTitleDraft(event.target.value)}
 									onBlur={commitRename}
@@ -512,7 +514,7 @@ export function TerminalDock({
 								<button
 									type="button"
 									className="mr-0.5 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-									aria-label="关闭 Terminal"
+									aria-label={t("terminal.close")}
 									onClick={() => closeTab(tab.id)}
 								>
 									<X className="size-3" />
@@ -526,7 +528,7 @@ export function TerminalDock({
 					variant="ghost"
 					size="icon"
 					className="size-6"
-					aria-label="新建 Terminal"
+					aria-label={t("terminal.new")}
 					disabled={!project || opening || !listenerReady}
 					onClick={() => void openTab()}
 				>
@@ -537,7 +539,7 @@ export function TerminalDock({
 					variant="ghost"
 					size="icon"
 					className="size-6"
-					aria-label="关闭并销毁 Terminal"
+					aria-label={t("terminal.destroy")}
 					disabled={opening}
 					onClick={() => void destroyAll()}
 				>
@@ -547,9 +549,7 @@ export function TerminalDock({
 			<div className="min-h-0 flex-1">
 				{tabs.length === 0 ? (
 					<div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-						{project
-							? "点击 + 在当前项目新建 Terminal"
-							: "选择项目后可打开 Terminal"}
+						{project ? t("terminal.newHint") : t("terminal.selectProjectHint")}
 					</div>
 				) : (
 					tabs.map((tab) => (

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { i18n } from "../../i18n/index.ts";
 import type {
 	ActiveTurn,
 	ChatRuntimeRecoveryState,
@@ -117,7 +118,7 @@ export function useChatRuntimeEvents({
 	const [recoveryState, setRecoveryState] = useState<ChatRuntimeRecoveryState>({
 		status: "idle",
 		recoverable: !session.temporary,
-		message: "",
+		messageKey: "",
 	});
 	const recoveryPromiseRef = useRef<Promise<boolean> | null>(null);
 	const contextStatsRefreshTimerRef = useRef<number | null>(null);
@@ -151,7 +152,7 @@ export function useChatRuntimeEvents({
 		setRecoveryState({
 			status: "idle",
 			recoverable: !session.temporary,
-			message: "",
+			messageKey: "",
 		});
 	}, [session.temporary]);
 
@@ -187,7 +188,7 @@ export function useChatRuntimeEvents({
 			setRecoveryState({
 				status: "failed",
 				recoverable: false,
-				message: "临时会话未保存，运行环境断开后无法恢复。",
+				messageKey: "chat.temporaryNotRecoverable",
 			});
 			return false;
 		}
@@ -197,29 +198,31 @@ export function useChatRuntimeEvents({
 			setRecoveryState({
 				status: "reconnecting",
 				recoverable: true,
-				message: "正在重新连接运行环境并载入原 Session…",
+				messageKey: "chat.reconnecting",
 			});
 			try {
 				const runtimeState = await client.state();
 				const resumePath = runtimeState?.sessionPath ?? session.sessionPath;
 				if (!resumePath) {
-					throw new Error("当前 Session 尚未持久化，无法安全恢复连接。");
+					throw new Error(i18n.t("errors.sessionNotPersisted"));
 				}
 
 				const snapshot = await client.ensure();
 				if (snapshot.state !== "running") {
-					throw new Error(`Pi Runtime 恢复后状态异常：${snapshot.state}`);
+					throw new Error(
+						i18n.t("errors.runtimeRecoveryState", { state: snapshot.state }),
+					);
 				}
 				const agentState = await client.getPiAgentState();
 				if (!agentState.sessionFile) {
-					throw new Error("Pi 未返回恢复后的 Session 路径。");
+					throw new Error(i18n.t("errors.runtimeResumePathMissing"));
 				}
 				if (agentState.sessionId) identifiedRef.current?.(agentState.sessionId);
 				await refreshSessionState();
 				setRecoveryState({
 					status: "recovered",
 					recoverable: true,
-					message: "已重新连接原 Session。上一轮不会自动重放，可继续发送消息。",
+					messageKey: "chat.reconnected",
 				});
 				return true;
 			} catch (error) {
@@ -227,7 +230,7 @@ export function useChatRuntimeEvents({
 				setRecoveryState({
 					status: "failed",
 					recoverable: appError.retryable,
-					message: appError.message,
+					messageKey: "",
 					error: appError,
 				});
 				return false;
@@ -254,7 +257,7 @@ export function useChatRuntimeEvents({
 		const timer = window.setTimeout(() => {
 			setRecoveryState((current) =>
 				current.status === "recovered"
-					? { status: "idle", recoverable: true, message: "" }
+					? { status: "idle", recoverable: true, messageKey: "" }
 					: current,
 			);
 		}, 5000);
@@ -288,8 +291,8 @@ export function useChatRuntimeEvents({
 					failActiveTurn(
 						interruptedTurn,
 						event.state === "failed"
-							? "Pi 进程运行失败。"
-							: "Pi 进程在回复完成前已停止。",
+							? i18n.t("chat.piProcessFailed")
+							: i18n.t("chat.piProcessStopped"),
 					);
 				}
 				if (event.state === "stopped" && !interruptedActiveTurn) return;
@@ -297,7 +300,7 @@ export function useChatRuntimeEvents({
 					setRecoveryState({
 						status: "failed",
 						recoverable: false,
-						message: "临时会话未保存，运行环境断开后无法恢复。",
+						messageKey: "chat.temporaryNotRecoverable",
 					});
 				} else {
 					void recoverRuntime();
@@ -426,7 +429,7 @@ export function useChatRuntimeEvents({
 				setRecoveryState({
 					status: "failed",
 					recoverable: false,
-					message: "临时会话未保存，运行环境断开后无法恢复。",
+					messageKey: "chat.temporaryNotRecoverable",
 				});
 			} else {
 				void recoverRuntime();
@@ -493,7 +496,7 @@ export function useChatRuntimeEvents({
 				setRecoveryState({
 					status: "recovered",
 					recoverable: true,
-					message: "已重新连接正在进行的 Pi 回复。",
+					messageKey: "chat.reconnectedActive",
 				});
 			} catch (error) {
 				if (!cancelled) console.warn("Failed to recover active Pi turn", error);

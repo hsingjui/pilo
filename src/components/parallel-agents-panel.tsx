@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
 	Bot,
 	GitBranch,
@@ -37,20 +39,20 @@ import {
 	Hint,
 } from "@/ui";
 
-function statusLabel(status: ParallelAgentStatus) {
+function statusLabel(t: TFunction, status: ParallelAgentStatus) {
 	switch (status) {
 		case "starting":
-			return "启动中";
+			return t("parallel.starting");
 		case "busy":
-			return "工作中";
+			return t("parallel.working");
 		case "waiting":
-			return "等待";
+			return t("parallel.waiting");
 		case "stopping":
-			return "停止中";
+			return t("parallel.stopping");
 		case "stopped":
-			return "已停止";
+			return t("parallel.stopped");
 		case "failed":
-			return "失败";
+			return t("parallel.failed");
 	}
 }
 
@@ -67,6 +69,7 @@ function statusDot(status: ParallelAgentStatus) {
 }
 
 export function ParallelAgentsPanel({ project }: { project: Project }) {
+	const { t } = useTranslation();
 	const [agents, setAgents] = useState<ParallelAgentInfo[]>([]);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [name, setName] = useState("");
@@ -129,13 +132,13 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 			setName("");
 			setInitialPrompt("");
 		} catch (error) {
-			toast.error("无法创建并行 Agent", {
+			toast.error(t("parallel.createFailed"), {
 				description: userErrorMessage(error),
 			});
 		} finally {
 			setCreating(false);
 		}
-	}, [agents.length, initialPrompt, name, project.id]);
+	}, [agents.length, initialPrompt, name, project.id, t]);
 
 	const send = useCallback(async () => {
 		if (!selected || !message.trim()) return;
@@ -145,13 +148,13 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 			setMessage("");
 			await refresh();
 		} catch (error) {
-			toast.error("发送失败", {
+			toast.error(t("parallel.sendFailed"), {
 				description: userErrorMessage(error),
 			});
 		} finally {
 			setActing(false);
 		}
-	}, [message, refresh, selected]);
+	}, [message, refresh, selected, t]);
 
 	const stop = useCallback(async () => {
 		if (!selected) return;
@@ -160,13 +163,13 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 			await stopParallelAgent(selected.id);
 			await refresh();
 		} catch (error) {
-			toast.error("停止 Agent 失败", {
+			toast.error(t("parallel.stopFailed"), {
 				description: userErrorMessage(error),
 			});
 		} finally {
 			setActing(false);
 		}
-	}, [refresh, selected]);
+	}, [refresh, selected, t]);
 
 	const remove = useCallback(async () => {
 		if (!selected) return;
@@ -176,13 +179,13 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 			setSelectedId(null);
 			await refresh();
 		} catch (error) {
-			toast.error("清理 Agent 失败", {
+			toast.error(t("parallel.cleanupFailed"), {
 				description: userErrorMessage(error),
 			});
 		} finally {
 			setActing(false);
 		}
-	}, [refresh, selected, project.id]);
+	}, [refresh, selected, project.id, t]);
 
 	return (
 		<>
@@ -191,15 +194,15 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 					<Input
 						value={name}
 						onChange={(event) => setName(event.target.value)}
-						placeholder="任务名称"
-						aria-label="任务名称"
+						placeholder={t("parallel.taskName")}
+						aria-label={t("parallel.taskName")}
 						className="h-7 text-xs"
 					/>
 					<Textarea
 						value={initialPrompt}
 						onChange={(event) => setInitialPrompt(event.target.value)}
-						placeholder="初始指令（可选）"
-						aria-label="初始指令（可选）"
+						placeholder={t("parallel.initialPrompt")}
+						aria-label={t("parallel.initialPrompt")}
 						className="min-h-16 resize-none text-xs"
 					/>
 					<Button
@@ -213,7 +216,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 						) : (
 							<Play className="size-3.5" />
 						)}
-						创建并行 Agent
+						{t("parallel.create")}
 					</Button>
 				</div>
 
@@ -221,8 +224,8 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 					{agents.length === 0 ? (
 						<EmptyState
 							variant="compact"
-							title="暂无并行 Agent"
-							description="创建后会显示在这里。"
+							title={t("parallel.empty")}
+							description={t("parallel.emptyDescription")}
 						/>
 					) : (
 						<ul className="grid gap-1">
@@ -244,7 +247,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 											</span>
 											<span className={statusDot(agent.status)} />
 											<span className="text-2xs text-muted-foreground">
-												{statusLabel(agent.status)}
+												{statusLabel(t, agent.status)}
 											</span>
 										</div>
 										<div className="mt-1.5 flex items-center gap-1 truncate font-mono text-2xs text-muted-foreground">
@@ -268,8 +271,8 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 						<Textarea
 							value={message}
 							onChange={(event) => setMessage(event.target.value)}
-							placeholder="继续给当前 Agent 指令"
-							aria-label="继续给当前 Agent 指令"
+							placeholder={t("parallel.continuePrompt")}
+							aria-label={t("parallel.continuePrompt")}
 							className="min-h-14 resize-none text-xs"
 							disabled={
 								selected.status === "stopped" || selected.status === "failed"
@@ -288,7 +291,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 								onClick={() => void send()}
 							>
 								<Send className="size-3.5" />
-								发送
+								{t("parallel.send")}
 							</Button>
 							<Button
 								variant="outline"
@@ -296,7 +299,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 								className="size-7"
 								disabled={acting || selected.status === "stopped"}
 								onClick={() => void stop()}
-								aria-label="停止 Agent"
+								aria-label={t("parallel.stop")}
 							>
 								<Square className="size-3.5" />
 							</Button>
@@ -306,7 +309,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 								className="size-7 text-destructive"
 								disabled={acting}
 								onClick={() => setConfirmingRemove(true)}
-								aria-label="清理 Worktree"
+								aria-label={t("parallel.cleanup")}
 							>
 								<Trash2 className="size-3.5" />
 							</Button>
@@ -324,14 +327,10 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 				<DialogContent className="w-[min(400px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden p-0 sm:p-0">
 					<DialogHeader className="px-5 pb-3 pt-4 text-left">
 						<DialogTitle className="text-sm font-semibold">
-							清理 Worktree？
+							{t("parallel.cleanupQuestion")}
 						</DialogTitle>
 						<DialogDescription className="text-xs leading-relaxed">
-							将删除
-							<span className="font-medium text-foreground">
-								{selected?.name}
-							</span>
-							的 worktree 和分支，未提交的修改会被删除。
+							{t("parallel.delete", { name: selected?.name })}
 						</DialogDescription>
 					</DialogHeader>
 					<DialogFooter className="border-t border-border/60 px-5 py-3 sm:gap-2">
@@ -342,7 +341,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 							disabled={acting}
 							onClick={() => setConfirmingRemove(false)}
 						>
-							取消
+							{t("common.cancel")}
 						</Button>
 						<Button
 							variant="destructive"
@@ -354,7 +353,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 								void remove();
 							}}
 						>
-							清理 Worktree
+							{t("parallel.cleanup")}
 						</Button>
 					</DialogFooter>
 				</DialogContent>

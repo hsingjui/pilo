@@ -1,5 +1,8 @@
 import { memo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronRight } from "lucide-react";
+
+import { i18n } from "@/i18n";
 
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import { toggleChatExpansionWithAnchor } from "@/components/chat/chat-expansion-anchor";
@@ -17,11 +20,14 @@ export const CompactionMessage = memo(function CompactionMessage({
 	message: Extract<ChatMessage, { role: "compaction" }>;
 }) {
 	const [expanded, setExpanded] = useState(false);
+	const { t } = useTranslation();
 	const summary = message.text.trim();
 	const label =
 		message.tokensBefore === undefined
-			? "上下文已压缩"
-			: `上下文已压缩 · ${message.tokensBefore.toLocaleString()} tokens`;
+			? t("chat.contextCompacted")
+			: t("chat.contextCompactedTokens", {
+					tokens: message.tokensBefore.toLocaleString(i18n.language),
+				});
 
 	return (
 		<ConversationColumn className="py-2">

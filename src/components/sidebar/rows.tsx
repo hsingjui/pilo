@@ -8,6 +8,7 @@ import {
 	type PointerEvent as ReactPointerEvent,
 	type ReactNode,
 } from "react";
+import { useTranslation } from "react-i18next";
 import {
 	Check,
 	ChevronDown,
@@ -132,7 +133,7 @@ function ConfirmDeleteButton({
 	return (
 		<button
 			type="button"
-			aria-label={confirming ? `确认${label}` : label}
+			aria-label={confirming ? confirmLabel : label}
 			className={cn(
 				"relative inline-flex items-center justify-center rounded-sm",
 				// 折叠态只有 20px，用伪元素补到 24×24
@@ -213,7 +214,10 @@ export function EnvRow({
 }) {
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [confirmingDelete, setConfirmingDelete] = useState(false);
-	const toggleLabel = collapsed ? "展开环境" : "折叠环境";
+	const { t } = useTranslation();
+	const toggleLabel = collapsed
+		? t("sidebar.expandEnvironment")
+		: t("sidebar.collapseEnvironment");
 	return (
 		<div className="group flex h-7 items-center gap-1 rounded-md pr-2">
 			<button
@@ -243,7 +247,7 @@ export function EnvRow({
 					<button
 						type="button"
 						className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-						aria-label={`在 ${env.name} 添加项目`}
+						aria-label={t("sidebar.addProjectIn", { name: env.name })}
 						onClick={(event) => {
 							event.stopPropagation();
 							onAddProject?.(env.id);
@@ -252,7 +256,9 @@ export function EnvRow({
 						<Plus className="h-3.5 w-3.5" />
 					</button>
 				</TooltipTrigger>
-				<TooltipContent side="right">添加项目</TooltipContent>
+				<TooltipContent side="right">
+					{t("navigation.addProject")}
+				</TooltipContent>
 			</Tooltip>
 			<DropdownMenu
 				open={menuOpen}
@@ -265,7 +271,7 @@ export function EnvRow({
 					<button
 						type="button"
 						className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-						aria-label="连接菜单"
+						aria-label={t("sidebar.connectionMenu")}
 						onClick={(event) => event.stopPropagation()}
 					>
 						<MoreHorizontal className="h-3.5 w-3.5" />
@@ -274,16 +280,16 @@ export function EnvRow({
 				<DropdownMenuContent align="start" className="min-w-0 w-40">
 					{onViewChange ? (
 						<>
-							<DropdownMenuLabel>视图</DropdownMenuLabel>
+							<DropdownMenuLabel>{t("sidebar.view")}</DropdownMenuLabel>
 							<ViewMenuItem
 								icon={Folder}
-								label="项目"
+								label={t("sidebar.projects")}
 								selected={view === "projects"}
 								onSelect={() => onViewChange("projects")}
 							/>
 							<ViewMenuItem
 								icon={Clock}
-								label="最近会话"
+								label={t("sidebar.recentSessions")}
 								selected={view === "recent"}
 								onSelect={() => onViewChange("recent")}
 							/>
@@ -293,7 +299,7 @@ export function EnvRow({
 							>
 								<Folder className={menuItemIconClassName} />
 								<span className="min-w-0 flex-1 whitespace-nowrap">
-									展示项目
+									{t("sidebar.showProjects")}
 								</span>
 								<MiniSwitch checked={showProjects} />
 							</DropdownMenuItem>
@@ -313,7 +319,9 @@ export function EnvRow({
 							}}
 						>
 							<Trash2 className={menuItemIconClassName} />
-							{confirmingDelete ? "确认移除" : "移除连接"}
+							{confirmingDelete
+								? t("sidebar.confirmRemove")
+								: t("sidebar.removeConnection")}
 						</DropdownMenuItem>
 					) : null}
 				</DropdownMenuContent>
@@ -346,7 +354,10 @@ export function RecentSectionHeader({
 	showProjects: boolean;
 	onShowProjectsChange?: (showProjects: boolean) => void;
 }) {
-	const toggleLabel = collapsed ? "展开最近会话" : "折叠最近会话";
+	const { t } = useTranslation();
+	const toggleLabel = collapsed
+		? t("sidebar.expandRecent")
+		: t("sidebar.collapseRecent");
 	return (
 		<div className="group flex h-7 items-center gap-1 rounded-md">
 			<button
@@ -361,7 +372,7 @@ export function RecentSectionHeader({
 				)}
 			>
 				<Clock className="h-3.5 w-3.5 shrink-0 opacity-80" />
-				<span className="min-w-0 truncate">最近会话</span>
+				<span className="min-w-0 truncate">{t("sidebar.recentSessions")}</span>
 				<ChevronDown
 					className={cn(
 						"h-3.5 w-3.5 shrink-0 text-current transition-[opacity,transform] duration-150 ease-out",
@@ -376,7 +387,7 @@ export function RecentSectionHeader({
 					<button
 						type="button"
 						className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-						aria-label="最近会话菜单"
+						aria-label={t("sidebar.recentMenu")}
 					>
 						<MoreHorizontal className="h-3.5 w-3.5" />
 					</button>
@@ -384,16 +395,16 @@ export function RecentSectionHeader({
 				<DropdownMenuContent align="start" className="min-w-0 w-40">
 					{onViewChange ? (
 						<>
-							<DropdownMenuLabel>视图</DropdownMenuLabel>
+							<DropdownMenuLabel>{t("sidebar.view")}</DropdownMenuLabel>
 							<ViewMenuItem
 								icon={Folder}
-								label="项目"
+								label={t("sidebar.projects")}
 								selected={view === "projects"}
 								onSelect={() => onViewChange("projects")}
 							/>
 							<ViewMenuItem
 								icon={Clock}
-								label="最近会话"
+								label={t("sidebar.recentSessions")}
 								selected={view === "recent"}
 								onSelect={() => onViewChange("recent")}
 							/>
@@ -403,7 +414,7 @@ export function RecentSectionHeader({
 							>
 								<Folder className={menuItemIconClassName} />
 								<span className="min-w-0 flex-1 whitespace-nowrap">
-									展示项目
+									{t("sidebar.showProjects")}
 								</span>
 								<MiniSwitch checked={showProjects} />
 							</DropdownMenuItem>
@@ -440,7 +451,10 @@ export function ProjectRow({
 }) {
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [confirmingDelete, setConfirmingDelete] = useState(false);
-	const toggleLabel = collapsed ? "展开项目" : "折叠项目";
+	const { t } = useTranslation();
+	const toggleLabel = collapsed
+		? t("sidebar.expandProject")
+		: t("sidebar.collapseProject");
 	return (
 		<Tooltip delayDuration={600}>
 			<TooltipTrigger asChild>
@@ -448,7 +462,11 @@ export function ProjectRow({
 				<div
 					role="button"
 					tabIndex={0}
-					aria-label={refreshing ? `${project.name} 正在刷新` : project.name}
+					aria-label={
+						refreshing
+							? t("sidebar.refreshingProject", { name: project.name })
+							: project.name
+					}
 					aria-current={selected ? "page" : undefined}
 					aria-disabled={refreshing || undefined}
 					data-menu-open={menuOpen || undefined}
@@ -502,7 +520,7 @@ export function ProjectRow({
 						{refreshing ? (
 							<span
 								className="flex h-5 w-5 items-center justify-center text-muted-foreground"
-								aria-label="正在刷新会话"
+								aria-label={t("sidebar.refreshingSessions")}
 							>
 								<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
 							</span>
@@ -517,7 +535,7 @@ export function ProjectRow({
 							<DropdownMenuTrigger asChild>
 								<button
 									type="button"
-									aria-label="项目菜单"
+									aria-label={t("sidebar.projectMenu")}
 									className={HOVER_ACTION}
 									onClick={(event) => event.stopPropagation()}
 								>
@@ -530,7 +548,7 @@ export function ProjectRow({
 									onSelect={() => onRefreshSessions?.()}
 								>
 									<RefreshCw className={menuItemIconClassName} />
-									刷新会话
+									{t("sidebar.refreshSessions")}
 								</DropdownMenuItem>
 								{onDelete ? (
 									<DropdownMenuItem
@@ -546,14 +564,16 @@ export function ProjectRow({
 										}}
 									>
 										<Trash2 className={menuItemIconClassName} />
-										{confirmingDelete ? "确认移除" : "移除项目"}
+										{confirmingDelete
+											? t("sidebar.confirmRemove")
+											: t("sidebar.removeProject")}
 									</DropdownMenuItem>
 								) : null}
 							</DropdownMenuContent>
 						</DropdownMenu>
 						<button
 							type="button"
-							aria-label="新建会话"
+							aria-label={t("sidebar.newSession")}
 							className={HOVER_ACTION}
 							onClick={(event) => {
 								event.preventDefault();
@@ -684,6 +704,7 @@ export const SessionRow = memo(function SessionRow({
 	projectName?: string;
 }) {
 	const projectContext = Boolean(projectName);
+	const { t } = useTranslation();
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [confirmingDeleteMenu, setConfirmingDeleteMenu] = useState(false);
 	const [renaming, setRenaming] = useState(false);
@@ -747,7 +768,7 @@ export const SessionRow = memo(function SessionRow({
 								<DropdownMenuTrigger asChild>
 									<button
 										type="button"
-										aria-label="更多操作"
+										aria-label={t("sidebar.moreActions")}
 										onClick={(event) => event.stopPropagation()}
 										className={cn(
 											"absolute left-1/2 top-1/2 z-20 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md opacity-0 pointer-events-none",
@@ -770,7 +791,7 @@ export const SessionRow = memo(function SessionRow({
 										}}
 									>
 										<Pencil className={menuItemIconClassName} />
-										重命名
+										{t("sidebar.rename")}
 									</DropdownMenuItem>
 									{onDelete ? (
 										<DropdownMenuItem
@@ -785,7 +806,9 @@ export const SessionRow = memo(function SessionRow({
 											}}
 										>
 											<Trash2 className={menuItemIconClassName} />
-											{confirmingDeleteMenu ? "确认删除" : "删除"}
+											{confirmingDeleteMenu
+												? t("sidebar.confirmDelete")
+												: t("sidebar.delete")}
 										</DropdownMenuItem>
 									) : null}
 								</DropdownMenuContent>
@@ -796,7 +819,7 @@ export const SessionRow = memo(function SessionRow({
 								<input
 									ref={renameInputRef}
 									value={renameValue}
-									aria-label="修改会话标题"
+									aria-label={t("sidebar.editSessionTitle")}
 									onClick={(event) => event.stopPropagation()}
 									onChange={(event) => setRenameValue(event.target.value)}
 									onBlur={() => {
@@ -862,8 +885,8 @@ export const SessionRow = memo(function SessionRow({
 							</span>
 							{onDelete ? (
 								<ConfirmDeleteButton
-									label="删除"
-									confirmLabel="确认删除"
+									label={t("sidebar.delete")}
+									confirmLabel={t("sidebar.confirmDelete")}
 									className={cn(
 										"absolute right-0 top-0 z-20",
 										"opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100",

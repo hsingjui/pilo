@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { getVersion } from "@tauri-apps/api/app";
 import { appLogDir } from "@tauri-apps/api/path";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -36,15 +38,15 @@ type UpdateStatus =
 	| "installing"
 	| "error";
 
-function formatUpdateError(error: unknown) {
+function formatUpdateError(error: unknown, t: TFunction) {
 	const message = error instanceof Error ? error.message : String(error);
 	if (message.includes("public key") || message.includes("signature")) {
-		return "更新签名配置不可用，请检查发布配置。";
+		return t("about.updateConfigUnavailable");
 	}
 	if (message.includes("network") || message.includes("fetch")) {
-		return "无法连接更新服务，请检查网络后重试。";
+		return t("about.updateServiceUnavailable");
 	}
-	return message || "检查更新失败，请稍后重试。";
+	return message || t("about.updateFailed");
 }
 
 async function handleOpenLogDirectory() {
@@ -56,6 +58,7 @@ async function handleOpenLogDirectory() {
 }
 
 export function AboutSettings() {
+	const { t } = useTranslation();
 	const [version, setVersion] = useState<string | null>(null);
 	const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
 	const [availableVersion, setAvailableVersion] = useState<string | null>(null);
@@ -107,7 +110,7 @@ export function AboutSettings() {
 			setAvailableVersion(update.version);
 			setUpdateStatus("available");
 		} catch (error) {
-			setUpdateError(formatUpdateError(error));
+			setUpdateError(formatUpdateError(error, t));
 			setUpdateStatus("error");
 		}
 	};
@@ -144,7 +147,7 @@ export function AboutSettings() {
 			await update.install();
 			await relaunch();
 		} catch (error) {
-			setUpdateError(formatUpdateError(error));
+			setUpdateError(formatUpdateError(error, t));
 			setUpdateStatus("error");
 		}
 	};
@@ -161,7 +164,7 @@ export function AboutSettings() {
 					<div className="size-16 shrink-0 overflow-hidden rounded-2xl border border-border/60 bg-background shadow-sm">
 						<img
 							src={appIconUrl}
-							alt="Pilo Logo"
+							alt="Pilo"
 							className="size-full object-cover"
 						/>
 					</div>
@@ -173,19 +176,19 @@ export function AboutSettings() {
 							{version ? <SettingsStatus>v{version}</SettingsStatus> : null}
 						</div>
 						<p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
-							轻量的 Pi 桌面客户端。
+							{t("about.description")}
 						</p>
 					</div>
 				</div>
 			</SettingsSection>
 
-			<SettingsSection title="应用">
-				<SettingsRow label="版本">
+			<SettingsSection title={t("settings.application")}>
+				<SettingsRow label={t("settings.version")}>
 					<span className="font-mono text-xs text-muted-foreground">
 						{version ?? "—"}
 					</span>
 				</SettingsRow>
-				<SettingsRow label="项目仓库">
+				<SettingsRow label={t("settings.repository")}>
 					<Button
 						type="button"
 						variant="ghost"
@@ -201,7 +204,7 @@ export function AboutSettings() {
 						<ExternalLink className="size-3.5 opacity-60" />
 					</Button>
 				</SettingsRow>
-				<SettingsRow label="日志目录">
+				<SettingsRow label={t("settings.logDirectory")}>
 					<Button
 						type="button"
 						variant="ghost"
@@ -213,21 +216,21 @@ export function AboutSettings() {
 						onClick={() => void handleOpenLogDirectory()}
 					>
 						<FolderOpen className="size-3.5" />
-						打开日志目录
+						{t("settings.openLogDirectory")}
 					</Button>
 				</SettingsRow>
 			</SettingsSection>
 
-			<SettingsSection title="更新">
+			<SettingsSection title={t("settings.update")}>
 				<SettingsRow
-					label="检查更新"
+					label={t("settings.updateCheck")}
 					helper={updateStatus === "error" ? updateError : undefined}
 				>
 					<div className="flex items-center gap-1.5">
 						{updateStatus === "latest" ? (
 							<SettingsStatus>
 								<CheckCircle2 className="mr-1 size-3" />
-								已是最新
+								{t("settings.latest")}
 							</SettingsStatus>
 						) : null}
 						{updateStatus === "available" && availableVersion ? (
@@ -242,7 +245,7 @@ export function AboutSettings() {
 								onClick={() => void handleInstallUpdate()}
 							>
 								<Download className="size-3.5" />
-								下载并安装
+								{t("settings.downloadInstall")}
 							</Button>
 						) : (
 							<Button
@@ -267,19 +270,19 @@ export function AboutSettings() {
 									)}
 								/>
 								{updateStatus === "checking"
-									? "检查中…"
+									? t("settings.checking")
 									: updateStatus === "downloading"
 										? downloadProgress === null
-											? "下载中…"
-											: `下载中 ${downloadProgress}%`
+											? t("settings.downloading")
+											: `${t("settings.downloading")} ${downloadProgress}%`
 										: updateStatus === "installing"
-											? "安装中…"
-											: "检查更新"}
+											? t("settings.installing")
+											: t("settings.updateCheck")}
 							</Button>
 						)}
 					</div>
 				</SettingsRow>
-				<SettingsRow label="发布记录">
+				<SettingsRow label={t("settings.releaseNotes")}>
 					<Button
 						type="button"
 						variant="ghost"

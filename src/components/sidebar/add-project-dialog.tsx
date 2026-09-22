@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronLeft, Folder, FolderOpen, Search } from "lucide-react";
 import { toast } from "sonner";
 
@@ -51,6 +52,7 @@ export function AddProjectDialog({
 	const [entries, setEntries] = useState<FsEntry[]>([]);
 	const [filter, setFilter] = useState("");
 	const [loadingEntries, setLoadingEntries] = useState(false);
+	const { t } = useTranslation();
 
 	const directories = useMemo(() => {
 		const query = filter.trim().toLocaleLowerCase();
@@ -74,17 +76,22 @@ export function AddProjectDialog({
 					);
 				});
 				notifyProjectsChanged();
-				toast.success(`已添加 ${project.name}`, {
-					description: `${project.connection.name} · ${project.metadata.cwd}`,
+				toast.success(t("project.added", { name: project.name }), {
+					description: t("project.addedDescription", {
+						connection: project.connection.name,
+						path: project.metadata.cwd,
+					}),
 				});
 				onOpenChange(false);
 			} catch (error) {
-				toast.error("添加项目失败", { description: userErrorMessage(error) });
+				toast.error(t("project.addFailed"), {
+					description: userErrorMessage(error),
+				});
 			} finally {
 				setBusy(false);
 			}
 		},
-		[connection, onOpenChange],
+		[connection, onOpenChange, t],
 	);
 
 	const loadDirectory = async (nextPath: string) => {
@@ -96,7 +103,9 @@ export function AddProjectDialog({
 			setBrowserPath(normalized);
 			setFilter("");
 		} catch (error) {
-			toast.error("读取远程目录失败", { description: userErrorMessage(error) });
+			toast.error(t("project.readDirectoryFailed"), {
+				description: userErrorMessage(error),
+			});
 		} finally {
 			setLoadingEntries(false);
 		}
@@ -117,9 +126,9 @@ export function AddProjectDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="max-w-xl gap-5">
 				<DialogHeader>
-					<DialogTitle>添加项目</DialogTitle>
+					<DialogTitle>{t("project.addTitle")}</DialogTitle>
 					<DialogDescription>
-						{connection.name} · 输入远程目录，或从根目录浏览选择。
+						{t("project.remoteDirectory", { connection: connection.name })}
 					</DialogDescription>
 				</DialogHeader>
 
@@ -129,7 +138,7 @@ export function AddProjectDialog({
 							htmlFor="project-path"
 							className="text-xs font-medium text-muted-foreground"
 						>
-							项目目录
+							{t("project.projectDirectory")}
 						</label>
 						<div className="flex gap-2">
 							<Input
@@ -146,7 +155,7 @@ export function AddProjectDialog({
 							<Button
 								variant="outline"
 								size="icon"
-								aria-label="浏览远程文件夹"
+								aria-label={t("project.browseRemote")}
 								onClick={openBrowser}
 							>
 								<FolderOpen className="h-4 w-4" />
@@ -155,7 +164,7 @@ export function AddProjectDialog({
 								disabled={busy || !path.trim()}
 								onClick={() => void add(path)}
 							>
-								{busy ? "添加中…" : "添加"}
+								{busy ? t("common.adding") : t("common.add")}
 							</Button>
 						</div>
 					</div>
@@ -184,7 +193,7 @@ export function AddProjectDialog({
 										setBrowserOpen(false);
 									}}
 								>
-									选择当前目录
+									{t("project.selectCurrentDirectory")}
 								</Button>
 							</div>
 							<div className="border-b p-2">
@@ -193,7 +202,7 @@ export function AddProjectDialog({
 									<Input
 										value={filter}
 										onChange={(event) => setFilter(event.target.value)}
-										placeholder="筛选文件夹"
+										placeholder={t("project.filterFolders")}
 										className="h-8 pl-7"
 									/>
 								</div>
@@ -201,13 +210,15 @@ export function AddProjectDialog({
 							<div className="max-h-72 overflow-y-auto p-1">
 								{loadingEntries ? (
 									<div className="px-3 py-6 text-center text-xs text-muted-foreground">
-										正在读取目录…
+										{t("common.loading")}
 									</div>
 								) : directories.length === 0 ? (
 									<div className="px-3 py-6 text-center text-xs text-muted-foreground">
 										{filter.trim()
-											? `没有匹配“${filter.trim()}”的文件夹`
-											: "没有文件夹"}
+											? t("project.noMatchingFolders", {
+													query: filter.trim(),
+												})
+											: t("project.noFolders")}
 									</div>
 								) : (
 									directories.map((entry) => {

@@ -1,4 +1,5 @@
 import { memo, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, GitFork, LoaderCircle } from "lucide-react";
 
 import {
@@ -14,7 +15,7 @@ import { useChatExpansionState } from "@/components/chat/chat-expansion-state";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import {
 	getAssistantActivities,
-	getAssistantStreamingLabel,
+	getAssistantStreamingState,
 	splitAssistantContentForDisplay,
 	type AssistantContentItem,
 } from "@/lib/chat-activity-state";
@@ -80,6 +81,7 @@ function CollapsibleMessageBody({
 	streaming?: boolean;
 	collapseDisabled?: boolean;
 }) {
+	const { t } = useTranslation();
 	const { collapseLongMessages } = usePreferences();
 	const collapsible =
 		collapseLongMessages &&
@@ -114,7 +116,7 @@ function CollapsibleMessageBody({
 							expanded && "rotate-180",
 						)}
 					/>
-					{expanded ? "收起消息" : "展开完整消息"}
+					{expanded ? t("chat.collapseMessage") : t("chat.expandMessage")}
 				</button>
 			) : null}
 		</div>
@@ -213,6 +215,7 @@ function AssistantWorkedRegion({
 	keepTextExpanded?: boolean;
 	durationMs?: number;
 }) {
+	const { t } = useTranslation();
 	const { collapseCompletedActivity, showWorkDuration } = usePreferences();
 	const [open, setOpen] = useChatExpansionState(
 		`worked:${messageId}:${active ? "active" : "complete"}`,
@@ -220,7 +223,11 @@ function AssistantWorkedRegion({
 	);
 	const durationLabel =
 		showWorkDuration && durationMs !== undefined
-			? formatWorkDuration(durationMs)
+			? formatWorkDuration(durationMs, {
+					hour: t("common.hour"),
+					minute: t("common.minute"),
+					second: t("common.second"),
+				})
 			: "";
 
 	return (
@@ -245,7 +252,9 @@ function AssistantWorkedRegion({
 					)}
 				/>
 				<span className="min-w-0 flex-1 truncate">
-					{durationLabel ? `工作了 ${durationLabel}` : "工作过程"}
+					{durationLabel
+						? t("chat.workDuration", { duration: durationLabel })
+						: t("chat.workActivity")}
 				</span>
 			</button>
 			{open ? (
@@ -278,6 +287,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 	suppressInterruptedError?: boolean;
 }) {
 	recordChatMessageRender("assistant");
+	const { t } = useTranslation();
 	const { pageFontSize, showWorkDuration } = usePreferences();
 	const content = getAssistantMessageContent(message);
 	const activity = getAssistantActivities(content);
@@ -292,11 +302,12 @@ export const AssistantMessage = memo(function AssistantMessage({
 		isTurnFinished,
 		foldWorkOnError,
 	);
-	const streamingLabel = getAssistantStreamingLabel({
+	const streamingState = getAssistantStreamingState({
 		text: message.text,
 		activity,
 		streaming: message.streaming,
 	});
+	const streamingLabel = streamingState ? t(`chat.${streamingState}`) : null;
 	const hasWorkActivity = activity.length > 0;
 	const workDurationOwnedByContent =
 		hasWorkActivity || displaySections.hasCollapsedWork;
@@ -313,7 +324,11 @@ export const AssistantMessage = memo(function AssistantMessage({
 		showWorkDuration &&
 		!workDurationOwnedByContent &&
 		message.workDurationMs !== undefined
-			? formatWorkDuration(message.workDurationMs)
+			? formatWorkDuration(message.workDurationMs, {
+					hour: t("common.hour"),
+					minute: t("common.minute"),
+					second: t("common.second"),
+				})
 			: "";
 	const visibleErrorMessage =
 		suppressInterruptedError && message.completion === "interrupted"
@@ -389,9 +404,11 @@ export const AssistantMessage = memo(function AssistantMessage({
 							{streamingLabel ? (
 								<ChatAgentActivityIndicator label={streamingLabel} />
 							) : visibleErrorMessage ? (
-								<span className="text-destructive">Pi 响应失败</span>
+								<span className="text-destructive">
+									{t("chat.responseFailed")}
+								</span>
 							) : (
-								<span>已停止</span>
+								<span>{t("chat.stopped")}</span>
 							)}
 						</div>
 					) : !message.streaming &&
@@ -405,7 +422,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 							) : null}
 							{canFork ? (
 								<MessageAction
-									label={forking ? "正在 Fork" : "Fork 新会话"}
+									label={forking ? t("chat.forking") : t("chat.forkNewSession")}
 									disabled={forkDisabled || forking}
 									onClick={() => onFork?.(message.id)}
 								>

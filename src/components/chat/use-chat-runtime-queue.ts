@@ -1,5 +1,6 @@
 /* oxlint-disable no-await-in-loop */
 import { useCallback, useRef, useState, type RefObject } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import type {
@@ -60,6 +61,7 @@ export function useChatRuntimeQueue({
 	restoreSubmission,
 	recoverSubmission,
 }: UseChatRuntimeQueueOptions) {
+	const { t } = useTranslation();
 	const bufferedQueuedMessagesRef = useRef<BufferedQueuedMessage[]>([]);
 	const queuedMessagesRef = useRef(new Map<string, BufferedQueuedMessage>());
 	const [pendingSteering, setPendingSteering] = useState(0);
@@ -172,12 +174,14 @@ export function useChatRuntimeQueue({
 				});
 				recoverSubmission(item.submission);
 				toast.error(
-					item.queued === "steer" ? "无法调整当前回复" : "无法排队发送",
+					item.queued === "steer"
+						? t("chat.queuedSteerFailed")
+						: t("chat.queueFailed"),
 					{ description: runtimeErrorMessage(error) },
 				);
 			});
 		},
-		[client, dispatchConversation, recoverSubmission],
+		[client, dispatchConversation, recoverSubmission, t],
 	);
 
 	const flushBufferedQueuedMessages = useCallback(
@@ -295,7 +299,7 @@ export function useChatRuntimeQueue({
 				}
 				removeQueuedMessagesFromConversation(turn, remaining);
 				restoreQueuedMessages(remaining);
-				toast.error("取回失败，消息已恢复到输入框", {
+				toast.error(t("chat.retrieveFailed"), {
 					description: runtimeErrorMessage(error),
 				});
 			}
@@ -310,6 +314,7 @@ export function useChatRuntimeQueue({
 			restoreSubmission,
 			session.id,
 			takeQueuedMessages,
+			t,
 		],
 	);
 
@@ -410,7 +415,7 @@ export function useChatRuntimeQueue({
 					removeQueuedMessagesFromConversation(turn, stranded);
 					restoreQueuedMessages(stranded);
 				}
-				toast.error("无法立即发送消息", {
+				toast.error(t("chat.immediateSendFailed"), {
 					description: runtimeErrorMessage(error),
 				});
 			}
@@ -427,6 +432,7 @@ export function useChatRuntimeQueue({
 			session.id,
 			session.temporary,
 			takeQueuedMessages,
+			t,
 		],
 	);
 
@@ -475,7 +481,7 @@ export function useChatRuntimeQueue({
 			try {
 				await client.stop("stop_turn_abort_failed");
 			} catch (stopError) {
-				toast.error("停止 Pi 失败", {
+				toast.error(t("chat.stopPiFailed"), {
 					description: runtimeErrorMessage(stopError),
 				});
 			}
@@ -489,6 +495,7 @@ export function useChatRuntimeQueue({
 		restoreQueuedMessages,
 		session.id,
 		takeQueuedMessages,
+		t,
 	]);
 
 	return {

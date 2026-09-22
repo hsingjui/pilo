@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
+import { i18n } from "../i18n/index.ts";
 import { userErrorMessage } from "@/lib/app-error";
 
 type UnlistenFn = () => void;
@@ -525,7 +526,7 @@ export async function requestPiRpc<T>(
 			{ sessionKey },
 		);
 		timer = window.setTimeout(
-			() => rejectResponse?.(new Error("Pi RPC 请求超时。")),
+			() => rejectResponse?.(new Error(i18n.t("errors.piRpcTimeout"))),
 			timeoutMs,
 		);
 		await invoke(sessionKey ? "chat_session_send_rpc" : "runtime_send_rpc", {
@@ -534,7 +535,10 @@ export async function requestPiRpc<T>(
 		});
 		const result = await response;
 		if (!result.success) {
-			throw new Error(result.error || `Pi RPC ${result.command} 执行失败。`);
+			throw new Error(
+				result.error ||
+					i18n.t("errors.piRpcCommandFailed", { command: result.command }),
+			);
 		}
 		traceRuntimeDebug("webview.rpc.end", {
 			sessionKey,

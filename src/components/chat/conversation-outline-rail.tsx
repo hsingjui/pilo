@@ -6,6 +6,7 @@ import {
 	useState,
 	type KeyboardEvent,
 } from "react";
+import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
 
@@ -44,6 +45,7 @@ export const ConversationOutlineRail = memo(function ConversationOutlineRail({
 	onJumpToRound: (index: number) => void;
 	className?: string;
 }) {
+	const { t } = useTranslation();
 	const railRef = useRef<HTMLElement>(null);
 	const openTimerRef = useRef<number | null>(null);
 	const [hoveredIndex, setHoveredIndex] = useState(-1);
@@ -101,7 +103,7 @@ export const ConversationOutlineRail = memo(function ConversationOutlineRail({
 	return (
 		<nav
 			ref={railRef}
-			aria-label="消息导航"
+			aria-label={t("chat.messageNavigation")}
 			className={cn(
 				// 以聊天面板宽度为准（chat-page 根节点 @container），面板窄于 35rem 时
 				// 大纲刻度会压到居中消息列上，因此隐藏。
@@ -191,7 +193,7 @@ export const ConversationOutlineRail = memo(function ConversationOutlineRail({
 						{entries[hoverCard.index]?.title}
 					</div>
 					<div className="mt-1.5 line-clamp-6 text-xs leading-relaxed text-muted-foreground">
-						{entries[hoverCard.index]?.preview || "还没有 Pi 回复。"}
+						{entries[hoverCard.index]?.preview || t("chat.noPiReply")}
 					</div>
 				</div>
 			) : null}

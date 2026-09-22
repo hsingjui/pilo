@@ -6,10 +6,13 @@ import type {
 } from "@/lib/pi-runtime";
 import type { SshConnectionInfo } from "@/lib/ssh-connections";
 
-export const AUTH_LABELS: Record<SshAuthMethod, string> = {
-	agent: "SSH Agent / 默认密钥",
-	password: "密码",
-	key: "指定私钥",
+export const AUTH_LABEL_KEYS: Record<
+	SshAuthMethod,
+	"connection.sshAgent" | "connection.password" | "connection.privateKey"
+> = {
+	agent: "connection.sshAgent",
+	password: "connection.password",
+	key: "connection.privateKey",
 };
 
 export type SshConnectionFormState = {

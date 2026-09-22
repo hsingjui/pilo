@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -49,6 +50,7 @@ export function SessionNamingSettings() {
 	const [loading, setLoading] = useState(true);
 	const [busyConnectionId, setBusyConnectionId] = useState<string | null>(null);
 	const [modelRevision, setModelRevision] = useState(0);
+	const { t } = useTranslation();
 
 	useEffect(() => {
 		let active = true;
@@ -74,7 +76,7 @@ export function SessionNamingSettings() {
 			})
 			.catch((error) => {
 				if (active) {
-					toast.error("加载命名设置失败", {
+					toast.error(t("settings.loadNamingSettingsFailed"), {
 						description: userErrorMessage(error),
 					});
 				}
@@ -85,7 +87,7 @@ export function SessionNamingSettings() {
 		return () => {
 			active = false;
 		};
-	}, []);
+	}, [t]);
 
 	void modelRevision;
 	const modelsByConnection = new Map<string, PiModel[]>();
@@ -119,7 +121,7 @@ export function SessionNamingSettings() {
 				return next;
 			});
 		} catch (error) {
-			toast.error("保存命名模型失败", {
+			toast.error(t("settings.saveNamingModelFailed"), {
 				description: userErrorMessage(error),
 			});
 		} finally {
@@ -139,9 +141,9 @@ export function SessionNamingSettings() {
 		try {
 			await refreshProjectPiModels(target.id);
 			setModelRevision((value) => value + 1);
-			toast.success("模型已刷新");
+			toast.success(t("settings.modelsRefreshed"));
 		} catch (error) {
-			toast.error("刷新模型失败", {
+			toast.error(t("settings.refreshModelsFailed"), {
 				description: userErrorMessage(error),
 			});
 		} finally {
@@ -151,12 +153,14 @@ export function SessionNamingSettings() {
 
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
-			<SettingsSection title="命名模型">
+			<SettingsSection title={t("settings.namingModel")}>
 				{loading ? (
-					<div className="px-3 py-5 text-xs text-muted-foreground">加载中…</div>
+					<div className="px-3 py-5 text-xs text-muted-foreground">
+						{t("common.loading")}
+					</div>
 				) : connections.length === 0 ? (
 					<div className="px-3 py-5 text-xs text-muted-foreground">
-						暂无连接。
+						{t("settings.noConnections")}
 					</div>
 				) : (
 					connections.map((connection) => {
@@ -191,10 +195,12 @@ export function SessionNamingSettings() {
 											"w-[320px] max-w-full",
 										)}
 									>
-										<SelectValue placeholder="选择模型" />
+										<SelectValue placeholder={t("settings.selectModel")} />
 									</SelectTrigger>
 									<SelectContent className="max-h-80">
-										<SelectItem value="disabled">不自动命名</SelectItem>
+										<SelectItem value="disabled">
+											{t("settings.noAutomaticNaming")}
+										</SelectItem>
 										{models.map((model) => (
 											<SelectItem key={modelKey(model)} value={modelKey(model)}>
 												{model.name} · {model.provider}
@@ -203,7 +209,11 @@ export function SessionNamingSettings() {
 									</SelectContent>
 								</Select>
 								<Hint
-									label={busy || projectCount === 0 ? undefined : "刷新模型"}
+									label={
+										busy || projectCount === 0
+											? undefined
+											: t("settings.refreshModels")
+									}
 								>
 									<Button
 										variant="ghost"
@@ -211,7 +221,7 @@ export function SessionNamingSettings() {
 										className={SETTINGS_ICON_BUTTON_CLASS}
 										disabled={busy || projectCount === 0}
 										onClick={() => void refreshModels(connection.id)}
-										aria-label="刷新模型"
+										aria-label={t("settings.refreshModels")}
 									>
 										<RefreshCw className={busy ? "animate-spin" : undefined} />
 									</Button>

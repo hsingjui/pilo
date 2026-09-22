@@ -1,4 +1,5 @@
 import { ArrowUp, Square } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { CHAT_COMPOSER_SEND_BUTTON_CLASS_NAME } from "@/components/chat/chat-composer-frame";
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
@@ -26,6 +27,7 @@ export function ComposerActions({
 	submitBlocked = false,
 	onPrimary,
 }: ComposerActionsProps) {
+	const { t } = useTranslation();
 	const hasValue = Boolean(value.trim()) || hasAttachments;
 	return (
 		<div className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -37,7 +39,7 @@ export function ComposerActions({
 								type="button"
 								size="icon"
 								className={CHAT_COMPOSER_SEND_BUTTON_CLASS_NAME}
-								aria-label="调整当前回复"
+								aria-label={t("chat.adjust")}
 								disabled={!canSteer || submitBlocked}
 								onClick={onPrimary}
 							>
@@ -45,7 +47,7 @@ export function ComposerActions({
 							</Button>
 						</TooltipTrigger>
 						<TooltipContent>
-							调整当前回复 ·{" "}
+							{t("chat.adjust")} ·{" "}
 							{sendMessageShortcut === "enter" ? "Enter" : "Ctrl/⌘ Enter"}
 						</TooltipContent>
 					</Tooltip>
@@ -57,13 +59,13 @@ export function ComposerActions({
 								variant="ghost"
 								size="icon"
 								className="size-7 rounded-full bg-foreground text-background transition-[background-color,scale] duration-100 enabled:hover:bg-foreground/85 active:scale-[0.96]"
-								aria-label="停止"
+								aria-label={t("chat.stop")}
 								onClick={onStop}
 							>
 								<Square className="size-3 fill-current" />
 							</Button>
 						</TooltipTrigger>
-						<TooltipContent>停止</TooltipContent>
+						<TooltipContent>{t("chat.stop")}</TooltipContent>
 					</Tooltip>
 				)
 			) : (
@@ -73,7 +75,7 @@ export function ComposerActions({
 							type="button"
 							size="icon"
 							className={CHAT_COMPOSER_SEND_BUTTON_CLASS_NAME}
-							aria-label="发送"
+							aria-label={t("chat.send")}
 							disabled={!hasValue || disabled || submitBlocked}
 							onClick={onPrimary}
 						>
@@ -81,7 +83,8 @@ export function ComposerActions({
 						</Button>
 					</TooltipTrigger>
 					<TooltipContent>
-						发送 · {sendMessageShortcut === "enter" ? "Enter" : "Ctrl/⌘ Enter"}
+						{t("chat.send")} ·{" "}
+						{sendMessageShortcut === "enter" ? "Enter" : "Ctrl/⌘ Enter"}
 					</TooltipContent>
 				</Tooltip>
 			)}

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Monitor, Moon, Settings, Sun } from "lucide-react";
 
 import { usePreferences } from "@/lib/preferences-provider";
@@ -12,10 +13,13 @@ const SettingsDialog = lazy(() =>
 	})),
 );
 
-const THEME_LABELS: Record<Theme, string> = {
-	light: "亮色",
-	dark: "暗色",
-	system: "跟随系统",
+const THEME_LABEL_KEYS: Record<
+	Theme,
+	"settings.light" | "settings.dark" | "settings.system"
+> = {
+	light: "settings.light",
+	dark: "settings.dark",
+	system: "settings.system",
 };
 
 const THEME_ICONS: Record<Theme, typeof Sun> = {
@@ -25,6 +29,7 @@ const THEME_ICONS: Record<Theme, typeof Sun> = {
 };
 
 function ThemeCycleButton() {
+	const { t } = useTranslation();
 	const { theme, setTheme } = useTheme();
 	const Icon = THEME_ICONS[theme];
 	return (
@@ -33,18 +38,21 @@ function ThemeCycleButton() {
 				<Button
 					variant="ghost"
 					size="icon"
-					aria-label="切换主题"
+					aria-label={t("settings.theme")}
 					onClick={() => setTheme(nextCycledTheme(theme))}
 				>
 					<Icon />
 				</Button>
 			</TooltipTrigger>
-			<TooltipContent>主题：{THEME_LABELS[theme]}</TooltipContent>
+			<TooltipContent>
+				{t("settings.theme")}: {t(THEME_LABEL_KEYS[theme])}
+			</TooltipContent>
 		</Tooltip>
 	);
 }
 
 export function SidebarFooter() {
+	const { t } = useTranslation();
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const { keyboardShortcuts } = usePreferences();
 	useKeyboardShortcut(keyboardShortcuts["open-settings"], () => {
@@ -58,13 +66,13 @@ export function SidebarFooter() {
 					<Button
 						variant="ghost"
 						size="icon"
-						aria-label="设置"
+						aria-label={t("settings.title")}
 						onClick={() => setSettingsOpen(true)}
 					>
 						<Settings />
 					</Button>
 				</TooltipTrigger>
-				<TooltipContent>设置</TooltipContent>
+				<TooltipContent>{t("settings.title")}</TooltipContent>
 			</Tooltip>
 			{settingsOpen ? (
 				<Suspense fallback={null}>

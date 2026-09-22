@@ -15,6 +15,8 @@ import type {
 	ConversationState,
 } from "./conversation-types.ts";
 
+import { i18n } from "../i18n/index.ts";
+
 type AssistantMessage = Extract<ChatMessage, { role: "assistant" }>;
 
 export function createConversationState(
@@ -122,9 +124,9 @@ function endTurn(
 			? undefined
 			: errorMessage?.trim() ||
 				(stopReason === "error"
-					? "Pi 返回了错误结果。"
+					? i18n.t("chat.responseError")
 					: completion === "interrupted"
-						? "这段历史回复在完成前中断。"
+						? i18n.t("chat.historyReplyInterrupted")
 						: undefined);
 	const messages = [...state.messages];
 	messages[index] = {

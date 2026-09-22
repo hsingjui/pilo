@@ -1,4 +1,5 @@
 import { skillInvocationSummary } from "./skill-invocation.ts";
+import { i18n } from "../i18n/index.ts";
 
 export type ConversationOutlineMessage = {
 	id: string;
@@ -66,7 +67,7 @@ export function buildConversationOutline(
 			current = {
 				key: message.id,
 				messageIndex,
-				title: truncate(summary || "未命名消息", 72),
+				title: truncate(summary || i18n.t("chat.untitledMessage"), 72),
 				preview: message.role === "assistant" ? truncate(summary, 240) : "",
 				weight: 0,
 			};

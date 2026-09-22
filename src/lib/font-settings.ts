@@ -13,13 +13,15 @@ export type MonospaceFontFamily =
 export type FontOption = {
 	value: string;
 	label: string;
+	/** 内置字体项的可翻译标签 key；系统字体项没有。 */
+	labelKey?: "settings.systemDefault" | "settings.systemMonospace";
 	/** 下拉预览用的 CSS family；省略表示用应用默认字体渲染。 */
 	family?: string;
 };
 
 export const PAGE_FONT_BUILTIN_OPTIONS: ReadonlyArray<FontOption> = [
 	{ value: "inter", label: "Inter", family: "Inter" },
-	{ value: "system-sans", label: "系统默认" },
+	{ value: "system-sans", label: "", labelKey: "settings.systemDefault" },
 ];
 
 export const MONOSPACE_FONT_BUILTIN_OPTIONS: ReadonlyArray<FontOption> = [
@@ -28,7 +30,7 @@ export const MONOSPACE_FONT_BUILTIN_OPTIONS: ReadonlyArray<FontOption> = [
 		label: "JetBrains Mono",
 		family: "JetBrains Mono",
 	},
-	{ value: "system-mono", label: "系统等宽" },
+	{ value: "system-mono", label: "", labelKey: "settings.systemMonospace" },
 ];
 
 /** 随应用打包的字体族名（小写）；全量枚举时跳过，避免与内置候选重复。 */

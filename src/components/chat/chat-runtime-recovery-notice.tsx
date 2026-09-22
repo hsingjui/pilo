@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
 	ChevronDown,
 	ChevronUp,
@@ -9,7 +10,7 @@ import {
 } from "lucide-react";
 
 import type { ChatRuntimeRecoveryState } from "@/components/chat/use-chat-runtime";
-import { appErrorActionLabel } from "@/lib/app-error";
+import { appErrorActionLabel, appErrorMessage } from "@/lib/app-error";
 import { Button, NoticeCard, NoticeIcon } from "@/ui";
 
 export function ChatRuntimeRecoveryNotice({
@@ -21,6 +22,7 @@ export function ChatRuntimeRecoveryNotice({
 	onReconnect: () => void;
 	onNewTemporaryChat?: () => void;
 }) {
+	const { t } = useTranslation();
 	const [detailsOpen, setDetailsOpen] = useState(false);
 	if (state.status === "idle") return null;
 
@@ -30,12 +32,19 @@ export function ChatRuntimeRecoveryNotice({
 	const action =
 		state.status === "failed" && state.recoverable
 			? {
-					label: error ? (appErrorActionLabel(error) ?? "重试") : "重新连接",
+					label: error
+						? (appErrorActionLabel(error) ?? t("common.retry"))
+						: t("errors.reconnect"),
 					onClick: onReconnect,
 				}
 			: state.status === "failed" && onNewTemporaryChat
-				? { label: "新建临时会话", onClick: onNewTemporaryChat }
+				? { label: t("chat.newTemporary"), onClick: onNewTemporaryChat }
 				: null;
+	const message = error
+		? appErrorMessage(error)
+		: state.messageKey
+			? t(state.messageKey)
+			: "";
 	const detail = error?.detail?.trim();
 
 	return (
@@ -55,15 +64,15 @@ export function ChatRuntimeRecoveryNotice({
 				<div className="min-w-0 flex-1">
 					<div className="font-medium text-foreground/85">
 						{recovering
-							? "正在恢复 Pi 会话"
+							? t("chat.reconnectingTitle")
 							: recovered
-								? "Pi 会话已恢复"
+								? t("chat.runtimeRecovered")
 								: state.recoverable
-									? "运行环境已中断"
-									: "当前会话已中断"}
+									? t("chat.runtimeInterrupted")
+									: t("chat.sessionInterrupted")}
 					</div>
 					<div className="mt-0.5 break-words leading-5 text-muted-foreground">
-						{state.message}
+						{message}
 					</div>
 				</div>
 				{action ? (
@@ -79,7 +88,7 @@ export function ChatRuntimeRecoveryNotice({
 					</Button>
 				) : null}
 			</div>
-			{detail && detail !== state.message ? (
+			{detail && detail !== message ? (
 				<div className="ml-6 mt-1">
 					<button
 						type="button"
@@ -91,7 +100,7 @@ export function ChatRuntimeRecoveryNotice({
 						) : (
 							<ChevronDown className="size-3" />
 						)}
-						查看详情
+						{t("chat.viewDetails")}
 					</button>
 					{detailsOpen ? (
 						<div className="mt-1.5 max-h-24 overflow-auto rounded-md bg-background/70 px-2 py-1.5 font-mono text-2xs leading-4 text-muted-foreground">

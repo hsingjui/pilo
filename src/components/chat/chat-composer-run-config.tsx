@@ -1,4 +1,5 @@
 import { Check, LoaderCircle, RefreshCw } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { CHAT_COMPOSER_RUN_CONFIG_TRIGGER_CLASS_NAME } from "@/components/chat/chat-composer-frame";
 import { PiLogo } from "@/components/pi-logo";
@@ -65,6 +66,7 @@ export function ComposerRunConfig({
 	onThinkingMenuOpen,
 	onThinkingChange,
 }: ComposerRunConfigProps) {
+	const { t } = useTranslation();
 	const effectiveModelLabel = selectedModel?.name || selectedModel?.id || "—";
 	const selectedModelValue = selectedModel ? modelValue(selectedModel) : "";
 	const selectedThinkingValue = selectedThinkingLevel ?? "";
@@ -109,7 +111,10 @@ export function ComposerRunConfig({
 				<button
 					type="button"
 					disabled={disabled}
-					aria-label={`运行配置：${effectiveModelLabel} · ${effectiveThinkingLabel}`}
+					aria-label={t("chat.runConfigLabel", {
+						model: effectiveModelLabel,
+						thinking: effectiveThinkingLabel,
+					})}
 					className={CHAT_COMPOSER_RUN_CONFIG_TRIGGER_CLASS_NAME}
 				>
 					<PiLogo className="size-4 text-current" />
@@ -131,9 +136,9 @@ export function ComposerRunConfig({
 						className="pr-1.5"
 						disabled={modelDisabled || !onModelChange}
 					>
-						<span className="min-w-0 flex-1 truncate">模型</span>
+						<span className="min-w-0 flex-1 truncate">{t("chat.model")}</span>
 						<span className="ml-4 max-w-40 truncate text-xs text-muted-foreground">
-							{modelLoading ? "加载中…" : effectiveModelLabel}
+							{modelLoading ? t("chat.loadingModels") : effectiveModelLabel}
 						</span>
 					</DropdownMenuSubTrigger>
 					<DropdownMenuSubContent className="w-72 max-w-[calc(100vw-2rem)] overflow-hidden">
@@ -150,7 +155,7 @@ export function ComposerRunConfig({
 							) : (
 								<RefreshCw className="size-3.5" />
 							)}
-							刷新模型
+							{t("chat.refreshModels")}
 						</DropdownMenuItem>
 						<DropdownMenuSeparator />
 						<div className="max-h-[min(20rem,calc(70vh-3rem))] overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
@@ -163,7 +168,7 @@ export function ComposerRunConfig({
 							) : null}
 							{models.length === 0 ? (
 								<DropdownMenuItem disabled>
-									{modelLoading ? "正在读取 Pi 模型…" : "没有可用模型"}
+									{modelLoading ? t("chat.readingModels") : t("chat.noModels")}
 								</DropdownMenuItem>
 							) : (
 								renderModelItems(models)
@@ -177,17 +182,23 @@ export function ComposerRunConfig({
 						className="pr-1.5"
 						disabled={thinkingDisabled || !onThinkingChange}
 					>
-						<span className="min-w-0 flex-1 truncate">推理</span>
+						<span className="min-w-0 flex-1 truncate">
+							{t("chat.reasoning")}
+						</span>
 						<span className="ml-4 max-w-40 truncate text-xs text-muted-foreground">
-							{thinkingLoading ? "加载中…" : effectiveThinkingLabel}
+							{thinkingLoading
+								? t("chat.loadingModels")
+								: effectiveThinkingLabel}
 						</span>
 					</DropdownMenuSubTrigger>
 					<DropdownMenuSubContent className="min-w-40">
 						{thinkingLoading ? (
-							<DropdownMenuItem disabled>正在读取推理等级…</DropdownMenuItem>
+							<DropdownMenuItem disabled>
+								{t("chat.readingReasoning")}
+							</DropdownMenuItem>
 						) : thinkingLevels.length === 0 ? (
 							<DropdownMenuItem disabled>
-								当前模型没有可用推理等级
+								{t("chat.noReasoning")}
 							</DropdownMenuItem>
 						) : (
 							<>

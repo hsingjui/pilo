@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import { i18n } from "@/i18n";
 import { userErrorMessage } from "@/lib/app-error";
 import {
 	getLocalConnection,
@@ -60,11 +62,11 @@ async function testConnection(
 	setBusyState(true);
 	try {
 		const result = await test();
-		toast.success(`${label} 可用`, {
+		toast.success(i18n.t("connection.available", { name: label }), {
 			description: `pilo-server ${result.serverVersion} · protocol ${result.protocolVersion}`,
 		});
 	} catch (error) {
-		toast.error(`${label} 连接失败`, {
+		toast.error(i18n.t("connection.connectionFailed", { name: label }), {
 			description: userErrorMessage(error),
 		});
 	} finally {
@@ -97,6 +99,7 @@ export function ConnectionsSettings() {
 		field: "identityFile" | "password";
 		message: string;
 	} | null>(null);
+	const { t } = useTranslation();
 
 	const refresh = useCallback(async () => {
 		const [localResult, sshResult, wslResult, projectsResult] =
@@ -110,7 +113,7 @@ export function ConnectionsSettings() {
 		if (sshResult.status === "fulfilled") {
 			setSshItems(sshResult.value);
 		} else {
-			toast.error("加载 SSH 连接失败", {
+			toast.error(t("connection.sshLoadFailed"), {
 				description: userErrorMessage(sshResult.reason),
 			});
 		}
@@ -127,7 +130,7 @@ export function ConnectionsSettings() {
 		}
 		setShownIds(listHomeConnectionIds());
 		setLoading(false);
-	}, []);
+	}, [t]);
 
 	useEffect(() => {
 		const load = async () => {
@@ -164,15 +167,21 @@ export function ConnectionsSettings() {
 					? { ...current, piExecutable: result.executable }
 					: current,
 			);
-			toast.success(`${connectionLabel(connection)} Pi 可用`, {
-				description: [result.executable, result.version]
-					.filter(Boolean)
-					.join(" · "),
-			});
+			toast.success(
+				t("connection.piAvailable", { name: connectionLabel(connection) }),
+				{
+					description: [result.executable, result.version]
+						.filter(Boolean)
+						.join(" · "),
+				},
+			);
 		} catch (error) {
-			toast.error(`${connectionLabel(connection)} 未检测到可用 Pi`, {
-				description: userErrorMessage(error),
-			});
+			toast.error(
+				t("connection.piUnavailable", { name: connectionLabel(connection) }),
+				{
+					description: userErrorMessage(error),
+				},
+			);
 		} finally {
 			setProbingPi(false);
 		}
@@ -190,9 +199,9 @@ export function ConnectionsSettings() {
 			);
 			setConnectionSettings(null);
 			await refresh();
-			toast.success("连接已保存");
+			toast.success(t("connection.connectionSaved"));
 		} catch (error) {
-			toast.error("保存连接失败", {
+			toast.error(t("connection.saveFailed"), {
 				description: userErrorMessage(error),
 			});
 		} finally {
@@ -205,9 +214,9 @@ export function ConnectionsSettings() {
 		try {
 			await saveWslConnection(wslConnection(distro));
 			await refresh();
-			toast.success(`已添加 WSL · ${distro}`);
+			toast.success(t("connection.wslAdded", { name: distro }));
 		} catch (error) {
-			toast.error("添加 WSL 失败", {
+			toast.error(t("connection.wslAddFailed"), {
 				description: userErrorMessage(error),
 			});
 		} finally {
@@ -224,7 +233,7 @@ export function ConnectionsSettings() {
 		) {
 			setSshFieldError({
 				field: "identityFile",
-				message: "请选择或填写私钥路径。",
+				message: t("connection.privateKeyRequired"),
 			});
 			return;
 		}
@@ -233,7 +242,10 @@ export function ConnectionsSettings() {
 			!editing.password &&
 			!editing.hasPassword
 		) {
-			setSshFieldError({ field: "password", message: "请输入 SSH 密码。" });
+			setSshFieldError({
+				field: "password",
+				message: t("connection.passwordRequired"),
+			});
 			return;
 		}
 		setBusy(true);
@@ -244,9 +256,9 @@ export function ConnectionsSettings() {
 			);
 			setSshEditorOpen(false);
 			await refresh();
-			toast.success("SSH 连接已保存");
+			toast.success(t("connection.sshSaved"));
 		} catch (error) {
-			toast.error("保存 SSH 连接失败", {
+			toast.error(t("connection.sshSaveFailed"), {
 				description: userErrorMessage(error),
 			});
 		} finally {
@@ -267,9 +279,11 @@ export function ConnectionsSettings() {
 			setConnectionShownInHome(connection.id, false);
 			await refresh();
 			setRemovingConnection(null);
-			toast.success(`已移除 ${connectionLabel(connection)}`);
+			toast.success(
+				t("connection.removed", { name: connectionLabel(connection) }),
+			);
 		} catch (error) {
-			toast.error("移除连接失败", {
+			toast.error(t("connection.removeFailed"), {
 				description: userErrorMessage(error),
 			});
 		} finally {
@@ -310,7 +324,7 @@ export function ConnectionsSettings() {
 			>
 				<ConnectionRow
 					connection={local}
-					description="本机"
+					description={t("connection.localMachine")}
 					projectCount={projectCount(local.id)}
 					shownInHome={shownIds.has(local.id)}
 					busy={busy || probingPi}
@@ -325,7 +339,9 @@ export function ConnectionsSettings() {
 					onConfigure={() => openConnectionSettings(local)}
 				/>
 				{loading ? (
-					<div className="px-3 py-5 text-xs text-muted-foreground">加载中…</div>
+					<div className="px-3 py-5 text-xs text-muted-foreground">
+						{t("connection.loading")}
+					</div>
 				) : (
 					<>
 						{wslItems.map((info) => {
@@ -335,7 +351,7 @@ export function ConnectionsSettings() {
 								<ConnectionRow
 									key={info.connection.id}
 									connection={info.connection}
-									description="WSL"
+									description={t("connection.wslLabel")}
 									projectCount={projectCount(
 										info.connection.id,
 										info.projectCount,
@@ -439,22 +455,20 @@ export function ConnectionsSettings() {
 			/>
 			<SettingsConfirmDialog
 				open={removingConnection !== null}
-				title="移除连接？"
+				title={t("connection.removeQuestion")}
 				description={
-					removingConnection ? (
-						<>
-							<span className="font-medium text-foreground">
-								“{connectionLabel(removingConnection)}”
-							</span>
-							及关联项目记录将从 Pilo 移除，项目文件保留。
-							{removingConnection.kind.type === "ssh"
-								? " SSH 凭据也会删除。"
-								: null}
-						</>
-					) : null
+					removingConnection
+						? `${t("connection.removeDescription", {
+								name: connectionLabel(removingConnection),
+							})}${
+								removingConnection.kind.type === "ssh"
+									? t("connection.sshCredentialsDeleted")
+									: ""
+							}`
+						: null
 				}
-				confirmLabel="移除连接"
-				busyLabel="正在移除…"
+				confirmLabel={t("connection.confirmRemove")}
+				busyLabel={t("connection.removing")}
 				busy={busy}
 				destructive
 				onOpenChange={(open) => {

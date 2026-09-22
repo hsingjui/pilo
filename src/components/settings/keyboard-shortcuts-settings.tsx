@@ -1,4 +1,5 @@
 import { useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -55,6 +56,7 @@ function ShortcutEditor({
 	onStartRecording: () => void;
 	onStopRecording: () => void;
 }) {
+	const { t } = useTranslation();
 	const { keyboardShortcuts, setKeyboardShortcut, resetKeyboardShortcut } =
 		usePreferences();
 	const shortcut = keyboardShortcuts[commandId];
@@ -67,8 +69,10 @@ function ShortcutEditor({
 			defaultShortcut,
 		);
 		if (conflictId) {
-			toast.error("默认快捷键已被占用", {
-				description: `“${getShortcutCommand(conflictId).label}”正在使用这个组合键。可先恢复全部默认快捷键。`,
+			toast.error(t("shortcuts.defaultOccupied"), {
+				description: t("shortcuts.defaultOccupiedDescription", {
+					label: t(getShortcutCommand(conflictId).labelKey),
+				}),
 			});
 			return;
 		}
@@ -87,15 +91,17 @@ function ShortcutEditor({
 		const next = shortcutFromKeyboardEvent(event.nativeEvent);
 		if (!next) return;
 		if (!isSafeGlobalShortcut(next)) {
-			toast.error("快捷键需要包含修饰键", {
-				description: "请使用 Ctrl、⌘、Alt、Shift 等组合键，或 F1–F12。",
+			toast.error(t("shortcuts.modifierRequired"), {
+				description: t("shortcuts.modifierDescription"),
 			});
 			return;
 		}
 		const conflictId = findShortcutConflict(keyboardShortcuts, commandId, next);
 		if (conflictId) {
-			toast.error("快捷键冲突", {
-				description: `已被“${getShortcutCommand(conflictId).label}”使用，请换一个组合键。`,
+			toast.error(t("shortcuts.conflict"), {
+				description: t("shortcuts.conflictDescription", {
+					label: t(getShortcutCommand(conflictId).labelKey),
+				}),
 			});
 			return;
 		}
@@ -116,15 +122,19 @@ function ShortcutEditor({
 				)}
 				onClick={onStartRecording}
 				onKeyDown={handleKeyDown}
-				aria-label={`修改${getShortcutCommand(commandId).label}快捷键`}
+				aria-label={t("shortcuts.change", {
+					label: t(getShortcutCommand(commandId).labelKey),
+				})}
 			>
 				{recording ? (
-					<span className="text-xs text-muted-foreground">按下新快捷键…</span>
+					<span className="text-xs text-muted-foreground">
+						{t("settings.pressNewShortcut")}
+					</span>
 				) : (
 					<ShortcutKeys shortcut={shortcut} />
 				)}
 			</button>
-			<Hint label={isCustom ? "恢复默认" : undefined}>
+			<Hint label={isCustom ? t("settings.resetDefault") : undefined}>
 				<Button
 					type="button"
 					variant="ghost"
@@ -132,7 +142,9 @@ function ShortcutEditor({
 					className={cn("size-7", !isCustom && "invisible")}
 					disabled={!isCustom}
 					onClick={resetShortcut}
-					aria-label={`恢复${getShortcutCommand(commandId).label}默认快捷键`}
+					aria-label={t("shortcuts.reset", {
+						label: t(getShortcutCommand(commandId).labelKey),
+					})}
 				>
 					<RotateCcw className="size-3.5" />
 				</Button>
@@ -142,6 +154,7 @@ function ShortcutEditor({
 }
 
 export function KeyboardShortcutsSettings() {
+	const { t } = useTranslation();
 	const {
 		sendMessageShortcut,
 		setSendMessageShortcut,
@@ -161,14 +174,20 @@ export function KeyboardShortcutsSettings() {
 
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
-			{(["应用", "会话"] as const).map((section, sectionIndex) => (
+			{(["app", "session"] as const).map((section, sectionIndex) => (
 				<SettingsSection
 					key={section}
-					title={section}
+					title={t(
+						section === "app"
+							? "settings.shortcutApp"
+							: "settings.shortcutSession",
+					)}
 					actions={
 						sectionIndex === 0 ? (
 							<Hint
-								label={hasCustomShortcut ? "恢复全部默认快捷键" : undefined}
+								label={
+									hasCustomShortcut ? t("settings.resetAllDefaults") : undefined
+								}
 							>
 								<Button
 									type="button"
@@ -180,7 +199,7 @@ export function KeyboardShortcutsSettings() {
 										setSendMessageShortcut("enter");
 										setRecordingCommandId(null);
 									}}
-									aria-label="恢复全部默认快捷键"
+									aria-label={t("settings.resetAllDefaults")}
 								>
 									<RotateCcw className="size-3.5" />
 								</Button>
@@ -191,7 +210,7 @@ export function KeyboardShortcutsSettings() {
 					{SHORTCUT_COMMANDS.filter(
 						(command) => command.section === section,
 					).map((command) => (
-						<SettingsRow key={command.id} label={command.label}>
+						<SettingsRow key={command.id} label={t(command.labelKey)}>
 							<ShortcutEditor
 								commandId={command.id}
 								recording={recordingCommandId === command.id}
@@ -203,8 +222,8 @@ export function KeyboardShortcutsSettings() {
 				</SettingsSection>
 			))}
 
-			<SettingsSection title="输入框">
-				<SettingsRow label="换行">
+			<SettingsSection title={t("settings.shortcutInput")}>
+				<SettingsRow label={t("settings.newline")}>
 					<ShortcutKeys shortcut={newlineKeys} />
 				</SettingsRow>
 			</SettingsSection>

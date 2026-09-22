@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+
+import { i18n } from "../../i18n/index.ts";
 
 import type { ComposerSuggestion } from "@/components/chat/chat-composer";
 import type { PiExtensionNotification } from "@/components/chat/pi-extension-notifications";
@@ -50,6 +53,7 @@ export function usePiSessionFeatures({
 	onSetEditorText,
 	onRefreshSessionState,
 }: UsePiSessionFeaturesOptions) {
+	const { t } = useTranslation();
 	const [commandSuggestions, setCommandSuggestions] = useState<
 		ComposerSuggestion[]
 	>([]);
@@ -227,7 +231,7 @@ export function usePiSessionFeatures({
 						setCompacting(false);
 						void onRefreshSessionState().catch(() => undefined);
 						if (event.errorMessage) {
-							toast.error("上下文压缩失败", {
+							toast.error(t("chat.compactFailed"), {
 								description: event.errorMessage,
 							});
 						}
@@ -273,7 +277,7 @@ export function usePiSessionFeatures({
 			disposed = true;
 			unlisten?.();
 		};
-	}, [client, handleExtensionRequest, onRefreshSessionState]);
+	}, [client, handleExtensionRequest, onRefreshSessionState, t]);
 
 	const loadCommands = useCallback(async () => {
 		if (readOnly || commandsLoaded || loadingCommandsRef.current) return;
@@ -285,13 +289,13 @@ export function usePiSessionFeatures({
 			setCommandSuggestions(createPiCommandSuggestions(result.commands));
 			setCommandsLoaded(true);
 		} catch (error) {
-			toast.error("无法读取 Pi 命令", {
+			toast.error(t("chat.readCommandsFailed"), {
 				description: runtimeErrorMessage(error),
 			});
 		} finally {
 			loadingCommandsRef.current = false;
 		}
-	}, [client, commandsLoaded, readOnly]);
+	}, [client, commandsLoaded, readOnly, t]);
 
 	const tryExecuteExtensionCommand = useCallback(
 		async (message: string) => {
@@ -317,13 +321,13 @@ export function usePiSessionFeatures({
 				await client.executePiCommand(trimmed);
 				return true;
 			} catch (error) {
-				toast.error("无法执行 Pi Extension 命令", {
+				toast.error(t("chat.executeExtensionFailed"), {
 					description: runtimeErrorMessage(error),
 				});
 				return matchedExtension;
 			}
 		},
-		[client, commandsLoaded, extensionCommandNames, readOnly],
+		[client, commandsLoaded, extensionCommandNames, readOnly, t],
 	);
 
 	const compact = useCallback(
@@ -333,19 +337,19 @@ export function usePiSessionFeatures({
 			try {
 				await client.ensure();
 				const result = await client.compactPiSession(customInstructions);
-				toast.success("上下文已压缩", {
-					description: `${result.tokensBefore.toLocaleString()} → ${result.estimatedTokensAfter.toLocaleString()} tokens`,
+				toast.success(t("chat.compactSuccess"), {
+					description: `${result.tokensBefore.toLocaleString(i18n.language)} → ${result.estimatedTokensAfter.toLocaleString(i18n.language)} tokens`,
 				});
 				await onRefreshSessionState();
 			} catch (error) {
-				toast.error("无法压缩上下文", {
+				toast.error(t("chat.compactFailedAction"), {
 					description: runtimeErrorMessage(error),
 				});
 			} finally {
 				setCompacting(false);
 			}
 		},
-		[client, compacting, onRefreshSessionState, readOnly],
+		[client, compacting, onRefreshSessionState, readOnly, t],
 	);
 
 	const abortRetry = useCallback(async () => {
@@ -353,9 +357,11 @@ export function usePiSessionFeatures({
 			await client.abortPiRetry("user_abort_retry");
 			setRetryState(null);
 		} catch (error) {
-			toast.error("无法停止重试", { description: runtimeErrorMessage(error) });
+			toast.error(t("chat.stopRetryFailed"), {
+				description: runtimeErrorMessage(error),
+			});
 		}
-	}, [client]);
+	}, [client, t]);
 
 	const extensionDialog = extensionDialogQueue[0] ?? null;
 	const respondToExtensionDialog = useCallback(
@@ -370,16 +376,23 @@ export function usePiSessionFeatures({
 			try {
 				await client.respondToExtensionUi(request.id, response);
 			} catch (error) {
-				toast.error("无法响应 Pi Extension", {
+				toast.error(t("chat.respondExtensionFailed"), {
 					description: runtimeErrorMessage(error),
 				});
 			}
 		},
-		[client, extensionDialogQueue],
+		[client, extensionDialogQueue, t],
 	);
 
 	const statusText = retryState
-		? `${retryState.kind === "summary" ? "摘要" : "请求"}重试 ${retryState.attempt}/${retryState.maxAttempts}`
+		? t("chat.statusRetry", {
+				kind:
+					retryState.kind === "summary"
+						? t("chat.kindSummary")
+						: t("chat.kindRequest"),
+				attempt: retryState.attempt,
+				maxAttempts: retryState.maxAttempts,
+			})
 		: "";
 
 	return {

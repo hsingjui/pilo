@@ -1,5 +1,6 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 
+import { i18n } from "../../i18n/index.ts";
 import {
 	upsertOpenedChat,
 	type OpenChat,
@@ -84,7 +85,7 @@ export function useRestoreActiveChatRuntimes({
 							indexed?.titleOverride ??
 							indexed?.name ??
 							indexed?.firstUserMessagePreview ??
-							"正在进行的对话",
+							i18n.t("app.chat"),
 						projectRecord: project,
 						sessionPath: state.sessionPath ?? undefined,
 					};

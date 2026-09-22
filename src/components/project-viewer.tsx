@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { FileCode, MessageSquare, X } from "lucide-react";
+
+import { i18n } from "@/i18n";
 
 import { TRAFFIC_LIGHT_GUTTER } from "@/components/title-bar";
 import { userErrorMessage } from "@/lib/app-error";
@@ -31,11 +34,13 @@ const MAX_VIEWER_BYTES = 5 * 1024 * 1024;
 function decodeFile(data: Uint8Array) {
 	if (data.byteLength > MAX_VIEWER_BYTES) {
 		throw new Error(
-			`文件超过 ${MAX_VIEWER_BYTES / 1024 / 1024} MB，暂不在查看器中打开。`,
+			i18n.t("file.tooLarge", {
+				size: MAX_VIEWER_BYTES / 1024 / 1024,
+			}),
 		);
 	}
 	if (data.subarray(0, Math.min(data.length, 8192)).includes(0)) {
-		throw new Error("该文件看起来是二进制文件，无法作为文本查看。");
+		throw new Error(i18n.t("file.binary"));
 	}
 	return new TextDecoder("utf-8", { fatal: true }).decode(data);
 }
@@ -61,6 +66,7 @@ export function ProjectViewer({
 	const { codeFontFamily, codeFontSize } = usePreferences();
 	const [tabs, setTabs] = useState<ViewerTab[]>([]);
 	const [activePath, setActivePath] = useState<string | null>(null);
+	const { t } = useTranslation();
 	const [highlighted, setHighlighted] = useState<{
 		path: string;
 		content: string;
@@ -187,7 +193,9 @@ export function ProjectViewer({
 							<button
 								type="button"
 								className="mr-1 rounded p-0.5 opacity-0 transition-opacity duration-100 hover:bg-muted group-hover/tab:opacity-100 focus-visible:opacity-100"
-								aria-label={`关闭 ${fileName(tab.path)}`}
+								aria-label={t("file.closeFile", {
+									name: fileName(tab.path),
+								})}
 								onClick={() => closeTab(tab.path)}
 							>
 								<X className="size-3" />
@@ -199,15 +207,18 @@ export function ProjectViewer({
 			<div className="min-h-0 flex-1">
 				{!activeTab ? (
 					<EmptyState
-						title="暂无打开的文件"
-						description="从文件或 Git 变更中打开。"
+						title={t("file.noOpenFiles")}
+						description={t("file.openFromFiles")}
 					/>
 				) : activeTab.loading ? (
 					<div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-						正在读取 {activeTab.path}…
+						{t("file.readFile", { path: activeTab.path })}
 					</div>
 				) : activeTab.error ? (
-					<EmptyState title="无法打开文件" description={activeTab.error} />
+					<EmptyState
+						title={t("file.openFailed")}
+						description={activeTab.error}
+					/>
 				) : highlightedHtml ? (
 					<div
 						className="project-file-highlight scrollbar-pro h-full overflow-auto bg-background"

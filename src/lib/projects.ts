@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import { i18n } from "../i18n/index.ts";
 import type { FsEntry } from "@/lib/files";
 import type { Connection, PiSessionSnapshot } from "@/lib/pi-runtime";
 
@@ -29,7 +30,7 @@ export type DiscoveredProject = {
 };
 
 export function localConnection(): Connection {
-	return { id: "local", name: "本地", kind: { type: "local" } };
+	return { id: "local", name: "Local", kind: { type: "local" } };
 }
 
 export function wslConnection(distro: string): Connection {
@@ -118,7 +119,7 @@ async function startProjectPi(id: string): Promise<PiSessionSnapshot> {
 		return current;
 	}
 	if (current.state === "starting" || current.state === "stopping") {
-		throw new Error(`Pi Runtime 当前处于 ${current.state} 状态，请稍后重试。`);
+		throw new Error(i18n.t("errors.piRuntimeState", { state: current.state }));
 	}
 	if (current.state === "running") {
 		await invoke("runtime_stop_pi");
@@ -131,5 +132,7 @@ export function notifyProjectsChanged() {
 }
 
 export function connectionLabel(connection: Connection): string {
-	return connection.name;
+	return connection.kind.type === "local"
+		? i18n.t("common.local")
+		: connection.name;
 }

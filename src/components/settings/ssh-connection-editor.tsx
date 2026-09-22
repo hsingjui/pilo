@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Eye, EyeOff, KeyRound } from "lucide-react";
 
 import type { SshAuthMethod } from "@/lib/pi-runtime";
@@ -53,6 +54,7 @@ export function SshConnectionEditor({
 	onTest,
 	onSave,
 }: SshConnectionEditorProps) {
+	const { t } = useTranslation();
 	const [revealedId, setRevealedId] = useState<string | null>(null);
 	const revealPassword = editing !== null && revealedId === editing.id;
 
@@ -79,17 +81,19 @@ export function SshConnectionEditor({
 			>
 				<DialogHeader>
 					<DialogTitle>
-						{editing?.name ? "编辑 SSH 连接" : "添加 SSH 连接"}
+						{editing?.name
+							? t("settings.editSshConnection")
+							: t("settings.addSshConnection")}
 					</DialogTitle>
 					<DialogDescription className="sr-only">
-						配置 SSH 连接
+						{t("settings.configureSshConnection")}
 					</DialogDescription>
 				</DialogHeader>
 				{editing ? (
 					<div className="grid gap-3">
 						<div className="grid grid-cols-2 gap-3">
 							<label htmlFor="ssh-name" className="grid gap-1 text-xs">
-								名称
+								{t("settings.connectionName")}
 								<Input
 									id="ssh-name"
 									className={SETTINGS_CONTROL_CLASS}
@@ -97,11 +101,11 @@ export function SshConnectionEditor({
 									onChange={(event) =>
 										onChange({ ...editing, name: event.target.value })
 									}
-									placeholder="生产服务器"
+									placeholder={t("settings.productionServer")}
 								/>
 							</label>
 							<div className="grid gap-1 text-xs">
-								连接方式
+								{t("settings.connectionMethod")}
 								<Select
 									value={editing.mode}
 									onValueChange={(value) =>
@@ -115,14 +119,20 @@ export function SshConnectionEditor({
 										<SelectValue />
 									</SelectTrigger>
 									<SelectContent>
-										<SelectItem value="direct">直接连接</SelectItem>
-										<SelectItem value="config">~/.ssh/config Host</SelectItem>
+										<SelectItem value="direct">
+											{t("settings.directConnection")}
+										</SelectItem>
+										<SelectItem value="config">
+											{t("settings.sshConfigHost")}
+										</SelectItem>
 									</SelectContent>
 								</Select>
 							</div>
 						</div>
 						<label htmlFor="ssh-host" className="grid gap-1 text-xs">
-							{editing.mode === "config" ? "Host 别名" : "主机"}
+							{editing.mode === "config"
+								? t("connection.hostAlias")
+								: t("connection.host")}
 							<Input
 								id="ssh-host"
 								className={SETTINGS_CONTROL_CLASS}
@@ -138,7 +148,7 @@ export function SshConnectionEditor({
 						{editing.mode === "direct" ? (
 							<div className="grid grid-cols-2 gap-3">
 								<label htmlFor="ssh-user" className="grid gap-1 text-xs">
-									用户名
+									{t("connection.username")}
 									<Input
 										id="ssh-user"
 										className={SETTINGS_CONTROL_CLASS}
@@ -150,7 +160,7 @@ export function SshConnectionEditor({
 									/>
 								</label>
 								<label htmlFor="ssh-port" className="grid gap-1 text-xs">
-									端口
+									{t("connection.port")}
 									<Input
 										id="ssh-port"
 										className={SETTINGS_CONTROL_CLASS}
@@ -166,7 +176,7 @@ export function SshConnectionEditor({
 							</div>
 						) : null}
 						<div className="grid gap-1 text-xs">
-							认证方式
+							{t("connection.authentication")}
 							<Select
 								value={editing.authMethod}
 								onValueChange={(value) =>
@@ -180,16 +190,22 @@ export function SshConnectionEditor({
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="agent">SSH Agent / 默认密钥</SelectItem>
-									<SelectItem value="password">密码</SelectItem>
+									<SelectItem value="agent">
+										{t("connection.sshAgent")}
+									</SelectItem>
+									<SelectItem value="password">
+										{t("connection.password")}
+									</SelectItem>
 									{editing.mode === "direct" ? (
-										<SelectItem value="key">指定私钥</SelectItem>
+										<SelectItem value="key">
+											{t("connection.privateKey")}
+										</SelectItem>
 									) : null}
 								</SelectContent>
 							</Select>
 						</div>
 						<div className="grid gap-1 text-xs">
-							Pi 运行位置
+							{t("connection.runtimeLocation")}
 							<Select
 								value={editing.piRuntime}
 								onValueChange={(value) =>
@@ -203,14 +219,18 @@ export function SshConnectionEditor({
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="workspace">远程 Pi（SSH 主机）</SelectItem>
-									<SelectItem value="local">本地 Pi（工具走 SSH）</SelectItem>
+									<SelectItem value="workspace">
+										{t("connection.piWorkspace")}
+									</SelectItem>
+									<SelectItem value="local">
+										{t("connection.piLocal")}
+									</SelectItem>
 								</SelectContent>
 							</Select>
 						</div>
 						{editing.authMethod === "password" ? (
 							<label htmlFor="ssh-password" className="grid gap-1 text-xs">
-								密码
+								{t("connection.password")}
 								<div className="relative">
 									<Input
 										id="ssh-password"
@@ -220,7 +240,7 @@ export function SshConnectionEditor({
 										onChange={(event) =>
 											onChange({ ...editing, password: event.target.value })
 										}
-										placeholder="SSH 密码"
+										placeholder={t("connection.sshPassword")}
 										aria-invalid={fieldError?.field === "password" || undefined}
 										aria-describedby={
 											fieldError?.field === "password"
@@ -236,7 +256,11 @@ export function SshConnectionEditor({
 										)}
 										disabled={!editing.password}
 										onClick={togglePassword}
-										aria-label={revealPassword ? "隐藏密码" : "查看密码"}
+										aria-label={
+											revealPassword
+												? t("settings.hidePassword")
+												: t("settings.showPassword")
+										}
 									>
 										{revealPassword ? <EyeOff /> : <Eye />}
 									</button>
@@ -255,7 +279,7 @@ export function SshConnectionEditor({
 							<label htmlFor="ssh-key" className="grid gap-1 text-xs">
 								<span className="flex items-center gap-1">
 									<KeyRound className="size-3.5" />
-									私钥路径
+									{t("connection.privateKeyPath")}
 								</span>
 								<Input
 									id="ssh-key"
@@ -286,7 +310,7 @@ export function SshConnectionEditor({
 						) : null}
 						{editing.mode === "direct" ? (
 							<label htmlFor="ssh-proxy" className="grid gap-1 text-xs">
-								跳板机（可选）
+								{t("connection.proxyJump")}
 								<Input
 									id="ssh-proxy"
 									className={SETTINGS_CONTROL_CLASS}
@@ -306,7 +330,9 @@ export function SshConnectionEditor({
 									disabled={busy || testing}
 									onClick={onTest}
 								>
-									{testing ? "测试中…" : "测试连接"}
+									{testing
+										? t("connection.testingConnection")
+										: t("connection.testConnection")}
 								</Button>
 							) : (
 								<span />
@@ -320,7 +346,7 @@ export function SshConnectionEditor({
 										onClose();
 									}}
 								>
-									取消
+									{t("common.cancel")}
 								</Button>
 								<Button
 									size="sm"
@@ -332,7 +358,7 @@ export function SshConnectionEditor({
 										onSave();
 									}}
 								>
-									{busy ? "保存中…" : "保存"}
+									{busy ? t("common.saving") : t("common.save")}
 								</Button>
 							</div>
 						</div>

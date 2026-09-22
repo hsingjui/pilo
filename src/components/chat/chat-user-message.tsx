@@ -1,4 +1,5 @@
 import { memo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronDown, Sparkles } from "lucide-react";
 
 import { ChatImageThumbnail } from "@/components/chat/chat-image-viewer";
@@ -26,6 +27,7 @@ function plainTextPreview(text: string) {
 }
 
 function UserMessageBody({ text }: { text: string }) {
+	const { t } = useTranslation();
 	const { collapseLongMessages } = usePreferences();
 	const [expanded, setExpanded] = useState(false);
 	const invocation = parseSkillInvocation(text);
@@ -53,7 +55,7 @@ function UserMessageBody({ text }: { text: string }) {
 							expanded && "rotate-180",
 						)}
 					/>
-					{expanded ? "收起消息" : "展开完整消息"}
+					{expanded ? t("chat.collapseMessage") : t("chat.expandMessage")}
 				</button>
 			) : null}
 		</div>
@@ -80,6 +82,7 @@ export const UserMessage = memo(function UserMessage({
 	recordRender?: boolean;
 }) {
 	if (recordRender) recordChatMessageRender("user");
+	const { t } = useTranslation();
 	const { pageFontSize } = usePreferences();
 
 	return (
@@ -88,7 +91,7 @@ export const UserMessage = memo(function UserMessage({
 				<div className="group flex min-w-0 max-w-[80%] flex-col items-end gap-1.5 @min-[40rem]:max-w-[70%]">
 					{message.queued ? (
 						<div className="text-2xs tabular-nums text-muted-foreground">
-							{message.queued === "steer" ? "待调整" : "已排队"}
+							{message.queued === "steer" ? t("chat.adjust") : t("chat.queued")}
 						</div>
 					) : null}
 					<div className="flex min-w-0 max-w-full justify-end">

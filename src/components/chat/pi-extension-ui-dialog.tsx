@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { PiExtensionDialogRequest } from "@/components/chat/use-pi-session-features";
 import {
@@ -41,6 +42,7 @@ function PiExtensionUiDialogContent({
 	onRespond: (response: ExtensionResponse) => void;
 }) {
 	const [value, setValue] = useState(request.prefill ?? "");
+	const { t } = useTranslation();
 	const title = request.title || "Pi Extension";
 	const cancel = () => onRespond({ cancelled: true });
 
@@ -98,17 +100,21 @@ function PiExtensionUiDialogContent({
 								variant="outline"
 								onClick={() => onRespond({ confirmed: false })}
 							>
-								否
+								{t("chat.no")}
 							</Button>
-							<Button onClick={() => onRespond({ confirmed: true })}>是</Button>
+							<Button onClick={() => onRespond({ confirmed: true })}>
+								{t("chat.confirm")}
+							</Button>
 						</>
 					) : (
 						<>
 							<Button variant="ghost" onClick={cancel}>
-								取消
+								{t("common.cancel")}
 							</Button>
 							{request.method === "input" || request.method === "editor" ? (
-								<Button onClick={() => onRespond({ value })}>确定</Button>
+								<Button onClick={() => onRespond({ value })}>
+									{t("common.confirm")}
+								</Button>
 							) : null}
 						</>
 					)}

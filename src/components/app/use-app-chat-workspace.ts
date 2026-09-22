@@ -7,6 +7,7 @@ import {
 	type Dispatch,
 	type SetStateAction,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import {
@@ -77,6 +78,7 @@ export function useAppChatWorkspace({
 	busyChatControllerIds,
 	preloadChatPage,
 }: UseAppChatWorkspaceOptions) {
+	const { t } = useTranslation();
 	const chatUiStateCacheRef = useRef<ChatUiStateCache | null>(null);
 	if (chatUiStateCacheRef.current === null) {
 		chatUiStateCacheRef.current = createChatUiStateCache();
@@ -221,7 +223,7 @@ export function useAppChatWorkspace({
 		if (activeProject && draftSessionStarted) {
 			return {
 				id: draftSessionId,
-				title: "新会话",
+				title: t("app.newChat"),
 				projectRecord: activeProject,
 				initialModel: draftSessionModel ?? undefined,
 				initialThinkingLevel: draftSessionThinkingLevel ?? undefined,
@@ -239,6 +241,7 @@ export function useAppChatWorkspace({
 		draftSessionId,
 		draftSessionModel,
 		draftSessionThinkingLevel,
+		t,
 	]);
 
 	const renderedOpenedChats = useMemo(
@@ -264,7 +267,7 @@ export function useAppChatWorkspace({
 			const prompt = submission.text;
 			const nextChat: ChatSession = {
 				id: draftSessionId,
-				title: "新会话",
+				title: t("app.newChat"),
 				projectRecord: project,
 				initialModel: model ?? undefined,
 				initialThinkingLevel: thinkingLevel ?? undefined,
@@ -283,7 +286,7 @@ export function useAppChatWorkspace({
 			setDraftSessionImages(submission.images);
 			setDraftSessionStarted(true);
 		},
-		[busyChatControllersRef, draftSessionId, setOpenedChats],
+		[busyChatControllersRef, draftSessionId, setOpenedChats, t],
 	);
 
 	const startLandingSession = useCallback(
@@ -301,12 +304,12 @@ export function useAppChatWorkspace({
 				return;
 			}
 			if (!activeProject) {
-				toast.info("请先添加项目");
+				toast.info(t("app.addProjectFirst"));
 				return;
 			}
 			startDraftSession(activeProject, submission, model, thinkingLevel);
 		},
-		[activeProject, projectsReady, startDraftSession],
+		[activeProject, projectsReady, startDraftSession, t],
 	);
 
 	/* oxlint-disable react/set-state-in-effect -- Replaying a landing submission is intentionally triggered when the asynchronous project catalog becomes ready. */
@@ -316,7 +319,7 @@ export function useAppChatWorkspace({
 		if (!pending) return;
 		pendingLandingSubmissionRef.current = null;
 		if (!activeProject) {
-			toast.info("请先添加项目");
+			toast.info(t("app.addProjectFirst"));
 			return;
 		}
 		startDraftSession(
@@ -325,7 +328,7 @@ export function useAppChatWorkspace({
 			pending.model,
 			pending.thinkingLevel,
 		);
-	}, [activeProject, projectsReady, startDraftSession]);
+	}, [activeProject, projectsReady, startDraftSession, t]);
 	/* oxlint-enable react/set-state-in-effect */
 
 	useEffect(() => {
@@ -361,13 +364,13 @@ export function useAppChatWorkspace({
 				projects.find((candidate) => candidate.id === projectId) ??
 				activeProject;
 			if (!project) {
-				toast.info("请先添加项目");
+				toast.info(t("app.addProjectFirst"));
 				return;
 			}
 			const sessionId = createTemporarySessionId();
 			const session: ChatSession = {
 				id: sessionId,
-				title: "临时会话",
+				title: t("app.temporaryChat"),
 				projectRecord: project,
 				temporary: true,
 			};
@@ -390,6 +393,7 @@ export function useAppChatWorkspace({
 			clearDraftSession,
 			projects,
 			setOpenedChats,
+			t,
 		],
 	);
 
@@ -487,7 +491,7 @@ export function useAppChatWorkspace({
 			if (!project) return;
 			const session: ChatSession = {
 				id: target.sessionId,
-				title: target.title || "新会话",
+				title: target.title || t("app.newChat"),
 				projectRecord: project,
 				sessionPath: target.sessionPath,
 			};
@@ -516,6 +520,7 @@ export function useAppChatWorkspace({
 			projects,
 			refreshProjectSessions,
 			setOpenedChats,
+			t,
 		],
 	);
 
@@ -600,13 +605,17 @@ export function useAppChatWorkspace({
 					current === sessionId ? null : current,
 				);
 				toast.success(
-					deleted.result.method === "trash" ? "会话已移到回收站" : "会话已删除",
+					deleted.result.method === "trash"
+						? t("app.sessionTrashed")
+						: t("app.sessionDeleted"),
 				);
 			} catch (error) {
-				toast.error("删除会话失败", { description: userErrorMessage(error) });
+				toast.error(t("app.deleteSessionFailed"), {
+					description: userErrorMessage(error),
+				});
 			}
 		},
-		[indexedSessions, removeIndexedSession, setOpenedChats],
+		[indexedSessions, removeIndexedSession, setOpenedChats, t],
 	);
 
 	const handleSessionIdentified = useCallback(
@@ -637,7 +646,7 @@ export function useAppChatWorkspace({
 			const project = entry.session.projectRecord;
 			const forkedSession: ChatSession = {
 				id: sessionId,
-				title: entry.session.title || "新会话",
+				title: entry.session.title || t("app.newChat"),
 				projectRecord: project,
 				sessionPath,
 			};
@@ -660,6 +669,7 @@ export function useAppChatWorkspace({
 			clearDraftSession,
 			refreshProjectSessions,
 			setOpenedChats,
+			t,
 		],
 	);
 

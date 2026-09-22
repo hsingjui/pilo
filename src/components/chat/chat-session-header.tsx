@@ -1,10 +1,10 @@
 import {
-	ChevronDown,
 	MessageSquareDashed,
 	PanelLeft,
 	PanelRight,
 	TerminalSquare,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import {
 	IS_MACOS,
@@ -12,22 +12,12 @@ import {
 	TRAFFIC_LIGHT_GUTTER,
 } from "@/components/title-bar";
 import { cn } from "@/lib/utils";
-import type { Project } from "@/lib/projects";
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@/ui";
 import type { ChatSession, ChatSessionRuntimeState } from "./chat-page-utils";
 
 export function SessionHeader({
 	session,
 	sessionState,
-	project,
-	projects,
-	onSwitchProject,
 	onOpenChanges,
 	onOpenTerminal,
 	terminalRunning = false,
@@ -40,11 +30,6 @@ export function SessionHeader({
 }: {
 	session?: ChatSession;
 	sessionState?: ChatSessionRuntimeState;
-	/** 落地页（新会话）模式：当前落点项目。 */
-	project?: Project | null;
-	/** 落地页（新会话）模式：可切换的项目列表。 */
-	projects?: Project[];
-	onSwitchProject?: (projectId: string) => void;
 	onOpenChanges?: () => void;
 	onOpenTerminal?: () => void;
 	terminalRunning?: boolean;
@@ -55,6 +40,7 @@ export function SessionHeader({
 	sidebarCollapsed?: boolean;
 	overlay?: boolean;
 }) {
+	const { t } = useTranslation();
 	return (
 		<header
 			data-tauri-drag-region="deep"
@@ -72,7 +58,9 @@ export function SessionHeader({
 				aria-hidden={!sidebarCollapsed}
 				className={cn(
 					"absolute top-1/2 z-10 -translate-y-1/2 transition-opacity duration-200 ease-out motion-reduce:transition-none",
-					IS_MACOS && sidebarCollapsed ? "left-[4.875rem]" : "left-1.5",
+					// macOS 全程停在红绿灯右侧：展开时该按钮虽在淡出，若切回 left-1.5 会
+					// 正好压在红绿灯下方。
+					IS_MACOS ? "left-[4.875rem]" : "left-1.5",
 					sidebarCollapsed
 						? "opacity-100 delay-200"
 						: "pointer-events-none opacity-0",
@@ -82,7 +70,7 @@ export function SessionHeader({
 					variant="ghost"
 					size="icon"
 					className="size-7 shrink-0 text-muted-foreground"
-					aria-label="展开侧边栏"
+					aria-label={t("navigation.expandSidebar")}
 					tabIndex={sidebarCollapsed ? 0 : -1}
 					onClick={onExpandSidebar}
 				>
@@ -92,7 +80,7 @@ export function SessionHeader({
 			{session && !session.temporary ? (
 				<div
 					role="tablist"
-					aria-label="会话"
+					aria-label={t("common.sessions")}
 					className="flex min-w-0 flex-1 items-center px-1"
 				>
 					<div
@@ -125,54 +113,8 @@ export function SessionHeader({
 						</span>
 					</div>
 				</div>
-			) : projects && projects.length > 0 ? (
-				/* 落地页没有会话：用项目下拉占据会话 tab 的同一位置，
-				   让用户看到并切换新会话的落点项目 */
-				<div
-					role="tablist"
-					aria-label="会话"
-					className="flex min-w-0 flex-1 items-center px-1"
-				>
-					<DropdownMenu>
-						<DropdownMenuTrigger asChild>
-							<button
-								type="button"
-								className="group flex h-8 w-fit max-w-[66.666667%] min-w-0 items-center gap-1.5 overflow-hidden rounded-md border border-transparent px-3 text-sm text-foreground outline-hidden transition-colors hover:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring"
-							>
-								<span
-									aria-hidden="true"
-									className={cn(
-										"size-2.5 shrink-0 rounded-[4px] bg-muted-foreground/50",
-										sidebarCollapsed && "opacity-0",
-									)}
-								/>
-								<span className="min-w-0 flex-1 truncate text-left">
-									{project ? project.name : "选择项目"}
-								</span>
-								<ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-							</button>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="start" className="min-w-48">
-							{projects.map((candidate) => (
-								<DropdownMenuItem
-									key={candidate.id}
-									onClick={() => onSwitchProject?.(candidate.id)}
-								>
-									<span className="min-w-0 flex-1 truncate">
-										{candidate.name}
-									</span>
-									{project?.id === candidate.id ? (
-										<span className="shrink-0 text-muted-foreground text-xs">
-											当前
-										</span>
-									) : null}
-								</DropdownMenuItem>
-							))}
-						</DropdownMenuContent>
-					</DropdownMenu>
-				</div>
 			) : (
-				/* 没有会话也没有项目：占位保证顶栏几何一致 */
+				/* 没有会话：占位保证顶栏几何一致（落地页项目选择已移至输入框上方） */
 				<div className="min-w-0 flex-1" />
 			)}
 			{onNewTemporaryChat || onOpenChanges || onOpenTerminal ? (
@@ -190,7 +132,9 @@ export function SessionHeader({
 									size="icon"
 									className="size-7"
 									aria-pressed={terminalVisible}
-									aria-label={terminalVisible ? "隐藏终端" : "显示终端"}
+									aria-label={
+										terminalVisible ? t("terminal.hide") : t("terminal.show")
+									}
 									onClick={onOpenTerminal}
 								>
 									<TerminalSquare
@@ -202,7 +146,7 @@ export function SessionHeader({
 								</Button>
 							</TooltipTrigger>
 							<TooltipContent>
-								{terminalVisible ? "隐藏终端" : "显示终端"}
+								{terminalVisible ? t("terminal.hide") : t("terminal.show")}
 							</TooltipContent>
 						</Tooltip>
 					) : null}
@@ -213,13 +157,13 @@ export function SessionHeader({
 									variant="ghost"
 									size="icon"
 									className="size-7"
-									aria-label="打开临时会话"
+									aria-label={t("app.temporaryChat")}
 									onClick={onNewTemporaryChat}
 								>
 									<MessageSquareDashed className="size-4" />
 								</Button>
 							</TooltipTrigger>
-							<TooltipContent>临时会话</TooltipContent>
+							<TooltipContent>{t("app.temporaryChat")}</TooltipContent>
 						</Tooltip>
 					) : null}
 					{onOpenChanges ? (
@@ -229,13 +173,13 @@ export function SessionHeader({
 									variant="ghost"
 									size="icon"
 									className="size-7"
-									aria-label="显示变更"
+									aria-label={t("chat.showChanges")}
 									onClick={onOpenChanges}
 								>
 									<PanelRight className="size-4" />
 								</Button>
 							</TooltipTrigger>
-							<TooltipContent>显示变更</TooltipContent>
+							<TooltipContent>{t("chat.showChanges")}</TooltipContent>
 						</Tooltip>
 					) : null}
 				</div>

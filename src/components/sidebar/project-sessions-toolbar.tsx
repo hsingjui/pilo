@@ -1,4 +1,5 @@
 import { ArrowLeft, SquarePen } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import type { SidebarProject } from "./types";
 
@@ -11,6 +12,7 @@ export function ProjectSessionsToolbar({
 	onBack: () => void;
 	onNewChat?: (projectId: string) => void;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="flex min-w-0 items-center gap-1">
 			<button
@@ -24,7 +26,7 @@ export function ProjectSessionsToolbar({
 			<button
 				type="button"
 				className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-				aria-label="新建会话"
+				aria-label={t("sidebar.newSession")}
 				onClick={() => onNewChat?.(project.id)}
 			>
 				<SquarePen className="h-4 w-4" />

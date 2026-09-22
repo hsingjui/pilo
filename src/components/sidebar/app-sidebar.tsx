@@ -11,6 +11,7 @@ import {
 	type KeyboardEvent as ReactKeyboardEvent,
 	type PointerEvent as ReactPointerEvent,
 } from "react";
+import { useTranslation } from "react-i18next";
 import {
 	closestCenter,
 	DndContext,
@@ -213,6 +214,11 @@ export function AppSidebar({
 	footer,
 }: AppSidebarProps) {
 	const [paletteOpen, setPaletteOpen] = useState(false);
+	// 头部操作按钮只在侧栏完全展开后显示：展开过渡期间卡片右缘从 0 长出，
+	// 锚在右缘的按钮会横穿 macOS 原生红绿灯区域。settledCollapsed 记录
+	// “已完成过渡的折叠状态”，与 collapsed 不同即说明动画仍在进行。
+	const [settledCollapsed, setSettledCollapsed] = useState(collapsed);
+	const { t } = useTranslation();
 	const [projectSessionsViewId, setProjectSessionsViewId] = useState<
 		string | null
 	>(null);
@@ -293,6 +299,12 @@ export function AppSidebar({
 			String(sidebarWidth),
 		);
 	}, [sidebarWidth]);
+
+	// 收起时立即隐藏；展开时等宽度过渡（200ms）结束再显示。
+	useEffect(() => {
+		const timer = window.setTimeout(() => setSettledCollapsed(collapsed), 220);
+		return () => window.clearTimeout(timer);
+	}, [collapsed]);
 
 	const startResize = useCallback(
 		(event: ReactPointerEvent) => {
@@ -556,30 +568,32 @@ export function AppSidebar({
 						<span className="min-w-0 select-none truncate px-2 text-lg font-semibold tracking-tight text-sidebar-foreground">
 							Pilo
 						</span>
-						<div
-							className={cn(
-								"absolute right-1.5 flex items-center gap-0.5",
-								// 与 TRAFFIC_LIGHT_ALIGNED_HEADER 同一红绿灯圆心：11 - 2 + 14 = 23
-								IS_MACOS ? "-top-0.5" : "top-2",
-							)}
-						>
-							<button
-								type="button"
-								className="flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-								aria-label="搜索会话"
-								onClick={() => setPaletteOpen(true)}
+						{!collapsed && !settledCollapsed ? (
+							<div
+								className={cn(
+									"absolute right-1.5 flex items-center gap-0.5",
+									// 与 TRAFFIC_LIGHT_ALIGNED_HEADER 同一红绿灯圆心：11 - 2 + 14 = 23
+									IS_MACOS ? "-top-0.5" : "top-2",
+								)}
 							>
-								<Search className="h-4 w-4" />
-							</button>
-							<button
-								type="button"
-								className="flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-								aria-label="收起侧边栏"
-								onClick={() => onCollapse?.()}
-							>
-								<PanelLeft className="h-4 w-4" />
-							</button>
-						</div>
+								<button
+									type="button"
+									className="flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+									aria-label={t("sidebar.searchSessions")}
+									onClick={() => setPaletteOpen(true)}
+								>
+									<Search className="h-4 w-4" />
+								</button>
+								<button
+									type="button"
+									className="flex h-7 w-7 items-center justify-center rounded-md text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+									aria-label={t("sidebar.collapseSidebar")}
+									onClick={() => onCollapse?.()}
+								>
+									<PanelLeft className="h-4 w-4" />
+								</button>
+							</div>
+						) : null}
 					</header>
 					<div className="-mt-1 flex shrink-0 flex-col gap-1 px-1.5">
 						{projectSessionsViewProject ? (
@@ -598,7 +612,7 @@ export function AppSidebar({
 									<span className="flex h-4 w-4 shrink-0 items-center justify-center text-current">
 										<SquarePen className="h-4 w-4" />
 									</span>
-									<span className="truncate">新会话</span>
+									<span className="truncate">{t("sidebar.newSession")}</span>
 								</button>
 							</div>
 						)}
@@ -628,7 +642,7 @@ export function AppSidebar({
 									</section>
 								) : (
 									<div className="px-3 py-8 text-center text-xs text-sidebar-foreground-muted">
-										暂无会话
+										{t("sidebar.noSessions")}
 									</div>
 								)
 							) : projectSessionsViewProject ? (
@@ -636,7 +650,7 @@ export function AppSidebar({
 									renderSessionList(projectSessionsViewSessions)
 								) : (
 									<div className="px-3 py-8 text-center text-xs text-sidebar-foreground-muted">
-										暂无会话
+										{t("sidebar.noSessions")}
 									</div>
 								)
 							) : (
@@ -765,7 +779,7 @@ export function AppSidebar({
 																							className="h-4 w-4 shrink-0"
 																						/>
 																						<span className="min-w-0 flex-1 truncate">
-																							查看全部
+																							{t("sidebar.viewAll")}
 																						</span>
 																					</button>
 																				) : null}
@@ -793,7 +807,7 @@ export function AppSidebar({
 					<div
 						role="separator"
 						aria-orientation="vertical"
-						aria-label="调整侧边栏宽度"
+						aria-label={t("sidebar.adjustSidebar")}
 						tabIndex={0}
 						aria-valuemin={MIN_SIDEBAR_WIDTH}
 						aria-valuemax={MAX_SIDEBAR_WIDTH}

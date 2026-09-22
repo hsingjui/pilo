@@ -1,4 +1,5 @@
 import { CircleAlert, Info, TriangleAlert, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { Button, NoticeCard, NoticeCardHeader, NoticeIcon } from "@/ui";
 
@@ -23,12 +24,16 @@ export function PiExtensionNotifications({
 	notifications,
 	onDismiss,
 }: PiExtensionNotificationsProps) {
+	const { t } = useTranslation();
 	if (notifications.length === 0) return null;
 
 	return (
 		<NoticeCard className="animate-in fade-in-0 overflow-hidden text-muted-foreground">
 			{notifications.length > 1 ? (
-				<NoticeCardHeader title="插件通知" count={notifications.length} />
+				<NoticeCardHeader
+					title={t("chat.pluginNotifications")}
+					count={notifications.length}
+				/>
 			) : null}
 			<div className="divide-y divide-border/30">
 				{notifications.map((notification) => (
@@ -46,7 +51,7 @@ export function PiExtensionNotifications({
 							variant="ghost"
 							size="icon"
 							className="-my-0.5 -mr-1 size-6 shrink-0 rounded-md text-muted-foreground hover:bg-hover hover:text-foreground active:scale-[0.92] transition-[background-color,color,scale] duration-150 ease-out"
-							aria-label="关闭插件通知"
+							aria-label={t("chat.closePluginNotifications")}
 							onClick={() => onDismiss(notification.id)}
 						>
 							<X className="size-3" />

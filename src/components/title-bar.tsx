@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, SquareSquare, X } from "lucide-react";
 
@@ -61,6 +62,7 @@ const CAPTION_RESTORE = <SquareSquare size={14} />;
 const CAPTION_CLOSE_ICON = <X size={15} />;
 
 function WindowControls() {
+	const { t } = useTranslation();
 	const win = getCurrentWindow();
 	const [maximized, setMaximized] = useState(false);
 	useEffect(() => {
@@ -75,16 +77,23 @@ function WindowControls() {
 	}, [win]);
 	return (
 		<div className="flex h-full items-stretch">
-			<CaptionButton label="最小化" onClick={() => win.minimize()}>
+			<CaptionButton
+				label={t("app.minimizeWindow")}
+				onClick={() => win.minimize()}
+			>
 				{CAPTION_MIN}
 			</CaptionButton>
 			<CaptionButton
-				label={maximized ? "还原" : "最大化"}
+				label={maximized ? t("app.restoreWindow") : t("app.maximizeWindow")}
 				onClick={() => win.toggleMaximize()}
 			>
 				{maximized ? CAPTION_RESTORE : CAPTION_MAX}
 			</CaptionButton>
-			<CaptionButton label="关闭" danger onClick={() => win.close()}>
+			<CaptionButton
+				label={t("app.closeWindow")}
+				danger
+				onClick={() => win.close()}
+			>
 				{CAPTION_CLOSE_ICON}
 			</CaptionButton>
 		</div>

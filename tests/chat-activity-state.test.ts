@@ -9,7 +9,7 @@ import {
 	appendAssistantTextContent,
 	appendAssistantThinkingContent,
 	finishAssistantThinkingContent,
-	getAssistantStreamingLabel,
+	getAssistantStreamingState,
 	reconcileAssistantTextContent,
 	shouldAutoCollapseAssistantActivity,
 	shouldInitiallyOpenAssistantActivity,
@@ -289,13 +289,13 @@ test("tool updates keep their original position among ordered content", () => {
 	);
 });
 
-test("assistant streaming label follows pending and active response phases", () => {
+test("assistant streaming state follows pending and active response phases", () => {
 	assert.equal(
-		getAssistantStreamingLabel({ text: "", streaming: true }),
-		"启动中…",
+		getAssistantStreamingState({ text: "", streaming: true }),
+		"starting",
 	);
 	assert.equal(
-		getAssistantStreamingLabel({
+		getAssistantStreamingState({
 			text: "",
 			streaming: true,
 			activity: [
@@ -307,22 +307,26 @@ test("assistant streaming label follows pending and active response phases", () 
 				},
 			],
 		}),
-		"思考中",
+		"thinking",
 	);
 	assert.equal(
-		getAssistantStreamingLabel({ text: "hello", streaming: true }),
-		"处理中",
+		getAssistantStreamingState({ text: "hello", streaming: true }),
+		"processing",
 	);
 	assert.equal(
-		getAssistantStreamingLabel({ text: "hello", streaming: false }),
+		getAssistantStreamingState({ text: "hello", streaming: false }),
 		null,
 	);
 });
 
 test("work duration uses the same compact shape as Lody", () => {
-	assert.equal(formatWorkDuration(11_999), "11秒");
-	assert.equal(formatWorkDuration(65_999), "1分 05秒");
-	assert.equal(formatWorkDuration(3_723_999), "1小时 02分 03秒");
+	const zhUnits = { hour: "小时", minute: "分", second: "秒" };
+	assert.equal(formatWorkDuration(11_999, zhUnits), "11秒");
+	assert.equal(formatWorkDuration(65_999, zhUnits), "1分 05秒");
+	assert.equal(formatWorkDuration(3_723_999, zhUnits), "1小时 02分 03秒");
+	const enUnits = { hour: "h", minute: "m", second: "s" };
+	assert.equal(formatWorkDuration(11_999, enUnits), "11s");
+	assert.equal(formatWorkDuration(65_999, enUnits), "1m 05s");
 });
 
 test("assistant activity summary groups file work and other tools", () => {

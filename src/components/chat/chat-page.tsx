@@ -8,6 +8,7 @@ import {
 	useState,
 	type ReactNode,
 } from "react";
+import { useTranslation } from "react-i18next";
 
 import type {
 	ChatUiState,
@@ -26,7 +27,7 @@ import { ChatImageScopeProvider } from "@/components/chat/chat-image-viewer";
 import { ChatPendingQueue } from "@/components/chat/chat-pending-queue";
 import { ChatRuntimeRecoveryNotice } from "@/components/chat/chat-runtime-recovery-notice";
 import { ChatInterruptedTurnNotice } from "@/components/chat/chat-interrupted-turn-notice";
-import { PI_SESSION_SUGGESTIONS } from "@/components/chat/chat-composer-suggestions";
+import { piSessionSuggestions } from "@/components/chat/chat-composer-suggestions";
 import { createFileSuggestions } from "@/components/chat/chat-file-suggestions";
 import { PiExtensionNotifications } from "@/components/chat/pi-extension-notifications";
 import { PiExtensionUiDialog } from "@/components/chat/pi-extension-ui-dialog";
@@ -190,6 +191,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		reserveWindowControls = false,
 		sidebarCollapsed = false,
 	} = props;
+	const { t } = useTranslation();
 	const { desktopNotifications, keyboardShortcuts } = usePreferences();
 	const [initialUiState] = useState<ChatUiState>(() =>
 		uiStateKey && readUiState
@@ -592,10 +594,10 @@ function ChatPageImpl(props: ChatPageProps) {
 	const composerSuggestions = useMemo(
 		() => [
 			...fileSuggestions,
-			...PI_SESSION_SUGGESTIONS,
+			...piSessionSuggestions(t),
 			...commandSuggestions,
 		],
-		[commandSuggestions, fileSuggestions],
+		[commandSuggestions, fileSuggestions, t],
 	);
 
 	const controllerMessageCount =
@@ -622,12 +624,12 @@ function ChatPageImpl(props: ChatPageProps) {
 				return true;
 			}
 			if (session.externalRunning) {
-				toast.info("外部 Pi 正在运行，当前会话只读");
+				toast.info(t("chat.externalReadOnly"));
 				return true;
 			}
 			if (commandName === "compact") {
 				if (running) {
-					toast.info("当前回复完成后再压缩");
+					toast.info(t("chat.waitCompaction"));
 					return true;
 				}
 				const customInstructions = command.slice("/compact".length).trim();
@@ -650,6 +652,7 @@ function ChatPageImpl(props: ChatPageProps) {
 			running,
 			session.externalRunning,
 			tryExecuteExtensionCommand,
+			t,
 		],
 	);
 	const persistDeferredHistorySubmissions = useCallback(
@@ -664,7 +667,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		(submission: ChatSubmission) => {
 			void (async () => {
 				if (session.externalRunning && submission.text.trim() !== "/new") {
-					toast.info("外部 Pi 正在运行，当前会话只读");
+					toast.info(t("chat.externalReadOnly"));
 					return;
 				}
 				if (await tryHandleComposerCommand(submission)) return;
@@ -674,7 +677,7 @@ function ChatPageImpl(props: ChatPageProps) {
 					return;
 				}
 				if (submission.images.length > 0) {
-					toast.info("请等待历史消息加载后再发送图片");
+					toast.info(t("chat.waitHistory"));
 					return;
 				}
 				const trimmed = submission.text.trim();
@@ -692,6 +695,7 @@ function ChatPageImpl(props: ChatPageProps) {
 			persistDeferredHistorySubmissions,
 			session.externalRunning,
 			tryHandleComposerCommand,
+			t,
 		],
 	);
 
@@ -718,7 +722,7 @@ function ChatPageImpl(props: ChatPageProps) {
 					client.getPiEntries(),
 				]);
 				if (!sourceState.sessionFile) {
-					throw new Error("当前会话尚未保存，暂时无法 Fork。");
+					throw new Error(t("chat.forkUnsaved"));
 				}
 				const target = resolveAssistantForkTarget(
 					getConversationMessages(),
@@ -738,20 +742,20 @@ function ChatPageImpl(props: ChatPageProps) {
 						? await forkClient.clonePiSession()
 						: await forkClient.forkPiSession(target.entryId);
 				if (result.cancelled) {
-					toast.info("Fork 已取消");
+					toast.info(t("chat.forkCancelled"));
 					return;
 				}
 
 				const state = await forkClient.getPiAgentState();
 				if (!state.sessionId || !state.sessionFile) {
-					throw new Error("Pi 未返回 Fork 后的新会话信息。");
+					throw new Error(t("chat.forkNoInfo"));
 				}
 				forkedSession = {
 					sessionId: state.sessionId,
 					sessionPath: state.sessionFile,
 				};
 			} catch (error) {
-				toast.error("Fork 新会话失败", {
+				toast.error(t("chat.forkFailed"), {
 					description: userErrorMessage(error),
 				});
 			} finally {
@@ -770,6 +774,7 @@ function ChatPageImpl(props: ChatPageProps) {
 			session.projectRecord.id,
 			session.temporary,
 			session.externalRunning,
+			t,
 		],
 	);
 
@@ -971,7 +976,7 @@ function ChatPageImpl(props: ChatPageProps) {
 										historyKey={session.projectRecord.id}
 										placeholder={
 											session.externalRunning
-												? "外部 Pi 正在运行，当前会话只读"
+												? t("chat.externalReadOnly")
 												: undefined
 										}
 										onChange={setDraft}
@@ -1013,7 +1018,10 @@ function ChatPageImpl(props: ChatPageProps) {
 										statusText={
 											session.externalRunning
 												? ""
-												: [historyProgress, piStatusText]
+												: [
+														historyProgress ? t(historyProgress) : "",
+														piStatusText,
+													]
 														.filter(Boolean)
 														.join(" · ")
 										}

@@ -27,8 +27,6 @@ export const CHAT_COMPOSER_SEND_BUTTON_CLASS_NAME = cn(
 	"transition-[background-color,scale] duration-100 enabled:hover:bg-foreground/85 active:scale-[0.96]",
 );
 
-export const DEFAULT_CHAT_COMPOSER_PLACEHOLDER = "给 Pi 发消息，@ 提及文件";
-
 export function ChatComposerRoot({
 	children,
 	className,

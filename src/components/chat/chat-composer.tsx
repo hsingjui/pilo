@@ -8,12 +8,14 @@ import {
 	type ClipboardEvent,
 	type KeyboardEvent,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { i18n } from "@/i18n";
+import { userErrorMessage } from "@/lib/app-error";
 import { ChatImageThumbnail } from "@/components/chat/chat-image-viewer";
 
-import { userErrorMessage } from "@/lib/app-error";
 import { cacheLocalChatImages } from "@/lib/chat-image-media";
 import {
 	appendChatInputHistory,
@@ -53,7 +55,6 @@ import {
 	CHAT_COMPOSER_ATTACHMENT_BUTTON_CLASS_NAME,
 	CHAT_COMPOSER_TEXTAREA_CLASS_NAME,
 	CHAT_COMPOSER_TOOLBAR_CLASS_NAME,
-	DEFAULT_CHAT_COMPOSER_PLACEHOLDER,
 	ChatComposerRoot,
 	ChatComposerSurface,
 } from "@/components/chat/chat-composer-frame";
@@ -121,22 +122,24 @@ function readImage(file: File, mimeType: string) {
 	return new Promise<ChatImageAttachment>((resolve, reject) => {
 		const reader = new FileReader();
 		reader.addEventListener("error", () => {
-			reject(reader.error ?? new Error("读取图片失败"));
+			reject(reader.error ?? new Error(i18n.t("chat.readImageFailed")));
 		});
 		reader.addEventListener("load", () => {
 			const result = reader.result;
 			if (typeof result !== "string") {
-				reject(new Error("读取图片失败"));
+				reject(new Error(i18n.t("chat.readImageFailed")));
 				return;
 			}
 			const separator = result.indexOf(",");
 			if (separator < 0) {
-				reject(new Error("图片数据格式无效"));
+				reject(new Error(i18n.t("chat.invalidImage")));
 				return;
 			}
 			resolve({
 				id: crypto.randomUUID(),
-				name: file.name || `粘贴的图片.${mimeType.split("/")[1] ?? "png"}`,
+				name:
+					file.name ||
+					`${i18n.t("chat.imageClipboard")}.${mimeType.split("/")[1] ?? "png"}`,
 				mimeType,
 				size: file.size,
 				data: result.slice(separator + 1),
@@ -154,7 +157,7 @@ export function ChatComposer({
 	onSubmit,
 	onSteer,
 	onFollowUp,
-	placeholder = DEFAULT_CHAT_COMPOSER_PLACEHOLDER,
+	placeholder,
 	disabled = false,
 	muted = false,
 	running = false,
@@ -185,6 +188,8 @@ export function ChatComposer({
 	historyKey,
 	className,
 }: ChatComposerProps) {
+	const { t } = useTranslation();
+	const composerPlaceholder = placeholder ?? t("chat.composerPlaceholder");
 	const { sendMessageShortcut, keyboardShortcuts } = usePreferences();
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -303,7 +308,7 @@ export function ChatComposer({
 		if (attachments.length === 0) return true;
 		if (!selectedModel?.input || selectedModel.input.includes("image"))
 			return true;
-		toast.error("当前模型不支持图片输入");
+		toast.error(t("chat.imageUnsupported"));
 		return false;
 	};
 
@@ -514,7 +519,7 @@ export function ChatComposer({
 			MAX_CHAT_IMAGE_COUNT - attachments.length,
 		);
 		if (availableSlots === 0) {
-			toast.error(`最多添加 ${MAX_CHAT_IMAGE_COUNT} 张图片`);
+			toast.error(t("chat.maxImages", { count: MAX_CHAT_IMAGE_COUNT }));
 			return;
 		}
 		const accepted: Array<{ file: File; mimeType: string }> = [];
@@ -526,18 +531,31 @@ export function ChatComposer({
 			if (accepted.length >= availableSlots) break;
 			const mimeType = resolveChatImageMimeType(file);
 			if (!mimeType) {
-				toast.error(`不支持的图片格式：${file.name || "剪贴板图片"}`);
+				toast.error(
+					t("chat.unsupportedImage", {
+						name: file.name || t("chat.imageClipboard"),
+					}),
+				);
 				continue;
 			}
 			if (file.size > MAX_CHAT_IMAGE_BYTES) {
-				toast.error(`图片过大：${file.name || "剪贴板图片"}`, {
-					description: `单张图片不能超过 ${formatChatImageSize(MAX_CHAT_IMAGE_BYTES)}`,
-				});
+				toast.error(
+					t("chat.imageTooLarge", {
+						name: file.name || t("chat.imageClipboard"),
+					}),
+					{
+						description: t("chat.imageSizeLimit", {
+							size: formatChatImageSize(MAX_CHAT_IMAGE_BYTES),
+						}),
+					},
+				);
 				continue;
 			}
 			if (totalBytes + file.size > MAX_CHAT_IMAGE_TOTAL_BYTES) {
-				toast.error("图片总大小过大", {
-					description: `单条消息的图片总大小不能超过 ${formatChatImageSize(MAX_CHAT_IMAGE_TOTAL_BYTES)}`,
+				toast.error(t("chat.imagesTooLarge"), {
+					description: t("chat.imagesTotalLimit", {
+						size: formatChatImageSize(MAX_CHAT_IMAGE_TOTAL_BYTES),
+					}),
 				});
 				break;
 			}
@@ -545,7 +563,7 @@ export function ChatComposer({
 			totalBytes += file.size;
 		}
 		if (files.length > availableSlots) {
-			toast.info(`最多添加 ${MAX_CHAT_IMAGE_COUNT} 张图片`);
+			toast.info(t("chat.maxImages", { count: MAX_CHAT_IMAGE_COUNT }));
 		}
 		if (accepted.length === 0) return;
 		try {
@@ -554,7 +572,9 @@ export function ChatComposer({
 			);
 			updateImages([...attachments, ...added]);
 		} catch (error) {
-			toast.error("无法读取图片", { description: userErrorMessage(error) });
+			toast.error(t("chat.readImageFailed"), {
+				description: userErrorMessage(error),
+			});
 		}
 	};
 
@@ -588,7 +608,7 @@ export function ChatComposer({
 			{suggestionMenuOpen && activeQuery && queryMeta ? (
 				<ComposerSuggestionMenu
 					activeQuery={activeQuery}
-					title={queryMeta.title}
+					title={t(queryMeta.titleKey)}
 					suggestions={filteredSuggestions}
 					highlightedIndex={effectiveHighlightedIndex}
 					onHighlight={setHighlightedIndex}
@@ -613,7 +633,9 @@ export function ChatComposer({
 								<button
 									type="button"
 									disabled={disabled}
-									aria-label={`移除 ${attachment.name}`}
+									aria-label={t("chat.removeAttachment", {
+										name: attachment.name,
+									})}
 									className={cn(
 										"absolute -right-1.5 -top-1.5 z-10 inline-flex size-5 items-center justify-center rounded-full",
 										"border border-border/70 bg-background text-muted-foreground shadow-sm transition-colors",
@@ -650,7 +672,7 @@ export function ChatComposer({
 					onPaste={handlePaste}
 					disabled={disabled}
 					rows={2}
-					placeholder={placeholder}
+					placeholder={composerPlaceholder}
 					className={cn(
 						CHAT_COMPOSER_TEXTAREA_CLASS_NAME,
 						showFocusHint && "pr-16",
@@ -693,13 +715,13 @@ export function ChatComposer({
 								variant="ghost"
 								size="icon"
 								className={CHAT_COMPOSER_ATTACHMENT_BUTTON_CLASS_NAME}
-								aria-label="添加附件"
+								aria-label={t("chat.addAttachment")}
 								onClick={() => fileInputRef.current?.click()}
 							>
 								<Plus className="size-4" />
 							</Button>
 						</TooltipTrigger>
-						<TooltipContent>添加附件</TooltipContent>
+						<TooltipContent>{t("chat.addAttachment")}</TooltipContent>
 					</Tooltip>
 
 					<ComposerRunConfig
@@ -721,9 +743,13 @@ export function ChatComposer({
 
 					{pendingSteering > 0 || pendingFollowUps > 0 ? (
 						<span className="hidden text-2xs tabular-nums text-muted-foreground @min-[40rem]:inline">
-							{pendingSteering > 0 ? `调整 ${pendingSteering}` : null}
+							{pendingSteering > 0
+								? t("chat.pendingSteer", { count: pendingSteering })
+								: null}
 							{pendingSteering > 0 && pendingFollowUps > 0 ? " · " : null}
-							{pendingFollowUps > 0 ? `稍后 ${pendingFollowUps}` : null}
+							{pendingFollowUps > 0
+								? t("chat.pendingFollowUp", { count: pendingFollowUps })
+								: null}
 						</span>
 					) : null}
 					{statusText ? (

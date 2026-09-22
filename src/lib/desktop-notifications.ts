@@ -1,4 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+
+import { i18n } from "../i18n/index.ts";
 import { listen } from "@tauri-apps/api/event";
 import {
 	isPermissionGranted,
@@ -25,8 +27,6 @@ const MACOS_DEFAULT_NOTIFICATION_SOUND = "NSUserNotificationDefaultSoundName";
 const NOTIFICATION_OPEN_SESSION_EVENT = "pilo://notification-open-session";
 const NOTIFICATION_TITLE_MAX_LENGTH = 72;
 const NOTIFICATION_BODY_MAX_LENGTH = 220;
-const TEST_NOTIFICATION_TITLE = "Pilo 测试通知";
-const TEST_NOTIFICATION_BODY = "通知正常。Agent 完成或出错时会提醒你。";
 
 function isMacOS() {
 	return (
@@ -63,9 +63,14 @@ function agentNotificationContent({
 	sessionTitle: string;
 	errorMessage?: string;
 }) {
-	const statusLabel = status === "completed" ? "已完成" : "运行出错";
-	const fallbackTitle =
-		status === "completed" ? "Agent 已完成" : "Agent 运行出错";
+	const statusLabel = i18n.t(
+		status === "completed" ? "notifications.completed" : "notifications.error",
+	);
+	const fallbackTitle = i18n.t(
+		status === "completed"
+			? "notifications.agentCompleted"
+			: "notifications.agentFailed",
+	);
 	const normalizedSessionTitle = compactNotificationText(sessionTitle, 120);
 	const suffix = ` · ${statusLabel}`;
 	const availableSessionLength =
@@ -77,7 +82,7 @@ function agentNotificationContent({
 	if (status === "completed") {
 		return {
 			title,
-			body: "Agent 已完成，打开会话查看结果。",
+			body: i18n.t("notifications.completedBody"),
 		};
 	}
 
@@ -88,10 +93,10 @@ function agentNotificationContent({
 		title,
 		body: normalizedError
 			? compactNotificationText(
-					`错误详情：${normalizedError}`,
+					i18n.t("notifications.errorDetail", { message: normalizedError }),
 					NOTIFICATION_BODY_MAX_LENGTH,
 				)
-			: "Agent 运行出错，打开会话查看详情。",
+			: i18n.t("notifications.errorBody"),
 	};
 }
 
@@ -185,21 +190,21 @@ export async function sendDesktopNotificationTest(): Promise<boolean> {
 	try {
 		if (isMacOS()) {
 			await sendMacOSNotification({
-				title: TEST_NOTIFICATION_TITLE,
-				body: TEST_NOTIFICATION_BODY,
+				title: i18n.t("notifications.testTitle"),
+				body: i18n.t("notifications.testBody"),
 			});
 			return true;
 		}
 		if (isWindows()) {
 			await sendWindowsNotification({
-				title: TEST_NOTIFICATION_TITLE,
-				body: TEST_NOTIFICATION_BODY,
+				title: i18n.t("notifications.testTitle"),
+				body: i18n.t("notifications.testBody"),
 			});
 			return true;
 		}
 		sendNotification({
-			title: TEST_NOTIFICATION_TITLE,
-			body: TEST_NOTIFICATION_BODY,
+			title: i18n.t("notifications.testTitle"),
+			body: i18n.t("notifications.testBody"),
 			autoCancel: true,
 			...defaultNotificationSound(),
 		});

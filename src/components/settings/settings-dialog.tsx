@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
 	Bell,
 	Info,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { changeAppLocale, isAppLocale } from "@/i18n";
 import {
 	ensureDesktopNotificationPermission,
 	getDesktopNotificationPermission,
@@ -81,57 +83,61 @@ type SettingsTabId =
 const SETTINGS_TABS = [
 	{
 		id: "preferences" as const,
-		section: "个人",
-		label: "偏好",
+		section: "personal",
+		labelKey: "settings.preferences",
 		icon: SlidersHorizontal,
 	},
 	{
 		id: "appearance" as const,
-		section: "个人",
-		label: "外观",
+		section: "personal",
+		labelKey: "settings.appearance",
 		icon: Palette,
 	},
 	{
 		id: "notifications" as const,
-		section: "个人",
-		label: "通知",
+		section: "personal",
+		labelKey: "settings.notifications",
 		icon: Bell,
 	},
 	{
 		id: "shortcuts" as const,
-		section: "个人",
-		label: "快捷键",
+		section: "personal",
+		labelKey: "settings.shortcuts",
 		icon: Keyboard,
 	},
 	{
 		id: "connections" as const,
-		section: "项目",
-		label: "连接",
+		section: "project",
+		labelKey: "settings.connections",
 		icon: Plug,
 	},
 	{
 		id: "session-naming" as const,
-		section: "项目",
-		label: "会话命名",
+		section: "project",
+		labelKey: "settings.sessionNaming",
 		icon: Type,
 	},
 	{
 		id: "about" as const,
-		section: "其他",
-		label: "关于",
+		section: "other",
+		labelKey: "settings.about",
 		icon: Info,
 	},
-];
+] as const;
 
-const THEME_LABELS: Record<Theme, string> = {
-	light: "亮色",
-	dark: "暗色",
-	system: "跟随系统",
+const THEME_LABEL_KEYS: Record<
+	Theme,
+	"settings.light" | "settings.dark" | "settings.system"
+> = {
+	light: "settings.light",
+	dark: "settings.dark",
+	system: "settings.system",
 };
 
 const FONT_SETTINGS_ROW_CLASS = "sm:grid-cols-[160px_1fr]";
 
 function PreferencesSettings() {
+	const { t, i18n } = useTranslation();
 	const {
 		sendMessageShortcut,
 		setSendMessageShortcut,
@@ -143,8 +149,8 @@ function PreferencesSettings() {
 
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
-			<SettingsSection title="对话">
-				<SettingsRow label="发送快捷键">
+			<SettingsSection title={t("settings.conversation")}>
+				<SettingsRow label={t("settings.sendShortcut")}>
 					<Select
 						value={sendMessageShortcut}
 						onValueChange={(value) =>
@@ -160,34 +166,58 @@ function PreferencesSettings() {
 						</SelectContent>
 					</Select>
 				</SettingsRow>
-				<SettingsRow label="折叠长消息">
+				<SettingsRow label={t("settings.collapseLongMessages")}>
 					<Switch
 						checked={collapseLongMessages}
 						onCheckedChange={setCollapseLongMessages}
 					/>
 				</SettingsRow>
-				<SettingsRow label="折叠工作过程">
+				<SettingsRow label={t("settings.collapseWork")}>
 					<Switch
 						checked={collapseCompletedActivity}
 						onCheckedChange={setCollapseCompletedActivity}
 					/>
+				</SettingsRow>
+				<SettingsRow label={t("settings.language")}>
+					<Select
+						value={i18n.language === "zh-CN" ? "zh-CN" : "en-US"}
+						onValueChange={(value) => {
+							if (isAppLocale(value)) void changeAppLocale(value);
+						}}
+					>
+						<SelectTrigger className={cn(SETTINGS_CONTROL_CLASS, "w-[180px]")}>
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="zh-CN">
+								{t("settings.languageChinese")}
+							</SelectItem>
+							<SelectItem value="en-US">
+								{t("settings.languageEnglish")}
+							</SelectItem>
+						</SelectContent>
+					</Select>
 				</SettingsRow>
 			</SettingsSection>
 		</div>
 	);
 }
 
-const NOTIFICATION_PERMISSION_LABELS: Record<
+const NOTIFICATION_PERMISSION_KEYS: Record<
 	DesktopNotificationPermission,
-	string
+	| "settings.granted"
+	| "settings.denied"
+	| "settings.notRequested"
+	| "settings.unavailable"
 > = {
-	granted: "已允许",
-	denied: "已拒绝",
-	default: "未请求",
-	unsupported: "不可用",
+	granted: "settings.granted",
+	denied: "settings.denied",
+	default: "settings.notRequested",
+	unsupported: "settings.unavailable",
 };
 
 function NotificationSettings() {
+	const { t } = useTranslation();
 	const { desktopNotifications, setDesktopNotifications } = usePreferences();
 	const permissionSystemManaged =
 		isDesktopNotificationPermissionSystemManaged();
@@ -229,8 +259,8 @@ function NotificationSettings() {
 		setPermission(await getDesktopNotificationPermission());
 		setDesktopNotifications(granted);
 		if (!granted) {
-			toast.error("未能启用系统通知", {
-				description: "请在系统通知设置中允许 Pilo 发送通知。",
+			toast.error(t("settings.enableNotificationsFailed"), {
+				description: t("settings.allowNotificationsDescription"),
 			});
 		}
 	};
@@ -241,15 +271,15 @@ function NotificationSettings() {
 		setPermission(await getDesktopNotificationPermission());
 		setTesting(false);
 		if (!sent)
-			toast.error("测试通知发送失败", {
-				description: "请检查系统通知权限后重试。",
+			toast.error(t("settings.testNotificationFailed"), {
+				description: t("settings.checkNotificationPermission"),
 			});
 	};
 
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
-			<SettingsSection title="系统通知">
-				<SettingsRow label="发送桌面通知">
+			<SettingsSection title={t("settings.systemNotifications")}>
+				<SettingsRow label={t("settings.sendDesktopNotifications")}>
 					<Switch
 						checked={desktopNotifications}
 						onCheckedChange={(enabled) =>
@@ -258,19 +288,21 @@ function NotificationSettings() {
 					/>
 				</SettingsRow>
 
-				<SettingsRow label="通知权限">
+				<SettingsRow label={t("settings.notificationPermission")}>
 					<div className="flex items-center gap-1.5">
 						<SettingsStatus
 							muted={permission !== "granted" && !permissionSystemManaged}
 						>
 							{checking
-								? "检测中…"
+								? t("settings.testing")
 								: permissionSystemManaged
-									? "系统管理"
-									: NOTIFICATION_PERMISSION_LABELS[permission]}
+									? t("settings.systemManaged")
+									: t(NOTIFICATION_PERMISSION_KEYS[permission])}
 						</SettingsStatus>
 						{!permissionSystemManaged ? (
-							<Hint label={checking ? undefined : "重新检测权限"}>
+							<Hint
+								label={checking ? undefined : t("settings.recheckPermission")}
+							>
 								<Button
 									variant="ghost"
 									size="icon"
@@ -287,7 +319,7 @@ function NotificationSettings() {
 					</div>
 				</SettingsRow>
 
-				<SettingsRow label="测试通知">
+				<SettingsRow label={t("settings.testNotification")}>
 					<Button
 						variant="ghost"
 						size="sm"
@@ -299,7 +331,9 @@ function NotificationSettings() {
 						onClick={() => void handleTestNotification()}
 					>
 						<Send className="size-3.5" />
-						{testing ? "发送中…" : "发送测试通知"}
+						{testing
+							? t("settings.sending")
+							: t("settings.sendTestNotification")}
 					</Button>
 				</SettingsRow>
 			</SettingsSection>
@@ -308,6 +342,7 @@ function NotificationSettings() {
 }
 
 function AppearanceSettings() {
+	const { t } = useTranslation();
 	const { theme, setTheme } = useTheme();
 	const {
 		pageFontFamily,
@@ -342,13 +377,16 @@ function AppearanceSettings() {
 	}, []);
 
 	const pageFontGroups: FontSelectGroup[] = [
-		{ label: "内置", options: PAGE_FONT_BUILTIN_OPTIONS },
-		{ label: "系统字体", options: buildSystemFontOptions(systemPageFonts) },
+		{ label: t("settings.builtIn"), options: PAGE_FONT_BUILTIN_OPTIONS },
+		{
+			label: t("settings.systemFonts"),
+			options: buildSystemFontOptions(systemPageFonts),
+		},
 	];
 	const monospaceFontGroups: FontSelectGroup[] = [
-		{ label: "内置", options: MONOSPACE_FONT_BUILTIN_OPTIONS },
+		{ label: t("settings.builtIn"), options: MONOSPACE_FONT_BUILTIN_OPTIONS },
 		{
-			label: "系统等宽",
+			label: t("settings.systemMonospace"),
 			options: buildSystemFontOptions(systemMonospaceFonts),
 		},
 	];
@@ -356,7 +394,7 @@ function AppearanceSettings() {
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
 			<SettingsSection>
-				<SettingsRow label="主题">
+				<SettingsRow label={t("settings.theme")}>
 					<Select
 						value={theme}
 						onValueChange={(value) => setTheme(value as Theme)}
@@ -365,9 +403,9 @@ function AppearanceSettings() {
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
-							{(Object.keys(THEME_LABELS) as Theme[]).map((value) => (
+							{(Object.keys(THEME_LABEL_KEYS) as Theme[]).map((value) => (
 								<SelectItem key={value} value={value}>
-									{THEME_LABELS[value]}
+									{t(THEME_LABEL_KEYS[value])}
 								</SelectItem>
 							))}
 						</SelectContent>
@@ -375,8 +413,11 @@ function AppearanceSettings() {
 				</SettingsRow>
 			</SettingsSection>
 
-			<SettingsSection title="字体">
-				<SettingsRow label="页面字体" className={FONT_SETTINGS_ROW_CLASS}>
+			<SettingsSection title={t("settings.font")}>
+				<SettingsRow
+					label={t("settings.pageFont")}
+					className={FONT_SETTINGS_ROW_CLASS}
+				>
 					<FontSelect
 						value={pageFontFamily}
 						groups={pageFontGroups}
@@ -399,7 +440,7 @@ function AppearanceSettings() {
 										{size === 14 ? (
 											<span
 												className="size-1.5 rounded-full bg-muted-foreground"
-												aria-label="默认字号"
+												aria-label={t("settings.defaultFontSize")}
 											/>
 										) : null}
 									</span>
@@ -409,7 +450,10 @@ function AppearanceSettings() {
 					</Select>
 				</SettingsRow>
 
-				<SettingsRow label="代码字体" className={FONT_SETTINGS_ROW_CLASS}>
+				<SettingsRow
+					label={t("settings.codeFont")}
+					className={FONT_SETTINGS_ROW_CLASS}
+				>
 					<FontSelect
 						value={codeFontFamily}
 						groups={monospaceFontGroups}
@@ -433,7 +477,7 @@ function AppearanceSettings() {
 										{size === 12 ? (
 											<span
 												className="size-1.5 rounded-full bg-muted-foreground"
-												aria-label="默认字号"
+												aria-label={t("settings.defaultFontSize")}
 											/>
 										) : null}
 									</span>
@@ -443,7 +487,10 @@ function AppearanceSettings() {
 					</Select>
 				</SettingsRow>
 
-				<SettingsRow label="终端字体" className={FONT_SETTINGS_ROW_CLASS}>
+				<SettingsRow
+					label={t("settings.terminalFont")}
+					className={FONT_SETTINGS_ROW_CLASS}
+				>
 					<FontSelect
 						value={terminalFontFamily}
 						groups={monospaceFontGroups}
@@ -466,7 +513,7 @@ function AppearanceSettings() {
 										{size === 12 ? (
 											<span
 												className="size-1.5 rounded-full bg-muted-foreground"
-												aria-label="默认字号"
+												aria-label={t("settings.defaultFontSize")}
 											/>
 										) : null}
 									</span>
@@ -487,22 +534,25 @@ export function SettingsDialog({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {
+	const { t } = useTranslation();
 	const [activeTab, setActiveTab] = useState<SettingsTabId>("preferences");
 	const activeTabConfig =
 		SETTINGS_TABS.find((tab) => tab.id === activeTab) ?? SETTINGS_TABS[0];
 	const sections = [
-		{ id: "个人", label: null },
-		{ id: "项目", label: "项目" },
-		{ id: "其他", label: "其他" },
+		{ id: "personal", labelKey: null },
+		{ id: "project", labelKey: "settings.projectSection" },
+		{ id: "other", labelKey: "settings.other" },
 	] as const;
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="flex h-[min(90vh,950px)] w-[84vw] max-w-[1100px] flex-col gap-0 overflow-hidden p-0 sm:p-0">
-				<DialogDescription className="sr-only">Pilo 设置</DialogDescription>
+				<DialogDescription className="sr-only">
+					{t("settings.title")}
+				</DialogDescription>
 				<div className="flex min-h-0 flex-1 overflow-hidden">
 					<nav
-						aria-label="设置"
+						aria-label={t("settings.title")}
 						className="flex w-48 shrink-0 flex-col border-e bg-background"
 					>
 						<div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -512,10 +562,17 @@ export function SettingsDialog({
 										(tab) => tab.section === section.id,
 									);
 									return (
-										<section key={section.id} aria-label={section.id}>
-											{section.label ? (
+										<section
+											key={section.id}
+											aria-label={
+												section.labelKey
+													? t(section.labelKey)
+													: t("settings.personal")
+											}
+										>
+											{section.labelKey ? (
 												<h2 className="px-2.5 pb-1 text-xs font-medium text-muted-foreground">
-													{section.label}
+													{t(section.labelKey)}
 												</h2>
 											) : null}
 											<div className="space-y-0.5">
@@ -537,7 +594,9 @@ export function SettingsDialog({
 															onClick={() => setActiveTab(tab.id)}
 														>
 															<Icon className="h-4 w-4 shrink-0 opacity-80" />
-															<span className="truncate">{tab.label}</span>
+															<span className="truncate">
+																{t(tab.labelKey)}
+															</span>
 														</button>
 													);
 												})}
@@ -551,7 +610,7 @@ export function SettingsDialog({
 
 					<main className="flex min-h-0 min-w-0 flex-1 flex-col">
 						<header className="mt-2 flex h-12 shrink-0 items-center px-8">
-							<DialogTitle>{activeTabConfig.label}</DialogTitle>
+							<DialogTitle>{t(activeTabConfig.labelKey)}</DialogTitle>
 						</header>
 						<div className="min-h-0 flex-1">
 							<ScrollArea className="h-full">

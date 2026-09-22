@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import {
 	Laptop,
 	Monitor,
@@ -13,6 +14,7 @@ import { toast } from "sonner";
 
 import { listWslDistributions, type WslDistribution } from "@/lib/connections";
 import { userErrorMessage } from "@/lib/app-error";
+import { i18n } from "@/i18n";
 import type { Connection } from "@/lib/pi-runtime";
 import { connectionLabel } from "@/lib/projects";
 import { IS_WINDOWS } from "@/components/title-bar";
@@ -32,7 +34,7 @@ import {
 	Switch,
 } from "@/ui";
 
-import { AUTH_LABELS, sshTargetLabel } from "./connection-form";
+import { AUTH_LABEL_KEYS, sshTargetLabel } from "./connection-form";
 import {
 	SETTINGS_CONTROL_CLASS,
 	SETTINGS_ICON_BUTTON_CLASS,
@@ -73,6 +75,7 @@ export function ConnectionRow({
 	onEdit,
 	onRemove,
 }: ConnectionRowProps) {
+	const { t } = useTranslation();
 	return (
 		<div className="flex items-center gap-2.5 px-3 py-2.5 transition-colors hover:bg-hover/30">
 			<div className="flex size-6 shrink-0 items-center justify-center text-foreground/70">
@@ -85,15 +88,17 @@ export function ConnectionRow({
 				<div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted-foreground">
 					{description}
 					<span>
-						{projectCount > 0 ? `${projectCount} 个项目` : "未关联项目"}
+						{projectCount > 0
+							? t("connection.projectCount", { count: projectCount })
+							: t("connection.unlinkedProjects")}
 					</span>
 				</div>
 			</div>
 			<div className="flex shrink-0 items-center gap-1">
 				<span className="mr-1 flex items-center gap-2 text-2xs text-muted-foreground">
-					显示在首页
+					{t("connection.shownInHome")}
 					<Switch
-						aria-label="显示在首页"
+						aria-label={t("connection.shownInHome")}
 						checked={shownInHome}
 						disabled={busy}
 						onCheckedChange={onToggleShown}
@@ -105,8 +110,8 @@ export function ConnectionRow({
 					className={SETTINGS_ICON_BUTTON_CLASS}
 					disabled={busy}
 					onClick={onTest}
-					aria-label="测试连接"
-					title="测试连接"
+					aria-label={t("connection.test")}
+					title={t("connection.test")}
 				>
 					<Wifi />
 				</Button>
@@ -116,11 +121,11 @@ export function ConnectionRow({
 					className={SETTINGS_ICON_BUTTON_CLASS}
 					disabled={busy}
 					onClick={onConfigure}
-					aria-label="配置连接"
-					title="配置连接"
+					aria-label={t("connection.configure")}
+					title={t("connection.configure")}
 				>
 					<Settings2 />
-					<span className="sr-only">配置连接</span>
+					<span className="sr-only">{t("connection.configure")}</span>
 				</Button>
 				{onEdit ? (
 					<Button
@@ -129,11 +134,11 @@ export function ConnectionRow({
 						className={SETTINGS_ICON_BUTTON_CLASS}
 						disabled={busy}
 						onClick={onEdit}
-						aria-label="编辑 SSH 参数"
-						title="编辑 SSH 参数"
+						aria-label={t("connection.editSsh")}
+						title={t("connection.editSsh")}
 					>
 						<Pencil />
-						<span className="sr-only">编辑 SSH 参数</span>
+						<span className="sr-only">{t("connection.editSsh")}</span>
 					</Button>
 				) : null}
 				{onRemove ? (
@@ -146,11 +151,11 @@ export function ConnectionRow({
 						)}
 						disabled={busy}
 						onClick={onRemove}
-						aria-label="移除连接"
-						title="移除连接"
+						aria-label={t("connection.remove")}
+						title={t("connection.remove")}
 					>
 						<Trash2 />
-						<span className="sr-only">移除连接</span>
+						<span className="sr-only">{t("connection.remove")}</span>
 					</Button>
 				) : null}
 			</div>
@@ -167,9 +172,10 @@ export function ConnectionsSection({
 	onAddSsh: () => void;
 	onAddWsl: () => void;
 }) {
+	const { t } = useTranslation();
 	return (
 		<SettingsSection
-			title="连接"
+			title={t("settings.connections")}
 			actions={
 				<AddConnectionMenu
 					canAddWsl={IS_WINDOWS}
@@ -209,6 +215,7 @@ export function ConnectionSettingsDialog({
 	const usesLocalPi =
 		draft?.connection.kind.type === "ssh" &&
 		draft.connection.piRuntime === "local";
+	const { t } = useTranslation();
 	return (
 		<Dialog open={draft !== null} onOpenChange={(open) => !open && onClose()}>
 			<DialogContent
@@ -216,13 +223,15 @@ export function ConnectionSettingsDialog({
 				className="max-w-md gap-4"
 			>
 				<DialogHeader>
-					<DialogTitle>配置连接</DialogTitle>
-					<DialogDescription className="sr-only">配置连接</DialogDescription>
+					<DialogTitle>{t("connection.configureTitle")}</DialogTitle>
+					<DialogDescription className="sr-only">
+						{t("connection.configureTitle")}
+					</DialogDescription>
 				</DialogHeader>
 				{draft ? (
 					<div className="grid gap-3">
 						<label htmlFor="connection-name" className="grid gap-1 text-xs">
-							名称
+							{t("connection.name")}
 							<Input
 								id="connection-name"
 								className={SETTINGS_CONTROL_CLASS}
@@ -234,9 +243,9 @@ export function ConnectionSettingsDialog({
 						</label>
 						{usesLocalPi ? (
 							<div className="grid gap-1 text-xs">
-								Pi 运行位置
+								{t("connection.runtimeLocation")}
 								<span className="rounded-md border border-border/60 bg-muted/20 px-2 py-1.5 text-2xs text-muted-foreground">
-									本地 Pi
+									{t("connection.localPi")}
 								</span>
 							</div>
 						) : (
@@ -244,7 +253,7 @@ export function ConnectionSettingsDialog({
 								htmlFor="connection-pi-path"
 								className="grid gap-1 text-xs"
 							>
-								Pi 路径
+								{t("connection.piPath")}
 								<div className="flex gap-2">
 									<Input
 										id="connection-pi-path"
@@ -253,7 +262,7 @@ export function ConnectionSettingsDialog({
 										onChange={(event) =>
 											onChange({ ...draft, piExecutable: event.target.value })
 										}
-										placeholder="自动检测"
+										placeholder={t("connection.autoDetect")}
 									/>
 									<Button
 										variant="outline"
@@ -261,7 +270,9 @@ export function ConnectionSettingsDialog({
 										disabled={busy || probing}
 										onClick={onProbe}
 									>
-										{probing ? "检测中…" : "检测 Pi"}
+										{probing
+											? t("connection.detecting")
+											: t("connection.detectPi")}
 									</Button>
 								</div>
 							</label>
@@ -273,14 +284,14 @@ export function ConnectionSettingsDialog({
 								disabled={busy}
 								onClick={onClose}
 							>
-								取消
+								{t("common.cancel")}
 							</Button>
 							<Button
 								size="sm"
 								disabled={busy || !draft.name.trim()}
 								onClick={onSave}
 							>
-								{busy ? "保存中…" : "保存"}
+								{busy ? t("common.saving") : t("common.save")}
 							</Button>
 						</div>
 					</div>
@@ -301,24 +312,25 @@ function AddConnectionMenu({
 	onAddWsl: () => void;
 	className?: string;
 }) {
+	const { t } = useTranslation();
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
 				<Button size="icon" variant="outline" className={cn(className)}>
 					<Plus />
-					<span className="sr-only">添加连接</span>
+					<span className="sr-only">{t("connection.addConnection")}</span>
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end">
 				{canAddWsl ? (
 					<DropdownMenuItem onSelect={onAddWsl}>
 						<Monitor />
-						添加 WSL 发行版
+						{t("connection.addWsl")}
 					</DropdownMenuItem>
 				) : null}
 				<DropdownMenuItem onSelect={onAddSsh}>
 					<Server />
-					添加 SSH 连接
+					{t("connection.addSsh")}
 				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
@@ -341,6 +353,7 @@ export function WslDistributionDialog({
 	const [distributions, setDistributions] = useState<WslDistribution[] | null>(
 		null,
 	);
+	const { t } = useTranslation();
 
 	useEffect(() => {
 		if (!open || !IS_WINDOWS) return;
@@ -352,14 +365,14 @@ export function WslDistributionDialog({
 			.catch((error) => {
 				if (cancelled) return;
 				setDistributions([]);
-				toast.error("加载 WSL 发行版失败", {
+				toast.error(t("connection.loadWslFailed"), {
 					description: userErrorMessage(error),
 				});
 			});
 		return () => {
 			cancelled = true;
 		};
-	}, [open]);
+	}, [open, t]);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -368,19 +381,19 @@ export function WslDistributionDialog({
 				className="max-w-md gap-4"
 			>
 				<DialogHeader>
-					<DialogTitle>添加 WSL 发行版</DialogTitle>
+					<DialogTitle>{t("connection.addWslTitle")}</DialogTitle>
 					<DialogDescription className="sr-only">
-						选择要添加的 WSL 发行版
+						{t("connection.selectWsl")}
 					</DialogDescription>
 				</DialogHeader>
 				<div className="max-h-72 divide-y divide-border/60 overflow-auto rounded-md border">
 					{distributions === null ? (
 						<div className="px-3 py-4 text-xs text-muted-foreground">
-							加载中…
+							{t("connection.loading")}
 						</div>
 					) : distributions.length === 0 ? (
 						<div className="px-3 py-4 text-xs text-muted-foreground">
-							未检测到 WSL 发行版。
+							{t("connection.noWsl")}
 						</div>
 					) : (
 						distributions.map((distribution) => {
@@ -400,7 +413,7 @@ export function WslDistributionDialog({
 										disabled={busy || added}
 										onClick={() => onAdd(distribution.name)}
 									>
-										{added ? "已添加" : "添加"}
+										{added ? t("common.added") : t("common.add")}
 									</Button>
 								</div>
 							);
@@ -419,9 +432,9 @@ export function sshConnectionDescription(connection: Connection): ReactNode {
 	return (
 		<>
 			<span className="truncate font-mono">{sshTargetLabel(target)}</span>
-			<span>{AUTH_LABELS[target.authMethod]}</span>
+			<span>{i18n.t(AUTH_LABEL_KEYS[target.authMethod])}</span>
 			{target.type === "direct" && target.proxyJump ? (
-				<span>经 {target.proxyJump}</span>
+				<span>{i18n.t("connection.via", { name: target.proxyJump })}</span>
 			) : null}
 		</>
 	);

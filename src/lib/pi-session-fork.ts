@@ -1,3 +1,4 @@
+import { i18n } from "../i18n/index.ts";
 import type { ChatMessage } from "@/lib/conversation-types";
 import type { PiSessionEntries, PiSessionEntry } from "@/lib/pi-runtime";
 
@@ -17,12 +18,12 @@ export function getActivePiBranch({
 
 	while (currentId) {
 		if (visited.has(currentId)) {
-			throw new Error("Pi 会话分支包含循环引用。");
+			throw new Error(i18n.t("errors.forkBranchLoop"));
 		}
 		visited.add(currentId);
 		const entry = byId.get(currentId);
 		if (!entry) {
-			throw new Error("Pi 会话分支缺少父级消息。");
+			throw new Error(i18n.t("errors.forkMissingParent"));
 		}
 		branch.push(entry);
 		currentId = entry.parentId;
@@ -42,7 +43,7 @@ export function resolveAssistantForkTarget(
 			message.id === assistantMessageId && message.role === "assistant",
 	);
 	if (assistantIndex < 0) {
-		throw new Error("找不到要 Fork 的 Agent 回复。");
+		throw new Error(i18n.t("errors.forkTargetNotFound"));
 	}
 
 	const activeUserEntries = getActivePiBranch(sessionEntries).filter(
@@ -56,7 +57,7 @@ export function resolveAssistantForkTarget(
 			(message) => message.role === "user",
 		).length;
 		if (activeUserEntries.length !== visibleUserCount) {
-			throw new Error("当前会话已发生变化，请刷新后再 Fork。");
+			throw new Error(i18n.t("errors.sessionChanged"));
 		}
 		return { type: "clone" };
 	}
@@ -68,7 +69,7 @@ export function resolveAssistantForkTarget(
 
 	const nextUserEntry = activeUserEntries[nextUserOrdinal];
 	if (!nextUserEntry) {
-		throw new Error("无法定位该回复之后的 Pi 分支点，请刷新会话后重试。");
+		throw new Error(i18n.t("errors.forkBranchPointNotFound"));
 	}
 
 	return { type: "fork", entryId: nextUserEntry.id };

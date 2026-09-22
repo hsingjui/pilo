@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import {
 	Folder,
 	LoaderCircle,
 	MessageSquareText,
 	MessagesSquare,
 } from "lucide-react";
+
+import { i18n } from "@/i18n";
 
 import {
 	listSessions,
@@ -62,7 +65,7 @@ function indexedTitle(session: SessionIndexEntry) {
 		session.titleOverride ??
 		session.name ??
 		session.firstUserMessagePreview ??
-		"新会话"
+		i18n.t("app.newChat")
 	);
 }
 
@@ -80,6 +83,7 @@ export function CommandPalette({
 		Array<SessionSearchTarget & { snippet: string; role: "user" | "assistant" }>
 	>([]);
 	const [searchingContent, setSearchingContent] = useState(false);
+	const { t } = useTranslation();
 	const requestRef = useRef(0);
 
 	useEffect(() => {
@@ -153,7 +157,7 @@ export function CommandPalette({
 							sessionId: session?.id ?? match.sessionId,
 							projectId: result.value.project.id,
 							sessionPath: match.sessionPath,
-							title: session?.title ?? "会话",
+							title: session?.title ?? t("commandPalette.sessionFallback"),
 							snippet: match.snippet,
 							role: match.role,
 						};
@@ -167,7 +171,7 @@ export function CommandPalette({
 			disposed = true;
 			window.clearTimeout(timer);
 		};
-	}, [catalog, open, projects, query]);
+	}, [catalog, open, projects, query, t]);
 
 	const normalized = query.trim().toLocaleLowerCase();
 	const projectById = useMemo(
@@ -235,11 +239,11 @@ export function CommandPalette({
 						setSearchingContent(true);
 					}
 				}}
-				placeholder="搜索项目、会话或消息…"
+				placeholder={t("commandPalette.placeholder")}
 			/>
 			{!hasResults && !searchingContent ? (
 				<div className="flex flex-1 items-center justify-center px-4 text-sm text-muted-foreground">
-					没有找到相关内容
+					{t("commandPalette.noResults")}
 				</div>
 			) : (
 				<CommandList
@@ -248,7 +252,7 @@ export function CommandPalette({
 					viewportClassName="max-h-none h-full"
 				>
 					{projectResults.length > 0 ? (
-						<CommandGroup heading="项目">
+						<CommandGroup heading={t("commandPalette.projectGroup")}>
 							{projectResults.map((project) => (
 								<CommandItem
 									key={`project:${project.id}`}
@@ -275,7 +279,13 @@ export function CommandPalette({
 						</CommandGroup>
 					) : null}
 					{sessionResults.length > 0 ? (
-						<CommandGroup heading={normalized ? "会话" : "最近会话"}>
+						<CommandGroup
+							heading={
+								normalized
+									? t("commandPalette.sessionGroup")
+									: t("commandPalette.recentSessions")
+							}
+						>
 							{sessionResults.map((session) => (
 								<CommandItem
 									key={`session:${session.projectId}:${session.id}`}
@@ -303,10 +313,11 @@ export function CommandPalette({
 											) : null}
 										</div>
 										<Hint
-											label={`${projectById.get(session.projectId)?.name ?? "项目"}${session.preview ? ` · ${session.preview}` : ""}`}
+											label={`${projectById.get(session.projectId)?.name ?? t("commandPalette.projectFallback")}${session.preview ? ` · ${session.preview}` : ""}`}
 										>
 											<div className="truncate text-2xs text-muted-foreground">
-												{projectById.get(session.projectId)?.name ?? "项目"}
+												{projectById.get(session.projectId)?.name ??
+													t("commandPalette.projectFallback")}
 												{session.preview ? ` · ${session.preview}` : ""}
 											</div>
 										</Hint>
@@ -316,7 +327,7 @@ export function CommandPalette({
 						</CommandGroup>
 					) : null}
 					{contentResults.length > 0 ? (
-						<CommandGroup heading="消息内容">
+						<CommandGroup heading={t("commandPalette.messageGroup")}>
 							{contentResults.map((result) => (
 								<CommandItem
 									key={`content:${result.projectId}:${result.sessionPath}:${result.role}:${result.snippet}`}
@@ -330,7 +341,9 @@ export function CommandPalette({
 											<div className="truncate text-xs font-medium text-foreground/90">
 												{result.title}
 												<span className="ml-2 font-normal text-muted-foreground">
-													{result.role === "user" ? "你" : "Agent"}
+													{result.role === "user"
+														? t("commandPalette.user")
+														: t("common.agent")}
 												</span>
 											</div>
 										</Hint>

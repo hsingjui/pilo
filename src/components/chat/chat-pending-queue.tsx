@@ -1,4 +1,5 @@
 import { Pencil, Send } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import type { ConversationState } from "@/lib/conversation-types";
 import {
@@ -27,6 +28,7 @@ export function ChatPendingQueue({
 	onEdit,
 	onSendNow,
 }: ChatPendingQueueProps) {
+	const { t } = useTranslation();
 	const queued = items.filter(
 		(item): item is PendingQueueItem => item.queueKind !== undefined,
 	);
@@ -34,11 +36,14 @@ export function ChatPendingQueue({
 
 	return (
 		<NoticeCard className="overflow-hidden text-muted-foreground">
-			<NoticeCardHeader title="待处理消息" count={queued.length} />
+			<NoticeCardHeader
+				title={t("chat.pendingMessages")}
+				count={queued.length}
+			/>
 			<div className="max-h-[min(25vh,240px)] divide-y divide-border/30 overflow-y-auto">
 				{queued.map((item) => {
 					const imageLabel = item.images?.length
-						? `${item.images.length} 张图片`
+						? t("chat.queuedImages", { count: item.images.length })
 						: "";
 					const label = item.text || imageLabel;
 					return (
@@ -47,7 +52,9 @@ export function ChatPendingQueue({
 							className="flex min-w-0 items-center gap-2 px-3 py-2"
 						>
 							<span className="shrink-0 text-2xs">
-								{item.queueKind === "steer" ? "调整" : "稍后"}
+								{item.queueKind === "steer"
+									? t("chat.adjust")
+									: t("chat.queuedFollowUp")}
 							</span>
 							<Hint label={label}>
 								<span className="min-w-0 flex-1 truncate text-foreground/80">
@@ -62,13 +69,13 @@ export function ChatPendingQueue({
 											variant="ghost"
 											size="icon"
 											className="size-7 rounded-md"
-											aria-label="取回编辑"
+											aria-label={t("chat.retrieveEdit")}
 											onClick={() => onEdit?.(item)}
 										>
 											<Pencil className="size-3.5" />
 										</Button>
 									</TooltipTrigger>
-									<TooltipContent>取回编辑</TooltipContent>
+									<TooltipContent>{t("chat.retrieveEdit")}</TooltipContent>
 								</Tooltip>
 								<Tooltip>
 									<TooltipTrigger asChild>
@@ -77,13 +84,13 @@ export function ChatPendingQueue({
 											variant="ghost"
 											size="icon"
 											className="size-7 rounded-md"
-											aria-label="立即发送"
+											aria-label={t("chat.interruptSend")}
 											onClick={() => onSendNow?.(item)}
 										>
 											<Send className="size-3.5" />
 										</Button>
 									</TooltipTrigger>
-									<TooltipContent>打断当前 Agent 并立即发送</TooltipContent>
+									<TooltipContent>{t("chat.interruptSend")}</TooltipContent>
 								</Tooltip>
 							</div>
 						</div>

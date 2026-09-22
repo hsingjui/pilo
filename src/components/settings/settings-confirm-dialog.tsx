@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/ui";
 import {
@@ -29,12 +30,14 @@ export function SettingsConfirmDialog({
 	title,
 	description,
 	confirmLabel,
-	busyLabel = "处理中…",
-	busy = false,
+	busy,
+	busyLabel,
 	destructive = false,
 	onOpenChange,
 	onConfirm,
 }: SettingsConfirmDialogProps) {
+	const { t } = useTranslation();
+	const effectiveBusyLabel = busyLabel ?? t("common.processing");
 	return (
 		<Dialog
 			open={open}
@@ -61,7 +64,7 @@ export function SettingsConfirmDialog({
 						disabled={busy}
 						onClick={() => onOpenChange(false)}
 					>
-						取消
+						{t("common.cancel")}
 					</Button>
 					<Button
 						variant={destructive ? "destructive" : "default"}
@@ -70,7 +73,7 @@ export function SettingsConfirmDialog({
 						disabled={busy}
 						onClick={onConfirm}
 					>
-						{busy ? busyLabel : confirmLabel}
+						{busy ? effectiveBusyLabel : confirmLabel}
 					</Button>
 				</DialogFooter>
 			</DialogContentWithoutClose>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { createChatSessionClient } from "@/lib/chat-session-client";
@@ -84,6 +85,7 @@ export function useChatSessionConfig({
 	session,
 	client,
 }: UseChatSessionConfigOptions) {
+	const { t } = useTranslation();
 	const initialCachedModels = getCachedProjectPiModels(
 		session.projectRecord.id,
 	);
@@ -374,7 +376,7 @@ export function useChatSessionConfig({
 				} catch (error) {
 					if (modelRequestRef.current !== requestId) return;
 					setSelectedModel(previousModel);
-					toast.error("无法切换模型", {
+					toast.error(t("chat.modelSwitchFailed"), {
 						description: runtimeErrorMessage(error),
 					});
 				} finally {
@@ -388,6 +390,7 @@ export function useChatSessionConfig({
 			selectedModel,
 			selectedThinkingLevel,
 			session.sessionPath,
+			t,
 		],
 	);
 
@@ -446,7 +449,7 @@ export function useChatSessionConfig({
 				if (modelRequestRef.current !== requestId) return;
 				setSelectedModel(previousModel);
 				setSelectedThinkingLevel(previousThinkingLevel);
-				toast.error("无法快速切换模型", {
+				toast.error(t("chat.quickModelSwitchFailed"), {
 					description: runtimeErrorMessage(error),
 				});
 			} finally {
@@ -462,6 +465,7 @@ export function useChatSessionConfig({
 		selectedThinkingLevel,
 		session.projectRecord.id,
 		session.sessionPath,
+		t,
 	]);
 
 	const loadThinkingLevels = useCallback(async () => {
@@ -480,7 +484,7 @@ export function useChatSessionConfig({
 			setThinkingLevels(levels.levels);
 			setSelectedThinkingLevel(state.thinkingLevel);
 		} catch (error) {
-			toast.error("无法读取思考等级", {
+			toast.error(t("chat.readReasoningFailed"), {
 				description: runtimeErrorMessage(error),
 			});
 		} finally {
@@ -492,6 +496,7 @@ export function useChatSessionConfig({
 		session.sessionPath,
 		thinkingChanging,
 		thinkingLoading,
+		t,
 	]);
 
 	const handleThinkingChange = useCallback(
@@ -519,7 +524,7 @@ export function useChatSessionConfig({
 					setSelectedThinkingLevel(state.thinkingLevel);
 				} catch (error) {
 					setSelectedThinkingLevel(previous);
-					toast.error("无法切换思考等级", {
+					toast.error(t("chat.reasoningSwitchFailed"), {
 						description: runtimeErrorMessage(error),
 					});
 				} finally {
@@ -533,6 +538,7 @@ export function useChatSessionConfig({
 			session.sessionPath,
 			thinkingChanging,
 			thinkingLevels,
+			t,
 		],
 	);
 

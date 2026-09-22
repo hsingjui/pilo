@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { ChatSession } from "@/components/chat/chat-page-utils";
 import type {
@@ -77,6 +78,7 @@ export function useChatRuntime({
 	refreshSessionState,
 	refreshSessionStats,
 }: UseChatRuntimeOptions) {
+	const { t } = useTranslation();
 	const identifiedRef = useRef(onSessionIdentified);
 	useEffect(() => {
 		identifiedRef.current = onSessionIdentified;
@@ -281,7 +283,7 @@ export function useChatRuntime({
 			try {
 				const subscription = runtimeListenerRef.current;
 				if (!subscription) {
-					throw new Error("Pi Runtime 事件通道尚未就绪。");
+					throw new Error(t("errors.piEventChannel"));
 				}
 				await subscription;
 				const snapshot = await client.ensure();
@@ -323,6 +325,7 @@ export function useChatRuntime({
 			session.projectRecord.id,
 			session.temporary,
 			session.title,
+			t,
 		],
 	);
 

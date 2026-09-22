@@ -1,3 +1,5 @@
+import { i18n } from "../i18n/index.ts";
+
 export type AppErrorCode =
 	| "pi_not_found"
 	| "connection_unavailable"
@@ -18,11 +20,21 @@ export type AppErrorArea =
 
 export type AppErrorAction = "retry" | "reconnect" | "settings" | "none";
 
+export type AppErrorMessageKey =
+	| "errors.requestFailed"
+	| "errors.piNotFound"
+	| "errors.authenticationFailed"
+	| "errors.timeout"
+	| "errors.pathNotFound"
+	| "errors.sessionUnavailable"
+	| "errors.connectionUnavailable"
+	| "errors.runtimeFailed";
+
 export type AppError = {
 	code: AppErrorCode;
 	area: AppErrorArea;
 	action: AppErrorAction;
-	message: string;
+	messageKey: AppErrorMessageKey | null;
 	detail?: string;
 	retryable: boolean;
 };
@@ -35,18 +47,18 @@ function rawErrorMessage(error: unknown): string {
 		const message = Reflect.get(error, "message");
 		if (typeof message === "string" && message.trim()) return message.trim();
 	}
-	return "请求失败";
+	return "Request failed";
 }
 
 function appError(
 	code: AppErrorCode,
 	area: AppErrorArea,
 	action: AppErrorAction,
-	message: string,
+	messageKey: AppErrorMessageKey | null,
 	detail: string,
 	retryable: boolean,
 ): AppError {
-	return { code, area, action, message, detail, retryable };
+	return { code, area, action, messageKey, detail, retryable };
 }
 
 export function toAppError(error: unknown): AppError {
@@ -61,7 +73,7 @@ export function toAppError(error: unknown): AppError {
 			"pi_not_found",
 			"runtime",
 			"settings",
-			"未检测到可用的 Pi。请确认当前环境已安装 Pi，然后重试。",
+			"errors.piNotFound",
 			detail,
 			false,
 		);
@@ -78,7 +90,7 @@ export function toAppError(error: unknown): AppError {
 			"authentication_failed",
 			"connection",
 			"reconnect",
-			"连接认证失败。请检查密码或私钥后重试。",
+			"errors.authenticationFailed",
 			detail,
 			true,
 		);
@@ -92,7 +104,7 @@ export function toAppError(error: unknown): AppError {
 			"timeout",
 			"runtime",
 			"retry",
-			"请求超时。请重试。",
+			"errors.timeout",
 			detail,
 			true,
 		);
@@ -105,7 +117,7 @@ export function toAppError(error: unknown): AppError {
 			"path_not_found",
 			"session",
 			"none",
-			"目标路径不存在或不可访问。请确认路径后重试。",
+			"errors.pathNotFound",
 			detail,
 			false,
 		);
@@ -120,7 +132,7 @@ export function toAppError(error: unknown): AppError {
 			"session_unavailable",
 			"session",
 			"retry",
-			"会话运行环境当前不可用。请重试。",
+			"errors.sessionUnavailable",
 			detail,
 			true,
 		);
@@ -136,16 +148,16 @@ export function toAppError(error: unknown): AppError {
 			"connection_unavailable",
 			"connection",
 			"reconnect",
-			"连接当前不可用。请检查连接设置后重试。",
+			"errors.connectionUnavailable",
 			detail,
 			true,
 		);
 	}
 	if (text.includes("model") || text.includes("provider")) {
-		return appError("unknown", "model", "retry", detail, detail, true);
+		return appError("unknown", "model", "retry", null, detail, true);
 	}
 	if (text.includes("extension") || text.includes("mcp")) {
-		return appError("unknown", "extension", "retry", detail, detail, true);
+		return appError("unknown", "extension", "retry", null, detail, true);
 	}
 	if (
 		text.includes("pi runtime") ||
@@ -156,22 +168,28 @@ export function toAppError(error: unknown): AppError {
 			"runtime_failed",
 			"runtime",
 			"retry",
-			"Pi Runtime 运行失败。请重试，仍失败请查看诊断。",
+			"errors.runtimeFailed",
 			detail,
 			true,
 		);
 	}
-	return appError("unknown", "unknown", "retry", detail, detail, true);
+	return appError("unknown", "unknown", "retry", null, detail, true);
+}
+
+export function appErrorMessage(error: AppError): string {
+	return error.messageKey
+		? i18n.t(error.messageKey)
+		: (error.detail ?? i18n.t("errors.requestFailed"));
 }
 
 export function appErrorActionLabel(error: AppError): string | null {
 	switch (error.action) {
 		case "retry":
-			return "重试";
+			return i18n.t("errors.retry");
 		case "reconnect":
-			return "重新连接";
+			return i18n.t("errors.reconnect");
 		case "settings":
-			return "检查设置";
+			return i18n.t("errors.checkSettings");
 		case "none":
 			return null;
 	}
@@ -179,5 +197,5 @@ export function appErrorActionLabel(error: AppError): string | null {
 
 /** 面向用户的错误文案：只说能做什么，原始异常留在 AppError.detail 里。 */
 export function userErrorMessage(error: unknown): string {
-	return toAppError(error).message;
+	return appErrorMessage(toAppError(error));
 }

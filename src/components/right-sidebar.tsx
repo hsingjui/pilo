@@ -5,6 +5,7 @@ import {
 	useState,
 	type RefObject,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { Panel, type PanelImperativeHandle } from "react-resizable-panels";
 import { FileCode, GitBranch, PanelRight, RefreshCw } from "lucide-react";
 
@@ -34,12 +35,13 @@ function fileStatusLabel(file: GitFileStatus, mode: DiffMode) {
 }
 
 function DiffViewer({ diff }: { diff: string }) {
+	const { t } = useTranslation();
 	if (!diff) {
 		return (
 			<EmptyState
 				variant="compact"
-				title="没有可显示的 diff"
-				description="该文件在当前视图下没有文本差异。"
+				title={t("file.noDiff")}
+				description={t("file.noDiffDescription")}
 			/>
 		);
 	}
@@ -85,6 +87,7 @@ export function RightSidebar({
 	project?: Project;
 	onOpenFile?: (path: string) => void;
 }) {
+	const { t } = useTranslation();
 	const [view, setView] = useState<SidebarView>("changes");
 	const [status, setStatus] = useState<GitStatus | null>(null);
 	const [loadState, setLoadState] = useState<LoadState>("idle");
@@ -149,7 +152,12 @@ export function RightSidebar({
 				.catch((loadError) => {
 					if (!cancelled) {
 						setDiff(
-							`无法读取 diff：${loadError instanceof Error ? loadError.message : String(loadError)}`,
+							t("file.readDiffFailed", {
+								message:
+									loadError instanceof Error
+										? loadError.message
+										: String(loadError),
+							}),
 						);
 					}
 				})
@@ -161,7 +169,7 @@ export function RightSidebar({
 			cancelled = true;
 			window.clearTimeout(timer);
 		};
-	}, [effectiveSelectedPath, mode, project]);
+	}, [effectiveSelectedPath, mode, project, t]);
 
 	return (
 		<Panel
@@ -197,12 +205,12 @@ export function RightSidebar({
 									onClick={() => setView(value)}
 								>
 									{value === "changes"
-										? "变更"
+										? t("file.changes")
 										: value === "files"
-											? "文件"
+											? t("file.files")
 											: value === "agents"
-												? "Agents"
-												: "Preview"}
+												? t("file.agents")
+												: t("file.preview")}
 								</button>
 							),
 						)}
@@ -218,7 +226,7 @@ export function RightSidebar({
 							variant="ghost"
 							size="icon"
 							className="ms-auto size-7"
-							aria-label="刷新 Git 状态"
+							aria-label={t("file.gitRefresh")}
 							onClick={() => void refresh()}
 							disabled={!project || loadState === "loading"}
 						>
@@ -236,7 +244,7 @@ export function RightSidebar({
 						variant="ghost"
 						size="icon"
 						className="size-7"
-						aria-label="收起右侧栏"
+						aria-label={t("file.collapseRightSidebar")}
 						onClick={() => panelRef.current?.collapse()}
 					>
 						<PanelRight className="size-4" />
@@ -249,8 +257,8 @@ export function RightSidebar({
 					) : (
 						<EmptyState
 							variant="compact"
-							title="未选择项目"
-							description="先选择项目。"
+							title={t("file.noProject")}
+							description={t("file.selectProjectFirst")}
 						/>
 					)
 				) : view === "preview" ? (
@@ -259,8 +267,8 @@ export function RightSidebar({
 					) : (
 						<EmptyState
 							variant="compact"
-							title="未选择项目"
-							description="先选择项目。"
+							title={t("file.noProject")}
+							description={t("file.selectProjectFirst")}
 						/>
 					)
 				) : view === "files" ? (
@@ -273,21 +281,21 @@ export function RightSidebar({
 					) : (
 						<EmptyState
 							variant="compact"
-							title="未选择项目"
-							description="先选择项目。"
+							title={t("file.noProject")}
+							description={t("file.selectProjectFirst")}
 						/>
 					)
 				) : !project ? (
 					<EmptyState
 						variant="compact"
-						title="未选择项目"
-						description="先选择项目。"
+						title={t("file.noProject")}
+						description={t("file.selectProjectFirst")}
 					/>
 				) : loadState === "error" ? (
 					<ErrorState
 						variant="compact"
-						title="无法读取 Git 状态"
-						description={error ?? "请检查当前项目是否为 Git 仓库。"}
+						title={t("file.gitReadFailed")}
+						description={error ?? t("file.gitRepoHint")}
 						onRetry={() => void refresh()}
 					/>
 				) : (
@@ -304,27 +312,29 @@ export function RightSidebar({
 									)}
 									onClick={() => setMode(value)}
 								>
-									{value === "working" ? "工作区" : "暂存"}
+									{value === "working"
+										? t("file.workingTree")
+										: t("file.staged")}
 								</button>
 							))}
 							<span className="ml-auto text-2xs tabular-nums text-muted-foreground">
-								{visibleFiles.length} 个文件
+								{t("file.fileCount", { count: visibleFiles.length })}
 							</span>
 						</div>
 						<Separator className="bg-sidebar-border" />
 						<div className="max-h-[38%] shrink-0 overflow-y-auto p-1.5">
 							{loadState === "loading" && !status ? (
 								<div className="px-2 py-4 text-center text-xs text-muted-foreground">
-									正在读取 Git 状态…
+									{t("file.readingGit")}
 								</div>
 							) : visibleFiles.length === 0 ? (
 								<EmptyState
 									variant="compact"
-									title="暂无变更"
+									title={t("file.noChanges")}
 									description={
 										mode === "working"
-											? "工作区没有未暂存变更。"
-											: "暂存区没有变更。"
+											? t("file.workingClean")
+											: t("file.stagedClean")
 									}
 								/>
 							) : (
@@ -356,7 +366,7 @@ export function RightSidebar({
 						<Separator className="bg-sidebar-border" />
 						<div className="flex min-h-0 flex-1 flex-col bg-background/40">
 							{effectiveSelectedPath ? (
-								<Hint label={onOpenFile ? "在编辑器中打开" : undefined}>
+								<Hint label={onOpenFile ? t("file.openInEditor") : undefined}>
 									<button
 										type="button"
 										className="shrink-0 truncate border-b border-sidebar-border px-3 py-2 text-left font-mono text-2xs text-muted-foreground transition-colors hover:text-foreground"

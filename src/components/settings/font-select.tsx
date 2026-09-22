@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Check, ChevronsUpDown } from "lucide-react";
 
 import type { FontOption } from "@/lib/font-settings";
@@ -43,6 +44,7 @@ export function FontSelect({
 	onChange: (value: string) => void;
 	className?: string;
 }) {
+	const { t } = useTranslation();
 	const [open, setOpen] = useState(false);
 	const selected = useMemo(
 		() =>
@@ -51,6 +53,8 @@ export function FontSelect({
 				.find((option) => option.value === value),
 		[groups, value],
 	);
+	const optionLabel = (option: FontOption) =>
+		option.labelKey ? t(option.labelKey) : option.label;
 
 	return (
 		<Popover modal open={open} onOpenChange={setOpen}>
@@ -60,7 +64,9 @@ export function FontSelect({
 					aria-expanded={open}
 					className={cn(TRIGGER_CLASS, "w-[200px]", className)}
 				>
-					<span className="truncate">{selected?.label ?? value}</span>
+					<span className="truncate">
+						{selected ? optionLabel(selected) : value}
+					</span>
 					<ChevronsUpDown className="size-4 shrink-0 opacity-50" />
 				</button>
 			</PopoverTrigger>
@@ -70,12 +76,12 @@ export function FontSelect({
 			>
 				<Command>
 					<CommandInput
-						placeholder="搜索字体…"
+						placeholder={t("settings.searchFonts")}
 						wrapperClassName="h-9"
 						className="text-sm"
 					/>
 					<CommandList>
-						<CommandEmpty>未找到匹配字体</CommandEmpty>
+						<CommandEmpty>{t("settings.noMatchingFonts")}</CommandEmpty>
 						{groups
 							.filter((group) => group.options.length > 0)
 							.map((group) => (
@@ -84,7 +90,7 @@ export function FontSelect({
 										<CommandItem
 											key={option.value}
 											value={option.value}
-											keywords={[option.label]}
+											keywords={[optionLabel(option)]}
 											onSelect={() => {
 												onChange(option.value);
 												setOpen(false);
@@ -98,7 +104,7 @@ export function FontSelect({
 														: undefined
 												}
 											>
-												{option.label}
+												{optionLabel(option)}
 											</span>
 											<Check
 												className={cn(

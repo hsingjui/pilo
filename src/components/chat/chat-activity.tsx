@@ -1,4 +1,6 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
 	BookOpen,
 	ChevronRight,
@@ -240,21 +242,21 @@ function ToolIcon({
 	}
 }
 
-function toolLabel(toolName: string) {
+function toolLabel(t: TFunction, toolName: string) {
 	switch (toolName.toLowerCase()) {
 		case "bash":
 		case "execute":
-			return "运行";
+			return t("chat.run");
 		case "read":
-			return "读取";
+			return t("chat.read");
 		case "write":
-			return "写入";
+			return t("chat.write");
 		case "edit":
-			return "编辑";
+			return t("chat.edit");
 		case "search":
 		case "grep":
 		case "find":
-			return "搜索";
+			return t("chat.search");
 		default:
 			return toolName;
 	}
@@ -312,6 +314,7 @@ function ActivityProcessStep({
 }
 
 function ThinkingActivityView({ activity }: { activity: ThinkingActivity }) {
+	const { t } = useTranslation();
 	const running = activity.status === "running";
 	return (
 		<ActivityProcessStep
@@ -337,13 +340,14 @@ function ThinkingActivityView({ activity }: { activity: ThinkingActivity }) {
 					)}
 				/>
 			) : (
-				<span>思考中…</span>
+				<span>{t("chat.thinking")}</span>
 			)}
 		</ActivityProcessStep>
 	);
 }
 
 function ToolDetail({ activity }: { activity: ToolCallActivity }) {
+	const { t } = useTranslation();
 	const hasArgs = activity.args !== undefined && activity.args !== null;
 	const hasResult = activity.result !== undefined && activity.result !== null;
 	const diff =
@@ -379,7 +383,7 @@ function ToolDetail({ activity }: { activity: ToolCallActivity }) {
 						<img
 							key={image.key}
 							src={`data:${image.mimeType};base64,${image.data}`}
-							alt="工具结果图像"
+							alt={t("chat.toolResultImage")}
 							className="max-h-80 max-w-full rounded-md object-contain outline-1 outline-black/10 dark:outline-white/10"
 						/>
 					))}
@@ -395,6 +399,7 @@ function ToolCallActivityView({
 	expansionKey: string;
 }) {
 	const running = activity.status === "running";
+	const { t } = useTranslation();
 	// 详情默认收起（含运行中），点击行切换；key 含 status，完成后 remount 自动收起
 	const [open, setOpen] = useChatExpansionState(expansionKey, false);
 	const preview = toolPreview(activity);
@@ -436,7 +441,7 @@ function ToolCallActivityView({
 					)}
 				/>
 				<span className="min-w-0 flex-1 truncate">
-					<span>{toolLabel(activity.toolName)}</span>
+					<span>{toolLabel(t, activity.toolName)}</span>
 					{previewLabel ? (
 						<Hint label={preview ?? undefined}>
 							<span className="ml-1.5 font-mono text-2xs font-normal text-muted-foreground">
@@ -456,7 +461,7 @@ function ToolCallActivityView({
 	);
 }
 
-function runningActivityLabel(activity: AssistantActivity[]) {
+function runningActivityLabel(t: TFunction, activity: AssistantActivity[]) {
 	let current: AssistantActivity | undefined;
 	for (let index = activity.length - 1; index >= 0; index -= 1) {
 		if (activity[index].status === "running") {
@@ -464,25 +469,27 @@ function runningActivityLabel(activity: AssistantActivity[]) {
 			break;
 		}
 	}
-	if (current?.type === "tool") return `正在${toolLabel(current.toolName)}…`;
-	if (current?.type === "thinking") return "思考中…";
-	return "正在处理…";
+	if (current?.type === "tool")
+		return t("chat.workingTool", { tool: toolLabel(t, current.toolName) });
+	if (current?.type === "thinking") return t("chat.thinking");
+	return t("chat.processing");
 }
 
 function activitySummaryLabel(
+	t: TFunction,
 	summary: ReturnType<typeof summarizeAssistantActivity>,
 ) {
 	const parts: string[] = [];
-	if (summary.hasThought) parts.push("思考过程");
+	if (summary.hasThought) parts.push(t("chat.thoughtProcess"));
 	if (summary.readFileCount > 0)
-		parts.push(`读取 ${summary.readFileCount} 个文件`);
+		parts.push(t("chat.readFiles", { count: summary.readFileCount }));
 	if (summary.createFileCount > 0)
-		parts.push(`新增 ${summary.createFileCount} 个文件`);
+		parts.push(t("chat.createdFiles", { count: summary.createFileCount }));
 	if (summary.editFileCount > 0)
-		parts.push(`修改 ${summary.editFileCount} 个文件`);
+		parts.push(t("chat.editedFiles", { count: summary.editFileCount }));
 	if (summary.commandCount > 0)
-		parts.push(`执行 ${summary.commandCount} 个命令`);
-	return parts.join(" · ") || "已完成";
+		parts.push(t("chat.executedCommands", { count: summary.commandCount }));
+	return parts.join(" · ") || t("chat.completed");
 }
 
 export function AssistantActivityView({
@@ -496,6 +503,7 @@ export function AssistantActivityView({
 	followedByText?: boolean;
 	durationMs?: number;
 }) {
+	const { t } = useTranslation();
 	const { collapseCompletedActivity, showWorkDuration } = usePreferences();
 	const running = activity.some((item) => item.status === "running");
 	const initiallyOpen = shouldInitiallyOpenAssistantActivity({
@@ -504,10 +512,14 @@ export function AssistantActivityView({
 	});
 	const durationLabel =
 		!running && showWorkDuration && durationMs !== undefined
-			? formatWorkDuration(durationMs)
+			? formatWorkDuration(durationMs, {
+					hour: t("common.hour"),
+					minute: t("common.minute"),
+					second: t("common.second"),
+				})
 			: "";
 	const summary = running ? null : summarizeAssistantActivity(activity);
-	const summaryLabel = summary ? activitySummaryLabel(summary) : "";
+	const summaryLabel = summary ? activitySummaryLabel(t, summary) : "";
 	const [groupOpen, setGroupOpen] = useChatExpansionState(
 		`${expansionKey}:group`,
 		initiallyOpen,
@@ -556,10 +568,12 @@ export function AssistantActivityView({
 				/>
 				<span className="min-w-0 flex-1 truncate">
 					{running ? (
-						runningActivityLabel(activity)
+						runningActivityLabel(t, activity)
 					) : durationLabel ? (
 						<>
-							<span className="text-foreground/75">工作了 {durationLabel}</span>
+							<span className="text-foreground/75">
+								{t("chat.workDuration", { duration: durationLabel })}
+							</span>
 							<span className="mx-1 text-muted-foreground/60">·</span>
 							<span>{summaryLabel}</span>
 						</>

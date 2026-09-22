@@ -301,7 +301,9 @@ export function upsertToolContent(
 	return next;
 }
 
-export function getAssistantStreamingLabel({
+export type AssistantStreamingState = "starting" | "thinking" | "processing";
+
+export function getAssistantStreamingState({
 	text,
 	activity,
 	streaming,
@@ -309,14 +311,14 @@ export function getAssistantStreamingLabel({
 	text: string;
 	activity?: AssistantActivity[];
 	streaming?: boolean;
-}): string | null {
+}): AssistantStreamingState | null {
 	if (!streaming) return null;
 	const items = activity ?? [];
-	if (!text && items.length === 0) return "启动中…";
+	if (!text && items.length === 0) return "starting";
 	if (
 		items.some((item) => item.type === "thinking" && item.status === "running")
 	) {
-		return "思考中";
+		return "thinking";
 	}
-	return "处理中";
+	return "processing";
 }
