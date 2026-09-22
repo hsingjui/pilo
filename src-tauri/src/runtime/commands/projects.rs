@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 
-use crate::domain::{DiscoveredProject, Project, ProjectModelCache};
+use crate::domain::{DiscoveredProject, Project, ProjectModelCache, ProjectPiRuntime};
 
 use super::super::{
     PiloRuntime,
@@ -51,10 +51,87 @@ pub async fn project_add(
     runtime: State<'_, PiloRuntime>,
     connection_id: String,
     path: String,
+    pi_runtime: ProjectPiRuntime,
 ) -> Result<Project, String> {
-    let project = project::add(&app, &runtime.servers, connection_id, path).await?;
+    let project = project::add(&app, &runtime.servers, connection_id, path, pi_runtime).await?;
     runtime.chat_sessions.open_project(&project.id).await?;
     Ok(project)
+}
+
+#[tauri::command]
+pub async fn project_set_pi_runtime(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+    pi_runtime: ProjectPiRuntime,
+) -> Result<Project, String> {
+    let previous = project::get(&app, &id)?;
+    project::validate_pi_runtime(&previous.connection, pi_runtime)?;
+    if previous.pi_runtime == pi_runtime {
+        return Ok(previous);
+    }
+
+    runtime.chat_sessions.stop_project(&id).await?;
+    runtime
+        .parallel_agents
+        .lock()
+        .await
+        .remove_project(&runtime.servers, &previous)
+        .await?;
+    let watcher_was_running = runtime.session_watchers.lock().await.stop(&id).await;
+    let updated = match project::set_pi_runtime(&app, &id, pi_runtime) {
+        Ok(updated) => updated,
+        Err(error) => {
+            if watcher_was_running {
+                let restore = runtime
+                    .session_watchers
+                    .lock()
+                    .await
+                    .start(Arc::clone(&runtime.servers), app.clone(), previous.clone())
+                    .await;
+                if let Err(restore_error) = restore {
+                    return Err(format!(
+                        "failed to change Pi runtime: {error}; restoring the existing session watcher also failed: {restore_error}"
+                    ));
+                }
+            }
+            return Err(error);
+        }
+    };
+
+    if watcher_was_running {
+        let restart = runtime
+            .session_watchers
+            .lock()
+            .await
+            .start(Arc::clone(&runtime.servers), app.clone(), updated.clone())
+            .await;
+        if let Err(error) = restart {
+            return match project::set_pi_runtime(&app, &id, previous.pi_runtime) {
+                Ok(rolled_back) => {
+                    let restore = runtime
+                        .session_watchers
+                        .lock()
+                        .await
+                        .start(Arc::clone(&runtime.servers), app, rolled_back)
+                        .await;
+                    match restore {
+                        Ok(()) => Err(format!(
+                            "failed to restart session watcher after changing Pi runtime; change was rolled back: {error}"
+                        )),
+                        Err(restore_error) => Err(format!(
+                            "failed to restart session watcher after changing Pi runtime: {error}; the runtime change was rolled back, but restoring the previous watcher also failed: {restore_error}"
+                        )),
+                    }
+                }
+                Err(rollback_error) => Err(format!(
+                    "failed to restart session watcher after changing Pi runtime: {error}; rollback also failed: {rollback_error}"
+                )),
+            };
+        }
+    }
+
+    Ok(updated)
 }
 
 #[tauri::command]

@@ -7,7 +7,7 @@ use super::super::{
     PiloRuntime,
     chat_sessions::ChatSessionLaunch,
     events::{RuntimeEventBus, RuntimeEventEnvelope, TauriEventSink},
-    project,
+    pi_workspace, project,
     server_pi::PiLaunchOptions,
     session_snapshot::PiSessionSnapshot,
 };
@@ -59,18 +59,22 @@ pub async fn chat_session_prepare(
     extensions: Option<Vec<String>>,
 ) -> Result<PiSessionSnapshot, String> {
     let project = project::get(&app, &project_id)?;
-    reject_external_session_owner(&runtime, &project, session_path.as_deref()).await?;
+    let profile = pi_workspace::resolve_pi_runtime(&app, &project, extensions.unwrap_or_default())?;
+    reject_external_session_owner(&runtime, &profile.project, session_path.as_deref()).await?;
     runtime
         .chat_sessions
         .prepare(
             Arc::clone(&runtime.servers),
             app,
-            project,
+            profile.project,
             session_key,
             ChatSessionLaunch {
                 session_path,
                 no_session,
-                extensions: extensions.unwrap_or_default(),
+                extensions: profile.extensions,
+                disable_builtin_tools: profile.disable_builtin_tools,
+                disable_extension_discovery: profile.disable_extension_discovery,
+                disable_context_files: profile.disable_context_files,
             },
         )
         .await
@@ -87,18 +91,22 @@ pub async fn chat_session_start(
     extensions: Option<Vec<String>>,
 ) -> Result<PiSessionSnapshot, String> {
     let project = project::get(&app, &project_id)?;
-    reject_external_session_owner(&runtime, &project, session_path.as_deref()).await?;
+    let profile = pi_workspace::resolve_pi_runtime(&app, &project, extensions.unwrap_or_default())?;
+    reject_external_session_owner(&runtime, &profile.project, session_path.as_deref()).await?;
     runtime
         .chat_sessions
         .ensure(
             Arc::clone(&runtime.servers),
             app,
-            project,
+            profile.project,
             session_key,
             ChatSessionLaunch {
                 session_path,
                 no_session,
-                extensions: extensions.unwrap_or_default(),
+                extensions: profile.extensions,
+                disable_builtin_tools: profile.disable_builtin_tools,
+                disable_extension_discovery: profile.disable_extension_discovery,
+                disable_context_files: profile.disable_context_files,
             },
         )
         .await
@@ -148,6 +156,7 @@ pub async fn project_start_pi(
 ) -> Result<PiSessionSnapshot, String> {
     let project = project::get(&app, &id)?;
     project::touch(&app, &project.id)?;
+    let profile = pi_workspace::resolve_pi_runtime(&app, &project, Vec::new())?;
     runtime
         .project_pi_session
         .lock()
@@ -155,8 +164,14 @@ pub async fn project_start_pi(
         .spawn(
             Arc::clone(&runtime.servers),
             TauriEventSink::new(app),
-            &project,
-            PiLaunchOptions::default(),
+            &profile.project,
+            PiLaunchOptions {
+                extensions: profile.extensions,
+                disable_builtin_tools: profile.disable_builtin_tools,
+                disable_extension_discovery: profile.disable_extension_discovery,
+                disable_context_files: profile.disable_context_files,
+                ..PiLaunchOptions::default()
+            },
         )
         .await
 }

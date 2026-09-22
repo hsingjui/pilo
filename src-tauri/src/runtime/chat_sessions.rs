@@ -41,12 +41,18 @@ pub struct ChatSessionLaunch {
     pub session_path: Option<String>,
     pub no_session: bool,
     pub extensions: Vec<String>,
+    pub disable_builtin_tools: bool,
+    pub disable_extension_discovery: bool,
+    pub disable_context_files: bool,
 }
 
 struct ChatProcess {
     project_id: String,
     no_session: bool,
     extensions: Vec<String>,
+    disable_builtin_tools: bool,
+    disable_extension_discovery: bool,
+    disable_context_files: bool,
     session: Mutex<ServerPiSession>,
     session_path: Arc<StdMutex<Option<String>>>,
     control_reply: Arc<StdMutex<Option<InitializationReply>>>,
@@ -235,6 +241,9 @@ impl ChatSessions {
                             project_id: project.id.clone(),
                             no_session: launch.no_session,
                             extensions: launch.extensions.clone(),
+                            disable_builtin_tools: launch.disable_builtin_tools,
+                            disable_extension_discovery: launch.disable_extension_discovery,
+                            disable_context_files: launch.disable_context_files,
                             session: Mutex::new(ServerPiSession::default()),
                             session_path: Arc::new(StdMutex::new(session_path.cloned())),
                             control_reply: Arc::new(StdMutex::new(None)),
@@ -254,6 +263,12 @@ impl ChatSessions {
         }
         if process.extensions != launch.extensions {
             return Err("session extensions changed while running".to_owned());
+        }
+        if process.disable_builtin_tools != launch.disable_builtin_tools
+            || process.disable_extension_discovery != launch.disable_extension_discovery
+            || process.disable_context_files != launch.disable_context_files
+        {
+            return Err("session Pi isolation mode changed while running".to_owned());
         }
         if let Some(path) = session_path {
             let mut current = process
@@ -316,6 +331,9 @@ impl ChatSessions {
                     session_path,
                     no_session: process.no_session,
                     extensions: process.extensions.clone(),
+                    disable_builtin_tools: process.disable_builtin_tools,
+                    disable_extension_discovery: process.disable_extension_discovery,
+                    disable_context_files: process.disable_context_files,
                     ..PiLaunchOptions::default()
                 },
             )

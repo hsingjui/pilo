@@ -62,6 +62,9 @@ pub struct PiLaunchOptions {
     pub session_path: Option<String>,
     pub no_session: bool,
     pub disable_resources: bool,
+    pub disable_builtin_tools: bool,
+    pub disable_extension_discovery: bool,
+    pub disable_context_files: bool,
     pub extensions: Vec<String>,
     pub provider: Option<String>,
     pub model: Option<String>,
@@ -490,6 +493,9 @@ impl ServerPiSession {
                     "thinking": options.thinking,
                     "systemPrompt": options.system_prompt,
                     "piExecutable": project.connection.pi_executable,
+                    "disableBuiltinTools": options.disable_builtin_tools,
+                    "disableExtensionDiscovery": options.disable_extension_discovery,
+                    "disableContextFiles": options.disable_context_files,
                 }),
             )
             .await
@@ -589,6 +595,7 @@ impl ServerPiSession {
             name: String::new(),
             path: launch.project.clone(),
             connection: launch.connection.clone(),
+            pi_runtime: crate::domain::ProjectPiRuntime::Workspace,
             metadata: crate::domain::ProjectMetadata {
                 cwd: launch.project.clone(),
                 git_branch: None,

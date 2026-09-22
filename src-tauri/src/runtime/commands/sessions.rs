@@ -12,12 +12,20 @@ use serde::{Deserialize, Serialize};
 use super::super::{
     PiloRuntime,
     events::{PiProcessState, RuntimeEvent, RuntimeEventSink},
-    project,
+    pi_workspace, project,
     server_pi::{PiLaunchOptions, ServerPiSession},
     session_history, session_index, storage,
 };
 
 const SESSION_NAMING_SYSTEM_PROMPT: &str = "Generate a concise title for a coding conversation from the user's first message. Return exactly one plain-text title with no quotes, markdown, explanation, prefix, or suffix. Use the same language as the user. Prefer at most 24 CJK characters or 60 Latin characters.";
+
+fn session_runtime_project(
+    app: &AppHandle,
+    project_id: &str,
+) -> Result<crate::domain::Project, String> {
+    let project = project::get(app, project_id)?;
+    pi_workspace::resolve_session_project(app, &project)
+}
 
 #[derive(Clone)]
 struct SessionNamingEventSink {
@@ -66,11 +74,12 @@ pub async fn session_generate_title(
 
     let (sender, mut receiver) = mpsc::unbounded_channel();
     let mut session = ServerPiSession::default();
+    let runtime_project = pi_workspace::resolve_session_project(&app, &project)?;
     session
         .spawn(
             Arc::clone(&runtime.servers),
             SessionNamingEventSink { sender },
-            &project,
+            &runtime_project,
             PiLaunchOptions {
                 no_session: true,
                 disable_resources: true,
@@ -307,7 +316,7 @@ pub async fn session_external_activity(
     runtime: State<'_, PiloRuntime>,
     project_id: String,
 ) -> Result<Vec<SessionExternalActivity>, String> {
-    let project = project::get(&app, &project_id)?;
+    let project = session_runtime_project(&app, &project_id)?;
     external_session_activities_for_project(&runtime, &project).await
 }
 
@@ -333,7 +342,7 @@ pub async fn session_search(
     if query.is_empty() {
         return Ok(Vec::new());
     }
-    let project = project::get(&app, &project_id)?;
+    let project = session_runtime_project(&app, &project_id)?;
     runtime
         .servers
         .request_typed(
@@ -362,7 +371,7 @@ pub async fn session_history(
     message_limit: Option<usize>,
     include_message_index: Option<bool>,
 ) -> Result<tauri::ipc::Response, String> {
-    let project = project::get(&app, &project_id)?;
+    let project = session_runtime_project(&app, &project_id)?;
     let expected_fingerprint =
         expected_session_fingerprint(expected_file_size, expected_file_mtime_ns)?;
     let serialized = if let Some(message_limit) = message_limit {
@@ -416,7 +425,7 @@ pub async fn session_history_image(
     expected_file_size: Option<u64>,
     expected_file_mtime_ns: Option<String>,
 ) -> Result<tauri::ipc::Response, String> {
-    let project = project::get(&app, &project_id)?;
+    let project = session_runtime_project(&app, &project_id)?;
     let expected_fingerprint =
         expected_session_fingerprint(expected_file_size, expected_file_mtime_ns)?;
     let bytes = session_history::read_history_image_bytes(
@@ -473,7 +482,7 @@ pub async fn session_delete(
     project_id: String,
     session_path: String,
 ) -> Result<SessionDeleteResult, String> {
-    let project = project::get(&app, &project_id)?;
+    let project = session_runtime_project(&app, &project_id)?;
     let db = storage::open(&app)?;
     let indexed = storage::get_session(&db, &session_path)?
         .ok_or_else(|| format!("session '{session_path}' is not indexed"))?;

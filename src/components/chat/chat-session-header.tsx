@@ -1,4 +1,5 @@
 import {
+	ChevronDown,
 	MessageSquareDashed,
 	PanelLeft,
 	PanelRight,
@@ -11,12 +12,22 @@ import {
 	TRAFFIC_LIGHT_GUTTER,
 } from "@/components/title-bar";
 import { cn } from "@/lib/utils";
+import type { Project } from "@/lib/projects";
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/ui";
 import type { ChatSession, ChatSessionRuntimeState } from "./chat-page-utils";
 
 export function SessionHeader({
 	session,
 	sessionState,
+	project,
+	projects,
+	onSwitchProject,
 	onOpenChanges,
 	onOpenTerminal,
 	terminalRunning = false,
@@ -29,6 +40,11 @@ export function SessionHeader({
 }: {
 	session?: ChatSession;
 	sessionState?: ChatSessionRuntimeState;
+	/** 落地页（新会话）模式：当前落点项目。 */
+	project?: Project | null;
+	/** 落地页（新会话）模式：可切换的项目列表。 */
+	projects?: Project[];
+	onSwitchProject?: (projectId: string) => void;
 	onOpenChanges?: () => void;
 	onOpenTerminal?: () => void;
 	terminalRunning?: boolean;
@@ -109,8 +125,54 @@ export function SessionHeader({
 						</span>
 					</div>
 				</div>
+			) : projects && projects.length > 0 ? (
+				/* 落地页没有会话：用项目下拉占据会话 tab 的同一位置，
+				   让用户看到并切换新会话的落点项目 */
+				<div
+					role="tablist"
+					aria-label="会话"
+					className="flex min-w-0 flex-1 items-center px-1"
+				>
+					<DropdownMenu>
+						<DropdownMenuTrigger asChild>
+							<button
+								type="button"
+								className="group flex h-8 w-fit max-w-[66.666667%] min-w-0 items-center gap-1.5 overflow-hidden rounded-md border border-transparent px-3 text-sm text-foreground outline-hidden transition-colors hover:bg-muted/40 focus-visible:ring-1 focus-visible:ring-ring"
+							>
+								<span
+									aria-hidden="true"
+									className={cn(
+										"size-2.5 shrink-0 rounded-[4px] bg-muted-foreground/50",
+										sidebarCollapsed && "opacity-0",
+									)}
+								/>
+								<span className="min-w-0 flex-1 truncate text-left">
+									{project ? project.name : "选择项目"}
+								</span>
+								<ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+							</button>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="start" className="min-w-48">
+							{projects.map((candidate) => (
+								<DropdownMenuItem
+									key={candidate.id}
+									onClick={() => onSwitchProject?.(candidate.id)}
+								>
+									<span className="min-w-0 flex-1 truncate">
+										{candidate.name}
+									</span>
+									{project?.id === candidate.id ? (
+										<span className="shrink-0 text-muted-foreground text-xs">
+											当前
+										</span>
+									) : null}
+								</DropdownMenuItem>
+							))}
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</div>
 			) : (
-				/* 落地页没有会话：用占位保证顶栏几何与有会话时完全一致 */
+				/* 没有会话也没有项目：占位保证顶栏几何一致 */
 				<div className="min-w-0 flex-1" />
 			)}
 			{onNewTemporaryChat || onOpenChanges || onOpenTerminal ? (

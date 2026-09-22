@@ -2,60 +2,62 @@ use std::collections::HashSet;
 
 use rusqlite::{Connection as SqliteConnection, OptionalExtension, params};
 
-use crate::domain::{Connection, Project, ProjectMetadata, ProjectModelCache};
+use crate::domain::{Connection, Project, ProjectMetadata, ProjectModelCache, ProjectPiRuntime};
 
 pub fn upsert_project(db: &SqliteConnection, project: &Project) -> Result<(), String> {
     let metadata_json =
         serde_json::to_string(&project.metadata).map_err(|error| error.to_string())?;
     db.execute(
-        "INSERT INTO projects(id,connection_id,name,path,metadata_json,created_at_ms,last_opened_at_ms,sort_order)
-         VALUES(?1,?2,?3,?4,?5,?6,?7,COALESCE((SELECT MAX(sort_order)+1 FROM projects WHERE connection_id=?2),0))
-         ON CONFLICT(id) DO UPDATE SET connection_id=excluded.connection_id,name=excluded.name,path=excluded.path,metadata_json=excluded.metadata_json,last_opened_at_ms=excluded.last_opened_at_ms",
-        params![project.id, project.connection.id, project.name, project.path, metadata_json, project.created_at_ms as i64, project.last_opened_at_ms as i64],
+        "INSERT INTO projects(id,connection_id,name,path,pi_runtime,metadata_json,created_at_ms,last_opened_at_ms,sort_order)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,COALESCE((SELECT MAX(sort_order)+1 FROM projects WHERE connection_id=?2),0))
+         ON CONFLICT(id) DO UPDATE SET connection_id=excluded.connection_id,name=excluded.name,path=excluded.path,pi_runtime=excluded.pi_runtime,metadata_json=excluded.metadata_json,last_opened_at_ms=excluded.last_opened_at_ms",
+        params![project.id, project.connection.id, project.name, project.path, project.pi_runtime.as_str(), metadata_json, project.created_at_ms as i64, project.last_opened_at_ms as i64],
     ).map_err(|error| error.to_string())?;
     Ok(())
 }
 
+fn project_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
+    let pi_runtime: String = row.get(3)?;
+    let metadata_json: String = row.get(4)?;
+    let kind_json: String = row.get(9)?;
+    let pi_runtime = ProjectPiRuntime::parse(&pi_runtime).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            3,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, error)),
+        )
+    })?;
+    let metadata = serde_json::from_str::<ProjectMetadata>(&metadata_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(error))
+    })?;
+    let kind = serde_json::from_str(&kind_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, Box::new(error))
+    })?;
+    Ok(Project {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        path: row.get(2)?,
+        pi_runtime,
+        metadata,
+        created_at_ms: row.get::<_, i64>(5)? as u64,
+        last_opened_at_ms: row.get::<_, i64>(6)? as u64,
+        connection: Connection {
+            id: row.get(7)?,
+            name: row.get(8)?,
+            pi_executable: row.get(10)?,
+            kind,
+        },
+    })
+}
+
 pub fn list_projects(db: &SqliteConnection) -> Result<Vec<Project>, String> {
     let mut statement = db.prepare(
-        "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable
+        "SELECT p.id,p.name,p.path,p.pi_runtime,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable
          FROM projects p JOIN connections c ON c.id=p.connection_id
          ORDER BY p.connection_id ASC,p.sort_order ASC,p.name ASC"
     ).map_err(|error| error.to_string())?;
     let rows = statement
-        .query_map([], |row| {
-            let kind_json: String = row.get(8)?;
-            let metadata_json: String = row.get(3)?;
-            let kind = serde_json::from_str(&kind_json).map_err(|error| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    8,
-                    rusqlite::types::Type::Text,
-                    Box::new(error),
-                )
-            })?;
-            let metadata: ProjectMetadata =
-                serde_json::from_str(&metadata_json).map_err(|error| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        3,
-                        rusqlite::types::Type::Text,
-                        Box::new(error),
-                    )
-                })?;
-            Ok(Project {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                path: row.get(2)?,
-                metadata,
-                created_at_ms: row.get::<_, i64>(4)? as u64,
-                last_opened_at_ms: row.get::<_, i64>(5)? as u64,
-                connection: Connection {
-                    id: row.get(6)?,
-                    name: row.get(7)?,
-                    pi_executable: row.get(9)?,
-                    kind,
-                },
-            })
-        })
+        .query_map([], project_from_row)
         .map_err(|error| error.to_string())?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|error| error.to_string())
@@ -102,41 +104,10 @@ pub fn reorder_projects(
 
 pub fn get_project(db: &SqliteConnection, id: &str) -> Result<Option<Project>, String> {
     db.query_row(
-        "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable
+        "SELECT p.id,p.name,p.path,p.pi_runtime,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable
          FROM projects p JOIN connections c ON c.id=p.connection_id WHERE p.id=?1",
         params![id],
-        |row| {
-            let kind_json: String = row.get(8)?;
-            let metadata_json: String = row.get(3)?;
-            let kind = serde_json::from_str(&kind_json).map_err(|error| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    8,
-                    rusqlite::types::Type::Text,
-                    Box::new(error),
-                )
-            })?;
-            let metadata: ProjectMetadata = serde_json::from_str(&metadata_json).map_err(|error| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    3,
-                    rusqlite::types::Type::Text,
-                    Box::new(error),
-                )
-            })?;
-            Ok(Project {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                path: row.get(2)?,
-                metadata,
-                created_at_ms: row.get::<_, i64>(4)? as u64,
-                last_opened_at_ms: row.get::<_, i64>(5)? as u64,
-                connection: Connection {
-                    id: row.get(6)?,
-                    name: row.get(7)?,
-                    pi_executable: row.get(9)?,
-                    kind,
-                },
-            })
-        },
+        project_from_row,
     )
     .optional()
     .map_err(|error| error.to_string())

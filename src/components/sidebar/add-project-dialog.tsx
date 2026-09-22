@@ -10,6 +10,7 @@ import {
 	addProject,
 	notifyProjectsChanged,
 	readConnectionDir,
+	type ProjectPiRuntime,
 } from "@/lib/projects";
 import {
 	Button,
@@ -51,6 +52,7 @@ export function AddProjectDialog({
 	const [entries, setEntries] = useState<FsEntry[]>([]);
 	const [filter, setFilter] = useState("");
 	const [loadingEntries, setLoadingEntries] = useState(false);
+	const [piRuntime, setPiRuntime] = useState<ProjectPiRuntime>("workspace");
 
 	const directories = useMemo(() => {
 		const query = filter.trim().toLocaleLowerCase();
@@ -66,7 +68,11 @@ export function AddProjectDialog({
 			if (!connection || !projectPath.trim()) return;
 			setBusy(true);
 			try {
-				const project = await addProject(connection.id, projectPath.trim());
+				const project = await addProject(
+					connection.id,
+					projectPath.trim(),
+					piRuntime,
+				);
 				void refreshProjectPiModels(project.id).catch((error) => {
 					console.warn(
 						"Failed to refresh Pi models after adding project",
@@ -84,7 +90,7 @@ export function AddProjectDialog({
 				setBusy(false);
 			}
 		},
-		[connection, onOpenChange],
+		[connection, onOpenChange, piRuntime],
 	);
 
 	const loadDirectory = async (nextPath: string) => {
@@ -114,7 +120,13 @@ export function AddProjectDialog({
 	if (!connection || connection.kind.type === "local") return null;
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
+		<Dialog
+			open={open}
+			onOpenChange={(nextOpen) => {
+				if (!nextOpen) setPiRuntime("workspace");
+				onOpenChange(nextOpen);
+			}}
+		>
 			<DialogContent className="max-w-xl gap-5">
 				<DialogHeader>
 					<DialogTitle>添加项目</DialogTitle>
@@ -124,6 +136,47 @@ export function AddProjectDialog({
 				</DialogHeader>
 
 				<div className="grid gap-3">
+					{connection.kind.type === "ssh" ? (
+						<div className="grid gap-1.5">
+							<div className="text-xs font-medium text-muted-foreground">
+								Pi 运行位置
+							</div>
+							<div className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/10 p-1">
+								<Button
+									type="button"
+									variant={piRuntime === "workspace" ? "secondary" : "ghost"}
+									className="h-auto justify-start px-3 py-2 text-left"
+									onClick={() => setPiRuntime("workspace")}
+								>
+									<span className="grid gap-0.5">
+										<span className="text-xs font-medium">远程 Pi</span>
+										<span className="text-[11px] font-normal text-muted-foreground">
+											Pi 与项目都运行在 SSH 主机
+										</span>
+									</span>
+								</Button>
+								<Button
+									type="button"
+									variant={piRuntime === "local" ? "secondary" : "ghost"}
+									className="h-auto justify-start px-3 py-2 text-left"
+									onClick={() => setPiRuntime("local")}
+								>
+									<span className="grid gap-0.5">
+										<span className="text-xs font-medium">本地 Pi</span>
+										<span className="text-[11px] font-normal text-muted-foreground">
+											内置工具透明路由到 SSH 工作区
+										</span>
+									</span>
+								</Button>
+							</div>
+							{piRuntime === "local" ? (
+								<p className="text-[11px] leading-relaxed text-muted-foreground">
+									SSH 断开时工具会直接报错，不会回退到本机文件系统。
+								</p>
+							) : null}
+						</div>
+					) : null}
+
 					<div className="grid gap-1.5">
 						<label
 							htmlFor="project-path"

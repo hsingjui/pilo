@@ -4,6 +4,7 @@ import test from "node:test";
 import { createChatUiStateCache } from "../src/components/app/chat-ui-state-cache.ts";
 import {
 	filterProjectSessions,
+	sortSidebarSessionsActiveFirst,
 	summarizeProjectSessions,
 } from "../src/components/sidebar/session-list.ts";
 import type { SidebarSession } from "../src/components/sidebar/types.ts";
@@ -100,6 +101,26 @@ function sidebarSession(
 	};
 }
 
+test("sortSidebarSessionsActiveFirst pins active sessions above recent ones", () => {
+	const sessions = [
+		sidebarSession("s0", 5, { active: true }),
+		sidebarSession("s1", 9),
+		sidebarSession("s2", 3, { active: true }),
+		sidebarSession("s3", 7),
+	];
+
+	const ordered = sortSidebarSessionsActiveFirst(sessions);
+	assert.deepEqual(
+		ordered.map((session) => session.id),
+		["s0", "s2", "s1", "s3"],
+	);
+	// 输入数组不应被原地修改。
+	assert.deepEqual(
+		sessions.map((session) => session.id),
+		["s0", "s1", "s2", "s3"],
+	);
+});
+
 test("sidebar project summary keeps active sessions first without moving the selected session", () => {
 	const sessions = Array.from({ length: 10 }, (_, index) =>
 		sidebarSession(`s${index}`, index, {
@@ -153,6 +174,17 @@ test("sidebar project session search matches titles and previews in recent order
 	assert.deepEqual(
 		filterProjectSessions(sessions, "performance").map((session) => session.id),
 		["new", "old"],
+	);
+});
+
+test("sidebar all-sessions view sorts active sessions first then recency", () => {
+	const sessions = Array.from({ length: 6 }, (_, index) =>
+		sidebarSession(`s${index}`, index, { active: index === 0 }),
+	);
+
+	assert.deepEqual(
+		sortSidebarSessionsActiveFirst(sessions).map((session) => session.id),
+		["s0", "s5", "s4", "s3", "s2", "s1"],
 	);
 });
 

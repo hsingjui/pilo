@@ -40,6 +40,8 @@ function modelKey(model: PiModel | null): string | null {
 
 const FILE_SUGGESTION_DEBOUNCE_MS = 180;
 
+const EMPTY_PROJECTS: Project[] = [];
+
 export function NewChatLanding({
 	sessionId,
 	onStartSession,
@@ -53,6 +55,8 @@ export function NewChatLanding({
 	sidebarCollapsed = false,
 	projectAvailable = true,
 	project = null,
+	projects = EMPTY_PROJECTS,
+	onSwitchProject,
 }: {
 	sessionId: string;
 	onStartSession: (
@@ -70,6 +74,9 @@ export function NewChatLanding({
 	sidebarCollapsed?: boolean;
 	projectAvailable?: boolean;
 	project?: Project | null;
+	/** 可切换的落点项目列表。 */
+	projects?: Project[];
+	onSwitchProject?: (projectId: string) => void;
 }) {
 	const { keyboardShortcuts } = usePreferences();
 	const projectId = project?.id ?? null;
@@ -355,6 +362,9 @@ export function NewChatLanding({
 		<div className="@container relative flex h-full min-w-0 flex-col">
 			<SessionHeader
 				overlay
+				project={project}
+				projects={projects}
+				onSwitchProject={onSwitchProject}
 				onOpenTerminal={onOpenTerminal}
 				terminalRunning={terminalRunning}
 				terminalVisible={terminalVisible}

@@ -54,6 +54,18 @@ export function summarizeProjectSessions(
 	};
 }
 
+export function sortSidebarSessionsActiveFirst(
+	sessions: readonly SidebarSession[],
+): SidebarSession[] {
+	/* oxlint-disable-next-line unicorn/no-array-sort -- clone first so the caller's session order stays immutable. */
+	return [...sessions].sort((a, b) => {
+		if (Boolean(a.active) !== Boolean(b.active)) {
+			return a.active ? -1 : 1;
+		}
+		return b.latestMessageAt.getTime() - a.latestMessageAt.getTime();
+	});
+}
+
 export function filterProjectSessions(
 	sessions: readonly SidebarSession[],
 	query: string,

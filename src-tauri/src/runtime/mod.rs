@@ -6,6 +6,7 @@ mod events;
 mod git;
 mod parallel;
 mod pi_events;
+mod pi_workspace;
 mod preview;
 pub mod project;
 mod remote_fs;

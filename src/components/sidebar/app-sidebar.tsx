@@ -34,14 +34,16 @@ import { ScrollArea } from "@/ui";
 import { IS_MACOS } from "@/components/title-bar";
 import { CommandPalette } from "@/components/command-palette";
 import { ProjectSessionsToolbar } from "./project-sessions-toolbar";
-import { EnvRow, SessionRow, ProjectRow } from "./rows";
+import { EnvRow, RecentSectionHeader, SessionRow, ProjectRow } from "./rows";
 import {
 	filterProjectSessions,
+	sortSidebarSessionsActiveFirst,
 	summarizeProjectSessions,
 } from "./session-list";
 import {
 	AppSidebarProps,
 	SidebarEnv,
+	SidebarEnvView,
 	SidebarSession,
 	SidebarProject,
 } from "./types";
@@ -67,6 +69,16 @@ const SIDEBAR_WIDTH_STORAGE_KEY = "pilo.sidebarWidth";
 
 /** 环境/项目折叠状态持久化 key。 */
 const COLLAPSED_SECTIONS_STORAGE_KEY = "pilo.collapsedSections";
+
+/** 侧栏组织模式持久化 key（Lody 的 sidebarOrganizeModeAtom 等价实现）。 */
+const ORGANIZE_MODE_STORAGE_KEY = "pilo.sidebarOrganizeMode";
+
+/** “最新更新”视图是否在会话行下展示项目名。 */
+const SHOW_PROJECTS_IN_RECENTS_STORAGE_KEY =
+	"pilo.sidebarShowProjectsInRecents";
+
+/** “最新更新”视图最多展示的会话数。 */
+const ENV_RECENT_SESSION_LIMIT = 50;
 const EMPTY_REFRESHING_PROJECT_IDS: ReadonlySet<string> = new Set();
 
 function readCollapsedSections(): Record<string, boolean> {
@@ -76,6 +88,21 @@ function readCollapsedSections(): Record<string, boolean> {
 	} catch {
 		return {};
 	}
+}
+
+function readOrganizeMode(): SidebarEnvView {
+	try {
+		const stored = window.localStorage.getItem(ORGANIZE_MODE_STORAGE_KEY);
+		return stored === "recent" ? "recent" : "projects";
+	} catch {
+		return "projects";
+	}
+}
+
+function readShowProjectsInRecents(): boolean {
+	return (
+		window.localStorage.getItem(SHOW_PROJECTS_IN_RECENTS_STORAGE_KEY) === "1"
+	);
 }
 
 const VirtualSessionRows = lazy(() =>
@@ -175,6 +202,7 @@ export function AppSidebar({
 	onFocusProject,
 	onReorderProjects,
 	onDeleteProject,
+	onSetProjectPiRuntime,
 	onDeleteConnection,
 	onAddProject,
 	footer,
@@ -191,6 +219,11 @@ export function AppSidebar({
 	const [collapsedSections, setCollapsedSections] = useState<
 		Record<string, boolean>
 	>(readCollapsedSections);
+	const [organizeMode, setOrganizeMode] =
+		useState<SidebarEnvView>(readOrganizeMode);
+	const [showProjectsInRecents, setShowProjectsInRecents] = useState(
+		readShowProjectsInRecents,
+	);
 	const [internalSelectedSessionId, setInternalSelectedSessionId] = useState<
 		string | null
 	>(null);
@@ -319,6 +352,29 @@ export function AppSidebar({
 		);
 	}, [collapsedSections]);
 
+	useEffect(() => {
+		window.localStorage.setItem(ORGANIZE_MODE_STORAGE_KEY, organizeMode);
+	}, [organizeMode]);
+
+	useEffect(() => {
+		window.localStorage.setItem(
+			SHOW_PROJECTS_IN_RECENTS_STORAGE_KEY,
+			showProjectsInRecents ? "1" : "0",
+		);
+	}, [showProjectsInRecents]);
+
+	/** 切换组织模式；切回“项目”时清掉二级视图，避免残留旧状态。 */
+	const changeOrganizeMode = useCallback((mode: SidebarEnvView) => {
+		setOrganizeMode(mode);
+		if (mode === "projects") {
+			setProjectSessionsViewId(null);
+			setProjectSessionsQuery("");
+		}
+		if (mode === "recent") {
+			setProjectSessionsViewId(null);
+		}
+	}, []);
+
 	const toggleSection = useCallback((key: string, defaultCollapsed = false) => {
 		setCollapsedSections((prev) => ({
 			...prev,
@@ -336,6 +392,14 @@ export function AppSidebar({
 		return grouped;
 	}, [projects]);
 
+	// “最新更新”视图：全部连接的会话合并为一条平铺列表，按更新时间排序。
+	const recentSessions = useMemo(() => {
+		if (organizeMode !== "recent") return [];
+		return sortSidebarSessionsActiveFirst(sessions).slice(
+			0,
+			ENV_RECENT_SESSION_LIMIT,
+		);
+	}, [organizeMode, sessions]);
 	const handleProjectDragEnd = useCallback(
 		(envId: string, event: DragEndEvent) => {
 			const { active, over } = event;
@@ -359,6 +423,10 @@ export function AppSidebar({
 		}
 		return grouped;
 	}, [sessions]);
+	const projectById = useMemo(
+		() => new Map(projects.map((project) => [project.id, project.name])),
+		[projects],
+	);
 	const projectSessionsViewProject = useMemo(
 		() =>
 			projectSessionsViewId
@@ -416,18 +484,30 @@ export function AppSidebar({
 		[],
 	);
 	const renderSession = useCallback(
-		(session: SidebarSession) => (
-			<SessionRow
-				key={session.id}
-				session={session}
-				selected={activeSessionId === session.id}
-				onSelect={handleSelectSession}
-				onDelete={session.sessionPath ? handleDeleteSession : undefined}
-				onRename={handleRenameSession}
-			/>
-		),
+		(session: SidebarSession) => {
+			// 「展示项目」开启且处于“最新更新”视图时才带项目名（两行式）；
+			// 项目树视图下会话已归属项目节点，不重复展示项目名。
+			const showProjectName =
+				organizeMode === "recent" && showProjectsInRecents;
+			return (
+				<SessionRow
+					key={session.id}
+					session={session}
+					selected={activeSessionId === session.id}
+					onSelect={handleSelectSession}
+					onDelete={session.sessionPath ? handleDeleteSession : undefined}
+					onRename={handleRenameSession}
+					projectName={
+						showProjectName ? projectById.get(session.projectId) : undefined
+					}
+				/>
+			);
+		},
 		[
 			activeSessionId,
+			organizeMode,
+			showProjectsInRecents,
+			projectById,
 			handleDeleteSession,
 			handleRenameSession,
 			handleSelectSession,
@@ -513,16 +593,18 @@ export function AppSidebar({
 								onNewChat={onNewChatInProject}
 							/>
 						) : (
-							<button
-								type="button"
-								className="group flex w-full select-none items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring dark:text-sidebar-foreground/75"
-								onClick={() => onNewChat?.()}
-							>
-								<span className="flex h-5 w-5 shrink-0 items-center justify-center text-current">
-									<SquarePen className="h-4 w-4" />
-								</span>
-								<span className="truncate">新会话</span>
-							</button>
+							<div className="flex items-center gap-1">
+								<button
+									type="button"
+									className="group flex min-w-0 flex-1 select-none items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-sidebar-foreground outline-hidden transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring dark:text-sidebar-foreground/75"
+									onClick={() => onNewChat?.()}
+								>
+									<span className="flex h-5 w-5 shrink-0 items-center justify-center text-current">
+										<SquarePen className="h-4 w-4" />
+									</span>
+									<span className="truncate">新会话</span>
+								</button>
+							</div>
 						)}
 					</div>
 					<ScrollArea
@@ -533,7 +615,27 @@ export function AppSidebar({
 						scrollbarThumbClassName="bg-[hsl(var(--muted-foreground)/0.35)] hover:bg-[hsl(var(--muted-foreground)/0.45)] active:bg-[hsl(var(--muted-foreground)/0.55)]"
 					>
 						<div className="relative w-full min-w-0 overflow-x-hidden pt-1">
-							{projectSessionsViewProject ? (
+							{organizeMode === "recent" ? (
+								recentSessions.length > 0 ? (
+									<section className="mb-3 w-full min-w-0 space-y-0.5 overflow-hidden last:mb-0">
+										<RecentSectionHeader
+											collapsed={collapsedSections["recent"] ?? false}
+											onToggle={() => toggleSection("recent")}
+											view={organizeMode}
+											onViewChange={changeOrganizeMode}
+											showProjects={showProjectsInRecents}
+											onShowProjectsChange={setShowProjectsInRecents}
+										/>
+										{!(collapsedSections["recent"] ?? false)
+											? renderSessionList(recentSessions)
+											: null}
+									</section>
+								) : (
+									<div className="px-3 py-8 text-center text-xs text-sidebar-foreground-muted">
+										暂无会话
+									</div>
+								)
+							) : projectSessionsViewProject ? (
 								projectSessionsViewSessions.length > 0 ? (
 									renderSessionList(projectSessionsViewSessions)
 								) : (
@@ -557,119 +659,129 @@ export function AppSidebar({
 												env={env}
 												collapsed={envCollapsed}
 												onToggle={() => toggleSection(`env:${env.id}`)}
+												view={organizeMode}
+												onViewChange={changeOrganizeMode}
+												showProjects={showProjectsInRecents}
+												onShowProjectsChange={setShowProjectsInRecents}
 												onAddProject={onAddProject}
 												onDeleteConnection={onDeleteConnection}
 											/>
-											{!envCollapsed && (
-												<DndContext
-													sensors={projectDragSensors}
-													collisionDetection={closestCenter}
-													onDragStart={() => {
-														suppressProjectClickRef.current = true;
-													}}
-													onDragCancel={() => {
-														window.setTimeout(() => {
-															suppressProjectClickRef.current = false;
-														}, 0);
-													}}
-													onDragEnd={(event) => {
-														handleProjectDragEnd(env.id, event);
-														window.setTimeout(() => {
-															suppressProjectClickRef.current = false;
-														}, 0);
-													}}
-												>
-													<SortableContext
-														items={envProjects.map((project) => project.id)}
-														strategy={verticalListSortingStrategy}
+											{!envCollapsed ? (
+												<>
+													<DndContext
+														sensors={projectDragSensors}
+														collisionDetection={closestCenter}
+														onDragStart={() => {
+															suppressProjectClickRef.current = true;
+														}}
+														onDragCancel={() => {
+															window.setTimeout(() => {
+																suppressProjectClickRef.current = false;
+															}, 0);
+														}}
+														onDragEnd={(event) => {
+															handleProjectDragEnd(env.id, event);
+															window.setTimeout(() => {
+																suppressProjectClickRef.current = false;
+															}, 0);
+														}}
 													>
-														{envProjects.map((project) => {
-															const projectCollapsed =
-																collapsedSections[`ws:${project.id}`] ?? true;
-															const projectSessions =
-																sessionsByProject.get(project.id) ?? [];
-															const projectSessionSummary = projectCollapsed
-																? null
-																: summarizeProjectSessions(
-																		projectSessions,
-																		activeSessionId,
-																	);
-															return (
-																<SortableProjectBlock
-																	key={project.id}
-																	id={project.id}
-																	disabled={
-																		refreshingProjectIds.has(project.id) ||
-																		envProjects.length < 2
-																	}
-																	row={
-																		<ProjectRow
-																			project={project}
-																			env={env}
-																			collapsed={projectCollapsed}
-																			selected={
-																				activeSessionId === null &&
-																				selectedProjectId === project.id
-																			}
-																			refreshing={refreshingProjectIds.has(
-																				project.id,
-																			)}
-																			onSelect={() => {
-																				if (suppressProjectClickRef.current)
-																					return;
-																				onFocusProject?.(project.id);
-																				onNewChatInProject?.(project.id);
-																			}}
-																			onToggle={() => {
-																				const key = `ws:${project.id}`;
-																				toggleSection(key, true);
-																				if (projectCollapsed)
-																					onRefreshProjectSessions?.(
-																						project.id,
-																					);
-																			}}
-																			onNewChat={onNewChatInProject}
-																			onDelete={onDeleteProject}
-																			onRefreshSessions={
-																				onRefreshProjectSessions
-																					? () =>
-																							onRefreshProjectSessions(
+														<SortableContext
+															items={envProjects.map((project) => project.id)}
+															strategy={verticalListSortingStrategy}
+														>
+															{envProjects.map((project) => {
+																const projectCollapsed =
+																	collapsedSections[`ws:${project.id}`] ?? true;
+																const projectSessions =
+																	sessionsByProject.get(project.id) ?? [];
+																const projectSessionSummary = projectCollapsed
+																	? null
+																	: summarizeProjectSessions(
+																			projectSessions,
+																			activeSessionId,
+																		);
+																return (
+																	<SortableProjectBlock
+																		key={project.id}
+																		id={project.id}
+																		disabled={
+																			refreshingProjectIds.has(project.id) ||
+																			envProjects.length < 2
+																		}
+																		row={
+																			<ProjectRow
+																				project={project}
+																				env={env}
+																				collapsed={projectCollapsed}
+																				selected={
+																					activeSessionId === null &&
+																					selectedProjectId === project.id
+																				}
+																				refreshing={refreshingProjectIds.has(
+																					project.id,
+																				)}
+																				onSelect={() => {
+																					if (suppressProjectClickRef.current)
+																						return;
+																					onFocusProject?.(project.id);
+																					onNewChatInProject?.(project.id);
+																				}}
+																				onToggle={() => {
+																					const key = `ws:${project.id}`;
+																					toggleSection(key, true);
+																					if (projectCollapsed)
+																						onRefreshProjectSessions?.(
+																							project.id,
+																						);
+																				}}
+																				onNewChat={onNewChatInProject}
+																				onDelete={onDeleteProject}
+																				onSetPiRuntime={onSetProjectPiRuntime}
+																				onRefreshSessions={
+																					onRefreshProjectSessions
+																						? () =>
+																								onRefreshProjectSessions(
+																									project.id,
+																								)
+																						: undefined
+																				}
+																			/>
+																		}
+																	>
+																		{projectSessionSummary ? (
+																			<>
+																				{projectSessionSummary.visible.map(
+																					renderSession,
+																				)}
+																				{projectSessionSummary.hiddenCount >
+																				0 ? (
+																					<button
+																						type="button"
+																						className="flex w-full items-center rounded-md py-1 pl-8 pr-2 text-left text-xs text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sidebar-ring"
+																						onClick={() =>
+																							openProjectSessionsView(
 																								project.id,
 																							)
-																					: undefined
-																			}
-																		/>
-																	}
-																>
-																	{projectSessionSummary ? (
-																		<>
-																			{projectSessionSummary.visible.map(
-																				renderSession,
-																			)}
-																			{projectSessionSummary.hiddenCount > 0 ? (
-																				<button
-																					type="button"
-																					className="flex w-full items-center rounded-md py-1 pl-8 pr-2 text-left text-xs text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sidebar-ring"
-																					onClick={() =>
-																						openProjectSessionsView(project.id)
-																					}
-																				>
-																					<span className="min-w-0 flex-1 truncate">
-																						查看全部
-																					</span>
-																					<span className="ml-2 shrink-0 tabular-nums">
-																						{projectSessionSummary.totalCount}
-																					</span>
-																				</button>
-																			) : null}
-																		</>
-																	) : null}
-																</SortableProjectBlock>
-															);
-														})}
-													</SortableContext>
-												</DndContext>
-											)}
+																						}
+																					>
+																						<span className="min-w-0 flex-1 truncate">
+																							查看全部
+																						</span>
+																						<span className="ml-2 shrink-0 tabular-nums">
+																							{projectSessionSummary.totalCount}
+																						</span>
+																					</button>
+																				) : null}
+																			</>
+																		) : null}
+																	</SortableProjectBlock>
+																);
+															})}
+														</SortableContext>
+													</DndContext>
+												</>
+											) : null}
 										</section>
 									);
 								})

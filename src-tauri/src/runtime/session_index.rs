@@ -6,7 +6,7 @@ use tauri::AppHandle;
 
 use crate::domain::{Project, SessionIndexEntry, SessionReconcileResult};
 
-use super::{server_client::ServerManager, storage};
+use super::{pi_workspace, server_client::ServerManager, storage};
 
 const INITIAL_SESSION_INDEX_LIMIT: usize = 20;
 pub const BACKGROUND_SESSION_INDEX_BATCH: usize = 64;
@@ -117,11 +117,12 @@ pub async fn reconcile(
     servers: &ServerManager,
     project: &Project,
 ) -> Result<SessionReconcileWork, String> {
+    let session_project = pi_workspace::resolve_session_project(app, project)?;
     let mut db = storage::open(app)?;
     let cached = storage::list_sessions(&db, &project.id)?;
     let files = scan_files(
         servers,
-        project,
+        &session_project,
         &cached,
         Some(INITIAL_SESSION_INDEX_LIMIT),
         &[],
@@ -153,7 +154,7 @@ pub async fn reconcile(
         if file.header.get("type").and_then(Value::as_str) != Some("session") {
             continue;
         }
-        if file.header.get("cwd").and_then(Value::as_str) != Some(project.path.as_str()) {
+        if file.header.get("cwd").and_then(Value::as_str) != Some(session_project.path.as_str()) {
             continue;
         }
 
@@ -195,7 +196,8 @@ pub async fn reconcile_paths(
     if paths.is_empty() && removed_paths.is_empty() {
         return Ok(0);
     }
-    let files = scan_files(servers, project, &[], None, paths).await?;
+    let session_project = pi_workspace::resolve_session_project(app, project)?;
+    let files = scan_files(servers, &session_project, &[], None, paths).await?;
     let mut db = storage::open(app)?;
     let transaction = db.transaction().map_err(|error| error.to_string())?;
     let mut changed = 0_usize;
@@ -211,7 +213,7 @@ pub async fn reconcile_paths(
         if file.header.get("type").and_then(Value::as_str) != Some("session") {
             continue;
         }
-        if file.header.get("cwd").and_then(Value::as_str) != Some(project.path.as_str()) {
+        if file.header.get("cwd").and_then(Value::as_str) != Some(session_project.path.as_str()) {
             continue;
         }
         let previous = storage::get_session(&transaction, &file.path)?;
@@ -278,12 +280,9 @@ fn build_index_entry(
         .and_then(Value::as_str)
         .ok_or_else(|| format!("session '{}' has no id", file.path))?
         .to_owned();
-    let cwd = file
-        .header
-        .get("cwd")
-        .and_then(Value::as_str)
-        .unwrap_or(&project.path)
-        .to_owned();
+    // Local-Pi SSH sessions are stored under a local anchor directory, but
+    // the indexed workspace identity remains the authoritative remote cwd.
+    let cwd = project.path.clone();
     let created_at = file
         .header
         .get("timestamp")
@@ -337,6 +336,7 @@ mod tests {
                 pi_executable: None,
                 kind: ConnectionKind::Local,
             },
+            pi_runtime: crate::domain::ProjectPiRuntime::Workspace,
             metadata: ProjectMetadata {
                 cwd: "/work".to_owned(),
                 git_branch: Some("main".to_owned()),

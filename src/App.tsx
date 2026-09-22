@@ -107,9 +107,11 @@ function App() {
 		readChatUiState,
 		writeChatUiState,
 		handleProjectsRemoved,
+		handleProjectRuntimeChanged,
 		startLandingSession,
 		startNewChat,
 		startTemporaryChat,
+		switchDraftProject,
 		selectSession,
 		openSearchSession,
 		updateSession,
@@ -196,12 +198,14 @@ function App() {
 		handleAddProject,
 		handleReorderProjects,
 		handleDeleteProject,
+		handleSetProjectPiRuntime,
 		handleDeleteConnection,
 	} = useAppProjectActions({
 		projects,
 		setProjects,
 		connectionCatalog,
 		onProjectsRemoved: handleProjectsRemoved,
+		onProjectRuntimeChanged: handleProjectRuntimeChanged,
 	});
 	const [viewerRequest, setViewerRequest] = useState<ViewerOpenRequest | null>(
 		null,
@@ -271,6 +275,9 @@ function App() {
 						void deleteSession(sessionId);
 					}}
 					onDeleteProject={(projectId) => void handleDeleteProject(projectId)}
+					onSetProjectPiRuntime={(projectId, piRuntime) =>
+						void handleSetProjectPiRuntime(projectId, piRuntime)
+					}
 					onDeleteConnection={(connectionId) =>
 						void handleDeleteConnection(connectionId)
 					}
@@ -402,6 +409,8 @@ function App() {
 											: true
 									}
 									project={activeProject}
+									projects={projects}
+									onSwitchProject={switchDraftProject}
 									onOpenTerminal={toggleTerminal}
 									terminalRunning={terminalRunning}
 									terminalVisible={terminalVisible}

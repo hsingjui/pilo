@@ -1,4 +1,4 @@
-use std::process::Stdio;
+use std::{collections::BTreeMap, process::Stdio};
 
 use tokio::process::Command;
 
@@ -104,6 +104,31 @@ pub(crate) fn ssh_tunnel_args(
         destination,
     ]);
     Ok(args)
+}
+
+pub(crate) fn ssh_child_environment(
+    connection: &Connection,
+) -> Result<BTreeMap<String, String>, String> {
+    let ConnectionKind::Ssh { target } = &connection.kind else {
+        return Err("SSH child environment requires an SSH connection".to_owned());
+    };
+    let mut environment = BTreeMap::new();
+    if !matches!(target.auth_method(), SshAuthMethod::Password) {
+        return Ok(environment);
+    }
+    super::credentials::get_ssh_password(&connection.id)?;
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("failed to locate Pilo executable for SSH askpass: {error}"))?;
+    environment.insert(
+        "SSH_ASKPASS".to_owned(),
+        executable.to_string_lossy().into_owned(),
+    );
+    environment.insert("SSH_ASKPASS_REQUIRE".to_owned(), "force".to_owned());
+    environment.insert(ASKPASS_CONNECTION_ENV.to_owned(), connection.id.clone());
+    if std::env::var_os("DISPLAY").is_none() {
+        environment.insert("DISPLAY".to_owned(), "pilo:0".to_owned());
+    }
+    Ok(environment)
 }
 
 fn append_target_args(args: &mut Vec<String>, target: &SshTarget) -> Result<(), String> {

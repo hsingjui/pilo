@@ -48,6 +48,12 @@ pub(crate) struct PiStartParams {
     system_prompt: Option<String>,
     #[serde(default)]
     pi_executable: Option<String>,
+    #[serde(default)]
+    disable_builtin_tools: bool,
+    #[serde(default)]
+    disable_extension_discovery: bool,
+    #[serde(default)]
+    disable_context_files: bool,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,10 +104,31 @@ fn materialize_extension(source: &str) -> Result<std::path::PathBuf, String> {
     let dir = std::env::temp_dir().join("pilo-extensions");
     std::fs::create_dir_all(&dir)
         .map_err(|error| format!("failed to create extension dir: {error}"))?;
+    prune_stale_extensions(&dir);
     let path = dir.join(format!("{:016x}.js", std::hash::Hasher::finish(&hasher)));
-    std::fs::write(&path, source)
-        .map_err(|error| format!("failed to write extension file: {error}"))?;
+    if !path.exists() {
+        std::fs::write(&path, source)
+            .map_err(|error| format!("failed to write extension file: {error}"))?;
+    }
     Ok(path)
+}
+
+/// Extensions are content-addressed, so distinct SSH configurations accumulate
+/// distinct files. Drop entries far older than any realistic Pi session.
+fn prune_stale_extensions(dir: &std::path::Path) {
+    const MAX_AGE: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 60 * 60);
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let now = std::time::SystemTime::now();
+    for entry in entries.flatten() {
+        let Ok(modified) = entry.metadata().and_then(|metadata| metadata.modified()) else {
+            continue;
+        };
+        if now.duration_since(modified).is_ok_and(|age| age > MAX_AGE) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
 }
 
 fn trace_pi_rpc_line(stream_id: &str, bytes: &[u8]) {
@@ -197,6 +224,15 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
             "--no-context-files".to_owned(),
             "--no-approve".to_owned(),
         ]);
+    }
+    if params.disable_builtin_tools {
+        args.push("--no-builtin-tools".to_owned());
+    }
+    if params.disable_extension_discovery {
+        args.push("--no-extensions".to_owned());
+    }
+    if params.disable_context_files {
+        args.push("--no-context-files".to_owned());
     }
     for source in &params.extensions {
         if source.trim().is_empty() {

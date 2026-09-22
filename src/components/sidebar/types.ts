@@ -1,12 +1,18 @@
 import type { ReactNode } from "react";
+import type { ProjectPiRuntime } from "@/lib/projects";
 
 export type SidebarEnv = { id: string; name: string };
+
+/** 侧栏组织模式：按连接分组的“项目”树，或平铺的“最新更新”会话列表。 */
+export type SidebarEnvView = "projects" | "recent";
 
 export type SidebarProject = {
 	id: string;
 	name: string;
 	path: string;
 	envId: string;
+	connectionType: "local" | "wsl" | "ssh";
+	piRuntime: ProjectPiRuntime;
 };
 
 export type SidebarSession = {
@@ -34,6 +40,12 @@ export type AppSidebarProps = {
 	refreshingProjectIds?: ReadonlySet<string>;
 	selectedProjectId?: string | null;
 	selectedSessionId?: string | null;
+	/** 侧栏组织模式：按项目分组（默认）或“最新更新”平铺列表。 */
+	organizeMode?: SidebarEnvView;
+	onOrganizeModeChange?: (mode: SidebarEnvView) => void;
+	/** “最新更新”模式下会话行是否显示所属项目名。 */
+	showProjectsInRecents?: boolean;
+	onShowProjectsInRecentsChange?: (showProjects: boolean) => void;
 	onSelectSession?: (sessionId: string) => void;
 	onOpenSearchSession?: (target: {
 		sessionId: string;
@@ -46,6 +58,10 @@ export type AppSidebarProps = {
 	onFocusProject?: (projectId: string) => void;
 	onReorderProjects?: (connectionId: string, projectIds: string[]) => void;
 	onDeleteProject?: (projectId: string) => void;
+	onSetProjectPiRuntime?: (
+		projectId: string,
+		piRuntime: ProjectPiRuntime,
+	) => void;
 	onDeleteConnection?: (connectionId: string) => void;
 	onAddProject?: (connectionId?: string) => void;
 	/** 底部操作区（设置 / 帮助 / 主题等），由 App 组合。 */

@@ -155,6 +155,29 @@ export function useAppChatWorkspace({
 		updateSession: updateIndexedSession,
 		removeSession: removeIndexedSession,
 	} = useAppSessionIndex(activeProjectId);
+	const handleProjectRuntimeChanged = useCallback(
+		(projectId: string) => {
+			setOpenedChats((current) =>
+				current.filter((entry) => entry.session.projectRecord.id !== projectId),
+			);
+			if (activeProjectId === projectId) {
+				setSelectedSessionId(null);
+				clearDraftSession();
+			}
+			void refreshProjectSessions(projectId, true).catch((error) =>
+				console.error(
+					"Failed to refresh sessions after Pi runtime switch",
+					error,
+				),
+			);
+		},
+		[
+			activeProjectId,
+			clearDraftSession,
+			refreshProjectSessions,
+			setOpenedChats,
+		],
+	);
 
 	useEffect(() => {
 		setOpenedChats((current) =>
@@ -466,6 +489,20 @@ export function useAppChatWorkspace({
 		],
 	);
 
+	const switchDraftProject = useCallback(
+		(projectId: string) => {
+			if (!projects.some((project) => project.id === projectId)) return;
+			setDraftProjectId(projectId);
+			setFocusedProjectId(projectId);
+			void touchProject(projectId)
+				.then(() => notifyProjectsChanged())
+				.catch((error) =>
+					console.error("Failed to update recent project", error),
+				);
+		},
+		[projects],
+	);
+
 	const openSearchSession = useCallback(
 		(target: SearchSessionTarget) => {
 			const project = projects.find(
@@ -664,9 +701,11 @@ export function useAppChatWorkspace({
 		readChatUiState,
 		writeChatUiState,
 		handleProjectsRemoved,
+		handleProjectRuntimeChanged,
 		startLandingSession,
 		startNewChat,
 		startTemporaryChat,
+		switchDraftProject,
 		selectSession,
 		openSearchSession,
 		updateSession,

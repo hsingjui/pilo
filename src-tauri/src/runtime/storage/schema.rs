@@ -84,6 +84,7 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
            name TEXT NOT NULL,
            path TEXT NOT NULL,
+           pi_runtime TEXT NOT NULL DEFAULT 'workspace',
            metadata_json TEXT NOT NULL,
            created_at_ms INTEGER NOT NULL,
            last_opened_at_ms INTEGER NOT NULL,
@@ -150,6 +151,20 @@ fn ensure_connection_columns(db: &SqliteConnection) -> Result<(), String> {
 }
 
 fn ensure_project_columns(db: &SqliteConnection) -> Result<(), String> {
+    let has_pi_runtime = db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('projects') WHERE name='pi_runtime')",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|exists| exists != 0)
+        .map_err(|error| error.to_string())?;
+    if !has_pi_runtime {
+        db.execute_batch(
+            "ALTER TABLE projects ADD COLUMN pi_runtime TEXT NOT NULL DEFAULT 'workspace';",
+        )
+        .map_err(|error| error.to_string())?;
+    }
     let has_sort_order = db
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM pragma_table_info('projects') WHERE name='sort_order')",

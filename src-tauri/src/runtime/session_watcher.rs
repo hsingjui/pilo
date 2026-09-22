@@ -8,6 +8,7 @@ use tokio::{sync::Mutex as AsyncMutex, task::JoinHandle};
 use crate::domain::Project;
 
 use super::{
+    pi_workspace,
     server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager},
     session_index,
 };
@@ -56,20 +57,21 @@ impl SessionWatcherManager {
         project: Project,
     ) -> Result<(), String> {
         self.stop(&project.id).await;
-        let client = servers.client(&project.connection).await?;
+        let session_project = pi_workspace::resolve_session_project(&app, &project)?;
+        let client = servers.client(&session_project.connection).await?;
         let stream_id = format!("session-watch:{}", project.id);
         let mut events = client.subscribe(&stream_id);
         client
             .request(
                 "session.watch_start",
-                json!({ "streamId": stream_id, "project": project.path }),
+                json!({ "streamId": stream_id, "project": session_project.path }),
             )
             .await?;
         let current_client = Arc::new(AsyncMutex::new(Arc::clone(&client)));
         let event_stream_id = stream_id.clone();
         let project_id = project.id.clone();
-        let project_path = project.path.clone();
-        let connection = project.connection.clone();
+        let project_path = session_project.path.clone();
+        let connection = session_project.connection.clone();
         let event_project = project.clone();
         let event_app = app.clone();
         let event_servers = Arc::clone(&servers);
@@ -194,17 +196,19 @@ impl SessionWatcherManager {
         Ok(())
     }
 
-    pub async fn stop(&mut self, project_id: &str) {
-        if let Some(handle) = self.watchers.remove(project_id) {
-            handle.task.abort();
-            let client = handle.current_client.lock().await.clone();
-            let _ = client
-                .request(
-                    "session.watch_stop",
-                    json!({ "streamId": handle.stream_id }),
-                )
-                .await;
-        }
+    pub async fn stop(&mut self, project_id: &str) -> bool {
+        let Some(handle) = self.watchers.remove(project_id) else {
+            return false;
+        };
+        handle.task.abort();
+        let client = handle.current_client.lock().await.clone();
+        let _ = client
+            .request(
+                "session.watch_stop",
+                json!({ "streamId": handle.stream_id }),
+            )
+            .await;
+        true
     }
 
     pub async fn stop_all(&mut self) {

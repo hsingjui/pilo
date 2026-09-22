@@ -20,7 +20,9 @@ import {
 	pickLocalProjectDirectory,
 	removeProject,
 	reorderProjects,
+	setProjectPiRuntime,
 	type Project,
+	type ProjectPiRuntime,
 } from "@/lib/projects";
 import { removeSshConnection } from "@/lib/ssh-connections";
 
@@ -32,6 +34,7 @@ type UseAppProjectActionsOptions = {
 		projectIds: ReadonlySet<string>,
 		nextProjects: Project[],
 	) => void;
+	onProjectRuntimeChanged: (projectId: string) => void;
 };
 
 export function useAppProjectActions({
@@ -39,6 +42,7 @@ export function useAppProjectActions({
 	setProjects,
 	connectionCatalog,
 	onProjectsRemoved,
+	onProjectRuntimeChanged,
 }: UseAppProjectActionsOptions) {
 	const [addProjectOpen, setAddProjectOpen] = useState(false);
 	const [addProjectConnectionId, setAddProjectConnectionId] = useState<
@@ -140,6 +144,45 @@ export function useAppProjectActions({
 		[onProjectsRemoved, projects, setProjects],
 	);
 
+	const handleSetProjectPiRuntime = useCallback(
+		async (projectId: string, piRuntime: ProjectPiRuntime) => {
+			const currentProject = projects.find(
+				(candidate) => candidate.id === projectId,
+			);
+			if (!currentProject || currentProject.piRuntime === piRuntime) return;
+			try {
+				const updated = await setProjectPiRuntime(projectId, piRuntime);
+				setProjects((current) =>
+					current.map((project) =>
+						project.id === projectId ? updated : project,
+					),
+				);
+				onProjectRuntimeChanged(projectId);
+				notifyProjectsChanged();
+				void refreshProjectPiModels(projectId).catch((error) => {
+					console.warn(
+						"Failed to refresh Pi models after runtime switch",
+						error,
+					);
+				});
+				toast.success(
+					piRuntime === "local" ? "已切换为本地 Pi" : "已切换为远程 Pi",
+					{
+						description:
+							piRuntime === "local"
+								? "内置工具将通过 SSH 操作远程工作区"
+								: "Pi 与工具恢复在远程主机运行",
+					},
+				);
+			} catch (error) {
+				toast.error("切换 Pi 运行位置失败", {
+					description: userErrorMessage(error),
+				});
+			}
+		},
+		[onProjectRuntimeChanged, projects, setProjects],
+	);
+
 	const handleDeleteConnection = useCallback(
 		async (connectionId: string) => {
 			if (connectionId === "local") return;
@@ -184,6 +227,7 @@ export function useAppProjectActions({
 		handleAddProject,
 		handleReorderProjects,
 		handleDeleteProject,
+		handleSetProjectPiRuntime,
 		handleDeleteConnection,
 	};
 }

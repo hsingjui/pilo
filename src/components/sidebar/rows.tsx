@@ -1,7 +1,9 @@
 /* oxlint-disable jsx-a11y/prefer-tag-over-role -- sidebar rows contain independent action buttons; native outer buttons would create invalid nested interactive controls. */
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
+	Check,
 	ChevronDown,
+	Clock,
 	Folder,
 	LoaderCircle,
 	Monitor,
@@ -9,22 +11,29 @@ import {
 	Pencil,
 	Plus,
 	RefreshCw,
-	SlidersHorizontal,
 	SquarePen,
 	Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { ProjectPiRuntime } from "@/lib/projects";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
 } from "@/ui";
 import { menuItemIconClassName } from "@/ui/menu-styles";
-import type { SidebarEnv, SidebarSession, SidebarProject } from "./types";
+import type {
+	SidebarEnv,
+	SidebarEnvView,
+	SidebarSession,
+	SidebarProject,
+} from "./types";
 
 // 悬浮时才出现的行内操作按钮（Lody loro-app-sidebar 的 hoverActionClassName）。
 const HOVER_ACTION = cn(
@@ -38,6 +47,52 @@ const HOVER_ACTION = cn(
 	// 不可见时用伪元素把命中区补到 24×24，视觉尺寸保持不变
 	"relative after:absolute after:-inset-0.5 after:content-['']",
 );
+
+/** 菜单内的迷你开关（比标准 Switch 小一号，适合行内展示）。 */
+function MiniSwitch({ checked }: { checked: boolean }) {
+	return (
+		<span
+			aria-hidden="true"
+			className={cn(
+				"relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors",
+				checked ? "bg-primary" : "bg-switch-track",
+			)}
+		>
+			<span
+				className={cn(
+					"absolute left-0.5 h-3 w-3 rounded-full bg-background shadow-sm transition-transform",
+					checked && "translate-x-3",
+				)}
+			/>
+		</span>
+	);
+}
+
+/** 「视图」分组的单选项：图标 + 文字 + 选中勾。 */
+function ViewMenuItem({
+	icon: Icon,
+	label,
+	selected,
+	onSelect,
+}: {
+	icon: typeof Folder;
+	label: string;
+	selected: boolean;
+	onSelect: () => void;
+}) {
+	return (
+		<DropdownMenuItem onSelect={onSelect}>
+			<Icon className={menuItemIconClassName} />
+			<span className="min-w-0 flex-1 whitespace-nowrap">{label}</span>
+			{selected ? (
+				<Check
+					className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+					aria-hidden="true"
+				/>
+			) : null}
+		</DropdownMenuItem>
+	);
+}
 
 /**
  * 两步确认的删除按钮：
@@ -130,12 +185,22 @@ export function EnvRow({
 	env,
 	collapsed,
 	onToggle,
+	view,
+	onViewChange,
+	showProjects,
+	onShowProjectsChange,
 	onAddProject,
 	onDeleteConnection,
 }: {
 	env: SidebarEnv;
 	collapsed: boolean;
 	onToggle: () => void;
+	/** 侧栏组织模式（全局）。 */
+	view: SidebarEnvView;
+	onViewChange?: (view: SidebarEnvView) => void;
+	/** 「展示项目」开关（“最新更新”模式下控制会话行是否带项目名）。 */
+	showProjects: boolean;
+	onShowProjectsChange?: (showProjects: boolean) => void;
 	onAddProject?: (connectionId: string) => void;
 	onDeleteConnection?: (connectionId: string) => void;
 }) {
@@ -182,25 +247,53 @@ export function EnvRow({
 				</TooltipTrigger>
 				<TooltipContent side="right">添加项目</TooltipContent>
 			</Tooltip>
-			{env.id !== "local" && onDeleteConnection ? (
-				<DropdownMenu
-					open={menuOpen}
-					onOpenChange={(open) => {
-						setMenuOpen(open);
-						if (!open) setConfirmingDelete(false);
-					}}
-				>
-					<DropdownMenuTrigger asChild>
-						<button
-							type="button"
-							className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-							aria-label="连接菜单"
-							onClick={(event) => event.stopPropagation()}
-						>
-							<SlidersHorizontal className="h-3.5 w-3.5" />
-						</button>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent align="start" className="min-w-0 w-32">
+			<DropdownMenu
+				open={menuOpen}
+				onOpenChange={(open) => {
+					setMenuOpen(open);
+					if (!open) setConfirmingDelete(false);
+				}}
+			>
+				<DropdownMenuTrigger asChild>
+					<button
+						type="button"
+						className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+						aria-label="连接菜单"
+						onClick={(event) => event.stopPropagation()}
+					>
+						<MoreHorizontal className="h-3.5 w-3.5" />
+					</button>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent align="start" className="min-w-0 w-40">
+					{onViewChange ? (
+						<>
+							<DropdownMenuLabel>视图</DropdownMenuLabel>
+							<ViewMenuItem
+								icon={Folder}
+								label="项目"
+								selected={view === "projects"}
+								onSelect={() => onViewChange("projects")}
+							/>
+							<ViewMenuItem
+								icon={Clock}
+								label="最新更新"
+								selected={view === "recent"}
+								onSelect={() => onViewChange("recent")}
+							/>
+							<DropdownMenuItem
+								data-show-projects={showProjects || undefined}
+								onSelect={() => onShowProjectsChange?.(!showProjects)}
+							>
+								<Folder className={menuItemIconClassName} />
+								<span className="min-w-0 flex-1 whitespace-nowrap">
+									展示项目
+								</span>
+								<MiniSwitch checked={showProjects} />
+							</DropdownMenuItem>
+							<DropdownMenuSeparator />
+						</>
+					) : null}
+					{onDeleteConnection ? (
 						<DropdownMenuItem
 							variant="destructive"
 							onSelect={(event) => {
@@ -215,14 +308,105 @@ export function EnvRow({
 							<Trash2 className={menuItemIconClassName} />
 							{confirmingDelete ? "确认删除" : "删除连接"}
 						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
-			) : null}
+					) : null}
+				</DropdownMenuContent>
+			</DropdownMenu>
 		</div>
 	);
 }
 
 // ---- 项目行 -------------------------------------------------------------
+
+/**
+ * “最新更新”视图的分区标题（参考 Lody SidebarSectionHeader）：
+ * 可折叠/展开；操作菜单融进标题行的 MoreHorizontal——连接和项目树
+ * 隐藏后，这里是用户切回“项目”视图的入口。
+ */
+export function RecentSectionHeader({
+	collapsed,
+	onToggle,
+	view,
+	onViewChange,
+	showProjects,
+	onShowProjectsChange,
+}: {
+	collapsed: boolean;
+	onToggle: () => void;
+	/** 侧栏组织模式（全局）。 */
+	view: SidebarEnvView;
+	onViewChange?: (view: SidebarEnvView) => void;
+	/** 「展示项目」开关（“最新更新”模式下控制会话行是否带项目名）。 */
+	showProjects: boolean;
+	onShowProjectsChange?: (showProjects: boolean) => void;
+}) {
+	const toggleLabel = collapsed ? "展开最新更新" : "折叠最新更新";
+	return (
+		<div className="group flex h-7 items-center gap-1 rounded-md">
+			<button
+				type="button"
+				aria-label={toggleLabel}
+				aria-expanded={!collapsed}
+				onClick={onToggle}
+				className={cn(
+					"relative flex h-7 min-w-0 flex-1 select-none items-center gap-2 rounded-md border border-transparent bg-transparent px-2 text-left",
+					"text-sm font-medium text-sidebar-foreground-muted transition-colors hover:text-sidebar-foreground",
+					"focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+				)}
+			>
+				<Clock className="h-3.5 w-3.5 shrink-0 opacity-80" />
+				<span className="min-w-0 truncate">最新更新</span>
+				<ChevronDown
+					className={cn(
+						"h-3.5 w-3.5 shrink-0 text-current transition-[opacity,transform] duration-150 ease-out",
+						collapsed
+							? "-rotate-90 opacity-100"
+							: "opacity-0 group-hover:opacity-100",
+					)}
+				/>
+			</button>
+			<DropdownMenu>
+				<DropdownMenuTrigger asChild>
+					<button
+						type="button"
+						className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+						aria-label="最新更新菜单"
+					>
+						<MoreHorizontal className="h-3.5 w-3.5" />
+					</button>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent align="start" className="min-w-0 w-40">
+					{onViewChange ? (
+						<>
+							<DropdownMenuLabel>视图</DropdownMenuLabel>
+							<ViewMenuItem
+								icon={Folder}
+								label="项目"
+								selected={view === "projects"}
+								onSelect={() => onViewChange("projects")}
+							/>
+							<ViewMenuItem
+								icon={Clock}
+								label="最新更新"
+								selected={view === "recent"}
+								onSelect={() => onViewChange("recent")}
+							/>
+							<DropdownMenuItem
+								data-show-projects={showProjects || undefined}
+								onSelect={() => onShowProjectsChange?.(!showProjects)}
+							>
+								<Folder className={menuItemIconClassName} />
+								<span className="min-w-0 flex-1 whitespace-nowrap">
+									展示项目
+								</span>
+								<MiniSwitch checked={showProjects} />
+							</DropdownMenuItem>
+						</>
+					) : null}
+				</DropdownMenuContent>
+			</DropdownMenu>
+		</div>
+	);
+}
 
 export function ProjectRow({
 	project,
@@ -234,6 +418,7 @@ export function ProjectRow({
 	onToggle,
 	onNewChat,
 	onDelete,
+	onSetPiRuntime,
 	onRefreshSessions,
 }: {
 	project: SidebarProject;
@@ -245,6 +430,7 @@ export function ProjectRow({
 	onToggle: () => void;
 	onNewChat?: (projectId: string) => void;
 	onDelete?: (projectId: string) => void;
+	onSetPiRuntime?: (projectId: string, piRuntime: ProjectPiRuntime) => void;
 	onRefreshSessions?: () => void;
 }) {
 	const [menuOpen, setMenuOpen] = useState(false);
@@ -341,6 +527,22 @@ export function ProjectRow({
 									<RefreshCw className={menuItemIconClassName} />
 									刷新会话
 								</DropdownMenuItem>
+								{project.connectionType === "ssh" && onSetPiRuntime ? (
+									<DropdownMenuItem
+										disabled={refreshing}
+										onSelect={() =>
+											onSetPiRuntime(
+												project.id,
+												project.piRuntime === "local" ? "workspace" : "local",
+											)
+										}
+									>
+										<Monitor className={menuItemIconClassName} />
+										{project.piRuntime === "local"
+											? "使用远程 Pi"
+											: "使用本地 Pi"}
+									</DropdownMenuItem>
+								) : null}
 								{onDelete ? (
 									<DropdownMenuItem
 										variant="destructive"
@@ -395,13 +597,17 @@ export const SessionRow = memo(function SessionRow({
 	onSelect,
 	onDelete,
 	onRename,
+	projectName,
 }: {
 	session: SidebarSession;
 	selected: boolean;
 	onSelect: (sessionId: string) => void;
 	onDelete?: (sessionId: string) => void;
 	onRename?: (sessionId: string, title: string) => void;
+	/** 所属项目名；仅在“最新更新”且开启「展示项目」时传入（两行式展示）。 */
+	projectName?: string;
 }) {
+	const projectContext = Boolean(projectName);
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [confirmingDeleteMenu, setConfirmingDeleteMenu] = useState(false);
 	const [renaming, setRenaming] = useState(false);
@@ -436,14 +642,20 @@ export const SessionRow = memo(function SessionRow({
 						onSelect(session.id);
 					}}
 					className={cn(
-						"group relative w-full min-w-0 cursor-pointer select-none rounded-md border border-transparent bg-transparent px-2 py-1 text-left transition-colors",
+						"group relative w-full min-w-0 cursor-pointer select-none rounded-md border border-transparent bg-transparent px-2 text-left transition-colors",
+						projectContext ? "py-1.5" : "py-1",
 						"hover:bg-sidebar-hover hover:text-sidebar-hover-foreground data-[menu-open]:bg-sidebar-hover",
 						"focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sidebar-ring",
 						selected &&
 							"border-sidebar-foreground/10 bg-sidebar-foreground/10 text-sidebar-foreground hover:bg-sidebar-foreground/10",
 					)}
 				>
-					<div className="flex w-full min-w-0 items-center gap-1.5">
+					<div
+						className={cn(
+							"flex w-full min-w-0 gap-1.5",
+							projectContext ? "items-start" : "items-center",
+						)}
+					>
 						{/* 图标槽 16px：让会话标题与项目标题共享同一条 30px 起始边 */}
 						<div className="relative flex h-4 w-4 shrink-0 items-center justify-center">
 							<DropdownMenu
@@ -500,42 +712,59 @@ export const SessionRow = memo(function SessionRow({
 								</DropdownMenuContent>
 							</DropdownMenu>
 						</div>
-						{renaming ? (
-							<input
-								ref={renameInputRef}
-								value={renameValue}
-								aria-label="修改会话标题"
-								onClick={(event) => event.stopPropagation()}
-								onChange={(event) => setRenameValue(event.target.value)}
-								onBlur={() => {
-									suppressSelectRef.current = true;
-									window.setTimeout(() => {
-										suppressSelectRef.current = false;
-									}, 0);
-									submitRename();
-								}}
-								onKeyDown={(event) => {
-									event.stopPropagation();
-									if (event.key === "Enter") submitRename();
-									if (event.key === "Escape") {
-										setRenameValue(session.title);
-										setRenaming(false);
-									}
-								}}
-								className="min-w-0 flex-1 rounded-sm bg-transparent px-1 text-sm outline-hidden ring-1 ring-sidebar-ring"
-							/>
-						) : (
-							<span
-								className={cn(
-									"block min-w-0 flex-1 truncate text-sm",
-									selected
-										? "text-sidebar-selection-foreground"
-										: "text-sidebar-foreground dark:text-sidebar-foreground/75",
-								)}
-							>
-								{session.title}
-							</span>
-						)}
+						<div className="min-w-0 flex-1">
+							{renaming ? (
+								<input
+									ref={renameInputRef}
+									value={renameValue}
+									aria-label="修改会话标题"
+									onClick={(event) => event.stopPropagation()}
+									onChange={(event) => setRenameValue(event.target.value)}
+									onBlur={() => {
+										suppressSelectRef.current = true;
+										window.setTimeout(() => {
+											suppressSelectRef.current = false;
+										}, 0);
+										submitRename();
+									}}
+									onKeyDown={(event) => {
+										event.stopPropagation();
+										if (event.key === "Enter") submitRename();
+										if (event.key === "Escape") {
+											setRenameValue(session.title);
+											setRenaming(false);
+										}
+									}}
+									className="min-w-0 w-full rounded-sm bg-transparent px-1 text-sm outline-hidden ring-1 ring-sidebar-ring"
+								/>
+							) : (
+								<div className="flex h-5 min-w-0 items-center">
+									<span
+										className={cn(
+											"block min-w-0 flex-1 truncate text-sm",
+											selected
+												? "text-sidebar-selection-foreground"
+												: "text-sidebar-foreground dark:text-sidebar-foreground/75",
+										)}
+									>
+										{session.title}
+									</span>
+								</div>
+							)}
+							{projectContext && projectName ? (
+								<div
+									data-sidebar-project-context={projectName}
+									className="flex h-4 min-w-0 items-center gap-1 text-[11px] leading-tight text-sidebar-foreground-muted"
+								>
+									<Folder
+										className="h-3 w-3 shrink-0 opacity-80"
+										strokeWidth={1.75}
+										aria-hidden="true"
+									/>
+									<span className="min-w-0 truncate">{projectName}</span>
+								</div>
+							) : null}
+						</div>
 						<div className="relative flex h-5 min-w-5 shrink-0 items-center justify-center pointer-events-none">
 							<span
 								aria-hidden="true"

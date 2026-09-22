@@ -18,6 +18,39 @@ export function ProjectSessionsToolbar({
 	onNewChat?: (projectId: string) => void;
 }) {
 	return (
+		<SidebarSessionsToolbar
+			title={project.name}
+			totalCount={totalCount}
+			query={query}
+			queryPlaceholder="搜索该项目的会话"
+			queryLabel="搜索该项目的会话"
+			onQueryChange={onQueryChange}
+			onBack={onBack}
+			onNewChat={onNewChat ? () => onNewChat(project.id) : undefined}
+		/>
+	);
+}
+
+function SidebarSessionsToolbar({
+	title,
+	totalCount,
+	query,
+	queryPlaceholder,
+	queryLabel,
+	onQueryChange,
+	onBack,
+	onNewChat,
+}: {
+	title: string;
+	totalCount: number;
+	query: string;
+	queryPlaceholder: string;
+	queryLabel: string;
+	onQueryChange: (query: string) => void;
+	onBack: () => void;
+	onNewChat?: () => void;
+}) {
+	return (
 		<>
 			<div className="flex min-w-0 items-center gap-1">
 				<button
@@ -26,7 +59,7 @@ export function ProjectSessionsToolbar({
 					onClick={onBack}
 				>
 					<ArrowLeft className="h-4 w-4 shrink-0" />
-					<span className="min-w-0 flex-1 truncate">{project.name}</span>
+					<span className="min-w-0 flex-1 truncate">{title}</span>
 					<span className="shrink-0 text-xs tabular-nums text-sidebar-foreground-muted">
 						{totalCount}
 					</span>
@@ -34,8 +67,8 @@ export function ProjectSessionsToolbar({
 				<button
 					type="button"
 					className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-					aria-label={`在 ${project.name} 新建会话`}
-					onClick={() => onNewChat?.(project.id)}
+					aria-label="新建会话"
+					onClick={() => onNewChat?.()}
 				>
 					<SquarePen className="h-4 w-4" />
 				</button>
@@ -50,8 +83,8 @@ export function ProjectSessionsToolbar({
 						if (query) onQueryChange("");
 						else onBack();
 					}}
-					placeholder="搜索该项目的会话"
-					aria-label="搜索该项目的会话"
+					placeholder={queryPlaceholder}
+					aria-label={queryLabel}
 					className="h-8 w-full rounded-lg border border-sidebar-border/70 bg-sidebar-foreground/[0.035] pl-8 pr-2 text-xs text-sidebar-foreground outline-hidden placeholder:text-sidebar-foreground-muted focus:border-sidebar-ring/70 focus:ring-2 focus:ring-sidebar-ring/20"
 				/>
 			</div>

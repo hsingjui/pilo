@@ -49,6 +49,7 @@ mod tests {
                     distro: "Debian-old".to_owned(),
                 },
             },
+            pi_runtime: crate::domain::ProjectPiRuntime::Workspace,
             metadata: ProjectMetadata {
                 cwd: "/code/demo".to_owned(),
                 git_branch: Some("main".to_owned()),
