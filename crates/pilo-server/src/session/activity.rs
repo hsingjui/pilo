@@ -187,21 +187,85 @@ fn external_pi_processes(project: &Path, owned_pids: &HashSet<u32>) -> Vec<Exter
         .collect()
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+fn external_pi_processes(project: &Path, owned_pids: &HashSet<u32>) -> Vec<ExternalPiProcess> {
+    let project = project
+        .canonicalize()
+        .unwrap_or_else(|_| project.to_path_buf());
+    let Ok(output) = std::process::Command::new("/bin/ps")
+        .args(["-axww", "-o", "pid=,command="])
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line
+                .trim_start()
+                .splitn(2, |character: char| character.is_ascii_whitespace());
+            let pid = fields.next()?.parse::<u32>().ok()?;
+            if pid == std::process::id() || owned_pids.contains(&pid) {
+                return None;
+            }
+            let command = fields.next()?.trim();
+            if !looks_like_pi_command(command.as_bytes()) {
+                return None;
+            }
+            let cwd = macos_process_cwd(pid)?;
+            let cwd = cwd.canonicalize().unwrap_or(cwd);
+            if cwd != project {
+                return None;
+            }
+            Some(ExternalPiProcess {
+                session_path: explicit_session_path(command.as_bytes(), &cwd),
+            })
+        })
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+fn macos_process_cwd(pid: u32) -> Option<PathBuf> {
+    let pid = pid.to_string();
+    let output = std::process::Command::new("/usr/sbin/lsof")
+        .args(["-a", "-p", &pid, "-d", "cwd", "-Fn"])
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix('n')
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+        })
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn external_pi_processes(_project: &Path, _owned_pids: &HashSet<u32>) -> Vec<ExternalPiProcess> {
     Vec::new()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn command_args(command: &[u8]) -> Vec<String> {
+    if command.contains(&0) {
+        return command
+            .split(|byte| *byte == 0)
+            .filter(|arg| !arg.is_empty())
+            .map(|arg| String::from_utf8_lossy(arg).into_owned())
+            .collect();
+    }
     command
-        .split(|byte| *byte == 0)
+        .split(|byte| byte.is_ascii_whitespace())
         .filter(|arg| !arg.is_empty())
         .map(|arg| String::from_utf8_lossy(arg).into_owned())
         .collect()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn explicit_session_path(command: &[u8], cwd: &Path) -> Option<PathBuf> {
     let args = command_args(command);
     let value = args.windows(2).find_map(|window| {
@@ -218,7 +282,7 @@ fn explicit_session_path(command: &[u8], cwd: &Path) -> Option<PathBuf> {
     })
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn looks_like_pi_command(command: &[u8]) -> bool {
     let args = command_args(command)
         .into_iter()
@@ -233,7 +297,7 @@ fn looks_like_pi_command(command: &[u8]) -> bool {
     })
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod tests {
     use std::path::{Path, PathBuf};
 
@@ -247,6 +311,9 @@ mod tests {
         assert!(looks_like_pi_command(
             b"/home/u/.local/bin/pi\0--session\0/tmp/a.jsonl\0"
         ));
+        assert!(looks_like_pi_command(
+            b"/opt/homebrew/bin/node /Users/u/.pi/agent/node_modules/pi-coding-agent/dist/bundle/cli.js --mode rpc"
+        ));
         assert!(!looks_like_pi_command(b"/usr/bin/node\0server.js\0"));
     }
 
@@ -259,6 +326,10 @@ mod tests {
         assert_eq!(
             explicit_session_path(b"pi\0-s\0relative/a.jsonl\0", Path::new("/work")),
             Some(PathBuf::from("/work/relative/a.jsonl"))
+        );
+        assert_eq!(
+            explicit_session_path(b"pi --session /tmp/a.jsonl", Path::new("/work")),
+            Some(PathBuf::from("/tmp/a.jsonl"))
         );
         assert_eq!(
             explicit_session_path(b"pi\0--session\0session-id\0", Path::new("/work")),
