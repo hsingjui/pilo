@@ -141,12 +141,14 @@ fn ensure_connection_columns(db: &SqliteConnection) -> Result<(), String> {
         .map(|exists| exists != 0)
         .map_err(|error| error.to_string())?;
     if !has_pi_executable {
-        db.execute_batch(
-            "ALTER TABLE connections ADD COLUMN pi_executable TEXT;
-             UPDATE connections SET name='本地' WHERE id='local' AND name='Local';",
-        )
-        .map_err(|error| error.to_string())?;
+        db.execute_batch("ALTER TABLE connections ADD COLUMN pi_executable TEXT;")
+            .map_err(|error| error.to_string())?;
     }
+    db.execute(
+        "UPDATE connections SET name='Local' WHERE id='local' AND name='本地'",
+        [],
+    )
+    .map_err(|error| error.to_string())?;
     let has_pi_runtime = column_exists(db, "connections", "pi_runtime")?;
     if !has_pi_runtime {
         db.execute_batch(

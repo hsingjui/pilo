@@ -163,7 +163,7 @@ pub fn ensure_local_connection(db: &SqliteConnection) -> Result<Connection, Stri
     }
     let connection = Connection {
         id: "local".to_owned(),
-        name: "本地".to_owned(),
+        name: "Local".to_owned(),
         pi_executable: None,
         pi_runtime: PiRuntime::default(),
         kind: ConnectionKind::Local,
