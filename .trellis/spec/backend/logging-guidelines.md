@@ -23,7 +23,9 @@ frontend-originated records are persisted to the log file without being echoed
 back into the webview.
 
 The About settings page opens the same directory with `appLogDir()` and the
-`opener` plugin. Do not duplicate the path calculation in Rust or TypeScript.
+`opener` plugin. Scope `opener:allow-open-path` to `$APPLOG`; the bare command
+permission exposes the command but still rejects the path. Do not duplicate the
+path calculation in Rust or TypeScript.
 
 ## Rust conventions
 
