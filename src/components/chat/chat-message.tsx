@@ -283,9 +283,14 @@ export const AssistantMessage = memo(function AssistantMessage({
 	const activity = getAssistantActivities(content);
 	const isTurnFinished =
 		message.streaming !== true && message.completion !== "continued";
+	const foldWorkOnError =
+		Boolean(message.errorMessage) ||
+		message.completion === "interrupted" ||
+		message.stopReason === "aborted";
 	const displaySections = splitAssistantContentForDisplay(
 		content,
 		isTurnFinished,
+		foldWorkOnError,
 	);
 	const streamingLabel = getAssistantStreamingLabel({
 		text: message.text,

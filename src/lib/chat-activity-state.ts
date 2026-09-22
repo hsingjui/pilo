@@ -124,10 +124,15 @@ export function getAssistantActivities(
  * Once the turn is finished, preserve the existing transcript shape: all
  * pre-final work (including intermediate narration) is folded behind the work
  * disclosure and only the final contiguous text run stays expanded.
+ *
+ * A turn that ended with an error or was interrupted has no final text run to
+ * anchor the fold, but still folds all work so the terminal notice stands alone
+ * below the collapsed activity.
  */
 export function splitAssistantContentForDisplay(
 	content: AssistantContentItem[] | undefined,
 	isTurnFinished: boolean,
+	foldWorkOnError = false,
 ): AssistantContentDisplaySections {
 	const items = content ?? [];
 	if (items.length <= 1) {
@@ -144,8 +149,14 @@ export function splitAssistantContentForDisplay(
 		finalTextStart = index;
 	}
 
-	if (finalTextStart === 0 || finalTextStart === items.length) {
+	if (finalTextStart === 0) {
 		return { work: [], final: items, hasCollapsedWork: false };
+	}
+
+	if (finalTextStart === items.length) {
+		return foldWorkOnError
+			? { work: items, final: [], hasCollapsedWork: true }
+			: { work: [], final: items, hasCollapsedWork: false };
 	}
 
 	const final = items.slice(finalTextStart);
@@ -153,7 +164,9 @@ export function splitAssistantContentForDisplay(
 		(item) => item.type === "text" && item.text.trim().length > 0,
 	);
 	if (!hasVisibleFinalText) {
-		return { work: [], final: items, hasCollapsedWork: false };
+		return foldWorkOnError
+			? { work: items, final: [], hasCollapsedWork: true }
+			: { work: [], final: items, hasCollapsedWork: false };
 	}
 
 	return {
