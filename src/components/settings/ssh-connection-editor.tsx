@@ -1,6 +1,8 @@
-import { KeyRound } from "lucide-react";
+import { useState } from "react";
+import { Eye, EyeOff, KeyRound } from "lucide-react";
 
 import type { SshAuthMethod } from "@/lib/pi-runtime";
+import { cn } from "@/lib/utils";
 import {
 	Button,
 	Dialog,
@@ -19,6 +21,7 @@ import {
 import type { SshConnectionFormState } from "./connection-form";
 import {
 	SETTINGS_CONTROL_CLASS,
+	SETTINGS_ICON_BUTTON_CLASS,
 	SETTINGS_NESTED_DIALOG_OVERLAY_CLASS,
 } from "./compact-layout";
 
@@ -28,24 +31,48 @@ type SshFieldError = {
 };
 
 type SshConnectionEditorProps = {
+	open: boolean;
 	editing: SshConnectionFormState | null;
 	busy: boolean;
+	testing?: boolean;
 	fieldError?: SshFieldError | null;
 	onChange: (editing: SshConnectionFormState) => void;
 	onClose: () => void;
+	onTest?: () => void;
 	onSave: () => void;
 };
 
 export function SshConnectionEditor({
+	open,
 	editing,
 	busy,
+	testing,
 	fieldError,
 	onChange,
 	onClose,
+	onTest,
 	onSave,
 }: SshConnectionEditorProps) {
+	const [revealedId, setRevealedId] = useState<string | null>(null);
+	const revealPassword = editing !== null && revealedId === editing.id;
+
+	const resetReveal = () => setRevealedId(null);
+
+	const togglePassword = () => {
+		if (!editing) return;
+		setRevealedId(revealedId === editing.id ? null : editing.id);
+	};
+
 	return (
-		<Dialog open={editing !== null} onOpenChange={(open) => !open && onClose()}>
+		<Dialog
+			open={open}
+			onOpenChange={(nextOpen) => {
+				if (!nextOpen) {
+					resetReveal();
+					onClose();
+				}
+			}}
+		>
 			<DialogContent
 				overlayClassName={SETTINGS_NESTED_DIALOG_OVERLAY_CLASS}
 				className="max-w-lg gap-4"
@@ -161,27 +188,66 @@ export function SshConnectionEditor({
 								</SelectContent>
 							</Select>
 						</div>
+						<div className="grid gap-1 text-xs">
+							Pi 运行位置
+							<Select
+								value={editing.piRuntime}
+								onValueChange={(value) =>
+									onChange({
+										...editing,
+										piRuntime: value as SshConnectionFormState["piRuntime"],
+									})
+								}
+							>
+								<SelectTrigger className={SETTINGS_CONTROL_CLASS}>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="workspace">
+										远程 Pi · Pi 与工具运行在 SSH 主机
+									</SelectItem>
+									<SelectItem value="local">
+										本地 Pi · 内置工具透明路由到 SSH 工作区
+									</SelectItem>
+								</SelectContent>
+							</Select>
+							<span className="text-2xs text-muted-foreground">
+								本地 Pi 在 SSH 断开时工具会直接报错，不会回退到本机文件系统。
+							</span>
+						</div>
 						{editing.authMethod === "password" ? (
 							<label htmlFor="ssh-password" className="grid gap-1 text-xs">
 								密码
-								<Input
-									id="ssh-password"
-									className={SETTINGS_CONTROL_CLASS}
-									type="password"
-									value={editing.password}
-									onChange={(event) =>
-										onChange({ ...editing, password: event.target.value })
-									}
-									placeholder={
-										editing.hasPassword ? "已保存；留空保持不变" : "SSH 密码"
-									}
-									aria-invalid={fieldError?.field === "password" || undefined}
-									aria-describedby={
-										fieldError?.field === "password"
-											? "ssh-password-error"
-											: undefined
-									}
-								/>
+								<div className="relative">
+									<Input
+										id="ssh-password"
+										className={cn(SETTINGS_CONTROL_CLASS, "pr-9")}
+										type={revealPassword ? "text" : "password"}
+										value={editing.password}
+										onChange={(event) =>
+											onChange({ ...editing, password: event.target.value })
+										}
+										placeholder="SSH 密码"
+										aria-invalid={fieldError?.field === "password" || undefined}
+										aria-describedby={
+											fieldError?.field === "password"
+												? "ssh-password-error"
+												: undefined
+										}
+									/>
+									<button
+										type="button"
+										className={cn(
+											SETTINGS_ICON_BUTTON_CLASS,
+											"absolute inset-y-0 right-0 my-auto",
+										)}
+										disabled={!editing.password}
+										onClick={togglePassword}
+										aria-label={revealPassword ? "隐藏密码" : "查看密码"}
+									>
+										{revealPassword ? <EyeOff /> : <Eye />}
+									</button>
+								</div>
 								{fieldError?.field === "password" ? (
 									<span
 										id="ssh-password-error"
@@ -242,19 +308,43 @@ export function SshConnectionEditor({
 								</span>
 							</label>
 						) : null}
-						<div className="mt-1 flex justify-end gap-2">
-							<Button size="sm" variant="outline" onClick={onClose}>
-								取消
-							</Button>
-							<Button
-								size="sm"
-								disabled={
-									busy || !editing.name.trim() || !editing.hostname.trim()
-								}
-								onClick={onSave}
-							>
-								{busy ? "保存中…" : "保存"}
-							</Button>
+						<div className="mt-1 flex items-center justify-between gap-2">
+							{onTest ? (
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={busy || testing}
+									onClick={onTest}
+								>
+									{testing ? "测试中…" : "测试连接"}
+								</Button>
+							) : (
+								<span />
+							)}
+							<div className="flex gap-2">
+								<Button
+									size="sm"
+									variant="outline"
+									onClick={() => {
+										resetReveal();
+										onClose();
+									}}
+								>
+									取消
+								</Button>
+								<Button
+									size="sm"
+									disabled={
+										busy || !editing.name.trim() || !editing.hostname.trim()
+									}
+									onClick={() => {
+										resetReveal();
+										onSave();
+									}}
+								>
+									{busy ? "保存中…" : "保存"}
+								</Button>
+							</div>
 						</div>
 					</div>
 				) : null}

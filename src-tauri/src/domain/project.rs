@@ -3,31 +3,6 @@ use serde_json::Value;
 
 use super::Connection;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ProjectPiRuntime {
-    #[default]
-    Workspace,
-    Local,
-}
-
-impl ProjectPiRuntime {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Workspace => "workspace",
-            Self::Local => "local",
-        }
-    }
-
-    pub fn parse(value: &str) -> Result<Self, String> {
-        match value {
-            "workspace" => Ok(Self::Workspace),
-            "local" => Ok(Self::Local),
-            _ => Err(format!("unknown Pi runtime '{value}'")),
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
@@ -35,8 +10,6 @@ pub struct Project {
     pub name: String,
     pub path: String,
     pub connection: Connection,
-    #[serde(default)]
-    pub pi_runtime: ProjectPiRuntime,
     pub metadata: ProjectMetadata,
     pub created_at_ms: u64,
     pub last_opened_at_ms: u64,

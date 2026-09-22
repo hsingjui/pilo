@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use pilo_protocol::PiExecutableInfo;
@@ -5,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, State};
 
-use crate::domain::{Connection, ConnectionKind, ConnectionNamingModel, WslDistribution};
+use crate::domain::{
+    Connection, ConnectionKind, ConnectionNamingModel, SshAuthMethod, WslDistribution,
+};
 
 use super::super::{
     PiloRuntime, credentials, storage,
@@ -257,6 +260,9 @@ fn ensure_wsl_connection(connection: &Connection) -> Result<(), String> {
     if !matches!(connection.kind, ConnectionKind::Wsl { .. }) {
         return Err("only WSL connections can be managed here".to_owned());
     }
+    if connection.pi_runtime != crate::domain::PiRuntime::Workspace {
+        return Err("Pi 运行位置仅对 SSH 连接可配置".to_owned());
+    }
     if connection.id.trim().is_empty() || connection.name.trim().is_empty() {
         return Err("WSL connection id and name are required".to_owned());
     }
@@ -297,6 +303,7 @@ pub async fn wsl_connection_test(
         id: format!("wsl:{distro}"),
         name: format!("WSL · {distro}"),
         pi_executable: None,
+        pi_runtime: crate::domain::PiRuntime::default(),
         kind: ConnectionKind::Wsl {
             distro: distro.to_owned(),
         },
@@ -312,6 +319,7 @@ pub async fn local_connection_test(
         id: "local".to_owned(),
         name: "Local".to_owned(),
         pi_executable: None,
+        pi_runtime: crate::domain::PiRuntime::default(),
         kind: ConnectionKind::Local,
     };
     connection_test_result(runtime.servers.test_connection(&connection).await?)
@@ -389,6 +397,15 @@ pub fn ssh_connection_save(
 }
 
 #[tauri::command]
+pub fn ssh_connection_password_get(app: AppHandle, id: String) -> Result<Option<String>, String> {
+    let db = storage::open(&app)?;
+    let connection = storage::get_connection(&db, id.trim())?
+        .ok_or_else(|| format!("SSH connection '{id}' was not found"))?;
+    ensure_ssh_connection(&connection)?;
+    Ok(credentials::get_ssh_password(&connection.id).ok())
+}
+
+#[tauri::command]
 pub fn ssh_connection_remove(app: AppHandle, id: String) -> Result<(), String> {
     let db = storage::open(&app)?;
     storage::remove_connection(&db, &id)?;
@@ -407,4 +424,44 @@ pub async fn ssh_connection_test(
         .ok_or_else(|| format!("SSH connection '{id}' was not found"))?;
     ensure_ssh_connection(&connection)?;
     connection_test_result(runtime.servers.test_connection(&connection).await?)
+}
+
+// Tests an SSH connection straight from the editor draft, before it is saved.
+#[tauri::command]
+pub async fn ssh_connection_test_draft(
+    runtime: State<'_, PiloRuntime>,
+    connection: Connection,
+    password: Option<String>,
+) -> Result<ConnectionTestResult, String> {
+    if !matches!(connection.kind, ConnectionKind::Ssh { .. }) || connection.id.trim().is_empty() {
+        return Err("a draft SSH connection is required".to_owned());
+    }
+    let password_auth = matches!(
+        &connection.kind,
+        ConnectionKind::Ssh { target }
+            if matches!(target.auth_method(), SshAuthMethod::Password)
+    );
+    if !password_auth {
+        return connection_test_result(runtime.servers.test_connection(&connection).await?);
+    }
+    // The SSH transport reads the password from the credential store by
+    // connection id (via the askpass helper), so stage the draft password under
+    // an ephemeral id instead of overwriting the saved credential. That avoids
+    // clobbering a real password and keeps concurrent tests from racing.
+    let password = match password {
+        Some(password) => password,
+        None => credentials::get_ssh_password(&connection.id)
+            .map_err(|_| "SSH password is required".to_owned())?,
+    };
+    static DRAFT_SEQ: AtomicU64 = AtomicU64::new(0);
+    let mut draft = connection.clone();
+    draft.id = format!(
+        "{}::draft:{}",
+        connection.id,
+        DRAFT_SEQ.fetch_add(1, Ordering::Relaxed)
+    );
+    credentials::set_ssh_password(&draft.id, &password)?;
+    let result = runtime.servers.test_connection(&draft).await;
+    let _ = credentials::delete_ssh_password(&draft.id);
+    connection_test_result(result?)
 }

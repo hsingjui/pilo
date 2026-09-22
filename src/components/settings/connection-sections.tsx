@@ -4,7 +4,6 @@ import {
 	Monitor,
 	Pencil,
 	Plus,
-	Search,
 	Server,
 	Settings2,
 	Trash2,
@@ -57,7 +56,6 @@ type ConnectionRowProps = {
 	busy: boolean;
 	onToggleShown: (shown: boolean) => void;
 	onTest: () => void;
-	onProbePi: () => void;
 	onConfigure: () => void;
 	onEdit?: () => void;
 	onRemove?: () => void;
@@ -71,7 +69,6 @@ export function ConnectionRow({
 	busy,
 	onToggleShown,
 	onTest,
-	onProbePi,
 	onConfigure,
 	onEdit,
 	onRemove,
@@ -118,22 +115,11 @@ export function ConnectionRow({
 					size="icon"
 					className={SETTINGS_ICON_BUTTON_CLASS}
 					disabled={busy}
-					onClick={onProbePi}
-					aria-label="检测 Pi"
-					title="检测 Pi"
-				>
-					<Search />
-				</Button>
-				<Button
-					variant="ghost"
-					size="icon"
-					className={SETTINGS_ICON_BUTTON_CLASS}
-					disabled={busy}
 					onClick={onConfigure}
 					aria-label="连接设置"
 					title="连接设置"
 				>
-					<Pencil />
+					<Settings2 />
 					<span className="sr-only">连接设置</span>
 				</Button>
 				{onEdit ? (
@@ -141,11 +127,12 @@ export function ConnectionRow({
 						variant="ghost"
 						size="icon"
 						className={SETTINGS_ICON_BUTTON_CLASS}
+						disabled={busy}
 						onClick={onEdit}
 						aria-label="编辑 SSH 参数"
 						title="编辑 SSH 参数"
 					>
-						<Settings2 />
+						<Pencil />
 						<span className="sr-only">编辑 SSH 参数</span>
 					</Button>
 				) : null}
@@ -220,6 +207,9 @@ export function ConnectionSettingsDialog({
 	onProbe: () => void;
 	onSave: () => void;
 }) {
+	const usesLocalPi =
+		draft?.connection.kind.type === "ssh" &&
+		draft.connection.piRuntime === "local";
 	return (
 		<Dialog open={draft !== null} onOpenChange={(open) => !open && onClose()}>
 			<DialogContent
@@ -229,8 +219,9 @@ export function ConnectionSettingsDialog({
 				<DialogHeader>
 					<DialogTitle>连接设置</DialogTitle>
 					<DialogDescription>
-						修改显示名称，并为这个连接指定 Pi 可执行文件。留空时自动从目标环境
-						PATH 检测。
+						{usesLocalPi
+							? "修改显示名称。该连接使用本地 Pi，Pi 运行在 Pilo 本机，请到「Local」连接的设置中配置本机 Pi。"
+							: "修改显示名称，并为这个连接指定 Pi 可执行文件。留空时自动从目标环境 PATH 检测。"}
 					</DialogDescription>
 				</DialogHeader>
 				{draft ? (
@@ -246,31 +237,43 @@ export function ConnectionSettingsDialog({
 								}
 							/>
 						</label>
-						<label htmlFor="connection-pi-path" className="grid gap-1 text-xs">
-							Pi 路径
-							<div className="flex gap-2">
-								<Input
-									id="connection-pi-path"
-									className={cn(SETTINGS_CONTROL_CLASS, "font-mono")}
-									value={draft.piExecutable}
-									onChange={(event) =>
-										onChange({ ...draft, piExecutable: event.target.value })
-									}
-									placeholder="自动检测"
-								/>
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={busy || probing}
-									onClick={onProbe}
-								>
-									{probing ? "检测中…" : "检测"}
-								</Button>
+						{usesLocalPi ? (
+							<div className="grid gap-1 text-xs">
+								Pi 运行位置
+								<span className="rounded-md border border-border/60 bg-muted/20 px-2 py-1.5 text-2xs text-muted-foreground">
+									本地 Pi · 使用本机 Pi，不检测远端可执行文件
+								</span>
 							</div>
-							<span className="text-2xs text-muted-foreground">
-								可填写绝对路径，也可填写目标环境 PATH 中可解析的命令名。
-							</span>
-						</label>
+						) : (
+							<label
+								htmlFor="connection-pi-path"
+								className="grid gap-1 text-xs"
+							>
+								Pi 路径
+								<div className="flex gap-2">
+									<Input
+										id="connection-pi-path"
+										className={cn(SETTINGS_CONTROL_CLASS, "font-mono")}
+										value={draft.piExecutable}
+										onChange={(event) =>
+											onChange({ ...draft, piExecutable: event.target.value })
+										}
+										placeholder="自动检测"
+									/>
+									<Button
+										variant="outline"
+										size="sm"
+										disabled={busy || probing}
+										onClick={onProbe}
+									>
+										{probing ? "检测中…" : "检测"}
+									</Button>
+								</div>
+								<span className="text-2xs text-muted-foreground">
+									可填写绝对路径，也可填写目标环境 PATH 中可解析的命令名。
+								</span>
+							</label>
+						)}
 						<div className="mt-1 flex justify-end gap-2">
 							<Button
 								size="sm"

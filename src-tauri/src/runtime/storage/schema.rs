@@ -71,6 +71,7 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            name TEXT NOT NULL,
            kind_json TEXT NOT NULL,
            pi_executable TEXT,
+           pi_runtime TEXT NOT NULL DEFAULT 'workspace',
            updated_at_ms INTEGER NOT NULL
          );
          CREATE TABLE IF NOT EXISTS connection_naming_models (
@@ -84,7 +85,6 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
            name TEXT NOT NULL,
            path TEXT NOT NULL,
-           pi_runtime TEXT NOT NULL DEFAULT 'workspace',
            metadata_json TEXT NOT NULL,
            created_at_ms INTEGER NOT NULL,
            last_opened_at_ms INTEGER NOT NULL,
@@ -147,24 +147,36 @@ fn ensure_connection_columns(db: &SqliteConnection) -> Result<(), String> {
         )
         .map_err(|error| error.to_string())?;
     }
+    let has_pi_runtime = column_exists(db, "connections", "pi_runtime")?;
+    if !has_pi_runtime {
+        db.execute_batch(
+            "ALTER TABLE connections ADD COLUMN pi_runtime TEXT NOT NULL DEFAULT 'workspace';",
+        )
+        .map_err(|error| error.to_string())?;
+        // Pi 运行位置从 project 迁移到 connection：旧库按项目记录的值
+        // 提升到对应连接（同一连接下存在 local 项目即为 local）。
+        if column_exists(db, "projects", "pi_runtime")? {
+            db.execute_batch(
+                "UPDATE connections SET pi_runtime='local'
+                 WHERE id IN (SELECT DISTINCT connection_id FROM projects WHERE pi_runtime='local');",
+            )
+            .map_err(|error| error.to_string())?;
+        }
+    }
     Ok(())
 }
 
+fn column_exists(db: &SqliteConnection, table: &str, name: &str) -> Result<bool, String> {
+    db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name=?2)",
+        params![table, name],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|exists| exists != 0)
+    .map_err(|error| error.to_string())
+}
+
 fn ensure_project_columns(db: &SqliteConnection) -> Result<(), String> {
-    let has_pi_runtime = db
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('projects') WHERE name='pi_runtime')",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .map(|exists| exists != 0)
-        .map_err(|error| error.to_string())?;
-    if !has_pi_runtime {
-        db.execute_batch(
-            "ALTER TABLE projects ADD COLUMN pi_runtime TEXT NOT NULL DEFAULT 'workspace';",
-        )
-        .map_err(|error| error.to_string())?;
-    }
     let has_sort_order = db
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM pragma_table_info('projects') WHERE name='sort_order')",

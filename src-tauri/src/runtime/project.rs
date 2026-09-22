@@ -5,9 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tauri::AppHandle;
 
-use crate::domain::{
-    Connection, ConnectionKind, DiscoveredProject, Project, ProjectMetadata, ProjectPiRuntime,
-};
+use crate::domain::{Connection, DiscoveredProject, Project, ProjectMetadata};
 
 use super::{pi_workspace, server_client::ServerManager, storage};
 
@@ -27,10 +25,8 @@ pub async fn add(
     servers: &ServerManager,
     connection_id: String,
     path: String,
-    pi_runtime: ProjectPiRuntime,
 ) -> Result<Project, String> {
     let connection = resolve_connection(app, &connection_id)?;
-    validate_pi_runtime(&connection, pi_runtime)?;
     let (connection, metadata) = inspect(servers, connection, path).await?;
     let normalized_path = metadata.cwd.clone();
     let id = Project::stable_id(&connection.id, &normalized_path);
@@ -44,7 +40,6 @@ pub async fn add(
         name: Project::name_from_path(&normalized_path),
         path: normalized_path,
         connection,
-        pi_runtime,
         metadata,
         created_at_ms,
         last_opened_at_ms: now,
@@ -66,7 +61,6 @@ pub async fn refresh(
         name: Project::name_from_path(&normalized_path),
         path: normalized_path,
         connection,
-        pi_runtime: current.pi_runtime,
         metadata,
         created_at_ms: current.created_at_ms,
         last_opened_at_ms: current.last_opened_at_ms,
@@ -78,18 +72,6 @@ pub async fn refresh(
 pub fn touch(app: &AppHandle, id: &str) -> Result<Project, String> {
     let mut project = get(app, id)?;
     project.last_opened_at_ms = storage::now_ms();
-    storage::upsert_project(&storage::open(app)?, &project)?;
-    Ok(project)
-}
-
-pub fn set_pi_runtime(
-    app: &AppHandle,
-    id: &str,
-    pi_runtime: ProjectPiRuntime,
-) -> Result<Project, String> {
-    let mut project = get(app, id)?;
-    validate_pi_runtime(&project.connection, pi_runtime)?;
-    project.pi_runtime = pi_runtime;
     storage::upsert_project(&storage::open(app)?, &project)?;
     Ok(project)
 }
@@ -151,21 +133,6 @@ pub fn resolve_connection(app: &AppHandle, connection_id: &str) -> Result<Connec
         .ok_or_else(|| format!("Connection '{connection_id}' was not found"))
 }
 
-pub(crate) fn validate_pi_runtime(
-    connection: &Connection,
-    pi_runtime: ProjectPiRuntime,
-) -> Result<(), String> {
-    if pi_runtime == ProjectPiRuntime::Local
-        && !matches!(connection.kind, ConnectionKind::Ssh { .. })
-    {
-        return Err(
-            "Local Pi with a remote workspace is currently available only for SSH projects"
-                .to_owned(),
-        );
-    }
-    Ok(())
-}
-
 async fn inspect(
     servers: &ServerManager,
     connection: Connection,
@@ -178,6 +145,7 @@ async fn inspect(
             serde_json::json!({
                 "project": path,
                 "piExecutable": connection.pi_executable.clone(),
+                "piRuntime": connection.pi_runtime.as_str(),
             }),
         )
         .await?;

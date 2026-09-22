@@ -23,7 +23,6 @@ import {
 	Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ProjectPiRuntime } from "@/lib/projects";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -426,7 +425,6 @@ export function ProjectRow({
 	onToggle,
 	onNewChat,
 	onDelete,
-	onSetPiRuntime,
 	onRefreshSessions,
 }: {
 	project: SidebarProject;
@@ -438,7 +436,6 @@ export function ProjectRow({
 	onToggle: () => void;
 	onNewChat?: (projectId: string) => void;
 	onDelete?: (projectId: string) => void;
-	onSetPiRuntime?: (projectId: string, piRuntime: ProjectPiRuntime) => void;
 	onRefreshSessions?: () => void;
 }) {
 	const [menuOpen, setMenuOpen] = useState(false);
@@ -535,22 +532,6 @@ export function ProjectRow({
 									<RefreshCw className={menuItemIconClassName} />
 									刷新会话
 								</DropdownMenuItem>
-								{project.connectionType === "ssh" && onSetPiRuntime ? (
-									<DropdownMenuItem
-										disabled={refreshing}
-										onSelect={() =>
-											onSetPiRuntime(
-												project.id,
-												project.piRuntime === "local" ? "workspace" : "local",
-											)
-										}
-									>
-										<Monitor className={menuItemIconClassName} />
-										{project.piRuntime === "local"
-											? "使用远程 Pi"
-											: "使用本地 Pi"}
-									</DropdownMenuItem>
-								) : null}
 								{onDelete ? (
 									<DropdownMenuItem
 										variant="destructive"

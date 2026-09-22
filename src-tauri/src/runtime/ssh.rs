@@ -4,7 +4,7 @@ use tokio::process::Command;
 
 use crate::domain::{Connection, ConnectionKind, SshAuthMethod, SshTarget};
 
-const SSH_CONNECT_TIMEOUT_SECONDS: u64 = 10;
+const SSH_CONNECT_TIMEOUT_SECONDS: u64 = 5;
 const ASKPASS_CONNECTION_ENV: &str = "PILO_SSH_ASKPASS_CONNECTION_ID";
 
 pub(crate) fn ssh_base_args(target: &SshTarget) -> Result<Vec<String>, String> {
@@ -15,6 +15,11 @@ pub(crate) fn ssh_base_args(target: &SshTarget) -> Result<Vec<String>, String> {
         format!("BatchMode={}", if batch_mode { "yes" } else { "no" }),
         "-o".to_owned(),
         format!("ConnectTimeout={SSH_CONNECT_TIMEOUT_SECONDS}"),
+        // BatchMode=yes turns ssh's "(yes/no)" host key prompt into a hard
+        // "Host key verification failed", so trust a new host key on first use
+        // (like interactive ssh) while still rejecting a changed key.
+        "-o".to_owned(),
+        "StrictHostKeyChecking=accept-new".to_owned(),
         "-o".to_owned(),
         "RemoteCommand=none".to_owned(),
     ];

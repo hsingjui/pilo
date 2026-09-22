@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import type { ProjectPiRuntime } from "@/lib/projects";
 
 export type SidebarEnv = { id: string; name: string };
 
@@ -12,7 +11,6 @@ export type SidebarProject = {
 	path: string;
 	envId: string;
 	connectionType: "local" | "wsl" | "ssh";
-	piRuntime: ProjectPiRuntime;
 };
 
 export type SidebarSession = {
@@ -58,10 +56,6 @@ export type AppSidebarProps = {
 	onFocusProject?: (projectId: string) => void;
 	onReorderProjects?: (connectionId: string, projectIds: string[]) => void;
 	onDeleteProject?: (projectId: string) => void;
-	onSetProjectPiRuntime?: (
-		projectId: string,
-		piRuntime: ProjectPiRuntime,
-	) => void;
 	onDeleteConnection?: (connectionId: string) => void;
 	onAddProject?: (connectionId?: string) => void;
 	/** 底部操作区（设置 / 帮助 / 主题等），由 App 组合。 */

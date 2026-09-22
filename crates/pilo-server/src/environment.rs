@@ -16,6 +16,10 @@ pub(crate) struct ProjectParams {
     pub(crate) project: String,
     #[serde(default)]
     pub(crate) pi_executable: Option<String>,
+    /// Pi 运行位置："workspace" 在连接环境内，"local" 在 Pilo 本机。
+    /// local 时无需（也不应）探测连接环境中的 Pi。
+    #[serde(default)]
+    pub(crate) pi_runtime: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -52,7 +56,14 @@ pub(crate) async fn environment_inspect(
     .await
     .map_err(|error| format!("project probe task failed: {error}"))??;
     let toolchain = cached_toolchain(state).await?;
-    let pi = probe_pi_executable(state, params.pi_executable.as_deref()).await?;
+    let pi = if params.pi_runtime.as_deref() == Some("local") {
+        PiExecutableInfo {
+            executable: String::new(),
+            version: String::new(),
+        }
+    } else {
+        probe_pi_executable(state, params.pi_executable.as_deref()).await?
+    };
     let git_branch = if toolchain.git_executable.is_empty() {
         None
     } else {

@@ -140,7 +140,6 @@ export function useAppCatalog(
 				path: project.metadata.cwd,
 				envId: project.connection.id,
 				connectionType: project.connection.kind.type,
-				piRuntime: project.piRuntime,
 			})),
 		[projects],
 	);

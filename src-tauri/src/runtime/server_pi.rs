@@ -595,7 +595,6 @@ impl ServerPiSession {
             name: String::new(),
             path: launch.project.clone(),
             connection: launch.connection.clone(),
-            pi_runtime: crate::domain::ProjectPiRuntime::Workspace,
             metadata: crate::domain::ProjectMetadata {
                 cwd: launch.project.clone(),
                 git_branch: None,

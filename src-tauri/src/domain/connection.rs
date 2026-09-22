@@ -7,7 +7,37 @@ pub struct Connection {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pi_executable: Option<String>,
+    /// 该连接上 Pi 的运行位置：在连接环境内（workspace），
+    /// 还是在本地 Pilo 主机上并通过 SSH 路由远程工作区（local）。
+    /// 仅对 SSH 连接有意义。
+    #[serde(default)]
+    pub pi_runtime: PiRuntime,
     pub kind: ConnectionKind,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PiRuntime {
+    #[default]
+    Workspace,
+    Local,
+}
+
+impl PiRuntime {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Workspace => "workspace",
+            Self::Local => "local",
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "workspace" => Ok(Self::Workspace),
+            "local" => Ok(Self::Local),
+            _ => Err(format!("unknown Pi runtime '{value}'")),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

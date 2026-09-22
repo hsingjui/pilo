@@ -11,6 +11,7 @@ import {
 	testLocalConnection,
 	testWslConnection,
 	updateConnectionSettings,
+	type ConnectionTestResult,
 	type WslConnectionInfo,
 } from "@/lib/connections";
 import {
@@ -25,10 +26,12 @@ import {
 	wslConnection,
 } from "@/lib/projects";
 import {
+	getSshConnectionPassword,
 	listSshConnections,
 	removeSshConnection,
 	saveSshConnection,
 	testSshConnection,
+	testSshConnectionDraft,
 	type SshConnectionInfo,
 } from "@/lib/ssh-connections";
 
@@ -50,6 +53,26 @@ import {
 import { SettingsConfirmDialog } from "./settings-confirm-dialog";
 import { SshConnectionEditor } from "./ssh-connection-editor";
 
+async function testConnection(
+	label: string,
+	test: () => Promise<ConnectionTestResult>,
+	setBusyState: (value: boolean) => void,
+) {
+	setBusyState(true);
+	try {
+		const result = await test();
+		toast.success(`${label} 可用`, {
+			description: `pilo-server ${result.serverVersion} · protocol ${result.protocolVersion}`,
+		});
+	} catch (error) {
+		toast.error(`${label} 连接失败`, {
+			description: userErrorMessage(error),
+		});
+	} finally {
+		setBusyState(false);
+	}
+}
+
 export function ConnectionsSettings() {
 	const [local, setLocal] = useState<Connection>(() => localConnection());
 	const [wslItems, setWslItems] = useState<WslConnectionInfo[]>([]);
@@ -63,9 +86,11 @@ export function ConnectionsSettings() {
 	const [loading, setLoading] = useState(true);
 	const [busy, setBusy] = useState(false);
 	const [editing, setEditing] = useState<SshConnectionFormState | null>(null);
+	const [sshEditorOpen, setSshEditorOpen] = useState(false);
 	const [connectionSettings, setConnectionSettings] =
 		useState<ConnectionSettingsDraft | null>(null);
 	const [probingPi, setProbingPi] = useState(false);
+	const [testingSsh, setTestingSsh] = useState(false);
 	const [wslPickerOpen, setWslPickerOpen] = useState(false);
 	const [removingConnection, setRemovingConnection] =
 		useState<Connection | null>(null);
@@ -120,25 +145,6 @@ export function ConnectionsSettings() {
 	const projectCount = (id: string, fallback = 0) =>
 		projectCounts.get(id) ?? fallback;
 
-	const testConnection = async (
-		label: string,
-		test: () => Promise<{ serverVersion: string; protocolVersion: number }>,
-	) => {
-		setBusy(true);
-		try {
-			const result = await test();
-			toast.success(`${label} 可用`, {
-				description: `pilo-server ${result.serverVersion} · protocol ${result.protocolVersion}`,
-			});
-		} catch (error) {
-			toast.error(`${label} 连接失败`, {
-				description: userErrorMessage(error),
-			});
-		} finally {
-			setBusy(false);
-		}
-	};
-
 	const openConnectionSettings = (connection: Connection) => {
 		setConnectionSettings({
 			connection,
@@ -150,18 +156,15 @@ export function ConnectionsSettings() {
 	const probePi = async (
 		connection: Connection,
 		executable?: string | null,
-		updateDraft = false,
 	) => {
 		setProbingPi(true);
 		try {
 			const result = await probeConnectionPi(connection.id, executable);
-			if (updateDraft) {
-				setConnectionSettings((current) =>
-					current?.connection.id === connection.id
-						? { ...current, piExecutable: result.executable }
-						: current,
-				);
-			}
+			setConnectionSettings((current) =>
+				current?.connection.id === connection.id
+					? { ...current, piExecutable: result.executable }
+					: current,
+			);
 			toast.success(`${connectionLabel(connection)} 的 Pi 可用`, {
 				description: [result.executable, result.version]
 					.filter(Boolean)
@@ -240,7 +243,7 @@ export function ConnectionsSettings() {
 				connectionFromSshForm(editing),
 				editing.password || undefined,
 			);
-			setEditing(null);
+			setSshEditorOpen(false);
 			await refresh();
 			toast.success("SSH 连接已保存");
 		} catch (error) {
@@ -275,6 +278,21 @@ export function ConnectionsSettings() {
 		}
 	};
 
+	const openSshEditor = async (info: SshConnectionInfo) => {
+		setSshFieldError(null);
+		const form = sshConnectionFormFromInfo(info);
+		// 编辑时直接回填已保存的密码，无需在输入框里提示“已保存”。
+		if (form.authMethod === "password" && form.hasPassword && !form.password) {
+			try {
+				form.password = (await getSshConnectionPassword(form.id)) ?? "";
+			} catch {
+				// 读取失败时保持为空，保存时沿用已存密码
+			}
+		}
+		setEditing(form);
+		setSshEditorOpen(true);
+	};
+
 	const addedDistros = new Set(
 		wslItems.flatMap((info) =>
 			info.connection.kind.type === "wsl" ? [info.connection.kind.distro] : [],
@@ -287,6 +305,7 @@ export function ConnectionsSettings() {
 				onAddSsh={() => {
 					setSshFieldError(null);
 					setEditing(emptySshConnectionForm());
+					setSshEditorOpen(true);
 				}}
 				onAddWsl={() => setWslPickerOpen(true)}
 			>
@@ -298,9 +317,12 @@ export function ConnectionsSettings() {
 					busy={busy || probingPi}
 					onToggleShown={(shown) => toggleShown(local.id, shown)}
 					onTest={() =>
-						void testConnection(connectionLabel(local), testLocalConnection)
+						void testConnection(
+							connectionLabel(local),
+							testLocalConnection,
+							setBusy,
+						)
 					}
-					onProbePi={() => void probePi(local, local.piExecutable)}
 					onConfigure={() => openConnectionSettings(local)}
 				/>
 				{loading ? (
@@ -327,12 +349,11 @@ export function ConnectionsSettings() {
 										toggleShown(info.connection.id, shown)
 									}
 									onTest={() =>
-										void testConnection(info.connection.name, () =>
-											testWslConnection(distro),
+										void testConnection(
+											info.connection.name,
+											() => testWslConnection(distro),
+											setBusy,
 										)
-									}
-									onProbePi={() =>
-										void probePi(info.connection, info.connection.piExecutable)
 									}
 									onConfigure={() => openConnectionSettings(info.connection)}
 									onRemove={() => setRemovingConnection(info.connection)}
@@ -355,18 +376,14 @@ export function ConnectionsSettings() {
 										toggleShown(info.connection.id, shown)
 									}
 									onTest={() =>
-										void testConnection(info.connection.name, () =>
-											testSshConnection(info.connection.id),
+										void testConnection(
+											info.connection.name,
+											() => testSshConnection(info.connection.id),
+											setBusy,
 										)
 									}
-									onProbePi={() =>
-										void probePi(info.connection, info.connection.piExecutable)
-									}
 									onConfigure={() => openConnectionSettings(info.connection)}
-									onEdit={() => {
-										setSshFieldError(null);
-										setEditing(sshConnectionFormFromInfo(info));
-									}}
+									onEdit={() => void openSshEditor(info)}
 									onRemove={() => setRemovingConnection(info.connection)}
 								/>
 							) : null,
@@ -384,22 +401,36 @@ export function ConnectionsSettings() {
 				onProbe={() => {
 					const draft = connectionSettings;
 					if (draft) {
-						void probePi(draft.connection, draft.piExecutable || null, true);
+						void probePi(draft.connection, draft.piExecutable || null);
 					}
 				}}
 				onSave={() => void saveConnectionSettings()}
 			/>
 			<SshConnectionEditor
+				open={sshEditorOpen}
 				editing={editing}
 				busy={busy}
+				testing={testingSsh}
 				fieldError={sshFieldError}
 				onChange={(next) => {
 					setEditing(next);
 					if (sshFieldError) setSshFieldError(null);
 				}}
 				onClose={() => {
-					setEditing(null);
+					setSshEditorOpen(false);
 					setSshFieldError(null);
+				}}
+				onTest={() => {
+					if (!editing) return;
+					void testConnection(
+						editing.name.trim() || editing.hostname.trim(),
+						() =>
+							testSshConnectionDraft(
+								connectionFromSshForm(editing),
+								editing.password || undefined,
+							),
+						setTestingSsh,
+					);
 				}}
 				onSave={() => void saveSsh()}
 			/>

@@ -408,11 +408,25 @@ async fn deploy_server_ssh(
         bytes
     });
 
-    let status_line = tokio::time::timeout(std::time::Duration::from_secs(8), stdout.next_line())
-        .await
-        .map_err(|_| "timed out while preparing remote pilo-server".to_owned())?
-        .map_err(|error| format!("failed to read pilo-server deploy status: {error}"))?
-        .unwrap_or_default();
+    let status_line =
+        match tokio::time::timeout(std::time::Duration::from_secs(8), stdout.next_line()).await {
+            Ok(line) => line
+                .map_err(|error| format!("failed to read pilo-server deploy status: {error}"))?
+                .unwrap_or_default(),
+            Err(_) => {
+                // ssh is still holding the connection; kill it so its stderr closes
+                // and we can report the real cause instead of a bare timeout.
+                let _ = child.start_kill();
+                drop(stdin);
+                let stderr = stderr_task.await.unwrap_or_default();
+                let detail = String::from_utf8_lossy(&stderr).trim().to_owned();
+                return Err(if detail.is_empty() {
+                    "timed out while preparing remote pilo-server".to_owned()
+                } else {
+                    format!("timed out while preparing remote pilo-server: {detail}")
+                });
+            }
+        };
     if status_line == "ready" {
         drop(stdin);
         let status = child.wait().await.map_err(|error| error.to_string())?;

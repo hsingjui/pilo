@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, fs, path::PathBuf};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
-use crate::domain::{ConnectionKind, Project, ProjectPiRuntime};
+use crate::domain::{ConnectionKind, PiRuntime, Project};
 
 use super::{ssh, storage};
 
@@ -31,9 +31,9 @@ pub(crate) fn resolve_session_project(
     app: &AppHandle,
     project: &Project,
 ) -> Result<Project, String> {
-    match project.pi_runtime {
-        ProjectPiRuntime::Workspace => Ok(project.clone()),
-        ProjectPiRuntime::Local => local_runtime_project(app, project),
+    match project.connection.pi_runtime {
+        PiRuntime::Workspace => Ok(project.clone()),
+        PiRuntime::Local => local_runtime_project(app, project),
     }
 }
 
@@ -42,15 +42,15 @@ pub(crate) fn resolve_pi_runtime(
     project: &Project,
     mut extensions: Vec<String>,
 ) -> Result<PiRuntimeProfile, String> {
-    match project.pi_runtime {
-        ProjectPiRuntime::Workspace => Ok(PiRuntimeProfile {
+    match project.connection.pi_runtime {
+        PiRuntime::Workspace => Ok(PiRuntimeProfile {
             project: project.clone(),
             extensions,
             disable_builtin_tools: false,
             disable_extension_discovery: false,
             disable_context_files: false,
         }),
-        ProjectPiRuntime::Local => {
+        PiRuntime::Local => {
             let runtime_project = local_runtime_project(app, project)?;
             let ConnectionKind::Ssh { target } = &project.connection.kind else {
                 return Err("Local Pi with a remote workspace requires an SSH project".to_owned());

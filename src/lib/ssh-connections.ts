@@ -35,3 +35,17 @@ export async function removeSshConnection(id: string): Promise<void> {
 export function testSshConnection(id: string): Promise<ConnectionTestResult> {
 	return invoke<ConnectionTestResult>("ssh_connection_test", { id });
 }
+
+export function getSshConnectionPassword(id: string): Promise<string | null> {
+	return invoke<string | null>("ssh_connection_password_get", { id });
+}
+
+export function testSshConnectionDraft(
+	connection: Connection,
+	password?: string,
+): Promise<ConnectionTestResult> {
+	return invoke<ConnectionTestResult>("ssh_connection_test_draft", {
+		connection,
+		password: password || null,
+	});
+}

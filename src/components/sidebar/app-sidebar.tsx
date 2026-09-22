@@ -208,7 +208,6 @@ export function AppSidebar({
 	onFocusProject,
 	onReorderProjects,
 	onDeleteProject,
-	onSetProjectPiRuntime,
 	onDeleteConnection,
 	onAddProject,
 	footer,
@@ -732,7 +731,6 @@ export function AppSidebar({
 																				}}
 																				onNewChat={onNewChatInProject}
 																				onDelete={onDeleteProject}
-																				onSetPiRuntime={onSetProjectPiRuntime}
 																				onRefreshSessions={
 																					onRefreshProjectSessions
 																						? () =>

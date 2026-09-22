@@ -334,9 +334,9 @@ mod tests {
                 id: "local".to_owned(),
                 name: "Local".to_owned(),
                 pi_executable: None,
+                pi_runtime: crate::domain::PiRuntime::default(),
                 kind: ConnectionKind::Local,
             },
-            pi_runtime: crate::domain::ProjectPiRuntime::Workspace,
             metadata: ProjectMetadata {
                 cwd: "/work".to_owned(),
                 git_branch: Some("main".to_owned()),

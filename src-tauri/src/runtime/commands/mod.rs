@@ -9,9 +9,10 @@ pub use appearance::system_font_families;
 pub use connections::{
     connection_health_get, connection_naming_model_get, connection_naming_model_list,
     connection_naming_model_set, connection_pi_probe, connection_settings_update,
-    local_connection_get, local_connection_test, ssh_connection_list, ssh_connection_remove,
-    ssh_connection_save, ssh_connection_test, wsl_connection_list, wsl_connection_remove,
-    wsl_connection_save, wsl_connection_test, wsl_list_distributions,
+    local_connection_get, local_connection_test, ssh_connection_list, ssh_connection_password_get,
+    ssh_connection_remove, ssh_connection_save, ssh_connection_test, ssh_connection_test_draft,
+    wsl_connection_list, wsl_connection_remove, wsl_connection_save, wsl_connection_test,
+    wsl_list_distributions,
 };
 pub use projects::{
     connection_fs_read_dir, local_pick_project_directory, parallel_agent_create,
@@ -20,9 +21,8 @@ pub use projects::{
     project_fs_remove, project_fs_rename, project_fs_search, project_fs_stat,
     project_fs_write_file, project_git_diff, project_git_status, project_list,
     project_model_cache_list, project_model_cache_set, project_preview_close, project_preview_open,
-    project_preview_ports, project_refresh, project_remove, project_reorder,
-    project_set_pi_runtime, project_terminal_open, project_touch, terminal_close, terminal_resize,
-    terminal_write,
+    project_preview_ports, project_refresh, project_remove, project_reorder, project_terminal_open,
+    project_touch, terminal_close, terminal_resize, terminal_write,
 };
 pub use runtime::{
     chat_session_prepare, chat_session_send_rpc, chat_session_start, chat_session_state,

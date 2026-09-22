@@ -3,9 +3,8 @@ mod project;
 mod session;
 
 pub use connection::{
-    Connection, ConnectionKind, ConnectionNamingModel, SshAuthMethod, SshTarget, WslDistribution,
+    Connection, ConnectionKind, ConnectionNamingModel, PiRuntime, SshAuthMethod, SshTarget,
+    WslDistribution,
 };
-pub use project::{
-    DiscoveredProject, Project, ProjectMetadata, ProjectModelCache, ProjectPiRuntime,
-};
+pub use project::{DiscoveredProject, Project, ProjectMetadata, ProjectModelCache};
 pub use session::{SessionIndexEntry, SessionReconcileResult, SessionUiStateUpdate};

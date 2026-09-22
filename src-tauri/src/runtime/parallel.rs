@@ -12,7 +12,7 @@ use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
 
-use crate::domain::{ConnectionKind, Project, ProjectMetadata, ProjectPiRuntime};
+use crate::domain::{ConnectionKind, PiRuntime, Project, ProjectMetadata};
 
 use super::{
     events::{PiProcessState, RuntimeEvent, RuntimeEventSink},
@@ -109,7 +109,6 @@ impl ParallelAgentManager {
             name: project.name.clone(),
             path: worktree_path.clone(),
             connection: project.connection.clone(),
-            pi_runtime: project.pi_runtime,
             metadata: ProjectMetadata {
                 cwd: worktree_path.clone(),
                 git_branch: Some(branch.clone()),
@@ -135,7 +134,7 @@ impl ParallelAgentManager {
                     // Local-Pi parallel agents are ephemeral workers. Persisting
                     // them would write into the main project's local session
                     // anchor and surface them in ordinary chat history.
-                    no_session: project.pi_runtime == ProjectPiRuntime::Local,
+                    no_session: project.connection.pi_runtime == PiRuntime::Local,
                     extensions: profile.extensions,
                     disable_builtin_tools: profile.disable_builtin_tools,
                     disable_extension_discovery: profile.disable_extension_discovery,
@@ -212,23 +211,6 @@ impl ParallelAgentManager {
             status_to_u8(ParallelAgentStatus::Stopped),
             Ordering::Release,
         );
-        Ok(())
-    }
-
-    pub async fn remove_project(
-        &mut self,
-        servers: &ServerManager,
-        project: &Project,
-    ) -> Result<(), String> {
-        let ids = self
-            .agents
-            .values()
-            .filter(|agent| agent.info.project_id == project.id)
-            .map(|agent| agent.info.id.clone())
-            .collect::<Vec<_>>();
-        for id in ids {
-            self.remove(servers, project, &id).await?;
-        }
         Ok(())
     }
 
@@ -461,11 +443,11 @@ mod tests {
                 id: "wsl".to_owned(),
                 name: "WSL".to_owned(),
                 pi_executable: None,
+                pi_runtime: crate::domain::PiRuntime::default(),
                 kind: ConnectionKind::Wsl {
                     distro: "Ubuntu".to_owned(),
                 },
             },
-            pi_runtime: crate::domain::ProjectPiRuntime::Workspace,
             metadata: crate::domain::ProjectMetadata {
                 cwd: "/srv/code/repo".to_owned(),
                 git_branch: None,

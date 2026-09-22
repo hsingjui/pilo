@@ -31,6 +31,7 @@ mod tests {
             id: "wsl:Debian".to_owned(),
             name: "Current Debian".to_owned(),
             pi_executable: Some("/opt/pi/bin/pi".to_owned()),
+            pi_runtime: crate::domain::PiRuntime::default(),
             kind: crate::domain::ConnectionKind::Wsl {
                 distro: "Debian".to_owned(),
             },
@@ -45,11 +46,11 @@ mod tests {
                 id: current_connection.id.clone(),
                 name: "Stale Debian".to_owned(),
                 pi_executable: None,
+                pi_runtime: crate::domain::PiRuntime::default(),
                 kind: crate::domain::ConnectionKind::Wsl {
                     distro: "Debian-old".to_owned(),
                 },
             },
-            pi_runtime: crate::domain::ProjectPiRuntime::Workspace,
             metadata: ProjectMetadata {
                 cwd: "/code/demo".to_owned(),
                 git_branch: Some("main".to_owned()),

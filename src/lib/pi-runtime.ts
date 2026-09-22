@@ -39,10 +39,14 @@ export type ConnectionKind =
 	| { type: "wsl"; distro: string }
 	| { type: "ssh"; target: SshTarget };
 
+/** Pi 进程运行位置：远程主机（默认）或本地本机。 */
+export type PiRuntime = "workspace" | "local";
+
 export type Connection = {
 	id: string;
 	name: string;
 	piExecutable?: string | null;
+	piRuntime?: PiRuntime;
 	kind: ConnectionKind;
 };
 

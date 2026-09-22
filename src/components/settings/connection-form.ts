@@ -1,4 +1,9 @@
-import type { Connection, SshAuthMethod, SshTarget } from "@/lib/pi-runtime";
+import type {
+	Connection,
+	PiRuntime,
+	SshAuthMethod,
+	SshTarget,
+} from "@/lib/pi-runtime";
 import type { SshConnectionInfo } from "@/lib/ssh-connections";
 
 export const AUTH_LABELS: Record<SshAuthMethod, string> = {
@@ -20,6 +25,7 @@ export type SshConnectionFormState = {
 	proxyJump: string;
 	hasPassword: boolean;
 	piExecutable: string;
+	piRuntime: PiRuntime;
 };
 
 export function emptySshConnectionForm(): SshConnectionFormState {
@@ -36,6 +42,7 @@ export function emptySshConnectionForm(): SshConnectionFormState {
 		proxyJump: "",
 		hasPassword: false,
 		piExecutable: "",
+		piRuntime: "workspace",
 	};
 }
 
@@ -55,6 +62,7 @@ export function sshConnectionFormFromInfo(
 			authMethod: target.authMethod,
 			hasPassword: info.hasPassword,
 			piExecutable: info.connection.piExecutable ?? "",
+			piRuntime: info.connection.piRuntime ?? "workspace",
 		};
 	}
 	return {
@@ -70,6 +78,7 @@ export function sshConnectionFormFromInfo(
 		proxyJump: target.proxyJump ?? "",
 		hasPassword: info.hasPassword,
 		piExecutable: info.connection.piExecutable ?? "",
+		piRuntime: info.connection.piRuntime ?? "workspace",
 	};
 }
 
@@ -99,6 +108,7 @@ export function connectionFromSshForm(
 		id: form.id,
 		name: form.name.trim(),
 		piExecutable: form.piExecutable.trim() || null,
+		piRuntime: form.piRuntime,
 		kind: { type: "ssh", target },
 	};
 }

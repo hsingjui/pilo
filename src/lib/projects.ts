@@ -12,14 +12,11 @@ export type ProjectMetadata = {
 	refreshedAtMs: number;
 };
 
-export type ProjectPiRuntime = "workspace" | "local";
-
 export type Project = {
 	id: string;
 	name: string;
 	path: string;
 	connection: Connection;
-	piRuntime: ProjectPiRuntime;
 	metadata: ProjectMetadata;
 	createdAtMs: number;
 	lastOpenedAtMs: number;
@@ -61,9 +58,8 @@ export function listProjects(): Promise<Project[]> {
 export function addProject(
 	connectionId: string,
 	path: string,
-	piRuntime: ProjectPiRuntime = "workspace",
 ): Promise<Project> {
-	return invoke<Project>("project_add", { connectionId, path, piRuntime });
+	return invoke<Project>("project_add", { connectionId, path });
 }
 
 export function pickLocalProjectDirectory(): Promise<string | null> {
@@ -79,13 +75,6 @@ export function readConnectionDir(
 
 export function refreshProject(id: string): Promise<Project> {
 	return invoke<Project>("project_refresh", { id });
-}
-
-export function setProjectPiRuntime(
-	id: string,
-	piRuntime: ProjectPiRuntime,
-): Promise<Project> {
-	return invoke<Project>("project_set_pi_runtime", { id, piRuntime });
 }
 
 export function touchProject(id: string): Promise<Project> {
