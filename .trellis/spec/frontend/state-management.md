@@ -9,6 +9,7 @@
 | Kind                   | Where                                                            | Mechanism                                                               |
 | ---------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | App-global prefs/theme | `src/lib/preferences-provider.tsx`, `src/lib/theme-provider.tsx` | React Context + `useState`, exposed via `usePreferences()` / theme hook |
+| App-global locale      | `src/i18n/`                                                      | i18next instance + `useTranslation()`; bootstrap before React renders   |
 | App shell state        | `src/App.tsx`                                                    | `useState` + orchestration hooks in `src/components/app/`               |
 | Feature state          | feature components                                               | `useState` / `useReducer`                                               |
 | Hot runtime state      | `src/components/chat/chat-conversation-store.ts`                 | external store + `useSyncExternalStore`                                 |
@@ -46,6 +47,9 @@ Consume it with `useSyncExternalStore(store.subscribe, store.getSnapshot)`.
 
 - Local state that must survive remounts is cached in module/state-cache files
   (`chat-ui-state-cache.ts`, `chat-history-window-store.ts`).
+- Locale is app-global low-frequency state owned by the i18n layer. Persist the
+  user's choice, resolve system language only when no valid choice exists, and
+  never store localized strings in domain/state-machine state.
 - Virtualization/scroll state uses dedicated stores/hooks
   (`@tanstack/react-virtual`, `chat-history-window-store`) — keep it out of
   React state to avoid re-render storms.

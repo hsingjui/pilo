@@ -59,7 +59,24 @@ test("parses the expanded skill block emitted by Pi", () => {
 - Preserve type safety (see `type-safety.md`) and accessibility (`jsx-a11y`).
 - Reuse `src/ui` primitives and `src/lib` helpers before writing new ones.
 - Keep Tauri access in `src/lib/*`; components stay declarative.
-- User-facing copy is Simplified Chinese; code identifiers English.
+- Built-in user-facing copy supports `zh-CN` and `en-US` through the i18n layer
+  (`src/i18n`); code identifiers stay English (see "Internationalization").
+
+## Internationalization (i18n)
+
+- Bundled resources live in `src/i18n/resources/{en-US,zh-CN}.ts`. English is the
+  schema/source; `src/@types/i18next.d.ts` type-checks keys (strictKeyChecks).
+- Add new built-in copy through `t("semantic.key")` in both resources. Never
+  hard-code one language in components.
+- Translate at the presentation boundary. Static registries keep stable IDs
+  (e.g. shortcut command IDs), and pure logic returns semantic states/codes,
+  not localized strings.
+- Use `useTranslation()` in components/hooks. Non-React adapters may call the
+  initialized `i18n` instance.
+- Pass the active `i18n.language` explicitly to `Intl`/`toLocaleString` when
+  formatting should follow Pilo's language, not the OS locale.
+- Do not translate user/Agent content, file paths, Git data, terminal output,
+  raw backend error details, protocol IDs, or persisted domain values.
 
 ## Forbidden
 
