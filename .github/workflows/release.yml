@@ -78,12 +78,20 @@ jobs:
             target: ""
             args: ""
             arch: x64
-            artifact: Pilo-windows-x64
+            artifact: Pilo-windows-x64-installed
+            install_mode: installed
+          - platform: windows-2022
+            target: ""
+            args: ""
+            arch: x64
+            artifact: Pilo-windows-x64-portable
+            install_mode: portable
           - platform: macos-14
             target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
             arch: arm64
             artifact: Pilo-macos-arm64
+            install_mode: installed
 
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
@@ -140,6 +148,7 @@ jobs:
         run: bash scripts/verify-pilo-server-resources.sh
 
       - name: Validate updater signing configuration
+        if: matrix.install_mode == 'installed'
         shell: bash
         run: |
           set -euo pipefail
@@ -148,12 +157,18 @@ jobs:
             exit 1
           fi
 
-      - name: Build Tauri app
+      - name: Build Tauri app (installed)
+        if: matrix.install_mode == 'installed'
         shell: bash
         run: pnpm tauri build ${{ matrix.args }}
 
-      - name: Prepare Windows assets
-        if: runner.os == 'Windows'
+      - name: Build Tauri app (portable)
+        if: matrix.install_mode == 'portable'
+        shell: bash
+        run: pnpm tauri build --no-bundle
+
+      - name: Prepare Windows installed assets
+        if: runner.os == 'Windows' && matrix.install_mode == 'installed'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -167,6 +182,24 @@ jobs:
           $nsisSig = Get-Item "$($nsis.FullName).sig" -ErrorAction SilentlyContinue
           if (-not $nsisSig) { throw 'NSIS updater signature was not produced' }
           Copy-Item $nsisSig.FullName "release-assets/Pilo-v$version-x64-setup.exe.sig"
+
+      - name: Prepare Windows portable assets
+        if: runner.os == 'Windows' && matrix.install_mode == 'portable'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ needs.preflight.outputs.version }}'
+          $portableDir = 'release-assets/Pilo-Portable'
+          New-Item -ItemType Directory -Force -Path "$portableDir/runtime" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$portableDir/icons" | Out-Null
+
+          $exe = Get-Item 'target/release/pilo.exe' -ErrorAction Stop
+          Copy-Item $exe.FullName "$portableDir/Pilo.exe"
+          Copy-Item 'src-tauri/resources/*' "$portableDir/runtime/" -Recurse
+          Copy-Item 'src-tauri/icons/128x128.png' "$portableDir/icons/128x128.png"
+
+          Compress-Archive -Path "$portableDir/*" -DestinationPath "release-assets/Pilo-v$version-x64-Portable.zip" -Force
+          Remove-Item -Recurse -Force $portableDir
 
       - name: Prepare macOS assets
         if: runner.os == 'macOS'
@@ -236,7 +269,7 @@ jobs:
 
           jq -n \
             --arg version "$VERSION" \
-            --arg notes "Pilo ${TAG}" \
+            --arg notes "Pilo ${TAG} 更新" \
             --arg pub_date "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
             --arg win_url "$BASE_URL/Pilo-v${VERSION}-x64-setup.exe" \
             --arg win_sig "$WIN_SIG" \
@@ -260,7 +293,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: Pilo ${{ github.ref_name }}
-          generate_release_notes: true
+          generate_release_notes: false
           draft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: release-assets/*
@@ -279,8 +312,8 @@ jobs:
 
           EXISTING_BODY=$(gh release view "$TAG" --repo "$REPO" --json body --jq '.body // ""')
 
-          if echo "$EXISTING_BODY" | grep -q '### Download / 下载'; then
-            echo "Download section already exists, skipping."
+          if echo "$EXISTING_BODY" | grep -q '### 下载安装'; then
+            echo "下载安装说明已存在，跳过追加。"
             exit 0
           fi
 
@@ -288,22 +321,23 @@ jobs:
 
           ---
 
-          ### Download / 下载
+          ### 下载安装
 
-          | Platform | File | Notes |
+          | 平台 | 文件 | 说明 |
           | --- | --- | --- |
-          | Windows x64 | [Pilo-v${VERSION}-x64-setup.exe](https://github.com/${REPO}/releases/download/${TAG}/Pilo-v${VERSION}-x64-setup.exe) | NSIS installer |
+          | Windows x64 | [Pilo-v${VERSION}-x64-setup.exe](https://github.com/${REPO}/releases/download/${TAG}/Pilo-v${VERSION}-x64-setup.exe) | 安装版 |
+          | Windows x64 | [Pilo-v${VERSION}-x64-Portable.zip](https://github.com/${REPO}/releases/download/${TAG}/Pilo-v${VERSION}-x64-Portable.zip) | 便携版，解压后直接运行 |
           | macOS (Apple Silicon) | [Pilo-v${VERSION}-arm64.dmg](https://github.com/${REPO}/releases/download/${TAG}/Pilo-v${VERSION}-arm64.dmg) | Apple Silicon |
 
-          #### macOS installation note
+          #### macOS 安装提示
 
-          Pilo is not currently signed and notarized with an Apple Developer certificate. If macOS blocks the app after installation, run:
+          Pilo 目前未使用 Apple Developer 证书签名和公证。若安装后被 macOS 阻止运行，请在终端执行：
 
           \`\`\`bash
           xattr -rd com.apple.quarantine /Applications/Pilo.app
           \`\`\`
 
-          > \`.app.tar.gz\`, \`.sig\`, and \`latest.json\` are used by Tauri auto-update and do not need to be downloaded manually.
+          > \`.app.tar.gz\`、\`.sig\` 和 \`latest.json\` 为 Tauri 自动更新专用，无需手动下载。
           EOF
 
           printf '%s\n' "$EXISTING_BODY" > release_body.md
