@@ -6,6 +6,8 @@
 	"permissions": [
 		"core:default",
 		"opener:default",
+		"opener:allow-open-path",
+		"log:default",
 		"notification:default",
 		"updater:default",
 		"process:allow-restart",

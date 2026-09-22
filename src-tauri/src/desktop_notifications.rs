@@ -92,7 +92,7 @@ mod windows_identity {
         let exe = match std::env::current_exe() {
             Ok(exe) => exe,
             Err(error) => {
-                eprintln!("[notification] failed to resolve current exe: {error}");
+                log::error!(target: "notification", "failed to resolve current exe: {error}");
                 return false;
             }
         };
@@ -109,8 +109,9 @@ mod windows_identity {
                     return true;
                 }
                 Err(error) => {
-                    eprintln!(
-                        "[notification] failed to add AppUserModelID to start menu shortcut '{}': {error}",
+                    log::error!(
+                        target: "notification",
+                        "failed to add AppUserModelID to start menu shortcut '{}': {error}",
                         path.display()
                     );
                 }
@@ -120,8 +121,9 @@ mod windows_identity {
         let Some(path) =
             known_folder(&FOLDERID_Programs).map(|dir| dir.join(&identity.shortcut_name))
         else {
-            eprintln!(
-                "[notification] start menu folder not found; notifications will fall back to the PowerShell identity"
+            log::warn!(
+                target: "notification",
+                "start menu folder not found; notifications will fall back to the PowerShell identity"
             );
             return false;
         };
@@ -131,8 +133,9 @@ mod windows_identity {
                 true
             }
             Err(error) => {
-                eprintln!(
-                    "[notification] failed to create start menu shortcut '{}': {error}",
+                log::error!(
+                    target: "notification",
+                    "failed to create start menu shortcut '{}': {error}",
                     path.display()
                 );
                 false
@@ -276,8 +279,9 @@ pub fn initialize_macos_notification_application(app: &tauri::App) {
     };
 
     if let Err(error) = mac_notification_sys::set_application(bundle_identifier) {
-        eprintln!(
-            "[notification] failed to register macOS notification application '{bundle_identifier}': {error}"
+        log::error!(
+            target: "notification",
+            "failed to register macOS notification application '{bundle_identifier}': {error}"
         );
     }
 }
@@ -403,15 +407,19 @@ pub fn send_macos_desktop_notification(
                         if let Some(target) = target {
                             focus_main_window(&app);
                             if let Err(error) = app.emit(NOTIFICATION_OPEN_SESSION_EVENT, target) {
-                                eprintln!(
-                                    "[notification] failed to emit notification target: {error}"
+                                log::error!(
+                                    target: "notification",
+                                    "failed to emit notification target: {error}"
                                 );
                             }
                         }
                     }
                     Ok(_) => {}
                     Err(error) => {
-                        eprintln!("[notification] failed to show macOS notification: {error}");
+                        log::error!(
+                            target: "notification",
+                            "failed to show macOS notification: {error}"
+                        );
                     }
                 }
             })
@@ -470,8 +478,9 @@ pub fn send_windows_desktop_notification(
                             if let Err(error) =
                                 click_app.emit(NOTIFICATION_OPEN_SESSION_EVENT, target.clone())
                             {
-                                eprintln!(
-                                    "[notification] failed to emit notification target: {error}"
+                                log::error!(
+                                    target: "notification",
+                                    "failed to emit notification target: {error}"
                                 );
                             }
                             let _ = activation_sender.send(());
@@ -488,7 +497,10 @@ pub fn send_windows_desktop_notification(
                 }
 
                 if let Err(error) = toast.show() {
-                    eprintln!("[notification] failed to show Windows notification: {error}");
+                    log::error!(
+                        target: "notification",
+                        "failed to show Windows notification: {error}"
+                    );
                 } else if wait_for_action {
                     // Keep the toast and its registered callbacks alive while waiting for
                     // normal user interaction. Bound the wait so suppressed or otherwise

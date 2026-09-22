@@ -79,8 +79,9 @@ impl ServerClient {
                 loop {
                     match tokio::io::AsyncReadExt::read(&mut stderr, &mut buffer).await {
                         Ok(0) | Err(_) => break,
-                        Ok(read) => eprintln!(
-                            "[pilo-server:{label}] {}",
+                        Ok(read) => log::warn!(
+                            target: "pilo-server",
+                            "[{label}] {}",
                             String::from_utf8_lossy(&buffer[..read]).trim_end()
                         ),
                     }

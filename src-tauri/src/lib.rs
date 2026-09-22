@@ -66,7 +66,26 @@ fn debug_runtime_trace_log(payload: &str) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default();
+    let builder = tauri::Builder::default().plugin(
+        tauri_plugin_log::Builder::new()
+            .level(if cfg!(debug_assertions) {
+                log::LevelFilter::Debug
+            } else {
+                log::LevelFilter::Info
+            })
+            .max_file_size(5 * 1024 * 1024)
+            .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(4))
+            .target(
+                tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview).filter(
+                    |metadata| {
+                        !metadata
+                            .target()
+                            .starts_with(tauri_plugin_log::WEBVIEW_TARGET)
+                    },
+                ),
+            )
+            .build(),
+    );
 
     // Embedded WebDriver is opt-in for development: `tauri dev --features webdriver`.
     #[cfg(all(debug_assertions, feature = "webdriver"))]
@@ -193,7 +212,7 @@ pub fn run() {
             }
 
             if let Err(error) = window.restore_state(persisted_window_state_flags()) {
-                eprintln!("[window-state] failed to restore main window: {error}");
+                log::error!(target: "window-state", "failed to restore main window: {error}");
             }
 
             let app_handle = app.handle().clone();
@@ -202,7 +221,7 @@ pub fn run() {
                 let projects = match runtime::project::list(&app_handle) {
                     Ok(projects) => projects,
                     Err(error) => {
-                        eprintln!("[server-prewarm] failed to load projects: {error}");
+                        log::error!(target: "server-prewarm", "failed to load projects: {error}");
                         return;
                     }
                 };
@@ -215,8 +234,9 @@ pub fn run() {
                     let servers = std::sync::Arc::clone(&servers);
                     tauri::async_runtime::spawn(async move {
                         if let Err(error) = servers.client(&connection).await {
-                            eprintln!(
-                                "[server-prewarm] failed for connection '{}': {error}",
+                            log::error!(
+                                target: "server-prewarm",
+                                "failed for connection '{}': {error}",
                                 connection.id
                             );
                         }

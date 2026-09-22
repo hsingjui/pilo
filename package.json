@@ -41,6 +41,7 @@
 		"@streamdown/math": "^1.0.2",
 		"@tanstack/react-virtual": "3.14.11",
 		"@tauri-apps/api": "^2",
+		"@tauri-apps/plugin-log": "^2.9.2",
 		"@tauri-apps/plugin-notification": "^2.4.0",
 		"@tauri-apps/plugin-opener": "^2",
 		"@tauri-apps/plugin-process": "^2.3.1",

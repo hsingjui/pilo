@@ -420,7 +420,10 @@ impl RuntimeEventBus {
                     }),
                 );
             }
-            eprintln!("[runtime-events] failed to send Tauri channel event: {error}");
+            log::error!(
+                target: "runtime-events",
+                "failed to send Tauri channel event: {error}"
+            );
         }
     }
 }

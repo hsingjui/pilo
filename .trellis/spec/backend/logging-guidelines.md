@@ -1,47 +1,65 @@
 # Logging Guidelines
 
-> There is **no logging framework** in this codebase. Do not add one without a
-> project decision — match what exists.
+Pilo uses `tauri-plugin-log` for desktop log persistence. Rust code logs through
+`log` macros; the plugin writes the desktop log file and handles bounded
+rotation.
 
----
+## Configuration
 
-## Current State
+`src-tauri/src/lib.rs` registers the log plugin before `setup` with:
 
-- No `tracing`, no `log`, no subscriber. `AGENTS.md` lists `tracing` under the
-  intended stack, but the code does not use it.
-- Diagnostics use `eprintln!` with a bracketed subsystem tag.
+- `Debug` level for debug builds and `Info` for release builds;
+- the default Tauri log directory (`app_log_dir()`), with a 5 MB file limit;
+- `RotationStrategy::KeepSome(4)`, giving up to four archived 5 MiB files plus the active file (about 25 MiB total);
+- the `Webview` target so Rust log entries remain visible in DevTools through
+  the frontend `attachLogger()` bridge.
+
+The frontend registers one `attachLogger()` listener from `src/main.tsx` and
+replays backend records through the original browser console methods. It bridges
+only `console.error` and `console.warn` to the plugin's `error` and `warn` APIs.
+`console.log` and other hot-path console output are not persisted. The Rust
+`Webview` target filters records whose target starts with `WEBVIEW_TARGET`, so
+frontend-originated records are persisted to the log file without being echoed
+back into the webview.
+
+The About settings page opens the same directory with `appLogDir()` and the
+`opener` plugin. Do not duplicate the path calculation in Rust or TypeScript.
+
+## Rust conventions
+
+Use the `log` facade and keep the subsystem tag as the `target`:
 
 ```rust
-eprintln!("[window-state] failed to restore main window: {error}");
-eprintln!("[server-prewarm] failed to load projects: {error}");
-eprintln!("[notification] failed to show macOS notification: {error}");
-eprintln!("[runtime-events] failed to send Tauri channel event: {error}");
+log::error!(target: "window-state", "failed to restore main window: {error}");
+log::warn!(target: "pilo-server", "[{label}] {message}");
 ```
 
-## Conventions
-
-- Format: `eprintln!("[<subsystem>] <what failed>: {error}")`.
 - Tag matches the owning module/feature, not the file path:
-  `[window-state]`, `[server-prewarm]`, `[notification]`, `[runtime-events]`.
+  `window-state`, `server-prewarm`, `notification`, `runtime-events`, or
+  `pilo-server`.
 - Log at boundaries where an error is swallowed (background task, event send,
-  best-effort side effect). If an error propagates to the frontend, do **not**
-  also log it — the `Result` is the report.
-- No per-request/per-message logs on hot paths (streaming, virtualization,
-  session parsing). They would flood stderr.
+  or best-effort side effect). If an error propagates to the frontend, do not
+  also log it.
+- Do not add per-request/per-message logs on hot paths (streaming,
+  virtualization, session parsing).
 - `crates/pilo-server` stdout is a protocol channel: only `--version` /
-  fingerprint subcommands `println!`. Never print to stdout in service mode;
-  use stderr for diagnostics.
-- `debug_trace` / `debug_runtime_trace_log` exist as opt-in frontend-driven
-  tracing. Use those for runtime tracing instead of ad-hoc prints.
+  fingerprint subcommands may print there. Service diagnostics stay on stderr;
+  `src-tauri/src/runtime/server_client.rs` routes that stderr into the desktop
+  logger.
 
 ## What to log
 
-- Startup/teardown failures that would otherwise be silent.
+- Startup and teardown failures that would otherwise be silent.
 - Background task failures (session watcher, server prewarm, notification send).
-- Environment probes (which Pi executable was found) when it aids support.
+- Environment probes when they aid support.
+- Frontend errors and warnings that are already reported through `console`.
 
 ## What not to log
 
-- Secrets, credentials, SSH passwords, keyring values.
+- Secrets, credentials, SSH passwords, keyring values, or access tokens.
 - Full conversation/JSONL content.
 - Anything in a tight loop.
+- Raw objects when a concise error message is sufficient.
+
+When adding a new diagnostic boundary, prefer one descriptive message and keep
+user-facing command errors separate from diagnostic logs.

@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import { appLogDir } from "@tauri-apps/api/path";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import {
 	CheckCircle2,
 	Code2,
 	Download,
 	ExternalLink,
+	FolderOpen,
 	RefreshCw,
 } from "lucide-react";
 
@@ -43,6 +45,14 @@ function formatUpdateError(error: unknown) {
 		return "无法连接更新服务，请检查网络后重试。";
 	}
 	return message || "检查更新失败，请稍后重试。";
+}
+
+async function handleOpenLogDirectory() {
+	try {
+		await openPath(await appLogDir());
+	} catch (error) {
+		console.error("Failed to open log directory", error);
+	}
 }
 
 export function AboutSettings() {
@@ -189,6 +199,21 @@ export function AboutSettings() {
 						<Code2 className="size-3.5" />
 						GitHub
 						<ExternalLink className="size-3.5 opacity-60" />
+					</Button>
+				</SettingsRow>
+				<SettingsRow label="日志目录">
+					<Button
+						type="button"
+						variant="ghost"
+						size="sm"
+						className={cn(
+							SETTINGS_TEXT_BUTTON_CLASS,
+							"text-muted-foreground hover:text-foreground",
+						)}
+						onClick={() => void handleOpenLogDirectory()}
+					>
+						<FolderOpen className="size-3.5" />
+						打开日志目录
 					</Button>
 				</SettingsRow>
 			</SettingsSection>

@@ -47,6 +47,8 @@ rfd = "0.15"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-wdio-webdriver = { version = "1", optional = true }
+tauri-plugin-log = "2"
+log = "0.4"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 mac-notification-sys = "0.6.15"

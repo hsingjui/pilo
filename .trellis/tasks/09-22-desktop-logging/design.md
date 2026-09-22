@@ -4,14 +4,14 @@
 
 ```
 前端 (webview)
-  console.error/warn ──attachConsole()──► @tauri-apps/plugin-log
-                                              │ invoke log command
+  console.error/warn ──plugin error/warn API──┐
                                               ▼
 桌面 Rust (pilo / src-tauri)
   log::error!/warn!  ─┐
-                      ├─► tauri-plugin-log ─► app_data_dir()/logs/pilo*.log (轮转)
+                      ├─► tauri-plugin-log ─► app_log_dir()/pilo*.log (轮转)
   远程 pilo-server     │        ▲
-  stderr ──(已回流)────┘        │ (仅 Tauri 运行时，不覆盖 --version stdout 路径)
+  stderr ──(已回流)────┘        │
+                                └─ attachLogger() → DevTools (仅 Tauri 运行时)
 ```
 
 - 日志只在**桌面进程**落盘。远程 `pilo-server` 不新增日志依赖。
@@ -23,14 +23,14 @@
 - **文件名契约**：由插件默认命名（`<identifier>.log` 或带时间戳）；不自定义，减少维护面。
 - **级别契约**：`LevelFilter` = debug 构建 `Debug`，release 构建 `Info`；通过 `cfg!(debug_assertions)` 选择。
 - **subsystem 语义**：迁移 `eprintln!("[tag] ...")` → `log::error!(target: "tag", "...")`，保留可 grep 的 tag。
-- **轮转契约**：`max_file_size(5 * 1024 * 1024)` + `RotationStrategy::KeepSome(5)`。
+- **轮转契约**：`max_file_size(5 * 1024 * 1024)` + `RotationStrategy::KeepSome(4)`，即最多 4 个归档文件 + 1 个活动文件，约 25 MiB。
 - **格式契约**：默认文本行；不引入 JSON 格式（避免与 spec 的“简单可读”冲突）。
 
 ## Data Flow
 
 1. 插件在 `tauri::Builder` 注册，`setup` 之前完成，保证早期启动日志被捕获。
-2. Rust 侧诊断点调用 `log` facade → 插件写入文件 + stdout（dev）。
-3. 前端 `attachConsole()` 绑定 webview console → 经 IPC 调用日志命令 → 同一文件。
+2. Rust 侧诊断点调用 `log` facade → 插件写入文件 + DevTools（dev）。
+3. 前端仅包装 `console.error/warn`，通过插件 `error/warn` API 经 IPC 写入同一文件；`attachLogger()` 负责使用原始 console 方法把 Rust 日志显示回 DevTools，Rust Webview target 过滤 `webview::*` 来源，避免前端日志回显循环。
 4. 远程会话：`server_client.rs` 读到 server stderr → 迁移后 `log::warn!` → 同一文件。
 
 ## Compatibility & Migration
@@ -43,8 +43,8 @@
 
 ## Trade-offs
 
-- 选 `tauri-plugin-log` 而非 `tracing`：一次覆盖文件落盘 + 有界轮转 + 前端 `attachConsole`，代码量最小；代价是结构化查询能力弱（未来需要再评估 OTel）。
-- 选“前端全量转发”而非逐点改写：58 处 `console.*` 零改动即被捕获；代价是需限制级别避免热路径刷屏。
+- 选 `tauri-plugin-log` 而非 `tracing`：一次覆盖文件落盘 + 有界轮转 + 前端 `attachLogger`，代码量最小；代价是结构化查询能力弱（未来需要再评估 OTel）。
+- 选“前端 console.error/warn 包装”而非逐点改写：保留现有调用点；不转发 `console.log`，避免热路径刷屏；用单一 `attachLogger()` 回放后端日志，避免日志回放与包装器互相触发。
 - 不做远程独立落盘：桌面崩溃后远程日志会丢；但远程 stderr 已回流，MVP 可接受。
 
 ## Rollback

@@ -1,5 +1,11 @@
 import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
+import {
+	attachLogger,
+	error as logError,
+	LogLevel,
+	warn as logWarn,
+} from "@tauri-apps/plugin-log";
 
 import App from "./App";
 import { installChatPerformanceDebugApi } from "@/lib/chat-performance-debug";
@@ -10,6 +16,57 @@ import { Toaster } from "@/ui";
 
 import "./index.css";
 
+function formatConsoleMessage(values: readonly unknown[]) {
+	return values
+		.map((value) => {
+			if (value instanceof Error) return value.stack ?? value.message;
+			if (typeof value === "string") return value;
+			return String(value);
+		})
+		.join(" ");
+}
+
+function installDesktopLogging() {
+	const originalConsoleDebug = console.debug.bind(console);
+	const originalConsoleError = console.error.bind(console);
+	const originalConsoleInfo = console.info.bind(console);
+	const originalConsoleLog = console.log.bind(console);
+	const originalConsoleWarn = console.warn.bind(console);
+	void attachLogger(({ level, message }) => {
+		switch (level) {
+			case LogLevel.Trace:
+				originalConsoleLog(message);
+				break;
+			case LogLevel.Debug:
+				originalConsoleDebug(message);
+				break;
+			case LogLevel.Info:
+				originalConsoleInfo(message);
+				break;
+			case LogLevel.Warn:
+				originalConsoleWarn(message);
+				break;
+			case LogLevel.Error:
+				originalConsoleError(message);
+				break;
+		}
+	}).catch(() => undefined);
+
+	console.error = (...values) => {
+		originalConsoleError(...values);
+		const message = formatConsoleMessage(values);
+		if (!message) return;
+		void logError(message).catch(() => undefined);
+	};
+	console.warn = (...values) => {
+		originalConsoleWarn(...values);
+		const message = formatConsoleMessage(values);
+		if (!message) return;
+		void logWarn(message).catch(() => undefined);
+	};
+}
+
+installDesktopLogging();
 installChatRuntimeTraceDebugApi();
 installChatPerformanceDebugApi();
 
