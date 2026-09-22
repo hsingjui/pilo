@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  * 不带阴影、不抢 accent。列表形态由调用方补 `overflow-hidden`，单块形态补 `px-3 py-2`。
  */
 const NOTICE_SURFACE_CLASS =
-	"mb-1 min-w-0 rounded-xl border border-border/60 bg-muted/30 text-xs";
+	"mb-1 block min-w-0 rounded-xl border border-border/60 bg-muted text-xs";
 
 export type NoticeTone = "info" | "success" | "warning" | "danger";
 
