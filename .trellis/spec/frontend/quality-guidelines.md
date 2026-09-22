@@ -22,6 +22,11 @@ Config `.oxfmtrc.json`: `useTabs: true`, `tabWidth: 2`, `printWidth: 80`,
 `singleQuote: false`, `semi: true`, `trailingComma: "all"`, `arrowParens: "always"`.
 Do not hand-format — run `pnpm format`.
 
+`ignorePatterns` excludes tool-generated trees that are not ours to format:
+`.pi/**` and `.trellis/**`. Trellis scripts write `task.json` with
+`json.dumps(indent=2)`, which conflicts with `useTabs: true`; without the
+ignore, every `task.py archive` breaks the CI format gate.
+
 ## Linting (oxlint)
 
 `.oxlintrc.json` enables `typescript`, `unicorn`, `oxc`, `react`, `jsx-a11y`

@@ -11,5 +11,5 @@
 	"arrowParens": "always",
 	"bracketSameLine": false,
 	"bracketSpacing": true,
-	"ignorePatterns": [".pi/**", "dist/**", "target/**"]
+	"ignorePatterns": [".pi/**", ".trellis/**", "dist/**", "target/**"]
 }
