@@ -61,6 +61,7 @@ export function NewChatLanding({
 	onExpandSidebar,
 	reserveWindowControls = false,
 	sidebarCollapsed = false,
+	temporary = false,
 	projectAvailable = true,
 	project = null,
 	projects = EMPTY_PROJECTS,
@@ -80,6 +81,8 @@ export function NewChatLanding({
 	onExpandSidebar?: () => void;
 	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
+	/** 临时会话草稿态：落地页顶栏显示临时标识。 */
+	temporary?: boolean;
 	projectAvailable?: boolean;
 	project?: Project | null;
 	/** 可切换的落点项目列表。 */
@@ -386,6 +389,7 @@ export function NewChatLanding({
 		<div className="@container relative flex h-full min-w-0 flex-col">
 			<SessionHeader
 				overlay
+				temporary={temporary}
 				onOpenTerminal={onOpenTerminal}
 				terminalRunning={terminalRunning}
 				terminalVisible={terminalVisible}

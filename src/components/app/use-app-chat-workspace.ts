@@ -111,6 +111,9 @@ export function useAppChatWorkspace({
 	const [draftSessionThinkingLevel, setDraftSessionThinkingLevel] =
 		useState<PiThinkingLevel | null>(null);
 	const [draftSessionStarted, setDraftSessionStarted] = useState(false);
+	// 落地页是否处于「临时会话」草稿态：点击临时会话按钮只切到落地页，
+	// 直到首条消息发送才真正建立会话。
+	const [draftTemporary, setDraftTemporary] = useState(false);
 	const [draftSessionId, setDraftSessionId] = useState(createDraftSessionId);
 	const [draftProjectId, setDraftProjectId] = useState<string | null>(null);
 	const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null);
@@ -120,6 +123,7 @@ export function useAppChatWorkspace({
 
 	const clearDraftSession = useCallback(() => {
 		setDraftSessionStarted(false);
+		setDraftTemporary(false);
 		setDraftSessionPrompt(null);
 		setDraftSessionImages([]);
 		setDraftSessionModel(null);
@@ -223,8 +227,9 @@ export function useAppChatWorkspace({
 		if (activeProject && draftSessionStarted) {
 			return {
 				id: draftSessionId,
-				title: t("app.newChat"),
+				title: draftTemporary ? t("app.temporaryChat") : t("app.newChat"),
 				projectRecord: activeProject,
+				temporary: draftTemporary || undefined,
 				initialModel: draftSessionModel ?? undefined,
 				initialThinkingLevel: draftSessionThinkingLevel ?? undefined,
 			};
@@ -238,6 +243,7 @@ export function useAppChatWorkspace({
 		externalOpenTurnPaths,
 		activeProject,
 		draftSessionStarted,
+		draftTemporary,
 		draftSessionId,
 		draftSessionModel,
 		draftSessionThinkingLevel,
@@ -265,10 +271,12 @@ export function useAppChatWorkspace({
 			thinkingLevel: PiThinkingLevel | null,
 		) => {
 			const prompt = submission.text;
+			const isTemporary = draftTemporary;
 			const nextChat: ChatSession = {
 				id: draftSessionId,
-				title: t("app.newChat"),
+				title: isTemporary ? t("app.temporaryChat") : t("app.newChat"),
 				projectRecord: project,
+				temporary: isTemporary || undefined,
 				initialModel: model ?? undefined,
 				initialThinkingLevel: thinkingLevel ?? undefined,
 			};
@@ -286,7 +294,7 @@ export function useAppChatWorkspace({
 			setDraftSessionImages(submission.images);
 			setDraftSessionStarted(true);
 		},
-		[busyChatControllersRef, draftSessionId, setOpenedChats, t],
+		[busyChatControllersRef, draftSessionId, draftTemporary, setOpenedChats, t],
 	);
 
 	const startLandingSession = useCallback(
@@ -367,34 +375,19 @@ export function useAppChatWorkspace({
 				toast.info(t("app.addProjectFirst"));
 				return;
 			}
-			const sessionId = createTemporarySessionId();
-			const session: ChatSession = {
-				id: sessionId,
-				title: t("app.temporaryChat"),
-				projectRecord: project,
-				temporary: true,
-			};
+			// 只切到「临时会话」草稿落地页，不立即建立会话；
+			// 真正的临时会话在首条消息发送时由 startDraftSession 建立。
 			setOpenedChats((current) =>
-				trimOpenedChats(
-					touchOpenedChat(
-						current.filter((entry) => !entry.session.temporary),
-						session,
-					),
-					busyChatControllersRef.current,
-				),
+				current.filter((entry) => !entry.session.temporary),
 			);
 			clearDraftSession();
+			setDraftSessionId(createTemporarySessionId());
 			setDraftProjectId(project.id);
-			setSelectedSessionId(sessionId);
+			setFocusedProjectId(project.id);
+			setSelectedSessionId(null);
+			setDraftTemporary(true);
 		},
-		[
-			activeProject,
-			busyChatControllersRef,
-			clearDraftSession,
-			projects,
-			setOpenedChats,
-			t,
-		],
+		[activeProject, clearDraftSession, projects, setOpenedChats, t],
 	);
 
 	const selectSession = useCallback(
@@ -682,6 +675,7 @@ export function useAppChatWorkspace({
 		refreshingProjectIds,
 		refreshProjectSessions,
 		chatSession,
+		draftTemporary,
 		renderedOpenedChats,
 		draftSessionId,
 		readChatUiState,

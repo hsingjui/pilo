@@ -33,6 +33,7 @@ export function SessionHeader({
 	reserveWindowControls = false,
 	sidebarCollapsed = false,
 	overlay = false,
+	temporary = false,
 }: {
 	session?: ChatSession;
 	sessionState?: ChatSessionRuntimeState;
@@ -48,12 +49,15 @@ export function SessionHeader({
 	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
 	overlay?: boolean;
+	/** 落地页无 session 时，用临时会话草稿态显示临时标识。 */
+	temporary?: boolean;
 }) {
 	const { t } = useTranslation();
 	// 会话窗口的 TitleBar 额外渲染置顶按钮（见 App.tsx 的 showAlwaysOnTop），
 	// 需要按多一个控件宽度避让，否则会压住菜单按钮。
 	const reserveWithPin =
 		reserveWindowControls && CUSTOM_TITLEBAR && isSessionWindow();
+	const temporaryActive = Boolean(session?.temporary || temporary);
 	return (
 		<header
 			data-tauri-drag-region="deep"
@@ -127,6 +131,17 @@ export function SessionHeader({
 						</span>
 					</div>
 				</div>
+			) : temporaryActive ? (
+				/* 临时会话（含草稿态）没有持久化标题，用虚线标识区别于普通会话/落地页，
+				   否则点击「临时会话」后界面看不出变化 */
+				<div className="flex min-w-0 flex-1 items-center px-1">
+					<div className="flex h-8 w-fit max-w-[66.666667%] min-w-0 items-center gap-1.5 overflow-hidden rounded-md border border-dashed border-border px-3 text-sm text-muted-foreground">
+						<MessageSquareDashed className="size-[1.15em] shrink-0" />
+						<span className="min-w-0 flex-1 truncate">
+							{sessionState?.name || session?.title || t("app.temporaryChat")}
+						</span>
+					</div>
+				</div>
 			) : (
 				/* 没有会话：占位保证顶栏几何一致（落地页项目选择已移至输入框上方） */
 				<div className="min-w-0 flex-1" />
@@ -175,9 +190,15 @@ export function SessionHeader({
 									size="icon"
 									className="size-7"
 									aria-label={t("app.temporaryChat")}
+									aria-pressed={temporaryActive}
 									onClick={onNewTemporaryChat}
 								>
-									<MessageSquareDashed className="size-4" />
+									<MessageSquareDashed
+										className={cn(
+											"size-4 transition-colors",
+											temporaryActive && "text-primary",
+										)}
+									/>
 								</Button>
 							</TooltipTrigger>
 							<TooltipContent>{t("app.temporaryChat")}</TooltipContent>

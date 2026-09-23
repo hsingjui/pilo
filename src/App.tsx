@@ -118,6 +118,7 @@ function App() {
 		refreshingProjectIds,
 		refreshProjectSessions,
 		chatSession,
+		draftTemporary,
 		renderedOpenedChats,
 		draftSessionId,
 		readChatUiState,
@@ -450,6 +451,7 @@ function App() {
 								<NewChatLanding
 									key={`landing:${draftSessionId}`}
 									sessionId={draftSessionId}
+									temporary={draftTemporary}
 									onNewChat={() => startNewChat(activeProject?.id)}
 									projectAvailable={
 										projectsReady && connectionsReady
