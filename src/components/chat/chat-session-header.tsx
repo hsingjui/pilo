@@ -7,13 +7,16 @@ import {
 import { useTranslation } from "react-i18next";
 
 import {
+	CUSTOM_TITLEBAR,
 	IS_MACOS,
 	TRAFFIC_LIGHT_ALIGNED_HEADER,
 	TRAFFIC_LIGHT_GUTTER,
 } from "@/components/title-bar";
 import { cn } from "@/lib/utils";
+import { isSessionWindow } from "@/lib/window";
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
 import type { ChatSession, ChatSessionRuntimeState } from "./chat-page-utils";
+import { SessionHeaderMenu } from "./chat-session-header-menu";
 
 export function SessionHeader({
 	session,
@@ -24,6 +27,9 @@ export function SessionHeader({
 	terminalVisible = false,
 	onNewTemporaryChat,
 	onExpandSidebar,
+	onRenameSession,
+	onFindInSession,
+	onOpenInNewWindow,
 	reserveWindowControls = false,
 	sidebarCollapsed = false,
 	overlay = false,
@@ -36,11 +42,18 @@ export function SessionHeader({
 	terminalVisible?: boolean;
 	onNewTemporaryChat?: () => void;
 	onExpandSidebar?: () => void;
+	onRenameSession?: (title: string) => void;
+	onFindInSession?: () => void;
+	onOpenInNewWindow?: () => void;
 	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
 	overlay?: boolean;
 }) {
 	const { t } = useTranslation();
+	// 会话窗口的 TitleBar 额外渲染置顶按钮（见 App.tsx 的 showAlwaysOnTop），
+	// 需要按多一个控件宽度避让，否则会压住菜单按钮。
+	const reserveWithPin =
+		reserveWindowControls && CUSTOM_TITLEBAR && isSessionWindow();
 	return (
 		<header
 			data-tauri-drag-region="deep"
@@ -49,7 +62,8 @@ export function SessionHeader({
 				IS_MACOS ? TRAFFIC_LIGHT_ALIGNED_HEADER : "mt-0.5",
 				overlay ? "absolute inset-x-0 top-0 z-30" : "relative",
 				IS_MACOS && sidebarCollapsed && TRAFFIC_LIGHT_GUTTER,
-				reserveWindowControls && "pr-[7.75rem]",
+				reserveWindowControls &&
+					(reserveWithPin ? "pr-[10.25rem]" : "pr-[7.75rem]"),
 			)}
 		>
 			{/* 展开按钮悬浮在标题左侧 logo 位（不占布局，标题在侧栏开合全程不位移），
@@ -117,7 +131,10 @@ export function SessionHeader({
 				/* 没有会话：占位保证顶栏几何一致（落地页项目选择已移至输入框上方） */
 				<div className="min-w-0 flex-1" />
 			)}
-			{onNewTemporaryChat || onOpenChanges || onOpenTerminal ? (
+			{onNewTemporaryChat ||
+			onOpenChanges ||
+			onOpenTerminal ||
+			(session && !session.temporary) ? (
 				<div
 					className={cn(
 						"flex shrink-0 items-center gap-1 pr-2",
@@ -181,6 +198,14 @@ export function SessionHeader({
 							</TooltipTrigger>
 							<TooltipContent>{t("chat.showChanges")}</TooltipContent>
 						</Tooltip>
+					) : null}
+					{session && !session.temporary ? (
+						<SessionHeaderMenu
+							session={session}
+							onRenameSession={onRenameSession}
+							onFindInSession={onFindInSession}
+							onOpenInNewWindow={onOpenInNewWindow}
+						/>
 					) : null}
 				</div>
 			) : null}

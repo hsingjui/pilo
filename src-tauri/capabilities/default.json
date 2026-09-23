@@ -2,9 +2,10 @@
 	"$schema": "../gen/schemas/desktop-schema.json",
 	"identifier": "default",
 	"description": "Capability for the main window",
-	"windows": ["main"],
+	"windows": ["main", "session-*"],
 	"permissions": [
 		"core:default",
+		"core:webview:allow-create-webview-window",
 		"opener:default",
 		{
 			"identifier": "opener:allow-open-path",
@@ -18,6 +19,8 @@
 		"core:window:allow-show",
 		"core:window:allow-unminimize",
 		"core:window:allow-set-focus",
+		"core:window:allow-set-always-on-top",
+		"core:window:allow-is-always-on-top",
 		"core:window:allow-toggle-maximize",
 		"core:window:allow-close",
 		"core:window:allow-start-dragging"

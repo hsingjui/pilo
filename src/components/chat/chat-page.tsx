@@ -93,6 +93,8 @@ type ChatPageProps = {
 	terminalVisible?: boolean;
 	onNewChat?: () => void;
 	onNewTemporaryChat?: () => void;
+	onRenameSession?: (title: string) => void;
+	onOpenInNewWindow?: () => void;
 	onExpandSidebar?: () => void;
 	controllerId?: string;
 	performanceSessionId?: string;
@@ -175,6 +177,8 @@ function ChatPageImpl(props: ChatPageProps) {
 		terminalVisible = false,
 		onNewChat,
 		onNewTemporaryChat,
+		onRenameSession,
+		onOpenInNewWindow,
 		onExpandSidebar,
 		controllerId,
 		performanceSessionId,
@@ -899,6 +903,9 @@ function ChatPageImpl(props: ChatPageProps) {
 							terminalRunning={terminalRunning}
 							terminalVisible={terminalVisible}
 							onNewTemporaryChat={onNewTemporaryChat}
+							onRenameSession={onRenameSession}
+							onFindInSession={() => setFindOpen(true)}
+							onOpenInNewWindow={onOpenInNewWindow}
 							onExpandSidebar={onExpandSidebar}
 							reserveWindowControls={reserveWindowControls}
 							sidebarCollapsed={sidebarCollapsed}

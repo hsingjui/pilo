@@ -864,3 +864,12 @@
 	background-color: hsl(var(--primary) / 0.75);
 	color: hsl(var(--primary-foreground));
 }
+
+/* 会话消息列与输入框的宽度上限。会话窗口面向窄屏，放开该限制。 */
+:root {
+	--conversation-max-width: min(80%, 52rem);
+}
+
+[data-session-window] {
+	--conversation-max-width: min(94%, 52rem);
+}

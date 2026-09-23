@@ -99,6 +99,9 @@ pub fn run() {
                 // Restore after that change so the saved client size does not
                 // grow by the removed title-bar height on every launch.
                 .skip_initial_state("main")
+                // 会话窗口（`session-*`）由前端每次居中创建，不参与状态持久化：
+                // 否则插件会在创建后恢复上次位置/尺寸，看起来像「先居中再跳走」。
+                .with_filter(|label| !label.starts_with("session-"))
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())

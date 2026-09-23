@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Minus, Square, SquareSquare, X } from "lucide-react";
+import { Minus, Pin, Square, SquareSquare, X } from "lucide-react";
 
 // 仅在 Tauri 环境生效的标记，避免普通浏览器里出现无意义的留白。
 const IS_TAURI = "__TAURI_INTERNALS__" in window;
@@ -100,10 +100,37 @@ function WindowControls() {
 	);
 }
 
-export function TitleBar() {
+/** 会话窗口专用：切换窗口置顶（always on top）。 */
+function AlwaysOnTopButton() {
+	const { t } = useTranslation();
+	const win = getCurrentWindow();
+	const [onTop, setOnTop] = useState(false);
+	useEffect(() => {
+		void win.isAlwaysOnTop().then(setOnTop);
+	}, [win]);
+	return (
+		<CaptionButton
+			label={onTop ? t("app.unpinWindow") : t("app.pinWindow")}
+			onClick={() => {
+				const next = !onTop;
+				setOnTop(next);
+				void win.setAlwaysOnTop(next);
+			}}
+		>
+			<Pin size={15} className={onTop ? "text-primary" : undefined} />
+		</CaptionButton>
+	);
+}
+
+export function TitleBar({
+	showAlwaysOnTop = false,
+}: {
+	showAlwaysOnTop?: boolean;
+}) {
 	return (
 		<div className="pointer-events-none absolute right-0 top-0 z-50 h-10">
-			<div className="pointer-events-auto h-full">
+			<div className="pointer-events-auto flex h-full items-stretch">
+				{showAlwaysOnTop ? <AlwaysOnTopButton /> : null}
 				<WindowControls />
 			</div>
 		</div>

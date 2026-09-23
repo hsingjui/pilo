@@ -13,7 +13,7 @@ export function ConversationColumn({
 		// 自身 padding 查询的是外层聊天页容器（@container 祖先），子元素查询本列。
 		<div
 			className={cn(
-				"@container mx-auto w-full max-w-[min(80%,52rem)] px-3 @min-[40rem]:px-4",
+				"@container mx-auto w-full max-w-[var(--conversation-max-width)] px-3 @min-[40rem]:px-4",
 				className,
 			)}
 		>

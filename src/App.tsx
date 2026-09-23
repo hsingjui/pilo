@@ -1,4 +1,12 @@
-import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
+import {
+	lazy,
+	Suspense,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
 	Group,
@@ -29,6 +37,11 @@ import { recordChatSessionSwitchStart } from "@/lib/chat-performance";
 import { usePreferences } from "@/lib/preferences-provider";
 import type { Project } from "@/lib/projects";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
+import {
+	isSessionWindow,
+	openSessionInNewWindow,
+	readSessionWindowTarget,
+} from "@/lib/window";
 import { TooltipProvider } from "@/ui";
 
 const importChatPage = () => import("@/components/chat/chat-page");
@@ -63,7 +76,7 @@ function App() {
 	const { t } = useTranslation();
 	const { keyboardShortcuts } = usePreferences();
 	const rightPanelRef = useRef<PanelImperativeHandle>(null);
-	const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
+	const [leftSidebarCollapsedState, setLeftSidebarCollapsed] = useState(false);
 	const [isResizing, setIsResizing] = useState(false);
 	const [openedChats, setOpenedChats] = useState<OpenChat[]>([]);
 	const handleProjectsLoaded = useCallback((nextProjects: Project[]) => {
@@ -141,6 +154,20 @@ function App() {
 			)?.controllerId ?? null
 		);
 	}, [chatSession, renderedOpenedChats]);
+
+	// 新窗口启动时按 URL 参数定位会话（项目加载完成后再跳）。
+	// 由「在新窗口打开会话」创建的窗口：隐藏左侧导航，使用自定义顶栏。
+	const bootWindowTarget = useMemo(() => readSessionWindowTarget(), []);
+	const sessionWindow = useMemo(() => isSessionWindow(), []);
+	const leftSidebarCollapsed = sessionWindow
+		? false
+		: leftSidebarCollapsedState;
+	const bootedWindowRef = useRef(false);
+	useEffect(() => {
+		if (bootedWindowRef.current || !bootWindowTarget || !projectsReady) return;
+		bootedWindowRef.current = true;
+		openSearchSession(bootWindowTarget);
+	}, [bootWindowTarget, openSearchSession, projectsReady]);
 	const [visualReadyControllerIds, setVisualReadyControllerIds] = useState<
 		ReadonlySet<string>
 	>(() => new Set());
@@ -257,44 +284,49 @@ function App() {
 
 	return (
 		<TooltipProvider>
-			<div className="flex h-full bg-background text-foreground">
-				<AppSidebar
-					collapsed={leftSidebarCollapsed}
-					onCollapse={() => setLeftSidebarCollapsed(true)}
-					envs={envs}
-					projects={sidebarProjects}
-					sessions={sidebarSessions}
-					selectedProjectId={activeProjectId}
-					selectedSessionId={selectedSessionId}
-					onSelectSession={monitoredSelectSession}
-					onOpenSearchSession={monitoredOpenSearchSession}
-					onUpdateSession={(sessionId, update) => {
-						void updateSession(sessionId, update);
-					}}
-					onDeleteSession={(sessionId) => {
-						void deleteSession(sessionId);
-					}}
-					onDeleteProject={(projectId) => void handleDeleteProject(projectId)}
-					onDeleteConnection={(connectionId) =>
-						void handleDeleteConnection(connectionId)
-					}
-					onNewChat={() => startNewChat()}
-					onNewChatInProject={(projectId) => startNewChat(projectId)}
-					onFocusProject={setFocusedProjectId}
-					onReorderProjects={(connectionId, projectIds) =>
-						void handleReorderProjects(connectionId, projectIds)
-					}
-					onAddProject={(connectionId) => void handleAddProject(connectionId)}
-					onRefreshProjectSessions={(projectId) => {
-						void refreshProjectSessions(projectId, true).catch((error) =>
-							console.error("Failed to refresh sessions", error),
-						);
-					}}
-					refreshingProjectIds={refreshingProjectIds}
-					footer={<SidebarFooter />}
-				/>
+			<div
+				data-session-window={sessionWindow ? "" : undefined}
+				className="flex h-full bg-background text-foreground"
+			>
+				{sessionWindow ? null : (
+					<AppSidebar
+						collapsed={leftSidebarCollapsed}
+						onCollapse={() => setLeftSidebarCollapsed(true)}
+						envs={envs}
+						projects={sidebarProjects}
+						sessions={sidebarSessions}
+						selectedProjectId={activeProjectId}
+						selectedSessionId={selectedSessionId}
+						onSelectSession={monitoredSelectSession}
+						onOpenSearchSession={monitoredOpenSearchSession}
+						onUpdateSession={(sessionId, update) => {
+							void updateSession(sessionId, update);
+						}}
+						onDeleteSession={(sessionId) => {
+							void deleteSession(sessionId);
+						}}
+						onDeleteProject={(projectId) => void handleDeleteProject(projectId)}
+						onDeleteConnection={(connectionId) =>
+							void handleDeleteConnection(connectionId)
+						}
+						onNewChat={() => startNewChat()}
+						onNewChatInProject={(projectId) => startNewChat(projectId)}
+						onFocusProject={setFocusedProjectId}
+						onReorderProjects={(connectionId, projectIds) =>
+							void handleReorderProjects(connectionId, projectIds)
+						}
+						onAddProject={(connectionId) => void handleAddProject(connectionId)}
+						onRefreshProjectSessions={(projectId) => {
+							void refreshProjectSessions(projectId, true).catch((error) =>
+								console.error("Failed to refresh sessions", error),
+							);
+						}}
+						refreshingProjectIds={refreshingProjectIds}
+						footer={<SidebarFooter />}
+					/>
+				)}
 				<main className="relative flex min-w-0 flex-1 flex-col">
-					{CUSTOM_TITLEBAR && <TitleBar />}
+					{CUSTOM_TITLEBAR && <TitleBar showAlwaysOnTop={sessionWindow} />}
 					<Group orientation="horizontal" className="min-h-0 flex-1">
 						<Panel
 							defaultSize={RIGHT_SIDEBAR_ENABLED ? 560 : "100"}
@@ -386,6 +418,25 @@ function App() {
 												}
 												onNewTemporaryChat={() =>
 													startTemporaryChat(entry.session.projectRecord.id)
+												}
+												onRenameSession={(title) => {
+													void updateSession(
+														entry.piSessionId ?? entry.session.id,
+														{ title },
+													);
+												}}
+												onOpenInNewWindow={
+													sessionWindow
+														? undefined
+														: () => {
+																openSessionInNewWindow({
+																	sessionId:
+																		entry.piSessionId ?? entry.session.id,
+																	projectId: entry.session.projectRecord.id,
+																	sessionPath: entry.session.sessionPath ?? "",
+																	title: entry.session.title,
+																});
+															}
 												}
 												onExpandSidebar={() => setLeftSidebarCollapsed(false)}
 												reserveWindowControls={CUSTOM_TITLEBAR}
