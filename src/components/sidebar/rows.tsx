@@ -856,7 +856,7 @@ export const SessionRow = memo(function SessionRow({
 							{projectContext && projectName ? (
 								<div
 									data-sidebar-project-context={projectName}
-									className="flex h-4 min-w-0 items-center gap-1 text-[11px] leading-tight text-sidebar-foreground-muted"
+									className="flex h-4 min-w-0 items-center gap-1 text-2xs leading-tight text-sidebar-foreground-muted"
 								>
 									<Folder
 										className="h-3 w-3 shrink-0 opacity-80"
@@ -873,14 +873,7 @@ export const SessionRow = memo(function SessionRow({
 								className="flex items-center justify-center transition-opacity duration-100 group-hover:opacity-0 group-data-[menu-open]:opacity-0"
 							>
 								{session.active ? (
-									<LoaderCircle
-										className={cn(
-											"size-3.5 animate-spin",
-											session.externalActive
-												? "text-muted-foreground"
-												: "text-sidebar-primary",
-										)}
-									/>
+									<LoaderCircle className="size-3.5 animate-spin text-sidebar-primary will-change-transform" />
 								) : null}
 							</span>
 							{onDelete ? (

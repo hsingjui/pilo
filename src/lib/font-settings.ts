@@ -36,23 +36,22 @@ export const MONOSPACE_FONT_BUILTIN_OPTIONS: ReadonlyArray<FontOption> = [
 /** 随应用打包的字体族名（小写）；全量枚举时跳过，避免与内置候选重复。 */
 const BUNDLED_FONT_FAMILIES = new Set(["inter", "jetbrains mono"]);
 
-export const PAGE_FONT_SIZES = [12, 13, 14, 15, 16, 17, 18] as const;
-export const CODE_FONT_SIZES = [10, 11, 12, 13, 14, 15, 16, 17, 18] as const;
-export const TERMINAL_FONT_SIZES = [
-	10, 11, 12, 13, 14, 15, 16, 17, 18, 20,
-] as const;
+export const PAGE_FONT_SIZES = [12, 14, 16, 18, 20, 22] as const;
+export const CODE_FONT_SIZES = [11, 12, 13, 14, 16, 18] as const;
+export const TERMINAL_FONT_SIZES = [11, 12, 13, 14, 16, 18] as const;
 
 export type PageFontSize = (typeof PAGE_FONT_SIZES)[number];
 export type CodeFontSize = (typeof CODE_FONT_SIZES)[number];
 export type TerminalFontSize = (typeof TERMINAL_FONT_SIZES)[number];
 
 export const DEFAULT_PAGE_FONT_FAMILY: PageFontFamily = "inter";
-export const DEFAULT_PAGE_FONT_SIZE: PageFontSize = 14;
+export const DEFAULT_PAGE_FONT_SIZE: PageFontSize = 16;
+export const PAGE_FONT_SIZE_SCALE_BASE = 14;
 export const DEFAULT_CODE_FONT_FAMILY: MonospaceFontFamily = "jetbrains-mono";
-export const DEFAULT_CODE_FONT_SIZE: CodeFontSize = 12;
+export const DEFAULT_CODE_FONT_SIZE: CodeFontSize = 14;
 export const DEFAULT_TERMINAL_FONT_FAMILY: MonospaceFontFamily =
 	"jetbrains-mono";
-export const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 12;
+export const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 14;
 
 const PAGE_FONT_FALLBACK_STACK =
 	'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Helvetica Neue", Arial, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Apple Color Emoji", "Segoe UI Emoji", sans-serif';

@@ -16,6 +16,7 @@ import {
 	DEFAULT_PAGE_FONT_SIZE,
 	DEFAULT_TERMINAL_FONT_FAMILY,
 	DEFAULT_TERMINAL_FONT_SIZE,
+	PAGE_FONT_SIZE_SCALE_BASE,
 	getMonospaceFontFamilyStack,
 	getPageFontFamilyStack,
 	isCodeFontSize,
@@ -183,7 +184,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 			"--pilo-page-font-size",
 			`${preferences.pageFontSize}px`,
 		);
-		const pageFontScale = preferences.pageFontSize / DEFAULT_PAGE_FONT_SIZE;
+		const pageFontScale =
+			preferences.pageFontSize / PAGE_FONT_SIZE_SCALE_BASE;
 		for (const [token, defaultSize] of [
 			["--text-2xs", 11],
 			["--text-xs", 12],

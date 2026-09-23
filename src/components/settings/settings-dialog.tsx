@@ -23,6 +23,9 @@ import {
 } from "@/lib/desktop-notifications";
 import {
 	CODE_FONT_SIZES,
+	DEFAULT_CODE_FONT_SIZE,
+	DEFAULT_PAGE_FONT_SIZE,
+	DEFAULT_TERMINAL_FONT_SIZE,
 	MONOSPACE_FONT_BUILTIN_OPTIONS,
 	PAGE_FONT_BUILTIN_OPTIONS,
 	PAGE_FONT_SIZES,
@@ -135,6 +138,14 @@ const THEME_LABEL_KEYS: Record<
 };
 
 const FONT_SETTINGS_ROW_CLASS = "sm:grid-cols-[160px_1fr]";
+const PAGE_FONT_SIZE_LABEL_KEYS = {
+	12: "settings.fontSizeTiny",
+	14: "settings.fontSizeSmall",
+	16: "settings.fontSizeStandard",
+	18: "settings.fontSizeLarge",
+	20: "settings.fontSizeExtraLarge",
+	22: "settings.fontSizeHuge",
+} as const satisfies Record<PageFontSize, string>;
 
 function PreferencesSettings() {
 	const { t, i18n } = useTranslation();
@@ -430,14 +441,16 @@ function AppearanceSettings() {
 						}
 					>
 						<SelectTrigger className={cn(SETTINGS_CONTROL_CLASS, "w-[104px]")}>
-							<SelectValue>{pageFontSize}px</SelectValue>
+							<SelectValue>
+								{t(PAGE_FONT_SIZE_LABEL_KEYS[pageFontSize])}
+							</SelectValue>
 						</SelectTrigger>
 						<SelectContent>
 							{PAGE_FONT_SIZES.map((size) => (
 								<SelectItem key={size} value={String(size)}>
 									<span className="inline-flex items-center gap-2">
-										{size}px
-										{size === 14 ? (
+										{t(PAGE_FONT_SIZE_LABEL_KEYS[size])}
+										{size === DEFAULT_PAGE_FONT_SIZE ? (
 											<span
 												className="size-1.5 rounded-full bg-muted-foreground"
 												aria-label={t("settings.defaultFontSize")}
@@ -474,7 +487,7 @@ function AppearanceSettings() {
 								<SelectItem key={size} value={String(size)}>
 									<span className="inline-flex items-center gap-2">
 										{size}px
-										{size === 12 ? (
+										{size === DEFAULT_CODE_FONT_SIZE ? (
 											<span
 												className="size-1.5 rounded-full bg-muted-foreground"
 												aria-label={t("settings.defaultFontSize")}
@@ -510,7 +523,7 @@ function AppearanceSettings() {
 								<SelectItem key={size} value={String(size)}>
 									<span className="inline-flex items-center gap-2">
 										{size}px
-										{size === 12 ? (
+										{size === DEFAULT_TERMINAL_FONT_SIZE ? (
 											<span
 												className="size-1.5 rounded-full bg-muted-foreground"
 												aria-label={t("settings.defaultFontSize")}
