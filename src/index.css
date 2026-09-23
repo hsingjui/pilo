@@ -853,3 +853,14 @@
 		transform: scale(0.85);
 	}
 }
+
+/* 会话内查找：基于 CSS Custom Highlight API 的字符级高亮 */
+::highlight(pilo-find) {
+	background-color: hsl(var(--primary) / 0.28);
+	color: inherit;
+}
+
+::highlight(pilo-find-active) {
+	background-color: hsl(var(--primary) / 0.75);
+	color: hsl(var(--primary-foreground));
+}

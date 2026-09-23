@@ -53,6 +53,7 @@ const USE_PLAIN_SHORT_CHAT = import.meta.env.VITE_PILO_PLAIN_SHORT_CHAT !== "0";
 
 export type ChatConversationViewportHandle = {
 	scrollToBottom: (smooth?: boolean) => void;
+	scrollToMessageIndex: (messageIndex: number) => void;
 };
 
 type ChatConversationViewportProps = {
@@ -125,6 +126,28 @@ const MessageRow = memo(function MessageRow({
 	forkDisabled,
 	suppressInterruptedError,
 }: MessageRowProps) {
+	return (
+		<div className="contents" data-message-id={message.id}>
+			{renderMessageRow({
+				message,
+				isLastMessage,
+				onForkAssistant,
+				forkingMessageId,
+				forkDisabled,
+				suppressInterruptedError,
+			})}
+		</div>
+	);
+});
+
+function renderMessageRow({
+	message,
+	isLastMessage,
+	onForkAssistant,
+	forkingMessageId,
+	forkDisabled,
+	suppressInterruptedError,
+}: MessageRowProps) {
 	if (message.historyPlaceholder) {
 		return <HistoryMessagePlaceholder message={message} />;
 	}
@@ -145,7 +168,7 @@ const MessageRow = memo(function MessageRow({
 			replyRunwayPx={isLastMessage ? message.replyRunwayPx : undefined}
 		/>
 	);
-});
+}
 
 // 切换骨架覆盖层：请求出现时立即实心（遮住切换瞬间的空白），
 // 请求消失时说明底下内容已就绪并完成滚动复位，淡出交还给真实内容。
@@ -298,6 +321,7 @@ const ChatConversationViewportImpl = forwardRef<
 		syncScrollState,
 		scrollToBottom,
 		handleOutlineJump,
+		jumpToMessageIndex,
 		handleScrollEnd,
 	} = useChatScrollController({
 		active,
@@ -385,7 +409,11 @@ const ChatConversationViewportImpl = forwardRef<
 		visualLive,
 	]);
 
-	useImperativeHandle(ref, () => ({ scrollToBottom }), [scrollToBottom]);
+	useImperativeHandle(
+		ref,
+		() => ({ scrollToBottom, scrollToMessageIndex: jumpToMessageIndex }),
+		[scrollToBottom, jumpToMessageIndex],
+	);
 
 	const bindScrollRef = useCallback(
 		(node: HTMLDivElement | null) => {

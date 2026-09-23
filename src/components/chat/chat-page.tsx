@@ -32,6 +32,7 @@ import { createFileSuggestions } from "@/components/chat/chat-file-suggestions";
 import { PiExtensionNotifications } from "@/components/chat/pi-extension-notifications";
 import { PiExtensionUiDialog } from "@/components/chat/pi-extension-ui-dialog";
 import { SessionHeader } from "@/components/chat/chat-session-header";
+import { ChatFindLayer } from "@/components/chat/chat-find-bar";
 import type { ChatSession } from "@/components/chat/chat-page-utils";
 import {
 	routeInitialDeferredSubmissions,
@@ -328,6 +329,11 @@ function ChatPageImpl(props: ChatPageProps) {
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
 	const conversationViewportRef = useRef<ChatConversationViewportHandle>(null);
+	const [findOpen, setFindOpen] = useState(false);
+	const handleFindNavigate = useCallback((messageIndex: number) => {
+		conversationViewportRef.current?.scrollToMessageIndex(messageIndex);
+	}, []);
+	useKeyboardShortcut("mod+f", () => setFindOpen(true), { enabled: active });
 	// 历史消息图片按 session snapshot 懒加载；本地消息由独立 Blob URL 缓存提供。
 	const historyImageScope = useMemo(
 		() =>
@@ -935,6 +941,12 @@ function ChatPageImpl(props: ChatPageProps) {
 									onRetryHistory={retryHistory}
 								/>
 							</ChatImageScopeProvider>
+							<ChatFindLayer
+								open={findOpen}
+								onClose={() => setFindOpen(false)}
+								messages={messages}
+								onNavigate={handleFindNavigate}
+							/>
 
 							{/* -mt-4 让滚动区底部上探 16px，消息在输入卡背后被自然裁切；
 							    裁切线藏在卡片圆角(12px)以内，输入框下方缝隙不会露出消息 */}

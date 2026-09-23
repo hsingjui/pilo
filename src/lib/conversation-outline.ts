@@ -41,6 +41,15 @@ function weightForLength(length: number): 0 | 1 | 2 | 3 {
 	return 0;
 }
 
+/** 供大纲与会话内查找复用的消息纯文本化。 */
+export function messageSearchText(message: ConversationOutlineMessage): string {
+	const source =
+		message.role === "user"
+			? (skillInvocationSummary(message.text) ?? message.text)
+			: message.text;
+	return plainText(source);
+}
+
 export function buildConversationOutline(
 	messages: readonly ConversationOutlineMessage[],
 ): ConversationOutlineEntry[] {

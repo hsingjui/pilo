@@ -262,23 +262,28 @@ export function useChatScrollController({
 		[virtualPadding.start],
 	);
 
-	const handleOutlineJump = useCallback(
-		(index: number) => {
-			const entry = outlineEntries[index];
-			if (!entry || !virtualizerRef.current) return;
+	const jumpToMessageIndex = useCallback(
+		(messageIndex: number) => {
+			if (!virtualizerRef.current) return;
 			stopScroll();
-			activeOutlineIndexRef.current = index;
-			setActiveOutlineIndex(index);
-			pendingOutlineJumpRef.current = {
-				messageIndex: entry.messageIndex,
-				attempts: 0,
-			};
-			scrollMessageToTop(entry.messageIndex);
-			if (outlineJumpDrift(entry.messageIndex) <= OUTLINE_JUMP_TOLERANCE_PX) {
+			pendingOutlineJumpRef.current = { messageIndex, attempts: 0 };
+			scrollMessageToTop(messageIndex);
+			if (outlineJumpDrift(messageIndex) <= OUTLINE_JUMP_TOLERANCE_PX) {
 				pendingOutlineJumpRef.current = null;
 			}
 		},
-		[outlineEntries, outlineJumpDrift, scrollMessageToTop, stopScroll],
+		[outlineJumpDrift, scrollMessageToTop, stopScroll],
+	);
+
+	const handleOutlineJump = useCallback(
+		(index: number) => {
+			const entry = outlineEntries[index];
+			if (!entry) return;
+			activeOutlineIndexRef.current = index;
+			setActiveOutlineIndex(index);
+			jumpToMessageIndex(entry.messageIndex);
+		},
+		[jumpToMessageIndex, outlineEntries],
 	);
 
 	const handleScrollEnd = useCallback(() => {
@@ -330,6 +335,7 @@ export function useChatScrollController({
 		syncScrollState,
 		scrollToBottom,
 		handleOutlineJump,
+		jumpToMessageIndex,
 		handleScrollEnd,
 	};
 }
