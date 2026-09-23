@@ -624,7 +624,8 @@ function ChatPageImpl(props: ChatPageProps) {
 	const tryHandleComposerCommand = useCallback(
 		async (submission: ChatSubmission) => {
 			const command = submission.text.trim();
-			if (!command.startsWith("/")) return false;
+			// 仅输入开头的斜杠作为命令执行，避免正文中的 / 误触发。
+			if (!submission.text.startsWith("/")) return false;
 			const commandName = command.slice(1).split(/\s+/, 1)[0];
 
 			if (commandName === "new") {

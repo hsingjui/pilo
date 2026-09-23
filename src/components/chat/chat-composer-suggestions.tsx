@@ -76,6 +76,8 @@ export function activeSuggestionQuery(
 	const token = beforeCaret.slice(tokenStart);
 	const trigger = token[0];
 	if (trigger !== "@" && trigger !== "/") return null;
+	// 命令仅由输入开头的斜杠触发；@ 文件引用可在任意位置触发。
+	if (trigger === "/" && tokenStart !== 0) return null;
 	if (token.slice(1).includes(" ")) return null;
 	return {
 		trigger,
