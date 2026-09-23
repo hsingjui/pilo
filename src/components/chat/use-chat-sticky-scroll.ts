@@ -40,9 +40,9 @@ type UseChatStickyScrollOptions = {
  * Owns bottom-following for the chat viewport.
  *
  * There is intentionally one resize owner. Content/viewport ResizeObserver
- * notifications are coalesced into one rAF and perform one direct DOM bottom
- * clamp. Streaming growth never bounces through both Virtua and DOM
- * corrections.
+ * notifications clamp the real DOM viewport during the resize delivery, before
+ * paint, so streaming growth does not expose an intermediate off-bottom frame.
+ * Streaming growth never bounces through both Virtua and DOM corrections.
  */
 export function useChatStickyScroll({
 	enabled,
@@ -251,8 +251,10 @@ export function useChatStickyScroll({
 		],
 	);
 
-	// One ResizeObserver owns both content growth and viewport-size changes. A
-	// burst of measurements can schedule at most one bottom clamp per frame.
+	// One ResizeObserver owns both content growth and viewport-size changes.
+	// Clamp during resize delivery instead of deferring another frame: the latter
+	// lets streaming content push the status row down for one visible paint before
+	// scrollTop catches up.
 	useEffect(() => {
 		if (
 			!enabled ||
@@ -296,7 +298,7 @@ export function useChatStickyScroll({
 				verticalLayoutChanged = true;
 			}
 			if (verticalLayoutChanged) {
-				scheduleFollow();
+				if (ownershipRef.current === "following") clampToBottom();
 				syncScrollToLatestVisibility();
 			}
 		});
@@ -304,10 +306,10 @@ export function useChatStickyScroll({
 		observer.observe(contentElement);
 		return () => observer.disconnect();
 	}, [
+		clampToBottom,
 		contentRevision,
 		enabled,
 		hasItems,
-		scheduleFollow,
 		scrollElement,
 		syncScrollToLatestVisibility,
 	]);
