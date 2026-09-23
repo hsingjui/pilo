@@ -405,6 +405,9 @@ function ChatPageImpl(props: ChatPageProps) {
 	const runtime = useChatRuntime({
 		active,
 		session,
+		// 通知标题与页头一致：优先使用 Pi 当前会话名（自动命名后立即更新），
+		// 会话索引里的 session.title 可能滞后到下一次 watcher 刷新。
+		sessionTitle: sessionState?.name || session.title,
 		client,
 		activeTurnSessionIdRef,
 		initialMessage,

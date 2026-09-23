@@ -67,6 +67,7 @@ export function dispatchRuntimeEventToConversation(
 
 type UseChatRuntimeEventsOptions = {
 	session: ChatSession;
+	sessionTitle: string;
 	client: ChatSessionClient;
 	activeTurnRef: { current: ActiveTurn | null };
 	activeTurnSessionIdRef?: { current: string | null };
@@ -94,6 +95,7 @@ type UseChatRuntimeEventsOptions = {
 
 export function useChatRuntimeEvents({
 	session,
+	sessionTitle,
 	client,
 	activeTurnRef,
 	activeTurnSessionIdRef,
@@ -143,10 +145,10 @@ export function useChatRuntimeEvents({
 	// 发出，同步 turn 的标题快照，避免通知仍显示「新会话」。
 	useEffect(() => {
 		const turn = activeTurnRef.current;
-		if (turn && turn.sessionTitle !== session.title) {
-			turn.sessionTitle = session.title;
+		if (turn && turn.sessionTitle !== sessionTitle) {
+			turn.sessionTitle = sessionTitle;
 		}
-	}, [activeTurnRef, session.title]);
+	}, [activeTurnRef, sessionTitle]);
 
 	const clearRecoveryState = useCallback(() => {
 		setRecoveryState({
@@ -474,7 +476,7 @@ export function useChatRuntimeEvents({
 					return;
 				const turn: ActiveTurn = {
 					sessionId: session.id,
-					sessionTitle: session.title,
+					sessionTitle,
 					projectId: session.projectRecord.id,
 					notificationSessionId: session.temporary
 						? session.id
@@ -514,7 +516,7 @@ export function useChatRuntimeEvents({
 		session.id,
 		session.projectRecord.id,
 		session.temporary,
-		session.title,
+		sessionTitle,
 		setActiveTurnSessionId,
 		setPendingSteeringCount,
 	]);

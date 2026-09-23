@@ -33,6 +33,7 @@ export type { ChatRuntimeRecoveryState } from "@/components/chat/chat-runtime-ty
 type UseChatRuntimeOptions = {
 	active: boolean;
 	session: ChatSession;
+	sessionTitle: string;
 	client: ChatSessionClient;
 	activeTurnSessionIdRef?: { current: string | null };
 	initialMessage?: string;
@@ -59,6 +60,7 @@ type UseChatRuntimeOptions = {
 export function useChatRuntime({
 	active,
 	session,
+	sessionTitle,
 	client,
 	activeTurnSessionIdRef,
 	initialMessage,
@@ -140,6 +142,7 @@ export function useChatRuntime({
 		failActiveTurn,
 	} = useChatRuntimeEvents({
 		session,
+		sessionTitle,
 		client,
 		activeTurnRef,
 		activeTurnSessionIdRef,
@@ -243,7 +246,7 @@ export function useChatRuntime({
 
 			const turn: ActiveTurn = {
 				sessionId: session.id,
-				sessionTitle: session.title,
+				sessionTitle,
 				projectId: session.projectRecord.id,
 				notificationSessionId: session.id,
 				generation: null,
@@ -324,7 +327,7 @@ export function useChatRuntime({
 			session.id,
 			session.projectRecord.id,
 			session.temporary,
-			session.title,
+			sessionTitle,
 			t,
 		],
 	);
