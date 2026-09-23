@@ -80,6 +80,7 @@ export {
 } from "./select";
 export { Separator } from "./separator";
 export { Skeleton } from "./skeleton";
+export { Spinner } from "./spinner";
 export { Toaster } from "./sonner";
 export { EmptyState, ErrorState, LoadingState } from "./state-view";
 export { Switch } from "./switch";

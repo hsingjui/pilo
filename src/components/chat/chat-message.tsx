@@ -7,7 +7,7 @@ import {
 	type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronRight, GitFork, LoaderCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, GitFork } from "lucide-react";
 
 import {
 	AssistantActivityView,
@@ -31,7 +31,7 @@ import { recordChatMessageRender } from "@/lib/chat-performance";
 import { formatWorkDuration } from "@/lib/format-duration";
 import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
-import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
+import { Button, Spinner, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
 
 function MessageAction({
 	label,
@@ -546,7 +546,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 									onClick={() => onFork?.(message.id)}
 								>
 									{forking ? (
-										<LoaderCircle className="size-3.5 animate-spin" />
+										<Spinner className="size-3.5" />
 									) : (
 										<GitFork className="size-3.5" />
 									)}

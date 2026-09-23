@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { CircleAlert, Inbox, LoaderCircle } from "lucide-react";
+import { CircleAlert, Inbox } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "./button";
+import { Spinner } from "./spinner";
 
 type StateViewVariant = "default" | "compact" | "hero";
 
@@ -103,7 +104,7 @@ export function LoadingState({
 	const { t } = useTranslation();
 	return (
 		<StateView
-			icon={<LoaderCircle className="size-4 animate-spin" />}
+			icon={<Spinner className="size-4" />}
 			title={title ?? t("common.loading")}
 			description={description}
 			variant={variant}

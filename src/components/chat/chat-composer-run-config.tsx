@@ -1,4 +1,4 @@
-import { Check, LoaderCircle, RefreshCw } from "lucide-react";
+import { Check, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { CHAT_COMPOSER_RUN_CONFIG_TRIGGER_CLASS_NAME } from "@/components/chat/chat-composer-frame";
@@ -13,6 +13,7 @@ import {
 	DropdownMenuSubContent,
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
+	Spinner,
 } from "@/ui";
 
 const THINKING_LEVEL_LABELS: Record<PiThinkingLevel, string> = {
@@ -151,7 +152,7 @@ export function ComposerRunConfig({
 							className="gap-2"
 						>
 							{modelLoading ? (
-								<LoaderCircle className="size-3.5 animate-spin" />
+								<Spinner className="size-3.5" />
 							) : (
 								<RefreshCw className="size-3.5" />
 							)}

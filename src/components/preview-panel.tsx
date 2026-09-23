@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-	ExternalLink,
-	LoaderCircle,
-	MonitorPlay,
-	RefreshCw,
-	X,
-} from "lucide-react";
+import { ExternalLink, MonitorPlay, RefreshCw, X } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 
@@ -18,7 +12,7 @@ import {
 } from "@/lib/preview";
 import { userErrorMessage } from "@/lib/app-error";
 import type { Project } from "@/lib/projects";
-import { Button, EmptyState, Input } from "@/ui";
+import { Button, EmptyState, Input, Spinner } from "@/ui";
 
 export function PreviewPanel({ project }: { project: Project }) {
 	const [ports, setPorts] = useState<number[]>([]);
@@ -114,7 +108,7 @@ export function PreviewPanel({ project }: { project: Project }) {
 						onClick={() => void open()}
 					>
 						{opening ? (
-							<LoaderCircle className="size-3.5 animate-spin" />
+							<Spinner className="size-3.5" />
 						) : (
 							<MonitorPlay className="size-3.5" />
 						)}

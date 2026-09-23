@@ -12,7 +12,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { Download, ImageOff, LoaderCircle, X } from "lucide-react";
+import { Download, ImageOff, X } from "lucide-react";
 
 import {
 	chatImageCacheKey,
@@ -26,7 +26,7 @@ import {
 } from "@/lib/chat-submission";
 import { isImeComposingNativeKeyboardEvent } from "@/lib/ime";
 import { cn } from "@/lib/utils";
-import { Hint } from "@/ui";
+import { Hint, Spinner } from "@/ui";
 
 /**
  * History images resolve through the session scope; optimistic local messages
@@ -304,7 +304,7 @@ export const ChatImageThumbnail = memo(function ChatImageThumbnail({
 						{lazy ? (
 							<span className="size-full animate-pulse bg-muted/70" />
 						) : (
-							<LoaderCircle className="size-4 animate-spin" />
+							<Spinner className="size-4" />
 						)}
 					</span>
 				)}

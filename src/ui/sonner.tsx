@@ -1,14 +1,9 @@
-import {
-	CircleAlert,
-	CircleCheck,
-	Info,
-	LoaderCircle,
-	TriangleAlert,
-} from "lucide-react";
+import { CircleAlert, CircleCheck, Info, TriangleAlert } from "lucide-react";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
 
 import { useResolvedTheme } from "@/lib/theme-provider";
 import { cn } from "@/lib/utils";
+import { Spinner } from "./spinner";
 
 const Toaster = ({
 	closeButton = true,
@@ -37,9 +32,7 @@ const Toaster = ({
 					<TriangleAlert className="size-4 shrink-0 text-status-warning" />
 				),
 				error: <CircleAlert className="size-4 shrink-0 text-status-danger" />,
-				loading: (
-					<LoaderCircle className="size-4 shrink-0 animate-spin text-muted-foreground" />
-				),
+				loading: <Spinner className="size-4 shrink-0 text-muted-foreground" />,
 			}}
 			toastOptions={{
 				...toastOptions,

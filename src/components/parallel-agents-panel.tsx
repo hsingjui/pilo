@@ -1,15 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import {
-	Bot,
-	GitBranch,
-	LoaderCircle,
-	Play,
-	Send,
-	Square,
-	Trash2,
-} from "lucide-react";
+import { Bot, GitBranch, Play, Send, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -37,6 +29,7 @@ import {
 	Input,
 	Textarea,
 	Hint,
+	Spinner,
 } from "@/ui";
 
 function statusLabel(t: TFunction, status: ParallelAgentStatus) {
@@ -212,7 +205,7 @@ export function ParallelAgentsPanel({ project }: { project: Project }) {
 						onClick={() => void create()}
 					>
 						{creating ? (
-							<LoaderCircle className="size-3.5 animate-spin" />
+							<Spinner className="size-3.5" />
 						) : (
 							<Play className="size-3.5" />
 						)}

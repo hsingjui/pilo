@@ -6,7 +6,6 @@ import {
 	ChevronRight,
 	CircleAlert,
 	FileText,
-	LoaderCircle,
 	PencilLine,
 	Search,
 	Sparkles,
@@ -25,7 +24,7 @@ import {
 import { formatWorkDuration } from "@/lib/format-duration";
 import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
-import { Hint } from "@/ui";
+import { Hint, Spinner } from "@/ui";
 
 export type ChatActivityStatus = "complete" | "running";
 
@@ -453,7 +452,7 @@ function ToolCallActivityView({
 				{activity.isError ? (
 					<CircleAlert className="mt-0.5 size-3.5 shrink-0" />
 				) : running ? (
-					<LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin" />
+					<Spinner className="mt-0.5 size-3.5 shrink-0" />
 				) : null}
 			</button>
 			{hasDetails && open ? <ToolDetail activity={activity} /> : null}
@@ -581,9 +580,7 @@ export function AssistantActivityView({
 						summaryLabel
 					)}
 				</span>
-				{running ? (
-					<LoaderCircle className="size-3.5 shrink-0 animate-spin" />
-				) : null}
+				{running ? <Spinner className="size-3.5 shrink-0" /> : null}
 			</button>
 			{groupOpen ? (
 				<div className="space-y-0 pt-0.5">

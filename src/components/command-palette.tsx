@@ -1,11 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import {
-	Folder,
-	LoaderCircle,
-	MessageSquareText,
-	MessagesSquare,
-} from "lucide-react";
+import { Folder, MessageSquareText, MessagesSquare } from "lucide-react";
 
 import { i18n } from "@/i18n";
 
@@ -21,6 +16,7 @@ import {
 	CommandItem,
 	CommandList,
 	Hint,
+	Spinner,
 } from "@/ui";
 import type { SidebarProject, SidebarSession } from "./sidebar/types";
 
@@ -362,7 +358,7 @@ export function CommandPalette({
 			<footer className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-4 py-2.5 text-2xs text-muted-foreground">
 				{searchingContent ? (
 					<span className="flex items-center gap-1.5">
-						<LoaderCircle className="size-3 animate-spin" />
+						<Spinner className="size-3" />
 						正在搜索历史消息
 					</span>
 				) : (

@@ -14,7 +14,6 @@ import {
 	ChevronDown,
 	Clock,
 	Folder,
-	LoaderCircle,
 	Monitor,
 	MoreHorizontal,
 	Pencil,
@@ -31,6 +30,7 @@ import {
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
+	Spinner,
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
@@ -522,7 +522,7 @@ export function ProjectRow({
 								className="flex h-5 w-5 items-center justify-center text-muted-foreground"
 								aria-label={t("sidebar.refreshingSessions")}
 							>
-								<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+								<Spinner className="h-3.5 w-3.5" />
 							</span>
 						) : null}
 						<DropdownMenu
@@ -873,7 +873,7 @@ export const SessionRow = memo(function SessionRow({
 								className="flex items-center justify-center transition-opacity duration-100 group-hover:opacity-0 group-data-[menu-open]:opacity-0"
 							>
 								{session.active ? (
-									<LoaderCircle className="size-3.5 animate-spin text-sidebar-primary will-change-transform" />
+									<Spinner className="size-3.5 text-sidebar-primary will-change-transform" />
 								) : null}
 							</span>
 							{onDelete ? (

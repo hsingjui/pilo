@@ -4,14 +4,13 @@ import {
 	ChevronDown,
 	ChevronUp,
 	CircleCheck,
-	LoaderCircle,
 	RefreshCw,
 	TriangleAlert,
 } from "lucide-react";
 
 import type { ChatRuntimeRecoveryState } from "@/components/chat/use-chat-runtime";
 import { appErrorActionLabel, appErrorMessage } from "@/lib/app-error";
-import { Button, NoticeCard, NoticeIcon } from "@/ui";
+import { Button, NoticeCard, NoticeIcon, Spinner } from "@/ui";
 
 export function ChatRuntimeRecoveryNotice({
 	state,
@@ -55,7 +54,7 @@ export function ChatRuntimeRecoveryNotice({
 		>
 			<div className="flex min-w-0 items-start gap-2.5">
 				{recovering ? (
-					<NoticeIcon icon={LoaderCircle} className="animate-spin" />
+					<NoticeIcon icon={Spinner} />
 				) : recovered ? (
 					<NoticeIcon icon={CircleCheck} tone="success" />
 				) : (
