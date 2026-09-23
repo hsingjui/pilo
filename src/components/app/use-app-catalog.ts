@@ -132,6 +132,12 @@ export function useAppCatalog(
 		return list;
 	}, [connectionCatalog]);
 
+	// 主页（侧边栏可见连接）下展示的项目。输入框上方的项目切换只应列出这些项目。
+	const homeProjects = useMemo(() => {
+		const visible = new Set(envs.map((env) => env.id));
+		return projects.filter((project) => visible.has(project.connection.id));
+	}, [envs, projects]);
+
 	const sidebarProjects = useMemo(
 		() =>
 			projects.map((project) => ({
@@ -148,11 +154,11 @@ export function useAppCatalog(
 		() =>
 			connectionsReady
 				? firstProjectInConnectionOrder(
-						projects,
+						homeProjects,
 						envs.map((env) => env.id),
 					)
 				: null,
-		[connectionsReady, envs, projects],
+		[connectionsReady, envs, homeProjects],
 	);
 
 	return {
@@ -162,6 +168,7 @@ export function useAppCatalog(
 		connectionCatalog,
 		connectionsReady,
 		envs,
+		homeProjects,
 		sidebarProjects,
 		firstProject,
 	};

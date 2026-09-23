@@ -82,6 +82,7 @@ function App() {
 		connectionCatalog,
 		connectionsReady,
 		envs,
+		homeProjects,
 		sidebarProjects,
 		firstProject,
 	} = useAppCatalog(handleProjectsLoaded);
@@ -405,7 +406,7 @@ function App() {
 											: true
 									}
 									project={activeProject}
-									projects={projects}
+									projects={homeProjects}
 									onSwitchProject={switchDraftProject}
 									onOpenTerminal={toggleTerminal}
 									terminalRunning={terminalRunning}
