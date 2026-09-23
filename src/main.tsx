@@ -72,7 +72,30 @@ function installDesktopLogging() {
 	};
 }
 
+/**
+ * WebView2/WKWebView 的默认右键菜单在桌面壳里只剩「刷新 / 另存为 / 打印 / 更多工具」
+ * 这类浏览器遗留项，release 下去掉。输入框、链接和已选中的文本放行，否则复制粘贴也没了。
+ * 开发构建保留原菜单，方便调试。
+ */
+function disableBrowserContextMenu() {
+	if (import.meta.env.DEV) return;
+	window.addEventListener(
+		"contextmenu",
+		(event) => {
+			const target = event.target;
+			const keepNativeMenu =
+				target instanceof Element &&
+				target.closest("input, textarea, [contenteditable], a[href]");
+			if (keepNativeMenu) return;
+			if (window.getSelection()?.isCollapsed === false) return;
+			event.preventDefault();
+		},
+		true,
+	);
+}
+
 installDesktopLogging();
+disableBrowserContextMenu();
 installChatRuntimeTraceDebugApi();
 installChatPerformanceDebugApi();
 
