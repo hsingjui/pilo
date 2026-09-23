@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use pilo_protocol::SessionFile;
+use rusqlite::{Connection as SqliteConnection, Transaction, TransactionBehavior};
 use serde_json::Value;
 use tauri::AppHandle;
 
@@ -108,6 +109,15 @@ pub struct SessionReconcileWork {
     pub deferred_paths: Vec<String>,
 }
 
+// Index writes read (get_session) and then write in the same transaction. Under WAL a deferred
+// transaction that already holds a read snapshot cannot be upgraded to a write when another
+// writer committed in the meantime: SQLite fails immediately with SQLITE_BUSY and busy_timeout
+// does not apply. BEGIN IMMEDIATE takes the write lock up front so contention is waited out.
+fn write_transaction(db: &mut SqliteConnection) -> Result<Transaction<'_>, String> {
+    db.transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())
+}
+
 pub fn list_cached(app: &AppHandle, project_id: &str) -> Result<Vec<SessionIndexEntry>, String> {
     storage::list_sessions(&storage::open(app)?, project_id)
 }
@@ -135,7 +145,7 @@ pub async fn reconcile(
     let mut result = SessionReconcileResult::default();
     let mut seen = Vec::with_capacity(files.len());
     let mut deferred_paths = Vec::new();
-    let transaction = db.transaction().map_err(|error| error.to_string())?;
+    let transaction = write_transaction(&mut db)?;
 
     for file in files {
         let previous = cached_by_path.get(file.path.as_str()).copied();
@@ -199,7 +209,7 @@ pub async fn reconcile_paths(
     let session_project = pi_workspace::resolve_session_project(app, project)?;
     let files = scan_files(servers, &session_project, &[], None, paths).await?;
     let mut db = storage::open(app)?;
-    let transaction = db.transaction().map_err(|error| error.to_string())?;
+    let transaction = write_transaction(&mut db)?;
     let mut changed = 0_usize;
     for path in removed_paths {
         if storage::remove_session_for_project(&transaction, &project.id, path)? {
