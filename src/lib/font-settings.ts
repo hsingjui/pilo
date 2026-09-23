@@ -196,36 +196,47 @@ export function isTerminalFontSize(value: unknown): value is TerminalFontSize {
 	return TERMINAL_FONT_SIZES.some((size) => size === value);
 }
 
-let systemFontFamiliesPromise: Promise<readonly string[]> | null = null;
-let systemMonospaceFamiliesPromise: Promise<readonly string[]> | null = null;
+/** 后端返回的系统字体族及其原生等宽判定。 */
+export type SystemFontFamily = {
+	family: string;
+	monospace: boolean;
+};
+
+let systemFontFamiliesPromise: Promise<readonly SystemFontFamily[]> | null =
+	null;
 
 /**
- * 全量枚举系统已安装字体族。整个会话只查询一次并缓存；
+ * 全量枚举系统已安装字体族（含原生等宽判定）。整个会话只查询一次并缓存；
  * 枚举失败时回退为空列表，下拉退化为仅内置候选。
  */
-export function resolveSystemFontFamilies(): Promise<readonly string[]> {
+function resolveSystemFonts(): Promise<readonly SystemFontFamily[]> {
 	if (!systemFontFamiliesPromise) {
-		systemFontFamiliesPromise = invoke<string[]>("system_font_families")
+		systemFontFamiliesPromise = invoke<SystemFontFamily[]>(
+			"system_font_families",
+		)
 			.then((families) => dedupeAndSortFontFamilies(families))
 			.catch((error) => {
 				console.warn("system_font_families failed", error);
 				// 清空缓存允许下次打开设置时重试，避免首帧失败被永久缓存。
 				systemFontFamiliesPromise = null;
-				systemMonospaceFamiliesPromise = null;
 				return [];
 			});
 	}
 	return systemFontFamiliesPromise;
 }
 
-/** 过滤出等宽的系统字体族，同样会话内只计算一次。 */
+/** 全部系统字体族名，供页面字体候选使用。 */
+export function resolveSystemFontFamilies(): Promise<readonly string[]> {
+	return resolveSystemFonts().then((families) =>
+		families.map((item) => item.family),
+	);
+}
+
+/** 依据后端原生等宽判定过滤出的等宽字体族名。 */
 export function resolveSystemMonospaceFamilies(): Promise<readonly string[]> {
-	if (!systemMonospaceFamiliesPromise) {
-		systemMonospaceFamiliesPromise = resolveSystemFontFamilies().then(
-			(families) => filterMonospaceFamilies(families),
-		);
-	}
-	return systemMonospaceFamiliesPromise;
+	return resolveSystemFonts().then((families) =>
+		families.filter((item) => item.monospace).map((item) => item.family),
+	);
 }
 
 const FONT_FAMILY_COLLATOR = new Intl.Collator("en", { sensitivity: "base" });
@@ -234,45 +245,21 @@ const FONT_FAMILY_COLLATOR = new Intl.Collator("en", { sensitivity: "base" });
  * 大小写不敏感地按名称排序并去重。tsconfig 的 lib 目标还不含
  * `Array#toSorted`，`sort` 又会原地突变，因此对副本排序。
  */
-function dedupeAndSortFontFamilies(families: readonly string[]): string[] {
+function dedupeAndSortFontFamilies(
+	families: readonly SystemFontFamily[],
+): SystemFontFamily[] {
 	const seen = new Set<string>();
-	const result: string[] = [];
-	for (const family of families) {
-		const trimmed = family.trim();
-		const key = trimmed.toLowerCase();
+	const result: SystemFontFamily[] = [];
+	for (const item of families) {
+		const family = item.family.trim();
+		const key = family.toLowerCase();
 		if (!key || seen.has(key)) continue;
 		seen.add(key);
-		result.push(trimmed);
+		result.push({ family, monospace: item.monospace });
 	}
 	const sorted = [...result];
-	sorted.sort((a, b) => FONT_FAMILY_COLLATOR.compare(a, b));
+	sorted.sort((a, b) => FONT_FAMILY_COLLATOR.compare(a.family, b.family));
 	return sorted;
-}
-
-const FONT_PROBE_SIZE = 48;
-const FONT_PROBE_EPSILON = 0.5;
-
-/**
- * 测量窄字符、宽字符与数字的 advance，全部一致才视为等宽字体。
- * 候选来自系统枚举、必然已安装，不存在回退误判。
- */
-function filterMonospaceFamilies(families: readonly string[]): string[] {
-	const canvas = document.createElement("canvas");
-	const ctx = canvas.getContext("2d");
-	if (!ctx) return [...families];
-	const measure = (family: string, text: string) => {
-		ctx.font = `${FONT_PROBE_SIZE}px ${quoteFontFamily(family)}, monospace`;
-		return ctx.measureText(text).width;
-	};
-	return families.filter((family) => {
-		const narrow = measure(family, "iiiiiiiiii");
-		const wide = measure(family, "WWWWWWWWWW");
-		const digits = measure(family, "1111111111");
-		return (
-			Math.abs(narrow - wide) < FONT_PROBE_EPSILON &&
-			Math.abs(narrow - digits) < FONT_PROBE_EPSILON
-		);
-	});
 }
 
 /** 系统字体族转下拉选项；跳过与随应用打包字体重名的族，避免重复。 */
