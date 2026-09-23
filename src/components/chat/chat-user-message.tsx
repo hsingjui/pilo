@@ -65,12 +65,19 @@ function UserMessageBody({ text }: { text: string }) {
 /** Skill 调用只显示紧凑占位，不回显 Pi 展开的 Skill 正文。 */
 function SkillInvocationBody({ invocation }: { invocation: SkillInvocation }) {
 	return (
-		<Hint label={invocation.location ?? undefined}>
-			<span className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-foreground/10 bg-background/40 px-2 py-1 text-xs">
-				<Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
-				<span className="min-w-0 truncate font-mono">{invocation.name}</span>
-			</span>
-		</Hint>
+		<div className="min-w-0 space-y-1.5">
+			<Hint label={invocation.location ?? undefined}>
+				<span className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-foreground/10 bg-background/40 px-2 py-1 text-xs">
+					<Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
+					<span className="min-w-0 truncate font-mono">{invocation.name}</span>
+				</span>
+			</Hint>
+			{invocation.additionalInstructions ? (
+				<p className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+					{invocation.additionalInstructions}
+				</p>
+			) : null}
+		</div>
 	);
 }
 

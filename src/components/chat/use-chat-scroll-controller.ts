@@ -264,15 +264,39 @@ export function useChatScrollController({
 
 	const jumpToMessageIndex = useCallback(
 		(messageIndex: number) => {
-			if (!virtualizerRef.current) return;
 			stopScroll();
+			const vlist = virtualizerRef.current;
+			if (!vlist) {
+				// 短会话走普通文档流（无 Virtualizer），按消息元素直接定位。
+				const viewport = scrollElementRef.current;
+				const message = messages[messageIndex];
+				if (!viewport || !message) return;
+				const row = viewport.querySelector<HTMLElement>(
+					`[data-message-id="${CSS.escape(message.id)}"]`,
+				);
+				const target = row?.firstElementChild as HTMLElement | null;
+				if (!target) return;
+				const viewportRect = viewport.getBoundingClientRect();
+				viewport.scrollTop +=
+					target.getBoundingClientRect().top -
+					viewportRect.top -
+					virtualPadding.start;
+				return;
+			}
 			pendingOutlineJumpRef.current = { messageIndex, attempts: 0 };
 			scrollMessageToTop(messageIndex);
 			if (outlineJumpDrift(messageIndex) <= OUTLINE_JUMP_TOLERANCE_PX) {
 				pendingOutlineJumpRef.current = null;
 			}
 		},
-		[outlineJumpDrift, scrollMessageToTop, stopScroll],
+		[
+			messages,
+			outlineJumpDrift,
+			scrollElementRef,
+			scrollMessageToTop,
+			stopScroll,
+			virtualPadding.start,
+		],
 	);
 
 	const handleOutlineJump = useCallback(
