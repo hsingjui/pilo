@@ -1,4 +1,11 @@
-import { memo, useState, type ReactNode } from "react";
+import {
+	memo,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+	type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, GitFork, LoaderCircle } from "lucide-react";
 
@@ -58,6 +65,46 @@ function MessageAction({
 }
 
 const LARGE_MESSAGE_PREVIEW_CHARS = 8_000;
+const WORK_ACTIVITY_INITIAL_ITEMS = 18;
+const WORK_ACTIVITY_REVEAL_ITEMS = 24;
+const WORK_ACTIVITY_REVEAL_MARGIN_PX = 640;
+
+function WorkActivityRevealSentinel({ onReveal }: { onReveal: () => void }) {
+	const sentinelRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		const sentinel = sentinelRef.current;
+		if (!sentinel) return;
+		const viewport = sentinel.closest<HTMLElement>(".chat-scrollbar");
+		if (!viewport || typeof IntersectionObserver === "undefined") {
+			const frame = requestAnimationFrame(onReveal);
+			return () => cancelAnimationFrame(frame);
+		}
+
+		let armed = true;
+		const observer = new IntersectionObserver(
+			(entries) => {
+				const entry = entries[0];
+				if (!entry) return;
+				if (!entry.isIntersecting) {
+					armed = true;
+					return;
+				}
+				if (!armed) return;
+				armed = false;
+				onReveal();
+			},
+			{
+				root: viewport,
+				rootMargin: `${WORK_ACTIVITY_REVEAL_MARGIN_PX}px 0px`,
+			},
+		);
+		observer.observe(sentinel);
+		return () => observer.disconnect();
+	}, [onReveal]);
+
+	return <div ref={sentinelRef} className="h-px w-full" aria-hidden="true" />;
+}
 
 function markdownPreview(text: string) {
 	let preview = text.slice(0, LARGE_MESSAGE_PREVIEW_CHARS);
@@ -70,7 +117,7 @@ function markdownPreview(text: string) {
 	return `${preview}\n\n…`;
 }
 
-function CollapsibleMessageBody({
+const CollapsibleMessageBody = memo(function CollapsibleMessageBody({
 	text,
 	markdown = false,
 	streaming = false,
@@ -121,7 +168,7 @@ function CollapsibleMessageBody({
 			) : null}
 		</div>
 	);
-}
+});
 
 function getAssistantMessageContent(
 	message: Extract<ChatMessage, { role: "assistant" }>,
@@ -146,12 +193,14 @@ function renderAssistantContentNodes({
 	streaming,
 	keepTextExpanded = false,
 	durationMs,
+	followedByTextAfterContent = false,
 }: {
 	messageId: string;
 	content: AssistantContentItem[];
 	streaming: boolean;
 	keepTextExpanded?: boolean;
 	durationMs?: number;
+	followedByTextAfterContent?: boolean;
 }) {
 	const nodes: ReactNode[] = [];
 	let firstActivityGroup = true;
@@ -183,7 +232,8 @@ function renderAssistantContentNodes({
 		const groupKey = group[0]?.id ?? `activity-${groupStart}`;
 		const nextItem = content[index + 1];
 		const followedByText =
-			nextItem?.type === "text" && nextItem.text.length > 0;
+			(nextItem?.type === "text" && nextItem.text.length > 0) ||
+			(index === content.length - 1 && followedByTextAfterContent);
 		nodes.push(
 			<div key={`${messageId}-${groupKey}`}>
 				<AssistantActivityView
@@ -200,6 +250,67 @@ function renderAssistantContentNodes({
 	return nodes;
 }
 
+function ProgressiveAssistantWorkContent({
+	messageId,
+	content,
+	active,
+	streaming,
+	keepTextExpanded,
+	followedByTextAfterContent,
+}: {
+	messageId: string;
+	content: AssistantContentItem[];
+	active: boolean;
+	streaming: boolean;
+	keepTextExpanded: boolean;
+	followedByTextAfterContent: boolean;
+}) {
+	const contentLengthRef = useRef(content.length);
+	useEffect(() => {
+		contentLengthRef.current = content.length;
+	}, [content.length]);
+	const [requestedVisibleCount, setRequestedVisibleCount] = useState(() =>
+		Math.min(content.length, WORK_ACTIVITY_INITIAL_ITEMS),
+	);
+	const visibleCount = Math.min(
+		content.length,
+		Math.max(requestedVisibleCount, WORK_ACTIVITY_INITIAL_ITEMS),
+	);
+	const startIndex = active ? Math.max(0, content.length - visibleCount) : 0;
+	const endIndex = active ? content.length : visibleCount;
+	const hasHiddenBefore = startIndex > 0;
+	const hasHiddenAfter = endIndex < content.length;
+	const visibleContent = content.slice(startIndex, endIndex);
+	const revealMore = useCallback(() => {
+		setRequestedVisibleCount((current) =>
+			Math.min(
+				contentLengthRef.current,
+				Math.max(current, WORK_ACTIVITY_INITIAL_ITEMS) +
+					WORK_ACTIVITY_REVEAL_ITEMS,
+			),
+		);
+	}, []);
+
+	return (
+		<>
+			{hasHiddenBefore ? (
+				<WorkActivityRevealSentinel onReveal={revealMore} />
+			) : null}
+			{renderAssistantContentNodes({
+				messageId,
+				content: visibleContent,
+				streaming,
+				keepTextExpanded,
+				followedByTextAfterContent:
+					hasHiddenAfter || followedByTextAfterContent,
+			})}
+			{hasHiddenAfter ? (
+				<WorkActivityRevealSentinel onReveal={revealMore} />
+			) : null}
+		</>
+	);
+}
+
 function AssistantWorkedRegion({
 	messageId,
 	content,
@@ -207,6 +318,7 @@ function AssistantWorkedRegion({
 	streaming = false,
 	keepTextExpanded = false,
 	durationMs,
+	followedByTextAfterContent = false,
 }: {
 	messageId: string;
 	content: AssistantContentItem[];
@@ -214,6 +326,7 @@ function AssistantWorkedRegion({
 	streaming?: boolean;
 	keepTextExpanded?: boolean;
 	durationMs?: number;
+	followedByTextAfterContent?: boolean;
 }) {
 	const { t } = useTranslation();
 	const { collapseCompletedActivity, showWorkDuration } = usePreferences();
@@ -259,12 +372,14 @@ function AssistantWorkedRegion({
 			</button>
 			{open ? (
 				<div className="pt-0.5">
-					{renderAssistantContentNodes({
-						messageId,
-						content,
-						streaming,
-						keepTextExpanded,
-					})}
+					<ProgressiveAssistantWorkContent
+						messageId={messageId}
+						content={content}
+						active={active}
+						streaming={streaming}
+						keepTextExpanded={keepTextExpanded}
+						followedByTextAfterContent={followedByTextAfterContent}
+					/>
 				</div>
 			) : null}
 		</div>
@@ -311,6 +426,9 @@ export const AssistantMessage = memo(function AssistantMessage({
 	const hasWorkActivity = activity.length > 0;
 	const workDurationOwnedByContent =
 		hasWorkActivity || displaySections.hasCollapsedWork;
+	const collapsedWorkFollowedByText = displaySections.final.some(
+		(item) => item.type === "text" && item.text.length > 0,
+	);
 	const visibleAssistantText = (
 		displaySections.hasCollapsedWork ? displaySections.final : content
 	)
@@ -359,6 +477,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 							messageId={message.id}
 							content={displaySections.work}
 							durationMs={message.workDurationMs}
+							followedByTextAfterContent={collapsedWorkFollowedByText}
 						/>,
 						...renderAssistantContentNodes({
 							messageId: message.id,
