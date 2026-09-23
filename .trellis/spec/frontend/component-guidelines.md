@@ -64,6 +64,36 @@ re-styling them.
   behavior rather than hand-rolled widgets.
 - `oxlint` runs the `jsx-a11y` plugin — accessibility warnings are lint failures.
 
+## Header Actions & Menus
+
+- `SessionHeader` (`src/components/chat/chat-session-header.tsx`) owns the right-side
+action group (terminal / temporary chat / panel / session menu). New per-session
+actions go there and appear only for persisted sessions (`session && !session.temporary`).
+- Session actions that need chat data flow as optional callbacks from `App.tsx`
+  through `ChatPage` props (`onRenameSession`, `onOpenInNewWindow`, …). When an
+  action targets the focused viewport (e.g. scrolling to a search hit), pass a
+  stable callback such as `onNavigate(messageIndex)` instead of a ref — reading
+  `ref.current` inside an effect would otherwise fail the `exhaustive-deps` lint.
+- Header components expose optional callbacks; they never wire runtime/Pi calls
+  themselves. The parent supplies the handlers.
+
+## Multi-Window (Tauri)
+
+- Create additional windows only through `src/lib/window.ts`; do not call the
+  Tauri window API directly from components.
+- Any new window label pattern must be declared in the `windows` list of
+  `src-tauri/capabilities/default.json` (e.g. `"session-*"`), and creating a
+  webview window requires the `core:webview:allow-create-webview-window`
+  permission. A capability that only lists `"main"` leaves the new window
+  without permissions.
+- New windows boot stateless: pass state through URL query params and re-resolve
+  it once the project index is ready (see `readSessionWindowTarget` and the boot
+  effect in `src/App.tsx`, which delegates to `workspace.openSearchSession`).
+- In-conversation find reuses `jumpToMessageIndex` from
+  `use-chat-scroll-controller.ts` for programmatic jumps; message plain text
+  comes from `messageSearchText` in `src/lib/conversation-outline.ts` so the
+  outline and the finder share one extraction path.
+
 ## Copy
 
 - User-facing strings are Simplified Chinese (`"复制"`, `"重试"`, …), matching the
