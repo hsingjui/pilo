@@ -118,6 +118,10 @@ For WSL or SSH, Pilo probes the target platform and deploys the matching `pilo-s
 | `scripts/`              | Runtime build and verification scripts                                                                          |
 | `docs/`                 | Design notes                                                                                                    |
 
+## Community
+
+[linux.do](https://linux.do)
+
 ## Third-Party Notices
 
 Some parts of Pilo are derived from third-party open-source software, including Lody. See [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for source and license details.

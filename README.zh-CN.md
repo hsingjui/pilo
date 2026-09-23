@@ -118,6 +118,10 @@ bash scripts/build-pilo-server.sh <target>
 | `scripts/`              | 运行时构建与资源校验脚本                                            |
 | `docs/`                 | 设计文档                                                            |
 
+## 社区
+
+[linux.do](https://linux.do)
+
 ## 第三方开源声明
 
 Pilo 的部分代码派生或改编自第三方开源软件，包括 Lody。来源与许可证详情见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
