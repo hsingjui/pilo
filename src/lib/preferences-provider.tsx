@@ -184,8 +184,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 			"--pilo-page-font-size",
 			`${preferences.pageFontSize}px`,
 		);
-		const pageFontScale =
-			preferences.pageFontSize / PAGE_FONT_SIZE_SCALE_BASE;
+		const pageFontScale = preferences.pageFontSize / PAGE_FONT_SIZE_SCALE_BASE;
 		for (const [token, defaultSize] of [
 			["--text-2xs", 11],
 			["--text-xs", 12],
