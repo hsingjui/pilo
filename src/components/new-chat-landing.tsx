@@ -283,7 +283,15 @@ export function NewChatLanding({
 			.then(() => {
 				const cached = getCachedProjectPiModels(projectId);
 				if (cached) applyModelSnapshot(cached);
-				if (!cached) void loadModels();
+				if (!cached) {
+					void loadModels();
+					return;
+				}
+				// 每次进入新会话都后台重探模型目录，改完 Pi 配置无需等 TTL。
+				// 结果由 subscribeProjectPiModels 回推；失败静默沿用缓存。
+				void refreshProjectPiModels(projectId).catch((error) => {
+					console.warn("Failed to refresh Pi models for new chat", error);
+				});
 			})
 			.catch((error) => {
 				console.warn("Failed to hydrate Pi models", error);
