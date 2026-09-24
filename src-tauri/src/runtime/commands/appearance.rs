@@ -59,6 +59,7 @@ fn enumerate_system_font_families() -> Result<Vec<SystemFontFamily>, String> {
         IDWriteFontCollection,
     };
     use windows::core::BOOL;
+    use windows::core::Interface;
     use windows::core::w;
 
     unsafe {
@@ -106,8 +107,7 @@ fn enumerate_system_font_families() -> Result<Vec<SystemFontFamily>, String> {
             let monospace = family
                 .GetFont(0)
                 .and_then(|font| font.cast::<IDWriteFont1>())
-                .and_then(|font| font.IsMonospacedFont())
-                .map(|value| value.as_bool())
+                .map(|font| font.IsMonospacedFont().as_bool())
                 .unwrap_or(false);
             families.insert(name, monospace);
         }
