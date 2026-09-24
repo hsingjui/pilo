@@ -85,7 +85,7 @@ export function useRestoreActiveChatRuntimes({
 							indexed?.titleOverride ??
 							indexed?.name ??
 							indexed?.firstUserMessagePreview ??
-							i18n.t("app.chat"),
+							i18n.t("app.newChat"),
 						projectRecord: project,
 						sessionPath: state.sessionPath ?? undefined,
 					};
