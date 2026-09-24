@@ -72,23 +72,59 @@ sequence 粒度可在实现阶段选择 per-session 或 Host-global，只要协�
 
 - TauriPiloClient -> invoke / Tauri channel。
 - WebPiloClient -> fetch / WebSocket。
-- 优先复用 conversation types/reducer、message/thinking/tool-call rendering、composer business rules、context/model UI。
-- Desktop layout/sidebar、Mobile layout/navigation、Remote bootstrap/auth screen 可以独立实现。
+- Desktop Chat 是 WebUI 的体验基线；优先直接复用 conversation types/reducer、ChatConversationViewport、message/thinking/tool-call rendering、composer、pending/recovery notice、context/model UI 等现有组件。
+- 如果共享组件缺少 Web/Mobile 所需能力，优先给共享组件增加 transport-neutral / responsive 能力，而不是在 src/remote 复制一份等价组件。
+- Remote 可以独立实现 bootstrap/auth、Mobile shell/navigation、offline/token-expired 等 Web 专属状态。
+- Desktop Sidebar 与 Mobile Navigation 可以不同，但都只负责选择 Project / Session；进入会话后应落到同一套 Chat 展示与操作语义。
 - 不复制第二套业务状态机。
+- 不复制第二套 Chat 视觉/交互系统。
 
-## Mobile-first / PWA-ready UX
+## Desktop-aligned / Mobile-adapted / PWA-ready UX
 
 WebUI 的第一优先设备是手机。
 
-- 主视图为 Header / current session + Chat + Composer。
-- Project / Session 使用 Drawer / Sheet 或独立移动页面。
-- 优先处理 safe area、软键盘、触控目标、单手操作和浏览器前后台切换。
+- 主视图沿用 Desktop 的 Header / current session + ChatConversationViewport + Composer 信息结构。
+- Message / Thinking / ToolCall / Compaction / Pending Queue / Context / Model / Thinking Level 等尽量直接复用 Desktop 组件，确保两端长期体验同步。
+- Project / Session 在 Mobile 使用 Drawer / Sheet 等轻量导航，不原样搬运 Desktop Sidebar 的 resize / drag / organize 等桌面交互。
+- Mobile 的专有改动限定在 responsive layout、safe area、软键盘、触控目标、单手操作和浏览器前后台切换。
+- Remote WebUI 不启用 Desktop 全局快捷键体系；Composer 使用 Mobile/Web 语义，主要操作必须有可触达的显式控件。
+- iOS/Android 浏览器差异通过 Web shell 或共享组件的响应式 class/prop 处理，不创建 Remote 专用 Chat 组件树。
 - 未认证时提示在桌面 Pilo 中打开 Remote 并扫描二维码。
 - token expired/revoked 时清除本地 token 并回到未认证页。
 - Remote 被桌面关闭时进入明确 disconnected/offline 状态。
 - 第一版提供 Web App Manifest、icons、theme color 与 standalone-friendly app shell。
 - 第一版不要求 Service Worker、offline cache、installability 或 Web Push；这些能力不得成为认证、reconnect 或基础导航的依赖。
-- Desktop Browser 只保证功能可用和基本响应式，不复刻 Tauri Desktop 布局。
+- Desktop Browser 只保证功能可用和基本响应式；核心 Chat 仍复用同一套组件，不额外设计 Desktop Web UI。
+
+### Component Reuse Principle
+
+WebUI 实现优先级：
+
+1. 直接复用 Desktop 现有组件。
+2. 对共享组件增加小范围 responsive / platform-neutral 能力。
+3. 仅当组件本质属于 Shell / Navigation / native-only capability 时，才在 Remote 下实现 Web 专用组件。
+
+允许独立实现：
+
+- Remote bootstrap / pairing / token-expired 页面。
+- Mobile Project / Session Drawer。
+- Web offline / reconnect shell。
+- PWA / browser-specific shell。
+
+不应独立实现：
+
+- Message / Assistant / User rendering。
+- Thinking / ToolCall / Compaction 展示。
+- Chat scroll / virtualization / scroll-to-latest。
+- Composer 主体与发送 / steer / follow-up / abort 语义。
+- Model / Thinking Level / Context Usage。
+- Pending queue / interrupted / recovery 等与 Chat runtime 直接相关的 UI。
+
+第一版明确不接入：
+
+- Terminal。
+- Desktop global shortcuts / command palette shortcuts。
+- 依赖物理键盘才能完成的核心操作。
 
 ## Desktop Settings UX
 

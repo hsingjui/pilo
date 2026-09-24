@@ -19,6 +19,7 @@ This directory contains guidelines for backend development in this project (Taur
 | [Error Handling](./error-handling.md)           | `Result<T, String>` boundary, error text contract | Filled |
 | [Quality Guidelines](./quality-guidelines.md)   | Code standards, forbidden patterns                | Filled |
 | [Logging Guidelines](./logging-guidelines.md)   | `eprintln!` diagnostics, log levels               | Filled |
+| [Remote WebUI & Event Hub](./remote-webui.md)   | Remote HTTP/WS adapter, auth, event replay        | Filled |
 
 ---
 

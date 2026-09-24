@@ -14,6 +14,7 @@ src/
   ui/               # shadcn/ui-style primitives (barrel: ui/index.ts)
   components/       # feature components, one folder per feature
   lib/              # non-React logic, API clients, providers, hooks
+  remote/           # Mobile WebUI shell (browser transport)
   assets/
 ```
 
@@ -48,6 +49,14 @@ Non-React logic and thin glue, kebab-case files:
   `projects.ts`, `terminal.ts`, `git.ts`, `preview.ts`, `parallel.ts`). These
   call `invoke`/`listen` and expose typed async functions. This is the only
   place `@tauri-apps/api` is used.
+- **Transport-neutral client**: `pilo-client.ts` defines the `PiloClient`
+  interface; `tauri-pilo-client.ts` implements it over invoke/channel and
+  `remote/web-pilo-client.ts` over fetch/WebSocket. Feature code should depend on
+  `PiloClient`, not on either transport directly.
+- **Remote transport**: `remote.ts` + `remote/remote-client.ts` hold the Remote
+  HTTP/WS calls and token storage; `remote/remote-app.tsx` is the browser shell
+  (pairing, reconnecting, resync). Only Remote-MVP features are mirrored on this
+  path — Files/Terminal/Git stay Tauri-only.
 - **Pure logic**: `conversation-reducer.ts`, `chat-submission.ts`,
   `chat-virtualization.ts`, `skill-invocation.ts`, etc. — unit-tested in `tests/`.
 - **Providers**: `preferences-provider.tsx`, `theme-provider.tsx`.
@@ -55,8 +64,11 @@ Non-React logic and thin glue, kebab-case files:
 
 ## Rules
 
-- React code never calls `@tauri-apps/api` directly — go through `src/lib/*`.
+- React code never calls `@tauri-apps/api` directly — go through `src/lib/*`
+  (or the `PiloClient` adapter).
 - UI components don't contain raw Tauri calls; hooks/`lib` do.
+- Browser-only code must not import Tauri APIs at module top level; the Remote
+  shell is loaded based on `__TAURI_INTERNALS__` detection in `main.tsx`.
 - New feature → new folder under `components/`, new API module under `lib/` if
   it talks to the backend.
 - Prefer `@/` path alias (maps to `src/`) over deep relative imports.
