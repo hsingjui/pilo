@@ -9,7 +9,6 @@ use std::{
 
 use serde::Serialize;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Manager};
 use tokio::sync::{Mutex, oneshot};
 
 use crate::domain::Project;
@@ -286,7 +285,7 @@ impl ChatSessions {
         process: &Arc<ChatProcess>,
         session: &mut ServerPiSession,
         servers: Arc<ServerManager>,
-        app: AppHandle,
+        events: RuntimeEventBus,
         project: &Project,
         session_key: &str,
     ) -> Result<PiSessionSnapshot, String> {
@@ -319,7 +318,7 @@ impl ChatSessions {
             .spawn(
                 servers,
                 ChatEventSink {
-                    events: app.state::<RuntimeEventBus>().inner().clone(),
+                    events,
                     session_key: session_key.to_owned(),
                     project_id: project.id.clone(),
                     control_reply: Arc::clone(&process.control_reply),
@@ -389,7 +388,7 @@ impl ChatSessions {
     pub async fn prepare(
         &self,
         servers: Arc<ServerManager>,
-        app: AppHandle,
+        events: RuntimeEventBus,
         project: Project,
         session_key: String,
         launch: ChatSessionLaunch,
@@ -408,9 +407,15 @@ impl ChatSessions {
         if process.closed.load(Ordering::Acquire) {
             return Err("project is closing".to_owned());
         }
-        let snapshot =
-            Self::spawn_if_needed(&process, &mut session, servers, app, &project, &session_key)
-                .await?;
+        let snapshot = Self::spawn_if_needed(
+            &process,
+            &mut session,
+            servers,
+            events,
+            &project,
+            &session_key,
+        )
+        .await?;
         if process.prepared.load(Ordering::Acquire) {
             runtime_trace(
                 "chat.prepare.end",
@@ -458,7 +463,7 @@ impl ChatSessions {
     pub async fn ensure(
         &self,
         servers: Arc<ServerManager>,
-        app: AppHandle,
+        events: RuntimeEventBus,
         project: Project,
         session_key: String,
         launch: ChatSessionLaunch,
@@ -477,9 +482,15 @@ impl ChatSessions {
         if process.closed.load(Ordering::Acquire) {
             return Err("project is closing".to_owned());
         }
-        let snapshot =
-            Self::spawn_if_needed(&process, &mut session, servers, app, &project, &session_key)
-                .await?;
+        let snapshot = Self::spawn_if_needed(
+            &process,
+            &mut session,
+            servers,
+            events,
+            &project,
+            &session_key,
+        )
+        .await?;
         if process.initialized.load(Ordering::Acquire) {
             runtime_trace(
                 "chat.ensure.end",

@@ -1,5 +1,6 @@
 mod connection;
 mod project;
+mod remote;
 mod session;
 
 pub use connection::{
@@ -7,4 +8,5 @@ pub use connection::{
     WslDistribution,
 };
 pub use project::{DiscoveredProject, Project, ProjectMetadata, ProjectModelCache};
+pub use remote::{RemoteDevice, RemoteHostConfig};
 pub use session::{SessionIndexEntry, SessionReconcileResult, SessionUiStateUpdate};

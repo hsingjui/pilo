@@ -1,4 +1,12 @@
-use std::sync::{Arc, Mutex as StdMutex};
+use std::{
+    collections::VecDeque,
+    sync::{
+        Arc, Mutex as StdMutex,
+        atomic::{AtomicU64, Ordering},
+    },
+};
+
+use tokio::sync::broadcast;
 
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -365,9 +373,37 @@ fn traceable_runtime_event(event: &RuntimeEvent) -> Option<(&'static str, Value)
     }
 }
 
-#[derive(Clone, Default)]
+const WEB_EVENT_CHANNEL_CAPACITY: usize = 512;
+const WEB_EVENT_REPLAY_CAPACITY: usize = 2048;
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SequencedRuntimeEvent {
+    pub sequence: u64,
+    #[serde(flatten)]
+    pub event: RuntimeEventEnvelope,
+}
+
+#[derive(Clone)]
 pub struct RuntimeEventBus {
     channel: Arc<StdMutex<Option<Channel<RuntimeEventEnvelope>>>>,
+    web_sender: broadcast::Sender<SequencedRuntimeEvent>,
+    replay: Arc<StdMutex<VecDeque<SequencedRuntimeEvent>>>,
+    sequence: Arc<AtomicU64>,
+}
+
+impl Default for RuntimeEventBus {
+    fn default() -> Self {
+        let (web_sender, _) = broadcast::channel(WEB_EVENT_CHANNEL_CAPACITY);
+        Self {
+            channel: Arc::new(StdMutex::new(None)),
+            web_sender,
+            replay: Arc::new(StdMutex::new(VecDeque::with_capacity(
+                WEB_EVENT_REPLAY_CAPACITY,
+            ))),
+            sequence: Arc::new(AtomicU64::new(0)),
+        }
+    }
 }
 
 impl RuntimeEventBus {
@@ -379,9 +415,55 @@ impl RuntimeEventBus {
         runtime_trace("channel.subscribe", None, None, Value::Null);
     }
 
+    pub(crate) fn subscribe_web(&self) -> broadcast::Receiver<SequencedRuntimeEvent> {
+        self.web_sender.subscribe()
+    }
+
+    pub(crate) fn latest_sequence(&self) -> u64 {
+        self.sequence.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn replay_after(&self, sequence: u64) -> Option<Vec<SequencedRuntimeEvent>> {
+        let replay = self
+            .replay
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if sequence > 0
+            && replay
+                .front()
+                .is_some_and(|first| first.sequence > sequence.saturating_add(1))
+        {
+            return None;
+        }
+        Some(
+            replay
+                .iter()
+                .filter(|event| event.sequence > sequence)
+                .cloned()
+                .collect(),
+        )
+    }
+
     pub fn send(&self, event: RuntimeEventEnvelope) {
         let trace = traceable_runtime_event(&event.event);
         let session_key = event.session_key.clone();
+        let sequence = self.sequence.fetch_add(1, Ordering::AcqRel) + 1;
+        let sequenced = SequencedRuntimeEvent {
+            sequence,
+            event: event.clone(),
+        };
+        {
+            let mut replay = self
+                .replay
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            replay.push_back(sequenced.clone());
+            while replay.len() > WEB_EVENT_REPLAY_CAPACITY {
+                replay.pop_front();
+            }
+        }
+        let _ = self.web_sender.send(sequenced);
+
         let channel = self
             .channel
             .lock()
@@ -533,6 +615,85 @@ mod tests {
                 "toolName": "bash",
                 "result": { "content": [] },
                 "isError": false
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn web_subscribers_share_one_ordered_event_stream() {
+        let bus = RuntimeEventBus::default();
+        let mut first = bus.subscribe_web();
+        let mut second = bus.subscribe_web();
+
+        bus.send(RuntimeEventEnvelope::session(
+            "chat-1".to_owned(),
+            "project-1".to_owned(),
+            RuntimeEvent::AssistantTextDelta {
+                generation: 1,
+                delta: "hello".to_owned(),
+            },
+        ));
+
+        let first_event = first.recv().await.unwrap();
+        let second_event = second.recv().await.unwrap();
+        assert_eq!(first_event.sequence, 1);
+        assert_eq!(second_event.sequence, 1);
+        assert_eq!(first_event.event.session_key.as_deref(), Some("chat-1"));
+        assert_eq!(second_event.event.project_id.as_deref(), Some("project-1"));
+
+        let replay = bus.replay_after(0).unwrap();
+        assert_eq!(replay.len(), 1);
+        assert_eq!(replay[0].sequence, 1);
+        assert_eq!(bus.latest_sequence(), 1);
+    }
+
+    #[test]
+    fn replay_reports_a_gap_after_buffer_eviction() {
+        let bus = RuntimeEventBus::default();
+        // Send one event past the replay window plus one more, so sequences 1 and 2
+        // are both evicted and a client that last saw sequence 1 has a real gap.
+        for generation in 0..=(WEB_EVENT_REPLAY_CAPACITY as u64 + 1) {
+            bus.send(RuntimeEventEnvelope::global(
+                RuntimeEvent::AssistantMessageEnd {
+                    generation,
+                    stop_reason: Some("stop".to_owned()),
+                    error_message: None,
+                },
+            ));
+        }
+
+        assert!(bus.replay_after(1).is_none());
+        let latest = bus.latest_sequence();
+        let replay = bus.replay_after(latest.saturating_sub(1)).unwrap();
+        assert_eq!(replay.len(), 1);
+        assert_eq!(replay[0].sequence, latest);
+    }
+
+    #[test]
+    fn sequenced_event_serialization_flattens_routing_and_runtime_fields() {
+        let event = SequencedRuntimeEvent {
+            sequence: 42,
+            event: RuntimeEventEnvelope::session(
+                "chat-1".to_owned(),
+                "project-1".to_owned(),
+                RuntimeEvent::AssistantMessageEnd {
+                    generation: 3,
+                    stop_reason: Some("stop".to_owned()),
+                    error_message: None,
+                },
+            ),
+        };
+
+        assert_eq!(
+            serde_json::to_value(event).unwrap(),
+            serde_json::json!({
+                "sequence": 42,
+                "sessionKey": "chat-1",
+                "projectId": "project-1",
+                "type": "assistant_message_end",
+                "generation": 3,
+                "stopReason": "stop",
+                "errorMessage": null
             })
         );
     }

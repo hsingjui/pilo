@@ -1,10 +1,13 @@
 mod connections;
 mod projects;
+mod remote;
 mod schema;
 mod sessions;
 
 pub use connections::*;
 pub use projects::*;
+pub(crate) use remote::*;
+pub(crate) use schema::open_with_paths;
 pub use schema::{now_ms, open};
 pub use sessions::*;
 

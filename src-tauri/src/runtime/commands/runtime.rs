@@ -5,40 +5,13 @@ use tauri::{AppHandle, State, ipc::Channel};
 
 use super::super::{
     PiloRuntime,
-    chat_sessions::ChatSessionLaunch,
+    chat_service::{self, ChatSessionRequest},
     events::{RuntimeEventBus, RuntimeEventEnvelope, TauriEventSink},
+    host_paths::HostPaths,
     pi_workspace, project,
     server_pi::PiLaunchOptions,
     session_snapshot::PiSessionSnapshot,
 };
-use super::sessions::{SessionExternalActivity, external_session_activities_for_project};
-
-fn session_has_external_open_turn(
-    activities: &[SessionExternalActivity],
-    session_path: &str,
-) -> bool {
-    activities
-        .iter()
-        .any(|activity| activity.turn_open && activity.path == session_path)
-}
-
-async fn reject_external_session_owner(
-    runtime: &PiloRuntime,
-    project: &crate::domain::Project,
-    session_path: Option<&str>,
-) -> Result<(), String> {
-    let Some(session_path) = session_path else {
-        return Ok(());
-    };
-    let activities = external_session_activities_for_project(runtime, project).await?;
-    if session_has_external_open_turn(&activities, session_path) {
-        return Err(
-            "session is currently owned by an external Pi process; Pilo opened it in read-only observer mode"
-                .to_owned(),
-        );
-    }
-    Ok(())
-}
 
 #[tauri::command]
 pub fn runtime_subscribe_events(
@@ -49,67 +22,59 @@ pub fn runtime_subscribe_events(
 }
 
 #[tauri::command]
+// Tauri commands expose their arguments flat; the chat session fields are part of the command surface.
+#[allow(clippy::too_many_arguments)]
 pub async fn chat_session_prepare(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
+    events: State<'_, RuntimeEventBus>,
     project_id: String,
     session_key: String,
     session_path: Option<String>,
     no_session: bool,
     extensions: Option<Vec<String>>,
 ) -> Result<PiSessionSnapshot, String> {
-    let project = project::get(&app, &project_id)?;
-    let profile = pi_workspace::resolve_pi_runtime(&app, &project, extensions.unwrap_or_default())?;
-    reject_external_session_owner(&runtime, &profile.project, session_path.as_deref()).await?;
-    runtime
-        .chat_sessions
-        .prepare(
-            Arc::clone(&runtime.servers),
-            app,
-            profile.project,
+    chat_service::prepare(
+        &HostPaths::from_app(&app)?,
+        &runtime,
+        events.inner().clone(),
+        ChatSessionRequest {
+            project_id,
             session_key,
-            ChatSessionLaunch {
-                session_path,
-                no_session,
-                extensions: profile.extensions,
-                disable_builtin_tools: profile.disable_builtin_tools,
-                disable_extension_discovery: profile.disable_extension_discovery,
-                disable_context_files: profile.disable_context_files,
-            },
-        )
-        .await
+            session_path,
+            no_session,
+            extensions: extensions.unwrap_or_default(),
+        },
+    )
+    .await
 }
 
 #[tauri::command]
+// Tauri commands expose their arguments flat; the chat session fields are part of the command surface.
+#[allow(clippy::too_many_arguments)]
 pub async fn chat_session_start(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
+    events: State<'_, RuntimeEventBus>,
     project_id: String,
     session_key: String,
     session_path: Option<String>,
     no_session: bool,
     extensions: Option<Vec<String>>,
 ) -> Result<PiSessionSnapshot, String> {
-    let project = project::get(&app, &project_id)?;
-    let profile = pi_workspace::resolve_pi_runtime(&app, &project, extensions.unwrap_or_default())?;
-    reject_external_session_owner(&runtime, &profile.project, session_path.as_deref()).await?;
-    runtime
-        .chat_sessions
-        .ensure(
-            Arc::clone(&runtime.servers),
-            app,
-            profile.project,
+    chat_service::start(
+        &HostPaths::from_app(&app)?,
+        &runtime,
+        events.inner().clone(),
+        ChatSessionRequest {
+            project_id,
             session_key,
-            ChatSessionLaunch {
-                session_path,
-                no_session,
-                extensions: profile.extensions,
-                disable_builtin_tools: profile.disable_builtin_tools,
-                disable_extension_discovery: profile.disable_extension_discovery,
-                disable_context_files: profile.disable_context_files,
-            },
-        )
-        .await
+            session_path,
+            no_session,
+            extensions: extensions.unwrap_or_default(),
+        },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -217,36 +182,4 @@ pub async fn runtime_send_rpc(
         .await
         .send_rpc(command)
         .await
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{SessionExternalActivity, session_has_external_open_turn};
-
-    #[test]
-    fn only_open_external_turns_block_session_ownership() {
-        let activities = vec![
-            SessionExternalActivity {
-                path: "/tmp/idle.jsonl".to_owned(),
-                turn_open: false,
-            },
-            SessionExternalActivity {
-                path: "/tmp/running.jsonl".to_owned(),
-                turn_open: true,
-            },
-        ];
-
-        assert!(!session_has_external_open_turn(
-            &activities,
-            "/tmp/idle.jsonl"
-        ));
-        assert!(session_has_external_open_turn(
-            &activities,
-            "/tmp/running.jsonl"
-        ));
-        assert!(!session_has_external_open_turn(
-            &activities,
-            "/tmp/unknown.jsonl"
-        ));
-    }
 }

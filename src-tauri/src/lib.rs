@@ -20,9 +20,10 @@ use runtime::{
         project_fs_write_file, project_git_diff, project_git_status, project_list,
         project_model_cache_list, project_model_cache_set, project_preview_close,
         project_preview_open, project_preview_ports, project_refresh, project_remove,
-        project_reorder, project_start_pi, project_terminal_open, project_touch, runtime_abort_pi,
-        runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc, runtime_stop_pi,
-        runtime_subscribe_events, session_delete, session_external_activity,
+        project_reorder, project_start_pi, project_terminal_open, project_touch,
+        remote_device_revoke, remote_host_state, remote_pairing_regenerate, remote_set_enabled,
+        runtime_abort_pi, runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc,
+        runtime_stop_pi, runtime_subscribe_events, session_delete, session_external_activity,
         session_generate_title, session_history, session_history_image, session_list,
         session_reconcile, session_search, session_update_ui_state, session_watch_start,
         session_watch_stop, ssh_connection_list, ssh_connection_password_get,
@@ -110,6 +111,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PiloRuntime::default())
         .manage(runtime::RuntimeEventBus::default())
+        .manage(runtime::RemoteServerManager::default())
         .invoke_handler(tauri::generate_handler![
             greet,
             debug_chat_performance_log,
@@ -192,6 +194,10 @@ pub fn run() {
             runtime_abort_pi,
             runtime_send_rpc,
             runtime_subscribe_events,
+            remote_host_state,
+            remote_set_enabled,
+            remote_pairing_regenerate,
+            remote_device_revoke,
             system_font_families,
         ])
         .setup(|app| {
@@ -217,6 +223,14 @@ pub fn run() {
             if let Err(error) = window.restore_state(persisted_window_state_flags()) {
                 log::error!(target: "window-state", "failed to restore main window: {error}");
             }
+
+            let remote_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let remote = remote_app.state::<runtime::RemoteServerManager>();
+                if let Err(error) = remote.restore(remote_app.clone()).await {
+                    log::error!(target: "remote-webui", "failed to restore Remote WebUI: {error}");
+                }
+            });
 
             let app_handle = app.handle().clone();
             let servers = std::sync::Arc::clone(&app.state::<PiloRuntime>().servers);
@@ -255,7 +269,9 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 use tauri::Manager;
                 let runtime = app.state::<PiloRuntime>();
+                let remote = app.state::<runtime::RemoteServerManager>();
                 tauri::async_runtime::block_on(async {
+                    remote.stop().await;
                     runtime.chat_sessions.stop_all().await;
                     let _ = runtime.project_pi_session.lock().await.stop().await;
                     runtime.session_watchers.lock().await.stop_all().await;
