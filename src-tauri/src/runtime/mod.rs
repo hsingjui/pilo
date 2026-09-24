@@ -5,6 +5,7 @@ pub(crate) mod debug_trace;
 mod events;
 mod git;
 mod parallel;
+mod pi_event_adapters;
 mod pi_events;
 mod pi_workspace;
 mod preview;
