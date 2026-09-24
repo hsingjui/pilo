@@ -80,6 +80,8 @@ type ChatComposerProps = {
 	onSuggestionTrigger?: (trigger: "@" | "/" | null, query: string) => void;
 	historyKey?: string | null;
 	className?: string;
+	/** 桌面专属的快捷键提示与自动聚焦；Remote WebUI 传 false。 */
+	desktopShortcuts?: boolean;
 };
 
 const EMPTY_MODELS: readonly PiModel[] = [];
@@ -122,6 +124,7 @@ export function ChatComposer({
 	onSuggestionTrigger,
 	historyKey,
 	className,
+	desktopShortcuts = true,
 }: ChatComposerProps) {
 	const { t } = useTranslation();
 	const composerPlaceholder = placeholder ?? t("chat.composerPlaceholder");
@@ -156,6 +159,7 @@ export function ChatComposer({
 		suggestions,
 		onSuggestionTrigger,
 		historyKey,
+		desktopShortcuts,
 	});
 
 	return (
@@ -211,6 +215,7 @@ export function ChatComposer({
 				) : null}
 
 				<Textarea
+					data-chat-composer-input=""
 					ref={textareaRef}
 					value={value}
 					onChange={(event) => {
@@ -251,7 +256,10 @@ export function ChatComposer({
 					</div>
 				) : null}
 
-				<div className={CHAT_COMPOSER_TOOLBAR_CLASS_NAME}>
+				<div
+					data-chat-composer-toolbar=""
+					className={CHAT_COMPOSER_TOOLBAR_CLASS_NAME}
+				>
 					<input
 						ref={fileInputRef}
 						type="file"
@@ -328,6 +336,7 @@ export function ChatComposer({
 						disabled={disabled}
 						running={running}
 						sendMessageShortcut={sendMessageShortcut}
+						showShortcutHint={desktopShortcuts}
 						onStop={onStop}
 						canSteer={Boolean(onSteer)}
 						submitBlocked={compacting}

@@ -69,6 +69,8 @@ type ChatPageProps = {
 	uiStateKey?: string;
 	readUiState?: (key: string) => ChatUiState;
 	writeUiState?: (key: string, patch: ChatUiStatePatch) => void;
+	readProjectDraft?: (projectId: string) => string;
+	writeProjectDraft?: (projectId: string, value: string) => void;
 	onRuntimeBusyChange?: (controllerId: string, busy: boolean) => void;
 	onVisualReadyChange?: (ready: boolean) => void;
 	showSwitchSkeleton?: boolean;
@@ -104,6 +106,8 @@ function ChatPageImpl(props: ChatPageProps) {
 		uiStateKey,
 		readUiState,
 		writeUiState,
+		readProjectDraft,
+		writeProjectDraft,
 		onRuntimeBusyChange,
 		onVisualReadyChange,
 		showSwitchSkeleton = false,
@@ -128,6 +132,8 @@ function ChatPageImpl(props: ChatPageProps) {
 		readUiState,
 		writeUiState,
 		sessionPath: session.sessionPath,
+		projectId: session.projectRecord.id,
+		writeProjectDraft,
 		active,
 	});
 	const activeTurnSessionIdRef = useRef<string | null>(null);
@@ -179,7 +185,9 @@ function ChatPageImpl(props: ChatPageProps) {
 		activeTurnSessionIdRef,
 		initialMessage,
 		initialImages,
-		initialDraft: initialUiState.draft,
+		initialDraft: readProjectDraft
+			? readProjectDraft(session.projectRecord.id)
+			: initialUiState.draft,
 		onDraftChange: persistDraft,
 		onHistoryMetadata: applyHistoryMetadata,
 	});
@@ -235,7 +243,13 @@ function ChatPageImpl(props: ChatPageProps) {
 		setComposerImages,
 		restoreSubmission,
 		recoverSubmission,
-	} = useChatSubmissionRecovery({ draft, setDraft });
+	} = useChatSubmissionRecovery({
+		draft,
+		setDraft,
+		active,
+		projectId: session.projectRecord.id,
+		readProjectDraft,
+	});
 	const resetConversation = useCallback(() => {
 		conversationStore.setSnapshot(createConversationState([]));
 	}, [conversationStore]);

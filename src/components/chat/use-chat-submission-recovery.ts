@@ -1,4 +1,10 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from "react";
 
 import type {
 	ChatImageAttachment,
@@ -14,9 +20,15 @@ import type {
 export function useChatSubmissionRecovery({
 	draft,
 	setDraft,
+	active = false,
+	projectId,
+	readProjectDraft,
 }: {
 	draft: string;
 	setDraft: (value: string) => void;
+	active?: boolean;
+	projectId?: string;
+	readProjectDraft?: (projectId: string) => string;
 }) {
 	const [composerImages, setComposerImages] = useState<ChatImageAttachment[]>(
 		[],
@@ -29,6 +41,15 @@ export function useChatSubmissionRecovery({
 	useLayoutEffect(() => {
 		composerImagesRef.current = composerImages;
 	}, [composerImages]);
+	// Drafts live at the project level, so a session that was mounted before the
+	// shared draft changed picks up the latest value when it becomes visible.
+	useEffect(() => {
+		if (!active || !projectId || !readProjectDraft) return;
+		const value = readProjectDraft(projectId);
+		if (draftRef.current === value) return;
+		draftRef.current = value;
+		setDraft(value);
+	}, [active, projectId, readProjectDraft, setDraft]);
 	const restoreSubmission = useCallback(
 		(submission: ChatSubmission) => {
 			draftRef.current = submission.text;

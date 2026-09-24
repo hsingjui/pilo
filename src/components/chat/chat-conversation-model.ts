@@ -9,6 +9,11 @@ import type {
 let localMessageSequence = 0;
 let localActivitySequence = 0;
 
+/** 历史窗口分页尺寸，桌面端与 Remote WebUI 共用。 */
+export const INITIAL_HISTORY_MESSAGE_COUNT = 80;
+export const HISTORY_PAGE_MESSAGE_COUNT = 48;
+export const HISTORY_PREFETCH_MESSAGES = 16;
+
 export function createLocalMessageId(
 	kind: "user" | "assistant" | "compaction",
 ) {

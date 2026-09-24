@@ -25,12 +25,16 @@ export function useChatPageUiState({
 	readUiState,
 	writeUiState,
 	sessionPath,
+	projectId,
+	writeProjectDraft,
 	active,
 }: {
 	uiStateKey?: string;
 	readUiState?: (key: string) => ChatUiState;
 	writeUiState?: (key: string, patch: ChatUiStatePatch) => void;
 	sessionPath?: string;
+	projectId?: string;
+	writeProjectDraft?: (projectId: string, value: string) => void;
 	active: boolean;
 }) {
 	const [initialUiState] = useState<ChatUiState>(() =>
@@ -62,13 +66,14 @@ export function useChatPageUiState({
 		uiStateKey,
 		writeUiState,
 	]);
-	const persistDraft = useMemo(
-		() =>
-			uiStateKey && writeUiState
-				? (value: string) => writeUiState(uiStateKey, { draft: value })
-				: undefined,
-		[uiStateKey, writeUiState],
-	);
+	// 草稿按项目共享：有 projectId 时优先写入项目级缓存。
+	const persistDraft = useMemo(() => {
+		if (projectId && writeProjectDraft)
+			return (value: string) => writeProjectDraft(projectId, value);
+		if (uiStateKey && writeUiState)
+			return (value: string) => writeUiState(uiStateKey, { draft: value });
+		return undefined;
+	}, [projectId, writeProjectDraft, uiStateKey, writeUiState]);
 	const persistScrollState = useCallback(
 		(state: { scrollTop: number; sticky: boolean }) => {
 			if (!active || !uiStateKey || !writeUiState) return;

@@ -115,6 +115,8 @@ function App() {
 		draftSessionId,
 		readChatUiState,
 		writeChatUiState,
+		readProjectDraft,
+		writeProjectDraft,
 		handleProjectsRemoved,
 		startLandingSession,
 		startNewChat,
@@ -373,6 +375,8 @@ function App() {
 													uiStateKey={entry.uiStateKey}
 													readUiState={readChatUiState}
 													writeUiState={writeChatUiState}
+													readProjectDraft={readProjectDraft}
+													writeProjectDraft={writeProjectDraft}
 													reserveWindowControls={CUSTOM_TITLEBAR}
 													sidebarCollapsed={leftSidebarCollapsed}
 													onOpenTerminal={toggleTerminal}
@@ -394,6 +398,8 @@ function App() {
 												uiStateKey={entry.uiStateKey}
 												readUiState={readChatUiState}
 												writeUiState={writeChatUiState}
+												readProjectDraft={readProjectDraft}
+												writeProjectDraft={writeProjectDraft}
 												onRuntimeBusyChange={handleChatRuntimeBusyChange}
 												active={active}
 												retainBackgroundVisual={retainedBackgroundVisualControllerIds.has(
@@ -470,6 +476,8 @@ function App() {
 									project={activeProject}
 									projects={homeProjects}
 									onSwitchProject={switchDraftProject}
+									readProjectDraft={readProjectDraft}
+									writeProjectDraft={writeProjectDraft}
 									onOpenTerminal={toggleTerminal}
 									terminalRunning={terminalRunning}
 									terminalVisible={terminalVisible}

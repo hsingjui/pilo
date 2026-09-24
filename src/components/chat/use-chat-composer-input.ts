@@ -50,6 +50,8 @@ export type ChatComposerInputOptions = {
 	suggestions?: readonly ComposerSuggestion[];
 	onSuggestionTrigger?: (trigger: "@" | "/" | null, query: string) => void;
 	historyKey?: string | null;
+	/** 桌面专属的快捷键提示与自动聚焦；Remote WebUI 传 false。 */
+	desktopShortcuts?: boolean;
 };
 
 export function useChatComposerInput({
@@ -66,6 +68,7 @@ export function useChatComposerInput({
 	suggestions = DEFAULT_SUGGESTIONS,
 	onSuggestionTrigger,
 	historyKey,
+	desktopShortcuts = true,
 }: ChatComposerInputOptions) {
 	const { t } = useTranslation();
 	const { sendMessageShortcut, keyboardShortcuts } = usePreferences();
@@ -91,21 +94,22 @@ export function useChatComposerInput({
 	useKeyboardShortcut(
 		keyboardShortcuts["focus-composer"],
 		() => textareaRef.current?.focus(),
-		{ enabled: !disabled },
+		{ enabled: !disabled && desktopShortcuts },
 	);
 
 	// 挂载或从后台切回该会话（新开会话、点击通知打开会话、侧边栏切换）时
 	// 聚焦输入框；disabled 变化也涵盖恢复重连/外部运行结束后的场景。
 	const prevDisabledRef = useRef(true);
 	useEffect(() => {
-		if (prevDisabledRef.current && !disabled) textareaRef.current?.focus();
+		if (prevDisabledRef.current && !disabled && desktopShortcuts)
+			textareaRef.current?.focus();
 		prevDisabledRef.current = disabled;
-	}, [disabled]);
+	}, [desktopShortcuts, disabled]);
 
 	// 窗口重新获得焦点（如点击系统通知回到应用）时，若应用内没有其他焦点
 	// 元素（终端、重命名输入框等），把焦点放回输入框。
 	useEffect(() => {
-		if (disabled) return;
+		if (disabled || !desktopShortcuts) return;
 		const handleWindowFocus = () => {
 			const activeElement = document.activeElement;
 			if (activeElement && activeElement !== document.body) return;
@@ -113,7 +117,7 @@ export function useChatComposerInput({
 		};
 		window.addEventListener("focus", handleWindowFocus);
 		return () => window.removeEventListener("focus", handleWindowFocus);
-	}, [disabled]);
+	}, [desktopShortcuts, disabled]);
 
 	useLayoutEffect(() => {
 		const textarea = textareaRef.current;
@@ -164,7 +168,10 @@ export function useChatComposerInput({
 			: 0;
 
 	const showFocusHint =
-		!disabled && value.length === 0 && attachments.length === 0;
+		desktopShortcuts &&
+		!disabled &&
+		value.length === 0 &&
+		attachments.length === 0;
 
 	const createSubmission = () => createChatSubmission(value, attachments);
 

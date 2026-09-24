@@ -30,19 +30,23 @@ function LoadingComposer({
 	uiStateKey,
 	readUiState,
 	writeUiState,
+	readProjectDraft,
+	writeProjectDraft,
 	scrollbarWidth,
 }: {
 	projectId: string;
 	uiStateKey: string;
 	readUiState: (key: string) => ChatUiState;
 	writeUiState: (key: string, patch: ChatUiStatePatch) => void;
+	readProjectDraft: (projectId: string) => string;
+	writeProjectDraft: (projectId: string, value: string) => void;
 	scrollbarWidth: number;
 }) {
 	const { t } = useTranslation();
-	const [draft, setDraft] = useState(() => readUiState(uiStateKey).draft);
+	const [draft, setDraft] = useState(() => readProjectDraft(projectId));
 	const updateDraft = (value: string) => {
 		setDraft(value);
-		writeUiState(uiStateKey, { draft: value });
+		writeProjectDraft(projectId, value);
 	};
 	const deferSubmission = (submission: ChatSubmission) => {
 		if (submission.images.length > 0) {
@@ -53,9 +57,9 @@ function LoadingComposer({
 		if (!trimmed) return;
 		const current = readUiState(uiStateKey);
 		writeUiState(uiStateKey, {
-			draft: "",
 			deferredSubmissions: [...current.deferredSubmissions, trimmed],
 		});
+		writeProjectDraft(projectId, "");
 		setDraft("");
 	};
 
@@ -83,6 +87,8 @@ export function ChatPageLoadingFallback({
 	uiStateKey,
 	readUiState,
 	writeUiState,
+	readProjectDraft,
+	writeProjectDraft,
 	reserveWindowControls = false,
 	sidebarCollapsed = false,
 	onOpenTerminal,
@@ -97,6 +103,8 @@ export function ChatPageLoadingFallback({
 	uiStateKey: string;
 	readUiState: (key: string) => ChatUiState;
 	writeUiState: (key: string, patch: ChatUiStatePatch) => void;
+	readProjectDraft: (projectId: string) => string;
+	writeProjectDraft: (projectId: string, value: string) => void;
 	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
 	onOpenTerminal?: () => void;
@@ -162,6 +170,8 @@ export function ChatPageLoadingFallback({
 					uiStateKey={uiStateKey}
 					readUiState={readUiState}
 					writeUiState={writeUiState}
+					readProjectDraft={readProjectDraft}
+					writeProjectDraft={writeProjectDraft}
 					scrollbarWidth={scrollbarWidth}
 				/>
 			</div>

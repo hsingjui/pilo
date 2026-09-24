@@ -29,15 +29,14 @@ import {
 	alignHistoryMessages,
 	buildHistoryPrefix,
 	conversationReducerContext,
+	HISTORY_PAGE_MESSAGE_COUNT,
+	HISTORY_PREFETCH_MESSAGES,
+	INITIAL_HISTORY_MESSAGE_COUNT,
 	markExternalTurnLive,
 	sameHistoryFingerprint,
 } from "@/components/chat/chat-conversation-model";
 import { createChatConversationStore } from "@/components/chat/chat-conversation-store";
 import { createChatHistoryWindowStore } from "@/components/chat/chat-history-window-store";
-
-const INITIAL_HISTORY_MESSAGE_COUNT = 80;
-const HISTORY_PAGE_MESSAGE_COUNT = 48;
-const HISTORY_PREFETCH_MESSAGES = 16;
 
 type UseChatConversationOptions = {
 	session: ChatSession;

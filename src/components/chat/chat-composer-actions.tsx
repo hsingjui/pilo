@@ -10,6 +10,7 @@ type ComposerActionsProps = {
 	disabled: boolean;
 	running: boolean;
 	sendMessageShortcut: "enter" | "mod-enter";
+	showShortcutHint?: boolean;
 	onStop?: () => void;
 	canSteer: boolean;
 	submitBlocked?: boolean;
@@ -22,6 +23,7 @@ export function ComposerActions({
 	disabled,
 	running,
 	sendMessageShortcut,
+	showShortcutHint = true,
 	onStop,
 	canSteer,
 	submitBlocked = false,
@@ -29,6 +31,9 @@ export function ComposerActions({
 }: ComposerActionsProps) {
 	const { t } = useTranslation();
 	const hasValue = Boolean(value.trim()) || hasAttachments;
+	const shortcutHint = showShortcutHint
+		? ` · ${sendMessageShortcut === "enter" ? "Enter" : "Ctrl/⌘ Enter"}`
+		: "";
 	return (
 		<div className="ml-auto flex shrink-0 items-center gap-1.5">
 			{running ? (
@@ -46,10 +51,7 @@ export function ComposerActions({
 								<ArrowUp className="size-4" />
 							</Button>
 						</TooltipTrigger>
-						<TooltipContent>
-							{t("chat.adjust")} ·{" "}
-							{sendMessageShortcut === "enter" ? "Enter" : "Ctrl/⌘ Enter"}
-						</TooltipContent>
+						<TooltipContent>{t("chat.adjust") + shortcutHint}</TooltipContent>
 					</Tooltip>
 				) : (
 					<Tooltip>
@@ -82,10 +84,7 @@ export function ComposerActions({
 							<ArrowUp className="size-4" />
 						</Button>
 					</TooltipTrigger>
-					<TooltipContent>
-						{t("chat.send")} ·{" "}
-						{sendMessageShortcut === "enter" ? "Enter" : "Ctrl/⌘ Enter"}
-					</TooltipContent>
+					<TooltipContent>{t("chat.send") + shortcutHint}</TooltipContent>
 				</Tooltip>
 			)}
 		</div>
