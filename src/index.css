@@ -840,11 +840,26 @@
 	animation: chat-copy-success-pop var(--dur-2) var(--ease) both;
 }
 
+/* 上下文占用刷新时圆环自转一圈，替代文字提示。 */
+@keyframes context-usage-update-spin {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.context-usage-update-spin {
+	animation: context-usage-update-spin 600ms var(--ease) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.pilo-skeleton-bone::after,
 	.chat-agent-activity-dot-pulse,
 	.chat-agent-activity-label::after,
-	.chat-copy-success-icon {
+	.chat-copy-success-icon,
+	.context-usage-update-spin {
 		animation: none;
 	}
 

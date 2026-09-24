@@ -1,5 +1,5 @@
 import { CircleDashed } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { i18n } from "@/i18n";
@@ -45,11 +45,27 @@ function formatCost(value: number | undefined) {
 	return `$${value.toFixed(2)}`;
 }
 
-function ContextIcon({ percent }: { percent: number }) {
+function ContextIcon({
+	percent,
+	spinning,
+	onSpinEnd,
+}: {
+	percent: number;
+	spinning: boolean;
+	onSpinEnd: () => void;
+}) {
 	const dashOffset = RING_CIRCUMFERENCE * (1 - percent / 100);
 
 	return (
-		<svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
+		<svg
+			viewBox="0 0 24 24"
+			className={cn(
+				"size-4 origin-center",
+				spinning && "context-usage-update-spin",
+			)}
+			aria-hidden="true"
+			onAnimationEnd={onSpinEnd}
+		>
 			<circle
 				cx="12"
 				cy="12"
@@ -69,6 +85,7 @@ function ContextIcon({ percent }: { percent: number }) {
 				strokeLinecap="round"
 				strokeDasharray={RING_CIRCUMFERENCE}
 				strokeDashoffset={dashOffset}
+				style={{ transition: "stroke-dashoffset 400ms ease-out" }}
 				className="-rotate-90 origin-center opacity-70"
 			/>
 		</svg>
@@ -111,6 +128,21 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 	const ringPercent = Math.min(100, Math.max(0, contextPercent ?? 0));
 	// HoverCard 只响应指针悬浮，这里受控补上键盘路径：focus-visible 打开，失焦关闭
 	const [open, setOpen] = useState(false);
+	// 占用值刷新后圆环自转一圈，替代文字提示更新的做法。
+	const [spinning, setSpinning] = useState(false);
+	const previousPercentRef = useRef(contextPercent);
+	useEffect(() => {
+		const previous = previousPercentRef.current;
+		previousPercentRef.current = contextPercent;
+		if (
+			previous === undefined ||
+			contextPercent === undefined ||
+			previous === contextPercent
+		) {
+			return;
+		}
+		setSpinning(true);
+	}, [contextPercent]);
 	const contextSummary =
 		contextPercent === undefined
 			? t("chat.contextUsagePending")
@@ -150,7 +182,11 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 							<span className="font-medium tabular-nums leading-none">
 								{formatPercent(contextPercent)}
 							</span>
-							<ContextIcon percent={ringPercent} />
+							<ContextIcon
+								percent={ringPercent}
+								spinning={spinning}
+								onSpinEnd={() => setSpinning(false)}
+							/>
 						</>
 					)}
 				</button>
