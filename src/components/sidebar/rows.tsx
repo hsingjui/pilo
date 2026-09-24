@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+	ActivityDot,
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -873,7 +874,7 @@ export const SessionRow = memo(function SessionRow({
 								className="flex items-center justify-center transition-opacity duration-100 group-hover:opacity-0 group-data-[menu-open]:opacity-0"
 							>
 								{session.active ? (
-									<Spinner className="size-3.5 text-sidebar-primary will-change-transform" />
+									<ActivityDot className="text-sidebar-primary" />
 								) : null}
 							</span>
 							{onDelete ? (
