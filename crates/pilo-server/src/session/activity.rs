@@ -1,6 +1,7 @@
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
+    time::SystemTime,
 };
 
 use serde::{Deserialize, Serialize};
@@ -8,6 +9,11 @@ use serde_json::Value;
 
 use super::{agent_dir, session_dir_key};
 use crate::to_value;
+
+/// Unterminated tails older than this are treated as crashed turns, not live ones.
+/// Pi appends to the session JSONL throughout a turn (deltas, tool calls), so any
+/// genuinely running turn refreshes mtime well inside this window.
+const OPEN_TURN_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(60);
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,6 +110,21 @@ fn activities_for_paths(paths: HashSet<PathBuf>) -> Result<Value, String> {
 
 fn session_turn_open(path: &Path) -> bool {
     use std::io::{Read as _, Seek as _, SeekFrom};
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    // A turn left open (assistant `toolUse` / missing terminal stopReason) is
+    // only evidence of a live turn if the file was written recently. A crashed
+    // or killed external Pi leaves an unterminated tail behind; without this
+    // freshness check the session would look "running" forever.
+    if metadata
+        .modified()
+        .ok()
+        .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+        .is_none_or(|age| age >= OPEN_TURN_STALE_AFTER)
+    {
+        return false;
+    }
     const TAIL_BYTES: u64 = 128 * 1024;
     let Ok(mut file) = std::fs::File::open(path) else {
         return false;
@@ -301,7 +322,7 @@ fn looks_like_pi_command(command: &[u8]) -> bool {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use super::{explicit_session_path, looks_like_pi_command};
+    use super::{OPEN_TURN_STALE_AFTER, explicit_session_path, looks_like_pi_command};
 
     #[test]
     fn recognizes_pi_cli_shapes() {
@@ -335,5 +356,47 @@ mod tests {
             explicit_session_path(b"pi\0--session\0session-id\0", Path::new("/work")),
             None
         );
+    }
+
+    #[test]
+    fn stale_unterminated_tail_is_not_an_open_turn() {
+        let dir = std::env::temp_dir().join(format!("pilo-activity-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("stale-session.jsonl");
+        std::fs::write(
+            &path,
+            "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"stopReason\":\"toolUse\"}}\n",
+        )
+        .unwrap();
+        // Backdate the file so the freshness window has expired.
+        let stale = std::time::SystemTime::now()
+            - std::time::Duration::from_secs(OPEN_TURN_STALE_AFTER.as_secs() + 60);
+        let file = std::fs::File::options().write(true).open(&path).unwrap();
+        file.set_modified(stale).unwrap();
+        drop(file);
+        assert!(!super::session_turn_open(&path));
+
+        // A fresh unterminated tail still counts as an open turn.
+        let fresh = dir.join("fresh-session.jsonl");
+        std::fs::write(
+            &fresh,
+            "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"stopReason\":\"toolUse\"}}\n",
+        )
+        .unwrap();
+        assert!(super::session_turn_open(&fresh));
+
+        // A stale file with a terminal stopReason stays closed regardless.
+        let closed = dir.join("closed-session.jsonl");
+        std::fs::write(
+            &closed,
+            "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"stopReason\":\"stop\"}}\n",
+        )
+        .unwrap();
+        let closed_file = std::fs::File::options().write(true).open(&closed).unwrap();
+        closed_file.set_modified(stale).unwrap();
+        drop(closed_file);
+        assert!(!super::session_turn_open(&closed));
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

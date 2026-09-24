@@ -61,7 +61,7 @@ export function mergeSidebarSessionsWithOpenChats(
 		indexedKeys.add(key);
 		const opened = openedByIndexedSession.get(key);
 		const active =
-			Boolean(session.externalActive) ||
+			Boolean(session.active) ||
 			(opened ? busyControllerIds.has(opened.controllerId) : false);
 		return Boolean(session.active) === active
 			? session

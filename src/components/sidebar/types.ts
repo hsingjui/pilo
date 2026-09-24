@@ -22,7 +22,6 @@ export type SidebarSession = {
 	latestMessageAt: Date;
 	/** Agent 正在运行时在行尾显示加载状态。 */
 	active?: boolean;
-	externalActive?: boolean;
 };
 
 export type AppSidebarProps = {

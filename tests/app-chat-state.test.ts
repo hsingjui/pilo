@@ -456,17 +456,15 @@ test("idle external ownership does not make the sidebar session active", () => {
 	assert.equal(sidebar[0].active, undefined);
 });
 
-test("external sidebar activity stays active without a Pilo controller", () => {
+test("indexed sidebar activity stays active without a mounted controller", () => {
 	const indexed = {
-		...toSidebarSession(indexedSession("pi-external", 1024)),
+		...toSidebarSession(indexedSession("pi-running", 1024)),
 		active: true,
-		externalActive: true,
 	};
 	const sidebar = mergeSidebarSessionsWithOpenChats([indexed], [], new Set());
 
 	assert.equal(sidebar[0], indexed);
 	assert.equal(sidebar[0].active, true);
-	assert.equal(sidebar[0].externalActive, true);
 });
 
 test("sidebar activity stays isolated across concurrently opened chats", () => {

@@ -154,21 +154,18 @@ export function useAppChatWorkspace({
 
 	const {
 		indexedSessions,
-		externalOpenTurnPaths,
+		isExternalOpenTurn,
 		refreshProjectSessions,
 		refreshingProjectIds,
 		sidebarSessions: indexedSidebarSessions,
 		updateSession: updateIndexedSession,
 		removeSession: removeIndexedSession,
-	} = useAppSessionIndex(activeProjectId);
+	} = useAppSessionIndex(projects.map((project) => project.id));
 	useEffect(() => {
 		setOpenedChats((current) =>
-			trimOpenedChats(
-				syncOpenedChatSessionMetadata(current, indexedSessions),
-				busyChatControllersRef.current,
-			),
+			syncOpenedChatSessionMetadata(current, indexedSessions),
 		);
-	}, [busyChatControllersRef, indexedSessions, setOpenedChats]);
+	}, [indexedSessions, setOpenedChats]);
 
 	const sidebarSessions = useMemo(
 		() =>
@@ -206,22 +203,28 @@ export function useAppChatWorkspace({
 			(selectedOpenedChatBusy || !selectedIndexedSession)
 		) {
 			const sessionPath = selectedOpenedChat.session.sessionPath;
+			const externalTurnOpen = sessionPath
+				? isExternalOpenTurn(
+						selectedOpenedChat.session.projectRecord.id,
+						sessionPath,
+					)
+				: false;
 			return {
 				...selectedOpenedChat.session,
-				externalRunning: sessionPath
-					? externalOpenTurnPaths.has(sessionPath)
-					: false,
-				externalTurnOpen: sessionPath
-					? externalOpenTurnPaths.has(sessionPath)
-					: false,
+				externalRunning: externalTurnOpen,
+				externalTurnOpen,
 			};
 		}
 		if (selectedIndexedSession && selectedProject) {
+			const externalTurnOpen = isExternalOpenTurn(
+				selectedIndexedSession.projectId,
+				selectedIndexedSession.sessionPath,
+			);
 			return indexedChatSession(
 				selectedIndexedSession,
 				selectedProject,
-				externalOpenTurnPaths.has(selectedIndexedSession.sessionPath),
-				externalOpenTurnPaths.has(selectedIndexedSession.sessionPath),
+				externalTurnOpen,
+				externalTurnOpen,
 			);
 		}
 		if (activeProject && draftSessionStarted) {
@@ -240,7 +243,7 @@ export function useAppChatWorkspace({
 		selectedOpenedChatBusy,
 		selectedIndexedSession,
 		selectedProject,
-		externalOpenTurnPaths,
+		isExternalOpenTurn,
 		activeProject,
 		draftSessionStarted,
 		draftTemporary,

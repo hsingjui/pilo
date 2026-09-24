@@ -13,7 +13,10 @@ import {
 	type OpenChat,
 } from "@/components/app/app-chat-state";
 import { useRestoreActiveChatRuntimes } from "@/components/app/use-restore-active-chat-runtimes";
-import { stopChatSession } from "@/lib/chat-session-client";
+import {
+	detachChatSessionClient,
+	stopChatSession,
+} from "@/lib/chat-session-client";
 import type { Project } from "@/lib/projects";
 
 type UseOpenedChatControllersOptions = {
@@ -62,13 +65,23 @@ export function useOpenedChatControllers({
 			if (next.has(controllerId)) continue;
 			busyChanged =
 				busyChatControllersRef.current.delete(controllerId) || busyChanged;
-			void stopChatSession(
-				entry.session.projectRecord.id,
-				entry.session.id,
-				`controller_evicted:${controllerId}`,
-			).catch((error) =>
-				console.warn("Failed to stop evicted chat session", error),
-			);
+			if (entry.session.temporary) {
+				void stopChatSession(
+					entry.session.projectRecord.id,
+					entry.session.id,
+					`temporary_controller_evicted:${controllerId}`,
+				).catch((error) =>
+					console.warn("Failed to stop evicted temporary chat session", error),
+				);
+			} else {
+				// Opened chats are a frontend memory cache. Evicting a controller must not
+				// terminate the backend runtime; a later controller can reattach by sessionKey.
+				detachChatSessionClient(
+					entry.session.projectRecord.id,
+					entry.session.id,
+					`controller_evicted:${controllerId}`,
+				);
+			}
 		}
 		if (busyChanged) {
 			setBusyChatControllerIds(new Set(busyChatControllersRef.current));

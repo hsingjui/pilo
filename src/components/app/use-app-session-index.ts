@@ -2,12 +2,14 @@ import {
 	useCallback,
 	useEffect,
 	useMemo,
+	useRef,
 	useState,
 	type Dispatch,
 	type SetStateAction,
 } from "react";
 
 import { toSidebarSession } from "@/components/app/app-chat-state";
+import { listChatSessionRuntimeStates } from "@/lib/chat-session-client";
 import { listenRuntimeEvents } from "@/lib/pi-runtime";
 import {
 	deleteSession,
@@ -27,17 +29,52 @@ type SessionUiUpdate = {
 };
 
 type ProjectExternalActivity = {
-	sessionPaths: ReadonlySet<string>;
 	openTurnPaths: ReadonlySet<string>;
 };
 
-const EMPTY_PATHS: ReadonlySet<string> = new Set();
+type ProjectRuntimeActivity = ReadonlyMap<string, ReadonlySet<string>>;
+
+function sameRuntimeActivity(
+	left: ProjectRuntimeActivity,
+	right: ProjectRuntimeActivity,
+) {
+	if (left.size !== right.size) return false;
+	for (const [projectId, paths] of left) {
+		const nextPaths = right.get(projectId);
+		if (!nextPaths || nextPaths.size !== paths.size) return false;
+		for (const path of paths) {
+			if (!nextPaths.has(path)) return false;
+		}
+	}
+	return true;
+}
+
+function runtimeActivityFromStates(
+	states: Awaited<ReturnType<typeof listChatSessionRuntimeStates>>,
+): ProjectRuntimeActivity {
+	const mutable = new Map<string, Set<string>>();
+	for (const state of states) {
+		if (
+			!state.activeTurn ||
+			state.snapshot.state !== "running" ||
+			!state.sessionPath
+		) {
+			continue;
+		}
+		let paths = mutable.get(state.projectId);
+		if (!paths) {
+			paths = new Set();
+			mutable.set(state.projectId, paths);
+		}
+		paths.add(state.sessionPath);
+	}
+	return mutable;
+}
 
 function toProjectExternalActivity(
 	activities: readonly SessionExternalActivity[],
 ): ProjectExternalActivity {
 	return {
-		sessionPaths: new Set(activities.map((activity) => activity.path)),
 		openTurnPaths: new Set(
 			activities
 				.filter((activity) => activity.turnOpen)
@@ -63,17 +100,16 @@ async function fetchProjectExternalActivity(
 			return next;
 		});
 	} catch (error) {
+		// 请求失败时清空该项目的活动状态，避免残留的 open-turn 让会话永远显示运行中。
+		setExternalActivity((current) => {
+			if (!current.has(projectId)) return current;
+			const next = new Map(current);
+			next.delete(projectId);
+			return next;
+		});
 		console.debug("Failed to inspect external Pi activity", error);
 	}
 }
-
-type IdleCapableWindow = Window & {
-	requestIdleCallback?: (
-		callback: () => void,
-		options?: { timeout: number },
-	) => number;
-	cancelIdleCallback?: (handle: number) => void;
-};
 
 function sameSessionIndexEntry(a: SessionIndexEntry, b: SessionIndexEntry) {
 	return (
@@ -125,16 +161,27 @@ function mergeProjectSessions(
 	return next;
 }
 
-export function useAppSessionIndex(activeProjectId: string | null) {
+export function useAppSessionIndex(projectIds: readonly string[]) {
 	const [indexedSessions, setIndexedSessions] = useState<SessionIndexEntry[]>(
 		[],
 	);
 	const [externalActivity, setExternalActivity] = useState<
 		ReadonlyMap<string, ProjectExternalActivity>
 	>(() => new Map());
+	const [runtimeActivity, setRuntimeActivity] =
+		useState<ProjectRuntimeActivity>(() => new Map());
 	const [refreshingProjectIds, setRefreshingProjectIds] = useState<
 		ReadonlySet<string>
 	>(() => new Set());
+	const watchedProjectIdsRef = useRef(new Set<string>());
+	const projectIdsKey = useMemo(
+		() => [...new Set(projectIds)].join("\0"),
+		[projectIds],
+	);
+	const stableProjectIds = useMemo(
+		() => (projectIdsKey ? projectIdsKey.split("\0") : []),
+		[projectIdsKey],
+	);
 
 	const replaceProjectSessions = useCallback(
 		(projectId: string, sessions: SessionIndexEntry[]) => {
@@ -150,6 +197,18 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 			fetchProjectExternalActivity(projectId, setExternalActivity),
 		[],
 	);
+
+	const refreshRuntimeActivity = useCallback(async () => {
+		try {
+			const states = await listChatSessionRuntimeStates();
+			const next = runtimeActivityFromStates(states);
+			setRuntimeActivity((current) =>
+				sameRuntimeActivity(current, next) ? current : next,
+			);
+		} catch (error) {
+			console.debug("Failed to inspect Pilo runtime activity", error);
+		}
+	}, []);
 
 	const refreshProjectSessions = useCallback(
 		async (projectId: string, showProgress = false) => {
@@ -185,75 +244,114 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 	);
 
 	useEffect(() => {
-		if (!activeProjectId) return;
+		const nextProjectIds = new Set(stableProjectIds);
+		const previousProjectIds = watchedProjectIdsRef.current;
+		const added = stableProjectIds.filter(
+			(projectId) => !previousProjectIds.has(projectId),
+		);
+		const removed = [...previousProjectIds].filter(
+			(projectId) => !nextProjectIds.has(projectId),
+		);
+		watchedProjectIdsRef.current = nextProjectIds;
+
+		if (removed.length > 0) {
+			const removedProjectIds = new Set(removed);
+			setIndexedSessions((current) =>
+				current.filter((session) => !removedProjectIds.has(session.projectId)),
+			);
+			setExternalActivity((current) => {
+				let changed = false;
+				const next = new Map(current);
+				for (const projectId of removedProjectIds) {
+					changed = next.delete(projectId) || changed;
+				}
+				return changed ? next : current;
+			});
+		}
+
+		for (const projectId of removed) {
+			void stopSessionWatch(projectId).catch(() => undefined);
+		}
+		for (const projectId of added) {
+			void listSessions(projectId)
+				.then((sessions) => {
+					if (watchedProjectIdsRef.current.has(projectId)) {
+						replaceProjectSessions(projectId, sessions);
+					}
+				})
+				.catch((error) =>
+					console.error("Failed to load cached sessions", error),
+				);
+			void refreshExternalActivity(projectId);
+			void startSessionWatch(projectId)
+				.then(() => {
+					if (!watchedProjectIdsRef.current.has(projectId)) {
+						void stopSessionWatch(projectId).catch(() => undefined);
+						return;
+					}
+					void refreshProjectSessions(projectId).catch((error) =>
+						console.error("Failed to reconcile sessions", error),
+					);
+				})
+				.catch((error) =>
+					console.error("Failed to start session watcher", error),
+				);
+		}
+	}, [
+		refreshExternalActivity,
+		refreshProjectSessions,
+		replaceProjectSessions,
+		stableProjectIds,
+	]);
+
+	useEffect(() => {
 		let disposed = false;
-		let refreshTimer: number | undefined;
-		let initialRefreshTimer: number | undefined;
-		let initialRefreshIdleId: number | undefined;
-		let watcherReady = false;
+		let runtimeRefreshTimer: number | undefined;
 		let unlistenRuntime: (() => void) | undefined;
 		let unlistenSessionWatch: (() => void) | undefined;
-		let activityTimer: number | undefined;
-		const idleWindow = window as IdleCapableWindow;
 
-		const refresh = () => {
-			void refreshProjectSessions(activeProjectId).catch((error) =>
-				console.error("Failed to reconcile sessions", error),
-			);
-		};
-		const queueRefresh = () => {
-			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
-			refreshTimer = window.setTimeout(refresh, 120);
-		};
-		const scheduleInitialRefresh = () => {
-			const run = () => {
-				initialRefreshTimer = undefined;
-				initialRefreshIdleId = undefined;
-				if (!disposed) refresh();
-			};
-			if (idleWindow.requestIdleCallback) {
-				initialRefreshIdleId = idleWindow.requestIdleCallback(run, {
-					timeout: 1200,
-				});
-				return;
+		const queueRuntimeActivityRefresh = () => {
+			if (runtimeRefreshTimer !== undefined) {
+				window.clearTimeout(runtimeRefreshTimer);
 			}
-			initialRefreshTimer = window.setTimeout(run, 0);
+			runtimeRefreshTimer = window.setTimeout(() => {
+				runtimeRefreshTimer = undefined;
+				void refreshRuntimeActivity();
+			}, 40);
 		};
-		const refreshActivity = () => {
-			void refreshExternalActivity(activeProjectId);
-		};
-		const scheduleActivityPoll = () => {
-			if (activityTimer !== undefined) window.clearTimeout(activityTimer);
-			activityTimer = window.setTimeout(() => {
-				refreshActivity();
-				scheduleActivityPoll();
-			}, 1500);
-		};
-		const hydrateThenRefresh = async () => {
-			try {
-				const cached = await listSessions(activeProjectId);
-				if (!disposed) replaceProjectSessions(activeProjectId, cached);
-			} catch (error) {
-				console.error("Failed to load cached sessions", error);
+		const refreshKnownProjects = () => {
+			queueRuntimeActivityRefresh();
+			for (const projectId of watchedProjectIdsRef.current) {
+				void refreshExternalActivity(projectId);
 			}
-			if (!disposed) scheduleInitialRefresh();
 		};
 
-		void hydrateThenRefresh();
-		refreshActivity();
-		scheduleActivityPoll();
-		window.addEventListener("focus", queueRefresh);
+		queueRuntimeActivityRefresh();
+		window.addEventListener("focus", refreshKnownProjects);
 		void listenRuntimeEvents((event) => {
-			if (event.projectId && event.projectId !== activeProjectId) {
-				if (event.type === "assistant_message_end") {
-					void refreshProjectSessions(event.projectId).catch((error) =>
-						console.error("Failed to refresh background sessions", error),
-					);
-				}
-				return;
+			switch (event.type) {
+				case "user_message_start":
+				case "assistant_message_start":
+				case "assistant_message_end":
+				case "runtime_error":
+					queueRuntimeActivityRefresh();
+					break;
+				case "process_state":
+					if (event.state === "stopped" || event.state === "failed") {
+						queueRuntimeActivityRefresh();
+					}
+					break;
+				default:
+					break;
 			}
-			if (event.type === "assistant_message_end" && !watcherReady) {
-				queueRefresh();
+			if (
+				event.type === "assistant_message_end" &&
+				event.projectId &&
+				watchedProjectIdsRef.current.has(event.projectId)
+			) {
+				void refreshProjectSessions(event.projectId).catch((error) =>
+					console.error("Failed to refresh completed session", error),
+				);
 			}
 		})
 			.then((unlisten) => {
@@ -264,82 +362,93 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 				console.error("Failed to listen for runtime events", error),
 			);
 		void listenSessionWatchEvents((event) => {
-			if (event.projectId !== activeProjectId) return;
-			if (event.type === "backend") watcherReady = true;
+			if (!watchedProjectIdsRef.current.has(event.projectId)) return;
 			if (event.type === "changed") {
-				queueRefresh();
-				refreshActivity();
+				void refreshProjectSessions(event.projectId).catch((error) =>
+					console.error("Failed to reconcile changed sessions", error),
+				);
+				void refreshExternalActivity(event.projectId);
 			}
 			if (event.type === "indexed") {
-				void listSessions(activeProjectId)
-					.then((sessions) => {
-						if (!disposed) replaceProjectSessions(activeProjectId, sessions);
-					})
+				void listSessions(event.projectId)
+					.then((sessions) => replaceProjectSessions(event.projectId, sessions))
 					.catch((error) =>
 						console.error("Failed to load background-indexed sessions", error),
 					);
 			}
 			if (event.type === "error") {
-				watcherReady = false;
 				console.warn("Session watcher fallback active", event.message);
 			}
 		})
-			.then(async (unlisten) => {
-				if (disposed) {
-					unlisten();
-					return;
-				}
-				unlistenSessionWatch = unlisten;
-				await startSessionWatch(activeProjectId);
-				if (disposed) {
-					void stopSessionWatch(activeProjectId).catch(() => undefined);
-					return;
-				}
-				watcherReady = true;
+			.then((unlisten) => {
+				if (disposed) unlisten();
+				else unlistenSessionWatch = unlisten;
 			})
 			.catch((error) =>
-				console.error("Failed to start session watcher", error),
+				console.error("Failed to listen for session watcher events", error),
 			);
+
 		return () => {
 			disposed = true;
-			if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
-			if (initialRefreshTimer !== undefined)
-				window.clearTimeout(initialRefreshTimer);
-			if (initialRefreshIdleId !== undefined && idleWindow.cancelIdleCallback) {
-				idleWindow.cancelIdleCallback(initialRefreshIdleId);
+			if (runtimeRefreshTimer !== undefined) {
+				window.clearTimeout(runtimeRefreshTimer);
 			}
-			if (activityTimer !== undefined) window.clearTimeout(activityTimer);
-			window.removeEventListener("focus", queueRefresh);
+			window.removeEventListener("focus", refreshKnownProjects);
 			unlistenRuntime?.();
 			unlistenSessionWatch?.();
-			void stopSessionWatch(activeProjectId).catch(() => undefined);
 		};
 	}, [
-		activeProjectId,
 		refreshExternalActivity,
 		refreshProjectSessions,
+		refreshRuntimeActivity,
 		replaceProjectSessions,
 	]);
 
-	const activeExternalActivity = activeProjectId
-		? externalActivity.get(activeProjectId)
-		: undefined;
-	const externalSessionPaths =
-		activeExternalActivity?.sessionPaths ?? EMPTY_PATHS;
-	const externalOpenTurnPaths =
-		activeExternalActivity?.openTurnPaths ?? EMPTY_PATHS;
+	useEffect(() => {
+		const poll = () => {
+			for (const projectId of watchedProjectIdsRef.current) {
+				void refreshExternalActivity(projectId);
+			}
+		};
+		const timer = window.setInterval(poll, 5000);
+		return () => window.clearInterval(timer);
+	}, [refreshExternalActivity]);
+
+	useEffect(
+		() => () => {
+			const watchedProjectIds = [...watchedProjectIdsRef.current];
+			watchedProjectIdsRef.current.clear();
+			for (const projectId of watchedProjectIds) {
+				void stopSessionWatch(projectId).catch(() => undefined);
+			}
+		},
+		[],
+	);
+
+	const isExternalOpenTurn = useCallback(
+		(projectId: string, sessionPath: string) =>
+			externalActivity.get(projectId)?.openTurnPaths.has(sessionPath) ?? false,
+		[externalActivity],
+	);
 
 	const sidebarSessions = useMemo(
 		() =>
 			indexedSessions.map((session) => {
 				const sidebar = toSidebarSession(session);
-				return externalActivity
-					.get(session.projectId)
-					?.openTurnPaths.has(session.sessionPath)
-					? { ...sidebar, active: true, externalActive: true }
-					: sidebar;
+				const externalActive =
+					externalActivity
+						.get(session.projectId)
+						?.openTurnPaths.has(session.sessionPath) ?? false;
+				const runtimeActive =
+					runtimeActivity.get(session.projectId)?.has(session.sessionPath) ??
+					false;
+				if (!externalActive && !runtimeActive) return sidebar;
+				return {
+					...sidebar,
+					active: true,
+				};
 			}),
-		[indexedSessions, externalActivity],
+		[indexedSessions, externalActivity, runtimeActivity],
 	);
 
 	const updateSession = useCallback(
@@ -390,8 +499,7 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 
 	return {
 		indexedSessions,
-		externalSessionPaths,
-		externalOpenTurnPaths,
+		isExternalOpenTurn,
 		refreshProjectSessions,
 		refreshingProjectIds,
 		sidebarSessions,

@@ -36,7 +36,7 @@ import type { ViewerOpenRequest } from "@/components/project-viewer";
 import { recordChatSessionSwitchStart } from "@/lib/chat-performance";
 import { notifyConnectionsChanged } from "@/lib/connection-events";
 import { usePreferences } from "@/lib/preferences-provider";
-import { notifyProjectsChanged, type Project } from "@/lib/projects";
+import { notifyProjectsChanged } from "@/lib/projects";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import {
 	isSessionWindow,
@@ -80,15 +80,6 @@ function App() {
 	const [leftSidebarCollapsedState, setLeftSidebarCollapsed] = useState(false);
 	const [isResizing, setIsResizing] = useState(false);
 	const [openedChats, setOpenedChats] = useState<OpenChat[]>([]);
-	const handleProjectsLoaded = useCallback((nextProjects: Project[]) => {
-		setOpenedChats((current) =>
-			current.filter((entry) =>
-				nextProjects.some(
-					(project) => project.id === entry.session.projectRecord.id,
-				),
-			),
-		);
-	}, []);
 	const {
 		projects,
 		setProjects,
@@ -99,7 +90,7 @@ function App() {
 		homeProjects,
 		sidebarProjects,
 		firstProject,
-	} = useAppCatalog(handleProjectsLoaded);
+	} = useAppCatalog();
 	const {
 		busyChatControllersRef,
 		busyChatControllerIds,

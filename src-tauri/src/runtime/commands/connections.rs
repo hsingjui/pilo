@@ -284,7 +284,12 @@ pub fn wsl_connection_save(
 }
 
 #[tauri::command]
-pub fn wsl_connection_remove(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn wsl_connection_remove(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+) -> Result<(), String> {
+    stop_connection_projects(&app, &runtime, &id).await?;
     let db = storage::open(&app)?;
     storage::remove_connection(&db, &id)?;
     Ok(())
@@ -406,10 +411,31 @@ pub fn ssh_connection_password_get(app: AppHandle, id: String) -> Result<Option<
 }
 
 #[tauri::command]
-pub fn ssh_connection_remove(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn ssh_connection_remove(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    id: String,
+) -> Result<(), String> {
+    stop_connection_projects(&app, &runtime, &id).await?;
     let db = storage::open(&app)?;
     storage::remove_connection(&db, &id)?;
     credentials::delete_ssh_password(&id)?;
+    Ok(())
+}
+
+async fn stop_connection_projects(
+    app: &AppHandle,
+    runtime: &PiloRuntime,
+    connection_id: &str,
+) -> Result<(), String> {
+    let project_ids = storage::list_projects(&storage::open(app)?)?
+        .into_iter()
+        .filter(|project| project.connection.id == connection_id)
+        .map(|project| project.id)
+        .collect::<Vec<_>>();
+    for project_id in project_ids {
+        runtime.chat_sessions.stop_project(&project_id).await?;
+    }
     Ok(())
 }
 

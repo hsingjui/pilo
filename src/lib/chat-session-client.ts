@@ -277,6 +277,18 @@ function releaseChatSessionClient(
 	return true;
 }
 
+export function detachChatSessionClient(
+	projectId: string,
+	sessionId: string,
+	reason = "detach_chat_session_client",
+) {
+	return releaseChatSessionClient(
+		chatSessionKey(projectId, sessionId),
+		undefined,
+		reason,
+	);
+}
+
 export function stopChatSession(
 	projectId: string,
 	sessionId: string,
