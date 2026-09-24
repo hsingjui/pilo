@@ -875,6 +875,11 @@ export const SessionRow = memo(function SessionRow({
 							>
 								{session.active ? (
 									<ActivityDot className="text-sidebar-primary" />
+								) : session.unread ? (
+									<span
+										aria-hidden="true"
+										className="inline-block size-1.5 shrink-0 rounded-full bg-sidebar-primary"
+									/>
 								) : null}
 							</span>
 							{onDelete ? (

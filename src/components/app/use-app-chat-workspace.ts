@@ -167,7 +167,7 @@ export function useAppChatWorkspace({
 		);
 	}, [indexedSessions, setOpenedChats]);
 
-	const sidebarSessions = useMemo(
+	const sidebarSessionsBase = useMemo(
 		() =>
 			mergeSidebarSessionsWithOpenChats(
 				indexedSidebarSessions,
@@ -175,6 +175,54 @@ export function useAppChatWorkspace({
 				busyChatControllerSince,
 			),
 		[indexedSidebarSessions, openedChats, busyChatControllerSince],
+	);
+
+	// 未读标记：agent 从运行中转为空闲时置为未读，打开会话即清除。
+	// 在渲染期根据上一帧的运行状态推导，避免在 effect 内 setState 引发级联渲染。
+	const [sessionUnreadState, setSessionUnreadState] = useState<{
+		prevActive: Map<string, boolean>;
+		unread: ReadonlySet<string>;
+	}>(() => ({ prevActive: new Map(), unread: new Set() }));
+	{
+		const { prevActive, unread: currentUnread } = sessionUnreadState;
+		const nextActive = new Map<string, boolean>();
+		let unread: ReadonlySet<string> = currentUnread;
+		let activeChanged = false;
+		for (const session of sidebarSessionsBase) {
+			const wasActive = prevActive.get(session.id) === true;
+			const active = Boolean(session.active);
+			nextActive.set(session.id, active);
+			if (wasActive !== active) activeChanged = true;
+			if (
+				wasActive &&
+				!active &&
+				session.id !== selectedSessionId &&
+				!unread.has(session.id)
+			) {
+				unread = new Set(unread).add(session.id);
+			}
+		}
+		if (selectedSessionId && unread.has(selectedSessionId)) {
+			const cleared = new Set(unread);
+			cleared.delete(selectedSessionId);
+			unread = cleared;
+		}
+		if (activeChanged || unread !== currentUnread) {
+			setSessionUnreadState({ prevActive: nextActive, unread });
+		}
+	}
+	const unreadSessionIds = sessionUnreadState.unread;
+
+	const sidebarSessions = useMemo(
+		() =>
+			unreadSessionIds.size === 0
+				? sidebarSessionsBase
+				: sidebarSessionsBase.map((session) =>
+						unreadSessionIds.has(session.id)
+							? { ...session, unread: true }
+							: session,
+					),
+		[sidebarSessionsBase, unreadSessionIds],
 	);
 
 	const selectedIndexedSession =
