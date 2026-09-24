@@ -15,6 +15,13 @@ export type ActiveTurn = {
 	promptSent: boolean;
 	queueReady: boolean;
 	preserveQueuedOnRelease: boolean;
+	discardRuntimeEvents?: boolean;
+	stopRuntimeRequested?: boolean;
+};
+
+export type DiscardedRuntimeBarrier = {
+	turn: ActiveTurn;
+	generation: number;
 };
 
 export type ChatRuntimeRecoveryMessageKey =

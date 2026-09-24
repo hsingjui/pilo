@@ -6,6 +6,7 @@ import type {
 	ActiveTurn,
 	BeginTurn,
 	ChatSessionClient,
+	DiscardedRuntimeBarrier,
 } from "@/components/chat/chat-runtime-types";
 import {
 	dispatchRuntimeEventToConversation,
@@ -87,6 +88,10 @@ export function useChatRuntime({
 	}, [onSessionIdentified]);
 
 	const activeTurnRef = useRef<ActiveTurn | null>(null);
+	const runtimeGenerationRef = useRef<number | null>(null);
+	const discardedRuntimeBarrierRef = useRef<DiscardedRuntimeBarrier | null>(
+		null,
+	);
 	const initialQueuedMessagesRef = useRef(initialQueuedMessages);
 	const sentInitialPromptsRef = useRef(new Set<string>());
 	const autoTitleRequestedRef = useRef(false);
@@ -124,6 +129,8 @@ export function useChatRuntime({
 		client,
 		activeTurnRef,
 		activeTurnSessionIdRef,
+		runtimeGenerationRef,
+		discardedRuntimeBarrierRef,
 		beginTurnRef,
 		setActiveTurnSessionId,
 		dispatchConversation,
@@ -144,6 +151,8 @@ export function useChatRuntime({
 		client,
 		activeTurnRef,
 		activeTurnSessionIdRef,
+		runtimeGenerationRef,
+		discardedRuntimeBarrierRef,
 		identifiedRef,
 		setActiveTurnSessionId,
 		desktopNotifications,
@@ -288,6 +297,7 @@ export function useChatRuntime({
 				await subscription;
 				const snapshot = await client.ensure();
 				if (activeTurnRef.current !== turn) return;
+				runtimeGenerationRef.current = snapshot.generation;
 				turn.generation = snapshot.generation;
 				const agentState = await client.getPiAgentState();
 				if (activeTurnRef.current !== turn) return;

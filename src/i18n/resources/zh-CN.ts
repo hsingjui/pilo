@@ -69,7 +69,6 @@ const zhCN = {
 		reload: "重新加载",
 		newChat: "新会话",
 		temporaryChat: "临时会话",
-		chat: "聊天",
 		selectProject: "选择项目",
 		noSessions: "暂无会话",
 		viewAll: "查看全部",

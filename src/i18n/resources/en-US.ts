@@ -57,7 +57,6 @@ const enUS = {
 		reload: "Reload",
 		newChat: "New session",
 		temporaryChat: "Temporary session",
-		chat: "Chat",
 		selectProject: "Select a project",
 		noSessions: "No sessions",
 		viewAll: "View all",

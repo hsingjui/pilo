@@ -134,6 +134,18 @@ pub async fn chat_session_stop(
 }
 
 #[tauri::command]
+pub async fn chat_session_detach(
+    runtime: State<'_, PiloRuntime>,
+    session_key: String,
+    reason: Option<String>,
+) -> Result<(), String> {
+    runtime
+        .chat_sessions
+        .detach(&session_key, reason.as_deref())
+        .await
+}
+
+#[tauri::command]
 pub async fn chat_session_state(
     runtime: State<'_, PiloRuntime>,
     session_key: String,

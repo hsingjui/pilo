@@ -59,7 +59,7 @@ struct ChatProcess {
     prepared: AtomicBool,
     initialized: AtomicBool,
     active_turn: Arc<AtomicBool>,
-    closed: AtomicBool,
+    closed: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
@@ -85,10 +85,14 @@ struct ChatEventSink {
     control_reply: Arc<StdMutex<Option<InitializationReply>>>,
     session_path: Arc<StdMutex<Option<String>>>,
     active_turn: Arc<AtomicBool>,
+    closed: Arc<AtomicBool>,
 }
 
 impl RuntimeEventSink for ChatEventSink {
     fn send(&self, event: RuntimeEvent) {
+        if self.closed.load(Ordering::Acquire) {
+            return;
+        }
         match &event {
             RuntimeEvent::UserMessageStart { .. } | RuntimeEvent::AssistantMessageStart { .. } => {
                 self.active_turn.store(true, Ordering::Release);
@@ -250,7 +254,7 @@ impl ChatSessions {
                             prepared: AtomicBool::new(false),
                             initialized: AtomicBool::new(false),
                             active_turn: Arc::new(AtomicBool::new(false)),
-                            closed: AtomicBool::new(false),
+                            closed: Arc::new(AtomicBool::new(false)),
                         })
                     }),
             )
@@ -325,6 +329,7 @@ impl ChatSessions {
                     control_reply: Arc::clone(&process.control_reply),
                     session_path: Arc::clone(&process.session_path),
                     active_turn: Arc::clone(&process.active_turn),
+                    closed: Arc::clone(&process.closed),
                 },
                 project,
                 PiLaunchOptions {
@@ -614,6 +619,55 @@ impl ChatSessions {
             }),
         );
         result?;
+        Ok(())
+    }
+
+    pub async fn detach(&self, session_key: &str, reason: Option<&str>) -> Result<(), String> {
+        let process = {
+            let mut registry = self.registry.lock().await;
+            registry.processes.remove(session_key)
+        };
+        let Some(process) = process else {
+            runtime_trace(
+                "chat.detach",
+                Some(session_key),
+                None,
+                json!({ "found": false, "reason": reason }),
+            );
+            return Ok(());
+        };
+
+        process.closed.store(true, Ordering::Release);
+        let detached_session_key = session_key.to_owned();
+        let detached_reason = reason.map(str::to_owned);
+        runtime_trace(
+            "chat.detach",
+            Some(session_key),
+            None,
+            json!({ "found": true, "reason": reason }),
+        );
+
+        tokio::spawn(async move {
+            let mut session = process.session.lock().await;
+            runtime_trace(
+                "chat.detach.stop.begin",
+                Some(&detached_session_key),
+                session.stream_id(),
+                json!({ "reason": detached_reason }),
+            );
+            let result = session.stop().await;
+            runtime_trace(
+                "chat.detach.stop.end",
+                Some(&detached_session_key),
+                session.stream_id(),
+                json!({
+                    "ok": result.is_ok(),
+                    "reason": detached_reason,
+                    "error": result.as_ref().err(),
+                }),
+            );
+        });
+
         Ok(())
     }
 

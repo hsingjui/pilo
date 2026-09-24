@@ -25,8 +25,8 @@ pub use projects::{
     project_touch, terminal_close, terminal_resize, terminal_write,
 };
 pub use runtime::{
-    chat_session_prepare, chat_session_send_rpc, chat_session_start, chat_session_state,
-    chat_session_states, chat_session_stop, project_start_pi, runtime_abort_pi,
+    chat_session_detach, chat_session_prepare, chat_session_send_rpc, chat_session_start,
+    chat_session_state, chat_session_states, chat_session_stop, project_start_pi, runtime_abort_pi,
     runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc, runtime_stop_pi,
     runtime_subscribe_events,
 };

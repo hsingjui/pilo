@@ -5,6 +5,7 @@ import type {
 	ActiveTurn,
 	ChatRuntimeRecoveryState,
 	ChatSessionClient,
+	DiscardedRuntimeBarrier,
 } from "@/components/chat/chat-runtime-types";
 import type { ChatSession } from "@/components/chat/chat-page-utils";
 import { isPresentationBatchedAction } from "@/components/chat/use-runtime-conversation-dispatch";
@@ -71,6 +72,8 @@ type UseChatRuntimeEventsOptions = {
 	client: ChatSessionClient;
 	activeTurnRef: { current: ActiveTurn | null };
 	activeTurnSessionIdRef?: { current: string | null };
+	runtimeGenerationRef: { current: number | null };
+	discardedRuntimeBarrierRef: { current: DiscardedRuntimeBarrier | null };
 	identifiedRef: { current: ((sessionId: string) => void) | undefined };
 	setActiveTurnSessionId: (sessionId: string | null) => void;
 	desktopNotifications: boolean;
@@ -98,6 +101,8 @@ export function useChatRuntimeEvents({
 	client,
 	activeTurnRef,
 	activeTurnSessionIdRef,
+	runtimeGenerationRef,
+	discardedRuntimeBarrierRef,
 	identifiedRef,
 	setActiveTurnSessionId,
 	desktopNotifications,
@@ -208,6 +213,7 @@ export function useChatRuntimeEvents({
 				}
 
 				const snapshot = await client.ensure();
+				runtimeGenerationRef.current = snapshot.generation;
 				if (snapshot.state !== "running") {
 					throw new Error(
 						i18n.t("errors.runtimeRecoveryState", { state: snapshot.state }),
@@ -248,6 +254,7 @@ export function useChatRuntimeEvents({
 		client,
 		identifiedRef,
 		refreshSessionState,
+		runtimeGenerationRef,
 		session.sessionPath,
 		session.temporary,
 	]);
@@ -267,6 +274,52 @@ export function useChatRuntimeEvents({
 	const handleRuntimeEvent = useCallback(
 		(event: PiloRuntimeEvent) => {
 			recordChatRuntimeEvent();
+			const latestGeneration = runtimeGenerationRef.current;
+			if (latestGeneration !== null && event.generation < latestGeneration) {
+				return;
+			}
+			if (latestGeneration === null || event.generation > latestGeneration) {
+				runtimeGenerationRef.current = event.generation;
+			}
+
+			const currentTurn = activeTurnRef.current;
+			const discardingCurrentTurn =
+				currentTurn?.discardRuntimeEvents === true &&
+				currentTurn.generation !== null &&
+				currentTurn.generation === event.generation;
+			if (discardingCurrentTurn) {
+				cancelContextStatsRefresh();
+				if (event.type === "assistant_message_end") {
+					void refreshSessionState().catch(() => undefined);
+					releaseActiveTurn(currentTurn, { preserveQueued: true });
+				} else if (
+					event.type === "process_state" &&
+					(event.state === "failed" || event.state === "stopped")
+				) {
+					releaseActiveTurn(currentTurn, { preserveQueued: true });
+				}
+				// runtime_error and all intermediate events stay suppressed while the
+				// stop watchdog owns this turn. They must not release ownership early.
+				return;
+			}
+
+			const discardedBarrier = discardedRuntimeBarrierRef.current;
+			if (
+				discardedBarrier &&
+				discardedBarrier.turn !== currentTurn &&
+				discardedBarrier.generation === event.generation
+			) {
+				if (!currentTurn || !currentTurn.promptSent) return;
+				discardedRuntimeBarrierRef.current = null;
+			} else if (
+				discardedBarrier &&
+				currentTurn &&
+				discardedBarrier.turn !== currentTurn &&
+				currentTurn.promptSent
+			) {
+				discardedRuntimeBarrierRef.current = null;
+			}
+
 			if (event.type === "assistant_message_start") {
 				// 连续工具循环很快进入下一次模型请求时，取消上一轮尚未执行的
 				// stats 刷新，等最新一次请求结束后再取一次即可。
@@ -394,6 +447,7 @@ export function useChatRuntimeEvents({
 			acknowledgeQueuedMessage,
 			activeTurnRef,
 			cancelContextStatsRefresh,
+			discardedRuntimeBarrierRef,
 			desktopNotifications,
 			dispatchConversation,
 			failActiveTurn,
@@ -401,6 +455,7 @@ export function useChatRuntimeEvents({
 			recoverRuntime,
 			refreshSessionState,
 			releaseActiveTurn,
+			runtimeGenerationRef,
 			scheduleContextStatsRefresh,
 			session.temporary,
 			session.id,
@@ -469,6 +524,7 @@ export function useChatRuntimeEvents({
 				) {
 					return;
 				}
+				runtimeGenerationRef.current = runtimeState.snapshot.generation;
 				const agentState = await client.getPiAgentState();
 				if (cancelled || !agentState.isStreaming || activeTurnRef.current)
 					return;
@@ -510,6 +566,7 @@ export function useChatRuntimeEvents({
 		activeTurnSessionIdRef,
 		client,
 		identifiedRef,
+		runtimeGenerationRef,
 		session.id,
 		session.projectRecord.id,
 		session.temporary,

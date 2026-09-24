@@ -208,7 +208,8 @@ export function useChatConversation({
 }: UseChatConversationOptions) {
 	const [conversationStore] = useState(createChatConversationStore);
 	const [historyStore] = useState(createChatHistoryWindowStore);
-	const historyPageRequestsRef = useRef(new Set<number>());
+	const historyRequestGenerationRef = useRef(0);
+	const historyPageRequestsRef = useRef(new Map<number, number>());
 	const loadedWindowFingerprintRef = useRef<SessionHistoryFingerprint | null>(
 		null,
 	);
@@ -262,6 +263,7 @@ export function useChatConversation({
 	const [draft, setDraftState] = useState(initialDraft);
 
 	useEffect(() => {
+		const requestGeneration = ++historyRequestGenerationRef.current;
 		const sessionPath = session.sessionPath;
 		if (!sessionPath) {
 			loadedHistoryFingerprintRef.current = null;
@@ -303,7 +305,12 @@ export function useChatConversation({
 						fingerprint: requestFingerprint,
 					},
 				);
-				if (cancelled) return;
+				if (
+					cancelled ||
+					historyRequestGenerationRef.current !== requestGeneration
+				) {
+					return;
+				}
 				const history = result.history;
 				const directory = history.messageIndex;
 				const windowStart = history.windowStartMessage;
@@ -328,7 +335,12 @@ export function useChatConversation({
 					conversationReducerContext,
 					{ maxEventsPerBatch: 400 },
 				);
-				if (cancelled) return;
+				if (
+					cancelled ||
+					historyRequestGenerationRef.current !== requestGeneration
+				) {
+					return;
+				}
 				finalState = alignHistoryMessages(finalState, directory, windowStart);
 				if (session.externalRunning && session.externalTurnOpen) {
 					finalState = markExternalTurnLive(finalState);
@@ -358,7 +370,12 @@ export function useChatConversation({
 				setHistoryProgress("");
 				setHistoryLoadState("ready");
 			} catch (error) {
-				if (cancelled) return;
+				if (
+					cancelled ||
+					historyRequestGenerationRef.current !== requestGeneration
+				) {
+					return;
+				}
 				console.error("Failed to read session history", error);
 				failedHistoryFingerprintRef.current = requestedFingerprint;
 				setHistoryProgress("");
@@ -459,15 +476,23 @@ export function useChatConversation({
 				) {
 					continue;
 				}
-				historyPageRequestsRef.current.add(pageStart);
+				const requestGeneration = historyRequestGenerationRef.current;
+				historyPageRequestsRef.current.set(pageStart, requestGeneration);
 				const windowStartedAt = performance.now();
 				const loadedFingerprint = loadedWindowFingerprintRef.current;
+				const requestIsCurrent = () =>
+					historyRequestGenerationRef.current === requestGeneration &&
+					sameHistoryFingerprint(
+						loadedFingerprint,
+						loadedWindowFingerprintRef.current,
+					);
 				void loadSessionHistoryWindow(session.projectRecord.id, sessionPath, {
 					startMessage: pageStart,
 					messageLimit: pageEnd - pageStart + 1,
 					fingerprint: loadedFingerprint ?? undefined,
 				})
 					.then(async (result) => {
+						if (!requestIsCurrent()) return;
 						if (
 							!sameHistoryFingerprint(loadedFingerprint, result.fingerprint)
 						) {
@@ -484,6 +509,7 @@ export function useChatConversation({
 							conversationReducerContext,
 							{ maxEventsPerBatch: 400 },
 						);
+						if (!requestIsCurrent()) return;
 						const currentDirectory = historyStore.getSnapshot().directory;
 						state = alignHistoryMessages(state, currentDirectory, actualStart);
 						historyStore.hydrate(actualStart, state.messages);
@@ -498,11 +524,17 @@ export function useChatConversation({
 								hydratedSnapshot.hydrated.size + runtimeMessageCount,
 						});
 					})
-					.catch((error) =>
-						console.warn("Failed to hydrate history window", error),
-					)
+					.catch((error) => {
+						if (!requestIsCurrent()) return;
+						console.warn("Failed to hydrate history window", error);
+					})
 					.finally(() => {
-						historyPageRequestsRef.current.delete(pageStart);
+						if (
+							historyPageRequestsRef.current.get(pageStart) ===
+							requestGeneration
+						) {
+							historyPageRequestsRef.current.delete(pageStart);
+						}
 					});
 			}
 		},

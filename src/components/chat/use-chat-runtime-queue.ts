@@ -8,6 +8,7 @@ import type {
 	BeginTurnRef,
 	BufferedQueuedMessage,
 	ChatSessionClient,
+	DiscardedRuntimeBarrier,
 } from "@/components/chat/chat-runtime-types";
 import type { ChatSession } from "@/components/chat/chat-page-utils";
 import { createLocalMessageId } from "@/components/chat/use-chat-conversation";
@@ -20,6 +21,8 @@ import {
 import { cacheLocalChatImages } from "@/lib/chat-image-media";
 import type { ConversationAction } from "@/lib/conversation-types";
 import { runtimeErrorMessage } from "@/lib/pi-runtime";
+
+const STOP_SETTLE_TIMEOUT_MS = 5_000;
 
 function combineQueuedSubmissions(
 	items: readonly BufferedQueuedMessage[],
@@ -38,6 +41,8 @@ type UseChatRuntimeQueueOptions = {
 	client: ChatSessionClient;
 	activeTurnRef: RefObject<ActiveTurn | null>;
 	activeTurnSessionIdRef?: { current: string | null };
+	runtimeGenerationRef: { current: number | null };
+	discardedRuntimeBarrierRef: { current: DiscardedRuntimeBarrier | null };
 	beginTurnRef: BeginTurnRef;
 	setActiveTurnSessionId: (sessionId: string | null) => void;
 	dispatchConversation: (
@@ -54,6 +59,8 @@ export function useChatRuntimeQueue({
 	client,
 	activeTurnRef,
 	activeTurnSessionIdRef,
+	runtimeGenerationRef,
+	discardedRuntimeBarrierRef,
 	beginTurnRef,
 	setActiveTurnSessionId,
 	dispatchConversation,
@@ -64,7 +71,15 @@ export function useChatRuntimeQueue({
 	const { t } = useTranslation();
 	const bufferedQueuedMessagesRef = useRef<BufferedQueuedMessage[]>([]);
 	const queuedMessagesRef = useRef(new Map<string, BufferedQueuedMessage>());
+	const stopFallbackTimersRef = useRef(new WeakMap<ActiveTurn, number>());
 	const [pendingFollowUps, setPendingFollowUps] = useState(0);
+
+	const clearStopFallback = useCallback((turn: ActiveTurn) => {
+		const timer = stopFallbackTimersRef.current.get(turn);
+		if (timer === undefined) return;
+		window.clearTimeout(timer);
+		stopFallbackTimersRef.current.delete(turn);
+	}, []);
 
 	const setPendingQueueCounts = useCallback((followUps: number) => {
 		setPendingFollowUps(followUps);
@@ -123,6 +138,7 @@ export function useChatRuntimeQueue({
 	const releaseActiveTurn = useCallback(
 		(turn: ActiveTurn, options: { preserveQueued?: boolean } = {}) => {
 			if (activeTurnRef.current !== turn) return;
+			clearStopFallback(turn);
 			if (!options.preserveQueued && !turn.preserveQueuedOnRelease) {
 				const discarded = takeQueuedMessages(turn);
 				removeQueuedMessagesFromConversation(turn, discarded);
@@ -138,6 +154,7 @@ export function useChatRuntimeQueue({
 		[
 			activeTurnRef,
 			activeTurnSessionIdRef,
+			clearStopFallback,
 			removeQueuedMessagesFromConversation,
 			restoreQueuedMessages,
 			setActiveTurnSessionId,
@@ -437,6 +454,27 @@ export function useChatRuntimeQueue({
 		[queueMessage],
 	);
 
+	/* oxlint-disable react/memo-dependencies -- stable refs/callbacks stay explicit in exhaustive-deps so async stop closures cannot go stale. */
+	const detachStoppedTurn = useCallback(
+		async (turn: ActiveTurn, reason: string) => {
+			if (turn.stopRuntimeRequested) return;
+			turn.stopRuntimeRequested = true;
+			clearStopFallback(turn);
+			try {
+				await client.detach(reason);
+			} catch (error) {
+				console.warn("Failed to detach stopped chat runtime", error);
+				toast.error(t("chat.stopPiFailed"), {
+					description: runtimeErrorMessage(error),
+				});
+			} finally {
+				runtimeGenerationRef.current = null;
+				releaseActiveTurn(turn, { preserveQueued: true });
+			}
+		},
+		[clearStopFallback, client, releaseActiveTurn, runtimeGenerationRef, t],
+	);
+
 	const handleStop = useCallback(() => {
 		const turn = activeTurnRef.current;
 		if (!turn || turn.sessionId !== session.id) return;
@@ -447,47 +485,59 @@ export function useChatRuntimeQueue({
 			type: "local_turn_abort",
 			timestampMs: Date.now(),
 		});
-		releaseActiveTurn(turn, { preserveQueued: true });
-		if (turn.generation === null || !turn.promptSent) return;
+
+		turn.discardRuntimeEvents = true;
+		if (turn.generation !== null) {
+			discardedRuntimeBarrierRef.current = {
+				turn,
+				generation: turn.generation,
+			};
+		}
+		if (turn.generation === null) {
+			releaseActiveTurn(turn, { preserveQueued: true });
+			return;
+		}
+		if (!turn.promptSent) {
+			void detachStoppedTurn(turn, "stop_turn_before_prompt");
+			return;
+		}
+
+		const fallbackTimer = window.setTimeout(() => {
+			void detachStoppedTurn(turn, "stop_turn_settle_timeout");
+		}, STOP_SETTLE_TIMEOUT_MS);
+		stopFallbackTimersRef.current.set(turn, fallbackTimer);
 
 		void (async () => {
-			let mustStopRuntime = false;
 			if (turn.queueReady) {
 				try {
 					await client.clearPiQueue();
 				} catch (error) {
 					console.warn("Pi queue clear failed while stopping", error);
-					mustStopRuntime = true;
+					void detachStoppedTurn(turn, "stop_turn_queue_clear_failed");
+					return;
 				}
 			}
-			if (!mustStopRuntime) {
-				try {
-					await client.abortPiReply("stop_turn");
-				} catch (error) {
-					console.warn("Pi abort failed; stopping chat runtime", error);
-					mustStopRuntime = true;
-				}
-			}
-			if (!mustStopRuntime) return;
+			if (activeTurnRef.current !== turn || turn.stopRuntimeRequested) return;
 			try {
-				await client.stop("stop_turn_abort_failed");
-			} catch (stopError) {
-				toast.error(t("chat.stopPiFailed"), {
-					description: runtimeErrorMessage(stopError),
-				});
+				await client.abortPiReply("stop_turn");
+			} catch (error) {
+				console.warn("Pi abort failed; detaching chat runtime", error);
+				void detachStoppedTurn(turn, "stop_turn_abort_failed");
 			}
 		})();
 	}, [
 		activeTurnRef,
 		client,
+		detachStoppedTurn,
+		discardedRuntimeBarrierRef,
 		dispatchConversation,
 		releaseActiveTurn,
 		removeQueuedMessagesFromConversation,
 		restoreQueuedMessages,
 		session.id,
 		takeQueuedMessages,
-		t,
 	]);
+	/* oxlint-enable react/memo-dependencies */
 
 	return {
 		pendingFollowUps,

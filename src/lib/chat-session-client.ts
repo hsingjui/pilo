@@ -141,6 +141,13 @@ function createRegisteredChatSessionClient(
 			traceChatClient("client.stop.request", sessionKey, { clientId, reason });
 			return invoke<void>("chat_session_stop", { sessionKey, reason });
 		},
+		detach: (reason = "client_detach") => {
+			traceChatClient("client.detach.request", sessionKey, {
+				clientId,
+				reason,
+			});
+			return invoke<void>("chat_session_detach", { sessionKey, reason });
+		},
 		dispose: (reason = "client_dispose") => {
 			releaseChatSessionClient(sessionKey, client, reason);
 			traceChatClient("client.stop.request", sessionKey, { clientId, reason });
