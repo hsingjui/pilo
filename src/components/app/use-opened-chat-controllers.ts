@@ -26,7 +26,7 @@ type UseOpenedChatControllersOptions = {
 	setOpenedChats: Dispatch<SetStateAction<OpenChat[]>>;
 };
 
-export type BusyChatControllersRef = MutableRefObject<Set<string>>;
+export type BusyChatControllersRef = MutableRefObject<Map<string, Date>>;
 
 export function useOpenedChatControllers({
 	projects,
@@ -35,10 +35,10 @@ export function useOpenedChatControllers({
 	setOpenedChats,
 }: UseOpenedChatControllersOptions) {
 	const previousOpenedChatsRef = useRef(new Map<string, OpenChat>());
-	const busyChatControllersRef = useRef(new Set<string>());
-	const [busyChatControllerIds, setBusyChatControllerIds] = useState<
-		ReadonlySet<string>
-	>(() => new Set());
+	const busyChatControllersRef = useRef(new Map<string, Date>());
+	const [busyChatControllerSince, setBusyChatControllerSince] = useState<
+		ReadonlyMap<string, Date>
+	>(() => new Map());
 
 	const handleChatRuntimeBusyChange = useCallback(
 		(controllerId: string, busy: boolean) => {
@@ -46,9 +46,9 @@ export function useOpenedChatControllers({
 			const changed = busy
 				? !busyControllers.has(controllerId)
 				: busyControllers.has(controllerId);
-			if (busy) busyControllers.add(controllerId);
+			if (busy) busyControllers.set(controllerId, new Date());
 			else busyControllers.delete(controllerId);
-			if (changed) setBusyChatControllerIds(new Set(busyControllers));
+			if (changed) setBusyChatControllerSince(new Map(busyControllers));
 			if (!busy) {
 				setOpenedChats((current) => trimOpenedChats(current, busyControllers));
 			}
@@ -84,7 +84,7 @@ export function useOpenedChatControllers({
 			}
 		}
 		if (busyChanged) {
-			setBusyChatControllerIds(new Set(busyChatControllersRef.current));
+			setBusyChatControllerSince(new Map(busyChatControllersRef.current));
 		}
 		previousOpenedChatsRef.current = next;
 	}, [openedChats]);
@@ -97,7 +97,7 @@ export function useOpenedChatControllers({
 
 	return {
 		busyChatControllersRef,
-		busyChatControllerIds,
+		busyChatControllerSince,
 		handleChatRuntimeBusyChange,
 	};
 }

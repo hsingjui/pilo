@@ -2,7 +2,21 @@ import type { SidebarSession } from "./types";
 
 export const SIDEBAR_RECENT_SESSION_LIMIT = 5;
 
+/**
+ * 排序键只在状态切换时变化：运行中的会话按进入运行状态的时刻排（组内稳定，
+ * 不会随消息流来回跳），空闲会话按最近消息时间排。缺失 runningSince 时
+ * （仅测试或极端同毫秒竞态）回退到最近消息时间。
+ */
 function compareSessionRecency(a: SidebarSession, b: SidebarSession) {
+	const aActive = Boolean(a.active);
+	const bActive = Boolean(b.active);
+	if (aActive !== bActive) return aActive ? -1 : 1;
+	if (aActive) {
+		return (
+			(b.runningSince?.getTime() ?? 0) - (a.runningSince?.getTime() ?? 0) ||
+			b.latestMessageAt.getTime() - a.latestMessageAt.getTime()
+		);
+	}
 	return b.latestMessageAt.getTime() - a.latestMessageAt.getTime();
 }
 
@@ -56,11 +70,5 @@ export function summarizeProjectSessions(
 export function sortSidebarSessionsActiveFirst(
 	sessions: readonly SidebarSession[],
 ): SidebarSession[] {
-	/* oxlint-disable-next-line unicorn/no-array-sort -- clone first so the caller's session order stays immutable. */
-	return [...sessions].sort((a, b) => {
-		if (Boolean(a.active) !== Boolean(b.active)) {
-			return a.active ? -1 : 1;
-		}
-		return b.latestMessageAt.getTime() - a.latestMessageAt.getTime();
-	});
+	return sortSidebarSessionsByRecency(sessions);
 }

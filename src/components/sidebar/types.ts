@@ -22,6 +22,8 @@ export type SidebarSession = {
 	latestMessageAt: Date;
 	/** Agent 正在运行时在行尾显示加载状态。 */
 	active?: boolean;
+	/** 进入运行状态的时刻；运行中的会话用它在组内保持稳定排序，避免随消息流来回跳动。 */
+	runningSince?: Date;
 };
 
 export type AppSidebarProps = {

@@ -93,7 +93,7 @@ function App() {
 	} = useAppCatalog();
 	const {
 		busyChatControllersRef,
-		busyChatControllerIds,
+		busyChatControllerSince,
 		handleChatRuntimeBusyChange,
 	} = useOpenedChatControllers({
 		projects,
@@ -133,7 +133,7 @@ function App() {
 		openedChats,
 		setOpenedChats,
 		busyChatControllersRef,
-		busyChatControllerIds,
+		busyChatControllerSince,
 		preloadChatPage: importChatPage,
 	});
 	const [sidebarRefreshing, setSidebarRefreshing] = useState(false);
@@ -196,9 +196,9 @@ function App() {
 			retainedBackgroundChatVisualControllerIds(
 				renderedOpenedChats,
 				activeChatControllerId,
-				busyChatControllerIds,
+				busyChatControllerSince,
 			),
-		[activeChatControllerId, busyChatControllerIds, renderedOpenedChats],
+		[activeChatControllerId, busyChatControllerSince, renderedOpenedChats],
 	);
 	// LRU order is useful for eviction/retention, but must not become DOM order:
 	// moving an existing WebView scroll container resets its native scrollTop.

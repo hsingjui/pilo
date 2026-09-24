@@ -52,7 +52,7 @@ type UseAppChatWorkspaceOptions = {
 	openedChats: OpenChat[];
 	setOpenedChats: Dispatch<SetStateAction<OpenChat[]>>;
 	busyChatControllersRef: BusyChatControllersRef;
-	busyChatControllerIds: ReadonlySet<string>;
+	busyChatControllerSince: ReadonlyMap<string, Date>;
 	preloadChatPage: () => Promise<unknown>;
 };
 
@@ -75,7 +75,7 @@ export function useAppChatWorkspace({
 	openedChats,
 	setOpenedChats,
 	busyChatControllersRef,
-	busyChatControllerIds,
+	busyChatControllerSince,
 	preloadChatPage,
 }: UseAppChatWorkspaceOptions) {
 	const { t } = useTranslation();
@@ -172,9 +172,9 @@ export function useAppChatWorkspace({
 			mergeSidebarSessionsWithOpenChats(
 				indexedSidebarSessions,
 				openedChats,
-				busyChatControllerIds,
+				busyChatControllerSince,
 			),
-		[indexedSidebarSessions, openedChats, busyChatControllerIds],
+		[indexedSidebarSessions, openedChats, busyChatControllerSince],
 	);
 
 	const selectedIndexedSession =
@@ -189,7 +189,7 @@ export function useAppChatWorkspace({
 			) ?? null)
 		: null;
 	const selectedOpenedChatBusy = selectedOpenedChat
-		? busyChatControllerIds.has(selectedOpenedChat.controllerId)
+		? busyChatControllerSince.has(selectedOpenedChat.controllerId)
 		: false;
 	const selectedProject = selectedIndexedSession
 		? (projects.find(

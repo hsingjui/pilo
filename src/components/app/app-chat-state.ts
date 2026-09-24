@@ -43,9 +43,13 @@ export function toSidebarSession(session: SessionIndexEntry): SidebarSession {
 export function mergeSidebarSessionsWithOpenChats(
 	indexedSessions: readonly SidebarSession[],
 	openedChats: readonly OpenChat[],
-	busyControllerIds: ReadonlySet<string>,
+	busyControllerSince: ReadonlyMap<string, Date> | ReadonlySet<string>,
 	now = new Date(),
 ): SidebarSession[] {
+	const busySinceAt = (controllerId: string): Date | null =>
+		busyControllerSince instanceof Map
+			? (busyControllerSince.get(controllerId) ?? null)
+			: null;
 	const openedByIndexedSession = new Map<string, OpenChat>();
 	for (const entry of openedChats) {
 		const sessionId = entry.piSessionId ?? entry.session.id;
@@ -60,12 +64,19 @@ export function mergeSidebarSessionsWithOpenChats(
 		const key = chatUiStateKey(session.projectId, session.id);
 		indexedKeys.add(key);
 		const opened = openedByIndexedSession.get(key);
+		const runningSince = opened?.controllerId
+			? busySinceAt(opened.controllerId)
+			: null;
 		const active =
 			Boolean(session.active) ||
-			(opened ? busyControllerIds.has(opened.controllerId) : false);
-		return Boolean(session.active) === active
-			? session
-			: { ...session, active };
+			(opened ? busyControllerSince.has(opened.controllerId) : false);
+		if (
+			Boolean(session.active) === active &&
+			runningSince === (session.runningSince ?? null)
+		) {
+			return session;
+		}
+		return { ...session, active, runningSince: runningSince ?? undefined };
 	});
 
 	const pending: SidebarSession[] = [];
@@ -82,7 +93,8 @@ export function mergeSidebarSessionsWithOpenChats(
 			sessionPath: entry.session.sessionPath ?? "",
 			projectId: entry.session.projectRecord.id,
 			latestMessageAt: now,
-			active: busyControllerIds.has(entry.controllerId),
+			active: busyControllerSince.has(entry.controllerId),
+			runningSince: busySinceAt(entry.controllerId) ?? undefined,
 		});
 	}
 
@@ -147,7 +159,7 @@ export function chatUiStateKey(projectId: string, sessionId: string) {
 export function retainedBackgroundChatVisualControllerIds(
 	openedChats: readonly OpenChat[],
 	activeControllerId: string | null,
-	busyControllerIds: ReadonlySet<string>,
+	busyControllerSince: ReadonlyMap<string, unknown> | ReadonlySet<string>,
 	limit = MAX_RETAINED_BACKGROUND_CHAT_VISUALS,
 ) {
 	const retained = new Set<string>();
@@ -158,7 +170,7 @@ export function retainedBackgroundChatVisualControllerIds(
 			if (retained.size >= limit) return;
 			const controllerId = openedChats[index]?.controllerId;
 			if (!controllerId || controllerId === activeControllerId) continue;
-			if (busyControllerIds.has(controllerId) !== busy) continue;
+			if (busyControllerSince.has(controllerId) !== busy) continue;
 			retained.add(controllerId);
 		}
 	};
@@ -372,7 +384,7 @@ export function touchOpenedChat(
 
 export function trimOpenedChats(
 	current: OpenChat[],
-	protectedControllerIds: ReadonlySet<string>,
+	protectedControllerIds: ReadonlyMap<string, unknown> | ReadonlySet<string>,
 	limit = MAX_OPEN_CHAT_CONTROLLERS,
 	maxEstimatedHistoryBytes = MAX_OPEN_CHAT_ESTIMATED_HISTORY_BYTES,
 ): OpenChat[] {
