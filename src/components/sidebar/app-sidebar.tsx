@@ -27,11 +27,11 @@ import {
 	verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { PanelLeft, Search, SquarePen } from "lucide-react";
+import { PanelLeft, RefreshCw, Search, SquarePen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/lib/preferences-provider";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
-import { ScrollArea } from "@/ui";
+import { ScrollArea, Skeleton } from "@/ui";
 import { IS_MACOS } from "@/components/title-bar";
 import { CommandPalette } from "@/components/command-palette";
 import { ProjectSessionsToolbar } from "./project-sessions-toolbar";
@@ -87,6 +87,30 @@ const SHOW_PROJECTS_IN_RECENTS_STORAGE_KEY =
 /** “最近会话”视图最多展示的会话数。 */
 const ENV_RECENT_SESSION_LIMIT = 50;
 const EMPTY_REFRESHING_PROJECT_IDS: ReadonlySet<string> = new Set();
+
+/** 整体刷新时的骨架占位，模拟环境/项目/会话行的层级。 */
+const SKELETON_ROW_WIDTHS = ["72%", "58%", "64%", "48%", "68%"] as const;
+
+function SidebarSkeleton() {
+	return (
+		<div className="space-y-3 px-1 pt-1" aria-hidden="true">
+			{["env-a", "env-b"].map((envKey) => (
+				<div key={envKey} className="space-y-1.5">
+					<div className="flex items-center gap-2 px-2 py-1">
+						<Skeleton className="h-4 w-4 rounded-md" />
+						<Skeleton className="h-3.5 w-24" />
+					</div>
+					{SKELETON_ROW_WIDTHS.map((width) => (
+						<div key={width} className="flex items-center gap-2 px-2 py-1.5">
+							<Skeleton className="h-4 w-4 shrink-0 rounded-md" />
+							<Skeleton className="h-3.5" style={{ width }} />
+						</div>
+					))}
+				</div>
+			))}
+		</div>
+	);
+}
 
 function readCollapsedSections(): Record<string, boolean> {
 	try {
@@ -200,6 +224,8 @@ export function AppSidebar({
 	onDeleteSession,
 	onRefreshProjectSessions,
 	refreshingProjectIds = EMPTY_REFRESHING_PROJECT_IDS,
+	onRefresh,
+	refreshing = false,
 	selectedProjectId,
 	selectedSessionId,
 	onSelectSession,
@@ -622,6 +648,17 @@ export function AppSidebar({
 									</span>
 									<span className="truncate">{t("sidebar.newSession")}</span>
 								</button>
+								<button
+									type="button"
+									className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:opacity-50"
+									aria-label={t("sidebar.refreshSidebar")}
+									onClick={() => onRefresh?.()}
+									disabled={refreshing}
+								>
+									<RefreshCw
+										className={cn("h-4 w-4", refreshing && "animate-spin")}
+									/>
+								</button>
 							</div>
 						)}
 					</div>
@@ -633,7 +670,9 @@ export function AppSidebar({
 						scrollbarThumbClassName="bg-[hsl(var(--muted-foreground)/0.35)] hover:bg-[hsl(var(--muted-foreground)/0.45)] active:bg-[hsl(var(--muted-foreground)/0.55)]"
 					>
 						<div className="relative w-full min-w-0 overflow-x-hidden pt-1">
-							{organizeMode === "recent" ? (
+							{refreshing ? (
+								<SidebarSkeleton />
+							) : organizeMode === "recent" ? (
 								recentSessions.length > 0 ? (
 									<section className="mb-3 w-full min-w-0 space-y-0.5 overflow-hidden last:mb-0">
 										<RecentSectionHeader

@@ -554,6 +554,7 @@ const zhCN = {
 		editSessionTitle: "修改会话标题",
 		renamePlaceholder: "会话标题",
 		searchSessions: "搜索会话",
+		refreshSidebar: "刷新侧边栏",
 		collapseSidebar: "收起侧边栏",
 		expandSidebar: "展开侧边栏",
 		adjustSidebar: "调整侧边栏宽度",

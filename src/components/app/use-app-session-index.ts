@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useState,
+	type Dispatch,
+	type SetStateAction,
+} from "react";
 
 import { toSidebarSession } from "@/components/app/app-chat-state";
 import { listenRuntimeEvents } from "@/lib/pi-runtime";
@@ -11,12 +18,54 @@ import {
 	startSessionWatch,
 	stopSessionWatch,
 	updateSessionUiState,
+	type SessionExternalActivity,
 	type SessionIndexEntry,
 } from "@/lib/sessions";
 
 type SessionUiUpdate = {
 	title?: string;
 };
+
+type ProjectExternalActivity = {
+	sessionPaths: ReadonlySet<string>;
+	openTurnPaths: ReadonlySet<string>;
+};
+
+const EMPTY_PATHS: ReadonlySet<string> = new Set();
+
+function toProjectExternalActivity(
+	activities: readonly SessionExternalActivity[],
+): ProjectExternalActivity {
+	return {
+		sessionPaths: new Set(activities.map((activity) => activity.path)),
+		openTurnPaths: new Set(
+			activities
+				.filter((activity) => activity.turnOpen)
+				.map((activity) => activity.path),
+		),
+	};
+}
+
+type ExternalActivitySetter = Dispatch<
+	SetStateAction<ReadonlyMap<string, ProjectExternalActivity>>
+>;
+
+/** 拉取某项目的外部 Pi 运行状态并写入活动映射。 */
+async function fetchProjectExternalActivity(
+	projectId: string,
+	setExternalActivity: ExternalActivitySetter,
+) {
+	try {
+		const activities = await getExternalSessionActivity(projectId);
+		setExternalActivity((current) => {
+			const next = new Map(current);
+			next.set(projectId, toProjectExternalActivity(activities));
+			return next;
+		});
+	} catch (error) {
+		console.debug("Failed to inspect external Pi activity", error);
+	}
+}
 
 type IdleCapableWindow = Window & {
 	requestIdleCallback?: (
@@ -80,11 +129,9 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 	const [indexedSessions, setIndexedSessions] = useState<SessionIndexEntry[]>(
 		[],
 	);
-	const [externalActivity, setExternalActivity] = useState<{
-		projectId: string;
-		sessionPaths: ReadonlySet<string>;
-		openTurnPaths: ReadonlySet<string>;
-	} | null>(null);
+	const [externalActivity, setExternalActivity] = useState<
+		ReadonlyMap<string, ProjectExternalActivity>
+	>(() => new Map());
 	const [refreshingProjectIds, setRefreshingProjectIds] = useState<
 		ReadonlySet<string>
 	>(() => new Set());
@@ -95,6 +142,12 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 				mergeProjectSessions(current, projectId, sessions),
 			);
 		},
+		[],
+	);
+
+	const refreshExternalActivity = useCallback(
+		(projectId: string) =>
+			fetchProjectExternalActivity(projectId, setExternalActivity),
 		[],
 	);
 
@@ -109,7 +162,11 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 				});
 			}
 			try {
-				const result = await reconcileSessions(projectId);
+				// 并行重取会话索引与运行状态（外部 Pi 是否有未结束的 turn）。
+				const [result] = await Promise.all([
+					reconcileSessions(projectId),
+					fetchProjectExternalActivity(projectId, setExternalActivity),
+				]);
 				setIndexedSessions((current) =>
 					mergeProjectSessions(current, projectId, result.sessions),
 				);
@@ -124,11 +181,6 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 				}
 			}
 		},
-		[],
-	);
-
-	const refreshExternalActivity = useCallback(
-		(projectId: string) => getExternalSessionActivity(projectId),
 		[],
 	);
 
@@ -168,22 +220,7 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 			initialRefreshTimer = window.setTimeout(run, 0);
 		};
 		const refreshActivity = () => {
-			void refreshExternalActivity(activeProjectId)
-				.then((activities) => {
-					if (disposed) return;
-					setExternalActivity({
-						projectId: activeProjectId,
-						sessionPaths: new Set(activities.map((activity) => activity.path)),
-						openTurnPaths: new Set(
-							activities
-								.filter((activity) => activity.turnOpen)
-								.map((activity) => activity.path),
-						),
-					});
-				})
-				.catch((error) =>
-					console.debug("Failed to inspect external Pi activity", error),
-				);
+			void refreshExternalActivity(activeProjectId);
 		};
 		const scheduleActivityPoll = () => {
 			if (activityTimer !== undefined) window.clearTimeout(activityTimer);
@@ -284,30 +321,25 @@ export function useAppSessionIndex(activeProjectId: string | null) {
 		replaceProjectSessions,
 	]);
 
-	const externalSessionPaths = useMemo<ReadonlySet<string>>(
-		() =>
-			externalActivity?.projectId === activeProjectId
-				? externalActivity.sessionPaths
-				: new Set(),
-		[activeProjectId, externalActivity],
-	);
-	const externalOpenTurnPaths = useMemo<ReadonlySet<string>>(
-		() =>
-			externalActivity?.projectId === activeProjectId
-				? externalActivity.openTurnPaths
-				: new Set(),
-		[activeProjectId, externalActivity],
-	);
+	const activeExternalActivity = activeProjectId
+		? externalActivity.get(activeProjectId)
+		: undefined;
+	const externalSessionPaths =
+		activeExternalActivity?.sessionPaths ?? EMPTY_PATHS;
+	const externalOpenTurnPaths =
+		activeExternalActivity?.openTurnPaths ?? EMPTY_PATHS;
 
 	const sidebarSessions = useMemo(
 		() =>
 			indexedSessions.map((session) => {
 				const sidebar = toSidebarSession(session);
-				return externalOpenTurnPaths.has(session.sessionPath)
+				return externalActivity
+					.get(session.projectId)
+					?.openTurnPaths.has(session.sessionPath)
 					? { ...sidebar, active: true, externalActive: true }
 					: sidebar;
 			}),
-		[indexedSessions, externalOpenTurnPaths],
+		[indexedSessions, externalActivity],
 	);
 
 	const updateSession = useCallback(

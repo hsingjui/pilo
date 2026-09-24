@@ -36,6 +36,10 @@ export type AppSidebarProps = {
 	onDeleteSession?: (sessionId: string) => void;
 	onRefreshProjectSessions?: (projectId: string) => void;
 	refreshingProjectIds?: ReadonlySet<string>;
+	/** 重新获取连接、项目与会话。 */
+	onRefresh?: () => void;
+	/** 整体刷新进行中：显示骨架动画。 */
+	refreshing?: boolean;
 	selectedProjectId?: string | null;
 	selectedSessionId?: string | null;
 	/** 侧栏组织模式：按项目分组（默认）或“最近会话”平铺列表。 */

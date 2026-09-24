@@ -548,6 +548,7 @@ const enUS = {
 		editSessionTitle: "Edit session title",
 		renamePlaceholder: "Session title",
 		searchSessions: "Search sessions",
+		refreshSidebar: "Refresh sidebar",
 		collapseSidebar: "Collapse sidebar",
 		expandSidebar: "Expand sidebar",
 		adjustSidebar: "Adjust sidebar width",

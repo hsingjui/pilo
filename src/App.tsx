@@ -34,8 +34,9 @@ import { SidebarFooter } from "@/components/sidebar-footer";
 import { CUSTOM_TITLEBAR, IS_MACOS, TitleBar } from "@/components/title-bar";
 import type { ViewerOpenRequest } from "@/components/project-viewer";
 import { recordChatSessionSwitchStart } from "@/lib/chat-performance";
+import { notifyConnectionsChanged } from "@/lib/connection-events";
 import { usePreferences } from "@/lib/preferences-provider";
-import type { Project } from "@/lib/projects";
+import { notifyProjectsChanged, type Project } from "@/lib/projects";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import {
 	isSessionWindow,
@@ -144,6 +145,21 @@ function App() {
 		busyChatControllerIds,
 		preloadChatPage: importChatPage,
 	});
+	const [sidebarRefreshing, setSidebarRefreshing] = useState(false);
+	// 刷新侧边栏：触发连接/项目重新拉取（事件驱动 useAppCatalog），
+	// 并重新 reconcile 所有项目的会话索引。骨架动画持续到会话刷新结束。
+	const handleRefreshSidebar = useCallback(() => {
+		setSidebarRefreshing(true);
+		notifyConnectionsChanged();
+		notifyProjectsChanged();
+		void Promise.all(
+			projects.map((project) =>
+				refreshProjectSessions(project.id).catch((error) =>
+					console.error("Failed to refresh sessions", error),
+				),
+			),
+		).finally(() => setSidebarRefreshing(false));
+	}, [projects, refreshProjectSessions]);
 	const activeChatControllerId = useMemo(() => {
 		if (!chatSession) return null;
 		return (
@@ -322,6 +338,8 @@ function App() {
 								console.error("Failed to refresh sessions", error),
 							);
 						}}
+						onRefresh={handleRefreshSidebar}
+						refreshing={sidebarRefreshing}
 						refreshingProjectIds={refreshingProjectIds}
 						footer={<SidebarFooter />}
 					/>
