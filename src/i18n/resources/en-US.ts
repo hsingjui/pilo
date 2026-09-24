@@ -405,7 +405,6 @@ const enUS = {
 		noSuggestionAvailable: "No {{title}} available",
 		suggestionMenuLabel: "{{title}} suggestions",
 		queued: "Queued",
-		pendingSteer: "Steer {{count}}",
 		pendingFollowUp: "Later {{count}}",
 		contextUsagePending: "Context usage pending update",
 		contextUsageKnownPending:

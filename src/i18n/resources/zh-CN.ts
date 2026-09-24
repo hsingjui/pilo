@@ -409,7 +409,6 @@ const zhCN = {
 		noSuggestionAvailable: "没有可用{{title}}",
 		suggestionMenuLabel: "{{title}}建议",
 		queued: "已排队",
-		pendingSteer: "调整 {{count}}",
 		pendingFollowUp: "稍后 {{count}}",
 		contextUsagePending: "上下文占用待更新",
 		contextUsageKnownPending: "上下文占用待更新（显示上次已知值）",

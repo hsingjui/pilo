@@ -429,7 +429,6 @@ function ChatPageImpl(props: ChatPageProps) {
 	});
 	const {
 		activeTurnSessionId,
-		pendingSteering,
 		pendingFollowUps,
 		running,
 		runtimeBusy,
@@ -1036,7 +1035,6 @@ function ChatPageImpl(props: ChatPageProps) {
 										muted={Boolean(session.externalRunning)}
 										running={running}
 										onStop={handleStop}
-										pendingSteering={pendingSteering}
 										pendingFollowUps={pendingFollowUps}
 										statusText={
 											session.externalRunning

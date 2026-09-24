@@ -82,8 +82,7 @@ type UseChatRuntimeEventsOptions = {
 		targetSessionId: string,
 		action: ConversationAction,
 	) => void;
-	setPendingQueueCounts: (steering: number, followUps: number) => void;
-	setPendingSteeringCount: (count: number) => void;
+	setPendingQueueCounts: (followUps: number) => void;
 	acknowledgeQueuedMessage: (turn: ActiveTurn, text: string) => void;
 	releaseActiveTurn: (
 		turn: ActiveTurn,
@@ -105,7 +104,6 @@ export function useChatRuntimeEvents({
 	dispatchConversation,
 	queueRuntimeAction,
 	setPendingQueueCounts,
-	setPendingSteeringCount,
 	acknowledgeQueuedMessage,
 	releaseActiveTurn,
 	refreshSessionState,
@@ -372,7 +370,7 @@ export function useChatRuntimeEvents({
 				case "assistant_text_snapshot":
 					break;
 				case "queue_update":
-					setPendingQueueCounts(event.steering.length, event.followUp.length);
+					setPendingQueueCounts(event.followUp.length);
 					break;
 				case "runtime_error":
 					failActiveTurn(turn, event.message);
@@ -491,7 +489,6 @@ export function useChatRuntimeEvents({
 					activeTurnSessionIdRef.current = turn.sessionId;
 				}
 				setActiveTurnSessionId(turn.sessionId);
-				setPendingSteeringCount(agentState.pendingMessageCount ?? 0);
 				if (!session.temporary) {
 					identifiedRef.current?.(agentState.sessionId ?? session.id);
 				}
@@ -518,7 +515,6 @@ export function useChatRuntimeEvents({
 		session.temporary,
 		sessionTitle,
 		setActiveTurnSessionId,
-		setPendingSteeringCount,
 	]);
 
 	return {

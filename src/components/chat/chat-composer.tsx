@@ -86,7 +86,6 @@ type ChatComposerProps = {
 	muted?: boolean;
 	running?: boolean;
 	onStop?: () => void;
-	pendingSteering?: number;
 	pendingFollowUps?: number;
 	statusText?: string;
 	compacting?: boolean;
@@ -162,7 +161,6 @@ export function ChatComposer({
 	muted = false,
 	running = false,
 	onStop,
-	pendingSteering = 0,
 	pendingFollowUps = 0,
 	statusText = "",
 	compacting = false,
@@ -741,15 +739,9 @@ export function ChatComposer({
 						onThinkingChange={onThinkingChange}
 					/>
 
-					{pendingSteering > 0 || pendingFollowUps > 0 ? (
+					{pendingFollowUps > 0 ? (
 						<span className="hidden text-2xs tabular-nums text-muted-foreground @min-[40rem]:inline">
-							{pendingSteering > 0
-								? t("chat.pendingSteer", { count: pendingSteering })
-								: null}
-							{pendingSteering > 0 && pendingFollowUps > 0 ? " · " : null}
-							{pendingFollowUps > 0
-								? t("chat.pendingFollowUp", { count: pendingFollowUps })
-								: null}
+							{t("chat.pendingFollowUp", { count: pendingFollowUps })}
 						</span>
 					) : null}
 					{statusText ? (

@@ -64,18 +64,10 @@ export function useChatRuntimeQueue({
 	const { t } = useTranslation();
 	const bufferedQueuedMessagesRef = useRef<BufferedQueuedMessage[]>([]);
 	const queuedMessagesRef = useRef(new Map<string, BufferedQueuedMessage>());
-	const [pendingSteering, setPendingSteering] = useState(0);
 	const [pendingFollowUps, setPendingFollowUps] = useState(0);
 
-	const setPendingQueueCounts = useCallback(
-		(steering: number, followUps: number) => {
-			setPendingSteering(steering);
-			setPendingFollowUps(followUps);
-		},
-		[],
-	);
-	const setPendingSteeringCount = useCallback((count: number) => {
-		setPendingSteering(count);
+	const setPendingQueueCounts = useCallback((followUps: number) => {
+		setPendingFollowUps(followUps);
 	}, []);
 
 	const acknowledgeQueuedMessage = useCallback(
@@ -141,7 +133,6 @@ export function useChatRuntimeQueue({
 				activeTurnSessionIdRef.current = null;
 			}
 			setActiveTurnSessionId(null);
-			setPendingSteering(0);
 			setPendingFollowUps(0);
 		},
 		[
@@ -499,10 +490,8 @@ export function useChatRuntimeQueue({
 	]);
 
 	return {
-		pendingSteering,
 		pendingFollowUps,
 		setPendingQueueCounts,
-		setPendingSteeringCount,
 		acknowledgeQueuedMessage,
 		releaseActiveTurn,
 		flushBufferedQueuedMessages,

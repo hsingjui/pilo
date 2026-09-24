@@ -108,10 +108,8 @@ export function useChatRuntime({
 	);
 
 	const {
-		pendingSteering,
 		pendingFollowUps,
 		setPendingQueueCounts,
-		setPendingSteeringCount,
 		acknowledgeQueuedMessage,
 		releaseActiveTurn,
 		flushBufferedQueuedMessages,
@@ -152,7 +150,6 @@ export function useChatRuntime({
 		dispatchConversation,
 		queueRuntimeAction,
 		setPendingQueueCounts,
-		setPendingSteeringCount,
 		acknowledgeQueuedMessage,
 		releaseActiveTurn,
 		refreshSessionState,
@@ -383,7 +380,6 @@ export function useChatRuntime({
 
 	return {
 		activeTurnSessionId,
-		pendingSteering,
 		pendingFollowUps,
 		running: activeTurnSessionId === session.id,
 		runtimeBusy:
