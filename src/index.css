@@ -873,3 +873,39 @@
 [data-session-window] {
 	--conversation-max-width: min(94%, 52rem);
 }
+
+/* Remote WebUI：以手机为主要设备，消息列与输入框放宽宽度上限。 */
+[data-remote-webui] {
+	--conversation-max-width: min(94%, 56rem);
+}
+
+@media (max-width: 639px) {
+	/*
+	 * Remote WebUI 主要在手机上使用。iOS Safari 会在聚焦小于 16px 的
+	 * textarea 时自动缩放页面；同时桌面端 28px 控件对触摸偏小。
+	 * 只放大 Remote composer 的输入与触控目标，不改变桌面端密度。
+	 */
+	[data-remote-webui] [data-chat-composer-input] {
+		font-size: 16px;
+		line-height: 24px;
+	}
+
+	[data-remote-webui] [data-chat-composer-toolbar] {
+		gap: 0.25rem;
+	}
+
+	[data-remote-webui] [data-chat-composer-toolbar] button {
+		min-width: 2.5rem;
+		min-height: 2.5rem;
+	}
+
+	[data-remote-webui] [data-chat-run-config-trigger] {
+		min-width: 0;
+		padding-inline: 0.5rem;
+	}
+
+	[data-remote-webui] > main > header button {
+		min-width: 2.5rem;
+		min-height: 2.5rem;
+	}
+}

@@ -110,6 +110,7 @@ export function ComposerRunConfig({
 		>
 			<DropdownMenuTrigger asChild>
 				<button
+					data-chat-run-config-trigger=""
 					type="button"
 					disabled={disabled}
 					aria-label={t("chat.runConfigLabel", {

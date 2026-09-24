@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import {
 	ChatComposer,
@@ -35,12 +34,7 @@ import { usePreferences } from "@/lib/preferences-provider";
 import type { Project } from "@/lib/projects";
 import type { ChatSubmission } from "@/lib/chat-submission";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@/ui";
+import { DraftProjectPicker } from "@/components/chat/draft-project-picker";
 
 function modelKey(model: PiModel | null): string | null {
 	return model ? `${model.provider}\0${model.id}` : null;
@@ -66,6 +60,8 @@ export function NewChatLanding({
 	project = null,
 	projects = EMPTY_PROJECTS,
 	onSwitchProject,
+	readProjectDraft,
+	writeProjectDraft,
 }: {
 	sessionId: string;
 	onStartSession: (
@@ -88,12 +84,16 @@ export function NewChatLanding({
 	/** 可切换的落点项目列表。 */
 	projects?: Project[];
 	onSwitchProject?: (projectId: string) => void;
+	readProjectDraft?: (projectId: string) => string;
+	writeProjectDraft?: (projectId: string, value: string) => void;
 }) {
 	const { t } = useTranslation();
 	const { keyboardShortcuts } = usePreferences();
 	const projectId = project?.id ?? null;
 	const cachedModels = projectId ? getCachedProjectPiModels(projectId) : null;
-	const [draft, setDraft] = useState("");
+	const [draft, setDraft] = useState(
+		() => (projectId ? readProjectDraft?.(projectId) : "") ?? "",
+	);
 	const [models, setModels] = useState<PiModel[]>(cachedModels?.models ?? []);
 	const [selectedModel, setSelectedModel] = useState<PiModel | null>(
 		cachedModels?.defaultModel ?? null,
@@ -130,6 +130,13 @@ export function NewChatLanding({
 			...commandSuggestions,
 		],
 		[commandSuggestions, fileSuggestions, t],
+	);
+	const updateDraft = useCallback(
+		(value: string) => {
+			setDraft(value);
+			if (projectId) writeProjectDraft?.(projectId, value);
+		},
+		[projectId, setDraft, writeProjectDraft],
 	);
 
 	const loadCommands = useCallback(async () => {
@@ -276,7 +283,8 @@ export function NewChatLanding({
 		setSelectedThinkingLevel(cached?.defaultThinkingLevel ?? null);
 		setModelLoadState(cached ? "ready" : "idle");
 		setModelError(null);
-	}, [projectId]);
+		setDraft(projectId ? (readProjectDraft?.(projectId) ?? "") : "");
+	}, [projectId, readProjectDraft]);
 	/* oxlint-enable react/set-state-in-effect */
 
 	useEffect(() => {
@@ -362,25 +370,26 @@ export function NewChatLanding({
 			if (command.startsWith("/")) {
 				const commandName = command.slice(1).split(/\s+/, 1)[0];
 				if (commandName === "new") {
-					setDraft("");
+					updateDraft("");
 					onNewChat?.();
 					return;
 				}
 				if (commandName === "compact") {
-					setDraft("");
+					updateDraft("");
 					toast.info(t("chat.noCompaction"));
 					return;
 				}
 			}
 
 			onStartSession(submission, selectedModel, selectedThinkingLevel);
+			updateDraft("");
 		},
 		[
 			onNewChat,
 			onStartSession,
 			selectedModel,
 			selectedThinkingLevel,
-			setDraft,
+			updateDraft,
 			t,
 		],
 	);
@@ -406,49 +415,15 @@ export function NewChatLanding({
 				</div>
 				<div className="relative -mt-4 w-full shrink-0 pb-4">
 					<ConversationColumn className="relative">
-						{projects.length > 0 ? (
-							<div className="flex pb-1.5 pl-1">
-								<DropdownMenu>
-									<DropdownMenuTrigger asChild>
-										<button
-											type="button"
-											className="group flex h-7 w-fit max-w-[66.666667%] min-w-0 items-center gap-1.5 rounded-lg border border-foreground/[0.10] px-2 text-xs text-muted-foreground outline-hidden transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring dark:border-input-border/70"
-											aria-label={t("app.selectProject")}
-										>
-											<span
-												aria-hidden="true"
-												className="size-2.5 shrink-0 rounded-[4px] bg-muted-foreground/50"
-											/>
-											<span className="min-w-0 flex-1 truncate text-left">
-												{project ? project.name : t("app.selectProject")}
-											</span>
-											<ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-										</button>
-									</DropdownMenuTrigger>
-									<DropdownMenuContent align="start" className="min-w-48">
-										{projects.map((candidate) => (
-											<DropdownMenuItem
-												key={candidate.id}
-												onClick={() => onSwitchProject?.(candidate.id)}
-											>
-												<span className="min-w-0 flex-1 truncate">
-													{candidate.name}
-												</span>
-												{project?.id === candidate.id ? (
-													<span className="shrink-0 text-xs text-muted-foreground">
-														当前
-													</span>
-												) : null}
-											</DropdownMenuItem>
-										))}
-									</DropdownMenuContent>
-								</DropdownMenu>
-							</div>
-						) : null}
+						<DraftProjectPicker
+							projects={projects}
+							project={project}
+							onSwitchProject={onSwitchProject}
+						/>
 						<ChatComposer
 							value={draft}
 							historyKey={projectId}
-							onChange={setDraft}
+							onChange={updateDraft}
 							onSubmit={handleSubmit}
 							disabled={false}
 							models={models}

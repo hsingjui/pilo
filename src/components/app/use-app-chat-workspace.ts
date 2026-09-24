@@ -25,8 +25,10 @@ import {
 } from "@/components/app/app-chat-state";
 import {
 	createChatUiStateCache,
+	createProjectDraftCache,
 	type ChatUiStateCache,
 	type ChatUiStatePatch,
+	type ProjectDraftCache,
 } from "@/components/app/chat-ui-state-cache";
 import { useAppSessionIndex } from "@/components/app/use-app-session-index";
 import type { BusyChatControllersRef } from "@/components/app/use-opened-chat-controllers";
@@ -93,6 +95,17 @@ export function useAppChatWorkspace({
 		},
 		[],
 	);
+	const projectDraftCacheRef = useRef<ProjectDraftCache | null>(null);
+	if (projectDraftCacheRef.current === null) {
+		projectDraftCacheRef.current = createProjectDraftCache();
+	}
+	const readProjectDraft = useCallback(
+		(projectId: string) => projectDraftCacheRef.current!.get(projectId),
+		[],
+	);
+	const writeProjectDraft = useCallback((projectId: string, value: string) => {
+		projectDraftCacheRef.current!.set(projectId, value);
+	}, []);
 
 	const pendingLandingSubmissionRef = useRef<{
 		submission: ChatSubmission;
@@ -680,6 +693,8 @@ export function useAppChatWorkspace({
 		draftSessionId,
 		readChatUiState,
 		writeChatUiState,
+		readProjectDraft,
+		writeProjectDraft,
 		handleProjectsRemoved,
 		startLandingSession,
 		startNewChat,

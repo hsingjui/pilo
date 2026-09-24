@@ -101,6 +101,8 @@ type ChatPageProps = {
 	uiStateKey?: string;
 	readUiState?: (key: string) => ChatUiState;
 	writeUiState?: (key: string, patch: ChatUiStatePatch) => void;
+	readProjectDraft?: (projectId: string) => string;
+	writeProjectDraft?: (projectId: string, value: string) => void;
 	onRuntimeBusyChange?: (controllerId: string, busy: boolean) => void;
 	onVisualReadyChange?: (ready: boolean) => void;
 	showSwitchSkeleton?: boolean;
@@ -185,6 +187,8 @@ function ChatPageImpl(props: ChatPageProps) {
 		uiStateKey,
 		readUiState,
 		writeUiState,
+		readProjectDraft,
+		writeProjectDraft,
 		onRuntimeBusyChange,
 		onVisualReadyChange,
 		showSwitchSkeleton = false,
@@ -231,10 +235,10 @@ function ChatPageImpl(props: ChatPageProps) {
 	]);
 	const persistDraft = useMemo(
 		() =>
-			uiStateKey && writeUiState
-				? (value: string) => writeUiState(uiStateKey, { draft: value })
+			writeProjectDraft
+				? (value: string) => writeProjectDraft(session.projectRecord.id, value)
 				: undefined,
-		[uiStateKey, writeUiState],
+		[session.projectRecord.id, writeProjectDraft],
 	);
 	const persistScrollState = useCallback(
 		(state: { scrollTop: number; sticky: boolean }) => {
@@ -302,7 +306,9 @@ function ChatPageImpl(props: ChatPageProps) {
 		activeTurnSessionIdRef,
 		initialMessage,
 		initialImages,
-		initialDraft: initialUiState.draft,
+		initialDraft: readProjectDraft
+			? readProjectDraft(session.projectRecord.id)
+			: initialUiState.draft,
 		onDraftChange: persistDraft,
 		onHistoryMetadata: applyHistoryMetadata,
 	});
@@ -368,6 +374,15 @@ function ChatPageImpl(props: ChatPageProps) {
 	useLayoutEffect(() => {
 		composerImagesRef.current = composerImages;
 	}, [composerImages]);
+	// Drafts live at the project level, so a session that was mounted before the
+	// shared draft changed picks up the latest value when it becomes visible.
+	useEffect(() => {
+		if (!active || !readProjectDraft) return;
+		const value = readProjectDraft(session.projectRecord.id);
+		if (draftRef.current === value) return;
+		draftRef.current = value;
+		setDraft(value);
+	}, [active, readProjectDraft, session.projectRecord.id, setDraft]);
 	const restoreSubmission = useCallback(
 		(submission: ChatSubmission) => {
 			draftRef.current = submission.text;

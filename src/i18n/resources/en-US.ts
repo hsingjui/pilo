@@ -82,6 +82,47 @@ const enUS = {
 		shortcuts: "Shortcuts",
 		connections: "Connections",
 		sessionNaming: "Session naming",
+		remote: "Remote",
+		remoteWebUi: "Remote WebUI",
+		remoteDescription:
+			"Access Pilo chat and sessions from another device on the same local network.",
+		remoteLoading: "Loading Remote WebUI…",
+		remoteRunning: "Running",
+		remoteStopped: "Stopped",
+		remoteConnected: "Remote connected",
+		remoteReconnecting: "Reconnecting…",
+		remoteConnecting: "Connecting to Pilo…",
+		remotePairRequired:
+			"Open Remote WebUI in Pilo on your computer and scan its QR code.",
+		remoteAuthorizationExpired:
+			"This device authorization expired. Scan a new QR code from Pilo.",
+		remoteError: "Remote WebUI error",
+		remoteActionFailed: "Remote WebUI action failed",
+		remotePairing: "Pair a device",
+		remotePairingHint: "One-time link · 5 min",
+		remoteOpenLink: "Scan the QR code or open the link",
+		remoteOpenLinkDescription:
+			"Pairing signs the device in immediately. The link is consumed after its first successful use.",
+		remoteCopyLink: "Copy link",
+		remoteNewLink: "New pairing link",
+		remoteLinkCopied: "Pairing link copied",
+		remoteCopyFailed: "Could not copy pairing link",
+		remotePairingExpired: "Pairing link expired",
+		remotePairingExpiredDescription:
+			"Generate a new one-time link to authorize another device.",
+		remoteAddress: "WebUI address",
+		remoteAddressDescription:
+			"Previously authorized devices can reopen this address while Remote WebUI is running.",
+		remoteDevices: "Authorized devices",
+		remoteDeviceCount: "{{count}} active",
+		remoteNoDevices: "No authorized devices",
+		remoteNoDevicesDescription:
+			"Scan the pairing QR code from a phone or tablet to add one.",
+		remoteDeviceDetails: "Last seen {{lastSeen}} · Expires {{expires}}",
+		remoteRevoke: "Revoke",
+		remoteSecurity: "Access scope",
+		remoteSecurityDescription:
+			"Paired devices have full Remote Chat/Session access. Terminal, Files, Git, Preview, and Parallel are not exposed. Turning Remote WebUI off stops network access without revoking remembered devices.",
 		about: "About",
 		conversation: "Conversation",
 		sendShortcut: "Send shortcut",

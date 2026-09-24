@@ -22,6 +22,26 @@ const EMPTY_CHAT_UI_STATE: ChatUiState = {
 
 export type ChatUiStateCache = ReturnType<typeof createChatUiStateCache>;
 
+export type ProjectDraftCache = ReturnType<typeof createProjectDraftCache>;
+
+/**
+ * Draft prompts are scoped to a project, not a session: switching sessions,
+ * starting a new chat, or leaving and returning to a project keeps the text.
+ * Kept in memory alongside ChatUiStateCache; disks are not involved.
+ */
+export function createProjectDraftCache() {
+	const drafts = new Map<string, string>();
+	return {
+		get(projectId: string): string {
+			return drafts.get(projectId) ?? "";
+		},
+		set(projectId: string, value: string) {
+			if (value) drafts.set(projectId, value);
+			else drafts.delete(projectId);
+		},
+	};
+}
+
 export function createChatUiStateCache(
 	limit = MAX_CHAT_UI_STATE_CACHE_ENTRIES,
 ) {

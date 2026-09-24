@@ -1,26 +1,20 @@
 import React, { useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import {
-	attachLogger,
-	error as logError,
-	LogLevel,
-	warn as logWarn,
-} from "@tauri-apps/plugin-log";
 
-import App from "./App";
 import {
 	initializeI18n,
 	readStoredLocale,
 	resolveInitialLocale,
 	i18n,
 } from "@/i18n";
-import { installChatPerformanceDebugApi } from "@/lib/chat-performance-debug";
-import { installChatRuntimeTraceDebugApi } from "@/lib/chat-runtime-trace-debug";
 import { PreferencesProvider } from "@/lib/preferences-provider";
 import { ThemeProvider } from "@/lib/theme-provider";
 import { Toaster } from "@/ui";
 
 import "./index.css";
+
+const DESKTOP_RUNTIME =
+	typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 function formatConsoleMessage(values: readonly unknown[]) {
 	return values
@@ -32,7 +26,13 @@ function formatConsoleMessage(values: readonly unknown[]) {
 		.join(" ");
 }
 
-function installDesktopLogging() {
+async function installDesktopLogging() {
+	const {
+		attachLogger,
+		error: logError,
+		LogLevel,
+		warn: logWarn,
+	} = await import("@tauri-apps/plugin-log");
 	const originalConsoleDebug = console.debug.bind(console);
 	const originalConsoleError = console.error.bind(console);
 	const originalConsoleInfo = console.info.bind(console);
@@ -72,11 +72,6 @@ function installDesktopLogging() {
 	};
 }
 
-/**
- * WebView2/WKWebView 的默认右键菜单在桌面壳里只剩「刷新 / 另存为 / 打印 / 更多工具」
- * 这类浏览器遗留项，release 下去掉。输入框、链接和已选中的文本放行，否则复制粘贴也没了。
- * 开发构建保留原菜单，方便调试。
- */
 function disableBrowserContextMenu() {
 	if (import.meta.env.DEV) return;
 	window.addEventListener(
@@ -93,11 +88,6 @@ function disableBrowserContextMenu() {
 		true,
 	);
 }
-
-installDesktopLogging();
-disableBrowserContextMenu();
-installChatRuntimeTraceDebugApi();
-installChatPerformanceDebugApi();
 
 function BootShellRemover() {
 	useEffect(() => {
@@ -164,12 +154,31 @@ async function bootstrap() {
 		typeof navigator === "undefined" ? undefined : navigator.language,
 	);
 	await initializeI18n(locale);
+
+	let RootApp: React.ComponentType;
+	if (DESKTOP_RUNTIME) {
+		await installDesktopLogging();
+		disableBrowserContextMenu();
+		const [
+			{ installChatPerformanceDebugApi },
+			{ installChatRuntimeTraceDebugApi },
+		] = await Promise.all([
+			import("@/lib/chat-performance-debug"),
+			import("@/lib/chat-runtime-trace-debug"),
+		]);
+		installChatRuntimeTraceDebugApi();
+		installChatPerformanceDebugApi();
+		RootApp = (await import("./App")).default;
+	} else {
+		RootApp = (await import("@/remote/remote-app")).RemoteApp;
+	}
+
 	createRoot(document.getElementById("root") as HTMLElement).render(
 		<React.StrictMode>
 			<RootErrorBoundary>
 				<ThemeProvider>
 					<PreferencesProvider>
-						<App />
+						<RootApp />
 						<Toaster />
 						<BootShellRemover />
 					</PreferencesProvider>

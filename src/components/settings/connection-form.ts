@@ -4,6 +4,7 @@ import type {
 	SshAuthMethod,
 	SshTarget,
 } from "@/lib/pi-runtime";
+import { randomId } from "@/lib/utils";
 import type { SshConnectionInfo } from "@/lib/ssh-connections";
 
 export const AUTH_LABEL_KEYS: Record<
@@ -33,7 +34,7 @@ export type SshConnectionFormState = {
 
 export function emptySshConnectionForm(): SshConnectionFormState {
 	return {
-		id: `ssh:${crypto.randomUUID()}`,
+		id: `ssh:${randomId()}`,
 		name: "",
 		mode: "direct",
 		hostname: "",

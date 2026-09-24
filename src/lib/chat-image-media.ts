@@ -55,6 +55,12 @@ export type ChatHistoryImageScope = {
 	projectId: string;
 	sessionPath: string;
 	fingerprint?: SessionHistoryFingerprint | null;
+	readImage?: (
+		projectId: string,
+		sessionPath: string,
+		imageId: string,
+		fingerprint?: SessionHistoryFingerprint,
+	) => Promise<Uint8Array<ArrayBuffer>>;
 };
 
 function localChatImageCacheKey(imageId: string): string {
@@ -111,7 +117,8 @@ export function loadChatHistoryImageUrl(
 	}
 	const inFlight = historyImageFetches.get(key);
 	if (inFlight) return inFlight;
-	const request = readSessionHistoryImage(
+	const readImage = scope.readImage ?? readSessionHistoryImage;
+	const request = readImage(
 		scope.projectId,
 		scope.sessionPath,
 		image.id,

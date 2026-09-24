@@ -2,8 +2,19 @@
 <html lang="zh-CN">
 	<head>
 		<meta charset="UTF-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<meta name="theme-color" content="#ffffff" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+		/>
+		<meta name="theme-color" content="#101010" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta
+			name="apple-mobile-web-app-status-bar-style"
+			content="black-translucent"
+		/>
+		<meta name="apple-mobile-web-app-title" content="Pilo" />
+		<link rel="manifest" href="/manifest.webmanifest" />
+		<link rel="apple-touch-icon" href="/pilo-192.png" />
 		<title>Pilo</title>
 		<script>
 			(() => {
@@ -41,6 +52,9 @@
 				if (dark) document.documentElement.classList.add("dark");
 				if (/Mac|iPhone|iPad|iPod/.test(navigator.platform)) {
 					document.documentElement.classList.add("pilo-macos");
+				}
+				if (!("__TAURI_INTERNALS__" in window)) {
+					document.documentElement.classList.add("pilo-browser");
 				}
 				document.documentElement.style.colorScheme = dark ? "dark" : "light";
 			})();
@@ -90,6 +104,12 @@
 				--boot-input: #1c1c1c; /* --input */
 				--boot-input-border: #282828; /* --input-border */
 				color-scheme: dark;
+			}
+			.pilo-browser #pilo-boot-shell {
+				grid-template-columns: minmax(0, 1fr);
+			}
+			.pilo-browser .pilo-boot-sidebar {
+				display: none;
 			}
 			.pilo-boot-sidebar {
 				margin: 8px 4px 8px 8px;

@@ -51,7 +51,7 @@ export function ChatComposerSurface({
 				"gap-1 rounded-xl px-2 py-1.5",
 				muted
 					? "border-border/60 bg-muted text-muted-foreground dark:border-border/50 dark:bg-muted"
-					: "border-foreground/[0.10] bg-background focus-within:border-ring/40 dark:border-input-border/70 dark:bg-input/90",
+					: "border-foreground/[0.10] bg-background focus-within:border-ring/40 dark:border-input-border/70 dark:bg-input",
 			)}
 		>
 			{children}
