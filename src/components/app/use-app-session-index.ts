@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { toSidebarSession } from "@/components/app/app-chat-state";
+import {
+	mergeProjectSessions,
+	runtimeActivityFromStates,
+	sameRuntimeActivity,
+	sameStringSet,
+	toProjectExternalActivity,
+	type ProjectExternalActivity,
+	type ProjectRuntimeActivity,
+} from "@/components/app/app-session-index-model";
 import { listChatSessionRuntimeStates } from "@/lib/chat-session-client";
 import { listenRuntimeEvents } from "@/lib/pi-runtime";
 import {
@@ -12,7 +21,6 @@ import {
 	startSessionWatch,
 	stopSessionWatch,
 	updateSessionUiState,
-	type SessionExternalActivity,
 	type SessionIndexEntry,
 } from "@/lib/sessions";
 
@@ -20,122 +28,7 @@ type SessionUiUpdate = {
 	title?: string;
 };
 
-type ProjectExternalActivity = {
-	openTurnPaths: ReadonlySet<string>;
-};
-
-type ProjectRuntimeActivity = ReadonlyMap<string, ReadonlySet<string>>;
-
 const EXTERNAL_ACTIVITY_FALLBACK_POLL_MS = 15_000;
-
-function sameStringSet(left: ReadonlySet<string>, right: ReadonlySet<string>) {
-	if (left.size !== right.size) return false;
-	for (const value of left) {
-		if (!right.has(value)) return false;
-	}
-	return true;
-}
-
-function sameRuntimeActivity(
-	left: ProjectRuntimeActivity,
-	right: ProjectRuntimeActivity,
-) {
-	if (left.size !== right.size) return false;
-	for (const [projectId, paths] of left) {
-		const nextPaths = right.get(projectId);
-		if (!nextPaths || nextPaths.size !== paths.size) return false;
-		for (const path of paths) {
-			if (!nextPaths.has(path)) return false;
-		}
-	}
-	return true;
-}
-
-function runtimeActivityFromStates(
-	states: Awaited<ReturnType<typeof listChatSessionRuntimeStates>>,
-	projectIds?: ReadonlySet<string>,
-): ProjectRuntimeActivity {
-	const mutable = new Map<string, Set<string>>();
-	for (const state of states) {
-		if (
-			(projectIds && !projectIds.has(state.projectId)) ||
-			!state.activeTurn ||
-			state.snapshot.state !== "running" ||
-			!state.sessionPath
-		) {
-			continue;
-		}
-		let paths = mutable.get(state.projectId);
-		if (!paths) {
-			paths = new Set();
-			mutable.set(state.projectId, paths);
-		}
-		paths.add(state.sessionPath);
-	}
-	return mutable;
-}
-
-function toProjectExternalActivity(
-	activities: readonly SessionExternalActivity[],
-): ProjectExternalActivity {
-	return {
-		openTurnPaths: new Set(
-			activities
-				.filter((activity) => activity.turnOpen)
-				.map((activity) => activity.path),
-		),
-	};
-}
-
-function sameSessionIndexEntry(a: SessionIndexEntry, b: SessionIndexEntry) {
-	return (
-		a.connectionId === b.connectionId &&
-		a.projectId === b.projectId &&
-		a.piSessionId === b.piSessionId &&
-		a.sessionPath === b.sessionPath &&
-		a.name === b.name &&
-		a.cwd === b.cwd &&
-		a.createdAt === b.createdAt &&
-		a.updatedAt === b.updatedAt &&
-		a.messageCount === b.messageCount &&
-		a.lastMessageAt === b.lastMessageAt &&
-		a.firstUserMessagePreview === b.firstUserMessagePreview &&
-		a.fileSize === b.fileSize &&
-		a.fileMtimeNs === b.fileMtimeNs &&
-		a.lastOffset === b.lastOffset &&
-		a.pinned === b.pinned &&
-		a.titleOverride === b.titleOverride
-	);
-}
-
-function mergeProjectSessions(
-	current: SessionIndexEntry[],
-	projectId: string,
-	sessions: SessionIndexEntry[],
-) {
-	const previousByPath = new Map(
-		current
-			.filter((session) => session.projectId === projectId)
-			.map((session) => [session.sessionPath, session] as const),
-	);
-	const nextProjectSessions = sessions.map((session) => {
-		const previous = previousByPath.get(session.sessionPath);
-		return previous && sameSessionIndexEntry(previous, session)
-			? previous
-			: session;
-	});
-	const next = [
-		...current.filter((session) => session.projectId !== projectId),
-		...nextProjectSessions,
-	];
-	if (
-		next.length === current.length &&
-		next.every((session, index) => session === current[index])
-	) {
-		return current;
-	}
-	return next;
-}
 
 export function useAppSessionIndex(projectIds: readonly string[]) {
 	const [indexedSessions, setIndexedSessions] = useState<SessionIndexEntry[]>(

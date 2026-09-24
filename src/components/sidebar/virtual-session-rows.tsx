@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
-import { SessionRowHighlightBlock, useSessionRowGlide } from "./rows";
+import { SessionRowHighlightBlock, useSessionRowGlide } from "./session-row";
 import type { SidebarSession } from "./types";
 
 const SESSION_ROW_ESTIMATE = 30;

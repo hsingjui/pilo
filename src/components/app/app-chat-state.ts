@@ -4,6 +4,7 @@ import type { ChatImageAttachment } from "@/lib/chat-submission";
 import type { SidebarSession } from "@/components/sidebar/types";
 import type { Project } from "@/lib/projects";
 import type { SessionIndexEntry } from "@/lib/sessions";
+import type { PiModel, PiThinkingLevel } from "@/lib/pi-runtime";
 
 let draftSessionSequence = 0;
 const sidebarSessionCache = new WeakMap<SessionIndexEntry, SidebarSession>();
@@ -209,6 +210,79 @@ export function indexedChatSession(
 		externalRunning,
 		externalTurnOpen,
 	};
+}
+
+/**
+ * Resolve the chat surface the app should show: a busy/opened chat, an indexed
+ * session, or the draft landing session once it has started.
+ */
+export function resolveChatSession({
+	selectedOpenedChat,
+	selectedOpenedChatBusy,
+	selectedIndexedSession,
+	selectedProject,
+	isExternalOpenTurn,
+	activeProject,
+	draftSessionStarted,
+	draftTemporary,
+	draftSessionId,
+	draftSessionModel,
+	draftSessionThinkingLevel,
+}: {
+	selectedOpenedChat: OpenChat | null;
+	selectedOpenedChatBusy: boolean;
+	selectedIndexedSession: SessionIndexEntry | null;
+	selectedProject: Project | null;
+	isExternalOpenTurn: (projectId: string, sessionPath: string) => boolean;
+	activeProject: Project | null;
+	draftSessionStarted: boolean;
+	draftTemporary: boolean;
+	draftSessionId: string;
+	draftSessionModel: PiModel | null;
+	draftSessionThinkingLevel: PiThinkingLevel | null;
+}): ChatSession | null {
+	if (
+		selectedOpenedChat &&
+		(selectedOpenedChatBusy || !selectedIndexedSession)
+	) {
+		const sessionPath = selectedOpenedChat.session.sessionPath;
+		const externalTurnOpen = sessionPath
+			? isExternalOpenTurn(
+					selectedOpenedChat.session.projectRecord.id,
+					sessionPath,
+				)
+			: false;
+		return {
+			...selectedOpenedChat.session,
+			externalRunning: externalTurnOpen,
+			externalTurnOpen,
+		};
+	}
+	if (selectedIndexedSession && selectedProject) {
+		const externalTurnOpen = isExternalOpenTurn(
+			selectedIndexedSession.projectId,
+			selectedIndexedSession.sessionPath,
+		);
+		return indexedChatSession(
+			selectedIndexedSession,
+			selectedProject,
+			externalTurnOpen,
+			externalTurnOpen,
+		);
+	}
+	if (activeProject && draftSessionStarted) {
+		return {
+			id: draftSessionId,
+			title: draftTemporary
+				? i18n.t("app.temporaryChat")
+				: i18n.t("app.newChat"),
+			projectRecord: activeProject,
+			temporary: draftTemporary || undefined,
+			initialModel: draftSessionModel ?? undefined,
+			initialThinkingLevel: draftSessionThinkingLevel ?? undefined,
+		};
+	}
+	return null;
 }
 
 export function upsertOpenedChat(

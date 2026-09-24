@@ -1,43 +1,14 @@
-import {
-	useLayoutEffect,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-	type ChangeEvent,
-	type ClipboardEvent,
-	type KeyboardEvent,
-} from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, X } from "lucide-react";
-import { toast } from "sonner";
 
-import { i18n } from "@/i18n";
-import { userErrorMessage } from "@/lib/app-error";
 import { ChatImageThumbnail } from "@/components/chat/chat-image-viewer";
 
-import { cacheLocalChatImages } from "@/lib/chat-image-media";
-import {
-	appendChatInputHistory,
-	isChatInputHistoryCursorValid,
-	moveChatInputHistory,
-	readChatInputHistory,
-} from "@/lib/chat-input-history";
-import { isImeComposingKeyboardEvent } from "@/lib/ime";
 import { formatKeyboardShortcut } from "@/lib/keyboard-shortcuts";
-import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import type { PiModel, PiThinkingLevel } from "@/lib/pi-runtime";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/lib/preferences-provider";
 import {
 	CHAT_IMAGE_ACCEPT,
-	MAX_CHAT_IMAGE_BYTES,
-	MAX_CHAT_IMAGE_COUNT,
-	MAX_CHAT_IMAGE_TOTAL_BYTES,
-	chatSubmissionHasContent,
-	createChatSubmission,
-	formatChatImageSize,
-	resolveChatImageMimeType,
 	type ChatImageAttachment,
 	type ChatSubmission,
 } from "@/lib/chat-submission";
@@ -59,12 +30,11 @@ import {
 	ChatComposerSurface,
 } from "@/components/chat/chat-composer-frame";
 import { ComposerRunConfig } from "@/components/chat/chat-composer-run-config";
+import { useChatComposerImages } from "@/components/chat/use-chat-composer-images";
+import { useChatComposerInput } from "@/components/chat/use-chat-composer-input";
 import {
 	ComposerSuggestionMenu,
 	DEFAULT_SUGGESTIONS,
-	FILE_SUGGESTION_LIMIT,
-	TRIGGER_META,
-	activeSuggestionQuery,
 	type ComposerSuggestion,
 } from "@/components/chat/chat-composer-suggestions";
 
@@ -112,41 +82,8 @@ type ChatComposerProps = {
 	className?: string;
 };
 
-const MAX_ROWS = 12;
-const LINE_HEIGHT = 24;
 const EMPTY_MODELS: readonly PiModel[] = [];
 const EMPTY_THINKING_LEVELS: readonly PiThinkingLevel[] = [];
-
-function readImage(file: File, mimeType: string) {
-	return new Promise<ChatImageAttachment>((resolve, reject) => {
-		const reader = new FileReader();
-		reader.addEventListener("error", () => {
-			reject(reader.error ?? new Error(i18n.t("chat.readImageFailed")));
-		});
-		reader.addEventListener("load", () => {
-			const result = reader.result;
-			if (typeof result !== "string") {
-				reject(new Error(i18n.t("chat.readImageFailed")));
-				return;
-			}
-			const separator = result.indexOf(",");
-			if (separator < 0) {
-				reject(new Error(i18n.t("chat.invalidImage")));
-				return;
-			}
-			resolve({
-				id: crypto.randomUUID(),
-				name:
-					file.name ||
-					`${i18n.t("chat.imageClipboard")}.${mimeType.split("/")[1] ?? "png"}`,
-				mimeType,
-				size: file.size,
-				data: result.slice(separator + 1),
-			});
-		});
-		reader.readAsDataURL(file);
-	});
-}
 
 export function ChatComposer({
 	value,
@@ -188,418 +125,38 @@ export function ChatComposer({
 }: ChatComposerProps) {
 	const { t } = useTranslation();
 	const composerPlaceholder = placeholder ?? t("chat.composerPlaceholder");
-	const { sendMessageShortcut, keyboardShortcuts } = usePreferences();
-	const textareaRef = useRef<HTMLTextAreaElement>(null);
-	const fileInputRef = useRef<HTMLInputElement>(null);
-	const [localImages, setLocalImages] = useState<ChatImageAttachment[]>([]);
-	const attachments = images ?? localImages;
-	const [caret, setCaret] = useState(value.length);
-	const [highlightedIndex, setHighlightedIndex] = useState(0);
-	const [dismissedQuery, setDismissedQuery] = useState<string | null>(null);
-	const historyEntriesRef = useRef<string[]>([]);
-	const historyCursorRef = useRef<number | null>(null);
-
-	const resetHistoryNavigation = () => {
-		historyEntriesRef.current = [];
-		historyCursorRef.current = null;
-	};
-
-	useEffect(() => {
-		historyEntriesRef.current = historyKey
-			? readChatInputHistory(historyKey)
-			: [];
-		historyCursorRef.current = null;
-	}, [historyKey]);
-
-	useKeyboardShortcut(
-		keyboardShortcuts["focus-composer"],
-		() => textareaRef.current?.focus(),
-		{ enabled: !disabled },
-	);
-
-	// 挂载或从后台切回该会话（新开会话、点击通知打开会话、侧边栏切换）时
-	// 聚焦输入框；disabled 变化也涵盖恢复重连/外部运行结束后的场景。
-	const prevDisabledRef = useRef(true);
-	useEffect(() => {
-		if (prevDisabledRef.current && !disabled) textareaRef.current?.focus();
-		prevDisabledRef.current = disabled;
-	}, [disabled]);
-
-	// 窗口重新获得焦点（如点击系统通知回到应用）时，若应用内没有其他焦点
-	// 元素（终端、重命名输入框等），把焦点放回输入框。
-	useEffect(() => {
-		if (disabled) return;
-		const handleWindowFocus = () => {
-			const activeElement = document.activeElement;
-			if (activeElement && activeElement !== document.body) return;
-			textareaRef.current?.focus();
-		};
-		window.addEventListener("focus", handleWindowFocus);
-		return () => window.removeEventListener("focus", handleWindowFocus);
-	}, [disabled]);
-
-	const showFocusHint =
-		!disabled && value.length === 0 && attachments.length === 0;
-
-	useLayoutEffect(() => {
-		const textarea = textareaRef.current;
-		if (!textarea) return;
-		textarea.style.height = "auto";
-		const maxHeight = MAX_ROWS * LINE_HEIGHT + 16;
-		const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
-		textarea.style.height = `${Math.max(48, nextHeight)}px`;
-		textarea.style.overflowY =
-			textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+	const { keyboardShortcuts, sendMessageShortcut } = usePreferences();
+	const { fileInputRef, attachments, updateImages, handleFiles, handlePaste } =
+		useChatComposerImages({ images, onImagesChange });
+	const {
+		textareaRef,
+		showFocusHint,
+		suggestionMenuOpen,
+		activeQuery,
+		queryMeta,
+		filteredSuggestions,
+		effectiveHighlightedIndex,
+		setHighlightedIndex,
+		selectSuggestion,
+		handleKeyDown,
+		syncCaret,
+		submit,
+		onFieldChange,
+	} = useChatComposerInput({
+		value,
+		onChange,
+		attachments,
+		selectedModel,
+		disabled,
+		compacting,
+		running,
+		onSubmit,
+		onSteer,
+		onFollowUp,
+		suggestions,
+		onSuggestionTrigger,
+		historyKey,
 	});
-
-	const activeQuery = useMemo(
-		() => activeSuggestionQuery(value, Math.min(caret, value.length)),
-		[value, caret],
-	);
-	const activeTrigger = activeQuery?.trigger ?? null;
-	const activeSuggestionText = activeQuery?.query ?? "";
-	useEffect(() => {
-		onSuggestionTrigger?.(activeTrigger, activeSuggestionText);
-	}, [activeSuggestionText, activeTrigger, onSuggestionTrigger]);
-	const activeKey = activeQuery
-		? `${activeQuery.start}:${activeQuery.trigger}:${activeQuery.query}`
-		: null;
-	const queryMeta = activeQuery ? TRIGGER_META[activeQuery.trigger] : null;
-	const filteredSuggestions = useMemo(() => {
-		if (!activeQuery || !queryMeta) return [];
-		const query = activeQuery.query.toLowerCase();
-		const limit = activeQuery.trigger === "@" ? FILE_SUGGESTION_LIMIT : 9;
-		return suggestions
-			.filter((suggestion) => suggestion.kind === queryMeta.kind)
-			.filter((suggestion) => {
-				if (!query) return true;
-				return [suggestion.label, suggestion.value, suggestion.detail]
-					.filter(Boolean)
-					.some((part) => part!.toLowerCase().includes(query));
-			})
-			.slice(0, limit);
-	}, [activeQuery, queryMeta, suggestions]);
-	const suggestionMenuOpen = Boolean(
-		activeQuery &&
-		activeKey !== dismissedQuery &&
-		(activeQuery.trigger !== "@" || filteredSuggestions.length > 0),
-	);
-	const effectiveHighlightedIndex =
-		filteredSuggestions.length > 0
-			? Math.min(highlightedIndex, filteredSuggestions.length - 1)
-			: 0;
-
-	const updateImages = (next: ChatImageAttachment[]) => {
-		cacheLocalChatImages(next);
-		if (onImagesChange) onImagesChange(next);
-		else setLocalImages(next);
-	};
-
-	const createSubmission = () => createChatSubmission(value, attachments);
-
-	const rememberSubmission = (submission: ChatSubmission) => {
-		if (submission.text) appendChatInputHistory(historyKey, submission.text);
-		resetHistoryNavigation();
-	};
-
-	const canSendImages = () => {
-		if (attachments.length === 0) return true;
-		if (!selectedModel?.input || selectedModel.input.includes("image"))
-			return true;
-		toast.error(t("chat.imageUnsupported"));
-		return false;
-	};
-
-	const submit = () => {
-		const submission = createSubmission();
-		if (
-			!chatSubmissionHasContent(submission) ||
-			disabled ||
-			compacting ||
-			!canSendImages()
-		)
-			return;
-		if (running) {
-			if (!onSteer) return;
-			rememberSubmission(submission);
-			onSteer(submission);
-			return;
-		}
-		if (!onSubmit) return;
-		rememberSubmission(submission);
-		onSubmit(submission);
-	};
-
-	const submitFollowUp = () => {
-		const submission = createSubmission();
-		if (
-			!chatSubmissionHasContent(submission) ||
-			disabled ||
-			compacting ||
-			!running ||
-			!onFollowUp ||
-			!canSendImages()
-		)
-			return;
-		rememberSubmission(submission);
-		onFollowUp(submission);
-	};
-
-	const applyHistoryValue = (nextValue: string) => {
-		onChange(nextValue);
-		setCaret(nextValue.length);
-		setHighlightedIndex(0);
-		setDismissedQuery(null);
-		requestAnimationFrame(() => {
-			const textarea = textareaRef.current;
-			if (!textarea) return;
-			textarea.focus();
-			textarea.setSelectionRange(nextValue.length, nextValue.length);
-		});
-	};
-
-	const handleHistoryNavigation = (
-		event: KeyboardEvent<HTMLTextAreaElement>,
-	) => {
-		if (
-			(event.key !== "ArrowUp" && event.key !== "ArrowDown") ||
-			event.shiftKey ||
-			event.ctrlKey ||
-			event.metaKey ||
-			event.altKey ||
-			isImeComposingKeyboardEvent(event) ||
-			!historyKey
-		) {
-			return false;
-		}
-
-		const browsingHistory = historyCursorRef.current !== null;
-		if (
-			browsingHistory &&
-			!isChatInputHistoryCursorValid(
-				historyEntriesRef.current,
-				historyCursorRef.current,
-				value,
-			)
-		) {
-			resetHistoryNavigation();
-			return false;
-		}
-		if (!browsingHistory && value.length > 0) return false;
-
-		if (!browsingHistory) {
-			if (event.key === "ArrowDown") return false;
-			historyEntriesRef.current = readChatInputHistory(historyKey);
-		}
-
-		const result = moveChatInputHistory(
-			historyEntriesRef.current,
-			historyCursorRef.current,
-			event.key === "ArrowUp" ? "older" : "newer",
-		);
-		if (!result.handled) return false;
-
-		event.preventDefault();
-		historyCursorRef.current = result.cursor;
-		applyHistoryValue(result.value);
-		return true;
-	};
-
-	const selectSuggestion = (suggestion: ComposerSuggestion) => {
-		if (!activeQuery) return;
-		const inserted = `${suggestion.value} `;
-		const nextValue = `${value.slice(0, activeQuery.start)}${inserted}${value.slice(activeQuery.end)}`;
-		const nextCaret = activeQuery.start + inserted.length;
-		resetHistoryNavigation();
-		onChange(nextValue);
-		setCaret(nextCaret);
-		setDismissedQuery(
-			`${activeQuery.start}:${activeQuery.trigger}:__selected__`,
-		);
-		requestAnimationFrame(() => {
-			const textarea = textareaRef.current;
-			if (!textarea) return;
-			textarea.focus();
-			textarea.setSelectionRange(nextCaret, nextCaret);
-		});
-	};
-
-	const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-		const primaryShortcutModifierMatches =
-			sendMessageShortcut === "enter"
-				? !event.ctrlKey && !event.metaKey
-				: event.ctrlKey || event.metaKey;
-		const shouldFollowUpWithEnter =
-			running &&
-			event.key === "Enter" &&
-			event.altKey &&
-			!event.shiftKey &&
-			!isImeComposingKeyboardEvent(event) &&
-			primaryShortcutModifierMatches;
-
-		if (shouldFollowUpWithEnter) {
-			event.preventDefault();
-			submitFollowUp();
-			return;
-		}
-
-		if (
-			historyCursorRef.current !== null &&
-			(event.key === "ArrowUp" || event.key === "ArrowDown") &&
-			handleHistoryNavigation(event)
-		) {
-			return;
-		}
-
-		if (suggestionMenuOpen && !isImeComposingKeyboardEvent(event)) {
-			if (
-				event.key === "Tab" &&
-				!event.shiftKey &&
-				!event.ctrlKey &&
-				!event.metaKey &&
-				!event.altKey &&
-				filteredSuggestions[effectiveHighlightedIndex]
-			) {
-				event.preventDefault();
-				selectSuggestion(filteredSuggestions[effectiveHighlightedIndex]);
-				return;
-			}
-			if (event.key === "ArrowDown" && filteredSuggestions.length > 0) {
-				event.preventDefault();
-				setHighlightedIndex(
-					(index) => (index + 1) % filteredSuggestions.length,
-				);
-				return;
-			}
-			if (event.key === "ArrowUp" && filteredSuggestions.length > 0) {
-				event.preventDefault();
-				setHighlightedIndex(
-					(index) =>
-						(index - 1 + filteredSuggestions.length) %
-						filteredSuggestions.length,
-				);
-				return;
-			}
-			if (event.key === "Escape") {
-				event.preventDefault();
-				setDismissedQuery(activeKey);
-				return;
-			}
-			if (
-				event.key === "Enter" &&
-				filteredSuggestions[effectiveHighlightedIndex]
-			) {
-				event.preventDefault();
-				selectSuggestion(filteredSuggestions[effectiveHighlightedIndex]);
-				return;
-			}
-		}
-
-		if (handleHistoryNavigation(event)) return;
-
-		const shouldSubmitWithEnter =
-			event.key === "Enter" &&
-			!event.shiftKey &&
-			!event.altKey &&
-			!isImeComposingKeyboardEvent(event) &&
-			primaryShortcutModifierMatches;
-
-		if (shouldSubmitWithEnter) {
-			event.preventDefault();
-			submit();
-		}
-	};
-
-	const addImageFiles = async (files: readonly File[]) => {
-		if (files.length === 0) return;
-		const availableSlots = Math.max(
-			0,
-			MAX_CHAT_IMAGE_COUNT - attachments.length,
-		);
-		if (availableSlots === 0) {
-			toast.error(t("chat.maxImages", { count: MAX_CHAT_IMAGE_COUNT }));
-			return;
-		}
-		const accepted: Array<{ file: File; mimeType: string }> = [];
-		let totalBytes = attachments.reduce(
-			(total, image) => total + image.size,
-			0,
-		);
-		for (const file of files) {
-			if (accepted.length >= availableSlots) break;
-			const mimeType = resolveChatImageMimeType(file);
-			if (!mimeType) {
-				toast.error(
-					t("chat.unsupportedImage", {
-						name: file.name || t("chat.imageClipboard"),
-					}),
-				);
-				continue;
-			}
-			if (file.size > MAX_CHAT_IMAGE_BYTES) {
-				toast.error(
-					t("chat.imageTooLarge", {
-						name: file.name || t("chat.imageClipboard"),
-					}),
-					{
-						description: t("chat.imageSizeLimit", {
-							size: formatChatImageSize(MAX_CHAT_IMAGE_BYTES),
-						}),
-					},
-				);
-				continue;
-			}
-			if (totalBytes + file.size > MAX_CHAT_IMAGE_TOTAL_BYTES) {
-				toast.error(t("chat.imagesTooLarge"), {
-					description: t("chat.imagesTotalLimit", {
-						size: formatChatImageSize(MAX_CHAT_IMAGE_TOTAL_BYTES),
-					}),
-				});
-				break;
-			}
-			accepted.push({ file, mimeType });
-			totalBytes += file.size;
-		}
-		if (files.length > availableSlots) {
-			toast.info(t("chat.maxImages", { count: MAX_CHAT_IMAGE_COUNT }));
-		}
-		if (accepted.length === 0) return;
-		try {
-			const added = await Promise.all(
-				accepted.map(({ file, mimeType }) => readImage(file, mimeType)),
-			);
-			updateImages([...attachments, ...added]);
-		} catch (error) {
-			toast.error(t("chat.readImageFailed"), {
-				description: userErrorMessage(error),
-			});
-		}
-	};
-
-	const handleFiles = (event: ChangeEvent<HTMLInputElement>) => {
-		const files = Array.from(event.target.files ?? []);
-		void addImageFiles(files);
-		event.target.value = "";
-	};
-
-	const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-		const files = Array.from(event.clipboardData.items)
-			.filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-			.flatMap((item) => {
-				const file = item.getAsFile();
-				return file ? [file] : [];
-			});
-		if (files.length > 0) {
-			event.preventDefault();
-			void addImageFiles(files);
-		}
-	};
-
-	const syncCaret = () => {
-		const textarea = textareaRef.current;
-		if (!textarea) return;
-		setCaret(textarea.selectionStart ?? value.length);
-	};
 
 	return (
 		<ChatComposerRoot className={className}>
@@ -657,11 +214,10 @@ export function ChatComposer({
 					ref={textareaRef}
 					value={value}
 					onChange={(event) => {
-						resetHistoryNavigation();
-						onChange(event.target.value);
-						setCaret(event.target.selectionStart ?? event.target.value.length);
-						setHighlightedIndex(0);
-						setDismissedQuery(null);
+						onFieldChange(
+							event.target.value,
+							event.target.selectionStart ?? event.target.value.length,
+						);
 					}}
 					onSelect={syncCaret}
 					onClick={syncCaret}

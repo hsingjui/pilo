@@ -1,23 +1,11 @@
-import {
-	memo,
-	useCallback,
-	useEffect,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-	type ReactNode,
-} from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
 	ChatUiState,
 	ChatUiStatePatch,
 } from "@/components/app/chat-ui-state-cache";
-import {
-	ChatComposer,
-	type ComposerSuggestion,
-} from "@/components/chat/chat-composer";
+import { ChatComposer } from "@/components/chat/chat-composer";
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import {
 	ChatConversationViewport,
@@ -28,59 +16,39 @@ import { ChatPendingQueue } from "@/components/chat/chat-pending-queue";
 import { ChatRuntimeRecoveryNotice } from "@/components/chat/chat-runtime-recovery-notice";
 import { ChatInterruptedTurnNotice } from "@/components/chat/chat-interrupted-turn-notice";
 import { piSessionSuggestions } from "@/components/chat/chat-composer-suggestions";
-import { createFileSuggestions } from "@/components/chat/chat-file-suggestions";
 import { PiExtensionNotifications } from "@/components/chat/pi-extension-notifications";
 import { PiExtensionUiDialog } from "@/components/chat/pi-extension-ui-dialog";
 import { SessionHeader } from "@/components/chat/chat-session-header";
 import { ChatFindLayer } from "@/components/chat/chat-find-bar";
 import type { ChatSession } from "@/components/chat/chat-page-utils";
-import {
-	routeInitialDeferredSubmissions,
-	shouldDeferSubmissionUntilHistoryReady,
-} from "@/components/chat/chat-submission-state";
-import {
-	useChatConversation,
-	useChatConversationView,
-} from "@/components/chat/use-chat-conversation";
+import { shouldDeferSubmissionUntilHistoryReady } from "@/components/chat/chat-submission-state";
+import { ChatConversationSubscriber } from "@/components/chat/chat-conversation-subscriber";
+import { useChatComposerSubmission } from "@/components/chat/use-chat-composer-submission";
+import { useChatConversation } from "@/components/chat/use-chat-conversation";
+import { useChatFileSuggestions } from "@/components/chat/use-chat-file-suggestions";
+import { useChatFork } from "@/components/chat/use-chat-fork";
+import { useChatModelShortcuts } from "@/components/chat/use-chat-model-shortcuts";
+import { useChatPageUiState } from "@/components/chat/use-chat-page-ui-state";
 import { useChatRuntime } from "@/components/chat/use-chat-runtime";
 import { useChatSessionConfig } from "@/components/chat/use-chat-session-config";
+import { useChatSubmissionRecovery } from "@/components/chat/use-chat-submission-recovery";
+import { useChatVisualRetention } from "@/components/chat/use-chat-visual-retention";
 import { usePiSessionFeatures } from "@/components/chat/use-pi-session-features";
 import { useScrollbarGutterWidth } from "@/components/chat/use-scrollbar-gutter";
-import { userErrorMessage } from "@/lib/app-error";
 import { createChatSessionClient } from "@/lib/chat-session-client";
 import {
 	getActiveStreamingPresentationChars,
 	getStreamingPresentationIntervalMs,
 } from "@/lib/chat-stream-presentation";
-import {
-	createChatSubmission,
-	type ChatImageAttachment,
-	type ChatSubmission,
-} from "@/lib/chat-submission";
-import { searchProjectFiles } from "@/lib/files";
-import { resolveAssistantForkTarget } from "@/lib/pi-session-fork";
-import type { CacheSnapshot } from "virtua";
-import type { ChatConversationStore } from "@/components/chat/chat-conversation-store";
-import type { ChatHistoryWindowStore } from "@/components/chat/chat-history-window-store";
+import { type ChatImageAttachment } from "@/lib/chat-submission";
 import { createConversationState } from "@/lib/conversation-reducer";
-import type { ChatMessage } from "@/lib/conversation-types";
 
 import { usePreferences } from "@/lib/preferences-provider";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
-import { toast } from "sonner";
 
 export type { ChatSession } from "@/components/chat/chat-page-utils";
 
 const EMPTY_CHAT_IMAGES: readonly ChatImageAttachment[] = [];
-const FILE_SUGGESTION_DEBOUNCE_MS = 180;
-const FILE_SUGGESTION_CACHE_TTL_MS = 10_000;
-const FILE_SUGGESTION_CACHE_MAX_ENTRIES = 24;
-const BACKGROUND_VISUAL_RETENTION_MS = 60_000;
-
-type FileSuggestionCacheEntry = {
-	expiresAt: number;
-	suggestions: ComposerSuggestion[];
-};
 
 type ChatPageProps = {
 	session: ChatSession;
@@ -116,55 +84,6 @@ type ChatPageProps = {
 	sidebarCollapsed?: boolean;
 };
 
-type ChatConversationSubscriberProps = {
-	active: boolean;
-	conversationStore: ChatConversationStore;
-	historyStore: ChatHistoryWindowStore;
-	baseMessages: ChatMessage[];
-	sessionPath?: string;
-	historyLoadState: "ready" | "loading" | "error";
-	loadState: "ready" | "loading" | "error";
-	children: (
-		view: ReturnType<typeof useChatConversationView>,
-		live: boolean,
-	) => ReactNode;
-};
-
-const ChatConversationSubscriber = memo(
-	function ChatConversationSubscriber({
-		active,
-		conversationStore,
-		historyStore,
-		baseMessages,
-		sessionPath,
-		historyLoadState,
-		loadState,
-		children,
-	}: ChatConversationSubscriberProps) {
-		// Keep the last visual snapshot mounted while this controller is hidden, but
-		// disconnect it from background store updates. On reactivation we first paint
-		// the frozen DOM, then reconnect on the next frame so session switching is an
-		// urgent, bounded operation rather than a full hidden-output catch-up render.
-		const [live, setLive] = useState(active);
-		useEffect(() => {
-			if (active === live) return;
-			const frame = requestAnimationFrame(() => setLive(active));
-			return () => cancelAnimationFrame(frame);
-		}, [active, live]);
-		const view = useChatConversationView({
-			conversationStore,
-			historyStore,
-			baseMessages,
-			sessionPath,
-			historyLoadState,
-			loadState,
-			live,
-		});
-		return children(view, live);
-	},
-	(previous, next) => !previous.active && !next.active,
-);
-
 function ChatPageImpl(props: ChatPageProps) {
 	const {
 		session,
@@ -198,61 +117,19 @@ function ChatPageImpl(props: ChatPageProps) {
 	} = props;
 	const { t } = useTranslation();
 	const { desktopNotifications, keyboardShortcuts } = usePreferences();
-	const [initialUiState] = useState<ChatUiState>(() =>
-		uiStateKey && readUiState
-			? readUiState(uiStateKey)
-			: { draft: "", scrollTop: 0, sticky: true, deferredSubmissions: [] },
-	);
-	const initialDeferredSubmissions = useMemo(
-		() =>
-			routeInitialDeferredSubmissions(
-				session.sessionPath,
-				initialUiState.deferredSubmissions,
-			),
-		[initialUiState.deferredSubmissions, session.sessionPath],
-	);
-	useEffect(() => {
-		if (
-			session.sessionPath ||
-			!uiStateKey ||
-			!writeUiState ||
-			initialUiState.deferredSubmissions.length === 0
-		) {
-			return;
-		}
-		// New chats hand the fallback queue directly to the runtime. Existing-session
-		// queues stay persisted until history is ready and the page actually drains them.
-		writeUiState(uiStateKey, { deferredSubmissions: [] });
-	}, [
-		initialUiState.deferredSubmissions,
-		session.sessionPath,
+	const {
+		initialUiState,
+		initialDeferredSubmissions,
+		persistDraft,
+		persistScrollState,
+		persistVirtualizerCache,
+	} = useChatPageUiState({
 		uiStateKey,
+		readUiState,
 		writeUiState,
-	]);
-	const persistDraft = useMemo(
-		() =>
-			uiStateKey && writeUiState
-				? (value: string) => writeUiState(uiStateKey, { draft: value })
-				: undefined,
-		[uiStateKey, writeUiState],
-	);
-	const persistScrollState = useCallback(
-		(state: { scrollTop: number; sticky: boolean }) => {
-			if (!active || !uiStateKey || !writeUiState) return;
-			writeUiState(uiStateKey, state);
-		},
-		[active, uiStateKey, writeUiState],
-	);
-	const persistVirtualizerCache = useCallback(
-		(cache: CacheSnapshot, messageCount: number) => {
-			if (!active || !uiStateKey || !writeUiState) return;
-			writeUiState(uiStateKey, {
-				virtualizerCache: cache,
-				virtualizerMessageCount: messageCount,
-			});
-		},
-		[active, uiStateKey, writeUiState],
-	);
+		sessionPath: session.sessionPath,
+		active,
+	});
 	const activeTurnSessionIdRef = useRef<string | null>(null);
 	const client = useMemo(
 		() =>
@@ -331,7 +208,6 @@ function ChatPageImpl(props: ChatPageProps) {
 		[conversationStore],
 	);
 	const scrollRef = useRef<HTMLDivElement>(null);
-	const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
 	const conversationViewportRef = useRef<ChatConversationViewportHandle>(null);
 	const [findOpen, setFindOpen] = useState(false);
 	const handleFindNavigate = useCallback((messageIndex: number) => {
@@ -354,51 +230,12 @@ function ChatPageImpl(props: ChatPageProps) {
 		conversationViewportRef.current?.scrollToBottom(smooth);
 	}, []);
 	const scrollbarWidth = useScrollbarGutterWidth(scrollRef, active);
-	const pendingHistorySubmissionsRef = useRef<string[]>(
-		initialDeferredSubmissions.history,
-	);
-	const [composerImages, setComposerImages] = useState<ChatImageAttachment[]>(
-		[],
-	);
-	const draftRef = useRef(draft);
-	const composerImagesRef = useRef(composerImages);
-	useLayoutEffect(() => {
-		draftRef.current = draft;
-	}, [draft]);
-	useLayoutEffect(() => {
-		composerImagesRef.current = composerImages;
-	}, [composerImages]);
-	const restoreSubmission = useCallback(
-		(submission: ChatSubmission) => {
-			draftRef.current = submission.text;
-			composerImagesRef.current = [...submission.images];
-			setDraft(submission.text);
-			setComposerImages([...submission.images]);
-		},
-		[setDraft],
-	);
-	const recoverSubmission = useCallback(
-		(submission: ChatSubmission) => {
-			const currentText = draftRef.current.trim();
-			const nextText = [currentText, submission.text]
-				.filter(Boolean)
-				.join("\n\n");
-			const seenImageIds = new Set<string>();
-			const nextImages = [
-				...composerImagesRef.current,
-				...submission.images,
-			].filter((image) => {
-				if (seenImageIds.has(image.id)) return false;
-				seenImageIds.add(image.id);
-				return true;
-			});
-			draftRef.current = nextText;
-			composerImagesRef.current = nextImages;
-			setDraft(nextText);
-			setComposerImages(nextImages);
-		},
-		[setDraft],
-	);
+	const {
+		composerImages,
+		setComposerImages,
+		restoreSubmission,
+		recoverSubmission,
+	} = useChatSubmissionRecovery({ draft, setDraft });
 	const resetConversation = useCallback(() => {
 		conversationStore.setSnapshot(createConversationState([]));
 	}, [conversationStore]);
@@ -441,71 +278,14 @@ function ChatPageImpl(props: ChatPageProps) {
 		handleSendQueuedNow,
 		handleStop,
 	} = runtime;
-	useEffect(() => {
-		if (active || !runtimeBusy || !uiStateKey || !writeUiState) return;
-		// A frozen background transcript deliberately stops consuming store
-		// updates. The assistant can therefore grow without changing message count,
-		// making a previously persisted Virtua height cache stale even though the
-		// old count still matches. Drop only the measurement cache when background
-		// work starts; draft/scroll ownership remain available for the next reveal.
-		writeUiState(uiStateKey, {
-			virtualizerCache: undefined,
-			virtualizerMessageCount: undefined,
-		});
-	}, [active, runtimeBusy, uiStateKey, writeUiState]);
-	const [backgroundVisualRetained, setBackgroundVisualRetained] =
-		useState(active);
-	useEffect(() => {
-		if (active) {
-			if (backgroundVisualRetained) return;
-			const frame = requestAnimationFrame(() =>
-				setBackgroundVisualRetained(true),
-			);
-			return () => cancelAnimationFrame(frame);
-		}
-		if (!retainBackgroundVisual) {
-			if (!backgroundVisualRetained) return;
-			const frame = requestAnimationFrame(() =>
-				setBackgroundVisualRetained(false),
-			);
-			return () => cancelAnimationFrame(frame);
-		}
-		// A controller that was visible stays frozen for its whole background run.
-		// Do not create a hidden visual tree for a session that was never opened.
-		if (runtimeBusy || !backgroundVisualRetained) return;
-		const timer = window.setTimeout(
-			() => setBackgroundVisualRetained(false),
-			BACKGROUND_VISUAL_RETENTION_MS,
-		);
-		return () => window.clearTimeout(timer);
-	}, [active, backgroundVisualRetained, retainBackgroundVisual, runtimeBusy]);
-	const renderVisual =
-		active || (retainBackgroundVisual && backgroundVisualRetained);
-	const visualReadyRef = useRef(false);
-	const onVisualReadyChangeRef = useRef(onVisualReadyChange);
-	useLayoutEffect(() => {
-		onVisualReadyChangeRef.current = onVisualReadyChange;
-	}, [onVisualReadyChange]);
-	const handleVisualReady = useCallback(() => {
-		if (visualReadyRef.current) return;
-		visualReadyRef.current = true;
-		onVisualReadyChange?.(true);
-	}, [onVisualReadyChange]);
-	useEffect(
-		() => () => {
-			if (visualReadyRef.current) onVisualReadyChangeRef.current?.(false);
-		},
-		[],
-	);
-	useLayoutEffect(() => {
-		if (!visualReadyRef.current) return;
-		// A retained, idle visual tree is still a valid warm cache. Invalidate it
-		// only when the DOM is actually evicted or when a background run can make
-		// the frozen transcript stale.
-		if (renderVisual && (active || !runtimeBusy)) return;
-		visualReadyRef.current = false;
-		onVisualReadyChange?.(false);
-	}, [active, onVisualReadyChange, renderVisual, runtimeBusy]);
+	const { renderVisual, handleVisualReady } = useChatVisualRetention({
+		active,
+		retainBackgroundVisual,
+		runtimeBusy,
+		uiStateKey,
+		writeUiState,
+		onVisualReadyChange,
+	});
 	const piFeatures = usePiSessionFeatures({
 		client,
 		active,
@@ -527,82 +307,13 @@ function ChatPageImpl(props: ChatPageProps) {
 		extensionNotifications,
 		dismissExtensionNotification,
 	} = piFeatures;
-	const [fileSuggestions, setFileSuggestions] = useState<ComposerSuggestion[]>(
-		[],
-	);
-	const fileSuggestionTimerRef = useRef<number | null>(null);
-	const fileSuggestionRequestRef = useRef(0);
-	const fileSuggestionCacheRef = useRef<Map<string, FileSuggestionCacheEntry>>(
-		new Map(),
-	);
-	const handleSuggestionTrigger = useCallback(
-		(trigger: "@" | "/" | null, query: string) => {
-			fileSuggestionRequestRef.current += 1;
-			const requestId = fileSuggestionRequestRef.current;
-			if (fileSuggestionTimerRef.current !== null) {
-				window.clearTimeout(fileSuggestionTimerRef.current);
-				fileSuggestionTimerRef.current = null;
-			}
-			if (trigger === "/") {
-				setFileSuggestions([]);
-				if (!session.externalRunning) void loadCommands();
-				return;
-			}
-			if (trigger !== "@") {
-				setFileSuggestions([]);
-				return;
-			}
-			const normalizedQuery = query.trim();
-			const cacheKey = `${session.projectRecord.id}\0${normalizedQuery.toLowerCase()}`;
-			const cached = fileSuggestionCacheRef.current.get(cacheKey);
-			if (cached && cached.expiresAt > Date.now()) {
-				fileSuggestionCacheRef.current.delete(cacheKey);
-				fileSuggestionCacheRef.current.set(cacheKey, cached);
-				setFileSuggestions(cached.suggestions);
-				return;
-			}
-			if (cached) fileSuggestionCacheRef.current.delete(cacheKey);
-
-			fileSuggestionTimerRef.current = window.setTimeout(() => {
-				fileSuggestionTimerRef.current = null;
-				void searchProjectFiles(session.projectRecord.id, normalizedQuery)
-					.then((paths) => {
-						if (fileSuggestionRequestRef.current !== requestId) return;
-						const suggestions = createFileSuggestions(paths, normalizedQuery);
-						fileSuggestionCacheRef.current.set(cacheKey, {
-							expiresAt: Date.now() + FILE_SUGGESTION_CACHE_TTL_MS,
-							suggestions,
-						});
-						while (
-							fileSuggestionCacheRef.current.size >
-							FILE_SUGGESTION_CACHE_MAX_ENTRIES
-						) {
-							const oldestKey = fileSuggestionCacheRef.current
-								.keys()
-								.next().value;
-							if (oldestKey === undefined) break;
-							fileSuggestionCacheRef.current.delete(oldestKey);
-						}
-						setFileSuggestions(suggestions);
-					})
-					.catch((error) => {
-						if (fileSuggestionRequestRef.current !== requestId) return;
-						console.warn("Failed to load file suggestions", error);
-						setFileSuggestions([]);
-					});
-			}, FILE_SUGGESTION_DEBOUNCE_MS);
-		},
-		[loadCommands, session.externalRunning, session.projectRecord.id],
-	);
-	useEffect(
-		() => () => {
-			fileSuggestionRequestRef.current += 1;
-			if (fileSuggestionTimerRef.current !== null) {
-				window.clearTimeout(fileSuggestionTimerRef.current);
-			}
-		},
-		[],
-	);
+	const handleCommandsTrigger = useCallback(() => {
+		if (!session.externalRunning) void loadCommands();
+	}, [loadCommands, session.externalRunning]);
+	const { fileSuggestions, handleSuggestionTrigger } = useChatFileSuggestions({
+		projectId: session.projectRecord.id,
+		onCommandsTrigger: handleCommandsTrigger,
+	});
 	const composerSuggestions = useMemo(
 		() => [
 			...fileSuggestions,
@@ -623,189 +334,32 @@ function ChatPageImpl(props: ChatPageProps) {
 		session.sessionPath,
 		controllerEffectiveLoadState,
 	);
-	const tryHandleComposerCommand = useCallback(
-		async (submission: ChatSubmission) => {
-			const command = submission.text.trim();
-			// 仅输入开头的斜杠作为命令执行，避免正文中的 / 误触发。
-			if (!submission.text.startsWith("/")) return false;
-			const commandName = command.slice(1).split(/\s+/, 1)[0];
 
-			if (commandName === "new") {
-				clearDraft();
-				setComposerImages([]);
-				onNewChat?.();
-				return true;
-			}
-			if (session.externalRunning) {
-				toast.info(t("chat.externalReadOnly"));
-				return true;
-			}
-			if (commandName === "compact") {
-				if (running) {
-					toast.info(t("chat.waitCompaction"));
-					return true;
-				}
-				const customInstructions = command.slice("/compact".length).trim();
-				clearDraft();
-				setComposerImages([]);
-				void compact(customInstructions || undefined);
-				return true;
-			}
-			if (await tryExecuteExtensionCommand(command)) {
-				clearDraft();
-				setComposerImages([]);
-				return true;
-			}
-			return false;
-		},
-		[
-			clearDraft,
-			compact,
-			onNewChat,
-			running,
-			session.externalRunning,
-			tryExecuteExtensionCommand,
-			t,
-		],
-	);
-	const persistDeferredHistorySubmissions = useCallback(
-		(submissions: string[]) => {
-			if (uiStateKey && writeUiState) {
-				writeUiState(uiStateKey, { deferredSubmissions: submissions });
-			}
-		},
-		[uiStateKey, writeUiState],
-	);
-	const handleComposerSubmit = useCallback(
-		(submission: ChatSubmission) => {
-			void (async () => {
-				if (session.externalRunning && submission.text.trim() !== "/new") {
-					toast.info(t("chat.externalReadOnly"));
-					return;
-				}
-				if (await tryHandleComposerCommand(submission)) return;
-				if (!historySubmissionBlocked) {
-					handleSubmit(submission);
-					setComposerImages([]);
-					return;
-				}
-				if (submission.images.length > 0) {
-					toast.info(t("chat.waitHistory"));
-					return;
-				}
-				const trimmed = submission.text.trim();
-				if (!trimmed) return;
-				const next = [...pendingHistorySubmissionsRef.current, trimmed];
-				pendingHistorySubmissionsRef.current = next;
-				persistDeferredHistorySubmissions(next);
-				clearDraft();
-			})();
-		},
-		[
-			clearDraft,
-			handleSubmit,
+	const { handleComposerSubmit, tryHandleComposerCommand } =
+		useChatComposerSubmission({
+			uiStateKey,
+			writeUiState,
+			initialDeferredHistory: initialDeferredSubmissions.history,
+			externalRunning: session.externalRunning,
 			historySubmissionBlocked,
-			persistDeferredHistorySubmissions,
-			session.externalRunning,
-			tryHandleComposerCommand,
-			t,
-		],
-	);
+			running,
+			clearDraft,
+			clearImages: () => setComposerImages([]),
+			onNewChat,
+			compact,
+			tryExecuteExtensionCommand,
+			handleSubmit,
+			handleFollowUp,
+		});
 
-	const handleForkAssistant = useCallback(
-		async (messageId: string) => {
-			if (
-				forkingMessageId ||
-				runtimeBusy ||
-				historyPending ||
-				session.temporary ||
-				session.externalRunning
-			) {
-				return;
-			}
-
-			setForkingMessageId(messageId);
-			let forkClient: ReturnType<typeof createChatSessionClient> | null = null;
-			let forkedSession: { sessionId: string; sessionPath: string } | null =
-				null;
-			try {
-				await client.ensure();
-				const [sourceState, entries] = await Promise.all([
-					client.getPiAgentState(),
-					client.getPiEntries(),
-				]);
-				if (!sourceState.sessionFile) {
-					throw new Error(t("chat.forkUnsaved"));
-				}
-				const target = resolveAssistantForkTarget(
-					getConversationMessages(),
-					messageId,
-					entries,
-				);
-				const forkRuntimeId = `fork-runtime-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-				forkClient = createChatSessionClient(
-					session.projectRecord.id,
-					forkRuntimeId,
-					sourceState.sessionFile,
-					{ owner: "fork" },
-				);
-				await forkClient.ensure();
-				const result =
-					target.type === "clone"
-						? await forkClient.clonePiSession()
-						: await forkClient.forkPiSession(target.entryId);
-				if (result.cancelled) {
-					toast.info(t("chat.forkCancelled"));
-					return;
-				}
-
-				const state = await forkClient.getPiAgentState();
-				if (!state.sessionId || !state.sessionFile) {
-					throw new Error(t("chat.forkNoInfo"));
-				}
-				forkedSession = {
-					sessionId: state.sessionId,
-					sessionPath: state.sessionFile,
-				};
-			} catch (error) {
-				toast.error(t("chat.forkFailed"), {
-					description: userErrorMessage(error),
-				});
-			} finally {
-				await forkClient?.dispose("fork_cleanup").catch(() => undefined);
-				setForkingMessageId(null);
-			}
-			if (forkedSession) onForkSessionCreated?.(forkedSession);
-		},
-		[
-			client,
-			forkingMessageId,
-			historyPending,
-			getConversationMessages,
-			onForkSessionCreated,
-			runtimeBusy,
-			session.projectRecord.id,
-			session.temporary,
-			session.externalRunning,
-			t,
-		],
-	);
-
-	useEffect(() => {
-		if (historySubmissionBlocked || running) return;
-		const [first, ...rest] = pendingHistorySubmissionsRef.current;
-		if (!first) return;
-		pendingHistorySubmissionsRef.current = [];
-		persistDeferredHistorySubmissions([]);
-		handleSubmit(createChatSubmission(first));
-		for (const message of rest) handleFollowUp(createChatSubmission(message));
-	}, [
-		handleFollowUp,
-		handleSubmit,
-		historySubmissionBlocked,
-		persistDeferredHistorySubmissions,
-		running,
-	]);
+	const { forkingMessageId, handleForkAssistant } = useChatFork({
+		client,
+		session,
+		runtimeBusy,
+		historyPending,
+		getConversationMessages,
+		onForkSessionCreated,
+	});
 
 	useEffect(() => {
 		if (controllerId) onRuntimeBusyChange?.(controllerId, runtimeBusy);
@@ -822,45 +376,20 @@ function ChatPageImpl(props: ChatPageProps) {
 		refreshHistoryIfStale(active, activeTurnSessionId);
 	}, [active, activeTurnSessionId, refreshHistoryIfStale]);
 
-	useKeyboardShortcut(
-		keyboardShortcuts["cycle-model"],
-		() => {
-			if (modelOptions.length === 0) {
-				void loadModelOptions();
-				return;
-			}
-			const currentIndex = selectedModel
-				? modelOptions.findIndex(
-						(model) =>
-							model.provider === selectedModel.provider &&
-							model.id === selectedModel.id,
-					)
-				: -1;
-			const nextModel = modelOptions[(currentIndex + 1) % modelOptions.length];
-			if (nextModel) handleModelChange(nextModel);
-		},
-		{
-			enabled:
-				active &&
-				!modelChanging &&
-				modelLoadState !== "loading" &&
-				!runtimeBusy &&
-				!historyPending,
-		},
-	);
-
-	useKeyboardShortcut(
-		keyboardShortcuts["cycle-scoped-model"],
+	useChatModelShortcuts({
+		active,
+		cycleModelShortcut: keyboardShortcuts["cycle-model"],
+		cycleScopedModelShortcut: keyboardShortcuts["cycle-scoped-model"],
+		modelOptions,
+		selectedModel,
+		modelChanging,
+		modelLoadState,
+		runtimeBusy,
+		historyPending,
+		loadModelOptions,
+		handleModelChange,
 		handleQuickCycleModel,
-		{
-			enabled:
-				active &&
-				!modelChanging &&
-				modelLoadState !== "loading" &&
-				!runtimeBusy &&
-				!historyPending,
-		},
-	);
+	});
 
 	// Preserve the last painted visual tree for a busy/recent background chat so
 	// switching back can reveal existing DOM immediately. The subscriber below is

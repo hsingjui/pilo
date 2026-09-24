@@ -11,7 +11,7 @@ import type {
 	DiscardedRuntimeBarrier,
 } from "@/components/chat/chat-runtime-types";
 import type { ChatSession } from "@/components/chat/chat-page-utils";
-import { createLocalMessageId } from "@/components/chat/use-chat-conversation";
+import { createLocalMessageId } from "@/components/chat/chat-conversation-model";
 import {
 	chatSubmissionHasContent,
 	createChatSubmission,

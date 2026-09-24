@@ -17,6 +17,7 @@ import {
 	identifyOpenedChat,
 	indexedChatSession,
 	mergeSidebarSessionsWithOpenChats,
+	resolveChatSession,
 	syncOpenedChatSessionMetadata,
 	touchOpenedChat,
 	trimOpenedChats,
@@ -29,6 +30,7 @@ import {
 	type ChatUiStatePatch,
 } from "@/components/app/chat-ui-state-cache";
 import { useAppSessionIndex } from "@/components/app/use-app-session-index";
+import { useSessionUnread } from "@/components/app/use-session-unread";
 import type { BusyChatControllersRef } from "@/components/app/use-opened-chat-controllers";
 import type { ChatSession } from "@/components/chat/chat-page";
 import { userErrorMessage } from "@/lib/app-error";
@@ -178,40 +180,10 @@ export function useAppChatWorkspace({
 	);
 
 	// 未读标记：agent 从运行中转为空闲时置为未读，打开会话即清除。
-	// 在渲染期根据上一帧的运行状态推导，避免在 effect 内 setState 引发级联渲染。
-	const [sessionUnreadState, setSessionUnreadState] = useState<{
-		prevActive: Map<string, boolean>;
-		unread: ReadonlySet<string>;
-	}>(() => ({ prevActive: new Map(), unread: new Set() }));
-	{
-		const { prevActive, unread: currentUnread } = sessionUnreadState;
-		const nextActive = new Map<string, boolean>();
-		let unread: ReadonlySet<string> = currentUnread;
-		let activeChanged = false;
-		for (const session of sidebarSessionsBase) {
-			const wasActive = prevActive.get(session.id) === true;
-			const active = Boolean(session.active);
-			nextActive.set(session.id, active);
-			if (wasActive !== active) activeChanged = true;
-			if (
-				wasActive &&
-				!active &&
-				session.id !== selectedSessionId &&
-				!unread.has(session.id)
-			) {
-				unread = new Set(unread).add(session.id);
-			}
-		}
-		if (selectedSessionId && unread.has(selectedSessionId)) {
-			const cleared = new Set(unread);
-			cleared.delete(selectedSessionId);
-			unread = cleared;
-		}
-		if (activeChanged || unread !== currentUnread) {
-			setSessionUnreadState({ prevActive: nextActive, unread });
-		}
-	}
-	const unreadSessionIds = sessionUnreadState.unread;
+	const unreadSessionIds = useSessionUnread(
+		sidebarSessionsBase,
+		selectedSessionId,
+	);
 
 	const sidebarSessions = useMemo(
 		() =>
@@ -245,61 +217,35 @@ export function useAppChatWorkspace({
 			) ?? null)
 		: null;
 
-	const chatSession = useMemo<ChatSession | null>(() => {
-		if (
-			selectedOpenedChat &&
-			(selectedOpenedChatBusy || !selectedIndexedSession)
-		) {
-			const sessionPath = selectedOpenedChat.session.sessionPath;
-			const externalTurnOpen = sessionPath
-				? isExternalOpenTurn(
-						selectedOpenedChat.session.projectRecord.id,
-						sessionPath,
-					)
-				: false;
-			return {
-				...selectedOpenedChat.session,
-				externalRunning: externalTurnOpen,
-				externalTurnOpen,
-			};
-		}
-		if (selectedIndexedSession && selectedProject) {
-			const externalTurnOpen = isExternalOpenTurn(
-				selectedIndexedSession.projectId,
-				selectedIndexedSession.sessionPath,
-			);
-			return indexedChatSession(
+	const chatSession = useMemo<ChatSession | null>(
+		() =>
+			resolveChatSession({
+				selectedOpenedChat,
+				selectedOpenedChatBusy,
 				selectedIndexedSession,
 				selectedProject,
-				externalTurnOpen,
-				externalTurnOpen,
-			);
-		}
-		if (activeProject && draftSessionStarted) {
-			return {
-				id: draftSessionId,
-				title: draftTemporary ? t("app.temporaryChat") : t("app.newChat"),
-				projectRecord: activeProject,
-				temporary: draftTemporary || undefined,
-				initialModel: draftSessionModel ?? undefined,
-				initialThinkingLevel: draftSessionThinkingLevel ?? undefined,
-			};
-		}
-		return null;
-	}, [
-		selectedOpenedChat,
-		selectedOpenedChatBusy,
-		selectedIndexedSession,
-		selectedProject,
-		isExternalOpenTurn,
-		activeProject,
-		draftSessionStarted,
-		draftTemporary,
-		draftSessionId,
-		draftSessionModel,
-		draftSessionThinkingLevel,
-		t,
-	]);
+				isExternalOpenTurn,
+				activeProject: activeProject ?? null,
+				draftSessionStarted,
+				draftTemporary,
+				draftSessionId,
+				draftSessionModel,
+				draftSessionThinkingLevel,
+			}),
+		[
+			selectedOpenedChat,
+			selectedOpenedChatBusy,
+			selectedIndexedSession,
+			selectedProject,
+			isExternalOpenTurn,
+			activeProject,
+			draftSessionStarted,
+			draftTemporary,
+			draftSessionId,
+			draftSessionModel,
+			draftSessionThinkingLevel,
+		],
+	);
 
 	const renderedOpenedChats = useMemo(
 		() =>

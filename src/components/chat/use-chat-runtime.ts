@@ -13,7 +13,7 @@ import {
 	useChatRuntimeEvents,
 } from "@/components/chat/use-chat-runtime-events";
 import { useChatRuntimeQueue } from "@/components/chat/use-chat-runtime-queue";
-import { createLocalMessageId } from "@/components/chat/use-chat-conversation";
+import { createLocalMessageId } from "@/components/chat/chat-conversation-model";
 import { useRuntimeConversationDispatch } from "@/components/chat/use-runtime-conversation-dispatch";
 import { getReplyRunwayHeight } from "@/lib/chat-scroll-state";
 import { registerChatRuntimeReplayTarget } from "@/lib/chat-runtime-replay";

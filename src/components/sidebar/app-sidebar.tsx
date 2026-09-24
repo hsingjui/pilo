@@ -1,53 +1,24 @@
 /* oxlint-disable jsx-a11y/prefer-tag-over-role -- 宽度拖拽手柄是垂直分割线，role=separator 语义正确，无对应语义 HTML 元素 */
-import {
-	lazy,
-	Suspense,
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-	type ReactNode,
-	type KeyboardEvent as ReactKeyboardEvent,
-	type PointerEvent as ReactPointerEvent,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-	closestCenter,
-	DndContext,
-	PointerSensor,
-	type DragEndEvent,
-	useSensor,
-	useSensors,
-} from "@dnd-kit/core";
-import {
-	arrayMove,
-	SortableContext,
-	useSortable,
-	verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { PanelLeft, RefreshCw, Search, SquarePen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/lib/preferences-provider";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
-import { ScrollArea, Skeleton } from "@/ui";
 import { IS_MACOS } from "@/components/title-bar";
 import { CommandPalette } from "@/components/command-palette";
 import { ProjectSessionsToolbar } from "./project-sessions-toolbar";
+import { SidebarTree } from "./sidebar-tree";
 import {
-	EnvRow,
-	RecentSectionHeader,
-	SessionRow,
-	SessionRowGlide,
-	ProjectRow,
-} from "./rows";
+	MAX_SIDEBAR_WIDTH,
+	MIN_SIDEBAR_WIDTH,
+	useSidebarLayout,
+} from "./use-sidebar-layout";
 import {
 	sortSidebarSessionsActiveFirst,
 	sortSidebarSessionsByRecency,
-	summarizeProjectSessions,
 } from "./session-list";
-import {
+import type {
 	AppSidebarProps,
 	SidebarEnv,
 	SidebarEnvView,
@@ -58,21 +29,6 @@ import {
 export type { AppSidebarProps, SidebarEnv, SidebarSession, SidebarProject };
 
 // ---- 侧边栏 ---------------------------------------------------------------
-
-/** 侧栏最小宽度：低于该值拖拽视为折叠（拖到 MIN 后调用 onCollapse）。 */
-const MIN_SIDEBAR_WIDTH = 240;
-
-/** 侧栏最大宽度。 */
-const MAX_SIDEBAR_WIDTH = 480;
-
-/** 侧栏默认宽度。 */
-const DEFAULT_SIDEBAR_WIDTH = 292;
-
-/** 方向键每次调整的宽度。 */
-const RESIZE_STEP = 16;
-
-/** 侧栏宽度持久化 key。 */
-const SIDEBAR_WIDTH_STORAGE_KEY = "pilo.sidebarWidth";
 
 /** 环境/项目折叠状态持久化 key。 */
 const COLLAPSED_SECTIONS_STORAGE_KEY = "pilo.collapsedSections";
@@ -87,30 +43,6 @@ const SHOW_PROJECTS_IN_RECENTS_STORAGE_KEY =
 /** “最近会话”视图最多展示的会话数。 */
 const ENV_RECENT_SESSION_LIMIT = 50;
 const EMPTY_REFRESHING_PROJECT_IDS: ReadonlySet<string> = new Set();
-
-/** 整体刷新时的骨架占位，模拟环境/项目/会话行的层级。 */
-const SKELETON_ROW_WIDTHS = ["72%", "58%", "64%", "48%", "68%"] as const;
-
-function SidebarSkeleton() {
-	return (
-		<div className="space-y-3 px-1 pt-1" aria-hidden="true">
-			{["env-a", "env-b"].map((envKey) => (
-				<div key={envKey} className="space-y-1.5">
-					<div className="flex items-center gap-2 px-2 py-1">
-						<Skeleton className="h-4 w-4 rounded-md" />
-						<Skeleton className="h-3.5 w-24" />
-					</div>
-					{SKELETON_ROW_WIDTHS.map((width) => (
-						<div key={width} className="flex items-center gap-2 px-2 py-1.5">
-							<Skeleton className="h-4 w-4 shrink-0 rounded-md" />
-							<Skeleton className="h-3.5" style={{ width }} />
-						</div>
-					))}
-				</div>
-			))}
-		</div>
-	);
-}
 
 function readCollapsedSections(): Record<string, boolean> {
 	try {
@@ -133,84 +65,6 @@ function readOrganizeMode(): SidebarEnvView {
 function readShowProjectsInRecents(): boolean {
 	return (
 		window.localStorage.getItem(SHOW_PROJECTS_IN_RECENTS_STORAGE_KEY) === "1"
-	);
-}
-
-const VirtualSessionRows = lazy(() =>
-	import("./virtual-session-rows").then((module) => ({
-		default: module.VirtualSessionRows,
-	})),
-);
-
-function SortableProjectBlock({
-	id,
-	disabled,
-	row,
-	children,
-}: {
-	id: string;
-	disabled: boolean;
-	row: ReactNode;
-	children?: ReactNode;
-}) {
-	const {
-		isDragging,
-		listeners,
-		setActivatorNodeRef,
-		setNodeRef,
-		transform,
-		transition,
-	} = useSortable({
-		id,
-		disabled,
-		transition: {
-			duration: 180,
-			easing: "cubic-bezier(0.2, 0, 0, 1)",
-		},
-	});
-	const pointerDown = listeners?.onPointerDown;
-
-	return (
-		<div
-			ref={setNodeRef}
-			style={{
-				transform: CSS.Transform.toString(transform),
-				transition,
-				position: "relative",
-				zIndex: isDragging ? 20 : undefined,
-			}}
-			className="grid w-full min-w-0 gap-px overflow-visible rounded-md"
-		>
-			<div
-				ref={setActivatorNodeRef}
-				{...listeners}
-				onPointerDown={(event) => {
-					const target = event.target as HTMLElement;
-					if (
-						target.closest(
-							"button, input, textarea, select, a, [role='menuitem']",
-						)
-					) {
-						return;
-					}
-					pointerDown?.(event);
-				}}
-				className={cn(
-					"rounded-md touch-none",
-					disabled ? "cursor-default" : "cursor-grab active:cursor-grabbing",
-				)}
-			>
-				<div
-					className={cn(
-						"rounded-md transition-[transform,opacity,box-shadow] duration-150 ease-out",
-						isDragging && "scale-[0.99] opacity-80 shadow-sm",
-					)}
-				>
-					{row}
-				</div>
-			</div>
-			{children}
-		</div>
 	);
 }
 
@@ -240,10 +94,6 @@ export function AppSidebar({
 	footer,
 }: AppSidebarProps) {
 	const [paletteOpen, setPaletteOpen] = useState(false);
-	// 头部操作按钮只在侧栏完全展开后显示：展开过渡期间卡片右缘从 0 长出，
-	// 锚在右缘的按钮会横穿 macOS 原生红绿灯区域。settledCollapsed 记录
-	// “已完成过渡的折叠状态”，与 collapsed 不同即说明动画仍在进行。
-	const [settledCollapsed, setSettledCollapsed] = useState(collapsed);
 	const { t } = useTranslation();
 	const [projectSessionsViewId, setProjectSessionsViewId] = useState<
 		string | null
@@ -277,7 +127,14 @@ export function AppSidebar({
 	}, [onDeleteSession, onSelectSession, onUpdateSession]);
 
 	// 拖拽右边缘调整宽度；拖到最小宽度以下即折叠。
-	const asideRef = useRef<HTMLElement>(null);
+	const {
+		asideRef,
+		settledCollapsed,
+		sidebarWidth,
+		resizing,
+		startResize,
+		handleResizeKeyDown,
+	} = useSidebarLayout({ collapsed, onCollapse });
 	const scrollViewportRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
 		const viewport = scrollViewportRef.current;
@@ -304,88 +161,6 @@ export function AppSidebar({
 		viewport.addEventListener("wheel", stopBoundaryBounce, { passive: false });
 		return () => viewport.removeEventListener("wheel", stopBoundaryBounce);
 	}, []);
-	const [sidebarWidth, setSidebarWidth] = useState(() => {
-		const stored = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
-		if (!stored) return DEFAULT_SIDEBAR_WIDTH;
-		const parsed = Number.parseInt(stored, 10);
-		if (!Number.isFinite(parsed)) return DEFAULT_SIDEBAR_WIDTH;
-		return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, parsed));
-	});
-	const [resizing, setResizing] = useState(false);
-	const suppressProjectClickRef = useRef(false);
-	const projectDragSensors = useSensors(
-		useSensor(PointerSensor, {
-			activationConstraint: { distance: 6 },
-		}),
-	);
-
-	useEffect(() => {
-		window.localStorage.setItem(
-			SIDEBAR_WIDTH_STORAGE_KEY,
-			String(sidebarWidth),
-		);
-	}, [sidebarWidth]);
-
-	// 收起时立即隐藏；展开时等宽度过渡（200ms）结束再显示。
-	useEffect(() => {
-		const timer = window.setTimeout(() => setSettledCollapsed(collapsed), 220);
-		return () => window.clearTimeout(timer);
-	}, [collapsed]);
-
-	const startResize = useCallback(
-		(event: ReactPointerEvent) => {
-			event.preventDefault();
-			const aside = asideRef.current;
-			if (!aside) return;
-			const startX = event.clientX;
-			const startWidth = aside.getBoundingClientRect().width;
-			// 折叠需要比最小宽度再小一截才触发（滞后带），
-			// 避免在最小宽度时按下/轻微抖动就误折叠、无法向外拖。
-			const collapseAt = MIN_SIDEBAR_WIDTH - 8;
-			const handleMove = (moveEvent: PointerEvent) => {
-				const rawWidth = startWidth + (moveEvent.clientX - startX);
-				if (rawWidth <= collapseAt) {
-					setSidebarWidth(MIN_SIDEBAR_WIDTH);
-					onCollapse?.();
-					cleanup();
-					return;
-				}
-				setSidebarWidth(
-					Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, rawWidth)),
-				);
-			};
-			const cleanup = () => {
-				window.removeEventListener("pointermove", handleMove);
-				window.removeEventListener("pointerup", cleanup);
-				window.removeEventListener("pointercancel", cleanup);
-				document.body.classList.remove("select-none");
-				setResizing(false);
-			};
-			window.addEventListener("pointermove", handleMove);
-			window.addEventListener("pointerup", cleanup);
-			window.addEventListener("pointercancel", cleanup);
-			document.body.classList.add("select-none");
-			setResizing(true);
-		},
-		[onCollapse],
-	);
-
-	// 键盘路径：←/→ 每次调 16px；已到最小宽度时继续 ← 则折叠，与拖拽一致。
-	const handleResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-		if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-		event.preventDefault();
-		if (event.key === "ArrowLeft" && sidebarWidth <= MIN_SIDEBAR_WIDTH) {
-			onCollapse?.();
-			return;
-		}
-		const delta = event.key === "ArrowRight" ? RESIZE_STEP : -RESIZE_STEP;
-		setSidebarWidth(
-			Math.min(
-				MAX_SIDEBAR_WIDTH,
-				Math.max(MIN_SIDEBAR_WIDTH, sidebarWidth + delta),
-			),
-		);
-	};
 
 	useEffect(() => {
 		window.localStorage.setItem(
@@ -441,20 +216,7 @@ export function AppSidebar({
 			ENV_RECENT_SESSION_LIMIT,
 		);
 	}, [organizeMode, sessions]);
-	const handleProjectDragEnd = useCallback(
-		(envId: string, event: DragEndEvent) => {
-			const { active, over } = event;
-			if (!over || active.id === over.id) return;
-			const order = (projectsByEnv.get(envId) ?? []).map(
-				(project) => project.id,
-			);
-			const fromIndex = order.indexOf(String(active.id));
-			const toIndex = order.indexOf(String(over.id));
-			if (fromIndex < 0 || toIndex < 0) return;
-			onReorderProjects?.(envId, arrayMove(order, fromIndex, toIndex));
-		},
-		[onReorderProjects, projectsByEnv],
-	);
+
 	const sessionsByProject = useMemo(() => {
 		const grouped = new Map<string, SidebarSession[]>();
 		for (const session of sessions) {
@@ -518,56 +280,6 @@ export function AppSidebar({
 		(id: string) => onDeleteSessionRef.current?.(id),
 		[],
 	);
-	const renderSession = useCallback(
-		(session: SidebarSession) => {
-			// 「展示项目」开启且处于“最近会话”视图时才带项目名（两行式）；
-			// 项目树视图下会话已归属项目节点，不重复展示项目名。
-			const showProjectName =
-				organizeMode === "recent" && showProjectsInRecents;
-			return (
-				<SessionRow
-					key={session.id}
-					session={session}
-					selected={activeSessionId === session.id}
-					onSelect={handleSelectSession}
-					onDelete={session.sessionPath ? handleDeleteSession : undefined}
-					onRename={handleRenameSession}
-					projectName={
-						showProjectName ? projectById.get(session.projectId) : undefined
-					}
-				/>
-			);
-		},
-		[
-			activeSessionId,
-			organizeMode,
-			showProjectsInRecents,
-			projectById,
-			handleDeleteSession,
-			handleRenameSession,
-			handleSelectSession,
-		],
-	);
-
-	const renderSessionList = (projectSessions: SidebarSession[]) => {
-		if (projectSessions.length < 40) {
-			return (
-				<SessionRowGlide>{projectSessions.map(renderSession)}</SessionRowGlide>
-			);
-		}
-
-		return (
-			<Suspense
-				fallback={<>{projectSessions.slice(0, 40).map(renderSession)}</>}
-			>
-				<VirtualSessionRows
-					sessions={projectSessions}
-					scrollViewportRef={scrollViewportRef}
-					renderSession={renderSession}
-				/>
-			</Suspense>
-		);
-	};
 
 	return (
 		<>
@@ -662,189 +374,37 @@ export function AppSidebar({
 							</div>
 						)}
 					</div>
-					<ScrollArea
-						className="mt-2 min-h-0 min-w-0 flex-1 overflow-x-hidden"
-						viewportRef={scrollViewportRef}
-						viewportClassName="min-w-0 overflow-x-hidden overscroll-y-none pl-1.5 pr-2.5 pb-3"
-						scrollbarClassName="w-2 p-px"
-						scrollbarThumbClassName="bg-[hsl(var(--muted-foreground)/0.35)] hover:bg-[hsl(var(--muted-foreground)/0.45)] active:bg-[hsl(var(--muted-foreground)/0.55)]"
-					>
-						<div className="relative w-full min-w-0 overflow-x-hidden pt-1">
-							{refreshing ? (
-								<SidebarSkeleton />
-							) : organizeMode === "recent" ? (
-								recentSessions.length > 0 ? (
-									<section className="mb-3 w-full min-w-0 space-y-0.5 overflow-hidden last:mb-0">
-										<RecentSectionHeader
-											collapsed={collapsedSections["recent"] ?? false}
-											onToggle={() => toggleSection("recent")}
-											view={organizeMode}
-											onViewChange={changeOrganizeMode}
-											showProjects={showProjectsInRecents}
-											onShowProjectsChange={setShowProjectsInRecents}
-										/>
-										{!(collapsedSections["recent"] ?? false)
-											? renderSessionList(recentSessions)
-											: null}
-									</section>
-								) : (
-									<div className="px-3 py-8 text-center text-xs text-sidebar-foreground-muted">
-										{t("sidebar.noSessions")}
-									</div>
-								)
-							) : projectSessionsViewProject ? (
-								projectSessionsViewSessions.length > 0 ? (
-									renderSessionList(projectSessionsViewSessions)
-								) : (
-									<div className="px-3 py-8 text-center text-xs text-sidebar-foreground-muted">
-										{t("sidebar.noSessions")}
-									</div>
-								)
-							) : (
-								envs.map((env) => {
-									const envCollapsed =
-										collapsedSections[`env:${env.id}`] ?? false;
-									const envProjects = projectsByEnv.get(env.id) ?? [];
-									return (
-										<section
-											key={env.id}
-											className="mb-3 w-full min-w-0 space-y-0.5 overflow-hidden last:mb-0"
-										>
-											<EnvRow
-												env={env}
-												collapsed={envCollapsed}
-												onToggle={() => toggleSection(`env:${env.id}`)}
-												view={organizeMode}
-												onViewChange={changeOrganizeMode}
-												showProjects={showProjectsInRecents}
-												onShowProjectsChange={setShowProjectsInRecents}
-												onAddProject={onAddProject}
-												onDeleteConnection={onDeleteConnection}
-											/>
-											{!envCollapsed ? (
-												<>
-													<DndContext
-														sensors={projectDragSensors}
-														collisionDetection={closestCenter}
-														onDragStart={() => {
-															suppressProjectClickRef.current = true;
-														}}
-														onDragCancel={() => {
-															window.setTimeout(() => {
-																suppressProjectClickRef.current = false;
-															}, 0);
-														}}
-														onDragEnd={(event) => {
-															handleProjectDragEnd(env.id, event);
-															window.setTimeout(() => {
-																suppressProjectClickRef.current = false;
-															}, 0);
-														}}
-													>
-														<SortableContext
-															items={envProjects.map((project) => project.id)}
-															strategy={verticalListSortingStrategy}
-														>
-															{envProjects.map((project) => {
-																const projectCollapsed =
-																	collapsedSections[`ws:${project.id}`] ?? true;
-																const projectSessions =
-																	sessionsByProject.get(project.id) ?? [];
-																const projectSessionSummary = projectCollapsed
-																	? null
-																	: summarizeProjectSessions(
-																			projectSessions,
-																			activeSessionId,
-																		);
-																return (
-																	<SortableProjectBlock
-																		key={project.id}
-																		id={project.id}
-																		disabled={
-																			refreshingProjectIds.has(project.id) ||
-																			envProjects.length < 2
-																		}
-																		row={
-																			<ProjectRow
-																				project={project}
-																				env={env}
-																				collapsed={projectCollapsed}
-																				selected={
-																					activeSessionId === null &&
-																					selectedProjectId === project.id
-																				}
-																				refreshing={refreshingProjectIds.has(
-																					project.id,
-																				)}
-																				onSelect={() => {
-																					if (suppressProjectClickRef.current)
-																						return;
-																					onFocusProject?.(project.id);
-																					onNewChatInProject?.(project.id);
-																				}}
-																				onToggle={() => {
-																					const key = `ws:${project.id}`;
-																					toggleSection(key, true);
-																					if (projectCollapsed)
-																						onRefreshProjectSessions?.(
-																							project.id,
-																						);
-																				}}
-																				onNewChat={onNewChatInProject}
-																				onDelete={onDeleteProject}
-																				onRefreshSessions={
-																					onRefreshProjectSessions
-																						? () =>
-																								onRefreshProjectSessions(
-																									project.id,
-																								)
-																						: undefined
-																				}
-																			/>
-																		}
-																	>
-																		{projectSessionSummary ? (
-																			<>
-																				<SessionRowGlide>
-																					{projectSessionSummary.visible.map(
-																						renderSession,
-																					)}
-																				</SessionRowGlide>
-																				{projectSessionSummary.hiddenCount >
-																				0 ? (
-																					<button
-																						type="button"
-																						className="flex w-full items-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-left text-xs text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sidebar-ring"
-																						onClick={() =>
-																							openProjectSessionsView(
-																								project.id,
-																							)
-																						}
-																					>
-																						<span
-																							aria-hidden="true"
-																							className="h-4 w-4 shrink-0"
-																						/>
-																						<span className="min-w-0 flex-1 truncate">
-																							{t("sidebar.viewAll")}
-																						</span>
-																					</button>
-																				) : null}
-																			</>
-																		) : null}
-																	</SortableProjectBlock>
-																);
-															})}
-														</SortableContext>
-													</DndContext>
-												</>
-											) : null}
-										</section>
-									);
-								})
-							)}
-						</div>
-					</ScrollArea>
+					<SidebarTree
+						scrollViewportRef={scrollViewportRef}
+						refreshing={refreshing}
+						organizeMode={organizeMode}
+						onOrganizeModeChange={changeOrganizeMode}
+						collapsedSections={collapsedSections}
+						onToggleSection={toggleSection}
+						showProjectsInRecents={showProjectsInRecents}
+						onShowProjectsInRecentsChange={setShowProjectsInRecents}
+						recentSessions={recentSessions}
+						projectSessionsViewProject={projectSessionsViewProject}
+						projectSessionsViewSessions={projectSessionsViewSessions}
+						onOpenProjectSessionsView={openProjectSessionsView}
+						projectById={projectById}
+						activeSessionId={activeSessionId}
+						selectedProjectId={selectedProjectId}
+						envs={envs}
+						projectsByEnv={projectsByEnv}
+						sessionsByProject={sessionsByProject}
+						refreshingProjectIds={refreshingProjectIds}
+						onFocusProject={onFocusProject}
+						onNewChatInProject={onNewChatInProject}
+						onDeleteProject={onDeleteProject}
+						onAddProject={onAddProject}
+						onDeleteConnection={onDeleteConnection}
+						onRefreshProjectSessions={onRefreshProjectSessions}
+						onReorderProjects={onReorderProjects}
+						onSelectSession={handleSelectSession}
+						onRenameSession={handleRenameSession}
+						onDeleteSession={handleDeleteSession}
+					/>
 					<footer className="flex shrink-0 items-center gap-1 border-t border-sidebar-border px-1.5 py-1">
 						{footer}
 					</footer>

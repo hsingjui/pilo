@@ -1,28 +1,15 @@
-import {
-	useCallback,
-	useEffect,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-	useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
 	createConversationState,
 	reduceConversationActions,
 	replayConversationEventsBatched,
 } from "@/lib/conversation-reducer";
-import type {
-	ChatMessage,
-	ConversationAction,
-	ConversationState,
-} from "@/lib/conversation-types";
+import type { ChatMessage, ConversationAction } from "@/lib/conversation-types";
 import {
 	loadSessionHistoryWindow,
 	type SessionHistory,
 	type SessionHistoryFingerprint,
-	type SessionHistoryMessageIndexEntry,
 } from "@/lib/sessions";
 import {
 	summarizeChatImages,
@@ -37,155 +24,20 @@ import {
 	getSessionHistoryFingerprint,
 	type ChatSession,
 } from "@/components/chat/chat-page-utils";
+import { recordHistoryWindowLoad } from "@/lib/chat-performance";
 import {
-	recordHistoryHydration,
-	recordHistoryWindowLoad,
-} from "@/lib/chat-performance";
-import {
-	createChatConversationStore,
-	type ChatConversationStore,
-} from "@/components/chat/chat-conversation-store";
-import {
-	createChatHistoryWindowStore,
-	type ChatHistoryWindowStore,
-} from "@/components/chat/chat-history-window-store";
+	alignHistoryMessages,
+	buildHistoryPrefix,
+	conversationReducerContext,
+	markExternalTurnLive,
+	sameHistoryFingerprint,
+} from "@/components/chat/chat-conversation-model";
+import { createChatConversationStore } from "@/components/chat/chat-conversation-store";
+import { createChatHistoryWindowStore } from "@/components/chat/chat-history-window-store";
 
-let localMessageSequence = 0;
-let localActivitySequence = 0;
-const EMPTY_PENDING_USERS: ConversationState["pendingUsers"] = [];
 const INITIAL_HISTORY_MESSAGE_COUNT = 80;
 const HISTORY_PAGE_MESSAGE_COUNT = 48;
 const HISTORY_PREFETCH_MESSAGES = 16;
-const NOOP_EXTERNAL_STORE_SUBSCRIBE = () => () => undefined;
-
-export function createLocalMessageId(
-	kind: "user" | "assistant" | "compaction",
-) {
-	localMessageSequence += 1;
-	return `local-${kind}-${Date.now()}-${localMessageSequence}`;
-}
-
-function createLocalContentId(kind: "thinking" | "text") {
-	localActivitySequence += 1;
-	return `local-${kind}-${Date.now()}-${localActivitySequence}`;
-}
-
-const conversationReducerContext = {
-	createMessageId: createLocalMessageId,
-	createContentId: createLocalContentId,
-	now: () => Date.now(),
-	formatTime,
-};
-
-function reviveExternalActivity<
-	T extends {
-		type: string;
-		status?: "complete" | "running";
-		result?: unknown;
-	},
->(item: T): T {
-	return item.type === "tool" && item.result === undefined
-		? { ...item, status: "running" }
-		: item;
-}
-
-function markExternalTurnLive(state: ConversationState): ConversationState {
-	for (let index = state.messages.length - 1; index >= 0; index -= 1) {
-		const message = state.messages[index];
-		if (!message || message.role !== "assistant") continue;
-		if (message.completion !== "interrupted") return state;
-		const messages = state.messages.slice();
-		messages[index] = {
-			...message,
-			content: message.content?.map(reviveExternalActivity),
-			activity: message.activity?.map(reviveExternalActivity),
-			streaming: true,
-			completion: undefined,
-			errorMessage: undefined,
-		};
-		return {
-			...state,
-			messages,
-			active: {
-				turnStartedAtMs: message.timestampMs,
-				assistantUpdatedAtMs: message.timestampMs,
-				assistantMessageId: message.id,
-				firstRuntimeUserSeen: false,
-			},
-		};
-	}
-	return state;
-}
-
-function historyPlaceholderMessage(
-	descriptor: SessionHistoryMessageIndexEntry,
-): ChatMessage {
-	const common = {
-		id: descriptor.id,
-		text: descriptor.preview,
-		time:
-			descriptor.timestampMs === undefined
-				? ""
-				: formatTime(descriptor.timestampMs),
-		timestampMs: descriptor.timestampMs,
-		historyPlaceholder: true as const,
-		historyEstimatedChars: descriptor.estimatedChars,
-	};
-	if (descriptor.role === "user") return { ...common, role: "user" };
-	if (descriptor.role === "compaction")
-		return { ...common, role: "compaction" };
-	return { ...common, role: "assistant" };
-}
-
-function alignHistoryMessages(
-	state: ConversationState,
-	directory: readonly SessionHistoryMessageIndexEntry[],
-	startIndex: number,
-): ConversationState {
-	if (state.messages.length === 0) return state;
-	let activeAssistantMessageId = state.active?.assistantMessageId;
-	const messages = state.messages.map((message, offset) => {
-		const descriptor = directory[startIndex + offset];
-		if (!descriptor || descriptor.role !== message.role) return message;
-		if (activeAssistantMessageId === message.id) {
-			activeAssistantMessageId = descriptor.id;
-		}
-		return message.id === descriptor.id
-			? message
-			: { ...message, id: descriptor.id };
-	});
-	return {
-		...state,
-		messages,
-		active: state.active
-			? { ...state.active, assistantMessageId: activeAssistantMessageId }
-			: null,
-	};
-}
-
-function sameHistoryFingerprint(
-	left: SessionHistoryFingerprint | null,
-	right: SessionHistoryFingerprint | null,
-) {
-	return (
-		left?.fileSize === right?.fileSize &&
-		left?.fileMtimeNs === right?.fileMtimeNs
-	);
-}
-
-function buildHistoryPrefix(
-	snapshot: ReturnType<ChatHistoryWindowStore["getSnapshot"]>,
-) {
-	const messages: ChatMessage[] = [];
-	for (let index = 0; index < snapshot.runtimeBaseStart; index += 1) {
-		const descriptor = snapshot.directory[index];
-		if (!descriptor) continue;
-		messages.push(
-			snapshot.hydrated.get(index) ?? historyPlaceholderMessage(descriptor),
-		);
-	}
-	return messages;
-}
 
 type UseChatConversationOptions = {
 	session: ChatSession;
@@ -596,95 +448,5 @@ export function useChatConversation({
 			session.sessionPath !== undefined && historyLoadState !== "ready",
 		retryHistory: () => setHistoryRetry((value) => value + 1),
 		refreshHistoryIfStale,
-	};
-}
-
-export function useChatConversationView({
-	conversationStore,
-	historyStore,
-	baseMessages,
-	sessionPath,
-	historyLoadState,
-	loadState,
-	live = true,
-}: {
-	conversationStore: ChatConversationStore;
-	historyStore: ChatHistoryWindowStore;
-	baseMessages: ChatMessage[];
-	sessionPath?: string;
-	historyLoadState: "ready" | "loading" | "error";
-	loadState: "ready" | "loading" | "error";
-	live?: boolean;
-}) {
-	const frozenConversationRef = useRef(conversationStore.getSnapshot());
-	const frozenHistoryRef = useRef(historyStore.getSnapshot());
-	const frozenConversationSnapshot = useCallback(
-		() => frozenConversationRef.current,
-		[],
-	);
-	const frozenHistorySnapshot = useCallback(() => frozenHistoryRef.current, []);
-	const conversationState = useSyncExternalStore(
-		live ? conversationStore.subscribe : NOOP_EXTERNAL_STORE_SUBSCRIBE,
-		live ? conversationStore.getSnapshot : frozenConversationSnapshot,
-		live ? conversationStore.getSnapshot : frozenConversationSnapshot,
-	);
-	const historySnapshot = useSyncExternalStore(
-		live ? historyStore.subscribe : NOOP_EXTERNAL_STORE_SUBSCRIBE,
-		live ? historyStore.getSnapshot : frozenHistorySnapshot,
-		live ? historyStore.getSnapshot : frozenHistorySnapshot,
-	);
-	useLayoutEffect(() => {
-		if (!live) return;
-		frozenConversationRef.current = conversationState;
-		frozenHistoryRef.current = historySnapshot;
-	}, [conversationState, historySnapshot, live]);
-	const runtimeMessages = conversationState?.messages ?? baseMessages;
-	useEffect(() => {
-		recordHistoryHydration(
-			historySnapshot.directory.length,
-			historySnapshot.hydrated.size + runtimeMessages.length,
-		);
-	}, [historySnapshot, runtimeMessages.length]);
-	// History changes only when its window/hydration state changes. Keep the
-	// potentially large placeholder prefix stable while the runtime tail streams,
-	// instead of rebuilding 0..runtimeBaseStart for every presentation flush.
-	const historyPrefix = useMemo(
-		() =>
-			sessionPath && historySnapshot.directory.length > 0
-				? buildHistoryPrefix(historySnapshot)
-				: EMPTY_MESSAGES,
-		[historySnapshot, sessionPath],
-	);
-	const messages = useMemo(
-		() =>
-			historyPrefix.length > 0
-				? [...historyPrefix, ...runtimeMessages]
-				: runtimeMessages,
-		[historyPrefix, runtimeMessages],
-	);
-	const pendingUsers = conversationState?.pendingUsers ?? EMPTY_PENDING_USERS;
-	const latestTurnInterrupted = useMemo(() => {
-		for (let index = messages.length - 1; index >= 0; index -= 1) {
-			const message = messages[index];
-			if (message?.role === "assistant" && !message.historyPlaceholder) {
-				return message.completion === "interrupted";
-			}
-		}
-		return false;
-	}, [messages]);
-	const activeAssistantMessageId =
-		conversationState?.active?.assistantMessageId ?? null;
-	const effectiveLoadState = sessionPath
-		? historyLoadState === "loading" && messages.length > 0
-			? "ready"
-			: historyLoadState
-		: loadState;
-
-	return {
-		messages,
-		pendingUsers,
-		latestTurnInterrupted,
-		activeAssistantMessageId,
-		effectiveLoadState,
 	};
 }

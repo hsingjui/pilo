@@ -1,0 +1,167 @@
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import {
+	ChevronDown,
+	Clock,
+	Folder,
+	Monitor,
+	MoreHorizontal,
+	Plus,
+	Trash2,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/ui";
+import { menuItemIconClassName } from "@/ui/menu-styles";
+import { MiniSwitch, ViewMenuItem } from "./sidebar-row-parts";
+import type { SidebarEnv, SidebarEnvView } from "./types";
+
+export function EnvRow({
+	env,
+	collapsed,
+	onToggle,
+	view,
+	onViewChange,
+	showProjects,
+	onShowProjectsChange,
+	onAddProject,
+	onDeleteConnection,
+}: {
+	env: SidebarEnv;
+	collapsed: boolean;
+	onToggle: () => void;
+	/** 侧栏组织模式（全局）。 */
+	view: SidebarEnvView;
+	onViewChange?: (view: SidebarEnvView) => void;
+	/** 「展示项目」开关（“最近会话”模式下控制会话行是否带项目名）。 */
+	showProjects: boolean;
+	onShowProjectsChange?: (showProjects: boolean) => void;
+	onAddProject?: (connectionId: string) => void;
+	onDeleteConnection?: (connectionId: string) => void;
+}) {
+	const [menuOpen, setMenuOpen] = useState(false);
+	const [confirmingDelete, setConfirmingDelete] = useState(false);
+	const { t } = useTranslation();
+	const toggleLabel = collapsed
+		? t("sidebar.expandEnvironment")
+		: t("sidebar.collapseEnvironment");
+	return (
+		<div className="group flex h-7 items-center gap-1 rounded-md pr-2">
+			<button
+				type="button"
+				aria-label={toggleLabel}
+				aria-expanded={!collapsed}
+				onClick={onToggle}
+				className={cn(
+					"relative flex h-7 min-w-0 flex-1 select-none items-center gap-2 rounded-md border border-transparent bg-transparent px-2 text-left",
+					"text-sm font-medium text-sidebar-foreground-muted transition-colors hover:text-sidebar-foreground",
+					"focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+				)}
+			>
+				<Monitor className="h-3.5 w-3.5 shrink-0 opacity-80" />
+				<span className="min-w-0 truncate">{env.name}</span>
+				<ChevronDown
+					className={cn(
+						"h-3.5 w-3.5 shrink-0 text-current transition-[opacity,transform] duration-150 ease-out",
+						collapsed
+							? "-rotate-90 opacity-100"
+							: "opacity-0 group-hover:opacity-100",
+					)}
+				/>
+			</button>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<button
+						type="button"
+						className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+						aria-label={t("sidebar.addProjectIn", { name: env.name })}
+						onClick={(event) => {
+							event.stopPropagation();
+							onAddProject?.(env.id);
+						}}
+					>
+						<Plus className="h-3.5 w-3.5" />
+					</button>
+				</TooltipTrigger>
+				<TooltipContent side="right">
+					{t("navigation.addProject")}
+				</TooltipContent>
+			</Tooltip>
+			<DropdownMenu
+				open={menuOpen}
+				onOpenChange={(open) => {
+					setMenuOpen(open);
+					if (!open) setConfirmingDelete(false);
+				}}
+			>
+				<DropdownMenuTrigger asChild>
+					<button
+						type="button"
+						className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+						aria-label={t("sidebar.connectionMenu")}
+						onClick={(event) => event.stopPropagation()}
+					>
+						<MoreHorizontal className="h-3.5 w-3.5" />
+					</button>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent align="start" className="min-w-0 w-40">
+					{onViewChange ? (
+						<>
+							<DropdownMenuLabel>{t("sidebar.view")}</DropdownMenuLabel>
+							<ViewMenuItem
+								icon={Folder}
+								label={t("sidebar.projects")}
+								selected={view === "projects"}
+								onSelect={() => onViewChange("projects")}
+							/>
+							<ViewMenuItem
+								icon={Clock}
+								label={t("sidebar.recentSessions")}
+								selected={view === "recent"}
+								onSelect={() => onViewChange("recent")}
+							/>
+							<DropdownMenuItem
+								data-show-projects={showProjects || undefined}
+								onSelect={() => onShowProjectsChange?.(!showProjects)}
+							>
+								<Folder className={menuItemIconClassName} />
+								<span className="min-w-0 flex-1 whitespace-nowrap">
+									{t("sidebar.showProjects")}
+								</span>
+								<MiniSwitch checked={showProjects} />
+							</DropdownMenuItem>
+							<DropdownMenuSeparator />
+						</>
+					) : null}
+					{onDeleteConnection ? (
+						<DropdownMenuItem
+							variant="destructive"
+							onSelect={(event) => {
+								if (!confirmingDelete) {
+									event.preventDefault();
+									setConfirmingDelete(true);
+									return;
+								}
+								onDeleteConnection(env.id);
+							}}
+						>
+							<Trash2 className={menuItemIconClassName} />
+							{confirmingDelete
+								? t("sidebar.confirmRemove")
+								: t("sidebar.removeConnection")}
+						</DropdownMenuItem>
+					) : null}
+				</DropdownMenuContent>
+			</DropdownMenu>
+		</div>
+	);
+}
