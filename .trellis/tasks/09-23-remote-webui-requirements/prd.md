@@ -8,6 +8,12 @@
 
 > 手机上的 Pilo 是同一个 Pilo Host 的另一个客户端，而不是另一套独立 Agent 系统。
 
+同时，WebUI 的产品体验以现有 Desktop Chat 为基准：
+
+- 核心 Chat 行为、消息展示、Thinking / ToolCall、Composer、Model / Thinking Level、Context Usage 等尽量直接复用现有 Desktop 组件和业务规则。
+- 不重新设计一套“移动版 Chat”，避免 Desktop / Web 长期产生交互和样式分叉。
+- Mobile 只在确有设备差异的部分做适配，例如导航方式、布局密度、触控目标、safe area、软键盘和浏览器前后台恢复。
+
 ## User Value
 
 - 离开电脑后仍能查看正在执行的 Session 和实时输出。
@@ -101,13 +107,14 @@ docs/remote-webui-architecture.md 已提出以下方向，当前可作为本轮�
 
 ### R6. Mobile-first Web UX
 
-- WebUI 的主要使用设备是手机，因此从第一版开始按 Mobile-first Web App 设计，而不是先做 Desktop Web 再响应式缩小。
-- Mobile 以 Chat 为主视图，不压缩复用 Desktop Sidebar。
-- Project / Session 切换使用 Drawer / Sheet / 独立页面等移动交互。
-- Composer、软键盘、safe area、触控目标、单手操作、前后台切换等移动端约束优先于 Desktop Web 交互。
-- Message、Thinking、ToolCall、Composer 等业务展示优先复用。
-- Tauri Desktop 与 Mobile Web 可以拥有不同 Layout 和 Navigation。
-- Desktop Browser 第一版只要求功能可用与基本响应式，不要求复制 Tauri Desktop 的布局或交互完整度。
+- WebUI 的主要使用设备是手机，但核心 Chat 体验仍以现有 Desktop Chat 为基准，而不是单独设计第二套 Mobile Chat。
+- Message、Thinking、ToolCall、Compaction、Pending Queue、Composer、Context、Model / Thinking Level 等核心 UI 与业务交互应优先直接复用现有 Desktop 组件。
+- Project / Session 导航可以使用 Drawer / Sheet 等更适合手机的交互，不要求原样复用 Desktop Sidebar。
+- Mobile 适配聚焦设备差异：safe area、软键盘、触控目标、窄屏布局、单手操作、前后台切换和浏览器 viewport 行为。
+- 共享组件如果需要兼容 Mobile，应通过 responsive props / class / 小范围能力扩展解决，避免在 Remote 下复制一个功能等价组件。
+- Tauri Desktop 与 Mobile Web 可以拥有不同 Shell / Navigation，但进入 Chat 主视图后尽量保持同一套信息层级和操作语义。
+- 第一版 WebUI 不对齐 Desktop 的全局快捷键体系；移动端以触控和显式按钮为主，避免引入依赖物理键盘的交互。
+- Desktop Browser 第一版只要求功能可用与基本响应式；不为 Desktop Browser 单独再做第三套体验。
 
 ### R7. Security Boundary
 
@@ -128,6 +135,7 @@ docs/remote-webui-architecture.md 已提出以下方向，当前可作为本轮�
 除非后续明确改变范围，第一版暂不包含：
 
 - 完整 Terminal 控制。
+- Desktop 全局快捷键 / command palette 快捷键体系。
 - 完整文件编辑器 / Git GUI。
 - PDF、文本文件、压缩包等通用文件附件 / 文件上传。
 - 完整 Settings / Updater / Window / Tray 等 Desktop 能力映射。
@@ -149,6 +157,8 @@ docs/remote-webui-architecture.md 已提出以下方向，当前可作为本轮�
 - [ ] Web 无法绕过 Host 直接访问 Local / WSL / SSH Runtime。
 - [ ] 未认证请求无法调用任何 Remote API；认证成功设备可以调用第一版 Remote WebUI 暴露的全部 Chat / Session 能力。
 - [ ] Mobile 主链路能完成：进入 Pilo → 选择 Project/Session → 查看历史 → 发送消息 → 查看实时结果 → Abort。
+- [ ] Web Chat 的消息、Thinking / ToolCall、Composer、Model / Thinking Level、Context 等主要交互与 Desktop 使用同一套组件或同一业务实现，没有功能等价的 Remote 专用副本。
+- [ ] Mobile 上的差异主要限定在 Shell / Navigation / responsive styling / touch & viewport adaptation，不改变 Desktop Chat 的核心语义。
 - [ ] Mobile 可以从相册/系统图片选择器添加图片并随 Chat 消息发送；不出现通用文件上传入口。
 - [ ] Remote 架构引入后，Desktop 的现有 Tauri IPC 路径仍可独立工作，不要求 localhost HTTP。
 - [ ] 第一版 Remote Host 生命周期绑定 Desktop 进程：Pilo 桌面进程运行时可远程访问；退出 Pilo 后 Remote listener 与正在运行的 Session 一起停止。
@@ -189,6 +199,7 @@ docs/remote-webui-architecture.md 已提出以下方向，当前可作为本轮�
 第一版明确不包含：
 
 - Terminal。
+- Desktop 全局快捷键体系；Remote Composer 不启用 Desktop shortcuts。
 - 完整 Files / 文件编辑。
 - Git GUI。
 - Preview。
@@ -278,12 +289,14 @@ Remote 生命周期：
 - 用户手动关闭 Remote 后持久化为 OFF；下次启动保持关闭。
 - Remote 开关属于 Host 运行配置，技术上应由 Rust/Host 侧持久化，而不是依赖前端 localStorage 才恢复。
 
-### D8. WebUI 采用 Mobile-first + PWA-ready
+### D8. WebUI 对齐 Desktop Chat + Mobile-adapted + PWA-ready
 
 已确认：
 
-- WebUI 绝大部分时间用于手机，因此从第一版开始按 Mobile-first Web App 设计，而不是先做 Desktop Web 再缩小。
-- 从一开始设计 app shell、移动导航、safe area、软键盘、触控与前后台恢复。
+- WebUI 绝大部分时间用于手机，但产品体验以现有 Desktop Chat 为基准，不另外发明一套 Remote/Mobile Chat。
+- 优先复用现有 ChatConversationViewport、Message / Thinking / ToolCall rendering、Composer、Context、Model / Thinking Level、Pending Queue 等 Desktop 能力；需要移动适配时优先扩展共享组件。
+- Mobile 单独适配 app shell、Project / Session navigation、safe area、软键盘、触控目标、窄屏布局与前后台恢复。
+- Desktop Sidebar 不要求直接塞进手机；可以做轻量 Drawer / Sheet，但其职责仍只是导航到同一套 Chat 主视图。
 - 增加 Web App Manifest、图标、theme color、standalone-friendly 页面结构等 PWA-ready 基础。
 - 第一版不把 service worker、offline cache、installability、Web Push 作为验收要求。
 - WebPiloClient、认证与 reconnect 不依赖 Service Worker。
