@@ -16,6 +16,7 @@ import {
 } from "@/i18n";
 import { installChatPerformanceDebugApi } from "@/lib/chat-performance-debug";
 import { installChatRuntimeTraceDebugApi } from "@/lib/chat-runtime-trace-debug";
+import { primeRuntimeEventChannel } from "@/lib/pi-runtime";
 import { PreferencesProvider } from "@/lib/preferences-provider";
 import { ThemeProvider } from "@/lib/theme-provider";
 import { Toaster } from "@/ui";
@@ -98,6 +99,7 @@ installDesktopLogging();
 disableBrowserContextMenu();
 installChatRuntimeTraceDebugApi();
 installChatPerformanceDebugApi();
+primeRuntimeEventChannel();
 
 function BootShellRemover() {
 	useEffect(() => {

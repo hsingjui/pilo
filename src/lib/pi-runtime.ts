@@ -428,6 +428,13 @@ function ensureRuntimeEventListener() {
 	return runtimeListenerReady;
 }
 
+// 在 webview reload 后尽早重建事件通道：Rust 侧只保留旧 Channel
+// （RuntimeEventBus），直到新页面重新 subscribe 之前，它会一直把 runtime
+// 事件发给已经不存在的 callback id。bootstrap 阶段先订阅可把这段窗口压到最小。
+export function primeRuntimeEventChannel() {
+	void ensureRuntimeEventListener().catch(() => undefined);
+}
+
 export async function listenRuntimeEvents(
 	handler: RuntimeEventHandler,
 	scope?: { sessionKey: string | undefined },
