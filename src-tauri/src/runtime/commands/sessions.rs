@@ -14,6 +14,7 @@ use super::super::{
     events::{PiProcessState, RuntimeEvent, RuntimeEventSink},
     pi_workspace, project,
     server_pi::{PiLaunchOptions, ServerPiSession},
+    session_activity::{SessionExternalActivity, external_session_activities_for_project},
     session_history, session_index, storage,
 };
 
@@ -53,28 +54,27 @@ fn normalize_generated_session_title(value: &str) -> Option<String> {
     Some(title)
 }
 
-#[tauri::command]
-pub async fn session_generate_title(
-    app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
-    project_id: String,
-    message: String,
+pub async fn generate_session_title(
+    app: &AppHandle,
+    runtime: &PiloRuntime,
+    project_id: &str,
+    message: &str,
 ) -> Result<Option<String>, String> {
     let message = message.trim();
     if message.is_empty() {
         return Ok(None);
     }
 
-    let project = project::get(&app, &project_id)?;
+    let project = project::get(app, project_id)?;
     let naming_model =
-        storage::get_connection_naming_model(&storage::open(&app)?, &project.connection.id)?;
+        storage::get_connection_naming_model(&storage::open(app)?, &project.connection.id)?;
     let Some(naming_model) = naming_model else {
         return Ok(None);
     };
 
     let (sender, mut receiver) = mpsc::unbounded_channel();
     let mut session = ServerPiSession::default();
-    let runtime_project = pi_workspace::resolve_session_project(&app, &project)?;
+    let runtime_project = pi_workspace::resolve_session_project(app, &project)?;
     session
         .spawn(
             Arc::clone(&runtime.servers),
@@ -142,6 +142,16 @@ pub async fn session_generate_title(
         (Ok(title), _) => Ok(title),
         (Err(error), _) => Err(error),
     }
+}
+
+#[tauri::command]
+pub async fn session_generate_title(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    project_id: String,
+    message: String,
+) -> Result<Option<String>, String> {
+    generate_session_title(&app, &runtime, &project_id, &message).await
 }
 
 struct BackgroundSessionIndexLease {
@@ -276,38 +286,6 @@ pub async fn session_reconcile(
         }
     }
     Ok(work.result)
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionExternalActivity {
-    pub path: String,
-    pub turn_open: bool,
-}
-
-pub(crate) async fn external_session_activities_for_project(
-    runtime: &PiloRuntime,
-    project: &crate::domain::Project,
-) -> Result<Vec<SessionExternalActivity>, String> {
-    let owned_session_paths = runtime
-        .chat_sessions
-        .states()
-        .await
-        .into_iter()
-        .filter(|state| state.project_id == project.id)
-        .filter_map(|state| state.session_path)
-        .collect::<Vec<_>>();
-    runtime
-        .servers
-        .request_typed(
-            &project.connection,
-            "session.activity",
-            serde_json::json!({
-                "project": project.path,
-                "ownedSessionPaths": owned_session_paths,
-            }),
-        )
-        .await
 }
 
 #[tauri::command]

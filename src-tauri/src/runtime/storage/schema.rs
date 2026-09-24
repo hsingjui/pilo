@@ -1,15 +1,14 @@
 use std::{
     collections::HashSet,
-    fs,
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use rusqlite::{Connection as SqliteConnection, params};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
-const DB_FILE_NAME: &str = "pilo.sqlite3";
+use super::super::host_paths::HostPaths;
 static INITIALIZED_DATABASES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
 
 pub fn now_ms() -> u64 {
@@ -19,23 +18,12 @@ pub fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
-fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())?;
-    fs::create_dir_all(&dir).map_err(|error| {
-        format!(
-            "failed to create Pilo app data directory '{}': {error}",
-            dir.display()
-        )
-    })?;
-    Ok(dir)
+pub fn open(app: &AppHandle) -> Result<SqliteConnection, String> {
+    open_with_paths(&HostPaths::from_app(app)?)
 }
 
-pub fn open(app: &AppHandle) -> Result<SqliteConnection, String> {
-    let dir = app_data_dir(app)?;
-    let path = dir.join(DB_FILE_NAME);
+pub(crate) fn open_with_paths(paths: &HostPaths) -> Result<SqliteConnection, String> {
+    let path = paths.database_path();
     let database_existed = path.exists();
     let connection = SqliteConnection::open(&path)
         .map_err(|error| format!("failed to open Pilo SQLite index: {error}"))?;
@@ -122,7 +110,30 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            pinned INTEGER NOT NULL DEFAULT 0,
            title_override TEXT,
            updated_at_ms INTEGER NOT NULL
-         );",
+         );
+         CREATE TABLE IF NOT EXISTS remote_host_config (
+           id INTEGER PRIMARY KEY CHECK(id=1),
+           enabled INTEGER NOT NULL DEFAULT 0,
+           port INTEGER NOT NULL DEFAULT 47653
+         );
+         INSERT OR IGNORE INTO remote_host_config(id,enabled,port) VALUES(1,0,47653);
+         CREATE TABLE IF NOT EXISTS remote_pairing (
+           id INTEGER PRIMARY KEY CHECK(id=1),
+           secret_hash TEXT NOT NULL,
+           expires_at_ms INTEGER NOT NULL,
+           consumed_at_ms INTEGER
+         );
+         CREATE TABLE IF NOT EXISTS remote_devices (
+           id TEXT PRIMARY KEY,
+           name TEXT NOT NULL,
+           token_hash TEXT NOT NULL UNIQUE,
+           created_at_ms INTEGER NOT NULL,
+           last_seen_at_ms INTEGER NOT NULL,
+           expires_at_ms INTEGER NOT NULL,
+           revoked_at_ms INTEGER
+         );
+         CREATE INDEX IF NOT EXISTS idx_remote_devices_activity
+           ON remote_devices(last_seen_at_ms DESC);",
     )
     .map_err(|error| format!("failed to initialize Pilo SQLite schema: {error}"))?;
     ensure_connection_columns(db)?;
