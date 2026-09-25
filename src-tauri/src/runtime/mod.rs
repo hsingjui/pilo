@@ -14,6 +14,7 @@ mod remote_fs;
 pub(crate) mod server_client;
 mod server_deploy;
 mod server_pi;
+mod server_pi_events;
 mod session_history;
 mod session_index;
 mod session_snapshot;
