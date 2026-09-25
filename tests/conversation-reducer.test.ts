@@ -2,13 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-	coalesceConversationActions,
 	createConversationState,
 	reduceConversation,
+} from "../src/lib/conversation-reducer.ts";
+import {
+	coalesceConversationActions,
 	reduceConversationActions,
 	replayConversationEvents,
 	replayConversationEventsBatched,
-} from "../src/lib/conversation-reducer.ts";
+} from "../src/lib/conversation-replay.ts";
 import type {
 	ConversationAction,
 	ConversationEvent,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
-import { coalesceConversationActions } from "@/lib/conversation-reducer";
+import { coalesceConversationActions } from "@/lib/conversation-replay";
 import type { ConversationAction } from "@/lib/conversation-types";
 import {
 	recordChatPresentationFlush,

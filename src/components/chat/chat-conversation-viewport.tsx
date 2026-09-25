@@ -18,12 +18,9 @@ import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import { ChatAgentActivityIndicator } from "@/components/chat/chat-agent-activity";
 import { ChatExpansionStateProvider } from "@/components/chat/chat-expansion-state";
 import { ChatHistorySkeleton } from "@/components/chat/chat-history-skeleton";
-import {
-	AssistantMessage,
-	EmptyConversation,
-} from "@/components/chat/chat-message";
-import { UserMessage } from "@/components/chat/chat-user-message";
-import { CompactionMessage } from "@/components/chat/compaction-message";
+import { EmptyConversation } from "@/components/chat/chat-message";
+import { MessageRow } from "@/components/chat/chat-message-row";
+import { SwitchSkeletonOverlay } from "@/components/chat/chat-switch-skeleton";
 import { ConversationOutlineRail } from "@/components/chat/conversation-outline-rail";
 import { useChatScrollController } from "@/components/chat/use-chat-scroll-controller";
 import type { ChatMessage } from "@/lib/conversation-types";
@@ -43,9 +40,6 @@ import {
 } from "@/ui";
 
 const CHAT_VIRTUA_BUFFER_PX = 800;
-// 切换骨架淡出时长：内容在骨架底下就绪后，覆盖层淡出即骨架→内容的交叉淡化，
-// 用连续运动掩盖内容替换的闪烁。淡出期间内容已可交互。
-const SWITCH_SKELETON_FADE_MS = 200;
 // Virtualization pays off for long history, but a short conversation with one
 // rapidly growing assistant row is cheaper and more stable in normal document
 // flow. Keep an opt-out for regression comparisons.
@@ -84,125 +78,6 @@ type ChatConversationViewportProps = {
 	onRetry?: () => void;
 	onRetryHistory: () => void;
 };
-
-type MessageRowProps = {
-	message: ChatMessage;
-	isLastMessage: boolean;
-	onForkAssistant?: (messageId: string) => void;
-	forkingMessageId?: string | null;
-	forkDisabled?: boolean;
-	suppressInterruptedError?: boolean;
-};
-
-function HistoryMessagePlaceholder({ message }: { message: ChatMessage }) {
-	const estimatedChars = message.historyEstimatedChars ?? message.text.length;
-	const estimatedHeight =
-		message.role === "user"
-			? Math.min(152, 52 + Math.ceil(estimatedChars / 90) * 20)
-			: message.role === "compaction"
-				? 40
-				: Math.min(360, 72 + Math.ceil(estimatedChars / 110) * 20);
-	return (
-		<ConversationColumn className="py-2 sm:py-3">
-			<div
-				className={
-					message.role === "user"
-						? "ml-auto w-[min(70%,28rem)] rounded-2xl border border-foreground/[0.05] bg-foreground/[0.025]"
-						: "w-full rounded-lg bg-foreground/[0.018]"
-				}
-				style={{ minHeight: estimatedHeight }}
-				data-history-placeholder="true"
-				aria-hidden="true"
-			/>
-		</ConversationColumn>
-	);
-}
-
-const MessageRow = memo(function MessageRow({
-	message,
-	isLastMessage,
-	onForkAssistant,
-	forkingMessageId,
-	forkDisabled,
-	suppressInterruptedError,
-}: MessageRowProps) {
-	return (
-		<div className="contents" data-message-id={message.id}>
-			{renderMessageRow({
-				message,
-				isLastMessage,
-				onForkAssistant,
-				forkingMessageId,
-				forkDisabled,
-				suppressInterruptedError,
-			})}
-		</div>
-	);
-});
-
-function renderMessageRow({
-	message,
-	isLastMessage,
-	onForkAssistant,
-	forkingMessageId,
-	forkDisabled,
-	suppressInterruptedError,
-}: MessageRowProps) {
-	if (message.historyPlaceholder) {
-		return <HistoryMessagePlaceholder message={message} />;
-	}
-	if (message.role === "compaction") {
-		return <CompactionMessage message={message} />;
-	}
-	return message.role === "user" ? (
-		<UserMessage message={message} />
-	) : (
-		<AssistantMessage
-			message={message}
-			onFork={onForkAssistant}
-			forking={forkingMessageId === message.id}
-			forkDisabled={forkDisabled}
-			suppressInterruptedError={
-				Boolean(suppressInterruptedError) && isLastMessage
-			}
-			replyRunwayPx={isLastMessage ? message.replyRunwayPx : undefined}
-		/>
-	);
-}
-
-// 切换骨架覆盖层：请求出现时立即实心（遮住切换瞬间的空白），
-// 请求消失时说明底下内容已就绪并完成滚动复位，淡出交还给真实内容。
-// 只做淡出不做淡入——骨架本身就是遮盖，淡入反而会露出背景造成闪烁。
-function SwitchSkeletonOverlay({ covering }: { covering: boolean }) {
-	const [mounted, setMounted] = useState(covering);
-	const [fading, setFading] = useState(false);
-	const [previousCovering, setPreviousCovering] = useState(covering);
-	if (covering !== previousCovering) {
-		setPreviousCovering(covering);
-		// 快速 A→B→A 时从淡出中途拉回实心，打断过渡而不是反向重放。
-		setMounted(true);
-		setFading(!covering);
-	}
-	useEffect(() => {
-		if (covering || !fading) return;
-		const timer = window.setTimeout(
-			() => setMounted(false),
-			SWITCH_SKELETON_FADE_MS + 50,
-		);
-		return () => window.clearTimeout(timer);
-	}, [covering, fading]);
-	if (!mounted) return null;
-	return (
-		<div
-			className={cn(
-				"chat-scrollbar absolute inset-0 z-10 overflow-x-hidden overflow-y-auto bg-background transition-opacity ease-out",
-				fading ? "pointer-events-none opacity-0 duration-200" : "duration-0",
-			)}
-		>
-			<ChatHistorySkeleton />
-		</div>
-	);
-}
 
 const ChatConversationViewportImpl = forwardRef<
 	ChatConversationViewportHandle,

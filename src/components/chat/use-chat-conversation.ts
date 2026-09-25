@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { createConversationState } from "@/lib/conversation-reducer";
 import {
-	createConversationState,
 	reduceConversationActions,
 	replayConversationEventsBatched,
-} from "@/lib/conversation-reducer";
+} from "@/lib/conversation-replay";
 import type { ChatMessage, ConversationAction } from "@/lib/conversation-types";
 import {
 	loadSessionHistoryWindow,
