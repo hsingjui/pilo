@@ -10,7 +10,10 @@ import {
 	type ProjectExternalActivity,
 	type ProjectRuntimeActivity,
 } from "@/components/app/app-session-index-model";
-import { listChatSessionRuntimeStates } from "@/lib/chat-session-client";
+import {
+	listChatSessionRuntimeStates,
+	type ChatSessionRuntimeState,
+} from "@/lib/chat-session-client";
 import { listenRuntimeEvents } from "@/lib/pi-runtime";
 import {
 	deleteSession,
@@ -39,6 +42,9 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 	>(() => new Map());
 	const [runtimeActivity, setRuntimeActivity] =
 		useState<ProjectRuntimeActivity>(() => new Map());
+	const [runtimeStates, setRuntimeStates] = useState<ChatSessionRuntimeState[]>(
+		[],
+	);
 	const [refreshingProjectIds, setRefreshingProjectIds] = useState<
 		ReadonlySet<string>
 	>(() => new Set());
@@ -164,10 +170,14 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 			refresh.rerun = false;
 			try {
 				const states = await listChatSessionRuntimeStates();
+				const watchedStates = states.filter((state) =>
+					watchedProjectIdsRef.current.has(state.projectId),
+				);
 				const nextActivity = runtimeActivityFromStates(
-					states,
+					watchedStates,
 					watchedProjectIdsRef.current,
 				);
+				setRuntimeStates(watchedStates);
 				setRuntimeActivity((current) =>
 					sameRuntimeActivity(current, nextActivity) ? current : nextActivity,
 				);
@@ -292,6 +302,9 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 				}
 				return changed ? nextMap : current;
 			});
+			setRuntimeStates((current) =>
+				current.filter((state) => !removedProjectIds.has(state.projectId)),
+			);
 			setRefreshingProjectIds((current) => {
 				const nextSet = new Set(
 					[...current].filter((projectId) => !removedProjectIds.has(projectId)),
@@ -553,6 +566,7 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 
 	return {
 		indexedSessions,
+		runtimeStates,
 		isExternalOpenTurn,
 		refreshProjectSessions,
 		refreshingProjectIds,

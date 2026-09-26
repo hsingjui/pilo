@@ -2,6 +2,8 @@ import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 
 import { i18n } from "../../i18n/index.ts";
 import {
+	chatUiStateKey,
+	identifyOpenedChat,
 	upsertOpenedChat,
 	type OpenChat,
 } from "@/components/app/app-chat-state";
@@ -89,7 +91,13 @@ export function useRestoreActiveChatRuntimes({
 						projectRecord: project,
 						sessionPath: state.sessionPath ?? undefined,
 					};
-					return [{ sessionKey: state.sessionKey, session }];
+					return [
+						{
+							sessionKey: state.sessionKey,
+							session,
+							piSessionId: indexed?.piSessionId,
+						},
+					];
 				});
 				if (restored.length === 0) return;
 
@@ -97,6 +105,16 @@ export function useRestoreActiveChatRuntimes({
 					let next = current;
 					for (const entry of restored) {
 						next = upsertOpenedChat(next, entry.session);
+						if (entry.piSessionId) {
+							next = identifyOpenedChat(
+								next,
+								chatUiStateKey(
+									entry.session.projectRecord.id,
+									entry.session.id,
+								),
+								entry.piSessionId,
+							);
+						}
 					}
 					// These entries represent live Pi turns and their ChatPage controllers
 					// have not mounted yet, so do not trim them against frontend busy state.

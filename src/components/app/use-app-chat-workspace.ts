@@ -11,11 +11,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import {
-	chatUiStateKey,
 	createDraftSessionId,
-	createTemporarySessionId,
-	identifyOpenedChat,
-	indexedChatSession,
 	mergeSidebarSessionsWithOpenChats,
 	resolveChatSession,
 	syncOpenedChatSessionMetadata,
@@ -31,23 +27,16 @@ import {
 	type ChatUiStatePatch,
 	type ProjectDraftCache,
 } from "@/components/app/chat-ui-state-cache";
+import { useAppChatNavigation } from "@/components/app/use-app-chat-navigation";
+import { useAppChatSessionActions } from "@/components/app/use-app-chat-session-actions";
 import { useAppSessionIndex } from "@/components/app/use-app-session-index";
 import { useSessionUnread } from "@/components/app/use-session-unread";
 import type { BusyChatControllersRef } from "@/components/app/use-opened-chat-controllers";
 import type { ChatSession } from "@/components/chat/chat-page";
-import { userErrorMessage } from "@/lib/app-error";
-import { stopChatSession } from "@/lib/chat-session-client";
 import type { ChatSubmission } from "@/lib/chat-submission";
-import {
-	listenForDesktopNotificationActions,
-	type DesktopNotificationSessionTarget,
-} from "@/lib/desktop-notifications";
 import type { PiModel, PiThinkingLevel } from "@/lib/pi-runtime";
-import {
-	notifyProjectsChanged,
-	touchProject,
-	type Project,
-} from "@/lib/projects";
+import { findReusableChatRuntime } from "@/lib/chat-session-runtime-model";
+import type { Project } from "@/lib/projects";
 
 type UseAppChatWorkspaceOptions = {
 	projects: Project[];
@@ -58,18 +47,6 @@ type UseAppChatWorkspaceOptions = {
 	busyChatControllersRef: BusyChatControllersRef;
 	busyChatControllerSince: ReadonlyMap<string, Date>;
 	preloadChatPage: () => Promise<unknown>;
-};
-
-type SearchSessionTarget = {
-	sessionId: string;
-	projectId: string;
-	sessionPath: string;
-	title: string;
-};
-
-type ForkSessionTarget = {
-	sessionId: string;
-	sessionPath: string;
 };
 
 export function useAppChatWorkspace({
@@ -169,6 +146,7 @@ export function useAppChatWorkspace({
 
 	const {
 		indexedSessions,
+		runtimeStates,
 		isExternalOpenTurn,
 		refreshProjectSessions,
 		refreshingProjectIds,
@@ -221,8 +199,16 @@ export function useAppChatWorkspace({
 					entry.piSessionId === selectedSessionId,
 			) ?? null)
 		: null;
+	const selectedRuntimeState = selectedIndexedSession
+		? findReusableChatRuntime(
+				runtimeStates,
+				selectedIndexedSession.projectId,
+				selectedIndexedSession.sessionPath,
+			)
+		: null;
 	const selectedOpenedChatBusy = selectedOpenedChat
-		? busyChatControllerSince.has(selectedOpenedChat.controllerId)
+		? busyChatControllerSince.has(selectedOpenedChat.controllerId) ||
+			Boolean(selectedRuntimeState)
 		: false;
 	const selectedProject = selectedIndexedSession
 		? (projects.find(
@@ -354,327 +340,51 @@ export function useAppChatWorkspace({
 		void preloadChatPage().catch(() => undefined);
 	}, [activeProject, chatSession, preloadChatPage]);
 
-	const startNewChat = useCallback(
-		(projectId?: string) => {
-			const targetProjectId = projectId ?? focusedProject?.id ?? null;
-			setOpenedChats((current) =>
-				current.filter((entry) => !entry.session.temporary),
-			);
-			clearDraftSession();
-			setDraftSessionId(createDraftSessionId());
-			setDraftProjectId(targetProjectId);
-			setFocusedProjectId(targetProjectId);
-			setSelectedSessionId(null);
-			if (targetProjectId) {
-				void touchProject(targetProjectId)
-					.then(() => notifyProjectsChanged())
-					.catch((error) =>
-						console.error("Failed to update recent project", error),
-					);
-			}
-		},
-		[clearDraftSession, focusedProject?.id, setOpenedChats],
-	);
+	const {
+		startNewChat,
+		startTemporaryChat,
+		selectSession,
+		switchDraftProject,
+		openSearchSession,
+	} = useAppChatNavigation({
+		projects,
+		activeProject: activeProject ?? null,
+		focusedProject: focusedProject ?? null,
+		openedChats,
+		indexedSessions,
+		runtimeStates,
+		busyChatControllersRef,
+		setOpenedChats,
+		clearDraftSession,
+		setDraftSessionId,
+		setDraftTemporary,
+		setDraftProjectId,
+		setFocusedProjectId,
+		setSelectedSessionId,
+		refreshProjectSessions,
+	});
 
-	const startTemporaryChat = useCallback(
-		(projectId?: string) => {
-			const project =
-				projects.find((candidate) => candidate.id === projectId) ??
-				activeProject;
-			if (!project) {
-				toast.info(t("app.addProjectFirst"));
-				return;
-			}
-			// 只切到「临时会话」草稿落地页，不立即建立会话；
-			// 真正的临时会话在首条消息发送时由 startDraftSession 建立。
-			setOpenedChats((current) =>
-				current.filter((entry) => !entry.session.temporary),
-			);
-			clearDraftSession();
-			setDraftSessionId(createTemporarySessionId());
-			setDraftProjectId(project.id);
-			setFocusedProjectId(project.id);
-			setSelectedSessionId(null);
-			setDraftTemporary(true);
-		},
-		[activeProject, clearDraftSession, projects, setOpenedChats, t],
-	);
-
-	const selectSession = useCallback(
-		(sessionId: string) => {
-			setOpenedChats((current) =>
-				current.filter(
-					(entry) =>
-						!entry.session.temporary ||
-						entry.session.id === sessionId ||
-						entry.piSessionId === sessionId,
-				),
-			);
-			const opened = openedChats.find(
-				(entry) =>
-					entry.session.id === sessionId || entry.piSessionId === sessionId,
-			);
-			const session = indexedSessions.find(
-				(candidate) => candidate.piSessionId === sessionId,
-			);
-			const openedIsBusy = opened
-				? busyChatControllersRef.current.has(opened.controllerId)
-				: false;
-			if (opened && (openedIsBusy || !session)) {
-				const projectId = opened.session.projectRecord.id;
-				setOpenedChats((current) =>
-					trimOpenedChats(
-						touchOpenedChat(current, opened.session, opened.initialMessage),
-						busyChatControllersRef.current,
-					),
-				);
-				setSelectedSessionId(sessionId);
-				clearDraftSession();
-				setDraftProjectId(projectId);
-				setFocusedProjectId(projectId);
-				void touchProject(projectId)
-					.then(() => notifyProjectsChanged())
-					.catch((error) =>
-						console.error("Failed to update recent project", error),
-					);
-				return;
-			}
-			if (!session) return;
-			const project = projects.find(
-				(candidate) => candidate.id === session.projectId,
-			);
-			if (project) {
-				const nextChat = indexedChatSession(session, project);
-				setOpenedChats((current) =>
-					trimOpenedChats(
-						touchOpenedChat(current, nextChat),
-						busyChatControllersRef.current,
-					),
-				);
-			}
-			setSelectedSessionId(sessionId);
-			clearDraftSession();
-			setDraftProjectId(session.projectId);
-			setFocusedProjectId(session.projectId);
-			void touchProject(session.projectId)
-				.then(() => notifyProjectsChanged())
-				.catch((error) =>
-					console.error("Failed to update recent project", error),
-				);
-		},
-		[
-			busyChatControllersRef,
-			clearDraftSession,
-			indexedSessions,
-			openedChats,
-			projects,
-			setOpenedChats,
-		],
-	);
-
-	const switchDraftProject = useCallback(
-		(projectId: string) => {
-			if (!projects.some((project) => project.id === projectId)) return;
-			setDraftProjectId(projectId);
-			setFocusedProjectId(projectId);
-			void touchProject(projectId)
-				.then(() => notifyProjectsChanged())
-				.catch((error) =>
-					console.error("Failed to update recent project", error),
-				);
-		},
-		[projects],
-	);
-
-	const openSearchSession = useCallback(
-		(target: SearchSessionTarget) => {
-			const project = projects.find(
-				(candidate) => candidate.id === target.projectId,
-			);
-			if (!project) return;
-			const session: ChatSession = {
-				id: target.sessionId,
-				title: target.title || t("app.newChat"),
-				projectRecord: project,
-				sessionPath: target.sessionPath,
-			};
-			setOpenedChats((current) =>
-				trimOpenedChats(
-					touchOpenedChat(current, session),
-					busyChatControllersRef.current,
-				),
-			);
-			setSelectedSessionId(target.sessionId);
-			clearDraftSession();
-			setDraftProjectId(target.projectId);
-			setFocusedProjectId(target.projectId);
-			void refreshProjectSessions(target.projectId).catch((error) =>
-				console.error("Failed to refresh searched session project", error),
-			);
-			void touchProject(target.projectId)
-				.then(() => notifyProjectsChanged())
-				.catch((error) =>
-					console.error("Failed to update recent project", error),
-				);
-		},
-		[
-			busyChatControllersRef,
-			clearDraftSession,
-			projects,
-			refreshProjectSessions,
-			setOpenedChats,
-			t,
-		],
-	);
-
-	const openNotificationSession = useCallback(
-		(target: DesktopNotificationSessionTarget) => {
-			setOpenedChats((current) =>
-				current.filter(
-					(entry) =>
-						!entry.session.temporary ||
-						entry.session.id === target.sessionId ||
-						entry.piSessionId === target.sessionId,
-				),
-			);
-			const opened = openedChats.find(
-				(entry) =>
-					entry.session.projectRecord.id === target.projectId &&
-					(entry.session.id === target.sessionId ||
-						entry.piSessionId === target.sessionId),
-			);
-			if (opened) {
-				setOpenedChats((current) =>
-					trimOpenedChats(
-						touchOpenedChat(current, opened.session, opened.initialMessage),
-						busyChatControllersRef.current,
-					),
-				);
-			}
-			setDraftProjectId(target.projectId);
-			setFocusedProjectId(target.projectId);
-			setSelectedSessionId(target.sessionId);
-			clearDraftSession();
-			void touchProject(target.projectId)
-				.then(() => notifyProjectsChanged())
-				.catch((error) =>
-					console.error("Failed to update recent project", error),
-				);
-		},
-		[busyChatControllersRef, clearDraftSession, openedChats, setOpenedChats],
-	);
-
-	useEffect(() => {
-		let disposed = false;
-		let unlisten: (() => void) | undefined;
-		void listenForDesktopNotificationActions(openNotificationSession)
-			.then((cleanup) => {
-				if (disposed) cleanup();
-				else unlisten = cleanup;
-			})
-			.catch((error) =>
-				console.warn("Failed to listen for notification actions", error),
-			);
-		return () => {
-			disposed = true;
-			unlisten?.();
-		};
-	}, [openNotificationSession]);
-
-	const updateSession = useCallback(
-		async (sessionId: string, update: { title?: string }) => {
-			await updateIndexedSession(sessionId, update);
-		},
-		[updateIndexedSession],
-	);
-
-	const deleteSession = useCallback(
-		async (sessionId: string) => {
-			const session = indexedSessions.find(
-				(candidate) => candidate.piSessionId === sessionId,
-			);
-			if (!session) return;
-			try {
-				await stopChatSession(session.projectId, sessionId, "session_delete");
-				const deleted = await removeIndexedSession(sessionId);
-				if (!deleted) return;
-				setOpenedChats((current) =>
-					current.filter(
-						(entry) =>
-							entry.session.id !== sessionId && entry.piSessionId !== sessionId,
-					),
-				);
-				setSelectedSessionId((current) =>
-					current === sessionId ? null : current,
-				);
-				toast.success(
-					deleted.result.method === "trash"
-						? t("app.sessionTrashed")
-						: t("app.sessionDeleted"),
-				);
-			} catch (error) {
-				toast.error(t("app.deleteSessionFailed"), {
-					description: userErrorMessage(error),
-				});
-			}
-		},
-		[indexedSessions, removeIndexedSession, setOpenedChats, t],
-	);
-
-	const handleSessionIdentified = useCallback(
-		(entry: OpenChat, piSessionId: string) => {
-			const nextUiStateKey = chatUiStateKey(
-				entry.session.projectRecord.id,
-				piSessionId,
-			);
-			chatUiStateCacheRef.current!.rekey(entry.uiStateKey, nextUiStateKey);
-			setOpenedChats((current) =>
-				identifyOpenedChat(current, entry.controllerId, piSessionId),
-			);
-			if (entry.session.id === draftSessionId) {
-				setDraftSessionPrompt(null);
-				setDraftSessionImages([]);
-			}
-			setSelectedSessionId((current) =>
-				current === entry.session.id || current === entry.piSessionId
-					? piSessionId
-					: current,
-			);
-		},
-		[draftSessionId, setOpenedChats],
-	);
-
-	const handleForkSessionCreated = useCallback(
-		(entry: OpenChat, { sessionId, sessionPath }: ForkSessionTarget) => {
-			const project = entry.session.projectRecord;
-			const forkedSession: ChatSession = {
-				id: sessionId,
-				title: entry.session.title || t("app.newChat"),
-				projectRecord: project,
-				sessionPath,
-			};
-			setOpenedChats((current) =>
-				trimOpenedChats(
-					touchOpenedChat(current, forkedSession),
-					busyChatControllersRef.current,
-				),
-			);
-			setSelectedSessionId(sessionId);
-			clearDraftSession();
-			setDraftProjectId(project.id);
-			setFocusedProjectId(project.id);
-			void refreshProjectSessions(project.id, true).catch((error) =>
-				console.error("Failed to index forked session", error),
-			);
-		},
-		[
-			busyChatControllersRef,
-			clearDraftSession,
-			refreshProjectSessions,
-			setOpenedChats,
-			t,
-		],
-	);
+	const {
+		updateSession,
+		deleteSession,
+		handleSessionIdentified,
+		handleForkSessionCreated,
+	} = useAppChatSessionActions({
+		indexedSessions,
+		updateIndexedSession,
+		removeIndexedSession,
+		setOpenedChats,
+		setSelectedSessionId,
+		chatUiStateCacheRef,
+		draftSessionId,
+		setDraftSessionPrompt,
+		setDraftSessionImages,
+		busyChatControllersRef,
+		clearDraftSession,
+		setDraftProjectId,
+		setFocusedProjectId,
+		refreshProjectSessions,
+	});
 
 	return {
 		activeProject,

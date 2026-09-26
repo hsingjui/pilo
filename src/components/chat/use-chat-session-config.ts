@@ -17,22 +17,14 @@ import {
 	getPiQuickCycleThinkingLevel,
 } from "@/lib/pi-model-selection";
 import {
-	PI_THINKING_LEVELS,
 	runtimeErrorMessage,
-	type PiAgentState,
 	type PiModel,
 	type PiThinkingLevel,
 } from "@/lib/pi-runtime";
-import type { SessionHistory } from "@/lib/sessions";
-import {
-	mergeRefreshedSessionState,
-	mergeSessionStats,
-} from "@/components/chat/chat-session-config-model";
-import {
-	readCurrentPiSessionState,
-	type ChatSession,
-	type ChatSessionRuntimeState,
-} from "@/components/chat/chat-page-utils";
+import type { ChatSession } from "@/components/chat/chat-page-utils";
+import { useChatRuntimeConfiguration } from "@/components/chat/use-chat-runtime-configuration";
+import { useChatSessionState } from "@/components/chat/use-chat-session-state";
+import { useChatThinkingControls } from "@/components/chat/use-chat-thinking-controls";
 
 type ChatSessionClient = ReturnType<typeof createChatSessionClient>;
 
@@ -77,23 +69,13 @@ export function useChatSessionConfig({
 					? "off"
 					: (initialCachedModels?.defaultThinkingLevel ?? "off")),
 		);
-	const [thinkingLoading, setThinkingLoading] = useState(false);
-	const [thinkingChanging, setThinkingChanging] = useState(false);
-	const [sessionState, setSessionState] =
-		useState<ChatSessionRuntimeState | null>(null);
-	const sessionStateRequestRef = useRef(0);
-	const sessionStateAppliedRef = useRef(0);
-	const initialConfigAppliedRef = useRef(new Set<string>());
 
 	/* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies -- Session identity/config changes intentionally reset this controller even when the config values are otherwise equal. */
 	useEffect(() => {
 		void session.id;
 		modelRequestRef.current += 1;
-		const requestGeneration = ++sessionStateRequestRef.current;
-		sessionStateAppliedRef.current = requestGeneration;
 		modelSelectionDirtyRef.current = false;
 		thinkingSelectionDirtyRef.current = false;
-		setSessionState(null);
 		const cached = getCachedProjectPiModels(session.projectRecord.id);
 		const initialModel =
 			session.initialModel ??
@@ -182,37 +164,44 @@ export function useChatSessionConfig({
 	}, [modelOptions, selectedModel, session.sessionPath]);
 	/* oxlint-enable react/set-state-in-effect */
 
-	const applyHistoryMetadata = useCallback(
-		(result: SessionHistory) => {
-			const cachedModels =
-				getCachedProjectPiModels(session.projectRecord.id)?.models ?? [];
-			let historicalModel: PiModel | null = null;
-			if (result.model) {
-				historicalModel = findMatchingPiModel(cachedModels, result.model) ?? {
-					provider: result.model.provider,
-					id: result.model.id,
-					name: result.model.id,
-					reasoning: false,
-				};
-				setSelectedModel(historicalModel);
-			}
-			if (
-				result.thinkingLevel &&
-				PI_THINKING_LEVELS.includes(result.thinkingLevel as PiThinkingLevel)
-			) {
-				setSelectedThinkingLevel(result.thinkingLevel as PiThinkingLevel);
-			}
-			setThinkingLevels([...getPiModelThinkingLevels(historicalModel)]);
-			const stats = result.stats;
-			setSessionState({
-				name: result.name ?? undefined,
-				tokens: stats?.tokens,
-				cost: stats?.cost,
-				contextTokens: stats?.contextTokens,
-			});
-		},
-		[session.projectRecord.id],
-	);
+	const {
+		sessionState,
+		applyHistoryMetadata,
+		refreshSessionState,
+		refreshSessionStats,
+	} = useChatSessionState({
+		session,
+		client,
+		setSelectedModel,
+		setSelectedThinkingLevel,
+		setThinkingLevels,
+	});
+
+	const {
+		thinkingLoading,
+		thinkingChanging,
+		loadThinkingLevels,
+		handleThinkingChange,
+	} = useChatThinkingControls({
+		client,
+		sessionPath: session.sessionPath,
+		selectedModel,
+		selectedThinkingLevel,
+		thinkingLevels,
+		thinkingSelectionDirtyRef,
+		setSelectedThinkingLevel,
+		setThinkingLevels,
+	});
+
+	const prepareRuntimeConfiguration = useChatRuntimeConfiguration({
+		session,
+		client,
+		selectedModel,
+		selectedThinkingLevel,
+		setSelectedModel,
+		setSelectedThinkingLevel,
+		setThinkingLevels,
+	});
 
 	const loadModelOptions = useCallback(
 		async (force = false) => {
@@ -427,165 +416,6 @@ export function useChatSessionConfig({
 		session.sessionPath,
 		t,
 	]);
-
-	const loadThinkingLevels = useCallback(async () => {
-		if (thinkingLoading || thinkingChanging) return;
-		if (session.sessionPath) {
-			setThinkingLevels([...getPiModelThinkingLevels(selectedModel)]);
-			return;
-		}
-		setThinkingLoading(true);
-		try {
-			await client.ensure();
-			const [levels, state] = await Promise.all([
-				client.getAvailablePiThinkingLevels(),
-				client.getPiAgentState(),
-			]);
-			setThinkingLevels(levels.levels);
-			setSelectedThinkingLevel(state.thinkingLevel);
-		} catch (error) {
-			toast.error(t("chat.readReasoningFailed"), {
-				description: runtimeErrorMessage(error),
-			});
-		} finally {
-			setThinkingLoading(false);
-		}
-	}, [
-		client,
-		selectedModel,
-		session.sessionPath,
-		thinkingChanging,
-		thinkingLoading,
-		t,
-	]);
-
-	const handleThinkingChange = useCallback(
-		(level: PiThinkingLevel | null) => {
-			if (
-				!level ||
-				thinkingChanging ||
-				level === selectedThinkingLevel ||
-				!thinkingLevels.includes(level)
-			)
-				return;
-			thinkingSelectionDirtyRef.current = true;
-			if (session.sessionPath) {
-				setSelectedThinkingLevel(level);
-				return;
-			}
-			const previous = selectedThinkingLevel;
-			setSelectedThinkingLevel(level);
-			setThinkingChanging(true);
-			void (async () => {
-				try {
-					await client.ensure();
-					await client.setPiThinkingLevel(level);
-					const state = await client.getPiAgentState();
-					setSelectedThinkingLevel(state.thinkingLevel);
-				} catch (error) {
-					setSelectedThinkingLevel(previous);
-					toast.error(t("chat.reasoningSwitchFailed"), {
-						description: runtimeErrorMessage(error),
-					});
-				} finally {
-					setThinkingChanging(false);
-				}
-			})();
-		},
-		[
-			client,
-			selectedThinkingLevel,
-			session.sessionPath,
-			thinkingChanging,
-			thinkingLevels,
-			t,
-		],
-	);
-
-	const prepareRuntimeConfiguration = useCallback(
-		async (agentState: PiAgentState) => {
-			if (session.sessionPath) {
-				let configChanged = false;
-				if (
-					selectedModel &&
-					(agentState.model?.provider !== selectedModel.provider ||
-						agentState.model?.id !== selectedModel.id)
-				) {
-					await client.setPiModel(selectedModel);
-					configChanged = true;
-				}
-				if (agentState.thinkingLevel !== selectedThinkingLevel) {
-					await client.setPiThinkingLevel(selectedThinkingLevel);
-					configChanged = true;
-				}
-				if (configChanged) {
-					const [state, thinking] = await Promise.all([
-						client.getPiAgentState(),
-						client.getAvailablePiThinkingLevels(),
-					]);
-					setSelectedModel(state.model);
-					setSelectedThinkingLevel(state.thinkingLevel);
-					setThinkingLevels(thinking.levels);
-				}
-				return;
-			}
-
-			if (initialConfigAppliedRef.current.has(session.id)) return;
-			let configChanged = false;
-			if (
-				session.initialModel &&
-				(agentState.model?.provider !== session.initialModel.provider ||
-					agentState.model?.id !== session.initialModel.id)
-			) {
-				await client.setPiModel(session.initialModel);
-				configChanged = true;
-			}
-			if (
-				session.initialThinkingLevel &&
-				agentState.thinkingLevel !== session.initialThinkingLevel
-			) {
-				await client.setPiThinkingLevel(session.initialThinkingLevel);
-				configChanged = true;
-			}
-			if (configChanged) {
-				const [state, thinking] = await Promise.all([
-					client.getPiAgentState(),
-					client.getAvailablePiThinkingLevels(),
-				]);
-				setSelectedModel(state.model);
-				setSelectedThinkingLevel(state.thinkingLevel);
-				setThinkingLevels(thinking.levels);
-			}
-			initialConfigAppliedRef.current.add(session.id);
-		},
-		[
-			client,
-			selectedModel,
-			selectedThinkingLevel,
-			session.id,
-			session.initialModel,
-			session.initialThinkingLevel,
-			session.sessionPath,
-		],
-	);
-
-	const refreshSessionState = useCallback(async () => {
-		const requestId = ++sessionStateRequestRef.current;
-		const state = await readCurrentPiSessionState(client);
-		if (requestId < sessionStateAppliedRef.current) return;
-		sessionStateAppliedRef.current = requestId;
-		setSessionState((previous) => mergeRefreshedSessionState(previous, state));
-	}, [client]);
-
-	// 每个 Pi assistant message_end 都代表一次模型请求已经结束。这里仅刷新
-	// get_session_stats，避免为了更新上下文占用额外再拉一次 get_state。
-	const refreshSessionStats = useCallback(async () => {
-		const requestId = ++sessionStateRequestRef.current;
-		const stats = await client.getPiSessionStats();
-		if (requestId < sessionStateAppliedRef.current) return;
-		sessionStateAppliedRef.current = requestId;
-		setSessionState((previous) => mergeSessionStats(previous, stats));
-	}, [client]);
 
 	return {
 		sessionState,
