@@ -30,6 +30,7 @@ remote_host_state()                       -> RemoteHostState
 remote_set_enabled(enabled: bool)         -> RemoteHostState
 remote_pairing_regenerate()               -> RemoteHostState
 remote_device_revoke(deviceId: String)    -> RemoteHostState
+remote_device_rename(deviceId: String, name: String) -> RemoteHostState
 ```
 
 `RemoteHostState` (`camelCase`): `enabled`, `running`, `port`, `baseUrl?`,
@@ -76,7 +77,7 @@ GET  /api/v1/events          -> WebSocket upgrade
 ```text
 remote_host_config(id=1, enabled, port)
 remote_pairing(id=1, secret_hash, expires_at_ms, consumed_at_ms)
-remote_devices(id, name, token_hash, created_at_ms, last_seen_at_ms, expires_at_ms, revoked_at_ms)
+remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, expires_at_ms, revoked_at_ms)
 ```
 
 ---
@@ -89,7 +90,19 @@ remote_devices(id, name, token_hash, created_at_ms, last_seen_at_ms, expires_at_
   A successful pair rotates the link (`regenerate_pairing`).
 - **Device token TTL**: 30 days absolute. Revoked or expired tokens fail auth
   immediately; live WebSockets re-check every 15 s and on `auth_generation` change.
+- **Device identity**: `deviceName` is an optional, client-supplied label. The
+  Remote WebUI sends `describeDevice(navigator.userAgent)`
+  (`src/lib/device-name.ts`) — `机型/系统 · 浏览器` — because a raw UA is
+  unreadable in the device list. `pair_ip` is the pairing request's peer IP from
+  `ConnectInfo<SocketAddr>`, not client-supplied.
+- **Device rename**: `remote_device_rename` reuses `auth::normalize_device_name`,
+  so the same 80-char bound applies. Renaming requires the device to exist and
+  not be revoked.
 - **Auth scope**: authenticated == full MVP capability. No roles/capabilities yet.
+- **Auth rate limiting**: only the pairing secret is IP-rate-limited (5 failures /
+  60 s). Device tokens are 32 random bytes looked up by SHA-256 hash, so they are
+  **not** rate-limited — blocking them turned the `401` a client needs to drop a
+  stale token into an unrecoverable `429` lockout (and also gated `/auth/pair`).
 - **RPC allowlist**: only chat-mutating/querying commands are forwarded (see
   `ALLOWED` in `api.rs`). No generic command proxy; Terminal/Files/Git are not exposed.
 - **`@` mentions**: `GET /api/v1/files/search` is the only Files surface. It
@@ -104,6 +117,12 @@ remote_devices(id, name, token_hash, created_at_ms, last_seen_at_ms, expires_at_
 - **Replay gap semantics**: `replay_after(seq)` returns `None` (gap → client must
   resync from snapshot) **iff** the oldest buffered sequence is greater than
   `seq + 1`. `seq == 0` always replays the whole buffer.
+- **WebSocket auth expiry**: the upgrade is rejected with a plain `401` before
+  the handshake, which browsers surface as an opaque `1006` close — identical to
+  a network drop. `event_socket` also closes the socket when `auth_tick` (15 s)
+  finds the token revoked/expired. The signal is therefore **lossy on the socket
+  path**: `remote-app.tsx` re-probes `bootstrap` on every socket disconnect so the
+  `401 → REMOTE_AUTH_EXPIRED → clear token → pairing screen` chain still runs.
 - **Backpressure**: each Web subscriber has a bounded broadcast channel; a lagging
   subscriber receives `Lagged` and is told to `resyncRequired` instead of blocking
   the runtime. Desktop Tauri channel is another subscriber and is unaffected.
@@ -117,7 +136,8 @@ remote_devices(id, name, token_hash, created_at_ms, last_seen_at_ms, expires_at_
 | Missing/invalid Bearer or `pilo-token`      | `401 authentication required`                   |
 | Unknown/expired/revoked token               | `401 invalid or expired device token`           |
 | Invalid or expired pairing secret           | `401 invalid or expired pairing link`           |
-| Too many auth failures from one IP          | `429 too many authentication attempts`          |
+| Too many pairing failures from one IP       | `429 too many authentication attempts`          |
+| Device token revoked while WS open          | socket closed; client must re-probe for `401`   |
 | RPC `type` not in allowlist                 | `400 chat command '<type>' is not available…`   |
 | Non-image attachment / wrong mime / too big | `400 …` (see `validate_remote_images`)          |
 | Unknown project/session                     | `404`                                           |
@@ -143,7 +163,8 @@ remote_devices(id, name, token_hash, created_at_ms, last_seen_at_ms, expires_at_
 Assertion points (inline `#[cfg(test)] mod tests`):
 
 - `storage/remote.rs`: config round-trip; pairing is one-time + expires;
-  authenticate rejects revoked and expired devices.
+  authenticate rejects revoked and expired devices; `pair_ip` round-trips and
+  `rename_remote_device` updates only existing, non-revoked devices.
 - `remote/auth.rs`: hashes are 64-char hex and never equal the plaintext;
   device names are bounded to 81 chars with `…`.
 - `remote/api.rs`: `validate_remote_rpc` rejects `terminal_write`/`fs_read_file`

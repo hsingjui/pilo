@@ -11,6 +11,23 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(() => ({
 	plugins: [react(), tailwindcss()],
+	build: {
+		rolldownOptions: {
+			output: {
+				// Split the eagerly-loaded entry bundle so no single chunk exceeds
+				// Vite's 500 kB warning threshold. Heavy features (chat markdown,
+				// terminal, editors) are already split via dynamic import.
+				codeSplitting: {
+					groups: [
+						{
+							name: "react",
+							test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+						},
+					],
+				},
+			},
+		},
+	},
 	resolve: {
 		alias: {
 			"@": path.resolve(import.meta.dirname, "./src"),

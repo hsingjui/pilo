@@ -8,5 +8,5 @@ pub use connection::{
     WslDistribution,
 };
 pub use project::{DiscoveredProject, Project, ProjectMetadata, ProjectModelCache};
-pub use remote::{RemoteDevice, RemoteHostConfig};
+pub use remote::{RemoteDevice, RemoteHostConfig, random_remote_port};
 pub use session::{SessionIndexEntry, SessionReconcileResult, SessionUiStateUpdate};

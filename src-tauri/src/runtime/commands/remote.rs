@@ -20,6 +20,15 @@ pub async fn remote_set_enabled(
 }
 
 #[tauri::command]
+pub async fn remote_set_port(
+    app: AppHandle,
+    remote: State<'_, RemoteServerManager>,
+    port: u16,
+) -> Result<RemoteHostState, String> {
+    remote.set_port(app, port).await
+}
+
+#[tauri::command]
 pub async fn remote_pairing_regenerate(
     app: AppHandle,
     remote: State<'_, RemoteServerManager>,
@@ -34,4 +43,14 @@ pub async fn remote_device_revoke(
     device_id: String,
 ) -> Result<RemoteHostState, String> {
     remote.revoke_device(&app, &device_id).await
+}
+
+#[tauri::command]
+pub async fn remote_device_rename(
+    app: AppHandle,
+    remote: State<'_, RemoteServerManager>,
+    device_id: String,
+    name: String,
+) -> Result<RemoteHostState, String> {
+    remote.rename_device(&app, &device_id, &name).await
 }

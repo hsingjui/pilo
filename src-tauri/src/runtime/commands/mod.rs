@@ -26,7 +26,8 @@ pub use projects::{
     project_touch, terminal_close, terminal_resize, terminal_write,
 };
 pub use remote::{
-    remote_device_revoke, remote_host_state, remote_pairing_regenerate, remote_set_enabled,
+    remote_device_rename, remote_device_revoke, remote_host_state, remote_pairing_regenerate,
+    remote_set_enabled, remote_set_port,
 };
 pub use runtime::{
     chat_session_detach, chat_session_prepare, chat_session_send_rpc, chat_session_start,

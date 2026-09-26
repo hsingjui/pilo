@@ -916,11 +916,26 @@
 
 	[data-remote-webui] [data-chat-run-config-trigger] {
 		min-width: 0;
+		min-height: 2.5rem;
 		padding-inline: 0.5rem;
+	}
+
+	/* 手机上消息与输入框应该占满宽度，94% 在 390px 下仍会浪费掉两侧各 12px。 */
+	[data-remote-webui] {
+		--conversation-max-width: 100%;
 	}
 
 	[data-remote-webui] > main > header button {
 		min-width: 2.5rem;
 		min-height: 2.5rem;
 	}
+}
+
+/*
+ * 触屏没有 hover，消息上 hover-only 的复制、时间戳等操作会永久不可见。
+ * 条件由 remote-app.tsx 的 useIsTouchDevice 等价判断写入 [data-touch-reveal]；
+ * 用属性选择器而不是 Tailwind variant，因为 v4.3.3 的 pointer-coarse: 没包 media query。
+ */
+[data-touch-reveal] .touch-reveal {
+	opacity: 1;
 }

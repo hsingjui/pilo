@@ -33,7 +33,7 @@ pub(crate) fn hash_credential(value: &str) -> String {
     format!("{digest:x}")
 }
 
-fn normalize_device_name(name: Option<&str>) -> String {
+pub(crate) fn normalize_device_name(name: Option<&str>) -> String {
     let name = name.unwrap_or_default().trim();
     if name.is_empty() {
         return "Remote device".to_owned();
@@ -61,6 +61,7 @@ pub(crate) fn exchange_pairing(
     paths: &HostPaths,
     secret: &str,
     device_name: Option<&str>,
+    pair_ip: &str,
 ) -> Result<Option<PairedDevice>, String> {
     if secret.len() < 32 || secret.len() > 128 {
         return Ok(None);
@@ -75,6 +76,7 @@ pub(crate) fn exchange_pairing(
     let device = RemoteDevice {
         id: random_secret(16)?,
         name: normalize_device_name(device_name),
+        pair_ip: pair_ip.trim().to_owned(),
         created_at_ms: now_ms,
         last_seen_at_ms: now_ms,
         expires_at_ms: now_ms.saturating_add(DEVICE_TOKEN_TTL_MS),

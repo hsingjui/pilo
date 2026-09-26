@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 export type RemoteDevice = {
 	id: string;
 	name: string;
+	pairIp: string;
 	createdAtMs: number;
 	lastSeenAtMs: number;
 	expiresAtMs: number;
@@ -28,10 +29,21 @@ export function setRemoteEnabled(enabled: boolean): Promise<RemoteHostState> {
 	return invoke<RemoteHostState>("remote_set_enabled", { enabled });
 }
 
+export function setRemotePort(port: number): Promise<RemoteHostState> {
+	return invoke<RemoteHostState>("remote_set_port", { port });
+}
+
 export function regenerateRemotePairing(): Promise<RemoteHostState> {
 	return invoke<RemoteHostState>("remote_pairing_regenerate");
 }
 
 export function revokeRemoteDevice(deviceId: string): Promise<RemoteHostState> {
 	return invoke<RemoteHostState>("remote_device_revoke", { deviceId });
+}
+
+export function renameRemoteDevice(
+	deviceId: string,
+	name: string,
+): Promise<RemoteHostState> {
+	return invoke<RemoteHostState>("remote_device_rename", { deviceId, name });
 }

@@ -41,7 +41,7 @@ function MessageAction({
 					type="button"
 					variant="ghost"
 					size="icon"
-					className="size-7 rounded-md text-muted-foreground opacity-0 transition-opacity duration-100 group-hover:opacity-100 focus-visible:opacity-100"
+					className="size-7 rounded-md text-muted-foreground touch-reveal opacity-0 transition-opacity duration-100 group-hover:opacity-100 focus-visible:opacity-100"
 					aria-label={label}
 					disabled={disabled}
 					onClick={onClick}
@@ -203,7 +203,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 							message.time ||
 							footerDuration ||
 							canFork) ? (
-						<div className="mt-0.5 flex min-h-7 flex-wrap items-center gap-2 text-2xs text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
+						<div className="mt-0.5 flex min-h-7 flex-wrap items-center gap-2 text-2xs text-muted-foreground touch-reveal opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
 							{visibleAssistantText ? (
 								<ChatCopyButton text={visibleAssistantText} />
 							) : null}

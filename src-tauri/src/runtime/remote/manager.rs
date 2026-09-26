@@ -52,6 +52,9 @@ struct RemoteServerInner {
     last_error: Option<String>,
 }
 
+/// 远程 WebUI 只允许非特权端口(与前端校验保持一致)。
+const MIN_REMOTE_PORT: u16 = 1024;
+
 #[derive(Default)]
 pub(crate) struct RemoteServerManager {
     inner: Arc<Mutex<RemoteServerInner>>,
@@ -91,6 +94,36 @@ impl RemoteServerManager {
         self.snapshot(&app).await
     }
 
+    pub(crate) async fn set_port(
+        &self,
+        app: AppHandle,
+        port: u16,
+    ) -> Result<RemoteHostState, String> {
+        if port < MIN_REMOTE_PORT {
+            return Err(format!(
+                "Remote WebUI port must be between {MIN_REMOTE_PORT} and 65535"
+            ));
+        }
+        let paths = HostPaths::from_app(&app)?;
+        let mut config = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
+        if config.port == port {
+            return self.snapshot(&app).await;
+        }
+        let was_running = inner_running_port(&*self.inner.lock().await).is_some();
+        if was_running {
+            self.stop().await;
+        }
+        // 端口变更后设备 localStorage token 会因 origin 改变而失效,清空旧设备记录。
+        storage::clear_remote_devices(&storage::open_with_paths(&paths)?)?;
+        config.port = port;
+        storage::set_remote_host_config(&storage::open_with_paths(&paths)?, &config)?;
+        if was_running && let Err(error) = self.start(app.clone(), port).await {
+            self.inner.lock().await.last_error = Some(error.clone());
+            return Err(error);
+        }
+        self.snapshot(&app).await
+    }
+
     pub(crate) async fn regenerate_pairing(
         &self,
         app: &AppHandle,
@@ -124,6 +157,23 @@ impl RemoteServerManager {
         if let Some(running) = self.inner.lock().await.running.as_ref() {
             let next = running.auth_generation.borrow().wrapping_add(1);
             running.auth_generation.send_replace(next);
+        }
+        self.snapshot(app).await
+    }
+
+    pub(crate) async fn rename_device(
+        &self,
+        app: &AppHandle,
+        device_id: &str,
+        name: &str,
+    ) -> Result<RemoteHostState, String> {
+        let paths = HostPaths::from_app(app)?;
+        let db = storage::open_with_paths(&paths)?;
+        let name = auth::normalize_device_name(Some(name));
+        if !storage::rename_remote_device(&db, device_id, &name)? {
+            return Err(format!(
+                "Remote device '{device_id}' was not found or already revoked"
+            ));
         }
         self.snapshot(app).await
     }
@@ -181,11 +231,14 @@ impl RemoteServerManager {
             return;
         };
         let _ = running.shutdown.send(true);
-        if tokio::time::timeout(Duration::from_secs(3), running.task)
+        let mut task = running.task;
+        if tokio::time::timeout(Duration::from_secs(3), &mut task)
             .await
             .is_err()
         {
-            log::warn!(target: "remote-webui", "Remote WebUI shutdown timed out");
+            log::warn!(target: "remote-webui", "Remote WebUI shutdown timed out; aborting server task");
+            task.abort();
+            let _ = task.await;
         }
     }
 
@@ -246,6 +299,10 @@ impl RemoteServerManager {
         log::info!(target: "remote-webui", "Remote WebUI started on LAN port {actual_port}");
         Ok(())
     }
+}
+
+fn inner_running_port(inner: &RemoteServerInner) -> Option<u16> {
+    inner.running.as_ref().map(|server| server.port)
 }
 
 fn lan_ip() -> IpAddr {

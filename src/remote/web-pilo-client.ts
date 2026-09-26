@@ -6,7 +6,10 @@ import type {
 	PiloClientStartChatInput,
 } from "@/lib/pilo-client";
 import type { PiSessionSnapshot } from "@/lib/pi-runtime";
+import type { ProjectPiModels } from "@/lib/pi-models";
 import type {
+	SessionDeleteResult,
+	SessionExternalActivity,
 	SessionHistoryFingerprint,
 	SessionHistoryResult,
 	SessionIndexEntry,
@@ -14,17 +17,18 @@ import type {
 import type { ChatSessionRuntimeState } from "@/lib/chat-session-client";
 import {
 	connectRemoteEvents,
+	deleteRemoteSession,
 	generateRemoteSessionTitle,
 	loadRemoteBootstrap,
 	loadRemoteChatState,
 	loadRemoteHistory,
 	loadRemoteHistoryImage,
+	loadRemoteExternalActivity,
 	loadRemoteModels,
 	loadRemoteSessions,
 	searchRemoteFiles,
 	sendRemoteChatCommand,
 	startRemoteChat,
-	type RemoteProjectModels,
 } from "./remote-client";
 
 export class WebPiloClient implements PiloClient {
@@ -36,6 +40,10 @@ export class WebPiloClient implements PiloClient {
 
 	listSessions(projectId: string): Promise<SessionIndexEntry[]> {
 		return loadRemoteSessions(this.token, projectId);
+	}
+
+	externalActivity(projectId: string): Promise<SessionExternalActivity[]> {
+		return loadRemoteExternalActivity(this.token, projectId);
 	}
 
 	loadHistory(
@@ -68,6 +76,13 @@ export class WebPiloClient implements PiloClient {
 		return generateRemoteSessionTitle(this.token, projectId, message);
 	}
 
+	deleteSession(
+		projectId: string,
+		sessionPath: string,
+	): Promise<SessionDeleteResult> {
+		return deleteRemoteSession(this.token, projectId, sessionPath);
+	}
+
 	startChat(input: PiloClientStartChatInput): Promise<PiSessionSnapshot> {
 		return startRemoteChat(this.token, input);
 	}
@@ -80,7 +95,7 @@ export class WebPiloClient implements PiloClient {
 		return searchRemoteFiles(this.token, projectId, query);
 	}
 
-	loadModels(projectId: string): Promise<RemoteProjectModels | null> {
+	loadModels(projectId: string): Promise<ProjectPiModels | null> {
 		return loadRemoteModels(this.token, projectId);
 	}
 

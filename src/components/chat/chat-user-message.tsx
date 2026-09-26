@@ -124,7 +124,7 @@ export const UserMessage = memo(function UserMessage({
 					<div className="flex items-center gap-1.5">
 						<ChatCopyButton text={message.text} />
 						{message.time ? (
-							<span className="text-2xs tabular-nums text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+							<span className="text-2xs tabular-nums text-muted-foreground touch-reveal opacity-0 transition-opacity duration-150 group-hover:opacity-100">
 								{message.time}
 							</span>
 						) : null}

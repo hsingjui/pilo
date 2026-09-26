@@ -8,7 +8,6 @@ import {
 	Plug,
 	SlidersHorizontal,
 	Type,
-	Wifi,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -25,7 +24,6 @@ import { ConnectionsSettings } from "./connections-settings";
 import { KeyboardShortcutsSettings } from "./keyboard-shortcuts-settings";
 import { NotificationSettings } from "./notification-settings";
 import { PreferencesSettings } from "./preferences-settings";
-import { RemoteSettings } from "./remote-settings";
 import { SessionNamingSettings } from "./session-naming-settings";
 
 type SettingsTabId =
@@ -35,7 +33,6 @@ type SettingsTabId =
 	| "shortcuts"
 	| "connections"
 	| "session-naming"
-	| "remote"
 	| "about";
 
 const SETTINGS_TABS = [
@@ -74,12 +71,6 @@ const SETTINGS_TABS = [
 		section: "project",
 		labelKey: "settings.sessionNaming",
 		icon: Type,
-	},
-	{
-		id: "remote" as const,
-		section: "other",
-		labelKey: "settings.remote",
-		icon: Wifi,
 	},
 	{
 		id: "about" as const,
@@ -194,7 +185,6 @@ export function SettingsDialog({
 										{activeTab === "session-naming" ? (
 											<SessionNamingSettings />
 										) : null}
-										{activeTab === "remote" ? <RemoteSettings /> : null}
 										{activeTab === "about" ? <AboutSettings /> : null}
 									</div>
 								</div>

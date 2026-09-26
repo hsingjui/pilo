@@ -39,6 +39,11 @@ impl ChatSessions {
             .control_reply
             .lock()
             .unwrap_or_else(|error| error.into_inner()) = None;
+        process
+            .initialization_stderr
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clear();
         let session_path = process
             .session_path
             .lock()
@@ -62,6 +67,7 @@ impl ChatSessions {
                     session_key: session_key.to_owned(),
                     project_id: project.id.clone(),
                     control_reply: Arc::clone(&process.control_reply),
+                    initialization_stderr: Arc::clone(&process.initialization_stderr),
                     session_path: Arc::clone(&process.session_path),
                     active_turn: Arc::clone(&process.active_turn),
                     closed: Arc::clone(&process.closed),

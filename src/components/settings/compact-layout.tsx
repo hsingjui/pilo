@@ -46,7 +46,7 @@ type SettingsSectionProps = {
 };
 
 type SettingsRowProps = {
-	label: string;
+	label: ReactNode;
 	helper?: ReactNode;
 	children?: ReactNode;
 	className?: string;

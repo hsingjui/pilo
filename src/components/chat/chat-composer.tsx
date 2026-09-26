@@ -308,21 +308,27 @@ export function ChatComposer({
 							{t("chat.pendingFollowUp", { count: pendingFollowUps })}
 						</span>
 					) : null}
-					{statusText ? (
-						<span className="hidden truncate text-2xs tabular-nums text-muted-foreground @min-[48rem]:inline">
-							{statusText}
+					{/* 重试文案与「停止重试」原本是两个兄弟节点，被上下文占用占位的 shrink-0
+					    挤掉；包成一组后文案可截断、按钮保持完整。重试中即使没有文案也要能中止。 */}
+					{statusText || (retrying && onAbortRetry) ? (
+						<span className="flex min-w-0 shrink items-center gap-1 text-2xs text-muted-foreground">
+							{statusText ? (
+								<span className="truncate tabular-nums hidden @min-[48rem]:inline">
+									{statusText}
+								</span>
+							) : null}
+							{retrying && onAbortRetry ? (
+								<Button
+									type="button"
+									variant="ghost"
+									size="sm"
+									className="h-7 px-2 text-2xs text-muted-foreground"
+									onClick={onAbortRetry}
+								>
+									{t("chat.stopRetry")}
+								</Button>
+							) : null}
 						</span>
-					) : null}
-					{retrying && onAbortRetry ? (
-						<Button
-							type="button"
-							variant="ghost"
-							size="sm"
-							className="h-7 px-2 text-2xs text-muted-foreground"
-							onClick={onAbortRetry}
-						>
-							停止重试
-						</Button>
 					) : null}
 
 					<ComposerContextUsage

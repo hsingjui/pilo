@@ -1,7 +1,9 @@
 import type { ChatSessionRuntimeState } from "@/lib/chat-session-client";
 import type { PiSessionSnapshot, PiloRuntimeEvent } from "@/lib/pi-runtime";
+import type { ProjectPiModels } from "@/lib/pi-models";
 import type { Project } from "@/lib/projects";
 import type {
+	SessionDeleteResult,
 	SessionHistoryFingerprint,
 	SessionHistoryResult,
 	SessionIndexEntry,
@@ -58,6 +60,12 @@ export interface PiloClient {
 		projectId: string,
 		message: string,
 	): Promise<string | null>;
+	deleteSession(
+		projectId: string,
+		sessionPath: string,
+	): Promise<SessionDeleteResult>;
+	/** Host-cached Pi model catalog snapshot; null when the project has none. */
+	loadModels(projectId: string): Promise<ProjectPiModels | null>;
 	startChat(input: PiloClientStartChatInput): Promise<PiSessionSnapshot>;
 	chatState(sessionKey: string): Promise<ChatSessionRuntimeState | null>;
 	sendChatCommand(

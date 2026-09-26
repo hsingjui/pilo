@@ -14,10 +14,17 @@ import {
 } from "@/lib/pilo-client";
 import { listProjects } from "@/lib/projects";
 import {
+	getCachedProjectPiModels,
+	hydrateProjectPiModels,
+	type ProjectPiModels,
+} from "@/lib/pi-models";
+import {
+	deleteSession as invokeDeleteSession,
 	loadSessionHistoryWindow,
 	readSessionHistoryImage,
 	reconcileSessions,
 	requestSessionTitle,
+	type SessionDeleteResult,
 	type SessionHistoryFingerprint,
 	type SessionHistoryResult,
 	type SessionIndexEntry,
@@ -75,6 +82,18 @@ export class TauriPiloClient implements PiloClient {
 		message: string,
 	): Promise<string | null> {
 		return requestSessionTitle(projectId, message);
+	}
+
+	deleteSession(
+		projectId: string,
+		sessionPath: string,
+	): Promise<SessionDeleteResult> {
+		return invokeDeleteSession(projectId, sessionPath);
+	}
+
+	async loadModels(projectId: string): Promise<ProjectPiModels | null> {
+		await hydrateProjectPiModels();
+		return getCachedProjectPiModels(projectId);
 	}
 
 	startChat(input: PiloClientStartChatInput): Promise<PiSessionSnapshot> {

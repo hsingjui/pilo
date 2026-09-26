@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "pnpm tauri dev --features webdriver",
+		"dev": "node scripts/dev.mjs",
 		"build": "tsc && vite build",
 		"preview": "vite preview",
 		"tauri": "tauri",
@@ -15,7 +15,7 @@
 		"format": "oxfmt --write .",
 		"format:check": "oxfmt --check .",
 		"check": "pnpm format:check && pnpm lint",
-		"test:unit": "node --experimental-strip-types --test tests/app-error.test.ts tests/chat-activity-state.test.ts tests/chat-file-suggestions.test.ts tests/chat-input-history.test.ts tests/chat-performance-switch.test.ts tests/chat-runtime-replay.test.ts tests/chat-runtime-trace.test.ts tests/chat-stream-presentation.test.ts tests/chat-streaming-markdown.test.ts tests/chat-history-window-store.test.ts tests/chat-message-search.test.ts tests/chat-conversation-store.test.ts tests/chat-submission.test.ts tests/conversation-reducer.test.ts tests/app-chat-state.test.ts tests/pi-model-selection.test.ts tests/pi-session-fork.test.ts tests/skill-invocation.test.ts tests/i18n-locale.test.ts tests/project-draft-cache.test.ts"
+		"test:unit": "node --experimental-strip-types --test tests/app-error.test.ts tests/chat-activity-state.test.ts tests/chat-file-suggestions.test.ts tests/chat-input-history.test.ts tests/chat-performance-switch.test.ts tests/chat-runtime-replay.test.ts tests/chat-runtime-trace.test.ts tests/chat-session-runtime-model.test.ts tests/chat-stream-presentation.test.ts tests/chat-streaming-markdown.test.ts tests/chat-history-window-store.test.ts tests/chat-message-search.test.ts tests/chat-conversation-store.test.ts tests/chat-submission.test.ts tests/conversation-reducer.test.ts tests/device-name.test.ts tests/app-chat-state.test.ts tests/pi-model-selection.test.ts tests/pi-session-fork.test.ts tests/skill-invocation.test.ts tests/i18n-locale.test.ts tests/project-draft-cache.test.ts"
 	},
 	"dependencies": {
 		"@dnd-kit/core": "^6.3.1",
@@ -48,6 +48,7 @@
 		"@tauri-apps/plugin-updater": "^2.11.0",
 		"@xterm/addon-fit": "^0.11.0",
 		"@xterm/xterm": "^6.0.0",
+		"bowser": "^2.14.1",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"cmdk": "^1.1.1",

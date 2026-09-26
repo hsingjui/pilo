@@ -2,6 +2,7 @@ import {
 	MessageSquareDashed,
 	PanelLeft,
 	PanelRight,
+	SquarePen,
 	TerminalSquare,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -26,6 +27,7 @@ export function SessionHeader({
 	terminalRunning = false,
 	terminalVisible = false,
 	onNewTemporaryChat,
+	onNewChat,
 	onExpandSidebar,
 	onRenameSession,
 	onFindInSession,
@@ -42,6 +44,8 @@ export function SessionHeader({
 	terminalRunning?: boolean;
 	terminalVisible?: boolean;
 	onNewTemporaryChat?: () => void;
+	/** 移动端顶栏的「新对话」入口；桌面端不传，保持侧栏新建语义。 */
+	onNewChat?: () => void;
 	onExpandSidebar?: () => void;
 	onRenameSession?: (title: string) => void;
 	onFindInSession?: () => void;
@@ -147,6 +151,7 @@ export function SessionHeader({
 				<div className="min-w-0 flex-1" />
 			)}
 			{onNewTemporaryChat ||
+			onNewChat ||
 			onOpenChanges ||
 			onOpenTerminal ||
 			(session && !session.temporary) ? (
@@ -180,6 +185,22 @@ export function SessionHeader({
 							<TooltipContent>
 								{terminalVisible ? t("terminal.hide") : t("terminal.show")}
 							</TooltipContent>
+						</Tooltip>
+					) : null}
+					{onNewChat ? (
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button
+									variant="ghost"
+									size="icon"
+									className="size-7"
+									aria-label={t("app.newChat")}
+									onClick={onNewChat}
+								>
+									<SquarePen className="size-4" />
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent>{t("app.newChat")}</TooltipContent>
 						</Tooltip>
 					) : null}
 					{onNewTemporaryChat ? (

@@ -4,7 +4,9 @@ import { useTranslation } from "react-i18next";
 
 import { i18n } from "@/i18n";
 import type { ChatSessionRuntimeState } from "@/components/chat/chat-page-utils";
+import { useIsTouchDevice } from "@/components/chat/chat-composer-run-config";
 import { cn } from "@/lib/utils";
+import { Popover, PopoverContent, PopoverTrigger } from "@/ui";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/ui";
 
 const RING_RADIUS = 10;
@@ -92,11 +94,91 @@ function ContextIcon({
 	);
 }
 
+/**
+ * 明细内容：桌面走悬浮卡，触屏走 Popover。两者共用这一份，
+ * 免得字段加减时两边漂移。
+ */
+function ContextDetails({
+	contextPercent,
+	contextTokens,
+	contextWindow,
+	ringPercent,
+	contextStale,
+	breakdownRows,
+	cost,
+}: {
+	contextPercent: number | undefined;
+	contextTokens: number | undefined;
+	contextWindow: number | undefined;
+	ringPercent: number;
+	contextStale: boolean;
+	breakdownRows: Array<[string, number]>;
+	cost: number | undefined;
+}) {
+	const { t } = useTranslation();
+	return (
+		<>
+			<div className="w-full space-y-2 px-2.5 py-2.5">
+				<div className="flex items-center justify-between gap-3 text-xs">
+					<p className="font-medium tabular-nums text-foreground">
+						{formatPercent(contextPercent)}
+					</p>
+					<p className="font-mono text-2xs tabular-nums text-muted-foreground">
+						{formatCompactTokens(contextTokens)} /{" "}
+						{formatCompactTokens(contextWindow)}
+					</p>
+				</div>
+				<div className="relative h-1 w-full overflow-hidden rounded-full bg-muted">
+					<div
+						className="h-full rounded-full bg-foreground/70 transition-[width] duration-200"
+						style={{ width: `${ringPercent}%` }}
+					/>
+				</div>
+				{contextPercent === undefined ? (
+					<p className="text-2xs leading-4 text-muted-foreground">
+						{t("chat.contextUsageUnknown")}
+					</p>
+				) : contextStale ? (
+					<p className="text-2xs leading-4 text-muted-foreground">
+						{t("chat.contextUsageAfterCompaction")}
+					</p>
+				) : null}
+			</div>
+
+			{breakdownRows.length > 0 ? (
+				<div className="w-full space-y-1.5 px-2.5 py-2">
+					{breakdownRows.map(([label, value]) => (
+						<div
+							key={label}
+							className="flex items-center justify-between text-xs"
+						>
+							<span className="text-muted-foreground">{label}</span>
+							<span className="font-mono text-2xs tabular-nums text-foreground">
+								{formatCompactTokens(value)}
+							</span>
+						</div>
+					))}
+				</div>
+			) : null}
+
+			{cost !== undefined ? (
+				<div className="flex w-full items-center justify-between gap-3 bg-muted/45 px-2.5 py-2 text-xs">
+					<span className="text-muted-foreground">{t("chat.totalCost")}</span>
+					<span className="font-mono text-2xs tabular-nums">
+						{formatCost(cost)}
+					</span>
+				</div>
+			) : null}
+		</>
+	);
+}
+
 export const ComposerContextUsage = memo(function ComposerContextUsage({
 	usage,
 	contextWindow: modelContextWindow,
 }: ComposerContextUsageProps) {
 	const { t } = useTranslation();
+	const isTouch = useIsTouchDevice();
 	const contextTokens = finiteNumber(usage?.contextTokens);
 	const contextWindow =
 		finiteNumber(usage?.contextWindow) ?? finiteNumber(modelContextWindow);
@@ -126,7 +208,8 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 	);
 
 	const ringPercent = Math.min(100, Math.max(0, contextPercent ?? 0));
-	// HoverCard 只响应指针悬浮，这里受控补上键盘路径：focus-visible 打开，失焦关闭
+	// HoverCard 只响应指针悬浮，这里受控补上键盘路径：focus-visible 打开，失焦关闭。
+	// 触屏没有 hover，改由点按切换；两条路径共用同一个 open 状态。
 	const [open, setOpen] = useState(false);
 	// 占用值刷新后圆环自转一圈，替代文字提示更新的做法。
 	const [spinning, setSpinning] = useState(false);
@@ -143,6 +226,7 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 		}
 		setSpinning(true);
 	}, [contextPercent]);
+
 	const contextSummary =
 		contextPercent === undefined
 			? t("chat.contextUsagePending")
@@ -152,6 +236,75 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 						percent: formatPercent(contextPercent),
 					});
 
+	const details = (
+		<ContextDetails
+			contextPercent={contextPercent}
+			contextTokens={contextTokens}
+			contextWindow={contextWindow}
+			ringPercent={ringPercent}
+			contextStale={contextStale}
+			breakdownRows={breakdownRows}
+			cost={usage?.cost}
+		/>
+	);
+
+	const trigger = (
+		<button
+			type="button"
+			className={cn(
+				"flex h-7 shrink-0 select-none items-center gap-1 rounded-md px-2 text-xs leading-tight text-muted-foreground transition-colors",
+				"hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground",
+				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+				contextStale && "opacity-60",
+			)}
+			aria-label={contextSummary}
+			aria-expanded={open}
+			// 点击开关交给 Radix：HoverCard 只认悬浮，Popover 自带点按切换，
+			// 这里自己再 toggle 一次会互相抵消（先开再关，看起来像没反应）。
+			onFocus={(event) => {
+				if (isTouch) return;
+				if (event.currentTarget.matches(":focus-visible")) setOpen(true);
+			}}
+			onBlur={() => {
+				if (!isTouch) setOpen(false);
+			}}
+		>
+			{contextPercent === undefined ? (
+				<CircleDashed className="size-4" aria-hidden="true" />
+			) : (
+				<>
+					<span className="font-medium tabular-nums leading-none">
+						{formatPercent(contextPercent)}
+					</span>
+					<ContextIcon
+						percent={ringPercent}
+						spinning={spinning}
+						onSpinEnd={() => setSpinning(false)}
+					/>
+				</>
+			)}
+		</button>
+	);
+
+	if (isTouch) {
+		// 触屏没有 hover，Radix 的悬停卡永远不弹。改用 Popover：它处理好了边缘碰撞
+		// 和点外部关闭，不用自己算位置。
+		return (
+			<Popover open={open} onOpenChange={setOpen}>
+				<PopoverTrigger asChild>{trigger}</PopoverTrigger>
+				<PopoverContent
+					side="top"
+					align="end"
+					sideOffset={8}
+					collisionPadding={8}
+					className="w-[248px] divide-y divide-border/60 overflow-hidden rounded-xl border-border/70 bg-background p-0 shadow-panel"
+				>
+					{details}
+				</PopoverContent>
+			</Popover>
+		);
+	}
+
 	return (
 		<HoverCard
 			open={open}
@@ -159,96 +312,14 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 			openDelay={0}
 			closeDelay={150}
 		>
-			<HoverCardTrigger asChild>
-				<button
-					type="button"
-					className={cn(
-						"flex h-7 shrink-0 select-none items-center gap-1 rounded-md px-2 text-xs leading-tight text-muted-foreground transition-colors",
-						"hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground",
-						"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-						contextStale && "opacity-60",
-					)}
-					aria-label={contextSummary}
-					aria-expanded={open}
-					onFocus={(event) => {
-						if (event.currentTarget.matches(":focus-visible")) setOpen(true);
-					}}
-					onBlur={() => setOpen(false)}
-				>
-					{contextPercent === undefined ? (
-						<CircleDashed className="size-4" aria-hidden="true" />
-					) : (
-						<>
-							<span className="font-medium tabular-nums leading-none">
-								{formatPercent(contextPercent)}
-							</span>
-							<ContextIcon
-								percent={ringPercent}
-								spinning={spinning}
-								onSpinEnd={() => setSpinning(false)}
-							/>
-						</>
-					)}
-				</button>
-			</HoverCardTrigger>
-
+			<HoverCardTrigger asChild>{trigger}</HoverCardTrigger>
 			<HoverCardContent
 				side="top"
 				align="end"
 				sideOffset={8}
 				className="w-[248px] divide-y divide-border/60 overflow-hidden rounded-xl border-border/70 bg-background p-0 shadow-panel"
 			>
-				<div className="w-full space-y-2 px-2.5 py-2.5">
-					<div className="flex items-center justify-between gap-3 text-xs">
-						<p className="font-medium tabular-nums text-foreground">
-							{formatPercent(contextPercent)}
-						</p>
-						<p className="font-mono text-2xs tabular-nums text-muted-foreground">
-							{formatCompactTokens(contextTokens)} /{" "}
-							{formatCompactTokens(contextWindow)}
-						</p>
-					</div>
-					<div className="relative h-1 w-full overflow-hidden rounded-full bg-muted">
-						<div
-							className="h-full rounded-full bg-foreground/70 transition-[width] duration-200"
-							style={{ width: `${ringPercent}%` }}
-						/>
-					</div>
-					{contextPercent === undefined ? (
-						<p className="text-2xs leading-4 text-muted-foreground">
-							{t("chat.contextUsageUnknown")}
-						</p>
-					) : contextStale ? (
-						<p className="text-2xs leading-4 text-muted-foreground">
-							{t("chat.contextUsageAfterCompaction")}
-						</p>
-					) : null}
-				</div>
-
-				{breakdownRows.length > 0 ? (
-					<div className="w-full space-y-1.5 px-2.5 py-2">
-						{breakdownRows.map(([label, value]) => (
-							<div
-								key={label}
-								className="flex items-center justify-between text-xs"
-							>
-								<span className="text-muted-foreground">{label}</span>
-								<span className="font-mono text-2xs tabular-nums text-foreground">
-									{formatCompactTokens(value)}
-								</span>
-							</div>
-						))}
-					</div>
-				) : null}
-
-				{usage?.cost !== undefined ? (
-					<div className="flex w-full items-center justify-between gap-3 bg-muted/45 px-2.5 py-2 text-xs">
-						<span className="text-muted-foreground">{t("chat.totalCost")}</span>
-						<span className="font-mono text-2xs tabular-nums">
-							{formatCost(usage.cost)}
-						</span>
-					</div>
-				) : null}
+				{details}
 			</HoverCardContent>
 		</HoverCard>
 	);

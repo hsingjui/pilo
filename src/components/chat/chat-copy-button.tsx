@@ -35,7 +35,7 @@ export function ChatCopyButton({ text }: { text: string }) {
 					type="button"
 					variant="ghost"
 					size="icon"
-					className="size-7 rounded-md text-muted-foreground opacity-0 transition-opacity duration-100 group-hover:opacity-100 focus-visible:opacity-100"
+					className="size-7 rounded-md text-muted-foreground touch-reveal opacity-0 transition-opacity duration-100 group-hover:opacity-100 focus-visible:opacity-100"
 					aria-label={label}
 					onClick={handleCopy}
 				>

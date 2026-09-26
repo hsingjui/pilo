@@ -1,3 +1,4 @@
+import { describeDevice } from "@/lib/device-name";
 import type { ChatSessionRuntimeState } from "@/lib/chat-session-client";
 import type {
 	PiloClientBootstrap,
@@ -5,12 +6,11 @@ import type {
 	PiloClientHistoryOptions,
 	PiloClientStartChatInput,
 } from "@/lib/pilo-client";
+import type { ProjectPiModels } from "@/lib/pi-models";
+import type { PiSessionSnapshot } from "@/lib/pi-runtime";
 import type {
-	PiModel,
-	PiSessionSnapshot,
-	PiThinkingLevel,
-} from "@/lib/pi-runtime";
-import type {
+	SessionDeleteResult,
+	SessionExternalActivity,
 	SessionHistoryFingerprint,
 	SessionHistoryResult,
 	SessionIndexEntry,
@@ -34,7 +34,7 @@ export async function pairRemote(secret: string) {
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify({
 			secret,
-			deviceName: navigator.userAgent.slice(0, 80),
+			deviceName: describeDevice(navigator.userAgent),
 		}),
 	});
 	if (!response.ok) throw new Error(await decodeError(response));
@@ -91,18 +91,17 @@ export function loadRemoteSessions(token: string, projectId: string) {
 	);
 }
 
-/** Mirror of the Desktop `ProjectPiModels` snapshot persisted in `project_model_cache`. */
-export type RemoteProjectModels = {
-	projectId: string;
-	models: PiModel[];
-	defaultModel: PiModel | null;
-	defaultThinkingLevel: PiThinkingLevel | null;
-	refreshedAtMs: number;
-};
+export function loadRemoteExternalActivity(token: string, projectId: string) {
+	const query = new URLSearchParams({ projectId });
+	return remoteFetch<SessionExternalActivity[]>(
+		token,
+		`/api/v1/sessions/external-activity?${query.toString()}`,
+	);
+}
 
 export function loadRemoteModels(token: string, projectId: string) {
 	const query = new URLSearchParams({ projectId });
-	return remoteFetch<RemoteProjectModels | null>(
+	return remoteFetch<ProjectPiModels | null>(
 		token,
 		`/api/v1/models?${query.toString()}`,
 	);
@@ -160,6 +159,17 @@ export function generateRemoteSessionTitle(
 	return remoteFetch<string | null>(token, "/api/v1/sessions/title", {
 		method: "POST",
 		body: JSON.stringify({ projectId, message }),
+	});
+}
+
+export function deleteRemoteSession(
+	token: string,
+	projectId: string,
+	sessionPath: string,
+) {
+	return remoteFetch<SessionDeleteResult>(token, "/api/v1/sessions/delete", {
+		method: "POST",
+		body: JSON.stringify({ projectId, sessionPath }),
 	});
 }
 

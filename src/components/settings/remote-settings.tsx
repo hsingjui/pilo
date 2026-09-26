@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Copy, RefreshCw, Trash2, Wifi, WifiOff } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Copy, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
@@ -7,11 +7,14 @@ import { toast } from "sonner";
 import {
 	getRemoteHostState,
 	regenerateRemotePairing,
+	renameRemoteDevice,
 	revokeRemoteDevice,
 	setRemoteEnabled,
+	setRemotePort,
+	type RemoteDevice,
 	type RemoteHostState,
 } from "@/lib/remote";
-import { Button, Spinner, Switch } from "@/ui";
+import { Button, Input, Spinner, Switch } from "@/ui";
 import {
 	SETTINGS_CONTAINER_CLASS,
 	SETTINGS_TEXT_BUTTON_CLASS,
@@ -20,18 +23,94 @@ import {
 	SettingsStatus,
 } from "./compact-layout";
 
-function relativeDeviceTime(value: number) {
-	return new Intl.DateTimeFormat(undefined, {
-		dateStyle: "medium",
-		timeStyle: "short",
-	}).format(new Date(value));
+/** 双击 / Enter / 铅笔按钮进入重命名,Enter/失焦保存,Escape 取消。 */
+function DeviceNameCell({
+	device,
+	onRename,
+}: {
+	device: RemoteDevice;
+	onRename: (name: string) => void;
+}) {
+	const { t } = useTranslation();
+	const [editing, setEditing] = useState(false);
+	const [draft, setDraft] = useState(device.name);
+	const inputRef = useRef<HTMLInputElement>(null);
+
+	/* oxlint-disable react/set-state-in-effect -- 进入编辑时一次性聚焦并全选，便于直接覆盖旧名称。 */
+	useEffect(() => {
+		if (!editing) return;
+		inputRef.current?.focus();
+		inputRef.current?.select();
+	}, [editing]);
+	/* oxlint-enable react/set-state-in-effect */
+
+	if (!editing) {
+		const startEditing = () => {
+			setDraft(device.name);
+			setEditing(true);
+		};
+		return (
+			<span className="flex items-center gap-1.5">
+				<button
+					type="button"
+					title={t("settings.remoteRenameHint")}
+					className="text-left font-medium leading-tight text-foreground"
+					onDoubleClick={startEditing}
+					onKeyDown={(event) => {
+						if (event.key !== "Enter") return;
+						startEditing();
+					}}
+				>
+					{device.name}
+					{device.pairIp ? (
+						<span className="ml-2 font-mono text-2xs font-normal text-muted-foreground">
+							{device.pairIp}
+						</span>
+					) : null}
+				</button>
+				<button
+					type="button"
+					aria-label={t("settings.remoteRename")}
+					title={t("settings.remoteRenameHint")}
+					className="text-muted-foreground transition-colors hover:text-foreground"
+					onClick={startEditing}
+				>
+					<Pencil className="size-3" />
+				</button>
+			</span>
+		);
+	}
+
+	const commit = () => {
+		const next = draft.trim();
+		setEditing(false);
+		if (next && next !== device.name) onRename(next);
+	};
+
+	return (
+		<Input
+			ref={inputRef}
+			className="h-7 w-full text-sm"
+			value={draft}
+			aria-label={t("settings.remoteRename")}
+			onChange={(event) => setDraft(event.target.value)}
+			onBlur={commit}
+			onKeyDown={(event) => {
+				if (event.key === "Enter") commit();
+				if (event.key === "Escape") setEditing(false);
+			}}
+		/>
+	);
 }
 
 export function RemoteSettings() {
 	const { t } = useTranslation();
 	const [state, setState] = useState<RemoteHostState | null>(null);
-	const [busy, setBusy] = useState<"toggle" | "pairing" | string | null>(null);
+	const [busy, setBusy] = useState<
+		"toggle" | "port" | "pairing" | string | null
+	>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [portDraft, setPortDraft] = useState<string | null>(null);
 
 	const refresh = useCallback(async () => {
 		try {
@@ -77,6 +156,33 @@ export function RemoteSettings() {
 		}
 	};
 
+	const savePort = async () => {
+		if (busy || !state || portDraft === null) return;
+		const port = Number(portDraft);
+		if (port === state.port) {
+			setPortDraft(null);
+			return;
+		}
+		if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+			toast.error(t("settings.remotePortInvalid"));
+			setPortDraft(null);
+			return;
+		}
+		setBusy("port");
+		try {
+			setState(await setRemotePort(port));
+			setPortDraft(null);
+			setError(null);
+			toast.success(t("settings.remotePortSaved"));
+		} catch (cause) {
+			const message = cause instanceof Error ? cause.message : String(cause);
+			setError(message);
+			toast.error(t("settings.remoteActionFailed"), { description: message });
+		} finally {
+			setBusy(null);
+		}
+	};
+
 	const regenerate = async () => {
 		if (busy) return;
 		setBusy("pairing");
@@ -107,10 +213,21 @@ export function RemoteSettings() {
 		}
 	};
 
-	const copyPairingLink = async () => {
-		if (!state?.pairingUrl) return;
+	const rename = async (deviceId: string, name: string) => {
 		try {
-			await navigator.clipboard.writeText(state.pairingUrl);
+			setState(await renameRemoteDevice(deviceId, name));
+			setError(null);
+		} catch (cause) {
+			const message = cause instanceof Error ? cause.message : String(cause);
+			setError(message);
+			toast.error(t("settings.remoteActionFailed"), { description: message });
+		}
+	};
+
+	const copyToClipboard = async (value: string | null | undefined) => {
+		if (!value) return;
+		try {
+			await navigator.clipboard.writeText(value);
 			toast.success(t("settings.remoteLinkCopied"));
 		} catch (cause) {
 			toast.error(t("settings.remoteCopyFailed"), {
@@ -142,6 +259,23 @@ export function RemoteSettings() {
 					helper={t("settings.remoteDescription")}
 				>
 					<div className="flex items-center gap-2">
+						<div className="flex items-center gap-1.5">
+							<span className="text-2xs text-muted-foreground">
+								{t("settings.remotePort")}
+							</span>
+							<Input
+								className="h-7 w-[4.5rem] text-right font-mono text-2xs"
+								inputMode="numeric"
+								value={portDraft ?? String(state.port)}
+								disabled={busy === "port"}
+								onChange={(event) => setPortDraft(event.target.value)}
+								onBlur={() => void savePort()}
+								onKeyDown={(event) => {
+									if (event.key === "Enter") void savePort();
+								}}
+								aria-label={t("settings.remotePort")}
+							/>
+						</div>
 						<SettingsStatus muted={!state.running}>
 							{state.running
 								? t("settings.remoteRunning")
@@ -173,23 +307,42 @@ export function RemoteSettings() {
 				) : null}
 			</SettingsSection>
 
+			{state.enabled && state.running && state.baseUrl ? (
+				<SettingsSection
+					title={t("settings.remoteAccessAddress")}
+					headerRight={t("settings.remoteAccessAddressHint")}
+				>
+					<SettingsRow
+						label={<span className="font-mono text-2xs">{state.baseUrl}</span>}
+					>
+						<Button
+							variant="outline"
+							size="sm"
+							className={SETTINGS_TEXT_BUTTON_CLASS}
+							onClick={() => void copyToClipboard(state.baseUrl)}
+						>
+							<Copy className="size-3.5" />
+							{t("settings.remoteCopyLink")}
+						</Button>
+					</SettingsRow>
+				</SettingsSection>
+			) : null}
+
 			{state.enabled && state.running ? (
 				<SettingsSection
 					title={t("settings.remotePairing")}
 					headerRight={t("settings.remotePairingHint")}
 				>
 					{state.pairingUrl ? (
-						<div className="grid gap-4 px-3 py-4 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center">
-							<div className="min-w-0 space-y-3">
-								<div>
-									<p className="text-sm font-medium">
-										{t("settings.remoteOpenLink")}
-									</p>
-									<p className="mt-1 text-2xs leading-5 text-muted-foreground">
-										{t("settings.remoteOpenLinkDescription")}
-									</p>
-								</div>
-								<div className="break-all rounded-md border bg-muted/30 px-2.5 py-2 font-mono text-2xs leading-5">
+						<div className="grid gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_148px] sm:items-center">
+							<div className="min-w-0 space-y-2">
+								<p className="text-sm font-medium">
+									{t("settings.remoteOpenLink")}
+								</p>
+								<div
+									className="truncate rounded-md border bg-muted/30 px-2.5 py-1.5 font-mono text-2xs leading-5"
+									title={state.pairingUrl}
+								>
 									{state.pairingUrl}
 								</div>
 								<div className="flex flex-wrap gap-1.5">
@@ -197,7 +350,7 @@ export function RemoteSettings() {
 										variant="outline"
 										size="sm"
 										className={SETTINGS_TEXT_BUTTON_CLASS}
-										onClick={() => void copyPairingLink()}
+										onClick={() => void copyToClipboard(state.pairingUrl)}
 									>
 										<Copy className="size-3.5" />
 										{t("settings.remoteCopyLink")}
@@ -220,10 +373,10 @@ export function RemoteSettings() {
 									</Button>
 								</div>
 							</div>
-							<div className="mx-auto rounded-xl border bg-white p-3">
+							<div className="mx-auto rounded-xl border bg-white p-2.5">
 								<QRCodeSVG
 									value={state.pairingUrl}
-									size={154}
+									size={124}
 									level="M"
 									marginSize={0}
 								/>
@@ -246,14 +399,6 @@ export function RemoteSettings() {
 							</Button>
 						</SettingsRow>
 					)}
-					<SettingsRow
-						label={t("settings.remoteAddress")}
-						helper={t("settings.remoteAddressDescription")}
-					>
-						<code className="max-w-[360px] truncate text-2xs text-muted-foreground">
-							{state.baseUrl}
-						</code>
-					</SettingsRow>
 				</SettingsSection>
 			) : null}
 
@@ -272,11 +417,12 @@ export function RemoteSettings() {
 					activeDevices.map((device) => (
 						<SettingsRow
 							key={device.id}
-							label={device.name}
-							helper={t("settings.remoteDeviceDetails", {
-								lastSeen: relativeDeviceTime(device.lastSeenAtMs),
-								expires: relativeDeviceTime(device.expiresAtMs),
-							})}
+							label={
+								<DeviceNameCell
+									device={device}
+									onRename={(name) => void rename(device.id, name)}
+								/>
+							}
 						>
 							<Button
 								variant="ghost"
@@ -295,19 +441,6 @@ export function RemoteSettings() {
 						</SettingsRow>
 					))
 				)}
-			</SettingsSection>
-
-			<SettingsSection>
-				<SettingsRow
-					label={t("settings.remoteSecurity")}
-					helper={t("settings.remoteSecurityDescription")}
-				>
-					{state.running ? (
-						<Wifi className="size-4 text-muted-foreground" />
-					) : (
-						<WifiOff className="size-4 text-muted-foreground" />
-					)}
-				</SettingsRow>
 			</SettingsSection>
 		</div>
 	);
