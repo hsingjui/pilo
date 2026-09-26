@@ -1,24 +1,19 @@
-use std::{
-    sync::{Arc, Mutex as StdMutex},
-    time::Duration,
-};
+use std::sync::{Arc, Mutex as StdMutex};
 
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
-use tokio::sync::mpsc;
 
 use crate::domain::{SessionIndexEntry, SessionReconcileResult, SessionUiStateUpdate};
-use serde::{Deserialize, Serialize};
 
-use super::super::{
-    PiloRuntime,
-    events::{PiProcessState, RuntimeEvent, RuntimeEventSink},
-    pi_workspace, project,
-    server_pi::{PiLaunchOptions, ServerPiSession},
-    session_activity::{SessionExternalActivity, external_session_activities_for_project},
-    session_history, session_index, storage,
+use super::super::{PiloRuntime, pi_workspace, project, session_index, storage};
+
+mod history;
+mod naming;
+
+pub use history::{
+    session_external_activity, session_history, session_history_image, session_search,
 };
-
-const SESSION_NAMING_SYSTEM_PROMPT: &str = "Generate a concise title for a coding conversation from the user's first message. Return exactly one plain-text title with no quotes, markdown, explanation, prefix, or suffix. Use the same language as the user. Prefer at most 24 CJK characters or 60 Latin characters.";
+pub use naming::{generate_session_title, session_generate_title};
 
 fn session_runtime_project(
     app: &AppHandle,
@@ -26,132 +21,6 @@ fn session_runtime_project(
 ) -> Result<crate::domain::Project, String> {
     let project = project::get(app, project_id)?;
     pi_workspace::resolve_session_project(app, &project)
-}
-
-#[derive(Clone)]
-struct SessionNamingEventSink {
-    sender: mpsc::UnboundedSender<RuntimeEvent>,
-}
-
-impl RuntimeEventSink for SessionNamingEventSink {
-    fn send(&self, event: RuntimeEvent) {
-        let _ = self.sender.send(event);
-    }
-}
-
-fn normalize_generated_session_title(value: &str) -> Option<String> {
-    let line = value.lines().map(str::trim).find(|line| !line.is_empty())?;
-    let trimmed = line
-        .trim_matches(|ch: char| matches!(ch, '"' | '\'' | '`' | '*' | '#'))
-        .trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let mut title = trimmed.chars().take(80).collect::<String>();
-    if trimmed.chars().count() > 80 {
-        title.push('…');
-    }
-    Some(title)
-}
-
-pub async fn generate_session_title(
-    app: &AppHandle,
-    runtime: &PiloRuntime,
-    project_id: &str,
-    message: &str,
-) -> Result<Option<String>, String> {
-    let message = message.trim();
-    if message.is_empty() {
-        return Ok(None);
-    }
-
-    let project = project::get(app, project_id)?;
-    let naming_model =
-        storage::get_connection_naming_model(&storage::open(app)?, &project.connection.id)?;
-    let Some(naming_model) = naming_model else {
-        return Ok(None);
-    };
-
-    let (sender, mut receiver) = mpsc::unbounded_channel();
-    let mut session = ServerPiSession::default();
-    let runtime_project = pi_workspace::resolve_session_project(app, &project)?;
-    session
-        .spawn(
-            Arc::clone(&runtime.servers),
-            SessionNamingEventSink { sender },
-            &runtime_project,
-            PiLaunchOptions {
-                no_session: true,
-                disable_resources: true,
-                provider: Some(naming_model.provider),
-                model: Some(naming_model.model_id),
-                thinking: Some("off".to_owned()),
-                system_prompt: Some(SESSION_NAMING_SYSTEM_PROMPT.to_owned()),
-                ..PiLaunchOptions::default()
-            },
-        )
-        .await?;
-
-    let result = async {
-        session
-            .send_rpc(serde_json::json!({ "type": "prompt", "message": message }))
-            .await?;
-        let mut latest_text = String::new();
-        tokio::time::timeout(Duration::from_secs(45), async {
-            loop {
-                let event = receiver
-                    .recv()
-                    .await
-                    .ok_or_else(|| "Pi naming event stream closed".to_owned())?;
-                match event {
-                    RuntimeEvent::AssistantTextSnapshot { text, .. } => latest_text = text,
-                    RuntimeEvent::AssistantMessageEnd {
-                        stop_reason,
-                        error_message,
-                        ..
-                    } => {
-                        if stop_reason.as_deref() == Some("error")
-                            || error_message
-                                .as_deref()
-                                .is_some_and(|value| !value.trim().is_empty())
-                        {
-                            return Err(error_message.unwrap_or_else(|| {
-                                "Pi failed to generate a session title".to_owned()
-                            }));
-                        }
-                        return Ok(normalize_generated_session_title(&latest_text));
-                    }
-                    RuntimeEvent::RuntimeError { message, .. } => return Err(message),
-                    RuntimeEvent::ProcessState {
-                        state: PiProcessState::Failed | PiProcessState::Stopped,
-                        ..
-                    } => {
-                        return Err("Pi naming process stopped before producing a title".to_owned());
-                    }
-                    _ => {}
-                }
-            }
-        })
-        .await
-        .map_err(|_| "Pi session title generation timed out".to_owned())?
-    }
-    .await;
-
-    let stop_result = session.stop().await;
-    match (result, stop_result) {
-        (Ok(title), _) => Ok(title),
-        (Err(error), _) => Err(error),
-    }
-}
-
-#[tauri::command]
-pub async fn session_generate_title(
-    app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
-    project_id: String,
-    message: String,
-) -> Result<Option<String>, String> {
-    generate_session_title(&app, &runtime, &project_id, &message).await
 }
 
 struct BackgroundSessionIndexLease {
@@ -286,136 +155,6 @@ pub async fn session_reconcile(
         }
     }
     Ok(work.result)
-}
-
-#[tauri::command]
-pub async fn session_external_activity(
-    app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
-    project_id: String,
-) -> Result<Vec<SessionExternalActivity>, String> {
-    let project = session_runtime_project(&app, &project_id)?;
-    external_session_activities_for_project(&runtime, &project).await
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionSearchMatch {
-    pub session_path: String,
-    pub session_id: String,
-    pub role: String,
-    pub snippet: String,
-    pub timestamp: Option<serde_json::Value>,
-}
-
-#[tauri::command]
-pub async fn session_search(
-    app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
-    project_id: String,
-    query: String,
-    limit: Option<usize>,
-) -> Result<Vec<SessionSearchMatch>, String> {
-    let query = query.trim();
-    if query.is_empty() {
-        return Ok(Vec::new());
-    }
-    let project = session_runtime_project(&app, &project_id)?;
-    runtime
-        .servers
-        .request_typed(
-            &project.connection,
-            "session.search",
-            serde_json::json!({
-                "project": project.path,
-                "query": query,
-                "limit": limit.unwrap_or(24),
-            }),
-        )
-        .await
-}
-
-#[tauri::command]
-// Tauri commands expose their arguments flat; the window options are part of the command surface.
-#[allow(clippy::too_many_arguments)]
-pub async fn session_history(
-    app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
-    project_id: String,
-    session_path: String,
-    expected_file_size: Option<u64>,
-    expected_file_mtime_ns: Option<String>,
-    start_message: Option<usize>,
-    message_limit: Option<usize>,
-    include_message_index: Option<bool>,
-) -> Result<tauri::ipc::Response, String> {
-    let project = session_runtime_project(&app, &project_id)?;
-    let expected_fingerprint =
-        expected_session_fingerprint(expected_file_size, expected_file_mtime_ns)?;
-    let serialized = if let Some(message_limit) = message_limit {
-        session_history::read_history_window_json(
-            &runtime.servers,
-            &runtime.session_history_cache,
-            &project,
-            &session_path,
-            expected_fingerprint,
-            start_message,
-            message_limit,
-            include_message_index.unwrap_or(false),
-        )
-        .await?
-    } else {
-        session_history::read_history_json(
-            &runtime.servers,
-            &runtime.session_history_cache,
-            &project,
-            &session_path,
-            expected_fingerprint,
-        )
-        .await?
-    };
-    Ok(tauri::ipc::Response::new(serialized))
-}
-
-fn expected_session_fingerprint(
-    expected_file_size: Option<u64>,
-    expected_file_mtime_ns: Option<String>,
-) -> Result<Option<(u64, u64)>, String> {
-    let expected_file_mtime_ns = expected_file_mtime_ns
-        .map(|value| {
-            value
-                .parse::<u64>()
-                .map_err(|error| format!("invalid expected session mtime '{value}': {error}"))
-        })
-        .transpose()?;
-    Ok(expected_file_size.zip(expected_file_mtime_ns))
-}
-
-/// Returns the raw image bytes for `{entryId}:{contentIndex}` ids emitted on
-/// `user_message_start.images`; the mime type is already known to the caller.
-#[tauri::command]
-pub async fn session_history_image(
-    app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
-    project_id: String,
-    session_path: String,
-    image_id: String,
-    expected_file_size: Option<u64>,
-    expected_file_mtime_ns: Option<String>,
-) -> Result<tauri::ipc::Response, String> {
-    let project = session_runtime_project(&app, &project_id)?;
-    let expected_fingerprint =
-        expected_session_fingerprint(expected_file_size, expected_file_mtime_ns)?;
-    let bytes = session_history::read_history_image_bytes(
-        &runtime.servers,
-        &runtime.session_history_cache,
-        &project,
-        &session_path,
-        &image_id,
-        expected_fingerprint,
-    )
-    .await?;
-    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command]
