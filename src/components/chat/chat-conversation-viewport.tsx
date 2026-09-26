@@ -40,6 +40,7 @@ import {
 } from "@/ui";
 
 const CHAT_VIRTUA_BUFFER_PX = 800;
+const CHAT_VISUAL_READY_FALLBACK_MS = 1_500;
 // Virtualization pays off for long history, but a short conversation with one
 // rapidly growing assistant row is cheaper and more stable in normal document
 // flow. Keep an opt-out for regression comparisons.
@@ -191,6 +192,7 @@ const ChatConversationViewportImpl = forwardRef<
 		virtualizerRef,
 		virtualPadding,
 		showScrollToLatest,
+		initialScrollRestored,
 		isScrolledFromTop,
 		activeOutlineIndex,
 		syncScrollState,
@@ -218,7 +220,12 @@ const ChatConversationViewportImpl = forwardRef<
 			return;
 		}
 		if (visualReadyReportedRef.current) return;
-		if (effectiveLoadState === "loading" || shortChatPromotionPending) return;
+		if (
+			effectiveLoadState === "loading" ||
+			shortChatPromotionPending ||
+			(messages.length > 0 && !initialScrollRestored)
+		)
+			return;
 
 		const reportReady = () => {
 			if (visualReadyReportedRef.current) return;
@@ -233,6 +240,7 @@ const ChatConversationViewportImpl = forwardRef<
 
 		const viewport = runtimeScrollRef.current;
 		if (!viewport) return;
+		const readyCheckStartedAt = performance.now();
 		let frame: number | null = null;
 		let stableFrames = 0;
 		let previousGeometry = "";
@@ -242,19 +250,10 @@ const ChatConversationViewportImpl = forwardRef<
 			const visibleHistoryPending = Boolean(
 				viewport.querySelector('[data-history-placeholder="true"]'),
 			);
-			const maxScrollTop = Math.max(
-				0,
-				viewport.scrollHeight - viewport.clientHeight,
-			);
-			const targetScrollTop = initialSticky
-				? maxScrollTop
-				: Math.min(initialScrollTop, maxScrollTop);
-			const scrollRestored =
-				Math.abs(viewport.scrollTop - targetScrollTop) <= 2;
 			const geometry = `${Math.round(viewport.scrollTop)}:${Math.round(
 				viewport.scrollHeight,
 			)}:${childCount}`;
-			if (hasPaintableRows && scrollRestored && !visibleHistoryPending) {
+			if (hasPaintableRows && !visibleHistoryPending) {
 				stableFrames = geometry === previousGeometry ? stableFrames + 1 : 1;
 				previousGeometry = geometry;
 				if (stableFrames >= 2) {
@@ -265,6 +264,16 @@ const ChatConversationViewportImpl = forwardRef<
 				stableFrames = 0;
 				previousGeometry = "";
 			}
+			// Scroll restoration already has a single owner in useChatStickyScroll.
+			// Do not keep the switch skeleton up forever when Virtua keeps refining
+			// row measurements or an older history page is slow to hydrate.
+			if (
+				hasPaintableRows &&
+				performance.now() - readyCheckStartedAt >= CHAT_VISUAL_READY_FALLBACK_MS
+			) {
+				reportReady();
+				return;
+			}
 			frame = requestAnimationFrame(checkReady);
 		};
 		frame = requestAnimationFrame(checkReady);
@@ -274,8 +283,7 @@ const ChatConversationViewportImpl = forwardRef<
 	}, [
 		active,
 		effectiveLoadState,
-		initialScrollTop,
-		initialSticky,
+		initialScrollRestored,
 		messages.length,
 		onVisualReady,
 		runtimeScrollRef,

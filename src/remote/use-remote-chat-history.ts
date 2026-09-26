@@ -67,10 +67,22 @@ export function useRemoteChatHistory({
 	const historyPageRequestsRef = useRef(new Set<number>());
 	const [historyFingerprint, setHistoryFingerprint] =
 		useState<SessionHistoryFingerprint | null>(null);
-	const [loadingConversation, setLoadingConversation] = useState(false);
+	const [conversationLoad, setConversationLoad] = useState<{
+		key: string | null;
+		status: "ready" | "loading" | "error";
+	}>({ key: null, status: "ready" });
 	const [historyRetryKey, setHistoryRetryKey] = useState(0);
 	const selectedSessionPath = selectedSession?.sessionPath ?? null;
 	const selectedSessionId = selectedSession?.piSessionId ?? null;
+	const selectedLoadKey =
+		activeProjectId && selectedSessionPath && selectedSessionId
+			? `${activeProjectId}\u0000${selectedSessionId}\u0000${selectedSessionPath}`
+			: null;
+	const loadingConversation = Boolean(
+		selectedLoadKey &&
+			(conversationLoad.key !== selectedLoadKey ||
+				conversationLoad.status === "loading"),
+	);
 	const externalTurnOpen = Boolean(
 		selectedSessionPath &&
 		isExternalOpenTurn(activeProjectId, selectedSessionPath),
@@ -90,7 +102,7 @@ export function useRemoteChatHistory({
 		historyStore.initialize([], 0);
 		historyPageRequestsRef.current.clear();
 		setHistoryFingerprint(null);
-		setLoadingConversation(false);
+		setConversationLoad({ key: null, status: "ready" });
 	}, [historyStore, selectedSessionPath]);
 
 	useEffect(() => {
@@ -104,11 +116,12 @@ export function useRemoteChatHistory({
 			!client ||
 			!activeProjectId ||
 			!selectedSessionPath ||
-			!selectedSessionId
+			!selectedSessionId ||
+			!selectedLoadKey
 		)
 			return;
 		let cancelled = false;
-		setLoadingConversation(true);
+		setConversationLoad({ key: selectedLoadKey, status: "loading" });
 		setRuntimeReady(false);
 		void client
 			.loadHistory(activeProjectId, selectedSessionPath, {
@@ -146,6 +159,7 @@ export function useRemoteChatHistory({
 			.then(() => {
 				if (cancelled) return;
 				setRuntimeReady(true);
+				setConversationLoad({ key: selectedLoadKey, status: "ready" });
 				void refreshAgentConfig();
 			})
 			.catch((error) => {
@@ -153,12 +167,11 @@ export function useRemoteChatHistory({
 				const message = error instanceof Error ? error.message : String(error);
 				if (message.includes("read-only observer mode")) {
 					setReadOnly(true);
+					setConversationLoad({ key: selectedLoadKey, status: "ready" });
 					return;
 				}
+				setConversationLoad({ key: selectedLoadKey, status: "error" });
 				setFatalError(message);
-			})
-			.finally(() => {
-				if (!cancelled) setLoadingConversation(false);
 			});
 		return () => {
 			cancelled = true;
@@ -171,6 +184,7 @@ export function useRemoteChatHistory({
 		refreshAgentConfig,
 		resyncKey,
 		historyRetryKey,
+		selectedLoadKey,
 		selectedSessionId,
 		selectedSessionPath,
 		client,
