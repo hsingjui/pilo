@@ -9,7 +9,6 @@ import {
 	useSyncExternalStore,
 } from "react";
 
-import type { ChatSessionRuntimeState } from "@/components/chat/chat-page-utils";
 import { createChatHistoryWindowStore } from "@/components/chat/chat-history-window-store";
 import {
 	alignHistoryMessages,
@@ -20,10 +19,8 @@ import {
 	markExternalTurnLive,
 	sameHistoryFingerprint,
 } from "@/components/chat/chat-conversation-model";
-import { createConversationState } from "@/lib/conversation-reducer";
 import { replayConversationEvents } from "@/lib/conversation-replay";
 import type { ConversationState } from "@/lib/conversation-types";
-import type { PiAgentState } from "@/lib/pi-runtime";
 import type {
 	SessionHistoryFingerprint,
 	SessionHistoryResult,
@@ -45,8 +42,6 @@ type UseRemoteChatHistoryOptions = {
 	setConversation: Dispatch<SetStateAction<ConversationState>>;
 	setRuntimeReady: Dispatch<SetStateAction<boolean>>;
 	setReadOnly: Dispatch<SetStateAction<boolean>>;
-	setAgentState: Dispatch<SetStateAction<PiAgentState | null>>;
-	setChatState: Dispatch<SetStateAction<ChatSessionRuntimeState | null>>;
 };
 
 export function useRemoteChatHistory({
@@ -62,8 +57,6 @@ export function useRemoteChatHistory({
 	setConversation,
 	setRuntimeReady,
 	setReadOnly,
-	setAgentState,
-	setChatState,
 }: UseRemoteChatHistoryOptions) {
 	const [historyStore] = useState(createChatHistoryWindowStore);
 	const historySnapshot = useSyncExternalStore(
@@ -76,6 +69,12 @@ export function useRemoteChatHistory({
 		useState<SessionHistoryFingerprint | null>(null);
 	const [loadingConversation, setLoadingConversation] = useState(false);
 	const [historyRetryKey, setHistoryRetryKey] = useState(0);
+	const selectedSessionPath = selectedSession?.sessionPath ?? null;
+	const selectedSessionId = selectedSession?.piSessionId ?? null;
+	const externalTurnOpen = Boolean(
+		selectedSessionPath &&
+		isExternalOpenTurn(activeProjectId, selectedSessionPath),
+	);
 
 	const historyPrefix = useMemo(
 		() => buildHistoryPrefix(historySnapshot),
@@ -83,31 +82,36 @@ export function useRemoteChatHistory({
 	);
 
 	/* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies -- Selecting a Host session or changing the resync generation intentionally replaces local replay state with the authoritative history snapshot. */
+	// Clearing the selection (always via startDraft) only needs to drop the
+	// history store here; conversation/runtime/agent state reset is owned by
+	// startDraft. See use-remote-chat.ts for the rawSessions-drop fallback.
+	useEffect(() => {
+		if (selectedSessionPath) return;
+		historyStore.initialize([], 0);
+		historyPageRequestsRef.current.clear();
+		setHistoryFingerprint(null);
+		setLoadingConversation(false);
+	}, [historyStore, selectedSessionPath]);
+
+	useEffect(() => {
+		if (!selectedSessionPath) return;
+		setReadOnly(externalTurnOpen);
+	}, [externalTurnOpen, selectedSessionPath, setReadOnly]);
+
 	useEffect(() => {
 		void resyncKey;
-		if (!client || !activeProjectId || !selectedSession) {
-			if (!selectedSession) {
-				setConversation(createConversationState());
-				historyStore.initialize([], 0);
-				historyPageRequestsRef.current.clear();
-				setHistoryFingerprint(null);
-				setRuntimeReady(false);
-				setReadOnly(false);
-				setAgentState(null);
-				setChatState(null);
-			}
+		if (
+			!client ||
+			!activeProjectId ||
+			!selectedSessionPath ||
+			!selectedSessionId
+		)
 			return;
-		}
 		let cancelled = false;
 		setLoadingConversation(true);
 		setRuntimeReady(false);
-		const externalTurnOpen = isExternalOpenTurn(
-			activeProjectId,
-			selectedSession.sessionPath,
-		);
-		setReadOnly(externalTurnOpen);
 		void client
-			.loadHistory(activeProjectId, selectedSession.sessionPath, {
+			.loadHistory(activeProjectId, selectedSessionPath, {
 				messageLimit: INITIAL_HISTORY_MESSAGE_COUNT,
 				includeMessageIndex: true,
 			})
@@ -135,9 +139,8 @@ export function useRemoteChatHistory({
 				return client.startChat({
 					projectId: activeProjectId,
 					sessionKey:
-						activeSessionKey ??
-						sessionKey(activeProjectId, selectedSession.piSessionId),
-					sessionPath: selectedSession.sessionPath,
+						activeSessionKey ?? sessionKey(activeProjectId, selectedSessionId),
+					sessionPath: selectedSessionPath,
 				});
 			})
 			.then(() => {
@@ -163,16 +166,15 @@ export function useRemoteChatHistory({
 	}, [
 		activeProjectId,
 		activeSessionKey,
+		externalTurnOpen,
 		handleExpiredAuth,
-		isExternalOpenTurn,
 		refreshAgentConfig,
 		resyncKey,
 		historyRetryKey,
-		selectedSession,
+		selectedSessionId,
+		selectedSessionPath,
 		client,
 		historyStore,
-		setAgentState,
-		setChatState,
 		setConversation,
 		setFatalError,
 		setReadOnly,
@@ -185,7 +187,7 @@ export function useRemoteChatHistory({
 			if (
 				!client ||
 				!activeProjectId ||
-				!selectedSession ||
+				!selectedSessionPath ||
 				!historyFingerprint
 			) {
 				return;
@@ -222,7 +224,7 @@ export function useRemoteChatHistory({
 				}
 				historyPageRequestsRef.current.add(pageStart);
 				void client
-					.loadHistory(activeProjectId, selectedSession.sessionPath, {
+					.loadHistory(activeProjectId, selectedSessionPath, {
 						startMessage: pageStart,
 						messageLimit: pageEnd - pageStart + 1,
 						includeMessageIndex: false,
@@ -261,7 +263,7 @@ export function useRemoteChatHistory({
 			handleExpiredAuth,
 			historyFingerprint,
 			historyStore,
-			selectedSession,
+			selectedSessionPath,
 		],
 	);
 

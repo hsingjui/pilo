@@ -129,10 +129,19 @@ export function useRemoteChat({
 			) ?? null,
 		[identifiedDraftSessionId, rawSessions],
 	);
+	const resolvedDraftProjectId = useMemo(() => {
+		if (
+			draftProjectId &&
+			projects.some((project) => project.id === draftProjectId)
+		) {
+			return draftProjectId;
+		}
+		return projects[0]?.id ?? "";
+	}, [draftProjectId, projects]);
 	const activeProjectId =
 		selectedSession?.projectId ??
 		identifiedDraftSession?.projectId ??
-		draftProjectId;
+		resolvedDraftProjectId;
 	const activeProject = useMemo(
 		() => projects.find((project) => project.id === activeProjectId) ?? null,
 		[projects, activeProjectId],
@@ -319,8 +328,6 @@ export function useRemoteChat({
 		setConversation,
 		setRuntimeReady,
 		setReadOnly,
-		setAgentState,
-		setChatState,
 	});
 	const {
 		historyPrefix,
@@ -411,6 +418,14 @@ export function useRemoteChat({
 		setDraftProjectId,
 		setRuntimeSessionKeys,
 	});
+
+	// A refresh can drop the selected session from rawSessions (external delete or
+	// index refresh). Route that through startDraft so selection and runtime state
+	// reset on the single canonical path instead of leaving a stale conversation.
+	useEffect(() => {
+		if (!selectedSessionPath || selectedSession) return;
+		startDraft();
+	}, [selectedSession, selectedSessionPath, startDraft]);
 
 	const ensureDraftRuntime = useCallback(async () => {
 		if (!client || !activeProjectId || !activeSessionKey)

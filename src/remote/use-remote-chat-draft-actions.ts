@@ -162,21 +162,32 @@ export function useRemoteChatDraftActions({
 
 	const switchDraftProject = useCallback(
 		(projectId: string) => {
+			queuedSubmissionsRef.current.clear();
 			setDraftProjectId(projectId);
 			setDraftId(randomId());
 			setIdentifiedDraftSessionId(null);
-			setComposer(projectDraftCache.get(projectId));
-			setImages([]);
-			setVisualReadyRouteKey(null);
-			autoTitleRequestedRef.current = false;
+			setConversation(createConversationState());
+			setRuntimeReady(false);
+			setReadOnly(false);
+			setAgentState(null);
+			setChatState(null);
 			setModels([]);
+			setThinkingLevels([]);
 			setDraftModel(null);
 			setDraftThinkingLevel(null);
+			setComposer(projectDraftCache.get(projectId));
+			setImages([]);
+			autoTitleRequestedRef.current = false;
+			setVisualReadyRouteKey(null);
 		},
 		[
 			autoTitleRequestedRef,
 			projectDraftCache,
+			queuedSubmissionsRef,
+			setAgentState,
+			setChatState,
 			setComposer,
+			setConversation,
 			setDraftId,
 			setDraftModel,
 			setDraftProjectId,
@@ -184,6 +195,9 @@ export function useRemoteChatDraftActions({
 			setIdentifiedDraftSessionId,
 			setImages,
 			setModels,
+			setReadOnly,
+			setRuntimeReady,
+			setThinkingLevels,
 			setVisualReadyRouteKey,
 		],
 	);
