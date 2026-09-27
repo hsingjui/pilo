@@ -313,13 +313,17 @@ pub fn run() {
                     {
                         log::warn!(target: "shutdown", "graceful shutdown timed out; forcing exit");
                     }
-                    // `AppHandle::exit` only posts a `RequestExit` message to the
-                    // event loop and does not terminate the process itself. If
-                    // that message is not processed (observed on Windows release)
-                    // the app lingers. Exit the process directly after teardown.
-                    // The window-state plugin already saves on close, so nothing
-                    // user-visible is lost by skipping the normal teardown events.
+                    // macOS 只有在事件循环正常退出时才会通知 LaunchServices/Dock
+                    // 注销应用；从工作线程直接 `std::process::exit` 会让 Dock 残留图标
+                    // （表现为「退出后仍在后台运行」）。让 Tauri 走一遍 `RunEvent::Exit`
+                    // 的正规退出流程：`exit(0)` 产生的是 `code = Some(0)`，上面的
+                    // `prevent_exit` 分支不会再拦截，事件循环随即退出并触发清理。
                     log::info!(target: "shutdown", "exiting process");
+                    handle.exit(0);
+                    // Windows release 下 `RequestExit` 消息偶发不被处理（见上方注释），
+                    // 兜底强制退出，避免残留进程。
+                    std::thread::sleep(std::time::Duration::from_millis(1500));
+                    log::warn!(target: "shutdown", "exit request not processed; forcing exit");
                     std::process::exit(0);
                 });
             }
