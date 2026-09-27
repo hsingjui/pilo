@@ -288,6 +288,17 @@ export const SessionRow = memo(function SessionRow({
 					>
 						{/* 图标槽 16px：让会话标题与项目标题共享同一条 30px 起始边 */}
 						<div className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+							{!session.active && session.unread ? (
+								<span
+									aria-hidden="true"
+									className="flex items-center justify-center transition-opacity duration-100 group-hover:opacity-0 group-data-[menu-open]:opacity-0"
+								>
+									<span
+										aria-hidden="true"
+										className="inline-block size-1.5 shrink-0 rounded-full bg-sidebar-primary"
+									/>
+								</span>
+							) : null}
 							<DropdownMenu
 								open={menuOpen}
 								onOpenChange={(open) => {
@@ -404,11 +415,6 @@ export const SessionRow = memo(function SessionRow({
 							>
 								{session.active ? (
 									<ActivityDot className="text-sidebar-primary" />
-								) : session.unread ? (
-									<span
-										aria-hidden="true"
-										className="inline-block size-1.5 shrink-0 rounded-full bg-sidebar-primary"
-									/>
 								) : null}
 							</span>
 							{onDelete ? (

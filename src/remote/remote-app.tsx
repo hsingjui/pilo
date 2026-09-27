@@ -165,7 +165,7 @@ export function RemoteApp() {
 
 	const unreadSessionIds = useSessionUnread(
 		sessionsWithActivity,
-		chat.selectedSession?.piSessionId ?? null,
+		chat.identifiedSessionId ?? null,
 	);
 
 	const sidebarSessions = useMemo(

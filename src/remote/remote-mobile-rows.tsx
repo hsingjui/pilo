@@ -123,6 +123,15 @@ export function MobileSessionRow({
 				firedRef.current = false;
 			}}
 		>
+			{/* 左侧固定槽：未读标记，与桌面侧栏保持一致（左未读 / 右运行）。 */}
+			<span className="flex size-4 shrink-0 items-center justify-center">
+				{!session.active && session.unread ? (
+					<span
+						aria-hidden="true"
+						className="size-1.5 rounded-full bg-sidebar-primary"
+					/>
+				) : null}
+			</span>
 			<span className="min-w-0 flex-1">
 				<span className="block truncate text-sm">{session.title}</span>
 				{projectName ? (
@@ -132,14 +141,12 @@ export function MobileSessionRow({
 					</span>
 				) : null}
 			</span>
-			{session.active ? (
-				<ActivityDot className="shrink-0 text-sidebar-primary" />
-			) : session.unread ? (
-				<span
-					aria-hidden="true"
-					className="size-1.5 shrink-0 rounded-full bg-sidebar-primary"
-				/>
-			) : null}
+			{/* 右侧固定槽：运行状态，与左侧未读槽共同预留宽度，标题不再占满整行。 */}
+			<span className="flex size-4 shrink-0 items-center justify-center">
+				{session.active ? (
+					<ActivityDot className="text-sidebar-primary" />
+				) : null}
+			</span>
 		</button>
 	);
 }
