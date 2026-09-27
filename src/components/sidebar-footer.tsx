@@ -116,24 +116,6 @@ export function SidebarFooter() {
 				</TooltipTrigger>
 				<TooltipContent>{t("settings.title")}</TooltipContent>
 			</Tooltip>
-			<Tooltip>
-				<TooltipTrigger asChild>
-					<Button
-						variant="ghost"
-						size="icon"
-						aria-label={t("settings.remote")}
-						onClick={() => setRemoteOpen(true)}
-					>
-						<Smartphone
-							className={cn(
-								"transition-colors",
-								remoteRunning && "text-primary",
-							)}
-						/>
-					</Button>
-				</TooltipTrigger>
-				<TooltipContent>{t("settings.remote")}</TooltipContent>
-			</Tooltip>
 			{remoteOpen ? (
 				<Suspense fallback={null}>
 					<Dialog
@@ -159,7 +141,25 @@ export function SidebarFooter() {
 					<SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 				</Suspense>
 			) : null}
-			<span className="ms-auto">
+			<span className="ms-auto flex items-center gap-1">
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							variant="ghost"
+							size="icon"
+							aria-label={t("settings.remote")}
+							onClick={() => setRemoteOpen(true)}
+						>
+							<Smartphone
+								className={cn(
+									"transition-colors",
+									remoteRunning && "text-primary",
+								)}
+							/>
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>{t("settings.remote")}</TooltipContent>
+				</Tooltip>
 				<ThemeCycleButton />
 			</span>
 		</>
