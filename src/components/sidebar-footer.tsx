@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Monitor, Moon, Settings, Smartphone, Sun } from "lucide-react";
 
-import { getRemoteHostState } from "@/lib/remote";
+import { getRemoteHostState, type RemoteHostState } from "@/lib/remote";
 import { usePreferences } from "@/lib/preferences-provider";
 import { nextCycledTheme, useTheme, type Theme } from "@/lib/theme-provider";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
@@ -32,11 +32,11 @@ const RemoteSettings = lazy(() =>
 
 /** 轮询 Remote WebUI 运行状态驱动侧边栏手机按钮高亮(无后端推送事件)。弹窗打开时暂停轮询,交由 RemoteSettings 刷新,避免重复请求。 */
 function useRemoteStatus(paused: boolean) {
-	const [running, setRunning] = useState(false);
+	const [state, setState] = useState<RemoteHostState | null>(null);
 	const refresh = useCallback(async () => {
 		try {
-			const state = await getRemoteHostState();
-			setRunning(state.running);
+			const next = await getRemoteHostState();
+			setState(next);
 		} catch {
 			// 命令不可用时保持当前显示，等待下一轮轮询
 		}
@@ -49,7 +49,7 @@ function useRemoteStatus(paused: boolean) {
 		return () => window.clearInterval(timer);
 	}, [refresh, paused]);
 	/* oxlint-enable react/set-state-in-effect */
-	return { running, refresh };
+	return { state, running: state?.running ?? false, refresh };
 }
 
 const THEME_LABEL_KEYS: Record<
@@ -94,8 +94,11 @@ export function SidebarFooter() {
 	const { t } = useTranslation();
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [remoteOpen, setRemoteOpen] = useState(false);
-	const { running: remoteRunning, refresh: refreshRemote } =
-		useRemoteStatus(remoteOpen);
+	const {
+		state: remoteState,
+		running: remoteRunning,
+		refresh: refreshRemote,
+	} = useRemoteStatus(remoteOpen);
 	const { keyboardShortcuts } = usePreferences();
 	useKeyboardShortcut(keyboardShortcuts["open-settings"], () => {
 		setSettingsOpen(true);
@@ -131,7 +134,7 @@ export function SidebarFooter() {
 							<DialogDescription className="sr-only">
 								{t("settings.remoteDescription")}
 							</DialogDescription>
-							<RemoteSettings />
+							<RemoteSettings initialState={remoteState} />
 						</DialogContent>
 					</Dialog>
 				</Suspense>

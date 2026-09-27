@@ -104,9 +104,15 @@ function DeviceNameCell({
 	);
 }
 
-export function RemoteSettings() {
+export function RemoteSettings({
+	initialState,
+}: {
+	initialState?: RemoteHostState | null;
+}) {
 	const { t } = useTranslation();
-	const [state, setState] = useState<RemoteHostState | null>(null);
+	const [state, setState] = useState<RemoteHostState | null>(
+		initialState ?? null,
+	);
 	const [busy, setBusy] = useState<
 		"toggle" | "port" | "pairing" | string | null
 	>(null);
