@@ -18,6 +18,8 @@ pub fn random_remote_port() -> u16 {
 pub struct RemoteHostConfig {
     pub enabled: bool,
     pub port: u16,
+    /// 内网穿透等外部访问地址(如 https://example.com);为空时回退到局域网 IP。
+    pub public_base_url: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

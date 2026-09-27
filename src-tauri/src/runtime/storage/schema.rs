@@ -114,7 +114,8 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
          CREATE TABLE IF NOT EXISTS remote_host_config (
            id INTEGER PRIMARY KEY CHECK(id=1),
            enabled INTEGER NOT NULL DEFAULT 0,
-           port INTEGER NOT NULL DEFAULT 47653
+           port INTEGER NOT NULL DEFAULT 47653,
+           public_base_url TEXT NOT NULL DEFAULT ''
          );
          CREATE TABLE IF NOT EXISTS remote_pairing (
            id INTEGER PRIMARY KEY CHECK(id=1),
@@ -140,6 +141,17 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
     ensure_project_columns(db)?;
     ensure_project_model_cache_columns(db)?;
     ensure_remote_device_columns(db)?;
+    ensure_remote_host_config_columns(db)?;
+    Ok(())
+}
+
+fn ensure_remote_host_config_columns(db: &SqliteConnection) -> Result<(), String> {
+    if !column_exists(db, "remote_host_config", "public_base_url")? {
+        db.execute_batch(
+            "ALTER TABLE remote_host_config ADD COLUMN public_base_url TEXT NOT NULL DEFAULT '';",
+        )
+        .map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 

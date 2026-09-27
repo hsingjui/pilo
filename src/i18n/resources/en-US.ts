@@ -103,6 +103,11 @@ const enUS = {
 		remoteCopyLink: "Copy link",
 		remoteAccessAddress: "Access address",
 		remoteAccessAddressHint: "Authorized devices open it directly",
+		remotePublicBaseUrl: "Public access URL",
+		remotePublicBaseUrlHint:
+			"Tunnel domain; leave empty to use the LAN address",
+		remotePublicBaseUrlInvalid: "URL must start with http:// or https://",
+		remotePublicBaseUrlSaved: "Public access URL saved",
 		remoteNewLink: "New pairing link",
 		remoteLinkCopied: "Link copied",
 		remoteCopyFailed: "Could not copy pairing link",

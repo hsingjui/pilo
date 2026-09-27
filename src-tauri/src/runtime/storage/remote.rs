@@ -15,12 +15,13 @@ pub(crate) fn get_remote_host_config(db: &SqliteConnection) -> Result<RemoteHost
     )
     .map_err(|error| format!("failed to initialize Remote WebUI configuration: {error}"))?;
     db.query_row(
-        "SELECT enabled, port FROM remote_host_config WHERE id=1",
+        "SELECT enabled, port, public_base_url FROM remote_host_config WHERE id=1",
         [],
         |row| {
             Ok(RemoteHostConfig {
                 enabled: row.get::<_, i64>(0)? != 0,
                 port: row.get::<_, u16>(1)?,
+                public_base_url: row.get::<_, String>(2)?,
             })
         },
     )
@@ -32,10 +33,14 @@ pub(crate) fn set_remote_host_config(
     config: &RemoteHostConfig,
 ) -> Result<(), String> {
     db.execute(
-        "INSERT INTO remote_host_config(id,enabled,port)
-         VALUES(1,?1,?2)
-         ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, port=excluded.port",
-        params![i64::from(config.enabled), config.port],
+        "INSERT INTO remote_host_config(id,enabled,port,public_base_url)
+         VALUES(1,?1,?2,?3)
+         ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled, port=excluded.port, public_base_url=excluded.public_base_url",
+        params![
+            i64::from(config.enabled),
+            config.port,
+            config.public_base_url
+        ],
     )
     .map_err(|error| format!("failed to persist Remote WebUI configuration: {error}"))?;
     Ok(())
@@ -266,6 +271,7 @@ mod tests {
         let config = RemoteHostConfig {
             enabled: true,
             port: 48_001,
+            public_base_url: "https://dev.example.com".to_owned(),
         };
         set_remote_host_config(&db, &config).unwrap();
         assert_eq!(get_remote_host_config(&db).unwrap(), config);

@@ -11,6 +11,7 @@ import {
 	revokeRemoteDevice,
 	setRemoteEnabled,
 	setRemotePort,
+	setRemotePublicBaseUrl,
 	type RemoteDevice,
 	type RemoteHostState,
 } from "@/lib/remote";
@@ -111,6 +112,7 @@ export function RemoteSettings() {
 	>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [portDraft, setPortDraft] = useState<string | null>(null);
+	const [publicBaseDraft, setPublicBaseDraft] = useState<string | null>(null);
 
 	const refresh = useCallback(async () => {
 		try {
@@ -174,6 +176,33 @@ export function RemoteSettings() {
 			setPortDraft(null);
 			setError(null);
 			toast.success(t("settings.remotePortSaved"));
+		} catch (cause) {
+			const message = cause instanceof Error ? cause.message : String(cause);
+			setError(message);
+			toast.error(t("settings.remoteActionFailed"), { description: message });
+		} finally {
+			setBusy(null);
+		}
+	};
+
+	const savePublicBaseUrl = async () => {
+		if (busy || !state || publicBaseDraft === null) return;
+		const value = publicBaseDraft.trim();
+		if (value === state.publicBaseUrl) {
+			setPublicBaseDraft(null);
+			return;
+		}
+		if (value && !/^https?:\/\//.test(value)) {
+			toast.error(t("settings.remotePublicBaseUrlInvalid"));
+			setPublicBaseDraft(null);
+			return;
+		}
+		setBusy("publicBaseUrl");
+		try {
+			setState(await setRemotePublicBaseUrl(value));
+			setPublicBaseDraft(null);
+			setError(null);
+			toast.success(t("settings.remotePublicBaseUrlSaved"));
 		} catch (cause) {
 			const message = cause instanceof Error ? cause.message : String(cause);
 			setError(message);
@@ -305,9 +334,26 @@ export function RemoteSettings() {
 						</Button>
 					</SettingsRow>
 				) : null}
+				<SettingsRow
+					label={t("settings.remotePublicBaseUrl")}
+					helper={t("settings.remotePublicBaseUrlHint")}
+				>
+					<Input
+						className="h-7 w-full font-mono text-2xs sm:w-64"
+						placeholder="https://example.com"
+						value={publicBaseDraft ?? state.publicBaseUrl}
+						disabled={busy === "publicBaseUrl"}
+						onChange={(event) => setPublicBaseDraft(event.target.value)}
+						onBlur={() => void savePublicBaseUrl()}
+						onKeyDown={(event) => {
+							if (event.key === "Enter") void savePublicBaseUrl();
+						}}
+						aria-label={t("settings.remotePublicBaseUrl")}
+					/>
+				</SettingsRow>
 			</SettingsSection>
 
-			{state.enabled && state.running && state.baseUrl ? (
+			{state.enabled && state.running ? (
 				<SettingsSection
 					title={t("settings.remoteAccessAddress")}
 					headerRight={t("settings.remoteAccessAddressHint")}

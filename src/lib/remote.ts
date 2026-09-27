@@ -15,6 +15,7 @@ export type RemoteHostState = {
 	running: boolean;
 	port: number;
 	baseUrl: string | null;
+	publicBaseUrl: string;
 	pairingUrl: string | null;
 	pairingExpiresAtMs: number | null;
 	lastError: string | null;
@@ -31,6 +32,14 @@ export function setRemoteEnabled(enabled: boolean): Promise<RemoteHostState> {
 
 export function setRemotePort(port: number): Promise<RemoteHostState> {
 	return invoke<RemoteHostState>("remote_set_port", { port });
+}
+
+export function setRemotePublicBaseUrl(
+	publicBaseUrl: string,
+): Promise<RemoteHostState> {
+	return invoke<RemoteHostState>("remote_set_public_base_url", {
+		publicBaseUrl,
+	});
 }
 
 export function regenerateRemotePairing(): Promise<RemoteHostState> {

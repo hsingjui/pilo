@@ -29,6 +29,15 @@ pub async fn remote_set_port(
 }
 
 #[tauri::command]
+pub async fn remote_set_public_base_url(
+    app: AppHandle,
+    remote: State<'_, RemoteServerManager>,
+    public_base_url: String,
+) -> Result<RemoteHostState, String> {
+    remote.set_public_base_url(app, &public_base_url).await
+}
+
+#[tauri::command]
 pub async fn remote_pairing_regenerate(
     app: AppHandle,
     remote: State<'_, RemoteServerManager>,

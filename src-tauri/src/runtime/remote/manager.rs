@@ -25,6 +25,8 @@ pub(crate) struct RemoteHostState {
     pub running: bool,
     pub port: u16,
     pub base_url: Option<String>,
+    /// 用户配置的外部访问地址;为空表示未配置(二维码用局域网地址)。
+    pub public_base_url: String,
     pub pairing_url: Option<String>,
     pub pairing_expires_at_ms: Option<u64>,
     pub last_error: Option<String>,
@@ -39,7 +41,7 @@ struct ActivePairing {
 
 struct RunningRemoteServer {
     port: u16,
-    base_url: String,
+    lan_base_url: String,
     pairing: Option<ActivePairing>,
     shutdown: watch::Sender<bool>,
     auth_generation: watch::Sender<u64>,
@@ -178,6 +180,18 @@ impl RemoteServerManager {
         self.snapshot(app).await
     }
 
+    pub(crate) async fn set_public_base_url(
+        &self,
+        app: AppHandle,
+        public_base_url: &str,
+    ) -> Result<RemoteHostState, String> {
+        let paths = HostPaths::from_app(&app)?;
+        let mut config = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
+        config.public_base_url = normalize_public_base_url(public_base_url)?;
+        storage::set_remote_host_config(&storage::open_with_paths(&paths)?, &config)?;
+        self.snapshot(&app).await
+    }
+
     pub(crate) async fn snapshot(&self, app: &AppHandle) -> Result<RemoteHostState, String> {
         let paths = HostPaths::from_app(app)?;
         let db = storage::open_with_paths(&paths)?;
@@ -198,14 +212,16 @@ impl RemoteServerManager {
         let (running, port, base_url, pairing_url, pairing_expires_at_ms) =
             match inner.running.as_ref() {
                 Some(server) => {
+                    let base_url =
+                        effective_base_url(&config.public_base_url, &server.lan_base_url);
                     let pairing_url = server
                         .pairing
                         .as_ref()
-                        .map(|pairing| format!("{}/?pair={}", server.base_url, pairing.secret));
+                        .map(|pairing| format!("{}/?pair={}", base_url, pairing.secret));
                     (
                         true,
                         server.port,
-                        Some(server.base_url.clone()),
+                        Some(base_url),
                         pairing_url,
                         server.pairing.as_ref().map(|pairing| pairing.expires_at_ms),
                     )
@@ -218,6 +234,7 @@ impl RemoteServerManager {
             running,
             port,
             base_url,
+            public_base_url: config.public_base_url.clone(),
             pairing_url,
             pairing_expires_at_ms,
             last_error: inner.last_error.clone(),
@@ -258,7 +275,7 @@ impl RemoteServerManager {
             .local_addr()
             .map_err(|error| format!("failed to read Remote WebUI listener address: {error}"))?
             .port();
-        let base_url = format!("http://{}:{actual_port}", lan_ip());
+        let lan_base_url = format!("http://{}:{actual_port}", lan_ip());
         let paths = HostPaths::from_app(&app)?;
         let pairing = auth::issue_pairing(&paths)?;
         let active_pairing = ActivePairing {
@@ -290,7 +307,7 @@ impl RemoteServerManager {
         inner.last_error = None;
         inner.running = Some(RunningRemoteServer {
             port: actual_port,
-            base_url,
+            lan_base_url,
             pairing: Some(active_pairing),
             shutdown,
             auth_generation,
@@ -305,6 +322,33 @@ fn inner_running_port(inner: &RemoteServerInner) -> Option<u16> {
     inner.running.as_ref().map(|server| server.port)
 }
 
+/// 去掉首尾空白与结尾斜杠;空串表示未配置。
+fn trim_base_url(input: &str) -> &str {
+    input.trim().trim_end_matches('/')
+}
+
+/// 优先用用户配置的外部访问地址(内网穿透域名),否则回退到局域网地址。
+fn effective_base_url(public_base_url: &str, lan_base_url: &str) -> String {
+    let configured = trim_base_url(public_base_url);
+    if configured.is_empty() {
+        lan_base_url.to_owned()
+    } else {
+        configured.to_owned()
+    }
+}
+
+/// 空字符串表示清除配置;否则必须是 http(s) URL。
+fn normalize_public_base_url(input: &str) -> Result<String, String> {
+    let trimmed = trim_base_url(input);
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+    if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+        return Err("Public access URL must start with http:// or https://".to_owned());
+    }
+    Ok(trimmed.to_owned())
+}
+
 fn lan_ip() -> IpAddr {
     let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0));
     let Ok(socket) = socket else {
@@ -317,4 +361,39 @@ fn lan_ip() -> IpAddr {
         return address.ip();
     }
     IpAddr::V4(Ipv4Addr::LOCALHOST)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{effective_base_url, normalize_public_base_url};
+
+    #[test]
+    fn effective_base_url_prefers_configured_public_url() {
+        assert_eq!(
+            effective_base_url("https://dev.example.com", "http://192.168.1.5:47653"),
+            "https://dev.example.com"
+        );
+        assert_eq!(
+            effective_base_url("", "http://192.168.1.5:47653"),
+            "http://192.168.1.5:47653"
+        );
+        assert_eq!(
+            effective_base_url("  ", "http://192.168.1.5:47653"),
+            "http://192.168.1.5:47653"
+        );
+    }
+
+    #[test]
+    fn normalize_public_base_url_validates_and_trims() {
+        assert_eq!(normalize_public_base_url("  "), Ok(String::new()));
+        assert_eq!(
+            normalize_public_base_url("https://dev.example.com/"),
+            Ok("https://dev.example.com".to_owned())
+        );
+        assert_eq!(
+            normalize_public_base_url("http://dev.example.com:8080"),
+            Ok("http://dev.example.com:8080".to_owned())
+        );
+        assert!(normalize_public_base_url("dev.example.com").is_err());
+    }
 }
