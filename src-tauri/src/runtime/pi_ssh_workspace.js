@@ -1,5 +1,11 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	rmSync,
+	statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -28,11 +34,14 @@ const workspaceFrame = "\x1ePILO_SSH_WORKSPACE\x1f";
 // PILO_SSH_FORCE_PERSISTENT forces the session path (used to exercise it in tests).
 const persistentTransport =
 	process.platform === "win32" || process.env.PILO_SSH_FORCE_PERSISTENT === "1";
-const muxDir =
-	process.platform === "win32"
-		? undefined
-		: mkdtempSync(path.join(tmpdir(), "pilo-ssh-"));
-const muxPath = muxDir ? path.join(muxDir, "control") : undefined;
+const muxEnabled = process.platform !== "win32";
+// The ControlMaster socket directory is created lazily (see ensureMuxPath) and
+// torn down on session shutdown. Pi may fire session_shutdown while the process
+// keeps running (reload / session replacement), so the directory must be
+// recreated on next use instead of being captured once at module load.
+let muxDir;
+let muxPath;
+let prunedStaleMuxDirs = false;
 let runtime = { kind: "connecting" };
 let shuttingDown = false;
 let reconnectPromise;
@@ -46,9 +55,55 @@ function sshEnvironment() {
 	return { ...process.env, ...config.sshEnvironment };
 }
 
+function releaseMuxPath() {
+	if (muxDir) {
+		try {
+			rmSync(muxDir, { recursive: true, force: true });
+		} catch {}
+	}
+	muxDir = undefined;
+	muxPath = undefined;
+}
+
+// Leftover directories mostly come from a hard kill (session_shutdown never
+// ran). Ponytail: 24h mtime cutoff, tighten if a long-lived idle session is ever
+// pruned while still in use.
+function pruneStaleMuxDirs() {
+	if (prunedStaleMuxDirs) return;
+	prunedStaleMuxDirs = true;
+	const root = tmpdir();
+	let entries;
+	try {
+		entries = readdirSync(root, { withFileTypes: true });
+	} catch {
+		return;
+	}
+	const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+	for (const entry of entries) {
+		if (!entry.isDirectory() || !entry.name.startsWith("pilo-ssh-")) continue;
+		const target = path.join(root, entry.name);
+		try {
+			if (statSync(target).mtimeMs < cutoff) {
+				rmSync(target, { recursive: true, force: true });
+			}
+		} catch {}
+	}
+}
+
+function ensureMuxPath() {
+	if (!muxEnabled) return undefined;
+	if (muxPath && existsSync(muxDir)) return muxPath;
+	if (muxDir) releaseMuxPath();
+	pruneStaleMuxDirs();
+	muxDir = mkdtempSync(path.join(tmpdir(), "pilo-ssh-"));
+	muxPath = path.join(muxDir, "control");
+	return muxPath;
+}
+
 function sshArgs() {
 	const args = [...config.sshArgs];
-	if (!muxPath || args.length === 0) return args;
+	const mux = ensureMuxPath();
+	if (!mux || args.length === 0) return args;
 	const destination = args.pop();
 	args.push(
 		"-o",
@@ -56,7 +111,7 @@ function sshArgs() {
 		"-o",
 		"ControlPersist=10m",
 		"-S",
-		muxPath,
+		mux,
 		destination,
 	);
 	return args;
@@ -125,6 +180,8 @@ function resolveRemoteInput(input, cwd = localCwd) {
 const sshTransportFailurePatterns = [
 	/^ssh:/m,
 	/^mux_client_/m,
+	/^unix_listener:/m,
+	/^Control socket /m,
 	/^kex_exchange_identification:/m,
 	/^channel \d+:/m,
 	/permission denied/i,
@@ -889,6 +946,9 @@ export default function piloSshWorkspace(pi) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		// session_shutdown may have run for a previous session in this same
+		// process (reload / session replacement), not just at process exit.
+		shuttingDown = false;
 		try {
 			await connectWorkspace();
 			ctx.ui?.setStatus?.("pilo-ssh-workspace", `SSH · ${config.label}`);
@@ -950,14 +1010,15 @@ export default function piloSshWorkspace(pi) {
 		shuttingDown = true;
 		ctx.ui?.setStatus?.("pilo-ssh-workspace", undefined);
 		if (session) destroySession(session);
-		if (muxPath) {
+		const closingMuxPath = muxPath;
+		if (closingMuxPath) {
 			try {
 				const args = [...config.sshArgs];
 				const destination = args.pop();
 				await new Promise((resolve) => {
 					const child = spawn(
 						"ssh",
-						[...args, "-S", muxPath, "-O", "exit", destination],
+						[...args, "-S", closingMuxPath, "-O", "exit", destination],
 						{
 							env: sshEnvironment(),
 							stdio: "ignore",
@@ -968,9 +1029,8 @@ export default function piloSshWorkspace(pi) {
 					child.on("close", () => resolve());
 				});
 			} catch {}
-			try {
-				rmSync(muxDir, { recursive: true, force: true });
-			} catch {}
 		}
+		releaseMuxPath();
+		runtime = { kind: "connecting" };
 	});
 }
