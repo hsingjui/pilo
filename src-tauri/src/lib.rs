@@ -68,6 +68,8 @@ fn debug_runtime_trace_log(payload: &str) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Guards the exit teardown so a repeated exit request cannot run it twice.
+    let exiting = std::sync::atomic::AtomicBool::new(false);
     let builder = tauri::Builder::default().plugin(
         tauri_plugin_log::Builder::new()
             .level(if cfg!(debug_assertions) {
@@ -270,18 +272,55 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
+        .run(move |app, event| {
+            // Teardown must run while the event loop is still alive. At
+            // `RunEvent::Exit` tokio's time driver is no longer pumped, so any
+            // timer or unresponsive child wait inside `block_on` parks forever
+            // and the app never quits. Intercept the user-initiated exit instead
+            // (`ExitRequested` with no exit code fires when the last window
+            // closes), keep the loop alive, tear down asynchronously, then exit.
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = event
+                && code.is_none()
+                && !exiting.swap(true, std::sync::atomic::Ordering::SeqCst)
+            {
                 use tauri::Manager;
-                let runtime = app.state::<PiloRuntime>();
-                let remote = app.state::<runtime::RemoteServerManager>();
-                tauri::async_runtime::block_on(async {
-                    remote.stop().await;
-                    runtime.chat_sessions.stop_all().await;
-                    let _ = runtime.project_pi_session.lock().await.stop().await;
-                    runtime.session_watchers.lock().await.stop_all().await;
-                    runtime.terminals.lock().await.close_all().await;
-                    runtime.servers.stop_all().await;
+                api.prevent_exit();
+                let handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let runtime = handle.state::<PiloRuntime>();
+                    let remote = handle.state::<runtime::RemoteServerManager>();
+                    // The whole teardown is bounded and always followed by
+                    // exit(0): a stuck pilo-server RPC must never keep the app
+                    // alive. Logs at each step pinpoint where it stalls.
+                    let teardown = async {
+                        log::info!(target: "shutdown", "remote webui: stopping");
+                        remote.stop().await;
+                        log::info!(target: "shutdown", "chat sessions: stopping");
+                        runtime.chat_sessions.stop_all().await;
+                        log::info!(target: "shutdown", "project pi session: stopping");
+                        let _ = runtime.project_pi_session.lock().await.stop().await;
+                        log::info!(target: "shutdown", "session watchers: stopping");
+                        runtime.session_watchers.lock().await.stop_all().await;
+                        log::info!(target: "shutdown", "terminals: closing");
+                        runtime.terminals.lock().await.close_all().await;
+                        log::info!(target: "shutdown", "servers: stopping");
+                        runtime.servers.stop_all().await;
+                        log::info!(target: "shutdown", "teardown complete");
+                    };
+                    if tokio::time::timeout(std::time::Duration::from_secs(5), teardown)
+                        .await
+                        .is_err()
+                    {
+                        log::warn!(target: "shutdown", "graceful shutdown timed out; forcing exit");
+                    }
+                    // `AppHandle::exit` only posts a `RequestExit` message to the
+                    // event loop and does not terminate the process itself. If
+                    // that message is not processed (observed on Windows release)
+                    // the app lingers. Exit the process directly after teardown.
+                    // The window-state plugin already saves on close, so nothing
+                    // user-visible is lost by skipping the normal teardown events.
+                    log::info!(target: "shutdown", "exiting process");
+                    std::process::exit(0);
                 });
             }
         });
