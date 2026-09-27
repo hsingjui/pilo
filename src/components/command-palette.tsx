@@ -4,11 +4,8 @@ import { Folder, MessageSquareText, MessagesSquare } from "lucide-react";
 
 import { i18n } from "@/i18n";
 
-import {
-	listSessions,
-	searchSessions,
-	type SessionIndexEntry,
-} from "@/lib/sessions";
+import type { PiloClient } from "@/lib/pilo-client";
+import type { SessionIndexEntry } from "@/lib/sessions";
 import {
 	CommandDialog,
 	CommandGroup,
@@ -28,6 +25,7 @@ export type SessionSearchTarget = {
 };
 
 type CommandPaletteProps = {
+	client: PiloClient;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	projects: SidebarProject[];
@@ -66,6 +64,7 @@ function indexedTitle(session: SessionIndexEntry) {
 }
 
 export function CommandPalette({
+	client,
 	open,
 	onOpenChange,
 	projects,
@@ -86,7 +85,7 @@ export function CommandPalette({
 		if (!open) return;
 		let disposed = false;
 		void Promise.allSettled(
-			projects.map((project) => listSessions(project.id)),
+			projects.map((project) => client.listSessions(project.id)),
 		).then((results) => {
 			if (disposed) return;
 			const byKey = new Map(
@@ -120,7 +119,7 @@ export function CommandPalette({
 		return () => {
 			disposed = true;
 		};
-	}, [open, projects, sessions]);
+	}, [client, open, projects, sessions]);
 
 	useEffect(() => {
 		if (!open) return;
@@ -133,7 +132,7 @@ export function CommandPalette({
 			void Promise.allSettled(
 				projects.map(async (project) => ({
 					project,
-					matches: await searchSessions(project.id, normalized, 12),
+					matches: await client.searchSessions(project.id, normalized, 12),
 				})),
 			).then((results) => {
 				if (disposed || requestRef.current !== request) return;
@@ -167,7 +166,7 @@ export function CommandPalette({
 			disposed = true;
 			window.clearTimeout(timer);
 		};
-	}, [catalog, open, projects, query, t]);
+	}, [catalog, client, open, projects, query, t]);
 
 	const normalized = query.trim().toLocaleLowerCase();
 	const projectById = useMemo(

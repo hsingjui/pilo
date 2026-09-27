@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { PanelLeft, RefreshCw, Search, SquarePen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/lib/preferences-provider";
+import { tauriPiloClient } from "@/lib/tauri-pilo-client";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { IS_MACOS } from "@/components/title-bar";
 import { CommandPalette } from "@/components/command-palette";
@@ -434,6 +435,7 @@ export function AppSidebar({
 			</aside>
 			{paletteOpen ? (
 				<CommandPalette
+					client={tauriPiloClient}
 					open
 					onOpenChange={setPaletteOpen}
 					projects={projects}

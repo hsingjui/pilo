@@ -24,10 +24,12 @@ import {
 	readSessionHistoryImage,
 	reconcileSessions,
 	requestSessionTitle,
+	searchSessions as invokeSearchSessions,
 	type SessionDeleteResult,
 	type SessionHistoryFingerprint,
 	type SessionHistoryResult,
 	type SessionIndexEntry,
+	type SessionSearchMatch,
 } from "@/lib/sessions";
 
 export class TauriPiloClient implements PiloClient {
@@ -48,6 +50,14 @@ export class TauriPiloClient implements PiloClient {
 	async listSessions(projectId: string): Promise<SessionIndexEntry[]> {
 		const result = await reconcileSessions(projectId);
 		return result.sessions;
+	}
+
+	searchSessions(
+		projectId: string,
+		query: string,
+		limit?: number,
+	): Promise<SessionSearchMatch[]> {
+		return invokeSearchSessions(projectId, query, limit);
 	}
 
 	loadHistory(
@@ -98,6 +108,10 @@ export class TauriPiloClient implements PiloClient {
 
 	startChat(input: PiloClientStartChatInput): Promise<PiSessionSnapshot> {
 		return invoke<PiSessionSnapshot>("chat_session_start", input);
+	}
+
+	stopChat(sessionKey: string, reason?: string): Promise<void> {
+		return invoke<void>("chat_session_stop", { sessionKey, reason });
 	}
 
 	chatState(sessionKey: string): Promise<ChatSessionRuntimeState | null> {

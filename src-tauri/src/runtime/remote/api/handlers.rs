@@ -63,6 +63,32 @@ pub(super) async fn sessions(
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct SessionSearchQuery {
+    project_id: String,
+    query: String,
+    limit: Option<usize>,
+}
+
+pub(super) async fn sessions_search(
+    State(state): State<RemoteHttpState>,
+    Query(query): Query<SessionSearchQuery>,
+) -> Response {
+    match crate::runtime::commands::session_search(
+        state.app.clone(),
+        state.app.state::<PiloRuntime>(),
+        query.project_id,
+        query.query,
+        Some(query.limit.unwrap_or(24).clamp(1, 100)),
+    )
+    .await
+    {
+        Ok(matches) => Json(matches).into_response(),
+        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    }
+}
+
 pub(super) async fn sessions_external_activity(
     State(state): State<RemoteHttpState>,
     Query(query): Query<SessionsQuery>,
@@ -320,6 +346,28 @@ pub(super) async fn chat_start(
 #[serde(rename_all = "camelCase")]
 pub(super) struct ChatStateQuery {
     session_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ChatStopRequest {
+    session_key: String,
+    reason: Option<String>,
+}
+
+pub(super) async fn chat_stop(
+    State(state): State<RemoteHttpState>,
+    Json(request): Json<ChatStopRequest>,
+) -> Response {
+    let runtime = state.app.state::<PiloRuntime>();
+    match runtime
+        .chat_sessions
+        .stop(&request.session_key, request.reason.as_deref())
+        .await
+    {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    }
 }
 
 pub(super) async fn chat_state(

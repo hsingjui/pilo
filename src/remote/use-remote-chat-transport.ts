@@ -16,6 +16,7 @@ import { toConversationAction } from "@/lib/conversation-runtime-adapter";
 import type { PiloClientEventMessage } from "@/lib/pilo-client";
 import { runtimeErrorMessage } from "@/lib/pi-runtime";
 import type { PiloRuntimeEvent } from "@/lib/pi-runtime";
+import type { PiExtensionDialogRequest } from "@/components/chat/use-pi-session-features";
 import { REMOTE_SEQUENCE_KEY } from "./remote-client";
 import {
 	isRpcResponse,
@@ -55,6 +56,9 @@ type UseRemoteChatTransportOptions = {
 	scheduleRuntimeActivityRefresh: () => void;
 	refreshAllSessions: () => Promise<void>;
 	refreshAgentConfigRef: MutableRefObject<(() => Promise<void>) | null>;
+	handleExtensionRequestRef: MutableRefObject<
+		((event: PiExtensionDialogRequest) => void) | null
+	>;
 	activeSessionKeyRef: MutableRefObject<string | null>;
 	queuedSubmissionsRef: MutableRefObject<Map<string, QueuedSubmission>>;
 	setCompacting: Dispatch<SetStateAction<boolean>>;
@@ -70,6 +74,7 @@ export function useRemoteChatTransport({
 	scheduleRuntimeActivityRefresh,
 	refreshAllSessions,
 	refreshAgentConfigRef,
+	handleExtensionRequestRef,
 	activeSessionKeyRef,
 	queuedSubmissionsRef,
 	setCompacting,
@@ -123,6 +128,9 @@ export function useRemoteChatTransport({
 						break;
 				}
 				if (event.sessionKey !== activeSessionKeyRef.current) continue;
+				if (event.type === "extension_ui_request") {
+					handleExtensionRequestRef.current?.(event);
+				}
 				switch (event.type) {
 					case "compaction_start":
 						setCompacting(true);
@@ -186,6 +194,7 @@ export function useRemoteChatTransport({
 		[
 			activeSessionKeyRef,
 			queuedSubmissionsRef,
+			handleExtensionRequestRef,
 			refreshAgentConfigRef,
 			refreshAllSessions,
 			scheduleRuntimeActivityRefresh,

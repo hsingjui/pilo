@@ -113,6 +113,7 @@ pub(crate) fn router(
     let protected = Router::new()
         .route("/api/v1/bootstrap", get(handlers::bootstrap))
         .route("/api/v1/sessions", get(handlers::sessions))
+        .route("/api/v1/sessions/search", get(handlers::sessions_search))
         .route(
             "/api/v1/sessions/external-activity",
             get(handlers::sessions_external_activity),
@@ -123,6 +124,7 @@ pub(crate) fn router(
         .route("/api/v1/sessions/delete", post(handlers::session_delete))
         .route("/api/v1/models", get(handlers::models))
         .route("/api/v1/chat/start", post(handlers::chat_start))
+        .route("/api/v1/chat/stop", post(handlers::chat_stop))
         .route("/api/v1/chat/state", get(handlers::chat_state))
         .route("/api/v1/chat/rpc", post(handlers::chat_rpc))
         .route("/api/v1/files/search", get(handlers::files_search))

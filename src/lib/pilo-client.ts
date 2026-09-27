@@ -7,6 +7,7 @@ import type {
 	SessionHistoryFingerprint,
 	SessionHistoryResult,
 	SessionIndexEntry,
+	SessionSearchMatch,
 } from "@/lib/sessions";
 
 export type PiloClientBootstrap = {
@@ -45,6 +46,11 @@ export type PiloClientEventOptions = {
 export interface PiloClient {
 	bootstrap(): Promise<PiloClientBootstrap>;
 	listSessions(projectId: string): Promise<SessionIndexEntry[]>;
+	searchSessions(
+		projectId: string,
+		query: string,
+		limit?: number,
+	): Promise<SessionSearchMatch[]>;
 	loadHistory(
 		projectId: string,
 		sessionPath: string,
@@ -67,6 +73,7 @@ export interface PiloClient {
 	/** Host-cached Pi model catalog snapshot; null when the project has none. */
 	loadModels(projectId: string): Promise<ProjectPiModels | null>;
 	startChat(input: PiloClientStartChatInput): Promise<PiSessionSnapshot>;
+	stopChat(sessionKey: string, reason?: string): Promise<void>;
 	chatState(sessionKey: string): Promise<ChatSessionRuntimeState | null>;
 	sendChatCommand(
 		sessionKey: string,

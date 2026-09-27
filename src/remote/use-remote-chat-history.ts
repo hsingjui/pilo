@@ -80,8 +80,8 @@ export function useRemoteChatHistory({
 			: null;
 	const loadingConversation = Boolean(
 		selectedLoadKey &&
-			(conversationLoad.key !== selectedLoadKey ||
-				conversationLoad.status === "loading"),
+		(conversationLoad.key !== selectedLoadKey ||
+			conversationLoad.status === "loading"),
 	);
 	const externalTurnOpen = Boolean(
 		selectedSessionPath &&

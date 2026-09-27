@@ -14,6 +14,7 @@ import type {
 	SessionHistoryFingerprint,
 	SessionHistoryResult,
 	SessionIndexEntry,
+	SessionSearchMatch,
 } from "@/lib/sessions";
 
 export const REMOTE_TOKEN_KEY = "pilo.remote.device-token.v1";
@@ -88,6 +89,23 @@ export function loadRemoteSessions(token: string, projectId: string) {
 	return remoteFetch<SessionIndexEntry[]>(
 		token,
 		`/api/v1/sessions?${query.toString()}`,
+	);
+}
+
+export function searchRemoteSessions(
+	token: string,
+	projectId: string,
+	query: string,
+	limit = 24,
+) {
+	const params = new URLSearchParams({
+		projectId,
+		query,
+		limit: String(limit),
+	});
+	return remoteFetch<SessionSearchMatch[]>(
+		token,
+		`/api/v1/sessions/search?${params.toString()}`,
 	);
 }
 
@@ -180,6 +198,17 @@ export function startRemoteChat(
 	return remoteFetch<PiSessionSnapshot>(token, "/api/v1/chat/start", {
 		method: "POST",
 		body: JSON.stringify(input),
+	});
+}
+
+export function stopRemoteChat(
+	token: string,
+	sessionKey: string,
+	reason?: string,
+) {
+	return remoteFetch<void>(token, "/api/v1/chat/stop", {
+		method: "POST",
+		body: JSON.stringify({ sessionKey, reason }),
 	});
 }
 

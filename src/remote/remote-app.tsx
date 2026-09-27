@@ -9,6 +9,8 @@ import { ChatComposer } from "@/components/chat/chat-composer";
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import { ChatConversationViewport } from "@/components/chat/chat-conversation-viewport";
 import { ChatInterruptedTurnNotice } from "@/components/chat/chat-interrupted-turn-notice";
+import { PiExtensionNotifications } from "@/components/chat/pi-extension-notifications";
+import { PiExtensionUiDialog } from "@/components/chat/pi-extension-ui-dialog";
 import { ChatPendingQueue } from "@/components/chat/chat-pending-queue";
 import { ChatRuntimeRecoveryNotice } from "@/components/chat/chat-runtime-recovery-notice";
 import { useScrollbarGutterWidth } from "@/components/chat/use-scrollbar-gutter";
@@ -293,6 +295,7 @@ export function RemoteApp() {
 			>
 				{isNarrow ? (
 					<RemoteMobileNavigation
+						client={connection.client}
 						open={mobileNavigationOpen}
 						onOpenChange={setMobileNavigationOpen}
 						onDeleteSession={handleDeleteMobileSession}
@@ -372,6 +375,11 @@ export function RemoteApp() {
 								suppressInterruptedError={active || chat.readOnly}
 								onVisualReady={chat.handleVisualReady}
 								onRetryHistory={chat.retryHistory}
+								onForkAssistant={
+									chat.selectedSession ? chat.handleForkAssistant : undefined
+								}
+								forkingMessageId={chat.forkingMessageId}
+								forkDisabled={chat.forkDisabled}
 							/>
 						</ChatImageScopeProvider>
 						<div
@@ -397,6 +405,10 @@ export function RemoteApp() {
 								<ChatRuntimeRecoveryNotice
 									state={recoveryState}
 									onReconnect={reconnectNow}
+								/>
+								<PiExtensionNotifications
+									notifications={chat.extensionNotifications}
+									onDismiss={chat.dismissExtensionNotification}
 								/>
 								{!chat.hasIdentifiedSession ? (
 									<DraftProjectPicker
@@ -496,6 +508,10 @@ export function RemoteApp() {
 				</main>
 
 				<ChatImageLightbox />
+				<PiExtensionUiDialog
+					request={chat.extensionDialog}
+					onRespond={(response) => void chat.respondToExtensionDialog(response)}
+				/>
 
 				{fatalError ? (
 					<div className="fixed inset-x-3 bottom-24 z-50 mx-auto max-w-lg rounded-xl border border-destructive/30 bg-background px-3 py-2 text-xs shadow-lg">

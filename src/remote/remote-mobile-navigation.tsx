@@ -26,6 +26,7 @@ import type {
 	SidebarProject,
 	SidebarSession,
 } from "@/components/sidebar/types";
+import type { PiloClient } from "@/lib/pilo-client";
 import { cn } from "@/lib/utils";
 import {
 	MobileEnvRow,
@@ -38,6 +39,7 @@ import {
 const RECENT_SESSION_LIMIT = 50;
 
 export function RemoteMobileNavigation({
+	client,
 	open,
 	onOpenChange,
 	envs,
@@ -54,6 +56,7 @@ export function RemoteMobileNavigation({
 	onReload,
 	onDeleteSession,
 }: {
+	client: PiloClient | null;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	envs: SidebarEnv[];
@@ -142,7 +145,7 @@ export function RemoteMobileNavigation({
 						// 固定宽度：移动端不提供拖拽调宽，也不必复用桌面侧栏的宽度状态。
 						"fixed inset-y-0 left-0 z-[var(--z-dialog)] flex w-[min(86vw,20rem)] flex-col",
 						"border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-popover outline-none",
-						"pb-[max(0.25rem,env(safe-area-inset-bottom))] pt-[env(safe-area-inset-top)]",
+						"pb-[max(0.25rem,env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)] pt-[env(safe-area-inset-top)]",
 						"data-[state=open]:animate-in data-[state=open]:slide-in-from-left-4",
 						"data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left-4",
 					)}
@@ -365,8 +368,9 @@ export function RemoteMobileNavigation({
 				</DialogPrimitive.Content>
 			</DialogPrimitive.Portal>
 
-			{paletteOpen ? (
+			{paletteOpen && client ? (
 				<CommandPalette
+					client={client}
 					open
 					onOpenChange={setPaletteOpen}
 					projects={projects}

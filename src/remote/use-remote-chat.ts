@@ -15,6 +15,7 @@ import {
 	createProjectDraftCache,
 } from "@/components/app/chat-ui-state-cache";
 import type { ChatSession } from "@/components/chat/chat-page-utils";
+import type { PiExtensionDialogRequest } from "@/components/chat/use-pi-session-features";
 import type { ChatImageAttachment } from "@/lib/chat-submission";
 import { findReusableChatRuntime } from "@/lib/chat-session-runtime-model";
 import { createConversationState } from "@/lib/conversation-reducer";
@@ -37,6 +38,8 @@ import { useRemoteChatAutoTitle } from "./use-remote-chat-auto-title";
 import { useRemoteChatCommands } from "./use-remote-chat-commands";
 import { useRemoteChatDraftActions } from "./use-remote-chat-draft-actions";
 import { useRemoteChatHistory } from "./use-remote-chat-history";
+import { useRemoteChatFork } from "./use-remote-chat-fork";
+import { useRemoteExtensionUi } from "./use-remote-extension-ui";
 import { useRemoteChatSuggestions } from "./use-remote-chat-suggestions";
 import {
 	type QueuedSubmission,
@@ -101,6 +104,7 @@ export function useRemoteChat({
 	const [retryState, setRetryState] = useState<RetryState | null>(null);
 	const [composer, setComposer] = useState("");
 	const [images, setImages] = useState<ChatImageAttachment[]>([]);
+	const pendingForkSessionIdRef = useRef<string | null>(null);
 	const [chatUiStateCache] = useState(createChatUiStateCache);
 	const [projectDraftCache] = useState(createProjectDraftCache);
 	const [visualReadyRouteKey, setVisualReadyRouteKey] = useState<string | null>(
@@ -114,6 +118,9 @@ export function useRemoteChat({
 	const queuedSubmissionsRef = useRef(new Map<string, QueuedSubmission>());
 	const autoTitleRequestedRef = useRef(false);
 	const refreshAgentConfigRef = useRef<(() => Promise<void>) | null>(null);
+	const handleExtensionRequestRef = useRef<
+		((event: PiExtensionDialogRequest) => void) | null
+	>(null);
 
 	const selectedSession = useMemo(
 		() =>
@@ -177,6 +184,7 @@ export function useRemoteChat({
 		scheduleRuntimeActivityRefresh,
 		refreshAllSessions,
 		refreshAgentConfigRef,
+		handleExtensionRequestRef,
 		activeSessionKeyRef,
 		queuedSubmissionsRef,
 		setCompacting,
@@ -365,6 +373,14 @@ export function useRemoteChat({
 		handleComposerChange("");
 		setImages([]);
 	}, [handleComposerChange]);
+	const extensionUi = useRemoteExtensionUi({
+		rpc,
+		activeSessionKey,
+		onSetEditorText: handleComposerChange,
+	});
+	useEffect(() => {
+		handleExtensionRequestRef.current = extensionUi.handleExtensionRequest;
+	}, [extensionUi.handleExtensionRequest]);
 	const historyImageScope = useMemo(
 		() =>
 			client && selectedSession && activeProjectId
@@ -561,6 +577,39 @@ export function useRemoteChat({
 		rpc,
 	});
 
+	const fork = useRemoteChatFork({
+		client,
+		activeProjectId,
+		activeSessionKey,
+		selectedSession,
+		messages: visibleMessages,
+		busy:
+			conversation.active !== null ||
+			loadingConversation ||
+			compacting ||
+			sending ||
+			readOnly,
+		rpcForSession,
+		refreshProjectSessions,
+		onForkSessionCreated: (sessionId) => {
+			pendingForkSessionIdRef.current = sessionId;
+		},
+	});
+
+	useEffect(() => {
+		const pendingForkSessionId = pendingForkSessionIdRef.current;
+		if (!pendingForkSessionId) return;
+		if (
+			!rawSessions.some(
+				(session) => session.piSessionId === pendingForkSessionId,
+			)
+		) {
+			return;
+		}
+		pendingForkSessionIdRef.current = null;
+		handleSelectSession(pendingForkSessionId);
+	}, [handleSelectSession, rawSessions]);
+
 	const selectedModel = useMemo(() => {
 		if (!hasIdentifiedSession) return draftModel;
 		const current = agentState?.model;
@@ -621,6 +670,15 @@ export function useRemoteChat({
 		readOnly,
 		runtimeReady,
 		loadingConversation,
+		forkingMessageId: fork.forkingMessageId,
+		forkDisabled:
+			conversation.active !== null ||
+			loadingConversation ||
+			compacting ||
+			sending ||
+			readOnly,
+		extensionDialog: extensionUi.extensionDialog,
+		extensionNotifications: extensionUi.extensionNotifications,
 		// actions
 		startDraft,
 		toggleTemporaryChat,
@@ -636,6 +694,9 @@ export function useRemoteChat({
 		refreshAgentConfig,
 		loadDraftCatalog,
 		abortPiRetry,
+		handleForkAssistant: fork.handleForkAssistant,
+		respondToExtensionDialog: extensionUi.respondToExtensionDialog,
+		dismissExtensionNotification: extensionUi.dismissExtensionNotification,
 		handleSocketMessage,
 	};
 }

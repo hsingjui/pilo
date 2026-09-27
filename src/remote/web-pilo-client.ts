@@ -13,6 +13,7 @@ import type {
 	SessionHistoryFingerprint,
 	SessionHistoryResult,
 	SessionIndexEntry,
+	SessionSearchMatch,
 } from "@/lib/sessions";
 import type { ChatSessionRuntimeState } from "@/lib/chat-session-client";
 import {
@@ -27,8 +28,10 @@ import {
 	loadRemoteModels,
 	loadRemoteSessions,
 	searchRemoteFiles,
+	searchRemoteSessions,
 	sendRemoteChatCommand,
 	startRemoteChat,
+	stopRemoteChat,
 } from "./remote-client";
 
 export class WebPiloClient implements PiloClient {
@@ -40,6 +43,14 @@ export class WebPiloClient implements PiloClient {
 
 	listSessions(projectId: string): Promise<SessionIndexEntry[]> {
 		return loadRemoteSessions(this.token, projectId);
+	}
+
+	searchSessions(
+		projectId: string,
+		query: string,
+		limit?: number,
+	): Promise<SessionSearchMatch[]> {
+		return searchRemoteSessions(this.token, projectId, query, limit);
 	}
 
 	externalActivity(projectId: string): Promise<SessionExternalActivity[]> {
@@ -85,6 +96,10 @@ export class WebPiloClient implements PiloClient {
 
 	startChat(input: PiloClientStartChatInput): Promise<PiSessionSnapshot> {
 		return startRemoteChat(this.token, input);
+	}
+
+	stopChat(sessionKey: string, reason?: string): Promise<void> {
+		return stopRemoteChat(this.token, sessionKey, reason);
 	}
 
 	chatState(sessionKey: string): Promise<ChatSessionRuntimeState | null> {
