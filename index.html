@@ -6,7 +6,7 @@
 			name="viewport"
 			content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
 		/>
-		<meta name="theme-color" content="#101010" />
+		<meta name="theme-color" content="#ffffff" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta
 			name="apple-mobile-web-app-status-bar-style"
@@ -58,6 +58,9 @@
 					document.documentElement.classList.add("pilo-browser");
 				}
 				document.documentElement.style.colorScheme = dark ? "dark" : "light";
+				document
+					.querySelector('meta[name="theme-color"]')
+					.setAttribute("content", dark ? "#101010" : "#ffffff");
 			})();
 		</script>
 		<style>
@@ -398,6 +401,12 @@
 				border-radius: 999px;
 				background: var(--boot-line-strong);
 			}
+			/* 浏览器（Remote WebUI）的骨架宽度与 remote-app 的
+			   --conversation-max-width 对齐，避免加载完成后消息列跳动。 */
+			.pilo-browser .pilo-boot-center-column,
+			.pilo-browser .pilo-boot-composer-column {
+				width: min(94%, 56rem);
+			}
 			.pilo-boot-line,
 			.pilo-boot-brand,
 			.pilo-boot-header-icon,
@@ -425,6 +434,10 @@
 				}
 			}
 			@container (max-width: 639px) {
+				.pilo-browser .pilo-boot-center-column,
+				.pilo-browser .pilo-boot-composer-column {
+					width: 100%;
+				}
 				.pilo-boot-center-column,
 				.pilo-boot-composer-column {
 					padding-inline: 12px;

@@ -26,6 +26,7 @@ import type { PiloClientEventMessage } from "@/lib/pilo-client";
 import { Spinner, TooltipProvider } from "@/ui";
 import { useMediaQuery } from "./remote-app-model";
 import { RemoteMobileNavigation } from "./remote-mobile-navigation";
+import { useRemoteKeyboardInset } from "./use-remote-keyboard-inset";
 import { useRemoteChat } from "./use-remote-chat";
 import { useRemoteConnection } from "./use-remote-connection";
 import { useRemoteSessions } from "./use-remote-sessions";
@@ -54,6 +55,7 @@ export function RemoteApp() {
 	});
 
 	const isNarrow = useMediaQuery("(max-width: 1023px)");
+	useRemoteKeyboardInset();
 	// 触屏没有 hover，消息上 hover-only 的复制/时间戳会永久不可见。
 	// 用 JS 判断而不是 CSS media query：与 chat-composer-run-config.tsx 的
 	// useIsTouchDevice() 同源，且 CSS 媒体查询无法在预览/测试环境里探测。
@@ -214,7 +216,7 @@ export function RemoteApp() {
 
 	if (pairing) {
 		return (
-			<div className="flex min-h-dvh items-center justify-center bg-background p-6">
+			<div className="flex min-h-[var(--remote-viewport-height,100dvh)] items-center justify-center bg-background p-6">
 				<div className="flex items-center gap-2 text-sm text-muted-foreground">
 					<Spinner className="size-4" /> {t("settings.remoteConnecting")}
 				</div>
@@ -224,7 +226,7 @@ export function RemoteApp() {
 
 	if (!token) {
 		return (
-			<div className="flex min-h-dvh items-center justify-center bg-background p-6">
+			<div className="flex min-h-[var(--remote-viewport-height,100dvh)] items-center justify-center bg-background p-6">
 				<div className="w-full max-w-sm rounded-2xl border bg-card p-6 text-center shadow-sm">
 					<WifiOff className="mx-auto size-6 text-muted-foreground" />
 					<h1 className="mt-4 text-base font-semibold">Pilo Remote</h1>
@@ -291,7 +293,7 @@ export function RemoteApp() {
 			<div
 				data-remote-webui=""
 				data-touch-reveal={isTouch ? "" : undefined}
-				className="flex h-dvh overflow-hidden bg-background pt-[env(safe-area-inset-top)] text-foreground"
+				className="flex h-[var(--remote-viewport-height,100dvh)] overflow-hidden bg-background pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] text-foreground"
 			>
 				{isNarrow ? (
 					<RemoteMobileNavigation
@@ -418,7 +420,6 @@ export function RemoteApp() {
 									/>
 								) : null}
 								<ChatComposer
-									className="remote-chat-composer"
 									value={chat.readOnly ? "" : chat.composer}
 									onChange={chat.handleComposerChange}
 									muted={chat.readOnly}

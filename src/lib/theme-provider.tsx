@@ -83,6 +83,13 @@ export function ThemeProvider({
 		root.classList.remove("light", "dark");
 		root.classList.add(resolvedTheme);
 		root.style.colorScheme = theme === "system" ? "light dark" : resolvedTheme;
+		// 移动端浏览器/PWA 的状态栏颜色跟随主题（boot 脚本做了首次设置，这里管切换）。
+		document
+			.querySelector('meta[name="theme-color"]')
+			?.setAttribute(
+				"content",
+				resolvedTheme === "dark" ? "#101010" : "#ffffff",
+			);
 
 		if (switching) {
 			requestAnimationFrame(() => {

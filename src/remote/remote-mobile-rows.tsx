@@ -81,7 +81,8 @@ export function MobileSessionRow({
 			data-session-row=""
 			aria-current={selected ? "page" : undefined}
 			className={cn(
-				"flex min-h-11 w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors",
+				// 长按删除与 iOS 的文字选择/长按弹窗冲突，一并关掉。
+				"flex min-h-11 w-full min-w-0 touch-manipulation select-none items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors [-webkit-touch-callout:none]",
 				selected
 					? "bg-sidebar-foreground/10 text-sidebar-foreground"
 					: "text-sidebar-foreground/85 active:bg-sidebar-hover",
@@ -103,6 +104,8 @@ export function MobileSessionRow({
 				timerRef.current = window.setTimeout(() => {
 					timerRef.current = null;
 					firedRef.current = true;
+					// Android 触觉得到长按已触发的反馈；iOS Safari 不支持，静默忽略。
+					navigator.vibrate?.(10);
 					onRequestDelete(session.id);
 				}, 500);
 			}}

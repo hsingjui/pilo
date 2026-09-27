@@ -217,6 +217,8 @@ export function ChatComposer({
 				<Textarea
 					data-chat-composer-input=""
 					ref={textareaRef}
+					// 移动端软键盘的回车键文案与实际行为一致（Enter 发送时显示“发送”）
+					enterKeyHint={sendMessageShortcut === "enter" ? "send" : "enter"}
 					value={value}
 					onChange={(event) => {
 						onFieldChange(

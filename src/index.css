@@ -307,6 +307,8 @@
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
 		-webkit-text-size-adjust: 100%;
+		/* 去掉 iOS 点按时整块的灰色高亮闪烁 */
+		-webkit-tap-highlight-color: transparent;
 	}
 
 	code,
