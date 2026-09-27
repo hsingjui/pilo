@@ -10,8 +10,8 @@ use crate::domain::Project;
 
 use super::types::ImageLocation;
 
-pub(super) const SESSION_HISTORY_CACHE_CAPACITY: usize = 8;
-pub(super) const SESSION_HISTORY_CACHE_MAX_ESTIMATED_BYTES: usize = 128 * 1024 * 1024;
+pub(super) const SESSION_HISTORY_CACHE_CAPACITY: usize = 16;
+pub(super) const SESSION_HISTORY_CACHE_MAX_ESTIMATED_BYTES: usize = 192 * 1024 * 1024;
 const SESSION_HISTORY_CACHE_ESTIMATE_MULTIPLIER: usize = 2;
 const IMAGE_LOCATION_CACHE_CAPACITY: usize = 16;
 

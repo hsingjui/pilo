@@ -170,6 +170,46 @@ export function requestSessionTitle(
 const sessionHistoryDecoder = new TextDecoder();
 const sessionHistoryInFlight = new Map<string, Promise<SessionHistoryResult>>();
 
+/**
+ * 已预热过、且未被淘汰的会话。用插入序 Map 限长，上限与 Rust 端
+ * `SESSION_HISTORY_CACHE_CAPACITY` 保持一致：集合若远大于 Rust 缓存，
+ * 会话被 Rust LRU 淘汰后这里仍记为“已预热”，点击时既冷读又不再重试。
+ * 超出上限时淘汰最早的一条，允许重新预热。
+ */
+const prefetchedSessions = new Map<string, true>();
+const PREFETCHED_SESSIONS_MAX = 16;
+
+/**
+ * 侧栏 hover 时预热 Rust 端 session_history 缓存：触发一次全量读取+解析+入缓存，
+ * 之后点击切换时即可命中缓存，只做窗口切片，避免冷读整份 JSONL。
+ * 响应只要 1 条消息、不 decode；失败静默（下次点击走正常冷读路径）。
+ */
+export function prefetchSessionHistory(
+	projectId: string,
+	sessionPath: string,
+): void {
+	// 远程（浏览器）环境没有 Tauri invoke；非桌面端不预热。
+	if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window))
+		return;
+	const key = `${projectId}\0${sessionPath}`;
+	if (prefetchedSessions.has(key)) return;
+	if (prefetchedSessions.size >= PREFETCHED_SESSIONS_MAX) {
+		const oldest = prefetchedSessions.keys().next().value;
+		if (oldest !== undefined) prefetchedSessions.delete(oldest);
+	}
+	prefetchedSessions.set(key, true);
+	void invoke("session_history", {
+		projectId,
+		sessionPath,
+		messageLimit: 1,
+		includeMessageIndex: false,
+	})
+		.then(() => undefined)
+		.catch(() => {
+			prefetchedSessions.delete(key);
+		});
+}
+
 function normalizeSessionHistoryResponse(
 	value: SessionHistory | SessionHistoryResult,
 ): SessionHistoryResult {

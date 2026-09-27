@@ -11,6 +11,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Folder, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { prefetchSessionHistory } from "@/lib/sessions";
 import {
 	ActivityDot,
 	DropdownMenu,
@@ -107,6 +108,9 @@ function ConfirmDeleteButton({
 }
 
 // ---- 会话行 ---------------------------------------------------------------
+
+/** hover 到点击之间通常只有一两百毫秒；指针停留超过这个时长才预热，避免扫过列表时误触发。 */
+const SESSION_ROW_PREFETCH_DELAY_MS = 150;
 
 // 会话列表的悬浮高亮：用一个高亮块在行之间平滑滑动，
 // 比每行各自 transition background-color 更跟手（参考 GlideMenu）。
@@ -219,6 +223,22 @@ export const SessionRow = memo(function SessionRow({
 	const [renameValue, setRenameValue] = useState(session.title);
 	const renameInputRef = useRef<HTMLInputElement>(null);
 	const suppressSelectRef = useRef(false);
+	// hover 稍停后预热该会话的 Rust 历史缓存，让随后的点击切换直接命中缓存。
+	const prefetchTimerRef = useRef<number | null>(null);
+	const clearPrefetchTimer = useCallback(() => {
+		if (prefetchTimerRef.current !== null) {
+			window.clearTimeout(prefetchTimerRef.current);
+			prefetchTimerRef.current = null;
+		}
+	}, []);
+	useEffect(() => clearPrefetchTimer, [clearPrefetchTimer]);
+	const schedulePrefetch = useCallback(() => {
+		if (prefetchTimerRef.current !== null) return;
+		prefetchTimerRef.current = window.setTimeout(() => {
+			prefetchTimerRef.current = null;
+			prefetchSessionHistory(session.projectId, session.sessionPath);
+		}, SESSION_ROW_PREFETCH_DELAY_MS);
+	}, [session.projectId, session.sessionPath]);
 	useEffect(() => {
 		if (renaming) renameInputRef.current?.focus();
 	}, [renaming]);
@@ -241,6 +261,8 @@ export const SessionRow = memo(function SessionRow({
 					onClick={() => {
 						if (!renaming && !suppressSelectRef.current) onSelect(session.id);
 					}}
+					onPointerEnter={schedulePrefetch}
+					onPointerLeave={clearPrefetchTimer}
 					onKeyDown={(event) => {
 						if (renaming || event.target !== event.currentTarget) return;
 						if (event.key !== "Enter" && event.key !== " ") return;
