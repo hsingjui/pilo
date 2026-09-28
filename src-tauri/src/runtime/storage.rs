@@ -38,6 +38,7 @@ mod tests {
             kind: crate::domain::ConnectionKind::Wsl {
                 distro: "Debian".to_owned(),
             },
+            shown_in_home: false,
         };
         upsert_connection(&db, &current_connection).expect("persist current connection");
 
@@ -53,6 +54,7 @@ mod tests {
                 kind: crate::domain::ConnectionKind::Wsl {
                     distro: "Debian-old".to_owned(),
                 },
+                shown_in_home: false,
             },
             metadata: ProjectMetadata {
                 cwd: "/code/demo".to_owned(),
@@ -69,6 +71,23 @@ mod tests {
             get_connection(&db, &current_connection.id).expect("read connection"),
             Some(current_connection)
         );
+    }
+
+    #[test]
+    fn connection_shown_in_home_defaults_local_visible_and_survives_upsert() {
+        let db = SqliteConnection::open_in_memory().expect("open in-memory SQLite");
+        db.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        initialize_schema(&db).expect("initialize schema");
+
+        let local = ensure_local_connection(&db).expect("ensure local connection");
+        assert!(local.shown_in_home, "local should be shown by default");
+
+        assert!(set_connection_shown_in_home(&db, "local", false).expect("hide local"));
+        assert!(!get_connection(&db, "local").unwrap().unwrap().shown_in_home);
+
+        // upsert（保存连接设置/SSH 编辑）不得覆盖用户选择的可见性。
+        upsert_connection(&db, &local).expect("upsert local connection");
+        assert!(!get_connection(&db, "local").unwrap().unwrap().shown_in_home);
     }
 
     #[test]

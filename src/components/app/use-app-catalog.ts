@@ -4,10 +4,6 @@ import { firstProjectInConnectionOrder } from "@/components/app/app-chat-state";
 import { CONNECTIONS_CHANGED_EVENT } from "@/lib/connection-events";
 import { listConnectionCatalog } from "@/lib/connections";
 import {
-	HOME_CONNECTIONS_CHANGED_EVENT,
-	listHomeConnectionIds,
-} from "@/lib/home-connections";
-import {
 	getCachedProjectPiModels,
 	hydrateProjectPiModels,
 	isProjectPiModelsStale,
@@ -75,11 +71,9 @@ export function useAppCatalog(
 		};
 		void load();
 		const handleChanged = () => void load();
-		window.addEventListener(HOME_CONNECTIONS_CHANGED_EVENT, handleChanged);
 		window.addEventListener(CONNECTIONS_CHANGED_EVENT, handleChanged);
 		return () => {
 			active = false;
-			window.removeEventListener(HOME_CONNECTIONS_CHANGED_EVENT, handleChanged);
 			window.removeEventListener(CONNECTIONS_CHANGED_EVENT, handleChanged);
 		};
 	}, []);
@@ -118,10 +112,9 @@ export function useAppCatalog(
 	}, [projects]);
 
 	const envs = useMemo(() => {
-		const shown = listHomeConnectionIds();
 		const byId = new Map<string, { id: string; name: string }>();
 		for (const connection of connectionCatalog) {
-			if (!shown.has(connection.id)) continue;
+			if (!connection.shownInHome) continue;
 			byId.set(connection.id, {
 				id: connection.id,
 				name: connectionLabel(connection),

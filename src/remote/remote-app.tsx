@@ -129,6 +129,7 @@ export function RemoteApp() {
 	const envs = useMemo(() => {
 		const byId = new Map<string, { id: string; name: string }>();
 		for (const project of projects) {
+			if (!project.connection.shownInHome) continue;
 			byId.set(project.connection.id, {
 				id: project.connection.id,
 				name: connectionLabel(project.connection),
@@ -138,6 +139,12 @@ export function RemoteApp() {
 		list.sort((a, b) => (a.id === "local" ? -1 : b.id === "local" ? 1 : 0));
 		return list;
 	}, [projects]);
+
+	// 与桌面端一致：输入框上方的项目切换只列出首页可见连接下的项目。
+	const homeProjects = useMemo(() => {
+		const visible = new Set(envs.map((env) => env.id));
+		return projects.filter((project) => visible.has(project.connection.id));
+	}, [envs, projects]);
 
 	const sidebarProjects = useMemo(
 		() =>
@@ -421,7 +428,7 @@ export function RemoteApp() {
 								/>
 								{!chat.hasIdentifiedSession ? (
 									<DraftProjectPicker
-										projects={projects}
+										projects={homeProjects}
 										project={chat.activeProject}
 										onSwitchProject={chat.switchDraftProject}
 									/>

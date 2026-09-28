@@ -101,6 +101,19 @@ export function probeConnectionPi(
 	});
 }
 
+/** 切换连接是否在首页显示。偏好存于主机，桌面端与 WebUI 共用。 */
+export async function setConnectionShownInHome(
+	id: string,
+	shown: boolean,
+): Promise<Connection> {
+	const connection = await invoke<Connection>("connection_shown_in_home_set", {
+		id,
+		shown,
+	});
+	notifyConnectionsChanged();
+	return connection;
+}
+
 /** 本机 + 已添加的 WSL/SSH 连接，用于首页环境列表和连接页统一展示。 */
 export async function listConnectionCatalog(): Promise<Connection[]> {
 	const [local, wsl, ssh] = await Promise.allSettled([

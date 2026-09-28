@@ -42,6 +42,8 @@ export type Connection = {
 	piExecutable?: string | null;
 	piRuntime?: PiRuntime;
 	kind: ConnectionKind;
+	/** 是否在首页（侧边栏环境列表）显示该连接。偏好存于主机，桌面端与 WebUI 共用。 */
+	shownInHome?: boolean;
 };
 
 export type PiSessionSnapshot = {

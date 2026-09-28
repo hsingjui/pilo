@@ -71,6 +71,24 @@ pub fn connection_naming_model_set(
 }
 
 #[tauri::command]
+pub fn connection_shown_in_home_set(
+    app: AppHandle,
+    id: String,
+    shown: bool,
+) -> Result<Connection, String> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Err("connection id is required".to_owned());
+    }
+    let db = storage::open(&app)?;
+    if !storage::set_connection_shown_in_home(&db, id, shown)? {
+        return Err(format!("Connection '{id}' was not found"));
+    }
+    storage::get_connection(&db, id)
+        .and_then(|connection| connection.ok_or_else(|| format!("Connection '{id}' was not found")))
+}
+
+#[tauri::command]
 pub fn local_connection_get(app: AppHandle) -> Result<Connection, String> {
     storage::ensure_local_connection(&storage::open(&app)?)
 }
@@ -243,6 +261,7 @@ pub async fn local_connection_test(
         pi_executable: None,
         pi_runtime: crate::domain::PiRuntime::default(),
         kind: ConnectionKind::Local,
+        shown_in_home: true,
     };
     connection_test_result(runtime.servers.test_connection(&connection).await?)
 }

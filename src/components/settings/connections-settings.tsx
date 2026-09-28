@@ -10,16 +10,13 @@ import {
 	probeConnectionPi,
 	removeWslConnection,
 	saveWslConnection,
+	setConnectionShownInHome,
 	testLocalConnection,
 	testWslConnection,
 	updateConnectionSettings,
 	type ConnectionTestResult,
 	type WslConnectionInfo,
 } from "@/lib/connections";
-import {
-	listHomeConnectionIds,
-	setConnectionShownInHome,
-} from "@/lib/home-connections";
 import type { Connection } from "@/lib/pi-runtime";
 import {
 	connectionLabel,
@@ -81,9 +78,6 @@ export function ConnectionsSettings() {
 	const [projectCounts, setProjectCounts] = useState<Map<string, number>>(
 		() => new Map(),
 	);
-	const [shownIds, setShownIds] = useState<Set<string>>(() =>
-		listHomeConnectionIds(),
-	);
 	const [loading, setLoading] = useState(true);
 	const [busy, setBusy] = useState(false);
 	const [testingIds, setTestingIds] = useState<Set<string>>(() => new Set());
@@ -138,7 +132,6 @@ export function ConnectionsSettings() {
 			}
 			setProjectCounts(counts);
 		}
-		setShownIds(listHomeConnectionIds());
 		setLoading(false);
 	}, [t]);
 
@@ -149,9 +142,15 @@ export function ConnectionsSettings() {
 		void load();
 	}, [refresh]);
 
-	const toggleShown = (id: string, shown: boolean) => {
-		setConnectionShownInHome(id, shown);
-		setShownIds(listHomeConnectionIds());
+	const toggleShown = async (id: string, shown: boolean) => {
+		try {
+			await setConnectionShownInHome(id, shown);
+			await refresh();
+		} catch (error) {
+			toast.error(t("connection.saveFailed"), {
+				description: userErrorMessage(error),
+			});
+		}
 	};
 
 	const projectCount = (id: string, fallback = 0) =>
@@ -286,7 +285,6 @@ export function ConnectionsSettings() {
 			} else {
 				await removeSshConnection(connection.id);
 			}
-			setConnectionShownInHome(connection.id, false);
 			await refresh();
 			setRemovingConnection(null);
 			toast.success(
@@ -336,7 +334,7 @@ export function ConnectionsSettings() {
 					connection={local}
 					description={t("connection.localMachine")}
 					projectCount={projectCount(local.id)}
-					shownInHome={shownIds.has(local.id)}
+					shownInHome={local.shownInHome ?? true}
 					busy={busy || probingPi || testingIds.has(local.id)}
 					testing={testingIds.has(local.id)}
 					onToggleShown={(shown) => toggleShown(local.id, shown)}
@@ -367,7 +365,7 @@ export function ConnectionsSettings() {
 										info.connection.id,
 										info.projectCount,
 									)}
-									shownInHome={shownIds.has(info.connection.id)}
+									shownInHome={info.connection.shownInHome ?? false}
 									busy={busy || probingPi || testingIds.has(info.connection.id)}
 									testing={testingIds.has(info.connection.id)}
 									onToggleShown={(shown) =>
@@ -395,7 +393,7 @@ export function ConnectionsSettings() {
 										info.connection.id,
 										info.projectCount,
 									)}
-									shownInHome={shownIds.has(info.connection.id)}
+									shownInHome={info.connection.shownInHome ?? false}
 									busy={busy || probingPi || testingIds.has(info.connection.id)}
 									testing={testingIds.has(info.connection.id)}
 									onToggleShown={(shown) =>

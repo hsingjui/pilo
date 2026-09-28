@@ -447,6 +447,7 @@ mod tests {
                 kind: ConnectionKind::Wsl {
                     distro: "Ubuntu".to_owned(),
                 },
+                shown_in_home: false,
             },
             metadata: crate::domain::ProjectMetadata {
                 cwd: "/srv/code/repo".to_owned(),

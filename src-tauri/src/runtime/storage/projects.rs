@@ -46,13 +46,14 @@ fn project_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
             pi_executable: row.get(9)?,
             pi_runtime,
             kind,
+            shown_in_home: row.get::<_, i64>(11)? != 0,
         },
     })
 }
 
 pub fn list_projects(db: &SqliteConnection) -> Result<Vec<Project>, String> {
     let mut statement = db.prepare(
-        "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable,c.pi_runtime
+        "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable,c.pi_runtime,c.shown_in_home
          FROM projects p JOIN connections c ON c.id=p.connection_id
          ORDER BY p.connection_id ASC,p.sort_order ASC,p.name ASC"
     ).map_err(|error| error.to_string())?;
@@ -104,7 +105,7 @@ pub fn reorder_projects(
 
 pub fn get_project(db: &SqliteConnection, id: &str) -> Result<Option<Project>, String> {
     db.query_row(
-        "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable,c.pi_runtime
+        "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable,c.pi_runtime,c.shown_in_home
          FROM projects p JOIN connections c ON c.id=p.connection_id WHERE p.id=?1",
         params![id],
         project_from_row,

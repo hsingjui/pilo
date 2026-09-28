@@ -77,7 +77,7 @@ pub fn clear_connection_naming_model(
 pub fn upsert_connection(db: &SqliteConnection, connection: &Connection) -> Result<(), String> {
     let kind_json = serde_json::to_string(&connection.kind).map_err(|error| error.to_string())?;
     db.execute(
-        "INSERT INTO connections(id,name,kind_json,pi_executable,pi_runtime,updated_at_ms) VALUES(?1,?2,?3,?4,?5,?6)
+        "INSERT INTO connections(id,name,kind_json,pi_executable,pi_runtime,shown_in_home,updated_at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7)
          ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind_json=excluded.kind_json, pi_executable=excluded.pi_executable, pi_runtime=excluded.pi_runtime, updated_at_ms=excluded.updated_at_ms",
         params![
             connection.id,
@@ -85,15 +85,30 @@ pub fn upsert_connection(db: &SqliteConnection, connection: &Connection) -> Resu
             kind_json,
             connection.pi_executable,
             connection.pi_runtime.as_str(),
+            connection.shown_in_home as i64,
             now_ms() as i64
         ],
     ).map_err(|error| error.to_string())?;
     Ok(())
 }
 
+pub fn set_connection_shown_in_home(
+    db: &SqliteConnection,
+    id: &str,
+    shown: bool,
+) -> Result<bool, String> {
+    Ok(db
+        .execute(
+            "UPDATE connections SET shown_in_home=?1, updated_at_ms=?2 WHERE id=?3",
+            params![shown as i64, now_ms() as i64, id],
+        )
+        .map_err(|error| error.to_string())?
+        > 0)
+}
+
 pub fn list_connections(db: &SqliteConnection) -> Result<Vec<Connection>, String> {
     let mut statement = db
-        .prepare("SELECT id,name,kind_json,pi_executable,pi_runtime FROM connections ORDER BY name COLLATE NOCASE ASC")
+        .prepare("SELECT id,name,kind_json,pi_executable,pi_runtime,shown_in_home FROM connections ORDER BY name COLLATE NOCASE ASC")
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
@@ -112,6 +127,7 @@ pub fn list_connections(db: &SqliteConnection) -> Result<Vec<Connection>, String
                 pi_executable: row.get(3)?,
                 pi_runtime,
                 kind,
+                shown_in_home: row.get::<_, i64>(5)? != 0,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -132,7 +148,7 @@ fn parse_pi_runtime(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<P
 
 pub fn get_connection(db: &SqliteConnection, id: &str) -> Result<Option<Connection>, String> {
     db.query_row(
-        "SELECT id,name,kind_json,pi_executable,pi_runtime FROM connections WHERE id=?1",
+        "SELECT id,name,kind_json,pi_executable,pi_runtime,shown_in_home FROM connections WHERE id=?1",
         params![id],
         |row| {
             let kind_json: String = row.get(2)?;
@@ -150,6 +166,7 @@ pub fn get_connection(db: &SqliteConnection, id: &str) -> Result<Option<Connecti
                 pi_executable: row.get(3)?,
                 pi_runtime,
                 kind,
+                shown_in_home: row.get::<_, i64>(5)? != 0,
             })
         },
     )
@@ -167,6 +184,7 @@ pub fn ensure_local_connection(db: &SqliteConnection) -> Result<Connection, Stri
         pi_executable: None,
         pi_runtime: PiRuntime::default(),
         kind: ConnectionKind::Local,
+        shown_in_home: true,
     };
     upsert_connection(db, &connection)?;
     Ok(connection)

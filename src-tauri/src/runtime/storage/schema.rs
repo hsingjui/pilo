@@ -60,6 +60,7 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            kind_json TEXT NOT NULL,
            pi_executable TEXT,
            pi_runtime TEXT NOT NULL DEFAULT 'workspace',
+           shown_in_home INTEGER NOT NULL DEFAULT 0,
            updated_at_ms INTEGER NOT NULL
          );
          CREATE TABLE IF NOT EXISTS connection_naming_models (
@@ -196,6 +197,14 @@ fn ensure_connection_columns(db: &SqliteConnection) -> Result<(), String> {
             )
             .map_err(|error| error.to_string())?;
         }
+    }
+    if !column_exists(db, "connections", "shown_in_home")? {
+        // 旧库默认只显示 local，其余连接保持隐藏，与旧 localStorage 默认一致。
+        db.execute_batch(
+            "ALTER TABLE connections ADD COLUMN shown_in_home INTEGER NOT NULL DEFAULT 0;
+             UPDATE connections SET shown_in_home=1 WHERE id='local';",
+        )
+        .map_err(|error| error.to_string())?;
     }
     Ok(())
 }

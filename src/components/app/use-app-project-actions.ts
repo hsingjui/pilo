@@ -10,7 +10,6 @@ import { toast } from "sonner";
 
 import { userErrorMessage } from "@/lib/app-error";
 import { removeWslConnection } from "@/lib/connections";
-import { setConnectionShownInHome } from "@/lib/home-connections";
 import { refreshProjectPiModels } from "@/lib/pi-models";
 import type { Connection } from "@/lib/pi-runtime";
 import {
@@ -168,7 +167,6 @@ export function useAppProjectActions({
 					await removeSshConnection(connectionId);
 				}
 				const nextProjects = await listProjects();
-				setConnectionShownInHome(connectionId, false);
 				setProjects(nextProjects);
 				onProjectsRemoved(affectedProjectIds, nextProjects);
 				notifyProjectsChanged();

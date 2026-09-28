@@ -346,6 +346,7 @@ mod tests {
                 pi_executable: None,
                 pi_runtime: crate::domain::PiRuntime::default(),
                 kind: ConnectionKind::Local,
+                shown_in_home: true,
             },
             metadata: ProjectMetadata {
                 cwd: "/work".to_owned(),

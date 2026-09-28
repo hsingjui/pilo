@@ -90,6 +90,7 @@ pub async fn wsl_connection_test(
         kind: ConnectionKind::Wsl {
             distro: distro.to_owned(),
         },
+        shown_in_home: false,
     };
     connection_test_result(runtime.servers.test_connection(&connection).await?)
 }

@@ -13,6 +13,9 @@ pub struct Connection {
     #[serde(default)]
     pub pi_runtime: PiRuntime,
     pub kind: ConnectionKind,
+    /// 是否在首页（侧边栏环境列表）显示该连接。桌面端设置与 WebUI 共用这一偏好。
+    #[serde(default)]
+    pub shown_in_home: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
