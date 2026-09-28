@@ -124,6 +124,20 @@ Pi RPC
 
 Pi 应该运行在代码所在环境。
 
+## UI
+
+Pilo 有两套 UI 入口，共享同一套组件：
+
+- **桌面端** — Tauri 窗口。
+- **WebUI** — `src/remote/`，浏览器访问的远程界面（Local/WSL/SSH 均可通过它接入）。
+
+修改 UI 时必须同时覆盖两端，并考虑移动端适配：
+
+- 一个 UI 改动默认意味着桌面端和 WebUI 都要生效。能复用就复用共享组件（如 `ChatComposer`），不要为 WebUI 复制一份。
+- 共享组件只在确有设备差异时才做响应式分支，例如触屏用点按（`Popover`）替代 hover（`HoverCard`）；有差异时用 props 或 class 表达，而不是新建组件。
+- 移动端适配是必需项，不是可选优化：窄屏布局、足够大的触控目标、安全区（safe-area）、软键盘 inset、viewport 行为。
+- 验证要覆盖两端：桌面端按 `## Validation` 的流程，WebUI 可直接在浏览器验证。如果一个改动只在一端可见，说明漏了另一端。
+
 ## Development Guidelines
 
 - 保持架构简单，避免过早抽象。
