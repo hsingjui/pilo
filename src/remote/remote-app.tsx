@@ -492,12 +492,6 @@ export function RemoteApp() {
 											? !chat.runtimeReady
 											: !chat.activeProjectId
 									}
-									onModelMenuOpen={() => {
-										if (chat.hasIdentifiedSession)
-											void chat.refreshAgentConfig();
-										else if (chat.activeProjectId)
-											void chat.loadDraftCatalog(chat.activeProjectId);
-									}}
 									onModelRefresh={() => {
 										if (chat.hasIdentifiedSession)
 											void chat.refreshAgentConfig();
@@ -515,12 +509,6 @@ export function RemoteApp() {
 											: !chat.activeProjectId ||
 												chat.composerThinkingLevels.length === 0
 									}
-									onThinkingMenuOpen={() => {
-										if (chat.hasIdentifiedSession)
-											void chat.refreshAgentConfig();
-										else if (chat.activeProjectId)
-											void chat.loadDraftCatalog(chat.activeProjectId);
-									}}
 									onThinkingChange={(level) => {
 										if (level) void chat.changeThinking(level);
 									}}
