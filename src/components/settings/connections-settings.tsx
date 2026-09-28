@@ -86,6 +86,7 @@ export function ConnectionsSettings() {
 	);
 	const [loading, setLoading] = useState(true);
 	const [busy, setBusy] = useState(false);
+	const [testingIds, setTestingIds] = useState<Set<string>>(() => new Set());
 	const [editing, setEditing] = useState<SshConnectionFormState | null>(null);
 	const [sshEditorOpen, setSshEditorOpen] = useState(false);
 	const [connectionSettings, setConnectionSettings] =
@@ -100,6 +101,15 @@ export function ConnectionsSettings() {
 		message: string;
 	} | null>(null);
 	const { t } = useTranslation();
+
+	const setTesting = useCallback((id: string, value: boolean) => {
+		setTestingIds((current) => {
+			const next = new Set(current);
+			if (value) next.add(id);
+			else next.delete(id);
+			return next;
+		});
+	}, []);
 
 	const refresh = useCallback(async () => {
 		const [localResult, sshResult, wslResult, projectsResult] =
@@ -327,13 +337,14 @@ export function ConnectionsSettings() {
 					description={t("connection.localMachine")}
 					projectCount={projectCount(local.id)}
 					shownInHome={shownIds.has(local.id)}
-					busy={busy || probingPi}
+					busy={busy || probingPi || testingIds.has(local.id)}
+					testing={testingIds.has(local.id)}
 					onToggleShown={(shown) => toggleShown(local.id, shown)}
 					onTest={() =>
 						void testConnection(
 							connectionLabel(local),
 							testLocalConnection,
-							setBusy,
+							(value) => setTesting(local.id, value),
 						)
 					}
 					onConfigure={() => openConnectionSettings(local)}
@@ -357,7 +368,8 @@ export function ConnectionsSettings() {
 										info.projectCount,
 									)}
 									shownInHome={shownIds.has(info.connection.id)}
-									busy={busy || probingPi}
+									busy={busy || probingPi || testingIds.has(info.connection.id)}
+									testing={testingIds.has(info.connection.id)}
 									onToggleShown={(shown) =>
 										toggleShown(info.connection.id, shown)
 									}
@@ -365,7 +377,7 @@ export function ConnectionsSettings() {
 										void testConnection(
 											info.connection.name,
 											() => testWslConnection(distro),
-											setBusy,
+											(value) => setTesting(info.connection.id, value),
 										)
 									}
 									onConfigure={() => openConnectionSettings(info.connection)}
@@ -384,7 +396,8 @@ export function ConnectionsSettings() {
 										info.projectCount,
 									)}
 									shownInHome={shownIds.has(info.connection.id)}
-									busy={busy || probingPi}
+									busy={busy || probingPi || testingIds.has(info.connection.id)}
+									testing={testingIds.has(info.connection.id)}
 									onToggleShown={(shown) =>
 										toggleShown(info.connection.id, shown)
 									}
@@ -392,7 +405,7 @@ export function ConnectionsSettings() {
 										void testConnection(
 											info.connection.name,
 											() => testSshConnection(info.connection.id),
-											setBusy,
+											(value) => setTesting(info.connection.id, value),
 										)
 									}
 									onConfigure={() => openConnectionSettings(info.connection)}

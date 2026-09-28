@@ -17,6 +17,7 @@ import {
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
+	Hint,
 } from "@/ui";
 
 import type { SshConnectionFormState } from "./connection-form";
@@ -248,22 +249,30 @@ export function SshConnectionEditor({
 												: undefined
 										}
 									/>
-									<button
-										type="button"
-										className={cn(
-											SETTINGS_ICON_BUTTON_CLASS,
-											"absolute inset-y-0 right-0 my-auto",
-										)}
-										disabled={!editing.password}
-										onClick={togglePassword}
-										aria-label={
+									<Hint
+										label={
 											revealPassword
 												? t("settings.hidePassword")
 												: t("settings.showPassword")
 										}
 									>
-										{revealPassword ? <EyeOff /> : <Eye />}
-									</button>
+										<button
+											type="button"
+											className={cn(
+												SETTINGS_ICON_BUTTON_CLASS,
+												"absolute inset-y-0 right-0 my-auto",
+											)}
+											disabled={!editing.password}
+											onClick={togglePassword}
+											aria-label={
+												revealPassword
+													? t("settings.hidePassword")
+													: t("settings.showPassword")
+											}
+										>
+											{revealPassword ? <EyeOff /> : <Eye />}
+										</button>
+									</Hint>
 								</div>
 								{fieldError?.field === "password" ? (
 									<span

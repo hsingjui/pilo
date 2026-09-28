@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
+	Eye,
+	EyeOff,
 	Laptop,
 	Monitor,
 	Pencil,
@@ -31,7 +33,8 @@ import {
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
-	Switch,
+	Hint,
+	Spinner,
 } from "@/ui";
 
 import { AUTH_LABEL_KEYS, sshTargetLabel } from "./connection-form";
@@ -56,6 +59,7 @@ type ConnectionRowProps = {
 	projectCount: number;
 	shownInHome: boolean;
 	busy: boolean;
+	testing?: boolean;
 	onToggleShown: (shown: boolean) => void;
 	onTest: () => void;
 	onConfigure: () => void;
@@ -69,6 +73,7 @@ export function ConnectionRow({
 	projectCount,
 	shownInHome,
 	busy,
+	testing,
 	onToggleShown,
 	onTest,
 	onConfigure,
@@ -95,68 +100,76 @@ export function ConnectionRow({
 				</div>
 			</div>
 			<div className="flex shrink-0 items-center gap-1">
-				<span className="mr-1 flex items-center gap-2 text-2xs text-muted-foreground">
-					{t("connection.shownInHome")}
-					<Switch
-						aria-label={t("connection.shownInHome")}
-						checked={shownInHome}
-						disabled={busy}
-						onCheckedChange={onToggleShown}
-					/>
-				</span>
-				<Button
-					variant="ghost"
-					size="icon"
-					className={SETTINGS_ICON_BUTTON_CLASS}
-					disabled={busy}
-					onClick={onTest}
-					aria-label={t("connection.test")}
-					title={t("connection.test")}
-				>
-					<Wifi />
-				</Button>
-				<Button
-					variant="ghost"
-					size="icon"
-					className={SETTINGS_ICON_BUTTON_CLASS}
-					disabled={busy}
-					onClick={onConfigure}
-					aria-label={t("connection.configure")}
-					title={t("connection.configure")}
-				>
-					<Settings2 />
-					<span className="sr-only">{t("connection.configure")}</span>
-				</Button>
-				{onEdit ? (
-					<Button
-						variant="ghost"
-						size="icon"
-						className={SETTINGS_ICON_BUTTON_CLASS}
-						disabled={busy}
-						onClick={onEdit}
-						aria-label={t("connection.editSsh")}
-						title={t("connection.editSsh")}
-					>
-						<Pencil />
-						<span className="sr-only">{t("connection.editSsh")}</span>
-					</Button>
-				) : null}
-				{onRemove ? (
+				<Hint label={t("connection.shownInHome")}>
 					<Button
 						variant="ghost"
 						size="icon"
 						className={cn(
 							SETTINGS_ICON_BUTTON_CLASS,
-							"hover:bg-destructive/10 hover:text-destructive",
+							!shownInHome && "text-muted-foreground",
 						)}
 						disabled={busy}
-						onClick={onRemove}
-						aria-label={t("connection.remove")}
-						title={t("connection.remove")}
+						onClick={() => onToggleShown(!shownInHome)}
+						aria-label={t("connection.shownInHome")}
+						aria-pressed={shownInHome}
 					>
-						<Trash2 />
-						<span className="sr-only">{t("connection.remove")}</span>
+						{shownInHome ? <Eye /> : <EyeOff />}
 					</Button>
+				</Hint>
+				<Hint label={t("connection.test")}>
+					<Button
+						variant="ghost"
+						size="icon"
+						className={SETTINGS_ICON_BUTTON_CLASS}
+						disabled={busy}
+						onClick={onTest}
+						aria-label={t("connection.test")}
+					>
+						{testing ? <Spinner /> : <Wifi />}
+					</Button>
+				</Hint>
+				<Hint label={t("connection.configure")}>
+					<Button
+						variant="ghost"
+						size="icon"
+						className={SETTINGS_ICON_BUTTON_CLASS}
+						disabled={busy}
+						onClick={onConfigure}
+						aria-label={t("connection.configure")}
+					>
+						<Settings2 />
+					</Button>
+				</Hint>
+				{onEdit ? (
+					<Hint label={t("connection.editSsh")}>
+						<Button
+							variant="ghost"
+							size="icon"
+							className={SETTINGS_ICON_BUTTON_CLASS}
+							disabled={busy}
+							onClick={onEdit}
+							aria-label={t("connection.editSsh")}
+						>
+							<Pencil />
+						</Button>
+					</Hint>
+				) : null}
+				{onRemove ? (
+					<Hint label={t("connection.remove")}>
+						<Button
+							variant="ghost"
+							size="icon"
+							className={cn(
+								SETTINGS_ICON_BUTTON_CLASS,
+								"hover:bg-destructive/10 hover:text-destructive",
+							)}
+							disabled={busy}
+							onClick={onRemove}
+							aria-label={t("connection.remove")}
+						>
+							<Trash2 />
+						</Button>
+					</Hint>
 				) : null}
 			</div>
 		</div>
@@ -315,12 +328,18 @@ function AddConnectionMenu({
 	const { t } = useTranslation();
 	return (
 		<DropdownMenu>
-			<DropdownMenuTrigger asChild>
-				<Button size="icon" variant="outline" className={cn(className)}>
-					<Plus />
-					<span className="sr-only">{t("connection.addConnection")}</span>
-				</Button>
-			</DropdownMenuTrigger>
+			<Hint label={t("connection.addConnection")}>
+				<DropdownMenuTrigger asChild>
+					<Button
+						size="icon"
+						variant="outline"
+						className={cn(className)}
+						aria-label={t("connection.addConnection")}
+					>
+						<Plus />
+					</Button>
+				</DropdownMenuTrigger>
+			</Hint>
 			<DropdownMenuContent align="end">
 				{canAddWsl ? (
 					<DropdownMenuItem onSelect={onAddWsl}>
