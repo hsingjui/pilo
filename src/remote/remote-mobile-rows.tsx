@@ -123,12 +123,13 @@ export function MobileSessionRow({
 				firedRef.current = false;
 			}}
 		>
-			{/* 左侧固定槽：未读标记，与桌面侧栏保持一致（左未读 / 右运行）。 */}
-			<span className="flex size-4 shrink-0 items-center justify-center">
+			{/* 左侧固定槽：未读标记，与桌面侧栏保持一致（左未读 / 右运行）。
+			    self-start + h-5 让点在两行式时对齐标题首行，而不是整块居中。 */}
+			<span className="flex h-5 w-4 shrink-0 self-start items-center justify-center">
 				{!session.active && session.unread ? (
 					<span
 						aria-hidden="true"
-						className="size-1.5 rounded-full bg-sidebar-primary"
+						className="size-1.5 rounded-full bg-sidebar-primary -translate-y-px"
 					/>
 				) : null}
 			</span>
@@ -142,9 +143,9 @@ export function MobileSessionRow({
 				) : null}
 			</span>
 			{/* 右侧固定槽：运行状态，与左侧未读槽共同预留宽度，标题不再占满整行。 */}
-			<span className="flex size-4 shrink-0 items-center justify-center">
+			<span className="flex h-5 w-4 shrink-0 self-start items-center justify-center">
 				{session.active ? (
-					<ActivityDot className="text-sidebar-primary" />
+					<ActivityDot className="text-sidebar-primary -translate-y-px" />
 				) : null}
 			</span>
 		</button>

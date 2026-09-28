@@ -286,8 +286,8 @@ export const SessionRow = memo(function SessionRow({
 							projectContext ? "items-start" : "items-center",
 						)}
 					>
-						{/* 图标槽 16px：让会话标题与项目标题共享同一条 30px 起始边 */}
-						<div className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+						{/* 图标槽 16px：让会话标题与项目标题共享同一条 30px 起始边；高度与标题行(20px)对齐，避免 items-start 时未读点偏高 */}
+						<div className="relative flex h-5 w-4 shrink-0 items-center justify-center">
 							{!session.active && session.unread ? (
 								<span
 									aria-hidden="true"
@@ -295,7 +295,7 @@ export const SessionRow = memo(function SessionRow({
 								>
 									<span
 										aria-hidden="true"
-										className="inline-block size-1.5 shrink-0 rounded-full bg-sidebar-primary"
+										className="inline-block size-1.5 shrink-0 rounded-full bg-sidebar-primary -translate-y-px"
 									/>
 								</span>
 							) : null}
@@ -414,7 +414,7 @@ export const SessionRow = memo(function SessionRow({
 								className="flex items-center justify-center transition-opacity duration-100 group-hover:opacity-0 group-data-[menu-open]:opacity-0"
 							>
 								{session.active ? (
-									<ActivityDot className="text-sidebar-primary" />
+									<ActivityDot className="text-sidebar-primary -translate-y-px" />
 								) : null}
 							</span>
 							{onDelete ? (
