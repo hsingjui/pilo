@@ -245,7 +245,8 @@ const ChatConversationViewportImpl = forwardRef<
 		let stableFrames = 0;
 		let previousGeometry = "";
 		const checkReady = () => {
-			const childCount = viewport.firstElementChild?.childElementCount ?? 0;
+			const messageRows = viewport.querySelectorAll("[data-message-id]");
+			const childCount = messageRows.length;
 			const hasPaintableRows = childCount > 0;
 			const visibleHistoryPending = Boolean(
 				viewport.querySelector('[data-history-placeholder="true"]'),
@@ -356,49 +357,58 @@ const ChatConversationViewportImpl = forwardRef<
 							: undefined
 					}
 				>
-					{effectiveLoadState === "loading" ? (
-						<ChatHistorySkeleton />
-					) : effectiveLoadState === "error" ? (
-						<div className="flex min-h-full flex-col pb-8 pt-4 @min-[40rem]:pb-10 @min-[40rem]:pt-6">
-							<ConversationColumn className="flex flex-1 items-center justify-center">
-								<ErrorState
-									title={t("chat.sessionLoadFailed")}
-									description={t("chat.sessionLoadDescription")}
-									onRetry={sessionPath ? onRetryHistory : onRetry}
-								/>
-							</ConversationColumn>
-						</div>
-					) : messages.length === 0 ? (
-						<div className="flex min-h-full flex-col">
+					<div
+						className={cn(
+							effectiveLoadState === "ready" &&
+								messages.length === 0 &&
+								"flex min-h-full flex-col",
+						)}
+					>
+						{effectiveLoadState === "loading" ? (
+							<ChatHistorySkeleton />
+						) : effectiveLoadState === "error" ? (
+							<div className="flex min-h-full flex-col pb-8 pt-4 @min-[40rem]:pb-10 @min-[40rem]:pt-6">
+								<ConversationColumn className="flex flex-1 items-center justify-center">
+									<ErrorState
+										title={t("chat.sessionLoadFailed")}
+										description={t("chat.sessionLoadDescription")}
+										onRetry={sessionPath ? onRetryHistory : onRetry}
+									/>
+								</ConversationColumn>
+							</div>
+						) : messages.length === 0 ? (
 							<EmptyConversation />
-						</div>
-					) : plainShortChat ? (
-						<div>
-							{messages.map((message, index) => renderMessage(message, index))}
-						</div>
-					) : (
-						// Virtua already removes off-screen rows. Do not add content-visibility:auto
-						// inside message rows: its intrinsic-size placeholders change measured row
-						// heights as reverse scrolling reveals content, which causes visible jumps.
-						<Virtualizer
-							ref={virtualizerRef}
-							data={messages}
-							cache={initialVirtualizerCache}
-							startMargin={virtualPadding.start}
-							shift={false}
-							bufferSize={CHAT_VIRTUA_BUFFER_PX}
-							keepMounted={keepMounted}
-							onScroll={handleVirtualScroll}
-							onScrollEnd={handleScrollEnd}
-						>
-							{renderMessage}
-						</Virtualizer>
-					)}
-					{compacting ? (
-						<ConversationColumn className="py-3">
-							<ChatAgentActivityIndicator label={t("chat.compacting")} />
-						</ConversationColumn>
-					) : null}
+						) : plainShortChat ? (
+							<div>
+								{messages.map((message, index) =>
+									renderMessage(message, index),
+								)}
+							</div>
+						) : (
+							// Virtua already removes off-screen rows. Do not add content-visibility:auto
+							// inside message rows: its intrinsic-size placeholders change measured row
+							// heights as reverse scrolling reveals content, which causes visible jumps.
+							<Virtualizer
+								ref={virtualizerRef}
+								data={messages}
+								cache={initialVirtualizerCache}
+								startMargin={virtualPadding.start}
+								shift={false}
+								bufferSize={CHAT_VIRTUA_BUFFER_PX}
+								keepMounted={keepMounted}
+								scrollRef={runtimeScrollRef}
+								onScroll={handleVirtualScroll}
+								onScrollEnd={handleScrollEnd}
+							>
+								{renderMessage}
+							</Virtualizer>
+						)}
+						{compacting ? (
+							<ConversationColumn className="py-3">
+								<ChatAgentActivityIndicator label={t("chat.compacting")} />
+							</ConversationColumn>
+						) : null}
+					</div>
 				</div>
 
 				{/* 与被覆盖的滚动区同样预留 stable gutter，切换骨架的列宽
