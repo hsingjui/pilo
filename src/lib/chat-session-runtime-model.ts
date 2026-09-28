@@ -1,5 +1,11 @@
 import type { ChatSessionRuntimeState } from "@/lib/chat-session-client";
 
+export function chatRuntimeHasOpenTurn(
+	state: ChatSessionRuntimeState | null | undefined,
+) {
+	return state?.activeTurn === true && state.snapshot.state === "running";
+}
+
 export function findReusableChatRuntime(
 	states: readonly ChatSessionRuntimeState[],
 	projectId: string,

@@ -36,6 +36,7 @@ type UseRemoteChatHistoryOptions = {
 	selectedSession: SessionIndexEntry | null;
 	resyncKey: number;
 	isExternalOpenTurn: (projectId: string, sessionPath: string) => boolean;
+	runtimeTurnOpen: boolean;
 	refreshAgentConfig: () => Promise<void>;
 	handleExpiredAuth: (error: unknown) => boolean;
 	setFatalError: (message: string | null) => void;
@@ -51,6 +52,7 @@ export function useRemoteChatHistory({
 	selectedSession,
 	resyncKey,
 	isExternalOpenTurn,
+	runtimeTurnOpen,
 	refreshAgentConfig,
 	handleExpiredAuth,
 	setFatalError,
@@ -87,6 +89,7 @@ export function useRemoteChatHistory({
 		selectedSessionPath &&
 		isExternalOpenTurn(activeProjectId, selectedSessionPath),
 	);
+	const liveTurnOpen = externalTurnOpen || runtimeTurnOpen;
 
 	const historyPrefix = useMemo(
 		() => buildHistoryPrefix(historySnapshot),
@@ -109,6 +112,23 @@ export function useRemoteChatHistory({
 		if (!selectedSessionPath) return;
 		setReadOnly(externalTurnOpen);
 	}, [externalTurnOpen, selectedSessionPath, setReadOnly]);
+
+	useEffect(() => {
+		if (
+			!liveTurnOpen ||
+			conversationLoad.key !== selectedLoadKey ||
+			conversationLoad.status !== "ready"
+		) {
+			return;
+		}
+		setConversation((current) => markExternalTurnLive(current));
+	}, [
+		conversationLoad.key,
+		conversationLoad.status,
+		liveTurnOpen,
+		selectedLoadKey,
+		setConversation,
+	]);
 
 	useEffect(() => {
 		void resyncKey;
@@ -145,9 +165,6 @@ export function useRemoteChatHistory({
 					reducerContext,
 				);
 				state = alignHistoryMessages(state, directory, windowStart);
-				if (externalTurnOpen) {
-					state = markExternalTurnLive(state);
-				}
 				setConversation(state);
 				return client.startChat({
 					projectId: activeProjectId,
@@ -179,7 +196,6 @@ export function useRemoteChatHistory({
 	}, [
 		activeProjectId,
 		activeSessionKey,
-		externalTurnOpen,
 		handleExpiredAuth,
 		refreshAgentConfig,
 		resyncKey,

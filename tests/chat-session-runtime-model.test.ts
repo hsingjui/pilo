@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { ChatSessionRuntimeState } from "../src/lib/chat-session-client.ts";
 import {
+	chatRuntimeHasOpenTurn,
 	findReusableChatRuntime,
 	runtimeSessionIdFromKey,
 } from "../src/lib/chat-session-runtime-model.ts";
@@ -62,4 +63,24 @@ test("does not reuse stopped runtimes or keys from another project", () => {
 		),
 		null,
 	);
+});
+
+test("reports an open turn only while the Host runtime is actively running it", () => {
+	const running = runtime(
+		JSON.stringify(["project-1", "running-id"]),
+		"/sessions/running.jsonl",
+	);
+	assert.equal(chatRuntimeHasOpenTurn(running), true);
+	assert.equal(
+		chatRuntimeHasOpenTurn({ ...running, activeTurn: false }),
+		false,
+	);
+	assert.equal(
+		chatRuntimeHasOpenTurn({
+			...running,
+			snapshot: { ...running.snapshot, state: "stopped" },
+		}),
+		false,
+	);
+	assert.equal(chatRuntimeHasOpenTurn(null), false);
 });

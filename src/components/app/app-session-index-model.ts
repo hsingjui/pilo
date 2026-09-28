@@ -1,4 +1,5 @@
 import { listChatSessionRuntimeStates } from "@/lib/chat-session-client";
+import { chatRuntimeHasOpenTurn } from "@/lib/chat-session-runtime-model";
 import type {
 	SessionExternalActivity,
 	SessionIndexEntry,
@@ -44,8 +45,7 @@ export function runtimeActivityFromStates(
 	for (const state of states) {
 		if (
 			(projectIds && !projectIds.has(state.projectId)) ||
-			!state.activeTurn ||
-			state.snapshot.state !== "running" ||
+			!chatRuntimeHasOpenTurn(state) ||
 			!state.sessionPath
 		) {
 			continue;

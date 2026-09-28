@@ -17,7 +17,10 @@ import {
 import type { ChatSession } from "@/components/chat/chat-page-utils";
 import type { PiExtensionDialogRequest } from "@/components/chat/use-pi-session-features";
 import type { ChatImageAttachment } from "@/lib/chat-submission";
-import { findReusableChatRuntime } from "@/lib/chat-session-runtime-model";
+import {
+	chatRuntimeHasOpenTurn,
+	findReusableChatRuntime,
+} from "@/lib/chat-session-runtime-model";
 import { createConversationState } from "@/lib/conversation-reducer";
 import type { ConversationState } from "@/lib/conversation-types";
 import type { PiAgentState, PiModel } from "@/lib/pi-runtime";
@@ -165,6 +168,7 @@ export function useRemoteChat({
 				selectedSession.sessionPath,
 			)
 		: null;
+	const runtimeTurnOpen = chatRuntimeHasOpenTurn(reusableRuntime);
 	const activeSessionKey = activeProjectId
 		? selectedSession
 			? (runtimeSessionKeys.get(selectedSession.piSessionId) ??
@@ -330,6 +334,7 @@ export function useRemoteChat({
 		selectedSession,
 		resyncKey,
 		isExternalOpenTurn,
+		runtimeTurnOpen,
 		refreshAgentConfig,
 		handleExpiredAuth,
 		setFatalError,
