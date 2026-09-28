@@ -222,6 +222,7 @@ export function resolveChatSession({
 	selectedIndexedSession,
 	selectedProject,
 	isExternalOpenTurn,
+	hostTurnOpen,
 	activeProject,
 	draftSessionStarted,
 	draftTemporary,
@@ -234,6 +235,7 @@ export function resolveChatSession({
 	selectedIndexedSession: SessionIndexEntry | null;
 	selectedProject: Project | null;
 	isExternalOpenTurn: (projectId: string, sessionPath: string) => boolean;
+	hostTurnOpen: boolean;
 	activeProject: Project | null;
 	draftSessionStarted: boolean;
 	draftTemporary: boolean;
@@ -252,10 +254,11 @@ export function resolveChatSession({
 					sessionPath,
 				)
 			: false;
+		// Host turn state is shared by desktop and WebUI; it cannot identify which client owns the turn.
 		return {
 			...selectedOpenedChat.session,
 			externalRunning: externalTurnOpen,
-			externalTurnOpen,
+			externalTurnOpen: externalTurnOpen || hostTurnOpen,
 		};
 	}
 	if (selectedIndexedSession && selectedProject) {
@@ -267,7 +270,7 @@ export function resolveChatSession({
 			selectedIndexedSession,
 			selectedProject,
 			externalTurnOpen,
-			externalTurnOpen,
+			externalTurnOpen || hostTurnOpen,
 		);
 	}
 	if (activeProject && draftSessionStarted) {

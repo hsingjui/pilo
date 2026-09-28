@@ -193,7 +193,7 @@ export function useChatConversation({
 					return;
 				}
 				finalState = alignHistoryMessages(finalState, directory, windowStart);
-				if (session.externalRunning && session.externalTurnOpen) {
+				if (session.externalTurnOpen) {
 					finalState = markExternalTurnLive(finalState);
 				}
 				historyStore.initialize(directory, windowStart);
@@ -243,7 +243,6 @@ export function useChatConversation({
 		historyRetry,
 		historyStore,
 		onHistoryMetadata,
-		session.externalRunning,
 		session.externalTurnOpen,
 		session.id,
 		session.projectRecord.id,

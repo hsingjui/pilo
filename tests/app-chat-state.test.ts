@@ -16,6 +16,7 @@ import {
 	identifyOpenedChat,
 	mergeSidebarSessionsWithOpenChats,
 	retainedBackgroundChatVisualControllerIds,
+	resolveChatSession,
 	syncOpenedChatSessionMetadata,
 	toSidebarSession,
 	touchOpenedChat,
@@ -427,6 +428,40 @@ test("inactive indexed sidebar sessions preserve object identity", () => {
 
 	assert.equal(cached, indexed);
 	assert.equal(sidebar[0], indexed);
+});
+
+test("a Host-owned open turn keeps history live without making the desktop chat read-only", () => {
+	const indexed = indexedSession("mobile", 1024);
+	const options = {
+		selectedOpenedChat: null as OpenChat | null,
+		selectedOpenedChatBusy: false,
+		selectedIndexedSession: indexed,
+		selectedProject: project,
+		isExternalOpenTurn: () => false,
+		hostTurnOpen: true,
+		activeProject: project,
+		draftSessionStarted: false,
+		draftTemporary: false,
+		draftSessionId: "draft",
+		draftSessionModel: null,
+		draftSessionThinkingLevel: null,
+	};
+
+	const fromIndex = resolveChatSession(options);
+	assert.equal(fromIndex?.externalTurnOpen, true);
+	assert.equal(fromIndex?.externalRunning, false);
+
+	const fromOpened = resolveChatSession({
+		...options,
+		selectedOpenedChat: upsertOpenedChat([], chat("mobile"))[0],
+		selectedOpenedChatBusy: true,
+	});
+	assert.equal(fromOpened?.externalTurnOpen, true);
+	assert.equal(fromOpened?.externalRunning, false);
+	assert.equal(
+		resolveChatSession({ ...options, hostTurnOpen: false })?.externalTurnOpen,
+		false,
+	);
 });
 
 test("opened chat updates external observer flags without unrelated metadata changes", () => {

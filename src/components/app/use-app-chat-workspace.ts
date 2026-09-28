@@ -35,7 +35,10 @@ import type { BusyChatControllersRef } from "@/components/app/use-opened-chat-co
 import type { ChatSession } from "@/components/chat/chat-page";
 import type { ChatSubmission } from "@/lib/chat-submission";
 import type { PiModel, PiThinkingLevel } from "@/lib/pi-runtime";
-import { findReusableChatRuntime } from "@/lib/chat-session-runtime-model";
+import {
+	chatRuntimeHasOpenTurn,
+	findReusableChatRuntime,
+} from "@/lib/chat-session-runtime-model";
 import type { Project } from "@/lib/projects";
 
 type UseAppChatWorkspaceOptions = {
@@ -224,6 +227,7 @@ export function useAppChatWorkspace({
 				selectedIndexedSession,
 				selectedProject,
 				isExternalOpenTurn,
+				hostTurnOpen: chatRuntimeHasOpenTurn(selectedRuntimeState),
 				activeProject: activeProject ?? null,
 				draftSessionStarted,
 				draftTemporary,
@@ -237,6 +241,7 @@ export function useAppChatWorkspace({
 			selectedIndexedSession,
 			selectedProject,
 			isExternalOpenTurn,
+			selectedRuntimeState,
 			activeProject,
 			draftSessionStarted,
 			draftTemporary,

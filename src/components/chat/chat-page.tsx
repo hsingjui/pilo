@@ -499,7 +499,7 @@ function ChatPageImpl(props: ChatPageProps) {
 									forkDisabled={
 										runtimeBusy || historyPending || Boolean(forkingMessageId)
 									}
-									suppressInterruptedError={session.externalRunning || running}
+									suppressInterruptedError={session.externalTurnOpen || running}
 									onVisualReady={handleVisualReady}
 									onRetry={onRetry}
 									onRetryHistory={retryHistory}
@@ -531,7 +531,7 @@ function ChatPageImpl(props: ChatPageProps) {
 										}
 									/>
 									{recoveryState.status === "idle" &&
-									!session.externalRunning &&
+									!session.externalTurnOpen &&
 									!running &&
 									latestTurnInterrupted ? (
 										<ChatInterruptedTurnNotice />
