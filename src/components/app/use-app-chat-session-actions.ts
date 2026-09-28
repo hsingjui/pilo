@@ -36,6 +36,7 @@ type RemoveIndexedSessionResult = {
 
 type UseAppChatSessionActionsOptions = {
 	indexedSessions: SessionIndexEntry[];
+	openedChats: OpenChat[];
 	updateIndexedSession: (
 		sessionId: string,
 		update: { title?: string },
@@ -61,6 +62,7 @@ type UseAppChatSessionActionsOptions = {
 
 export function useAppChatSessionActions({
 	indexedSessions,
+	openedChats,
 	updateIndexedSession,
 	removeIndexedSession,
 	setOpenedChats,
@@ -89,7 +91,35 @@ export function useAppChatSessionActions({
 			const session = indexedSessions.find(
 				(candidate) => candidate.piSessionId === sessionId,
 			);
-			if (!session) return;
+			if (!session) {
+				// 未进入索引的会话（例如启动即报错、从未生成 Pi 会话文件）不会持久化到磁盘，
+				// 只挂在打开的聊天列表里；把它移除即可，否则会永远卡在侧栏且删除无效。
+				const pending = openedChats.find(
+					(entry) =>
+						entry.session.id === sessionId || entry.piSessionId === sessionId,
+				);
+				if (!pending) return;
+				try {
+					await stopChatSession(
+						pending.session.projectRecord.id,
+						sessionId,
+						"session_delete",
+					);
+				} catch (error) {
+					console.error("Failed to stop pending chat session", error);
+				}
+				setOpenedChats((current) =>
+					current.filter(
+						(entry) =>
+							entry.session.id !== sessionId && entry.piSessionId !== sessionId,
+					),
+				);
+				setSelectedSessionId((current) =>
+					current === sessionId ? null : current,
+				);
+				if (pending.session.id === draftSessionId) clearDraftSession();
+				return;
+			}
 			try {
 				await stopChatSession(session.projectId, sessionId, "session_delete");
 				const deleted = await removeIndexedSession(sessionId);
@@ -116,6 +146,9 @@ export function useAppChatSessionActions({
 		},
 		[
 			indexedSessions,
+			openedChats,
+			clearDraftSession,
+			draftSessionId,
 			removeIndexedSession,
 			setOpenedChats,
 			setSelectedSessionId,

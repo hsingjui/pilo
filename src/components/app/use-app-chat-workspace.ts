@@ -371,6 +371,7 @@ export function useAppChatWorkspace({
 		handleForkSessionCreated,
 	} = useAppChatSessionActions({
 		indexedSessions,
+		openedChats,
 		updateIndexedSession,
 		removeIndexedSession,
 		setOpenedChats,

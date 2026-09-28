@@ -136,7 +136,7 @@ export function SidebarTree({
 					session={session}
 					selected={activeSessionId === session.id}
 					onSelect={onSelectSession}
-					onDelete={session.sessionPath ? onDeleteSession : undefined}
+					onDelete={onDeleteSession}
 					onRename={onRenameSession}
 					projectName={
 						showProjectName ? projectById.get(session.projectId) : undefined
