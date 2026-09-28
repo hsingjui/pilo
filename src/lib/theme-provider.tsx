@@ -82,14 +82,30 @@ export function ThemeProvider({
 
 		root.classList.remove("light", "dark");
 		root.classList.add(resolvedTheme);
-		root.style.colorScheme = theme === "system" ? "light dark" : resolvedTheme;
-		// 移动端浏览器/PWA 的状态栏颜色跟随主题（boot 脚本做了首次设置，这里管切换）。
+		const colorScheme = theme === "system" ? "light dark" : resolvedTheme;
+		root.style.colorScheme = colorScheme;
 		document
-			.querySelector('meta[name="theme-color"]')
-			?.setAttribute(
-				"content",
-				resolvedTheme === "dark" ? "#101010" : "#ffffff",
+			.querySelector('meta[name="color-scheme"]')
+			?.setAttribute("content", colorScheme);
+
+		// 移动端浏览器/PWA 的系统栏：system 模式交给 media query，
+		// 显式 light/dark 则让两条 meta 都锁定到应用主题。
+		const themeColorMetas = document.querySelectorAll<HTMLMetaElement>(
+			'meta[name="theme-color"]',
+		);
+		if (theme === "system") {
+			themeColorMetas.forEach((meta) => {
+				meta.setAttribute(
+					"content",
+					meta.media.includes("dark") ? "#101010" : "#ffffff",
+				);
+			});
+		} else {
+			const themeColor = resolvedTheme === "dark" ? "#101010" : "#ffffff";
+			themeColorMetas.forEach((meta) =>
+				meta.setAttribute("content", themeColor),
 			);
+		}
 
 		if (switching) {
 			requestAnimationFrame(() => {

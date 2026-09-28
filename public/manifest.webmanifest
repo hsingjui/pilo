@@ -7,16 +7,34 @@
 	"display": "standalone",
 	"background_color": "#ffffff",
 	"theme_color": "#ffffff",
+	"color_scheme_dark": {
+		"background_color": "#101010",
+		"theme_color": "#101010"
+	},
 	"icons": [
 		{
 			"src": "/pilo-192.png",
 			"sizes": "192x192",
-			"type": "image/png"
+			"type": "image/png",
+			"purpose": "any"
 		},
 		{
 			"src": "/pilo-512.png",
 			"sizes": "512x512",
-			"type": "image/png"
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/pilo-maskable-192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "maskable"
+		},
+		{
+			"src": "/pilo-maskable-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "maskable"
 		}
 	]
 }

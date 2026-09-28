@@ -6,7 +6,17 @@
 			name="viewport"
 			content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
 		/>
-		<meta name="theme-color" content="#ffffff" />
+		<meta name="color-scheme" content="light dark" />
+		<meta
+			name="theme-color"
+			content="#ffffff"
+			media="(prefers-color-scheme: light)"
+		/>
+		<meta
+			name="theme-color"
+			content="#101010"
+			media="(prefers-color-scheme: dark)"
+		/>
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta
 			name="apple-mobile-web-app-status-bar-style"
@@ -15,7 +25,7 @@
 		<meta name="apple-mobile-web-app-title" content="Pilo" />
 		<link rel="manifest" href="/manifest.webmanifest" />
 		<link rel="icon" type="image/png" href="/pilo-192.png" />
-		<link rel="apple-touch-icon" href="/pilo-192.png" />
+		<link rel="apple-touch-icon" sizes="180x180" href="/pilo-180.png" />
 		<title>Pilo</title>
 		<script>
 			(() => {
@@ -46,9 +56,11 @@
 				);
 
 				const stored = localStorage.getItem("pilo-ui-theme");
+				const selectedTheme =
+					stored === "dark" || stored === "light" ? stored : "system";
 				const dark =
-					stored === "dark" ||
-					(stored !== "light" &&
+					selectedTheme === "dark" ||
+					(selectedTheme === "system" &&
 						window.matchMedia("(prefers-color-scheme: dark)").matches);
 				if (dark) document.documentElement.classList.add("dark");
 				if (/Mac|iPhone|iPad|iPod/.test(navigator.platform)) {
@@ -57,10 +69,20 @@
 				if (!("__TAURI_INTERNALS__" in window)) {
 					document.documentElement.classList.add("pilo-browser");
 				}
-				document.documentElement.style.colorScheme = dark ? "dark" : "light";
+				document.documentElement.style.colorScheme =
+					selectedTheme === "system" ? "light dark" : selectedTheme;
 				document
-					.querySelector('meta[name="theme-color"]')
-					.setAttribute("content", dark ? "#101010" : "#ffffff");
+					.querySelector('meta[name="color-scheme"]')
+					?.setAttribute(
+						"content",
+						selectedTheme === "system" ? "light dark" : selectedTheme,
+					);
+				if (selectedTheme !== "system") {
+					const themeColor = dark ? "#101010" : "#ffffff";
+					document
+						.querySelectorAll('meta[name="theme-color"]')
+						.forEach((meta) => meta.setAttribute("content", themeColor));
+				}
 			})();
 		</script>
 		<style>
@@ -71,12 +93,16 @@
 				height: 100%;
 				margin: 0;
 			}
+			html,
 			body {
 				background: #ffffff;
-				overflow: hidden;
 			}
+			html.dark,
 			.dark body {
 				background: #101010;
+			}
+			body {
+				overflow: hidden;
 			}
 			#pilo-boot-shell {
 				/* token 快照，供 index.css 加载前使用；改动 tokens 时同步这里 */
