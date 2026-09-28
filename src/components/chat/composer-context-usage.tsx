@@ -23,13 +23,21 @@ function finiteNumber(value: number | null | undefined) {
 		: undefined;
 }
 
+/** token 数统一用 k/M（不走 locale 的万/亿），贴合模型界惯例。 */
 function formatCompactTokens(value: number | null | undefined) {
 	const normalized = finiteNumber(value);
-	return normalized === undefined
-		? "—"
-		: new Intl.NumberFormat(i18n.language, { notation: "compact" }).format(
-				Math.max(0, normalized),
-			);
+	if (normalized === undefined) return "—";
+	const n = Math.max(0, normalized);
+	if (n < 1000) return String(Math.round(n));
+	const scaled = (divisor: number) => {
+		const text = (n / divisor).toFixed(1);
+		return text.endsWith(".0") ? text.slice(0, -2) : text;
+	};
+	if (n < 1_000_000) {
+		const k = scaled(1000);
+		return k === "1000" ? "1M" : `${k}k`;
+	}
+	return `${scaled(1_000_000)}M`;
 }
 
 function formatPercent(value: number | null | undefined) {
@@ -105,6 +113,7 @@ function ContextDetails({
 	ringPercent,
 	contextStale,
 	breakdownRows,
+	cacheHitRate,
 	cost,
 }: {
 	contextPercent: number | undefined;
@@ -113,14 +122,22 @@ function ContextDetails({
 	ringPercent: number;
 	contextStale: boolean;
 	breakdownRows: Array<[string, number]>;
+	cacheHitRate: number | undefined;
 	cost: number | undefined;
 }) {
 	const { t } = useTranslation();
+	const breakdownTotal = breakdownRows.reduce(
+		(sum, [, value]) => sum + value,
+		0,
+	);
 	return (
 		<>
 			<div className="w-full space-y-2 px-2.5 py-2.5">
-				<div className="flex items-center justify-between gap-3 text-xs">
-					<p className="font-medium tabular-nums text-foreground">
+				<p className="text-2xs font-semibold uppercase leading-tight tracking-[0.6px] text-muted-foreground">
+					{t("chat.contextSection")}
+				</p>
+				<div className="flex items-baseline justify-between gap-3">
+					<p className="text-sm font-semibold tabular-nums text-foreground">
 						{formatPercent(contextPercent)}
 					</p>
 					<p className="font-mono text-2xs tabular-nums text-muted-foreground">
@@ -128,7 +145,7 @@ function ContextDetails({
 						{formatCompactTokens(contextWindow)}
 					</p>
 				</div>
-				<div className="relative h-1 w-full overflow-hidden rounded-full bg-muted">
+				<div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
 					<div
 						className="h-full rounded-full bg-foreground/70 transition-[width] duration-200"
 						style={{ width: `${ringPercent}%` }}
@@ -146,18 +163,41 @@ function ContextDetails({
 			</div>
 
 			{breakdownRows.length > 0 ? (
-				<div className="w-full space-y-1.5 px-2.5 py-2">
-					{breakdownRows.map(([label, value]) => (
-						<div
-							key={label}
-							className="flex items-center justify-between text-xs"
-						>
-							<span className="text-muted-foreground">{label}</span>
+				<div className="w-full space-y-2 px-2.5 py-2">
+					<p className="text-2xs font-semibold uppercase leading-tight tracking-[0.6px] text-muted-foreground">
+						{t("chat.tokensSection")}
+					</p>
+					<div className="space-y-1.5">
+						{breakdownRows.map(([label, value]) => (
+							<div
+								key={label}
+								className="flex items-center justify-between text-xs"
+							>
+								<span className="text-muted-foreground">{label}</span>
+								<span className="font-mono text-2xs tabular-nums text-foreground">
+									{formatCompactTokens(value)}
+								</span>
+							</div>
+						))}
+					</div>
+					{cacheHitRate !== undefined ? (
+						<div className="flex items-center justify-between text-xs">
+							<span className="text-muted-foreground">
+								{t("chat.cacheHitRate")}
+							</span>
 							<span className="font-mono text-2xs tabular-nums text-foreground">
-								{formatCompactTokens(value)}
+								{formatPercent(cacheHitRate)}
 							</span>
 						</div>
-					))}
+					) : null}
+					<div className="flex items-center justify-between border-t border-border/60 pt-1.5 text-xs">
+						<span className="text-muted-foreground">
+							{t("chat.tokensTotal")}
+						</span>
+						<span className="font-mono text-2xs tabular-nums text-foreground">
+							{formatCompactTokens(breakdownTotal)}
+						</span>
+					</div>
 				</div>
 			) : null}
 
@@ -207,6 +247,14 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 			entry[1] !== undefined && entry[1] > 0,
 	);
 
+	// 命中率 = 缓存读 /（缓存读 + 未命中输入）：刻画多少输入 token 走了缓存。
+	const inputTokens = finiteNumber(tokens?.input) ?? 0;
+	const cacheReadTokens = finiteNumber(tokens?.cacheRead) ?? 0;
+	const cacheHitRate =
+		inputTokens + cacheReadTokens > 0
+			? (cacheReadTokens / (inputTokens + cacheReadTokens)) * 100
+			: undefined;
+
 	const ringPercent = Math.min(100, Math.max(0, contextPercent ?? 0));
 	// HoverCard 只响应指针悬浮，这里受控补上键盘路径：focus-visible 打开，失焦关闭。
 	// 触屏没有 hover，改由点按切换；两条路径共用同一个 open 状态。
@@ -244,6 +292,7 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 			ringPercent={ringPercent}
 			contextStale={contextStale}
 			breakdownRows={breakdownRows}
+			cacheHitRate={cacheHitRate}
 			cost={usage?.cost}
 		/>
 	);
