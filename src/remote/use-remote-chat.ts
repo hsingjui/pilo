@@ -35,7 +35,10 @@ import {
 	sessionLabel,
 	writeRemoteScrollState,
 } from "./remote-app-model";
-import { useRemoteChatActions } from "./use-remote-chat-actions";
+import {
+	type PendingProjectMcpPrompt,
+	useRemoteChatActions,
+} from "./use-remote-chat-actions";
 import { useRemoteChatAgentConfig } from "./use-remote-chat-agent-config";
 import { useRemoteChatAutoTitle } from "./use-remote-chat-auto-title";
 import { useRemoteChatCommands } from "./use-remote-chat-commands";
@@ -120,6 +123,19 @@ export function useRemoteChat({
 	const activeTurnRef = useRef(false);
 	const queuedSubmissionsRef = useRef(new Map<string, QueuedSubmission>());
 	const autoTitleRequestedRef = useRef(false);
+	const pendingProjectMcpPromptsRef = useRef(
+		new Map<string, PendingProjectMcpPrompt>(),
+	);
+	const projectMcpApprovalRequestedRef = useRef(new Set<string>());
+	const projectMcpResumeRef = useRef<
+		((sessionKey: string) => Promise<void>) | null
+	>(null);
+	const projectMcpFailRef = useRef<
+		((sessionKey: string, error: unknown) => void) | null
+	>(null);
+	const projectMcpCancelRef = useRef<((sessionKey: string) => void) | null>(
+		null,
+	);
 	const refreshAgentConfigRef = useRef<(() => Promise<void>) | null>(null);
 	const handleExtensionRequestRef = useRef<
 		((event: PiExtensionDialogRequest) => void) | null
@@ -378,10 +394,54 @@ export function useRemoteChat({
 		handleComposerChange("");
 		setImages([]);
 	}, [handleComposerChange]);
+	const approveProjectMcpServer = useCallback(
+		async (serverName: string) => {
+			if (!client || !activeProjectId || !activeSessionKey) {
+				throw new Error("Choose a project first");
+			}
+			await client.approveProjectMcpServer(activeProjectId, serverName);
+			const input = {
+				projectId: activeProjectId,
+				sessionKey: activeSessionKey,
+				sessionPath: selectedSession?.sessionPath,
+				noSession: draftTemporary,
+			};
+			await client.startChat(input).catch(() => undefined);
+			await client.startChat(input);
+			setRuntimeReady(true);
+		},
+		[
+			activeProjectId,
+			activeSessionKey,
+			client,
+			draftTemporary,
+			selectedSession?.sessionPath,
+		],
+	);
+	const resumeProjectMcpPrompt = useCallback(
+		async (targetSessionKey: string) => {
+			await projectMcpResumeRef.current?.(targetSessionKey);
+		},
+		[],
+	);
+	const failProjectMcpPrompt = useCallback(
+		(targetSessionKey: string, error: unknown) => {
+			projectMcpFailRef.current?.(targetSessionKey, error);
+		},
+		[],
+	);
+	const cancelProjectMcpPrompt = useCallback((targetSessionKey: string) => {
+		projectMcpCancelRef.current?.(targetSessionKey);
+	}, []);
 	const extensionUi = useRemoteExtensionUi({
 		rpc,
 		activeSessionKey,
 		onSetEditorText: handleComposerChange,
+		onApproveProjectMcpServer: approveProjectMcpServer,
+		projectMcpApprovalRequestedRef,
+		onProjectMcpApproved: resumeProjectMcpPrompt,
+		onProjectMcpApprovalFailed: failProjectMcpPrompt,
+		onProjectMcpDeclined: cancelProjectMcpPrompt,
 	});
 	useEffect(() => {
 		handleExtensionRequestRef.current = extensionUi.handleExtensionRequest;
@@ -559,6 +619,9 @@ export function useRemoteChat({
 		stop,
 		changeModel,
 		changeThinking,
+		resumeProjectMcpPrompt: resumeProjectMcpPromptAction,
+		failProjectMcpPrompt: failProjectMcpPromptAction,
+		cancelProjectMcpPrompt: cancelProjectMcpPromptAction,
 	} = useRemoteChatActions({
 		client,
 		activeSessionKey,
@@ -566,6 +629,8 @@ export function useRemoteChat({
 		hasSelectedSession: Boolean(selectedSession),
 		hasIdentifiedSession,
 		autoTitleRequestedRef,
+		pendingProjectMcpPromptsRef,
+		projectMcpApprovalRequestedRef,
 		queuedSubmissionsRef,
 		ensureDraftRuntime,
 		tryHandleComposerCommand,
@@ -581,6 +646,24 @@ export function useRemoteChat({
 		setDraftThinkingLevel,
 		rpc,
 	});
+
+	useEffect(() => {
+		projectMcpResumeRef.current = resumeProjectMcpPromptAction;
+		projectMcpFailRef.current = failProjectMcpPromptAction;
+		projectMcpCancelRef.current = cancelProjectMcpPromptAction;
+		return () => {
+			if (projectMcpResumeRef.current === resumeProjectMcpPromptAction)
+				projectMcpResumeRef.current = null;
+			if (projectMcpFailRef.current === failProjectMcpPromptAction)
+				projectMcpFailRef.current = null;
+			if (projectMcpCancelRef.current === cancelProjectMcpPromptAction)
+				projectMcpCancelRef.current = null;
+		};
+	}, [
+		cancelProjectMcpPromptAction,
+		failProjectMcpPromptAction,
+		resumeProjectMcpPromptAction,
+	]);
 
 	const fork = useRemoteChatFork({
 		client,

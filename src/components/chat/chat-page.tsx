@@ -137,6 +137,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		active,
 	});
 	const activeTurnSessionIdRef = useRef<string | null>(null);
+	const projectMcpApprovalPendingRef = useRef(false);
 	const client = useMemo(
 		() =>
 			createChatSessionClient(session.projectRecord.id, session.id, undefined, {
@@ -261,6 +262,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		sessionTitle: sessionState?.name || session.title,
 		client,
 		activeTurnSessionIdRef,
+		projectMcpApprovalPendingRef,
 		initialMessage,
 		initialImages,
 		initialQueuedMessages: initialDeferredSubmissions.runtime,
@@ -284,6 +286,10 @@ function ChatPageImpl(props: ChatPageProps) {
 		running,
 		runtimeBusy,
 		recoveryState,
+		clearRecoveryState,
+		resumeProjectMcpTurn,
+		failProjectMcpTurn,
+		cancelProjectMcpTurn,
 		handleReconnect,
 		handleSubmit,
 		handleSteer,
@@ -304,8 +310,13 @@ function ChatPageImpl(props: ChatPageProps) {
 		client,
 		active,
 		readOnly: session.externalRunning,
+		projectMcpApprovalPendingRef,
 		onSetEditorText: setDraft,
 		onRefreshSessionState: refreshSessionState,
+		onProjectMcpApprovalRequested: clearRecoveryState,
+		onProjectMcpApproved: resumeProjectMcpTurn,
+		onProjectMcpApprovalFailed: failProjectMcpTurn,
+		onProjectMcpDeclined: cancelProjectMcpTurn,
 	});
 	const {
 		commandSuggestions,

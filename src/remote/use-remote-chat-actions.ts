@@ -1,6 +1,6 @@
 import {
 	type Dispatch,
-	type MutableRefObject,
+	type RefObject,
 	type SetStateAction,
 	useCallback,
 	useState,
@@ -24,14 +24,22 @@ import { reducerContext } from "./remote-app-model";
 import type { QueuedSubmission, RemoteRpc } from "./use-remote-chat-transport";
 import type { WebPiloClient } from "./web-pilo-client";
 
+export type PendingProjectMcpPrompt = {
+	sessionKey: string;
+	submission: ChatSubmission;
+	shouldAutoTitle: boolean;
+};
+
 type UseRemoteChatActionsOptions = {
 	client: WebPiloClient | null;
 	activeSessionKey: string | null;
 	readOnly: boolean;
 	hasSelectedSession: boolean;
 	hasIdentifiedSession: boolean;
-	autoTitleRequestedRef: MutableRefObject<boolean>;
-	queuedSubmissionsRef: MutableRefObject<Map<string, QueuedSubmission>>;
+	autoTitleRequestedRef: RefObject<boolean>;
+	pendingProjectMcpPromptsRef: RefObject<Map<string, PendingProjectMcpPrompt>>;
+	projectMcpApprovalRequestedRef: RefObject<Set<string>>;
+	queuedSubmissionsRef: RefObject<Map<string, QueuedSubmission>>;
 	ensureDraftRuntime: () => Promise<void>;
 	tryHandleComposerCommand: (submission: ChatSubmission) => Promise<boolean>;
 	requestAutoTitle: (message: string) => void;
@@ -54,6 +62,8 @@ export function useRemoteChatActions({
 	hasSelectedSession,
 	hasIdentifiedSession,
 	autoTitleRequestedRef,
+	pendingProjectMcpPromptsRef,
+	projectMcpApprovalRequestedRef,
 	queuedSubmissionsRef,
 	ensureDraftRuntime,
 	tryHandleComposerCommand,
@@ -89,6 +99,7 @@ export function useRemoteChatActions({
 			if (!submission.text.trim() && submission.images.length === 0) return;
 			if (mode === "prompt" && (await tryHandleComposerCommand(submission)))
 				return;
+			const submissionSessionKey = activeSessionKey;
 			const shouldAutoTitle =
 				mode === "prompt" &&
 				!hasSelectedSession &&
@@ -143,6 +154,19 @@ export function useRemoteChatActions({
 						type: "local_user_queue_failed",
 						clientMessageId: queuedClientMessageId,
 					});
+				} else if (
+					projectMcpApprovalRequestedRef.current.has(submissionSessionKey)
+				) {
+					// pi-mcp-adapter 杀掉 runtime 等待项目 MCP 信任审批。按
+					// sessionKey 挂起原 prompt，避免切换会话后把 A 的提交重放到 B。
+					if (!pendingProjectMcpPromptsRef.current.has(submissionSessionKey)) {
+						pendingProjectMcpPromptsRef.current.set(submissionSessionKey, {
+							sessionKey: submissionSessionKey,
+							submission,
+							shouldAutoTitle,
+						});
+					}
+					return;
 				} else {
 					runLocalAction({
 						type: "conversation_runtime_error",
@@ -167,6 +191,8 @@ export function useRemoteChatActions({
 			ensureDraftRuntime,
 			handleComposerChange,
 			handleExpiredAuth,
+			pendingProjectMcpPromptsRef,
+			projectMcpApprovalRequestedRef,
 			queuedSubmissionsRef,
 			readOnly,
 			requestAutoTitle,
@@ -306,13 +332,117 @@ export function useRemoteChatActions({
 		],
 	);
 
+	const resumeProjectMcpPrompt = useCallback(
+		async (sessionKey: string) => {
+			const pending = pendingProjectMcpPromptsRef.current.get(sessionKey);
+			pendingProjectMcpPromptsRef.current.delete(sessionKey);
+			projectMcpApprovalRequestedRef.current.delete(sessionKey);
+			if (!pending || !client) return;
+
+			const isActiveSession = activeSessionKey === sessionKey;
+			if (isActiveSession) setSending(true);
+			try {
+				await client.sendChatCommand(pending.sessionKey, {
+					type: "prompt",
+					message: pending.submission.text,
+					images: toPiImageContents(pending.submission.images),
+				});
+				if (isActiveSession && pending.shouldAutoTitle) {
+					requestAutoTitle(pending.submission.text);
+				}
+			} catch (error) {
+				if (isActiveSession) {
+					runLocalAction({
+						type: "conversation_runtime_error",
+						message: runtimeErrorMessage(error),
+						timestampMs: Date.now(),
+					});
+					handleComposerChange(pending.submission.text);
+					setImages(pending.submission.images);
+					if (!handleExpiredAuth(error)) {
+						setFatalError(
+							error instanceof Error ? error.message : String(error),
+						);
+					}
+				} else {
+					console.error(
+						"Failed to resume background MCP-approved prompt",
+						error,
+					);
+				}
+			} finally {
+				if (isActiveSession) setSending(false);
+			}
+		},
+		[
+			activeSessionKey,
+			client,
+			handleComposerChange,
+			handleExpiredAuth,
+			pendingProjectMcpPromptsRef,
+			projectMcpApprovalRequestedRef,
+			requestAutoTitle,
+			runLocalAction,
+			setFatalError,
+			setImages,
+		],
+	);
+
+	const failProjectMcpPrompt = useCallback(
+		(sessionKey: string, error: unknown) => {
+			const pending = pendingProjectMcpPromptsRef.current.get(sessionKey);
+			pendingProjectMcpPromptsRef.current.delete(sessionKey);
+			projectMcpApprovalRequestedRef.current.delete(sessionKey);
+			if (!pending || activeSessionKey !== sessionKey) return;
+			runLocalAction({
+				type: "conversation_runtime_error",
+				message: runtimeErrorMessage(error),
+				timestampMs: Date.now(),
+			});
+			handleComposerChange(pending.submission.text);
+			setImages(pending.submission.images);
+		},
+		[
+			activeSessionKey,
+			handleComposerChange,
+			pendingProjectMcpPromptsRef,
+			projectMcpApprovalRequestedRef,
+			runLocalAction,
+			setImages,
+		],
+	);
+
+	const cancelProjectMcpPrompt = useCallback(
+		(sessionKey: string) => {
+			const pending = pendingProjectMcpPromptsRef.current.get(sessionKey);
+			pendingProjectMcpPromptsRef.current.delete(sessionKey);
+			projectMcpApprovalRequestedRef.current.delete(sessionKey);
+			if (!pending || activeSessionKey !== sessionKey) return;
+			runLocalAction({ type: "local_turn_abort", timestampMs: Date.now() });
+		},
+		[
+			activeSessionKey,
+			pendingProjectMcpPromptsRef,
+			projectMcpApprovalRequestedRef,
+			runLocalAction,
+		],
+	);
+
 	const stop = useCallback(async () => {
 		if (!client || !activeSessionKey) return;
+		pendingProjectMcpPromptsRef.current.delete(activeSessionKey);
+		projectMcpApprovalRequestedRef.current.delete(activeSessionKey);
 		runLocalAction({ type: "local_turn_abort", timestampMs: Date.now() });
 		await client
 			.sendChatCommand(activeSessionKey, { type: "abort" })
 			.catch(() => undefined);
-	}, [activeSessionKey, client, runLocalAction]);
+	}, [
+		activeSessionKey,
+		client,
+		pendingProjectMcpPromptsRef,
+		projectMcpApprovalRequestedRef,
+		runLocalAction,
+	]);
 
 	const changeModel = useCallback(
 		async (model: PiModel) => {
@@ -376,5 +506,8 @@ export function useRemoteChatActions({
 		stop,
 		changeModel,
 		changeThinking,
+		resumeProjectMcpPrompt,
+		failProjectMcpPrompt,
+		cancelProjectMcpPrompt,
 	};
 }

@@ -37,6 +37,7 @@ type UseChatRuntimeOptions = {
 	sessionTitle: string;
 	client: ChatSessionClient;
 	activeTurnSessionIdRef?: { current: string | null };
+	projectMcpApprovalPendingRef: { current: boolean };
 	initialMessage?: string;
 	initialImages?: readonly ChatImageAttachment[];
 	initialQueuedMessages?: readonly string[];
@@ -64,6 +65,7 @@ export function useChatRuntime({
 	sessionTitle,
 	client,
 	activeTurnSessionIdRef,
+	projectMcpApprovalPendingRef,
 	initialMessage,
 	initialImages = [],
 	initialQueuedMessages = [],
@@ -96,6 +98,10 @@ export function useChatRuntime({
 	const sentInitialPromptsRef = useRef(new Set<string>());
 	const autoTitleRequestedRef = useRef(false);
 	const beginTurnRef = useRef<BeginTurn | null>(null);
+	const pendingProjectMcpTurnRef = useRef<{
+		turn: ActiveTurn;
+		submission: ChatSubmission;
+	} | null>(null);
 	const [activeTurnSessionId, setActiveTurnSessionId] = useState<string | null>(
 		null,
 	);
@@ -153,6 +159,7 @@ export function useChatRuntime({
 		activeTurnSessionIdRef,
 		runtimeGenerationRef,
 		discardedRuntimeBarrierRef,
+		projectMcpApprovalPendingRef,
 		identifiedRef,
 		setActiveTurnSessionId,
 		desktopNotifications,
@@ -232,6 +239,45 @@ export function useChatRuntime({
 		],
 	);
 
+	const runTurn = useCallback(
+		async (turn: ActiveTurn, submission: ChatSubmission) => {
+			const subscription = runtimeListenerRef.current;
+			if (!subscription) {
+				throw new Error(t("errors.piEventChannel"));
+			}
+			await subscription;
+			const snapshot = await client.ensure();
+			if (activeTurnRef.current !== turn) return;
+			runtimeGenerationRef.current = snapshot.generation;
+			turn.generation = snapshot.generation;
+			const agentState = await client.getPiAgentState();
+			if (activeTurnRef.current !== turn) return;
+			if (agentState.sessionId && !session.temporary) {
+				turn.notificationSessionId = agentState.sessionId;
+				identifiedRef.current?.(agentState.sessionId);
+			}
+			await prepareRuntimeConfiguration(agentState);
+			if (activeTurnRef.current !== turn) return;
+			turn.promptSent = true;
+			await client.sendPiPrompt(submission.text, submission.images);
+			if (activeTurnRef.current !== turn) return;
+			requestAutoTitle(submission.text);
+			turn.queueReady = true;
+			flushBufferedQueuedMessages(turn);
+			clearRecoveryState();
+		},
+		[
+			clearRecoveryState,
+			client,
+			flushBufferedQueuedMessages,
+			prepareRuntimeConfiguration,
+			requestAutoTitle,
+			runtimeListenerRef,
+			session.temporary,
+			t,
+		],
+	);
+
 	const beginTurn = useCallback<BeginTurn>(
 		async (submission, appendUserMessage = true) => {
 			const normalized = createChatSubmission(
@@ -290,54 +336,69 @@ export function useChatRuntime({
 			requestAnimationFrame(() => scrollToBottom(false));
 
 			try {
-				const subscription = runtimeListenerRef.current;
-				if (!subscription) {
-					throw new Error(t("errors.piEventChannel"));
-				}
-				await subscription;
-				const snapshot = await client.ensure();
-				if (activeTurnRef.current !== turn) return;
-				runtimeGenerationRef.current = snapshot.generation;
-				turn.generation = snapshot.generation;
-				const agentState = await client.getPiAgentState();
-				if (activeTurnRef.current !== turn) return;
-				if (agentState.sessionId && !session.temporary) {
-					turn.notificationSessionId = agentState.sessionId;
-					identifiedRef.current?.(agentState.sessionId);
-				}
-				await prepareRuntimeConfiguration(agentState);
-				if (activeTurnRef.current !== turn) return;
-				turn.promptSent = true;
-				await client.sendPiPrompt(trimmed, normalized.images);
-				if (activeTurnRef.current !== turn) return;
-				requestAutoTitle(trimmed);
-				turn.queueReady = true;
-				flushBufferedQueuedMessages(turn);
-				clearRecoveryState();
+				await runTurn(turn, normalized);
 			} catch (error) {
+				if (
+					projectMcpApprovalPendingRef.current &&
+					activeTurnRef.current === turn &&
+					!turn.promptSent
+				) {
+					pendingProjectMcpTurnRef.current = { turn, submission: normalized };
+					return;
+				}
 				failActiveTurn(turn, runtimeErrorMessage(error));
 			}
 		},
 		[
 			activeTurnSessionIdRef,
 			clearDraft,
-			clearRecoveryState,
-			client,
 			dispatchConversationActions,
 			failActiveTurn,
-			flushBufferedQueuedMessages,
-			prepareRuntimeConfiguration,
-			requestAutoTitle,
-			runtimeListenerRef,
+			projectMcpApprovalPendingRef,
+			runTurn,
 			scrollRef,
 			scrollToBottom,
 			session.id,
 			session.projectRecord.id,
-			session.temporary,
 			sessionTitle,
-			t,
 		],
 	);
+
+	const resumeProjectMcpTurn = useCallback(async () => {
+		const pending = pendingProjectMcpTurnRef.current;
+		pendingProjectMcpTurnRef.current = null;
+		clearRecoveryState();
+		if (!pending || activeTurnRef.current !== pending.turn) return;
+		try {
+			await runTurn(pending.turn, pending.submission);
+		} catch (error) {
+			failActiveTurn(pending.turn, runtimeErrorMessage(error));
+			throw error;
+		}
+	}, [clearRecoveryState, failActiveTurn, runTurn]);
+
+	const failProjectMcpTurn = useCallback(
+		(error: unknown) => {
+			const pending = pendingProjectMcpTurnRef.current;
+			pendingProjectMcpTurnRef.current = null;
+			clearRecoveryState();
+			if (!pending || activeTurnRef.current !== pending.turn) return;
+			failActiveTurn(pending.turn, runtimeErrorMessage(error));
+		},
+		[clearRecoveryState, failActiveTurn],
+	);
+
+	const cancelProjectMcpTurn = useCallback(() => {
+		const pending = pendingProjectMcpTurnRef.current;
+		pendingProjectMcpTurnRef.current = null;
+		clearRecoveryState();
+		if (!pending || activeTurnRef.current !== pending.turn) return;
+		dispatchConversation(pending.turn.sessionId, {
+			type: "local_turn_abort",
+			timestampMs: Date.now(),
+		});
+		releaseActiveTurn(pending.turn);
+	}, [clearRecoveryState, dispatchConversation, releaseActiveTurn]);
 
 	useEffect(() => {
 		beginTurnRef.current = beginTurn;
@@ -395,6 +456,10 @@ export function useChatRuntime({
 		runtimeBusy:
 			activeTurnSessionId !== null || recoveryState.status === "reconnecting",
 		recoveryState,
+		clearRecoveryState,
+		resumeProjectMcpTurn,
+		failProjectMcpTurn,
+		cancelProjectMcpTurn,
 		handleReconnect: recoverRuntime,
 		handleSubmit,
 		handleSteer,

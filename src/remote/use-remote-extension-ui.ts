@@ -1,9 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	type RefObject,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import type { PiExtensionNotification } from "@/components/chat/pi-extension-notifications";
-import type { PiExtensionDialogRequest } from "@/components/chat/use-pi-session-features";
+import {
+	projectMcpApprovalServer,
+	sameExtensionDialogRequest,
+	type PiExtensionDialogRequest,
+} from "@/components/chat/use-pi-session-features";
 import { runtimeErrorMessage } from "@/lib/pi-runtime";
 import type { RemoteRpc } from "./use-remote-chat-transport";
 
@@ -22,10 +32,20 @@ export function useRemoteExtensionUi({
 	rpc,
 	activeSessionKey,
 	onSetEditorText,
+	onApproveProjectMcpServer,
+	projectMcpApprovalRequestedRef,
+	onProjectMcpApproved,
+	onProjectMcpApprovalFailed,
+	onProjectMcpDeclined,
 }: {
 	rpc: RemoteRpc;
 	activeSessionKey: string | null;
 	onSetEditorText: (text: string) => void;
+	onApproveProjectMcpServer: (serverName: string) => Promise<void>;
+	projectMcpApprovalRequestedRef: RefObject<Set<string>>;
+	onProjectMcpApproved?: (sessionKey: string) => Promise<void>;
+	onProjectMcpApprovalFailed?: (sessionKey: string, error: unknown) => void;
+	onProjectMcpDeclined?: (sessionKey: string) => void;
 }) {
 	const { t } = useTranslation();
 	// `rpc` is bound to the active session, so each queued dialog carries the
@@ -33,6 +53,10 @@ export function useRemoteExtensionUi({
 	const [extensionDialogQueue, setExtensionDialogQueue] = useState<
 		{ sessionKey: string | null; request: PiExtensionDialogRequest }[]
 	>([]);
+	const resolvingProjectMcpRequestRef = useRef<{
+		sessionKey: string | null;
+		request: PiExtensionDialogRequest;
+	} | null>(null);
 	const [extensionNotifications, setExtensionNotifications] = useState<
 		PiExtensionNotification[]
 	>([]);
@@ -134,15 +158,29 @@ export function useRemoteExtensionUi({
 
 	const handleExtensionRequest = useCallback(
 		(event: PiExtensionDialogRequest) => {
+			const resolving = resolvingProjectMcpRequestRef.current;
+			if (
+				resolving?.sessionKey === activeSessionKey &&
+				sameExtensionDialogRequest(resolving.request, event)
+			)
+				return;
 			switch (event.method) {
 				case "select":
 				case "confirm":
 				case "input":
 				case "editor":
-					setExtensionDialogQueue((current) => [
-						...current.filter((item) => item.sessionKey === activeSessionKey),
-						{ sessionKey: activeSessionKey, request: event },
-					]);
+					if (projectMcpApprovalServer(event) && activeSessionKey) {
+						projectMcpApprovalRequestedRef.current.add(activeSessionKey);
+					}
+					setExtensionDialogQueue((current) =>
+						current.some(
+							(item) =>
+								item.sessionKey === activeSessionKey &&
+								sameExtensionDialogRequest(item.request, event),
+						)
+							? current
+							: [...current, { sessionKey: activeSessionKey, request: event }],
+					);
 					break;
 				case "notify":
 					showExtensionNotification(event);
@@ -152,7 +190,12 @@ export function useRemoteExtensionUi({
 					break;
 			}
 		},
-		[activeSessionKey, onSetEditorText, showExtensionNotification],
+		[
+			activeSessionKey,
+			onSetEditorText,
+			projectMcpApprovalRequestedRef,
+			showExtensionNotification,
+		],
 	);
 
 	const extensionDialog =
@@ -169,9 +212,37 @@ export function useRemoteExtensionUi({
 			);
 			if (!entry) return;
 			setExtensionDialogQueue((current) =>
-				current.filter((item) => item !== entry),
+				current.filter(
+					(item) =>
+						item.sessionKey !== entry.sessionKey ||
+						!sameExtensionDialogRequest(item.request, entry.request),
+				),
 			);
 			try {
+				const projectMcpServer = projectMcpApprovalServer(entry.request);
+				if (projectMcpServer && response.confirmed === true) {
+					resolvingProjectMcpRequestRef.current = entry;
+					try {
+						await onApproveProjectMcpServer(projectMcpServer);
+						// 审批已持久化，新 runtime 已就绪：只重发原 session 的 prompt。
+						if (entry.sessionKey) {
+							await onProjectMcpApproved?.(entry.sessionKey);
+						}
+					} catch (error) {
+						if (entry.sessionKey) {
+							onProjectMcpApprovalFailed?.(entry.sessionKey, error);
+						}
+						throw error;
+					} finally {
+						resolvingProjectMcpRequestRef.current = null;
+					}
+					return;
+				}
+				if (projectMcpServer) {
+					// 与桌面端一致：拒绝时 runtime 已死，不必再发 extension_ui_response。
+					if (entry.sessionKey) onProjectMcpDeclined?.(entry.sessionKey);
+					return;
+				}
 				await rpc<void>({
 					type: "extension_ui_response",
 					id: entry.request.id,
@@ -183,7 +254,16 @@ export function useRemoteExtensionUi({
 				});
 			}
 		},
-		[activeSessionKey, extensionDialogQueue, rpc, t],
+		[
+			activeSessionKey,
+			extensionDialogQueue,
+			onProjectMcpApproved,
+			onProjectMcpApprovalFailed,
+			onProjectMcpDeclined,
+			onApproveProjectMcpServer,
+			rpc,
+			t,
+		],
 	);
 
 	return {

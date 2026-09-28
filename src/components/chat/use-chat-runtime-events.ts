@@ -74,6 +74,7 @@ type UseChatRuntimeEventsOptions = {
 	activeTurnSessionIdRef?: { current: string | null };
 	runtimeGenerationRef: { current: number | null };
 	discardedRuntimeBarrierRef: { current: DiscardedRuntimeBarrier | null };
+	projectMcpApprovalPendingRef: { current: boolean };
 	identifiedRef: { current: ((sessionId: string) => void) | undefined };
 	setActiveTurnSessionId: (sessionId: string | null) => void;
 	desktopNotifications: boolean;
@@ -103,6 +104,7 @@ export function useChatRuntimeEvents({
 	activeTurnSessionIdRef,
 	runtimeGenerationRef,
 	discardedRuntimeBarrierRef,
+	projectMcpApprovalPendingRef,
 	identifiedRef,
 	setActiveTurnSessionId,
 	desktopNotifications,
@@ -336,6 +338,10 @@ export function useChatRuntimeEvents({
 				event.type === "process_state" &&
 				(event.state === "failed" || event.state === "stopped")
 			) {
+				// pi-mcp-adapter can intentionally terminate the first startup while a
+				// project MCP confirmation is waiting. Treat that process exit as part of
+				// the approval handshake instead of surfacing runtime recovery UI.
+				if (projectMcpApprovalPendingRef.current) return;
 				const interruptedTurn = activeTurnRef.current;
 				const interruptedActiveTurn =
 					interruptedTurn?.generation !== null &&
@@ -452,6 +458,7 @@ export function useChatRuntimeEvents({
 			dispatchConversation,
 			failActiveTurn,
 			queueRuntimeAction,
+			projectMcpApprovalPendingRef,
 			recoverRuntime,
 			refreshSessionState,
 			releaseActiveTurn,

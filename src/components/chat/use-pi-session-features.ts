@@ -26,6 +26,32 @@ export type PiExtensionDialogRequest = Extract<
 	{ type: "extension_ui_request" }
 >;
 
+export function projectMcpApprovalServer(
+	request: PiExtensionDialogRequest,
+): string | null {
+	if (request.method !== "confirm" || !request.title || !request.message) {
+		return null;
+	}
+	if (!request.message.startsWith("Project config:")) return null;
+	const match = request.title.match(
+		/^Allow project MCP server [“"](.+?)[”"]\?$/,
+	);
+	return match?.[1]?.trim() || null;
+}
+
+export function sameExtensionDialogRequest(
+	left: PiExtensionDialogRequest,
+	right: PiExtensionDialogRequest,
+): boolean {
+	if (left.id === right.id) return true;
+	const server = projectMcpApprovalServer(left);
+	return (
+		server !== null &&
+		server === projectMcpApprovalServer(right) &&
+		left.message === right.message
+	);
+}
+
 type RetryState = {
 	kind: "agent" | "summary";
 	attempt: number;
@@ -42,16 +68,26 @@ type UsePiSessionFeaturesOptions = {
 	client: ChatSessionClient;
 	active: boolean;
 	readOnly?: boolean;
+	projectMcpApprovalPendingRef: { current: boolean };
 	onSetEditorText: (text: string) => void;
 	onRefreshSessionState: () => Promise<void>;
+	onProjectMcpApprovalRequested: () => void;
+	onProjectMcpApproved: () => Promise<void>;
+	onProjectMcpApprovalFailed: (error: unknown) => void;
+	onProjectMcpDeclined: () => void;
 };
 
 export function usePiSessionFeatures({
 	client,
 	active,
 	readOnly = false,
+	projectMcpApprovalPendingRef,
 	onSetEditorText,
 	onRefreshSessionState,
+	onProjectMcpApprovalRequested,
+	onProjectMcpApproved,
+	onProjectMcpApprovalFailed,
+	onProjectMcpDeclined,
 }: UsePiSessionFeaturesOptions) {
 	const { t } = useTranslation();
 	const [commandSuggestions, setCommandSuggestions] = useState<
@@ -67,6 +103,9 @@ export function usePiSessionFeatures({
 	const [extensionDialogQueue, setExtensionDialogQueue] = useState<
 		PiExtensionDialogRequest[]
 	>([]);
+	const resolvingProjectMcpRequestRef = useRef<PiExtensionDialogRequest | null>(
+		null,
+	);
 	const [extensionNotifications, setExtensionNotifications] = useState<
 		PiExtensionNotification[]
 	>([]);
@@ -196,12 +235,24 @@ export function usePiSessionFeatures({
 
 	const handleExtensionRequest = useCallback(
 		(event: PiExtensionDialogRequest) => {
+			const resolving = resolvingProjectMcpRequestRef.current;
+			if (resolving && sameExtensionDialogRequest(resolving, event)) return;
 			switch (event.method) {
 				case "select":
 				case "confirm":
 				case "input":
 				case "editor":
-					setExtensionDialogQueue((current) => [...current, event]);
+					if (projectMcpApprovalServer(event)) {
+						projectMcpApprovalPendingRef.current = true;
+						onProjectMcpApprovalRequested();
+					}
+					setExtensionDialogQueue((current) =>
+						current.some((request) =>
+							sameExtensionDialogRequest(request, event),
+						)
+							? current
+							: [...current, event],
+					);
 					break;
 				case "notify":
 					showExtensionNotification(event);
@@ -211,7 +262,12 @@ export function usePiSessionFeatures({
 					break;
 			}
 		},
-		[onSetEditorText, showExtensionNotification],
+		[
+			onProjectMcpApprovalRequested,
+			onSetEditorText,
+			projectMcpApprovalPendingRef,
+			showExtensionNotification,
+		],
 	);
 
 	useEffect(() => {
@@ -372,7 +428,37 @@ export function usePiSessionFeatures({
 		}) => {
 			const request = extensionDialogQueue[0];
 			if (!request) return;
-			setExtensionDialogQueue((current) => current.slice(1));
+			const projectMcpServer = projectMcpApprovalServer(request);
+			setExtensionDialogQueue((current) =>
+				current.filter((item) => !sameExtensionDialogRequest(item, request)),
+			);
+			if (projectMcpServer && response.confirmed === true) {
+				resolvingProjectMcpRequestRef.current = request;
+				try {
+					await client.approveProjectMcpServer(projectMcpServer);
+					// The first startup may still be settling after pi-mcp-adapter asked
+					// for trust before Pi attached its stdin RPC reader. Wait it out, then
+					// start a clean runtime with the approval already persisted.
+					await client.ensure().catch(() => undefined);
+					await client.ensure();
+					await onProjectMcpApproved();
+				} catch (error) {
+					onProjectMcpApprovalFailed(error);
+					toast.error(t("chat.respondExtensionFailed"), {
+						description: runtimeErrorMessage(error),
+					});
+				} finally {
+					resolvingProjectMcpRequestRef.current = null;
+					projectMcpApprovalPendingRef.current = false;
+				}
+				return;
+			}
+
+			if (projectMcpServer) {
+				projectMcpApprovalPendingRef.current = false;
+				onProjectMcpDeclined();
+				return;
+			}
 			try {
 				await client.respondToExtensionUi(request.id, response);
 			} catch (error) {
@@ -381,7 +467,15 @@ export function usePiSessionFeatures({
 				});
 			}
 		},
-		[client, extensionDialogQueue, t],
+		[
+			client,
+			extensionDialogQueue,
+			onProjectMcpApproved,
+			onProjectMcpApprovalFailed,
+			onProjectMcpDeclined,
+			projectMcpApprovalPendingRef,
+			t,
+		],
 	);
 
 	const statusText = retryState
