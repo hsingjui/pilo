@@ -49,6 +49,7 @@ export function RemoteMobileNavigation({
 	selectedSessionId,
 	connected,
 	refreshingProjectIds,
+	refreshing,
 	onSelectSession,
 	onNewChat,
 	onRefreshProjectSessions,
@@ -66,6 +67,7 @@ export function RemoteMobileNavigation({
 	selectedSessionId: string | null;
 	connected: boolean;
 	refreshingProjectIds: ReadonlySet<string>;
+	refreshing: boolean;
 	onSelectSession: (sessionId: string) => void;
 	onNewChat: (projectId?: string) => void;
 	onRefreshProjectSessions: (projectId: string) => void;
@@ -192,11 +194,14 @@ export function RemoteMobileNavigation({
 						</button>
 						<button
 							type="button"
-							className={ROW_ACTION_CLASS}
+							className={cn(ROW_ACTION_CLASS, "disabled:opacity-50")}
 							aria-label={t("sidebar.refreshSidebar")}
+							disabled={refreshing}
 							onClick={onRefresh}
 						>
-							<RefreshCw className="size-4" />
+							<RefreshCw
+								className={cn("size-4", refreshing && "animate-spin")}
+							/>
 						</button>
 					</div>
 

@@ -62,6 +62,7 @@ export function RemoteApp() {
 	const isTouch = useMediaQuery("(hover: none) and (pointer: coarse)");
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 	const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+	const [sidebarRefreshing, setSidebarRefreshing] = useState(false);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	// "chat-scrollbar" 预留 stable gutter，输入框不在滚动容器内，需补等宽内边距
 	// 才能与消息列左右对齐（手机 overlay 滚动条为 0，仅在桌面浏览器可见）。
@@ -105,6 +106,16 @@ export function RemoteApp() {
 		refreshProjectSessions,
 		refreshAllSessions,
 	} = sessions;
+	// 刷新侧栏：拉取 bootstrap 与会话索引。远程端没有桌面版的事件驱动目录，
+	// 靠一个 loading 状态给刷新按钮反馈，避免“点了没反应”。
+	const handleRefreshSidebar = async () => {
+		setSidebarRefreshing(true);
+		try {
+			await Promise.allSettled([reloadBootstrap(), refreshAllSessions()]);
+		} finally {
+			setSidebarRefreshing(false);
+		}
+	};
 	const {
 		connected,
 		recoveryState,
@@ -258,10 +269,8 @@ export function RemoteApp() {
 			onRefreshProjectSessions={(projectId) =>
 				void refreshProjectSessions(projectId, true)
 			}
-			onRefresh={() => {
-				void reloadBootstrap();
-				void refreshAllSessions();
-			}}
+			onRefresh={handleRefreshSidebar}
+			refreshing={sidebarRefreshing}
 			refreshingProjectIds={refreshingProjectIds}
 			footer={
 				<div className="flex min-w-0 items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground">
@@ -315,10 +324,8 @@ export function RemoteApp() {
 						onRefreshProjectSessions={(projectId) =>
 							void refreshProjectSessions(projectId, true)
 						}
-						onRefresh={() => {
-							void reloadBootstrap();
-							void refreshAllSessions();
-						}}
+						onRefresh={handleRefreshSidebar}
+						refreshing={sidebarRefreshing}
 						onReload={() => void reloadBootstrap()}
 					/>
 				) : (
