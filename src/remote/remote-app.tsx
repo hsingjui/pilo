@@ -426,6 +426,14 @@ export function RemoteApp() {
 										onSwitchProject={chat.switchDraftProject}
 									/>
 								) : null}
+								{chat.extensionDialog ? (
+									<PiExtensionUiDialog
+										request={chat.extensionDialog}
+										onRespond={(response) =>
+											void chat.respondToExtensionDialog(response)
+										}
+									/>
+								) : null}
 								<ChatComposer
 									value={chat.readOnly ? "" : chat.composer}
 									onChange={chat.handleComposerChange}
@@ -516,10 +524,6 @@ export function RemoteApp() {
 				</main>
 
 				<ChatImageLightbox />
-				<PiExtensionUiDialog
-					request={chat.extensionDialog}
-					onRespond={(response) => void chat.respondToExtensionDialog(response)}
-				/>
 
 				{fatalError ? (
 					<div className="fixed inset-x-3 bottom-24 z-50 mx-auto max-w-lg rounded-xl border border-destructive/30 bg-background px-3 py-2 text-xs shadow-lg">

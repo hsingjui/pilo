@@ -536,6 +536,14 @@ function ChatPageImpl(props: ChatPageProps) {
 										notifications={extensionNotifications}
 										onDismiss={dismissExtensionNotification}
 									/>
+									{extensionDialog ? (
+										<PiExtensionUiDialog
+											request={extensionDialog}
+											onRespond={(response) =>
+												void respondToExtensionDialog(response)
+											}
+										/>
+									) : null}
 									<ChatComposer
 										value={session.externalRunning ? "" : draft}
 										historyKey={session.projectRecord.id}
@@ -624,10 +632,6 @@ function ChatPageImpl(props: ChatPageProps) {
 								</ConversationColumn>
 							</div>
 						</div>
-						<PiExtensionUiDialog
-							request={extensionDialog}
-							onRespond={(response) => void respondToExtensionDialog(response)}
-						/>
 					</div>
 				);
 			}}
