@@ -354,7 +354,6 @@ const zhCN = {
 		expandMessage: "展开完整消息",
 		workDuration: "工作了 {{duration}}",
 		workActivity: "工作过程",
-		responseFailed: "Pi 响应失败",
 		stopped: "已停止",
 		starting: "启动中…",
 		thinking: "思考中…",

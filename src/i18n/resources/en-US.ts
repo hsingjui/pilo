@@ -349,7 +349,6 @@ const enUS = {
 		expandMessage: "Expand full message",
 		workDuration: "Worked for {{duration}}",
 		workActivity: "Work activity",
-		responseFailed: "Pi response failed",
 		stopped: "Stopped",
 		starting: "Starting…",
 		thinking: "Thinking…",
