@@ -93,7 +93,9 @@ pub(super) async fn sessions_external_activity(
     State(state): State<RemoteHttpState>,
     Query(query): Query<SessionsQuery>,
 ) -> Response {
-    let project = match get_project(&state.paths, &query.project_id) {
+    let project = match get_project(&state.paths, &query.project_id).and_then(|project| {
+        pi_workspace::resolve_session_project_with_paths(&state.paths, &project)
+    }) {
         Ok(project) => project,
         Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
     };
