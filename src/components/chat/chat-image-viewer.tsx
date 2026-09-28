@@ -215,7 +215,14 @@ export const ChatImageLightbox = memo(function ChatImageLightbox() {
 							</DialogPrimitive.Close>
 						</div>
 					</div>
-					<div className="flex min-h-0 flex-1 items-center justify-center">
+					{/* oxlint-disable jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- 点击空白处关闭；键盘关闭已由 Dialog 的 Escape 处理，此元素不是交互控件。 */}
+					<div
+						className="flex min-h-0 flex-1 items-center justify-center"
+						onClick={(event) => {
+							if (event.target === event.currentTarget)
+								closeChatImageLightbox();
+						}}
+					>
 						{state ? (
 							<DialogPrimitive.Description asChild>
 								<img
