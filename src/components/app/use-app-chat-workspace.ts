@@ -378,8 +378,6 @@ export function useAppChatWorkspace({
 		setSelectedSessionId,
 		chatUiStateCacheRef,
 		draftSessionId,
-		setDraftSessionPrompt,
-		setDraftSessionImages,
 		busyChatControllersRef,
 		clearDraftSession,
 		setDraftProjectId,

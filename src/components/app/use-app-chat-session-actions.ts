@@ -19,7 +19,6 @@ import type { BusyChatControllersRef } from "@/components/app/use-opened-chat-co
 import type { ChatSession } from "@/components/chat/chat-page";
 import { userErrorMessage } from "@/lib/app-error";
 import { stopChatSession } from "@/lib/chat-session-client";
-import type { ChatSubmission } from "@/lib/chat-submission";
 import type { SessionIndexEntry } from "@/lib/sessions";
 
 type ForkSessionTarget = {
@@ -48,10 +47,8 @@ type UseAppChatSessionActionsOptions = {
 	setSelectedSessionId: Dispatch<SetStateAction<string | null>>;
 	chatUiStateCacheRef: MutableRefObject<ChatUiStateCache | null>;
 	draftSessionId: string;
-	setDraftSessionPrompt: Dispatch<SetStateAction<string | null>>;
-	setDraftSessionImages: Dispatch<SetStateAction<ChatSubmission["images"]>>;
-	busyChatControllersRef: BusyChatControllersRef;
 	clearDraftSession: () => void;
+	busyChatControllersRef: BusyChatControllersRef;
 	setDraftProjectId: Dispatch<SetStateAction<string | null>>;
 	setFocusedProjectId: Dispatch<SetStateAction<string | null>>;
 	refreshProjectSessions: (
@@ -69,10 +66,8 @@ export function useAppChatSessionActions({
 	setSelectedSessionId,
 	chatUiStateCacheRef,
 	draftSessionId,
-	setDraftSessionPrompt,
-	setDraftSessionImages,
-	busyChatControllersRef,
 	clearDraftSession,
+	busyChatControllersRef,
 	setDraftProjectId,
 	setFocusedProjectId,
 	refreshProjectSessions,
@@ -167,8 +162,7 @@ export function useAppChatSessionActions({
 				identifyOpenedChat(current, entry.controllerId, piSessionId),
 			);
 			if (entry.session.id === draftSessionId) {
-				setDraftSessionPrompt(null);
-				setDraftSessionImages([]);
+				clearDraftSession();
 			}
 			setSelectedSessionId((current) =>
 				current === entry.session.id || current === entry.piSessionId
@@ -178,9 +172,8 @@ export function useAppChatSessionActions({
 		},
 		[
 			chatUiStateCacheRef,
+			clearDraftSession,
 			draftSessionId,
-			setDraftSessionImages,
-			setDraftSessionPrompt,
 			setOpenedChats,
 			setSelectedSessionId,
 		],
