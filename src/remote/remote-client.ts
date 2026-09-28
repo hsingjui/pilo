@@ -243,6 +243,17 @@ export function sendRemoteChatCommand(
 	});
 }
 
+export function approveRemoteProjectMcpServer(
+	token: string,
+	projectId: string,
+	serverName: string,
+) {
+	return remoteFetch<void>(token, "/api/v1/chat/mcp-approve", {
+		method: "POST",
+		body: JSON.stringify({ projectId, serverName }),
+	});
+}
+
 export function connectRemoteEvents(
 	token: string,
 	after: number | undefined,

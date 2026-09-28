@@ -17,6 +17,7 @@ import type {
 } from "@/lib/sessions";
 import type { ChatSessionRuntimeState } from "@/lib/chat-session-client";
 import {
+	approveRemoteProjectMcpServer,
 	connectRemoteEvents,
 	deleteRemoteSession,
 	generateRemoteSessionTitle,
@@ -119,6 +120,13 @@ export class WebPiloClient implements PiloClient {
 		command: Record<string, unknown>,
 	): Promise<void> {
 		return sendRemoteChatCommand(this.token, sessionKey, command);
+	}
+
+	approveProjectMcpServer(
+		projectId: string,
+		serverName: string,
+	): Promise<void> {
+		return approveRemoteProjectMcpServer(this.token, projectId, serverName);
 	}
 
 	connectEvents(options: PiloClientEventOptions): Promise<() => void> {

@@ -7,6 +7,7 @@ use super::super::{
     PiloRuntime,
     chat_service::{self, ChatSessionRequest},
     events::{RuntimeEventBus, RuntimeEventEnvelope, TauriEventSink},
+    git,
     host_paths::HostPaths,
     pi_workspace, project,
     server_pi::PiLaunchOptions,
@@ -19,6 +20,109 @@ pub fn runtime_subscribe_events(
     channel: Channel<RuntimeEventEnvelope>,
 ) {
     events.subscribe(channel);
+}
+
+const APPROVE_PROJECT_MCP_SCRIPT: &str = r#"
+import { createHash } from "node:crypto";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, join, relative, resolve } from "node:path";
+
+const serverName = process.argv[1];
+if (!serverName) throw new Error("missing MCP server name");
+const cwd = process.cwd();
+const configPath = join(cwd, ".pi", "mcp-adapter.json");
+const config = JSON.parse(readFileSync(configPath, "utf8"));
+const definition = config?.mcpServers?.[serverName];
+if (!definition || typeof definition !== "object" || definition.disabled === true) {
+  throw new Error(`project MCP server "${serverName}" is not enabled in ${configPath}`);
+}
+const canonicalize = (value) => {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([, entry]) => entry !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, entry]) => [key, canonicalize(entry)]));
+};
+const definitionHash = createHash("sha256")
+  .update(JSON.stringify(canonicalize(definition)))
+  .digest("hex");
+const canonicalProjectRoot = (value) => {
+  try { return realpathSync(value); } catch { return resolve(value); }
+};
+const linkedWorktreeRepoScope = (dotGit) => {
+  try {
+    if (!lstatSync(dotGit).isFile()) return undefined;
+    const pointer = /^gitdir: (.+)$/m.exec(readFileSync(dotGit, "utf8"))?.[1]?.trim();
+    if (!pointer) return undefined;
+    const adminDir = realpathSync(resolve(dirname(dotGit), pointer));
+    const backLink = readFileSync(join(adminDir, "gitdir"), "utf8").trim();
+    if (realpathSync(resolve(adminDir, backLink)) !== realpathSync(dotGit)) return undefined;
+    const commonDir = dirname(dirname(adminDir));
+    const bare = /^\s*bare\s*=\s*(true|yes|on|1)\s*$/im.test(readFileSync(join(commonDir, "config"), "utf8"));
+    return basename(commonDir) === ".git" && !bare ? dirname(commonDir) : `git-dir:${commonDir}`;
+  } catch {
+    return undefined;
+  }
+};
+const projectApprovalScope = (value) => {
+  const root = canonicalProjectRoot(value);
+  for (let dir = root; ; dir = dirname(dir)) {
+    const dotGit = join(dir, ".git");
+    if (existsSync(dotGit)) {
+      const repoScope = linkedWorktreeRepoScope(dotGit);
+      return repoScope ? join(repoScope, relative(dir, root)) : root;
+    }
+    if (dirname(dir) === dir) return root;
+  }
+};
+const agentDir = process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent");
+const approvalPath = join(agentDir, "mcp-project-approvals.json");
+let store = { version: 1, approvals: [] };
+if (existsSync(approvalPath)) {
+  const parsed = JSON.parse(readFileSync(approvalPath, "utf8"));
+  if (parsed?.version === 1 && Array.isArray(parsed.approvals)) store = parsed;
+}
+const projectRoot = projectApprovalScope(cwd);
+store.approvals = store.approvals.filter((entry) =>
+  entry?.projectRoot !== projectRoot || entry?.serverName !== serverName);
+store.approvals.push({
+  projectRoot,
+  serverName,
+  definitionHash,
+  approvedAt: new Date().toISOString(),
+});
+mkdirSync(dirname(approvalPath), { recursive: true, mode: 0o700 });
+const temporary = `${approvalPath}.${process.pid}.tmp`;
+writeFileSync(temporary, `${JSON.stringify(store, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+if (process.platform !== "win32") chmodSync(temporary, 0o600);
+renameSync(temporary, approvalPath);
+if (process.platform !== "win32") chmodSync(approvalPath, 0o600);
+"#;
+
+#[tauri::command]
+pub async fn project_mcp_server_approve(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    project_id: String,
+    server_name: String,
+) -> Result<(), String> {
+    let server_name = server_name.trim();
+    if server_name.is_empty() {
+        return Err("MCP server name cannot be empty".to_owned());
+    }
+    let project = project::get(&app, project_id.trim())?;
+    let runtime_project = pi_workspace::resolve_session_project(&app, &project)?;
+    let args = vec![
+        "--input-type=module".to_owned(),
+        "-e".to_owned(),
+        APPROVE_PROJECT_MCP_SCRIPT.to_owned(),
+        server_name.to_owned(),
+    ];
+    git::run_checked_owned(&runtime.servers, &runtime_project, "node", &args)
+        .await
+        .map(|_| ())
 }
 
 #[tauri::command]

@@ -407,6 +407,30 @@ pub(super) async fn chat_rpc(
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(super) struct ChatMcpApproveRequest {
+    project_id: String,
+    server_name: String,
+}
+
+pub(super) async fn chat_mcp_approve(
+    State(state): State<RemoteHttpState>,
+    Json(request): Json<ChatMcpApproveRequest>,
+) -> Response {
+    match crate::runtime::commands::project_mcp_server_approve(
+        state.app.clone(),
+        state.app.state::<PiloRuntime>(),
+        request.project_id,
+        request.server_name,
+    )
+    .await
+    {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct FileSearchQuery {
     project_id: String,
     query: String,

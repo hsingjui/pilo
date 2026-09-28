@@ -127,6 +127,7 @@ pub(crate) fn router(
         .route("/api/v1/chat/stop", post(handlers::chat_stop))
         .route("/api/v1/chat/state", get(handlers::chat_state))
         .route("/api/v1/chat/rpc", post(handlers::chat_rpc))
+        .route("/api/v1/chat/mcp-approve", post(handlers::chat_mcp_approve))
         .route("/api/v1/files/search", get(handlers::files_search))
         .route("/api/v1/events", get(ws::events))
         .route_layer(from_fn_with_state(state.clone(), middleware::require_auth));

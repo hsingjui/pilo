@@ -31,9 +31,9 @@ pub use remote::{
 };
 pub use runtime::{
     chat_session_detach, chat_session_prepare, chat_session_send_rpc, chat_session_start,
-    chat_session_state, chat_session_states, chat_session_stop, project_start_pi, runtime_abort_pi,
-    runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc, runtime_stop_pi,
-    runtime_subscribe_events,
+    chat_session_state, chat_session_states, chat_session_stop, project_mcp_server_approve,
+    project_start_pi, runtime_abort_pi, runtime_get_pi_state, runtime_restart_pi, runtime_send_rpc,
+    runtime_stop_pi, runtime_subscribe_events,
 };
 pub use sessions::{
     generate_session_title, session_delete, session_external_activity, session_generate_title,

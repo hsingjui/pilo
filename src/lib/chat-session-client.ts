@@ -99,6 +99,11 @@ function createRegisteredChatSessionClient(
 			invoke<ChatSessionRuntimeState | null>("chat_session_state", {
 				sessionKey,
 			}),
+		approveProjectMcpServer: (serverName: string) =>
+			invoke<void>("project_mcp_server_approve", {
+				projectId,
+				serverName,
+			}),
 		prepare: (): Promise<PiSessionSnapshot> => {
 			traceChatClient("client.prepare.request", sessionKey, {
 				clientId,
