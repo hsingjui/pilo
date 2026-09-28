@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ComponentPropsWithoutRef, useEffect, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Check, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -80,37 +80,31 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 	);
 }
 
+// 既被触屏抽屉当作普通按钮用，也被桌面 DropdownMenuTrigger asChild 包裹。
+// 后者靠 onPointerDown 开合，必须把 Slot 合并进来的 props（含 ref）透传到按钮上。
+type RunConfigTriggerProps = {
+	label: string;
+	thinking: string;
+	loading?: boolean;
+} & Omit<ComponentPropsWithoutRef<"button">, "children" | "className" | "type">;
+
 function RunConfigTrigger({
 	label,
 	thinking,
-	disabled,
 	loading,
-	ariaHasPopup,
-	ariaExpanded,
-	onClick,
-}: {
-	label: string;
-	thinking: string;
-	disabled: boolean;
-	loading?: boolean;
-	ariaHasPopup?: "dialog";
-	ariaExpanded?: boolean;
-	onClick?: () => void;
-}) {
+	...buttonProps
+}: RunConfigTriggerProps) {
 	const { t } = useTranslation();
 	return (
 		<button
+			{...buttonProps}
 			data-chat-run-config-trigger=""
 			type="button"
-			disabled={disabled}
 			aria-label={t("chat.runConfigLabel", {
 				model: label,
 				thinking,
 			})}
-			aria-haspopup={ariaHasPopup}
-			aria-expanded={ariaExpanded}
 			className={CHAT_COMPOSER_RUN_CONFIG_TRIGGER_CLASS_NAME}
-			onClick={onClick}
 		>
 			<PiLogo className="size-4 text-current" />
 			{loading ? <Spinner className="size-3.5 shrink-0" /> : null}
