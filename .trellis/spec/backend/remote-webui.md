@@ -126,6 +126,22 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
 - **Backpressure**: each Web subscriber has a bounded broadcast channel; a lagging
   subscriber receives `Lagged` and is told to `resyncRequired` instead of blocking
   the runtime. Desktop Tauri channel is another subscriber and is unaffected.
+- **Browser recovery**: Remote Browser owns `online/offline` and foreground
+  lifecycle recovery. `navigator.onLine` is advisory only: an already-live
+  WebSocket remains authoritative, while an offline hint may slow background
+  polling/retry but must not hard-disable LAN HTTP/WS access. Returning online or
+  resuming after background suspension recreates the WebSocket immediately.
+  Ordinary reconnects consume sequence replay and refresh bootstrap/session
+  metadata; only an explicit `resyncRequired` frame may trigger full history
+  resync.
+- **PWA cache boundary**: the Service Worker is progressive enhancement for
+  production Remote Browser on a secure context only. Tauri never registers it.
+  It may precache the minimal built App Shell, but `/api/v1/**` is always
+  network-only and navigation fallback always uses the canonical cached
+  `index.html` (never the requested pairing URL). Web updates require explicit
+  user activation rather than automatically reloading an active chat. A newly
+  activated worker does not claim existing tabs; stale version caches are removed
+  only after every open window in scope is controlled by the current worker.
 
 ---
 

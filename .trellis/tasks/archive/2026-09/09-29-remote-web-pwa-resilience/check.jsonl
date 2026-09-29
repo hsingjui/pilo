@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/remote-webui.md", "reason": "Verify Remote auth/replay/API contracts are not regressed"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Verify required frontend quality gates and i18n"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Review browser/build/Host boundary and cross-layer side effects"}
