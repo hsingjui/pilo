@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RefreshCw, Wifi, WifiOff, X } from "lucide-react";
+import { toast } from "sonner";
 
 import { toSidebarSession } from "@/components/app/app-chat-state";
 import { runtimeActivityFromStates } from "@/components/app/app-session-index-model";
@@ -31,6 +32,7 @@ import { useRemoteKeyboardInset } from "./use-remote-keyboard-inset";
 import { useRemoteChat } from "./use-remote-chat";
 import { useRemoteConnection } from "./use-remote-connection";
 import { useRemoteNetworkLifecycle } from "./use-remote-network-lifecycle";
+import { useRemotePwa } from "./use-remote-pwa";
 import { useRemoteSessions } from "./use-remote-sessions";
 
 export function RemoteApp() {
@@ -44,6 +46,7 @@ export function RemoteApp() {
 	);
 	const reconnectProbeRef = useRef<() => void>(() => {});
 	const { browserOnline, recoveryGeneration } = useRemoteNetworkLifecycle();
+	const { updateAvailable, applyUpdate } = useRemotePwa();
 
 	const connection = useRemoteConnection({
 		pairingSecret,
@@ -132,6 +135,25 @@ export function RemoteApp() {
 		token,
 		pairing,
 	} = connection;
+	const active = chat.conversation.active !== null;
+	const updateBlocked =
+		active || chat.sending || chat.compacting || chat.retryState !== null;
+
+	useEffect(() => {
+		if (!token || pairing || updateBlocked || !updateAvailable) return;
+		const toastId = toast.info(t("settings.remoteUpdateAvailable"), {
+			description: t("settings.remoteUpdateDescription"),
+			duration: Infinity,
+			action: {
+				label: t("settings.remoteUpdateAction"),
+				onClick: () => void applyUpdate(),
+			},
+		});
+		return () => {
+			toast.dismiss(toastId);
+		};
+	}, [applyUpdate, pairing, t, token, updateAvailable, updateBlocked]);
+
 	const envs = useMemo(() => {
 		const byId = new Map<string, { id: string; name: string }>();
 		for (const project of projects) {
@@ -262,7 +284,6 @@ export function RemoteApp() {
 		);
 	}
 
-	const active = chat.conversation.active !== null;
 	const pendingFollowUps = chat.conversation.pendingUsers.filter(
 		(user) => user.queueKind === "follow_up",
 	).length;

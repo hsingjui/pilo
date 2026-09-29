@@ -105,6 +105,10 @@ const zhCN = {
 		remoteOfflineDescription:
 			"当前设备没有网络，网络恢复后 Pilo 会自动重新连接。",
 		remoteReconnecting: "正在重新连接…",
+		remoteUpdateAvailable: "Pilo 有新版本",
+		remoteUpdateDescription:
+			"新的 Remote Web 版本已就绪，可在当前会话空闲时更新。",
+		remoteUpdateAction: "更新",
 		remoteConnecting: "正在连接 Pilo…",
 		remotePairRequired: "请在电脑端 Pilo 中打开远程访问并扫描二维码。",
 		remoteAuthorizationExpired:

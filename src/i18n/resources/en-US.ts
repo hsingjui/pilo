@@ -93,6 +93,10 @@ const enUS = {
 		remoteOfflineDescription:
 			"Network connection is unavailable. Pilo will reconnect automatically when it returns.",
 		remoteReconnecting: "Reconnecting…",
+		remoteUpdateAvailable: "Pilo update available",
+		remoteUpdateDescription:
+			"A newer Remote Web version is ready. Update when the current session is idle.",
+		remoteUpdateAction: "Update",
 		remoteConnecting: "Connecting to Pilo…",
 		remotePairRequired:
 			"Open Remote WebUI in Pilo on your computer and scan its QR code.",

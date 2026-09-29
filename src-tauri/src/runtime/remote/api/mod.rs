@@ -6,15 +6,15 @@ use std::{
 };
 
 use axum::{
-    Json, Router,
     body::Body,
     extract::{DefaultBodyLimit, State},
-    http::{StatusCode, Uri, header},
+    http::{header, StatusCode, Uri},
     middleware::from_fn_with_state,
     response::{IntoResponse, Response},
     routing::{get, post},
+    Json, Router,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tauri::AppHandle;
 use tokio::sync::watch;
 use tower_http::timeout::TimeoutLayer;
@@ -165,7 +165,7 @@ fn allows_spa_fallback(path: &str) -> bool {
 }
 
 fn asset_cache_control(path: &str, spa_fallback: bool) -> &'static str {
-    if spa_fallback || path == "index.html" {
+    if spa_fallback || !path.starts_with("assets/") {
         "no-cache"
     } else {
         "public, max-age=31536000, immutable"
@@ -227,9 +227,15 @@ mod tests {
     }
 
     #[test]
-    fn fallback_index_is_never_immutable() {
+    fn only_fingerprinted_assets_are_immutable() {
         assert_eq!(asset_cache_control("index.html", false), "no-cache");
         assert_eq!(asset_cache_control("sessions/abc", true), "no-cache");
+        assert_eq!(asset_cache_control("sw.js", false), "no-cache");
+        assert_eq!(
+            asset_cache_control("manifest.webmanifest", false),
+            "no-cache"
+        );
+        assert_eq!(asset_cache_control("pilo-192.png", false), "no-cache");
         assert_eq!(
             asset_cache_control("assets/app-123.js", false),
             "public, max-age=31536000, immutable"

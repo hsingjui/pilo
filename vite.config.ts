@@ -5,12 +5,46 @@ import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { VitePWA } from "vite-plugin-pwa";
 
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
-	plugins: [react(), tailwindcss()],
+	plugins: [
+		react(),
+		tailwindcss(),
+		VitePWA({
+			strategies: "injectManifest",
+			srcDir: "src/remote",
+			filename: "sw.js",
+			injectRegister: false,
+			manifest: false,
+			injectManifest: {
+				rollupFormat: "iife",
+				injectionPoint: "self.PILO_PRECACHE_MANIFEST",
+				globPatterns: [
+					"index.html",
+					"manifest.webmanifest",
+					"pilo-*.png",
+					"assets/index-*.{js,css}",
+					"assets/remote-app-*.js",
+					"assets/react-*.js",
+					"assets/rolldown-runtime-*.js",
+					"assets/utils-*.js",
+					"assets/i18nInstance-*.js",
+					"assets/core-*.js",
+					"assets/bundle-mjs-*.js",
+					"assets/draft-project-picker-*.js",
+					"assets/use-pi-session-features-*.js",
+					"assets/{folder,wifi,send,trash,pencil,ellipsis,sessions}-*.js",
+					"assets/inter-latin-*-normal-*.woff2",
+					"assets/jetbrains-mono-latin-*-normal-*.woff2",
+				],
+				maximumFileSizeToCacheInBytes: 1024 * 1024,
+			},
+		}),
+	],
 	build: {
 		rolldownOptions: {
 			output: {
