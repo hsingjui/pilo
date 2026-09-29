@@ -29,6 +29,10 @@ import type {
 import type { PiloClient } from "@/lib/pilo-client";
 import { cn } from "@/lib/utils";
 import {
+	remoteConnectionLabelKey,
+	type RemoteConnectionState,
+} from "@/remote/remote-connection-state";
+import {
 	MobileEnvRow,
 	MobileProjectRow,
 	MobileSessionRow,
@@ -47,7 +51,7 @@ export function RemoteMobileNavigation({
 	sessions,
 	activeProjectId,
 	selectedSessionId,
-	connected,
+	connectionState,
 	refreshingProjectIds,
 	refreshing,
 	onSelectSession,
@@ -65,7 +69,7 @@ export function RemoteMobileNavigation({
 	sessions: SidebarSession[];
 	activeProjectId: string | null;
 	selectedSessionId: string | null;
-	connected: boolean;
+	connectionState: RemoteConnectionState;
 	refreshingProjectIds: ReadonlySet<string>;
 	refreshing: boolean;
 	onSelectSession: (sessionId: string) => void;
@@ -345,7 +349,7 @@ export function RemoteMobileNavigation({
 					</div>
 
 					<footer className="flex min-h-12 shrink-0 items-center gap-2 border-t border-sidebar-border px-3">
-						{connected ? (
+						{connectionState === "connected" ? (
 							<Wifi
 								className="size-4 shrink-0 text-sidebar-foreground-muted"
 								aria-hidden="true"
@@ -357,9 +361,7 @@ export function RemoteMobileNavigation({
 							/>
 						)}
 						<span className="min-w-0 flex-1 truncate text-xs text-sidebar-foreground-muted">
-							{connected
-								? t("settings.remoteConnected")
-								: t("settings.remoteReconnecting")}
+							{t(remoteConnectionLabelKey(connectionState))}
 						</span>
 						<button
 							type="button"

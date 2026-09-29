@@ -101,6 +101,9 @@ const zhCN = {
 		remoteRunning: "运行中",
 		remoteStopped: "已关闭",
 		remoteConnected: "远程已连接",
+		remoteOffline: "网络已断开",
+		remoteOfflineDescription:
+			"当前设备没有网络，网络恢复后 Pilo 会自动重新连接。",
 		remoteReconnecting: "正在重新连接…",
 		remoteConnecting: "正在连接 Pilo…",
 		remotePairRequired: "请在电脑端 Pilo 中打开远程访问并扫描二维码。",

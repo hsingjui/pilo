@@ -89,6 +89,9 @@ const enUS = {
 		remoteRunning: "Running",
 		remoteStopped: "Stopped",
 		remoteConnected: "Remote connected",
+		remoteOffline: "Offline",
+		remoteOfflineDescription:
+			"Network connection is unavailable. Pilo will reconnect automatically when it returns.",
 		remoteReconnecting: "Reconnecting…",
 		remoteConnecting: "Connecting to Pilo…",
 		remotePairRequired:

@@ -15,16 +15,20 @@ const EXTERNAL_ACTIVITY_FALLBACK_POLL_MS = 15_000;
 
 type UseRemoteSessionsOptions = {
 	client: WebPiloClient | null;
+	browserOnline: boolean;
 	handleExpiredAuth: (error: unknown) => boolean;
 	setFatalError: (message: string | null) => void;
 	resyncKey: number;
+	snapshotRefreshKey: number;
 };
 
 export function useRemoteSessions({
 	client,
+	browserOnline,
 	handleExpiredAuth,
 	setFatalError,
 	resyncKey,
+	snapshotRefreshKey,
 }: UseRemoteSessionsOptions) {
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [chatSessions, setChatSessions] = useState<
@@ -167,15 +171,17 @@ export function useRemoteSessions({
 		[],
 	);
 
-	/* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies -- Bootstrap and the resync generation intentionally retrigger synchronization with the external Remote Host snapshot. */
+	/* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies -- Snapshot/replay generations intentionally retrigger authoritative Remote Host metadata synchronization. */
 	useEffect(() => {
 		void resyncKey;
+		void snapshotRefreshKey;
 		void reloadBootstrap();
-	}, [reloadBootstrap, resyncKey]);
+	}, [reloadBootstrap, resyncKey, snapshotRefreshKey]);
 	useEffect(() => {
 		void resyncKey;
+		void snapshotRefreshKey;
 		void refreshAllSessions();
-	}, [refreshAllSessions, resyncKey]);
+	}, [refreshAllSessions, resyncKey, snapshotRefreshKey]);
 
 	// 外部会话开关不会触发 Host 事件，靠轮询兜底，让侧栏与打开的会话跟上状态。
 	useEffect(() => {
@@ -183,15 +189,25 @@ export function useRemoteSessions({
 			setExternalActivity(new Map());
 			return;
 		}
+		if (!browserOnline) return;
+
 		const run = () => {
+			if (document.visibilityState !== "visible") return;
 			for (const project of projects) {
 				void refreshExternalActivity(project.id);
 			}
 		};
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === "visible") run();
+		};
 		run();
 		const timer = window.setInterval(run, EXTERNAL_ACTIVITY_FALLBACK_POLL_MS);
-		return () => window.clearInterval(timer);
-	}, [client, projects, refreshExternalActivity]);
+		document.addEventListener("visibilitychange", handleVisibilityChange);
+		return () => {
+			window.clearInterval(timer);
+			document.removeEventListener("visibilitychange", handleVisibilityChange);
+		};
+	}, [browserOnline, client, projects, refreshExternalActivity]);
 	/* oxlint-enable react/set-state-in-effect, react/exhaustive-effect-dependencies */
 
 	return {

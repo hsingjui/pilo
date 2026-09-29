@@ -12,7 +12,6 @@ import { ChatInterruptedTurnNotice } from "@/components/chat/chat-interrupted-tu
 import { PiExtensionNotifications } from "@/components/chat/pi-extension-notifications";
 import { PiExtensionUiDialog } from "@/components/chat/pi-extension-ui-dialog";
 import { ChatPendingQueue } from "@/components/chat/chat-pending-queue";
-import { ChatRuntimeRecoveryNotice } from "@/components/chat/chat-runtime-recovery-notice";
 import { useScrollbarGutterWidth } from "@/components/chat/use-scrollbar-gutter";
 import { DraftProjectPicker } from "@/components/chat/draft-project-picker";
 import { SessionHeader } from "@/components/chat/chat-session-header";
@@ -25,10 +24,13 @@ import { connectionLabel } from "@/lib/projects";
 import type { PiloClientEventMessage } from "@/lib/pilo-client";
 import { Spinner, TooltipProvider } from "@/ui";
 import { useMediaQuery } from "./remote-app-model";
+import { remoteConnectionLabelKey } from "./remote-connection-state";
+import { RemoteConnectionNotice } from "./remote-connection-notice";
 import { RemoteMobileNavigation } from "./remote-mobile-navigation";
 import { useRemoteKeyboardInset } from "./use-remote-keyboard-inset";
 import { useRemoteChat } from "./use-remote-chat";
 import { useRemoteConnection } from "./use-remote-connection";
+import { useRemoteNetworkLifecycle } from "./use-remote-network-lifecycle";
 import { useRemoteSessions } from "./use-remote-sessions";
 
 export function RemoteApp() {
@@ -41,17 +43,22 @@ export function RemoteApp() {
 		() => {},
 	);
 	const reconnectProbeRef = useRef<() => void>(() => {});
+	const { browserOnline, recoveryGeneration } = useRemoteNetworkLifecycle();
 
 	const connection = useRemoteConnection({
 		pairingSecret,
+		browserOnline,
+		recoveryGeneration,
 		onSocketMessageRef: socketHandlerRef,
 		onReconnectProbeRef: reconnectProbeRef,
 	});
 	const sessions = useRemoteSessions({
 		client: connection.client,
+		browserOnline,
 		handleExpiredAuth: connection.handleExpiredAuth,
 		setFatalError: connection.setFatalError,
 		resyncKey: connection.resyncKey,
+		snapshotRefreshKey: connection.snapshotRefreshKey,
 	});
 
 	const isNarrow = useMediaQuery("(max-width: 1023px)");
@@ -117,7 +124,7 @@ export function RemoteApp() {
 		}
 	};
 	const {
-		connected,
+		networkState,
 		recoveryState,
 		reconnectNow,
 		fatalError,
@@ -125,7 +132,6 @@ export function RemoteApp() {
 		token,
 		pairing,
 	} = connection;
-
 	const envs = useMemo(() => {
 		const byId = new Map<string, { id: string; name: string }>();
 		for (const project of projects) {
@@ -281,15 +287,13 @@ export function RemoteApp() {
 			refreshingProjectIds={refreshingProjectIds}
 			footer={
 				<div className="flex min-w-0 items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground">
-					{connected ? (
+					{networkState === "connected" ? (
 						<Wifi className="size-3 shrink-0" />
 					) : (
 						<WifiOff className="size-3 shrink-0" />
 					)}
 					<span className="truncate">
-						{connected
-							? t("settings.remoteConnected")
-							: t("settings.remoteReconnecting")}
+						{t(remoteConnectionLabelKey(networkState))}
 					</span>
 					<button
 						type="button"
@@ -322,7 +326,7 @@ export function RemoteApp() {
 						sessions={sidebarSessions}
 						activeProjectId={chat.activeProjectId || null}
 						selectedSessionId={chat.identifiedSessionId ?? null}
-						connected={connected}
+						connectionState={networkState}
 						refreshingProjectIds={refreshingProjectIds}
 						onSelectSession={chat.handleSelectSession}
 						onNewChat={(projectId) =>
@@ -418,8 +422,9 @@ export function RemoteApp() {
 								chat.latestTurnInterrupted ? (
 									<ChatInterruptedTurnNotice />
 								) : null}
-								<ChatRuntimeRecoveryNotice
-									state={recoveryState}
+								<RemoteConnectionNotice
+									connectionState={networkState}
+									recoveryState={recoveryState}
 									onReconnect={reconnectNow}
 								/>
 								<PiExtensionNotifications

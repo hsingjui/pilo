@@ -4,20 +4,30 @@ import { useTranslation } from "react-i18next";
 import type { ChatRuntimeRecoveryState } from "@/components/chat/chat-runtime-types";
 import type { PiloClientEventMessage } from "@/lib/pilo-client";
 import {
+	resolveRemoteConnectionState,
+	type RemoteConnectionState,
+} from "./remote-connection-state";
+import {
 	REMOTE_SEQUENCE_KEY,
 	REMOTE_TOKEN_KEY,
 	pairRemote,
 } from "./remote-client";
 import { WebPiloClient } from "./web-pilo-client";
 
+const OFFLINE_RETRY_DELAY_MS = 30_000;
+
 type UseRemoteConnectionOptions = {
 	pairingSecret: string | null;
+	browserOnline: boolean;
+	recoveryGeneration: number;
 	onSocketMessageRef: { current: (message: PiloClientEventMessage) => void };
 	onReconnectProbeRef: { current: () => void };
 };
 
 export function useRemoteConnection({
 	pairingSecret,
+	browserOnline,
+	recoveryGeneration,
 	onSocketMessageRef,
 	onReconnectProbeRef,
 }: UseRemoteConnectionOptions) {
@@ -32,14 +42,29 @@ export function useRemoteConnection({
 	const [pairing, setPairing] = useState(Boolean(pairingSecret));
 	const [fatalError, setFatalError] = useState<string | null>(null);
 	const [connected, setConnected] = useState(false);
+	const [validatedRecoveryGeneration, setValidatedRecoveryGeneration] =
+		useState(0);
+	const validatedRecoveryGenerationRef = useRef(0);
+	const browserOnlineRef = useRef(browserOnline);
 	const [reconnectKey, setReconnectKey] = useState(0);
 	const [resyncKey, setResyncKey] = useState(0);
+	const [snapshotRefreshKey, setSnapshotRefreshKey] = useState(0);
 	const [recoveryState, setRecoveryState] = useState<ChatRuntimeRecoveryState>({
 		status: "idle",
 		recoverable: true,
 		messageKey: "",
 	});
 	const reconnectAttemptsRef = useRef(0);
+	const needsSnapshotRefreshRef = useRef(false);
+
+	const networkState: RemoteConnectionState = resolveRemoteConnectionState(
+		browserOnline,
+		connected && validatedRecoveryGeneration === recoveryGeneration,
+	);
+
+	useEffect(() => {
+		browserOnlineRef.current = browserOnline;
+	}, [browserOnline]);
 
 	const handleExpiredAuth = useCallback(
 		(error: unknown) => {
@@ -69,11 +94,13 @@ export function useRemoteConnection({
 	}, [recoveryState.status]);
 
 	const reconnectNow = useCallback(() => {
+		setConnected(false);
 		setRecoveryState({
 			status: "reconnecting",
 			recoverable: true,
 			messageKey: "chat.reconnecting",
 		});
+		needsSnapshotRefreshRef.current = true;
 		reconnectAttemptsRef.current = 0;
 		setReconnectKey((value) => value + 1);
 	}, []);
@@ -101,10 +128,14 @@ export function useRemoteConnection({
 		};
 	}, [pairingSecret]);
 
-	/* oxlint-disable react/exhaustive-effect-dependencies -- reconnectKey is an explicit retry generation used only to recreate the external WebSocket. */
+	/* oxlint-disable react/exhaustive-effect-dependencies -- reconnectKey and recoveryGeneration are explicit generations used only to recreate the external WebSocket. */
 	useEffect(() => {
 		void reconnectKey;
+		void recoveryGeneration;
 		if (!client) return;
+		if (validatedRecoveryGenerationRef.current !== recoveryGeneration) {
+			needsSnapshotRefreshRef.current = true;
+		}
 		let cancelled = false;
 		let disconnect: (() => void) | undefined;
 		let reconnectTimer: number | undefined;
@@ -135,26 +166,37 @@ export function useRemoteConnection({
 						}
 						return current;
 					});
-					if (isConnected) reconnectAttemptsRef.current = 0;
-					if (!isConnected && reconnectTimer === undefined) {
-						// ponytail: the browser reports a rejected WebSocket handshake as an
-						// opaque 1006 close, so the socket can never say "token died". Probe an
-						// authenticated endpoint instead: a stale token then clears locally and
-						// lands on the pairing screen via handleExpiredAuth. Replace with a
-						// CloseFrame(4001) if this probe ever gets too chatty.
-						onReconnectProbeRef.current();
-						// ponytail: capped exponential backoff so a dead token cannot
-						// hammer the Host every 1.5s forever.
-						const delay = Math.min(
-							1_500 * 2 ** Math.min(reconnectAttemptsRef.current, 4),
-							30_000,
-						);
-						reconnectAttemptsRef.current += 1;
-						reconnectTimer = window.setTimeout(
-							() => setReconnectKey((value) => value + 1),
-							delay,
-						);
+					if (isConnected) {
+						reconnectAttemptsRef.current = 0;
+						validatedRecoveryGenerationRef.current = recoveryGeneration;
+						setValidatedRecoveryGeneration(recoveryGeneration);
+						if (needsSnapshotRefreshRef.current) {
+							needsSnapshotRefreshRef.current = false;
+							setSnapshotRefreshKey((value) => value + 1);
+						}
+						return;
 					}
+
+					needsSnapshotRefreshRef.current = true;
+					if (reconnectTimer !== undefined) return;
+
+					const online = browserOnlineRef.current;
+					if (online) {
+						// Browser WebSocket handshake failures surface as opaque 1006 closes,
+						// so an authenticated HTTP probe still owns stale-token detection.
+						onReconnectProbeRef.current();
+					}
+					const delay = online
+						? Math.min(
+								1_500 * 2 ** Math.min(reconnectAttemptsRef.current, 4),
+								OFFLINE_RETRY_DELAY_MS,
+							)
+						: OFFLINE_RETRY_DELAY_MS;
+					reconnectAttemptsRef.current += 1;
+					reconnectTimer = window.setTimeout(
+						() => setReconnectKey((value) => value + 1),
+						delay,
+					);
 				},
 			})
 			.then((stop) => {
@@ -175,6 +217,7 @@ export function useRemoteConnection({
 		client,
 		handleExpiredAuth,
 		reconnectKey,
+		recoveryGeneration,
 		onSocketMessageRef,
 		onReconnectProbeRef,
 	]);
@@ -186,11 +229,12 @@ export function useRemoteConnection({
 		pairing,
 		fatalError,
 		setFatalError,
-		connected,
+		networkState,
 		recoveryState,
 		reconnectNow,
 		resyncKey,
 		setResyncKey,
+		snapshotRefreshKey,
 		handleExpiredAuth,
 	};
 }
