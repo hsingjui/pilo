@@ -406,7 +406,7 @@ export function AppSidebar({
 						onRenameSession={handleRenameSession}
 						onDeleteSession={handleDeleteSession}
 					/>
-					<footer className="flex shrink-0 items-center gap-1 border-t border-sidebar-border px-1.5 py-1">
+					<footer className="relative flex shrink-0 items-center gap-1 border-t border-sidebar-border px-1.5 py-1">
 						{footer}
 					</footer>
 				</div>

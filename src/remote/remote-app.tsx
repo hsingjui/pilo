@@ -144,6 +144,7 @@ export function RemoteApp() {
 		const toastId = toast.info(t("settings.remoteUpdateAvailable"), {
 			description: t("settings.remoteUpdateDescription"),
 			duration: Infinity,
+			position: isNarrow ? "bottom-center" : "bottom-left",
 			action: {
 				label: t("settings.remoteUpdateAction"),
 				onClick: () => void applyUpdate(),
@@ -152,7 +153,15 @@ export function RemoteApp() {
 		return () => {
 			toast.dismiss(toastId);
 		};
-	}, [applyUpdate, pairing, t, token, updateAvailable, updateBlocked]);
+	}, [
+		applyUpdate,
+		isNarrow,
+		pairing,
+		t,
+		token,
+		updateAvailable,
+		updateBlocked,
+	]);
 
 	const envs = useMemo(() => {
 		const byId = new Map<string, { id: string; name: string }>();

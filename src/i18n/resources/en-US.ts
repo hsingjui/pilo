@@ -228,6 +228,14 @@ const enUS = {
 		checkForUpdates: "Check for updates",
 		upToDate: "Up to date",
 		downloadInstall: "Download and install",
+		updateAvailable: "Update",
+		updateCardTitle: "Update available",
+		updateCardDescription:
+			"Pilo v{{version}} is ready. Install to get the latest.",
+		updateCardFailedTitle: "Update failed",
+		updatePreview: "Preview update prompt",
+		updatePreviewOnly:
+			"Preview only — no update will be downloaded or installed.",
 		checking: "Checking…",
 		downloading: "Downloading…",
 		installing: "Installing…",

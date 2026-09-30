@@ -182,7 +182,14 @@ async function bootstrap() {
 				<ThemeProvider>
 					<PreferencesProvider>
 						<RootApp />
-						<Toaster />
+						<Toaster
+							offset={{
+								bottom: "calc(24px + env(safe-area-inset-bottom))",
+							}}
+							mobileOffset={{
+								bottom: "calc(16px + env(safe-area-inset-bottom))",
+							}}
+						/>
 						<BootShellRemover />
 					</PreferencesProvider>
 				</ThemeProvider>

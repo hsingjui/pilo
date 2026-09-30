@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import type { DesktopUpdate } from "@/lib/use-desktop-update";
 import {
 	Dialog,
 	DialogContent,
@@ -83,9 +84,11 @@ const SETTINGS_TABS = [
 export function SettingsDialog({
 	open,
 	onOpenChange,
+	update,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
+	update: DesktopUpdate;
 }) {
 	const { t } = useTranslation();
 	const [activeTab, setActiveTab] = useState<SettingsTabId>("preferences");
@@ -185,7 +188,9 @@ export function SettingsDialog({
 										{activeTab === "session-naming" ? (
 											<SessionNamingSettings />
 										) : null}
-										{activeTab === "about" ? <AboutSettings /> : null}
+										{activeTab === "about" ? (
+											<AboutSettings update={update} />
+										) : null}
 									</div>
 								</div>
 							</ScrollArea>

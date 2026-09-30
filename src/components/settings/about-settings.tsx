@@ -1,11 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
 import { getVersion } from "@tauri-apps/api/app";
 import { appLogDir } from "@tauri-apps/api/path";
-import { relaunch } from "@tauri-apps/plugin-process";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
-import { check, type Update } from "@tauri-apps/plugin-updater";
 import {
 	CheckCircle2,
 	Code2,
@@ -17,6 +14,7 @@ import {
 
 import appIconUrl from "../../../src-tauri/icons/128x128.png";
 import { cn } from "@/lib/utils";
+import type { DesktopUpdate } from "@/lib/use-desktop-update";
 import { Button } from "@/ui";
 import {
 	SETTINGS_CONTAINER_CLASS,
@@ -29,26 +27,6 @@ import {
 const REPOSITORY_URL = "https://github.com/hsingjui/pilo";
 const RELEASES_URL = `${REPOSITORY_URL}/releases`;
 
-type UpdateStatus =
-	| "idle"
-	| "checking"
-	| "latest"
-	| "available"
-	| "downloading"
-	| "installing"
-	| "error";
-
-function formatUpdateError(error: unknown, t: TFunction) {
-	const message = error instanceof Error ? error.message : String(error);
-	if (message.includes("public key") || message.includes("signature")) {
-		return t("about.updateConfigUnavailable");
-	}
-	if (message.includes("network") || message.includes("fetch")) {
-		return t("about.updateServiceUnavailable");
-	}
-	return message || t("about.updateFailed");
-}
-
 async function handleOpenLogDirectory() {
 	try {
 		await openPath(await appLogDir());
@@ -57,17 +35,18 @@ async function handleOpenLogDirectory() {
 	}
 }
 
-export function AboutSettings() {
+export function AboutSettings({ update }: { update: DesktopUpdate }) {
 	const { t } = useTranslation();
 	const [version, setVersion] = useState<string | null>(null);
-	const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
-	const [availableVersion, setAvailableVersion] = useState<string | null>(null);
-	const [updateError, setUpdateError] = useState<string | null>(null);
-	const [downloadedBytes, setDownloadedBytes] = useState(0);
-	const [downloadTotalBytes, setDownloadTotalBytes] = useState<number | null>(
-		null,
-	);
-	const updateRef = useRef<Update | null>(null);
+	const {
+		status: updateStatus,
+		availableVersion,
+		error: updateError,
+		downloadProgress,
+		checkForUpdates,
+		installUpdate,
+		previewUpdate,
+	} = update;
 
 	useEffect(() => {
 		let active = true;
@@ -80,82 +59,8 @@ export function AboutSettings() {
 			});
 		return () => {
 			active = false;
-			const update = updateRef.current;
-			updateRef.current = null;
-			if (update) void update.close();
 		};
 	}, []);
-
-	const handleCheckForUpdates = async () => {
-		if (updateStatus === "checking" || updateStatus === "downloading") return;
-
-		setUpdateStatus("checking");
-		setUpdateError(null);
-		setAvailableVersion(null);
-		setDownloadedBytes(0);
-		setDownloadTotalBytes(null);
-
-		const previousUpdate = updateRef.current;
-		updateRef.current = null;
-		if (previousUpdate) await previousUpdate.close().catch(() => undefined);
-
-		try {
-			const update = await check({ timeout: 15_000 });
-			if (!update) {
-				setUpdateStatus("latest");
-				return;
-			}
-
-			updateRef.current = update;
-			setAvailableVersion(update.version);
-			setUpdateStatus("available");
-		} catch (error) {
-			setUpdateError(formatUpdateError(error, t));
-			setUpdateStatus("error");
-		}
-	};
-
-	const handleInstallUpdate = async () => {
-		const update = updateRef.current;
-		if (
-			!update ||
-			updateStatus === "downloading" ||
-			updateStatus === "installing"
-		) {
-			return;
-		}
-
-		setUpdateStatus("downloading");
-		setUpdateError(null);
-		setDownloadedBytes(0);
-		setDownloadTotalBytes(null);
-
-		try {
-			await update.download((event) => {
-				if (event.event === "Started") {
-					setDownloadTotalBytes(event.data.contentLength ?? null);
-					return;
-				}
-				if (event.event === "Progress") {
-					setDownloadedBytes((current) => current + event.data.chunkLength);
-					return;
-				}
-				setUpdateStatus("installing");
-			});
-
-			setUpdateStatus("installing");
-			await update.install();
-			await relaunch();
-		} catch (error) {
-			setUpdateError(formatUpdateError(error, t));
-			setUpdateStatus("error");
-		}
-	};
-
-	const downloadProgress =
-		downloadTotalBytes && downloadTotalBytes > 0
-			? Math.min(100, Math.round((downloadedBytes / downloadTotalBytes) * 100))
-			: null;
 
 	return (
 		<div className={SETTINGS_CONTAINER_CLASS}>
@@ -226,7 +131,7 @@ export function AboutSettings() {
 					label={t("settings.updateCheck")}
 					helper={updateStatus === "error" ? updateError : undefined}
 				>
-					<div className="flex items-center gap-1.5">
+					<div className="flex flex-wrap items-center gap-1.5">
 						{updateStatus === "latest" ? (
 							<SettingsStatus>
 								<CheckCircle2 className="mr-1 size-3" />
@@ -242,7 +147,7 @@ export function AboutSettings() {
 								variant="default"
 								size="sm"
 								className={SETTINGS_TEXT_BUTTON_CLASS}
-								onClick={() => void handleInstallUpdate()}
+								onClick={() => void installUpdate()}
 							>
 								<Download className="size-3.5" />
 								{t("settings.downloadInstall")}
@@ -261,7 +166,7 @@ export function AboutSettings() {
 									updateStatus === "downloading" ||
 									updateStatus === "installing"
 								}
-								onClick={() => void handleCheckForUpdates()}
+								onClick={() => void checkForUpdates()}
 							>
 								<RefreshCw
 									className={cn(
@@ -280,6 +185,16 @@ export function AboutSettings() {
 											: t("settings.updateCheck")}
 							</Button>
 						)}
+						{import.meta.env.DEV ? (
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onClick={previewUpdate}
+							>
+								{t("settings.updatePreview")}
+							</Button>
+						) : null}
 					</div>
 				</SettingsRow>
 				<SettingsRow label={t("settings.releaseNotes")}>
