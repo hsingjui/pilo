@@ -134,7 +134,15 @@ export function SettingsRow({
 				) : null}
 			</div>
 			{children ? (
-				<div className="flex min-w-0 flex-wrap items-center gap-2 text-sm sm:justify-end sm:pl-4">
+				<div
+					className={cn(
+						"flex min-w-0 flex-wrap items-center gap-2 text-sm sm:justify-end sm:pl-4",
+						// 按钮自带 px-2，会在堆叠布局下相对标签缩进、在栅格布局下相对其他值内缩。
+						// 整体外移 8px 让值列与标签及其他值对齐，同时保留按钮两侧对称的 hover 底色；带 role 的控件保持原位。
+						"max-sm:[&_button:first-child:not([role])]:-ml-2",
+						"sm:[&_button:last-child:not([role])]:-mr-2",
+					)}
+				>
 					{children}
 				</div>
 			) : null}
