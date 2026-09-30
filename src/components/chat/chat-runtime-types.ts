@@ -9,6 +9,7 @@ export type ChatSessionClient = ReturnType<typeof createChatSessionClient>;
 export type ActiveTurn = {
 	sessionId: string;
 	sessionTitle: string;
+	sessionTitleReady?: Promise<string | undefined>;
 	projectId: string;
 	notificationSessionId: string;
 	generation: number | null;

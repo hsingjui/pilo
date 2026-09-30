@@ -14,7 +14,10 @@ import { recordChatRuntimeEvent } from "@/lib/chat-performance";
 import { recordChatRuntimeTraceEvent } from "@/lib/chat-runtime-trace";
 import { toConversationAction } from "@/lib/conversation-runtime-adapter";
 import type { ConversationAction } from "@/lib/conversation-types";
-import { notifyAgentResult } from "@/lib/desktop-notifications";
+import {
+	notifyAgentResult,
+	type AgentNotificationStatus,
+} from "@/lib/desktop-notifications";
 import { runtimeErrorMessage, type PiloRuntimeEvent } from "@/lib/pi-runtime";
 
 const CONTEXT_STATS_REFRESH_DELAY_MS = 1000;
@@ -163,6 +166,37 @@ export function useChatRuntimeEvents({
 		});
 	}, [session.temporary]);
 
+	const notifyTurnResult = useCallback(
+		async (
+			turn: ActiveTurn,
+			status: AgentNotificationStatus,
+			errorMessage?: string,
+		) => {
+			// 标题生成和 React 状态更新都可能晚于 turn 结束，通知不依赖渲染时序。
+			let title = (await turn.sessionTitleReady) ?? turn.sessionTitle;
+			if (
+				turn.generation !== null &&
+				runtimeGenerationRef.current === turn.generation
+			) {
+				const state = await client.getPiAgentState().catch(() => undefined);
+				if (
+					runtimeGenerationRef.current === turn.generation &&
+					state?.sessionId === turn.notificationSessionId
+				) {
+					title = state.sessionName?.trim() || title;
+				}
+			}
+			await notifyAgentResult({
+				status,
+				projectId: turn.projectId,
+				sessionId: turn.notificationSessionId,
+				sessionTitle: title,
+				errorMessage,
+			});
+		},
+		[client, runtimeGenerationRef],
+	);
+
 	const failActiveTurn = useCallback(
 		(turn: ActiveTurn, message: string) => {
 			if (activeTurnRef.current !== turn) return;
@@ -172,13 +206,7 @@ export function useChatRuntimeEvents({
 				timestampMs: Date.now(),
 			});
 			if (desktopNotifications) {
-				void notifyAgentResult({
-					status: "error",
-					projectId: turn.projectId,
-					sessionId: turn.notificationSessionId,
-					sessionTitle: turn.sessionTitle,
-					errorMessage: message,
-				});
+				void notifyTurnResult(turn, "error", message);
 			}
 			releaseActiveTurn(turn);
 		},
@@ -186,6 +214,7 @@ export function useChatRuntimeEvents({
 			activeTurnRef,
 			desktopNotifications,
 			dispatchConversation,
+			notifyTurnResult,
 			releaseActiveTurn,
 		],
 	);
@@ -398,13 +427,11 @@ export function useChatRuntimeEvents({
 				case "assistant_message_end":
 					if (event.stopReason === "error" || event.errorMessage?.trim()) {
 						if (desktopNotifications) {
-							void notifyAgentResult({
-								status: "error",
-								projectId: turn.projectId,
-								sessionId: turn.notificationSessionId,
-								sessionTitle: turn.sessionTitle,
-								errorMessage: event.errorMessage ?? undefined,
-							});
+							void notifyTurnResult(
+								turn,
+								"error",
+								event.errorMessage ?? undefined,
+							);
 						}
 						releaseActiveTurn(turn);
 						break;
@@ -414,12 +441,7 @@ export function useChatRuntimeEvents({
 						event.stopReason !== "aborted" &&
 						!event.errorMessage?.trim()
 					) {
-						void notifyAgentResult({
-							status: "completed",
-							projectId: turn.projectId,
-							sessionId: turn.notificationSessionId,
-							sessionTitle: turn.sessionTitle,
-						});
+						void notifyTurnResult(turn, "completed");
 					}
 					releaseActiveTurn(turn);
 					break;
@@ -457,6 +479,7 @@ export function useChatRuntimeEvents({
 			desktopNotifications,
 			dispatchConversation,
 			failActiveTurn,
+			notifyTurnResult,
 			queueRuntimeAction,
 			projectMcpApprovalPendingRef,
 			recoverRuntime,

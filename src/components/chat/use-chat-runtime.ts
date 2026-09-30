@@ -96,7 +96,7 @@ export function useChatRuntime({
 	);
 	const initialQueuedMessagesRef = useRef(initialQueuedMessages);
 	const sentInitialPromptsRef = useRef(new Set<string>());
-	const autoTitleRequestedRef = useRef(false);
+	const autoTitlePromiseRef = useRef<Promise<string | undefined> | null>(null);
 	const beginTurnRef = useRef<BeginTurn | null>(null);
 	const pendingProjectMcpTurnRef = useRef<{
 		turn: ActiveTurn;
@@ -212,23 +212,29 @@ export function useChatRuntime({
 			if (
 				session.temporary ||
 				session.sessionPath ||
-				autoTitleRequestedRef.current ||
+				autoTitlePromiseRef.current ||
 				!prompt
 			) {
-				return;
+				return autoTitlePromiseRef.current ?? undefined;
 			}
-			autoTitleRequestedRef.current = true;
-			void requestSessionTitle(session.projectRecord.id, prompt)
+			autoTitlePromiseRef.current = requestSessionTitle(
+				session.projectRecord.id,
+				prompt,
+			)
 				.then(async (title) => {
 					if (!title) return;
 					const state = await client.getPiAgentState();
-					if (state.sessionName?.trim()) return;
+					const name = state.sessionName?.trim();
+					if (name) return name;
 					await client.setPiSessionName(title);
 					await refreshSessionState();
+					return title;
 				})
 				.catch((error) => {
 					console.warn("Failed to generate session title", error);
+					return undefined;
 				});
+			return autoTitlePromiseRef.current;
 		},
 		[
 			client,
@@ -259,9 +265,15 @@ export function useChatRuntime({
 			await prepareRuntimeConfiguration(agentState);
 			if (activeTurnRef.current !== turn) return;
 			turn.promptSent = true;
-			await client.sendPiPrompt(submission.text, submission.images);
+			const promptResult = client.sendPiPrompt(
+				submission.text,
+				submission.images,
+			);
+			turn.sessionTitleReady = promptResult
+				.then(() => requestAutoTitle(submission.text))
+				.catch(() => undefined);
+			await promptResult;
 			if (activeTurnRef.current !== turn) return;
-			requestAutoTitle(submission.text);
 			turn.queueReady = true;
 			flushBufferedQueuedMessages(turn);
 			clearRecoveryState();
