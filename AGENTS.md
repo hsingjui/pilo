@@ -173,6 +173,10 @@ cargo clippy --all-targets --all-features -- -D warnings
 pnpm tauri dev
 ```
 
+## Release
+
+发布新版本（bump `Cargo.toml` 的 `[workspace.package].version`、打 tag、推送触发 release workflow）前，必须先向用户确认目标版本号，得到确认后才能执行。`Cargo.lock` 中 workspace 包的版本需同步更新；tag 版本必须与 `Cargo.toml` 一致（release preflight 会校验）。
+
 <!-- TRELLIS:START -->
 
 # Trellis Instructions
