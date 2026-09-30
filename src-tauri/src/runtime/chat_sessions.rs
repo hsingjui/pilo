@@ -57,6 +57,19 @@ struct ChatProcess {
     closed: Arc<AtomicBool>,
 }
 
+impl ChatProcess {
+    fn mark_closed(&self) {
+        let mut reply = self
+            .control_reply
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        self.closed.store(true, Ordering::Release);
+        if let Some(sender) = reply.take() {
+            let _ = sender.send(Err("project is closing".to_owned()));
+        }
+    }
+}
+
 #[derive(Default)]
 struct ChatRegistry {
     processes: HashMap<String, Arc<ChatProcess>>,

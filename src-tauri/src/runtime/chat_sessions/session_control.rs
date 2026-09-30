@@ -59,7 +59,7 @@ impl ChatSessions {
             );
             return Ok(());
         };
-        process.closed.store(true, Ordering::Release);
+        process.mark_closed();
         let mut session = process.session.lock().await;
         runtime_trace(
             "chat.stop.begin",
@@ -108,7 +108,7 @@ impl ChatSessions {
             return Ok(());
         };
 
-        process.closed.store(true, Ordering::Release);
+        process.mark_closed();
         let detached_session_key = session_key.to_owned();
         let detached_reason = reason.map(str::to_owned);
         runtime_trace(

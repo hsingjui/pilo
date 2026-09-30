@@ -111,10 +111,16 @@ impl ChatSessions {
         command: Value,
     ) -> Result<(), String> {
         let (sender, response) = oneshot::channel();
-        *process
-            .control_reply
-            .lock()
-            .unwrap_or_else(|error| error.into_inner()) = Some(sender);
+        {
+            let mut reply = process
+                .control_reply
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if process.closed.load(Ordering::Acquire) {
+                return Err("project is closing".to_owned());
+            }
+            *reply = Some(sender);
+        }
         let result = async {
             session.send_rpc(command).await?;
             tokio::time::timeout(Duration::from_secs(30), response)

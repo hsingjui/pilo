@@ -1,4 +1,6 @@
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::Arc;
+
+use tokio::task::JoinSet;
 
 use super::ChatSessions;
 
@@ -23,13 +25,23 @@ impl ChatSessions {
                 .values()
                 .filter(|process| process.project_id == project_id)
                 .map(|process| {
-                    process.closed.store(true, Ordering::Release);
+                    process.mark_closed();
                     Arc::clone(process)
                 })
                 .collect::<Vec<_>>()
         };
+        let mut stops = JoinSet::new();
         for process in processes {
-            process.session.lock().await.stop().await?;
+            stops.spawn(async move { process.session.lock().await.stop().await });
+        }
+        let mut stop_error = None;
+        while let Some(result) = stops.join_next().await {
+            if let Err(error) = result.unwrap_or_else(|error| Err(error.to_string())) {
+                stop_error.get_or_insert(error);
+            }
+        }
+        if let Some(error) = stop_error {
+            return Err(error);
         }
         let mut registry = self.registry.lock().await;
         registry
@@ -49,7 +61,7 @@ impl ChatSessions {
                 .processes
                 .drain()
                 .map(|(_, process)| {
-                    process.closed.store(true, Ordering::Release);
+                    process.mark_closed();
                     process
                 })
                 .collect::<Vec<_>>()
