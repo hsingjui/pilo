@@ -140,7 +140,11 @@ export function ProjectRow({
 									<MoreHorizontal className="h-3.5 w-3.5" />
 								</button>
 							</DropdownMenuTrigger>
-							<DropdownMenuContent align="start" className="min-w-0 w-32">
+							<DropdownMenuContent
+								align="start"
+								className="min-w-0 w-32"
+								onClick={(event) => event.stopPropagation()}
+							>
 								<DropdownMenuItem
 									disabled={refreshing}
 									onSelect={() => onRefreshSessions?.()}
