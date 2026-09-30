@@ -8,7 +8,6 @@ import {
 	Settings,
 	Smartphone,
 	Sun,
-	X,
 } from "lucide-react";
 
 import { getRemoteHostState, type RemoteHostState } from "@/lib/remote";
@@ -19,7 +18,6 @@ import { cn } from "@/lib/utils";
 import { useDesktopUpdate, type DesktopUpdate } from "@/lib/use-desktop-update";
 import {
 	Button,
-	Card,
 	Dialog,
 	DialogContent,
 	DialogDescription,
@@ -102,98 +100,69 @@ function ThemeCycleButton() {
 	);
 }
 
-/** 悬浮在侧边栏底栏上方的更新卡片：比挤在底栏里的小胶囊更清楚，且不挤压底栏布局。 */
-function UpdateCard({
-	update,
-	onDismiss,
-}: {
-	update: DesktopUpdate;
-	onDismiss: () => void;
-}) {
+/**
+ * 底栏里的更新入口：和齿轮同高的一枚小按钮，不额外占位、不遮挡会话列表。
+ * 详情（版本号、失败原因、下载进度）放 tooltip，底栏只留最短的一行字。
+ */
+function UpdateButton({ update }: { update: DesktopUpdate }) {
 	const { t } = useTranslation();
 	const busy =
 		update.status === "downloading" || update.status === "installing";
 	const failed = update.status === "error";
 	const progress = update.downloadProgress;
 
+	const label = failed
+		? t("common.retry")
+		: update.status === "installing"
+			? t("settings.installing")
+			: update.status === "downloading"
+				? progress === null
+					? t("settings.downloading")
+					: `${progress}%`
+				: t("settings.updateAvailable");
+
+	const detail = failed
+		? (update.error ?? t("about.updateFailed"))
+		: update.status === "installing"
+			? t("settings.installing")
+			: update.status === "downloading"
+				? progress === null
+					? t("settings.downloading")
+					: `${t("settings.downloading")} ${progress}%`
+				: `${t("settings.downloadInstall")} v${update.availableVersion ?? ""}`;
+
 	return (
-		<Card className="absolute inset-x-1.5 bottom-full z-20 mb-2 gap-3 p-3 shadow-lg">
-			<output className="sr-only">
-				{failed
-					? t("settings.updateCardFailedTitle")
-					: update.status === "installing"
-						? t("settings.installing")
-						: update.status === "downloading"
-							? t("settings.downloading")
-							: t("settings.updateCardTitle")}
-			</output>
-			<div className="flex items-start gap-2.5">
-				<span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-					{busy ? (
-						<Spinner className="size-4" />
-					) : (
-						<Download className="size-4" />
-					)}
-				</span>
-				<div className="min-w-0 flex-1">
-					<p className="text-sm font-medium leading-snug text-foreground">
-						{failed
-							? t("settings.updateCardFailedTitle")
-							: t("settings.updateCardTitle")}
-					</p>
-					<p className="mt-0.5 text-xs leading-snug text-muted-foreground">
-						{failed
-							? (update.error ?? t("about.updateFailed"))
-							: t("settings.updateCardDescription", {
-									version: update.availableVersion ?? "",
-								})}
-					</p>
-				</div>
+		<Tooltip>
+			<TooltipTrigger asChild>
 				<Button
 					variant="ghost"
 					size="icon"
-					className="-mr-1 -mt-1 size-7 shrink-0 text-muted-foreground"
-					aria-label={t("common.close")}
-					onClick={onDismiss}
+					className={cn(
+						"w-auto gap-1.5 px-2.5 text-xs tabular-nums",
+						failed
+							? "text-status-danger"
+							: busy
+								? "text-muted-foreground"
+								: "text-primary",
+					)}
+					disabled={busy}
+					aria-label={detail}
+					onClick={() =>
+						void (failed ? update.checkForUpdates() : update.installUpdate())
+					}
 				>
-					<X className="size-3.5" />
+					{failed ? (
+						<RefreshCw className="size-3.5" />
+					) : busy ? (
+						<Spinner className="size-3.5" />
+					) : (
+						<Download className="size-3.5" />
+					)}
+					{label}
 				</Button>
-			</div>
-			{busy && progress !== null ? (
-				<div className="h-1 overflow-hidden rounded-full bg-muted">
-					<div
-						className="h-full rounded-full bg-primary transition-[width] duration-200"
-						style={{ width: `${progress}%` }}
-					/>
-				</div>
-			) : null}
-			<Button
-				size="sm"
-				variant={failed ? "outline" : "default"}
-				className="w-full gap-1.5"
-				disabled={busy}
-				onClick={() =>
-					void (failed ? update.checkForUpdates() : update.installUpdate())
-				}
-			>
-				{failed ? (
-					<RefreshCw className="size-4" />
-				) : busy ? (
-					<Spinner className="size-4" />
-				) : (
-					<Download className="size-4" />
-				)}
-				{failed
-					? t("common.retry")
-					: update.status === "installing"
-						? t("settings.installing")
-						: update.status === "downloading"
-							? progress === null
-								? t("settings.downloading")
-								: `${t("settings.downloading")} ${progress}%`
-							: t("settings.downloadInstall")}
-			</Button>
-		</Card>
+			</TooltipTrigger>
+			<TooltipContent>{detail}</TooltipContent>
+		</Tooltip>
 	);
 }
 
@@ -202,15 +171,7 @@ export function SidebarFooter() {
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [remoteOpen, setRemoteOpen] = useState(false);
 	const update = useDesktopUpdate();
-	// 用户关闭的版本；出现新版本时自然重置，无需额外 effect。
-	const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
 	const hasUpdate = update.availableVersion !== null;
-	const updateBusy =
-		update.status === "downloading" || update.status === "installing";
-	const updateCardOpen =
-		hasUpdate &&
-		dismissedVersion !== update.availableVersion &&
-		(updateBusy || update.status === "error" || update.status === "available");
 	const {
 		state: remoteState,
 		running: remoteRunning,
@@ -236,30 +197,7 @@ export function SidebarFooter() {
 				</TooltipTrigger>
 				<TooltipContent>{t("settings.title")}</TooltipContent>
 			</Tooltip>
-			{updateCardOpen && update.availableVersion !== null ? (
-				<UpdateCard
-					update={update}
-					onDismiss={() => setDismissedVersion(update.availableVersion)}
-				/>
-			) : null}
-			{hasUpdate && !updateCardOpen ? (
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<Button
-							variant="ghost"
-							size="icon"
-							className="text-primary"
-							aria-label={`${t("settings.updateAvailable")} v${update.availableVersion}`}
-							onClick={() => setDismissedVersion(null)}
-						>
-							<Download />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>
-						{`${t("settings.downloadInstall")} v${update.availableVersion}`}
-					</TooltipContent>
-				</Tooltip>
-			) : null}
+			{hasUpdate ? <UpdateButton update={update} /> : null}
 			{remoteOpen ? (
 				<Suspense fallback={null}>
 					<Dialog
