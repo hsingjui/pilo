@@ -6,15 +6,15 @@ use std::{
 };
 
 use axum::{
+    Json, Router,
     body::Body,
     extract::{DefaultBodyLimit, State},
-    http::{header, StatusCode, Uri},
+    http::{StatusCode, Uri, header},
     middleware::from_fn_with_state,
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::AppHandle;
 use tokio::sync::watch;
 use tower_http::timeout::TimeoutLayer;
