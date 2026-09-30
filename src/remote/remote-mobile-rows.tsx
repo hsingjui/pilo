@@ -82,7 +82,8 @@ export function MobileSessionRow({
 			aria-current={selected ? "page" : undefined}
 			className={cn(
 				// 长按删除与 iOS 的文字选择/长按弹窗冲突，一并关掉。
-				"flex min-h-11 w-full min-w-0 touch-manipulation select-none items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors [-webkit-touch-callout:none]",
+				"flex min-h-11 w-full min-w-0 touch-manipulation select-none gap-2 rounded-lg px-3 py-2 text-left transition-colors [-webkit-touch-callout:none]",
+				projectName ? "items-start" : "items-center",
 				selected
 					? "bg-sidebar-foreground/10 text-sidebar-foreground"
 					: "text-sidebar-foreground/85 active:bg-sidebar-hover",
@@ -124,8 +125,8 @@ export function MobileSessionRow({
 			}}
 		>
 			{/* 左侧固定槽：未读标记，与桌面侧栏保持一致（左未读 / 右运行）。
-			    self-start + h-5 让点在两行式时对齐标题首行，而不是整块居中。 */}
-			<span className="flex h-5 w-4 shrink-0 self-start items-center justify-center">
+			    h-5 与标题行等高，单行居中，两行对齐标题首行。 */}
+			<span className="flex h-5 w-4 shrink-0 items-center justify-center">
 				{!session.active && session.unread ? (
 					<span
 						aria-hidden="true"
@@ -143,7 +144,7 @@ export function MobileSessionRow({
 				) : null}
 			</span>
 			{/* 右侧固定槽：运行状态，与左侧未读槽共同预留宽度，标题不再占满整行。 */}
-			<span className="flex h-5 w-4 shrink-0 self-start items-center justify-center">
+			<span className="flex h-5 w-4 shrink-0 items-center justify-center">
 				{session.active ? (
 					<ActivityDot className="text-sidebar-primary -translate-y-px" />
 				) : null}
