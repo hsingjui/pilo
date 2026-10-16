@@ -106,6 +106,20 @@ them (`#[allow(...)]` only with a comment explaining why).
 
 ### Linux AppImage finalization
 
+- Desktop metadata lives in `bundle.category`, `shortDescription`,
+  `longDescription`, and `homepage`. deb and rpm share
+  `src-tauri/linux/pilo.desktop`; AppImage inherits the deb desktop template.
+  Use a `.desktop` extension: oxfmt treats `.hbs` as HTML and destroys the
+  required line-based desktop entry syntax.
+  Keep `Exec`, `Icon`, `Name`, and categories as Tauri template variables, retain
+  optional MIME associations, and validate the rendered desktop entry with
+  `desktop-file-validate`. Localized comments and search keywords belong in the
+  shared template, not in separate package-specific copies.
+- Align package and desktop descriptions with the English/Chinese README
+  introduction. Application versions inherit `[workspace.package].version`;
+  the optional desktop entry `Version` describes the file format, not Pilo's
+  release version, and must not be bumped with app releases.
+
 - Run `scripts/finalize-linux-appimage.sh <AppImage> <AppDir> <runtime-dir>
   <AppImage-output-plugin>` after Tauri bundling and before collecting assets.
   It restores all four original server binaries into the prepared AppDir and

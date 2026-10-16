@@ -32,6 +32,18 @@
 	"bundle": {
 		"active": true,
 		"targets": "all",
+		"category": "DeveloperTool",
+		"shortDescription": "A simple desktop client for Pi Coding Agent",
+		"longDescription": "A simple desktop client for Pi Coding Agent that brings Local, WSL, and SSH projects into one workspace while keeping Pi in the environment where the code lives.",
+		"homepage": "https://github.com/hsingjui/pilo",
+		"linux": {
+			"deb": {
+				"desktopTemplate": "linux/pilo.desktop"
+			},
+			"rpm": {
+				"desktopTemplate": "linux/pilo.desktop"
+			}
+		},
 		"createUpdaterArtifacts": true,
 		"resources": {
 			"resources/": "runtime/",

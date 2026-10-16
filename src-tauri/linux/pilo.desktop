@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name={{name}}
+GenericName=AI Coding Workspace
+GenericName[zh_CN]=AI 编程工作区
+Comment={{comment}}
+Comment[zh_CN]=简洁的 Pi Coding Agent 桌面客户端
+Exec={{exec}}
+Icon={{icon}}
+Terminal=false
+Categories={{categories}}
+Keywords=Pi;AI;Coding;Agent;Development;SSH;WSL;
+Keywords[zh_CN]=Pi;AI;编程;智能体;开发;SSH;WSL;
+StartupWMClass={{exec}}
+{{#if mime_type}}
+MimeType={{mime_type}}
+{{/if}}
