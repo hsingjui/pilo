@@ -76,6 +76,15 @@ them (`#[allow(...)]` only with a comment explaining why).
   The upstream fix is https://tauri.app/release/tao/v0.36.0/.
 - After rebuilding, manually verify KDE title bar buttons and native Wayland
   scaling on KWin. Static compilation cannot verify compositor behavior.
+- On Linux, initialize GLib's program name from the configured product name
+  before creating the Tauri runtime. GDK uses it as the Wayland `app_id` when
+  GTK application registration is disabled; it must match the case-sensitive
+  desktop entry basename (`Pilo` for `Pilo.desktop`), not `Icon=pilo` or the
+  executable name. This also covers secondary windows.
+- Keep `enableGTKAppId` disabled: enabling it registers on D-Bus and changes
+  multi-instance behavior. Do not change AppImage finalization just to fix the
+  installed deb/rpm window icon. Development builds use `Pilo Dev` and need a
+  matching desktop entry for compositor-provided icons.
 
 ### Bundled server resource paths
 

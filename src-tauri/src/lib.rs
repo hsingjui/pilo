@@ -75,6 +75,13 @@ fn debug_runtime_trace_log(payload: &str) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
+    #[cfg(target_os = "linux")]
+    // GDK uses the program name as the Wayland app_id when GTK application
+    // registration is disabled. Match Tauri's case-sensitive desktop filename
+    // (e.g. Pilo.desktop), without making the app single-instance on D-Bus.
+    glib::set_prgname(context.config().product_name.as_deref());
+
     // 0 = running, 1 = cleaning up, 2 = ready to leave the event loop.
     let exiting = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0));
     let builder = tauri::Builder::default()
@@ -333,7 +340,7 @@ pub fn run() {
 
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(move |app, event| {
             #[cfg(target_os = "macos")]
