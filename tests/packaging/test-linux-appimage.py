@@ -35,6 +35,9 @@ if mode == 'corrupt':
     (appdir / 'usr/lib/Pilo/runtime/pilo-server-linux-aarch64').write_bytes(b'corrupted')
 if mode == 'wayland':
     (appdir / 'usr/lib/libwayland-client.so.0').write_bytes(b'old-library')
+if mode == 'force-x11':
+    hook = appdir / 'apprun-hooks/linuxdeploy-plugin-gtk.sh'
+    hook.write_text(hook.read_text() + 'export GDK_BACKEND=x11\\n')
 payload = io.BytesIO()
 with tarfile.open(fileobj=payload, mode='w:gz') as archive:
     archive.add(appdir, arcname='squashfs-root')
@@ -66,6 +69,14 @@ class AppImageFinalizationTests(unittest.TestCase):
             (self.bundled / name).write_bytes(b"linuxdeploy modified binary")
         (self.appdir / "AppRun").write_text("#!/bin/sh\nexit 0\n")
         (self.appdir / "AppRun").chmod(0o755)
+        self.hooks = self.appdir / "apprun-hooks"
+        self.hooks.mkdir()
+        self.gtk_hook = self.hooks / "linuxdeploy-plugin-gtk.sh"
+        self.gtk_hook.write_text(
+            "#!/bin/sh\n"
+            "export GDK_BACKEND=x11 # linuxdeploy compatibility workaround\n"
+            "export GTK_THEME=Adwaita\n"
+        )
         self.library = self.appdir / "usr/lib/libwayland-client.so.0"
         self.library.write_bytes(b"old-wayland")
         self.library.with_name("libwayland-client.so").symlink_to(self.library.name)
@@ -90,9 +101,13 @@ class AppImageFinalizationTests(unittest.TestCase):
         verify = self.root / "verify"
         verify.mkdir()
         subprocess.run([str(self.image), "--appimage-extract"], cwd=verify, check=True)
-        extracted = verify / "squashfs-root/usr/lib"
+        extracted_root = verify / "squashfs-root"
+        extracted = extracted_root / "usr/lib"
         self.assertEqual(list(extracted.glob("libwayland-client.so*")), [])
         self.assertTrue((extracted / "libwayland-cursor.so.0").is_file())
+        gtk_hook = extracted_root / "apprun-hooks/linuxdeploy-plugin-gtk.sh"
+        self.assertNotIn("GDK_BACKEND=x11", gtk_hook.read_text())
+        self.assertIn("GTK_THEME=Adwaita", gtk_hook.read_text())
         for name in RUNTIMES:
             self.assertEqual((extracted / "Pilo/runtime" / name).read_bytes(),
                              (self.originals / name).read_bytes())
@@ -103,6 +118,12 @@ class AppImageFinalizationTests(unittest.TestCase):
 
     def test_rejects_reintroduced_wayland_library(self):
         self.assertNotEqual(self.run_finalizer("wayland").returncode, 0)
+        self.assertEqual(self.image.read_bytes(), b"old-appimage")
+
+    def test_rejects_reintroduced_forced_x11_backend(self):
+        result = self.run_finalizer("force-x11")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("still forces the GTK X11 backend", result.stderr)
         self.assertEqual(self.image.read_bytes(), b"old-appimage")
 
     def test_rejects_missing_original_runtime(self):

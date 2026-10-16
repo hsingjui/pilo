@@ -122,8 +122,10 @@ them (`#[allow(...)]` only with a comment explaining why).
 
 - Run `scripts/finalize-linux-appimage.sh <AppImage> <AppDir> <runtime-dir>
   <AppImage-output-plugin>` after Tauri bundling and before collecting assets.
-  It restores all four original server binaries into the prepared AppDir and
-  removes `libwayland-client.so*`, which conflicts with host Mesa/EGL.
+  It restores all four original server binaries into the prepared AppDir,
+  removes `libwayland-client.so*` that conflicts with host Mesa/EGL, and removes
+  linuxdeploy's forced `GDK_BACKEND=x11` so GTK can use native Wayland
+  per-monitor scaling while retaining its automatic X11 fallback.
 - Never run linuxdeploy over restored server resources: its ELF patching makes
   the static PIE Linux runtimes segfault even for `--fingerprint`. Repack with
   the AppImage output plugin alone, using the copy cached by Tauri.

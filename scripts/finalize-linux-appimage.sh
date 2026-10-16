@@ -47,6 +47,14 @@ chmod 755 "$BUNDLED_RUNTIME_DIR"/pilo-server-linux-* "$BUNDLED_RUNTIME_DIR/pilo-
 # This library is also excluded by the upstream AppImage excludelist.
 find "$APPDIR/usr/lib" -name 'libwayland-client.so*' -delete
 
+# linuxdeploy's GTK hook forces X11, which hides KWin's per-monitor Wayland
+# scale factors. Let GTK select Wayland natively while retaining its X11 fallback.
+FORCED_X11_PATTERN='^[[:space:]]*export[[:space:]]+GDK_BACKEND=x11([[:space:]]*#.*)?$'
+GTK_HOOK="$APPDIR/apprun-hooks/linuxdeploy-plugin-gtk.sh"
+if [[ -f "$GTK_HOOK" ]]; then
+  sed -i -E "/$FORCED_X11_PATTERN/d" "$GTK_HOOK"
+fi
+
 EXPECTED_FINGERPRINT="$("$RUNTIME_DIR/pilo-server-linux-x86_64" --fingerprint)"
 if [[ ! "$EXPECTED_FINGERPRINT" =~ ^[0-9a-f]{16}$ ]]; then
   printf 'Original x64 server did not return a valid fingerprint\n' >&2
@@ -73,6 +81,11 @@ mkdir "$WORK_DIR/verify"
 EXTRACTED="$WORK_DIR/verify/squashfs-root"
 if [[ -n "$(find "$EXTRACTED/usr/lib" -name 'libwayland-client.so*' -print -quit)" ]]; then
   printf 'Rebuilt AppImage still contains a bundled Wayland client library\n' >&2
+  exit 1
+fi
+EXTRACTED_GTK_HOOK="$EXTRACTED/apprun-hooks/linuxdeploy-plugin-gtk.sh"
+if [[ -f "$EXTRACTED_GTK_HOOK" ]] && grep -Eq "$FORCED_X11_PATTERN" "$EXTRACTED_GTK_HOOK"; then
+  printf 'Rebuilt AppImage still forces the GTK X11 backend\n' >&2
   exit 1
 fi
 for name in "${REQUIRED[@]}"; do
