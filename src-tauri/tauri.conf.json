@@ -12,6 +12,7 @@
 		"windows": [
 			{
 				"title": "Pilo",
+				"decorations": true,
 				"create": false,
 				"visible": false,
 				"width": 1200,

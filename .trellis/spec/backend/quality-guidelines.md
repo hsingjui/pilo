@@ -60,6 +60,23 @@ them (`#[allow(...)]` only with a comment explaining why).
 - `pnpm tauri dev` and desktop-window/installer verification must run on Windows.
   WSL is for code, `cargo check`, and static validation only.
 
+### Linux Wayland window decorations
+
+- Keep the desktop Tauri dependency at `2.12` or newer and commit `Cargo.lock`.
+  `cargo tree --locked -i tao` must resolve Tao >= 0.36.0; older Tao forces GTK
+  client-side decorations even when KWin supports server-side decorations.
+- When upgrading the Rust `tauri` minor version, update the direct
+  `@tauri-apps/api` dependency and `pnpm-lock.yaml` to the same major/minor.
+  `pnpm build` does not run the Tauri packaging version check; verify the
+  installed API version against `Cargo.lock` before packaging.
+- Keep `app.windows[].decorations: true` in `src-tauri/tauri.conf.json`.
+  The Windows-only builder override in `desktop_window.rs` intentionally disables
+  decorations for its custom title bar; do not extend that override to Linux.
+- Do not use `GTK_CSD=0`, force X11, or install a custom GTK HeaderBar as a fix.
+  The upstream fix is https://tauri.app/release/tao/v0.36.0/.
+- After rebuilding, manually verify KDE title bar buttons and native Wayland
+  scaling on KWin. Static compilation cannot verify compositor behavior.
+
 ### Bundled server resource paths
 
 - Initialize the server resource directory from `app.path().resource_dir()` in

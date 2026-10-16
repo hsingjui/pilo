@@ -23,8 +23,9 @@ webdriver = ["dep:tauri-plugin-wdio-webdriver"]
 [dependencies]
 pilo-protocol = { path = "../crates/pilo-protocol" }
 pilo-server = { path = "../crates/pilo-server" }
-tauri = { version = "2", features = ["devtools", "tray-icon"] }
-# Stay on the plugin lines compatible with the locked Tauri 2.11 runtime.
+# Tauri 2.12 uses Tao >= 0.36, which respects KDE Wayland server-side decorations.
+tauri = { version = "2.12", features = ["devtools", "tray-icon"] }
+# Keep the desktop integration plugin lines pinned to compatible minor releases.
 tauri-plugin-autostart = "~2.5.1"
 tauri-plugin-global-shortcut = "~2.3.1"
 tauri-plugin-single-instance = "~2.4.0"
