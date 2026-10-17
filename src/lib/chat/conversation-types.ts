@@ -1,3 +1,4 @@
+import type { TokenUsage } from "@/lib/api/token-usage";
 import type { AssistantActivity } from "@/components/chat/chat-activity";
 import type { AssistantContentItem } from "@/lib/chat/chat-activity-state";
 import type { ChatConversationImage } from "@/lib/chat/chat-submission";
@@ -27,6 +28,8 @@ export type ChatMessage =
 			replyRunwayPx?: number;
 			stopReason?: string;
 			errorMessage?: string;
+			/** 该轮最后一次模型调用的用量（含缓存与费用）。 */
+			usage?: TokenUsage;
 			completion?: "complete" | "interrupted" | "continued";
 			historyPlaceholder?: boolean;
 			historyEstimatedChars?: number;
@@ -87,6 +90,8 @@ export type ConversationEvent = ConversationEventMeta &
 				stopReason?: string | null;
 				errorMessage?: string | null;
 				completion?: "complete" | "interrupted";
+				/** 实时路径为 null/missing，历史上的 assistant_turn_end 可能省略该字段。 */
+				usage?: TokenUsage | null;
 		  }
 	);
 

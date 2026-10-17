@@ -511,6 +511,34 @@ pub(super) async fn model_scope_set(
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
     }
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PromptEnhanceInput {
+    project_id: String,
+    draft: String,
+    model: Option<crate::domain::PromptEnhanceModel>,
+}
+
+/// Mobile WebUI 的提示词优化。复用桌面的 `prompt_enhance`，保证两端同一套
+/// 改写提示词、草稿裁剪与超时策略。
+pub(super) async fn prompt_enhance(
+    State(state): State<RemoteHttpState>,
+    Json(input): Json<PromptEnhanceInput>,
+) -> Response {
+    let runtime = state.app.state::<PiloRuntime>();
+    match crate::runtime::prompt_enhance::enhance_prompt(
+        &state.app,
+        &runtime,
+        &input.project_id,
+        input.model,
+        &input.draft,
+    )
+    .await
+    {
+        Ok(text) => Json(text).into_response(),
+        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

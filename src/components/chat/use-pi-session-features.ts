@@ -19,6 +19,7 @@ import {
 	type PiCommand,
 	type PiloRuntimeEvent,
 } from "@/lib/api/pi-runtime";
+import { usePreferences } from "@/lib/preferences-provider";
 
 type ChatSessionClient = ReturnType<typeof createChatSessionClient>;
 
@@ -99,6 +100,7 @@ export function usePiSessionFeatures({
 	onProjectMcpDeclined,
 }: UsePiSessionFeaturesOptions) {
 	const { t } = useTranslation();
+	const { showPluginNotifications } = usePreferences();
 	const commandSuggestions = useMemo(
 		() => createPiCommandSuggestions(commands ?? []),
 		[commands],
@@ -158,6 +160,8 @@ export function usePiSessionFeatures({
 
 	const showExtensionNotification = useCallback(
 		(event: PiExtensionDialogRequest) => {
+			// 插件通知默认关闭；关闭时不建状态、不起计时器，事件直接丢弃。
+			if (!showPluginNotifications) return;
 			const type = event.notifyType ?? "info";
 			const notification: PiExtensionNotification = {
 				id: event.id,
@@ -199,7 +203,7 @@ export function usePiSessionFeatures({
 				].slice(-MAX_EXTENSION_NOTIFICATIONS);
 			});
 		},
-		[],
+		[showPluginNotifications],
 	);
 
 	useEffect(() => {

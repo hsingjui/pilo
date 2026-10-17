@@ -11,6 +11,7 @@ import {
 	replayConversationEvents,
 	replayConversationEventsBatched,
 } from "../../src/lib/chat/conversation-replay.ts";
+import { toConversationAction } from "../../src/lib/chat/conversation-runtime-adapter.ts";
 import type {
 	ConversationAction,
 	ConversationEvent,
@@ -474,6 +475,38 @@ test("frame coalescing merges only compatible high-frequency actions", () => {
 	);
 });
 
+test("thinking actions keep the start and end timestamps of their block", () => {
+	const state = reduce([
+		{
+			type: "local_user_submit",
+			clientMessageId: "u1",
+			text: "run",
+			timestampMs: 1,
+		},
+		{ type: "local_assistant_pending", timestampMs: 1 },
+		{ type: "user_message_start", text: "run", timestampMs: 2 },
+		{ type: "assistant_message_start", timestampMs: 3 },
+		{ type: "assistant_thinking_start", timestampMs: 4 },
+		{ type: "assistant_thinking_delta", delta: "想", timestampMs: 5 },
+		{ type: "assistant_thinking_end", timestampMs: 40 },
+	]);
+	const thinking = state.messages
+		.flatMap((message) => message.content ?? [])
+		.find((item) => item.type === "thinking");
+
+	assert.deepEqual(
+		thinking?.type === "thinking"
+			? {
+					text: thinking.text,
+					status: thinking.status,
+					startedAtMs: thinking.startedAtMs,
+					endedAtMs: thinking.endedAtMs,
+				}
+			: null,
+		{ text: "想", status: "complete", startedAtMs: 4, endedAtMs: 40 },
+	);
+});
+
 test("compaction marker closes the running turn and inserts a compaction message", () => {
 	const state = replayConversationEvents(
 		[
@@ -519,4 +552,130 @@ test("compaction marker closes the running turn and inserts a compaction message
 	if (compaction?.role !== "compaction") throw new Error("expected compaction");
 	assert.equal(compaction.text, "summary text");
 	assert.equal(compaction.tokensBefore, 217_975);
+});
+
+test("history replay keeps the turn token usage on the assistant message", () => {
+	const state = replayConversationEvents(
+		[
+			{
+				type: "user_message_start",
+				text: "run",
+				timestampMs: 1,
+				sourceEntryId: "u1",
+			},
+			{ type: "assistant_message_start", timestampMs: 2, sourceEntryId: "a1" },
+			{
+				type: "assistant_text_delta",
+				delta: "done",
+				timestampMs: 3,
+				sourceEntryId: "a1",
+				sourceContentIndex: 0,
+			},
+			{
+				type: "assistant_turn_end",
+				stopReason: "stop",
+				completion: "complete",
+				timestampMs: 4,
+				usage: {
+					input: 10,
+					output: 5,
+					cacheRead: 20,
+					cacheWrite: 2,
+					total: 37,
+					cost: 0.01,
+				},
+			},
+		] satisfies ConversationEvent[],
+		context(),
+	);
+
+	const assistant = state.messages[1];
+	if (assistant?.role !== "assistant") throw new Error("expected assistant");
+	assert.deepEqual(assistant.usage, {
+		input: 10,
+		output: 5,
+		cacheRead: 20,
+		cacheWrite: 2,
+		total: 37,
+		cost: 0.01,
+	});
+});
+
+test("turns without reported usage keep the field empty", () => {
+	const state = replayConversationEvents(
+		[
+			{
+				type: "user_message_start",
+				text: "run",
+				timestampMs: 1,
+				sourceEntryId: "u1",
+			},
+			{ type: "assistant_message_start", timestampMs: 2, sourceEntryId: "a1" },
+			{
+				type: "assistant_text_delta",
+				delta: "done",
+				timestampMs: 3,
+				sourceEntryId: "a1",
+				sourceContentIndex: 0,
+			},
+			{ type: "assistant_turn_end", stopReason: "stop", timestampMs: 4 },
+		] satisfies ConversationEvent[],
+		context(),
+	);
+
+	const assistant = state.messages[1];
+	if (assistant?.role !== "assistant") throw new Error("expected assistant");
+	assert.equal(assistant.usage, undefined);
+});
+
+test("live assistant_message_end carries usage into the turn end action", () => {
+	const action = toConversationAction({
+		type: "assistant_message_end",
+		generation: 1,
+		stopReason: "stop",
+		errorMessage: null,
+		usage: { input: 3, output: 7, cacheRead: 40, cacheWrite: 0, total: 50 },
+	});
+
+	if (action?.type !== "assistant_turn_end")
+		throw new Error("expected turn end");
+	assert.equal(action.usage?.total, 50);
+	assert.equal(action.usage?.cacheRead, 40);
+});
+
+test("streaming thinking start and end record distinct context timestamps", () => {
+	let currentTime = 1000;
+	const customCtx = {
+		...context(),
+		now: () => currentTime,
+	};
+	let state = reduceConversation(
+		createConversationState(),
+		{ type: "local_user_submit", clientMessageId: "u1", text: "hi" },
+		customCtx,
+	);
+	state = reduceConversation(
+		state,
+		{ type: "user_message_start", text: "hi" },
+		customCtx,
+	);
+	currentTime = 1500;
+	state = reduceConversation(
+		state,
+		{ type: "assistant_thinking_start" },
+		customCtx,
+	);
+	currentTime = 5500;
+	state = reduceConversation(
+		state,
+		{ type: "assistant_thinking_end" },
+		customCtx,
+	);
+
+	const assistant = state.messages[1];
+	if (assistant?.role !== "assistant") throw new Error("expected assistant");
+	const thinking = assistant.content?.find((item) => item.type === "thinking");
+	assert.ok(thinking);
+	assert.equal(thinking?.startedAtMs, 1500);
+	assert.equal(thinking?.endedAtMs, 5500);
 });

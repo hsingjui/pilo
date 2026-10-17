@@ -10,6 +10,7 @@ import { registerChatFile } from "@/lib/chat/chat-file-lifecycle";
 import type { SessionReadState } from "@/lib/session-read-state";
 import type { RemoteAccessAddress } from "@/lib/api/remote";
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-client";
+import type { PromptEnhanceModel } from "@/lib/prompt-enhance";
 import type {
 	PiloClientBootstrap,
 	PiloClientEventMessage,
@@ -455,6 +456,18 @@ export function generateRemoteSessionTitle(
 	return remoteFetch<string | null>(token, "/api/v1/sessions/title", {
 		method: "POST",
 		body: JSON.stringify({ projectId, message }),
+	});
+}
+
+export function enhanceRemotePrompt(
+	token: string,
+	projectId: string,
+	draft: string,
+	model: PromptEnhanceModel | null,
+) {
+	return remoteFetch<string>(token, "/api/v1/prompt/enhance", {
+		method: "POST",
+		body: JSON.stringify({ projectId, draft, model }),
 	});
 }
 

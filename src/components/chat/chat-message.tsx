@@ -1,6 +1,6 @@
-import { memo, type ReactNode } from "react";
+import { Fragment, memo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { GitFork } from "lucide-react";
+import { Coins, GitFork } from "lucide-react";
 
 import { ChatAgentActivityIndicator } from "@/components/chat/chat-agent-activity";
 import {
@@ -11,6 +11,7 @@ import {
 import { ChatCopyButton } from "@/components/chat/chat-copy-button";
 import { ChatEmptyHero } from "@/components/chat/chat-empty-hero";
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
+import { hasTokenUsage, type TokenUsage } from "@/lib/api/token-usage";
 import {
 	getAssistantActivities,
 	getAssistantStreamingState,
@@ -20,10 +21,69 @@ import {
 import type { ChatMessage } from "@/lib/chat/conversation-types";
 import { recordChatMessageRender } from "@/lib/chat/chat-performance";
 import { formatWorkDuration } from "@/lib/format-duration";
+import { formatCompactTokens, formatCost } from "@/lib/format-numbers";
 import { getPageFontFamilyStack } from "@/lib/font-settings";
 import { usePreferences } from "@/lib/preferences-provider";
 import { Button, Spinner, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
 
+/**
+ * 单轮 token 用量：折叠在消息脚注里只显示合计，悬停展开输入/输出/缓存与费用
+ * （该轮最后一次模型调用的用量，与 Pi 的 `usage` 一致）。
+ */
+function TurnTokenChip({ usage }: { usage: TokenUsage }) {
+	const { t } = useTranslation();
+	const breakdown: Array<[string, number]> = [
+		[t("chat.input"), usage.input],
+		[t("chat.output"), usage.output],
+		[t("chat.cacheRead"), usage.cacheRead],
+		[t("chat.cacheWrite"), usage.cacheWrite],
+	];
+
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<span
+					className="inline-flex cursor-default items-center gap-1 font-mono tabular-nums"
+					aria-label={`${t("chat.turnTokens")}: ${formatCompactTokens(usage.total)}`}
+				>
+					<Coins className="size-3 shrink-0 opacity-70" aria-hidden="true" />
+					{formatCompactTokens(usage.total)}
+				</span>
+			</TooltipTrigger>
+			<TooltipContent side="top" className="text-2xs">
+				<div className="grid grid-cols-[auto_auto] gap-x-3 gap-y-0.5">
+					<span className="col-span-2 pb-0.5 font-semibold uppercase tracking-[0.6px] text-muted-foreground">
+						{t("chat.turnTokens")}
+					</span>
+					{breakdown.map(([label, value]) => (
+						<Fragment key={label}>
+							<span className="text-muted-foreground">{label}</span>
+							<span className="text-right font-mono tabular-nums">
+								{formatCompactTokens(value)}
+							</span>
+						</Fragment>
+					))}
+					<span className="border-t border-border/60 pt-0.5 text-muted-foreground">
+						{t("chat.tokensTotal")}
+					</span>
+					<span className="border-t border-border/60 pt-0.5 text-right font-mono tabular-nums">
+						{formatCompactTokens(usage.total)}
+					</span>
+					{usage.cost !== undefined && usage.cost > 0 ? (
+						<Fragment>
+							<span className="text-muted-foreground">
+								{t("chat.turnCost")}
+							</span>
+							<span className="text-right font-mono tabular-nums">
+								{formatCost(usage.cost)}
+							</span>
+						</Fragment>
+					) : null}
+				</div>
+			</TooltipContent>
+		</Tooltip>
+	);
+}
 function MessageAction({
 	label,
 	children,
@@ -117,6 +177,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 					second: t("common.second"),
 				})
 			: "";
+	const turnUsage = hasTokenUsage(message.usage) ? message.usage : null;
 	const visibleErrorMessage =
 		suppressInterruptedError && message.completion === "interrupted"
 			? undefined
@@ -206,6 +267,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 					  (visibleAssistantText ||
 							message.time ||
 							footerDuration ||
+							turnUsage ||
 							canFork) ? (
 						<div className="mt-0.5 flex min-h-7 flex-wrap items-center gap-2 text-2xs text-muted-foreground touch-reveal opacity-0 transition-opacity duration-150 group-hover:opacity-100 has-[:focus-visible]:opacity-100">
 							{visibleAssistantText ? (
@@ -233,6 +295,10 @@ export const AssistantMessage = memo(function AssistantMessage({
 							{footerDuration ? (
 								<span className="font-mono tabular-nums">{footerDuration}</span>
 							) : null}
+							{turnUsage && (message.time || footerDuration) ? (
+								<span aria-hidden="true">·</span>
+							) : null}
+							{turnUsage ? <TurnTokenChip usage={turnUsage} /> : null}
 						</div>
 					) : null}
 				</div>

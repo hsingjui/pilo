@@ -361,6 +361,7 @@ impl RuntimeEventSink for TauriEventSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::token_usage::TokenUsage;
 
     #[test]
     fn runtime_event_has_stable_chat_shape() {
@@ -368,6 +369,14 @@ mod tests {
             generation: 7,
             stop_reason: Some("stop".to_owned()),
             error_message: None,
+            usage: Some(TokenUsage {
+                input: 10,
+                output: 5,
+                cache_read: 20,
+                cache_write: 2,
+                total: 37,
+                cost: Some(0.01),
+            }),
         };
 
         assert_eq!(
@@ -376,7 +385,15 @@ mod tests {
                 "type": "assistant_message_end",
                 "generation": 7,
                 "stopReason": "stop",
-                "errorMessage": null
+                "errorMessage": null,
+                "usage": {
+                    "input": 10,
+                    "output": 5,
+                    "cacheRead": 20,
+                    "cacheWrite": 2,
+                    "total": 37,
+                    "cost": 0.01
+                }
             })
         );
     }
@@ -483,6 +500,7 @@ mod tests {
                     generation,
                     stop_reason: Some("stop".to_owned()),
                     error_message: None,
+                    usage: None,
                 },
             ));
         }
@@ -572,6 +590,7 @@ mod tests {
                     generation: 3,
                     stop_reason: Some("stop".to_owned()),
                     error_message: None,
+                    usage: None,
                 },
             ),
         };
@@ -585,7 +604,8 @@ mod tests {
                 "type": "assistant_message_end",
                 "generation": 3,
                 "stopReason": "stop",
-                "errorMessage": null
+                "errorMessage": null,
+                "usage": null
             })
         );
     }

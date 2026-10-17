@@ -9,6 +9,7 @@ import { CacheKeepAliveNotice } from "@/components/chat/cache-keep-alive-notice"
 import { useCacheKeepAliveStatus } from "@/lib/use-cache-keep-alive-status";
 import { useNextPrompt } from "@/components/chat/use-next-prompt";
 import { tauriPiloClient } from "@/lib/api/tauri-pilo-client";
+import { promptEnhanceModel } from "@/lib/prompt-enhance";
 import { SessionMentionScope } from "@/components/chat/session-mention-context";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { uploadChatFile } from "@/lib/api/files";
@@ -21,6 +22,7 @@ import { ChatImageScopeProvider } from "@/components/chat/chat-image-viewer";
 import { ChatMarkdownImageScopeProvider } from "@/components/chat/chat-markdown-image";
 import { ChatPendingQueue } from "@/components/chat/chat-pending-queue";
 import { ChatRuntimeRecoveryNotice } from "@/components/chat/chat-runtime-recovery-notice";
+import { ChatTodoCapsule } from "@/components/chat/chat-todo-capsule";
 import { ChatInterruptedTurnNotice } from "@/components/chat/chat-interrupted-turn-notice";
 import { piSessionSuggestions } from "@/components/chat/chat-composer-suggestions";
 import { PiExtensionNotifications } from "@/components/chat/pi-extension-notifications";
@@ -613,6 +615,11 @@ function ChatPageImpl(props: ChatPageProps) {
 											key={client.sessionKey}
 											status={cacheKeepAlive.status}
 										/>
+										<ChatTodoCapsule
+											conversationStore={conversationStore}
+											historyMessages={baseMessages}
+											running={running}
+										/>
 										<ChatComposer
 											nextPrompt={nextPrompt.text}
 											onNextPromptDismiss={nextPrompt.dismiss}
@@ -662,6 +669,13 @@ function ChatPageImpl(props: ChatPageProps) {
 															handleFollowUp(submission);
 														}
 													: undefined
+											}
+											onEnhancePrompt={(draftValue) =>
+												tauriPiloClient.enhancePrompt(
+													session.projectRecord.id,
+													draftValue,
+													promptEnhanceModel(selectedModel),
+												)
 											}
 											disabled={
 												// 后台保留页不可见；其 focus-composer hook 先注册、先执行，

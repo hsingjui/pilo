@@ -1,5 +1,6 @@
 use serde_json::Value;
 
+use super::super::token_usage::TokenUsage;
 use super::parser_fields::{
     entry_id, entry_timestamp_ms, fallback_text, normalize_thinking, tool_result_payload,
     user_images, user_text,
@@ -11,6 +12,7 @@ struct TurnMeta {
     has_assistant: bool,
     stop_reason: Option<String>,
     error_message: Option<String>,
+    usage: Option<TokenUsage>,
     updated_at_ms: Option<i64>,
 }
 
@@ -134,6 +136,13 @@ fn project_message(
                 .get("errorMessage")
                 .and_then(Value::as_str)
                 .map(str::to_owned);
+            // 累加该轮次所有 assistant 步骤的 token 与费用用量
+            if let Some(usage) = TokenUsage::from_json(message.get("usage")) {
+                match &mut turn.usage {
+                    Some(current) => current.accumulate(usage),
+                    None => turn.usage = Some(usage),
+                }
+            }
             turn.updated_at_ms = timestamp_ms.or(turn.updated_at_ms);
         }
         Some("toolResult") => {
@@ -349,6 +358,7 @@ fn finish_turn(events: &mut Vec<ConversationEventDto>, turn: &mut TurnMeta, eof:
         error_message: turn.error_message.take(),
         completion,
         timestamp_ms: turn.updated_at_ms,
+        usage: turn.usage.take(),
     });
     *turn = TurnMeta::default();
 }

@@ -50,6 +50,7 @@ export type PiloPreferences = {
 	collapseCompletedActivity: boolean;
 	collapseLongMessages: boolean;
 	showWorkDuration: boolean;
+	showPluginNotifications: boolean;
 	desktopNotifications: boolean;
 	developerMode: boolean;
 	pageFontFamily: PageFontFamily;
@@ -70,6 +71,7 @@ type PreferencesContextValue = PiloPreferences & {
 	setCollapseCompletedActivity: (value: boolean) => void;
 	setCollapseLongMessages: (value: boolean) => void;
 	setShowWorkDuration: (value: boolean) => void;
+	setShowPluginNotifications: (value: boolean) => void;
 	setDesktopNotifications: (value: boolean) => void;
 	setDeveloperMode: (value: boolean) => void;
 	setPageFontFamily: (value: PageFontFamily) => void;
@@ -102,6 +104,7 @@ const DEFAULT_PREFERENCES: PiloPreferences = {
 	collapseCompletedActivity: true,
 	collapseLongMessages: true,
 	showWorkDuration: true,
+	showPluginNotifications: false,
 	desktopNotifications: false,
 	developerMode: false,
 	pageFontFamily: DEFAULT_PAGE_FONT_FAMILY,
@@ -153,6 +156,10 @@ function readStoredPreferences(): PiloPreferences {
 				typeof parsed.showWorkDuration === "boolean"
 					? parsed.showWorkDuration
 					: DEFAULT_PREFERENCES.showWorkDuration,
+			showPluginNotifications:
+				typeof parsed.showPluginNotifications === "boolean"
+					? parsed.showPluginNotifications
+					: DEFAULT_PREFERENCES.showPluginNotifications,
 			desktopNotifications:
 				typeof parsed.desktopNotifications === "boolean"
 					? parsed.desktopNotifications
@@ -270,6 +277,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 	const setShowWorkDuration = useCallback((value: boolean) => {
 		setPreferences((current) => ({ ...current, showWorkDuration: value }));
 	}, []);
+	const setShowPluginNotifications = useCallback((value: boolean) => {
+		setPreferences((current) => ({
+			...current,
+			showPluginNotifications: value,
+		}));
+	}, []);
 	const setDesktopNotifications = useCallback((value: boolean) => {
 		setPreferences((current) => ({ ...current, desktopNotifications: value }));
 	}, []);
@@ -332,6 +345,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 			setCollapseCompletedActivity,
 			setCollapseLongMessages,
 			setShowWorkDuration,
+			setShowPluginNotifications,
 			setDesktopNotifications,
 			setDeveloperMode,
 			setPageFontFamily,
@@ -364,6 +378,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 			setKeyboardShortcut,
 			setSendMessageShortcut,
 			setShowWorkDuration,
+			setShowPluginNotifications,
 			setTerminalFontFamily,
 			setTerminalFontSize,
 		],

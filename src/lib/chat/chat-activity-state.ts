@@ -237,13 +237,20 @@ export function reconcileAssistantTextContent(
 export function startAssistantThinkingContent(
 	content: AssistantContentItem[] | undefined,
 	createId: () => string,
+	startedAtMs?: number,
 ): AssistantContentItem[] {
 	const items = content ?? [];
 	const last = items[items.length - 1];
 	if (last?.type === "thinking" && last.status === "running") return items;
 	return [
 		...items,
-		{ id: createId(), type: "thinking", text: "", status: "running" },
+		{
+			id: createId(),
+			type: "thinking",
+			text: "",
+			status: "running",
+			startedAtMs,
+		},
 	];
 }
 
@@ -251,6 +258,7 @@ export function appendAssistantThinkingContent(
 	content: AssistantContentItem[] | undefined,
 	delta: string,
 	createId: () => string,
+	startedAtMs?: number,
 ): AssistantContentItem[] {
 	const items = content ?? [];
 	if (!delta) return items;
@@ -264,19 +272,26 @@ export function appendAssistantThinkingContent(
 	}
 	return [
 		...items,
-		{ id: createId(), type: "thinking", text: delta, status: "running" },
+		{
+			id: createId(),
+			type: "thinking",
+			text: delta,
+			status: "running",
+			startedAtMs,
+		},
 	];
 }
 
 export function finishAssistantThinkingContent(
 	content: AssistantContentItem[] | undefined,
+	endedAtMs?: number,
 ): AssistantContentItem[] {
 	const items = content ?? [];
 	for (let index = items.length - 1; index >= 0; index -= 1) {
 		const item = items[index];
 		if (item.type === "thinking" && item.status === "running") {
 			const next = [...items];
-			next[index] = { ...item, status: "complete" };
+			next[index] = { ...item, status: "complete", endedAtMs };
 			return next;
 		}
 	}

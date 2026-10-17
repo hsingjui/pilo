@@ -588,3 +588,53 @@ test("fallback submissions for new sessions can go directly to runtime", () => {
 		false,
 	);
 });
+
+test("started draft session leaves initialModel undefined when draft model is null", () => {
+	const sampleProject = {
+		id: "proj-1",
+		name: "Project 1",
+		path: "/test",
+		connection: { id: "local", name: "Local", kind: "local" as const },
+	};
+	const sessionWithNullModel = resolveChatSession({
+		sessions: [],
+		openedChats: [],
+		activeProject: sampleProject,
+		selectedSessionId: null,
+		selectedIndexedSession: null,
+		selectedProject: sampleProject,
+		draftSessionStarted: true,
+		draftTemporary: false,
+		draftSessionId: "draft-1",
+		draftSessionModel: null,
+		draftSessionThinkingLevel: null,
+		isExternalOpenTurn: () => false,
+		hostTurnOpen: false,
+	});
+	assert.equal(sessionWithNullModel?.initialModel, undefined);
+	assert.equal(sessionWithNullModel?.initialThinkingLevel, undefined);
+
+	const customModel = {
+		id: "custom-model",
+		name: "Custom Model",
+		provider: "test",
+		reasoning: false,
+	};
+	const sessionWithCustomModel = resolveChatSession({
+		sessions: [],
+		openedChats: [],
+		activeProject: sampleProject,
+		selectedSessionId: null,
+		selectedIndexedSession: null,
+		selectedProject: sampleProject,
+		draftSessionStarted: true,
+		draftTemporary: false,
+		draftSessionId: "draft-1",
+		draftSessionModel: customModel,
+		draftSessionThinkingLevel: "high",
+		isExternalOpenTurn: () => false,
+		hostTurnOpen: false,
+	});
+	assert.deepEqual(sessionWithCustomModel?.initialModel, customModel);
+	assert.equal(sessionWithCustomModel?.initialThinkingLevel, "high");
+});

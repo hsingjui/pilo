@@ -41,6 +41,12 @@ export const SHORTCUT_COMMANDS = [
 		labelKey: "shortcuts.focusComposer",
 		defaultShortcut: "mod+l",
 	},
+	{
+		id: "queue-message",
+		section: "session",
+		labelKey: "shortcuts.queueMessage",
+		defaultShortcut: "alt+enter",
+	},
 ] as const;
 
 export type ShortcutCommandId = (typeof SHORTCUT_COMMANDS)[number]["id"];

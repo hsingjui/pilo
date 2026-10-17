@@ -1,6 +1,7 @@
 import { CircleAlert, Info, TriangleAlert, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { usePreferences } from "@/lib/preferences-provider";
 import { Button, NoticeCard, NoticeCardHeader, NoticeIcon } from "@/ui";
 
 export type PiExtensionNotification = {
@@ -25,7 +26,9 @@ export function PiExtensionNotifications({
 	onDismiss,
 }: PiExtensionNotificationsProps) {
 	const { t } = useTranslation();
-	if (notifications.length === 0) return null;
+	const { showPluginNotifications } = usePreferences();
+	// 偏好关闭时隐藏已上屏的卡片；事件层同时不再构建通知与计时器。
+	if (!showPluginNotifications || notifications.length === 0) return null;
 
 	return (
 		<NoticeCard className="animate-in fade-in-0 overflow-hidden text-muted-foreground">

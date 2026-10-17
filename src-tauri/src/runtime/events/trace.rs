@@ -31,12 +31,14 @@ pub(super) fn traceable_runtime_event(event: &RuntimeEvent) -> Option<(&'static 
             generation,
             stop_reason,
             error_message,
+            usage,
         } => Some((
             "assistant_message_end",
             json!({
                 "generation": generation,
                 "stopReason": stop_reason,
                 "hasError": error_message.as_ref().is_some_and(|value| !value.is_empty()),
+                "totalTokens": usage.as_ref().map(|usage| usage.total),
             }),
         )),
         RuntimeEvent::ToolExecutionStart {

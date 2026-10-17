@@ -34,6 +34,7 @@ import { isImeComposingKeyboardEvent } from "@/lib/ime";
 import { type PiModel, runtimeErrorMessage } from "@/lib/api/pi-runtime";
 import { usePreferences } from "@/lib/preferences-provider";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
+import { keyboardEventMatchesShortcut } from "@/lib/keyboard-shortcuts";
 import { useIsTouchDevice } from "@/components/chat/chat-composer-run-config";
 import {
 	DEFAULT_SUGGESTIONS,
@@ -520,15 +521,14 @@ export function useChatComposerInput({
 			sendMessageShortcut === "enter"
 				? !event.ctrlKey && !event.metaKey
 				: event.ctrlKey || event.metaKey;
-		const shouldFollowUpWithEnter =
+		// 排队发送走独立快捷键（默认 Alt+Enter），只在此轮运行时才有意义；
+		// 它不属于“回车发送 / 修饰键发送”偏好，因此在两种偏好下都能用。
+		const shouldQueueWithShortcut =
 			running &&
-			event.key === "Enter" &&
-			event.altKey &&
-			!event.shiftKey &&
 			!isImeComposingKeyboardEvent(event) &&
-			primaryShortcutModifierMatches;
+			keyboardEventMatchesShortcut(event, keyboardShortcuts["queue-message"]);
 
-		if (shouldFollowUpWithEnter) {
+		if (shouldQueueWithShortcut) {
 			event.preventDefault();
 			submitFollowUp();
 			return;

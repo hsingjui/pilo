@@ -435,7 +435,12 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
         args.extend(["--thinking".to_owned(), thinking.clone()]);
     }
     if let Some(system_prompt) = params.system_prompt.as_ref() {
-        args.extend(["--system-prompt".to_owned(), system_prompt.clone()]);
+        // Windows 的 cmd.exe 在解析批处理参数时若遇到换行符会直接语法报错崩溃
+        #[cfg(windows)]
+        let prompt_arg = system_prompt.replace(['\r', '\n'], " ");
+        #[cfg(not(windows))]
+        let prompt_arg = system_prompt.clone();
+        args.extend(["--system-prompt".to_owned(), prompt_arg]);
     }
     let mut command = process_command(&pi_executable, &args, &path);
     command

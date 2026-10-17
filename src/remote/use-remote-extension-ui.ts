@@ -15,6 +15,7 @@ import {
 	type PiExtensionDialogRequest,
 } from "@/components/chat/use-pi-session-features";
 import { runtimeErrorMessage } from "@/lib/api/pi-runtime";
+import { usePreferences } from "@/lib/preferences-provider";
 import type { RemoteRpc } from "./use-remote-chat-transport";
 
 const MAX_EXTENSION_NOTIFICATIONS = 3;
@@ -48,6 +49,7 @@ export function useRemoteExtensionUi({
 	onProjectMcpDeclined?: (sessionKey: string) => void;
 }) {
 	const { t } = useTranslation();
+	const { showPluginNotifications } = usePreferences();
 	// `rpc` is bound to the active session, so each queued dialog carries the
 	// session it belongs to; only the active session's dialog is shown/answered.
 	const [extensionDialogQueue, setExtensionDialogQueue] = useState<
@@ -76,6 +78,8 @@ export function useRemoteExtensionUi({
 
 	const showExtensionNotification = useCallback(
 		(event: PiExtensionDialogRequest) => {
+			// 插件通知默认关闭；与桌面端同一开关，关闭时丢弃事件。
+			if (!showPluginNotifications) return;
 			const notification: PiExtensionNotification = {
 				id: event.id,
 				message: event.message || event.title || "Pi extension notification",
@@ -110,7 +114,7 @@ export function useRemoteExtensionUi({
 				].slice(-MAX_EXTENSION_NOTIFICATIONS);
 			});
 		},
-		[],
+		[showPluginNotifications],
 	);
 
 	useEffect(() => {

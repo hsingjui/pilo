@@ -135,6 +135,7 @@ pub(crate) fn router(
         .route("/api/v1/history/image", get(handlers::history_image))
         .route("/api/v1/sessions/title", post(handlers::session_title))
         .route("/api/v1/sessions/delete", post(handlers::session_delete))
+        .route("/api/v1/prompt/enhance", post(handlers::prompt_enhance))
         .route(
             "/api/v1/models",
             get(handlers::models).post(handlers::models_set),

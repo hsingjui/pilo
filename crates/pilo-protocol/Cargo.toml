@@ -13,3 +13,6 @@ tokio = { version = "1", features = ["io-util"] }
 [build-dependencies]
 prost-build = "0.14"
 protoc-bin-vendored = "3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }

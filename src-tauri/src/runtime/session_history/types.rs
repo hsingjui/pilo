@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use serde::Serialize;
 use serde_json::Value;
 
+use super::super::token_usage::TokenUsage;
+
 /// Byte range of a JSONL line so a single image payload can be fetched lazily
 /// without re-reading the whole session file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -158,6 +160,9 @@ pub enum ConversationEventDto {
         stop_reason: Option<String>,
         #[serde(rename = "errorMessage", skip_serializing_if = "Option::is_none")]
         error_message: Option<String>,
+        /// 该轮最后一次模型调用的用量。
+        #[serde(skip_serializing_if = "Option::is_none")]
+        usage: Option<TokenUsage>,
         completion: TurnCompletion,
         #[serde(rename = "timestampMs", skip_serializing_if = "Option::is_none")]
         timestamp_ms: Option<i64>,

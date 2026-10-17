@@ -13,6 +13,7 @@ import type {
 	ConversationReducerContext,
 	ConversationState,
 } from "./conversation-types.ts";
+import type { TokenUsage } from "../api/token-usage.ts";
 
 import { i18n } from "../../i18n/index.ts";
 
@@ -108,6 +109,7 @@ function endTurn(
 	errorMessage: string | null | undefined,
 	timestampMs: number,
 	completion: "complete" | "interrupted" | "continued" = "complete",
+	usage: TokenUsage | null | undefined = undefined,
 ): ConversationState {
 	if (!state.active?.assistantMessageId) return { ...state, active: null };
 	const index = state.messages.findIndex(
@@ -158,6 +160,8 @@ function endTurn(
 		stopReason: stopReason ?? undefined,
 		errorMessage: visibleError,
 		completion,
+		// 同一轮可能有多个 segment；保留已有用量，只有新上报才覆盖。
+		usage: usage ?? current.usage,
 	};
 	return { ...state, messages, active: null };
 }
@@ -509,10 +513,13 @@ function reduceConversationAction(
 		case "assistant_thinking_start":
 			return withAssistant(state, context, action.timestampMs, (message) => ({
 				...message,
-				content: startAssistantThinkingContent(message.content, () =>
-					action.sourceEntryId
-						? `${action.sourceEntryId}:content:${action.sourceContentIndex ?? 0}`
-						: context.createContentId("thinking"),
+				content: startAssistantThinkingContent(
+					message.content,
+					() =>
+						action.sourceEntryId
+							? `${action.sourceEntryId}:content:${action.sourceContentIndex ?? 0}`
+							: context.createContentId("thinking"),
+					action.timestampMs ?? context.now(),
 				),
 				streaming: true,
 			}));
@@ -523,13 +530,17 @@ function reduceConversationAction(
 					message.content,
 					action.delta,
 					() => context.createContentId("thinking"),
+					action.timestampMs ?? context.now(),
 				),
 				streaming: true,
 			}));
 		case "assistant_thinking_end":
 			return withAssistant(state, context, action.timestampMs, (message) => ({
 				...message,
-				content: finishAssistantThinkingContent(message.content),
+				content: finishAssistantThinkingContent(
+					message.content,
+					action.timestampMs ?? context.now(),
+				),
 			}));
 		case "tool_execution_start":
 			return withAssistant(state, context, action.timestampMs, (message) => ({
@@ -607,6 +618,7 @@ function reduceConversationAction(
 				action.errorMessage,
 				action.timestampMs ?? context.now(),
 				action.completion,
+				action.usage,
 			);
 	}
 }

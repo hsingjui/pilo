@@ -8,12 +8,14 @@ use super::pi_event_adapters::{
     adapt_tool_execution_end, adapt_tool_execution_start, adapt_tool_execution_update,
     assistant_text, is_pilo_correlated_response, message_text,
 };
+use super::token_usage::TokenUsage;
 
 #[derive(Default)]
 pub struct PiEventAdapter {
     finalized_text: String,
     stop_reason: Option<String>,
     error_message: Option<String>,
+    usage: Option<TokenUsage>,
 }
 
 impl PiEventAdapter {
@@ -104,30 +106,56 @@ impl PiEventAdapter {
         }]
     }
 
-    fn remember_agent_end(&mut self, event: &Value) {
-        let assistant = event
-            .get("messages")
-            .and_then(Value::as_array)
-            .and_then(|messages| {
-                messages
-                    .iter()
-                    .rev()
-                    .find(|entry| entry.get("role").and_then(Value::as_str) == Some("assistant"))
-            });
-        if let Some(assistant) = assistant {
-            self.remember_completion_metadata(assistant);
+    fn remember_completion_metadata(&mut self, message: &Value) {
+        if let Some(stop_reason) = message.get("stopReason").and_then(Value::as_str) {
+            self.stop_reason = Some(stop_reason.to_owned());
+        }
+        if let Some(error_message) = message.get("errorMessage").and_then(Value::as_str) {
+            self.error_message = Some(error_message.to_owned());
+        }
+        if let Some(usage) = TokenUsage::from_json(message.get("usage")) {
+            match &mut self.usage {
+                Some(current) => current.accumulate(usage),
+                None => self.usage = Some(usage),
+            }
         }
     }
 
-    fn remember_completion_metadata(&mut self, message: &Value) {
-        self.stop_reason = message
-            .get("stopReason")
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-        self.error_message = message
-            .get("errorMessage")
-            .and_then(Value::as_str)
-            .map(str::to_owned);
+    fn remember_agent_end(&mut self, event: &Value) {
+        let messages = match event.get("messages").and_then(Value::as_array) {
+            Some(messages) => messages,
+            None => return,
+        };
+        // 最后一条 assistant 消息决定终止原因与错误信息
+        if let Some(last_assistant) = messages
+            .iter()
+            .rev()
+            .find(|entry| entry.get("role").and_then(Value::as_str) == Some("assistant"))
+        {
+            self.stop_reason = last_assistant
+                .get("stopReason")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            self.error_message = last_assistant
+                .get("errorMessage")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+        }
+        // 累加本轮多步（含工具调用链）所有 assistant 消息的 token 与费用消耗
+        let mut total_usage: Option<TokenUsage> = None;
+        for entry in messages {
+            if entry.get("role").and_then(Value::as_str) == Some("assistant") {
+                if let Some(usage) = TokenUsage::from_json(entry.get("usage")) {
+                    match &mut total_usage {
+                        Some(current) => current.accumulate(usage),
+                        None => total_usage = Some(usage),
+                    }
+                }
+            }
+        }
+        if total_usage.is_some() {
+            self.usage = total_usage;
+        }
     }
 
     fn adapt_agent_settled(&mut self, generation: u64) -> Vec<RuntimeEvent> {
@@ -135,6 +163,7 @@ impl PiEventAdapter {
             generation,
             stop_reason: self.stop_reason.take(),
             error_message: self.error_message.take(),
+            usage: self.usage.take(),
         };
         self.finalized_text.clear();
         vec![event]

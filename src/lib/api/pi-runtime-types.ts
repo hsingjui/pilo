@@ -1,3 +1,4 @@
+import type { TokenUsage } from "./token-usage";
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
 import type { NextPromptSettings } from "../next-prompt";
 import type { ProjectModelScope } from "../project-model-scope";
@@ -251,6 +252,8 @@ export type PiloRuntimeEvent = {
 			generation: number;
 			stopReason: string | null;
 			errorMessage: string | null;
+			/** 该轮最后一次模型调用的用量；Pi 未上报时为 null。 */
+			usage: TokenUsage | null;
 	  }
 	| {
 			type: "queue_update";

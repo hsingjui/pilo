@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -7,6 +7,7 @@ import {
 	CircleAlert,
 	CodeXml,
 	FileText,
+	ListTodo,
 	PencilLine,
 	Plug,
 	Puzzle,
@@ -17,8 +18,10 @@ import {
 } from "lucide-react";
 
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
+import { ChatTodoList } from "@/components/chat/chat-todo-capsule";
 import { toggleChatExpansionWithAnchor } from "@/components/chat/chat-expansion-anchor";
 import { useChatExpansionState } from "@/components/chat/chat-expansion-state";
+import { useChatFileOpen } from "@/components/chat/chat-file-open-context";
 import {
 	shouldAutoCollapseAssistantActivity,
 	shouldInitiallyOpenAssistantActivity,
@@ -36,6 +39,12 @@ import {
 	toolFilePath,
 	toolPreview,
 } from "@/lib/chat/chat-tool-result";
+import {
+	countChatTodos,
+	isChatTodoTool,
+	parseChatTodos,
+	type ChatTodoItem,
+} from "@/lib/chat/chat-todos";
 import { formatWorkDuration } from "@/lib/format-duration";
 import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
@@ -48,6 +57,9 @@ export type ThinkingActivity = {
 	type: "thinking";
 	text: string;
 	status: ChatActivityStatus;
+	/** 流式开始/结束时刻；历史回放的消息可能没有，因此是可选的。 */
+	startedAtMs?: number;
+	endedAtMs?: number;
 };
 
 export type ToolCallActivity = {
@@ -103,6 +115,7 @@ function ToolIcon({
 }) {
 	if (isSkill) return <Puzzle className={className} />;
 	if (toolName.startsWith("mcp__")) return <Plug className={className} />;
+	if (isChatTodoTool(toolName)) return <ListTodo className={className} />;
 
 	switch (toolName.toLowerCase()) {
 		case "codemode":
@@ -132,6 +145,7 @@ function ToolIcon({
 function toolLabel(t: TFunction, toolName: string) {
 	const mcpTool = toolName.match(/^mcp__(.+?)__(.+)$/);
 	if (mcpTool) return `${mcpTool[1]}/${mcpTool[2]}`;
+	if (isChatTodoTool(toolName)) return t("chat.todos");
 
 	switch (toolName.toLowerCase()) {
 		case "tool_search":
@@ -158,66 +172,113 @@ function toolLabel(t: TFunction, toolName: string) {
 	}
 }
 
-function ActivityProcessStep({
-	icon,
-	children,
+function ThinkingActivityView({
+	activity,
+	expansionKey,
 }: {
-	icon: ReactNode;
-	children: ReactNode;
+	activity: ThinkingActivity;
+	expansionKey: string;
 }) {
-	return (
-		<div
-			className={cn(
-				"flex min-h-6 w-full items-baseline gap-1.5 py-0.5",
-				PROCESS_TEXT_CLASS,
-			)}
-		>
-			<span className="relative top-[0.125em] inline-flex shrink-0">
-				{icon}
-			</span>
-			<div className="min-w-0 flex-1">{children}</div>
-		</div>
-	);
-}
-
-function ThinkingActivityView({ activity }: { activity: ThinkingActivity }) {
 	const { t } = useTranslation();
+	const { showWorkDuration } = usePreferences();
 	const running = activity.status === "running";
+	// 思考默认收成单行（与工具调用一致），展开状态按条目记忆，
+	// 因此状态从 running 变为 complete 不会把用户展开的内容重新收起。
+	const [open, setOpen] = useChatExpansionState(expansionKey, false);
+	const hasDetails = activity.text.trim().length > 0;
+	const durationMs =
+		activity.startedAtMs !== undefined && activity.endedAtMs !== undefined
+			? Math.max(0, activity.endedAtMs - activity.startedAtMs)
+			: undefined;
+	// 只有耗时达到或超过 1 秒才展示持续时长；不足 1 秒或无跨度时间戳显示“思考”，避免出现“思考了0秒”
+	const durationLabel =
+		!running &&
+		showWorkDuration &&
+		durationMs !== undefined &&
+		durationMs >= 1000
+			? formatWorkDuration(durationMs, {
+					hour: t("common.hour"),
+					minute: t("common.minute"),
+					second: t("common.second"),
+				})
+			: "";
+	const label = running
+		? t("chat.thinking")
+		: durationLabel
+			? t("chat.thoughtDuration", { duration: durationLabel })
+			: t("chat.thought");
+
+	// 提取思考正文的末尾有效行作为单行折叠时的摘要（类似 tool call 的 preview）
+	const previewText = useMemo(() => {
+		if (!activity.text) return "";
+		const lines = activity.text
+			.split("\n")
+			.map((line) => line.trim())
+			.filter(Boolean);
+		return lines[lines.length - 1] ?? "";
+	}, [activity.text]);
+
 	return (
-		<ActivityProcessStep
-			icon={
+		<div className="w-full" data-chat-expansion-root>
+			<button
+				type="button"
+				className={cn(
+					"group/thinking -mx-1 flex min-h-6 w-[calc(100%+0.5rem)] items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+					PROCESS_TEXT_CLASS,
+					hasDetails
+						? "hover:bg-hover hover:text-foreground"
+						: "cursor-default",
+					open && "bg-hover text-foreground",
+				)}
+				onClick={(event) =>
+					hasDetails &&
+					toggleChatExpansionWithAnchor(event.currentTarget, () =>
+						setOpen((value) => !value),
+					)
+				}
+				aria-expanded={hasDetails ? open : undefined}
+			>
 				<Sparkles
 					className={cn(
 						PROCESS_ICON_CLASS,
 						running && "motion-safe:animate-pulse",
 					)}
 				/>
-			}
-		>
-			{activity.text ? (
-				<ChatMarkdown
-					text={activity.text}
-					isStreaming={running}
-					className={cn(
-						"!leading-[1.5] !text-muted-foreground",
-						"[&_p]:!mb-1 [&_li:not(:first-child)]:!mt-0.5",
-						"[&_:is(h1,h2,h3,h4,h5,h6)]:!my-1 [&_:is(h1,h2,h3,h4,h5,h6)]:!text-[1em] [&_:is(h1,h2,h3,h4,h5,h6)]:!font-medium",
-						"[&_[data-streamdown='code-block']]:!my-2",
-					)}
-				/>
-			) : (
-				<span>{t("chat.thinking")}</span>
-			)}
-		</ActivityProcessStep>
+				<span className="shrink-0 truncate">{label}</span>
+				{previewText && !open ? (
+					<span className="min-w-0 flex-1 truncate font-normal text-muted-foreground/75">
+						{previewText}
+					</span>
+				) : (
+					<span className="min-w-0 flex-1" aria-hidden="true" />
+				)}
+			</button>
+			{hasDetails && open ? (
+				<div className="pt-0.5">
+					<ChatMarkdown
+						text={activity.text}
+						isStreaming={running}
+						className={cn(
+							"!leading-[1.5] !text-muted-foreground",
+							"[&_p]:!mb-1 [&_li:not(:first-child)]:!mt-0.5",
+							"[&_:is(h1,h2,h3,h4,h5,h6)]:!my-1 [&_:is(h1,h2,h3,h4,h5,h6)]:!text-[1em] [&_:is(h1,h2,h3,h4,h5,h6)]:!font-medium",
+							"[&_[data-streamdown='code-block']]:!my-2",
+						)}
+					/>
+				</div>
+			) : null}
+		</div>
 	);
 }
 
 function ToolDetail({
 	activity,
 	writeContent,
+	todos,
 }: {
 	activity: ToolCallActivity;
 	writeContent: string | null;
+	todos: ChatTodoItem[] | null;
 }) {
 	const { t, i18n } = useTranslation();
 	const hasArgs = activity.args !== undefined && activity.args !== null;
@@ -244,6 +305,15 @@ function ToolDetail({
 	const wallTimeSeconds = flattenedResult?.wallTimeSeconds;
 	const hasExecutionSummary =
 		exitCode != null || wallTimeSeconds != null || flattenedResult?.truncated;
+
+	// 待办清单自带结构化展示，不再回落到参数/结果的 JSON 文本。
+	if (todos) {
+		return (
+			<div className="w-full pb-1 pt-0.5 font-normal text-muted-foreground">
+				<ChatTodoList items={todos} className="py-1" />
+			</div>
+		);
+	}
 
 	if (
 		writeContent === null &&
@@ -314,14 +384,24 @@ function ToolCallActivityView({
 	const { t } = useTranslation();
 	// 详情默认收起（含运行中），点击行切换；key 含 status，完成后 remount 自动收起
 	const [open, setOpen] = useChatExpansionState(expansionKey, false);
+	const openFile = useChatFileOpen();
 	const preview = toolPreview(activity);
 	const filePath = toolFilePath(activity);
+	// 能打开时才把路径做成可点入口；没有注册者（WebUI）或没有路径则退回纯文本。
+	const openablePath = openFile && filePath ? filePath : null;
+	const todos = isChatTodoTool(activity.toolName)
+		? parseChatTodos(activity.args, activity.result)
+		: null;
 	const skillName =
 		activity.toolName.toLowerCase() === "read"
 			? filePath?.replace(/\\/g, "/").match(/(?:^|\/)([^/]+)\/SKILL\.md$/)?.[1]
 			: null;
-	const previewLabel =
-		skillName ?? (filePath ? fileBasename(filePath) : preview);
+	const previewLabel = todos
+		? t("chat.todoProgress", {
+				done: countChatTodos(todos).completed,
+				total: todos.length,
+			})
+		: (skillName ?? (filePath ? fileBasename(filePath) : preview));
 	const writeContent =
 		activity.toolName.toLowerCase() === "write" &&
 		isRecord(activity.args) &&
@@ -329,6 +409,7 @@ function ToolCallActivityView({
 			? activity.args.content
 			: null;
 	const hasDetails =
+		todos !== null ||
 		writeContent !== null ||
 		(activity.args !== undefined &&
 			activity.args !== null &&
@@ -337,53 +418,72 @@ function ToolCallActivityView({
 
 	return (
 		<div className="w-full" data-chat-expansion-root>
-			<button
-				type="button"
+			{/* 一行里有两个独立可点区域（展开详情、打开文件），
+			    所以外层是 div，而不是把整行做成 button。 */}
+			<div
 				className={cn(
-					"group/tool -mx-1 flex min-h-6 w-[calc(100%+0.5rem)] items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+					"group/tool -mx-1 flex min-h-6 w-[calc(100%+0.5rem)] items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors motion-reduce:transition-none",
 					PROCESS_TEXT_CLASS,
-					hasDetails
-						? "hover:bg-hover hover:text-foreground"
-						: "cursor-default",
+					hasDetails && "hover:bg-hover hover:text-foreground",
 					open && "bg-hover text-foreground",
 					activity.isError && "text-destructive",
 				)}
-				onClick={(event) =>
-					hasDetails &&
-					toggleChatExpansionWithAnchor(event.currentTarget, () =>
-						setOpen((value) => !value),
-					)
-				}
-				aria-expanded={hasDetails ? open : undefined}
 			>
-				<ToolIcon
-					toolName={activity.toolName}
-					isSkill={Boolean(skillName)}
-					className={cn(
-						PROCESS_ICON_CLASS,
-						activity.isError && "text-destructive",
-					)}
-				/>
-				<span className="flex min-w-0 flex-1 items-center gap-1.5">
-					<span className="max-w-full shrink-0 truncate">
+				<button
+					type="button"
+					className="flex min-w-0 shrink items-center gap-1.5 rounded-sm text-left disabled:cursor-default focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+					disabled={!hasDetails}
+					onClick={(event) =>
+						hasDetails &&
+						toggleChatExpansionWithAnchor(event.currentTarget, () =>
+							setOpen((value) => !value),
+						)
+					}
+					aria-expanded={hasDetails ? open : undefined}
+				>
+					<ToolIcon
+						toolName={activity.toolName}
+						isSkill={Boolean(skillName)}
+						className={cn(
+							PROCESS_ICON_CLASS,
+							activity.isError && "text-destructive",
+						)}
+					/>
+					<span className="min-w-0 truncate">
 						{skillName ? t("chat.skill") : toolLabel(t, activity.toolName)}
 					</span>
-					{previewLabel ? (
-						<Hint label={preview ?? undefined}>
-							<span className="min-w-0 truncate font-mono text-[length:var(--pilo-code-font-size)] font-normal text-muted-foreground">
-								{previewLabel}
-							</span>
-						</Hint>
-					) : null}
-				</span>
+				</button>
+				{previewLabel && openablePath ? (
+					<Hint label={openablePath}>
+						<button
+							type="button"
+							className="min-w-0 shrink truncate rounded-sm font-mono text-[length:var(--pilo-code-font-size)] font-normal text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+							aria-label={t("chat.openFile", { path: openablePath })}
+							onClick={() => openFile?.(openablePath)}
+						>
+							{previewLabel}
+						</button>
+					</Hint>
+				) : previewLabel ? (
+					<Hint label={preview ?? undefined}>
+						<span className="min-w-0 truncate font-mono text-[length:var(--pilo-code-font-size)] font-normal text-muted-foreground">
+							{previewLabel}
+						</span>
+					</Hint>
+				) : null}
+				<span className="min-w-0 flex-1" aria-hidden="true" />
 				{activity.isError ? (
 					<CircleAlert className="size-3.5 shrink-0" />
 				) : running ? (
 					<Spinner className="size-3.5 shrink-0" />
 				) : null}
-			</button>
+			</div>
 			{hasDetails && open ? (
-				<ToolDetail activity={activity} writeContent={writeContent} />
+				<ToolDetail
+					activity={activity}
+					writeContent={writeContent}
+					todos={todos}
+				/>
 			) : null}
 		</div>
 	);
@@ -515,7 +615,11 @@ export function AssistantActivityView({
 				<div className="space-y-0 pt-0.5">
 					{activity.map((item) =>
 						item.type === "thinking" ? (
-							<ThinkingActivityView key={item.id} activity={item} />
+							<ThinkingActivityView
+								key={item.id}
+								activity={item}
+								expansionKey={`${expansionKey}:thinking:${item.id}`}
+							/>
 						) : (
 							<ToolCallActivityView
 								key={`${item.id}-${item.status}`}

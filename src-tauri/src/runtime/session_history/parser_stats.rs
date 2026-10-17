@@ -1,5 +1,6 @@
 use serde_json::Value;
 
+use super::super::token_usage::TokenUsage;
 use super::types::SessionHistoryStats;
 
 pub(super) fn collect_history_stats(entries: &[Value], branch: &[usize]) -> SessionHistoryStats {
@@ -53,29 +54,23 @@ pub(super) fn collect_history_stats(entries: &[Value], branch: &[usize]) -> Sess
 }
 
 fn add_usage(stats: &mut SessionHistoryStats, usage: Option<&Value>) {
-    let Some(usage) = usage else {
+    // 字段映射与单条消息的用量共用一处；会话合计仍是四个计数器相加，
+    // 不采用 `totalTokens`，以免改变既有统计口径。
+    let Some(usage) = TokenUsage::from_json(usage) else {
         return;
     };
-    let input = usage.get("input").and_then(Value::as_u64).unwrap_or(0);
-    let output = usage.get("output").and_then(Value::as_u64).unwrap_or(0);
-    let cache_read = usage.get("cacheRead").and_then(Value::as_u64).unwrap_or(0);
-    let cache_write = usage.get("cacheWrite").and_then(Value::as_u64).unwrap_or(0);
+    let total = usage
+        .input
+        .saturating_add(usage.output)
+        .saturating_add(usage.cache_read)
+        .saturating_add(usage.cache_write);
 
-    stats.tokens.input = stats.tokens.input.saturating_add(input);
-    stats.tokens.output = stats.tokens.output.saturating_add(output);
-    stats.tokens.cache_read = stats.tokens.cache_read.saturating_add(cache_read);
-    stats.tokens.cache_write = stats.tokens.cache_write.saturating_add(cache_write);
-    stats.tokens.total = stats.tokens.total.saturating_add(
-        input
-            .saturating_add(output)
-            .saturating_add(cache_read)
-            .saturating_add(cache_write),
-    );
-    stats.cost += usage
-        .get("cost")
-        .and_then(|cost| cost.get("total"))
-        .and_then(Value::as_f64)
-        .unwrap_or(0.0);
+    stats.tokens.input = stats.tokens.input.saturating_add(usage.input);
+    stats.tokens.output = stats.tokens.output.saturating_add(usage.output);
+    stats.tokens.cache_read = stats.tokens.cache_read.saturating_add(usage.cache_read);
+    stats.tokens.cache_write = stats.tokens.cache_write.saturating_add(usage.cache_write);
+    stats.tokens.total = stats.tokens.total.saturating_add(total);
+    stats.cost += usage.cost.unwrap_or(0.0);
 }
 
 fn current_branch_context_tokens(entries: &[Value], branch: &[usize]) -> Option<u64> {

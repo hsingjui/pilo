@@ -15,7 +15,10 @@ import {
 	type ChatSessionRuntimeState,
 } from "@/lib/api/chat-session-client";
 import { listenRuntimeEvents } from "@/lib/api/pi-runtime";
-import { chatRpcChangesActivity } from "@/lib/chat/chat-session-runtime-model";
+import {
+	chatRpcChangesActivity,
+	chatRpcRenamesSession,
+} from "@/lib/chat/chat-session-runtime-model";
 import {
 	deleteSession,
 	getExternalSessionActivity,
@@ -386,6 +389,13 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 				case "rpc_message":
 					if (chatRpcChangesActivity(event.message)) {
 						queueRuntimeActivityRefresh();
+					}
+					// Pi 写回会话名（首次自动命名或手动重命名）后立即重扫会话列表：
+					// 桌面端因此不依赖文件监听也能把标题带进侧栏，与 WebUI 行为一致。
+					if (chatRpcRenamesSession(event.message) && event.projectId) {
+						void refreshProjectSessions(event.projectId).catch((error) =>
+							console.error("Failed to refresh renamed session", error),
+						);
 					}
 					break;
 				default:

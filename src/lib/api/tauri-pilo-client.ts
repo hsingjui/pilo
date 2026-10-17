@@ -47,6 +47,7 @@ import {
 	type SessionIndexEntry,
 	type SessionSearchMatch,
 } from "@/lib/api/sessions";
+import type { PromptEnhanceModel } from "@/lib/prompt-enhance";
 
 export class TauriPiloClient implements PiloClient {
 	private sequence = 0;
@@ -139,6 +140,14 @@ export class TauriPiloClient implements PiloClient {
 		message: string,
 	): Promise<string | null> {
 		return requestSessionTitle(projectId, message);
+	}
+
+	enhancePrompt(
+		projectId: string,
+		draft: string,
+		model: PromptEnhanceModel | null,
+	): Promise<string> {
+		return invoke<string>("prompt_enhance", { projectId, draft, model });
 	}
 
 	deleteSession(

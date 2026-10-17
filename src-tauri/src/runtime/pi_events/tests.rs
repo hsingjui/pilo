@@ -1,5 +1,6 @@
 use super::*;
 use crate::runtime::events::ExtensionUiRequestPayload;
+use crate::runtime::token_usage::TokenUsage;
 
 #[test]
 fn maps_assistant_message_start_instead_of_agent_start() {
@@ -277,7 +278,8 @@ fn agent_end_does_not_finish_until_agent_settled() {
                 "messages": [{
                     "role": "assistant",
                     "content": [],
-                    "stopReason": "stop"
+                    "stopReason": "stop",
+                    "usage": { "input": 10, "output": 5 }
                 }]
             })
         ),
@@ -290,6 +292,14 @@ fn agent_end_does_not_finish_until_agent_settled() {
             generation: 5,
             stop_reason: Some("stop".to_owned()),
             error_message: None,
+            usage: Some(TokenUsage {
+                input: 10,
+                output: 5,
+                cache_read: 0,
+                cache_write: 0,
+                total: 15,
+                cost: None,
+            }),
         }]
     );
 }
@@ -319,6 +329,7 @@ fn settled_uses_latest_error_metadata_and_resets_state() {
             generation: 5,
             stop_reason: Some("error".to_owned()),
             error_message: Some("provider failed".to_owned()),
+            usage: None,
         }]
     );
     assert_eq!(
@@ -327,6 +338,7 @@ fn settled_uses_latest_error_metadata_and_resets_state() {
             generation: 5,
             stop_reason: None,
             error_message: None,
+            usage: None,
         }]
     );
 }

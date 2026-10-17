@@ -21,6 +21,7 @@ import type {
 	SessionIndexEntry,
 	SessionSearchMatch,
 } from "@/lib/api/sessions";
+import type { PromptEnhanceModel } from "@/lib/prompt-enhance";
 
 export type PiloClientBootstrap = {
 	projects: Project[];
@@ -91,6 +92,15 @@ export interface PiloClient {
 		projectId: string,
 		message: string,
 	): Promise<string | null>;
+	/**
+	 * Rewrite a composer draft into a clearer prompt. `model: null` follows
+	 * Pi's default. Runs on a throwaway Pi process: no conversation is touched.
+	 */
+	enhancePrompt(
+		projectId: string,
+		draft: string,
+		model: PromptEnhanceModel | null,
+	): Promise<string>;
 	deleteSession(
 		projectId: string,
 		sessionPath: string,

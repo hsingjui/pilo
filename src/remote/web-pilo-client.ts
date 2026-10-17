@@ -33,10 +33,12 @@ import type {
 	SessionSearchMatch,
 } from "@/lib/api/sessions";
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-client";
+import type { PromptEnhanceModel } from "@/lib/prompt-enhance";
 import {
 	approveRemoteProjectMcpServer,
 	connectRemoteEvents,
 	deleteRemoteSession,
+	enhanceRemotePrompt,
 	generateRemoteSessionTitle,
 	loadRemoteBootstrap,
 	loadRemoteThemeSettings,
@@ -162,6 +164,14 @@ export class WebPiloClient implements PiloClient {
 		message: string,
 	): Promise<string | null> {
 		return generateRemoteSessionTitle(this.token, projectId, message);
+	}
+
+	enhancePrompt(
+		projectId: string,
+		draft: string,
+		model: PromptEnhanceModel | null,
+	): Promise<string> {
+		return enhanceRemotePrompt(this.token, projectId, draft, model);
 	}
 
 	deleteSession(

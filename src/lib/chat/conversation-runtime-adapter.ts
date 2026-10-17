@@ -44,6 +44,7 @@ export function toConversationAction(
 				type: "assistant_turn_end",
 				stopReason: event.stopReason,
 				errorMessage: event.errorMessage,
+				usage: event.usage,
 			};
 		case "theme_settings_changed":
 		case "project_model_scope_changed":

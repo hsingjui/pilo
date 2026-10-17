@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+};
 
 use pilo_protocol::SessionFile;
 use rusqlite::{Connection as SqliteConnection, Transaction, TransactionBehavior};
@@ -11,6 +14,27 @@ use super::{pi_workspace, server_client::ServerManager, storage};
 
 const INITIAL_SESSION_INDEX_LIMIT: usize = 10;
 pub const BACKGROUND_SESSION_INDEX_BATCH: usize = 64;
+/// 只剥离 Windows verbatim 前缀；普通路径（含 POSIX 路径）原样返回，
+/// 不解析 `..`、不做大小写归并。
+fn windows_verbatim_path(value: &str) -> Cow<'_, str> {
+    if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+        return Cow::Owned(format!(r"\\{rest}"));
+    }
+    match value.strip_prefix(r"\\?\") {
+        Some(rest) => Cow::Borrowed(rest),
+        None => Cow::Borrowed(value),
+    }
+}
+
+/// 会话头 cwd 是否属于该项目。Windows 上 `fs::canonicalize` 会把项目路径写成
+/// `\\?\C:\...`，而 Pi 写入会话头的 cwd 是普通形式；两者是同一目录，比较前必须归一化，
+/// 否则带前缀的项目会把所有会话都过滤掉（索引永远为空）。
+fn session_cwd_matches(header_cwd: Option<&str>, project_path: &str) -> bool {
+    let Some(cwd) = header_cwd else {
+        return false;
+    };
+    cwd == project_path || windows_verbatim_path(cwd) == windows_verbatim_path(project_path)
+}
 
 #[derive(Default)]
 pub struct BackgroundSessionIndexManager {
@@ -174,7 +198,10 @@ pub async fn reconcile(
             }
             continue;
         }
-        if file.header.get("cwd").and_then(Value::as_str) != Some(session_project.path.as_str()) {
+        if !session_cwd_matches(
+            file.header.get("cwd").and_then(Value::as_str),
+            &session_project.path,
+        ) {
             continue;
         }
 
@@ -239,7 +266,10 @@ pub async fn reconcile_paths(
         {
             continue;
         }
-        if file.header.get("cwd").and_then(Value::as_str) != Some(session_project.path.as_str()) {
+        if !session_cwd_matches(
+            file.header.get("cwd").and_then(Value::as_str),
+            &session_project.path,
+        ) {
             continue;
         }
         let previous = storage::get_session(&transaction, &file.path, Some(&project.id))?;
@@ -510,5 +540,48 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["a", "b"]
         );
+    }
+
+    #[test]
+    fn session_cwd_matches_verbatim_project_paths() {
+        for (header_cwd, project_path, expected) in [
+            (Some(r"E:\my_projects\pilo"), r"E:\my_projects\pilo", true),
+            (
+                Some(r"E:\my_projects\pilo"),
+                r"\\?\E:\my_projects\pilo",
+                true,
+            ),
+            (
+                Some(r"\\?\E:\my_projects\pilo"),
+                r"E:\my_projects\pilo",
+                true,
+            ),
+            (None, r"E:\my_projects\pilo", false),
+            (
+                Some(r"E:\my_projects\other"),
+                r"\\?\E:\my_projects\pilo",
+                false,
+            ),
+            (Some("/root/code/pilo"), "/root/code/pilo", true),
+            (Some("/root/code/pilo"), "/root/code/other", false),
+        ] {
+            assert_eq!(
+                session_cwd_matches(header_cwd, project_path),
+                expected,
+                "cwd={header_cwd:?} project={project_path}"
+            );
+        }
+    }
+
+    #[test]
+    fn verbatim_windows_paths_lose_their_prefix() {
+        for (input, expected) in [
+            (r"\\?\UNC\server\share\code", r"\\server\share\code"),
+            (r"\\?\E:\my_projects\pilo", r"E:\my_projects\pilo"),
+            (r"E:\my_projects\pilo", r"E:\my_projects\pilo"),
+            ("/root/code/pilo", "/root/code/pilo"),
+        ] {
+            assert_eq!(windows_verbatim_path(input), expected, "input={input}");
+        }
     }
 }

@@ -5,6 +5,11 @@ import { useTranslation } from "react-i18next";
 import { i18n } from "@/i18n";
 import type { ChatSessionRuntimeState } from "@/components/chat/chat-page-utils";
 import { useIsTouchDevice } from "@/components/chat/chat-composer-run-config";
+import {
+	finiteNumber,
+	formatCompactTokens,
+	formatCost,
+} from "@/lib/format-numbers";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/ui";
@@ -17,29 +22,6 @@ type ComposerContextUsageProps = {
 	contextWindow?: number;
 };
 
-function finiteNumber(value: number | null | undefined) {
-	return typeof value === "number" && Number.isFinite(value)
-		? value
-		: undefined;
-}
-
-/** token 数统一用 k/M（不走 locale 的万/亿），贴合模型界惯例。 */
-function formatCompactTokens(value: number | null | undefined) {
-	const normalized = finiteNumber(value);
-	if (normalized === undefined) return "—";
-	const n = Math.max(0, normalized);
-	if (n < 1000) return String(Math.round(n));
-	const scaled = (divisor: number) => {
-		const text = (n / divisor).toFixed(1);
-		return text.endsWith(".0") ? text.slice(0, -2) : text;
-	};
-	if (n < 1_000_000) {
-		const k = scaled(1000);
-		return k === "1000" ? "1M" : `${k}k`;
-	}
-	return `${scaled(1_000_000)}M`;
-}
-
 function formatPercent(value: number | null | undefined) {
 	const normalized = finiteNumber(value);
 	if (normalized === undefined) return "—";
@@ -47,12 +29,6 @@ function formatPercent(value: number | null | undefined) {
 	return `${new Intl.NumberFormat(i18n.language, {
 		maximumFractionDigits: 1,
 	}).format(Math.max(0, normalized))}%`;
-}
-
-function formatCost(value: number | undefined) {
-	if (value === undefined || !Number.isFinite(value)) return "—";
-	if (value < 0.01) return `$${value.toFixed(4)}`;
-	return `$${value.toFixed(2)}`;
 }
 
 function ContextIcon({

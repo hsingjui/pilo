@@ -11,6 +11,17 @@ export function chatRpcChangesActivity(message: unknown) {
 	);
 }
 
+export function chatRpcRenamesSession(message: unknown) {
+	return (
+		typeof message === "object" &&
+		message !== null &&
+		"type" in message &&
+		message.type === "response" &&
+		"command" in message &&
+		message.command === "set_session_name"
+	);
+}
+
 export function chatRuntimeHasOpenTurn(
 	state: ChatSessionRuntimeState | null | undefined,
 ) {

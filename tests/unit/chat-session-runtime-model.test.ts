@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { ChatSessionRuntimeState } from "../../src/lib/api/chat-session-client.ts";
 import {
+	chatRpcRenamesSession,
 	chatRuntimeHasOpenTurn,
 	findReusableChatRuntime,
 	runtimeSessionIdFromKey,
@@ -83,4 +84,25 @@ test("reports an open turn only while the Host runtime is actively running it", 
 		false,
 	);
 	assert.equal(chatRuntimeHasOpenTurn(null), false);
+});
+
+test("recognizes the Pi rename response that renames a session", () => {
+	assert.equal(
+		chatRpcRenamesSession({
+			type: "response",
+			command: "set_session_name",
+			success: true,
+		}),
+		true,
+	);
+	assert.equal(
+		chatRpcRenamesSession({ type: "response", command: "prompt" }),
+		false,
+	);
+	assert.equal(
+		chatRpcRenamesSession({ type: "request", command: "set_session_name" }),
+		false,
+	);
+	assert.equal(chatRpcRenamesSession("set_session_name"), false);
+	assert.equal(chatRpcRenamesSession(null), false);
 });

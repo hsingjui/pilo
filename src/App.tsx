@@ -16,6 +16,7 @@ import {
 } from "react-resizable-panels";
 import { toast } from "sonner";
 
+import { useChatFileOpener } from "@/components/chat/chat-file-open-context";
 import { SessionMentionProvider } from "@/components/chat/session-mention-context";
 import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { AddProjectDialog } from "@/components/sidebar/add-project-dialog";
@@ -271,6 +272,9 @@ function App() {
 		},
 		[activeProject],
 	);
+
+	// 工具行里的文件路径点击后落到右侧查看器。
+	useChatFileOpener(openViewerFile);
 
 	useKeyboardShortcut(keyboardShortcuts["new-chat"], () => startNewChat());
 	useKeyboardShortcut(keyboardShortcuts["toggle-sidebar"], () => {

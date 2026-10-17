@@ -35,6 +35,7 @@ import {
 import { useProjectModelScope } from "@/lib/use-project-model-scope";
 import type { SessionIndexEntry } from "@/lib/api/sessions";
 import { randomId } from "@/lib/utils";
+import { promptEnhanceModel } from "@/lib/prompt-enhance";
 import {
 	readRemoteScrollState,
 	type RetryState,
@@ -913,6 +914,17 @@ export function useRemoteChat({
 		models,
 	]);
 
+	// 提示词优化：一次性 Pi 进程，不要求会话在运行，也不写入会话上下文。
+	const handleEnhancePrompt =
+		client && activeProjectId
+			? (draft: string) =>
+					client.enhancePrompt(
+						activeProjectId,
+						draft,
+						promptEnhanceModel(selectedModel),
+					)
+			: undefined;
+
 	return {
 		// route / selection
 		activeProjectId,
@@ -999,6 +1011,7 @@ export function useRemoteChat({
 		handleEditQueued,
 		handleSendQueuedNow,
 		handleSendNow,
+		handleEnhancePrompt,
 		stop,
 		changeModel,
 		changeThinking,

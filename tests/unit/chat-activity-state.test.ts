@@ -747,3 +747,49 @@ test("outline index resolves directly from Virtua item offsets", () => {
 		3,
 	);
 });
+
+test("thinking blocks record the timeline shown on the collapsed row", () => {
+	let nextId = 0;
+	const createId = () => `content-${++nextId}`;
+	let content = startAssistantThinkingContent([], createId, 1_000);
+	content = appendAssistantThinkingContent(content, "先分析", createId, 1_050);
+	content = finishAssistantThinkingContent(content, 4_600);
+
+	const [thinking] = content;
+	assert.equal(thinking?.type, "thinking");
+	assert.equal(
+		thinking?.type === "thinking" ? thinking.startedAtMs : null,
+		1_000,
+	);
+	assert.equal(
+		thinking?.type === "thinking" ? thinking.endedAtMs : null,
+		4_600,
+	);
+});
+
+test("thinking deltas keep the block start and never spawn a second block", () => {
+	let nextId = 0;
+	const createId = () => `content-${++nextId}`;
+	let content = startAssistantThinkingContent([], createId, 1_000);
+	content = appendAssistantThinkingContent(content, "a", createId, 9_999);
+	content = appendAssistantThinkingContent(content, "b", createId, 9_999);
+
+	assert.equal(content.length, 1);
+	assert.equal(content[0]?.type === "thinking" ? content[0].text : null, "ab");
+	assert.equal(
+		content[0]?.type === "thinking" ? content[0].startedAtMs : null,
+		1_000,
+	);
+});
+
+test("a thinking delta without a start still records when it began", () => {
+	let nextId = 0;
+	const createId = () => `content-${++nextId}`;
+	const content = appendAssistantThinkingContent([], "想", createId, 700);
+
+	assert.equal(content.length, 1);
+	assert.equal(
+		content[0]?.type === "thinking" ? content[0].startedAtMs : null,
+		700,
+	);
+});

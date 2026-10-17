@@ -14,9 +14,11 @@ mod next_prompt;
 mod parallel;
 mod pi_event_adapters;
 mod pi_events;
+mod pi_oneshot;
 mod pi_workspace;
 mod preview;
 pub mod project;
+mod prompt_enhance;
 mod remote;
 mod remote_fs;
 pub(crate) mod server_client;
@@ -32,6 +34,7 @@ mod session_watcher;
 pub(crate) mod ssh;
 pub(crate) mod storage;
 mod terminal;
+mod token_usage;
 #[allow(dead_code)]
 mod wsl;
 
