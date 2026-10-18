@@ -14,6 +14,8 @@ use super::transport::{
     PendingRequest, PendingRequests, ServerEvent, ServerEventHub, mark_disconnected,
 };
 use super::{SERVER_DISCONNECTED_EVENT, manager::retryable_read_method};
+use crate::domain::{Connection, ConnectionKind};
+use crate::runtime::server_client::manager::ServerManager;
 use crate::runtime::server_deploy::{
     ServerArch, ServerPlatform, ServerTarget, installed_server_candidates, parse_target_probe,
     server_binary,
@@ -351,6 +353,27 @@ async fn resubscribing_stream_closes_the_stale_receiver() {
     let event = current.recv().await.unwrap();
     assert_eq!(event.event, "pi.rpc");
     assert_eq!(event.data, json!({ "type": "agent_settled" }));
+}
+
+#[tokio::test]
+async fn shutdown_gate_rejects_new_server_connections() {
+    let manager = ServerManager::default();
+    let connection = Connection {
+        id: "local".to_owned(),
+        name: "Local".to_owned(),
+        pi_executable: None,
+        pi_runtime: Default::default(),
+        kind: ConnectionKind::Local,
+        shown_in_home: true,
+    };
+
+    manager.stop_all().await;
+
+    let error = manager
+        .request(&connection, "fs.read_file", Value::Null)
+        .await
+        .unwrap_err();
+    assert_eq!(error, "pilo-server manager is shutting down");
 }
 
 #[test]

@@ -1,8 +1,14 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify, RwLock};
 
 use crate::{domain::Connection, runtime::connection_diagnostics::request_failure_reason};
 
@@ -44,6 +50,9 @@ pub(super) fn retryable_read_method(method: &str) -> bool {
 pub struct ServerManager {
     clients: Mutex<HashMap<String, CachedServerClient>>,
     connection_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    admission: RwLock<()>,
+    shutdown: AtomicBool,
+    shutdown_notify: Notify,
 }
 
 struct CachedServerClient {
@@ -52,10 +61,40 @@ struct CachedServerClient {
 }
 
 impl ServerManager {
+    const SHUTTING_DOWN: &str = "pilo-server manager is shutting down";
+
+    fn ensure_running(&self) -> Result<(), String> {
+        if self.shutdown.load(Ordering::Acquire) {
+            Err(Self::SHUTTING_DOWN.to_owned())
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn until_shutdown<T>(
+        &self,
+        operation: impl std::future::Future<Output = Result<T, String>>,
+    ) -> Result<T, String> {
+        let notified = self.shutdown_notify.notified();
+        tokio::pin!(notified);
+        // Register before checking the flag so shutdown cannot be missed between
+        // the check and the first poll of the operation.
+        notified.as_mut().enable();
+        self.ensure_running()?;
+        tokio::select! {
+            biased;
+            _ = &mut notified => Err(Self::SHUTTING_DOWN.to_owned()),
+            result = operation => result,
+        }
+    }
+
     pub async fn client(&self, connection: &Connection) -> Result<Arc<ServerClient>, String> {
         if let Some(client) = self.cached_client(connection).await {
             return Ok(client);
         }
+
+        let _admission_guard = self.admission.read().await;
+        self.ensure_running()?;
 
         let connection_lock = {
             let mut locks = self.connection_locks.lock().await;
@@ -65,12 +104,17 @@ impl ServerManager {
                     .or_insert_with(|| Arc::new(Mutex::new(()))),
             )
         };
-        let _connection_guard = connection_lock.lock().await;
+        let _connection_guard = self
+            .until_shutdown(async { Ok(connection_lock.lock().await) })
+            .await?;
+        self.ensure_running()?;
         if let Some(client) = self.cached_client(connection).await {
             return Ok(client);
         }
 
-        let client = ServerClient::connect(connection).await?;
+        let client = self
+            .until_shutdown(ServerClient::connect(connection))
+            .await?;
         self.clients.lock().await.insert(
             connection.id.clone(),
             CachedServerClient {
@@ -172,10 +216,16 @@ impl ServerManager {
     }
 
     pub async fn test_connection(&self, connection: &Connection) -> Result<Value, String> {
+        let _admission_guard = self.admission.read().await;
+        self.ensure_running()?;
         // Connection tests must validate the current configuration and credentials,
         // so do not reuse a pooled client that may have been created before edits.
-        let client = ServerClient::connect(connection).await?;
-        let result = client.request("server.ping", Value::Null).await;
+        let client = self
+            .until_shutdown(ServerClient::connect(connection))
+            .await?;
+        let result = self
+            .until_shutdown(client.request("server.ping", Value::Null))
+            .await;
         client.stop().await;
         result
     }
@@ -203,7 +253,14 @@ impl ServerManager {
         })
     }
 
+    pub(crate) fn begin_shutdown(&self) {
+        self.shutdown.store(true, Ordering::Release);
+        self.shutdown_notify.notify_waiters();
+    }
+
     pub async fn stop_all(&self) {
+        self.begin_shutdown();
+        let _admission_guard = self.admission.write().await;
         let clients = self
             .clients
             .lock()
@@ -216,5 +273,118 @@ impl ServerManager {
             stops.spawn(async move { client.stop().await });
         }
         while stops.join_next().await.is_some() {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::ConnectionKind;
+    use std::{future::Future, task::Poll, time::Duration};
+
+    fn connection() -> Connection {
+        Connection {
+            id: "local".to_owned(),
+            name: "Local".to_owned(),
+            pi_executable: None,
+            pi_runtime: Default::default(),
+            kind: ConnectionKind::Local,
+            shown_in_home: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn pending_connection_keeps_admission_parallel_and_is_cancelled_on_shutdown() {
+        let manager = ServerManager::default();
+        let connection = connection();
+        let connection_lock = Arc::new(Mutex::new(()));
+        let _blocked_connection = connection_lock.lock().await;
+        manager
+            .connection_locks
+            .lock()
+            .await
+            .insert(connection.id.clone(), Arc::clone(&connection_lock));
+        let request = manager.client(&connection);
+        tokio::pin!(request);
+        std::future::poll_fn(|cx| {
+            assert!(request.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+
+        // A cold connection must not take exclusive admission from other environments.
+        drop(manager.admission.try_read().expect("parallel admission"));
+        manager.begin_shutdown();
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(1), async {
+            tokio::join!(request, manager.stop_all())
+        })
+        .await
+        .expect("shutdown must not wait for the blocked connection");
+        assert_eq!(result.err().unwrap(), ServerManager::SHUTTING_DOWN);
+    }
+
+    #[tokio::test]
+    async fn shutdown_cancels_in_flight_operations_and_rejects_unpolled_work() {
+        let manager = ServerManager::default();
+        let operation = manager.until_shutdown(std::future::pending::<Result<(), String>>());
+        tokio::pin!(operation);
+        std::future::poll_fn(|cx| {
+            assert!(operation.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        manager.begin_shutdown();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), operation)
+                .await
+                .unwrap()
+                .unwrap_err(),
+            ServerManager::SHUTTING_DOWN
+        );
+        let result = manager
+            .until_shutdown(async { panic!("shutdown work must not be polled") })
+            .await;
+        assert_eq!(
+            result,
+            Err::<(), _>(ServerManager::SHUTTING_DOWN.to_owned())
+        );
+        assert_eq!(
+            manager.test_connection(&connection()).await.unwrap_err(),
+            ServerManager::SHUTTING_DOWN
+        );
+    }
+
+    #[tokio::test]
+    async fn shutdown_preserves_cached_clients_for_teardown_then_drains_them() {
+        let manager = ServerManager::default();
+        let connection = connection();
+        let (writer, _requests) = tokio::sync::mpsc::channel(1);
+        let client = Arc::new(ServerClient {
+            request_id: Default::default(),
+            writer,
+            pending: Default::default(),
+            events: Default::default(),
+            process: Mutex::new(None),
+            closed: Default::default(),
+        });
+        manager.clients.lock().await.insert(
+            connection.id.clone(),
+            CachedServerClient {
+                connection: connection.clone(),
+                client: Arc::clone(&client),
+            },
+        );
+        manager.begin_shutdown();
+        assert!(Arc::ptr_eq(
+            &client,
+            &manager.client(&connection).await.unwrap()
+        ));
+        manager.stop_all().await;
+        assert!(client.is_closed());
+        assert!(manager.clients.lock().await.is_empty());
+        assert_eq!(
+            manager.client(&connection).await.err().unwrap(),
+            ServerManager::SHUTTING_DOWN
+        );
     }
 }

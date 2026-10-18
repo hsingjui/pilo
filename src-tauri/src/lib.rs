@@ -370,6 +370,7 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     let runtime = handle.state::<PiloRuntime>();
                     let remote = handle.state::<runtime::RemoteServerManager>();
+                    runtime.servers.begin_shutdown();
                     // The whole teardown is bounded and always followed by
                     // exit(0): a stuck pilo-server RPC must never keep the app
                     // alive. Logs at each step pinpoint where it stalls.
@@ -393,7 +394,12 @@ pub fn run() {
                     }
                     // Always close server stdin, even when chat/terminal cleanup timed out.
                     log::info!(target: "shutdown", "servers: stopping");
-                    runtime.servers.stop_all().await;
+                    if tokio::time::timeout(std::time::Duration::from_secs(8), runtime.servers.stop_all())
+                        .await
+                        .is_err()
+                    {
+                        log::warn!(target: "shutdown", "server cleanup timed out; exiting");
+                    }
                     log::info!(target: "shutdown", "teardown complete");
                     // macOS 只有在事件循环正常退出时才会通知 LaunchServices/Dock
                     // 注销应用；从工作线程直接 `std::process::exit` 会让 Dock 残留图标

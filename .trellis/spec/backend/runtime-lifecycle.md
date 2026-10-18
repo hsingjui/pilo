@@ -38,6 +38,9 @@ Frontend controller eviction alone is not backend process cleanup.
   budget, including binary data and the frame currently being written.
 - `ServerClient::stop()` closes stdin, waits for server cleanup, then force-kills
   only if necessary.
+- `ServerManager::begin_shutdown()` closes new-connection admission and cancels
+  pending connection setup/tests; `stop_all()` drains cached clients after admitted
+  operations release their shared admission guards.
 
 ## 3. Contracts
 
@@ -193,6 +196,15 @@ Frontend controller eviction alone is not backend process cleanup.
   waiting for EOF cleanup (5 seconds); fallback kill/wait has another 1-second bound.
   Stop connection servers concurrently and do this even if earlier app teardown
   exceeds its 5-second grace period.
+- Begin server-manager shutdown before session/terminal teardown. Cached live
+  clients remain usable for stop RPCs, but cold/retry connections and connection
+  tests fail with `pilo-server manager is shutting down`. Use shared admission
+  guards and per-connection locks so slow SSH/WSL setup does not serialize other
+  environments. Register shutdown notification before checking the atomic flag;
+  cancel connection-lock waits, setup and test pings when shutdown begins.
+  Exclusive admission in `stop_all()` prevents cache insertion after its drain.
+  The desktop bounds this final server cleanup to 8 seconds, independently of
+  the preceding 5-second resource teardown, and proceeds to exit on timeout.
 
 ## 4. Validation & Error Matrix
 
@@ -230,6 +242,8 @@ Frontend controller eviction alone is not backend process cleanup.
 | Session startup/RPC lock held | State queries use the independent snapshot reader |
 | Server stdin EOF or invalid frame | Cancel requests, clean up children, finish writer |
 | Server ignores EOF | Bounded force-kill fallback |
+| Shutdown during cold connection or connection test | Cancel setup/test; reject new connections, keep cached clients for stop RPCs until drained |
+| Final server cleanup exceeds 8 seconds | Log timeout and continue desktop exit |
 
 ## 5. Good / Base / Bad Cases
 
@@ -240,8 +254,13 @@ Frontend controller eviction alone is not backend process cleanup.
 
 ## 6. Tests Required
 
-Existing WSL workspace tests and static checks have passed; no new repository
-tests have been added. An ad-hoc stdio check using a slow fake login shell and
+Server-manager regression coverage checks pending connection-lock cancellation,
+parallel admission, cancellation of an in-flight operation, rejection before work
+is polled, rejection of connection tests after shutdown, and cached-client use
+during teardown followed by drain. Native Windows exit timing remains manual.
+
+Earlier lifecycle work passed WSL workspace tests and static checks.
+An ad-hoc stdio check using a slow fake login shell and
 fake Pi confirmed cold-probe cancellation without a late child, successful
 same-stream restart after stop ACK, and 50 immediately paired start/stop requests
 with no remaining Pi children. Native Windows behavior remains unverified.
@@ -330,6 +349,10 @@ process.writer_task.abort();
 let _ = process.writer_task.await;
 // Bounded wait, then kill only if the server does not exit.
 ```
+
+Do not hold a global exclusive mutex across remote connection setup, or await
+that setup indefinitely from shutdown. Use shared admission with cancellation,
+then drain under exclusive admission and keep a final desktop timeout.
 
 ```typescript
 // Wrong: successful transport does not mean Pi accepted the prompt.
