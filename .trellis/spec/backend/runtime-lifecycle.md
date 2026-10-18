@@ -202,6 +202,10 @@ Frontend controller eviction alone is not backend process cleanup.
   guards and per-connection locks so slow SSH/WSL setup does not serialize other
   environments. Register shutdown notification before checking the atomic flag;
   cancel connection-lock waits, setup and test pings when shutdown begins.
+  Every subprocess launched during connection preparation, including WSL/SSH
+  platform probes and WSL deployment via `Command::output()`, must enable
+  `kill_on_drop(true)` so cancellation or timeout also terminates the launcher.
+  This does not guarantee termination of detached remote descendants.
   Exclusive admission in `stop_all()` prevents cache insertion after its drain.
   The desktop bounds this final server cleanup to 8 seconds, independently of
   the preceding 5-second resource teardown, and proceeds to exit on timeout.

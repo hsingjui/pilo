@@ -204,6 +204,7 @@ async fn probe_wsl_target(
     diagnostics: &ConnectionDiagnostics,
 ) -> Result<ServerTarget, String> {
     let mut command = Command::new("wsl.exe");
+    command.kill_on_drop(true);
     command.args([
         "--distribution",
         distro,
@@ -240,6 +241,7 @@ async fn probe_ssh_target(
     diagnostics: &ConnectionDiagnostics,
 ) -> Result<ServerTarget, String> {
     let mut command = ssh_command(connection)?;
+    command.kill_on_drop(true);
     command.env(ASKPASS_ATTEMPT_ENV, diagnostics.attempt_id.to_string());
     command.arg(wrap_posix_script(
         "printf '%s\\t%s\\n' \"$(uname -s)\" \"$(uname -m)\"",
@@ -277,6 +279,7 @@ async fn deploy_server_wsl(
         fingerprint = artifact.fingerprint,
     );
     let mut command = Command::new("wsl.exe");
+    command.kill_on_drop(true);
     command.args([
         "--distribution",
         distro,
