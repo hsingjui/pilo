@@ -21,6 +21,10 @@ use crate::runtime::server_deploy::{
     server_binary,
 };
 
+#[cfg(unix)]
+#[path = "tests/shutdown.rs"]
+mod shutdown;
+
 const LINUX_X86_64: ServerTarget = ServerTarget {
     platform: ServerPlatform::Linux,
     arch: ServerArch::X86_64,
@@ -31,30 +35,17 @@ const LINUX_AARCH64: ServerTarget = ServerTarget {
 };
 
 #[cfg(unix)]
-#[tokio::test]
-async fn stop_closes_stdin_and_allows_server_child_cleanup_before_exit() {
+pub(super) fn spawn_test_client(script: &str, marker: &Path) -> Arc<super::ServerClient> {
     use super::{
         ServerClient,
         transport::{ServerProcess, reader_loop, writer_loop},
     };
-    use std::{
-        process::Stdio,
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use std::process::Stdio;
     use tokio::{io::BufReader, process::Command};
 
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/shutdown-tests");
-    std::fs::create_dir_all(&dir).unwrap();
-    let marker = dir.join(format!(
-        "cleanup-{}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
     let mut child = Command::new("/bin/sh")
-        .args(["-c", "cat >/dev/null; printf cleaned > \"$1\"", "sh"])
-        .arg(&marker)
+        .args(["-c", script, "sh"])
+        .arg(marker)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .kill_on_drop(true)
@@ -79,7 +70,7 @@ async fn stop_closes_stdin_and_allows_server_child_cleanup_before_exit() {
         Arc::clone(&events),
         Arc::clone(&closed),
     ));
-    let client = ServerClient {
+    Arc::new(ServerClient {
         request_id: Default::default(),
         writer,
         pending,
@@ -90,7 +81,24 @@ async fn stop_closes_stdin_and_allows_server_child_cleanup_before_exit() {
             reader_task,
         })),
         closed,
-    };
+    })
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stop_closes_stdin_and_allows_server_child_cleanup_before_exit() {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/shutdown-tests");
+    std::fs::create_dir_all(&dir).unwrap();
+    let marker = dir.join(format!(
+        "cleanup-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let client = spawn_test_client("cat >/dev/null; printf cleaned > \"$1\"", &marker);
     client.stop().await;
     assert_eq!(std::fs::read_to_string(&marker).unwrap(), "cleaned");
     std::fs::remove_file(marker).unwrap();

@@ -8,7 +8,10 @@ use std::{
 
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use tokio::sync::{Mutex, Notify, RwLock};
+use tokio::{
+    sync::{Mutex, Notify, RwLock},
+    task::JoinSet,
+};
 
 use crate::{domain::Connection, runtime::connection_diagnostics::request_failure_reason};
 
@@ -260,19 +263,19 @@ impl ServerManager {
 
     pub async fn stop_all(&self) {
         self.begin_shutdown();
+        let mut stops = JoinSet::new();
+        // Start cached cleanup while admitted connection tests stop their clients.
+        self.drain_clients(&mut stops).await;
         let _admission_guard = self.admission.write().await;
-        let clients = self
-            .clients
-            .lock()
-            .await
-            .drain()
-            .map(|(_, cached)| cached.client)
-            .collect::<Vec<_>>();
-        let mut stops = tokio::task::JoinSet::new();
-        for client in clients {
-            stops.spawn(async move { client.stop().await });
-        }
+        // A connect already completing at shutdown may have published another client.
+        self.drain_clients(&mut stops).await;
         while stops.join_next().await.is_some() {}
+    }
+
+    async fn drain_clients(&self, stops: &mut JoinSet<()>) {
+        for (_, cached) in self.clients.lock().await.drain() {
+            stops.spawn(async move { cached.client.stop().await });
+        }
     }
 }
 
@@ -291,6 +294,112 @@ mod tests {
             kind: ConnectionKind::Local,
             shown_in_home: true,
         }
+    }
+
+    fn inert_client() -> Arc<ServerClient> {
+        let (writer, _requests) = tokio::sync::mpsc::channel(1);
+        Arc::new(ServerClient {
+            request_id: Default::default(),
+            writer,
+            pending: Default::default(),
+            events: Default::default(),
+            process: Mutex::new(None),
+            closed: Default::default(),
+        })
+    }
+
+    #[tokio::test]
+    async fn shutdown_starts_cached_cleanup_before_admission_and_drains_late_clients() {
+        let manager = ServerManager::default();
+        let connection = connection();
+        let client = inert_client();
+        manager.clients.lock().await.insert(
+            connection.id.clone(),
+            CachedServerClient {
+                connection: connection.clone(),
+                client: Arc::clone(&client),
+            },
+        );
+        let admission = manager.admission.read().await;
+        let shutdown = manager.stop_all();
+        tokio::pin!(shutdown);
+        std::future::poll_fn(|cx| {
+            assert!(shutdown.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !client.is_closed() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("cached cleanup must start before admission is released");
+
+        // An already admitted connect can publish its client after the first drain.
+        let late_client = inert_client();
+        manager.clients.lock().await.insert(
+            connection.id.clone(),
+            CachedServerClient {
+                connection,
+                client: Arc::clone(&late_client),
+            },
+        );
+        std::future::poll_fn(|cx| {
+            assert!(shutdown.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        drop(admission);
+        tokio::time::timeout(Duration::from_secs(1), shutdown)
+            .await
+            .expect("shutdown must drain clients published before exclusive admission");
+        assert!(late_client.is_closed());
+        assert!(manager.clients.lock().await.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn shutdown_stops_cached_servers_in_parallel_with_admitted_cleanup() {
+        use super::super::tests::spawn_test_client;
+        use std::{
+            path::Path,
+            time::{Instant, SystemTime, UNIX_EPOCH},
+        };
+
+        let manager = ServerManager::default();
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/shutdown-tests");
+        std::fs::create_dir_all(&dir).unwrap();
+        let marker = dir.join(format!(
+            "parallel-cleanup-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let client = spawn_test_client("cat >/dev/null; sleep 4; printf cleaned > \"$1\"", &marker);
+        let temporary = spawn_test_client("exec sleep 30", &marker);
+        let connection = connection();
+        manager.clients.lock().await.insert(
+            connection.id.clone(),
+            CachedServerClient { connection, client },
+        );
+        let admission = manager.admission.read().await;
+        // Match test_connection's admission lifetime while its temporary client stops.
+        let test_cleanup = async {
+            temporary.stop().await;
+            drop(admission);
+        };
+        manager.begin_shutdown();
+        let started = Instant::now();
+        tokio::join!(test_cleanup, manager.stop_all());
+        let elapsed = started.elapsed();
+        assert_eq!(std::fs::read_to_string(&marker).unwrap(), "cleaned");
+        std::fs::remove_file(marker).unwrap();
+        assert!(
+            elapsed < Duration::from_secs(8),
+            "server cleanup exceeded the desktop deadline: {elapsed:?}"
+        );
     }
 
     #[tokio::test]
@@ -358,15 +467,7 @@ mod tests {
     async fn shutdown_preserves_cached_clients_for_teardown_then_drains_them() {
         let manager = ServerManager::default();
         let connection = connection();
-        let (writer, _requests) = tokio::sync::mpsc::channel(1);
-        let client = Arc::new(ServerClient {
-            request_id: Default::default(),
-            writer,
-            pending: Default::default(),
-            events: Default::default(),
-            process: Mutex::new(None),
-            closed: Default::default(),
-        });
+        let client = inert_client();
         manager.clients.lock().await.insert(
             connection.id.clone(),
             CachedServerClient {

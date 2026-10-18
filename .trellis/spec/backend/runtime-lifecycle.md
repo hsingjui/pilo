@@ -39,8 +39,9 @@ Frontend controller eviction alone is not backend process cleanup.
 - `ServerClient::stop()` closes stdin, waits for server cleanup, then force-kills
   only if necessary.
 - `ServerManager::begin_shutdown()` closes new-connection admission and cancels
-  pending connection setup/tests; `stop_all()` drains cached clients after admitted
-  operations release their shared admission guards.
+  pending connection setup/tests; `stop_all()` starts cached-client cleanup before
+  waiting for shared admission guards, then drains late clients under exclusive
+  admission.
 
 ## 3. Contracts
 
@@ -206,7 +207,13 @@ Frontend controller eviction alone is not backend process cleanup.
   platform probes and WSL deployment via `Command::output()`, must enable
   `kill_on_drop(true)` so cancellation or timeout also terminates the launcher.
   This does not guarantee termination of detached remote descendants.
-  Exclusive admission in `stop_all()` prevents cache insertion after its drain.
+  `stop_all()` first drains cached clients into an owned `JoinSet` so their stops
+  run concurrently with admitted connection-test cleanup. It then acquires
+  exclusive admission and drains again to catch clients published by a connect
+  already completing at shutdown. Keep test admission held through temporary
+  client stop, so final cleanup still waits for it. Waiting for exclusive admission
+  before starting cached stops serializes two cleanup grace periods and can exceed
+  the desktop deadline. Exclusive admission prevents insertion after the final drain.
   The desktop bounds this final server cleanup to 8 seconds, independently of
   the preceding 5-second resource teardown, and proceeds to exit on timeout.
 
@@ -247,6 +254,7 @@ Frontend controller eviction alone is not backend process cleanup.
 | Server stdin EOF or invalid frame | Cancel requests, clean up children, finish writer |
 | Server ignores EOF | Bounded force-kill fallback |
 | Shutdown during cold connection or connection test | Cancel setup/test; reject new connections, keep cached clients for stop RPCs until drained |
+| Temporary connection test is still stopping during final cleanup | Start cached stops concurrently; wait for test cleanup and drain any late clients |
 | Final server cleanup exceeds 8 seconds | Log timeout and continue desktop exit |
 
 ## 5. Good / Base / Bad Cases
@@ -261,7 +269,25 @@ Frontend controller eviction alone is not backend process cleanup.
 Server-manager regression coverage checks pending connection-lock cancellation,
 parallel admission, cancellation of an in-flight operation, rejection before work
 is polled, rejection of connection tests after shutdown, and cached-client use
-during teardown followed by drain. Native Windows exit timing remains manual.
+during teardown followed by drain. Additional coverage verifies cached cleanup
+starts while admission is still held, late clients are drained after exclusive
+admission, and real Unix child cleanup runs in parallel: a five-second temporary
+client fallback plus four-second cached EOF cleanup must finish within eight
+seconds. That timing test models `test_connection()`'s admission lifetime.
+
+`server_client/tests/shutdown.rs` also calls the real `ServerManager::client()`
+and `test_connection()` with a task-local fake Unix launcher injected only at
+`spawn_server()`. The normal `ServerClient::connect()` handshake, request framing,
+reader/writer tasks and ping remain active. Hold the handshake response for both
+manager entry points, or reply to the handshake and hold the subsequent test ping.
+After shutdown, assert the shutdown error, bounded `stop_all()` completion and
+launcher reaping; the test-ping case must also write its EOF-cleanup marker.
+Removing any of the three manager cancellation wrappers must fail these tests.
+The launcher override is compiled only for Unix tests and must not modify global
+environment variables. Include a per-process atomic sequence in fixture-directory
+names; timestamps alone can collide between concurrently running tests.
+Platform probing/deployment, real SSH/WSL and native desktop
+exit are not exercised by these fixtures. Native Windows exit timing remains manual.
 
 Earlier lifecycle work passed WSL workspace tests and static checks.
 An ad-hoc stdio check using a slow fake login shell and
