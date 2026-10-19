@@ -101,6 +101,15 @@ fn strip_outer_fence(value: &str) -> &str {
     let Some(inner) = body.trim_end().strip_suffix("```") else {
         return value;
     };
+    // An earlier closing fence belongs to a code block, not an outer wrapper.
+    if body.lines().last().map(str::trim) != Some("```")
+        || inner.lines().any(|line| {
+            let fence = line.trim();
+            fence.len() >= 3 && fence.bytes().all(|byte| byte == b'`')
+        })
+    {
+        return value;
+    }
     inner.trim()
 }
 
@@ -218,6 +227,34 @@ mod tests {
     #[test]
     fn keeps_code_blocks_inside_the_prompt() {
         let reply = "Rewrite `parse` so that:\n\n```rust\nfn parse() {}\n```";
+        assert_eq!(normalize_enhanced_prompt(reply).as_deref(), Some(reply));
+    }
+
+    #[test]
+    fn keeps_separate_leading_and_trailing_code_blocks() {
+        for (newline, closing) in [("\n", "```"), ("\r\n", "```"), ("\n", "````")] {
+            let reply = [
+                "```rust",
+                "fn before() {}",
+                closing,
+                "",
+                "Change the implementation to this interface:",
+                "",
+                "```rust",
+                "fn after() {}",
+                "```",
+            ]
+            .join(newline);
+            assert_eq!(
+                normalize_enhanced_prompt(&reply).as_deref(),
+                Some(reply.as_str())
+            );
+        }
+    }
+
+    #[test]
+    fn keeps_a_closing_fence_inside_a_code_line() {
+        let reply = "```text\nPreserve this literal: ```";
         assert_eq!(normalize_enhanced_prompt(reply).as_deref(), Some(reply));
     }
 
