@@ -5,6 +5,10 @@ import type {
 	NextPromptSettings,
 	NextPromptRequest,
 } from "@/lib/next-prompt";
+import type {
+	PromptEnhancementModel,
+	PromptEnhancementSettings,
+} from "@/lib/prompt-enhancement";
 import { invoke } from "@tauri-apps/api/core";
 
 import {
@@ -199,6 +203,34 @@ export class TauriPiloClient implements PiloClient {
 
 	requestNextPrompt(request: NextPromptRequest): Promise<void> {
 		return invoke<void>("next_prompt_request", { request });
+	}
+
+	loadPromptEnhancementSettings(
+		connectionId: string,
+	): Promise<PromptEnhancementSettings> {
+		return invoke<PromptEnhancementSettings>(
+			"prompt_enhancement_settings_get",
+			{ connectionId },
+		);
+	}
+
+	savePromptEnhancementSettings(
+		connectionId: string,
+		enabled: boolean,
+		model: PromptEnhancementModel | null,
+	): Promise<PromptEnhancementSettings> {
+		return invoke<PromptEnhancementSettings>(
+			"prompt_enhancement_settings_set",
+			{ connectionId, enabled, model },
+		);
+	}
+
+	enhancePrompt(
+		projectId: string,
+		draft: string,
+		model: PromptEnhancementModel | null,
+	): Promise<string> {
+		return invoke<string>("prompt_enhance", { projectId, draft, model });
 	}
 
 	startChat(input: PiloClientStartChatInput): Promise<PiSessionSnapshot> {

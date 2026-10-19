@@ -10,6 +10,7 @@ import {
 	TextCursorInput,
 	Timer,
 	Type,
+	WandSparkles,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -34,6 +35,7 @@ import { KeyboardShortcutsSettings } from "./keyboard-shortcuts-settings";
 import { NotificationSettings } from "./notification-settings";
 import { PreferencesSettings } from "./preferences-settings";
 import { ConnectionNextPromptSettings } from "./connection-next-prompt-settings";
+import { ConnectionPromptEnhancementSettings } from "./connection-prompt-enhancement-settings";
 import { ConnectionCacheKeepAliveSettings } from "./connection-cache-keep-alive-settings";
 import { SessionNamingSettings } from "./session-naming-settings";
 
@@ -45,6 +47,7 @@ type SettingsTabId =
 	| "shortcuts"
 	| "connections"
 	| "next-prompt"
+	| "prompt-enhancement"
 	| "cache-keep-alive"
 	| "session-naming"
 	| "about";
@@ -91,6 +94,12 @@ const SETTINGS_TABS = [
 		section: "project",
 		labelKey: "settings.nextPrompt",
 		icon: TextCursorInput,
+	},
+	{
+		id: "prompt-enhancement" as const,
+		section: "project",
+		labelKey: "settings.promptEnhancement",
+		icon: WandSparkles,
 	},
 	{
 		id: "cache-keep-alive" as const,
@@ -249,6 +258,9 @@ export function SettingsDialog({
 										) : null}
 										{activeTab === "next-prompt" ? (
 											<ConnectionNextPromptSettings />
+										) : null}
+										{activeTab === "prompt-enhancement" ? (
+											<ConnectionPromptEnhancementSettings />
 										) : null}
 										{activeTab === "cache-keep-alive" ? (
 											<ConnectionCacheKeepAliveSettings />

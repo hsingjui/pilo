@@ -3,7 +3,11 @@ mod cache_keep_alive;
 mod connections;
 mod next_prompt;
 mod projects;
+mod prompt_enhancement;
 pub use next_prompt::{next_prompt_request, next_prompt_settings_get, next_prompt_settings_set};
+pub use prompt_enhancement::{
+    prompt_enhance, prompt_enhancement_settings_get, prompt_enhancement_settings_set,
+};
 mod remote;
 mod runtime;
 mod session_reads;

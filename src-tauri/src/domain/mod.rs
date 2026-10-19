@@ -7,7 +7,9 @@ mod desktop;
 pub(crate) use desktop::{AutostartMode, DEFAULT_SHOW_SHORTCUT};
 mod next_prompt;
 mod project;
+mod prompt_enhancement;
 pub use next_prompt::{NextPromptModel, NextPromptRequest, NextPromptSettings};
+pub use prompt_enhancement::{PromptEnhancementModel, PromptEnhancementSettings};
 mod remote;
 mod session;
 

@@ -7,7 +7,9 @@ mod desktop;
 pub(crate) use desktop::*;
 mod next_prompt;
 mod projects;
+mod prompt_enhancement;
 pub(crate) use next_prompt::*;
+pub(crate) use prompt_enhancement::*;
 mod remote;
 mod schema;
 mod session_reads;
@@ -127,6 +129,46 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn prompt_enhancement_defaults_to_disabled_and_keeps_the_model() {
+        let db = SqliteConnection::open_in_memory().expect("open in-memory SQLite");
+        db.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        initialize_schema(&db).expect("initialize schema");
+        db.execute_batch(
+            "INSERT INTO connections(id,name,kind_json,updated_at_ms) VALUES('local','Local','{\"type\":\"local\"}',1);",
+        )
+        .expect("seed connection");
+
+        assert_eq!(
+            get_prompt_enhancement_settings(&db, "local").expect("read defaults"),
+            crate::domain::PromptEnhancementSettings {
+                connection_id: "local".to_owned(),
+                enabled: false,
+                model: None,
+                updated_at_ms: 0,
+            }
+        );
+
+        let model = crate::domain::PromptEnhancementModel {
+            provider: "openai".to_owned(),
+            id: "gpt-5.6-mini".to_owned(),
+        };
+        let enabled = set_prompt_enhancement_settings(&db, "local", true, Some(model.clone()))
+            .expect("enable enhancement");
+        assert!(enabled.enabled);
+        assert_eq!(enabled.model, Some(model.clone()));
+
+        // Disabling keeps the chosen model; the revision still advances.
+        let disabled = set_prompt_enhancement_settings(&db, "local", false, Some(model.clone()))
+            .expect("disable enhancement");
+        assert!(!disabled.enabled);
+        assert_eq!(disabled.model, Some(model));
+        assert!(disabled.updated_at_ms > enabled.updated_at_ms);
+
+        assert!(set_prompt_enhancement_settings(&db, "missing", true, None).is_err());
+        assert!(get_prompt_enhancement_settings(&db, "missing").is_err());
     }
 
     const LEGACY_SCHEMA: &str = "CREATE TABLE connections (

@@ -5,6 +5,10 @@ import type {
 	NextPromptSettings,
 	NextPromptRequest,
 } from "@/lib/next-prompt";
+import type {
+	PromptEnhancementModel,
+	PromptEnhancementSettings,
+} from "@/lib/prompt-enhancement";
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-client";
 import type { PiSessionSnapshot, PiloRuntimeEvent } from "@/lib/api/pi-runtime";
 import type { ProjectPiModels } from "@/lib/api/pi-models";
@@ -115,6 +119,19 @@ export interface PiloClient {
 		model: NextPromptModel | null,
 	): Promise<NextPromptSettings>;
 	requestNextPrompt(request: NextPromptRequest): Promise<void>;
+	loadPromptEnhancementSettings(
+		connectionId: string,
+	): Promise<PromptEnhancementSettings>;
+	savePromptEnhancementSettings(
+		connectionId: string,
+		enabled: boolean,
+		model: PromptEnhancementModel | null,
+	): Promise<PromptEnhancementSettings>;
+	enhancePrompt(
+		projectId: string,
+		draft: string,
+		model: PromptEnhancementModel | null,
+	): Promise<string>;
 	startChat(input: PiloClientStartChatInput): Promise<PiSessionSnapshot>;
 	stopChat(sessionKey: string, reason?: string): Promise<void>;
 	chatState(sessionKey: string): Promise<ChatSessionRuntimeState | null>;

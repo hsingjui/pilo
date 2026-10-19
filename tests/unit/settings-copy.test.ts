@@ -13,6 +13,7 @@ test("Chinese settings menus and core labels stay within two to four characters"
 		shortcuts: zhCN.settings.shortcuts,
 		connections: zhCN.settings.connections,
 		nextPrompt: zhCN.settings.nextPrompt,
+		promptEnhancement: zhCN.settings.promptEnhancement,
 		cacheKeepAlive: zhCN.settings.cacheKeepAlive,
 		sessionNaming: zhCN.settings.sessionNaming,
 		about: zhCN.settings.about,

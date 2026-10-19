@@ -22,6 +22,8 @@ import {
 	SessionMentionScope,
 } from "@/components/chat/session-mention-context";
 import { ChatComposer } from "@/components/chat/chat-composer";
+import { promptEnhancementModel } from "@/lib/prompt-enhancement";
+import { usePromptEnhancementSettings } from "@/lib/use-prompt-enhancement-settings";
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import { RemoteConversationViewport } from "./remote-conversation-viewport";
 import { ChatInterruptedTurnNotice } from "@/components/chat/chat-interrupted-turn-notice";
@@ -157,6 +159,13 @@ function RemoteWorkspace() {
 		token,
 	} = connection;
 	const visibleError = fatalError ?? sessions.refreshError;
+	// 草稿优化按当前项目所属 Connection 的 Host 设置开关；默认关闭。
+	const promptEnhancement = usePromptEnhancementSettings(
+		connection.client,
+		chat.activeProject?.connection.id ?? "",
+	);
+	// 草稿优化回调在等待期间读取，不能依赖属性窄化，先落成常量。
+	const enhanceProjectId = chat.activeProjectId ?? "";
 	const active = chat.conversationUi.active;
 	const updateBlocked =
 		active || chat.sending || chat.compacting || chat.retryState !== null;
@@ -570,6 +579,24 @@ function RemoteWorkspace() {
 																	return await client.uploadChatFile(
 																		chat.activeProjectId,
 																		file,
+																	);
+																} catch (error) {
+																	handleExpiredAuth(error);
+																	throw error;
+																}
+															}
+														: undefined
+												}
+												onEnhancePrompt={
+													client &&
+													enhanceProjectId &&
+													promptEnhancement.settings?.enabled
+														? async (draftValue) => {
+																try {
+																	return await client.enhancePrompt(
+																		enhanceProjectId,
+																		draftValue,
+																		promptEnhancementModel(chat.selectedModel),
 																	);
 																} catch (error) {
 																	handleExpiredAuth(error);

@@ -86,6 +86,9 @@ pub enum RuntimeEvent {
     NextPromptSettingsChanged {
         settings: crate::domain::NextPromptSettings,
     },
+    PromptEnhancementSettingsChanged {
+        settings: crate::domain::PromptEnhancementSettings,
+    },
     ProjectModelScopeChanged {
         scope: crate::domain::ProjectModelScope,
     },

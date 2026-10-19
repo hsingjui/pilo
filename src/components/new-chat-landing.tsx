@@ -39,6 +39,8 @@ import type { Project } from "@/lib/api/projects";
 import type { ChatSubmission } from "@/lib/chat/chat-submission";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { tauriPiloClient } from "@/lib/api/tauri-pilo-client";
+import { promptEnhancementModel } from "@/lib/prompt-enhancement";
+import { usePromptEnhancementSettings } from "@/lib/use-prompt-enhancement-settings";
 import { useProjectModelScope } from "@/lib/use-project-model-scope";
 import { DraftProjectPicker } from "@/components/chat/draft-project-picker";
 
@@ -97,6 +99,11 @@ export function NewChatLanding({
 	const projectId = project?.id ?? null;
 	const cachedModels = projectId ? getCachedProjectPiModels(projectId) : null;
 	const scopeConfig = useProjectModelScope(tauriPiloClient, projectId ?? "");
+	// 草稿优化按落点项目所属 Connection 的 Host 设置开关；默认关闭。
+	const promptEnhancement = usePromptEnhancementSettings(
+		tauriPiloClient,
+		project?.connection.id ?? "",
+	);
 	useEffect(() => {
 		if (!projectId) return;
 		let disposed = false;
@@ -443,6 +450,16 @@ export function NewChatLanding({
 								onUploadFile={
 									projectId
 										? (file) => uploadChatFile(projectId, file)
+										: undefined
+								}
+								onEnhancePrompt={
+									promptEnhancement.settings?.enabled && projectId
+										? (draftValue) =>
+												tauriPiloClient.enhancePrompt(
+													projectId,
+													draftValue,
+													promptEnhancementModel(selectedModel),
+												)
 										: undefined
 								}
 								onChange={updateDraft}

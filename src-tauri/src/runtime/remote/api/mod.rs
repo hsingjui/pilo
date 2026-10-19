@@ -152,6 +152,15 @@ pub(crate) fn router(
             post(handlers::next_prompt_request),
         )
         .route(
+            "/api/v1/prompt-enhancement/settings",
+            get(handlers::prompt_enhancement_settings_get)
+                .post(handlers::prompt_enhancement_settings_set),
+        )
+        .route(
+            "/api/v1/prompt-enhancement/enhance",
+            post(handlers::prompt_enhance),
+        )
+        .route(
             "/api/v1/cache-keep-alive/settings",
             get(handlers::cache_keep_alive_settings_list)
                 .post(handlers::cache_keep_alive_settings_set),

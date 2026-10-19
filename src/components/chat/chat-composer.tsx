@@ -1,8 +1,10 @@
 import {
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
+	useState,
 	type CSSProperties,
 } from "react";
 import {
@@ -10,7 +12,8 @@ import {
 	isImeComposingNativeKeyboardEvent,
 } from "@/lib/ime";
 import { useTranslation } from "react-i18next";
-import { LoaderCircle, Plus, X } from "lucide-react";
+import { toast } from "sonner";
+import { LoaderCircle, PencilSparkles, Plus, X } from "lucide-react";
 
 import { SessionMentionBadge } from "@/components/chat/session-mention-badge";
 import { FileMentionBadge } from "@/components/chat/path-mention-badge";
@@ -31,7 +34,11 @@ import { ChatImageThumbnail } from "@/components/chat/chat-image-viewer";
 import { discardRemovedChatFiles } from "@/lib/chat/chat-file-lifecycle";
 
 import { formatKeyboardShortcut } from "@/lib/keyboard-shortcuts";
-import type { PiModel, PiThinkingLevel } from "@/lib/api/pi-runtime";
+import {
+	runtimeErrorMessage,
+	type PiModel,
+	type PiThinkingLevel,
+} from "@/lib/api/pi-runtime";
 import type { ModelScopeControls } from "@/lib/project-model-scope";
 import { cn } from "@/lib/utils";
 import { getPageFontFamilyStack } from "@/lib/font-settings";
@@ -44,6 +51,7 @@ import {
 	Button,
 	NoticeCard,
 	Textarea,
+	Spinner,
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
@@ -119,6 +127,11 @@ type ChatComposerProps = {
 	onNextPromptDismiss?: () => void;
 	/** 桌面专属的快捷键提示与自动聚焦；Remote WebUI 传 false。 */
 	desktopShortcuts?: boolean;
+	/**
+	 * 用一次性 Pi 进程改写草稿；只有当前 Connection 打开该功能时才传入。
+	 * 桌面与 Remote WebUI 共用。
+	 */
+	onEnhancePrompt?: (draft: string) => Promise<string>;
 };
 
 const EMPTY_MODELS: readonly PiModel[] = [];
@@ -170,6 +183,7 @@ export function ChatComposer({
 	nextPrompt,
 	onNextPromptDismiss,
 	desktopShortcuts = true,
+	onEnhancePrompt,
 }: ChatComposerProps) {
 	const { t } = useTranslation();
 	const composerPlaceholder = placeholder ?? t("chat.composerPlaceholder");
@@ -398,6 +412,54 @@ export function ChatComposer({
 		changeDraft(ghostText);
 		textareaRef.current?.focus();
 	}, [ghostText, onNextPromptDismiss, changeDraft, textareaRef]);
+
+	// 草稿优化：只在草稿未被改动时回填，避免覆盖用户在等待期间的新输入。
+	const [enhancing, setEnhancing] = useState(false);
+	const enhancingRef = useRef(false);
+	// 用完整草稿（含 @文件 / #会话 引用）做快照：只比较正文会漏掉等待期间
+	// 新增的引用，回填时把它们抹掉。
+	const draftValueRef = useRef(value);
+	useLayoutEffect(() => {
+		draftValueRef.current = value;
+	}, [value]);
+	const enhanceDraft = mentionDraft.text.trim();
+	const enhanceDisabled =
+		!onEnhancePrompt ||
+		disabled ||
+		sendingNow ||
+		processing ||
+		enhancing ||
+		!enhanceDraft;
+
+	async function handleEnhancePrompt() {
+		if (enhanceDisabled || enhancingRef.current || !onEnhancePrompt) return;
+		const references = mentionDraft.references;
+		const startValue = draftValueRef.current;
+		enhancingRef.current = true;
+		setEnhancing(true);
+		try {
+			const enhanced = (await onEnhancePrompt(enhanceDraft)).trim();
+			// 期间草稿有任何变化（正文、引用或附件）就放弃回填，避免覆盖用户输入；
+			// 回填走 changeDraft，让被替换掉的引用按既有规则清理附件。
+			if (enhanced && draftValueRef.current === startValue) {
+				changeDraft(writeChatMentionDraft(references, enhanced));
+			}
+		} catch (error) {
+			const detail =
+				error instanceof Error
+					? error.message
+					: typeof error === "string"
+						? error
+						: runtimeErrorMessage(error);
+			toast.error(t("chat.enhancePromptFailed"), {
+				description: detail || runtimeErrorMessage(error),
+			});
+		} finally {
+			enhancingRef.current = false;
+			setEnhancing(false);
+			requestAnimationFrame(() => textareaRef.current?.focus());
+		}
+	}
 
 	useEffect(() => {
 		if (!ghostText || suggestionMenuOpen) return;
@@ -744,6 +806,42 @@ export function ChatComposer({
 								: t("chat.addAttachment")}
 						</TooltipContent>
 					</Tooltip>
+
+					{onEnhancePrompt ? (
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button
+									type="button"
+									variant="ghost"
+									size="icon"
+									disabled={enhanceDisabled}
+									className={CHAT_COMPOSER_ATTACHMENT_BUTTON_CLASS_NAME}
+									data-chat-composer-enhance=""
+									aria-label={
+										enhancing
+											? t("chat.enhancingPrompt")
+											: t("chat.enhancePrompt")
+									}
+									aria-busy={enhancing}
+									onClick={() => {
+										onNextPromptDismiss?.();
+										void handleEnhancePrompt();
+									}}
+								>
+									{enhancing ? (
+										<Spinner className="size-3.5" />
+									) : (
+										<PencilSparkles className="size-4" />
+									)}
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent>
+								{enhancing
+									? t("chat.enhancingPrompt")
+									: t("chat.enhancePrompt")}
+							</TooltipContent>
+						</Tooltip>
+					) : null}
 
 					<ComposerRunConfig
 						models={models}

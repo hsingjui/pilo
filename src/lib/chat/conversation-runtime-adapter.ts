@@ -57,6 +57,7 @@ export function toConversationAction(
 		case "theme_settings_changed":
 		case "project_model_scope_changed":
 		case "next_prompt_settings_changed":
+		case "prompt_enhancement_settings_changed":
 		case "cache_keep_alive_settings_changed":
 		case "sessions_indexed":
 		case "session_index_error":

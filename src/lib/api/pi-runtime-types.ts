@@ -1,6 +1,7 @@
 import type { TokenUsage } from "./token-usage";
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
 import type { NextPromptSettings } from "../next-prompt";
+import type { PromptEnhancementSettings } from "../prompt-enhancement";
 import type { ProjectModelScope } from "../project-model-scope";
 import type { ThemeSettings } from "../theme-settings";
 import type { SessionReadState } from "../session-read-state";
@@ -173,6 +174,10 @@ export type PiloRuntimeEvent = {
 			settings: CacheKeepAliveSettings;
 	  }
 	| { type: "next_prompt_settings_changed"; settings: NextPromptSettings }
+	| {
+			type: "prompt_enhancement_settings_changed";
+			settings: PromptEnhancementSettings;
+	  }
 	| {
 			type: "session_turn_completed";
 			projectId: string;

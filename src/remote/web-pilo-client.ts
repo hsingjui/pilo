@@ -6,6 +6,10 @@ import type {
 	NextPromptRequest,
 } from "@/lib/next-prompt";
 import type {
+	PromptEnhancementModel,
+	PromptEnhancementSettings,
+} from "@/lib/prompt-enhancement";
+import type {
 	PiloClient,
 	PiloClientBootstrap,
 	PiloClientEventOptions,
@@ -54,6 +58,9 @@ import {
 	loadRemoteNextPromptSettings,
 	saveRemoteNextPromptSettings,
 	requestRemoteNextPrompt,
+	loadRemotePromptEnhancementSettings,
+	saveRemotePromptEnhancementSettings,
+	enhanceRemotePrompt,
 	loadRemoteModelScope,
 	saveRemoteModelScope,
 	loadRemoteSessions,
@@ -202,6 +209,33 @@ export class WebPiloClient implements PiloClient {
 
 	requestNextPrompt(request: NextPromptRequest): Promise<void> {
 		return requestRemoteNextPrompt(this.token, request);
+	}
+
+	loadPromptEnhancementSettings(
+		connectionId: string,
+	): Promise<PromptEnhancementSettings> {
+		return loadRemotePromptEnhancementSettings(this.token, connectionId);
+	}
+
+	savePromptEnhancementSettings(
+		connectionId: string,
+		enabled: boolean,
+		model: PromptEnhancementModel | null,
+	): Promise<PromptEnhancementSettings> {
+		return saveRemotePromptEnhancementSettings(
+			this.token,
+			connectionId,
+			enabled,
+			model,
+		);
+	}
+
+	enhancePrompt(
+		projectId: string,
+		draft: string,
+		model: PromptEnhancementModel | null,
+	): Promise<string> {
+		return enhanceRemotePrompt(this.token, projectId, draft, model);
 	}
 
 	startChat(input: PiloClientStartChatInput): Promise<PiSessionSnapshot> {

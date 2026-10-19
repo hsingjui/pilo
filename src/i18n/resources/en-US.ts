@@ -159,6 +159,11 @@ const enUS = {
 		nextPromptFollowModel: "Follow chat model",
 		nextPromptUnavailable:
 			"Prompt suggestions are unavailable. Check your model configuration and Pi version.",
+		promptEnhancement: "Prompt enhancement",
+		promptEnhancementDescription:
+			"Rewrites the draft into a clearer prompt with a separate model call.",
+		promptEnhancementModel: "Enhancement model",
+		promptEnhancementFollowModel: "Follow chat model",
 		sessionNaming: "Session naming",
 		remote: "Remote",
 		remoteWebUi: "Remote WebUI",
@@ -510,6 +515,9 @@ const enUS = {
 		todoStatusCompleted: "Completed",
 		todoStatusCancelled: "Cancelled",
 		addAttachment: "Add attachment",
+		enhancePrompt: "Enhance draft",
+		enhancingPrompt: "Enhancing draft…",
+		enhancePromptFailed: "Could not enhance the draft",
 		dropFiles: "Drop files to add to your message",
 		preparingAttachments: "Preparing attachments…",
 		maxFiles: "Add up to {{count}} files at a time",

@@ -19,6 +19,8 @@ import { CacheKeepAliveNotice } from "@/components/chat/cache-keep-alive-notice"
 import { useCacheKeepAliveStatus } from "@/lib/use-cache-keep-alive-status";
 import { useNextPrompt } from "@/components/chat/use-next-prompt";
 import { tauriPiloClient } from "@/lib/api/tauri-pilo-client";
+import { promptEnhancementModel } from "@/lib/prompt-enhancement";
+import { usePromptEnhancementSettings } from "@/lib/use-prompt-enhancement-settings";
 import { SessionMentionScope } from "@/components/chat/session-mention-context";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { uploadChatFile } from "@/lib/api/files";
@@ -199,6 +201,11 @@ function ChatPageImpl(props: ChatPageProps) {
 		refreshSessionState,
 		refreshSessionStats,
 	} = sessionConfig;
+	// 草稿优化按当前项目所属 Connection 的 Host 设置开关；默认关闭。
+	const promptEnhancement = usePromptEnhancementSettings(
+		tauriPiloClient,
+		session.projectRecord.connection.id,
+	);
 	const readOnly = Boolean(session.externalRunning || sessionHeaderMissing);
 	const conversation = useChatConversation({
 		session,
@@ -646,6 +653,16 @@ function ChatPageImpl(props: ChatPageProps) {
 											attachmentScopeKey={`${session.projectRecord.id}:${session.id}`}
 											onUploadFile={(file) =>
 												uploadChatFile(session.projectRecord.id, file)
+											}
+											onEnhancePrompt={
+												promptEnhancement.settings?.enabled
+													? (draftValue) =>
+															tauriPiloClient.enhancePrompt(
+																session.projectRecord.id,
+																draftValue,
+																promptEnhancementModel(selectedModel),
+															)
+													: undefined
 											}
 											placeholder={
 												readOnly

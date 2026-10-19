@@ -85,6 +85,14 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            updated_at_ms INTEGER NOT NULL,
            CHECK((provider IS NULL AND model_id IS NULL) OR (provider IS NOT NULL AND model_id IS NOT NULL))
          );
+         CREATE TABLE IF NOT EXISTS connection_prompt_enhancement_settings (
+           connection_id TEXT PRIMARY KEY REFERENCES connections(id) ON DELETE CASCADE,
+           enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),
+           provider TEXT,
+           model_id TEXT,
+           updated_at_ms INTEGER NOT NULL,
+           CHECK((provider IS NULL AND model_id IS NULL) OR (provider IS NOT NULL AND model_id IS NOT NULL))
+         );
          CREATE TABLE IF NOT EXISTS model_cache_keep_alive_settings (
            connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
            provider TEXT NOT NULL,

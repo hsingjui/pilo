@@ -568,6 +568,75 @@ pub(super) async fn next_prompt_request(
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PromptEnhancementSettingsQuery {
+    connection_id: String,
+}
+
+pub(super) async fn prompt_enhancement_settings_get(
+    State(state): State<RemoteHttpState>,
+    Query(query): Query<PromptEnhancementSettingsQuery>,
+) -> Response {
+    match crate::runtime::prompt_enhancement::load(&state.paths, &query.connection_id) {
+        Ok(settings) => Json(settings).into_response(),
+        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PromptEnhancementSettingsInput {
+    connection_id: String,
+    enabled: bool,
+    model: Option<crate::domain::PromptEnhancementModel>,
+}
+
+pub(super) async fn prompt_enhancement_settings_set(
+    State(state): State<RemoteHttpState>,
+    Json(input): Json<PromptEnhancementSettingsInput>,
+) -> Response {
+    match crate::runtime::prompt_enhancement::save(
+        &state.paths,
+        &state.app.state::<RuntimeEventBus>(),
+        &input.connection_id,
+        input.enabled,
+        input.model,
+    ) {
+        Ok(settings) => Json(settings).into_response(),
+        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PromptEnhanceInput {
+    project_id: String,
+    draft: String,
+    model: Option<crate::domain::PromptEnhancementModel>,
+}
+
+/// The Host's budget covers process start, the RPC, generation and cleanup, so
+/// it returns a real reason instead of the Router's generic 408.
+pub(super) async fn prompt_enhance(
+    State(state): State<RemoteHttpState>,
+    Json(input): Json<PromptEnhanceInput>,
+) -> Response {
+    match crate::runtime::prompt_enhancement::enhance(
+        &state.app,
+        &state.app.state::<PiloRuntime>(),
+        &state.paths,
+        &input.project_id,
+        &input.draft,
+        input.model,
+    )
+    .await
+    {
+        Ok(text) => Json(text).into_response(),
+        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    }
+}
+
 pub(super) async fn cache_keep_alive_settings_list(
     State(state): State<RemoteHttpState>,
     Query(query): Query<NextPromptSettingsQuery>,

@@ -298,6 +298,27 @@ fn normalize_windows_extension_path(value: &str) -> String {
     value.strip_prefix(r"\\?\").unwrap_or(value).to_owned()
 }
 
+/// Windows batch launchers (`pi.cmd`, `pi.bat`) reach the CLI through
+/// `cmd.exe`, whose argument parsing rejects a newline outright. Native
+/// launchers such as `pi` or `pi.exe` pass the value straight through, so a
+/// multi-line system prompt keeps its paragraphs and lists there.
+fn is_batch_launcher(executable: &str) -> bool {
+    std::path::Path::new(executable)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat")
+        })
+}
+
+fn system_prompt_argument(executable: &str, prompt: &str) -> String {
+    if cfg!(windows) && is_batch_launcher(executable) {
+        prompt.replace(['\r', '\n'], " ")
+    } else {
+        prompt.to_owned()
+    }
+}
+
 fn trace_pi_rpc_line(stream_id: &str, bytes: &[u8]) {
     #[cfg(debug_assertions)]
     {
@@ -435,7 +456,10 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
         args.extend(["--thinking".to_owned(), thinking.clone()]);
     }
     if let Some(system_prompt) = params.system_prompt.as_ref() {
-        args.extend(["--system-prompt".to_owned(), system_prompt.clone()]);
+        args.extend([
+            "--system-prompt".to_owned(),
+            system_prompt_argument(&pi_executable, system_prompt),
+        ]);
     }
     let mut command = process_command(&pi_executable, &args, &path);
     command
@@ -729,6 +753,45 @@ mod tests {
         ] {
             assert_eq!(normalize_windows_extension_path(input), expected);
         }
+    }
+
+    #[test]
+    fn only_batch_launchers_are_treated_as_cmd_wrapped() {
+        use super::is_batch_launcher;
+
+        for launcher in [r"C:\tools\pi.cmd", "pi.cmd", "pi.CMD", r"C:\Pilo\pi.bat"] {
+            assert!(
+                is_batch_launcher(launcher),
+                "{launcher} should be a batch launcher"
+            );
+        }
+        for launcher in [
+            "pi",
+            "pi.exe",
+            r"C:\tools\pi.exe",
+            r"C:\dir.cmd\pi",
+            "/usr/bin/pi",
+        ] {
+            assert!(
+                !is_batch_launcher(launcher),
+                "{launcher} should not be a batch launcher"
+            );
+        }
+    }
+
+    #[test]
+    fn multiline_system_prompts_only_collapse_for_batch_launchers() {
+        use super::system_prompt_argument;
+
+        let prompt = "Line one\r\nLine two\nLine three";
+        let batch = system_prompt_argument("pi.cmd", prompt);
+        let native = system_prompt_argument("pi.exe", prompt);
+        if cfg!(windows) {
+            assert_eq!(batch, "Line one  Line two Line three");
+        } else {
+            assert_eq!(batch, prompt);
+        }
+        assert_eq!(native, prompt);
     }
 
     #[test]

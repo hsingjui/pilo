@@ -5,6 +5,10 @@ import type {
 	NextPromptSettings,
 	NextPromptRequest,
 } from "@/lib/next-prompt";
+import type {
+	PromptEnhancementModel,
+	PromptEnhancementSettings,
+} from "@/lib/prompt-enhancement";
 import { describeDevice } from "@/lib/device-name";
 import { registerChatFile } from "@/lib/chat/chat-file-lifecycle";
 import type { SessionReadState } from "@/lib/session-read-state";
@@ -364,6 +368,45 @@ export function requestRemoteNextPrompt(
 	return remoteFetch<void>(token, "/api/v1/next-prompt/request", {
 		method: "POST",
 		body: JSON.stringify(request),
+	});
+}
+
+export function loadRemotePromptEnhancementSettings(
+	token: string,
+	connectionId: string,
+) {
+	const query = new URLSearchParams({ connectionId });
+	return remoteFetch<PromptEnhancementSettings>(
+		token,
+		`/api/v1/prompt-enhancement/settings?${query.toString()}`,
+	);
+}
+
+export function saveRemotePromptEnhancementSettings(
+	token: string,
+	connectionId: string,
+	enabled: boolean,
+	model: PromptEnhancementModel | null,
+) {
+	return remoteFetch<PromptEnhancementSettings>(
+		token,
+		"/api/v1/prompt-enhancement/settings",
+		{
+			method: "POST",
+			body: JSON.stringify({ connectionId, enabled, model }),
+		},
+	);
+}
+
+export function enhanceRemotePrompt(
+	token: string,
+	projectId: string,
+	draft: string,
+	model: PromptEnhancementModel | null,
+) {
+	return remoteFetch<string>(token, "/api/v1/prompt-enhancement/enhance", {
+		method: "POST",
+		body: JSON.stringify({ projectId, draft, model }),
 	});
 }
 
