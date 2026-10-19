@@ -276,7 +276,7 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 		<button
 			type="button"
 			className={cn(
-				"flex h-7 shrink-0 select-none items-center gap-1 rounded-md px-2 text-xs leading-tight text-muted-foreground transition-colors motion-reduce:transition-none",
+				"relative start-1 -ms-(--pilo-ui-composer-toolbar-gap) flex h-7 shrink-0 select-none items-center gap-1 rounded-md ps-1 pe-0 text-xs leading-tight text-muted-foreground transition-colors motion-reduce:transition-none",
 				"hover:bg-hover hover:text-hover-foreground data-[state=open]:bg-hover data-[state=open]:text-hover-foreground",
 				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
 				contextStale && "opacity-60",

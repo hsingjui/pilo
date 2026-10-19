@@ -11,8 +11,9 @@ export const CHAT_COMPOSER_TEXTAREA_CLASS_NAME = cn(
 	"disabled:bg-transparent disabled:text-muted-foreground disabled:opacity-100",
 );
 
+// 工具栏作为具名容器：子项按工具栏实际宽度做渐进显示，不依赖视口。
 export const CHAT_COMPOSER_TOOLBAR_CLASS_NAME =
-	"flex select-none items-center gap-(--pilo-ui-composer-toolbar-gap) pt-0.5";
+	"@container/toolbar -ms-1 flex select-none items-center gap-(--pilo-ui-composer-toolbar-gap) pt-0.5";
 
 export const CHAT_COMPOSER_ATTACHMENT_BUTTON_CLASS_NAME =
 	"h-(--pilo-ui-composer-control-size) w-(--pilo-ui-composer-attachment-width) rounded-md text-muted-foreground";

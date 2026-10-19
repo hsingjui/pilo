@@ -295,10 +295,19 @@ function RunConfigTrigger({
 			data-chat-run-config-trigger=""
 			type="button"
 			aria-label={t("chat.runConfigLabel", { model: label, thinking })}
-			className={CHAT_COMPOSER_RUN_CONFIG_TRIGGER_CLASS_NAME}
+			className={cn(
+				CHAT_COMPOSER_RUN_CONFIG_TRIGGER_CLASS_NAME,
+				"-ms-1 max-w-fit grow gap-1 @max-[24rem]/toolbar:gap-0.5 @max-[24rem]/toolbar:[--pilo-ui-composer-run-config-padding:0]",
+			)}
 		>
-			<PiLogo className="size-4 text-current" />
-			<span className="block min-w-0 max-w-40 truncate text-left">{label}</span>
+			<PiLogo className="size-4 shrink-0 text-current" />
+			<span
+				data-chat-run-config-label=""
+				// 窄屏只省略过长的模型名，Pi Logo 和思考等级始终保留。
+				className="block min-w-0 flex-1 truncate text-left"
+			>
+				{label}
+			</span>
 			<span aria-hidden="true" className="shrink-0 text-muted-foreground/60">
 				·
 			</span>

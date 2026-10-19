@@ -1,0 +1,157 @@
+<!doctype html>
+<!-- Run with pnpm exec vite, then open /tests/browser/chat-composer-run-config.html. -->
+<html lang="en" translate="no">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Composer run config regression</title>
+	</head>
+	<body>
+		<pre id="results">Running…</pre>
+		<div id="root"></div>
+		<script type="module">
+			import "../../src/index.css";
+			import { createElement as h } from "react";
+			import { createRoot } from "react-dom/client";
+			import { ChatComposer } from "../../src/components/chat/chat-composer.tsx";
+			import { PreferencesProvider } from "../../src/lib/preferences-provider.tsx";
+			import { TooltipProvider } from "../../src/ui/tooltip.tsx";
+			import { initializeI18n } from "../../src/i18n/index.ts";
+
+			if (new URLSearchParams(location.search).has("remote"))
+				document.documentElement.dataset.remoteWebui = "";
+			await initializeI18n("en-US");
+			const root = createRoot(document.getElementById("root"));
+			const cases = [320, 360, 390, 480, 680].flatMap((width) =>
+				["high", "minimal", "xhigh"].flatMap((level) =>
+					["A very long reasoning model name", "GPT"].map((name) => ({
+						width,
+						level,
+						name,
+					})),
+				),
+			);
+			const model = {
+				id: "long-model",
+				contextWindow: 200000,
+				provider: "test",
+				reasoning: true,
+			};
+			root.render(
+				h(
+					PreferencesProvider,
+					null,
+					h(
+						TooltipProvider,
+						null,
+						cases.map(({ width, level, name }) =>
+							h(
+								"div",
+								{
+									key: `${width}-${level}-${name}`,
+									"data-case": `${width}px ${level} ${name}`,
+									style: { width, maxWidth: "100%" },
+								},
+								h(ChatComposer, {
+									value: "Continue",
+									onChange: () => {},
+									desktopShortcuts: width >= 680,
+									models: [model],
+									selectedModel: { ...model, name },
+									pendingFollowUps: 1,
+									onModelChange: () => {},
+									thinkingLevels: ["high", "minimal", "xhigh"],
+									selectedThinkingLevel: level,
+									onThinkingChange: () => {},
+									onEnhancePrompt: async (draft) => draft,
+								}),
+							),
+						),
+					),
+				),
+			);
+
+			function assert(condition, message) {
+				if (!condition) throw new Error(message);
+			}
+			try {
+				while (!document.querySelector("[data-chat-run-config-trigger]"))
+					await new Promise(requestAnimationFrame);
+				await document.fonts.ready;
+				await new Promise(requestAnimationFrame);
+				for (const fixture of document.querySelectorAll("[data-case]")) {
+					const name = fixture.dataset.case;
+					const trigger = fixture.querySelector(
+						"[data-chat-run-config-trigger]",
+					);
+					const label = fixture.querySelector("[data-chat-run-config-label]");
+					const thinking = trigger.lastElementChild;
+					const actions = fixture.querySelector("[data-chat-composer-actions]");
+					const attachment = fixture.querySelector(
+						"[data-chat-composer-attachment]",
+					);
+					const context = trigger.nextElementSibling;
+					const toolbar = fixture.querySelector("[data-chat-composer-toolbar]");
+					const gap = parseFloat(getComputedStyle(toolbar).columnGap);
+					assert(
+						attachment.getBoundingClientRect().left <
+							fixture.querySelector("textarea").getBoundingClientRect().left &&
+							trigger.getBoundingClientRect().left -
+								attachment.getBoundingClientRect().right <=
+								gap - 3,
+						`${name}: attachment and model sit further left`,
+					);
+					assert(
+						context.tagName === "BUTTON" &&
+							Math.abs(
+								context.getBoundingClientRect().left -
+									trigger.getBoundingClientRect().right -
+									parseFloat(
+										getComputedStyle(document.documentElement).fontSize,
+									) /
+										4,
+							) <= 1,
+						`${name}: context sits immediately beside model without a growing spacer`,
+					);
+					assert(
+						getComputedStyle(trigger.firstElementChild).display !== "none" &&
+							trigger.firstElementChild.getBoundingClientRect().width > 0,
+						`${name}: Pi Logo remains visible`,
+					);
+					const separator = thinking.previousElementSibling;
+					assert(
+						separator.textContent.trim() === "·" &&
+							getComputedStyle(separator).display !== "none" &&
+							separator.getBoundingClientRect().width > 0,
+						`${name}: model/reasoning separator remains visible`,
+					);
+					assert(
+						getComputedStyle(thinking).display !== "none" &&
+							thinking.getBoundingClientRect().width > 0,
+						`${name}: reasoning level remains visible`,
+					);
+					assert(
+						label.getBoundingClientRect().width > 0,
+						`${name}: model remains visible`,
+					);
+					assert(
+						thinking.getBoundingClientRect().right <=
+							trigger.getBoundingClientRect().right + 1 &&
+							context.getBoundingClientRect().right <=
+								actions.getBoundingClientRect().left + 1 &&
+							actions.getBoundingClientRect().right <=
+								fixture.getBoundingClientRect().right + 1,
+						`${name}: controls do not overlap or overflow`,
+					);
+				}
+				document.body.dataset.testStatus = "passed";
+				document.getElementById("results").textContent =
+					`PASS: ${cases.length} desktop/mobile layouts keep left-aligned attachment/model, adjacent context and visible reasoning without overflow`;
+			} catch (error) {
+				document.body.dataset.testStatus = "failed";
+				document.getElementById("results").textContent = error.stack;
+				throw error;
+			}
+		</script>
+	</body>
+</html>

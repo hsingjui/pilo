@@ -6,6 +6,7 @@ import {
 	Square,
 	Zap,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -52,6 +53,8 @@ const SEND_MODE_OPTIONS = [
 ] as const;
 
 type ComposerActionsProps = {
+	/** 与发送方式同组、一起贴右的附加操作，例如草稿优化。 */
+	leadingActions?: ReactNode;
 	value: string;
 	hasAttachments: boolean;
 	disabled: boolean;
@@ -70,6 +73,7 @@ type ComposerActionsProps = {
 };
 
 export function ComposerActions({
+	leadingActions,
 	value,
 	hasAttachments,
 	disabled,
@@ -109,7 +113,11 @@ export function ComposerActions({
 			? t(selectedOption.label)
 			: t("chat.send");
 	return (
-		<div className="ms-auto flex shrink-0 items-center gap-1.5">
+		<div
+			data-chat-composer-actions=""
+			className="ms-auto flex shrink-0 items-center gap-1.5"
+		>
+			{leadingActions}
 			<DropdownMenu>
 				<Tooltip>
 					<TooltipTrigger asChild>

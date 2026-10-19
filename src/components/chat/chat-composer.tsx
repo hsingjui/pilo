@@ -816,42 +816,6 @@ export function ChatComposer({
 						</TooltipContent>
 					</Tooltip>
 
-					{onEnhancePrompt ? (
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button
-									type="button"
-									variant="ghost"
-									size="icon"
-									disabled={enhanceDisabled}
-									className={CHAT_COMPOSER_ATTACHMENT_BUTTON_CLASS_NAME}
-									data-chat-composer-enhance=""
-									aria-label={
-										enhancing
-											? t("chat.enhancingPrompt")
-											: t("chat.enhancePrompt")
-									}
-									aria-busy={enhancing}
-									onClick={() => {
-										onNextPromptDismiss?.();
-										void handleEnhancePrompt();
-									}}
-								>
-									{enhancing ? (
-										<Spinner className="size-3.5" />
-									) : (
-										<PencilSparkles className="size-4" />
-									)}
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent>
-								{enhancing
-									? t("chat.enhancingPrompt")
-									: t("chat.enhancePrompt")}
-							</TooltipContent>
-						</Tooltip>
-					) : null}
-
 					<ComposerRunConfig
 						models={models}
 						modelScope={modelScope}
@@ -878,17 +842,55 @@ export function ChatComposer({
 						onThinkingChange={onThinkingChange}
 					/>
 
+					<ComposerContextUsage
+						usage={contextUsage}
+						contextWindow={selectedModel?.contextWindow}
+					/>
 					{pendingFollowUps > 0 ? (
 						<span className="hidden text-2xs tabular-nums text-muted-foreground @min-[40rem]:inline">
 							{t("chat.pendingFollowUp", { count: pendingFollowUps })}
 						</span>
 					) : null}
-					<ComposerContextUsage
-						usage={contextUsage}
-						contextWindow={selectedModel?.contextWindow}
-					/>
 
 					<ComposerActions
+						leadingActions={
+							// 草稿优化作用于输入内容，和发送方式、发送按钮同组贴右。
+							onEnhancePrompt ? (
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											disabled={enhanceDisabled}
+											className={CHAT_COMPOSER_ATTACHMENT_BUTTON_CLASS_NAME}
+											data-chat-composer-enhance=""
+											aria-label={
+												enhancing
+													? t("chat.enhancingPrompt")
+													: t("chat.enhancePrompt")
+											}
+											aria-busy={enhancing}
+											onClick={() => {
+												onNextPromptDismiss?.();
+												void handleEnhancePrompt();
+											}}
+										>
+											{enhancing ? (
+												<Spinner className="size-3.5" />
+											) : (
+												<PencilSparkles className="size-4" />
+											)}
+										</Button>
+									</TooltipTrigger>
+									<TooltipContent>
+										{enhancing
+											? t("chat.enhancingPrompt")
+											: t("chat.enhancePrompt")}
+									</TooltipContent>
+								</Tooltip>
+							) : null
+						}
 						value={value}
 						hasAttachments={attachments.length > 0}
 						disabled={disabled || sendingNow}
