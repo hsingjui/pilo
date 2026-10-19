@@ -416,12 +416,19 @@ export function ChatComposer({
 	// 草稿优化：只在草稿未被改动时回填，避免覆盖用户在等待期间的新输入。
 	const [enhancing, setEnhancing] = useState(false);
 	const enhancingRef = useRef(false);
-	// 用完整草稿（含 @文件 / #会话 引用）做快照：只比较正文会漏掉等待期间
-	// 新增的引用，回填时把它们抹掉。
-	const draftValueRef = useRef(value);
+	// 每次草稿或归属变化都创建新快照，切走再切回也不能恢复旧请求。
+	const draftSnapshotRef = useRef<object | null>(null);
 	useLayoutEffect(() => {
-		draftValueRef.current = value;
-	}, [value]);
+		draftSnapshotRef.current = {
+			value,
+			attachments,
+			attachmentScopeKey,
+			historyKey,
+		};
+		return () => {
+			draftSnapshotRef.current = null;
+		};
+	}, [value, attachments, attachmentScopeKey, historyKey]);
 	const enhanceDraft = mentionDraft.text.trim();
 	const enhanceDisabled =
 		!onEnhancePrompt ||
@@ -434,17 +441,19 @@ export function ChatComposer({
 	async function handleEnhancePrompt() {
 		if (enhanceDisabled || enhancingRef.current || !onEnhancePrompt) return;
 		const references = mentionDraft.references;
-		const startValue = draftValueRef.current;
+		const startSnapshot = draftSnapshotRef.current;
+		const isCurrent = () => draftSnapshotRef.current === startSnapshot;
 		enhancingRef.current = true;
 		setEnhancing(true);
 		try {
 			const enhanced = (await onEnhancePrompt(enhanceDraft)).trim();
 			// 期间草稿有任何变化（正文、引用或附件）就放弃回填，避免覆盖用户输入；
 			// 回填走 changeDraft，让被替换掉的引用按既有规则清理附件。
-			if (enhanced && draftValueRef.current === startValue) {
+			if (enhanced && isCurrent()) {
 				changeDraft(writeChatMentionDraft(references, enhanced));
 			}
 		} catch (error) {
+			if (!isCurrent()) return;
 			const detail =
 				error instanceof Error
 					? error.message
@@ -456,8 +465,8 @@ export function ChatComposer({
 			});
 		} finally {
 			enhancingRef.current = false;
-			setEnhancing(false);
-			requestAnimationFrame(() => textareaRef.current?.focus());
+			if (draftSnapshotRef.current) setEnhancing(false);
+			if (isCurrent()) textareaRef.current?.focus();
 		}
 	}
 

@@ -1,0 +1,207 @@
+<!doctype html>
+<!-- Run with pnpm exec vite, then open /tests/browser/prompt-enhancement.html. -->
+<html lang="en" translate="no">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Prompt enhancement regression</title>
+	</head>
+	<body>
+		<pre id="results">Running…</pre>
+		<input id="focus-target" aria-label="Focus target" />
+		<div id="root"></div>
+		<script type="module">
+			import "../../src/index.css";
+			import { createElement as h, useLayoutEffect } from "react";
+			import { createRoot } from "react-dom/client";
+			import { ChatComposer } from "../../src/components/chat/chat-composer.tsx";
+			import { usePromptEnhancementSettings } from "../../src/lib/use-prompt-enhancement-settings.ts";
+			import { PreferencesProvider } from "../../src/lib/preferences-provider.tsx";
+			import { TooltipProvider } from "../../src/ui/tooltip.tsx";
+			import { initializeI18n } from "../../src/i18n/index.ts";
+
+			await initializeI18n("en-US");
+			const root = createRoot(document.getElementById("root"));
+			const changes = [];
+			let pendingReply;
+			let handleSettingsEvent;
+			let loads = 0;
+			let hostSettings = {
+				connectionId: "local",
+				enabled: true,
+				model: null,
+				updatedAtMs: 1,
+			};
+			const client = {
+				loadPromptEnhancementSettings: async () => {
+					loads++;
+					return hostSettings;
+				},
+			};
+			let options = {};
+			function Fixture() {
+				const config = usePromptEnhancementSettings(
+					client,
+					"local",
+					options.refreshKey ?? "0:0",
+				);
+				useLayoutEffect(() => {
+					handleSettingsEvent = config.handleEvent;
+				}, [config.handleEvent]);
+				return options.mounted
+					? h(ChatComposer, {
+							value: options.value,
+							historyKey: options.project,
+							attachmentScopeKey: options.scope,
+							desktopShortcuts: options.desktop,
+							onChange: (value) => {
+								changes.push(value);
+								render({ value });
+							},
+							onEnhancePrompt: config.settings?.enabled
+								? () => new Promise((resolve) => (pendingReply = resolve))
+								: undefined,
+						})
+					: null;
+			}
+			function render(next) {
+				options = { ...options, ...next };
+				document.getElementById("root").style.width = options.desktop
+					? "680px"
+					: "320px";
+				root.render(
+					h(PreferencesProvider, null, h(TooltipProvider, null, h(Fixture))),
+				);
+			}
+			function assert(condition, message) {
+				if (!condition) throw new Error(message);
+			}
+			async function settle() {
+				await new Promise(requestAnimationFrame);
+				await new Promise(requestAnimationFrame);
+			}
+			async function until(check) {
+				const deadline = performance.now() + 10000;
+				while (!check()) {
+					if (performance.now() > deadline) throw new Error("Timed out");
+					await new Promise(requestAnimationFrame);
+				}
+			}
+			const button = () =>
+				document.querySelector("[data-chat-composer-enhance]");
+			async function start() {
+				await until(() => button() && !button().disabled);
+				changes.length = 0;
+				button().click();
+				await settle();
+				assert(pendingReply && button().disabled, "Request is in flight");
+			}
+			async function finish() {
+				const resolve = pendingReply;
+				pendingReply = null;
+				resolve("Enhanced prompt");
+				await settle();
+			}
+			try {
+				for (const desktop of [true, false]) {
+					render({
+						desktop,
+						mounted: true,
+						project: "p",
+						scope: "a",
+						value: "Continue",
+					});
+					await settle();
+					await start();
+					await finish();
+					assert(
+						changes[0] === "Enhanced prompt",
+						"Unchanged draft is enhanced",
+					);
+					assert(
+						document.activeElement === document.querySelector("textarea"),
+						"Successful rewrite focuses the composer",
+					);
+
+					for (const scenario of [
+						"session",
+						"round-trip",
+						"project",
+						"edit",
+						"edit-revert",
+						"unmount",
+					]) {
+						render({
+							mounted: true,
+							project: "p",
+							scope: "a",
+							value: "Continue",
+						});
+						await settle();
+						await start();
+						if (scenario === "session" || scenario === "round-trip")
+							render({ scope: "b" });
+						if (scenario === "project") render({ project: "q" });
+						if (scenario === "edit" || scenario === "edit-revert")
+							render({ value: "New draft" });
+						if (scenario === "unmount") render({ mounted: false });
+						await settle();
+						if (scenario === "round-trip") render({ scope: "a" });
+						if (scenario === "edit-revert") render({ value: "Continue" });
+						await settle();
+						const focus = document.getElementById("focus-target");
+						focus.focus();
+						await finish();
+						assert(
+							changes.length === 0,
+							`${scenario}: stale reply was discarded`,
+						);
+						assert(
+							document.activeElement === focus,
+							`${scenario}: stale reply did not steal focus`,
+						);
+					}
+				}
+
+				render({ mounted: true, project: "p", scope: "a", value: "Continue" });
+				await settle();
+				hostSettings = { ...hostSettings, enabled: false, updatedAtMs: 2 };
+				handleSettingsEvent({
+					type: "prompt_enhancement_settings_changed",
+					settings: hostSettings,
+				});
+				await settle();
+				assert(!button(), "Host disable event hides the WebUI control");
+				hostSettings = { ...hostSettings, enabled: true, updatedAtMs: 3 };
+				handleSettingsEvent({
+					type: "prompt_enhancement_settings_changed",
+					settings: hostSettings,
+				});
+				await settle();
+				assert(button(), "Host enable event restores the WebUI control");
+				for (const refreshKey of ["1:0", "1:1"]) {
+					const previousLoads = loads;
+					hostSettings = {
+						...hostSettings,
+						enabled: !hostSettings.enabled,
+						updatedAtMs: hostSettings.updatedAtMs + 1,
+					};
+					render({ refreshKey });
+					await settle();
+					assert(loads > previousLoads, "Recovery re-reads Host settings");
+					assert(
+						Boolean(button()) === hostSettings.enabled,
+						"Recovery applies missed settings changes",
+					);
+				}
+				document.body.dataset.testStatus = "passed";
+				document.getElementById("results").textContent =
+					"PASS: desktop/mobile draft ownership, round trips, edits, unmount, focus, settings events and recovery";
+			} catch (error) {
+				document.body.dataset.testStatus = "failed";
+				document.getElementById("results").textContent = error.stack;
+				throw error;
+			}
+		</script>
+	</body>
+</html>

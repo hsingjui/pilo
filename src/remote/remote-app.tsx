@@ -163,6 +163,7 @@ function RemoteWorkspace() {
 	const promptEnhancement = usePromptEnhancementSettings(
 		connection.client,
 		chat.activeProject?.connection.id ?? "",
+		`${connection.resyncKey}:${connection.snapshotRefreshKey}`,
 	);
 	// 草稿优化回调在等待期间读取，不能依赖属性窄化，先落成常量。
 	const enhanceProjectId = chat.activeProjectId ?? "";
@@ -280,12 +281,14 @@ function RemoteWorkspace() {
 	});
 	const { handleSocketMessage } = chat;
 	const { handleMessage: handleNextPromptMessage } = nextPrompt;
+	const { handleEvent: handlePromptEnhancementEvent } = promptEnhancement;
 	useEffect(() => {
 		socketHandlerRef.current = (message) => {
 			if (message.type === "events") {
 				for (const event of message.events) {
 					handleThemeEvent(event);
 					handleReadEvent(event);
+					handlePromptEnhancementEvent(event);
 				}
 			}
 			handleCacheKeepAliveMessage(message);
@@ -298,6 +301,7 @@ function RemoteWorkspace() {
 		handleThemeEvent,
 		handleNextPromptMessage,
 		handleCacheKeepAliveMessage,
+		handlePromptEnhancementEvent,
 	]);
 
 	const sidebarSessions = useMemo(

@@ -65,8 +65,9 @@ settings fields and `ChatComposer`.
   tail around an ellipsis; the head carries the task statement and the tail is
   what the user is actively writing.
 - Reply normalization strips a Markdown fence only when it wraps the whole
-  reply, and quotes only for a single wrapping pair. A prompt that merely ends
-  with a code block keeps its closing fence. An empty result is an error.
+  reply, and quotes only for a single wrapping pair. The first closing fence
+  must be the final line: separate leading/trailing code blocks and inline
+  backticks are not a wrapper. An empty result is an error.
 
 ### Frontend
 
@@ -74,15 +75,19 @@ settings fields and `ChatComposer`.
   enabled; the default is disabled, so the control is absent rather than inert.
 - While a rewrite is in flight the control is disabled, and the result is
   written back only if the draft (text, references and attachments) is unchanged,
-  so a late reply never overwrites typing.
-- Failures keep the draft and surface the Host detail; the composer takes focus
-  back afterwards.
+  so a late reply never overwrites typing. Track the committed draft snapshot
+  identity, including `attachmentScopeKey` and `historyKey`, not just equal text.
+  Changing ownership, editing and reverting, or unmounting invalidates a request.
+- Failures keep the draft and surface the Host detail; stale requests neither
+  report errors nor move focus to a different draft.
 - The settings entry mirrors prompt suggestions: one row per Connection, a
   model select defaulting to "Follow chat model", unknown saved models preserved
   without a model probe, coarse-pointer touch targets.
 - The Remote WebUI has no settings dialog. It reads the same Host row on mount,
   on focus/visibility and through its socket, so its composer behaves like the
-  desktop one.
+  desktop one. Forward each socket event to the settings hook's `handleEvent`
+  and pass `${resyncKey}:${snapshotRefreshKey}` as `refreshKey` so recovery also
+  reloads changes that were missed while disconnected.
 
 ## 4. Validation & Error Matrix
 
@@ -108,15 +113,29 @@ settings fields and `ChatComposer`.
 ## 6. Tests Required
 
 `runtime/prompt_enhancement.rs` covers short/long draft clipping, an outer
-fence, an inner code block, an unclosed leading fence, single- vs multi-pair
-quotes and empty replies. `runtime/storage.rs` covers the disabled default,
+fence, an inner code block, separate leading/trailing blocks (LF and CRLF),
+inline backticks, an unclosed leading fence, single- vs multi-pair quotes and
+empty replies. `runtime/storage.rs` covers the disabled default,
 enable/disable keeping the model, a monotonic revision and unknown Connections.
 `tests/unit/prompt-enhancement.test.ts` covers model trimming and incomplete
 models; `tests/unit/settings-copy.test.ts` keeps the new tab label within the
-Chinese copy rule.
+Chinese copy rule. `tests/browser/prompt-enhancement.html` exercises the real
+shared composer on desktop/mobile layouts: unchanged replies, ownership
+switches (including A → B → A), edits/reverts, unmount and focus isolation. It
+also checks Host settings events and both recovery refresh keys on the shared
+settings hook; it does not establish a real authenticated WebSocket connection.
 
-Not covered by automation, and not claimed as verified: a real rewrite against
-Pi on Local/WSL/SSH, and the desktop/WebUI visual and touch behavior.
+Manual integration validation must use an isolated Host, authenticated WebUI,
+and real Pi/model calls, not just the component fixture. Check successful
+fill/focus, equal drafts across real sessions, A → B → A, edits while waiting,
+leading/trailing snippets, settings pushes without a settings GET, and a settings
+reload after closing/reopening the actual WebSocket. Confirm throwaway Pi
+processes exit and do not add session JSONL files. Keep test data/configuration
+inside the project and remove temporary launch hooks and copied credentials.
+
+A narrow browser viewport validates responsive layout, not physical touch or
+soft-keyboard behavior. Windows desktop, WSL/SSH execution, and physical-device
+validation remain separate checks; Local WebUI results do not stand in for them.
 
 ## 7. Wrong vs Correct
 
