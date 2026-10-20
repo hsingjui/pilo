@@ -612,6 +612,8 @@ export function useRemoteChat({
 		activeProjectId,
 		draftId,
 		draftTemporary,
+		hasChatSession:
+			hasIdentifiedSession || runtimeReady || conversationUi.messageCount > 0,
 		selectedSession,
 		identifiedDraftSessionId,
 		selectedSessionPath,

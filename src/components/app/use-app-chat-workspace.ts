@@ -417,6 +417,8 @@ export function useAppChatWorkspace({
 		projects,
 		activeProject: activeProject ?? null,
 		focusedProject: focusedProject ?? null,
+		hasChatSession: Boolean(chatSession),
+		draftTemporary,
 		openedChats,
 		indexedSessions,
 		runtimeStates,

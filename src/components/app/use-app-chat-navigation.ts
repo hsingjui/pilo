@@ -46,6 +46,8 @@ type UseAppChatNavigationOptions = {
 	projects: Project[];
 	activeProject: Project | null;
 	focusedProject: Project | null;
+	hasChatSession: boolean;
+	draftTemporary: boolean;
 	openedChats: OpenChat[];
 	indexedSessions: SessionIndexEntry[];
 	runtimeStates: ChatSessionRuntimeState[];
@@ -67,6 +69,8 @@ export function useAppChatNavigation({
 	projects,
 	activeProject,
 	focusedProject,
+	hasChatSession,
+	draftTemporary,
 	openedChats,
 	indexedSessions,
 	runtimeStates,
@@ -85,6 +89,12 @@ export function useAppChatNavigation({
 	const startNewChat = useCallback(
 		(projectId?: string) => {
 			const targetProjectId = projectId ?? focusedProject?.id ?? null;
+			if (
+				!hasChatSession &&
+				!draftTemporary &&
+				targetProjectId === (activeProject?.id ?? null)
+			)
+				return;
 			setOpenedChats((current) =>
 				current.filter((entry) => !entry.session.temporary),
 			);
@@ -102,8 +112,11 @@ export function useAppChatNavigation({
 			}
 		},
 		[
+			activeProject?.id,
 			clearDraftSession,
+			draftTemporary,
 			focusedProject?.id,
+			hasChatSession,
 			setDraftProjectId,
 			setDraftSessionId,
 			setFocusedProjectId,
@@ -121,6 +134,8 @@ export function useAppChatNavigation({
 				toast.info(t("app.addProjectFirst"));
 				return;
 			}
+			if (!hasChatSession && draftTemporary && project.id === activeProject?.id)
+				return;
 			setOpenedChats((current) =>
 				current.filter((entry) => !entry.session.temporary),
 			);
@@ -134,6 +149,8 @@ export function useAppChatNavigation({
 		[
 			activeProject,
 			clearDraftSession,
+			draftTemporary,
+			hasChatSession,
 			projects,
 			setDraftProjectId,
 			setDraftSessionId,

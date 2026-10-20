@@ -1,0 +1,235 @@
+<!doctype html>
+<!-- Run with pnpm exec vite, then open /tests/browser/new-chat-draft-reuse.html.
+     Desktop and WebUI hooks use mocked setters; no Pi session is created. -->
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>New chat draft reuse regression</title>
+	</head>
+	<body>
+		<pre id="results">Running…</pre>
+		<div id="root"></div>
+		<script type="module">
+			import { createElement as h, useLayoutEffect } from "react";
+			import { createRoot } from "react-dom/client";
+			import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+			import { useAppChatNavigation } from "../../src/components/app/use-app-chat-navigation.ts";
+			import { useRemoteChatDraftActions } from "../../src/remote/use-remote-chat-draft-actions.ts";
+			import { initializeI18n } from "../../src/i18n/index.ts";
+
+			await initializeI18n("en-US");
+			const previousInternals = window.__TAURI_INTERNALS__;
+			const previousEventInternals = window.__TAURI_EVENT_PLUGIN_INTERNALS__;
+			window.__TAURI_INTERNALS__ = {};
+			window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {};
+			const project = { id: "project" };
+			const otherProject = { id: "other" };
+			mockIPC(
+				(command) => {
+					if (command === "project_touch") return project;
+					throw new Error(`Unexpected IPC: ${command}`);
+				},
+				{ shouldMockEvents: true },
+			);
+			const root = createRoot(document.querySelector("#root"));
+			const desktopCalls = [];
+			const remoteCalls = [];
+			const record = (calls, name) => (value) => calls.push([name, value]);
+			function setters(calls, names) {
+				return Object.fromEntries(
+					names.split(" ").map((name) => [name, record(calls, name)]),
+				);
+			}
+			const desktopOptions = {
+				projects: [project, otherProject],
+				activeProject: project,
+				focusedProject: project,
+				hasChatSession: false,
+				draftTemporary: false,
+				openedChats: [],
+				indexedSessions: [],
+				runtimeStates: [],
+				busyChatControllersRef: { current: new Map() },
+				clearDraftSession: record(desktopCalls, "clearDraftSession"),
+				refreshProjectSessions: async () => {},
+				...setters(
+					desktopCalls,
+					"setOpenedChats setDraftSessionId setDraftTemporary setDraftProjectId setFocusedProjectId setSelectedSessionId",
+				),
+			};
+			const queuedSubmissionsRef = { current: new Map() };
+			const autoTitleRequestedRef = { current: true };
+			const remoteOptions = {
+				activeProjectId: project.id,
+				draftId: "draft",
+				draftTemporary: false,
+				hasChatSession: false,
+				selectedSession: null,
+				identifiedDraftSessionId: null,
+				selectedSessionPath: null,
+				rawSessions: [],
+				isNarrow: true,
+				closeMobileNavigation: record(remoteCalls, "closeMobileNavigation"),
+				chatUiStateCache: { get: () => ({ draft: "saved" }) },
+				projectDraftCache: { get: () => "saved" },
+				queuedSubmissionsRef,
+				autoTitleRequestedRef,
+				releaseTemporaryRuntime: record(remoteCalls, "releaseTemporaryRuntime"),
+				refreshProjectSessions: async () => {},
+				...setters(
+					remoteCalls,
+					"setSelectedSessionPath setIdentifiedDraftSessionId setDraftTemporary setDraftId setConversation setRuntimeReady setReadOnly setAgentState setChatState setModels setThinkingLevels setDraftModel setDraftThinkingLevel setComposer setImages setVisualReadyRouteKey setDraftProjectId setRuntimeSessionKeys",
+				),
+			};
+			let desktop;
+			let remote;
+			function Harness({ desktopOverrides, remoteOverrides }) {
+				const navigation = useAppChatNavigation({
+					...desktopOptions,
+					...desktopOverrides,
+				});
+				const actions = useRemoteChatDraftActions({
+					...remoteOptions,
+					...remoteOverrides,
+				});
+				useLayoutEffect(() => {
+					desktop = navigation;
+					remote = actions;
+				});
+				return null;
+			}
+			async function render(desktopOverrides = {}, remoteOverrides = {}) {
+				root.render(h(Harness, { desktopOverrides, remoteOverrides }));
+				for (let frame = 0; frame < 4; frame++)
+					await new Promise(requestAnimationFrame);
+				desktopCalls.length = 0;
+				remoteCalls.length = 0;
+			}
+			function assert(condition, message) {
+				if (!condition) throw new Error(message);
+			}
+			function did(calls, name) {
+				return calls.some(([call]) => call === name);
+			}
+			try {
+				await render();
+				queuedSubmissionsRef.current.set("keep", {});
+				for (let repeat = 0; repeat < 3; repeat++) {
+					desktop.startNewChat();
+					remote.startDraft(project.id);
+				}
+				assert(
+					desktopCalls.length === 0,
+					"Repeated desktop new-chat reset the current draft",
+				);
+				assert(
+					remoteCalls.length === 3 &&
+						remoteCalls.every(([name]) => name === "closeMobileNavigation"),
+					"WebUI reuse must only close mobile navigation, preserving text, images, model and thinking",
+				);
+				assert(
+					queuedSubmissionsRef.current.has("keep") &&
+						autoTitleRequestedRef.current,
+					"WebUI reuse changed queued or title state",
+				);
+
+				await render({ draftTemporary: true }, { draftTemporary: true });
+				desktop.startTemporaryChat();
+				remote.startDraft(project.id, true);
+				assert(
+					desktopCalls.length === 0,
+					"Repeated temporary desktop new-chat reset the draft",
+				);
+				assert(
+					remoteCalls.length === 1 &&
+						remoteCalls[0][0] === "closeMobileNavigation",
+					"Repeated temporary WebUI new-chat reset the draft",
+				);
+
+				await render({ hasChatSession: true }, { hasChatSession: true });
+				desktop.startNewChat();
+				remote.startDraft();
+				assert(
+					did(desktopCalls, "clearDraftSession") &&
+						did(desktopCalls, "setDraftSessionId"),
+					"Started desktop session must create a fresh draft",
+				);
+				assert(
+					did(remoteCalls, "setDraftId"),
+					"Started/optimistic WebUI session must create a fresh draft",
+				);
+
+				await render();
+				desktop.startNewChat(otherProject.id);
+				remote.startDraft(otherProject.id);
+				assert(
+					desktopCalls.some(
+						([name, value]) =>
+							name === "setDraftProjectId" && value === otherProject.id,
+					),
+					"Desktop project change was treated as draft reuse",
+				);
+				assert(
+					remoteCalls.some(
+						([name, value]) =>
+							name === "setDraftProjectId" && value === otherProject.id,
+					),
+					"WebUI project change was treated as draft reuse",
+				);
+
+				await render();
+				desktop.startTemporaryChat();
+				remote.toggleTemporaryChat();
+				assert(
+					desktopCalls.some(
+						([name, value]) => name === "setDraftTemporary" && value === true,
+					),
+					"Desktop normal-to-temporary must create a new draft",
+				);
+				assert(
+					remoteCalls.some(
+						([name, value]) => name === "setDraftTemporary" && value === true,
+					),
+					"WebUI normal-to-temporary must create a new draft",
+				);
+
+				await render({ draftTemporary: true }, { draftTemporary: true });
+				desktop.startNewChat();
+				remote.toggleTemporaryChat();
+				assert(
+					did(desktopCalls, "setDraftSessionId"),
+					"Desktop temporary-to-normal must create a new draft",
+				);
+				assert(
+					remoteCalls.some(
+						([name, value]) => name === "setDraftTemporary" && value === false,
+					),
+					"WebUI temporary-to-normal must create a new draft",
+				);
+
+				await render({}, { selectedSessionPath: "/deleted.jsonl" });
+				remote.startDraft();
+				assert(
+					did(remoteCalls, "setDraftId"),
+					"A stale selected path must still reset the WebUI draft",
+				);
+				document.body.dataset.testStatus = "passed";
+				document.querySelector("#results").textContent =
+					"PASS: desktop/WebUI draft reuse, mobile navigation, started sessions, project and mode changes, stale paths";
+			} catch (error) {
+				document.body.dataset.testStatus = "failed";
+				document.querySelector("#results").textContent = error.stack;
+				throw error;
+			} finally {
+				root.unmount();
+				clearMocks();
+				if (previousInternals === undefined) delete window.__TAURI_INTERNALS__;
+				else window.__TAURI_INTERNALS__ = previousInternals;
+				if (previousEventInternals === undefined)
+					delete window.__TAURI_EVENT_PLUGIN_INTERNALS__;
+				else window.__TAURI_EVENT_PLUGIN_INTERNALS__ = previousEventInternals;
+			}
+		</script>
+	</body>
+</html>

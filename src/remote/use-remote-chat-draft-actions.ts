@@ -28,6 +28,7 @@ type UseRemoteChatDraftActionsOptions = {
 	activeProjectId: string;
 	draftId: string;
 	draftTemporary: boolean;
+	hasChatSession: boolean;
 	selectedSession: SessionIndexEntry | null;
 	identifiedDraftSessionId: string | null;
 	selectedSessionPath: string | null;
@@ -67,6 +68,7 @@ export function useRemoteChatDraftActions({
 	activeProjectId,
 	draftId,
 	draftTemporary,
+	hasChatSession,
 	selectedSession,
 	identifiedDraftSessionId,
 	selectedSessionPath,
@@ -101,6 +103,15 @@ export function useRemoteChatDraftActions({
 	const startDraft = useCallback(
 		(projectId?: string, temporary = false) => {
 			const targetProjectId = projectId ?? activeProjectId ?? "";
+			if (
+				!hasChatSession &&
+				!selectedSessionPath &&
+				draftTemporary === temporary &&
+				targetProjectId === activeProjectId
+			) {
+				if (isNarrow) closeMobileNavigation();
+				return;
+			}
 			releaseTemporaryRuntime();
 			queuedSubmissionsRef.current.clear();
 			setSelectedSessionPath(null);
@@ -131,10 +142,13 @@ export function useRemoteChatDraftActions({
 			activeProjectId,
 			autoTitleRequestedRef,
 			closeMobileNavigation,
+			draftTemporary,
+			hasChatSession,
 			isNarrow,
 			projectDraftCache,
 			queuedSubmissionsRef,
 			releaseTemporaryRuntime,
+			selectedSessionPath,
 			setAgentState,
 			setChatState,
 			setComposer,

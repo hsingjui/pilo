@@ -302,6 +302,12 @@ spacing, type sizes, or control heights.
 
 ## Header Actions & Menus
 
+- New-chat navigation reuses the current unstarted draft when the target project
+  and normal/temporary mode match. Guard in desktop `useAppChatNavigation` and
+  WebUI `useRemoteChatDraftActions` before resetting identity, configuration,
+  text, images or runtime state. WebUI still closes mobile navigation on reuse.
+  Existing/started sessions (including optimistic first-message startup), stale
+  selected paths, project changes and mode changes must still create a new draft.
 - `SessionHeader` (`src/components/chat/chat-session-header.tsx`) owns the right-side
 action group (terminal / temporary chat / panel / session menu). New per-session
 actions go there and appear only for persisted sessions (`session && !session.temporary`).
