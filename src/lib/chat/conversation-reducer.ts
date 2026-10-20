@@ -105,6 +105,7 @@ function withAssistant(
 
 function endTurn(
 	state: ConversationState,
+	context: ConversationReducerContext,
 	stopReason: string | null | undefined,
 	errorMessage: string | null | undefined,
 	timestampMs: number,
@@ -133,6 +134,7 @@ function endTurn(
 	messages[index] = {
 		...current,
 		text: assistantText(current.content) || current.text,
+		time: context.formatTime(timestampMs),
 		content: finishContent(current.content),
 		activity: current.activity?.map((item) =>
 			item.type === "thinking"
@@ -314,13 +316,26 @@ function reduceConversationAction(
 				replyRunwayPx: action.replyRunwayPx,
 			}));
 		case "local_turn_abort":
-			return endTurn(state, "aborted", null, action.timestampMs);
+			return endTurn(state, context, "aborted", null, action.timestampMs);
 		case "conversation_runtime_error":
-			return endTurn(state, "error", action.message, action.timestampMs);
+			return endTurn(
+				state,
+				context,
+				"error",
+				action.message,
+				action.timestampMs,
+			);
 		case "compaction_marker": {
 			const timestampMs = action.timestampMs ?? context.now();
 			const next = state.active?.assistantMessageId
-				? endTurn(state, undefined, undefined, timestampMs, "continued")
+				? endTurn(
+						state,
+						context,
+						undefined,
+						undefined,
+						timestampMs,
+						"continued",
+					)
 				: state;
 			return {
 				...next,
@@ -353,6 +368,7 @@ function reduceConversationAction(
 						}
 						next = endTurn(
 							state,
+							context,
 							undefined,
 							undefined,
 							action.timestampMs ?? pending.timestampMs ?? context.now(),
@@ -406,6 +422,7 @@ function reduceConversationAction(
 							// Without a previous reply to update, keep the output as its own segment.
 							next = endTurn(
 								next,
+								context,
 								staleAssistant.stopReason,
 								staleAssistant.errorMessage,
 								startedAtMs,
@@ -451,7 +468,14 @@ function reduceConversationAction(
 			const timestampMs = action.timestampMs ?? context.now();
 			let next = state;
 			if (state.active?.assistantMessageId) {
-				next = endTurn(state, undefined, undefined, timestampMs, "continued");
+				next = endTurn(
+					state,
+					context,
+					undefined,
+					undefined,
+					timestampMs,
+					"continued",
+				);
 			}
 			return {
 				...next,
@@ -621,6 +645,7 @@ function reduceConversationAction(
 		case "assistant_turn_end":
 			return endTurn(
 				state,
+				context,
 				action.stopReason,
 				action.errorMessage,
 				action.timestampMs ?? context.now(),

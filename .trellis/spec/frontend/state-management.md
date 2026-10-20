@@ -61,6 +61,15 @@ value undefined instead of substituting the client clock. Fork actions
 obtain the latest messages on click, before their first await, rather than
 subscribing shell callbacks to every streaming message change.
 
+The assistant footer's `ChatMessage.time` is formatted from the turn-end
+timestamp by the shared `endTurn` reducer, including abort/error and segment
+boundaries; it must not keep the optimistic placeholder's submission time.
+`ChatMessage.timestampMs` remains the message creation timestamp for turn
+revival. `toConversationAction` preserves `assistant_message_end.timestampMs`
+so reconnect replay uses Host time rather than the browser's processing time.
+History replay uses the persisted `assistant_turn_end.timestampMs`. When an
+end event has no timestamp, the existing reducer clock fallback applies.
+
 - Local state that must survive remounts is cached in module/state-cache files
   (`chat-ui-state-cache.ts`, `chat-history-window-store.ts`).
 - Locale is app-global low-frequency state owned by the i18n layer. Persist the

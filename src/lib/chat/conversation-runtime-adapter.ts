@@ -50,6 +50,7 @@ export function toConversationAction(
 		case "assistant_message_end":
 			return {
 				type: "assistant_turn_end",
+				timestampMs: event.timestampMs,
 				stopReason: event.stopReason,
 				errorMessage: event.errorMessage,
 				usage: event.usage,
