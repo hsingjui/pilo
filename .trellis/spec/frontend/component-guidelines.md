@@ -542,7 +542,13 @@ actions go there and appear only for persisted sessions (`session && !session.te
   `scrollTop` before the size is restored, producing a few-pixel rebound on
   streaming renders even though final DOM heights are unchanged. Keep the probe
   out of layout and the accessibility tree, remove duplicate IDs/names, and
-  remove it immediately after measurement. Do not replace native leading with
+  remove it immediately after measurement. Measure content `scrollHeight` on the
+  same clone at the live textarea's computed width, with vertical overflow hidden
+  and the placeholder cleared. Set the clone's value only after measuring native
+  row height. Never reset the live textarea to `height: auto`, even with its CSS
+  minimum preserved: a tall draft still temporarily collapses, clamps bottom
+  scroll offsets, and can flicker on every keystroke. Only write the final height
+  and overflow to the live textarea. Do not replace native leading with
   a multiplier just to make `parseFloat` work. Integer `scrollHeight` must not
   shrink the minimum on the first character and shift the inline chips. When
   verification is authorized, replay overflowing text in plain and virtualized

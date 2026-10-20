@@ -173,7 +173,6 @@ export function useChatComposerInput({
 			"[data-chat-composer-region]",
 		);
 		if (panel && panel.clientHeight === 0) return;
-		textarea.style.height = "auto";
 		const styles = window.getComputedStyle(textarea);
 		let lineHeight = Number.parseFloat(styles.lineHeight);
 		const padding =
@@ -182,29 +181,30 @@ export function useChatComposerInput({
 		const border =
 			Number.parseFloat(styles.borderTopWidth) +
 			Number.parseFloat(styles.borderBottomWidth);
+		// Measure out of flow: shrinking the live textarea clamps the chat's scrollTop.
+		const probe = textarea.cloneNode(false) as HTMLTextAreaElement;
+		probe.removeAttribute("id");
+		probe.removeAttribute("name");
+		probe.setAttribute("aria-hidden", "true");
+		probe.tabIndex = -1;
+		probe.value = "";
+		probe.placeholder = "";
+		Object.assign(probe.style, {
+			position: "absolute",
+			top: "0",
+			left: "0",
+			width: styles.width,
+			height: "auto",
+			minHeight: "0",
+			overflowY: "hidden",
+			visibility: "hidden",
+			pointerEvents: "none",
+		});
+		textarea.parentElement?.append(probe);
 		if (!Number.isFinite(lineHeight)) {
-			// Measure native rows out of flow: shrinking the live textarea briefly
-			// expands the chat viewport and clamps its scrollTop before we restore it.
-			const probe = textarea.cloneNode(false) as HTMLTextAreaElement;
-			probe.removeAttribute("id");
-			probe.removeAttribute("name");
-			probe.setAttribute("aria-hidden", "true");
-			probe.tabIndex = -1;
-			Object.assign(probe.style, {
-				position: "absolute",
-				top: "0",
-				left: "0",
-				width: styles.width,
-				height: "auto",
-				minHeight: "0",
-				visibility: "hidden",
-				pointerEvents: "none",
-			});
-			textarea.parentElement?.append(probe);
 			lineHeight =
 				(probe.getBoundingClientRect().height - padding - border) /
 				textarea.rows;
-			probe.remove();
 		}
 		// Keep the empty row height after typing; scrollHeight rounds fractional line heights.
 		const minHeight = Math.max(
@@ -224,9 +224,11 @@ export function useChatComposerInput({
 			);
 		}
 		// Placeholder predictions must not resize an empty draft.
+		probe.value = textarea.value;
 		const contentHeight = textarea.value
-			? textarea.scrollHeight + border
+			? probe.scrollHeight + border
 			: textarea.rows * lineHeight + padding + border;
+		probe.remove();
 		textarea.style.height = `${Math.max(minHeight, Math.min(contentHeight, maxHeight))}px`;
 		textarea.style.overflowY = contentHeight > maxHeight ? "auto" : "hidden";
 	}, []);
