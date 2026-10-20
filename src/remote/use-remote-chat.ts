@@ -322,6 +322,9 @@ export function useRemoteChat({
 		sessionHeaderMissing,
 	} = agentConfig;
 	const readOnly = externalReadOnly || sessionHeaderMissing;
+	const hasScopeDefault = Boolean(
+		scopeConfig.scope?.models?.some((entry) => entry.isDefault),
+	);
 	const projectScopeDefaultModel = useMemo(
 		() =>
 			getProjectScopeDefaultModel(
@@ -341,14 +344,13 @@ export function useRemoteChat({
 	const needsDraftDefault =
 		!hasIdentifiedSession && !runtimeReady && !draftModel;
 	const draftConfigError = needsDraftDefault
-		? (scopeConfig.error ??
-			(scopeConfig.scope?.models?.length ? modelError : null))
+		? (scopeConfig.error ?? (hasScopeDefault ? modelError : null))
 		: null;
 	const draftConfigPending =
 		needsDraftDefault &&
 		(scopeConfig.loading ||
 			Boolean(draftConfigError) ||
-			(Boolean(scopeConfig.scope?.models?.length) && !modelsLoaded));
+			(hasScopeDefault && !modelsLoaded));
 	const routeUiKey = activeProjectId
 		? chatUiStateKey(activeProjectId, routeSessionId)
 		: "remote-draft";
@@ -813,7 +815,12 @@ export function useRemoteChat({
 		setChatState,
 	});
 
-	const draftDisplayModel = initialDraftModel ?? catalog?.defaultModel ?? null;
+	const draftConfigUnresolved =
+		needsDraftDefault &&
+		(!scopeConfig.scope || (hasScopeDefault && !modelsLoaded));
+	const draftDisplayModel = draftConfigUnresolved
+		? null
+		: (initialDraftModel ?? catalog?.defaultModel ?? null);
 	const composerThinkingLevelsForModel =
 		hasIdentifiedSession || runtimeReady
 			? thinkingLevels
@@ -821,9 +828,11 @@ export function useRemoteChat({
 	const composerSelectedThinkingLevel =
 		hasIdentifiedSession || runtimeReady
 			? (agentState?.thinkingLevel ?? historyThinkingLevel)
-			: initialDraftModel
-				? initialDraftThinkingLevel
-				: (draftThinkingLevel ?? catalog?.defaultThinkingLevel ?? null);
+			: draftConfigUnresolved
+				? null
+				: initialDraftModel
+					? initialDraftThinkingLevel
+					: (draftThinkingLevel ?? catalog?.defaultThinkingLevel ?? null);
 
 	const { tryHandleComposerCommand } = useRemoteChatCommands({
 		client,
@@ -1083,7 +1092,8 @@ export function useRemoteChat({
 		draftConfigPending,
 		draftConfigError,
 		models,
-		modelLoading,
+		modelLoading:
+			modelLoading || (draftConfigUnresolved && scopeConfig.loading),
 		modelError,
 		modelScope: {
 			...scopeConfig,

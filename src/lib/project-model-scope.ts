@@ -4,6 +4,8 @@ export type ProjectScopedModel = {
 	provider: string;
 	modelId: string;
 	thinkingLevel: PiThinkingLevel | null;
+	/** Omitted in legacy data; only true marks a new-chat default. */
+	isDefault?: boolean;
 };
 
 export type ModelScopeControls = {

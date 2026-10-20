@@ -74,7 +74,10 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 	const isTouch = useIsTouchDevice();
 	const [open, setOpen] = useState(false);
 	const [modelOpen, setModelOpen] = useState(false);
-	const label = props.selectedModel?.name || props.selectedModel?.id || "—";
+	const label =
+		props.selectedModel?.name ||
+		props.selectedModel?.id ||
+		(props.modelLoading ? t("chat.loadingModels") : "—");
 	const thinking = thinkingLevelLabel(props.selectedThinkingLevel);
 	// Membership editing is independent of the active Pi process and remains usable during streaming.
 	const disabled =

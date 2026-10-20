@@ -84,6 +84,10 @@
 					);
 				},
 			};
+			let resolveScope;
+			const scopeResponse = new Promise((resolve) => {
+				resolveScope = resolve;
+			});
 			const previousInternals = window.__TAURI_INTERNALS__;
 			const previousEventInternals = window.__TAURI_EVENT_PLUGIN_INTERNALS__;
 			const previousPreferences = localStorage.getItem("pilo.preferences.v1");
@@ -104,23 +108,7 @@
 			mockIPC(
 				(command) => {
 					if (command === "project_model_cache_list") return [catalog];
-					if (command === "project_model_scope_get")
-						return {
-							projectId: project.id,
-							models: [
-								{
-									provider: "fixture",
-									modelId: "current",
-									thinkingLevel: "high",
-								},
-								{
-									provider: "fixture",
-									modelId: "cached",
-									thinkingLevel: "high",
-								},
-							],
-							updatedAtMs: 1,
-						};
+					if (command === "project_model_scope_get") return scopeResponse;
 					if (
 						["runtime_subscribe_events", "debug_runtime_trace_log"].includes(
 							command,
@@ -217,8 +205,28 @@
 				);
 				await settle();
 				assert(
+					label().includes("Loading") &&
+						!label().includes("Cached A") &&
+						!label().includes("Low"),
+					"Pending Scope must not expose cached Pi model / thinking defaults",
+				);
+				resolveScope({
+					projectId: project.id,
+					models: [
+						{ provider: "fixture", modelId: "cached", thinkingLevel: "high" },
+						{
+							provider: "fixture",
+							modelId: "current",
+							thinkingLevel: "high",
+							isDefault: true,
+						},
+					],
+					updatedAtMs: 1,
+				});
+				await settle();
+				assert(
 					label().includes("Actual B") && label().includes("High"),
-					"New chat did not default to the project's first Scope model / thinking level",
+					"New chat did not use the marked Scope default / thinking level",
 				);
 				await submit("Use the project default");
 				assert(

@@ -16,8 +16,10 @@ or session JSONL. Both transports use the Host's database.
 - Storage: `project_model_scopes(project_id TEXT PRIMARY KEY REFERENCES
   projects(id) ON DELETE CASCADE, models_json TEXT NULL, updated_at_ms INTEGER NOT NULL)`.
 - Response: `{ projectId, models: ProjectScopedModel[] | null, updatedAtMs }`.
-  Each member is `{ provider, modelId, thinkingLevel }`; thinkingLevel is null or
-  `off | minimal | low | medium | high | xhigh | max`.
+  Each member is `{ provider, modelId, thinkingLevel, isDefault }`; thinkingLevel
+  is null or `off | minimal | low | medium | high | xhigh | max`. `isDefault` is a
+  boolean, defaulting to false when omitted in legacy data or requests. It stays
+  inside the existing models JSON; no SQL column or new transport is needed.
 - Event: `{ type: "project_model_scope_changed", projectId, scope }`. No
   sessionKey or process generation; publish only after a successful write.
 
@@ -26,18 +28,27 @@ or session JSONL. Both transports use the Host's database.
 - No row / `models: null` inherits Pi. `models: []` is a custom empty Scope.
   An array completely replaces the inherited list; never union the two.
 - New-chat startup precedence on Desktop and WebUI is explicit user selection,
-  then the first stored member of a custom project Scope, then Pi's own default.
-  `getProjectScopeDefaultModel` in `src/lib/pi-model-selection.ts` resolves that
-  member by provider + model ID against the available catalog. Missing/inherited/
-  empty Scope, or an unavailable first member, leaves the model to Pi; never
-  silently select a later member. Apply the member's thinking override or its
-  model profile default, unless the user explicitly picked another level.
+  then the member marked `isDefault: true` in a custom project Scope, then Pi's
+  own default. `getProjectScopeDefaultModel` in `src/lib/pi-model-selection.ts`
+  resolves that member by provider + model ID against the available catalog,
+  retaining its actual Scope order. Missing/inherited/empty/unmarked Scope or an
+  unavailable marked member leaves the model to Pi; never implicitly select the
+  first or another member. Existing unmarked lists now follow Pi, with no
+  automatic promotion of their former first member. Apply the marked member's
+  thinking override or model profile default unless the user picked another level.
 - Drafts store only explicit selections; derive project defaults from the current
   Scope/catalog so late responses and menu reloads cannot overwrite user intent.
-  Without an explicit model selection, wait for Scope loading and (for a custom
-  nonempty Scope) the model catalog before allowing startup. Preference/catalog
+  Without an explicit model selection, wait for Scope loading and (when a Scope
+  default is marked) the model catalog before allowing startup. Preference/catalog
   failures remain visible, not an implicit fallback to unknown defaults. Scope
   changes never reapply startup defaults to an already identified/live session.
+- New-chat model/thinking presentation waits for the initial Scope response and,
+  for a marked default, its available model catalog. Until resolved, expose no
+  tentative Pi-default model or thinking level; the shared composer shows its
+  localized model-loading label. Revalidating an already resolved Scope keeps
+  the current presentation, and explicit user choices remain visible immediately.
+  This applies to desktop, WebUI and temporary drafts; startup precedence and
+  submission readiness are unchanged.
 - One atomic upsert replaces all members. `updatedAtMs` is monotonically
   increasing per project (`MAX(now, previous + 1)`), even for restoring null.
   Consumers reject lower revisions and stale project/transport requests.
@@ -78,6 +89,23 @@ or session JSONL. Both transports use the Host's database.
   ones). Events update formal preferences, never the open draft. Apply is one
   save; cancel/close discards; unchanged drafts do not create overrides. Failed
   saves retain the draft; duplicate submissions are blocked.
+- Only the normal Scope list offers an icon-only star, in a reserved far-right
+  slot after the current-model checkmark. Non-default rows reveal an outline star
+  on row hover, focus within, or cmdk active-item navigation; pointer-coarse
+  devices always reveal it. The saved default has a filled star that is always
+  visible, even when it is not the current model. No visible default label, star
+  in the All list, or default control in the membership editor is added. Reserving
+  the slot on every Scope row prevents content shifting when a star appears.
+  Clicking toggles the default and saves immediately, clearing other flags while
+  preserving all members (including unavailable ones), order and thinking levels.
+  Inherited lists are materialized as a custom Scope when a default is first set.
+  Narrow WebUI supports this action too; `canEditScope` only gates membership
+  editing. Star clicks and keyboard activation never select/reconfigure a model
+  or dismiss the menu. Focus returns to search before saving disables the button.
+  Errors remain visible; failed saves leave the formal preference unchanged.
+  Removing/clearing members in the editor removes their flags; re-adding an
+  initial member restores thinking but never its old default flag. Membership
+  edits still require Apply. The backend rejects multiple marked members.
 - `ModelScopeControls.projectId` identifies the picker before formal preferences
   arrive. Key overlays by that stable project identity and layout capability,
   never by `scope?.projectId`: the first preference response must not remount
@@ -108,6 +136,8 @@ or session JSONL. Both transports use the Host's database.
 | Project missing | `Project '<id>' was not found`; preference routes return 400 |
 | Blank provider/model ID | `model scope provider and model id cannot be empty` |
 | Duplicate provider + model ID | `model scope contains duplicate model identities` |
+| Multiple marked default members | `model scope can contain only one default model`; no write/event |
+| Omitted `isDefault` in stored JSON/request | Decode as false; no implicit first-item default |
 | Invalid thinking level | Serde/Tauri or JSON extraction rejects the request |
 | Valid but unavailable member | Saved unchanged; excluded from effective selection/cycling |
 | SQLite/read/write failure | Error propagates; failed writes publish no event |
@@ -137,9 +167,19 @@ Add/update/run tests only with explicit user authorization. Assertion points:
   unavailable retention; project cascade; increasing same-millisecond revisions.
 - Selection: identity collisions across providers; inherited order/thinking;
   custom replacement/empty; unavailable intersection before fallback; singleton;
-  custom Scope first-member new-chat default with thinking override/profile
-  fallback; absent/inherited/empty/unavailable-first fallback to Pi; explicit
+  marked Scope default at any position with thinking override/profile fallback;
+  absent/inherited/empty/unmarked/unavailable-default fallback to Pi; explicit
   user selection wins on Desktop and WebUI, including late Scope responses.
+- Additional default-marker cases: legacy false decoding, true/false JSON round
+  trips, rejecting multiple defaults without writes/events, marking/clearing/
+  removing/re-adding a default, preserving order and thinking, hover/keyboard/touch
+  star visibility independent of current-model selection, persistent filled
+  default star and fixed row layout, immediate save and clearing, click/keyboard
+  isolation from model selection, and cross-client propagation.
+- `tests/unit/pi-model-selection.test.ts` covers marked defaults at any position,
+  provider matching, unmarked legacy lists and unavailable-default fallback.
+  `tests/browser/chat-run-config-cache.html` delays the initial Scope response to
+  check loading presentation before the marked default and thinking are shown.
 - UI: unchanged/cancelled drafts; batch actions; failed save/retry; incoming
   events during editing; narrow management hidden; keyboard search/navigation;
   delayed first preference response preserves Scope view/query/focus; refreshing

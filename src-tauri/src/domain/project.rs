@@ -54,6 +54,8 @@ pub struct ProjectScopedModel {
     pub provider: String,
     pub model_id: String,
     pub thinking_level: Option<ModelScopeThinkingLevel>,
+    #[serde(default)]
+    pub is_default: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

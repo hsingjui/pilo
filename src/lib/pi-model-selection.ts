@@ -75,14 +75,15 @@ export function getProjectScopeDefaultModel(
 	models: readonly PiModel[],
 	scope: ProjectModelScope | null,
 ): PiModel | null {
-	const first = scope?.models?.[0];
-	if (!first) return null;
+	const scopeOrder = scope?.models?.findIndex((entry) => entry.isDefault) ?? -1;
+	const entry = scope?.models?.[scopeOrder];
+	if (!entry) return null;
 	const model = findMatchingPiModel(models, {
-		provider: first.provider,
-		id: first.modelId,
+		provider: entry.provider,
+		id: entry.modelId,
 	});
 	return model
-		? { ...model, scopeOrder: 0, scopeThinkingLevel: first.thinkingLevel }
+		? { ...model, scopeOrder, scopeThinkingLevel: entry.thinkingLevel }
 		: null;
 }
 
@@ -91,11 +92,15 @@ export function getProjectScopeDraft(
 	scope: ProjectModelScope,
 ): ProjectScopedModel[] {
 	return (
-		scope.models?.map((entry) => ({ ...entry })) ??
+		scope.models?.map((entry) => ({
+			...entry,
+			isDefault: entry.isDefault ?? false,
+		})) ??
 		getPiQuickCycleModels(models).map((model) => ({
 			provider: model.provider,
 			modelId: model.id,
 			thinkingLevel: model.scopeThinkingLevel ?? null,
+			isDefault: false,
 		}))
 	);
 }

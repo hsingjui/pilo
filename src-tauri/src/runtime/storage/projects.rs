@@ -248,6 +248,15 @@ pub fn set_project_model_scope(
             return Err("model scope contains duplicate model identities".to_owned());
         }
     }
+    if models
+        .iter()
+        .flatten()
+        .filter(|model| model.is_default)
+        .count()
+        > 1
+    {
+        return Err("model scope can contain only one default model".to_owned());
+    }
     let models_json = models
         .as_ref()
         .map(serde_json::to_string)

@@ -1,5 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Check, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import {
+	Check,
+	RefreshCw,
+	Search,
+	SlidersHorizontal,
+	Star,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { getProjectScopeDraft, piModelsMatch } from "@/lib/pi-model-selection";
@@ -72,6 +78,12 @@ export function ChatModelPicker({
 		modelScope?.scope && modelScope.catalogReady && !modelScope.error,
 	);
 	const saving = modelScope?.saving ?? false;
+	const defaultScopeModel = modelScope?.scope?.models?.find(
+		(entry) => entry.isDefault,
+	);
+	const defaultScopeValue = defaultScopeModel
+		? identity(defaultScopeModel.provider, defaultScopeModel.modelId)
+		: null;
 	const listLoading = loading || Boolean(modelScope?.loading);
 	const listError = saveError ?? modelScope?.error ?? error;
 	const listMaxHeight = compact
@@ -148,7 +160,7 @@ export function ChatModelPicker({
 								candidate.provider !== provider ||
 								candidate.modelId !== modelId,
 						)
-					: [...current.models, { ...entry }],
+					: [...current.models, { ...entry, isDefault: false }],
 			};
 		});
 	};
@@ -161,6 +173,21 @@ export function ChatModelPicker({
 		} catch (cause) {
 			setSaveError(runtimeErrorMessage(cause));
 		}
+	};
+	const toggleDefault = (model: PiModel) => {
+		if (!modelScope?.scope || !scopeReady || saving || listLoading || disabled)
+			return;
+		const value = identity(model.provider, model.id);
+		const nextModels = getProjectScopeDraft(
+			modelScope.models,
+			modelScope.scope,
+		);
+		for (const entry of nextModels) {
+			entry.isDefault =
+				identity(entry.provider, entry.modelId) === value &&
+				defaultScopeValue !== value;
+		}
+		void save(nextModels);
 	};
 	const listPaddingClassName = compact
 		? "px-(--pilo-ui-menu-padding) pb-(--pilo-ui-menu-padding)"
@@ -374,18 +401,19 @@ export function ChatModelPicker({
 													entry.modelId === model.id,
 											),
 									)
-									.map(
-										(model) =>
-											current.initial.find(
-												(entry) =>
-													entry.provider === model.provider &&
-													entry.modelId === model.id,
-											) ?? {
-												provider: model.provider,
-												modelId: model.id,
-												thinkingLevel: null,
-											},
-									);
+									.map((model) => {
+										const initial = current.initial.find(
+											(entry) =>
+												entry.provider === model.provider &&
+												entry.modelId === model.id,
+										);
+										return {
+											provider: model.provider,
+											modelId: model.id,
+											thinkingLevel: initial?.thinkingLevel ?? null,
+											isDefault: false,
+										};
+									});
 								return {
 									...current,
 									models: [...current.models, ...additions],
@@ -469,62 +497,122 @@ export function ChatModelPicker({
 						)}
 					>
 						{showModels
-							? visibleModels.map((model) => (
-									<CommandItem
-										key={identity(model.provider, model.id)}
-										value={identity(model.provider, model.id)}
-										disabled={disabled || !onChange}
-										onSelect={() => onChange?.(model)}
-										title={`${model.name || model.id} · ${model.provider} · ${model.id}`}
-										aria-label={`${model.name || model.id} · ${model.provider} · ${model.id}${piModelsMatch(model, selectedModel) ? ` · ${t("chat.currentModel")}` : ""}`}
-										className={cn(
-											"gap-2",
-											itemRadiusClassName,
-											compact
-												? "min-h-(--pilo-ui-menu-item-height) px-2 py-1.5 pointer-coarse:min-h-(--pilo-ui-menu-item-height)"
-												: "min-h-[max(44px,var(--pilo-sheet-model-height))] px-3 py-2",
-										)}
-									>
-										{compact ? (
-											<>
-												<span className="min-w-0 flex-1 truncate">
-													{model.name || model.id}
-												</span>
-												<span className="max-w-28 shrink-0 truncate text-xs text-muted-foreground">
-													{model.provider}
-												</span>
-											</>
-										) : (
-											<span className="min-w-0 flex-1">
-												<span className="block leading-snug font-medium wrap-anywhere">
-													{model.name || model.id}
-												</span>
-												<span className="mt-0.5 block text-[0.8125rem] leading-snug text-muted-foreground wrap-anywhere">
-													{model.provider}
-													{availableModels.some(
-														(candidate) =>
-															candidate.provider === model.provider &&
-															candidate.id !== model.id &&
-															(candidate.name || candidate.id) ===
-																(model.name || model.id),
-													)
-														? ` · ${model.id}`
-														: ""}
-												</span>
-											</span>
-										)}
-										<span
-											className="flex size-4 shrink-0 items-center justify-center"
-											aria-hidden="true"
+							? visibleModels.map((model) => {
+									const selected = piModelsMatch(model, selectedModel);
+									const showDefaultToggle =
+										view === "scope" && Boolean(modelScope);
+									const isDefault =
+										identity(model.provider, model.id) === defaultScopeValue;
+									return (
+										<div
+											key={identity(model.provider, model.id)}
+											className="group/model-row relative"
 										>
-											{piModelsMatch(model, selectedModel) ? (
-												<Check
-													className={cn("size-3.5", !compact && "text-primary")}
-												/>
+											<CommandItem
+												value={identity(model.provider, model.id)}
+												disabled={disabled || !onChange}
+												onSelect={() => onChange?.(model)}
+												title={`${model.name || model.id} · ${model.provider} · ${model.id}`}
+												aria-label={`${model.name || model.id} · ${model.provider} · ${model.id}${isDefault ? ` · ${t("chat.scopeDefaultModel")}` : ""}${selected ? ` · ${t("chat.currentModel")}` : ""}`}
+												className={cn(
+													"peer/model-item gap-2",
+													itemRadiusClassName,
+													compact
+														? "min-h-(--pilo-ui-menu-item-height) px-2 py-1.5 pointer-coarse:min-h-(--pilo-ui-menu-item-height)"
+														: "min-h-[max(44px,var(--pilo-sheet-model-height))] px-3 py-2",
+													showDefaultToggle &&
+														(compact ? "pe-10 pointer-coarse:pe-14" : "pe-14"),
+												)}
+											>
+												{compact ? (
+													<>
+														<span className="min-w-0 flex-1 truncate">
+															{model.name || model.id}
+														</span>
+														<span className="max-w-28 shrink-0 truncate text-xs text-muted-foreground">
+															{model.provider}
+														</span>
+													</>
+												) : (
+													<span className="min-w-0 flex-1">
+														<span className="block leading-snug font-medium wrap-anywhere">
+															{model.name || model.id}
+														</span>
+														<span className="mt-0.5 block text-[0.8125rem] leading-snug text-muted-foreground wrap-anywhere">
+															{model.provider}
+															{availableModels.some(
+																(candidate) =>
+																	candidate.provider === model.provider &&
+																	candidate.id !== model.id &&
+																	(candidate.name || candidate.id) ===
+																		(model.name || model.id),
+															)
+																? ` · ${model.id}`
+																: ""}
+														</span>
+													</span>
+												)}
+												<span
+													className="flex size-4 shrink-0 items-center justify-center"
+													aria-hidden="true"
+												>
+													{selected ? (
+														<Check
+															className={cn(
+																"size-3.5",
+																!compact && "text-primary",
+															)}
+														/>
+													) : null}
+												</span>
+											</CommandItem>
+											{showDefaultToggle ? (
+												<Button
+													type="button"
+													variant="ghost"
+													size="icon"
+													className={cn(
+														"absolute end-1 top-1/2 -translate-y-1/2 text-muted-foreground",
+														compact
+															? "size-7 pointer-coarse:size-11"
+															: "size-11",
+														!isDefault &&
+															"pointer-events-none opacity-0 group-hover/model-row:pointer-events-auto group-hover/model-row:opacity-100 group-focus-within/model-row:pointer-events-auto group-focus-within/model-row:opacity-100 peer-data-[selected=true]/model-item:pointer-events-auto peer-data-[selected=true]/model-item:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100",
+													)}
+													disabled={
+														disabled || !scopeReady || saving || listLoading
+													}
+													aria-pressed={isDefault}
+													aria-label={t("chat.scopeDefaultModelLabel", {
+														model: model.name || model.id,
+													})}
+													title={
+														isDefault
+															? t("chat.clearScopeDefault")
+															: t("chat.setScopeDefault")
+													}
+													onClick={(event) => {
+														event.stopPropagation();
+														searchRef.current?.focus();
+														toggleDefault(model);
+													}}
+													onKeyDown={(event) => {
+														if (event.key !== "Tab" && event.key !== "Escape")
+															event.stopPropagation();
+													}}
+												>
+													<Star
+														className={cn(
+															"size-3.5",
+															isDefault && "fill-current",
+														)}
+														aria-hidden="true"
+													/>
+												</Button>
 											) : null}
-										</span>
-									</CommandItem>
-								))
+										</div>
+									);
+								})
 							: null}
 						{!listLoading &&
 						!listError &&

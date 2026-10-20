@@ -152,6 +152,9 @@ export function NewChatLanding({
 	const fileSuggestionRequestRef = useRef(0);
 	const modelRequestRef = useRef(0);
 	const modelLoadingRef = useRef(false);
+	const hasScopeDefault = Boolean(
+		scopeConfig.scope?.models?.some((entry) => entry.isDefault),
+	);
 	const projectScopeDefaultModel = useMemo(
 		() =>
 			getProjectScopeDefaultModel(
@@ -161,24 +164,28 @@ export function NewChatLanding({
 		[modelCatalog, projectId, scopeConfig.scope],
 	);
 	const initialModel = draftModel ?? projectScopeDefaultModel;
-	const selectedModel = initialModel ?? modelCatalog?.defaultModel ?? null;
-	const selectedThinkingLevel =
-		draftThinkingLevel ??
-		(draftModel
-			? (draftModel.defaultThinkingLevel ?? null)
-			: projectScopeDefaultModel
-				? getPiQuickCycleThinkingLevel(projectScopeDefaultModel)
-				: (modelCatalog?.defaultThinkingLevel ?? null));
+	const draftConfigUnresolved =
+		!draftModel &&
+		(!scopeConfig.scope || (hasScopeDefault && modelLoadState !== "ready"));
+	const selectedModel = draftConfigUnresolved
+		? null
+		: (initialModel ?? modelCatalog?.defaultModel ?? null);
+	const selectedThinkingLevel = draftConfigUnresolved
+		? null
+		: (draftThinkingLevel ??
+			(draftModel
+				? (draftModel.defaultThinkingLevel ?? null)
+				: projectScopeDefaultModel
+					? getPiQuickCycleThinkingLevel(projectScopeDefaultModel)
+					: (modelCatalog?.defaultThinkingLevel ?? null)));
 	const draftConfigError = draftModel
 		? null
-		: (scopeConfig.error ??
-			(scopeConfig.scope?.models?.length ? modelError : null));
+		: (scopeConfig.error ?? (hasScopeDefault ? modelError : null));
 	const draftConfigPending =
 		!draftModel &&
 		(scopeConfig.loading ||
 			Boolean(draftConfigError) ||
-			(Boolean(scopeConfig.scope?.models?.length) &&
-				modelLoadState !== "ready"));
+			(hasScopeDefault && modelLoadState !== "ready"));
 	const composerSuggestions = useMemo(
 		() => [
 			...fileSuggestions,
@@ -398,7 +405,7 @@ export function NewChatLanding({
 			}
 
 			if (draftConfigPending) return;
-			// 手动选择 > 项目 Scope 首项 > Pi 自己的默认配置；目录缓存不参与启动选择。
+			// 手动选择 > 项目 Scope 默认项 > Pi 自己的默认配置；目录缓存不参与启动选择。
 			onStartSession(
 				submission,
 				initialModel,
@@ -477,7 +484,10 @@ export function NewChatLanding({
 								}}
 								canEditScope={projectAvailable && Boolean(project)}
 								selectedModel={selectedModel}
-								modelLoading={modelLoadState === "loading"}
+								modelLoading={
+									modelLoadState === "loading" ||
+									(draftConfigUnresolved && scopeConfig.loading)
+								}
 								modelError={modelError}
 								modelDisabled={!projectAvailable || !project}
 								onModelMenuOpen={() => void loadModels()}
