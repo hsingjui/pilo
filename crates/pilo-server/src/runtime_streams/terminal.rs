@@ -1,5 +1,6 @@
 use std::{
     io::{Read, Write},
+    path::Path,
     sync::Arc,
 };
 
@@ -9,6 +10,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::environment::{cached_login_path, default_shell};
+use crate::session::windows_verbatim_path;
 use crate::{ServerState, blocking};
 
 pub(crate) struct TerminalSession {
@@ -61,7 +63,7 @@ pub(crate) async fn terminal_open(
 
     let shell = default_shell();
     let mut command = CommandBuilder::new(shell);
-    command.cwd(&params.project);
+    set_project_cwd(&mut command, &params.project);
     command.env("PATH", cached_login_path(state).await);
     let child = pair
         .slave
@@ -156,6 +158,13 @@ pub(crate) async fn terminal_open(
     Ok(Value::Null)
 }
 
+/// `fs::canonicalize` 在 Windows 上给出 `\\?\E:\...`，`cmd.exe` 会把它当成 UNC 路径并
+/// 回退到 Windows 目录，终端就在错误的目录里启动。PTY 的 cwd 必须先去掉 verbatim
+/// 前缀；UNC 形式还原为 `\\server\share`，普通路径（含 POSIX 路径）原样保留。
+fn set_project_cwd(command: &mut CommandBuilder, project: &str) {
+    command.cwd(Path::new(&*windows_verbatim_path(project)));
+}
+
 pub(crate) async fn terminal_write(
     state: &ServerState,
     params: TerminalWriteParams,
@@ -228,4 +237,48 @@ pub(crate) async fn terminal_close(
         Ok(Value::Null)
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use portable_pty::CommandBuilder;
+
+    use super::set_project_cwd;
+
+    fn resolved_cwd(project: &str) -> Option<String> {
+        let mut command = CommandBuilder::new("terminal-cwd-test");
+        set_project_cwd(&mut command, project);
+        command
+            .get_cwd()
+            .map(|value| value.to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn terminal_cwd_drops_the_verbatim_prefix() {
+        for (project, expected) in [
+            (r"\\?\E:\my_projects\pilo", r"E:\my_projects\pilo"),
+            (r"\\?\C:\Users\测试 用户\code", r"C:\Users\测试 用户\code"),
+            (
+                r"\\?\UNC\server\shared folder\code",
+                r"\\server\shared folder\code",
+            ),
+        ] {
+            assert_eq!(
+                resolved_cwd(project).as_deref(),
+                Some(expected),
+                "project={project}"
+            );
+        }
+    }
+
+    #[test]
+    fn terminal_cwd_keeps_paths_that_are_already_usable() {
+        for project in [r"E:\my_projects\pilo", "/root/code/pilo", "./relative"] {
+            assert_eq!(
+                resolved_cwd(project).as_deref(),
+                Some(project),
+                "project={project}"
+            );
+        }
+    }
 }

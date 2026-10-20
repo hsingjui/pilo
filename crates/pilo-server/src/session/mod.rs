@@ -36,7 +36,7 @@ fn session_dir_key(project: &str) -> String {
 
 /// 只剥离 Windows verbatim 前缀；普通路径（含 POSIX 路径）原样返回，
 /// 不解析 `..`、不做大小写归并。
-fn windows_verbatim_path(value: &str) -> Cow<'_, str> {
+pub(crate) fn windows_verbatim_path(value: &str) -> Cow<'_, str> {
     if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
         return Cow::Owned(format!(r"\\{rest}"));
     }
