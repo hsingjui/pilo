@@ -13,5 +13,9 @@ opt-level = 3
 panic = "abort"
 strip = true
 
+[profile.dev]
+# 调试符号会把 target/debug 撑到数 GB，桌面端日常构建用不到。
+debug = 0
+
 [profile.dev.package.serde_json]
 opt-level = 3
