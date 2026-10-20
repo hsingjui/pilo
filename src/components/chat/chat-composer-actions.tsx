@@ -15,8 +15,6 @@ import {
 } from "@/components/chat/chat-composer-frame";
 import type { ComposerSendMode } from "@/lib/chat/composer-send-mode";
 import { cn } from "@/lib/utils";
-import { formatKeyboardShortcutText } from "@/lib/keyboard-shortcuts";
-import { usePreferences } from "@/lib/preferences-provider";
 import { menuItemIconClassName } from "@/ui/menu-styles";
 import {
 	Button,
@@ -91,10 +89,6 @@ export function ComposerActions({
 	onPrimary,
 }: ComposerActionsProps) {
 	const { t } = useTranslation();
-	const { keyboardShortcuts } = usePreferences();
-	const queueShortcutLabel = formatKeyboardShortcutText(
-		keyboardShortcuts["queue-message"],
-	);
 	const hasValue = Boolean(value.trim()) || hasAttachments;
 	const showStop = running && !hasValue;
 	const shortcutHint = showShortcutHint
@@ -182,11 +176,6 @@ export function ComposerActions({
 										{t(option.detail)}
 									</span>
 								</span>
-								{option.mode === "follow_up" && queueShortcutLabel ? (
-									<kbd className="ml-1 shrink-0 rounded border border-border/70 bg-muted/50 px-1 py-px font-mono text-2xs text-muted-foreground">
-										{queueShortcutLabel}
-									</kbd>
-								) : null}
 							</DropdownMenuRadioItem>
 						))}
 					</DropdownMenuRadioGroup>
