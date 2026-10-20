@@ -588,3 +588,46 @@ test("fallback submissions for new sessions can go directly to runtime", () => {
 		false,
 	);
 });
+
+test("a new session only pins the run configuration the user picked", () => {
+	const sessionWithNullModel = resolveChatSession({
+		selectedOpenedChat: null,
+		selectedOpenedChatBusy: false,
+		activeProject: project,
+		selectedIndexedSession: null,
+		selectedProject: project,
+		draftSessionStarted: true,
+		draftTemporary: false,
+		draftSessionId: "draft-1",
+		draftSessionModel: null,
+		draftSessionThinkingLevel: null,
+		isExternalOpenTurn: () => false,
+		hostTurnOpen: false,
+	});
+	// 没选过模型时留空，会话页才会采用 Pi 当前配置里的默认模型。
+	assert.equal(sessionWithNullModel?.initialModel, undefined);
+	assert.equal(sessionWithNullModel?.initialThinkingLevel, undefined);
+
+	const customModel = {
+		id: "custom-model",
+		name: "Custom Model",
+		provider: "test",
+		reasoning: false,
+	};
+	const sessionWithCustomModel = resolveChatSession({
+		selectedOpenedChat: null,
+		selectedOpenedChatBusy: false,
+		activeProject: project,
+		selectedIndexedSession: null,
+		selectedProject: project,
+		draftSessionStarted: true,
+		draftTemporary: false,
+		draftSessionId: "draft-1",
+		draftSessionModel: customModel,
+		draftSessionThinkingLevel: "high",
+		isExternalOpenTurn: () => false,
+		hostTurnOpen: false,
+	});
+	assert.deepEqual(sessionWithCustomModel?.initialModel, customModel);
+	assert.equal(sessionWithCustomModel?.initialThinkingLevel, "high");
+});

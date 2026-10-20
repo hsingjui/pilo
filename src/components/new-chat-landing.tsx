@@ -23,6 +23,8 @@ import { searchProjectFiles, uploadChatFile } from "@/lib/api/files";
 import {
 	getNextPiScopeModel,
 	getProjectScopeModels,
+	getProjectScopeDefaultModel,
+	findMatchingPiModel,
 	isPiScopeCatalogResolved,
 	getPiModelThinkingLevels,
 	getPiQuickCycleThinkingLevel,
@@ -126,13 +128,10 @@ export function NewChatLanding({
 		() => (projectId ? readProjectDraft?.(projectId) : "") ?? "",
 	);
 	const [models, setModels] = useState<PiModel[]>(cachedModels?.models ?? []);
-	const [selectedModel, setSelectedModel] = useState<PiModel | null>(
-		cachedModels?.defaultModel ?? null,
-	);
-	const [selectedThinkingLevel, setSelectedThinkingLevel] =
-		useState<PiThinkingLevel | null>(
-			cachedModels?.defaultThinkingLevel ?? null,
-		);
+	// 草稿只保存手动选择；项目默认随 Scope/目录加载派生，不写回用户选择。
+	const [draftModel, setDraftModel] = useState<PiModel | null>(null);
+	const [draftThinkingLevel, setDraftThinkingLevel] =
+		useState<PiThinkingLevel | null>(null);
 	const [modelLoadState, setModelLoadState] = useState<
 		"idle" | "loading" | "ready" | "error"
 	>(cachedModels ? "ready" : "idle");
@@ -153,11 +152,33 @@ export function NewChatLanding({
 	const fileSuggestionRequestRef = useRef(0);
 	const modelRequestRef = useRef(0);
 	const modelLoadingRef = useRef(false);
-	const modelSelectionDirtyRef = useRef(false);
-	const thinkingSelectionDirtyRef = useRef(false);
-	const selectedModelKeyRef = useRef(
-		modelKey(cachedModels?.defaultModel ?? null),
+	const projectScopeDefaultModel = useMemo(
+		() =>
+			getProjectScopeDefaultModel(
+				modelCatalog?.projectId === projectId ? modelCatalog.models : [],
+				scopeConfig.scope,
+			),
+		[modelCatalog, projectId, scopeConfig.scope],
 	);
+	const initialModel = draftModel ?? projectScopeDefaultModel;
+	const selectedModel = initialModel ?? modelCatalog?.defaultModel ?? null;
+	const selectedThinkingLevel =
+		draftThinkingLevel ??
+		(draftModel
+			? (draftModel.defaultThinkingLevel ?? null)
+			: projectScopeDefaultModel
+				? getPiQuickCycleThinkingLevel(projectScopeDefaultModel)
+				: (modelCatalog?.defaultThinkingLevel ?? null));
+	const draftConfigError = draftModel
+		? null
+		: (scopeConfig.error ??
+			(scopeConfig.scope?.models?.length ? modelError : null));
+	const draftConfigPending =
+		!draftModel &&
+		(scopeConfig.loading ||
+			Boolean(draftConfigError) ||
+			(Boolean(scopeConfig.scope?.models?.length) &&
+				modelLoadState !== "ready"));
 	const composerSuggestions = useMemo(
 		() => [
 			...fileSuggestions,
@@ -213,36 +234,15 @@ export function NewChatLanding({
 		(snapshot: NonNullable<ReturnType<typeof getCachedProjectPiModels>>) => {
 			setModelCatalog(snapshot);
 			setModels(snapshot.models);
-			if (!modelSelectionDirtyRef.current) {
-				selectedModelKeyRef.current = modelKey(snapshot.defaultModel);
-				setSelectedModel(snapshot.defaultModel);
-				if (!thinkingSelectionDirtyRef.current) {
-					setSelectedThinkingLevel(snapshot.defaultThinkingLevel);
-				}
-			} else {
-				const selectedKey = selectedModelKeyRef.current;
-				const refreshedSelectedModel = selectedKey
-					? snapshot.models.find((model) => modelKey(model) === selectedKey)
-					: null;
-				if (refreshedSelectedModel) {
-					setSelectedModel(refreshedSelectedModel);
-					if (!thinkingSelectionDirtyRef.current) {
-						setSelectedThinkingLevel(
-							refreshedSelectedModel.defaultThinkingLevel ?? null,
-						);
-					}
-				}
-			}
+			setDraftModel((current) =>
+				current
+					? (findMatchingPiModel(snapshot.models, current) ?? current)
+					: null,
+			);
 			setModelLoadState("ready");
 			setModelError(null);
 		},
-		[
-			setModelError,
-			setModelLoadState,
-			setModels,
-			setSelectedModel,
-			setSelectedThinkingLevel,
-		],
+		[setModelError, setModelLoadState, setModels, setDraftModel],
 	);
 
 	const loadModels = useCallback(
@@ -274,10 +274,8 @@ export function NewChatLanding({
 		[applyModelSnapshot, projectId, setModelError, setModelLoadState],
 	);
 
-	/* oxlint-disable react/set-state-in-effect -- Changing project identity intentionally resets the draft run configuration to that project's cached Pi defaults. */
+	/* oxlint-disable react/set-state-in-effect -- Changing project identity clears manual choices before resolving that project's defaults. */
 	useEffect(() => {
-		modelSelectionDirtyRef.current = false;
-		thinkingSelectionDirtyRef.current = false;
 		fileSuggestionRequestRef.current += 1;
 		if (fileSuggestionTimerRef.current !== null) {
 			window.clearTimeout(fileSuggestionTimerRef.current);
@@ -287,9 +285,8 @@ export function NewChatLanding({
 		const cached = projectId ? getCachedProjectPiModels(projectId) : null;
 		setModelCatalog(cached);
 		setModels(cached?.models ?? []);
-		selectedModelKeyRef.current = modelKey(cached?.defaultModel ?? null);
-		setSelectedModel(cached?.defaultModel ?? null);
-		setSelectedThinkingLevel(cached?.defaultThinkingLevel ?? null);
+		setDraftModel(null);
+		setDraftThinkingLevel(null);
 		setModelLoadState(cached ? "ready" : "idle");
 		setModelError(null);
 		setDraft(projectId ? (readProjectDraft?.(projectId) ?? "") : "");
@@ -324,13 +321,10 @@ export function NewChatLanding({
 
 	const selectDraftModel = (
 		model: PiModel,
-		thinkingLevel = model.defaultThinkingLevel ?? null,
+		thinkingLevel: PiThinkingLevel | null = null,
 	) => {
-		modelSelectionDirtyRef.current = true;
-		thinkingSelectionDirtyRef.current = false;
-		selectedModelKeyRef.current = modelKey(model);
-		setSelectedModel(model);
-		setSelectedThinkingLevel(thinkingLevel);
+		setDraftModel(model);
+		setDraftThinkingLevel(thinkingLevel);
 	};
 
 	useKeyboardShortcut(
@@ -378,7 +372,7 @@ export function NewChatLanding({
 			}
 			const nextModel = getNextPiScopeModel(scopeModels, selectedModel);
 			if (!nextModel) return;
-			selectDraftModel(nextModel, getPiQuickCycleThinkingLevel(nextModel));
+			selectDraftModel(nextModel, nextModel.scopeThinkingLevel ?? null);
 		},
 		{
 			enabled:
@@ -403,13 +397,21 @@ export function NewChatLanding({
 				}
 			}
 
-			onStartSession(submission, selectedModel, selectedThinkingLevel);
+			if (draftConfigPending) return;
+			// 手动选择 > 项目 Scope 首项 > Pi 自己的默认配置；目录缓存不参与启动选择。
+			onStartSession(
+				submission,
+				initialModel,
+				initialModel ? selectedThinkingLevel : draftThinkingLevel,
+			);
 			updateDraft("");
 		},
 		[
 			onNewChat,
 			onStartSession,
-			selectedModel,
+			draftConfigPending,
+			draftThinkingLevel,
+			initialModel,
 			selectedThinkingLevel,
 			updateDraft,
 			t,
@@ -464,7 +466,8 @@ export function NewChatLanding({
 								}
 								onChange={updateDraft}
 								onSubmit={handleSubmit}
-								disabled={false}
+								disabled={draftConfigPending}
+								statusError={draftConfigError}
 								models={models}
 								modelScope={{
 									...scopeConfig,
@@ -489,10 +492,7 @@ export function NewChatLanding({
 									!project ||
 									getPiModelThinkingLevels(selectedModel).length === 0
 								}
-								onThinkingChange={(level) => {
-									thinkingSelectionDirtyRef.current = true;
-									setSelectedThinkingLevel(level);
-								}}
+								onThinkingChange={setDraftThinkingLevel}
 								suggestions={composerSuggestions}
 								onSuggestionTrigger={handleSuggestionTrigger}
 							/>

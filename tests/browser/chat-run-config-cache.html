@@ -1,0 +1,330 @@
+<!doctype html>
+<!-- Run with pnpm exec vite, then open /tests/browser/chat-run-config-cache.html.
+     Check desktop and touch/mobile viewports. All Pi/Host calls are mocked. -->
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Chat run configuration cache regression</title>
+	</head>
+	<body>
+		<pre id="results" style="white-space: pre-wrap">Running…</pre>
+		<div id="root" style="height: 70vh"></div>
+		<script type="module">
+			import "../../src/index.css";
+			import { createElement as h, useLayoutEffect } from "react";
+			import { createRoot } from "react-dom/client";
+			import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
+			import { NewChatLanding } from "../../src/components/new-chat-landing.tsx";
+			import { ComposerRunConfig } from "../../src/components/chat/chat-composer-run-config.tsx";
+			import { useChatSessionConfig } from "../../src/components/chat/use-chat-session-config.ts";
+			import { hydrateProjectPiModels } from "../../src/lib/api/pi-models.ts";
+			import { PreferencesProvider } from "../../src/lib/preferences-provider.tsx";
+			import { TooltipProvider } from "../../src/ui/tooltip.tsx";
+			import { initializeI18n } from "../../src/i18n/index.ts";
+
+			await initializeI18n("en-US");
+			const project = {
+				id: "run-config-cache-fixture",
+				name: "Fixture",
+				path: "/fixture",
+				connection: { id: "local", name: "Local", kind: { type: "local" } },
+				metadata: {
+					cwd: "/fixture",
+					gitBranch: null,
+					piVersion: "1.0.0",
+					refreshedAtMs: 0,
+				},
+				createdAtMs: 0,
+				lastOpenedAtMs: 0,
+			};
+			const cachedModel = {
+				id: "cached",
+				name: "Cached A",
+				provider: "fixture",
+				reasoning: true,
+				thinkingLevels: ["low", "high"],
+				defaultThinkingLevel: "low",
+				scopeOrder: null,
+				scopeThinkingLevel: null,
+			};
+			const currentModel = { ...cachedModel, id: "current", name: "Actual B" };
+			const catalog = {
+				projectId: project.id,
+				models: [cachedModel, currentModel],
+				commands: [],
+				defaultModel: cachedModel,
+				defaultThinkingLevel: "low",
+				refreshedAtMs: 1,
+			};
+			const state = {
+				model: currentModel,
+				thinkingLevel: "high",
+				isStreaming: false,
+				isCompacting: false,
+				messageCount: 0,
+				pendingMessageCount: 0,
+			};
+			const session = {
+				id: "temporary-fixture",
+				title: "Temporary",
+				projectRecord: project,
+				temporary: true,
+			};
+			const client = {
+				ensure: async () => ({}),
+				getPiAgentState: async () => state,
+				getAvailablePiThinkingLevels: async () => ({ levels: ["low", "high"] }),
+				setPiModel: async () => {
+					throw new Error("Opening a picker must not change Pi's model");
+				},
+				setPiThinkingLevel: async () => {
+					throw new Error(
+						"Opening a picker must not change Pi's thinking level",
+					);
+				},
+			};
+			const previousInternals = window.__TAURI_INTERNALS__;
+			const previousEventInternals = window.__TAURI_EVENT_PLUGIN_INTERNALS__;
+			const previousPreferences = localStorage.getItem("pilo.preferences.v1");
+			const previousInputHistory = localStorage.getItem(
+				"pilo.chatInputHistory.v1",
+			);
+			localStorage.setItem(
+				"pilo.preferences.v1",
+				JSON.stringify({
+					keyboardShortcuts: {
+						"cycle-scoped-model": "ctrl+p",
+						"cycle-model": "ctrl+shift+m",
+					},
+				}),
+			);
+			window.__TAURI_INTERNALS__ = {};
+			window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {};
+			mockIPC(
+				(command) => {
+					if (command === "project_model_cache_list") return [catalog];
+					if (command === "project_model_scope_get")
+						return {
+							projectId: project.id,
+							models: [
+								{
+									provider: "fixture",
+									modelId: "current",
+									thinkingLevel: "high",
+								},
+								{
+									provider: "fixture",
+									modelId: "cached",
+									thinkingLevel: "high",
+								},
+							],
+							updatedAtMs: 1,
+						};
+					if (
+						["runtime_subscribe_events", "debug_runtime_trace_log"].includes(
+							command,
+						)
+					)
+						return null;
+					throw new Error(`Unexpected IPC: ${command}`);
+				},
+				{ shouldMockEvents: true },
+			);
+			const root = createRoot(document.getElementById("root"));
+			let config;
+			const started = [];
+			function TemporaryChat() {
+				const current = useChatSessionConfig({ session, client });
+				useLayoutEffect(() => {
+					config = current;
+				});
+				return h(ComposerRunConfig, {
+					models: current.modelOptions,
+					selectedModel: current.selectedModel,
+					modelLoading: current.modelLoadState === "loading",
+					modelError: current.modelError,
+					modelDisabled: false,
+					onModelChange: current.handleModelChange,
+					onModelMenuOpen: () => void current.loadModelOptions(),
+					thinkingLevels: current.thinkingLevels,
+					selectedThinkingLevel: current.selectedThinkingLevel,
+					thinkingLoading: current.thinkingLoading,
+					thinkingDisabled: false,
+					onThinkingChange: current.handleThinkingChange,
+					onThinkingMenuOpen: () => void current.loadThinkingLevels(),
+				});
+			}
+			function render(child) {
+				root.render(
+					h(PreferencesProvider, null, h(TooltipProvider, null, child)),
+				);
+			}
+			function assert(condition, message) {
+				if (!condition) throw new Error(message);
+			}
+			async function settle() {
+				for (let frame = 0; frame < 6; frame++)
+					await new Promise(requestAnimationFrame);
+			}
+			function label() {
+				return document
+					.querySelector("[data-chat-run-config-trigger]")
+					.getAttribute("aria-label");
+			}
+			async function openPicker() {
+				const trigger = document.querySelector(
+					"[data-chat-run-config-trigger]",
+				);
+				if (matchMedia("(hover: none) and (pointer: coarse)").matches)
+					trigger.click();
+				else
+					trigger.dispatchEvent(
+						new PointerEvent("pointerdown", {
+							bubbles: true,
+							button: 0,
+							buttons: 1,
+							pointerType: "mouse",
+						}),
+					);
+				await settle();
+				assert(
+					document.querySelector('[role="menu"], [role="dialog"]'),
+					"Picker did not open",
+				);
+			}
+			async function submit(text) {
+				const textarea = document.querySelector("textarea");
+				Object.getOwnPropertyDescriptor(
+					HTMLTextAreaElement.prototype,
+					"value",
+				).set.call(textarea, text);
+				textarea.dispatchEvent(new Event("input", { bubbles: true }));
+				await settle();
+				document.querySelector('button[aria-label="Send"]').click();
+				await settle();
+			}
+			try {
+				await hydrateProjectPiModels();
+				render(
+					h(NewChatLanding, {
+						sessionId: "scope-draft",
+						project,
+						onStartSession: (submission, model, thinkingLevel) => {
+							started.push({ model, thinkingLevel });
+						},
+					}),
+				);
+				await settle();
+				assert(
+					label().includes("Actual B") && label().includes("High"),
+					"New chat did not default to the project's first Scope model / thinking level",
+				);
+				await submit("Use the project default");
+				assert(
+					started[0]?.model.id === "current" &&
+						started[0]?.thinkingLevel === "high",
+					"Scope default was not passed to startup",
+				);
+				window.dispatchEvent(
+					new KeyboardEvent("keydown", {
+						key: "p",
+						code: "KeyP",
+						ctrlKey: true,
+						bubbles: true,
+						cancelable: true,
+					}),
+				);
+				await settle();
+				assert(
+					label().includes("Cached A") && label().includes("High"),
+					"Scope shortcut did not advance to A / High",
+				);
+				await openPicker();
+				assert(
+					label().includes("Cached A") && label().includes("High"),
+					"Opening the picker replaced Scope High with cached Low",
+				);
+				document.activeElement.dispatchEvent(
+					new KeyboardEvent("keydown", {
+						key: "Escape",
+						bubbles: true,
+						cancelable: true,
+					}),
+				);
+				await settle();
+				window.dispatchEvent(
+					new KeyboardEvent("keydown", {
+						key: "m",
+						code: "KeyM",
+						ctrlKey: true,
+						shiftKey: true,
+						bubbles: true,
+						cancelable: true,
+					}),
+				);
+				await settle();
+				assert(
+					label().includes("Actual B") && label().includes("Low"),
+					"Manual selection did not override Scope thinking",
+				);
+				await submit("Use the manual selection");
+				assert(
+					started[1]?.model.id === "current" &&
+						started[1]?.thinkingLevel === "low",
+					"Manual choice did not take precedence at startup",
+				);
+				render(h(TemporaryChat));
+				await settle();
+				assert(
+					config.selectedModel.id === "cached",
+					"Fixture must start with stale defaults",
+				);
+				await config.prepareRuntimeConfiguration(state);
+				await settle();
+				assert(
+					label().includes("Actual B") && label().includes("High"),
+					"Runtime configuration was not synchronized",
+				);
+				await openPicker();
+				assert(
+					config.selectedModel.id === "current",
+					"Opening the picker replaced the live model with cached A",
+				);
+				assert(
+					config.selectedThinkingLevel === "high",
+					"Opening the picker replaced the live thinking level",
+				);
+				assert(
+					label().includes("Actual B") && label().includes("High"),
+					"Picker label no longer matches Pi",
+				);
+				document.body.dataset.testStatus = "passed";
+				document.getElementById("results").textContent =
+					"PASS: project Scope default, manual precedence, picker reload and live temporary-session configuration";
+			} catch (error) {
+				document.body.dataset.testStatus = "failed";
+				document.getElementById("results").textContent = error.stack;
+				throw error;
+			} finally {
+				root.unmount();
+				clearMocks();
+				if (previousInternals === undefined) delete window.__TAURI_INTERNALS__;
+				else window.__TAURI_INTERNALS__ = previousInternals;
+				if (previousEventInternals === undefined)
+					delete window.__TAURI_EVENT_PLUGIN_INTERNALS__;
+				else window.__TAURI_EVENT_PLUGIN_INTERNALS__ = previousEventInternals;
+				if (previousPreferences === null)
+					localStorage.removeItem("pilo.preferences.v1");
+				else localStorage.setItem("pilo.preferences.v1", previousPreferences);
+				if (previousInputHistory === null)
+					localStorage.removeItem("pilo.chatInputHistory.v1");
+				else
+					localStorage.setItem(
+						"pilo.chatInputHistory.v1",
+						previousInputHistory,
+					);
+			}
+		</script>
+	</body>
+</html>

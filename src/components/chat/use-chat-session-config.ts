@@ -234,6 +234,8 @@ export function useChatSessionConfig({
 		client,
 		selectedModel,
 		selectedThinkingLevel,
+		modelSelectionDirtyRef,
+		thinkingSelectionDirtyRef,
 		setSelectedModel,
 		setSelectedThinkingLevel,
 		setThinkingLevels,

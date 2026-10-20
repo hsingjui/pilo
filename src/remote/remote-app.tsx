@@ -635,6 +635,7 @@ function RemoteWorkspace() {
 												disabled={
 													chat.readOnly ||
 													chat.sending ||
+													chat.draftConfigPending ||
 													!chat.activeProjectId ||
 													!chat.historyReady
 												}
@@ -649,6 +650,7 @@ function RemoteWorkspace() {
 														? t("chat.sessionHeaderMissing")
 														: null) ??
 													chat.retryState?.errorMessage ??
+													chat.draftConfigError ??
 													(chat.historyIndexStale
 														? t("chat.historyIndexStale")
 														: null)

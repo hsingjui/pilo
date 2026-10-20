@@ -25,6 +25,19 @@ or session JSONL. Both transports use the Host's database.
 
 - No row / `models: null` inherits Pi. `models: []` is a custom empty Scope.
   An array completely replaces the inherited list; never union the two.
+- New-chat startup precedence on Desktop and WebUI is explicit user selection,
+  then the first stored member of a custom project Scope, then Pi's own default.
+  `getProjectScopeDefaultModel` in `src/lib/pi-model-selection.ts` resolves that
+  member by provider + model ID against the available catalog. Missing/inherited/
+  empty Scope, or an unavailable first member, leaves the model to Pi; never
+  silently select a later member. Apply the member's thinking override or its
+  model profile default, unless the user explicitly picked another level.
+- Drafts store only explicit selections; derive project defaults from the current
+  Scope/catalog so late responses and menu reloads cannot overwrite user intent.
+  Without an explicit model selection, wait for Scope loading and (for a custom
+  nonempty Scope) the model catalog before allowing startup. Preference/catalog
+  failures remain visible, not an implicit fallback to unknown defaults. Scope
+  changes never reapply startup defaults to an already identified/live session.
 - One atomic upsert replaces all members. `updatedAtMs` is monotonically
   increasing per project (`MAX(now, previous + 1)`), even for restoring null.
   Consumers reject lower revisions and stale project/transport requests.
@@ -123,7 +136,10 @@ Add/update/run tests only with explicit user authorization. Assertion points:
 - Storage: null/empty/nonempty round trips; duplicate/blank/invalid levels;
   unavailable retention; project cascade; increasing same-millisecond revisions.
 - Selection: identity collisions across providers; inherited order/thinking;
-  custom replacement/empty; unavailable intersection before fallback; singleton.
+  custom replacement/empty; unavailable intersection before fallback; singleton;
+  custom Scope first-member new-chat default with thinking override/profile
+  fallback; absent/inherited/empty/unavailable-first fallback to Pi; explicit
+  user selection wins on Desktop and WebUI, including late Scope responses.
 - UI: unchanged/cancelled drafts; batch actions; failed save/retry; incoming
   events during editing; narrow management hidden; keyboard search/navigation;
   delayed first preference response preserves Scope view/query/focus; refreshing

@@ -71,6 +71,21 @@ export function getProjectScopeModels(
 	});
 }
 
+export function getProjectScopeDefaultModel(
+	models: readonly PiModel[],
+	scope: ProjectModelScope | null,
+): PiModel | null {
+	const first = scope?.models?.[0];
+	if (!first) return null;
+	const model = findMatchingPiModel(models, {
+		provider: first.provider,
+		id: first.modelId,
+	});
+	return model
+		? { ...model, scopeOrder: 0, scopeThinkingLevel: first.thinkingLevel }
+		: null;
+}
+
 export function getProjectScopeDraft(
 	models: readonly PiModel[],
 	scope: ProjectModelScope,

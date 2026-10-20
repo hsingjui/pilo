@@ -48,6 +48,7 @@ export function useRemoteChatAgentConfig({
 	const [modelError, setModelError] = useState<string | null>(null);
 	const [catalog, setCatalog] = useState<ProjectPiModels | null>(null);
 	const [thinkingLevels, setThinkingLevels] = useState<PiThinkingLevel[]>([]);
+	// 仅保存用户明确选择的启动配置；目录默认值只用于草稿展示。
 	const [draftModel, setDraftModel] = useState<PiModel | null>(null);
 	const [draftThinkingLevel, setDraftThinkingLevel] =
 		useState<PiThinkingLevel | null>(null);
@@ -153,11 +154,6 @@ export function useRemoteChatAgentConfig({
 					setCatalog(loaded);
 					setModelsLoaded(loaded !== null);
 					setModels(loaded?.models ?? []);
-					if (!loaded) return;
-					setDraftModel((current) => current ?? loaded.defaultModel);
-					setDraftThinkingLevel(
-						(current) => current ?? loaded.defaultThinkingLevel,
-					);
 				})
 				.catch((error) => {
 					if (draftCatalogRequestRef.current !== requestId) return;

@@ -30,6 +30,8 @@ import type { Project } from "@/lib/api/projects";
 import type { PiloClientBootstrap } from "@/lib/api/pilo-client";
 import {
 	getProjectScopeModels,
+	getProjectScopeDefaultModel,
+	getPiQuickCycleThinkingLevel,
 	isPiScopeCatalogResolved,
 } from "@/lib/pi-model-selection";
 import { useProjectModelScope } from "@/lib/use-project-model-scope";
@@ -319,6 +321,33 @@ export function useRemoteChat({
 		sessionHeaderMissing,
 	} = agentConfig;
 	const readOnly = externalReadOnly || sessionHeaderMissing;
+	const projectScopeDefaultModel = useMemo(
+		() =>
+			getProjectScopeDefaultModel(
+				catalog?.projectId === activeProjectId ? catalog.models : [],
+				scopeConfig.scope,
+			),
+		[activeProjectId, catalog, scopeConfig.scope],
+	);
+	const initialDraftModel = draftModel ?? projectScopeDefaultModel;
+	const initialDraftThinkingLevel =
+		draftThinkingLevel ??
+		(draftModel
+			? (draftModel.defaultThinkingLevel ?? null)
+			: projectScopeDefaultModel
+				? getPiQuickCycleThinkingLevel(projectScopeDefaultModel)
+				: null);
+	const needsDraftDefault =
+		!hasIdentifiedSession && !runtimeReady && !draftModel;
+	const draftConfigError = needsDraftDefault
+		? (scopeConfig.error ??
+			(scopeConfig.scope?.models?.length ? modelError : null))
+		: null;
+	const draftConfigPending =
+		needsDraftDefault &&
+		(scopeConfig.loading ||
+			Boolean(draftConfigError) ||
+			(Boolean(scopeConfig.scope?.models?.length) && !modelsLoaded));
 	const routeUiKey = activeProjectId
 		? chatUiStateKey(activeProjectId, routeSessionId)
 		: "remote-draft";
@@ -621,6 +650,8 @@ export function useRemoteChat({
 
 	const ensureDraftRuntime = useCallback(async () => {
 		if (sessionHeaderMissing) throw new Error(t("chat.sessionHeaderMissing"));
+		if (draftConfigPending)
+			throw new Error(draftConfigError ?? t("common.loading"));
 		if (!client || !activeProjectId || !activeSessionKey)
 			throw new Error("Choose a project first");
 		const targetSessionKey = activeSessionKey;
@@ -676,26 +707,27 @@ export function useRemoteChat({
 		if (draftTemporary && !isActiveSession()) {
 			throw new Error("temporary session is closing");
 		}
-		if (isActiveSession()) setRuntimeReady(true);
 		// Carry the draft run-config onto the freshly started session, matching the
 		// Desktop `prepareRuntimeConfiguration` step for new chats. Selected sessions
 		// keep whatever model Pi already restored.
-		if (!selectedSession && draftModel) {
+		const isNewDraft = !selectedSession && !identifiedDraftSessionId;
+		if (isNewDraft && initialDraftModel) {
 			await targetRpc<PiModel>({
 				type: "set_model",
-				provider: draftModel.provider,
-				modelId: draftModel.id,
-			}).catch(() => undefined);
+				provider: initialDraftModel.provider,
+				modelId: initialDraftModel.id,
+			});
 		}
-		if (!selectedSession && draftThinkingLevel) {
+		if (isNewDraft && initialDraftThinkingLevel) {
 			await targetRpc<void>({
 				type: "set_thinking_level",
-				level: draftThinkingLevel,
-			}).catch(() => undefined);
+				level: initialDraftThinkingLevel,
+			});
 		}
 		// Hydrate real state before callers mutate model/thinking settings.
 		const state = await targetRpc<PiAgentState>({ type: "get_state" });
 		if (isActiveSession()) {
+			setRuntimeReady(true);
 			setAgentState(state);
 			if (!selectedSession) identifyDraftSession(state);
 		}
@@ -707,8 +739,10 @@ export function useRemoteChat({
 		activeSessionKey,
 		agentState,
 		client,
-		draftModel,
-		draftThinkingLevel,
+		draftConfigError,
+		draftConfigPending,
+		initialDraftModel,
+		initialDraftThinkingLevel,
 		draftTemporary,
 		identifiedDraftSessionId,
 		identifyDraftSession,
@@ -777,12 +811,17 @@ export function useRemoteChat({
 		setChatState,
 	});
 
-	const composerThinkingLevelsForModel = selectedSession
-		? thinkingLevels
-		: (draftModel?.thinkingLevels ?? []);
-	const composerSelectedThinkingLevel = selectedSession
-		? (agentState?.thinkingLevel ?? historyThinkingLevel)
-		: draftThinkingLevel;
+	const draftDisplayModel = initialDraftModel ?? catalog?.defaultModel ?? null;
+	const composerThinkingLevelsForModel =
+		hasIdentifiedSession || runtimeReady
+			? thinkingLevels
+			: (draftDisplayModel?.thinkingLevels ?? []);
+	const composerSelectedThinkingLevel =
+		hasIdentifiedSession || runtimeReady
+			? (agentState?.thinkingLevel ?? historyThinkingLevel)
+			: initialDraftModel
+				? initialDraftThinkingLevel
+				: (draftThinkingLevel ?? catalog?.defaultThinkingLevel ?? null);
 
 	const { tryHandleComposerCommand } = useRemoteChatCommands({
 		client,
@@ -896,7 +935,7 @@ export function useRemoteChat({
 	}, [handleSelectSession, rawSessions]);
 
 	const selectedModel = useMemo(() => {
-		if (!hasIdentifiedSession) return draftModel;
+		if (!hasIdentifiedSession && !runtimeReady) return draftDisplayModel;
 		const current = agentState?.model ?? historyModel;
 		if (!current) return null;
 		return (
@@ -907,10 +946,11 @@ export function useRemoteChat({
 		);
 	}, [
 		agentState?.model,
-		draftModel,
+		draftDisplayModel,
 		hasIdentifiedSession,
 		historyModel,
 		models,
+		runtimeReady,
 	]);
 
 	return {
@@ -954,6 +994,8 @@ export function useRemoteChat({
 		selectedModel,
 		composerThinkingLevels: composerThinkingLevelsForModel,
 		composerSelectedThinkingLevel,
+		draftConfigPending,
+		draftConfigError,
 		models,
 		modelLoading,
 		modelError,
