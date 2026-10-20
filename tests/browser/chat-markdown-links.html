@@ -21,6 +21,8 @@
 				MARKDOWN_REHYPE_PLUGINS,
 			} from "../../src/components/chat/chat-markdown-components.tsx";
 			import { ChatMarkdownLinkScope } from "../../src/components/chat/chat-markdown-link.tsx";
+			import { ProjectWorkspaceContext } from "../../src/components/app/project-workspace-context.tsx";
+			import { openHtmlReport } from "../../src/lib/api/reports.ts";
 			import { initializeI18n } from "../../src/i18n/index.ts";
 			import { findMessageMatches } from "../../src/lib/chat/chat-message-search.ts";
 			import {
@@ -31,6 +33,11 @@
 			await initializeI18n("en-US");
 			const root = createRoot(document.getElementById("root"));
 			const calls = [];
+			const previews = [];
+			const workspace = {
+				state: new Map(),
+				openFile: (projectId, file) => previews.push({ projectId, file }),
+			};
 
 			const url = "file:///Users/example/My%20Pages/报告.html";
 			const originalIsTauri = globalThis.isTauri;
@@ -38,7 +45,14 @@
 			window.__TAURI_INTERNALS__ = {
 				invoke: async (command, args) => {
 					calls.push({ command, args });
-					return null;
+					if (args.url.includes("missing.html"))
+						throw new Error("file link is not accessible: missing remote file");
+					return args.preview
+						? {
+								path: decodeURIComponent(new URL(args.url).pathname),
+								content: "# Remote preview",
+							}
+						: null;
 				},
 			};
 			function assert(condition, message) {
@@ -48,27 +62,35 @@
 				flushSync(() => {
 					root.render(
 						h(
-							ChatMarkdownLinkScope.Provider,
-							{
-								value: { id: "project", connection: { kind: { type: kind } } },
-							},
-							h(Toaster),
+							ProjectWorkspaceContext.Provider,
+							{ value: workspace },
 							h(
-								Streamdown,
+								ChatMarkdownLinkScope.Provider,
 								{
-									mode,
-									className: "markdown-renderer",
-									components: MARKDOWN_COMPONENTS,
-									rehypePlugins: MARKDOWN_REHYPE_PLUGINS,
-									urlTransform: defaultUrlTransform,
+									value: {
+										id: kind === "local" ? "project" : `${kind}-project`,
+										connection: { kind: { type: kind } },
+									},
 								},
-								markdown,
+								h(Toaster),
+								h(
+									Streamdown,
+									{
+										mode,
+										className: "markdown-renderer",
+										components: MARKDOWN_COMPONENTS,
+										rehypePlugins: MARKDOWN_REHYPE_PLUGINS,
+										urlTransform: defaultUrlTransform,
+									},
+									markdown,
+								),
 							),
 						),
 					);
 				});
 				return document.querySelector("#root button");
 			}
+
 			try {
 				globalThis.isTauri = true;
 				const local = render("local");
@@ -89,26 +111,99 @@
 				);
 				assert(calls[0].args.url === new URL(url).href, "URL was corrupted");
 				for (const kind of ["ssh", "wsl"]) {
+					const remoteUrl =
+						"file:///home/user/My%20Pages/%E6%8A%A5%E5%91%8A.html";
+					const before = calls.length;
+					render(kind, `[Remote report](${remoteUrl})`).click();
+					await new Promise(requestAnimationFrame);
+					assert(
+						calls.length === before + 1,
+						`${kind} click must invoke exactly once`,
+					);
+					assert(
+						calls.at(-1).command === "project_file_link_open",
+						"Wrong remote command",
+					);
+					assert(
+						calls.at(-1).args.projectId === `${kind}-project`,
+						"Remote connection scope lost",
+					);
+					assert(
+						calls.at(-1).args.url === new URL(remoteUrl).href,
+						"Remote URL was corrupted",
+					);
+					assert(
+						calls.at(-1).args.preview === false,
+						"Remote HTML must use system opening",
+					);
+					for (const extension of ["md", "rs"]) {
+						const textUrl = `file:///home/user/notes.${extension}`;
+						render(kind, `[Remote source](${textUrl})`).click();
+						await new Promise(requestAnimationFrame);
+						assert(
+							calls.at(-1).args.preview === true,
+							"Remote text must use preview",
+						);
+						assert(
+							previews.at(-1).projectId === `${kind}-project`,
+							"Preview project scope lost",
+						);
+						assert(
+							previews.at(-1).file.path === new URL(textUrl).pathname,
+							"Preview path lost",
+						);
+						assert(
+							previews.at(-1).file.content === "# Remote preview",
+							"Preview content lost",
+						);
+					}
+					await openHtmlReport(
+						{ id: `${kind}-project`, connection: { kind: { type: kind } } },
+						remoteUrl,
+					);
+					assert(
+						calls.at(-1).command === "project_html_report_open",
+						"Legacy HTML command lost",
+					);
+					assert(
+						calls.at(-1).args.projectId === `${kind}-project`,
+						"Legacy connection scope lost",
+					);
+				}
+				render("ssh", "[Missing](file:///home/user/missing.html)").click();
+				await new Promise(requestAnimationFrame);
+				assert(
+					toast.getHistory().at(-1).description.includes("missing remote file"),
+					"Remote error lost",
+				);
+				globalThis.isTauri = false;
+				const beforeWeb = calls.length;
+				for (const kind of ["local", "ssh", "wsl"]) {
 					render(kind).click();
 					await new Promise(requestAnimationFrame);
 					assert(
-						calls.length === 1,
-						"Remote project must never open a local file",
+						calls.length === beforeWeb,
+						"WebUI must never call desktop IPC",
 					);
 					assert(
-						toast.getHistory().at(-1).description.includes("WSL and SSH"),
-						"Missing remote hint",
+						toast.getHistory().at(-1).description.includes("WebUI"),
+						"Missing WebUI hint",
+					);
+					await openHtmlReport(
+						{ id: "project", connection: { kind: { type: kind } } },
+						url,
+					).then(
+						() => {
+							throw new Error("WebUI must reject legacy native opening");
+						},
+						(error) =>
+							assert(
+								error.message.includes("WebUI"),
+								"Wrong legacy WebUI guard",
+							),
 					);
 				}
-				globalThis.isTauri = false;
 				const mobile = render("local");
-				mobile.click();
-				await new Promise(requestAnimationFrame);
-				assert(calls.length === 1, "WebUI must never call desktop IPC");
-				assert(
-					toast.getHistory().at(-1).description.includes("WebUI"),
-					"Missing WebUI hint",
-				);
 				assert(
 					!document.querySelector('a[href^="file:"]'),
 					"Navigable file URL leaked",
@@ -228,7 +323,7 @@
 				);
 				document.body.dataset.testStatus = "passed";
 				document.getElementById("results").textContent =
-					"PASS: Local IPC, SSH/WSL/WebUI guards, focus, light/dark filename chips, narrow layout, no automatic navigation and two ordered file-link search highlights in static/streaming desktop/WebUI Markdown.";
+					"PASS: Local/SSH/WSL IPC, remote text tabs and errors, legacy HTML IPC, WebUI guard, focus, light/dark filename chips, narrow layout, no automatic navigation and two ordered file-link search highlights in static/streaming desktop/WebUI Markdown.";
 			} catch (error) {
 				document.body.dataset.testStatus = "failed";
 				document.getElementById("results").textContent = String(

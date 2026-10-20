@@ -2,10 +2,13 @@
 
 ## 1. Scope / Trigger
 
-Local desktop Markdown `file://` links open Markdown/code as read-only tabs beside
-the conversation title. Allowlisted documents (including HTML reports) use the
-system default application; unknown file types are rejected. WSL/SSH and WebUI remain unsupported for native file access;
-never reinterpret remote paths as desktop-local paths. Git tabs are not implemented.
+Desktop Markdown `file://` links open Markdown/code as read-only tabs beside
+the conversation title for Local, WSL and SSH projects. Allowlisted documents
+(including HTML reports) use the system default application; unknown file types
+are rejected. WSL/SSH documents are bounded, disposable local snapshots, read on
+the selected connection without an HTTP server or project-directory sync.
+WebUI remains unsupported for native file access; never reinterpret remote paths
+as desktop-local paths. Git tabs are not implemented.
 
 ## 2. Signatures
 
@@ -20,7 +23,12 @@ never reinterpret remote paths as desktop-local paths. Git tabs are not implemen
 - IPC: `{ projectId: string, url: string, preview: boolean }`.
   Preview response: `{ path: string, content: string }` with canonical absolute path;
   system opening response: `null`.
-- Legacy `project_html_report_open` and `openHtmlReport` retain HTML-only behavior.
+- Legacy `project_html_report_open` and `openHtmlReport` retain HTML-only behavior
+  for Local/WSL/SSH.
+- Server RPC `file_link.read { path: string, preview: boolean }` returns
+  `{ path: string }` with a canonical absolute path and exactly one binary
+  attachment. `path` is absolute on the saved project's connection, not the Host.
+  No WebUI route is registered for this operation.
 - `projectEditorUrl(project, editor, targetPath = project.path): string` builds
   an editor URL for a project directory or the selected absolute file path.
 - `openProjectInEditor(project, editor, path?: string): Promise<void>` preserves
@@ -45,9 +53,16 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
 - `rehypeFileLinks` transfers sanitized targets to `data-pilo-file-url` and an inert
   HTTPS sentinel. `MarkdownLink` renders a button, never a navigable file anchor.
   Raw HTML cannot spoof metadata because sanitize removes it first.
-- Chips shorten URL-only labels to decoded filenames, preserve custom/formatted
-  labels, retain full URL in `title`, truncate without shrinking icons, expose
-  visible focus and a 44px coarse-pointer hit target. Disable while opening.
+- File-only paragraphs and tight list items mark their direct file links with
+  `data-pilo-file-layout="standalone"` after sanitization. Whitespace and `br`
+  separators are allowed; prose, headings and table cells keep lightweight inline
+  references. Standalone buttons are content-width, left-aligned rows, stacked
+  with 8px gaps; suppress their following `br` to avoid duplicate vertical gaps.
+  Inline references inherit prose typography and omit attachment icons/fill.
+- File links shorten URL-only labels to decoded filenames, preserve custom/formatted
+  labels and retain full URL in `title`. Standalone labels truncate without
+  shrinking icons; inline labels wrap long tokens. Both styles expose visible
+  focus and a 44px coarse-pointer hit target. Disable while opening.
 - Label shortening belongs in `rehypeFileLinks`, shared by rendering and
   `markdownSearchText`. File buttons opt into DOM matching with
   `data-chat-search-reference`; the projection uses matching text boundaries.
@@ -58,8 +73,11 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
 
 ### Reading and system opening
 
-- Backend independently resolves the saved project and requires Local **before**
-  touching the filesystem. Validate URL, canonicalize, and require a regular file.
+- Backend independently resolves the saved project before touching the filesystem.
+  Local uses host file URL semantics; WSL/SSH URL decoding is OS-independent, then
+  delegates to `file_link.read` on the selected connection. A Windows Host must not
+  call `Url::to_file_path` on a remote POSIX URL. Both branches validate URLs,
+  canonicalize in the owning environment and require a regular file.
 - Preview reads are bounded to 1 MiB (including a growth check during reading),
   require UTF-8, and reject NUL bytes. Scripts are text only, never executed.
 - System opening allows only `html`, `htm`, `pdf`, `txt`, `md`, `markdown`,
@@ -68,7 +86,19 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
   Sandbox launch configurations) are rejected, not handled by a growing denylist.
   Retain executable signatures/shebangs and Unix executable-bit checks even for
   allowed extensions. Use Rust `OpenerExt::open_path`, not broad frontend opener
-  permissions.
+  permissions. Document extension/header checks are shared by Host and server in
+  `crates/pilo-server/src/file_links.rs`.
+- Remote preview transfers are bounded to 1 MiB; remote document transfers are
+  bounded to `MAX_BINARY_PAYLOAD_BYTES` (32 MiB). Check size again after a bounded
+  read to reject growth. The Host independently checks attachment count, preview
+  encoding/size and system document types/signatures.
+- Remote documents are written with a random safe basename and the validated
+  canonical extension under `app_cache_dir()/file-links/`. Use exclusive creation,
+  private Unix directory/file modes and flush/close before launch. Failed
+  write/open operations remove their snapshot; later opens best-effort remove
+  snapshots older than seven days. Snapshots are not authoritative files and do
+  not preserve relative HTML assets. Prefer self-contained reports; never
+  synchronize adjacent remote files or start a web server implicitly.
 - Links may be outside the project (HTML skills often write under the user's home).
   No generic filesystem permission or remote endpoint is added.
 - Existing sidebar project-file reads keep their separate project-relative API
@@ -152,19 +182,22 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
 
 | Condition | Result |
 | --- | --- |
-| Local `.md` / `.markdown` | Sanitized Markdown workspace tab |
+| Desktop Local/WSL/SSH `.md` / `.markdown` | Sanitized Markdown workspace tab |
 | Known code/text extension or supported text basename | Read-only highlighted/plain-text tab |
 | Allowlisted HTML, PDF, text and raster image documents | System-default application |
 | Unknown system-open extension, including `.wsb` or macro documents | Reject |
 | Project Markdown local image | Resolve from document directory via bounded project image API |
 | Image traversal above project root or document outside project | Unavailable; no image read |
 | Preview >1 MiB, NUL, invalid UTF-8 | Error toast; no partial/new tab |
-| Windows drive URL, Unicode/spaces | Decode using host file URL semantics |
+| Windows drive URL, Unicode/spaces | Decode for the selected environment; remote POSIX URLs work on a Windows Host |
 | Remote hostname, UNC/device path, encoded slash/backslash, ADS | Reject |
 | Query/fragment (even empty), controls, malformed encoding, >4096 URL | Reject |
 | Missing file or directory | Reject |
 | Executable, script or shortcut requested for system opening | Reject (safe text preview may still be allowed) |
-| WSL/SSH | Localized unsupported hint; backend independently rejects |
+| WSL/SSH code/text | Bounded preview through the selected connection; canonical remote path retained |
+| WSL/SSH allowlisted documents | Bounded cache snapshot, then system-default application; no HTTP server |
+| Remote document >32 MiB | Reject before transfer and after bounded reading |
+| Remote HTML with relative assets | Only the linked document is copied; adjacent assets are not synchronized |
 | WebUI | Localized unsupported hint; no desktop IPC |
 | HTTP(S)/mailto | Existing external-anchor behavior |
 | Editor click with a file selected | Open that file in the chosen editor/environment |
@@ -176,7 +209,8 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
 - Good: `[Notes](file:///Users/me/notes.md)` opens after the conversation tab;
   clicking it again selects the existing tab.
 - Base: `[Report](file:///Users/me/report.html)` still opens in the default browser;
-  `[Site](https://example.com)` retains external-link security.
+  `[Site](https://example.com)` retains external-link security. An SSH report
+  under `~/.answer-me-with-html/` is read on SSH and opened as a local snapshot.
 - Bad: `file://server/share/report.html`, `file:///C:/run.exe:payload.html`,
   executing Markdown scripts, automatically opening during render, or mounting a
   separate modal/header for previews.
@@ -194,7 +228,8 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
   path and existing project-directory fallback.
 - `tests/unit/project-workspace.test.ts`: routing, deduplication, path case,
   selection/closing, project pruning and stale highlighting.
-- `tests/browser/chat-markdown-links.html`: mocked system IPC, remote/WebUI guards,
+- `tests/browser/chat-markdown-links.html`: mocked system IPC, desktop connection
+  routing and the WebUI guard,
   no automatic opening, focus, 320px light/dark chips and coarse-pointer targets;
   two indexed/DOM `Report` hits with ordered active ranges in static/streaming
   Markdown, raw anchors and filename-only URL labels on desktop/WebUI.
@@ -211,13 +246,23 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
 - Rust `file_links::tests`: URL/path validation, missing/directory/symlink checks,
   bounded UTF-8 previews, document allowlist, unknown/`.wsb` refusal and executable
   rejection even under an allowed extension.
-- Browser fixtures mock native IPC. Actual file reading/default-app launching
-  and Windows WebView layout still require Windows `pnpm tauri dev` testing.
+- Pending explicit authorization: the existing browser fixture still asserts
+  WSL/SSH rejection and must be updated for the new desktop routing contract.
+  Add coverage for OS-independent POSIX/drive URL decoding, remote canonical paths,
+  preview size/encoding rejection, remote document executable bits/signatures and
+  symlink names/targets, 32 MiB document/growth limits, cache flush/failed-open
+  cleanup/expiry, unchanged Local behavior and unchanged WebUI IPC refusal.
+  No tests were created, modified or run for this change.
+- Browser fixtures mock native IPC. Actual WSL/SSH file reading/default-app
+  launching, standalone report scripts and Windows WebView layout still require
+  Windows desktop verification. Rebuild the WSL/SSH `pilo-server` development
+  runtime explicitly before trying the new server capability; source edits do not
+  update already-built binaries. No build or native verification has been run.
 
 ## 7. Wrong vs Correct
 
 - Wrong: loosen sanitization, navigate directly to file URLs, grant generic opener
   access, or hide/unmount chat with `display: none` while a file is active.
 - Correct: preserve link metadata through filtering, activate through shared UI,
-  validate inside the Local-only command, and overlay preview over an inert,
+  validate and read on the selected connection, and overlay preview over an inert,
   geometrically preserved chat panel using per-project workspace state.

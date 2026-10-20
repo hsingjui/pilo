@@ -1,11 +1,21 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
+use pilo_protocol::MAX_BINARY_PAYLOAD_BYTES;
+use pilo_server::file_links::{
+    FileLinkMetadata, MAX_PREVIEW_BYTES, check_system_extension, check_system_header,
+};
 use serde::Serialize;
-use tauri::{AppHandle, Url};
+use serde_json::json;
+use tauri::{AppHandle, Manager, Url};
 use tauri_plugin_opener::OpenerExt;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::domain::{ConnectionKind, Project};
+
+use super::PiloRuntime;
 
 fn is_html(path: &Path) -> bool {
     path.extension()
@@ -15,7 +25,7 @@ fn is_html(path: &Path) -> bool {
         })
 }
 
-fn file_path(value: &str) -> Result<PathBuf, String> {
+fn file_url(value: &str) -> Result<(Url, String), String> {
     let invalid = || "only local file URLs without queries or fragments are supported".to_owned();
     let lower = value.to_ascii_lowercase();
     if value.len() > 4096
@@ -49,6 +59,48 @@ fn file_path(value: &str) -> Result<PathBuf, String> {
     {
         return Err(invalid());
     }
+    // Decode independently of the host OS: Windows cannot to_file_path a POSIX URL.
+    let encoded = url.path().as_bytes();
+    let mut bytes = Vec::with_capacity(encoded.len());
+    let mut index = 0;
+    while index < encoded.len() {
+        if encoded[index] == b'%' {
+            let pair = encoded.get(index + 1..index + 3).ok_or_else(invalid)?;
+            let pair = std::str::from_utf8(pair).map_err(|_| invalid())?;
+            bytes.push(u8::from_str_radix(pair, 16).map_err(|_| invalid())?);
+            index += 3;
+        } else {
+            bytes.push(encoded[index]);
+            index += 1;
+        }
+    }
+    let path = String::from_utf8(bytes).map_err(|_| invalid())?;
+    let drive_path = path.as_bytes().get(1).is_some_and(u8::is_ascii_alphabetic)
+        && path.as_bytes().get(2) == Some(&b':')
+        && path.as_bytes().get(3) == Some(&b'/');
+    let suffix = if drive_path { &path[4..] } else { &path };
+    if !path.starts_with('/')
+        || path.starts_with("//")
+        || path.ends_with('/')
+        || path.contains('\\')
+        || path.chars().any(char::is_control)
+        || suffix.contains(':')
+    {
+        return Err(invalid());
+    }
+    Ok((
+        url,
+        if drive_path {
+            path[1..].to_owned()
+        } else {
+            path
+        },
+    ))
+}
+
+fn file_path(value: &str) -> Result<PathBuf, String> {
+    let invalid = || "only local file URLs without queries or fragments are supported".to_owned();
+    let (url, _) = file_url(value)?;
     let path = url.to_file_path().map_err(|_| invalid())?;
     let text = path.to_str().ok_or_else(invalid)?;
     // Reject UNC/device paths and Windows alternate data streams, not just URL hosts.
@@ -62,8 +114,6 @@ fn file_path(value: &str) -> Result<PathBuf, String> {
     }
     Ok(path)
 }
-
-const MAX_PREVIEW_BYTES: u64 = 1024 * 1024;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -101,55 +151,16 @@ async fn read_preview(path: &Path) -> Result<FileLinkPreview, String> {
         .read_to_end(&mut bytes)
         .await
         .map_err(|error| format!("failed to read file preview: {error}"))?;
+    preview_from_bytes(path.to_string_lossy().into_owned(), bytes)
+}
+
+fn preview_from_bytes(path: String, bytes: Vec<u8>) -> Result<FileLinkPreview, String> {
     if bytes.len() as u64 > MAX_PREVIEW_BYTES || bytes.contains(&0) {
         return Err("file preview requires UTF-8 text no larger than 1 MiB".to_owned());
     }
     let content =
         String::from_utf8(bytes).map_err(|_| "file preview requires UTF-8 text".to_owned())?;
-    Ok(FileLinkPreview {
-        path: path.to_string_lossy().into_owned(),
-        content,
-    })
-}
-
-fn check_system_extension(path: &Path) -> Result<(), String> {
-    let name = path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or("")
-        .trim_end_matches([' ', '.']);
-    let extension = Path::new(name)
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    // Unknown extensions can have executable associations (for example Windows .wsb).
-    if !matches!(
-        extension.as_str(),
-        "html"
-            | "htm"
-            | "pdf"
-            | "txt"
-            | "md"
-            | "markdown"
-            | "csv"
-            | "png"
-            | "jpg"
-            | "jpeg"
-            | "gif"
-            | "webp"
-            | "bmp"
-            | "ico"
-            | "tif"
-            | "tiff"
-            | "avif"
-    ) {
-        return Err(
-            "only supported document types can be opened by file links; preview code instead"
-                .to_owned(),
-        );
-    }
-    Ok(())
+    Ok(FileLinkPreview { path, content })
 }
 
 async fn check_system_file(path: &Path) -> Result<(), String> {
@@ -176,19 +187,130 @@ async fn check_system_file(path: &Path) -> Result<(), String> {
         .read_to_end(&mut header)
         .await
         .map_err(|error| error.to_string())?;
-    if header.starts_with(b"MZ")
-        || header.starts_with(b"\x7fELF")
-        || header.starts_with(b"#!")
-        || matches!(
-            header.as_slice(),
-            [0xfe, 0xed, 0xfa, 0xce | 0xcf]
-                | [0xce | 0xcf, 0xfa, 0xed, 0xfe]
-                | [0xca, 0xfe, 0xba, 0xbe]
-        )
-    {
-        return Err("executables and scripts cannot be opened by file links".to_owned());
+    check_system_header(&header)
+}
+
+async fn cache_document(app: &AppHandle, path: &str, bytes: &[u8]) -> Result<PathBuf, String> {
+    let directory = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("failed to resolve file link cache: {error}"))?
+        .join("file-links");
+    let mut builder = tokio::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    builder.mode(0o700);
+    builder
+        .create(&directory)
+        .await
+        .map_err(|error| format!("failed to create file link cache: {error}"))?;
+    // A browser/application may still need the snapshot after this command returns.
+    // Remove expired snapshots on subsequent opens, not immediately after launching.
+    if let Ok(mut entries) = tokio::fs::read_dir(&directory).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if let Ok(metadata) = entry.metadata().await
+                && metadata.is_file()
+                && metadata
+                    .modified()
+                    .ok()
+                    .and_then(|modified| modified.elapsed().ok())
+                    .is_some_and(|age| age > Duration::from_secs(7 * 24 * 60 * 60))
+            {
+                let _ = tokio::fs::remove_file(entry.path()).await;
+            }
+        }
     }
-    Ok(())
+    let name = path
+        .rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches([' ', '.']);
+    let extension = Path::new(name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "file link document has no extension".to_owned())?;
+    let mut nonce = [0_u8; 16];
+    getrandom::fill(&mut nonce)
+        .map_err(|error| format!("failed to name file link cache: {error}"))?;
+    let name = nonce
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let cached = directory.join(format!("{name}.{extension}"));
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options
+        .open(&cached)
+        .await
+        .map_err(|error| format!("failed to create file link snapshot: {error}"))?;
+    let result = async {
+        file.write_all(bytes).await?;
+        file.flush().await
+    }
+    .await;
+    drop(file);
+    if let Err(error) = result {
+        let _ = tokio::fs::remove_file(&cached).await;
+        return Err(format!("failed to cache file link: {error}"));
+    }
+    Ok(cached)
+}
+
+async fn open_remote_file_link(
+    app: &AppHandle,
+    project: &Project,
+    url: &str,
+    preview: bool,
+    html_only: bool,
+) -> Result<Option<FileLinkPreview>, String> {
+    let (_, path) = file_url(url)?;
+    if html_only && !is_html(Path::new(&path)) {
+        return Err("HTML report must resolve to an HTML file".to_owned());
+    }
+    if !preview {
+        check_system_extension(Path::new(&path))?;
+    }
+    let runtime = app.state::<PiloRuntime>();
+    let (metadata, mut binary) = runtime
+        .servers
+        .request_with_binary(
+            &project.connection,
+            "file_link.read",
+            json!({ "path": path, "preview": preview }),
+            Vec::new(),
+        )
+        .await?;
+    let metadata: FileLinkMetadata = serde_json::from_value(metadata)
+        .map_err(|error| format!("invalid file link response: {error}"))?;
+    if binary.len() != 1 {
+        return Err("file_link.read expected one binary attachment".to_owned());
+    }
+    let bytes = binary.remove(0);
+    if preview {
+        return preview_from_bytes(metadata.path, bytes).map(Some);
+    }
+    if bytes.len() > MAX_BINARY_PAYLOAD_BYTES {
+        return Err("file link document exceeds the binary transport limit".to_owned());
+    }
+    check_system_extension(Path::new(&metadata.path))?;
+    if html_only && !is_html(Path::new(&metadata.path)) {
+        return Err("HTML report must resolve to an HTML file".to_owned());
+    }
+    check_system_header(&bytes[..bytes.len().min(4)])?;
+    let cached = cache_document(app, &metadata.path, &bytes).await?;
+    let result = async {
+        check_system_file(&cached).await?;
+        app.opener()
+            .open_path(cached.to_string_lossy(), None::<&str>)
+            .map_err(|error| format!("failed to open file link: {error}"))
+    }
+    .await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&cached).await;
+    }
+    result.map(|()| None)
 }
 
 pub(crate) async fn open_file_link(
@@ -198,7 +320,7 @@ pub(crate) async fn open_file_link(
     preview: bool,
 ) -> Result<Option<FileLinkPreview>, String> {
     if !matches!(project.connection.kind, ConnectionKind::Local) {
-        return Err("file links require a Local project".to_owned());
+        return open_remote_file_link(app, project, url, preview, false).await;
     }
     let path = checked_file_path(url).await?;
     if preview {
@@ -216,7 +338,9 @@ pub(crate) async fn open_file_link(
 // Retain the original HTML-only command contract for existing callers.
 pub(crate) async fn open(app: &AppHandle, project: &Project, url: &str) -> Result<(), String> {
     if !matches!(project.connection.kind, ConnectionKind::Local) {
-        return Err("file links require a Local project".to_owned());
+        return open_remote_file_link(app, project, url, false, true)
+            .await
+            .map(|_| ());
     }
     if !is_html(&file_path(url)?) || !is_html(&checked_file_path(url).await?) {
         return Err("HTML report must resolve to an HTML file".to_owned());
@@ -243,6 +367,46 @@ mod tests {
             file_path("file:///C:/Users/example/My%20Pages/report.html").unwrap(),
             PathBuf::from(r"C:\Users\example\My Pages\report.html")
         );
+    }
+
+    #[test]
+    fn decodes_remote_paths_independently_of_the_desktop_os() {
+        for (url, expected) in [
+            (
+                "file:///root/project/report.html",
+                "/root/project/report.html",
+            ),
+            (
+                "file://localhost/home/user/My%20Pages/%E6%8A%A5%E5%91%8A.md",
+                "/home/user/My Pages/报告.md",
+            ),
+            (
+                "file:///C:/Users/example/My%20Pages/report.html",
+                "C:/Users/example/My Pages/report.html",
+            ),
+            ("file:///tmp/100%25.md", "/tmp/100%.md"),
+        ] {
+            assert_eq!(file_url(url).unwrap().1, expected, "{url}");
+        }
+    }
+
+    #[test]
+    fn remote_previews_preserve_the_canonical_path_and_validate_bytes() {
+        let preview = preview_from_bytes(
+            "/home/user/报告.md".to_owned(),
+            "# 说明".as_bytes().to_vec(),
+        )
+        .unwrap();
+        assert_eq!(preview.path, "/home/user/报告.md");
+        assert_eq!(preview.content, "# 说明");
+        for bytes in [
+            vec![0],
+            vec![0xff],
+            vec![b'a'; MAX_PREVIEW_BYTES as usize + 1],
+        ] {
+            assert!(preview_from_bytes("/tmp/file.md".to_owned(), bytes).is_err());
+        }
+        assert!(preview_from_bytes("/tmp/empty.rs".to_owned(), Vec::new()).is_ok());
     }
 
     #[tokio::test]
@@ -384,7 +548,11 @@ mod tests {
             "file:///tmp/report\\page.html",
             "file:///tmp/report%.md",
             "file:///tmp/report%FF.md",
+            "file:///tmp/report%5cpage.html",
+            "file:///%2fserver/share/report.html",
+            "file:///tmp/report%7f.md",
         ] {
+            assert!(file_url(url).is_err(), "{url}");
             assert!(file_path(url).is_err(), "{url}");
         }
     }

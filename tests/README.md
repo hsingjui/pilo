@@ -55,7 +55,7 @@ Open one of these paths at `http://127.0.0.1:1420`:
 - `/tests/browser/cache-keep-alive.html`
 - `/tests/browser/chat-run-config-cache.html` (project Scope default, manual-choice precedence, picker reload and live temporary-session configuration; check desktop and touch/mobile)
 - `/tests/browser/chat-markdown-images.html`
-- `/tests/browser/chat-markdown-links.html` (mocked system-opening IPC and remote/WebUI guards)
+- `/tests/browser/chat-markdown-links.html` (mocked Local/WSL/SSH opening IPC, remote text tabs/errors and WebUI native-opening guards)
 - `/tests/browser/project-workspace-tabs.html` (shared header file tabs, Markdown/code, retained chat state, project isolation, keyboard and narrow layouts)
 - `/tests/browser/chat-mentions.html`
 - `/tests/browser/chat-scroll-following.html`

@@ -1,0 +1,21 @@
+{
+  "id": "remote-file-links",
+  "name": "remote-file-links",
+  "title": "Support desktop WSL/SSH file links without an HTTP server",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "file-links",
+  "creator": "hsingjui",
+  "assignee": "hsingjui",
+  "createdAt": "2026-10-20",
+  "relatedFiles": [
+    "src/lib/api/file-links.ts",
+    "src/lib/api/reports.ts",
+    "src-tauri/src/runtime/file_links.rs",
+    "crates/pilo-server/src/file_links.rs",
+    "crates/pilo-server/src/lib.rs",
+    "crates/pilo-protocol/src/lib.rs",
+    ".trellis/spec/frontend/html-report-links.md"
+  ],
+  "notes": "Implementation and source review only. Builds, test changes/execution and native runtime verification require user approval; existing browser fixture still expects remote rejection."
+}

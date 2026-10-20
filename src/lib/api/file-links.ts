@@ -15,8 +15,6 @@ export async function openFileLink(
 ): Promise<WorkspaceFile | null> {
 	if (!isTauri()) throw new Error(i18n.t("chat.fileLinkWebUnsupported"));
 	if (!project) throw new Error(i18n.t("chat.fileLinkNoProject"));
-	if (project.connection.kind.type !== "local")
-		throw new Error(i18n.t("chat.fileLinkRemoteUnsupported"));
 	const url = resolveMarkdownFileUrl(value);
 	if (!url) throw new Error(i18n.t("chat.fileLinkInvalid"));
 	return invoke<WorkspaceFile | null>("project_file_link_open", {

@@ -23,6 +23,7 @@ pub const SERVER_CAPABILITIES: &[&str] = &[
     "command.run",
     "fs.read_dir",
     "fs.read_file",
+    "file_link.read",
     "fs.write_file",
     "fs.stat",
     "fs.mkdir",

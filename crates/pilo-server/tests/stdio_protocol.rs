@@ -249,3 +249,108 @@ async fn session_read_returns_file_fingerprint() {
     assert!(status.success());
     std::fs::remove_dir_all(base).unwrap();
 }
+
+#[tokio::test]
+async fn file_links_use_the_server_filesystem_and_binary_transport() {
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target")
+        .join(format!("file-link-stdio-test-{}", std::process::id()));
+    std::fs::create_dir_all(&base).unwrap();
+    let report = base.join("报告 page.pdf");
+    let document = b"%PDF-1.7\n\0\xff";
+    std::fs::write(&report, document).unwrap();
+    let source = base.join("source.rs");
+    let text = "// 远程代码\nfn main() {}";
+    std::fs::write(&source, text).unwrap();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_pilo-server"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    write_frame(&mut stdin, Envelope::request(1, "server.ping", Value::Null))
+        .await
+        .unwrap();
+    let ping = read_frame(&mut stdout).await.unwrap().unwrap();
+    let Envelope::Response {
+        result: Some(ping),
+        error: None,
+        ..
+    } = ping
+    else {
+        panic!("unexpected ping: {ping:?}");
+    };
+    assert!(
+        ping["capabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("file_link.read"))
+    );
+
+    for (id, path, preview, expected) in [
+        (2, &report, false, document.as_slice()),
+        (3, &source, true, text.as_bytes()),
+    ] {
+        write_frame(
+            &mut stdin,
+            Envelope::request(
+                id,
+                "file_link.read",
+                json!({ "path": path, "preview": preview }),
+            ),
+        )
+        .await
+        .unwrap();
+        let response =
+            tokio::time::timeout(std::time::Duration::from_secs(5), read_frame(&mut stdout))
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+        let Envelope::Response {
+            id: response_id,
+            result: Some(metadata),
+            binary,
+            error: None,
+        } = response
+        else {
+            panic!("unexpected file link response: {response:?}");
+        };
+        assert_eq!(response_id, id);
+        assert_eq!(
+            metadata["path"],
+            std::fs::canonicalize(path)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .replace('\\', "/")
+        );
+        assert_eq!(binary, vec![expected.to_vec()]);
+    }
+    write_frame(
+        &mut stdin,
+        Envelope::request(
+            4,
+            "file_link.read",
+            json!({ "path": "relative.md", "preview": true }),
+        ),
+    )
+    .await
+    .unwrap();
+    let response = read_frame(&mut stdout).await.unwrap().unwrap();
+    assert!(
+        matches!(response, Envelope::Response { id: 4, result: None, error: Some(_), ref binary } if binary.is_empty())
+    );
+
+    drop(stdin);
+    let status = tokio::time::timeout(std::time::Duration::from_secs(5), child.wait())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(status.success());
+    std::fs::remove_dir_all(base).unwrap();
+}

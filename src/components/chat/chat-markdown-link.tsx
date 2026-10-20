@@ -13,6 +13,7 @@ import { ProjectWorkspaceContext } from "@/components/app/project-workspace-cont
 import { openFileLink } from "@/lib/api/file-links";
 import { resolveMarkdownFileUrl } from "@/lib/chat/chat-markdown-links";
 import { workspaceFileKey } from "@/lib/project-workspace";
+import { cn } from "@/lib/utils";
 
 export const ChatMarkdownLinkScope = createContext<Pick<
 	Project,
@@ -22,6 +23,7 @@ export const ChatMarkdownLinkScope = createContext<Pick<
 type MarkdownLinkProps = ComponentPropsWithoutRef<"a"> & {
 	node?: unknown;
 	"data-pilo-file-url"?: string;
+	"data-pilo-file-layout"?: "standalone";
 };
 
 export function MarkdownLink({
@@ -29,6 +31,7 @@ export function MarkdownLink({
 	rel,
 	node: _node,
 	"data-pilo-file-url": fileUrl,
+	"data-pilo-file-layout": fileLayout,
 	...props
 }: MarkdownLinkProps) {
 	const { t } = useTranslation();
@@ -37,6 +40,7 @@ export function MarkdownLink({
 	const [opening, setOpening] = useState(false);
 	if (fileUrl !== undefined) {
 		const url = resolveMarkdownFileUrl(fileUrl);
+		const standalone = fileLayout === "standalone";
 		return (
 			<button
 				type="button"
@@ -44,7 +48,12 @@ export function MarkdownLink({
 				disabled={opening}
 				aria-busy={opening}
 				data-chat-search-reference=""
-				className="inline-flex min-h-8 min-w-0 max-w-full cursor-pointer touch-manipulation items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-2 py-1 align-middle text-left text-sm font-medium text-foreground no-underline transition-colors hover:bg-hover disabled:cursor-wait disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [@media(pointer:coarse)]:min-h-11"
+				className={cn(
+					"min-w-0 max-w-full cursor-pointer touch-manipulation text-left text-foreground transition-colors disabled:cursor-wait disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [@media(pointer:coarse)]:min-h-11",
+					standalone
+						? "mt-2 flex min-h-8 w-fit items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-3 py-1.5 text-sm font-medium no-underline first:mt-0 hover:bg-hover [&+br]:hidden"
+						: "inline-block min-h-6 rounded-sm p-0 align-baseline [font:inherit] underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-muted-foreground",
+				)}
 				onClick={() => {
 					if (!url) {
 						toast.error(t("chat.fileLinkInvalid"));
@@ -84,15 +93,25 @@ export function MarkdownLink({
 						.finally(() => setOpening(false));
 				}}
 			>
-				<FileCode2
-					aria-hidden="true"
-					className="size-4 shrink-0 text-muted-foreground"
-				/>
-				<span className="min-w-0 truncate">{children}</span>
-				<ArrowUpRight
-					aria-hidden="true"
-					className="size-3.5 shrink-0 text-muted-foreground"
-				/>
+				{standalone && (
+					<FileCode2
+						aria-hidden="true"
+						className="size-4 shrink-0 text-muted-foreground"
+					/>
+				)}
+				<span
+					className={
+						standalone ? "min-w-0 truncate" : "[overflow-wrap:anywhere]"
+					}
+				>
+					{children}
+				</span>
+				{standalone && (
+					<ArrowUpRight
+						aria-hidden="true"
+						className="size-3.5 shrink-0 text-muted-foreground"
+					/>
+				)}
 			</button>
 		);
 	}

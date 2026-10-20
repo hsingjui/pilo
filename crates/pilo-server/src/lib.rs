@@ -3,6 +3,7 @@ mod command;
 mod environment;
 mod extensions;
 pub use extensions::runtime_directory;
+pub mod file_links;
 mod fs_ops;
 mod output;
 mod runtime_streams;
@@ -368,6 +369,13 @@ async fn dispatch(
         "fs.read_dir" => blocking(move || fs_read_dir(from_params(params)?))
             .await
             .map(ServerReply::json),
+        "file_link.read" => {
+            let (metadata, data) =
+                tokio::task::spawn_blocking(move || file_links::read(from_params(params)?))
+                    .await
+                    .map_err(|error| format!("pilo-server blocking task failed: {error}"))??;
+            Ok(ServerReply::with_binary(to_value(metadata)?, vec![data]))
+        }
         "fs.read_file" => {
             let data = tokio::task::spawn_blocking(move || fs_read_file(from_params(params)?))
                 .await

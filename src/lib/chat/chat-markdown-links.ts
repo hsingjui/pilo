@@ -131,7 +131,25 @@ function visitFileLinks(node: LinkNode) {
 		// Never let the WebView navigate to a file, even with modifier clicks.
 		props.href = "https://pilo.invalid/file-link";
 	}
-	for (const child of node.children ?? []) visitFileLinks(child);
+	const children = node.children ?? [];
+	for (const child of children) visitFileLinks(child);
+	// Only file-only paragraphs/list items become attachment rows, never prose.
+	if (
+		(node.tagName === "p" || node.tagName === "li") &&
+		children.every(
+			(child) =>
+				(child.type === "text" && !child.value?.trim()) ||
+				child.tagName === "br" ||
+				(child.tagName === "a" &&
+					child.properties?.["data-pilo-file-url"] !== undefined),
+		)
+	) {
+		for (const child of children) {
+			if (child.properties?.["data-pilo-file-url"] !== undefined) {
+				child.properties["data-pilo-file-layout"] = "standalone";
+			}
+		}
+	}
 }
 
 /** After sanitize, preserve file targets for our component before harden blocks them. */

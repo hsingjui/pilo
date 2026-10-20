@@ -11,8 +11,6 @@ export function openHtmlReport(
 		return Promise.reject(new Error(i18n.t("chat.fileLinkWebUnsupported")));
 	if (!project)
 		return Promise.reject(new Error(i18n.t("chat.fileLinkNoProject")));
-	if (project.connection.kind.type !== "local")
-		return Promise.reject(new Error(i18n.t("chat.fileLinkRemoteUnsupported")));
 	return invoke<void>("project_html_report_open", {
 		projectId: project.id,
 		url,
