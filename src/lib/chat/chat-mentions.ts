@@ -31,35 +31,70 @@ export function fileMentionPath(value: string): string | null {
 	return path;
 }
 
+export type ChatMentionPart = {
+	value: string;
+	start: number;
+	mention?: ChatMention;
+};
+
+/** Completed picks stay ordinary @paths, including when embedded in body text. */
+export function readChatMentionParts(
+	value: string,
+	sessions: ReadonlyMap<string, SessionMention>,
+): ChatMentionPart[] {
+	const parts: ChatMentionPart[] = [];
+	// Completed inline references do not require leading whitespace.
+	const pattern = /@"(?:\\.|[^"\\\r\n])*"|@[^\s"]+/g;
+	let offset = 0;
+	for (const match of value.matchAll(pattern)) {
+		const token = match[0];
+		const session = sessions.get(token);
+		const path = session?.path ?? fileMentionPath(token);
+		if (!path) continue;
+		const start = match.index;
+		if (start > offset)
+			parts.push({ value: value.slice(offset, start), start: offset });
+		parts.push({
+			value: token,
+			start,
+			mention: session
+				? { kind: "session", path, session }
+				: { kind: "file", path },
+		});
+		offset = start + token.length;
+	}
+	if (offset < value.length)
+		parts.push({ value: value.slice(offset), start: offset });
+	return parts;
+}
+
 export function readChatMentionDraft(
 	value: string,
 	sessions: ReadonlyMap<string, SessionMention>,
 ) {
-	const lines = value.split("\n");
-	let referenceStart = lines.length;
 	const references: ChatMention[] = [];
 	const seen = new Set<string>();
-	while (referenceStart > 0) {
-		const line = lines[referenceStart - 1];
-		const session = sessions.get(line);
-		const path = session?.path ?? fileMentionPath(line);
-		if (!path) break;
-		references.push(
-			session ? { kind: "session", path, session } : { kind: "file", path },
-		);
-		referenceStart -= 1;
+	const lines: string[] = [];
+	for (const line of value.split("\n")) {
+		const parts = readChatMentionParts(line, sessions);
+		let text = "";
+		let hasReference = false;
+		for (const part of parts) {
+			if (!part.mention) {
+				text += part.value;
+				continue;
+			}
+			hasReference = true;
+			const key = `${part.mention.kind}:${part.mention.path}`;
+			if (!seen.has(key)) {
+				seen.add(key);
+				references.push(part.mention);
+			}
+		}
+		// Existing inline drafts and trailing reference blocks share the same shelf.
+		if (!hasReference || text.trim()) lines.push(text);
 	}
-	// oxlint-disable-next-line unicorn/no-array-reverse -- Reverse a local array; the app targets ES2020.
-	references.reverse();
-	return {
-		references: references.filter((mention) => {
-			const key = `${mention.kind}:${mention.path}`;
-			if (seen.has(key)) return false;
-			seen.add(key);
-			return true;
-		}),
-		text: lines.slice(0, referenceStart).join("\n"),
-	};
+	return { references, text: lines.join("\n") };
 }
 
 export function writeChatMentionDraft(

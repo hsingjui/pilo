@@ -5,6 +5,7 @@ import {
 	fileMentionPath,
 	fileMentionValue,
 	readChatMentionDraft,
+	readChatMentionParts,
 	writeChatMentionDraft,
 	type ChatMention,
 } from "../../src/lib/chat/chat-mentions.ts";
@@ -92,11 +93,10 @@ test("repeated file picks do not produce duplicate chips or reference lines", ()
 	);
 });
 
-test("typing @ queries, old inline mentions and unknown session paths remain literal", () => {
+test("typing @ queries and unknown session paths remain literal", () => {
 	for (const text of [
 		"@",
 		"@src/index.ts",
-		'Please read @"src/index.ts"',
 		"@/sessions/deleted.jsonl",
 		'@"/sessions/deleted session.jsonl"',
 		'@"~/sessions/deleted.jsonl"',
@@ -121,5 +121,113 @@ test("session-only drafts remain compatible and slash commands keep their prefix
 	assert.equal(
 		createChatSubmission(writeChatMentionDraft([file], "/skill:review")).text,
 		'/skill:review \n@"src/chat composer.tsx"',
+	);
+});
+
+test("inline parts retain mixed reference order, duplicates and UTF-16 offsets", () => {
+	const fileValue = fileMentionValue(file.path);
+	const sessionValue = sessionMentionValue(session.path);
+	const text = `前文😀 ${fileValue} middle ${sessionValue}\n${fileValue} 后文`;
+	const parts = readChatMentionParts(text, sessions);
+	assert.equal(parts.map((part) => part.value).join(""), text);
+	assert.deepEqual(
+		parts.filter((part) => part.mention).map((part) => part.mention),
+		[file, sessionReference, file],
+	);
+	for (const part of parts)
+		assert.equal(
+			text.slice(part.start, part.start + part.value.length),
+			part.value,
+		);
+	assert.equal(parts[1].start, "前文😀 ".length);
+});
+
+test("quoted file chips remain inline when adjacent spaces are deleted", () => {
+	const value = fileMentionValue(file.path);
+	const parts = readChatMentionParts(`前文${value}${value}后文`, sessions);
+	assert.deepEqual(
+		parts.map((part) => part.mention?.kind ?? "text"),
+		["text", "file", "file", "text"],
+	);
+	assert.equal(
+		parts.map((part) => part.value).join(""),
+		`前文${value}${value}后文`,
+	);
+});
+
+test("inline parser keeps incomplete queries and unknown sessions as text", () => {
+	for (const text of [
+		"@",
+		"prefix @src/index.ts",
+		'@"unfinished',
+		'@""',
+		"@/sessions/deleted.jsonl",
+		'@"/sessions/deleted session.jsonl"',
+		'@"~/unknown"',
+	]) {
+		assert.deepEqual(readChatMentionParts(text, sessions), [
+			{ value: text, start: 0 },
+		]);
+	}
+	assert.deepEqual(readChatMentionParts("", sessions), []);
+});
+
+test("inline parser prioritizes known sessions over file-shaped paths", () => {
+	const relativeSession = { ...session, path: "previous session.jsonl" };
+	const catalog = new Map([
+		[sessionMentionValue(relativeSession.path), relativeSession],
+	]);
+	const [part] = readChatMentionParts(
+		sessionMentionValue(relativeSession.path),
+		catalog,
+	);
+	assert.equal(part.mention?.kind, "session");
+	assert.equal(
+		readChatMentionParts(
+			`before ${sessionMentionValue(session.path)} after`,
+			sessions,
+		)[1].mention?.kind,
+		"session",
+	);
+});
+
+test("inline uploads preserve Unix, Windows and UNC attachment paths", () => {
+	for (const path of [
+		"/project/attachments/AAAAAAAAAAAAAAAAAAAAAA/report.txt",
+		String.raw`C:\project\attachments\AAAAAAAAAAAAAAAAAAAAAA\report.txt`,
+		String.raw`\\server\project\attachments\AAAAAAAAAAAAAAAAAAAAAA\report.txt`,
+	]) {
+		const value = fileMentionValue(path);
+		const parts = readChatMentionParts(`before ${value} after`, sessions);
+		assert.deepEqual(parts[1].mention, { kind: "file", path });
+	}
+});
+
+test("inline references survive slash-command submission without being moved", () => {
+	const text = `/skill:review check ${fileMentionValue(file.path)} before replying`;
+	assert.equal(createChatSubmission(text).text, text);
+});
+
+test("reference shelf extracts completed inline drafts without moving body text to the front", () => {
+	const value = `前文 ${fileMentionValue(file.path)} 后文\n${sessionMentionValue(session.path)}\n尾行`;
+	assert.deepEqual(readChatMentionDraft(value, sessions), {
+		references: [file, sessionReference],
+		text: "前文  后文\n尾行",
+	});
+});
+
+test("reference shelf deduplicates mixed inline and trailing references", () => {
+	const value = `before ${fileMentionValue(file.path)} after\n${fileMentionValue(file.path)}\n${sessionMentionValue(session.path)}`;
+	const draft = readChatMentionDraft(value, sessions);
+	assert.deepEqual(draft, {
+		references: [file, sessionReference],
+		text: "before  after",
+	});
+	assert.deepEqual(
+		readChatMentionDraft(
+			writeChatMentionDraft(draft.references, draft.text),
+			sessions,
+		),
+		draft,
 	);
 });

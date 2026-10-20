@@ -491,99 +491,92 @@ actions go there and appear only for persisted sessions (`session && !session.te
   type; same-connection cross-project references are allowed. The lazy-loading
   `ChatPageLoadingFallback` also needs the session connection scope so its enabled
   composer and first-message preview resolve the same references as `ChatPage`.
-- `readChatMentionDraft` / `writeChatMentionDraft` in `src/lib/chat/chat-mentions.ts`
-  keep mixed file/session references as trailing ordinary `@path` lines in the
-  draft/submission string, preserving insertion order and deduplicating picks.
-  Session values still use `sessionMentionValue` and resolve against the scoped
-  catalog. Do not read or inject conversation content, add a second conversation
-  store, or serialize titles instead of paths.
-- Completed project file picks use quoted project-relative paths, e.g.
-  `@"src/index.ts"`, including paths without spaces. Uploaded files instead use
-  the server-returned absolute `.../attachments/<canonical-16-byte-base64url-id>/<name>`
-  path in the project's environment, including Windows/UNC paths. The shared
-  `fileMentionPath` parser recognizes both forms so chips, input history, cleanup,
-  search and sent messages agree. This distinguishes a chip from a still-editable
-  unquoted `@src` query without separate draft metadata. Empty/incomplete quotes,
-  unrelated absolute paths, tilde paths and old inline mentions remain text.
-  Resolve known sessions first so a quoted session path never becomes a file.
-- Keep the native textarea for body editing. `FileMentionBadge` and
-  `SessionMentionBadge` share `PathMentionBadge`: compact icon + name chips in
-  the same wrapping row before the textarea, not a separate attachment row.
-  Both sent/history user messages and Skill instructions use the default badge
-  with a tappable path popover. Unknown/deleted absolute session paths remain
-  visible as ordinary text.
-- `tests/unit/chat-mentions.test.ts` covers mixed-reference round-trips, plain-text
-  query preservation, deletion and slash-command submissions. Run the browser
-  fixture `/tests/browser/chat-mentions.html` through Vite for desktop + 320px WebUI
-  selection, path popovers, keyboard/mobile Backspace and sent-message rendering.
-  Its search regression also checks file-chip/body same-name hits in visible
-  order, next/previous navigation, session titles and compact/expanded Skill
-  instructions; hidden paths and controls must not count as matches. Pure search
-  projections are covered by `tests/unit/chat-message-search.test.ts`. Require
-  `document.body.dataset.testStatus === "passed"`.
-- Composer chips use `--pilo-composer-line-height`
-  (`max(1.75rem, readingFontSize × 1.6px)`) for their geometry. The textarea uses
-  `leading-[normal]` (native font leading, **not** Tailwind's `leading-normal`
-  multiplier of 1.5) and symmetric block padding of
-  `max(0px, (var(--pilo-composer-line-height) - 1lh) / 2)` to align its first line
-  without inflating its text line-height. WebKit paints a trailing blank-line
-  caret at the full line-height, so do not restore chip-height leading on the
-  textarea. Reducing the multiplier only reduces the jump; it does not remove
-  the mismatch between font-height text carets and line-height blank carets.
-  The browser fixture requires native leading, checks finite autosizing and
-  covers trailing/repeated newlines. Verify actual caret painting in WebKit:
-  Chromium/style assertions alone missed this bug. Native leading removes the
-  inflated caret, though WebKit can retain a 1 CSS px native difference between
-  text and blank-line carets; do not claim pixel equality from a style assertion.
-  Align chips by **text baseline**, not
-  by box center: the compact chip label carries
-  `leading-(--pilo-composer-line-height)`, the chip's flex containers use
-  `items-baseline` (the icon stays `self-center`), and the wrapping row uses
-  `items-baseline`. Centering the chip box instead leaves the smaller `text-xs`
-  chip text ~1.5px above the reading-size body baseline because the font sizes
-  differ. Fixed `h-7`/`items-center` chips beside independently scaled reading
-  text drift vertically. Mobile keeps its 16px font-size floor but must not
-  override the chip line-height or re-couple textarea leading to it; retain the
-  separate coarse-pointer 44px hit target. The browser fixture compares the chip label baseline with the first
-  text-line baseline for empty, single-character and multiline drafts. Measure
-  that baseline with a zero-height inline DOM marker and allow at most 1 CSS px
-  of native rounding; canvas font-bound estimates can falsely fail with native
-  leading and independently scaled UI/reading fonts. Check independent UI/reading
-  sizes and both pointer modes.
-- Textarea autosizing keeps a whole-pixel minimum from `rows × lineHeight` plus
-  padding/borders for both empty and non-empty text. Computed `line-height: normal`
-  is not numeric: measure the native row box with `height: auto` and no CSS
-  minimum on a hidden, absolutely positioned textarea clone in the same parent.
-  Never remove the live textarea's minimum to measure native leading: its
-  temporary shrink expands the adjacent chat viewport, and Chromium clamps
-  `scrollTop` before the size is restored, producing a few-pixel rebound on
-  streaming renders even though final DOM heights are unchanged. Keep the probe
-  out of layout and the accessibility tree, remove duplicate IDs/names, and
-  remove it immediately after measurement. Measure content `scrollHeight` on the
-  same clone at the live textarea's computed width, with vertical overflow hidden
-  and the placeholder cleared. Set the clone's value only after measuring native
-  row height. Never reset the live textarea to `height: auto`, even with its CSS
-  minimum preserved: a tall draft still temporarily collapses, clamps bottom
-  scroll offsets, and can flicker on every keystroke. Only write the final height
-  and overflow to the live textarea. Do not replace native leading with
-  a multiplier just to make `parseFloat` work. Integer `scrollHeight` must not
-  shrink the minimum on the first character and shift the inline chips. When
-  verification is authorized, replay overflowing text in plain and virtualized
-  chats at UI sizes 14/15 and check scroll offsets, not only settled heights.
-- With a collapsed caret at body offset 0, Backspace removes the last reference
-  atomically; elsewhere, text deletion and selection stay native. Handle mobile
-  `beforeinput` / `deleteContentBackward` as well as keyboard Backspace, without
-  intercepting IME composition or allowing changes while the composer is disabled.
-- Composer suggestion/caret operations use visible body text; submission creation,
-  input-history cursor validation, queues and recovery must use the full string.
-  Append reference lines after the body so slash commands retain their prefix.
-  `createChatSubmission` in `src/lib/chat/chat-submission.ts` ensures an ASCII space
-  separates a slash-command name from following text: Pi splits Skill/extension
-  names on a literal space, not arbitrary whitespace. Submit `/skill:foo` plus a
-  reference as `/skill:foo \n@path`, not `/skill:foo\n@path`. Do this only at
-  submission creation, never during draft editing (which would move the caret).
-  Preserve existing spaces, bare commands and ordinary messages; keep multiline
-  instructions intact and add the command separator before their first newline.
+- `readChatMentionParts(value, sessions)` in `src/lib/chat/chat-mentions.ts`
+  projects completed file/session references and text in source order, with
+  UTF-16 offsets, for sent/history rendering, search and upload cleanup.
+- The composer uses `readChatMentionDraft` to collect completed references into
+  a deduplicated shelf **above** the native textarea, separate from the body.
+  Recover both older trailing reference blocks and inline drafts. Preserve
+  non-reference body text, blank lines and incomplete queries; omit lines that
+  contain only references. New edits serialize through `writeChatMentionDraft`
+  as body text followed by plain-text reference lines. Pi JSONL, queues, drafts
+  and recovery never store HTML, chip labels or editor IDs.
+- Completed files use quoted relative paths, e.g. `@"src/index.ts"`, including
+  paths without spaces. Uploads use the environment's server-returned absolute
+  `.../attachments/<canonical-16-byte-base64url-id>/<name>` path, including Windows
+  and UNC paths. Reuse `fileMentionPath` validation. Resolve known sessions against
+  the exact connection scope first; unknown/deleted absolute sessions, incomplete
+  quotes, unquoted file queries, tilde paths and unrelated absolute files stay text.
+- Keep the shared desktop/WebUI composer body as a native `Textarea`, not a
+  `contentEditable` editor. File/session selections remove only the active query,
+  add to the shelf and restore the body caret at the query position. Slash commands
+  still insert into the body. Never prepend references to the textarea's value or
+  mix the shelf and textarea into the same wrapping row. `submissionText` and
+  input-history validation use the full source; suggestions and caret offsets
+  use only the projected body. Restore full drafts via `onHistoryValue`.
+- Reuse `FileMentionBadge` / `SessionMentionBadge` for path popovers and previews.
+  Each shelf reference has a separate, named remove button; do not nest interactive
+  controls. Removal preserves body text and focuses the textarea. Body-start
+  Backspace and cancelable mobile `beforeinput` can remove the last reference,
+  but not while disabled, sending or composing. Attachment drag/drop availability
+  must read the native `.disabled` property from `[data-chat-composer-input]`,
+  including the temporary `sendingNow` lock; the textarea does not use
+  `aria-disabled`. Rebind native listeners when the
+  keyed attachment/history scope changes. Use a layout effect for this native
+  listener: a remounted textarea must handle its first `beforeinput` immediately,
+  not wait for a passive effect. Deduplicate repeated picks by kind/path.
+- Keep shelf labels compact (`max(1.25rem, readingFontSize × 1.25px)`), with their
+  own UI-sized text rather than reading-text baseline coupling. Cap previews at
+  `12rem`, allow shrinking/truncation, wrap the shelf with a bounded scroll area,
+  and keep coarse-pointer preview/removal targets at least 44px. The body retains
+  its mobile 16px font floor and native `line-height: normal`; adding references
+  must not increase the textarea's own height or caret line-height. The whole
+  composer can grow to accommodate the explicitly separate shelf.
+- Images and file/session references share **one** wrapping attachment tray above
+  the textarea, not separate independently growing image and reference sections.
+  Composer-only thumbnails use the existing preview component at `2.75rem`
+  (44px at default scale); message thumbnails retain their usual size. Pad image trays so removal buttons and
+  focus rings are not clipped. Use `p-1` and `mb-1`, with the desktop removal
+  badge offset only `0.125rem`; touch image removal sits beside the preview
+  with its own 44px target rather than covering the preview. The tray's single
+  maximum is `min(8rem,25dvh)`;
+  overflowing items scroll inside it, and keyboard focus reveals hidden controls.
+  Never put the body or toolbar inside that scrolling area. During autosizing,
+  further cap the tray to actual panel space after reserving the body minimum,
+  toolbar, notices and bottom padding/safe area, then remeasure the textarea
+  budget. In short desktop panes or with a mobile keyboard, this shared budget
+  must keep send controls visible instead of just clamping the body at its minimum.
+  Verify eight images plus file/session references and long text, panel shrink /
+  grow, independent removal, and mixed submission; do not change upload ownership.
+- Native textarea autosizing uses a hidden, inert/aria-hidden, absolutely
+  positioned clone at the live width. Measure native leading and content without
+  changing the live textarea's height/minimum, reserve a whole-pixel one-row
+  minimum (`rows={1}`) and twelve-row/panel-space maximum, and account for shelf,
+  toolbar, attachments and safe-area space. The body uses `min-h-0` rather than retaining
+  the legacy `3rem` floor in addition to its measured row. Coarse-pointer inputs
+  retain `min-h-11` for a 44px touch target; multiline text grows naturally.
+  Observe surrounding layout changes; disconnect observers and cancel pending frames on cleanup.
+  Never collapse the live textarea: that clamps chat scroll offsets mid-render.
+- `chat-file-lifecycle.ts` scans the same reference parts, including incoming inline
+  drafts. Removing a pending upload from the shelf cleans up that upload; ordinary
+  body edits, repeated picks and mounting/recovering drafts do not delete it.
+  `retainChatFiles` transfers submission ownership before async sends or queues.
+  Do not adopt existing/history files into pending cleanup ownership.
+- Sent/history messages and Skill instructions still render references inline
+  in source order; the composer shelf is not a new message rendering contract.
+  Search uses visible file names/session titles, not hidden paths or controls.
+  Slash normalization remains in `createChatSubmission` so `/skill:foo` followed
+  by reference lines receives the ASCII-space separator required by Pi.
+- `tests/browser/chat-mentions.html` covers desktop and 320px WebUI: shelf geometry,
+  fixed preview width, middle-of-body completion/caret continuity, deduplication,
+  independent removal, disabled and mobile Backspace behavior, old inline draft
+  recovery, native autosizing, composition submission guards, upload ownership,
+  keyed remounts, path popovers, sending and search navigation. Add `?remote=1`
+  for remote-root styling; emulate coarse-pointer touch as well as narrow width.
+  A temporary same-origin iframe in Windows development WebView2 avoids changing
+  the user's conversation. `?manual=1` skips the automated scenario for screenshots.
+  Synthetic composition events are not proof of physical IME or iOS keyboard
+  behavior, and computed native leading is not proof of identical WebKit carets.
 - A new `@` starts on the file category. Tab cycles categories without entering
   results; typing or Down enters results, where Tab/Enter completes. Up from the
   first result returns to categories. Empty results must not swallow submission

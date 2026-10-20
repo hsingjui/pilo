@@ -1,7 +1,7 @@
 import {
 	useCallback,
-	useEffect,
 	useLayoutEffect,
+	useEffect,
 	useMemo,
 	useId,
 	useRef,
@@ -28,8 +28,8 @@ import {
 	type ChatImageAttachment,
 	type ChatSubmission,
 } from "@/lib/chat/chat-submission";
-import { fileMentionPath } from "@/lib/chat/chat-mentions";
 import { retainChatFiles } from "@/lib/chat/chat-file-lifecycle";
+import { fileMentionPath } from "@/lib/chat/chat-mentions";
 import { isImeComposingKeyboardEvent } from "@/lib/ime";
 import { type PiModel, runtimeErrorMessage } from "@/lib/api/pi-runtime";
 import { usePreferences } from "@/lib/preferences-provider";
@@ -99,7 +99,8 @@ export function useChatComposerInput({
 	const { sendMessageShortcut, keyboardShortcuts } = usePreferences();
 	const isTouch = useIsTouchDevice();
 	const newlineOnEnter = !desktopShortcuts && isTouch;
-	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const editorRef = useRef<HTMLTextAreaElement>(null);
+	const surroundingHeightRef = useRef<number | null>(null);
 	const suggestionMenuId = useId();
 	const [mentionNavigation, setMentionNavigation] = useState<{
 		historyKey: ChatComposerInputOptions["historyKey"];
@@ -107,7 +108,6 @@ export function useChatComposerInput({
 		tab: MentionTab;
 		categoryFocused: boolean;
 	} | null>(null);
-	const surroundingHeightRef = useRef<number | null>(null);
 	const [sendMode, setSendModeState] =
 		useState<ComposerSendMode>(readComposerSendMode);
 	const [sendingNow, setSendingNow] = useState(false);
@@ -139,7 +139,7 @@ export function useChatComposerInput({
 
 	useKeyboardShortcut(
 		keyboardShortcuts["focus-composer"],
-		() => textareaRef.current?.focus(),
+		() => editorRef.current?.focus(),
 		{ enabled: !disabled && desktopShortcuts },
 	);
 
@@ -148,7 +148,7 @@ export function useChatComposerInput({
 	const prevDisabledRef = useRef(true);
 	useEffect(() => {
 		if (prevDisabledRef.current && !disabled && desktopShortcuts)
-			textareaRef.current?.focus();
+			editorRef.current?.focus();
 		prevDisabledRef.current = disabled;
 	}, [desktopShortcuts, disabled]);
 
@@ -159,14 +159,14 @@ export function useChatComposerInput({
 		const handleWindowFocus = () => {
 			const activeElement = document.activeElement;
 			if (activeElement && activeElement !== document.body) return;
-			textareaRef.current?.focus();
+			editorRef.current?.focus();
 		};
 		window.addEventListener("focus", handleWindowFocus);
 		return () => window.removeEventListener("focus", handleWindowFocus);
 	}, [desktopShortcuts, disabled]);
 
 	const resizeTextarea = useCallback(() => {
-		const textarea = textareaRef.current;
+		const textarea = editorRef.current;
 		if (!textarea) return;
 		const panel = textarea.closest<HTMLElement>("[data-chat-panel]");
 		const composerRegion = textarea.closest<HTMLElement>(
@@ -213,6 +213,20 @@ export function useChatComposerInput({
 		);
 		let maxHeight = MAX_ROWS * lineHeight + padding + border;
 		if (panel && composerRegion) {
+			const tray = textarea
+				.closest("[data-session-mention-target]")
+				?.querySelector<HTMLElement>("[data-chat-composer-attachments]");
+			if (tray) {
+				// Images and references share the space left after the body minimum and fixed controls.
+				const fixedHeight =
+					composerRegion.getBoundingClientRect().height -
+					textarea.getBoundingClientRect().height -
+					tray.getBoundingClientRect().height;
+				tray.style.setProperty(
+					"--pilo-composer-attachments-max-height",
+					`${Math.max(0, Math.floor(panel.clientHeight - fixedHeight - minHeight))}px`,
+				);
+			}
 			// Reserve the toolbar, attachments, notices and bottom safe-area padding.
 			const surroundingHeight =
 				composerRegion.getBoundingClientRect().height -
@@ -238,7 +252,7 @@ export function useChatComposerInput({
 	});
 
 	useLayoutEffect(() => {
-		const textarea = textareaRef.current;
+		const textarea = editorRef.current;
 		const panel = textarea?.closest<HTMLElement>("[data-chat-panel]");
 		if (!textarea || !panel) return;
 		const composerRegion = textarea.closest<HTMLElement>(
@@ -268,10 +282,21 @@ export function useChatComposerInput({
 		};
 	}, [resizeTextarea]);
 
-	const activeQuery = useMemo(
-		() => activeSuggestionQuery(value, Math.min(caret, value.length)),
-		[value, caret],
-	);
+	const activeQuery = useMemo(() => {
+		const query = activeSuggestionQuery(value, Math.min(caret, value.length));
+		if (query?.trigger === "@") {
+			const token = value.slice(query.start, query.end);
+			if (
+				fileMentionPath(token) !== null ||
+				suggestions.some(
+					(suggestion) =>
+						suggestion.kind === "session" && suggestion.value === token,
+				)
+			)
+				return null;
+		}
+		return query;
+	}, [value, caret, suggestions]);
 	const activeTrigger = activeQuery?.trigger ?? null;
 	const activeSuggestionText = activeQuery?.query ?? "";
 	const activeKey = activeQuery
@@ -334,7 +359,7 @@ export function useChatComposerInput({
 			categoryFocused: true,
 		});
 		setHighlightedIndex(0);
-		textareaRef.current?.focus({ preventScroll: true });
+		editorRef.current?.focus({ preventScroll: true });
 	};
 	const enterCandidates = () => {
 		if (activeQuery?.trigger === "@")
@@ -437,16 +462,14 @@ export function useChatComposerInput({
 		setHighlightedIndex(0);
 		setDismissedQuery(null);
 		requestAnimationFrame(() => {
-			const textarea = textareaRef.current;
-			if (!textarea) return;
-			textarea.focus();
-			textarea.setSelectionRange(nextValue.length, nextValue.length);
+			const editor = editorRef.current;
+			if (!editor) return;
+			editor.focus();
+			editor.setSelectionRange(nextValue.length, nextValue.length);
 		});
 	};
 
-	const handleHistoryNavigation = (
-		event: KeyboardEvent<HTMLTextAreaElement>,
-	) => {
+	const handleHistoryNavigation = (event: KeyboardEvent<HTMLElement>) => {
 		if (
 			(event.key !== "ArrowUp" && event.key !== "ArrowDown") ||
 			event.shiftKey ||
@@ -494,9 +517,10 @@ export function useChatComposerInput({
 	const selectSuggestion = (suggestion: ComposerSuggestion) => {
 		if (!activeQuery) return;
 		const isMention =
-			suggestion.kind === "session" ||
-			(suggestion.kind === "file" &&
-				fileMentionPath(suggestion.value) !== null);
+			!!onMentionSelect &&
+			(suggestion.kind === "session" ||
+				(suggestion.kind === "file" &&
+					fileMentionPath(suggestion.value) !== null));
 		const inserted = isMention ? "" : `${suggestion.value} `;
 		const nextValue = `${value.slice(0, activeQuery.start)}${inserted}${value.slice(activeQuery.end)}`;
 		const nextCaret = activeQuery.start + inserted.length;
@@ -509,14 +533,14 @@ export function useChatComposerInput({
 			`${activeQuery.start}:${activeQuery.trigger}:__selected__`,
 		);
 		requestAnimationFrame(() => {
-			const textarea = textareaRef.current;
-			if (!textarea) return;
-			textarea.focus();
-			textarea.setSelectionRange(nextCaret, nextCaret);
+			const editor = editorRef.current;
+			if (!editor) return;
+			editor.focus();
+			editor.setSelectionRange(nextCaret, nextCaret);
 		});
 	};
 
-	const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+	const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
 		// 排队发送走独立快捷键（默认 Alt+Enter），只在此轮运行时才有意义；
 		// 它不属于“回车发送 / 修饰键发送”偏好，因此在两种偏好下都能用。
 		// 必须排在 newlineOnEnter 之前：触屏 WebUI 把 Enter 设成换行，
@@ -630,9 +654,9 @@ export function useChatComposerInput({
 	};
 
 	const syncCaret = () => {
-		const textarea = textareaRef.current;
-		if (!textarea) return;
-		setCaret(textarea.selectionStart ?? value.length);
+		const editor = editorRef.current;
+		if (!editor) return;
+		setCaret(editor.selectionStart ?? value.length);
 	};
 
 	return {
@@ -640,7 +664,7 @@ export function useChatComposerInput({
 		setSendMode,
 		sendingNow,
 		canSubmit: Boolean(running ? runningSubmit : onSubmit),
-		textareaRef,
+		editorRef,
 		newlineOnEnter,
 		showFocusHint,
 		suggestionMenuOpen,

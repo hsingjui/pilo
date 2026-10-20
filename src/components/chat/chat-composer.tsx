@@ -15,10 +15,12 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { LoaderCircle, PencilSparkles, Plus, X } from "lucide-react";
 
-import { SessionMentionBadge } from "@/components/chat/session-mention-badge";
 import { FileMentionBadge } from "@/components/chat/path-mention-badge";
+import { SessionMentionBadge } from "@/components/chat/session-mention-badge";
+import { discardRemovedChatFiles } from "@/lib/chat/chat-file-lifecycle";
 import {
 	fileMentionPath,
+	fileMentionName,
 	readChatMentionDraft,
 	writeChatMentionDraft,
 } from "@/lib/chat/chat-mentions";
@@ -31,7 +33,6 @@ import {
 	type SessionMention,
 } from "@/lib/chat/session-mentions";
 import { ChatImageThumbnail } from "@/components/chat/chat-image-viewer";
-import { discardRemovedChatFiles } from "@/lib/chat/chat-file-lifecycle";
 
 import { formatKeyboardShortcut } from "@/lib/keyboard-shortcuts";
 import {
@@ -50,11 +51,11 @@ import {
 import {
 	Button,
 	NoticeCard,
-	Textarea,
 	Spinner,
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
+	Textarea,
 } from "@/ui";
 import { ComposerActions } from "@/components/chat/chat-composer-actions";
 import { ComposerContextUsage } from "@/components/chat/composer-context-usage";
@@ -216,27 +217,6 @@ export function ChatComposer({
 		],
 		[suggestions, mentions],
 	);
-	const addSessionMention = useCallback(
-		(mention: SessionMention, text = mentionDraft.text) => {
-			// Recheck the current scope at insertion, including drops after a project switch.
-			if (
-				mention.connectionId !== connectionId ||
-				!byValue.has(sessionMentionValue(mention.path))
-			)
-				return;
-			onNextPromptDismiss?.();
-			changeDraft(
-				writeChatMentionDraft(
-					[
-						...mentionDraft.references,
-						{ kind: "session", path: mention.path, session: mention },
-					],
-					text,
-				),
-			);
-		},
-		[mentionDraft, connectionId, byValue, changeDraft, onNextPromptDismiss],
-	);
 
 	const {
 		keyboardShortcuts,
@@ -277,7 +257,7 @@ export function ChatComposer({
 		setSendMode,
 		sendingNow,
 		canSubmit,
-		textareaRef,
+		editorRef,
 		newlineOnEnter,
 		showFocusHint,
 		suggestionMenuOpen,
@@ -302,20 +282,19 @@ export function ChatComposer({
 		onChange: (text) =>
 			changeDraft(writeChatMentionDraft(mentionDraft.references, text)),
 		onMentionSelect: (suggestion, text) => {
-			if (suggestion.kind === "session") {
-				const mention = byValue.get(suggestion.value);
-				if (mention) addSessionMention(mention, text);
-				return;
-			}
+			const session = byValue.get(suggestion.value);
 			const path = fileMentionPath(suggestion.value);
-			if (!path) return;
-			onNextPromptDismiss?.();
-			changeDraft(
-				writeChatMentionDraft(
-					[...mentionDraft.references, { kind: "file", path }],
-					text,
-				),
-			);
+			if (suggestion.kind === "session" && session)
+				addSessionMention(session, text);
+			else if (suggestion.kind === "file" && path) {
+				onNextPromptDismiss?.();
+				changeDraft(
+					writeChatMentionDraft(
+						[...mentionDraft.references, { kind: "file", path }],
+						text,
+					),
+				);
+			}
 		},
 		attachments,
 		selectedModel,
@@ -332,6 +311,27 @@ export function ChatComposer({
 		historyKey,
 		desktopShortcuts,
 	});
+
+	const addSessionMention = useCallback(
+		(mention: SessionMention, text = mentionDraft.text) => {
+			if (
+				mention.connectionId !== connectionId ||
+				!byValue.has(sessionMentionValue(mention.path))
+			)
+				return;
+			onNextPromptDismiss?.();
+			changeDraft(
+				writeChatMentionDraft(
+					[
+						...mentionDraft.references,
+						{ kind: "session", path: mention.path, session: mention },
+					],
+					text,
+				),
+			);
+		},
+		[connectionId, byValue, onNextPromptDismiss, mentionDraft, changeDraft],
+	);
 
 	const removeLastMention = useCallback(
 		(textarea: HTMLTextAreaElement) => {
@@ -355,18 +355,23 @@ export function ChatComposer({
 		[disabled, sendingNow, mentionDraft, changeDraft, onNextPromptDismiss],
 	);
 
-	useEffect(() => {
-		const textarea = textareaRef.current;
+	useLayoutEffect(() => {
+		const textarea = editorRef.current;
 		if (!textarea) return;
-		// Mobile keyboards can emit beforeinput without a Backspace keydown.
+		// Mobile keyboards may emit only beforeinput; bind before paint so remounts cannot miss it.
 		const handleBeforeInput = (event: InputEvent) => {
-			if (event.inputType !== "deleteContentBackward" || event.isComposing)
+			if (
+				event.inputType !== "deleteContentBackward" ||
+				event.isComposing ||
+				!event.cancelable
+			)
 				return;
 			if (removeLastMention(textarea)) event.preventDefault();
 		};
 		textarea.addEventListener("beforeinput", handleBeforeInput);
 		return () => textarea.removeEventListener("beforeinput", handleBeforeInput);
-	}, [textareaRef, removeLastMention]);
+		// oxlint-disable-next-line react/exhaustive-effect-dependencies -- Scope changes remount the keyed textarea, so its native listener must be rebound.
+	}, [editorRef, removeLastMention, attachmentScopeKey, historyKey]);
 
 	useEffect(() => {
 		const element = rootRef.current;
@@ -383,7 +388,7 @@ export function ChatComposer({
 			connectionId,
 			insert: (mention) => {
 				addSessionMention(mention);
-				textareaRef.current?.focus({ preventScroll: true });
+				editorRef.current?.focus({ preventScroll: true });
 			},
 		});
 	}, [
@@ -393,7 +398,7 @@ export function ChatComposer({
 		sendingNow,
 		processing,
 		addSessionMention,
-		textareaRef,
+		editorRef,
 	]);
 
 	const ghostText =
@@ -409,9 +414,15 @@ export function ChatComposer({
 	const adoptNextPrompt = useCallback(() => {
 		if (!ghostText) return;
 		onNextPromptDismiss?.();
-		changeDraft(ghostText);
-		textareaRef.current?.focus();
-	}, [ghostText, onNextPromptDismiss, changeDraft, textareaRef]);
+		changeDraft(writeChatMentionDraft(mentionDraft.references, ghostText));
+		editorRef.current?.focus();
+	}, [
+		ghostText,
+		onNextPromptDismiss,
+		editorRef,
+		changeDraft,
+		mentionDraft.references,
+	]);
 
 	// 草稿优化：只在草稿未被改动时回填，避免覆盖用户在等待期间的新输入。
 	const [enhancing, setEnhancing] = useState(false);
@@ -466,7 +477,7 @@ export function ChatComposer({
 		} finally {
 			enhancingRef.current = false;
 			if (draftSnapshotRef.current) setEnhancing(false);
-			if (isCurrent()) textareaRef.current?.focus();
+			if (isCurrent()) editorRef.current?.focus();
 		}
 	}
 
@@ -558,78 +569,115 @@ export function ChatComposer({
 			) : null}
 
 			<ChatComposerSurface muted={muted}>
-				{attachments.length > 0 ? (
-					<div className="flex flex-wrap gap-1.5 px-1 pb-1">
-						{attachments.map((attachment) => (
-							<div key={attachment.id} className="relative">
-								<ChatImageThumbnail
-									image={{
-										id: attachment.id,
-										name: attachment.name,
-										mimeType: attachment.mimeType,
-										size: attachment.size,
-										source: "local",
-									}}
-								/>
-								<button
-									type="button"
-									disabled={disabled || sendingNow || processing}
-									aria-label={t("chat.removeAttachment", {
-										name: attachment.name,
-									})}
-									className={cn(
-										"absolute -right-1.5 -top-1.5 z-10 inline-flex size-5 items-center justify-center rounded-full",
-										"border border-border/70 bg-background text-muted-foreground shadow-sm transition-colors",
-										"hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-										(disabled || sendingNow || processing) && "opacity-60",
-									)}
-									onClick={() =>
-										updateImages(
-											attachments.filter((item) => item.id !== attachment.id),
-										)
-									}
-								>
-									<X className="size-3" />
-								</button>
-							</div>
-						))}
-					</div>
-				) : null}
-
 				<div
 					className="relative min-w-0"
 					style={
 						{
-							"--pilo-composer-line-height": `max(1.75rem, ${readingFontSize * 1.6}px)`,
+							"--pilo-composer-line-height": `max(1.25rem, ${readingFontSize * 1.25}px)`,
 						} as CSSProperties
 					}
 				>
-					<div className="flex max-h-[min(24rem,40dvh)] min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-1 overflow-y-auto overscroll-contain px-1">
-						{mentionDraft.references.map((mention) =>
-							mention.kind === "session" ? (
-								<SessionMentionBadge
-									key={`session:${mention.path}`}
-									mention={mention.session}
-									compact
-								/>
-							) : (
-								<FileMentionBadge
-									key={`file:${mention.path}`}
-									path={mention.path}
-									compact
-								/>
-							),
-						)}
+					{attachments.length > 0 || mentionDraft.references.length > 0 ? (
+						<div
+							data-chat-composer-attachments=""
+							data-chat-composer-references=""
+							className={cn(
+								"mb-1 flex max-h-[min(8rem,25dvh,var(--pilo-composer-attachments-max-height,8rem))] min-w-0 flex-wrap items-center gap-1.5 overflow-y-auto overscroll-contain",
+								attachments.length > 0 ? "p-1" : "px-1",
+							)}
+						>
+							{attachments.map((attachment) => (
+								<div
+									key={attachment.id}
+									data-chat-composer-image=""
+									className="relative inline-flex shrink-0 items-center"
+								>
+									<ChatImageThumbnail
+										className="size-11"
+										image={{
+											id: attachment.id,
+											name: attachment.name,
+											mimeType: attachment.mimeType,
+											size: attachment.size,
+											source: "local",
+										}}
+									/>
+									<button
+										type="button"
+										disabled={disabled || sendingNow || processing}
+										aria-label={t("chat.removeAttachment", {
+											name: attachment.name,
+										})}
+										className={cn(
+											"absolute -right-0.5 -top-0.5 z-10 inline-flex size-5 items-center justify-center rounded-full pointer-coarse:static pointer-coarse:min-h-11 pointer-coarse:min-w-11",
+											"border border-border/70 bg-background text-muted-foreground shadow-sm transition-colors pointer-coarse:border-0 pointer-coarse:bg-transparent pointer-coarse:shadow-none",
+											"hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+											(disabled || sendingNow || processing) && "opacity-60",
+										)}
+										onClick={() =>
+											updateImages(
+												attachments.filter((item) => item.id !== attachment.id),
+											)
+										}
+									>
+										<X className="size-3" />
+									</button>
+								</div>
+							))}
+							{mentionDraft.references.map((mention, index) => (
+								<span
+									key={`${mention.kind}:${mention.path}`}
+									data-chat-composer-reference=""
+									className="inline-flex min-w-0 max-w-full items-center gap-0.5"
+								>
+									{mention.kind === "session" ? (
+										<SessionMentionBadge mention={mention.session} compact />
+									) : (
+										<FileMentionBadge path={mention.path} compact />
+									)}
+									<button
+										type="button"
+										disabled={disabled || sendingNow}
+										className="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+										aria-label={
+											mention.kind === "session"
+												? t("chat.removeSessionMention", {
+														title: mention.session.title,
+													})
+												: t("chat.removeAttachment", {
+														name: fileMentionName(mention.path),
+													})
+										}
+										onClick={() => {
+											onNextPromptDismiss?.();
+											changeDraft(
+												writeChatMentionDraft(
+													mentionDraft.references.filter((_, i) => i !== index),
+													mentionDraft.text,
+												),
+											);
+											editorRef.current?.focus({ preventScroll: true });
+										}}
+									>
+										<X className="size-3" aria-hidden="true" />
+									</button>
+								</span>
+							))}
+						</div>
+					) : null}
+					<div className="relative min-w-0">
 						<Textarea
 							data-chat-composer-input=""
-							ref={textareaRef}
+							key={attachmentScopeKey ?? historyKey}
+							ref={editorRef}
 							enterKeyHint={
 								!newlineOnEnter && sendMessageShortcut === "enter"
 									? "send"
 									: "enter"
 							}
 							value={mentionDraft.text}
-							// oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- A multiline native textarea needs combobox semantics for the shared suggestion list.
+							rows={1}
+							// oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Native multiline input with a shared suggestion list.
 							role="combobox"
 							aria-autocomplete="list"
 							aria-expanded={suggestionMenuOpen}
@@ -643,10 +691,7 @@ export function ChatComposer({
 							}
 							onChange={(event) => {
 								onNextPromptDismiss?.();
-								onFieldChange(
-									event.target.value,
-									event.target.selectionStart ?? event.target.value.length,
-								);
+								onFieldChange(event.target.value, event.target.selectionStart);
 							}}
 							onSelect={syncCaret}
 							onClick={syncCaret}
@@ -698,7 +743,6 @@ export function ChatComposer({
 								handlePaste(event);
 							}}
 							disabled={disabled || sendingNow}
-							rows={2}
 							style={
 								{
 									"--pilo-reading-font-size": `${readingFontSize}px`,
@@ -706,60 +750,55 @@ export function ChatComposer({
 								} as CSSProperties
 							}
 							aria-label={composerPlaceholder}
-							placeholder={
-								ghostText ||
-								(mentionDraft.references.length === 0
-									? composerPlaceholder
-									: undefined)
-							}
+							placeholder={ghostText || composerPlaceholder}
 							className={cn(
 								CHAT_COMPOSER_TEXTAREA_CLASS_NAME,
-								"w-auto min-w-0 flex-1 basis-32 px-0",
+								"w-full min-h-0 min-w-0 pointer-coarse:min-h-11",
 								ghostText ? "pr-20" : showFocusHint && "pr-16",
 							)}
 						/>
-					</div>
 
-					<div className="pointer-events-none absolute end-0 top-0 z-10 flex h-(--pilo-composer-line-height) items-center">
-						{ghostText ? (
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								onClick={adoptNextPrompt}
-								className="pointer-events-auto h-7 px-2 text-xs text-muted-foreground pointer-coarse:min-h-11"
-								aria-label={t("chat.adoptNextPrompt", { text: ghostText })}
-								aria-keyshortcuts="Tab"
-							>
-								<span className="flex items-center gap-1.5 pointer-coarse:hidden">
-									<span aria-hidden="true">→</span>
-									<kbd className="rounded border border-border/70 bg-muted/50 px-1 py-px font-mono text-2xs">
-										Tab
-									</kbd>
-								</span>
-								<span className="hidden pointer-coarse:inline">
-									{t("chat.acceptNextPrompt")}
-								</span>
-							</Button>
-						) : null}
-
-						{showFocusHint && !ghostText ? (
-							<div
-								className="flex items-center gap-0.5 font-mono text-2xs text-muted-foreground opacity-70 transition-opacity group-focus-within:opacity-0"
-								aria-hidden="true"
-							>
-								{formatKeyboardShortcut(
-									keyboardShortcuts["focus-composer"],
-								).map((label, index) => (
-									<span key={label} className="flex items-center gap-0.5">
-										{index > 0 ? <span>+</span> : null}
-										<kbd className="rounded border border-border/70 bg-muted/50 px-1 py-px">
-											{label}
+						<div className="pointer-events-none absolute end-0 top-0 z-10 flex h-(--pilo-composer-line-height) items-center">
+							{ghostText ? (
+								<Button
+									type="button"
+									variant="ghost"
+									size="sm"
+									onClick={adoptNextPrompt}
+									className="pointer-events-auto h-7 px-2 text-xs text-muted-foreground pointer-coarse:min-h-11"
+									aria-label={t("chat.adoptNextPrompt", { text: ghostText })}
+									aria-keyshortcuts="Tab"
+								>
+									<span className="flex items-center gap-1.5 pointer-coarse:hidden">
+										<span aria-hidden="true">→</span>
+										<kbd className="rounded border border-border/70 bg-muted/50 px-1 py-px font-mono text-2xs">
+											Tab
 										</kbd>
 									</span>
-								))}
-							</div>
-						) : null}
+									<span className="hidden pointer-coarse:inline">
+										{t("chat.acceptNextPrompt")}
+									</span>
+								</Button>
+							) : null}
+
+							{showFocusHint && !ghostText ? (
+								<div
+									className="flex items-center gap-0.5 font-mono text-2xs text-muted-foreground opacity-70 transition-opacity group-focus-within:opacity-0"
+									aria-hidden="true"
+								>
+									{formatKeyboardShortcut(
+										keyboardShortcuts["focus-composer"],
+									).map((label, index) => (
+										<span key={label} className="flex items-center gap-0.5">
+											{index > 0 ? <span>+</span> : null}
+											<kbd className="rounded border border-border/70 bg-muted/50 px-1 py-px">
+												{label}
+											</kbd>
+										</span>
+									))}
+								</div>
+							) : null}
+						</div>
 					</div>
 				</div>
 
@@ -795,7 +834,7 @@ export function ChatComposer({
 								aria-busy={processing}
 								onClick={() => {
 									onNextPromptDismiss?.();
-									textareaRef.current?.blur();
+									editorRef.current?.blur();
 									fileInputRef.current?.click();
 								}}
 							>

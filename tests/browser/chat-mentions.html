@@ -11,7 +11,7 @@
 		<div id="root" style="padding: 16px"></div>
 		<script type="module">
 			import "../../src/index.css";
-			import { createElement as h, useState } from "react";
+			import { createElement as h, useEffect, useState } from "react";
 			import { createRoot } from "react-dom/client";
 			import { ChatComposer } from "../../src/components/chat/chat-composer.tsx";
 			import { UserMessage } from "../../src/components/chat/chat-user-message.tsx";
@@ -25,33 +25,118 @@
 			import { TooltipProvider } from "../../src/ui/tooltip.tsx";
 			import { initializeI18n } from "../../src/i18n/index.ts";
 
+			import { cacheLocalChatImages } from "../../src/lib/chat/chat-image-media.ts";
+			import { registerChatFile } from "../../src/lib/chat/chat-file-lifecycle.ts";
+
+			if (new URLSearchParams(location.search).has("remote"))
+				document.documentElement.dataset.remoteWebui = "";
 			await initializeI18n("en-US");
+			const fixtures = new Map();
+			window.mentionFixtures = fixtures;
 			const path = "src/components/a-very-long-file-name-for-narrow-layout.tsx";
 			const sessionPath = "/sessions/previous.jsonl";
+			function sampleImages(count) {
+				const canvas = document.createElement("canvas");
+				canvas.width = 160;
+				canvas.height = 120;
+				const context = canvas.getContext("2d");
+				return Array.from({ length: count }, (_, index) => {
+					context.fillStyle = index % 2 ? "#dce9dc" : "#dce8f4";
+					context.fillRect(0, 0, 160, 120);
+					context.fillStyle = index % 2 ? "#638a68" : "#6385a5";
+					context.fillRect(12, 12, 136, 18);
+					context.fillRect(12, 40, 60, 66);
+					context.fillStyle = "#ffffff";
+					context.fillRect(82, 40, 66, 66);
+					const data = canvas.toDataURL("image/png").split(",")[1];
+					return {
+						id: `sample-image-${index}`,
+						name: `screenshot-${index + 1}.png`,
+						mimeType: "image/png",
+						size: atob(data).length,
+						data,
+					};
+				});
+			}
+			window.mentionSampleImages = sampleImages;
 			function Fixture({ id, width }) {
 				const [value, setValue] = useState("");
 				const [sent, setSent] = useState(null);
+				const [disabled, setDisabled] = useState(false);
+				const [scope, setScope] = useState(0);
+				const [images, setImages] = useState([]);
+				const [panelHeight, setPanelHeight] = useState(420);
+				useEffect(() => {
+					fixtures.set(id, {
+						setValue,
+						setDisabled,
+						setScope,
+						setPanelHeight,
+						setImages: (next) => {
+							cacheLocalChatImages(next);
+							setImages(next);
+						},
+					});
+					return () => fixtures.delete(id);
+				}, [id]);
 				return h(
 					"section",
 					{ id, style: { width, maxWidth: "100%", marginBottom: 32 } },
 					h("h2", null, id),
 					h(
 						"div",
-						{ "data-chat-panel": "", style: { minHeight: 180 } },
-						h(ChatComposer, {
-							value,
-							onChange: setValue,
-							onSubmit: setSent,
-							suggestions: createFileSuggestions([path], ""),
-							desktopShortcuts: id === "desktop",
-						}),
+						{
+							"data-chat-panel": "",
+							style: {
+								height: panelHeight,
+								display: "flex",
+								flexDirection: "column",
+								justifyContent: "flex-end",
+							},
+						},
+						h(
+							"div",
+							{ "data-chat-composer-region": "", style: { paddingBottom: 16 } },
+							h(ChatComposer, {
+								value,
+								onChange: setValue,
+								images,
+								onImagesChange: setImages,
+								onSubmit: setSent,
+								disabled,
+								attachmentScopeKey: `${id}:${scope}`,
+								historyKey: `${id}:${scope}`,
+								suggestions: createFileSuggestions([path], ""),
+								desktopShortcuts: id === "desktop",
+							}),
+						),
 					),
 					h("pre", { "data-draft": "", hidden: true }, value),
+					h(
+						"pre",
+						{ "data-submitted": "", hidden: true },
+						JSON.stringify(sent),
+					),
 					sent
-						? h(UserMessage, {
-								message: { id, role: "user", text: sent.text },
-								recordRender: false,
-							})
+						? h(
+								"div",
+								{ "data-sent": "" },
+								h(UserMessage, {
+									message: {
+										id,
+										role: "user",
+										text: sent.text,
+										images: sent.images.map(({ id, name, mimeType, size }) => ({
+											id,
+											name,
+											mimeType,
+											size,
+											source: "local",
+										})),
+									},
+									recordRender: false,
+								}),
+							)
 						: null,
 				);
 			}
@@ -136,7 +221,8 @@
 			async function until(check) {
 				const deadline = performance.now() + 10000;
 				while (!check()) {
-					if (performance.now() > deadline) throw new Error("Timed out");
+					if (performance.now() > deadline)
+						throw new Error(`Timed out: ${check}`);
 					await new Promise(requestAnimationFrame);
 				}
 			}
@@ -149,244 +235,486 @@
 				).set.call(element, value);
 				element.dispatchEvent(new Event("input", { bubbles: true }));
 			}
-			try {
-				for (const id of ["desktop", "webui-mobile"]) {
-					await until(() => document.querySelector(`#${id} textarea`));
-					const section = document.getElementById(id);
-					const textarea = section.querySelector("textarea");
-					const fileSelector = 'button[aria-label^="View path for file"]';
-					const sessionSelector = 'button[aria-label^="View path for session"]';
-					input(textarea, "@");
-					await until(() => section.querySelector('[role="option"]'));
-					section.querySelector('[role="option"]').click();
-					await until(() => section.querySelector(fileSelector));
-					assert(textarea.value === "", "File path leaked into body editor");
-					const firstLineBaseline = (element) => {
-						const styles = getComputedStyle(element);
-						const rect = element.getBoundingClientRect();
-						// Measure the browser's actual baseline, not rounded canvas font bounds.
-						const lineBox = document.createElement("span");
-						Object.assign(lineBox.style, {
-							position: "absolute",
-							visibility: "hidden",
-							font: styles.font,
-							whiteSpace: "nowrap",
-						});
-						lineBox.textContent = "H";
-						const marker = document.createElement("span");
-						Object.assign(marker.style, {
-							display: "inline-block",
-							width: "0",
-							height: "0",
-						});
-						lineBox.append(marker);
-						document.body.append(lineBox);
-						const baseline =
-							marker.getBoundingClientRect().top -
-							lineBox.getBoundingClientRect().top;
-						lineBox.remove();
-						return (
-							rect.top +
-							Number.parseFloat(styles.borderTopWidth) +
-							Number.parseFloat(styles.paddingTop) +
-							baseline
-						);
-					};
-					const assertFirstLineAlignment = () => {
-						const chip = section.querySelector(fileSelector);
-						assert(
-							Math.abs(
-								firstLineBaseline(chip.querySelector(".truncate")) -
-									firstLineBaseline(textarea),
-							) <= 1,
-							`${id}: file chip text is not baseline-aligned with the first text line`,
-						);
-						assert(
-							!matchMedia("(pointer: coarse)").matches ||
-								chip.getBoundingClientRect().height >= 44,
-							"Compact chip lost its touch target",
-						);
-					};
-					assertFirstLineAlignment();
-					const emptyHeight = textarea.getBoundingClientRect().height;
-					// A numeric multiplier still makes WebKit stretch the blank-line caret.
-					assert(
-						getComputedStyle(textarea).lineHeight === "normal",
-						`${id}: textarea must use native font leading`,
-					);
-					for (const text of [
-						"字",
-						"字\n",
-						"字\n\n",
-						"后续文字 hello\n第二行\nThird line",
-					]) {
-						input(textarea, text);
-						await until(() =>
-							section
-								.querySelector("[data-draft]")
-								.textContent.startsWith(text),
-						);
-						assertFirstLineAlignment();
-						assert(
-							Number.isFinite(Number.parseFloat(textarea.style.height)) &&
-								textarea.getBoundingClientRect().height >= emptyHeight &&
-								textarea.scrollHeight <= textarea.clientHeight + 1,
-							`${id}: native line-height broke multiline autosizing`,
-						);
-						if (text === "字") {
-							assert(
-								textarea.getBoundingClientRect().height === emptyHeight,
-								"First character shifted the composer height",
+			const frame = () => new Promise(requestAnimationFrame);
+			const token = `@"${path}"`;
+			const sessionToken = `@${sessionPath}`;
+			const fileSelector = 'button[aria-label^="View path for file"]';
+			const sessionSelector = 'button[aria-label^="View path for session"]';
+			function select(editor, start, end = start) {
+				editor.focus();
+				editor.setSelectionRange(start, end);
+				editor.dispatchEvent(
+					new KeyboardEvent("keyup", { key: "ArrowRight", bubbles: true }),
+				);
+			}
+			function beforeInput(editor, inputType) {
+				editor.dispatchEvent(
+					new InputEvent("beforeinput", {
+						inputType,
+						bubbles: true,
+						cancelable: true,
+					}),
+				);
+			}
+			async function runRegression() {
+				try {
+					for (const id of ["desktop", "webui-mobile"]) {
+						await until(() => fixtures.has(id));
+						const section = document.getElementById(id);
+						const editor = () =>
+							section.querySelector("[data-chat-composer-input]");
+						const shelf = () =>
+							section.querySelector("[data-chat-composer-references]");
+						const refs = () => [
+							...section.querySelectorAll("[data-chat-composer-reference]"),
+						];
+						const draft = () =>
+							section.querySelector("[data-draft]").textContent;
+						const expectDraft = async (expected, body) => {
+							await until(
+								() => draft() === expected && editor().value === body,
 							);
-						}
-					}
-					input(textarea, "@");
-					await until(
-						() => section.querySelectorAll('[role="tab"]').length === 2,
-					);
-					section.querySelectorAll('[role="tab"]')[1].click();
-					await until(() =>
-						section
-							.querySelector('[role="option"]')
-							?.textContent.includes("Previous discussion"),
-					);
-					section.querySelector('[role="option"]').click();
-					await until(() => section.querySelector(sessionSelector));
-					input(textarea, "Please review.");
-					await until(() =>
-						section
-							.querySelector("[data-draft]")
-							.textContent.startsWith("Please review.\n"),
-					);
-					assert(
-						section.scrollWidth <= section.clientWidth,
-						"Narrow layout overflow",
-					);
-					section.querySelector(fileSelector).click();
-					await until(() =>
-						document
-							.querySelector('[role="dialog"]')
-							?.textContent.includes(path),
-					);
-					section.querySelector(fileSelector).click();
-					await until(() => !document.querySelector('[role="dialog"]'));
-					textarea.setSelectionRange(0, 0);
-					textarea.dispatchEvent(
-						new KeyboardEvent("keydown", {
-							key: "Backspace",
-							bubbles: true,
-							cancelable: true,
-						}),
-					);
-					await until(() => !section.querySelector(sessionSelector));
-					assert(
-						section.querySelector(fileSelector),
-						"Backspace removed the wrong reference",
-					);
-					textarea.dispatchEvent(
-						new InputEvent("beforeinput", {
-							inputType: "deleteContentBackward",
-							bubbles: true,
-							cancelable: true,
-						}),
-					);
-					await until(() => !section.querySelector(fileSelector));
-					assert(
-						textarea.value === "Please review.",
-						"Reference deletion changed body text",
-					);
-					input(textarea, "Please review. @");
-					await until(() => section.querySelector('[role="option"]'));
-					section.querySelector('[role="option"]').click();
-					await until(() => section.querySelector(fileSelector));
-					const draft = section.querySelector("[data-draft]").textContent;
-					assert(
-						draft.includes(`@"${path}"`),
-						"File reference lost its Pi path",
-					);
-					section.querySelector('button[aria-label="Send"]').click();
-					await until(
-						() => section.querySelectorAll(fileSelector).length === 2,
-					);
-					assert(
-						section.textContent.includes("Please review."),
-						"Sent message lost its body",
-					);
-					assert(
-						section.scrollWidth <= section.clientWidth,
-						"Sent message overflows narrow layout",
-					);
-				}
-				for (const id of ["desktop-search", "webui-mobile-search"]) {
-					const section = document.getElementById(id);
-					const field = section.querySelector("input");
-					const activeRange = () =>
-						Array.from(CSS.highlights.get("pilo-find-active") ?? [])[0];
-					input(field, "needle.ts");
-					await until(() => CSS.highlights.get("pilo-find")?.size === 6);
-					const next = section.querySelector('button[aria-label="Next match"]');
-					const previous = section.querySelector(
-						'button[aria-label="Previous match"]',
-					);
-					const all = Array.from(CSS.highlights.get("pilo-find"));
-					for (let index = 0; index < 6; index++) {
-						await until(
-							() => activeRange()?.startContainer === all[index].startContainer,
-						);
-						const parent = activeRange().startContainer.parentElement;
+							await frame();
+						};
+						const reset = async (value, body = value) => {
+							fixtures.get(id).setValue(value);
+							await expectDraft(value, body);
+							select(editor(), body.length);
+							await frame();
+						};
+						const complete = async (session = false) => {
+							await until(
+								() => section.querySelectorAll('[role="tab"]').length === 2,
+							);
+							section.querySelectorAll('[role="tab"]')[session ? 1 : 0].click();
+							await until(() =>
+								section
+									.querySelector('[role="option"]')
+									?.textContent.includes(
+										session ? "Previous discussion" : "a-very-long-file",
+									),
+							);
+							section.querySelector('[role="option"]').click();
+							await frame();
+						};
+						await reset("已有文字 @");
+						const height = editor().getBoundingClientRect().height;
 						assert(
-							parent.closest("[data-message-id]").dataset.messageId ===
-								searchMessages[Math.floor(index / 2)].id,
-							"Search navigated to the wrong message",
+							editor().rows === 1,
+							"Composer still reserves an unused second row",
+						);
+						const oneLineHeight = editor().getBoundingClientRect().height;
+						if (matchMedia("(pointer:coarse)").matches)
+							assert(
+								oneLineHeight >=
+									2.75 *
+										Number.parseFloat(
+											getComputedStyle(document.documentElement).fontSize,
+										),
+								"Compact input lost its touch target",
+							);
+
+						await complete();
+						await expectDraft(`已有文字 \n${token}`, "已有文字 ");
+						assert(
+							editor() instanceof HTMLTextAreaElement,
+							"Body is not a native textarea",
 						);
 						assert(
-							Boolean(parent.closest("button[data-chat-search-reference]")) ===
-								(index % 2 === 0),
-							"Search must visit the file chip before the same-name body text",
+							shelf().getBoundingClientRect().bottom <=
+								editor().getBoundingClientRect().top,
+							`${id}: references are not above the input`,
 						);
-						next.click();
-					}
-					await until(
-						() => activeRange()?.startContainer === all[0].startContainer,
-					);
-					previous.click();
-					await until(
-						() => activeRange()?.startContainer === all[5].startContainer,
-					);
-					input(field, "Previous discussion");
-					await until(() => CSS.highlights.get("pilo-find")?.size === 1);
-					await until(
-						() => activeRange()?.toString() === "Previous discussion",
-					);
-					assert(
-						activeRange().startContainer.parentElement.closest(
-							'button[aria-label^="View path for session"]',
-						),
-						"Session title did not receive a visible highlight",
-					);
-					for (const query of ["src/", sessionPath, "Hidden Skill", "Copy"]) {
-						input(field, query);
+						assert(
+							Math.abs(editor().getBoundingClientRect().height - height) <= 1,
+							"Reference insertion changed body height",
+						);
+						assert(
+							editor().selectionStart === "已有文字 ".length,
+							"Completing @ moved the body caret",
+						);
+						assert(
+							getComputedStyle(editor()).lineHeight === "normal",
+							"Native caret leading changed",
+						);
+
+						await reset("前文 @ 后文");
+						select(editor(), 4);
+						await complete();
+						await expectDraft(`前文  后文\n${token}`, "前文  后文");
+						assert(
+							editor().selectionStart === 3,
+							"Mid-body completion lost its caret",
+						);
+						assert(
+							document.execCommand("insertText", false, "插入"),
+							"Native typing failed",
+						);
+						await expectDraft(`前文 插入 后文\n${token}`, "前文 插入 后文");
+
+						input(editor(), `${editor().value} @`);
+						select(editor(), editor().value.length);
+						await complete(true);
 						await until(
 							() =>
-								section.textContent.includes("No matches") && !activeRange(),
+								refs().length === 2 && shelf().querySelector(sessionSelector),
+						);
+						const body = editor().value;
+						input(editor(), `${body}@`);
+						select(editor(), editor().value.length);
+						await complete();
+						assert(
+							refs().length === 2 &&
+								shelf().querySelectorAll(fileSelector).length === 1,
+							"Repeated picks duplicated references",
+						);
+						await expectDraft(`${body}\n${token}\n${sessionToken}`, body);
+
+						const remSize = Number.parseFloat(
+							getComputedStyle(document.documentElement).fontSize,
+						);
+						const limit = 12 * remSize;
+						for (const badge of shelf().querySelectorAll(
+							`${fileSelector}, ${sessionSelector}`,
+						)) {
+							assert(
+								badge.getBoundingClientRect().width <= limit + 1,
+								"Reference exceeded fixed maximum width",
+							);
+							assert(
+								!matchMedia("(pointer: coarse)").matches ||
+									badge.getBoundingClientRect().height >= 44,
+								"Reference lost its touch target",
+							);
+						}
+						assert(
+							section.scrollWidth <= section.clientWidth + 1,
+							"Reference shelf overflows narrow layout",
+						);
+						shelf().querySelector(fileSelector).click();
+						await until(() =>
+							document
+								.querySelector('[role="dialog"]')
+								?.textContent.includes(path),
+						);
+						shelf().querySelector(fileSelector).click();
+						await until(() => !document.querySelector('[role="dialog"]'));
+
+						// Removing a single reference never edits the body or another reference.
+						refs()[0].lastElementChild.click();
+						await expectDraft(`${body}\n${sessionToken}`, body);
+						assert(
+							refs().length === 1 && shelf().querySelector(sessionSelector),
+							"Removed the wrong reference",
+						);
+						select(editor(), 0);
+						beforeInput(editor(), "deleteContentBackward");
+						await expectDraft(body, body);
+						assert(!shelf(), "Empty reference shelf stayed visible");
+
+						// Old inline drafts migrate visually without rewriting the saved draft on mount.
+						await reset(`字 ${token} 后文\n${sessionToken}`, "字  后文");
+						assert(
+							refs().length === 2,
+							"Inline draft references were not restored",
+						);
+						fixtures.get(id).setDisabled(true);
+						await until(() => editor().disabled);
+						refs()[0].lastElementChild.click();
+						select(editor(), 0);
+						beforeInput(editor(), "deleteContentBackward");
+						assert(refs().length === 2, "Disabled input removed a reference");
+						fixtures.get(id).setDisabled(false);
+						await until(() => !editor().disabled);
+
+						for (const text of [
+							"",
+							"字",
+							"line\n",
+							"line\n\n",
+							Array(20).fill("多行 text").join("\n"),
+						]) {
+							await reset(text);
+							assert(
+								Number.isFinite(Number.parseFloat(editor().style.height)) &&
+									editor().clientHeight > 0,
+								"Native autosizing failed",
+							);
+						}
+						await reset("first\nsecond\nthird");
+						assert(
+							editor().getBoundingClientRect().height > oneLineHeight,
+							"Compact body stopped growing with multiline input",
+						);
+						// Images and references must share a single bounded tray, even in a short panel.
+						const mixedBody = Array(20).fill("正文保留可输入空间").join("\n");
+						const mixedDraft = `${mixedBody}\n${token}\n${sessionToken}`;
+						await reset(mixedDraft, mixedBody);
+						const photos = () => [
+							...section.querySelectorAll("[data-chat-composer-image]"),
+						];
+						fixtures.get(id).setImages(sampleImages(8));
+						await until(
+							() =>
+								photos().length === 8 &&
+								photos().every((photo) => photo.querySelector("img")?.complete),
+						);
+						const panel = section.querySelector("[data-chat-panel]");
+						const region = section.querySelector("[data-chat-composer-region]");
+						const tray = () =>
+							section.querySelector("[data-chat-composer-attachments]");
+						const toolbar = section.querySelector(
+							"[data-chat-composer-toolbar]",
+						);
+						let sawTrayOverflow = false;
+						const compactPanelHeight = matchMedia("(pointer:coarse)").matches
+							? 200
+							: 160;
+						for (const panelHeight of [420, 240, compactPanelHeight, 420]) {
+							fixtures.get(id).setPanelHeight(panelHeight);
+							await until(
+								() =>
+									Math.abs(
+										panel.getBoundingClientRect().height - panelHeight,
+									) <= 1 &&
+									region.getBoundingClientRect().height <= panelHeight + 1,
+							);
+							await frame();
+							assert(
+								tray() === shelf(),
+								"Images and references use separate height budgets",
+							);
+							assert(
+								tray().getBoundingClientRect().height <=
+									Math.min(8 * remSize, innerHeight * 0.25) + 1,
+								"Mixed attachments exceeded their shared height cap",
+							);
+							sawTrayOverflow ||= tray().scrollHeight > tray().clientHeight;
+							assert(
+								editor().getBoundingClientRect().height >= height - 1 &&
+									editor().scrollHeight > editor().clientHeight,
+								"Mixed attachments squeezed the body below its minimum",
+							);
+							const bounds = panel.getBoundingClientRect();
+							assert(
+								toolbar.getBoundingClientRect().bottom <= bounds.bottom &&
+									toolbar.getBoundingClientRect().top >= bounds.top,
+								"Mixed attachments pushed send controls outside the panel",
+							);
+							assert(
+								tray().getBoundingClientRect().bottom <=
+									editor().getBoundingClientRect().top &&
+									editor().getBoundingClientRect().bottom <=
+										toolbar.getBoundingClientRect().top,
+								"Attachments, body or toolbar overlap",
+							);
+						}
+						assert(
+							sawTrayOverflow,
+							"Constrained mixed attachments never scrolled inside the tray",
+						);
+						for (const photo of photos())
+							assert(
+								Math.abs(
+									photo
+										.querySelector('button[aria-label^="View image"]')
+										.getBoundingClientRect().height -
+										2.75 * remSize,
+								) <= 1,
+								"Composer thumbnail lost its compact size",
+							);
+						if (matchMedia("(pointer:coarse)").matches) {
+							const preview = photos()[0]
+								.querySelector('button[aria-label^="View image"]')
+								.getBoundingClientRect();
+							const removal = photos()[0]
+								.querySelector('button[aria-label^="Remove"]')
+								.getBoundingClientRect();
+							assert(
+								removal.width >= 2.75 * remSize &&
+									removal.height >= 2.75 * remSize,
+								"Image removal lost its touch target",
+							);
+							assert(
+								removal.left >= preview.right,
+								"Compact image preview and removal touch areas overlap",
+							);
+						}
+						fixtures.get(id).setPanelHeight(compactPanelHeight);
+						await until(
+							() =>
+								panel.clientHeight === compactPanelHeight &&
+								region.getBoundingClientRect().height <= compactPanelHeight + 1,
+						);
+						const lastRemove = refs()[1].lastElementChild;
+						lastRemove.focus();
+						assert(
+							tray().scrollTop > 0,
+							"Keyboard focus did not reveal hidden references",
+						);
+						lastRemove.click();
+						await expectDraft(`${mixedBody}\n${token}`, mixedBody);
+						assert(
+							photos().length === 8,
+							"Removing a reference removed images",
+						);
+						photos()[0].querySelector('button[aria-label^="Remove"]').click();
+						await until(() => photos().length === 7);
+						assert(
+							refs().length === 1 && editor().value === mixedBody,
+							"Removing an image changed references or body",
+						);
+						fixtures.get(id).setImages([]);
+						await until(() => photos().length === 0);
+						fixtures.get(id).setPanelHeight(420);
+						await reset("中文");
+						editor().dispatchEvent(
+							new CompositionEvent("compositionstart", { bubbles: true }),
+						);
+						editor().dispatchEvent(
+							new KeyboardEvent("keydown", {
+								key: "Enter",
+								isComposing: true,
+								bubbles: true,
+								cancelable: true,
+							}),
 						);
 						assert(
-							!CSS.highlights.get("pilo-find"),
-							"Hidden paths or controls became search hits",
+							!section.querySelector("[data-sent]"),
+							"IME composition submitted the prompt",
+						);
+						editor().dispatchEvent(
+							new CompositionEvent("compositionend", {
+								bubbles: true,
+								data: "中文",
+							}),
+						);
+
+						const upload = `/project/attachments/AAAAAAAAAAAAAAAAAAAAAA/${id}.txt`;
+						const uploadToken = `@"${upload}"`;
+						let removed = 0;
+						registerChatFile(upload, async () => {
+							removed += 1;
+						});
+						await reset(`check later\n${uploadToken}`, "check later");
+						const old = editor();
+						fixtures.get(id).setScope((scope) => scope + 1);
+						await until(() => editor() !== old);
+						select(editor(), 0);
+						beforeInput(editor(), "deleteContentBackward");
+						await expectDraft("check later", "check later");
+						assert(
+							removed === 1,
+							"Removing an uploaded reference did not clean it up",
+						);
+						registerChatFile(upload, async () => {
+							removed += 1;
+						});
+						await reset(`Please review\n${uploadToken}`, "Please review");
+						fixtures.get(id).setImages(sampleImages(2));
+						await until(
+							() =>
+								section.querySelectorAll("[data-chat-composer-image]")
+									.length === 2,
+						);
+						section.querySelector('button[aria-label="Send"]').click();
+						await until(() => section.querySelector("[data-sent]"));
+						const submitted = JSON.parse(
+							section.querySelector("[data-submitted]").textContent,
+						);
+						assert(
+							submitted.images.length === 2 &&
+								submitted.text.includes(uploadToken),
+							"Combined image/reference submission lost content",
+						);
+						refs()[0].lastElementChild.click();
+						await expectDraft("Please review", "Please review");
+						assert(
+							removed === 1,
+							"Sent upload was cleaned up while clearing references",
+						);
+						assert(
+							section.scrollWidth <= section.clientWidth + 1,
+							"Sent message overflows narrow layout",
 						);
 					}
-					input(field, "");
-					await until(() => !section.textContent.includes("No matches"));
+					for (const id of ["desktop-search", "webui-mobile-search"]) {
+						const section = document.getElementById(id);
+						const field = section.querySelector("input");
+						const activeRange = () =>
+							Array.from(CSS.highlights.get("pilo-find-active") ?? [])[0];
+						input(field, "needle.ts");
+						await until(() => CSS.highlights.get("pilo-find")?.size === 7);
+						const next = section.querySelector(
+							'button[aria-label="Next match"]',
+						);
+						const previous = section.querySelector(
+							'button[aria-label="Previous match"]',
+						);
+						const all = Array.from(CSS.highlights.get("pilo-find"));
+						for (let index = 0; index < 7; index++) {
+							await until(
+								() =>
+									activeRange()?.startContainer === all[index].startContainer,
+							);
+							const parent = activeRange().startContainer.parentElement;
+							assert(
+								parent.closest("[data-message-id]").dataset.messageId ===
+									searchMessages[index < 3 ? 0 : index < 5 ? 1 : 2].id,
+								"Search navigated to the wrong message",
+							);
+							assert(
+								Boolean(
+									parent.closest("button[data-chat-search-reference]"),
+								) === (index !== 0 && index !== 3 && index !== 5),
+								"Search must follow inline body and repeated-chip order",
+							);
+							next.click();
+						}
+						await until(
+							() => activeRange()?.startContainer === all[0].startContainer,
+						);
+						previous.click();
+						await until(
+							() => activeRange()?.startContainer === all[6].startContainer,
+						);
+						input(field, "Previous discussion");
+						await until(() => CSS.highlights.get("pilo-find")?.size === 1);
+						await until(
+							() => activeRange()?.toString() === "Previous discussion",
+						);
+						assert(
+							activeRange().startContainer.parentElement.closest(
+								'button[aria-label^="View path for session"]',
+							),
+							"Session title did not receive a visible highlight",
+						);
+						for (const query of ["src/", sessionPath, "Hidden Skill", "Copy"]) {
+							input(field, query);
+							await until(
+								() =>
+									section.textContent.includes("No matches") && !activeRange(),
+							);
+							assert(
+								!CSS.highlights.get("pilo-find"),
+								"Hidden paths or controls became search hits",
+							);
+						}
+						input(field, "");
+						await until(() => !section.textContent.includes("No matches"));
+					}
+					document.body.dataset.testStatus = "passed";
+					document.querySelector("#results").textContent =
+						"PASS: desktop + 320px WebUI reference shelf above native textarea, caret preservation, deduplication, independent removal, mobile Backspace, inline draft recovery, disabled state, autosizing, shared image/reference height budget, short-panel resizing, keyboard reveal, mixed submission, IME submission guard, upload ownership, scope remounts, popovers, submission and search navigation";
+				} catch (error) {
+					document.body.dataset.testStatus = "failed";
+					document.querySelector("#results").textContent =
+						`FAIL: ${error.message}`;
+					throw error;
 				}
-				document.body.dataset.testStatus = "passed";
-				document.querySelector("#results").textContent =
-					"PASS: desktop + WebUI mobile chip/body baseline alignment, stable autosizing, native caret leading, touch targets, path popover, Backspace, submission, search highlights and next/previous navigation for files, sessions and Skill instructions";
-			} catch (error) {
-				document.body.dataset.testStatus = "failed";
-				document.querySelector("#results").textContent =
-					`FAIL: ${error.message}`;
-				throw error;
 			}
+			if (!new URLSearchParams(location.search).has("manual"))
+				await runRegression();
 		</script>
 	</body>
 </html>

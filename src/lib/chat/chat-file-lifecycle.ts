@@ -1,4 +1,7 @@
-import { fileMentionPath } from "@/lib/chat/chat-mentions";
+import { readChatMentionParts } from "@/lib/chat/chat-mentions";
+import type { SessionMention } from "@/lib/chat/session-mentions";
+
+const EMPTY_SESSIONS: ReadonlyMap<string, SessionMention> = new Map();
 
 // Keep ownership across composer remounts, but never adopt existing/history files.
 const pendingFiles = new Map<string, () => Promise<void>>();
@@ -20,10 +23,9 @@ export function discardChatFiles(paths: readonly string[]) {
 }
 
 function filePaths(text: string) {
-	return text.split("\n").flatMap((line) => {
-		const path = fileMentionPath(line);
-		return path ? [path] : [];
-	});
+	return readChatMentionParts(text, EMPTY_SESSIONS).flatMap(({ mention }) =>
+		mention?.kind === "file" ? [mention.path] : [],
+	);
 }
 
 export function discardRemovedChatFiles(previous: string, next: string) {

@@ -30,9 +30,10 @@ export function PathMentionBadge({
 						aria-label={label}
 						data-chat-search-reference={compact ? undefined : ""}
 						className={cn(
-							"group/mention inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-foreground/10 bg-background/40 px-2 py-1 text-xs align-middle focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11",
-							compact &&
-								"h-(--pilo-composer-line-height) max-w-[min(12rem,calc(100%_-_8.5rem))] shrink-0 items-baseline border-0 bg-transparent p-0",
+							"group/mention inline-flex min-w-0 max-w-[min(12rem,100%)] items-center gap-1.5 rounded-md border border-foreground/10 bg-background/40 px-2 py-1 text-xs align-middle focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:min-h-11",
+							compact
+								? "h-(--pilo-composer-line-height) items-center border-0 bg-transparent p-0"
+								: "my-0.5",
 						)}
 					>
 						{/* Keep the chip compact inside the full-height touch target. */}

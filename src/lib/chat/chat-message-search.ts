@@ -1,5 +1,5 @@
 import { parseSkillInvocation } from "./skill-invocation.ts";
-import { fileMentionName, readChatMentionDraft } from "./chat-mentions.ts";
+import { fileMentionName, readChatMentionParts } from "./chat-mentions.ts";
 import type { SessionMention } from "./session-mentions.ts";
 import type { ChatMessage } from "./conversation-types.ts";
 import { markdownSearchText, searchTextMatches } from "./chat-search-text.ts";
@@ -28,25 +28,26 @@ const markdownTextCache = new WeakMap<
 
 const EMPTY_SESSIONS: ReadonlyMap<string, SessionMention> = new Map();
 
-/** Match rendered user content: Skill name, reference labels, then literal body. */
+/** Match rendered user content: Skill name and inline reference labels in body order. */
 function searchableText(
 	message: ChatMessage,
 	sessions: ReadonlyMap<string, SessionMention>,
 ): string {
 	if (message.role !== "user") return message.text;
 	const invocation = parseSkillInvocation(message.text);
-	const { references, text } = readChatMentionDraft(
+	const parts = readChatMentionParts(
 		invocation ? invocation.additionalInstructions : message.text,
 		sessions,
 	);
 	return [
 		...(invocation ? [invocation.name] : []),
-		...references.map((mention) =>
-			mention.kind === "session"
-				? mention.session.title
-				: fileMentionName(mention.path),
-		),
-		text,
+		parts
+			.map(({ value, mention }) =>
+				mention
+					? `\n${mention.kind === "session" ? mention.session.title : fileMentionName(mention.path)}\n`
+					: value,
+			)
+			.join(""),
 	].join("\n");
 }
 

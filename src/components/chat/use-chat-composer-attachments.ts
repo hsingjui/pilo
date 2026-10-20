@@ -214,7 +214,7 @@ export function useChatComposerAttachments({
 		event.target.value = "";
 	};
 
-	const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+	const handlePaste = (event: ClipboardEvent<HTMLElement>) => {
 		const files = Array.from(event.clipboardData.items)
 			.filter((item) => item.kind === "file" && item.type.startsWith("image/"))
 			.flatMap((item) => {
@@ -239,7 +239,8 @@ export function useChatComposerAttachments({
 			visible() &&
 			!disabled &&
 			operationRef.current !== scope &&
-			!root.querySelector("textarea")?.disabled &&
+			!root.querySelector<HTMLTextAreaElement>("[data-chat-composer-input]")
+				?.disabled &&
 			!document.querySelector('[role="dialog"], [role="alertdialog"]');
 		const hasFiles = (event: DragEvent) =>
 			event.dataTransfer?.types.includes("Files");
@@ -268,7 +269,7 @@ export function useChatComposerAttachments({
 			}
 			void latestRef.current?.addFiles(Array.from(event.dataTransfer.files));
 			root
-				.querySelector<HTMLTextAreaElement>("textarea")
+				.querySelector<HTMLElement>("[data-chat-composer-input]")
 				?.focus({ preventScroll: true });
 		};
 		window.addEventListener("dragover", over);
