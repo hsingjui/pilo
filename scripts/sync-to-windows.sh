@@ -14,6 +14,9 @@ RSYNC_EXCLUDES=(
   "--exclude=.pi/"
   "--exclude=.trellis/"
   "--exclude=.agents/"
+  "--exclude=.tmp/"
+  "--exclude=*.local"
+  "--exclude=tests/tmp/"
   "--exclude=node_modules/"
   "--exclude=dist/"
   "--exclude=.vite/"
@@ -21,7 +24,7 @@ RSYNC_EXCLUDES=(
   "--exclude=src-tauri/resources/pilo-server-*"
 )
 
-INOTIFY_EXCLUDE='(^|/)(\.git|\.idea|\.vscode|\.pi|\.trellis|\.agents|node_modules|dist|\.vite|target)(/|$)|/src-tauri/resources/pilo-server-[^/]*$'
+INOTIFY_EXCLUDE='(^|/)(\.git|\.idea|\.vscode|\.pi|\.trellis|\.agents|\.tmp|[^/]*\.local|node_modules|dist|\.vite|target)(/|$)|/tests/tmp(/|$)|/src-tauri/resources/pilo-server-[^/]*$'
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -36,6 +39,8 @@ sync_once() {
 
   rsync \
     --archive \
+    --no-devices \
+    --no-specials \
     --delete-delay \
     --no-perms \
     --no-owner \
@@ -50,7 +55,7 @@ require_command rsync
 require_command inotifywait
 
 coproc WATCHER {
-  inotifywait \
+  exec inotifywait \
     --monitor \
     --quiet \
     --recursive \
