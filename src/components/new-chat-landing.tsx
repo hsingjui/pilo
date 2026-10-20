@@ -12,6 +12,7 @@ import { createFileSuggestions } from "@/components/chat/chat-file-suggestions";
 import { ChatEmptyHero } from "@/components/chat/chat-empty-hero";
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import { SessionHeader } from "@/components/chat/chat-session-header";
+import { useScrollbarGutterWidth } from "@/components/chat/use-scrollbar-gutter";
 import {
 	listenRuntimeEvents,
 	runtimeErrorMessage,
@@ -98,6 +99,8 @@ export function NewChatLanding({
 }) {
 	const { t } = useTranslation();
 	const { keyboardShortcuts } = usePreferences();
+	const scrollRef = useRef<HTMLDivElement>(null);
+	const scrollbarWidth = useScrollbarGutterWidth(scrollRef);
 	const projectId = project?.id ?? null;
 	const cachedModels = projectId ? getCachedProjectPiModels(projectId) : null;
 	const scopeConfig = useProjectModelScope(tauriPiloClient, projectId ?? "");
@@ -441,12 +444,18 @@ export function NewChatLanding({
 					sidebarCollapsed={sidebarCollapsed}
 				/>
 				<ProjectWorkspacePanel project={project} headerOverlay>
-					<div className="flex min-h-0 w-full flex-1 flex-col">
+					<div
+						ref={scrollRef}
+						className="chat-scrollbar flex min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto"
+					>
 						<ConversationColumn className="flex flex-1 items-center justify-center">
 							<ChatEmptyHero />
 						</ConversationColumn>
 					</div>
-					<div className="relative -mt-4 w-full shrink-0 pb-4">
+					<div
+						className="relative -mt-4 w-full shrink-0 pb-4"
+						style={{ paddingRight: scrollbarWidth }}
+					>
 						<ConversationColumn className="relative">
 							<DraftProjectPicker
 								projects={projects}
