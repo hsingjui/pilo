@@ -79,6 +79,35 @@ end event has no timestamp, the existing reducer clock fallback applies.
   (`@tanstack/react-virtual`, `chat-history-window-store`) — keep it out of
   React state to avoid re-render storms.
 
+## Session Refresh and Opened-Chat Cache
+
+- **Scope:** Desktop workspace refresh must remove stale persisted entries from
+  `openedChats`, not just SQLite/the index; `mergeSidebarSessionsWithOpenChats`
+  otherwise adds them back to the sidebar. WebUI already resets a missing
+  selected session through `startDraft` in `use-remote-chat.ts`.
+- **Signature:** The index hook's `refreshProjectSessions(projectId, showProgress)`
+  resolves to `SessionIndexEntry[] | undefined`; coalesced callers receive the
+  final rerun's result. The workspace wrapper still returns `Promise<void>`.
+- **Contract:** Capture that project's idle, non-temporary controllers with
+  defined `historyFileSize` before awaiting refresh. Remove only those absent
+  from the successful result by `piSessionId ?? session.id`; recheck busy state
+  before eviction. Undefined history metadata is not proof of a deleted file.
+- **Errors:** Failed or obsolete-generation refreshes do not evict cached chats.
+  Keep other projects, temporary chats, running chats and newly opened controllers.
+  Clear selection in the successful refresh handler only when it evicts the
+  selected controller in the currently active project; use the latest workspace
+  ref and a functional selection update so navigation during the scan is preserved.
+  Do not clear selection from an effect merely because index/opened lookups miss:
+  notification navigation can precede the initial asynchronous index load.
+- **Cases:** A deleted, previously indexed chat disappears after refresh; an
+  existing chat keeps its controller; a draft awaiting persistence stays visible.
+- **Verification when authorized:** Cover deleted files, unchanged sessions,
+  failed refresh, queued reruns, busy transitions, identified draft IDs differing
+  from controller IDs, chats opened while the scan is pending, navigation to
+  another project during refresh, and notification navigation before index load.
+- **Wrong / correct:** Do not prune on initial cached-index load or blanket-clear
+  all controllers. Use the successful scan result and the pre-refresh snapshot.
+
 ## Reply-Segment Usage
 
 ### 1. Scope / Trigger

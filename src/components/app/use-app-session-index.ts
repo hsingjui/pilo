@@ -60,7 +60,11 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 	const projectRefreshRequestsRef = useRef(
 		new Map<
 			string,
-			{ generation: number; promise: Promise<void>; rerun: boolean }
+			{
+				generation: number;
+				promise: Promise<SessionIndexEntry[] | undefined>;
+				rerun: boolean;
+			}
 		>(),
 	);
 	const runtimeActivityRefreshRef = useRef<{
@@ -213,16 +217,15 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 				const existing = projectRefreshRequestsRef.current.get(projectId);
 				if (existing?.generation === generation) {
 					existing.rerun = true;
-					await existing.promise;
-					return;
+					return await existing.promise;
 				}
 
 				const refreshState = {
 					generation,
-					promise: Promise.resolve(),
+					promise: Promise.resolve<SessionIndexEntry[] | undefined>(undefined),
 					rerun: false,
 				};
-				const run = async (): Promise<void> => {
+				const run = async (): Promise<SessionIndexEntry[] | undefined> => {
 					refreshState.rerun = false;
 					const [result] = await Promise.all([
 						reconcileSessions(projectId),
@@ -232,9 +235,10 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 					setIndexedSessions((current) =>
 						mergeProjectSessions(current, projectId, result.sessions),
 					);
-					if (refreshState.rerun) await run();
+					if (refreshState.rerun) return run();
+					return result.sessions;
 				};
-				let tracked: Promise<void>;
+				let tracked: Promise<SessionIndexEntry[] | undefined>;
 				tracked = run().finally(() => {
 					if (
 						projectRefreshRequestsRef.current.get(projectId) === refreshState
@@ -244,7 +248,7 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 				});
 				refreshState.promise = tracked;
 				projectRefreshRequestsRef.current.set(projectId, refreshState);
-				await tracked;
+				return await tracked;
 			} finally {
 				if (showProgress) {
 					setRefreshingProjectIds((current) => {

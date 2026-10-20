@@ -149,12 +149,16 @@ export function useAppChatWorkspace({
 		projects.find((project) => project.id === focusedProjectId) ??
 		activeProject;
 	const activeProjectId = activeProject?.id ?? null;
+	const workspaceRef = useRef({ activeProjectId, openedChats });
+	useEffect(() => {
+		workspaceRef.current = { activeProjectId, openedChats };
+	}, [activeProjectId, openedChats]);
 
 	const {
 		indexedSessions,
 		runtimeStates,
 		isExternalOpenTurn,
-		refreshProjectSessions,
+		refreshProjectSessions: refreshIndexedSessions,
 		refreshingProjectIds,
 		sidebarSessions: indexedSidebarSessions,
 		updateSession: updateIndexedSession,
@@ -165,6 +169,54 @@ export function useAppChatWorkspace({
 			syncOpenedChatSessionMetadata(current, indexedSessions),
 		);
 	}, [indexedSessions, setOpenedChats]);
+
+	const refreshProjectSessions = useCallback(
+		async (projectId: string, showProgress = false) => {
+			// Only prune persisted chats already cached when this refresh started.
+			const cachedControllerIds = new Set(
+				openedChats
+					.filter(
+						(entry) =>
+							entry.session.projectRecord.id === projectId &&
+							!entry.session.temporary &&
+							entry.session.historyFileSize !== undefined &&
+							!busyChatControllersRef.current.has(entry.controllerId),
+					)
+					.map((entry) => entry.controllerId),
+			);
+			const sessions = await refreshIndexedSessions(projectId, showProgress);
+			if (!sessions || cachedControllerIds.size === 0) return;
+			const sessionIds = new Set(
+				sessions.map((session) => session.piSessionId),
+			);
+			const shouldPrune = (entry: OpenChat) =>
+				cachedControllerIds.has(entry.controllerId) &&
+				!busyChatControllersRef.current.has(entry.controllerId) &&
+				!sessionIds.has(entry.piSessionId ?? entry.session.id);
+			const removedChats = workspaceRef.current.openedChats.filter(shouldPrune);
+			if (removedChats.length === 0) return;
+			setOpenedChats((current) => {
+				const next = current.filter((entry) => !shouldPrune(entry));
+				return next.length === current.length ? current : next;
+			});
+			setSelectedSessionId((current) =>
+				workspaceRef.current.activeProjectId === projectId &&
+				removedChats.some(
+					(entry) =>
+						shouldPrune(entry) &&
+						(entry.session.id === current || entry.piSessionId === current),
+				)
+					? null
+					: current,
+			);
+		},
+		[
+			busyChatControllersRef,
+			openedChats,
+			refreshIndexedSessions,
+			setOpenedChats,
+		],
+	);
 
 	const sidebarSessionsBase = useMemo(
 		() =>
