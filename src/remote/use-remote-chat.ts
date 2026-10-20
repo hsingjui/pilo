@@ -586,11 +586,12 @@ export function useRemoteChat({
 			client && activeProjectId
 				? {
 						projectId: activeProjectId,
+						projectPath: activeProject?.path,
 						sessionKey: routeKey ?? "remote-draft",
 						readImage: client.readProjectImage.bind(client),
 					}
 				: null,
-		[activeProjectId, client, routeKey],
+		[activeProjectId, activeProject?.path, client, routeKey],
 	);
 
 	const releaseTemporaryRuntime = useCallback(() => {

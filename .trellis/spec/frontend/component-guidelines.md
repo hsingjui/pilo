@@ -68,7 +68,7 @@ re-styling them.
   requests per language and evict failed loads so later requests can retry.
 - File-opening links in tool activity rows are limited to built-in `read`,
   `write` and `edit`. Other tools (commands and MCP tools), unsupported paths and
-  WebUI retain the original full-row disclosure button and preview tooltip.
+  WebUI non-image files retain the original full-row disclosure button and preview tooltip.
   Preserve the original icon/name/preview layout; do not impose a fixed 50%
   name width or split every tool row to support a file-opening feature.
 - Only rows with an openable `read`/`write`/`edit` path use a relative wrapper
@@ -78,12 +78,21 @@ re-styling them.
   expands details; file clicks only open the viewer. When verification is
   authorized, cover long commands/MCP names, read/write/edit file clicks,
   unsupported paths and status icons on desktop and 320px WebUI.
-- `useChatFileOpener(openFile, canOpenFile)` publishes the viewer capability with
-  its action. `canOpenFile` reuses `projectRelativePath` from the same active
-  project as `openFile`; render project-external absolute paths as plain text,
-  not buttons that silently return. WebUI registers no opener. When verification
-  is authorized, cover project-relative/absolute paths, external Skill paths,
-  project switches, preview/blank-space clicks and independent file activation.
+- `useChatFileOpener(openFile, canOpenFile)` publishes the desktop workspace
+  capability. `useChatFileOpen()` first resolves supported project images through
+  the conversation's `ChatProjectImageScope` (`projectPath`, `projectId`,
+  `sessionKey`, optional `readImage` transport), then falls back to that desktop
+  capability. PNG/JPEG/GIF/WebP open in the existing `ChatImageLightbox`, never
+  `readProjectTextFile`. Tool paths are literal filenames: encode before using
+  the Markdown source resolver so `%20` in a filename is not decoded as a space.
+  Project absolute paths become contained relative paths; WebUI uses its existing
+  image-only HTTP reader, retaining traversal/symlink checks and the 10 MiB cap.
+  Desktop retains its existing absolute-file read capability for outside-project
+  images, using the same bounded Blob URL loader and lightbox. Text files still
+  open workspace tabs; WebUI registers no generic file opener or new endpoint.
+  When verification is authorized, cover relative/absolute images, Windows paths,
+  literal percent names, outside-project WebUI refusal, stale/invalid images,
+  project switches and independent file/disclosure clicks at desktop/320px widths.
 
 ## Large Content
 

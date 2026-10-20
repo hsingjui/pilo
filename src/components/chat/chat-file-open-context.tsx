@@ -1,13 +1,14 @@
 import { useEffect, useSyncExternalStore } from "react";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
-/**
- * 打开当前连接中的文件（桌面端落到右侧 ProjectViewer）。
- *
- * 工具行要把文件路径变成可点入口，但消息渲染层级有五六层，逐层传参会污染
- * 一路上的组件签名。这里沿用聊天区既有的模块级 external store 做法
- * （见 chat-image-viewer 的图片查看器）：App 注册动作，工具行订阅读取。
- * WebUI 没有查看器，也就没有注册者，读到 null 时工具行退回不可点的纯文本。
- */
+import { openChatImageLightbox } from "@/components/chat/chat-image-viewer";
+import { useChatProjectImageScope } from "@/components/chat/chat-markdown-image";
+import { loadChatProjectImageUrl } from "@/lib/chat/chat-image-media";
+import { resolveMarkdownImageSource } from "@/lib/chat/chat-markdown-images";
+import { workspaceFileKey } from "@/lib/project-workspace";
+
+/** Desktop text files use workspace tabs; project images use the shared lightbox. */
 type ChatFileOpenHandler = (path: string) => void;
 type ChatFileOpener = {
 	openFile: ChatFileOpenHandler;
@@ -46,11 +47,48 @@ export function useChatFileOpener(
 	}, [onOpenFile, canOpenFile]);
 }
 
-/** 当前可用的打开动作；没有注册者时为 null。 */
-export function useChatFileOpen() {
-	return useSyncExternalStore(
+/** Images use the conversation's project and transport, including on WebUI. */
+export function useChatFileOpen(): ChatFileOpener | null {
+	const { t } = useTranslation();
+	const scope = useChatProjectImageScope();
+	const fileOpener = useSyncExternalStore(
 		subscribe,
 		() => opener,
 		() => opener,
 	);
+	if (!scope?.projectPath) return fileOpener;
+
+	const root = workspaceFileKey(scope.projectPath).replace(/\/+$/, "");
+	const imageSource = (candidate: string) => {
+		const path = workspaceFileKey(candidate.trim());
+		const relative = path.startsWith(`${root}/`)
+			? path.slice(root.length + 1)
+			: path;
+		// Tool paths are literal filesystem names, not URL-encoded Markdown sources.
+		return resolveMarkdownImageSource(encodeURIComponent(relative));
+	};
+	return {
+		canOpenFile: (path) =>
+			imageSource(path).type === "project" ||
+			Boolean(fileOpener?.canOpenFile(path)),
+		openFile: (path) => {
+			const source = imageSource(path);
+			if (source.type !== "project") {
+				fileOpener?.openFile(path);
+				return;
+			}
+			void loadChatProjectImageUrl(source.path, source.mimeType, scope)
+				.then((url) => {
+					openChatImageLightbox({
+						url,
+						name: source.path.split("/").pop() || source.path,
+					});
+				})
+				.catch((error: unknown) => {
+					toast.error(t("chat.loadImageFailed"), {
+						description: error instanceof Error ? error.message : String(error),
+					});
+				});
+		},
+	};
 }

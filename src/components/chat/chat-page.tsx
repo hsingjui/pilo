@@ -291,8 +291,12 @@ function ChatPageImpl(props: ChatPageProps) {
 		[historyImageFingerprint, session.projectRecord.id, session.sessionPath],
 	);
 	const projectImageScope = useMemo(
-		() => ({ projectId: session.projectRecord.id, sessionKey: session.id }),
-		[session.projectRecord.id, session.id],
+		() => ({
+			projectId: session.projectRecord.id,
+			projectPath: session.projectRecord.path,
+			sessionKey: session.id,
+		}),
+		[session.projectRecord.id, session.projectRecord.path, session.id],
 	);
 	const scrollToBottom = useCallback((smooth = true) => {
 		conversationViewportRef.current?.scrollToBottom(smooth);

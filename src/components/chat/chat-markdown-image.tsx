@@ -23,6 +23,10 @@ import { Spinner } from "@/ui";
 
 const ProjectImageContext = createContext<ChatProjectImageScope | null>(null);
 
+export function useChatProjectImageScope() {
+	return useContext(ProjectImageContext);
+}
+
 export function ChatMarkdownImageScopeProvider({
 	scope,
 	children,

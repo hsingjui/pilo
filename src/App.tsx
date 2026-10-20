@@ -29,7 +29,10 @@ import { useAppCatalog } from "@/components/app/use-app-catalog";
 import { useAppChatWorkspace } from "@/components/app/use-app-chat-workspace";
 import { useAppProjectActions } from "@/components/app/use-app-project-actions";
 import { useOpenedChatControllers } from "@/components/app/use-opened-chat-controllers";
-import { ChatImageLightbox } from "@/components/chat/chat-image-viewer";
+import {
+	ChatImageLightbox,
+	openChatImageLightbox,
+} from "@/components/chat/chat-image-viewer";
 import { ChatPageLoadingFallback } from "@/components/chat/chat-page-loading-fallback";
 import { NewChatLanding } from "@/components/new-chat-landing";
 import { SidebarFooter } from "@/components/sidebar-footer";
@@ -39,7 +42,9 @@ import {
 	ProjectWorkspaceContext,
 	useProjectWorkspaces,
 } from "@/components/app/project-workspace-context";
-import { readProjectTextFile } from "@/lib/api/files";
+import { readProjectFile, readProjectTextFile } from "@/lib/api/files";
+import { loadChatProjectImageUrl } from "@/lib/chat/chat-image-media";
+import { resolveChatImageMimeType } from "@/lib/chat/chat-submission";
 import { workspaceFileKey } from "@/lib/project-workspace";
 import { recordChatSessionSwitchStart } from "@/lib/chat/chat-performance";
 import { usePreferences } from "@/lib/preferences-provider";
@@ -298,18 +303,30 @@ function App() {
 				selectWorkspaceFile(activeProject.id, existing.path);
 				return;
 			}
-			void readProjectTextFile(activeProject.id, path)
-				.then((content) => {
-					openWorkspaceFile(activeProject.id, {
-						path: absolutePath,
-						content,
+			const mimeType = resolveChatImageMimeType({ name: path, type: "" });
+			const request = mimeType
+				? loadChatProjectImageUrl(path, mimeType, {
+						projectId: activeProject.id,
+						sessionKey: "file-viewer",
+						readImage: async (projectId, imagePath) =>
+							new Uint8Array(await readProjectFile(projectId, imagePath)),
+					}).then((url) => {
+						openChatImageLightbox({
+							url,
+							name: path.split("/").pop() || path,
+						});
+					})
+				: readProjectTextFile(activeProject.id, path).then((content) => {
+						openWorkspaceFile(activeProject.id, {
+							path: absolutePath,
+							content,
+						});
 					});
-				})
-				.catch((error: unknown) => {
-					toast.error(t("file.openFailed"), {
-						description: error instanceof Error ? error.message : String(error),
-					});
+			void request.catch((error: unknown) => {
+				toast.error(t("file.openFailed"), {
+					description: error instanceof Error ? error.message : String(error),
 				});
+			});
 		},
 		[
 			activeProject,
@@ -326,7 +343,7 @@ function App() {
 		[activeProject],
 	);
 
-	// 工具行里的文件路径点击后落到右侧查看器。
+	// 工具行里的文件路径按类型打开图片查看器或工作区 Tab。
 	useChatFileOpener(openViewerFile, canOpenViewerFile);
 
 	useKeyboardShortcut(keyboardShortcuts["new-chat"], () => startNewChat());
