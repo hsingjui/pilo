@@ -368,6 +368,7 @@ function RemoteWorkspace() {
 			selectedProjectId={chat.activeProjectId || null}
 			selectedSessionId={chat.identifiedSessionId ?? null}
 			onSelectSession={chat.handleSelectSession}
+			onRefreshSession={chat.refreshSession}
 			onNewChat={() => chat.startDraft(chat.activeProjectId || undefined)}
 			onNewChatInProject={(projectId) => chat.startDraft(projectId)}
 			onRefreshProjectSessions={(projectId) =>
@@ -412,6 +413,7 @@ function RemoteWorkspace() {
 									open={mobileNavigationOpen}
 									onOpenChange={setMobileNavigationOpen}
 									onDeleteSession={handleDeleteMobileSession}
+									onRefreshSession={chat.refreshSession}
 									envs={envs}
 									projects={sidebarProjects}
 									sessions={sidebarSessions}

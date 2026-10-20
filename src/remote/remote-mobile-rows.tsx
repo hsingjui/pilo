@@ -1,6 +1,16 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, Folder, Monitor, SquarePen } from "lucide-react";
+import {
+	ChevronDown,
+	Folder,
+	Monitor,
+	MoreHorizontal,
+	RefreshCw,
+	SquarePen,
+	Trash2,
+} from "lucide-react";
+import { useSessionRefresh } from "@/components/sidebar/use-session-refresh";
+import { menuItemIconClassName } from "@/ui/menu-styles";
 
 import type {
 	SidebarEnv,
@@ -8,7 +18,15 @@ import type {
 	SidebarSession,
 } from "@/components/sidebar/types";
 import { cn } from "@/lib/utils";
-import { ActivityDot, Button, Spinner } from "@/ui";
+import {
+	ActivityDot,
+	Button,
+	Spinner,
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/ui";
 
 /** 触摸端行内按钮：始终可见，且命中区不小于 44×44。 */
 export const ROW_ACTION_CLASS =
@@ -23,6 +41,7 @@ export function MobileSessionRow({
 	onRequestDelete,
 	onCancelDelete,
 	onConfirmDelete,
+	onRefresh,
 }: {
 	session: SidebarSession;
 	selected: boolean;
@@ -32,8 +51,13 @@ export function MobileSessionRow({
 	onRequestDelete: (sessionId: string) => void;
 	onCancelDelete: () => void;
 	onConfirmDelete: () => void;
+	onRefresh: (sessionId: string, projectId: string) => Promise<void>;
 }) {
 	const { t } = useTranslation();
+	const { refresh, disabled: refreshDisabled } = useSessionRefresh(
+		session,
+		onRefresh,
+	);
 	const timerRef = useRef<number | null>(null);
 	const firedRef = useRef(false);
 	const sessionButtonRef = useRef<HTMLButtonElement>(null);
@@ -216,6 +240,35 @@ export function MobileSessionRow({
 					) : null}
 				</span>
 			</button>
+			<DropdownMenu>
+				<DropdownMenuTrigger asChild>
+					<button
+						type="button"
+						className={ROW_ACTION_CLASS}
+						aria-label={t("sidebar.moreActions")}
+					>
+						<MoreHorizontal className="size-4" />
+					</button>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent align="end" className="min-w-0 w-40">
+					<DropdownMenuItem
+						disabled={refreshDisabled}
+						onSelect={() => void refresh()}
+					>
+						<RefreshCw className={menuItemIconClassName} />
+						{t("chat.refreshSession")}
+					</DropdownMenuItem>
+					<DropdownMenuItem
+						className="text-destructive focus:text-destructive"
+						onSelect={() =>
+							onRequestDelete(`${session.projectId}:${session.id}`)
+						}
+					>
+						<Trash2 className={menuItemIconClassName} />
+						{t("common.delete")}
+					</DropdownMenuItem>
+				</DropdownMenuContent>
+			</DropdownMenu>
 		</div>
 	);
 }

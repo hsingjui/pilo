@@ -49,7 +49,10 @@ type UseChatConversationOptions = {
 	initialImages?: readonly ChatImageAttachment[];
 	initialDraft?: string;
 	onDraftChange?: (value: string) => void;
-	onHistoryMetadata: (history: SessionHistory) => void;
+	onHistoryMetadata: (
+		history: SessionHistory,
+		refresh: boolean,
+	) => void | Promise<void>;
 };
 
 export function useChatConversation({
@@ -69,6 +72,7 @@ export function useChatConversation({
 		null,
 	);
 	const historyReloadScheduledRef = useRef(false);
+	const forceHistoryReloadRef = useRef(false);
 	const [historyLoadState, setHistoryLoadState] = useState<
 		"ready" | "loading" | "error"
 	>(session.sessionPath ? "loading" : "ready");
@@ -132,13 +136,19 @@ export function useChatConversation({
 			return;
 		}
 		if (activeTurnSessionIdRef?.current === session.id) {
+			if (forceHistoryReloadRef.current) {
+				forceHistoryReloadRef.current = false;
+				return;
+			}
 			historyDeferredRef.current = true;
 			return;
 		}
 		historyDeferredRef.current = false;
+		const forceReload = forceHistoryReloadRef.current;
 		const requestedHistory = historyFingerprintRef.current;
 		const requestedFingerprint = requestedHistory.fingerprint;
 		const requestFingerprint =
+			!forceReload &&
 			requestedHistory.fileSize !== undefined &&
 			requestedHistory.fileMtimeNs !== undefined
 				? {
@@ -183,7 +193,6 @@ export function useChatConversation({
 					totalMessages: history.totalMessages,
 					retryAttempt,
 				});
-				onHistoryMetadata(history);
 				const replayStartedAt = performance.now();
 				let finalState = await replayConversationEventsBatched(
 					history.events,
@@ -194,6 +203,25 @@ export function useChatConversation({
 					cancelled ||
 					historyRequestGenerationRef.current !== requestGeneration
 				) {
+					return;
+				}
+				if (activeTurnSessionIdRef?.current === session.id) {
+					// Initial loads must resume after the turn; manual refreshes must not.
+					historyDeferredRef.current = !forceReload;
+					forceHistoryReloadRef.current = false;
+					setHistoryLoadState("ready");
+					return;
+				}
+				await onHistoryMetadata(history, forceReload);
+				if (
+					cancelled ||
+					historyRequestGenerationRef.current !== requestGeneration
+				)
+					return;
+				if (activeTurnSessionIdRef?.current === session.id) {
+					historyDeferredRef.current = !forceReload;
+					forceHistoryReloadRef.current = false;
+					setHistoryLoadState("ready");
 					return;
 				}
 				finalState = alignHistoryMessages(finalState, directory, windowStart);
@@ -223,6 +251,7 @@ export function useChatConversation({
 					: requestedFingerprint;
 				setLoadedIndexFingerprint(requestedFingerprint);
 				failedHistoryFingerprintRef.current = undefined;
+				forceHistoryReloadRef.current = false;
 				setHistoryLoadState("ready");
 			} catch (error) {
 				if (
@@ -436,6 +465,11 @@ export function useChatConversation({
 		],
 	);
 
+	const retryHistory = useCallback(() => {
+		forceHistoryReloadRef.current = true;
+		setHistoryRetry((value) => value + 1);
+	}, []);
+
 	return {
 		conversationStore,
 		historyStore,
@@ -461,7 +495,7 @@ export function useChatConversation({
 		historyImageFingerprint,
 		historyPending:
 			session.sessionPath !== undefined && historyLoadState !== "ready",
-		retryHistory: () => setHistoryRetry((value) => value + 1),
+		retryHistory,
 		refreshHistoryIfStale,
 	};
 }

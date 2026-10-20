@@ -41,6 +41,7 @@ export type AppSidebarProps = {
 		projectId: string,
 	) => void;
 	onDeleteSession?: (sessionId: string, projectId: string) => void;
+	onRefreshSession?: (sessionId: string, projectId: string) => Promise<void>;
 	onRefreshProjectSessions?: (projectId: string) => void;
 	refreshingProjectIds?: ReadonlySet<string>;
 	selectedProjectId?: string | null;

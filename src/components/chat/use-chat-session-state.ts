@@ -104,11 +104,18 @@ export function useChatSessionState({
 	);
 
 	const refreshSessionState = useCallback(
-		async (agentState?: PiAgentState) => {
+		async (agentState?: PiAgentState, syncConfiguration = false) => {
 			const requestId = ++sessionStateRequestRef.current;
 			const currentAgentState = agentState ?? (await client.getPiAgentState());
 			if (requestId < sessionStateAppliedRef.current) return;
 			sessionStateAppliedRef.current = requestId;
+			if (syncConfiguration) {
+				setSelectedModel(currentAgentState.model);
+				setSelectedThinkingLevel(currentAgentState.thinkingLevel);
+				setThinkingLevels([
+					...getPiModelThinkingLevels(currentAgentState.model),
+				]);
+			}
 			// Publish identity before stats, which may be delayed or fail mid-turn.
 			setSessionState((previous) => ({
 				...previous,
@@ -123,7 +130,7 @@ export function useChatSessionState({
 				mergeRefreshedSessionState(previous, state),
 			);
 		},
-		[client],
+		[client, setSelectedModel, setSelectedThinkingLevel, setThinkingLevels],
 	);
 
 	const refreshSessionStats = useCallback(async () => {

@@ -11,6 +11,9 @@ import { ProjectWorkspaceContext } from "@/components/app/project-workspace-cont
 import { ProjectWorkspacePanel } from "@/components/app/project-workspace-panel";
 import { useTranslation } from "react-i18next";
 
+import { chatRuntimeHasOpenTurn } from "@/lib/chat/chat-session-runtime-model";
+import type { SessionHistory } from "@/lib/api/sessions";
+
 import type {
 	ChatUiState,
 	ChatUiStatePatch,
@@ -92,6 +95,10 @@ type ChatPageProps = {
 	readProjectDraft?: (projectId: string) => string;
 	writeProjectDraft?: (projectId: string, value: string) => void;
 	onRuntimeBusyChange?: (controllerId: string, busy: boolean) => void;
+	onRegisterSessionRefresh?: (
+		controllerId: string,
+		refresh: ((sessionPath: string) => Promise<void>) | null,
+	) => void;
 	onVisualReadyChange?: (ready: boolean) => void;
 	showSwitchSkeleton?: boolean;
 	onForkSessionCreated?: (session: {
@@ -108,7 +115,7 @@ type ChatPageProps = {
 
 function ChatPageImpl(props: ChatPageProps) {
 	const {
-		session,
+		session: sourceSession,
 		active = true,
 		retainBackgroundVisual = true,
 		onSessionIdentified,
@@ -129,6 +136,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		readProjectDraft,
 		writeProjectDraft,
 		onRuntimeBusyChange,
+		onRegisterSessionRefresh,
 		onVisualReadyChange,
 		showSwitchSkeleton = false,
 		onForkSessionCreated,
@@ -139,6 +147,16 @@ function ChatPageImpl(props: ChatPageProps) {
 		reserveWindowControls = false,
 		sidebarCollapsed = false,
 	} = props;
+	const [refreshedSessionPath, setRefreshedSessionPath] = useState<
+		string | null
+	>(null);
+	const session = useMemo(
+		() =>
+			sourceSession.sessionPath || !refreshedSessionPath
+				? sourceSession
+				: { ...sourceSession, sessionPath: refreshedSessionPath },
+		[sourceSession, refreshedSessionPath],
+	);
 	const { t } = useTranslation();
 	const { desktopNotifications, keyboardShortcuts } = usePreferences();
 	const workspace = useContext(ProjectWorkspaceContext);
@@ -207,6 +225,17 @@ function ChatPageImpl(props: ChatPageProps) {
 		session.projectRecord.connection.id,
 	);
 	const readOnly = Boolean(session.externalRunning || sessionHeaderMissing);
+	const handleHistoryMetadata = useCallback(
+		async (history: SessionHistory, refresh: boolean) => {
+			applyHistoryMetadata(history);
+			if (!refresh) return;
+			const runtime = await client.state();
+			if (runtime?.initialized && runtime.snapshot.state === "running") {
+				await refreshSessionState(undefined, true);
+			}
+		},
+		[applyHistoryMetadata, client, refreshSessionState],
+	);
 	const conversation = useChatConversation({
 		session,
 		activeTurnSessionIdRef,
@@ -216,7 +245,7 @@ function ChatPageImpl(props: ChatPageProps) {
 			? readProjectDraft(session.projectRecord.id)
 			: initialUiState.draft,
 		onDraftChange: persistDraft,
-		onHistoryMetadata: applyHistoryMetadata,
+		onHistoryMetadata: handleHistoryMetadata,
 	});
 	const {
 		conversationStore,
@@ -371,6 +400,54 @@ function ChatPageImpl(props: ChatPageProps) {
 		extensionNotifications,
 		dismissExtensionNotification,
 	} = piFeatures;
+	// The workspace probes external activity; background session props may be stale.
+	const refreshSessionDisabled =
+		runtimeBusy ||
+		compacting ||
+		Boolean(retryState) ||
+		modelChanging ||
+		thinkingChanging ||
+		historyPending ||
+		Boolean(extensionDialog);
+	const handleRefreshSession = useCallback(
+		async (sessionPath: string) => {
+			if (refreshSessionDisabled) {
+				throw new Error(t("chat.refreshSessionUnavailable"));
+			}
+			const runtimeState = await client.state();
+			if (chatRuntimeHasOpenTurn(runtimeState) || runtimeState?.compacting) {
+				throw new Error(t("chat.refreshSessionRunning"));
+			}
+			if (
+				runtimeState?.initialized &&
+				runtimeState.snapshot.state === "running"
+			) {
+				const state = await client.getPiAgentState();
+				if (state.isStreaming || state.isCompacting) {
+					throw new Error(t("chat.refreshSessionRunning"));
+				}
+			}
+			if (activeTurnSessionIdRef.current === session.id) {
+				throw new Error(t("chat.refreshSessionRunning"));
+			}
+			clearRecoveryState();
+			setRefreshedSessionPath(sessionPath);
+			retryHistory();
+		},
+		[
+			clearRecoveryState,
+			client,
+			refreshSessionDisabled,
+			retryHistory,
+			session.id,
+			t,
+		],
+	);
+	useEffect(() => {
+		if (!controllerId || !onRegisterSessionRefresh) return;
+		onRegisterSessionRefresh(controllerId, handleRefreshSession);
+		return () => onRegisterSessionRefresh(controllerId, null);
+	}, [controllerId, handleRefreshSession, onRegisterSessionRefresh]);
 	const cacheKeepAlive = useCacheKeepAliveStatus({
 		client: tauriPiloClient,
 		sessionKey: client.sessionKey,

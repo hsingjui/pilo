@@ -123,6 +123,8 @@ function App() {
 		switchDraftProject,
 		selectSession,
 		openSearchSession,
+		registerSessionRefresh,
+		refreshSession,
 		updateSession,
 		deleteSession,
 		handleSessionIdentified,
@@ -359,6 +361,7 @@ function App() {
 								onUpdateSession={(sessionId, update, projectId) => {
 									void updateSession(sessionId, update, projectId);
 								}}
+								onRefreshSession={refreshSession}
 								onDeleteSession={(sessionId, projectId) => {
 									void deleteSession(sessionId, projectId);
 								}}
@@ -454,6 +457,7 @@ function App() {
 														readProjectDraft={readProjectDraft}
 														writeProjectDraft={writeProjectDraft}
 														onRuntimeBusyChange={handleChatRuntimeBusyChange}
+														onRegisterSessionRefresh={registerSessionRefresh}
 														active={active}
 														retainBackgroundVisual={retainedBackgroundVisualControllerIds.has(
 															entry.controllerId,

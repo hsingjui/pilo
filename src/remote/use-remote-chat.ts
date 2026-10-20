@@ -16,6 +16,7 @@ import {
 	createProjectDraftCache,
 } from "@/components/app/chat-ui-state-cache";
 import { createChatConversationStore } from "@/components/chat/chat-conversation-store";
+import { INITIAL_HISTORY_MESSAGE_COUNT } from "@/components/chat/chat-conversation-model";
 import type { ChatSession } from "@/components/chat/chat-page-utils";
 import type { PiExtensionDialogRequest } from "@/components/chat/use-pi-session-features";
 import type { ChatImageAttachment } from "@/lib/chat/chat-submission";
@@ -452,6 +453,7 @@ export function useRemoteChat({
 		runtimeTurnOpen,
 		refreshAgentConfig,
 		onHistoryMetadata: applyHistoryMetadata,
+		getConversationState: conversationStore.getSnapshot,
 		handleExpiredAuth,
 		setFatalError,
 		setConversation,
@@ -895,6 +897,90 @@ export function useRemoteChat({
 		resumeProjectMcpPromptAction,
 	]);
 
+	const refreshSessionDisabled =
+		conversationUi.active ||
+		runtimeTurnOpen ||
+		compacting ||
+		sending ||
+		Boolean(retryState) ||
+		externalReadOnly ||
+		loadingConversation ||
+		Boolean(extensionUi.extensionDialog);
+	const refreshSession = useCallback(
+		async (sessionId: string, projectId: string) => {
+			if (!client) return;
+			const target = rawSessions.find(
+				(entry) =>
+					entry.projectId === projectId && entry.piSessionId === sessionId,
+			);
+			if (!target) throw new Error(t("chat.sessionPathUnavailable"));
+			const isCurrent =
+				activeProjectId === projectId && identifiedSessionId === sessionId;
+			const targetKey = isCurrent ? activeSessionKey : null;
+			if (isCurrent && refreshSessionDisabled) {
+				throw new Error(t("chat.refreshSessionUnavailable"));
+			}
+			try {
+				const [bootstrap, external] = await Promise.all([
+					client.bootstrap(),
+					client.externalActivity(projectId),
+				]);
+				const runtime = findReusableChatRuntime(
+					bootstrap.chatSessions,
+					projectId,
+					target.sessionPath,
+				);
+				if (
+					chatRuntimeHasOpenTurn(runtime) ||
+					runtime?.compacting ||
+					external.some(
+						(entry) => entry.path === target.sessionPath && entry.turnOpen,
+					)
+				) {
+					throw new Error(t("chat.refreshSessionRunning"));
+				}
+				if (runtime?.initialized && runtime.snapshot.state === "running") {
+					const state = await readSessionState(runtime.sessionKey);
+					if (state.isStreaming || state.isCompacting) {
+						throw new Error(t("chat.refreshSessionRunning"));
+					}
+				}
+				if (targetKey && activeSessionKeyRef.current === targetKey) {
+					if (conversationStore.getSnapshot()?.active) {
+						throw new Error(t("chat.refreshSessionRunning"));
+					}
+					setFatalError(null);
+					if (!selectedSession) setSelectedSessionPath(target.sessionPath);
+					retryHistory();
+				} else {
+					await client.loadHistory(projectId, target.sessionPath, {
+						messageLimit: INITIAL_HISTORY_MESSAGE_COUNT,
+						includeMessageIndex: true,
+					});
+				}
+				await refreshProjectSessions(projectId);
+			} catch (error) {
+				if (!handleExpiredAuth(error)) throw error;
+			}
+		},
+		[
+			activeProjectId,
+			activeSessionKey,
+			client,
+			conversationStore,
+			handleExpiredAuth,
+			identifiedSessionId,
+			rawSessions,
+			readSessionState,
+			refreshProjectSessions,
+			refreshSessionDisabled,
+			retryHistory,
+			selectedSession,
+			setFatalError,
+			t,
+		],
+	);
+
 	const fork = useRemoteChatFork({
 		client,
 		activeProjectId,
@@ -1037,6 +1123,7 @@ export function useRemoteChat({
 		switchDraftProject,
 		handleSelectSession,
 		retryHistory,
+		refreshSession,
 		sendSubmission,
 		handleEditQueued,
 		handleSendQueuedNow,

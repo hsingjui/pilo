@@ -20,8 +20,21 @@ import type { ChatUiStateCache } from "@/components/app/chat-ui-state-cache";
 import type { BusyChatControllersRef } from "@/components/app/use-opened-chat-controllers";
 import type { ChatSession } from "@/components/chat/chat-page";
 import { userErrorMessage } from "@/lib/app-error";
-import { stopChatSession } from "@/lib/api/chat-session-client";
-import type { SessionIndexEntry } from "@/lib/api/sessions";
+import {
+	listChatSessionRuntimeStates,
+	stopChatSession,
+} from "@/lib/api/chat-session-client";
+import { requestPiRpc, type PiAgentState } from "@/lib/api/pi-runtime";
+import {
+	chatRuntimeHasOpenTurn,
+	findReusableChatRuntime,
+} from "@/lib/chat/chat-session-runtime-model";
+import { INITIAL_HISTORY_MESSAGE_COUNT } from "@/components/chat/chat-conversation-model";
+import {
+	getExternalSessionActivity,
+	loadSessionHistoryWindow,
+	type SessionIndexEntry,
+} from "@/lib/api/sessions";
 
 type ForkSessionTarget = {
 	sessionId: string;
@@ -83,6 +96,78 @@ export function useAppChatSessionActions({
 	useEffect(() => {
 		activeProjectIdRef.current = activeProjectId;
 	}, [activeProjectId]);
+
+	const sessionRefreshHandlersRef = useRef(
+		new Map<string, (sessionPath: string) => Promise<void>>(),
+	);
+	const registerSessionRefresh = useCallback(
+		(
+			controllerId: string,
+			refresh: ((sessionPath: string) => Promise<void>) | null,
+		) => {
+			if (refresh) sessionRefreshHandlersRef.current.set(controllerId, refresh);
+			else sessionRefreshHandlersRef.current.delete(controllerId);
+		},
+		[],
+	);
+	const refreshSession = useCallback(
+		async (sessionId: string, projectId: string) => {
+			const indexed = indexedSessions.find(
+				(entry) =>
+					entry.projectId === projectId && entry.piSessionId === sessionId,
+			);
+			const opened = openedChats.find(
+				(entry) =>
+					entry.session.projectRecord.id === projectId &&
+					(entry.piSessionId ?? entry.session.id) === sessionId,
+			);
+			const path = opened?.session.sessionPath ?? indexed?.sessionPath;
+			if (!path) throw new Error(t("chat.sessionPathUnavailable"));
+			if (opened && busyChatControllersRef.current.has(opened.controllerId)) {
+				throw new Error(t("chat.refreshSessionRunning"));
+			}
+			const [states, external] = await Promise.all([
+				listChatSessionRuntimeStates(),
+				getExternalSessionActivity(projectId),
+			]);
+			const runtime = findReusableChatRuntime(states, projectId, path);
+			if (
+				chatRuntimeHasOpenTurn(runtime) ||
+				runtime?.compacting ||
+				external.some((entry) => entry.path === path && entry.turnOpen)
+			) {
+				throw new Error(t("chat.refreshSessionRunning"));
+			}
+			const handler =
+				opened && sessionRefreshHandlersRef.current.get(opened.controllerId);
+			if (handler) {
+				await handler(path);
+			} else {
+				if (runtime?.initialized && runtime.snapshot.state === "running") {
+					const state = await requestPiRpc<PiAgentState>(
+						{ type: "get_state" },
+						undefined,
+						runtime.sessionKey,
+					);
+					if (state.isStreaming || state.isCompacting) {
+						throw new Error(t("chat.refreshSessionRunning"));
+					}
+				}
+				await loadSessionHistoryWindow(projectId, path, {
+					messageLimit: INITIAL_HISTORY_MESSAGE_COUNT,
+					includeMessageIndex: true,
+				});
+			}
+			await refreshProjectSessions(projectId);
+		},
+		[
+			busyChatControllersRef,
+			indexedSessions,
+			openedChats,
+			refreshProjectSessions,
+			t,
+		],
+	);
 
 	const updateSession = useCallback(
 		async (
@@ -241,6 +326,8 @@ export function useAppChatSessionActions({
 	);
 
 	return {
+		registerSessionRefresh,
+		refreshSession,
 		updateSession,
 		deleteSession,
 		handleSessionIdentified,

@@ -9,7 +9,14 @@ import {
 	type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Folder, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import {
+	Folder,
+	MoreHorizontal,
+	Pencil,
+	RefreshCw,
+	Trash2,
+} from "lucide-react";
+import { useSessionRefresh } from "./use-session-refresh";
 import { cn } from "@/lib/utils";
 import { prefetchSessionHistory } from "@/lib/api/sessions";
 import {
@@ -204,6 +211,7 @@ export const SessionRow = memo(function SessionRow({
 	onSelect,
 	onDelete,
 	onRename,
+	onRefresh,
 	projectName,
 }: {
 	session: SidebarSession;
@@ -211,12 +219,17 @@ export const SessionRow = memo(function SessionRow({
 	onSelect: (sessionId: string, projectId: string) => void;
 	onDelete?: (sessionId: string, projectId: string) => void;
 	onRename?: (sessionId: string, title: string, projectId: string) => void;
+	onRefresh?: (sessionId: string, projectId: string) => Promise<void>;
 	/** 所属项目名；仅在“最近会话”且开启「展示项目」时传入（两行式展示）。 */
 	projectName?: string;
 }) {
 	const projectContext = Boolean(projectName);
 	const mentionDrag = useSessionMentionDrag();
 	const { t } = useTranslation();
+	const { refresh, disabled: refreshDisabled } = useSessionRefresh(
+		session,
+		onRefresh,
+	);
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [confirmingDeleteMenu, setConfirmingDeleteMenu] = useState(false);
 	const [renaming, setRenaming] = useState(false);
@@ -340,7 +353,7 @@ export const SessionRow = memo(function SessionRow({
 										<MoreHorizontal className="h-3.5 w-3.5" />
 									</button>
 								</DropdownMenuTrigger>
-								<DropdownMenuContent align="start" className="min-w-0 w-32">
+								<DropdownMenuContent align="start" className="min-w-0 w-40">
 									<DropdownMenuItem
 										onSelect={() => {
 											setRenameValue(session.title);
@@ -350,6 +363,15 @@ export const SessionRow = memo(function SessionRow({
 										<Pencil className={menuItemIconClassName} />
 										{t("sidebar.rename")}
 									</DropdownMenuItem>
+									{onRefresh ? (
+										<DropdownMenuItem
+											disabled={refreshDisabled}
+											onSelect={() => void refresh()}
+										>
+											<RefreshCw className={menuItemIconClassName} />
+											{t("chat.refreshSession")}
+										</DropdownMenuItem>
+									) : null}
 									{onDelete ? (
 										<DropdownMenuItem
 											className="text-destructive focus:text-destructive"

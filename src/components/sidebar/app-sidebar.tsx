@@ -78,6 +78,7 @@ export function AppSidebar({
 	onCollapse,
 	onUpdateSession,
 	onDeleteSession,
+	onRefreshSession,
 	onRefreshProjectSessions,
 	refreshingProjectIds = EMPTY_REFRESHING_PROJECT_IDS,
 	selectedProjectId,
@@ -395,6 +396,7 @@ export function AppSidebar({
 						onSelectSession={handleSelectSession}
 						onRenameSession={handleRenameSession}
 						onDeleteSession={handleDeleteSession}
+						onRefreshSession={onRefreshSession}
 					/>
 					<footer className="relative flex shrink-0 items-center gap-1 border-t border-sidebar-border px-1.5 py-1">
 						{footer}

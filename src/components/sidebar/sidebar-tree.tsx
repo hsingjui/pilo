@@ -66,6 +66,7 @@ type SidebarTreeProps = {
 		projectId: string,
 	) => void;
 	onDeleteSession: (sessionId: string, projectId: string) => void;
+	onRefreshSession?: (sessionId: string, projectId: string) => Promise<void>;
 };
 
 /**
@@ -101,6 +102,7 @@ export function SidebarTree({
 	onSelectSession,
 	onRenameSession,
 	onDeleteSession,
+	onRefreshSession,
 }: SidebarTreeProps) {
 	const { t } = useTranslation();
 	const suppressProjectClickRef = useRef(false);
@@ -142,6 +144,7 @@ export function SidebarTree({
 					onSelect={onSelectSession}
 					onDelete={onDeleteSession}
 					onRename={onRenameSession}
+					onRefresh={onRefreshSession}
 					projectName={
 						showProjectName ? projectById.get(session.projectId) : undefined
 					}
@@ -156,6 +159,7 @@ export function SidebarTree({
 			projectById,
 			onDeleteSession,
 			onRenameSession,
+			onRefreshSession,
 			onSelectSession,
 		],
 	);

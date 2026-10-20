@@ -432,6 +432,8 @@ export function useAppChatWorkspace({
 	});
 
 	const {
+		registerSessionRefresh,
+		refreshSession,
 		updateSession,
 		deleteSession,
 		handleSessionIdentified,
@@ -476,6 +478,8 @@ export function useAppChatWorkspace({
 		switchDraftProject,
 		selectSession,
 		openSearchSession,
+		registerSessionRefresh,
+		refreshSession,
 		updateSession,
 		deleteSession,
 		handleSessionIdentified,

@@ -78,6 +78,7 @@ export function RemoteMobileNavigation({
 	onNewChat,
 	onRefreshProjectSessions,
 	onDeleteSession,
+	onRefreshSession,
 }: {
 	client: PiloClient | null;
 	open: boolean;
@@ -93,6 +94,7 @@ export function RemoteMobileNavigation({
 	onNewChat: (projectId?: string) => void;
 	onRefreshProjectSessions: (projectId: string) => void;
 	onDeleteSession: (sessionId: string, projectId: string) => void;
+	onRefreshSession: (sessionId: string, projectId: string) => Promise<void>;
 }) {
 	const { t } = useTranslation();
 	const [mode, setMode] = useState<SidebarEnvView>("projects");
@@ -297,6 +299,7 @@ export function RemoteMobileNavigation({
 												selectedSessionId === session.id
 											}
 											projectName={projectNameById.get(session.projectId)}
+											onRefresh={onRefreshSession}
 											onSelect={handleSelectSession}
 											confirmingDelete={
 												confirmDeleteSessionId ===
@@ -392,6 +395,7 @@ export function RemoteMobileNavigation({
 																						`${session.projectId}:${session.id}`
 																					}
 																					onSelect={handleSelectSession}
+																					onRefresh={onRefreshSession}
 																					onRequestDelete={
 																						setConfirmDeleteSessionId
 																					}

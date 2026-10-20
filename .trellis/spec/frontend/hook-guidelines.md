@@ -61,6 +61,41 @@ codebase does not use it.)
   success (no automatic retry), manual retry, index catch-up (notice clears),
   later index changes (reload allowed), and live-turn notice suppression.
 
+## Manual Session Refresh
+
+- Desktop and WebUI expose refresh in each left-sidebar session row menu,
+  including the mobile navigation drawer, not in the top-right session header.
+  The row uses `useSessionRefresh` for pending state and localized errors. Disable
+  running rows; reject requests while compaction, retry, submission, an extension
+  dialog or history load is active. Running sessions do not queue a
+  refresh for later. Recheck Host runtime activity and Pi streaming/compaction
+  before requesting history, since the menu state can lag behind the process.
+- If a turn is adopted while an ordinary history read/replay is pending, mark
+  that load deferred so it retries after the turn ends. Returning `ready` without
+  publishing a snapshot or marking it deferred can strand the initial history.
+  A manual refresh interrupted by a new turn must clear its force flag and must
+  not queue a retry.
+- Manual history retry must omit the cached index fingerprint. The Host then
+  stats the original Local/WSL/SSH JSONL before reusing a matching projection;
+  passing a stale expected fingerprint can otherwise return the old cache.
+- Desktop mounted controllers register their refresh callback with the workspace
+  session actions and unregister on cleanup. Match rows by project and persisted
+  Pi ID, not a draft controller ID. Unopened sessions warm a fresh source window
+  without selecting the row. Refresh the project index after the request.
+  Workspace actions probe external activity before calling mounted handlers;
+  those handlers must not veto the fresh result with cached `externalRunning`
+  props, since inactive controllers intentionally skip ordinary props updates.
+- Replay replaces conversation/history-window state, not the controller or
+  composer draft. Refresh live metadata/configuration only for an initialized
+  running process, after applying historical metadata; never start, stop or
+  restart Pi just to refresh. Desktop awaits this metadata refresh before
+  publishing the new snapshot; WebUI uses its existing history/config reload.
+- When verification is authorized, cover changed source with unchanged index,
+  idle sessions with/without an existing Pi process, running/compacting/queued
+  states, failed reads and retry, switching WebUI sessions during refresh,
+  adopting a turn during the initial history read/replay, and refreshing a
+  background external session after it becomes idle.
+
 ## Keep hooks focused
 
 If a hook grows past one responsibility, split it — the chat feature does this

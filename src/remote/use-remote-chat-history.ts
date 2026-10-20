@@ -43,6 +43,7 @@ type UseRemoteChatHistoryOptions = {
 	handleExpiredAuth: (error: unknown) => boolean;
 	setFatalError: (message: string | null) => void;
 	setConversation: Dispatch<SetStateAction<ConversationState>>;
+	getConversationState: () => ConversationState | undefined;
 	setRuntimeReady: Dispatch<SetStateAction<boolean>>;
 	setReadOnly: Dispatch<SetStateAction<boolean>>;
 };
@@ -60,6 +61,7 @@ export function useRemoteChatHistory({
 	handleExpiredAuth,
 	setFatalError,
 	setConversation,
+	getConversationState,
 	setRuntimeReady,
 	setReadOnly,
 }: UseRemoteChatHistoryOptions) {
@@ -80,6 +82,7 @@ export function useRemoteChatHistory({
 		status: "ready" | "loading" | "error";
 	}>({ key: null, status: "ready" });
 	const [historyRetryKey, setHistoryRetryKey] = useState(0);
+	const manualRefreshRef = useRef(false);
 	const selectedSessionRef = useRef(selectedSession);
 	useEffect(() => {
 		selectedSessionRef.current = selectedSession;
@@ -156,6 +159,13 @@ export function useRemoteChatHistory({
 			!selectedLoadKey
 		)
 			return;
+		const manualRefresh = manualRefreshRef.current;
+		manualRefreshRef.current = false;
+		if (
+			manualRefresh &&
+			(liveTurnOpenRef.current || getConversationState()?.active)
+		)
+			return;
 		let cancelled = false;
 		const requestedSession = selectedSessionRef.current;
 		const requestedIndexFingerprint = requestedSession
@@ -178,6 +188,14 @@ export function useRemoteChatHistory({
 				if (!directory || windowStart === undefined) {
 					throw new Error(
 						"Session history window is missing its message index.",
+					);
+				}
+				if (
+					manualRefresh &&
+					(liveTurnOpenRef.current || getConversationState()?.active)
+				) {
+					return client.chatState(
+						activeSessionKey ?? sessionKey(activeProjectId, selectedSessionId),
 					);
 				}
 				setHistoryFingerprint(result.fingerprint);
@@ -231,6 +249,7 @@ export function useRemoteChatHistory({
 		activeProjectId,
 		activeSessionKey,
 		handleExpiredAuth,
+		getConversationState,
 		refreshAgentConfig,
 		onHistoryMetadata,
 		resyncKey,
@@ -345,6 +364,7 @@ export function useRemoteChatHistory({
 	);
 
 	const retryHistory = useCallback(() => {
+		manualRefreshRef.current = true;
 		setHistoryRetryKey((value) => value + 1);
 	}, []);
 
