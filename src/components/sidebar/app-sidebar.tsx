@@ -1,5 +1,13 @@
 /* oxlint-disable jsx-a11y/prefer-tag-over-role -- 宽度拖拽手柄是垂直分割线，role=separator 语义正确，无对应语义 HTML 元素 */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	lazy,
+	Suspense,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { PanelLeft, Search, SquarePen } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -7,7 +15,6 @@ import { usePreferences } from "@/lib/preferences-provider";
 import { tauriPiloClient } from "@/lib/api/tauri-pilo-client";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { IS_MACOS } from "@/components/title-bar";
-import { CommandPalette } from "@/components/command-palette";
 import { ProjectSessionsToolbar } from "./project-sessions-toolbar";
 import { SidebarTree } from "./sidebar-tree";
 import { SIDEBAR_ACTION } from "./sidebar-row-parts";
@@ -27,6 +34,12 @@ import type {
 	SidebarSession,
 	SidebarProject,
 } from "./types";
+
+const CommandPalette = lazy(() =>
+	import("@/components/command-palette").then((module) => ({
+		default: module.CommandPalette,
+	})),
+);
 
 export type { AppSidebarProps, SidebarEnv, SidebarSession, SidebarProject };
 
@@ -289,9 +302,11 @@ export function AppSidebar({
 			<aside
 				ref={asideRef}
 				style={collapsed ? undefined : { width: sidebarWidth }}
+				aria-hidden={collapsed}
+				inert={collapsed}
 				className={cn(
 					"relative h-full shrink-0 transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none",
-					// 拖拽时关闭宽度过渡，避免动画跟不上指针（与右侧 Panel 一致）
+					// 拖拽时关闭宽度过渡，避免动画跟不上指针。
 					resizing && "transition-none",
 					collapsed
 						? "w-0 overflow-hidden opacity-0"
@@ -426,19 +441,21 @@ export function AppSidebar({
 				)}
 			</aside>
 			{paletteOpen ? (
-				<CommandPalette
-					client={tauriPiloClient}
-					open
-					onOpenChange={setPaletteOpen}
-					projects={projects}
-					sessions={sessions}
-					onSelectProject={(projectId) => onNewChatInProject?.(projectId)}
-					onSelectSession={(target) =>
-						onOpenSearchSession
-							? onOpenSearchSession(target)
-							: handleSelectSession(target.sessionId, target.projectId)
-					}
-				/>
+				<Suspense fallback={null}>
+					<CommandPalette
+						client={tauriPiloClient}
+						open
+						onOpenChange={setPaletteOpen}
+						projects={projects}
+						sessions={sessions}
+						onSelectProject={(projectId) => onNewChatInProject?.(projectId)}
+						onSelectSession={(target) =>
+							onOpenSearchSession
+								? onOpenSearchSession(target)
+								: handleSelectSession(target.sessionId, target.projectId)
+						}
+					/>
+				</Suspense>
 			) : null}
 		</>
 	);

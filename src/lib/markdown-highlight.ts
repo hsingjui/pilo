@@ -1,5 +1,9 @@
 import type { CodeHighlighterPlugin, HighlightOptions } from "streamdown";
-import type { BundledLanguage } from "shiki";
+import {
+	CODE_THEME_NAME,
+	getCodeHighlighter,
+	type CodeLanguage,
+} from "@/lib/code-highlighter";
 
 type ShikiHighlighter = Awaited<
 	ReturnType<(typeof import("shiki/core"))["createHighlighterCore"]>
@@ -8,11 +12,7 @@ type MarkdownHighlightResult = NonNullable<
 	ReturnType<CodeHighlighterPlugin["highlight"]>
 >;
 
-const MARKDOWN_CODE_THEME_NAME = "pilo-css-variables";
-const MARKDOWN_CODE_THEMES = [
-	MARKDOWN_CODE_THEME_NAME,
-	MARKDOWN_CODE_THEME_NAME,
-] as const;
+const MARKDOWN_CODE_THEMES = [CODE_THEME_NAME, CODE_THEME_NAME] as const;
 
 const MARKDOWN_CODE_LANGUAGES = [
 	"typescript",
@@ -29,32 +29,31 @@ const MARKDOWN_CODE_LANGUAGES = [
 	"yaml",
 	"html",
 	"css",
-] as const satisfies readonly BundledLanguage[];
+] as const satisfies readonly CodeLanguage[];
 
-const MARKDOWN_CODE_LANGUAGE_ALIASES: Partial<Record<string, BundledLanguage>> =
-	{
-		js: "javascript",
-		ts: "typescript",
-		md: "markdown",
-		py: "python",
-		rs: "rust",
-		sh: "shellscript",
-		shell: "shellscript",
-		yml: "yaml",
-	};
+const MARKDOWN_CODE_LANGUAGE_ALIASES: Partial<Record<string, CodeLanguage>> = {
+	js: "javascript",
+	ts: "typescript",
+	md: "markdown",
+	py: "python",
+	rs: "rust",
+	sh: "shellscript",
+	shell: "shellscript",
+	yml: "yaml",
+};
 
 const MARKDOWN_CODE_LANGUAGE_SET = new Set<string>([
 	...MARKDOWN_CODE_LANGUAGES,
 	...Object.keys(MARKDOWN_CODE_LANGUAGE_ALIASES),
 ]);
 
-function normalizeCodeLanguage(language: string): BundledLanguage | null {
+function normalizeCodeLanguage(language: string): CodeLanguage | null {
 	const normalized = String(language).trim().toLowerCase();
 	if (!normalized) return null;
 	const alias = MARKDOWN_CODE_LANGUAGE_ALIASES[normalized];
 	if (alias) return alias;
 	return MARKDOWN_CODE_LANGUAGE_SET.has(normalized)
-		? (normalized as BundledLanguage)
+		? (normalized as CodeLanguage)
 		: null;
 }
 
@@ -142,78 +141,6 @@ function highlightCode(
 
 function createLazyShikiCodePlugin(): CodeHighlighterPlugin {
 	let highlighter: ShikiHighlighter | null = null;
-	let highlighterPromise: Promise<ShikiHighlighter> | null = null;
-
-	const loadHighlighter = async () => {
-		if (!highlighterPromise) {
-			highlighterPromise = (async () => {
-				const [
-					{ createCssVariablesTheme, createHighlighterCore },
-					{ createJavaScriptRegexEngine },
-					typescript,
-					tsx,
-					javascript,
-					jsx,
-					json,
-					bash,
-					shellscript,
-					markdown,
-					python,
-					rust,
-					go,
-					yaml,
-					html,
-					css,
-				] = await Promise.all([
-					import("shiki/core"),
-					import("shiki/engine/javascript"),
-					import("@shikijs/langs/typescript"),
-					import("@shikijs/langs/tsx"),
-					import("@shikijs/langs/javascript"),
-					import("@shikijs/langs/jsx"),
-					import("@shikijs/langs/json"),
-					import("@shikijs/langs/bash"),
-					import("@shikijs/langs/shellscript"),
-					import("@shikijs/langs/markdown"),
-					import("@shikijs/langs/python"),
-					import("@shikijs/langs/rust"),
-					import("@shikijs/langs/go"),
-					import("@shikijs/langs/yaml"),
-					import("@shikijs/langs/html"),
-					import("@shikijs/langs/css"),
-				]);
-
-				const loadedHighlighter = await createHighlighterCore({
-					engine: createJavaScriptRegexEngine(),
-					langs: [
-						...typescript.default,
-						...tsx.default,
-						...javascript.default,
-						...jsx.default,
-						...json.default,
-						...bash.default,
-						...shellscript.default,
-						...markdown.default,
-						...python.default,
-						...rust.default,
-						...go.default,
-						...yaml.default,
-						...html.default,
-						...css.default,
-					],
-					themes: [
-						createCssVariablesTheme({
-							name: MARKDOWN_CODE_THEME_NAME,
-							variablePrefix: "--pilo-shiki-",
-						}),
-					],
-				});
-				highlighter = loadedHighlighter;
-				return loadedHighlighter;
-			})();
-		}
-		return highlighterPromise;
-	};
 
 	return {
 		name: "shiki",
@@ -221,11 +148,16 @@ function createLazyShikiCodePlugin(): CodeHighlighterPlugin {
 		getSupportedLanguages: () => [...MARKDOWN_CODE_LANGUAGES],
 		getThemes: () => [...MARKDOWN_CODE_THEMES],
 		highlight: (options, callback) => {
-			if (highlighter) return highlightCode(highlighter, options);
-			void loadHighlighter()
-				.then((loadedHighlighter) =>
-					callback?.(highlightCode(loadedHighlighter, options)),
-				)
+			const language = normalizeCodeLanguage(options.language);
+			if (!language) return createPlainHighlightResult(options.code);
+			if (highlighter?.getLoadedLanguages().includes(language)) {
+				return highlightCode(highlighter, options);
+			}
+			void getCodeHighlighter(language)
+				.then((loadedHighlighter) => {
+					highlighter = loadedHighlighter;
+					callback?.(highlightCode(loadedHighlighter, options));
+				})
 				.catch(() => callback?.(createPlainHighlightResult(options.code)));
 			return null;
 		},

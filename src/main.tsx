@@ -184,9 +184,6 @@ function BootstrapErrorFallback() {
 }
 
 async function bootstrap() {
-	if (DESKTOP_RUNTIME) {
-		await installDesktopLogging();
-	}
 	if (!DESKTOP_RUNTIME) {
 		document.documentElement.setAttribute("data-remote-webui", "");
 	}
@@ -201,20 +198,25 @@ async function bootstrap() {
 	let RootApp: React.ComponentType;
 	if (DESKTOP_RUNTIME) {
 		disableBrowserContextMenu();
-		const [
-			{ installChatPerformanceDebugApi },
-			{ installChatRuntimeTraceDebugApi },
-			{ installDesktopTrayLabels },
-		] = await Promise.all([
-			import("@/lib/chat/chat-performance-debug"),
-			import("@/lib/chat/chat-runtime-trace-debug"),
-			import("@/lib/desktop-integration"),
-		]);
-		installChatRuntimeTraceDebugApi();
-		installChatPerformanceDebugApi();
 		primeRuntimeEventChannel();
+		const [{ default: App }, { installDesktopTrayLabels }] = await Promise.all([
+			import("./App"),
+			import("@/lib/desktop-integration"),
+			installDesktopLogging(),
+		]);
 		installDesktopTrayLabels();
-		RootApp = (await import("./App")).default;
+		RootApp = App;
+		if (import.meta.env.DEV) {
+			const [
+				{ installChatPerformanceDebugApi },
+				{ installChatRuntimeTraceDebugApi },
+			] = await Promise.all([
+				import("@/lib/chat/chat-performance-debug"),
+				import("@/lib/chat/chat-runtime-trace-debug"),
+			]);
+			installChatRuntimeTraceDebugApi();
+			installChatPerformanceDebugApi();
+		}
 	} else {
 		RootApp = (await import("@/remote/remote-app")).RemoteApp;
 	}

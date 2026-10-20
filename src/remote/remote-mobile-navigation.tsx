@@ -1,12 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useTranslation } from "react-i18next";
 import { Search, SquarePen, Wifi, WifiOff, X } from "lucide-react";
 
-import {
-	CommandPalette,
-	type SessionSearchTarget,
-} from "@/components/command-palette";
+import type { SessionSearchTarget } from "@/components/command-palette";
 import {
 	sortSidebarSessionsActiveFirst,
 	sortSidebarSessionsByRecency,
@@ -29,6 +26,12 @@ import {
 	MobileSessionRow,
 	ROW_ACTION_CLASS,
 } from "@/remote/remote-mobile-rows";
+
+const CommandPalette = lazy(() =>
+	import("@/components/command-palette").then((module) => ({
+		default: module.CommandPalette,
+	})),
+);
 
 /** “最近会话”视图最多展示的会话数，与桌面侧栏保持一致。 */
 const RECENT_SESSION_LIMIT = 50;
@@ -474,21 +477,23 @@ export function RemoteMobileNavigation({
 			</DialogPrimitive.Portal>
 
 			{paletteOpen && client ? (
-				<CommandPalette
-					client={client}
-					open
-					onOpenChange={setPaletteOpen}
-					projects={projects}
-					sessions={sessions}
-					onSelectProject={(projectId) => {
-						setPaletteOpen(false);
-						handleNewChat(projectId);
-					}}
-					onSelectSession={(target: SessionSearchTarget) => {
-						setPaletteOpen(false);
-						handleSelectSession(target.sessionId, target.projectId);
-					}}
-				/>
+				<Suspense fallback={null}>
+					<CommandPalette
+						client={client}
+						open
+						onOpenChange={setPaletteOpen}
+						projects={projects}
+						sessions={sessions}
+						onSelectProject={(projectId) => {
+							setPaletteOpen(false);
+							handleNewChat(projectId);
+						}}
+						onSelectSession={(target: SessionSearchTarget) => {
+							setPaletteOpen(false);
+							handleSelectSession(target.sessionId, target.projectId);
+						}}
+					/>
+				</Suspense>
 			) : null}
 		</DialogPrimitive.Root>
 	);

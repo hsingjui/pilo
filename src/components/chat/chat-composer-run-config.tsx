@@ -1,10 +1,15 @@
-import { type ComponentPropsWithoutRef, useEffect, useState } from "react";
+import {
+	type ComponentPropsWithoutRef,
+	lazy,
+	Suspense,
+	useEffect,
+	useState,
+} from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Check, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { CHAT_COMPOSER_RUN_CONFIG_TRIGGER_CLASS_NAME } from "@/components/chat/chat-composer-frame";
-import { ChatModelPicker } from "@/components/chat/chat-model-picker";
 import { PiLogo } from "@/components/pi-logo";
 import type { PiModel, PiThinkingLevel } from "@/lib/api/pi-runtime";
 import type { ModelScopeControls } from "@/lib/project-model-scope";
@@ -20,6 +25,12 @@ import {
 	DropdownMenuTrigger,
 	Spinner,
 } from "@/ui";
+
+const ChatModelPicker = lazy(() =>
+	import("@/components/chat/chat-model-picker").then((module) => ({
+		default: module.ChatModelPicker,
+	})),
+);
 
 const THINKING_LEVEL_LABELS: Record<PiThinkingLevel, string> = {
 	off: "Off",
@@ -322,19 +333,29 @@ function RunConfigTrigger({
 function RunConfigModelPicker(
 	props: ComposerRunConfigProps & { compact?: boolean },
 ) {
+	const { t } = useTranslation();
 	return (
-		<ChatModelPicker
-			models={props.models}
-			selectedModel={props.selectedModel}
-			loading={props.modelLoading}
-			error={props.modelError}
-			disabled={props.modelDisabled}
-			onRefresh={props.onModelRefresh}
-			onChange={props.onModelChange}
-			modelScope={props.modelScope}
-			canEditScope={props.canEditScope ?? false}
-			compact={props.compact}
-		/>
+		<Suspense
+			fallback={
+				<output className="flex min-h-28 items-center justify-center gap-2 p-3 text-sm text-muted-foreground">
+					<Spinner className="size-4" aria-hidden="true" />
+					{t("chat.loadingModels")}
+				</output>
+			}
+		>
+			<ChatModelPicker
+				models={props.models}
+				selectedModel={props.selectedModel}
+				loading={props.modelLoading}
+				error={props.modelError}
+				disabled={props.modelDisabled}
+				onRefresh={props.onModelRefresh}
+				onChange={props.onModelChange}
+				modelScope={props.modelScope}
+				canEditScope={props.canEditScope ?? false}
+				compact={props.compact}
+			/>
+		</Suspense>
 	);
 }
 

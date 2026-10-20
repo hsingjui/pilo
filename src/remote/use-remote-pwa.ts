@@ -62,23 +62,29 @@ export function useRemotePwa() {
 		window.addEventListener("online", requestUpdate);
 		document.addEventListener("visibilitychange", handleVisibilityChange);
 
-		void navigator.serviceWorker
-			.register(SERVICE_WORKER_URL, {
-				scope: SERVICE_WORKER_SCOPE,
-				updateViaCache: "none",
-			})
-			.then((nextRegistration) => {
-				if (disposed) return;
-				registration = nextRegistration;
-				registration.addEventListener("updatefound", handleUpdateFound);
-				handleUpdateFound();
-				syncWaitingWorker();
-				requestUpdate();
-			})
-			.catch(() => undefined);
+		const register = () => {
+			void navigator.serviceWorker
+				.register(SERVICE_WORKER_URL, {
+					scope: SERVICE_WORKER_SCOPE,
+					updateViaCache: "none",
+				})
+				.then((nextRegistration) => {
+					if (disposed) return;
+					registration = nextRegistration;
+					registration.addEventListener("updatefound", handleUpdateFound);
+					handleUpdateFound();
+					syncWaitingWorker();
+					requestUpdate();
+				})
+				.catch(() => undefined);
+		};
+		// Initial precaching must not compete with the page's outstanding assets.
+		if (document.readyState === "complete") register();
+		else window.addEventListener("load", register, { once: true });
 
 		return () => {
 			disposed = true;
+			window.removeEventListener("load", register);
 			registration?.removeEventListener("updatefound", handleUpdateFound);
 			installingWorker?.removeEventListener(
 				"statechange",

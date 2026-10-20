@@ -49,6 +49,23 @@ re-styling them.
   (e.g. `chat-composer.tsx`, `chat-composer-frame.tsx`, `chat-composer-actions.tsx`).
 - Heavy features are lazy-loaded with `React.lazy` + `Suspense` in `src/App.tsx`
   (`ChatPage`, `ProjectViewer`, `RightSidebar`, `TerminalDock`).
+- Startup loading boundaries apply to desktop and WebUI: `ChatMarkdown` starts
+  its shared runtime import on the first rendered message, not at module scope;
+  importing/prewarming `ChatPage` must not fetch the Markdown engine for an empty
+  draft. Both sidebar and mobile command palettes use `lazy` + `Suspense` only
+  when opened. `ComposerRunConfig` also lazy-loads `ChatModelPicker` only when
+  its desktop submenu or touch sheet mounts. Keep the trigger eager; compact
+  pickers focus their search input on mount after loading, while touch sheets
+  must not automatically summon the soft keyboard. Desktop debug API imports
+  belong inside `import.meta.env.DEV`; load desktop logging and `App` in parallel
+  but finish logging setup before rendering. WebUI service-worker registration
+  waits for `document.readyState === "complete"` or a one-shot window `load`
+  event, removed on cleanup, so precaching does not contend with initial assets.
+- Chat and project-file highlighting share `getCodeHighlighter(language)` from
+  `src/lib/code-highlighter.ts`, using one JS regex engine and CSS-variable theme.
+  Load only the requested grammar (plus its bundled dependencies); do not load
+  the full supported-language list on the first code block. Cache concurrent
+  requests per language and evict failed loads so later requests can retry.
 - File-opening links in tool activity rows are limited to built-in `read`,
   `write` and `edit`. Other tools (commands and MCP tools), unsupported paths and
   WebUI retain the original full-row disclosure button and preview tooltip.

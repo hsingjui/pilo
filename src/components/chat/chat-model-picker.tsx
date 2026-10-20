@@ -71,9 +71,10 @@ export function ChatModelPicker({
 	const searchRef = useRef<HTMLInputElement>(null);
 	const wasEditingRef = useRef(false);
 	useEffect(() => {
-		if (editing || wasEditingRef.current) searchRef.current?.focus();
+		// The desktop submenu may open before this lazy-loaded input mounts.
+		if (compact || editing || wasEditingRef.current) searchRef.current?.focus();
 		wasEditingRef.current = editing;
-	}, [editing]);
+	}, [compact, editing]);
 	const scopeReady = Boolean(
 		modelScope?.scope && modelScope.catalogReady && !modelScope.error,
 	);
