@@ -9,6 +9,7 @@ import {
 
 import {
 	reduceProjectWorkspaces,
+	type GitWorkspaceView,
 	type WorkspaceFile,
 } from "@/lib/project-workspace";
 
@@ -30,6 +31,19 @@ export function useProjectWorkspaces(projectIds: readonly string[]) {
 	const closeFile = useCallback((projectId: string, path: string) => {
 		dispatch({ type: "close", projectId, path });
 	}, []);
+	const openGit = useCallback((projectId: string) => {
+		if (!availableProjects.current.includes(projectId)) return;
+		dispatch({ type: "open-git", projectId });
+	}, []);
+	const closeGit = useCallback((projectId: string) => {
+		dispatch({ type: "close-git", projectId });
+	}, []);
+	const updateGitView = useCallback(
+		(projectId: string, view: Partial<GitWorkspaceView>) => {
+			dispatch({ type: "update-git-view", projectId, view });
+		},
+		[],
+	);
 	const highlightFile = useCallback(
 		(projectId: string, file: WorkspaceFile, html: string | null) => {
 			dispatch({ type: "highlight", projectId, file, html });
@@ -37,8 +51,26 @@ export function useProjectWorkspaces(projectIds: readonly string[]) {
 		[],
 	);
 	return useMemo(
-		() => ({ state, openFile, selectFile, closeFile, highlightFile }),
-		[state, openFile, selectFile, closeFile, highlightFile],
+		() => ({
+			state,
+			openFile,
+			selectFile,
+			closeFile,
+			openGit,
+			closeGit,
+			updateGitView,
+			highlightFile,
+		}),
+		[
+			state,
+			openFile,
+			selectFile,
+			closeFile,
+			openGit,
+			closeGit,
+			updateGitView,
+			highlightFile,
+		],
 	);
 }
 

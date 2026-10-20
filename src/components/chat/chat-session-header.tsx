@@ -3,7 +3,7 @@ import { ProjectWorkspaceContext } from "@/components/app/project-workspace-cont
 import {
 	MessageSquareDashed,
 	PanelLeft,
-	PanelRight,
+	GitBranch,
 	SquarePen,
 	TerminalSquare,
 } from "lucide-react";
@@ -29,7 +29,6 @@ export function SessionHeader({
 	session,
 	project = session?.projectRecord,
 	sessionState,
-	onOpenChanges,
 	onOpenTerminal,
 	terminalRunning = false,
 	terminalVisible = false,
@@ -47,7 +46,6 @@ export function SessionHeader({
 	session?: ChatSession;
 	project?: Project | null;
 	sessionState?: ChatSessionRuntimeState;
-	onOpenChanges?: () => void;
 	onOpenTerminal?: () => void;
 	terminalRunning?: boolean;
 	terminalVisible?: boolean;
@@ -67,10 +65,12 @@ export function SessionHeader({
 	const { t } = useTranslation();
 	const editorProject = isTauri() ? project : null;
 	const workspace = useContext(ProjectWorkspaceContext);
-	const activeFilePath = project
-		? workspace?.state.get(project.id)?.activePath
+	const activeTab = project
+		? workspace?.state.get(project.id)?.activeTab
 		: undefined;
-	const fileActive = Boolean(activeFilePath);
+	const activeFilePath =
+		activeTab?.kind === "file" ? activeTab.path : undefined;
+	const workspaceActive = Boolean(activeTab && activeTab.kind !== "chat");
 	// 会话窗口的 TitleBar 额外渲染置顶按钮（见 App.tsx 的 showAlwaysOnTop），
 	// 需要按多一个控件宽度避让，否则会压住菜单按钮。
 	const reserveWithPin =
@@ -83,7 +83,7 @@ export function SessionHeader({
 				"flex h-11 shrink-0 items-center bg-background",
 				IS_MACOS ? TRAFFIC_LIGHT_ALIGNED_HEADER : "mt-0.5",
 				overlay ? "absolute inset-x-0 top-0 z-30" : "relative",
-				fileActive && "z-40",
+				workspaceActive && "z-40",
 				IS_MACOS && sidebarCollapsed && TRAFFIC_LIGHT_GUTTER,
 				reserveWindowControls &&
 					(reserveWithPin ? "pr-[10.25rem]" : "pr-[7.75rem]"),
@@ -152,7 +152,6 @@ export function SessionHeader({
 			{editorProject ||
 			onNewTemporaryChat ||
 			onNewChat ||
-			onOpenChanges ||
 			onOpenTerminal ||
 			(session && !session.temporary) ? (
 				<div
@@ -231,20 +230,22 @@ export function SessionHeader({
 							filePath={activeFilePath ?? undefined}
 						/>
 					) : null}
-					{onOpenChanges ? (
+					{editorProject && workspace ? (
 						<Tooltip>
 							<TooltipTrigger asChild>
 								<Button
 									variant="ghost"
 									size="icon"
-									className="size-7"
-									aria-label={t("chat.showChanges")}
-									onClick={onOpenChanges}
+									className="size-7 [@media(pointer:coarse)]:size-11"
+									data-open-git=""
+									aria-label={t("file.viewChanges")}
+									aria-pressed={activeTab?.kind === "git"}
+									onClick={() => workspace.openGit(editorProject.id)}
 								>
-									<PanelRight className="size-4" />
+									<GitBranch aria-hidden="true" className="size-4" />
 								</Button>
 							</TooltipTrigger>
-							<TooltipContent>{t("chat.showChanges")}</TooltipContent>
+							<TooltipContent>{t("file.viewChanges")}</TooltipContent>
 						</Tooltip>
 					) : null}
 					{session && !session.temporary ? (

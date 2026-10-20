@@ -59,8 +59,9 @@ export function ProjectViewer({
 	const { t } = useTranslation();
 	const { codeFontFamily, codeFontSize } = usePreferences();
 	const workspace = useContext(ProjectWorkspaceContext);
-	const { files, activePath } =
+	const { files, activeTab } =
 		workspace?.state.get(project.id) ?? EMPTY_PROJECT_WORKSPACE;
+	const activePath = activeTab.kind === "file" ? activeTab.path : null;
 	const activeFile = files.find((file) => file.path === activePath);
 	const highlightFile = workspace?.highlightFile;
 	useEffect(() => {

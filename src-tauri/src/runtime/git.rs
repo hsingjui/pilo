@@ -26,6 +26,9 @@ pub struct GitStatus {
 }
 
 pub async fn status(servers: &ServerManager, project: &Project) -> Result<GitStatus, String> {
+    let prefix = run_checked(servers, project, "git", &["rev-parse", "--show-prefix"]).await?;
+    let prefix = String::from_utf8_lossy(&prefix);
+    let prefix = prefix.trim_end_matches(['\r', '\n']);
     let branch = branch(servers, project).await;
     let output = run_checked(
         servers,
@@ -37,12 +40,24 @@ pub async fn status(servers: &ServerManager, project: &Project) -> Result<GitSta
             "--porcelain=v1",
             "-z",
             "--untracked-files=all",
+            "--",
+            ".",
         ],
     )
     .await?;
     Ok(GitStatus {
         branch,
-        files: parse_porcelain_v1_z(&output),
+        files: parse_porcelain_v1_z(&output)
+            .into_iter()
+            .filter_map(|mut file| {
+                file.path = file.path.strip_prefix(prefix)?.to_owned();
+                if let Some(original) = &file.original_path {
+                    file.original_path =
+                        Some(original.strip_prefix(prefix).unwrap_or(original).to_owned());
+                }
+                Some(file)
+            })
+            .collect(),
     })
 }
 
@@ -52,19 +67,23 @@ pub async fn diff(
     path: Option<&str>,
     staged: bool,
 ) -> Result<String, String> {
+    if let Some(path) = path {
+        validate_diff_path(project, path)?;
+    }
     let mut args = vec![
+        "--literal-pathspecs".to_owned(),
         "--no-pager".to_owned(),
         "diff".to_owned(),
         "--no-ext-diff".to_owned(),
+        "--no-textconv".to_owned(),
+        "--relative".to_owned(),
         "--no-color".to_owned(),
         "--unified=3".to_owned(),
     ];
     if staged {
         args.push("--cached".to_owned());
     }
-    if let Some(path) = path {
-        args.extend(["--".to_owned(), path.to_owned()]);
-    }
+    args.extend(["--".to_owned(), path.unwrap_or(".").to_owned()]);
 
     let output = run_checked_owned(servers, project, "git", &args).await?;
     if !output.is_empty() || staged || path.is_none() {
@@ -82,6 +101,8 @@ pub async fn diff(
         "--no-pager".to_owned(),
         "diff".to_owned(),
         "--no-index".to_owned(),
+        "--no-ext-diff".to_owned(),
+        "--no-textconv".to_owned(),
         "--no-color".to_owned(),
         "--unified=3".to_owned(),
         "--".to_owned(),
@@ -97,6 +118,21 @@ pub async fn diff(
         return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
     }
     Err(command_error("git", &output))
+}
+
+fn validate_diff_path(project: &Project, path: &str) -> Result<(), String> {
+    let windows = cfg!(windows) && matches!(project.connection.kind, ConnectionKind::Local);
+    if path.is_empty()
+        || path.contains('\0')
+        || path.starts_with('/')
+        || (windows && (path.starts_with('\\') || path.as_bytes().get(1) == Some(&b':')))
+        || path
+            .split(|character| character == '/' || (windows && character == '\\'))
+            .any(|part| matches!(part, "" | "." | ".."))
+    {
+        return Err("Git diff path must be a project-relative file path".to_owned());
+    }
+    Ok(())
 }
 
 pub async fn run_checked_owned(
@@ -194,6 +230,7 @@ async fn is_untracked(
         project,
         "git",
         &[
+            "--literal-pathspecs".to_owned(),
             "ls-files".to_owned(),
             "--others".to_owned(),
             "--exclude-standard".to_owned(),

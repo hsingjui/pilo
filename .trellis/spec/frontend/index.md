@@ -24,6 +24,7 @@ This directory contains guidelines for frontend development in this project (Rea
 | [State Management](./state-management.md)         | Local state, global state, server state | Filled |
 | [Quality Guidelines](./quality-guidelines.md)     | Linting, testing, forbidden patterns    | Filled |
 | [File Links & Workspace Tabs](./html-report-links.md) | Project tabs, safe Markdown/code previews, Local/WSL/SSH system opening and WebUI guard | Filled |
+| [Desktop Git Workspace](./git-workspace.md) | Native-only read-only Git tab, workspace lifecycle and sidebar removal | Filled |
 | [Type Safety](./type-safety.md)                   | Type patterns, validation               | Filled |
 
 ---

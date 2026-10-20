@@ -78,7 +78,6 @@ type ChatPageProps = {
 	active?: boolean;
 	retainBackgroundVisual?: boolean;
 	onSessionIdentified?: (sessionId: string) => void;
-	onOpenChanges?: () => void;
 	onOpenTerminal?: () => void;
 	terminalRunning?: boolean;
 	terminalVisible?: boolean;
@@ -119,7 +118,6 @@ function ChatPageImpl(props: ChatPageProps) {
 		active = true,
 		retainBackgroundVisual = true,
 		onSessionIdentified,
-		onOpenChanges,
 		onOpenTerminal,
 		terminalRunning = false,
 		terminalVisible = false,
@@ -160,9 +158,10 @@ function ChatPageImpl(props: ChatPageProps) {
 	const { t } = useTranslation();
 	const { desktopNotifications, keyboardShortcuts } = usePreferences();
 	const workspace = useContext(ProjectWorkspaceContext);
-	const fileActive = Boolean(
-		workspace?.state.get(session.projectRecord.id)?.activePath,
-	);
+	const workspaceTab = workspace?.state.get(
+		session.projectRecord.id,
+	)?.activeTab;
+	const workspaceActive = Boolean(workspaceTab && workspaceTab.kind !== "chat");
 	const {
 		initialUiState,
 		initialDeferredSubmissions,
@@ -599,7 +598,6 @@ function ChatPageImpl(props: ChatPageProps) {
 							<SessionHeader
 								session={session}
 								sessionState={sessionState ?? undefined}
-								onOpenChanges={onOpenChanges}
 								onOpenTerminal={onOpenTerminal}
 								terminalRunning={terminalRunning}
 								terminalVisible={terminalVisible}
@@ -618,7 +616,7 @@ function ChatPageImpl(props: ChatPageProps) {
 								headerOverlay={emptyTemporarySession}
 							>
 								<ChatFindLayer
-									active={active && !fileActive}
+									active={active && !workspaceActive}
 									open={findOpen}
 									onOpen={() => setFindOpen(true)}
 									onClose={() => setFindOpen(false)}

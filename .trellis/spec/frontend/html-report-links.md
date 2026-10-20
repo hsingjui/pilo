@@ -8,7 +8,8 @@ the conversation title for Local, WSL and SSH projects. Allowlisted documents
 are rejected. WSL/SSH documents are bounded, disposable local snapshots, read on
 the selected connection without an HTTP server or project-directory sync.
 WebUI remains unsupported for native file access; never reinterpret remote paths
-as desktop-local paths. Git tabs are not implemented.
+as desktop-local paths. Desktop-only read-only Git tabs share the workspace shell;
+see [Git Workspace Tab](./git-workspace.md). WebUI has no Git UI or routes.
 
 ## 2. Signatures
 
@@ -35,9 +36,10 @@ as desktop-local paths. Git tabs are not implemented.
   the connection environment and existing editor selection.
 - `project_open_in_zed_wsl(app, id: String, path: Option<String>) -> Result<(), String>`
   accepts optional IPC `{ id, path? }`; omitting `path` retains project opening.
-- `useProjectWorkspaces(projectIds)` owns `{ state, openFile, selectFile, closeFile, highlightFile }`.
-  `state` maps project IDs to `{ files: readonly WorkspaceFile[], activePath: string | null }`;
-  null selects chat. Files have `{ path, content, html?: string | null }`.
+- `useProjectWorkspaces(projectIds)` owns `{ state, openFile, selectFile, closeFile, openGit, closeGit, highlightFile }`.
+  `state` maps project IDs to `{ files: readonly WorkspaceFile[], gitOpen: boolean, activeTab: WorkspaceTab }`.
+  `WorkspaceTab` discriminates chat, file with path, and Git; `selectFile(id, null)`
+  still selects chat. Files have `{ path, content, html?: string | null }`.
 
 Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
 `src-tauri/src/runtime/file_links.rs`, `src/lib/project-workspace.ts`,
@@ -101,18 +103,18 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
   synchronize adjacent remote files or start a web server implicitly.
 - Links may be outside the project (HTML skills often write under the user's home).
   No generic filesystem permission or remote endpoint is added.
-- Existing sidebar project-file reads keep their separate project-relative API
-  and 5 MiB text-preview limit via `readProjectTextFile`.
+- Retained project-file APIs keep their separate read contracts and
+  5 MiB text-preview limit via `readProjectTextFile`; the sidebar UI is removed.
 
 ### Shared workspace UI and lifecycle
 
 - Desktop and WebUI provide the same `ProjectWorkspaceContext`, `SessionHeader`
   tab strip and `ProjectWorkspacePanel`. No modal or second viewer title bar.
-- With no session or files, keep the landing header empty rather than rendering
-  a default new-session tab. Standalone session titles have no selected fill;
-  only show the selection background when file tabs exist. Preserve temporary
-  chat's dashed identifier, and provide a new-session return tab while a landing
-  preview is open. Closing its last file restores the empty header.
+- With no session, files or Git tab, keep the landing header empty rather than
+  rendering a default new-session tab. Standalone session titles have no selected
+  fill; show the selection background when file/Git tabs exist. Preserve temporary
+  chat's dashed identifier and provide a new-session return tab while a landing
+  preview/Git tab is open. Closing the last workspace tab restores the empty header.
 - Workspace state is in-memory and per project, not per session. Switching
   conversations preserves that project's files; selecting a conversation/new chat
   on desktop explicitly returns to chat. Runtime session identification must not
@@ -121,8 +123,9 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
   Windows separators, canonical verbatim drive prefixes (`\\\\?\\`) and drive-path case;
   preserve POSIX case. Backend canonical
   paths deduplicate symlink targets after reading.
-- Close active file -> adjacent file -> chat when last file closes; closing an
-  inactive file does not change selection. Closing restores selected-tab focus.
+- Close active file -> adjacent file -> Git if open, otherwise chat when the last
+  file closes; closing an inactive file does not change selection. Closing restores
+  selected-tab focus, or the native Git icon if the landing header becomes empty.
 - Removed projects are pruned; pending reads cannot reopen a removed project.
   Highlight responses apply only to the exact still-open file object, so stale
   close/reopen results cannot replace new content. Close releases cached HTML.
@@ -132,8 +135,8 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
   chats, pass the same overlay flag to `SessionHeader` and the panel's `headerOverlay`:
   keep the header absolute above the inset preview instead of changing chat height.
   Loading fallbacks must also pass their project to the header. Disable hidden chat find.
-- Markdown reuses sanitized `ChatMarkdown`; MDX and HTML source read from the
-  sidebar remain inert code. Code reuses the existing highlighter with escaped
+- Markdown reuses sanitized `ChatMarkdown`; MDX and HTML source in the
+  file viewer remain inert code. Code reuses the existing highlighter with escaped
   plain-text fallback and configured code font. Share `--pilo-shiki-*` semantic
   color variables with Markdown code blocks; emitted token spans alone do not
   produce syntax colors. No editor/save/run actions.
@@ -227,7 +230,9 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
   verbatim/Unicode/space/hash paths, WSL/SSH routing, optional Windows Zed WSL IPC
   path and existing project-directory fallback.
 - `tests/unit/project-workspace.test.ts`: routing, deduplication, path case,
-  selection/closing, project pruning and stale highlighting.
+  selection/closing, project pruning and stale highlighting. Its old activePath
+  assertions still need adaptation to activeTab/gitOpen, pending separate user
+  approval; do not silently edit them during feature implementation.
 - `tests/browser/chat-markdown-links.html`: mocked system IPC, desktop connection
   routing and the WebUI guard,
   no automatic opening, focus, 320px light/dark chips and coarse-pointer targets;

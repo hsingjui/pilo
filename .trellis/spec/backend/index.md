@@ -20,6 +20,7 @@ This directory contains guidelines for backend development in this project (Taur
 | [Next Prompt & Built-in Extensions](./next-prompt-and-extensions.md) | Connection prediction, shared input assistance, fixed Server deployment | Filled |
 | [Prompt Cache Keep-alive](./cache-keep-alive.md) | Model policy, bounded background requests, shared quiet notices | Filled |
 | [File Links & Workspace Tabs](../frontend/html-report-links.md) | Connection-aware bounded text previews and validated system file opening | Filled |
+| [Desktop Git Workspace](../frontend/git-workspace.md) | Existing Tauri Git reads, connection routing and literal project-relative paths | Filled |
 | [Error Handling](./error-handling.md)           | `Result<T, String>` boundary, error text contract | Filled |
 | [Quality Guidelines](./quality-guidelines.md)   | Code standards, forbidden patterns                | Filled |
 | [Logging Guidelines](./logging-guidelines.md)   | `eprintln!` diagnostics, log levels               | Filled |

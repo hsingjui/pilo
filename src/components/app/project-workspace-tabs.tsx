@@ -5,14 +5,20 @@ import {
 	FileCog,
 	FileJson2,
 	FileText,
+	GitBranch,
 	Palette,
 	SquareTerminal,
 	X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { isTauri } from "@tauri-apps/api/core";
 
 import { ProjectWorkspaceContext } from "@/components/app/project-workspace-context";
-import { EMPTY_PROJECT_WORKSPACE } from "@/lib/project-workspace";
+
+import {
+	EMPTY_PROJECT_WORKSPACE,
+	type WorkspaceTab,
+} from "@/lib/project-workspace";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 
@@ -41,6 +47,76 @@ function WorkspaceFileIcon({ path }: { path: string }) {
 	return <Icon aria-hidden="true" className="size-4 shrink-0" />;
 }
 
+const TAB_CLASS =
+	"flex min-h-8 min-w-0 items-center gap-1.5 rounded-md border px-3 text-sm outline-hidden focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:min-h-11";
+
+function CloseableWorkspaceTab({
+	kind,
+	path,
+	label,
+	hint,
+	selected,
+	onSelect,
+	onClose,
+	children,
+}: {
+	kind: "git" | "file";
+	path?: string;
+	label: string;
+	hint: string;
+	selected: boolean;
+	onSelect: () => void;
+	onClose: () => void;
+	children: ReactNode;
+}) {
+	const { t } = useTranslation();
+	return (
+		<div
+			role="presentation"
+			onMouseDown={(event) => {
+				if (event.button === 1) event.preventDefault();
+			}}
+			onAuxClick={(event) => {
+				if (event.button !== 1) return;
+				event.preventDefault();
+				onClose();
+			}}
+			className={cn(
+				"flex min-w-28 max-w-56 items-center rounded-md ring-1 ring-inset hover:bg-hover",
+				selected ? "bg-muted/60 ring-border" : "ring-border/60",
+			)}
+		>
+			<Hint label={hint}>
+				<button
+					type="button"
+					role="tab"
+					data-tab-kind={kind}
+					data-file-path={path}
+					aria-selected={selected}
+					tabIndex={selected ? 0 : -1}
+					onClick={onSelect}
+					className={cn(
+						TAB_CLASS,
+						"flex-1 border-transparent pr-1",
+						selected ? "text-foreground" : "text-muted-foreground",
+					)}
+				>
+					{children}
+					<span className="min-w-0 truncate">{label}</span>
+				</button>
+			</Hint>
+			<button
+				type="button"
+				aria-label={t("file.closeFile", { name: label })}
+				onClick={onClose}
+				className="mr-1 flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [@media(pointer:coarse)]:size-11"
+			>
+				<X aria-hidden="true" className="size-3.5" />
+			</button>
+		</div>
+	);
+}
+
 export function ProjectWorkspaceTabs({
 	projectId,
 	title,
@@ -54,25 +130,25 @@ export function ProjectWorkspaceTabs({
 }) {
 	const { t } = useTranslation();
 	const workspace = useContext(ProjectWorkspaceContext);
-	const { files, activePath } =
+	const { files, activeTab, gitOpen } =
 		(projectId ? workspace?.state.get(projectId) : undefined) ??
 		EMPTY_PROJECT_WORKSPACE;
+	const showGit = isTauri() && gitOpen;
+	const hasTabs = files.length > 0 || showGit;
 	const listRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
-		const tabs =
-			listRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
-		const selected = Array.from(tabs ?? []).find(
-			(tab) => (tab.dataset.filePath ?? null) === activePath,
+		const selected = listRef.current?.querySelector<HTMLButtonElement>(
+			'[role="tab"][aria-selected="true"]',
 		);
 		if (!selected || !listRef.current) return;
 		const reveal = () => {
 			if (getComputedStyle(selected).visibility === "hidden") return;
-			// Reveal the close button too, including after a narrow-window resize.
-			const target = activePath === null ? selected : selected.parentElement;
+			const target =
+				activeTab.kind === "chat" ? selected : selected.parentElement;
 			target?.scrollIntoView({ block: "nearest", inline: "nearest" });
 		};
 		if (
-			activePath !== null &&
+			activeTab.kind !== "chat" &&
 			getComputedStyle(selected).visibility !== "hidden"
 		) {
 			selected.focus({ preventScroll: true });
@@ -81,22 +157,29 @@ export function ProjectWorkspaceTabs({
 		const observer = new ResizeObserver(reveal);
 		observer.observe(listRef.current);
 		return () => observer.disconnect();
-	}, [activePath]);
-	const select = (path: string | null) => {
-		if (projectId) workspace?.selectFile(projectId, path);
+	}, [activeTab]);
+	const select = (tab: WorkspaceTab) => {
+		if (!projectId || !workspace) return;
+		if (tab.kind === "git") workspace.openGit(projectId);
+		else workspace.selectFile(projectId, tab.kind === "file" ? tab.path : null);
 	};
-	const close = (path: string) => {
-		if (projectId) workspace?.closeFile(projectId, path);
-		requestAnimationFrame(() =>
-			listRef.current
-				?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')
-				?.focus({ preventScroll: true }),
-		);
+	const close = (tab: WorkspaceTab) => {
+		if (!projectId || !workspace) return;
+		const fallback = listRef.current
+			?.closest("header")
+			?.querySelector<HTMLButtonElement>("[data-open-git]");
+		if (tab.kind === "git") workspace.closeGit(projectId);
+		else if (tab.kind === "file") workspace.closeFile(projectId, tab.path);
+		requestAnimationFrame(() => {
+			const target =
+				listRef.current?.querySelector<HTMLButtonElement>(
+					'[role="tab"][aria-selected="true"]',
+				) ?? fallback;
+			target?.focus({ preventScroll: true });
+		});
 	};
-	if (!title && files.length === 0) return <div className="min-w-0 flex-1" />;
+	if (!title && !hasTabs) return <div className="min-w-0 flex-1" />;
 	const chatTitle = title || t("app.newChat");
-	const tabClass =
-		"flex min-h-8 min-w-0 items-center gap-1.5 rounded-md border px-3 text-sm outline-hidden focus-visible:ring-2 focus-visible:ring-ring [@media(pointer:coarse)]:min-h-11";
 	return (
 		<div
 			ref={listRef}
@@ -110,9 +193,12 @@ export function ProjectWorkspaceTabs({
 					event.target.getAttribute("role") !== "tab"
 				)
 					return;
-				if (event.key === "Delete" && event.target.dataset.filePath) {
+				if (event.key === "Delete") {
+					if (event.target.dataset.tabKind === "git") close({ kind: "git" });
+					else if (event.target.dataset.filePath)
+						close({ kind: "file", path: event.target.dataset.filePath });
+					else return;
 					event.preventDefault();
-					close(event.target.dataset.filePath);
 					return;
 				}
 				const tabs = Array.from(
@@ -147,76 +233,48 @@ export function ProjectWorkspaceTabs({
 				<button
 					type="button"
 					role="tab"
-					aria-selected={activePath === null}
-					tabIndex={activePath === null ? 0 : -1}
-					onClick={() => select(null)}
+					aria-selected={activeTab.kind === "chat"}
+					tabIndex={activeTab.kind === "chat" ? 0 : -1}
+					onClick={() => select({ kind: "chat" })}
 					className={cn(
-						tabClass,
-						files.length ? "min-w-24 max-w-56" : "max-w-[66.666667%]",
+						TAB_CLASS,
+						hasTabs ? "min-w-24 max-w-56" : "max-w-[66.666667%]",
 						temporary ? "border-dashed border-border" : "border-transparent",
-						activePath === null
+						activeTab.kind === "chat"
 							? "text-foreground"
 							: "text-muted-foreground hover:bg-hover",
-						files.length > 0 && activePath === null && "bg-muted/60",
+						hasTabs && activeTab.kind === "chat" && "bg-muted/60",
 					)}
 				>
 					{children}
 					<span className="min-w-0 truncate">{chatTitle}</span>
 				</button>
 			</Hint>
-			{files.map((file) => (
-				<div
-					key={file.path}
-					role="presentation"
-					onMouseDown={(event) => {
-						// Suppress native middle-button autoscroll/paste before auxclick.
-						if (event.button === 1) event.preventDefault();
-					}}
-					onAuxClick={(event) => {
-						if (event.button !== 1) return;
-						event.preventDefault();
-						close(file.path);
-					}}
-					className={cn(
-						"flex min-w-28 max-w-56 items-center rounded-md ring-1 ring-inset hover:bg-hover",
-						activePath === file.path
-							? "bg-muted/60 ring-border"
-							: "ring-border/60",
-					)}
+			{showGit ? (
+				<CloseableWorkspaceTab
+					kind="git"
+					label="Git"
+					hint={t("file.viewChanges")}
+					selected={activeTab.kind === "git"}
+					onSelect={() => select({ kind: "git" })}
+					onClose={() => close({ kind: "git" })}
 				>
-					<Hint label={file.path}>
-						<button
-							type="button"
-							role="tab"
-							data-file-path={file.path}
-							aria-selected={activePath === file.path}
-							tabIndex={activePath === file.path ? 0 : -1}
-							onClick={() => select(file.path)}
-							className={cn(
-								tabClass,
-								"flex-1 border-transparent pr-1",
-								activePath === file.path
-									? "text-foreground"
-									: "text-muted-foreground",
-							)}
-						>
-							<WorkspaceFileIcon path={file.path} />
-							<span className="min-w-0 truncate">
-								{file.path.split(/[\\/]/).at(-1)}
-							</span>
-						</button>
-					</Hint>
-					<button
-						type="button"
-						aria-label={t("file.closeFile", {
-							name: file.path.split(/[\\/]/).at(-1) ?? file.path,
-						})}
-						onClick={() => close(file.path)}
-						className="mr-1 flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [@media(pointer:coarse)]:size-11"
-					>
-						<X aria-hidden="true" className="size-3.5" />
-					</button>
-				</div>
+					<GitBranch aria-hidden="true" className="size-4 shrink-0" />
+				</CloseableWorkspaceTab>
+			) : null}
+			{files.map((file) => (
+				<CloseableWorkspaceTab
+					key={file.path}
+					kind="file"
+					path={file.path}
+					label={file.path.split(/[\\/]/).at(-1) ?? file.path}
+					hint={file.path}
+					selected={activeTab.kind === "file" && activeTab.path === file.path}
+					onSelect={() => select({ kind: "file", path: file.path })}
+					onClose={() => close({ kind: "file", path: file.path })}
+				>
+					<WorkspaceFileIcon path={file.path} />
+				</CloseableWorkspaceTab>
 			))}
 		</div>
 	);

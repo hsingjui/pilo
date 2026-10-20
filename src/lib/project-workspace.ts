@@ -4,14 +4,39 @@ export type WorkspaceFile = {
 	html?: string | null;
 };
 
+export type WorkspaceTab =
+	| { kind: "chat" }
+	| { kind: "file"; path: string }
+	| { kind: "git" };
+
+export type GitWorkspaceView = {
+	mode: "working" | "staged";
+	selectedPath: string | null;
+	showDetail: boolean;
+	listWidth?: number;
+	diffStyle: "unified" | "split";
+	wrapLines: boolean;
+};
+
+export const DEFAULT_GIT_WORKSPACE_VIEW: GitWorkspaceView = {
+	mode: "working",
+	selectedPath: null,
+	showDetail: false,
+	diffStyle: "split",
+	wrapLines: false,
+};
+
 export type ProjectWorkspace = {
 	files: readonly WorkspaceFile[];
-	activePath: string | null;
+	gitOpen: boolean;
+	gitView?: GitWorkspaceView;
+	activeTab: WorkspaceTab;
 };
 
 export const EMPTY_PROJECT_WORKSPACE: ProjectWorkspace = {
 	files: [],
-	activePath: null,
+	gitOpen: false,
+	activeTab: { kind: "chat" },
 };
 
 export function workspaceFileKey(path: string): string {
@@ -26,6 +51,13 @@ type WorkspaceAction =
 	| { type: "open"; projectId: string; file: WorkspaceFile }
 	| { type: "select"; projectId: string; path: string | null }
 	| { type: "close"; projectId: string; path: string }
+	| { type: "open-git"; projectId: string }
+	| { type: "close-git"; projectId: string }
+	| {
+			type: "update-git-view";
+			projectId: string;
+			view: Partial<GitWorkspaceView>;
+	  }
 	| {
 			type: "highlight";
 			projectId: string;
@@ -52,8 +84,9 @@ export function reduceProjectWorkspaces(
 				(file) => workspaceFileKey(file.path) === key,
 			);
 			next = {
+				...current,
 				files: existing ? current.files : [...current.files, action.file],
-				activePath: existing?.path ?? action.file.path,
+				activeTab: { kind: "file", path: existing?.path ?? action.file.path },
 			};
 			break;
 		}
@@ -63,8 +96,19 @@ export function reduceProjectWorkspaces(
 				!current.files.some((file) => file.path === action.path)
 			)
 				return state;
-			if (current.activePath === action.path) return state;
-			next = { ...current, activePath: action.path };
+			if (
+				(action.path === null && current.activeTab.kind === "chat") ||
+				(current.activeTab.kind === "file" &&
+					current.activeTab.path === action.path)
+			)
+				return state;
+			next = {
+				...current,
+				activeTab:
+					action.path === null
+						? { kind: "chat" }
+						: { kind: "file", path: action.path },
+			};
 			break;
 		}
 		case "close": {
@@ -73,12 +117,48 @@ export function reduceProjectWorkspaces(
 			);
 			if (index < 0) return state;
 			const files = current.files.filter((file) => file.path !== action.path);
+			const neighbor = files[Math.min(index, files.length - 1)];
 			next = {
+				...current,
 				files,
-				activePath:
-					current.activePath === action.path
-						? (files[Math.min(index, files.length - 1)]?.path ?? null)
-						: current.activePath,
+				activeTab:
+					current.activeTab.kind === "file" &&
+					current.activeTab.path === action.path
+						? neighbor
+							? { kind: "file", path: neighbor.path }
+							: { kind: current.gitOpen ? "git" : "chat" }
+						: current.activeTab,
+			};
+			break;
+		}
+		case "open-git": {
+			if (current.gitOpen && current.activeTab.kind === "git") return state;
+			next = { ...current, gitOpen: true, activeTab: { kind: "git" } };
+			break;
+		}
+		case "close-git": {
+			if (!current.gitOpen) return state;
+			const neighbor = current.files[0];
+			next = {
+				...current,
+				gitOpen: false,
+				activeTab:
+					current.activeTab.kind === "git"
+						? neighbor
+							? { kind: "file", path: neighbor.path }
+							: { kind: "chat" }
+						: current.activeTab,
+			};
+			break;
+		}
+		case "update-git-view": {
+			if (!current.gitOpen) return state;
+			next = {
+				...current,
+				gitView: {
+					...(current.gitView ?? DEFAULT_GIT_WORKSPACE_VIEW),
+					...action.view,
+				},
 			};
 			break;
 		}

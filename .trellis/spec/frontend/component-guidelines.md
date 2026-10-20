@@ -47,8 +47,24 @@ re-styling them.
 - Feature components own their layout and state; primitives stay dumb.
 - Long/multi-part UI is split into focused files co-located in the feature folder
   (e.g. `chat-composer.tsx`, `chat-composer-frame.tsx`, `chat-composer-actions.tsx`).
-- Heavy features are lazy-loaded with `React.lazy` + `Suspense` in `src/App.tsx`
-  (`ChatPage`, `ProjectViewer`, `RightSidebar`, `TerminalDock`).
+- Heavy features use `React.lazy` + `Suspense`: `ChatPage` and `TerminalDock`
+  in `src/App.tsx`, `ProjectViewer` and native-only `GitWorkspace` in the shared
+  workspace panel. The right sidebar has been removed.
+- Left navigation uses `AppSidebar` + `useSidebarLayout`, shared by desktop and
+  wide WebUI; narrow WebUI retains its separate mobile drawer. Keep direct pixel
+  width control (292px default, 240–480px bounds), no transition during dragging,
+  and the 200ms width/opacity transition for collapse/expand with reduced-motion
+  support. At a raw drag width <=232px, stop dragging and collapse to zero; the
+  8px hysteresis lets users drag outward from the minimum without accidental
+  collapse. Arrow keys resize by 16px; Left at the minimum collapses. Retain the
+  tall edge handle, keyboard semantics, hidden/inert collapsed content and the
+  existing `pilo.sidebarWidth` storage key. Do not replace this with the Git
+  split-pane implementation: library snapping and delayed layout callbacks do
+  not preserve this interaction. Git reuses the already-installed
+  `react-resizable-panels`; it does not require migrating the app shell.
+  When verification is authorized, check continuous dragging, drag-triggered
+  collapse animation, button/shortcut expand, long-handle feedback and keyboard
+  resizing in Windows and wide WebUI; type/lint checks are not animation proof.
 - Startup loading boundaries apply to desktop and WebUI: `ChatMarkdown` starts
   its shared runtime import on the first rendered message, not at module scope;
   importing/prewarming `ChatPage` must not fetch the Markdown engine for an empty
