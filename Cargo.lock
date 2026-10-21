@@ -3286,7 +3286,7 @@ dependencies = [
 
 [[package]]
 name = "pilo"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -3325,7 +3325,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-protocol"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "prost",
  "prost-build",
@@ -3337,7 +3337,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-server"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "memchr",
  "notify",
