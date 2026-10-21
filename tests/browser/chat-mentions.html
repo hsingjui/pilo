@@ -67,12 +67,14 @@
 				const [scope, setScope] = useState(0);
 				const [images, setImages] = useState([]);
 				const [panelHeight, setPanelHeight] = useState(420);
+				const [uploadFile, setUploadFile] = useState(null);
 				useEffect(() => {
 					fixtures.set(id, {
 						setValue,
 						setDisabled,
 						setScope,
 						setPanelHeight,
+						setUploadFile: (upload) => setUploadFile(() => upload),
 						setImages: (next) => {
 							cacheLocalChatImages(next);
 							setImages(next);
@@ -103,6 +105,7 @@
 								onChange: setValue,
 								images,
 								onImagesChange: setImages,
+								onUploadFile: uploadFile ?? undefined,
 								onSubmit: setSent,
 								disabled,
 								attachmentScopeKey: `${id}:${scope}`,
@@ -249,14 +252,15 @@
 					new KeyboardEvent("keyup", { key: "ArrowRight", bubbles: true }),
 				);
 			}
-			function beforeInput(editor, inputType) {
-				editor.dispatchEvent(
-					new InputEvent("beforeinput", {
-						inputType,
-						bubbles: true,
-						cancelable: true,
-					}),
-				);
+			function beforeInput(editor, inputType, options = {}) {
+				const event = new InputEvent("beforeinput", {
+					inputType,
+					bubbles: true,
+					cancelable: true,
+					...options,
+				});
+				editor.dispatchEvent(event);
+				return event;
 			}
 			async function runRegression() {
 				try {
@@ -298,6 +302,57 @@
 							);
 							section.querySelector('[role="option"]').click();
 							await frame();
+						};
+						const pressBackspace = (options = {}) => {
+							const event = new KeyboardEvent("keydown", {
+								key: "Backspace",
+								bubbles: true,
+								cancelable: true,
+								...options,
+							});
+							editor().dispatchEvent(event);
+							return event;
+						};
+						const imageFile = (name) => {
+							const image = sampleImages(1)[0];
+							const bytes = Uint8Array.from(atob(image.data), (char) =>
+								char.charCodeAt(0),
+							);
+							return new File([bytes], name, { type: "image/png" });
+						};
+						const pickFiles = (files) => {
+							const transfer = new DataTransfer();
+							for (const file of files) transfer.items.add(file);
+							const picker = section.querySelector('input[type="file"]');
+							picker.files = transfer.files;
+							picker.dispatchEvent(new Event("change", { bubbles: true }));
+						};
+						const pasteImage = async (name) => {
+							const clipboard = new DataTransfer();
+							clipboard.items.add(imageFile(name));
+							editor().dispatchEvent(
+								new ClipboardEvent("paste", {
+									clipboardData: clipboard,
+									bubbles: true,
+									cancelable: true,
+								}),
+							);
+							await until(() =>
+								[
+									...section.querySelectorAll("[data-chat-composer-image]"),
+								].some((chip) => chip.textContent.includes(name)),
+							);
+						};
+						const expectAttachmentOrder = (names) => {
+							const actual = [
+								...shelf().querySelectorAll(
+									"[data-chat-composer-attachment-chip]",
+								),
+							].map((chip) => chip.querySelector("button").textContent.trim());
+							assert(
+								JSON.stringify(actual) === JSON.stringify(names),
+								`Attachment insertion order changed: ${actual.join(", ")}`,
+							);
 						};
 						await reset("");
 						const placeholder = editor().placeholder;
@@ -359,6 +414,209 @@
 						await until(
 							() => !section.querySelector("[data-chat-composer-image]"),
 						);
+						expectPlaceholder(true);
+
+						await reset("@");
+						await complete();
+						await expectDraft(token, "");
+						await pasteImage("first-paste.png");
+						await reset(`@\n${token}`, "@");
+						await complete(true);
+						await expectDraft(`${token}\n${sessionToken}`, "");
+						await pasteImage("second-paste.png");
+						const fileName = path.split("/").pop();
+						expectAttachmentOrder([
+							fileName,
+							"first-paste.png",
+							"Previous discussion",
+							"second-paste.png",
+						]);
+						refs()[0].lastElementChild.click();
+						await expectDraft(sessionToken, "");
+						expectAttachmentOrder([
+							"first-paste.png",
+							"Previous discussion",
+							"second-paste.png",
+						]);
+						await reset(`@\n${sessionToken}`, "@");
+						await complete();
+						await expectDraft(`${sessionToken}\n${token}`, "");
+						expectAttachmentOrder([
+							"first-paste.png",
+							"Previous discussion",
+							"second-paste.png",
+							fileName,
+						]);
+						section
+							.querySelector(
+								'[data-chat-composer-image] button[aria-label^="Remove"]',
+							)
+							.click();
+						await until(
+							() =>
+								section.querySelectorAll("[data-chat-composer-image]")
+									.length === 1,
+						);
+						expectAttachmentOrder([
+							"Previous discussion",
+							"second-paste.png",
+							fileName,
+						]);
+						fixtures.get(id).setImages([]);
+						await until(
+							() => !section.querySelector("[data-chat-composer-image]"),
+						);
+
+						const uploads = new Map();
+						fixtures
+							.get(id)
+							.setUploadFile(
+								(file) =>
+									new Promise((resolve, reject) =>
+										uploads.set(file.name, { resolve, reject }),
+									),
+							);
+						await reset(`batch body\n${token}`, "batch body");
+						pickFiles([
+							new File(["first"], "first.txt", { type: "text/plain" }),
+							imageFile("middle.png"),
+							new File(["last"], "last.txt", { type: "text/plain" }),
+						]);
+						await until(() => uploads.size === 2);
+						uploads.get("last.txt").resolve("uploads/last.txt");
+						await frame();
+						expectAttachmentOrder([fileName]);
+						uploads.get("first.txt").resolve("uploads/first.txt");
+						await expectDraft(
+							`batch body\n${token}\n@"uploads/first.txt"\n@"uploads/last.txt"`,
+							"batch body",
+						);
+						expectAttachmentOrder([
+							fileName,
+							"first.txt",
+							"middle.png",
+							"last.txt",
+						]);
+						select(editor(), 0);
+						pressBackspace();
+						await expectDraft(
+							`batch body\n${token}\n@"uploads/first.txt"`,
+							"batch body",
+						);
+						expectAttachmentOrder([fileName, "first.txt", "middle.png"]);
+						await reset("");
+						fixtures.get(id).setImages([]);
+						await until(() => !shelf());
+						pickFiles([
+							imageFile("before-failure.png"),
+							new File(["reject"], "failed.txt", { type: "text/plain" }),
+							imageFile("after-failure.png"),
+						]);
+						await until(() => uploads.has("failed.txt"));
+						uploads
+							.get("failed.txt")
+							.reject(new Error("Expected fixture upload failure"));
+						await until(
+							() =>
+								section.querySelectorAll("[data-chat-composer-image]")
+									.length === 2,
+						);
+						expectAttachmentOrder(["before-failure.png", "after-failure.png"]);
+						await expectDraft("", "");
+						fixtures.get(id).setUploadFile(null);
+						fixtures.get(id).setImages([]);
+						await until(() => !shelf());
+
+						const deletionBody = "保留正文";
+						await reset(`${deletionBody}\n${token}`, deletionBody);
+						await pasteImage("backspace-first.png");
+						await reset(
+							`${deletionBody}\n${token}\n${sessionToken}`,
+							deletionBody,
+						);
+						await pasteImage("backspace-last.png");
+						const deletionOrder = [
+							fileName,
+							"backspace-first.png",
+							"Previous discussion",
+							"backspace-last.png",
+						];
+						expectAttachmentOrder(deletionOrder);
+						select(editor(), 1);
+						assert(
+							!pressBackspace().defaultPrevented,
+							"Body Backspace was intercepted by attachments",
+						);
+						select(editor(), 0, 1);
+						assert(
+							!pressBackspace().defaultPrevented,
+							"Selected-text Backspace removed an attachment",
+						);
+						select(editor(), 0);
+						pressBackspace({ isComposing: true });
+						pressBackspace({ ctrlKey: true });
+						beforeInput(editor(), "deleteContentBackward", {
+							isComposing: true,
+						});
+						beforeInput(editor(), "deleteContentBackward", {
+							cancelable: false,
+						});
+						await frame();
+						expectAttachmentOrder(deletionOrder);
+						fixtures.get(id).setDisabled(true);
+						await until(() => editor().disabled);
+						pressBackspace();
+						beforeInput(editor(), "deleteContentBackward");
+						await frame();
+						expectAttachmentOrder(deletionOrder);
+						fixtures.get(id).setDisabled(false);
+						await until(() => !editor().disabled);
+						select(editor(), 0);
+						assert(
+							pressBackspace().defaultPrevented,
+							"Image Backspace was not consumed",
+						);
+						await until(
+							() =>
+								section.querySelectorAll("[data-chat-composer-image]")
+									.length === 1,
+						);
+						await expectDraft(
+							`${deletionBody}\n${token}\n${sessionToken}`,
+							deletionBody,
+						);
+						expectAttachmentOrder([
+							fileName,
+							"backspace-first.png",
+							"Previous discussion",
+						]);
+						select(editor(), 0);
+						beforeInput(editor(), "deleteContentBackward");
+						await expectDraft(`${deletionBody}\n${token}`, deletionBody);
+						expectAttachmentOrder([fileName, "backspace-first.png"]);
+						select(editor(), 0);
+						assert(
+							beforeInput(editor(), "deleteContentBackward").defaultPrevented,
+							"Mobile image Backspace was not consumed",
+						);
+						await until(
+							() => !section.querySelector("[data-chat-composer-image]"),
+						);
+						await expectDraft(`${deletionBody}\n${token}`, deletionBody);
+						expectAttachmentOrder([fileName]);
+						select(editor(), 0);
+						pressBackspace();
+						await expectDraft(deletionBody, deletionBody);
+						assert(!shelf(), "Backspace left an empty attachment tray");
+						await reset("");
+						await pasteImage("only-image.png");
+						const oldImageEditor = editor();
+						fixtures.get(id).setScope((scope) => scope + 1);
+						await until(() => editor() !== oldImageEditor);
+						select(editor(), 0);
+						beforeInput(editor(), "deleteContentBackward");
+						await until(() => !shelf());
+						await expectDraft("", "");
 						expectPlaceholder(true);
 
 						await reset("已有文字 @");
@@ -797,7 +1055,7 @@
 					}
 					document.body.dataset.testStatus = "passed";
 					document.querySelector("#results").textContent =
-						"PASS: desktop + 320px WebUI reference shelf above native textarea, caret preservation, deduplication, independent removal, mobile Backspace, inline draft recovery, disabled state, two-row minimum, attachment/reference placeholder visibility, unified attachment chips, image lightbox, autosizing, shared image/reference height budget, short-panel resizing, keyboard reveal, mixed submission, IME submission guard, upload ownership, scope remounts, popovers, submission and search navigation";
+						"PASS: desktop + 320px WebUI reference shelf above native textarea, caret preservation, deduplication, independent removal, mixed-image/reference Backspace, mobile Backspace after scope remount, caret/selection/IME/disabled deletion guards, inline draft recovery, disabled state, two-row minimum, attachment/reference placeholder visibility, unified attachment chips, mixed insertion/paste and reversed-completion batch order, partial upload failure, removal and re-addition order, image lightbox, autosizing, shared image/reference height budget, short-panel resizing, keyboard reveal, mixed submission, IME submission guard, upload ownership, scope remounts, popovers, submission and search navigation";
 				} catch (error) {
 					document.body.dataset.testStatus = "failed";
 					document.querySelector("#results").textContent =

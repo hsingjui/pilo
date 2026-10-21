@@ -544,9 +544,16 @@ actions go there and appear only for persisted sessions (`session && !session.te
   accessible name independent of placeholder visibility.
 - Reuse `FileMentionBadge` / `SessionMentionBadge` for path popovers and previews.
   Each shelf reference has a separate, named remove button; do not nest interactive
-  controls. Removal preserves body text and focuses the textarea. Body-start
-  Backspace and cancelable mobile `beforeinput` can remove the last reference,
-  but not while disabled, sending or composing. Attachment drag/drop availability
+  controls. Reference removal preserves body text and focuses the textarea.
+  Body-start Backspace and cancelable mobile `beforeinput` remove the last visible
+  attachment in mixed insertion order, including image-only drafts. Use the same
+  ordered items as rendering, not a separate last-reference/last-image lookup.
+  Images go through `updateImages`; references go through `changeDraft` so upload
+  cleanup still runs. Preserve the body and all other attachments. Do not remove
+  attachments with a text selection, a nonzero caret, while disabled/sending or
+  composing, or with Ctrl/Meta/Alt Backspace; image deletion also respects the existing
+  processing lock. Consume successful deletion to avoid native text deletion.
+  Attachment drag/drop availability
   must read the native `.disabled` property from `[data-chat-composer-input]`,
   including the temporary `sendingNow` lock; the textarea does not use
   `aria-disabled`. Rebind native listeners when the
@@ -565,6 +572,19 @@ actions go there and appear only for persisted sessions (`session && !session.te
   composer can grow to accommodate the explicitly separate shelf.
 - Images and file/session references share **one** wrapping attachment tray above
   the textarea, not separate independently growing image and reference sections.
+  Keep one scope-local insertion order keyed by image ID or reference kind/path:
+  append new items, prune removed keys, and append removed/re-added items at the end.
+  Render that mixed DOM order instead of grouping images first or using CSS `order`.
+  The attachment hook publishes successful batch keys through `onAttachmentsAdded`
+  in accepted-file order rather than grouped image/reference payload order.
+  Append those keys to existing ordering; never infer a mixed batch's
+  order from the images-first map or from individual upload completion times.
+  Failed entries contribute no keys; obsolete scopes publish neither keys nor
+  references and retain the existing file cleanup path. Cover a text/image/text
+  batch with reversed upload completion and partial failure.
+  Body edits must not reshuffle existing chips. Reset ordering when
+  `attachmentScopeKey ?? historyKey` changes; this is transient view state, not a
+  change to serialized drafts, image payloads or submission ownership.
   `ChatImageThumbnail compact` shows a `1rem` thumbnail and truncated filename
   inside the same preview button; keep lightbox/retry behavior and accessible error
   feedback. File/session chips retain their existing path popovers. Message

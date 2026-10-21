@@ -63,7 +63,7 @@ export function useChatComposerAttachments({
 	images,
 	onImagesChange,
 	onUploadFile,
-	onFilesAdded,
+	onAttachmentsAdded,
 	scopeKey,
 	disabled,
 	rootRef,
@@ -71,7 +71,7 @@ export function useChatComposerAttachments({
 	images?: readonly ChatImageAttachment[];
 	onImagesChange?: (images: ChatImageAttachment[]) => void;
 	onUploadFile?: (file: File) => Promise<string>;
-	onFilesAdded: (paths: string[]) => void;
+	onAttachmentsAdded: (paths: string[], orderedKeys: string[]) => void;
 	scopeKey?: string | null;
 	disabled: boolean;
 	rootRef: RefObject<HTMLDivElement | null>;
@@ -92,7 +92,7 @@ export function useChatComposerAttachments({
 	const operationRef = useRef<object | null>(null);
 	const latestRef = useRef<{
 		scope: object;
-		onFilesAdded: typeof onFilesAdded;
+		onAttachmentsAdded: typeof onAttachmentsAdded;
 		addFiles: (files: readonly File[]) => Promise<void>;
 	} | null>(null);
 	const processing = pendingScope === scope;
@@ -194,7 +194,16 @@ export function useChatComposerAttachments({
 				result?.path ? [result.path] : [],
 			);
 			if (addedImages.length) updateImages([...attachments, ...addedImages]);
-			if (paths.length) latestRef.current?.onFilesAdded(paths);
+			// Promise.all retains accepted-file order, unlike the grouped payloads above.
+			const orderedKeys = added.flatMap((result) =>
+				result?.image
+					? [`image:${result.image.id}`]
+					: result?.path
+						? [`file:${result.path}`]
+						: [],
+			);
+			if (orderedKeys.length)
+				latestRef.current?.onAttachmentsAdded(paths, orderedKeys);
 		} finally {
 			if (operationRef.current === scope) operationRef.current = null;
 			if (isCurrent()) setPendingScope(null);
@@ -202,7 +211,7 @@ export function useChatComposerAttachments({
 	};
 
 	useLayoutEffect(() => {
-		latestRef.current = { scope, onFilesAdded, addFiles };
+		latestRef.current = { scope, onAttachmentsAdded, addFiles };
 		return () => {
 			latestRef.current = null;
 		};

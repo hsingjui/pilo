@@ -23,6 +23,7 @@ import {
 	fileMentionName,
 	readChatMentionDraft,
 	writeChatMentionDraft,
+	type ChatMention,
 } from "@/lib/chat/chat-mentions";
 import {
 	useSessionMentions,
@@ -225,6 +226,11 @@ export function ChatComposer({
 		readingFontSize,
 		readingFontFamily,
 	} = usePreferences();
+	const attachmentScope = attachmentScopeKey ?? historyKey;
+	const [attachmentOrder, setAttachmentOrder] = useState<{
+		scope: typeof attachmentScope;
+		keys: string[];
+	}>({ scope: attachmentScope, keys: [] });
 	const {
 		fileInputRef,
 		attachments,
@@ -237,10 +243,20 @@ export function ChatComposer({
 		images,
 		onImagesChange,
 		onUploadFile,
-		scopeKey: attachmentScopeKey ?? historyKey,
+		scopeKey: attachmentScope,
 		disabled,
 		rootRef,
-		onFilesAdded: (paths) => {
+		onAttachmentsAdded: (paths, orderedKeys) => {
+			setAttachmentOrder((current) => ({
+				scope: attachmentScope,
+				keys: [
+					...new Set([
+						...(current.scope === attachmentScope ? current.keys : []),
+						...orderedKeys,
+					]),
+				],
+			}));
+			if (paths.length === 0) return;
 			onNextPromptDismiss?.();
 			changeDraft(
 				writeChatMentionDraft(
@@ -253,6 +269,50 @@ export function ChatComposer({
 			);
 		},
 	});
+	const attachmentItems = useMemo(
+		() =>
+			new Map<
+				string,
+				| { kind: "image"; attachment: ChatImageAttachment }
+				| { kind: "reference"; mention: ChatMention; index: number }
+			>([
+				...attachments.map(
+					(attachment) =>
+						[
+							`image:${attachment.id}`,
+							{ kind: "image" as const, attachment },
+						] as const,
+				),
+				...mentionDraft.references.map(
+					(mention, index) =>
+						[
+							`${mention.kind}:${mention.path}`,
+							{ kind: "reference" as const, mention, index },
+						] as const,
+				),
+			]),
+		[attachments, mentionDraft.references],
+	);
+	const orderedAttachmentKeys = useMemo(() => {
+		const previousKeys =
+			attachmentOrder.scope === attachmentScope ? attachmentOrder.keys : [];
+		const previousKeySet = new Set(previousKeys);
+		return [
+			...previousKeys.filter((key) => attachmentItems.has(key)),
+			...[...attachmentItems.keys()].filter((key) => !previousKeySet.has(key)),
+		];
+	}, [attachmentOrder, attachmentScope, attachmentItems]);
+	// Keep one insertion order across images and references, before layout effects run.
+	if (
+		attachmentOrder.scope !== attachmentScope ||
+		attachmentOrder.keys.length !== orderedAttachmentKeys.length ||
+		attachmentOrder.keys.some(
+			(key, index) => key !== orderedAttachmentKeys[index],
+		)
+	) {
+		setAttachmentOrder({ scope: attachmentScope, keys: orderedAttachmentKeys });
+	}
+
 	const {
 		sendMode,
 		setSendMode,
@@ -334,26 +394,45 @@ export function ChatComposer({
 		[connectionId, byValue, onNextPromptDismiss, mentionDraft, changeDraft],
 	);
 
-	const removeLastMention = useCallback(
+	const removeLastAttachment = useCallback(
 		(textarea: HTMLTextAreaElement) => {
 			if (
 				disabled ||
 				sendingNow ||
 				textarea.selectionStart !== 0 ||
-				textarea.selectionEnd !== 0 ||
-				mentionDraft.references.length === 0
+				textarea.selectionEnd !== 0
 			)
 				return false;
+			const key = orderedAttachmentKeys[orderedAttachmentKeys.length - 1];
+			const item = key ? attachmentItems.get(key) : undefined;
+			if (!item || (item.kind === "image" && processing)) return false;
 			onNextPromptDismiss?.();
-			changeDraft(
-				writeChatMentionDraft(
-					mentionDraft.references.slice(0, -1),
-					mentionDraft.text,
-				),
-			);
+			if (item.kind === "image") {
+				updateImages(
+					attachments.filter((image) => image.id !== item.attachment.id),
+				);
+			} else {
+				changeDraft(
+					writeChatMentionDraft(
+						mentionDraft.references.filter((_, index) => index !== item.index),
+						mentionDraft.text,
+					),
+				);
+			}
 			return true;
 		},
-		[disabled, sendingNow, mentionDraft, changeDraft, onNextPromptDismiss],
+		[
+			disabled,
+			sendingNow,
+			processing,
+			orderedAttachmentKeys,
+			attachmentItems,
+			attachments,
+			updateImages,
+			mentionDraft,
+			changeDraft,
+			onNextPromptDismiss,
+		],
 	);
 
 	useLayoutEffect(() => {
@@ -367,12 +446,12 @@ export function ChatComposer({
 				!event.cancelable
 			)
 				return;
-			if (removeLastMention(textarea)) event.preventDefault();
+			if (removeLastAttachment(textarea)) event.preventDefault();
 		};
 		textarea.addEventListener("beforeinput", handleBeforeInput);
 		return () => textarea.removeEventListener("beforeinput", handleBeforeInput);
 		// oxlint-disable-next-line react/exhaustive-effect-dependencies -- Scope changes remount the keyed textarea, so its native listener must be rebound.
-	}, [editorRef, removeLastMention, attachmentScopeKey, historyKey]);
+	}, [editorRef, removeLastAttachment, attachmentScopeKey, historyKey]);
 
 	useEffect(() => {
 		const element = rootRef.current;
@@ -584,64 +663,74 @@ export function ChatComposer({
 							data-chat-composer-references=""
 							className="mb-1 flex max-h-[min(8rem,25dvh,var(--pilo-composer-attachments-max-height,8rem))] min-w-0 flex-wrap items-center gap-1.5 overflow-y-auto overscroll-contain p-1"
 						>
-							{attachments.map((attachment) => (
-								<ComposerAttachment
-									key={attachment.id}
-									kind="image"
-									disabled={disabled || sendingNow || processing}
-									removeLabel={t("chat.removeAttachment", {
-										name: attachment.name,
-									})}
-									onRemove={() =>
-										updateImages(
-											attachments.filter((image) => image.id !== attachment.id),
-										)
-									}
-								>
-									<ChatImageThumbnail
-										compact
-										image={{
-											id: attachment.id,
-											name: attachment.name,
-											mimeType: attachment.mimeType,
-											size: attachment.size,
-											source: "local",
+							{orderedAttachmentKeys.map((key) => {
+								const item = attachmentItems.get(key);
+								if (!item) return null;
+								if (item.kind === "image") {
+									const { attachment } = item;
+									return (
+										<ComposerAttachment
+											key={key}
+											kind="image"
+											disabled={disabled || sendingNow || processing}
+											removeLabel={t("chat.removeAttachment", {
+												name: attachment.name,
+											})}
+											onRemove={() =>
+												updateImages(
+													attachments.filter(
+														(image) => image.id !== attachment.id,
+													),
+												)
+											}
+										>
+											<ChatImageThumbnail
+												compact
+												image={{
+													id: attachment.id,
+													name: attachment.name,
+													mimeType: attachment.mimeType,
+													size: attachment.size,
+													source: "local",
+												}}
+											/>
+										</ComposerAttachment>
+									);
+								}
+								const { mention, index } = item;
+								return (
+									<ComposerAttachment
+										key={key}
+										kind="reference"
+										disabled={disabled || sendingNow}
+										removeLabel={
+											mention.kind === "session"
+												? t("chat.removeSessionMention", {
+														title: mention.session.title,
+													})
+												: t("chat.removeAttachment", {
+														name: fileMentionName(mention.path),
+													})
+										}
+										onRemove={() => {
+											onNextPromptDismiss?.();
+											changeDraft(
+												writeChatMentionDraft(
+													mentionDraft.references.filter((_, i) => i !== index),
+													mentionDraft.text,
+												),
+											);
+											editorRef.current?.focus({ preventScroll: true });
 										}}
-									/>
-								</ComposerAttachment>
-							))}
-							{mentionDraft.references.map((mention, index) => (
-								<ComposerAttachment
-									key={`${mention.kind}:${mention.path}`}
-									kind="reference"
-									disabled={disabled || sendingNow}
-									removeLabel={
-										mention.kind === "session"
-											? t("chat.removeSessionMention", {
-													title: mention.session.title,
-												})
-											: t("chat.removeAttachment", {
-													name: fileMentionName(mention.path),
-												})
-									}
-									onRemove={() => {
-										onNextPromptDismiss?.();
-										changeDraft(
-											writeChatMentionDraft(
-												mentionDraft.references.filter((_, i) => i !== index),
-												mentionDraft.text,
-											),
-										);
-										editorRef.current?.focus({ preventScroll: true });
-									}}
-								>
-									{mention.kind === "session" ? (
-										<SessionMentionBadge mention={mention.session} compact />
-									) : (
-										<FileMentionBadge path={mention.path} compact />
-									)}
-								</ComposerAttachment>
-							))}
+									>
+										{mention.kind === "session" ? (
+											<SessionMentionBadge mention={mention.session} compact />
+										) : (
+											<FileMentionBadge path={mention.path} compact />
+										)}
+									</ComposerAttachment>
+								);
+							})}
 						</div>
 					) : null}
 					<div className="relative min-w-0">
@@ -682,7 +771,7 @@ export function ChatComposer({
 									!event.metaKey &&
 									!event.altKey &&
 									!isImeComposingKeyboardEvent(event) &&
-									removeLastMention(event.currentTarget)
+									removeLastAttachment(event.currentTarget)
 								) {
 									event.preventDefault();
 									return;
