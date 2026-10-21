@@ -15,6 +15,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Download, ExternalLink, ImageOff, X } from "lucide-react";
 
 import { ChatImageViewport } from "@/components/chat/chat-image-viewport";
+import { COMPOSER_ATTACHMENT_PREVIEW_CLASS_NAME } from "@/components/chat/composer-attachment";
 import {
 	chatImageCacheKey,
 	getLocalChatImageUrl,
@@ -245,10 +246,12 @@ export const ChatImageThumbnail = memo(function ChatImageThumbnail({
 	image,
 	alt,
 	className,
+	compact = false,
 }: {
 	image: ChatConversationImage;
 	alt?: string;
 	className?: string;
+	compact?: boolean;
 }) {
 	const lazy = image.source !== "local";
 	const { t } = useTranslation();
@@ -280,39 +283,53 @@ export const ChatImageThumbnail = memo(function ChatImageThumbnail({
 				aria-label={t("chat.viewImage", { name: label })}
 				onClick={handleClick}
 				className={cn(
-					"group relative overflow-hidden rounded-lg border border-foreground/10 bg-muted/40 transition-colors hover:border-foreground/25",
-					THUMBNAIL_SIZE_CLASS,
+					compact
+						? COMPOSER_ATTACHMENT_PREVIEW_CLASS_NAME
+						: cn(
+								"group relative overflow-hidden rounded-lg border border-foreground/10 bg-muted/40 transition-colors hover:border-foreground/25",
+								THUMBNAIL_SIZE_CLASS,
+							),
 					className,
 				)}
 			>
-				{source.status === "ready" ? (
-					<img
-						src={source.url}
-						alt={alt ?? label}
-						loading="lazy"
-						decoding="async"
-						draggable={false}
-						className="size-full object-cover transition-transform duration-150 ease-out group-hover:scale-[1.03]"
-					/>
-				) : source.status === "error" ? (
-					<span
-						className="flex size-full flex-col items-center justify-center gap-1 px-1 text-2xs leading-tight text-muted-foreground"
-						role="alert"
-					>
-						<ImageOff className="size-4" />
-						<span className="line-clamp-2">
-							{retry ? t("chat.loadImageFailed") : source.message}
+				<span
+					className={
+						compact ? "size-4 shrink-0 overflow-hidden rounded-sm" : "contents"
+					}
+				>
+					{source.status === "ready" ? (
+						<img
+							src={source.url}
+							alt={compact ? "" : (alt ?? label)}
+							loading="lazy"
+							decoding="async"
+							draggable={false}
+							className="size-full object-cover transition-transform duration-150 ease-out group-hover:scale-[1.03]"
+						/>
+					) : source.status === "error" ? (
+						<span
+							className={cn(
+								"flex size-full flex-col items-center justify-center gap-1 text-2xs leading-tight text-muted-foreground",
+								!compact && "px-1",
+							)}
+							role="alert"
+						>
+							<ImageOff className="size-4 shrink-0" />
+							<span className={compact ? "sr-only" : "line-clamp-2"}>
+								{retry ? t("chat.loadImageFailed") : source.message}
+							</span>
 						</span>
-					</span>
-				) : (
-					<span className="flex size-full items-center justify-center text-muted-foreground">
-						{lazy ? (
-							<span className="size-full animate-pulse bg-muted/70" />
-						) : (
-							<Spinner className="size-4" />
-						)}
-					</span>
-				)}
+					) : (
+						<span className="flex size-full items-center justify-center text-muted-foreground">
+							{lazy ? (
+								<span className="size-full animate-pulse bg-muted/70" />
+							) : (
+								<Spinner className="size-4" />
+							)}
+						</span>
+					)}
+				</span>
+				{compact ? <span className="min-w-0 truncate">{label}</span> : null}
 			</button>
 		</Hint>
 	);

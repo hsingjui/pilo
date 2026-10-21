@@ -15,6 +15,7 @@
 			import { createRoot } from "react-dom/client";
 			import { ChatComposer } from "../../src/components/chat/chat-composer.tsx";
 			import { UserMessage } from "../../src/components/chat/chat-user-message.tsx";
+			import { ChatImageLightbox } from "../../src/components/chat/chat-image-viewer.tsx";
 			import { ChatFindLayer } from "../../src/components/chat/chat-find-bar.tsx";
 			import { createFileSuggestions } from "../../src/components/chat/chat-file-suggestions.ts";
 			import {
@@ -210,6 +211,7 @@
 								h(Fixture, { id: "webui-mobile", width: 320 }),
 								h(SearchFixture, { id: "desktop-search", width: 680 }),
 								h(SearchFixture, { id: "webui-mobile-search", width: 320 }),
+								h(ChatImageLightbox),
 							),
 						),
 					),
@@ -559,46 +561,90 @@
 							sawTrayOverflow,
 							"Constrained mixed attachments never scrolled inside the tray",
 						);
-						for (const photo of photos())
+						const chipStyle = getComputedStyle(refs()[0]);
+						const chipHeight = refs()[0].getBoundingClientRect().height;
+						const chips = [
+							...tray().querySelectorAll(
+								"[data-chat-composer-attachment-chip]",
+							),
+						];
+						assert(
+							chips.length === 10,
+							"Mixed attachments do not share the chip component",
+						);
+						for (const chip of chips) {
+							const style = getComputedStyle(chip);
+							const [preview, removal] = chip.querySelectorAll("button");
+							const previewBounds = preview.getBoundingClientRect();
+							const removalBounds = removal.getBoundingClientRect();
+							assert(
+								Math.abs(chip.getBoundingClientRect().height - chipHeight) <=
+									1 &&
+									style.backgroundColor === chipStyle.backgroundColor &&
+									style.borderRadius === chipStyle.borderRadius,
+								"Image, file and session chips use inconsistent styling",
+							);
+							assert(
+								chip.getBoundingClientRect().width <= limit + 1,
+								"Attachment chip exceeded its width limit",
+							);
+							assert(
+								!chip.querySelector("button button"),
+								"Attachment chip nests interactive controls",
+							);
+							assert(
+								removalBounds.left >= previewBounds.right - 1,
+								"Preview and removal targets overlap",
+							);
+							if (matchMedia("(pointer:coarse)").matches)
+								assert(
+									previewBounds.width >= 44 &&
+										previewBounds.height >= 44 &&
+										removalBounds.width >= 44 &&
+										removalBounds.height >= 44,
+									"Attachment chip lost its touch targets",
+								);
+						}
+						for (const [index, photo] of photos().entries()) {
 							assert(
 								Math.abs(
-									photo
-										.querySelector('button[aria-label^="View image"]')
-										.getBoundingClientRect().height -
-										2.75 * remSize,
+									photo.querySelector("img").getBoundingClientRect().height -
+										remSize,
 								) <= 1,
-								"Composer thumbnail lost its compact size",
-							);
-						if (matchMedia("(pointer:coarse)").matches) {
-							const preview = photos()[0]
-								.querySelector('button[aria-label^="View image"]')
-								.getBoundingClientRect();
-							const removal = photos()[0]
-								.querySelector('button[aria-label^="Remove"]')
-								.getBoundingClientRect();
-							assert(
-								removal.width >= 2.75 * remSize &&
-									removal.height >= 2.75 * remSize,
-								"Image removal lost its touch target",
+								"Image chip lost its small thumbnail",
 							);
 							assert(
-								removal.left >= preview.right,
-								"Compact image preview and removal touch areas overlap",
+								photo.textContent.includes(`screenshot-${index + 1}.png`),
+								"Image chip lost its filename",
 							);
 						}
+						photos()[0]
+							.querySelector('button[aria-label^="View image"]')
+							.click();
+						await until(() =>
+							document
+								.querySelector('[role="dialog"]')
+								?.textContent.includes("screenshot-1.png"),
+						);
+						document
+							.querySelector('[role="dialog"] button[aria-label="Close"]')
+							.click();
+						await until(() => !document.querySelector('[role="dialog"]'));
 						fixtures.get(id).setPanelHeight(compactPanelHeight);
 						await until(
 							() =>
 								panel.clientHeight === compactPanelHeight &&
 								region.getBoundingClientRect().height <= compactPanelHeight + 1,
 						);
-						const lastRemove = refs()[1].lastElementChild;
-						lastRemove.focus();
+						const lastChip = tray().querySelector(
+							"[data-chat-composer-attachment-chip]:last-child",
+						);
+						lastChip.lastElementChild.focus();
 						assert(
 							tray().scrollTop > 0,
-							"Keyboard focus did not reveal hidden references",
+							"Keyboard focus did not reveal hidden attachments",
 						);
-						lastRemove.click();
+						refs()[1].lastElementChild.click();
 						await expectDraft(`${mixedBody}\n${token}`, mixedBody);
 						assert(
 							photos().length === 8,
@@ -751,7 +797,7 @@
 					}
 					document.body.dataset.testStatus = "passed";
 					document.querySelector("#results").textContent =
-						"PASS: desktop + 320px WebUI reference shelf above native textarea, caret preservation, deduplication, independent removal, mobile Backspace, inline draft recovery, disabled state, two-row minimum, attachment/reference placeholder visibility, autosizing, shared image/reference height budget, short-panel resizing, keyboard reveal, mixed submission, IME submission guard, upload ownership, scope remounts, popovers, submission and search navigation";
+						"PASS: desktop + 320px WebUI reference shelf above native textarea, caret preservation, deduplication, independent removal, mobile Backspace, inline draft recovery, disabled state, two-row minimum, attachment/reference placeholder visibility, unified attachment chips, image lightbox, autosizing, shared image/reference height budget, short-panel resizing, keyboard reveal, mixed submission, IME submission guard, upload ownership, scope remounts, popovers, submission and search navigation";
 				} catch (error) {
 					document.body.dataset.testStatus = "failed";
 					document.querySelector("#results").textContent =

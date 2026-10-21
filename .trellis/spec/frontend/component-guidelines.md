@@ -553,20 +553,25 @@ actions go there and appear only for persisted sessions (`session && !session.te
   keyed attachment/history scope changes. Use a layout effect for this native
   listener: a remounted textarea must handle its first `beforeinput` immediately,
   not wait for a passive effect. Deduplicate repeated picks by kind/path.
-- Keep shelf labels compact (`max(1.25rem, readingFontSize × 1.25px)`), with their
-  own UI-sized text rather than reading-text baseline coupling. Cap previews at
-  `12rem`, allow shrinking/truncation, wrap the shelf with a bounded scroll area,
+- Images, files and sessions use the same `ComposerAttachment` chip shell and
+  `COMPOSER_ATTACHMENT_PREVIEW_CLASS_NAME` for their preview buttons. Keep a shared
+  muted background, rounded corners, trailing removal button and desktop height
+  `max(1.75rem, var(--pilo-composer-line-height))`. Use UI-sized labels rather than
+  reading-text baseline coupling. Cap the whole chip at `12rem`, including removal;
+  allow shrinking/truncation and wrap the shelf with a bounded scroll area,
   and keep coarse-pointer preview/removal targets at least 44px. The body retains
   its mobile 16px font floor and native `line-height: normal`; adding references
   must not increase the textarea's own height or caret line-height. The whole
   composer can grow to accommodate the explicitly separate shelf.
 - Images and file/session references share **one** wrapping attachment tray above
   the textarea, not separate independently growing image and reference sections.
-  Composer-only thumbnails use the existing preview component at `2.75rem`
-  (44px at default scale); message thumbnails retain their usual size. Pad image trays so removal buttons and
-  focus rings are not clipped. Use `p-1` and `mb-1`, with the desktop removal
-  badge offset only `0.125rem`; touch image removal sits beside the preview
-  with its own 44px target rather than covering the preview. The tray's single
+  `ChatImageThumbnail compact` shows a `1rem` thumbnail and truncated filename
+  inside the same preview button; keep lightbox/retry behavior and accessible error
+  feedback. File/session chips retain their existing path popovers. Message
+  thumbnails and badges retain their non-compact appearance. Use `p-1` and `mb-1`
+  on the tray so focus rings are not clipped. Removal always sits beside the preview,
+  never overlaid on it; both targets retain a 44px floor on coarse pointers.
+  The tray's single
   maximum is `min(8rem,25dvh)`;
   overflowing items scroll inside it, and keyboard focus reveals hidden controls.
   Never put the body or toolbar inside that scrolling area. During autosizing,

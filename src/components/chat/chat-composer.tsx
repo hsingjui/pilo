@@ -13,7 +13,7 @@ import {
 } from "@/lib/ime";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { LoaderCircle, PencilSparkles, Plus, X } from "lucide-react";
+import { LoaderCircle, PencilSparkles, Plus } from "lucide-react";
 
 import { FileMentionBadge } from "@/components/chat/path-mention-badge";
 import { SessionMentionBadge } from "@/components/chat/session-mention-badge";
@@ -33,6 +33,7 @@ import {
 	type SessionMention,
 } from "@/lib/chat/session-mentions";
 import { ChatImageThumbnail } from "@/components/chat/chat-image-viewer";
+import { ComposerAttachment } from "@/components/chat/composer-attachment";
 
 import { formatKeyboardShortcut } from "@/lib/keyboard-shortcuts";
 import {
@@ -581,19 +582,24 @@ export function ChatComposer({
 						<div
 							data-chat-composer-attachments=""
 							data-chat-composer-references=""
-							className={cn(
-								"mb-1 flex max-h-[min(8rem,25dvh,var(--pilo-composer-attachments-max-height,8rem))] min-w-0 flex-wrap items-center gap-1.5 overflow-y-auto overscroll-contain",
-								attachments.length > 0 ? "p-1" : "px-1",
-							)}
+							className="mb-1 flex max-h-[min(8rem,25dvh,var(--pilo-composer-attachments-max-height,8rem))] min-w-0 flex-wrap items-center gap-1.5 overflow-y-auto overscroll-contain p-1"
 						>
 							{attachments.map((attachment) => (
-								<div
+								<ComposerAttachment
 									key={attachment.id}
-									data-chat-composer-image=""
-									className="relative inline-flex shrink-0 items-center"
+									kind="image"
+									disabled={disabled || sendingNow || processing}
+									removeLabel={t("chat.removeAttachment", {
+										name: attachment.name,
+									})}
+									onRemove={() =>
+										updateImages(
+											attachments.filter((image) => image.id !== attachment.id),
+										)
+									}
 								>
 									<ChatImageThumbnail
-										className="size-11"
+										compact
 										image={{
 											id: attachment.id,
 											name: attachment.name,
@@ -602,66 +608,39 @@ export function ChatComposer({
 											source: "local",
 										}}
 									/>
-									<button
-										type="button"
-										disabled={disabled || sendingNow || processing}
-										aria-label={t("chat.removeAttachment", {
-											name: attachment.name,
-										})}
-										className={cn(
-											"absolute -right-0.5 -top-0.5 z-10 inline-flex size-5 items-center justify-center rounded-full pointer-coarse:static pointer-coarse:min-h-11 pointer-coarse:min-w-11",
-											"border border-border/70 bg-background text-muted-foreground shadow-sm transition-colors pointer-coarse:border-0 pointer-coarse:bg-transparent pointer-coarse:shadow-none",
-											"hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-											(disabled || sendingNow || processing) && "opacity-60",
-										)}
-										onClick={() =>
-											updateImages(
-												attachments.filter((item) => item.id !== attachment.id),
-											)
-										}
-									>
-										<X className="size-3" />
-									</button>
-								</div>
+								</ComposerAttachment>
 							))}
 							{mentionDraft.references.map((mention, index) => (
-								<span
+								<ComposerAttachment
 									key={`${mention.kind}:${mention.path}`}
-									data-chat-composer-reference=""
-									className="inline-flex min-w-0 max-w-full items-center gap-0.5"
+									kind="reference"
+									disabled={disabled || sendingNow}
+									removeLabel={
+										mention.kind === "session"
+											? t("chat.removeSessionMention", {
+													title: mention.session.title,
+												})
+											: t("chat.removeAttachment", {
+													name: fileMentionName(mention.path),
+												})
+									}
+									onRemove={() => {
+										onNextPromptDismiss?.();
+										changeDraft(
+											writeChatMentionDraft(
+												mentionDraft.references.filter((_, i) => i !== index),
+												mentionDraft.text,
+											),
+										);
+										editorRef.current?.focus({ preventScroll: true });
+									}}
 								>
 									{mention.kind === "session" ? (
 										<SessionMentionBadge mention={mention.session} compact />
 									) : (
 										<FileMentionBadge path={mention.path} compact />
 									)}
-									<button
-										type="button"
-										disabled={disabled || sendingNow}
-										className="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-										aria-label={
-											mention.kind === "session"
-												? t("chat.removeSessionMention", {
-														title: mention.session.title,
-													})
-												: t("chat.removeAttachment", {
-														name: fileMentionName(mention.path),
-													})
-										}
-										onClick={() => {
-											onNextPromptDismiss?.();
-											changeDraft(
-												writeChatMentionDraft(
-													mentionDraft.references.filter((_, i) => i !== index),
-													mentionDraft.text,
-												),
-											);
-											editorRef.current?.focus({ preventScroll: true });
-										}}
-									>
-										<X className="size-3" aria-hidden="true" />
-									</button>
-								</span>
+								</ComposerAttachment>
 							))}
 						</div>
 					) : null}
