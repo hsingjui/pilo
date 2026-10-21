@@ -297,23 +297,69 @@
 							section.querySelector('[role="option"]').click();
 							await frame();
 						};
-						await reset("已有文字 @");
-						const height = editor().getBoundingClientRect().height;
-						assert(
-							editor().rows === 1,
-							"Composer still reserves an unused second row",
-						);
-						const oneLineHeight = editor().getBoundingClientRect().height;
-						if (matchMedia("(pointer:coarse)").matches)
+						await reset("");
+						const placeholder = editor().placeholder;
+						assert(placeholder.length > 0, "Empty input lost its placeholder");
+						const expectPlaceholder = (visible) => {
 							assert(
-								oneLineHeight >=
-									2.75 *
-										Number.parseFloat(
-											getComputedStyle(document.documentElement).fontSize,
-										),
-								"Compact input lost its touch target",
+								editor().placeholder === (visible ? placeholder : ""),
+								visible
+									? "Empty shelf did not restore the placeholder"
+									: "Attachments or references did not hide the placeholder",
 							);
+							assert(
+								editor().getAttribute("aria-label") === placeholder,
+								"Placeholder visibility changed the accessible name",
+							);
+						};
+						const height = editor().getBoundingClientRect().height;
+						assert(editor().rows === 2, "Composer lost its two-row minimum");
+						assert(
+							height + 1 >=
+								3 *
+									Number.parseFloat(
+										getComputedStyle(document.documentElement).fontSize,
+									),
+							"Composer lost its original 3rem minimum height",
+						);
+						for (const session of [false, true]) {
+							await reset("@");
+							await complete(session);
+							await expectDraft(session ? sessionToken : token, "");
+							expectPlaceholder(false);
+							refs()[0].lastElementChild.click();
+							await expectDraft("", "");
+							expectPlaceholder(true);
+						}
+						fixtures.get(id).setImages(sampleImages(1));
+						await until(() =>
+							section.querySelector("[data-chat-composer-image]"),
+						);
+						expectPlaceholder(false);
+						await reset(sessionToken, "");
+						fixtures.get(id).setImages([]);
+						await until(
+							() => !section.querySelector("[data-chat-composer-image]"),
+						);
+						expectPlaceholder(false);
+						fixtures.get(id).setImages(sampleImages(1));
+						await until(() =>
+							section.querySelector("[data-chat-composer-image]"),
+						);
+						refs()[0].lastElementChild.click();
+						await expectDraft("", "");
+						expectPlaceholder(false);
+						section
+							.querySelector(
+								'[data-chat-composer-image] button[aria-label^="Remove"]',
+							)
+							.click();
+						await until(
+							() => !section.querySelector("[data-chat-composer-image]"),
+						);
+						expectPlaceholder(true);
 
+						await reset("已有文字 @");
 						await complete();
 						await expectDraft(`已有文字 \n${token}`, "已有文字 ");
 						assert(
@@ -443,8 +489,8 @@
 						}
 						await reset("first\nsecond\nthird");
 						assert(
-							editor().getBoundingClientRect().height > oneLineHeight,
-							"Compact body stopped growing with multiline input",
+							editor().getBoundingClientRect().height > height,
+							"Body stopped growing beyond its two-row minimum",
 						);
 						// Images and references must share a single bounded tray, even in a short panel.
 						const mixedBody = Array(20).fill("正文保留可输入空间").join("\n");
@@ -705,7 +751,7 @@
 					}
 					document.body.dataset.testStatus = "passed";
 					document.querySelector("#results").textContent =
-						"PASS: desktop + 320px WebUI reference shelf above native textarea, caret preservation, deduplication, independent removal, mobile Backspace, inline draft recovery, disabled state, autosizing, shared image/reference height budget, short-panel resizing, keyboard reveal, mixed submission, IME submission guard, upload ownership, scope remounts, popovers, submission and search navigation";
+						"PASS: desktop + 320px WebUI reference shelf above native textarea, caret preservation, deduplication, independent removal, mobile Backspace, inline draft recovery, disabled state, two-row minimum, attachment/reference placeholder visibility, autosizing, shared image/reference height budget, short-panel resizing, keyboard reveal, mixed submission, IME submission guard, upload ownership, scope remounts, popovers, submission and search navigation";
 				} catch (error) {
 					document.body.dataset.testStatus = "failed";
 					document.querySelector("#results").textContent =

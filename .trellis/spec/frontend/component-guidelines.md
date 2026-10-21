@@ -539,6 +539,9 @@ actions go there and appear only for persisted sessions (`session && !session.te
   mix the shelf and textarea into the same wrapping row. `submissionText` and
   input-history validation use the full source; suggestions and caret offsets
   use only the projected body. Restore full drafts via `onHistoryValue`.
+  Hide the default body placeholder while any image attachment or file/session
+  reference is present; restore it once the shelf is empty. Keep the textarea's
+  accessible name independent of placeholder visibility.
 - Reuse `FileMentionBadge` / `SessionMentionBadge` for path popovers and previews.
   Each shelf reference has a separate, named remove button; do not nest interactive
   controls. Removal preserves body text and focuses the textarea. Body-start
@@ -575,11 +578,12 @@ actions go there and appear only for persisted sessions (`session && !session.te
   grow, independent removal, and mixed submission; do not change upload ownership.
 - Native textarea autosizing uses a hidden, inert/aria-hidden, absolutely
   positioned clone at the live width. Measure native leading and content without
-  changing the live textarea's height/minimum, reserve a whole-pixel one-row
-  minimum (`rows={1}`) and twelve-row/panel-space maximum, and account for shelf,
-  toolbar, attachments and safe-area space. The body uses `min-h-0` rather than retaining
-  the legacy `3rem` floor in addition to its measured row. Coarse-pointer inputs
-  retain `min-h-11` for a 44px touch target; multiline text grows naturally.
+  changing the live textarea's height/minimum. Preserve the original two-row
+  minimum (`rows={2}`) and theme-driven `--pilo-ui-composer-input-height` floor;
+  moving references into a separate shelf must not shrink the body. Do not override
+  that floor with `min-h-0` or a separate coarse-pointer minimum. Keep the
+  twelve-row/panel-space maximum and account for shelf, toolbar, attachments and
+  safe-area space; multiline text grows naturally.
   Observe surrounding layout changes; disconnect observers and cancel pending frames on cleanup.
   Never collapse the live textarea: that clamps chat scroll offsets mid-render.
 - `chat-file-lifecycle.ts` scans the same reference parts, including incoming inline

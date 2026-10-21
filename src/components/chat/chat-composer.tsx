@@ -676,7 +676,7 @@ export function ChatComposer({
 									: "enter"
 							}
 							value={mentionDraft.text}
-							rows={1}
+							rows={2}
 							// oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Native multiline input with a shared suggestion list.
 							role="combobox"
 							aria-autocomplete="list"
@@ -750,10 +750,16 @@ export function ChatComposer({
 								} as CSSProperties
 							}
 							aria-label={composerPlaceholder}
-							placeholder={ghostText || composerPlaceholder}
+							placeholder={
+								ghostText ||
+								(mentionDraft.references.length === 0 &&
+								attachments.length === 0
+									? composerPlaceholder
+									: undefined)
+							}
 							className={cn(
 								CHAT_COMPOSER_TEXTAREA_CLASS_NAME,
-								"w-full min-h-0 min-w-0 pointer-coarse:min-h-11",
+								"w-full min-w-0",
 								ghostText ? "pr-20" : showFocusHint && "pr-16",
 							)}
 						/>
