@@ -1,6 +1,8 @@
 # Desktop Git Tab — Implementation Plan
 
-Status: desktop-only scope approved; implementation and source review complete. The revised view was inspected in the existing Windows window. Full runtime acceptance and tests/builds remain pending authorization; no commit has been made. WebUI Git adapter and HTTP changes were withdrawn.
+Status: implementation, approved test adaptation and checks completed; committed in `f7ceb68` and archived on 2026-10-21 at the user's request. See [acceptance.md](./acceptance.md) for the consolidated evidence and remaining runtime checks. WebUI Git adapter and HTTP changes were withdrawn.
+
+The implementation/check notes below describe earlier stages, not the final verification state. In particular, earlier statements about unchanged tests, unexecuted builds and no commit were superseded by the separately authorized October 20 verification and commit session recorded in acceptance.md.
 
 ## Before Continuing
 
@@ -42,7 +44,7 @@ Do not create/modify tests without separate approval. The existing tests/unit/pr
 - [x] Load trellis-check for final source/spec review; run only permitted static checks.
 - [x] Update shared workspace/component specs to document desktop-only Git and sidebar removal.
 - [x] Update task progress and report changes, untouched tests and unexecuted checks honestly.
-- [ ] Commit only with user approval; no release/version changes.
+- [x] Committed with user approval as `f7ceb68`; later release/version work was separate from this task.
 
 Workspace selection consumers are the highest-risk boundary. Recheck current callers before deleting frontend pages; do not widen into backend capability deletion. Roll back only related task changes if necessary.
 

@@ -48,10 +48,10 @@ Chat remains mounted and active agent work continues while desktop Git is select
 
 ## Risks and Deferred Items
 
-- Shared workspace selection affects viewers, find, landing/loading views and per-project pruning. Existing workspace tests bind to the old state shape; they remain untouched pending separate approval to update them.
+- Shared workspace selection affects viewers, find, landing/loading views and per-project pruning. Workspace tests were subsequently adapted to activeTab/gitOpen after separate user approval; see acceptance.md for executed checks and remaining runtime coverage.
 - Large diffs remain subject to current transport limits. Rendering is virtualized; transport streaming is deferred.
 - Desktop runtime validation must run on Windows, not WSL. No runtime correctness is implied by source inspection.
 
 ## Planning Status
 
-The user approved the revised desktop-only summary and requested continued implementation. Git UI, the approved visual revision using `@pierre/diffs`, and right-sidebar removal are implemented. TypeScript and targeted frontend lint pass. The revised Git view was inspected in the existing Windows development window, including layout/wrap and a 390px container; full runtime acceptance, Rust compilation and tests/builds remain pending. Existing workspace tests are unchanged and still need separate approval for state-shape adaptation. No unresolved product behavior questions remain.
+Implementation, approved visual revisions, test adaptation and compilation/build checks are complete and committed in `f7ceb68`; syntax bundle reduction followed in `1783432`. Archived on 2026-10-21 at the user's request. See [acceptance.md](./acceptance.md) for recovered verification evidence and explicitly incomplete Windows/Local/WSL/SSH runtime acceptance. No tests or builds were rerun during archiving.
