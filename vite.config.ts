@@ -10,7 +10,7 @@ import { VitePWA } from "vite-plugin-pwa";
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(() => ({
+export default defineConfig(({ command }) => ({
 	plugins: [
 		react(),
 		tailwindcss(),
@@ -40,14 +40,19 @@ export default defineConfig(() => ({
 	build: {
 		rolldownOptions: {
 			output: {
-				// Split the eagerly-loaded entry bundle so no single chunk exceeds
-				// Vite's 500 kB warning threshold. Heavy features (chat markdown,
-				// terminal, editors) are already split via dynamic import.
+				// Keep React cached separately and avoid merging C++ grammar data
+				// into one oversized optional chunk.
 				codeSplitting: {
 					groups: [
 						{
 							name: "react",
 							test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+						},
+						{
+							name: "shiki-cpp-macro",
+							test: /node_modules[\\/]@shikijs[\\/]langs[\\/]dist[\\/]cpp-macro\.mjs$/,
+							// Shared SQL/GLSL/RegExp grammars must stay independently loadable.
+							includeDependenciesRecursively: false,
 						},
 					],
 				},
@@ -55,9 +60,21 @@ export default defineConfig(() => ({
 		},
 	},
 	resolve: {
-		alias: {
-			"@": path.resolve(import.meta.dirname, "./src"),
-		},
+		alias: [
+			{ find: "@", replacement: path.resolve(import.meta.dirname, "./src") },
+			// Replace only the full bundle; preserve shiki/core and engine imports.
+			{
+				find: /^shiki$/,
+				replacement: path.resolve(
+					import.meta.dirname,
+					"./src/lib/git-diff-shiki.ts",
+				),
+			},
+			// Shiki accepts Vite's WASM initializer; avoid a base64 JS payload.
+			...(command === "build"
+				? [{ find: "shiki/wasm", replacement: "shiki/onig.wasm?init" }]
+				: []),
+		],
 	},
 
 	// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

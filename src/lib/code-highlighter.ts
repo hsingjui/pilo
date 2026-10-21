@@ -1,6 +1,6 @@
 export const CODE_THEME_NAME = "pilo-css-vars";
 
-const CODE_LANGUAGE_LOADERS = {
+export const CODE_LANGUAGE_LOADERS = {
 	typescript: () => import("@shikijs/langs/typescript"),
 	tsx: () => import("@shikijs/langs/tsx"),
 	javascript: () => import("@shikijs/langs/javascript"),

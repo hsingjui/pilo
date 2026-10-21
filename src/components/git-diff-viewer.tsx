@@ -3,13 +3,23 @@ import { FileDiff, Virtualizer } from "@pierre/diffs/react";
 import {
 	parsePatchFiles,
 	DEFAULT_VIRTUAL_FILE_METRICS,
+	EXTENSION_TO_FILE_FORMAT,
+	setCustomExtension,
 	type FileDiffMetadata,
 } from "@pierre/diffs";
 import { useTranslation } from "react-i18next";
 
+import { bundledLanguages } from "@/lib/git-diff-shiki";
 import { usePreferences } from "@/lib/preferences-provider";
 import { useTheme } from "@/lib/theme-provider";
 import { EmptyState } from "@/ui";
+
+// Unsupported syntax stays a regular diff without loading removed grammars.
+for (const [extension, language] of Object.entries(EXTENSION_TO_FILE_FORMAT)) {
+	if (language == null || !Object.hasOwn(bundledLanguages, language)) {
+		setCustomExtension(extension, extension === "h" ? "c" : "text");
+	}
+}
 
 export function DiffViewer({
 	diff,
