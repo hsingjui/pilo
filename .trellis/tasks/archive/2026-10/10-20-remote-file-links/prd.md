@@ -19,6 +19,7 @@ Server/protocol: add file_link.read with shared document safety checks.
 Specs: update the file-link contract and pending verification matrix.
 
 ## Validation
-Review diffs and trace Local/WSL/SSH callers. No tests are created/modified or run, and no builds are run without explicit user authorization. Native Windows and real SSH verification remain pending.
+Tests and builds require explicit user authorization, which was subsequently given. Updated browser/protocol tests and implementation are committed in `d6498c0`. Recovered frontend/Node/Rust results and file-link browser checks passed; the broader shared workspace browser fixture has recorded unresolved layout assertion failures. Native Windows and real WSL/SSH acceptance remain incomplete. See [acceptance.md](./acceptance.md) for evidence, exact limitations and historical session references.
 
-The checkout lacks the documented Trellis task scripts; this task artifact is maintained directly without changing the workflow runtime.
+## Archive status
+Archived on 2026-10-21 at the user's request, with incomplete and failed verification scenarios explicitly retained in acceptance.md. No tests or builds were rerun during archiving. The checkout lacks project-local task scripts; the installed Trellis archive command is used with `--no-commit`, without changing the workflow runtime.

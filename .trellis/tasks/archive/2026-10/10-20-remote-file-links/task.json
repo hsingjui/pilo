@@ -2,7 +2,7 @@
   "id": "remote-file-links",
   "name": "remote-file-links",
   "title": "Support desktop WSL/SSH file links without an HTTP server",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": "file-links",
   "creator": "hsingjui",
@@ -17,5 +17,7 @@
     "crates/pilo-protocol/src/lib.rs",
     ".trellis/spec/frontend/html-report-links.md"
   ],
-  "notes": "Implementation and source review only. Builds, test changes/execution and native runtime verification require user approval; existing browser fixture still expects remote rejection."
+  "notes": "Implementation and approved browser/protocol tests committed. Historical frontend/Node/Rust checks and file-link browser fixture passed. Broader shared workspace browser layout assertions failed; real Windows/WSL/SSH acceptance remains incomplete. Archived at user request with evidence and gaps in acceptance.md. No tests/builds rerun during archiving.",
+  "commit": "d6498c0113405345a67c69cecc032a163c6ac170",
+  "completedAt": "2026-10-21"
 }
