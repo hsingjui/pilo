@@ -543,6 +543,18 @@ actions go there and appear only for persisted sessions (`session && !session.te
   reference is present; restore it once the shelf is empty. Keep the textarea's
   accessible name independent of placeholder visibility.
 - Reuse `FileMentionBadge` / `SessionMentionBadge` for path popovers and previews.
+  On desktop only (`isTauri()`), file badges use `useChatFileOpen` when its
+  `canOpenFile(path)` allows activation: text/code opens the existing project
+  workspace tab, repeated clicks reuse it, and images retain the shared lightbox.
+  `canPreviewFileMention` also gates activation by the existing text-preview and
+  image-MIME classifiers (HTML/HTM is inert source here, not a system launch).
+  The registered opener's path predicate alone is not a type capability check:
+  PDFs, ZIPs, other binaries and unknown types retain their path popovers even if
+  that predicate returns true. Keep the content/UTF-8/size checks on actual reads.
+  Keep full paths in `Hint` and give the button an opening-action accessible name.
+  WebUI file badges do not activate the file opener; retain the path popover there,
+  for unavailable files, and for session badges. This applies to both compact
+  composer chips and non-compact sent/history badges; do not add WebUI file APIs.
   Each shelf reference has a separate, named remove button; do not nest interactive
   controls. Reference removal preserves body text and focuses the textarea.
   Body-start Backspace and cancelable mobile `beforeinput` remove the last visible
@@ -581,7 +593,8 @@ actions go there and appear only for persisted sessions (`session && !session.te
   order from the images-first map or from individual upload completion times.
   Failed entries contribute no keys; obsolete scopes publish neither keys nor
   references and retain the existing file cleanup path. Cover a text/image/text
-  batch with reversed upload completion and partial failure.
+  batch with reversed upload completion, partial failure and binary-path fallback
+  with a permissive file-opener test fixture.
   Body edits must not reshuffle existing chips. Reset ordering when
   `attachmentScopeKey ?? historyKey` changes; this is transient view state, not a
   change to serialized drafts, image payloads or submission ownership.

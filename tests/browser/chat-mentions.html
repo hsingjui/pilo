@@ -16,6 +16,7 @@
 			import { ChatComposer } from "../../src/components/chat/chat-composer.tsx";
 			import { UserMessage } from "../../src/components/chat/chat-user-message.tsx";
 			import { ChatImageLightbox } from "../../src/components/chat/chat-image-viewer.tsx";
+			import { useChatFileOpener } from "../../src/components/chat/chat-file-open-context.tsx";
 			import { ChatFindLayer } from "../../src/components/chat/chat-find-bar.tsx";
 			import { createFileSuggestions } from "../../src/components/chat/chat-file-suggestions.ts";
 			import {
@@ -36,6 +37,14 @@
 			window.mentionFixtures = fixtures;
 			const path = "src/components/a-very-long-file-name-for-narrow-layout.tsx";
 			const sessionPath = "/sessions/previous.jsonl";
+			const openedFiles = [];
+			const openFile = (candidate) => openedFiles.push(candidate);
+			// Match the desktop opener's broad path capability; badges must reject binary types.
+			const canOpenFile = (candidate) => candidate.length > 0;
+			function FileOpenerFixture() {
+				useChatFileOpener(openFile, canOpenFile);
+				return null;
+			}
 			function sampleImages(count) {
 				const canvas = document.createElement("canvas");
 				canvas.width = 160;
@@ -215,6 +224,7 @@
 								h(SearchFixture, { id: "desktop-search", width: 680 }),
 								h(SearchFixture, { id: "webui-mobile-search", width: 320 }),
 								h(ChatImageLightbox),
+								h(FileOpenerFixture),
 							),
 						),
 					),
@@ -618,6 +628,106 @@
 						await until(() => !shelf());
 						await expectDraft("", "");
 						expectPlaceholder(true);
+
+						const previousTauri = globalThis.isTauri;
+						try {
+							for (const native of [true, false]) {
+								globalThis.isTauri = native;
+								await reset("");
+								await reset(token, "");
+								const preview = refs()[0].querySelector("button");
+								const before = openedFiles.length;
+								if (native) {
+									assert(
+										preview.getAttribute("aria-label") === `Open file ${path}`,
+										"Desktop file chip still describes path-only activation",
+									);
+									preview.click();
+									preview.click();
+									assert(
+										openedFiles.length === before + 2 &&
+											openedFiles
+												.slice(-2)
+												.every((candidate) => candidate === path),
+										"Desktop file chip did not use the existing file opener",
+									);
+									assert(
+										!document.querySelector('[role="dialog"]'),
+										"Desktop file chip opened a path popup instead of the file",
+									);
+								} else {
+									assert(
+										preview.matches(fileSelector),
+										"WebUI file chip unexpectedly enables opening",
+									);
+									preview.click();
+									await until(() =>
+										document
+											.querySelector('[role="dialog"]')
+											?.textContent.includes(path),
+									);
+									assert(
+										openedFiles.length === before,
+										"WebUI file chip invoked the desktop opener",
+									);
+									preview.click();
+									await until(() => !document.querySelector('[role="dialog"]'));
+								}
+								const beforeRemove = openedFiles.length;
+								refs()[0].lastElementChild.click();
+								await expectDraft("", "");
+								assert(
+									openedFiles.length === beforeRemove,
+									"Removing a file chip opened the file",
+								);
+							}
+							globalThis.isTauri = true;
+							for (const binaryPath of [
+								"report.pdf",
+								"archive.zip",
+								"document.docx",
+								"unknown.custom",
+							]) {
+								await reset(`@"${binaryPath}"`, "");
+								const preview = refs()[0].querySelector("button");
+								const before = openedFiles.length;
+								assert(
+									preview.matches(fileSelector),
+									"Unsupported files lost their path-preview fallback",
+								);
+								preview.click();
+								await until(() =>
+									document
+										.querySelector('[role="dialog"]')
+										?.textContent.includes(binaryPath),
+								);
+								assert(
+									openedFiles.length === before,
+									"Binary file attempted a text preview despite broad opener capability",
+								);
+								preview.click();
+								await until(() => !document.querySelector('[role="dialog"]'));
+							}
+							for (const previewPath of [
+								"README",
+								"docs/note.md",
+								"src/index.ts",
+								"report.HTML",
+								"assets/photo.PNG",
+							]) {
+								await reset(`@"${previewPath}"`, "");
+								const before = openedFiles.length;
+								refs()[0].querySelector("button").click();
+								assert(
+									openedFiles.length === before + 1 &&
+										openedFiles.at(-1) === previewPath,
+									"Supported text/image file lost direct activation",
+								);
+							}
+						} finally {
+							globalThis.isTauri = previousTauri;
+							await reset("");
+						}
 
 						await reset("已有文字 @");
 						await complete();
@@ -1055,7 +1165,7 @@
 					}
 					document.body.dataset.testStatus = "passed";
 					document.querySelector("#results").textContent =
-						"PASS: desktop + 320px WebUI reference shelf above native textarea, caret preservation, deduplication, independent removal, mixed-image/reference Backspace, mobile Backspace after scope remount, caret/selection/IME/disabled deletion guards, inline draft recovery, disabled state, two-row minimum, attachment/reference placeholder visibility, unified attachment chips, mixed insertion/paste and reversed-completion batch order, partial upload failure, removal and re-addition order, image lightbox, autosizing, shared image/reference height budget, short-panel resizing, keyboard reveal, mixed submission, IME submission guard, upload ownership, scope remounts, popovers, submission and search navigation";
+						"PASS: desktop + 320px WebUI reference shelf above native textarea, caret preservation, deduplication, independent removal, mixed-image/reference Backspace, mobile Backspace after scope remount, caret/selection/IME/disabled deletion guards, inline draft recovery, disabled state, two-row minimum, attachment/reference placeholder visibility, unified attachment chips, mixed insertion/paste and reversed-completion batch order, partial upload failure, removal and re-addition order, image lightbox, autosizing, shared image/reference height budget, short-panel resizing, keyboard reveal, mixed submission, IME submission guard, upload ownership, scope remounts, desktop file-chip activation, WebUI and binary path-only fallback, independent removal, popovers, submission and search navigation";
 				} catch (error) {
 					document.body.dataset.testStatus = "failed";
 					document.querySelector("#results").textContent =

@@ -1,3 +1,5 @@
+import { fileLinkPreviewKind } from "@/lib/chat/chat-markdown-links";
+import { resolveChatImageMimeType } from "@/lib/chat/chat-submission";
 import {
 	sessionMentionValue,
 	type SessionMention,
@@ -9,6 +11,16 @@ export type ChatMention =
 
 export function fileMentionName(path: string) {
 	return path.split(/[\\/]/).pop() || path;
+}
+
+/** File badges preview supported text/images, never launch arbitrary documents. */
+export function canPreviewFileMention(path: string) {
+	return (
+		fileLinkPreviewKind(path) !== null ||
+		// Unlike file:// links, HTML references open as inert source in the text viewer.
+		/\.html?$/i.test(path) ||
+		resolveChatImageMimeType({ name: path, type: "" }) !== null
+	);
 }
 
 /** Quoted paths distinguish completed file picks from an active @ query. */
