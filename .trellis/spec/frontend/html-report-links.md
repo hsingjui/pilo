@@ -230,9 +230,9 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
   verbatim/Unicode/space/hash paths, WSL/SSH routing, optional Windows Zed WSL IPC
   path and existing project-directory fallback.
 - `tests/unit/project-workspace.test.ts`: routing, deduplication, path case,
-  selection/closing, project pruning and stale highlighting. Its old activePath
-  assertions still need adaptation to activeTab/gitOpen, pending separate user
-  approval; do not silently edit them during feature implementation.
+  selection/closing, project pruning and stale highlighting. Tests now use
+  activeTab/gitOpen and cover Git singleton/close behavior and project-owned view
+  retention; see the Git workspace spec for the full reducer contract.
 - `tests/browser/chat-markdown-links.html`: mocked system IPC, desktop connection
   routing and the WebUI guard,
   no automatic opening, focus, 320px light/dark chips and coarse-pointer targets;
@@ -251,18 +251,24 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
 - Rust `file_links::tests`: URL/path validation, missing/directory/symlink checks,
   bounded UTF-8 previews, document allowlist, unknown/`.wsb` refusal and executable
   rejection even under an allowed extension.
-- Pending explicit authorization: the existing browser fixture still asserts
-  WSL/SSH rejection and must be updated for the new desktop routing contract.
-  Add coverage for OS-independent POSIX/drive URL decoding, remote canonical paths,
-  preview size/encoding rejection, remote document executable bits/signatures and
-  symlink names/targets, 32 MiB document/growth limits, cache flush/failed-open
-  cleanup/expiry, unchanged Local behavior and unchanged WebUI IPC refusal.
-  No tests were created, modified or run for this change.
+- The browser fixture has been updated for desktop WSL/SSH routing, remote text
+  previews/errors, legacy HTML opening and unchanged WebUI IPC refusal.
+  `crates/pilo-server/tests/stdio_protocol.rs` covers server-owned filesystem reads,
+  canonical paths, binary attachment delivery and relative-path rejection.
+  Retain coverage requirements for OS-independent POSIX/drive URL decoding,
+  preview size/encoding rejection, executable bits/signatures and symlink targets,
+  32 MiB document/growth limits, cache flush/failed-open cleanup/expiry and Local
+  compatibility; mocked IPC does not replace real connection verification.
 - Browser fixtures mock native IPC. Actual WSL/SSH file reading/default-app
   launching, standalone report scripts and Windows WebView layout still require
   Windows desktop verification. Rebuild the WSL/SSH `pilo-server` development
   runtime explicitly before trying the new server capability; source edits do not
-  update already-built binaries. No build or native verification has been run.
+  update already-built binaries. Historical checks/builds and the file-link
+  browser fixture passed after user authorization, but the broader shared
+  workspace browser fixture recorded unresolved layout assertions. Real native
+  acceptance remains incomplete. See the archived remote-file-links and
+  git-workspace-tab tasks under `.trellis/tasks/archive/2026-10/` for consolidated
+  `acceptance.md` evidence; these historical results do not certify current HEAD.
 
 ## 7. Wrong vs Correct
 
