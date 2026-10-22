@@ -51,6 +51,7 @@ pub(super) fn retryable_read_method(method: &str) -> bool {
 
 #[derive(Default)]
 pub struct ServerManager {
+    control_app: std::sync::Mutex<Option<tauri::AppHandle>>,
     clients: Mutex<HashMap<String, CachedServerClient>>,
     connection_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     admission: RwLock<()>,
@@ -64,6 +65,21 @@ struct CachedServerClient {
 }
 
 impl ServerManager {
+    pub(crate) fn initialize_control(&self, app: tauri::AppHandle) {
+        *self
+            .control_app
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(app);
+    }
+
+    pub(crate) fn control_app(&self) -> Result<tauri::AppHandle, String> {
+        self.control_app
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+            .ok_or_else(|| "Pilo Host control is unavailable".to_owned())
+    }
+
     const SHUTTING_DOWN: &str = "pilo-server manager is shutting down";
 
     fn ensure_running(&self) -> Result<(), String> {
@@ -257,6 +273,10 @@ impl ServerManager {
     }
 
     pub(crate) fn begin_shutdown(&self) {
+        self.control_app
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         self.shutdown.store(true, Ordering::Release);
         self.shutdown_notify.notify_waiters();
     }

@@ -56,6 +56,7 @@ import { useRemoteConnection } from "./use-remote-connection";
 import { useRemoteNetworkLifecycle } from "./use-remote-network-lifecycle";
 import { useRemotePwa } from "./use-remote-pwa";
 import { useRemoteSessions } from "./use-remote-sessions";
+import { useRemotePreferences } from "./use-remote-preferences";
 import { useRemoteTheme } from "./use-remote-theme";
 
 export function RemoteApp() {
@@ -83,6 +84,11 @@ function RemoteWorkspace() {
 		recoveryGeneration,
 		onSocketMessageRef: socketHandlerRef,
 		onReconnectProbeRef: reconnectProbeRef,
+	});
+	const handlePreferencesEvent = useRemotePreferences({
+		client: connection.client,
+		refreshKey: `${connection.resyncKey}:${connection.snapshotRefreshKey}`,
+		onError: connection.handleExpiredAuth,
 	});
 	const { handleThemeEvent } = useRemoteTheme({
 		client: connection.client,
@@ -149,6 +155,7 @@ function RemoteWorkspace() {
 		externalActivity,
 		refreshingProjectIds,
 		refreshProjectSessions,
+		reloadBootstrap,
 	} = sessions;
 	const {
 		networkState,
@@ -287,6 +294,8 @@ function RemoteWorkspace() {
 			if (message.type === "events") {
 				for (const event of message.events) {
 					handleThemeEvent(event);
+					handlePreferencesEvent(event);
+					if (event.type === "configuration_changed") void reloadBootstrap();
 					handleReadEvent(event);
 					handlePromptEnhancementEvent(event);
 				}
@@ -299,6 +308,8 @@ function RemoteWorkspace() {
 		handleSocketMessage,
 		handleReadEvent,
 		handleThemeEvent,
+		handlePreferencesEvent,
+		reloadBootstrap,
 		handleNextPromptMessage,
 		handleCacheKeepAliveMessage,
 		handlePromptEnhancementEvent,

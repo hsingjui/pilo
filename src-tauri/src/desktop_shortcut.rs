@@ -51,6 +51,43 @@ fn parse(value: &str) -> Result<Shortcut, String> {
     Ok(shortcut)
 }
 
+pub(crate) fn validate_in_app_shortcut_conflicts(
+    global: &str,
+    shortcuts: &serde_json::Value,
+) -> Result<(), String> {
+    let global = parse(global)?;
+    if shortcuts.as_object().is_some_and(|shortcuts| {
+        shortcuts.values().any(|value| {
+            value.as_str().is_some_and(|value| {
+                !value.is_empty() && parse(value).is_ok_and(|shortcut| shortcut == global)
+            })
+        })
+    }) {
+        return Err("desktop shortcut conflicts with an application shortcut".to_owned());
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_application_shortcut(value: &str) -> Result<String, String> {
+    if value.len() > 128 || value.chars().any(char::is_control) {
+        return Err("invalid application shortcut".into());
+    }
+    if let Ok(shortcut) = parse(value) {
+        return Ok(shortcut.to_string());
+    }
+    // KeyboardEvent.key can contain printable characters (e.g. Shift+? or Unicode)
+    // that the native key-code parser cannot represent. Only parse their modifiers.
+    let (modifiers, key) = value
+        .rsplit_once('+')
+        .ok_or("invalid application shortcut")?;
+    let mut chars = key.chars();
+    if chars.next().is_none_or(char::is_whitespace) || chars.next().is_some() {
+        return Err("invalid application shortcut".into());
+    }
+    let shortcut = parse(&format!("{modifiers}+a"))?;
+    Ok(format!("{}:{}", shortcut.mods.bits(), key.to_lowercase()))
+}
+
 pub(crate) fn install(app: &AppHandle) -> Result<(), String> {
     app.plugin(
         tauri_plugin_global_shortcut::Builder::new()
@@ -162,6 +199,10 @@ pub(crate) async fn desktop_shortcut_set(
         let tx = db
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
+        validate_in_app_shortcut_conflicts(
+            &shortcut,
+            &storage::get_preferences(&tx)?.values["keyboardShortcuts"],
+        )?;
         let previous = parse(&storage::get_show_shortcut(&tx)?)
             .ok()
             .filter(|key| manager.is_registered(*key));

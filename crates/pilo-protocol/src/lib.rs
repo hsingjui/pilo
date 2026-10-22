@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+mod control;
+pub use control::*;
+
 mod pi_extensions;
 pub use pi_extensions::{BuiltinExtension, SshWorkspaceConfig};
 
@@ -17,6 +20,9 @@ pub const MAX_FRAME_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_BINARY_PAYLOAD_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_CHAT_FILE_BYTES: usize = 10 * 1024 * 1024;
 pub const SERVER_CAPABILITIES: &[&str] = &[
+    "control.register",
+    "control.respond",
+    "control.revoke",
     "server.ping",
     "server.status",
     "environment.inspect",

@@ -1,3 +1,5 @@
+mod preferences;
+pub use preferences::{preferences_get, preferences_patch};
 mod appearance;
 mod cache_keep_alive;
 mod connections;
@@ -19,12 +21,12 @@ pub use appearance::{system_font_families, theme_settings_get, theme_settings_se
 pub use cache_keep_alive::{cache_keep_alive_settings_list, cache_keep_alive_settings_set};
 
 pub use connections::{
-    connection_health_get, connection_naming_model_get, connection_naming_model_list,
-    connection_naming_model_set, connection_pi_probe, connection_settings_update,
-    connection_shown_in_home_set, local_connection_get, local_connection_test, ssh_connection_list,
-    ssh_connection_password_get, ssh_connection_remove, ssh_connection_save, ssh_connection_test,
-    ssh_connection_test_draft, wsl_connection_list, wsl_connection_remove, wsl_connection_save,
-    wsl_connection_test, wsl_list_distributions,
+    SaveSshConnectionRequest, connection_health_get, connection_naming_model_get,
+    connection_naming_model_list, connection_naming_model_set, connection_pi_probe,
+    connection_settings_update, connection_shown_in_home_set, local_connection_get,
+    local_connection_test, ssh_connection_list, ssh_connection_password_get, ssh_connection_remove,
+    ssh_connection_save, ssh_connection_test, ssh_connection_test_draft, wsl_connection_list,
+    wsl_connection_remove, wsl_connection_save, wsl_connection_test, wsl_list_distributions,
 };
 pub use projects::{
     connection_fs_read_dir, local_pick_project_directory, parallel_agent_create,

@@ -170,6 +170,10 @@ pub(crate) struct PiStartParams {
     stream_id: String,
     project: String,
     #[serde(default)]
+    control_stream_id: Option<String>,
+    #[serde(default)]
+    remote_control: Option<pilo_protocol::ControlContext>,
+    #[serde(default)]
     session_path: Option<String>,
     #[serde(default)]
     no_session: bool,
@@ -461,7 +465,41 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
             system_prompt_argument(&pi_executable, system_prompt),
         ]);
     }
+    let control = params
+        .control_stream_id
+        .as_deref()
+        .map(|stream| {
+            state
+                .agent_control
+                .context(stream)
+                .ok_or_else(|| "unregistered Pilo control context".to_owned())
+        })
+        .transpose()?;
+    if control.is_some() {
+        args.extend(["--append-system-prompt".to_owned(), "Pilo application control is available through bash: invoke the executable in PILO_CTL with the ctl subcommand (POSIX: \"$PILO_CTL\" ctl; PowerShell: & $env:PILO_CTL ctl). Start with ctl --help and ctl settings list. This controls the running Pilo Host; use explicit --connection/--project for scoped writes. Never print PILO_CONTROL_TOKEN or put credentials in command arguments; use --stdin JSON. Failed writes must not be automatically retried.".to_owned()]);
+    }
     let mut command = process_command(&pi_executable, &args, &path);
+    for key in [
+        "PILO_CTL",
+        "PILO_CONTROL_ENDPOINT",
+        "PILO_CONTROL_TOKEN",
+        "PILO_REMOTE_CONTROL",
+    ] {
+        command.env_remove(key);
+    }
+    if let Some(control) = control {
+        command
+            .env("PILO_CTL", control.executable)
+            .env("PILO_CONTROL_ENDPOINT", control.endpoint)
+            .env("PILO_CONTROL_TOKEN", control.token);
+    }
+    if let Some(control) = &params.remote_control {
+        command.env(
+            "PILO_REMOTE_CONTROL",
+            serde_json::to_string(control)
+                .map_err(|_| "invalid remote control context".to_owned())?,
+        );
+    }
     command
         .current_dir(&params.project)
         .stdin(Stdio::piped())
@@ -527,6 +565,8 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
     let stops = Arc::clone(&state.pi_stops);
     let outputs = Arc::clone(&state.pi_output_tasks);
     let stdout_identity = stdin_identity.clone();
+    let agent_control = state.agent_control.clone();
+    let control_stream = params.control_stream_id.clone();
     let stdout_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
         loop {
@@ -578,6 +618,9 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
                 None
             }
         };
+        if let Some(stream) = control_stream {
+            agent_control.revoke(&stream);
+        }
         let code = exit_status.as_ref().and_then(|status| status.code());
         let success = exit_status.as_ref().is_some_and(|status| status.success());
         trace_pi(
@@ -699,6 +742,9 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
 }
 
 pub(crate) async fn pi_stop(state: &ServerState, params: PiStopParams) -> Result<Value, String> {
+    state
+        .agent_control
+        .revoke(&format!("control:{}", params.stream_id));
     let pid = state
         .pi
         .lock()

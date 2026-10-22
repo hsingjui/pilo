@@ -1,3 +1,7 @@
+import type {
+	PreferencePatch,
+	PreferencesSnapshot,
+} from "@/lib/host-preferences";
 import type { ThemeSettings, ThemeSettingsUpdate } from "@/lib/theme-settings";
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
 import type {
@@ -53,6 +57,13 @@ import {
 } from "@/lib/api/sessions";
 
 export class TauriPiloClient implements PiloClient {
+	loadPreferences() {
+		return invoke<PreferencesSnapshot>("preferences_get");
+	}
+	savePreferences(patch: PreferencePatch) {
+		return invoke<PreferencesSnapshot>("preferences_patch", { patch });
+	}
+
 	private sequence = 0;
 
 	async bootstrap(): Promise<PiloClientBootstrap> {

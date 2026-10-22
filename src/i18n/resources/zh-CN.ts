@@ -106,6 +106,8 @@ const zhCN = {
 	},
 	settings: {
 		...enUS.settings,
+		preferencesLoadFailed: "加载偏好设置失败",
+		preferencesSaveFailed: "保存偏好设置失败",
 		themeLoadFailed: "主题加载失败，请重试。",
 		themeSaveFailed: "主题保存失败，请重试。",
 		title: "设置",

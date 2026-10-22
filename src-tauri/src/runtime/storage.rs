@@ -1,3 +1,5 @@
+mod preferences;
+pub(crate) use preferences::*;
 mod appearance;
 pub(crate) use appearance::*;
 mod cache_keep_alive;

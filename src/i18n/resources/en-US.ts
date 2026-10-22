@@ -96,6 +96,8 @@ const enUS = {
 		quit: "Quit Pilo",
 	},
 	settings: {
+		preferencesLoadFailed: "Failed to load preferences",
+		preferencesSaveFailed: "Failed to save preferences",
 		themeLoadFailed: "Failed to load theme",
 		themeSaveFailed: "Failed to save theme",
 		title: "Settings",

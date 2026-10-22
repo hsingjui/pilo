@@ -1,3 +1,4 @@
+import { useConfigurationRevision } from "@/lib/use-configuration-revision";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -72,6 +73,7 @@ async function testConnection(
 }
 
 export function ConnectionsSettings() {
+	const configurationRevision = useConfigurationRevision();
 	const [local, setLocal] = useState<Connection>(() => localConnection());
 	const [wslItems, setWslItems] = useState<WslConnectionInfo[]>([]);
 	const [sshItems, setSshItems] = useState<SshConnectionInfo[]>([]);
@@ -135,12 +137,14 @@ export function ConnectionsSettings() {
 		setLoading(false);
 	}, [t]);
 
+	/* oxlint-disable react/exhaustive-effect-dependencies -- Host configuration revisions intentionally reload externally owned settings. */
 	useEffect(() => {
 		const load = async () => {
 			await refresh();
 		};
 		void load();
-	}, [refresh]);
+	}, [refresh, configurationRevision]);
+	/* oxlint-enable react/exhaustive-effect-dependencies */
 
 	const toggleShown = async (id: string, shown: boolean) => {
 		try {

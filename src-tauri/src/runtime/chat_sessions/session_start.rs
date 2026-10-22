@@ -80,6 +80,9 @@ impl ChatSessions {
                 },
                 project,
                 PiLaunchOptions {
+                    agent_control: !session.builtin_extensions().iter().any(|extension| {
+                        matches!(extension, pilo_protocol::BuiltinExtension::ModelCatalog)
+                    }),
                     session_path,
                     no_session: process.no_session,
                     extensions: process.extensions.clone(),

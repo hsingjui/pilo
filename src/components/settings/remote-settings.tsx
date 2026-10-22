@@ -1,3 +1,4 @@
+import { useConfigurationRevision } from "@/lib/use-configuration-revision";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -117,6 +118,7 @@ export function RemoteSettings({
 }: {
 	initialState?: RemoteHostState | null;
 }) {
+	const configurationRevision = useConfigurationRevision();
 	const { t } = useTranslation();
 	const [state, setState] = useState<RemoteHostState | null>(
 		initialState ?? null,
@@ -166,9 +168,11 @@ export function RemoteSettings({
 	}, []);
 
 	/* oxlint-disable react/set-state-in-effect -- This settings panel mirrors lifecycle state owned by the external Rust Remote Host. */
+	/* oxlint-disable react/exhaustive-effect-dependencies -- Host configuration revisions intentionally reload externally owned settings. */
 	useEffect(() => {
 		void refresh();
-	}, [refresh]);
+	}, [refresh, configurationRevision]);
+	/* oxlint-enable react/exhaustive-effect-dependencies */
 
 	useEffect(() => {
 		if (!state?.enabled) return;

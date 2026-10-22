@@ -153,12 +153,48 @@ and live/history tool-result usage parity. The history stats fixture includes
 Wrong: send `assistant_message_end` at steer and release runtime ownership.
 Correct: send usage-only metadata, then let the user echo split the conversation.
 
+## Shared Host Preferences
+
+- `PreferencesProvider` owns the React projection, not authoritative persistence.
+  `host-preferences.ts` binds an instance-local transport and serializes writes.
+  `PiloClient.loadPreferences/savePreferences` mirror desktop IPC and authenticated
+  HTTP; WebUI attaches its transport through `useRemotePreferences`.
+- Snapshots contain `revision` and `values`, including locale. Discard older
+  revisions within a transport binding; a newly paired Host starts a new binding.
+  Reload on reconnect/resync and foreground. A successful reload restores write
+  readiness even if initial hydration failed; apply this only to the same transport
+  binding. Failed writes remain failed and are never replayed by recovery. Do not
+  send the browser's cached snapshot back on load or reconnect.
+- Submit only changed fields; shortcut maps patch individual bindings. The
+  provider overlays pending local edits on the latest Host snapshot so rapid
+  toggles remain responsive. After success remove the pending patch; after
+  failure also remove it and show a localized toast. Never retry a failed write
+  automatically, including after re-pairing.
+- Desktop imports valid old preferences/locale once, without replacing initialized
+  Host fields. Before migration, retain original browser values under their
+  `.legacy` keys when storage permits. Application bindings retain printable
+  `KeyboardEvent.key` values (including shifted punctuation and Unicode); import
+  unbinds incompatible entries individually instead of failing all preferences.
+  WebUI never imports browser values. Theme continues to use its separate Host
+  migration/revision protocol.
+- Language changes go through the same Host patch before i18next, document locale
+  and startup cache are updated; apply incoming language revisions in order.
+  System language is only an initial fallback before Host hydration.
+- `configuration_changed` refreshes project/connection catalogs in both shells.
+  Native settings panels use `useConfigurationRevision`; existing scoped Runtime
+  events continue to update scope/prediction/enhancement/cache policy.
+- Sharing persisted values does not add native settings pages to WebUI. Plugin
+  notification and developer-mode controls remain desktop-only. Preserve existing
+  mobile font/layout rules, touch targets and safe-area behavior.
+- Contract and unexecuted regression cases:
+  [Built-in Agent Control](../backend/agent-control.md).
+
 ## Shared Theme Preferences
 
 - Theme mode, family, active custom CSS/name and saved custom themes are owned
   by Host SQLite, not device preferences. `ThemeProvider` owns their React
-  projection and CSS injection; `PreferencesProvider` owns device-local fonts
-  and other preferences only.
+  projection and CSS injection; `PreferencesProvider` projects the remaining
+  Host-owned preferences, including fonts, into React.
 - `AppearanceSettings` is desktop-only and writes through `ThemeProvider`.
   WebUI has no theme settings entry, dialog or switching controls in either its
   wide sidebar or mobile navigation. `useRemoteTheme` only loads the Host theme
@@ -180,9 +216,9 @@ Correct: send usage-only metadata, then let the user echo split the conversation
 
 ## Font Preferences
 
-- Font preferences are device-local (`pilo.preferences.v1` in `localStorage`),
-  not synchronized between desktop and WebUI. UI, reading, code and terminal
-  fonts/sizes are independent. Defaults are UI 15px, reading 16px, code 14px and
+- Font preferences are Host-owned and synchronized between desktop and WebUI.
+  `pilo.preferences.v1` is only a startup cache / desktop migration source.
+  UI, reading, code and terminal fonts/sizes are independent. Defaults are UI 15px, reading 16px, code 14px and
   terminal 14px; accepted sizes are finite numbers within the ranges in
   `src/lib/font-settings.ts`.
 - UI scaling uses a fixed 14px Tailwind `text-sm` baseline, not the configurable
@@ -206,7 +242,7 @@ Correct: send usage-only metadata, then let the user echo split the conversation
 
 ### 1. Scope / Trigger
 
-Desktop Preferences exposes a device-local opt-in for inspecting the current
+Desktop Preferences exposes a Host-backed opt-in for inspecting the current
 main/session window. WebUI keeps browser-native tools and has no switch.
 
 ### 2. Signatures
@@ -219,8 +255,8 @@ main/session window. WebUI keeps browser-native tools and has no switch.
 
 ### 3. Contracts
 
-The existing `pilo.preferences.v1` entry stores the flag. Only literal `true`
-enables it; missing/invalid values default to false. Tauri's inspector shortcut
+Host preferences store the flag; `pilo.preferences.v1` caches it for startup.
+Only literal `true` enables it; missing/invalid values default to false. Tauri's inspector shortcut
 is captured before its built-in handler. F12 is captured only when enabled,
 not assigned to an application command, and not being recorded by a
 `[data-shortcut-recording="true"]` editor. Existing F12 bindings and recording

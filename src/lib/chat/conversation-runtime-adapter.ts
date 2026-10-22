@@ -55,6 +55,8 @@ export function toConversationAction(
 				errorMessage: event.errorMessage,
 				usage: event.usage,
 			};
+		case "preferences_changed":
+		case "configuration_changed":
 		case "theme_settings_changed":
 		case "project_model_scope_changed":
 		case "next_prompt_settings_changed":

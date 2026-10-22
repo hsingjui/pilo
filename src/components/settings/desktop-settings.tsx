@@ -1,3 +1,4 @@
+import { useConfigurationRevision } from "@/lib/use-configuration-revision";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -27,11 +28,13 @@ import {
 } from "./compact-layout";
 
 export function DesktopSettings() {
+	const configurationRevision = useConfigurationRevision();
 	const { t } = useTranslation();
 	const [mode, setMode] = useState<AutostartMode | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [loadError, setLoadError] = useState(false);
 
+	/* oxlint-disable react/exhaustive-effect-dependencies -- Host configuration revisions intentionally reload externally owned settings. */
 	useEffect(() => {
 		let active = true;
 		void getDesktopAutostart().then(
@@ -46,7 +49,8 @@ export function DesktopSettings() {
 		return () => {
 			active = false;
 		};
-	}, []);
+	}, [configurationRevision]);
+	/* oxlint-enable react/exhaustive-effect-dependencies */
 
 	const retry = async () => {
 		setLoadError(false);
@@ -116,11 +120,13 @@ export function DesktopSettings() {
 }
 
 function ExitOnCloseSetting() {
+	const configurationRevision = useConfigurationRevision();
 	const { t } = useTranslation();
 	const [enabled, setEnabled] = useState<boolean | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [loadError, setLoadError] = useState(false);
 
+	/* oxlint-disable react/exhaustive-effect-dependencies -- Host configuration revisions intentionally reload externally owned settings. */
 	useEffect(() => {
 		let active = true;
 		void getDesktopExitOnClose().then(
@@ -135,7 +141,8 @@ function ExitOnCloseSetting() {
 		return () => {
 			active = false;
 		};
-	}, []);
+	}, [configurationRevision]);
+	/* oxlint-enable react/exhaustive-effect-dependencies */
 
 	const retry = async () => {
 		setLoadError(false);

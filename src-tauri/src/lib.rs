@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 mod desktop_notifications;
 mod desktop_shortcut;
 mod desktop_tray;
@@ -23,11 +25,12 @@ use runtime::{
         local_connection_get, local_connection_test, local_pick_project_directory,
         next_prompt_request, next_prompt_settings_get, next_prompt_settings_set,
         parallel_agent_create, parallel_agent_list, parallel_agent_remove, parallel_agent_send,
-        parallel_agent_stop, project_add, project_chat_file_remove, project_chat_file_upload,
-        project_discover, project_file_link_open, project_fs_mkdir, project_fs_read_dir,
-        project_fs_read_file, project_fs_read_image, project_fs_remove, project_fs_rename,
-        project_fs_search, project_fs_stat, project_fs_write_file, project_git_diff,
-        project_git_status, project_html_report_open, project_list, project_mcp_server_approve,
+        parallel_agent_stop, preferences_get, preferences_patch, project_add,
+        project_chat_file_remove, project_chat_file_upload, project_discover,
+        project_file_link_open, project_fs_mkdir, project_fs_read_dir, project_fs_read_file,
+        project_fs_read_image, project_fs_remove, project_fs_rename, project_fs_search,
+        project_fs_stat, project_fs_write_file, project_git_diff, project_git_status,
+        project_html_report_open, project_list, project_mcp_server_approve,
         project_model_cache_list, project_model_cache_set, project_model_scope_get,
         project_model_scope_set, project_open_in_zed_wsl, project_preview_close,
         project_preview_open, project_preview_ports, project_refresh, project_remove,
@@ -268,6 +271,8 @@ pub fn run() {
             remote_device_revoke,
             remote_device_rename,
             system_font_families,
+            preferences_get,
+            preferences_patch,
             theme_settings_get,
             theme_settings_set,
         ])
@@ -310,6 +315,7 @@ pub fn run() {
                 tauri::ActivationPolicy::Regular
             });
             desktop_window::create_main_window(app, start_hidden)?;
+            app.state::<PiloRuntime>().servers.initialize_control(app.handle().clone());
             app.state::<PiloRuntime>().chat_sessions.start_idle_reaper();
 
             let remote_app = app.handle().clone();

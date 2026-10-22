@@ -1,3 +1,4 @@
+import type { PreferencesSnapshot } from "@/lib/host-preferences";
 import type { TokenUsage } from "./token-usage";
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
 import type { NextPromptSettings } from "../next-prompt";
@@ -165,6 +166,11 @@ export type PiloRuntimeEvent = {
 	/** Host publication time, preserved across reconnect replay. */
 	timestampMs?: number;
 } & (
+	| {
+			type: "preferences_changed";
+			settings: PreferencesSnapshot;
+	  }
+	| { type: "configuration_changed" }
 	| { type: "theme_settings_changed"; settings: ThemeSettings }
 	| { type: "project_model_scope_changed"; scope: ProjectModelScope }
 	| { type: "sessions_indexed"; projectId: string }

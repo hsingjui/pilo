@@ -42,6 +42,28 @@ pub(super) async fn bootstrap(State(state): State<RemoteHttpState>) -> Response 
     .into_response()
 }
 
+pub(super) async fn preferences_get(State(state): State<RemoteHttpState>) -> Response {
+    match crate::runtime::preferences::load(&state.app) {
+        Ok(settings) => Json(settings).into_response(),
+        Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+    }
+}
+
+pub(super) async fn preferences_patch(
+    State(state): State<RemoteHttpState>,
+    Json(patch): Json<serde_json::Map<String, Value>>,
+) -> Response {
+    match crate::runtime::preferences::save(
+        &state.app,
+        &state.app.state::<RuntimeEventBus>(),
+        patch,
+        false,
+    ) {
+        Ok(settings) => Json(settings).into_response(),
+        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    }
+}
+
 pub(super) async fn theme_settings(State(state): State<RemoteHttpState>) -> Response {
     match crate::runtime::appearance::load(
         state.app.clone(),

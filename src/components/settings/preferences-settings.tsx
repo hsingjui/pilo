@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { changeAppLocale, isAppLocale } from "@/i18n";
 import {
@@ -79,7 +80,12 @@ export function PreferencesSettings() {
 					<Select
 						value={i18n.language === "zh-CN" ? "zh-CN" : "en-US"}
 						onValueChange={(value) => {
-							if (isAppLocale(value)) void changeAppLocale(value);
+							if (isAppLocale(value))
+								void changeAppLocale(value).catch((error: unknown) =>
+									toast.error(t("settings.preferencesSaveFailed"), {
+										description: String(error),
+									}),
+								);
 						}}
 					>
 						<SelectTrigger className={cn(SETTINGS_CONTROL_CLASS, "w-[180px]")}>

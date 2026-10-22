@@ -68,7 +68,15 @@ function shellQuote(value) {
 }
 
 function sshEnvironment() {
-	return { ...process.env, ...config.sshEnvironment };
+	const environment = { ...process.env, ...config.sshEnvironment };
+	for (const key of [
+		"PILO_CTL",
+		"PILO_CONTROL_ENDPOINT",
+		"PILO_CONTROL_TOKEN",
+		"PILO_REMOTE_CONTROL",
+	])
+		delete environment[key];
+	return environment;
 }
 
 function releaseMuxPath() {
@@ -134,15 +142,25 @@ function sshArgs() {
 }
 
 function remoteSessionExports(env) {
-	if (!env) return "";
 	const assignments = [];
+	const control = process.env.PILO_REMOTE_CONTROL
+		? JSON.parse(process.env.PILO_REMOTE_CONTROL)
+		: null;
+	if (control) {
+		for (const [key, value] of Object.entries({
+			PILO_CTL: control.executable,
+			PILO_CONTROL_ENDPOINT: control.endpoint,
+			PILO_CONTROL_TOKEN: control.token,
+		}))
+			assignments.push(`${key}=${shellQuote(value)}`);
+	}
 	for (const key of [
 		"PI_SESSION_ID",
 		"PI_PROVIDER",
 		"PI_MODEL",
 		"PI_REASONING_LEVEL",
 	]) {
-		if (typeof env[key] === "string") {
+		if (typeof env?.[key] === "string") {
 			assignments.push(`${key}=${shellQuote(env[key])}`);
 		}
 	}
@@ -661,7 +679,9 @@ function createRemoteBashOperations() {
 			await ensureActive();
 			const remoteCwd = toRemote(cwd);
 			const remoteCommand = `cd -- ${shellQuote(remoteCwd)} && ${remoteSessionExports(options.env)}exec bash -c ${shellQuote(command)}`;
-			const result = await runSsh(remoteCommand, {
+			const result = await runSsh("bash -s", {
+				// The capability travels over SSH stdin, never in ssh/sh argv.
+				input: Buffer.from(`${remoteCommand}\n`, "utf8"),
 				signal: options.signal,
 				timeoutSeconds: options.timeout,
 				onData: options.onData,

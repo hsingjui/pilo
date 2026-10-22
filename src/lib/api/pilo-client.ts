@@ -1,3 +1,7 @@
+import type {
+	PreferencePatch,
+	PreferencesSnapshot,
+} from "@/lib/host-preferences";
 import type { ThemeSettings, ThemeSettingsUpdate } from "@/lib/theme-settings";
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
 import type {
@@ -61,6 +65,8 @@ export type PiloClientEventOptions = {
 };
 
 export interface PiloClient {
+	loadPreferences(): Promise<PreferencesSnapshot>;
+	savePreferences(patch: PreferencePatch): Promise<PreferencesSnapshot>;
 	bootstrap(): Promise<PiloClientBootstrap>;
 	loadThemeSettings(): Promise<ThemeSettings>;
 	saveThemeSettings(update: ThemeSettingsUpdate): Promise<ThemeSettings>;

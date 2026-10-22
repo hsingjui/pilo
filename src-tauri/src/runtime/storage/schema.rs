@@ -58,6 +58,12 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            id INTEGER PRIMARY KEY CHECK(id = 1),
            autostart_mode TEXT NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS preferences (
+           id INTEGER PRIMARY KEY CHECK(id = 1),
+           revision INTEGER NOT NULL,
+           values_json TEXT NOT NULL,
+           migrated INTEGER NOT NULL DEFAULT 0
+         );
          CREATE TABLE IF NOT EXISTS theme_settings (
            id INTEGER PRIMARY KEY CHECK(id = 1),
            settings_json TEXT NOT NULL

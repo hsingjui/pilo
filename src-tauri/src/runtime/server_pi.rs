@@ -24,6 +24,7 @@ struct StateCell {
     process: AtomicU8,
     next_prompt_ready: AtomicBool,
     cache_keep_alive: StdMutex<Option<crate::domain::CacheKeepAliveStatus>>,
+    control: StdMutex<Vec<super::control::ControlLease>>,
 }
 
 impl Default for StateCell {
@@ -32,6 +33,7 @@ impl Default for StateCell {
             process: AtomicU8::new(state_to_u8(PiProcessState::Stopped)),
             next_prompt_ready: AtomicBool::new(false),
             cache_keep_alive: StdMutex::new(None),
+            control: StdMutex::new(Vec::new()),
         }
     }
 }
@@ -49,6 +51,12 @@ impl StateCell {
 
     fn set(&self, state: PiProcessState) {
         self.process.store(state_to_u8(state), Ordering::Release);
+        if !matches!(state, PiProcessState::Running | PiProcessState::Starting) {
+            self.control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
+        }
         if state != PiProcessState::Running {
             self.next_prompt_ready.store(false, Ordering::Release);
             *self
@@ -83,6 +91,7 @@ pub struct PiLaunchOptions {
     pub model: Option<String>,
     pub thinking: Option<String>,
     pub system_prompt: Option<String>,
+    pub agent_control: bool,
 }
 
 struct Launch {
@@ -196,6 +205,11 @@ impl ServerPiSession {
     }
 
     fn schedule_cleanup(&mut self) {
+        self.state
+            .control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
         if let Some(task) = self.event_task.take() {
             task.abort();
         }
@@ -282,16 +296,88 @@ impl ServerPiSession {
             generation,
         );
 
-        // Record ownership before awaiting the acknowledgement, so cancellation
-        // and a lost pi.start response still have a stream to clean up.
         self.client = Some(Arc::clone(&client));
         self.stream_id = Some(stream_id.clone());
         self.event_task = Some(event_task);
+        let setup: Result<(Option<String>, Option<pilo_protocol::ControlContext>), String> =
+            async {
+                let mut control_stream = None;
+                let mut remote_control = None;
+                if options.agent_control {
+                    let app = servers.control_app()?;
+                    let control_id = format!("control:{stream_id}");
+                    let (_, lease) = super::control::attach(
+                        app.clone(),
+                        client.clone(),
+                        control_id.clone(),
+                        &project.id,
+                        matches!(
+                            project.connection.kind,
+                            crate::domain::ConnectionKind::Local
+                        ),
+                    )
+                    .await?;
+                    self.state
+                        .control
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .push(lease);
+                    control_stream = Some(control_id);
+                    if options
+                        .builtin_extensions
+                        .iter()
+                        .any(|extension| matches!(extension, BuiltinExtension::SshWorkspace { .. }))
+                    {
+                        let original = super::project::get(&app, &project.id)?;
+                        let remote_client = servers.client(&original.connection).await?;
+                        let (context, lease) = super::control::attach(
+                            app,
+                            remote_client,
+                            format!("remote-control:{stream_id}"),
+                            &project.id,
+                            false,
+                        )
+                        .await?;
+                        self.state
+                            .control
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .push(lease);
+                        remote_control = Some(context);
+                    }
+                }
+
+                Ok((control_stream, remote_control))
+            }
+            .await;
+        let (control_stream, remote_control) = match setup {
+            Ok(context) => context,
+            Err(error) => {
+                let _ = self.stop().await;
+                self.schedule_cleanup();
+                self.state.set(PiProcessState::Failed);
+                sink.send(RuntimeEvent::RuntimeError {
+                    generation,
+                    code: RuntimeErrorCode::SpawnFailed,
+                    message: error.clone(),
+                });
+                sink.send(RuntimeEvent::ProcessState {
+                    generation,
+                    state: PiProcessState::Failed,
+                });
+                return Err(error);
+            }
+        };
+
+        // Record ownership before awaiting the acknowledgement, so cancellation
+        // and a lost pi.start response still have a stream to clean up.
         if let Err(error) = client
             .request(
                 "pi.start",
                 json!({
                     "streamId": stream_id,
+                    "controlStreamId": control_stream,
+                    "remoteControl": remote_control,
                     "project": project.path,
                     "sessionPath": options.session_path,
                     "noSession": options.no_session,

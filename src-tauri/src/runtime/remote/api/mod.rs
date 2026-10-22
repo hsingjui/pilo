@@ -118,6 +118,10 @@ pub(crate) fn router(
     let protected = Router::new()
         .route("/api/v1/bootstrap", get(handlers::bootstrap))
         .route(
+            "/api/v1/preferences",
+            get(handlers::preferences_get).post(handlers::preferences_patch),
+        )
+        .route(
             "/api/v1/theme",
             get(handlers::theme_settings).post(handlers::theme_settings_set),
         )

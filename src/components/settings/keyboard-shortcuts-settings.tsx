@@ -1,3 +1,4 @@
+import { useConfigurationRevision } from "@/lib/use-configuration-revision";
 import {
 	useEffect,
 	useState,
@@ -192,6 +193,7 @@ function ShortcutEditor({
 }
 
 function DesktopShortcutSettings() {
+	const configurationRevision = useConfigurationRevision();
 	const { t } = useTranslation();
 	const { keyboardShortcuts } = usePreferences();
 	const [settings, setSettings] = useState<DesktopShortcutSettings | null>(
@@ -201,6 +203,7 @@ function DesktopShortcutSettings() {
 	const [saving, setSaving] = useState(false);
 	const [recording, setRecording] = useState(false);
 
+	/* oxlint-disable react/exhaustive-effect-dependencies -- Host configuration revisions intentionally reload externally owned settings. */
 	useEffect(() => {
 		let active = true;
 		void getDesktopShortcut().then(
@@ -215,7 +218,8 @@ function DesktopShortcutSettings() {
 		return () => {
 			active = false;
 		};
-	}, []);
+	}, [configurationRevision]);
+	/* oxlint-enable react/exhaustive-effect-dependencies */
 
 	const retry = async () => {
 		setLoadError(false);

@@ -1,5 +1,6 @@
 mod chat_files;
 mod command;
+pub mod control;
 mod environment;
 mod extensions;
 pub use extensions::runtime_directory;
@@ -78,6 +79,7 @@ type PiOutputTasks = HashMap<
 #[derive(Clone)]
 struct ServerState {
     writer: ServerWriter,
+    agent_control: Arc<control::ControlState>,
     request_slots: Arc<Semaphore>,
     control_slots: Arc<Semaphore>,
     search_slots: Arc<Semaphore>,
@@ -102,6 +104,7 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
     let (writer_tx, mut writer_rx) = mpsc::channel::<output::QueuedOutput>(256);
     let state = ServerState {
         writer: ServerWriter::new(writer_tx),
+        agent_control: Arc::new(control::ControlState::default()),
         request_slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
         control_slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
         search_slots: Arc::new(Semaphore::new(2)),
@@ -117,6 +120,7 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
         extensions_dir: Arc::new(extensions_dir),
     };
 
+    let control_listener = control::listen(state.clone()).await?;
     let (writer_done_tx, mut writer_done_rx) = tokio::sync::oneshot::channel();
     let mut writer_task = tokio::spawn(async move {
         let stdout = tokio::io::stdout();
@@ -167,6 +171,26 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
         else {
             continue;
         };
+        // These operations are synchronous state changes. Process them in input
+        // order so a cancelled registration cannot be published after its revoke.
+        if matches!(
+            method.as_str(),
+            "control.register" | "control.respond" | "control.revoke"
+        ) {
+            let response = match dispatch(&state, &method, params, binary).await {
+                Ok(reply) => Envelope::response_with_binary(id, reply.value, reply.binary),
+                Err(error) => Envelope::error(id, "request_failed", error),
+            };
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                state.writer.send(response),
+            )
+            .await
+            {
+                Ok(Ok(())) => continue,
+                _ => break Ok(()),
+            }
+        }
         let slots = if matches!(
             method.as_str(),
             "pi.stop" | "terminal.close" | "session.watch_stop"
@@ -247,6 +271,7 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
     );
     // Cancel pending pi.start before draining the registry, so no request can
     // spawn a new child after shutdown cleanup has already passed it.
+    control_listener.abort();
     requests.abort_all();
     while requests.join_next().await.is_some() {}
     state.pi_starts.lock().await.clear();
@@ -345,6 +370,22 @@ async fn dispatch(
         ));
     }
     match method {
+        "control.register" => state
+            .agent_control
+            .register(from_params(params)?)
+            .map(ServerReply::json),
+        "control.respond" => Ok(ServerReply::json(
+            state.agent_control.respond(from_params(params)?),
+        )),
+        "control.revoke" => {
+            let stream = params
+                .get("streamId")
+                .and_then(Value::as_str)
+                .ok_or("streamId is required")?;
+            state.agent_control.revoke(stream);
+            Ok(ServerReply::json(serde_json::json!({ "ok": true })))
+        }
+
         "server.ping" => to_value(ServerPing {
             protocol_version: PROTOCOL_VERSION,
             server_version: SERVER_VERSION.to_owned(),

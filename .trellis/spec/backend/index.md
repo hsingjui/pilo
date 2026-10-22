@@ -21,6 +21,7 @@ This directory contains guidelines for backend development in this project (Taur
 | [Prompt Cache Keep-alive](./cache-keep-alive.md) | Model policy, bounded background requests, shared quiet notices | Filled |
 | [File Links & Workspace Tabs](../frontend/html-report-links.md) | Connection-aware bounded text previews and validated system file opening | Filled |
 | [Desktop Git Workspace](../frontend/git-workspace.md) | Existing Tauri Git reads, connection routing and literal project-relative paths | Filled |
+| [Agent Control](./agent-control.md) | Built-in CLI control, session capabilities, shared Host preferences | Filled |
 | [Error Handling](./error-handling.md)           | `Result<T, String>` boundary, error text contract | Filled |
 | [Quality Guidelines](./quality-guidelines.md)   | Code standards, forbidden patterns                | Filled |
 | [Logging Guidelines](./logging-guidelines.md)   | `eprintln!` diagnostics, log levels               | Filled |

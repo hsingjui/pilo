@@ -29,6 +29,17 @@ useEffect(() => () => window.clearTimeout(resetTimer.current), []);
   and return the unlisten handle. `listen` returns `Promise<UnlistenFn>`; guard
   against set-after-unmount.
 
+### External refresh generations
+
+Host configuration revisions and WebUI replay/resync keys intentionally retrigger
+loads even when they are not data inputs to the effect. Keep these dependencies;
+removing them breaks CLI-driven updates or recovery. Follow `useRemoteTheme` and
+the settings panels: scope an explained `react/exhaustive-effect-dependencies`
+exception to just that effect, then re-enable the rule. Do not disable global
+rules or suppress genuine missing closures (`react-hooks/exhaustive-deps`).
+Destructure stable callbacks before using them in an effect and its dependency
+array rather than capturing an entire hook result object.
+
 ## When to make a hook vs. a plain function
 
 - **Hook** when it needs React state, effects, refs, or context.

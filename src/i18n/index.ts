@@ -1,12 +1,8 @@
 import i18n from "i18next";
+import { writeHostPreferences } from "@/lib/host-preferences";
 import { initReactI18next } from "react-i18next";
 
-import {
-	isAppLocale,
-	persistLocale,
-	updateDocumentLocale,
-	type AppLocale,
-} from "./locale.ts";
+import { isAppLocale, updateDocumentLocale, type AppLocale } from "./locale.ts";
 import enUS from "./resources/en-US.ts";
 import zhCN from "./resources/zh-CN.ts";
 
@@ -40,9 +36,7 @@ export async function initializeI18n(locale: AppLocale): Promise<void> {
 
 export async function changeAppLocale(locale: AppLocale): Promise<void> {
 	if (!isAppLocale(locale)) return;
-	persistLocale(locale);
-	await i18n.changeLanguage(locale);
-	updateDocumentLocale(locale);
+	await writeHostPreferences({ locale });
 }
 
 export { i18n };

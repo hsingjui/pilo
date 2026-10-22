@@ -1,3 +1,4 @@
+import { useConfigurationRevision } from "@/lib/use-configuration-revision";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RefreshCw } from "lucide-react";
@@ -46,6 +47,7 @@ function modelKey(model: NamingSelection) {
 }
 
 export function SessionNamingSettings() {
+	const configurationRevision = useConfigurationRevision();
 	const [connections, setConnections] = useState<Connection[]>([]);
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [selections, setSelections] = useState<Map<string, NamingSelection>>(
@@ -56,6 +58,7 @@ export function SessionNamingSettings() {
 	const [modelRevision, setModelRevision] = useState(0);
 	const { t } = useTranslation();
 
+	/* oxlint-disable react/exhaustive-effect-dependencies -- Host configuration revisions intentionally reload externally owned settings. */
 	useEffect(() => {
 		let active = true;
 		void Promise.all([
@@ -91,7 +94,8 @@ export function SessionNamingSettings() {
 		return () => {
 			active = false;
 		};
-	}, [t]);
+	}, [t, configurationRevision]);
+	/* oxlint-enable react/exhaustive-effect-dependencies */
 
 	void modelRevision;
 	const modelsByConnection = new Map<string, PiModel[]>();

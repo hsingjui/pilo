@@ -1,3 +1,7 @@
+import type {
+	PreferencePatch,
+	PreferencesSnapshot,
+} from "@/lib/host-preferences";
 import type { ThemeSettings, ThemeSettingsUpdate } from "@/lib/theme-settings";
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
 import type {
@@ -196,6 +200,19 @@ async function remoteFetchBytes(
 	}
 	if (!response.ok) throw new Error(await decodeError(response));
 	return new Uint8Array(await response.arrayBuffer());
+}
+
+export function loadRemotePreferences(token: string) {
+	return remoteFetch<PreferencesSnapshot>(token, "/api/v1/preferences", {
+		cache: "no-store",
+	});
+}
+
+export function saveRemotePreferences(token: string, patch: PreferencePatch) {
+	return remoteFetch<PreferencesSnapshot>(token, "/api/v1/preferences", {
+		method: "POST",
+		body: JSON.stringify(patch),
+	});
 }
 
 export function loadRemoteThemeSettings(token: string) {

@@ -252,6 +252,7 @@ pub async fn project_start_pi(
             TauriEventSink::new(app),
             &profile.project,
             PiLaunchOptions {
+                agent_control: true,
                 extensions: profile.extensions,
                 builtin_extensions: profile.builtin_extensions,
                 disable_builtin_tools: profile.disable_builtin_tools,

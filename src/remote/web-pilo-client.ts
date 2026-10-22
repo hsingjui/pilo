@@ -1,3 +1,4 @@
+import type { PreferencePatch } from "@/lib/host-preferences";
 import type { ThemeSettings, ThemeSettingsUpdate } from "@/lib/theme-settings";
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
 import type {
@@ -44,6 +45,8 @@ import {
 	generateRemoteSessionTitle,
 	loadRemoteBootstrap,
 	loadRemoteThemeSettings,
+	loadRemotePreferences,
+	saveRemotePreferences,
 	saveRemoteThemeSettings,
 	loadRemoteChatState,
 	loadRemoteHistory,
@@ -88,6 +91,13 @@ export class WebPiloClient implements PiloClient {
 
 	bootstrap(): Promise<PiloClientBootstrap> {
 		return loadRemoteBootstrap(this.token);
+	}
+
+	loadPreferences() {
+		return loadRemotePreferences(this.token);
+	}
+	savePreferences(patch: PreferencePatch) {
+		return saveRemotePreferences(this.token, patch);
 	}
 
 	loadThemeSettings(): Promise<ThemeSettings> {
