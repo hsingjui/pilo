@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+	findMatchingPiModel,
 	getNextPiQuickCycleModel,
 	getPiModelThinkingLevels,
 	getPiQuickCycleModels,
@@ -230,4 +231,54 @@ test("thinking levels expose only the selected model profile", () => {
 		"high",
 	]);
 	assert.deepEqual(getPiModelThinkingLevels(model("unknown")), []);
+});
+
+test("finding a model accepts a routing-prefixed alias of a catalog id", () => {
+	const catalog = [
+		model("deepseek-v4.1-flash", { contextWindow: 1_000_000 }),
+		model("gemini-3.8-flash-high"),
+	];
+
+	assert.equal(
+		findMatchingPiModel(catalog, {
+			provider: "test",
+			id: "cline-pass/deepseek-v4.1-flash",
+		})?.id,
+		"deepseek-v4.1-flash",
+	);
+	// 目录里是带前缀的写法、历史里是裸 id 时反过来也要认出来。
+	assert.equal(
+		findMatchingPiModel([model("cline-pass/gemini-3.8-flash-high")], {
+			provider: "test",
+			id: "gemini-3.8-flash-high",
+		})?.id,
+		"cline-pass/gemini-3.8-flash-high",
+	);
+});
+
+test("finding a model never matches across providers", () => {
+	const catalog = [model("deepseek-v4.1-flash", { provider: "other" })];
+
+	assert.equal(
+		findMatchingPiModel(catalog, {
+			provider: "test",
+			id: "cline-pass/deepseek-v4.1-flash",
+		}),
+		null,
+	);
+});
+
+test("finding a model prefers the exact id over an alias", () => {
+	const catalog = [
+		model("cline-pass/deepseek-v4.1-flash", { name: "prefixed" }),
+		model("deepseek-v4.1-flash", { name: "bare" }),
+	];
+
+	assert.equal(
+		findMatchingPiModel(catalog, {
+			provider: "test",
+			id: "deepseek-v4.1-flash",
+		})?.name,
+		"bare",
+	);
 });
