@@ -12,7 +12,10 @@ import { isPresentationBatchedAction } from "@/components/chat/use-runtime-conve
 import { recordChatRuntimeEvent } from "@/lib/chat/chat-performance";
 import { recordChatRuntimeTraceEvent } from "@/lib/chat/chat-runtime-trace";
 import { toConversationAction } from "@/lib/chat/conversation-runtime-adapter";
-import type { ConversationAction } from "@/lib/chat/conversation-types";
+import type {
+	ConversationAction,
+	ConversationState,
+} from "@/lib/chat/conversation-types";
 import {
 	notifyAgentResult,
 	type AgentNotificationStatus,
@@ -85,6 +88,7 @@ type UseChatRuntimeEventsOptions = {
 	identifiedRef: { current: ((sessionId: string) => void) | undefined };
 	setActiveTurnSessionId: (sessionId: string | null) => void;
 	desktopNotifications: boolean;
+	getConversationState: () => ConversationState | undefined;
 	dispatchConversation: (
 		targetSessionId: string,
 		action: ConversationAction,
@@ -94,7 +98,7 @@ type UseChatRuntimeEventsOptions = {
 		action: ConversationAction,
 	) => void;
 	setPendingQueueCounts: (followUps: number) => void;
-	acknowledgeQueuedMessage: (turn: ActiveTurn, text: string) => void;
+	acknowledgeQueuedMessage: (turn: ActiveTurn, clientMessageId: string) => void;
 	releaseActiveTurn: (
 		turn: ActiveTurn,
 		options?: { preserveQueued?: boolean },
@@ -115,6 +119,7 @@ export function useChatRuntimeEvents({
 	identifiedRef,
 	setActiveTurnSessionId,
 	desktopNotifications,
+	getConversationState,
 	dispatchConversation,
 	queueRuntimeAction,
 	setPendingQueueCounts,
@@ -407,6 +412,11 @@ export function useChatRuntimeEvents({
 			}
 			if (event.generation !== turn.generation) return;
 
+			// Capture the pending item consumed by this echo, not another with the same text.
+			const pendingUser =
+				event.type === "user_message_start"
+					? getConversationState()?.pendingUsers[0]
+					: undefined;
 			dispatchRuntimeEventToConversation(
 				event,
 				turn.sessionId,
@@ -438,7 +448,9 @@ export function useChatRuntimeEvents({
 					releaseActiveTurn(turn);
 					break;
 				case "user_message_start":
-					acknowledgeQueuedMessage(turn, event.text);
+					if (pendingUser?.queueKind) {
+						acknowledgeQueuedMessage(turn, pendingUser.clientMessageId);
+					}
 					break;
 				case "assistant_text_snapshot":
 				case "assistant_usage_update":
@@ -473,6 +485,7 @@ export function useChatRuntimeEvents({
 			desktopNotifications,
 			dispatchConversation,
 			failActiveTurn,
+			getConversationState,
 			notifyTurnResult,
 			queueRuntimeAction,
 			projectMcpApprovalPendingRef,

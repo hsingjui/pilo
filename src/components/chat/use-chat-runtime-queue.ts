@@ -86,13 +86,10 @@ export function useChatRuntimeQueue({
 	}, []);
 
 	const acknowledgeQueuedMessage = useCallback(
-		(turn: ActiveTurn, text: string) => {
-			for (const [id, item] of queuedMessagesRef.current) {
-				if (item.turn === turn && item.submission.text === text) {
-					queuedMessagesRef.current.delete(id);
-					break;
-				}
-			}
+		(turn: ActiveTurn, clientMessageId: string) => {
+			const item = queuedMessagesRef.current.get(clientMessageId);
+			if (item?.turn !== turn) return;
+			queuedMessagesRef.current.delete(clientMessageId);
 		},
 		[],
 	);

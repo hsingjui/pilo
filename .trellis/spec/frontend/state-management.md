@@ -153,6 +153,66 @@ and live/history tool-result usage parity. The history stats fixture includes
 Wrong: send `assistant_message_end` at steer and release runtime ownership.
 Correct: send usage-only metadata, then let the user echo split the conversation.
 
+## Image-only Submission Acknowledgements
+
+### 1. Scope / Trigger
+
+A textless image prompt or queued steer/follow-up must advance the same pending
+submission state as a text message, in desktop and WebUI.
+
+### 2. Signatures
+
+`PiEventAdapter::adapt_message_start` emits
+`UserMessageStart { generation, text: "" }` for image-only user content.
+`toConversationAction` forwards this to the shared `user_message_start` reducer.
+Desktop `useChatRuntimeEvents` reads `getConversationState()` directly from the
+conversation store and calls `acknowledgeQueuedMessage(turn, clientMessageId)`
+only for the queued pending item consumed by that echo.
+
+### 3. Contracts
+
+Do not filter a user-start event by text length. Keep the local image summaries
+when acknowledging a pending submission. `local_user_submit.previousTurn` also
+applies to image-only prompts: late previous-turn output remains in that segment
+until the user echo arrives. Queue acknowledgement still happens at the user
+boundary, not at RPC success or `queue_update`. Capture `pendingUsers[0]` before
+synchronously reducing the echo; remove its transport entry by `clientMessageId`
+only if it has a `queueKind` and belongs to the current turn. Desktop must not
+match acknowledgement by text: a direct image prompt and a buffered image steer
+both have empty text. WebUI already uses the same pending-item ID rule.
+
+### 4. Validation & Error Matrix
+
+Empty text with image content emits an acknowledgement; absent/invalid content
+that `message_text` cannot decode emits none. A missing pending submission follows
+the existing external-user path; this event does not carry live image payloads.
+A direct prompt's echo or an echo without a pending item removes no transport
+queue entry. A missing ID or different owning turn is ignored.
+
+### 5. Good / Base / Bad Cases
+
+Good: image-only prompt followed by a text steer leaves no stale pending entry.
+Base: ordinary text submissions keep their existing acknowledgement behavior.
+Bad: dropping the image echo lets the text steer consume the image's pending slot
+while the transport removes the steer's real queue entry, leaving inert buttons.
+
+### 6. Tests Required
+
+When authorized, cover image-only direct prompts, steers and follow-ups, a later
+text steer, image preservation, empty pending queues and late previous-turn output
+in both shells. Assert the preceding usage update still arrives before the empty
+user echo. Also cover an image prompt A acknowledged while image B is buffered:
+B must retain its edit/send-now actions, and a later failed B send must still
+remove its pending row and restore its payload. Repeated identical text must
+also acknowledge only the consumed ID. No tests or builds were run for this fix.
+
+### 7. Wrong vs Correct
+
+Wrong: hide stale queue rows, filter `message_text` with `!text.is_empty()`, or
+remove a transport queue entry just because its text matches a direct prompt.
+Correct: preserve every decoded user boundary, including `text: ""`, and use the
+consumed pending item's ID so the reducer and transport confirm the same message.
+
 ## Shared Host Preferences
 
 - `PreferencesProvider` owns the React projection, not authoritative persistence.

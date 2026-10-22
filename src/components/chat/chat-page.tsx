@@ -330,6 +330,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		initialQueuedMessages: initialDeferredSubmissions.runtime,
 		desktopNotifications,
 		onSessionIdentified,
+		getConversationState: conversationStore.getSnapshot,
 		dispatchConversationBatch,
 		resetConversation,
 		getActivePresentationIntervalMs,

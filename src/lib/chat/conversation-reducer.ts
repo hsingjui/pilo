@@ -233,9 +233,8 @@ function reduceConversationAction(
 	switch (action.type) {
 		case "local_user_submit": {
 			const previous = state.messages[state.messages.length - 1];
-			// Image-only prompts do not emit a text user echo in the runtime adapter.
 			const previousTurn =
-				action.text.length > 0 && previous?.role === "assistant"
+				previous?.role === "assistant"
 					? {
 							turnStartedAtMs: previous.timestampMs,
 							firstRuntimeUserSeen: true,

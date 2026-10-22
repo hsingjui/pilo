@@ -25,7 +25,10 @@ import {
 	type ChatSubmission,
 } from "@/lib/chat/chat-submission";
 import { cacheLocalChatImages } from "@/lib/chat/chat-image-media";
-import type { ConversationAction } from "@/lib/chat/conversation-types";
+import type {
+	ConversationAction,
+	ConversationState,
+} from "@/lib/chat/conversation-types";
 import { runtimeErrorMessage, type PiAgentState } from "@/lib/api/pi-runtime";
 import { requestSessionTitle } from "@/lib/api/sessions";
 import { chatRuntimeHasOpenTurn } from "@/lib/chat/chat-session-runtime-model";
@@ -44,6 +47,7 @@ type UseChatRuntimeOptions = {
 	initialQueuedMessages?: readonly string[];
 	desktopNotifications: boolean;
 	onSessionIdentified?: (sessionId: string) => void;
+	getConversationState: () => ConversationState | undefined;
 	dispatchConversationBatch: (
 		targetSessionId: string,
 		actions: readonly ConversationAction[],
@@ -72,6 +76,7 @@ export function useChatRuntime({
 	initialQueuedMessages = [],
 	desktopNotifications,
 	onSessionIdentified,
+	getConversationState,
 	dispatchConversationBatch,
 	resetConversation,
 	getActivePresentationIntervalMs,
@@ -165,6 +170,7 @@ export function useChatRuntime({
 		identifiedRef,
 		setActiveTurnSessionId,
 		desktopNotifications,
+		getConversationState,
 		dispatchConversation,
 		queueRuntimeAction,
 		setPendingQueueCounts,

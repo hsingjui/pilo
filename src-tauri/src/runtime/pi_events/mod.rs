@@ -81,7 +81,8 @@ impl PiEventAdapter {
                 if let Some(usage) = self.usage.take() {
                     events.push(RuntimeEvent::AssistantUsageUpdate { generation, usage });
                 }
-                if let Some(text) = message_text(message).filter(|text| !text.is_empty()) {
+                // Image-only messages still acknowledge a pending user submission.
+                if let Some(text) = message_text(message) {
                     events.push(RuntimeEvent::UserMessageStart { generation, text });
                 }
                 events
