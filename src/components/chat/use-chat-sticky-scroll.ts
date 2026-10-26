@@ -194,7 +194,7 @@ export function useChatStickyScroll({
 		},
 		[stopScroll],
 	);
-	// Expanding a disclosure in the upper half is reading intent. Bottom clamping
+	// Toggling a disclosure is reading intent. Bottom clamping
 	// on the following resize would drag the anchored trigger upward one frame
 	// after the click, so yield ownership before that correction can run.
 	const handleExpansionToggle = useCallback(() => {

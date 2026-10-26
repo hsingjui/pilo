@@ -25,15 +25,11 @@ export function toggleChatExpansionWithAnchor(
 		return;
 	}
 
-	// A toggle in the upper half moves a large visible mass, so bottom-following
-	// must not clamp to the new max offset on the next frame — that fights the
-	// anchor and shoves the clicked trigger upward. Lower-half toggles keep the
-	// clamp, which reads as the familiar bottom-anchored expansion.
-	const triggerTop =
-		trigger.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
-	if (triggerTop < viewport.clientHeight / 2) {
-		viewport.dispatchEvent(new CustomEvent(CHAT_EXPANSION_TOGGLE_EVENT));
-	}
+	// Any user toggle is reading intent: bottom-following must not clamp to the
+	// new max offset, or it fights the anchor and shoves the clicked trigger
+	// upward so long content appears to expand above it and the trigger becomes
+	// hard to reach. Content always grows downward from the fixed trigger.
+	viewport.dispatchEvent(new CustomEvent(CHAT_EXPANSION_TOGGLE_EVENT));
 
 	const anchorTop = trigger.getBoundingClientRect().top;
 	const expansionRoot =
