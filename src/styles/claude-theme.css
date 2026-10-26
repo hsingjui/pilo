@@ -2,8 +2,8 @@
 @layer base {
 	/*
 	 * Claude 主题族（light）：参考 Claude Code 浅色界面，保留 CDS 陶土强调色。
-	 * 近白画布 #fcfcfc → 侧栏 #fafaf9 → 填充 #f0f0ef → 选中 #ececea，避免米黄偏色。
-	 * 二级文本 #666666 在填充/选中底上均 >4.8:1；
+	 * 近白画布 #fcfcfc → 侧栏 #fafaf9 → 填充 #f0f0ef → 选中 #e5e5e3，避免米黄偏色。
+	 * 二级文本 #666666 在填充底上 >4.8:1、选中底上 4.5:1；
 	 * 陶土原色直接做按钮底白字只有 ~3.1:1，--primary 压暗一档，--ring 保留原色。
 	 * Syntax/status colors start from Lody; syntax is recalibrated to the code surface.
 	 */
@@ -40,7 +40,7 @@
 		--sidebar-primary: 14 61.7% 47%;
 		--sidebar-hover: 60 3.2% 93.9%;
 		--sidebar-hover-foreground: 0 0% 8.2%;
-		--sidebar-selection: 60 5% 92.2%; /* #ececea */
+		--sidebar-selection: 60 3% 89.4%; /* #e5e5e3：比 hover 深一档，#666 仍 4.5:1 */
 		--sidebar-selection-foreground: 0 0% 8.2%;
 		--sidebar-border: 60 4.9% 88%;
 		--sidebar-ring: 15.9 62.4% 59.6%;
@@ -159,6 +159,7 @@
 			"Copernicus", "Source Serif 4", "Noto Serif SC", "Songti SC", Georgia,
 			serif;
 		--pilo-shadow-composer: 0 2px 8px rgb(0 0 0 / 0.04);
+		--pilo-shadow-composer-focus: 0 4px 24px rgb(0 0 0 / 0.08);
 		/* Claude 用户消息气泡：中性浅灰，无边框。 */
 		--pilo-user-bubble-bg: #f0f0ef;
 		--pilo-user-bubble-border: transparent;
@@ -205,9 +206,9 @@
 		--sidebar-foreground: 0 0% 96.1%;
 		--sidebar-foreground-muted: 60 2.3% 57.1%; /* 选中底 >5:1 */
 		--sidebar-primary: 15.9 62.4% 59.6%;
-		--sidebar-hover: 60 2.7% 14.7%;
+		--sidebar-hover: 60 1% 9.5%;
 		--sidebar-hover-foreground: 0 0% 96.1%;
-		--sidebar-selection: 60 2.1% 16.5%;
+		--sidebar-selection: 60 1.5% 14%; /* 比 hover 亮一档，可区分 */
 		--sidebar-selection-foreground: 0 0% 96.1%;
 		--sidebar-border: 0 0% 13%;
 		--sidebar-ring: 15.9 62.4% 59.6%;
@@ -245,11 +246,15 @@
 		--pilo-composer-background: hsl(var(--card));
 		--pilo-composer-border: hsl(var(--input-border) / 0.7);
 		--pilo-shadow-composer: 0 2px 8px rgb(0 0 0 / 0.25);
+		--pilo-shadow-composer-focus: 0 4px 24px rgb(0 0 0 / 0.45);
 		--pilo-user-bubble-bg: hsl(60 2.1% 18.4%); /* 暖深灰 #30302e */
 		--pilo-user-bubble-border: transparent;
 
 		--pilo-shadow-panel: 0 1px 2px rgb(0 0 0 / 0.4), 0 2px 8px rgb(0 0 0 / 0.4);
 		--pilo-shadow-floating:
 			0 2px 8px rgb(0 0 0 / 0.45), 0 8px 28px rgb(0 0 0 / 0.65);
+		/* 暗色浮层用内侧高光勾边：外环与深色底几乎同色，看不出轮廓。 */
+		--pilo-menu-shadow:
+			inset 0 0 0 1px rgb(255 255 255 / 0.1), var(--pilo-shadow-floating);
 	}
 }

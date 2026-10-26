@@ -43,8 +43,8 @@
 		--ring: 219.7 82.2% 64.7%;
 		--sidebar-background: 220 23.1% 97.5%;
 		--sidebar-foreground: var(--card-foreground);
-		/* 环境名/占位符/图标：与二级文本同色，侧栏底 5.0:1 */
-		--sidebar-foreground-muted: var(--muted-foreground);
+		/* 环境名/占位符/图标：比二级文本略深，选中底上也 ≥4.5:1（侧栏底 5.3:1） */
+		--sidebar-foreground-muted: 220 8.9% 42%;
 		--sidebar-primary: 219.7 82.2% 64.7%;
 		--sidebar-hover: 225 15.4% 94.9%;
 		--sidebar-hover-foreground: 225 7.1% 11%;
@@ -292,7 +292,8 @@
 		--pilo-mobile-selected-ring-width: 1px;
 		--pilo-composer-background: hsl(var(--background));
 		--pilo-composer-border: hsl(var(--foreground) / 0.1);
-		--pilo-composer-focus-border: hsl(var(--ring) / 0.4);
+		/* 实色焦点环：白底 3.2:1；0.4 透明度只有 1.5:1，聚焦不可见。 */
+		--pilo-composer-focus-border: hsl(var(--ring));
 
 		/* Overlay stacking */
 		--z-dialog-overlay: 70;
@@ -373,6 +374,8 @@
 		--pilo-project-selected-foreground: hsl(var(--sidebar-foreground) / 0.75);
 		--pilo-composer-background: hsl(var(--input));
 		--pilo-composer-border: hsl(var(--input-border) / 0.7);
+		/* 暗色橙色实色过亮；0.5 在输入框底上 3.8:1。 */
+		--pilo-composer-focus-border: hsl(var(--ring) / 0.5);
 
 		--pilo-shadow-panel:
 			0 1px 1px hsl(0 0% 0% / 0.35), 0 14px 44px hsl(0 0% 0% / 0.55);
