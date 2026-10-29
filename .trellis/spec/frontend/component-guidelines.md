@@ -181,7 +181,11 @@ spacing, type sizes, or control heights.
   CSS and Tailwind consumers through the runtime aliases; include the boot
   composer. General mobile controls keep a 44px floor, except the compact chat
   activity disclosures described below. The compact composer keeps its existing
-  40px controls and 44px attachment hit area. Caller utilities
+  40px controls and 44px attachment hit area. The primary send/stop button is
+  the exception: on coarse pointers it keeps a 32px visible circle inside a 44px
+  wrapper hit area, so narrow WebUI's toolbar `button` min-size rule must exempt
+  `[data-chat-composer-send]` instead of inflating it against the composer edge.
+  Caller utilities
   still override component defaults. Mobile-only sheet/segment/drawer roles
   retain their existing token prefixes rather than another mobile alias layer.
 - Session row density is device-specific: `--pilo-sidebar-session-*` configures
@@ -215,8 +219,13 @@ spacing, type sizes, or control heights.
   so that user CSS cannot accidentally establish the wrong layer order.
   Boot geometry must also match the mounted layout: read cached `uiFontSize`
   with the same 15 default, 12–18 range and `/ 14` scale as PreferencesProvider;
-  mobile WebUI stays at 100%. Use sidebar row height/padding/gap tokens, not
-  pixel snapshots. Reserve the landing project-picker row (`pilo.boot.hasProjects`
+  mobile WebUI stays at 100%, including before `index.css` loads. Its composer
+  toolbar mirrors the shared action-group breakpoint and send/stop geometry:
+  coarse pointers use a `2rem` visible circle centered in a `2.75rem` slot, not a
+  circle enlarged to the mobile control-size token. Keep the send-mode slot and
+  attachment gutter aligned with the mounted toolbar; the WebUI dock reads the
+  same keyboard-dependent bottom-padding override. Use sidebar row
+  height/padding/gap tokens, not pixel snapshots. Reserve the landing project-picker row (`pilo.boot.hasProjects`
   is only a last-observed visibility hint written by DraftProjectPicker), otherwise
   the centered hero moves when the composer dock grows. Hero logo/gap use rem;
   heading size follows the conversation column's 40rem container breakpoint,
@@ -614,6 +623,15 @@ actions go there and appear only for persisted sessions (`session && !session.te
   must keep send controls visible instead of just clamping the body at its minimum.
   Verify eight images plus file/session references and long text, panel shrink /
   grow, independent removal, and mixed submission; do not change upload ownership.
+- Composer action-group gaps shrink from `gap-1.5` to `gap-0.5` below a
+  `40rem` toolbar container width in the shared desktop/WebUI component. Reclaim
+  model-label space without shrinking controls or overlapping touch targets.
+- WebUI composer bottom padding defaults to `max(1rem,env(safe-area-inset-bottom))`.
+  While `useRemoteKeyboardInset` detects an editing focus, unscaled viewport and
+  viewport shrink beyond its existing threshold, set
+  `--remote-composer-bottom-padding: 0.5rem` so the home-indicator safe area is not
+  reserved again above the keyboard. Remove the override when detection clears
+  and on hook cleanup. Keep desktop padding and keyboard detection unchanged.
 - Native textarea autosizing uses a hidden, inert/aria-hidden, absolutely
   positioned clone at the live width. Measure native leading and content without
   changing the live textarea's height/minimum. Preserve the original two-row

@@ -520,7 +520,7 @@ function RemoteWorkspace() {
 									</ChatMarkdownImageScopeProvider>
 									<div
 										data-chat-composer-region=""
-										className="relative z-20 -mt-4 w-full shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]"
+										className="relative z-20 -mt-4 w-full shrink-0 pb-[var(--remote-composer-bottom-padding,max(1rem,env(safe-area-inset-bottom)))]"
 										style={{ paddingRight: isNarrow ? 0 : scrollbarWidth }}
 									>
 										<ConversationColumn className="relative">

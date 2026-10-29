@@ -803,6 +803,12 @@
 		min-height: var(--pilo-ui-composer-control-size);
 	}
 
+	/* The send button keeps its smaller visible circle; its wrapper supplies the 44px hit area. */
+	[data-remote-webui] [data-chat-composer-toolbar] [data-chat-composer-send] {
+		min-width: 0;
+		min-height: 0;
+	}
+
 	/* Keep the upload hit area in the left gutter without pushing the model right. */
 	[data-remote-webui]
 		[data-chat-composer-toolbar]

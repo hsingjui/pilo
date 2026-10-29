@@ -32,6 +32,7 @@ export function useRemoteKeyboardInset() {
 				window.innerHeight - viewport.height >
 					window.innerHeight * KEYBOARD_SHRINK_RATIO;
 			if (keyboardOpen) {
+				root.style.setProperty("--remote-composer-bottom-padding", "0.5rem");
 				root.style.setProperty(
 					"--remote-viewport-height",
 					`${viewport.height}px`,
@@ -42,6 +43,7 @@ export function useRemoteKeyboardInset() {
 				);
 				return;
 			}
+			root.style.removeProperty("--remote-composer-bottom-padding");
 			root.style.removeProperty("--remote-viewport-height");
 			root.style.removeProperty("--remote-keyboard-bottom");
 		};
@@ -67,6 +69,7 @@ export function useRemoteKeyboardInset() {
 			document.removeEventListener("visibilitychange", update);
 			document.removeEventListener("focusin", handleFocusChange);
 			document.removeEventListener("focusout", handleFocusChange);
+			root.style.removeProperty("--remote-composer-bottom-padding");
 			root.style.removeProperty("--remote-viewport-height");
 			root.style.removeProperty("--remote-keyboard-bottom");
 		};

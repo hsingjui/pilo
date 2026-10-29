@@ -537,6 +537,7 @@
 					background: var(--boot-line);
 				}
 				.pilo-boot-composer-toolbar {
+					container: boot-toolbar / inline-size;
 					display: flex;
 					height: calc(
 						max(
@@ -548,6 +549,7 @@
 					box-sizing: border-box;
 					align-items: center;
 					gap: var(--pilo-ui-composer-toolbar-gap);
+					margin-inline-start: -0.25rem;
 					padding-top: 0.125rem;
 				}
 				.pilo-boot-composer-button {
@@ -574,15 +576,51 @@
 					border-radius: 999px;
 					background: var(--boot-line);
 				}
+				.pilo-boot-composer-actions {
+					display: flex;
+					flex-shrink: 0;
+					align-items: center;
+					gap: 0.375rem;
+					margin-inline-start: auto;
+				}
+				.pilo-boot-composer-mode {
+					width: var(--pilo-ui-composer-control-size);
+				}
 				.pilo-boot-composer-send {
-					margin-left: auto;
+					display: grid;
+					place-items: center;
+					flex-shrink: 0;
 					width: var(--pilo-ui-composer-control-size);
 					height: var(--pilo-ui-composer-control-size);
+				}
+				.pilo-boot-composer-send::before {
+					content: "";
+					width: 100%;
+					height: 100%;
 					border-radius: 999px;
 					background: var(--boot-line-strong);
 				}
+				@container boot-toolbar (max-width: 39.999rem) {
+					.pilo-boot-composer-actions {
+						gap: 0.125rem;
+					}
+				}
+				@media (pointer: coarse) {
+					.pilo-boot-composer-mode,
+					.pilo-boot-composer-send {
+						width: 2.75rem;
+						height: 2.75rem;
+					}
+					.pilo-boot-composer-send::before {
+						width: 2rem;
+						height: 2rem;
+					}
+				}
 				.pilo-browser .pilo-boot-composer-dock {
-					padding-bottom: max(1rem, env(safe-area-inset-bottom));
+					padding-bottom: var(
+						--remote-composer-bottom-padding,
+						max(1rem, env(safe-area-inset-bottom))
+					);
 				}
 				/* 浏览器（Remote WebUI）的骨架宽度与 remote-app 的
 			   --conversation-max-width 对齐，避免加载完成后消息列跳动。 */
@@ -623,6 +661,9 @@
 					}
 				}
 				@media (max-width: 1023px) {
+					:root[data-remote-webui] {
+						font-size: 100% !important;
+					}
 					.pilo-browser .pilo-boot-page {
 						scrollbar-gutter: auto;
 					}
@@ -731,7 +772,12 @@
 								<div class="pilo-boot-composer-toolbar">
 									<div class="pilo-boot-composer-button"></div>
 									<div class="pilo-boot-composer-model"></div>
-									<div class="pilo-boot-composer-send"></div>
+									<div class="pilo-boot-composer-actions">
+										<div
+											class="pilo-boot-composer-button pilo-boot-composer-mode"
+										></div>
+										<div class="pilo-boot-composer-send"></div>
+									</div>
 								</div>
 							</div>
 						</div>

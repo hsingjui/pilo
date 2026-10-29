@@ -109,7 +109,7 @@ export function ComposerActions({
 	return (
 		<div
 			data-chat-composer-actions=""
-			className="ms-auto flex shrink-0 items-center gap-1.5"
+			className="ms-auto flex shrink-0 items-center gap-1.5 @max-[40rem]/toolbar:gap-0.5"
 		>
 			{leadingActions}
 			<DropdownMenu>
@@ -187,6 +187,7 @@ export function ComposerActions({
 						<Button
 							type="button"
 							size="icon"
+							data-chat-composer-send=""
 							className={cn(
 								CHAT_COMPOSER_SEND_BUTTON_CLASS_NAME,
 								"motion-reduce:active:scale-100 pointer-coarse:relative pointer-coarse:size-8",
