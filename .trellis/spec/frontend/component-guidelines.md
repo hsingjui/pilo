@@ -623,6 +623,16 @@ actions go there and appear only for persisted sessions (`session && !session.te
   must keep send controls visible instead of just clamping the body at its minimum.
   Verify eight images plus file/session references and long text, panel shrink /
   grow, independent removal, and mixed submission; do not change upload ownership.
+- The desktop loading fallback uses the real `ChatComposer`, so it must also
+  load the project's Connection-owned prompt enhancement settings and pass
+  `onEnhancePrompt` when enabled. Do not silently drop the control while the
+  lazy chat page loads. Pass `enhancePromptDisabled` in the fallback: keep the
+  control visible, but do not start a request whose result would be discarded
+  when Suspense replaces this short-lived composer. Normal composers default
+  this flag to false; draft editing and deferred submission remain available.
+  With no model selected in the fallback, pass `null` so the Host uses its
+  configured enhancement model or Pi default. Empty drafts keep the visible
+  control disabled, like the ready composer.
 - Composer action-group gaps shrink from `gap-1.5` to `gap-0.5` below a
   `40rem` toolbar container width in the shared desktop/WebUI component. Reclaim
   model-label space without shrinking controls or overlapping touch targets.

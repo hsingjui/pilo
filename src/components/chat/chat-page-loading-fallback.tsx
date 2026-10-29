@@ -8,6 +8,8 @@ import type {
 } from "@/components/app/chat-ui-state-cache";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { uploadChatFile } from "@/lib/api/files";
+import { tauriPiloClient } from "@/lib/api/tauri-pilo-client";
+import { usePromptEnhancementSettings } from "@/lib/use-prompt-enhancement-settings";
 import { SessionMentionScope } from "@/components/chat/session-mention-context";
 import { ChatEmptyHero } from "@/components/chat/chat-empty-hero";
 import { ChatHistorySkeleton } from "@/components/chat/chat-history-skeleton";
@@ -30,6 +32,7 @@ const EMPTY_CHAT_IMAGES: readonly ChatImageAttachment[] = [];
 
 function LoadingComposer({
 	projectId,
+	connectionId,
 	uiStateKey,
 	readUiState,
 	writeUiState,
@@ -38,6 +41,7 @@ function LoadingComposer({
 	scrollbarWidth,
 }: {
 	projectId: string;
+	connectionId: string;
 	uiStateKey: string;
 	readUiState: (key: string) => ChatUiState;
 	writeUiState: (key: string, patch: ChatUiStatePatch) => void;
@@ -46,6 +50,10 @@ function LoadingComposer({
 	scrollbarWidth: number;
 }) {
 	const { t } = useTranslation();
+	const promptEnhancement = usePromptEnhancementSettings(
+		tauriPiloClient,
+		connectionId,
+	);
 	const [draft, setDraft] = useState(() => readProjectDraft(projectId));
 	const updateDraft = (value: string) => {
 		setDraft(value);
@@ -79,6 +87,13 @@ function LoadingComposer({
 					historyKey={projectId}
 					attachmentScopeKey={uiStateKey}
 					onUploadFile={(file) => uploadChatFile(projectId, file)}
+					onEnhancePrompt={
+						promptEnhancement.settings?.enabled
+							? (draftValue) =>
+									tauriPiloClient.enhancePrompt(projectId, draftValue, null)
+							: undefined
+					}
+					enhancePromptDisabled
 					onChange={updateDraft}
 					onSubmit={deferSubmission}
 				/>
@@ -179,6 +194,7 @@ export function ChatPageLoadingFallback({
 					</div>
 					<LoadingComposer
 						projectId={session.projectRecord.id}
+						connectionId={session.projectRecord.connection.id}
 						uiStateKey={uiStateKey}
 						readUiState={readUiState}
 						writeUiState={writeUiState}

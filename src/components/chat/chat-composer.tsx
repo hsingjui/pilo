@@ -135,6 +135,8 @@ type ChatComposerProps = {
 	 * 桌面与 Remote WebUI 共用。
 	 */
 	onEnhancePrompt?: (draft: string) => Promise<string>;
+	/** 保留按钮展示，但在加载占位页等短生命周期界面禁用请求。 */
+	enhancePromptDisabled?: boolean;
 };
 
 const EMPTY_MODELS: readonly PiModel[] = [];
@@ -187,6 +189,7 @@ export function ChatComposer({
 	onNextPromptDismiss,
 	desktopShortcuts = true,
 	onEnhancePrompt,
+	enhancePromptDisabled = false,
 }: ChatComposerProps) {
 	const { t } = useTranslation();
 	const composerPlaceholder = placeholder ?? t("chat.composerPlaceholder");
@@ -523,6 +526,7 @@ export function ChatComposer({
 	const enhanceDraft = mentionDraft.text.trim();
 	const enhanceDisabled =
 		!onEnhancePrompt ||
+		enhancePromptDisabled ||
 		disabled ||
 		sendingNow ||
 		processing ||
