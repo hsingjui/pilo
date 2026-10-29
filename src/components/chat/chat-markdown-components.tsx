@@ -1,10 +1,15 @@
-import type { ComponentPropsWithoutRef } from "react";
+import { useContext, useId, type ComponentPropsWithoutRef } from "react";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import type { PluggableList, Plugin } from "unified";
 import type { Options as SanitizeSchema } from "rehype-sanitize";
 import { defaultRehypePlugins, type Components } from "streamdown";
 import { rehypeProjectImages } from "@/lib/chat/chat-markdown-images";
 import { MarkdownImage } from "@/components/chat/chat-markdown-image";
-import { MarkdownLink } from "@/components/chat/chat-markdown-link";
+import {
+	MarkdownLink,
+	MarkdownLinkLabelContext,
+} from "@/components/chat/chat-markdown-link";
 import { rehypeFileLinks } from "@/lib/chat/chat-markdown-links";
 import { cn } from "@/lib/utils";
 
@@ -24,17 +29,65 @@ function MarkdownInlineCode({
 	inline: _inline,
 	...props
 }: MarkdownCodeProps) {
-	return (
-		<code
-			{...props}
-			className={cn(
-				"rounded-sm bg-code px-1 py-px font-mono [font-size:var(--pilo-code-font-size)] text-code-foreground ring-1 ring-inset ring-border/50",
-				className,
-			)}
-		>
-			{children}
-		</code>
+	const { t } = useTranslation();
+	const isLinkLabel = useContext(MarkdownLinkLabelContext);
+	const copyDescriptionId = useId();
+	const codeClassName = cn(
+		"rounded-sm bg-code px-1 py-px font-mono [font-size:var(--pilo-code-font-size)] text-code-foreground ring-1 ring-inset ring-border/50",
+		className,
 	);
+
+	if (isLinkLabel) {
+		return (
+			<code {...props} className={codeClassName}>
+				{children}
+			</code>
+		);
+	}
+
+	async function copyCode(element: HTMLElement) {
+		const selection = window.getSelection();
+		if (
+			selection &&
+			!selection.isCollapsed &&
+			selection.containsNode(element, true)
+		)
+			return;
+		try {
+			await navigator.clipboard.writeText(element.textContent ?? "");
+			toast.success(t("chat.copied"));
+		} catch {
+			toast.error(t("chat.copyFailed"));
+		}
+	}
+
+	/* oxlint-disable jsx-a11y/prefer-tag-over-role, jsx-a11y/no-noninteractive-element-to-interactive-role -- Keep code inline; native buttons change wrapping. Keyboard activation and focus are provided explicitly. */
+	return (
+		<>
+			<code
+				{...props}
+				role="button"
+				tabIndex={0}
+				aria-describedby={copyDescriptionId}
+				className={cn(
+					"cursor-pointer hover:bg-hover focus-visible:outline-hidden focus-visible:ring-ring",
+					codeClassName,
+				)}
+				onClick={(event) => void copyCode(event.currentTarget)}
+				onKeyDown={(event) => {
+					if (event.key !== "Enter" && event.key !== " ") return;
+					event.preventDefault();
+					if (!event.repeat) void copyCode(event.currentTarget);
+				}}
+			>
+				{children}
+			</code>
+			<span id={copyDescriptionId} hidden>
+				{t("chat.copyCode")}
+			</span>
+		</>
+	);
+	/* oxlint-enable jsx-a11y/prefer-tag-over-role, jsx-a11y/no-noninteractive-element-to-interactive-role */
 }
 
 function MarkdownTable({ node: _node, ...props }: MarkdownTableProps) {

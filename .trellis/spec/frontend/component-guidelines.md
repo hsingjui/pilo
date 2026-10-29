@@ -82,6 +82,22 @@ re-styling them.
   Load only the requested grammar (plus its bundled dependencies); do not load
   the full supported-language list on the first code block. Cache concurrent
   requests per language and evict failed loads so later requests can retry.
+- Markdown inline code in the shared `MARKDOWN_COMPONENTS.inlineCode` renderer
+  copies its rendered text on click or keyboard activation, with localized
+  success/failure toasts. Preserve the original inline code bounds, padding,
+  typography and line height; only subtly change its existing background on
+  hover. No tooltip, added button surface or minimum control height (including
+  touch), and keep keyboard focus inset within the original bounds. Keep the
+  native inline `code` element: a button wrapper is an atomic inline box that
+  changes wrapping. Add `role="button"`, `tabIndex={0}`, Enter/Space activation
+  (prevent Space scrolling and ignore key repeats), and a localized
+  hidden copy hint referenced by `aria-describedby`; do not replace the code
+  text's accessible name with a generic copy label. Preserve text selection and
+  do not copy after selecting text inside the code. `MarkdownLinkLabelContext` keeps external/file link
+  labels non-interactive so links retain their own action. Code remains ordinary
+  text for search projection and DOM highlighting, without custom markers or
+  boundaries. Fenced blocks retain Streamdown's existing copy control. This
+  applies to desktop and WebUI, including previews.
 - File-opening links in tool activity rows are limited to built-in `read`,
   `write` and `edit`. Other tools (commands and MCP tools), unsupported paths and
   WebUI non-image files retain the original full-row disclosure button and preview tooltip.

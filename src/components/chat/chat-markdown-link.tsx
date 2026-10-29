@@ -15,6 +15,8 @@ import { resolveMarkdownFileUrl } from "@/lib/chat/chat-markdown-links";
 import { workspaceFileKey } from "@/lib/project-workspace";
 import { cn } from "@/lib/utils";
 
+export const MarkdownLinkLabelContext = createContext(false);
+
 export const ChatMarkdownLinkScope = createContext<Pick<
 	Project,
 	"id" | "connection"
@@ -104,7 +106,9 @@ export function MarkdownLink({
 						standalone ? "min-w-0 truncate" : "[overflow-wrap:anywhere]"
 					}
 				>
-					{children}
+					<MarkdownLinkLabelContext.Provider value={true}>
+						{children}
+					</MarkdownLinkLabelContext.Provider>
 				</span>
 				{standalone && (
 					<ArrowUpRight
@@ -121,7 +125,9 @@ export function MarkdownLink({
 			target="_blank"
 			rel={`${rel ?? ""} noopener noreferrer`.trim()}
 		>
-			{children}
+			<MarkdownLinkLabelContext.Provider value={true}>
+				{children}
+			</MarkdownLinkLabelContext.Provider>
 		</a>
 	);
 }
