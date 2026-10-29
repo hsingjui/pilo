@@ -10,13 +10,39 @@ export function piModelsMatch(
 ): boolean {
 	return Boolean(a && b && a.provider === b.provider && a.id === b.id);
 }
+/**
+ * 一个模型 id 的路由前缀层：`cline-pass/deepseek-v4.1-flash` →
+ * [`cline-pass/deepseek-v4.1-flash`, `deepseek-v4.1-flash`]。
+ *
+ * Pi 的会话历史记录的是带路由前缀的别名，模型目录里则是裸 id（也可能反过来），
+ * 只做全等比较会匹配不上，调用方就退化成没有能力信息的占位模型。
+ */
+function modelIdLayers(id: string): string[] {
+	const layers = [id];
+	let rest = id;
+	for (let slash = rest.indexOf("/"); slash !== -1; slash = rest.indexOf("/")) {
+		rest = rest.slice(slash + 1);
+		layers.push(rest);
+	}
+	return layers;
+}
 
 export function findMatchingPiModel(
 	models: readonly PiModel[],
 	model: Pick<PiModel, "provider" | "id"> | null | undefined,
 ): PiModel | null {
 	if (!model) return null;
-	return models.find((candidate) => piModelsMatch(candidate, model)) ?? null;
+	const exact = models.find((candidate) => piModelsMatch(candidate, model));
+	if (exact) return exact;
+	// 同一个 id 的不同写法一定属于同一个 provider，跨 provider 不做模糊匹配。
+	const requestedLayers = new Set(modelIdLayers(model.id));
+	return (
+		models.find((candidate) => {
+			if (candidate.provider !== model.provider) return false;
+			if (requestedLayers.has(candidate.id)) return true;
+			return modelIdLayers(candidate.id).includes(model.id);
+		}) ?? null
+	);
 }
 
 export function getPiQuickCycleModels(models: readonly PiModel[]): PiModel[] {

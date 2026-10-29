@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import {
+	historyContextPercent,
 	mergeRefreshedSessionState,
 	mergeSessionStats,
 } from "@/components/chat/chat-session-config-model";
@@ -86,13 +87,18 @@ export function useChatSessionState({
 			}
 			setThinkingLevels([...getPiModelThinkingLevels(historicalModel)]);
 			const stats = result.stats;
+			// 历史没有占比，用模型目录里的 contextWindow 当分母补上。
+			const contextWindow = historicalModel?.contextWindow;
+			const contextTokens = stats?.contextTokens;
 			setSessionState((previous) => ({
 				sessionId: previous?.sessionId,
 				sessionPath: previous?.sessionPath,
 				name: result.name ?? undefined,
 				tokens: stats?.tokens,
 				cost: stats?.cost,
-				contextTokens: stats?.contextTokens,
+				contextTokens,
+				contextWindow,
+				contextPercent: historyContextPercent(contextTokens, contextWindow),
 			}));
 		},
 		[
