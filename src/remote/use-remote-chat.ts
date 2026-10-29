@@ -39,10 +39,12 @@ import { useProjectModelScope } from "@/lib/use-project-model-scope";
 import type { SessionIndexEntry } from "@/lib/api/sessions";
 import { randomId } from "@/lib/utils";
 import {
+	readRemoteProjectId,
 	readRemoteScrollState,
 	type RetryState,
 	sessionKey,
 	sessionLabel,
+	writeRemoteProjectId,
 	writeRemoteScrollState,
 } from "./remote-app-model";
 import {
@@ -106,7 +108,7 @@ export function useRemoteChat({
 	const [selectedSessionPath, setSelectedSessionPath] = useState<string | null>(
 		null,
 	);
-	const [draftProjectId, setDraftProjectId] = useState("");
+	const [draftProjectId, setDraftProjectId] = useState(readRemoteProjectId);
 	const [draftId, setDraftId] = useState(() => randomId());
 	// 草稿态是否为临时会话（noSession）：首条消息发送前不建立持久会话。
 	const [draftTemporary, setDraftTemporary] = useState(false);
@@ -223,12 +225,19 @@ export function useRemoteChat({
 	const resolvedDraftProjectId = useMemo(() => {
 		if (
 			draftProjectId &&
-			projects.some((project) => project.id === draftProjectId)
+			projects.some(
+				(project) =>
+					project.id === draftProjectId && project.connection.shownInHome,
+			)
 		) {
 			return draftProjectId;
 		}
-		return projects[0]?.id ?? "";
+		return projects.find((project) => project.connection.shownInHome)?.id ?? "";
 	}, [draftProjectId, projects]);
+	useEffect(() => {
+		// Bootstrap validates the restored id; an empty list must not erase it.
+		if (resolvedDraftProjectId) writeRemoteProjectId(resolvedDraftProjectId);
+	}, [resolvedDraftProjectId]);
 	const activeProjectId =
 		selectedSession?.projectId ??
 		identifiedDraftSession?.projectId ??

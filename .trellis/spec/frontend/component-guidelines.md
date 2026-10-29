@@ -632,7 +632,22 @@ actions go there and appear only for persisted sessions (`session && !session.te
   this flag to false; draft editing and deferred submission remain available.
   With no model selected in the fallback, pass `null` so the Host uses its
   configured enhancement model or Pi default. Empty drafts keep the visible
-  control disabled, like the ready composer.
+  control disabled, like the ready composer. The WebUI reads this setting from
+  the active project's Connection, not another Connection's enabled switch.
+  The shared `DraftProjectPicker` must show the Connection label beside the
+  project name in both its trigger and menu rows: Local/WSL/SSH projects may
+  share the same name but have different enhancement settings. Keep the name
+  and Connection independently truncatable and the menu within narrow viewports;
+  do not infer the environment from the project name or change its default order.
+  WebUI persists the selected project id through `remote-app-model.ts` and
+  initializes `useRemoteChat` from it, so reloads do not silently switch WSL/SSH
+  back to the first (often Local) project. Validate the id against bootstrap
+  projects whose Connection has `shownInHome: true`; if absent, removed or
+  hidden, fall back only to the first homepage-visible project, never a hidden
+  Local project from the full bootstrap list. When none are visible, keep the
+  draft project empty and do not overwrite the saved id during bootstrap.
+  Explicitly opened sessions still resolve their own project independently.
+  Persist project identity only, not a session or runtime.
 - Composer action-group gaps shrink from `gap-1.5` to `gap-0.5` below a
   `40rem` toolbar container width in the shared desktop/WebUI component. Reclaim
   model-label space without shrinking controls or overlapping touch targets.

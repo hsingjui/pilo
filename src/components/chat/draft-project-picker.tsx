@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { ChevronDown } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import type { Project } from "@/lib/api/projects";
+import { connectionLabel, type Project } from "@/lib/api/projects";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -25,6 +25,7 @@ export function DraftProjectPicker({
 }) {
 	const { t } = useTranslation();
 	const hasProjects = projects.length > 0;
+	const connectionName = project ? connectionLabel(project.connection) : null;
 	useEffect(() => {
 		try {
 			localStorage.setItem("pilo.boot.hasProjects", hasProjects ? "1" : "0");
@@ -40,7 +41,12 @@ export function DraftProjectPicker({
 					<button
 						type="button"
 						className="group flex h-7 w-fit max-w-[66.666667%] min-w-0 items-center gap-1.5 rounded-lg border border-foreground/[0.10] bg-background px-2 text-xs text-muted-foreground outline-hidden transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring dark:border-input-border/70"
-						aria-label={t("app.selectProject")}
+						aria-label={
+							project
+								? `${t("app.selectProject")}: ${project.name} · ${connectionName}`
+								: t("app.selectProject")
+						}
+						title={project ? `${project.name} · ${connectionName}` : undefined}
 					>
 						<span
 							aria-hidden="true"
@@ -49,16 +55,27 @@ export function DraftProjectPicker({
 						<span className="min-w-0 flex-1 truncate text-left">
 							{project ? project.name : t("app.selectProject")}
 						</span>
+						{connectionName ? (
+							<span className="max-w-[50%] shrink-0 truncate text-muted-foreground/70">
+								{connectionName}
+							</span>
+						) : null}
 						<ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
 					</button>
 				</DropdownMenuTrigger>
-				<DropdownMenuContent align="start" className="min-w-48">
+				<DropdownMenuContent
+					align="start"
+					className="min-w-48 max-w-[calc(100vw-2rem)]"
+				>
 					{projects.map((candidate) => (
 						<DropdownMenuItem
 							key={candidate.id}
 							onClick={() => onSwitchProject?.(candidate.id)}
 						>
 							<span className="min-w-0 flex-1 truncate">{candidate.name}</span>
+							<span className="max-w-[50%] shrink-0 truncate text-xs text-muted-foreground">
+								{connectionLabel(candidate.connection)}
+							</span>
 							{project?.id === candidate.id ? (
 								<span className="shrink-0 text-xs text-muted-foreground">
 									当前

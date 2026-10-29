@@ -66,6 +66,24 @@ export type RetryState = {
 	errorMessage: string;
 };
 
+const REMOTE_PROJECT_KEY = "pilo.remote.project.v1";
+
+export function readRemoteProjectId(): string {
+	try {
+		return window.localStorage.getItem(REMOTE_PROJECT_KEY) ?? "";
+	} catch {
+		return "";
+	}
+}
+
+export function writeRemoteProjectId(projectId: string) {
+	try {
+		window.localStorage.setItem(REMOTE_PROJECT_KEY, projectId);
+	} catch {
+		// Best-effort persistence; ignore quota or private-mode failures.
+	}
+}
+
 // Scroll position survives session switches and reloads without a Host round trip.
 export const REMOTE_SCROLL_KEY_PREFIX = "pilo.remote.scroll.v1.";
 
