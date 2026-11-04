@@ -70,6 +70,16 @@ so reconnect replay uses Host time rather than the browser's processing time.
 History replay uses the persisted `assistant_turn_end.timestampMs`. When an
 end event has no timestamp, the existing reducer clock fallback applies.
 
+Consecutive queued `user_message_start` echoes may arrive before the assistant
+produces any content. When `endTurn` closes such a streaming placeholder with
+`completion: "continued"`, remove it from `messages` instead of retaining a
+timestamp-only assistant row between the users. Keep segments with text,
+content/activity entries, usage, errors or stop reasons, and keep normal
+completion, interruption and abort handling unchanged. Queue echoes still
+consume each pending user independently and transfer `replyRunwayPx` to the
+newest assistant placeholder. This shared reducer contract applies to desktop
+and WebUI; do not hide empty rows only in one viewport or alter Pi's queue order.
+
 - Local state that must survive remounts is cached in module/state-cache files
   (`chat-ui-state-cache.ts`, `chat-history-window-store.ts`).
 - Locale is app-global low-frequency state owned by the i18n layer. Persist the

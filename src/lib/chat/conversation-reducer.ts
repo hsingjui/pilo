@@ -130,6 +130,26 @@ function endTurn(
 					: completion === "interrupted"
 						? i18n.t("chat.historyReplyInterrupted")
 						: undefined);
+	// Consecutive queue echoes must not leave a timestamp-only assistant row.
+	if (
+		completion === "continued" &&
+		current.streaming === true &&
+		!current.text &&
+		!current.content?.length &&
+		!current.activity?.length &&
+		!current.usage &&
+		!usage &&
+		!current.errorMessage &&
+		!visibleError &&
+		!current.stopReason &&
+		!stopReason
+	) {
+		return {
+			...state,
+			messages: state.messages.filter((message) => message.id !== current.id),
+			active: null,
+		};
+	}
 	const messages = [...state.messages];
 	messages[index] = {
 		...current,
