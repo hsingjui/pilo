@@ -45,11 +45,12 @@ export type PendingProjectMcpPrompt = {
 	shouldAutoTitle: boolean;
 };
 
+type SubmissionPhase = "preparing" | "sending";
+
 type UseRemoteChatActionsOptions = {
 	client: WebPiloClient | null;
 	activeSessionKey: string | null;
 	activeSessionKeyRef: RefObject<string | null>;
-	routeUiKey: string;
 	composer: string;
 	readOnly: boolean;
 	hasSelectedSession: boolean;
@@ -77,7 +78,6 @@ export function useRemoteChatActions({
 	client,
 	activeSessionKey,
 	activeSessionKeyRef,
-	routeUiKey,
 	composer,
 	readOnly,
 	hasSelectedSession,
@@ -100,19 +100,22 @@ export function useRemoteChatActions({
 	setDraftThinkingLevel,
 	rpcForSession,
 }: UseRemoteChatActionsOptions) {
-	const [sendingSessionKeys, setSendingSessionKeys] = useState(
-		new Set<string>(),
+	const [submissionPhases, setSubmissionPhases] = useState(
+		new Map<string, SubmissionPhase>(),
 	);
 	const sendingSessionKeysRef = useRef(new Set<string>());
-	const sending =
-		activeSessionKey !== null && sendingSessionKeys.has(activeSessionKey);
-	const setSessionSending = useCallback(
-		(sessionKey: string, value: boolean) => {
-			if (value) sendingSessionKeysRef.current.add(sessionKey);
+	const submissionPhase = activeSessionKey
+		? submissionPhases.get(activeSessionKey)
+		: undefined;
+	const sending = submissionPhase !== undefined;
+	const composerLocked = submissionPhase === "preparing";
+	const setSubmissionPhase = useCallback(
+		(sessionKey: string, phase: SubmissionPhase | null) => {
+			if (phase) sendingSessionKeysRef.current.add(sessionKey);
 			else sendingSessionKeysRef.current.delete(sessionKey);
-			setSendingSessionKeys((current) => {
-				const next = new Set(current);
-				if (value) next.add(sessionKey);
+			setSubmissionPhases((current) => {
+				const next = new Map(current);
+				if (phase) next.set(sessionKey, phase);
 				else next.delete(sessionKey);
 				return next;
 			});
@@ -122,12 +125,13 @@ export function useRemoteChatActions({
 	const recoveredSubmissionsRef = useRef(new Map<string, ChatSubmission[]>());
 	const [recoveryRevision, setRecoveryRevision] = useState(0);
 
-	/* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies -- Failed send-now submissions belong to their original session, including when it returns from the background. recoveryRevision 是重新回填输入框的显式触发代，不是 effect 读取的值。 */
+	/* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies -- Failed submissions belong to their original runtime session, including after draft identification or returning from the background. recoveryRevision 是重新回填输入框的显式触发代，不是 effect 读取的值。 */
 	useEffect(() => {
 		void recoveryRevision;
-		const recovered = recoveredSubmissionsRef.current.get(routeUiKey);
+		if (!activeSessionKey) return;
+		const recovered = recoveredSubmissionsRef.current.get(activeSessionKey);
 		if (!recovered) return;
-		recoveredSubmissionsRef.current.delete(routeUiKey);
+		recoveredSubmissionsRef.current.delete(activeSessionKey);
 		handleComposerChange(
 			[composer, ...recovered.map((item) => item.text)]
 				.filter(Boolean)
@@ -140,7 +144,13 @@ export function useRemoteChatActions({
 				),
 			).values(),
 		]);
-	}, [composer, handleComposerChange, recoveryRevision, routeUiKey, setImages]);
+	}, [
+		activeSessionKey,
+		composer,
+		handleComposerChange,
+		recoveryRevision,
+		setImages,
+	]);
 	/* oxlint-enable react/set-state-in-effect */
 
 	const runLocalAction = useCallback(
@@ -207,7 +217,7 @@ export function useRemoteChatActions({
 			const descriptors = summarizeChatImages(submission.images);
 			let queuedClientMessageId: string | null = null;
 			// Lock before the first await; React's disabled state may not have rendered yet.
-			setSessionSending(submissionSessionKey, true);
+			setSubmissionPhase(submissionSessionKey, "preparing");
 			try {
 				if (mode === "prompt" && (await tryHandleComposerCommand(submission)))
 					return;
@@ -241,6 +251,8 @@ export function useRemoteChatActions({
 					});
 				}
 				clearComposer();
+				// The submitted draft is owned by this request; editing can resume now.
+				setSubmissionPhase(submissionSessionKey, "sending");
 				await ensureDraftRuntime();
 				const accepted =
 					mode === "prompt"
@@ -287,8 +299,9 @@ export function useRemoteChatActions({
 					return;
 				}
 				if (!isActiveSession()) {
-					recoveredSubmissionsRef.current.set(routeUiKey, [
-						...(recoveredSubmissionsRef.current.get(routeUiKey) ?? []),
+					recoveredSubmissionsRef.current.set(submissionSessionKey, [
+						...(recoveredSubmissionsRef.current.get(submissionSessionKey) ??
+							[]),
 						submission,
 					]);
 					setRecoveryRevision((value) => value + 1);
@@ -308,13 +321,16 @@ export function useRemoteChatActions({
 						timestampMs: Date.now(),
 					});
 				}
-				handleComposerChange(submission.text);
-				setImages(submission.images);
+				recoveredSubmissionsRef.current.set(submissionSessionKey, [
+					...(recoveredSubmissionsRef.current.get(submissionSessionKey) ?? []),
+					submission,
+				]);
+				setRecoveryRevision((value) => value + 1);
 				if (!handleExpiredAuth(error)) {
 					setFatalError(error instanceof Error ? error.message : String(error));
 				}
 			} finally {
-				setSessionSending(submissionSessionKey, false);
+				setSubmissionPhase(submissionSessionKey, null);
 			}
 		},
 		[
@@ -324,22 +340,19 @@ export function useRemoteChatActions({
 			clearComposer,
 			client,
 			ensureDraftRuntime,
-			handleComposerChange,
 			handleExpiredAuth,
 			pendingProjectMcpPromptsRef,
 			projectMcpApprovalRequestedRef,
 			queuedSubmissionsRef,
 			readOnly,
 			requestAutoTitle,
-			routeUiKey,
 			rpcForSession,
 			runLocalAction,
 			sendPrompt,
 			hasSelectedSession,
 			tryHandleComposerCommand,
 			setFatalError,
-			setImages,
-			setSessionSending,
+			setSubmissionPhase,
 		],
 	);
 
@@ -354,7 +367,7 @@ export function useRemoteChatActions({
 			const targetSessionKey = activeSessionKey;
 			const isActiveSession = () =>
 				activeSessionKeyRef.current === targetSessionKey;
-			setSessionSending(targetSessionKey, true);
+			setSubmissionPhase(targetSessionKey, "preparing");
 			try {
 				await rpcForSession<void>(targetSessionKey, { type: "clear_queue" });
 				await remaining.reduce<Promise<void>>(
@@ -369,8 +382,8 @@ export function useRemoteChatActions({
 					Promise.resolve(),
 				);
 				if (!isActiveSession()) {
-					recoveredSubmissionsRef.current.set(routeUiKey, [
-						...(recoveredSubmissionsRef.current.get(routeUiKey) ?? []),
+					recoveredSubmissionsRef.current.set(targetSessionKey, [
+						...(recoveredSubmissionsRef.current.get(targetSessionKey) ?? []),
 						item.submission,
 					]);
 					setRecoveryRevision((value) => value + 1);
@@ -388,7 +401,7 @@ export function useRemoteChatActions({
 					setFatalError(error instanceof Error ? error.message : String(error));
 				}
 			} finally {
-				setSessionSending(targetSessionKey, false);
+				setSubmissionPhase(targetSessionKey, null);
 			}
 		},
 		[
@@ -398,12 +411,11 @@ export function useRemoteChatActions({
 			handleComposerChange,
 			handleExpiredAuth,
 			queuedSubmissionsRef,
-			routeUiKey,
 			rpcForSession,
 			runLocalAction,
 			setFatalError,
 			setImages,
-			setSessionSending,
+			setSubmissionPhase,
 		],
 	);
 
@@ -430,7 +442,7 @@ export function useRemoteChatActions({
 			const clientMessageId = queuedClientMessageId ?? randomId();
 			const queued = [...queuedSubmissionsRef.current.entries()];
 			const remaining = queued.filter(([id]) => id !== clientMessageId);
-			setSessionSending(targetSessionKey, true);
+			setSubmissionPhase(targetSessionKey, "preparing");
 			if (!queuedClientMessageId) clearComposer();
 			let queueCleared = false;
 			let optimisticSubmitted = false;
@@ -478,8 +490,8 @@ export function useRemoteChatActions({
 				if (!started) {
 					// `sendPrompt` already rolled back the optimistic prompt.
 					if (remaining.length > 0) {
-						recoveredSubmissionsRef.current.set(routeUiKey, [
-							...(recoveredSubmissionsRef.current.get(routeUiKey) ?? []),
+						recoveredSubmissionsRef.current.set(targetSessionKey, [
+							...(recoveredSubmissionsRef.current.get(targetSessionKey) ?? []),
 							...remaining.map(([, pending]) => pending.submission),
 						]);
 						setRecoveryRevision((value) => value + 1);
@@ -549,8 +561,8 @@ export function useRemoteChatActions({
 							]
 						: [];
 				if (recovered.length > 0) {
-					recoveredSubmissionsRef.current.set(routeUiKey, [
-						...(recoveredSubmissionsRef.current.get(routeUiKey) ?? []),
+					recoveredSubmissionsRef.current.set(targetSessionKey, [
+						...(recoveredSubmissionsRef.current.get(targetSessionKey) ?? []),
 						...recovered,
 					]);
 					setRecoveryRevision((value) => value + 1);
@@ -559,7 +571,7 @@ export function useRemoteChatActions({
 					setFatalError(error instanceof Error ? error.message : String(error));
 				}
 			} finally {
-				setSessionSending(targetSessionKey, false);
+				setSubmissionPhase(targetSessionKey, null);
 			}
 		},
 		[
@@ -570,12 +582,11 @@ export function useRemoteChatActions({
 			handleExpiredAuth,
 			queuedSubmissionsRef,
 			readOnly,
-			routeUiKey,
 			rpcForSession,
 			sendPrompt,
 			setConversation,
 			setFatalError,
-			setSessionSending,
+			setSubmissionPhase,
 		],
 	);
 
@@ -606,7 +617,7 @@ export function useRemoteChatActions({
 			if (!pending || !client) return;
 
 			const isActiveSession = () => activeSessionKeyRef.current === sessionKey;
-			setSessionSending(sessionKey, true);
+			setSubmissionPhase(sessionKey, "sending");
 			try {
 				const started = await sendPrompt(
 					pending.sessionKey,
@@ -623,8 +634,11 @@ export function useRemoteChatActions({
 						message: runtimeErrorMessage(error),
 						timestampMs: Date.now(),
 					});
-					handleComposerChange(pending.submission.text);
-					setImages(pending.submission.images);
+					recoveredSubmissionsRef.current.set(sessionKey, [
+						...(recoveredSubmissionsRef.current.get(sessionKey) ?? []),
+						pending.submission,
+					]);
+					setRecoveryRevision((value) => value + 1);
 					if (!handleExpiredAuth(error)) {
 						setFatalError(
 							error instanceof Error ? error.message : String(error),
@@ -637,13 +651,12 @@ export function useRemoteChatActions({
 					);
 				}
 			} finally {
-				setSessionSending(sessionKey, false);
+				setSubmissionPhase(sessionKey, null);
 			}
 		},
 		[
 			activeSessionKeyRef,
 			client,
-			handleComposerChange,
 			handleExpiredAuth,
 			pendingProjectMcpPromptsRef,
 			projectMcpApprovalRequestedRef,
@@ -651,8 +664,7 @@ export function useRemoteChatActions({
 			runLocalAction,
 			sendPrompt,
 			setFatalError,
-			setImages,
-			setSessionSending,
+			setSubmissionPhase,
 		],
 	);
 
@@ -667,16 +679,17 @@ export function useRemoteChatActions({
 				message: runtimeErrorMessage(error),
 				timestampMs: Date.now(),
 			});
-			handleComposerChange(pending.submission.text);
-			setImages(pending.submission.images);
+			recoveredSubmissionsRef.current.set(sessionKey, [
+				...(recoveredSubmissionsRef.current.get(sessionKey) ?? []),
+				pending.submission,
+			]);
+			setRecoveryRevision((value) => value + 1);
 		},
 		[
 			activeSessionKey,
-			handleComposerChange,
 			pendingProjectMcpPromptsRef,
 			projectMcpApprovalRequestedRef,
 			runLocalAction,
-			setImages,
 		],
 	);
 
@@ -795,6 +808,7 @@ export function useRemoteChatActions({
 
 	return {
 		sending,
+		composerLocked,
 		sendSubmission,
 		handleEditQueued,
 		handleSendQueuedNow,

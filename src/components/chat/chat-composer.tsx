@@ -96,6 +96,7 @@ type ChatComposerProps = {
 	onSendNow?: (submission: ChatSubmission) => Promise<void>;
 	placeholder?: string;
 	disabled?: boolean;
+	submitBlocked?: boolean;
 	muted?: boolean;
 	running?: boolean;
 	onStop?: () => void;
@@ -155,6 +156,7 @@ export function ChatComposer({
 	onSendNow,
 	placeholder,
 	disabled = false,
+	submitBlocked = false,
 	muted = false,
 	running = false,
 	onStop,
@@ -363,7 +365,7 @@ export function ChatComposer({
 		attachments,
 		selectedModel,
 		disabled,
-		submitBlocked: processing,
+		submitBlocked: submitBlocked || processing,
 		compacting,
 		running,
 		onSubmit,
@@ -1010,7 +1012,7 @@ export function ChatComposer({
 						}
 						value={value}
 						hasAttachments={attachments.length > 0}
-						disabled={disabled || sendingNow}
+						disabled={disabled || sendingNow || submitBlocked}
 						running={running}
 						sendMessageShortcut={sendMessageShortcut}
 						showShortcutHint={desktopShortcuts}
@@ -1021,7 +1023,9 @@ export function ChatComposer({
 						canSubmit={canSubmit}
 						sendMode={sendMode}
 						onSendModeChange={setSendMode}
-						submitBlocked={compacting || sendingNow || processing}
+						submitBlocked={
+							submitBlocked || compacting || sendingNow || processing
+						}
 						onPrimary={() => {
 							onNextPromptDismiss?.();
 							submit();

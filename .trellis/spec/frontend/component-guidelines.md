@@ -590,6 +590,24 @@ actions go there and appear only for persisted sessions (`session && !session.te
   Hide the default body placeholder while any image attachment or file/session
   reference is present; restore it once the shelf is empty. Keep the textarea's
   accessible name independent of placeholder visibility.
+- Keep `ChatComposer.submitBlocked` separate from `disabled`: it blocks the
+  send/stop controls and both primary/queue keyboard submission paths, not native
+  textarea editing or focus. WebUI passes `chat.sending` to this prop instead of disabling
+  the whole composer for the lifetime of the network request. Its per-session
+  submission phase stays `preparing` (editing locked) until command handling or
+  draft consumption completes; after `clearComposer`, switch to `sending`
+  (editing allowed) before awaiting runtime startup or prompt/queue RPCs. Keep
+  the synchronous per-session duplicate-send guard, command-resolution lock,
+  queue-edit lock and shared `sendingNow` lock. Desktop callers default to
+  `submitBlocked={false}`; do not change their existing sending rules.
+  Recover failed sends (including MCP resume/approval failure) through the
+  existing recovery merge, preserving the latest text and deduplicating images
+  by ID instead of overwriting the next draft. Key recovery by runtime session
+  identity, not `routeUiKey`, which changes when startup identifies a new draft.
+  When verification is authorized, delay startup/prompt RPCs, edit the next draft
+  while pending, reject duplicate sends, and check success/failure, first-send
+  identification, session switching, slash commands and mobile soft-keyboard
+  focus. No reply completion is required to resume editing.
 - Reuse `FileMentionBadge` / `SessionMentionBadge` for path popovers and previews.
   On desktop only (`isTauri()`), file badges use `useChatFileOpen` when its
   `canOpenFile(path)` allows activation: text/code opens the existing project

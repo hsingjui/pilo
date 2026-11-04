@@ -862,6 +862,7 @@ export function useRemoteChat({
 
 	const {
 		sending,
+		composerLocked,
 		sendSubmission,
 		handleEditQueued,
 		handleSendQueuedNow,
@@ -876,7 +877,6 @@ export function useRemoteChat({
 		client,
 		activeSessionKey,
 		activeSessionKeyRef,
-		routeUiKey,
 		composer,
 		readOnly,
 		hasSelectedSession: Boolean(selectedSession),
@@ -1122,6 +1122,7 @@ export function useRemoteChat({
 						isPiScopeCatalogResolved(catalog.models),
 		},
 		sending,
+		composerLocked,
 		retryState,
 		compacting,
 		readOnly,

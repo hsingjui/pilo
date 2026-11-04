@@ -651,11 +651,12 @@ function RemoteWorkspace() {
 												}
 												disabled={
 													chat.readOnly ||
-													chat.sending ||
+													chat.composerLocked ||
 													chat.draftConfigPending ||
 													!chat.activeProjectId ||
 													!chat.historyReady
 												}
+												submitBlocked={chat.sending}
 												running={active && !chat.readOnly}
 												onStop={
 													chat.readOnly ? undefined : () => void chat.stop()
