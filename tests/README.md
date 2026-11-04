@@ -63,6 +63,7 @@ Open one of these paths at `http://127.0.0.1:1420`:
 - `/tests/browser/chat-column-alignment.html` (message/composer edges, symmetric mobile margins, scrolling and desktop gutter; check 320/390/640/768/1023/1024/1440px)
 - `/tests/browser/dom-text-selection.html`
 - `/tests/browser/remote-mobile-navigation.html`
+- `/tests/browser/remote-session-isolation.html` (real WebUI with mocked Host/Pi; delayed history/RPC, rapid switching, late events, notification dedup/expiry, draft navigation, failed loads and global notices; check wide and touch/mobile viewports)
 
 Each page reports results and sets `document.body.dataset.testStatus` to
 `passed` or `failed`. These pages are not executed by `pnpm test`. Check both

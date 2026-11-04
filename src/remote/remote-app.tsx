@@ -535,16 +535,19 @@ function RemoteWorkspace() {
 										style={{ paddingRight: isNarrow ? 0 : scrollbarWidth }}
 									>
 										<ConversationColumn className="relative">
-											<ChatPendingQueue
-												items={chat.conversationUi.pendingUsers}
-												onEdit={(item) =>
-													void chat.handleEditQueued(item.clientMessageId)
-												}
-												onSendNow={(item) =>
-													void chat.handleSendQueuedNow(item.clientMessageId)
-												}
-											/>
-											{recoveryState.status === "idle" &&
+											{chat.historyReady ? (
+												<ChatPendingQueue
+													items={chat.conversationUi.pendingUsers}
+													onEdit={(item) =>
+														void chat.handleEditQueued(item.clientMessageId)
+													}
+													onSendNow={(item) =>
+														void chat.handleSendQueuedNow(item.clientMessageId)
+													}
+												/>
+											) : null}
+											{chat.historyReady &&
+											recoveryState.status === "idle" &&
 											!chat.readOnly &&
 											!active &&
 											chat.latestTurnInterrupted ? (
@@ -571,12 +574,14 @@ function RemoteWorkspace() {
 												key={`cache-keep-alive:${chat.activeSessionKey}`}
 												status={cacheKeepAliveStatus}
 											/>
-											<ChatTodoCapsule
-												key={`chat-todo:${chat.activeSessionKey}`}
-												conversationStore={chat.conversationStore}
-												historyMessages={chat.historyPrefix}
-												running={active && !chat.readOnly}
-											/>
+											{chat.historyReady ? (
+												<ChatTodoCapsule
+													key={`chat-todo:${chat.activeSessionKey}`}
+													conversationStore={chat.conversationStore}
+													historyMessages={chat.historyPrefix}
+													running={active && !chat.readOnly}
+												/>
+											) : null}
 											<ChatComposer
 												nextPrompt={nextPrompt.text}
 												onNextPromptDismiss={nextPrompt.dismiss}

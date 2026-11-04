@@ -590,6 +590,21 @@ actions go there and appear only for persisted sessions (`session && !session.te
   Hide the default body placeholder while any image attachment or file/session
   reference is present; restore it once the shelf is empty. Keep the textarea's
   accessible name independent of placeholder visibility.
+- WebUI session switching must hide `ChatTodoCapsule`, `ChatPendingQueue` and
+  `ChatInterruptedTurnNotice` until `chat.historyReady` belongs to the selected
+  history load key. A React `key` alone does not isolate the shared conversation
+  store. `useRemoteChatHistory` exposes a prefix only for that ready key, including
+  an empty prefix when navigating to a draft. Bind extension notifications,
+  deduplication and dismissal timer IDs to the originating `event.sessionKey`;
+  expose only the active session's notifications. Commit the transport's active
+  session ref and extension handler together in a layout effect so late events
+  from the previous session cannot be routed into the newly visible session.
+  Keep global connection notices and toasts independent of this history gate.
+  When verification is authorized, delay history/RPC loads and cover A → B,
+  A → B → C, A → draft, failed loads, identical notification IDs/messages across
+  sessions, and old-session events arriving during the switch on narrow/wide WebUI.
+  Regression page: `tests/browser/remote-session-isolation.html` mounts the real
+  `RemoteApp` with deferred Host/Pi fixtures and restores browser state on exit.
 - Keep `ChatComposer.submitBlocked` separate from `disabled`: it blocks the
   send/stop controls and both primary/queue keyboard submission paths, not native
   textarea editing or focus. WebUI passes `chat.sending` to this prop instead of disabling

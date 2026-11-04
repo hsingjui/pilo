@@ -3,6 +3,7 @@ import {
 	type SetStateAction,
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -423,9 +424,6 @@ export function useRemoteChat({
 	useEffect(() => {
 		refreshAgentConfigRef.current = refreshAgentConfig;
 	}, [refreshAgentConfig]);
-	useEffect(() => {
-		activeSessionKeyRef.current = activeSessionKey;
-	}, [activeSessionKey]);
 
 	const routeKey = activeSessionKey ?? routeUiKey;
 	const initialScrollState = useMemo(
@@ -574,9 +572,11 @@ export function useRemoteChat({
 		onProjectMcpApprovalFailed: failProjectMcpPrompt,
 		onProjectMcpDeclined: cancelProjectMcpPrompt,
 	});
-	useEffect(() => {
+	// Route streamed events to the committed session before the browser paints.
+	useLayoutEffect(() => {
+		activeSessionKeyRef.current = activeSessionKey;
 		handleExtensionRequestRef.current = extensionUi.handleExtensionRequest;
-	}, [extensionUi.handleExtensionRequest]);
+	}, [activeSessionKey, extensionUi.handleExtensionRequest]);
 	const historyImageScope = useMemo(
 		() =>
 			client && selectedSession && activeProjectId

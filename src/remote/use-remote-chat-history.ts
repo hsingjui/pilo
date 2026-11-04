@@ -109,8 +109,18 @@ export function useRemoteChatHistory({
 	}, [liveTurnOpen]);
 
 	const historyPrefix = useMemo(
-		() => buildHistoryPrefix(historySnapshot),
-		[historySnapshot],
+		() =>
+			selectedLoadKey &&
+			conversationLoad.key === selectedLoadKey &&
+			conversationLoad.status === "ready"
+				? buildHistoryPrefix(historySnapshot)
+				: [],
+		[
+			conversationLoad.key,
+			conversationLoad.status,
+			historySnapshot,
+			selectedLoadKey,
+		],
 	);
 
 	/* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies -- Selecting a Host session or changing the resync generation intentionally replaces local replay state with the authoritative history snapshot. */

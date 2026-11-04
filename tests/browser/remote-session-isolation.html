@@ -1,0 +1,548 @@
+<!doctype html>
+<!-- Run with pnpm exec vite, then open this page in wide and touch/mobile viewports.
+     Mounts the real RemoteApp; all Host/Pi calls are fixture-only. -->
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>WebUI session isolation regression</title>
+	</head>
+	<body>
+		<pre id="results">Running…</pre>
+		<div id="root"></div>
+		<script type="module">
+			import "../../src/index.css";
+			import { createElement as h } from "react";
+			import { flushSync } from "react-dom";
+			import { createRoot } from "react-dom/client";
+			import { Toaster, toast } from "sonner";
+			import { RemoteApp } from "../../src/remote/remote-app.tsx";
+			import { WebPiloClient } from "../../src/remote/web-pilo-client.ts";
+			import { sessionKey } from "../../src/remote/remote-app-model.ts";
+			import { PreferencesProvider } from "../../src/lib/preferences-provider.tsx";
+			import { DEFAULT_KEYBOARD_SHORTCUTS } from "../../src/lib/keyboard-shortcuts.ts";
+			import { i18n, initializeI18n } from "../../src/i18n/index.ts";
+
+			await initializeI18n("en-US");
+			const results = document.getElementById("results");
+			const root = createRoot(document.getElementById("root"));
+			const savedStorage = Object.entries(localStorage);
+			const savedFetch = window.fetch;
+			const savedSetTimeout = window.setTimeout;
+			const timers = [];
+			const requests = [];
+			const runtimeGates = new Map();
+			const unexpectedCalls = [];
+			const passed = [];
+			const project = {
+				id: "session-isolation-fixture",
+				name: "Isolation fixture",
+				path: "/fixture",
+				connection: {
+					id: "local",
+					name: "Local",
+					kind: { type: "local" },
+					shownInHome: true,
+				},
+				metadata: {
+					cwd: "/fixture",
+					gitBranch: null,
+					piVersion: "1",
+					refreshedAtMs: 0,
+				},
+				createdAtMs: 0,
+				lastOpenedAtMs: 0,
+			};
+			const sessions = ["A", "B", "C"].map((id) => ({
+				connectionId: "local",
+				projectId: project.id,
+				piSessionId: id,
+				sessionPath: `/fixture/${id}.jsonl`,
+				name: `Fixture session ${id}`,
+				cwd: "/fixture",
+				createdAt: "2026-01-01T00:00:00Z",
+				updatedAt: "2026-01-01T00:00:00Z",
+				messageCount: 2,
+				lastMessageAt: "2026-01-01T00:00:00Z",
+				firstUserMessagePreview: `Request ${id}`,
+				fileSize: 100,
+				fileMtimeNs: "100",
+				lastOffset: 100,
+				indexedAtMs: 0,
+				pinned: false,
+				titleOverride: null,
+			}));
+			const preferences = {
+				revision: 1,
+				values: {
+					locale: "en-US",
+					sendMessageShortcut: "enter",
+					keyboardShortcuts: DEFAULT_KEYBOARD_SHORTCUTS,
+					collapseCompletedActivity: true,
+					collapseLongMessages: true,
+					showWorkDuration: true,
+					showPluginNotifications: true,
+					desktopNotifications: false,
+					developerMode: false,
+					pageFontFamily: "system",
+					uiFontSize: 14,
+					readingFontFamily: "system",
+					readingFontSize: 14,
+					codeFontFamily: "system",
+					codeFontSize: 13,
+					terminalFontFamily: "system",
+					terminalFontSize: 13,
+				},
+			};
+			let socket;
+			let sequence = 0;
+			const key = (id) => sessionKey(project.id, id);
+			function deferred() {
+				let resolve;
+				let reject;
+				const promise = new Promise((yes, no) => {
+					resolve = yes;
+					reject = no;
+				});
+				return { promise, resolve, reject };
+			}
+			function history(id, empty = false) {
+				const interrupted = id === "A";
+				const events = [
+					{ type: "user_message_start", text: `Request ${id}` },
+					{ type: "assistant_message_start" },
+					...(!empty
+						? [
+								{
+									type: "tool_execution_start",
+									toolCallId: `todo-${id}`,
+									toolName: "todowrite",
+									args: {
+										todos: [
+											{ content: `Task owned by ${id}`, status: "in_progress" },
+										],
+									},
+								},
+								{
+									type: "tool_execution_end",
+									toolCallId: `todo-${id}`,
+									toolName: "todowrite",
+									result: {},
+									isError: false,
+								},
+							]
+						: [
+								{
+									type: "assistant_text_delta",
+									delta: `Reply ${id} without tasks`,
+								},
+							]),
+					{
+						type: "assistant_turn_end",
+						completion: interrupted ? "interrupted" : "complete",
+					},
+				];
+				const directory = ["user", "assistant"].map((role, index) => ({
+					id: `${id}-${index}`,
+					role,
+					preview: `${id} history ${index}`,
+					estimatedChars: 100,
+				}));
+				return {
+					fingerprint: { fileSize: 100, fileMtimeNs: "100" },
+					history: {
+						events,
+						name: `Fixture session ${id}`,
+						model: null,
+						thinkingLevel: null,
+						sourceMessageCount: directory.length,
+						windowStartMessage: 0,
+						windowMessageCount: 2,
+						totalMessages: directory.length,
+						messageIndex: directory,
+					},
+				};
+			}
+			function unexpected(name) {
+				unexpectedCalls.push(name);
+				throw new Error(`Unexpected fixture call: ${name}`);
+			}
+			const mocks = {
+				bootstrap: async () => ({
+					projects: [project],
+					chatSessions: [],
+					latestSequence: 0,
+				}),
+				listCachedSessions: async () => sessions,
+				listSessions: async () => sessions,
+				externalActivity: async () => [],
+				loadSessionReadStates: async () => [],
+				loadPreferences: async () => preferences,
+				loadThemeSettings: async () => ({
+					revision: 1,
+					theme: "light",
+					themeFamily: "lody",
+					themeCustomCss: "",
+					themeCustomName: "",
+					savedCustomThemes: [],
+				}),
+				loadModels: async () => ({
+					projectId: project.id,
+					models: [],
+					commands: [],
+					defaultModel: null,
+					defaultThinkingLevel: null,
+					refreshedAtMs: 1,
+				}),
+				loadModelScope: async () => ({
+					projectId: project.id,
+					models: null,
+					updatedAtMs: 1,
+				}),
+				loadNextPromptSettings: async (connectionId) => ({
+					connectionId,
+					enabled: false,
+					model: null,
+					updatedAtMs: 1,
+				}),
+				loadPromptEnhancementSettings: async (connectionId) => ({
+					connectionId,
+					enabled: false,
+					model: null,
+					updatedAtMs: 1,
+				}),
+				chatState: async (session) =>
+					runtimeGates.get(session)?.promise ?? null,
+				loadHistory: (_project, path, options) => {
+					const id = sessions.find(
+						(session) => session.sessionPath === path,
+					)?.piSessionId;
+					if (!id) return unexpected(`history ${path}`);
+					if (options?.startMessage !== undefined)
+						return Promise.resolve(history(id));
+					const request = { id, ...deferred() };
+					requests.push(request);
+					return request.promise;
+				},
+				connectEvents: async (options) => {
+					socket = options;
+					options.onStatus(true);
+					return () => {
+						socket = undefined;
+					};
+				},
+				startChat: () => unexpected("startChat"),
+				sendChatCommand: () => unexpected("sendChatCommand"),
+			};
+			const originals = Object.fromEntries(
+				Object.keys(mocks).map((name) => [name, WebPiloClient.prototype[name]]),
+			);
+			Object.assign(WebPiloClient.prototype, mocks);
+			window.fetch = (...args) => unexpected(`fetch ${args[0]}`);
+			window.setTimeout = (callback, delay, ...args) => {
+				const id = savedSetTimeout.call(window, callback, delay, ...args);
+				if (delay === 5000 || delay === 10000) timers.push({ id, callback });
+				return id;
+			};
+			localStorage.clear();
+			localStorage.setItem(
+				"pilo.remote.device-token.v1",
+				"fixture-not-a-real-token",
+			);
+			localStorage.setItem("pilo.remote.project.v1", project.id);
+			localStorage.setItem("pilo.sidebarOrganizeMode", "recent");
+			localStorage.setItem(
+				"pilo.preferences.v1",
+				JSON.stringify(preferences.values),
+			);
+
+			function assert(condition, message) {
+				if (!condition) throw new Error(message);
+			}
+			async function until(check, message) {
+				const deadline = performance.now() + 10000;
+				while (!check()) {
+					if (performance.now() > deadline)
+						throw new Error(`Timed out: ${message}`);
+					await new Promise(requestAnimationFrame);
+				}
+			}
+			async function settle() {
+				await new Promise(requestAnimationFrame);
+				await new Promise(requestAnimationFrame);
+			}
+			const app = () => document.querySelector("[data-remote-webui]");
+			const todo = () => document.querySelector("[data-chat-todo-capsule]");
+			const notices = () => [
+				...app().querySelectorAll('output, [role="status"], [role="alert"]'),
+			];
+			const hasNotice = (text) =>
+				notices().some((notice) => notice.textContent.includes(text));
+			function noOldContent(label) {
+				assert(!todo(), `${label}: old task capsule is visible`);
+				assert(
+					!hasNotice("Shared plugin notice"),
+					`${label}: old plugin notification is visible`,
+				);
+				assert(
+					!hasNotice(i18n.t("chat.lastReplyIncomplete")),
+					`${label}: old interruption is visible`,
+				);
+				assert(
+					document
+						.querySelector("[data-sonner-toast]")
+						?.textContent.includes("Global fixture notice"),
+					`${label}: global notice was cleared`,
+				);
+			}
+			function emit(id, ...events) {
+				flushSync(() =>
+					socket.onMessage({
+						type: "events",
+						events: events.map((event) => ({
+							...event,
+							projectId: project.id,
+							sessionKey: key(id),
+							sequence: ++sequence,
+							timestampMs: Date.now(),
+						})),
+					}),
+				);
+			}
+			function notify(id, text = "Shared plugin notice") {
+				emit(id, {
+					type: "extension_ui_request",
+					id: "same-notification-id",
+					method: "notify",
+					message: text,
+					notifyType: "info",
+				});
+			}
+			async function select(id) {
+				if (matchMedia("(max-width: 1023px)").matches) {
+					app()
+						.querySelector(
+							`button[aria-label="${i18n.t("navigation.expandSidebar")}"]`,
+						)
+						.click();
+				}
+				const row = () =>
+					[...document.querySelectorAll("[data-session-row]")].find((element) =>
+						element.textContent.includes(`Fixture session ${id}`),
+					);
+				await until(row, `session ${id} navigation row`);
+				const previous = requests.length;
+				flushSync(() => row().click());
+				await until(
+					() => requests.length > previous,
+					`session ${id} history request`,
+				);
+				return requests.at(-1);
+			}
+			async function loaded(id) {
+				const request = await select(id);
+				request.resolve(history(id));
+				await until(
+					() => todo()?.textContent.includes(`Task owned by ${id}`),
+					`session ${id} task`,
+				);
+				return request;
+			}
+			function startDraft() {
+				const label = matchMedia("(max-width: 1023px)").matches
+					? i18n.t("app.newChat")
+					: i18n.t("sidebar.newSession");
+				const button = [...app().querySelectorAll("button")].find(
+					(element) =>
+						element.getAttribute("aria-label") === label ||
+						element.textContent.trim() === label,
+				);
+				assert(button, "New chat navigation is missing");
+				flushSync(() => button.click());
+			}
+			function pass(message) {
+				passed.push(message);
+				results.textContent = passed.map((line) => `PASS: ${line}`).join("\n");
+			}
+			try {
+				root.render(h(PreferencesProvider, null, h(RemoteApp), h(Toaster)));
+				await until(() => app() && socket, "WebUI bootstrap");
+				toast.info("Global fixture notice", {
+					duration: Infinity,
+					id: "global-fixture",
+				});
+				await loaded("A");
+				assert(
+					hasNotice(i18n.t("chat.lastReplyIncomplete")),
+					"A interruption fixture is missing",
+				);
+				notify("A");
+				await until(() => hasNotice("Shared plugin notice"), "A notification");
+				const aTimer = timers.at(-1);
+				assert(aTimer, "A notification expiry timer is missing");
+
+				const bRuntime = deferred();
+				runtimeGates.set(key("B"), bRuntime);
+				const b = await select("B");
+				noOldContent("A → B before history");
+				notify("A", "Late notification from A");
+				emit("A", {
+					type: "tool_execution_start",
+					toolCallId: "late-A",
+					toolName: "todowrite",
+					args: {
+						todos: [{ content: "Late task from A", status: "in_progress" }],
+					},
+				});
+				await settle();
+				noOldContent("A → B after late A events");
+				assert(
+					!hasNotice("Late notification from A"),
+					"Late A notification leaked into B",
+				);
+				b.resolve(history("B"));
+				await settle();
+				noOldContent("B history loaded, runtime still pending");
+				bRuntime.resolve(null);
+				runtimeGates.delete(key("B"));
+				await until(
+					() => todo()?.textContent.includes("Task owned by B"),
+					"B ready task",
+				);
+				emit("A", {
+					type: "tool_execution_start",
+					toolCallId: "late-A-after-B-ready",
+					toolName: "todowrite",
+					args: {
+						todos: [{ content: "Late task from A", status: "in_progress" }],
+					},
+				});
+				assert(
+					todo()?.textContent.includes("Task owned by B"),
+					"Late A todo replaced B's progress",
+				);
+				assert(
+					!todo().textContent.includes("Late task from A"),
+					"B capsule contains late A data",
+				);
+				pass(
+					"delayed history/RPC hides old progress and interruption; late A events are ignored",
+				);
+
+				notify("B");
+				await until(
+					() => hasNotice("Shared plugin notice"),
+					"B notification with same ID/message",
+				);
+				assert(
+					notices().filter((notice) =>
+						notice.textContent.includes("Shared plugin notice"),
+					).length === 1,
+					"Notification is duplicated",
+				);
+				window.clearTimeout(aTimer.id);
+				flushSync(() => aTimer.callback());
+				assert(
+					hasNotice("Shared plugin notice"),
+					"A's expiry dismissed B's notification",
+				);
+				const bNotice = notices().find((notice) =>
+					notice.textContent.includes("Shared plugin notice"),
+				);
+				flushSync(() => bNotice.querySelector("button").click());
+				assert(
+					!hasNotice("Shared plugin notice"),
+					"B notification did not dismiss",
+				);
+				pass(
+					"same notification ID/message is isolated across sessions, including expiry and dismissal",
+				);
+
+				const delayedA = await select("A");
+				const delayedB = await select("B");
+				const currentC = await select("C");
+				noOldContent("A → B → C pending");
+				delayedB.resolve(history("B"));
+				delayedA.resolve(history("A"));
+				notify("A", "Late A during C");
+				notify("B", "Late B during C");
+				await settle();
+				noOldContent("C after obsolete history responses");
+				currentC.resolve(history("C"));
+				await until(
+					() => todo()?.textContent.includes("Task owned by C"),
+					"C task",
+				);
+				assert(
+					!hasNotice("Late A during C") && !hasNotice("Late B during C"),
+					"Obsolete notification appeared in C",
+				);
+				pass(
+					"rapid A → B → C discards out-of-order history and previous-session notifications",
+				);
+
+				await loaded("A");
+				startDraft();
+				noOldContent("A → draft immediately");
+				notify("A", "Late A in draft");
+				await settle();
+				noOldContent("A → draft settled");
+				assert(
+					!hasNotice("Late A in draft"),
+					"Old notification leaked into draft",
+				);
+				const lateDraftHistory = await select("A");
+				startDraft();
+				lateDraftHistory.resolve(history("A"));
+				await settle();
+				noOldContent("draft after obsolete history response");
+				pass(
+					"draft navigation drops old task progress, notifications and late history responses",
+				);
+
+				await loaded("A");
+				const failedB = await select("B");
+				noOldContent("B before failed load");
+				failedB.reject(new Error("Fixture history load failed"));
+				await until(
+					() => app().textContent.includes("Fixture history load failed"),
+					"history error notice",
+				);
+				notify("A", "Late A after failure");
+				await settle();
+				noOldContent("B after failed load");
+				assert(
+					!hasNotice("Late A after failure"),
+					"Late notification revived old content after failure",
+				);
+				const emptyC = await select("C");
+				emptyC.resolve(history("C", true));
+				await until(
+					() => app().textContent.includes("Reply C without tasks"),
+					"empty target history",
+				);
+				await settle();
+				noOldContent("target without tasks");
+				assert(unexpectedCalls.length === 0, unexpectedCalls.join("\n"));
+				pass(
+					"failed loads and task-free targets never revive old progress; global notices survive",
+				);
+				document.body.dataset.testStatus = "passed";
+			} catch (error) {
+				document.body.dataset.testStatus = "failed";
+				results.textContent += `\nFAIL: ${error.stack}`;
+				throw error;
+			} finally {
+				root.unmount();
+				toast.dismiss("global-fixture");
+				for (const timer of timers) window.clearTimeout(timer.id);
+				Object.assign(WebPiloClient.prototype, originals);
+				window.fetch = savedFetch;
+				window.setTimeout = savedSetTimeout;
+				localStorage.clear();
+				for (const [name, value] of savedStorage)
+					localStorage.setItem(name, value);
+			}
+		</script>
+	</body>
+</html>

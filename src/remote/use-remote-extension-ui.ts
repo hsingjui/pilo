@@ -23,10 +23,18 @@ const INFO_NOTIFICATION_DURATION_MS = 5_000;
 const WARNING_NOTIFICATION_DURATION_MS = 10_000;
 const EXTENSION_NOTIFICATION_DEDUP_WINDOW_MS = 10_000;
 
+type SessionExtensionNotification = PiExtensionNotification & {
+	sessionKey: string;
+};
+
 function extensionNotificationDedupKey(
-	notification: PiExtensionNotification,
+	notification: SessionExtensionNotification,
 ): string {
-	return `${notification.type}:${notification.message}`;
+	return JSON.stringify([
+		notification.sessionKey,
+		notification.type,
+		notification.message,
+	]);
 }
 
 export function useRemoteExtensionUi({
@@ -60,7 +68,7 @@ export function useRemoteExtensionUi({
 		request: PiExtensionDialogRequest;
 	} | null>(null);
 	const [extensionNotifications, setExtensionNotifications] = useState<
-		PiExtensionNotification[]
+		SessionExtensionNotification[]
 	>([]);
 	const extensionNotificationTimersRef = useRef(new Map<string, number>());
 	const extensionNotificationLastSeenRef = useRef(new Map<string, number>());
@@ -79,9 +87,10 @@ export function useRemoteExtensionUi({
 	const showExtensionNotification = useCallback(
 		(event: PiExtensionDialogRequest) => {
 			// 插件通知默认关闭；与桌面端同一开关，关闭时丢弃事件。
-			if (!showPluginNotifications) return;
-			const notification: PiExtensionNotification = {
-				id: event.id,
+			if (!showPluginNotifications || !event.sessionKey) return;
+			const notification: SessionExtensionNotification = {
+				id: JSON.stringify([event.sessionKey, event.id]),
+				sessionKey: event.sessionKey,
 				message: event.message || event.title || "Pi extension notification",
 				type: event.notifyType ?? "info",
 			};
@@ -162,6 +171,7 @@ export function useRemoteExtensionUi({
 
 	const handleExtensionRequest = useCallback(
 		(event: PiExtensionDialogRequest) => {
+			if (event.sessionKey !== activeSessionKey) return;
 			const resolving = resolvingProjectMcpRequestRef.current;
 			if (
 				resolving?.sessionKey === activeSessionKey &&
@@ -274,7 +284,9 @@ export function useRemoteExtensionUi({
 		handleExtensionRequest,
 		extensionDialog,
 		respondToExtensionDialog,
-		extensionNotifications,
+		extensionNotifications: extensionNotifications.filter(
+			(notification) => notification.sessionKey === activeSessionKey,
+		),
 		dismissExtensionNotification,
 	};
 }
