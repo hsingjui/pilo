@@ -1,5 +1,4 @@
-import { useEffect } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Folder } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { connectionLabel, type Project } from "@/lib/api/projects";
@@ -11,7 +10,7 @@ import {
 } from "@/ui";
 
 /**
- * 新会话落地页输入框上方的项目选择器。
+ * 新会话欢迎区中的项目选择器。
  * Desktop 落地页与 Remote WebUI 共用，避免两处样式漂移。
  */
 export function DraftProjectPicker({
@@ -24,23 +23,15 @@ export function DraftProjectPicker({
 	onSwitchProject?: (projectId: string) => void;
 }) {
 	const { t } = useTranslation();
-	const hasProjects = projects.length > 0;
 	const connectionName = project ? connectionLabel(project.connection) : null;
-	useEffect(() => {
-		try {
-			localStorage.setItem("pilo.boot.hasProjects", hasProjects ? "1" : "0");
-		} catch {
-			// This is only a startup geometry hint, never project state.
-		}
-	}, [hasProjects]);
-	if (!hasProjects) return null;
+	if (projects.length === 0) return null;
 	return (
-		<div className="flex pb-1.5 pl-1">
+		<div className="flex w-full min-w-0 justify-center">
 			<DropdownMenu>
 				<DropdownMenuTrigger asChild>
 					<button
 						type="button"
-						className="group flex h-7 w-fit max-w-[66.666667%] min-w-0 items-center gap-1.5 rounded-lg border border-foreground/[0.10] bg-background px-2 text-xs text-muted-foreground outline-hidden transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring dark:border-input-border/70"
+						className="flex min-h-(--pilo-ui-button-sm-height) max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground outline-hidden transition-colors hover:bg-hover hover:text-hover-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-hover data-[state=open]:text-hover-foreground motion-reduce:transition-none"
 						aria-label={
 							project
 								? `${t("app.selectProject")}: ${project.name} · ${connectionName}`
@@ -48,39 +39,44 @@ export function DraftProjectPicker({
 						}
 						title={project ? `${project.name} · ${connectionName}` : undefined}
 					>
-						<span
-							aria-hidden="true"
-							className="size-2.5 shrink-0 rounded-[4px] bg-muted-foreground/50"
-						/>
-						<span className="min-w-0 flex-1 truncate text-left">
-							{project ? project.name : t("app.selectProject")}
+						<span className="min-w-0 truncate font-medium text-foreground">
+							{project?.name ?? t("app.selectProject")}
 						</span>
 						{connectionName ? (
-							<span className="max-w-[50%] shrink-0 truncate text-muted-foreground/70">
-								{connectionName}
-							</span>
+							<>
+								<span aria-hidden="true" className="shrink-0">
+									·
+								</span>
+								<span className="max-w-[50%] min-w-0 truncate text-xs">
+									{connectionName}
+								</span>
+							</>
 						) : null}
-						<ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+						<ChevronDown aria-hidden="true" className="size-3.5 shrink-0" />
 					</button>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent
-					align="start"
-					className="min-w-48 max-w-[calc(100vw-2rem)]"
+					align="center"
+					className="min-w-48 max-w-[calc(100vw-2rem)] [--pilo-ui-menu-item-gap:0.25rem]"
 				>
 					{projects.map((candidate) => (
 						<DropdownMenuItem
 							key={candidate.id}
+							icon={<Folder aria-hidden="true" />}
+							aria-current={project?.id === candidate.id ? "true" : undefined}
+							className={
+								project?.id === candidate.id
+									? "bg-hover text-hover-foreground"
+									: undefined
+							}
 							onClick={() => onSwitchProject?.(candidate.id)}
 						>
-							<span className="min-w-0 flex-1 truncate">{candidate.name}</span>
-							<span className="max-w-[50%] shrink-0 truncate text-xs text-muted-foreground">
+							<span className="min-w-0 flex-1 truncate font-medium">
+								{candidate.name}
+							</span>
+							<span className="max-w-[50%] min-w-0 truncate text-xs text-muted-foreground">
 								{connectionLabel(candidate.connection)}
 							</span>
-							{project?.id === candidate.id ? (
-								<span className="shrink-0 text-xs text-muted-foreground">
-									当前
-								</span>
-							) : null}
 						</DropdownMenuItem>
 					))}
 				</DropdownMenuContent>

@@ -241,18 +241,23 @@ spacing, type sizes, or control heights.
   circle enlarged to the mobile control-size token. Keep the send-mode slot and
   attachment gutter aligned with the mounted toolbar; the WebUI dock reads the
   same keyboard-dependent bottom-padding override. Use sidebar row
-  height/padding/gap tokens, not pixel snapshots. Reserve the landing project-picker row (`pilo.boot.hasProjects`
-  is only a last-observed visibility hint written by DraftProjectPicker), otherwise
-  the centered hero moves when the composer dock grows. Hero logo/gap use rem;
-  heading size follows the conversation column's 40rem container breakpoint,
-  not viewport width. Wide WebUI retains its sidebar; <=1023px hides it.
+  height/padding/gap tokens, not pixel snapshots. The landing project picker now
+  belongs inside the centered welcome hero, never the composer dock. Match its
+  single-row control height and spacing in the boot hero;
+  `pilo.boot.hasProjects` is only a last-observed visibility hint written by
+  `ChatEmptyHero` when it receives draft projects. Empty persisted sessions must
+  not overwrite that hint. Always retain the original welcome heading, including
+  when the project picker is visible.
+  Hero logo/gap use rem; heading size follows the conversation column's 40rem
+  container breakpoint, not viewport width. Wide WebUI retains its sidebar;
+  <=1023px hides it.
   `BootShellRemover` belongs to the ready screen, not the unconditional root
   bootstrap: desktop waits for `projectsReady && connectionsReady`; WebUI waits
   for the first bootstrap attempt to settle, while offline/auth/pairing/error
   screens must still be revealed. Wait for `document.fonts.ready` before the
   removal frame. A first React commit can have no projects yet; revealing it
-  moves the hero down, then back up when the picker arrives (~18px observed on
-  Windows). Verify the last boot frame against the first uncovered frame and
+  changes the hero geometry again when the project picker arrives. Verify the
+  last boot frame against the first uncovered frame and
   later frames through the desktop WebDriver, not just steady-state rectangles.
 - `--pilo-conversation-max-width` is the shared desktop/session/WebUI measure;
   omitting it uses device defaults, and narrow WebUI stays full-width.
@@ -650,11 +655,35 @@ actions go there and appear only for persisted sessions (`session && !session.te
   configured enhancement model or Pi default. Empty drafts keep the visible
   control disabled, like the ready composer. The WebUI reads this setting from
   the active project's Connection, not another Connection's enabled switch.
-  The shared `DraftProjectPicker` must show the Connection label beside the
-  project name in both its trigger and menu rows: Local/WSL/SSH projects may
-  share the same name but have different enhancement settings. Keep the name
-  and Connection independently truncatable and the menu within narrow viewports;
-  do not infer the environment from the project name or change its default order.
+  On draft landing pages, shared `ChatEmptyHero` receives the visible projects,
+  active project and switch callback. Preserve the original logo and welcome
+  heading (including its text and typography). Place `DraftProjectPicker` below
+  that heading as one compact secondary row: project name, decorative middle
+  dot, muted Connection label and dropdown chevron. Both labels truncate
+  independently; never wrap them onto separate lines, add a Connection subtitle,
+  or add a “Start in” sentence. Never replace the welcome copy with project
+  selection. The whole row is a borderless, transparent menu trigger. Do not
+  restore a separate picker above the composer or move it into the header/toolbar.
+  Local/WSL/SSH projects may share names but have different enhancement settings,
+  so never omit or infer the Connection label. Keep a visible keyboard focus
+  ring, theme hover/open colors and reduced-motion support; the trigger uses
+  `--pilo-ui-button-sm-height` (44px minimum on mobile/coarse pointers). Match
+  this geometry in the boot welcome hero. Menus stay within narrow viewports,
+  use content-driven width with a compact `min-w-48` floor (no fixed `w-72`),
+  and retain theme item padding/height rather than extra vertical padding.
+  Locally set `--pilo-ui-menu-item-gap: 0.25rem` on this menu surface so adjacent
+  selected/hovered backgrounds remain visually separate, even in zero-gap themes.
+  Do not change the global menu gap. Rows reuse the Folder icon and put
+  independently truncated project/Connection labels on one line; never stack
+  the labels. Preserve menu semantics, project order, switching logic and
+  keyboard/touch activation. Indicate the selected row visually only with the
+  theme's hover background/foreground, retaining `aria-current="true"` for
+  accessibility. Do not add a check icon, reserved check slot or textual badge.
+  Desktop landing and WebUI drafts use the same hero/picker. WebUI supplies it
+  through the viewport's `emptyContent` slot only for unidentified drafts;
+  existing sessions retain the ordinary empty state and cannot switch projects
+  here. Starting a conversation replaces the hero with messages. With no visible
+  projects, omit only the picker; the original welcome heading remains.
   WebUI persists the selected project id through `remote-app-model.ts` and
   initializes `useRemoteChat` from it, so reloads do not silently switch WSL/SSH
   back to the first (often Local) project. Validate the id against bootstrap

@@ -32,7 +32,7 @@ import { PiExtensionUiDialog } from "@/components/chat/pi-extension-ui-dialog";
 import { ChatPendingQueue } from "@/components/chat/chat-pending-queue";
 import { ChatTodoCapsule } from "@/components/chat/chat-todo-capsule";
 import { useScrollbarGutterWidth } from "@/components/chat/use-scrollbar-gutter";
-import { DraftProjectPicker } from "@/components/chat/draft-project-picker";
+import { ChatEmptyHero } from "@/components/chat/chat-empty-hero";
 import { BootShellRemover } from "@/components/boot-shell-remover";
 import { SessionHeader } from "@/components/chat/chat-session-header";
 import {
@@ -482,6 +482,17 @@ function RemoteWorkspace() {
 										<ChatImageScopeProvider scope={chat.historyImageScope}>
 											<RemoteConversationViewport
 												key={chat.routeKey ?? "remote-draft"}
+												emptyContent={
+													!chat.hasIdentifiedSession ? (
+														<ConversationColumn className="flex flex-1 items-center justify-center">
+															<ChatEmptyHero
+																projects={homeProjects}
+																project={chat.activeProject}
+																onSwitchProject={chat.switchDraftProject}
+															/>
+														</ConversationColumn>
+													) : undefined
+												}
 												active
 												visualLive
 												showSwitchSkeleton={chat.showSwitchSkeleton}
@@ -548,13 +559,6 @@ function RemoteWorkspace() {
 												notifications={chat.extensionNotifications}
 												onDismiss={chat.dismissExtensionNotification}
 											/>
-											{!chat.hasIdentifiedSession ? (
-												<DraftProjectPicker
-													projects={homeProjects}
-													project={chat.activeProject}
-													onSwitchProject={chat.switchDraftProject}
-												/>
-											) : null}
 											{chat.extensionDialog ? (
 												<PiExtensionUiDialog
 													request={chat.extensionDialog}

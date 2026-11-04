@@ -45,7 +45,6 @@ import { tauriPiloClient } from "@/lib/api/tauri-pilo-client";
 import { promptEnhancementModel } from "@/lib/prompt-enhancement";
 import { usePromptEnhancementSettings } from "@/lib/use-prompt-enhancement-settings";
 import { useProjectModelScope } from "@/lib/use-project-model-scope";
-import { DraftProjectPicker } from "@/components/chat/draft-project-picker";
 
 function modelKey(model: PiModel | null): string | null {
 	return model ? `${model.provider}\0${model.id}` : null;
@@ -449,7 +448,11 @@ export function NewChatLanding({
 						className="chat-scrollbar flex min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto"
 					>
 						<ConversationColumn className="flex flex-1 items-center justify-center">
-							<ChatEmptyHero />
+							<ChatEmptyHero
+								projects={projects}
+								project={project}
+								onSwitchProject={onSwitchProject}
+							/>
 						</ConversationColumn>
 					</div>
 					<div
@@ -457,11 +460,6 @@ export function NewChatLanding({
 						style={{ paddingRight: scrollbarWidth }}
 					>
 						<ConversationColumn className="relative">
-							<DraftProjectPicker
-								projects={projects}
-								project={project}
-								onSwitchProject={onSwitchProject}
-							/>
 							<ChatComposer
 								value={draft}
 								historyKey={projectId}

@@ -9,6 +9,7 @@ import {
 	useRef,
 	useState,
 	type MutableRefObject,
+	type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowDown } from "lucide-react";
@@ -55,6 +56,7 @@ type ChatConversationViewportProps = {
 	active: boolean;
 	visualLive: boolean;
 	showSwitchSkeleton?: boolean;
+	emptyContent?: ReactNode;
 	sessionId: string;
 	sessionPath?: string;
 	messages: ChatMessage[];
@@ -88,6 +90,7 @@ const ChatConversationViewportImpl = forwardRef<
 		active,
 		visualLive,
 		showSwitchSkeleton = false,
+		emptyContent,
 		sessionId,
 		sessionPath,
 		messages,
@@ -378,7 +381,7 @@ const ChatConversationViewportImpl = forwardRef<
 								</ConversationColumn>
 							</div>
 						) : messages.length === 0 ? (
-							<EmptyConversation />
+							(emptyContent ?? <EmptyConversation />)
 						) : plainShortChat ? (
 							<div>
 								{messages.map((message, index) =>

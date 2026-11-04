@@ -462,6 +462,8 @@
 					align-items: center;
 					justify-content: center;
 					gap: 0.75rem;
+					padding-block: 1rem;
+					box-sizing: border-box;
 				}
 				.pilo-boot-mark {
 					width: 4rem;
@@ -497,20 +499,17 @@
 				}
 				.pilo-boot-project-picker {
 					display: flex;
+					width: min(12rem, 100%);
+					height: max(1.25rem, var(--pilo-ui-button-sm-height));
 					align-items: center;
-					width: min(8rem, 66.666667%);
-					height: 1.75rem;
-					margin: 0 0 0.375rem 0.25rem;
-					border: 1px solid var(--pilo-composer-border);
-					border-radius: var(--pilo-ui-radius-lg);
-					padding-inline: 0.5rem;
-					box-sizing: border-box;
+					justify-content: center;
 				}
 				.pilo-boot-no-projects .pilo-boot-project-picker {
 					display: none;
 				}
 				.pilo-boot-project-picker .pilo-boot-line {
-					width: 75%;
+					width: 100%;
+					height: 1rem;
 				}
 				.pilo-boot-composer {
 					position: relative;
@@ -757,14 +756,14 @@
 									<path d="M517.36 400H634.72V634.72H517.36Z"></path>
 								</svg>
 								<div class="pilo-boot-heading"></div>
+								<div class="pilo-boot-project-picker">
+									<div class="pilo-boot-line"></div>
+								</div>
 							</div>
 						</div>
 					</div>
 					<div class="pilo-boot-composer-dock">
 						<div class="pilo-boot-composer-column">
-							<div class="pilo-boot-project-picker">
-								<div class="pilo-boot-line"></div>
-							</div>
 							<div class="pilo-boot-composer">
 								<div class="pilo-boot-composer-input">
 									<div class="pilo-boot-composer-line"></div>
