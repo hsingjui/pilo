@@ -91,7 +91,7 @@ test("user skill invocation is found through its visible name", () => {
 	assert.equal(matches.length, 1);
 });
 
-test("file references and repeated picks are searched in source order", () => {
+test("file references are deduplicated and searched before body text", () => {
 	const referenced: ChatMessage[] = [
 		{
 			id: "file",
@@ -106,9 +106,8 @@ test("file references and repeated picks are searched in source order", () => {
 			match.start,
 		]),
 		[
-			[0, 6],
-			[1, 17],
-			[2, 28],
+			[0, 0],
+			[1, 15],
 		],
 	);
 	assert.equal(findMessageMatches(referenced, "src/").length, 0);
@@ -138,7 +137,7 @@ test("mixed references search session titles in rendered order within their scop
 		findMessageMatches(referenced, "index.ts", sessions).map(
 			(match) => match.start,
 		),
-		[6, 26, 37],
+		[9, 18, 33],
 	);
 	assert.equal(findMessageMatches(referenced, "Previous", sessions).length, 1);
 	assert.equal(
@@ -164,7 +163,7 @@ test("Skill instructions project references without exposing the expanded Skill 
 		];
 		assert.deepEqual(
 			findMessageMatches(referenced, "index.ts").map((match) => match.start),
-			[13, 24],
+			[7, 22],
 		);
 		assert.equal(findMessageMatches(referenced, "Hidden Skill").length, 0);
 		assert.equal(findMessageMatches(referenced, "src/").length, 0);

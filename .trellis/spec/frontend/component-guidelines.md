@@ -717,11 +717,17 @@ actions go there and appear only for persisted sessions (`session && !session.te
   body edits, repeated picks and mounting/recovering drafts do not delete it.
   `retainChatFiles` transfers submission ownership before async sends or queues.
   Do not adopt existing/history files into pending cleanup ownership.
-- Sent/history messages and Skill instructions still render references inline
-  in source order; the composer shelf is not a new message rendering contract.
-  Search uses visible file names/session titles, not hidden paths or controls.
-  Slash normalization remains in `createChatSubmission` so `/skill:foo` followed
-  by reference lines receives the ASCII-space separator required by Pi.
+- Sent/history messages render images, Skill badges and file/session references
+  **above** the body in the shared desktop/WebUI `UserMessage`. Reuse
+  `readChatMentionDraft` for both ordinary messages and Skill instructions to
+  collect/deduplicate references, including older inline and trailing forms.
+  File/session badges wrap on narrow screens and remain visible when long body
+  text is collapsed. Preserve the existing preview/open behavior. Search follows
+  the same deduplicated label order before body text, not hidden paths or controls.
+  This is display-only: serialized references remain after the body, images remain
+  separate attachments, and copy/JSONL/queues are unchanged. Slash normalization
+  remains in `createChatSubmission` so `/skill:foo` followed by reference lines
+  receives the ASCII-space separator required by Pi.
 - `tests/browser/chat-mentions.html` covers desktop and 320px WebUI: shelf geometry,
   fixed preview width, middle-of-body completion/caret continuity, deduplication,
   independent removal, disabled and mobile Backspace behavior, old inline draft

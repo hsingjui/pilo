@@ -5,7 +5,7 @@ import { ChevronDown, Sparkles } from "lucide-react";
 import { SessionMentionBadge } from "@/components/chat/session-mention-badge";
 import { useSessionMentions } from "@/components/chat/session-mention-context";
 import { FileMentionBadge } from "@/components/chat/path-mention-badge";
-import { readChatMentionParts } from "@/lib/chat/chat-mentions";
+import { readChatMentionDraft } from "@/lib/chat/chat-mentions";
 import { ChatImageThumbnail } from "@/components/chat/chat-image-viewer";
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
 import { ChatCopyButton } from "@/components/chat/chat-copy-button";
@@ -42,29 +42,33 @@ function ReferencedMessageBody({ text: sourceText }: { text: string }) {
 	const { collapseLongMessages } = usePreferences();
 	const [expanded, setExpanded] = useState(false);
 	const { byValue } = useSessionMentions();
-	const text = sourceText;
+	const { references, text } = readChatMentionDraft(sourceText, byValue);
 	const collapsible =
 		collapseLongMessages && text.length > LARGE_MESSAGE_PREVIEW_CHARS;
 	const visibleText = collapsible && !expanded ? plainTextPreview(text) : text;
 
 	return (
 		<div className="min-w-0 space-y-1.5">
-			{text ? (
-				<p className="whitespace-pre-wrap [overflow-wrap:anywhere]">
-					{readChatMentionParts(visibleText, byValue).map((part) =>
-						part.mention ? (
-							part.mention.kind === "session" ? (
-								<SessionMentionBadge
-									key={part.start}
-									mention={part.mention.session}
-								/>
-							) : (
-								<FileMentionBadge key={part.start} path={part.mention.path} />
-							)
+			{references.length > 0 ? (
+				<div className="flex min-w-0 flex-wrap gap-1.5">
+					{references.map((mention) =>
+						mention.kind === "session" ? (
+							<SessionMentionBadge
+								key={`${mention.kind}:${mention.path}`}
+								mention={mention.session}
+							/>
 						) : (
-							part.value
+							<FileMentionBadge
+								key={`${mention.kind}:${mention.path}`}
+								path={mention.path}
+							/>
 						),
 					)}
+				</div>
+			) : null}
+			{text ? (
+				<p className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+					{visibleText}
 				</p>
 			) : null}
 			{collapsible ? (

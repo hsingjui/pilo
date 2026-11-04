@@ -1104,7 +1104,7 @@
 						const activeRange = () =>
 							Array.from(CSS.highlights.get("pilo-find-active") ?? [])[0];
 						input(field, "needle.ts");
-						await until(() => CSS.highlights.get("pilo-find")?.size === 7);
+						await until(() => CSS.highlights.get("pilo-find")?.size === 6);
 						const next = section.querySelector(
 							'button[aria-label="Next match"]',
 						);
@@ -1112,7 +1112,7 @@
 							'button[aria-label="Previous match"]',
 						);
 						const all = Array.from(CSS.highlights.get("pilo-find"));
-						for (let index = 0; index < 7; index++) {
+						for (let index = 0; index < all.length; index++) {
 							await until(
 								() =>
 									activeRange()?.startContainer === all[index].startContainer,
@@ -1120,14 +1120,15 @@
 							const parent = activeRange().startContainer.parentElement;
 							assert(
 								parent.closest("[data-message-id]").dataset.messageId ===
-									searchMessages[index < 3 ? 0 : index < 5 ? 1 : 2].id,
+									searchMessages[Math.floor(index / 2)].id,
 								"Search navigated to the wrong message",
 							);
 							assert(
 								Boolean(
 									parent.closest("button[data-chat-search-reference]"),
-								) === (index !== 0 && index !== 3 && index !== 5),
-								"Search must follow inline body and repeated-chip order",
+								) ===
+									(index % 2 === 0),
+								"Search must follow deduplicated references before body text",
 							);
 							next.click();
 						}
@@ -1136,7 +1137,9 @@
 						);
 						previous.click();
 						await until(
-							() => activeRange()?.startContainer === all[6].startContainer,
+							() =>
+								activeRange()?.startContainer ===
+								all[all.length - 1].startContainer,
 						);
 						input(field, "Previous discussion");
 						await until(() => CSS.highlights.get("pilo-find")?.size === 1);
