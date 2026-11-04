@@ -246,9 +246,13 @@ export function createStreamingMarkdownBlockParser(
 
 		if (cutoff > 0) {
 			const newlyStableSource = tailSource.slice(0, cutoff);
-			stableBlocks.push(
-				...parseStreamingTail(newlyStableSource, options.remend),
-			);
+			// Large historical replies can exceed the engine's call-argument limit.
+			for (const block of parseStreamingTail(
+				newlyStableSource,
+				options.remend,
+			)) {
+				stableBlocks.push(block);
+			}
 			stableSourceLength += cutoff;
 			tailSource = markdown.slice(stableSourceLength);
 		}

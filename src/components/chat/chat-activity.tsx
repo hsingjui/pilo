@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -48,7 +48,7 @@ import {
 import { formatWorkDuration } from "@/lib/format-duration";
 import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
-import { Hint, Spinner } from "@/ui";
+import { Button, Hint, Spinner } from "@/ui";
 
 export type ChatActivityStatus = "complete" | "running";
 
@@ -76,6 +76,7 @@ export type AssistantActivity = ThinkingActivity | ToolCallActivity;
 
 const PROCESS_TEXT_CLASS = "font-medium leading-snug text-muted-foreground";
 const PROCESS_ICON_CLASS = "size-3.5 shrink-0 text-muted-foreground";
+const THINKING_REVEAL_CHARS = 8_000;
 
 function ToolDiff({ diff }: { diff: string }) {
 	return (
@@ -185,6 +186,17 @@ function ThinkingActivityView({
 	// 思考默认收成单行（与工具调用一致），展开状态按条目记忆，
 	// 因此状态从 running 变为 complete 不会把用户展开的内容重新收起。
 	const [open, setOpen] = useChatExpansionState(expansionKey, false);
+	const [revealedChars, setRevealedChars] = useState(THINKING_REVEAL_CHARS);
+	// Bound the initial Markdown/DOM work even for runaway model output.
+	let visibleEnd = Math.min(activity.text.length, revealedChars);
+	if (
+		visibleEnd < activity.text.length &&
+		/[\uD800-\uDBFF]/.test(activity.text[visibleEnd - 1])
+	) {
+		visibleEnd += 1;
+	}
+	const hasHiddenText = visibleEnd < activity.text.length;
+	const visibleText = activity.text.slice(0, visibleEnd);
 	const durationMs =
 		activity.startedAtMs !== undefined && activity.endedAtMs !== undefined
 			? Math.max(0, activity.endedAtMs - activity.startedAtMs)
@@ -213,7 +225,7 @@ function ThinkingActivityView({
 		while (end > 0) {
 			const start = activity.text.lastIndexOf("\n", end - 1) + 1;
 			const line = activity.text.slice(start, end).trim();
-			if (line) return line;
+			if (line) return line.slice(0, THINKING_REVEAL_CHARS);
 			end = start - 1;
 		}
 		return "";
@@ -222,8 +234,8 @@ function ThinkingActivityView({
 
 	const details = (
 		<ChatMarkdown
-			text={activity.text}
-			isStreaming={running}
+			text={visibleText}
+			isStreaming={running && !hasHiddenText}
 			className={cn(
 				"!leading-[1.5] !text-muted-foreground",
 				"[&_p]:!mb-1 [&_li:not(:first-child)]:!mt-0.5",
@@ -269,12 +281,37 @@ function ThinkingActivityView({
 	return (
 		<div className="w-full" data-chat-expansion-root>
 			<Hint
-				label={hasDetails && !open ? activity.text : undefined}
+				label={
+					hasDetails && !open
+						? `${activity.text.slice(0, THINKING_REVEAL_CHARS)}${activity.text.length > THINKING_REVEAL_CHARS ? "\n…" : ""}`
+						: undefined
+				}
 				className="scrollbar-pro max-h-[min(24rem,var(--radix-tooltip-content-available-height))] max-w-[min(20rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain whitespace-pre-wrap"
 			>
 				{trigger}
 			</Hint>
-			{hasDetails && open ? <div className="pt-0.5">{details}</div> : null}
+			{hasDetails && open ? (
+				<div className="pt-0.5">
+					{details}
+					{hasHiddenText ? (
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							onClick={(event) => {
+								const root = event.currentTarget.closest<HTMLElement>(
+									"[data-chat-expansion-root]",
+								);
+								toggleChatExpansionWithAnchor(root ?? event.currentTarget, () =>
+									setRevealedChars((value) => value + THINKING_REVEAL_CHARS),
+								);
+							}}
+						>
+							{t("chat.showMoreThinking")}
+						</Button>
+					) : null}
+				</div>
+			) : null}
 		</div>
 	);
 }

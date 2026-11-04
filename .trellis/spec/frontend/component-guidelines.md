@@ -128,6 +128,24 @@ re-styling them.
 
 ## Large Content
 
+- Shared `ThinkingActivityView` initially reveals at most 8,000 UTF-16 code units
+  (plus one to keep surrogate pairs intact), even while streaming and regardless
+  of the long-message folding preference. Reveal another 8,000 only through
+  the localized Show more button; never automatically mount a runaway thinking
+  body on open/reconnect. Keep the disclosure summary and hover tooltip bounded
+  too; a scrollable tooltip is not a size bound. Anchor reveals to the thinking
+  root, not the moving bottom button, so newly revealed text is not skipped.
+  Preserve the full source in state/JSONL and use the shared desktop/WebUI view
+  with the standard touch-sized button.
+- `createStreamingMarkdownBlockParser` appends newly stable blocks one at a time.
+  Never spread an unbounded block array into `push(...)`: a million-character
+  thinking history can contain over 170,000 paragraphs and exceed JavaScript
+  call-argument limits without any recursive code. Array-literal spreads retain
+  the existing block order without passing function arguments. When verification
+  is authorized, cover the supplied large-thinking history, initial open, hover,
+  repeated reveal, streaming/completion, Unicode boundaries and reading position
+  in desktop and narrow WebUI, plus unchanged ordinary Markdown parsing.
+
 - Command palette recency sorting is memoized O(n log n), not repeated insertion.
   Content search runs projects serially and skips superseded queued queries;
   an already-started project scan still finishes. The server allows at most two

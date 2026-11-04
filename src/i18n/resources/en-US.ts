@@ -548,6 +548,7 @@ const enUS = {
 		processing: "Processing…",
 		workingTool: "{{tool}}…",
 		thoughtProcess: "Thought process",
+		showMoreThinking: "Show more thinking",
 		thought: "Thought",
 		thoughtDuration: "Thought for {{duration}}",
 		readFiles: "Read {{count}} files",
