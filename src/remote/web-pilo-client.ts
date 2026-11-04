@@ -17,7 +17,11 @@ import type {
 	PiloClientHistoryOptions,
 	PiloClientStartChatInput,
 } from "@/lib/api/pilo-client";
-import type { PiSessionSnapshot, PiloRuntimeEvent } from "@/lib/api/pi-runtime";
+import type {
+	PiModel,
+	PiSessionSnapshot,
+	PiloRuntimeEvent,
+} from "@/lib/api/pi-runtime";
 import type { SessionReadState } from "@/lib/session-read-state";
 import {
 	isProjectPiModelsIncomplete,
@@ -55,6 +59,7 @@ import {
 	uploadRemoteChatFile,
 	loadRemoteExternalActivity,
 	loadRemoteModels,
+	loadRemoteConnectionModels,
 	saveRemoteModels,
 	loadRemoteCacheKeepAliveSettings,
 	saveRemoteCacheKeepAliveSettings,
@@ -77,6 +82,10 @@ import {
 } from "./remote-client";
 
 export class WebPiloClient implements PiloClient {
+	loadConnectionModels(connectionId: string): Promise<PiModel[]> {
+		return loadRemoteConnectionModels(this.token, connectionId);
+	}
+
 	private readonly chatEventListeners = new Set<
 		(event: PiloRuntimeEvent) => void
 	>();

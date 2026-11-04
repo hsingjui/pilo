@@ -22,6 +22,15 @@ pub use wsl::{
 };
 
 #[tauri::command]
+pub async fn connection_models_get(
+    app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
+    connection_id: String,
+) -> Result<Vec<Value>, String> {
+    super::super::connection_models::load(&app, &runtime, &connection_id).await
+}
+
+#[tauri::command]
 pub fn connection_naming_model_list(app: AppHandle) -> Result<Vec<ConnectionNamingModel>, String> {
     storage::list_connection_naming_models(&storage::open(&app)?)
 }

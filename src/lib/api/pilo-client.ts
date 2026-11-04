@@ -14,7 +14,11 @@ import type {
 	PromptEnhancementSettings,
 } from "@/lib/prompt-enhancement";
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-client";
-import type { PiSessionSnapshot, PiloRuntimeEvent } from "@/lib/api/pi-runtime";
+import type {
+	PiModel,
+	PiSessionSnapshot,
+	PiloRuntimeEvent,
+} from "@/lib/api/pi-runtime";
 import type { ProjectPiModels } from "@/lib/api/pi-models";
 import type { Project } from "@/lib/api/projects";
 import type { SessionReadState } from "@/lib/session-read-state";
@@ -105,6 +109,8 @@ export interface PiloClient {
 		projectId: string,
 		sessionPath: string,
 	): Promise<SessionDeleteResult>;
+	/** Fresh Pi user catalog for this connection, independent of project caches. */
+	loadConnectionModels(connectionId: string): Promise<PiModel[]>;
 	/** Host-cached Pi model catalog snapshot; null when the project has none. */
 	loadModels(projectId: string): Promise<ProjectPiModels | null>;
 	loadModelScope(projectId: string): Promise<ProjectModelScope>;

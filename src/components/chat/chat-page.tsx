@@ -807,6 +807,9 @@ function ChatPageImpl(props: ChatPageProps) {
 												!running &&
 												!session.externalTurnOpen
 													? t("chat.historyIndexStale")
+													: null) ??
+												(nextPrompt.unavailable && !running && !readOnly
+													? t("settings.nextPromptUnavailable")
 													: null)
 											}
 											compacting={compacting}

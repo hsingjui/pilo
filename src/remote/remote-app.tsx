@@ -670,6 +670,9 @@ function RemoteWorkspace() {
 													chat.draftConfigError ??
 													(chat.historyIndexStale
 														? t("chat.historyIndexStale")
+														: null) ??
+													(nextPrompt.unavailable && !active && !chat.readOnly
+														? t("settings.nextPromptUnavailable")
 														: null)
 												}
 												compacting={chat.compacting}

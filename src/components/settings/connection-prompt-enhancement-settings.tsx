@@ -3,55 +3,39 @@ import { useTranslation } from "react-i18next";
 
 import { listConnectionCatalog } from "@/lib/api/connections";
 import { connectionLabel } from "@/lib/api/projects";
-import { type Connection, type PiModel } from "@/lib/api/pi-runtime";
+import { type Connection } from "@/lib/api/pi-runtime";
 import { tauriPiloClient } from "@/lib/api/tauri-pilo-client";
 import { usePromptEnhancementSettings } from "@/lib/use-prompt-enhancement-settings";
+import { ConnectionModelCatalog } from "./connection-model-catalog";
 import { PromptEnhancementSettingsFields } from "./prompt-enhancement-settings";
 import { SettingsSection, SETTINGS_CONTAINER_CLASS } from "./compact-layout";
 
-function ConnectionSettings({
-	connection,
-	models,
-}: {
-	connection: Connection;
-	models: readonly PiModel[];
-}) {
+function ConnectionSettings({ connection }: { connection: Connection }) {
 	const config = usePromptEnhancementSettings(tauriPiloClient, connection.id);
 	return (
-		<PromptEnhancementSettingsFields
-			config={config}
-			models={models}
-			connectionName={connectionLabel(connection)}
-		/>
+		<ConnectionModelCatalog client={tauriPiloClient} connection={connection}>
+			{(models, refresh) => (
+				<PromptEnhancementSettingsFields
+					config={config}
+					models={models}
+					modelActions={refresh}
+					connectionName={connectionLabel(connection)}
+				/>
+			)}
+		</ConnectionModelCatalog>
 	);
 }
 
 /** One row per Connection: the setting is shared by desktop and the WebUI. */
 export function ConnectionPromptEnhancementSettings() {
 	const { t } = useTranslation();
-	const [catalog, setCatalog] = useState<{
-		connections: Connection[];
-		models: Map<string, PiModel[]>;
-	}>({ connections: [], models: new Map() });
+	const [connections, setConnections] = useState<Connection[]>([]);
 	const [error, setError] = useState<string | null>(null);
 	useEffect(() => {
 		let disposed = false;
-		void Promise.all([listConnectionCatalog(), tauriPiloClient.bootstrap()])
-			.then(async ([connections, snapshot]) => {
-				const caches = await Promise.all(
-					snapshot.projects.map(async (project) => ({
-						connectionId: project.connection.id,
-						catalog: await tauriPiloClient.loadModels(project.id),
-					})),
-				);
-				if (disposed) return;
-				const models = new Map<string, PiModel[]>();
-				for (const cache of caches)
-					models.set(cache.connectionId, [
-						...(models.get(cache.connectionId) ?? []),
-						...(cache.catalog?.models ?? []),
-					]);
-				setCatalog({ connections, models });
+		void listConnectionCatalog()
+			.then((catalog) => {
+				if (!disposed) setConnections(catalog);
 			})
 			.catch((cause: unknown) => {
 				if (!disposed)
@@ -72,12 +56,8 @@ export function ConnectionPromptEnhancementSettings() {
 				</p>
 			) : null}
 			<SettingsSection title={t("settings.promptEnhancementModel")}>
-				{catalog.connections.map((connection) => (
-					<ConnectionSettings
-						key={connection.id}
-						connection={connection}
-						models={catalog.models.get(connection.id) ?? []}
-					/>
+				{connections.map((connection) => (
+					<ConnectionSettings key={connection.id} connection={connection} />
 				))}
 			</SettingsSection>
 		</div>

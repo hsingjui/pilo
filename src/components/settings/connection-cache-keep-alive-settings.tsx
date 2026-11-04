@@ -3,36 +3,21 @@ import { useTranslation } from "react-i18next";
 
 import { listConnectionCatalog } from "@/lib/api/connections";
 import { connectionLabel } from "@/lib/api/projects";
-import type { Connection, PiModel } from "@/lib/api/pi-runtime";
+import type { Connection } from "@/lib/api/pi-runtime";
 import { tauriPiloClient } from "@/lib/api/tauri-pilo-client";
+import { ConnectionModelCatalog } from "./connection-model-catalog";
 import { CacheKeepAliveSettingsFields } from "./cache-keep-alive-settings";
 import { SETTINGS_CONTAINER_CLASS } from "./compact-layout";
 
 export function ConnectionCacheKeepAliveSettings() {
 	const { t } = useTranslation();
-	const [catalog, setCatalog] = useState<
-		{ connection: Connection; models: PiModel[] }[]
-	>([]);
+	const [connections, setConnections] = useState<Connection[]>([]);
 	const [error, setError] = useState<string | null>(null);
 	useEffect(() => {
 		let disposed = false;
-		void Promise.all([listConnectionCatalog(), tauriPiloClient.bootstrap()])
-			.then(async ([connections, snapshot]) => {
-				const caches = await Promise.all(
-					snapshot.projects.map(async (project) => ({
-						connectionId: project.connection.id,
-						catalog: await tauriPiloClient.loadModels(project.id),
-					})),
-				);
-				if (!disposed)
-					setCatalog(
-						connections.map((connection) => ({
-							connection,
-							models: caches
-								.filter((cache) => cache.connectionId === connection.id)
-								.flatMap((cache) => cache.catalog?.models ?? []),
-						})),
-					);
+		void listConnectionCatalog()
+			.then((catalog) => {
+				if (!disposed) setConnections(catalog);
 			})
 			.catch((cause: unknown) => {
 				if (!disposed)
@@ -52,14 +37,22 @@ export function ConnectionCacheKeepAliveSettings() {
 					{error}
 				</p>
 			) : null}
-			{catalog.map(({ connection, models }) => (
-				<CacheKeepAliveSettingsFields
+			{connections.map((connection) => (
+				<ConnectionModelCatalog
 					key={connection.id}
 					client={tauriPiloClient}
-					connectionId={connection.id}
-					connectionName={connectionLabel(connection)}
-					models={models}
-				/>
+					connection={connection}
+				>
+					{(models, refresh) => (
+						<CacheKeepAliveSettingsFields
+							client={tauriPiloClient}
+							connectionId={connection.id}
+							connectionName={connectionLabel(connection)}
+							models={models}
+							modelActions={refresh}
+						/>
+					)}
+				</ConnectionModelCatalog>
 			))}
 		</div>
 	);

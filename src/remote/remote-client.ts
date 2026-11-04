@@ -25,7 +25,7 @@ import type {
 	PiloClientStartChatInput,
 } from "@/lib/api/pilo-client";
 import type { ProjectPiModels } from "@/lib/api/pi-models";
-import type { PiSessionSnapshot } from "@/lib/api/pi-runtime";
+import type { PiModel, PiSessionSnapshot } from "@/lib/api/pi-runtime";
 import type {
 	ProjectModelScope,
 	ProjectScopedModel,
@@ -38,6 +38,16 @@ import type {
 	SessionIndexEntry,
 	SessionSearchMatch,
 } from "@/lib/api/sessions";
+
+export function loadRemoteConnectionModels(
+	token: string,
+	connectionId: string,
+): Promise<PiModel[]> {
+	return remoteFetch<PiModel[]>(
+		token,
+		`/api/v1/connections/models?${new URLSearchParams({ connectionId })}`,
+	);
+}
 
 export const REMOTE_TOKEN_KEY = "pilo.remote.device-token.v1";
 export const REMOTE_SEQUENCE_KEY = "pilo.remote.sequence.v1";

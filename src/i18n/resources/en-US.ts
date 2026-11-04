@@ -295,6 +295,8 @@ const enUS = {
 		addSshConnection: "Add SSH connection",
 		configureSshConnection: "Configure SSH connection",
 		selectModel: "Select a model",
+		modelUnavailable: "Unavailable",
+		automaticNamingFailed: "Automatic session naming failed",
 		noAutomaticNaming: "Do not name automatically",
 		namingModel: "Naming model",
 		noConnections: "No connections.",

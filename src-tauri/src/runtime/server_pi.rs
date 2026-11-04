@@ -81,6 +81,7 @@ const fn state_to_u8(state: PiProcessState) -> u8 {
 pub struct PiLaunchOptions {
     pub session_path: Option<String>,
     pub no_session: bool,
+    pub user_scope: bool,
     pub disable_resources: bool,
     pub disable_builtin_tools: bool,
     pub disable_extension_discovery: bool,
@@ -248,6 +249,42 @@ impl ServerPiSession {
         self.snapshot_reader().snapshot()
     }
 
+    /// Probe user configuration without requiring or indexing a project.
+    pub(crate) async fn spawn_connection<S: RuntimeEventSink>(
+        &mut self,
+        servers: Arc<ServerManager>,
+        sink: S,
+        connection: &Connection,
+    ) -> Result<PiSessionSnapshot, String> {
+        let project = Project {
+            id: String::new(),
+            name: String::new(),
+            path: String::new(),
+            connection: connection.clone(),
+            metadata: crate::domain::ProjectMetadata {
+                cwd: String::new(),
+                git_branch: None,
+                pi_version: String::new(),
+                refreshed_at_ms: 0,
+            },
+            created_at_ms: 0,
+            last_opened_at_ms: 0,
+        };
+        self.spawn(
+            servers,
+            sink,
+            &project,
+            PiLaunchOptions {
+                no_session: true,
+                user_scope: true,
+                disable_builtin_tools: true,
+                disable_context_files: true,
+                ..PiLaunchOptions::default()
+            },
+        )
+        .await
+    }
+
     pub async fn spawn<S: RuntimeEventSink>(
         &mut self,
         servers: Arc<ServerManager>,
@@ -381,6 +418,7 @@ impl ServerPiSession {
                     "project": project.path,
                     "sessionPath": options.session_path,
                     "noSession": options.no_session,
+                    "userScope": options.user_scope,
                     "disableResources": options.disable_resources,
                     "extensions": options.extensions,
                     "builtinExtensions": options.builtin_extensions,

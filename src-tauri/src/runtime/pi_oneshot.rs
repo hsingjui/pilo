@@ -9,7 +9,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use serde_json::json;
+use serde_json::{Value, json};
 use tauri::AppHandle;
 use tokio::sync::mpsc;
 
@@ -21,13 +21,46 @@ use super::{
 };
 
 #[derive(Clone)]
-struct OneshotEventSink {
-    sender: mpsc::UnboundedSender<RuntimeEvent>,
+pub(super) struct OneshotEventSink {
+    pub(super) sender: mpsc::UnboundedSender<RuntimeEvent>,
 }
 
 impl RuntimeEventSink for OneshotEventSink {
     fn send(&self, event: RuntimeEvent) {
         let _ = self.sender.send(event);
+    }
+}
+
+/// Correlated RPC on a private process; the caller supplies the operation deadline.
+pub(super) async fn request(
+    session: &ServerPiSession,
+    receiver: &mut mpsc::UnboundedReceiver<RuntimeEvent>,
+    mut command: Value,
+) -> Result<Value, String> {
+    let id = format!("pilo-private-{}", command["type"].as_str().unwrap_or("rpc"));
+    command["id"] = json!(id);
+    session.send_rpc(command).await?;
+    loop {
+        match receiver.recv().await {
+            Some(RuntimeEvent::RpcMessage { message, .. })
+                if message.get("id").and_then(Value::as_str) == Some(id.as_str()) =>
+            {
+                if message.get("success").and_then(Value::as_bool) != Some(true) {
+                    return Err(message["error"]
+                        .as_str()
+                        .unwrap_or("Pi private RPC failed")
+                        .to_owned());
+                }
+                return Ok(message["data"].clone());
+            }
+            Some(RuntimeEvent::RuntimeError { message, .. }) => return Err(message),
+            Some(RuntimeEvent::ProcessState {
+                state: PiProcessState::Failed | PiProcessState::Stopped,
+                ..
+            })
+            | None => return Err("Pi private process stopped before answering".to_owned()),
+            _ => {}
+        }
     }
 }
 
@@ -46,10 +79,15 @@ pub(crate) async fn generate_text(
     app: &AppHandle,
     runtime: &PiloRuntime,
     project_id: &str,
-    launch: PiLaunchOptions,
+    mut launch: PiLaunchOptions,
     prompt: String,
     timeout: Duration,
 ) -> Result<String, String> {
+    let selected_model = match (launch.provider.take(), launch.model.take()) {
+        (Some(provider), Some(id)) => Some((provider, id)),
+        (None, None) => None,
+        _ => return Err("provider and model id must be set together".to_owned()),
+    };
     let mut session = ServerPiSession::default();
     // `session` stays outside the deadline so that an elapsed budget drops the
     // session and lets `Drop` schedule the cleanup instead of leaking a stream.
@@ -67,6 +105,39 @@ pub(crate) async fn generate_text(
             .await?;
 
         let generated = async {
+            // CLI model matching may fall back. Resolve exact identity and auth in
+            // this project's process before sending any private user text.
+            if let Some((provider, id)) = &selected_model {
+                let catalog = request(
+                    &session,
+                    &mut receiver,
+                    json!({ "type": "get_available_models" }),
+                )
+                .await?;
+                let available = catalog["models"].as_array().is_some_and(|models| {
+                    models.iter().any(|model| {
+                        model["provider"].as_str() == Some(provider.as_str())
+                            && model["id"].as_str() == Some(id.as_str())
+                    })
+                });
+                if !available {
+                    return Err(format!("Model {provider}/{id} is unavailable in this project; check its provider configuration and credentials"));
+                }
+                let model = request(&session, &mut receiver, json!({
+                    "type": "set_model", "provider": provider, "modelId": id,
+                })).await?;
+                if model["provider"].as_str() != Some(provider.as_str())
+                    || model["id"].as_str() != Some(id.as_str())
+                {
+                    return Err(format!("Pi did not select the requested model {provider}/{id}"));
+                }
+                request(
+                    &session,
+                    &mut receiver,
+                    json!({ "type": "set_thinking_level", "level": "off" }),
+                )
+                .await?;
+            }
             session
                 .send_rpc(json!({ "type": "prompt", "message": prompt }))
                 .await?;

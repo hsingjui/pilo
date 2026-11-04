@@ -4,6 +4,7 @@ mod chat_service;
 mod chat_sessions;
 pub mod commands;
 mod connection_diagnostics;
+mod connection_models;
 mod control;
 mod credentials;
 pub(crate) mod debug_trace;

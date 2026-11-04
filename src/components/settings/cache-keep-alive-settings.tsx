@@ -1,4 +1,10 @@
-import { type FocusEvent, type KeyboardEvent, useRef, useState } from "react";
+import {
+	type ReactNode,
+	type FocusEvent,
+	type KeyboardEvent,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
 
@@ -195,6 +201,7 @@ export function CacheKeepAliveSettingsFields({
 	client,
 	connectionId,
 	models,
+	modelActions,
 	initialModel,
 	sessionKey,
 	connectionName,
@@ -202,6 +209,7 @@ export function CacheKeepAliveSettingsFields({
 	client: PiloClient;
 	connectionId: string;
 	models: readonly PiModel[];
+	modelActions?: ReactNode;
 	initialModel?: PiModel | null;
 	sessionKey?: string;
 	connectionName?: string;
@@ -235,7 +243,14 @@ export function CacheKeepAliveSettingsFields({
 	const configured = new Set(
 		enabledSettings.map((row) => JSON.stringify([row.provider, row.modelId])),
 	);
-	const available = [...unique].filter(([key]) => !configured.has(key));
+	const available = [...unique].filter(
+		([key, model]) =>
+			!configured.has(key) &&
+			models.some(
+				(candidate) =>
+					candidate.provider === model.provider && candidate.id === model.id,
+			),
+	);
 	const unsupported =
 		config.unavailable ||
 		config.status?.ready === false ||
@@ -243,6 +258,7 @@ export function CacheKeepAliveSettingsFields({
 	return (
 		<SettingsSection
 			title={connectionName ?? t("settings.cacheKeepAliveModels")}
+			headerRight={modelActions}
 			actions={
 				<Popover modal open={pickerOpen} onOpenChange={setPickerOpen}>
 					<PopoverTrigger asChild>

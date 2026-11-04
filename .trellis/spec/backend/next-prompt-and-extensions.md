@@ -12,6 +12,10 @@ Owners: `runtime/next_prompt.rs` (Host policy), `storage/next_prompt.rs` (SQLite
 `crates/pilo-server/extensions/next-prompt.js` (Pi model call). Desktop and WebUI
 share `useNextPrompt`, `useNextPromptSettings`, settings fields and `ChatComposer`.
 
+Connection settings list models using the independent Pi user catalog and shared
+refresh in [Connection Model Catalog](./connection-models.md); project model caches
+are not a source for Connection-owned choices.
+
 ## 2. Signatures
 
 - Tauri `next_prompt_settings_get(connectionId) -> NextPromptSettings`;

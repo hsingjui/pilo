@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { usePromptEnhancementSettings } from "@/lib/use-prompt-enhancement-settings";
@@ -21,16 +21,18 @@ type Config = ReturnType<typeof usePromptEnhancementSettings>;
  * Switch and model for one Connection.
  *
  * Mirrors the prompt-suggestion fields: disabled by default, "follow the chat
- * model" unless a Connection picks its own. An unknown saved model stays
- * selectable without a model probe.
+ * model" unless a Connection picks its own. A missing saved model is shown
+ * as unavailable in the trigger, never reinserted into the options.
  */
 export function PromptEnhancementSettingsFields({
 	config,
 	models,
+	modelActions,
 	connectionName,
 }: {
 	config: Config;
 	models: readonly PiModel[];
+	modelActions?: ReactNode;
 	connectionName: string;
 }) {
 	const { t } = useTranslation();
@@ -39,12 +41,12 @@ export function PromptEnhancementSettingsFields({
 	const unique = new Map(
 		models.map((model) => [JSON.stringify([model.provider, model.id]), model]),
 	);
-	if (settings?.model) {
-		const selected = settings.model;
-		const key = JSON.stringify([selected.provider, selected.id]);
-		if (!unique.has(key))
-			unique.set(key, { ...selected, name: selected.id, reasoning: false });
-	}
+	const modelValue = settings?.model
+		? JSON.stringify([settings.model.provider, settings.model.id])
+		: "follow";
+	const selectedModelMissing = Boolean(
+		settings?.model && !unique.has(modelValue),
+	);
 	const enabledSwitch = (
 		<Switch
 			id={id}
@@ -57,14 +59,11 @@ export function PromptEnhancementSettingsFields({
 	);
 	const modelSelect = (
 		<Select
-			value={
-				settings?.model
-					? JSON.stringify([settings.model.provider, settings.model.id])
-					: "follow"
-			}
+			value={modelValue}
 			disabled={!settings || config.saving}
 			onValueChange={(value) => {
 				const model = unique.get(value);
+				if (value !== "follow" && !model) return;
 				void config.save(
 					settings?.enabled ?? false,
 					model ? { provider: model.provider, id: model.id } : null,
@@ -80,7 +79,9 @@ export function PromptEnhancementSettingsFields({
 					"sm:w-[320px] max-w-full",
 				)}
 			>
-				<SelectValue />
+				<SelectValue>
+					{selectedModelMissing ? t("settings.modelUnavailable") : undefined}
+				</SelectValue>
 			</SelectTrigger>
 			<SelectContent className="max-w-[calc(100vw-2rem)]">
 				<SelectItem value="follow">
@@ -98,6 +99,7 @@ export function PromptEnhancementSettingsFields({
 		<div className="min-w-0 divide-y divide-border/60">
 			<SettingsRow label={<label htmlFor={id}>{connectionName}</label>}>
 				{modelSelect}
+				{modelActions}
 				{enabledSwitch}
 			</SettingsRow>
 			{config.error ? (

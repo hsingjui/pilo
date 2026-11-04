@@ -3,23 +3,14 @@ import { useTranslation } from "react-i18next";
 
 import { listConnectionCatalog } from "@/lib/api/connections";
 import { connectionLabel } from "@/lib/api/projects";
-import {
-	listenRuntimeEvents,
-	type Connection,
-	type PiModel,
-} from "@/lib/api/pi-runtime";
+import { listenRuntimeEvents, type Connection } from "@/lib/api/pi-runtime";
 import { tauriPiloClient } from "@/lib/api/tauri-pilo-client";
 import { useNextPromptSettings } from "@/lib/use-next-prompt-settings";
+import { ConnectionModelCatalog } from "./connection-model-catalog";
 import { NextPromptSettingsFields } from "./next-prompt-settings";
 import { SettingsSection, SETTINGS_CONTAINER_CLASS } from "./compact-layout";
 
-function ConnectionSettings({
-	connection,
-	models,
-}: {
-	connection: Connection;
-	models: readonly PiModel[];
-}) {
+function ConnectionSettings({ connection }: { connection: Connection }) {
 	const config = useNextPromptSettings(tauriPiloClient, connection.id);
 	useEffect(() => {
 		let disposed = false;
@@ -36,39 +27,28 @@ function ConnectionSettings({
 		};
 	}, [config.handleEvent]);
 	return (
-		<NextPromptSettingsFields
-			config={config}
-			models={models}
-			connectionName={connectionLabel(connection)}
-		/>
+		<ConnectionModelCatalog client={tauriPiloClient} connection={connection}>
+			{(models, refresh) => (
+				<NextPromptSettingsFields
+					config={config}
+					models={models}
+					modelActions={refresh}
+					connectionName={connectionLabel(connection)}
+				/>
+			)}
+		</ConnectionModelCatalog>
 	);
 }
 
 export function ConnectionNextPromptSettings() {
 	const { t } = useTranslation();
-	const [catalog, setCatalog] = useState<{
-		connections: Connection[];
-		models: Map<string, PiModel[]>;
-	}>({ connections: [], models: new Map() });
+	const [connections, setConnections] = useState<Connection[]>([]);
 	const [error, setError] = useState<string | null>(null);
 	useEffect(() => {
 		let disposed = false;
-		void Promise.all([listConnectionCatalog(), tauriPiloClient.bootstrap()])
-			.then(async ([connections, snapshot]) => {
-				const caches = await Promise.all(
-					snapshot.projects.map(async (project) => ({
-						connectionId: project.connection.id,
-						catalog: await tauriPiloClient.loadModels(project.id),
-					})),
-				);
-				if (disposed) return;
-				const models = new Map<string, PiModel[]>();
-				for (const cache of caches)
-					models.set(cache.connectionId, [
-						...(models.get(cache.connectionId) ?? []),
-						...(cache.catalog?.models ?? []),
-					]);
-				setCatalog({ connections, models });
+		void listConnectionCatalog()
+			.then((catalog) => {
+				if (!disposed) setConnections(catalog);
 			})
 			.catch((cause: unknown) => {
 				if (!disposed)
@@ -89,12 +69,8 @@ export function ConnectionNextPromptSettings() {
 				</p>
 			) : null}
 			<SettingsSection title={t("settings.nextPromptModel")}>
-				{catalog.connections.map((connection) => (
-					<ConnectionSettings
-						key={connection.id}
-						connection={connection}
-						models={catalog.models.get(connection.id) ?? []}
-					/>
+				{connections.map((connection) => (
+					<ConnectionSettings key={connection.id} connection={connection} />
 				))}
 			</SettingsSection>
 		</div>

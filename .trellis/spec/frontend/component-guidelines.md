@@ -662,6 +662,21 @@ actions go there and appear only for persisted sessions (`session && !session.te
   must keep send controls visible instead of just clamping the body at its minimum.
   Verify eight images plus file/session references and long text, panel shrink /
   grow, independent removal, and mixed submission; do not change upload ownership.
+- Connection-owned model settings (naming, next prompt, enhancement and cache
+  keep-alive) share `ConnectionModelCatalog` / `useConnectionModels`. Read Pi user
+  configuration through `PiloClient.loadConnectionModels`, not project-cache
+  unions; refresh is available without any project and replaces the shared
+  snapshot. Preserve missing saved identities in settings, but omit them from
+  dropdown options and show only the short localized "Unavailable" in the trigger.
+  Do not append provider/ID plus a long explanatory suffix to removed models.
+  Refresh errors stay visible, controls wrap on narrow screens, and the refresh
+  icon has an accessible name and 44px coarse-pointer target. See
+  [Connection Model Catalog](../backend/connection-models.md).
+- Desktop and WebUI composers surface next-prompt `unavailable` in the existing
+  status-error area only when idle and writable, below higher-priority session,
+  retry and history errors. Do not replace the current model or fabricate a
+  suggestion. Automatic naming failures use a localized toast with Host detail;
+  enhancement failures keep the existing draft.
 - The desktop loading fallback uses the real `ChatComposer`, so it must also
   load the project's Connection-owned prompt enhancement settings and pass
   `onEnhancePrompt` when enabled. Do not silently drop the control while the

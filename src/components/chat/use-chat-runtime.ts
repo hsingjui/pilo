@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
+import { userErrorMessage } from "@/lib/app-error";
 
 import type { ChatSession } from "@/components/chat/chat-page-utils";
 import type {
@@ -239,7 +241,9 @@ export function useChatRuntime({
 					return title;
 				})
 				.catch((error) => {
-					console.warn("Failed to generate session title", error);
+					toast.error(t("settings.automaticNamingFailed"), {
+						description: userErrorMessage(error),
+					});
 					return undefined;
 				});
 			return autoTitlePromiseRef.current;
@@ -250,6 +254,7 @@ export function useChatRuntime({
 			session.projectRecord.id,
 			session.sessionPath,
 			session.temporary,
+			t,
 		],
 	);
 

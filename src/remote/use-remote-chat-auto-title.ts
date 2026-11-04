@@ -5,6 +5,10 @@ import {
 	type SetStateAction,
 } from "react";
 
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
+import { userErrorMessage } from "@/lib/app-error";
+
 import type { ChatSessionRuntimeState } from "@/components/chat/chat-page-utils";
 import type { PiAgentState } from "@/lib/api/pi-runtime";
 import type { SessionIndexEntry } from "@/lib/api/sessions";
@@ -43,6 +47,7 @@ export function useRemoteChatAutoTitle({
 	setAgentState,
 	setChatState,
 }: UseRemoteChatAutoTitleOptions) {
+	const { t } = useTranslation();
 	return useCallback(
 		(message: string) => {
 			const prompt = message.trim();
@@ -83,7 +88,9 @@ export function useRemoteChatAutoTitle({
 				})
 				.catch((error) => {
 					if (!handleExpiredAuth(error)) {
-						console.warn("Failed to generate remote session title", error);
+						toast.error(t("settings.automaticNamingFailed"), {
+							description: userErrorMessage(error),
+						});
 					}
 				});
 		},
@@ -100,6 +107,7 @@ export function useRemoteChatAutoTitle({
 			selectedSession,
 			setAgentState,
 			setChatState,
+			t,
 		],
 	);
 }

@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { useNextPromptSettings } from "@/lib/use-next-prompt-settings";
@@ -20,11 +20,13 @@ type Config = ReturnType<typeof useNextPromptSettings>;
 export function NextPromptSettingsFields({
 	config,
 	models,
+	modelActions,
 	unavailable = false,
 	connectionName,
 }: {
 	config: Config;
 	models: readonly PiModel[];
+	modelActions?: ReactNode;
 	unavailable?: boolean;
 	connectionName?: string;
 }) {
@@ -34,12 +36,12 @@ export function NextPromptSettingsFields({
 	const unique = new Map(
 		models.map((model) => [JSON.stringify([model.provider, model.id]), model]),
 	);
-	if (settings?.model) {
-		const selected = settings.model;
-		const key = JSON.stringify([selected.provider, selected.id]);
-		if (!unique.has(key))
-			unique.set(key, { ...selected, name: selected.id, reasoning: false });
-	}
+	const modelValue = settings?.model
+		? JSON.stringify([settings.model.provider, settings.model.id])
+		: "follow";
+	const selectedModelMissing = Boolean(
+		settings?.model && !unique.has(modelValue),
+	);
 	const isSettingsPage = connectionName !== undefined;
 	const enabledSwitch = (
 		<Switch
@@ -53,14 +55,11 @@ export function NextPromptSettingsFields({
 	);
 	const modelSelect = (
 		<Select
-			value={
-				settings?.model
-					? JSON.stringify([settings.model.provider, settings.model.id])
-					: "follow"
-			}
+			value={modelValue}
 			disabled={!settings || config.saving}
 			onValueChange={(value) => {
 				const model = unique.get(value);
+				if (value !== "follow" && !model) return;
 				void config.save(
 					settings?.enabled ?? false,
 					model ? { provider: model.provider, id: model.id } : null,
@@ -76,7 +75,9 @@ export function NextPromptSettingsFields({
 					isSettingsPage && "sm:w-[320px] max-w-full",
 				)}
 			>
-				<SelectValue />
+				<SelectValue>
+					{selectedModelMissing ? t("settings.modelUnavailable") : undefined}
+				</SelectValue>
 			</SelectTrigger>
 			<SelectContent className="max-w-[calc(100vw-2rem)]">
 				<SelectItem value="follow">
@@ -101,6 +102,7 @@ export function NextPromptSettingsFields({
 			{isSettingsPage ? (
 				<SettingsRow label={<label htmlFor={id}>{connectionName}</label>}>
 					{modelSelect}
+					{modelActions}
 					{enabledSwitch}
 				</SettingsRow>
 			) : (

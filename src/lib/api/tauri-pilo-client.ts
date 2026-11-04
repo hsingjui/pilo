@@ -21,6 +21,7 @@ import {
 } from "@/lib/api/chat-session-client";
 import {
 	listenRuntimeEvents,
+	type PiModel,
 	type PiSessionSnapshot,
 } from "@/lib/api/pi-runtime";
 import {
@@ -65,6 +66,10 @@ export class TauriPiloClient implements PiloClient {
 	}
 
 	private sequence = 0;
+
+	loadConnectionModels(connectionId: string): Promise<PiModel[]> {
+		return invoke<PiModel[]>("connection_models_get", { connectionId });
+	}
 
 	async bootstrap(): Promise<PiloClientBootstrap> {
 		const [projects, chatSessions] = await Promise.all([

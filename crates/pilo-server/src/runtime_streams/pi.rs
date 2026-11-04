@@ -178,6 +178,8 @@ pub(crate) struct PiStartParams {
     #[serde(default)]
     no_session: bool,
     #[serde(default)]
+    user_scope: bool,
+    #[serde(default)]
     disable_resources: bool,
     /// Inline extension sources materialized to temp files and loaded with
     /// explicit `--extension` flags for this process only.
@@ -478,6 +480,21 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
     if control.is_some() {
         args.extend(["--append-system-prompt".to_owned(), "Pilo application control is available through bash: invoke the executable in PILO_CTL with the ctl subcommand (POSIX: \"$PILO_CTL\" ctl; PowerShell: & $env:PILO_CTL ctl). Start with ctl --help and ctl settings list. This controls the running Pilo Host; use explicit --connection/--project for scoped writes. Never print PILO_CONTROL_TOKEN or put credentials in command arguments; use --stdin JSON. Failed writes must not be automatically retried.".to_owned()]);
     }
+    // An empty, Server-owned cwd excludes every workspace's .pi configuration
+    // while preserving Pi's user settings, credentials and provider extensions.
+    let cwd = if params.user_scope {
+        if !params.no_session || params.control_stream_id.is_some() {
+            return Err("user model probes require an isolated no-session process".to_owned());
+        }
+        let cwd = crate::extensions::runtime_directory()
+            .map_err(|error| format!("model catalog directory unavailable: {error}"))?
+            .join("model-catalog");
+        std::fs::create_dir_all(&cwd)
+            .map_err(|error| format!("failed to create model catalog directory: {error}"))?;
+        cwd
+    } else {
+        std::path::PathBuf::from(&params.project)
+    };
     let mut command = process_command(&pi_executable, &args, &path);
     for key in [
         "PILO_CTL",
@@ -501,7 +518,7 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
         );
     }
     command
-        .current_dir(&params.project)
+        .current_dir(&cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

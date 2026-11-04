@@ -44,6 +44,8 @@ settings fields and `ChatComposer`.
 - The settings key is the original project's Connection, not the execution
   Connection of an SSH workspace.
 - Disabling in the UI preserves the selected model.
+- Connection model choices and refresh use the user catalog described in
+  [Connection Model Catalog](./connection-models.md), never a union of project caches.
 
 ### Enhancement call
 
@@ -52,6 +54,9 @@ settings fields and `ChatComposer`.
 - Model resolution: a configured model wins; otherwise the caller's chat
   selection; otherwise Pi's default. Both identities are trimmed and must be
   nonempty, otherwise the call is rejected before any process starts.
+- Explicit targets are checked against the isolated execution process's available
+  models and selected with exact `set_model` RPC identity verification before any
+  draft is sent. Unavailable targets fail clearly; CLI fallback is forbidden.
 - One budget (`40s`) covers project resolution, process start, the prompt RPC,
   generation and the stop call. It must stay below the Remote WebUI Router's
   `45s` `TimeoutLayer`, otherwise the outer layer answers a generic `408` and the
@@ -81,8 +86,10 @@ settings fields and `ChatComposer`.
 - Failures keep the draft and surface the Host detail; stale requests neither
   report errors nor move focus to a different draft.
 - The settings entry mirrors prompt suggestions: one row per Connection, a
-  model select defaulting to "Follow chat model", unknown saved models preserved
-  without a model probe, coarse-pointer touch targets.
+  model select defaulting to "Follow chat model", a shared Connection catalog
+  refresh, and coarse-pointer touch targets. Preserve unknown saved identities
+  but show only a short unavailable label in the trigger, not a stale dropdown
+  option. Catalog reads never require a project.
 - The Remote WebUI has no settings dialog. It reads the same Host row on mount,
   on focus/visibility and through its socket, so its composer behaves like the
   desktop one. Forward each socket event to the settings hook's `handleEvent`

@@ -540,6 +540,22 @@ pub(super) struct NextPromptSettingsQuery {
     connection_id: String,
 }
 
+pub(super) async fn connection_models(
+    State(state): State<RemoteHttpState>,
+    Query(query): Query<NextPromptSettingsQuery>,
+) -> Response {
+    match crate::runtime::connection_models::load(
+        &state.app,
+        &state.app.state::<PiloRuntime>(),
+        &query.connection_id,
+    )
+    .await
+    {
+        Ok(models) => Json(models).into_response(),
+        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    }
+}
+
 pub(super) async fn next_prompt_settings_get(
     State(state): State<RemoteHttpState>,
     Query(query): Query<NextPromptSettingsQuery>,

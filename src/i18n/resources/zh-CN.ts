@@ -287,6 +287,8 @@ const zhCN = {
 		addSshConnection: "添加 SSH 连接",
 		configureSshConnection: "配置 SSH 连接",
 		selectModel: "选择模型",
+		modelUnavailable: "不可用",
+		automaticNamingFailed: "自动命名失败",
 		noAutomaticNaming: "关闭命名",
 		namingModel: "命名模型",
 		noConnections: "暂无连接。",

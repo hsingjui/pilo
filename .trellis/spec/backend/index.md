@@ -16,6 +16,7 @@ This directory contains guidelines for backend development in this project (Taur
 | ----------------------------------------------- | ------------------------------------------------- | ------ |
 | [Directory Structure](./directory-structure.md) | Module organization and file layout               | Filled |
 | [Database Guidelines](./database-guidelines.md) | SQLite schema, queries, migrations                | Filled |
+| [Connection Model Catalog](./connection-models.md) | User-level catalog, shared settings refresh, exact execution checks | Filled |
 | [Project Model Scope](./project-model-scope.md) | Project preferences, transport/events, effective Scope | Filled |
 | [Next Prompt & Built-in Extensions](./next-prompt-and-extensions.md) | Connection prediction, shared input assistance, fixed Server deployment | Filled |
 | [Prompt Cache Keep-alive](./cache-keep-alive.md) | Model policy, bounded background requests, shared quiet notices | Filled |
