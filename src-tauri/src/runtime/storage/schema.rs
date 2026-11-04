@@ -129,7 +129,7 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            refreshed_at_ms INTEGER NOT NULL
          );
          CREATE TABLE IF NOT EXISTS project_model_scopes (
-           project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+           project_id TEXT PRIMARY KEY,
            models_json TEXT,
            updated_at_ms INTEGER NOT NULL
          );
@@ -200,6 +200,7 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
     ensure_connection_columns(db)?;
     ensure_project_columns(db)?;
     ensure_project_model_cache_columns(db)?;
+    ensure_persistent_project_model_scopes(db)?;
     ensure_remote_device_columns(db)?;
     ensure_remote_host_config_columns(db)?;
     if !column_exists(db, "desktop_settings", "show_shortcut")? {
@@ -270,6 +271,38 @@ fn ensure_session_project_keys(db: &SqliteConnection) -> Result<(), String> {
              CREATE UNIQUE INDEX idx_sessions_project_pi_id ON sessions(project_id,pi_session_id);",
             )
             .map_err(|error| format!("failed to migrate project-scoped sessions: {error}"))?;
+    }
+    transaction.commit().map_err(|error| error.to_string())
+}
+
+// Removing a project can be temporary; its stable ID restores preferences on re-add.
+fn ensure_persistent_project_model_scopes(db: &SqliteConnection) -> Result<(), String> {
+    let transaction = Transaction::new_unchecked(db, TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    let has_foreign_key = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_foreign_key_list('project_model_scopes'))",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| error.to_string())?
+        != 0;
+    if has_foreign_key {
+        transaction
+            .execute_batch(
+                "CREATE TABLE project_model_scopes_persistent (
+                   project_id TEXT PRIMARY KEY,
+                   models_json TEXT,
+                   updated_at_ms INTEGER NOT NULL
+                 );
+                 INSERT INTO project_model_scopes_persistent(project_id,models_json,updated_at_ms)
+                   SELECT project_id,models_json,updated_at_ms FROM project_model_scopes;
+                 DROP TABLE project_model_scopes;
+                 ALTER TABLE project_model_scopes_persistent RENAME TO project_model_scopes;",
+            )
+            .map_err(|error| {
+                format!("failed to migrate persistent project model scopes: {error}")
+            })?;
     }
     transaction.commit().map_err(|error| error.to_string())
 }

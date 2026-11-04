@@ -13,8 +13,9 @@ or session JSONL. Both transports use the Host's database.
 - Authenticated HTTP: `GET /api/v1/models/scope?projectId=...` and
   `POST /api/v1/models/scope` with `{ projectId, models }`.
 - `PiloClient.loadModelScope(projectId)` / `saveModelScope(projectId, models)`.
-- Storage: `project_model_scopes(project_id TEXT PRIMARY KEY REFERENCES
-  projects(id) ON DELETE CASCADE, models_json TEXT NULL, updated_at_ms INTEGER NOT NULL)`.
+- Storage: `project_model_scopes(project_id TEXT PRIMARY KEY,
+  models_json TEXT NULL, updated_at_ms INTEGER NOT NULL)`. No project foreign key:
+  these are persistent preferences, not disposable project caches.
 - Response: `{ projectId, models: ProjectScopedModel[] | null, updatedAtMs }`.
   Each member is `{ provider, modelId, thinkingLevel, isDefault }`; thinkingLevel
   is null or `off | minimal | low | medium | high | xhigh | max`. `isDefault` is a
@@ -27,6 +28,17 @@ or session JSONL. Both transports use the Host's database.
 
 - No row / `models: null` inherits Pi. `models: []` is a custom empty Scope.
   An array completely replaces the inherited list; never union the two.
+- Removing a project retains its complete Scope, including member order, thinking
+  overrides, default markers and revision. Re-adding the same normalized path on
+  the same connection restores it through `Project::stable_id(connection_id, path)`.
+  Scope reads/writes still require an added project; retained preferences do not
+  make a removed project accessible. Model/command caches and session indexes
+  keep their existing deletion behavior. Desktop and WebUI share this storage.
+- `ensure_persistent_project_model_scopes` upgrades the legacy cascading table in
+  an immediate transaction: copy all rows unchanged into a table without the
+  project foreign key, drop the old table, then rename the replacement. Repeated
+  initialization is inert; failures roll back and propagate without losing rows.
+  Preferences deleted before this migration cannot be recovered.
 - New-chat startup precedence on Desktop and WebUI is explicit user selection,
   then the member marked `isDefault: true` in a custom project Scope, then Pi's
   own default. `getProjectScopeDefaultModel` in `src/lib/pi-model-selection.ts`
@@ -144,7 +156,9 @@ or session JSONL. Both transports use the Host's database.
 | Scope read fails | Display error; do not reinterpret as inheritance |
 | Older event/read/save response | Does not replace newer formal preferences |
 | Save fails | Formal preferences unchanged, draft remains editable |
-| Project deleted | Foreign key cascade removes preferences |
+| Project removed | Preferences retained; reads/writes reject the missing project |
+| Same connection/path re-added | Complete saved Scope and revision restored |
+| Legacy cascading Scope table | Atomic, idempotent migration preserves all rows |
 
 ## 5. Good / Base / Bad Cases
 
@@ -154,6 +168,8 @@ or session JSONL. Both transports use the Host's database.
   Apply; Web and desktop then use the same saved complete list.
 - Good: custom unavailable members remain in the editor and can be removed;
   searching or selecting visible results never silently drops them.
+- Good: temporarily removing and re-adding a project restores its favorites and
+  marked default; a different connection or path does not inherit that Scope.
 - Bad: custom empty Scope must not cycle all models. Restore inheritance is a
   separate explicit null save, not the Clear selection action.
 - Bad: a delayed read, project switch or another client save must not overwrite
@@ -164,7 +180,11 @@ or session JSONL. Both transports use the Host's database.
 Add/update/run tests only with explicit user authorization. Assertion points:
 
 - Storage: null/empty/nonempty round trips; duplicate/blank/invalid levels;
-  unavailable retention; project cascade; increasing same-millisecond revisions.
+  unavailable retention; increasing same-millisecond revisions. Removal/re-add
+  retains full Scope JSON and revision (including default/thinking/order), rejects
+  reads/writes while removed and isolates different connections/paths; disposable
+  model caches still cascade. Upgrade a legacy cascading table with multiple
+  rows, repeat initialization, and check row preservation and foreign-key removal.
 - Selection: identity collisions across providers; inherited order/thinking;
   custom replacement/empty; unavailable intersection before fallback; singleton;
   marked Scope default at any position with thinking override/profile fallback;
@@ -198,6 +218,10 @@ Add/update/run tests only with explicit user authorization. Assertion points:
   switching and reconnect; no Pi process/config mutation while editing.
 
 ## 7. Wrong vs Correct
+
+- Wrong: cascade-delete project Scope preferences along with disposable caches.
+- Correct: keep Scope keyed by stable project ID independently of the project row;
+  validate project existence at the existing read/write boundaries.
 
 ```ts
 // Wrong: an explicit empty override falls back to the full catalog.
