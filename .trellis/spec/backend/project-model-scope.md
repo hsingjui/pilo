@@ -246,6 +246,10 @@ not mean its Pi process is still running when reopened.
   Remove the probe-only `pilo_model_catalog` command before caching.
 - No catalog TTL, hourly polling, per-draft forced refresh, separate command
   probe, or per-session command reload. Configuration changes need manual refresh.
+- Desktop startup background preloading uses `useAppCatalog.homeProjects`, so only
+  projects under sidebar-visible Connections (`shownInHome: true`) are eligible.
+  Hidden Connections must not start Pi just to warm model caches. Explicit refresh
+  and catalog loading for an actively used project retain their on-demand behavior.
 - Desktop landing/opened-session composers and WebUI derive suggestions and
   extension-name routing from the same project catalog. Passive completion must
   not start a history session. Executing a known extension still ensures Pi.

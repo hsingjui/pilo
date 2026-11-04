@@ -34,8 +34,12 @@ Owners: `runtime/connection_models.rs`, `ServerPiSession::spawn_connection`,
   schedules cleanup when the deadline expires.
 - `useConnectionModels` shares the snapshot and in-flight request per PiloClient
   and Connection execution configuration. All four settings pages use the same
-  component for loading, refresh and errors. Explicit refresh replaces that
-  Connection catalog rather than merging results; it never touches project caches.
+  component for loading, refresh and errors. Automatically load only Connections
+  with `shownInHome: true`, matching the sidebar; hidden Connections keep their
+  settings rows and explicit refresh without starting Pi on mount. Changing a
+  Connection to visible permits the normal deduplicated automatic load. Explicit
+  refresh replaces that Connection catalog rather than merging results; it never
+  touches project caches.
 - Preserve an old saved identity absent from the catalog without reinserting it
   into the dropdown. Show only the short localized "Unavailable" in the trigger;
   dropdown options contain current models only. Never silently clear the setting,
@@ -56,7 +60,8 @@ Owners: `runtime/connection_models.rs`, `ServerPiSession::spawn_connection`,
 
 | Condition | Behavior |
 | --- | --- |
-| Connection with no projects | Query its user catalog; refresh remains enabled |
+| Visible Connection with no projects | Query its user catalog; refresh remains enabled |
+| Hidden Connection | No automatic Pi probe; explicit refresh remains enabled |
 | Project A declares a private model | Do not leak it into the Connection settings |
 | Unknown Connection | Command error / HTTP 400; no Pi process |
 | Fresh catalog excludes a saved model | Retain identity; short unavailable trigger, no stale dropdown item |

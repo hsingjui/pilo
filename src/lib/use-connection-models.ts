@@ -68,6 +68,7 @@ export function useConnectionModels(
 		connection.piExecutable,
 	]);
 	const connectionId = connection.id;
+	const shownInHome = connection.shownInHome;
 	const catalog = useMemo(() => {
 		let entries = catalogs.get(client);
 		if (!entries) {
@@ -83,7 +84,7 @@ export function useConnectionModels(
 	}, [client, key, connectionId]);
 	const snapshot = useSyncExternalStore(catalog.subscribe, catalog.getSnapshot);
 	useEffect(() => {
-		void catalog.load();
-	}, [catalog]);
+		if (shownInHome) void catalog.load();
+	}, [catalog, shownInHome]);
 	return { ...snapshot, refresh: () => catalog.load(true) };
 }

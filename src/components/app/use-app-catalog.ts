@@ -78,28 +78,6 @@ export function useAppCatalog(
 		};
 	}, []);
 
-	useEffect(() => {
-		if (projects.length === 0) return;
-		const timer = window.setTimeout(() => {
-			void hydrateProjectPiModels()
-				.then(() => {
-					const incompleteProjectIds = projects
-						.filter((project) => {
-							const cached = getCachedProjectPiModels(project.id);
-							return !cached || isProjectPiModelsIncomplete(cached);
-						})
-						.map((project) => project.id);
-					if (incompleteProjectIds.length > 0) {
-						void refreshAllProjectPiModels(incompleteProjectIds);
-					}
-				})
-				.catch((error) =>
-					console.warn("Failed to schedule Pi model refresh", error),
-				);
-		}, 15_000);
-		return () => window.clearTimeout(timer);
-	}, [projects]);
-
 	const envs = useMemo(() => {
 		const byId = new Map<string, { id: string; name: string }>();
 		for (const connection of connectionCatalog) {
@@ -119,6 +97,28 @@ export function useAppCatalog(
 		const visible = new Set(envs.map((env) => env.id));
 		return projects.filter((project) => visible.has(project.connection.id));
 	}, [envs, projects]);
+
+	useEffect(() => {
+		if (homeProjects.length === 0) return;
+		const timer = window.setTimeout(() => {
+			void hydrateProjectPiModels()
+				.then(() => {
+					const incompleteProjectIds = homeProjects
+						.filter((project) => {
+							const cached = getCachedProjectPiModels(project.id);
+							return !cached || isProjectPiModelsIncomplete(cached);
+						})
+						.map((project) => project.id);
+					if (incompleteProjectIds.length > 0) {
+						void refreshAllProjectPiModels(incompleteProjectIds);
+					}
+				})
+				.catch((error) =>
+					console.warn("Failed to schedule Pi model refresh", error),
+				);
+		}, 15_000);
+		return () => window.clearTimeout(timer);
+	}, [homeProjects]);
 
 	const sidebarProjects = useMemo(
 		() =>
