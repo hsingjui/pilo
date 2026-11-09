@@ -79,7 +79,7 @@ jobs:
             args: ""
             arch: x64
             artifact: Pilo-windows-x64-installed
-          - platform: macos-14
+          - platform: macos-15
             target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
             arch: arm64
