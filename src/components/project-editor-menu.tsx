@@ -104,14 +104,14 @@ export function ProjectEditorMenu({
 	return (
 		<fieldset
 			aria-label={t("chat.quickOpen")}
-			className="group/editor inline-flex shrink-0 items-center rounded-md transition-colors hover:bg-hover has-[[data-state=open]]:bg-hover"
+			className="group/editor inline-flex shrink-0 items-center rounded-md transition-colors hover:bg-hover has-[[data-state=open]]:bg-hover has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring/60"
 		>
 			<Tooltip>
 				<TooltipTrigger asChild>
 					<Button
 						variant="ghost"
 						size="icon"
-						className="size-7 [@media(pointer:coarse)]:size-11"
+						className="size-7 focus-visible:bg-hover focus-visible:ring-0 [@media(pointer:coarse)]:size-11"
 						aria-label={openLabel}
 						onClick={() => handleOpen(selectedEditor)}
 					>
@@ -127,7 +127,7 @@ export function ProjectEditorMenu({
 					<Button
 						variant="ghost"
 						size="icon"
-						className="h-7 w-4 text-muted-foreground/60 group-hover/editor:text-muted-foreground data-[state=open]:text-foreground [@media(pointer:coarse)]:size-11"
+						className="h-7 w-4 text-muted-foreground/60 group-hover/editor:text-muted-foreground focus-visible:bg-hover focus-visible:text-foreground focus-visible:ring-0 data-[state=open]:text-foreground [@media(pointer:coarse)]:size-11"
 						aria-label={t("chat.chooseProjectApp")}
 					>
 						<ChevronDown className="size-2.5" />

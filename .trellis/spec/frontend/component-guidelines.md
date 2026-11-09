@@ -42,6 +42,17 @@ const buttonVariants = cva("inline-flex ...", {
 Feature code composes primitives with `variant`/`size` props instead of
 re-styling them.
 
+- Shared `Button`, `Input`, `Textarea`, `SelectTrigger` and dialog close controls
+  use `focus-visible:ring-1 focus-visible:ring-ring/60`: a thin, subdued theme
+  ring while preserving keyboard focus visibility on desktop and WebUI. Do not
+  replace it with unconditional `focus:ring-*` on non-text controls.
+- `ProjectEditorMenu` is a split control: its fieldset draws the same ring via
+  `has-[:focus-visible]` around the editor icon and arrow together, not the
+  neighboring Git button. Keep both buttons separately keyboard-accessible;
+  suppress their individual rings and use `focus-visible:bg-hover` to identify
+  which action is focused. Preserve touch hit sizes and the existing menu
+  close/focus-restoration behavior.
+
 ## Composition & Layout
 
 - Feature components own their layout and state; primitives stay dumb.
