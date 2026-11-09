@@ -9,6 +9,7 @@ import {
 	SquarePen,
 	Trash2,
 } from "lucide-react";
+import { displayProjectPath } from "@/lib/project-path";
 import { cn } from "@/lib/utils";
 import {
 	DropdownMenu,
@@ -192,7 +193,7 @@ export function ProjectRow({
 				<div className="flex flex-col gap-0.5 text-xs">
 					<span>{env.name}</span>
 					<span className="break-all font-mono text-2xs leading-snug">
-						{project.path}
+						{displayProjectPath(project.path)}
 					</span>
 				</div>
 			</TooltipContent>

@@ -6,6 +6,7 @@ import { i18n } from "@/i18n";
 
 import type { PiloClient } from "@/lib/api/pilo-client";
 import type { SessionIndexEntry } from "@/lib/api/sessions";
+import { displayProjectPath } from "@/lib/project-path";
 import {
 	CommandDialog,
 	CommandGroup,
@@ -174,7 +175,7 @@ export function CommandPalette({
 	const projectResults = useMemo(() => {
 		if (!normalized) return projects.slice(0, 8);
 		return projects.filter((project) =>
-			[project.name, project.path]
+			[project.name, project.path, displayProjectPath(project.path)]
 				.join("\n")
 				.toLocaleLowerCase()
 				.includes(normalized),
@@ -273,9 +274,9 @@ export function CommandPalette({
 										<Hint label={project.name}>
 											<div className="truncate text-sm">{project.name}</div>
 										</Hint>
-										<Hint label={project.path}>
+										<Hint label={displayProjectPath(project.path)}>
 											<div className="truncate text-2xs text-muted-foreground">
-												{project.path}
+												{displayProjectPath(project.path)}
 											</div>
 										</Hint>
 									</div>

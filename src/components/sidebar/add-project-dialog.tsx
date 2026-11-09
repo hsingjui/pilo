@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { userErrorMessage } from "@/lib/app-error";
 import type { FsEntry } from "@/lib/api/files";
 import { isImeComposingKeyboardEvent } from "@/lib/ime";
+import { displayProjectPath } from "@/lib/project-path";
 import { refreshProjectPiModels } from "@/lib/api/pi-models";
 import type { Connection } from "@/lib/api/pi-runtime";
 import {
@@ -84,7 +85,7 @@ export function AddProjectDialog({
 				toast.success(t("project.added", { name: project.name }), {
 					description: t("project.addedDescription", {
 						connection: connectionLabel(project.connection),
-						path: project.metadata.cwd,
+						path: displayProjectPath(project.metadata.cwd),
 					}),
 				});
 				onOpenChange(false);
