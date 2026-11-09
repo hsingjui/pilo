@@ -13,7 +13,13 @@ import {
 } from "@/lib/ime";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { LoaderCircle, PencilSparkles, Plus } from "lucide-react";
+import {
+	LoaderCircle,
+	PencilSparkles,
+	Plus,
+	TriangleAlert,
+	X,
+} from "lucide-react";
 
 import { FileMentionBadge } from "@/components/chat/path-mention-badge";
 import { SessionMentionBadge } from "@/components/chat/session-mention-badge";
@@ -53,6 +59,7 @@ import {
 import {
 	Button,
 	NoticeCard,
+	NoticeIcon,
 	Spinner,
 	Tooltip,
 	TooltipContent,
@@ -128,6 +135,7 @@ type ChatComposerProps = {
 	historyKey?: string | null;
 	className?: string;
 	nextPrompt?: string | null;
+	nextPromptUnavailable?: boolean;
 	onNextPromptDismiss?: () => void;
 	/** 桌面专属的快捷键提示与自动聚焦；Remote WebUI 传 false。 */
 	desktopShortcuts?: boolean;
@@ -188,6 +196,7 @@ export function ChatComposer({
 	historyKey,
 	className,
 	nextPrompt,
+	nextPromptUnavailable = false,
 	onNextPromptDismiss,
 	desktopShortcuts = true,
 	onEnhancePrompt,
@@ -651,6 +660,29 @@ export function ChatComposer({
 							{statusError}
 						</div>
 					) : null}
+				</NoticeCard>
+			) : null}
+
+			{nextPromptUnavailable && !statusError && onNextPromptDismiss ? (
+				<NoticeCard
+					announce="status"
+					ariaLive="polite"
+					className="mb-2 flex items-start gap-2.5 px-3 py-2"
+				>
+					<NoticeIcon icon={TriangleAlert} tone="warning" />
+					<p className="min-w-0 flex-1 text-xs leading-5 wrap-anywhere text-muted-foreground">
+						{t("settings.nextPromptUnavailable")}
+					</p>
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon"
+						className="-my-1 size-7 shrink-0 text-muted-foreground pointer-coarse:size-11"
+						aria-label={t("common.close")}
+						onClick={() => onNextPromptDismiss()}
+					>
+						<X className="size-3.5" />
+					</Button>
 				</NoticeCard>
 			) : null}
 

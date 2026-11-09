@@ -705,11 +705,15 @@ actions go there and appear only for persisted sessions (`session && !session.te
   Refresh errors stay visible, controls wrap on narrow screens, and the refresh
   icon has an accessible name and 44px coarse-pointer target. See
   [Connection Model Catalog](../backend/connection-models.md).
-- Desktop and WebUI composers surface next-prompt `unavailable` in the existing
-  status-error area only when idle and writable, below higher-priority session,
-  retry and history errors. Do not replace the current model or fabricate a
-  suggestion. Automatic naming failures use a localized toast with Host detail;
-  enhancement failures keep the existing draft.
+- Desktop and WebUI pass next-prompt `unavailable` to the shared `ChatComposer`
+  through `nextPromptUnavailable`, only when idle and writable. Show a separate
+  quiet `NoticeCard` with a warning icon, muted text and a named close button
+  (44px coarse-pointer target), not red text in `statusError`. Higher-priority
+  session, retry and history errors suppress this notice. Close calls the existing
+  `onNextPromptDismiss` to clear only this session's current result; it does not
+  disable suggestions or suppress future failures. Do not replace the current
+  model or fabricate a suggestion. Automatic naming failures use a localized
+  toast with Host detail; enhancement failures keep the existing draft.
 - The desktop loading fallback uses the real `ChatComposer`, so it must also
   load the project's Connection-owned prompt enhancement settings and pass
   `onEnhancePrompt` when enabled. Do not silently drop the control while the

@@ -589,6 +589,9 @@ function RemoteWorkspace() {
 											) : null}
 											<ChatComposer
 												nextPrompt={nextPrompt.text}
+												nextPromptUnavailable={
+													nextPrompt.unavailable && !active && !chat.readOnly
+												}
 												onNextPromptDismiss={nextPrompt.dismiss}
 												value={chat.readOnly ? "" : chat.composer}
 												onChange={chat.handleComposerChange}
@@ -681,9 +684,6 @@ function RemoteWorkspace() {
 													chat.draftConfigError ??
 													(chat.historyIndexStale
 														? t("chat.historyIndexStale")
-														: null) ??
-													(nextPrompt.unavailable && !active && !chat.readOnly
-														? t("settings.nextPromptUnavailable")
 														: null)
 												}
 												compacting={chat.compacting}

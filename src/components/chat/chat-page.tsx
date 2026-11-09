@@ -727,6 +727,9 @@ function ChatPageImpl(props: ChatPageProps) {
 										/>
 										<ChatComposer
 											nextPrompt={nextPrompt.text}
+											nextPromptUnavailable={
+												nextPrompt.unavailable && !running && !readOnly
+											}
 											onNextPromptDismiss={nextPrompt.dismiss}
 											value={readOnly ? "" : draft}
 											historyKey={session.projectRecord.id}
@@ -807,9 +810,6 @@ function ChatPageImpl(props: ChatPageProps) {
 												!running &&
 												!session.externalTurnOpen
 													? t("chat.historyIndexStale")
-													: null) ??
-												(nextPrompt.unavailable && !running && !readOnly
-													? t("settings.nextPromptUnavailable")
 													: null)
 											}
 											compacting={compacting}
