@@ -125,9 +125,15 @@ or session JSONL. Both transports use the Host's database.
 - All and Scope share loading/error presentation. Every actual catalog refresh,
   including incomplete-cache refreshes, reports loading; keep valid existing rows
   visible. A missing-metadata message is only appropriate after loading ends.
-  Before a refresh disables its button, focus the search input so Radix does
-  not dismiss the submenu through focus-outside handling. Refresh updates data
-  in place, without closing the overlay or discarding an editor draft.
+  During refresh, keep the refresh button focusable: use `aria-disabled` with
+  a click guard for loading, not native `disabled` or `pointer-events: none`.
+  Never focus the search input from the refresh action; preserve focus without
+  summoning the touch keyboard or triggering Radix focus-outside dismissal.
+  Refresh updates data in place, without closing the overlay or discarding the
+  current view, query or editor draft. Also preserve overlay focus when loading
+  completes: the new-chat composer's `disabled` state may clear after Scope or
+  catalog refresh, but its re-enable autofocus must not take focus from a menu
+  or dialog. Making only the refresh button focusable does not cover this path.
 - Desktop retains the nested Model / Reasoning DropdownMenu, including the
   original reasoning submenu. Only the model submenu hosts the shared picker
   (`compact` single-line rows). Its input/Command owns typing and arrow keys;

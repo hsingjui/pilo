@@ -245,6 +245,16 @@ spacing, type sizes, or control heights.
   the tab strip adds its 2px inset to that inner curve. Do not leave unrelated
   `xl`/`lg` tiers on these sibling controls after adapting the model rows. Compact
   desktop stays separate.
+- The shared composer's model refresh must not focus search or close the model
+  submenu/sheet. During loading, keep its refresh button focusable using
+  `aria-disabled` plus a click guard, not native `disabled` or pointer-event
+  suppression. Preserve the current view, query and membership draft; touch
+  refresh must not summon the soft keyboard. When the composer becomes enabled
+  again, `useChatComposerInput` must skip automatic textarea focus if the active
+  element is inside a menu or dialog. New-chat Scope/catalog refresh can toggle
+  the composer's `disabled` state; its completion must not steal overlay focus
+  and trigger Radix focus-outside dismissal. Keep explicit focus shortcuts and
+  ordinary mount/reconnect autofocus unchanged outside overlays.
 - `theme-presets.css` is loaded before the inline boot script and imported by
   `index.css` for other shared entry points. Boot styles read the same public
   geometry/palette tokens; never add a second Claude snapshot. Keep its asset

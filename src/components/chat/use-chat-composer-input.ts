@@ -145,9 +145,15 @@ export function useChatComposerInput({
 
 	// 挂载或从后台切回该会话（新开会话、点击通知打开会话、侧边栏切换）时
 	// 聚焦输入框；disabled 变化也涵盖恢复重连/外部运行结束后的场景。
+	// 模型刷新结束也会恢复输入框，但不能抢走菜单或对话框内的焦点。
 	const prevDisabledRef = useRef(true);
 	useEffect(() => {
-		if (prevDisabledRef.current && !disabled && desktopShortcuts)
+		if (
+			prevDisabledRef.current &&
+			!disabled &&
+			desktopShortcuts &&
+			!document.activeElement?.closest('[role="dialog"], [role="menu"]')
+		)
 			editorRef.current?.focus();
 		prevDisabledRef.current = disabled;
 	}, [desktopShortcuts, disabled]);

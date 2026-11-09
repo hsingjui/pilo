@@ -317,16 +317,17 @@ export function ChatModelPicker({
 						size="icon"
 						variant="ghost"
 						className={cn(
-							"text-muted-foreground",
+							"text-muted-foreground aria-disabled:opacity-50",
 							compact
 								? "size-8 rounded-lg"
 								: "size-[max(44px,var(--pilo-sheet-control-height))] rounded-(--pilo-sheet-item-radius)",
 						)}
-						disabled={listLoading || saving || !onRefresh}
+						disabled={saving || !onRefresh}
+						aria-disabled={listLoading || saving || !onRefresh}
 						aria-label={t("chat.refreshModels")}
 						title={t("chat.refreshModels")}
 						onClick={() => {
-							searchRef.current?.focus();
+							if (listLoading) return;
 							onRefresh?.();
 							void modelScope?.refresh();
 						}}
