@@ -373,6 +373,17 @@ Tauri-only executable discovery.
   using a hidden, noninteractive, profile-free PowerShell process. Resolve
   percent-variable references in that child only; never write the registry or
   mutate the server's process environment.
+- Windows also appends mise shims from `MISE_DATA_DIR/shims` when configured
+  and `LOCALAPPDATA/mise/shims`, after inherited/persisted `PATH`. Finding
+  `pi.cmd` is insufficient when its Node is managed by mise; both probing and
+  RPC startup must receive the augmented path. Do not pick a hardcoded Node
+  version directory or change the user's system `PATH`.
+- Windows CLI probes run through hidden, noninteractive, profile-free PowerShell
+  with UTF-8 console/output encoding, preserving the native exit code and the
+  existing timeout. Quote executable/arguments as PowerShell string literals
+  (double embedded single quotes); never interpolate them as shell syntax.
+  This makes `cmd` shim diagnostics valid UTF-8 before `command_output_text`
+  decodes them. Actual Pi RPC startup remains a direct process invocation.
 - If no Pi is found, refresh the shell/persisted path and query available package
   managers in parallel: `npm prefix -g`, `pnpm bin -g`, `bun pm bin -g`. Only npm
   needs `/bin` appended on Unix. Probes run from the user's home when available,
@@ -413,6 +424,9 @@ Unix execute permissions, post-install retry, explicit override with a broken
 default, and probe/start path parity. Cover installing Node and Pi in separate
 custom directories after server startup, then auto-probing, saving the detected
 absolute executable, and starting RPC with the refreshed Node path still present.
+Also cover Windows mise-managed Node with only `pi.cmd` on the original path,
+custom `MISE_DATA_DIR`, existing Node path priority, native nonzero exit codes,
+Chinese diagnostics, and executable/argument paths containing spaces or quotes.
 No automated or native-runtime validation is implied by source review or formatting.
 
 #### 7. Wrong vs Correct

@@ -381,6 +381,10 @@ fn tool_search_path(path: &str) -> String {
             dirs.push(PathBuf::from(dir).join("bin"));
         }
     }
+    #[cfg(windows)]
+    if let Some(dir) = std::env::var_os("MISE_DATA_DIR").filter(|value| !value.is_empty()) {
+        dirs.push(PathBuf::from(dir).join("shims"));
+    }
     for key in [
         "npm_config_prefix",
         "NPM_CONFIG_PREFIX",
@@ -415,6 +419,7 @@ fn tool_search_path(path: &str) -> String {
                 ("LOCALAPPDATA", "pnpm/bin"),
                 ("LOCALAPPDATA", "pi-node/current"),
                 ("ProgramFiles", "nodejs"),
+                ("LOCALAPPDATA", "mise/shims"),
             ] {
                 if let Some(base) = std::env::var_os(key) {
                     dirs.push(PathBuf::from(base).join(suffix));
@@ -522,10 +527,28 @@ async fn command_text(
     tokio::task::spawn_blocking(move || {
         use std::os::windows::process::CommandExt;
 
-        let mut command = std::process::Command::new(&program);
+        let invocation = std::iter::once(&program)
+            .chain(args.iter())
+            .map(|value| format!("'{}'", value.replace('\'', "''")))
+            .collect::<Vec<_>>()
+            .join(" ");
+        // Set the child console code page too, so cmd shims emit UTF-8 diagnostics.
+        let script = format!(
+            "$ErrorActionPreference = 'Stop'; \
+             [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); \
+             $OutputEncoding = [Console]::OutputEncoding; \
+             & {invocation}; exit $LASTEXITCODE"
+        );
+        let mut command = std::process::Command::new("powershell.exe");
         command.creation_flags(0x0800_0000);
         command
-            .args(&args)
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                &script,
+            ])
             .env("PATH", path)
             .env("COREPACK_ENABLE_NETWORK", "0")
             .env("COREPACK_ENABLE_DOWNLOAD_PROMPT", "0")
