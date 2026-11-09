@@ -3,6 +3,8 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
 };
 
+use std::time::Instant;
+
 use pilo_protocol::BuiltinExtension;
 use serde_json::{Value, json};
 use tokio::task::JoinHandle;
@@ -290,7 +292,7 @@ impl ServerPiSession {
         servers: Arc<ServerManager>,
         sink: S,
         project: &Project,
-        options: PiLaunchOptions,
+        mut options: PiLaunchOptions,
     ) -> Result<PiSessionSnapshot, String> {
         if matches!(
             self.state.get(),
@@ -302,7 +304,31 @@ impl ServerPiSession {
         self.builtin_extensions = options.builtin_extensions.clone();
         // A failed generation may still own a server stream. Do not overwrite it.
         self.schedule_cleanup();
-        let client = servers.client(&project.connection).await?;
+        let model_probe = options.user_scope
+            || options
+                .builtin_extensions
+                .iter()
+                .any(|extension| matches!(extension, BuiltinExtension::ModelCatalog));
+        if model_probe {
+            // Probes skip user extensions; explicitly selected Pilo built-ins still load.
+            options.disable_extension_discovery = true;
+            options.extensions.clear();
+        }
+        let started = Instant::now();
+        let client = servers.client(&project.connection).await;
+        if model_probe {
+            super::debug_trace::runtime_trace(
+                "model_catalog.server_ready.end",
+                None,
+                None,
+                json!({
+                    "projectId": project.id,
+                    "ok": client.is_ok(),
+                    "elapsedMs": started.elapsed().as_millis(),
+                }),
+            );
+        }
+        let client = client?;
         let generation = self.generation.saturating_add(1);
         self.generation = generation;
         *self
@@ -408,7 +434,8 @@ impl ServerPiSession {
 
         // Record ownership before awaiting the acknowledgement, so cancellation
         // and a lost pi.start response still have a stream to clean up.
-        if let Err(error) = client
+        let started = Instant::now();
+        let started_process = client
             .request(
                 "pi.start",
                 json!({
@@ -432,8 +459,20 @@ impl ServerPiSession {
                     "disableContextFiles": options.disable_context_files,
                 }),
             )
-            .await
-        {
+            .await;
+        if model_probe {
+            super::debug_trace::runtime_trace(
+                "model_catalog.process_spawn.end",
+                None,
+                Some(&stream_id),
+                json!({
+                    "projectId": project.id,
+                    "ok": started_process.is_ok(),
+                    "elapsedMs": started.elapsed().as_millis(),
+                }),
+            );
+        }
+        if let Err(error) = started_process {
             if let Err(stop_error) = self.stop().await {
                 log::warn!(target: "pilo-server", "failed to roll back Pi startup: {stop_error}");
                 self.schedule_cleanup();

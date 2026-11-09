@@ -1,6 +1,9 @@
 //! Connection settings use Pi's user catalog, never a union of project caches.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use serde_json::{Value, json};
 use tauri::AppHandle;
@@ -20,6 +23,13 @@ pub(crate) async fn load(
     runtime: &PiloRuntime,
     connection_id: &str,
 ) -> Result<Vec<Value>, String> {
+    let started = Instant::now();
+    super::debug_trace::runtime_trace(
+        "model_catalog.connection.begin",
+        None,
+        None,
+        json!({ "connectionId": connection_id }),
+    );
     let connection = {
         let db = storage::open(app)?;
         let connection = if connection_id == "local" {
@@ -36,7 +46,7 @@ pub(crate) async fn load(
         }
     };
     let mut session = ServerPiSession::default();
-    tokio::time::timeout(Duration::from_secs(35), async {
+    let result = tokio::time::timeout(Duration::from_secs(35), async {
         let (sender, mut receiver) = mpsc::unbounded_channel();
         session
             .spawn_connection(
@@ -45,6 +55,7 @@ pub(crate) async fn load(
                 &connection,
             )
             .await?;
+        let catalog_started = Instant::now();
         let result = request(
             &session,
             &mut receiver,
@@ -57,9 +68,43 @@ pub(crate) async fn load(
                 .cloned()
                 .ok_or_else(|| "Pi model catalog response is missing models".to_owned())
         });
-        let _ = session.stop().await;
+        super::debug_trace::runtime_trace(
+            "model_catalog.connection_catalog.end",
+            None,
+            None,
+            json!({
+                "connectionId": connection_id,
+                "ok": result.is_ok(),
+                "elapsedMs": catalog_started.elapsed().as_millis(),
+            }),
+        );
+        let cleanup_started = Instant::now();
+        let stopped = session.stop().await;
+        super::debug_trace::runtime_trace(
+            "model_catalog.connection_cleanup.end",
+            None,
+            None,
+            json!({
+                "connectionId": connection_id,
+                "ok": stopped.is_ok(),
+                "elapsedMs": cleanup_started.elapsed().as_millis(),
+            }),
+        );
         result
     })
     .await
-    .map_err(|_| "Connection model catalog timed out".to_owned())?
+    .map_err(|_| "Connection model catalog timed out".to_owned())
+    .and_then(|result| result);
+    super::debug_trace::runtime_trace(
+        "model_catalog.connection.end",
+        None,
+        None,
+        json!({
+            "connectionId": connection_id,
+            "ok": result.is_ok(),
+            "elapsedMs": started.elapsed().as_millis(),
+            "modelCount": result.as_ref().map(|models| models.len()).ok(),
+        }),
+    );
+    result
 }

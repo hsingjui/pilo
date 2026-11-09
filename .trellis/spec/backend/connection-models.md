@@ -24,9 +24,12 @@ Owners: `runtime/connection_models.rs`, `ServerPiSession::spawn_connection`,
 - A private, no-session Pi process runs in the Server-owned empty
   `<runtime-root>/model-catalog` directory, not the home directory, any workspace,
   or the most recently used project. Home may itself contain project `.pi` files.
-  Keep Pi's user configuration, authentication and user provider extensions.
-  Disable built-in tools and context files. No chat attachment, persisted session,
-  Agent Control capability, or Project record is created.
+  Keep Pi's user configuration and authentication. Disable built-in tools,
+  context files and user extension discovery; the shared `ServerPiSession::spawn`
+  also clears explicit user extension sources for all model probes. Extension-only
+  providers are intentionally absent from the fast catalog; normal chat extension
+  loading is unchanged. No chat attachment, persisted session, Agent Control
+  capability, or Project record is created.
 - Read the correlated `get_available_models` RPC response; malformed results,
   startup errors, process exit, and timeout are errors, not successful empty lists.
   A genuine empty `models` array is valid. One 35-second budget covers startup,

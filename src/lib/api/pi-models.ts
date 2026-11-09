@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 
 import { createChatSessionClient } from "@/lib/api/chat-session-client";
 import {
@@ -443,11 +443,39 @@ export function refreshProjectPiModels(
 				builtinExtensions: [{ id: "model-catalog" }],
 			});
 	const persist = transport?.persist ?? persistProjectPiModels;
-	const refresh = (async () => {
+	const trace = (stage: string, detail: Record<string, unknown>) => {
+		const payload = {
+			stage: `model_catalog.${stage}`,
+			sessionKey: JSON.stringify([projectId, sessionKey]),
+			projectId,
+			...detail,
+		};
+		console.info("[model-catalog]", payload);
+		if (isTauri()) {
+			void invoke("debug_runtime_trace_log", {
+				payload: JSON.stringify(payload),
+			}).catch(() => undefined);
+		}
+	};
+	const measure = async <T>(stage: string, operation: () => Promise<T>) => {
+		const started = performance.now();
+		trace(`${stage}.begin`, {});
+		let ok = false;
 		try {
-			await client.prepare();
-			const commands = await client
-				.getPiCommands()
+			const result = await operation();
+			ok = true;
+			return result;
+		} finally {
+			trace(`${stage}.end`, {
+				ok,
+				elapsedMs: Math.round(performance.now() - started),
+			});
+		}
+	};
+	const refresh = measure("refresh", async () => {
+		try {
+			await measure("prepare", () => client.prepare());
+			const commands = await measure("commands", () => client.getPiCommands())
 				.then((result) =>
 					result.commands.filter(
 						(command) => `/${command.name}` !== PI_MODEL_CATALOG_COMMAND,
@@ -461,7 +489,13 @@ export function refreshProjectPiModels(
 						null
 					);
 				});
-			const extensionCatalog = await fetchPiModelCatalogViaExtension(client);
+			const extensionCatalog = await measure("extension", () =>
+				fetchPiModelCatalogViaExtension(client),
+			);
+			trace("catalog", {
+				catalogSource: extensionCatalog ? "extension" : "rpc",
+				commandCount: commands?.length ?? null,
+			});
 			if (extensionCatalog) {
 				let snapshot: ProjectPiModels = {
 					projectId,
@@ -470,31 +504,31 @@ export function refreshProjectPiModels(
 					refreshedAtMs: Date.now(),
 				};
 				try {
-					snapshot = await persist(snapshot);
+					snapshot = await measure("persist", () => persist(snapshot));
 				} catch (error) {
 					console.warn("Failed to persist refreshed Pi models", error);
 				}
+				trace("result", { modelCount: snapshot.models.length });
 				return publishProjectPiModels(snapshot);
 			}
 
 			console.warn(
 				"Pi model catalog extension unavailable; falling back to RPC probing",
 			);
-			await client.prepare();
-			const [result, state] = await Promise.all([
-				client.getAvailablePiModels(),
-				client.getPiAgentState(),
-			]);
-			const scopeProfiles = await resolveScopedModelProfiles(
-				client,
-				result.models,
-				state,
+			await measure("fallback_prepare", () => client.prepare());
+			const [result, state] = await measure("rpc_catalog", () =>
+				Promise.all([client.getAvailablePiModels(), client.getPiAgentState()]),
 			);
-			const models = await resolveModelThinkingProfiles(
-				client,
-				result.models,
-				state,
-				scopeProfiles,
+			const scopeProfiles = await measure("scope_profiles", () =>
+				resolveScopedModelProfiles(client, result.models, state),
+			);
+			const models = await measure("thinking_profiles", () =>
+				resolveModelThinkingProfiles(
+					client,
+					result.models,
+					state,
+					scopeProfiles,
+				),
 			);
 			const defaultModel =
 				models.find((model) => modelsMatch(model, state.model)) ?? state.model;
@@ -507,17 +541,20 @@ export function refreshProjectPiModels(
 				refreshedAtMs: Date.now(),
 			};
 			try {
-				snapshot = await persist(snapshot);
+				snapshot = await measure("persist", () => persist(snapshot));
 			} catch (error) {
 				console.warn("Failed to persist refreshed Pi models", error);
 			}
+			trace("result", { modelCount: snapshot.models.length });
 			return publishProjectPiModels(snapshot);
 		} finally {
-			await client.dispose("model_probe_cleanup").catch((error) => {
+			await measure("cleanup", () =>
+				client.dispose("model_probe_cleanup"),
+			).catch((error) => {
 				console.warn("Failed to stop Pi model probe session", error);
 			});
 		}
-	})();
+	});
 
 	pendingRefreshes.set(projectId, refresh);
 	const clearPending = () => {

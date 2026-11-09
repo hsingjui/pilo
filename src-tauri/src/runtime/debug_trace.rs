@@ -49,6 +49,7 @@ fn log_runtime_diagnostic(
         ),
         _ => {
             stage.starts_with("chat.")
+                || stage.starts_with("model_catalog.")
                 || stage.starts_with("next_prompt.")
                 || matches!(
                     stage,
@@ -70,6 +71,10 @@ fn log_runtime_diagnostic(
     let mut safe = serde_json::Map::new();
     for key in [
         "projectId",
+        "connectionId",
+        "catalogSource",
+        "modelCount",
+        "commandCount",
         "hasSessionPath",
         "noSession",
         "ok",

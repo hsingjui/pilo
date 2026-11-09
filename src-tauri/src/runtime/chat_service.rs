@@ -1,4 +1,6 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
+
+use serde_json::json;
 
 use pilo_protocol::BuiltinExtension;
 
@@ -20,6 +22,14 @@ pub(crate) struct ChatSessionRequest {
     pub builtin_extensions: Vec<BuiltinExtension>,
 }
 
+impl ChatSessionRequest {
+    fn is_model_probe(&self) -> bool {
+        self.builtin_extensions
+            .iter()
+            .any(|extension| matches!(extension, BuiltinExtension::ModelCatalog))
+    }
+}
+
 fn get_project(paths: &HostPaths, project_id: &str) -> Result<Project, String> {
     storage::get_project(&storage::open_with_paths(paths)?, project_id)?
         .ok_or_else(|| format!("Project '{project_id}' was not found"))
@@ -30,16 +40,22 @@ async fn resolve_launch(
     runtime: &PiloRuntime,
     request: &ChatSessionRequest,
 ) -> Result<(Project, ChatSessionLaunch, String), String> {
+    let started = Instant::now();
+    if request.is_model_probe() {
+        super::debug_trace::runtime_trace(
+            "model_catalog.resolve_launch.begin",
+            Some(&request.session_key),
+            None,
+            json!({ "projectId": request.project_id }),
+        );
+    }
     let project = get_project(paths, &request.project_id)?;
     let profile =
         pi_workspace::resolve_pi_runtime_with_paths(paths, &project, request.extensions.clone())?;
+    let model_probe = request.is_model_probe();
     let mut builtin_extensions = profile.builtin_extensions;
     // Probes are throwaway sessions; only normal chats load turn guards and assistance.
-    if !request
-        .builtin_extensions
-        .iter()
-        .any(|extension| matches!(extension, BuiltinExtension::ModelCatalog))
-    {
+    if !model_probe {
         builtin_extensions.push(BuiltinExtension::StreamGuard);
         builtin_extensions.push(BuiltinExtension::NextPrompt);
         builtin_extensions.push(BuiltinExtension::CacheKeepAlive);
@@ -52,6 +68,14 @@ async fn resolve_launch(
     }
     reject_external_session_owner(runtime, &profile.project, request.session_path.as_deref())
         .await?;
+    if model_probe {
+        super::debug_trace::runtime_trace(
+            "model_catalog.resolve_launch.end",
+            Some(&request.session_key),
+            None,
+            json!({ "ok": true, "elapsedMs": started.elapsed().as_millis() }),
+        );
+    }
     Ok((
         profile.project,
         ChatSessionLaunch {
@@ -59,9 +83,9 @@ async fn resolve_launch(
             no_session: request.no_session,
             extensions: profile.extensions,
             builtin_extensions,
-            disable_builtin_tools: profile.disable_builtin_tools,
+            disable_builtin_tools: model_probe || profile.disable_builtin_tools,
             disable_extension_discovery: profile.disable_extension_discovery,
-            disable_context_files: profile.disable_context_files,
+            disable_context_files: model_probe || profile.disable_context_files,
         },
         project.connection.id,
     ))
@@ -84,13 +108,14 @@ pub(crate) async fn prepare(
             launch,
         )
         .await?;
-    if let Err(error) = super::cache_keep_alive::configure_session(
-        paths,
-        runtime,
-        &request.session_key,
-        &connection_id,
-    )
-    .await
+    if !request.is_model_probe()
+        && let Err(error) = super::cache_keep_alive::configure_session(
+            paths,
+            runtime,
+            &request.session_key,
+            &connection_id,
+        )
+        .await
     {
         log::warn!(target: "cache-keep-alive", "failed to configure session: {error}");
     }
@@ -114,13 +139,14 @@ pub(crate) async fn start(
             launch,
         )
         .await?;
-    if let Err(error) = super::cache_keep_alive::configure_session(
-        paths,
-        runtime,
-        &request.session_key,
-        &connection_id,
-    )
-    .await
+    if !request.is_model_probe()
+        && let Err(error) = super::cache_keep_alive::configure_session(
+            paths,
+            runtime,
+            &request.session_key,
+            &connection_id,
+        )
+        .await
     {
         log::warn!(target: "cache-keep-alive", "failed to configure session: {error}");
     }

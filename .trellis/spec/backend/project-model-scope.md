@@ -268,6 +268,16 @@ not mean its Pi process is still running when reopened.
 - One throwaway `noSession` probe reads models and `get_commands` from the same
   project/Pi environment, preserving the existing extension/RPC model fallback.
   Remove the probe-only `pilo_model_catalog` command before caching.
+- The shared Host chat service recognizes the `ModelCatalog` built-in and disables
+  built-in tools and context-file loading for that probe only. Both prepare/start
+  skip chat cache keep-alive configuration. The shared `ServerPiSession::spawn`
+  disables extension discovery and clears explicit user extension sources for
+  model probes by default. Keep explicitly selected Pilo built-ins (catalog and
+  required workspace bridge), skills, prompt templates, authentication and model
+  configuration; never use blanket resource disabling or a normal chat process
+  to refresh the catalog. Extension-registered providers/commands and extension
+  overrides of model defaults are intentionally absent from this fast catalog.
+  Normal chat extension loading is unchanged.
 - No catalog TTL, hourly polling, per-draft forced refresh, separate command
   probe, or per-session command reload. Configuration changes need manual refresh.
 - Desktop startup background preloading uses `useAppCatalog.homeProjects`, so only

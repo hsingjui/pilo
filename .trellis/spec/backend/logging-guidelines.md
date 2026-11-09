@@ -123,6 +123,15 @@ streams. Keep timeout, retry, teardown, and public error behavior unchanged.
   received result is not a cancellation of pending generation. WebUI client
   decisions stay in its console; Host result/rejection records persist for both
   clients. See [Next Prompt](./next-prompt-and-extensions.md).
+- Model refresh uses bounded `model_catalog.*` stages: shared frontend prepare,
+  commands, extension versus RPC fallback, scope/thinking probes, persistence,
+  cleanup and total time; Host launch resolution, Server readiness and process
+  spawn; connection settings catalog reads and cleanup. Record `elapsedMs`,
+  success, counts and catalog source, never model/config/auth objects. Desktop
+  frontend stages use `debug_runtime_trace_log` and the same release allowlist;
+  WebUI frontend stages stay in its console. Existing `chat.control.*` stages
+  identify the wait for Pi's initial `get_state`; process spawn ACK is not Pi
+  readiness. Correlate by probe session key/project and stream ID.
 - WebUI browser timeout warnings include RPC/session IDs, elapsed time, command
   transport completion, pending count and last socket sequence/message age.
   These warnings stay in the browser console; shared Host stages and socket
