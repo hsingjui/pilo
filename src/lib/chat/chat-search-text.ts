@@ -5,13 +5,17 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 
-import { rehypeFileLinks } from "./chat-markdown-links.ts";
+import {
+	rehypeFileLinks,
+	rehypeRelativeFileLinks,
+} from "./chat-markdown-links.ts";
 
 const markdownProcessor = unified()
 	.use(remarkParse)
 	.use(remarkGfm)
 	.use(remarkRehype, { allowDangerousHtml: true })
 	.use(rehypeRaw)
+	.use(rehypeRelativeFileLinks)
 	.use(rehypeSanitize, {
 		protocols: {
 			...defaultSchema.protocols,

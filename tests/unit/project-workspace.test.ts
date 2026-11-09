@@ -363,3 +363,56 @@ test("Markdown and common source files preview, HTML/documents use the default a
 	for (const name of ["README.md", "main.ts", "document.pdf", "image.png"])
 		assert.ok(resolveMarkdownFileUrl(`file:///tmp/${name}`));
 });
+
+test("line navigation retriggers while retaining canonical tabs and cached content", () => {
+	const original = file("\\\\?\\C:\\repo\\main.ts");
+	const lineRange = { start: 12, end: 18 };
+	let state = reduceProjectWorkspaces(empty(), {
+		type: "open",
+		projectId: "a",
+		file: original,
+		lineRange,
+	});
+	assert.deepEqual(state.get("a")?.activeTab, {
+		kind: "file",
+		path: original.path,
+		lineRange,
+	});
+	const initial = state.get("a");
+	state = reduceProjectWorkspaces(state, {
+		type: "open",
+		projectId: "a",
+		file: file("c:/repo/main.ts"),
+		lineRange: { ...lineRange },
+	});
+	assert.notEqual(state.get("a")?.activeTab, initial?.activeTab);
+	assert.equal(state.get("a")?.files, initial?.files);
+	assert.equal(state.get("a")?.files[0], original);
+	const previous = state.get("a")?.activeTab;
+	state = reduceProjectWorkspaces(state, {
+		type: "select",
+		projectId: "a",
+		path: original.path,
+		lineRange: { ...lineRange },
+	});
+	assert.notEqual(state.get("a")?.activeTab, previous);
+	assert.deepEqual(state.get("a")?.activeTab, previous);
+	state = reduceProjectWorkspaces(state, {
+		type: "select",
+		projectId: "a",
+		path: original.path,
+	});
+	assert.deepEqual(state.get("a")?.activeTab, {
+		kind: "file",
+		path: original.path,
+	});
+	assert.equal(
+		reduceProjectWorkspaces(state, {
+			type: "select",
+			projectId: "a",
+			path: original.path,
+		}),
+		state,
+	);
+	assert.equal(state.get("a")?.files[0], original);
+});

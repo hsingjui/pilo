@@ -41,6 +41,7 @@ import {
 } from "@/components/chat/chat-image-viewer";
 import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { ChatMarkdownImageScopeProvider } from "@/components/chat/chat-markdown-image";
+import { ChatMarkdownLinkScope } from "@/components/chat/chat-markdown-link";
 import { connectionLabel } from "@/lib/api/projects";
 import type { PiloClientEventMessage } from "@/lib/api/pilo-client";
 import { TooltipProvider } from "@/ui";
@@ -476,59 +477,63 @@ function RemoteWorkspace() {
 									readImage={chat.projectImageScope?.readImage}
 									headerOverlay={chat.conversationUi.messageCount === 0}
 								>
-									<ChatMarkdownImageScopeProvider
-										scope={chat.projectImageScope}
-									>
-										<ChatImageScopeProvider scope={chat.historyImageScope}>
-											<RemoteConversationViewport
-												key={chat.routeKey ?? "remote-draft"}
-												emptyContent={
-													!chat.hasIdentifiedSession ? (
-														<ConversationColumn className="flex flex-1 items-center justify-center">
-															<ChatEmptyHero
-																projects={homeProjects}
-																project={chat.activeProject}
-																onSwitchProject={chat.switchDraftProject}
-															/>
-														</ConversationColumn>
-													) : undefined
-												}
-												active
-												visualLive
-												showSwitchSkeleton={chat.showSwitchSkeleton}
-												sessionId={chat.activeSessionKey ?? "remote-draft"}
-												sessionPath={chat.headerSession?.sessionPath}
-												conversationStore={chat.conversationStore}
-												historyPrefix={chat.historyPrefix}
-												onVisibleRangeChange={chat.requestHistoryRange}
-												compacting={chat.compacting}
-												effectiveLoadState={
-													chat.loadingConversation ? "loading" : "ready"
-												}
-												initialScrollTop={chat.initialScrollState.scrollTop}
-												initialSticky={chat.initialScrollState.sticky}
-												initialVirtualizerCache={
-													chat.initialUiState.virtualizerCache
-												}
-												initialVirtualizerMessageCount={
-													chat.initialUiState.virtualizerMessageCount
-												}
-												onScrollStateChange={chat.persistScrollState}
-												onVirtualizerCacheChange={chat.persistVirtualizerCache}
-												runtimeScrollRef={scrollRef}
-												suppressInterruptedError={active || chat.readOnly}
-												onVisualReady={chat.handleVisualReady}
-												onRetryHistory={chat.retryHistory}
-												onForkAssistant={
-													chat.selectedSession
-														? chat.handleForkAssistant
-														: undefined
-												}
-												forkingMessageId={chat.forkingMessageId}
-												forkDisabled={chat.forkDisabled}
-											/>
-										</ChatImageScopeProvider>
-									</ChatMarkdownImageScopeProvider>
+									<ChatMarkdownLinkScope.Provider value={chat.activeProject}>
+										<ChatMarkdownImageScopeProvider
+											scope={chat.projectImageScope}
+										>
+											<ChatImageScopeProvider scope={chat.historyImageScope}>
+												<RemoteConversationViewport
+													key={chat.routeKey ?? "remote-draft"}
+													emptyContent={
+														!chat.hasIdentifiedSession ? (
+															<ConversationColumn className="flex flex-1 items-center justify-center">
+																<ChatEmptyHero
+																	projects={homeProjects}
+																	project={chat.activeProject}
+																	onSwitchProject={chat.switchDraftProject}
+																/>
+															</ConversationColumn>
+														) : undefined
+													}
+													active
+													visualLive
+													showSwitchSkeleton={chat.showSwitchSkeleton}
+													sessionId={chat.activeSessionKey ?? "remote-draft"}
+													sessionPath={chat.headerSession?.sessionPath}
+													conversationStore={chat.conversationStore}
+													historyPrefix={chat.historyPrefix}
+													onVisibleRangeChange={chat.requestHistoryRange}
+													compacting={chat.compacting}
+													effectiveLoadState={
+														chat.loadingConversation ? "loading" : "ready"
+													}
+													initialScrollTop={chat.initialScrollState.scrollTop}
+													initialSticky={chat.initialScrollState.sticky}
+													initialVirtualizerCache={
+														chat.initialUiState.virtualizerCache
+													}
+													initialVirtualizerMessageCount={
+														chat.initialUiState.virtualizerMessageCount
+													}
+													onScrollStateChange={chat.persistScrollState}
+													onVirtualizerCacheChange={
+														chat.persistVirtualizerCache
+													}
+													runtimeScrollRef={scrollRef}
+													suppressInterruptedError={active || chat.readOnly}
+													onVisualReady={chat.handleVisualReady}
+													onRetryHistory={chat.retryHistory}
+													onForkAssistant={
+														chat.selectedSession
+															? chat.handleForkAssistant
+															: undefined
+													}
+													forkingMessageId={chat.forkingMessageId}
+													forkDisabled={chat.forkDisabled}
+												/>
+											</ChatImageScopeProvider>
+										</ChatMarkdownImageScopeProvider>
+									</ChatMarkdownLinkScope.Provider>
 									<div
 										data-chat-composer-region=""
 										className="relative z-20 -mt-4 w-full shrink-0 pb-[var(--remote-composer-bottom-padding,max(1rem,env(safe-area-inset-bottom)))]"

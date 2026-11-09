@@ -1,4 +1,11 @@
-import { Suspense, useContext, useEffect, useMemo } from "react";
+import {
+	Suspense,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+	type CSSProperties,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import { ProjectWorkspaceContext } from "@/components/app/project-workspace-context";
@@ -15,6 +22,7 @@ import type { Project } from "@/lib/api/projects";
 import {
 	EMPTY_PROJECT_WORKSPACE,
 	type WorkspaceFile,
+	type WorkspaceLineRange,
 } from "@/lib/project-workspace";
 import { cn } from "@/lib/utils";
 
@@ -40,9 +48,172 @@ function ProjectMarkdownPreview({
 		<ChatMarkdownImageScopeProvider scope={scope}>
 			<ChatMarkdown
 				text={file.content}
+				sourceLines
 				className="mx-auto max-w-4xl p-4 font-sans sm:p-6"
 			/>
 		</ChatMarkdownImageScopeProvider>
+	);
+}
+
+function ProjectPlainPreview({
+	content,
+	lineRange,
+}: {
+	content: string;
+	lineRange?: WorkspaceLineRange;
+}) {
+	const selection = useMemo(() => {
+		if (!lineRange) return null;
+		let start = 0;
+		let end = content.length;
+		let startLine = 1;
+		let endLine = 1;
+		for (const newline of content.matchAll(/\r\n|\r|\n/g)) {
+			if (endLine === lineRange.end) {
+				end = newline.index;
+				break;
+			}
+			endLine += 1;
+			if (endLine <= lineRange.start) {
+				start = newline.index + newline[0].length;
+				startLine = endLine;
+			}
+		}
+		return { start, end, startLine, endLine };
+	}, [content, lineRange]);
+	return (
+		<pre className="min-h-full min-w-max whitespace-pre p-3 leading-relaxed">
+			<code>
+				{selection ? (
+					<>
+						{content.slice(0, selection.start)}
+						<span
+							className="project-source-lines"
+							data-source-line-start={selection.startLine}
+							data-source-line-end={selection.endLine}
+						>
+							{content.slice(selection.start, selection.end)}
+						</span>
+						{content.slice(selection.end)}
+					</>
+				) : (
+					content
+				)}
+			</code>
+		</pre>
+	);
+}
+
+function ProjectFilePanel({
+	project,
+	file,
+	active,
+	lineRange,
+	readImage,
+	style,
+}: {
+	project: Project;
+	file: WorkspaceFile;
+	active: boolean;
+	lineRange?: WorkspaceLineRange;
+	readImage?: ChatProjectImageScope["readImage"];
+	style: CSSProperties;
+}) {
+	const { t } = useTranslation();
+	const panelRef = useRef<HTMLElement>(null);
+	useEffect(() => {
+		const panel = panelRef.current;
+		if (!panel || !active || !lineRange) return;
+		let frame: number | null = null;
+		let scrollTarget: HTMLElement | null = null;
+		const clear = () => {
+			for (const node of panel.querySelectorAll("[data-source-line-highlight]"))
+				node.removeAttribute("data-source-line-highlight");
+		};
+		const apply = () => {
+			frame = null;
+			const blocks = panel.querySelectorAll<HTMLElement>(
+				"[data-source-line-start]",
+			);
+			const selected = new Set<HTMLElement>();
+			let closest: HTMLElement | null = null;
+			let distance = Number.POSITIVE_INFINITY;
+			for (const block of blocks) {
+				const start = Number(block.dataset.sourceLineStart);
+				const end = Number(block.dataset.sourceLineEnd);
+				if (start <= lineRange.end && end >= lineRange.start)
+					selected.add(block);
+				const gap = Math.max(start - lineRange.start, lineRange.start - end, 0);
+				if (gap < distance) {
+					closest = block;
+					distance = gap;
+				}
+			}
+			// Prefer specific paragraphs/cells over their enclosing list/quote/table.
+			for (const block of selected) {
+				for (
+					let parent = block.parentElement;
+					parent && parent !== panel;
+					parent = parent.parentElement
+				)
+					selected.delete(parent);
+			}
+			if (!selected.size && closest) selected.add(closest);
+			clear();
+			for (const block of selected) block.dataset.sourceLineHighlight = "";
+			const target = selected.values().next().value;
+			if (!target || target === scrollTarget) return;
+			scrollTarget = target;
+			panel.scrollTo({
+				top:
+					panel.scrollTop +
+					target.getBoundingClientRect().top -
+					panel.getBoundingClientRect().top -
+					panel.clientTop -
+					panel.clientHeight / 4,
+				behavior: "auto",
+			});
+		};
+		const schedule = () => {
+			if (frame === null) frame = requestAnimationFrame(apply);
+		};
+		// Suspense, syntax highlighting and rich Markdown can replace the target DOM.
+		const observer = new MutationObserver(schedule);
+		observer.observe(panel, { childList: true, subtree: true });
+		schedule();
+		return () => {
+			observer.disconnect();
+			if (frame !== null) cancelAnimationFrame(frame);
+			clear();
+		};
+	}, [active, lineRange]);
+	return (
+		<section
+			ref={panelRef}
+			role="tabpanel"
+			aria-label={file.path}
+			tabIndex={0}
+			inert={!active}
+			className={cn(
+				"project-file-highlight scrollbar-pro absolute inset-2 overflow-auto overscroll-contain rounded-lg border border-border bg-background text-foreground focus-visible:outline-2 focus-visible:outline-ring",
+				!active && "invisible",
+			)}
+			style={style}
+		>
+			{fileLinkPreviewKind(file.path) === "markdown" ? (
+				<Suspense fallback={<p className="p-4">{t("common.loading")}</p>}>
+					<ProjectMarkdownPreview
+						project={project}
+						file={file}
+						readImage={readImage}
+					/>
+				</Suspense>
+			) : file.html ? (
+				<div dangerouslySetInnerHTML={{ __html: file.html }} />
+			) : (
+				<ProjectPlainPreview content={file.content} lineRange={lineRange} />
+			)}
+		</section>
 	);
 }
 
@@ -56,7 +227,6 @@ export function ProjectViewer({
 	headerOverlay?: boolean;
 	readImage?: ChatProjectImageScope["readImage"];
 }) {
-	const { t } = useTranslation();
 	const { codeFontFamily, codeFontSize } = usePreferences();
 	const workspace = useContext(ProjectWorkspaceContext);
 	const { files, activeTab } =
@@ -95,37 +265,22 @@ export function ProjectViewer({
 				inert={activePath === null}
 			>
 				{files.map((file) => (
-					<section
+					<ProjectFilePanel
 						key={file.path}
-						role="tabpanel"
-						aria-label={file.path}
-						tabIndex={0}
-						inert={file.path !== activePath}
-						className={cn(
-							"project-file-highlight scrollbar-pro absolute inset-2 overflow-auto overscroll-contain rounded-lg border border-border bg-background text-foreground focus-visible:outline-2 focus-visible:outline-ring",
-							file.path !== activePath && "invisible",
-						)}
+						project={project}
+						file={file}
+						active={file.path === activePath}
+						lineRange={
+							activeTab.kind === "file" && file.path === activePath
+								? activeTab.lineRange
+								: undefined
+						}
+						readImage={readImage}
 						style={{
 							fontFamily: getMonospaceFontFamilyStack(codeFontFamily),
 							fontSize: codeFontSize,
 						}}
-					>
-						{fileLinkPreviewKind(file.path) === "markdown" ? (
-							<Suspense fallback={<p className="p-4">{t("common.loading")}</p>}>
-								<ProjectMarkdownPreview
-									project={project}
-									file={file}
-									readImage={readImage}
-								/>
-							</Suspense>
-						) : file.html ? (
-							<div dangerouslySetInnerHTML={{ __html: file.html }} />
-						) : (
-							<pre className="min-h-full min-w-max whitespace-pre p-3 leading-relaxed">
-								<code>{file.content}</code>
-							</pre>
-						)}
-					</section>
+					/>
 				))}
 			</div>
 		</ChatMarkdownLinkScope.Provider>

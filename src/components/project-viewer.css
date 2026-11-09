@@ -13,3 +13,22 @@
 .project-file-highlight code {
 	font-family: inherit;
 }
+
+.project-file-highlight .shiki .line,
+.project-file-highlight .project-source-lines {
+	display: inline-block;
+	min-width: 100%;
+	min-height: 1lh;
+	vertical-align: top;
+}
+
+.project-file-highlight [data-source-line-highlight] {
+	background-color: hsl(var(--muted-foreground) / 0.16);
+	box-shadow: inset 2px 0 0 hsl(var(--muted-foreground) / 0.8);
+}
+
+/* Rich code blocks paint opaque surfaces over their source wrapper. */
+.project-file-highlight .markdown-renderer div[data-source-line-highlight] {
+	outline: 2px solid hsl(var(--muted-foreground) / 0.6);
+	outline-offset: 2px;
+}

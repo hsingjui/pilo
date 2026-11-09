@@ -125,5 +125,13 @@ export async function highlightProjectFile(path: string, code: string) {
 	return highlighter.codeToHtml(code, {
 		lang: language,
 		theme: CODE_THEME_NAME,
+		transformers: [
+			{
+				line(node, line) {
+					node.properties["data-source-line-start"] = line;
+					node.properties["data-source-line-end"] = line;
+				},
+			},
+		],
 	});
 }

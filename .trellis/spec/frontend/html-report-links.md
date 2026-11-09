@@ -2,7 +2,7 @@
 
 ## 1. Scope / Trigger
 
-Desktop Markdown `file://` links open Markdown/code as read-only tabs beside
+Desktop Markdown `file://` and project-relative links open Markdown/code as read-only tabs beside
 the conversation title for Local, WSL and SSH projects. Allowlisted documents
 (including HTML reports) use the system default application; unknown file types
 are rejected. WSL/SSH documents are bounded, disposable local snapshots, read on
@@ -14,6 +14,9 @@ see [Git Workspace Tab](./git-workspace.md). WebUI has no Git UI or routes.
 ## 2. Signatures
 
 - `resolveMarkdownFileUrl(value: string): string | null`
+- `resolveMarkdownFileLink(value: string, projectPath?: string): { url: string; lineRange?: WorkspaceLineRange } | null`
+- `WorkspaceLineRange = { start: number; end: number }` uses inclusive, 1-based source lines.
+- `ChatMarkdown` accepts preview-only `sourceLines?: boolean` to retain whole-document source positions.
 - `fileLinkPreviewKind(path: string): "markdown" | "code" | null`
 - `projectMarkdownImageScope(project: Pick<Project, "id" | "path">, filePath: string): ChatProjectImageScope | null`
 - `resolveMarkdownImageSource(src?: string, baseDirectory?: string): MarkdownImageSource`
@@ -38,7 +41,9 @@ see [Git Workspace Tab](./git-workspace.md). WebUI has no Git UI or routes.
   accepts optional IPC `{ id, path? }`; omitting `path` retains project opening.
 - `useProjectWorkspaces(projectIds)` owns `{ state, openFile, selectFile, closeFile, openGit, closeGit, highlightFile }`.
   `state` maps project IDs to `{ files: readonly WorkspaceFile[], gitOpen: boolean, activeTab: WorkspaceTab }`.
-  `WorkspaceTab` discriminates chat, file with path, and Git; `selectFile(id, null)`
+  `openFile(id, file, lineRange?)` and `selectFile(id, path, lineRange?)` accept
+  optional source locations. `WorkspaceTab` discriminates chat, file with path
+  and optional `lineRange`, and Git; `selectFile(id, null)`
   still selects chat. Files have `{ path, content, html?: string | null }`.
 
 Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
@@ -50,8 +55,15 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
 ### Markdown security and link presentation
 
 - Preserve Streamdown's sanitize schema, adding `file` only to `href`; do not change
-  image protocols. Plugin order remains raw -> sanitize -> `rehypeFileLinks` ->
-  project images -> harden.
+  image protocols. Plugin order remains raw -> `rehypeRelativeFileLinks` ->
+  sanitize -> `rehypeFileLinks` -> project images -> harden. The pre-sanitize
+  plugin only prefixes valid root-level `file.ts:line[:column][-line[:column]]` references with
+  `./` so they are not mistaken for URL schemes; it never bypasses sanitization.
+  This also covers the supported extensionless basenames `Dockerfile`, `Makefile`,
+  `LICENSE` and `README` (case-insensitive), without accepting arbitrary schemes.
+  Run the bounded relative-path validator before the root-reference regex, so
+  hrefs over 4096 characters are rejected before matching. Split dotted basenames
+  at the first dot to avoid quadratic backtracking on long invalid references.
 - `rehypeFileLinks` transfers sanitized targets to `data-pilo-file-url` and an inert
   HTTPS sentinel. `MarkdownLink` renders a button, never a navigable file anchor.
   Raw HTML cannot spoof metadata because sanitize removes it first.
@@ -61,7 +73,8 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
   references. Standalone buttons are content-width, left-aligned rows, stacked
   with 8px gaps; suppress their following `br` to avoid duplicate vertical gaps.
   Inline references inherit prose typography and omit attachment icons/fill.
-- File links shorten URL-only labels to decoded filenames, preserve custom/formatted
+- File links shorten URL-only labels to decoded filenames (retaining a compact
+  `:start[-end]` suffix for source locations), preserve custom/formatted
   labels and retain full URL in `title`. Standalone labels truncate without
   shrinking icons; inline labels wrap long tokens. Both styles expose visible
   focus and a 44px coarse-pointer hit target. Disable while opening.
@@ -70,8 +83,26 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
   `data-chat-search-reference`; the projection uses matching text boundaries.
   `[Report](file:///tmp/report.html) Report` must have two ordered highlights.
   Search URL-only chips by their displayed filename, never the hidden directory.
+- Relative links resolve from `ChatMarkdownLinkScope.path` (the owning project
+  root, including in Markdown previews), never the browser URL, Host cwd or
+  selected document directory. Accept `resources/design.md`, `./src/main.ts`,
+  root-level `README.md:12`, and `:line[:column][-line[:column]]` suffixes.
+  Source locations also accept `#L12`, `#L12-L18` (optional `Ccolumn` parts).
+  Columns are ignored; ranges include both endpoints. Only positive safe integers
+  with end >= start are accepted. Strip location syntax before passing the
+  validated URL to the existing IPC; arbitrary document fragments are ignored
+  only for relative links. Absolute file URLs still reject non-line fragments.
+  Normalize dot segments without allowing traversal above the project root;
+  reject queries, encoded separators, backslashes, controls and malformed
+  encoding. Invalid relative targets stay inert file buttons, not browser links.
+  Encode the resolved POSIX/Windows path as a validated `file://` URL and reuse
+  existing Local/WSL/SSH IPC, preview limits and tab deduplication. Existing
+  absolute file URL security checks are unchanged; only code/Markdown preview
+  links may add recognized source locations. External system documents do not
+  gain line-fragment support.
 - No reads or system launches during render; activation uses the actual project's
-  `ChatMarkdownLinkScope`. WebUI rejects before desktop IPC.
+  `ChatMarkdownLinkScope`. Desktop and WebUI provide the same project scope;
+  WebUI still rejects before desktop IPC and adds no file-reading endpoint.
 
 ### Reading and system opening
 
@@ -181,11 +212,50 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
 - Both Markdown and code panels use an inset, rounded 1px semantic `border-border`
   frame. Keep overflow/scroll inside that frame and preserve the chat geometry.
 
+### Source location navigation
+
+- Line links retain a fresh `lineRange` on the active file tab. Repeating the
+  same file/range must retrigger navigation, not the normal same-tab no-op.
+  Preserve canonical tab deduplication and cached file-content identity.
+  Selecting the same file without a range clears an existing `lineRange` and its
+  emphasis without scrolling; only range-free same-file selections are no-ops.
+- Code previews annotate bounded Shiki line spans. Plain-text/large-file fallback
+  wraps only the requested slice, not one DOM node per line; preserve exact text
+  and CRLF/LF/CR boundaries even for large ranges.
+- Markdown previews opt into `ChatMarkdown.sourceLines`: static whole-document
+  parsing retains global HAST line positions and line-preserving TeX normalization.
+  Post-sanitize `rehypeMarkdownSourceLines` annotates rendered blocks and wraps
+  `pre` before Streamdown replaces it. Chat keeps its incremental parsing/copy UI.
+- Markdown highlights overlapping paragraphs, headings, list items, table cells
+  or whole fenced code blocks; this is not character-exact source selection.
+  Prefer matching descendants over enclosing lists/quotes/tables.
+- Scroll only the file panel with context above the first target. Out-of-file,
+  blank or unrendered lines use the nearest rendered block; plain text clamps
+  a start past EOF to the final line. Clear old emphasis on navigation/tab changes;
+  normal tab switching still preserves scroll.
+- Observe child-list replacements from Suspense, syntax highlighting and rich
+  Markdown. Apply emphasis to late mounts, but do not repeatedly scroll an
+  unchanged DOM target. Disconnect observers/cancel frames on cleanup.
+- Highlights use neutral `muted-foreground` theme colors: a translucent gray
+  background and left marker, plus a gray outline around opaque Markdown code
+  blocks. Do not use `primary` or `destructive`, which can resemble error states.
+  Preserve syntax/text colors, without taking focus, smooth scrolling, modifying source
+  text or adding copy handlers. Both UI shells share the viewer; WebUI gains no
+  native file-read capability.
+
 ## 4. Validation & Error Matrix
 
 | Condition | Result |
 | --- | --- |
 | Desktop Local/WSL/SSH `.md` / `.markdown` | Sanitized Markdown workspace tab |
+| Project-relative `resources/design.md:215`, `README.md:12:3` | Resolve from project root; navigate to/highlight the source line |
+| Root-level `Dockerfile:12`, `Makefile:8`, `LICENSE:3`, `README:5` | Preserve through sanitization; open the file at the requested source line |
+| Same-file selection without a range after line navigation | Clear the old range/emphasis without replacing content or scrolling |
+| `src/main.ts:12-18`, `README.md#L12-L18`, `file:///tmp/main.rs#L12-L18` | Open/select code or Markdown preview; highlight the inclusive source range |
+| Zero, reversed or unsafe-integer line range | Reject; no file read or navigation |
+| Source line past EOF or unrendered Markdown line | Nearest available source line/rendered block |
+| `./README.md#intro` | Open from project root; ordinary section anchors are not line locations |
+| Relative traversal above project root or invalid relative path | Error on activation; no browser navigation or desktop IPC |
 | Known code/text extension or supported text basename | Read-only highlighted/plain-text tab |
 | Allowlisted HTML, PDF, text and raster image documents | System-default application |
 | Unknown system-open extension, including `.wsb` or macro documents | Reject |
@@ -194,7 +264,7 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
 | Preview >1 MiB, NUL, invalid UTF-8 | Error toast; no partial/new tab |
 | Windows drive URL, Unicode/spaces | Decode for the selected environment; remote POSIX URLs work on a Windows Host |
 | Remote hostname, UNC/device path, encoded slash/backslash, ADS | Reject |
-| Query/fragment (even empty), controls, malformed encoding, >4096 URL | Reject |
+| Query/non-line fragment on absolute file URL (even empty), controls, malformed encoding, >4096 URL | Reject |
 | Missing file or directory | Reject |
 | Executable, script or shortcut requested for system opening | Reject (safe text preview may still be allowed) |
 | WSL/SSH code/text | Bounded preview through the selected connection; canonical remote path retained |
@@ -210,7 +280,9 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
 ## 5. Good / Base / Bad Cases
 
 - Good: `[Notes](file:///Users/me/notes.md)` opens after the conversation tab;
-  clicking it again selects the existing tab.
+  clicking it again selects the existing tab. `[Spec](resources/design.md:215)`
+  resolves from the owning project's directory without a `[blocked]` marker,
+  then highlights the rendered block corresponding to source line 215.
 - Base: `[Report](file:///Users/me/report.html)` still opens in the default browser;
   `[Site](https://example.com)` retains external-link security. An SSH report
   under `~/.answer-me-with-html/` is read on SSH and opened as a local snapshot.
@@ -220,9 +292,26 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
 
 ## 6. Tests Required
 
+- Source-location coverage: workspace open/select stores inclusive ranges, repeated
+  same-file/same-range links retrigger navigation without replacing cached content,
+  legacy two-argument calls keep their previous state shape. Preview source maps
+  retain global lines across blocks, lists/tables, fences, TeX and CRLF. Browser
+  checks must assert scroll/highlight after async Markdown/Shiki mounts, replacement
+  of an old range, nearest-line fallback, large plain-text ranges, copy behavior,
+  normal tab scroll preservation, both themes and narrow/mobile layouts.
+
 - `tests/unit/chat-markdown-links.test.ts`: URL guards, static/streaming Markdown,
+  project-relative paths and line suffixes (including root-level filenames),
+  POSIX/Windows roots, encoded Unicode/spaces, traversal and scheme rejection,
+  unchanged absolute/external links and no WebUI IPC; add single/range/column
+  syntax, absolute preview line fragments, zero/reversed/unsafe ranges, and
+  rejection of line fragments on external system documents,
   raw anchors, spoofed metadata, label formatting, visible-label search projection,
-  file-chip search markers and external-link security.
+  file-chip search markers and external-link security. Oversized dotted hrefs run
+  in a timeout-bounded child process so regex regressions cannot hang the runner.
+- `tests/unit/markdown-source-lines.test.ts`: global block/table/list/fence line
+  positions across LF/CRLF/CR and TeX normalization, sanitized raw-HTML metadata,
+  Shiki line attributes and unsupported/oversized highlighting fallbacks.
 - `tests/unit/chat-markdown-images.test.ts`: preview scopes at project root and
   nested directories, Windows canonical paths, contained parent image paths,
   above-root traversal and outside-project document rejection.

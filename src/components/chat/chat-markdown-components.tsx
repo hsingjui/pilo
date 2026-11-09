@@ -10,7 +10,10 @@ import {
 	MarkdownLink,
 	MarkdownLinkLabelContext,
 } from "@/components/chat/chat-markdown-link";
-import { rehypeFileLinks } from "@/lib/chat/chat-markdown-links";
+import {
+	rehypeFileLinks,
+	rehypeRelativeFileLinks,
+} from "@/lib/chat/chat-markdown-links";
 import { cn } from "@/lib/utils";
 
 type MarkdownCodeProps = ComponentPropsWithoutRef<"code"> & {
@@ -109,6 +112,7 @@ const [sanitize, sanitizeSchema] = defaultRehypePlugins.sanitize as [
 
 export const MARKDOWN_REHYPE_PLUGINS = [
 	defaultRehypePlugins.raw,
+	rehypeRelativeFileLinks,
 	[
 		sanitize,
 		{

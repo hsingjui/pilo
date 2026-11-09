@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import type { Project } from "@/lib/api/projects";
 import { ProjectWorkspaceContext } from "@/components/app/project-workspace-context";
 import { openFileLink } from "@/lib/api/file-links";
-import { resolveMarkdownFileUrl } from "@/lib/chat/chat-markdown-links";
+import { resolveMarkdownFileLink } from "@/lib/chat/chat-markdown-links";
 import { workspaceFileKey } from "@/lib/project-workspace";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +19,7 @@ export const MarkdownLinkLabelContext = createContext(false);
 
 export const ChatMarkdownLinkScope = createContext<Pick<
 	Project,
-	"id" | "connection"
+	"id" | "connection" | "path"
 > | null>(null);
 
 type MarkdownLinkProps = ComponentPropsWithoutRef<"a"> & {
@@ -41,7 +41,7 @@ export function MarkdownLink({
 	const workspace = useContext(ProjectWorkspaceContext);
 	const [opening, setOpening] = useState(false);
 	if (fileUrl !== undefined) {
-		const url = resolveMarkdownFileUrl(fileUrl);
+		const target = resolveMarkdownFileLink(fileUrl, project?.path);
 		const standalone = fileLayout === "standalone";
 		return (
 			<button
@@ -57,10 +57,11 @@ export function MarkdownLink({
 						: "inline-block min-h-6 rounded-sm p-0 align-baseline [font:inherit] underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-muted-foreground",
 				)}
 				onClick={() => {
-					if (!url) {
+					if (!target) {
 						toast.error(t("chat.fileLinkInvalid"));
 						return;
 					}
+					const { url, lineRange } = target;
 					const path = decodeURIComponent(new URL(url).pathname).replace(
 						/^\/([a-z]:\/)/i,
 						"$1",
@@ -74,7 +75,7 @@ export function MarkdownLink({
 									workspaceFileKey(file.path) === workspaceFileKey(path),
 							);
 					if (existing && project && workspace) {
-						workspace.selectFile(project.id, existing.path);
+						workspace.selectFile(project.id, existing.path, lineRange);
 						return;
 					}
 					setOpening(true);
@@ -82,7 +83,7 @@ export function MarkdownLink({
 						.then((file) => {
 							if (!file || !project) return;
 							if (!workspace) throw new Error(t("file.workspaceUnavailable"));
-							workspace.openFile(project.id, file);
+							workspace.openFile(project.id, file, lineRange);
 						})
 						.catch((error: unknown) => {
 							toast.error(t("chat.fileLinkOpenFailed"), {

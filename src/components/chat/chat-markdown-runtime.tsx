@@ -20,7 +20,11 @@ import {
 	MARKDOWN_CODE_PLUGIN,
 	MARKDOWN_STREAMING_CODE_PLUGIN,
 } from "@/lib/markdown-highlight";
-import { remarkSingleDollarTextMath } from "@/lib/markdown-single-dollar-math";
+import {
+	normalizeTexMathDelimiters,
+	remarkSingleDollarTextMath,
+} from "@/lib/markdown-single-dollar-math";
+import { rehypeMarkdownSourceLines } from "@/lib/markdown-source-lines";
 import {
 	recordMarkdownParse,
 	recordMarkdownRender,
@@ -82,6 +86,7 @@ type MarkdownPresentationBoundaryProps = {
 	text: string;
 	isStreaming: boolean;
 	className?: string;
+	sourceLines?: boolean;
 };
 
 type MarkdownPresentationBoundaryState = {
@@ -210,6 +215,7 @@ class MarkdownPresentationBoundary extends Component<
 				presentationLagging={this.state.catchingUp}
 				isStreaming={this.props.isStreaming}
 				className={this.props.className}
+				sourceLines={this.props.sourceLines}
 			/>
 		);
 	}
@@ -230,6 +236,10 @@ const STREAMDOWN_CONTROLS = {
 } satisfies ControlsConfig;
 
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm, remarkSingleDollarTextMath];
+const MARKDOWN_SOURCE_REHYPE_PLUGINS = [
+	...MARKDOWN_REHYPE_PLUGINS,
+	rehypeMarkdownSourceLines,
+];
 
 const MARKDOWN_BASE_CLASSNAME =
 	"markdown-renderer max-w-none text-foreground leading-[1.75] " +
@@ -265,11 +275,13 @@ const ChatMarkdownBody = memo(function ChatMarkdownBody({
 	presentationLagging,
 	isStreaming,
 	className,
+	sourceLines = false,
 }: {
 	text: string;
 	presentationLagging: boolean;
 	isStreaming: boolean;
 	className?: string;
+	sourceLines?: boolean;
 }) {
 	recordMarkdownRender(text.length);
 	const { t } = useTranslation();
@@ -278,8 +290,16 @@ const ChatMarkdownBody = memo(function ChatMarkdownBody({
 	const needsMath = useMemo(() => hasPotentialMathMarkup(text), [text]);
 	const blockParser = useMemo(
 		() =>
-			createStreamingMarkdownBlockParser({ onMetrics: recordMarkdownParse }),
-		[],
+			sourceLines
+				? (markdown: string) => [markdown]
+				: createStreamingMarkdownBlockParser({
+						onMetrics: recordMarkdownParse,
+					}),
+		[sourceLines],
+	);
+	const source = useMemo(
+		() => (sourceLines ? normalizeTexMathDelimiters(text) : text),
+		[sourceLines, text],
 	);
 	const [mermaidOptions, setMermaidOptions] = useState(() => ({
 		config: createMarkdownMermaidConfig(theme),
@@ -363,7 +383,7 @@ const ChatMarkdownBody = memo(function ChatMarkdownBody({
 	return (
 		<div className={cn(MARKDOWN_BASE_CLASSNAME, className)}>
 			<Streamdown
-				mode="streaming"
+				mode={sourceLines ? "static" : "streaming"}
 				className="space-y-0"
 				controls={STREAMDOWN_CONTROLS}
 				isAnimating={shouldAnimate}
@@ -373,7 +393,9 @@ const ChatMarkdownBody = memo(function ChatMarkdownBody({
 				parseMarkdownIntoBlocksFn={blockParser}
 				plugins={plugins}
 				remarkPlugins={MARKDOWN_REMARK_PLUGINS}
-				rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
+				rehypePlugins={
+					sourceLines ? MARKDOWN_SOURCE_REHYPE_PLUGINS : MARKDOWN_REHYPE_PLUGINS
+				}
 				components={MARKDOWN_COMPONENTS}
 				translations={{
 					copied: t("chat.copied"),
@@ -381,7 +403,7 @@ const ChatMarkdownBody = memo(function ChatMarkdownBody({
 				}}
 				urlTransform={defaultUrlTransform}
 			>
-				{text}
+				{source}
 			</Streamdown>
 		</div>
 	);
@@ -391,16 +413,19 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 	text,
 	isStreaming = false,
 	className,
+	sourceLines,
 }: {
 	text: string;
 	isStreaming?: boolean;
 	className?: string;
+	sourceLines?: boolean;
 }) {
 	return (
 		<MarkdownPresentationBoundary
 			text={text}
 			isStreaming={isStreaming}
 			className={className}
+			sourceLines={sourceLines}
 		/>
 	);
 });

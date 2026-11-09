@@ -4,6 +4,7 @@ export type ChatMarkdownProps = {
 	text: string;
 	isStreaming?: boolean;
 	className?: string;
+	sourceLines?: boolean;
 };
 
 type ChatMarkdownRuntimeComponent =

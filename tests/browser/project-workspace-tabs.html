@@ -106,7 +106,7 @@
 								rehypePlugins: MARKDOWN_REHYPE_PLUGINS,
 								urlTransform: defaultUrlTransform,
 							},
-							"[notes](file:///tmp/notes.md) [source](file:///tmp/main.ts) [document](file:///tmp/document.pdf)",
+							"[notes](file:///tmp/notes.md) [source](file:///tmp/main.ts) [document](file:///tmp/document.pdf) [range](src/range.ts:60-62)",
 						),
 						h("p", { id: "agent-output" }, output),
 						h("div", { style: { height: 2000 } }, "Conversation stays mounted"),
@@ -233,9 +233,11 @@
 				const rect = panel.getBoundingClientRect();
 				const container = panel.parentElement.getBoundingClientRect();
 				assert(
-					["Top", "Right", "Bottom", "Left"].every(
-						(side) => parseFloat(style[`border${side}Width`]) === 1,
-					) && parseFloat(style.borderTopLeftRadius) > 0,
+					["Top", "Right", "Bottom", "Left"].every((side) => {
+						// Fractional DPR rounds a CSS border down to whole device pixels.
+						const width = parseFloat(style[`border${side}Width`]);
+						return width > 0 && width <= 1 && 1 - width < 1 / devicePixelRatio;
+					}) && parseFloat(style.borderTopLeftRadius) > 0,
 					"Markdown/code preview must have a rounded 1px frame",
 				);
 				assert(
@@ -345,6 +347,7 @@
 				const scroll = document.querySelector("#chat-scroll");
 				const draft = document.querySelector("#draft");
 				scroll.scrollTop = 650;
+				const initialChatScroll = scroll.scrollTop;
 				const height = scroll.clientHeight;
 				const links = [...scroll.querySelectorAll("button")];
 				assert(
@@ -417,7 +420,8 @@
 					"Markdown scripts must not run",
 				);
 				assert(
-					scroll.clientHeight === height && scroll.scrollTop === 650,
+					scroll.clientHeight === height &&
+						scroll.scrollTop === initialChatScroll,
 					"File selection changed hidden conversation geometry",
 				);
 				fixture.appendOutput("Agent continued while previewing");
@@ -431,7 +435,7 @@
 				);
 				assert(
 					document.querySelector("#chat-scroll") === scroll &&
-						scroll.scrollTop === 650,
+						scroll.scrollTop === initialChatScroll,
 					"Conversation scroll was lost",
 				);
 				assert(
@@ -804,6 +808,192 @@
 				);
 				fixture.workspace.closeFile("alpha", "/tmp/outside.md");
 				await settle();
+				// Source links use the same viewer in both shells; only desktop may read files.
+				globalThis.isTauri = true;
+				fixture.setWeb(false);
+				fixture.setWidth(940);
+				await settle();
+				const beforeRangeOpen = fileCalls().length;
+				links[3].click();
+				const activePanel = () =>
+					document.querySelector('[role="tabpanel"]:not([inert])');
+				const highlighted = () => [
+					...(activePanel()?.querySelectorAll("[data-source-line-highlight]") ??
+						[]),
+				];
+				await waitFor(
+					() =>
+						highlighted().length === 3 &&
+						highlighted()[0].dataset.sourceLineStart === "60" &&
+						activePanel().querySelector(".shiki") &&
+						activePanel().scrollTop > 0,
+					"Relative source link did not navigate after async Shiki mounted",
+				);
+				const rangePath = "/tmp/alpha/src/range.ts";
+				assert(
+					fileCalls().at(-1).args.url === "file:///tmp/alpha/src/range.ts" &&
+						fileCalls().length === beforeRangeOpen + 1,
+					"Relative source IPC must use the project root without location syntax",
+				);
+				const codePanel = activePanel();
+				codePanel.scrollTop = 0;
+				fixture.workspace.selectFile("alpha", rangePath, {
+					start: 60,
+					end: 62,
+				});
+				await waitFor(
+					() => codePanel.scrollTop > 0,
+					"Repeated range did not scroll again",
+				);
+				assert(
+					fileCalls().length === beforeRangeOpen + 1,
+					"Repeated navigation reread cached content",
+				);
+				fixture.workspace.selectFile("alpha", rangePath, {
+					start: 10,
+					end: 12,
+				});
+				await waitFor(
+					() =>
+						highlighted().length === 3 &&
+						highlighted()[0].dataset.sourceLineStart === "10",
+					"New range did not replace old emphasis",
+				);
+				const rangeScroll = codePanel.scrollTop;
+				fixture.workspace.selectFile("alpha", rangePath);
+				await settle();
+				assert(
+					highlighted().length === 0 && codePanel.scrollTop === rangeScroll,
+					"Range-free selection must clear emphasis without scrolling",
+				);
+				codePanel.scrollTop = 400;
+				fixture.workspace.selectFile("alpha", null);
+				await settle();
+				fixture.workspace.selectFile("alpha", rangePath);
+				await settle();
+				assert(
+					activePanel() === codePanel && codePanel.scrollTop === 400,
+					"Normal tab switching lost the preview DOM or scroll",
+				);
+				fixture.workspace.closeFile("alpha", rangePath);
+				await settle();
+
+				const markdownPath = "/tmp/alpha/source-lines.md";
+				const markdownContent =
+					Array.from({ length: 80 }, (_, i) => `Paragraph ${i + 1}`).join(
+						"\n\n",
+					) + "\n\n```ts\nconst marker = 1;\n```";
+				for (const native of [true, false]) {
+					globalThis.isTauri = native;
+					fixture.setWeb(!native);
+					for (const width of [940, 320]) {
+						fixture.setWidth(width);
+						for (const dark of [false, true]) {
+							document.documentElement.classList.toggle("dark", dark);
+							fixture.workspace.openFile(
+								"alpha",
+								{ path: markdownPath, content: markdownContent },
+								{ start: 101, end: 101 },
+							);
+							await waitFor(
+								() =>
+									highlighted().length === 1 &&
+									highlighted()[0].textContent === "Paragraph 51" &&
+									activePanel().scrollTop > 0,
+								"Markdown source lines did not retain global paragraph positions",
+							);
+							const target = highlighted()[0];
+							const bounds = activePanel().getBoundingClientRect();
+							assert(
+								target.getBoundingClientRect().top >= bounds.top &&
+									target.getBoundingClientRect().bottom <= bounds.bottom,
+								"Source navigation did not reveal the target inside the file panel",
+							);
+							assert(
+								getComputedStyle(target).backgroundColor !== "rgba(0, 0, 0, 0)",
+								"Source emphasis is invisible in the current theme",
+							);
+							fixture.workspace.selectFile("alpha", markdownPath, {
+								start: 162,
+								end: 162,
+							});
+							await waitFor(
+								() =>
+									highlighted().length === 1 &&
+									highlighted()[0].tagName === "DIV" &&
+									highlighted()[0].dataset.sourceLineStart === "161" &&
+									highlighted()[0].textContent.includes("const marker") &&
+									highlighted()[0].querySelector(
+										'span[style*="token-keyword"]',
+									),
+								"Fenced code source wrapper did not survive rich Markdown rendering",
+							);
+							fixture.workspace.selectFile("alpha", markdownPath, {
+								start: 160,
+								end: 160,
+							});
+							await waitFor(
+								() => highlighted()[0]?.textContent === "Paragraph 80",
+								"Blank Markdown lines must select the nearest rendered block",
+							);
+							fixture.workspace.closeFile("alpha", markdownPath);
+							await settle();
+						}
+					}
+				}
+				document.documentElement.classList.remove("dark");
+				const beforeWebRange = fileCalls().length;
+				links[3].click();
+				await settle();
+				assert(
+					fileCalls().length === beforeWebRange &&
+						!fixture.workspace.state
+							.get("alpha")
+							.files.some((file) => file.path === rangePath),
+					"WebUI relative source links must reject before native IPC",
+				);
+				const plainPath = "/tmp/alpha/large.txt";
+				const plainContent = Array.from(
+					{ length: 3000 },
+					(_, i) => `Line ${i + 1}`,
+				).join("\r\n");
+				fixture.workspace.openFile(
+					"alpha",
+					{ path: plainPath, content: plainContent },
+					{ start: 2200, end: 2202 },
+				);
+				await waitFor(
+					() => highlighted().length === 1 && activePanel().scrollTop > 0,
+					"Plain-text fallback did not navigate to the requested slice",
+				);
+				assert(
+					highlighted()[0].textContent ===
+						"Line 2200\r\nLine 2201\r\nLine 2202" &&
+						activePanel().querySelector("code").textContent === plainContent,
+					"Plain source navigation changed CRLF text or selected the wrong lines",
+				);
+				fixture.workspace.selectFile("alpha", plainPath, {
+					start: 2,
+					end: 2500,
+				});
+				await settle();
+				assert(
+					highlighted().length === 1 &&
+						activePanel().querySelectorAll(".project-source-lines").length ===
+							1 &&
+						highlighted()[0].textContent.split("\r\n").length === 2499,
+					"Large plain ranges must use one wrapper, not one node per line",
+				);
+				fixture.workspace.selectFile("alpha", plainPath, {
+					start: 5000,
+					end: 5000,
+				});
+				await waitFor(
+					() => highlighted()[0]?.textContent === "Line 3000",
+					"A plain-text location after EOF did not clamp to the final line",
+				);
+				fixture.workspace.closeFile("alpha", plainPath);
+				await settle();
 				const pendingOpen = fixture.workspace.openFile;
 				pendingOpen("beta", { path: "/tmp/beta.md", content: "Beta" });
 				await settle();
@@ -817,7 +1007,7 @@
 				);
 				document.body.dataset.testStatus = "passed";
 				document.getElementById("results").textContent =
-					"PASS: empty landing header, standalone titles without backgrounds, temporary identifiers, landing preview navigation, shared header tabs, Markdown/code, deduplication, project isolation, preserved draft/scroll/background updates, keyboard navigation, close focus, file-type icons, active-file editor opening, shared Hint tooltips, unified tab surfaces, compact long titles, framed previews, middle-click closing, 320px light/dark layout, system/WebUI routing, root/nested Markdown images, desktop/remote image transports and project image boundaries.";
+					"PASS: empty landing header, standalone titles without backgrounds, temporary identifiers, landing preview navigation, shared header tabs, Markdown/code, deduplication, project isolation, preserved draft/scroll/background updates, keyboard navigation, close focus, file-type icons, active-file editor opening, shared Hint tooltips, unified tab surfaces, compact long titles, framed previews, middle-click closing, 320px light/dark layout, system/WebUI routing, root/nested Markdown images, desktop/remote image transports, project image boundaries, source-link IPC, async source highlighting/scroll, repeated and replaced ranges, range clearing, Markdown source maps, large CRLF plain-text ranges and EOF fallback.";
 			} catch (error) {
 				document.body.dataset.testStatus = "failed";
 				document.getElementById("results").textContent = String(

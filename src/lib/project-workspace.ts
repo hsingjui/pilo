@@ -1,3 +1,8 @@
+export type WorkspaceLineRange = {
+	start: number;
+	end: number;
+};
+
 export type WorkspaceFile = {
 	path: string;
 	content: string;
@@ -6,7 +11,7 @@ export type WorkspaceFile = {
 
 export type WorkspaceTab =
 	| { kind: "chat" }
-	| { kind: "file"; path: string }
+	| { kind: "file"; path: string; lineRange?: WorkspaceLineRange }
 	| { kind: "git" };
 
 export type GitWorkspaceView = {
@@ -48,8 +53,18 @@ export function workspaceFileKey(path: string): string {
 }
 
 type WorkspaceAction =
-	| { type: "open"; projectId: string; file: WorkspaceFile }
-	| { type: "select"; projectId: string; path: string | null }
+	| {
+			type: "open";
+			projectId: string;
+			file: WorkspaceFile;
+			lineRange?: WorkspaceLineRange;
+	  }
+	| {
+			type: "select";
+			projectId: string;
+			path: string | null;
+			lineRange?: WorkspaceLineRange;
+	  }
 	| { type: "close"; projectId: string; path: string }
 	| { type: "open-git"; projectId: string }
 	| { type: "close-git"; projectId: string }
@@ -86,7 +101,11 @@ export function reduceProjectWorkspaces(
 			next = {
 				...current,
 				files: existing ? current.files : [...current.files, action.file],
-				activeTab: { kind: "file", path: existing?.path ?? action.file.path },
+				activeTab: {
+					kind: "file",
+					path: existing?.path ?? action.file.path,
+					...(action.lineRange ? { lineRange: action.lineRange } : {}),
+				},
 			};
 			break;
 		}
@@ -99,7 +118,9 @@ export function reduceProjectWorkspaces(
 			if (
 				(action.path === null && current.activeTab.kind === "chat") ||
 				(current.activeTab.kind === "file" &&
-					current.activeTab.path === action.path)
+					current.activeTab.path === action.path &&
+					!current.activeTab.lineRange &&
+					!action.lineRange)
 			)
 				return state;
 			next = {
@@ -107,7 +128,11 @@ export function reduceProjectWorkspaces(
 				activeTab:
 					action.path === null
 						? { kind: "chat" }
-						: { kind: "file", path: action.path },
+						: {
+								kind: "file",
+								path: action.path,
+								...(action.lineRange ? { lineRange: action.lineRange } : {}),
+							},
 			};
 			break;
 		}

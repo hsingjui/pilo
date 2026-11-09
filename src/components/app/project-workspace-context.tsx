@@ -11,6 +11,7 @@ import {
 	reduceProjectWorkspaces,
 	type GitWorkspaceView,
 	type WorkspaceFile,
+	type WorkspaceLineRange,
 } from "@/lib/project-workspace";
 
 export function useProjectWorkspaces(projectIds: readonly string[]) {
@@ -20,14 +21,28 @@ export function useProjectWorkspaces(projectIds: readonly string[]) {
 		availableProjects.current = projectIds;
 		dispatch({ type: "prune", projectIds });
 	}, [projectIds]);
-	const openFile = useCallback((projectId: string, file: WorkspaceFile) => {
-		// Ignore a pending read that finishes after its project was removed.
-		if (!availableProjects.current.includes(projectId)) return;
-		dispatch({ type: "open", projectId, file });
-	}, []);
-	const selectFile = useCallback((projectId: string, path: string | null) => {
-		dispatch({ type: "select", projectId, path });
-	}, []);
+	const openFile = useCallback(
+		(
+			projectId: string,
+			file: WorkspaceFile,
+			lineRange?: WorkspaceLineRange,
+		) => {
+			// Ignore a pending read that finishes after its project was removed.
+			if (!availableProjects.current.includes(projectId)) return;
+			dispatch({ type: "open", projectId, file, lineRange });
+		},
+		[],
+	);
+	const selectFile = useCallback(
+		(
+			projectId: string,
+			path: string | null,
+			lineRange?: WorkspaceLineRange,
+		) => {
+			dispatch({ type: "select", projectId, path, lineRange });
+		},
+		[],
+	);
 	const closeFile = useCallback((projectId: string, path: string) => {
 		dispatch({ type: "close", projectId, path });
 	}, []);
