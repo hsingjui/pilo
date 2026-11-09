@@ -497,13 +497,14 @@ const enUS = {
 	},
 	chat: {
 		todayPrompt: "What would you like to work on today?",
-		openProjectInEditor: "Open project in editor",
 		openProjectWithEditor: "Open in {{editor}}",
-		openFileInEditor: "Open file in editor",
 		openFileWithEditor: "Open {{name}} in {{editor}}",
-		chooseProjectEditor: "Choose editor",
-		openProjectInEditorFailed:
-			"Could not open {{editor}}. Make sure it is installed and its URL handler is registered.",
+		quickOpen: "Quick open",
+		chooseProjectApp: "Choose app",
+		fileExplorer: "File Explorer",
+		openFileDirectoryWithApp: "Open containing folder in {{editor}}",
+		openProjectInAppFailed:
+			"Could not open {{editor}}. Make sure it is installed and available.",
 		acceptNextPrompt: "Use suggestion",
 		adoptNextPrompt: "Use suggestion: {{text}}",
 		composerPlaceholder: "Message Pi, @ to mention files",

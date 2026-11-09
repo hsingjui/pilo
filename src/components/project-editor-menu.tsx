@@ -1,17 +1,19 @@
 import { useRef, useSyncExternalStore } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, FolderOpen, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import vscodeIcon from "@/assets/editors/vscode.svg";
+import wincIcon from "@/assets/editors/winc.svg";
 
 import {
+	getProjectOpeners,
 	openProjectInEditor,
-	PROJECT_EDITORS,
 	readProjectEditor,
 	subscribeProjectEditor,
 	writeProjectEditor,
 	type ProjectEditor,
+	type ProjectOpener,
 } from "@/lib/project-editor";
 import type { Project } from "@/lib/api/projects";
 import {
@@ -33,7 +35,16 @@ const editorIconPaths: Record<Exclude<ProjectEditor, "vscode">, string> = {
 		"M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23",
 };
 
-function ProjectEditorIcon({ editor }: { editor: ProjectEditor }) {
+function ProjectEditorIcon({ editor }: { editor: ProjectOpener }) {
+	if (editor === "winc") {
+		return <img src={wincIcon} alt="" className="size-4 shrink-0" />;
+	}
+	if (editor === "explorer" || editor === "finder") {
+		return <FolderOpen aria-hidden="true" className="size-4 shrink-0" />;
+	}
+	if (editor === "powershell" || editor === "ghostty") {
+		return <Terminal aria-hidden="true" className="size-4 shrink-0" />;
+	}
 	if (editor === "vscode") {
 		return <img src={vscodeIcon} alt="" className="size-4 shrink-0" />;
 	}
@@ -57,30 +68,42 @@ export function ProjectEditorMenu({
 	filePath?: string;
 }) {
 	const { t } = useTranslation();
-	const selectedEditor = useSyncExternalStore(
+	const storedEditor = useSyncExternalStore(
 		subscribeProjectEditor,
 		readProjectEditor,
 	);
+	const editors = getProjectOpeners(project).map((editor) => ({
+		id: editor.id,
+		name: editor.id === "explorer" ? t("chat.fileExplorer") : editor.name,
+	}));
+	const selectedEditor =
+		editors.find((editor) => editor.id === storedEditor.id) ?? editors[0];
+	const nativeApp =
+		selectedEditor.id === "explorer" ||
+		selectedEditor.id === "finder" ||
+		selectedEditor.id === "powershell" ||
+		selectedEditor.id === "ghostty";
 	const pointerSelectionRef = useRef(false);
-	const openLabel = filePath
-		? t("chat.openFileWithEditor", {
-				editor: selectedEditor.name,
-				name: filePath.split(/[\\/]/).at(-1) ?? filePath,
-			})
-		: t("chat.openProjectWithEditor", { editor: selectedEditor.name });
+	const openLabel =
+		filePath && nativeApp
+			? t("chat.openFileDirectoryWithApp", { editor: selectedEditor.name })
+			: filePath
+				? t("chat.openFileWithEditor", {
+						editor: selectedEditor.name,
+						name: filePath.split(/[\\/]/).at(-1) ?? filePath,
+					})
+				: t("chat.openProjectWithEditor", { editor: selectedEditor.name });
 
-	function handleOpen(editor: (typeof PROJECT_EDITORS)[number]) {
+	function handleOpen(editor: (typeof editors)[number]) {
 		writeProjectEditor(editor.id);
 		void openProjectInEditor(project, editor.id, filePath).catch(() => {
-			toast.error(t("chat.openProjectInEditorFailed", { editor: editor.name }));
+			toast.error(t("chat.openProjectInAppFailed", { editor: editor.name }));
 		});
 	}
 
 	return (
 		<fieldset
-			aria-label={t(
-				filePath ? "chat.openFileInEditor" : "chat.openProjectInEditor",
-			)}
+			aria-label={t("chat.quickOpen")}
 			className="group/editor inline-flex shrink-0 items-center rounded-md transition-colors hover:bg-hover has-[[data-state=open]]:bg-hover"
 		>
 			<Tooltip>
@@ -105,7 +128,7 @@ export function ProjectEditorMenu({
 						variant="ghost"
 						size="icon"
 						className="h-7 w-4 text-muted-foreground/60 group-hover/editor:text-muted-foreground data-[state=open]:text-foreground [@media(pointer:coarse)]:size-11"
-						aria-label={t("chat.chooseProjectEditor")}
+						aria-label={t("chat.chooseProjectApp")}
 					>
 						<ChevronDown className="size-2.5" />
 					</Button>
@@ -126,7 +149,7 @@ export function ProjectEditorMenu({
 					}}
 				>
 					<DropdownMenuRadioGroup value={selectedEditor.id}>
-						{PROJECT_EDITORS.map((editor) => (
+						{editors.map((editor) => (
 							<DropdownMenuRadioItem
 								key={editor.id}
 								value={editor.id}

@@ -22,6 +22,7 @@ mod pi_workspace;
 mod preferences;
 mod preview;
 pub mod project;
+mod project_opener;
 mod prompt_enhancement;
 mod remote;
 mod remote_fs;

@@ -37,7 +37,7 @@ pub use projects::{
     project_fs_read_image, project_fs_remove, project_fs_rename, project_fs_search,
     project_fs_stat, project_fs_write_file, project_git_diff, project_git_status,
     project_html_report_open, project_list, project_model_cache_list, project_model_cache_set,
-    project_model_scope_get, project_model_scope_set, project_open_in_zed_wsl,
+    project_model_scope_get, project_model_scope_set, project_open_in_app, project_open_in_zed_wsl,
     project_preview_close, project_preview_open, project_preview_ports, project_refresh,
     project_remove, project_reorder, project_terminal_open, project_touch, terminal_close,
     terminal_resize, terminal_write,

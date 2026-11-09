@@ -35,8 +35,14 @@ see [Git Workspace Tab](./git-workspace.md). WebUI has no Git UI or routes.
   No WebUI route is registered for this operation.
 - `projectEditorUrl(project, editor, targetPath = project.path): string` builds
   an editor URL for a project directory or the selected absolute file path.
-- `openProjectInEditor(project, editor, path?: string): Promise<void>` preserves
-  the connection environment and existing editor selection.
+- `openProjectInEditor(project, editor: ProjectOpener, path?: string): Promise<void>`
+  preserves the connection environment and existing quick-open selection.
+  `ProjectOpener` adds `explorer | powershell | finder | ghostty | winc` to `ProjectEditor`.
+- `getProjectOpeners(project)` filters native apps by desktop OS and connection.
+- `project_open_in_app(handle, id: String, app: ProjectApp, path: Option<String>) -> Result<(), String>`
+  accepts IPC `{ id, app: "explorer" | "powershell" | "finder" | "ghostty" | "winc", path? }`.
+  Omitted path uses the saved project directory; a file targets its parent folder
+  for file managers/terminals, or the file itself for Winc.
 - `project_open_in_zed_wsl(app, id: String, path: Option<String>) -> Result<(), String>`
   accepts optional IPC `{ id, path? }`; omitting `path` retains project opening.
 - `useProjectWorkspaces(projectIds)` owns `{ state, openFile, selectFile, closeFile, openGit, closeGit, highlightFile }`.
@@ -205,6 +211,38 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
   existing CLI launcher (`--wsl <distro> -- <path>`), not a local UNC URL; absent
   path defaults to the saved project directory. Paths remain separate argv, not
   shell text; only saved WSL projects can use that command.
+- Quick open retains editor URL routing and the `pilo.projectEditor.v1` preference,
+  and adds Windows File Explorer/Windows PowerShell for Local/WSL and macOS
+  Finder/Ghostty for Local. Winc is a CLI-based editor for Windows/macOS/Linux
+  Local and Windows WSL projects; SSH retains URL-based editors only. WebUI gets no native menu
+  or launch endpoint. An unavailable remembered choice falls back to Zed without
+  overwriting the preference. Preserve existing menu keyboard behavior and 44px
+  coarse-pointer targets.
+- Native launches live in `runtime/project_opener.rs`, not React or command glue.
+  Resolve the saved project before launching; require an absolute existing regular
+  file/directory. Windows strips verbatim drive/UNC prefixes and maps WSL POSIX
+  paths to `\\wsl.localhost\<distro>\...`; never treat SSH paths as local paths.
+  Windows directory opening delegates to `tauri_plugin_opener::open_path` with
+  the default file manager from `spawn_blocking`. Do not pass the directory
+  directly to `explorer.exe`: its parser splits commas in unquoted paths, while
+  Rust's automatic argument quoting only covers whitespace. Preserve literal
+  drive/UNC/WSL paths, including comma-only names and root directories.
+  PowerShell uses a new console and `Set-Location -LiteralPath` with a temporary
+  environment variable, never interpolated path source. Finder uses `/usr/bin/open
+  -a Finder`; Ghostty uses `open -na Ghostty --args --working-directory=<directory>`
+  so an already-running app cannot discard the working directory. Mac launcher
+  failures/timeouts reject; Windows directory opening resolves after the system
+  opener accepts the request. PowerShell resolves after process spawn and reaps
+  it in the background. File-manager/terminal actions never execute the selected file.
+- Winc preserves the selected file/directory as a separate argv after `--`, rather
+  than using a URL scheme or opening a file's parent. Windows uses the installed
+  `LOCALAPPDATA/Programs/winc/winc.exe`, then absolute PATH entries (including
+  the parent exe for the installer's `bin/winc.cmd`), then `winc.exe` lookup.
+  Never execute its `.cmd` wrapper through a shell. Windows WSL uses the existing
+  UNC mapping; upstream Winc detects that distro for Git/terminal routing. macOS
+  uses `/usr/bin/open -na winc --args -- <path>` so a running app receives the path;
+  Linux uses `winc -- <path>` from PATH. Windows/Linux return after spawning and
+  reap the GUI process in the background; macOS checks the launcher exit status.
 - Middle-button `auxclick` anywhere on a file tab (including its close icon)
   closes that file once through the existing close/focus flow. Prevent middle
   `mousedown` defaults too, to suppress Windows autoscroll/Linux paste. Right
@@ -276,6 +314,12 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
 | Editor click with a file selected | Open that file in the chosen editor/environment |
 | Editor click with chat selected | Preserve project-directory opening |
 | Windows Zed WSL with omitted path | Preserve saved project-directory CLI opening |
+| File manager/terminal with file selected | Open containing directory, never execute the file |
+| Windows directory containing a comma but no whitespace, or a drive/UNC root | Pass the literal directory to the system opener, never build an Explorer command line |
+| Winc with file/chat selected | Open that file/project directory in the editor |
+| Native app on wrong OS, SSH, relative/missing/special path | Reject; no launch |
+| Ghostty absent or macOS launcher timeout/nonzero exit | Reject and show localized failure |
+| Native quick-open choice unavailable on current project | Display Zed, preserve saved choice |
 
 ## 5. Good / Base / Bad Cases
 
@@ -283,6 +327,9 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
   clicking it again selects the existing tab. `[Spec](resources/design.md:215)`
   resolves from the owning project's directory without a `[blocked]` marker,
   then highlights the rendered block corresponding to source line 215.
+- Good: Windows WSL File Explorer/PowerShell targets the selected distro's UNC
+  directory; Ghostty opens the selected local file's parent, including spaces.
+  Winc opens that file itself and recognizes Windows WSL UNC paths.
 - Base: `[Report](file:///Users/me/report.html)` still opens in the default browser;
   `[Site](https://example.com)` retains external-link security. An SSH report
   under `~/.answer-me-with-html/` is read on SSH and opened as a local snapshot.
@@ -317,7 +364,15 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
   above-root traversal and outside-project document rejection.
 - `tests/unit/project-editor.test.ts`: project/file URL targets, encoded Windows
   verbatim/Unicode/space/hash paths, WSL/SSH routing, optional Windows Zed WSL IPC
-  path and existing project-directory fallback.
+  path and existing project-directory fallback. Pending explicit test authorization:
+  native target filtering, shared remembered selections and unavailable-choice
+  fallback, IPC app/path payloads, missing/relative/special paths, Windows
+  drive/verbatim/UNC/WSL folders, quotes/wildcards/Unicode, and launch failures.
+  Native Windows/macOS verification must check the actual folder and terminal cwd,
+  including Ghostty already running; static checks are not launch verification.
+  Winc coverage must assert file-vs-directory targeting, Windows default/custom
+  PATH launcher resolution, WSL distro routing, macOS already-running forwarding,
+  Linux PATH lookup and missing-app errors (pending explicit test authorization).
 - `tests/unit/project-workspace.test.ts`: routing, deduplication, path case,
   selection/closing, project pruning and stale highlighting. Tests now use
   activeTab/gitOpen and cover Git singleton/close behavior and project-owned view
@@ -360,6 +415,13 @@ Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
   `acceptance.md` evidence; these historical results do not certify current HEAD.
 
 ## 7. Wrong vs Correct
+
+- Wrong: interpolate a directory into PowerShell source, open an SSH path locally,
+  or reuse a running Ghostty instance while expecting it to consume `--args`.
+- Wrong: manufacture `winc://` URLs or launch `winc.cmd` with interpolated paths.
+- Correct: use Winc's native CLI/app bundle with separate path arguments.
+- Correct: keep paths as argv/environment data, filter unsupported connections,
+  and use Ghostty's new-instance launcher for the requested working directory.
 
 - Wrong: loosen sanitization, navigate directly to file URLs, grant generic opener
   access, or hide/unmount chat with `display: none` while a file is active.

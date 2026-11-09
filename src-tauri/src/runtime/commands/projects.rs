@@ -21,6 +21,17 @@ pub fn project_list(app: AppHandle) -> Result<Vec<Project>, String> {
 }
 
 #[tauri::command]
+pub async fn project_open_in_app(
+    handle: AppHandle,
+    id: String,
+    app: super::super::project_opener::ProjectApp,
+    path: Option<String>,
+) -> Result<(), String> {
+    let project = project::get(&handle, &id)?;
+    super::super::project_opener::open(&project, app, path.as_deref()).await
+}
+
+#[tauri::command]
 pub async fn project_open_in_zed_wsl(
     app: AppHandle,
     id: String,

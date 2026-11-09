@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Pilo contains code derived from third-party open-source projects. The notices below describe the relevant sources and license terms.
+Pilo contains code and assets derived from third-party open-source projects. The notices below describe the relevant sources and license terms.
 
 ## Lody
 
@@ -19,3 +19,10 @@ Portions of Pilo are derived from or adapted from [Lody](https://github.com/Lody
 The Lody-derived portions remain subject to the Apache License 2.0. Pilo itself is also licensed under Apache License 2.0. See [LICENSE](./LICENSE) for the full license text.
 
 This repository-level notice records the origin and modification of the Lody-derived portions. Additional file-level modification notices may be added where appropriate.
+
+## Winc
+
+- Asset: `src/assets/editors/winc.svg`, the unmodified Winc application icon.
+- Source: https://github.com/DEEIX-AI/Winc/blob/dev/crates/winc-app/assets/icon.svg
+- Copyright 2026 Chenyme and DEEIX AI
+- License: Apache License 2.0. See [LICENSE](./LICENSE) for the full license text.

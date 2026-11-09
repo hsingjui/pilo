@@ -478,13 +478,13 @@ const zhCN = {
 	chat: {
 		...enUS.chat,
 		todayPrompt: "今天要做点什么？",
-		openProjectInEditor: "在编辑器中打开",
 		openProjectWithEditor: "在 {{editor}} 中打开",
-		openFileInEditor: "在编辑器中打开文件",
 		openFileWithEditor: "在 {{editor}} 中打开 {{name}}",
-		chooseProjectEditor: "选择编辑器",
-		openProjectInEditorFailed:
-			"无法打开 {{editor}}，请确认已安装并注册打开协议。",
+		quickOpen: "快速打开",
+		chooseProjectApp: "选择应用",
+		fileExplorer: "文件管理器",
+		openFileDirectoryWithApp: "在 {{editor}} 中打开所在目录",
+		openProjectInAppFailed: "无法打开 {{editor}}，请确认已安装且可用。",
 		acceptNextPrompt: "采用建议",
 		adoptNextPrompt: "采用建议：{{text}}",
 		composerPlaceholder: "给 Pi 发消息，@ 提及文件",
