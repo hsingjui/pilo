@@ -63,6 +63,9 @@ pub(crate) async fn terminal_open(
 
     let shell = default_shell();
     let mut command = CommandBuilder::new(shell);
+    #[cfg(windows)]
+    // xterm consumes UTF-8; initialize cmd.exe to emit the same encoding.
+    command.args(["/D", "/K", "chcp 65001>NUL"]);
     set_project_cwd(&mut command, &params.project);
     command.env("PATH", cached_login_path(state).await);
     let child = pair
