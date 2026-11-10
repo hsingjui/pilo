@@ -840,6 +840,8 @@ const enUS = {
 		sessionFallback: "Session",
 	},
 	sidebar: {
+		defaultWorkspace: "Default workspace",
+		showDefaultWorkspace: "Show default workspace",
 		view: "View",
 		projects: "Projects",
 		recentSessions: "Recent sessions",

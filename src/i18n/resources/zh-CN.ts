@@ -812,6 +812,8 @@ const zhCN = {
 		sessionFallback: "会话",
 	},
 	sidebar: {
+		defaultWorkspace: "默认工作区",
+		showDefaultWorkspace: "显示默认工作区",
 		view: "视图",
 		projects: "项目",
 		recentSessions: "最近会话",

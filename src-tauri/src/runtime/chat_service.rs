@@ -9,7 +9,7 @@ use crate::domain::Project;
 use super::{
     PiloRuntime, RuntimeEventBus, chat_sessions::ChatSessionLaunch, host_paths::HostPaths,
     pi_workspace, session_activity::reject_external_session_owner,
-    session_snapshot::PiSessionSnapshot, storage,
+    session_snapshot::PiSessionSnapshot,
 };
 
 #[derive(Clone, Debug)]
@@ -30,14 +30,10 @@ impl ChatSessionRequest {
     }
 }
 
-fn get_project(paths: &HostPaths, project_id: &str) -> Result<Project, String> {
-    storage::get_project(&storage::open_with_paths(paths)?, project_id)?
-        .ok_or_else(|| format!("Project '{project_id}' was not found"))
-}
-
 async fn resolve_launch(
     paths: &HostPaths,
     runtime: &PiloRuntime,
+    events: &RuntimeEventBus,
     request: &ChatSessionRequest,
 ) -> Result<(Project, ChatSessionLaunch, String), String> {
     let started = Instant::now();
@@ -49,7 +45,9 @@ async fn resolve_launch(
             json!({ "projectId": request.project_id }),
         );
     }
-    let project = get_project(paths, &request.project_id)?;
+    let project =
+        super::project::ready_with_paths(paths, &runtime.servers, events, &request.project_id)
+            .await?;
     let profile =
         pi_workspace::resolve_pi_runtime_with_paths(paths, &project, request.extensions.clone())?;
     let model_probe = request.is_model_probe();
@@ -97,7 +95,8 @@ pub(crate) async fn prepare(
     events: RuntimeEventBus,
     request: ChatSessionRequest,
 ) -> Result<PiSessionSnapshot, String> {
-    let (project, launch, connection_id) = resolve_launch(paths, runtime, &request).await?;
+    let (project, launch, connection_id) =
+        resolve_launch(paths, runtime, &events, &request).await?;
     let snapshot = runtime
         .chat_sessions
         .prepare(
@@ -128,7 +127,8 @@ pub(crate) async fn start(
     events: RuntimeEventBus,
     request: ChatSessionRequest,
 ) -> Result<PiSessionSnapshot, String> {
-    let (project, launch, connection_id) = resolve_launch(paths, runtime, &request).await?;
+    let (project, launch, connection_id) =
+        resolve_launch(paths, runtime, &events, &request).await?;
     let snapshot = runtime
         .chat_sessions
         .ensure(

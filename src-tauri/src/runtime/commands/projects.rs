@@ -23,21 +23,23 @@ pub fn project_list(app: AppHandle) -> Result<Vec<Project>, String> {
 #[tauri::command]
 pub async fn project_open_in_app(
     handle: AppHandle,
+    runtime: State<'_, PiloRuntime>,
     id: String,
     app: super::super::project_opener::ProjectApp,
     path: Option<String>,
 ) -> Result<(), String> {
-    let project = project::get(&handle, &id)?;
+    let project = project::ready(&handle, &runtime.servers, &id).await?;
     super::super::project_opener::open(&project, app, path.as_deref()).await
 }
 
 #[tauri::command]
 pub async fn project_open_in_zed_wsl(
     app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
     id: String,
     path: Option<String>,
 ) -> Result<(), String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     let crate::domain::ConnectionKind::Wsl { distro } = &project.connection.kind else {
         return Err("opening Zed in WSL requires a WSL project".to_owned());
     };
@@ -47,21 +49,23 @@ pub async fn project_open_in_zed_wsl(
 #[tauri::command]
 pub async fn project_html_report_open(
     app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
     project_id: String,
     url: String,
 ) -> Result<(), String> {
-    let project = project::get(&app, &project_id)?;
+    let project = project::ready(&app, &runtime.servers, &project_id).await?;
     super::super::file_links::open(&app, &project, &url).await
 }
 
 #[tauri::command]
 pub async fn project_file_link_open(
     app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
     project_id: String,
     url: String,
     preview: bool,
 ) -> Result<Option<super::super::file_links::FileLinkPreview>, String> {
-    let project = project::get(&app, &project_id)?;
+    let project = project::ready(&app, &runtime.servers, &project_id).await?;
     super::super::file_links::open_file_link(&app, &project, &url, preview).await
 }
 
@@ -151,6 +155,11 @@ pub async fn project_remove(
     runtime: State<'_, PiloRuntime>,
     id: String,
 ) -> Result<Vec<Project>, String> {
+    if project::get(&app, &id)?.is_default_workspace() {
+        return Err(
+            "The default workspace cannot be removed; hide it in the connection menu".to_owned(),
+        );
+    }
     runtime.chat_sessions.stop_project(&id).await?;
     project::remove(&app, &id)
 }
@@ -161,7 +170,7 @@ pub async fn project_git_status(
     runtime: State<'_, PiloRuntime>,
     id: String,
 ) -> Result<GitStatus, String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     git::status(&runtime.servers, &project).await
 }
 
@@ -173,7 +182,7 @@ pub async fn project_git_diff(
     path: Option<String>,
     staged: bool,
 ) -> Result<String, String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     git::diff(&runtime.servers, &project, path.as_deref(), staged).await
 }
 
@@ -185,7 +194,7 @@ pub async fn project_terminal_open(
     cols: u16,
     rows: u16,
 ) -> Result<TerminalInfo, String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     runtime
         .terminals
         .lock()
@@ -247,7 +256,7 @@ pub async fn parallel_agent_create(
     name: String,
     prompt: Option<String>,
 ) -> Result<ParallelAgentInfo, String> {
-    let project = project::get(&app, &project_id)?;
+    let project = project::ready(&app, &runtime.servers, &project_id).await?;
     runtime
         .parallel_agents
         .lock()
@@ -285,7 +294,7 @@ pub async fn parallel_agent_remove(
     project_id: String,
     agent_id: String,
 ) -> Result<(), String> {
-    let project = project::get(&app, &project_id)?;
+    let project = project::ready(&app, &runtime.servers, &project_id).await?;
     runtime
         .parallel_agents
         .lock()
@@ -300,7 +309,7 @@ pub async fn project_preview_ports(
     runtime: State<'_, PiloRuntime>,
     project_id: String,
 ) -> Result<Vec<u16>, String> {
-    let project = project::get(&app, &project_id)?;
+    let project = project::ready(&app, &runtime.servers, &project_id).await?;
     preview::detect_ports(&runtime.servers, &project).await
 }
 
@@ -311,7 +320,7 @@ pub async fn project_preview_open(
     project_id: String,
     port: u16,
 ) -> Result<PreviewInfo, String> {
-    let project = project::get(&app, &project_id)?;
+    let project = project::ready(&app, &runtime.servers, &project_id).await?;
     runtime.previews.lock().await.open(&project, port).await
 }
 
@@ -330,7 +339,7 @@ pub async fn project_fs_read_dir(
     id: String,
     path: String,
 ) -> Result<Vec<FsEntry>, String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     remote_fs::read_dir(&runtime.servers, &project, &path).await
 }
 
@@ -362,7 +371,7 @@ pub async fn project_fs_read_file(
     id: String,
     path: String,
 ) -> Result<Vec<u8>, String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     remote_fs::read_viewer_file(&runtime.servers, &project, &path).await
 }
 
@@ -373,7 +382,7 @@ pub async fn project_fs_read_image(
     id: String,
     path: String,
 ) -> Result<Vec<u8>, String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     remote_fs::read_image(&runtime.servers, &project, &path).await
 }
 
@@ -385,7 +394,7 @@ pub async fn project_chat_file_upload(
     name: String,
     data: Vec<u8>,
 ) -> Result<String, String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     remote_fs::upload_chat_file(&runtime.servers, &project, &name, &data).await
 }
 
@@ -396,7 +405,7 @@ pub async fn project_chat_file_remove(
     id: String,
     path: String,
 ) -> Result<(), String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     remote_fs::remove_chat_file(&runtime.servers, &project, &path).await
 }
 
@@ -408,7 +417,7 @@ pub async fn project_fs_write_file(
     path: String,
     data: Vec<u8>,
 ) -> Result<(), String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     remote_fs::write_file(&runtime.servers, &project, &path, &data).await
 }
 
@@ -419,7 +428,7 @@ pub async fn project_fs_stat(
     id: String,
     path: String,
 ) -> Result<FsEntry, String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     remote_fs::stat(&runtime.servers, &project, &path).await
 }
 
@@ -430,7 +439,7 @@ pub async fn project_fs_mkdir(
     id: String,
     path: String,
 ) -> Result<(), String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     remote_fs::mkdir(&runtime.servers, &project, &path).await
 }
 
@@ -442,7 +451,7 @@ pub async fn project_fs_rename(
     from: String,
     to: String,
 ) -> Result<(), String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     remote_fs::rename(&runtime.servers, &project, &from, &to).await
 }
 
@@ -453,7 +462,7 @@ pub async fn project_fs_remove(
     id: String,
     path: String,
 ) -> Result<(), String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     remote_fs::remove(&runtime.servers, &project, &path).await
 }
 
@@ -464,7 +473,7 @@ pub async fn project_fs_search(
     id: String,
     query: String,
 ) -> Result<Vec<String>, String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     remote_fs::search(&runtime.servers, &project, &query).await
 }
 

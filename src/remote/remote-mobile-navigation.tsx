@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useTranslation } from "react-i18next";
+import { isDefaultWorkspace } from "@/lib/default-workspace";
+import { usePreferences } from "@/lib/preferences-provider";
 import { Search, SquarePen, Wifi, WifiOff, X } from "lucide-react";
 
 import type { SessionSearchTarget } from "@/components/command-palette";
@@ -100,6 +102,7 @@ export function RemoteMobileNavigation({
 	onRefreshSession: (sessionId: string, projectId: string) => Promise<void>;
 }) {
 	const { t } = useTranslation();
+	const { defaultWorkspaceVisibility } = usePreferences();
 	const [mode, setMode] = useState<SidebarEnvView>("projects");
 	const [paletteOpen, setPaletteOpen] = useState(false);
 	const [projectSessionLimits, setProjectSessionLimits] = useState<
@@ -145,12 +148,17 @@ export function RemoteMobileNavigation({
 	const projectsByEnv = useMemo(() => {
 		const grouped = new Map<string, SidebarProject[]>();
 		for (const project of projects) {
+			if (
+				isDefaultWorkspace(project) &&
+				defaultWorkspaceVisibility[project.envId] !== true
+			)
+				continue;
 			const items = grouped.get(project.envId);
 			if (items) items.push(project);
 			else grouped.set(project.envId, [project]);
 		}
 		return grouped;
-	}, [projects]);
+	}, [projects, defaultWorkspaceVisibility]);
 
 	const sessionsByProject = useMemo(() => {
 		const grouped = new Map<string, SidebarSession[]>();

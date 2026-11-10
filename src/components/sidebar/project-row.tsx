@@ -1,6 +1,7 @@
 /* oxlint-disable jsx-a11y/prefer-tag-over-role -- project rows contain independent action buttons; native outer buttons would create invalid nested interactive controls. */
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { isDefaultWorkspace } from "@/lib/default-workspace";
 import {
 	ChevronDown,
 	Folder,
@@ -153,7 +154,7 @@ export function ProjectRow({
 									<RefreshCw className={menuItemIconClassName} />
 									{t("sidebar.refreshSessions")}
 								</DropdownMenuItem>
-								{onDelete ? (
+								{onDelete && !isDefaultWorkspace(project) ? (
 									<DropdownMenuItem
 										variant="destructive"
 										disabled={refreshing}

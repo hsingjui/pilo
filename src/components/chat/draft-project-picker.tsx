@@ -2,6 +2,7 @@ import { ChevronDown, Folder } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { connectionLabel, type Project } from "@/lib/api/projects";
+import { isDefaultWorkspace } from "@/lib/default-workspace";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -24,6 +25,11 @@ export function DraftProjectPicker({
 }) {
 	const { t } = useTranslation();
 	const connectionName = project ? connectionLabel(project.connection) : null;
+	const projectName =
+		project &&
+		(isDefaultWorkspace(project)
+			? t("sidebar.defaultWorkspace")
+			: project.name);
 	if (projects.length === 0) return null;
 	return (
 		<div className="flex w-full min-w-0 justify-center">
@@ -34,13 +40,13 @@ export function DraftProjectPicker({
 						className="flex min-h-(--pilo-ui-button-sm-height) max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground outline-hidden transition-colors hover:bg-hover hover:text-hover-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-hover data-[state=open]:text-hover-foreground motion-reduce:transition-none"
 						aria-label={
 							project
-								? `${t("app.selectProject")}: ${project.name} · ${connectionName}`
+								? `${t("app.selectProject")}: ${projectName} · ${connectionName}`
 								: t("app.selectProject")
 						}
-						title={project ? `${project.name} · ${connectionName}` : undefined}
+						title={project ? `${projectName} · ${connectionName}` : undefined}
 					>
 						<span className="min-w-0 truncate font-medium text-foreground">
-							{project?.name ?? t("app.selectProject")}
+							{projectName ?? t("app.selectProject")}
 						</span>
 						{connectionName ? (
 							<>
@@ -72,7 +78,9 @@ export function DraftProjectPicker({
 							onClick={() => onSwitchProject?.(candidate.id)}
 						>
 							<span className="min-w-0 flex-1 truncate font-medium">
-								{candidate.name}
+								{isDefaultWorkspace(candidate)
+									? t("sidebar.defaultWorkspace")
+									: candidate.name}
 							</span>
 							<span className="max-w-[50%] min-w-0 truncate text-xs text-muted-foreground">
 								{connectionLabel(candidate.connection)}

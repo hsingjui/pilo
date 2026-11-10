@@ -67,6 +67,7 @@ import {
 export type SendMessageShortcut = "enter" | "mod-enter";
 
 export type PiloPreferences = {
+	defaultWorkspaceVisibility: Record<string, boolean>;
 	sendMessageShortcut: SendMessageShortcut;
 	keyboardShortcuts: KeyboardShortcutMap;
 	collapseCompletedActivity: boolean;
@@ -86,6 +87,7 @@ export type PiloPreferences = {
 };
 
 type PreferencesContextValue = PiloPreferences & {
+	setDefaultWorkspaceShown: (connectionId: string, shown: boolean) => void;
 	setSendMessageShortcut: (value: SendMessageShortcut) => void;
 	setKeyboardShortcut: (commandId: ShortcutCommandId, value: string) => void;
 	resetKeyboardShortcut: (commandId: ShortcutCommandId) => void;
@@ -121,6 +123,7 @@ type StoredPreferences = Partial<Omit<PiloPreferences, "keyboardShortcuts">> & {
 const STORAGE_KEY = "pilo.preferences.v1";
 
 const DEFAULT_PREFERENCES: PiloPreferences = {
+	defaultWorkspaceVisibility: {},
 	sendMessageShortcut: "enter",
 	keyboardShortcuts: { ...DEFAULT_KEYBOARD_SHORTCUTS },
 	collapseCompletedActivity: true,
@@ -161,6 +164,7 @@ function readStoredPreferences(): PiloPreferences {
 			DEFAULT_PREFERENCES.pageFontFamily,
 		);
 		return {
+			defaultWorkspaceVisibility: {},
 			sendMessageShortcut:
 				parsed.sendMessageShortcut === "mod-enter"
 					? "mod-enter"
@@ -236,7 +240,14 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 				...next.keyboardShortcuts,
 				...patch.keyboardShortcuts,
 			};
-			Object.assign(next, patch, { keyboardShortcuts });
+			const defaultWorkspaceVisibility = {
+				...next.defaultWorkspaceVisibility,
+				...patch.defaultWorkspaceVisibility,
+			};
+			Object.assign(next, patch, {
+				keyboardShortcuts,
+				defaultWorkspaceVisibility,
+			});
 		}
 		preferencesRef.current = next;
 		applyPreferences(next);
@@ -352,6 +363,13 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 					),
 				);
 				Object.assign(patch, { keyboardShortcuts: changes });
+			}
+			if (patch.defaultWorkspaceVisibility) {
+				patch.defaultWorkspaceVisibility = Object.fromEntries(
+					Object.entries(patch.defaultWorkspaceVisibility).filter(
+						([id, shown]) => current.defaultWorkspaceVisibility[id] !== shown,
+					),
+				);
 			}
 			if (Object.keys(patch).length === 0) return;
 			pendingRef.current.push(patch);
@@ -484,6 +502,18 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 		},
 		[setPreferences],
 	);
+	const setDefaultWorkspaceShown = useCallback(
+		(connectionId: string, shown: boolean) => {
+			setPreferences((current) => ({
+				...current,
+				defaultWorkspaceVisibility: {
+					...current.defaultWorkspaceVisibility,
+					[connectionId]: shown,
+				},
+			}));
+		},
+		[setPreferences],
+	);
 	const setDeveloperMode = useCallback(
 		(value: boolean) => {
 			setPreferences((current) => ({ ...current, developerMode: value }));
@@ -563,6 +593,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 	const value = useMemo<PreferencesContextValue>(
 		() => ({
 			...preferences,
+			setDefaultWorkspaceShown,
 			setSendMessageShortcut,
 			setKeyboardShortcut,
 			resetKeyboardShortcut,
@@ -586,6 +617,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 		}),
 		[
 			preferences,
+			setDefaultWorkspaceShown,
 			resetKeyboardShortcut,
 			resetKeyboardShortcuts,
 			setCodeFontFamily,

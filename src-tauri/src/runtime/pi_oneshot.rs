@@ -92,7 +92,7 @@ pub(crate) async fn generate_text(
     // `session` stays outside the deadline so that an elapsed budget drops the
     // session and lets `Drop` schedule the cleanup instead of leaking a stream.
     tokio::time::timeout(timeout, async {
-        let project = project::get(app, project_id)?;
+        let project = project::ready(app, &runtime.servers, project_id).await?;
         let (sender, mut receiver) = mpsc::unbounded_channel();
         let runtime_project = pi_workspace::resolve_session_project(app, &project)?;
         session

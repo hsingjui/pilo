@@ -27,6 +27,9 @@ pub(crate) fn resolve_session_project_with_paths(
     paths: &HostPaths,
     project: &Project,
 ) -> Result<Project, String> {
+    if project.default_workspace_pending() {
+        return Ok(project.clone());
+    }
     match project.connection.pi_runtime {
         PiRuntime::Workspace => Ok(normalize_local_pi_project(project.clone())),
         PiRuntime::Local => local_runtime_project(paths, project),

@@ -240,7 +240,7 @@ pub async fn project_start_pi(
     runtime: State<'_, PiloRuntime>,
     id: String,
 ) -> Result<PiSessionSnapshot, String> {
-    let project = project::get(&app, &id)?;
+    let project = project::ready(&app, &runtime.servers, &id).await?;
     project::touch(&app, &project.id)?;
     let profile = pi_workspace::resolve_pi_runtime(&app, &project, Vec::new())?;
     runtime

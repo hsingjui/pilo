@@ -101,6 +101,20 @@ pub(crate) fn patch_preferences(
                 }
             }
             values.insert(key, Value::Object(shortcuts));
+        } else if key == "defaultWorkspaceVisibility" {
+            let mut visibility = values
+                .get(&key)
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            if let Some(patch) = value.as_object() {
+                for (id, shown) in patch {
+                    if !migrate || !visibility.contains_key(id) {
+                        visibility.insert(id.clone(), shown.clone());
+                    }
+                }
+            }
+            values.insert(key, Value::Object(visibility));
         } else if !migrate || !values.contains_key(&key) {
             values.insert(key, value);
         }

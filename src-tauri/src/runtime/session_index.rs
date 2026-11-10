@@ -151,6 +151,15 @@ pub async fn reconcile(
     servers: &ServerManager,
     project: &Project,
 ) -> Result<SessionReconcileWork, String> {
+    if project.default_workspace_pending() {
+        return Ok(SessionReconcileWork {
+            result: SessionReconcileResult {
+                sessions: list_cached(app, &project.id)?,
+                ..SessionReconcileResult::default()
+            },
+            deferred_paths: Vec::new(),
+        });
+    }
     let session_project = pi_workspace::resolve_session_project(app, project)?;
     let mut db = storage::open(app)?;
     let cached = storage::list_sessions(&db, &project.id)?;

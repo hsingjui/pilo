@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { defaultWorkspaceName } from "@/lib/default-workspace";
 
 import { i18n } from "../../i18n/index.ts";
 import type { FsEntry } from "@/lib/api/files";
@@ -53,7 +54,9 @@ export function sshConfigConnection(host: string): Connection {
 }
 
 export function listProjects(): Promise<Project[]> {
-	return invoke<Project[]>("project_list");
+	return invoke<Project[]>("project_list").then((projects) =>
+		projects.map(defaultWorkspaceName),
+	);
 }
 
 export function addProject(
@@ -75,22 +78,27 @@ export function readConnectionDir(
 }
 
 export function refreshProject(id: string): Promise<Project> {
-	return invoke<Project>("project_refresh", { id });
+	return invoke<Project>("project_refresh", { id }).then(defaultWorkspaceName);
 }
 
 export function touchProject(id: string): Promise<Project> {
-	return invoke<Project>("project_touch", { id });
+	return invoke<Project>("project_touch", { id }).then(defaultWorkspaceName);
 }
 
 export function reorderProjects(
 	connectionId: string,
 	projectIds: string[],
 ): Promise<Project[]> {
-	return invoke<Project[]>("project_reorder", { connectionId, projectIds });
+	return invoke<Project[]>("project_reorder", {
+		connectionId,
+		projectIds,
+	}).then((projects) => projects.map(defaultWorkspaceName));
 }
 
 export function removeProject(id: string): Promise<Project[]> {
-	return invoke<Project[]>("project_remove", { id });
+	return invoke<Project[]>("project_remove", { id }).then((projects) =>
+		projects.map(defaultWorkspaceName),
+	);
 }
 
 export function discoverProjects(

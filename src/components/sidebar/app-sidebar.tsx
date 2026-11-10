@@ -9,6 +9,7 @@ import {
 	useState,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { isDefaultWorkspace } from "@/lib/default-workspace";
 import { PanelLeft, Search, SquarePen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/lib/preferences-provider";
@@ -112,7 +113,7 @@ export function AppSidebar({
 	const [projectSessionsViewId, setProjectSessionsViewId] = useState<
 		string | null
 	>(null);
-	const { keyboardShortcuts } = usePreferences();
+	const { keyboardShortcuts, defaultWorkspaceVisibility } = usePreferences();
 	useKeyboardShortcut(keyboardShortcuts["open-command-palette"], () =>
 		setPaletteOpen((open) => !open),
 	);
@@ -215,12 +216,17 @@ export function AppSidebar({
 	const projectsByEnv = useMemo(() => {
 		const grouped = new Map<string, SidebarProject[]>();
 		for (const project of projects) {
+			if (
+				isDefaultWorkspace(project) &&
+				defaultWorkspaceVisibility[project.envId] !== true
+			)
+				continue;
 			const items = grouped.get(project.envId);
 			if (items) items.push(project);
 			else grouped.set(project.envId, [project]);
 		}
 		return grouped;
-	}, [projects]);
+	}, [projects, defaultWorkspaceVisibility]);
 
 	// “最近会话”视图：全部连接的会话合并为一条平铺列表，按更新时间排序。
 	const recentSessions = useMemo(() => {

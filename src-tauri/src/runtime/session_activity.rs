@@ -15,6 +15,9 @@ pub(crate) async fn external_session_activities_for_project(
     runtime: &PiloRuntime,
     project: &Project,
 ) -> Result<Vec<SessionExternalActivity>, String> {
+    if project.default_workspace_pending() {
+        return Ok(Vec::new());
+    }
     let owned_session_paths = runtime
         .chat_sessions
         .states()

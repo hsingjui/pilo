@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { isDefaultWorkspace } from "@/lib/default-workspace";
+import { useTranslation } from "react-i18next";
 
 import { firstProjectInConnectionOrder } from "@/components/app/app-chat-state";
 import { CONNECTIONS_CHANGED_EVENT } from "@/lib/api/connection-events";
@@ -20,6 +22,7 @@ import type { Connection } from "@/lib/api/pi-runtime";
 export function useAppCatalog(
 	onProjectsLoaded?: (projects: Project[]) => void,
 ) {
+	const { t } = useTranslation();
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [projectsReady, setProjectsReady] = useState(false);
 	const [connectionCatalog, setConnectionCatalog] = useState<Connection[]>([]);
@@ -105,6 +108,11 @@ export function useAppCatalog(
 				.then(() => {
 					const incompleteProjectIds = homeProjects
 						.filter((project) => {
+							if (
+								isDefaultWorkspace(project) &&
+								project.metadata.refreshedAtMs === 0
+							)
+								return false;
 							const cached = getCachedProjectPiModels(project.id);
 							return !cached || isProjectPiModelsIncomplete(cached);
 						})
@@ -124,12 +132,14 @@ export function useAppCatalog(
 		() =>
 			projects.map((project) => ({
 				id: project.id,
-				name: project.name,
+				name: isDefaultWorkspace(project)
+					? t("sidebar.defaultWorkspace")
+					: project.name,
 				path: project.metadata.cwd,
 				envId: project.connection.id,
 				connectionType: project.connection.kind.type,
 			})),
-		[projects],
+		[projects, t],
 	);
 
 	const firstProject = useMemo(

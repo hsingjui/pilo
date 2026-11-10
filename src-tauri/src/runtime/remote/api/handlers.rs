@@ -27,11 +27,10 @@ pub(super) struct BootstrapResponse {
 }
 
 pub(super) async fn bootstrap(State(state): State<RemoteHttpState>) -> Response {
-    let projects =
-        match storage::open_with_paths(&state.paths).and_then(|db| storage::list_projects(&db)) {
-            Ok(projects) => projects,
-            Err(error) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-        };
+    let projects = match crate::runtime::project::list(&state.app) {
+        Ok(projects) => projects,
+        Err(error) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+    };
     let runtime = state.app.state::<PiloRuntime>();
     let events = state.app.state::<RuntimeEventBus>();
     Json(BootstrapResponse {
@@ -346,11 +345,13 @@ pub(super) async fn project_image(
     State(state): State<RemoteHttpState>,
     Query(query): Query<ProjectImageQuery>,
 ) -> Response {
-    let project = match get_project(&state.paths, &query.project_id) {
-        Ok(project) => project,
-        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-    };
     let runtime = state.app.state::<PiloRuntime>();
+    let project =
+        match crate::runtime::project::ready(&state.app, &runtime.servers, &query.project_id).await
+        {
+            Ok(project) => project,
+            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
+        };
     match remote_fs::read_image(&runtime.servers, &project, &query.path).await {
         Ok(bytes) => Response::builder()
             .status(StatusCode::OK)
@@ -377,11 +378,13 @@ pub(super) async fn chat_file_upload(
     Query(query): Query<ChatFileUploadQuery>,
     data: Bytes,
 ) -> Response {
-    let project = match get_project(&state.paths, &query.project_id) {
-        Ok(project) => project,
-        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-    };
     let runtime = state.app.state::<PiloRuntime>();
+    let project =
+        match crate::runtime::project::ready(&state.app, &runtime.servers, &query.project_id).await
+        {
+            Ok(project) => project,
+            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
+        };
     match remote_fs::upload_chat_file(&runtime.servers, &project, &query.name, &data).await {
         Ok(path) => Json(path).into_response(),
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
@@ -399,11 +402,13 @@ pub(super) async fn chat_file_remove(
     State(state): State<RemoteHttpState>,
     Query(query): Query<ChatFileRemoveQuery>,
 ) -> Response {
-    let project = match get_project(&state.paths, &query.project_id) {
-        Ok(project) => project,
-        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-    };
     let runtime = state.app.state::<PiloRuntime>();
+    let project =
+        match crate::runtime::project::ready(&state.app, &runtime.servers, &query.project_id).await
+        {
+            Ok(project) => project,
+            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
+        };
     match remote_fs::remove_chat_file(&runtime.servers, &project, &query.path).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
@@ -851,11 +856,13 @@ pub(super) async fn files_search(
     State(state): State<RemoteHttpState>,
     Query(query): Query<FileSearchQuery>,
 ) -> Response {
-    let project = match get_project(&state.paths, &query.project_id) {
-        Ok(project) => project,
-        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-    };
     let runtime = state.app.state::<PiloRuntime>();
+    let project =
+        match crate::runtime::project::ready(&state.app, &runtime.servers, &query.project_id).await
+        {
+            Ok(project) => project,
+            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
+        };
     match remote_fs::search(&runtime.servers, &project, &query.query).await {
         Ok(paths) => Json(paths).into_response(),
         Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),

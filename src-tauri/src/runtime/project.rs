@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use pilo_protocol::EnvironmentInfo;
 use serde::Deserialize;
 use serde_json::Value;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::domain::{Connection, DiscoveredProject, Project, ProjectMetadata};
 
@@ -42,7 +42,90 @@ pub(crate) fn save_model_scope(
 }
 
 pub fn list(app: &AppHandle) -> Result<Vec<Project>, String> {
-    storage::list_projects(&storage::open(app)?)
+    let db = storage::open(app)?;
+    storage::ensure_local_connection(&db)?;
+    for connection in storage::list_connections(&db)? {
+        let key = default_workspace_key(&connection.id);
+        let root = if cfg!(debug_assertions) {
+            ".pilo-dev"
+        } else {
+            ".pilo"
+        };
+        let path = format!("~/{root}/workspaces/{key}");
+        let now = storage::now_ms();
+        let project = Project {
+            id: Project::default_workspace_id(&connection.id),
+            name: "Default workspace".to_owned(),
+            path: path.clone(),
+            connection,
+            metadata: ProjectMetadata {
+                cwd: path,
+                git_branch: None,
+                pi_version: String::new(),
+                refreshed_at_ms: 0,
+            },
+            created_at_ms: now,
+            last_opened_at_ms: 0,
+        };
+        // Catalog entries are cheap; creating directories or contacting remotes is not.
+        storage::insert_project_if_missing(&db, &project)?;
+    }
+    storage::list_projects(&db)
+}
+
+fn default_workspace_key(connection_id: &str) -> String {
+    if connection_id == "local" {
+        "local".to_owned()
+    } else {
+        format!(
+            "{:016x}",
+            super::host_paths::fnv1a_64(connection_id.as_bytes())
+        )
+    }
+}
+
+pub(crate) async fn ready_with_paths(
+    paths: &super::host_paths::HostPaths,
+    servers: &ServerManager,
+    events: &super::RuntimeEventBus,
+    id: &str,
+) -> Result<Project, String> {
+    let mut project = storage::get_project(&storage::open_with_paths(paths)?, id)?
+        .ok_or_else(|| format!("Project '{id}' was not found"))?;
+    if project.default_workspace_pending() {
+        let cwd: String = servers
+            .request_typed(
+                &project.connection,
+                "workspace.ensure_default",
+                serde_json::json!({
+                    "key": default_workspace_key(&project.connection.id),
+                    "development": cfg!(debug_assertions),
+                }),
+            )
+            .await?;
+        project.path = cwd.clone();
+        project.metadata.cwd = cwd;
+        project.metadata.refreshed_at_ms = storage::now_ms();
+        storage::initialize_default_workspace(&storage::open_with_paths(paths)?, &project)?;
+        events.send(RuntimeEventEnvelope::global(
+            RuntimeEvent::ConfigurationChanged,
+        ));
+    }
+    Ok(project)
+}
+
+pub(crate) async fn ready(
+    app: &AppHandle,
+    servers: &ServerManager,
+    id: &str,
+) -> Result<Project, String> {
+    ready_with_paths(
+        &super::host_paths::HostPaths::from_app(app)?,
+        servers,
+        app.state::<super::RuntimeEventBus>().inner(),
+        id,
+    )
+    .await
 }
 
 pub fn get(app: &AppHandle, id: &str) -> Result<Project, String> {
@@ -83,12 +166,17 @@ pub async fn refresh(
     servers: &ServerManager,
     id: &str,
 ) -> Result<Project, String> {
-    let current = get(app, id)?;
+    let current = ready(app, servers, id).await?;
+    let default_workspace = current.is_default_workspace();
     let (connection, metadata) = inspect(servers, current.connection, current.path).await?;
     let normalized_path = metadata.cwd.clone();
     let project = Project {
         id: current.id,
-        name: Project::name_from_path(&normalized_path),
+        name: if default_workspace {
+            current.name
+        } else {
+            Project::name_from_path(&normalized_path)
+        },
         path: normalized_path,
         connection,
         metadata,
@@ -100,13 +188,17 @@ pub async fn refresh(
 }
 
 pub fn touch(app: &AppHandle, id: &str) -> Result<Project, String> {
-    let mut project = get(app, id)?;
-    project.last_opened_at_ms = storage::now_ms();
-    storage::upsert_project(&storage::open(app)?, &project)?;
-    Ok(project)
+    get(app, id)?;
+    storage::touch_project(&storage::open(app)?, id, storage::now_ms())?;
+    get(app, id)
 }
 
 pub fn remove(app: &AppHandle, id: &str) -> Result<Vec<Project>, String> {
+    if get(app, id)?.is_default_workspace() {
+        return Err(
+            "The default workspace cannot be removed; hide it in the connection menu".to_owned(),
+        );
+    }
     let db = storage::open(app)?;
     if !storage::remove_project(&db, id)? {
         return Err(format!("Project '{id}' was not found"));
@@ -121,7 +213,12 @@ pub fn reorder(
     project_ids: &[String],
 ) -> Result<Vec<Project>, String> {
     let mut db = storage::open(app)?;
-    storage::reorder_projects(&mut db, connection_id, project_ids)?;
+    let default_id = Project::default_workspace_id(connection_id);
+    let mut ordered = project_ids.to_vec();
+    if !ordered.contains(&default_id) && storage::get_project(&db, &default_id)?.is_some() {
+        ordered.insert(0, default_id);
+    }
+    storage::reorder_projects(&mut db, connection_id, &ordered)?;
     storage::list_projects(&db)
 }
 

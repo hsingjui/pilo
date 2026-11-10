@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useRef, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
+import { isDefaultWorkspace } from "@/lib/default-workspace";
 import {
 	closestCenter,
 	DndContext,
@@ -115,7 +116,13 @@ export function SidebarTree({
 	const handleProjectDragEnd = useCallback(
 		(envId: string, event: DragEndEvent) => {
 			const { active, over } = event;
-			if (!over || active.id === over.id) return;
+			if (
+				!over ||
+				active.id === over.id ||
+				isDefaultWorkspace({ id: String(active.id) }) ||
+				isDefaultWorkspace({ id: String(over.id) })
+			)
+				return;
 			const order = (projectsByEnv.get(envId) ?? []).map(
 				(project) => project.id,
 			);
@@ -287,6 +294,7 @@ export function SidebarTree({
 															key={project.id}
 															id={project.id}
 															disabled={
+																isDefaultWorkspace(project) ||
 																refreshingProjectIds.has(project.id) ||
 																envProjects.length < 2
 															}

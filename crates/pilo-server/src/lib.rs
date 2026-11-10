@@ -398,6 +398,9 @@ async fn dispatch(
         })
         .map(ServerReply::json),
         "server.status" => server_status(state).await.map(ServerReply::json),
+        "workspace.ensure_default" => environment::ensure_default_workspace(from_params(params)?)
+            .await
+            .map(ServerReply::json),
         "environment.inspect" => environment_inspect(state, from_params(params)?)
             .await
             .map(ServerReply::json),

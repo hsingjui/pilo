@@ -71,6 +71,46 @@ fn resolve_project_path(project: &str) -> Result<PathBuf, String> {
     Ok(PathBuf::from(project))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DefaultWorkspaceParams {
+    key: String,
+    #[serde(default)]
+    development: bool,
+}
+
+pub(crate) async fn ensure_default_workspace(
+    params: DefaultWorkspaceParams,
+) -> Result<Value, String> {
+    if params.key.is_empty()
+        || params.key.len() > 64
+        || !params
+            .key
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+    {
+        return Err("invalid default workspace key".to_owned());
+    }
+    tokio::task::spawn_blocking(move || {
+        let home = std::env::home_dir()
+            .filter(|path| path.is_absolute())
+            .ok_or_else(|| "default workspace home directory is not available".to_owned())?;
+        let root = if params.development {
+            ".pilo-dev"
+        } else {
+            ".pilo"
+        };
+        let path = home.join(root).join("workspaces").join(params.key);
+        std::fs::create_dir_all(&path)
+            .map_err(|error| format!("failed to create default workspace: {error}"))?;
+        let path = std::fs::canonicalize(&path)
+            .map_err(|error| format!("failed to resolve default workspace: {error}"))?;
+        crate::to_value(path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|error| format!("default workspace setup task failed: {error}"))?
+}
+
 pub(crate) async fn environment_inspect(
     state: &ServerState,
     params: ProjectParams,

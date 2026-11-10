@@ -14,6 +14,7 @@ import type {
 	PromptEnhancementSettings,
 } from "@/lib/prompt-enhancement";
 import { describeDevice } from "@/lib/device-name";
+import { defaultWorkspaceName } from "@/lib/default-workspace";
 import { registerChatFile } from "@/lib/chat/chat-file-lifecycle";
 import type { SessionReadState } from "@/lib/session-read-state";
 import type { RemoteAccessAddress } from "@/lib/api/remote";
@@ -241,8 +242,15 @@ export function saveRemoteThemeSettings(
 	});
 }
 
-export function loadRemoteBootstrap(token: string) {
-	return remoteFetch<PiloClientBootstrap>(token, "/api/v1/bootstrap");
+export async function loadRemoteBootstrap(token: string) {
+	const bootstrap = await remoteFetch<PiloClientBootstrap>(
+		token,
+		"/api/v1/bootstrap",
+	);
+	return {
+		...bootstrap,
+		projects: bootstrap.projects.map(defaultWorkspaceName),
+	};
 }
 
 export function loadRemoteSessions(

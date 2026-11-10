@@ -75,6 +75,18 @@ pub struct DiscoveredProject {
 }
 
 impl Project {
+    pub fn default_workspace_id(connection_id: &str) -> String {
+        format!("default-workspace:{connection_id}")
+    }
+
+    pub fn is_default_workspace(&self) -> bool {
+        self.id == Self::default_workspace_id(&self.connection.id)
+    }
+
+    pub fn default_workspace_pending(&self) -> bool {
+        self.is_default_workspace() && self.metadata.refreshed_at_ms == 0
+    }
+
     pub fn stable_id(connection_id: &str, path: &str) -> String {
         format!("project:{connection_id}:{path}")
     }

@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { isDefaultWorkspace } from "@/lib/default-workspace";
 
 import {
 	chatUiStateKey,
@@ -163,7 +164,14 @@ export function useAppChatWorkspace({
 		sidebarSessions: indexedSidebarSessions,
 		updateSession: updateIndexedSession,
 		removeSession: removeIndexedSession,
-	} = useAppSessionIndex(projects.map((project) => project.id));
+	} = useAppSessionIndex(
+		projects
+			.filter(
+				(project) =>
+					!isDefaultWorkspace(project) || project.metadata.refreshedAtMs !== 0,
+			)
+			.map((project) => project.id),
+	);
 	useEffect(() => {
 		setOpenedChats((current) =>
 			syncOpenedChatSessionMetadata(current, indexedSessions),

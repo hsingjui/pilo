@@ -3,6 +3,7 @@ import { i18n } from "../../i18n/index.ts";
 import type { ChatImageAttachment } from "@/lib/chat/chat-submission";
 import type { SidebarSession } from "@/components/sidebar/types";
 import type { Project } from "@/lib/api/projects";
+import { isDefaultWorkspace } from "@/lib/default-workspace";
 import type { SessionIndexEntry } from "@/lib/api/sessions";
 import type { PiModel, PiThinkingLevel } from "@/lib/api/pi-runtime";
 
@@ -117,9 +118,12 @@ export function firstProjectInConnectionOrder(
 	connectionIds: readonly string[],
 ): Project | null {
 	for (const connectionId of connectionIds) {
-		const project = projects.find(
+		const candidates = projects.filter(
 			(candidate) => candidate.connection.id === connectionId,
 		);
+		const project =
+			candidates.find((candidate) => !isDefaultWorkspace(candidate)) ??
+			candidates[0];
 		if (project) return project;
 	}
 	return projects[0] ?? null;

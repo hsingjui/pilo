@@ -192,7 +192,7 @@ pub fn ensure_local_connection(db: &SqliteConnection) -> Result<Connection, Stri
 
 pub fn connection_project_count(db: &SqliteConnection, id: &str) -> Result<u64, String> {
     db.query_row(
-        "SELECT COUNT(*) FROM projects WHERE connection_id=?1",
+        "SELECT COUNT(*) FROM projects WHERE connection_id=?1 AND id != 'default-workspace:' || connection_id",
         params![id],
         |row| row.get::<_, i64>(0),
     )

@@ -63,6 +63,9 @@ impl SessionWatcherManager {
         project: Project,
     ) -> Result<(), String> {
         self.stop(&project.id).await;
+        if project.default_workspace_pending() {
+            return Ok(());
+        }
         let started = Instant::now();
         let session_project = pi_workspace::resolve_session_project(&app, &project)
             .inspect_err(|error| log_start_failure(&project.id, "resolve", started, error))?;

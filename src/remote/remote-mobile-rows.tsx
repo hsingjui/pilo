@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useSessionRefresh } from "@/components/sidebar/use-session-refresh";
 import { menuItemIconClassName } from "@/ui/menu-styles";
+import { DefaultWorkspaceMenuItem } from "@/components/sidebar/default-workspace-menu-item";
 
 import type {
 	SidebarEnv,
@@ -356,29 +357,46 @@ export function MobileEnvRow({
 	expanded: boolean;
 	onToggle: () => void;
 }) {
+	const { t } = useTranslation();
 	return (
-		<button
-			type="button"
-			aria-expanded={expanded}
-			className="pilo-mobile-env-row flex w-full min-w-0 items-center gap-2 rounded-md text-left text-sidebar-foreground-muted transition-colors duration-[var(--dur-1)] ease-[var(--ease)] hover:bg-sidebar-hover active:bg-sidebar-hover motion-reduce:transition-none"
-			onClick={onToggle}
-		>
-			<Monitor className="size-4 shrink-0" aria-hidden="true" />
-			<span
-				className="min-w-0 flex-1 truncate text-xs font-medium"
-				title={env.name}
+		<div className="flex min-w-0 items-center">
+			<button
+				type="button"
+				aria-expanded={expanded}
+				className="pilo-mobile-env-row flex flex-1 min-w-0 items-center gap-2 rounded-md text-left text-sidebar-foreground-muted transition-colors duration-[var(--dur-1)] ease-[var(--ease)] hover:bg-sidebar-hover active:bg-sidebar-hover motion-reduce:transition-none"
+				onClick={onToggle}
 			>
-				{env.name}
-			</span>
-			<span className="flex h-5 w-4 shrink-0 items-center justify-center">
-				<ChevronDown
-					aria-hidden="true"
-					className={cn(
-						"size-3.5 transition-transform duration-[var(--dur-1)] ease-[var(--ease)] motion-reduce:transition-none",
-						!expanded && "-rotate-90",
-					)}
-				/>
-			</span>
-		</button>
+				<Monitor className="size-4 shrink-0" aria-hidden="true" />
+				<span
+					className="min-w-0 flex-1 truncate text-xs font-medium"
+					title={env.name}
+				>
+					{env.name}
+				</span>
+				<span className="flex h-5 w-4 shrink-0 items-center justify-center">
+					<ChevronDown
+						aria-hidden="true"
+						className={cn(
+							"size-3.5 transition-transform duration-[var(--dur-1)] ease-[var(--ease)] motion-reduce:transition-none",
+							!expanded && "-rotate-90",
+						)}
+					/>
+				</span>
+			</button>
+			<DropdownMenu>
+				<DropdownMenuTrigger asChild>
+					<button
+						type="button"
+						className={ROW_ACTION_CLASS}
+						aria-label={t("sidebar.connectionMenu")}
+					>
+						<MoreHorizontal className="size-4" />
+					</button>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent align="end">
+					<DefaultWorkspaceMenuItem connectionId={env.id} />
+				</DropdownMenuContent>
+			</DropdownMenu>
+		</div>
 	);
 }

@@ -19,6 +19,7 @@ pub(crate) fn defaults() -> Map<String, Value> {
     // Keep these defaults and ranges aligned with font-settings / keyboard-shortcuts.
     json!({
         "locale": "en-US", "sendMessageShortcut": "enter",
+        "defaultWorkspaceVisibility": {},
         "keyboardShortcuts": {
             "new-chat": "mod+n", "toggle-sidebar": "mod+b", "open-settings": "mod+,",
             "open-command-palette": "mod+k", "cycle-model": "mod+shift+m",
@@ -50,6 +51,15 @@ pub(crate) fn validate(patch: &Map<String, Value>) -> Result<(), String> {
             "codeFontSize" | "terminalFontSize" => value
                 .as_f64()
                 .is_some_and(|size| (10.0..=24.0).contains(&size)),
+            "defaultWorkspaceVisibility" => value.as_object().is_some_and(|connections| {
+                connections.len() <= 1024
+                    && connections.iter().all(|(id, shown)| {
+                        !id.is_empty()
+                            && id.len() <= 1024
+                            && !id.chars().any(char::is_control)
+                            && shown.is_boolean()
+                    })
+            }),
             "keyboardShortcuts" => value.as_object().is_some_and(|shortcuts| {
                 !shortcuts.is_empty()
                     && shortcuts.iter().all(|(command, value)| {

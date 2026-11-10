@@ -12,6 +12,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { chatUiStateKey } from "@/components/app/app-chat-state";
+import { isDefaultWorkspace } from "@/lib/default-workspace";
 import {
 	createChatUiStateCache,
 	createProjectDraftCache,
@@ -233,7 +234,13 @@ export function useRemoteChat({
 		) {
 			return draftProjectId;
 		}
-		return projects.find((project) => project.connection.shownInHome)?.id ?? "";
+		const visible = projects.filter(
+			(project) => project.connection.shownInHome,
+		);
+		return (
+			(visible.find((project) => !isDefaultWorkspace(project)) ?? visible[0])
+				?.id ?? ""
+		);
 	}, [draftProjectId, projects]);
 	useEffect(() => {
 		// Bootstrap validates the restored id; an empty list must not erase it.

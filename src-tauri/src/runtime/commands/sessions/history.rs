@@ -42,6 +42,9 @@ pub async fn session_search(
         return Ok(Vec::new());
     }
     let project = session_runtime_project(&app, &project_id)?;
+    if project.default_workspace_pending() {
+        return Ok(Vec::new());
+    }
     runtime
         .servers
         .request_typed(

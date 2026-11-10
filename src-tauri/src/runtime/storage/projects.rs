@@ -7,6 +7,41 @@ use crate::domain::{
     ProjectScopedModel,
 };
 
+pub(crate) fn initialize_default_workspace(
+    db: &SqliteConnection,
+    project: &Project,
+) -> Result<(), String> {
+    let metadata = serde_json::to_string(&project.metadata).map_err(|error| error.to_string())?;
+    db.execute(
+        "UPDATE projects SET path=?2,metadata_json=?3 WHERE id=?1",
+        params![project.id, project.path, metadata],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub(crate) fn touch_project(db: &SqliteConnection, id: &str, now: u64) -> Result<(), String> {
+    db.execute(
+        "UPDATE projects SET last_opened_at_ms=?2 WHERE id=?1",
+        params![id, now as i64],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+pub(crate) fn insert_project_if_missing(
+    db: &SqliteConnection,
+    project: &Project,
+) -> Result<(), String> {
+    let metadata = serde_json::to_string(&project.metadata).map_err(|error| error.to_string())?;
+    db.execute(
+        "INSERT INTO projects(id,connection_id,name,path,metadata_json,created_at_ms,last_opened_at_ms,sort_order)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,-1) ON CONFLICT(id) DO NOTHING",
+        params![project.id, project.connection.id, project.name, project.path, metadata, project.created_at_ms as i64, project.last_opened_at_ms as i64],
+    ).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 pub fn upsert_project(db: &SqliteConnection, project: &Project) -> Result<(), String> {
     let metadata_json =
         serde_json::to_string(&project.metadata).map_err(|error| error.to_string())?;
@@ -58,7 +93,7 @@ pub fn list_projects(db: &SqliteConnection) -> Result<Vec<Project>, String> {
     let mut statement = db.prepare(
         "SELECT p.id,p.name,p.path,p.metadata_json,p.created_at_ms,p.last_opened_at_ms,c.id,c.name,c.kind_json,c.pi_executable,c.pi_runtime,c.shown_in_home
          FROM projects p JOIN connections c ON c.id=p.connection_id
-         ORDER BY p.connection_id ASC,p.sort_order ASC,p.name ASC"
+         ORDER BY p.connection_id ASC,CASE WHEN p.id='default-workspace:' || p.connection_id THEN 0 ELSE 1 END,p.sort_order ASC,p.name ASC"
     ).map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], project_from_row)

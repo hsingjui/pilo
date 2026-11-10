@@ -5,6 +5,7 @@ import {
 } from "@/components/app/project-workspace-context";
 import { ProjectWorkspacePanel } from "@/components/app/project-workspace-panel";
 import { useTranslation } from "react-i18next";
+import { isDefaultWorkspace } from "@/lib/default-workspace";
 import { Wifi, WifiOff, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -219,12 +220,14 @@ function RemoteWorkspace() {
 		() =>
 			projects.map((project) => ({
 				id: project.id,
-				name: project.name,
+				name: isDefaultWorkspace(project)
+					? t("sidebar.defaultWorkspace")
+					: project.name,
 				path: project.metadata.cwd,
 				envId: project.connection.id,
 				connectionType: project.connection.kind.type,
 			})),
-		[projects],
+		[projects, t],
 	);
 
 	const runtimeActivity = useMemo(

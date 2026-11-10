@@ -24,6 +24,7 @@ import {
 import { menuItemIconClassName } from "@/ui/menu-styles";
 import { MiniSwitch, SIDEBAR_ACTION, ViewMenuItem } from "./sidebar-row-parts";
 import type { SidebarEnv, SidebarEnvView } from "./types";
+import { DefaultWorkspaceMenuItem } from "./default-workspace-menu-item";
 
 export function EnvRow({
 	env,
@@ -142,6 +143,7 @@ export function EnvRow({
 							<DropdownMenuSeparator />
 						</>
 					) : null}
+					<DefaultWorkspaceMenuItem connectionId={env.id} />
 					{onDeleteConnection ? (
 						<DropdownMenuItem
 							variant="destructive"
