@@ -85,7 +85,7 @@ pub(super) fn project_branch(entries: &[Value], branch: &[usize]) -> SessionHist
                         source_entry_id,
                         source_content_index: None,
                     });
-                turn.updated_at_ms = timestamp_ms.or(turn.updated_at_ms);
+                update_turn_timestamp(&mut turn, timestamp_ms);
             }
             _ => {}
         }
@@ -145,7 +145,7 @@ fn project_message(
                 .get("errorMessage")
                 .and_then(Value::as_str)
                 .map(str::to_owned);
-            turn.updated_at_ms = timestamp_ms.or(turn.updated_at_ms);
+            update_turn_timestamp(turn, timestamp_ms);
         }
         Some("toolResult") => {
             ensure_assistant_start(events, turn, timestamp_ms, source_entry_id.clone());
@@ -174,7 +174,7 @@ fn project_message(
                 timestamp_ms,
                 source_entry_id,
             });
-            turn.updated_at_ms = timestamp_ms.or(turn.updated_at_ms);
+            update_turn_timestamp(turn, timestamp_ms);
         }
         Some("bashExecution") => {
             ensure_assistant_start(events, turn, timestamp_ms, source_entry_id.clone());
@@ -203,7 +203,7 @@ fn project_message(
                 timestamp_ms,
                 source_entry_id,
             });
-            turn.updated_at_ms = timestamp_ms.or(turn.updated_at_ms);
+            update_turn_timestamp(turn, timestamp_ms);
         }
         _ => {
             ensure_assistant_start(events, turn, timestamp_ms, source_entry_id.clone());
@@ -213,7 +213,7 @@ fn project_message(
                 source_entry_id,
                 source_content_index: None,
             });
-            turn.updated_at_ms = timestamp_ms.or(turn.updated_at_ms);
+            update_turn_timestamp(turn, timestamp_ms);
         }
     }
 }
@@ -342,7 +342,13 @@ fn ensure_assistant_start(
         });
         turn.has_assistant = true;
     }
-    turn.updated_at_ms = timestamp_ms.or(turn.updated_at_ms);
+    update_turn_timestamp(turn, timestamp_ms);
+}
+
+fn update_turn_timestamp(turn: &mut TurnMeta, timestamp_ms: Option<i64>) {
+    if let Some(timestamp_ms) = timestamp_ms {
+        turn.updated_at_ms = Some(timestamp_ms);
+    }
 }
 
 fn finish_turn(events: &mut Vec<ConversationEventDto>, turn: &mut TurnMeta, eof: bool) {

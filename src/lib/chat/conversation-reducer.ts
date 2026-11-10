@@ -85,7 +85,7 @@ function withAssistant(
 			id,
 			role: "assistant",
 			text: "",
-			time: context.formatTime(timestampMs ?? context.now()),
+			time: timestampMs === undefined ? "" : context.formatTime(timestampMs),
 			timestampMs,
 			streaming: true,
 		};
@@ -108,7 +108,7 @@ function endTurn(
 	context: ConversationReducerContext,
 	stopReason: string | null | undefined,
 	errorMessage: string | null | undefined,
-	timestampMs: number,
+	timestampMs: number | undefined,
 	completion: "complete" | "interrupted" | "continued" = "complete",
 	usage: TokenUsage | null | undefined = undefined,
 ): ConversationState {
@@ -154,7 +154,10 @@ function endTurn(
 	messages[index] = {
 		...current,
 		text: assistantText(current.content) || current.text,
-		time: context.formatTime(timestampMs),
+		time:
+			timestampMs === undefined
+				? current.time
+				: context.formatTime(timestampMs),
 		content: finishContent(current.content),
 		activity: current.activity?.map((item) =>
 			item.type === "thinking"
@@ -176,9 +179,11 @@ function endTurn(
 		),
 		streaming: false,
 		workDurationMs:
-			completion === "continued" || startedAt === undefined
-				? undefined
-				: Math.max(0, timestampMs - startedAt),
+			completion === "continued" ||
+				startedAt === undefined ||
+				timestampMs === undefined
+					? undefined
+					: Math.max(0, timestampMs - startedAt),
 		stopReason: stopReason ?? undefined,
 		errorMessage: visibleError,
 		completion,
@@ -667,7 +672,7 @@ function reduceConversationAction(
 				context,
 				action.stopReason,
 				action.errorMessage,
-				action.timestampMs ?? context.now(),
+				action.timestampMs,
 				action.completion,
 				action.usage,
 			);

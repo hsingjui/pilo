@@ -123,12 +123,12 @@ export type ConversationAction =
 	  }
 	| {
 			type: "local_turn_abort";
-			timestampMs: number;
+			timestampMs?: number;
 	  }
 	| {
 			type: "conversation_runtime_error";
 			message: string;
-			timestampMs: number;
+			timestampMs?: number;
 	  };
 
 export type ConversationState = {

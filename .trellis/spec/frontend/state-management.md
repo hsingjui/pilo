@@ -68,7 +68,8 @@ boundaries; it must not keep the optimistic placeholder's submission time.
 revival. `toConversationAction` preserves `assistant_message_end.timestampMs`
 so reconnect replay uses Host time rather than the browser's processing time.
 History replay uses the persisted `assistant_turn_end.timestampMs`. When an
-end event has no timestamp, the existing reducer clock fallback applies.
+end event has no timestamp, preserve the existing message time and leave derived
+duration undefined; never substitute the WebUI clock.
 
 Consecutive queued `user_message_start` echoes may arrive before the assistant
 produces any content. When `endTurn` closes such a streaming placeholder with

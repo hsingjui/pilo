@@ -211,7 +211,7 @@ export function useRemoteChatTransport({
 						actions.push({
 							type: "conversation_runtime_error",
 							message: event.message,
-							timestampMs: Date.now(),
+							timestampMs: event.timestampMs,
 						});
 						break;
 					case "process_state":
@@ -220,7 +220,7 @@ export function useRemoteChatTransport({
 							setRetryState(null);
 							actions.push({
 								type: "local_turn_abort",
-								timestampMs: Date.now(),
+								timestampMs: event.timestampMs,
 							});
 						}
 						break;

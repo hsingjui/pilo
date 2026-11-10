@@ -6,14 +6,22 @@ export function toConversationAction(
 ): ConversationAction | null {
 	switch (event.type) {
 		case "user_message_start":
-			return { type: event.type, text: event.text };
+			return {
+				type: event.type,
+				text: event.text,
+				timestampMs: event.timestampMs,
+			};
 		case "assistant_message_start":
-			return { type: event.type };
+			return { type: event.type, timestampMs: event.timestampMs };
 		case "assistant_thinking_start":
 		case "assistant_thinking_end":
 			return { type: event.type, timestampMs: event.timestampMs };
 		case "assistant_text_delta":
-			return { type: event.type, delta: event.delta };
+			return {
+				type: event.type,
+				delta: event.delta,
+				timestampMs: event.timestampMs,
+			};
 		case "assistant_thinking_delta":
 			return {
 				type: event.type,
@@ -21,15 +29,24 @@ export function toConversationAction(
 				timestampMs: event.timestampMs,
 			};
 		case "assistant_text_snapshot":
-			return { type: event.type, text: event.text };
+			return {
+				type: event.type,
+				text: event.text,
+				timestampMs: event.timestampMs,
+			};
 		case "assistant_usage_update":
-			return { type: event.type, usage: event.usage };
+			return {
+				type: event.type,
+				usage: event.usage,
+				timestampMs: event.timestampMs,
+			};
 		case "tool_execution_start":
 			return {
 				type: event.type,
 				toolCallId: event.toolCallId,
 				toolName: event.toolName,
 				args: event.args,
+				timestampMs: event.timestampMs,
 			};
 		case "tool_execution_update":
 			return {
@@ -38,6 +55,7 @@ export function toConversationAction(
 				toolName: event.toolName,
 				args: event.args,
 				partialResult: event.partialResult,
+				timestampMs: event.timestampMs,
 			};
 		case "tool_execution_end":
 			return {
@@ -46,6 +64,7 @@ export function toConversationAction(
 				toolName: event.toolName,
 				result: event.result,
 				isError: event.isError,
+				timestampMs: event.timestampMs,
 			};
 		case "assistant_message_end":
 			return {
@@ -77,6 +96,7 @@ export function toConversationAction(
 						type: "compaction_marker",
 						summary: event.result.summary,
 						tokensBefore: event.result.tokensBefore,
+						timestampMs: event.timestampMs,
 					}
 				: null;
 		case "auto_retry_start":
