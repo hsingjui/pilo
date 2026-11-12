@@ -185,7 +185,8 @@ export function useMobileNavigationSwipe(
 			swipeRef.current = null;
 			// Don't let a swipe also click the row or control where it started.
 			if (event.cancelable) event.preventDefault();
-			if (!open) setOpeningDrag({ phase: "opening", offset: swipe.openingOffset });
+			if (!open)
+				setOpeningDrag({ phase: "opening", offset: swipe.openingOffset });
 			onOpenChange(!open);
 		},
 		onTouchCancelCapture: cancelSwipe,
