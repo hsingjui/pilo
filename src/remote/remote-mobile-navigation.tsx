@@ -1,4 +1,13 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+	type CSSProperties,
+	type ReactNode,
+	lazy,
+	Suspense,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useTranslation } from "react-i18next";
 import { isDefaultWorkspace } from "@/lib/default-workspace";
@@ -28,6 +37,7 @@ import {
 	MobileSessionRow,
 	ROW_ACTION_CLASS,
 } from "@/remote/remote-mobile-rows";
+import type { MobileNavigationMotion } from "./use-mobile-navigation-swipe";
 
 const CommandPalette = lazy(() =>
 	import("@/components/command-palette").then((module) => ({
@@ -38,6 +48,75 @@ const CommandPalette = lazy(() =>
 /** “最近会话”视图最多展示的会话数，与桌面侧栏保持一致。 */
 const RECENT_SESSION_LIMIT = 50;
 const PROJECT_SESSION_BATCH_SIZE = 50;
+
+const DRAWER_PANEL_CLASS = cn(
+	// Reserve at least 64px of backdrop for an easy outside-tap dismissal.
+	"fixed inset-y-0 left-0 z-[var(--z-dialog)] flex flex-col overflow-hidden pilo-mobile-sidebar",
+	"border-r border-sidebar-border/60 bg-sidebar text-sidebar-foreground shadow-popover outline-none",
+	"pb-[max(0.5rem,env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)] pt-[env(safe-area-inset-top)]",
+	"[&_button]:touch-manipulation [&_button]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-inset [&_button:focus-visible]:ring-sidebar-ring",
+);
+const DRAWER_MOTION_CLASS = "duration-[var(--dur-2)] ease-out";
+
+function MobileNavigationSurface({
+	motion,
+	children,
+}: {
+	motion?: MobileNavigationMotion;
+	children: ReactNode;
+}) {
+	const { openingDrag, attachPreview, finishCancel } = motion ?? {};
+	const preview = openingDrag && openingDrag.phase !== "opening";
+	const enterStyle:
+		| (CSSProperties & { "--tw-enter-translate-x": string })
+		| undefined =
+		openingDrag?.phase === "opening" && openingDrag.offset !== undefined
+			? { "--tw-enter-translate-x": openingDrag.offset }
+			: undefined;
+
+	return (
+		<DialogPrimitive.Portal forceMount={preview ? true : undefined}>
+			{!preview && (
+				<DialogPrimitive.Overlay
+					data-mobile-navigation-swipe=""
+					className="fixed inset-0 z-[var(--z-dialog-overlay)] bg-black/40 duration-[var(--dur-2)] ease-out data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 motion-reduce:animate-none"
+				/>
+			)}
+			{preview ? (
+				// A partial drag is visual only; do not trap focus or lock the page yet.
+				<div
+					ref={attachPreview}
+					inert
+					className={cn(
+						DRAWER_PANEL_CLASS,
+						"pointer-events-none",
+						openingDrag.phase === "canceling" &&
+							`${DRAWER_MOTION_CLASS} animate-out slide-out-to-left-full [--tw-animation-fill-mode:forwards]`,
+					)}
+					style={{ transform: `translateX(${openingDrag.offset})` }}
+					onAnimationEnd={(event) => {
+						if (event.target === event.currentTarget) finishCancel?.();
+					}}
+				>
+					{children}
+				</div>
+			) : (
+				<DialogPrimitive.Content
+					data-mobile-navigation-swipe=""
+					style={enterStyle}
+					className={cn(
+						DRAWER_PANEL_CLASS,
+						DRAWER_MOTION_CLASS,
+						"data-[state=open]:animate-in data-[state=open]:slide-in-from-left-full",
+						"data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left-full motion-reduce:animate-none",
+					)}
+				>
+					{children}
+				</DialogPrimitive.Content>
+			)}
+		</DialogPrimitive.Portal>
+	);
+}
 
 function MobileSessionLoadSentinel({ onLoadMore }: { onLoadMore: () => void }) {
 	const sentinelRef = useRef<HTMLDivElement>(null);
@@ -72,6 +151,7 @@ export function RemoteMobileNavigation({
 	client,
 	open,
 	onOpenChange,
+	motion,
 	envs,
 	projects,
 	sessions,
@@ -88,6 +168,7 @@ export function RemoteMobileNavigation({
 	client: PiloClient | null;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
+	motion?: MobileNavigationMotion;
 	envs: SidebarEnv[];
 	projects: SidebarProject[];
 	sessions: SidebarSession[];
@@ -198,295 +279,275 @@ export function RemoteMobileNavigation({
 
 	return (
 		<DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-			<DialogPrimitive.Portal>
-				<DialogPrimitive.Overlay
-					data-mobile-navigation-swipe=""
-					className="fixed inset-0 z-[var(--z-dialog-overlay)] bg-black/40 duration-[var(--dur-2)] ease-out data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 motion-reduce:animate-none"
-				/>
-				<DialogPrimitive.Content
-					data-mobile-navigation-swipe=""
-					className={cn(
-						// Reserve at least 64px of backdrop for an easy outside-tap dismissal.
-						"fixed inset-y-0 left-0 z-[var(--z-dialog)] flex flex-col overflow-hidden pilo-mobile-sidebar",
-						"border-r border-sidebar-border/60 bg-sidebar text-sidebar-foreground shadow-popover outline-none",
-						"pb-[max(0.5rem,env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)] pt-[env(safe-area-inset-top)]",
-						"[&_button]:touch-manipulation [&_button]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-inset [&_button:focus-visible]:ring-sidebar-ring",
-						"duration-[var(--dur-2)] ease-out data-[state=open]:animate-in data-[state=open]:slide-in-from-left-full",
-						"data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left-full motion-reduce:animate-none",
-					)}
-				>
-					<DialogPrimitive.Title className="sr-only">
+			<MobileNavigationSurface motion={motion}>
+				<DialogPrimitive.Title className="sr-only">Pilo</DialogPrimitive.Title>
+				<DialogPrimitive.Description className="sr-only">
+					{t("common.sessions")}
+				</DialogPrimitive.Description>
+
+				<header className="pilo-mobile-sidebar-header flex shrink-0 items-center pl-5 pr-3">
+					<span className="min-w-0 flex-1 truncate text-lg font-semibold tracking-tight">
 						Pilo
-					</DialogPrimitive.Title>
-					<DialogPrimitive.Description className="sr-only">
-						{t("common.sessions")}
-					</DialogPrimitive.Description>
-
-					<header className="pilo-mobile-sidebar-header flex shrink-0 items-center pl-5 pr-3">
-						<span className="min-w-0 flex-1 truncate text-lg font-semibold tracking-tight">
-							Pilo
-						</span>
-						<button
-							type="button"
-							className={ROW_ACTION_CLASS}
-							aria-label={t("sidebar.searchSessions")}
-							onClick={() => {
-								// 抽屉是 modal，先关闭再叠一层搜索面板，避免两个焦点陷阱打架。
-								onOpenChange(false);
-								setPaletteOpen(true);
-							}}
-						>
-							<Search className="size-4" aria-hidden="true" />
-						</button>
-						<DialogPrimitive.Close
-							className={ROW_ACTION_CLASS}
-							aria-label={t("common.close")}
-						>
-							<X className="size-4" aria-hidden="true" />
-						</DialogPrimitive.Close>
-					</header>
-
-					<div className="flex shrink-0 items-center px-(--pilo-mobile-sidebar-content-padding) pb-2">
-						<button
-							type="button"
-							className="pilo-mobile-project-row flex min-w-0 flex-1 items-center gap-2 rounded-md text-left text-sm text-sidebar-foreground transition-colors duration-[var(--dur-1)] ease-[var(--ease)] hover:bg-sidebar-hover active:bg-sidebar-hover motion-reduce:transition-none"
-							onClick={() => handleNewChat(activeProjectId ?? undefined)}
-						>
-							<SquarePen
-								className="size-4 shrink-0"
-								strokeWidth={1.5}
-								aria-hidden="true"
-							/>
-							<span className="truncate">{t("sidebar.newSession")}</span>
-						</button>
-					</div>
-
-					<div className="relative mx-(--pilo-mobile-sidebar-content-padding) mb-3 grid shrink-0 grid-cols-2 rounded-(--pilo-segment-radius) bg-sidebar-hover/60 p-(--pilo-segment-padding)">
-						<span
-							aria-hidden="true"
-							className={cn(
-								"pointer-events-none absolute inset-y-(--pilo-segment-padding) left-(--pilo-segment-padding) w-[calc(50%-var(--pilo-segment-padding))] rounded-(--pilo-segment-item-radius) bg-sidebar transition-transform duration-[var(--dur-1)] ease-[var(--ease)] motion-reduce:transition-none",
-								mode === "recent" && "translate-x-full",
-							)}
-						/>
-						{(
-							[
-								{ value: "projects", label: t("sidebar.projects") },
-								{ value: "recent", label: t("sidebar.recentSessions") },
-							] as const
-						).map((option) => (
-							<button
-								key={option.value}
-								type="button"
-								aria-pressed={mode === option.value}
-								className={cn(
-									"relative flex min-h-11 min-w-0 items-center justify-center rounded-(--pilo-segment-item-radius) px-2 text-sm font-medium transition-colors duration-[var(--dur-1)] ease-[var(--ease)] motion-reduce:transition-none",
-									mode === option.value
-										? "text-sidebar-foreground"
-										: "text-sidebar-foreground-muted active:text-sidebar-foreground",
-								)}
-								onClick={() => setMode(option.value)}
-							>
-								<span className="min-w-0 text-balance leading-4">
-									{option.label}
-								</span>
-							</button>
-						))}
-					</div>
-
-					<div
-						data-mobile-session-scroll=""
-						className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-(--pilo-mobile-sidebar-content-padding) pb-4"
+					</span>
+					<button
+						type="button"
+						className={ROW_ACTION_CLASS}
+						aria-label={t("sidebar.searchSessions")}
+						onClick={() => {
+							// 抽屉是 modal，先关闭再叠一层搜索面板，避免两个焦点陷阱打架。
+							onOpenChange(false);
+							setPaletteOpen(true);
+						}}
 					>
-						{mode === "recent" ? (
-							recentSessions.length === 0 ? (
-								<p className="px-3 py-10 text-center text-sm text-sidebar-foreground-muted">
-									{t("sidebar.noSessions")}
-								</p>
-							) : (
-								<div className="space-y-(--pilo-mobile-session-gap)">
-									{recentSessions.map((session) => (
-										<MobileSessionRow
-											key={`${session.projectId}:${session.id}`}
-											session={session}
-											selected={
-												activeProjectId === session.projectId &&
-												selectedSessionId === session.id
-											}
-											projectName={projectNameById.get(session.projectId)}
-											onRefresh={onRefreshSession}
-											onSelect={handleSelectSession}
-											confirmingDelete={
-												confirmDeleteSessionId ===
-												`${session.projectId}:${session.id}`
-											}
-											onRequestDelete={setConfirmDeleteSessionId}
-											onCancelDelete={() => setConfirmDeleteSessionId(null)}
-											onConfirmDelete={() => {
-												setConfirmDeleteSessionId(null);
-												onDeleteSession(session.id, session.projectId);
-											}}
-										/>
-									))}
-								</div>
-							)
-						) : (
-							envs.map((env) => {
-								const envExpanded = sectionOverrides[`env:${env.id}`] ?? true;
-								const envProjects = projectsByEnv.get(env.id) ?? [];
-								return (
-									<section key={env.id}>
-										<MobileEnvRow
-											env={env}
-											expanded={envExpanded}
-											onToggle={() => toggleSection(`env:${env.id}`, true)}
-										/>
-										{envExpanded ? (
-											<div className="space-y-(--pilo-mobile-row-gap)">
-												{envProjects.map((project) => {
-													const projectExpanded =
-														sectionOverrides[`project:${project.id}`] ??
-														activeProjectId === project.id;
-													const projectSessions =
-														sessionsByProject.get(project.id) ?? [];
-													const selectedIndex =
-														project.id === activeProjectId
-															? projectSessions.findIndex(
-																	(session) => session.id === selectedSessionId,
-																)
-															: -1;
-													const visibleCount = Math.min(
-														projectSessions.length,
-														Math.max(
-															projectSessionLimits[project.id] ??
-																PROJECT_SESSION_BATCH_SIZE,
-															Math.ceil(
-																(selectedIndex + 1) /
-																	PROJECT_SESSION_BATCH_SIZE,
-															) * PROJECT_SESSION_BATCH_SIZE,
-														),
-													);
-													return (
-														<div key={project.id}>
-															<MobileProjectRow
-																project={project}
-																expanded={projectExpanded}
-																selected={activeProjectId === project.id}
-																sessionCount={projectSessions.length}
-																refreshing={refreshingProjectIds.has(
-																	project.id,
-																)}
-																onToggle={() => {
-																	toggleSection(
-																		`project:${project.id}`,
-																		activeProjectId === project.id,
-																	);
-																	if (!projectExpanded) {
-																		onRefreshProjectSessions(project.id);
-																	}
-																}}
-																onNewChat={handleNewChat}
-															/>
-															{projectExpanded ? (
-																projectSessions.length === 0 ? (
-																	<p className="pl-8 pr-2 py-4 text-sm text-sidebar-foreground-muted">
-																		{t("sidebar.noSessions")}
-																	</p>
-																) : (
-																	<div className="mt-1 space-y-(--pilo-mobile-session-gap) pb-2">
-																		{projectSessions
-																			.slice(0, visibleCount)
-																			.map((session) => (
-																				<MobileSessionRow
-																					key={`${session.projectId}:${session.id}`}
-																					session={session}
-																					selected={
-																						activeProjectId ===
-																							session.projectId &&
-																						selectedSessionId === session.id
-																					}
-																					confirmingDelete={
-																						confirmDeleteSessionId ===
-																						`${session.projectId}:${session.id}`
-																					}
-																					onSelect={handleSelectSession}
-																					onRefresh={onRefreshSession}
-																					onRequestDelete={
-																						setConfirmDeleteSessionId
-																					}
-																					onCancelDelete={() =>
-																						setConfirmDeleteSessionId(null)
-																					}
-																					onConfirmDelete={() => {
-																						setConfirmDeleteSessionId(null);
-																						onDeleteSession(
-																							session.id,
-																							session.projectId,
-																						);
-																					}}
-																				/>
-																			))}
-																		{projectSessions.length >
-																		PROJECT_SESSION_BATCH_SIZE ? (
-																			<p
-																				className="px-2 text-center text-xs text-sidebar-foreground-muted"
-																				aria-live="polite"
-																				aria-atomic="true"
-																			>
-																				{t("common.sessions")} {visibleCount} /{" "}
-																				{projectSessions.length}
-																			</p>
-																		) : null}
-																		{visibleCount < projectSessions.length ? (
-																			<MobileSessionLoadSentinel
-																				onLoadMore={() =>
-																					setProjectSessionLimits(
-																						(current) => ({
-																							...current,
-																							[project.id]: Math.max(
-																								current[project.id] ?? 0,
-																								visibleCount +
-																									PROJECT_SESSION_BATCH_SIZE,
-																							),
-																						}),
-																					)
-																				}
-																			/>
-																		) : null}
-																	</div>
-																)
-															) : null}
-														</div>
-													);
-												})}
-											</div>
-										) : null}
-									</section>
-								);
-							})
-						)}
-					</div>
+						<Search className="size-4" aria-hidden="true" />
+					</button>
+					<DialogPrimitive.Close
+						className={ROW_ACTION_CLASS}
+						aria-label={t("common.close")}
+					>
+						<X className="size-4" aria-hidden="true" />
+					</DialogPrimitive.Close>
+				</header>
 
-					<footer className="mx-(--pilo-mobile-sidebar-content-padding) flex min-h-14 shrink-0 items-center gap-2 border-t border-sidebar-border/60 px-2 pt-1">
-						{connectionState === "connected" ? (
-							<Wifi
-								className="size-4 shrink-0 text-sidebar-foreground-muted"
-								strokeWidth={1.5}
-								aria-hidden="true"
-							/>
-						) : (
-							<WifiOff
-								className="size-4 shrink-0 text-sidebar-foreground-muted"
-								strokeWidth={1.5}
-								aria-hidden="true"
-							/>
+				<div className="flex shrink-0 items-center px-(--pilo-mobile-sidebar-content-padding) pb-1">
+					<button
+						type="button"
+						className="pilo-mobile-project-row flex min-w-0 flex-1 items-center gap-2 rounded-md text-left text-sm text-sidebar-foreground transition-colors duration-[var(--dur-1)] ease-[var(--ease)] hover:bg-sidebar-hover active:bg-sidebar-hover motion-reduce:transition-none"
+						onClick={() => handleNewChat(activeProjectId ?? undefined)}
+					>
+						<SquarePen
+							className="size-4 shrink-0"
+							strokeWidth={1.5}
+							aria-hidden="true"
+						/>
+						<span className="truncate">{t("sidebar.newSession")}</span>
+					</button>
+				</div>
+
+				<div className="relative mx-(--pilo-mobile-sidebar-content-padding) mb-2 grid shrink-0 grid-cols-2 px-(--pilo-segment-padding)">
+					<span
+						aria-hidden="true"
+						className="pointer-events-none absolute inset-x-0 inset-y-0.5 rounded-(--pilo-segment-radius) bg-sidebar-hover/60"
+					/>
+					<span
+						aria-hidden="true"
+						className={cn(
+							"pointer-events-none absolute inset-y-1 left-(--pilo-segment-padding) w-[calc(50%-var(--pilo-segment-padding))] rounded-(--pilo-segment-item-radius) bg-sidebar transition-transform duration-[var(--dur-1)] ease-[var(--ease)] motion-reduce:transition-none",
+							mode === "recent" && "translate-x-full",
 						)}
-						<span className="min-w-0 flex-1 truncate text-sm text-sidebar-foreground-muted">
-							{t(remoteConnectionLabelKey(connectionState))}
-						</span>
-					</footer>
-				</DialogPrimitive.Content>
-			</DialogPrimitive.Portal>
+					/>
+					{(
+						[
+							{ value: "projects", label: t("sidebar.projects") },
+							{ value: "recent", label: t("sidebar.recentSessions") },
+						] as const
+					).map((option) => (
+						<button
+							key={option.value}
+							type="button"
+							aria-pressed={mode === option.value}
+							className={cn(
+								"relative flex min-h-11 min-w-0 items-center justify-center rounded-(--pilo-segment-item-radius) px-2 text-[0.875rem] font-medium transition-colors duration-[var(--dur-1)] ease-[var(--ease)] motion-reduce:transition-none",
+								mode === option.value
+									? "text-sidebar-foreground"
+									: "text-sidebar-foreground-muted active:text-sidebar-foreground",
+							)}
+							onClick={() => setMode(option.value)}
+						>
+							<span className="min-w-0 text-balance leading-4">
+								{option.label}
+							</span>
+						</button>
+					))}
+				</div>
+
+				<div
+					data-mobile-session-scroll=""
+					className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-(--pilo-mobile-sidebar-content-padding) pb-4"
+				>
+					{mode === "recent" ? (
+						recentSessions.length === 0 ? (
+							<p className="px-3 py-10 text-center text-sm text-sidebar-foreground-muted">
+								{t("sidebar.noSessions")}
+							</p>
+						) : (
+							<div className="space-y-(--pilo-mobile-session-gap)">
+								{recentSessions.map((session) => (
+									<MobileSessionRow
+										key={`${session.projectId}:${session.id}`}
+										session={session}
+										selected={
+											activeProjectId === session.projectId &&
+											selectedSessionId === session.id
+										}
+										projectName={projectNameById.get(session.projectId)}
+										onRefresh={onRefreshSession}
+										onSelect={handleSelectSession}
+										confirmingDelete={
+											confirmDeleteSessionId ===
+											`${session.projectId}:${session.id}`
+										}
+										onRequestDelete={setConfirmDeleteSessionId}
+										onCancelDelete={() => setConfirmDeleteSessionId(null)}
+										onConfirmDelete={() => {
+											setConfirmDeleteSessionId(null);
+											onDeleteSession(session.id, session.projectId);
+										}}
+									/>
+								))}
+							</div>
+						)
+					) : (
+						envs.map((env) => {
+							const envExpanded = sectionOverrides[`env:${env.id}`] ?? true;
+							const envProjects = projectsByEnv.get(env.id) ?? [];
+							return (
+								<section key={env.id}>
+									<MobileEnvRow
+										env={env}
+										expanded={envExpanded}
+										onToggle={() => toggleSection(`env:${env.id}`, true)}
+									/>
+									{envExpanded ? (
+										<div className="space-y-(--pilo-mobile-row-gap)">
+											{envProjects.map((project) => {
+												const projectExpanded =
+													sectionOverrides[`project:${project.id}`] ??
+													activeProjectId === project.id;
+												const projectSessions =
+													sessionsByProject.get(project.id) ?? [];
+												const selectedIndex =
+													project.id === activeProjectId
+														? projectSessions.findIndex(
+																(session) => session.id === selectedSessionId,
+															)
+														: -1;
+												const visibleCount = Math.min(
+													projectSessions.length,
+													Math.max(
+														projectSessionLimits[project.id] ??
+															PROJECT_SESSION_BATCH_SIZE,
+														Math.ceil(
+															(selectedIndex + 1) / PROJECT_SESSION_BATCH_SIZE,
+														) * PROJECT_SESSION_BATCH_SIZE,
+													),
+												);
+												return (
+													<div key={project.id}>
+														<MobileProjectRow
+															project={project}
+															expanded={projectExpanded}
+															selected={activeProjectId === project.id}
+															sessionCount={projectSessions.length}
+															refreshing={refreshingProjectIds.has(project.id)}
+															onToggle={() => {
+																toggleSection(
+																	`project:${project.id}`,
+																	activeProjectId === project.id,
+																);
+																if (!projectExpanded) {
+																	onRefreshProjectSessions(project.id);
+																}
+															}}
+															onNewChat={handleNewChat}
+														/>
+														{projectExpanded ? (
+															projectSessions.length === 0 ? (
+																<p className="pl-8 pr-2 py-4 text-sm text-sidebar-foreground-muted">
+																	{t("sidebar.noSessions")}
+																</p>
+															) : (
+																<div className="mt-1 space-y-(--pilo-mobile-session-gap) pb-2">
+																	{projectSessions
+																		.slice(0, visibleCount)
+																		.map((session) => (
+																			<MobileSessionRow
+																				key={`${session.projectId}:${session.id}`}
+																				session={session}
+																				selected={
+																					activeProjectId ===
+																						session.projectId &&
+																					selectedSessionId === session.id
+																				}
+																				confirmingDelete={
+																					confirmDeleteSessionId ===
+																					`${session.projectId}:${session.id}`
+																				}
+																				onSelect={handleSelectSession}
+																				onRefresh={onRefreshSession}
+																				onRequestDelete={
+																					setConfirmDeleteSessionId
+																				}
+																				onCancelDelete={() =>
+																					setConfirmDeleteSessionId(null)
+																				}
+																				onConfirmDelete={() => {
+																					setConfirmDeleteSessionId(null);
+																					onDeleteSession(
+																						session.id,
+																						session.projectId,
+																					);
+																				}}
+																			/>
+																		))}
+																	{projectSessions.length >
+																	PROJECT_SESSION_BATCH_SIZE ? (
+																		<p
+																			className="px-2 text-center text-xs text-sidebar-foreground-muted"
+																			aria-live="polite"
+																			aria-atomic="true"
+																		>
+																			{t("common.sessions")} {visibleCount} /{" "}
+																			{projectSessions.length}
+																		</p>
+																	) : null}
+																	{visibleCount < projectSessions.length ? (
+																		<MobileSessionLoadSentinel
+																			onLoadMore={() =>
+																				setProjectSessionLimits((current) => ({
+																					...current,
+																					[project.id]: Math.max(
+																						current[project.id] ?? 0,
+																						visibleCount +
+																							PROJECT_SESSION_BATCH_SIZE,
+																					),
+																				}))
+																			}
+																		/>
+																	) : null}
+																</div>
+															)
+														) : null}
+													</div>
+												);
+											})}
+										</div>
+									) : null}
+								</section>
+							);
+						})
+					)}
+				</div>
+
+				<footer className="mx-(--pilo-mobile-sidebar-content-padding) flex min-h-14 shrink-0 items-center gap-2 border-t border-sidebar-border/60 px-2 pt-1">
+					{connectionState === "connected" ? (
+						<Wifi
+							className="size-4 shrink-0 text-sidebar-foreground-muted"
+							strokeWidth={1.5}
+							aria-hidden="true"
+						/>
+					) : (
+						<WifiOff
+							className="size-4 shrink-0 text-sidebar-foreground-muted"
+							strokeWidth={1.5}
+							aria-hidden="true"
+						/>
+					)}
+					<span className="min-w-0 flex-1 truncate text-sm text-sidebar-foreground-muted">
+						{t(remoteConnectionLabelKey(connectionState))}
+					</span>
+				</footer>
+			</MobileNavigationSurface>
 
 			{paletteOpen && client ? (
 				<Suspense fallback={null}>

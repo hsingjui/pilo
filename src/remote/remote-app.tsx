@@ -121,11 +121,12 @@ function RemoteWorkspace() {
 	const isTouch = useMediaQuery("(hover: none) and (pointer: coarse)");
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 	const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
-	const mobileNavigationSwipe = useMobileNavigationSwipe(
-		isNarrow,
-		mobileNavigationOpen,
-		setMobileNavigationOpen,
-	);
+	const { handlers: mobileNavigationSwipe, motion: mobileNavigationMotion } =
+		useMobileNavigationSwipe(
+			isNarrow,
+			mobileNavigationOpen,
+			setMobileNavigationOpen,
+		);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	// Wide layouts compensate for the message scrollbar gutter; narrow layouts
 	// keep the composer side spacing symmetric.
@@ -435,6 +436,7 @@ function RemoteWorkspace() {
 									client={connection.client}
 									open={mobileNavigationOpen}
 									onOpenChange={setMobileNavigationOpen}
+									motion={mobileNavigationMotion}
 									onDeleteSession={handleDeleteMobileSession}
 									onRefreshSession={chat.refreshSession}
 									envs={envs}
