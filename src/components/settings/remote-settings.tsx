@@ -12,6 +12,7 @@ import {
 	revokeRemoteDevice,
 	setRemoteEnabled,
 	setRemotePort,
+	setRemoteScreenSharing,
 	setRemoteAddresses,
 	type RemoteAccessAddress,
 	type RemoteDevice,
@@ -208,6 +209,19 @@ export function RemoteSettings({
 		}
 	};
 
+	const toggleScreenSharing = async (enabled: boolean) => {
+		if (busy) return;
+		setBusy("screen");
+		try {
+			setState(await setRemoteScreenSharing(enabled));
+		} catch (cause) {
+			const message = cause instanceof Error ? cause.message : String(cause);
+			toast.error(t("settings.remoteActionFailed"), { description: message });
+		} finally {
+			setBusy(null);
+		}
+	};
+
 	const savePort = async () => {
 		if (busy || !state || portDraft === null) return;
 		const port = Number(portDraft);
@@ -385,6 +399,19 @@ export function RemoteSettings({
 						/>
 					</div>
 				</SettingsRow>
+				{state.screenSharingSupported ? (
+					<SettingsRow
+						label={t("settings.remoteScreenSharing")}
+						helper={t("settings.remoteScreenSharingDescription")}
+					>
+						<Switch
+							checked={state.screenSharing}
+							disabled={Boolean(busy)}
+							onCheckedChange={(checked) => void toggleScreenSharing(checked)}
+							aria-label={t("settings.remoteScreenSharing")}
+						/>
+					</SettingsRow>
+				) : null}
 				{error || state.lastError || state.addressConfigError ? (
 					<SettingsRow
 						label={t("settings.remoteError")}

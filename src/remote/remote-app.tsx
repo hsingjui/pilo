@@ -47,6 +47,7 @@ import { connectionLabel } from "@/lib/api/projects";
 import type { PiloClientEventMessage } from "@/lib/api/pilo-client";
 import { TooltipProvider } from "@/ui";
 import { RemotePairingPage } from "./remote-pairing-page";
+import { RemoteScreen } from "./remote-screen";
 import { isRemotePairingLocation } from "./remote-pairing-model";
 import { useMediaQuery } from "./remote-app-model";
 import { remoteConnectionLabelKey } from "./remote-connection-state";
@@ -459,6 +460,7 @@ function RemoteWorkspace() {
 							<main className="@container relative flex min-w-0 flex-1 flex-col bg-background">
 								<SessionHeader
 									project={chat.activeProject}
+									endAction={<RemoteScreen token={token} />}
 									session={chat.headerSession ?? undefined}
 									sessionState={chat.chatState ?? undefined}
 									onNewChat={

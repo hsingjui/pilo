@@ -1,4 +1,4 @@
-import { useContext } from "react";
+import { useContext, type ReactNode } from "react";
 import { ProjectWorkspaceContext } from "@/components/app/project-workspace-context";
 import {
 	MessageSquareDashed,
@@ -38,6 +38,7 @@ export function SessionHeader({
 	onRenameSession,
 	onFindInSession,
 	onOpenInNewWindow,
+	endAction,
 	reserveWindowControls = false,
 	sidebarCollapsed = false,
 	overlay = false,
@@ -56,6 +57,7 @@ export function SessionHeader({
 	onRenameSession?: (title: string) => void;
 	onFindInSession?: () => void;
 	onOpenInNewWindow?: () => void;
+	endAction?: ReactNode;
 	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
 	overlay?: boolean;
@@ -150,6 +152,7 @@ export function SessionHeader({
 				)}
 			</ProjectWorkspaceTabs>
 			{editorProject ||
+			endAction ||
 			onNewTemporaryChat ||
 			onNewChat ||
 			onOpenTerminal ||
@@ -160,6 +163,7 @@ export function SessionHeader({
 						reserveWindowControls && "-translate-y-1",
 					)}
 				>
+					{endAction}
 					{onOpenTerminal ? (
 						<Tooltip>
 							<TooltipTrigger asChild>

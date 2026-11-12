@@ -46,6 +46,30 @@ pub(crate) fn set_remote_host_config(
     Ok(())
 }
 
+pub(crate) fn remote_screen_sharing(db: &SqliteConnection) -> Result<bool, String> {
+    db.query_row(
+        "SELECT screen_sharing FROM remote_host_config WHERE id=1",
+        [],
+        |row| row.get(0),
+    )
+    .optional()
+    .map(|enabled| enabled.unwrap_or(false))
+    .map_err(|error| format!("failed to read remote screen sharing configuration: {error}"))
+}
+
+pub(crate) fn set_remote_screen_sharing(
+    db: &SqliteConnection,
+    enabled: bool,
+) -> Result<(), String> {
+    db.execute(
+        "INSERT INTO remote_host_config(id,port,screen_sharing) VALUES(1,?1,?2)
+         ON CONFLICT(id) DO UPDATE SET screen_sharing=excluded.screen_sharing",
+        params![random_remote_port(), enabled],
+    )
+    .map_err(|error| format!("failed to save remote screen sharing configuration: {error}"))?;
+    Ok(())
+}
+
 pub(crate) fn get_remote_access_config(
     db: &SqliteConnection,
 ) -> Result<Option<RemoteAccessConfig>, String> {
