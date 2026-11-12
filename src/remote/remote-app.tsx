@@ -52,6 +52,7 @@ import { useMediaQuery } from "./remote-app-model";
 import { remoteConnectionLabelKey } from "./remote-connection-state";
 import { RemoteConnectionNotice } from "./remote-connection-notice";
 import { RemoteMobileNavigation } from "./remote-mobile-navigation";
+import { useMobileNavigationSwipe } from "./use-mobile-navigation-swipe";
 import { useRemoteKeyboardInset } from "./use-remote-keyboard-inset";
 import { useRemoteChat } from "./use-remote-chat";
 import { useRemoteConnection } from "./use-remote-connection";
@@ -119,6 +120,11 @@ function RemoteWorkspace() {
 	const isTouch = useMediaQuery("(hover: none) and (pointer: coarse)");
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 	const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+	const mobileNavigationSwipe = useMobileNavigationSwipe(
+		isNarrow,
+		mobileNavigationOpen,
+		setMobileNavigationOpen,
+	);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	// Wide layouts compensate for the message scrollbar gutter; narrow layouts
 	// keep the composer side spacing symmetric.
@@ -418,6 +424,7 @@ function RemoteWorkspace() {
 						connectionId={chat.activeProject?.connection.id ?? ""}
 					>
 						<div
+							{...mobileNavigationSwipe}
 							data-remote-webui=""
 							data-touch-reveal={isTouch ? "" : undefined}
 							className="flex h-[var(--remote-viewport-height,100dvh)] overflow-hidden bg-background pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] text-foreground"

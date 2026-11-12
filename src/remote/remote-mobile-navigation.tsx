@@ -199,8 +199,12 @@ export function RemoteMobileNavigation({
 	return (
 		<DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
 			<DialogPrimitive.Portal>
-				<DialogPrimitive.Overlay className="fixed inset-0 z-[var(--z-dialog-overlay)] bg-black/40 duration-[var(--dur-2)] ease-out data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 motion-reduce:animate-none" />
+				<DialogPrimitive.Overlay
+					data-mobile-navigation-swipe=""
+					className="fixed inset-0 z-[var(--z-dialog-overlay)] bg-black/40 duration-[var(--dur-2)] ease-out data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 motion-reduce:animate-none"
+				/>
 				<DialogPrimitive.Content
+					data-mobile-navigation-swipe=""
 					className={cn(
 						// Reserve at least 64px of backdrop for an easy outside-tap dismissal.
 						"fixed inset-y-0 left-0 z-[var(--z-dialog)] flex flex-col overflow-hidden pilo-mobile-sidebar",
