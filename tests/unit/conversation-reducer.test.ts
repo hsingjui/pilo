@@ -642,8 +642,13 @@ test("usage-only runtime updates do not create an assistant message", () => {
 		type: "assistant_usage_update",
 		generation: 1,
 		usage,
+		timestampMs: 1,
 	});
-	assert.deepEqual(action, { type: "assistant_usage_update", usage });
+	assert.deepEqual(action, {
+		type: "assistant_usage_update",
+		usage,
+		timestampMs: 1,
+	});
 	if (!action) throw new Error("expected usage update");
 	const state = createConversationState();
 	assert.equal(reduceConversation(state, action, context()), state);
