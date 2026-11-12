@@ -636,8 +636,7 @@ fn command_args(command: &[u8]) -> Vec<String> {
 fn explicit_session_path(command: &[u8], cwd: &Path) -> Option<PathBuf> {
     let args = command_args(command);
     let value = args.windows(2).find_map(|window| {
-        (window[0] == "--session" || window[0] == "-s")
-            .then(|| window[1].trim_matches(['"', '\'']))
+        (window[0] == "--session" || window[0] == "-s").then(|| window[1].trim_matches(['"', '\'']))
     })?;
     let candidate = PathBuf::from(value);
     if candidate.extension().and_then(|value| value.to_str()) != Some("jsonl") {

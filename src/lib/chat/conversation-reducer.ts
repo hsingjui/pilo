@@ -180,10 +180,10 @@ function endTurn(
 		streaming: false,
 		workDurationMs:
 			completion === "continued" ||
-				startedAt === undefined ||
-				timestampMs === undefined
-					? undefined
-					: Math.max(0, timestampMs - startedAt),
+			startedAt === undefined ||
+			timestampMs === undefined
+				? undefined
+				: Math.max(0, timestampMs - startedAt),
 		stopReason: stopReason ?? undefined,
 		errorMessage: visibleError,
 		completion,
