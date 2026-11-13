@@ -15,7 +15,10 @@ import { cn } from "@/lib/utils";
 import { usePreferences } from "@/lib/preferences-provider";
 import { tauriPiloClient } from "@/lib/api/tauri-pilo-client";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
-import { IS_MACOS } from "@/components/title-bar";
+import {
+	IS_MACOS,
+	TRAFFIC_LIGHT_ALIGNED_SIDEBAR_ACTIONS,
+} from "@/components/title-bar";
 import { ProjectSessionsToolbar } from "./project-sessions-toolbar";
 import { SidebarTree } from "./sidebar-tree";
 import { SIDEBAR_ACTION } from "./sidebar-row-parts";
@@ -319,7 +322,7 @@ export function AppSidebar({
 						: "overflow-visible opacity-100",
 				)}
 			>
-				<div className="relative flex flex-col overflow-hidden bg-sidebar text-sidebar-foreground pilo-sidebar-surface">
+				<div className="relative flex flex-col bg-sidebar text-sidebar-foreground pilo-sidebar-surface">
 					<header
 						data-tauri-drag-region="deep"
 						className={cn(
@@ -343,8 +346,8 @@ export function AppSidebar({
 								className={cn(
 									// Match the scroll body inset and row action padding.
 									"absolute right-2.5 flex h-7 items-center gap-0.5 border border-transparent px-2",
-									// 与 TRAFFIC_LIGHT_ALIGNED_HEADER 同一红绿灯圆心：11 - 2 + 14 = 23
-									IS_MACOS ? "-top-0.5" : "top-2",
+									// 扣除主题顶部内缩及容器半高，字体缩放后仍对齐原生红绿灯。
+									IS_MACOS ? TRAFFIC_LIGHT_ALIGNED_SIDEBAR_ACTIONS : "top-2",
 								)}
 							>
 								<button
@@ -388,40 +391,43 @@ export function AppSidebar({
 							</div>
 						)}
 					</div>
-					<SidebarTree
-						scrollViewportRef={scrollViewportRef}
-						organizeMode={organizeMode}
-						onOrganizeModeChange={changeOrganizeMode}
-						collapsedSections={collapsedSections}
-						onToggleSection={toggleSection}
-						showProjectsInRecents={showProjectsInRecents}
-						onShowProjectsInRecentsChange={setShowProjectsInRecents}
-						recentSessions={recentSessions}
-						projectSessionsViewProject={projectSessionsViewProject}
-						projectSessionsViewSessions={projectSessionsViewSessions}
-						onOpenProjectSessionsView={openProjectSessionsView}
-						projectById={projectById}
-						activeSessionId={activeSessionId}
-						selectedProjectId={selectedProjectId}
-						envs={envs}
-						projectsByEnv={projectsByEnv}
-						sessionsByProject={sessionsByProject}
-						refreshingProjectIds={refreshingProjectIds}
-						onFocusProject={onFocusProject}
-						onNewChatInProject={onNewChatInProject}
-						onDeleteProject={onDeleteProject}
-						onAddProject={onAddProject}
-						onDeleteConnection={onDeleteConnection}
-						onRefreshProjectSessions={onRefreshProjectSessions}
-						onReorderProjects={onReorderProjects}
-						onSelectSession={handleSelectSession}
-						onRenameSession={handleRenameSession}
-						onDeleteSession={handleDeleteSession}
-						onRefreshSession={onRefreshSession}
-					/>
-					<footer className="relative flex shrink-0 items-center gap-1 border-t border-sidebar-border px-1.5 py-1">
-						{footer}
-					</footer>
+					{/* 顶栏按钮可越过卡片上缘；仅裁剪列表和页脚，保留圆角边界。 */}
+					<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-[inherit]">
+						<SidebarTree
+							scrollViewportRef={scrollViewportRef}
+							organizeMode={organizeMode}
+							onOrganizeModeChange={changeOrganizeMode}
+							collapsedSections={collapsedSections}
+							onToggleSection={toggleSection}
+							showProjectsInRecents={showProjectsInRecents}
+							onShowProjectsInRecentsChange={setShowProjectsInRecents}
+							recentSessions={recentSessions}
+							projectSessionsViewProject={projectSessionsViewProject}
+							projectSessionsViewSessions={projectSessionsViewSessions}
+							onOpenProjectSessionsView={openProjectSessionsView}
+							projectById={projectById}
+							activeSessionId={activeSessionId}
+							selectedProjectId={selectedProjectId}
+							envs={envs}
+							projectsByEnv={projectsByEnv}
+							sessionsByProject={sessionsByProject}
+							refreshingProjectIds={refreshingProjectIds}
+							onFocusProject={onFocusProject}
+							onNewChatInProject={onNewChatInProject}
+							onDeleteProject={onDeleteProject}
+							onAddProject={onAddProject}
+							onDeleteConnection={onDeleteConnection}
+							onRefreshProjectSessions={onRefreshProjectSessions}
+							onReorderProjects={onReorderProjects}
+							onSelectSession={handleSelectSession}
+							onRenameSession={handleRenameSession}
+							onDeleteSession={handleDeleteSession}
+							onRefreshSession={onRefreshSession}
+						/>
+						<footer className="relative flex shrink-0 items-center gap-1 border-t border-sidebar-border px-1.5 py-1">
+							{footer}
+						</footer>
+					</div>
 				</div>
 				{/* 折叠时侧栏宽为 0，手柄没有可拖的内容，也不该出现在 Tab 顺序里。 */}
 				{collapsed ? null : (

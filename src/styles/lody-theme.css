@@ -170,6 +170,7 @@
 		--pilo-sidebar-border-color: hsl(var(--sidebar-border) / 0.8);
 		--pilo-sidebar-radius: var(--pilo-radius-xl);
 		--pilo-sidebar-padding: 2px;
+		--pilo-sidebar-header-top-inset: calc(0.5rem + 3px);
 		--pilo-sidebar-shadow: var(--pilo-shadow-sm);
 		--pilo-mobile-sidebar-radius: 0 var(--pilo-mobile-radius-xl)
 			var(--pilo-mobile-radius-xl) 0;

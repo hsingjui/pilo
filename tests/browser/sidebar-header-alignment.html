@@ -1,0 +1,229 @@
+<!doctype html>
+<!-- Run with pnpm exec vite. Open this page for mocked macOS, then ?web=1 for WebUI.
+     Check Chromium and WebKit, including a 320px viewport. No desktop Host is used. -->
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Sidebar header alignment regression</title>
+	</head>
+	<body>
+		<pre
+			id="results"
+			style="position: fixed; bottom: 0; right: 0; z-index: 100"
+		>
+Running…</pre>
+		<div
+			id="root"
+			style="position: absolute; top: 0; left: 0; width: 100%; height: 600px"
+		></div>
+		<script type="module">
+			import "../../src/index.css";
+			import { createElement as h } from "react";
+			import { createRoot } from "react-dom/client";
+
+			const web = new URL(location.href).searchParams.has("web");
+			// Title-bar platform flags are captured at import time. Mock only the
+			// desktop chrome; PreferencesProvider must not connect to a real Host.
+			globalThis.isTauri = false;
+			if (!web) {
+				Object.defineProperty(navigator, "userAgent", {
+					configurable: true,
+					value: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+				});
+				window.__TAURI_INTERNALS__ = {};
+			} else {
+				delete window.__TAURI_INTERNALS__;
+				document.documentElement.setAttribute("data-remote-webui", "");
+			}
+			const [
+				{ AppSidebar },
+				{ SessionHeader },
+				{ PreferencesProvider },
+				{ TooltipProvider },
+				{ initializeI18n },
+			] = await Promise.all([
+				import("../../src/components/sidebar/app-sidebar.tsx"),
+				import("../../src/components/chat/chat-session-header.tsx"),
+				import("../../src/lib/preferences-provider.tsx"),
+				import("../../src/ui/tooltip.tsx"),
+				import("../../src/i18n/index.ts"),
+			]);
+			const keys = [
+				"pilo.sidebarWidth",
+				"pilo.collapsedSections",
+				"pilo.sidebarOrganizeMode",
+				"pilo.sidebarShowProjectsInRecents",
+				"pilo.preferences.v1",
+			];
+			const saved = keys.map((key) => [key, localStorage.getItem(key)]);
+			for (const key of keys) localStorage.removeItem(key);
+			await initializeI18n("en-US");
+			const root = createRoot(document.getElementById("root"));
+			let collapses = 0;
+			function render(collapsed = false) {
+				root.render(
+					h(
+						PreferencesProvider,
+						null,
+						h(
+							TooltipProvider,
+							null,
+							h(
+								"div",
+								{ className: "flex h-full" },
+								h(AppSidebar, {
+									envs: [],
+									projects: [],
+									sessions: [],
+									collapsed,
+									onCollapse: () => {
+										collapses++;
+									},
+									footer: h(
+										"button",
+										{ id: "footer-probe", className: "h-8" },
+										"Footer",
+									),
+								}),
+								h(
+									"main",
+									{ className: "relative flex min-w-0 flex-1 flex-col" },
+									h(SessionHeader, {
+										sidebarCollapsed: collapsed,
+										onExpandSidebar() {},
+									}),
+								),
+							),
+						),
+					),
+				);
+			}
+			function assert(condition, message) {
+				if (!condition) throw new Error(message);
+			}
+			async function settle() {
+				await new Promise((resolve) => setTimeout(resolve, 260));
+				await new Promise(requestAnimationFrame);
+			}
+			function assertNotClipped(button, label) {
+				const rect = button.getBoundingClientRect();
+				for (
+					let ancestor = button.parentElement;
+					ancestor;
+					ancestor = ancestor.parentElement
+				) {
+					const style = getComputedStyle(ancestor);
+					if (!/^(hidden|clip|auto|scroll)$/.test(style.overflowY)) continue;
+					const clip = ancestor.getBoundingClientRect();
+					assert(
+						rect.top - 2 >= clip.top + parseFloat(style.borderTopWidth) - 0.5,
+						`${label}: button and 2px focus ring must clear ${ancestor.className}`,
+					);
+				}
+				const hit = document.elementFromPoint(
+					rect.x + rect.width / 2,
+					rect.top + 0.5,
+				);
+				assert(
+					hit && button.contains(hit),
+					`${label}: button top must be clickable`,
+				);
+			}
+			const results = [];
+			try {
+				render();
+				await settle();
+				for (const family of ["lody", "claude"]) {
+					document.documentElement.dataset.themeFamily = family;
+					for (let size = 12; size <= 18; size++) {
+						document.documentElement.style.fontSize = `${(size / 14) * 100}%`;
+						await new Promise(requestAnimationFrame);
+						const label = `${web ? "WebUI" : "macOS"} / ${family} / ${size}`;
+						const buttons = document.querySelectorAll("aside header button");
+						assert(
+							buttons.length === 2,
+							`${label}: search and collapse are present`,
+						);
+						for (const button of buttons) {
+							assertNotClipped(button, label);
+							if (!web) {
+								const rect = button.getBoundingClientRect();
+								assert(
+									Math.abs(rect.top + rect.height / 2 - 23) < 0.5,
+									`${label}: sidebar circle stays at 23px`,
+								);
+							}
+						}
+						if (!web) {
+							const header = document
+								.querySelector("main > header")
+								.getBoundingClientRect();
+							assert(
+								Math.abs(header.top + header.height / 2 - 23) < 0.5,
+								`${label}: session header matches native controls`,
+							);
+						}
+						const footer =
+							document.getElementById("footer-probe").parentElement;
+						assert(
+							getComputedStyle(footer.parentElement).overflowY === "hidden",
+							`${label}: body and footer retain their clipping layer`,
+						);
+						buttons[1].focus();
+						assert(
+							document.activeElement === buttons[1],
+							`${label}: keyboard focus works`,
+						);
+						buttons[1].click();
+						assert(
+							collapses === results.length + 1,
+							`${label}: collapse callback works`,
+						);
+						results.push(label);
+					}
+				}
+				render(true);
+				await settle();
+				const aside = document.querySelector("aside");
+				assert(
+					aside.inert && aside.getAttribute("aria-hidden") === "true",
+					"collapsed sidebar is inert",
+				);
+				assert(
+					aside.getBoundingClientRect().width < 0.5,
+					"collapsed sidebar occupies no width",
+				);
+				assert(
+					!aside.querySelector("header button"),
+					"collapsed actions are unmounted",
+				);
+				render(false);
+				await settle();
+				assert(
+					document.querySelectorAll("aside header button").length === 2,
+					"actions return after expanding",
+				);
+				assertNotClipped(
+					document.querySelector("aside header button:last-child"),
+					"expanded sidebar",
+				);
+				document.body.dataset.testStatus = "passed";
+				document.getElementById("results").textContent =
+					`Passed ${results.length} theme/size cases, collapse and expand (${web ? "WebUI" : "macOS mock"}).`;
+			} catch (error) {
+				document.body.dataset.testStatus = "failed";
+				document.getElementById("results").textContent = String(
+					error.stack || error,
+				);
+				throw error;
+			} finally {
+				root.unmount();
+				for (const [key, value] of saved) {
+					if (value === null) localStorage.removeItem(key);
+					else localStorage.setItem(key, value);
+				}
+			}
+		</script>
+	</body>
+</html>

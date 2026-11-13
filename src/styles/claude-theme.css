@@ -109,6 +109,7 @@
 		--pilo-sidebar-border-color: hsl(var(--sidebar-border) / 0.6);
 		--pilo-sidebar-radius: 0;
 		--pilo-sidebar-padding: 0.5rem;
+		--pilo-sidebar-header-top-inset: 0.5rem;
 		--pilo-sidebar-shadow: 0 0 #0000;
 		--pilo-mobile-sidebar-radius: 0;
 		/* Mobile shape uses the same independent contract as custom themes. */

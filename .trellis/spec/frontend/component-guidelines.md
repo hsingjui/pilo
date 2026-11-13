@@ -76,6 +76,14 @@ re-styling them.
   When verification is authorized, check continuous dragging, drag-triggered
   collapse animation, button/shortcut expand, long-handle feedback and keyboard
   resizing in Windows and wide WebUI; type/lint checks are not animation proof.
+  macOS header actions share a 23px center with native traffic lights across UI
+  font sizes 12–18. Keep them outside the sidebar body/footer clipping layer:
+  a correct `calc()` offset still clips buttons and focus rings when the card
+  itself has `overflow-hidden`. Retain rounded bottom clipping and the original
+  body inset. `tests/browser/sidebar-header-alignment.html` checks both built-in
+  themes, all allowed font sizes, top-edge hit targets, focus and collapse/expand;
+  run its `?web=1` mode too, including a narrow viewport. The macOS mock verifies
+  CSS geometry, not native traffic-light positioning in the Tauri WebView.
 - Startup loading boundaries apply to desktop and WebUI: `ChatMarkdown` starts
   its shared runtime import on the first rendered message, not at module scope;
   importing/prewarming `ChatPage` must not fetch the Markdown engine for an empty

@@ -17,12 +17,14 @@ export const IS_WINDOWS = IS_TAURI && navigator.userAgent.includes("Windows");
 export const TRAFFIC_LIGHT_GUTTER = "pl-[4.5rem]";
 
 /**
- * macOS 顶栏内容与红绿灯圆心对齐用的上边距。
- * 当前 tauri/tao 的 trafficLightPosition.y = 25 会让原生按钮圆心落在窗口顶部下 23px；
- * h-11 顶栏内容居中为 22px，因此补 1px。侧栏卡片头部（顶边距 11px）的收起按钮
- * 使用 -top-0.5（11 - 2 + 14 = 23），两者圆心一致，收起/展开时控件不会跳动。
+ * tauri/tao 的 trafficLightPosition.y = 25 使原生红绿灯圆心距窗口顶部 23px。
+ * 顶栏 h-11 和侧栏按钮容器 h-7 会随根字号缩放，因此不能固定补 1px/-2px。
  */
-export const TRAFFIC_LIGHT_ALIGNED_HEADER = "mt-px";
+export const TRAFFIC_LIGHT_ALIGNED_HEADER = "mt-[calc(23px-1.375rem)]";
+
+/** 侧栏按钮容器以同一个 23px 圆心定位，扣除主题顶部内缩和容器半高。 */
+export const TRAFFIC_LIGHT_ALIGNED_SIDEBAR_ACTIONS =
+	"top-[calc(23px-var(--pilo-sidebar-header-top-inset)-0.875rem)]";
 
 // 自定义标题栏仅在 Windows 且运行于 Tauri 时启用（Windows 无边框 + 自绘控制按钮）
 export const CUSTOM_TITLEBAR =

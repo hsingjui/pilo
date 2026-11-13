@@ -59,6 +59,7 @@ Open one of these paths at `http://127.0.0.1:1420`:
 - `/tests/browser/chat-markdown-images.html`
 - `/tests/browser/chat-markdown-links.html` (mocked Local/WSL/SSH opening IPC, remote text tabs/errors and WebUI native-opening guards)
 - `/tests/browser/project-workspace-tabs.html` (shared header file tabs, Markdown/code, retained chat state, project isolation, keyboard and narrow layouts)
+- `/tests/browser/sidebar-header-alignment.html` (mocked macOS header alignment, both built-in themes, UI font sizes 12–18, unclipped focus/hit targets, collapse/expand; also open `?web=1` for WebUI and check a 320px viewport)
 - `/tests/browser/chat-mentions.html`
 - `/tests/browser/chat-scroll-following.html`
 - `/tests/browser/chat-streaming-status.html`
