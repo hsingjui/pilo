@@ -7,14 +7,12 @@ import {
 
 import { ChatConversationViewport } from "@/components/chat/chat-conversation-viewport";
 import type { ChatConversationStore } from "@/components/chat/chat-conversation-store";
-import { createConversationState } from "@/lib/chat/conversation-reducer";
+import { EMPTY_MESSAGES } from "@/components/chat/chat-mock-conversations";
 import type { ChatMessage } from "@/lib/chat/conversation-types";
-
-const EMPTY_CONVERSATION = createConversationState();
 
 type Props = Omit<
 	ComponentProps<typeof ChatConversationViewport>,
-	"messages" | "activeAssistantMessageId"
+	"messages" | "activeAssistantMessageId" | "conversationStore"
 > & {
 	conversationStore: ChatConversationStore;
 	historyPrefix: ChatMessage[];
@@ -29,26 +27,25 @@ export const RemoteConversationViewport = memo(
 		initialVirtualizerMessageCount,
 		...props
 	}: Props) {
-		const conversation =
-			useSyncExternalStore(
-				conversationStore.subscribe,
-				conversationStore.getSnapshot,
-				conversationStore.getSnapshot,
-			) ?? EMPTY_CONVERSATION;
+		const timeline = useSyncExternalStore(
+			conversationStore.subscribe,
+			conversationStore.getTimelineSnapshot,
+			conversationStore.getTimelineSnapshot,
+		);
+		const runtimeMessages = timeline?.messages ?? EMPTY_MESSAGES;
 		const messages = useMemo(
 			() =>
 				historyPrefix.length > 0
-					? [...historyPrefix, ...conversation.messages]
-					: conversation.messages,
-			[conversation.messages, historyPrefix],
+					? [...historyPrefix, ...runtimeMessages]
+					: runtimeMessages,
+			[historyPrefix, runtimeMessages],
 		);
 		return (
 			<ChatConversationViewport
 				{...props}
 				messages={messages}
-				activeAssistantMessageId={
-					conversation.active?.assistantMessageId ?? null
-				}
+				conversationStore={conversationStore}
+				activeAssistantMessageId={timeline?.activeAssistantMessageId ?? null}
 				initialVirtualizerCache={
 					initialVirtualizerMessageCount === messages.length
 						? initialVirtualizerCache

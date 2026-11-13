@@ -13,7 +13,9 @@
 			import "../../src/index.css";
 			import { createElement as h, createRef } from "react";
 			import { createRoot } from "react-dom/client";
-			import { ChatConversationViewport } from "../../src/components/chat/chat-conversation-viewport.tsx";
+			import { createChatConversationStore } from "../../src/components/chat/chat-conversation-store.ts";
+			import { createConversationState } from "../../src/lib/chat/conversation-reducer.ts";
+			import { RemoteConversationViewport } from "../../src/remote/remote-conversation-viewport.tsx";
 			import { PreferencesProvider } from "../../src/lib/preferences-provider.tsx";
 			import { TooltipProvider } from "../../src/ui/tooltip.tsx";
 			import { initializeI18n } from "../../src/i18n/index.ts";
@@ -77,27 +79,48 @@
 						: {}),
 				};
 			}
-			function render(width, history, content, finished = false) {
+			function mountChat(width, history, initialContent) {
 				const messages = Array.from({ length: history }, (_, i) => ({
 					id: `history-${i}`,
 					role: i % 2 ? "assistant" : "user",
 					text: `History ${i}.\n\n`.repeat(3),
 				}));
-				messages.push(
-					{
-						id: "user",
-						role: "user",
-						text: "Check scrolling during this reply.",
-					},
-					{
-						id: "live",
-						role: "assistant",
-						text: "",
-						content,
-						streaming: !finished,
-						...(finished ? { errorMessage: "Final error.\n".repeat(6) } : {}),
-					},
-				);
+				messages.push({
+					id: "user",
+					role: "user",
+					text: "Check scrolling during this reply.",
+				});
+				const conversationStore = createChatConversationStore();
+				const base = createConversationState(messages);
+				const active = {
+					assistantMessageId: "live",
+					firstRuntimeUserSeen: true,
+				};
+				function updateReply(content, finished = false) {
+					const previous = conversationStore.getTimelineSnapshot();
+					conversationStore.setSnapshot({
+						...base,
+						active: finished ? null : active,
+						messages: [
+							...messages,
+							{
+								id: "live",
+								role: "assistant",
+								text: "",
+								content: [...content],
+								streaming: !finished,
+								...(finished ? { errorMessage: "Final error.\n".repeat(6) } : {}),
+							},
+						],
+					});
+					if (previous && !finished) {
+						assert(
+							conversationStore.getTimelineSnapshot() === previous,
+							`${label}: streaming deltas must not replace the timeline`,
+						);
+					}
+				}
+				updateReply(initialContent);
 				document.documentElement.toggleAttribute(
 					"data-remote-webui",
 					width === 360,
@@ -115,15 +138,15 @@
 									className: "@container flex flex-col",
 									style: { width, maxWidth: "100%", height: 560 },
 								},
-								h(ChatConversationViewport, {
+								h(RemoteConversationViewport, {
 									key: session,
 									ref: viewportRef,
 									runtimeScrollRef,
 									active: true,
 									visualLive: true,
 									sessionId: `case-${session}`,
-									messages,
-									activeAssistantMessageId: finished ? null : "live",
+									conversationStore,
+									historyPrefix: [],
 									effectiveLoadState: "ready",
 									initialScrollTop: 0,
 									initialSticky: true,
@@ -138,6 +161,7 @@
 						),
 					),
 				);
+				return updateReply;
 			}
 			try {
 				for (const width of [900, 360]) {
@@ -151,7 +175,7 @@
 								text: "Reply.\n\n".repeat(8),
 							};
 							let content = [intro];
-							render(width, history, content);
+							const updateReply = mountChat(width, history, content);
 							await settle(12);
 							const startSamples = sampledFrames;
 							sampling = true;
@@ -176,25 +200,37 @@
 									});
 								}
 							}
-							render(width, history, [...content]);
+							updateReply(content);
 							await settle(24);
 							if (kind === "parallel-tools") {
-								// Expand the last tool in the lower half, retaining follow ownership.
 								content = content.map((item) =>
 									item.id === "tool-11" ? tool(11, "running", 1) : item,
 								);
-								render(width, history, content);
+								updateReply(content);
 								await settle();
-								const buttons = runtimeScrollRef.current.querySelectorAll(
-									"button.group\\/tool",
+								const viewport = runtimeScrollRef.current;
+								const buttons = viewport.querySelectorAll("button.group\\/tool");
+								const lastTool = buttons[buttons.length - 1];
+								// Expanding a tool yields follow ownership to the disclosure anchor.
+								sampling = false;
+								lastTool.click();
+								assert(
+									lastTool.getAttribute("aria-expanded") === "true",
+									`${label}: last tool must expand`,
 								);
-								buttons[buttons.length - 1].click();
+								assert(
+									!viewport.hasAttribute("data-chat-following"),
+									`${label}: expanding a tool must release follow ownership`,
+								);
+								await settle();
+								viewportRef.current.scrollToBottom();
+								sampling = true;
 								await settle();
 								for (const lines of [4, 8, 16, 32]) {
 									content = content.map((item) =>
 										item.id === "tool-11" ? tool(11, "running", lines) : item,
 									);
-									render(width, history, content);
+									updateReply(content);
 									await settle();
 								}
 							}
@@ -203,7 +239,7 @@
 									content = content.map((item) =>
 										item.id === `tool-${i}` ? tool(i, "complete", 20) : item,
 									);
-									render(width, history, content);
+									updateReply(content);
 									await settle(3);
 								}
 							}
@@ -215,7 +251,7 @@
 									text: "Continued reply.\n\n".repeat(30),
 								},
 							];
-							render(width, history, content);
+							updateReply(content);
 							await settle(24);
 							sampling = false;
 							assert(
@@ -241,15 +277,21 @@
 									text: "More output.\n\n".repeat(40),
 								},
 							];
-							render(width, history, content);
+							updateReply(content);
 							await settle(12);
+							assert(
+								viewport
+									.querySelector('[data-chat-search-content-id="reading-tail"]')
+									?.textContent.includes("More output."),
+								`${label}: live row must render the delta while reading`,
+							);
 							assert(
 								Math.abs(viewport.scrollTop - readingTop) <= 1,
 								`${label}: growth must not pull a reader to bottom`,
 							);
 							viewportRef.current.scrollToBottom();
 							await settle();
-							render(width, history, content, true);
+							updateReply(content, true);
 							await settle(12);
 							assert(
 								viewport.querySelector('[role="alert"]').getBoundingClientRect()

@@ -27,6 +27,7 @@ export function useChatConversationView({
 	sessionPath,
 	historyLoadState,
 	loadState,
+	findOpen,
 	live = true,
 }: {
 	conversationStore: ChatConversationStore;
@@ -35,19 +36,34 @@ export function useChatConversationView({
 	sessionPath?: string;
 	historyLoadState: "ready" | "loading" | "error";
 	loadState: "ready" | "loading" | "error";
+	findOpen: boolean;
 	live?: boolean;
 }) {
-	const frozenConversationRef = useRef(conversationStore.getSnapshot());
+	const frozenTimelineRef = useRef(conversationStore.getTimelineSnapshot());
+	const frozenSearchRef = useRef<ConversationState | undefined>(undefined);
 	const frozenHistoryRef = useRef(historyStore.getSnapshot());
-	const frozenConversationSnapshot = useCallback(
-		() => frozenConversationRef.current,
+	const frozenTimelineSnapshot = useCallback(
+		() => frozenTimelineRef.current,
 		[],
 	);
+	const frozenSearchSnapshot = useCallback(() => frozenSearchRef.current, []);
 	const frozenHistorySnapshot = useCallback(() => frozenHistoryRef.current, []);
-	const conversationState = useSyncExternalStore(
+	const getTimeline = live
+		? conversationStore.getTimelineSnapshot
+		: frozenTimelineSnapshot;
+	const timeline = useSyncExternalStore(
 		live ? conversationStore.subscribe : NOOP_EXTERNAL_STORE_SUBSCRIBE,
-		live ? conversationStore.getSnapshot : frozenConversationSnapshot,
-		live ? conversationStore.getSnapshot : frozenConversationSnapshot,
+		getTimeline,
+		getTimeline,
+	);
+	const searchLive = live && findOpen;
+	const getSearch = searchLive
+		? conversationStore.getSnapshot
+		: frozenSearchSnapshot;
+	const search = useSyncExternalStore(
+		searchLive ? conversationStore.subscribe : NOOP_EXTERNAL_STORE_SUBSCRIBE,
+		getSearch,
+		getSearch,
 	);
 	const historySnapshot = useSyncExternalStore(
 		live ? historyStore.subscribe : NOOP_EXTERNAL_STORE_SUBSCRIBE,
@@ -56,10 +72,11 @@ export function useChatConversationView({
 	);
 	useLayoutEffect(() => {
 		if (!live) return;
-		frozenConversationRef.current = conversationState;
+		frozenTimelineRef.current = timeline;
+		frozenSearchRef.current = findOpen ? search : undefined;
 		frozenHistoryRef.current = historySnapshot;
-	}, [conversationState, historySnapshot, live]);
-	const runtimeMessages = conversationState?.messages ?? baseMessages;
+	}, [findOpen, historySnapshot, live, search, timeline]);
+	const runtimeMessages = timeline?.messages ?? baseMessages;
 	useEffect(() => {
 		recordHistoryHydration(
 			historySnapshot.directory.length,
@@ -83,7 +100,17 @@ export function useChatConversationView({
 				: runtimeMessages,
 		[historyPrefix, runtimeMessages],
 	);
-	const pendingUsers = conversationState?.pendingUsers ?? EMPTY_PENDING_USERS;
+	const searchRuntimeMessages = findOpen ? search?.messages : undefined;
+	const searchMessages = useMemo(
+		() =>
+			searchRuntimeMessages && searchRuntimeMessages !== runtimeMessages
+				? historyPrefix.length > 0
+					? [...historyPrefix, ...searchRuntimeMessages]
+					: searchRuntimeMessages
+				: messages,
+		[historyPrefix, messages, runtimeMessages, searchRuntimeMessages],
+	);
+	const pendingUsers = timeline?.pendingUsers ?? EMPTY_PENDING_USERS;
 	const latestTurnInterrupted = useMemo(() => {
 		for (let index = messages.length - 1; index >= 0; index -= 1) {
 			const message = messages[index];
@@ -93,8 +120,7 @@ export function useChatConversationView({
 		}
 		return false;
 	}, [messages]);
-	const activeAssistantMessageId =
-		conversationState?.active?.assistantMessageId ?? null;
+	const activeAssistantMessageId = timeline?.activeAssistantMessageId ?? null;
 	const effectiveLoadState = sessionPath
 		? historyLoadState === "loading" && messages.length > 0
 			? "ready"
@@ -103,6 +129,7 @@ export function useChatConversationView({
 
 	return {
 		messages,
+		searchMessages,
 		pendingUsers,
 		latestTurnInterrupted,
 		activeAssistantMessageId,

@@ -45,12 +45,20 @@ export function createChatConversationStore() {
 
 Consume it with `useSyncExternalStore(store.subscribe, store.getSnapshot)`.
 
-WebUI uses this same conversation store. `RemoteConversationViewport` subscribes
-to the full snapshot and renders the shared `ChatConversationViewport`; the
-workspace hook subscribes only to a cached projection of activity, message
-count, pending users and interruption status. Keep the projection reference
-stable on text/thinking/tool deltas, or the entire shell re-renders again.
-The setter updates the projection before publishing the store snapshot.
+Desktop and WebUI pass `getTimelineSnapshot()` messages to the shared
+`ChatConversationViewport`. Only the last streaming assistant row subscribes
+with `getStreamingTail()`. Keep the timeline array reference stable when only
+that row's body changes; publish the actual messages again on structural
+changes, history reconciliation, or turn completion. Keep the live row at its
+original index so Virtua's range, cache, and scroll restoration still use the
+same coordinates. The desktop's retained view freezes both subscriptions while
+hidden. Search subscribes to `getSnapshot()` while open; history, fork and
+runtime consumers still read the full snapshot.
+
+The WebUI workspace hook subscribes only to a cached projection of activity,
+message count, pending users and interruption status. Keep the projection
+reference stable on text/thinking/tool deltas, or the entire shell re-renders
+again. The setter updates the projection before publishing the store snapshot.
 
 Web event frames coalesce adjacent deltas and use `reduceConversationActions`.
 Flush at user/non-assistant boundaries and after `assistant_turn_end` before

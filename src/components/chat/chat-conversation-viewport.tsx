@@ -16,6 +16,7 @@ import { ArrowDown } from "lucide-react";
 import { Virtualizer, type CacheSnapshot } from "virtua";
 
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
+import type { ChatConversationStore } from "@/components/chat/chat-conversation-store";
 import { ChatAgentActivityIndicator } from "@/components/chat/chat-agent-activity";
 import { ChatExpansionStateProvider } from "@/components/chat/chat-expansion-state";
 import { ChatHistorySkeleton } from "@/components/chat/chat-history-skeleton";
@@ -60,6 +61,7 @@ type ChatConversationViewportProps = {
 	sessionId: string;
 	sessionPath?: string;
 	messages: ChatMessage[];
+	conversationStore: ChatConversationStore;
 	onVisibleRangeChange?: (startIndex: number, endIndex: number) => void;
 	activeAssistantMessageId: string | null;
 	compacting?: boolean;
@@ -94,6 +96,7 @@ const ChatConversationViewportImpl = forwardRef<
 		sessionId,
 		sessionPath,
 		messages,
+		conversationStore,
 		onVisibleRangeChange,
 		activeAssistantMessageId,
 		compacting = false,
@@ -314,23 +317,36 @@ const ChatConversationViewportImpl = forwardRef<
 		[syncScrollState],
 	);
 	const renderMessage = useCallback(
-		(message: ChatMessage, index: number) => (
-			<MessageRow
-				key={message.id}
-				message={message}
-				isLastMessage={index === messages.length - 1}
-				onForkAssistant={onForkAssistant}
-				forkingMessageId={forkingMessageId}
-				forkDisabled={forkDisabled}
-				suppressInterruptedError={suppressInterruptedError}
-			/>
-		),
+		(message: ChatMessage, index: number) => {
+			const isLastMessage = index === messages.length - 1;
+			const isStreamingTail =
+				isLastMessage &&
+				message.role === "assistant" &&
+				message.streaming === true &&
+				message.id === activeAssistantMessageId;
+			return (
+				<MessageRow
+					key={message.id}
+					message={message}
+					isLastMessage={isLastMessage}
+					streamingStore={isStreamingTail ? conversationStore : undefined}
+					streamingLive={isStreamingTail && visualLive}
+					onForkAssistant={onForkAssistant}
+					forkingMessageId={forkingMessageId}
+					forkDisabled={forkDisabled}
+					suppressInterruptedError={suppressInterruptedError}
+				/>
+			);
+		},
 		[
+			activeAssistantMessageId,
+			conversationStore,
 			forkDisabled,
 			forkingMessageId,
 			messages.length,
 			onForkAssistant,
 			suppressInterruptedError,
+			visualLive,
 		],
 	);
 

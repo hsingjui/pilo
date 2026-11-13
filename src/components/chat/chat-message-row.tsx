@@ -1,6 +1,13 @@
-import { memo } from "react";
+import {
+	memo,
+	useCallback,
+	useLayoutEffect,
+	useRef,
+	useSyncExternalStore,
+} from "react";
 
 import { ConversationColumn } from "@/components/chat/chat-conversation-column";
+import type { ChatConversationStore } from "@/components/chat/chat-conversation-store";
 import { AssistantMessage } from "@/components/chat/chat-message";
 import { UserMessage } from "@/components/chat/chat-user-message";
 import { CompactionMessage } from "@/components/chat/compaction-message";
@@ -69,14 +76,36 @@ function renderMessageRow({
 	);
 }
 
+const subscribeToFrozenTail = () => () => undefined;
+
 export const MessageRow = memo(function MessageRow({
-	message,
+	message: timelineMessage,
 	isLastMessage,
 	onForkAssistant,
 	forkingMessageId,
 	forkDisabled,
 	suppressInterruptedError,
-}: MessageRowProps) {
+	streamingStore,
+	streamingLive,
+}: MessageRowProps & {
+	streamingStore?: ChatConversationStore;
+	streamingLive: boolean;
+}) {
+	// Only the current streaming row subscribes; keep its DOM and index at turn end.
+	const frozenTail = useRef(timelineMessage);
+	const getFrozenTail = useCallback(() => frozenTail.current, []);
+	const liveStore = streamingLive ? streamingStore : undefined;
+	const getTail = liveStore?.getStreamingTail ?? getFrozenTail;
+	const tail = useSyncExternalStore(
+		liveStore?.subscribe ?? subscribeToFrozenTail,
+		getTail,
+		getTail,
+	);
+	const message =
+		streamingStore && tail?.id === timelineMessage.id ? tail : timelineMessage;
+	useLayoutEffect(() => {
+		if (streamingLive) frozenTail.current = message;
+	}, [message, streamingLive]);
 	return (
 		<div
 			className="contents"

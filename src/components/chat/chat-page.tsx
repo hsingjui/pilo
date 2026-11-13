@@ -607,10 +607,12 @@ function ChatPageImpl(props: ChatPageProps) {
 				sessionPath={session.sessionPath}
 				historyLoadState={historyLoadState}
 				loadState={loadState}
+				findOpen={findOpen}
 			>
 				{(
 					{
 						messages,
+						searchMessages,
 						pendingUsers,
 						latestTurnInterrupted,
 						activeAssistantMessageId,
@@ -655,7 +657,7 @@ function ChatPageImpl(props: ChatPageProps) {
 									open={findOpen}
 									onOpen={() => setFindOpen(true)}
 									onClose={() => setFindOpen(false)}
-									messages={messages}
+									messages={searchMessages}
 									onNavigate={handleFindNavigate}
 								>
 									<ChatMarkdownLinkScope.Provider value={session.projectRecord}>
@@ -669,6 +671,7 @@ function ChatPageImpl(props: ChatPageProps) {
 													sessionId={performanceSessionId ?? session.id}
 													sessionPath={session.sessionPath}
 													messages={messages}
+													conversationStore={conversationStore}
 													onVisibleRangeChange={requestHistoryRange}
 													activeAssistantMessageId={activeAssistantMessageId}
 													compacting={compacting}
