@@ -1,5 +1,8 @@
 {
 	"bundle": {
-		"targets": ["dmg", "app"]
+		"targets": ["dmg", "app"],
+		"macOS": {
+			"signingIdentity": "-"
+		}
 	}
 }

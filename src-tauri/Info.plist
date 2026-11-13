@@ -5,5 +5,7 @@
     <!-- Start without a Dock flash; showing a window switches to Regular. -->
     <key>LSUIElement</key>
     <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Pilo 需要访问本地网络，以连接 SSH 主机和远程开发环境。</string>
 </dict>
 </plist>
