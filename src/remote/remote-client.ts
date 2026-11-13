@@ -610,58 +610,16 @@ export function approveRemoteProjectMcpServer(
 	});
 }
 
-function remoteWebSocket(token: string, path: string, query: URLSearchParams) {
-	const url = new URL(path, window.location.href);
-	url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-	url.search = query.toString();
-	return new WebSocket(url, ["pilo", `pilo-token.${token}`]);
-}
-
-export type RemoteScreenDisplay = { id: string; primary: boolean };
-
-export function decodeRemoteScreenDisplays(raw: string): {
-	displays: RemoteScreenDisplay[];
-	selectedId: string;
-} | null {
-	let value: unknown;
-	try {
-		value = JSON.parse(raw);
-	} catch {
-		return null;
-	}
-	if (
-		!isRecord(value) ||
-		typeof value.selectedId !== "string" ||
-		!Array.isArray(value.displays)
-	)
-		return null;
-	const displays = value.displays.filter(
-		(display: unknown): display is RemoteScreenDisplay =>
-			isRecord(display) &&
-			typeof display.id === "string" &&
-			typeof display.primary === "boolean",
-	);
-	if (!displays.some((display) => display.id === value.selectedId)) return null;
-	return { displays, selectedId: value.selectedId };
-}
-
-export function connectRemoteScreen(token: string, displayId: string) {
-	const query = new URLSearchParams();
-	if (displayId) query.set("display", displayId);
-	const socket = remoteWebSocket(token, "/api/v1/screen", query);
-	socket.binaryType = "blob";
-	return socket;
-}
-
 export function connectRemoteEvents(
 	token: string,
 	after: number | undefined,
 	onMessage: (message: PiloClientEventMessage) => void,
 	onStatus: (connected: boolean) => void,
 ) {
-	const query = new URLSearchParams();
-	if (after && after > 0) query.set("after", String(after));
-	const socket = remoteWebSocket(token, "/api/v1/events", query);
+	const url = new URL("/api/v1/events", window.location.href);
+	url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+	if (after && after > 0) url.searchParams.set("after", String(after));
+	const socket = new WebSocket(url, ["pilo", `pilo-token.${token}`]);
 	let hiddenAt = document.visibilityState === "hidden" ? Date.now() : null;
 	let probeTimer: number | undefined;
 	const clearProbe = () => {

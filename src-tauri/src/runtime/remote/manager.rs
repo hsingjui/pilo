@@ -23,8 +23,6 @@ use super::{access, api, pairing::PairingSession};
 pub(crate) struct RemoteHostState {
     pub enabled: bool,
     pub running: bool,
-    pub screen_sharing: bool,
-    pub screen_sharing_supported: bool,
     pub port: u16,
     pub base_url: Option<String>,
     pub public_base_url: String,
@@ -45,7 +43,6 @@ struct RunningRemoteServer {
     pairing: Arc<PairingSession>,
     shutdown: watch::Sender<bool>,
     auth_generation: watch::Sender<u64>,
-    screen_sharing: watch::Sender<bool>,
     task: JoinHandle<()>,
 }
 
@@ -93,28 +90,6 @@ impl RemoteServerManager {
         }
         storage::set_remote_host_config(&storage::open_with_paths(&paths)?, &config)?;
         self.snapshot(&app).await
-    }
-
-    pub(crate) async fn set_screen_sharing(
-        &self,
-        app: &AppHandle,
-        enabled: bool,
-    ) -> Result<RemoteHostState, String> {
-        if !cfg!(windows) {
-            return Err("Remote screen sharing requires a Windows Host".to_owned());
-        }
-        let paths = HostPaths::from_app(app)?;
-        let inner = self.inner.lock().await;
-        storage::set_remote_screen_sharing(&storage::open_with_paths(&paths)?, enabled)?;
-        if let Some(running) = inner.running.as_ref() {
-            running.screen_sharing.send_if_modified(|current| {
-                let changed = *current != enabled;
-                *current = enabled;
-                changed
-            });
-        }
-        drop(inner);
-        self.snapshot(app).await
     }
 
     pub(crate) async fn set_port(
@@ -405,8 +380,6 @@ impl RemoteServerManager {
             Ok(RemoteHostState {
                 enabled: host.enabled,
                 running: running.is_some(),
-                screen_sharing: cfg!(windows) && storage::remote_screen_sharing(&db)?,
-                screen_sharing_supported: cfg!(windows),
                 port: running.as_ref().map_or(host.port, |(port, _, _)| *port),
                 base_url,
                 public_base_url: host.public_base_url,
@@ -465,25 +438,16 @@ impl RemoteServerManager {
         let pairing_for_init = pairing.clone();
         let paths_for_init = paths.clone();
         let lan_for_init = lan_base_url.clone();
-        let screen_sharing_enabled = tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let config = load_access_config(&paths_for_init, &lan_for_init)?;
-            pairing_for_init.regenerate(&paths_for_init, access::pairing_addresses(&config))?;
-            storage::remote_screen_sharing(&storage::open_with_paths(&paths_for_init)?)
+            pairing_for_init.regenerate(&paths_for_init, access::pairing_addresses(&config))
         })
         .await
         .map_err(|_| "Remote WebUI pairing task failed".to_owned())??;
         let (shutdown, shutdown_rx) = watch::channel(false);
         let (auth_generation, auth_generation_rx) = watch::channel(0_u64);
-        let (screen_sharing, screen_sharing_rx) = watch::channel(screen_sharing_enabled);
         let shutdown_for_task = shutdown.clone();
-        let router = api::router(
-            app,
-            paths,
-            pairing.clone(),
-            shutdown_rx,
-            auth_generation_rx,
-            screen_sharing_rx,
-        );
+        let router = api::router(app, paths, pairing.clone(), shutdown_rx, auth_generation_rx);
         let pairing_for_expiry = pairing.clone();
         let task = tokio::spawn(async move {
             let serve = async move {
@@ -524,7 +488,6 @@ impl RemoteServerManager {
             pairing,
             shutdown,
             auth_generation,
-            screen_sharing,
             task,
         });
         log::info!(target: "remote-webui", "Remote WebUI started on LAN port {actual_port}");

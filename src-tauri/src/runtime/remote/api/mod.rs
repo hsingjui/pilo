@@ -28,7 +28,6 @@ use super::pairing::PairingSession;
 
 mod handlers;
 mod middleware;
-mod screen;
 mod validation;
 mod ws;
 
@@ -44,10 +43,6 @@ pub(crate) struct RemoteHttpState {
     rate_limiter: Arc<AuthRateLimiter>,
     shutdown: watch::Receiver<bool>,
     auth_generation: watch::Receiver<u64>,
-    #[cfg(windows)]
-    screen_sharing: watch::Receiver<bool>,
-    #[cfg(windows)]
-    screen_slots: Arc<tokio::sync::Semaphore>,
 }
 
 #[derive(Default)]
@@ -110,10 +105,7 @@ pub(crate) fn router(
     pairing: Arc<PairingSession>,
     shutdown: watch::Receiver<bool>,
     auth_generation: watch::Receiver<u64>,
-    screen_sharing: watch::Receiver<bool>,
 ) -> Router {
-    #[cfg(not(windows))]
-    let _ = screen_sharing;
     let state = RemoteHttpState {
         app,
         paths,
@@ -121,10 +113,6 @@ pub(crate) fn router(
         rate_limiter: Arc::new(AuthRateLimiter::default()),
         shutdown,
         auth_generation,
-        #[cfg(windows)]
-        screen_sharing,
-        #[cfg(windows)]
-        screen_slots: Arc::new(tokio::sync::Semaphore::new(4)),
     };
 
     let protected = Router::new()
@@ -201,7 +189,6 @@ pub(crate) fn router(
                 )),
         )
         .route("/api/v1/events", get(ws::events))
-        .route("/api/v1/screen", get(screen::view))
         .route_layer(from_fn_with_state(state.clone(), middleware::require_auth));
 
     let pairing = Router::new()

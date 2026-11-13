@@ -174,8 +174,7 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
            id INTEGER PRIMARY KEY CHECK(id=1),
            enabled INTEGER NOT NULL DEFAULT 0,
            port INTEGER NOT NULL DEFAULT 47653,
-           public_base_url TEXT NOT NULL DEFAULT '',
-           screen_sharing INTEGER NOT NULL DEFAULT 0
+           public_base_url TEXT NOT NULL DEFAULT ''
          );
          CREATE TABLE IF NOT EXISTS remote_pairing (
            id INTEGER PRIMARY KEY CHECK(id=1),
@@ -312,12 +311,6 @@ fn ensure_remote_host_config_columns(db: &SqliteConnection) -> Result<(), String
     if !column_exists(db, "remote_host_config", "public_base_url")? {
         db.execute_batch(
             "ALTER TABLE remote_host_config ADD COLUMN public_base_url TEXT NOT NULL DEFAULT '';",
-        )
-        .map_err(|error| error.to_string())?;
-    }
-    if !column_exists(db, "remote_host_config", "screen_sharing")? {
-        db.execute_batch(
-            "ALTER TABLE remote_host_config ADD COLUMN screen_sharing INTEGER NOT NULL DEFAULT 0;",
         )
         .map_err(|error| error.to_string())?;
     }

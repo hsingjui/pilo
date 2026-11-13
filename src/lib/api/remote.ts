@@ -19,8 +19,6 @@ export type RemoteAccessAddress = {
 export type RemoteHostState = {
 	enabled: boolean;
 	running: boolean;
-	screenSharing: boolean;
-	screenSharingSupported: boolean;
 	port: number;
 	baseUrl: string | null;
 	publicBaseUrl: string;
@@ -45,12 +43,6 @@ export function getRemoteLanAddresses(): Promise<string[]> {
 
 export function setRemoteEnabled(enabled: boolean): Promise<RemoteHostState> {
 	return invoke<RemoteHostState>("remote_set_enabled", { enabled });
-}
-
-export function setRemoteScreenSharing(
-	enabled: boolean,
-): Promise<RemoteHostState> {
-	return invoke<RemoteHostState>("remote_set_screen_sharing", { enabled });
 }
 
 export function setRemotePort(port: number): Promise<RemoteHostState> {

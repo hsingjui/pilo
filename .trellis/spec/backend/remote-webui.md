@@ -568,47 +568,13 @@ Do not return a receipt based on only the reusable secret + address ID.
   are migrated — generic Files/Terminal/Git stay Tauri-only. Project image reads
   are shared through `PiloClient.readProjectImage`.
 
-## Read-only Screen Viewing
+## Removed Screen Viewing
 
-### 1. Scope / Trigger
-
-Capture the interactive Windows Host desktop, not the browser device or a Local/WSL/SSH connection. The desktop owns authorization; the WebUI only requests and renders frames.
-
-### 2. Signatures
-
-- Desktop IPC: `remote_set_screen_sharing(enabled: bool) -> RemoteHostState`; state includes `screenSharing` and `screenSharingSupported`.
-- Storage: `remote_host_config.screen_sharing INTEGER NOT NULL DEFAULT 0`. The migration must not change the existing remote-access configuration.
-- Protected WebSocket: `GET /api/v1/screen?display=<opaque-id>`; omit `display` for the primary monitor. Use the same device-token subprotocol as `/api/v1/events` on a separate socket.
-
-### 3. Contracts
-
-The first text message is `{ displays: [{ id, primary }], selectedId }`; subsequent binary messages are individual JPEG frames. The browser sends `ack` after decoding a frame. Keep at most one outstanding frame and one latest replacement; time out a stalled consumer. Only the requested monitor is captured. Derive the opaque ID from the active Windows monitor interfaces, not the reassignable GDI source name. Do not advertise displays without a verifiable identity. Switching reconnects the current viewer without changing other viewers; wait up to two seconds for a capture slot to allow the old capture to finish stopping. Closing or hiding the preview releases its capture and the in-memory image. The same route serves LAN WS and tunneled WSS; plaintext LAN does not protect credentials or frames.
-
-Windows capture encodes JPEG at the selected display’s captured pixel dimensions; remove row padding without resampling. The encoded-frame byte cap is independent of resolution (32 MiB); oversized frames are not queued. The WebUI uses a dedicated screen preview, sharing only the pan/zoom hook with chat images. The preview fits the display frame within the available viewport and mobile safe areas, with transparent surrounding space, no visible title or close icon, and a display selector only for multiple monitors. Clicking or tapping the space outside the frame and controls (or pressing Escape) dismisses it without activating the underlying page. Keep the viewer mounted across frame URL changes so that incoming frames do not reset the view.
-
-### 4. Validation & Error Matrix
-
-| Condition | Result |
-| --- | --- |
-| Missing, expired or revoked credential before upgrade | Existing protected-route `401` |
-| Disabled or Host shuts down; unsupported Host; locked or inactive Windows session | Close `4001`, `4002` or `4003`, respectively |
-| Selected display unavailable; capture fails; all four capture slots occupied | Close `4004`, `4005` or `4006`, respectively |
-| Active viewer authorization expires or is revoked; stream stalls | Close `4007` or `4008`, respectively |
-| Shutdown, sharing disablement, session lock or authorization loss interrupts a JPEG write | Drop the transport without flushing the partial frame or sending a close code |
-
-### 5. Good / Base / Bad Cases
-
-- Good: A paired phone opens the primary display without local confirmation; selecting another display changes only that phone's stream.
-- Base: Existing installs migrate with viewing off. Single-display Hosts do not show a display selector.
-- Bad: If the selected monitor goes away, clear the image and keep the error across tab visibility changes until the viewer makes another explicit selection; never silently choose another monitor.
-
-### 6. Tests Required
-
-Verify a paired phone on both LAN WS and tunneled WSS. On a display larger than 1080p, compare the JPEG’s decoded dimensions with the capture dimensions. Verify that mobile pinch and desktop Ctrl-wheel zoom preserve pan and scale across frame updates, and that changing displays resets the view. Check that clicking or tapping transparent space closes the preview, while interacting with the frame or the display selector does not. With four viewers, switch one display while the other three stay connected. Throttle a frame transfer, then revoke that viewer or disable sharing and verify that the interrupted frame does not finish sending. Verify lock, unplug, toggle-off, backgrounding, and disconnect release capture, and a delayed `ack` never queues older JPEGs. After unplugging a selected display, verify that hiding and reopening the browser tab does not restart capture; replacing a display on the same GDI source must not satisfy the old ID.
-
-### 7. Wrong vs Correct
-
-Wrong: Reuse the chat event socket for images or infer consent from pairing. Correct: Require both current pairing and the desktop opt-in on the dedicated screen socket.
+The former `/api/v1/screen` WebSocket route returns `404` and does not
+upgrade. The desktop screen-sharing command and UI are gone. Existing SQLite
+databases can retain the unused `remote_host_config.screen_sharing` column;
+new databases do not create it. Keep other Remote WebUI settings and device
+pairings intact.
 
 ## Project Images in Markdown Replies
 

@@ -36,7 +36,7 @@ pub(super) async fn events(
         .on_upgrade(move |socket| event_socket(socket, state, auth_session, query.after))
 }
 
-pub(super) async fn remote_token_is_valid(paths: &HostPaths, token: &str) -> bool {
+async fn remote_token_is_valid(paths: &HostPaths, token: &str) -> bool {
     let paths = paths.clone();
     let token = token.to_owned();
     tokio::task::spawn_blocking(move || auth::authenticate(&paths, &token))

@@ -27,15 +27,6 @@ pub async fn remote_set_enabled(
 }
 
 #[tauri::command]
-pub async fn remote_set_screen_sharing(
-    app: AppHandle,
-    remote: State<'_, RemoteServerManager>,
-    enabled: bool,
-) -> Result<RemoteHostState, String> {
-    remote.set_screen_sharing(&app, enabled).await
-}
-
-#[tauri::command]
 pub async fn remote_set_port(
     app: AppHandle,
     remote: State<'_, RemoteServerManager>,
