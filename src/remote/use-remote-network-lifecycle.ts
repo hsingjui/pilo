@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 export function useRemoteNetworkLifecycle() {
 	const [browserOnline, setBrowserOnline] = useState(() => navigator.onLine);
 	const [recoveryGeneration, setRecoveryGeneration] = useState(0);
+	const [foregroundGeneration, setForegroundGeneration] = useState(0);
 
 	useEffect(() => {
 		const requestRecovery = () =>
@@ -17,8 +18,10 @@ export function useRemoteNetworkLifecycle() {
 		};
 		// Foreground recovery probes the existing socket in connectRemoteEvents.
 		const handleVisibilityChange = () => {
-			if (document.visibilityState === "visible")
+			if (document.visibilityState === "visible") {
 				setBrowserOnline(navigator.onLine);
+				if (navigator.onLine) setForegroundGeneration((value) => value + 1);
+			}
 		};
 
 		window.addEventListener("offline", handleOffline);
@@ -31,5 +34,5 @@ export function useRemoteNetworkLifecycle() {
 		};
 	}, []);
 
-	return { browserOnline, recoveryGeneration };
+	return { browserOnline, recoveryGeneration, foregroundGeneration };
 }

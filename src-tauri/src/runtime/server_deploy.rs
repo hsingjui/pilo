@@ -1,5 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::Arc};
 
+use sha2::{Digest, Sha256};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, BufReader},
     process::{Child, ChildStderr, ChildStdin, ChildStdout, Command},
@@ -11,7 +12,8 @@ use crate::domain::{Connection, ConnectionKind};
 use super::{
     connection_diagnostics::ConnectionDiagnostics,
     ssh::{
-        ASKPASS_ATTEMPT_ENV, ssh_command, stderr_without_askpass_diagnostics, wrap_posix_script,
+        ASKPASS_ATTEMPT_ENV, ssh_command, ssh_command_with_options,
+        stderr_without_askpass_diagnostics, wrap_posix_script,
     },
 };
 
@@ -65,6 +67,7 @@ pub(super) async fn spawn_server(
     connection: &Connection,
     force_redeploy: bool,
     diagnostics: &ConnectionDiagnostics,
+    persistent: bool,
 ) -> Result<SpawnedServer, String> {
     #[cfg(all(test, unix))]
     if let Ok(server) = TEST_SERVER.try_with(|server| server.borrow_mut().take()) {
@@ -109,7 +112,7 @@ pub(super) async fn spawn_server(
             spawn_wsl_server(connection, force_redeploy, diagnostics).await
         }
         ConnectionKind::Ssh { .. } => {
-            spawn_ssh_server(connection, force_redeploy, diagnostics).await
+            spawn_ssh_server(connection, force_redeploy, diagnostics, persistent).await
         }
     }
 }
@@ -150,6 +153,7 @@ async fn spawn_ssh_server(
     connection: &Connection,
     force_redeploy: bool,
     diagnostics: &ConnectionDiagnostics,
+    persistent: bool,
 ) -> Result<SpawnedServer, String> {
     let ConnectionKind::Ssh { target: _ } = &connection.kind else {
         return Err("SSH pilo-server spawn requires an SSH connection".to_owned());
@@ -163,14 +167,50 @@ async fn spawn_ssh_server(
         .finish(deploy_server_ssh(connection, server_target, force_redeploy, diagnostics).await)?;
     let spawn = diagnostics.stage("spawn");
     let result = (|| {
-        let mut command = ssh_command(connection)?;
+        let mut command = if persistent {
+            ssh_command_with_options(
+                connection,
+                &[
+                    "-o",
+                    "ServerAliveInterval=15",
+                    "-o",
+                    "ServerAliveCountMax=2",
+                ],
+            )?
+        } else {
+            ssh_command(connection)?
+        };
         command.env(ASKPASS_ATTEMPT_ENV, diagnostics.attempt_id.to_string());
-        command.arg(wrap_posix_script(&format!(
+        let mut script = format!(
             "PILO_SERVER_RUNTIME_DIR=\"$HOME/{SERVER_REMOTE_DIR}\" exec \"$HOME/{SERVER_REMOTE_DIR}/pilo-server\""
-        )));
+        );
+        if persistent {
+            script.push_str(&format!(" --ssh-bridge {}", ssh_daemon_scope(connection)?));
+        }
+        command.arg(wrap_posix_script(&script));
         spawn_piped_server(command, &connection.name, reused_deployment, diagnostics)
     })();
     spawn.finish(result)
+}
+
+fn ssh_daemon_scope(connection: &Connection) -> Result<String, String> {
+    // Connection IDs are only Host-local. Scope the socket to this Host process
+    // so a different Host cannot take over its Pi streams.
+    static HOST_SCOPE: std::sync::OnceLock<Result<[u8; 16], String>> = std::sync::OnceLock::new();
+    let host = HOST_SCOPE
+        .get_or_init(|| {
+            let mut bytes = [0; 16];
+            getrandom::fill(&mut bytes)
+                .map_err(|_| "cannot generate SSH runtime scope".to_owned())?;
+            Ok(bytes)
+        })
+        .as_ref()
+        .map_err(Clone::clone)?;
+    let mut digest = Sha256::new();
+    digest.update(host);
+    digest.update(connection.id.as_bytes());
+    digest.update(serde_json::to_vec(&connection.kind).map_err(|error| error.to_string())?);
+    Ok(format!("{:x}", digest.finalize())[..16].to_owned())
 }
 
 fn spawn_piped_server(

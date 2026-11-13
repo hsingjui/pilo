@@ -25,6 +25,7 @@ import type { ChatImageAttachment } from "@/lib/chat/chat-submission";
 import {
 	chatRuntimeHasOpenTurn,
 	findReusableChatRuntime,
+	runtimeSessionPathKey,
 } from "@/lib/chat/chat-session-runtime-model";
 import { createConversationState } from "@/lib/chat/conversation-reducer";
 import type { ConversationState } from "@/lib/chat/conversation-types";
@@ -186,6 +187,14 @@ export function useRemoteChat({
 		ReadonlyMap<string, string>
 	>(() => new Map());
 	const activeSessionKeyRef = useRef<string | null>(null);
+	const selectedHistoryScopeRef = useRef<string | null>(null);
+	const [historyCompletionKey, setHistoryCompletionKey] = useState(0);
+	const onSessionCompleted = useCallback((projectId: string, path: string) => {
+		const scope = sessionKey(projectId, runtimeSessionPathKey(path));
+		if (selectedHistoryScopeRef.current === scope) {
+			setHistoryCompletionKey((value) => value + 1);
+		}
+	}, []);
 	const queuedSubmissionsRef = useRef(new Map<string, QueuedSubmission>());
 	const autoTitleRequestedRef = useRef(false);
 	const pendingProjectMcpPromptsRef = useRef(
@@ -269,10 +278,10 @@ export function useRemoteChat({
 	const runtimeTurnOpen = chatRuntimeHasOpenTurn(reusableRuntime);
 	const activeSessionKey = activeProjectId
 		? selectedSession
-			? (runtimeSessionKeys.get(
+			? (reusableRuntime?.sessionKey ??
+				runtimeSessionKeys.get(
 					sessionKey(activeProjectId, selectedSession.piSessionId),
 				) ??
-				reusableRuntime?.sessionKey ??
 				sessionKey(activeProjectId, selectedSession.piSessionId))
 			: sessionKey(activeProjectId, draftId)
 		: null;
@@ -290,6 +299,7 @@ export function useRemoteChat({
 		handleExpiredAuth,
 		setFatalError,
 		setResyncKey,
+		onSessionCompleted,
 		setConversation,
 		scheduleRuntimeActivityRefresh,
 		refreshAllSessions,
@@ -432,7 +442,7 @@ export function useRemoteChat({
 		refreshAgentConfigRef.current = refreshAgentConfig;
 	}, [refreshAgentConfig]);
 
-	const routeKey = activeSessionKey ?? routeUiKey;
+	const routeKey = routeUiKey;
 	const initialScrollState = useMemo(
 		() => readRemoteScrollState(routeUiKey),
 		[routeUiKey],
@@ -454,10 +464,10 @@ export function useRemoteChat({
 		[chatUiStateCache, routeUiKey],
 	);
 	const handleVisualReady = useCallback(() => {
-		setVisualReadyRouteKey(activeSessionKey);
-	}, [activeSessionKey]);
+		setVisualReadyRouteKey(routeKey);
+	}, [routeKey]);
 	const showSwitchSkeleton =
-		Boolean(selectedSession) && visualReadyRouteKey !== activeSessionKey;
+		Boolean(selectedSession) && visualReadyRouteKey !== routeKey;
 
 	const history = useRemoteChatHistory({
 		client,
@@ -465,6 +475,8 @@ export function useRemoteChat({
 		activeSessionKey,
 		selectedSession,
 		resyncKey,
+		snapshotRefreshKey,
+		historyCompletionKey,
 		isExternalOpenTurn,
 		runtimeTurnOpen,
 		refreshAgentConfig,
@@ -579,11 +591,29 @@ export function useRemoteChat({
 		onProjectMcpApprovalFailed: failProjectMcpPrompt,
 		onProjectMcpDeclined: cancelProjectMcpPrompt,
 	});
-	// Route streamed events to the committed session before the browser paints.
+	const committedRouteKeyRef = useRef(routeKey);
+	// Reset the old conversation before routing events to a different session.
 	useLayoutEffect(() => {
+		if (selectedSession && committedRouteKeyRef.current !== routeKey) {
+			setConversation(initialConversation);
+		}
+		committedRouteKeyRef.current = routeKey;
 		activeSessionKeyRef.current = activeSessionKey;
+		selectedHistoryScopeRef.current = selectedSession
+			? sessionKey(
+					selectedSession.projectId,
+					runtimeSessionPathKey(selectedSession.sessionPath),
+				)
+			: null;
 		handleExtensionRequestRef.current = extensionUi.handleExtensionRequest;
-	}, [activeSessionKey, extensionUi.handleExtensionRequest]);
+	}, [
+		activeSessionKey,
+		extensionUi.handleExtensionRequest,
+		initialConversation,
+		routeKey,
+		selectedSession,
+		setConversation,
+	]);
 	const historyImageScope = useMemo(
 		() =>
 			client && selectedSession && activeProjectId

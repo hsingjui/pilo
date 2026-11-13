@@ -44,16 +44,17 @@ pub struct ServerClient {
 }
 
 impl ServerClient {
-    async fn connect(connection: &Connection) -> Result<Arc<Self>, String> {
+    async fn connect(connection: &Connection, persistent: bool) -> Result<Arc<Self>, String> {
         let diagnostics = ConnectionDiagnostics::new(connection);
         diagnostics
             .stage("connect")
-            .finish(Self::connect_with_diagnostics(connection, &diagnostics).await)
+            .finish(Self::connect_with_diagnostics(connection, &diagnostics, persistent).await)
     }
 
     async fn connect_with_diagnostics(
         connection: &Connection,
         diagnostics: &ConnectionDiagnostics,
+        persistent: bool,
     ) -> Result<Arc<Self>, String> {
         let attempt_id = diagnostics.attempt_id;
         // The remote deployment is content-addressed, so a reused binary always
@@ -71,7 +72,7 @@ impl ServerClient {
                 reused_deployment,
             } = diagnostics
                 .stage("prepare_server")
-                .finish(spawn_server(connection, force_redeploy, diagnostics).await)?;
+                .finish(spawn_server(connection, force_redeploy, diagnostics, persistent).await)?;
             let (writer_tx, writer_rx) = mpsc::channel(REQUEST_CAPACITY);
             let events = Arc::new(ServerEventHub::default());
             let pending = Arc::new(Mutex::new(HashMap::new()));

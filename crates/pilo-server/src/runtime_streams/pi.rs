@@ -25,11 +25,157 @@ use crate::{PiOutputTasks, PiStarts, ServerState};
 pub(crate) struct PiProcess {
     pub(crate) child: Child,
     pub(crate) stdin: Arc<Mutex<ChildStdin>>,
+    work: Arc<StdMutex<PiWork>>,
+}
+
+#[derive(Default)]
+struct PiWork {
+    active: bool,
+    compacting: bool,
+    tools: std::collections::HashSet<String>,
+    queued: bool,
+    warming_until: u64,
+    pending: std::collections::HashMap<String, String>,
+    dialogs: std::collections::HashMap<String, (Value, Option<std::time::Instant>)>,
+}
+
+impl PiWork {
+    fn observe(&mut self, event: &Value) {
+        match event.get("type").and_then(Value::as_str) {
+            Some("agent_start" | "auto_retry_start") => self.active = true,
+            Some("agent_settled") => {
+                self.active = false;
+                self.tools.clear();
+            }
+            Some("tool_execution_start" | "tool_execution_end") => {
+                if let Some(id) = event.get("toolCallId").and_then(Value::as_str) {
+                    if event["type"] == "tool_execution_start" {
+                        self.tools.insert(id.to_owned());
+                    } else {
+                        self.tools.remove(id);
+                    }
+                }
+            }
+            Some("compaction_start" | "summarization_retry_scheduled") => self.compacting = true,
+            Some("compaction_end") => {
+                self.compacting = event
+                    .get("willRetry")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            }
+            Some("summarization_retry_finished") => self.compacting = false,
+            Some("queue_update") => {
+                self.queued = ["steering", "followUp"].iter().any(|key| {
+                    event
+                        .get(*key)
+                        .and_then(Value::as_array)
+                        .is_some_and(|queue| !queue.is_empty())
+                });
+            }
+            Some("response") => {
+                let command = event.get("command").and_then(Value::as_str);
+                let id = event.get("id").and_then(Value::as_str).unwrap_or_default();
+                if command.is_some() && self.pending.get(id).map(String::as_str) == command {
+                    self.pending.remove(id);
+                }
+                if command == Some("compact")
+                    && event.get("success").and_then(Value::as_bool) == Some(false)
+                {
+                    self.compacting = false;
+                }
+            }
+            Some("extension_ui_request")
+                if matches!(
+                    event.get("method").and_then(Value::as_str),
+                    Some("select" | "confirm" | "input" | "editor")
+                ) =>
+            {
+                if let Some(id) = event.get("id").and_then(Value::as_str) {
+                    let deadline = event.get("timeout").and_then(Value::as_u64).and_then(|ms| {
+                        std::time::Instant::now().checked_add(std::time::Duration::from_millis(ms))
+                    });
+                    self.dialogs.retain(|_, (_, until)| {
+                        until.is_none_or(|until| until > std::time::Instant::now())
+                    });
+                    self.dialogs
+                        .insert(id.to_owned(), (event.clone(), deadline));
+                }
+            }
+            Some("extension_ui_request")
+                if event.get("widgetKey").and_then(Value::as_str)
+                    == Some("pilo.cache-keep-alive.v1") =>
+            {
+                let now = unix_time_ms();
+                self.warming_until = event
+                    .pointer("/widgetLines/0")
+                    .and_then(Value::as_str)
+                    .and_then(|line| serde_json::from_str::<Value>(line).ok())
+                    .filter(|status| {
+                        matches!(
+                            status.get("status").and_then(Value::as_str),
+                            Some("scheduled" | "warming")
+                        )
+                    })
+                    .and_then(|status| status.get("expiresAtMs").and_then(Value::as_u64))
+                    .filter(|expires| *expires <= now.saturating_add(86_400_000))
+                    .unwrap_or_default();
+            }
+            _ => {}
+        }
+    }
+}
+
+fn unix_time_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as u64)
 }
 
 impl PiProcess {
+    #[cfg(unix)]
+    pub(crate) fn has_work(&self) -> bool {
+        let work = self
+            .work
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        work.active
+            || work.compacting
+            || work.queued
+            || !work.pending.is_empty()
+            || !work.tools.is_empty()
+            || work.warming_until > unix_time_ms()
+            || work
+                .dialogs
+                .values()
+                .any(|(_, until)| until.is_none_or(|until| until > std::time::Instant::now()))
+    }
+
+    pub(crate) fn attach_state(&self) -> Value {
+        let work = self
+            .work
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dialogs = work
+            .dialogs
+            .values()
+            .filter_map(|(dialog, until)| {
+                if let Some(until) = until {
+                    let remaining = until.checked_duration_since(std::time::Instant::now())?;
+                    let mut dialog = dialog.clone();
+                    dialog["timeout"] = json!(remaining.as_millis() as u64);
+                    Some(dialog)
+                } else {
+                    Some(dialog.clone())
+                }
+            })
+            .collect::<Vec<_>>();
+        json!({ "active": work.active || work.queued || !work.pending.is_empty(), "compacting": work.compacting, "dialogs": dialogs })
+    }
+
     pub(crate) async fn stop(self) -> Result<std::process::ExitStatus, String> {
-        let Self { mut child, stdin } = self;
+        let Self {
+            mut child, stdin, ..
+        } = self;
         // EOF lets Pi run session_shutdown hooks before any force-kill fallback.
         drop(stdin);
         if let Ok(Ok(status)) =
@@ -573,7 +719,15 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
         }),
     );
     let stdin_identity = Arc::downgrade(&stdin);
-    processes.insert(params.stream_id.clone(), PiProcess { child, stdin });
+    let work = Arc::new(StdMutex::new(PiWork::default()));
+    processes.insert(
+        params.stream_id.clone(),
+        PiProcess {
+            child,
+            stdin,
+            work: Arc::clone(&work),
+        },
+    );
 
     let stream_id = params.stream_id.clone();
     let writer = state.writer.clone();
@@ -584,12 +738,18 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
     let stdout_identity = stdin_identity.clone();
     let agent_control = state.agent_control.clone();
     let control_stream = params.control_stream_id.clone();
+    let track_work = state.retain_pi;
     let stdout_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
         loop {
             match read_rpc_line(&mut reader).await {
                 Ok(Some(bytes)) => {
                     trace_pi_rpc_line(&stream_id, &bytes);
+                    if track_work && let Ok(event) = serde_json::from_slice::<Value>(&bytes) {
+                        work.lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .observe(&event);
+                    }
                     if writer
                         .send(Envelope::event_with_binary(
                             stream_id.clone(),
@@ -721,14 +881,12 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
             "id": params.command.get("id"),
         }),
     );
-    let stdin = {
+    let (stdin, work) = {
         let processes = state.pi.lock().await;
-        Arc::clone(
-            &processes
-                .get(&params.stream_id)
-                .ok_or_else(|| format!("Pi stream '{}' is not running", params.stream_id))?
-                .stdin,
-        )
+        let process = processes
+            .get(&params.stream_id)
+            .ok_or_else(|| format!("Pi stream '{}' is not running", params.stream_id))?;
+        (Arc::clone(&process.stdin), Arc::clone(&process.work))
     };
     let mut bytes = serde_json::to_vec(&params.command).map_err(|error| error.to_string())?;
     if bytes.len() > MAX_BINARY_PAYLOAD_BYTES {
@@ -742,7 +900,25 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
     let started = std::time::Instant::now();
     let mut stdin = stdin.lock().await;
     let lock_wait_ms = started.elapsed().as_millis();
-    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    let command = params
+        .command
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let id = params
+        .command
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let tracked =
+        state.retain_pi && matches!(command, "prompt" | "steer" | "follow_up" | "compact");
+    if tracked {
+        work.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pending
+            .insert(id.to_owned(), command.to_owned());
+    }
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         stdin.write_all(&bytes).await?;
         stdin.flush().await
     })
@@ -750,12 +926,23 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
     .map_err(|_| {
         eprintln!("[runtime-diagnostics] pi.send timeout pid={} streamId={} command={} rpcId={} payloadBytes={} elapsedMs={} lockWaitMs={lock_wait_ms}", std::process::id(), params.stream_id, params.command.get("type").and_then(Value::as_str).unwrap_or("unknown"), params.command.get("id").and_then(Value::as_str).unwrap_or("none"), bytes.len(), started.elapsed().as_millis());
         format!("timed out while writing Pi stream '{}'", params.stream_id)
-    })?
-    .map_err(|error| {
+    })
+    .and_then(|result| result.map_err(|error| {
         eprintln!("[runtime-diagnostics] pi.send failed pid={} streamId={} kind={:?} elapsedMs={}", std::process::id(), params.stream_id, error.kind(), started.elapsed().as_millis());
         error.to_string()
-    })?;
-    Ok(Value::Null)
+    }));
+    if state.retain_pi {
+        let mut work = work
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if tracked && result.is_err() {
+            work.pending.remove(id);
+        }
+        if result.is_ok() && command == "extension_ui_response" {
+            work.dialogs.remove(id);
+        }
+    }
+    result.map(|()| Value::Null)
 }
 
 pub(crate) async fn pi_stop(state: &ServerState, params: PiStopParams) -> Result<Value, String> {

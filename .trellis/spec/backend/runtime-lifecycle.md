@@ -4,7 +4,8 @@
 
 Apply when changing chat-turn ownership, process retention, runtime-event replay,
 external session activity detection, or server shutdown.
-Desktop and WebUI share `ChatSessions`; Local, WSL, and SSH use the same server lifecycle.
+Desktop and WebUI share `ChatSessions`. Local and WSL use stdio-owned servers;
+pooled SSH connections use a bridge to a separately owned server.
 Frontend controller eviction alone is not backend process cleanup.
 
 ## 2. Signatures
@@ -28,22 +29,45 @@ Frontend controller eviction alone is not backend process cleanup.
   `prepare` / `ensure` run readiness in owned tasks so HTTP cancellation cannot
   abandon a starting process in the shared registry.
 - `ServerPiSession` records client/stream/task ownership before awaiting `pi.start`.
-  Its `Drop` schedules bounded cleanup; failed `stop` retains the stream identity
-  for retry. `PendingRequestGuard` removes cancelled client request senders.
+  `PendingRequestGuard` removes cancelled client request senders. SSH stop waits
+  a bounded time for confirmation, but its owned task can outlive the caller and
+  retry `pi.stop` for the original stream ID until confirmed, the target changes,
+  or the Host shuts down.
 - `PiProcess::stop()` drops stdin, waits for EOF shutdown, then force-kills only
   if necessary. `serve_stdio()` handles EOF, framing errors and stdout failure
   through cleanup; accepted Pi starts are registered in `pi_starts` at admission,
   and accepted Pi stops are registered in `pi_stops` before awaiting.
 - `ServerWriter::send` / `blocking_send` share a 256-envelope / 64 MiB payload
   budget, including binary data and the frame currently being written.
-- `ServerClient::stop()` closes stdin, waits for server cleanup, then force-kills
-  only if necessary.
+- `ServerClient::stop()` closes stdin and waits before force-killing the launcher.
+  For pooled SSH, the launcher is only the bridge; this does not stop the daemon.
+- SSH `--ssh-bridge <scope>` starts or reuses `--ssh-daemon <scope>`. The Host
+  subscribes to its original stream before calling `pi.attach({ streamId })`.
+  That read returns `null` for a missing stream or `{ active, compacting, dialogs }`
+  for a live one. `pi_reattached` tells clients to reconcile without resending input.
 - `ServerManager::begin_shutdown()` closes new-connection admission and cancels
   pending connection setup/tests; `stop_all()` starts cached-client cleanup before
   waiting for shared admission guards, then drains late clients under exclusive
   admission.
 
 ## 3. Contracts
+
+- SSH retains Pi across transport EOF; terminals and session watches still belong
+  to the bridge. A replacement bridge takes over from a stale one. Socket access
+  is restricted to the SSH user, and the scope is tied to the live Host and the
+  connection configuration. It does not restore a runtime across Host restarts.
+- Before reconnecting an SSH stream or session watcher, verify the saved target
+  under the per-connection setup lock. Recovery must never evict a client for a
+  different target with the same connection ID.
+- Without a bridge, SSH drains Pi output without replaying token deltas. Pending
+  input, active turns (through `agent_settled`), compaction, unanswered dialogs,
+  and the built-in cache-warming lease keep the daemon alive. The daemon closes
+  admission and runs normal process cleanup after 15 continuous idle minutes
+  without a bridge, or after one continuous hour without a bridge even if work
+  remains. The hard limit covers a Host that cannot reconnect to send a stop.
+- Desktop and WebUI reconcile the selected history after `session_turn_completed`.
+  WebUI also checks it after socket recovery and on foreground return. Do not
+  replace conversation content with an older read that raced live events.
 
 - Admission reserves one slot for the requested chat and retains up to three
   other most recently used eligible processes. The 30-second Host sweep retains
@@ -160,7 +184,7 @@ Frontend controller eviction alone is not backend process cleanup.
   Windows fallback uses `taskkill.exe /PID <pid> /T /F`. This is not a Windows
   Job Object: already-detached descendants and abrupt server crashes are not
   guaranteed to be contained. Never kill unrelated processes by executable name.
-- Register each admitted `pi.start` cancellation sender by request ID and stream
+- Register each admitted `pi.start` cancellation sender by server sequence and stream
   ID before spawning its dispatch task. Stop cancels all pending starts for that
   stream, even if no child exists yet. Cancellation is checked before dispatch
   polling; a cancelled start returns `request_failed` with

@@ -25,6 +25,25 @@ pub(crate) struct ControlLease {
     client: Arc<ServerClient>,
     stream: String,
     task: JoinHandle<()>,
+    app: AppHandle,
+    source_project: String,
+    source_connection: String,
+}
+
+impl ControlLease {
+    pub(crate) fn rebind(&mut self, previous: &Arc<ServerClient>, client: &Arc<ServerClient>) {
+        if Arc::ptr_eq(&self.client, previous) {
+            self.task.abort();
+            self.task = spawn_dispatcher(
+                self.app.clone(),
+                client.clone(),
+                &self.stream,
+                self.source_project.clone(),
+                self.source_connection.clone(),
+            );
+            self.client = client.clone();
+        }
+    }
 }
 
 impl Drop for ControlLease {
@@ -51,11 +70,58 @@ pub(crate) async fn attach(
 ) -> Result<(ControlContext, ControlLease), String> {
     // Resolve from Host storage, never from a caller-supplied source identity.
     let source = project::get(&app, project_id)?;
-    let mut events = client.subscribe(&stream);
-    let dispatcher = client.clone();
-    let source_project = source.id;
-    let source_connection = source.connection.id;
-    let task = tokio::spawn(async move {
+    let task = spawn_dispatcher(
+        app.clone(),
+        client.clone(),
+        &stream,
+        source.id.clone(),
+        source.connection.id.clone(),
+    );
+    let lease = ControlLease {
+        client: client.clone(),
+        stream: stream.clone(),
+        task,
+        app,
+        source_project: source.id,
+        source_connection: source.connection.id,
+    };
+    // Debug Local servers are GUI executables. Use the console runtime for ctl.
+    let executable = if local && cfg!(windows) {
+        let path = if cfg!(debug_assertions) {
+            std::env::current_exe()
+                .map_err(|_| "failed to locate Windows ctl runtime".to_owned())?
+                .with_file_name("pilo-server.exe")
+        } else {
+            super::server_deploy::server_binary(super::server_deploy::ServerTarget::current()?)?
+        };
+        if !path.is_file() {
+            return Err(
+                "Windows ctl runtime is unavailable; start development with pnpm tauri dev"
+                    .to_owned(),
+            );
+        }
+        Some(path.to_string_lossy().into_owned())
+    } else {
+        None
+    };
+    let mut secret = [0_u8; 32];
+    getrandom::fill(&mut secret)
+        .map_err(|_| "failed to generate Pilo control context".to_owned())?;
+    let context = serde_json::from_value(client.request("control.register", json!({ "streamId": stream, "token": URL_SAFE_NO_PAD.encode(secret), "executable": executable })).await?)
+        .map_err(|_| "invalid Pilo control registration response".to_owned())?;
+    Ok((context, lease))
+}
+
+fn spawn_dispatcher(
+    app: AppHandle,
+    client: Arc<ServerClient>,
+    stream: &str,
+    source_project: String,
+    source_connection: String,
+) -> JoinHandle<()> {
+    let mut events = client.subscribe(stream);
+    let dispatcher = client;
+    tokio::spawn(async move {
         let mut work = JoinSet::new();
         loop {
             tokio::select! {
@@ -83,37 +149,7 @@ pub(crate) async fn attach(
                 _ = work.join_next(), if !work.is_empty() => {}
             }
         }
-    });
-    let lease = ControlLease {
-        client: client.clone(),
-        stream: stream.clone(),
-        task,
-    };
-    // Debug Local servers are GUI executables. Use the console runtime for ctl.
-    let executable = if local && cfg!(windows) {
-        let path = if cfg!(debug_assertions) {
-            std::env::current_exe()
-                .map_err(|_| "failed to locate Windows ctl runtime".to_owned())?
-                .with_file_name("pilo-server.exe")
-        } else {
-            super::server_deploy::server_binary(super::server_deploy::ServerTarget::current()?)?
-        };
-        if !path.is_file() {
-            return Err(
-                "Windows ctl runtime is unavailable; start development with pnpm tauri dev"
-                    .to_owned(),
-            );
-        }
-        Some(path.to_string_lossy().into_owned())
-    } else {
-        None
-    };
-    let mut secret = [0_u8; 32];
-    getrandom::fill(&mut secret)
-        .map_err(|_| "failed to generate Pilo control context".to_owned())?;
-    let context = serde_json::from_value(client.request("control.register", json!({ "streamId": stream, "token": URL_SAFE_NO_PAD.encode(secret), "executable": executable })).await?)
-        .map_err(|_| "invalid Pilo control registration response".to_owned())?;
-    Ok((context, lease))
+    })
 }
 
 pub(crate) fn changed(app: &AppHandle) {

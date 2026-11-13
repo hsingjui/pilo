@@ -16,6 +16,7 @@ import {
 import { runtimeActivityFromStates } from "@/components/app/app-session-index-model";
 import { useSyncedSessionUnread } from "@/components/app/use-synced-session-unread";
 import { CacheKeepAliveNotice } from "@/components/chat/cache-keep-alive-notice";
+import { runtimeSessionPathKey } from "@/lib/chat/chat-session-runtime-model";
 import { useCacheKeepAliveStatus } from "@/lib/use-cache-keep-alive-status";
 import { useNextPrompt } from "@/components/chat/use-next-prompt";
 import {
@@ -80,7 +81,8 @@ function RemoteWorkspace() {
 		() => {},
 	);
 	const reconnectProbeRef = useRef<() => void>(() => {});
-	const { browserOnline, recoveryGeneration } = useRemoteNetworkLifecycle();
+	const { browserOnline, recoveryGeneration, foregroundGeneration } =
+		useRemoteNetworkLifecycle();
 	const { updateAvailable, applyUpdate } = useRemotePwa();
 
 	const connection = useRemoteConnection({
@@ -99,13 +101,15 @@ function RemoteWorkspace() {
 		refreshKey: `${connection.resyncKey}:${connection.snapshotRefreshKey}`,
 		onError: connection.handleExpiredAuth,
 	});
+	const snapshotRefreshKey =
+		connection.snapshotRefreshKey + foregroundGeneration;
 	const sessions = useRemoteSessions({
 		client: connection.client,
 		browserOnline,
 		handleExpiredAuth: connection.handleExpiredAuth,
 		setFatalError: connection.setFatalError,
 		resyncKey: connection.resyncKey,
-		snapshotRefreshKey: connection.snapshotRefreshKey,
+		snapshotRefreshKey,
 	});
 
 	const workspaceProjectIds = useMemo(
@@ -141,7 +145,7 @@ function RemoteWorkspace() {
 		handleExpiredAuth: connection.handleExpiredAuth,
 		setFatalError: connection.setFatalError,
 		resyncKey: connection.resyncKey,
-		snapshotRefreshKey: connection.snapshotRefreshKey,
+		snapshotRefreshKey,
 		setResyncKey: connection.setResyncKey,
 		projects: sessions.projects,
 		rawSessions: sessions.rawSessions,
@@ -252,8 +256,9 @@ function RemoteWorkspace() {
 						.get(session.projectId)
 						?.openTurnPaths.has(session.sessionPath) ?? false;
 				const runtimeActive =
-					runtimeActivity.get(session.projectId)?.has(session.sessionPath) ??
-					false;
+					runtimeActivity
+						.get(session.projectId)
+						?.has(runtimeSessionPathKey(session.sessionPath)) ?? false;
 				return externalActive || runtimeActive
 					? { ...sidebar, active: true }
 					: sidebar;

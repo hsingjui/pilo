@@ -1,9 +1,9 @@
 use std::sync::{
-    Arc, Mutex as StdMutex,
+    Arc, Mutex as StdMutex, Weak,
     atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
 };
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use pilo_protocol::BuiltinExtension;
 use serde_json::{Value, json};
@@ -27,6 +27,7 @@ struct StateCell {
     next_prompt_ready: AtomicBool,
     cache_keep_alive: StdMutex<Option<crate::domain::CacheKeepAliveStatus>>,
     control: StdMutex<Vec<super::control::ControlLease>>,
+    client: StdMutex<Option<Arc<ServerClient>>>,
 }
 
 impl Default for StateCell {
@@ -36,6 +37,7 @@ impl Default for StateCell {
             next_prompt_ready: AtomicBool::new(false),
             cache_keep_alive: StdMutex::new(None),
             control: StdMutex::new(Vec::new()),
+            client: StdMutex::new(None),
         }
     }
 }
@@ -48,6 +50,17 @@ impl StateCell {
             3 => PiProcessState::Stopping,
             4 => PiProcessState::Failed,
             _ => PiProcessState::Stopped,
+        }
+    }
+
+    fn resume_control(&self, previous: &Arc<ServerClient>, client: &Arc<ServerClient>) {
+        for lease in self
+            .control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter_mut()
+        {
+            lease.rebind(previous, client);
         }
     }
 
@@ -136,9 +149,10 @@ pub struct ServerPiSession {
     snapshot_metadata: Arc<StdMutex<PiSessionSnapshot>>,
     state: Arc<StateCell>,
     launch: Option<Launch>,
-    client: Option<Arc<ServerClient>>,
     stream_id: Option<String>,
     event_task: Option<JoinHandle<()>>,
+    recovery: Option<(Weak<ServerManager>, Connection)>,
+    stop_task: Option<JoinHandle<Result<(), String>>>,
 }
 
 impl Default for ServerPiSession {
@@ -147,8 +161,10 @@ impl Default for ServerPiSession {
     }
 }
 
+const STOP_TIMEOUT: Duration = Duration::from_secs(5);
+
 async fn stop_stream(client: &ServerClient, stream_id: &str) -> Result<(), String> {
-    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    tokio::time::timeout(STOP_TIMEOUT, async {
         loop {
             match client
                 .request("pi.stop", json!({ "streamId": stream_id }))
@@ -163,6 +179,43 @@ async fn stop_stream(client: &ServerClient, stream_id: &str) -> Result<(), Strin
     })
     .await
     .map_err(|_| "timed out while stopping Pi stream".to_owned())?
+}
+
+async fn stop_owned_stream(
+    client: Arc<ServerClient>,
+    stream_id: String,
+    recovery: Option<(Weak<ServerManager>, Connection)>,
+) -> Result<(), String> {
+    let mut result = stop_stream(&client, &stream_id).await;
+    if let Some((servers, connection)) = recovery {
+        let mut delay = Duration::from_millis(250);
+        while result.is_err() {
+            let Some(manager) = servers.upgrade() else {
+                break;
+            };
+            if manager.is_shutting_down() {
+                break;
+            }
+            match manager.recover_ssh_client(&connection).await {
+                Ok(Some(next)) => {
+                    // pi.stop is idempotent for this daemon and stream ID, even if its ACK was lost.
+                    result = stop_stream(&next, &stream_id).await;
+                    if result.is_ok() {
+                        break;
+                    }
+                }
+                Ok(None) => break,
+                Err(error) => result = Err(error),
+            }
+            drop(manager);
+            tokio::time::sleep(delay).await;
+            delay = (delay * 2).min(Duration::from_secs(10));
+        }
+    }
+    if let Err(error) = &result {
+        log::warn!(target: "pilo-server", "failed to clean up Pi stream '{stream_id}': {error}");
+    }
+    result
 }
 
 impl Drop for ServerPiSession {
@@ -184,9 +237,10 @@ impl ServerPiSession {
             })),
             state: Arc::new(StateCell::default()),
             launch: None,
-            client: None,
             stream_id: None,
             event_task: None,
+            recovery: None,
+            stop_task: None,
         }
     }
 
@@ -216,19 +270,26 @@ impl ServerPiSession {
         if let Some(task) = self.event_task.take() {
             task.abort();
         }
-        let Some(client) = self.client.take() else {
+        let Some(client) = self
+            .state
+            .client
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        else {
             return;
         };
         let Some(stream_id) = self.stream_id.take() else {
             return;
         };
+        let recovery = self.recovery.take();
+        // Dropping the handle detaches a stop that is already waiting for SSH.
+        if self.stop_task.take().is_some() {
+            return;
+        }
         match tokio::runtime::Handle::try_current() {
             Ok(runtime) => {
-                runtime.spawn(async move {
-                    if let Err(error) = stop_stream(&client, &stream_id).await {
-                        log::warn!(target: "pilo-server", "failed to clean up Pi stream '{stream_id}': {error}");
-                    }
-                });
+                runtime.spawn(stop_owned_stream(client, stream_id, recovery));
             }
             Err(error) => {
                 log::warn!(target: "pilo-server", "Pi stream cleanup has no runtime: {error}")
@@ -351,15 +412,24 @@ impl ServerPiSession {
             std::process::id(),
             STREAM_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         );
+        *self
+            .state
+            .client
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(client.clone());
+        self.recovery = matches!(
+            project.connection.kind,
+            crate::domain::ConnectionKind::Ssh { .. }
+        )
+        .then(|| (Arc::downgrade(&servers), project.connection.clone()));
         let event_task = spawn_event_task(
             Arc::clone(&client),
             sink.clone(),
             Arc::clone(&self.state),
             stream_id.clone(),
             generation,
+            self.recovery.clone(),
         );
-
-        self.client = Some(Arc::clone(&client));
         self.stream_id = Some(stream_id.clone());
         self.event_task = Some(event_task);
         let setup: Result<(Option<String>, Option<pilo_protocol::ControlContext>), String> =
@@ -509,8 +579,11 @@ impl ServerPiSession {
             return Err("RPC command must be a JSON object".to_owned());
         }
         let client = self
+            .state
             .client
-            .as_ref()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
             .ok_or_else(|| "Pi process is not running".to_owned())?;
         let stream_id = self
             .stream_id
@@ -530,7 +603,13 @@ impl ServerPiSession {
     }
 
     pub async fn stop(&mut self) -> Result<PiSessionSnapshot, String> {
-        let Some(client) = self.client.as_ref() else {
+        let client = self
+            .state
+            .client
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let Some(client) = client else {
             self.state.set(PiProcessState::Stopped);
             return Ok(self.snapshot());
         };
@@ -539,18 +618,44 @@ impl ServerPiSession {
             return Ok(self.snapshot());
         };
         self.state.set(PiProcessState::Stopping);
-        let result = stop_stream(client, stream_id).await;
-        if let Some(task) = self.event_task.take() {
-            task.abort();
-        }
+        let result = if let Some(recovery) = self.recovery.clone() {
+            if let Some(task) = self.event_task.take() {
+                task.abort();
+            }
+            let task = self.stop_task.get_or_insert_with(|| {
+                tokio::spawn(stop_owned_stream(client, stream_id.clone(), Some(recovery)))
+            });
+            match tokio::time::timeout(STOP_TIMEOUT, task).await {
+                Ok(result) => {
+                    self.stop_task = None;
+                    result
+                        .map_err(|error| error.to_string())
+                        .and_then(|result| result)
+                }
+                Err(_) => {
+                    Err("timed out while stopping Pi stream; SSH cleanup is pending".to_owned())
+                }
+            }
+        } else {
+            let result = stop_stream(&client, stream_id).await;
+            if let Some(task) = self.event_task.take() {
+                task.abort();
+            }
+            result
+        };
         self.state.set(if result.is_ok() {
             PiProcessState::Stopped
         } else {
             PiProcessState::Failed
         });
         result?;
-        self.client = None;
+        self.state
+            .client
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         self.stream_id = None;
+        self.recovery = None;
         Ok(self.snapshot())
     }
 
@@ -578,7 +683,11 @@ impl ServerPiSession {
             last_opened_at_ms: 0,
         };
         let options = launch.options.clone();
-        let _ = self.stop().await;
+        let ssh = self.recovery.is_some();
+        let stopped = self.stop().await;
+        if ssh {
+            stopped?;
+        }
         self.spawn(servers, sink, &project, options).await
     }
 }

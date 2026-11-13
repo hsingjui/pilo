@@ -18,6 +18,7 @@ import { listenRuntimeEvents } from "@/lib/api/pi-runtime";
 import {
 	chatRpcChangesActivity,
 	chatRpcRenamesSession,
+	runtimeSessionPathKey,
 } from "@/lib/chat/chat-session-runtime-model";
 import {
 	deleteSession,
@@ -387,6 +388,7 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 				case "auto_retry_start":
 				case "compaction_start":
 				case "compaction_end":
+				case "pi_reattached":
 				case "process_state":
 					queueRuntimeActivityRefresh();
 					break;
@@ -525,8 +527,9 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 						.get(session.projectId)
 						?.openTurnPaths.has(session.sessionPath) ?? false;
 				const runtimeActive =
-					runtimeActivity.get(session.projectId)?.has(session.sessionPath) ??
-					false;
+					runtimeActivity
+						.get(session.projectId)
+						?.has(runtimeSessionPathKey(session.sessionPath)) ?? false;
 				if (!externalActive && !runtimeActive) return sidebar;
 				return {
 					...sidebar,

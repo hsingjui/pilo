@@ -105,6 +105,7 @@ export function useChatConversation({
 		undefined,
 	);
 	const historyDeferredRef = useRef(false);
+	const reconciliationPendingRef = useRef(false);
 	const baseMessages = useMemo<ChatMessage[]>(() => {
 		if (initialMessage || initialImages.length > 0) {
 			return [
@@ -144,7 +145,8 @@ export function useChatConversation({
 			return;
 		}
 		historyDeferredRef.current = false;
-		const forceReload = forceHistoryReloadRef.current;
+		const reconcile = reconciliationPendingRef.current;
+		const forceReload = forceHistoryReloadRef.current || reconcile;
 		const requestedHistory = historyFingerprintRef.current;
 		const requestedFingerprint = requestedHistory.fingerprint;
 		const requestFingerprint =
@@ -157,6 +159,7 @@ export function useChatConversation({
 					}
 				: undefined;
 		let cancelled = false;
+		const initialConversation = conversationStore.getSnapshot();
 		const loadHistory = async (retryAttempt: number) => {
 			const startedAt = performance.now();
 			setHistoryLoadState("loading");
@@ -206,24 +209,31 @@ export function useChatConversation({
 					return;
 				}
 				if (activeTurnSessionIdRef?.current === session.id) {
-					// Initial loads must resume after the turn; manual refreshes must not.
-					historyDeferredRef.current = !forceReload;
+					// Automatic reconciliation resumes after the turn; manual refresh does not.
+					historyDeferredRef.current = !forceReload || reconcile;
 					forceHistoryReloadRef.current = false;
 					setHistoryLoadState("ready");
 					return;
 				}
-				await onHistoryMetadata(history, forceReload);
+				await onHistoryMetadata(history, forceHistoryReloadRef.current);
 				if (
 					cancelled ||
 					historyRequestGenerationRef.current !== requestGeneration
 				)
 					return;
 				if (activeTurnSessionIdRef?.current === session.id) {
-					historyDeferredRef.current = !forceReload;
+					historyDeferredRef.current = !forceReload || reconcile;
 					forceHistoryReloadRef.current = false;
 					setHistoryLoadState("ready");
 					return;
 				}
+				if (conversationStore.getSnapshot() !== initialConversation) {
+					historyDeferredRef.current = true;
+					forceHistoryReloadRef.current = false;
+					setHistoryLoadState("ready");
+					return;
+				}
+				reconciliationPendingRef.current = false;
 				finalState = alignHistoryMessages(finalState, directory, windowStart);
 				if (session.externalTurnOpen) {
 					finalState = markExternalTurnLive(finalState);
@@ -262,6 +272,8 @@ export function useChatConversation({
 				}
 				console.error("Failed to read session history", error);
 				failedHistoryFingerprintRef.current = requestedFingerprint;
+				reconciliationPendingRef.current = false;
+				forceHistoryReloadRef.current = false;
 				setHistoryError(toAppError(error).detail ?? null);
 				setHistoryLoadState("error");
 			}
@@ -436,7 +448,7 @@ export function useChatConversation({
 				return;
 			}
 			if (activeTurnSessionId === session.id) return;
-			if (historyDeferredRef.current) {
+			if (historyDeferredRef.current || reconciliationPendingRef.current) {
 				historyDeferredRef.current = false;
 				setHistoryRetry((value) => value + 1);
 				return;
@@ -464,6 +476,11 @@ export function useChatConversation({
 			sessionHistoryFingerprint,
 		],
 	);
+
+	const reconcileHistory = useCallback(() => {
+		reconciliationPendingRef.current = true;
+		setHistoryRetry((value) => value + 1);
+	}, []);
 
 	const retryHistory = useCallback(() => {
 		forceHistoryReloadRef.current = true;
@@ -496,6 +513,7 @@ export function useChatConversation({
 		historyPending:
 			session.sessionPath !== undefined && historyLoadState !== "ready",
 		retryHistory,
+		reconcileHistory,
 		refreshHistoryIfStale,
 	};
 }

@@ -1,5 +1,8 @@
 import { listChatSessionRuntimeStates } from "@/lib/api/chat-session-client";
-import { chatRuntimeHasOpenTurn } from "@/lib/chat/chat-session-runtime-model";
+import {
+	chatRuntimeHasOpenTurn,
+	runtimeSessionPathKey,
+} from "@/lib/chat/chat-session-runtime-model";
 import type {
 	SessionExternalActivity,
 	SessionIndexEntry,
@@ -56,7 +59,7 @@ export function runtimeActivityFromStates(
 			paths = new Set();
 			mutable.set(state.projectId, paths);
 		}
-		paths.add(state.sessionPath);
+		paths.add(runtimeSessionPathKey(state.sessionPath));
 	}
 	return mutable;
 }

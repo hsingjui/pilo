@@ -161,6 +161,11 @@ pub enum RuntimeEvent {
         #[serde(rename = "isError")]
         is_error: bool,
     },
+    PiReattached {
+        generation: u64,
+        active: bool,
+        compacting: bool,
+    },
     AssistantMessageEnd {
         generation: u64,
         #[serde(rename = "stopReason")]

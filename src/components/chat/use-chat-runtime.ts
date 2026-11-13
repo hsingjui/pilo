@@ -64,6 +64,7 @@ type UseChatRuntimeOptions = {
 	prepareRuntimeConfiguration: (agentState: PiAgentState) => Promise<void>;
 	refreshSessionState: (agentState?: PiAgentState) => Promise<void>;
 	refreshSessionStats: () => Promise<void>;
+	onRuntimeReattached: () => void;
 };
 
 export function useChatRuntime({
@@ -90,6 +91,7 @@ export function useChatRuntime({
 	prepareRuntimeConfiguration,
 	refreshSessionState,
 	refreshSessionStats,
+	onRuntimeReattached,
 }: UseChatRuntimeOptions) {
 	const { t } = useTranslation();
 	const identifiedRef = useRef(onSessionIdentified);
@@ -180,6 +182,7 @@ export function useChatRuntime({
 		releaseActiveTurn,
 		refreshSessionState,
 		refreshSessionStats,
+		onRuntimeReattached,
 	});
 
 	useEffect(() => {

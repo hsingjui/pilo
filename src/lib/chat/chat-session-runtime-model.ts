@@ -33,16 +33,25 @@ export function chatRuntimeHasOpenTurn(
 	);
 }
 
+// Pi and the session index can spell the same Windows path with different separators.
+export function runtimeSessionPathKey(path: string): string {
+	return /^[a-z]:[\\/]/i.test(path) || path.startsWith("\\\\")
+		? path.replaceAll("\\", "/")
+		: path;
+}
+
 export function findReusableChatRuntime(
 	states: readonly ChatSessionRuntimeState[],
 	projectId: string,
 	sessionPath: string,
 ): ChatSessionRuntimeState | null {
+	const pathKey = runtimeSessionPathKey(sessionPath);
 	return (
 		states.find(
 			(state) =>
 				state.projectId === projectId &&
-				state.sessionPath === sessionPath &&
+				typeof state.sessionPath === "string" &&
+				runtimeSessionPathKey(state.sessionPath) === pathKey &&
 				(state.snapshot.state === "running" ||
 					state.snapshot.state === "starting"),
 		) ?? null

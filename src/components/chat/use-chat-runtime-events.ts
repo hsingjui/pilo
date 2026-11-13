@@ -105,6 +105,7 @@ type UseChatRuntimeEventsOptions = {
 	) => void;
 	refreshSessionState: (agentState?: PiAgentState) => Promise<void>;
 	refreshSessionStats: () => Promise<void>;
+	onRuntimeReattached: () => void;
 };
 
 export function useChatRuntimeEvents({
@@ -127,6 +128,7 @@ export function useChatRuntimeEvents({
 	releaseActiveTurn,
 	refreshSessionState,
 	refreshSessionStats,
+	onRuntimeReattached,
 }: UseChatRuntimeEventsOptions) {
 	const runtimeListenerRef = useRef<ReturnType<typeof client.listen> | null>(
 		null,
@@ -284,6 +286,21 @@ export function useChatRuntimeEvents({
 			}
 
 			const currentTurn = activeTurnRef.current;
+			if (event.type === "pi_reattached") {
+				if (event.active) {
+					if (!currentTurn) adoptActiveTurn(event.generation);
+				} else {
+					dispatchConversation(session.id, {
+						type: "local_turn_abort",
+						timestampMs: event.timestampMs ?? Date.now(),
+					});
+					if (currentTurn)
+						releaseActiveTurn(currentTurn, { preserveQueued: true });
+				}
+				onRuntimeReattached();
+				void refreshSessionState().catch(() => undefined);
+				return;
+			}
 			const discardingCurrentTurn =
 				currentTurn?.discardRuntimeEvents === true &&
 				currentTurn.generation !== null &&
@@ -487,6 +504,7 @@ export function useChatRuntimeEvents({
 			failActiveTurn,
 			getConversationState,
 			notifyTurnResult,
+			onRuntimeReattached,
 			queueRuntimeAction,
 			projectMcpApprovalPendingRef,
 			refreshSessionState,
@@ -505,7 +523,9 @@ export function useChatRuntimeEvents({
 
 	useEffect(() => {
 		let disposed = false;
+		runtimeGenerationRef.current = null;
 		const subscription = client.listen((event) => {
+			if (disposed) return;
 			if (import.meta.env.DEV) {
 				recordChatRuntimeTraceEvent(session.id, event);
 			}
@@ -532,7 +552,14 @@ export function useChatRuntimeEvents({
 			}
 			void subscription.then((unlisten) => unlisten()).catch(() => undefined);
 		};
-	}, [activeTurnRef, client, failActiveTurn, session.id, session.temporary]);
+	}, [
+		activeTurnRef,
+		client,
+		failActiveTurn,
+		runtimeGenerationRef,
+		session.id,
+		session.temporary,
+	]);
 
 	useEffect(() => {
 		let cancelled = false;

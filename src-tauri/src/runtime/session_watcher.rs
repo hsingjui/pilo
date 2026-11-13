@@ -181,8 +181,21 @@ impl SessionWatcherManager {
                 let mut delay = Duration::from_millis(250);
                 loop {
                     tokio::time::sleep(delay).await;
+                    if event_servers.is_shutting_down() {
+                        return;
+                    }
                     attempts = attempts.saturating_add(1);
-                    let (stage, error) = match event_servers.client(&connection).await {
+                    let next_client =
+                        if matches!(connection.kind, crate::domain::ConnectionKind::Ssh { .. }) {
+                            match event_servers.recover_ssh_client(&connection).await {
+                                Ok(Some(client)) => Ok(client),
+                                Ok(None) => return,
+                                Err(error) => Err(error),
+                            }
+                        } else {
+                            event_servers.client(&connection).await
+                        };
+                    let (stage, error) = match next_client {
                         Ok(next_client) => {
                             let next_events = next_client.subscribe(&event_stream_id);
                             *event_client.lock().await = Arc::clone(&next_client);

@@ -11,7 +11,11 @@ import { ProjectWorkspaceContext } from "@/components/app/project-workspace-cont
 import { ProjectWorkspacePanel } from "@/components/app/project-workspace-panel";
 import { useTranslation } from "react-i18next";
 
-import { chatRuntimeHasOpenTurn } from "@/lib/chat/chat-session-runtime-model";
+import {
+	chatRuntimeHasOpenTurn,
+	runtimeSessionPathKey,
+} from "@/lib/chat/chat-session-runtime-model";
+import { listenRuntimeEvents } from "@/lib/api/pi-runtime";
 import type { SessionHistory } from "@/lib/api/sessions";
 
 import type {
@@ -87,6 +91,7 @@ type ChatPageProps = {
 	onOpenInNewWindow?: () => void;
 	onExpandSidebar?: () => void;
 	controllerId?: string;
+	runtimeSessionId?: string;
 	performanceSessionId?: string;
 	uiStateKey?: string;
 	readUiState?: (key: string) => ChatUiState;
@@ -127,6 +132,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		onOpenInNewWindow,
 		onExpandSidebar,
 		controllerId,
+		runtimeSessionId,
 		performanceSessionId,
 		uiStateKey,
 		readUiState,
@@ -179,13 +185,19 @@ function ChatPageImpl(props: ChatPageProps) {
 	});
 	const activeTurnSessionIdRef = useRef<string | null>(null);
 	const projectMcpApprovalPendingRef = useRef(false);
+	const clientSessionId = runtimeSessionId ?? session.id;
 	const client = useMemo(
 		() =>
-			createChatSessionClient(session.projectRecord.id, session.id, undefined, {
-				noSession: session.temporary,
-				owner: "chat_controller",
-			}),
-		[session.projectRecord.id, session.id, session.temporary],
+			createChatSessionClient(
+				session.projectRecord.id,
+				clientSessionId,
+				undefined,
+				{
+					noSession: session.temporary,
+					owner: "chat_controller",
+				},
+			),
+		[session.projectRecord.id, clientSessionId, session.temporary],
 	);
 	useEffect(() => {
 		client.updateSessionPath(session.sessionPath);
@@ -262,6 +274,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		historyImageFingerprint,
 		historyPending,
 		retryHistory,
+		reconcileHistory,
 		refreshHistoryIfStale,
 	} = conversation;
 	const getActivePresentationIntervalMs = useCallback(
@@ -342,6 +355,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		prepareRuntimeConfiguration,
 		refreshSessionState,
 		refreshSessionStats,
+		onRuntimeReattached: reconcileHistory,
 	});
 	const {
 		activeTurnSessionId,
@@ -537,6 +551,26 @@ function ChatPageImpl(props: ChatPageProps) {
 		},
 		[controllerId, onRuntimeBusyChange],
 	);
+
+	useEffect(() => {
+		const path = session.sessionPath;
+		if (!active || !path) return;
+		let disposed = false;
+		const subscription = listenRuntimeEvents((event) => {
+			if (
+				!disposed &&
+				event.type === "session_turn_completed" &&
+				event.projectId === session.projectRecord.id &&
+				runtimeSessionPathKey(event.sessionPath) === runtimeSessionPathKey(path)
+			) {
+				reconcileHistory();
+			}
+		});
+		return () => {
+			disposed = true;
+			void subscription.then((unlisten) => unlisten()).catch(() => undefined);
+		};
+	}, [active, reconcileHistory, session.projectRecord.id, session.sessionPath]);
 
 	useEffect(() => {
 		refreshHistoryIfStale(active, activeTurnSessionId);
@@ -866,7 +900,8 @@ function chatPagePropsEqual(previous: ChatPageProps, next: ChatPageProps) {
 	if (!previousActive && !nextActive) {
 		return (
 			(previous.retainBackgroundVisual ?? true) ===
-			(next.retainBackgroundVisual ?? true)
+				(next.retainBackgroundVisual ?? true) &&
+			previous.runtimeSessionId === next.runtimeSessionId
 		);
 	}
 

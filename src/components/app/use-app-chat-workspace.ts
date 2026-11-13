@@ -476,6 +476,7 @@ export function useAppChatWorkspace({
 		chatSession,
 		draftTemporary,
 		renderedOpenedChats,
+		runtimeStates,
 		draftSessionId,
 		readChatUiState,
 		writeChatUiState,

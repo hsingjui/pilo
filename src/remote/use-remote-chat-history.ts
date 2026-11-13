@@ -3,6 +3,7 @@ import {
 	type SetStateAction,
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -36,6 +37,8 @@ type UseRemoteChatHistoryOptions = {
 	activeSessionKey: string | null;
 	selectedSession: SessionIndexEntry | null;
 	resyncKey: number;
+	snapshotRefreshKey: number;
+	historyCompletionKey: number;
 	isExternalOpenTurn: (projectId: string, sessionPath: string) => boolean;
 	runtimeTurnOpen: boolean;
 	refreshAgentConfig: (liveRuntime?: boolean) => Promise<void>;
@@ -54,6 +57,8 @@ export function useRemoteChatHistory({
 	activeSessionKey,
 	selectedSession,
 	resyncKey,
+	snapshotRefreshKey,
+	historyCompletionKey,
 	isExternalOpenTurn,
 	runtimeTurnOpen,
 	refreshAgentConfig,
@@ -81,8 +86,15 @@ export function useRemoteChatHistory({
 		key: string | null;
 		status: "ready" | "loading" | "error";
 	}>({ key: null, status: "ready" });
+	const conversationLoadKey = conversationLoad.key;
+	const conversationLoadKeyRef = useRef(conversationLoadKey);
+	useEffect(() => {
+		conversationLoadKeyRef.current = conversationLoadKey;
+	}, [conversationLoadKey]);
 	const [historyRetryKey, setHistoryRetryKey] = useState(0);
+	const deferredHistoryRefreshRef = useRef<string | null>(null);
 	const manualRefreshRef = useRef(false);
+	const reconciledCompletionRef = useRef(historyCompletionKey);
 	const selectedSessionRef = useRef(selectedSession);
 	useEffect(() => {
 		selectedSessionRef.current = selectedSession;
@@ -93,6 +105,13 @@ export function useRemoteChatHistory({
 		activeProjectId && selectedSessionPath && selectedSessionId
 			? `${activeProjectId}\u0000${selectedSessionId}\u0000${selectedSessionPath}`
 			: null;
+	/* oxlint-disable react/exhaustive-effect-dependencies -- Invalidate the old read at commit, before the next passive effect starts. */
+	useLayoutEffect(() => {
+		return () => {
+			historyGenerationRef.current += 1;
+		};
+	}, [activeSessionKey, client, selectedLoadKey]);
+	/* oxlint-enable react/exhaustive-effect-dependencies */
 	const loadingConversation = Boolean(
 		selectedLoadKey &&
 		(conversationLoad.key !== selectedLoadKey ||
@@ -104,9 +123,11 @@ export function useRemoteChatHistory({
 	);
 	const liveTurnOpen = externalTurnOpen || runtimeTurnOpen;
 	const liveTurnOpenRef = useRef(liveTurnOpen);
+	const externalTurnOpenRef = useRef(externalTurnOpen);
 	useEffect(() => {
 		liveTurnOpenRef.current = liveTurnOpen;
-	}, [liveTurnOpen]);
+		externalTurnOpenRef.current = externalTurnOpen;
+	}, [externalTurnOpen, liveTurnOpen]);
 
 	const historyPrefix = useMemo(
 		() =>
@@ -158,9 +179,26 @@ export function useRemoteChatHistory({
 	]);
 
 	useEffect(() => {
+		if (
+			!selectedLoadKey ||
+			conversationLoad.key !== selectedLoadKey ||
+			conversationLoad.status === "loading" ||
+			liveTurnOpen ||
+			(reconciledCompletionRef.current === historyCompletionKey &&
+				deferredHistoryRefreshRef.current !== selectedLoadKey)
+		) {
+			return;
+		}
+		reconciledCompletionRef.current = historyCompletionKey;
+		deferredHistoryRefreshRef.current = null;
+		setHistoryRetryKey((value) => value + 1);
+	}, [conversationLoad, historyCompletionKey, liveTurnOpen, selectedLoadKey]);
+
+	useEffect(() => {
 		const generation = ++historyGenerationRef.current;
 		historyPageRequestsRef.current.clear();
 		void resyncKey;
+		void snapshotRefreshKey;
 		if (
 			!client ||
 			!activeProjectId ||
@@ -176,7 +214,9 @@ export function useRemoteChatHistory({
 			(liveTurnOpenRef.current || getConversationState()?.active)
 		)
 			return;
-		let cancelled = false;
+		const isCurrent = () => historyGenerationRef.current === generation;
+		const refreshing = conversationLoadKeyRef.current === selectedLoadKey;
+		const initialState = getConversationState();
 		const requestedSession = selectedSessionRef.current;
 		const requestedIndexFingerprint = requestedSession
 			? {
@@ -184,15 +224,29 @@ export function useRemoteChatHistory({
 					fileMtimeNs: requestedSession.fileMtimeNs,
 				}
 			: null;
-		setConversationLoad({ key: selectedLoadKey, status: "loading" });
-		setRuntimeReady(false);
+		if (!refreshing) {
+			historyStore.initialize([], 0);
+			setHistoryFingerprint(null);
+			setLoadedIndexFingerprint(null);
+			setConversationLoad({ key: selectedLoadKey, status: "loading" });
+			setRuntimeReady(false);
+		}
+		const targetKey =
+			activeSessionKey ?? sessionKey(activeProjectId, selectedSessionId);
 		void client
 			.loadHistory(activeProjectId, selectedSessionPath, {
 				messageLimit: INITIAL_HISTORY_MESSAGE_COUNT,
 				includeMessageIndex: true,
 			})
-			.then((result: SessionHistoryResult) => {
-				if (cancelled) return;
+			.then(async (result: SessionHistoryResult) => {
+				if (!isCurrent()) return null;
+				const runtime = result.history.headerMissing
+					? null
+					: await client.chatState(targetKey);
+				const live =
+					externalTurnOpenRef.current ||
+					Boolean(runtime?.activeTurn || runtime?.compacting);
+				if (!isCurrent()) return;
 				const directory = result.history.messageIndex;
 				const windowStart = result.history.windowStartMessage;
 				if (!directory || windowStart === undefined) {
@@ -200,14 +254,18 @@ export function useRemoteChatHistory({
 						"Session history window is missing its message index.",
 					);
 				}
+				const current = getConversationState();
 				if (
-					manualRefresh &&
-					(liveTurnOpenRef.current || getConversationState()?.active)
+					current !== initialState ||
+					(live && (manualRefresh || current?.active))
 				) {
-					return client.chatState(
-						activeSessionKey ?? sessionKey(activeProjectId, selectedSessionId),
-					);
+					if (!manualRefresh) {
+						if (live) deferredHistoryRefreshRef.current = selectedLoadKey;
+						else setHistoryRetryKey((value) => value + 1);
+					}
+					return runtime;
 				}
+				deferredHistoryRefreshRef.current = null;
 				setHistoryFingerprint(result.fingerprint);
 				setLoadedIndexFingerprint(requestedIndexFingerprint);
 				historyPageRequestsRef.current.clear();
@@ -218,27 +276,30 @@ export function useRemoteChatHistory({
 				);
 				state = alignHistoryMessages(state, directory, windowStart);
 				// Restore the live tail before incoming events can create a new reply.
-				if (liveTurnOpenRef.current) state = markExternalTurnLive(state);
-				setConversation(state);
-				onHistoryMetadata(result.history);
-				if (result.history.headerMissing) return null;
-				// The shared event stream already observes running sessions; viewing
-				// history must not start a Pi process just to attach to an idle session.
-				return client.chatState(
-					activeSessionKey ?? sessionKey(activeProjectId, selectedSessionId),
+				if (live) state = markExternalTurnLive(state);
+				setConversation(
+					live && current?.pendingUsers.length
+						? { ...state, pendingUsers: current.pendingUsers }
+						: state,
 				);
+				onHistoryMetadata(result.history);
+				return runtime;
 			})
 			.then((runtime) => {
-				if (cancelled) return;
+				if (!isCurrent()) return;
 				const ready = Boolean(
 					runtime?.initialized && runtime.snapshot.state === "running",
 				);
 				setRuntimeReady(ready);
-				setConversationLoad({ key: selectedLoadKey, status: "ready" });
+				setConversationLoad((current) =>
+					current.key === selectedLoadKey && current.status === "ready"
+						? current
+						: { key: selectedLoadKey, status: "ready" },
+				);
 				void refreshAgentConfig(ready);
 			})
 			.catch((error) => {
-				if (cancelled || handleExpiredAuth(error)) return;
+				if (!isCurrent() || handleExpiredAuth(error)) return;
 				const message = error instanceof Error ? error.message : String(error);
 				if (message.includes("read-only observer mode")) {
 					setReadOnly(true);
@@ -250,7 +311,6 @@ export function useRemoteChatHistory({
 				setFatalError(message);
 			});
 		return () => {
-			cancelled = true;
 			if (historyGenerationRef.current === generation) {
 				historyGenerationRef.current += 1;
 			}
@@ -263,6 +323,7 @@ export function useRemoteChatHistory({
 		refreshAgentConfig,
 		onHistoryMetadata,
 		resyncKey,
+		snapshotRefreshKey,
 		historyRetryKey,
 		selectedLoadKey,
 		selectedSessionId,

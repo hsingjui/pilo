@@ -39,6 +39,10 @@ import {
 import { readProjectFile, readProjectTextFile } from "@/lib/api/files";
 import { loadChatProjectImageUrl } from "@/lib/chat/chat-image-media";
 import { resolveChatImageMimeType } from "@/lib/chat/chat-submission";
+import {
+	findReusableChatRuntime,
+	runtimeSessionIdFromKey,
+} from "@/lib/chat/chat-session-runtime-model";
 import { workspaceFileKey } from "@/lib/project-workspace";
 import { recordChatSessionSwitchStart } from "@/lib/chat/chat-performance";
 import { usePreferences } from "@/lib/preferences-provider";
@@ -99,6 +103,7 @@ function App() {
 		chatSession,
 		draftTemporary,
 		renderedOpenedChats,
+		runtimeStates,
 		draftSessionId,
 		readChatUiState,
 		writeChatUiState,
@@ -401,6 +406,20 @@ function App() {
 											entry.piSessionId === chatSession.id);
 									const visualVisible =
 										entry.controllerId === activeChatControllerId;
+									const { projectRecord, sessionPath } = entry.session;
+									const runtime = sessionPath
+										? findReusableChatRuntime(
+												runtimeStates,
+												projectRecord.id,
+												sessionPath,
+											)
+										: null;
+									const runtimeSessionId = runtime
+										? runtimeSessionIdFromKey(
+												runtime.sessionKey,
+												projectRecord.id,
+											)
+										: null;
 									return (
 										<div
 											key={entry.controllerId}
@@ -440,6 +459,7 @@ function App() {
 											>
 												<ChatPage
 													session={entry.session}
+													runtimeSessionId={runtimeSessionId ?? undefined}
 													controllerId={entry.controllerId}
 													performanceSessionId={
 														entry.piSessionId ?? entry.session.id

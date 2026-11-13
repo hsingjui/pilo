@@ -274,7 +274,12 @@ impl RuntimeEventSink for ParallelEventSink {
             | RuntimeEvent::AssistantThinkingDelta { .. }
             | RuntimeEvent::ToolExecutionStart { .. }
             | RuntimeEvent::ToolExecutionUpdate { .. } => Some(ParallelAgentStatus::Busy),
-            RuntimeEvent::AssistantMessageEnd { .. } => Some(ParallelAgentStatus::Waiting),
+            RuntimeEvent::PiReattached {
+                active, compacting, ..
+            } if *active || *compacting => Some(ParallelAgentStatus::Busy),
+            RuntimeEvent::PiReattached { .. } | RuntimeEvent::AssistantMessageEnd { .. } => {
+                Some(ParallelAgentStatus::Waiting)
+            }
             RuntimeEvent::RuntimeError { .. } => Some(ParallelAgentStatus::Failed),
             _ => None,
         };

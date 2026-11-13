@@ -8,6 +8,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         return Ok(());
     }
+    #[cfg(unix)]
+    if let Some(mode) = std::env::args().nth(1)
+        && matches!(mode.as_str(), "--ssh-bridge" | "--ssh-daemon")
+    {
+        let scope = std::env::args().nth(2).ok_or("missing SSH runtime scope")?;
+        if mode == "--ssh-bridge" {
+            let result = pilo_server::ssh_daemon::bridge(&scope).await;
+            // Tokio stdin can still have a blocking read pending after socket EOF.
+            if let Err(error) = result {
+                eprintln!("SSH runtime bridge: {error}");
+                std::process::exit(1);
+            }
+            std::process::exit(0);
+        }
+        return Ok(pilo_server::ssh_daemon::serve(&scope).await?);
+    }
     if std::env::args().any(|arg| arg == "--version") {
         println!("{}", pilo_server::SERVER_VERSION);
         return Ok(());

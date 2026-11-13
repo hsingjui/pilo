@@ -85,6 +85,7 @@ export function toConversationAction(
 		case "session_index_error":
 		case "session_read_state_changed":
 		case "session_turn_completed":
+		case "pi_reattached":
 		case "process_state":
 		case "rpc_message":
 		case "queue_update":

@@ -82,8 +82,12 @@ impl ServerManager {
 
     const SHUTTING_DOWN: &str = "pilo-server manager is shutting down";
 
+    pub(in crate::runtime) fn is_shutting_down(&self) -> bool {
+        self.shutdown.load(Ordering::Acquire)
+    }
+
     fn ensure_running(&self) -> Result<(), String> {
-        if self.shutdown.load(Ordering::Acquire) {
+        if self.is_shutting_down() {
             Err(Self::SHUTTING_DOWN.to_owned())
         } else {
             Ok(())
@@ -111,7 +115,32 @@ impl ServerManager {
         if let Some(client) = self.cached_client(connection).await {
             return Ok(client);
         }
+        self.connect_client(connection, false)
+            .await?
+            .ok_or_else(|| "pilo-server connection configuration changed".to_owned())
+    }
 
+    // A retained stream may only reconnect to its original, still-configured target.
+    // None means recovery must stop, rather than retry with an obsolete configuration.
+    pub(in crate::runtime) async fn recover_ssh_client(
+        &self,
+        connection: &Connection,
+    ) -> Result<Option<Arc<ServerClient>>, String> {
+        self.connect_client(connection, true).await
+    }
+
+    fn ssh_target_is_current(&self, connection: &Connection) -> Result<bool, String> {
+        use crate::runtime::storage;
+        let db = storage::open(&self.control_app()?)?;
+        Ok(storage::get_connection(&db, &connection.id)?
+            .is_some_and(|current| current.kind == connection.kind))
+    }
+
+    async fn connect_client(
+        &self,
+        connection: &Connection,
+        recovering: bool,
+    ) -> Result<Option<Arc<ServerClient>>, String> {
         let _admission_guard = self.admission.read().await;
         self.ensure_running()?;
 
@@ -127,13 +156,36 @@ impl ServerManager {
             .until_shutdown(async { Ok(connection_lock.lock().await) })
             .await?;
         self.ensure_running()?;
-        if let Some(client) = self.cached_client(connection).await {
-            return Ok(client);
+        if recovering && !self.ssh_target_is_current(connection)? {
+            return Ok(None);
         }
-
+        if let Some(client) = self.cached_client(connection).await {
+            return Ok(Some(client));
+        }
+        let stale = {
+            let mut clients = self.clients.lock().await;
+            if recovering
+                && clients
+                    .get(&connection.id)
+                    .is_some_and(|cached| cached.connection.kind != connection.kind)
+            {
+                return Ok(None);
+            }
+            clients.remove(&connection.id)
+        };
+        if let Some(stale) = stale {
+            stale.client.stop().await;
+        }
         let client = self
-            .until_shutdown(ServerClient::connect(connection))
+            .until_shutdown(ServerClient::connect(connection, true))
             .await?;
+        if recovering {
+            let current = self.ssh_target_is_current(connection);
+            if !matches!(current, Ok(true)) {
+                client.stop().await;
+                return current.map(|_| None);
+            }
+        }
         self.clients.lock().await.insert(
             connection.id.clone(),
             CachedServerClient {
@@ -141,27 +193,18 @@ impl ServerManager {
                 client: Arc::clone(&client),
             },
         );
-        Ok(client)
+        Ok(Some(client))
     }
 
     async fn cached_client(&self, connection: &Connection) -> Option<Arc<ServerClient>> {
-        let stale = {
-            let mut clients = self.clients.lock().await;
-            match clients.get(&connection.id) {
-                Some(cached)
-                    if cached.connection.kind.eq(&connection.kind)
-                        && !cached.client.is_closed() =>
-                {
-                    return Some(Arc::clone(&cached.client));
-                }
-                Some(_) => clients.remove(&connection.id).map(|cached| cached.client),
-                None => None,
-            }
-        };
-        if let Some(client) = stale {
-            client.stop().await;
-        }
-        None
+        self.clients
+            .lock()
+            .await
+            .get(&connection.id)
+            .filter(|cached| {
+                cached.connection.kind == connection.kind && !cached.client.is_closed()
+            })
+            .map(|cached| Arc::clone(&cached.client))
     }
 
     async fn invalidate_client(&self, connection_id: &str, failed: &Arc<ServerClient>) {
@@ -240,7 +283,7 @@ impl ServerManager {
         // Connection tests must validate the current configuration and credentials,
         // so do not reuse a pooled client that may have been created before edits.
         let client = self
-            .until_shutdown(ServerClient::connect(connection))
+            .until_shutdown(ServerClient::connect(connection, false))
             .await?;
         let result = self
             .until_shutdown(client.request("server.ping", Value::Null))

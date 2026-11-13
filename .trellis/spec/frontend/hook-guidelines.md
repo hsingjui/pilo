@@ -72,6 +72,15 @@ codebase does not use it.)
   success (no automatic retry), manual retry, index catch-up (notice clears),
   later index changes (reload allowed), and live-turn notice suppression.
 
+## Matching Host Chat Runtimes
+
+- Desktop and WebUI use `runtimeSessionPathKey` for sidebar activity and
+  `findReusableChatRuntime` for adoption. A Windows index path such as
+  `C:\Users\me\.pi/agent\sessions\a.jsonl` must match Pi’s
+  `C:\Users\me\.pi\agent\sessions\a.jsonl` in the same project.
+- Normalize separators only for the comparison. Keep the original index path
+  for history and persistence, and leave absolute POSIX paths unchanged.
+
 ## Manual Session Refresh
 
 - Desktop and WebUI expose refresh in each left-sidebar session row menu,
@@ -81,8 +90,12 @@ codebase does not use it.)
   dialog or history load is active. Running sessions do not queue a
   refresh for later. Recheck Host runtime activity and Pi streaming/compaction
   before requesting history, since the menu state can lag behind the process.
-- If a turn is adopted while an ordinary history read/replay is pending, mark
-  that load deferred so it retries after the turn ends. Returning `ready` without
+- WebUI viewport readiness uses the same route key as the mounted view, not the
+  replaceable Host runtime key. Clear the previous conversation before routing
+  events to a different selected session; keep it when only the runtime rebinds.
+- Guard initial history loads as well as refreshes against live updates. If a
+  turn is adopted while an ordinary history read/replay is pending, mark that
+  load deferred so it retries after the turn ends. Returning `ready` without
   publishing a snapshot or marking it deferred can strand the initial history.
   A manual refresh interrupted by a new turn must clear its force flag and must
   not queue a retry.

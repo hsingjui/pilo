@@ -301,6 +301,10 @@ export function usePiSessionFeatures({
 					case "extension_ui_request":
 						handleExtensionRequest(event);
 						break;
+					case "pi_reattached":
+						setCompacting(event.compacting);
+						setRetryState(null);
+						break;
 					case "compaction_start":
 						setCompacting(true);
 						break;

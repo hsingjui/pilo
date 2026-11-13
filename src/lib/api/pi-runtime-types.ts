@@ -196,6 +196,12 @@ export type PiloRuntimeEvent = {
 			completionId?: string;
 	  }
 	| {
+			type: "pi_reattached";
+			generation: number;
+			active: boolean;
+			compacting: boolean;
+	  }
+	| {
 			type: "process_state";
 			generation: number;
 			state: PiProcessState;

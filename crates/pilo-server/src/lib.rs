@@ -3,6 +3,8 @@ mod command;
 pub mod control;
 mod environment;
 mod extensions;
+#[cfg(unix)]
+pub mod ssh_daemon;
 pub use extensions::runtime_directory;
 pub mod file_links;
 mod fs_ops;
@@ -14,7 +16,10 @@ use std::{
     collections::HashMap,
     io::{self, Read},
     path::Path,
-    sync::{Arc, Mutex as StdMutex},
+    sync::{
+        Arc, Mutex as StdMutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Instant,
 };
 
@@ -79,6 +84,7 @@ type PiOutputTasks = HashMap<
 #[derive(Clone)]
 struct ServerState {
     writer: ServerWriter,
+    retain_pi: bool,
     agent_control: Arc<control::ControlState>,
     request_slots: Arc<Semaphore>,
     control_slots: Arc<Semaphore>,
@@ -86,6 +92,7 @@ struct ServerState {
     started_at: Instant,
     pi: Arc<Mutex<HashMap<String, PiProcess>>>,
     pi_starts: Arc<Mutex<PiStarts>>,
+    pi_start_sequence: Arc<AtomicU64>,
     pi_stops: Arc<Mutex<JoinSet<()>>>,
     pi_output_tasks: Arc<StdMutex<PiOutputTasks>>,
     session_watchers: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
@@ -95,39 +102,67 @@ struct ServerState {
     extensions_dir: Arc<std::path::PathBuf>,
 }
 
-pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
-    let extensions_dir = extensions::deploy()?;
-    eprintln!(
-        "[runtime-diagnostics] server started pid={} version={SERVER_VERSION} maxInFlight={MAX_IN_FLIGHT_REQUESTS}",
-        std::process::id()
-    );
-    let (writer_tx, mut writer_rx) = mpsc::channel::<output::QueuedOutput>(256);
-    let state = ServerState {
-        writer: ServerWriter::new(writer_tx),
-        agent_control: Arc::new(control::ControlState::default()),
-        request_slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
-        control_slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
-        search_slots: Arc::new(Semaphore::new(2)),
-        started_at: Instant::now(),
-        pi: Arc::new(Mutex::new(HashMap::new())),
-        pi_starts: Arc::new(Mutex::new(HashMap::new())),
-        pi_stops: Arc::new(Mutex::new(JoinSet::new())),
-        pi_output_tasks: Arc::new(StdMutex::new(HashMap::new())),
-        session_watchers: Arc::new(Mutex::new(HashMap::new())),
-        terminals: Arc::new(StdMutex::new(HashMap::new())),
-        login_path: Arc::new(OnceCell::new()),
-        toolchain: Arc::new(OnceCell::new()),
-        extensions_dir: Arc::new(extensions_dir),
-    };
+impl ServerState {
+    fn new(retain_pi: bool) -> io::Result<Self> {
+        let extensions_dir = extensions::deploy()?;
+        eprintln!(
+            "[runtime-diagnostics] server started pid={} version={SERVER_VERSION} maxInFlight={MAX_IN_FLIGHT_REQUESTS}",
+            std::process::id()
+        );
+        Ok(Self {
+            writer: ServerWriter::new(retain_pi),
+            retain_pi,
+            agent_control: Arc::new(control::ControlState::default()),
+            request_slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
+            control_slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
+            search_slots: Arc::new(Semaphore::new(2)),
+            started_at: Instant::now(),
+            pi: Arc::new(Mutex::new(HashMap::new())),
+            pi_starts: Arc::new(Mutex::new(HashMap::new())),
+            pi_start_sequence: Arc::new(AtomicU64::new(0)),
+            pi_stops: Arc::new(Mutex::new(JoinSet::new())),
+            pi_output_tasks: Arc::new(StdMutex::new(HashMap::new())),
+            session_watchers: Arc::new(Mutex::new(HashMap::new())),
+            terminals: Arc::new(StdMutex::new(HashMap::new())),
+            login_path: Arc::new(OnceCell::new()),
+            toolchain: Arc::new(OnceCell::new()),
+            extensions_dir: Arc::new(extensions_dir),
+        })
+    }
+}
 
+pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
+    let state = ServerState::new(false)?;
     let control_listener = control::listen(state.clone()).await?;
-    let (writer_done_tx, mut writer_done_rx) = tokio::sync::oneshot::channel();
-    let mut writer_task = tokio::spawn(async move {
-        let stdout = tokio::io::stdout();
-        let mut stdout = stdout;
+    let result = serve_connection(
+        &state,
+        tokio::io::stdin(),
+        tokio::io::stdout(),
+        std::future::pending(),
+    )
+    .await;
+    control_listener.abort();
+    cleanup(state).await;
+    result?;
+    Ok(())
+}
+
+async fn serve_connection(
+    state: &ServerState,
+    mut input: impl tokio::io::AsyncRead + Unpin,
+    mut output: impl tokio::io::AsyncWrite + Unpin + Send + 'static,
+    replaced: impl std::future::Future<Output = ()>,
+) -> io::Result<()> {
+    tokio::pin!(replaced);
+    let (writer_tx, mut writer_rx) = mpsc::channel::<output::QueuedOutput>(256);
+    state.writer.set_sender(Some(writer_tx.clone()));
+    let response_writer = state.writer.for_connection(writer_tx);
+    let (writer_done, mut writer_closed) = tokio::sync::oneshot::channel::<()>();
+    let writer_task = tokio::spawn(async move {
+        let _done = writer_done;
         while let Some(queued) = writer_rx.recv().await {
             // Keep the byte reservation until the frame has actually been written.
-            if let Err(error) = write_frame(&mut stdout, queued.message).await {
+            if let Err(error) = write_frame(&mut output, queued.message).await {
                 eprintln!(
                     "[runtime-diagnostics] server stdout failed pid={} kind={:?} error={error}",
                     std::process::id(),
@@ -136,12 +171,9 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
         }
-        let _ = writer_done_tx.send(());
     });
-
-    let stdin = tokio::io::stdin();
-    let mut stdin = stdin;
     let mut requests = JoinSet::new();
+    let mut pi_requests = JoinSet::new();
     let read_result = loop {
         while let Some(result) = requests.try_join_next() {
             if let Err(error) = result {
@@ -153,9 +185,11 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
         }
+        while pi_requests.try_join_next().is_some() {}
         let frame = tokio::select! {
-            frame = read_frame(&mut stdin) => frame,
-            _ = &mut writer_done_rx => break Ok(()),
+            _ = &mut replaced => break Ok(()),
+            _ = &mut writer_closed => break Ok(()),
+            frame = read_frame(&mut input) => frame,
         };
         let message = match frame {
             Ok(Some(message)) => message,
@@ -177,7 +211,7 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
             method.as_str(),
             "control.register" | "control.respond" | "control.revoke"
         ) {
-            let response = match dispatch(&state, &method, params, binary).await {
+            let response = match dispatch(state, &method, params, binary).await {
                 Ok(reply) => Envelope::response_with_binary(id, reply.value, reply.binary),
                 Err(error) => Envelope::error(id, "request_failed", error),
             };
@@ -218,38 +252,45 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
         // Register starts in input order, before their tasks can await probing.
-        let start_cancel = if method == "pi.start"
+        let start = if method == "pi.start"
             && let Some(stream_id) = params.get("streamId").and_then(Value::as_str)
         {
             let (cancel, cancelled) = tokio::sync::oneshot::channel();
+            let start_id = state.pi_start_sequence.fetch_add(1, Ordering::Relaxed);
             state
                 .pi_starts
                 .lock()
                 .await
-                .insert(id, (stream_id.to_owned(), cancel));
-            Some(cancelled)
+                .insert(start_id, (stream_id.to_owned(), cancel));
+            Some((start_id, cancelled))
         } else {
             None
         };
         let state = state.clone();
+        let response_writer = response_writer.clone();
+        let requests =
+            if state.retain_pi && matches!(method.as_str(), "pi.start" | "pi.send" | "pi.stop") {
+                &mut pi_requests
+            } else {
+                &mut requests
+            };
         requests.spawn(async move {
             let _permit = permit;
             let started = Instant::now();
             let stream_id = params.get("streamId").and_then(Value::as_str).map(str::to_owned);
             let rpc_id = params.pointer("/command/id").and_then(Value::as_str).map(str::to_owned);
             let operation = dispatch(&state, &method, params, binary);
-            let result = if let Some(cancelled) = start_cancel {
-                tokio::select! {
+            let result = if let Some((start_id, cancelled)) = start {
+                let result = tokio::select! {
                     biased;
                     _ = cancelled => Err("Pi stream startup cancelled".to_owned()),
                     result = operation => result,
-                }
+                };
+                state.pi_starts.lock().await.remove(&start_id);
+                result
             } else {
                 operation.await
             };
-            if method == "pi.start" {
-                state.pi_starts.lock().await.remove(&id);
-            }
             if result.is_err() || started.elapsed().as_secs() >= 5 {
                 eprintln!("[runtime-diagnostics] server request pid={} requestId={id} method={method} streamId={stream_id:?} rpcId={rpc_id:?} ok={} elapsedMs={} activeRequests={}", std::process::id(), result.is_ok(), started.elapsed().as_millis(), MAX_IN_FLIGHT_REQUESTS.saturating_sub(state.request_slots.available_permits()));
             }
@@ -257,7 +298,7 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(reply) => Envelope::response_with_binary(id, reply.value, reply.binary),
                 Err(error) => Envelope::error(id, "request_failed", error),
             };
-            if state.writer.send(response).await.is_err() {
+            if response_writer.send(response).await.is_err() {
                 eprintln!("[runtime-diagnostics] server response queue closed pid={} requestId={id} method={method}", std::process::id());
             }
         });
@@ -269,11 +310,21 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
         read_result.as_ref().err().map(std::io::Error::kind),
         requests.len()
     );
-    // Cancel pending pi.start before draining the registry, so no request can
-    // spawn a new child after shutdown cleanup has already passed it.
-    control_listener.abort();
+    state.writer.set_sender(None);
+    writer_task.abort();
+    let _ = writer_task.await;
     requests.abort_all();
     while requests.join_next().await.is_some() {}
+    // Admitted Pi writes may already have reached stdin. Let them finish once,
+    // without routing an old request ID into a replacement SSH connection.
+    pi_requests.detach_all();
+    if state.retain_pi {
+        cleanup_connection_resources(state).await;
+    }
+    read_result
+}
+
+async fn cleanup(state: ServerState) {
     state.pi_starts.lock().await.clear();
     for (_, (_, tasks)) in state
         .pi_output_tasks
@@ -311,6 +362,14 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     drop(stops);
+    cleanup_connection_resources(&state).await;
+    eprintln!(
+        "[runtime-diagnostics] server stopped pid={}",
+        std::process::id()
+    );
+}
+
+async fn cleanup_connection_resources(state: &ServerState) {
     for (_, task) in state.session_watchers.lock().await.drain() {
         task.abort();
     }
@@ -320,20 +379,6 @@ pub async fn serve_stdio() -> Result<(), Box<dyn std::error::Error>> {
             let _ = terminal.child.wait();
         }
     }
-    drop(state.writer);
-    if tokio::time::timeout(std::time::Duration::from_secs(1), &mut writer_task)
-        .await
-        .is_err()
-    {
-        writer_task.abort();
-        let _ = writer_task.await;
-    }
-    eprintln!(
-        "[runtime-diagnostics] server stopped pid={}",
-        std::process::id()
-    );
-    read_result?;
-    Ok(())
 }
 
 struct ServerReply {
@@ -398,6 +443,18 @@ async fn dispatch(
         })
         .map(ServerReply::json),
         "server.status" => server_status(state).await.map(ServerReply::json),
+        "pi.attach" if state.retain_pi => {
+            let stream = params
+                .get("streamId")
+                .and_then(Value::as_str)
+                .ok_or("streamId is required")?;
+            let processes = state.pi.lock().await;
+            Ok(ServerReply::json(
+                processes
+                    .get(stream)
+                    .map_or(Value::Null, PiProcess::attach_state),
+            ))
+        }
         "workspace.ensure_default" => environment::ensure_default_workspace(from_params(params)?)
             .await
             .map(ServerReply::json),

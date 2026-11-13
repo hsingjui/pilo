@@ -236,8 +236,9 @@ export function useRemoteChatDraftActions({
 			if (!session) return;
 			if (
 				session.projectId === activeProjectId &&
-				session.piSessionId === identifiedDraftSessionId &&
-				selectedSessionPath === null
+				(session.sessionPath === selectedSessionPath ||
+					(session.piSessionId === identifiedDraftSessionId &&
+						selectedSessionPath === null))
 			) {
 				if (isNarrow) closeMobileNavigation();
 				return;

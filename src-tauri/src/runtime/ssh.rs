@@ -48,11 +48,18 @@ pub(crate) fn ssh_base_args(target: &SshTarget) -> Result<Vec<String>, String> {
 }
 
 pub(crate) fn ssh_command(connection: &Connection) -> Result<Command, String> {
+    ssh_command_with_options(connection, &[])
+}
+
+pub(super) fn ssh_command_with_options(
+    connection: &Connection,
+    options: &[&str],
+) -> Result<Command, String> {
     let ConnectionKind::Ssh { target } = &connection.kind else {
         return Err("SSH command requires an SSH connection".to_owned());
     };
     let mut command = Command::new("ssh");
-    command.args(ssh_base_args(target)?);
+    command.args(options).args(ssh_base_args(target)?);
     if matches!(target.auth_method(), SshAuthMethod::Password) {
         super::credentials::get_ssh_password(&connection.id)?;
         let executable = std::env::current_exe().map_err(|error| {

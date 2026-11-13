@@ -1,6 +1,6 @@
 use std::{
     io::{self, Write},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use pilo_protocol::Envelope;
@@ -15,9 +15,10 @@ pub(crate) struct QueuedOutput {
 
 #[derive(Clone)]
 pub(crate) struct ServerWriter {
-    sender: mpsc::Sender<QueuedOutput>,
+    sender: Arc<Mutex<Option<mpsc::Sender<QueuedOutput>>>>,
     bytes: Arc<Semaphore>,
     runtime: tokio::runtime::Handle,
+    retain_pi: bool,
 }
 
 #[derive(Default)]
@@ -35,15 +36,46 @@ impl Write for PayloadSize {
 }
 
 impl ServerWriter {
-    pub(crate) fn new(sender: mpsc::Sender<QueuedOutput>) -> Self {
+    pub(crate) fn new(retain_pi: bool) -> Self {
         Self {
-            sender,
+            sender: Arc::new(Mutex::new(None)),
             bytes: Arc::new(Semaphore::new(OUTPUT_MAX_BYTES)),
             runtime: tokio::runtime::Handle::current(),
+            retain_pi,
+        }
+    }
+
+    pub(crate) fn set_sender(&self, sender: Option<mpsc::Sender<QueuedOutput>>) {
+        *self
+            .sender
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = sender;
+    }
+
+    pub(crate) fn for_connection(&self, sender: mpsc::Sender<QueuedOutput>) -> Self {
+        Self {
+            sender: Arc::new(Mutex::new(Some(sender))),
+            bytes: Arc::clone(&self.bytes),
+            runtime: self.runtime.clone(),
+            retain_pi: false,
         }
     }
 
     pub(crate) async fn send(&self, mut message: Envelope) -> Result<(), String> {
+        let sender = self
+            .sender
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let retain_stream = self.retain_pi
+            && matches!(&message, Envelope::Event { event, .. } if event.starts_with("pi."));
+        let Some(sender) = sender else {
+            return if retain_stream {
+                Ok(())
+            } else {
+                Err("server output is closed".to_owned())
+            };
+        };
         let (value, binary, overhead) = match &message {
             Envelope::Request {
                 method,
@@ -94,11 +126,11 @@ impl ServerWriter {
             }
         }
         // Reserve a queue slot first: waiting producers must not retain byte permits.
-        let slot = self
-            .sender
-            .reserve()
-            .await
-            .map_err(|_| "server output is closed".to_owned())?;
+        let slot = match sender.reserve().await {
+            Ok(slot) => slot,
+            Err(_) if retain_stream => return Ok(()),
+            Err(_) => return Err("server output is closed".to_owned()),
+        };
         let permit = Arc::clone(&self.bytes)
             .acquire_many_owned(bytes as u32)
             .await

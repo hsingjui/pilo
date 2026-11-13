@@ -34,8 +34,11 @@ impl RuntimeEventSink for ChatEventSink {
         if self.closed.load(Ordering::Acquire) {
             return;
         }
-        let completed_turn = matches!(&event, RuntimeEvent::AssistantMessageEnd { .. })
-            && self.active_turn.load(Ordering::Acquire);
+        let completed_turn = matches!(
+            &event,
+            RuntimeEvent::AssistantMessageEnd { .. }
+                | RuntimeEvent::PiReattached { active: false, .. }
+        ) && self.active_turn.load(Ordering::Acquire);
         match &event {
             RuntimeEvent::RuntimeLog {
                 stream: RuntimeLogStream::Stderr,
@@ -63,6 +66,13 @@ impl RuntimeEventSink for ChatEventSink {
                     .unwrap_or_else(|error| error.into_inner()) = None;
                 self.active_turn.store(true, Ordering::Release);
             }
+            RuntimeEvent::PiReattached { active, .. } => {
+                *self
+                    .pending_prompt_id
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner()) = None;
+                self.active_turn.store(*active, Ordering::Release);
+            }
             RuntimeEvent::AssistantMessageEnd { .. }
             | RuntimeEvent::RuntimeError { .. }
             | RuntimeEvent::ProcessState {
@@ -74,6 +84,9 @@ impl RuntimeEventSink for ChatEventSink {
             _ => {}
         }
         match &event {
+            RuntimeEvent::PiReattached { compacting, .. } => {
+                self.compacting.store(*compacting, Ordering::Release)
+            }
             RuntimeEvent::CompactionStart { .. } => self.compacting.store(true, Ordering::Release),
             RuntimeEvent::CompactionEnd { .. }
             | RuntimeEvent::RuntimeError { .. }

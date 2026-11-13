@@ -60,6 +60,7 @@ type UseRemoteChatTransportOptions = {
 	handleExpiredAuth: (error: unknown) => boolean;
 	setFatalError: (message: string | null) => void;
 	setResyncKey: Dispatch<SetStateAction<number>>;
+	onSessionCompleted: (projectId: string, sessionPath: string) => void;
 	setConversation: Dispatch<SetStateAction<ConversationState>>;
 	scheduleRuntimeActivityRefresh: (projectId?: string) => void;
 	refreshAllSessions: () => Promise<void>;
@@ -80,6 +81,7 @@ export function useRemoteChatTransport({
 	handleExpiredAuth,
 	setFatalError,
 	setResyncKey,
+	onSessionCompleted,
 	setConversation,
 	scheduleRuntimeActivityRefresh,
 	refreshAllSessions,
@@ -109,9 +111,7 @@ export function useRemoteChatTransport({
 					REMOTE_SEQUENCE_KEY,
 					String(message.latestSequence),
 				);
-				if (message.type === "resyncRequired") {
-					setResyncKey((value) => value + 1);
-				}
+				setResyncKey((value) => value + 1);
 				return;
 			}
 			if (message.type !== "events") return;
@@ -125,12 +125,16 @@ export function useRemoteChatTransport({
 					handleModelScopeEvent(event);
 					continue;
 				}
+				if (event.type === "session_turn_completed") {
+					onSessionCompleted(event.projectId, event.sessionPath);
+					scheduleRuntimeActivityRefresh(event.projectId);
+					continue;
+				}
 				if (
 					event.type === "sessions_indexed" ||
 					event.type === "session_index_error" ||
 					event.type === "theme_settings_changed" ||
-					event.type === "session_read_state_changed" ||
-					event.type === "session_turn_completed"
+					event.type === "session_read_state_changed"
 				)
 					continue;
 				if (event.type === "rpc_message" && isRpcResponse(event.message)) {
@@ -150,6 +154,7 @@ export function useRemoteChatTransport({
 				}
 				// Running/unread markers track every session, not just the visible one.
 				switch (event.type) {
+					case "pi_reattached":
 					case "user_message_start":
 					case "assistant_message_end":
 					case "compaction_end":
@@ -204,6 +209,17 @@ export function useRemoteChatTransport({
 					handleExtensionRequestRef.current?.(event);
 				}
 				switch (event.type) {
+					case "pi_reattached":
+						setCompacting(event.compacting);
+						setRetryState(null);
+						if (!event.active) {
+							actions.push({
+								type: "local_turn_abort",
+								timestampMs: event.timestampMs,
+							});
+						}
+						setResyncKey((value) => value + 1);
+						break;
 					case "runtime_error":
 						setCompacting(false);
 						setRetryState(null);
@@ -323,6 +339,7 @@ export function useRemoteChatTransport({
 			queuedSubmissionsRef,
 			handleExtensionRequestRef,
 			handleModelScopeEvent,
+			onSessionCompleted,
 			refreshAgentConfigRef,
 			refreshAllSessions,
 			scheduleRuntimeActivityRefresh,

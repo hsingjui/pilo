@@ -3359,6 +3359,7 @@ dependencies = [
 name = "pilo-server"
 version = "0.3.9"
 dependencies = [
+ "libc",
  "memchr",
  "notify",
  "pilo-protocol",
