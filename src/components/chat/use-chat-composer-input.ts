@@ -33,6 +33,7 @@ import { fileMentionPath } from "@/lib/chat/chat-mentions";
 import { isImeComposingKeyboardEvent } from "@/lib/ime";
 import { type PiModel, runtimeErrorMessage } from "@/lib/api/pi-runtime";
 import { usePreferences } from "@/lib/preferences-provider";
+import { useTheme } from "@/lib/theme-provider";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { keyboardEventMatchesShortcut } from "@/lib/keyboard-shortcuts";
 import { useIsTouchDevice } from "@/components/chat/chat-composer-run-config";
@@ -53,6 +54,7 @@ const SESSION_QUERY_META = {
 
 export type ChatComposerInputOptions = {
 	value: string;
+	editorKey?: string | null;
 	submissionText?: string;
 	onHistoryValue?: (value: string) => void;
 	onMentionSelect?: (suggestion: ComposerSuggestion, text: string) => void;
@@ -76,6 +78,7 @@ export type ChatComposerInputOptions = {
 
 export function useChatComposerInput({
 	value,
+	editorKey,
 	submissionText = value,
 	onHistoryValue,
 	onMentionSelect,
@@ -96,7 +99,14 @@ export function useChatComposerInput({
 	desktopShortcuts = true,
 }: ChatComposerInputOptions) {
 	const { t } = useTranslation();
-	const { sendMessageShortcut, keyboardShortcuts } = usePreferences();
+	const {
+		sendMessageShortcut,
+		keyboardShortcuts,
+		readingFontSize,
+		readingFontFamily,
+		uiFontSize,
+	} = usePreferences();
+	const { resolvedTheme, themeFamily, themeCustomCss } = useTheme();
 	const isTouch = useIsTouchDevice();
 	const newlineOnEnter = !desktopShortcuts && isTouch;
 	const editorRef = useRef<HTMLTextAreaElement>(null);
@@ -253,40 +263,72 @@ export function useChatComposerInput({
 		textarea.style.overflowY = contentHeight > maxHeight ? "auto" : "hidden";
 	}, []);
 
+	// Stream updates may re-render the composer without changing its measured text.
+	/* oxlint-disable react/exhaustive-effect-dependencies -- Text and editor changes invalidate the measurement; theme and UI scale rebind the observer to measure after provider styles apply. */
 	useLayoutEffect(() => {
 		resizeTextarea();
-	});
+	}, [editorKey, readingFontFamily, readingFontSize, resizeTextarea, value]);
 
 	useLayoutEffect(() => {
 		const textarea = editorRef.current;
-		const panel = textarea?.closest<HTMLElement>("[data-chat-panel]");
-		if (!textarea || !panel) return;
+		const wrapper = textarea?.parentElement;
+		if (!textarea || !wrapper) return;
+		const panel = textarea.closest<HTMLElement>("[data-chat-panel]");
 		const composerRegion = textarea.closest<HTMLElement>(
 			"[data-chat-composer-region]",
 		);
 		let frame: number | null = null;
-		const observer = new ResizeObserver((entries) => {
-			const panelResized = entries.some((entry) => entry.target === panel);
-			const surroundingHeight = composerRegion
-				? composerRegion.getBoundingClientRect().height -
-					textarea.getBoundingClientRect().height
-				: null;
-			// Ignore region resizes caused only by changes to the textarea height.
-			if (!panelResized && surroundingHeight === surroundingHeightRef.current)
-				return;
+		const scheduleResize = () => {
 			if (frame !== null) return;
 			frame = requestAnimationFrame(() => {
 				frame = null;
 				resizeTextarea();
 			});
+		};
+		let wrapperWidth: number | undefined;
+		const observer = new ResizeObserver((entries) => {
+			const width = entries.find((entry) => entry.target === wrapper)
+				?.contentRect.width;
+			const widthChanged = width !== undefined && width !== wrapperWidth;
+			if (width !== undefined) wrapperWidth = width;
+			const panelResized = entries.some((entry) => entry.target === panel);
+			if (!widthChanged && !panelResized) {
+				// Ignore resizes caused only by the textarea height changing.
+				if (
+					!panel ||
+					!composerRegion ||
+					!entries.some((entry) => entry.target === composerRegion)
+				)
+					return;
+				const surroundingHeight =
+					composerRegion.getBoundingClientRect().height -
+					textarea.getBoundingClientRect().height;
+				if (
+					Math.abs(surroundingHeight - (surroundingHeightRef.current ?? 0)) <
+					0.5
+				)
+					return;
+			}
+			scheduleResize();
 		});
-		observer.observe(panel);
-		if (composerRegion) observer.observe(composerRegion);
+		observer.observe(wrapper);
+		if (panel) observer.observe(panel);
+		if (panel && composerRegion) observer.observe(composerRegion);
+		document.fonts?.addEventListener("loadingdone", scheduleResize);
 		return () => {
 			observer.disconnect();
+			document.fonts?.removeEventListener("loadingdone", scheduleResize);
 			if (frame !== null) cancelAnimationFrame(frame);
 		};
-	}, [resizeTextarea]);
+	}, [
+		editorKey,
+		resizeTextarea,
+		resolvedTheme,
+		themeCustomCss,
+		themeFamily,
+		uiFontSize,
+	]);
+	/* oxlint-enable react/exhaustive-effect-dependencies */
 
 	const activeQuery = useMemo(() => {
 		const query = activeSuggestionQuery(value, Math.min(caret, value.length));

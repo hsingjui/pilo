@@ -216,6 +216,7 @@ export function ChatComposer({
 		getDraft,
 	);
 	const value = draftStore && muted ? "" : draft;
+	const editorKey = attachmentScopeKey ?? historyKey;
 	const { t } = useTranslation();
 	const composerPlaceholder = placeholder ?? t("chat.composerPlaceholder");
 	const rootRef = useRef<HTMLDivElement>(null);
@@ -366,6 +367,7 @@ export function ChatComposer({
 		onFieldChange,
 	} = useChatComposerInput({
 		value: mentionDraft.text,
+		editorKey,
 		submissionText: value,
 		onHistoryValue: changeDraft,
 		onChange: (text) =>
@@ -788,7 +790,7 @@ export function ChatComposer({
 					<div className="relative min-w-0">
 						<Textarea
 							data-chat-composer-input=""
-							key={attachmentScopeKey ?? historyKey}
+							key={editorKey}
 							ref={editorRef}
 							enterKeyHint={
 								!newlineOnEnter && sendMessageShortcut === "enter"
