@@ -92,7 +92,8 @@ jobs:
       matrix:
         include:
           - target: linux-x86_64
-            runner: ubuntu-latest
+            # Ubuntu 26.04's static glibc in the release build used AVX during startup.
+            runner: ubuntu-24.04
             rust_target: x86_64-unknown-linux-gnu
             resource: pilo-server-linux-x86_64
           - target: linux-aarch64
