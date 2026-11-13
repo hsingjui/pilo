@@ -608,6 +608,7 @@ function ChatPageImpl(props: ChatPageProps) {
 				historyLoadState={historyLoadState}
 				loadState={loadState}
 				findOpen={findOpen}
+				findPaused={workspaceActive}
 			>
 				{(
 					{
@@ -653,8 +654,9 @@ function ChatPageImpl(props: ChatPageProps) {
 								headerOverlay={emptyTemporarySession}
 							>
 								<ChatFindLayer
-									active={active && !workspaceActive}
+									active={active}
 									open={findOpen}
+									paused={workspaceActive}
 									onOpen={() => setFindOpen(true)}
 									onClose={() => setFindOpen(false)}
 									messages={searchMessages}

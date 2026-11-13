@@ -23,6 +23,7 @@ import { Button } from "@/ui";
 export function ChatFindLayer({
 	active,
 	open,
+	paused = false,
 	onOpen,
 	onClose,
 	messages,
@@ -32,6 +33,7 @@ export function ChatFindLayer({
 	children: ReactNode;
 	active: boolean;
 	open: boolean;
+	paused?: boolean;
 	onOpen: () => void;
 	onClose: () => void;
 	messages: readonly ChatMessage[];
@@ -45,6 +47,7 @@ export function ChatFindLayer({
 	const inputRef = useRef<HTMLInputElement>(null);
 	const barRef = useRef<HTMLDivElement>(null);
 	const pendingRevealRef = useRef(false);
+	const pausedSearchRef = useRef(open && paused);
 	const focusFrameRef = useRef<number | null>(null);
 
 	useKeyboardShortcut(
@@ -82,7 +85,7 @@ export function ChatFindLayer({
 				inputRef.current?.select();
 			});
 		},
-		{ enabled: active },
+		{ enabled: active && !paused },
 	);
 
 	useEffect(
@@ -130,21 +133,25 @@ export function ChatFindLayer({
 		inputRef.current?.select();
 	}, [open]);
 
-	useEffect(() => {
-		if (!open) return;
-		return clearTextHighlight;
-	}, [open]);
-
 	// 显式导航即使命中未变（只有一个结果），也要重新定位。
 	/* oxlint-disable react/exhaustive-effect-dependencies -- 使用命中键避免对象身份变化触发定位；navigationRequest 保留重复导航。 */
 	useEffect(() => {
-		if (!open) return;
-		pendingRevealRef.current = true;
-		if (activeMessageIndex !== undefined) onNavigate?.(activeMessageIndex);
+		const resuming = pausedSearchRef.current && !paused;
+		pausedSearchRef.current = open && paused;
+		if (!open || paused) {
+			pendingRevealRef.current = false;
+			return;
+		}
+		// 返回聊天标签时只刷新高亮，不重新定位旧命中。
+		if (!resuming) {
+			pendingRevealRef.current = true;
+			if (activeMessageIndex !== undefined) onNavigate?.(activeMessageIndex);
+		}
 		const raf = requestAnimationFrame(() => syncHighlight());
 		return () => cancelAnimationFrame(raf);
 	}, [
 		open,
+		paused,
 		activeKey,
 		query,
 		activeMessageIndex,
@@ -155,7 +162,7 @@ export function ChatFindLayer({
 
 	// 滚动、展开工作过程与 Markdown 异步渲染都会改变可高亮的 DOM。
 	useEffect(() => {
-		if (!open) return;
+		if (!open || paused) return;
 		let raf = 0;
 		const handleScroll = () => {
 			cancelAnimationFrame(raf);
@@ -180,8 +187,9 @@ export function ChatFindLayer({
 			cancelAnimationFrame(raf);
 			observer.disconnect();
 			window.removeEventListener("scroll", handleScroll, { capture: true });
+			clearTextHighlight();
 		};
-	}, [open, syncHighlight]);
+	}, [open, paused, syncHighlight]);
 
 	const step = (delta: number) => {
 		if (matches.length === 0) return;

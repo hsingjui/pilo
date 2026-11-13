@@ -14,6 +14,7 @@ type ChatConversationSubscriberProps = {
 	historyLoadState: "ready" | "loading" | "error";
 	loadState: "ready" | "loading" | "error";
 	findOpen: boolean;
+	findPaused: boolean;
 	children: (
 		view: ReturnType<typeof useChatConversationView>,
 		live: boolean,
@@ -36,6 +37,7 @@ export const ChatConversationSubscriber = memo(
 		historyLoadState,
 		loadState,
 		findOpen,
+		findPaused,
 		children,
 	}: ChatConversationSubscriberProps) {
 		const [live, setLive] = useState(active);
@@ -52,6 +54,7 @@ export const ChatConversationSubscriber = memo(
 			historyLoadState,
 			loadState,
 			findOpen,
+			findPaused,
 			live,
 		});
 		return children(view, live);

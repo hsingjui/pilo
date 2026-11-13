@@ -28,6 +28,7 @@ export function useChatConversationView({
 	historyLoadState,
 	loadState,
 	findOpen,
+	findPaused,
 	live = true,
 }: {
 	conversationStore: ChatConversationStore;
@@ -37,6 +38,7 @@ export function useChatConversationView({
 	historyLoadState: "ready" | "loading" | "error";
 	loadState: "ready" | "loading" | "error";
 	findOpen: boolean;
+	findPaused: boolean;
 	live?: boolean;
 }) {
 	const frozenTimelineRef = useRef(conversationStore.getTimelineSnapshot());
@@ -56,7 +58,7 @@ export function useChatConversationView({
 		getTimeline,
 		getTimeline,
 	);
-	const searchLive = live && findOpen;
+	const searchLive = live && findOpen && !findPaused;
 	const getSearch = searchLive
 		? conversationStore.getSnapshot
 		: frozenSearchSnapshot;

@@ -52,8 +52,11 @@ that row's body changes; publish the actual messages again on structural
 changes, history reconciliation, or turn completion. Keep the live row at its
 original index so Virtua's range, cache, and scroll restoration still use the
 same coordinates. The desktop's retained view freezes both subscriptions while
-hidden. Search subscribes to `getSnapshot()` while open; history, fork and
-runtime consumers still read the full snapshot.
+hidden. Search subscribes to `getSnapshot()` while open and not paused;
+history, fork and runtime consumers still read the full snapshot. File and Git
+workspace tabs pause search without changing `ChatFindLayer.open`. Returning to
+the chat refreshes highlights without focusing the find input or scrolling to
+the old match; explicit find navigation still scrolls to the selected match.
 
 The WebUI workspace hook subscribes only to a cached projection of activity,
 message count, pending users and interruption status. Keep the projection
