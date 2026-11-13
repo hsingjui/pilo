@@ -136,6 +136,14 @@ re-styling them.
   When verification is authorized, cover relative/absolute images, Windows paths,
   literal percent names, outside-project WebUI refusal, stale/invalid images,
   project switches and independent file/disclosure clicks at desktop/320px widths.
+- If a successful `read` result contains exactly one embedded image, its file
+  button opens that image directly instead of rereading the path. Each embedded
+  image in tool details also opens directly in the shared lightbox. Cover an
+  outside-project or deleted screenshot on desktop and WebUI: opening the image
+  must not issue a file read. The existing path fallback applies when there is
+  no single matching result image. For supported inline PNG/JPEG/GIF/WebP,
+  the lightbox saves the embedded bytes directly and uses their actual format
+  for the download extension; it does not offer to open them as an original.
 
 ## Large Content
 

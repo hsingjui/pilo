@@ -24,6 +24,7 @@ import {
 } from "@/lib/chat/chat-image-media";
 import {
 	formatChatImageSize,
+	resolveChatImageMimeType,
 	type ChatConversationImage,
 } from "@/lib/chat/chat-submission";
 import { isImeComposingNativeKeyboardEvent } from "@/lib/ime";
@@ -169,10 +170,25 @@ function useChatImageLightboxState() {
 	);
 }
 
+function lightboxDownloadName({ url, name }: ChatImageLightboxPayload) {
+	if (url.startsWith("blob:")) return name || "image";
+	const inlineMimeType = /^data:(image\/[a-z0-9.+-]+);base64,/i.exec(url)?.[1];
+	if (!inlineMimeType) return undefined;
+	const mimeType = resolveChatImageMimeType({ name: "", type: inlineMimeType });
+	if (!mimeType) return undefined;
+	if (
+		name.includes(".") &&
+		resolveChatImageMimeType({ name, type: "" }) === mimeType
+	)
+		return name;
+	// Pi can convert the image, so the download must use the result's format.
+	return `${name.replace(/\.[^.]+$/, "") || "image"}.${mimeType.slice("image/".length)}`;
+}
+
 export const ChatImageLightbox = memo(function ChatImageLightbox() {
 	const { t } = useTranslation();
 	const state = useChatImageLightboxState();
-	const downloadable = state?.url.startsWith("blob:") ?? false;
+	const downloadName = state ? lightboxDownloadName(state) : undefined;
 	return (
 		<DialogPrimitive.Root
 			open={state !== null}
@@ -200,18 +216,18 @@ export const ChatImageLightbox = memo(function ChatImageLightbox() {
 									{formatChatImageSize(state.size)}
 								</span>
 							) : null}
-							{state ? (
+							{state && (downloadName || !state.url.startsWith("data:")) ? (
 								<a
 									href={state.url}
-									download={downloadable ? state.name || "image" : undefined}
-									target={downloadable ? undefined : "_blank"}
-									rel={downloadable ? undefined : "noopener noreferrer"}
+									download={downloadName}
+									target={downloadName ? undefined : "_blank"}
+									rel={downloadName ? undefined : "noopener noreferrer"}
 									className="inline-flex size-9 items-center justify-center rounded-md text-white/80 transition-colors hover:bg-white/15 hover:text-white any-pointer-coarse:size-11"
 									aria-label={t(
-										downloadable ? "chat.saveImage" : "chat.openOriginalImage",
+										downloadName ? "chat.saveImage" : "chat.openOriginalImage",
 									)}
 								>
-									{downloadable ? (
+									{downloadName ? (
 										<Download className="size-4" />
 									) : (
 										<ExternalLink className="size-4" />

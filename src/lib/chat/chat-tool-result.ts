@@ -58,11 +58,38 @@ function structuredTextOutput(text: string) {
 	}
 }
 
+type ToolResultImage = { data: string; mimeType: string };
+
+function isToolResultImage(block: unknown): block is ToolResultImage {
+	return (
+		isRecord(block) &&
+		block.type === "image" &&
+		typeof block.data === "string" &&
+		typeof block.mimeType === "string" &&
+		block.mimeType.startsWith("image/")
+	);
+}
+
+export function singleToolResultImage(result: unknown): ToolResultImage | null {
+	if (!isRecord(result) || !Array.isArray(result.content)) return null;
+	let image: ToolResultImage | null = null;
+	for (const block of result.content) {
+		if (!isToolResultImage(block)) continue;
+		if (image) return null;
+		image = block;
+	}
+	return image;
+}
+
+export function toolResultImageUrl(image: ToolResultImage) {
+	return `data:${image.mimeType};base64,${image.data}`;
+}
+
 export function flattenToolResult(result: ReturnType<typeof resultContent>) {
 	const text: string[] = [];
 	const metadataOutput = structuredToolOutput(result.metadata);
 	const structuredOutputs = metadataOutput ? [metadataOutput] : [];
-	const images: Array<{ data: string; mimeType: string; key: string }> = [];
+	const images: Array<ToolResultImage & { key: string }> = [];
 	const imageOccurrences = new Map<string, number>();
 
 	for (const block of result.blocks) {
@@ -80,13 +107,7 @@ export function flattenToolResult(result: ReturnType<typeof resultContent>) {
 			else text.push(blockText);
 			continue;
 		}
-		if (
-			isRecord(block) &&
-			block.type === "image" &&
-			typeof block.data === "string" &&
-			typeof block.mimeType === "string" &&
-			block.mimeType.startsWith("image/")
-		) {
+		if (isToolResultImage(block)) {
 			const baseKey = `${block.mimeType}:${block.data.length}:${block.data.slice(0, 32)}`;
 			const occurrence = (imageOccurrences.get(baseKey) ?? 0) + 1;
 			imageOccurrences.set(baseKey, occurrence);

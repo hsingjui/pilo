@@ -17,6 +17,7 @@ import {
 	Wrench,
 } from "lucide-react";
 
+import { openChatImageLightbox } from "@/components/chat/chat-image-viewer";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import { ChatTodoList } from "@/components/chat/chat-todo-capsule";
 import { toggleChatExpansionWithAnchor } from "@/components/chat/chat-expansion-anchor";
@@ -35,9 +36,11 @@ import {
 	isRecord,
 	keyedDiffLines,
 	resultContent,
+	singleToolResultImage,
 	toolEditDiff,
 	toolFilePath,
 	toolPreview,
+	toolResultImageUrl,
 } from "@/lib/chat/chat-tool-result";
 import {
 	countChatTodos,
@@ -406,14 +409,25 @@ function ToolDetail({
 			) : null}
 			{diff
 				? null
-				: images.map((image) => (
-						<img
-							key={image.key}
-							src={`data:${image.mimeType};base64,${image.data}`}
-							alt={t("chat.toolResultImage")}
-							className="max-h-80 max-w-full rounded-md object-contain outline-1 outline-black/10 dark:outline-white/10"
-						/>
-					))}
+				: images.map((image) => {
+						const url = toolResultImageUrl(image);
+						const name = t("chat.toolResultImage");
+						return (
+							<button
+								key={image.key}
+								type="button"
+								aria-label={t("chat.viewImage", { name })}
+								onClick={() => openChatImageLightbox({ url, name })}
+								className="block max-w-full cursor-zoom-in rounded-md focus-visible:outline-2 focus-visible:outline-ring any-pointer-coarse:min-h-11 any-pointer-coarse:min-w-11"
+							>
+								<img
+									src={url}
+									alt={name}
+									className="max-h-80 max-w-full rounded-md object-contain outline-1 outline-black/10 dark:outline-white/10"
+								/>
+							</button>
+						);
+					})}
 		</div>
 	);
 }
@@ -433,10 +447,14 @@ function ToolCallActivityView({
 	const preview = toolPreview(activity);
 	const filePath = toolFilePath(activity);
 	const toolName = activity.toolName.toLowerCase();
+	const readImage =
+		toolName === "read" && !running && !activity.isError && filePath
+			? singleToolResultImage(activity.result)
+			: null;
 	const openablePath =
 		(toolName === "read" || toolName === "write" || toolName === "edit") &&
 		filePath &&
-		fileOpener?.canOpenFile(filePath)
+		(readImage || fileOpener?.canOpenFile(filePath))
 			? filePath
 			: null;
 	const skillName =
@@ -498,7 +516,16 @@ function ToolCallActivityView({
 							type="button"
 							className="relative z-10 inline-flex min-w-0 shrink cursor-pointer items-center rounded-sm bg-muted/50 px-1 font-mono text-[length:var(--pilo-code-font-size)] font-normal text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
 							aria-label={t("chat.openFile", { path: openablePath })}
-							onClick={() => fileOpener?.openFile(openablePath)}
+							onClick={() => {
+								if (readImage) {
+									openChatImageLightbox({
+										url: toolResultImageUrl(readImage),
+										name: fileBasename(openablePath),
+									});
+									return;
+								}
+								fileOpener?.openFile(openablePath);
+							}}
 						>
 							<span className="min-w-0 truncate">{previewLabel}</span>
 						</button>
