@@ -378,12 +378,8 @@ fn windows_paths_equal(left: &Path, right: &Path) -> bool {
     let left = left.canonicalize().unwrap_or_else(|_| left.to_path_buf());
     let right = right.canonicalize().unwrap_or_else(|_| right.to_path_buf());
     left.to_string_lossy()
-        .trim_end_matches(|character| character == '\\' || character == '/')
-        .eq_ignore_ascii_case(
-            right
-                .to_string_lossy()
-                .trim_end_matches(|character| character == '\\' || character == '/'),
-        )
+        .trim_end_matches(['\\', '/'])
+        .eq_ignore_ascii_case(right.to_string_lossy().trim_end_matches(['\\', '/']))
 }
 
 #[cfg(windows)]
@@ -589,7 +585,7 @@ fn command_args(command: &[u8]) -> Vec<String> {
     let mut backslashes = 0;
 
     let push_backslashes = |current: &mut Vec<u8>, count: usize| {
-        current.extend(std::iter::repeat(b'\\').take(count));
+        current.extend(std::iter::repeat_n(b'\\', count));
     };
     let push_argument = |args: &mut Vec<String>, current: &mut Vec<u8>| {
         if !current.is_empty() {
