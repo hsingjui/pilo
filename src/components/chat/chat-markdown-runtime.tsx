@@ -37,6 +37,8 @@ const MARKDOWN_MERMAID_PLUGIN = createMarkdownMermaidPlugin();
 const MARKDOWN_CATCH_UP_CHUNK_CHARS = 2_000;
 const MARKDOWN_CATCH_UP_THRESHOLD_CHARS = 4_000;
 const MARKDOWN_CATCH_UP_INTERVAL_MS = 50;
+const LONG_STREAMING_MARKDOWN_CHARS = 16_000;
+const LONG_STREAMING_MARKDOWN_INTERVAL_MS = 180;
 const MAX_ANIMATED_STREAMING_CHARS = 64 * 1024;
 type MarkdownMathPlugin = NonNullable<PluginConfig["math"]>;
 let cachedMathPlugin: MarkdownMathPlugin | null = null;
@@ -78,9 +80,9 @@ function markdownCatchUpSlice(value: string, end: number) {
 /**
  * A hidden running session can accumulate tens of thousands of characters while
  * its visual snapshot is frozen. Reconnecting that source in one React commit
- * turns session switching into a multi-second DOM mount. Reveal the append-only
- * backlog in bounded animation-frame chunks instead; ordinary streaming deltas
- * are normally smaller than one chunk and incur only a single-frame handoff.
+ * turns session switching into a multi-second DOM mount. Reveal append-only
+ * backlog in bounded chunks. Also coalesce ordinary deltas once the rendered
+ * Markdown is long enough for each resize to be expensive.
  */
 type MarkdownPresentationBoundaryProps = {
 	text: string;
@@ -91,8 +93,8 @@ type MarkdownPresentationBoundaryProps = {
 
 type MarkdownPresentationBoundaryState = {
 	sourceText: string;
+	sourceStreaming: boolean;
 	presentedText: string;
-	catchingUp: boolean;
 };
 
 class MarkdownPresentationBoundary extends Component<
@@ -101,118 +103,106 @@ class MarkdownPresentationBoundary extends Component<
 > {
 	state: MarkdownPresentationBoundaryState = {
 		sourceText: this.props.text,
+		sourceStreaming: this.props.isStreaming,
 		presentedText: this.props.text,
-		catchingUp: false,
 	};
 
-	private frame: number | null = null;
-	private lastCatchUpCommitAt = Number.NEGATIVE_INFINITY;
+	private timer: number | null = null;
+	private lastPresentationCommitAt = Number.NEGATIVE_INFINITY;
 
 	static getDerivedStateFromProps(
 		props: MarkdownPresentationBoundaryProps,
 		state: MarkdownPresentationBoundaryState,
 	): Partial<MarkdownPresentationBoundaryState> | null {
-		if (props.text === state.sourceText) return null;
-		if (state.catchingUp) {
-			if (props.text.startsWith(state.presentedText)) {
-				return { sourceText: props.text };
-			}
-			return {
-				sourceText: props.text,
-				presentedText: props.text,
-				catchingUp: false,
-			};
-		}
+		if (
+			props.text === state.sourceText &&
+			props.isStreaming === state.sourceStreaming
+		)
+			return null;
 
-		const appendOnly = props.text.startsWith(state.sourceText);
-		const backlogChars = props.text.length - state.sourceText.length;
-		if (appendOnly && backlogChars > MARKDOWN_CATCH_UP_THRESHOLD_CHARS) {
-			return {
-				sourceText: props.text,
-				presentedText: state.sourceText,
-				catchingUp: true,
-			};
-		}
+		const finished = state.sourceStreaming && !props.isStreaming;
+		const backlogChars = props.text.length - state.presentedText.length;
+		const largeBacklog = backlogChars > MARKDOWN_CATCH_UP_THRESHOLD_CHARS;
+		const longStream =
+			props.isStreaming &&
+			state.presentedText.length >= LONG_STREAMING_MARKDOWN_CHARS;
+		const deferAppend =
+			(largeBacklog ||
+				(!finished && (longStream || state.sourceText !== state.presentedText))) &&
+			props.text.startsWith(state.presentedText);
 		return {
 			sourceText: props.text,
-			presentedText: props.text,
-			catchingUp: false,
+			sourceStreaming: props.isStreaming,
+			// Flush small final deltas, but keep large background backlogs bounded.
+			presentedText: deferAppend ? state.presentedText : props.text,
 		};
 	}
 
 	componentDidMount() {
-		this.scheduleCatchUp();
+		this.lastPresentationCommitAt = performance.now();
+		this.schedulePresentation();
 	}
 
-	componentDidUpdate() {
-		this.scheduleCatchUp();
+	componentDidUpdate(
+		_previousProps: MarkdownPresentationBoundaryProps,
+		previousState: MarkdownPresentationBoundaryState,
+	) {
+		if (this.state.presentedText !== previousState.presentedText)
+			this.lastPresentationCommitAt = performance.now();
+		this.schedulePresentation();
 	}
 
 	componentWillUnmount() {
-		if (this.frame !== null) cancelAnimationFrame(this.frame);
+		this.cancelPresentation();
 	}
 
-	private scheduleCatchUp() {
-		if (!this.state.catchingUp) {
-			if (this.frame !== null) {
-				cancelAnimationFrame(this.frame);
-				this.frame = null;
-			}
-			this.lastCatchUpCommitAt = Number.NEGATIVE_INFINITY;
+	private cancelPresentation() {
+		if (this.timer === null) return;
+		window.clearTimeout(this.timer);
+		this.timer = null;
+	}
+
+	private schedulePresentation() {
+		const { presentedText, sourceText } = this.state;
+		if (presentedText === sourceText) {
+			this.cancelPresentation();
 			return;
 		}
-		if (this.frame !== null) return;
+		if (this.timer !== null) return;
 
-		// Backlog reveal is presentation work too. Advancing on every animation
-		// frame can drive a growing Virtua row through synchronous ResizeObserver
-		// measurement at ~60 Hz, which is faster than normal active streaming.
-		// Keep the first chunk responsive, then cap subsequent catch-up commits at
-		// the fastest normal presentation cadence (20 fps).
-		const advance = (timestamp: number) => {
-			if (!this.state.catchingUp) {
-				this.frame = null;
-				this.lastCatchUpCommitAt = Number.NEGATIVE_INFINITY;
-				return;
-			}
-			if (
-				timestamp - this.lastCatchUpCommitAt <
-				MARKDOWN_CATCH_UP_INTERVAL_MS
-			) {
-				this.frame = requestAnimationFrame(advance);
-				return;
-			}
-
-			this.frame = null;
-			this.lastCatchUpCommitAt = timestamp;
+		const interval =
+			this.props.isStreaming &&
+			presentedText.length >= LONG_STREAMING_MARKDOWN_CHARS &&
+			sourceText.length - presentedText.length <=
+				MARKDOWN_CATCH_UP_THRESHOLD_CHARS
+				? LONG_STREAMING_MARKDOWN_INTERVAL_MS
+				: MARKDOWN_CATCH_UP_INTERVAL_MS;
+		const delay = Math.max(
+			0,
+			interval - (performance.now() - this.lastPresentationCommitAt),
+		);
+		this.timer = window.setTimeout(() => {
+			this.timer = null;
 			this.setState((state) => {
-				const sourceText = this.props.text;
-				if (!sourceText.startsWith(state.presentedText)) {
-					return {
-						sourceText,
-						presentedText: sourceText,
-						catchingUp: false,
-					};
-				}
-				const presentedText = markdownCatchUpSlice(
-					sourceText,
-					state.presentedText.length + MARKDOWN_CATCH_UP_CHUNK_CHARS,
-				);
+				if (state.presentedText === state.sourceText) return null;
 				return {
-					sourceText,
-					presentedText,
-					catchingUp: presentedText !== sourceText,
+					presentedText: markdownCatchUpSlice(
+						state.sourceText,
+						state.presentedText.length + MARKDOWN_CATCH_UP_CHUNK_CHARS,
+					),
 				};
 			});
-		};
-
-		this.frame = requestAnimationFrame(advance);
+		}, delay);
 	}
 
 	render() {
 		return (
 			<ChatMarkdownBody
 				text={this.state.presentedText}
-				presentationLagging={this.state.catchingUp}
+				presentationLagging={
+					!this.props.isStreaming &&
+					this.state.presentedText !== this.state.sourceText
+				}
 				isStreaming={this.props.isStreaming}
 				className={this.props.className}
 				sourceLines={this.props.sourceLines}
