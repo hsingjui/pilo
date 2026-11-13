@@ -128,7 +128,8 @@ class MarkdownPresentationBoundary extends Component<
 			state.presentedText.length >= LONG_STREAMING_MARKDOWN_CHARS;
 		const deferAppend =
 			(largeBacklog ||
-				(!finished && (longStream || state.sourceText !== state.presentedText))) &&
+				(!finished &&
+					(longStream || state.sourceText !== state.presentedText))) &&
 			props.text.startsWith(state.presentedText);
 		return {
 			sourceText: props.text,

@@ -53,10 +53,15 @@ export function useNextPrompt({ draftStore, ...options }: Options) {
 		return draftStore.subscribe((previous) => {
 			const draft = draftStore.getSnapshot();
 			if (Boolean(previous) === Boolean(draft)) return;
-			const { options, config } = latestRef.current;
+			const { options: latestOptions, config: latestConfig } =
+				latestRef.current;
 			// Invalidate predictions without making the page a draft subscriber.
-			if (options.connected !== false)
-				cache.update({ ...options, draft }, config.settings, config.saving);
+			if (latestOptions.connected !== false)
+				cache.update(
+					{ ...latestOptions, draft },
+					latestConfig.settings,
+					latestConfig.saving,
+				);
 		});
 	}, [cache, draftStore]);
 	useEffect(() => () => cache.clear("view_unmounted"), [cache]);

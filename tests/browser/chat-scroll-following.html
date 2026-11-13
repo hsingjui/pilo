@@ -109,7 +109,9 @@
 								text: "",
 								content: [...content],
 								streaming: !finished,
-								...(finished ? { errorMessage: "Final error.\n".repeat(6) } : {}),
+								...(finished
+									? { errorMessage: "Final error.\n".repeat(6) }
+									: {}),
 							},
 						],
 					});
@@ -209,7 +211,9 @@
 								updateReply(content);
 								await settle();
 								const viewport = runtimeScrollRef.current;
-								const buttons = viewport.querySelectorAll("button.group\\/tool");
+								const buttons = viewport.querySelectorAll(
+									"button.group\\/tool",
+								);
 								const lastTool = buttons[buttons.length - 1];
 								// Expanding a tool yields follow ownership to the disclosure anchor.
 								sampling = false;
