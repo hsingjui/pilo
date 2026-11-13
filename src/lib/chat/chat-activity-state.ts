@@ -316,20 +316,27 @@ export function upsertToolContent(
 	return next;
 }
 
-export type AssistantStreamingState = "starting" | "thinking" | "processing";
+export type AssistantPendingStatus = "starting" | "sending";
+export type AssistantStreamingState =
+	| AssistantPendingStatus
+	| "waitingResponse"
+	| "thinking"
+	| "processing";
 
 export function getAssistantStreamingState({
 	text,
 	activity,
 	streaming,
+	emptyState = "starting",
 }: {
 	text: string;
 	activity?: AssistantActivity[];
 	streaming?: boolean;
+	emptyState?: AssistantPendingStatus | "waitingResponse" | null;
 }): AssistantStreamingState | null {
 	if (!streaming) return null;
 	const items = activity ?? [];
-	if (!text && items.length === 0) return "starting";
+	if (!text && items.length === 0) return emptyState;
 	if (
 		items.some((item) => item.type === "thinking" && item.status === "running")
 	) {

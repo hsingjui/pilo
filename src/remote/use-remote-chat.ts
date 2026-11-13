@@ -710,112 +710,127 @@ export function useRemoteChat({
 		startDraft();
 	}, [selectedSession, selectedSessionPath, startDraft]);
 
-	const ensureDraftRuntime = useCallback(async () => {
-		if (sessionHeaderMissing) throw new Error(t("chat.sessionHeaderMissing"));
-		if (draftConfigPending)
-			throw new Error(draftConfigError ?? t("common.loading"));
-		if (!client || !activeProjectId || !activeSessionKey)
-			throw new Error("Choose a project first");
-		const targetSessionKey = activeSessionKey;
-		const isActiveSession = () =>
-			activeSessionKeyRef.current === targetSessionKey;
-		const targetRpc = <T>(command: Record<string, unknown>) =>
-			rpcForSession<T>(targetSessionKey, command);
-		const runtime = runtimeReady
-			? await client.chatState(targetSessionKey)
-			: null;
-		if (runtime?.snapshot.state === "running" && runtime.initialized) {
+	const runtimeReadyInSnapshot = chatSessions.some(
+		(runtime) =>
+			runtime.sessionKey === activeSessionKey &&
+			runtime.snapshot.state === "running" &&
+			runtime.initialized,
+	);
+	const ensureDraftRuntime = useCallback(
+		async (onStart?: () => void) => {
+			if (sessionHeaderMissing) throw new Error(t("chat.sessionHeaderMissing"));
+			if (draftConfigPending)
+				throw new Error(draftConfigError ?? t("common.loading"));
+			if (!client || !activeProjectId || !activeSessionKey)
+				throw new Error("Choose a project first");
+			const targetSessionKey = activeSessionKey;
+			const isActiveSession = () =>
+				activeSessionKeyRef.current === targetSessionKey;
+			const targetRpc = <T>(command: Record<string, unknown>) =>
+				rpcForSession<T>(targetSessionKey, command);
+			const runtime = runtimeReady
+				? await client.chatState(targetSessionKey)
+				: null;
+			if (runtime?.snapshot.state === "running" && runtime.initialized) {
+				if (draftTemporary && !isActiveSession()) {
+					throw new Error("temporary session is closing");
+				}
+				if (!agentState || (!selectedSession && !identifiedDraftSessionId)) {
+					const state = await targetRpc<PiAgentState>({ type: "get_state" });
+					if (isActiveSession()) {
+						setAgentState(state);
+						if (!selectedSession) identifyDraftSession(state);
+					}
+				}
+				return;
+			}
+			// On cold startup, use the cached snapshot only for the indicator.
+			if (runtimeReady || !runtimeReadyInSnapshot) onStart?.();
+			await client
+				.startChat({
+					projectId: activeProjectId,
+					sessionKey: targetSessionKey,
+					sessionPath:
+						selectedSession?.sessionPath ??
+						(identifiedDraftSessionId ? agentState?.sessionFile : undefined),
+					noSession: draftTemporary,
+				})
+				.catch((error: unknown) => {
+					if (
+						isActiveSession() &&
+						error instanceof Error &&
+						error.message.includes("read-only observer mode")
+					) {
+						setReadOnly(true);
+					}
+					throw error;
+				})
+				.finally(async () => {
+					// Leaving while startup is pending can precede creation of the runtime.
+					if (draftTemporary && !isActiveSession()) {
+						await client
+							.stopChat(targetSessionKey, "temporary_start_abandoned")
+							.catch((error) => {
+								console.warn(
+									"Failed to stop abandoned temporary startup",
+									error,
+								);
+							});
+					}
+				});
 			if (draftTemporary && !isActiveSession()) {
 				throw new Error("temporary session is closing");
 			}
-			if (!agentState || (!selectedSession && !identifiedDraftSessionId)) {
-				const state = await targetRpc<PiAgentState>({ type: "get_state" });
-				if (isActiveSession()) {
-					setAgentState(state);
-					if (!selectedSession) identifyDraftSession(state);
-				}
+			// Carry the draft run-config onto the freshly started session, matching the
+			// Desktop `prepareRuntimeConfiguration` step for new chats. Selected sessions
+			// keep whatever model Pi already restored.
+			const isNewDraft = !selectedSession && !identifiedDraftSessionId;
+			if (isNewDraft && initialDraftModel) {
+				await targetRpc<PiModel>({
+					type: "set_model",
+					provider: initialDraftModel.provider,
+					modelId: initialDraftModel.id,
+				});
 			}
-			return;
-		}
-		await client
-			.startChat({
-				projectId: activeProjectId,
-				sessionKey: targetSessionKey,
-				sessionPath:
-					selectedSession?.sessionPath ??
-					(identifiedDraftSessionId ? agentState?.sessionFile : undefined),
-				noSession: draftTemporary,
-			})
-			.catch((error: unknown) => {
-				if (
-					isActiveSession() &&
-					error instanceof Error &&
-					error.message.includes("read-only observer mode")
-				) {
-					setReadOnly(true);
-				}
-				throw error;
-			})
-			.finally(async () => {
-				// Leaving while startup is pending can precede creation of the runtime.
-				if (draftTemporary && !isActiveSession()) {
-					await client
-						.stopChat(targetSessionKey, "temporary_start_abandoned")
-						.catch((error) => {
-							console.warn("Failed to stop abandoned temporary startup", error);
-						});
-				}
-			});
-		if (draftTemporary && !isActiveSession()) {
-			throw new Error("temporary session is closing");
-		}
-		// Carry the draft run-config onto the freshly started session, matching the
-		// Desktop `prepareRuntimeConfiguration` step for new chats. Selected sessions
-		// keep whatever model Pi already restored.
-		const isNewDraft = !selectedSession && !identifiedDraftSessionId;
-		if (isNewDraft && initialDraftModel) {
-			await targetRpc<PiModel>({
-				type: "set_model",
-				provider: initialDraftModel.provider,
-				modelId: initialDraftModel.id,
-			});
-		}
-		if (isNewDraft && initialDraftThinkingLevel) {
-			await targetRpc<void>({
-				type: "set_thinking_level",
-				level: initialDraftThinkingLevel,
-			});
-		}
-		// Hydrate real state before callers mutate model/thinking settings.
-		const state = await targetRpc<PiAgentState>({ type: "get_state" });
-		if (isActiveSession()) {
-			setRuntimeReady(true);
-			setAgentState(state);
-			if (!selectedSession) identifyDraftSession(state);
-		}
-		window.setTimeout(() => {
-			if (isActiveSession()) void refreshAgentConfig();
-		}, 50);
-	}, [
-		activeProjectId,
-		activeSessionKey,
-		agentState,
-		client,
-		draftConfigError,
-		draftConfigPending,
-		initialDraftModel,
-		initialDraftThinkingLevel,
-		draftTemporary,
-		identifiedDraftSessionId,
-		identifyDraftSession,
-		refreshAgentConfig,
-		rpcForSession,
-		runtimeReady,
-		setAgentState,
-		selectedSession,
-		sessionHeaderMissing,
-		t,
-	]);
+			if (isNewDraft && initialDraftThinkingLevel) {
+				await targetRpc<void>({
+					type: "set_thinking_level",
+					level: initialDraftThinkingLevel,
+				});
+			}
+			// Hydrate real state before callers mutate model/thinking settings.
+			const state = await targetRpc<PiAgentState>({ type: "get_state" });
+			if (isActiveSession()) {
+				setRuntimeReady(true);
+				setAgentState(state);
+				if (!selectedSession) identifyDraftSession(state);
+			}
+			window.setTimeout(() => {
+				if (isActiveSession()) void refreshAgentConfig();
+			}, 50);
+		},
+		[
+			activeProjectId,
+			activeSessionKey,
+			agentState,
+			client,
+			draftConfigError,
+			draftConfigPending,
+			initialDraftModel,
+			initialDraftThinkingLevel,
+			draftTemporary,
+			identifiedDraftSessionId,
+			identifyDraftSession,
+			refreshAgentConfig,
+			rpcForSession,
+			runtimeReady,
+			runtimeReadyInSnapshot,
+			setAgentState,
+			selectedSession,
+			sessionHeaderMissing,
+			t,
+		],
+	);
 
 	const refreshActiveAgentConfig = useCallback(
 		async (liveRuntime = true) => {

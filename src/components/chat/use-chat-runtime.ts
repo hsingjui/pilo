@@ -272,6 +272,15 @@ export function useChatRuntime({
 				throw new Error(t("errors.piEventChannel"));
 			}
 			await subscription;
+			const runtime = await client.state().catch(() => null);
+			if (activeTurnRef.current !== turn) return;
+			if (!runtime?.initialized || runtime.snapshot.state !== "running") {
+				dispatchConversation(turn.sessionId, {
+					type: "local_assistant_status",
+					clientMessageId,
+					status: "starting",
+				});
+			}
 			const snapshot = await client.ensure();
 			if (activeTurnRef.current !== turn) return;
 			runtimeGenerationRef.current = snapshot.generation;
@@ -286,6 +295,11 @@ export function useChatRuntime({
 			await prepareRuntimeConfiguration(agentState);
 			if (activeTurnRef.current !== turn) return;
 			turn.promptSent = true;
+			dispatchConversation(turn.sessionId, {
+				type: "local_assistant_status",
+				clientMessageId,
+				status: "sending",
+			});
 			const promptResult = client
 				.sendPiPrompt(submission.text, submission.images)
 				.catch((error: unknown) => {
@@ -307,6 +321,12 @@ export function useChatRuntime({
 				.catch(() => undefined);
 			const result = await promptResult;
 			if (activeTurnRef.current !== turn) return;
+			if (!result?.disposition || result.disposition === "started") {
+				dispatchConversation(turn.sessionId, {
+					type: "local_assistant_status",
+					clientMessageId,
+				});
+			}
 			if (result?.disposition === "handled") {
 				const runtime = await client.state();
 				if (activeTurnRef.current !== turn) return;
@@ -402,6 +422,7 @@ export function useChatRuntime({
 					type: "local_assistant_pending",
 					timestampMs: submittedAtMs,
 					replyRunwayPx,
+					pendingStatus: null,
 				},
 			]);
 			if (!preserveDraft) clearDraft();

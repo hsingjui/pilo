@@ -19,6 +19,30 @@ import { i18n } from "../../i18n/index.ts";
 
 type AssistantMessage = Extract<ChatMessage, { role: "assistant" }>;
 
+function setAssistantPendingStatus(
+	state: ConversationState,
+	status: AssistantMessage["pendingStatus"],
+): ConversationState {
+	const id = state.active?.assistantMessageId;
+	if (!id) return state;
+	const lastIndex = state.messages.length - 1;
+	const index =
+		state.messages[lastIndex]?.id === id
+			? lastIndex
+			: state.messages.findIndex((message) => message.id === id);
+	const message = state.messages[index];
+	if (
+		message?.role !== "assistant" ||
+		message.pendingStatus === undefined ||
+		message.pendingStatus === status
+	) {
+		return state;
+	}
+	const messages = state.messages.slice();
+	messages[index] = { ...message, pendingStatus: status };
+	return { ...state, messages };
+}
+
 export function createConversationState(
 	messages: ChatMessage[] = [],
 ): ConversationState {
@@ -178,6 +202,7 @@ function endTurn(
 					},
 		),
 		streaming: false,
+		...(current.pendingStatus !== undefined && { pendingStatus: undefined }),
 		workDurationMs:
 			completion === "continued" ||
 			startedAt === undefined ||
@@ -282,6 +307,7 @@ function reduceConversationAction(
 						? state.messages
 						: [...state.messages, message],
 				active: {
+					localClientMessageId: action.clientMessageId,
 					turnStartedAtMs: action.timestampMs,
 					assistantUpdatedAtMs: action.timestampMs,
 					firstRuntimeUserSeen: false,
@@ -338,7 +364,15 @@ function reduceConversationAction(
 				...message,
 				streaming: true,
 				replyRunwayPx: action.replyRunwayPx,
+				...(action.pendingStatus !== undefined && {
+					pendingStatus: action.pendingStatus,
+				}),
 			}));
+		case "local_assistant_status":
+			// The echo queue can still contain a submission that was cancelled locally.
+			return state.active?.localClientMessageId === action.clientMessageId
+				? setAssistantPendingStatus(state, action.status)
+				: state;
 		case "local_turn_abort":
 			return endTurn(state, context, "aborted", null, action.timestampMs);
 		case "conversation_runtime_error":
@@ -478,7 +512,7 @@ function reduceConversationAction(
 						}
 					}
 					next = {
-						...next,
+						...setAssistantPendingStatus(next, undefined),
 						active: {
 							...next.active,
 							turnStartedAtMs: startedAtMs,
@@ -526,7 +560,10 @@ function reduceConversationAction(
 				state,
 				context,
 				action.timestampMs,
-				(message) => message,
+				(message) =>
+					message.pendingStatus === undefined
+						? message
+						: { ...message, pendingStatus: undefined },
 			);
 			return {
 				...next,

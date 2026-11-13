@@ -199,6 +199,10 @@ export const AssistantMessage = memo(function AssistantMessage({
 		text: message.text,
 		activity,
 		streaming: message.streaming,
+		emptyState:
+			message.pendingStatus === undefined
+				? "waitingResponse"
+				: message.pendingStatus,
 	});
 	const streamingLabel = streamingState ? t(`chat.${streamingState}`) : null;
 	const hasWorkActivity = activity.length > 0;
@@ -295,16 +299,16 @@ export const AssistantMessage = memo(function AssistantMessage({
 								: visibleErrorMessage}
 						</div>
 					) : null}
-					{streamingLabel || message.stopReason === "aborted" ? (
+					{message.streaming || message.stopReason === "aborted" ? (
 						<div
 							className="mt-1 flex min-h-6 items-center gap-1 text-muted-foreground"
 							data-chat-streaming-status={streamingLabel ? "" : undefined}
 						>
 							{streamingLabel ? (
 								<ChatAgentActivityIndicator label={streamingLabel} />
-							) : (
+							) : message.stopReason === "aborted" ? (
 								<span className="text-2xs">{t("chat.stopped")}</span>
-							)}
+							) : null}
 						</div>
 					) : // 错误回合同样要能看到已上报的用量：不再排除 visibleErrorMessage。
 					!message.streaming &&

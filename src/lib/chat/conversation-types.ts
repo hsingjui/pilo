@@ -1,6 +1,9 @@
 import type { TokenUsage } from "@/lib/api/token-usage";
 import type { AssistantActivity } from "@/components/chat/chat-activity";
-import type { AssistantContentItem } from "@/lib/chat/chat-activity-state";
+import type {
+	AssistantContentItem,
+	AssistantPendingStatus,
+} from "@/lib/chat/chat-activity-state";
 import type { ChatConversationImage } from "@/lib/chat/chat-submission";
 
 export type ChatMessage =
@@ -24,6 +27,8 @@ export type ChatMessage =
 			content?: AssistantContentItem[];
 			activity?: AssistantActivity[];
 			streaming?: boolean;
+			/** null: checking session readiness; undefined: no local submission phase. */
+			pendingStatus?: AssistantPendingStatus | null;
 			workDurationMs?: number;
 			replyRunwayPx?: number;
 			stopReason?: string;
@@ -120,6 +125,12 @@ export type ConversationAction =
 			type: "local_assistant_pending";
 			timestampMs: number;
 			replyRunwayPx?: number;
+			pendingStatus?: AssistantPendingStatus | null;
+	  }
+	| {
+			type: "local_assistant_status";
+			clientMessageId: string;
+			status?: AssistantPendingStatus;
 	  }
 	| {
 			type: "local_turn_abort";
@@ -135,6 +146,7 @@ export type ConversationState = {
 	messages: ChatMessage[];
 	active: {
 		assistantMessageId?: string;
+		localClientMessageId?: string;
 		turnStartedAtMs?: number;
 		assistantUpdatedAtMs?: number;
 		firstRuntimeUserSeen: boolean;

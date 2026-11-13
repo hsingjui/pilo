@@ -59,7 +59,7 @@ type UseRemoteChatActionsOptions = {
 	pendingProjectMcpPromptsRef: RefObject<Map<string, PendingProjectMcpPrompt>>;
 	projectMcpApprovalRequestedRef: RefObject<Set<string>>;
 	queuedSubmissionsRef: RefObject<Map<string, QueuedSubmission>>;
-	ensureDraftRuntime: () => Promise<void>;
+	ensureDraftRuntime: (onStarting?: () => void) => Promise<void>;
 	tryHandleComposerCommand: (submission: ChatSubmission) => Promise<boolean>;
 	requestAutoTitle: (message: string) => void;
 	clearComposer: () => void;
@@ -168,6 +168,15 @@ export function useRemoteChatActions({
 			submission: ChatSubmission,
 			clientMessageId: string,
 		) => {
+			const isActiveSession = () =>
+				activeSessionKeyRef.current === targetSessionKey;
+			if (isActiveSession()) {
+				runLocalAction({
+					type: "local_assistant_status",
+					clientMessageId,
+					status: "sending",
+				});
+			}
 			const result = await rpcForSession<PiPromptResult>(
 				targetSessionKey,
 				{
@@ -177,11 +186,17 @@ export function useRemoteChatActions({
 				},
 				PI_PROMPT_RPC_TIMEOUT_MS,
 			);
+			if (
+				(!result?.disposition || result.disposition === "started") &&
+				isActiveSession()
+			) {
+				runLocalAction({ type: "local_assistant_status", clientMessageId });
+			}
 			if (result?.disposition !== "handled") return true;
 			const runtime = await client?.chatState(targetSessionKey);
 			if (chatRuntimeHasOpenTurn(runtime)) return true;
 			setConversation((current) =>
-				activeSessionKeyRef.current === targetSessionKey
+				isActiveSession()
 					? reduceConversationActions(
 							current,
 							[
@@ -194,7 +209,13 @@ export function useRemoteChatActions({
 			);
 			return false;
 		},
-		[activeSessionKeyRef, client, rpcForSession, setConversation],
+		[
+			activeSessionKeyRef,
+			client,
+			rpcForSession,
+			runLocalAction,
+			setConversation,
+		],
 	);
 
 	const sendSubmission = useCallback(
@@ -234,6 +255,7 @@ export function useRemoteChatActions({
 					runLocalAction({
 						type: "local_assistant_pending",
 						timestampMs: now,
+						pendingStatus: null,
 					});
 				} else {
 					queuedClientMessageId = clientMessageId;
@@ -253,7 +275,18 @@ export function useRemoteChatActions({
 				clearComposer();
 				// The submitted draft is owned by this request; editing can resume now.
 				setSubmissionPhase(submissionSessionKey, "sending");
-				await ensureDraftRuntime();
+				await ensureDraftRuntime(
+					mode === "prompt"
+						? () => {
+								if (!isActiveSession()) return;
+								runLocalAction({
+									type: "local_assistant_status",
+									clientMessageId,
+									status: "starting",
+								});
+							}
+						: undefined,
+				);
 				const accepted =
 					mode === "prompt"
 						? await sendPrompt(
@@ -478,6 +511,7 @@ export function useRemoteChatActions({
 					runTargetAction({
 						type: "local_assistant_pending",
 						timestampMs: now,
+						pendingStatus: "sending",
 					});
 					optimisticSubmitted = true;
 				}

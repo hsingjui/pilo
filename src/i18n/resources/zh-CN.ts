@@ -543,6 +543,8 @@ const zhCN = {
 		workActivity: "工作过程",
 		stopped: "已停止",
 		starting: "启动中…",
+		sending: "发送中…",
+		waitingResponse: "等待响应…",
 		thinking: "思考中…",
 		processing: "正在处理…",
 		workingTool: "正在{{tool}}…",

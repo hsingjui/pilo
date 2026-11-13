@@ -564,6 +564,8 @@ const enUS = {
 		workActivity: "Work activity",
 		stopped: "Stopped",
 		starting: "Starting…",
+		sending: "Sending…",
+		waitingResponse: "Waiting for response…",
 		thinking: "Thinking…",
 		processing: "Processing…",
 		workingTool: "{{tool}}…",
