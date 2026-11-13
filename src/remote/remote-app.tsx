@@ -292,7 +292,7 @@ function RemoteWorkspace() {
 		connectionId: chat.activeProject?.connection.id ?? "",
 		sessionKey: chat.activeSessionKey,
 		sessionId: chat.identifiedSessionId ?? null,
-		draft: chat.composer,
+		draftStore: chat.draftStore,
 		hasAttachments: chat.images.length > 0,
 		active: networkState === "connected",
 		connected: networkState === "connected",
@@ -612,7 +612,7 @@ function RemoteWorkspace() {
 													nextPrompt.unavailable && !active && !chat.readOnly
 												}
 												onNextPromptDismiss={nextPrompt.dismiss}
-												value={chat.readOnly ? "" : chat.composer}
+												draftStore={chat.draftStore}
 												onChange={chat.handleComposerChange}
 												muted={chat.readOnly}
 												placeholder={

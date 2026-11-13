@@ -51,7 +51,7 @@ type UseRemoteChatActionsOptions = {
 	client: WebPiloClient | null;
 	activeSessionKey: string | null;
 	activeSessionKeyRef: RefObject<string | null>;
-	composer: string;
+	getDraft: () => string;
 	readOnly: boolean;
 	hasSelectedSession: boolean;
 	hasIdentifiedSession: boolean;
@@ -78,7 +78,7 @@ export function useRemoteChatActions({
 	client,
 	activeSessionKey,
 	activeSessionKeyRef,
-	composer,
+	getDraft,
 	readOnly,
 	hasSelectedSession,
 	hasIdentifiedSession,
@@ -133,7 +133,7 @@ export function useRemoteChatActions({
 		if (!recovered) return;
 		recoveredSubmissionsRef.current.delete(activeSessionKey);
 		handleComposerChange(
-			[composer, ...recovered.map((item) => item.text)]
+			[getDraft(), ...recovered.map((item) => item.text)]
 				.filter(Boolean)
 				.join("\n\n"),
 		);
@@ -146,7 +146,7 @@ export function useRemoteChatActions({
 		]);
 	}, [
 		activeSessionKey,
-		composer,
+		getDraft,
 		handleComposerChange,
 		recoveryRevision,
 		setImages,

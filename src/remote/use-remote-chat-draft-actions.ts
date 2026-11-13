@@ -57,7 +57,7 @@ type UseRemoteChatDraftActionsOptions = {
 	setThinkingLevels: Dispatch<SetStateAction<PiThinkingLevel[]>>;
 	setDraftModel: Dispatch<SetStateAction<PiModel | null>>;
 	setDraftThinkingLevel: Dispatch<SetStateAction<PiThinkingLevel | null>>;
-	setComposer: Dispatch<SetStateAction<string>>;
+	restoreComposer: (value: string) => void;
 	setImages: Dispatch<SetStateAction<ChatImageAttachment[]>>;
 	setVisualReadyRouteKey: Dispatch<SetStateAction<string | null>>;
 	setDraftProjectId: Dispatch<SetStateAction<string>>;
@@ -94,7 +94,7 @@ export function useRemoteChatDraftActions({
 	setThinkingLevels,
 	setDraftModel,
 	setDraftThinkingLevel,
-	setComposer,
+	restoreComposer,
 	setImages,
 	setVisualReadyRouteKey,
 	setDraftProjectId,
@@ -127,7 +127,7 @@ export function useRemoteChatDraftActions({
 			setThinkingLevels([]);
 			setDraftModel(null);
 			setDraftThinkingLevel(null);
-			setComposer(
+			restoreComposer(
 				!temporary && targetProjectId
 					? projectDraftCache.get(targetProjectId)
 					: "",
@@ -151,7 +151,7 @@ export function useRemoteChatDraftActions({
 			selectedSessionPath,
 			setAgentState,
 			setChatState,
-			setComposer,
+			restoreComposer,
 			setConversation,
 			setDraftId,
 			setDraftModel,
@@ -198,7 +198,7 @@ export function useRemoteChatDraftActions({
 			setThinkingLevels([]);
 			setDraftModel(null);
 			setDraftThinkingLevel(null);
-			setComposer(projectDraftCache.get(projectId));
+			restoreComposer(projectDraftCache.get(projectId));
 			setImages([]);
 			autoTitleRequestedRef.current = false;
 			setVisualReadyRouteKey(null);
@@ -210,7 +210,7 @@ export function useRemoteChatDraftActions({
 			releaseTemporaryRuntime,
 			setAgentState,
 			setChatState,
-			setComposer,
+			restoreComposer,
 			setConversation,
 			setDraftId,
 			setDraftModel,
@@ -248,7 +248,7 @@ export function useRemoteChatDraftActions({
 			setDraftTemporary(false);
 			setSelectedSessionPath(session.sessionPath);
 			setDraftProjectId(session.projectId);
-			setComposer(
+			restoreComposer(
 				chatUiStateCache.get(
 					chatUiStateKey(session.projectId, session.piSessionId),
 				).draft,
@@ -267,7 +267,7 @@ export function useRemoteChatDraftActions({
 			rawSessions,
 			selectedSessionPath,
 			releaseTemporaryRuntime,
-			setComposer,
+			restoreComposer,
 			setDraftProjectId,
 			setDraftTemporary,
 			setImages,

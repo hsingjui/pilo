@@ -7,6 +7,7 @@ import {
 	useSyncExternalStore,
 } from "react";
 
+import type { ChatDraftStore } from "@/components/chat/chat-draft-store";
 import type { PiloClientEventMessage } from "@/lib/api/pilo-client";
 import {
 	createNextPromptSessionCache,
@@ -14,13 +15,14 @@ import {
 } from "@/lib/next-prompt-session-cache";
 import { useNextPromptSettings } from "@/lib/use-next-prompt-settings";
 
-type Options = NextPromptSessionOptions & {
+type Options = Omit<NextPromptSessionOptions, "draft"> & {
+	draftStore: ChatDraftStore;
 	/** Desktop uses the existing multiplexed event channel; WebUI supplies its socket frames. */
 	subscribe?: boolean;
 	refreshKey?: string;
 };
 
-export function useNextPrompt(options: Options) {
+export function useNextPrompt({ draftStore, ...options }: Options) {
 	const config = useNextPromptSettings(
 		options.client,
 		options.connectionId,
@@ -39,9 +41,24 @@ export function useNextPrompt(options: Options) {
 		cache.setTransport(options.client, options.refreshKey, options.connected);
 	}, [cache, options.client, options.refreshKey, options.connected]);
 	useLayoutEffect(() => {
-		if (options.connected !== false)
-			cache.update(options, config.settings, config.saving);
-	}, [cache, options, config.settings, config.saving]);
+		if (options.connected !== false) {
+			cache.update(
+				{ ...options, draft: draftStore.getSnapshot() },
+				config.settings,
+				config.saving,
+			);
+		}
+	}, [cache, draftStore, options, config.settings, config.saving]);
+	useLayoutEffect(() => {
+		return draftStore.subscribe((previous) => {
+			const draft = draftStore.getSnapshot();
+			if (Boolean(previous) === Boolean(draft)) return;
+			const { options, config } = latestRef.current;
+			// Invalidate predictions without making the page a draft subscriber.
+			if (options.connected !== false)
+				cache.update({ ...options, draft }, config.settings, config.saving);
+		});
+	}, [cache, draftStore]);
 	useEffect(() => () => cache.clear("view_unmounted"), [cache]);
 
 	const dismiss = useCallback(
@@ -97,7 +114,10 @@ export function useNextPrompt(options: Options) {
 		};
 	}, [options.client, options.subscribe, cache]);
 
-	const result = cache.getResult(options);
+	const result = cache.getResult({
+		...options,
+		draft: draftStore.getSnapshot(),
+	});
 	return {
 		config,
 		handleMessage,

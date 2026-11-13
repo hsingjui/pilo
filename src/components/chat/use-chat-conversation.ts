@@ -40,6 +40,7 @@ import {
 	sameHistoryFingerprint,
 } from "@/components/chat/chat-conversation-model";
 import { createChatConversationStore } from "@/components/chat/chat-conversation-store";
+import { createChatDraftStore } from "@/components/chat/chat-draft-store";
 import { createChatHistoryWindowStore } from "@/components/chat/chat-history-window-store";
 
 type UseChatConversationOptions = {
@@ -121,7 +122,7 @@ export function useChatConversation({
 		if (session.sessionPath) return EMPTY_MESSAGES;
 		return MOCK_CONVERSATIONS[session.id] ?? EMPTY_MESSAGES;
 	}, [initialImages, initialMessage, session.id, session.sessionPath]);
-	const [draft, setDraftState] = useState(initialDraft);
+	const [draftStore] = useState(() => createChatDraftStore(initialDraft));
 
 	useEffect(() => {
 		const requestGeneration = ++historyRequestGenerationRef.current;
@@ -296,10 +297,10 @@ export function useChatConversation({
 
 	const setDraft = useCallback(
 		(value: string) => {
-			setDraftState(value);
+			draftStore.setValue(value);
 			onDraftChange?.(value);
 		},
-		[onDraftChange],
+		[draftStore, onDraftChange],
 	);
 	const clearDraft = useCallback(() => setDraft(""), [setDraft]);
 
@@ -491,7 +492,7 @@ export function useChatConversation({
 		conversationStore,
 		historyStore,
 		baseMessages,
-		draft,
+		draftStore,
 		setDraft,
 		clearDraft,
 		dispatchConversation,

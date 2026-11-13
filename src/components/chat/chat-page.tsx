@@ -262,7 +262,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		conversationStore,
 		historyStore,
 		baseMessages,
-		draft,
+		draftStore,
 		setDraft,
 		clearDraft,
 		dispatchConversationBatch,
@@ -320,7 +320,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		restoreSubmission,
 		recoverSubmission,
 	} = useChatSubmissionRecovery({
-		draft,
+		draftStore,
 		setDraft,
 		active,
 		projectId: session.projectRecord.id,
@@ -477,7 +477,7 @@ function ChatPageImpl(props: ChatPageProps) {
 		connectionId: session.projectRecord.connection.id,
 		sessionKey: client.sessionKey,
 		sessionId: sessionState?.sessionId ?? null,
-		draft,
+		draftStore,
 		hasAttachments: composerImages.length > 0,
 		active,
 		loading: historyPending,
@@ -765,7 +765,7 @@ function ChatPageImpl(props: ChatPageProps) {
 												nextPrompt.unavailable && !running && !readOnly
 											}
 											onNextPromptDismiss={nextPrompt.dismiss}
-											value={readOnly ? "" : draft}
+											draftStore={draftStore}
 											historyKey={session.projectRecord.id}
 											attachmentScopeKey={`${session.projectRecord.id}:${session.id}`}
 											onUploadFile={(file) =>

@@ -6,6 +6,7 @@ import {
 	useState,
 } from "react";
 
+import type { ChatDraftStore } from "@/components/chat/chat-draft-store";
 import type {
 	ChatImageAttachment,
 	ChatSubmission,
@@ -14,17 +15,17 @@ import type {
 /**
  * Composer-side draft state that survives a failed submission: the image
  * attachments plus the restore/recover callbacks the runtime uses to put a
- * rejected submission back into the composer. Draft and image refs mirror the
- * latest values so the callbacks stay stable across renders.
+ * rejected submission back into the composer. Read the latest draft directly
+ * from the store so recovery does not subscribe the page to each keystroke.
  */
 export function useChatSubmissionRecovery({
-	draft,
+	draftStore,
 	setDraft,
 	active = false,
 	projectId,
 	readProjectDraft,
 }: {
-	draft: string;
+	draftStore: ChatDraftStore;
 	setDraft: (value: string) => void;
 	active?: boolean;
 	projectId?: string;
@@ -33,11 +34,7 @@ export function useChatSubmissionRecovery({
 	const [composerImages, setComposerImages] = useState<ChatImageAttachment[]>(
 		[],
 	);
-	const draftRef = useRef(draft);
 	const composerImagesRef = useRef(composerImages);
-	useLayoutEffect(() => {
-		draftRef.current = draft;
-	}, [draft]);
 	useLayoutEffect(() => {
 		composerImagesRef.current = composerImages;
 	}, [composerImages]);
@@ -46,13 +43,11 @@ export function useChatSubmissionRecovery({
 	useEffect(() => {
 		if (!active || !projectId || !readProjectDraft) return;
 		const value = readProjectDraft(projectId);
-		if (draftRef.current === value) return;
-		draftRef.current = value;
+		if (draftStore.getSnapshot() === value) return;
 		setDraft(value);
-	}, [active, projectId, readProjectDraft, setDraft]);
+	}, [active, draftStore, projectId, readProjectDraft, setDraft]);
 	const restoreSubmission = useCallback(
 		(submission: ChatSubmission) => {
-			draftRef.current = submission.text;
 			composerImagesRef.current = [...submission.images];
 			setDraft(submission.text);
 			setComposerImages([...submission.images]);
@@ -61,7 +56,7 @@ export function useChatSubmissionRecovery({
 	);
 	const recoverSubmission = useCallback(
 		(submission: ChatSubmission) => {
-			const currentText = draftRef.current.trim();
+			const currentText = draftStore.getSnapshot().trim();
 			const nextText = [currentText, submission.text]
 				.filter(Boolean)
 				.join("\n\n");
@@ -74,12 +69,11 @@ export function useChatSubmissionRecovery({
 				seenImageIds.add(image.id);
 				return true;
 			});
-			draftRef.current = nextText;
 			composerImagesRef.current = nextImages;
 			setDraft(nextText);
 			setComposerImages(nextImages);
 		},
-		[setDraft],
+		[draftStore, setDraft],
 	);
 	return {
 		composerImages,

@@ -5,6 +5,7 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	useSyncExternalStore,
 	type CSSProperties,
 } from "react";
 import {
@@ -21,6 +22,7 @@ import {
 	X,
 } from "lucide-react";
 
+import type { ChatDraftStore } from "@/components/chat/chat-draft-store";
 import { FileMentionBadge } from "@/components/chat/path-mention-badge";
 import { SessionMentionBadge } from "@/components/chat/session-mention-badge";
 import { discardRemovedChatFiles } from "@/lib/chat/chat-file-lifecycle";
@@ -90,8 +92,10 @@ export type {
 	ComposerSuggestionKind,
 } from "@/components/chat/chat-composer-suggestions";
 
-type ChatComposerProps = {
-	value: string;
+type ChatComposerProps = (
+	| { value: string; draftStore?: never }
+	| { draftStore: ChatDraftStore; value?: never }
+) & {
 	onChange: (value: string) => void;
 	images?: readonly ChatImageAttachment[];
 	onImagesChange?: (images: ChatImageAttachment[]) => void;
@@ -151,8 +155,11 @@ type ChatComposerProps = {
 const EMPTY_MODELS: readonly PiModel[] = [];
 const EMPTY_THINKING_LEVELS: readonly PiThinkingLevel[] = [];
 
+const subscribeToControlledDraft = () => () => undefined;
+
 export function ChatComposer({
-	value,
+	value: controlledValue,
+	draftStore,
 	onChange,
 	images,
 	onImagesChange,
@@ -202,6 +209,13 @@ export function ChatComposer({
 	onEnhancePrompt,
 	enhancePromptDisabled = false,
 }: ChatComposerProps) {
+	const getDraft = draftStore?.getSnapshot ?? (() => controlledValue ?? "");
+	const draft = useSyncExternalStore(
+		draftStore?.subscribe ?? subscribeToControlledDraft,
+		getDraft,
+		getDraft,
+	);
+	const value = draftStore && muted ? "" : draft;
 	const { t } = useTranslation();
 	const composerPlaceholder = placeholder ?? t("chat.composerPlaceholder");
 	const rootRef = useRef<HTMLDivElement>(null);

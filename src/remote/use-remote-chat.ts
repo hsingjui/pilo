@@ -18,6 +18,7 @@ import {
 	createProjectDraftCache,
 } from "@/components/app/chat-ui-state-cache";
 import { createChatConversationStore } from "@/components/chat/chat-conversation-store";
+import { createChatDraftStore } from "@/components/chat/chat-draft-store";
 import { INITIAL_HISTORY_MESSAGE_COUNT } from "@/components/chat/chat-conversation-model";
 import type { ChatSession } from "@/components/chat/chat-page-utils";
 import type { PiExtensionDialogRequest } from "@/components/chat/use-pi-session-features";
@@ -172,7 +173,12 @@ export function useRemoteChat({
 	const [externalReadOnly, setReadOnly] = useState(false);
 	const [compacting, setCompacting] = useState(false);
 	const [retryState, setRetryState] = useState<RetryState | null>(null);
-	const [composer, setComposer] = useState("");
+	const [draftStore, setDraftStore] = useState(createChatDraftStore);
+	const committedDraftStoreRef = useRef(draftStore);
+	const restoreComposer = useCallback((value: string) => {
+		// Commit the new store with the route instead of notifying the old composer.
+		setDraftStore(createChatDraftStore(value));
+	}, []);
 	const [images, setImages] = useState<ChatImageAttachment[]>([]);
 	const pendingForkSessionIdRef = useRef<{
 		sessionId: string;
@@ -506,7 +512,8 @@ export function useRemoteChat({
 
 	const handleComposerChange = useCallback(
 		(value: string) => {
-			setComposer(value);
+			// A guarded async action can finish after returning to the same session.
+			committedDraftStoreRef.current.setValue(value);
 			if (!activeProjectId) return;
 			if (hasIdentifiedSession) {
 				chatUiStateCache.patch(routeUiKey, { draft: value });
@@ -598,6 +605,7 @@ export function useRemoteChat({
 			setConversation(initialConversation);
 		}
 		committedRouteKeyRef.current = routeKey;
+		committedDraftStoreRef.current = draftStore;
 		activeSessionKeyRef.current = activeSessionKey;
 		selectedHistoryScopeRef.current = selectedSession
 			? sessionKey(
@@ -608,6 +616,7 @@ export function useRemoteChat({
 		handleExtensionRequestRef.current = extensionUi.handleExtensionRequest;
 	}, [
 		activeSessionKey,
+		draftStore,
 		extensionUi.handleExtensionRequest,
 		initialConversation,
 		routeKey,
@@ -686,7 +695,7 @@ export function useRemoteChat({
 		setThinkingLevels,
 		setDraftModel,
 		setDraftThinkingLevel,
-		setComposer,
+		restoreComposer,
 		setImages,
 		setVisualReadyRouteKey,
 		setDraftProjectId,
@@ -914,7 +923,7 @@ export function useRemoteChat({
 		client,
 		activeSessionKey,
 		activeSessionKeyRef,
-		composer,
+		getDraft: draftStore.getSnapshot,
 		readOnly,
 		hasSelectedSession: Boolean(selectedSession),
 		hasIdentifiedSession,
@@ -1129,7 +1138,7 @@ export function useRemoteChat({
 		showSwitchSkeleton,
 		requestHistoryRange,
 		// composer / config
-		composer,
+		draftStore,
 		images,
 		setImages,
 		handleComposerChange,
