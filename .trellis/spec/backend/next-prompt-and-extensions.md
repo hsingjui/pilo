@@ -269,8 +269,13 @@ are not a source for Connection-owned choices.
   optionally setting it. Never replace text in shared deployed source.
 - User-installed extensions remain Pi-native. Inline-source compatibility remains
   for other callers, but these production built-ins do not use it.
-  `src-tauri/src/runtime/pi_ssh_workspace.js` is retained unchanged solely for the
-  existing source-reading SSH test fixture; it has no production loading reference.
+  `src-tauri/src/runtime/pi_ssh_workspace.js` is a legacy copy with no production
+  loading reference. SSH regression tests must read the production source in
+  `crates/pilo-server/extensions/ssh-workspace.js`, supplying child-only config
+  through `PILO_SSH_WORKSPACE_CONFIG`. The mux fixture evaluates it with isolated
+  imports and maps every filesystem operation into a private directory; simulated
+  macOS `/tmp` pruning must never touch real sessions. Cover short socket paths
+  despite a long `TMPDIR`, lazy creation, stale cleanup, recreation and shutdown.
 - The model-catalog probe resolves defaults serially: each setModel changes the
   same throwaway Pi session and must restore its baseline before the next model.
   Never parallelize this loop to satisfy no-await-in-loop.

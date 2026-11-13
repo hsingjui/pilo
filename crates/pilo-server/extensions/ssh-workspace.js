@@ -51,6 +51,8 @@ const workspaceFrame = "\x1ePILO_SSH_WORKSPACE\x1f";
 const persistentTransport =
 	process.platform === "win32" || process.env.PILO_SSH_FORCE_PERSISTENT === "1";
 const muxEnabled = process.platform !== "win32";
+// macOS TMPDIR can exceed sun_path's 104-byte limit once OpenSSH adds its suffix.
+const muxRoot = process.platform === "darwin" ? "/tmp" : tmpdir();
 // The ControlMaster socket directory is created lazily (see ensureMuxPath) and
 // torn down on session shutdown. Pi may fire session_shutdown while the process
 // keeps running (reload / session replacement), so the directory must be
@@ -95,7 +97,7 @@ function releaseMuxPath() {
 function pruneStaleMuxDirs() {
 	if (prunedStaleMuxDirs) return;
 	prunedStaleMuxDirs = true;
-	const root = tmpdir();
+	const root = muxRoot;
 	let entries;
 	try {
 		entries = readdirSync(root, { withFileTypes: true });
@@ -119,7 +121,7 @@ function ensureMuxPath() {
 	if (muxPath && existsSync(muxDir)) return muxPath;
 	if (muxDir) releaseMuxPath();
 	pruneStaleMuxDirs();
-	muxDir = mkdtempSync(path.join(tmpdir(), "pilo-ssh-"));
+	muxDir = mkdtempSync(path.join(muxRoot, "pilo-ssh-"));
 	muxPath = path.join(muxDir, "control");
 	return muxPath;
 }

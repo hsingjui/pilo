@@ -37,8 +37,10 @@ Unit tests cover focused modules, including stores and static React rendering.
 Integration tests exercise scripts/processes and Pi extensions with local
 stubs; they do not require a running desktop app or real SSH server. The SSH
 workspace test uses a POSIX shell and filesystem permissions, so run the full
-integration suite on Linux/WSL. Run desktop application verification on Windows
-separately.
+integration suite on Linux/WSL. It reads the production Server extension and
+simulates both Linux and macOS, redirecting all mux filesystem operations into
+private fixture directories (never the real macOS `/tmp`). Run desktop
+application verification on Windows separately.
 
 `tsx-loader.mjs` resolves `@/` against `src/` and transpiles TSX with the already
 installed TypeScript dependency. Node strips ordinary TypeScript types. This
