@@ -61,6 +61,7 @@ import { useChatRuntime } from "@/components/chat/use-chat-runtime";
 import { useChatSessionConfig } from "@/components/chat/use-chat-session-config";
 import { useChatSubmissionRecovery } from "@/components/chat/use-chat-submission-recovery";
 import { useChatVisualRetention } from "@/components/chat/use-chat-visual-retention";
+import { useHistoryIndexWarning } from "@/components/chat/use-history-index-warning";
 import { usePiSessionFeatures } from "@/components/chat/use-pi-session-features";
 import { useScrollbarGutterWidth } from "@/components/chat/use-scrollbar-gutter";
 import { createChatSessionClient } from "@/lib/api/chat-session-client";
@@ -418,6 +419,16 @@ function ChatPageImpl(props: ChatPageProps) {
 		extensionNotifications,
 		dismissExtensionNotification,
 	} = piFeatures;
+	const showHistoryIndexWarning = useHistoryIndexWarning(
+		active &&
+			historyIndexStale &&
+			!runtimeBusy &&
+			!compacting &&
+			!retryState &&
+			!session.externalTurnOpen
+			? (session.sessionPath ?? null)
+			: null,
+	);
 	// The workspace probes external activity; background session props may be stale.
 	const refreshSessionDisabled =
 		runtimeBusy ||
@@ -845,9 +856,7 @@ function ChatPageImpl(props: ChatPageProps) {
 													: null) ??
 												(readOnly ? null : retryState?.errorMessage) ??
 												historyError ??
-												(historyIndexStale &&
-												!running &&
-												!session.externalTurnOpen
+												(showHistoryIndexWarning
 													? t("chat.historyIndexStale")
 													: null)
 											}

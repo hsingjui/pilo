@@ -18,6 +18,7 @@ import { useSyncedSessionUnread } from "@/components/app/use-synced-session-unre
 import { CacheKeepAliveNotice } from "@/components/chat/cache-keep-alive-notice";
 import { runtimeSessionPathKey } from "@/lib/chat/chat-session-runtime-model";
 import { useCacheKeepAliveStatus } from "@/lib/use-cache-keep-alive-status";
+import { useHistoryIndexWarning } from "@/components/chat/use-history-index-warning";
 import { useNextPrompt } from "@/components/chat/use-next-prompt";
 import {
 	SessionMentionProvider,
@@ -188,11 +189,14 @@ function RemoteWorkspace() {
 	// 草稿优化回调在等待期间读取，不能依赖属性窄化，先落成常量。
 	const enhanceProjectId = chat.activeProjectId ?? "";
 	const active = chat.conversationUi.active;
-	const updateBlocked =
+	const chatBusy =
 		active || chat.sending || chat.compacting || chat.retryState !== null;
+	const showHistoryIndexWarning = useHistoryIndexWarning(
+		chat.historyIndexStale && !chatBusy ? chat.routeKey : null,
+	);
 
 	useEffect(() => {
-		if (!token || updateBlocked || !updateAvailable) return;
+		if (!token || chatBusy || !updateAvailable) return;
 		const toastId = toast.info(t("settings.remoteUpdateAvailable"), {
 			description: t("settings.remoteUpdateDescription"),
 			duration: Infinity,
@@ -205,7 +209,7 @@ function RemoteWorkspace() {
 		return () => {
 			toast.dismiss(toastId);
 		};
-	}, [applyUpdate, isNarrow, t, token, updateAvailable, updateBlocked]);
+	}, [applyUpdate, chatBusy, isNarrow, t, token, updateAvailable]);
 
 	const envs = useMemo(() => {
 		const byId = new Map<string, { id: string; name: string }>();
@@ -699,7 +703,7 @@ function RemoteWorkspace() {
 														: null) ??
 													chat.retryState?.errorMessage ??
 													chat.draftConfigError ??
-													(chat.historyIndexStale
+													(showHistoryIndexWarning
 														? t("chat.historyIndexStale")
 														: null)
 												}

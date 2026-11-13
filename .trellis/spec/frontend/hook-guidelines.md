@@ -64,13 +64,17 @@ codebase does not use it.)
 - Preserve successfully replayed messages on index mismatch. Desktop and WebUI
   show `chat.historyIndexStale` through the shared `ChatComposer.statusError`.
   Warn only while idle and while the index still equals the one captured at
-  load time; normal live appends or a newly advanced index are not failures.
-  Desktop read failures expose the normalized backend detail alongside the
-  existing error view/retry button; WebUI retains its fatal-error notice.
+  load time. Gate the notice with `useHistoryIndexWarning`: an idle mismatch
+  must persist for two seconds in the same session, because the fresh history
+  read can finish before the sidebar index updates. Do not delay history
+  reconciliation or read errors. Desktop read failures expose the normalized
+  backend detail alongside the existing error view/retry button; WebUI retains
+  its fatal-error notice.
 - When verification is authorized, cover stale index A returning history B
-  (one load, stable messages, visible notice), unchanged failure after a prior
-  success (no automatic retry), manual retry, index catch-up (notice clears),
-  later index changes (reload allowed), and live-turn notice suppression.
+  (one load, stable messages, notice after two seconds), index catch-up before
+  the delay (no notice) and after it (notice clears), switching sessions or
+  starting a turn during the delay, unchanged failure after a prior success
+  (no automatic retry), manual retry, and later index changes (reload allowed).
 
 ## Matching Host Chat Runtimes
 
