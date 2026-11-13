@@ -328,10 +328,10 @@ export function useChatRuntime({
 				});
 			}
 			if (result?.disposition === "handled") {
-				const runtime = await client.state();
+				const currentRuntime = await client.state();
 				if (activeTurnRef.current !== turn) return;
 				// An input handler can consume the prompt or start its own turn.
-				if (!chatRuntimeHasOpenTurn(runtime)) {
+				if (!chatRuntimeHasOpenTurn(currentRuntime)) {
 					dispatchConversationActions(turn.sessionId, [
 						{ type: "local_user_queue_failed", clientMessageId },
 						{ type: "local_turn_abort", timestampMs: Date.now() },
