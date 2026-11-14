@@ -20,8 +20,12 @@ import {
 	markExternalTurnLive,
 	sameHistoryFingerprint,
 } from "@/components/chat/chat-conversation-model";
+import type { AssistantContentItem } from "@/lib/chat/chat-activity-state";
 import { replayConversationEvents } from "@/lib/chat/conversation-replay";
-import type { ConversationState } from "@/lib/chat/conversation-types";
+import type {
+	ChatMessage,
+	ConversationState,
+} from "@/lib/chat/conversation-types";
 import type {
 	SessionHistory,
 	SessionHistoryFingerprint,
@@ -50,6 +54,157 @@ type UseRemoteChatHistoryOptions = {
 	setRuntimeReady: Dispatch<SetStateAction<boolean>>;
 	setReadOnly: Dispatch<SetStateAction<boolean>>;
 };
+
+function sameAssistant(
+	saved: ChatMessage | undefined,
+	live: ChatMessage | undefined,
+): boolean {
+	if (saved?.role !== "assistant" || live?.role !== "assistant") return false;
+	return (
+		saved.id === live.id ||
+		(saved.content?.some(
+			(item) =>
+				item.type === "tool" &&
+				live.content?.some(
+					(other) => other.type === "tool" && other.id === item.id,
+				),
+		) ??
+			false)
+	);
+}
+
+function mergeAssistantContent(
+	saved: readonly AssistantContentItem[],
+	live: readonly AssistantContentItem[],
+): AssistantContentItem[] {
+	const content: AssistantContentItem[] = [];
+	let savedStart = 0;
+	let liveStart = 0;
+	// Shared tools anchor the two ordered streams without dropping earlier content.
+	const appendSpan = (savedEnd: number, liveEnd: number) => {
+		const before = saved.slice(savedStart, savedEnd);
+		const after = live.slice(liveStart, liveEnd);
+		const tail = before.at(-1);
+		const head = after[0];
+		if (
+			tail &&
+			head &&
+			tail.type !== "tool" &&
+			head.type === tail.type &&
+			(tail.text.startsWith(head.text) || head.text.startsWith(tail.text))
+		) {
+			if (tail.text.length > head.text.length)
+				after[0] = { ...head, text: tail.text };
+			before.pop();
+		}
+		content.push(...before, ...after);
+	};
+	for (let index = 0; index < live.length; index += 1) {
+		const item = live[index];
+		if (item.type !== "tool") continue;
+		const savedIndex = saved.findIndex(
+			(other, offset) =>
+				offset >= savedStart && other.type === "tool" && other.id === item.id,
+		);
+		const earlier = saved[savedIndex];
+		if (earlier?.type !== "tool") continue;
+		appendSpan(savedIndex, index);
+		content.push({
+			...earlier,
+			...item,
+			args: item.args ?? earlier.args,
+			result: item.result ?? earlier.result,
+			...(earlier.result !== undefined &&
+				item.status === "running" && {
+					status: earlier.status,
+					result: earlier.result,
+					isError: earlier.isError,
+				}),
+		});
+		savedStart = savedIndex + 1;
+		liveStart = index + 1;
+	}
+	appendSpan(saved.length, live.length);
+	return content;
+}
+
+function mergeInitialHistory(
+	history: ConversationState,
+	current: ConversationState,
+): ConversationState {
+	const { messages } = history;
+	const pendingUserIds = new Set(
+		current.pendingUsers.map((user) => user.clientMessageId),
+	);
+	// A JSONL snapshot can include the beginning of the suffix already seen live.
+	// Compare only the loaded window, never the paged history or each delta.
+	let overlap = Math.min(messages.length, current.messages.length);
+	findOverlap: for (; overlap > 0; overlap -= 1) {
+		const start = messages.length - overlap;
+		for (let index = 0; index < overlap; index += 1) {
+			const message = current.messages[index];
+			const saved = messages[start + index];
+			if (saved.role !== message.role || pendingUserIds.has(message.id))
+				continue findOverlap;
+			if (saved.role === "assistant") {
+				if (!sameAssistant(saved, message)) continue findOverlap;
+			} else if (
+				saved.id !== message.id &&
+				!(
+					saved.role === "user" &&
+					saved.text === message.text &&
+					index + 1 < overlap &&
+					sameAssistant(
+						messages[start + index + 1],
+						current.messages[index + 1],
+					)
+				)
+			) {
+				// Text and streaming flags alone cannot distinguish repeated turns.
+				continue findOverlap;
+			}
+		}
+		break;
+	}
+	const prefixLength = messages.length - overlap;
+	return {
+		...current,
+		messages: [
+			...messages.slice(0, prefixLength),
+			...current.messages.slice(0, overlap).map((message, index) => {
+				const saved = messages[prefixLength + index];
+				if (saved.role === "user" && message.role === "user" && saved.images)
+					return { ...message, images: saved.images };
+				if (
+					saved.role !== "assistant" ||
+					message.role !== "assistant" ||
+					!saved.content?.length
+				)
+					return message;
+				const content = mergeAssistantContent(
+					saved.content,
+					message.content ?? [],
+				);
+				const text = content
+					.map((item) => (item.type === "text" ? item.text : ""))
+					.join("");
+				return {
+					...message,
+					content,
+					text: text || message.text || saved.text,
+				};
+			}),
+			...current.messages.slice(overlap),
+		],
+		pendingUsers: prefixLength
+			? current.pendingUsers.map((user) =>
+					user.replyStartIndex === undefined
+						? user
+						: { ...user, replyStartIndex: user.replyStartIndex + prefixLength },
+				)
+			: current.pendingUsers,
+	};
+}
 
 export function useRemoteChatHistory({
 	client,
@@ -86,6 +241,7 @@ export function useRemoteChatHistory({
 		key: string | null;
 		status: "ready" | "loading" | "error";
 	}>({ key: null, status: "ready" });
+	const appliedHistoryKeyRef = useRef<string | null>(null);
 	const conversationLoadKey = conversationLoad.key;
 	const conversationLoadKeyRef = useRef(conversationLoadKey);
 	useEffect(() => {
@@ -150,6 +306,7 @@ export function useRemoteChatHistory({
 	// startDraft. See use-remote-chat.ts for the rawSessions-drop fallback.
 	useEffect(() => {
 		if (selectedSessionPath) return;
+		appliedHistoryKeyRef.current = null;
 		historyStore.initialize([], 0);
 		historyPageRequestsRef.current.clear();
 		setHistoryFingerprint(null);
@@ -225,6 +382,7 @@ export function useRemoteChatHistory({
 				}
 			: null;
 		if (!refreshing) {
+			appliedHistoryKeyRef.current = null;
 			historyStore.initialize([], 0);
 			setHistoryFingerprint(null);
 			setLoadedIndexFingerprint(null);
@@ -255,9 +413,11 @@ export function useRemoteChatHistory({
 					);
 				}
 				const current = getConversationState();
+				const hasHistory = appliedHistoryKeyRef.current === selectedLoadKey;
 				if (
-					current !== initialState ||
-					(live && (manualRefresh || current?.active))
+					(hasHistory || manualRefresh) &&
+					(current !== initialState ||
+						(live && (manualRefresh || current?.active)))
 				) {
 					if (!manualRefresh) {
 						if (live) deferredHistoryRefreshRef.current = selectedLoadKey;
@@ -265,7 +425,15 @@ export function useRemoteChatHistory({
 					}
 					return runtime;
 				}
-				deferredHistoryRefreshRef.current = null;
+				const mergeLive =
+					!hasHistory &&
+					!manualRefresh &&
+					current &&
+					(live || current !== initialState || current.active !== null) &&
+					(current.messages.length > 0 || current.pendingUsers.length > 0);
+				appliedHistoryKeyRef.current = selectedLoadKey;
+				// Runtime messages don't carry JSONL entry IDs; reconcile the seam once idle.
+				deferredHistoryRefreshRef.current = mergeLive ? selectedLoadKey : null;
 				setHistoryFingerprint(result.fingerprint);
 				setLoadedIndexFingerprint(requestedIndexFingerprint);
 				historyPageRequestsRef.current.clear();
@@ -275,13 +443,15 @@ export function useRemoteChatHistory({
 					reducerContext,
 				);
 				state = alignHistoryMessages(state, directory, windowStart);
-				// Restore the live tail before incoming events can create a new reply.
-				if (live) state = markExternalTurnLive(state);
-				setConversation(
-					live && current?.pendingUsers.length
-						? { ...state, pendingUsers: current.pendingUsers }
-						: state,
-				);
+				if (mergeLive) {
+					state = mergeInitialHistory(state, current);
+				} else {
+					// Restore the live tail before incoming events can create a new reply.
+					if (live) state = markExternalTurnLive(state);
+					if (live && current?.pendingUsers.length)
+						state = { ...state, pendingUsers: current.pendingUsers };
+				}
+				setConversation(state);
 				onHistoryMetadata(result.history);
 				return runtime;
 			})

@@ -84,6 +84,11 @@ codebase does not use it.)
   `C:\Users\me\.pi\agent\sessions\a.jsonl` in the same project.
 - Normalize separators only for the comparison. Keep the original index path
   for history and persistence, and leave absolute POSIX paths unchanged.
+- A Desktop history window ending in an interrupted assistant is provisional:
+  a WebUI turn can still be running before the sidebar sees its runtime. Match
+  it against current Host runtime states before publishing. If idle, re-read
+  once without the index fingerprint before showing an interruption; the turn
+  may have finished after the first read. Keep the live-update guards in place.
 
 ## Manual Session Refresh
 
@@ -97,12 +102,17 @@ codebase does not use it.)
 - WebUI viewport readiness uses the same route key as the mounted view, not the
   replaceable Host runtime key. Clear the previous conversation before routing
   events to a different selected session; keep it when only the runtime rebinds.
-- Guard initial history loads as well as refreshes against live updates. If a
-  turn is adopted while an ordinary history read/replay is pending, mark that
-  load deferred so it retries after the turn ends. Returning `ready` without
-  publishing a snapshot or marking it deferred can strand the initial history.
-  A manual refresh interrupted by a new turn must clear its force flag and must
-  not queue a retry.
+- Guard history reads against live updates. On WebUI's first successful load,
+  merge the loaded history window with the live suffix once before reporting
+  `ready`; preserve live message IDs, the active reply, and pending submissions.
+  Match assistant overlap by message ID or a shared tool-call ID, not text or
+  streaming status. Merge content around shared tools; if overlap is uncertain,
+  keep both messages until reconciliation instead of dropping persisted content.
+  Keep earlier pages lazy and reconcile the seam against the Host after the
+  turn ends. Do not run the merge on each stream event. When a history window
+  is already visible, defer an ordinary refresh that would overwrite live
+  updates. A manual refresh interrupted by a new turn must clear its force flag
+  and must not queue a retry.
 - Manual history retry must omit the cached index fingerprint. The Host then
   stats the original Local/WSL/SSH JSONL before reusing a matching projection;
   passing a stale expected fingerprint can otherwise return the old cache.

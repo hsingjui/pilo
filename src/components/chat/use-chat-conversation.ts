@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { toAppError } from "@/lib/app-error";
+import { listChatSessionRuntimeStates } from "@/lib/api/chat-session-client";
+import {
+	chatRuntimeHasOpenTurn,
+	findReusableChatRuntime,
+} from "@/lib/chat/chat-session-runtime-model";
 import { createConversationState } from "@/lib/chat/conversation-reducer";
 import {
 	reduceConversationActions,
@@ -161,7 +166,10 @@ export function useChatConversation({
 				: undefined;
 		let cancelled = false;
 		const initialConversation = conversationStore.getSnapshot();
-		const loadHistory = async (retryAttempt: number) => {
+		const loadHistory = async (
+			fingerprint: SessionHistoryFingerprint | undefined,
+			confirmedFresh = false,
+		): Promise<void> => {
 			const startedAt = performance.now();
 			setHistoryLoadState("loading");
 			setHistoryError(null);
@@ -172,7 +180,7 @@ export function useChatConversation({
 					{
 						messageLimit: INITIAL_HISTORY_MESSAGE_COUNT,
 						includeMessageIndex: true,
-						fingerprint: requestFingerprint,
+						fingerprint,
 					},
 				);
 				if (
@@ -195,7 +203,7 @@ export function useChatConversation({
 					windowStart,
 					windowMessageCount: history.windowMessageCount,
 					totalMessages: history.totalMessages,
-					retryAttempt,
+					retryAttempt: historyRetry,
 				});
 				const replayStartedAt = performance.now();
 				let finalState = await replayConversationEventsBatched(
@@ -215,6 +223,40 @@ export function useChatConversation({
 					forceHistoryReloadRef.current = false;
 					setHistoryLoadState("ready");
 					return;
+				}
+				let turnOpen = session.externalTurnOpen;
+				const tail = finalState.messages.at(-1);
+				if (
+					tail?.role === "assistant" &&
+					tail.completion === "interrupted" &&
+					!session.externalRunning
+				) {
+					// The sidebar can discover a WebUI session before its runtime refresh.
+					const states = await listChatSessionRuntimeStates().catch(() => null);
+					if (
+						cancelled ||
+						historyRequestGenerationRef.current !== requestGeneration
+					) {
+						return;
+					}
+					if (states) {
+						turnOpen = Boolean(
+							findReusableChatRuntime(
+								states.filter(chatRuntimeHasOpenTurn),
+								session.projectRecord.id,
+								sessionPath,
+							),
+						);
+					}
+					if (turnOpen && forceHistoryReloadRef.current) {
+						forceHistoryReloadRef.current = false;
+						setHistoryLoadState("ready");
+						return;
+					}
+					if (!turnOpen && !confirmedFresh) {
+						// The turn may have finished after the first history snapshot.
+						return loadHistory(undefined, true);
+					}
 				}
 				await onHistoryMetadata(history, forceHistoryReloadRef.current);
 				if (
@@ -236,7 +278,7 @@ export function useChatConversation({
 				}
 				reconciliationPendingRef.current = false;
 				finalState = alignHistoryMessages(finalState, directory, windowStart);
-				if (session.externalTurnOpen) {
+				if (turnOpen) {
 					finalState = markExternalTurnLive(finalState);
 				}
 				historyStore.initialize(directory, windowStart);
@@ -279,7 +321,7 @@ export function useChatConversation({
 				setHistoryLoadState("error");
 			}
 		};
-		void loadHistory(historyRetry);
+		void loadHistory(requestFingerprint);
 		return () => {
 			cancelled = true;
 		};
@@ -289,6 +331,7 @@ export function useChatConversation({
 		historyRetry,
 		historyStore,
 		onHistoryMetadata,
+		session.externalRunning,
 		session.externalTurnOpen,
 		session.id,
 		session.projectRecord.id,
