@@ -1,11 +1,15 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
+use std::{
+    path::Path,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Instant,
 };
 
-use std::time::Instant;
-
 use serde_json::{Value, json};
+
+use crate::domain::{ConnectionKind, Project};
 
 use super::{
     super::{
@@ -298,9 +302,13 @@ impl ChatSessions {
 
     pub(crate) async fn stop_session_file(
         &self,
-        project_id: &str,
+        project: &Project,
         session_path: &str,
     ) -> Result<(), String> {
+        // Pi and the index can use different separators for the same Windows path.
+        let local_windows =
+            cfg!(windows) && matches!(project.connection.kind, ConnectionKind::Local);
+        let session_file = Path::new(session_path);
         // Persisted Pi IDs and runtime keys differ for chats started as drafts.
         let session_keys = {
             let registry = self.registry.lock().await;
@@ -308,13 +316,16 @@ impl ChatSessions {
                 .processes
                 .iter()
                 .filter(|(_, process)| {
-                    process.project_id == project_id
+                    process.project_id == project.id
                         && process
                             .session_path
                             .lock()
                             .unwrap_or_else(|error| error.into_inner())
                             .as_deref()
-                            == Some(session_path)
+                            .is_some_and(|path| {
+                                path == session_path
+                                    || (local_windows && Path::new(path) == session_file)
+                            })
                 })
                 .map(|(session_key, _)| session_key.clone())
                 .collect::<Vec<_>>()

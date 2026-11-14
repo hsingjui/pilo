@@ -14,6 +14,7 @@ import { isDefaultWorkspace } from "@/lib/default-workspace";
 import {
 	chatUiStateKey,
 	createDraftSessionId,
+	createTemporarySessionId,
 	mergeSidebarSessionsWithOpenChats,
 	resolveChatSession,
 	syncOpenedChatSessionMetadata,
@@ -343,8 +344,12 @@ export function useAppChatWorkspace({
 		) => {
 			const prompt = submission.text;
 			const isTemporary = draftTemporary;
+			// Returning to the landing page after deletion can leave its old draft ID in state.
+			const sessionId = isTemporary
+				? createTemporarySessionId()
+				: createDraftSessionId();
 			const nextChat: ChatSession = {
-				id: draftSessionId,
+				id: sessionId,
 				title: isTemporary ? t("app.temporaryChat") : t("app.newChat"),
 				projectRecord: project,
 				temporary: isTemporary || undefined,
@@ -358,14 +363,15 @@ export function useAppChatWorkspace({
 				),
 			);
 			setDraftProjectId(project.id);
-			setSelectedSessionId(draftSessionId);
+			setDraftSessionId(sessionId);
+			setSelectedSessionId(sessionId);
 			setDraftSessionModel(model);
 			setDraftSessionThinkingLevel(thinkingLevel);
 			setDraftSessionPrompt(prompt);
 			setDraftSessionImages(submission.images);
 			setDraftSessionStarted(true);
 		},
-		[busyChatControllersRef, draftSessionId, draftTemporary, setOpenedChats, t],
+		[busyChatControllersRef, draftTemporary, setOpenedChats, t],
 	);
 
 	const startLandingSession = useCallback(

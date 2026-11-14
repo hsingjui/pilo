@@ -229,7 +229,7 @@ pub async fn session_delete(
 
     runtime
         .chat_sessions
-        .stop_session_file(&project.id, &session_path)
+        .stop_session_file(&project, &session_path)
         .await?;
     super::super::session_activity::reject_external_session_owner(
         &runtime,

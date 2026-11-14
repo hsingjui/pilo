@@ -224,8 +224,9 @@ cause of every headerless file.
 
 ### 2. Signatures
 
-- `ChatSessions::stop_session_file(project_id, session_path) -> Result<(), String>`
-  resolves actual runtime keys from the registry, including starting processes.
+- `ChatSessions::stop_session_file(project, session_path) -> Result<(), String>`
+  takes the resolved session runtime project and finds its actual runtime keys,
+  including starting processes.
 - `session_delete(projectId, sessionPath)` remains the shared desktop/WebUI command.
 - History responses add `headerMissing: boolean`; TypeScript accepts an omitted
   field from older Hosts as `false`. No database schema change is required.
@@ -247,9 +248,13 @@ WebUI must not start Pi as part of loading it. Index recovery enables listing an
 
 Deletion resolves the indexed project/path first, stops matching Host runtimes
 by their actual keys, checks the existing external-open-turn guard, then deletes
-the file and cached index. This guard is heuristic; it does not lock external Pi
-processes or serialize concurrent new starts. Unindexed draft deletion uses its
-actual runtime key and preserves the open chat if stopping fails.
+the file and cached index. Compare Windows local runtime paths as native paths
+so Pi's backslashes match the index's mixed separators. This includes SSH
+projects using Host-side Pi; keep remote path comparisons exact and leave the
+indexed path unchanged for deletion. The external guard is heuristic; it does
+not lock external Pi processes or serialize concurrent new starts. Unindexed
+draft deletion uses its actual runtime key and preserves the open chat if
+stopping fails.
 
 ### 4. Validation & Error Matrix
 
@@ -275,15 +280,17 @@ Pending explicit authorization; no tests added/run for this change. Cover standa
 and invalid recovery filenames, BOM/blank/malformed prefixes, mismatched real cwd,
 read-budget limits, title/first-message extraction, unreadable-row retention,
 actual removal, full/windowed history flags, image offsets, desktop/WebUI deferred
-send blocking, and deletion of draft-key and multiple matching runtimes. Assert
-stop failures prevent deletion and original JSONL bytes stay unchanged by indexing.
+send blocking, and deletion of draft-key and multiple matching runtimes. Include
+mixed Windows separators under SSH with Host-side Pi. Assert stop failures
+prevent deletion and original JSONL bytes stay unchanged by indexing.
 
 ### 7. Wrong vs Correct
 
 Wrong: `stop(piSessionId)` followed by file deletion; silently discard every
 unparseable file from a full scan.
-Correct: `stop_session_file(projectId, sessionPath)` before deletion; keep observed
-unreadable paths and recover only index metadata under the contract above.
+Correct: `stop_session_file(runtime_project, session_path)` before deletion;
+keep observed unreadable paths and recover only index metadata under the
+contract above.
 
 ## Missing Session Title Recovery
 

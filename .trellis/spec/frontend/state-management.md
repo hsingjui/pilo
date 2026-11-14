@@ -123,6 +123,9 @@ and WebUI; do not hide empty rows only in one viewport or alter Pi's queue order
   notification navigation can precede the initial asynchronous index load.
 - **Cases:** A deleted, previously indexed chat disappears after refresh; an
   existing chat keeps its controller; a draft awaiting persistence stays visible.
+- Desktop landing submissions allocate a fresh runtime ID at first send. Reusing
+  the unstarted landing UI must not reuse its previous chat's runtime key after
+  a deletion or index refresh returns the user to the landing page.
 - **Verification when authorized:** Cover deleted files, unchanged sessions,
   failed refresh, queued reruns, busy transitions, identified draft IDs differing
   from controller IDs, chats opened while the scan is pending, navigation to
