@@ -167,33 +167,36 @@ function mergeInitialHistory(
 		break;
 	}
 	const prefixLength = messages.length - overlap;
+	const mergedMessages = current.messages.slice(0, overlap);
+	for (let index = 0; index < overlap; index += 1) {
+		const message = mergedMessages[index];
+		const saved = messages[prefixLength + index];
+		if (saved.role === "user" && message.role === "user" && saved.images) {
+			mergedMessages[index] = { ...message, images: saved.images };
+		} else if (
+			saved.role === "assistant" &&
+			message.role === "assistant" &&
+			saved.content?.length
+		) {
+			const content = mergeAssistantContent(
+				saved.content,
+				message.content ?? [],
+			);
+			const text = content
+				.map((item) => (item.type === "text" ? item.text : ""))
+				.join("");
+			mergedMessages[index] = {
+				...message,
+				content,
+				text: text || message.text || saved.text,
+			};
+		}
+	}
 	return {
 		...current,
 		messages: [
 			...messages.slice(0, prefixLength),
-			...current.messages.slice(0, overlap).map((message, index) => {
-				const saved = messages[prefixLength + index];
-				if (saved.role === "user" && message.role === "user" && saved.images)
-					return { ...message, images: saved.images };
-				if (
-					saved.role !== "assistant" ||
-					message.role !== "assistant" ||
-					!saved.content?.length
-				)
-					return message;
-				const content = mergeAssistantContent(
-					saved.content,
-					message.content ?? [],
-				);
-				const text = content
-					.map((item) => (item.type === "text" ? item.text : ""))
-					.join("");
-				return {
-					...message,
-					content,
-					text: text || message.text || saved.text,
-				};
-			}),
+			...mergedMessages,
 			...current.messages.slice(overlap),
 		],
 		pendingUsers: prefixLength
