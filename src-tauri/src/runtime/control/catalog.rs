@@ -132,6 +132,13 @@ pub(super) fn catalog() -> Value {
     entries.push(json!({ "key": "remote.deviceName", "scope": "desktop", "schema": { "required": ["deviceId", "name"] }, "secret": false, "reset": false }));
     entries.push(json!({ "key": "remote.revokeDevice", "scope": "desktop", "schema": { "type": "string", "description": "device ID" }, "secret": false, "reset": false }));
     entries.push(json!({ "key": "remote.devices", "scope": "desktop", "type": "array", "readOnly": true, "secret": false }));
+    let ssh_auth_schema = json!({
+        "oneOf": [
+            { "enum": ["agent", "key", "password"] },
+            { "type": "object", "required": ["agent_key"], "additionalProperties": false, "properties": { "agent_key": { "type": "string", "description": "OpenSSH public key (type and base64)" } } }
+        ],
+        "default": "agent"
+    });
     let connection_schema = json!({
         "type": "object", "required": ["connection"], "additionalProperties": false,
         "properties": {
@@ -147,8 +154,8 @@ pub(super) fn catalog() -> Value {
                         { "type": "object", "required": ["type"], "properties": { "type": { "const": "local" } }, "description": "reserved id local; workspace runtime only" },
                         { "type": "object", "required": ["type", "distro"], "properties": { "type": { "const": "wsl" }, "distro": { "type": "string" } } },
                         { "type": "object", "required": ["type", "target"], "properties": { "type": { "const": "ssh" }, "target": { "oneOf": [
-                            { "type": "object", "required": ["type", "host"], "properties": { "type": { "const": "config_host" }, "host": { "type": "string" }, "authMethod": { "enum": ["agent", "key", "password"], "default": "agent" } } },
-                            { "type": "object", "required": ["type", "hostname"], "properties": { "type": { "const": "direct" }, "hostname": { "type": "string" }, "port": { "type": ["integer", "null"], "minimum": 1, "maximum": 65535 }, "user": { "type": ["string", "null"] }, "identityFile": { "type": ["string", "null"] }, "proxyJump": { "type": ["string", "null"] }, "authMethod": { "enum": ["agent", "key", "password"], "default": "agent" } } }
+                            { "type": "object", "required": ["type", "host"], "properties": { "type": { "const": "config_host" }, "host": { "type": "string" }, "authMethod": ssh_auth_schema } },
+                            { "type": "object", "required": ["type", "hostname"], "properties": { "type": { "const": "direct" }, "hostname": { "type": "string" }, "port": { "type": ["integer", "null"], "minimum": 1, "maximum": 65535 }, "user": { "type": ["string", "null"] }, "identityFile": { "type": ["string", "null"] }, "proxyJump": { "type": ["string", "null"] }, "authMethod": ssh_auth_schema } }
                         ] } } }
                     ] }
                 }

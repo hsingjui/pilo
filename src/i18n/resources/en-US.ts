@@ -425,7 +425,19 @@ const enUS = {
 		username: "Username",
 		port: "Port",
 		authentication: "Authentication",
-		sshAgent: "SSH Agent / default key",
+		sshAgent: "SSH Agent",
+		sshAgentKey: "SSH agent key",
+		sshAgentAuto: "Use SSH defaults",
+		sshAgentChecking: "Reading the Pilo Host’s SSH agent…",
+		sshAgentDetected:
+			"SSH agent detected. Your key manager may ask for approval when connecting.",
+		sshAgentUnavailable:
+			"Could not read the Pilo Host’s SSH agent. Check that ssh-add -L works on the Host. If you use Bitwarden, enable SSH Agent in its desktop app first.",
+		sshAgentEmpty:
+			"The SSH agent returned no public keys. Unlock your key manager or add an SSH key, then refresh.",
+		sshAgentSavedKey: "Saved key",
+		sshAgentKeyMissing:
+			"The SSH agent did not list the saved key. Pilo will not automatically change it.",
 		password: "Password",
 		privateKey: "Private key",
 		piWorkspace: "Remote Pi (SSH host)",

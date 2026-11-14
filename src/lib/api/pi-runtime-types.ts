@@ -25,15 +25,17 @@ export type RuntimeErrorCode =
 
 export type SshAuthMethod = "agent" | "password" | "key";
 
+type SshTargetAuth = SshAuthMethod | { agent_key: string };
+
 export type SshTarget =
-	| { type: "config_host"; host: string; authMethod: SshAuthMethod }
+	| { type: "config_host"; host: string; authMethod: SshTargetAuth }
 	| {
 			type: "direct";
 			hostname: string;
 			port: number | null;
 			user: string | null;
 			identityFile: string | null;
-			authMethod: SshAuthMethod;
+			authMethod: SshTargetAuth;
 			proxyJump: string | null;
 	  };
 

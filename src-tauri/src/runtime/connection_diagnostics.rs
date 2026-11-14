@@ -23,7 +23,7 @@ impl ConnectionDiagnostics {
             ConnectionKind::Wsl { .. } => ("wsl", "none", "none", false),
             ConnectionKind::Ssh { target } => {
                 let auth = match target.auth_method() {
-                    SshAuthMethod::Agent => "agent",
+                    SshAuthMethod::Agent | SshAuthMethod::AgentKey(_) => "agent",
                     SshAuthMethod::Password => "password",
                     SshAuthMethod::Key => "key",
                 };

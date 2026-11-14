@@ -408,7 +408,17 @@ const zhCN = {
 		username: "用户名",
 		port: "端口",
 		authentication: "认证方式",
-		sshAgent: "SSH Agent / 默认密钥",
+		sshAgent: "SSH Agent",
+		sshAgentKey: "SSH Agent 密钥",
+		sshAgentAuto: "使用 SSH 默认设置",
+		sshAgentChecking: "正在读取 Pilo 主机的 SSH Agent…",
+		sshAgentDetected: "已检测到 SSH Agent。连接时，密钥管理器可能会请你授权。",
+		sshAgentUnavailable:
+			"无法读取 Pilo 主机的 SSH Agent。请确认主机上的 `ssh-add -L` 可用；如果使用 Bitwarden，请先在桌面版启用 SSH Agent。",
+		sshAgentEmpty:
+			"SSH Agent 未提供公钥。请解锁密钥管理器或添加 SSH 密钥后刷新。",
+		sshAgentSavedKey: "已保存的密钥",
+		sshAgentKeyMissing: "SSH Agent 未列出已保存的密钥；Pilo 不会自动更换它。",
 		password: "密码",
 		privateKey: "指定私钥",
 		piWorkspace: "远程 Pi（SSH 主机）",

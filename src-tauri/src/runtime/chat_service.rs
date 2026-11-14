@@ -48,8 +48,12 @@ async fn resolve_launch(
     let project =
         super::project::ready_with_paths(paths, &runtime.servers, events, &request.project_id)
             .await?;
-    let profile =
-        pi_workspace::resolve_pi_runtime_with_paths(paths, &project, request.extensions.clone())?;
+    let profile = pi_workspace::resolve_checked_pi_runtime_with_paths(
+        paths,
+        &project,
+        request.extensions.clone(),
+    )
+    .await?;
     let model_probe = request.is_model_probe();
     let mut builtin_extensions = profile.builtin_extensions;
     // Probes are throwaway sessions; only normal chats load turn guards and assistance.

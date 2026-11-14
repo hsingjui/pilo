@@ -242,7 +242,7 @@ pub async fn project_start_pi(
 ) -> Result<PiSessionSnapshot, String> {
     let project = project::ready(&app, &runtime.servers, &id).await?;
     project::touch(&app, &project.id)?;
-    let profile = pi_workspace::resolve_pi_runtime(&app, &project, Vec::new())?;
+    let profile = pi_workspace::resolve_pi_runtime(&app, &project, Vec::new()).await?;
     runtime
         .project_pi_session
         .lock()

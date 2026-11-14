@@ -237,12 +237,12 @@ export function ConnectionsSettings() {
 		}
 	};
 
-	const saveSsh = async () => {
-		if (!editing?.name.trim() || !editing.hostname.trim()) return;
+	const saveSsh = async (draft: SshConnectionFormState) => {
+		if (!draft.name.trim() || !draft.hostname.trim()) return;
 		if (
-			editing.mode === "direct" &&
-			editing.authMethod === "key" &&
-			!editing.identityFile.trim()
+			draft.mode === "direct" &&
+			draft.authMethod === "key" &&
+			!draft.identityFile.trim()
 		) {
 			setSshFieldError({
 				field: "identityFile",
@@ -251,9 +251,9 @@ export function ConnectionsSettings() {
 			return;
 		}
 		if (
-			editing.authMethod === "password" &&
-			!editing.password &&
-			!editing.hasPassword
+			draft.authMethod === "password" &&
+			!draft.password &&
+			!draft.hasPassword
 		) {
 			setSshFieldError({
 				field: "password",
@@ -264,8 +264,8 @@ export function ConnectionsSettings() {
 		setBusy(true);
 		try {
 			await saveSshConnection(
-				connectionFromSshForm(editing),
-				editing.password || undefined,
+				connectionFromSshForm(draft),
+				draft.password || undefined,
 			);
 			setSshEditorOpen(false);
 			await refresh();
@@ -447,19 +447,18 @@ export function ConnectionsSettings() {
 					setSshEditorOpen(false);
 					setSshFieldError(null);
 				}}
-				onTest={() => {
-					if (!editing) return;
+				onTest={(draft) => {
 					void testConnection(
-						editing.name.trim() || editing.hostname.trim(),
+						draft.name.trim() || draft.hostname.trim(),
 						() =>
 							testSshConnectionDraft(
-								connectionFromSshForm(editing),
-								editing.password || undefined,
+								connectionFromSshForm(draft),
+								draft.password || undefined,
 							),
 						setTestingSsh,
 					);
 				}}
-				onSave={() => void saveSsh()}
+				onSave={(draft) => void saveSsh(draft)}
 			/>
 			<WslDistributionDialog
 				open={wslPickerOpen}

@@ -70,6 +70,7 @@ pub struct WslDistribution {
 pub enum SshAuthMethod {
     #[default]
     Agent,
+    AgentKey(String),
     Password,
     Key,
 }

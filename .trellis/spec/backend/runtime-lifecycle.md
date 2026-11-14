@@ -231,6 +231,12 @@ Frontend controller eviction alone is not backend process cleanup.
   platform probes and WSL deployment via `Command::output()`, must enable
   `kill_on_drop(true)` so cancellation or timeout also terminates the launcher.
   This does not guarantee termination of detached remote descendants.
+- For explicitly selected SSH agent keys, resolve the target’s effective OpenSSH
+  config with a bounded `ssh -G` before opening a Host connection or launching
+  the Local Pi workspace. `IdentitiesOnly=yes` still includes configured
+  `IdentityFile` and `CertificateFile` entries. Reject additional entries rather
+  than authenticating with another key or dropping host routing config. Do not
+  reuse a user-configured ControlMaster socket for explicit key authentication.
   `stop_all()` first drains cached clients into an owned `JoinSet` so their stops
   run concurrently with admitted connection-test cleanup. It then acquires
   exclusive admission and drains again to catch clients published by a connect

@@ -11,6 +11,16 @@ export type SshConnectionInfo = {
 	hasPassword: boolean;
 };
 
+export type SshAgentIdentity = {
+	publicKey: string;
+	fingerprint: string;
+	comment: string;
+};
+
+export function listSshAgentIdentities(): Promise<SshAgentIdentity[]> {
+	return invoke<SshAgentIdentity[]>("ssh_agent_identities_list");
+}
+
 export function listSshConnections(): Promise<SshConnectionInfo[]> {
 	return invoke<SshConnectionInfo[]>("ssh_connection_list");
 }

@@ -45,7 +45,8 @@ impl PreviewManager {
         let (local_port, tunnel) = match &project.connection.kind {
             ConnectionKind::Ssh { .. } => {
                 let local_port = reserve_local_port()?;
-                let mut child = ssh_tunnel_command(&project.connection, local_port, remote_port)?
+                let mut child = ssh_tunnel_command(&project.connection, local_port, remote_port)
+                    .await?
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())

@@ -25,6 +25,8 @@ export type SshConnectionFormState = {
 	user: string;
 	authMethod: SshAuthMethod;
 	identityFile: string;
+	// null allows a new connection to auto-select the only available key.
+	agentPublicKey: string | null;
 	password: string;
 	proxyJump: string;
 	hasPassword: boolean;
@@ -42,6 +44,7 @@ export function emptySshConnectionForm(): SshConnectionFormState {
 		user: "",
 		authMethod: "agent",
 		identityFile: "",
+		agentPublicKey: null,
 		password: "",
 		proxyJump: "",
 		hasPassword: false,
@@ -56,6 +59,9 @@ export function sshConnectionFormFromInfo(
 	const target =
 		info.connection.kind.type === "ssh" ? info.connection.kind.target : null;
 	if (!target) return emptySshConnectionForm();
+	const auth = target.authMethod;
+	const authMethod = typeof auth === "string" ? auth : "agent";
+	const agentPublicKey = typeof auth === "string" ? "" : auth.agent_key;
 	if (target.type === "config_host") {
 		return {
 			...emptySshConnectionForm(),
@@ -63,7 +69,8 @@ export function sshConnectionFormFromInfo(
 			name: info.connection.name,
 			mode: "config",
 			hostname: target.host,
-			authMethod: target.authMethod,
+			authMethod,
+			agentPublicKey,
 			hasPassword: info.hasPassword,
 			piExecutable: info.connection.piExecutable ?? "",
 			piRuntime: info.connection.piRuntime ?? "workspace",
@@ -77,7 +84,8 @@ export function sshConnectionFormFromInfo(
 		hostname: target.hostname,
 		port: target.port ? String(target.port) : "22",
 		user: target.user ?? "",
-		authMethod: target.authMethod,
+		authMethod,
+		agentPublicKey,
 		identityFile: target.identityFile ?? "",
 		proxyJump: target.proxyJump ?? "",
 		hasPassword: info.hasPassword,
@@ -89,12 +97,16 @@ export function sshConnectionFormFromInfo(
 export function connectionFromSshForm(
 	form: SshConnectionFormState,
 ): Connection {
+	const authMethod =
+		form.authMethod === "agent" && form.agentPublicKey
+			? { agent_key: form.agentPublicKey }
+			: form.authMethod;
 	let target: SshTarget;
 	if (form.mode === "config") {
 		target = {
 			type: "config_host",
 			host: form.hostname.trim(),
-			authMethod: form.authMethod,
+			authMethod,
 		};
 	} else {
 		target = {
@@ -104,7 +116,7 @@ export function connectionFromSshForm(
 			user: form.user.trim() || null,
 			identityFile:
 				form.authMethod === "key" ? form.identityFile.trim() || null : null,
-			authMethod: form.authMethod,
+			authMethod,
 			proxyJump: form.proxyJump.trim() || null,
 		};
 	}

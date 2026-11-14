@@ -3,7 +3,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde::Deserialize;
 use tauri::{AppHandle, State};
 
-use crate::domain::{Connection, ConnectionKind, SshAuthMethod};
+use crate::{
+    domain::{Connection, ConnectionKind, SshAuthMethod},
+    runtime::ssh::{self, SshAgentIdentity},
+};
 
 use super::{
     ConnectionTestResult, PiloRuntime, connection_test_result, credentials,
@@ -23,6 +26,11 @@ pub struct SshConnectionInfo {
 pub struct SaveSshConnectionRequest {
     pub connection: Connection,
     pub password: Option<String>,
+}
+
+#[tauri::command]
+pub async fn ssh_agent_identities_list() -> Result<Vec<SshAgentIdentity>, String> {
+    ssh::list_agent_identities().await
 }
 
 fn ensure_ssh_connection(connection: &Connection) -> Result<(), String> {
@@ -57,13 +65,14 @@ pub fn ssh_connection_save(
     request: SaveSshConnectionRequest,
 ) -> Result<SshConnectionInfo, String> {
     ensure_ssh_connection(&request.connection)?;
-    let db = storage::open(&app)?;
     let password_auth = match &request.connection.kind {
         ConnectionKind::Ssh { target } => {
-            matches!(target.auth_method(), crate::domain::SshAuthMethod::Password)
+            ssh::validate_agent_identity(target)?;
+            matches!(target.auth_method(), SshAuthMethod::Password)
         }
         _ => false,
     };
+    let db = storage::open(&app)?;
     if password_auth {
         if let Some(password) = request.password.as_deref() {
             credentials::set_ssh_password(&request.connection.id, password)?;

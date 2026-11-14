@@ -36,15 +36,30 @@ pub(crate) fn resolve_session_project_with_paths(
     }
 }
 
-pub(crate) fn resolve_pi_runtime(
+pub(crate) async fn resolve_pi_runtime(
     app: &AppHandle,
     project: &Project,
     extensions: Vec<String>,
 ) -> Result<PiRuntimeProfile, String> {
-    resolve_pi_runtime_with_paths(&HostPaths::from_app(app)?, project, extensions)
+    resolve_checked_pi_runtime_with_paths(&HostPaths::from_app(app)?, project, extensions).await
 }
 
-pub(crate) fn resolve_pi_runtime_with_paths(
+pub(crate) async fn resolve_checked_pi_runtime_with_paths(
+    paths: &HostPaths,
+    project: &Project,
+    extensions: Vec<String>,
+) -> Result<PiRuntimeProfile, String> {
+    let profile = resolve_pi_runtime_with_paths(paths, project, extensions)?;
+    if let (ConnectionKind::Ssh { target }, [BuiltinExtension::SshWorkspace { config }]) = (
+        &project.connection.kind,
+        profile.builtin_extensions.as_slice(),
+    ) {
+        ssh::check_agent_key_config(target, &config.ssh_args).await?;
+    }
+    Ok(profile)
+}
+
+fn resolve_pi_runtime_with_paths(
     paths: &HostPaths,
     project: &Project,
     extensions: Vec<String>,

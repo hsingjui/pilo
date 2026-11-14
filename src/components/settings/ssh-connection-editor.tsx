@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Eye, EyeOff, KeyRound } from "lucide-react";
 
 import type { SshAuthMethod } from "@/lib/api/pi-runtime";
+import {
+	listSshAgentIdentities,
+	type SshAgentIdentity,
+} from "@/lib/api/ssh-connections";
 import { cn } from "@/lib/utils";
 import {
 	Button,
@@ -40,8 +44,8 @@ type SshConnectionEditorProps = {
 	fieldError?: SshFieldError | null;
 	onChange: (editing: SshConnectionFormState) => void;
 	onClose: () => void;
-	onTest?: () => void;
-	onSave: () => void;
+	onTest?: (editing: SshConnectionFormState) => void;
+	onSave: (editing: SshConnectionFormState) => void;
 };
 
 export function SshConnectionEditor({
@@ -58,6 +62,56 @@ export function SshConnectionEditor({
 	const { t } = useTranslation();
 	const [revealedId, setRevealedId] = useState<string | null>(null);
 	const revealPassword = editing !== null && revealedId === editing.id;
+	const agentFormId =
+		open && editing?.authMethod === "agent" ? editing.id : null;
+	const [agentRevision, setAgentRevision] = useState(0);
+	const [agentResult, setAgentResult] = useState<{
+		formId: string;
+		revision: number;
+		identities: SshAgentIdentity[] | null;
+	} | null>(null);
+
+	useEffect(() => {
+		if (!agentFormId) return;
+		let active = true;
+		const settle = (identities: SshAgentIdentity[] | null) => {
+			if (active) {
+				setAgentResult({
+					formId: agentFormId,
+					revision: agentRevision,
+					identities,
+				});
+			}
+		};
+		void listSshAgentIdentities().then(settle, () => settle(null));
+		return () => {
+			active = false;
+		};
+	}, [agentFormId, agentRevision]);
+
+	const identities =
+		agentResult &&
+		agentResult.formId === agentFormId &&
+		agentResult.revision === agentRevision
+			? agentResult.identities
+			: undefined;
+	const agentPublicKey =
+		editing?.agentPublicKey ??
+		(identities?.length === 1 ? identities[0]?.publicKey : "") ??
+		"";
+	const savedKeyMissing =
+		Boolean(agentPublicKey) &&
+		!identities?.some((identity) => identity.publicKey === agentPublicKey);
+	const waitingForAgent = Boolean(agentFormId) && identities === undefined;
+	const agentStatus = waitingForAgent
+		? "connection.sshAgentChecking"
+		: identities === null
+			? "connection.sshAgentUnavailable"
+			: savedKeyMissing
+				? "connection.sshAgentKeyMissing"
+				: identities?.length
+					? "connection.sshAgentDetected"
+					: "connection.sshAgentEmpty";
 
 	const resetReveal = () => setRevealedId(null);
 
@@ -78,7 +132,7 @@ export function SshConnectionEditor({
 		>
 			<DialogContent
 				overlayClassName={SETTINGS_NESTED_DIALOG_OVERLAY_CLASS}
-				className="max-w-lg gap-4"
+				className="max-w-lg grid-cols-1 gap-4 overflow-y-auto"
 			>
 				<DialogHeader>
 					<DialogTitle>
@@ -91,7 +145,7 @@ export function SshConnectionEditor({
 					</DialogDescription>
 				</DialogHeader>
 				{editing ? (
-					<div className="grid gap-3">
+					<div className="grid grid-cols-1 gap-3">
 						<div className="grid grid-cols-2 gap-3">
 							<label htmlFor="ssh-name" className="grid gap-1 text-xs">
 								{t("settings.connectionName")}
@@ -205,6 +259,67 @@ export function SshConnectionEditor({
 								</SelectContent>
 							</Select>
 						</div>
+						{agentFormId ? (
+							<div className="grid min-w-0 gap-1 text-xs">
+								<label htmlFor="ssh-agent-key">
+									{t("connection.sshAgentKey")}
+								</label>
+								<div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+									<Select
+										value={agentPublicKey || "auto"}
+										onValueChange={(value) =>
+											onChange({
+												...editing,
+												agentPublicKey: value === "auto" ? "" : value,
+											})
+										}
+									>
+										<SelectTrigger
+											id="ssh-agent-key"
+											className={cn(
+												SETTINGS_CONTROL_CLASS,
+												"min-w-0 [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0",
+											)}
+											aria-describedby="ssh-agent-status"
+										>
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent className="max-w-(--radix-select-trigger-width)">
+											<SelectItem value="auto">
+												{t("connection.sshAgentAuto")}
+											</SelectItem>
+											{savedKeyMissing ? (
+												<SelectItem value={agentPublicKey}>
+													{t("connection.sshAgentSavedKey")}
+												</SelectItem>
+											) : null}
+											{identities?.map(
+												({ publicKey, fingerprint, comment }) => (
+													<SelectItem key={publicKey} value={publicKey}>
+														<span className="break-all">
+															{comment
+																? `${comment} · ${fingerprint}`
+																: fingerprint}
+														</span>
+													</SelectItem>
+												),
+											)}
+										</SelectContent>
+									</Select>
+									<Button
+										variant="outline"
+										size="sm"
+										disabled={waitingForAgent || busy || testing}
+										onClick={() => setAgentRevision((revision) => revision + 1)}
+									>
+										{t("common.refresh")}
+									</Button>
+								</div>
+								<output id="ssh-agent-status" className="text-muted-foreground">
+									{t(agentStatus)}
+								</output>
+							</div>
+						) : null}
 						<div className="grid gap-1 text-xs">
 							{t("connection.runtimeLocation")}
 							<Select
@@ -331,13 +446,13 @@ export function SshConnectionEditor({
 								/>
 							</label>
 						) : null}
-						<div className="mt-1 flex items-center justify-between gap-2">
+						<div className="mt-1 flex flex-wrap items-center justify-between gap-2">
 							{onTest ? (
 								<Button
 									variant="outline"
 									size="sm"
-									disabled={busy || testing}
-									onClick={onTest}
+									disabled={busy || testing || waitingForAgent}
+									onClick={() => onTest({ ...editing, agentPublicKey })}
 								>
 									{testing
 										? t("connection.testingConnection")
@@ -360,11 +475,14 @@ export function SshConnectionEditor({
 								<Button
 									size="sm"
 									disabled={
-										busy || !editing.name.trim() || !editing.hostname.trim()
+										busy ||
+										waitingForAgent ||
+										!editing.name.trim() ||
+										!editing.hostname.trim()
 									}
 									onClick={() => {
 										resetReveal();
-										onSave();
+										onSave({ ...editing, agentPublicKey });
 									}}
 								>
 									{busy ? t("common.saving") : t("common.save")}

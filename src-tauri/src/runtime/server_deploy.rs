@@ -166,7 +166,7 @@ async fn spawn_ssh_server(
         .stage("deploy")
         .finish(deploy_server_ssh(connection, server_target, force_redeploy, diagnostics).await)?;
     let spawn = diagnostics.stage("spawn");
-    let result = (|| {
+    let result = async {
         let mut command = if persistent {
             ssh_command_with_options(
                 connection,
@@ -176,9 +176,10 @@ async fn spawn_ssh_server(
                     "-o",
                     "ServerAliveCountMax=2",
                 ],
-            )?
+            )
+            .await?
         } else {
-            ssh_command(connection)?
+            ssh_command(connection).await?
         };
         command.env(ASKPASS_ATTEMPT_ENV, diagnostics.attempt_id.to_string());
         let mut script = format!(
@@ -189,7 +190,8 @@ async fn spawn_ssh_server(
         }
         command.arg(wrap_posix_script(&script));
         spawn_piped_server(command, &connection.name, reused_deployment, diagnostics)
-    })();
+    }
+    .await;
     spawn.finish(result)
 }
 
@@ -291,7 +293,7 @@ async fn probe_ssh_target(
     connection: &Connection,
     diagnostics: &ConnectionDiagnostics,
 ) -> Result<ServerTarget, String> {
-    let mut command = ssh_command(connection)?;
+    let mut command = ssh_command(connection).await?;
     command.kill_on_drop(true);
     command.env(ASKPASS_ATTEMPT_ENV, diagnostics.attempt_id.to_string());
     command.arg(wrap_posix_script(
@@ -433,7 +435,7 @@ async fn deploy_server_ssh(
         "set -e; dst=\"$HOME/{SERVER_REMOTE_DIR}/pilo-server\"; expected=\"{fingerprint}\"; force={force_redeploy}; actual=$(\"$dst\" --fingerprint 2>/dev/null || true); if [ \"$force\" = \"false\" ] && [ \"$actual\" = \"$expected\" ]; then printf 'ready\\n'; exit 0; fi; mkdir -p \"$(dirname \"$dst\")\"; printf 'upload\\n'; tmp=\"$dst.tmp.$$\"; trap 'rm -f \"$tmp\"' EXIT; cat > \"$tmp\"; chmod 700 \"$tmp\"; actual=$(\"$tmp\" --fingerprint 2>/dev/null || true); [ \"$actual\" = \"$expected\" ] || {{ printf 'fingerprint_mismatch\\n' >&2; exit 43; }}; mv -f \"$tmp\" \"$dst\"; trap - EXIT; {LEGACY_SERVER_CLEANUP}printf 'installed\\n'",
         fingerprint = artifact.fingerprint,
     );
-    let mut command = ssh_command(connection)?;
+    let mut command = ssh_command(connection).await?;
     command.env(ASKPASS_ATTEMPT_ENV, diagnostics.attempt_id.to_string());
     command.arg(wrap_posix_script(&install_script));
     command

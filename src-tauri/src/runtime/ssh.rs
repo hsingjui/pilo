@@ -1,5 +1,8 @@
-use std::{collections::BTreeMap, process::Stdio};
+use std::{collections::BTreeMap, fs, process::Stdio, time::Duration};
 
+use base64::{Engine as _, engine::general_purpose};
+use serde::Serialize;
+use sha2::{Digest, Sha256};
 use tokio::process::Command;
 
 use crate::domain::{Connection, ConnectionKind, SshAuthMethod, SshTarget};
@@ -17,7 +20,132 @@ pub(super) fn stderr_without_askpass_diagnostics(stderr: &[u8]) -> String {
         .collect()
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshAgentIdentity {
+    public_key: String,
+    fingerprint: String,
+    comment: String,
+}
+
+pub(crate) async fn list_agent_identities() -> Result<Vec<SshAgentIdentity>, String> {
+    let mut command = Command::new("ssh-add");
+    command.arg("-L").stdin(Stdio::null()).kill_on_drop(true);
+    super::hide_console_window(&mut command);
+    let output = tokio::time::timeout(Duration::from_secs(5), command.output())
+        .await
+        .map_err(|_| "SSH agent timed out while listing public keys".to_owned())?
+        .map_err(|error| format!("failed to run ssh-add: {error}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        if stdout.trim() == "The agent has no identities."
+            || stderr.trim() == "The agent has no identities."
+        {
+            return Ok(Vec::new());
+        }
+        return Err("could not list public keys from the SSH agent".to_owned());
+    }
+
+    let mut identities = Vec::<SshAgentIdentity>::new();
+    for line in stdout.lines() {
+        let mut fields = line.splitn(3, ' ');
+        let (Some(kind), Some(encoded)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        let public_key = format!("{kind} {encoded}");
+        let Some(blob) = public_key_blob(&public_key) else {
+            continue;
+        };
+        if identities
+            .iter()
+            .any(|identity| identity.public_key == public_key)
+        {
+            continue;
+        }
+        identities.push(SshAgentIdentity {
+            public_key,
+            fingerprint: format!(
+                "SHA256:{}",
+                general_purpose::STANDARD_NO_PAD.encode(Sha256::digest(blob))
+            ),
+            comment: fields
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .chars()
+                .filter(|character| !character.is_control())
+                .take(120)
+                .collect(),
+        });
+    }
+    Ok(identities)
+}
+
+pub(in crate::runtime) fn validate_agent_identity(target: &SshTarget) -> Result<(), String> {
+    if let SshAuthMethod::AgentKey(key) = target.auth_method() {
+        if public_key_blob(key).is_none() {
+            return Err("invalid SSH agent public key".to_owned());
+        }
+        if matches!(
+            target,
+            SshTarget::Direct {
+                identity_file: Some(_),
+                ..
+            }
+        ) {
+            return Err("SSH agent key cannot be combined with a private key path".to_owned());
+        }
+    }
+    Ok(())
+}
+
+fn public_key_blob(public_key: &str) -> Option<Vec<u8>> {
+    if public_key.len() > 32 * 1024 {
+        return None;
+    }
+    let (kind, encoded) = public_key.split_once(' ')?;
+    if kind.is_empty()
+        || !kind.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'@' | b'+')
+        })
+    {
+        return None;
+    }
+    let blob = general_purpose::STANDARD.decode(encoded).ok()?;
+    let kind_length = u32::try_from(kind.len()).ok()?.to_be_bytes();
+    let fields = blob.strip_prefix(kind_length.as_slice())?;
+    let key_data = fields.strip_prefix(kind.as_bytes())?;
+    (!key_data.is_empty()).then_some(blob)
+}
+
+fn agent_identity_path(key: &str) -> Result<String, String> {
+    let dir = pilo_server::runtime_directory()
+        .map_err(|error| format!("failed to resolve SSH agent public key cache: {error}"))?
+        .join("ssh-agent-keys");
+    let path = dir.join(format!("{:x}.pub", Sha256::digest(key.as_bytes())));
+    let contents = format!("{key}\n");
+    if !fs::read(&path).is_ok_and(|cached| cached == contents.as_bytes()) {
+        // The same key can be opened concurrently by independent SSH commands.
+        let mut nonce = [0; 16];
+        getrandom::fill(&mut nonce)
+            .map_err(|error| format!("failed to name SSH agent public key cache file: {error}"))?;
+        let temporary = dir.join(format!("{:032x}.tmp", u128::from_be_bytes(nonce)));
+        let result = fs::create_dir_all(&dir)
+            .and_then(|()| fs::write(&temporary, contents))
+            .and_then(|()| fs::rename(&temporary, &path));
+        if let Err(error) = result {
+            let _ = fs::remove_file(&temporary);
+            return Err(format!("failed to cache SSH agent public key: {error}"));
+        }
+    }
+    path.into_os_string()
+        .into_string()
+        .map_err(|_| "SSH agent public key cache path is not valid UTF-8".to_owned())
+}
+
 pub(crate) fn ssh_base_args(target: &SshTarget) -> Result<Vec<String>, String> {
+    validate_agent_identity(target)?;
     let batch_mode = !matches!(target.auth_method(), SshAuthMethod::Password);
     let mut args = vec![
         "-T".to_owned(),
@@ -43,23 +171,96 @@ pub(crate) fn ssh_base_args(target: &SshTarget) -> Result<Vec<String>, String> {
             "NumberOfPasswordPrompts=1".to_owned(),
         ]);
     }
+    if let SshAuthMethod::AgentKey(key) = target.auth_method() {
+        // OpenSSH accepts a public IdentityFile and asks the agent to sign.
+        args.extend([
+            "-i".to_owned(),
+            agent_identity_path(key)?,
+            "-o".to_owned(),
+            "IdentitiesOnly=yes".to_owned(),
+            "-o".to_owned(),
+            "PreferredAuthentications=publickey".to_owned(),
+            "-o".to_owned(),
+            "PubkeyAuthentication=yes".to_owned(),
+            "-o".to_owned(),
+            "PKCS11Provider=none".to_owned(),
+            "-o".to_owned(),
+            "CertificateFile=none".to_owned(),
+            "-o".to_owned(),
+            "ControlPath=none".to_owned(),
+        ]);
+    }
     append_target_args(&mut args, target)?;
     Ok(args)
 }
 
-pub(crate) fn ssh_command(connection: &Connection) -> Result<Command, String> {
-    ssh_command_with_options(connection, &[])
+pub(super) async fn check_agent_key_config(
+    target: &SshTarget,
+    args: &[String],
+) -> Result<(), String> {
+    if !matches!(target.auth_method(), SshAuthMethod::AgentKey(_)) {
+        return Ok(());
+    }
+    let selected = args
+        .windows(2)
+        .find(|pair| pair[0] == "-i")
+        .map(|pair| pair[1].as_str())
+        .ok_or_else(|| "SSH agent public key is missing from the command".to_owned())?;
+    // IdentityFile and CertificateFile accumulate even with IdentitiesOnly=yes.
+    // Let OpenSSH resolve Host, Include and Match without dropping route settings.
+    let mut command = Command::new("ssh");
+    command
+        .arg("-G")
+        .args(args)
+        .stdin(Stdio::null())
+        .kill_on_drop(true);
+    super::hide_console_window(&mut command);
+    let output = tokio::time::timeout(Duration::from_secs(5), command.output())
+        .await
+        .map_err(|_| "timed out while checking OpenSSH configuration".to_owned())?
+        .map_err(|error| format!("failed to check OpenSSH configuration: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "failed to resolve OpenSSH configuration: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let config = String::from_utf8_lossy(&output.stdout);
+    let mut selected_found = false;
+    for (name, value) in config.lines().filter_map(|line| line.split_once(' ')) {
+        match name {
+            "identityfile" if value == selected => selected_found = true,
+            "identityfile" | "certificatefile" if value != "none" => {
+                return Err(concat!(
+                    "OpenSSH config adds another IdentityFile or CertificateFile. ",
+                    "Remove it for this host, or use SSH defaults instead of a selected agent key."
+                )
+                .to_owned());
+            }
+            _ => {}
+        }
+    }
+    if !selected_found {
+        return Err("OpenSSH configuration did not retain the selected agent key".to_owned());
+    }
+    Ok(())
 }
 
-pub(super) fn ssh_command_with_options(
+pub(crate) async fn ssh_command(connection: &Connection) -> Result<Command, String> {
+    ssh_command_with_options(connection, &[]).await
+}
+
+pub(super) async fn ssh_command_with_options(
     connection: &Connection,
     options: &[&str],
 ) -> Result<Command, String> {
     let ConnectionKind::Ssh { target } = &connection.kind else {
         return Err("SSH command requires an SSH connection".to_owned());
     };
+    let args = ssh_base_args(target)?;
+    check_agent_key_config(target, &args).await?;
     let mut command = Command::new("ssh");
-    command.args(options).args(ssh_base_args(target)?);
+    command.args(options).args(args);
     if matches!(target.auth_method(), SshAuthMethod::Password) {
         super::credentials::get_ssh_password(&connection.id)?;
         let executable = std::env::current_exe().map_err(|error| {
@@ -77,7 +278,7 @@ pub(super) fn ssh_command_with_options(
     Ok(command)
 }
 
-pub(crate) fn ssh_tunnel_command(
+pub(crate) async fn ssh_tunnel_command(
     connection: &Connection,
     local_port: u16,
     remote_port: u16,
@@ -85,8 +286,10 @@ pub(crate) fn ssh_tunnel_command(
     let ConnectionKind::Ssh { target } = &connection.kind else {
         return Err("SSH tunnel requires an SSH connection".to_owned());
     };
+    let args = ssh_tunnel_args(target, local_port, remote_port)?;
+    check_agent_key_config(target, &args).await?;
     let mut command = Command::new("ssh");
-    command.args(ssh_tunnel_args(target, local_port, remote_port)?);
+    command.args(args);
     if matches!(target.auth_method(), SshAuthMethod::Password) {
         super::credentials::get_ssh_password(&connection.id)?;
         let executable = std::env::current_exe().map_err(|error| {

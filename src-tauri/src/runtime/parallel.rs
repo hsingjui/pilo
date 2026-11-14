@@ -118,13 +118,14 @@ impl ParallelAgentManager {
             created_at_ms: project.created_at_ms,
             last_opened_at_ms: project.last_opened_at_ms,
         };
-        let profile = match pi_workspace::resolve_pi_runtime(&app, &worktree_project, Vec::new()) {
-            Ok(profile) => profile,
-            Err(error) => {
-                let _ = remove_worktree(&servers, project, &branch, &worktree_path).await;
-                return Err(error);
-            }
-        };
+        let profile =
+            match pi_workspace::resolve_pi_runtime(&app, &worktree_project, Vec::new()).await {
+                Ok(profile) => profile,
+                Err(error) => {
+                    let _ = remove_worktree(&servers, project, &branch, &worktree_path).await;
+                    return Err(error);
+                }
+            };
         if let Err(error) = session
             .spawn(
                 Arc::clone(&servers),

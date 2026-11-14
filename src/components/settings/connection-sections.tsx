@@ -454,7 +454,13 @@ export function sshConnectionDescription(connection: Connection): ReactNode {
 	return (
 		<>
 			<span className="truncate font-mono">{sshTargetLabel(target)}</span>
-			<span>{i18n.t(AUTH_LABEL_KEYS[target.authMethod])}</span>
+			<span>
+				{i18n.t(
+					AUTH_LABEL_KEYS[
+						typeof target.authMethod === "string" ? target.authMethod : "agent"
+					],
+				)}
+			</span>
 			{target.type === "direct" && target.proxyJump ? (
 				<span>{i18n.t("connection.via", { name: target.proxyJump })}</span>
 			) : null}
