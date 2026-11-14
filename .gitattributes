@@ -9,3 +9,4 @@
 .trellis/workspace/*/journal-*.md merge=union
 
 .githooks/* text eol=lf
+*.sh text eol=lf
