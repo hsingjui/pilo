@@ -7,6 +7,8 @@ import {
 	type SetStateAction,
 } from "react";
 
+import type { AssistantContentItem } from "@/lib/chat/chat-activity-state";
+
 type ChatExpansionStore = Map<string, boolean>;
 
 const ChatExpansionStateContext = createContext<ChatExpansionStore | null>(
@@ -26,9 +28,33 @@ export function ChatExpansionStateProvider({
 	);
 }
 
-export function useChatExpansionState(key: string, initialOpen: boolean) {
+export function chatToolExpansionKey(messageId: string, toolCallId: string) {
+	return `tool:${messageId}:${toolCallId}`;
+}
+
+export function useFindExpandedToolIndex(messageId: string) {
 	const store = useContext(ChatExpansionStateContext);
-	const [open, setOpenState] = useState(() => store?.get(key) ?? initialOpen);
+	return useCallback(
+		(content: readonly AssistantContentItem[]) =>
+			content.findIndex(
+				(item) =>
+					item.type === "tool" &&
+					store?.get(chatToolExpansionKey(messageId, item.id)) === true,
+			),
+		[messageId, store],
+	);
+}
+
+export function useChatExpansionState(
+	key: string,
+	initialOpen: boolean | (() => boolean),
+) {
+	const store = useContext(ChatExpansionStateContext);
+	const [open, setOpenState] = useState(
+		() =>
+			store?.get(key) ??
+			(typeof initialOpen === "function" ? initialOpen() : initialOpen),
+	);
 	const setOpen = useCallback(
 		(next: SetStateAction<boolean>) => {
 			setOpenState((current) => {

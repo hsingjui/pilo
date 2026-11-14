@@ -14,7 +14,10 @@ import {
 	type AssistantActivity,
 } from "@/components/chat/chat-activity";
 import { toggleChatExpansionWithAnchor } from "@/components/chat/chat-expansion-anchor";
-import { useChatExpansionState } from "@/components/chat/chat-expansion-state";
+import {
+	useChatExpansionState,
+	useFindExpandedToolIndex,
+} from "@/components/chat/chat-expansion-state";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import { useChatFindMatch } from "@/components/chat/chat-find-context";
 import type { AssistantContentItem } from "@/lib/chat/chat-activity-state";
@@ -212,6 +215,7 @@ export function renderAssistantContentNodes({
 			<div key={`${messageId}-${groupKey}`}>
 				<AssistantActivityView
 					activity={group}
+					messageId={messageId}
 					expansionKey={`${messageId}:${groupKey}`}
 					followedByText={followedByText}
 					durationMs={firstActivityGroup ? durationMs : undefined}
@@ -242,6 +246,15 @@ function ProgressiveAssistantWorkContent({
 	const contentRef = useRef<HTMLDivElement>(null);
 	const [revealedBefore, setRevealedBefore] = useState(0);
 	const [revealedAfter, setRevealedAfter] = useState(0);
+	const findExpandedToolIndex = useFindExpandedToolIndex(messageId);
+	const [expandedToolStart] = useState(() => {
+		if (active) return 0;
+		// Completed work remounts; keep an already-open tool in the first window.
+		const index = findExpandedToolIndex(content);
+		return index < WORK_ACTIVITY_INITIAL_ITEMS
+			? 0
+			: index - Math.floor(WORK_ACTIVITY_INITIAL_ITEMS / 2);
+	});
 	const findMatch = useChatFindMatch(messageId);
 	const targetContentId = findMatch?.contentId;
 	const targetIndex = targetContentId
@@ -252,7 +265,7 @@ function ProgressiveAssistantWorkContent({
 			? Math.max(0, targetIndex - Math.floor(WORK_ACTIVITY_INITIAL_ITEMS / 2))
 			: active
 				? Math.max(0, content.length - WORK_ACTIVITY_INITIAL_ITEMS)
-				: 0;
+				: expandedToolStart;
 	const initialEnd =
 		active && targetIndex < 0
 			? content.length
@@ -325,9 +338,13 @@ export function AssistantWorkedRegion({
 }) {
 	const { t } = useTranslation();
 	const { collapseCompletedActivity, showWorkDuration } = usePreferences();
+	const findExpandedToolIndex = useFindExpandedToolIndex(messageId);
 	const [expanded, setOpen] = useChatExpansionState(
 		`worked:${messageId}:${active ? "active" : "complete"}`,
-		active || !collapseCompletedActivity,
+		() =>
+			active ||
+			!collapseCompletedActivity ||
+			findExpandedToolIndex(content) >= 0,
 	);
 	const findMatch = useChatFindMatch(messageId);
 	const searchKey = findMatch

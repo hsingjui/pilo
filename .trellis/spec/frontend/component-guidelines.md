@@ -408,6 +408,11 @@ spacing, type sizes, or control heights.
   work retains the first error summary. Failed groups do not auto-collapse when
   following text arrives, and failed tool output defaults open. Preserve manual
   disclosure state and search expansion behavior.
+- Key tool detail expansion by message ID and tool call ID, not execution status
+  or the surrounding activity group. Following text must not auto-collapse a
+  group with open tool details. When completed work remounts, keep an open tool
+  in the initial reveal window; a saved disclosure choice takes precedence over
+  the default for that view.
 - Chat activity disclosures intentionally stay compact on desktop and WebUI,
   including coarse-pointer devices: `ToolCallActivityView` uses `min-h-6` (24px)
   and `AssistantActivityView` uses `min-h-7` (28px). This is a deliberate

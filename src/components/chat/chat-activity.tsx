@@ -21,7 +21,11 @@ import { openChatImageLightbox } from "@/components/chat/chat-image-viewer";
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import { ChatTodoList } from "@/components/chat/chat-todo-capsule";
 import { toggleChatExpansionWithAnchor } from "@/components/chat/chat-expansion-anchor";
-import { useChatExpansionState } from "@/components/chat/chat-expansion-state";
+import {
+	chatToolExpansionKey,
+	useChatExpansionState,
+	useFindExpandedToolIndex,
+} from "@/components/chat/chat-expansion-state";
 import { useChatFileOpen } from "@/components/chat/chat-file-open-context";
 import {
 	shouldAutoCollapseAssistantActivity,
@@ -441,7 +445,7 @@ function ToolCallActivityView({
 }) {
 	const running = activity.status === "running";
 	const { t } = useTranslation();
-	// 详情默认收起（含运行中），点击行切换；key 含 status，完成后 remount 自动收起
+	// 详情默认收起，手动展开后按工具调用 ID 保留状态。
 	const [open, setOpen] = useChatExpansionState(expansionKey, false);
 	const fileOpener = useChatFileOpen();
 	const preview = toolPreview(activity);
@@ -618,11 +622,13 @@ function activitySummaryLabel(
 
 export function AssistantActivityView({
 	activity,
+	messageId,
 	expansionKey,
 	followedByText = false,
 	durationMs,
 }: {
 	activity: AssistantActivity[];
+	messageId: string;
 	expansionKey: string;
 	followedByText?: boolean;
 	durationMs?: number;
@@ -644,9 +650,10 @@ export function AssistantActivityView({
 			: "";
 	const summary = running ? null : summarizeAssistantActivity(activity);
 	const summaryLabel = summary ? activitySummaryLabel(t, summary) : "";
+	const findExpandedToolIndex = useFindExpandedToolIndex(messageId);
 	const [groupOpen, setGroupOpen] = useChatExpansionState(
 		`${expansionKey}:group`,
-		initiallyOpen,
+		() => initiallyOpen || findExpandedToolIndex(activity) >= 0,
 	);
 	const autoCollapseEligible = followedByText && collapseCompletedActivity;
 	const previousAutoCollapseEligibleRef = useRef(autoCollapseEligible);
@@ -657,12 +664,13 @@ export function AssistantActivityView({
 			!shouldAutoCollapseAssistantActivity(
 				previousEligible,
 				autoCollapseEligible,
-			)
+			) ||
+			findExpandedToolIndex(activity) >= 0
 		) {
 			return;
 		}
 		setGroupOpen(false);
-	}, [autoCollapseEligible, setGroupOpen]);
+	}, [activity, autoCollapseEligible, findExpandedToolIndex, setGroupOpen]);
 	if (activity.length === 0) return null;
 
 	return (
@@ -718,9 +726,9 @@ export function AssistantActivityView({
 							/>
 						) : (
 							<ToolCallActivityView
-								key={`${item.id}-${item.status}`}
+								key={item.id}
 								activity={item}
-								expansionKey={`${expansionKey}:tool:${item.id}:${item.status}`}
+								expansionKey={chatToolExpansionKey(messageId, item.id)}
 							/>
 						),
 					)}
