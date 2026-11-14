@@ -184,11 +184,13 @@ impl ChatSessions {
         project: Project,
         session_key: String,
         launch: ChatSessionLaunch,
+        policy: tokio::sync::OwnedRwLockReadGuard<()>,
     ) -> Result<PiSessionSnapshot, String> {
         let sessions = self.clone();
         // The HTTP caller may time out; readiness and failure cleanup still
         // belong to the Host, not to the lifetime of that request future.
         tokio::spawn(async move {
+            let _policy = policy;
             sessions
                 .prepare_inner(servers, events, project, session_key, launch)
                 .await
@@ -289,9 +291,11 @@ impl ChatSessions {
         project: Project,
         session_key: String,
         launch: ChatSessionLaunch,
+        policy: tokio::sync::OwnedRwLockReadGuard<()>,
     ) -> Result<PiSessionSnapshot, String> {
         let sessions = self.clone();
         tokio::spawn(async move {
+            let _policy = policy;
             sessions
                 .ensure_inner(servers, events, project, session_key, launch)
                 .await

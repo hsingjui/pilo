@@ -19,6 +19,7 @@ pub struct SshConnectionInfo {
     pub connection: Connection,
     pub project_count: u64,
     pub has_password: bool,
+    pub local_pi_resources: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -26,6 +27,7 @@ pub struct SshConnectionInfo {
 pub struct SaveSshConnectionRequest {
     pub connection: Connection,
     pub password: Option<String>,
+    pub local_pi_resources: Option<bool>,
 }
 
 #[tauri::command]
@@ -53,6 +55,7 @@ pub fn ssh_connection_list(app: AppHandle) -> Result<Vec<SshConnectionInfo>, Str
             Ok(SshConnectionInfo {
                 project_count: storage::connection_project_count(&db, &connection.id)?,
                 has_password: credentials::has_ssh_password(&connection.id),
+                local_pi_resources: storage::get_local_pi_resources(&db, &connection.id)?,
                 connection,
             })
         })
@@ -60,8 +63,9 @@ pub fn ssh_connection_list(app: AppHandle) -> Result<Vec<SshConnectionInfo>, Str
 }
 
 #[tauri::command]
-pub fn ssh_connection_save(
+pub async fn ssh_connection_save(
     app: AppHandle,
+    runtime: State<'_, PiloRuntime>,
     request: SaveSshConnectionRequest,
 ) -> Result<SshConnectionInfo, String> {
     ensure_ssh_connection(&request.connection)?;
@@ -72,22 +76,47 @@ pub fn ssh_connection_save(
         }
         _ => false,
     };
-    let db = storage::open(&app)?;
+    if password_auth
+        && request.password.is_none()
+        && !credentials::has_ssh_password(&request.connection.id)
+    {
+        return Err("SSH password is required".to_owned());
+    }
+    let _policy = runtime.pi_resource_policy.write().await;
+    let current = {
+        let db = storage::open(&app)?;
+        storage::get_local_pi_resources(&db, &request.connection.id)?
+    };
+    let enabled = request.connection.pi_runtime == crate::domain::PiRuntime::Local
+        && request.local_pi_resources.unwrap_or(current);
+    if current != enabled {
+        crate::runtime::pi_workspace::stop_for_resource_change(
+            &app,
+            &runtime,
+            &request.connection.id,
+        )
+        .await?;
+    }
+    let mut db = storage::open(&app)?;
+    let db = db.transaction().map_err(|error| error.to_string())?;
     if password_auth {
         if let Some(password) = request.password.as_deref() {
             credentials::set_ssh_password(&request.connection.id, password)?;
-        } else if !credentials::has_ssh_password(&request.connection.id) {
-            return Err("SSH password is required".to_owned());
         }
     } else {
         credentials::delete_ssh_password(&request.connection.id)?;
     }
     storage::upsert_connection(&db, &request.connection)?;
-    Ok(SshConnectionInfo {
+    storage::set_local_pi_resources(&db, &request.connection.id, enabled)?;
+    let info = SshConnectionInfo {
         project_count: storage::connection_project_count(&db, &request.connection.id)?,
         has_password: credentials::has_ssh_password(&request.connection.id),
+        local_pi_resources: enabled,
         connection: request.connection,
-    })
+    };
+    db.commit().map_err(|error| error.to_string())?;
+    crate::runtime::control::changed(&app);
+    Ok(info)
 }
 
 #[tauri::command]
@@ -105,6 +134,7 @@ pub async fn ssh_connection_remove(
     runtime: State<'_, PiloRuntime>,
     id: String,
 ) -> Result<(), String> {
+    let _policy = runtime.pi_resource_policy.write().await;
     stop_connection_projects(&app, &runtime, &id).await?;
     let db = storage::open(&app)?;
     storage::remove_connection(&db, &id)?;

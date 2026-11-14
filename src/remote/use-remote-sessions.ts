@@ -32,6 +32,9 @@ export function useRemoteSessions({
 	snapshotRefreshKey,
 }: UseRemoteSessionsOptions) {
 	const [projects, setProjects] = useState<Project[]>([]);
+	const [localPiResources, setLocalPiResources] = useState<
+		Record<string, boolean>
+	>({});
 	const [bootstrapSettled, setBootstrapSettled] = useState(false);
 	const [chatSessions, setChatSessions] = useState<
 		PiloClientBootstrap["chatSessions"]
@@ -68,6 +71,7 @@ export function useRemoteSessions({
 		try {
 			const bootstrap = await client.bootstrap();
 			setProjects(bootstrap.projects);
+			setLocalPiResources(bootstrap.localPiResources ?? {});
 			setChatSessions(bootstrap.chatSessions);
 			setFatalError(null);
 		} catch (error) {
@@ -365,6 +369,7 @@ export function useRemoteSessions({
 
 	return {
 		projects,
+		localPiResources,
 		bootstrapSettled,
 		chatSessions,
 		rawSessions,

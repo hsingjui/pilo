@@ -442,6 +442,11 @@ const enUS = {
 		privateKey: "Private key",
 		piWorkspace: "Remote Pi (SSH host)",
 		piLocal: "Local Pi (tools use SSH)",
+		localPiResources: "Use local Pi resources",
+		localPiResourcesDescription:
+			"Enable Host skills, extensions, MCP, and local tools. Extensions can run code on the Host. Only enable this for trusted SSH workspaces.",
+		localPiResourcesBusy:
+			"Wait for chats and parallel tasks on this connection to finish, or stop them before saving.",
 		sshPassword: "SSH password",
 		privateKeyPath: "Private key path",
 		proxyJump: "Proxy jump (optional)",

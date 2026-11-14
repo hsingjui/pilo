@@ -99,6 +99,7 @@ pub(crate) async fn prepare(
     events: RuntimeEventBus,
     request: ChatSessionRequest,
 ) -> Result<PiSessionSnapshot, String> {
+    let policy = runtime.pi_resource_policy.clone().read_owned().await;
     let (project, launch, connection_id) =
         resolve_launch(paths, runtime, &events, &request).await?;
     let snapshot = runtime
@@ -109,6 +110,7 @@ pub(crate) async fn prepare(
             project,
             request.session_key.clone(),
             launch,
+            policy,
         )
         .await?;
     if !request.is_model_probe()
@@ -131,6 +133,7 @@ pub(crate) async fn start(
     events: RuntimeEventBus,
     request: ChatSessionRequest,
 ) -> Result<PiSessionSnapshot, String> {
+    let policy = runtime.pi_resource_policy.clone().read_owned().await;
     let (project, launch, connection_id) =
         resolve_launch(paths, runtime, &events, &request).await?;
     let snapshot = runtime
@@ -141,6 +144,7 @@ pub(crate) async fn start(
             project,
             request.session_key.clone(),
             launch,
+            policy,
         )
         .await?;
     if !request.is_model_probe()

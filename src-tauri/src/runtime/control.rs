@@ -232,11 +232,14 @@ async fn execute(
                 ConnectionKind::Ssh { .. } => {
                     commands::ssh_connection_save(
                         app.clone(),
+                        app.state::<PiloRuntime>(),
                         commands::SaveSshConnectionRequest {
                             connection: save.connection,
                             password: save.password,
+                            local_pi_resources: None,
                         },
-                    )?;
+                    )
+                    .await?;
                 }
                 ConnectionKind::Wsl { .. } => {
                     commands::wsl_connection_save(app.clone(), save.connection)?;

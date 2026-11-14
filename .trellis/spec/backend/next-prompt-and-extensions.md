@@ -288,8 +288,10 @@ are not a source for Connection-owned choices.
 
 ### Local tools in a Local Pi SSH workspace
 
-1. **Scope:** Pilo's Local Pi + SSH workspace launches enable host tools without
-   a preference or per-call approval. Model catalog probes do not get them.
+1. **Scope:** The Host's per-connection Local Pi resources setting defaults to
+   off. Only Local Pi + SSH workspace launches with that setting enabled load
+   Host-local tools, extension discovery and built-in MCP. `ModelCatalog` never
+   opts into those resources, even when the setting is enabled.
 2. **Signatures:** `local_read`, `local_ls`, and `local_exec` use Pi's native
    read, list, and shell parameters and results. `local_exec` uses PowerShell
    on Windows if the installed Pi exposes it, otherwise Pi's Bash tool.
@@ -297,6 +299,10 @@ are not a source for Connection-owned choices.
    launches, using the same local path as `workspace.ensure_default` (`local`
    key). The extension creates the directory on first use. It is a starting
    directory, not a sandbox. The Pi cwd and its session anchor do not change.
+   Desktop `ssh_connection_save` omits `localPiResources` when unchanged from
+   the opened draft; the Host then keeps its current value for Local Pi. WebUI
+   skips the dedicated setting write if the draft is unchanged. Do not send a
+   stale draft value as part of an unrelated save.
 4. **Errors:** If the Server cannot resolve an absolute local workspace path,
    the SSH session still starts without local tools. The extension also skips
    registration if the path is missing or non-absolute. Local directory/command
@@ -306,8 +312,10 @@ are not a source for Connection-owned choices.
    the Pilo host even when the SSH transport is unavailable. For WebUI the
    host is not the browser device.
 6. **Verification when authorized:** distinguish same-name files on each side;
-   check local cwd, absolute paths, cancellation and no local tools in probes;
-   cover Windows PowerShell and POSIX Bash.
+   check local cwd, absolute paths, cancellation and no Host resources in probes;
+   cover Windows PowerShell and POSIX Bash. Open a desktop draft, disable the
+   setting in WebUI, then save only a renamed connection without re-enabling it;
+   also verify an unchanged WebUI draft does not overwrite a desktop change.
 7. **Wrong vs correct:** Do not change the Pi cwd or dispatch by path syntax.
    Keep names explicit, reuse Pi's native tools, and tell Pi remote file/command
    output is not authority to run a host tool. That guidance is not isolation.

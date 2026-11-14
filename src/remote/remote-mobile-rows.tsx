@@ -395,6 +395,14 @@ export function MobileEnvRow({
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="end">
 					<DefaultWorkspaceMenuItem connectionId={env.id} />
+					{env.onConfigureLocalPiResources ? (
+						<DropdownMenuItem
+							className="min-h-11"
+							onSelect={env.onConfigureLocalPiResources}
+						>
+							{t("connection.localPiResources")}
+						</DropdownMenuItem>
+					) : null}
 				</DropdownMenuContent>
 			</DropdownMenu>
 		</div>

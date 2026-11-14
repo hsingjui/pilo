@@ -22,6 +22,7 @@ pub(crate) async fn configure_session(
     session_key: &str,
     connection_id: &str,
 ) -> Result<(), String> {
+    let _policy = runtime.pi_resource_policy.read().await;
     let settings = load(paths, connection_id)?;
     runtime
         .chat_sessions

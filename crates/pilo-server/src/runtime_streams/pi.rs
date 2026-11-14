@@ -26,6 +26,7 @@ pub(crate) struct PiProcess {
     pub(crate) child: Child,
     pub(crate) stdin: Arc<Mutex<ChildStdin>>,
     work: Arc<StdMutex<PiWork>>,
+    track_work: bool,
 }
 
 #[derive(Default)]
@@ -40,6 +41,18 @@ struct PiWork {
 }
 
 impl PiWork {
+    fn is_busy(&self) -> bool {
+        self.active
+            || self.compacting
+            || self.queued
+            || !self.pending.is_empty()
+            || !self.tools.is_empty()
+            || self
+                .dialogs
+                .values()
+                .any(|(_, until)| until.is_none_or(|until| until > std::time::Instant::now()))
+    }
+
     fn observe(&mut self, event: &Value) {
         match event.get("type").and_then(Value::as_str) {
             Some("agent_start" | "auto_retry_start") => self.active = true,
@@ -138,16 +151,7 @@ impl PiProcess {
             .work
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        work.active
-            || work.compacting
-            || work.queued
-            || !work.pending.is_empty()
-            || !work.tools.is_empty()
-            || work.warming_until > unix_time_ms()
-            || work
-                .dialogs
-                .values()
-                .any(|(_, until)| until.is_none_or(|until| until > std::time::Instant::now()))
+        work.is_busy() || work.warming_until > unix_time_ms()
     }
 
     pub(crate) fn attach_state(&self) -> Value {
@@ -229,6 +233,19 @@ async fn abort_output_tasks(tasks: [tokio::task::JoinHandle<()>; 2]) {
     }
 }
 
+fn ensure_pi_idle(process: Option<&PiProcess>) -> Result<(), String> {
+    if process.is_some_and(|process| {
+        process
+            .work
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_busy()
+    }) {
+        return Err("SSH_LOCAL_PI_RESOURCES_BUSY".to_owned());
+    }
+    Ok(())
+}
+
 async fn stop_registered_pi(
     processes: &Mutex<std::collections::HashMap<String, PiProcess>>,
     starts: &Mutex<PiStarts>,
@@ -236,10 +253,14 @@ async fn stop_registered_pi(
     outputs: &StdMutex<PiOutputTasks>,
     stream_id: &str,
     expected_stdin: Option<&Weak<Mutex<ChildStdin>>>,
+    only_if_idle: bool,
 ) -> Result<Option<std::process::ExitStatus>, String> {
     let stopped = {
         let mut processes = processes.lock().await;
         let mut stops = stops.lock().await;
+        if only_if_idle {
+            ensure_pi_idle(processes.get(stream_id))?;
+        }
         let output = if let Some(expected_stdin) = expected_stdin {
             // EOF belongs to this process instance, not to a replacement or pending start.
             if !processes
@@ -358,8 +379,16 @@ pub(crate) struct PiSendParams {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct PiCheckIdleParams {
+    stream_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct PiStopParams {
     stream_id: String,
+    #[serde(default)]
+    only_if_idle: bool,
 }
 
 fn trace_pi(stage: &str, stream_id: &str, detail: Value) {
@@ -431,6 +460,14 @@ fn prune_stale_extensions(dir: &std::path::Path) {
             let _ = std::fs::remove_file(entry.path());
         }
     }
+}
+
+fn append_inline_extensions(args: &mut Vec<String>, sources: &[String]) -> Result<(), String> {
+    for source in sources.iter().filter(|source| !source.trim().is_empty()) {
+        let path = materialize_extension(source)?;
+        args.extend(["--extension".to_owned(), extension_path_argument(&path)]);
+    }
+    Ok(())
 }
 
 fn extension_path_argument(path: &std::path::Path) -> String {
@@ -544,33 +581,45 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
     } else if let Some(path) = params.session_path.as_ref() {
         args.extend(["--session".to_owned(), path.clone()]);
     }
+    let ssh_workspace = params.builtin_extensions.iter().find_map(|extension| {
+        if let BuiltinExtension::SshWorkspace { config } = extension {
+            Some(config)
+        } else {
+            None
+        }
+    });
+    let host_resources = ssh_workspace.is_some_and(|config| config.local_pi_resources)
+        && !params.disable_resources
+        && !params.disable_extension_discovery
+        && !params
+            .builtin_extensions
+            .contains(&BuiltinExtension::ModelCatalog);
+    let ssh_only = ssh_workspace.is_some() && !host_resources;
     if params.disable_resources {
+        args.push("--no-tools".to_owned());
+    }
+    if params.disable_builtin_tools || ssh_workspace.is_some() {
+        args.push("--no-builtin-tools".to_owned());
+    }
+    if params.disable_resources || params.disable_extension_discovery || ssh_only {
+        args.push("--no-extensions".to_owned());
+    }
+    if params.disable_resources || params.disable_context_files || ssh_workspace.is_some() {
+        args.push("--no-context-files".to_owned());
+    }
+    if params.disable_resources || ssh_only {
         args.extend([
-            "--no-tools".to_owned(),
-            "--no-extensions".to_owned(),
             "--no-skills".to_owned(),
             "--no-prompt-templates".to_owned(),
             "--no-themes".to_owned(),
-            "--no-context-files".to_owned(),
-            "--no-approve".to_owned(),
         ]);
     }
-    if params.disable_builtin_tools {
-        args.push("--no-builtin-tools".to_owned());
+    if params.disable_resources || ssh_workspace.is_some() {
+        // The Pi cwd is a Host-side session anchor, not the SSH project.
+        args.push("--no-approve".to_owned());
     }
-    if params.disable_extension_discovery {
-        args.push("--no-extensions".to_owned());
-    }
-    if params.disable_context_files {
-        args.push("--no-context-files".to_owned());
-    }
-    for source in &params.extensions {
-        if source.trim().is_empty() {
-            continue;
-        }
-        let path = materialize_extension(source)?;
-        // Explicit --extension paths still load when discovery is disabled.
-        args.extend(["--extension".to_owned(), extension_path_argument(&path)]);
+    if ssh_workspace.is_none() {
+        append_inline_extensions(&mut args, &params.extensions)?;
     }
     let mut ssh_workspace_config = None;
     let mut builtin_names = std::collections::HashSet::new();
@@ -597,6 +646,10 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
             "--extension".to_owned(),
             extension_path_argument(&state.extensions_dir.join(filename)),
         ]);
+    }
+    if host_resources {
+        args.extend(["--extension".to_owned(), "builtin:mcp".to_owned()]);
+        append_inline_extensions(&mut args, &params.extensions)?;
     }
     if let Some(provider) = params.provider.as_ref() {
         args.extend(["--provider".to_owned(), provider.clone()]);
@@ -674,11 +727,8 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
     command.env_remove("PILO_SSH_LOCAL_WORKSPACE");
     if let Some(config) = ssh_workspace_config {
         command.env("PILO_SSH_WORKSPACE_CONFIG", config);
-        let model_probe = params
-            .builtin_extensions
-            .iter()
-            .any(|extension| matches!(extension, BuiltinExtension::ModelCatalog));
-        if !model_probe && let Ok(path) = default_workspace_path("local", cfg!(debug_assertions)) {
+        if host_resources {
+            let path = default_workspace_path("local", cfg!(debug_assertions))?;
             command.env("PILO_SSH_LOCAL_WORKSPACE", path);
         }
     }
@@ -728,12 +778,14 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
     );
     let stdin_identity = Arc::downgrade(&stdin);
     let work = Arc::new(StdMutex::new(PiWork::default()));
+    let track_work = state.retain_pi || ssh_workspace.is_some();
     processes.insert(
         params.stream_id.clone(),
         PiProcess {
             child,
             stdin,
             work: Arc::clone(&work),
+            track_work,
         },
     );
 
@@ -746,7 +798,6 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
     let stdout_identity = stdin_identity.clone();
     let agent_control = state.agent_control.clone();
     let control_stream = params.control_stream_id.clone();
-    let track_work = state.retain_pi;
     let stdout_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
         loop {
@@ -791,6 +842,7 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
             &outputs,
             &stream_id,
             Some(&stdout_identity),
+            false,
         )
         .await
         {
@@ -889,12 +941,16 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
             "id": params.command.get("id"),
         }),
     );
-    let (stdin, work) = {
+    let (stdin, work, track_work) = {
         let processes = state.pi.lock().await;
         let process = processes
             .get(&params.stream_id)
             .ok_or_else(|| format!("Pi stream '{}' is not running", params.stream_id))?;
-        (Arc::clone(&process.stdin), Arc::clone(&process.work))
+        (
+            Arc::clone(&process.stdin),
+            Arc::clone(&process.work),
+            process.track_work,
+        )
     };
     let mut bytes = serde_json::to_vec(&params.command).map_err(|error| error.to_string())?;
     if bytes.len() > MAX_BINARY_PAYLOAD_BYTES {
@@ -918,8 +974,11 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
         .get("id")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let tracked =
-        state.retain_pi && matches!(command, "prompt" | "steer" | "follow_up" | "compact");
+    let tracked = track_work
+        && matches!(
+            command,
+            "prompt" | "steer" | "follow_up" | "compact" | "bash"
+        );
     if tracked {
         work.lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -939,7 +998,7 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
         eprintln!("[runtime-diagnostics] pi.send failed pid={} streamId={} kind={:?} elapsedMs={}", std::process::id(), params.stream_id, error.kind(), started.elapsed().as_millis());
         error.to_string()
     }));
-    if state.retain_pi {
+    if track_work {
         let mut work = work
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -953,10 +1012,20 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
     result.map(|()| Value::Null)
 }
 
+pub(crate) async fn pi_check_idle(
+    state: &ServerState,
+    params: PiCheckIdleParams,
+) -> Result<Value, String> {
+    let processes = state.pi.lock().await;
+    ensure_pi_idle(processes.get(&params.stream_id))?;
+    Ok(Value::Null)
+}
+
 pub(crate) async fn pi_stop(state: &ServerState, params: PiStopParams) -> Result<Value, String> {
-    state
-        .agent_control
-        .revoke(&format!("control:{}", params.stream_id));
+    let control_stream = format!("control:{}", params.stream_id);
+    if !params.only_if_idle {
+        state.agent_control.revoke(&control_stream);
+    }
     let pid = state
         .pi
         .lock()
@@ -975,8 +1044,12 @@ pub(crate) async fn pi_stop(state: &ServerState, params: PiStopParams) -> Result
         &state.pi_output_tasks,
         &params.stream_id,
         None,
+        params.only_if_idle,
     )
     .await?;
+    if params.only_if_idle {
+        state.agent_control.revoke(&control_stream);
+    }
     Ok(Value::Null)
 }
 

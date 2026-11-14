@@ -1,11 +1,78 @@
 use std::fs;
 
 use pilo_protocol::{BuiltinExtension, SshWorkspaceConfig};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::domain::{ConnectionKind, PiRuntime, Project};
 
 use super::{host_paths::HostPaths, ssh, storage};
+
+pub(crate) const RESOURCES_BUSY: &str = "SSH_LOCAL_PI_RESOURCES_BUSY";
+
+pub(crate) async fn set_local_pi_resources(
+    app: &AppHandle,
+    connection_id: &str,
+    enabled: bool,
+) -> Result<(), String> {
+    let runtime = app.state::<super::PiloRuntime>();
+    let _policy = runtime.pi_resource_policy.write().await;
+    {
+        let db = storage::open(app)?;
+        let connection = storage::get_connection(&db, connection_id)?
+            .ok_or_else(|| "SSH connection not found".to_owned())?;
+        if connection.pi_runtime != PiRuntime::Local
+            || !matches!(connection.kind, ConnectionKind::Ssh { .. })
+        {
+            return Err("This setting requires an SSH connection using local Pi".to_owned());
+        }
+        if storage::get_local_pi_resources(&db, connection_id)? == enabled {
+            return Ok(());
+        }
+    }
+    stop_for_resource_change(app, &runtime, connection_id).await?;
+    storage::set_local_pi_resources(&storage::open(app)?, connection_id, enabled)?;
+    super::control::changed(app);
+    Ok(())
+}
+
+pub(crate) async fn stop_for_resource_change(
+    app: &AppHandle,
+    runtime: &super::PiloRuntime,
+    connection_id: &str,
+) -> Result<(), String> {
+    let projects = storage::list_projects(&storage::open(app)?)?
+        .into_iter()
+        .filter(|project| project.connection.id == connection_id)
+        .map(|project| project.id)
+        .collect::<Vec<_>>();
+    let mut session = runtime.project_pi_session.lock().await;
+    let mut agents = runtime.parallel_agents.lock().await;
+    let affects_project_pi = session.uses_ssh_workspace()
+        && session
+            .snapshot()
+            .project_id
+            .is_some_and(|id| projects.contains(&id));
+
+    // Reject existing work before stopping any instance; stop also rechecks Pi-side activity.
+    runtime
+        .chat_sessions
+        .check_idle_for_resource_change(&projects)
+        .await?;
+    if affects_project_pi {
+        session.check_idle().await?;
+    }
+    agents.check_idle_for_resource_change(&projects).await?;
+
+    runtime
+        .chat_sessions
+        .stop_for_resource_change(&projects)
+        .await?;
+    if affects_project_pi {
+        session.stop_if_idle().await?;
+    }
+    agents.stop_for_resource_change(&projects).await?;
+    Ok(())
+}
 
 pub(crate) struct PiRuntimeProfile {
     pub project: Project,
@@ -84,9 +151,14 @@ fn resolve_pi_runtime_with_paths(
                         .to_owned(),
                 );
             }
+            let local_pi_resources = storage::get_local_pi_resources(
+                &storage::open_with_paths(paths)?,
+                &project.connection.id,
+            )?;
             let config = SshWorkspaceConfig {
                 label: project.connection.name.clone(),
                 remote_cwd: project.path.clone(),
+                local_pi_resources,
                 ssh_args: ssh::ssh_base_args(target)?,
                 ssh_environment: ssh::ssh_child_environment(&project.connection)?,
             };
@@ -95,7 +167,7 @@ fn resolve_pi_runtime_with_paths(
                 extensions,
                 builtin_extensions: vec![BuiltinExtension::SshWorkspace { config }],
                 disable_builtin_tools: true,
-                disable_extension_discovery: true,
+                disable_extension_discovery: !local_pi_resources,
                 disable_context_files: true,
             })
         }

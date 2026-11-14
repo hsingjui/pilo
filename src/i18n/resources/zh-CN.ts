@@ -423,6 +423,11 @@ const zhCN = {
 		privateKey: "指定私钥",
 		piWorkspace: "远程 Pi（SSH 主机）",
 		piLocal: "本地 Pi（工具走 SSH）",
+		localPiResources: "使用本地 Pi 资源",
+		localPiResourcesDescription:
+			"开启后可使用本机的 Skill、扩展、MCP 和本地工具。扩展可以在本机执行代码，只对信任的 SSH 工作区开启。",
+		localPiResourcesBusy:
+			"请等待该连接上的聊天和并行任务结束，或先停止任务，再保存。",
 		sshPassword: "SSH 密码",
 		privateKeyPath: "私钥路径",
 		proxyJump: "跳板机（可选）",

@@ -76,6 +76,7 @@ pub(crate) fn hide_console_window(command: &mut Command) {
 
 pub struct PiloRuntime {
     pub(crate) chat_sessions: ChatSessions,
+    pub(crate) pi_resource_policy: Arc<tokio::sync::RwLock<()>>,
     pub(crate) project_pi_session: Mutex<ServerPiSession>,
     pub(crate) parallel_agents: Mutex<ParallelAgentManager>,
     pub(crate) previews: Mutex<PreviewManager>,
@@ -90,6 +91,7 @@ impl Default for PiloRuntime {
     fn default() -> Self {
         Self {
             chat_sessions: ChatSessions::default(),
+            pi_resource_policy: Arc::default(),
             project_pi_session: Mutex::new(ServerPiSession::default()),
             parallel_agents: Mutex::new(ParallelAgentManager::default()),
             previews: Mutex::new(PreviewManager::default()),

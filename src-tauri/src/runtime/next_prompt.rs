@@ -55,6 +55,7 @@ pub(crate) async fn request(
     {
         return Err("invalid next prompt request identity".to_owned());
     }
+    let _policy = runtime.pi_resource_policy.read().await;
     // Look up an existing process only. Browsing history must never start Pi.
     let state = runtime
         .chat_sessions

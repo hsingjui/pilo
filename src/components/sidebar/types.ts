@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 
-export type SidebarEnv = { id: string; name: string };
+export type SidebarEnv = {
+	id: string;
+	name: string;
+	onConfigureLocalPiResources?: () => void;
+};
 
 /** 侧栏组织模式：按连接分组的“项目”树，或平铺的“最近会话”会话列表。 */
 export type SidebarEnvView = "projects" | "recent";

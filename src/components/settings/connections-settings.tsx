@@ -266,13 +266,18 @@ export function ConnectionsSettings() {
 			await saveSshConnection(
 				connectionFromSshForm(draft),
 				draft.password || undefined,
+				draft.localPiResources === draft.initialLocalPiResources
+					? undefined
+					: draft.localPiResources,
 			);
 			setSshEditorOpen(false);
 			await refresh();
 			toast.success(t("connection.sshSaved"));
 		} catch (error) {
 			toast.error(t("connection.sshSaveFailed"), {
-				description: userErrorMessage(error),
+				description: String(error).includes("SSH_LOCAL_PI_RESOURCES_BUSY")
+					? t("connection.localPiResourcesBusy")
+					: userErrorMessage(error),
 			});
 		} finally {
 			setBusy(false);

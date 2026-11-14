@@ -38,6 +38,7 @@ export type PiloClientBootstrap = {
 	projects: Project[];
 	chatSessions: ChatSessionRuntimeState[];
 	latestSequence: number;
+	localPiResources?: Record<string, boolean>;
 };
 
 export type PiloClientStartChatInput = {

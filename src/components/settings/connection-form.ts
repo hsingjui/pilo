@@ -32,6 +32,8 @@ export type SshConnectionFormState = {
 	hasPassword: boolean;
 	piExecutable: string;
 	piRuntime: PiRuntime;
+	localPiResources: boolean;
+	initialLocalPiResources: boolean;
 };
 
 export function emptySshConnectionForm(): SshConnectionFormState {
@@ -50,6 +52,8 @@ export function emptySshConnectionForm(): SshConnectionFormState {
 		hasPassword: false,
 		piExecutable: "",
 		piRuntime: "workspace",
+		localPiResources: false,
+		initialLocalPiResources: false,
 	};
 }
 
@@ -62,6 +66,7 @@ export function sshConnectionFormFromInfo(
 	const auth = target.authMethod;
 	const authMethod = typeof auth === "string" ? auth : "agent";
 	const agentPublicKey = typeof auth === "string" ? "" : auth.agent_key;
+	const localPiResources = info.localPiResources ?? false;
 	if (target.type === "config_host") {
 		return {
 			...emptySshConnectionForm(),
@@ -72,6 +77,8 @@ export function sshConnectionFormFromInfo(
 			authMethod,
 			agentPublicKey,
 			hasPassword: info.hasPassword,
+			localPiResources,
+			initialLocalPiResources: localPiResources,
 			piExecutable: info.connection.piExecutable ?? "",
 			piRuntime: info.connection.piRuntime ?? "workspace",
 		};
@@ -88,6 +95,8 @@ export function sshConnectionFormFromInfo(
 		agentPublicKey,
 		identityFile: target.identityFile ?? "",
 		proxyJump: target.proxyJump ?? "",
+		localPiResources,
+		initialLocalPiResources: localPiResources,
 		hasPassword: info.hasPassword,
 		piExecutable: info.connection.piExecutable ?? "",
 		piRuntime: info.connection.piRuntime ?? "workspace",

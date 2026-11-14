@@ -25,6 +25,7 @@ import {
 } from "@/ui";
 
 import type { SshConnectionFormState } from "./connection-form";
+import { LocalPiResourcesField } from "./local-pi-resources-field";
 import {
 	SETTINGS_CONTROL_CLASS,
 	SETTINGS_ICON_BUTTON_CLASS,
@@ -344,6 +345,15 @@ export function SshConnectionEditor({
 								</SelectContent>
 							</Select>
 						</div>
+						{editing.piRuntime === "local" ? (
+							<LocalPiResourcesField
+								checked={editing.localPiResources}
+								disabled={busy}
+								onCheckedChange={(localPiResources) =>
+									onChange({ ...editing, localPiResources })
+								}
+							/>
+						) : null}
 						{editing.authMethod === "password" ? (
 							<label htmlFor="ssh-password" className="grid gap-1 text-xs">
 								{t("connection.password")}

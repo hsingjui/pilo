@@ -210,6 +210,34 @@ impl ParallelAgentManager {
         Ok(())
     }
 
+    pub(crate) async fn check_idle_for_resource_change(
+        &self,
+        projects: &[String],
+    ) -> Result<(), String> {
+        for agent in self.agents.values().filter(|agent| {
+            projects.contains(&agent.info.project_id) && agent.session.uses_ssh_workspace()
+        }) {
+            agent.session.check_idle().await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn stop_for_resource_change(
+        &mut self,
+        projects: &[String],
+    ) -> Result<(), String> {
+        for agent in self.agents.values_mut().filter(|agent| {
+            projects.contains(&agent.info.project_id) && agent.session.uses_ssh_workspace()
+        }) {
+            agent.session.stop_if_idle().await?;
+            agent.status.store(
+                status_to_u8(ParallelAgentStatus::Stopped),
+                Ordering::Release,
+            );
+        }
+        Ok(())
+    }
+
     pub async fn stop(&mut self, agent_id: &str) -> Result<(), String> {
         let agent = self
             .agents

@@ -9,6 +9,7 @@ export type SshConnectionInfo = {
 	connection: Connection;
 	projectCount: number;
 	hasPassword: boolean;
+	localPiResources?: boolean;
 };
 
 export type SshAgentIdentity = {
@@ -28,9 +29,10 @@ export function listSshConnections(): Promise<SshConnectionInfo[]> {
 export async function saveSshConnection(
 	connection: Connection,
 	password?: string,
+	localPiResources?: boolean,
 ): Promise<SshConnectionInfo> {
 	const info = await invoke<SshConnectionInfo>("ssh_connection_save", {
-		request: { connection, password: password || null },
+		request: { connection, password: password || null, localPiResources },
 	});
 	notifyConnectionsChanged();
 	return info;

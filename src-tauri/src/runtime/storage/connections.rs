@@ -92,6 +92,28 @@ pub fn upsert_connection(db: &SqliteConnection, connection: &Connection) -> Resu
     Ok(())
 }
 
+pub(crate) fn get_local_pi_resources(db: &SqliteConnection, id: &str) -> Result<bool, String> {
+    db.query_row(
+        "SELECT COALESCE((SELECT local_pi_resources FROM connections WHERE id=?1), 0)",
+        params![id],
+        |row| row.get(0),
+    )
+    .map_err(|error| error.to_string())
+}
+
+pub(crate) fn set_local_pi_resources(
+    db: &SqliteConnection,
+    id: &str,
+    enabled: bool,
+) -> Result<(), String> {
+    db.execute(
+        "UPDATE connections SET local_pi_resources=?2 WHERE id=?1",
+        params![id, enabled],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 pub fn set_connection_shown_in_home(
     db: &SqliteConnection,
     id: &str,

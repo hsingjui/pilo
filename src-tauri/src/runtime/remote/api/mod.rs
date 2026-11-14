@@ -118,6 +118,10 @@ pub(crate) fn router(
     let protected = Router::new()
         .route("/api/v1/bootstrap", get(handlers::bootstrap))
         .route(
+            "/api/v1/connections/local-pi-resources",
+            post(handlers::local_pi_resources_set),
+        )
+        .route(
             "/api/v1/preferences",
             get(handlers::preferences_get).post(handlers::preferences_patch),
         )

@@ -47,7 +47,19 @@ import { ChatMarkdownImageScopeProvider } from "@/components/chat/chat-markdown-
 import { ChatMarkdownLinkScope } from "@/components/chat/chat-markdown-link";
 import { connectionLabel } from "@/lib/api/projects";
 import type { PiloClientEventMessage } from "@/lib/api/pilo-client";
-import { TooltipProvider } from "@/ui";
+import {
+	Button,
+	Dialog,
+	DialogContent,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+	TooltipProvider,
+} from "@/ui";
+import type { SidebarEnv } from "@/components/sidebar/types";
+import { LocalPiResourcesField } from "@/components/settings/local-pi-resources-field";
+import { userErrorMessage } from "@/lib/app-error";
+import { saveRemoteLocalPiResources } from "./remote-client";
 import { RemotePairingPage } from "./remote-pairing-page";
 import { isRemotePairingLocation } from "./remote-pairing-model";
 import { useMediaQuery } from "./remote-app-model";
@@ -211,19 +223,64 @@ function RemoteWorkspace() {
 		};
 	}, [applyUpdate, chatBusy, isNarrow, t, token, updateAvailable]);
 
+	const { localPiResources } = sessions;
+	const [resourceDraft, setResourceDraft] = useState<{
+		id: string;
+		enabled: boolean;
+		initialEnabled: boolean;
+	} | null>(null);
+	const [savingResources, setSavingResources] = useState(false);
+	const saveResources = async () => {
+		if (!token || !resourceDraft || savingResources) return;
+		if (resourceDraft.enabled === resourceDraft.initialEnabled) {
+			setResourceDraft(null);
+			return;
+		}
+		setSavingResources(true);
+		try {
+			await saveRemoteLocalPiResources(
+				token,
+				resourceDraft.id,
+				resourceDraft.enabled,
+			);
+			setResourceDraft(null);
+			await reloadBootstrap();
+		} catch (error) {
+			toast.error(t("connection.sshSaveFailed"), {
+				description: String(error).includes("SSH_LOCAL_PI_RESOURCES_BUSY")
+					? t("connection.localPiResourcesBusy")
+					: userErrorMessage(error),
+			});
+		} finally {
+			setSavingResources(false);
+		}
+	};
+
 	const envs = useMemo(() => {
-		const byId = new Map<string, { id: string; name: string }>();
+		const byId = new Map<string, SidebarEnv>();
 		for (const project of projects) {
 			if (!project.connection.shownInHome) continue;
+			const enabled = localPiResources[project.connection.id] === true;
 			byId.set(project.connection.id, {
 				id: project.connection.id,
 				name: connectionLabel(project.connection),
+				onConfigureLocalPiResources: Object.hasOwn(
+					localPiResources,
+					project.connection.id,
+				)
+					? () =>
+							setResourceDraft({
+								id: project.connection.id,
+								enabled,
+								initialEnabled: enabled,
+							})
+					: undefined,
 			});
 		}
 		const list = [...byId.values()];
 		list.sort((a, b) => (a.id === "local" ? -1 : b.id === "local" ? 1 : 0));
 		return list;
-	}, [projects]);
+	}, [localPiResources, projects]);
 
 	// 与桌面端一致：输入框上方的项目切换只列出首页可见连接下的项目。
 	const homeProjects = useMemo(() => {
@@ -760,6 +817,39 @@ function RemoteWorkspace() {
 							</main>
 
 							<ChatImageLightbox />
+							<Dialog
+								open={resourceDraft !== null}
+								onOpenChange={(open) => {
+									if (!open && !savingResources) setResourceDraft(null);
+								}}
+							>
+								<DialogContent aria-describedby={undefined}>
+									<DialogHeader>
+										<DialogTitle>
+											{envs.find((env) => env.id === resourceDraft?.id)?.name ??
+												t("connection.localPiResources")}
+										</DialogTitle>
+									</DialogHeader>
+									{resourceDraft ? (
+										<LocalPiResourcesField
+											checked={resourceDraft.enabled}
+											disabled={savingResources}
+											onCheckedChange={(enabled) =>
+												setResourceDraft({ ...resourceDraft, enabled })
+											}
+										/>
+									) : null}
+									<DialogFooter>
+										<Button
+											className="pointer-coarse:min-h-11"
+											disabled={savingResources}
+											onClick={() => void saveResources()}
+										>
+											{t("common.save")}
+										</Button>
+									</DialogFooter>
+								</DialogContent>
+							</Dialog>
 
 							{visibleError ? (
 								<div

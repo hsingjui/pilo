@@ -344,6 +344,17 @@ export function saveRemoteModelScope(
 	});
 }
 
+export function saveRemoteLocalPiResources(
+	token: string,
+	connectionId: string,
+	enabled: boolean,
+): Promise<void> {
+	return remoteFetch<void>(token, "/api/v1/connections/local-pi-resources", {
+		method: "POST",
+		body: JSON.stringify({ connectionId, enabled }),
+	});
+}
+
 export function loadRemoteCacheKeepAliveSettings(
 	token: string,
 	connectionId: string,

@@ -144,6 +144,11 @@ export function EnvRow({
 						</>
 					) : null}
 					<DefaultWorkspaceMenuItem connectionId={env.id} />
+					{env.onConfigureLocalPiResources ? (
+						<DropdownMenuItem onSelect={env.onConfigureLocalPiResources}>
+							{t("connection.localPiResources")}
+						</DropdownMenuItem>
+					) : null}
 					{onDeleteConnection ? (
 						<DropdownMenuItem
 							variant="destructive"

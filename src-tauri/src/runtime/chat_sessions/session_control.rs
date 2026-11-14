@@ -256,6 +256,50 @@ impl ChatSessions {
         result
     }
 
+    async fn resource_change_candidates(
+        &self,
+        projects: &[String],
+    ) -> Vec<(String, Arc<ChatProcess>)> {
+        self.registry
+            .lock()
+            .await
+            .processes
+            .iter()
+            .filter(|(_, process)| projects.contains(&process.project_id))
+            .map(|(key, process)| (key.clone(), Arc::clone(process)))
+            .collect()
+    }
+
+    pub(crate) async fn check_idle_for_resource_change(
+        &self,
+        projects: &[String],
+    ) -> Result<(), String> {
+        for (_, process) in self.resource_change_candidates(projects).await {
+            let session = process.session.lock().await;
+            if session.uses_ssh_workspace() {
+                if process.active_turn.load(Ordering::Acquire)
+                    || process.compacting.load(Ordering::Acquire)
+                {
+                    return Err(super::super::pi_workspace::RESOURCES_BUSY.to_owned());
+                }
+                session.check_idle().await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn stop_for_resource_change(&self, projects: &[String]) -> Result<(), String> {
+        for (key, process) in self.resource_change_candidates(projects).await {
+            // Keep the process registered if stop fails so a later save can try again.
+            let mut session = process.session.lock().await;
+            if session.uses_ssh_workspace() {
+                session.stop_if_idle().await?;
+                self.close_process(&key).await;
+            }
+        }
+        Ok(())
+    }
+
     pub async fn stop(&self, session_key: &str, reason: Option<&str>) -> Result<(), String> {
         let process = self.close_process(session_key).await;
         let Some(process) = process else {

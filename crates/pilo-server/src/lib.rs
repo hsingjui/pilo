@@ -35,8 +35,8 @@ use pilo_protocol::{
     ServerStatus, read_frame, write_frame,
 };
 use runtime_streams::{
-    PiProcess, TerminalSession, pi_send, pi_start, pi_stop, preview_ports, terminal_close,
-    terminal_open, terminal_resize, terminal_write,
+    PiProcess, TerminalSession, pi_check_idle, pi_send, pi_start, pi_stop, preview_ports,
+    terminal_close, terminal_open, terminal_resize, terminal_write,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -580,6 +580,9 @@ async fn dispatch(
             .await
             .map(ServerReply::json),
         "pi.send" => pi_send(state, from_params(params)?)
+            .await
+            .map(ServerReply::json),
+        "pi.check_idle" => pi_check_idle(state, from_params(params)?)
             .await
             .map(ServerReply::json),
         "pi.stop" => pi_stop(state, from_params(params)?)

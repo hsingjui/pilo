@@ -163,11 +163,18 @@ impl Default for ServerPiSession {
 
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 
-async fn stop_stream(client: &ServerClient, stream_id: &str) -> Result<(), String> {
+async fn stop_stream(
+    client: &ServerClient,
+    stream_id: &str,
+    only_if_idle: bool,
+) -> Result<(), String> {
     tokio::time::timeout(STOP_TIMEOUT, async {
         loop {
             match client
-                .request("pi.stop", json!({ "streamId": stream_id }))
+                .request(
+                    "pi.stop",
+                    json!({ "streamId": stream_id, "onlyIfIdle": only_if_idle }),
+                )
                 .await
             {
                 Err(error) if error.contains("request capacity exhausted") => {
@@ -186,7 +193,7 @@ async fn stop_owned_stream(
     stream_id: String,
     recovery: Option<(Weak<ServerManager>, Connection)>,
 ) -> Result<(), String> {
-    let mut result = stop_stream(&client, &stream_id).await;
+    let mut result = stop_stream(&client, &stream_id, false).await;
     if let Some((servers, connection)) = recovery {
         let mut delay = Duration::from_millis(250);
         while result.is_err() {
@@ -199,7 +206,7 @@ async fn stop_owned_stream(
             match manager.recover_ssh_client(&connection).await {
                 Ok(Some(next)) => {
                     // pi.stop is idempotent for this daemon and stream ID, even if its ACK was lost.
-                    result = stop_stream(&next, &stream_id).await;
+                    result = stop_stream(&next, &stream_id, false).await;
                     if result.is_ok() {
                         break;
                     }
@@ -255,6 +262,12 @@ impl ServerPiSession {
 
     pub(crate) fn builtin_extensions(&self) -> &[BuiltinExtension] {
         &self.builtin_extensions
+    }
+
+    pub(crate) fn uses_ssh_workspace(&self) -> bool {
+        self.builtin_extensions
+            .iter()
+            .any(|extension| matches!(extension, BuiltinExtension::SshWorkspace { .. }))
     }
 
     pub(crate) fn next_prompt_ready(&self) -> bool {
@@ -602,7 +615,30 @@ impl ServerPiSession {
         self.send_rpc(json!({ "type": "abort" })).await
     }
 
+    pub(crate) async fn check_idle(&self) -> Result<(), String> {
+        let client = self
+            .state
+            .client
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if let (Some(client), Some(stream_id)) = (client, &self.stream_id) {
+            client
+                .request("pi.check_idle", json!({ "streamId": stream_id }))
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn stop_if_idle(&mut self) -> Result<PiSessionSnapshot, String> {
+        self.stop_inner(true).await
+    }
+
     pub async fn stop(&mut self) -> Result<PiSessionSnapshot, String> {
+        self.stop_inner(false).await
+    }
+
+    async fn stop_inner(&mut self, only_if_idle: bool) -> Result<PiSessionSnapshot, String> {
         let client = self
             .state
             .client
@@ -617,8 +653,17 @@ impl ServerPiSession {
             self.state.set(PiProcessState::Stopped);
             return Ok(self.snapshot());
         };
-        self.state.set(PiProcessState::Stopping);
-        let result = if let Some(recovery) = self.recovery.clone() {
+        if !only_if_idle {
+            self.state.set(PiProcessState::Stopping);
+        }
+        let result = if only_if_idle {
+            // Resource changes only use this path for Host-side SSH workspace processes.
+            stop_stream(&client, stream_id, true).await?;
+            if let Some(task) = self.event_task.take() {
+                task.abort();
+            }
+            Ok(())
+        } else if let Some(recovery) = self.recovery.clone() {
             if let Some(task) = self.event_task.take() {
                 task.abort();
             }
@@ -637,7 +682,7 @@ impl ServerPiSession {
                 }
             }
         } else {
-            let result = stop_stream(&client, stream_id).await;
+            let result = stop_stream(&client, stream_id, false).await;
             if let Some(task) = self.event_task.take() {
                 task.abort();
             }

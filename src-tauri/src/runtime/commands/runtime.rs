@@ -192,6 +192,7 @@ pub async fn chat_session_send_rpc(
     session_key: String,
     command: Value,
 ) -> Result<(), String> {
+    let _policy = runtime.pi_resource_policy.read().await;
     runtime.chat_sessions.send(&session_key, command).await
 }
 
@@ -240,6 +241,7 @@ pub async fn project_start_pi(
     runtime: State<'_, PiloRuntime>,
     id: String,
 ) -> Result<PiSessionSnapshot, String> {
+    let _policy = runtime.pi_resource_policy.read().await;
     let project = project::ready(&app, &runtime.servers, &id).await?;
     project::touch(&app, &project.id)?;
     let profile = pi_workspace::resolve_pi_runtime(&app, &project, Vec::new()).await?;
@@ -251,17 +253,21 @@ pub async fn project_start_pi(
             Arc::clone(&runtime.servers),
             TauriEventSink::new(app),
             &profile.project,
-            PiLaunchOptions {
-                agent_control: true,
-                extensions: profile.extensions,
-                builtin_extensions: profile.builtin_extensions,
-                disable_builtin_tools: profile.disable_builtin_tools,
-                disable_extension_discovery: profile.disable_extension_discovery,
-                disable_context_files: profile.disable_context_files,
-                ..PiLaunchOptions::default()
-            },
+            project_pi_options(&profile),
         )
         .await
+}
+
+fn project_pi_options(profile: &pi_workspace::PiRuntimeProfile) -> PiLaunchOptions {
+    PiLaunchOptions {
+        agent_control: true,
+        extensions: profile.extensions.clone(),
+        builtin_extensions: profile.builtin_extensions.clone(),
+        disable_builtin_tools: profile.disable_builtin_tools,
+        disable_extension_discovery: profile.disable_extension_discovery,
+        disable_context_files: profile.disable_context_files,
+        ..PiLaunchOptions::default()
+    }
 }
 
 #[tauri::command]
@@ -281,10 +287,23 @@ pub async fn runtime_restart_pi(
     app: AppHandle,
     runtime: State<'_, PiloRuntime>,
 ) -> Result<PiSessionSnapshot, String> {
-    runtime
-        .project_pi_session
-        .lock()
-        .await
+    let _policy = runtime.pi_resource_policy.read().await;
+    let mut session = runtime.project_pi_session.lock().await;
+    if session.uses_ssh_workspace() {
+        let id = session.snapshot().project_id.ok_or("missing Pi project")?;
+        let project = project::ready(&app, &runtime.servers, &id).await?;
+        let profile = pi_workspace::resolve_pi_runtime(&app, &project, Vec::new()).await?;
+        session.stop().await?;
+        return session
+            .spawn(
+                Arc::clone(&runtime.servers),
+                TauriEventSink::new(app),
+                &profile.project,
+                project_pi_options(&profile),
+            )
+            .await;
+    }
+    session
         .restart(Arc::clone(&runtime.servers), TauriEventSink::new(app))
         .await
 }
@@ -299,6 +318,7 @@ pub async fn runtime_send_rpc(
     runtime: State<'_, PiloRuntime>,
     command: Value,
 ) -> Result<(), String> {
+    let _policy = runtime.pi_resource_policy.read().await;
     runtime
         .project_pi_session
         .lock()

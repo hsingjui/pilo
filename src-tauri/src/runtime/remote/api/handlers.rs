@@ -24,6 +24,7 @@ pub(super) struct BootstrapResponse {
     projects: Vec<crate::domain::Project>,
     chat_sessions: Vec<crate::runtime::chat_sessions::ChatSessionState>,
     latest_sequence: u64,
+    local_pi_resources: std::collections::HashMap<String, bool>,
 }
 
 pub(super) async fn bootstrap(State(state): State<RemoteHttpState>) -> Response {
@@ -33,12 +34,56 @@ pub(super) async fn bootstrap(State(state): State<RemoteHttpState>) -> Response 
     };
     let runtime = state.app.state::<PiloRuntime>();
     let events = state.app.state::<RuntimeEventBus>();
+    let local_pi_resources = match local_pi_resources_snapshot(&state.paths) {
+        Ok(settings) => settings,
+        Err(error) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+    };
     Json(BootstrapResponse {
         projects,
         chat_sessions: runtime.chat_sessions.states().await,
         latest_sequence: events.latest_sequence(),
+        local_pi_resources,
     })
     .into_response()
+}
+
+fn local_pi_resources_snapshot(
+    paths: &crate::runtime::host_paths::HostPaths,
+) -> Result<std::collections::HashMap<String, bool>, String> {
+    let db = storage::open_with_paths(paths)?;
+    storage::list_connections(&db)?
+        .into_iter()
+        .filter(|connection| {
+            connection.pi_runtime == crate::domain::PiRuntime::Local
+                && matches!(connection.kind, crate::domain::ConnectionKind::Ssh { .. })
+        })
+        .map(|connection| {
+            let enabled = storage::get_local_pi_resources(&db, &connection.id)?;
+            Ok((connection.id, enabled))
+        })
+        .collect()
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct LocalPiResourcesUpdate {
+    connection_id: String,
+    enabled: bool,
+}
+
+pub(super) async fn local_pi_resources_set(
+    State(state): State<RemoteHttpState>,
+    Json(update): Json<LocalPiResourcesUpdate>,
+) -> Response {
+    match pi_workspace::set_local_pi_resources(&state.app, &update.connection_id, update.enabled)
+        .await
+    {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) if error == pi_workspace::RESOURCES_BUSY => {
+            api_error(StatusCode::CONFLICT, &error)
+        }
+        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    }
 }
 
 pub(super) async fn preferences_get(State(state): State<RemoteHttpState>) -> Response {
@@ -808,6 +853,7 @@ pub(super) async fn chat_rpc(
         return api_error(StatusCode::BAD_REQUEST, &error);
     }
     let runtime = state.app.state::<PiloRuntime>();
+    let _policy = runtime.pi_resource_policy.read().await;
     match runtime
         .chat_sessions
         .send(&request.session_key, request.command)

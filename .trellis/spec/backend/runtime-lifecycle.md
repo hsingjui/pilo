@@ -45,6 +45,10 @@ Frontend controller eviction alone is not backend process cleanup.
   subscribes to its original stream before calling `pi.attach({ streamId })`.
   That read returns `null` for a missing stream or `{ active, compacting, dialogs }`
   for a live one. `pi_reattached` tells clients to reconcile without resending input.
+- `pi.check_idle({ streamId })` returns `null` for an idle or missing stream and
+  `SSH_LOCAL_PI_RESOURCES_BUSY` for active work. It never stops a process.
+  `pi.stop({ streamId, onlyIfIdle: true })` rechecks the same predicate before
+  stopping. Ordinary `pi.stop` does not require idleness.
 - `ServerManager::begin_shutdown()` closes new-connection admission and cancels
   pending connection setup/tests; `stop_all()` starts cached-client cleanup before
   waiting for shared admission guards, then drains late clients under exclusive
@@ -65,6 +69,14 @@ Frontend controller eviction alone is not backend process cleanup.
   admission and runs normal process cleanup after 15 continuous idle minutes
   without a bridge, or after one continuous hour without a bridge even if work
   remains. The hard limit covers a Host that cannot reconnect to send a stop.
+- Changing the SSH Local Pi resource setting preflights every affected chat,
+  project Pi and parallel agent before issuing any stops. Hold the Host resource
+  policy write lock through preflight, stops and persistence to exclude Host
+  starts and input; keep the stop-time check for autonomous Pi activity.
+  Active turns, queued or pending input, compaction, tools and unanswered dialogs
+  block the switch. Cache warming retains the SSH daemon but neither scheduled
+  nor in-flight warming blocks an explicit stop; shutdown cancels its timer or
+  request. Do not use the daemon retention check for a setting change.
 - Desktop and WebUI reconcile the selected history after `session_turn_completed`.
   WebUI also checks it after socket recovery and on foreground return. Do not
   replace conversation content with an older read that raced live events.
@@ -251,6 +263,8 @@ Frontend controller eviction alone is not backend process cleanup.
 
 | Condition | Behavior |
 | --- | --- |
+| SSH Local Pi resource switch finds a busy stream in preflight | Return busy before stopping any affected stream or saving the setting |
+| SSH Local Pi resource switch finds only idle streams with cache warming | Allow shutdown and the setting change |
 | Eligible idle cache exceeds budget | Stop oldest eligible processes on admission or the next 30-second sweep |
 | Persisted idle process reaches five minutes | Sweep expires it; next ensure resumes its JSONL |
 | WebUI model/thinking/fork/manual refresh after eviction | Ensure the target before RPC; background polling stays read-only |
@@ -325,6 +339,10 @@ fake Pi confirmed cold-probe cancellation without a late child, successful
 same-stream restart after stop ACK, and 50 immediately paired start/stop requests
 with no remaining Pi children. Native Windows behavior remains unverified.
 The following targeted regressions remain to be added with explicit authorization:
+- With one idle chat and a busy parallel agent or project Pi, reject the SSH
+  Local Pi resource switch without stopping the chat. Repeat with a queued or
+  pending prompt. With only cache warming, allow the switch without changing
+  the SSH daemon's retention predicate.
 - Sweep over-budget sessions after their live turns finish, expire eligible idle
   sessions, ignore read-only recency updates, and preserve active/temporary/
   unsaved/in-flight exclusions. Exercise resumption on Desktop and WebUI, including

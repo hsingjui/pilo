@@ -18,6 +18,8 @@ pub enum BuiltinExtension {
 pub struct SshWorkspaceConfig {
     pub label: String,
     pub remote_cwd: String,
+    #[serde(default)]
+    pub local_pi_resources: bool,
     pub ssh_args: Vec<String>,
     pub ssh_environment: BTreeMap<String, String>,
 }

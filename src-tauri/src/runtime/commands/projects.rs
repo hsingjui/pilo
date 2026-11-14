@@ -256,6 +256,7 @@ pub async fn parallel_agent_create(
     name: String,
     prompt: Option<String>,
 ) -> Result<ParallelAgentInfo, String> {
+    let _policy = runtime.pi_resource_policy.read().await;
     let project = project::ready(&app, &runtime.servers, &project_id).await?;
     runtime
         .parallel_agents
