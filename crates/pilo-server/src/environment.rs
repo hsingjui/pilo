@@ -79,6 +79,14 @@ pub(crate) struct DefaultWorkspaceParams {
     development: bool,
 }
 
+pub(crate) fn default_workspace_path(key: &str, development: bool) -> Result<PathBuf, String> {
+    let home = std::env::home_dir()
+        .filter(|path| path.is_absolute())
+        .ok_or_else(|| "default workspace home directory is not available".to_owned())?;
+    let root = if development { ".pilo-dev" } else { ".pilo" };
+    Ok(home.join(root).join("workspaces").join(key))
+}
+
 pub(crate) async fn ensure_default_workspace(
     params: DefaultWorkspaceParams,
 ) -> Result<Value, String> {
@@ -92,15 +100,7 @@ pub(crate) async fn ensure_default_workspace(
         return Err("invalid default workspace key".to_owned());
     }
     tokio::task::spawn_blocking(move || {
-        let home = std::env::home_dir()
-            .filter(|path| path.is_absolute())
-            .ok_or_else(|| "default workspace home directory is not available".to_owned())?;
-        let root = if params.development {
-            ".pilo-dev"
-        } else {
-            ".pilo"
-        };
-        let path = home.join(root).join("workspaces").join(params.key);
+        let path = default_workspace_path(&params.key, params.development)?;
         std::fs::create_dir_all(&path)
             .map_err(|error| format!("failed to create default workspace: {error}"))?;
         let path = std::fs::canonicalize(&path)

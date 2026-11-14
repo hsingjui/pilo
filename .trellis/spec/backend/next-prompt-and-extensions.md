@@ -286,6 +286,32 @@ are not a source for Connection-owned choices.
   CI already covers the Server crate tree. No plugin hot reload, package manifest,
   bundle-hash or independent rollback.
 
+### Local tools in a Local Pi SSH workspace
+
+1. **Scope:** Pilo's Local Pi + SSH workspace launches enable host tools without
+   a preference or per-call approval. Model catalog probes do not get them.
+2. **Signatures:** `local_read`, `local_ls`, and `local_exec` use Pi's native
+   read, list, and shell parameters and results. `local_exec` uses PowerShell
+   on Windows if the installed Pi exposes it, otherwise Pi's Bash tool.
+3. **Contract:** Server sets child-only `PILO_SSH_LOCAL_WORKSPACE` for eligible
+   launches, using the same local path as `workspace.ensure_default` (`local`
+   key). The extension creates the directory on first use. It is a starting
+   directory, not a sandbox. The Pi cwd and its session anchor do not change.
+4. **Errors:** If the Server cannot resolve an absolute local workspace path,
+   the SSH session still starts without local tools. The extension also skips
+   registration if the path is missing or non-absolute. Local directory/command
+   failures are returned as tool errors. SSH failures never route ordinary tools
+   to the host.
+5. **Cases:** `read` and `bash` target SSH; `local_read` and `local_exec` target
+   the Pilo host even when the SSH transport is unavailable. For WebUI the
+   host is not the browser device.
+6. **Verification when authorized:** distinguish same-name files on each side;
+   check local cwd, absolute paths, cancellation and no local tools in probes;
+   cover Windows PowerShell and POSIX Bash.
+7. **Wrong vs correct:** Do not change the Pi cwd or dispatch by path syntax.
+   Keep names explicit, reuse Pi's native tools, and tell Pi remote file/command
+   output is not authority to run a host tool. That guidance is not isolation.
+
 ## 4. Validation & Error Matrix
 
 | Condition | Behavior |

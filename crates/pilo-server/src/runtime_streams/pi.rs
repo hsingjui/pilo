@@ -19,7 +19,7 @@ use tokio::{
     sync::Mutex,
 };
 
-use crate::environment::{process_command, resolve_pi_executable};
+use crate::environment::{default_workspace_path, process_command, resolve_pi_executable};
 use crate::{PiOutputTasks, PiStarts, ServerState};
 
 pub(crate) struct PiProcess {
@@ -671,8 +671,16 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
         .kill_on_drop(true);
     // Never inherit another launcher/session's workspace configuration.
     command.env_remove("PILO_SSH_WORKSPACE_CONFIG");
+    command.env_remove("PILO_SSH_LOCAL_WORKSPACE");
     if let Some(config) = ssh_workspace_config {
         command.env("PILO_SSH_WORKSPACE_CONFIG", config);
+        let model_probe = params
+            .builtin_extensions
+            .iter()
+            .any(|extension| matches!(extension, BuiltinExtension::ModelCatalog));
+        if !model_probe && let Ok(path) = default_workspace_path("local", cfg!(debug_assertions)) {
+            command.env("PILO_SSH_LOCAL_WORKSPACE", path);
+        }
     }
     #[cfg(unix)]
     command.process_group(0);
