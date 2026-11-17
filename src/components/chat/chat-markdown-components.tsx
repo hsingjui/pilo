@@ -1,4 +1,10 @@
-import { useContext, useId, type ComponentPropsWithoutRef } from "react";
+import {
+	cloneElement,
+	isValidElement,
+	useContext,
+	useId,
+	type ComponentPropsWithoutRef,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import type { PluggableList, Plugin } from "unified";
@@ -19,10 +25,81 @@ import { cn } from "@/lib/utils";
 type MarkdownCodeProps = ComponentPropsWithoutRef<"code"> & {
 	node?: unknown;
 	inline?: boolean;
+	"data-block"?: string;
+};
+type MarkdownPreProps = ComponentPropsWithoutRef<"pre"> & {
+	node?: unknown;
 };
 type MarkdownTableProps = ComponentPropsWithoutRef<"table"> & {
 	node?: unknown;
 };
+
+async function copyMarkdownText(text: string) {
+	if (typeof navigator.clipboard?.writeText === "function") {
+		await navigator.clipboard.writeText(text);
+		return;
+	}
+
+	// LAN HTTP has no Clipboard API; copy during the original user gesture.
+	const activeElement = document.activeElement;
+	const selection = window.getSelection();
+	const anchor = selection?.anchorNode;
+	const focus = selection?.focusNode;
+	const anchorOffset = selection?.anchorOffset ?? 0;
+	const focusOffset = selection?.focusOffset ?? 0;
+	const field = document.createElement("textarea");
+	field.value = text;
+	field.readOnly = true;
+	field.style.cssText = "position:fixed;top:0;left:0;opacity:0;font-size:16px";
+	document.body.append(field);
+	try {
+		field.focus({ preventScroll: true });
+		field.select();
+		if (!document.execCommand("copy")) throw new Error("Copy failed");
+	} finally {
+		field.remove();
+		if (activeElement instanceof HTMLElement)
+			activeElement.focus({ preventScroll: true });
+		if (selection && anchor?.isConnected && focus?.isConnected)
+			selection.setBaseAndExtent(anchor, anchorOffset, focus, focusOffset);
+	}
+}
+
+function MarkdownPre({ children }: MarkdownPreProps) {
+	const { t } = useTranslation();
+	if (!isValidElement<MarkdownCodeProps>(children)) return children;
+
+	// Keep Streamdown's block rendering and replace only the unavailable copy action.
+	const block = cloneElement(children, { "data-block": "true" });
+	const text = children.props.children;
+	if (
+		typeof text !== "string" ||
+		typeof globalThis.navigator?.clipboard?.writeText === "function"
+	)
+		return block;
+
+	return (
+		<div
+			className="contents"
+			onClickCapture={(event) => {
+				if (
+					!(event.target instanceof Element) ||
+					!event.target.closest(
+						'button[data-streamdown="code-block-copy-button"]:enabled',
+					)
+				)
+					return;
+				event.stopPropagation();
+				void copyMarkdownText(text).then(
+					() => toast.success(t("chat.copied")),
+					() => toast.error(t("chat.copyFailed")),
+				);
+			}}
+		>
+			{block}
+		</div>
+	);
+}
 
 function MarkdownInlineCode({
 	className,
@@ -57,7 +134,7 @@ function MarkdownInlineCode({
 		)
 			return;
 		try {
-			await navigator.clipboard.writeText(element.textContent ?? "");
+			await copyMarkdownText(element.textContent ?? "");
 			toast.success(t("chat.copied"));
 		} catch {
 			toast.error(t("chat.copyFailed"));
@@ -132,5 +209,6 @@ export const MARKDOWN_COMPONENTS = {
 	a: MarkdownLink,
 	img: MarkdownImage,
 	inlineCode: MarkdownInlineCode,
+	pre: MarkdownPre,
 	table: MarkdownTable,
 } satisfies Components;
