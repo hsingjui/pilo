@@ -39,8 +39,11 @@ chat status notices. Owners: `runtime/cache_keep_alive.rs`,
   observed provider payload and model identity. Captured provider payload size
   is capped at 16 Mi UTF-16 code units. Payload replay only supports Anthropic Messages,
   OpenAI Responses (including the custom `openai-responses-ws` API) and OpenAI
-  Completions with a safe one-token output cap; active Anthropic thinking,
-  previous-response references and resolved model identity changes are rejected.
+  Completions with a safe one-token output cap. Anthropic `thinking.type: "adaptive"`
+  is replayable with `max_tokens: 1`; preserve the thinking config and
+  `output_config.effort` because changing them can invalidate the cache.
+  Budget-based and unknown thinking modes, previous-response references and
+  resolved model identity changes are rejected.
   The custom WS adapter captures the full normalized body before continuation
   optimization. Its `onPayload` replacement runs after normalization, so replay
   preserves `instructions`, `input` and tools and restores `max_output_tokens: 1`.

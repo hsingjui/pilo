@@ -15,7 +15,9 @@ function replayPayload(payload, api) {
 	const copy = structuredClone(payload);
 	if (
 		copy.previous_response_id ||
-		(copy.thinking && copy.thinking.type !== "disabled")
+		(copy.thinking &&
+			copy.thinking.type !== "disabled" &&
+			!(api === "anthropic-messages" && copy.thinking.type === "adaptive"))
 	)
 		return null;
 	if (api === "anthropic-messages") copy.max_tokens = 1;
@@ -175,6 +177,7 @@ export default function (pi) {
 						maxTokens: 1,
 						maxRetries: 0,
 						sessionId: leaf.sessionId,
+						disableContinuation: true,
 						// Preserve the exact captured prefix, cache markers and thinking options.
 						onPayload: (_payload, model) => {
 							if (
