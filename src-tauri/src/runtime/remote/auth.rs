@@ -83,6 +83,13 @@ pub(crate) fn authenticate(paths: &HostPaths, token: &str) -> Result<Option<Remo
     storage::authenticate_remote_device(&db, &hash_credential(token), storage::now_ms())
 }
 
+/// 把当前设备的有效期重置为从现在起的完整 TTL；token 不变。
+/// 设备已撤销或过期时返回 `None`。
+pub(crate) fn renew_device(paths: &HostPaths, device_id: &str) -> Result<Option<u64>, String> {
+    let mut db = storage::open_with_paths(paths)?;
+    storage::renew_remote_device(&mut db, device_id, DEVICE_TOKEN_TTL_MS)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

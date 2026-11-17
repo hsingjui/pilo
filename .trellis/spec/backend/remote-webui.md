@@ -69,6 +69,8 @@ Authenticated (`require_auth` middleware):
 
 ```text
 GET  /api/v1/bootstrap       -> { projects, chatSessions, latestSequence }
+GET  /api/v1/auth/device     -> { expiresAtMs }          (current device only)
+POST /api/v1/auth/device/renew -> { expiresAtMs }        (resets current device to full TTL)
 GET  /api/v1/theme           -> ThemeSettings (Host SQLite)
 POST /api/v1/theme           -> ThemeSettingsUpdate body -> committed ThemeSettings
 GET  /api/v1/sessions?projectId=...&cached=true // optional; default reconciles JSONL
@@ -217,6 +219,17 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   response, full pairing URL or token may enter the PWA cache.
 - **Device token TTL**: 30 days absolute. Revoked or expired tokens fail auth
   immediately; live WebSockets re-check every 15 s and on `auth_generation` change.
+  Renewal is explicit only: `POST /auth/device/renew` resets the authenticated
+  device's expiry to now + 30 days, keeps the same token, and fails with 401 if
+  the device was revoked/expired meanwhile. Sample the time after acquiring the
+  SQLite write lock so a device that expires while waiting cannot be renewed.
+  It never renews other devices. WebUI checks `/auth/device` once per page load
+  (per token) and, when ≤ 7 days remain, shows a persistent toast on wide screens
+  or an inline reminder with visible close and renew buttons above the composer
+  on narrow screens. Keep the reminder on non-401 renewal failures so the user
+  can retry; do not let Sonner's action dismiss it before the request succeeds.
+  Lookup failures stay silent except 401, which follows the normal expired-auth
+  path.
   Each newly paired origin gets an independent device record/token, individually
   revocable but not strictly origin-bound. Existing valid tokens survive address
   migration and restart; the pre-existing port-change clearing policy is separate.

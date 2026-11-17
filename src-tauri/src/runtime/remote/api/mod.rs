@@ -117,6 +117,8 @@ pub(crate) fn router(
 
     let protected = Router::new()
         .route("/api/v1/bootstrap", get(handlers::bootstrap))
+        .route("/api/v1/auth/device", get(middleware::device_auth))
+        .route("/api/v1/auth/device/renew", post(middleware::device_renew))
         .route(
             "/api/v1/connections/local-pi-resources",
             post(handlers::local_pi_resources_set),

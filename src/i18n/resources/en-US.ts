@@ -188,6 +188,11 @@ const enUS = {
 			"Open Remote WebUI in Pilo on your computer and scan its QR code.",
 		remoteAuthorizationExpired:
 			"This device authorization expired. Scan a new QR code from Pilo.",
+		remoteAuthorizationExpiring: "Device authorization expires soon",
+		remoteAuthorizationExpiresAt: "Expires {{date}}",
+		remoteAuthorizationRenew: "Renew",
+		remoteAuthorizationRenewed: "Device authorization renewed",
+		remoteAuthorizationRenewFailed: "Renewal failed",
 		remoteError: "Remote WebUI error",
 		remoteActionFailed: "Remote WebUI action failed",
 		remotePairing: "Pair a device",

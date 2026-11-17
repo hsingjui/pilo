@@ -6,7 +6,7 @@ use std::{
 
 use axum::{
     Json,
-    extract::{ConnectInfo, MatchedPath, Request, State},
+    extract::{ConnectInfo, Extension, MatchedPath, Request, State},
     http::{HeaderMap, StatusCode, header},
     middleware::Next,
     response::{IntoResponse, Response},
@@ -177,6 +177,38 @@ fn pairing_response<T: Serialize>(
         Err(PairingError::Internal(message)) => {
             api_error(StatusCode::INTERNAL_SERVER_ERROR, &message)
         }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct DeviceAuthResponse {
+    expires_at_ms: u64,
+}
+
+/// 当前设备的授权到期时间，供 WebUI 提示即将过期。
+pub(super) async fn device_auth(Extension(session): Extension<AuthSession>) -> Response {
+    Json(DeviceAuthResponse {
+        expires_at_ms: session.device.expires_at_ms,
+    })
+    .into_response()
+}
+
+/// 把当前设备授权重置为完整 TTL；token 不变，已建立的连接不受影响。
+pub(super) async fn device_renew(
+    State(state): State<RemoteHttpState>,
+    Extension(session): Extension<AuthSession>,
+) -> Response {
+    let paths = state.paths.clone();
+    let device_id = session.device.id;
+    match tokio::task::spawn_blocking(move || auth::renew_device(&paths, &device_id)).await {
+        Ok(Ok(Some(expires_at_ms))) => Json(DeviceAuthResponse { expires_at_ms }).into_response(),
+        Ok(Ok(None)) => api_error(StatusCode::UNAUTHORIZED, "invalid or expired device token"),
+        Ok(Err(error)) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+        Err(error) => api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("device renew task failed: {error}"),
+        ),
     }
 }
 

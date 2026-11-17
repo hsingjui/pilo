@@ -313,6 +313,36 @@ pub(crate) fn revoke_remote_device(
     Ok(changed > 0)
 }
 
+/// Returns the new expiry only if the device is still valid.
+pub(crate) fn renew_remote_device(
+    db: &mut SqliteConnection,
+    device_id: &str,
+    ttl_ms: u64,
+) -> Result<Option<u64>, String> {
+    let transaction = db
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| format!("failed to lock Remote WebUI device state: {error}"))?;
+    // The device can expire while waiting for the write lock.
+    let now_ms = super::now_ms();
+    let expires_at_ms = now_ms.saturating_add(ttl_ms);
+    let changed = transaction
+        .execute(
+            "UPDATE remote_devices
+             SET expires_at_ms=?1
+             WHERE id=?2 AND revoked_at_ms IS NULL AND expires_at_ms>=?3",
+            params![
+                as_i64(expires_at_ms, "device expiry")?,
+                device_id,
+                as_i64(now_ms, "device renew time")?
+            ],
+        )
+        .map_err(|error| format!("failed to renew Remote WebUI device: {error}"))?;
+    transaction
+        .commit()
+        .map_err(|error| format!("failed to commit Remote WebUI device renewal: {error}"))?;
+    Ok((changed > 0).then_some(expires_at_ms))
+}
+
 pub(crate) fn clear_remote_devices(db: &SqliteConnection) -> Result<usize, String> {
     db.execute("DELETE FROM remote_devices", [])
         .map_err(|error| format!("failed to clear Remote WebUI devices: {error}"))

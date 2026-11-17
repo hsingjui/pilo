@@ -54,6 +54,7 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
+	NoticeCard,
 	TooltipProvider,
 } from "@/ui";
 import type { SidebarEnv } from "@/components/sidebar/types";
@@ -69,6 +70,7 @@ import { RemoteMobileNavigation } from "./remote-mobile-navigation";
 import { useMobileNavigationSwipe } from "./use-mobile-navigation-swipe";
 import { useRemoteKeyboardInset } from "./use-remote-keyboard-inset";
 import { useRemoteChat } from "./use-remote-chat";
+import { useRemoteAuthExpiry } from "./use-remote-auth-expiry";
 import { useRemoteConnection } from "./use-remote-connection";
 import { useRemoteNetworkLifecycle } from "./use-remote-network-lifecycle";
 import { useRemotePwa } from "./use-remote-pwa";
@@ -130,6 +132,11 @@ function RemoteWorkspace() {
 	);
 	const workspaces = useProjectWorkspaces(workspaceProjectIds);
 	const isNarrow = useMediaQuery("(max-width: 1023px)");
+	const authExpiryReminder = useRemoteAuthExpiry({
+		token: connection.token,
+		isNarrow,
+		onError: connection.handleExpiredAuth,
+	});
 	useRemoteKeyboardInset();
 	// 触屏没有 hover，消息上 hover-only 的复制/时间戳会永久不可见。
 	// 用 JS 判断而不是 CSS media query：与 chat-composer-run-config.tsx 的
@@ -618,6 +625,37 @@ function RemoteWorkspace() {
 										style={{ paddingRight: isNarrow ? 0 : scrollbarWidth }}
 									>
 										<ConversationColumn className="relative">
+											{authExpiryReminder ? (
+												<NoticeCard className="flex items-center gap-1 py-1 pl-3 pr-1">
+													<div role="status" className="min-w-0 flex-1">
+														<div className="font-medium text-foreground/85">
+															{t("settings.remoteAuthorizationExpiring")}
+														</div>
+														<div className="text-muted-foreground">
+															{authExpiryReminder.description}
+														</div>
+													</div>
+													<Button
+														type="button"
+														variant="secondary"
+														size="sm"
+														className="min-h-11 min-w-11 shrink-0"
+														onClick={() => void authExpiryReminder.renew()}
+													>
+														{t("settings.remoteAuthorizationRenew")}
+													</Button>
+													<Button
+														type="button"
+														variant="ghost"
+														size="icon"
+														className="min-h-11 min-w-11 shrink-0 text-muted-foreground"
+														aria-label={t("common.close")}
+														onClick={authExpiryReminder.dismiss}
+													>
+														<X aria-hidden="true" />
+													</Button>
+												</NoticeCard>
+											) : null}
 											{chat.historyReady ? (
 												<ChatPendingQueue
 													items={chat.conversationUi.pendingUsers}

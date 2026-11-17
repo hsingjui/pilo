@@ -213,6 +213,33 @@ async function remoteFetchBytes(
 	return new Uint8Array(await response.arrayBuffer());
 }
 
+function parseDeviceAuth(value: unknown) {
+	if (
+		!isRecord(value) ||
+		typeof value.expiresAtMs !== "number" ||
+		!Number.isSafeInteger(value.expiresAtMs)
+	)
+		throw new Error("REMOTE_DEVICE_INVALID_RESPONSE");
+	return { expiresAtMs: value.expiresAtMs };
+}
+
+export async function loadRemoteDeviceAuth(token: string) {
+	return parseDeviceAuth(
+		await remoteFetch<unknown>(token, "/api/v1/auth/device", {
+			cache: "no-store",
+		}),
+	);
+}
+
+export async function renewRemoteDeviceAuth(token: string) {
+	return parseDeviceAuth(
+		await remoteFetch<unknown>(token, "/api/v1/auth/device/renew", {
+			method: "POST",
+			cache: "no-store",
+		}),
+	);
+}
+
 export function loadRemotePreferences(token: string) {
 	return remoteFetch<PreferencesSnapshot>(token, "/api/v1/preferences", {
 		cache: "no-store",

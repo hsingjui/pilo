@@ -186,6 +186,11 @@ const zhCN = {
 		remotePairRequired: "请在电脑端 Pilo 中打开远程访问并扫描二维码。",
 		remoteAuthorizationExpired:
 			"该设备认证已过期，请重新扫描 Pilo 中的二维码。",
+		remoteAuthorizationExpiring: "该设备认证即将过期",
+		remoteAuthorizationExpiresAt: "将于 {{date}} 过期",
+		remoteAuthorizationRenew: "续期",
+		remoteAuthorizationRenewed: "设备认证已续期",
+		remoteAuthorizationRenewFailed: "续期失败",
 		remoteError: "远程访问出错",
 		remoteActionFailed: "远程访问操作失败",
 		remotePairing: "连接设备",
