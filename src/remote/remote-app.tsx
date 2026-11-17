@@ -627,14 +627,14 @@ function RemoteWorkspace() {
 										<ConversationColumn className="relative">
 											{authExpiryReminder ? (
 												<NoticeCard className="flex items-center gap-1 py-1 pl-3 pr-1">
-													<div role="status" className="min-w-0 flex-1">
-														<div className="font-medium text-foreground/85">
+													<output className="min-w-0 flex-1">
+														<span className="block font-medium text-foreground/85">
 															{t("settings.remoteAuthorizationExpiring")}
-														</div>
-														<div className="text-muted-foreground">
+														</span>
+														<span className="block text-muted-foreground">
 															{authExpiryReminder.description}
-														</div>
-													</div>
+														</span>
+													</output>
 													<Button
 														type="button"
 														variant="secondary"
