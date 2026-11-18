@@ -16,12 +16,19 @@ struct TurnMeta {
     updated_at_ms: Option<i64>,
 }
 
-pub(super) fn project_branch(entries: &[Value], branch: &[usize]) -> SessionHistory {
+pub(super) fn project_branch(entries: &mut [Value], branch: &[usize]) -> SessionHistory {
     let mut history = SessionHistory::default();
     let mut turn = TurnMeta::default();
 
     for &index in branch {
-        let entry = &entries[index];
+        // Branch indices are unique. Moving each entry out lets tool payloads move
+        // into the projection and frees the rest once this entry is projected.
+        let mut entry = std::mem::take(&mut entries[index]);
+        let message = if entry.get("type").and_then(Value::as_str) == Some("message") {
+            entry.get_mut("message").map(Value::take)
+        } else {
+            None
+        };
         match entry.get("type").and_then(Value::as_str) {
             Some("model_change") => {
                 if let (Some(provider), Some(id)) = (
@@ -46,11 +53,11 @@ pub(super) fn project_branch(entries: &[Value], branch: &[usize]) -> SessionHist
                 }
             }
             Some("message") => {
-                let Some(message) = entry.get("message") else {
+                let Some(mut message) = message else {
                     continue;
                 };
                 history.source_message_count += 1;
-                project_message(entry, message, &mut history.events, &mut turn);
+                project_message(&entry, &mut message, &mut history.events, &mut turn);
             }
             Some("compaction") => {
                 finish_turn(&mut history.events, &mut turn, false);
@@ -61,16 +68,16 @@ pub(super) fn project_branch(entries: &[Value], branch: &[usize]) -> SessionHist
                         .unwrap_or_default()
                         .to_owned(),
                     tokens_before: entry.get("tokensBefore").and_then(Value::as_u64),
-                    timestamp_ms: entry_timestamp_ms(entry, None),
-                    source_entry_id: entry_id(entry),
+                    timestamp_ms: entry_timestamp_ms(&entry, None),
+                    source_entry_id: entry_id(&entry),
                 });
             }
             Some("custom_message")
                 if entry.get("display").and_then(Value::as_bool) != Some(false) =>
             {
-                let timestamp_ms = entry_timestamp_ms(entry, None);
-                let source_entry_id = entry_id(entry);
-                let text = fallback_text("Custom message", entry.get("content").unwrap_or(entry));
+                let timestamp_ms = entry_timestamp_ms(&entry, None);
+                let source_entry_id = entry_id(&entry);
+                let text = fallback_text("Custom message", entry.get("content").unwrap_or(&entry));
                 ensure_assistant_start(
                     &mut history.events,
                     &mut turn,
@@ -97,13 +104,18 @@ pub(super) fn project_branch(entries: &[Value], branch: &[usize]) -> SessionHist
 
 fn project_message(
     entry: &Value,
-    message: &Value,
+    message: &mut Value,
     events: &mut Vec<ConversationEventDto>,
     turn: &mut TurnMeta,
 ) {
-    let timestamp_ms = entry_timestamp_ms(entry, Some(message));
+    let timestamp_ms = entry_timestamp_ms(entry, Some(&*message));
     let source_entry_id = entry_id(entry);
-    let role = message.get("role").and_then(Value::as_str);
+    // Owned so the arms below can move payloads out of `message`.
+    let role = message
+        .get("role")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let role = role.as_deref();
     if matches!(role, Some("assistant" | "toolResult"))
         && let Some(usage) = TokenUsage::from_json(message.get("usage"))
     {
@@ -132,7 +144,7 @@ fn project_message(
         Some("assistant") => {
             ensure_assistant_start(events, turn, timestamp_ms, source_entry_id.clone());
             project_assistant_content(
-                message.get("content"),
+                message.get_mut("content"),
                 timestamp_ms,
                 source_entry_id.clone(),
                 events,
@@ -163,14 +175,15 @@ fn project_message(
                 .and_then(Value::as_str)
                 .unwrap_or("unknown")
                 .to_owned();
+            let is_error = message
+                .get("isError")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             events.push(ConversationEventDto::ToolExecutionEnd {
                 tool_call_id,
                 tool_name,
-                result: tool_result_payload(message),
-                is_error: message
-                    .get("isError")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
+                result: tool_result_payload(std::mem::take(message)),
+                is_error,
                 timestamp_ms,
                 source_entry_id,
             });
@@ -219,19 +232,19 @@ fn project_message(
 }
 
 fn project_assistant_content(
-    content: Option<&Value>,
+    content: Option<&mut Value>,
     timestamp_ms: Option<i64>,
     source_entry_id: Option<String>,
     events: &mut Vec<ConversationEventDto>,
 ) {
     match content {
         Some(Value::Array(parts)) => {
-            for (index, part) in parts.iter().enumerate() {
+            for (index, part) in parts.iter_mut().enumerate() {
                 project_assistant_part(part, index, timestamp_ms, source_entry_id.clone(), events);
             }
         }
         Some(Value::String(text)) => events.push(ConversationEventDto::AssistantTextDelta {
-            delta: text.clone(),
+            delta: std::mem::take(text),
             timestamp_ms,
             source_entry_id,
             source_content_index: Some(0),
@@ -242,14 +255,16 @@ fn project_assistant_content(
 }
 
 fn project_assistant_part(
-    part: &Value,
+    part: &mut Value,
     index: usize,
     timestamp_ms: Option<i64>,
     source_entry_id: Option<String>,
     events: &mut Vec<ConversationEventDto>,
 ) {
     let source_content_index = Some(index);
-    match part.get("type").and_then(Value::as_str) {
+    // Owned so the tool-call arm can move its arguments out of `part`.
+    let part_type = part.get("type").and_then(Value::as_str).map(str::to_owned);
+    match part_type.as_deref() {
         Some("text") => {
             if let Some(text) = part.get("text").and_then(Value::as_str) {
                 events.push(ConversationEventDto::AssistantTextDelta {
@@ -295,14 +310,19 @@ fn project_assistant_part(
                         source_entry_id.as_deref().unwrap_or("history")
                     )
                 });
+            let tool_name = part
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+                .to_owned();
+            let args = part
+                .get_mut("arguments")
+                .map(Value::take)
+                .unwrap_or(Value::Null);
             events.push(ConversationEventDto::ToolExecutionStart {
                 tool_call_id,
-                tool_name: part
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or("unknown")
-                    .to_owned(),
-                args: part.get("arguments").cloned().unwrap_or(Value::Null),
+                tool_name,
+                args,
                 timestamp_ms,
                 source_entry_id,
                 source_content_index,

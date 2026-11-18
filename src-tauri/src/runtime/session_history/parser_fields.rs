@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use super::types::{HistoryImage, ImageLocation};
@@ -120,21 +120,23 @@ pub(super) fn user_images(value: Option<&Value>, base_id: Option<&str>) -> Vec<H
         .collect()
 }
 
-pub(super) fn tool_result_payload(message: &Value) -> Value {
-    let Some(object) = message.as_object() else {
-        return message.clone();
-    };
-    let mut result = Map::new();
-    for (key, value) in object {
-        if matches!(
-            key.as_str(),
-            "role" | "toolCallId" | "toolName" | "isError" | "timestamp"
-        ) {
-            continue;
-        }
-        result.insert(key.clone(), value.clone());
+/// Consumes the persisted message so large tool payloads move into the history
+/// projection instead of being cloned.
+pub(super) fn tool_result_payload(message: Value) -> Value {
+    match message {
+        Value::Object(object) => Value::Object(
+            object
+                .into_iter()
+                .filter(|(key, _)| {
+                    !matches!(
+                        key.as_str(),
+                        "role" | "toolCallId" | "toolName" | "isError" | "timestamp"
+                    )
+                })
+                .collect(),
+        ),
+        other => other,
     }
-    Value::Object(result)
 }
 
 pub(super) fn fallback_text(label: &str, value: &Value) -> String {
