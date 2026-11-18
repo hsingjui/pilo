@@ -4,6 +4,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::super::token_usage::TokenUsage;
+use super::incremental::IncrementalState;
 
 /// Byte range of a JSONL line so a single image payload can be fetched lazily
 /// without re-reading the whole session file.
@@ -66,6 +67,12 @@ pub struct SessionHistory {
     /// Image id → JSONL line range; internal only, never serialized to IPC.
     #[serde(skip)]
     pub image_locations: HashMap<String, ImageLocation>,
+    /// Index of the first projected message; non-zero when only a tail was projected.
+    #[serde(skip)]
+    pub(super) first_message_index: usize,
+    /// Resume point for the next load. The serializer fills `message_index`.
+    #[serde(skip)]
+    pub(super) incremental: Option<IncrementalState>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

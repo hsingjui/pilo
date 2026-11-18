@@ -7,10 +7,11 @@ use crate::runtime::server_client::ServerManager;
 
 use super::{
     cache::{
-        SessionFileFingerprint, SessionHistoryCache, SessionHistoryWindowIndex, cache_key,
-        fingerprint_from_metadata,
+        HistoryStorage, SessionFileFingerprint, SessionHistoryCache, SessionHistoryWindowIndex,
+        cache_key, fingerprint_from_metadata,
     },
     disk::DiskHistory,
+    incremental::extend_projection,
     parser::HistoryParser,
     serialize::{
         serialize_history_response, serialize_history_window_response, serialize_windowed_history,
@@ -20,6 +21,13 @@ use super::{
 
 const HISTORY_CHANGED_DURING_READ: &str = "session changed while history was being read";
 const HISTORY_CHANGED_READ_RETRIES: usize = 2;
+
+type LoadPermit = Arc<tokio::sync::OwnedSemaphorePermit>;
+type LoadedHistory = (
+    HistoryStorage,
+    Arc<SessionHistoryWindowIndex>,
+    Option<SessionFileFingerprint>,
+);
 
 pub(super) async fn acquire_cold_load() -> Result<Arc<tokio::sync::OwnedSemaphorePermit>, String> {
     static SLOTS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
@@ -111,25 +119,13 @@ pub async fn read_history_window_json(
     }
 }
 
-enum HistoryStorage {
-    Memory(Arc<Vec<u8>>),
-    Disk(Arc<DiskHistory>),
-}
-
 async fn load_history(
     servers: &ServerManager,
     cache: &tokio::sync::Mutex<SessionHistoryCache>,
     project: &Project,
     path: &str,
     expected_fingerprint: Option<(u64, u64)>,
-) -> Result<
-    (
-        HistoryStorage,
-        Arc<SessionHistoryWindowIndex>,
-        Option<SessionFileFingerprint>,
-    ),
-    String,
-> {
+) -> Result<LoadedHistory, String> {
     let key = cache_key(project, path);
     let load_lock = cache.lock().await.load_lock(&key);
     let _load_guard = load_lock.lock().await;
@@ -158,8 +154,20 @@ async fn load_history(
         source_confirmed = true;
     }
     let load_permit = acquire_cold_load().await?;
-    if let Some(fingerprint) = fingerprint.filter(|_| source_confirmed) {
-        cache.lock().await.evict_stale_memory(&key, fingerprint);
+    // The cached projection stays available for its own fingerprint until a
+    // replacement is cached, whether the incremental attempt succeeds or not.
+    let base = cache.lock().await.incremental_base(&key);
+    if let Some(base) = base
+        && source_confirmed
+        && fingerprint.is_some_and(|source| source.file_size > base.2.file_size)
+    {
+        match load_incremental(servers, cache, project, path, base, &load_permit).await {
+            Ok(loaded) => return Ok(loaded),
+            Err(reason) => log::debug!(
+                target: "session-history",
+                "incremental history load fell back to a full read: {reason}"
+            ),
+        }
     }
     let (history, fingerprint) =
         read_file(servers, project, path, Arc::clone(&load_permit)).await?;
@@ -171,6 +179,95 @@ async fn load_history(
     })
     .await
     .map_err(|error| format!("history serialization task failed: {error}"))??;
+    store_history(cache, key, fingerprint, serialized, index, &load_permit).await
+}
+
+/// Rereads the source from the cached checkpoint and reprojects only that tail.
+/// Any error means the caller falls back to a full read.
+async fn load_incremental(
+    servers: &ServerManager,
+    cache: &tokio::sync::Mutex<SessionHistoryCache>,
+    project: &Project,
+    path: &str,
+    (previous, previous_index, previous_fingerprint): (
+        HistoryStorage,
+        Arc<SessionHistoryWindowIndex>,
+        SessionFileFingerprint,
+    ),
+    load_permit: &LoadPermit,
+) -> Result<LoadedHistory, String> {
+    let state = previous_index
+        .incremental
+        .clone()
+        .ok_or_else(|| "cached history has no checkpoint".to_owned())?;
+    if !state.resumable() {
+        return Err(format!("{} incremental updates reached", state.updates));
+    }
+    let start = state.checkpoint.file_offset;
+    let image_locations = state.prefix_image_locations(&previous_index.image_locations);
+    let (parser, fingerprint, bytes_read) = read_source(servers, project, path, start, || {
+        HistoryParser::resume(
+            state.clone(),
+            image_locations.clone(),
+            Some(Arc::clone(load_permit)),
+        )
+    })
+    .await
+    // Server errors can name the session path, which stays out of logs.
+    .map_err(|_| "reading the source tail failed".to_owned())?;
+    let fingerprint =
+        fingerprint.ok_or_else(|| "session.read returned no fingerprint".to_owned())?;
+    // Recheck the actual snapshot: the earlier probe raced with opening the file.
+    if fingerprint.file_size <= previous_fingerprint.file_size {
+        return Err("source did not grow since the cached projection".to_owned());
+    }
+    let prefer_disk = !SessionHistoryCache::fits_memory(fingerprint);
+    let permit = Arc::clone(load_permit);
+    let (storage, index) = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let history = parser
+            .finish_resumed()
+            .ok_or_else(|| "source tail changed or the branch left the checkpoint".to_owned())?;
+        extend_projection(&previous, &previous_index, history, prefer_disk)
+    })
+    .await
+    .map_err(|error| format!("incremental history task failed: {error}"))??;
+    log::debug!(
+        target: "session-history",
+        "incremental history load read {bytes_read} bytes from offset {start}"
+    );
+    let key = cache_key(project, path);
+    match storage {
+        HistoryStorage::Memory(serialized) => {
+            store_history(
+                cache,
+                key,
+                Some(fingerprint),
+                serialized,
+                index,
+                load_permit,
+            )
+            .await
+        }
+        HistoryStorage::Disk(file) => {
+            cache
+                .lock()
+                .await
+                .insert_disk(key, fingerprint, Arc::clone(&file), Arc::clone(&index));
+            Ok((HistoryStorage::Disk(file), index, Some(fingerprint)))
+        }
+    }
+}
+
+/// Caches a projection in memory or on disk when it fits; otherwise returns it uncached.
+async fn store_history(
+    cache: &tokio::sync::Mutex<SessionHistoryCache>,
+    key: String,
+    fingerprint: Option<SessionFileFingerprint>,
+    serialized: Arc<Vec<u8>>,
+    index: Arc<SessionHistoryWindowIndex>,
+    load_permit: &LoadPermit,
+) -> Result<LoadedHistory, String> {
     if let Some(fingerprint) = fingerprint {
         if SessionHistoryCache::fits_memory(fingerprint) {
             cache.lock().await.insert_windowed(
@@ -181,7 +278,7 @@ async fn load_history(
             );
         } else if SessionHistoryCache::fits_disk(serialized.len(), &index) {
             let data = Arc::clone(&serialized);
-            let disk_permit = Arc::clone(&load_permit);
+            let disk_permit = Arc::clone(load_permit);
             match tokio::task::spawn_blocking(move || {
                 let _permit = disk_permit;
                 DiskHistory::create(&data)
@@ -210,10 +307,28 @@ pub(super) async fn read_file(
     servers: &ServerManager,
     project: &Project,
     path: &str,
-    load_permit: Arc<tokio::sync::OwnedSemaphorePermit>,
+    load_permit: LoadPermit,
 ) -> Result<(SessionHistory, Option<SessionFileFingerprint>), String> {
+    let (parser, fingerprint, _) = read_source(servers, project, path, 0, || {
+        HistoryParser::with_load_permit(Arc::clone(&load_permit))
+    })
+    .await?;
+    tokio::task::spawn_blocking(move || (parser.finish(), fingerprint))
+        .await
+        .map_err(|error| format!("history parsing task failed: {error}"))
+}
+
+/// Feeds the source from `start` up to its size when first read into a fresh
+/// parser, retrying when the file is replaced mid-read. Returns the byte count read.
+async fn read_source(
+    servers: &ServerManager,
+    project: &Project,
+    path: &str,
+    start: u64,
+    new_parser: impl Fn() -> HistoryParser,
+) -> Result<(HistoryParser, Option<SessionFileFingerprint>, u64), String> {
     for attempt in 0..=HISTORY_CHANGED_READ_RETRIES {
-        match read_file_once(servers, project, path, Arc::clone(&load_permit)).await {
+        match read_source_once(servers, project, path, start, new_parser()).await {
             Err(error)
                 if error == HISTORY_CHANGED_DURING_READ
                     && attempt < HISTORY_CHANGED_READ_RETRIES =>
@@ -226,15 +341,15 @@ pub(super) async fn read_file(
     unreachable!("history retry loop always returns")
 }
 
-async fn read_file_once(
+async fn read_source_once(
     servers: &ServerManager,
     project: &Project,
     path: &str,
-    load_permit: Arc<tokio::sync::OwnedSemaphorePermit>,
-) -> Result<(SessionHistory, Option<SessionFileFingerprint>), String> {
+    start: u64,
+    mut parser: HistoryParser,
+) -> Result<(HistoryParser, Option<SessionFileFingerprint>, u64), String> {
     const CHUNK_BYTES: usize = 16 * 1024 * 1024;
-    let mut cursor = 0_u64;
-    let mut parser = HistoryParser::with_load_permit(load_permit);
+    let mut cursor = start;
     let mut fingerprint = None;
     let mut snapshot_size = None;
     loop {
@@ -242,7 +357,7 @@ async fn read_file_once(
             .map(|size: u64| size.saturating_sub(cursor) as usize)
             .unwrap_or(CHUNK_BYTES);
         if snapshot_size.is_some() && remaining == 0 {
-            return finish_file_read(parser, fingerprint).await;
+            return Ok((parser, fingerprint, cursor - start));
         }
         let (metadata, binary) = servers
             .request_with_binary(
@@ -294,21 +409,15 @@ async fn read_file_once(
         })
         .await
         .map_err(|error| format!("history parsing task failed: {error}"))?;
-        if snapshot_size.is_some_and(|size| next_offset >= size) || eof {
-            return finish_file_read(parser, fingerprint).await;
+        if snapshot_size.is_some_and(|size| next_offset >= size)
+            || eof
+            || parser.verification_failed()
+        {
+            return Ok((parser, fingerprint, next_offset - start));
         }
         if empty {
             return Err("pilo-server returned an empty non-terminal session chunk".to_owned());
         }
         cursor = next_offset;
     }
-}
-
-async fn finish_file_read(
-    parser: HistoryParser,
-    fingerprint: Option<SessionFileFingerprint>,
-) -> Result<(SessionHistory, Option<SessionFileFingerprint>), String> {
-    tokio::task::spawn_blocking(move || (parser.finish(), fingerprint))
-        .await
-        .map_err(|error| format!("history parsing task failed: {error}"))
 }

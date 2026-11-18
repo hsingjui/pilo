@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::domain::Project;
 
-use super::{disk::DiskHistory, types::ImageLocation};
+use super::{disk::DiskHistory, incremental::IncrementalState, types::ImageLocation};
 
 pub(super) const SESSION_HISTORY_CACHE_CAPACITY: usize = 16;
 // Resident budget for parsed histories. Larger sessions use the disk cache,
@@ -33,7 +33,15 @@ pub(super) struct SessionHistoryWindowIndex {
     pub(super) events_content_end: usize,
     pub(super) message_ranges: Vec<Range<usize>>,
     pub(super) message_index_json: Arc<Vec<u8>>,
+    /// Byte range of each entry in `message_index_json`.
+    pub(super) directory_ranges: Vec<Range<usize>>,
     pub(super) image_locations: ImageLocations,
+    pub(super) incremental: Option<IncrementalState>,
+}
+
+pub(super) enum HistoryStorage {
+    Memory(Arc<Vec<u8>>),
+    Disk(Arc<DiskHistory>),
 }
 
 #[derive(Clone)]
@@ -92,17 +100,38 @@ impl SessionHistoryCache {
         self.entries.contains_key(key) || self.disk_entries.contains_key(key)
     }
 
-    /// Frees resident history before a cold load without discarding the disk snapshot.
-    /// The fingerprint must come from the source, not the client.
-    pub(super) fn evict_stale_memory(&mut self, key: &str, fingerprint: SessionFileFingerprint) {
-        if self
-            .entries
-            .get(key)
-            .is_some_and(|entry| entry.fingerprint != fingerprint)
+    /// A cached projection of any fingerprint that can be extended from its
+    /// checkpoint. It stays cached until a replacement is inserted.
+    pub(super) fn incremental_base(
+        &self,
+        key: &str,
+    ) -> Option<(
+        HistoryStorage,
+        Arc<SessionHistoryWindowIndex>,
+        SessionFileFingerprint,
+    )> {
+        if let Some(entry) = self.entries.get(key)
+            && let Some(index) = entry
+                .window_index
+                .as_ref()
+                .filter(|index| index.incremental.is_some())
         {
-            self.remove_entry(key);
-            self.order.retain(|candidate| candidate != key);
+            return Some((
+                HistoryStorage::Memory(Arc::clone(&entry.serialized_json)),
+                Arc::clone(index),
+                entry.fingerprint,
+            ));
         }
+        self.disk_entries
+            .get(key)
+            .filter(|entry| entry.index.incremental.is_some())
+            .map(|entry| {
+                (
+                    HistoryStorage::Disk(Arc::clone(&entry.file)),
+                    Arc::clone(&entry.index),
+                    entry.fingerprint,
+                )
+            })
     }
 
     pub(super) fn fits_disk(bytes: usize, index: &SessionHistoryWindowIndex) -> bool {
@@ -132,11 +161,11 @@ impl SessionHistoryCache {
         file: Arc<DiskHistory>,
         index: Arc<SessionHistoryWindowIndex>,
     ) {
-        self.remove(&key);
         let index_bytes = estimated_index_bytes(&index);
         if !Self::fits_disk(file.bytes, &index) {
             return;
         }
+        self.remove(&key);
         self.disk_bytes = self.disk_bytes.saturating_add(file.bytes);
         self.disk_index_bytes = self.disk_index_bytes.saturating_add(index_bytes);
         self.disk_order.push_back(key.clone());
@@ -227,11 +256,11 @@ impl SessionHistoryCache {
         serialized_json: Arc<Vec<u8>>,
         window_index: Option<Arc<SessionHistoryWindowIndex>>,
     ) {
-        self.remove(&key);
         let estimated_bytes = estimated_history_bytes(fingerprint);
         if estimated_bytes > SESSION_HISTORY_CACHE_MAX_ESTIMATED_BYTES {
             return;
         }
+        self.remove(&key);
         self.entries.insert(
             key.clone(),
             CachedSessionHistory {
@@ -349,6 +378,16 @@ fn estimated_index_bytes(index: &SessionHistoryWindowIndex) -> usize {
                 .capacity()
                 .saturating_mul(std::mem::size_of::<Range<usize>>()),
         )
+        .saturating_add(
+            index
+                .directory_ranges
+                .capacity()
+                .saturating_mul(std::mem::size_of::<Range<usize>>()),
+        )
+        .saturating_add(index.incremental.as_ref().map_or(0, |state| {
+            std::mem::size_of::<IncrementalState>()
+                .saturating_add(state.checkpoint.entry_id.capacity())
+        }))
         .saturating_add(
             index
                 .image_locations

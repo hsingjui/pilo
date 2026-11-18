@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ops::Range, sync::Arc};
 
 use serde::Serialize;
 
@@ -6,6 +6,8 @@ use super::{
     cache::{SessionFileFingerprint, SessionHistoryWindowIndex},
     types::{ConversationEventDto, SessionHistory},
 };
+
+const EVENTS_PREFIX: &[u8] = b"{\"events\":[";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -190,6 +192,40 @@ fn describe_history_message(
 pub(super) fn serialize_windowed_history(
     history: SessionHistory,
 ) -> Result<(Arc<Vec<u8>>, Arc<SessionHistoryWindowIndex>), String> {
+    let mut serialized = EVENTS_PREFIX.to_vec();
+    let index = serialize_history_tail(history, &HistoryPrefix::EMPTY, &mut serialized, 0)?;
+    Ok((Arc::new(serialized), Arc::new(index)))
+}
+
+/// Serialized messages kept from a cached projection. Both byte prefixes end
+/// right before the first replaced message, including its leading separator.
+pub(super) struct HistoryPrefix<'a> {
+    pub(super) serialized_len: usize,
+    pub(super) events_content_start: usize,
+    pub(super) message_ranges: &'a [Range<usize>],
+    pub(super) directory: &'a [u8],
+    pub(super) directory_ranges: &'a [Range<usize>],
+}
+
+impl HistoryPrefix<'_> {
+    const EMPTY: HistoryPrefix<'static> = HistoryPrefix {
+        serialized_len: EVENTS_PREFIX.len(),
+        events_content_start: EVENTS_PREFIX.len(),
+        message_ranges: &[],
+        directory: b"[",
+        directory_ranges: &[],
+    };
+}
+
+/// Appends `history` after `prefix`. `output` starts at serialized offset
+/// `output_offset`: it already holds the prefix when that is 0, or receives only
+/// the tail when the prefix lives elsewhere (a disk cache).
+pub(super) fn serialize_history_tail(
+    history: SessionHistory,
+    prefix: &HistoryPrefix<'_>,
+    output: &mut Vec<u8>,
+    output_offset: usize,
+) -> Result<SessionHistoryWindowIndex, String> {
     let SessionHistory {
         events,
         model,
@@ -199,62 +235,94 @@ pub(super) fn serialize_windowed_history(
         source_message_count,
         stats,
         image_locations,
+        first_message_index,
+        mut incremental,
     } = history;
+    if first_message_index != prefix.message_ranges.len()
+        || output_offset + output.len() != prefix.serialized_len
+    {
+        return Err("history tail does not continue its cached prefix".to_owned());
+    }
     let messages = split_history_messages(events);
-    let directory = messages
-        .iter()
-        .enumerate()
-        .map(|(index, events)| describe_history_message(index, events))
-        .collect::<Vec<_>>();
-    let message_index_json = Arc::new(
-        serde_json::to_vec(&directory)
-            .map_err(|error| format!("failed to serialize history message index: {error}"))?,
-    );
+    // A kept prefix ends with the separator before its first replaced message.
+    if first_message_index > 0 && messages.is_empty() {
+        return Err("history tail has no message after its cached prefix".to_owned());
+    }
+    if let Some(state) = incremental.as_mut() {
+        let entry_id = Some(state.checkpoint.entry_id.as_str());
+        let checkpoint = messages.iter().rposition(|events| match events.first() {
+            Some(
+                ConversationEventDto::UserMessageStart {
+                    source_entry_id, ..
+                }
+                | ConversationEventDto::CompactionMarker {
+                    source_entry_id, ..
+                },
+            ) => source_entry_id.as_deref() == entry_id,
+            _ => false,
+        });
+        match checkpoint {
+            Some(position) => state.checkpoint.message_index = first_message_index + position,
+            None => incremental = None,
+        }
+    }
 
-    let mut serialized = Vec::new();
-    serialized.extend_from_slice(b"{\"events\":[");
-    let events_content_start = serialized.len();
-    let mut message_ranges = Vec::with_capacity(messages.len());
-    let mut first = true;
-    for message_events in &messages {
+    // Same bytes as serializing the whole directory array, with per-entry ranges.
+    let mut directory = prefix.directory.to_vec();
+    let mut directory_ranges = prefix.directory_ranges.to_vec();
+    directory_ranges.reserve(messages.len());
+    for (position, events) in messages.iter().enumerate() {
+        if position > 0 {
+            directory.push(b',');
+        }
+        let start = directory.len();
+        serde_json::to_writer(
+            &mut directory,
+            &describe_history_message(first_message_index + position, events),
+        )
+        .map_err(|error| format!("failed to serialize history message index: {error}"))?;
+        directory_ranges.push(start..directory.len());
+    }
+    directory.push(b']');
+
+    let mut message_ranges = prefix.message_ranges.to_vec();
+    message_ranges.reserve(messages.len());
+    for (position, message_events) in messages.iter().enumerate() {
         let event_json = serde_json::to_vec(message_events)
             .map_err(|error| format!("failed to serialize history events: {error}"))?;
-        if !first {
-            serialized.push(b',');
+        if position > 0 {
+            output.push(b',');
         }
-        first = false;
-        let start = serialized.len();
+        let start = output_offset + output.len();
         if event_json.len() >= 2 {
-            serialized.extend_from_slice(&event_json[1..event_json.len() - 1]);
+            output.extend_from_slice(&event_json[1..event_json.len() - 1]);
         }
-        let end = serialized.len();
-        message_ranges.push(start..end);
+        message_ranges.push(start..output_offset + output.len());
     }
-    let events_content_end = serialized.len();
-    serialized.extend_from_slice(b"],\"model\":");
-    push_json_value(&mut serialized, &model)?;
-    serialized.extend_from_slice(b",\"thinkingLevel\":");
-    push_json_value(&mut serialized, &thinking_level)?;
-    serialized.extend_from_slice(b",\"name\":");
-    push_json_value(&mut serialized, &name)?;
-    serialized.extend_from_slice(b",\"headerMissing\":");
-    push_json_value(&mut serialized, &header_missing)?;
-    serialized.extend_from_slice(b",\"sourceMessageCount\":");
-    push_json_value(&mut serialized, &source_message_count)?;
-    serialized.extend_from_slice(b",\"stats\":");
-    push_json_value(&mut serialized, &stats)?;
-    serialized.push(b'}');
+    let events_content_end = output_offset + output.len();
+    output.extend_from_slice(b"],\"model\":");
+    push_json_value(output, &model)?;
+    output.extend_from_slice(b",\"thinkingLevel\":");
+    push_json_value(output, &thinking_level)?;
+    output.extend_from_slice(b",\"name\":");
+    push_json_value(output, &name)?;
+    output.extend_from_slice(b",\"headerMissing\":");
+    push_json_value(output, &header_missing)?;
+    output.extend_from_slice(b",\"sourceMessageCount\":");
+    push_json_value(output, &source_message_count)?;
+    output.extend_from_slice(b",\"stats\":");
+    push_json_value(output, &stats)?;
+    output.push(b'}');
 
-    Ok((
-        Arc::new(serialized),
-        Arc::new(SessionHistoryWindowIndex {
-            events_content_start,
-            events_content_end,
-            message_ranges,
-            message_index_json,
-            image_locations: Arc::new(image_locations),
-        }),
-    ))
+    Ok(SessionHistoryWindowIndex {
+        events_content_start: prefix.events_content_start,
+        events_content_end,
+        message_ranges,
+        message_index_json: Arc::new(directory),
+        directory_ranges,
+        image_locations: Arc::new(image_locations),
+        incremental,
+    })
 }
 
 pub(super) fn serialize_history_window_response(

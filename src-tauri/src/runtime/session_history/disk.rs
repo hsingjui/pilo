@@ -19,39 +19,50 @@ pub(super) struct DiskHistory {
 
 impl DiskHistory {
     pub(super) fn create(serialized: &[u8]) -> Result<Self, String> {
-        let mut nonce = [0_u8; 16];
-        getrandom::fill(&mut nonce)
-            .map_err(|error| format!("failed to name history cache: {error}"))?;
-        let name = nonce
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
-        let path = std::env::temp_dir().join(format!("pilo-history-{}-{name}", std::process::id()));
-        let mut options = OpenOptions::new();
-        options.read(true).write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::OpenOptionsExt;
-            use windows::Win32::Storage::FileSystem::FILE_FLAG_DELETE_ON_CLOSE;
-            options.custom_flags(FILE_FLAG_DELETE_ON_CLOSE.0);
-        }
-        let mut file = options
-            .open(&path)
-            .map_err(|error| format!("failed to create history cache: {error}"))?;
-        #[cfg(not(windows))]
-        std::fs::remove_file(&path)
-            .map_err(|error| format!("failed to unlink history cache: {error}"))?;
+        let mut file = create_cache_file()?;
         file.write_all(serialized)
             .map_err(|error| format!("failed to write history cache: {error}"))?;
         Ok(Self {
             file: Mutex::new(file),
             bytes: serialized.len(),
         })
+    }
+
+    /// Copies `prefix_len` bytes of a cached projection into a new disposable file,
+    /// then appends `tail`. `previous` keeps serving its own readers.
+    pub(super) fn create_from_prefix(
+        previous: &DiskHistory,
+        prefix_len: usize,
+        tail: &[u8],
+    ) -> Result<Self, String> {
+        let mut file = create_cache_file()?;
+        let mut source = previous
+            .file
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        source
+            .seek(SeekFrom::Start(0))
+            .map_err(|error| format!("failed to seek history cache: {error}"))?;
+        let copied = std::io::copy(&mut (&mut *source).take(prefix_len as u64), &mut file)
+            .map_err(|error| format!("failed to copy history cache: {error}"))?;
+        drop(source);
+        if copied != prefix_len as u64 {
+            return Err("failed to copy history cache: cached prefix is truncated".to_owned());
+        }
+        file.write_all(tail)
+            .map_err(|error| format!("failed to write history cache: {error}"))?;
+        Ok(Self {
+            file: Mutex::new(file),
+            bytes: prefix_len + tail.len(),
+        })
+    }
+
+    pub(super) fn read_prefix(&self, len: usize) -> Result<Vec<u8>, String> {
+        let mut file = self
+            .file
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        read_range(&mut file, 0..len)
     }
 
     pub(super) fn read_full(
@@ -107,6 +118,37 @@ impl DiskHistory {
         .await
         .map_err(|error| format!("history cache read task failed: {error}"))?
     }
+}
+
+fn create_cache_file() -> Result<File, String> {
+    let mut nonce = [0_u8; 16];
+    getrandom::fill(&mut nonce)
+        .map_err(|error| format!("failed to name history cache: {error}"))?;
+    let name = nonce
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let path = std::env::temp_dir().join(format!("pilo-history-{}-{name}", std::process::id()));
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows::Win32::Storage::FileSystem::FILE_FLAG_DELETE_ON_CLOSE;
+        options.custom_flags(FILE_FLAG_DELETE_ON_CLOSE.0);
+    }
+    let file = options
+        .open(&path)
+        .map_err(|error| format!("failed to create history cache: {error}"))?;
+    #[cfg(not(windows))]
+    std::fs::remove_file(&path)
+        .map_err(|error| format!("failed to unlink history cache: {error}"))?;
+    Ok(file)
 }
 
 fn read_range(file: &mut File, range: Range<usize>) -> Result<Vec<u8>, String> {

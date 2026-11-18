@@ -1,6 +1,7 @@
 mod cache;
 mod disk;
 mod images;
+mod incremental;
 mod parser;
 mod parser_fields;
 mod parser_projection;

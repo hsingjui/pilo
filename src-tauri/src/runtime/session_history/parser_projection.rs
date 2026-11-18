@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 use super::super::token_usage::TokenUsage;
+use super::incremental::ProjectionState;
 use super::parser_fields::{
     entry_id, entry_timestamp_ms, fallback_text, normalize_thinking, tool_result_payload,
     user_images, user_text,
@@ -16,11 +17,33 @@ struct TurnMeta {
     updated_at_ms: Option<i64>,
 }
 
-pub(super) fn project_branch(entries: &mut [Value], branch: &[usize]) -> SessionHistory {
-    let mut history = SessionHistory::default();
+/// Projects `branch` starting from `start`. When `checkpoint` names a branch
+/// position, also returns the state just before that entry.
+pub(super) fn project_branch(
+    entries: &mut [Value],
+    branch: &[usize],
+    start: ProjectionState,
+    checkpoint: Option<usize>,
+) -> (SessionHistory, Option<ProjectionState>) {
+    let mut history = SessionHistory {
+        model: start.model,
+        thinking_level: start.thinking_level,
+        name: start.name,
+        source_message_count: start.source_message_count,
+        ..SessionHistory::default()
+    };
     let mut turn = TurnMeta::default();
+    let mut checkpoint_state = None;
 
-    for &index in branch {
+    for (position, &index) in branch.iter().enumerate() {
+        if checkpoint == Some(position) {
+            checkpoint_state = Some(ProjectionState {
+                model: history.model.clone(),
+                thinking_level: history.thinking_level.clone(),
+                name: history.name.clone(),
+                source_message_count: history.source_message_count,
+            });
+        }
         // Branch indices are unique. Moving each entry out lets tool payloads move
         // into the projection and frees the rest once this entry is projected.
         let mut entry = std::mem::take(&mut entries[index]);
@@ -99,7 +122,7 @@ pub(super) fn project_branch(entries: &mut [Value], branch: &[usize]) -> Session
     }
 
     finish_turn(&mut history.events, &mut turn, true);
-    history
+    (history, checkpoint_state)
 }
 
 fn project_message(

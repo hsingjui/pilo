@@ -3,9 +3,9 @@ use serde_json::Value;
 use super::super::token_usage::TokenUsage;
 use super::types::SessionHistoryStats;
 
-pub(super) fn collect_history_stats(entries: &[Value], branch: &[usize]) -> SessionHistoryStats {
-    let mut stats = SessionHistoryStats::default();
-
+/// Folds entries into running totals. Callers resume from a checkpoint's totals in
+/// source order, so the floating-point cost sum matches a full scan.
+pub(super) fn accumulate_history_stats(stats: &mut SessionHistoryStats, entries: &[Value]) {
     for entry in entries {
         match entry.get("type").and_then(Value::as_str) {
             Some("message") => {
@@ -21,7 +21,7 @@ pub(super) fn collect_history_stats(entries: &[Value], branch: &[usize]) -> Sess
                     Some("user") => stats.user_messages += 1,
                     Some("toolResult") => {
                         stats.tool_results += 1;
-                        add_usage(&mut stats, message.get("usage"));
+                        add_usage(stats, message.get("usage"));
                     }
                     Some("assistant") => {
                         stats.assistant_messages += 1;
@@ -37,20 +37,17 @@ pub(super) fn collect_history_stats(entries: &[Value], branch: &[usize]) -> Sess
                                     .count()
                             })
                             .unwrap_or(0);
-                        add_usage(&mut stats, message.get("usage"));
+                        add_usage(stats, message.get("usage"));
                     }
                     _ => {}
                 }
             }
             Some("branch_summary") | Some("compaction") => {
-                add_usage(&mut stats, entry.get("usage"));
+                add_usage(stats, entry.get("usage"));
             }
             _ => {}
         }
     }
-
-    stats.context_tokens = current_branch_context_tokens(entries, branch);
-    stats
 }
 
 fn add_usage(stats: &mut SessionHistoryStats, usage: Option<&Value>) {
@@ -73,14 +70,17 @@ fn add_usage(stats: &mut SessionHistoryStats, usage: Option<&Value>) {
     stats.cost += usage.cost.unwrap_or(0.0);
 }
 
-fn current_branch_context_tokens(entries: &[Value], branch: &[usize]) -> Option<u64> {
-    let start = branch
-        .iter()
-        .rposition(|index| {
-            entries[*index].get("type").and_then(Value::as_str) == Some("compaction")
-        })
-        .map(|position| position + 1)
-        .unwrap_or(0);
+/// Context usage of the branch segment. `before` is the value for branch entries
+/// preceding the segment and applies only when the segment has no compaction.
+pub(super) fn branch_context_tokens(
+    entries: &[Value],
+    branch: &[usize],
+    before: Option<u64>,
+) -> Option<u64> {
+    let compaction = branch.iter().rposition(|index| {
+        entries[*index].get("type").and_then(Value::as_str) == Some("compaction")
+    });
+    let start = compaction.map(|position| position + 1).unwrap_or(0);
 
     for index in branch[start..].iter().rev() {
         let entry = &entries[*index];
@@ -116,5 +116,5 @@ fn current_branch_context_tokens(entries: &[Value], branch: &[usize]) -> Option<
         }
     }
 
-    None
+    if compaction.is_some() { None } else { before }
 }
