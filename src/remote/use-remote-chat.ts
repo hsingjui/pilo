@@ -22,7 +22,10 @@ import { createChatDraftStore } from "@/components/chat/chat-draft-store";
 import { INITIAL_HISTORY_MESSAGE_COUNT } from "@/components/chat/chat-conversation-model";
 import type { ChatSession } from "@/components/chat/chat-page-utils";
 import type { PiExtensionDialogRequest } from "@/components/chat/use-pi-session-features";
-import type { ChatImageAttachment } from "@/lib/chat/chat-submission";
+import type {
+	ChatImageAttachment,
+	ChatSubmission,
+} from "@/lib/chat/chat-submission";
 import {
 	chatRuntimeHasOpenTurn,
 	findReusableChatRuntime,
@@ -64,6 +67,7 @@ import { useRemoteChatFork } from "./use-remote-chat-fork";
 import { useRemoteExtensionUi } from "./use-remote-extension-ui";
 import { useRemoteChatSuggestions } from "./use-remote-chat-suggestions";
 import {
+	type ParkedQueuedSubmission,
 	type QueuedSubmission,
 	useRemoteChatTransport,
 } from "./use-remote-chat-transport";
@@ -202,6 +206,36 @@ export function useRemoteChat({
 		}
 	}, []);
 	const queuedSubmissionsRef = useRef(new Map<string, QueuedSubmission>());
+	const parkedQueuedSubmissionsRef = useRef(
+		new Map<string, ParkedQueuedSubmission[]>(),
+	);
+	const parkQueuedSubmissions = useCallback(() => {
+		const queued = queuedSubmissionsRef.current;
+		const targetSessionKey = activeSessionKeyRef.current;
+		if (targetSessionKey && queued.size > 0) {
+			// Keep every unacknowledged user message in order so background echoes
+			// consume the right entry; a stalled turn can then restore the rest.
+			const parked = (
+				conversationStore.getSnapshot() ?? initialConversation
+			).pendingUsers.map((pending) => ({
+				clientMessageId: pending.clientMessageId,
+				submission: pending.queueKind
+					? (queued.get(pending.clientMessageId)?.submission ?? null)
+					: null,
+			}));
+			if (parked.some((item) => item.submission)) {
+				parkedQueuedSubmissionsRef.current.set(targetSessionKey, [
+					...(parkedQueuedSubmissionsRef.current.get(targetSessionKey) ?? []),
+					...parked,
+				]);
+			}
+		}
+		queued.clear();
+	}, [conversationStore, initialConversation]);
+	const recoverSubmissionsRef = useRef<
+		| ((sessionKey: string, submissions: readonly ChatSubmission[]) => void)
+		| null
+	>(null);
 	const autoTitleRequestedRef = useRef(false);
 	const pendingProjectMcpPromptsRef = useRef(
 		new Map<string, PendingProjectMcpPrompt>(),
@@ -314,6 +348,8 @@ export function useRemoteChat({
 		activeSessionKeyRef,
 		projectMcpApprovalRequestedRef,
 		queuedSubmissionsRef,
+		parkedQueuedSubmissionsRef,
+		recoverSubmissionsRef,
 		setCompacting,
 		setRetryState,
 	});
@@ -678,7 +714,7 @@ export function useRemoteChat({
 		closeMobileNavigation,
 		chatUiStateCache,
 		projectDraftCache,
-		queuedSubmissionsRef,
+		parkQueuedSubmissions,
 		autoTitleRequestedRef,
 		releaseTemporaryRuntime,
 		refreshProjectSessions,
@@ -931,6 +967,7 @@ export function useRemoteChat({
 		stop,
 		changeModel,
 		changeThinking,
+		recoverSubmissions,
 		resumeProjectMcpPrompt: resumeProjectMcpPromptAction,
 		failProjectMcpPrompt: failProjectMcpPromptAction,
 		cancelProjectMcpPrompt: cancelProjectMcpPromptAction,
@@ -946,6 +983,7 @@ export function useRemoteChat({
 		pendingProjectMcpPromptsRef,
 		projectMcpApprovalRequestedRef,
 		queuedSubmissionsRef,
+		parkedQueuedSubmissionsRef,
 		ensureDraftRuntime,
 		tryHandleComposerCommand,
 		requestAutoTitle,
@@ -962,10 +1000,12 @@ export function useRemoteChat({
 	});
 
 	useEffect(() => {
+		recoverSubmissionsRef.current = recoverSubmissions;
 		projectMcpResumeRef.current = resumeProjectMcpPromptAction;
 		projectMcpFailRef.current = failProjectMcpPromptAction;
 		projectMcpCancelRef.current = cancelProjectMcpPromptAction;
 		return () => {
+			recoverSubmissionsRef.current = null;
 			if (projectMcpResumeRef.current === resumeProjectMcpPromptAction)
 				projectMcpResumeRef.current = null;
 			if (projectMcpFailRef.current === failProjectMcpPromptAction)
@@ -976,6 +1016,7 @@ export function useRemoteChat({
 	}, [
 		cancelProjectMcpPromptAction,
 		failProjectMcpPromptAction,
+		recoverSubmissions,
 		resumeProjectMcpPromptAction,
 	]);
 

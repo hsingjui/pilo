@@ -33,6 +33,7 @@ import { chatRuntimeHasOpenTurn } from "@/lib/chat/chat-session-runtime-model";
 import { randomId } from "@/lib/utils";
 import { reducerContext } from "./remote-app-model";
 import type {
+	ParkedQueuedSubmission,
 	QueuedSubmission,
 	RemoteSessionRpc,
 } from "./use-remote-chat-transport";
@@ -59,6 +60,7 @@ type UseRemoteChatActionsOptions = {
 	pendingProjectMcpPromptsRef: RefObject<Map<string, PendingProjectMcpPrompt>>;
 	projectMcpApprovalRequestedRef: RefObject<Set<string>>;
 	queuedSubmissionsRef: RefObject<Map<string, QueuedSubmission>>;
+	parkedQueuedSubmissionsRef: RefObject<Map<string, ParkedQueuedSubmission[]>>;
 	ensureDraftRuntime: (onStarting?: () => void) => Promise<void>;
 	tryHandleComposerCommand: (submission: ChatSubmission) => Promise<boolean>;
 	requestAutoTitle: (message: string) => void;
@@ -86,6 +88,7 @@ export function useRemoteChatActions({
 	pendingProjectMcpPromptsRef,
 	projectMcpApprovalRequestedRef,
 	queuedSubmissionsRef,
+	parkedQueuedSubmissionsRef,
 	ensureDraftRuntime,
 	tryHandleComposerCommand,
 	requestAutoTitle,
@@ -124,6 +127,46 @@ export function useRemoteChatActions({
 	);
 	const recoveredSubmissionsRef = useRef(new Map<string, ChatSubmission[]>());
 	const [recoveryRevision, setRecoveryRevision] = useState(0);
+	const recoverSubmissions = useCallback(
+		(sessionKey: string, submissions: readonly ChatSubmission[]) => {
+			recoveredSubmissionsRef.current.set(sessionKey, [
+				...(recoveredSubmissionsRef.current.get(sessionKey) ?? []),
+				...submissions,
+			]);
+			setRecoveryRevision((value) => value + 1);
+		},
+		[],
+	);
+	const hasQueuedSubmission = useCallback(
+		(clientMessageId: string) =>
+			queuedSubmissionsRef.current.has(clientMessageId) ||
+			[...parkedQueuedSubmissionsRef.current.values()].some((items) =>
+				items.some(
+					(item) => item.clientMessageId === clientMessageId && item.submission,
+				),
+			),
+		[parkedQueuedSubmissionsRef, queuedSubmissionsRef],
+	);
+	// Returns false once a stall restore, echo or queue action has taken ownership.
+	const forgetQueuedSubmission = useCallback(
+		(clientMessageId: string) => {
+			if (queuedSubmissionsRef.current.delete(clientMessageId)) return true;
+			for (const [key, items] of parkedQueuedSubmissionsRef.current) {
+				const index = items.findIndex(
+					(item) => item.clientMessageId === clientMessageId && item.submission,
+				);
+				if (index < 0) continue;
+				// It never reached Pi, so no echo will consume its slot.
+				items.splice(index, 1);
+				if (!items.some((item) => item.submission)) {
+					parkedQueuedSubmissionsRef.current.delete(key);
+				}
+				return true;
+			}
+			return false;
+		},
+		[parkedQueuedSubmissionsRef, queuedSubmissionsRef],
+	);
 
 	/* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies -- Failed submissions belong to their original runtime session, including after draft identification or returning from the background. recoveryRevision 是重新回填输入框的显式触发代，不是 effect 读取的值。 */
 	useEffect(() => {
@@ -287,6 +330,13 @@ export function useRemoteChatActions({
 							}
 						: undefined,
 				);
+				// A stall restore or queue action may have taken it during startup.
+				if (
+					queuedClientMessageId &&
+					!hasQueuedSubmission(queuedClientMessageId)
+				) {
+					return;
+				}
 				const accepted =
 					mode === "prompt"
 						? await sendPrompt(
@@ -301,9 +351,11 @@ export function useRemoteChatActions({
 									images: toPiImageContents(submission.images),
 								})
 							)?.disposition !== "handled";
+				// Pi handled it without queueing, so a later stall must not restore it.
+				if (!accepted && queuedClientMessageId)
+					forgetQueuedSubmission(queuedClientMessageId);
 				if (!isActiveSession()) return;
 				if (!accepted) {
-					queuedSubmissionsRef.current.delete(clientMessageId);
 					// `sendPrompt` already rolled back its own optimistic prompt; queued
 					// steer/follow-up messages still need the local rollback here.
 					if (mode !== "prompt") {
@@ -331,17 +383,19 @@ export function useRemoteChatActions({
 					}
 					return;
 				}
+				// A stalled turn may already have returned queued input to the draft.
+				const owned =
+					!queuedClientMessageId ||
+					forgetQueuedSubmission(queuedClientMessageId);
 				if (!isActiveSession()) {
-					recoveredSubmissionsRef.current.set(submissionSessionKey, [
-						...(recoveredSubmissionsRef.current.get(submissionSessionKey) ??
-							[]),
-						submission,
-					]);
-					setRecoveryRevision((value) => value + 1);
+					if (owned) recoverSubmissions(submissionSessionKey, [submission]);
+					return;
+				}
+				if (!owned) {
+					handleExpiredAuth(error);
 					return;
 				}
 				if (queuedClientMessageId) {
-					queuedSubmissionsRef.current.delete(queuedClientMessageId);
 					runLocalAction({
 						type: "local_user_queue_failed",
 						clientMessageId: queuedClientMessageId,
@@ -354,13 +408,15 @@ export function useRemoteChatActions({
 						timestampMs: Date.now(),
 					});
 				}
-				recoveredSubmissionsRef.current.set(submissionSessionKey, [
-					...(recoveredSubmissionsRef.current.get(submissionSessionKey) ?? []),
-					submission,
-				]);
-				setRecoveryRevision((value) => value + 1);
+				recoverSubmissions(submissionSessionKey, [submission]);
 				if (!handleExpiredAuth(error)) {
-					setFatalError(error instanceof Error ? error.message : String(error));
+					const message =
+						error instanceof Error ? error.message : String(error);
+					setFatalError(
+						message.includes("PILO_STALLED_TURN_INPUT_CLOSED")
+							? runtimeErrorMessage(error)
+							: message,
+					);
 				}
 			} finally {
 				setSubmissionPhase(submissionSessionKey, null);
@@ -373,11 +429,14 @@ export function useRemoteChatActions({
 			clearComposer,
 			client,
 			ensureDraftRuntime,
+			forgetQueuedSubmission,
 			handleExpiredAuth,
+			hasQueuedSubmission,
 			pendingProjectMcpPromptsRef,
 			projectMcpApprovalRequestedRef,
 			queuedSubmissionsRef,
 			readOnly,
+			recoverSubmissions,
 			requestAutoTitle,
 			rpcForSession,
 			runLocalAction,
@@ -850,6 +909,7 @@ export function useRemoteChatActions({
 		stop,
 		changeModel,
 		changeThinking,
+		recoverSubmissions,
 		resumeProjectMcpPrompt,
 		failProjectMcpPrompt,
 		cancelProjectMcpPrompt,

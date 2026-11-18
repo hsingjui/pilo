@@ -43,6 +43,14 @@ export type QueuedSubmission = {
 	queueKind: "steer" | "follow_up";
 };
 
+/** Unacknowledged user input of a session the user left; `null` marks a prompt. */
+export type ParkedQueuedSubmission = {
+	clientMessageId: string;
+	submission: ChatSubmission | null;
+};
+
+const STREAM_STALLED_PREFIX = "PILO_STREAM_STALLED:";
+
 export type RemoteRpc = <T>(
 	command: Record<string, unknown>,
 	timeoutMs?: number,
@@ -71,6 +79,13 @@ type UseRemoteChatTransportOptions = {
 	activeSessionKeyRef: MutableRefObject<string | null>;
 	projectMcpApprovalRequestedRef: MutableRefObject<Set<string>>;
 	queuedSubmissionsRef: MutableRefObject<Map<string, QueuedSubmission>>;
+	parkedQueuedSubmissionsRef: MutableRefObject<
+		Map<string, ParkedQueuedSubmission[]>
+	>;
+	recoverSubmissionsRef: MutableRefObject<
+		| ((sessionKey: string, submissions: readonly ChatSubmission[]) => void)
+		| null
+	>;
 	setCompacting: Dispatch<SetStateAction<boolean>>;
 	setRetryState: Dispatch<SetStateAction<RetryState | null>>;
 };
@@ -90,6 +105,8 @@ export function useRemoteChatTransport({
 	activeSessionKeyRef,
 	projectMcpApprovalRequestedRef,
 	queuedSubmissionsRef,
+	parkedQueuedSubmissionsRef,
+	recoverSubmissionsRef,
 	setCompacting,
 	setRetryState,
 }: UseRemoteChatTransportOptions) {
@@ -204,6 +221,32 @@ export function useRemoteChatTransport({
 						continue;
 					}
 				}
+				const parked = event.sessionKey
+					? parkedQueuedSubmissionsRef.current.get(event.sessionKey)
+					: undefined;
+				if (event.sessionKey && parked) {
+					// Echoes consume unacknowledged user messages in send order.
+					if (event.type === "user_message_start") parked.shift();
+					const settled =
+						event.type === "assistant_message_end" ||
+						(event.type === "process_state" &&
+							(event.state === "stopped" || event.state === "failed"));
+					if (settled || !parked.some((item) => item.submission)) {
+						parkedQueuedSubmissionsRef.current.delete(event.sessionKey);
+					}
+					if (
+						event.type === "assistant_message_end" &&
+						event.errorMessage?.startsWith(STREAM_STALLED_PREFIX)
+					) {
+						// Pi cleared its queue before settling; return parked input to its session.
+						const recovered = parked.flatMap((item) =>
+							item.submission ? [item.submission] : [],
+						);
+						if (recovered.length > 0) {
+							recoverSubmissionsRef.current?.(event.sessionKey, recovered);
+						}
+					}
+				}
 				if (event.sessionKey !== activeSessionKeyRef.current) continue;
 				if (event.type === "extension_ui_request") {
 					handleExtensionRequestRef.current?.(event);
@@ -285,6 +328,8 @@ export function useRemoteChatTransport({
 				window.localStorage.setItem(REMOTE_SEQUENCE_KEY, String(lastSequence));
 			}
 			if (actions.length > 0) {
+				const sessionKey = activeSessionKeyRef.current;
+				const recovered: ChatSubmission[] = [];
 				setConversation((current) => {
 					let next = current;
 					let batch: ConversationAction[] = [];
@@ -326,17 +371,42 @@ export function useRemoteChatTransport({
 							}
 						}
 						batch.push(action);
-						if (action.type === "assistant_turn_end") flush();
+						if (action.type === "assistant_turn_end") {
+							flush();
+							if (!action.errorMessage?.startsWith(STREAM_STALLED_PREFIX)) {
+								continue;
+							}
+							// Pi's queue has been cleared. Only restore submissions that
+							// have not already been acknowledged by a user-message echo.
+							for (const pending of next.pendingUsers) {
+								if (!pending.queueKind) continue;
+								const id = pending.clientMessageId;
+								const queued = queuedSubmissionsRef.current.get(id);
+								if (!queued) continue;
+								queuedSubmissionsRef.current.delete(id);
+								recovered.push(queued.submission);
+								batch.push({
+									type: "local_user_queue_failed",
+									clientMessageId: id,
+								});
+							}
+							flush();
+						}
 					}
 					flush();
 					return next;
 				});
+				if (sessionKey && recovered.length > 0) {
+					recoverSubmissionsRef.current?.(sessionKey, recovered);
+				}
 			}
 		},
 		[
 			activeSessionKeyRef,
 			projectMcpApprovalRequestedRef,
 			queuedSubmissionsRef,
+			parkedQueuedSubmissionsRef,
+			recoverSubmissionsRef,
 			handleExtensionRequestRef,
 			handleModelScopeEvent,
 			onSessionCompleted,

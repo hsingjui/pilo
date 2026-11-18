@@ -974,6 +974,8 @@ const enUS = {
 			"The connection is currently unavailable. Check the connection settings and try again.",
 		runtimeFailed:
 			"Pi Runtime failed. Try again; if it still fails, check diagnostics.",
+		stalledTurnInputClosed:
+			"The previous reply stopped. Your message is back in the input; send it again.",
 		retry: "Retry",
 		reconnect: "Reconnect",
 		checkSettings: "Check settings",

@@ -35,6 +35,9 @@ struct PiWork {
     compacting: bool,
     tools: std::collections::HashSet<String>,
     queued: bool,
+    clearing_stalled_queue: bool,
+    // Clients restore unsent queued input after a stall; late queue input would duplicate it.
+    stalled_input_closed: bool,
     warming_until: u64,
     pending: std::collections::HashMap<String, String>,
     dialogs: std::collections::HashMap<String, (Value, Option<std::time::Instant>)>,
@@ -45,6 +48,7 @@ impl PiWork {
         self.active
             || self.compacting
             || self.queued
+            || self.clearing_stalled_queue
             || !self.pending.is_empty()
             || !self.tools.is_empty()
             || self
@@ -53,9 +57,18 @@ impl PiWork {
                 .any(|(_, until)| until.is_none_or(|until| until > std::time::Instant::now()))
     }
 
+    fn has_pending_chat_input(&self) -> bool {
+        self.pending
+            .values()
+            .any(|command| queues_chat_input(command))
+    }
+
     fn observe(&mut self, event: &Value) {
         match event.get("type").and_then(Value::as_str) {
-            Some("agent_start" | "auto_retry_start") => self.active = true,
+            Some("agent_start" | "auto_retry_start") => {
+                self.active = true;
+                self.stalled_input_closed = false;
+            }
             Some("agent_settled") => {
                 self.active = false;
                 self.tools.clear();
@@ -173,7 +186,7 @@ impl PiProcess {
                 }
             })
             .collect::<Vec<_>>();
-        json!({ "active": work.active || work.queued || !work.pending.is_empty(), "compacting": work.compacting, "dialogs": dialogs })
+        json!({ "active": work.active || work.queued || work.clearing_stalled_queue || !work.pending.is_empty(), "compacting": work.compacting, "dialogs": dialogs })
     }
 
     pub(crate) async fn stop(self) -> Result<std::process::ExitStatus, String> {
@@ -305,6 +318,86 @@ async fn stop_registered_pi(
     stopped
         .await
         .map_err(|_| "Pi stop task ended unexpectedly".to_owned())?
+}
+
+const STALL_CLEAR_QUEUE_ID: &str = "pilo-stall-clear-queue";
+const STALLED_INPUT_CLOSED: &str = "PILO_STALLED_TURN_INPUT_CLOSED";
+const STALL_QUEUE_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+fn queues_chat_input(command: &str) -> bool {
+    matches!(command, "prompt" | "steer" | "follow_up")
+}
+
+fn ended_with_stream_stall(event: &Value) -> bool {
+    event["messages"]
+        .as_array()
+        .and_then(|messages| {
+            messages
+                .iter()
+                .rev()
+                .find(|message| message["role"] == "assistant")
+        })
+        .and_then(|message| message["errorMessage"].as_str())
+        .is_some_and(|error| error.starts_with("PILO_STREAM_STALLED:"))
+}
+
+async fn clear_stalled_pi_queue<R: AsyncBufRead + Unpin>(
+    reader: &mut R,
+    stdin: &Weak<Mutex<ChildStdin>>,
+    work: &StdMutex<PiWork>,
+    writer: &crate::output::ServerWriter,
+    stream_id: &str,
+) -> Result<(), String> {
+    let mut sent = false;
+    loop {
+        // An earlier steer may still be awaiting an async Pi input handler.
+        let input_pending = work
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .has_pending_chat_input();
+        if !sent && !input_pending {
+            let mut command =
+                serde_json::to_vec(&json!({ "id": STALL_CLEAR_QUEUE_ID, "type": "clear_queue" }))
+                    .map_err(|error| error.to_string())?;
+            command.push(b'\n');
+            let pipe = stdin.upgrade().ok_or("Pi stdin closed")?;
+            let mut pipe = pipe.lock().await;
+            pipe.write_all(&command)
+                .await
+                .map_err(|error| error.to_string())?;
+            pipe.flush().await.map_err(|error| error.to_string())?;
+            sent = true;
+        }
+        let bytes = read_rpc_line(reader)
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or("Pi exited before clearing its stalled queue")?;
+        trace_pi_rpc_line(stream_id, &bytes);
+        if let Ok(event) = serde_json::from_slice::<Value>(&bytes) {
+            if sent
+                && event["type"] == "response"
+                && event["id"] == STALL_CLEAR_QUEUE_ID
+                && event["command"] == "clear_queue"
+            {
+                return if event["success"].as_bool() == Some(true) {
+                    Ok(())
+                } else {
+                    Err("Pi rejected clear_queue".to_owned())
+                };
+            }
+            work.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .observe(&event);
+        }
+        writer
+            .send(Envelope::event_with_binary(
+                stream_id.to_owned(),
+                "pi.rpc_json",
+                Value::Null,
+                vec![bytes],
+            ))
+            .await?;
+    }
 }
 
 async fn read_rpc_line<R: AsyncBufRead + Unpin>(
@@ -778,7 +871,10 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
     );
     let stdin_identity = Arc::downgrade(&stdin);
     let work = Arc::new(StdMutex::new(PiWork::default()));
-    let track_work = state.retain_pi || ssh_workspace.is_some();
+    let watch_stalls = params
+        .builtin_extensions
+        .contains(&BuiltinExtension::StreamGuard);
+    let track_work = state.retain_pi || ssh_workspace.is_some() || watch_stalls;
     processes.insert(
         params.stream_id.clone(),
         PiProcess {
@@ -800,14 +896,60 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
     let control_stream = params.control_stream_id.clone();
     let stdout_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
+        let mut settle_after_stop = None;
         loop {
             match read_rpc_line(&mut reader).await {
                 Ok(Some(bytes)) => {
                     trace_pi_rpc_line(&stream_id, &bytes);
+                    let mut clear_queue = false;
                     if track_work && let Ok(event) = serde_json::from_slice::<Value>(&bytes) {
-                        work.lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .observe(&event);
+                        let mut work = work
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        work.observe(&event);
+                        if watch_stalls {
+                            match event["type"].as_str() {
+                                Some("agent_end") => {
+                                    let stalled = ended_with_stream_stall(&event);
+                                    work.clearing_stalled_queue = stalled;
+                                    work.stalled_input_closed = stalled;
+                                }
+                                Some("agent_settled") if work.clearing_stalled_queue => {
+                                    clear_queue = work.queued || work.has_pending_chat_input();
+                                    work.clearing_stalled_queue = clear_queue;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    if clear_queue {
+                        // Abort leaves Pi's queue intact. Do not let clients restore
+                        // their drafts until Pi acknowledges clearing it.
+                        let result = tokio::time::timeout(
+                            STALL_QUEUE_CLEANUP_TIMEOUT,
+                            clear_stalled_pi_queue(
+                                &mut reader,
+                                &stdout_identity,
+                                &work,
+                                &writer,
+                                &stream_id,
+                            ),
+                        )
+                        .await;
+                        match result {
+                            Ok(Ok(())) => {
+                                work.lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                    .clearing_stalled_queue = false
+                            }
+                            failure => {
+                                eprintln!(
+                                    "[runtime-diagnostics] stalled queue cleanup failed streamId={stream_id}: {failure:?}"
+                                );
+                                settle_after_stop = Some(bytes);
+                                break;
+                            }
+                        }
                     }
                     if writer
                         .send(Envelope::event_with_binary(
@@ -857,6 +999,17 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
         };
         if let Some(stream) = control_stream {
             agent_control.revoke(&stream);
+        }
+        if let Some(bytes) = settle_after_stop {
+            // A failed clear must never leave a process that can replay the old queue.
+            let _ = writer
+                .send(Envelope::event_with_binary(
+                    stream_id.clone(),
+                    "pi.rpc_json",
+                    Value::Null,
+                    vec![bytes],
+                ))
+                .await;
         }
         let code = exit_status.as_ref().and_then(|status| status.code());
         let success = exit_status.as_ref().is_some_and(|status| status.success());
@@ -974,16 +1127,20 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
         .get("id")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let tracked = track_work
-        && matches!(
-            command,
-            "prompt" | "steer" | "follow_up" | "compact" | "bash"
-        );
+    let queues_input = queues_chat_input(command);
+    let tracked = track_work && (queues_input || matches!(command, "compact" | "bash"));
     if tracked {
-        work.lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .pending
-            .insert(id.to_owned(), command.to_owned());
+        let mut work = work
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Only a new prompt may follow a stalled turn; queue input sent before the
+        // client saw the stall is already back in its draft.
+        if queues_input
+            && (work.clearing_stalled_queue || (command != "prompt" && work.stalled_input_closed))
+        {
+            return Err(STALLED_INPUT_CLOSED.to_owned());
+        }
+        work.pending.insert(id.to_owned(), command.to_owned());
     }
     let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         stdin.write_all(&bytes).await?;
@@ -1004,6 +1161,9 @@ pub(crate) async fn pi_send(state: &ServerState, params: PiSendParams) -> Result
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if tracked && result.is_err() {
             work.pending.remove(id);
+        }
+        if result.is_ok() && command == "prompt" {
+            work.stalled_input_closed = false;
         }
         if result.is_ok() && command == "extension_ui_response" {
             work.dialogs.remove(id);

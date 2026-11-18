@@ -228,6 +228,19 @@ are not a source for Connection-owned choices.
   Shared UI localizes this prefix; ordinary errors and manual cancellation stay
   unchanged. Do not automatically replay a possibly side-effecting turn, and
   avoid retryable provider wording such as `timeout` in the replacement error.
+- Pi's abort leaves queued steering and follow-up input intact. On a guarded
+  `agent_end` with `PILO_STREAM_STALLED:`, pilo-server holds `agent_settled`
+  until in-flight input RPCs finish and Pi acknowledges `clear_queue`. It
+  rejects new input during cleanup. If cleanup fails or exceeds five seconds,
+  remove and stop that Pi process before releasing settlement. Only restore
+  local queued submissions with no `user_message_start` acknowledgement, with
+  their attachments; never keep the Pi copy and restore the draft together.
+  After the stall, `steer`/`follow_up` stay rejected with
+  `PILO_STALLED_TURN_INPUT_CLOSED` until a `prompt` is written or Pi emits
+  `agent_start`, because queue input still in flight was already restored.
+  WebUI parks a left session's unacknowledged input in send order; background
+  echoes consume it and a stalled settlement restores the rest to that
+  session's draft.
 - Manual abort removes the timer; late events cannot rearm an aborted/expired
   request. `agent_end`, session start/switch/shutdown clear all watchdog state.
   A subsequent turn gets a fresh signal/timer. Idle background model calls are
@@ -333,6 +346,7 @@ are not a source for Connection-owned choices.
 | No next intent / invalid output | Null/empty; no automatic retry or generic continue |
 | Timeout/cancel/late reply/replay | Invalidate or ignore; never overwrite real draft |
 | Main model produces no events for the idle deadline | Abort once, preserve partial assistant content, persist `PILO_STREAM_STALLED:`; no replay |
+| Stalled model with queued text or images | Clear Pi's queue before settlement; restore the unsent draft once on desktop and WebUI; a manual resend yields one JSONL user entry |
 | Manual abort / long tools / normal provider error | Preserve existing behavior; do not label as model stall |
 | Duplicate built-in ID / invalid SSH config | Reject Pi start before launch |
 | Relative explicit runtime root / deployment IO failure | Server startup fails; no half-written script is loaded |

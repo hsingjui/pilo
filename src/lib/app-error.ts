@@ -28,7 +28,8 @@ export type AppErrorMessageKey =
 	| "errors.pathNotFound"
 	| "errors.sessionUnavailable"
 	| "errors.connectionUnavailable"
-	| "errors.runtimeFailed";
+	| "errors.runtimeFailed"
+	| "errors.stalledTurnInputClosed";
 
 export type AppError = {
 	code: AppErrorCode;
@@ -63,6 +64,16 @@ function appError(
 
 export function toAppError(error: unknown): AppError {
 	const detail = rawErrorMessage(error);
+	if (detail.includes("PILO_STALLED_TURN_INPUT_CLOSED")) {
+		return appError(
+			"session_unavailable",
+			"session",
+			"none",
+			"errors.stalledTurnInputClosed",
+			detail,
+			false,
+		);
+	}
 	const text = detail.toLowerCase();
 	if (
 		text.includes("pi executable") ||

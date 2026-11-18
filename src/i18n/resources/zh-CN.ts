@@ -939,6 +939,7 @@ const zhCN = {
 		sessionUnavailable: "会话运行环境当前不可用。请重试。",
 		connectionUnavailable: "连接当前不可用。请检查连接设置后重试。",
 		runtimeFailed: "Pi Runtime 运行失败。请重试，仍失败请查看诊断。",
+		stalledTurnInputClosed: "上一条回复已中断，消息已放回输入框，请重新发送。",
 		retry: "重试",
 		reconnect: "重新连接",
 		checkSettings: "检查设置",

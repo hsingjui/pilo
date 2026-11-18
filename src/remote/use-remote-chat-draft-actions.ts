@@ -22,7 +22,6 @@ import type {
 import type { SessionIndexEntry } from "@/lib/api/sessions";
 import { randomId } from "@/lib/utils";
 import { sessionKey } from "./remote-app-model";
-import type { QueuedSubmission } from "./use-remote-chat-transport";
 
 type UseRemoteChatDraftActionsOptions = {
 	activeProjectId: string;
@@ -37,7 +36,7 @@ type UseRemoteChatDraftActionsOptions = {
 	closeMobileNavigation: () => void;
 	chatUiStateCache: ChatUiStateCache;
 	projectDraftCache: ProjectDraftCache;
-	queuedSubmissionsRef: MutableRefObject<Map<string, QueuedSubmission>>;
+	parkQueuedSubmissions: () => void;
 	autoTitleRequestedRef: MutableRefObject<boolean>;
 	releaseTemporaryRuntime: () => void;
 	refreshProjectSessions: (
@@ -77,7 +76,7 @@ export function useRemoteChatDraftActions({
 	closeMobileNavigation,
 	chatUiStateCache,
 	projectDraftCache,
-	queuedSubmissionsRef,
+	parkQueuedSubmissions,
 	autoTitleRequestedRef,
 	releaseTemporaryRuntime,
 	refreshProjectSessions,
@@ -113,7 +112,7 @@ export function useRemoteChatDraftActions({
 				return;
 			}
 			releaseTemporaryRuntime();
-			queuedSubmissionsRef.current.clear();
+			parkQueuedSubmissions();
 			setSelectedSessionPath(null);
 			setIdentifiedDraftSessionId(null);
 			setDraftTemporary(temporary);
@@ -146,7 +145,7 @@ export function useRemoteChatDraftActions({
 			hasChatSession,
 			isNarrow,
 			projectDraftCache,
-			queuedSubmissionsRef,
+			parkQueuedSubmissions,
 			releaseTemporaryRuntime,
 			selectedSessionPath,
 			setAgentState,
@@ -185,7 +184,7 @@ export function useRemoteChatDraftActions({
 	const switchDraftProject = useCallback(
 		(projectId: string) => {
 			releaseTemporaryRuntime();
-			queuedSubmissionsRef.current.clear();
+			parkQueuedSubmissions();
 			setDraftProjectId(projectId);
 			setDraftId(randomId());
 			setIdentifiedDraftSessionId(null);
@@ -206,7 +205,7 @@ export function useRemoteChatDraftActions({
 		[
 			autoTitleRequestedRef,
 			projectDraftCache,
-			queuedSubmissionsRef,
+			parkQueuedSubmissions,
 			releaseTemporaryRuntime,
 			setAgentState,
 			setChatState,
@@ -244,7 +243,7 @@ export function useRemoteChatDraftActions({
 				return;
 			}
 			releaseTemporaryRuntime();
-			queuedSubmissionsRef.current.clear();
+			parkQueuedSubmissions();
 			setDraftTemporary(false);
 			setSelectedSessionPath(session.sessionPath);
 			setDraftProjectId(session.projectId);
@@ -263,7 +262,7 @@ export function useRemoteChatDraftActions({
 			closeMobileNavigation,
 			identifiedDraftSessionId,
 			isNarrow,
-			queuedSubmissionsRef,
+			parkQueuedSubmissions,
 			rawSessions,
 			selectedSessionPath,
 			releaseTemporaryRuntime,
