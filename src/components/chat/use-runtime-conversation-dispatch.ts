@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
-import { coalesceConversationActions } from "@/lib/chat/conversation-replay";
+import { pushCoalescedConversationAction } from "@/lib/chat/conversation-replay";
 import type { ConversationAction } from "@/lib/chat/conversation-types";
 import {
 	recordChatPresentationFlush,
@@ -8,6 +8,9 @@ import {
 } from "@/lib/chat/chat-performance";
 
 const INACTIVE_RUNTIME_FLUSH_MS = 150;
+// Hidden windows may not get a frame. Count inputs before coalescing so a
+// stream that keeps merging into one action still flushes periodically.
+const MAX_PENDING_RUNTIME_INPUTS = 128;
 
 function isPresentationBatchedAction(action: ConversationAction) {
 	return (
@@ -32,6 +35,7 @@ export function useRuntimeConversationDispatch(
 	const pendingRuntimeActionsRef = useRef<{
 		sessionId: string;
 		actions: ConversationAction[];
+		inputActions: number;
 	} | null>(null);
 	const scheduledFlushRef = useRef<ScheduledFlush | null>(null);
 	const lastPresentationFlushAtRef = useRef(0);
@@ -60,13 +64,12 @@ export function useRuntimeConversationDispatch(
 	const flushRuntimeActions = useCallback(() => {
 		const pending = takePendingRuntimeActions();
 		if (!pending || pending.actions.length === 0) return;
-		const coalesced = coalesceConversationActions(pending.actions);
 		recordChatPresentationFlush({
 			active,
-			inputActions: pending.actions.length,
-			coalescedActions: coalesced.length,
+			inputActions: pending.inputActions,
+			coalescedActions: pending.actions.length,
 		});
-		dispatchConversationBatch(pending.sessionId, coalesced);
+		dispatchConversationBatch(pending.sessionId, pending.actions);
 		lastPresentationFlushAtRef.current = performance.now();
 	}, [active, dispatchConversationBatch, takePendingRuntimeActions]);
 
@@ -107,12 +110,17 @@ export function useRuntimeConversationDispatch(
 			) {
 				flushRuntimeActions();
 			}
-			const pending = pendingRuntimeActionsRef.current ?? {
+			const pending = (pendingRuntimeActionsRef.current ??= {
 				sessionId,
 				actions: [],
-			};
-			pending.actions.push(action);
-			pendingRuntimeActionsRef.current = pending;
+				inputActions: 0,
+			});
+			pushCoalescedConversationAction(pending.actions, action);
+			pending.inputActions += 1;
+			if (pending.inputActions >= MAX_PENDING_RUNTIME_INPUTS) {
+				flushRuntimeActions();
+				return;
+			}
 			scheduleRuntimeFlush();
 		},
 		[flushRuntimeActions, scheduleRuntimeFlush],
@@ -122,19 +130,18 @@ export function useRuntimeConversationDispatch(
 		(targetSessionId: string, actions: readonly ConversationAction[]) => {
 			const pending = takePendingRuntimeActions();
 			if (pending?.actions.length) {
-				const coalescedPending = coalesceConversationActions(pending.actions);
 				recordChatPresentationFlush({
 					active,
-					inputActions: pending.actions.length,
-					coalescedActions: coalescedPending.length,
+					inputActions: pending.inputActions,
+					coalescedActions: pending.actions.length,
 				});
 				if (pending.sessionId === targetSessionId) {
 					dispatchConversationBatch(targetSessionId, [
-						...coalescedPending,
+						...pending.actions,
 						...actions,
 					]);
 				} else {
-					dispatchConversationBatch(pending.sessionId, coalescedPending);
+					dispatchConversationBatch(pending.sessionId, pending.actions);
 					dispatchConversationBatch(targetSessionId, actions);
 				}
 			} else if (actions.length > 0) {

@@ -10,46 +10,54 @@ import type {
 	ConversationState,
 } from "./conversation-types.ts";
 
+/** Appends `action`, merging it into the trailing action when both coalesce. */
+export function pushCoalescedConversationAction(
+	result: ConversationAction[],
+	action: ConversationAction,
+) {
+	const previous = result[result.length - 1];
+	if (
+		previous?.type === "assistant_text_delta" &&
+		action.type === "assistant_text_delta" &&
+		previous.sourceEntryId === action.sourceEntryId &&
+		previous.sourceContentIndex === action.sourceContentIndex
+	) {
+		result[result.length - 1] = {
+			...action,
+			delta: previous.delta + action.delta,
+		};
+		return;
+	}
+	if (
+		previous?.type === "assistant_thinking_delta" &&
+		action.type === "assistant_thinking_delta" &&
+		previous.sourceEntryId === action.sourceEntryId &&
+		previous.sourceContentIndex === action.sourceContentIndex
+	) {
+		result[result.length - 1] = {
+			...action,
+			timestampMs: previous.timestampMs,
+			delta: previous.delta + action.delta,
+		};
+		return;
+	}
+	if (
+		previous?.type === "tool_execution_update" &&
+		action.type === "tool_execution_update" &&
+		previous.toolCallId === action.toolCallId
+	) {
+		result[result.length - 1] = action;
+		return;
+	}
+	result.push(action);
+}
+
 export function coalesceConversationActions(
 	actions: readonly ConversationAction[],
 ): ConversationAction[] {
 	const result: ConversationAction[] = [];
 	for (const action of actions) {
-		const previous = result[result.length - 1];
-		if (
-			previous?.type === "assistant_text_delta" &&
-			action.type === "assistant_text_delta" &&
-			previous.sourceEntryId === action.sourceEntryId &&
-			previous.sourceContentIndex === action.sourceContentIndex
-		) {
-			result[result.length - 1] = {
-				...action,
-				delta: previous.delta + action.delta,
-			};
-			continue;
-		}
-		if (
-			previous?.type === "assistant_thinking_delta" &&
-			action.type === "assistant_thinking_delta" &&
-			previous.sourceEntryId === action.sourceEntryId &&
-			previous.sourceContentIndex === action.sourceContentIndex
-		) {
-			result[result.length - 1] = {
-				...action,
-				timestampMs: previous.timestampMs,
-				delta: previous.delta + action.delta,
-			};
-			continue;
-		}
-		if (
-			previous?.type === "tool_execution_update" &&
-			action.type === "tool_execution_update" &&
-			previous.toolCallId === action.toolCallId
-		) {
-			result[result.length - 1] = action;
-			continue;
-		}
-		result.push(action);
+		pushCoalescedConversationAction(result, action);
 	}
 	return result;
 }
