@@ -25,3 +25,10 @@ Tauri 2 在 Windows 上依赖 Common Controls v6（如 `TaskDialogIndirect`）�
 - 先用最小改动在原生 Windows 复现并确认根因（例如检查测试二进制导入表 / 清单）。
 - 修复后 `cargo test -p pilo --lib` 能在原生 Windows 运行；`pnpm tauri dev` 启动的应用清单与修复前一致（对比嵌入清单）。
 - 如果根因不是清单，回到规划阶段重新评估，不扩大改动范围。
+
+## 结论（2026-11-18 实测）
+
+- 根因确认：`tauri-winres` 经 `embed_resource::compile` 只发 `cargo:rustc-link-arg-bins`，清单资源只进 bin；lib 单元测试二进制导入 `comctl32!TaskDialogIndirect` 但无清单，启动即 0xc0000139。
+- 修法：`build.rs` 在 MSVC Windows 目标上用 `WindowsAttributes::new_without_app_manifest()`，改发 `rustc-link-arg=/MANIFEST:EMBED`、`/MANIFESTINPUT:windows-app-manifest.xml`、`/MANIFESTUAC:NO`；清单文件照抄 tauri-build 2.7.3 默认清单。`rustc-link-arg-tests` 不覆盖 lib 单元测试，不能用。
+- 验证：`mt.exe -inputresource:pilo.exe;#1` 导出的清单与修复前语义相同（同一 Common-Controls v6 依赖、无 trustInfo），仅标签间空白被链接器规范化；测试二进制带同一清单；`cargo test -p pilo --lib` 166 个用例通过；fmt / clippy 通过。
+- 副作用：`pilo_lib.dll`（cdylib，不随安装包发布）现在也带 ID 2 清单，修复前无资源节。

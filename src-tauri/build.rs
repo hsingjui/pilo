@@ -25,7 +25,33 @@ fn main() {
         check_server_runtimes();
     }
 
-    tauri_build::build()
+    let mut attributes = tauri_build::Attributes::new();
+    if is_windows_msvc_target() {
+        attributes = attributes
+            .windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest());
+        embed_windows_manifest();
+    }
+    if let Err(error) = tauri_build::try_build(attributes) {
+        panic!("{error:#}");
+    }
+}
+
+fn is_windows_msvc_target() -> bool {
+    std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+        && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc")
+}
+
+/// tauri-build 只把应用清单（Common Controls v6 依赖）链接进 bin 目标，
+/// lib 单元测试二进制没有清单，会加载 v5 的 comctl32.dll，
+/// 启动即因缺少 `TaskDialogIndirect` 以 0xc0000139 退出。
+/// 改由链接器给所有目标嵌入同一份清单；内容与 tauri-build 默认清单相同，
+/// `/MANIFESTUAC:NO` 避免额外生成 trustInfo，正式应用的清单保持不变。
+fn embed_windows_manifest() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("windows-app-manifest.xml");
+    println!("cargo:rerun-if-changed=windows-app-manifest.xml");
+    println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+    println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
+    println!("cargo:rustc-link-arg=/MANIFESTUAC:NO");
 }
 
 /// `cargo build --release` 不会打开 `tauri/custom-protocol`（只有 Tauri CLI 会），
