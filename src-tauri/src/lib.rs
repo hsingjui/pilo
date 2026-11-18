@@ -148,7 +148,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PiloRuntime::default())
-        .manage(runtime::RuntimeEventBus::default())
+        .manage(runtime::RuntimeEventBus::for_host())
         .manage(runtime::RemoteServerManager::default())
         .invoke_handler(tauri::generate_handler![
             greet,

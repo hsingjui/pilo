@@ -23,7 +23,7 @@ Frontend controller eviction alone is not backend process cleanup.
 - `ChatSessions::state(...)` / `states()` read registered `SessionSnapshotReader`
   handles without awaiting the Pi startup/RPC session mutex. Remove readers with
   their processes on eviction, detach, project stop and global shutdown.
-- `RuntimeEventBus::replay_after(sequence) -> Option<Vec<SequencedRuntimeEvent>>`:
+- `RuntimeEventBus::replay_after(sequence) -> Option<Vec<Arc<SequencedRuntimeEvent>>>`:
   `None` means replay is incomplete and the WebUI must resync.
 - `ChatSessions::start_idle_reaper()` starts one Host-owned 30-second sweep.
   `prepare` / `ensure` run readiness in owned tasks so HTTP cancellation cannot
@@ -189,7 +189,11 @@ Frontend controller eviction alone is not backend process cleanup.
   already at the latest sequence receives an empty replay. Sequence zero retains
   the existing whole-buffer bootstrap behavior.
 - Sequence allocation, replay insertion, and Web broadcast publication share a
-  lock to preserve ordering across concurrent sessions.
+  lock to preserve ordering across concurrent sessions. Replay and the live
+  ring share event payloads through `Arc`. The Host starts with both buffers
+  disabled. WebUI start/stop toggles them under the manager lock. Disabling
+  clears both immediately and prevents draining sockets from refilling them;
+  Host sequence allocation and desktop delivery continue.
 - Pi stop gives stdin EOF one second for Pi shutdown hooks, then a bounded
   one-second process-tree fallback and one-second direct-child reap. Unix Pi
   starts in a fresh process group and fallback uses `/bin/kill -KILL -- -<pid>`;
@@ -293,6 +297,7 @@ Frontend controller eviction alone is not backend process cleanup.
 | Replay byte/count eviction | Older sequence returns `None`; WebUI resyncs |
 | Event over 16 MiB replay limit but within 64 MiB live limit | Deliver live; clear replay and expose the gap |
 | Web live count/byte eviction or event over live limit | Report lag; request snapshot resync |
+| WebUI stopped while sockets drain | Clear both buffers; keep sequence advancing without buffering until start |
 | Server stream count/byte overflow | Reserved disconnect event; remove stream sender |
 | Session startup/RPC lock held | State queries use the independent snapshot reader |
 | Server stdin EOF or invalid frame | Cancel requests, clean up children, finish writer |
@@ -410,6 +415,8 @@ The following targeted regressions remain to be added with explicit authorizatio
 - Pending explicit test authorization: byte/count overflow including binary-only
   events, live oversized-event gaps, notification coalescing without lost events,
   cursor ordering, and state queries while startup/RPC holds the session mutex.
+  Verify both buffers clear on WebUI stop and stay empty with draining receivers,
+  desktop delivery continues, and a restart restores replay with the correct gap.
 - `server_client/tests.rs`: a fake server completes its EOF cleanup before stop returns.
 - `pilo-server/tests/stdio_protocol.rs`: a real fake-Pi child is reaped after server EOF.
 - Windows desktop shutdown and Local/WSL/SSH resumption still require platform testing;

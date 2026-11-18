@@ -29,14 +29,23 @@ const WEB_EVENT_REPLAY_MAX_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Default)]
 struct EventReplay {
-    events: VecDeque<(SequencedRuntimeEvent, usize)>,
+    // Shared with the live web queue: both buffers usually hold the same events.
+    events: VecDeque<(Arc<SequencedRuntimeEvent>, usize)>,
     bytes: usize,
+}
+
+impl EventReplay {
+    fn clear(&mut self) {
+        self.events.clear();
+        self.bytes = 0;
+    }
 }
 
 #[derive(Default)]
 struct WebEventQueue {
     buffer: EventReplay,
     latest_sequence: u64,
+    enabled: bool,
 }
 
 pub(crate) struct WebEventReceiver {
@@ -48,7 +57,7 @@ pub(crate) struct WebEventReceiver {
 impl WebEventReceiver {
     pub(crate) fn try_recv(
         &mut self,
-    ) -> Result<SequencedRuntimeEvent, broadcast::error::TryRecvError> {
+    ) -> Result<Arc<SequencedRuntimeEvent>, broadcast::error::TryRecvError> {
         let queue = self
             .queue
             .lock()
@@ -63,7 +72,7 @@ impl WebEventReceiver {
                 && let Some((event, _)) = queue.buffer.events.get(offset)
             {
                 self.next_sequence = event.sequence + 1;
-                return Ok(event.clone());
+                return Ok(Arc::clone(event));
             }
         }
         if self.next_sequence <= queue.latest_sequence {
@@ -76,7 +85,7 @@ impl WebEventReceiver {
 
     pub(crate) async fn recv(
         &mut self,
-    ) -> Result<SequencedRuntimeEvent, broadcast::error::RecvError> {
+    ) -> Result<Arc<SequencedRuntimeEvent>, broadcast::error::RecvError> {
         loop {
             match self.try_recv() {
                 Ok(event) => return Ok(event),
@@ -136,7 +145,10 @@ impl Default for RuntimeEventBus {
         Self {
             channels: Arc::new(StdMutex::new(HashMap::new())),
             web_sender,
-            web_queue: Arc::new(StdMutex::new(WebEventQueue::default())),
+            web_queue: Arc::new(StdMutex::new(WebEventQueue {
+                enabled: true,
+                ..WebEventQueue::default()
+            })),
             replay: Arc::new(StdMutex::new(EventReplay::default())),
             sequence: Arc::new(AtomicU64::new(0)),
             session_read_paths: Arc::new(StdMutex::new(None)),
@@ -149,6 +161,30 @@ impl Default for RuntimeEventBus {
 }
 
 impl RuntimeEventBus {
+    /// Host bus: Web events are buffered only while Remote WebUI runs.
+    pub fn for_host() -> Self {
+        let bus = Self::default();
+        bus.set_web_events_enabled(false);
+        bus
+    }
+
+    pub(crate) fn set_web_events_enabled(&self, enabled: bool) {
+        // Serialize with send, including sends to sockets still shutting down.
+        let mut replay = self
+            .replay
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut queue = self
+            .web_queue
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        queue.enabled = enabled;
+        if !enabled {
+            replay.clear();
+            queue.buffer.clear();
+        }
+    }
+
     pub fn subscribe(&self, window_label: &str, channel: Channel<RuntimeEventEnvelope>) {
         let channel_id = channel.id();
         // Reload replaces only this window's channel; other windows stay subscribed.
@@ -193,7 +229,7 @@ impl RuntimeEventBus {
         self.sequence.load(Ordering::Acquire)
     }
 
-    pub(crate) fn replay_after(&self, sequence: u64) -> Option<Vec<SequencedRuntimeEvent>> {
+    pub(crate) fn replay_after(&self, sequence: u64) -> Option<Vec<Arc<SequencedRuntimeEvent>>> {
         let replay = self
             .replay
             .lock()
@@ -211,7 +247,7 @@ impl RuntimeEventBus {
                 .events
                 .iter()
                 .filter(|(event, _)| event.sequence > sequence)
-                .map(|(event, _)| event.clone())
+                .map(|(event, _)| Arc::clone(event))
                 .collect(),
         )
     }
@@ -233,63 +269,65 @@ impl RuntimeEventBus {
         }
         let trace = traceable_runtime_event(&event.event);
         let session_key = event.session_key.clone();
-        let (sequence, payload_bytes) = {
+        let (sequenced, payload_bytes) = {
             let mut replay = self
                 .replay
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let sequence = self.sequence.fetch_add(1, Ordering::AcqRel) + 1;
-            let sequenced = SequencedRuntimeEvent {
-                sequence,
-                event: event.clone(),
-            };
+            // One allocation is shared by replay, the web queue and every reader.
+            let sequenced = Arc::new(SequencedRuntimeEvent { sequence, event });
             // Count without allocating another serialized copy of large RPC results.
             let mut size = PayloadSize::default();
-            let bytes = if serde_json::to_writer(&mut size, &sequenced).is_ok() {
+            let bytes = if serde_json::to_writer(&mut size, &*sequenced).is_ok() {
                 size.0
             } else {
                 usize::MAX
             };
-            // Events above the replay limit leave a gap; the live queue has its own limit.
-            if bytes > WEB_EVENT_REPLAY_MAX_BYTES {
-                replay.events.clear();
-                replay.bytes = 0;
-            } else {
-                while replay.events.len() >= WEB_EVENT_REPLAY_CAPACITY
-                    || replay.bytes.saturating_add(bytes) > WEB_EVENT_REPLAY_MAX_BYTES
-                {
-                    let Some((_, evicted_bytes)) = replay.events.pop_front() else {
-                        break;
-                    };
-                    replay.bytes -= evicted_bytes;
-                }
-                replay.bytes += bytes;
-                replay.events.push_back((sequenced.clone(), bytes));
-            }
             // Publish under the same lock so concurrent sessions keep sequence order.
             let mut queue = self
                 .web_queue
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             queue.latest_sequence = sequence;
-            if self.web_sender.receiver_count() == 0 || bytes > WEB_EVENT_CHANNEL_MAX_BYTES {
-                queue.buffer.events.clear();
-                queue.buffer.bytes = 0;
-            } else {
-                while queue.buffer.events.len() >= WEB_EVENT_CHANNEL_CAPACITY
-                    || queue.buffer.bytes.saturating_add(bytes) > WEB_EVENT_CHANNEL_MAX_BYTES
-                {
-                    let Some((_, evicted_bytes)) = queue.buffer.events.pop_front() else {
-                        break;
-                    };
-                    queue.buffer.bytes -= evicted_bytes;
+            if queue.enabled {
+                // Events above the replay limit leave a gap; the live queue has its own limit.
+                if bytes > WEB_EVENT_REPLAY_MAX_BYTES {
+                    replay.clear();
+                } else {
+                    while replay.events.len() >= WEB_EVENT_REPLAY_CAPACITY
+                        || replay.bytes.saturating_add(bytes) > WEB_EVENT_REPLAY_MAX_BYTES
+                    {
+                        let Some((_, evicted_bytes)) = replay.events.pop_front() else {
+                            break;
+                        };
+                        replay.bytes -= evicted_bytes;
+                    }
+                    replay.bytes += bytes;
+                    replay.events.push_back((Arc::clone(&sequenced), bytes));
                 }
-                queue.buffer.bytes += bytes;
-                queue.buffer.events.push_back((sequenced, bytes));
+                if self.web_sender.receiver_count() == 0 || bytes > WEB_EVENT_CHANNEL_MAX_BYTES {
+                    queue.buffer.clear();
+                } else {
+                    while queue.buffer.events.len() >= WEB_EVENT_CHANNEL_CAPACITY
+                        || queue.buffer.bytes.saturating_add(bytes) > WEB_EVENT_CHANNEL_MAX_BYTES
+                    {
+                        let Some((_, evicted_bytes)) = queue.buffer.events.pop_front() else {
+                            break;
+                        };
+                        queue.buffer.bytes -= evicted_bytes;
+                    }
+                    queue.buffer.bytes += bytes;
+                    queue
+                        .buffer
+                        .events
+                        .push_back((Arc::clone(&sequenced), bytes));
+                }
+                let _ = self.web_sender.send(());
             }
-            let _ = self.web_sender.send(());
-            (sequence, bytes)
+            (sequenced, bytes)
         };
+        let sequence = sequenced.sequence;
 
         let channels = self
             .channels
@@ -324,7 +362,7 @@ impl RuntimeEventBus {
                     }),
                 );
             }
-            if let Err(error) = channel.send(event.clone()) {
+            if let Err(error) = channel.send(sequenced.event.clone()) {
                 if let Some((event_type, detail)) = trace.as_ref() {
                     runtime_trace(
                         "channel.send_error",

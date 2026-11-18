@@ -277,9 +277,10 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   same value live and after reconnect replay, so a duration derived from it never
   mixes the Host clock with client processing time. Other event kinds stay
   unstamped: an absent timestamp means "unknown", never "now".
-- **Replay gap semantics**: `replay_after(seq)` returns `None` (gap → client must
-  resync from snapshot) **iff** the oldest buffered sequence is greater than
-  `seq + 1`. `seq == 0` always replays the whole buffer.
+- **Replay gap semantics**: for `seq > 0`, `replay_after(seq)` returns `None`
+  (resync from snapshot) if the oldest buffered sequence is greater than
+  `seq + 1`, or if the buffer is empty and the Host has advanced past `seq`.
+  `seq == 0` always replays the whole buffer.
 - **WebSocket auth expiry**: the upgrade is rejected with a plain `401` before
   the handshake, which browsers surface as an opaque `1006` close — identical to
   a network drop. `event_socket` also closes the socket when `auth_tick` (15 s)

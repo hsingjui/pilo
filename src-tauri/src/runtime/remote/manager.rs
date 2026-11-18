@@ -5,7 +5,7 @@ use std::{
 };
 
 use serde::Serialize;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::{
     sync::{Mutex, watch},
     task::JoinHandle,
@@ -13,7 +13,7 @@ use tokio::{
 
 use crate::{
     domain::{RemoteAccessAddress, RemoteAccessConfig, RemoteDevice},
-    runtime::{host_paths::HostPaths, storage},
+    runtime::{RuntimeEventBus, host_paths::HostPaths, storage},
 };
 
 use super::{access, api, pairing::PairingSession};
@@ -43,6 +43,7 @@ struct RunningRemoteServer {
     pairing: Arc<PairingSession>,
     shutdown: watch::Sender<bool>,
     auth_generation: watch::Sender<u64>,
+    events: RuntimeEventBus,
     task: JoinHandle<()>,
 }
 
@@ -402,11 +403,15 @@ impl RemoteServerManager {
     }
 
     pub(crate) async fn stop(&self) {
-        let running = self.inner.lock().await.running.take();
-        let Some(running) = running else {
-            return;
+        let running = {
+            let mut inner = self.inner.lock().await;
+            let Some(running) = inner.running.take() else {
+                return;
+            };
+            let _ = running.shutdown.send(true);
+            running.events.set_web_events_enabled(false);
+            running
         };
-        let _ = running.shutdown.send(true);
         let pairing = running.pairing;
         let _ = tokio::task::spawn_blocking(move || pairing.invalidate()).await;
         let mut task = running.task;
@@ -447,6 +452,8 @@ impl RemoteServerManager {
         let (shutdown, shutdown_rx) = watch::channel(false);
         let (auth_generation, auth_generation_rx) = watch::channel(0_u64);
         let shutdown_for_task = shutdown.clone();
+        let events = app.state::<RuntimeEventBus>().inner().clone();
+        events.set_web_events_enabled(true);
         let router = api::router(app, paths, pairing.clone(), shutdown_rx, auth_generation_rx);
         let pairing_for_expiry = pairing.clone();
         let task = tokio::spawn(async move {
@@ -488,6 +495,7 @@ impl RemoteServerManager {
             pairing,
             shutdown,
             auth_generation,
+            events,
             task,
         });
         log::info!(target: "remote-webui", "Remote WebUI started on LAN port {actual_port}");

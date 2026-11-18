@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use axum::{
     extract::{
@@ -7,7 +7,7 @@ use axum::{
     },
     response::Response,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tauri::Manager;
 use tokio::sync::broadcast;
@@ -200,13 +200,13 @@ async fn event_socket(
 }
 
 enum EventBatchResult {
-    Ready(Vec<SequencedRuntimeEvent>),
+    Ready(Vec<Arc<SequencedRuntimeEvent>>),
     Lagged,
     Closed,
 }
 
 async fn collect_event_batch(
-    first: SequencedRuntimeEvent,
+    first: Arc<SequencedRuntimeEvent>,
     receiver: &mut crate::runtime::events::WebEventReceiver,
 ) -> EventBatchResult {
     let mut batch = vec![first];
@@ -226,14 +226,32 @@ async fn collect_event_batch(
     EventBatchResult::Ready(batch)
 }
 
-async fn send_event_batch(
-    socket: &mut WebSocket,
-    events: &[SequencedRuntimeEvent],
-) -> Result<(), axum::Error> {
-    send_ws_json(socket, &json!({ "type": "events", "events": events })).await
+#[derive(Serialize)]
+struct EventBatch<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    events: &'a [Arc<SequencedRuntimeEvent>],
 }
 
-async fn send_ws_json(socket: &mut WebSocket, value: &Value) -> Result<(), axum::Error> {
+async fn send_event_batch(
+    socket: &mut WebSocket,
+    events: &[Arc<SequencedRuntimeEvent>],
+) -> Result<(), axum::Error> {
+    // Serialize straight to text; a `json!` Value would deep-copy every payload.
+    send_ws_json(
+        socket,
+        &EventBatch {
+            kind: "events",
+            events,
+        },
+    )
+    .await
+}
+
+async fn send_ws_json<T: Serialize + ?Sized>(
+    socket: &mut WebSocket,
+    value: &T,
+) -> Result<(), axum::Error> {
     let text = serde_json::to_string(value).unwrap_or_else(|_| "{}".to_owned());
     socket
         .send(Message::Text(text.into()))
