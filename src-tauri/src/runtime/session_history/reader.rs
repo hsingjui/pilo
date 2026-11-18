@@ -133,23 +133,34 @@ async fn load_history(
     let key = cache_key(project, path);
     let load_lock = cache.lock().await.load_lock(&key);
     let _load_guard = load_lock.lock().await;
-    let fingerprint = match expected_fingerprint {
+    let mut source_confirmed = expected_fingerprint.is_none();
+    let mut fingerprint = match expected_fingerprint {
         Some((file_size, file_mtime_ns)) => Some(SessionFileFingerprint {
             file_size,
             file_mtime_ns,
         }),
         None => read_fingerprint(servers, project, path).await?,
     };
-    if let Some(fingerprint) = fingerprint {
-        let mut cache = cache.lock().await;
-        if let Some((serialized, index)) = cache.get_windowed(&key, fingerprint) {
-            return Ok((HistoryStorage::Memory(serialized), index, Some(fingerprint)));
+    while let Some(candidate) = fingerprint {
+        let mut history_cache = cache.lock().await;
+        if let Some((serialized, index)) = history_cache.get_windowed(&key, candidate) {
+            return Ok((HistoryStorage::Memory(serialized), index, Some(candidate)));
         }
-        if let Some((file, index)) = cache.get_disk(&key, fingerprint) {
-            return Ok((HistoryStorage::Disk(file), index, Some(fingerprint)));
+        if let Some((file, index)) = history_cache.get_disk(&key, candidate) {
+            return Ok((HistoryStorage::Disk(file), index, Some(candidate)));
         }
+        if source_confirmed || !history_cache.has_history(&key) {
+            break;
+        }
+        // An older client window can miss even when the cache is already current.
+        drop(history_cache);
+        fingerprint = read_fingerprint(servers, project, path).await?;
+        source_confirmed = true;
     }
     let load_permit = acquire_cold_load().await?;
+    if let Some(fingerprint) = fingerprint.filter(|_| source_confirmed) {
+        cache.lock().await.evict_stale_memory(&key, fingerprint);
+    }
     let (history, fingerprint) =
         read_file(servers, project, path, Arc::clone(&load_permit)).await?;
     let serialization_permit = Arc::clone(&load_permit);

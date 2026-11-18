@@ -21,17 +21,22 @@ Local/WSL/SSH; Pi JSONL in its original environment remains authoritative.
 
 - Cache keys include project ID and source path. Merge overlapping
   loads with a per-key lock, then recheck fingerprinted caches inside the lock.
-  Release that lock before reading individual image payloads or history pages.
+  A client fingerprint can hit the cache directly. If it misses an existing
+  projection, probe the source fingerprint and try the cache again before
+  evicting. A failed probe or missing source fingerprint must not evict.
+  Release the per-key lock before reading individual image payloads or history pages.
 - Cold loads share two global semaphore slots across projects/connections and
   both full-history and image-index scans. Cache hits bypass these slots. Acquire
   the per-key lock before the global slot; parsing, projection, serialization
   and disk writes retain shared ownership of the permit, including blocking
-  tasks whose HTTP callers are cancelled.
+  tasks whose HTTP callers are cancelled. Once admitted, drop a stale memory
+  projection to reduce peak memory. Keep a stale disk projection until a new
+  one is cached or normal eviction applies; only matching fingerprints can hit it.
 - Index user-image JSONL ranges before dropping their base64 `data` from parsed
   entries. Keep image IDs, content positions and MIME types for projection;
   lazy reads still decode the original source range. Tool-result image payloads
   are unchanged.
-- Memory LRU: 16 entries, 192 MiB estimated using source size × 2. Histories
+- Memory LRU: 16 entries, 64 MiB estimated using source size × 2. Histories
   exceeding this estimate use disposable projected-history files when eligible.
 - Disk LRU: 16 entries, 2 GiB total projected bytes and 64 MiB estimated indexes.
   Indexes include message ranges, serialized directory and image locations.
@@ -55,7 +60,9 @@ Local/WSL/SSH; Pi JSONL in its original environment remains authoritative.
 | Two other cold scans are running | Wait for a global slot; do not allocate another parser |
 | Cold-load HTTP caller cancels during blocking work | Keep its slot until that blocking work ends |
 | User image line is indexed | Release parsed base64 data; lazy source reads remain valid |
-| Different fingerprint | Read/project source again; replace cached entry |
+| Stale client fingerprint but the source matches the cache | Reuse the current projection and return its fingerprint |
+| Source fingerprint differs from the cached fingerprint | Evict only a stale memory projection after cold-load admission |
+| Cold rebuild fails, is cancelled, or returns uncached history | Keep any existing disk projection available for its original fingerprint |
 | Over disk/index budget | Return uncached history |
 | Temporary cache creation/write fails | Log warning without payload; return history |
 | Cached range read fails | Return error; do not return partial JSON |
@@ -79,7 +86,9 @@ targeted regression coverage; no new repository tests have been added:
   bytes still match the original JSONL, including split lines and multiple images.
 - Memory/disk pages produce identical events, directory, stats and fingerprints,
   including empty windows and start/limit clamping.
-- Concurrent first loads share a cached projection; changed fingerprints rebuild.
+- Concurrent first loads share a cached projection; a changed source fingerprint
+  rebuilds, but a stale client fingerprint alone does not. A failed or cancelled
+  rebuild does not remove an old disk projection that can still serve its fingerprint.
 - Byte/index/count eviction releases handles without breaking in-flight reads.
 - Windows close/crash and Unix unlink remove disposable files; write failure
   preserves the uncached response. Check Local/WSL/SSH and lazy image lookup.

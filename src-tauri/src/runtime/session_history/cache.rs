@@ -11,7 +11,9 @@ use crate::domain::Project;
 use super::{disk::DiskHistory, types::ImageLocation};
 
 pub(super) const SESSION_HISTORY_CACHE_CAPACITY: usize = 16;
-pub(super) const SESSION_HISTORY_CACHE_MAX_ESTIMATED_BYTES: usize = 192 * 1024 * 1024;
+// Resident budget for parsed histories. Larger sessions use the disk cache,
+// which serves the same windows without keeping the whole history in RAM.
+pub(super) const SESSION_HISTORY_CACHE_MAX_ESTIMATED_BYTES: usize = 64 * 1024 * 1024;
 const SESSION_HISTORY_CACHE_ESTIMATE_MULTIPLIER: usize = 2;
 const IMAGE_LOCATION_CACHE_CAPACITY: usize = 16;
 const SESSION_HISTORY_DISK_CACHE_MAX_BYTES: usize = 2 * 1024 * 1024 * 1024;
@@ -84,6 +86,23 @@ impl SessionHistoryCache {
 
     pub(super) fn fits_memory(fingerprint: SessionFileFingerprint) -> bool {
         estimated_history_bytes(fingerprint) <= SESSION_HISTORY_CACHE_MAX_ESTIMATED_BYTES
+    }
+
+    pub(super) fn has_history(&self, key: &str) -> bool {
+        self.entries.contains_key(key) || self.disk_entries.contains_key(key)
+    }
+
+    /// Frees resident history before a cold load without discarding the disk snapshot.
+    /// The fingerprint must come from the source, not the client.
+    pub(super) fn evict_stale_memory(&mut self, key: &str, fingerprint: SessionFileFingerprint) {
+        if self
+            .entries
+            .get(key)
+            .is_some_and(|entry| entry.fingerprint != fingerprint)
+        {
+            self.remove_entry(key);
+            self.order.retain(|candidate| candidate != key);
+        }
     }
 
     pub(super) fn fits_disk(bytes: usize, index: &SessionHistoryWindowIndex) -> bool {
