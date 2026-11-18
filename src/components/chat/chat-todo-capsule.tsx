@@ -14,8 +14,10 @@ import {
 import type { ChatConversationStore } from "@/components/chat/chat-conversation-store";
 import type { ChatMessage } from "@/lib/chat/conversation-types";
 import {
-	latestTurnChatTodos,
+	buildChatTodoProgress,
+	latestTurnChatTodoSource,
 	type ChatTodoItem,
+	type ChatTodoProgress,
 	type ChatTodoStatus,
 } from "@/lib/chat/chat-todos";
 import { cn } from "@/lib/utils";
@@ -41,6 +43,37 @@ const STATUS_LABEL_KEYS = {
 	completed: "chat.todoStatusCompleted",
 	cancelled: "chat.todoStatusCancelled",
 } as const;
+
+const NOOP_EXTERNAL_STORE_SUBSCRIBE = () => () => undefined;
+
+type TodoCapsuleSnapshot = {
+	turnId: string | null;
+	items: ChatTodoItem[] | null;
+	progress: ChatTodoProgress | null;
+};
+
+/** 每次流式刷新只倒序扫描当前轮；清单来源不变时返回同一快照，胶囊不重渲染。 */
+function createTodoSnapshotReader(
+	conversationStore: ChatConversationStore,
+	historyMessages: readonly ChatMessage[],
+) {
+	let cached: TodoCapsuleSnapshot | null = null;
+	return () => {
+		const { turnId, items } = latestTurnChatTodoSource([
+			historyMessages,
+			conversationStore.getSnapshot()?.messages ?? [],
+		]);
+		if (!cached || cached.turnId !== turnId || cached.items !== items) {
+			cached = {
+				turnId,
+				items,
+				progress:
+					items && items.length > 0 ? buildChatTodoProgress(items) : null,
+			};
+		}
+		return cached;
+	};
+}
 
 function isTodoDone(status: ChatTodoStatus) {
 	return status === "completed" || status === "cancelled";
@@ -105,31 +138,27 @@ export function ChatTodoCapsule({
 	conversationStore,
 	historyMessages,
 	running,
+	live = true,
 	className,
 }: {
 	conversationStore: ChatConversationStore;
 	/** 会话已加载的历史消息（远端是 historyPrefix，桌面是 baseMessages）。 */
 	historyMessages: readonly ChatMessage[];
 	running: boolean;
+	/** 后台保留的页面不跟随流式刷新，切回前台时再读取最新状态。 */
+	live?: boolean;
 	className?: string;
 }) {
 	const { t } = useTranslation();
-	const snapshot = useSyncExternalStore(
-		conversationStore.subscribe,
-		conversationStore.getSnapshot,
-		conversationStore.getSnapshot,
+	const getTodoSnapshot = useMemo(
+		() => createTodoSnapshotReader(conversationStore, historyMessages),
+		[conversationStore, historyMessages],
 	);
-	const { progress, turnId } = useMemo(() => {
-		const messages = [...historyMessages, ...(snapshot?.messages ?? [])];
-		let userMessageId: string | null = null;
-		for (let index = messages.length - 1; index >= 0; index -= 1) {
-			if (messages[index].role === "user") {
-				userMessageId = messages[index].id;
-				break;
-			}
-		}
-		return { progress: latestTurnChatTodos(messages), turnId: userMessageId };
-	}, [historyMessages, snapshot]);
+	const { progress, turnId } = useSyncExternalStore(
+		live ? conversationStore.subscribe : NOOP_EXTERNAL_STORE_SUBSCRIBE,
+		getTodoSnapshot,
+		getTodoSnapshot,
+	);
 	const fingerprint = useMemo(
 		() => JSON.stringify([turnId, progress?.items]),
 		[turnId, progress],

@@ -774,6 +774,7 @@ function ChatPageImpl(props: ChatPageProps) {
 											conversationStore={conversationStore}
 											historyMessages={baseMessages}
 											running={running}
+											live={active}
 										/>
 										<ChatComposer
 											nextPrompt={nextPrompt.text}

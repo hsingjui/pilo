@@ -194,33 +194,74 @@ export function buildChatTodoProgress(
 	};
 }
 
+// 工具项在流式更新间保持引用不变，按引用缓存解析结果，避免每次刷新重复解析。
+const parsedTodoToolItems = new WeakMap<object, ChatTodoItem[] | null>();
+
+function latestTodoItemsInMessage(
+	message: Extract<ChatMessage, { role: "assistant" }>,
+): ChatTodoItem[] | null | undefined {
+	const content = message.content ?? [];
+	for (let itemIndex = content.length - 1; itemIndex >= 0; itemIndex -= 1) {
+		const item = content[itemIndex];
+		// 未完成或失败的调用不能代表已生效的清单，继续找上一份成功快照。
+		if (
+			item.type !== "tool" ||
+			item.status !== "complete" ||
+			item.isError ||
+			!isChatTodoTool(item.toolName)
+		)
+			continue;
+		let items = parsedTodoToolItems.get(item);
+		if (items === undefined) {
+			items = parseChatTodos(item.args, item.result);
+			parsedTodoToolItems.set(item, items);
+		}
+		// 空清单是有效的清空操作，不能继续回溯到旧清单。
+		if (items !== null) return items;
+	}
+	return undefined;
+}
+
+export type ChatTodoTurnSource = {
+	/** 最后一条用户消息的 ID；没有用户消息时为 null。 */
+	turnId: string | null;
+	/** 当前轮最近一次生效的清单（可能为空数组）；同一工具项返回同一引用。 */
+	items: ChatTodoItem[] | null;
+};
+
+/**
+ * 按顺序拼接的多段消息（如历史前缀 + 实时消息）里，最后一个用户轮的待办来源。
+ * 从末尾倒序扫描，不拼接数组；跨过用户消息就停止，避免旧轮清单常驻。
+ */
+export function latestTurnChatTodoSource(
+	messageLists: readonly (readonly ChatMessage[])[],
+): ChatTodoTurnSource {
+	let items: ChatTodoItem[] | null | undefined;
+	for (
+		let listIndex = messageLists.length - 1;
+		listIndex >= 0;
+		listIndex -= 1
+	) {
+		const messages = messageLists[listIndex];
+		for (let index = messages.length - 1; index >= 0; index -= 1) {
+			const message = messages[index];
+			if (message.role === "user") {
+				return { turnId: message.id, items: items ?? null };
+			}
+			if (items === undefined && message.role === "assistant") {
+				items = latestTodoItemsInMessage(message);
+			}
+		}
+	}
+	return { turnId: null, items: items ?? null };
+}
+
 /**
  * 最后一个用户轮里的待办快照；跨过用户消息就不再往前找，避免旧轮清单常驻。
  */
 export function latestTurnChatTodos(
 	messages: readonly ChatMessage[],
 ): ChatTodoProgress | null {
-	for (let index = messages.length - 1; index >= 0; index -= 1) {
-		const message = messages[index];
-		if (message.role === "user") return null;
-		if (message.role !== "assistant") continue;
-		const content = message.content ?? [];
-		for (let itemIndex = content.length - 1; itemIndex >= 0; itemIndex -= 1) {
-			const item = content[itemIndex];
-			// 未完成或失败的调用不能代表已生效的清单，继续找上一份成功快照。
-			if (
-				item.type !== "tool" ||
-				item.status !== "complete" ||
-				item.isError ||
-				!isChatTodoTool(item.toolName)
-			)
-				continue;
-			const items = parseChatTodos(item.args, item.result);
-			// 空清单是有效的清空操作，不能继续回溯到旧清单。
-			if (items !== null) {
-				return items.length > 0 ? buildChatTodoProgress(items) : null;
-			}
-		}
-	}
-	return null;
+	const { items } = latestTurnChatTodoSource([messages]);
+	return items && items.length > 0 ? buildChatTodoProgress(items) : null;
 }

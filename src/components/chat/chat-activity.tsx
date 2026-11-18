@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -180,7 +180,8 @@ function toolLabel(t: TFunction, toolName: string) {
 	}
 }
 
-function ThinkingActivityView({
+// 未变化的活动项在流式刷新间保持引用，memo 让整组只重渲染正在变化的那一行。
+const ThinkingActivityView = memo(function ThinkingActivityView({
 	activity,
 	expansionKey,
 }: {
@@ -321,7 +322,7 @@ function ThinkingActivityView({
 			) : null}
 		</div>
 	);
-}
+});
 
 function ToolDetail({
 	activity,
@@ -436,7 +437,7 @@ function ToolDetail({
 	);
 }
 
-function ToolCallActivityView({
+const ToolCallActivityView = memo(function ToolCallActivityView({
 	activity,
 	expansionKey,
 }: {
@@ -587,7 +588,7 @@ function ToolCallActivityView({
 			) : null}
 		</div>
 	);
-}
+});
 
 function runningActivityLabel(t: TFunction, activity: AssistantActivity[]) {
 	let current: AssistantActivity | undefined;
