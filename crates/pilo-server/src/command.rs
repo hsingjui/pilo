@@ -41,7 +41,8 @@ where
     R: tokio::io::AsyncRead + Unpin,
 {
     let mut output = Vec::new();
-    let mut buffer = [0_u8; 16 * 1024];
+    // Keep both output buffers out of the shared RPC dispatch future.
+    let mut buffer = vec![0_u8; 16 * 1024];
     loop {
         let read = reader
             .read(&mut buffer)

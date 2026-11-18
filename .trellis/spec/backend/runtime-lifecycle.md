@@ -230,6 +230,11 @@ Frontend controller eviction alone is not backend process cleanup.
   responses return `output_too_large`; Pi stdout is bounded while reading, not
   after allocating a complete line. An over-limit line terminates that stream.
   Queue budgets exclude waiting producers and object-allocation overhead.
+- Keep the two 16 KiB `command.run` stdout/stderr read buffers heap-backed.
+  Inline arrays held across `.await` inflate the shared `dispatch` future even
+  for unrelated methods and can overflow the Windows debug server's main stack.
+  The `pilo-server` stdio integration tests exercise both `server.ping` and
+  `command.run` through the actual child binary.
 - Event coalescing ticks only while a Pi stream has buffered events. Reset the
   16 ms window when an empty buffer first receives a delta; idle streams do not
   continuously wake their tasks.
