@@ -418,8 +418,9 @@ const zhCN = {
 		sshAgentAuto: "使用 SSH 默认设置",
 		sshAgentChecking: "正在读取 Pilo 主机的 SSH Agent…",
 		sshAgentDetected: "已检测到 SSH Agent。连接时，密钥管理器可能会请你授权。",
-		sshAgentUnavailable:
-			"无法读取 Pilo 主机的 SSH Agent。请确认主机上的 `ssh-add -L` 可用；如果使用 Bitwarden，请先在桌面版启用 SSH Agent。",
+		sshAgentUnavailable: "无法读取主机的 SSH Agent。",
+		sshAgentTroubleshooting:
+			"请确认 Pilo 主机上的 ssh-add -L 可用；如果使用 Bitwarden，请先在桌面版启用 SSH Agent。",
 		sshAgentEmpty:
 			"SSH Agent 未提供公钥。请解锁密钥管理器或添加 SSH 密钥后刷新。",
 		sshAgentSavedKey: "已保存的密钥",
@@ -429,8 +430,8 @@ const zhCN = {
 		piWorkspace: "远程 Pi（SSH 主机）",
 		piLocal: "本地 Pi（工具走 SSH）",
 		localPiResources: "使用本地 Pi 资源",
-		localPiResourcesDescription:
-			"开启后可使用本机的 Skill、扩展、MCP 和本地工具。扩展可以在本机执行代码，只对信任的 SSH 工作区开启。",
+		localPiResourcesDescription: "使用本机技能、扩展、MCP 和工具。",
+		localPiResourcesWarning: "扩展可在本机执行代码，仅用于可信工作区。",
 		localPiResourcesBusy:
 			"请等待该连接上的聊天和并行任务结束，或先停止任务，再保存。",
 		sshPassword: "SSH 密码",

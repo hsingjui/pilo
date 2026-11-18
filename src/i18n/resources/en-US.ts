@@ -436,8 +436,9 @@ const enUS = {
 		sshAgentChecking: "Reading the Pilo Host’s SSH agent…",
 		sshAgentDetected:
 			"SSH agent detected. Your key manager may ask for approval when connecting.",
-		sshAgentUnavailable:
-			"Could not read the Pilo Host’s SSH agent. Check that ssh-add -L works on the Host. If you use Bitwarden, enable SSH Agent in its desktop app first.",
+		sshAgentUnavailable: "Could not read the Pilo Host’s SSH agent.",
+		sshAgentTroubleshooting:
+			"Check that ssh-add -L works on the Pilo Host. If you use Bitwarden, enable SSH Agent in its desktop app first.",
 		sshAgentEmpty:
 			"The SSH agent returned no public keys. Unlock your key manager or add an SSH key, then refresh.",
 		sshAgentSavedKey: "Saved key",
@@ -449,7 +450,9 @@ const enUS = {
 		piLocal: "Local Pi (tools use SSH)",
 		localPiResources: "Use local Pi resources",
 		localPiResourcesDescription:
-			"Enable Host skills, extensions, MCP, and local tools. Extensions can run code on the Host. Only enable this for trusted SSH workspaces.",
+			"Enable Host skills, extensions, MCP, and local tools.",
+		localPiResourcesWarning:
+			"Extensions can run code on the Host. Only enable this for trusted SSH workspaces.",
 		localPiResourcesBusy:
 			"Wait for chats and parallel tasks on this connection to finish, or stop them before saving.",
 		sshPassword: "SSH password",

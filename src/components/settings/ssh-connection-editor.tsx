@@ -318,6 +318,11 @@ export function SshConnectionEditor({
 								</div>
 								<output id="ssh-agent-status" className="text-muted-foreground">
 									{t(agentStatus)}
+									{agentStatus === "connection.sshAgentUnavailable" ? (
+										<span className="block">
+											{t("connection.sshAgentTroubleshooting")}
+										</span>
+									) : null}
 								</output>
 							</div>
 						) : null}

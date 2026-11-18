@@ -22,6 +22,9 @@ export function LocalPiResourcesField({
 					className="mt-1 block text-muted-foreground"
 				>
 					{t("connection.localPiResourcesDescription")}
+					<span className="block">
+						{t("connection.localPiResourcesWarning")}
+					</span>
 				</span>
 			</label>
 			<Switch
