@@ -84,6 +84,8 @@ function ensureActive(
 			turnStartedAtMs: timestampMs,
 			assistantUpdatedAtMs: timestampMs,
 			firstRuntimeUserSeen: false,
+			// Output with nothing loaded before it joined an already running turn.
+			...(state.messages.length === 0 && { partialTurn: true }),
 		},
 	};
 }
@@ -588,13 +590,21 @@ function reduceConversationAction(
 				};
 			});
 		case "assistant_text_snapshot":
+			// The snapshot covers the whole turn; a partial reply would gain a copy
+			// of text that the history snapshot already holds.
+			if (state.active?.partialTurn) return state;
 			return withAssistant(state, context, action.timestampMs, (message) => {
 				const content = reconcileAssistantTextContent(
 					message.content,
 					action.text,
 					() => context.createContentId("text"),
 				);
-				return { ...message, content, text: action.text, streaming: true };
+				return {
+					...message,
+					content,
+					text: assistantText(content) || message.text,
+					streaming: true,
+				};
 			});
 		case "assistant_usage_update":
 			if (!state.active?.assistantMessageId) return state;

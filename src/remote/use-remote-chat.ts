@@ -521,6 +521,7 @@ export function useRemoteChat({
 		historyCompletionKey,
 		isExternalOpenTurn,
 		runtimeTurnOpen,
+		hasPendingUsers: conversationUi.pendingUsers.length > 0,
 		refreshAgentConfig,
 		onHistoryMetadata: applyHistoryMetadata,
 		getConversationState: conversationStore.getSnapshot,

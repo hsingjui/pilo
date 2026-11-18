@@ -151,6 +151,12 @@ export type ConversationState = {
 		assistantUpdatedAtMs?: number;
 		firstRuntimeUserSeen: boolean;
 		runtimeStarted?: boolean;
+		/**
+		 * The reply was adopted mid-turn with no earlier conversation loaded, so it
+		 * lacks the turn's earlier content. Host text snapshots cover the whole
+		 * turn and must not be reconciled into it.
+		 */
+		partialTurn?: boolean;
 	} | null;
 	pendingUsers: Array<{
 		clientMessageId: string;

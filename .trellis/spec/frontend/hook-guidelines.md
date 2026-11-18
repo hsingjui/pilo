@@ -106,13 +106,32 @@ codebase does not use it.)
   merge the loaded history window with the live suffix once before reporting
   `ready`; preserve live message IDs, the active reply, and pending submissions.
   Match assistant overlap by message ID or a shared tool-call ID, not text or
-  streaming status. Merge content around shared tools; if overlap is uncertain,
-  keep both messages until reconciliation instead of dropping persisted content.
+  streaming status. The one structural exception: the first live row, when it
+  is an assistant reply with no user echo before it, can continue the last
+  persisted turn without a shared tool. An open turn (persisted as
+  interrupted) always matches; a completed turn matches only when every live
+  item is a non-tool item whose text the persisted copy already contains,
+  otherwise the reply belongs to a turn that started after the snapshot.
+  Merge content around shared tools: before the first shared tool keep only the
+  persisted copy (the stream may have joined mid-message); after it both
+  streams are complete, so persisted items line up with the start of each live
+  span and only the remainder is new. A completed persisted turn with no shared
+  tool keeps its persisted content. Otherwise, if overlap is uncertain, keep
+  both until reconciliation instead of dropping persisted content.
   Keep earlier pages lazy and reconcile the seam against the Host after the
   turn ends. Do not run the merge on each stream event. When a history window
   is already visible, defer an ordinary refresh that would overwrite live
-  updates. A manual refresh interrupted by a new turn must clear its force flag
-  and must not queue a retry.
+  updates or `pendingUsers`, even if the Host reports idle. Check the current
+  conversation before the read and again before applying it. Retry the deferred
+  refresh once pending submissions settle and the Host is idle. A manual refresh
+  interrupted by a new turn or pending submission must not queue a retry.
+- Host `assistant_text_snapshot` carries the whole turn's text since the last
+  user message. A reply adopted with nothing loaded before it is marked
+  `active.partialTurn` and ignores snapshots until the merge clears the flag:
+  when the reply merged with a persisted row, or the loaded history does not
+  end with an assistant row (the reply is then the turn's only row);
+  `reconcileAssistantTextContent` only rewrites the last text item and skips
+  snapshots whose earlier text does not line up.
 - Manual history retry must omit the cached index fingerprint. The Host then
   stats the original Local/WSL/SSH JSONL before reusing a matching projection;
   passing a stale expected fingerprint can otherwise return the old cache.

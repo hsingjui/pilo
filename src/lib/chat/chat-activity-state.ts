@@ -226,6 +226,9 @@ export function reconcileAssistantTextContent(
 			remainingTextItems === 0
 				? text.slice(offset)
 				: text.slice(offset, offset + item.text.length);
+		// Only the streaming tail may differ; a mismatch earlier means the snapshot
+		// covers a different span of the turn, and slicing would garble the text.
+		if (remainingTextItems > 0 && nextText !== item.text) return items;
 		offset += nextText.length;
 		if (nextText === item.text) continue;
 		next[index] = { ...item, text: nextText };
