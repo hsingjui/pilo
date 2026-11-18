@@ -1,5 +1,6 @@
 import {
 	useCallback,
+	useRef,
 	type Dispatch,
 	type MutableRefObject,
 	type SetStateAction,
@@ -21,9 +22,13 @@ type UseRemoteChatAutoTitleOptions = {
 	activeSessionKey: string | null;
 	selectedSession: SessionIndexEntry | null;
 	draftTemporary: boolean;
-	autoTitleRequestedRef: MutableRefObject<boolean>;
 	activeSessionKeyRef: MutableRefObject<string | null>;
 	rpcForSession: RemoteSessionRpc;
+	confirmSessionName: (
+		projectId: string,
+		sessionPath: string,
+		name: string,
+	) => void;
 	refreshProjectSessions: (
 		projectId: string,
 		showProgress?: boolean,
@@ -39,15 +44,16 @@ export function useRemoteChatAutoTitle({
 	activeSessionKey,
 	selectedSession,
 	draftTemporary,
-	autoTitleRequestedRef,
 	activeSessionKeyRef,
 	rpcForSession,
+	confirmSessionName,
 	refreshProjectSessions,
 	handleExpiredAuth,
 	setAgentState,
 	setChatState,
 }: UseRemoteChatAutoTitleOptions) {
 	const { t } = useTranslation();
+	const requestedSessionKeysRef = useRef(new Set<string>());
 	return useCallback(
 		(message: string) => {
 			const prompt = message.trim();
@@ -57,12 +63,12 @@ export function useRemoteChatAutoTitle({
 				!activeSessionKey ||
 				selectedSession ||
 				draftTemporary ||
-				autoTitleRequestedRef.current ||
+				requestedSessionKeysRef.current.has(activeSessionKey) ||
 				!prompt
 			) {
 				return;
 			}
-			autoTitleRequestedRef.current = true;
+			requestedSessionKeysRef.current.add(activeSessionKey);
 			const targetSessionKey = activeSessionKey;
 			void client
 				.generateSessionTitle(activeProjectId, prompt)
@@ -71,17 +77,23 @@ export function useRemoteChatAutoTitle({
 					const state = await rpcForSession<PiAgentState>(targetSessionKey, {
 						type: "get_state",
 					});
-					if (state.sessionName?.trim()) return;
-					await rpcForSession<void>(targetSessionKey, {
-						type: "set_session_name",
-						name: title,
-					});
+					const existingName = state.sessionName?.trim();
+					const name = existingName || title;
+					if (!existingName) {
+						await rpcForSession<void>(targetSessionKey, {
+							type: "set_session_name",
+							name,
+						});
+					}
+					if (state.sessionFile) {
+						confirmSessionName(activeProjectId, state.sessionFile, name);
+					}
 					if (activeSessionKeyRef.current === targetSessionKey) {
 						setAgentState((current) =>
-							current ? { ...current, sessionName: title } : current,
+							current ? { ...current, sessionName: name } : current,
 						);
 						setChatState((current) =>
-							current ? { ...current, name: title } : current,
+							current ? { ...current, name } : current,
 						);
 					}
 					void refreshProjectSessions(activeProjectId, true);
@@ -98,8 +110,8 @@ export function useRemoteChatAutoTitle({
 			activeProjectId,
 			activeSessionKey,
 			activeSessionKeyRef,
-			autoTitleRequestedRef,
 			client,
+			confirmSessionName,
 			draftTemporary,
 			handleExpiredAuth,
 			refreshProjectSessions,

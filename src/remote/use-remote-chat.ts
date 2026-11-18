@@ -83,6 +83,11 @@ type UseRemoteChatOptions = {
 	projects: Project[];
 	rawSessions: SessionIndexEntry[];
 	chatSessions: PiloClientBootstrap["chatSessions"];
+	confirmSessionName: (
+		projectId: string,
+		sessionPath: string,
+		name: string,
+	) => void;
 	refreshProjectSessions: (
 		projectId: string,
 		showProgress?: boolean,
@@ -104,6 +109,7 @@ export function useRemoteChat({
 	projects,
 	rawSessions,
 	chatSessions,
+	confirmSessionName,
 	refreshProjectSessions,
 	refreshAllSessions,
 	scheduleRuntimeActivityRefresh,
@@ -236,7 +242,6 @@ export function useRemoteChat({
 		| ((sessionKey: string, submissions: readonly ChatSubmission[]) => void)
 		| null
 	>(null);
-	const autoTitleRequestedRef = useRef(false);
 	const pendingProjectMcpPromptsRef = useRef(
 		new Map<string, PendingProjectMcpPrompt>(),
 	);
@@ -716,7 +721,6 @@ export function useRemoteChat({
 		chatUiStateCache,
 		projectDraftCache,
 		parkQueuedSubmissions,
-		autoTitleRequestedRef,
 		releaseTemporaryRuntime,
 		refreshProjectSessions,
 		setSelectedSessionPath,
@@ -916,9 +920,9 @@ export function useRemoteChat({
 		activeSessionKey,
 		selectedSession,
 		draftTemporary,
-		autoTitleRequestedRef,
 		activeSessionKeyRef,
 		rpcForSession,
+		confirmSessionName,
 		refreshProjectSessions,
 		handleExpiredAuth,
 		setAgentState,
@@ -978,9 +982,7 @@ export function useRemoteChat({
 		activeSessionKeyRef,
 		getDraft: draftStore.getSnapshot,
 		readOnly,
-		hasSelectedSession: Boolean(selectedSession),
 		hasIdentifiedSession,
-		autoTitleRequestedRef,
 		pendingProjectMcpPromptsRef,
 		projectMcpApprovalRequestedRef,
 		queuedSubmissionsRef,

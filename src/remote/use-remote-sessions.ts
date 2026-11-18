@@ -9,6 +9,7 @@ import {
 import type { PiloClientBootstrap } from "@/lib/api/pilo-client";
 import type { Project } from "@/lib/api/projects";
 import type { SessionIndexEntry } from "@/lib/api/sessions";
+import { runtimeSessionPathKey } from "@/lib/chat/chat-session-runtime-model";
 import type { WebPiloClient } from "./web-pilo-client";
 
 // 外部 Pi 进程不会发出 Host 事件，只能像桌面端一样做低频兜底轮询。
@@ -47,6 +48,7 @@ export function useRemoteSessions({
 		new Map<string, { promise: Promise<void>; rerun: boolean }>(),
 	);
 	const sessionRevisionsRef = useRef(new Map<string, number>());
+	const confirmedNamesRef = useRef(new Map<string, Map<string, string>>());
 	const [externalActivity, setExternalActivity] = useState<
 		ReadonlyMap<string, ProjectExternalActivity>
 	>(() => new Map());
@@ -89,9 +91,57 @@ export function useRemoteSessions({
 		return revision;
 	}, []);
 
+	const confirmSessionName = useCallback(
+		(projectId: string, sessionPath: string, name: string) => {
+			const pathKey = runtimeSessionPathKey(sessionPath);
+			const names = confirmedNamesRef.current.get(projectId) ?? new Map();
+			names.set(pathKey, name);
+			confirmedNamesRef.current.set(projectId, names);
+			setRawSessions((current) => {
+				const index = current.findIndex(
+					(session) =>
+						session.projectId === projectId &&
+						session.name === null &&
+						runtimeSessionPathKey(session.sessionPath) === pathKey,
+				);
+				if (index < 0) return current;
+				const next = current.slice();
+				next[index] = { ...next[index], name };
+				return next;
+			});
+		},
+		[],
+	);
+
+	const mergeIndexedSessions = useCallback(
+		(projectId: string, sessions: SessionIndexEntry[]) => {
+			const names = confirmedNamesRef.current.get(projectId);
+			// An older cached read cannot erase a name already confirmed by Pi.
+			const next = names
+				? sessions.map((session) => {
+						const pathKey = runtimeSessionPathKey(session.sessionPath);
+						if (session.name !== null) {
+							names.delete(pathKey);
+							return session;
+						}
+						const name = names.get(pathKey);
+						return name ? { ...session, name } : session;
+					})
+				: sessions;
+			if (names?.size === 0) confirmedNamesRef.current.delete(projectId);
+			setRawSessions((current) =>
+				mergeProjectSessions(current, projectId, next),
+			);
+		},
+		[],
+	);
+
 	const removeIndexedSession = useCallback(
 		(projectId: string, sessionPath: string) => {
 			advanceSessionRevision(projectId);
+			const names = confirmedNamesRef.current.get(projectId);
+			names?.delete(runtimeSessionPathKey(sessionPath));
+			if (names?.size === 0) confirmedNamesRef.current.delete(projectId);
 			setRawSessions((current) =>
 				current.filter(
 					(session) =>
@@ -128,9 +178,7 @@ export function useRemoteSessions({
 					try {
 						const cached = await client.listCachedSessions(projectId);
 						if (sessionRevisionsRef.current.get(projectId) === cachedRevision) {
-							setRawSessions((current) =>
-								mergeProjectSessions(current, projectId, cached),
-							);
+							mergeIndexedSessions(projectId, cached);
 						}
 					} catch (error) {
 						if (handleExpiredAuth(error)) return;
@@ -143,9 +191,7 @@ export function useRemoteSessions({
 							/* oxlint-disable-next-line no-await-in-loop -- Queued scans must run serially. */
 							const next = await client.listSessions(projectId);
 							if (sessionRevisionsRef.current.get(projectId) === revision) {
-								setRawSessions((current) =>
-									mergeProjectSessions(current, projectId, next),
-								);
+								mergeIndexedSessions(projectId, next);
 							}
 						} catch (error) {
 							if (handleExpiredAuth(error)) return;
@@ -186,7 +232,7 @@ export function useRemoteSessions({
 				}
 			}
 		},
-		[advanceSessionRevision, client, handleExpiredAuth],
+		[advanceSessionRevision, client, handleExpiredAuth, mergeIndexedSessions],
 	);
 
 	useEffect(() => {
@@ -228,9 +274,7 @@ export function useRemoteSessions({
 					sessionRevisionsRef.current.get(projectId) !== sessionRevision
 				)
 					return;
-				setRawSessions((current) =>
-					mergeProjectSessions(current, projectId, cached),
-				);
+				mergeIndexedSessions(projectId, cached);
 			};
 			void refresh().catch((error) => {
 				if (isCurrent() && !handleExpiredAuth(error)) {
@@ -245,7 +289,7 @@ export function useRemoteSessions({
 			disposed = true;
 			unlisten();
 		};
-	}, [client, handleExpiredAuth, projectIds]);
+	}, [client, handleExpiredAuth, mergeIndexedSessions, projectIds]);
 
 	const refreshAllSessions = useCallback(async () => {
 		if (!client) {
@@ -373,6 +417,7 @@ export function useRemoteSessions({
 		bootstrapSettled,
 		chatSessions,
 		rawSessions,
+		confirmSessionName,
 		removeIndexedSession,
 		externalActivity,
 		isExternalOpenTurn,

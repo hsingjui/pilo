@@ -169,6 +169,7 @@ function RemoteWorkspace() {
 		projects: sessions.projects,
 		rawSessions: sessions.rawSessions,
 		chatSessions: sessions.chatSessions,
+		confirmSessionName: sessions.confirmSessionName,
 		refreshProjectSessions: sessions.refreshProjectSessions,
 		refreshAllSessions: sessions.refreshAllSessions,
 		scheduleRuntimeActivityRefresh: sessions.scheduleRuntimeActivityRefresh,

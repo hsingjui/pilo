@@ -1,9 +1,4 @@
-import {
-	type Dispatch,
-	type MutableRefObject,
-	type SetStateAction,
-	useCallback,
-} from "react";
+import { type Dispatch, type SetStateAction, useCallback } from "react";
 
 import { chatUiStateKey } from "@/components/app/app-chat-state";
 import type {
@@ -37,7 +32,6 @@ type UseRemoteChatDraftActionsOptions = {
 	chatUiStateCache: ChatUiStateCache;
 	projectDraftCache: ProjectDraftCache;
 	parkQueuedSubmissions: () => void;
-	autoTitleRequestedRef: MutableRefObject<boolean>;
 	releaseTemporaryRuntime: () => void;
 	refreshProjectSessions: (
 		projectId: string,
@@ -77,7 +71,6 @@ export function useRemoteChatDraftActions({
 	chatUiStateCache,
 	projectDraftCache,
 	parkQueuedSubmissions,
-	autoTitleRequestedRef,
 	releaseTemporaryRuntime,
 	refreshProjectSessions,
 	setSelectedSessionPath,
@@ -132,14 +125,12 @@ export function useRemoteChatDraftActions({
 					: "",
 			);
 			setImages([]);
-			autoTitleRequestedRef.current = false;
 			setVisualReadyRouteKey(null);
 			if (targetProjectId) setDraftProjectId(targetProjectId);
 			if (isNarrow) closeMobileNavigation();
 		},
 		[
 			activeProjectId,
-			autoTitleRequestedRef,
 			closeMobileNavigation,
 			draftTemporary,
 			hasChatSession,
@@ -199,11 +190,9 @@ export function useRemoteChatDraftActions({
 			setDraftThinkingLevel(null);
 			restoreComposer(projectDraftCache.get(projectId));
 			setImages([]);
-			autoTitleRequestedRef.current = false;
 			setVisualReadyRouteKey(null);
 		},
 		[
-			autoTitleRequestedRef,
 			projectDraftCache,
 			parkQueuedSubmissions,
 			releaseTemporaryRuntime,

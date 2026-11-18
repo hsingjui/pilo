@@ -43,7 +43,7 @@ export type PendingProjectMcpPrompt = {
 	sessionKey: string;
 	clientMessageId: string;
 	submission: ChatSubmission;
-	shouldAutoTitle: boolean;
+	requestAutoTitle: (message: string) => void;
 };
 
 type SubmissionPhase = "preparing" | "sending";
@@ -54,9 +54,7 @@ type UseRemoteChatActionsOptions = {
 	activeSessionKeyRef: RefObject<string | null>;
 	getDraft: () => string;
 	readOnly: boolean;
-	hasSelectedSession: boolean;
 	hasIdentifiedSession: boolean;
-	autoTitleRequestedRef: RefObject<boolean>;
 	pendingProjectMcpPromptsRef: RefObject<Map<string, PendingProjectMcpPrompt>>;
 	projectMcpApprovalRequestedRef: RefObject<Set<string>>;
 	queuedSubmissionsRef: RefObject<Map<string, QueuedSubmission>>;
@@ -82,9 +80,7 @@ export function useRemoteChatActions({
 	activeSessionKeyRef,
 	getDraft,
 	readOnly,
-	hasSelectedSession,
 	hasIdentifiedSession,
-	autoTitleRequestedRef,
 	pendingProjectMcpPromptsRef,
 	projectMcpApprovalRequestedRef,
 	queuedSubmissionsRef,
@@ -272,10 +268,6 @@ export function useRemoteChatActions({
 			const submissionSessionKey = activeSessionKey;
 			const isActiveSession = () =>
 				activeSessionKeyRef.current === submissionSessionKey;
-			const shouldAutoTitle =
-				mode === "prompt" &&
-				!hasSelectedSession &&
-				!autoTitleRequestedRef.current;
 			const now = Date.now();
 			const clientMessageId = randomId();
 			const descriptors = summarizeChatImages(submission.images);
@@ -351,22 +343,19 @@ export function useRemoteChatActions({
 									images: toPiImageContents(submission.images),
 								})
 							)?.disposition !== "handled";
-				// Pi handled it without queueing, so a later stall must not restore it.
-				if (!accepted && queuedClientMessageId)
+				if (mode === "prompt") {
+					// An accepted first prompt owns its title even after navigation.
+					if (accepted) requestAutoTitle(submission.text);
+				} else if (!accepted && queuedClientMessageId) {
+					// Pi handled it without queueing, so a later stall must not restore it.
 					forgetQueuedSubmission(queuedClientMessageId);
-				if (!isActiveSession()) return;
-				if (!accepted) {
-					// `sendPrompt` already rolled back its own optimistic prompt; queued
-					// steer/follow-up messages still need the local rollback here.
-					if (mode !== "prompt") {
+					if (isActiveSession()) {
 						runLocalAction({
 							type: "local_user_queue_failed",
 							clientMessageId,
 						});
 					}
-					return;
 				}
-				if (shouldAutoTitle) requestAutoTitle(submission.text);
 			} catch (error) {
 				if (
 					!queuedClientMessageId &&
@@ -378,7 +367,7 @@ export function useRemoteChatActions({
 							sessionKey: submissionSessionKey,
 							clientMessageId,
 							submission,
-							shouldAutoTitle,
+							requestAutoTitle,
 						});
 					}
 					return;
@@ -425,7 +414,6 @@ export function useRemoteChatActions({
 		[
 			activeSessionKey,
 			activeSessionKeyRef,
-			autoTitleRequestedRef,
 			clearComposer,
 			client,
 			ensureDraftRuntime,
@@ -441,7 +429,6 @@ export function useRemoteChatActions({
 			rpcForSession,
 			runLocalAction,
 			sendPrompt,
-			hasSelectedSession,
 			tryHandleComposerCommand,
 			setFatalError,
 			setSubmissionPhase,
@@ -717,9 +704,7 @@ export function useRemoteChatActions({
 					pending.submission,
 					pending.clientMessageId,
 				);
-				if (isActiveSession() && pending.shouldAutoTitle && started) {
-					requestAutoTitle(pending.submission.text);
-				}
+				if (started) pending.requestAutoTitle(pending.submission.text);
 			} catch (error) {
 				if (isActiveSession()) {
 					runLocalAction({
@@ -753,7 +738,6 @@ export function useRemoteChatActions({
 			handleExpiredAuth,
 			pendingProjectMcpPromptsRef,
 			projectMcpApprovalRequestedRef,
-			requestAutoTitle,
 			runLocalAction,
 			sendPrompt,
 			setFatalError,
