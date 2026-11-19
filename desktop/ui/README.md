@@ -46,6 +46,19 @@
   composes a 3pt ring with the small shadow; rendered rings need native screenshots.
   Its native shadow transition is stretched to 2s by the fixture's block probe;
   the component keeps the standard transition duration.
+- Textarea is a shadowless multiline field, unlike Input's 80pt-minimum multiline
+  mode. `rows` defaults to two (58pt); positive row counts use the standard 20pt
+  line height with 8pt vertical padding and a 1pt border. Invalid counts fall back
+  to two. Caller classes/styles can override height; custom typography needs a
+  matching caller height. Native Input has no browser drag-resize handle or
+  intrinsic CSS rows. Autosizing stays caller-owned via `onContentSizeChange`,
+  as in the React composer's separate resize hook; the fixture shows growth,
+  shrinkage and a cap. Give each field an `accessibilityLabel`. Rendered focus
+  rings and placeholder/foreground colors are verified with native screenshots.
+  macOS native typing drops the requested 20pt leading to the font's ~17pt,
+  unlike initialized text and React; explicit inline `lineHeight: 20` does not
+  restore it. Box/rows geometry remains unchanged. This SDK typing-attributes
+  mismatch is verified only by native screenshots, not `nsh/test` view styles.
 - Toast/ToastStack wrap native presentation; callers own a `ToastManager`
   (re-exported from `toast-stack`). Push with `{ timeout: durationInMs }` for
   auto-dismiss; omit timeout for a persistent toast. Advance on a timer, pausing
