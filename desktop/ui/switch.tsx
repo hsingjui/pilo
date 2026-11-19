@@ -1,9 +1,10 @@
-import { split } from "nsh";
+import { split, token } from "nsh";
 import {
 	Switch as BaseSwitch,
 	type SwitchProps as BaseSwitchProps,
 } from "nsh/base";
 import { styleVar } from "./theme-style";
+import { focusRingStyle } from "./focus-ring-style";
 
 export type SwitchProps = Omit<BaseSwitchProps, "children">;
 
@@ -14,18 +15,25 @@ export function Switch(props: SwitchProps) {
 		"trackClass",
 		"thumbClass",
 		"thumbStyle",
+		"focusVisibleStyle",
 	]);
 	return (
 		<BaseSwitch
 			{...rest}
 			class={[
-				"h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50",
+				"h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-hidden disabled:opacity-50",
 				props.checked ? "bg-primary" : "bg-switch-track",
 				local.class,
 			]
 				.filter(Boolean)
 				.join(" ")}
 			style={[{ boxShadow: styleVar("pilo-shadow-xs") }, local.style]}
+			focusVisibleStyle={focusRingStyle(
+				token("ring"),
+				styleVar("pilo-shadow-xs"),
+				local.focusVisibleStyle,
+				{ width: 2, opacity: 100, offset: 2, offsetColor: token("background") },
+			)}
 			trackClass={["w-9 h-5 p-0.5", local.trackClass].filter(Boolean).join(" ")}
 			thumbClass={[
 				"size-4 rounded-full bg-background transition-transform",

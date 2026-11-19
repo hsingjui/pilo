@@ -10,6 +10,9 @@
   When switching themes, pair `setTheme({ cssVars: theme.cssVars })` with
   `setStyleTheme(theme.styleVars)`; pair both with `null` to restore Lody.
   The helper follows light/dark appearance with the same fallback order as NSH.
+- Input/Button/Switch/Tab/Select compose focus rings and their base shadow in native `focusVisibleStyle`;
+  caller state styles win. `nsh/test` checks composition and keyboard focus, but
+  rendered rings require native screenshot verification (shadow styles are not exposed).
 - Compose icons as children. Icons default to 16 points and the nearest
   `Foreground` context (provided by Button), or the foreground token outside it.
   An explicit icon color overrides the context. An icon without an

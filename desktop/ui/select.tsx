@@ -3,6 +3,7 @@ import { Select as BaseSelect, type SelectProps } from "nsh/base";
 import { classNames } from "./class-names";
 import { Icon } from "./icon";
 import { styleVar } from "./theme-style";
+import { focusRingStyle } from "./focus-ring-style";
 
 export type { SelectProps, SelectItem } from "nsh/base";
 
@@ -34,8 +35,12 @@ export function Select(props: SelectProps) {
 				local.trigger ?? (
 					<View
 						disabled={props.disabled}
-						class="flex-row w-full items-center justify-between gap-2 h-(--pilo-field-height) rounded-(--pilo-radius-md) border border-input-border bg-input-field px-3 py-2 text-sm font-sans text-input-foreground hover:border-(--pilo-field-hover-border) focus-visible:border-(--pilo-field-focus-border) focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring/60 disabled:bg-muted disabled:opacity-60"
+						class="flex-row w-full items-center justify-between gap-2 h-(--pilo-field-height) rounded-(--pilo-radius-md) border border-input-border bg-input-field px-3 py-2 text-sm font-sans text-input-foreground hover:border-(--pilo-field-hover-border) focus-visible:border-(--pilo-field-focus-border) focus-visible:outline-hidden disabled:bg-muted disabled:opacity-60"
 						style={{ boxShadow: styleVar("pilo-field-shadow") }}
+						focusVisibleStyle={focusRingStyle(
+							token("ring"),
+							styleVar("pilo-field-shadow"),
+						)}
 					>
 						<Text
 							class={classNames("flex-1", !title() && "text-input-placeholder")}

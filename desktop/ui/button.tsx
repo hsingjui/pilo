@@ -1,4 +1,4 @@
-import { split, token, type StyleProp, type ViewStyle } from "nsh";
+import { split, token } from "nsh";
 import {
 	Button as BaseButton,
 	type ButtonProps as BaseButtonProps,
@@ -6,6 +6,7 @@ import {
 import { styleVar } from "./theme-style";
 import { Foreground } from "./foreground";
 import { classNames } from "./class-names";
+import { focusRingStyle } from "./focus-ring-style";
 
 const variants = {
 	default: "bg-primary text-primary-foreground hover:bg-button-hover",
@@ -44,33 +45,42 @@ export function buttonVariants(
 	props: Pick<ButtonProps, "variant" | "size" | "class"> = {},
 ) {
 	return classNames(
-		"flex-row items-center justify-center gap-(--pilo-button-gap) whitespace-nowrap rounded-(--pilo-radius-md) text-sm font-medium font-sans text-foreground transition-[color,background-color,border-color,scale] active:scale-[0.96] focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring/60 disabled:opacity-50",
+		"flex-row items-center justify-center gap-(--pilo-button-gap) whitespace-nowrap rounded-(--pilo-radius-md) text-sm font-medium font-sans text-foreground transition-[color,background-color,border-color,scale] active:scale-[0.96] focus-visible:outline-hidden disabled:opacity-50",
 		variants[props.variant ?? "default"],
 		sizes[props.size ?? "default"],
 		props.class,
 	);
 }
 
-function shadow(variant: ButtonProps["variant"]): StyleProp<ViewStyle> {
+function shadow(variant: ButtonProps["variant"]): string | undefined {
 	if (variant === "ghost" || variant === "link") return undefined;
-	return {
-		boxShadow: styleVar(
-			variant === "default" || variant === undefined
-				? "pilo-button-primary-shadow"
-				: "pilo-button-secondary-shadow",
-		),
-	};
+	return styleVar(
+		variant === "default" || variant === undefined
+			? "pilo-button-primary-shadow"
+			: "pilo-button-secondary-shadow",
+	);
 }
 
 export function Button(props: ButtonProps) {
-	const [local, rest] = split(props, ["variant", "size", "class", "style"]);
+	const [local, rest] = split(props, [
+		"variant",
+		"size",
+		"class",
+		"style",
+		"focusVisibleStyle",
+	]);
 	const foreground = () => token(foregrounds[local.variant ?? "default"]);
 	return (
 		<Foreground.Provider value={foreground}>
 			<BaseButton
 				{...rest}
 				class={buttonVariants(local)}
-				style={[shadow(local.variant), local.style]}
+				style={[{ boxShadow: shadow(local.variant) }, local.style]}
+				focusVisibleStyle={focusRingStyle(
+					token("ring"),
+					shadow(local.variant),
+					local.focusVisibleStyle,
+				)}
 			/>
 		</Foreground.Provider>
 	);
