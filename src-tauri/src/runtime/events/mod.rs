@@ -21,6 +21,7 @@ mod recovery_tests;
 mod session_reads;
 mod stream;
 mod trace;
+pub mod turn_projection;
 
 pub use model::*;
 pub use stream::{EventBatch, EventQueueLimits, EventStream};
