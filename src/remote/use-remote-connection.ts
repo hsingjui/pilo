@@ -182,8 +182,25 @@ export function useRemoteConnection({
 					setFatalError(error instanceof Error ? error.message : String(error));
 				}
 			});
+		// Backoff timers are throttled or frozen in background tabs; returning to
+		// the foreground reconnects immediately instead of waiting them out.
+		const reconnectOnForeground = () => {
+			if (
+				cancelled ||
+				document.visibilityState !== "visible" ||
+				reconnectTimer === undefined ||
+				!browserOnlineRef.current
+			)
+				return;
+			// This socket generation is being replaced; ignore its late close events.
+			cancelled = true;
+			reconnectAttemptsRef.current = 0;
+			setReconnectKey((value) => value + 1);
+		};
+		document.addEventListener("visibilitychange", reconnectOnForeground);
 		return () => {
 			cancelled = true;
+			document.removeEventListener("visibilitychange", reconnectOnForeground);
 			if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
 			disconnect?.();
 		};
