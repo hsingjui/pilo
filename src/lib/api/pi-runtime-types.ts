@@ -6,6 +6,7 @@ import type { PromptEnhancementSettings } from "../prompt-enhancement";
 import type { ProjectModelScope } from "../project-model-scope";
 import type { ThemeSettings } from "../theme-settings";
 import type { SessionReadState } from "../session-read-state";
+import type { SessionExternalActivity } from "./sessions";
 
 export type PiProcessState =
 	| "stopped"
@@ -177,6 +178,12 @@ export type PiloRuntimeEvent = {
 	| { type: "project_model_scope_changed"; scope: ProjectModelScope }
 	| { type: "sessions_indexed"; projectId: string }
 	| { type: "session_index_error"; projectId: string; message: string }
+	| {
+			/** Host-detected open turns of external Pi processes in one project. */
+			type: "external_session_activity_changed";
+			projectId: string;
+			activities: SessionExternalActivity[];
+	  }
 	| {
 			type: "cache_keep_alive_settings_changed";
 			settings: CacheKeepAliveSettings;

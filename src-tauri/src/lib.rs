@@ -296,6 +296,8 @@ pub fn run() {
             initialize_windows_notification_application(app);
             app.state::<runtime::RuntimeEventBus>()
                 .initialize_session_reads(app.handle())?;
+            app.state::<runtime::RuntimeEventBus>()
+                .start_external_activity_poll(app.handle().clone());
             if let Err(error) = desktop_shortcut::install(app.handle()) {
                 log::error!(target: "desktop", "global show shortcut unavailable: {error}");
             }

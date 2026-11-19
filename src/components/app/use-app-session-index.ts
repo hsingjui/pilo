@@ -14,7 +14,10 @@ import {
 	listChatSessionRuntimeStates,
 	type ChatSessionRuntimeState,
 } from "@/lib/api/chat-session-client";
-import { listenRuntimeEvents } from "@/lib/api/pi-runtime";
+import {
+	listenRuntimeEvents,
+	primeRuntimeEventChannel,
+} from "@/lib/api/pi-runtime";
 import {
 	chatRpcChangesActivity,
 	chatRpcRenamesSession,
@@ -29,14 +32,13 @@ import {
 	startSessionWatch,
 	stopSessionWatch,
 	updateSessionUiState,
+	type SessionExternalActivity,
 	type SessionIndexEntry,
 } from "@/lib/api/sessions";
 
 type SessionUiUpdate = {
 	title?: string;
 };
-
-const EXTERNAL_ACTIVITY_FALLBACK_POLL_MS = 15_000;
 
 export function useAppSessionIndex(projectIds: readonly string[]) {
 	const [indexedSessions, setIndexedSessions] = useState<SessionIndexEntry[]>(
@@ -104,6 +106,32 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 		[],
 	);
 
+	const applyExternalActivity = useCallback(
+		(projectId: string, activities: readonly SessionExternalActivity[]) => {
+			const nextActivity = toProjectExternalActivity(activities);
+			setExternalActivity((current) => {
+				const previous = current.get(projectId);
+				if (
+					previous &&
+					sameStringSet(previous.openTurnPaths, nextActivity.openTurnPaths)
+				) {
+					return current;
+				}
+				if (nextActivity.openTurnPaths.size === 0) {
+					if (!previous) return current;
+					const nextMap = new Map(current);
+					nextMap.delete(projectId);
+					return nextMap;
+				}
+				const nextMap = new Map(current);
+				nextMap.set(projectId, nextActivity);
+				return nextMap;
+			});
+		},
+		[],
+	);
+
+	// Initial load only; the Host pushes later changes as runtime events.
 	const refreshExternalActivity = useCallback(
 		(projectId: string) => {
 			const generation = projectGenerationsRef.current.get(projectId);
@@ -117,28 +145,17 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 			if (existing?.generation === generation) return existing.promise;
 
 			let tracked: Promise<void>;
-			tracked = getExternalSessionActivity(projectId)
-				.then((activities) => {
+			tracked = primeRuntimeEventChannel()
+				.then(async () => {
 					if (!isCurrentProjectGeneration(projectId, generation)) return;
-					const nextActivity = toProjectExternalActivity(activities);
-					setExternalActivity((current) => {
-						const previous = current.get(projectId);
-						if (
-							previous &&
-							sameStringSet(previous.openTurnPaths, nextActivity.openTurnPaths)
-						) {
-							return current;
-						}
-						if (nextActivity.openTurnPaths.size === 0) {
-							if (!previous) return current;
-							const nextMap = new Map(current);
-							nextMap.delete(projectId);
-							return nextMap;
-						}
-						const nextMap = new Map(current);
-						nextMap.set(projectId, nextActivity);
-						return nextMap;
-					});
+					const activities = await getExternalSessionActivity(projectId);
+					if (
+						isCurrentProjectGeneration(projectId, generation) &&
+						externalActivityRequestsRef.current.get(projectId)?.promise ===
+							tracked
+					) {
+						applyExternalActivity(projectId, activities);
+					}
 				})
 				.catch((error) => {
 					// A failed probe means activity is unknown, not that turns completed.
@@ -158,7 +175,7 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 			});
 			return tracked;
 		},
-		[isCurrentProjectGeneration],
+		[applyExternalActivity, isCurrentProjectGeneration],
 	);
 
 	const refreshRuntimeActivity = useCallback(() => {
@@ -228,10 +245,7 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 				};
 				const run = async (): Promise<SessionIndexEntry[] | undefined> => {
 					refreshState.rerun = false;
-					const [result] = await Promise.all([
-						reconcileSessions(projectId),
-						refreshExternalActivity(projectId),
-					]);
+					const result = await reconcileSessions(projectId);
 					if (!isCurrentProjectGeneration(projectId, generation)) return;
 					setIndexedSessions((current) =>
 						mergeProjectSessions(current, projectId, result.sessions),
@@ -261,7 +275,7 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 				}
 			}
 		},
-		[isCurrentProjectGeneration, refreshExternalActivity],
+		[isCurrentProjectGeneration],
 	);
 	/* oxlint-enable react/memo-dependencies */
 
@@ -370,17 +384,17 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 				void refreshRuntimeActivity();
 			}, 40);
 		};
-		const refreshKnownProjects = () => {
-			queueRuntimeActivityRefresh();
-			for (const projectId of watchedProjectIdsRef.current) {
-				void refreshExternalActivity(projectId);
-			}
-		};
-
 		queueRuntimeActivityRefresh();
-		window.addEventListener("focus", refreshKnownProjects);
+		window.addEventListener("focus", queueRuntimeActivityRefresh);
 		void listenRuntimeEvents((event) => {
 			switch (event.type) {
+				case "external_session_activity_changed":
+					if (watchedProjectIdsRef.current.has(event.projectId)) {
+						// A snapshot already in flight must not undo this push.
+						externalActivityRequestsRef.current.delete(event.projectId);
+						applyExternalActivity(event.projectId, event.activities);
+					}
+					break;
 				case "user_message_start":
 				case "assistant_message_start":
 				case "assistant_message_end":
@@ -471,35 +485,17 @@ export function useAppSessionIndex(projectIds: readonly string[]) {
 			if (runtimeRefreshTimer !== undefined) {
 				window.clearTimeout(runtimeRefreshTimer);
 			}
-			window.removeEventListener("focus", refreshKnownProjects);
+			window.removeEventListener("focus", queueRuntimeActivityRefresh);
 			unlistenRuntime?.();
 			unlistenSessionWatch?.();
 		};
 	}, [
+		applyExternalActivity,
 		isCurrentProjectGeneration,
-		refreshExternalActivity,
 		refreshProjectSessions,
 		refreshRuntimeActivity,
 		replaceProjectSessions,
 	]);
-
-	useEffect(() => {
-		const poll = () => {
-			if (document.visibilityState !== "visible") return;
-			for (const projectId of watchedProjectIdsRef.current) {
-				void refreshExternalActivity(projectId);
-			}
-		};
-		const handleVisibilityChange = () => {
-			if (document.visibilityState === "visible") poll();
-		};
-		const timer = window.setInterval(poll, EXTERNAL_ACTIVITY_FALLBACK_POLL_MS);
-		document.addEventListener("visibilitychange", handleVisibilityChange);
-		return () => {
-			window.clearInterval(timer);
-			document.removeEventListener("visibilitychange", handleVisibilityChange);
-		};
-	}, [refreshExternalActivity]);
 
 	useEffect(
 		() => () => {

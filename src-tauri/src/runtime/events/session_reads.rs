@@ -1,10 +1,11 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex as StdMutex},
+    time::Duration,
 };
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager as _};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -12,6 +13,7 @@ use crate::{
     runtime::{
         PiloRuntime,
         host_paths::HostPaths,
+        pi_workspace, project,
         session_activity::{self, SessionExternalActivity},
         storage,
     },
@@ -20,6 +22,15 @@ use crate::{
 use super::{RuntimeEvent, RuntimeEventBus, RuntimeEventEnvelope};
 
 pub(super) type ExternalReadActivity = Arc<StdMutex<HashMap<String, Arc<Mutex<HashSet<String>>>>>>;
+/// Projects with a scheduled refresh worker and whether they need a rerun.
+pub(super) type ExternalActivityRefreshes = Arc<StdMutex<HashMap<String, bool>>>;
+
+/// Session file writes drive external activity refreshes. Polling only covers
+/// open external turns (a crashed Pi writes nothing) and unwatched projects
+/// on existing connections.
+const EXTERNAL_ACTIVITY_POLL_INTERVAL: Duration = Duration::from_secs(15);
+/// Spacing between event-driven reruns while an external turn keeps writing.
+const EXTERNAL_ACTIVITY_RERUN_DELAY: Duration = Duration::from_secs(2);
 
 struct SessionCompletion {
     project_id: String,
@@ -83,6 +94,18 @@ impl RuntimeEventBus {
         runtime: &PiloRuntime,
         project: &Project,
     ) -> Result<Vec<SessionExternalActivity>, String> {
+        self.update_external_session_activity(
+            project,
+            session_activity::external_session_activities_for_project(runtime, project, None),
+        )
+        .await
+    }
+
+    async fn update_external_session_activity(
+        &self,
+        project: &Project,
+        probe: impl Future<Output = Result<Vec<SessionExternalActivity>, String>>,
+    ) -> Result<Vec<SessionExternalActivity>, String> {
         let activity = self
             .external_read_activity
             .lock()
@@ -90,22 +113,36 @@ impl RuntimeEventBus {
             .entry(project.id.clone())
             .or_default()
             .clone();
-        // Serialize Desktop/WebUI polls per project so stale replies cannot
-        // turn one external completion into multiple unread revisions.
+        // Serialize snapshots and background probes per project so stale replies
+        // cannot turn one external completion into multiple unread revisions.
         let mut previous = activity.lock().await;
-        let activities =
-            session_activity::external_session_activities_for_project(runtime, project).await?;
-        for entry in &activities {
-            if !entry.turn_open && previous.contains(&entry.path) {
-                self.record_session_completion(project.id.clone(), entry.path.clone());
+        let result = probe.await;
+        if let Ok(activities) = &result {
+            for entry in activities {
+                if !entry.turn_open && previous.contains(&entry.path) {
+                    self.record_session_completion(project.id.clone(), entry.path.clone());
+                }
             }
+            // A disappeared process is not proof of a completed turn.
+            let open_paths = activities
+                .iter()
+                .filter(|entry| entry.turn_open)
+                .map(|entry| entry.path.clone())
+                .collect::<HashSet<_>>();
+            if open_paths != *previous {
+                self.send(RuntimeEventEnvelope::global(
+                    RuntimeEvent::ExternalSessionActivityChanged {
+                        project_id: project.id.clone(),
+                        activities: activities
+                            .iter()
+                            .filter(|entry| entry.turn_open)
+                            .cloned()
+                            .collect(),
+                    },
+                ));
+            }
+            *previous = open_paths;
         }
-        // A disappeared process is not proof of a completed turn.
-        *previous = activities
-            .iter()
-            .filter(|entry| entry.turn_open)
-            .map(|entry| entry.path.clone())
-            .collect();
         if previous.is_empty() {
             let mut registry = self
                 .external_read_activity
@@ -116,7 +153,147 @@ impl RuntimeEventBus {
                 registry.remove(&project.id);
             }
         }
-        Ok(activities)
+        result
+    }
+
+    async fn refresh_cached_external_activity(
+        &self,
+        app: &AppHandle,
+        project_id: &str,
+    ) -> Result<(), String> {
+        let runtime = app.state::<PiloRuntime>();
+        if runtime.servers.is_shutting_down() {
+            return Ok(());
+        }
+        let project = pi_workspace::resolve_session_project(app, &project::get(app, project_id)?)?;
+        if project.default_workspace_pending() {
+            return Ok(());
+        }
+        // A delayed watcher trigger must never connect or replace a live client.
+        let Some(client) = runtime.servers.cached_client(&project.connection).await else {
+            return Ok(());
+        };
+        self.update_external_session_activity(&project, async {
+            let activities = session_activity::external_session_activities_for_project(
+                &runtime,
+                &project,
+                Some(&client),
+            )
+            .await?;
+            if !runtime
+                .servers
+                .cached_client(&project.connection)
+                .await
+                .is_some_and(|current| Arc::ptr_eq(&current, &client))
+            {
+                return Err("pilo-server client changed during external activity probe".to_owned());
+            }
+            Ok(activities)
+        })
+        .await?;
+        Ok(())
+    }
+
+    /// Refreshes one project's external activity off the caller's task. Triggers
+    /// that arrive while a refresh runs collapse into one delayed rerun.
+    pub(crate) fn schedule_external_activity_refresh(&self, app: &AppHandle, project_id: &str) {
+        {
+            let mut refreshes = self
+                .external_activity_refreshes
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(pending) = refreshes.get_mut(project_id) {
+                *pending = true;
+                return;
+            }
+            refreshes.insert(project_id.to_owned(), false);
+        }
+        let events = self.clone();
+        let app = app.clone();
+        let project_id = project_id.to_owned();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                if let Err(error) = events
+                    .refresh_cached_external_activity(&app, &project_id)
+                    .await
+                {
+                    log::debug!(target: "session-reads", "external activity refresh failed: {error}");
+                }
+                let rerun = {
+                    let mut refreshes = events
+                        .external_activity_refreshes
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    let rerun = refreshes.get(&project_id).copied().unwrap_or_default();
+                    if !rerun {
+                        refreshes.remove(&project_id);
+                    }
+                    rerun
+                };
+                if !rerun {
+                    return;
+                }
+                tokio::time::sleep(EXTERNAL_ACTIVITY_RERUN_DELAY).await;
+                if let Some(pending) = events
+                    .external_activity_refreshes
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .get_mut(&project_id)
+                {
+                    *pending = false;
+                }
+            }
+        });
+    }
+
+    /// Host-owned fallback for what session file events cannot report: an
+    /// external Pi that exits mid-turn, a fallback-inferred turn going stale,
+    /// and projects without a live session watcher.
+    pub(crate) fn start_external_activity_poll(&self, app: AppHandle) {
+        let events = self.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut tick = tokio::time::interval(EXTERNAL_ACTIVITY_POLL_INTERVAL);
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            tick.tick().await;
+            loop {
+                tick.tick().await;
+                let runtime = app.state::<PiloRuntime>();
+                if runtime.servers.is_shutting_down() {
+                    return;
+                }
+                let open_project_ids = events
+                    .external_read_activity
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .keys()
+                    .cloned()
+                    .collect::<HashSet<_>>();
+                let Ok(projects) = project::list(&app) else {
+                    continue;
+                };
+                let mut projects = projects
+                    .iter()
+                    .filter_map(|project| pi_workspace::resolve_session_project(&app, project).ok())
+                    .filter(|project| !project.default_workspace_pending())
+                    .collect::<Vec<_>>();
+                {
+                    let watchers = runtime.session_watchers.lock().await;
+                    projects.retain(|project| {
+                        open_project_ids.contains(&project.id) || !watchers.covers(project)
+                    });
+                }
+                for project in projects {
+                    if runtime
+                        .servers
+                        .cached_client(&project.connection)
+                        .await
+                        .is_some()
+                    {
+                        events.schedule_external_activity_refresh(&app, &project.id);
+                    }
+                }
+            }
+        });
     }
 
     pub(crate) fn record_session_completion(&self, project_id: String, session_path: String) {

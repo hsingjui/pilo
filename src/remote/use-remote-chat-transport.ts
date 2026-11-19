@@ -150,6 +150,7 @@ export function useRemoteChatTransport({
 				if (
 					event.type === "sessions_indexed" ||
 					event.type === "session_index_error" ||
+					event.type === "external_session_activity_changed" ||
 					event.type === "theme_settings_changed" ||
 					event.type === "session_read_state_changed"
 				)

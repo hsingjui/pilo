@@ -79,6 +79,12 @@ pub enum RuntimeEvent {
         project_id: String,
         message: String,
     },
+    /// Host-detected external Pi activity changed for one project.
+    ExternalSessionActivityChanged {
+        #[serde(rename = "projectId")]
+        project_id: String,
+        activities: Vec<super::super::session_activity::SessionExternalActivity>,
+    },
     SessionReadStateChanged {
         state: crate::domain::SessionReadState,
         #[serde(rename = "completionId", skip_serializing_if = "Option::is_none")]

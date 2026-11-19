@@ -196,7 +196,10 @@ impl ServerManager {
         Ok(Some(client))
     }
 
-    async fn cached_client(&self, connection: &Connection) -> Option<Arc<ServerClient>> {
+    pub(in crate::runtime) async fn cached_client(
+        &self,
+        connection: &Connection,
+    ) -> Option<Arc<ServerClient>> {
         self.clients
             .lock()
             .await

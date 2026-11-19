@@ -83,6 +83,7 @@ export function toConversationAction(
 		case "cache_keep_alive_settings_changed":
 		case "sessions_indexed":
 		case "session_index_error":
+		case "external_session_activity_changed":
 		case "session_read_state_changed":
 		case "session_turn_completed":
 		case "pi_reattached":

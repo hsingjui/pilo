@@ -1,19 +1,24 @@
 use std::{
-    collections::HashMap,
-    sync::Arc,
+    collections::{HashMap, HashSet},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
 use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager as _};
 use tokio::{sync::Mutex as AsyncMutex, task::JoinHandle};
 
 use crate::domain::Project;
 
 use super::{
+    PiloRuntime, RuntimeEventBus,
     connection_diagnostics::request_failure_reason,
+    events::PiProcessState,
     pi_workspace,
     server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager},
     session_index,
@@ -45,6 +50,8 @@ enum SessionWatchEvent {
 }
 
 struct WatchHandle {
+    project: Project,
+    live: Arc<AtomicBool>,
     current_client: Arc<AsyncMutex<Arc<ServerClient>>>,
     stream_id: String,
     task: JoinHandle<()>,
@@ -91,6 +98,8 @@ impl SessionWatcherManager {
         let project_path = session_project.path.clone();
         let connection = session_project.connection.clone();
         let event_project = project.clone();
+        let live = Arc::new(AtomicBool::new(true));
+        let event_live = Arc::clone(&live);
         let event_app = app.clone();
         let event_servers = Arc::clone(&servers);
         let event_client = Arc::clone(&current_client);
@@ -123,6 +132,14 @@ impl SessionWatcherManager {
                                     .get("full")
                                     .and_then(Value::as_bool)
                                     .unwrap_or(paths.is_empty() && removed_paths.is_empty());
+                                refresh_external_activity(
+                                    &event_app,
+                                    &project_id,
+                                    full_refresh,
+                                    &paths,
+                                    &removed_paths,
+                                )
+                                .await;
                                 if full_refresh {
                                     notices.changed();
                                 } else {
@@ -156,14 +173,18 @@ impl SessionWatcherManager {
                                     .and_then(serde_json::Value::as_str)
                                     .unwrap_or("server"),
                             ),
-                            "session.error" => notices.error(
-                                "backend",
-                                event
-                                    .data
-                                    .get("message")
-                                    .and_then(serde_json::Value::as_str)
-                                    .unwrap_or("pilo-server session watcher failed"),
-                            ),
+                            "session.error" => {
+                                // The failed notification may have been the only write.
+                                event_live.store(false, Ordering::Relaxed);
+                                notices.error(
+                                    "backend",
+                                    event
+                                        .data
+                                        .get("message")
+                                        .and_then(serde_json::Value::as_str)
+                                        .unwrap_or("pilo-server session watcher failed"),
+                                );
+                            }
                             _ => {}
                         }
                         continue;
@@ -171,6 +192,7 @@ impl SessionWatcherManager {
                     None => "pilo-server session watcher event channel closed".to_owned(),
                 };
 
+                event_live.store(false, Ordering::Relaxed);
                 notices.error(
                     "disconnected",
                     format!("{disconnect_message}; reconnecting session watcher"),
@@ -211,10 +233,18 @@ impl SessionWatcherManager {
                             {
                                 Ok(_) => {
                                     events = next_events;
+                                    event_live.store(true, Ordering::Relaxed);
                                     let suppressed = retry_log.recover().unwrap_or(0);
                                     let suppressed_errors = notices.errors.recover().unwrap_or(0);
                                     log::info!(target: "session-watcher", "recovered projectHash={project_hash} connectionId={:?} attempts={attempts} elapsedMs={} suppressedFailures={suppressed} suppressedErrors={suppressed_errors}", connection.id, reconnect_started.elapsed().as_millis());
                                     notices.changed();
+                                    // Turns may have started or ended while disconnected.
+                                    event_app
+                                        .state::<RuntimeEventBus>()
+                                        .schedule_external_activity_refresh(
+                                            &event_app,
+                                            &project_id,
+                                        );
                                     break;
                                 }
                                 Err(error) => ("watch_start", error),
@@ -232,13 +262,18 @@ impl SessionWatcherManager {
             }
         });
         self.watchers.insert(
-            project.id,
+            project.id.clone(),
             WatchHandle {
+                project: session_project,
+                live,
                 current_client,
                 stream_id,
                 task,
             },
         );
+        // Catch writes between the initial snapshot and watcher registration.
+        app.state::<RuntimeEventBus>()
+            .schedule_external_activity_refresh(&app, &project.id);
         Ok(())
     }
 
@@ -264,6 +299,51 @@ impl SessionWatcherManager {
             self.stop(&id).await;
         }
     }
+
+    pub(crate) fn covers(&self, project: &Project) -> bool {
+        self.watchers.get(&project.id).is_some_and(|watcher| {
+            !watcher.task.is_finished()
+                && watcher.live.load(Ordering::Relaxed)
+                && watcher.project.connection.id == project.connection.id
+                && watcher.project.connection.kind == project.connection.kind
+                && watcher.project.path == project.path
+        })
+    }
+}
+
+/// External Pi turns start and end with session file writes, so file changes
+/// drive external activity refreshes. Pilo's own running sessions write on
+/// every message; changes limited to those paths cannot reveal an external
+/// turn and are skipped.
+async fn refresh_external_activity(
+    app: &AppHandle,
+    project_id: &str,
+    full_refresh: bool,
+    paths: &[String],
+    removed_paths: &[String],
+) {
+    if !full_refresh && removed_paths.is_empty() {
+        let owned_paths = app
+            .state::<PiloRuntime>()
+            .chat_sessions
+            .states()
+            .await
+            .into_iter()
+            .filter(|state| state.project_id == project_id)
+            .filter(|state| {
+                matches!(
+                    state.snapshot.state,
+                    PiProcessState::Running | PiProcessState::Starting
+                )
+            })
+            .filter_map(|state| state.session_path)
+            .collect::<HashSet<_>>();
+        if paths.iter().all(|path| owned_paths.contains(path)) {
+            return;
+        }
+    }
+    app.state::<RuntimeEventBus>()
+        .schedule_external_activity_refresh(app, project_id);
 }
 
 fn string_array(data: &Value, key: &str) -> Vec<String> {

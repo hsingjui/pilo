@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::Project;
 
-use super::{PiloRuntime, events::PiProcessState};
+use super::{PiloRuntime, events::PiProcessState, server_client::ServerClient};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionExternalActivity {
     pub path: String,
@@ -14,6 +14,7 @@ pub struct SessionExternalActivity {
 pub(crate) async fn external_session_activities_for_project(
     runtime: &PiloRuntime,
     project: &Project,
+    cached_client: Option<&ServerClient>,
 ) -> Result<Vec<SessionExternalActivity>, String> {
     if project.default_workspace_pending() {
         return Ok(Vec::new());
@@ -32,16 +33,19 @@ pub(crate) async fn external_session_activities_for_project(
         })
         .filter_map(|state| state.session_path)
         .collect::<Vec<_>>();
+    let params = serde_json::json!({
+        "project": project.path,
+        "ownedSessionPaths": owned_session_paths,
+    });
+    if let Some(client) = cached_client {
+        let value = client.request("session.activity", params).await?;
+        return serde_json::from_value(value).map_err(|error| {
+            format!("invalid pilo-server response for session.activity: {error}")
+        });
+    }
     runtime
         .servers
-        .request_typed(
-            &project.connection,
-            "session.activity",
-            serde_json::json!({
-                "project": project.path,
-                "ownedSessionPaths": owned_session_paths,
-            }),
-        )
+        .request_typed(&project.connection, "session.activity", params)
         .await
 }
 
@@ -62,7 +66,7 @@ pub(crate) async fn reject_external_session_owner(
     let Some(session_path) = session_path else {
         return Ok(());
     };
-    let activities = external_session_activities_for_project(runtime, project).await?;
+    let activities = external_session_activities_for_project(runtime, project, None).await?;
     if session_has_external_open_turn(&activities, session_path) {
         return Err(
             "session is currently owned by an external Pi process; Pilo opened it in read-only observer mode"

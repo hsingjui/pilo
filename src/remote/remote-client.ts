@@ -334,6 +334,7 @@ export function loadRemoteExternalActivity(token: string, projectId: string) {
 	return remoteFetch<SessionExternalActivity[]>(
 		token,
 		`/api/v1/sessions/external-activity?${query.toString()}`,
+		{ cache: "no-store" },
 	);
 }
 

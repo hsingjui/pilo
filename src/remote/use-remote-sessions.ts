@@ -8,12 +8,12 @@ import {
 } from "@/components/app/app-session-index-model";
 import type { PiloClientBootstrap } from "@/lib/api/pilo-client";
 import type { Project } from "@/lib/api/projects";
-import type { SessionIndexEntry } from "@/lib/api/sessions";
+import type {
+	SessionExternalActivity,
+	SessionIndexEntry,
+} from "@/lib/api/sessions";
 import { runtimeSessionPathKey } from "@/lib/chat/chat-session-runtime-model";
 import type { WebPiloClient } from "./web-pilo-client";
-
-// 外部 Pi 进程不会发出 Host 事件，只能像桌面端一样做低频兜底轮询。
-const EXTERNAL_ACTIVITY_FALLBACK_POLL_MS = 15_000;
 
 type UseRemoteSessionsOptions = {
 	client: WebPiloClient | null;
@@ -305,32 +305,25 @@ export function useRemoteSessions({
 		);
 	}, [client, projectIds, refreshProjectSessions]);
 
-	const refreshExternalActivity = useCallback(
-		async (projectId: string) => {
-			if (!client) return;
-			try {
-				const activities = await client.externalActivity(projectId);
-				const nextActivity = toProjectExternalActivity(activities);
-				setExternalActivity((current) => {
-					const previous = current.get(projectId);
-					if (
-						previous &&
-						sameStringSet(previous.openTurnPaths, nextActivity.openTurnPaths)
-					) {
-						return current;
-					}
-					const nextMap = new Map(current);
-					if (nextActivity.openTurnPaths.size === 0) nextMap.delete(projectId);
-					else nextMap.set(projectId, nextActivity);
-					return nextMap;
-				});
-			} catch (error) {
-				if (!handleExpiredAuth(error)) {
-					console.debug("Failed to inspect external Pi activity", error);
+	const applyExternalActivity = useCallback(
+		(projectId: string, activities: readonly SessionExternalActivity[]) => {
+			const nextActivity = toProjectExternalActivity(activities);
+			setExternalActivity((current) => {
+				const previous = current.get(projectId);
+				if (
+					previous &&
+					sameStringSet(previous.openTurnPaths, nextActivity.openTurnPaths)
+				) {
+					return current;
 				}
-			}
+				if (!previous && nextActivity.openTurnPaths.size === 0) return current;
+				const nextMap = new Map(current);
+				if (nextActivity.openTurnPaths.size === 0) nextMap.delete(projectId);
+				else nextMap.set(projectId, nextActivity);
+				return nextMap;
+			});
 		},
-		[client, handleExpiredAuth],
+		[],
 	);
 
 	const isExternalOpenTurn = useCallback(
@@ -384,31 +377,56 @@ export function useRemoteSessions({
 		void refreshAllSessions();
 	}, [refreshAllSessions, resyncKey, snapshotRefreshKey]);
 
-	// 外部会话开关不会触发 Host 事件，靠轮询兜底，让侧栏与打开的会话跟上状态。
+	// The Host pushes external Pi activity changes; snapshots resync on reconnect
+	// and foreground, when pushed events may have been missed.
 	useEffect(() => {
+		void resyncKey;
+		void snapshotRefreshKey;
 		if (!client || projectIds.length === 0) {
 			setExternalActivity(new Map());
 			return;
 		}
-		if (!browserOnline) return;
-
-		const run = () => {
-			if (document.visibilityState !== "visible") return;
-			for (const projectId of projectIds) {
-				void refreshExternalActivity(projectId);
+		let disposed = false;
+		// A push received during this refresh takes priority over the pending snapshot.
+		const pushedProjectIds = new Set<string>();
+		const unlisten = client.listenChatEvents((event) => {
+			if (
+				event.type === "external_session_activity_changed" &&
+				projectIds.includes(event.projectId)
+			) {
+				pushedProjectIds.add(event.projectId);
+				applyExternalActivity(event.projectId, event.activities);
 			}
-		};
-		const handleVisibilityChange = () => {
-			if (document.visibilityState === "visible") run();
-		};
-		run();
-		const timer = window.setInterval(run, EXTERNAL_ACTIVITY_FALLBACK_POLL_MS);
-		document.addEventListener("visibilitychange", handleVisibilityChange);
+		});
+		if (browserOnline) {
+			for (const projectId of projectIds) {
+				void client
+					.externalActivity(projectId)
+					.then((activities) => {
+						if (!disposed && !pushedProjectIds.has(projectId)) {
+							applyExternalActivity(projectId, activities);
+						}
+					})
+					.catch((error) => {
+						if (!disposed && !handleExpiredAuth(error)) {
+							console.debug("Failed to inspect external Pi activity", error);
+						}
+					});
+			}
+		}
 		return () => {
-			window.clearInterval(timer);
-			document.removeEventListener("visibilitychange", handleVisibilityChange);
+			disposed = true;
+			unlisten();
 		};
-	}, [browserOnline, client, projectIds, refreshExternalActivity]);
+	}, [
+		applyExternalActivity,
+		browserOnline,
+		client,
+		handleExpiredAuth,
+		projectIds,
+		resyncKey,
+		snapshotRefreshKey,
+	]);
 	/* oxlint-enable react/set-state-in-effect, react/exhaustive-effect-dependencies */
 
 	return {

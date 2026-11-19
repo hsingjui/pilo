@@ -25,6 +25,19 @@ Frontend controller eviction alone is not backend process cleanup.
   process or any ancestor in `owned_pids` is Pilo's (`pi.cmd` launches the node
   agent as a grandchild). A contiguous chain of Pi-shaped processes counts as one
   fallback candidate (innermost), but every explicit `--session` path counts.
+- External activity is Host-pushed: `RuntimeEventBus::external_session_activity`
+  broadcasts global `external_session_activity_changed { projectId, activities }`
+  (open turns only) whenever a project's open set changes. Session watcher
+  `session.changed` events (except those touching only Pilo's running session
+  paths), successful watch registration and watcher recovery call
+  `schedule_external_activity_refresh(app, project_id)`. The worker resolves the
+  current project, uses a matching cached client without connecting or retrying,
+  and coalesces later triggers into one rerun after 2s. The 15s fallback also
+  uses only existing connections. It covers open external turns (a crashed Pi
+  writes nothing) and projects without a live watcher for their current scope.
+  Finished, reconnecting or failed watchers do not provide coverage. Desktop
+  and WebUI fetch on load/resync and ignore a pending snapshot once a push for
+  the same project arrives. They do not poll.
 - `ChatSessions::state(...)` / `states()` read registered `SessionSnapshotReader`
   handles without awaiting the Pi startup/RPC session mutex. Remove readers with
   their processes on eviction, detach, project stop and global shutdown.
@@ -408,6 +421,11 @@ The following targeted regressions remain to be added with explicit authorizatio
   fallback candidates retain stale-tail filtering; a terminal message larger than
   128 KiB remains idle; trailing metadata/partial lines do not hide the last message;
   a named live process whose file has no `message` entry yet stays active.
+  Also cover a write between the initial snapshot and watcher registration,
+  a finished watcher falling back on an existing connection, and an obsolete
+  refresh leaving the replacement SSH client untouched. A tray-only Host must
+  not start a WSL or SSH server for a background probe. In Desktop and WebUI,
+  a late open snapshot must not undo an already received close push.
   These assertion points are requirements, not a claim of checks already run.
 - Prompt forwarding: absent `streamingBehavior` becomes `followUp`, explicit
   `steer`/`followUp` survives, and non-prompt commands are unchanged.
