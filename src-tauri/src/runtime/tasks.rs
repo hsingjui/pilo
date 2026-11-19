@@ -22,6 +22,20 @@ where
     }
 }
 
+pub(crate) fn spawn_blocking<F>(function: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    let handle = Handle::try_current()
+        .ok()
+        .or_else(|| HOST_RUNTIME.get().cloned());
+    if let Some(handle) = handle {
+        handle.spawn_blocking(function);
+    } else {
+        log::error!(target: "runtime", "cannot schedule blocking task before host runtime initialization");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -30,6 +44,13 @@ mod tests {
         super::initialize(runtime.handle().clone());
         let (send, receive) = std::sync::mpsc::channel();
         super::spawn(async move {
+            send.send(()).unwrap();
+        });
+        receive
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        let (send, receive) = std::sync::mpsc::channel();
+        super::spawn_blocking(move || {
             send.send(()).unwrap();
         });
         receive

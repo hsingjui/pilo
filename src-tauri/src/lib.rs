@@ -1,23 +1,34 @@
 #![recursion_limit = "256"]
 
+#[cfg(feature = "tauri")]
 mod desktop_notifications;
+#[cfg(feature = "tauri")]
 mod desktop_paths;
+#[cfg(feature = "tauri")]
 mod desktop_shortcut;
+#[cfg(feature = "tauri")]
 mod desktop_tray;
+#[cfg(feature = "tauri")]
 mod desktop_window;
 mod domain;
 mod runtime;
 
 /// AppHandle-free runtime entry points for the nsh desktop spike (M0).
+#[cfg(feature = "tauri")]
 pub use runtime::nsh_spike;
 
+#[cfg(feature = "tauri")]
 use desktop_notifications::{
     initialize_macos_notification_application, initialize_windows_notification_application,
     send_macos_desktop_notification, send_windows_desktop_notification,
 };
+#[cfg(feature = "tauri")]
 use desktop_tray::desktop_tray_set_labels;
+#[cfg(feature = "tauri")]
 use desktop_window::desktop_open_devtools;
+#[cfg(feature = "tauri")]
 use runtime::desktop_startup::{AUTOSTART_ARG, desktop_autostart_get, desktop_autostart_set};
+#[cfg(feature = "tauri")]
 use runtime::{
     PiloRuntime,
     commands::{
@@ -54,6 +65,7 @@ use runtime::{
         wsl_connection_test, wsl_list_distributions,
     },
 };
+#[cfg(feature = "tauri")]
 use std::{fs::OpenOptions, io::Write};
 
 pub fn handle_ssh_askpass() -> bool {
@@ -61,11 +73,13 @@ pub fn handle_ssh_askpass() -> bool {
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+#[cfg(feature = "tauri")]
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+#[cfg(feature = "tauri")]
 #[tauri::command]
 fn debug_chat_performance_log(payload: &str) -> Result<(), String> {
     let path = std::env::temp_dir().join("pilo-chat-performance.jsonl");
@@ -77,11 +91,13 @@ fn debug_chat_performance_log(payload: &str) -> Result<(), String> {
     writeln!(file, "{payload}").map_err(|error| error.to_string())
 }
 
+#[cfg(feature = "tauri")]
 #[tauri::command]
 fn debug_runtime_trace_log(payload: &str) -> Result<(), String> {
     runtime::debug_trace::append_frontend_trace(payload)
 }
 
+#[cfg(feature = "tauri")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let context = tauri::generate_context!();
@@ -301,11 +317,11 @@ pub fn run() {
                 app.path().resource_dir()?,
             )?;
             runtime::initialize_server_resource_dir(paths.resource_dir().to_owned());
-            app.manage(paths);
+            app.manage(paths.clone());
             initialize_macos_notification_application(app);
             initialize_windows_notification_application(app);
             app.state::<runtime::RuntimeEventBus>()
-                .initialize_session_reads(app.handle())?;
+                .initialize_session_reads(paths);
             app.state::<runtime::RuntimeEventBus>()
                 .start_external_activity_poll(app.handle().clone());
             if let Err(error) = desktop_shortcut::install(app.handle()) {

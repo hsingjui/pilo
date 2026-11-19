@@ -76,12 +76,7 @@ pub async fn session_reconcile(
 ) -> Result<SessionReconcileResult, String> {
     let project = project::get(&app, &project_id)?;
     let host_paths = crate::desktop_paths::from_app(&app)?;
-    let work = session_index::reconcile(
-        &crate::desktop_paths::from_app(&app)?,
-        &runtime.servers,
-        &project,
-    )
-    .await?;
+    let work = session_index::reconcile(&host_paths, &runtime.servers, &project).await?;
     if !work.deferred_paths.is_empty() {
         let should_start_background_index = {
             let mut manager = runtime

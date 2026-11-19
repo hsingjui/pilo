@@ -45,13 +45,11 @@ pub(super) struct SessionCompletionQueue {
 }
 
 impl RuntimeEventBus {
-    pub(crate) fn initialize_session_reads(&self, app: &AppHandle) -> Result<(), String> {
+    pub(crate) fn initialize_session_reads(&self, paths: HostPaths) {
         *self
             .session_read_paths
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) =
-            Some(crate::desktop_paths::from_app(app)?);
-        Ok(())
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(paths);
     }
 
     fn session_read_paths(&self) -> Result<HostPaths, String> {
@@ -342,7 +340,7 @@ impl RuntimeEventBus {
         }
         let events = self.clone();
         // One worker preserves each session's turn order without blocking Pi.
-        tokio::task::spawn_blocking(move || {
+        crate::runtime::tasks::spawn_blocking(move || {
             loop {
                 let completion = {
                     let mut queue = events

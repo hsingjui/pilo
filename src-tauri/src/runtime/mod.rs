@@ -1,66 +1,115 @@
+#[cfg(feature = "tauri")]
 mod appearance;
+#[cfg(feature = "tauri")]
 mod cache_keep_alive;
+#[cfg(feature = "tauri")]
 mod chat_service;
+#[cfg(feature = "tauri")]
 mod chat_sessions;
+#[cfg(feature = "tauri")]
 pub mod commands;
 mod connection_diagnostics;
+#[cfg(feature = "tauri")]
 mod connection_models;
+#[cfg(feature = "tauri")]
 mod control;
 mod credentials;
+#[cfg(feature = "tauri")]
 pub(crate) mod debug_trace;
+#[cfg(feature = "tauri")]
 pub(crate) mod desktop_startup;
+#[cfg(feature = "tauri")]
 mod events;
+#[cfg(feature = "tauri")]
 mod file_links;
+#[cfg(feature = "tauri")]
 mod git;
 pub(crate) mod host_paths;
+#[cfg(feature = "tauri")]
 mod next_prompt;
+#[cfg(feature = "tauri")]
 pub mod nsh_spike;
+#[cfg(feature = "tauri")]
 mod parallel;
+#[cfg(feature = "tauri")]
 mod pi_event_adapters;
+#[cfg(feature = "tauri")]
 mod pi_events;
+#[cfg(feature = "tauri")]
 mod pi_oneshot;
+#[cfg(feature = "tauri")]
 mod pi_workspace;
+#[cfg(feature = "tauri")]
 mod preferences;
+#[cfg(feature = "tauri")]
 mod preview;
+#[cfg(feature = "tauri")]
 pub mod project;
+#[cfg(feature = "tauri")]
 mod project_opener;
+#[cfg(feature = "tauri")]
 mod prompt_enhancement;
+#[cfg(feature = "tauri")]
 mod remote;
+#[cfg(feature = "tauri")]
 mod remote_fs;
+#[cfg(feature = "tauri")]
 pub(crate) mod server_client;
 mod server_deploy;
+#[cfg(feature = "tauri")]
 mod server_pi;
+#[cfg(feature = "tauri")]
 mod server_pi_events;
+#[cfg(feature = "tauri")]
 mod session_activity;
+#[cfg(feature = "tauri")]
 mod session_history;
+#[cfg(feature = "tauri")]
 mod session_index;
+#[cfg(feature = "tauri")]
 mod session_snapshot;
+#[cfg(feature = "tauri")]
 mod session_watcher;
 #[allow(dead_code)]
 pub(crate) mod ssh;
 pub(crate) mod storage;
 pub(crate) mod tasks;
+#[cfg(feature = "tauri")]
 mod terminal;
 mod token_usage;
 #[allow(dead_code)]
 mod wsl;
 
+#[cfg(feature = "tauri")]
 use std::sync::{Arc, Mutex as StdMutex};
 
 use tokio::process::Command;
+#[cfg(feature = "tauri")]
 use tokio::sync::Mutex;
 
+#[cfg(feature = "tauri")]
 use chat_sessions::ChatSessions;
+#[cfg(feature = "tauri")]
 pub(crate) use events::RuntimeEventBus;
+#[cfg(feature = "tauri")]
 use parallel::ParallelAgentManager;
+#[cfg(feature = "tauri")]
 use preview::PreviewManager;
+#[cfg(feature = "tauri")]
 pub(crate) use remote::RemoteServerManager;
+#[cfg(feature = "tauri")]
 use server_client::ServerManager;
+#[cfg(feature = "tauri")]
 pub(crate) use server_deploy::{initialize_local_server_binary, initialize_server_resource_dir};
+#[cfg(feature = "tauri")]
 use server_pi::ServerPiSession;
+#[cfg(feature = "tauri")]
 use session_history::SessionHistoryCache;
+#[cfg(feature = "tauri")]
 use session_index::BackgroundSessionIndexManager;
+#[cfg(feature = "tauri")]
 use session_watcher::SessionWatcherManager;
+#[cfg(feature = "tauri")]
 use terminal::TerminalManager;
 
 /// Pilo 本体是 GUI 程序（没有控制台），Windows 会为它启动的控制台子进程
@@ -76,6 +125,7 @@ pub(crate) fn hide_console_window(command: &mut Command) {
     let _ = command;
 }
 
+#[cfg(feature = "tauri")]
 pub struct PiloRuntime {
     pub(crate) chat_sessions: ChatSessions,
     pub(crate) pi_resource_policy: Arc<tokio::sync::RwLock<()>>,
@@ -89,6 +139,7 @@ pub struct PiloRuntime {
     pub(crate) terminals: Mutex<TerminalManager>,
 }
 
+#[cfg(feature = "tauri")]
 impl Default for PiloRuntime {
     fn default() -> Self {
         Self {

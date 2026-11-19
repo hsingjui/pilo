@@ -1,6 +1,8 @@
+#[cfg(feature = "tauri")]
 use std::path::Path;
 
 /// 每个随包 pilo-server 运行时，以及它服务的 Rust 编译目标。
+#[cfg(feature = "tauri")]
 const SERVER_RESOURCES: &[(&str, &str)] = &[
     ("x86_64-pc-windows-msvc", "pilo-server-windows-x86_64.exe"),
     ("x86_64-unknown-linux-gnu", "pilo-server-linux-x86_64"),
@@ -8,6 +10,7 @@ const SERVER_RESOURCES: &[(&str, &str)] = &[
     ("aarch64-apple-darwin", "pilo-server-darwin-aarch64"),
 ];
 
+#[cfg(feature = "tauri")]
 fn main() {
     // 只对存在文件发 rerun-if-changed：cargo 把不存在的路径当作“永远变更”，
     // 会让本 build script（以及 pilo crate）每次构建都重跑。
@@ -36,6 +39,7 @@ fn main() {
     }
 }
 
+#[cfg(feature = "tauri")]
 fn is_windows_msvc_target() -> bool {
     std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
         && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc")
@@ -46,6 +50,7 @@ fn is_windows_msvc_target() -> bool {
 /// 启动即因缺少 `TaskDialogIndirect` 以 0xc0000139 退出。
 /// 改由链接器给所有目标嵌入同一份清单；内容与 tauri-build 默认清单相同，
 /// `/MANIFESTUAC:NO` 避免额外生成 trustInfo，正式应用的清单保持不变。
+#[cfg(feature = "tauri")]
 fn embed_windows_manifest() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("windows-app-manifest.xml");
     println!("cargo:rerun-if-changed=windows-app-manifest.xml");
@@ -58,6 +63,7 @@ fn embed_windows_manifest() {
 /// 这样产出的二进制仍然是 dev 形态：不内嵌 `frontendDist`，窗口直接指向 `devUrl`，
 /// 脱离 `pnpm tauri dev` 运行时只显示「无法访问此页面」。这里提前失败，
 /// 避免把这种二进制当成发布版打包出去。
+#[cfg(feature = "tauri")]
 fn check_not_dev_build() {
     // 直接用 DEP_TAURI_DEV（tauri 的 build script 通过 `cargo:dev` 导出）；
     // tauri_build::is_dev() 在变量缺失时会 panic，不适用于手工执行的场景。
@@ -77,6 +83,7 @@ fn check_not_dev_build() {
 /// 全部平台的产物。发布流水线会设置 `PILO_REQUIRE_FULL_SERVER_BUNDLE=1`
 /// 恢复四平台完整性校验（`scripts/verify-pilo-server-resources.sh` 也校验同一集合）。
 /// 没有对应运行时的目标（例如未支持的主机架构）不做校验，仍可产出诊断用二进制。
+#[cfg(feature = "tauri")]
 fn check_server_runtimes() {
     let target = std::env::var("TARGET").unwrap_or_default();
     let full_bundle = env_flag("PILO_REQUIRE_FULL_SERVER_BUNDLE");
@@ -116,6 +123,7 @@ fn check_server_runtimes() {
 
 /// 构建开关：只有非空且不是 `0`/`false` 时才视为开启，
 /// 避免 `PILO_REQUIRE_FULL_SERVER_BUNDLE=0` 反而触发严格校验。
+#[cfg(feature = "tauri")]
 fn env_flag(name: &str) -> bool {
     std::env::var(name)
         .map(|value| {
@@ -124,3 +132,6 @@ fn env_flag(name: &str) -> bool {
         })
         .unwrap_or(false)
 }
+
+#[cfg(not(feature = "tauri"))]
+fn main() {}

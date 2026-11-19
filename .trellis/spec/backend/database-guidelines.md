@@ -9,8 +9,13 @@
 ## Overview
 
 - Engine: `rusqlite` (bundled SQLite), no ORM, no query builder.
-- DB file: `pilo.sqlite3` in Tauri `app_data_dir()`.
-- Opened through `storage::open(&app)` (`src-tauri/src/runtime/storage/schema.rs`).
+- DB file: `pilo.sqlite3` in the host data directory. The Tauri shell resolves
+  `app_data_dir()` and the resource directory once during setup and manages
+  `HostPaths::new(data_dir, resource_dir)`; runtime path code must not resolve
+  paths through `AppHandle`.
+- Opened through `storage::open(&paths)` (or `open_with_paths(&paths)`) in
+  `src-tauri/src/runtime/storage/schema.rs`. Shell-bound adapters obtain the
+  managed paths through `desktop_paths::from_app(&app)`.
 - `pnpm tauri dev` (also used by `pnpm dev`) automatically merges
   `src-tauri/tauri.dev.conf.json` through `scripts/tauri.mjs`. Development uses
   `app.hsingjui.pilo.dev`; release retains `app.hsingjui.pilo`. Keep their app
