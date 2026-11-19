@@ -29,14 +29,14 @@ test("the shell starts in the system language, falling back to English", async (
 	const shell = (locale: string) =>
 		open("./app-shell-states-fixture.tsx", {
 			locale,
-			storage: { "fixture.scenario": "empty" },
+			storage: { "fixture.scenario": "starting" },
 		});
 	const chinese = await shell("zh-Hans-CN");
-	await chinese.waitFor("id:workspace >> text:请先添加项目");
+	await chinese.waitFor("id:workspace >> text:加载中…");
 	const english = await shell("en-US");
-	await english.waitFor("id:workspace >> text:Add a project first");
+	await english.waitFor("id:workspace >> text:Loading…");
 	const french = await shell("fr-FR");
-	await french.waitFor("id:workspace >> text:Add a project first");
+	await french.waitFor("id:workspace >> text:Loading…");
 });
 
 test("switching the locale re-renders interpolated text and moves the nsh locale", async () => {

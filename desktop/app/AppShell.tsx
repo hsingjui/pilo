@@ -6,6 +6,7 @@ import { activeProject } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
+import { followSavedAppearance } from "./appearance";
 import { t } from "./i18n";
 
 /** The sidebar's width until the user resizes it, as in the Tauri app. */
@@ -23,6 +24,7 @@ export function AppShell(props: AppShellProps) {
 	const status = computed(() => store.state().status);
 	const project = computed(() => activeProject(store.state()));
 	const collapsed = signal(false);
+	followSavedAppearance(store.state);
 	// The app draws its own title bar: the sidebar and the main area reach
 	// the window's top edge, beside the system's window controls.
 	currentWindow().set({
