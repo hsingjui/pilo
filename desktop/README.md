@@ -62,3 +62,10 @@ A custom theme is a token table shared by the desktop and the WebUI, checked by
   `{ cssVars: resolveCustomTheme(builtIn.cssVars, tokens) }` to `setTheme`;
   `desktop/tests/custom-theme.test.ts` checks nsh reads every accepted form
   exactly as `parseThemeColor`/`parseThemeLength` do.
+
+## Native images
+
+nsh 0.6.0 returns Rust `Vec<u8>` as `Uint8Array`, but `Image.src` does
+not take the array directly. Pass a `URL.createObjectURL(new Blob([bytes],
+{ type: mimeType }))` URL and revoke it when no longer needed. A native
+absolute local file path also works as `Image.src`.
