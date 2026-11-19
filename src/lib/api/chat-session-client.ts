@@ -19,6 +19,7 @@ import {
 	type PiThinkingLevel,
 	type PiloRuntimeEvent,
 } from "@/lib/api/pi-runtime";
+import { chatSessionKey } from "./chat-session-key";
 import type { ChatSessionRuntimeState } from "./chat-session-types";
 
 export * from "./chat-session-types";
@@ -48,10 +49,6 @@ function traceChatClient(
 
 export function listChatSessionRuntimeStates() {
 	return invoke<ChatSessionRuntimeState[]>("chat_session_states");
-}
-
-function chatSessionKey(projectId: string, sessionId: string) {
-	return JSON.stringify([projectId, sessionId]);
 }
 
 function createRegisteredChatSessionClient(
