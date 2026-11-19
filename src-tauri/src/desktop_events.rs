@@ -3,7 +3,7 @@ use std::sync::Arc;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 
-use crate::runtime::events::{RuntimeEventBus, RuntimeEventEnvelope, TauriEventSink};
+use crate::runtime::events::RuntimeEventEnvelope;
 use crate::runtime::host_events::HostEvents;
 use tauri::{Manager, ipc::Channel};
 
@@ -16,12 +16,6 @@ impl HostEvents for TauriChannelEvents {
 
     fn emit_runtime(&self, event: RuntimeEventEnvelope) -> Result<(), String> {
         self.0.send(event).map_err(|error| error.to_string())
-    }
-}
-
-impl TauriEventSink {
-    pub fn new(app: AppHandle) -> Self {
-        Self::from_bus(app.state::<RuntimeEventBus>().inner().clone())
     }
 }
 
@@ -44,7 +38,7 @@ pub(crate) fn from_app(app: &AppHandle) -> Arc<dyn HostEvents> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::events::RuntimeEvent;
+    use crate::runtime::events::{RuntimeEvent, RuntimeEventBus};
 
     #[test]
     fn runtime_channel_keeps_the_existing_unsequenced_envelope() {

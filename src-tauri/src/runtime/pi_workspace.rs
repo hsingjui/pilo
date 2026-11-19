@@ -112,19 +112,6 @@ pub(crate) fn resolve_session_project_with_paths(
     }
 }
 
-pub(crate) async fn resolve_pi_runtime(
-    app: &AppHandle,
-    project: &Project,
-    extensions: Vec<String>,
-) -> Result<PiRuntimeProfile, String> {
-    resolve_checked_pi_runtime_with_paths(
-        &crate::desktop_paths::from_app(app)?,
-        project,
-        extensions,
-    )
-    .await
-}
-
 pub(crate) async fn resolve_checked_pi_runtime_with_paths(
     paths: &HostPaths,
     project: &Project,

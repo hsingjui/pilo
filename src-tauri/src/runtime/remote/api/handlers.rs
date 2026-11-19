@@ -891,9 +891,8 @@ pub(super) async fn chat_mcp_approve(
     State(state): State<RemoteHttpState>,
     Json(request): Json<ChatMcpApproveRequest>,
 ) -> Response {
-    match crate::runtime::commands::project_mcp_server_approve(
-        state.app.clone(),
-        state.app.state::<PiloRuntime>(),
+    match crate::runtime::runtime_api::project_mcp_server_approve(
+        &state.app.state::<crate::runtime::Runtime>(),
         request.project_id,
         request.server_name,
     )

@@ -78,6 +78,15 @@ pub(crate) async fn session_read_states(
         .map_err(|error| format!("failed to load session read states: {error}"))?
 }
 
+pub(crate) fn runtime_subscribe_events(
+    runtime: &Runtime,
+    window_label: &str,
+    channel_id: u32,
+    events: Arc<dyn HostEvents>,
+) {
+    runtime.events.subscribe(window_label, channel_id, events);
+}
+
 pub(crate) async fn session_mark_read(
     runtime: &Runtime,
     project_id: String,

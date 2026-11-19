@@ -466,8 +466,8 @@ mod tests {
             assert!(read_preview(&path).await.is_err(), "{name}");
         }
         for name in [
-            "runtime.EXE",
-            "runtime.exe .",
+            "app.EXE",
+            "app.exe .",
             "run.cmd",
             "link.lnk",
             "link.url",

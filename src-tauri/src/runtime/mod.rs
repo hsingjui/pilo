@@ -54,6 +54,8 @@ mod remote;
 #[cfg(feature = "tauri")]
 mod remote_fs;
 #[cfg(feature = "tauri")]
+mod runtime_api;
+#[cfg(feature = "tauri")]
 pub(crate) mod server_client;
 mod server_deploy;
 #[cfg(feature = "tauri")]
