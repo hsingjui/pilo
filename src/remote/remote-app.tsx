@@ -97,7 +97,7 @@ function RemoteWorkspace() {
 	const reconnectProbeRef = useRef<() => void>(() => {});
 	const { browserOnline, recoveryGeneration, foregroundGeneration } =
 		useRemoteNetworkLifecycle();
-	const { updateAvailable, applyUpdate } = useRemotePwa();
+	const { updateAvailable, applyUpdate, dismissUpdate } = useRemotePwa();
 
 	const connection = useRemoteConnection({
 		browserOnline,
@@ -215,21 +215,29 @@ function RemoteWorkspace() {
 		chat.historyIndexStale && !chatBusy ? chat.routeKey : null,
 	);
 
+	const showUpdateNotice = Boolean(token) && !chatBusy && updateAvailable;
 	useEffect(() => {
-		if (!token || chatBusy || !updateAvailable) return;
+		// Narrow layouts render the notice inline instead.
+		if (!showUpdateNotice || isNarrow) return;
+		let disposed = false;
 		const toastId = toast.info(t("settings.remoteUpdateAvailable"), {
 			description: t("settings.remoteUpdateDescription"),
 			duration: Infinity,
-			position: isNarrow ? "bottom-center" : "bottom-left",
+			position: "bottom-left",
+			// Sonner also fires onDismiss for the programmatic cleanup below.
+			onDismiss: () => {
+				if (!disposed) dismissUpdate();
+			},
 			action: {
 				label: t("settings.remoteUpdateAction"),
 				onClick: () => void applyUpdate(),
 			},
 		});
 		return () => {
+			disposed = true;
 			toast.dismiss(toastId);
 		};
-	}, [applyUpdate, chatBusy, isNarrow, t, token, updateAvailable]);
+	}, [applyUpdate, dismissUpdate, isNarrow, showUpdateNotice, t]);
 
 	const { localPiResources } = sessions;
 	const [resourceDraft, setResourceDraft] = useState<{
@@ -465,6 +473,45 @@ function RemoteWorkspace() {
 		);
 	}
 
+	const workspaceTab = chat.activeProject
+		? workspaces.state.get(chat.activeProject.id)?.activeTab
+		: undefined;
+	const workspaceTabOpen = Boolean(
+		workspaceTab && workspaceTab.kind !== "chat",
+	);
+	const inlineUpdateNotice =
+		showUpdateNotice && isNarrow ? (
+			<NoticeCard className="flex items-center gap-1 py-1 pl-3 pr-1">
+				<output className="min-w-0 flex-1">
+					<span className="block font-medium text-foreground/85">
+						{t("settings.remoteUpdateAvailable")}
+					</span>
+					<span className="block text-muted-foreground">
+						{t("settings.remoteUpdateDescription")}
+					</span>
+				</output>
+				<Button
+					type="button"
+					variant="secondary"
+					size="sm"
+					className="min-h-11 min-w-11 shrink-0"
+					onClick={() => void applyUpdate()}
+				>
+					{t("settings.remoteUpdateAction")}
+				</Button>
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon"
+					className="min-h-11 min-w-11 shrink-0 text-muted-foreground"
+					aria-label={t("common.close")}
+					onClick={dismissUpdate}
+				>
+					<X aria-hidden="true" />
+				</Button>
+			</NoticeCard>
+		) : null;
+
 	const pendingFollowUps = chat.conversationUi.pendingUsers.filter(
 		(user) => user.queueKind === "follow_up",
 	).length;
@@ -672,6 +719,7 @@ function RemoteWorkspace() {
 													</Button>
 												</NoticeCard>
 											) : null}
+											{!workspaceTabOpen ? inlineUpdateNotice : null}
 											{chat.historyReady ? (
 												<ChatPendingQueue
 													items={chat.conversationUi.pendingUsers}
@@ -869,6 +917,11 @@ function RemoteWorkspace() {
 										</ConversationColumn>
 									</div>
 								</ProjectWorkspacePanel>
+								{workspaceTabOpen && inlineUpdateNotice ? (
+									<ConversationColumn className="shrink-0 pt-1 pb-[var(--remote-composer-bottom-padding,max(1rem,env(safe-area-inset-bottom)))]">
+										{inlineUpdateNotice}
+									</ConversationColumn>
+								) : null}
 							</main>
 
 							<ChatImageLightbox />

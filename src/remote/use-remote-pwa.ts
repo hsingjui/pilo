@@ -13,32 +13,44 @@ function canUseRemoteServiceWorker() {
 
 export function useRemotePwa() {
 	const supported = canUseRemoteServiceWorker();
-	const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(
+	const [updateWorker, setUpdateWorker] = useState<ServiceWorker | null>(null);
+	const updateWorkerRef = useRef<ServiceWorker | null>(null);
+	const applyingUpdateRef = useRef(false);
+	// Dismissal follows the worker through activation, not subsequent builds.
+	const [dismissedWorker, setDismissedWorker] = useState<ServiceWorker | null>(
 		null,
 	);
-	const waitingWorkerRef = useRef<ServiceWorker | null>(null);
-	const applyingUpdateRef = useRef(false);
-
-	const captureWaitingWorker = useCallback((worker: ServiceWorker | null) => {
-		waitingWorkerRef.current = worker;
-		setWaitingWorker(worker);
-	}, []);
+	const dismissUpdate = useCallback(
+		() => setDismissedWorker(updateWorker),
+		[updateWorker],
+	);
 
 	useEffect(() => {
 		if (!supported) return;
 
+		const serviceWorker = navigator.serviceWorker;
+		const initialController = serviceWorker.controller;
 		let disposed = false;
 		let registration: ServiceWorkerRegistration | null = null;
 		let installingWorker: ServiceWorker | null = null;
 
-		const syncWaitingWorker = () => {
-			if (disposed || !registration || !navigator.serviceWorker.controller) {
-				return;
-			}
-			captureWaitingWorker(registration.waiting);
+		const syncUpdateWorker = () => {
+			if (disposed || !registration || !initialController) return;
+
+			// Another tab can activate the update while this page still runs old code.
+			const { waiting, active } = registration;
+			const worker = waiting ?? (active !== initialController ? active : null);
+			if (worker === updateWorkerRef.current) return;
+			updateWorkerRef.current?.removeEventListener(
+				"statechange",
+				syncUpdateWorker,
+			);
+			updateWorkerRef.current = worker;
+			worker?.addEventListener("statechange", syncUpdateWorker);
+			setUpdateWorker(worker);
 		};
 		const handleInstallingStateChange = () => {
-			if (installingWorker?.state === "installed") syncWaitingWorker();
+			if (installingWorker?.state === "installed") syncUpdateWorker();
 		};
 		const handleUpdateFound = () => {
 			installingWorker?.removeEventListener(
@@ -53,17 +65,19 @@ export function useRemotePwa() {
 		};
 		const requestUpdate = () => {
 			if (document.visibilityState !== "visible") return;
+			syncUpdateWorker();
 			void registration?.update().catch(() => undefined);
 		};
 		const handleVisibilityChange = () => {
 			if (document.visibilityState === "visible") requestUpdate();
 		};
 
+		serviceWorker.addEventListener("controllerchange", syncUpdateWorker);
 		window.addEventListener("online", requestUpdate);
 		document.addEventListener("visibilitychange", handleVisibilityChange);
 
 		const register = () => {
-			void navigator.serviceWorker
+			void serviceWorker
 				.register(SERVICE_WORKER_URL, {
 					scope: SERVICE_WORKER_SCOPE,
 					updateViaCache: "none",
@@ -73,7 +87,7 @@ export function useRemotePwa() {
 					registration = nextRegistration;
 					registration.addEventListener("updatefound", handleUpdateFound);
 					handleUpdateFound();
-					syncWaitingWorker();
+					syncUpdateWorker();
 					requestUpdate();
 				})
 				.catch(() => undefined);
@@ -90,13 +104,19 @@ export function useRemotePwa() {
 				"statechange",
 				handleInstallingStateChange,
 			);
+			updateWorkerRef.current?.removeEventListener(
+				"statechange",
+				syncUpdateWorker,
+			);
+			updateWorkerRef.current = null;
+			serviceWorker.removeEventListener("controllerchange", syncUpdateWorker);
 			window.removeEventListener("online", requestUpdate);
 			document.removeEventListener("visibilitychange", handleVisibilityChange);
 		};
-	}, [captureWaitingWorker, supported]);
+	}, [supported]);
 
 	const applyUpdate = useCallback(async () => {
-		const worker = waitingWorkerRef.current;
+		const worker = updateWorkerRef.current;
 		if (!worker || applyingUpdateRef.current) return;
 		applyingUpdateRef.current = true;
 
@@ -120,9 +140,11 @@ export function useRemotePwa() {
 				worker.addEventListener("statechange", handleStateChange);
 			});
 
-			// ServiceWorker.postMessage has no targetOrigin parameter.
-			// oxlint-disable-next-line unicorn/require-post-message-target-origin
-			worker.postMessage({ type: "SKIP_WAITING" });
+			if (worker.state === "installed") {
+				// ServiceWorker.postMessage has no targetOrigin parameter.
+				// oxlint-disable-next-line unicorn/require-post-message-target-origin
+				worker.postMessage({ type: "SKIP_WAITING" });
+			}
 			if (await activated) window.location.reload();
 		} finally {
 			applyingUpdateRef.current = false;
@@ -131,7 +153,8 @@ export function useRemotePwa() {
 
 	return {
 		supported,
-		updateAvailable: waitingWorker !== null,
+		updateAvailable: updateWorker !== null && updateWorker !== dismissedWorker,
 		applyUpdate,
+		dismissUpdate,
 	};
 }
