@@ -125,6 +125,24 @@ impl BootstrapFixture {
         )
     }
 
+    /// Seeds a model scope from before the Host stored default markers.
+    pub fn seed_legacy_model_scope(&self, project_id: String) -> Result<(), String> {
+        let paths = HostPaths::new(self.0.clone(), self.0.clone())?;
+        let models = serde_json::json!([{
+            "provider": "fixture",
+            "modelId": "saved-model",
+            "thinkingLevel": "high",
+        }]);
+        storage::open(&paths)?
+            .execute(
+                "INSERT INTO project_model_scopes (project_id, models_json, updated_at_ms)
+                 VALUES (?1, ?2, 123)",
+                [project_id, models.to_string()],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
     /// Saves an indexed session for a fixture project without starting Pi.
     pub fn seed_indexed_session(&self, project_id: String, cwd: String) -> Result<(), String> {
         let paths = HostPaths::new(self.0.clone(), self.0.clone())?;

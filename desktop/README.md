@@ -45,6 +45,12 @@ for the connection, not a union of project caches.
 commands, defaults and refresh timestamp), or `null` if none is cached.
 It does not launch Pi or refresh the cache.
 
+`loadModelScope(projectId)` reads the Host's project model scope and returns
+`{ projectId, models, updatedAtMs }`. Each model is
+`{ provider, modelId, thinkingLevel, isDefault }`. A missing scope returns
+`models: null` (inherit Pi) and `updatedAtMs: 0`; `models: []` means an
+explicit empty scope. An unknown project is rejected.
+
 Use `readProjectImage(projectId, path)` for a project-relative image and
 `readHistoryImage(projectId, sessionPath, imageId, fingerprint?)` for a
 transcript attachment. Both return `Uint8Array` bytes; nsh `Image` accepts
