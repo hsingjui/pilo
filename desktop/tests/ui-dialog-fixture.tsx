@@ -15,8 +15,10 @@ mount(() => {
 	const alert = signal(false);
 	const focused = signal("");
 	const center = signal("pending");
+	const geometry = signal("pending");
 	let header: ViewRef | undefined;
 	let footer: ViewRef | undefined;
+	let first: ViewRef | undefined;
 	return (
 		<View class="p-12 gap-6 bg-background">
 			<Button
@@ -57,10 +59,24 @@ mount(() => {
 				backdropTestID="backdrop"
 				onOpenChange={({ open }) => visible.set(open)}
 				onOpen={async () => {
-					const [top, bottom] = await Promise.all([
+					const [top, bottom, field] = await Promise.all([
 						header?.measure(),
 						footer?.measure(),
+						first?.measure(),
 					]);
+					if (top && bottom && field)
+						geometry.set(
+							JSON.stringify({
+								x: top.pagePosition.x,
+								y: top.pagePosition.y,
+								width: top.bounds.size.width,
+								bottom: bottom.pagePosition.y + bottom.bounds.size.height,
+								gap:
+									field.pagePosition.y -
+									top.pagePosition.y -
+									top.bounds.size.height,
+							}),
+						);
 					if (top && bottom)
 						center.set(
 							(
@@ -84,6 +100,9 @@ mount(() => {
 				</DialogHeader>
 				<Input
 					testID="first"
+					ref={(view) => {
+						first = view;
+					}}
 					placeholder="Title"
 					onFocus={() => focused.set("first")}
 				/>
@@ -104,6 +123,11 @@ mount(() => {
 					</Button>
 				</DialogFooter>
 			</Dialog>
+			<Text class="absolute bottom-2 left-2">
+				{() =>
+					visible() || geometry() === "pending" ? "" : `Geometry: ${geometry()}`
+				}
+			</Text>
 		</View>
 	);
 });

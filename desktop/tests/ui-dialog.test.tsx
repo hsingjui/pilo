@@ -19,6 +19,11 @@ test("Dialog opens and closes through actions, Escape and the backdrop, includin
 	expect(center).toBeGreaterThanOrEqual(299);
 	expect(center).toBeLessThanOrEqual(301);
 	await app.press("id:close");
+	const geometry =
+		app.texts().find((text) => text.startsWith("Geometry: ")) ?? "";
+	expect(geometry).toContain('"x":169');
+	expect(geometry).toContain('"width":462');
+	expect(geometry).toContain('"gap":16');
 	expect(app.shows("text:Edit session")).toBe(false);
 	await app.press("id:open");
 	await app.keyboard.press("escape");
@@ -45,4 +50,34 @@ test("Dialog keyboard focus cycles inside the modal", async () => {
 		expect(app.shows("text:Focus: outside")).toBe(false);
 	}
 	expect(app.shows("text:Focus: first")).toBe(true);
+});
+
+test("Dialog scrolls tall content within viewport margins and follows window resizing", async () => {
+	const app = await open("./ui-dialog-tall-fixture.tsx", {
+		platform: "macos",
+		width: 800,
+		height: 600,
+	});
+	await app.press("id:open");
+	await app.waitUntil(() => !app.shows("text:Start: pending"));
+	const start = Number(
+		app
+			.texts()
+			.find((text) => text.startsWith("Start: "))
+			?.slice(7),
+	);
+	expect(start).toBeGreaterThanOrEqual(16);
+	for (const height of [600, 400]) {
+		if (height === 400) await app.setViewport(800, height);
+		await app.scroll("id:tall-dialog", 3000);
+		await app.press("id:measure-end");
+		const end = Number(
+			app
+				.texts()
+				.find((text) => text.startsWith("End: "))
+				?.slice(5),
+		);
+		expect(end).toBeLessThanOrEqual(height - 16);
+		expect(end).toBeGreaterThan(100);
+	}
 });

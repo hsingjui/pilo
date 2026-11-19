@@ -16,6 +16,7 @@
   accessibility label is decorative; icon-only controls need a control label.
 - Fixtures and `nsh/test` coverage live in `desktop/tests/ui-*`. Check headless
   behavior and native macOS behavior separately; headless checks do not draw.
+- Popover defaults to center (like React); triggers near a window edge must pass `align="start"`.
 - Toast/ToastStack wrap native presentation; callers own a `ToastManager`
   (re-exported from `toast-stack`). Push with `{ timeout: durationInMs }` for
   auto-dismiss; omit timeout for a persistent toast. Advance on a timer, pausing
