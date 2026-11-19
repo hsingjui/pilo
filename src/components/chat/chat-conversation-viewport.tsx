@@ -131,6 +131,7 @@ const ChatConversationViewportImpl = forwardRef<
 	const plainShortChat = shouldRenderPlainShortChat({
 		enabled: USE_PLAIN_SHORT_CHAT,
 		promoted: shortChatPromoted,
+		messageCount: messages.length,
 	});
 	const handleScrollStateChange = useCallback(
 		(state: { scrollTop: number; sticky: boolean }) => {

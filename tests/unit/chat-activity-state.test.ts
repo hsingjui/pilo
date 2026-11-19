@@ -559,6 +559,7 @@ test("short chat stays plain until it is promoted", () => {
 		shouldRenderPlainShortChat({
 			enabled: true,
 			promoted: false,
+			messageCount: 8,
 		}),
 		true,
 	);
@@ -566,6 +567,7 @@ test("short chat stays plain until it is promoted", () => {
 		shouldRenderPlainShortChat({
 			enabled: true,
 			promoted: true,
+			messageCount: 8,
 		}),
 		false,
 	);

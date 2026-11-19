@@ -26,11 +26,15 @@ export function shouldInitializeShortChatPromoted({
 export function shouldRenderPlainShortChat({
 	enabled,
 	promoted,
+	messageCount,
 }: {
 	enabled: boolean;
 	promoted: boolean;
+	messageCount: number;
 }) {
-	return enabled && !promoted;
+	return (
+		enabled && !promoted && messageCount <= PLAIN_SHORT_CHAT_HARD_MAX_MESSAGES
+	);
 }
 
 export function shouldPromoteShortChatVirtualization({
