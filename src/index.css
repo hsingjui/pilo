@@ -755,10 +755,11 @@
 	--conversation-max-width: var(--pilo-conversation-max-width, min(94%, 56rem));
 }
 
-/* Keep mobile spacing independent of the user's reading size. */
+/* Keep the previous mobile UI text scale without enlarging rem-based geometry. */
 @media (max-width: 1023px) {
 	:root[data-remote-webui] {
-		--spacing: 4px;
+		/* Override the preference's inline root scale only for mobile WebUI. */
+		font-size: 100% !important;
 		--text-2xs: calc(1rem * 11 / 14);
 		--text-xs: calc(1rem * 12 / 14);
 		--text-sm: 1rem;
