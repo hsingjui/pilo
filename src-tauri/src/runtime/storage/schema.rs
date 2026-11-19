@@ -22,7 +22,7 @@ pub fn open(paths: &HostPaths) -> Result<SqliteConnection, String> {
 }
 
 pub(crate) fn open_with_paths(paths: &HostPaths) -> Result<SqliteConnection, String> {
-    let path = paths.database_path();
+    let path = paths.database_path()?;
     let database_existed = path.exists();
     let connection = SqliteConnection::open(&path)
         .map_err(|error| format!("failed to open Pilo SQLite index: {error}"))?;

@@ -311,10 +311,7 @@ pub fn run() {
             use tauri::Manager;
 
             runtime::tasks::initialize(tauri::async_runtime::handle().inner().clone());
-            let paths = runtime::host_paths::HostPaths::new(
-                app.path().app_data_dir().map_err(|error| format!("failed to resolve Pilo app data directory: {error}"))?,
-                app.path().resource_dir()?,
-            )?;
+            let paths = desktop_paths::initialize(app.handle())?;
             runtime::initialize_server_resource_dir(paths.resource_dir().to_owned());
             let runtime = runtime::Runtime::new(paths.clone(), desktop_events::from_app(app.handle()))
                 .with_web_assets(desktop_runtime::assets(app.handle()))?

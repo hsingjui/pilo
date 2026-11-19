@@ -194,7 +194,7 @@ fn normalize_local_pi_project(mut project: Project) -> Project {
 }
 
 fn local_session_anchor(paths: &HostPaths, project_id: &str) -> Result<std::path::PathBuf, String> {
-    let path = paths.session_anchor_path(project_id);
+    let path = paths.session_anchor_path(project_id)?;
     fs::create_dir_all(&path)
         .map_err(|error| format!("failed to create local Pi workspace anchor: {error}"))?;
     Ok(path)
@@ -203,7 +203,7 @@ fn local_session_anchor(paths: &HostPaths, project_id: &str) -> Result<std::path
 /// Remove the local anchor directory that holds a Local-Pi project's session
 /// files, so a re-added project does not resurrect the previous sessions.
 pub(crate) fn remove_session_anchor(paths: &HostPaths, project_id: &str) -> Result<(), String> {
-    let path = paths.session_anchor_path(project_id);
+    let path = paths.session_anchor_path(project_id)?;
     match fs::remove_dir_all(&path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
