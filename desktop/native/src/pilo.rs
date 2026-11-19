@@ -11,6 +11,7 @@ use pilo_lib::{
         host_events::HostEvents,
         host_paths::HostPaths,
         initialize_server_resource_dir,
+        preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
         project_api::project_list,
         runtime_api::chat_session_states,
         tasks,
@@ -109,6 +110,22 @@ pub struct Bootstrap {
     pub chat_sessions: Vec<JsonValue>,
 }
 
+/// The current revision and complete Host preference values.
+#[derive(JsObject)]
+pub struct NativePreferencesSnapshot {
+    pub revision: u64,
+    pub values: JsonValue,
+}
+
+impl From<PreferencesSnapshot> for NativePreferencesSnapshot {
+    fn from(snapshot: PreferencesSnapshot) -> Self {
+        Self {
+            revision: snapshot.revision,
+            values: JsonValue::Object(snapshot.values),
+        }
+    }
+}
+
 /// A native host for the shared Pilo runtime.
 #[class]
 pub struct Pilo {
@@ -128,6 +145,24 @@ impl Pilo {
             projects: encode_list(projects)?,
             chat_sessions: encode_list(chat_session_states(runtime).await?)?,
         })
+    }
+
+    async fn with_runtime_blocking<T: Send + 'static>(
+        this: Instance<Self>,
+        operation: impl FnOnce(&Runtime) -> Result<T, String> + Send + 'static,
+    ) -> Result<T, String> {
+        let task = this.with(|pilo| {
+            let host = pilo.host.clone();
+            pilo.executor.spawn(async move {
+                let host = host.lock().await;
+                let runtime = host.as_ref().ok_or(CLOSED)?.clone();
+                tokio::task::spawn_blocking(move || operation(&runtime))
+                    .await
+                    .map_err(|error| format!("Pilo runtime task failed: {error}"))?
+            })
+        });
+        task.await
+            .map_err(|error| format!("Pilo runtime task failed: {error}"))?
     }
 }
 
@@ -195,6 +230,27 @@ impl Pilo {
         let task = this.with(|pilo| pilo.executor.spawn(Self::load_bootstrap(pilo.host.clone())));
         task.await
             .map_err(|error| format!("failed to bootstrap Pilo: {error}"))?
+    }
+
+    /// Reads the complete Host preferences from the runtime's SQLite index.
+    pub async fn load_preferences(
+        this: Instance<Self>,
+    ) -> Result<NativePreferencesSnapshot, String> {
+        Self::with_runtime_blocking(this, |runtime| preferences_get(runtime).map(Into::into)).await
+    }
+
+    /// Applies a partial patch and returns the complete, updated preferences.
+    pub async fn save_preferences(
+        this: Instance<Self>,
+        patch: JsonValue,
+    ) -> Result<NativePreferencesSnapshot, String> {
+        Self::with_runtime_blocking(this, |runtime| {
+            let JsonValue::Object(patch) = patch else {
+                return Err("Pilo preference patch must be an object".into());
+            };
+            preferences_patch(runtime, patch, None).map(Into::into)
+        })
+        .await
     }
 
     /// Waits for the runtime to close. Safe to call again after shutdown.

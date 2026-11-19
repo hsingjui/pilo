@@ -8,6 +8,10 @@ debug builds). Tests can pass a separate absolute path. Call `bootstrap()`
 for saved projects and live chat snapshots, and await `shutdown()` before
 quitting the app. Bootstrap does not yet include the event cursor.
 
+Use `loadPreferences()` and `savePreferences(patch)` to read or update the
+existing Host preferences. Both return the current revision and complete
+values; writes patch only the supplied fields.
+
 Build the local development server with `cargo build -p pilo-server` from
 the repo root, or set `PILO_SERVER_BINARY` to an absolute path. Development
 WebUI assets come from `dist/`; a packaged app will stage them under
