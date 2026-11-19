@@ -475,6 +475,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parallel_sink_emits_agent_routing_and_updates_status_despite_delivery_failure() {
+        let events = Arc::new(crate::runtime::host_events::RecordingEvents::default());
+        let status = Arc::new(AtomicU8::new(status_to_u8(ParallelAgentStatus::Starting)));
+        let sink = ParallelEventSink {
+            events: events.clone(),
+            agent_id: "agent".into(),
+            status: status.clone(),
+        };
+        sink.send(RuntimeEvent::AssistantTextDelta {
+            generation: 1,
+            delta: String::new(),
+        });
+        assert_eq!(
+            status.load(Ordering::Acquire),
+            status_to_u8(ParallelAgentStatus::Busy)
+        );
+        assert_eq!(
+            *events.events.lock().unwrap(),
+            vec![(
+                PARALLEL_EVENT_NAME.into(),
+                json!({"agentId":"agent", "event":{"type":"assistant_text_delta", "generation":1, "delta":""}})
+            )]
+        );
+        events.fail.store(true, Ordering::Relaxed);
+        sink.send(RuntimeEvent::AssistantMessageEnd {
+            generation: 1,
+            stop_reason: None,
+            error_message: None,
+            usage: None,
+        });
+        assert_eq!(
+            status.load(Ordering::Acquire),
+            status_to_u8(ParallelAgentStatus::Waiting)
+        );
+        assert_eq!(events.events.lock().unwrap().len(), 1);
+    }
+
+    #[test]
     fn branch_slug_is_safe_and_bounded() {
         assert_eq!(slugify("Fix Login Flow"), "fix-login-flow");
         assert_eq!(slugify("***"), "task");

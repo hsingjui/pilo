@@ -42,3 +42,31 @@ impl HostEvents for RecordingEvents {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct InvalidPayload;
+
+    impl Serialize for InvalidPayload {
+        fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("invalid payload"))
+        }
+    }
+
+    #[test]
+    fn serialized_events_preserve_null_and_do_not_deliver_invalid_payloads() {
+        let recording = RecordingEvents::default();
+        let events: &dyn HostEvents = &recording;
+        events.emit_serialized("empty", ()).unwrap();
+        assert_eq!(
+            events.emit_serialized("invalid", InvalidPayload),
+            Err("invalid payload".into())
+        );
+        assert_eq!(
+            *recording.events.lock().unwrap(),
+            vec![("empty".into(), Value::Null)]
+        );
+    }
+}

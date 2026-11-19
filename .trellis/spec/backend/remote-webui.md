@@ -49,9 +49,22 @@ remote_device_rename(deviceId: String, name: String) -> RemoteHostState
 
 - `runtime_subscribe_events(window: WebviewWindow, events: State<RuntimeEventBus>, channel)`:
   Tauri injects the calling window; the frontend still sends only `{ channel }`.
-- `RuntimeEventBus::subscribe(window_label, channel)` replaces that window's
+- `RuntimeEventBus::subscribe(window_label, channel_id, Arc<dyn HostEvents>)` replaces that window's
   subscription, not other windows. `unsubscribe(window_label)` runs on
   `WindowEvent::Destroyed`, not a cancellable close request.
+- `HostEvents: Send + Sync` exposes `emit(name, serde_json::Value) -> Result<(), String>`.
+  Its typed `emit_runtime(RuntimeEventEnvelope)` hook defaults to the internal
+  `pilo://runtime` name. The Tauri shell overrides this hook to send the original
+  typed envelope through its IPC Channel, without a JSON round-trip or a new
+  application-wide event. Channel IDs remain diagnostic metadata.
+- Named events (`pilo://sessions`, `pilo://terminal`, `pilo://parallel-agent`,
+  `pilo://notification-open-session`) retain their existing payloads. Their Tauri
+  adapter lives in `desktop_events.rs`; runtime code serializes through
+  `HostEvents`, never `AppHandle::emit`.
+- Delivery failure must not prevent other subscribers or WebUI replay from
+  receiving the event. Empty payload fields remain intact; serialization errors
+  must return before delivery. Recording-host tests cover these cases, per-window
+  replacement/unsubscribe, and watcher delivery failure/recovery.
 
 ### HTTP routes (`runtime/remote/api/mod.rs`)
 

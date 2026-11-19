@@ -38,3 +38,38 @@ impl HostEvents for TauriHostEvents {
 pub(crate) fn from_app(app: &AppHandle) -> Arc<dyn HostEvents> {
     Arc::new(TauriHostEvents(app.clone()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::events::RuntimeEvent;
+
+    #[test]
+    fn runtime_channel_keeps_the_existing_unsequenced_envelope() {
+        let received = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let messages = Arc::clone(&received);
+        let channel = Channel::new(move |body| {
+            messages
+                .lock()
+                .unwrap()
+                .push(body.deserialize::<Value>().unwrap());
+            Ok(())
+        });
+        let bus = RuntimeEventBus::default();
+        bus.subscribe("main", channel.id(), Arc::new(TauriChannelEvents(channel)));
+        bus.send(RuntimeEventEnvelope::session(
+            "chat".into(),
+            "project".into(),
+            RuntimeEvent::AssistantTextDelta {
+                generation: 1,
+                delta: "text".into(),
+            },
+        ));
+        assert_eq!(
+            *received.lock().unwrap(),
+            vec![
+                serde_json::json!({"sessionKey":"chat", "projectId":"project", "type":"assistant_text_delta", "generation":1, "delta":"text"})
+            ]
+        );
+    }
+}

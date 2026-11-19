@@ -1,4 +1,8 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+
+pub use crate::runtime::notifications::DesktopNotificationSessionTarget;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use crate::runtime::notifications::emit_open_session;
 
 #[cfg(target_os = "windows")]
 mod windows_identity {
@@ -239,16 +243,6 @@ mod windows_identity {
     }
 }
 
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
-pub const NOTIFICATION_OPEN_SESSION_EVENT: &str = "pilo://notification-open-session";
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DesktopNotificationSessionTarget {
-    pub project_id: String,
-    pub session_id: String,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[serde(rename_all = "camelCase")]
@@ -406,9 +400,7 @@ pub fn send_macos_desktop_notification(
                     Ok(NotificationResponse::Click | NotificationResponse::ActionButton(_)) => {
                         if let Some(target) = target {
                             focus_main_window(&app);
-                            if let Err(error) =
-                                events.emit_serialized(NOTIFICATION_OPEN_SESSION_EVENT, target)
-                            {
+                            if let Err(error) = emit_open_session(events.as_ref(), target) {
                                 log::error!(
                                     target: "notification",
                                     "failed to emit notification target: {error}"
@@ -477,9 +469,7 @@ pub fn send_windows_desktop_notification(
                     toast = toast
                         .on_activated(move |_| {
                             focus_main_window(&click_app);
-                            if let Err(error) = events
-                                .emit_serialized(NOTIFICATION_OPEN_SESSION_EVENT, target.clone())
-                            {
+                            if let Err(error) = emit_open_session(events.as_ref(), target.clone()) {
                                 log::error!(
                                     target: "notification",
                                     "failed to emit notification target: {error}"

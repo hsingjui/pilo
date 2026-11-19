@@ -26,6 +26,7 @@ pub(crate) mod host_events;
 pub(crate) mod host_paths;
 #[cfg(feature = "tauri")]
 mod next_prompt;
+pub(crate) mod notifications;
 #[cfg(feature = "tauri")]
 pub mod nsh_spike;
 #[cfg(feature = "tauri")]
