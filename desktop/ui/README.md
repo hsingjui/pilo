@@ -59,6 +59,23 @@
   unlike initialized text and React; explicit inline `lineHeight: 20` does not
   restore it. Box/rows geometry remains unchanged. This SDK typing-attributes
   mismatch is verified only by native screenshots, not `nsh/test` view styles.
+- Command uses native `items`, query callbacks and slots instead of cmdk child
+  components. It supplies the search icon, row/group/shortcut/empty styling;
+  callers own empty copy, selection actions and loading indicators. Native
+  filtering is case-insensitive label/keyword substring matching, not cmdk's
+  fuzzy scoring; use `filterable={false}` for caller-ranked results (as Pilo's
+  React palette already does). Native arrows wrap at the ends; cmdk defaults
+  to stopping. Escape clears a nonempty query, then calls `onCancel`; cmdk's
+  containing Dialog closes immediately instead. Compose Command inside
+  CommandDialog and wire `onCancel` to the caller's open state. CommandDialog
+  matches the 640pt, min(560pt, 72vh), 12%-top container without altering Dialog.
+  Explicit `separator` adds section rules; default groups have none. Custom
+  `renderItem` replaces row content, keeping native `group-focus:` styling.
+  Native sections are flat rows with a shared 4pt list inset, not separately
+  padded groups (8pt less space between sections). The inner scroll view has no
+  public scrollbar-look prop, so overflow retains its platform indicator rather
+  than ScrollArea's themed thumb.
+  Components are static; live appearance captures verify the theme colors.
 - Toast/ToastStack wrap native presentation; callers own a `ToastManager`
   (re-exported from `toast-stack`). Push with `{ timeout: durationInMs }` for
   auto-dismiss; omit timeout for a persistent toast. Advance on a timer, pausing
