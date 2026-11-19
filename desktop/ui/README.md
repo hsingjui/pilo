@@ -37,6 +37,15 @@
   sweep continues through a 1.5s JS block and redraws its foreground gradient
   after light-to-dark appearance changes without remounting. Canvas draw reads
   theme tokens in a reactive effect; `nsh/test` cannot inspect recorded gradient colors.
+- Checkbox is a compact 16pt control with a 14pt mark. Use native `checked`,
+  `indeterminate` and `onChange({ checked })`, or `defaultChecked` for local state.
+  Labels stay outside; give the control an `accessibilityLabel`. Invalid styling
+  uses `invalid`; nsh/base does not expose an invalid accessibility state for
+  Checkbox, so callers must include validation context in the label. Marks use `primary-foreground` or
+  `indicatorColor`, not arbitrary SVG `currentColor` classes. Keyboard focus
+  composes a 3pt ring with the small shadow; rendered rings need native screenshots.
+  Its native shadow transition is stretched to 2s by the fixture's block probe;
+  the component keeps the standard transition duration.
 - Toast/ToastStack wrap native presentation; callers own a `ToastManager`
   (re-exported from `toast-stack`). Push with `{ timeout: durationInMs }` for
   auto-dismiss; omit timeout for a persistent toast. Advance on a timer, pausing
