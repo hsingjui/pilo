@@ -97,6 +97,12 @@ Results arrive through `nextEvents` as `extension_ui_request` events with
 `method: "setWidget"`, `widgetKey: "pilo.next-prompt.v1"`, and one JSON result
 in `widgetLines`; match the session, generation, request ID, and revision.
 
+`loadPromptEnhancementSettings(connectionId)` returns
+`{ connectionId, enabled, model, updatedAtMs }`, where `model` is
+`{ provider, id }` or `null` (follow the chat model). With no saved row,
+it returns `enabled: false`, `model: null`, and `updatedAtMs: 0`.
+An unknown connection is rejected. Loading does not contact Pi.
+
 Use `readProjectImage(projectId, path)` for a project-relative image and
 `readHistoryImage(projectId, sessionPath, imageId, fingerprint?)` for a
 transcript attachment. Both return `Uint8Array` bytes; nsh `Image` accepts

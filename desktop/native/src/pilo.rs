@@ -24,6 +24,7 @@ use pilo_lib::{
             project_fs_read_image, project_list, project_model_cache_list, project_model_scope_get,
             project_model_scope_set,
         },
+        prompt_enhancement::prompt_enhancement_settings_get,
         runtime_api::{
             chat_session_send_rpc, chat_session_start, chat_session_state, chat_session_stop,
         },
@@ -513,6 +514,18 @@ impl Pilo {
         Self::with_runtime(this, move |runtime| async move {
             let request = serde_json::from_value(request).map_err(|error| error.to_string())?;
             next_prompt_request(&runtime, request).await
+        })
+        .await
+    }
+
+    /// Reads the connection's saved prompt enhancement settings.
+    pub async fn load_prompt_enhancement_settings(
+        this: Instance<Self>,
+        connection_id: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, move |runtime| {
+            let settings = prompt_enhancement_settings_get(runtime, connection_id)?;
+            serde_json::to_value(settings).map_err(|error| error.to_string())
         })
         .await
     }

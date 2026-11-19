@@ -172,6 +172,20 @@ impl BootstrapFixture {
         Ok(())
     }
 
+    /// Seeds enabled prompt enhancement settings for the local connection.
+    pub fn seed_prompt_enhancement_settings(&self) -> Result<(), String> {
+        let paths = HostPaths::new(self.0.clone(), self.0.clone())?;
+        storage::open(&paths)?
+            .execute(
+                "INSERT INTO connection_prompt_enhancement_settings
+                 (connection_id, enabled, provider, model_id, updated_at_ms)
+                 VALUES ('local', 1, 'fixture', 'rewrite', 123)",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
     /// Saves an indexed session for a fixture project without starting Pi.
     pub fn seed_indexed_session(&self, project_id: String, cwd: String) -> Result<(), String> {
         let paths = HostPaths::new(self.0.clone(), self.0.clone())?;
