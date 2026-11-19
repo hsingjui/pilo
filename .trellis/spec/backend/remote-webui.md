@@ -11,6 +11,7 @@ Apply code-spec depth when a change touches:
 
 - The HTTP/WebSocket Remote adapter and desktop LAN discovery (`runtime/remote/*`).
 - The `RuntimeEventBus` broadcast/replay contract (`runtime/events.rs`).
+- The sequence-pinned chat transcript snapshot and its turn projection.
 - `remote_host_config` / `remote_pairing` / `remote_devices` SQLite tables.
 - The transport-neutral `PiloClient` boundary (`src/lib/api/pilo-client.ts` + adapters).
 
@@ -62,6 +63,117 @@ enum EventBatch {
   envelopes through the existing channel. WebUI keeps its independent shared
   live/replay queues and original gap/replay behavior.
 
+### Chat transcript snapshots (`runtime/transcript.rs`)
+
+```rust
+Runtime::chat_transcript_snapshot(
+    &self, session_key: &str, window: TranscriptWindow,
+) -> impl Future<Output = Result<TranscriptSnapshot, String>>
+TranscriptWindow { start_message: Option<usize>, message_limit: Option<usize>, include_message_index: bool }
+TranscriptSnapshot { event_sequence: u64, session_key: String, generation: u64, history: Value, live: TurnLive }
+```
+
+JSON fields are camelCase. `live` is tagged by `type`: `{"type":"idle"}`,
+`{"type":"active","events":[...]}`, or `{"type":"truncated"}`. `history`
+uses the existing history DTO, window selection and fingerprint; a missing
+`messageLimit` requests all messages, otherwise the reader's 1–256 limit applies.
+This is a runtime API, not a new Tauri command or Remote HTTP endpoint. Existing
+Tauri and WebUI history paths and channel payloads are unchanged.
+
+Subscribe first and keep the stream while awaiting the snapshot. For the selected
+session/generation, replaying **history + live + matching events strictly above
+`eventSequence` gives the exact transcript**, within the requested history window,
+provided the snapshot is not truncated, subsequent delivery has no gap, and Pi
+only appends to the captured JSONL prefix. Replace that session's transcript;
+do not append the snapshot to its previous contents. Discard buffered events at
+or below this transcript cut for that transcript only, not other sessions or
+global state. Continue normal session/generation routing above the cut. A gap or
+generation change requires a fresh cut rather than guessing missing deltas.
+
+The projection/base Arcs, generation and sequence are captured under the same
+publish lock that sequences events. JSONL I/O and parsing happen outside it;
+events published during the read remain above the cut. Idle captures retry if
+their generation/revision changed during the read.
+
+- **Idle**: no live turn is retained. Read the full current JSONL source and
+  serialize the requested history window; there are no live events to replay.
+- **Active**: Pilo recorded a safe idle boundary before sending the prompt.
+  History ends at that `base_size`; `events` contains the ordered runtime-event
+  payloads since the recorded start, including accepted mid-turn steers. Adjacent
+  text/thinking deltas merge only when replay semantics are preserved. Retention
+  is bounded to 2,048 merged events and 16 MiB serialized event payload bytes.
+- **Truncated**: the runtime cannot establish exact reconstruction. Causes include
+  missing/unsafe starts, attachment mid-turn, autonomous Pi turns (queued
+  follow-ups, compaction retries or extensions), overflow, invalidated prefixes,
+  or unsupported connections. Do not apply its empty history as authoritative,
+  append suspect live data, or resume deltas onto an uncertain transcript. **Hold
+  off until Host activity confirms idle/settle, then refetch authoritative
+  history/a fresh snapshot.** Do not repeatedly splice snapshots during the
+  unsafe turn. Remote/SSH/WSL sessions are always `Truncated` in this version,
+  even when idle: use the existing settled-history reader for those connections,
+  not a loop waiting for their snapshot's `live` to become `Idle`.
+
+Local settle resets the projection and releases its base; the next prompt records
+a new boundary. A generation bump resets ownership. Unknown or closing sessions
+return `Err`; this API does not start or resurrect a Pi process.
+
+#### Projection event coverage
+
+`ChatEventSink` observes events under the publication lock. Only an active,
+recorded turn in the current generation retains events; idle-time metadata leaves
+`Idle`, and truncated turns retain no events. Unsolicited content or raw
+`agent_start` signals an unrecorded turn, not idle metadata.
+
+- **Retained while Active**: expected prompt/steer `UserMessageStart` echoes;
+  assistant start, usage, text delta/snapshot and thinking start/delta/end; tool
+  execution start/update/end in order; queue updates, runtime logs, extension UI
+  requests, auto-retry end, summarization-retry events and non-retrying compaction
+  end; RPC messages except lifecycle responses below; and same-generation
+  starting/running/stopping process events. Other events forwarded through this
+  sink are retained while Active unless explicitly excluded below.
+- **Lifecycle, not retained**: runtime `AssistantMessageEnd` means
+  `agent_settled` and resets to Idle. Raw Pi assistant `message_end` does **not**
+  settle a turn: both assistant messages and intervening tool events stay Active.
+  `PiReattached` resets, then truncates an active attachment. Raw `agent_start`
+  consumes recorded-start permission or truncates an autonomous run, without
+  emitting a new runtime payload.
+- **Invalidate, not retained**: auto-retry start; and, while a turn is active,
+  compaction start/retry, runtime errors and failed/stopped process events. These truncate unsafe
+  live reconstruction rather than claiming a clean settle.
+- **Prompt responses**: owning rejection/handled-without-turn resets to Idle if
+  no run started, otherwise truncates; an owning queued disposition truncates.
+  Failed, handled or queued prompt/steer responses cancel the corresponding
+  expected user echo. A failed steer must not authorize a future follow-up.
+  Responses that leave the projection Active follow the ordinary RPC retention
+  rule; lifecycle early returns are not pushed.
+- **Outside the projection**: stale-generation events, events outside a recorded
+  active turn, internally consumed initialization responses, and global events
+  published outside `ChatEventSink`. The global stream still delivers them by
+  its existing rules; projection retention never suppresses transport delivery.
+
+#### Bounded prefix seal
+
+Before sending a local prompt from idle (`send_rpc`), the blocking capture worker
+records file identity (dev/inode on Unix), size, mtime, boundary newline and
+SHA-256 of the last **64 KiB before
+`base_size`**, or the whole file if smaller. Empty files are valid boundaries.
+Capture rejects changing metadata; it never reads/hashes a whole large history.
+The existing non-Unix identity fallback uses creation time, not a strong file ID.
+
+Snapshot reads require the same identity, size at least `base_size`, the same hash
+over `[max(0, base_size - 64 KiB), base_size)`, and a newline at the boundary.
+Identity/size/mtime stability and the tail are checked around the history read;
+mtime change without growth conservatively truncates, including an mtime-only
+touch. Growth may change mtime because appends are expected. Failure returns
+`Truncated`. Only the snapshot path reads the full prefix needed for history.
+
+This is an **append-only assumption, not a full-prefix integrity proof**. Two
+known blind spots, covered by tests, are an earlier-prefix rewrite outside the
+tail followed by an append, and a same-size earlier rewrite with restored mtime
+(or indistinguishable mtime due to timestamp resolution). Both can preserve the
+inode, tail and boundary checks while changing earlier history. Do not claim that
+this bounded seal detects every external rewrite.
+
 ### Re-bootstrap event classes
 
 `Runtime::bootstrap_snapshot(&self) -> Result<BootstrapSnapshot, String>` is async.
@@ -82,11 +194,15 @@ must remain readable. A further overflow reports another gap, not silent loss.
 The bootstrap cut is not a transcript watermark: do not use it to discard queued
 session deltas, including events already queued at or below the new cut.
 
-Clients may see a session event already reflected in state when re-bootstrapping
-mid-stream. There is **no session metadata cursor and no delta suppression**.
-A transcript-snapshot watermark is a separate follow-up. For a chat session
-created after the bootstrap cut and absent from the snapshot, every event
-applies. Do not discard such events because the snapshot lacks a row.
+Legacy bootstrap-only clients may see a session event already reflected in state
+when re-bootstrapping mid-stream. There is no session metadata cursor or automatic
+transport delta suppression. A client using a valid transcript snapshot replaces
+that session's transcript and applies only events above its `eventSequence`, so
+it no longer repeats transcript content after re-bootstrap. This stronger cut
+does not upgrade `bootstrap_snapshot` itself or change legacy clients. For a chat
+session created after the bootstrap cut and absent from the snapshot, every event
+applies unless a separate transcript snapshot covers it. Do not discard such
+events merely because the bootstrap lacks a row.
 Pi session-family events in the legacy project-Pi lane may omit `sessionKey`;
 preserve that lane's generation/routing rules rather than discarding its events.
 
@@ -94,8 +210,9 @@ preserve that lane's generation/routing rules rather than discarding its events.
 - **B: invalidate only** — refetch the authoritative value; never increment a
   counter or append state based on the notification. Completion IDs identify
   receipts; `SessionTurnCompleted` is not an increment instruction.
-- **C: chat-session-scoped** — may repeat after re-bootstrap; no deduplication
-  guarantee until a transcript watermark accompanies the transcript snapshot.
+- **C: chat-session-scoped** — legacy bootstrap-only replay may repeat. Transcript
+  snapshot clients avoid transcript repeats with the per-session cut above;
+  `Truncated` requires waiting for idle and refetching, not delta replay.
 
 The exhaustive match in `events/recovery_tests.rs` must classify every variant;
 adding a variant without classifying it fails test compilation. Update this table
@@ -527,11 +644,19 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
 | Foreground probe timeout/send failure        | Socket closes; existing auth probe/reconnect/replay runs |
 | Another desktop window subscribes/reloads   | Existing windows retain completion/RPC delivery |
 | Desktop window destroyed                   | Remove only that window's channel               |
+| Transcript snapshot: unknown/closing session | Rust `Err`; never spawn a process              |
+| Transcript snapshot: repeated idle read races | Retryable `Err` after bounded retries          |
+| Transcript snapshot: unsafe start, seal failure or overflow | `live: Truncated`; wait for idle, then refetch |
+| Transcript snapshot: Remote/SSH/WSL         | Always `Truncated`; settled-history fallback    |
 
 ---
 
 ## 5. Good / Base / Bad Cases
 
+- **Good transcript recovery**: subscribe, load a non-truncated transcript cut,
+  replace history + live, then apply buffered matching events above its sequence.
+- **Bad transcript recovery**: use the generic bootstrap cut as a transcript
+  watermark, or append deltas after `Truncated` without waiting/refetching.
 - **Good LAN picker**: multiple host IPv4s appear with the saved port; selecting
   one saves only that origin, while existing origins are marked Added. No suitable
   interface leaves manual entry unchanged; discovery failure offers retry.
@@ -558,6 +683,25 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
 ---
 
 ## 6. Tests Required
+
+Transcript snapshot assertions (`chat_sessions/transcript_proof.rs`,
+`chat_sessions/turn_projection.rs`, `events/turn_projection.rs` and
+`session_history/transcript.rs`):
+
+- Merged replay equals raw replay; preserve steers and tool ordering, trip both
+  bounds, keep idle metadata Idle, and reset only on settle/generation lifecycle.
+  Capture before sending; concurrent publication and publication during history
+  I/O must preserve the cut. Host/WebUI serialized payloads stay unchanged.
+- Reject tail mismatch with append, shrink, same-bytes identity replacement and
+  a non-newline boundary even when the current file ends in a newline. Read at
+  most 64 KiB at capture; cover mtime-only invalidation and both known blind spots.
+- Replay fake-Pi snapshots with messages persisted after publication. The ignored
+  `real_pi_transcript_snapshot_proof` checks right after prompt, mid-text,
+  mid-tool, turn ending and idle against fresh settled history; queued follow-up
+  is Truncated and verifies fresh-history resync. Preserve its semantic comparison
+  scope: ordered content/tool/completion data, excluding entry IDs, timestamps
+  and transport-only tool metadata. The ignored `prompt_capture_benchmark`
+  compares old full hashing with bounded capture on small and large JSONL files.
 
 Session recovery assertions, pending explicit authorization (no tests added or
 run): cached reads do not contact the server; unknown projects remain 404;
@@ -644,6 +788,12 @@ Additional multi-address assertion points, pending explicit test authorization
 ---
 
 ## 7. Wrong vs Correct
+
+Transcript recovery: wrong — discard chat deltas using a generic bootstrap cut,
+or splice more live events onto a Truncated transcript. Correct — replace from a
+valid transcript snapshot and replay only above its cut; if Truncated, hold off
+until idle and refetch. Never describe the bounded tail seal as proof against
+arbitrary prefix rewrites.
 
 Session recovery: wrong — block cached session access on a successful remote scan
 or swallow scan errors into console-only output. Correct — read the Host index
