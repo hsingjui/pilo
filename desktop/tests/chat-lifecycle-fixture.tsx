@@ -83,13 +83,41 @@ async function expectError(promise: Promise<unknown>, message: string) {
 	throw new Error(`expected rejection: ${message}`);
 }
 
+async function expectIdle(pilo: Pilo, generation: number) {
+	const state = (await pilo.chatState(sessionKey)) as {
+		sessionKey: string;
+		projectId: string;
+		sessionPath: string | null;
+		prepared: boolean;
+		initialized: boolean;
+		activeTurn: boolean;
+		snapshot: { state: string; generation: number };
+	} | null;
+	if (
+		state?.sessionKey !== sessionKey ||
+		state.projectId !== projectId ||
+		state.sessionPath !== null ||
+		state.prepared !== true ||
+		state.initialized !== true ||
+		state.activeTurn !== false ||
+		state.snapshot.state !== "running" ||
+		state.snapshot.generation !== generation
+	) {
+		throw new Error(`unexpected chat state: ${JSON.stringify(state)}`);
+	}
+}
+
 async function run() {
 	const realPi = host.params.realPi === true;
-	const stop = host.params.stop === true;
+	const state = host.params.state === true;
+	const stop = state || host.params.stop === true;
 	const fixture = new ChatFixture(realPi);
 	const pilo = new Pilo(fixture.dataDir());
 	const input = { projectId, sessionKey, noSession: true };
 	try {
+		if (state && (await pilo.chatState(sessionKey)) !== null) {
+			throw new Error("unexpected chat state before startup");
+		}
 		await expectError(
 			pilo.startChat({ ...input, projectId: "missing" }),
 			"Project 'missing' was not found",
@@ -106,7 +134,11 @@ async function run() {
 		) {
 			throw new Error(`Pi did not start: ${JSON.stringify(snapshot)}`);
 		}
-		if (realPi) await smokeTurn(pilo, fixture);
+		if (state) await expectIdle(pilo, snapshot.generation);
+		if (realPi) {
+			await smokeTurn(pilo, fixture);
+			if (state) await expectIdle(pilo, snapshot.generation);
+		}
 		if (stop) {
 			await pilo.stopChat(sessionKey, "fixture complete");
 			await expectError(
@@ -114,6 +146,9 @@ async function run() {
 				"is not running",
 			);
 			await pilo.stopChat(sessionKey);
+			if (state && (await pilo.chatState(sessionKey)) !== null) {
+				throw new Error("chat state remained after stopping Pi");
+			}
 		}
 	} finally {
 		await pilo.shutdown();
@@ -126,7 +161,13 @@ async function run() {
 			"Pilo runtime has been shut down",
 		);
 	}
-	const method = stop ? "stopChat" : "startChat";
+	if (state) {
+		await expectError(
+			pilo.chatState(sessionKey),
+			"Pilo runtime has been shut down",
+		);
+	}
+	const method = state ? "chatState" : stop ? "stopChat" : "startChat";
 	status.set(
 		realPi
 			? `${method}: relay/deepseek-flash replied NSH_BRIDGE_OK`

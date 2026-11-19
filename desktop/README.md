@@ -45,6 +45,9 @@ for a new session; `noSession` defaults to false. The optional client-selected
 built-in extension is `{ id: "model-catalog" }`.
 `stopChat(sessionKey, reason?)` stops the Pi process for that key and is a
 no-op if the session is not running.
+`chatState(sessionKey)` returns the live runtime metadata and Pi process
+snapshot for that key, or `null` if no state is available. It does not return
+transcript text.
 
 `loadSessionReadStates()` reads the saved read revisions across projects.
 Call `markSessionRead(projectId, sessionPath, revision)` with the positive

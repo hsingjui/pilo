@@ -18,7 +18,7 @@ use pilo_lib::{
         initialize_server_resource_dir,
         preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
         project_api::{project_fs_read_image, project_list},
-        runtime_api::{chat_session_start, chat_session_stop},
+        runtime_api::{chat_session_start, chat_session_state, chat_session_stop},
         session_api::{session_history_image, session_reconcile},
         tasks,
         web_assets::{WebAsset, WebAssets},
@@ -458,6 +458,15 @@ impl Pilo {
     ) -> Result<(), String> {
         Self::with_runtime(this, move |runtime| async move {
             chat_session_stop(&runtime, session_key, reason).await
+        })
+        .await
+    }
+
+    /// Returns a live chat state, or null when none is available for the key.
+    pub async fn chat_state(this: Instance<Self>, session_key: String) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            serde_json::to_value(chat_session_state(&runtime, session_key).await?)
+                .map_err(|error| error.to_string())
         })
         .await
     }

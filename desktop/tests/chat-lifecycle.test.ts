@@ -11,3 +11,10 @@ test("Pilo stops a running chat and accepts a repeated stop", async () => {
 	});
 	await app.waitFor("text:stopChat verified", { timeout: 15000 });
 });
+
+test("Pilo returns live chat state only while the session is running", async () => {
+	const app = await open("./chat-lifecycle-fixture.tsx", {
+		host: { params: { state: true } },
+	});
+	await app.waitFor("text:chatState verified", { timeout: 15000 });
+});
