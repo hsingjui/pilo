@@ -3,6 +3,7 @@ mod idle_cache;
 mod project_lifecycle;
 mod session_control;
 mod session_start;
+mod transcript;
 mod turn_projection;
 
 use std::{

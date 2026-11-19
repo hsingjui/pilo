@@ -14,7 +14,8 @@ pub struct TurnLimits {
     pub max_bytes: usize,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum TurnLive {
     Idle,
     Active { events: Arc<Vec<Arc<RuntimeEvent>>> },

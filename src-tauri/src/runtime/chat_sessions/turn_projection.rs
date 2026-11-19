@@ -1,13 +1,17 @@
 use std::{
     collections::VecDeque,
-    fs::File,
-    io::{Read, Seek, SeekFrom},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 
 use crate::runtime::events::{
     PiProcessState, RuntimeEvent, RuntimeEventBus, SequencedRuntimeEvent,
     turn_projection::{TurnLimits, TurnLive, TurnProjection},
+};
+use crate::runtime::{
+    session_history::{
+        TranscriptBase, empty_transcript_history, read_transcript_history, record_transcript_base,
+    },
+    transcript::{TranscriptSnapshot, TranscriptWindow},
 };
 
 pub(super) enum PromptMode {
@@ -29,6 +33,7 @@ pub(super) struct SessionTurn {
 }
 
 struct TurnState {
+    base: Option<Arc<TranscriptBase>>,
     projection: TurnProjection,
     generation: u64,
     sequence: u64,
@@ -49,6 +54,7 @@ impl TurnState {
     }
 
     fn reset(&mut self) {
+        self.base = None;
         self.projection.settle();
         self.running = false;
         self.awaiting_agent_start = false;
@@ -80,6 +86,102 @@ impl TurnState {
 }
 
 impl SessionTurn {
+    pub(super) async fn snapshot(
+        &self,
+        events: &RuntimeEventBus,
+        session_key: &str,
+        path: Option<String>,
+        window: TranscriptWindow,
+    ) -> Result<TranscriptSnapshot, String> {
+        self.snapshot_with_reader(events, session_key, window, |base| {
+            let path = path.clone();
+            async move {
+                match path {
+                    Some(path) => read_transcript_history(path, base, window).await,
+                    None if base.is_none() => empty_transcript_history(window),
+                    None => Err("transcript source is unavailable".to_owned()),
+                }
+            }
+        })
+        .await
+    }
+
+    async fn snapshot_with_reader<
+        F: std::future::Future<Output = Result<serde_json::Value, String>>,
+    >(
+        &self,
+        events: &RuntimeEventBus,
+        session_key: &str,
+        window: TranscriptWindow,
+        mut read: impl FnMut(Option<Arc<TranscriptBase>>) -> F,
+    ) -> Result<TranscriptSnapshot, String> {
+        for attempt in 0..3 {
+            let (projection, base, generation, revision, event_sequence) = events
+                .with_publish_lock(|| {
+                    let state = self
+                        .state
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    (
+                        state.projection.snapshot(),
+                        state.base.clone(),
+                        state.generation,
+                        state.revision,
+                        events.latest_sequence(),
+                    )
+                });
+            let mut live = projection.live;
+            let history = if matches!(live, TurnLive::Truncated) {
+                empty_transcript_history(window)?
+            } else {
+                let result = read(base.clone()).await;
+                if matches!(live, TurnLive::Idle)
+                    && !events.with_publish_lock(|| {
+                        let state = self
+                            .state
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        state.generation == generation && state.revision == revision
+                    })
+                {
+                    continue;
+                }
+                match result {
+                    Ok(history) => history,
+                    Err(_) if matches!(live, TurnLive::Idle) && attempt < 2 => continue,
+                    Err(_) => {
+                        live = TurnLive::Truncated;
+                        if let Some(base) = &base {
+                            events.with_publish_lock(|| {
+                                let mut state = self
+                                    .state
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                if state
+                                    .base
+                                    .as_ref()
+                                    .is_some_and(|current| Arc::ptr_eq(current, base))
+                                {
+                                    state.projection.truncate();
+                                    state.revision = state.revision.wrapping_add(1);
+                                }
+                            });
+                        }
+                        empty_transcript_history(window)?
+                    }
+                }
+            };
+            return Ok(TranscriptSnapshot {
+                event_sequence,
+                session_key: session_key.to_owned(),
+                generation,
+                history,
+                live,
+            });
+        }
+        Err("session changed while transcript was being read; retry the snapshot".to_owned())
+    }
+
     pub(super) fn new(local: bool) -> Self {
         let mut projection = TurnProjection::new(TurnLimits {
             max_events: 2048,
@@ -91,6 +193,7 @@ impl SessionTurn {
         Self {
             local,
             state: Mutex::new(TurnState {
+                base: None,
                 projection,
                 generation: 0,
                 sequence: 0,
@@ -161,7 +264,7 @@ impl SessionTurn {
         let Some(token) = token else {
             return;
         };
-        let size = tokio::task::spawn_blocking(move || path.and_then(record_base_size))
+        let base = tokio::task::spawn_blocking(move || path.and_then(record_transcript_base))
             .await
             .ok()
             .flatten();
@@ -178,8 +281,9 @@ impl SessionTurn {
                 state.prompt_id = prompt_id;
                 return;
             }
-            if let Some(size) = size {
-                state.projection.begin(size);
+            if let Some(base) = base {
+                state.projection.begin(base.size);
+                state.base = Some(base);
                 state.awaiting_agent_start = true;
             } else {
                 state.projection.truncate();
@@ -335,30 +439,6 @@ impl SessionTurn {
     }
 }
 
-fn record_base_size(path: String) -> Option<u64> {
-    let mut file = File::open(&path).ok()?;
-    let before = file.metadata().ok()?;
-    if !before.is_file() {
-        return None;
-    }
-    let size = before.len();
-    if size > 0 {
-        file.seek(SeekFrom::End(-1)).ok()?;
-        let mut last = [0];
-        file.read_exact(&mut last).ok()?;
-        if last != *b"\n" {
-            return None;
-        }
-    }
-    let after = file.metadata().ok()?;
-    let current = std::fs::metadata(path).ok()?;
-    (before.len() == after.len()
-        && before.len() == current.len()
-        && before.modified().ok()? == after.modified().ok()?
-        && before.modified().ok()? == current.modified().ok()?)
-    .then_some(size)
-}
-
 fn event_generation(event: &RuntimeEvent) -> Option<u64> {
     match event {
         RuntimeEvent::ProcessState { generation, .. }
@@ -401,6 +481,10 @@ fn event_generation(event: &RuntimeEvent) -> Option<u64> {
         | RuntimeEvent::ProjectModelScopeChanged { .. } => None,
     }
 }
+
+#[cfg(test)]
+#[path = "transcript_proof.rs"]
+mod proof;
 
 #[cfg(test)]
 mod tests {
@@ -449,7 +533,7 @@ mod tests {
         }
     }
 
-    fn sink(local: bool) -> ChatEventSink {
+    pub(super) fn sink(local: bool) -> ChatEventSink {
         ChatEventSink {
             events: RuntimeEventBus::default(),
             turn: Arc::new(SessionTurn::new(local)),

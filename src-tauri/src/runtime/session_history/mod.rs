@@ -8,7 +8,12 @@ mod parser_projection;
 mod parser_stats;
 mod reader;
 mod serialize;
+mod transcript;
 mod types;
+
+pub(crate) use transcript::{
+    TranscriptBase, empty_transcript_history, read_transcript_history, record_transcript_base,
+};
 
 pub(crate) use cache::SessionHistoryCache;
 pub use images::read_history_image_bytes;

@@ -61,8 +61,10 @@ mod wsl;
 use tokio::process::Command;
 
 pub(crate) use events::RuntimeEventBus;
+mod transcript;
 pub(crate) use remote::RemoteServerManager;
 pub use server_deploy::initialize_server_resource_dir;
+pub use transcript::{TranscriptSnapshot, TranscriptWindow};
 
 /// Pilo 本体是 GUI 程序（没有控制台），Windows 会为它启动的控制台子进程
 /// 分配一个新的控制台窗口（即用户看到的"终端"）。用 CREATE_NO_WINDOW
