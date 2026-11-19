@@ -25,6 +25,7 @@ import {
 	SettingsSection,
 } from "./compact-layout";
 import { SettingsConfirmDialog } from "./settings-confirm-dialog";
+import { ThemeConversionNotice } from "./theme-conversion-notice";
 import {
 	ThemeTokenEditor,
 	editableThemeTokens,
@@ -48,6 +49,7 @@ export function AppearanceSettings() {
 		theme,
 		themeFamily,
 		themeCustomTokens = {},
+		themeCustomConversion,
 		themeCustomCss,
 		supportsThemeTokens,
 		themeCustomName,
@@ -229,7 +231,16 @@ export function AppearanceSettings() {
 				</SettingsRow>
 				<div className="space-y-3 p-3">
 					{supportsThemeTokens ? (
-						<ThemeTokenEditor tokens={draftTokens} onChange={setDraftTokens} />
+						<>
+							<ThemeConversionNotice
+								conversion={themeCustomConversion}
+								savedThemeName={sourceName}
+							/>
+							<ThemeTokenEditor
+								tokens={draftTokens}
+								onChange={setDraftTokens}
+							/>
+						</>
 					) : (
 						<Textarea
 							aria-label={t("settings.themeCustomCss")}

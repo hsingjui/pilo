@@ -154,10 +154,12 @@ export function ThemeProvider({
 
 	useEffect(() => {
 		try {
+			const { themeCustomConversion: _conversion, ...cachedSettings } =
+				settings;
 			localStorage.setItem(
 				THEME_CACHE_KEY,
 				JSON.stringify({
-					...settings,
+					...cachedSettings,
 					...(supportsThemeTokens(settings)
 						? { themeCustomTokenCss: customThemeCss(settings) }
 						: {}),

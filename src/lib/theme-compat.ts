@@ -20,11 +20,12 @@ export function normalizeThemeSettings(next: ThemeSettings): ThemeSettings {
 }
 
 export function compatibleThemeUpdate(
-	update: ThemeSettingsUpdate,
+	update: ThemeSettingsUpdate & Pick<ThemeSettings, "themeCustomConversion">,
 	tokens: boolean,
 ): ThemeSettingsUpdate {
-	if (tokens) return update;
-	const { themeCustomTokens: _tokens, ...legacy } = update;
+	const { themeCustomConversion: _conversion, ...writable } = update;
+	if (tokens) return writable;
+	const { themeCustomTokens: _tokens, ...legacy } = writable;
 	if (legacy.saveCustomTheme) {
 		const { name, css } = legacy.saveCustomTheme;
 		return { ...legacy, saveCustomTheme: { name, css } };
@@ -40,7 +41,11 @@ export function customThemeCss(settings: ThemeSettings): string {
 }
 
 export function legacyThemeInitial(settings: ThemeSettings) {
-	const { themeCustomTokens: _tokens, ...legacy } = settings;
+	const {
+		themeCustomTokens: _tokens,
+		themeCustomConversion: _conversion,
+		...legacy
+	} = settings;
 	return {
 		...legacy,
 		savedCustomThemes: settings.savedCustomThemes.map(({ name, css }) => ({

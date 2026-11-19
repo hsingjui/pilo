@@ -4,6 +4,26 @@ import type { CustomThemeTokens } from "./theme-tokens";
 export type Theme = "dark" | "light" | "system";
 export type ThemeFamily = "lody" | "claude" | "custom";
 
+export type ThemeConversionIssue = {
+	kind: "rule" | "declaration";
+	selector?: string;
+	text: string;
+	reason:
+		| "unsupported-at-rule"
+		| "unsupported-selector"
+		| "malformed"
+		| "not-custom-property"
+		| "unknown-token"
+		| "unsupported-value"
+		| "invalid-value"
+		| "appearance-not-allowed";
+};
+
+export type ThemeCustomConversion = {
+	current: ThemeConversionIssue[];
+	savedThemes: { name: string; issues: ThemeConversionIssue[] }[];
+};
+
 export type ThemeSettings = {
 	revision: number;
 	theme: Theme;
@@ -13,6 +33,7 @@ export type ThemeSettings = {
 	// themeCustomCss / saved css remain one release for rollback.
 	// Until the Host sends this field, CSS remains the active contract.
 	themeCustomTokens?: CustomThemeTokens;
+	readonly themeCustomConversion?: ThemeCustomConversion;
 	themeCustomName: string;
 	savedCustomThemes: SavedCustomTheme[];
 };

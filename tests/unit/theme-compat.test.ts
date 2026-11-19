@@ -76,7 +76,7 @@ test("all legacy updates and initial migration omit token keys", () => {
 		const payload = compatibleThemeUpdate(update, false);
 		assert.equal(Object.hasOwn(payload, "themeCustomTokens"), false);
 		assert.equal(Object.hasOwn(payload.saveCustomTheme ?? {}, "tokens"), false);
-		assert.equal(compatibleThemeUpdate(update, true), update);
+		assert.deepEqual(compatibleThemeUpdate(update, true), update);
 	}
 	assert.deepEqual(compatibleThemeUpdate(updates[3], false), {
 		themeFamily: "custom",
@@ -90,6 +90,44 @@ test("all legacy updates and initial migration omit token keys", () => {
 				savedCustomThemes: [{ name: "Green", css: "", tokens: {} }],
 			}),
 		).includes("tokens"),
+		false,
+	);
+});
+
+test("conversion diagnostics are read-only and excluded from every outgoing mode", () => {
+	const themeCustomConversion = {
+		current: [{ kind: "rule", reason: "malformed", text: "bad {" }],
+		savedThemes: [],
+	} as const;
+	// Host diagnostics may accompany a structurally typed update at runtime.
+	const conversion = {
+		current: [...themeCustomConversion.current],
+		savedThemes: [],
+	};
+	for (const tokens of [false, true]) {
+		for (const update of [
+			{ theme: "light" } as const,
+			{ themeCustomTokens: {} },
+			{ saveCustomTheme: { name: "Green", css: ":root{}", tokens: {} } },
+			{ deleteCustomTheme: "Green" },
+		]) {
+			assert.equal(
+				Object.hasOwn(
+					compatibleThemeUpdate(
+						{ ...update, themeCustomConversion: conversion },
+						tokens,
+					),
+					"themeCustomConversion",
+				),
+				false,
+			);
+		}
+	}
+	assert.equal(
+		Object.hasOwn(
+			legacyThemeInitial({ ...legacy, themeCustomConversion: conversion }),
+			"themeCustomConversion",
+		),
 		false,
 	);
 });

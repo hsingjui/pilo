@@ -27,6 +27,40 @@
 			document.documentElement.classList.add("pilo-browser");
 			document.documentElement.dataset.remoteWebui = "";
 			const legacy = new URLSearchParams(location.search).has("legacy");
+			const conversion = {
+				current: [
+					{
+						kind: "rule",
+						reason: "unsupported-selector",
+						selector: ".custom-card:hover",
+						text: ".custom-card:hover { box-shadow: 0 8px 24px #0003; }",
+					},
+				],
+				savedThemes: [
+					{
+						name: "Recovered",
+						issues: [
+							{
+								kind: "rule",
+								reason: "unsupported-at-rule",
+								text: "@media (prefers-reduced-motion: reduce) {\n  .custom-card { transition: none; }\n}",
+							},
+							{
+								kind: "declaration",
+								reason: "unknown-token",
+								selector: ":root",
+								text: "--custom-accent-shadow: 0 8px 24px rgba(51, 102, 153, 0.2);",
+							},
+							{
+								kind: "declaration",
+								reason: "appearance-not-allowed",
+								selector: ":root.dark",
+								text: "--pilo-bubble-radius: 1.5rem;",
+							},
+						],
+					},
+				],
+			};
 			let settings = {
 				revision: 1,
 				theme: "light",
@@ -34,12 +68,16 @@
 				themeCustomName: "",
 				themeCustomCss: "body{display:none}",
 				savedCustomThemes: [],
-				...(legacy ? {} : { themeCustomTokens: {} }),
+				...(legacy
+					? {}
+					: { themeCustomTokens: {}, themeCustomConversion: conversion }),
 			};
 			const updates = [];
 			const client = {
 				loadThemeSettings: async () => settings,
 				saveThemeSettings: async (update) => {
+					if (Object.hasOwn(update, "themeCustomConversion"))
+						throw new Error("Read-only diagnostics in update");
 					if (
 						legacy &&
 						(Object.hasOwn(update, "themeCustomTokens") ||
@@ -56,6 +94,16 @@
 						const item = update.saveCustomTheme;
 						settings = {
 							...settings,
+							...(legacy
+								? {}
+								: {
+										themeCustomConversion: {
+											current: [],
+											savedThemes: conversion.savedThemes.filter(
+												(entry) => entry.name !== item.name,
+											),
+										},
+									}),
 							themeCustomName: item.name.trim(),
 							...(legacy
 								? { themeCustomCss: item.css }
@@ -195,6 +243,11 @@
 					'input[aria-label="Filter tokens"]',
 				);
 				assert(
+					document.body.textContent.includes("Unconverted CSS (1)") &&
+						document.body.textContent.includes("Unsupported selector"),
+					"Current theme conversion notice missing",
+				);
+				assert(
 					search.placeholder === "Filter tokens",
 					"Search needs a visible empty-state placeholder",
 				);
@@ -253,6 +306,17 @@
 					style().includes("--primary:210 50% 40%"),
 					"Saved token not applied",
 				);
+				assert(
+					!document.body.textContent.includes("Unconverted CSS ("),
+					"Notice must clear when Host reports no conversion issues after save",
+				);
+				assert(
+					!Object.hasOwn(
+						JSON.parse(localStorage.getItem("pilo.theme.v1")),
+						"themeCustomConversion",
+					),
+					"Conversion diagnostics must never be cached",
+				);
 				window.themeFixture.theme.applyThemeSettings({
 					...settings,
 					revision: settings.revision + 1,
@@ -280,9 +344,70 @@
 					document.documentElement.scrollWidth <= innerWidth,
 					"Horizontal overflow",
 				);
+				settings = {
+					...settings,
+					revision: settings.revision + 3,
+					theme: "light",
+					themeCustomName: "",
+					themeCustomTokens: {},
+					themeCustomConversion: conversion,
+					savedCustomThemes: [
+						{
+							name: "Recovered",
+							css: ":root{--custom-accent-shadow: 0 8px 24px #0003;}",
+							tokens: { light: { primary: "#336699" } },
+						},
+					],
+				};
+				window.themeFixture.theme.applyThemeSettings(settings);
+				await tick();
+				[...document.querySelectorAll("button")]
+					.find((el) => el.textContent.trim() === "Recovered")
+					.click();
+				await tick();
+				await tick();
+				assert(
+					document.body.textContent.includes("Unconverted CSS (3)") &&
+						document.body.textContent.includes("Unknown theme token") &&
+						!document.body.textContent.includes(".custom-card:hover"),
+					"Saved theme must show its own conversion issues, not current issues",
+				);
+				input("Theme name", "Recovered copy");
+				const issueRegion = document.querySelector(
+					'section[aria-label="Unconverted CSS details"]',
+				);
+				assert(
+					issueRegion.tabIndex === 0,
+					"Conversion details must be keyboard focusable",
+				);
+				issueRegion.focus();
+				assert(
+					document.activeElement === issueRegion,
+					"Conversion region must take focus",
+				);
+				assert(
+					getComputedStyle(issueRegion.querySelector("pre")).overflowWrap ===
+						"anywhere",
+					"CSS must wrap at spaces before breaking long words",
+				);
+				await tick();
+				assert(
+					document.body.textContent.includes("Unconverted CSS (3)"),
+					"Renaming a draft must retain source conversion notice",
+				);
+				assert(
+					updates.every(
+						(update) => !Object.hasOwn(update, "themeCustomConversion"),
+					),
+					"Conversion leaked in updates",
+				);
+				assert(
+					document.documentElement.scrollWidth <= innerWidth,
+					"Conversion notice overflow",
+				);
 				document.body.dataset.testStatus = "passed";
 				document.getElementById("results").textContent =
-					"PASS: mocked Host load/save, validation, alpha, token rendering, invalid Host update, narrow layout";
+					"PASS: mocked Host load/save, validation, alpha, token rendering, invalid Host update, narrow layout, read-only conversion issues";
 				scrollTo(0, 0);
 			}
 			run().catch((error) => {

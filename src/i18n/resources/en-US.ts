@@ -330,6 +330,20 @@ const enUS = {
 		themeFamilyCustom: "Custom",
 		themeCustomCss: "Custom CSS",
 		themeCustomTokens: "Custom tokens",
+		themeConversionTitle: "Unconverted CSS ({{count}})",
+		themeConversionHint:
+			"These parts weren't carried over. They won't be kept as tokens after saving.",
+		themeConversionDetails: "Unconverted CSS details",
+		themeConversionReasons: {
+			"unsupported-at-rule": "Unsupported at-rule",
+			"unsupported-selector": "Unsupported selector",
+			malformed: "Malformed CSS",
+			"not-custom-property": "Not a custom property",
+			"unknown-token": "Unknown theme token",
+			"unsupported-value": "Unsupported CSS value",
+			"invalid-value": "Invalid token value",
+			"appearance-not-allowed": "This token cannot vary by appearance",
+		},
 		themeTokenSearch: "Filter tokens",
 		themeTokensHint:
 			"Leave empty to keep built-in values. Light colors also apply in dark mode unless overridden.",
