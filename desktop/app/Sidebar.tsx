@@ -1,5 +1,6 @@
 import {
 	type Accessor,
+	colorScheme,
 	computed,
 	Scroll,
 	signal,
@@ -44,6 +45,12 @@ const ROW =
 	"min-h-(--pilo-sidebar-project-height) flex-row items-center gap-1.5 rounded-md border border-transparent px-2 py-0.5 hover:bg-sidebar-hover";
 const SELECTED_ROW =
 	"border-(--pilo-sidebar-selected-border) bg-(--pilo-sidebar-selected-background) hover:bg-(--pilo-sidebar-selected-background)";
+
+/** An unselected row's text, which the dark sidebar dims as Tauri's does. */
+const unselectedForeground = () =>
+	colorScheme() === "dark"
+		? `color-mix(in srgb, ${token("sidebar-foreground")} 75%, transparent)`
+		: token("sidebar-foreground");
 
 const focusRing = () =>
 	focusRingStyle(token("sidebar-ring"), undefined, undefined, { width: 2 });
@@ -305,9 +312,9 @@ function ProjectSection(props: SidebarProps & { project: Accessor<Project> }) {
 		);
 	};
 	const foreground = () =>
-		token(
-			selected() ? "pilo-project-selected-foreground" : "sidebar-foreground",
-		);
+		selected()
+			? token("pilo-project-selected-foreground")
+			: unselectedForeground();
 	const toggle = () => {
 		const expand = collapsed();
 		void settings.setSectionCollapsed(section(), !expand);
@@ -482,7 +489,7 @@ function SessionRow(props: {
 					class={`min-w-0 truncate font-sans text-sm ${
 						selected()
 							? "text-sidebar-selection-foreground"
-							: "text-sidebar-foreground"
+							: "text-sidebar-foreground dark:text-sidebar-foreground/75"
 					}`}
 				>
 					{() => session().title}
