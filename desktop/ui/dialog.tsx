@@ -15,7 +15,7 @@ export function Dialog(props: DialogProps) {
 		<BaseDialog
 			{...rest}
 			class={classNames(
-				"w-[90%] max-w-lg self-center rounded-(--pilo-radius-lg) border border-border bg-background text-foreground p-(--pilo-dialog-padding) gap-(--pilo-dialog-gap) font-sans",
+				"w-[90%] max-w-lg self-center my-auto rounded-(--pilo-radius-lg) border border-border bg-background text-foreground p-(--pilo-dialog-padding) gap-(--pilo-dialog-gap) font-sans",
 				local.class,
 			)}
 			style={[

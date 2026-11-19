@@ -9,6 +9,15 @@ test("Dialog opens and closes through actions, Escape and the backdrop, includin
 	expect(app.shows("text:Edit session")).toBe(false);
 	await app.press("id:open");
 	expect(app.shows("text:Edit session")).toBe(true);
+	await app.waitUntil(() => !app.shows("text:Center: pending"));
+	const center = Number(
+		app
+			.texts()
+			.find((text) => text.startsWith("Center: "))
+			?.slice(8),
+	);
+	expect(center).toBeGreaterThanOrEqual(299);
+	expect(center).toBeLessThanOrEqual(301);
 	await app.press("id:close");
 	expect(app.shows("text:Edit session")).toBe(false);
 	await app.press("id:open");
