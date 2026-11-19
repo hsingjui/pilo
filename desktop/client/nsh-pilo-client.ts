@@ -1,7 +1,8 @@
 import type { Pilo } from "app/native";
 
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
-import type { PiSessionSnapshot } from "@/lib/api/pi-runtime-types";
+import type { ProjectPiModels } from "@/lib/api/pi-models-types";
+import type { PiModel, PiSessionSnapshot } from "@/lib/api/pi-runtime-types";
 import type {
 	PiloClient,
 	PiloClientBootstrap,
@@ -17,6 +18,7 @@ import type {
 	SessionIndexEntry,
 	SessionSearchMatch,
 } from "@/lib/api/sessions-types";
+import type { ProjectModelScope } from "@/lib/project-model-scope";
 import type {
 	PreferencePatch,
 	PreferencesSnapshot,
@@ -42,6 +44,9 @@ export type PiloNative = Pick<
 	| "deleteSession"
 	| "readHistoryImage"
 	| "readProjectImage"
+	| "loadConnectionModels"
+	| "loadModels"
+	| "loadModelScope"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "loadPreferences"
@@ -73,6 +78,9 @@ type BridgedPiloClient = Pick<
 	| "deleteSession"
 	| "readHistoryImage"
 	| "readProjectImage"
+	| "loadConnectionModels"
+	| "loadModels"
+	| "loadModelScope"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "connectEvents"
@@ -182,6 +190,24 @@ export class NshPiloClient implements BridgedPiloClient {
 	/** The bytes of an image at a path relative to the project. */
 	async readProjectImage(projectId: string, path: string) {
 		return (await this.pilo.readProjectImage(projectId, path)) as ImageBytes;
+	}
+
+	/** Pi's current user-level model catalog for the connection. */
+	async loadConnectionModels(connectionId: string): Promise<PiModel[]> {
+		return (await this.pilo.loadConnectionModels(connectionId)) as PiModel[];
+	}
+
+	/**
+	 * The project's saved model catalog, or null when none is cached. It does
+	 * not start Pi or refresh the cache.
+	 */
+	async loadModels(projectId: string): Promise<ProjectPiModels | null> {
+		return (await this.pilo.loadModels(projectId)) as ProjectPiModels | null;
+	}
+
+	/** The project's model scope; `models: null` means it inherits Pi's. */
+	async loadModelScope(projectId: string): Promise<ProjectModelScope> {
+		return (await this.pilo.loadModelScope(projectId)) as ProjectModelScope;
 	}
 
 	loadSessionReadStates() {

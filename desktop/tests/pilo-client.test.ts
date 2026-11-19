@@ -42,6 +42,13 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 		deleteSession: answer("deleteSession", { method: "trash" }),
 		readHistoryImage: answer("readHistoryImage", new Uint8Array([1, 2])),
 		readProjectImage: answer("readProjectImage", new Uint8Array([3])),
+		loadConnectionModels: answer("loadConnectionModels", [{ id: "m1" }]),
+		loadModels: answer("loadModels", { projectId: "p1", models: [] }),
+		loadModelScope: answer("loadModelScope", {
+			projectId: "p1",
+			models: null,
+			updatedAtMs: 0,
+		}),
 		loadSessionReadStates: answer("loadSessionReadStates", [readState]),
 		markSessionRead: answer("markSessionRead", readState),
 		loadPreferences: answer("loadPreferences", preferences),
@@ -234,6 +241,49 @@ test("an image the native module cannot read rejects with its error", async () =
 	for (const call of [
 		client.readHistoryImage("p1", "/s.jsonl", "m1:0"),
 		client.readProjectImage("p1", "docs/a.png"),
+	]) {
+		let caught: unknown;
+		await call.catch((error: unknown) => {
+			caught = error;
+		});
+		expect(caught).toBe(failure);
+	}
+});
+
+test("model calls pass their arguments and return the native answers", async () => {
+	const { pilo, calls } = fakeNative();
+	const client = new NshPiloClient(pilo);
+
+	expect(await client.loadConnectionModels("local")).toEqual([{ id: "m1" }]);
+	expect(await client.loadModels("p1")).toEqual({
+		projectId: "p1",
+		models: [],
+	});
+	expect(await client.loadModelScope("p1")).toEqual({
+		projectId: "p1",
+		models: null,
+		updatedAtMs: 0,
+	});
+	expect(calls).toEqual([
+		["loadConnectionModels", "local"],
+		["loadModels", "p1"],
+		["loadModelScope", "p1"],
+	]);
+});
+
+test("an uncached catalog is null and a rejected model call keeps its error", async () => {
+	const failure = new Error("Connection 'gone' was not found");
+	const { pilo } = fakeNative({
+		loadConnectionModels: () => Promise.reject(failure),
+		loadModels: () => Promise.resolve(null),
+		loadModelScope: () => Promise.reject(failure),
+	});
+	const client = new NshPiloClient(pilo);
+
+	expect(await client.loadModels("p1")).toBe(null);
+	for (const call of [
+		client.loadConnectionModels("gone"),
+		client.loadModelScope("gone"),
 	]) {
 		let caught: unknown;
 		await call.catch((error: unknown) => {
@@ -439,6 +489,13 @@ test("the client searches, deletes and titles sessions through the native module
 test("the client reads project and session image bytes through the native module", async () => {
 	const app = await open("./pilo-client-images-fixture.tsx");
 	await app.waitFor("text:client project and session image bytes verified", {
+		timeout: 30_000,
+	});
+});
+
+test("the client loads connection models, a saved catalog and a model scope through the native module", async () => {
+	const app = await open("./pilo-client-models-fixture.tsx");
+	await app.waitFor("text:client model catalogs and scope verified", {
 		timeout: 30_000,
 	});
 });
