@@ -1,6 +1,7 @@
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { isImeComposingNativeKeyboardEvent } from "@/lib/ime";
 import { cn } from "@/lib/utils";
@@ -35,7 +36,7 @@ const DialogOverlay = React.forwardRef<
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const dialogBaseClasses =
-	"pilo-dialog-content fixed left-[50%] top-[calc(50%+(var(--safe-area-top,0px)-var(--safe-area-bottom,0px))/2)] z-[var(--z-dialog)] grid w-[calc(100vw-4rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] border border-border bg-background shadow-popover rounded-lg max-h-[calc(100vh-2rem-var(--safe-area-top,0px)-var(--safe-area-bottom,0px))]";
+	"pilo-dialog-content fixed left-[50%] top-[calc(100dvh-var(--remote-keyboard-bottom,0px)-var(--remote-viewport-height,100dvh)/2+(var(--safe-area-top,env(safe-area-inset-top,0px))-var(--safe-area-bottom,env(safe-area-inset-bottom,0px)))/2)] z-[var(--z-dialog)] grid w-[calc(100vw-4rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] overflow-y-auto border border-border bg-background shadow-popover rounded-lg max-h-[calc(var(--remote-viewport-height,100dvh)-2rem-var(--safe-area-top,env(safe-area-inset-top,0px))-var(--safe-area-bottom,env(safe-area-inset-bottom,0px)))]";
 
 const dialogAnimationClasses =
 	"duration-100 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0";
@@ -57,34 +58,37 @@ const DialogContent = React.forwardRef<
 			...props
 		},
 		ref,
-	) => (
-		<DialogPortal>
-			<DialogOverlay className={overlayClassName} noAnimation={noAnimation} />
-			<DialogPrimitive.Content
-				ref={ref}
-				className={cn(
-					dialogBaseClasses,
-					!noAnimation && dialogAnimationClasses,
-					className,
-				)}
-				onEscapeKeyDown={(event) => {
-					// Don't dismiss the dialog when Esc only cancels an IME composition.
-					if (isImeComposingNativeKeyboardEvent(event)) {
-						event.preventDefault();
-						return;
-					}
-					onEscapeKeyDown?.(event);
-				}}
-				{...props}
-			>
-				{children}
-				<DialogPrimitive.Close className="absolute right-4 top-4 rounded-xs opacity-70 ring-offset-background transition-opacity after:absolute after:-inset-1 after:content-[''] hover:opacity-100 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-hover data-[state=open]:text-muted-foreground">
-					<X className="h-4 w-4" />
-					<span className="sr-only">Close</span>
-				</DialogPrimitive.Close>
-			</DialogPrimitive.Content>
-		</DialogPortal>
-	),
+	) => {
+		const { t } = useTranslation();
+		return (
+			<DialogPortal>
+				<DialogOverlay className={overlayClassName} noAnimation={noAnimation} />
+				<DialogPrimitive.Content
+					ref={ref}
+					className={cn(
+						dialogBaseClasses,
+						!noAnimation && dialogAnimationClasses,
+						className,
+					)}
+					onEscapeKeyDown={(event) => {
+						// Don't dismiss the dialog when Esc only cancels an IME composition.
+						if (isImeComposingNativeKeyboardEvent(event)) {
+							event.preventDefault();
+							return;
+						}
+						onEscapeKeyDown?.(event);
+					}}
+					{...props}
+				>
+					{children}
+					<DialogPrimitive.Close className="absolute right-4 top-4 rounded-xs opacity-70 ring-offset-background transition-opacity after:absolute after:-inset-1 after:content-[''] pointer-coarse:after:left-1/2 pointer-coarse:after:top-1/2 pointer-coarse:after:size-[44px] pointer-coarse:after:-translate-x-1/2 pointer-coarse:after:-translate-y-1/2 hover:opacity-100 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-hover data-[state=open]:text-muted-foreground">
+						<X className="h-4 w-4" />
+						<span className="sr-only">{t("common.close")}</span>
+					</DialogPrimitive.Close>
+				</DialogPrimitive.Content>
+			</DialogPortal>
+		);
+	},
 );
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
