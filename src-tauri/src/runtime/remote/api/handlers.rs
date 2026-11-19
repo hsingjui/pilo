@@ -25,12 +25,12 @@ pub(super) struct BootstrapResponse {
 }
 
 pub(super) async fn bootstrap(state: RemoteHttpState) -> Response {
+    let latest_sequence = state.runtime.events.snapshot_sequence();
     let projects = match crate::runtime::project::list(&state.runtime) {
         Ok(projects) => projects,
         Err(error) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
     };
     let runtime = state.runtime.core.clone();
-    let events = state.runtime.events.clone();
     let local_pi_resources = match local_pi_resources_snapshot(&state.runtime.paths) {
         Ok(settings) => settings,
         Err(error) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
@@ -38,7 +38,7 @@ pub(super) async fn bootstrap(state: RemoteHttpState) -> Response {
     Json(BootstrapResponse {
         projects,
         chat_sessions: runtime.chat_sessions.states().await,
-        latest_sequence: events.latest_sequence(),
+        latest_sequence,
         local_pi_resources,
     })
     .into_response()
@@ -890,5 +890,82 @@ pub(super) async fn files_search(
     match remote_fs::search(&runtime.servers, &project, &query.query).await {
         Ok(paths) => Json(paths).into_response(),
         Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::{
+        Runtime,
+        bootstrap::tests::runtime_with_mid_snapshot_change,
+        events::{EventBatch, EventQueueLimits},
+        host_events::RecordingEvents,
+        host_paths::HostPaths,
+    };
+    use std::sync::Arc;
+
+    fn state(runtime: Runtime) -> RemoteHttpState {
+        RemoteHttpState {
+            runtime,
+            pairing: Arc::new(super::super::PairingSession::default()),
+            rate_limiter: Arc::new(super::super::AuthRateLimiter::default()),
+            shutdown: tokio::sync::watch::channel(false).1,
+            auth_generation: tokio::sync::watch::channel(0).1,
+        }
+    }
+
+    #[tokio::test]
+    async fn remote_cut_precedes_all_snapshot_reads_and_does_not_skip_a_later_change() {
+        let (runtime, root) = runtime_with_mid_snapshot_change("remote-cut");
+        let mut stream = runtime.subscribe_events(EventQueueLimits {
+            max_events: 10,
+            max_bytes: 4096,
+        });
+        let response = bootstrap(state(runtime.clone())).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let snapshot: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(snapshot["latestSequence"], 1);
+        assert_eq!(snapshot.as_object().unwrap().len(), 4);
+        assert!(
+            !snapshot["projects"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|project| project["id"] == "changed")
+        );
+        assert!(
+            crate::runtime::project::list(&runtime)
+                .unwrap()
+                .iter()
+                .any(|project| project.id == "changed")
+        );
+        let EventBatch::Events(events) = stream.try_next_batch(10).unwrap() else {
+            panic!("expected events after cut")
+        };
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.sequence)
+                .collect::<Vec<_>>(),
+            vec![2, 3]
+        );
+        drop(runtime);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn remote_bootstrap_keeps_storage_error_response() {
+        let paths = HostPaths::with_data_dir_resolver(std::path::PathBuf::new(), || {
+            Err("data unavailable".into())
+        });
+        let runtime = Runtime::new(paths, Arc::new(RecordingEvents::default()));
+        assert_eq!(
+            bootstrap(state(runtime)).await.status(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 }

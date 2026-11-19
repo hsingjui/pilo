@@ -64,6 +64,24 @@ enum EventBatch {
 
 ### Re-bootstrap event classes
 
+`Runtime::bootstrap_snapshot(&self) -> Result<BootstrapSnapshot, String>` is async.
+The public `runtime::bootstrap::BootstrapSnapshot` contains `event_sequence`,
+`projects`, `chat_sessions`, and `preferences`, serialized in camelCase. It reads
+`event_sequence` under the publication lock **before any snapshot state**.
+Remote WebUI `/bootstrap` makes the same early cut but retains its existing
+`latestSequence` JSON field and other response fields.
+
+Snapshot state is not read while holding the publication lock: SQLite and async
+session state have their own synchronization, and writers are not all serialized
+by the event lock. This is an early cut, **not an atomic snapshot**. A change
+committed before the cut is visible to later state reads; a change after the cut
+still has its event after the cut, even if an earlier snapshot read missed it.
+Subscribe before bootstrapping and keep that stream alive while reading state.
+After a gap, keep reading the same stream; events queued while re-bootstrapping
+must remain readable. A further overflow reports another gap, not silent loss.
+The bootstrap cut is not a transcript watermark: do not use it to discard queued
+session deltas, including events already queued at or below the new cut.
+
 Clients may see a session event already reflected in state when re-bootstrapping
 mid-stream. There is **no session metadata cursor and no delta suppression**.
 A transcript-snapshot watermark is a separate follow-up. For a chat session

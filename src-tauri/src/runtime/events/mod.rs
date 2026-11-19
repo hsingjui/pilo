@@ -177,6 +177,14 @@ impl Default for RuntimeEventBus {
 }
 
 impl RuntimeEventBus {
+    pub(crate) fn snapshot_sequence(&self) -> u64 {
+        let _publish_guard = self
+            .replay
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.latest_sequence()
+    }
+
     pub(crate) fn subscribe_events(&self, limits: EventQueueLimits) -> EventStream {
         let _publish_guard = self
             .replay

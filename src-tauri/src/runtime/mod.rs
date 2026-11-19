@@ -1,4 +1,5 @@
 pub mod appearance;
+pub mod bootstrap;
 pub mod cache_keep_alive;
 mod chat_service;
 mod chat_sessions;
