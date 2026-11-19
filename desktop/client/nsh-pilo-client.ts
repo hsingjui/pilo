@@ -75,7 +75,7 @@ export class NshPiloClient implements BridgedPiloClient {
 	private readonly pilo: PiloNative;
 	private readonly listeners = new Set<PiloClientEventOptions>();
 	private polling = false;
-	private closed = false;
+	private streamClosed = false;
 	/** A batch that arrived after its last listener left, for the next one. */
 	private held: NativeEventBatch | undefined;
 
@@ -125,6 +125,11 @@ export class NshPiloClient implements BridgedPiloClient {
 		return (await this.pilo.saveThemeSettings(update)) as ThemeSettings;
 	}
 
+	/** Whether the runtime shut down: its event stream never resumes. */
+	get closed() {
+		return this.streamClosed;
+	}
+
 	/**
 	 * Delivers runtime events in sequence order, starting with those queued
 	 * since the native module was created. A listener can therefore receive
@@ -137,7 +142,7 @@ export class NshPiloClient implements BridgedPiloClient {
 	 * connecting again resumes a failed stream.
 	 */
 	connectEvents(options: PiloClientEventOptions): Promise<() => void> {
-		if (this.closed) {
+		if (this.streamClosed) {
 			options.onStatus(false);
 			return Promise.resolve(() => {});
 		}
@@ -165,7 +170,7 @@ export class NshPiloClient implements BridgedPiloClient {
 					((await this.pilo.nextEvents(EVENT_BATCH_SIZE)) as NativeEventBatch);
 				this.held = undefined;
 				if (batch.type === "closed") {
-					this.closed = true;
+					this.streamClosed = true;
 					break;
 				}
 				if (this.listeners.size === 0) {

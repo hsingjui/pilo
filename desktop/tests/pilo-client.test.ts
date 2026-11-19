@@ -192,6 +192,7 @@ test("a closed stream disconnects listeners and is never polled again", async ()
 
 	expect(statuses).toEqual([true, false]);
 	expect(messages).toEqual([]);
+	expect(client.closed).toBe(true);
 
 	const late = listener();
 	const disconnect = await client.connectEvents(late.options);
@@ -232,6 +233,7 @@ test("a failed poll disconnects listeners and reconnecting resumes polling", asy
 
 	expect(failed.statuses).toEqual([true, false]);
 	expect(polls.length).toBe(1);
+	expect(client.closed).toBe(false);
 
 	const resumed = listener();
 	await client.connectEvents(resumed.options);
