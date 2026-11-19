@@ -62,6 +62,7 @@ Open one of these paths at `http://127.0.0.1:1420`:
 - `/tests/browser/sidebar-header-alignment.html` (mocked macOS header alignment, both built-in themes, UI font sizes 12–18, unclipped focus/hit targets, collapse/expand; also open `?web=1` for WebUI and check a 320px viewport)
 - `/tests/browser/chat-mentions.html`
 - `/tests/browser/chat-scroll-following.html`
+- `/tests/browser/chat-scroll-virtualization-swap.html` (a live stream takes a plain short chat past its message cap; every painted frame keeps a reader on their row and a follower at the bottom; wide and narrow)
 - `/tests/browser/chat-streaming-status.html`
 - `/tests/browser/chat-column-alignment.html` (message/composer edges, symmetric mobile margins, scrolling and desktop gutter; check 320/390/640/768/1023/1024/1440px)
 - `/tests/browser/dom-text-selection.html`

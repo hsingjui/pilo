@@ -1,0 +1,267 @@
+<!doctype html>
+<!-- Run with pnpm exec vite, then open /tests/browser/chat-scroll-virtualization-swap.html. -->
+<html lang="en" translate="no">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Chat scroll across the plain to virtualized swap</title>
+	</head>
+	<body>
+		<pre id="results">Running…</pre>
+		<div id="root"></div>
+		<script type="module">
+			import "../../src/index.css";
+			import { createElement as h, createRef } from "react";
+			import { createRoot } from "react-dom/client";
+			import { createChatConversationStore } from "../../src/components/chat/chat-conversation-store.ts";
+			import { createConversationState } from "../../src/lib/chat/conversation-reducer.ts";
+			import { PLAIN_SHORT_CHAT_HARD_MAX_MESSAGES } from "../../src/lib/chat/chat-virtualization.ts";
+			import { RemoteConversationViewport } from "../../src/remote/remote-conversation-viewport.tsx";
+			import { PreferencesProvider } from "../../src/lib/preferences-provider.tsx";
+			import { TooltipProvider } from "../../src/ui/tooltip.tsx";
+			import { initializeI18n } from "../../src/i18n/index.ts";
+
+			await initializeI18n("en-US");
+			const root = createRoot(document.getElementById("root"));
+			const runtimeScrollRef = createRef();
+			let label = "";
+			function assert(condition, message) {
+				if (!condition) throw new Error(`${label}: ${message}`);
+			}
+			async function settle(frames = 6) {
+				for (let i = 0; i < frames; i++)
+					await new Promise(requestAnimationFrame);
+			}
+			// A task posted from rAF runs after that frame's resize delivery, so it
+			// sees what the frame paints. Settled-only assertions would miss a reader
+			// who is thrown away for a frame and then put back.
+			const channel = new MessageChannel();
+			let resolvePainted = null;
+			channel.port1.onmessage = () => resolvePainted?.();
+			function paintedFrame() {
+				return new Promise((resolve) => {
+					requestAnimationFrame(() => {
+						resolvePainted = resolve;
+						channel.port2.postMessage(null);
+					});
+				});
+			}
+			function rowTop(viewport, id) {
+				const row = viewport.querySelector(
+					`[data-message-id="${id}"]`,
+				)?.firstElementChild;
+				return row
+					? row.getBoundingClientRect().top -
+							viewport.getBoundingClientRect().top
+					: null;
+			}
+			function hasRowAtCenter(viewport) {
+				const { top, height } = viewport.getBoundingClientRect();
+				const center = top + height / 2;
+				return [...viewport.querySelectorAll("[data-message-id]")].some(
+					(row) => {
+						const box = row.firstElementChild.getBoundingClientRect();
+						return box.top <= center && center <= box.bottom;
+					},
+				);
+			}
+			function distanceFromBottom(viewport) {
+				return (
+					viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop
+				);
+			}
+			const reply = (id, paragraphs, streaming) => ({
+				id,
+				role: "assistant",
+				text: "",
+				content: [
+					{
+						id: `${id}-text`,
+						type: "text",
+						text: "Reply.\n\n".repeat(paragraphs),
+					},
+				],
+				streaming,
+			});
+			// One live turn away from the plain list's cap.
+			const history = Array.from(
+				{ length: PLAIN_SHORT_CHAT_HARD_MAX_MESSAGES - 2 },
+				(_, i) => ({
+					id: `history-${i}`,
+					role: i % 2 ? "assistant" : "user",
+					text: `History ${i}.\n\n`.repeat(12),
+				}),
+			);
+			function mountChat(width) {
+				const conversationStore = createChatConversationStore();
+				function setMessages(messages) {
+					conversationStore.setSnapshot({
+						...createConversationState(messages),
+						active: {
+							assistantMessageId: messages.at(-1).id,
+							firstRuntimeUserSeen: true,
+						},
+						messages,
+					});
+				}
+				setMessages([
+					...history,
+					{ id: "user-1", role: "user", text: "First prompt." },
+					reply("reply-1", 8, true),
+				]);
+				document.documentElement.toggleAttribute(
+					"data-remote-webui",
+					width === 360,
+				);
+				root.render(
+					h(
+						PreferencesProvider,
+						null,
+						h(
+							TooltipProvider,
+							null,
+							h(
+								"main",
+								{
+									className: "@container flex flex-col",
+									style: { width, maxWidth: "100%", height: 560 },
+								},
+								h(RemoteConversationViewport, {
+									key: label,
+									runtimeScrollRef,
+									active: true,
+									visualLive: true,
+									sessionId: label,
+									conversationStore,
+									historyPrefix: [],
+									effectiveLoadState: "ready",
+									initialScrollTop: 0,
+									initialSticky: true,
+									onRetryHistory() {},
+								}),
+							),
+						),
+					),
+				);
+				// The next turn takes the conversation past the cap mid-stream.
+				return (paragraphs) =>
+					setMessages([
+						...history,
+						{ id: "user-1", role: "user", text: "First prompt." },
+						reply("reply-1", 8, false),
+						{ id: "user-2", role: "user", text: "Second prompt." },
+						reply("reply-2", paragraphs, true),
+					]);
+			}
+			try {
+				let paintedFrames = 0;
+				for (const width of [900, 360]) {
+					for (const ownership of ["reading", "following"]) {
+						label = `${width}px / ${ownership}`;
+						const streamNextTurn = mountChat(width);
+						await settle(12);
+						const viewport = runtimeScrollRef.current;
+						const messageRows = () =>
+							viewport.querySelectorAll("[data-message-id]").length;
+						assert(
+							messageRows() === PLAIN_SHORT_CHAT_HARD_MAX_MESSAGES,
+							"starts as a plain list at the cap",
+						);
+						let anchorId = null;
+						let anchorTop = null;
+						if (ownership === "reading") {
+							viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -200 }));
+							viewport.scrollTop = Math.round(viewport.scrollTop / 2);
+							await settle();
+							// The row crossing the top edge is what the reader is looking at.
+							for (const { id } of history) {
+								const top = rowTop(viewport, id);
+								if (top > 0) break;
+								anchorId = id;
+								anchorTop = top;
+							}
+							assert(anchorTop < -100, "reader is scrolled into a history row");
+						}
+						assert(
+							viewport.hasAttribute("data-chat-following") ===
+								(ownership === "following"),
+							`${ownership} ownership before the swap`,
+						);
+
+						const failures = [];
+						for (let frame = 0; frame < 24; frame++) {
+							streamNextTurn(2 + frame * 3);
+							await paintedFrame();
+							paintedFrames++;
+							if (ownership === "reading") {
+								const top = rowTop(viewport, anchorId);
+								if (
+									viewport.hasAttribute("data-chat-following") ||
+									top === null ||
+									Math.abs(top - anchorTop) > 1
+								) {
+									failures.push(
+										`frame ${frame}: ${anchorId} moved from ${anchorTop}px to ${
+											top === null ? "unmounted" : `${top}px`
+										}, scrollTop ${viewport.scrollTop}`,
+									);
+								} else if (!hasRowAtCenter(viewport)) {
+									failures.push(
+										`frame ${frame}: no row at the viewport center`,
+									);
+								}
+							} else if (
+								!viewport.hasAttribute("data-chat-following") ||
+								distanceFromBottom(viewport) > 2
+							) {
+								failures.push(
+									`frame ${frame}: ${distanceFromBottom(viewport)}px above the bottom`,
+								);
+							}
+						}
+						assert(
+							messageRows() < PLAIN_SHORT_CHAT_HARD_MAX_MESSAGES,
+							"the stream must have swapped the plain list for Virtua",
+						);
+						assert(failures.length === 0, failures[0]);
+
+						if (ownership === "reading") {
+							// The anchor must not pin the reader while the stream goes on.
+							const before = viewport.scrollTop;
+							viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: 120 }));
+							viewport.scrollTop += 120;
+							for (let frame = 0; frame < 8; frame++) {
+								streamNextTurn(80 + frame * 3);
+								await paintedFrame();
+							}
+							assert(
+								Math.abs(viewport.scrollTop - before - 120) <= 1,
+								"reader can scroll on after the swap",
+							);
+							viewport.scrollTop = viewport.scrollHeight;
+							await settle();
+							streamNextTurn(120);
+							await settle(12);
+							assert(
+								viewport.hasAttribute("data-chat-following") &&
+									distanceFromBottom(viewport) <= 2,
+								"scrolling to the bottom follows the stream again",
+							);
+						}
+					}
+				}
+				document.body.dataset.testStatus = "passed";
+				document.getElementById("results").textContent =
+					`PASS: ${paintedFrames} painted frames; a stream crossing the plain-list cap keeps a reader on their row and a follower at the bottom in wide/narrow chats`;
+			} catch (error) {
+				document.body.dataset.testStatus = "failed";
+				document.getElementById("results").textContent =
+					`FAIL: ${error.message}\n${error.stack}`;
+				throw error;
+			} finally {
+				channel.port1.close();
+				channel.port2.close();
+			}
+		</script>
+	</body>
+</html>

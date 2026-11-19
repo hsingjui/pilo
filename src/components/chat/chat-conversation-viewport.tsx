@@ -183,7 +183,7 @@ const ChatConversationViewportImpl = forwardRef<
 		return () => window.clearTimeout(timer);
 	}, [shortChatPromotionPending, showSwitchSkeleton]);
 
-	const keepMounted = useMemo(() => {
+	const streamingRow = useMemo(() => {
 		if (!activeAssistantMessageId) return undefined;
 		const lastIndex = messages.length - 1;
 		if (messages[lastIndex]?.id === activeAssistantMessageId)
@@ -204,6 +204,8 @@ const ChatConversationViewportImpl = forwardRef<
 		activeOutlineIndex,
 		syncScrollState,
 		scrollToBottom,
+		captureReadingAnchor,
+		readingAnchorRows,
 		handleOutlineJump,
 		jumpToMessageIndex,
 		handleScrollEnd,
@@ -220,6 +222,13 @@ const ChatConversationViewportImpl = forwardRef<
 		onVisibleRangeChange,
 		onVirtualizerCacheChange,
 	});
+	const keepMounted = useMemo(
+		() =>
+			readingAnchorRows
+				? [...readingAnchorRows, ...(streamingRow ?? [])]
+				: streamingRow,
+		[readingAnchorRows, streamingRow],
+	);
 
 	useLayoutEffect(() => {
 		if (!active || !visualLive) {
@@ -313,6 +322,12 @@ const ChatConversationViewportImpl = forwardRef<
 		},
 		[runtimeScrollRef, scrollRef],
 	);
+	// React detaches this ref while the plain rows are still laid out: the last
+	// moment to see what a reader is looking at before Virtua replaces them.
+	const bindPlainListRef = useCallback(
+		(plainList: HTMLDivElement) => () => captureReadingAnchor(plainList),
+		[captureReadingAnchor],
+	);
 	const handleVirtualScroll = useCallback(
 		(offset: number) => syncScrollState(offset),
 		[syncScrollState],
@@ -401,7 +416,7 @@ const ChatConversationViewportImpl = forwardRef<
 						) : messages.length === 0 ? (
 							(emptyContent ?? <EmptyConversation />)
 						) : plainShortChat ? (
-							<div>
+							<div ref={bindPlainListRef}>
 								{messages.map((message, index) =>
 									renderMessage(message, index),
 								)}

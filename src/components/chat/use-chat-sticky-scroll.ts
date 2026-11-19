@@ -18,8 +18,18 @@ import { recordStickyScrollMetric } from "@/lib/chat/chat-performance";
 
 const BOTTOM_THRESHOLD_PX = 4;
 const SCROLL_WRITE_EPSILON_PX = 1;
+const READING_ANCHOR_SETTLED_FRAMES = 2;
 
 type ScrollOwnership = "following" | "reading";
+
+// What a reader is looking at: the row crossing the viewport top, how far it
+// is scrolled past, and the last row in view.
+type ReadingAnchor = {
+	index: number;
+	offset: number;
+	lastIndex: number;
+	settledFrames: number;
+};
 
 type ChatScrollState = {
 	scrollTop: number;
@@ -83,6 +93,12 @@ export function useChatStickyScroll({
 	const initialScrollRestoredRef = useRef(false);
 	const [initialScrollRestored, setInitialScrollRestored] = useState(false);
 	const followFrameRef = useRef<number | null>(null);
+	const capturedReadingAnchorRef = useRef<ReadingAnchor | null>(null);
+	const readingAnchorRef = useRef<ReadingAnchor | null>(null);
+	const readingAnchorFrameRef = useRef<number | null>(null);
+	const [readingAnchorRows, setReadingAnchorRows] = useState<
+		readonly number[] | null
+	>(null);
 	const followVisibilityActiveRef = useRef(false);
 	const contentRevisionRef = useRef(contentRevision);
 	const resizeHeightsRef = useRef(new WeakMap<Element, number>());
@@ -138,7 +154,93 @@ export function useChatStickyScroll({
 		});
 	}, [clampToBottom]);
 
+	const releaseReadingAnchor = useCallback(() => {
+		if (!readingAnchorRef.current) return;
+		readingAnchorRef.current = null;
+		setReadingAnchorRows(null);
+		if (readingAnchorFrameRef.current === null) return;
+		cancelAnimationFrame(readingAnchorFrameRef.current);
+		readingAnchorFrameRef.current = null;
+	}, []);
+
+	// Scroll offsets do not survive the plain DOM -> Virtua swap: Virtua starts
+	// from estimated row sizes, so the same scrollTop shows different rows. The
+	// rows in view and how far the first one is scrolled past do survive.
+	const captureReadingAnchor = useCallback((plainList: HTMLElement) => {
+		capturedReadingAnchorRef.current = null;
+		const viewport = scrollElementRef.current;
+		if (!viewport || ownershipRef.current !== "reading") return;
+		const { top, bottom } = viewport.getBoundingClientRect();
+		let anchor: ReadingAnchor | null = null;
+		for (let index = 0; index < plainList.children.length; index++) {
+			// Message rows are display: contents; their first child owns the box.
+			const row = plainList.children[index].firstElementChild;
+			if (!row) continue;
+			const rowTop = row.getBoundingClientRect().top;
+			if (!anchor || rowTop <= top) {
+				anchor = {
+					index,
+					offset: top - rowTop,
+					lastIndex: index,
+					settledFrames: 0,
+				};
+			} else if (rowTop < bottom) {
+				anchor.lastIndex = index;
+			} else {
+				break;
+			}
+		}
+		capturedReadingAnchorRef.current = anchor;
+	}, []);
+
+	const alignReadingAnchor = useCallback(() => {
+		const anchor = readingAnchorRef.current;
+		const viewport = scrollElementRef.current;
+		const content = viewport?.firstElementChild;
+		const vlist = vlistRef.current;
+		if (!anchor || !viewport || !content || !vlist) return;
+		const drift =
+			content.getBoundingClientRect().top +
+			vlist.getItemOffset(anchor.index) +
+			anchor.offset -
+			viewport.getBoundingClientRect().top;
+		if (Math.abs(drift) <= SCROLL_WRITE_EPSILON_PX) return;
+		anchor.settledFrames = 0;
+		viewport.scrollTop += drift;
+		scrollPositionRef.current = viewport.scrollTop;
+		recordStickyScrollMetric("dom-scroll-write");
+	}, [vlistRef]);
+
+	// Virtua learns real row sizes only as rows mount, and each measurement
+	// moves the anchor row again. Until two frames in a row need no correction,
+	// resize delivery realigns it before paint and the rows in view stay mounted,
+	// because Virtua only picks up the corrected offset on its next scroll event.
+	const holdReadingAnchor = useCallback(
+		(anchor: ReadingAnchor) => {
+			releaseReadingAnchor();
+			readingAnchorRef.current = anchor;
+			setReadingAnchorRows(
+				Array.from(
+					{ length: anchor.lastIndex - anchor.index + 1 },
+					(_, offset) => anchor.index + offset,
+				),
+			);
+			alignReadingAnchor();
+			const settle = () => {
+				readingAnchorFrameRef.current = requestAnimationFrame(() => {
+					readingAnchorFrameRef.current = null;
+					alignReadingAnchor();
+					if (anchor.settledFrames++ < READING_ANCHOR_SETTLED_FRAMES) settle();
+					else releaseReadingAnchor();
+				});
+			};
+			settle();
+		},
+		[alignReadingAnchor, releaseReadingAnchor],
+	);
+
 	const stopScroll = useCallback(() => {
+		releaseReadingAnchor();
 		commitOwnership("reading");
 		syncScrollToLatestVisibility();
 		const viewport = scrollElementRef.current;
@@ -146,17 +248,22 @@ export function useChatStickyScroll({
 			scrollTop: viewport?.scrollTop ?? scrollPositionRef.current,
 			sticky: false,
 		});
-	}, [commitOwnership, syncScrollToLatestVisibility]);
+	}, [commitOwnership, releaseReadingAnchor, syncScrollToLatestVisibility]);
 
 	const handleWheel = useCallback(
 		(event: WheelEvent) => {
+			releaseReadingAnchor();
 			if (event.deltaY < 0) stopScroll();
 		},
-		[stopScroll],
+		[releaseReadingAnchor, stopScroll],
 	);
-	const handleTouchStart = useCallback((event: TouchEvent) => {
-		touchStartYRef.current = event.touches[0]?.clientY ?? null;
-	}, []);
+	const handleTouchStart = useCallback(
+		(event: TouchEvent) => {
+			releaseReadingAnchor();
+			touchStartYRef.current = event.touches[0]?.clientY ?? null;
+		},
+		[releaseReadingAnchor],
+	);
 	const handleTouchMove = useCallback(
 		(event: TouchEvent) => {
 			const startY = touchStartYRef.current;
@@ -173,6 +280,7 @@ export function useChatStickyScroll({
 	}, []);
 	const handleKeyDown = useCallback(
 		(event: KeyboardEvent) => {
+			releaseReadingAnchor();
 			if (
 				event.key === "ArrowUp" ||
 				event.key === "PageUp" ||
@@ -181,10 +289,11 @@ export function useChatStickyScroll({
 				stopScroll();
 			}
 		},
-		[stopScroll],
+		[releaseReadingAnchor, stopScroll],
 	);
 	const handlePointerDown = useCallback(
 		(event: PointerEvent) => {
+			releaseReadingAnchor();
 			const viewport = scrollElementRef.current;
 			if (!viewport || event.button !== 0) return;
 			const scrollbarWidth = viewport.offsetWidth - viewport.clientWidth;
@@ -192,7 +301,7 @@ export function useChatStickyScroll({
 			const rect = viewport.getBoundingClientRect();
 			if (event.clientX >= rect.right - scrollbarWidth) stopScroll();
 		},
-		[stopScroll],
+		[releaseReadingAnchor, stopScroll],
 	);
 	// Toggling a disclosure is reading intent. Bottom clamping
 	// on the following resize would drag the anchored trigger upward one frame
@@ -306,6 +415,7 @@ export function useChatStickyScroll({
 			}
 			if (verticalLayoutChanged) {
 				if (ownershipRef.current === "following") clampToBottom();
+				else alignReadingAnchor();
 				syncScrollToLatestVisibility();
 			}
 		});
@@ -332,6 +442,7 @@ export function useChatStickyScroll({
 		};
 	}, [
 		activeAssistantMessageId,
+		alignReadingAnchor,
 		clampToBottom,
 		contentRevision,
 		enabled,
@@ -401,26 +512,32 @@ export function useChatStickyScroll({
 		if (ownershipRef.current === "following") scheduleFollow();
 	}, [enabled, initialScrollRestored, scheduleFollow]);
 
-	useEffect(() => {
+	// Layout phase: the swap already clamped scrollTop to Virtua's estimated
+	// height, and a reader must be back on their row before that paints.
+	useLayoutEffect(() => {
 		if (contentRevisionRef.current === contentRevision) return;
 		contentRevisionRef.current = contentRevision;
-		if (
-			!enabled ||
-			!initialScrollRestored ||
-			ownershipRef.current !== "following"
-		) {
-			return;
-		}
+		if (!enabled || !initialScrollRestored) return;
 		// Switching between plain DOM and Virtua replaces the observed content
 		// element without changing itemCount. Rebind above, then converge the new
 		// geometry to bottom once on the next frame.
-		scheduleFollow();
-	}, [contentRevision, enabled, initialScrollRestored, scheduleFollow]);
+		const anchor = capturedReadingAnchorRef.current;
+		capturedReadingAnchorRef.current = null;
+		if (ownershipRef.current === "following") scheduleFollow();
+		else if (anchor) holdReadingAnchor(anchor);
+	}, [
+		contentRevision,
+		enabled,
+		holdReadingAnchor,
+		initialScrollRestored,
+		scheduleFollow,
+	]);
 
 	const scrollToBottom = useCallback(
 		(smooth = false) => {
 			const viewport = scrollElementRef.current;
 			if (!viewport || itemCountRef.current <= 0) return;
+			releaseReadingAnchor();
 			commitOwnership("following");
 			scrollToLatestVisibleRef.current = false;
 			setShowScrollToLatest(false);
@@ -431,7 +548,7 @@ export function useChatStickyScroll({
 			recordStickyScrollMetric("follow-request");
 			recordStickyScrollMetric("dom-scroll-write");
 		},
-		[commitOwnership],
+		[commitOwnership, releaseReadingAnchor],
 	);
 
 	const handleScroll = useCallback(
@@ -444,8 +561,11 @@ export function useChatStickyScroll({
 				0,
 				viewport.scrollHeight - viewport.clientHeight - scrollTop,
 			);
+			// A held anchor is still converging on estimated geometry, where the
+			// reader's row can sit at a bottom that is not the conversation's.
 			if (
 				ownershipRef.current === "reading" &&
+				!readingAnchorRef.current &&
 				distanceFromBottom <= BOTTOM_THRESHOLD_PX
 			) {
 				commitOwnership("following");
@@ -464,13 +584,14 @@ export function useChatStickyScroll({
 				cancelAnimationFrame(followFrameRef.current);
 				followFrameRef.current = null;
 			}
+			releaseReadingAnchor();
 			const viewport = scrollElementRef.current;
 			onScrollStateChangeRef.current?.({
 				scrollTop: viewport?.scrollTop ?? scrollPositionRef.current,
 				sticky: ownershipRef.current === "following",
 			});
 		},
-		[],
+		[releaseReadingAnchor],
 	);
 
 	return {
@@ -483,5 +604,7 @@ export function useChatStickyScroll({
 		handleScroll,
 		scrollToBottom,
 		stopScroll,
+		captureReadingAnchor,
+		readingAnchorRows,
 	};
 }

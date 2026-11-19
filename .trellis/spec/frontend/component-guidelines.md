@@ -364,6 +364,20 @@ spacing, type sizes, or control heights.
   for post-rAF task samples during thinking/text bursts, parallel tool insertion,
   partial output, completion, reading and turn-end errors in plain/virtualized
   wide/narrow layouts. Settled-only assertions miss the one-frame regression.
+- The plain list -> Virtua swap must keep a reader on their row. It can happen
+  mid-stream: `shouldRenderPlainShortChat` enforces the hard cap on every render.
+  Virtua mounts with estimated row sizes, so the swap collapses `scrollHeight`
+  and the browser clamps `scrollTop`; the old offset means nothing in the new
+  geometry. `useChatStickyScroll` captures the reading anchor (row at the
+  viewport top, its offset, last row in view) from the plain list's ref cleanup,
+  the last moment those rows are laid out, then realigns `scrollTop` to that row
+  in the layout effect and in resize delivery until two frames need no change.
+  The rows in view stay in `keepMounted` meanwhile: Virtua only learns the
+  corrected offset on its next scroll event, so without them one frame paints
+  blank in Chromium. Any scroll input releases the anchor, and a held anchor
+  must not flip ownership to following when estimated geometry puts it at a
+  false bottom. Run `/tests/browser/chat-scroll-virtualization-swap.html` in
+  WebKit and Chromium.
 - Keep the live assistant status in normal document flow after the full reply,
   both while following and reading. Do not pin it with `position: sticky` or
   add sticky-inset spacers: when tool details expand or streamed output grows
