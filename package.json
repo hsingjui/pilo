@@ -4,6 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "node scripts/dev.mjs",
+		"desktop:generate:icons": "node scripts/generate-desktop-icons.mjs",
 		"desktop:generate:themes": "node scripts/generate-desktop-themes.mjs",
 		"debug:desktop": "node scripts/debug-desktop.mjs",
 		"build": "tsc && vite build",

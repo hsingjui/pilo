@@ -16,3 +16,16 @@ From the repository root, run `pnpm desktop:generate:themes` after editing
   including shadows, motion, shorthand values and layout-dependent math.
   Use the relevant theme/appearance's values with explicit component styles
   where supported; do not pass this map to the native token API.
+
+## Icons
+
+Run `pnpm desktop:generate:icons` to refresh the Canvas data from the named
+`lucide-react` icon imports in `src/`. Add `--check` to detect stale output.
+The generated `app/lucide-icons.json` uses the original export names, including
+aliases, without bundling React or Lucide.
+
+Each icon has its original square viewbox `size` and ordered `paths`.
+Scale the Canvas context from that viewbox, construct `new Path2D(d)` for each
+path, fill entries marked `fill: true`, and stroke every path. Lucide defaults
+to a 2-unit stroke and round caps/joins. The source data is covered by
+`app/Lucide-LICENSE`.
