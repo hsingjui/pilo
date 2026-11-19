@@ -11,7 +11,7 @@ use serde_json::Value;
 use tauri::Manager;
 
 use crate::runtime::{
-    PiloRuntime, RuntimeEventBus,
+    PiloRuntime,
     chat_service::{self, ChatSessionRequest},
     pi_workspace, remote_fs, session_history, storage,
 };
@@ -28,14 +28,13 @@ pub(super) struct BootstrapResponse {
 }
 
 pub(super) async fn bootstrap(State(state): State<RemoteHttpState>) -> Response {
-    let projects =
-        match crate::runtime::project::list(&state.app.state::<crate::runtime::Runtime>()) {
-            Ok(projects) => projects,
-            Err(error) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-        };
-    let runtime = state.app.state::<PiloRuntime>();
-    let events = state.app.state::<RuntimeEventBus>();
-    let local_pi_resources = match local_pi_resources_snapshot(&state.paths) {
+    let projects = match crate::runtime::project::list(&state.runtime) {
+        Ok(projects) => projects,
+        Err(error) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+    };
+    let runtime = state.runtime.core.clone();
+    let events = state.runtime.events.clone();
+    let local_pi_resources = match local_pi_resources_snapshot(&state.runtime.paths) {
         Ok(settings) => settings,
         Err(error) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
     };
@@ -88,7 +87,7 @@ pub(super) async fn local_pi_resources_set(
 }
 
 pub(super) async fn preferences_get(State(state): State<RemoteHttpState>) -> Response {
-    match crate::runtime::preferences::load(&state.paths) {
+    match crate::runtime::preferences::load(&state.runtime.paths) {
         Ok(settings) => Json(settings).into_response(),
         Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
     }
@@ -99,8 +98,8 @@ pub(super) async fn preferences_patch(
     Json(patch): Json<serde_json::Map<String, Value>>,
 ) -> Response {
     match crate::runtime::preferences::save(
-        &state.paths,
-        &state.app.state::<RuntimeEventBus>(),
+        &state.runtime.paths,
+        &state.runtime.events,
         patch,
         false,
     ) {
@@ -111,8 +110,8 @@ pub(super) async fn preferences_patch(
 
 pub(super) async fn theme_settings(State(state): State<RemoteHttpState>) -> Response {
     match crate::runtime::appearance::load(
-        state.paths.clone(),
-        state.app.state::<RuntimeEventBus>().inner().clone(),
+        state.runtime.paths.clone(),
+        state.runtime.events.clone(),
         None,
     )
     .await
@@ -127,8 +126,8 @@ pub(super) async fn theme_settings_set(
     Json(update): Json<crate::domain::ThemeSettingsUpdate>,
 ) -> Response {
     match crate::runtime::appearance::save(
-        state.paths.clone(),
-        state.app.state::<RuntimeEventBus>().inner().clone(),
+        state.runtime.paths.clone(),
+        state.runtime.events.clone(),
         update,
     )
     .await
@@ -139,9 +138,7 @@ pub(super) async fn theme_settings_set(
 }
 
 pub(super) async fn session_read_states(State(state): State<RemoteHttpState>) -> Response {
-    match crate::runtime::handle::session_read_states(&state.app.state::<crate::runtime::Runtime>())
-        .await
-    {
+    match crate::runtime::handle::session_read_states(&state.runtime).await {
         Ok(states) => Json(states).into_response(),
         Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
     }
@@ -160,7 +157,7 @@ pub(super) async fn session_mark_read(
     Json(request): Json<SessionReadRequest>,
 ) -> Response {
     match crate::runtime::handle::session_mark_read(
-        &state.app.state::<crate::runtime::Runtime>(),
+        &state.runtime,
         request.project_id,
         request.session_path,
         request.revision,
@@ -184,15 +181,12 @@ pub(super) async fn sessions(
     State(state): State<RemoteHttpState>,
     Query(query): Query<SessionsQuery>,
 ) -> Response {
-    let project = match get_project(&state.paths, &query.project_id) {
+    let project = match get_project(&state.runtime.paths, &query.project_id) {
         Ok(project) => project,
         Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
     };
     if query.cached {
-        return match crate::runtime::session_api::session_list(
-            &state.app.state::<crate::runtime::Runtime>(),
-            project.id,
-        ) {
+        return match crate::runtime::session_api::session_list(&state.runtime, project.id) {
             Ok(sessions) => Json(sessions).into_response(),
             Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
         };
@@ -222,7 +216,7 @@ pub(super) async fn sessions_search(
     Query(query): Query<SessionSearchQuery>,
 ) -> Response {
     match crate::runtime::session_api::session_search(
-        &state.app.state::<crate::runtime::Runtime>(),
+        &state.runtime,
         query.project_id,
         query.query,
         Some(query.limit.unwrap_or(24).clamp(1, 100)),
@@ -238,16 +232,16 @@ pub(super) async fn sessions_external_activity(
     State(state): State<RemoteHttpState>,
     Query(query): Query<SessionsQuery>,
 ) -> Response {
-    let project = match get_project(&state.paths, &query.project_id).and_then(|project| {
-        pi_workspace::resolve_session_project_with_paths(&state.paths, &project)
+    let project = match get_project(&state.runtime.paths, &query.project_id).and_then(|project| {
+        pi_workspace::resolve_session_project_with_paths(&state.runtime.paths, &project)
     }) {
         Ok(project) => project,
         Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
     };
     match state
-        .app
-        .state::<RuntimeEventBus>()
-        .external_session_activity(&state.app.state::<crate::runtime::Runtime>(), &project)
+        .runtime
+        .events
+        .external_session_activity(&state.runtime, &project)
         .await
     {
         Ok(activities) => Json(activities).into_response(),
@@ -271,13 +265,13 @@ pub(super) async fn history(
     State(state): State<RemoteHttpState>,
     Query(query): Query<HistoryQuery>,
 ) -> Response {
-    let project = match get_project(&state.paths, &query.project_id).and_then(|project| {
-        pi_workspace::resolve_session_project_with_paths(&state.paths, &project)
+    let project = match get_project(&state.runtime.paths, &query.project_id).and_then(|project| {
+        pi_workspace::resolve_session_project_with_paths(&state.runtime.paths, &project)
     }) {
         Ok(project) => project,
         Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
     };
-    let runtime = state.app.state::<PiloRuntime>();
+    let runtime = state.runtime.core.clone();
     let limit = query.message_limit.unwrap_or(200).clamp(1, 400);
     let expected_fingerprint = match expected_session_fingerprint(
         query.expected_file_size,
@@ -340,8 +334,8 @@ pub(super) async fn history_image(
     State(state): State<RemoteHttpState>,
     Query(query): Query<HistoryImageQuery>,
 ) -> Response {
-    let project = match get_project(&state.paths, &query.project_id).and_then(|project| {
-        pi_workspace::resolve_session_project_with_paths(&state.paths, &project)
+    let project = match get_project(&state.runtime.paths, &query.project_id).and_then(|project| {
+        pi_workspace::resolve_session_project_with_paths(&state.runtime.paths, &project)
     }) {
         Ok(project) => project,
         Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
@@ -353,7 +347,7 @@ pub(super) async fn history_image(
         Ok(value) => value,
         Err(error) => return api_error(StatusCode::BAD_REQUEST, &error),
     };
-    let runtime = state.app.state::<PiloRuntime>();
+    let runtime = state.runtime.core.clone();
     match session_history::read_history_image_bytes(
         &runtime.servers,
         &runtime.session_history_cache,
@@ -393,17 +387,14 @@ pub(super) async fn project_image(
     State(state): State<RemoteHttpState>,
     Query(query): Query<ProjectImageQuery>,
 ) -> Response {
-    let runtime = state.app.state::<PiloRuntime>();
-    let project = match crate::runtime::project::ready(
-        &state.app.state::<crate::runtime::Runtime>(),
-        &runtime.servers,
-        &query.project_id,
-    )
-    .await
-    {
-        Ok(project) => project,
-        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-    };
+    let runtime = state.runtime.core.clone();
+    let project =
+        match crate::runtime::project::ready(&state.runtime, &runtime.servers, &query.project_id)
+            .await
+        {
+            Ok(project) => project,
+            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
+        };
     match remote_fs::read_image(&runtime.servers, &project, &query.path).await {
         Ok(bytes) => Response::builder()
             .status(StatusCode::OK)
@@ -430,17 +421,14 @@ pub(super) async fn chat_file_upload(
     Query(query): Query<ChatFileUploadQuery>,
     data: Bytes,
 ) -> Response {
-    let runtime = state.app.state::<PiloRuntime>();
-    let project = match crate::runtime::project::ready(
-        &state.app.state::<crate::runtime::Runtime>(),
-        &runtime.servers,
-        &query.project_id,
-    )
-    .await
-    {
-        Ok(project) => project,
-        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-    };
+    let runtime = state.runtime.core.clone();
+    let project =
+        match crate::runtime::project::ready(&state.runtime, &runtime.servers, &query.project_id)
+            .await
+        {
+            Ok(project) => project,
+            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
+        };
     match remote_fs::upload_chat_file(&runtime.servers, &project, &query.name, &data).await {
         Ok(path) => Json(path).into_response(),
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
@@ -458,17 +446,14 @@ pub(super) async fn chat_file_remove(
     State(state): State<RemoteHttpState>,
     Query(query): Query<ChatFileRemoveQuery>,
 ) -> Response {
-    let runtime = state.app.state::<PiloRuntime>();
-    let project = match crate::runtime::project::ready(
-        &state.app.state::<crate::runtime::Runtime>(),
-        &runtime.servers,
-        &query.project_id,
-    )
-    .await
-    {
-        Ok(project) => project,
-        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-    };
+    let runtime = state.runtime.core.clone();
+    let project =
+        match crate::runtime::project::ready(&state.runtime, &runtime.servers, &query.project_id)
+            .await
+        {
+            Ok(project) => project,
+            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
+        };
     match remote_fs::remove_chat_file(&runtime.servers, &project, &query.path).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
@@ -486,7 +471,7 @@ pub(super) async fn session_title(
     State(state): State<RemoteHttpState>,
     Json(request): Json<SessionTitleRequest>,
 ) -> Response {
-    let runtime = state.app.state::<crate::runtime::Runtime>();
+    let runtime = state.runtime.clone();
     match crate::runtime::session_naming::generate_session_title(
         &runtime,
         &request.project_id,
@@ -513,7 +498,7 @@ pub(super) async fn session_delete(
     Json(request): Json<SessionDeleteRequest>,
 ) -> Response {
     match crate::runtime::session_api::session_delete(
-        &state.app.state::<crate::runtime::Runtime>(),
+        &state.runtime,
         request.project_id,
         request.session_path,
     )
@@ -535,7 +520,7 @@ pub(super) async fn models(
     State(state): State<RemoteHttpState>,
     Query(query): Query<ModelsQuery>,
 ) -> Response {
-    match storage::open_with_paths(&state.paths)
+    match storage::open_with_paths(&state.runtime.paths)
         .and_then(|db| storage::list_project_model_cache(&db))
     {
         Ok(caches) => {
@@ -552,12 +537,12 @@ pub(super) async fn models_set(
     State(state): State<RemoteHttpState>,
     Json(mut cache): Json<crate::domain::ProjectModelCache>,
 ) -> Response {
-    if let Err(error) = get_project(&state.paths, &cache.project_id) {
+    if let Err(error) = get_project(&state.runtime.paths, &cache.project_id) {
         return api_error(StatusCode::NOT_FOUND, &error);
     }
     // Mobile and desktop clocks can differ; the Host owns cache ordering.
     cache.refreshed_at_ms = storage::now_ms();
-    match storage::open_with_paths(&state.paths)
+    match storage::open_with_paths(&state.runtime.paths)
         .and_then(|db| storage::upsert_project_model_cache(&db, &cache))
     {
         Ok(()) => Json(cache).into_response(),
@@ -569,10 +554,7 @@ pub(super) async fn model_scope_get(
     State(state): State<RemoteHttpState>,
     Query(query): Query<ModelsQuery>,
 ) -> Response {
-    match crate::runtime::project::load_model_scope(
-        &state.app.state::<crate::runtime::Runtime>(),
-        &query.project_id,
-    ) {
+    match crate::runtime::project::load_model_scope(&state.runtime, &query.project_id) {
         Ok(scope) => Json(scope).into_response(),
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
     }
@@ -590,8 +572,8 @@ pub(super) async fn model_scope_set(
     Json(request): Json<ModelScopeRequest>,
 ) -> Response {
     match crate::runtime::project::save_model_scope(
-        &state.app.state::<crate::runtime::Runtime>(),
-        &state.app.state::<RuntimeEventBus>(),
+        &state.runtime,
+        &state.runtime.events,
         &request.project_id,
         request.models,
     ) {
@@ -610,11 +592,8 @@ pub(super) async fn connection_models(
     State(state): State<RemoteHttpState>,
     Query(query): Query<NextPromptSettingsQuery>,
 ) -> Response {
-    match crate::runtime::connections::connection_models_get(
-        &state.app.state::<crate::runtime::Runtime>(),
-        query.connection_id,
-    )
-    .await
+    match crate::runtime::connections::connection_models_get(&state.runtime, query.connection_id)
+        .await
     {
         Ok(models) => Json(models).into_response(),
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
@@ -625,7 +604,7 @@ pub(super) async fn next_prompt_settings_get(
     State(state): State<RemoteHttpState>,
     Query(query): Query<NextPromptSettingsQuery>,
 ) -> Response {
-    match crate::runtime::next_prompt::load(&state.paths, &query.connection_id) {
+    match crate::runtime::next_prompt::load(&state.runtime.paths, &query.connection_id) {
         Ok(settings) => Json(settings).into_response(),
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
     }
@@ -644,8 +623,8 @@ pub(super) async fn next_prompt_settings_set(
     Json(input): Json<NextPromptSettingsInput>,
 ) -> Response {
     match crate::runtime::next_prompt::save(
-        &state.paths,
-        &state.app.state::<RuntimeEventBus>(),
+        &state.runtime.paths,
+        &state.runtime.events,
         &input.connection_id,
         input.enabled,
         input.model,
@@ -659,12 +638,8 @@ pub(super) async fn next_prompt_request(
     State(state): State<RemoteHttpState>,
     Json(request): Json<crate::domain::NextPromptRequest>,
 ) -> Response {
-    match crate::runtime::next_prompt::request(
-        &state.paths,
-        &state.app.state::<PiloRuntime>(),
-        request,
-    )
-    .await
+    match crate::runtime::next_prompt::request(&state.runtime.paths, &state.runtime.core, request)
+        .await
     {
         Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
@@ -681,7 +656,7 @@ pub(super) async fn prompt_enhancement_settings_get(
     State(state): State<RemoteHttpState>,
     Query(query): Query<PromptEnhancementSettingsQuery>,
 ) -> Response {
-    match crate::runtime::prompt_enhancement::load(&state.paths, &query.connection_id) {
+    match crate::runtime::prompt_enhancement::load(&state.runtime.paths, &query.connection_id) {
         Ok(settings) => Json(settings).into_response(),
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
     }
@@ -700,8 +675,8 @@ pub(super) async fn prompt_enhancement_settings_set(
     Json(input): Json<PromptEnhancementSettingsInput>,
 ) -> Response {
     match crate::runtime::prompt_enhancement::save(
-        &state.paths,
-        &state.app.state::<RuntimeEventBus>(),
+        &state.runtime.paths,
+        &state.runtime.events,
         &input.connection_id,
         input.enabled,
         input.model,
@@ -726,8 +701,8 @@ pub(super) async fn prompt_enhance(
     Json(input): Json<PromptEnhanceInput>,
 ) -> Response {
     match crate::runtime::prompt_enhancement::enhance(
-        &state.app.state::<crate::runtime::Runtime>(),
-        &state.paths,
+        &state.runtime,
+        &state.runtime.paths,
         &input.project_id,
         &input.draft,
         input.model,
@@ -743,7 +718,7 @@ pub(super) async fn cache_keep_alive_settings_list(
     State(state): State<RemoteHttpState>,
     Query(query): Query<NextPromptSettingsQuery>,
 ) -> Response {
-    match crate::runtime::cache_keep_alive::load(&state.paths, &query.connection_id) {
+    match crate::runtime::cache_keep_alive::load(&state.runtime.paths, &query.connection_id) {
         Ok(settings) => Json(settings).into_response(),
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
     }
@@ -754,9 +729,9 @@ pub(super) async fn cache_keep_alive_settings_set(
     Json(settings): Json<crate::domain::CacheKeepAliveSettings>,
 ) -> Response {
     match crate::runtime::cache_keep_alive::save(
-        &state.paths,
-        &state.app.state::<PiloRuntime>(),
-        &state.app.state::<RuntimeEventBus>(),
+        &state.runtime.paths,
+        &state.runtime.core,
+        &state.runtime.events,
         settings,
     )
     .await
@@ -793,8 +768,8 @@ pub(super) async fn chat_start(
             "Remote catalog probes only support the model-catalog extension with noSession",
         );
     }
-    let runtime = state.app.state::<PiloRuntime>();
-    let events = state.app.state::<RuntimeEventBus>().inner().clone();
+    let runtime = state.runtime.core.clone();
+    let events = state.runtime.events.clone();
     let probe = !request.builtin_extensions.is_empty();
     let request = ChatSessionRequest {
         project_id: request.project_id,
@@ -806,9 +781,9 @@ pub(super) async fn chat_start(
     };
     let result = if probe {
         // Preparing a no-session probe must not send new_session or index an empty chat.
-        chat_service::prepare(&state.paths, &runtime, events, request).await
+        chat_service::prepare(&state.runtime.paths, &runtime, events, request).await
     } else {
-        chat_service::start(&state.paths, &runtime, events, request).await
+        chat_service::start(&state.runtime.paths, &runtime, events, request).await
     };
     match result {
         Ok(snapshot) => Json(snapshot).into_response(),
@@ -833,7 +808,7 @@ pub(super) async fn chat_stop(
     State(state): State<RemoteHttpState>,
     Json(request): Json<ChatStopRequest>,
 ) -> Response {
-    let runtime = state.app.state::<PiloRuntime>();
+    let runtime = state.runtime.core.clone();
     match runtime
         .chat_sessions
         .stop(&request.session_key, request.reason.as_deref())
@@ -848,7 +823,7 @@ pub(super) async fn chat_state(
     State(state): State<RemoteHttpState>,
     Query(query): Query<ChatStateQuery>,
 ) -> Response {
-    let runtime = state.app.state::<PiloRuntime>();
+    let runtime = state.runtime.core.clone();
     Json(runtime.chat_sessions.state(&query.session_key).await).into_response()
 }
 
@@ -866,7 +841,7 @@ pub(super) async fn chat_rpc(
     if let Err(error) = super::validation::validate_remote_rpc(&request.command) {
         return api_error(StatusCode::BAD_REQUEST, &error);
     }
-    let runtime = state.app.state::<PiloRuntime>();
+    let runtime = state.runtime.core.clone();
     let _policy = runtime.pi_resource_policy.read().await;
     match runtime
         .chat_sessions
@@ -890,7 +865,7 @@ pub(super) async fn chat_mcp_approve(
     Json(request): Json<ChatMcpApproveRequest>,
 ) -> Response {
     match crate::runtime::runtime_api::project_mcp_server_approve(
-        &state.app.state::<crate::runtime::Runtime>(),
+        &state.runtime,
         request.project_id,
         request.server_name,
     )
@@ -915,17 +890,14 @@ pub(super) async fn files_search(
     State(state): State<RemoteHttpState>,
     Query(query): Query<FileSearchQuery>,
 ) -> Response {
-    let runtime = state.app.state::<PiloRuntime>();
-    let project = match crate::runtime::project::ready(
-        &state.app.state::<crate::runtime::Runtime>(),
-        &runtime.servers,
-        &query.project_id,
-    )
-    .await
-    {
-        Ok(project) => project,
-        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-    };
+    let runtime = state.runtime.core.clone();
+    let project =
+        match crate::runtime::project::ready(&state.runtime, &runtime.servers, &query.project_id)
+            .await
+        {
+            Ok(project) => project,
+            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
+        };
     match remote_fs::search(&runtime.servers, &project, &query.query).await {
         Ok(paths) => Json(paths).into_response(),
         Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),

@@ -157,6 +157,19 @@ mod tests {
             .emit("test", serde_json::Value::Null)
             .unwrap();
         assert_eq!(host.events.lock().unwrap().len(), 1);
+        runtime_subscribe_events(&runtime, "main", 1, host.clone());
+        runtime
+            .events
+            .send(super::super::events::RuntimeEventEnvelope::global(
+                super::super::events::RuntimeEvent::PreferencesChanged {
+                    settings: super::super::preferences::preferences_get(&runtime).unwrap(),
+                },
+            ));
+        let recorded = host.events.lock().unwrap();
+        assert_eq!(recorded.len(), 2);
+        assert_eq!(recorded[1].0, super::super::events::RUNTIME_EVENT_NAME);
+        drop(recorded);
+        drop(db);
         std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -47,11 +47,17 @@ remote_device_rename(deviceId: String, name: String) -> RemoteHostState
 
 ### Desktop runtime subscriptions (`runtime/commands/runtime.rs`)
 
-- `runtime_subscribe_events(window: WebviewWindow, events: State<RuntimeEventBus>, channel)`:
+- `runtime_subscribe_events(window: WebviewWindow, runtime: State<Runtime>, channel)`:
   Tauri injects the calling window; the frontend still sends only `{ channel }`.
 - `RuntimeEventBus::subscribe(window_label, channel_id, Arc<dyn HostEvents>)` replaces that window's
   subscription, not other windows. `unsubscribe(window_label)` runs on
   `WindowEvent::Destroyed`, not a cancellable close request.
+- Desktop commands and WebUI handlers share the cheap, Arc-backed `Runtime` handle. It owns
+  HostPaths, HostEvents, the event bus, core runtime managers and the remote server manager.
+  The desktop setup builds it once; commands unpack arguments and delegate to same-name runtime
+  functions. WebUI request/WebSocket state holds a clone rather than fetching managed state.
+  Compatibility Tauri states remain aliases of those managers for the deferred A4 control,
+  reconcile and binary-response adapters; WebAssets resolution still lives on the Tauri side.
 - `HostEvents: Send + Sync` exposes `emit(name, serde_json::Value) -> Result<(), String>`.
   Its typed `emit_runtime(RuntimeEventEnvelope)` hook defaults to the internal
   `pilo://runtime` name. The Tauri shell overrides this hook to send the original

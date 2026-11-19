@@ -456,7 +456,13 @@ impl RemoteServerManager {
         let shutdown_for_task = shutdown.clone();
         let events = runtime.events.clone();
         events.set_web_events_enabled(true);
-        let router = api::router(app, paths, pairing.clone(), shutdown_rx, auth_generation_rx);
+        let router = api::router(
+            app,
+            runtime.clone(),
+            pairing.clone(),
+            shutdown_rx,
+            auth_generation_rx,
+        );
         let pairing_for_expiry = pairing.clone();
         let task = tokio::spawn(async move {
             let serve = async move {

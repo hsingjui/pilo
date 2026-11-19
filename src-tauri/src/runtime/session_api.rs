@@ -237,6 +237,7 @@ mod tests {
             session_list(&runtime, "project".into()).unwrap(),
             vec![state]
         );
+        drop(db);
         std::fs::remove_dir_all(root).unwrap();
     }
 }

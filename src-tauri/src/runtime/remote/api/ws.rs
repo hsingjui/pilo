@@ -9,12 +9,9 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tauri::Manager;
 use tokio::sync::broadcast;
 
-use crate::runtime::{
-    RuntimeEventBus, events::SequencedRuntimeEvent, host_paths::HostPaths, remote::auth,
-};
+use crate::runtime::{events::SequencedRuntimeEvent, host_paths::HostPaths, remote::auth};
 
 use super::{AuthSession, RemoteHttpState};
 
@@ -53,7 +50,7 @@ async fn event_socket(
     auth_session: AuthSession,
     after: Option<u64>,
 ) {
-    let events = state.app.state::<RuntimeEventBus>().inner().clone();
+    let events = state.runtime.events.clone();
     let mut receiver = events.subscribe_web();
     let snapshot_sequence = events.latest_sequence();
     log::info!(target: "remote-webui", "event socket opened deviceId={} after={after:?} latestSequence={snapshot_sequence}", auth_session.device.id);
@@ -115,14 +112,14 @@ async fn event_socket(
                 }
             }
             _ = auth_tick.tick() => {
-                if !remote_token_is_valid(&state.paths, &auth_session.token).await {
+                if !remote_token_is_valid(&state.runtime.paths, &auth_session.token).await {
                     let _ = socket.send(Message::Close(None)).await;
                     break "authentication expired";
                 }
             }
             changed = auth_generation.changed() => {
                 if changed.is_err()
-                    || !remote_token_is_valid(&state.paths, &auth_session.token).await
+                    || !remote_token_is_valid(&state.runtime.paths, &auth_session.token).await
                 {
                     let _ = socket.send(Message::Close(None)).await;
                     break "authentication changed";
@@ -264,6 +261,7 @@ async fn send_ws_json<T: Serialize + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::RuntimeEventBus;
     use crate::runtime::events::{PiProcessState, RuntimeEvent, RuntimeEventEnvelope};
 
     #[tokio::test]

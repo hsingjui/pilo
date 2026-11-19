@@ -124,7 +124,7 @@ pub(super) async fn pair(
             "too many authentication attempts",
         );
     }
-    let paths = state.paths.clone();
+    let paths = state.runtime.paths.clone();
     let pairing = state.pairing.clone();
     let pair_ip = address.ip().to_string();
     let result = tokio::task::spawn_blocking(move || {
@@ -199,7 +199,7 @@ pub(super) async fn device_renew(
     State(state): State<RemoteHttpState>,
     Extension(session): Extension<AuthSession>,
 ) -> Response {
-    let paths = state.paths.clone();
+    let paths = state.runtime.paths.clone();
     let device_id = session.device.id;
     match tokio::task::spawn_blocking(move || auth::renew_device(&paths, &device_id)).await {
         Ok(Ok(Some(expires_at_ms))) => Json(DeviceAuthResponse { expires_at_ms }).into_response(),
@@ -224,7 +224,7 @@ pub(super) async fn require_auth(
     let Some(token) = token_from_headers(request.headers()) else {
         return api_error(StatusCode::UNAUTHORIZED, "authentication required");
     };
-    let paths = state.paths.clone();
+    let paths = state.runtime.paths.clone();
     let auth_token = token.clone();
     let result = tokio::task::spawn_blocking(move || auth::authenticate(&paths, &auth_token)).await;
     match result {

@@ -21,7 +21,9 @@ use tower_http::timeout::TimeoutLayer;
 
 use crate::{
     domain::{Project, RemoteDevice},
-    runtime::{connection_diagnostics::request_failure_reason, host_paths::HostPaths, storage},
+    runtime::{
+        Runtime, connection_diagnostics::request_failure_reason, host_paths::HostPaths, storage,
+    },
 };
 
 use super::pairing::PairingSession;
@@ -38,7 +40,7 @@ const AUTH_FAILURE_LIMIT: usize = 5;
 #[derive(Clone)]
 pub(crate) struct RemoteHttpState {
     app: AppHandle,
-    paths: HostPaths,
+    runtime: Runtime,
     pairing: Arc<PairingSession>,
     rate_limiter: Arc<AuthRateLimiter>,
     shutdown: watch::Receiver<bool>,
@@ -101,14 +103,14 @@ struct AuthSession {
 
 pub(crate) fn router(
     app: AppHandle,
-    paths: HostPaths,
+    runtime: Runtime,
     pairing: Arc<PairingSession>,
     shutdown: watch::Receiver<bool>,
     auth_generation: watch::Receiver<u64>,
 ) -> Router {
     let state = RemoteHttpState {
         app,
-        paths,
+        runtime,
         pairing,
         rate_limiter: Arc::new(AuthRateLimiter::default()),
         shutdown,
