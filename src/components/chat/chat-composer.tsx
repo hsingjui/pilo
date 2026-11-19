@@ -123,6 +123,7 @@ type ChatComposerProps = (
 	canEditScope?: boolean;
 	selectedModel?: PiModel | null;
 	modelLoading?: boolean;
+	runConfigTriggerLoading?: boolean;
 	modelError?: string | null;
 	modelDisabled?: boolean;
 	onModelMenuOpen?: () => void;
@@ -187,6 +188,7 @@ export function ChatComposer({
 	canEditScope = true,
 	selectedModel = null,
 	modelLoading = false,
+	runConfigTriggerLoading,
 	modelError = null,
 	modelDisabled = false,
 	onModelMenuOpen,
@@ -989,6 +991,7 @@ export function ChatComposer({
 						canEditScope={canEditScope}
 						selectedModel={selectedModel}
 						modelLoading={modelLoading}
+						runConfigTriggerLoading={runConfigTriggerLoading}
 						modelError={modelError}
 						modelDisabled={modelDisabled}
 						onModelMenuOpen={onModelMenuOpen}

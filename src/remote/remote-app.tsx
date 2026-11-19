@@ -812,6 +812,7 @@ function RemoteWorkspace() {
 												canEditScope={!isNarrow}
 												selectedModel={chat.selectedModel}
 												modelLoading={chat.modelLoading}
+												runConfigTriggerLoading={chat.loadingConversation}
 												modelError={chat.modelError ?? fatalError}
 												modelDisabled={
 													chat.readOnly ||

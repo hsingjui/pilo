@@ -94,6 +94,8 @@ function LoadingComposer({
 							: undefined
 					}
 					enhancePromptDisabled
+					// 正式页代码加载期间模型尚未解析，用骨架占位而不是“— · —”。
+					runConfigTriggerLoading
 					onChange={updateDraft}
 					onSubmit={deferSubmission}
 				/>

@@ -23,6 +23,7 @@ import {
 	DropdownMenuSubContent,
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
+	Skeleton,
 	Spinner,
 } from "@/ui";
 
@@ -67,6 +68,7 @@ type ComposerRunConfigProps = {
 	canEditScope?: boolean;
 	selectedModel: PiModel | null;
 	modelLoading: boolean;
+	runConfigTriggerLoading?: boolean;
 	modelError: string | null;
 	modelDisabled: boolean;
 	onModelMenuOpen?: () => void;
@@ -85,11 +87,14 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 	const isTouch = useIsTouchDevice();
 	const [open, setOpen] = useState(false);
 	const [modelOpen, setModelOpen] = useState(false);
-	const label =
-		props.selectedModel?.name ||
-		props.selectedModel?.id ||
-		(props.modelLoading ? t("chat.loadingModels") : "—");
+	const label = props.selectedModel?.name || props.selectedModel?.id || "—";
 	const thinking = thinkingLevelLabel(props.selectedThinkingLevel);
+	// 历史元数据的等待只影响触发器，不代表模型列表也在加载。
+	const modelPending =
+		!props.selectedModel &&
+		(props.modelLoading || props.runConfigTriggerLoading === true);
+	const thinkingPending =
+		modelPending || (!props.selectedThinkingLevel && props.thinkingLoading);
 	// Membership editing is independent of the active Pi process and remains usable during streaming.
 	const disabled =
 		(props.modelDisabled || !props.onModelChange) &&
@@ -105,7 +110,13 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 		}
 	};
 	const trigger = (
-		<RunConfigTrigger label={label} thinking={thinking} disabled={disabled} />
+		<RunConfigTrigger
+			label={modelPending ? t("chat.loadingModels") : label}
+			thinking={thinkingPending ? t("chat.readingReasoning") : thinking}
+			modelPending={modelPending}
+			thinkingPending={thinkingPending}
+			disabled={disabled}
+		/>
 	);
 	const panel = (
 		<RunConfigPanel
@@ -295,11 +306,15 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 type RunConfigTriggerProps = {
 	label: string;
 	thinking: string;
+	modelPending?: boolean;
+	thinkingPending?: boolean;
 } & Omit<ComponentPropsWithoutRef<"button">, "children" | "className" | "type">;
 
 function RunConfigTrigger({
 	label,
 	thinking,
+	modelPending = false,
+	thinkingPending = false,
 	...buttonProps
 }: RunConfigTriggerProps) {
 	const { t } = useTranslation();
@@ -308,6 +323,7 @@ function RunConfigTrigger({
 			{...buttonProps}
 			data-chat-run-config-trigger=""
 			type="button"
+			aria-busy={modelPending || thinkingPending || undefined}
 			aria-label={t("chat.runConfigLabel", { model: label, thinking })}
 			className={cn(
 				CHAT_COMPOSER_RUN_CONFIG_TRIGGER_CLASS_NAME,
@@ -315,17 +331,31 @@ function RunConfigTrigger({
 			)}
 		>
 			<PiLogo className="size-4 shrink-0 text-current" />
-			<span
-				data-chat-run-config-label=""
-				// 窄屏只省略过长的模型名，Pi Logo 和思考等级始终保留。
-				className="block min-w-0 flex-1 truncate text-left"
-			>
-				{label}
-			</span>
-			<span aria-hidden="true" className="shrink-0 text-muted-foreground/60">
-				·
-			</span>
-			<span className="shrink-0">{thinking}</span>
+			{modelPending ? (
+				// 模型与思考等级都未就绪：一条骨架占位，与启动骨架的模型占位对齐。
+				<Skeleton className="h-2.5 w-20 shrink-0 rounded-full" />
+			) : (
+				<>
+					<span
+						data-chat-run-config-label=""
+						// 窄屏只省略过长的模型名，Pi Logo 和思考等级始终保留。
+						className="block min-w-0 flex-1 truncate text-left"
+					>
+						{label}
+					</span>
+					<span
+						aria-hidden="true"
+						className="shrink-0 text-muted-foreground/60"
+					>
+						·
+					</span>
+					{thinkingPending ? (
+						<Skeleton className="h-2.5 w-8 shrink-0 rounded-full" />
+					) : (
+						<span className="shrink-0">{thinking}</span>
+					)}
+				</>
+			)}
 		</button>
 	);
 }

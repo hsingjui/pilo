@@ -379,6 +379,7 @@ const ChatConversationViewportImpl = forwardRef<
 				>
 					<div
 						className={cn(
+							effectiveLoadState === "loading" && "h-full",
 							effectiveLoadState === "ready" &&
 								messages.length === 0 &&
 								"flex min-h-full flex-col",

@@ -25,8 +25,29 @@ import {
 	type WorkspaceLineRange,
 } from "@/lib/project-workspace";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/ui";
 
 import "./project-viewer.css";
+
+const MARKDOWN_SKELETON_LINES = ["w-[92%]", "w-[84%]", "w-[88%]", "w-[46%]"];
+
+// 与 ProjectMarkdownPreview 同样的列宽与内边距，就绪后正文原位替换。
+function ProjectMarkdownSkeleton() {
+	const { t } = useTranslation();
+	return (
+		<output className="mx-auto block max-w-4xl p-4 sm:p-6">
+			<span className="sr-only">{t("common.loading")}</span>
+			<Skeleton strong className="mb-5 h-5 w-[38%]" />
+			{[0, 1].map((block) => (
+				<div key={block} className="mb-5 grid gap-2.5">
+					{MARKDOWN_SKELETON_LINES.map((width) => (
+						<Skeleton key={width} className={cn("h-3", width)} />
+					))}
+				</div>
+			))}
+		</output>
+	);
+}
 
 function ProjectMarkdownPreview({
 	project,
@@ -119,7 +140,6 @@ function ProjectFilePanel({
 	readImage?: ChatProjectImageScope["readImage"];
 	style: CSSProperties;
 }) {
-	const { t } = useTranslation();
 	const panelRef = useRef<HTMLElement>(null);
 	useEffect(() => {
 		const panel = panelRef.current;
@@ -201,7 +221,7 @@ function ProjectFilePanel({
 			style={style}
 		>
 			{fileLinkPreviewKind(file.path) === "markdown" ? (
-				<Suspense fallback={<p className="p-4">{t("common.loading")}</p>}>
+				<Suspense fallback={<ProjectMarkdownSkeleton />}>
 					<ProjectMarkdownPreview
 						project={project}
 						file={file}

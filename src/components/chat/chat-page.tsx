@@ -871,6 +871,7 @@ function ChatPageImpl(props: ChatPageProps) {
 											modelScope={modelScope}
 											selectedModel={selectedModel}
 											modelLoading={modelLoadState === "loading"}
+											runConfigTriggerLoading={historyLoadState === "loading"}
 											modelError={modelError}
 											modelDisabled={
 												modelChanging ||

@@ -273,7 +273,9 @@ spacing, type sizes, or control heights.
   `xl`/`lg` tiers on these sibling controls after adapting the model rows. Compact
   desktop stays separate.
 - The shared composer's model refresh must not focus search or close the model
-  submenu/sheet. During loading, keep its refresh button focusable using
+  submenu/sheet. Keep `runConfigTriggerLoading` for startup/history placeholders
+  separate from `modelLoading`, which gates model-list refresh on desktop and
+  WebUI. During a catalog load, keep the refresh button focusable using
   `aria-disabled` plus a click guard, not native `disabled` or pointer-event
   suppression. Preserve the current view, query and membership draft; touch
   refresh must not summon the soft keyboard. When the composer becomes enabled
