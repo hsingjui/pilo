@@ -11,7 +11,11 @@ import type {
 	PiloClientStartChatInput,
 } from "@/lib/api/pilo-client";
 import type { Project } from "@/lib/api/projects-types";
-import type { SessionIndexEntry } from "@/lib/api/sessions-types";
+import type {
+	SessionDeleteResult,
+	SessionIndexEntry,
+	SessionSearchMatch,
+} from "@/lib/api/sessions-types";
 import type {
 	PreferencePatch,
 	PreferencesSnapshot,
@@ -32,6 +36,9 @@ export type PiloNative = Pick<
 	| "sendChatCommand"
 	| "listProjects"
 	| "listSessions"
+	| "searchSessions"
+	| "generateSessionTitle"
+	| "deleteSession"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "loadPreferences"
@@ -58,6 +65,9 @@ type BridgedPiloClient = Pick<
 	| "loadThemeSettings"
 	| "saveThemeSettings"
 	| "listSessions"
+	| "searchSessions"
+	| "generateSessionTitle"
+	| "deleteSession"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "connectEvents"
@@ -109,6 +119,35 @@ export class NshPiloClient implements BridgedPiloClient {
 
 	async listSessions(projectId: string): Promise<SessionIndexEntry[]> {
 		return (await this.pilo.listSessions(projectId)) as SessionIndexEntry[];
+	}
+
+	/** Messages of the project's saved sessions that contain the query. */
+	async searchSessions(
+		projectId: string,
+		query: string,
+		limit?: number,
+	): Promise<SessionSearchMatch[]> {
+		return (await this.pilo.searchSessions(
+			projectId,
+			query,
+			limit,
+		)) as SessionSearchMatch[];
+	}
+
+	/** A title from the naming model, or null when none is configured. */
+	generateSessionTitle(projectId: string, message: string) {
+		return this.pilo.generateSessionTitle(projectId, message);
+	}
+
+	/** Deletes a session that `listSessions` has returned. */
+	async deleteSession(
+		projectId: string,
+		sessionPath: string,
+	): Promise<SessionDeleteResult> {
+		return (await this.pilo.deleteSession(
+			projectId,
+			sessionPath,
+		)) as SessionDeleteResult;
 	}
 
 	loadSessionReadStates() {

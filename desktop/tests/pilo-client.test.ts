@@ -37,6 +37,9 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 		sendChatCommand: answer("sendChatCommand", undefined),
 		listProjects: answer("listProjects", [{ id: "p1" }]),
 		listSessions: answer("listSessions", [{ piSessionId: "s1" }]),
+		searchSessions: answer("searchSessions", [{ sessionId: "s1" }]),
+		generateSessionTitle: answer("generateSessionTitle", "Repair the parser"),
+		deleteSession: answer("deleteSession", { method: "trash" }),
 		loadSessionReadStates: answer("loadSessionReadStates", [readState]),
 		markSessionRead: answer("markSessionRead", readState),
 		loadPreferences: answer("loadPreferences", preferences),
@@ -154,6 +157,48 @@ test("a chat call the native module rejects reaches the caller unchanged", async
 		});
 		expect(caught).toBe(failure);
 	}
+});
+
+test("session search, title and deletion pass their arguments and return the native answers", async () => {
+	const { pilo, calls } = fakeNative();
+	const client = new NshPiloClient(pilo);
+
+	expect(await client.searchSessions("p1", "needle", 5)).toEqual([
+		{ sessionId: "s1" },
+	]);
+	expect(await client.searchSessions("p1", "needle")).toEqual([
+		{ sessionId: "s1" },
+	]);
+	expect(await client.generateSessionTitle("p1", "Repair the parser")).toBe(
+		"Repair the parser",
+	);
+	expect(await client.deleteSession("p1", "/s.jsonl")).toEqual({
+		method: "trash",
+	});
+	expect(calls).toEqual([
+		["searchSessions", "p1", "needle", 5],
+		["searchSessions", "p1", "needle", undefined],
+		["generateSessionTitle", "p1", "Repair the parser"],
+		["deleteSession", "p1", "/s.jsonl"],
+	]);
+});
+
+test("no matches, no naming model and a rejected deletion reach the caller as they are", async () => {
+	const failure = new Error("Session '/s.jsonl' is not indexed");
+	const { pilo } = fakeNative({
+		searchSessions: () => Promise.resolve([]),
+		generateSessionTitle: () => Promise.resolve(null),
+		deleteSession: () => Promise.reject(failure),
+	});
+	const client = new NshPiloClient(pilo);
+
+	expect(await client.searchSessions("p1", "no match")).toEqual([]);
+	expect(await client.generateSessionTitle("p1", "hello")).toBe(null);
+	let caught: unknown;
+	await client.deleteSession("p1", "/s.jsonl").catch((error: unknown) => {
+		caught = error;
+	});
+	expect(caught).toBe(failure);
 });
 
 /** A native event stream whose polls the test answers one at a time. */
@@ -338,6 +383,13 @@ test("the client delivers native runtime events, a queue overflow gap and shutdo
 test("the client starts, queries, commands and stops a Pi chat through the native module", async () => {
 	const app = await open("./pilo-client-chat-fixture.tsx");
 	await app.waitFor("text:client chat lifecycle and command reply verified", {
+		timeout: 30_000,
+	});
+});
+
+test("the client searches, deletes and titles sessions through the native module", async () => {
+	const app = await open("./pilo-client-sessions-fixture.tsx");
+	await app.waitFor("text:client session search, deletion and title verified", {
 		timeout: 30_000,
 	});
 });
