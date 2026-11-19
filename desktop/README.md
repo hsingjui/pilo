@@ -103,6 +103,12 @@ in `widgetLines`; match the session, generation, request ID, and revision.
 it returns `enabled: false`, `model: null`, and `updatedAtMs: 0`.
 An unknown connection is rejected. Loading does not contact Pi.
 
+`savePromptEnhancementSettings(connectionId, enabled, model)` replaces the
+saved settings and returns the updated snapshot with a larger `updatedAtMs`.
+Pass the selected model again to retain it when disabling enhancement, or
+pass `null` to follow the chat model. A successful save publishes
+`prompt_enhancement_settings_changed` with `settings`. Saving does not contact Pi.
+
 Use `readProjectImage(projectId, path)` for a project-relative image and
 `readHistoryImage(projectId, sessionPath, imageId, fingerprint?)` for a
 transcript attachment. Both return `Uint8Array` bytes; nsh `Image` accepts

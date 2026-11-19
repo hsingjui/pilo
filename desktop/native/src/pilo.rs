@@ -24,7 +24,7 @@ use pilo_lib::{
             project_fs_read_image, project_list, project_model_cache_list, project_model_scope_get,
             project_model_scope_set,
         },
-        prompt_enhancement::prompt_enhancement_settings_get,
+        prompt_enhancement::{prompt_enhancement_settings_get, prompt_enhancement_settings_set},
         runtime_api::{
             chat_session_send_rpc, chat_session_start, chat_session_state, chat_session_stop,
         },
@@ -525,6 +525,21 @@ impl Pilo {
     ) -> Result<JsonValue, String> {
         Self::with_runtime_blocking(this, move |runtime| {
             let settings = prompt_enhancement_settings_get(runtime, connection_id)?;
+            serde_json::to_value(settings).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Saves prompt enhancement settings for a connection.
+    pub async fn save_prompt_enhancement_settings(
+        this: Instance<Self>,
+        connection_id: String,
+        enabled: bool,
+        model: JsonValue,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, move |runtime| {
+            let model = serde_json::from_value(model).map_err(|error| error.to_string())?;
+            let settings = prompt_enhancement_settings_set(runtime, connection_id, enabled, model)?;
             serde_json::to_value(settings).map_err(|error| error.to_string())
         })
         .await
