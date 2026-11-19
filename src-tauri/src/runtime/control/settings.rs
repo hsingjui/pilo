@@ -256,7 +256,7 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
             }
             encode(
                 app.state::<crate::runtime::RemoteServerManager>()
-                    .snapshot(app)
+                    .snapshot(&app.state::<crate::runtime::Runtime>())
                     .await?
                     .devices,
             )
@@ -267,7 +267,12 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
             }
             let remote = app.state::<crate::runtime::RemoteServerManager>();
             let state = if key == "remote.revokeDevice" {
-                remote.revoke_device(app, &decode::<String>(value)?).await?
+                remote
+                    .revoke_device(
+                        &app.state::<crate::runtime::Runtime>(),
+                        &decode::<String>(value)?,
+                    )
+                    .await?
             } else {
                 #[derive(serde::Deserialize)]
                 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -277,7 +282,11 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                 }
                 let rename: Rename = decode(value)?;
                 remote
-                    .rename_device(app, &rename.device_id, &rename.name)
+                    .rename_device(
+                        &app.state::<crate::runtime::Runtime>(),
+                        &rename.device_id,
+                        &rename.name,
+                    )
                     .await?
             };
             encode(state.devices)
@@ -285,12 +294,15 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
         "remote.enabled" | "remote.port" | "remote.publicBaseUrl" | "remote.addresses" => {
             let remote = app.state::<crate::runtime::RemoteServerManager>();
             let state = if get {
-                remote.snapshot(app).await?
+                remote
+                    .snapshot(&app.state::<crate::runtime::Runtime>())
+                    .await?
             } else {
                 match key.as_str() {
                     "remote.enabled" => {
                         remote
                             .set_enabled(
+                                &app.state::<crate::runtime::Runtime>(),
                                 app.clone(),
                                 decode(if reset { json!(false) } else { value })?,
                             )
@@ -299,6 +311,7 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                     "remote.port" => {
                         remote
                             .set_port(
+                                &app.state::<crate::runtime::Runtime>(),
                                 app.clone(),
                                 decode(if reset {
                                     json!(crate::domain::random_remote_port())
@@ -311,7 +324,7 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                     "remote.publicBaseUrl" => {
                         remote
                             .set_public_base_url(
-                                app.clone(),
+                                &app.state::<crate::runtime::Runtime>(),
                                 &decode::<String>(if reset { json!("") } else { value })?,
                             )
                             .await?
@@ -323,7 +336,9 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                                     .to_owned(),
                             );
                         }
-                        remote.set_addresses(app.clone(), decode(value)?).await?
+                        remote
+                            .set_addresses(&app.state::<crate::runtime::Runtime>(), decode(value)?)
+                            .await?
                     }
                 }
             };

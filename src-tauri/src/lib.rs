@@ -357,7 +357,7 @@ pub fn run() {
             let remote_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let remote = remote_app.state::<runtime::RemoteServerManager>();
-                if let Err(error) = remote.restore(remote_app.clone()).await {
+                if let Err(error) = remote.restore(&remote_app.state::<runtime::Runtime>(), remote_app.clone()).await {
                     log::error!(target: "remote-webui", "failed to restore Remote WebUI: {error}");
                 }
             });

@@ -1,90 +1,77 @@
 use tauri::{AppHandle, State};
 
-use crate::domain::{RemoteAccessAddress, RemoteAccessConfig};
+use crate::domain::RemoteAccessAddress;
 
-use super::super::remote::{RemoteHostState, RemoteServerManager};
+use super::super::{
+    Runtime,
+    remote::{self, RemoteHostState},
+};
 
 #[tauri::command]
-pub async fn remote_host_state(
-    app: AppHandle,
-    remote: State<'_, RemoteServerManager>,
-) -> Result<RemoteHostState, String> {
-    remote.snapshot(&app).await
+pub async fn remote_host_state(runtime: State<'_, Runtime>) -> Result<RemoteHostState, String> {
+    remote::remote_host_state(&runtime).await
 }
 
 #[tauri::command]
-pub async fn remote_lan_addresses() -> Result<Vec<String>, String> {
-    super::super::remote::list_lan_ips().await
+pub async fn remote_lan_addresses(runtime: State<'_, Runtime>) -> Result<Vec<String>, String> {
+    remote::remote_lan_addresses(&runtime).await
 }
 
 #[tauri::command]
 pub async fn remote_set_enabled(
+    runtime: State<'_, Runtime>,
     app: AppHandle,
-    remote: State<'_, RemoteServerManager>,
     enabled: bool,
 ) -> Result<RemoteHostState, String> {
-    remote.set_enabled(app, enabled).await
+    remote::remote_set_enabled(&runtime, app, enabled).await
 }
 
 #[tauri::command]
 pub async fn remote_set_port(
+    runtime: State<'_, Runtime>,
     app: AppHandle,
-    remote: State<'_, RemoteServerManager>,
     port: u16,
 ) -> Result<RemoteHostState, String> {
-    remote.set_port(app, port).await
+    remote::remote_set_port(&runtime, app, port).await
 }
 
 #[tauri::command]
 pub async fn remote_set_public_base_url(
-    app: AppHandle,
-    remote: State<'_, RemoteServerManager>,
+    runtime: State<'_, Runtime>,
     public_base_url: String,
 ) -> Result<RemoteHostState, String> {
-    remote.set_public_base_url(app, &public_base_url).await
+    remote::remote_set_public_base_url(&runtime, public_base_url).await
 }
 
 #[tauri::command]
 pub async fn remote_set_addresses(
-    app: AppHandle,
-    remote: State<'_, RemoteServerManager>,
+    runtime: State<'_, Runtime>,
     addresses: Vec<RemoteAccessAddress>,
     entry_address_id: String,
 ) -> Result<RemoteHostState, String> {
-    remote
-        .set_addresses(
-            app,
-            RemoteAccessConfig {
-                addresses,
-                entry_address_id,
-            },
-        )
-        .await
+    remote::remote_set_addresses(&runtime, addresses, entry_address_id).await
 }
 
 #[tauri::command]
 pub async fn remote_pairing_regenerate(
-    app: AppHandle,
-    remote: State<'_, RemoteServerManager>,
+    runtime: State<'_, Runtime>,
 ) -> Result<RemoteHostState, String> {
-    remote.regenerate_pairing(&app).await
+    remote::remote_pairing_regenerate(&runtime).await
 }
 
 #[tauri::command]
 pub async fn remote_device_revoke(
-    app: AppHandle,
-    remote: State<'_, RemoteServerManager>,
+    runtime: State<'_, Runtime>,
     device_id: String,
 ) -> Result<RemoteHostState, String> {
-    remote.revoke_device(&app, &device_id).await
+    remote::remote_device_revoke(&runtime, device_id).await
 }
 
 #[tauri::command]
 pub async fn remote_device_rename(
-    app: AppHandle,
-    remote: State<'_, RemoteServerManager>,
+    runtime: State<'_, Runtime>,
     device_id: String,
     name: String,
 ) -> Result<RemoteHostState, String> {
-    remote.rename_device(&app, &device_id, &name).await
+    remote::remote_device_rename(&runtime, device_id, name).await
 }

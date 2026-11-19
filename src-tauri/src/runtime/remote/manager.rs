@@ -5,7 +5,7 @@ use std::{
 };
 
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tokio::{
     sync::{Mutex, watch},
     task::JoinHandle,
@@ -13,7 +13,7 @@ use tokio::{
 
 use crate::{
     domain::{RemoteAccessAddress, RemoteAccessConfig, RemoteDevice},
-    runtime::{RuntimeEventBus, host_paths::HostPaths, storage},
+    runtime::{Runtime, RuntimeEventBus, host_paths::HostPaths, storage},
 };
 
 use super::{access, api, pairing::PairingSession};
@@ -61,13 +61,13 @@ pub(crate) struct RemoteServerManager {
 }
 
 impl RemoteServerManager {
-    pub(crate) async fn restore(&self, app: AppHandle) -> Result<(), String> {
-        let paths = crate::desktop_paths::from_app(&app)?;
+    pub(crate) async fn restore(&self, runtime: &Runtime, app: AppHandle) -> Result<(), String> {
+        let paths = runtime.paths.clone();
         let config = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
         if !config.enabled {
             return Ok(());
         }
-        if let Err(error) = self.start(app, config.port).await {
+        if let Err(error) = self.start(runtime, app, config.port).await {
             self.inner.lock().await.last_error = Some(error.clone());
             return Err(error);
         }
@@ -76,13 +76,14 @@ impl RemoteServerManager {
 
     pub(crate) async fn set_enabled(
         &self,
+        runtime: &Runtime,
         app: AppHandle,
         enabled: bool,
     ) -> Result<RemoteHostState, String> {
-        let paths = crate::desktop_paths::from_app(&app)?;
+        let paths = runtime.paths.clone();
         let mut config = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
         if enabled {
-            self.start(app.clone(), config.port).await?;
+            self.start(runtime, app.clone(), config.port).await?;
             config.enabled = true;
         } else {
             self.stop().await;
@@ -90,11 +91,12 @@ impl RemoteServerManager {
             storage::clear_remote_pairing(&storage::open_with_paths(&paths)?)?;
         }
         storage::set_remote_host_config(&storage::open_with_paths(&paths)?, &config)?;
-        self.snapshot(&app).await
+        self.snapshot(runtime).await
     }
 
     pub(crate) async fn set_port(
         &self,
+        runtime: &Runtime,
         app: AppHandle,
         port: u16,
     ) -> Result<RemoteHostState, String> {
@@ -103,10 +105,10 @@ impl RemoteServerManager {
                 "Remote WebUI port must be between {MIN_REMOTE_PORT} and 65535"
             ));
         }
-        let paths = crate::desktop_paths::from_app(&app)?;
+        let paths = runtime.paths.clone();
         let mut config = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
         if config.port == port {
-            return self.snapshot(&app).await;
+            return self.snapshot(runtime).await;
         }
         let (was_running, lan_base_url) = {
             let inner = self.inner.lock().await;
@@ -178,18 +180,18 @@ impl RemoteServerManager {
         })
         .await
         .map_err(|_| "Remote WebUI port task failed".to_owned())??;
-        if was_running && let Err(error) = self.start(app.clone(), port).await {
+        if was_running && let Err(error) = self.start(runtime, app.clone(), port).await {
             self.inner.lock().await.last_error = Some(error.clone());
             return Err(error);
         }
-        self.snapshot(&app).await
+        self.snapshot(runtime).await
     }
 
     pub(crate) async fn regenerate_pairing(
         &self,
-        app: &AppHandle,
+        runtime: &Runtime,
     ) -> Result<RemoteHostState, String> {
-        let paths = crate::desktop_paths::from_app(app)?;
+        let paths = runtime.paths.clone();
         let inner = self.inner.lock().await;
         let running = inner
             .running
@@ -204,16 +206,16 @@ impl RemoteServerManager {
         .await
         .map_err(|_| "Remote WebUI pairing task failed".to_owned())??;
         drop(inner);
-        self.snapshot(app).await
+        self.snapshot(runtime).await
     }
 
     pub(crate) async fn set_addresses(
         &self,
-        app: AppHandle,
+        runtime: &Runtime,
         config: RemoteAccessConfig,
     ) -> Result<RemoteHostState, String> {
         let config = access::normalize_config(config)?;
-        let paths = crate::desktop_paths::from_app(&app)?;
+        let paths = runtime.paths.clone();
         let inner = self.inner.lock().await;
         let lan_base_url = inner
             .running
@@ -241,16 +243,16 @@ impl RemoteServerManager {
         .await
         .map_err(|_| "Remote WebUI address task failed".to_owned())??;
         drop(inner);
-        self.snapshot(&app).await
+        self.snapshot(runtime).await
     }
 
     pub(crate) async fn set_public_base_url(
         &self,
-        app: AppHandle,
+        runtime: &Runtime,
         public_base_url: &str,
     ) -> Result<RemoteHostState, String> {
         let public_base_url = normalize_public_base_url(public_base_url)?;
-        let state = self.snapshot(&app).await?;
+        let state = self.snapshot(runtime).await?;
         let mut addresses = state.addresses;
         addresses.retain(|address| address.id != "public");
         if !public_base_url.is_empty()
@@ -279,7 +281,7 @@ impl RemoteServerManager {
             .id
             .clone();
         self.set_addresses(
-            app,
+            runtime,
             RemoteAccessConfig {
                 addresses,
                 entry_address_id,
@@ -290,10 +292,10 @@ impl RemoteServerManager {
 
     pub(crate) async fn revoke_device(
         &self,
-        app: &AppHandle,
+        runtime: &Runtime,
         device_id: &str,
     ) -> Result<RemoteHostState, String> {
-        let paths = crate::desktop_paths::from_app(app)?;
+        let paths = runtime.paths.clone();
         let db = storage::open_with_paths(&paths)?;
         if !storage::revoke_remote_device(&db, device_id, storage::now_ms())? {
             return Err(format!(
@@ -304,16 +306,16 @@ impl RemoteServerManager {
             let next = running.auth_generation.borrow().wrapping_add(1);
             running.auth_generation.send_replace(next);
         }
-        self.snapshot(app).await
+        self.snapshot(runtime).await
     }
 
     pub(crate) async fn rename_device(
         &self,
-        app: &AppHandle,
+        runtime: &Runtime,
         device_id: &str,
         name: &str,
     ) -> Result<RemoteHostState, String> {
-        let paths = crate::desktop_paths::from_app(app)?;
+        let paths = runtime.paths.clone();
         let db = storage::open_with_paths(&paths)?;
         let name = super::auth::normalize_device_name(Some(name));
         if !storage::rename_remote_device(&db, device_id, &name)? {
@@ -321,11 +323,11 @@ impl RemoteServerManager {
                 "Remote device '{device_id}' was not found or already revoked"
             ));
         }
-        self.snapshot(app).await
+        self.snapshot(runtime).await
     }
 
-    pub(crate) async fn snapshot(&self, app: &AppHandle) -> Result<RemoteHostState, String> {
-        let paths = crate::desktop_paths::from_app(app)?;
+    pub(crate) async fn snapshot(&self, runtime: &Runtime) -> Result<RemoteHostState, String> {
+        let paths = runtime.paths.clone();
         let inner = self.inner.lock().await;
         let running = inner.running.as_ref().map(|server| {
             (
@@ -425,7 +427,7 @@ impl RemoteServerManager {
         }
     }
 
-    async fn start(&self, app: AppHandle, port: u16) -> Result<(), String> {
+    async fn start(&self, runtime: &Runtime, app: AppHandle, port: u16) -> Result<(), String> {
         let mut inner = self.inner.lock().await;
         if inner.running.is_some() {
             return Ok(());
@@ -438,7 +440,7 @@ impl RemoteServerManager {
             .map_err(|error| format!("failed to read Remote WebUI listener address: {error}"))?
             .port();
         let lan_base_url = format!("http://{}:{actual_port}", lan_ip());
-        let paths = crate::desktop_paths::from_app(&app)?;
+        let paths = runtime.paths.clone();
         let pairing = Arc::new(PairingSession::default());
         let pairing_for_init = pairing.clone();
         let paths_for_init = paths.clone();
@@ -452,7 +454,7 @@ impl RemoteServerManager {
         let (shutdown, shutdown_rx) = watch::channel(false);
         let (auth_generation, auth_generation_rx) = watch::channel(0_u64);
         let shutdown_for_task = shutdown.clone();
-        let events = app.state::<RuntimeEventBus>().inner().clone();
+        let events = runtime.events.clone();
         events.set_web_events_enabled(true);
         let router = api::router(app, paths, pairing.clone(), shutdown_rx, auth_generation_rx);
         let pairing_for_expiry = pairing.clone();
