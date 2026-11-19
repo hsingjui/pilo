@@ -1,5 +1,5 @@
 import type { ChatMessage } from "@/lib/chat/conversation-types";
-import type { SessionHistoryMessageIndexEntry } from "@/lib/api/sessions";
+import type { SessionHistoryMessageIndexEntry } from "@/lib/api/sessions-types";
 
 export const MAX_HYDRATED_HISTORY_MESSAGES = 200;
 

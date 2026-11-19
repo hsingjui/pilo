@@ -6,6 +6,8 @@ import type {
 } from "@/lib/api/pi-runtime";
 import type { Project } from "@/lib/api/projects";
 
+export { formatTime } from "@/lib/chat/format-time";
+
 export type ChatSession = {
 	id: string;
 	title: string;
@@ -56,14 +58,6 @@ export async function readCurrentPiSessionState(
 		contextWindow: stats.contextUsage?.contextWindow,
 		contextPercent: stats.contextUsage?.percent,
 	};
-}
-
-export function formatTime(timestampMs = Date.now()) {
-	return new Intl.DateTimeFormat("zh-CN", {
-		hour: "2-digit",
-		minute: "2-digit",
-		hour12: false,
-	}).format(new Date(timestampMs));
 }
 
 export function getSessionHistoryFingerprint(session: ChatSession) {
