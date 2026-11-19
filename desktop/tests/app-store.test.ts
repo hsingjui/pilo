@@ -5,6 +5,7 @@ import type {
 	PiloClientEventMessage,
 	PiloClientEventOptions,
 } from "@/lib/api/pilo-client";
+import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import type { Project } from "@/lib/api/projects-types";
 import type { SessionIndexEntry } from "@/lib/api/sessions-types";
 import type { PreferencesSnapshot } from "@/lib/host-preferences-types";
@@ -57,6 +58,9 @@ function fakeClient() {
 	const projectLists: Reply<Project[]>[] = [];
 	const sessionLists: (Reply<SessionIndexEntry[]> & { projectId: string })[] =
 		[];
+	const chatStates: (Reply<ChatSessionRuntimeState | null> & {
+		sessionKey: string;
+	})[] = [];
 	const answers = {
 		closed: false,
 		themeSettings: theme(1) as ThemeSettings | Error,
@@ -72,6 +76,10 @@ function fakeClient() {
 		},
 		bootstrap: () =>
 			new Promise((resolve, reject) => bootstraps.push({ resolve, reject })),
+		chatState: (sessionKey) =>
+			new Promise((resolve, reject) =>
+				chatStates.push({ sessionKey, resolve, reject }),
+			),
 		listProjects: () =>
 			new Promise((resolve, reject) => projectLists.push({ resolve, reject })),
 		listSessions: (projectId) =>
@@ -108,6 +116,7 @@ function fakeClient() {
 		bootstraps,
 		projectLists,
 		sessionLists,
+		chatStates,
 		marked,
 		connections: () => connections,
 		listening: () => listeners.size,
@@ -558,4 +567,171 @@ test("the state follows the real native module through events, a gap and shutdow
 		"text:app state followed the native module through a gap and shutdown",
 		{ timeout: 30_000 },
 	);
+});
+
+const chat = (sessionKey: string, activeTurn = false) =>
+	({ sessionKey, projectId: "p1", activeTurn }) as ChatSessionRuntimeState;
+const chatEvent = (sequence: number, sessionKey: string, type: string) =>
+	[sequence, { type, sessionKey, projectId: "p1", generation: 1 }] as [
+		number,
+		object,
+	];
+
+test("a chat started after launch appears, follows its turn and goes when stopped", async () => {
+	const { store, emit, chatStates } = await startedStore();
+	expect(store.state().chatSessions).toEqual([]);
+
+	emit(events(chatEvent(11, "k1", "process_state")));
+	await settle();
+	expect(chatStates.map(({ sessionKey }) => sessionKey)).toEqual(["k1"]);
+	// Nothing is shown from the event itself.
+	expect(store.state().chatSessions).toEqual([]);
+	chatStates[0]?.resolve(chat("k1"));
+	await settle();
+	expect(store.state().chatSessions).toEqual([chat("k1")]);
+
+	emit(events(chatEvent(12, "k1", "user_message_start")));
+	await settle();
+	chatStates[1]?.resolve(chat("k1", true));
+	await settle();
+	expect(store.state().chatSessions).toEqual([chat("k1", true)]);
+
+	emit(events(chatEvent(13, "k1", "process_state")));
+	await settle();
+	chatStates[2]?.resolve(null);
+	await settle();
+	expect(store.state().chatSessions).toEqual([]);
+});
+
+test("events during a chat state read cause one more read, however many they are", async () => {
+	const { store, emit, chatStates } = await startedStore();
+	emit(events(chatEvent(11, "k1", "user_message_start")));
+	await settle();
+	emit(
+		events(
+			chatEvent(12, "k1", "assistant_message_start"),
+			chatEvent(13, "k1", "assistant_message_end"),
+		),
+	);
+	emit(events(chatEvent(14, "k1", "user_message_start")));
+	await settle();
+	expect(chatStates.length).toBe(1);
+
+	chatStates[0]?.resolve(chat("k1", true));
+	await settle();
+	expect(chatStates.length).toBe(2);
+	chatStates[1]?.resolve(chat("k1"));
+	await settle();
+	expect(chatStates.length).toBe(2);
+	expect(store.state().chatSessions).toEqual([chat("k1")]);
+
+	// With no read in flight, the next event reads again.
+	emit(events(chatEvent(15, "k1", "user_message_start")));
+	await settle();
+	expect(chatStates.length).toBe(3);
+});
+
+test("each chat is read on its own events", async () => {
+	const { store, emit, chatStates } = await startedStore();
+	emit(
+		events(
+			chatEvent(11, "k1", "process_state"),
+			chatEvent(12, "k2", "process_state"),
+			chatEvent(13, "k1", "user_message_start"),
+		),
+	);
+	await settle();
+	expect(chatStates.map(({ sessionKey }) => sessionKey)).toEqual(["k1", "k2"]);
+	chatStates[1]?.resolve(chat("k2"));
+	chatStates[0]?.resolve(chat("k1"));
+	await settle();
+	chatStates[2]?.resolve(chat("k1", true));
+	await settle();
+
+	expect(chatStates.map(({ sessionKey }) => sessionKey)).toEqual([
+		"k1",
+		"k2",
+		"k1",
+	]);
+	expect(store.state().chatSessions).toEqual([chat("k2"), chat("k1", true)]);
+});
+
+test("text and tool events, and events of no chat, read no chat state", async () => {
+	const { emit, chatStates } = await startedStore();
+	emit(
+		events(
+			chatEvent(11, "k1", "assistant_text_delta"),
+			chatEvent(12, "k1", "tool_execution_start"),
+			[13, { type: "process_state", generation: 1 }],
+			[14, { type: "sessions_indexed", projectId: "p1" }],
+		),
+	);
+	await settle();
+	expect(chatStates.length).toBe(0);
+});
+
+test("a chat state that answers after a newer bootstrap is not shown", async () => {
+	const { store, emit, chatStates, bootstraps } = await startedStore();
+	emit(events(chatEvent(11, "k1", "process_state")));
+	await settle();
+	emit({ type: "resyncRequired", latestSequence: 20 });
+	await settle();
+	bootstraps[1]?.resolve({
+		...snapshot(20, 3, "p1", "p2"),
+		chatSessions: [chat("k1", true)],
+	});
+	await settle();
+	expect(store.state().chatSessions).toEqual([chat("k1", true)]);
+
+	// Read before that bootstrap, so older than what it holds.
+	chatStates[0]?.resolve(chat("k1"));
+	await settle();
+	expect(store.state().chatSessions).toEqual([chat("k1", true)]);
+});
+
+test("a chat's events that waited for a bootstrap read its state after it", async () => {
+	const { store, emit, chatStates, bootstraps } = await startedStore();
+	emit({ type: "resyncRequired", latestSequence: 20 });
+	await settle();
+	emit(events(chatEvent(21, "k1", "user_message_start")));
+	await settle();
+	expect(chatStates.length).toBe(0);
+
+	bootstraps[1]?.resolve({
+		...snapshot(20, 3, "p1", "p2"),
+		chatSessions: [chat("k1")],
+	});
+	await settle();
+	expect(chatStates.length).toBe(1);
+	chatStates[0]?.resolve(chat("k1", true));
+	await settle();
+	expect(store.state().chatSessions).toEqual([chat("k1", true)]);
+});
+
+test("a chat state read that fails keeps the state shown and the next event reads again", async () => {
+	const { store, emit, chatStates } = await startedStore();
+	emit(events(chatEvent(11, "k1", "process_state")));
+	await settle();
+	chatStates[0]?.resolve(chat("k1"));
+	await settle();
+
+	emit(events(chatEvent(12, "k1", "user_message_start")));
+	await settle();
+	chatStates[1]?.reject(new Error("the runtime did not answer"));
+	await settle();
+	expect(store.state().chatSessions).toEqual([chat("k1")]);
+	expect(store.state().status).toEqual({ type: "ready" });
+
+	emit(events(chatEvent(13, "k1", "assistant_message_start")));
+	await settle();
+	chatStates[2]?.resolve(chat("k1", true));
+	await settle();
+	expect(store.state().chatSessions).toEqual([chat("k1", true)]);
+});
+
+test("the store keeps the chat states current through the native module", async () => {
+	const app = await open("./app-store-chat-fixture.tsx");
+	await app.waitFor("text:chat states followed through the store", {
+		timeout: 30_000,
+	});
 });

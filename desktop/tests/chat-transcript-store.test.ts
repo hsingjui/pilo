@@ -909,6 +909,7 @@ function fakeApp() {
 		closed: false,
 		bootstrap: () =>
 			new Promise((resolve, reject) => bootstraps.push({ resolve, reject })),
+		chatState: () => Promise.resolve(null),
 		listProjects: () => Promise.resolve([]),
 		listSessions: () => Promise.resolve([]),
 		loadSessionReadStates: () => Promise.resolve([]),

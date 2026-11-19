@@ -78,6 +78,12 @@ export function scriptedClient(script: AppScript = {}) {
 				})
 			);
 		},
+		// A scripted chat keeps the state the bootstrap gave it.
+		chatState: (sessionKey) =>
+			Promise.resolve(
+				script.chatSessions?.find((chat) => chat.sessionKey === sessionKey) ??
+					null,
+			),
 		listProjects: () => Promise.resolve(projects),
 		listSessions: (projectId) =>
 			script.sessions?.(projectId) ?? Promise.resolve([]),

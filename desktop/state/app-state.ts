@@ -5,6 +5,10 @@ import type { SessionIndexEntry } from "@/lib/api/sessions-types";
 import type { PreferencesSnapshot } from "@/lib/host-preferences-types";
 import type { SessionReadState } from "@/lib/session-read-state";
 import type { ThemeSettings } from "@/lib/theme-settings-types";
+import {
+	chatRpcChangesActivity,
+	chatRpcRenamesSession,
+} from "@/lib/chat/chat-session-runtime-model";
 
 export type StartupStatus =
 	| { type: "starting" }
@@ -68,6 +72,12 @@ export type AppAction =
 	| { type: "sessions_failed"; projectId: string; message: string }
 	| { type: "project_selected"; projectId: string }
 	| { type: "session_selected"; projectId: string; sessionPath: string }
+	/** One chat's runtime state as just read; `null` when it has none. */
+	| {
+			type: "chat_session_loaded";
+			sessionKey: string;
+			chat: ChatSessionRuntimeState | null;
+	  }
 	| { type: "event"; event: PiloClientEvent };
 
 export function createAppState(): AppState {
@@ -192,6 +202,64 @@ export function isStaleEvent(state: AppState, event: PiloClientEvent) {
 	}
 }
 
+/**
+ * Whether the event is one after which a chat's runtime state is read
+ * again: the events the WebUI refreshes its chat states on, told by its
+ * own checks of Pi's answers, and Pi's answer to `get_state`.
+ */
+export function changesChatSession(event: PiloClientEvent): boolean {
+	switch (event.type) {
+		case "process_state":
+		case "pi_reattached":
+		case "user_message_start":
+		case "assistant_message_start":
+		case "assistant_message_end":
+		case "auto_retry_start":
+		case "compaction_start":
+		case "compaction_end":
+		case "runtime_error":
+			return true;
+		case "rpc_message":
+			return (
+				chatRpcChangesActivity(event.message) ||
+				chatRpcRenamesSession(event.message) ||
+				reportsState(event.message)
+			);
+		default:
+			return false;
+	}
+}
+
+/**
+ * Pi's answer to `get_state`. The Host learns the chat's session file from
+ * it, and the sidebar matches a running chat to its saved session by that
+ * path, so a new chat shows as running only once this has been read.
+ */
+function reportsState(message: unknown) {
+	return (
+		typeof message === "object" &&
+		message !== null &&
+		"type" in message &&
+		message.type === "response" &&
+		"command" in message &&
+		message.command === "get_state"
+	);
+}
+
+function withChatSession(
+	chatSessions: ChatSessionRuntimeState[],
+	sessionKey: string,
+	chat: ChatSessionRuntimeState | null,
+) {
+	const index = chatSessions.findIndex(
+		(held) => held.sessionKey === sessionKey,
+	);
+	if (index < 0) return chat ? [...chatSessions, chat] : chatSessions;
+	return chat
+		? chatSessions.map((held, at) => (at === index ? chat : held))
+		: chatSessions.filter((_, at) => at !== index);
+}
+
 function reduceEvent(state: AppState, event: PiloClientEvent): AppState {
 	if (isStaleEvent(state, event)) return state;
 	switch (event.type) {
@@ -302,6 +370,16 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 				...state,
 				navigation: { projectId, session: { projectId, sessionPath } },
 			};
+		}
+		case "chat_session_loaded": {
+			const chatSessions = withChatSession(
+				state.chatSessions,
+				action.sessionKey,
+				action.chat,
+			);
+			return chatSessions === state.chatSessions
+				? state
+				: { ...state, chatSessions };
 		}
 		case "event":
 			return reduceEvent(state, action.event);

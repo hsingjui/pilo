@@ -1,5 +1,6 @@
 import { expect, test } from "nsh/test";
 
+import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import type { PiloClientEvent } from "@/lib/api/pilo-client";
 import type { Project } from "@/lib/api/projects-types";
 import type { SessionIndexEntry } from "@/lib/api/sessions-types";
@@ -10,6 +11,7 @@ import {
 	type AppAction,
 	type AppState,
 	activeProject,
+	changesChatSession,
 	createAppState,
 	isSessionUnread,
 	isStaleEvent,
@@ -359,4 +361,98 @@ test("a selection survives a new project list only while its project does", () =
 	expect(
 		reduce(opened, { type: "projects_loaded", projects: [] }).navigation,
 	).toEqual({ projectId: null, session: null });
+});
+
+const chat = (sessionKey: string, activeTurn = false) =>
+	({ sessionKey, projectId: "p1", activeTurn }) as ChatSessionRuntimeState;
+
+test("a chat's runtime state is added, replaced in place and removed", () => {
+	const started = ready(
+		{ type: "chat_session_loaded", sessionKey: "k1", chat: chat("k1") },
+		{ type: "chat_session_loaded", sessionKey: "k2", chat: chat("k2") },
+	);
+	expect(started.chatSessions).toEqual([chat("k1"), chat("k2")]);
+
+	const busy = reduce(started, {
+		type: "chat_session_loaded",
+		sessionKey: "k1",
+		chat: chat("k1", true),
+	});
+	expect(busy.chatSessions).toEqual([chat("k1", true), chat("k2")]);
+	// The other chat's state is the same object, so its views do not rerun.
+	expect(busy.chatSessions[1]).toBe(started.chatSessions[1]);
+
+	const stopped = reduce(busy, {
+		type: "chat_session_loaded",
+		sessionKey: "k1",
+		chat: null,
+	});
+	expect(stopped.chatSessions).toEqual([chat("k2")]);
+});
+
+test("a chat with no runtime state that the app does not hold changes nothing", () => {
+	const state = ready();
+	expect(
+		reduce(state, {
+			type: "chat_session_loaded",
+			sessionKey: "k1",
+			chat: null,
+		}),
+	).toBe(state);
+});
+
+test("a bootstrap replaces the chat states that were read before it", () => {
+	const state = reduce(
+		ready({ type: "chat_session_loaded", sessionKey: "k1", chat: chat("k1") }),
+		{
+			type: "bootstrapped",
+			snapshot: {
+				projects: [project("p1")],
+				chatSessions: [chat("k2")],
+				latestSequence: 20,
+				preferences: preferences(3),
+			},
+		},
+	);
+	expect(state.chatSessions).toEqual([chat("k2")]);
+});
+
+test("the events that can change a chat's runtime state are told from the rest", () => {
+	const response = (command: string) => ({
+		type: "rpc_message",
+		message: { type: "response", command, success: true },
+	});
+	for (const body of [
+		{ type: "process_state", state: "running" },
+		{ type: "process_state", state: "stopped" },
+		{ type: "pi_reattached", active: false },
+		{ type: "user_message_start", text: "hello" },
+		{ type: "assistant_message_start" },
+		{ type: "assistant_message_end" },
+		{ type: "auto_retry_start" },
+		{ type: "compaction_start" },
+		{ type: "compaction_end" },
+		{ type: "runtime_error", message: "failed" },
+		response("prompt"),
+		response("compact"),
+		response("set_session_name"),
+		response("get_state"),
+	]) {
+		expect(changesChatSession(event(11, body))).toBe(true);
+	}
+	for (const body of [
+		{ type: "assistant_text_delta", delta: "text" },
+		{ type: "assistant_thinking_delta", delta: "text" },
+		{ type: "tool_execution_start" },
+		{ type: "tool_execution_end" },
+		{ type: "queue_update" },
+		{ type: "extension_ui_request" },
+		response("set_model"),
+		{ type: "rpc_message", message: { type: "extension_ui_response" } },
+		{ type: "rpc_message", message: null },
+		{ type: "sessions_indexed", projectId: "p1" },
+		{ type: "session_turn_completed", projectId: "p1" },
+	]) {
+		expect(changesChatSession(event(11, body))).toBe(false);
+	}
 });

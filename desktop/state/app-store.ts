@@ -8,6 +8,7 @@ import type { NshPiloClient } from "../client/nsh-pilo-client";
 import {
 	type AppAction,
 	type AppState,
+	changesChatSession,
 	createAppState,
 	isSessionUnread,
 	isStaleEvent,
@@ -19,6 +20,7 @@ import type { ChatTranscriptStore } from "./chat-transcript-store";
 export type AppStoreClient = Pick<
 	NshPiloClient,
 	| "bootstrap"
+	| "chatState"
 	| "listProjects"
 	| "listSessions"
 	| "loadSessionReadStates"
@@ -53,6 +55,10 @@ export class AppStore {
 	/** Counts project reads, so a reload superseded by a newer read is dropped. */
 	private projectReads = 0;
 	private readonly sessionReads = new Map<string, number>();
+	/** Counts applied bootstraps, each of which replaces the chat states. */
+	private bootstraps = 0;
+	/** The chats whose runtime state is being read, and whether to read again. */
+	private readonly chatReads = new Map<string, { again: boolean }>();
 
 	/**
 	 * `chat`, when given, is the open chat's transcript: it gets every event
@@ -208,6 +214,9 @@ export class AppStore {
 	private handle(event: PiloClientEvent) {
 		if (isStaleEvent(this.current(), event)) return;
 		this.apply({ type: "event", event });
+		if (event.sessionKey !== undefined && changesChatSession(event)) {
+			void this.loadChatSession(event.sessionKey);
+		}
 		if (event.type === "configuration_changed") {
 			void this.reloadProjects();
 		} else if (
@@ -216,6 +225,36 @@ export class AppStore {
 		) {
 			void this.loadSessions(event.projectId);
 		}
+	}
+
+	/**
+	 * Reads one chat's runtime state after an event that can change it, as
+	 * the WebUI reads its chat states again on such events. One read per
+	 * chat is in flight at a time; events during it cause one more after.
+	 */
+	private async loadChatSession(sessionKey: string) {
+		const pending = this.chatReads.get(sessionKey);
+		if (pending) {
+			pending.again = true;
+			return;
+		}
+		const read = { again: false };
+		this.chatReads.set(sessionKey, read);
+		do {
+			read.again = false;
+			const bootstraps = this.bootstraps;
+			try {
+				const chat = await this.client.chatState(sessionKey);
+				// A bootstrap applied meanwhile is newer than this answer.
+				if (this.bootstraps === bootstraps) {
+					this.apply({ type: "chat_session_loaded", sessionKey, chat });
+				}
+			} catch {
+				// The state shown stays until the chat's next event or the next
+				// bootstrap; a runtime that stopped answering ends the stream.
+			}
+		} while (read.again);
+		this.chatReads.delete(sessionKey);
 	}
 
 	private async reloadProjects() {
@@ -259,6 +298,7 @@ export class AppStore {
 					this.client.loadSessionReadStates(),
 				]);
 				if (!current()) continue;
+				this.bootstraps += 1;
 				this.apply(
 					{ type: "bootstrapped", snapshot },
 					{ type: "theme_settings_loaded", settings },
