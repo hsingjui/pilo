@@ -1,5 +1,30 @@
 use serde::{Deserialize, Serialize};
 
+use super::theme_tokens::{
+    CustomThemeTokens, read_custom_theme_tokens, theme_token_catalog, validate_custom_theme_tokens,
+};
+
+fn deserialize_tokens<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<CustomThemeTokens, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    validate_custom_theme_tokens(&value, theme_token_catalog())
+        .map_err(|issues| serde::de::Error::custom(serde_json::json!({ "issues": issues })))
+}
+
+fn deserialize_optional_tokens<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<CustomThemeTokens>, D::Error> {
+    deserialize_tokens(deserializer).map(Some)
+}
+
+fn deserialize_stored_tokens<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<CustomThemeTokens, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(read_custom_theme_tokens(&value, theme_token_catalog()))
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ThemeMode {
@@ -21,7 +46,20 @@ pub enum ThemeFamily {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct SavedCustomTheme {
     pub name: String,
+    #[serde(default)]
     pub css: String,
+    #[serde(default, deserialize_with = "deserialize_stored_tokens")]
+    pub tokens: CustomThemeTokens,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SavedCustomThemeInput {
+    pub name: String,
+    #[serde(default)]
+    pub css: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_tokens")]
+    pub tokens: CustomThemeTokens,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
@@ -31,6 +69,8 @@ pub struct ThemeSettings {
     pub theme: ThemeMode,
     pub theme_family: ThemeFamily,
     pub theme_custom_css: String,
+    #[serde(deserialize_with = "deserialize_stored_tokens")]
+    pub theme_custom_tokens: CustomThemeTokens,
     pub theme_custom_name: String,
     pub saved_custom_themes: Vec<SavedCustomTheme>,
 }
@@ -41,7 +81,40 @@ pub struct ThemeSettingsUpdate {
     pub theme: Option<ThemeMode>,
     pub theme_family: Option<ThemeFamily>,
     pub theme_custom_css: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_tokens")]
+    pub theme_custom_tokens: Option<CustomThemeTokens>,
     pub theme_custom_name: Option<String>,
-    pub save_custom_theme: Option<SavedCustomTheme>,
+    pub save_custom_theme: Option<SavedCustomThemeInput>,
     pub delete_custom_theme: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn theme_settings_keep_rollback_fields_and_allow_unknown_snapshot_fields() {
+        let snapshot = json!({
+            "themeCustomCss":"rollback", "themeCustomTokens":{"dark":{"primary":"#fff"}},
+            "futureField":true, "savedCustomThemes":[{"name":"Saved", "css":"saved rollback", "tokens":{}, "futureField":true}]
+        });
+        let current: ThemeSettings = serde_json::from_value(snapshot).unwrap();
+        #[derive(Deserialize)]
+        struct OldSavedTheme {
+            name: String,
+            css: String,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct OldSettings {
+            theme_custom_css: String,
+            saved_custom_themes: Vec<OldSavedTheme>,
+        }
+        let old: OldSettings =
+            serde_json::from_value(serde_json::to_value(current).unwrap()).unwrap();
+        assert_eq!(old.theme_custom_css, "rollback");
+        assert_eq!(old.saved_custom_themes[0].name, "Saved");
+        assert_eq!(old.saved_custom_themes[0].css, "saved rollback");
+    }
 }

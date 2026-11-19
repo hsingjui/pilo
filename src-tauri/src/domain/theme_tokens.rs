@@ -250,8 +250,27 @@ pub fn validate_custom_theme_tokens(
     input: &Value,
     catalog: &ThemeTokenCatalog,
 ) -> Result<CustomThemeTokens, Vec<ThemeTokenIssue>> {
+    let (tokens, issues) = check_custom_theme_tokens(input, catalog);
+    if issues.is_empty() {
+        Ok(tokens)
+    } else {
+        Err(issues)
+    }
+}
+
+pub fn read_custom_theme_tokens(input: &Value, catalog: &ThemeTokenCatalog) -> CustomThemeTokens {
+    check_custom_theme_tokens(input, catalog).0
+}
+
+fn check_custom_theme_tokens(
+    input: &Value,
+    catalog: &ThemeTokenCatalog,
+) -> (CustomThemeTokens, Vec<ThemeTokenIssue>) {
     let Some(input) = input.as_object() else {
-        return Err(vec![ThemeTokenIssue::NotAnObject { scope: None }]);
+        return (
+            CustomThemeTokens::default(),
+            vec![ThemeTokenIssue::NotAnObject { scope: None }],
+        );
     };
     let mut issues = Vec::new();
     let mut tokens = CustomThemeTokens::default();
@@ -308,16 +327,51 @@ pub fn validate_custom_theme_tokens(
             }
         }
     }
-    if issues.is_empty() {
-        Ok(tokens)
-    } else {
-        Err(issues)
-    }
+    (tokens, issues)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stored_theme_tokens_keep_valid_entries_and_theme_scope_precedence() {
+        let catalog = theme_token_catalog();
+        let input = serde_json::json!({
+            "theme": {"primary":"#abc", "font-sans":"Inter", "removed":"#fff", "pilo-field-height":"bad"},
+            "light": {"primary":"#123", "background":"#fff", "font-sans":"Arial"},
+            "dark": {"primary":"#456", "foreground":"#000", "background":false},
+            "unknown": {"primary":"#fff"}
+        });
+        let tokens = read_custom_theme_tokens(&input, catalog);
+        assert_eq!(
+            serde_json::to_value(&tokens).unwrap(),
+            serde_json::json!({
+                "theme":{"primary":"#abc", "font-sans":"Inter"},
+                "light":{"background":"#fff"},
+                "dark":{"foreground":"#000"}
+            })
+        );
+        assert_eq!(
+            validate_custom_theme_tokens(&serde_json::to_value(&tokens).unwrap(), catalog).unwrap(),
+            tokens
+        );
+        let mut changed_catalog = catalog.clone();
+        changed_catalog.remove("primary");
+        let mut expected = tokens;
+        expected.theme.remove("primary");
+        assert_eq!(read_custom_theme_tokens(&input, &changed_catalog), expected);
+        for value in [
+            serde_json::json!(null),
+            serde_json::json!([]),
+            serde_json::json!({"theme":42, "light":null}),
+        ] {
+            assert_eq!(
+                read_custom_theme_tokens(&value, catalog),
+                CustomThemeTokens::default()
+            );
+        }
+    }
 
     #[test]
     fn theme_catalog_empty_unsupported_and_conflicting_kinds() {

@@ -37,6 +37,7 @@ pub(super) async fn settings(runtime: &Runtime, command: ControlCommand) -> Resu
             "theme"
                 | "themeFamily"
                 | "themeCustomCss"
+                | "themeCustomTokens"
                 | "themeCustomName"
                 | "savedCustomThemes"
                 | "saveCustomTheme"
@@ -73,7 +74,8 @@ pub(super) async fn settings(runtime: &Runtime, command: ControlCommand) -> Resu
         }
         let mut update = serde_json::Map::new();
         update.insert(name.to_owned(), value);
-        let update: ThemeSettingsUpdate = decode(Value::Object(update))?;
+        let update: ThemeSettingsUpdate =
+            serde_json::from_value(Value::Object(update)).map_err(|error| error.to_string())?;
         return encode(
             crate::runtime::appearance::save(runtime.paths.clone(), events.clone(), update).await?,
         );
@@ -319,4 +321,69 @@ pub(super) async fn settings(runtime: &Runtime, command: ControlCommand) -> Resu
     Ok(
         json!({ "key": key, "value": result, "connectionId": command.connection_id, "projectId": command.project_id }),
     )
+}
+
+#[cfg(test)]
+mod theme_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn theme_tokens_setting_get_set_reset() {
+        let root = std::env::temp_dir().join(format!(
+            "pilo-theme-control-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let runtime = Runtime::new(
+            crate::runtime::host_paths::HostPaths::new(root.clone(), root.clone()).unwrap(),
+            Arc::new(crate::runtime::host_events::RecordingEvents::default()),
+        );
+        let command = |method: &str, value: Value| {
+            decode(json!({"method":method, "key":"theme.themeCustomTokens", "value":value}))
+                .unwrap()
+        };
+        assert_eq!(
+            settings(&runtime, command("settings.get", Value::Null))
+                .await
+                .unwrap(),
+            json!({})
+        );
+        let tokens = json!({"dark":{"primary":"#abc"}});
+        let saved = settings(&runtime, command("settings.set", tokens.clone()))
+            .await
+            .unwrap();
+        assert_eq!(saved["themeCustomTokens"], tokens);
+        assert_eq!(
+            settings(&runtime, command("settings.get", Value::Null))
+                .await
+                .unwrap(),
+            tokens
+        );
+        assert!(
+            settings(
+                &runtime,
+                command("settings.set", json!({"dark":{"primary":"bad"}}))
+            )
+            .await
+            .unwrap_err()
+            .contains("invalid-value")
+        );
+        let reset = settings(&runtime, command("settings.reset", Value::Null))
+            .await
+            .unwrap();
+        assert_eq!(reset["themeCustomTokens"], json!({}));
+        assert_eq!(reset["revision"], saved["revision"].as_u64().unwrap() + 1);
+        assert_eq!(
+            settings(&runtime, command("settings.get", Value::Null))
+                .await
+                .unwrap(),
+            json!({})
+        );
+        drop(runtime);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
