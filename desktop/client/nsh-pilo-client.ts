@@ -1,7 +1,13 @@
 import type { Pilo } from "app/native";
 
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
-import type { PiloClient, PiloClientBootstrap } from "@/lib/api/pilo-client";
+import type {
+	PiloClient,
+	PiloClientBootstrap,
+	PiloClientEvent,
+	PiloClientEventMessage,
+	PiloClientEventOptions,
+} from "@/lib/api/pilo-client";
 import type { Project } from "@/lib/api/projects-types";
 import type { SessionIndexEntry } from "@/lib/api/sessions-types";
 import type {
@@ -17,6 +23,7 @@ import type {
 export type PiloNative = Pick<
 	Pilo,
 	| "bootstrap"
+	| "nextEvents"
 	| "listProjects"
 	| "listSessions"
 	| "loadSessionReadStates"
@@ -47,7 +54,17 @@ type BridgedPiloClient = Pick<
 	| "listSessions"
 	| "loadSessionReadStates"
 	| "markSessionRead"
+	| "connectEvents"
 >;
+
+/** What `nextEvents` resolves with, as `desktop/README.md` lists it. */
+type NativeEventBatch =
+	| { type: "events"; events: PiloClientEvent[] }
+	| { type: "gap"; firstMissed: number; lastMissed: number }
+	| { type: "closed" };
+
+/** Well under the native queue bound of 2,048 events. */
+const EVENT_BATCH_SIZE = 256;
 
 /**
  * `PiloClient` for the nsh desktop app. The native module serializes the same
@@ -56,6 +73,11 @@ type BridgedPiloClient = Pick<
  */
 export class NshPiloClient implements BridgedPiloClient {
 	private readonly pilo: PiloNative;
+	private readonly listeners = new Set<PiloClientEventOptions>();
+	private polling = false;
+	private closed = false;
+	/** A batch that arrived after its last listener left, for the next one. */
+	private held: NativeEventBatch | undefined;
 
 	constructor(pilo: PiloNative) {
 		this.pilo = pilo;
@@ -103,8 +125,86 @@ export class NshPiloClient implements BridgedPiloClient {
 		return (await this.pilo.saveThemeSettings(update)) as ThemeSettings;
 	}
 
+	/**
+	 * Delivers runtime events in sequence order, starting with those queued
+	 * since the native module was created. A listener can therefore receive
+	 * events at or below the `latestSequence` of its own bootstrap: state that
+	 * the bootstrap snapshot already holds skips them, but chat deltas are not
+	 * dropped by that sequence (see `desktop/README.md`). The module has no
+	 * replay cursor, so `after` is not honored: a `resyncRequired` message
+	 * names the last sequence the queue dropped, and the listener bootstraps
+	 * again. `onStatus(false)` follows a runtime shutdown or a failed poll;
+	 * connecting again resumes a failed stream.
+	 */
+	connectEvents(options: PiloClientEventOptions): Promise<() => void> {
+		if (this.closed) {
+			options.onStatus(false);
+			return Promise.resolve(() => {});
+		}
+		this.listeners.add(options);
+		options.onStatus(true);
+		void this.poll();
+		return Promise.resolve(() => {
+			if (this.listeners.delete(options)) options.onStatus(false);
+		});
+	}
+
 	/** Await before the app quits; later calls reject. */
 	shutdown() {
 		return this.pilo.shutdown();
+	}
+
+	/** Keeps one native poll in flight while anyone listens. */
+	private async poll() {
+		if (this.polling) return;
+		this.polling = true;
+		try {
+			while (this.listeners.size > 0) {
+				const batch =
+					this.held ??
+					((await this.pilo.nextEvents(EVENT_BATCH_SIZE)) as NativeEventBatch);
+				this.held = undefined;
+				if (batch.type === "closed") {
+					this.closed = true;
+					break;
+				}
+				if (this.listeners.size === 0) {
+					this.held = batch;
+					break;
+				}
+				this.publish(
+					batch.type === "gap"
+						? { type: "resyncRequired", latestSequence: batch.lastMissed }
+						: batch,
+				);
+			}
+		} catch (error) {
+			console.error("Pilo event polling failed", error);
+		}
+		this.polling = false;
+		this.disconnect();
+	}
+
+	private publish(message: PiloClientEventMessage) {
+		for (const listener of [...this.listeners]) {
+			notify(() => listener.onMessage(message));
+		}
+	}
+
+	private disconnect() {
+		const listeners = [...this.listeners];
+		this.listeners.clear();
+		for (const listener of listeners) {
+			notify(() => listener.onStatus(false));
+		}
+	}
+}
+
+/** One listener that throws must not stop the stream for the others. */
+function notify(call: () => void) {
+	try {
+		call();
+	} catch (error) {
+		console.error("Pilo event listener failed", error);
 	}
 }
