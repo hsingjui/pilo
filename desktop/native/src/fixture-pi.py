@@ -9,5 +9,5 @@ for line in sys.stdin:
         "id": command.get("id"),
         "command": command["type"],
         "success": True,
-        "data": {},
+        "data": command.get("probe", {}),
     }), flush=True)

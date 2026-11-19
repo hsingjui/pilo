@@ -18,3 +18,10 @@ test("Pilo returns live chat state only while the session is running", async () 
 	});
 	await app.waitFor("text:chatState verified", { timeout: 15000 });
 });
+
+test("Pilo forwards Pi RPC commands and delivers responses through events", async () => {
+	const app = await open("./chat-lifecycle-fixture.tsx", {
+		host: { params: { command: true } },
+	});
+	await app.waitFor("text:sendChatCommand verified", { timeout: 15000 });
+});

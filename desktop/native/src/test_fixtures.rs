@@ -5,13 +5,11 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use nsh_core::{JsonValue, prelude::*};
+use nsh_core::prelude::*;
 use pilo_lib::{
     domain::{Project, ProjectMetadata, SessionIndexEntry},
-    runtime::{host_paths::HostPaths, runtime_api::chat_session_send_rpc, storage},
+    runtime::{host_paths::HostPaths, storage},
 };
-
-use crate::pilo::Pilo;
 
 pub(crate) fn register(registry: &mut Registry) {
     registry.module::<ImageFixture>();
@@ -279,19 +277,5 @@ impl ChatFixture {
     /// Returns the isolated runtime data directory.
     pub fn data_dir(&self) -> String {
         self.0.data_dir()
-    }
-
-    /// Stimulates a real Pi turn while the production command bridge is pending.
-    pub async fn send(
-        this: Instance<Self>,
-        pilo: Instance<Pilo>,
-        session_key: String,
-        command: JsonValue,
-    ) -> Result<(), String> {
-        let _ = this;
-        Pilo::with_runtime(pilo, move |runtime| async move {
-            chat_session_send_rpc(&runtime, session_key, command).await
-        })
-        .await
     }
 }

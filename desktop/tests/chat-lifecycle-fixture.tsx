@@ -27,8 +27,8 @@ async function readEvents(pilo: Pilo, handle: (event: ChatEvent) => boolean) {
 	}
 }
 
-async function smokeTurn(pilo: Pilo, fixture: ChatFixture) {
-	await fixture.send(pilo, sessionKey, {
+async function smokeTurn(pilo: Pilo) {
+	await pilo.sendChatCommand(sessionKey, {
 		id: "fixture-model",
 		type: "set_model",
 		provider: "relay",
@@ -47,7 +47,7 @@ async function smokeTurn(pilo: Pilo, fixture: ChatFixture) {
 			throw new Error(response.error ?? "set_model failed");
 		return true;
 	});
-	await fixture.send(pilo, sessionKey, {
+	await pilo.sendChatCommand(sessionKey, {
 		id: "fixture-prompt",
 		type: "prompt",
 		message: "Reply with only this exact text: NSH_BRIDGE_OK",
@@ -71,6 +71,34 @@ async function smokeTurn(pilo: Pilo, fixture: ChatFixture) {
 	});
 	if (reply.trim() !== "NSH_BRIDGE_OK")
 		throw new Error(`unexpected reply: ${reply}`);
+}
+
+async function expectCommandResponse(pilo: Pilo) {
+	await pilo.sendChatCommand(sessionKey, {
+		id: "fixture-probe",
+		type: "get_state",
+		probe: { values: [true, 42, "native"] },
+	});
+	await readEvents(pilo, (event) => {
+		if (event.type !== "rpc_message") return false;
+		const response = event.message as {
+			id?: string;
+			command?: string;
+			success?: boolean;
+			data?: { values?: unknown[] };
+		};
+		if (response.id !== "fixture-probe") return false;
+		if (
+			response.command !== "get_state" ||
+			response.success !== true ||
+			JSON.stringify(response.data?.values) !== '[true,42,"native"]'
+		) {
+			throw new Error(
+				`unexpected command response: ${JSON.stringify(response)}`,
+			);
+		}
+		return true;
+	});
 }
 
 async function expectError(promise: Promise<unknown>, message: string) {
@@ -109,7 +137,8 @@ async function expectIdle(pilo: Pilo, generation: number) {
 
 async function run() {
 	const realPi = host.params.realPi === true;
-	const state = host.params.state === true;
+	const command = host.params.command === true;
+	const state = command || host.params.state === true;
 	const stop = state || host.params.stop === true;
 	const fixture = new ChatFixture(realPi);
 	const pilo = new Pilo(fixture.dataDir());
@@ -136,13 +165,15 @@ async function run() {
 		}
 		if (state) await expectIdle(pilo, snapshot.generation);
 		if (realPi) {
-			await smokeTurn(pilo, fixture);
+			await smokeTurn(pilo);
 			if (state) await expectIdle(pilo, snapshot.generation);
+		} else if (command) {
+			await expectCommandResponse(pilo);
 		}
 		if (stop) {
 			await pilo.stopChat(sessionKey, "fixture complete");
 			await expectError(
-				fixture.send(pilo, sessionKey, { type: "get_state" }),
+				pilo.sendChatCommand(sessionKey, { type: "get_state" }),
 				"is not running",
 			);
 			await pilo.stopChat(sessionKey);
@@ -167,7 +198,19 @@ async function run() {
 			"Pilo runtime has been shut down",
 		);
 	}
-	const method = state ? "chatState" : stop ? "stopChat" : "startChat";
+	if (command) {
+		await expectError(
+			pilo.sendChatCommand(sessionKey, { type: "get_state" }),
+			"Pilo runtime has been shut down",
+		);
+	}
+	const method = command
+		? "sendChatCommand"
+		: state
+			? "chatState"
+			: stop
+				? "stopChat"
+				: "startChat";
 	status.set(
 		realPi
 			? `${method}: relay/deepseek-flash replied NSH_BRIDGE_OK`

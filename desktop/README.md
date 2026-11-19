@@ -48,6 +48,9 @@ no-op if the session is not running.
 `chatState(sessionKey)` returns the live runtime metadata and Pi process
 snapshot for that key, or `null` if no state is available. It does not return
 transcript text.
+`sendChatCommand(sessionKey, command)` forwards a Pi RPC command object to
+the running session. The promise resolves once the command is sent; consume
+its response and any turn events via `nextEvents()`.
 
 `loadSessionReadStates()` reads the saved read revisions across projects.
 Call `markSessionRead(projectId, sessionPath, revision)` with the positive
