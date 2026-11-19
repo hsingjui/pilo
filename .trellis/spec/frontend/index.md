@@ -8,6 +8,8 @@
 
 This directory contains guidelines for frontend development in this project (React 19 + Tauri).
 
+迁移分支的原生桌面另见 [nsh 桌面规范](../desktop/index.md)；本目录继续适用于 React/WebUI 与现有 Tauri 前端。
+
 ---
 
 ## Guidelines Index
