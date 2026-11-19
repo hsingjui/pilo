@@ -28,8 +28,6 @@ pub(crate) use handle::Runtime;
 mod next_prompt;
 pub(crate) mod notifications;
 #[cfg(feature = "tauri")]
-pub mod nsh_spike;
-#[cfg(feature = "tauri")]
 mod parallel;
 mod pi_event_adapters;
 mod pi_events;
@@ -53,7 +51,7 @@ mod remote_fs;
 mod runtime_api;
 #[cfg(feature = "tauri")]
 pub(crate) mod server_client;
-mod server_deploy;
+pub(crate) mod server_deploy;
 #[cfg(feature = "tauri")]
 mod server_pi;
 #[cfg(feature = "tauri")]
@@ -96,7 +94,7 @@ pub(crate) use remote::RemoteServerManager;
 #[cfg(feature = "tauri")]
 use server_client::ServerManager;
 #[cfg(feature = "tauri")]
-pub(crate) use server_deploy::{initialize_local_server_binary, initialize_server_resource_dir};
+pub(crate) use server_deploy::initialize_server_resource_dir;
 #[cfg(feature = "tauri")]
 use server_pi::ServerPiSession;
 #[cfg(feature = "tauri")]

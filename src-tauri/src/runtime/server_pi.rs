@@ -450,7 +450,7 @@ impl ServerPiSession {
             async {
                 let mut control_stream = None;
                 let mut remote_control = None;
-                if options.agent_control && servers.agent_control_enabled() {
+                if options.agent_control {
                     let app = servers.control_app()?;
                     let control_id = format!("control:{stream_id}");
                     let (_, lease) = super::control::attach(

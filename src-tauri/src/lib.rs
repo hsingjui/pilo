@@ -17,9 +17,7 @@ mod desktop_window;
 mod domain;
 mod runtime;
 
-/// AppHandle-free runtime entry points for the nsh desktop spike (M0).
-#[cfg(feature = "tauri")]
-pub use runtime::nsh_spike;
+pub use runtime::server_deploy::initialize_local_server_binary;
 
 #[cfg(feature = "tauri")]
 use desktop_notifications::{

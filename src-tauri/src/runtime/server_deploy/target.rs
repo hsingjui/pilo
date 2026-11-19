@@ -11,7 +11,7 @@ static LOCAL_SERVER_BINARY: OnceLock<PathBuf> = OnceLock::new();
 
 /// Runs this `pilo-server` binary for Local connections. A host whose own
 /// executable cannot serve `--pilo-server` (the nsh shell) sets it.
-pub(crate) fn initialize_local_server_binary(binary: PathBuf) {
+pub fn initialize_local_server_binary(binary: PathBuf) {
     let _ = LOCAL_SERVER_BINARY.set(binary);
 }
 

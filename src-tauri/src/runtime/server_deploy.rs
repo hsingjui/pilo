@@ -48,7 +48,8 @@ tokio::task_local! {
     pub(super) static TEST_SERVER: std::cell::RefCell<Option<SpawnedServer>>;
 }
 
-pub(crate) use target::{initialize_local_server_binary, initialize_server_resource_dir};
+pub use target::initialize_local_server_binary;
+pub(crate) use target::initialize_server_resource_dir;
 
 #[cfg(test)]
 pub(super) use target::{ServerArch, installed_server_candidates};
