@@ -17,6 +17,7 @@ use super::{
         events::{PiProcessState, RuntimeEvent, RuntimeEventEnvelope},
     },
     ChatProcess, ChatSessions,
+    turn_projection::{PromptMode, PromptStart},
 };
 
 static PROMPT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -228,7 +229,42 @@ impl ChatSessions {
                 .unwrap_or_else(|error| error.into_inner()) = Some(id);
             owns_prompt_flag = true;
         }
-        let result = session.send_rpc(command).await;
+        let result = if matches!(command_type.as_str(), "prompt" | "steer") {
+            let mode = if command_type == "steer"
+                || (was_active && command["streamingBehavior"] == "steer")
+            {
+                PromptMode::Steer
+            } else if was_active || process.compacting.load(Ordering::Acquire) {
+                PromptMode::Queued
+            } else {
+                PromptMode::Idle
+            };
+            let path = process
+                .session_path
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            process
+                .turn
+                .send_prompt(
+                    &process.events,
+                    PromptStart {
+                        generation: session.snapshot().generation,
+                        path,
+                        id: command_id.clone(),
+                        mode,
+                    },
+                    || async {
+                        if process.closed.load(Ordering::Acquire) {
+                            return Err("project is closing".to_owned());
+                        }
+                        session.send_rpc(command).await
+                    },
+                )
+                .await
+        } else {
+            session.send_rpc(command).await
+        };
         if result.is_err()
             && !was_active
             && let Some(flag) = work_flag

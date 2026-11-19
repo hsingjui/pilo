@@ -19,7 +19,17 @@ use crate::runtime::{
 
 const RUNTIME_EVENT_BATCH_MS: u64 = 16;
 
-fn observe_input_assistance(state: &StateCell, data: &Value) {
+fn observe_pi_event(
+    state: &StateCell,
+    data: &Value,
+    generation: u64,
+    agent_start_observer: &Option<Arc<dyn Fn(u64) + Send + Sync>>,
+) {
+    if data.get("type").and_then(Value::as_str) == Some("agent_start")
+        && let Some(observe) = agent_start_observer
+    {
+        observe(generation);
+    }
     if data.get("type").and_then(Value::as_str) == Some("extension_ui_request")
         && data.get("method").and_then(Value::as_str) == Some("setWidget")
         && data.get("widgetKey").and_then(Value::as_str) == Some("pilo.cache-keep-alive.v1")
@@ -52,6 +62,7 @@ pub(super) fn spawn_event_task<S: RuntimeEventSink>(
     stream_id: String,
     generation: u64,
     recovery: Option<(Weak<ServerManager>, crate::domain::Connection)>,
+    agent_start_observer: Option<Arc<dyn Fn(u64) + Send + Sync>>,
 ) -> JoinHandle<()> {
     let mut events = client.subscribe(&stream_id);
     tokio::spawn(async move {
@@ -180,7 +191,7 @@ pub(super) fn spawn_event_task<S: RuntimeEventSink>(
             match event.event.as_str() {
                 "pi.rpc" => {
                     let data = event.data.clone();
-                    observe_input_assistance(&state, &data);
+                    observe_pi_event(&state, &data, generation, &agent_start_observer);
                     trace_pi_transport_event(&stream_id, &data);
                     dispatch_runtime_events(
                         &sink,
@@ -200,7 +211,7 @@ pub(super) fn spawn_event_task<S: RuntimeEventSink>(
                     };
                     match serde_json::from_slice::<Value>(bytes) {
                         Ok(data) => {
-                            observe_input_assistance(&state, &data);
+                            observe_pi_event(&state, &data, generation, &agent_start_observer);
                             trace_pi_transport_event(&stream_id, &data);
                             dispatch_runtime_events(
                                 &sink,
@@ -285,4 +296,24 @@ pub(super) fn spawn_event_task<S: RuntimeEventSink>(
         }
         flush_runtime_events(&sink, &mut buffered_runtime_events);
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn raw_agent_start_is_observed_without_adding_a_runtime_payload() {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&seen);
+        let observer: Option<Arc<dyn Fn(u64) + Send + Sync>> = Some(Arc::new(move |generation| {
+            recorded.lock().unwrap().push(generation);
+        }));
+        let state = StateCell::default();
+        let data = json!({ "type": "agent_start" });
+        observe_pi_event(&state, &data, 7, &observer);
+        assert!(adapt_pi_rpc(&mut PiEventAdapter::default(), 7, data).is_empty());
+        observe_pi_event(&state, &json!({"type": "turn_start"}), 7, &observer);
+        assert_eq!(*seen.lock().unwrap(), vec![7]);
+    }
 }

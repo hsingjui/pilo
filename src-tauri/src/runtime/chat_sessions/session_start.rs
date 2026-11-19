@@ -53,6 +53,11 @@ impl ChatSessions {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .clone();
+        let turn = Arc::clone(&process.turn);
+        let turn_events = events.clone();
+        session.observe_agent_starts(move |generation| {
+            turn.agent_start(&turn_events, generation);
+        });
         runtime_trace(
             "chat.spawn.begin",
             Some(session_key),
@@ -67,6 +72,7 @@ impl ChatSessions {
             .spawn(
                 servers,
                 ChatEventSink {
+                    turn: Arc::clone(&process.turn),
                     events,
                     session_key: session_key.to_owned(),
                     project_id: project.id.clone(),

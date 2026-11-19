@@ -3,6 +3,7 @@ mod idle_cache;
 mod project_lifecycle;
 mod session_control;
 mod session_start;
+mod turn_projection;
 
 use std::{
     collections::HashMap,
@@ -50,6 +51,8 @@ pub struct ChatSessionLaunch {
 }
 
 struct ChatProcess {
+    events: RuntimeEventBus,
+    turn: Arc<turn_projection::SessionTurn>,
     project_id: String,
     no_session: bool,
     extensions: Vec<String>,
@@ -222,6 +225,11 @@ impl ChatSessions {
                     .snapshots
                     .insert(session_key.to_owned(), session.snapshot_reader());
                 let process = Arc::new(ChatProcess {
+                    events: events.clone(),
+                    turn: Arc::new(turn_projection::SessionTurn::new(matches!(
+                        project.connection.kind,
+                        crate::domain::ConnectionKind::Local
+                    ))),
                     project_id: project.id.clone(),
                     no_session: launch.no_session,
                     extensions: launch.extensions.clone(),

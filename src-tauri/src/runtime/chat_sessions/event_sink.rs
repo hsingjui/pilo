@@ -18,6 +18,7 @@ use super::InitializationReply;
 #[derive(Clone)]
 pub(super) struct ChatEventSink {
     pub(super) events: RuntimeEventBus,
+    pub(super) turn: Arc<super::turn_projection::SessionTurn>,
     pub(super) session_key: String,
     pub(super) project_id: String,
     pub(super) control_reply: Arc<StdMutex<Option<InitializationReply>>>,
@@ -186,11 +187,10 @@ impl RuntimeEventSink for ChatEventSink {
                     .record_session_completion(self.project_id.clone(), path);
             }
         }
-        self.events.send(RuntimeEventEnvelope::session(
-            self.session_key.clone(),
-            self.project_id.clone(),
-            event,
-        ));
+        self.events.send_observed(
+            RuntimeEventEnvelope::session(self.session_key.clone(), self.project_id.clone(), event),
+            |event| self.turn.observe(event),
+        );
     }
 }
 
@@ -232,6 +232,7 @@ mod tests {
     #[test]
     fn compaction_completion_does_not_clear_an_active_turn() {
         let sink = ChatEventSink {
+            turn: Arc::new(super::super::turn_projection::SessionTurn::new(true)),
             events: RuntimeEventBus::default(),
             session_key: "session".to_owned(),
             project_id: "project".to_owned(),
@@ -272,6 +273,7 @@ mod tests {
     #[test]
     fn rejected_prompt_rolls_back_only_the_prompt_that_set_active_turn() {
         let sink = ChatEventSink {
+            turn: Arc::new(super::super::turn_projection::SessionTurn::new(true)),
             events: RuntimeEventBus::default(),
             session_key: "session".to_owned(),
             project_id: "project".to_owned(),
@@ -331,6 +333,7 @@ mod tests {
     async fn initialization_failure_returns_captured_stderr_without_waiting_for_timeout() {
         let (sender, response) = oneshot::channel();
         let sink = ChatEventSink {
+            turn: Arc::new(super::super::turn_projection::SessionTurn::new(true)),
             events: RuntimeEventBus::default(),
             session_key: "session".to_owned(),
             project_id: "project".to_owned(),

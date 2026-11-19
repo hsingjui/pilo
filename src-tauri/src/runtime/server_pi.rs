@@ -144,6 +144,7 @@ impl SessionSnapshotReader {
 }
 
 pub struct ServerPiSession {
+    agent_start_observer: Option<Arc<dyn Fn(u64) + Send + Sync>>,
     builtin_extensions: Vec<BuiltinExtension>,
     generation: u64,
     snapshot_metadata: Arc<StdMutex<PiSessionSnapshot>>,
@@ -232,8 +233,13 @@ impl Drop for ServerPiSession {
 }
 
 impl ServerPiSession {
+    pub(crate) fn observe_agent_starts(&mut self, observe: impl Fn(u64) + Send + Sync + 'static) {
+        self.agent_start_observer = Some(Arc::new(observe));
+    }
+
     pub(crate) fn with_builtin_extensions(builtin_extensions: Vec<BuiltinExtension>) -> Self {
         Self {
+            agent_start_observer: None,
             builtin_extensions,
             generation: 0,
             snapshot_metadata: Arc::new(StdMutex::new(PiSessionSnapshot {
@@ -442,6 +448,7 @@ impl ServerPiSession {
             stream_id.clone(),
             generation,
             self.recovery.clone(),
+            self.agent_start_observer.clone(),
         );
         self.stream_id = Some(stream_id.clone());
         self.event_task = Some(event_task);

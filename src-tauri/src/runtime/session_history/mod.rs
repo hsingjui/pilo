@@ -16,3 +16,9 @@ pub use reader::{read_history_json, read_history_window_json};
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(crate) fn full_history_snapshot_for_test(bytes: &[u8]) -> serde_json::Value {
+    let (history, _) = serialize::serialize_windowed_history(parser::parse_history(bytes)).unwrap();
+    serde_json::from_slice(&serialize::serialize_history_response(&history, None)).unwrap()
+}

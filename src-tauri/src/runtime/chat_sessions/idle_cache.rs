@@ -137,6 +137,8 @@ mod tests {
 
     fn process(last_used: u64) -> Arc<ChatProcess> {
         Arc::new(ChatProcess {
+            events: Default::default(),
+            turn: Arc::new(super::super::turn_projection::SessionTurn::new(true)),
             project_id: "project".to_owned(),
             no_session: false,
             extensions: Vec::new(),

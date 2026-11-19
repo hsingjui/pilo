@@ -178,6 +178,14 @@ impl Default for RuntimeEventBus {
 }
 
 impl RuntimeEventBus {
+    pub(crate) fn with_publish_lock<T>(&self, action: impl FnOnce() -> T) -> T {
+        let _publish_guard = self
+            .replay
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        action()
+    }
+
     pub(crate) fn snapshot_sequence(&self) -> u64 {
         let _publish_guard = self
             .replay
@@ -298,7 +306,15 @@ impl RuntimeEventBus {
         )
     }
 
-    pub fn send(&self, mut event: RuntimeEventEnvelope) {
+    pub fn send(&self, event: RuntimeEventEnvelope) {
+        self.send_observed(event, |_| {});
+    }
+
+    pub(crate) fn send_observed(
+        &self,
+        mut event: RuntimeEventEnvelope,
+        observe: impl FnOnce(&SequencedRuntimeEvent),
+    ) {
         // Stamp before buffering so live delivery and reconnect replay share the same clock.
         if event.timestamp_ms.is_none()
             && matches!(
@@ -323,6 +339,7 @@ impl RuntimeEventBus {
             let sequence = self.sequence.fetch_add(1, Ordering::AcqRel) + 1;
             // One allocation is shared by replay, the web queue and every reader.
             let sequenced = Arc::new(SequencedRuntimeEvent { sequence, event });
+            observe(&sequenced);
             // Count without allocating another serialized copy of large RPC results.
             let mut size = PayloadSize::default();
             let bytes = if serde_json::to_writer(&mut size, &*sequenced).is_ok() {
