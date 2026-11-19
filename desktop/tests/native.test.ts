@@ -1,6 +1,6 @@
-import { expect, test } from "nsh/test";
-import { AppInfo } from "app/native";
+import { expect, open, test } from "nsh/test";
 
-test("the native shell exposes its crate version", () => {
-	expect(AppInfo.version()).toBe("0.1.0");
+test("the native shell exposes its crate version", async () => {
+	const app = await open("./native-fixture.tsx");
+	expect(app.texts()).toEqual(["0.1.0"]);
 });
