@@ -87,6 +87,7 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 			model: null,
 			updatedAtMs: 0,
 		}),
+		enhancePrompt: answer("enhancePrompt", "Fix the parser's unit test."),
 		savePromptEnhancementSettings: answer("savePromptEnhancementSettings", {
 			connectionId: "local",
 			enabled: true,
@@ -612,6 +613,35 @@ test("prompt enhancement settings the native module refuses reject with its erro
 	}
 });
 
+test("a prompt enhancement passes its project, draft and model and returns the rewrite", async () => {
+	const { pilo, calls } = fakeNative();
+	const client = new NshPiloClient(pilo);
+	const model = { provider: "relay", id: "m1" };
+
+	expect(await client.enhancePrompt("p1", "parser test pls", model)).toBe(
+		"Fix the parser's unit test.",
+	);
+	await client.enhancePrompt("p1", "parser test pls", null);
+	expect(calls).toEqual([
+		["enhancePrompt", "p1", "parser test pls", model],
+		["enhancePrompt", "p1", "parser test pls", null],
+	]);
+});
+
+test("a prompt enhancement the native module refuses rejects with its error", async () => {
+	const failure = new Error("Prompt enhancement is disabled");
+	const { pilo } = fakeNative({
+		enhancePrompt: () => Promise.reject(failure),
+	});
+	let caught: unknown;
+	await new NshPiloClient(pilo)
+		.enhancePrompt("p1", "parser test pls", null)
+		.catch((error: unknown) => {
+			caught = error;
+		});
+	expect(caught).toBe(failure);
+});
+
 /** A native event stream whose polls the test answers one at a time. */
 function fakeEventStream() {
 	const polls: {
@@ -857,6 +887,13 @@ test("the client reads settled session history through the native module", async
 test("the client loads and saves prompt enhancement settings through the native module", async () => {
 	const app = await open("./pilo-client-prompt-enhancement-fixture.tsx");
 	await app.waitFor("text:client prompt enhancement settings verified", {
+		timeout: 30_000,
+	});
+});
+
+test("the client rewrites a draft through the native module", async () => {
+	const app = await open("./pilo-client-enhance-prompt-fixture.tsx");
+	await app.waitFor("text:client prompt enhancement verified", {
 		timeout: 30_000,
 	});
 });

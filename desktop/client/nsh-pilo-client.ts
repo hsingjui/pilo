@@ -76,6 +76,7 @@ export type PiloNative = Pick<
 	| "requestNextPrompt"
 	| "loadPromptEnhancementSettings"
 	| "savePromptEnhancementSettings"
+	| "enhancePrompt"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "loadPreferences"
@@ -147,6 +148,7 @@ type BridgedPiloClient = Pick<
 	| "requestNextPrompt"
 	| "loadPromptEnhancementSettings"
 	| "savePromptEnhancementSettings"
+	| "enhancePrompt"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "connectEvents"
@@ -388,6 +390,20 @@ export class NshPiloClient implements BridgedPiloClient {
 			enabled,
 			model,
 		)) as PromptEnhancementSettings;
+	}
+
+	/**
+	 * The draft rewritten by the project's connection, which must have prompt
+	 * enhancement enabled. Its saved model is used, else `model` (the
+	 * chat's), else Pi's default. The rewrite runs outside the chat: it
+	 * neither enters the transcript nor waits behind a running turn.
+	 */
+	enhancePrompt(
+		projectId: string,
+		draft: string,
+		model: PromptEnhancementModel | null,
+	) {
+		return this.pilo.enhancePrompt(projectId, draft, model);
 	}
 
 	loadSessionReadStates() {
