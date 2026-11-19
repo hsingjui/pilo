@@ -9,11 +9,25 @@ import { Tab } from "../ui/tab";
 import { Tabs } from "../ui/tabs";
 import { Tooltip } from "../ui/tooltip";
 import { setStyleTheme } from "../ui/theme-style";
+import { Popover } from "../ui/popover";
+import { Menu } from "../ui/menu";
+import { MenuItem } from "../ui/menu-item";
+import { MenuSeparator } from "../ui/menu-separator";
+import { Submenu } from "../ui/submenu";
+import { Select } from "../ui/select";
+import { Dialog } from "../ui/dialog";
+import { DialogHeader } from "../ui/dialog-header";
+import { DialogTitle } from "../ui/dialog-title";
+import { DialogDescription } from "../ui/dialog-description";
+import { DialogFooter } from "../ui/dialog-footer";
 
 mount(() => {
 	const theme = signal("Lody");
 	const selected = signal("overview");
 	const enabled = signal(true);
+	const floating = signal(false);
+	const dialog = signal(false);
+	const model = signal<string | null>(null);
 	return (
 		<View class="flex-1 bg-background p-8 gap-6 font-sans text-foreground">
 			<View class="flex-row items-center justify-between">
@@ -166,6 +180,116 @@ mount(() => {
 					</View>
 				</View>
 			</View>
+			<View class="flex-row items-center gap-3">
+				<Button
+					testID="show-floating"
+					variant="outline"
+					onPress={() => floating.set(true)}
+				>
+					<Text>Show floating surfaces</Text>
+				</Button>
+				<Button
+					testID="show-dialog"
+					onPress={() => {
+						floating.set(false);
+						dialog.set(true);
+					}}
+				>
+					<Text>Open dialog</Text>
+				</Button>
+			</View>
+			<View class="flex-row gap-8">
+				<View class="w-72 gap-2 items-start">
+					<Text class="text-lg font-semibold">Popover</Text>
+					<Popover
+						open={floating()}
+						onOpenChange={({ open }) => floating.set(open)}
+						trigger={
+							<Button variant="outline">
+								<Text>Session details</Text>
+							</Button>
+						}
+					>
+						<View class="gap-2">
+							<Text class="font-semibold">Session details</Text>
+							<Text class="text-sm text-muted-foreground">
+								Anchored content · outside / Escape to close
+							</Text>
+						</View>
+					</Popover>
+				</View>
+				<View class="w-72 gap-2 items-start">
+					<Text class="text-lg font-semibold">Menu</Text>
+					<Menu
+						open={floating()}
+						onOpenChange={({ open }) => floating.set(open)}
+						trigger={
+							<Button variant="outline">
+								<Text>Session actions</Text>
+							</Button>
+						}
+					>
+						<MenuItem icon={<Icon name="Plus" size={14} />} shortcut="⌘N">
+							<Text>New session</Text>
+						</MenuItem>
+						<MenuItem checked>
+							<Text>Show timestamps</Text>
+						</MenuItem>
+						<MenuItem disabled>
+							<Text>Unavailable action</Text>
+						</MenuItem>
+						<MenuSeparator />
+						<Submenu label="More actions">
+							<MenuItem>
+								<Text>Archive session</Text>
+							</MenuItem>
+						</Submenu>
+						<MenuItem
+							variant="destructive"
+							icon={<Icon name="Trash2" size={14} />}
+						>
+							<Text>Delete session</Text>
+						</MenuItem>
+					</Menu>
+				</View>
+				<View class="w-72 gap-2">
+					<Text class="text-lg font-semibold">Select</Text>
+					<Select
+						value={model()}
+						onChange={({ value }) => model.set(value)}
+						open={floating()}
+						onOpenChange={({ open }) => floating.set(open)}
+						placeholder="Choose model"
+						items={[
+							{ value: "fast", title: "Fast" },
+							{ value: "balanced", title: "Balanced" },
+							{ value: "quality", title: "Quality", disabled: true },
+						]}
+					/>
+				</View>
+			</View>
+			<Dialog
+				open={dialog()}
+				animation="none"
+				accessibilityLabel="Edit session"
+				onOpenChange={({ open }) => dialog.set(open)}
+			>
+				<DialogHeader>
+					<DialogTitle>Edit session</DialogTitle>
+					<DialogDescription>
+						Update the details of this coding session.
+					</DialogDescription>
+				</DialogHeader>
+				<Input value="Build native Pilo components" />
+				<DialogFooter>
+					<Button variant="outline" onPress={() => dialog.set(false)}>
+						<Text>Cancel</Text>
+					</Button>
+					<Button testID="gallery-save" onPress={() => dialog.set(false)}>
+						<Text>Save changes</Text>
+					</Button>
+				</DialogFooter>
+			</Dialog>
 		</View>
 	);
 });
