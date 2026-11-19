@@ -158,6 +158,20 @@ impl BootstrapFixture {
         Ok(())
     }
 
+    /// Seeds enabled next-prompt settings for the local connection.
+    pub fn seed_next_prompt_settings(&self) -> Result<(), String> {
+        let paths = HostPaths::new(self.0.clone(), self.0.clone())?;
+        storage::open(&paths)?
+            .execute(
+                "INSERT INTO connection_next_prompt_settings
+                 (connection_id, enabled, provider, model_id, updated_at_ms)
+                 VALUES ('local', 1, 'fixture', 'prediction', 123)",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
     /// Saves an indexed session for a fixture project without starting Pi.
     pub fn seed_indexed_session(&self, project_id: String, cwd: String) -> Result<(), String> {
         let paths = HostPaths::new(self.0.clone(), self.0.clone())?;

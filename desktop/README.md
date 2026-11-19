@@ -71,6 +71,12 @@ returns the saved policy, and publishes `cache_keep_alive_settings_changed`
 with `settings`. Saving may reconfigure already-running eligible Pi sessions
 on that connection, but does not launch Pi.
 
+`loadNextPromptSettings(connectionId)` returns
+`{ connectionId, enabled, model, updatedAtMs }`, where `model` is
+`{ provider, id }` or `null` (follow the chat model). With no saved row,
+it returns `enabled: false`, `model: null`, and `updatedAtMs: 0`.
+An unknown connection is rejected. Loading does not contact Pi.
+
 Use `readProjectImage(projectId, path)` for a project-relative image and
 `readHistoryImage(projectId, sessionPath, imageId, fingerprint?)` for a
 transcript attachment. Both return `Uint8Array` bytes; nsh `Image` accepts

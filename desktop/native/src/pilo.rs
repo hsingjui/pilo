@@ -18,6 +18,7 @@ use pilo_lib::{
         host_events::HostEvents,
         host_paths::HostPaths,
         initialize_server_resource_dir,
+        next_prompt::next_prompt_settings_get,
         preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
         project_api::{
             project_fs_read_image, project_list, project_model_cache_list, project_model_scope_get,
@@ -461,6 +462,18 @@ impl Pilo {
         Self::with_runtime(this, move |runtime| async move {
             let settings = serde_json::from_value(settings).map_err(|error| error.to_string())?;
             let settings = cache_keep_alive_settings_set(&runtime, settings).await?;
+            serde_json::to_value(settings).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Reads the connection's saved next-prompt settings.
+    pub async fn load_next_prompt_settings(
+        this: Instance<Self>,
+        connection_id: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, move |runtime| {
+            let settings = next_prompt_settings_get(runtime, connection_id)?;
             serde_json::to_value(settings).map_err(|error| error.to_string())
         })
         .await
