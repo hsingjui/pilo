@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 
@@ -49,6 +49,7 @@ function PiExtensionUiDialogContent({
 	const editorRef = useRef<HTMLTextAreaElement>(null);
 	const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
 	const isTouch = useIsTouchDevice();
+	const titleId = useId();
 	const { t } = useTranslation();
 	const title = request.title || "Pi Extension";
 	const options =
@@ -106,7 +107,10 @@ function PiExtensionUiDialogContent({
 		>
 			<div className="flex items-start gap-2.5 px-4 pb-2 pt-3">
 				<div className="min-w-0 flex-1">
-					<div className="truncate text-sm font-medium leading-6 text-foreground">
+					<div
+						id={titleId}
+						className="break-words text-sm font-medium leading-6 text-foreground"
+					>
 						{title}
 					</div>
 					{request.message ? (
@@ -121,7 +125,7 @@ function PiExtensionUiDialogContent({
 					size="icon"
 					className={cn(
 						"shrink-0 rounded-lg text-muted-foreground hover:bg-hover hover:text-foreground",
-						isTouch ? "-mr-1.5 -mt-1 size-9" : "-mr-1.5 -mt-1 size-7",
+						"-mr-1.5 -mt-1 size-7 pointer-coarse:size-[44px]",
 					)}
 					aria-label={t("common.cancel")}
 					onClick={cancel}
@@ -146,14 +150,16 @@ function PiExtensionUiDialogContent({
 							className={cn(
 								menuItemClassName,
 								"gap-2.5",
-								isTouch && "min-h-11",
+								"pointer-coarse:min-h-[44px]",
 								index === activeIndex && "bg-hover text-hover-foreground",
 							)}
 						>
 							<span className="flex size-4 shrink-0 items-center justify-center text-2xs tabular-nums text-muted-foreground">
 								{index < 9 ? index + 1 : ""}
 							</span>
-							<span className="min-w-0 flex-1 truncate">{option}</span>
+							<span className="min-w-0 flex-1 whitespace-normal break-words">
+								{option}
+							</span>
 						</button>
 					))}
 				</div>
@@ -163,6 +169,7 @@ function PiExtensionUiDialogContent({
 				<div className="px-4 pb-3 pt-1">
 					<Input
 						ref={inputRef}
+						aria-labelledby={titleId}
 						value={value}
 						placeholder={request.placeholder ?? undefined}
 						onChange={(event) => setValue(event.target.value)}
@@ -183,6 +190,7 @@ function PiExtensionUiDialogContent({
 				<div className="px-4 pb-3 pt-1">
 					<Textarea
 						ref={editorRef}
+						aria-labelledby={titleId}
 						rows={8}
 						value={value}
 						onChange={(event) => setValue(event.target.value)}
@@ -198,14 +206,14 @@ function PiExtensionUiDialogContent({
 							<Button
 								variant="outline"
 								size="sm"
-								className={isTouch ? "h-10 px-4" : undefined}
+								className="pointer-coarse:min-h-[44px] pointer-coarse:px-4"
 								onClick={() => onRespond({ confirmed: false })}
 							>
 								{t("chat.no")}
 							</Button>
 							<Button
 								size="sm"
-								className={isTouch ? "h-10 px-4" : undefined}
+								className="pointer-coarse:min-h-[44px] pointer-coarse:px-4"
 								onClick={() => onRespond({ confirmed: true })}
 							>
 								{t("chat.confirm")}
@@ -216,14 +224,14 @@ function PiExtensionUiDialogContent({
 							<Button
 								variant="ghost"
 								size="sm"
-								className={isTouch ? "h-10 px-4" : undefined}
+								className="pointer-coarse:min-h-[44px] pointer-coarse:px-4"
 								onClick={cancel}
 							>
 								{t("common.cancel")}
 							</Button>
 							<Button
 								size="sm"
-								className={isTouch ? "h-10 px-4" : undefined}
+								className="pointer-coarse:min-h-[44px] pointer-coarse:px-4"
 								onClick={() => onRespond({ value })}
 							>
 								{t("common.confirm")}

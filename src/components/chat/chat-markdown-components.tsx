@@ -21,6 +21,7 @@ import {
 	rehypeRelativeFileLinks,
 } from "@/lib/chat/chat-markdown-links";
 import { cn } from "@/lib/utils";
+import { copyText } from "@/lib/copy-text";
 
 type MarkdownCodeProps = ComponentPropsWithoutRef<"code"> & {
 	node?: unknown;
@@ -33,37 +34,6 @@ type MarkdownPreProps = ComponentPropsWithoutRef<"pre"> & {
 type MarkdownTableProps = ComponentPropsWithoutRef<"table"> & {
 	node?: unknown;
 };
-
-async function copyMarkdownText(text: string) {
-	if (typeof navigator.clipboard?.writeText === "function") {
-		await navigator.clipboard.writeText(text);
-		return;
-	}
-
-	// LAN HTTP has no Clipboard API; copy during the original user gesture.
-	const activeElement = document.activeElement;
-	const selection = window.getSelection();
-	const anchor = selection?.anchorNode;
-	const focus = selection?.focusNode;
-	const anchorOffset = selection?.anchorOffset ?? 0;
-	const focusOffset = selection?.focusOffset ?? 0;
-	const field = document.createElement("textarea");
-	field.value = text;
-	field.readOnly = true;
-	field.style.cssText = "position:fixed;top:0;left:0;opacity:0;font-size:16px";
-	document.body.append(field);
-	try {
-		field.focus({ preventScroll: true });
-		field.select();
-		if (!document.execCommand("copy")) throw new Error("Copy failed");
-	} finally {
-		field.remove();
-		if (activeElement instanceof HTMLElement)
-			activeElement.focus({ preventScroll: true });
-		if (selection && anchor?.isConnected && focus?.isConnected)
-			selection.setBaseAndExtent(anchor, anchorOffset, focus, focusOffset);
-	}
-}
 
 function MarkdownPre({ children }: MarkdownPreProps) {
 	const { t } = useTranslation();
@@ -90,7 +60,7 @@ function MarkdownPre({ children }: MarkdownPreProps) {
 				)
 					return;
 				event.stopPropagation();
-				void copyMarkdownText(text).then(
+				void copyText(text).then(
 					() => toast.success(t("chat.copied")),
 					() => toast.error(t("chat.copyFailed")),
 				);
@@ -134,7 +104,7 @@ function MarkdownInlineCode({
 		)
 			return;
 		try {
-			await copyMarkdownText(element.textContent ?? "");
+			await copyText(element.textContent ?? "");
 			toast.success(t("chat.copied"));
 		} catch {
 			toast.error(t("chat.copyFailed"));
