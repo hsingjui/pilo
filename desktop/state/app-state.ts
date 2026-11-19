@@ -19,6 +19,19 @@ export type SessionIndexState = {
 	message?: string;
 };
 
+export type SessionSelection = { projectId: string; sessionPath: string };
+
+/**
+ * What the user is looking at. It is kept in memory only, like the selection
+ * of the Tauri app: a restart opens the first project with no session.
+ */
+export type Navigation = {
+	/** The project chosen for a new chat; unset until the user picks one. */
+	projectId: string | null;
+	/** The open session, if any. */
+	session: SessionSelection | null;
+};
+
 export type AppState = {
 	status: StartupStatus;
 	/** Event cut of the last bootstrap. */
@@ -29,6 +42,7 @@ export type AppState = {
 	themeSettings: ThemeSettings | null;
 	sessionIndexes: Record<string, SessionIndexState>;
 	readStates: Record<string, SessionReadState>;
+	navigation: Navigation;
 };
 
 export type AppSnapshot = {
@@ -52,6 +66,8 @@ export type AppAction =
 			sessions: SessionIndexEntry[];
 	  }
 	| { type: "sessions_failed"; projectId: string; message: string }
+	| { type: "project_selected"; projectId: string }
+	| { type: "session_selected"; projectId: string; sessionPath: string }
 	| { type: "event"; event: PiloClientEvent };
 
 export function createAppState(): AppState {
@@ -64,7 +80,18 @@ export function createAppState(): AppState {
 		themeSettings: null,
 		sessionIndexes: {},
 		readStates: {},
+		navigation: { projectId: null, session: null },
 	};
+}
+
+/** The chosen project, else the first one, as long as it still exists. */
+export function activeProject(state: AppState): Project | null {
+	const { projectId } = state.navigation;
+	return (
+		state.projects.find(({ id }) => id === projectId) ??
+		state.projects[0] ??
+		null
+	);
 }
 
 export function readStateKey(projectId: string, sessionPath: string) {
@@ -90,7 +117,7 @@ function withSessionIndex(
 	update: (current: SessionIndexState | undefined) => SessionIndexState,
 ): AppState {
 	// A load can finish after its project was removed.
-	if (!state.projects.some(({ id }) => id === projectId)) return state;
+	if (!hasProject(state.projects, projectId)) return state;
 	return {
 		...state,
 		sessionIndexes: {
@@ -126,6 +153,23 @@ function withoutRemovedProjects(
 			projectIds.has(projectId),
 		),
 	);
+}
+
+function hasProject(projects: Project[], projectId: string) {
+	return projects.some(({ id }) => id === projectId);
+}
+
+/** Drops a selection whose project is gone from a new project list. */
+function withKnownSelection(
+	{ projectId, session }: Navigation,
+	projects: Project[],
+): Navigation {
+	return {
+		projectId:
+			projectId !== null && hasProject(projects, projectId) ? projectId : null,
+		session:
+			session && hasProject(projects, session.projectId) ? session : null,
+	};
 }
 
 /**
@@ -197,6 +241,7 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 					state.sessionIndexes,
 					snapshot.projects,
 				),
+				navigation: withKnownSelection(state.navigation, snapshot.projects),
 			};
 		}
 		case "bootstrap_failed":
@@ -211,6 +256,7 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 					state.sessionIndexes,
 					action.projects,
 				),
+				navigation: withKnownSelection(state.navigation, action.projects),
 			};
 		case "theme_settings_loaded":
 			return {
@@ -243,6 +289,20 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 				sessions: current?.sessions ?? [],
 				message: action.message,
 			}));
+		case "project_selected":
+			if (!hasProject(state.projects, action.projectId)) return state;
+			return {
+				...state,
+				navigation: { projectId: action.projectId, session: null },
+			};
+		case "session_selected": {
+			const { projectId, sessionPath } = action;
+			if (!hasProject(state.projects, projectId)) return state;
+			return {
+				...state,
+				navigation: { projectId, session: { projectId, sessionPath } },
+			};
+		}
 		case "event":
 			return reduceEvent(state, action.event);
 	}

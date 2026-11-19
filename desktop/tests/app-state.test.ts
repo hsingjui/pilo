@@ -9,6 +9,7 @@ import type { ThemeSettings } from "@/lib/theme-settings-types";
 import {
 	type AppAction,
 	type AppState,
+	activeProject,
 	createAppState,
 	isSessionUnread,
 	isStaleEvent,
@@ -66,6 +67,7 @@ test("the state starts empty and a bootstrap makes it ready", () => {
 		themeSettings: null,
 		sessionIndexes: {},
 		readStates: {},
+		navigation: { projectId: null, session: null },
 	});
 
 	const state = ready();
@@ -294,4 +296,67 @@ test("events the state does not hold leave it untouched", () => {
 			state,
 		);
 	}
+});
+
+test("the active project is the chosen one, else the first, else none", () => {
+	expect(activeProject(createAppState())).toBe(null);
+	const state = ready();
+	expect(activeProject(state)?.id).toBe("p1");
+	expect(
+		activeProject(reduce(state, { type: "project_selected", projectId: "p2" }))
+			?.id,
+	).toBe("p2");
+	expect(reduce(state, { type: "project_selected", projectId: "gone" })).toBe(
+		state,
+	);
+});
+
+test("opening a session selects its project and choosing a project closes it", () => {
+	const opened = ready({
+		type: "session_selected",
+		projectId: "p2",
+		sessionPath: "a",
+	});
+	expect(opened.navigation).toEqual({
+		projectId: "p2",
+		session: { projectId: "p2", sessionPath: "a" },
+	});
+	expect(
+		reduce(opened, { type: "project_selected", projectId: "p1" }).navigation,
+	).toEqual({ projectId: "p1", session: null });
+	expect(
+		reduce(opened, {
+			type: "session_selected",
+			projectId: "gone",
+			sessionPath: "b",
+		}),
+	).toBe(opened);
+});
+
+test("a selection survives a new project list only while its project does", () => {
+	const opened = ready({
+		type: "session_selected",
+		projectId: "p2",
+		sessionPath: "a",
+	});
+	const kept = reduce(opened, {
+		type: "projects_loaded",
+		projects: [project("p2"), project("p3")],
+	});
+	expect(kept.navigation).toEqual(opened.navigation);
+
+	const removed = reduce(opened, {
+		type: "bootstrapped",
+		snapshot: {
+			projects: [project("p1")],
+			chatSessions: [],
+			latestSequence: 20,
+			preferences: preferences(3),
+		},
+	});
+	expect(removed.navigation).toEqual({ projectId: null, session: null });
+	expect(activeProject(removed)?.id).toBe("p1");
+	expect(
+		reduce(opened, { type: "projects_loaded", projects: [] }).navigation,
+	).toEqual({ projectId: null, session: null });
 });

@@ -87,11 +87,14 @@ async function run() {
 				"saved-session" && isSessionUnread(state(), local.id, sessionPath),
 			"the indexed session or its unread turn did not reach the state",
 		);
-		const completed = Object.values(state().readStates)[0]?.completedRevision;
-		await client.markSessionRead(local.id, sessionPath, completed ?? 0);
+		store.selectSession(local.id, sessionPath);
+		assert(
+			state().navigation.session?.sessionPath === sessionPath,
+			"the session was not opened",
+		);
 		await eventually(
 			() => !isSessionUnread(state(), local.id, sessionPath),
-			"marking the session read did not reach the state",
+			"opening the unread session did not mark it read",
 		);
 
 		store.stop();

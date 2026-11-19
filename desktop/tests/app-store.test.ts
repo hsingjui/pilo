@@ -61,7 +61,10 @@ function fakeClient() {
 		closed: false,
 		themeSettings: theme(1) as ThemeSettings | Error,
 		readStates: [] as SessionReadState[],
+		markFails: false,
 	};
+	const marked: { projectId: string; sessionPath: string; revision: number }[] =
+		[];
 	let connections = 0;
 	const client: AppStoreClient = {
 		get closed() {
@@ -76,6 +79,12 @@ function fakeClient() {
 				sessionLists.push({ projectId, resolve, reject }),
 			),
 		loadSessionReadStates: () => Promise.resolve(answers.readStates),
+		markSessionRead(projectId, sessionPath, revision) {
+			marked.push({ projectId, sessionPath, revision });
+			return answers.markFails
+				? Promise.reject(new Error("read state was not saved"))
+				: Promise.resolve(read(sessionPath, revision, revision));
+		},
 		loadThemeSettings: () =>
 			answers.themeSettings instanceof Error
 				? Promise.reject(answers.themeSettings)
@@ -99,6 +108,7 @@ function fakeClient() {
 		bootstraps,
 		projectLists,
 		sessionLists,
+		marked,
 		connections: () => connections,
 		listening: () => listeners.size,
 		emit(message: PiloClientEventMessage) {
@@ -488,6 +498,58 @@ test("stop ends listening and a load in flight is not shown", async () => {
 	await restarted;
 	expect(fake.connections()).toBe(2);
 	expect(fake.store.state().latestSequence).toBe(21);
+});
+
+test("opening an unread session acknowledges its completed turns once", async () => {
+	const fake = fakeClient();
+	fake.answers.readStates = [read("unread", 3, 1), read("seen", 2, 2)];
+	const store = new AppStore(fake.client);
+	const started = store.start();
+	await settle();
+	fake.bootstraps[0]?.resolve(snapshot(10, 3, "p1", "p2"));
+	await started;
+
+	store.selectSession("p1", "seen");
+	store.selectSession("p1", "never-completed");
+	store.selectSession("gone", "unread");
+	expect(fake.marked).toEqual([]);
+	expect(store.state().navigation.session?.sessionPath).toBe("never-completed");
+
+	store.selectSession("p1", "unread");
+	expect(fake.marked).toEqual([
+		{ projectId: "p1", sessionPath: "unread", revision: 3 },
+	]);
+	// The runtime's event, not the reply, moves the state.
+	fake.emit(
+		events([
+			11,
+			{ type: "session_read_state_changed", state: read("unread", 3, 3) },
+		]),
+	);
+	store.selectSession("p1", "unread");
+	expect(fake.marked.length).toBe(1);
+
+	store.selectProject("p2");
+	expect(store.state().navigation).toEqual({ projectId: "p2", session: null });
+});
+
+test("a failed acknowledgment leaves the session open and unread", async () => {
+	const fake = fakeClient();
+	fake.answers.readStates = [read("unread", 3, 1)];
+	fake.answers.markFails = true;
+	const store = new AppStore(fake.client);
+	const started = store.start();
+	await settle();
+	fake.bootstraps[0]?.resolve(snapshot(10, 3, "p1"));
+	await started;
+
+	store.selectSession("p1", "unread");
+	await settle();
+	expect(store.state().navigation.session?.sessionPath).toBe("unread");
+	expect(Object.values(store.state().readStates)).toEqual([
+		read("unread", 3, 1),
+	]);
+	expect(store.state().status).toEqual({ type: "ready" });
 });
 
 test("the state follows the real native module through events, a gap and shutdown", async () => {

@@ -9,7 +9,9 @@ import {
 	type AppAction,
 	type AppState,
 	createAppState,
+	isSessionUnread,
 	isStaleEvent,
+	readStateKey,
 	reduceAppState,
 } from "./app-state";
 
@@ -20,6 +22,7 @@ export type AppStoreClient = Pick<
 	| "listSessions"
 	| "loadSessionReadStates"
 	| "loadThemeSettings"
+	| "markSessionRead"
 	| "connectEvents"
 	| "closed"
 >;
@@ -82,6 +85,35 @@ export class AppStore {
 			action = { type: "sessions_failed", projectId, message: describe(error) };
 		}
 		if (this.sessionReads.get(projectId) === read) this.apply(action);
+	}
+
+	/** Chooses the project for a new chat and closes the open session. */
+	selectProject(projectId: string) {
+		this.apply({ type: "project_selected", projectId });
+	}
+
+	/**
+	 * Opens a session and, as the user is now looking at it, acknowledges its
+	 * completed turns. The state follows the runtime's read-state event.
+	 */
+	selectSession(projectId: string, sessionPath: string) {
+		this.apply({ type: "session_selected", projectId, sessionPath });
+		const state = this.current();
+		const opened = state.navigation.session;
+		if (
+			opened?.projectId !== projectId ||
+			opened.sessionPath !== sessionPath ||
+			!isSessionUnread(state, projectId, sessionPath)
+		) {
+			return;
+		}
+		const read = state.readStates[readStateKey(projectId, sessionPath)];
+		if (!read) return;
+		this.client
+			.markSessionRead(projectId, sessionPath, read.completedRevision)
+			.catch((error: unknown) => {
+				console.error("Marking the session read failed", error);
+			});
 	}
 
 	/** Stops listening to runtime events. */
