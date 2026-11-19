@@ -186,15 +186,18 @@ export function useRemoteChatAgentConfig({
 	}, [activeProjectId, configKey]);
 	/* oxlint-enable react/set-state-in-effect */
 
+	// Session index refreshes replace the selectedSession object; depending on it
+	// would let this cleanup discard an in-flight refreshAgentConfig.
+	const hasSelectedSession = selectedSession !== null;
 	/* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies -- The draft landing page preloads the Host-cached Pi model catalog, and draftId intentionally retriggers it for every new draft. */
 	useEffect(() => {
 		void draftId;
-		if (selectedSession || !activeProjectId) return;
+		if (hasSelectedSession || !activeProjectId) return;
 		void loadDraftCatalog(activeProjectId);
 		return () => {
 			draftCatalogRequestRef.current += 1;
 		};
-	}, [activeProjectId, draftId, loadDraftCatalog, selectedSession]);
+	}, [activeProjectId, draftId, hasSelectedSession, loadDraftCatalog]);
 	/* oxlint-enable react/set-state-in-effect, react/exhaustive-effect-dependencies */
 
 	return {
