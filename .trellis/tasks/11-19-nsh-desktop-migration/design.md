@@ -23,8 +23,8 @@ pilo-desktop（nsh 壳，Rust）        Remote API（Axum，已有）
 crates/
   pilo-protocol/        不变
   pilo-server/          不变
-  pilo-runtime/         新：由 src-tauri/src/runtime + domain 抽出，不依赖 tauri
-src-tauri/              过渡期保留：只剩 Tauri 壳、command 胶水、插件接线
+src-tauri/              过渡期保留原路径：runtime/ 与 domain/ 去掉 Tauri 依赖后可单独编译；
+                        Tauri 壳、command 胶水、插件接线放在 `tauri` feature 之后
 desktop/                新：nsh 应用
   nsh.json  theme.json  App.tsx
   native/               Rust crate（pilo-desktop）：#[native_module("app/native")]，依赖 pilo-runtime
@@ -33,9 +33,16 @@ desktop/                新：nsh 应用
 src/                    保留：WebUI 及其用到的共享组件、src/lib 纯逻辑
 ```
 
-目录名 `desktop/` 为暂定名。切换发版后删除 `src-tauri/` 以及 `src/` 中只被桌面端使用的文件。
+目录名 `desktop/` 为暂定名。M7 切换发版时把 `src-tauri/src/runtime` 与 `domain` 搬到 `crates/pilo-runtime`，删除 Tauri 壳以及 `src/` 中只被桌面端使用的文件。
 
 ## 3. Rust 运行时抽离
+
+抽离只在 `nsh-migration` 分支进行，`main` 不动（PRD Decisions）。`main` 仍在修改 `src-tauri/src/runtime`（例如会话历史增量加载），因此：
+
+- **不移动文件**。在原路径上去掉 Tauri 依赖，`desktop/native` 以 path 依赖引用 `src-tauri` 这个 crate 的库（关闭 `tauri` feature）。文件搬迁推迟到 M7，那时 `main` 已不再独立演进。
+- **改动尽量是替换而非重排**：把 `AppHandle` 参数换成运行时自己的句柄类型，不调整函数顺序和模块结构，让 `main` 的改动能按行合入。
+- 每次合入 `main` 后，在分支上同时验证 Tauri 版（`cargo check`、`pnpm build`）和 nsh 版。
+- `main` 上新增或修改的 Tauri command，登记到“待同步清单”，在 `Pilo` 模块补上对应方法。
 
 现状耦合点（均已在仓库中确认）：
 
@@ -48,7 +55,7 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 | `asset_resolver()` 提供 WebUI 资源 | `runtime/remote/api/mod.rs:256` | 定义 `WebAssets` trait；nsh 壳用内嵌目录实现（`include_dir` 一类），Tauri 壳沿用 resolver |
 | `tauri::ipc::Response` 二进制返回 | 历史图片读取 | 运行时返回 `Vec<u8>`，由壳决定编码 |
 
-抽离本身不改变行为，可独立验证：`cargo test`、Tauri 版手动回归。127 个 command 的函数体改为调用 `pilo-runtime` 的同名函数，command 只剩参数解包。
+抽离本身不改变行为，可独立验证：`cargo test`、分支上的 Tauri 版手动回归。127 个 command 的函数体改为调用运行时的同名函数，command 只剩参数解包。下文的 `pilo-runtime` 指去掉 Tauri 依赖后的这部分代码，M7 之前它仍位于 `src-tauri/src/runtime`。
 
 ## 4. 桥接契约（TSX ↔ Rust）
 
@@ -83,7 +90,7 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 
 - `desktop/theme.json` 是 Lody 基础主题（shadcn 风格 token + Pilo 自有 token：`sidebar`、`hover`、`bubble-radius`、`composer-radius` 等）。
 - 主题族切换 = 基础主题与该族 token 表合并后 `setTheme`；亮/暗用 `setColorScheme`。
-- `ThemeSettings` 结构（`theme`、`themeFamily`、`savedCustomThemes`）保留，存储位置不变；自定义主题内容由 CSS 文本改为 token 表（取决于 PRD Open Question 3）。
+- `ThemeSettings` 结构（`theme`、`themeFamily`、`savedCustomThemes`）保留，存储位置不变；自定义主题内容由 CSS 文本改为 token 表（取决于 PRD Open Question 2）。
 - 构建期脚本从 `src/styles/lody-theme.css`、`claude-theme.css` 生成 token JSON，保证 WebUI 与桌面端同源。
 - 用户输入的 token 先校验再应用（无效值会让 `setTheme` 整体失败）。
 
@@ -114,8 +121,8 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 - 新增 release 流水线：`nsh package --target windows|macos|linux`，WebUI 仍先 `pnpm build` 再内嵌。
 - Windows：Inno Setup 每用户安装器；代码签名沿用现有方式（如有）。
 - macOS：`.app` 需自行签名、公证并打成发布包。
-- Linux：nsh 只产出目录与 `tar.gz`；`deb` / `rpm` / `AppImage` 取决于 PRD Open Question 2。
-- 自动更新：`nsh/updater` 读取 nsh 格式清单。Tauri 版 → nsh 版的过渡取决于 PRD Open Question 5，候选做法：最后一个 Tauri 版本提示用户手动下载；或让 Tauri 更新器下载并运行 nsh 安装器（待验证）。
+- Linux：nsh 只产出目录与 `tar.gz`；`deb` / `rpm` / `AppImage` 取决于 PRD Open Question 1。
+- 自动更新：`nsh/updater` 读取 nsh 格式清单。Tauri 版 → nsh 版的过渡取决于 PRD Open Question 4，候选做法：最后一个 Tauri 版本提示用户手动下载；或让 Tauri 更新器下载并运行 nsh 安装器（待验证）。
 - 版本号继续由 `Cargo.toml` `[workspace.package].version` 驱动，`nsh.json` 的版本由脚本同步；发版前仍需向用户确认版本号。
 
 ## 10. 测试
@@ -128,7 +135,8 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 ## 11. 过渡期规则
 
 - `AGENTS.md` 的“两端共享同一套组件”改为过渡期说明：`main` 上的 UI 改动仍按 React 两端共用；迁移分支每次合入 `main` 时，把期间桌面端可见的改动登记到“待同步清单”，在对应里程碑内补到 nsh 界面。
-- `nsh-migration` 至少每周合入一次 `main`；运行时抽离若在 `main` 上进行（PRD Open Question 1），迁移分支上不再改 `src-tauri/src/runtime` 的业务代码。
+- `nsh-migration` 至少每周合入一次 `main`，冲突在迁移分支上解决；迁移分支不向 `main` 回合任何改动，直到 M7。
+- 迁移分支对 `src-tauri/src/runtime` 只做去 Tauri 依赖的改动，不改业务逻辑；业务修复一律先进 `main` 再合入。
 - nsh 版本固定到具体 release，升级 nsh 单独提交并跑全量 `nsh test`。
 
 ## 12. 风险与回退
@@ -140,7 +148,8 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 | 输入法与 `@` 提及 | Composer 是核心交互 | M0 第三项 |
 | Tokio 运行时与 nsh 任务协作 | 桥接方案是否成立 | M0 第一项 |
 | 双份 UI 维护 | 迁移期间成本 | 待同步清单；缩短迁移周期 |
-| Linux / macOS 支持范围收窄 | 部分用户无法升级 | PRD Open Question 2 |
-| 无 Mermaid、查找、拖拽排序 | 功能回退 | PRD Open Question 4；必要时用 `WebView` 承载 Mermaid（待验证） |
+| 运行时只在分支上抽离，`main` 持续改同一批文件 | 每次合入都可能冲突 | 不移动文件、替换式改动、每周合入、合入后双版本验证 |
+| Linux / macOS 支持范围收窄 | 部分用户无法升级 | PRD Open Question 1 |
+| 无 Mermaid、查找、拖拽排序 | 功能回退 | PRD Open Question 3；必要时用 `WebView` 承载 Mermaid（待验证） |
 
 回退：切换发版前 Tauri 版本始终可发；切换后保留 `src-tauri/` 一个版本周期再删除。

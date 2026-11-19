@@ -4,6 +4,7 @@
 
 - PRD 的 Open Questions 全部确认，`design.md` 按结论更新。
 - 分支 `nsh-migration`，基于 `main`。
+- 每周把 `main` 合入 `nsh-migration` 一次；合入后跑一遍“验证命令”中的 Rust 与 WebUI 部分，确认分支上的 Tauri 版仍可用。
 - 每个里程碑是一个子任务，按 Trellis 流程单独规划、实现、检查、归档；后续子任务在前一个结束时创建，避免计划过期。
 
 ## 任务图
@@ -11,7 +12,7 @@
 | 里程碑 | 子任务 | 交付物 | 替换的现有代码 | 依赖 |
 |---|---|---|---|---|
 | M0 | `11-19-nsh-m0-risk-spikes` | 四项风险结论 + 继续/中止决定 | — | — |
-| M1 | 运行时抽离与地基 | `crates/pilo-runtime`；`desktop/` 骨架、主题、图标、基础组件、i18n；功能对齐清单 | `src/ui`（2,154 行）、`src/styles`（1,150 行） | M0 |
+| M1 | 运行时抽离与地基 | `src-tauri` 运行时去 Tauri 依赖（原路径）；`desktop/` 骨架、主题、图标、基础组件、i18n；功能对齐清单 | `src/ui`（2,154 行）、`src/styles`（1,150 行） | M0 |
 | M2 | 桥接与数据层 | `Pilo` Rust 模块覆盖 `PiloClient`；signal 状态；应用启动、项目与会话列表 | `src/lib/api`（3,623 行）、`components/app`（3,958 行） | M1 |
 | M3 | Chat | 消息列、工具活动、Markdown、Diff、Composer、队列、模型与运行配置 | `components/chat`（19,306 行） | M2 |
 | M4 | 侧边栏与设置 | 项目树、会话行、搜索、Connection 管理、全部设置页、命令面板 | `components/sidebar`（2,695 行）、`components/settings`（6,091 行） | M2 |
@@ -29,7 +30,7 @@ M4、M5、M6 互不依赖，可在 M3 之后任意顺序进行。
 
 ### M1 运行时抽离与地基
 
-1. 按 `design.md` 第 3 节抽出 `crates/pilo-runtime`，`src-tauri` 改为调用它；Tauri 版回归通过。
+1. 按 `design.md` 第 3 节在原路径上去掉运行时的 Tauri 依赖（不移动文件），Tauri 壳放到 `tauri` feature 之后；分支上的 Tauri 版回归通过。
 2. 建立 `desktop/`：`nsh.json`、`theme.json`、字体、`native/` crate 空壳。
 3. 构建期脚本：主题 CSS → token JSON；`lucide-react` → 图标数据。
 4. 基础组件：按钮、图标按钮、输入、弹层、菜单、对话框、tooltip、toast、tabs、select、开关、滚动条。
@@ -73,13 +74,14 @@ M4、M5、M6 互不依赖，可在 M3 之后任意顺序进行。
 
 ### M7 发版切换
 
-1. 三平台 `nsh package` 流水线，内嵌 WebUI 与 `pilo-server` 资源。
-2. Windows 全量验证（PRD 验收项）；macOS、Linux 冒烟。
-3. 现有数据目录升级验证。
-4. 更新过渡方案落地。
-5. 性能对比记录。
-6. 删除 `src-tauri/` 壳与 `src/` 中仅桌面端使用的文件；更新 `AGENTS.md`、README、spec。
-7. 发版前向用户确认版本号。
+1. 把 `src-tauri/src/runtime` 与 `domain` 搬到 `crates/pilo-runtime`。
+2. 三平台 `nsh package` 流水线，内嵌 WebUI 与 `pilo-server` 资源。
+3. Windows 全量验证（PRD 验收项）；macOS、Linux 冒烟。
+4. 现有数据目录升级验证。
+5. 更新过渡方案落地。
+6. 性能对比记录。
+7. 删除 `src-tauri/` 壳与 `src/` 中仅桌面端使用的文件；更新 `AGENTS.md`、README、spec。
+8. 发版前向用户确认版本号。
 
 ## 验证命令
 
@@ -88,7 +90,7 @@ M4、M5、M6 互不依赖，可在 M3 之后任意顺序进行。
 cargo fmt --all --check
 cargo check
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test -p pilo-runtime
+cargo test -p pilo --lib --no-default-features   # 去 Tauri 依赖后的运行时
 
 # nsh 桌面端（desktop/ 目录）
 nsh check
@@ -113,5 +115,5 @@ pnpm test:unit
 ## 回滚点
 
 - M1 的运行时抽离是独立提交序列，出问题可单独回退，不影响 nsh 代码。
-- M0–M6 期间 `main` 的 Tauri 版本不受影响；中止迁移只需停用分支，已合入 `main` 的运行时抽离保留。
+- M0–M6 期间 `main` 完全不受影响；中止迁移只需停用 `nsh-migration` 分支，`main` 无需任何回退。
 - M7 删除 Tauri 的提交单独成组，保留一个版本周期后再清理。
