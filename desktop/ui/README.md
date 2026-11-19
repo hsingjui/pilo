@@ -26,3 +26,10 @@
   timer on cleanup. See `ui-toast-fixture.tsx` for a complete lifecycle example.
   Variants match Sonner: neutral surfaces with semantic success/info/warning/error
   icons. `closeLabel` lets callers localize the close control.
+- Place `Scrollbar` beside a `Scroll`/`List`, pass its ref as `scroll`, and turn
+  the platform indicator off with `scrollbar={false}`. The default reveals on
+  hover/scroll; `mode="always"` still hides when content fits. `axis="horizontal"`
+  uses the compact horizontal track. `scrollbarLook(axis)` exposes the same
+  classes for per-view built-in bars (`scrollbar={{ vertical: scrollbarLook() }}`).
+  `nsh/test` cannot inspect native animated opacity or thumb geometry; verify
+  show/hide and thumb position in native screenshots, not static style snapshots.
