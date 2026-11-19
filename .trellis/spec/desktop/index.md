@@ -10,6 +10,7 @@
 | [基础组件](./component-guidelines.md)  | 导入、props、状态归属和 fixture 模式 | 初稿 |
 | [主题与资源](./theme-and-assets.md)    | token、生成文件、图标、字体、i18n    | 初稿 |
 | [质量与验证](./quality-guidelines.md)  | 协作规则、测试与验证命令             | 初稿 |
+| [应用外壳](./app-shell.md)             | 入口、打开会话、已读、侧栏、外壳测试 | 初稿 |
 
 需求入口：[迁移 PRD](../../tasks/11-19-nsh-desktop-migration/prd.md)、[设计决策](../../tasks/11-19-nsh-desktop-migration/design.md)、[功能对齐清单](../../tasks/11-19-nsh-desktop-migration/feature-parity.md)。React/WebUI 文档见 [frontend](../frontend/index.md)，运行时文档见 [backend](../backend/index.md)。
 

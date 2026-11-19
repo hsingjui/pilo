@@ -8,8 +8,8 @@
 | ------------------------------------------------- | ----------------------------------------------------------- |
 | `desktop/nsh.json`                                | 应用元数据；`rust` 指向 native；运行时别名 `@` 指向共享 src |
 | `desktop/tsconfig.json`                           | 继承 nsh 生成的类型配置；别名同时在此声明供类型检查使用     |
-| `desktop/App.tsx`                                 | 导入字体，初始化 i18n，`mount(AppShell)`                    |
-| `desktop/app/AppShell.tsx`                        | 应用外壳；业务视图放 app 层，不塞进基础组件                 |
+| `desktop/App.tsx`                                 | 导入字体，初始化 i18n，调用 `launch(new Pilo())`            |
+| `desktop/app/AppShell.tsx`                        | 应用外壳，见[应用外壳](./app-shell.md)；业务视图放 app 层  |
 | `desktop/app/fonts.ts`                            | 字体资源注册入口                                            |
 | `desktop/app/i18n.ts`                             | 共享 i18next 的原生响应式适配                               |
 | `desktop/ui/`                                     | 组件、前景色上下文、主题样式辅助函数                        |
