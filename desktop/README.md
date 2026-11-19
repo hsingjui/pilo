@@ -76,6 +76,11 @@ on that connection, but does not launch Pi.
 `{ provider, id }` or `null` (follow the chat model). With no saved row,
 it returns `enabled: false`, `model: null`, and `updatedAtMs: 0`.
 An unknown connection is rejected. Loading does not contact Pi.
+`saveNextPromptSettings(connectionId, enabled, model)` replaces the saved
+settings and returns the updated snapshot with a larger `updatedAtMs`.
+Pass the selected model again to retain it when disabling prediction, or
+pass `null` to follow the chat model. A successful save publishes
+`next_prompt_settings_changed` with `settings`. Saving does not contact Pi.
 
 Use `readProjectImage(projectId, path)` for a project-relative image and
 `readHistoryImage(projectId, sessionPath, imageId, fingerprint?)` for a
