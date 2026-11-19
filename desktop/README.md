@@ -50,6 +50,14 @@ It does not launch Pi or refresh the cache.
 `{ provider, modelId, thinkingLevel, isDefault }`. A missing scope returns
 `models: null` (inherit Pi) and `updatedAtMs: 0`; `models: []` means an
 explicit empty scope. An unknown project is rejected.
+`saveModelScope(projectId, models)` replaces the scope with the supplied
+ordered array (`[]` clears all members), or restores Pi inheritance with
+`null`. `thinkingLevel` is null or one of `off`, `minimal`, `low`,
+`medium`, `high`, `xhigh`, and `max`; omitted `isDefault` is false,
+and at most one member may be the default. A successful save returns the
+updated scope with a larger `updatedAtMs` and publishes
+`project_model_scope_changed` with `projectId` and `scope`. Neither call
+launches Pi.
 
 Use `readProjectImage(projectId, path)` for a project-relative image and
 `readHistoryImage(projectId, sessionPath, imageId, fingerprint?)` for a

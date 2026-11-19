@@ -20,6 +20,7 @@ use pilo_lib::{
         preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
         project_api::{
             project_fs_read_image, project_list, project_model_cache_list, project_model_scope_get,
+            project_model_scope_set,
         },
         runtime_api::{
             chat_session_send_rpc, chat_session_start, chat_session_state, chat_session_stop,
@@ -421,6 +422,20 @@ impl Pilo {
     ) -> Result<JsonValue, String> {
         Self::with_runtime_blocking(this, move |runtime| {
             let scope = project_model_scope_get(runtime, project_id)?;
+            serde_json::to_value(scope).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Replaces a project's saved model scope or restores Pi inheritance.
+    pub async fn save_model_scope(
+        this: Instance<Self>,
+        project_id: String,
+        models: JsonValue,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, move |runtime| {
+            let models = serde_json::from_value(models).map_err(|error| error.to_string())?;
+            let scope = project_model_scope_set(runtime, project_id, models)?;
             serde_json::to_value(scope).map_err(|error| error.to_string())
         })
         .await
