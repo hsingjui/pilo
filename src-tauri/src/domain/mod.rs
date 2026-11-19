@@ -1,4 +1,5 @@
 mod appearance;
+pub mod theme_css_convert;
 pub mod theme_tokens;
 pub use appearance::{SavedCustomTheme, ThemeSettings, ThemeSettingsUpdate};
 mod cache_keep_alive;
