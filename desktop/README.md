@@ -24,6 +24,11 @@ Use `loadPreferences()` and `savePreferences(patch)` to read or update the
 existing Host preferences. Both return the current revision and complete
 values; writes patch only the supplied fields.
 
+Use `loadThemeSettings()` and `saveThemeSettings(update)` for saved Host
+appearance. Both return the complete Host settings, including
+`themeCustomTokens` and the read-only `themeCustomConversion` report.
+Token-only saves keep the legacy CSS.
+
 `listProjects()` refreshes the saved project catalog without loading live chat
 snapshots. `listSessions(projectId)` uses the same session-index reconciliation
 as the Tauri client and returns saved sessions, not live chat state.

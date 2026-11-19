@@ -10,6 +10,7 @@ use pilo_lib::{
     initialize_local_server_binary,
     runtime::{
         Runtime,
+        appearance::{theme_settings_get, theme_settings_set},
         events::{EventBatch, EventQueueLimits, EventStream},
         handle::{session_mark_read, session_read_states},
         host_events::HostEvents,
@@ -394,6 +395,31 @@ impl Pilo {
                 return Err("Pilo preference patch must be an object".into());
             };
             preferences_patch(runtime, patch, None).map(Into::into)
+        })
+        .await
+    }
+
+    /// Reads the complete Host appearance settings, including tokens and conversion reports.
+    pub async fn load_theme_settings(this: Instance<Self>) -> Result<JsonValue, String> {
+        Self::with_runtime(this, |runtime| async move {
+            let settings = theme_settings_get(&runtime, None).await?;
+            serde_json::to_value(settings).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Applies a Host appearance update and returns the complete settings.
+    pub async fn save_theme_settings(
+        this: Instance<Self>,
+        update: JsonValue,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            if !update.is_object() {
+                return Err("Pilo theme settings update must be an object".into());
+            }
+            let update = serde_json::from_value(update).map_err(|error| error.to_string())?;
+            let settings = theme_settings_set(&runtime, update).await?;
+            serde_json::to_value(settings).map_err(|error| error.to_string())
         })
         .await
     }

@@ -68,6 +68,25 @@ impl BootstrapFixture {
         self.0.to_string_lossy().into_owned()
     }
 
+    /// Seeds appearance settings from before the Host stored theme tokens.
+    pub fn seed_legacy_theme_settings(&self, css: String) -> Result<(), String> {
+        let paths = HostPaths::new(self.0.clone(), self.0.clone())?;
+        let settings = serde_json::json!({
+            "revision": 7,
+            "themeFamily": "custom",
+            "themeCustomCss": css,
+            "themeCustomName": "Legacy",
+            "savedCustomThemes": [{ "name": "Legacy", "css": css }],
+        });
+        storage::open(&paths)?
+            .execute(
+                "INSERT INTO theme_settings (id, settings_json) VALUES (1, ?1)",
+                [settings.to_string()],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
     /// Saves an indexed session for a fixture project without starting Pi.
     pub fn seed_indexed_session(&self, project_id: String, cwd: String) -> Result<(), String> {
         let paths = HostPaths::new(self.0.clone(), self.0.clone())?;
