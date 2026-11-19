@@ -27,7 +27,10 @@ use pilo_lib::{
         runtime_api::{
             chat_session_send_rpc, chat_session_start, chat_session_state, chat_session_stop,
         },
-        session_api::{session_delete, session_history_image, session_reconcile, session_search},
+        session_api::{
+            session_delete, session_history, session_history_image, session_reconcile,
+            session_search,
+        },
         session_naming::session_generate_title,
         tasks,
         web_assets::{WebAsset, WebAssets},
@@ -171,6 +174,14 @@ fn history_fingerprint_args(
 pub struct NativeHistoryFingerprint {
     pub file_size: f64,
     pub file_mtime_ns: String,
+}
+
+#[derive(Default, JsObject)]
+pub struct NativeHistoryOptions {
+    pub start_message: Option<f64>,
+    pub message_limit: Option<f64>,
+    pub include_message_index: Option<bool>,
+    pub fingerprint: Option<NativeHistoryFingerprint>,
 }
 
 /// The initial project catalog and runtime snapshots with their event cut.
@@ -549,6 +560,43 @@ impl Pilo {
         Self::with_runtime(this, move |runtime| async move {
             serde_json::to_value(session_delete(&runtime, project_id, session_path).await?)
                 .map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Reads a window of settled session history without starting Pi.
+    pub async fn load_history(
+        this: Instance<Self>,
+        project_id: String,
+        session_path: String,
+        options: Option<NativeHistoryOptions>,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let options = options.unwrap_or_default();
+            let checked_integer = |value: f64| {
+                if !(0.0..=9_007_199_254_740_991.0).contains(&value) || value.fract() != 0.0 {
+                    return Err(
+                        "history window offsets and limits must be non-negative safe integers"
+                            .to_owned(),
+                    );
+                }
+                Ok(value as usize)
+            };
+            let start = options.start_message.map(checked_integer).transpose()?;
+            let limit = checked_integer(options.message_limit.unwrap_or(256.0))?;
+            let (file_size, file_mtime_ns) = history_fingerprint_args(options.fingerprint)?;
+            let history = session_history(
+                &runtime,
+                project_id,
+                session_path,
+                file_size,
+                file_mtime_ns,
+                start,
+                Some(limit),
+                Some(options.include_message_index.unwrap_or(true)),
+            )
+            .await?;
+            serde_json::from_slice(&history).map_err(|error| error.to_string())
         })
         .await
     }

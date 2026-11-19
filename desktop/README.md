@@ -36,6 +36,15 @@ model and returns a title, or `null` if no title is available.
 `deleteSession(projectId, sessionPath)` removes an indexed session and
 returns `{ method: "trash" | "unlink" }`.
 
+`loadHistory(projectId, sessionPath, options?)` reads settled Pi history
+without starting a chat. It returns `{ history, fingerprint }` and uses the
+same reader and defaults as the Tauri client. Options are `startMessage`
+(zero-based; defaults to the tail), `messageLimit` (default 256, clamped to
+1–256), `includeMessageIndex` (default true), and the optional fingerprint
+from a previous read. A missing session is rejected. Use this reader for
+SSH/WSL history or to recover settled history after an unsafe turn; the
+result has no transcript event sequence.
+
 `loadConnectionModels(connectionId)` queries Pi's current user-level catalog
 for the connection, not a union of project caches.
 `loadModels(projectId)` returns the Host's saved project catalog (models,
