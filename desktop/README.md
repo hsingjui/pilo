@@ -64,6 +64,12 @@ model policies (ordered by provider and model ID), or `[]` if it has none.
 Each policy has `connectionId`, `provider`, `modelId`, `enabled`,
 `cacheTtlSeconds`, `idleKeepAliveSeconds`, and `updatedAtMs`. An unknown
 connection is rejected. Loading does not launch Pi.
+`saveCacheKeepAliveSettings(settings)` upserts one policy by connection,
+provider, and model ID. TTL must be 10–86400 seconds and idle duration
+60–86400 seconds. The Host assigns a monotonic `updatedAtMs` for that policy,
+returns the saved policy, and publishes `cache_keep_alive_settings_changed`
+with `settings`. Saving may reconfigure already-running eligible Pi sessions
+on that connection, but does not launch Pi.
 
 Use `readProjectImage(projectId, path)` for a project-relative image and
 `readHistoryImage(projectId, sessionPath, imageId, fingerprint?)` for a
