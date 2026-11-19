@@ -1,3 +1,6 @@
+import type { CustomThemeTokens } from "./theme-tokens";
+import { readCustomThemeTokens } from "./theme-web";
+
 /**
  * 自定义主题族（data-theme-family="custom"）的用户 CSS 覆盖层。
  *
@@ -54,6 +57,7 @@ export const CUSTOM_CSS_PLACEHOLDER = `/*
 export type SavedCustomTheme = {
 	name: string;
 	css: string;
+	tokens: CustomThemeTokens;
 };
 
 export function isThemeCustomCss(value: unknown): value is string {
@@ -68,13 +72,19 @@ export function readSavedCustomThemes(value: unknown): SavedCustomTheme[] {
 			typeof entry !== "object" ||
 			entry === null ||
 			!("name" in entry) ||
-			!("css" in entry) ||
 			typeof entry.name !== "string" ||
-			typeof entry.css !== "string"
+			("css" in entry && typeof entry.css !== "string")
 		)
 			continue;
 		const name = entry.name.trim();
-		if (name) themes.set(name, { name, css: entry.css });
+		if (name)
+			themes.set(name, {
+				name,
+				css: "css" in entry ? (entry.css as string) : "",
+				tokens: readCustomThemeTokens(
+					"tokens" in entry ? entry.tokens : undefined,
+				),
+			});
 	}
 	return [...themes.values()];
 }

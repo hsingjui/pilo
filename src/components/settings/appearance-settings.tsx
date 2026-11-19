@@ -218,7 +218,11 @@ export function AppearanceSettings() {
 							onClick={() => {
 								updateSettings({
 									themeFamily: "custom",
-									saveCustomTheme: { name: draftName, css: draftCss },
+									saveCustomTheme: {
+										name: draftName,
+										css: draftCss,
+										tokens: {},
+									},
 								});
 								setDraftName(draftName.trim());
 							}}

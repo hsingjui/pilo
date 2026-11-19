@@ -1,5 +1,6 @@
 import { isThemeCustomCss, readSavedCustomThemes } from "@/lib/theme-custom";
 import type { Theme, ThemeSettings } from "./theme-settings-types";
+import { readCustomThemeTokens } from "./theme-web";
 
 export type {
 	Theme,
@@ -37,6 +38,7 @@ export function readCachedTheme(
 	}
 	return {
 		revision: 0,
+		themeCustomTokens: readCustomThemeTokens(stored.themeCustomTokens),
 		theme:
 			stored.theme === "light" ||
 			stored.theme === "dark" ||

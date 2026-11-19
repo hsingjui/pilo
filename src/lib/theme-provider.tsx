@@ -13,7 +13,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { i18n } from "@/i18n";
 import { listenRuntimeEvents } from "@/lib/api/pi-runtime";
-import { CUSTOM_THEME_STYLE_ID } from "@/lib/theme-custom";
+import {
+	CUSTOM_THEME_STYLE_ID,
+	readSavedCustomThemes,
+} from "@/lib/theme-custom";
+import {
+	readCustomThemeTokens,
+	renderCustomThemeCss,
+	validateWebThemeTokens,
+} from "@/lib/theme-web";
 import {
 	readCachedTheme,
 	THEME_CACHE_KEY,
@@ -47,6 +55,7 @@ const ThemeProviderContext = createContext<ThemeProviderState>({
 	theme: "system",
 	themeFamily: "lody",
 	themeCustomCss: "",
+	themeCustomTokens: {},
 	themeCustomName: "",
 	savedCustomThemes: [],
 	resolvedTheme: "light",
@@ -72,14 +81,19 @@ export function ThemeProvider({
 	const [settings, setSettings] = useState(() =>
 		readCachedTheme(defaultTheme, storageKey, familyStorageKey),
 	);
-	const { theme, themeFamily, themeCustomCss } = settings;
+	const { theme, themeFamily, themeCustomTokens } = settings;
 	const initialSettingsRef = useRef(settings);
 	const revisionRef = useRef(-1);
 	const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
 	const applyThemeSettings = useCallback((next: ThemeSettings) => {
 		if (next.revision <= revisionRef.current) return;
+		if (!validateWebThemeTokens(next.themeCustomTokens ?? {}).ok) return;
 		revisionRef.current = next.revision;
-		setSettings(next);
+		setSettings({
+			...next,
+			themeCustomTokens: readCustomThemeTokens(next.themeCustomTokens),
+			savedCustomThemes: readSavedCustomThemes(next.savedCustomThemes),
+		});
 	}, []);
 
 	useEffect(() => {
@@ -139,8 +153,9 @@ export function ThemeProvider({
 			el.id = CUSTOM_THEME_STYLE_ID;
 			document.head.appendChild(el);
 		}
-		el.textContent = themeFamily === "custom" ? themeCustomCss : "";
-	}, [themeFamily, themeCustomCss]);
+		el.textContent =
+			themeFamily === "custom" ? renderCustomThemeCss(themeCustomTokens) : "";
+	}, [themeFamily, themeCustomTokens]);
 
 	const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(getSystemTheme);
 
@@ -170,7 +185,7 @@ export function ThemeProvider({
 		const root = window.document.documentElement;
 		// 主题翻转会让几乎所有元素的颜色/边框/阴影同时变化，任由过渡播放会整页拖影。
 		// 先挂上禁用类、强制 reflow，翻转后在下一帧移除，让后续交互恢复过渡。
-		const applied = `${themeFamily}:${resolvedTheme}:${themeFamily === "custom" ? themeCustomCss : ""}`;
+		const applied = `${themeFamily}:${resolvedTheme}:${themeFamily === "custom" ? JSON.stringify(themeCustomTokens) : ""}`;
 		const switching =
 			appliedThemeRef.current !== null && appliedThemeRef.current !== applied;
 		appliedThemeRef.current = applied;
@@ -205,7 +220,7 @@ export function ThemeProvider({
 				});
 			});
 		}
-	}, [resolvedTheme, themeFamily, themeCustomCss]);
+	}, [resolvedTheme, themeFamily, themeCustomTokens]);
 
 	const updateSettings = useCallback(
 		(update: ThemeSettingsUpdate) => {
