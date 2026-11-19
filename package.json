@@ -4,6 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "node scripts/dev.mjs",
+		"desktop:generate:themes": "node scripts/generate-desktop-themes.mjs",
 		"debug:desktop": "node scripts/debug-desktop.mjs",
 		"build": "tsc && vite build",
 		"preview": "vite preview",
@@ -90,6 +91,7 @@
 		"@vitejs/plugin-react": "^6.0.2",
 		"oxfmt": "^0.67.0",
 		"oxlint": "^1.82.0",
+		"postcss": "8.5.28",
 		"tailwindcss": "^4.3.3",
 		"typescript": "~6.0.3",
 		"vite": "^8.0.16",
