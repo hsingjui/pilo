@@ -56,6 +56,8 @@ const enUS = {
 		addProjectFirst: "Add a project first",
 		interfaceError: "Something went wrong with the interface",
 		unexpectedError: "An unexpected error occurred.",
+		runtimeStopped: "Pilo's runtime stopped",
+		runtimeStoppedDescription: "Restart Pilo to continue.",
 		reload: "Reload",
 		newChat: "New session",
 		temporaryChat: "Temporary session",

@@ -56,13 +56,18 @@ test("a ready app without projects asks for one", async () => {
 	expect(app.shows("id:startup-failed")).toBe(false);
 });
 
-test("a runtime that shut down shows a failure without a retry", async () => {
+test("a runtime that shut down says so and asks for a restart", async () => {
 	const app = await openStates("closed");
-	await app.waitFor("id:startup-failed");
-	expect(app.shows("id:workspace >> text:An unexpected error occurred.")).toBe(
+	await app.waitFor("id:runtime-stopped");
+	expect(app.shows("id:runtime-stopped >> text:Pilo's runtime stopped")).toBe(
 		true,
 	);
+	expect(
+		app.shows("id:runtime-stopped >> text:Restart Pilo to continue."),
+	).toBe(true);
+	expect(app.shows("id:startup-failed")).toBe(false);
 	expect(app.shows("id:startup-retry")).toBe(false);
+	expect(app.shows("id:workspace-title")).toBe(false);
 });
 
 test("the sidebar collapses and expands from the title bar", async () => {

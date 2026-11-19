@@ -100,9 +100,7 @@ export function AppShell(props: AppShellProps) {
 									/>
 								);
 							case "closed":
-								return (
-									<StartupFailure message={() => t("app.unexpectedError")} />
-								);
+								return <RuntimeStopped />;
 							case "ready":
 								return <ProjectPlaceholder project={project} />;
 						}
@@ -125,12 +123,29 @@ function StartupLoading() {
 }
 
 /** Startup did not finish; with `onRetry` the user can run it again. */
+/** The runtime shut down under the app; only a new launch starts another. */
+function RuntimeStopped() {
+	return (
+		<View
+			testID="runtime-stopped"
+			role="alert"
+			class="max-w-md items-center gap-4"
+		>
+			<Text class="text-center font-sans text-lg font-medium text-foreground">
+				{() => t("app.runtimeStopped")}
+			</Text>
+			<Text class="text-center font-sans text-sm text-muted-foreground">
+				{() => t("app.runtimeStoppedDescription")}
+			</Text>
+		</View>
+	);
+}
+
 function StartupFailure(props: {
 	message: () => string;
-	onRetry?: () => Promise<void>;
+	onRetry: () => Promise<void>;
 }) {
 	const retrying = signal(false);
-	const retry = props.onRetry;
 	return (
 		<View
 			testID="startup-failed"
@@ -146,19 +161,17 @@ function StartupFailure(props: {
 			>
 				{props.message}
 			</Text>
-			{retry ? (
-				<Button
-					testID="startup-retry"
-					variant="outline"
-					disabled={retrying()}
-					onPress={() => {
-						retrying.set(true);
-						void retry().finally(() => retrying.set(false));
-					}}
-				>
-					<Text>{() => t("common.retry")}</Text>
-				</Button>
-			) : null}
+			<Button
+				testID="startup-retry"
+				variant="outline"
+				disabled={retrying()}
+				onPress={() => {
+					retrying.set(true);
+					void props.onRetry().finally(() => retrying.set(false));
+				}}
+			>
+				<Text>{() => t("common.retry")}</Text>
+			</Button>
 		</View>
 	);
 }

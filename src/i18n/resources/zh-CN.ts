@@ -68,6 +68,8 @@ const zhCN = {
 		addProjectFirst: "请先添加项目",
 		interfaceError: "界面遇到了问题",
 		unexpectedError: "发生了意外错误。",
+		runtimeStopped: "Pilo 运行时已停止",
+		runtimeStoppedDescription: "请重启 Pilo 后继续使用。",
 		reload: "重新加载",
 		newChat: "新会话",
 		temporaryChat: "临时会话",
