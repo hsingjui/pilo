@@ -33,6 +33,12 @@ Token-only saves keep the legacy CSS.
 snapshots. `listSessions(projectId)` uses the same session-index reconciliation
 as the Tauri client and returns saved sessions, not live chat state.
 
+Use `readProjectImage(projectId, path)` for a project-relative image and
+`readHistoryImage(projectId, sessionPath, imageId, fingerprint?)` for a
+transcript attachment. Both return `Uint8Array` bytes; nsh `Image` accepts
+a Blob URL made from those bytes. The optional fingerprint carries
+`fileSize` and the exact `fileMtimeNs` string.
+
 `loadSessionReadStates()` reads the saved read revisions across projects.
 Call `markSessionRead(projectId, sessionPath, revision)` with the positive
 safe-integer revision the client observed. It returns the resulting read

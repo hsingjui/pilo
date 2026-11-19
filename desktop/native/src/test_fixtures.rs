@@ -1,19 +1,20 @@
 use std::{
-    fs::{self, DirBuilder},
-    io::ErrorKind,
+    fs::{self, DirBuilder, OpenOptions},
+    io::{ErrorKind, Write},
     path::PathBuf,
     sync::atomic::{AtomicU64, Ordering},
 };
 
 use nsh_core::prelude::*;
 use pilo_lib::{
-    domain::SessionIndexEntry,
+    domain::{Project, ProjectMetadata, SessionIndexEntry},
     runtime::{host_paths::HostPaths, storage},
 };
 
 pub(crate) fn register(registry: &mut Registry) {
     registry.module::<ImageFixture>();
     registry.class::<BootstrapFixture>();
+    registry.class::<SessionFilesFixture>();
 }
 
 /// Native image sources for the desktop transport tests.
@@ -149,5 +150,79 @@ impl BootstrapFixture {
 impl Drop for BootstrapFixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// An isolated project and a single synthetic Pi session file.
+#[class]
+struct SessionFilesFixture {
+    storage: BootstrapFixture,
+    session: PathBuf,
+}
+
+#[class]
+impl SessionFilesFixture {
+    pub fn new(jsonl: String) -> Result<Self, String> {
+        let storage = BootstrapFixture::new()?;
+        let paths = HostPaths::new(storage.0.clone(), storage.0.clone())?;
+        let db = storage::open(&paths)?;
+        let cwd = storage.data_dir();
+        storage::upsert_project(
+            &db,
+            &Project {
+                id: "session-files".into(),
+                name: "Session files fixture".into(),
+                path: cwd.clone(),
+                connection: storage::ensure_local_connection(&db)?,
+                metadata: ProjectMetadata {
+                    cwd,
+                    git_branch: None,
+                    pi_version: "test".into(),
+                    refreshed_at_ms: 1,
+                },
+                created_at_ms: 1,
+                last_opened_at_ms: 1,
+            },
+        )?;
+        fs::write(storage.0.join("fixture.png"), ImageFixture::bytes())
+            .map_err(|error| error.to_string())?;
+
+        let sessions = std::env::var_os("PI_CODING_AGENT_DIR")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".pi/agent")))
+            .ok_or("Pi agent directory is unavailable")?
+            .join("sessions");
+        fs::create_dir_all(&sessions).map_err(|error| error.to_string())?;
+        let session = sessions
+            .join(
+                storage
+                    .0
+                    .file_name()
+                    .ok_or("fixture directory has no name")?,
+            )
+            .with_extension("jsonl");
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&session)
+            .map_err(|error| error.to_string())?;
+        let fixture = Self { storage, session };
+        file.write_all(jsonl.as_bytes())
+            .map_err(|error| error.to_string())?;
+        Ok(fixture)
+    }
+
+    pub fn data_dir(&self) -> String {
+        self.storage.data_dir()
+    }
+
+    pub fn session_path(&self) -> String {
+        self.session.to_string_lossy().into_owned()
+    }
+}
+
+impl Drop for SessionFilesFixture {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.session);
     }
 }

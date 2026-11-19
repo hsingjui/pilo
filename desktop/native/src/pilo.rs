@@ -17,8 +17,8 @@ use pilo_lib::{
         host_paths::HostPaths,
         initialize_server_resource_dir,
         preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
-        project_api::project_list,
-        session_api::session_reconcile,
+        project_api::{project_fs_read_image, project_list},
+        session_api::{session_history_image, session_reconcile},
         tasks,
         web_assets::{WebAsset, WebAssets},
     },
@@ -141,6 +141,26 @@ fn encode_event_batch(batch: EventBatch) -> Result<JsonValue, String> {
 
 fn load_projects(runtime: &Runtime) -> Result<Vec<JsonValue>, String> {
     encode_list(project_list(runtime)?)
+}
+
+fn history_fingerprint_args(
+    fingerprint: Option<NativeHistoryFingerprint>,
+) -> Result<(Option<u64>, Option<String>), String> {
+    let Some(fingerprint) = fingerprint else {
+        return Ok((None, None));
+    };
+    let size = fingerprint.file_size;
+    if !(0.0..=9_007_199_254_740_991.0).contains(&size) || size.fract() != 0.0 {
+        return Err("session history file size must be a non-negative safe integer".into());
+    }
+    Ok((Some(size as u64), Some(fingerprint.file_mtime_ns)))
+}
+
+/// A session file's size and exact modification time, as returned by the runtime.
+#[derive(JsObject)]
+pub struct NativeHistoryFingerprint {
+    pub file_size: f64,
+    pub file_mtime_ns: String,
 }
 
 /// The initial project catalog and runtime snapshots with their event cut.
@@ -344,6 +364,41 @@ impl Pilo {
         });
         task.await
             .map_err(|error| format!("failed to load sessions: {error}"))?
+    }
+
+    /// Reads one image attachment from a Pi session's JSONL.
+    pub async fn read_history_image(
+        this: Instance<Self>,
+        project_id: String,
+        session_path: String,
+        image_id: String,
+        fingerprint: Option<NativeHistoryFingerprint>,
+    ) -> Result<Vec<u8>, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let (file_size, file_mtime_ns) = history_fingerprint_args(fingerprint)?;
+            session_history_image(
+                &runtime,
+                project_id,
+                session_path,
+                image_id,
+                file_size,
+                file_mtime_ns,
+            )
+            .await
+        })
+        .await
+    }
+
+    /// Reads a supported image from a project-relative path.
+    pub async fn read_project_image(
+        this: Instance<Self>,
+        project_id: String,
+        path: String,
+    ) -> Result<Vec<u8>, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            project_fs_read_image(&runtime, project_id, path).await
+        })
+        .await
     }
 
     /// Loads the persisted read states across projects.
