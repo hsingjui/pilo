@@ -43,6 +43,8 @@ Use `startChat({ projectId, sessionKey, sessionPath?, noSession?, builtinExtensi
 to start or resume Pi and get its ready process snapshot. Omit `sessionPath`
 for a new session; `noSession` defaults to false. The optional client-selected
 built-in extension is `{ id: "model-catalog" }`.
+`stopChat(sessionKey, reason?)` stops the Pi process for that key and is a
+no-op if the session is not running.
 
 `loadSessionReadStates()` reads the saved read revisions across projects.
 Call `markSessionRead(projectId, sessionPath, revision)` with the positive

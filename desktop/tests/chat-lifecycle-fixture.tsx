@@ -85,6 +85,7 @@ async function expectError(promise: Promise<unknown>, message: string) {
 
 async function run() {
 	const realPi = host.params.realPi === true;
+	const stop = host.params.stop === true;
 	const fixture = new ChatFixture(realPi);
 	const pilo = new Pilo(fixture.dataDir());
 	const input = { projectId, sessionKey, noSession: true };
@@ -106,15 +107,30 @@ async function run() {
 			throw new Error(`Pi did not start: ${JSON.stringify(snapshot)}`);
 		}
 		if (realPi) await smokeTurn(pilo, fixture);
+		if (stop) {
+			await pilo.stopChat(sessionKey, "fixture complete");
+			await expectError(
+				fixture.send(pilo, sessionKey, { type: "get_state" }),
+				"is not running",
+			);
+			await pilo.stopChat(sessionKey);
+		}
 	} finally {
 		await pilo.shutdown();
 		fixture.dispose();
 	}
 	await expectError(pilo.startChat(input), "Pilo runtime has been shut down");
+	if (stop) {
+		await expectError(
+			pilo.stopChat(sessionKey),
+			"Pilo runtime has been shut down",
+		);
+	}
+	const method = stop ? "stopChat" : "startChat";
 	status.set(
 		realPi
-			? "startChat: relay/deepseek-flash replied NSH_BRIDGE_OK"
-			: "startChat verified",
+			? `${method}: relay/deepseek-flash replied NSH_BRIDGE_OK`
+			: `${method} verified`,
 	);
 }
 

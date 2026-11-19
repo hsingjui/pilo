@@ -18,7 +18,7 @@ use pilo_lib::{
         initialize_server_resource_dir,
         preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
         project_api::{project_fs_read_image, project_list},
-        runtime_api::chat_session_start,
+        runtime_api::{chat_session_start, chat_session_stop},
         session_api::{session_history_image, session_reconcile},
         tasks,
         web_assets::{WebAsset, WebAssets},
@@ -446,6 +446,18 @@ impl Pilo {
             )
             .await?;
             serde_json::to_value(snapshot).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Stops a Pi chat; stopping an absent session succeeds.
+    pub async fn stop_chat(
+        this: Instance<Self>,
+        session_key: String,
+        reason: Option<String>,
+    ) -> Result<(), String> {
+        Self::with_runtime(this, move |runtime| async move {
+            chat_session_stop(&runtime, session_key, reason).await
         })
         .await
     }
