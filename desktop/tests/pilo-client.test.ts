@@ -40,6 +40,8 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 		searchSessions: answer("searchSessions", [{ sessionId: "s1" }]),
 		generateSessionTitle: answer("generateSessionTitle", "Repair the parser"),
 		deleteSession: answer("deleteSession", { method: "trash" }),
+		readHistoryImage: answer("readHistoryImage", new Uint8Array([1, 2])),
+		readProjectImage: answer("readProjectImage", new Uint8Array([3])),
 		loadSessionReadStates: answer("loadSessionReadStates", [readState]),
 		markSessionRead: answer("markSessionRead", readState),
 		loadPreferences: answer("loadPreferences", preferences),
@@ -199,6 +201,46 @@ test("no matches, no naming model and a rejected deletion reach the caller as th
 		caught = error;
 	});
 	expect(caught).toBe(failure);
+});
+
+test("image reads pass their arguments and return the native bytes", async () => {
+	const { pilo, calls } = fakeNative();
+	const client = new NshPiloClient(pilo);
+	const fingerprint = { fileSize: 12, fileMtimeNs: "1735787045000000000" };
+
+	expect(
+		await client.readHistoryImage("p1", "/s.jsonl", "m1:0", fingerprint),
+	).toEqual(new Uint8Array([1, 2]));
+	expect(await client.readHistoryImage("p1", "/s.jsonl", "m1:0")).toEqual(
+		new Uint8Array([1, 2]),
+	);
+	expect(await client.readProjectImage("p1", "docs/a.png")).toEqual(
+		new Uint8Array([3]),
+	);
+	expect(calls).toEqual([
+		["readHistoryImage", "p1", "/s.jsonl", "m1:0", fingerprint],
+		["readHistoryImage", "p1", "/s.jsonl", "m1:0", undefined],
+		["readProjectImage", "p1", "docs/a.png"],
+	]);
+});
+
+test("an image the native module cannot read rejects with its error", async () => {
+	const failure = new Error("image 'm1:0' was not found");
+	const { pilo } = fakeNative({
+		readHistoryImage: () => Promise.reject(failure),
+		readProjectImage: () => Promise.reject(failure),
+	});
+	const client = new NshPiloClient(pilo);
+	for (const call of [
+		client.readHistoryImage("p1", "/s.jsonl", "m1:0"),
+		client.readProjectImage("p1", "docs/a.png"),
+	]) {
+		let caught: unknown;
+		await call.catch((error: unknown) => {
+			caught = error;
+		});
+		expect(caught).toBe(failure);
+	}
 });
 
 /** A native event stream whose polls the test answers one at a time. */
@@ -390,6 +432,13 @@ test("the client starts, queries, commands and stops a Pi chat through the nativ
 test("the client searches, deletes and titles sessions through the native module", async () => {
 	const app = await open("./pilo-client-sessions-fixture.tsx");
 	await app.waitFor("text:client session search, deletion and title verified", {
+		timeout: 30_000,
+	});
+});
+
+test("the client reads project and session image bytes through the native module", async () => {
+	const app = await open("./pilo-client-images-fixture.tsx");
+	await app.waitFor("text:client project and session image bytes verified", {
 		timeout: 30_000,
 	});
 });

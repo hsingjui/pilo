@@ -13,6 +13,7 @@ import type {
 import type { Project } from "@/lib/api/projects-types";
 import type {
 	SessionDeleteResult,
+	SessionHistoryFingerprint,
 	SessionIndexEntry,
 	SessionSearchMatch,
 } from "@/lib/api/sessions-types";
@@ -39,6 +40,8 @@ export type PiloNative = Pick<
 	| "searchSessions"
 	| "generateSessionTitle"
 	| "deleteSession"
+	| "readHistoryImage"
+	| "readProjectImage"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "loadPreferences"
@@ -68,6 +71,8 @@ type BridgedPiloClient = Pick<
 	| "searchSessions"
 	| "generateSessionTitle"
 	| "deleteSession"
+	| "readHistoryImage"
+	| "readProjectImage"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "connectEvents"
@@ -76,6 +81,12 @@ type BridgedPiloClient = Pick<
 	| "chatState"
 	| "sendChatCommand"
 >;
+
+/**
+ * Image bytes as the native module returns them: over an `ArrayBuffer`, never
+ * a shared one, which its generated declaration does not say.
+ */
+type ImageBytes = Uint8Array<ArrayBuffer>;
 
 /** What `nextEvents` resolves with, as `desktop/README.md` lists it. */
 type NativeEventBatch =
@@ -148,6 +159,29 @@ export class NshPiloClient implements BridgedPiloClient {
 			projectId,
 			sessionPath,
 		)) as SessionDeleteResult;
+	}
+
+	/**
+	 * The bytes of one image attachment in a session file. A fingerprint from
+	 * the history that named the image rejects a file that changed since.
+	 */
+	async readHistoryImage(
+		projectId: string,
+		sessionPath: string,
+		imageId: string,
+		fingerprint?: SessionHistoryFingerprint,
+	) {
+		return (await this.pilo.readHistoryImage(
+			projectId,
+			sessionPath,
+			imageId,
+			fingerprint,
+		)) as ImageBytes;
+	}
+
+	/** The bytes of an image at a path relative to the project. */
+	async readProjectImage(projectId: string, path: string) {
+		return (await this.pilo.readProjectImage(projectId, path)) as ImageBytes;
 	}
 
 	loadSessionReadStates() {
