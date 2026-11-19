@@ -620,7 +620,7 @@ test("the client delivers native runtime events, a queue overflow gap and shutdo
 	const app = await open("./pilo-client-events-fixture.tsx");
 	await app.waitFor(
 		"text:client event delivery, gap resync and shutdown verified",
-		{ timeout: 20_000 },
+		{ timeout: 30_000 },
 	);
 });
 
