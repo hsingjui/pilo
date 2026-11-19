@@ -31,28 +31,28 @@ function state(
 }
 
 test("no chat is open: the list shows nothing", () => {
-	expect(chatListView(state("closed"))).toBe("closed");
+	expect(chatListView(state("closed"), 0)).toBe("closed");
 });
 
 test("the first read of a chat shows the skeleton", () => {
-	expect(chatListView(state("loading"))).toBe("loading");
+	expect(chatListView(state("loading"), 0)).toBe("loading");
 });
 
 test("a read that follows one already shown keeps what it showed", () => {
-	expect(chatListView(state("loading", 3))).toBe("messages");
-	expect(chatListView(state("loading", 0))).toBe("empty");
+	expect(chatListView(state("loading", 3), 3)).toBe("messages");
+	expect(chatListView(state("loading", 0), 0)).toBe("empty");
 });
 
 test("a ready chat shows its messages, or that it has none", () => {
-	expect(chatListView(state("ready", 3))).toBe("messages");
-	expect(chatListView(state("ready", 0))).toBe("empty");
+	expect(chatListView(state("ready", 3), 3)).toBe("messages");
+	expect(chatListView(state("ready", 0), 0)).toBe("empty");
 });
 
 test("a failed read shows the failure, over a conversation kept from before too", () => {
-	expect(chatListView(state("failed"))).toBe("failed");
-	expect(chatListView(state("failed", 3))).toBe("failed");
+	expect(chatListView(state("failed"), 0)).toBe("failed");
+	expect(chatListView(state("failed", 3), 3)).toBe("failed");
 });
 
 test("a turn that cannot be rebuilt is waited for", () => {
-	expect(chatListView(state("not_loaded"))).toBe("waiting");
+	expect(chatListView(state("not_loaded"), 0)).toBe("waiting");
 });

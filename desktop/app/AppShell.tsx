@@ -22,7 +22,7 @@ export interface AppShellProps {
 	/** The app state the shell shows; whoever mounts the shell starts it. */
 	store: AppStore;
 	/** The open session's transcript; whoever mounts the shell keeps it open. */
-	chat: Pick<ChatTranscriptStore, "state" | "refresh">;
+	chat: Pick<ChatTranscriptStore, "state" | "messages" | "refresh">;
 }
 
 export function AppShell(props: AppShellProps) {
@@ -115,6 +115,7 @@ export function AppShell(props: AppShellProps) {
 								return sessionOpen() ? (
 									<ChatMessageList
 										transcript={chat.state}
+										messages={() => chat.messages()}
 										onRetry={() => chat.refresh()}
 										empty={() => <NewSession project={project} />}
 									/>

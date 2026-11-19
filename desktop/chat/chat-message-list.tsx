@@ -1,12 +1,11 @@
-import { computed, type JSX, List, type ListSlot, View } from "nsh";
+import { computed, type JSX, type ListSlot, View } from "nsh";
 
 import type { ChatMessage } from "@/lib/chat/conversation-types";
 import type { ChatTranscriptState } from "../state/chat-transcript-store";
-import { scrollbarLook } from "../ui/scrollbar";
 import { ChatHistorySkeleton } from "./chat-history-skeleton";
 import { chatListView } from "./chat-list-view";
 import { ChatLoadFailure } from "./chat-load-failure";
-import { ChatMessageRow } from "./chat-message-row";
+import { ChatMessages } from "./chat-messages";
 import { ChatTurnWaiting } from "./chat-turn-waiting";
 import type {
 	AssistantChatMessage,
@@ -14,11 +13,14 @@ import type {
 	UserChatMessage,
 } from "./chat-message-types";
 
-const noMessages: readonly ChatMessage[] = [];
-
 export interface ChatMessageListProps {
 	/** The open chat's transcript, as `ChatTranscriptStore` holds it. */
 	transcript: () => ChatTranscriptState;
+	/**
+	 * Every message of the chat in order, as the store's `messages()` joins
+	 * them: a row is kept by its place, so index i must always be message i.
+	 */
+	messages: () => readonly ChatMessage[];
 	/** Reads the chat again after a failed read (the store's `refresh`). */
 	onRetry?: () => Promise<void> | void;
 	/** What a chat without messages shows. */
@@ -38,9 +40,8 @@ export interface ChatMessageListProps {
 export function ChatMessageList(props: ChatMessageListProps) {
 	const { transcript } = props;
 	const sessionKey = computed(() => transcript().sessionKey);
-	const view = computed(() => chatListView(transcript()));
-	const messages = computed(
-		() => transcript().conversation?.messages ?? noMessages,
+	const view = computed(() =>
+		chatListView(transcript(), props.messages().length),
 	);
 	return (
 		<View testID="chat-message-list" class="min-h-0 min-w-0 flex-1">
@@ -71,25 +72,12 @@ export function ChatMessageList(props: ChatMessageListProps) {
 						);
 					case "messages":
 						return (
-							<List
-								testID="chat-messages"
-								class="min-h-0 flex-1"
-								contentClass="pt-6 pb-10"
-								each={messages()}
-								keyExtractor={(message) => message.id}
-								estimatedItemSize={96}
-								initialScrollAtEnd
-								scrollbar={{ vertical: scrollbarLook() }}
+							<ChatMessages
+								messages={props.messages}
+								userBody={props.userBody}
+								assistantBody={props.assistantBody}
 								footer={props.footer}
-							>
-								{(message) => (
-									<ChatMessageRow
-										message={message}
-										userBody={props.userBody}
-										assistantBody={props.assistantBody}
-									/>
-								)}
-							</List>
+							/>
 						);
 				}
 			}}

@@ -3,7 +3,6 @@ import { mount, setTheme, signal, Storage, Text, View } from "nsh";
 import { replayConversationEvents } from "@/lib/chat/conversation-replay";
 import type {
 	ConversationEvent,
-	ConversationReducerContext,
 	ConversationState,
 } from "@/lib/chat/conversation-types";
 import "../app/fonts";
@@ -13,6 +12,7 @@ import claude from "../claude-theme.json";
 import type { ChatTranscriptState } from "../state/chat-transcript-store";
 import { Button } from "../ui/button";
 import { setStyleTheme } from "../ui/theme-style";
+import { context, long, startedAt, turn } from "./chat-conversation-fixture";
 import { fixtureThemeFamily } from "./fixture-theme";
 
 /**
@@ -37,34 +37,6 @@ type Scenario =
 	| "switching";
 
 const sessionKey = "chat-fixture";
-const startedAt = Date.UTC(2026, 10, 20, 9, 0);
-
-function context(): ConversationReducerContext {
-	let id = 0;
-	return {
-		createMessageId: (kind) => `${kind}-${++id}`,
-		createContentId: (kind) => `${kind}-${++id}`,
-		now: () => startedAt,
-		formatTime: (timestampMs) =>
-			new Date(timestampMs).toISOString().slice(11, 16),
-	};
-}
-
-/** A settled turn: a prompt and its reply. */
-function turn(
-	index: number,
-	prompt: string,
-	reply: string,
-	end: Partial<Extract<ConversationEvent, { type: "assistant_turn_end" }>> = {},
-): ConversationEvent[] {
-	const timestampMs = startedAt + index * 60_000;
-	return [
-		{ type: "user_message_start", text: prompt, timestampMs },
-		{ type: "assistant_message_start", timestampMs },
-		{ type: "assistant_text_delta", delta: reply, timestampMs },
-		{ type: "assistant_turn_end", stopReason: "stop", timestampMs, ...end },
-	];
-}
 
 const history: ConversationEvent[] = [
 	...turn(
@@ -94,27 +66,6 @@ const history: ConversationEvent[] = [
 		"One helper was renamed; nothing else changed.",
 	),
 ];
-
-/**
- * A chat of `count` messages. The reducer copies the messages for every
- * event, so a long chat is built in parts: no single call into JS runs long.
- */
-async function long(count: number): Promise<ConversationState> {
-	const reducer = context();
-	let conversation = replayConversationEvents([], reducer);
-	const turns = count / 2;
-	for (let first = 0; first < turns; first += 500) {
-		const events: ConversationEvent[] = [];
-		for (let index = first; index < Math.min(first + 500, turns); index++) {
-			events.push(
-				...turn(index, `Question ${index + 1}`, `Answer ${index + 1}`),
-			);
-		}
-		conversation = replayConversationEvents(events, reducer, conversation);
-		await new Promise((resolve) => setTimeout(resolve));
-	}
-	return conversation;
-}
 
 function ready(conversation: ConversationState): ChatTranscriptState {
 	return {
@@ -214,6 +165,7 @@ async function run() {
 			) : null}
 			<ChatMessageList
 				transcript={transcript}
+				messages={() => transcript().conversation?.messages ?? []}
 				onRetry={scenario === "failed" ? retry : undefined}
 				empty={() => (
 					<Text class="font-sans text-sm text-muted-foreground">
