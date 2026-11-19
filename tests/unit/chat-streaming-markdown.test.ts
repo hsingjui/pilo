@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
 	createStreamingMarkdownBlockParser,
+	openFencedCodeTailChars,
 	parseFinalMarkdownIntoBlocks,
 	type StreamingMarkdownParseMetrics,
 } from "../../src/lib/chat/chat-streaming-markdown.ts";
@@ -74,6 +75,25 @@ for (const fixture of FIXTURES) {
 		assertIncrementalMatchesFull(fixture.markdown);
 	});
 }
+
+test("an open fenced tail excludes preceding prose and closed blocks", () => {
+	const prefix = "Intro\r\n\r\n~~~\r\nOld code\r\n~~~~\r\n\r\n";
+	const tail = "  ```ts\r\n" + "const value = 1;\r\n".repeat(250);
+	assert.equal(openFencedCodeTailChars(prefix), 0);
+	assert.equal(openFencedCodeTailChars(prefix + tail), tail.length);
+	assert.equal(openFencedCodeTailChars(prefix + tail + "   `````  "), 0);
+});
+
+test("only a matching fence with sufficient markers and no suffix closes the tail", () => {
+	const tail = "~~~~lang\ncode\n~~~\n````\n~~~~ not a closer\nlast line";
+	assert.equal(openFencedCodeTailChars(tail), tail.length);
+	assert.equal(openFencedCodeTailChars(tail + "\n~~~~"), 0);
+});
+
+test("ordinary prose, inline code and four-space indented code have no open fence", () => {
+	assert.equal(openFencedCodeTailChars("plain text\ninline ``` markers"), 0);
+	assert.equal(openFencedCodeTailChars("    ```\n    indented code"), 0);
+});
 
 test("incremental parser resets safely when source is replaced", () => {
 	const parser = createStreamingMarkdownBlockParser();

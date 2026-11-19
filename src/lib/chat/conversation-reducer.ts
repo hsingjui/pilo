@@ -59,6 +59,28 @@ function assistantText(content: AssistantContentItem[] | undefined): string {
 		.join("");
 }
 
+// Tool arguments are JSON; an update can carry a fresh copy of the same value.
+function sameToolArgs(previous: unknown, next: unknown): boolean {
+	if (Object.is(previous, next)) return true;
+	if (
+		!previous ||
+		!next ||
+		typeof previous !== "object" ||
+		typeof next !== "object" ||
+		Array.isArray(previous) !== Array.isArray(next)
+	)
+		return false;
+	const keys = Object.keys(previous);
+	return (
+		keys.length === Object.keys(next).length &&
+		keys.every(
+			(key) =>
+				Object.hasOwn(next, key) &&
+				sameToolArgs(Reflect.get(previous, key), Reflect.get(next, key)),
+		)
+	);
+}
+
 function finishContent(
 	content: AssistantContentItem[] | undefined,
 ): AssistantContentItem[] | undefined {
@@ -684,7 +706,9 @@ function reduceConversationAction(
 					(current) => ({
 						...current,
 						toolName: action.toolName,
-						args: action.args,
+						args: sameToolArgs(current.args, action.args)
+							? current.args
+							: action.args,
 						result: action.partialResult,
 						status: "running",
 					}),

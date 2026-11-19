@@ -75,6 +75,7 @@ import type { WebPiloClient } from "./web-pilo-client";
 
 type UseRemoteChatOptions = {
 	client: WebPiloClient | null;
+	lastSequenceRef: { current: number };
 	handleExpiredAuth: (error: unknown) => boolean;
 	setFatalError: (message: string | null) => void;
 	resyncKey: number;
@@ -101,6 +102,7 @@ type UseRemoteChatOptions = {
 
 export function useRemoteChat({
 	client,
+	lastSequenceRef,
 	handleExpiredAuth,
 	setFatalError,
 	resyncKey,
@@ -147,10 +149,14 @@ export function useRemoteChat({
 		getConversationUi,
 		getConversationUi,
 	);
+	// Streaming deltas are buffered by the transport; every other write applies
+	// them first so local actions and history refreshes keep event order.
+	const flushDeferredConversationRef = useRef<(() => void) | null>(null);
 	const setConversation = useCallback<
 		Dispatch<SetStateAction<ConversationState>>
 	>(
 		(update) => {
+			flushDeferredConversationRef.current?.();
 			const current = conversationStore.getSnapshot() ?? initialConversation;
 			const next = typeof update === "function" ? update(current) : update;
 			let interrupted = false;
@@ -338,14 +344,20 @@ export function useRemoteChat({
 		activeProjectId,
 		resyncKey + snapshotRefreshKey,
 	);
+	const readConversationState = useCallback(
+		() => conversationStore.getSnapshot() ?? initialConversation,
+		[conversationStore, initialConversation],
+	);
 	const transport = useRemoteChatTransport({
 		client,
+		lastSequenceRef,
 		handleModelScopeEvent: scopeConfig.handleEvent,
 		handleExpiredAuth,
 		setFatalError,
 		setResyncKey,
 		onSessionCompleted,
 		setConversation,
+		getConversationState: readConversationState,
 		scheduleRuntimeActivityRefresh,
 		refreshAllSessions,
 		refreshAgentConfigRef,
@@ -358,7 +370,16 @@ export function useRemoteChat({
 		setCompacting,
 		setRetryState,
 	});
-	const { rpc, rpcForSession, handleSocketMessage, abortPiRetry } = transport;
+	const {
+		rpc,
+		rpcForSession,
+		handleSocketMessage,
+		flushDeferredConversation,
+		abortPiRetry,
+	} = transport;
+	useLayoutEffect(() => {
+		flushDeferredConversationRef.current = flushDeferredConversation;
+	}, [flushDeferredConversation]);
 	const readSessionState = useCallback(
 		(targetSessionKey: string) =>
 			rpcForSession<PiAgentState>(targetSessionKey, { type: "get_state" }),

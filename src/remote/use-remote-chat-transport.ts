@@ -3,15 +3,22 @@ import {
 	type MutableRefObject,
 	type SetStateAction,
 	useCallback,
+	useEffect,
 	useRef,
 } from "react";
 
 import { markExternalTurnLive } from "@/components/chat/chat-conversation-model";
+import { isPresentationBatchedAction } from "@/components/chat/use-runtime-conversation-dispatch";
 import { i18n } from "@/i18n";
 import type { ChatSubmission } from "@/lib/chat/chat-submission";
 import { chatRpcChangesActivity } from "@/lib/chat/chat-session-runtime-model";
 import {
+	getActiveStreamingPresentationChars,
+	getStreamingPresentationIntervalMs,
+} from "@/lib/chat/chat-stream-presentation";
+import {
 	coalesceConversationActions,
+	pushCoalescedConversationAction,
 	reduceConversationActions,
 } from "@/lib/chat/conversation-replay";
 import type {
@@ -50,6 +57,8 @@ export type ParkedQueuedSubmission = {
 };
 
 const STREAM_STALLED_PREFIX = "PILO_STREAM_STALLED:";
+// Replay dedupe uses the in-memory sequence; storage only seeds a new page.
+const SEQUENCE_PERSIST_INTERVAL_MS = 1_000;
 
 export type RemoteRpc = <T>(
 	command: Record<string, unknown>,
@@ -64,12 +73,15 @@ export type RemoteSessionRpc = <T>(
 
 type UseRemoteChatTransportOptions = {
 	client: WebPiloClient | null;
+	lastSequenceRef: MutableRefObject<number>;
 	handleModelScopeEvent: (event: PiloRuntimeEvent) => void;
 	handleExpiredAuth: (error: unknown) => boolean;
 	setFatalError: (message: string | null) => void;
 	setResyncKey: Dispatch<SetStateAction<number>>;
 	onSessionCompleted: (projectId: string, sessionPath: string) => void;
 	setConversation: Dispatch<SetStateAction<ConversationState>>;
+	/** Reads the store without flushing buffered streaming output. */
+	getConversationState: () => ConversationState;
 	scheduleRuntimeActivityRefresh: (projectId?: string) => void;
 	refreshAllSessions: () => Promise<void>;
 	refreshAgentConfigRef: MutableRefObject<(() => Promise<void>) | null>;
@@ -92,12 +104,14 @@ type UseRemoteChatTransportOptions = {
 
 export function useRemoteChatTransport({
 	client,
+	lastSequenceRef,
 	handleModelScopeEvent,
 	handleExpiredAuth,
 	setFatalError,
 	setResyncKey,
 	onSessionCompleted,
 	setConversation,
+	getConversationState,
 	scheduleRuntimeActivityRefresh,
 	refreshAllSessions,
 	refreshAgentConfigRef,
@@ -112,8 +126,192 @@ export function useRemoteChatTransport({
 }: UseRemoteChatTransportOptions) {
 	const rpcSequenceRef = useRef(0);
 	const pendingRpcRef = useRef(new Map<string, PendingRpc>());
-	const lastSequenceRef = useRef(0);
 	const lastSocketMessageAtRef = useRef<number | null>(null);
+	const deferredActionsRef = useRef<{
+		sessionKey: string;
+		actions: ConversationAction[];
+	} | null>(null);
+	const deferredFlushTimerRef = useRef<number | null>(null);
+	const lastPresentationAtRef = useRef(0);
+	const sequencePersistTimerRef = useRef<number | null>(null);
+
+	const persistSequence = useCallback(() => {
+		if (sequencePersistTimerRef.current === null) return;
+		window.clearTimeout(sequencePersistTimerRef.current);
+		sequencePersistTimerRef.current = null;
+		window.localStorage.setItem(
+			REMOTE_SEQUENCE_KEY,
+			String(lastSequenceRef.current),
+		);
+	}, [lastSequenceRef]);
+
+	const schedulePersistSequence = useCallback(() => {
+		if (sequencePersistTimerRef.current !== null) return;
+		sequencePersistTimerRef.current = window.setTimeout(
+			persistSequence,
+			SEQUENCE_PERSIST_INTERVAL_MS,
+		);
+	}, [persistSequence]);
+
+	useEffect(() => {
+		// Leaving or hiding the page writes the exact sequence before suspension.
+		const persistWhenHidden = () => {
+			if (document.visibilityState === "hidden") persistSequence();
+		};
+		window.addEventListener("pagehide", persistSequence);
+		document.addEventListener("visibilitychange", persistWhenHidden);
+		return () => {
+			window.removeEventListener("pagehide", persistSequence);
+			document.removeEventListener("visibilitychange", persistWhenHidden);
+			persistSequence();
+		};
+	}, [persistSequence]);
+
+	const applyConversationActions = useCallback(
+		(sessionKey: string | null, actions: readonly ConversationAction[]) => {
+			lastPresentationAtRef.current = performance.now();
+			const recovered: ChatSubmission[] = [];
+			setConversation((current) => {
+				let next = current;
+				let batch: ConversationAction[] = [];
+				const flush = () => {
+					if (batch.length === 0) return;
+					next = reduceConversationActions(
+						next,
+						coalesceConversationActions(batch),
+						reducerContext,
+					);
+					batch = [];
+				};
+				for (const action of actions) {
+					// Live events can arrive before the bootstrap reports the open turn.
+					switch (action.type) {
+						case "assistant_message_start":
+						case "assistant_text_delta":
+						case "assistant_text_snapshot":
+						case "assistant_thinking_start":
+						case "assistant_thinking_delta":
+						case "assistant_thinking_end":
+						case "tool_execution_start":
+						case "tool_execution_update":
+						case "tool_execution_end":
+						case "assistant_turn_end":
+							if (!next.active) {
+								flush();
+								next = markExternalTurnLive(next);
+							}
+							break;
+						default:
+							flush();
+							break;
+					}
+					if (action.type === "user_message_start") {
+						const pending = next.pendingUsers[0];
+						if (pending?.queueKind) {
+							queuedSubmissionsRef.current.delete(pending.clientMessageId);
+						}
+					}
+					batch.push(action);
+					if (action.type === "assistant_turn_end") {
+						flush();
+						if (!action.errorMessage?.startsWith(STREAM_STALLED_PREFIX)) {
+							continue;
+						}
+						// Pi's queue has been cleared. Only restore submissions that
+						// have not already been acknowledged by a user-message echo.
+						for (const pending of next.pendingUsers) {
+							if (!pending.queueKind) continue;
+							const id = pending.clientMessageId;
+							const queued = queuedSubmissionsRef.current.get(id);
+							if (!queued) continue;
+							queuedSubmissionsRef.current.delete(id);
+							recovered.push(queued.submission);
+							batch.push({
+								type: "local_user_queue_failed",
+								clientMessageId: id,
+							});
+						}
+						flush();
+					}
+				}
+				flush();
+				return next;
+			});
+			if (sessionKey && recovered.length > 0) {
+				recoverSubmissionsRef.current?.(sessionKey, recovered);
+			}
+		},
+		[queuedSubmissionsRef, recoverSubmissionsRef, setConversation],
+	);
+
+	/** Removes buffered streaming output; output from another session is dropped. */
+	const takeDeferredConversationActions = useCallback(
+		(sessionKey: string | null) => {
+			if (deferredFlushTimerRef.current !== null) {
+				window.clearTimeout(deferredFlushTimerRef.current);
+				deferredFlushTimerRef.current = null;
+			}
+			const deferred = deferredActionsRef.current;
+			deferredActionsRef.current = null;
+			return deferred && deferred.sessionKey === sessionKey
+				? deferred.actions
+				: null;
+		},
+		[],
+	);
+
+	const flushDeferredConversation = useCallback(() => {
+		const sessionKey = activeSessionKeyRef.current;
+		const deferred = takeDeferredConversationActions(sessionKey);
+		if (deferred) applyConversationActions(sessionKey, deferred);
+	}, [
+		activeSessionKeyRef,
+		applyConversationActions,
+		takeDeferredConversationActions,
+	]);
+
+	// Server frames arrive every 16 ms while streaming. Present deltas at the
+	// same adaptive cadence as the desktop chat instead of rendering every frame.
+	const deferConversationActions = useCallback(
+		(sessionKey: string, actions: readonly ConversationAction[]) => {
+			if (deferredActionsRef.current?.sessionKey !== sessionKey) {
+				takeDeferredConversationActions(null);
+			}
+			const deferred = (deferredActionsRef.current ??= {
+				sessionKey,
+				actions: [],
+			});
+			for (const action of actions) {
+				pushCoalescedConversationAction(deferred.actions, action);
+			}
+			if (deferredFlushTimerRef.current !== null) return;
+			const intervalMs = getStreamingPresentationIntervalMs(
+				getActiveStreamingPresentationChars(getConversationState()),
+			);
+			const delayMs = Math.max(
+				0,
+				intervalMs - (performance.now() - lastPresentationAtRef.current),
+			);
+			deferredFlushTimerRef.current = window.setTimeout(() => {
+				deferredFlushTimerRef.current = null;
+				flushDeferredConversation();
+			}, delayMs);
+		},
+		[
+			flushDeferredConversation,
+			getConversationState,
+			takeDeferredConversationActions,
+		],
+	);
+
+	useEffect(
+		() => () => {
+			if (deferredFlushTimerRef.current !== null) {
+				window.clearTimeout(deferredFlushTimerRef.current);
+			}
+		},
+		[],
+	);
 
 	const handleSocketMessage = useCallback(
 		(message: PiloClientEventMessage) => {
@@ -124,6 +322,10 @@ export function useRemoteChatTransport({
 					message.latestSequence < lastSequenceRef.current)
 			) {
 				lastSequenceRef.current = message.latestSequence;
+				if (sequencePersistTimerRef.current !== null) {
+					window.clearTimeout(sequencePersistTimerRef.current);
+					sequencePersistTimerRef.current = null;
+				}
 				window.localStorage.setItem(
 					REMOTE_SEQUENCE_KEY,
 					String(message.latestSequence),
@@ -326,99 +528,46 @@ export function useRemoteChatTransport({
 			}
 			if (lastSequence > lastSequenceRef.current) {
 				lastSequenceRef.current = lastSequence;
-				window.localStorage.setItem(REMOTE_SEQUENCE_KEY, String(lastSequence));
+				schedulePersistSequence();
 			}
-			if (actions.length > 0) {
-				const sessionKey = activeSessionKeyRef.current;
-				const recovered: ChatSubmission[] = [];
-				setConversation((current) => {
-					let next = current;
-					let batch: ConversationAction[] = [];
-					const flush = () => {
-						if (batch.length === 0) return;
-						next = reduceConversationActions(
-							next,
-							coalesceConversationActions(batch),
-							reducerContext,
-						);
-						batch = [];
-					};
-					for (const action of actions) {
-						// Live events can arrive before the bootstrap reports the open turn.
-						switch (action.type) {
-							case "assistant_message_start":
-							case "assistant_text_delta":
-							case "assistant_text_snapshot":
-							case "assistant_thinking_start":
-							case "assistant_thinking_delta":
-							case "assistant_thinking_end":
-							case "tool_execution_start":
-							case "tool_execution_update":
-							case "tool_execution_end":
-							case "assistant_turn_end":
-								if (!next.active) {
-									flush();
-									next = markExternalTurnLive(next);
-								}
-								break;
-							default:
-								flush();
-								break;
-						}
-						if (action.type === "user_message_start") {
-							const pending = next.pendingUsers[0];
-							if (pending?.queueKind) {
-								queuedSubmissionsRef.current.delete(pending.clientMessageId);
-							}
-						}
-						batch.push(action);
-						if (action.type === "assistant_turn_end") {
-							flush();
-							if (!action.errorMessage?.startsWith(STREAM_STALLED_PREFIX)) {
-								continue;
-							}
-							// Pi's queue has been cleared. Only restore submissions that
-							// have not already been acknowledged by a user-message echo.
-							for (const pending of next.pendingUsers) {
-								if (!pending.queueKind) continue;
-								const id = pending.clientMessageId;
-								const queued = queuedSubmissionsRef.current.get(id);
-								if (!queued) continue;
-								queuedSubmissionsRef.current.delete(id);
-								recovered.push(queued.submission);
-								batch.push({
-									type: "local_user_queue_failed",
-									clientMessageId: id,
-								});
-							}
-							flush();
-						}
-					}
-					flush();
-					return next;
-				});
-				if (sessionKey && recovered.length > 0) {
-					recoverSubmissionsRef.current?.(sessionKey, recovered);
-				}
+			if (actions.length === 0) return;
+			const sessionKey = activeSessionKeyRef.current;
+			if (
+				sessionKey &&
+				actions.every(isPresentationBatchedAction) &&
+				getConversationState().active
+			) {
+				deferConversationActions(sessionKey, actions);
+				return;
 			}
+			// Anything else keeps event order by applying buffered output first.
+			const deferred = takeDeferredConversationActions(sessionKey);
+			applyConversationActions(
+				sessionKey,
+				deferred ? [...deferred, ...actions] : actions,
+			);
 		},
 		[
 			activeSessionKeyRef,
+			applyConversationActions,
+			deferConversationActions,
+			getConversationState,
 			projectMcpApprovalRequestedRef,
-			queuedSubmissionsRef,
 			parkedQueuedSubmissionsRef,
 			recoverSubmissionsRef,
 			handleExtensionRequestRef,
 			handleModelScopeEvent,
+			lastSequenceRef,
 			onSessionCompleted,
 			refreshAgentConfigRef,
 			refreshAllSessions,
+			schedulePersistSequence,
 			scheduleRuntimeActivityRefresh,
 			setCompacting,
-			setConversation,
 			setFatalError,
 			setResyncKey,
 			setRetryState,
+			takeDeferredConversationActions,
 		],
 	);
 
@@ -483,7 +632,7 @@ export function useRemoteChatTransport({
 				throw error;
 			}
 		},
-		[client],
+		[client, lastSequenceRef],
 	);
 
 	const rpc = useCallback(
@@ -507,5 +656,11 @@ export function useRemoteChatTransport({
 		[rpc, handleExpiredAuth, setFatalError, setRetryState],
 	);
 
-	return { handleSocketMessage, rpcForSession, rpc, abortPiRetry };
+	return {
+		handleSocketMessage,
+		flushDeferredConversation,
+		rpcForSession,
+		rpc,
+		abortPiRetry,
+	};
 }

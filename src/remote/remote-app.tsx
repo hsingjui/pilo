@@ -161,6 +161,7 @@ function RemoteWorkspace() {
 
 	const chat = useRemoteChat({
 		client: connection.client,
+		lastSequenceRef: connection.lastSequenceRef,
 		handleExpiredAuth: connection.handleExpiredAuth,
 		setFatalError: connection.setFatalError,
 		resyncKey: connection.resyncKey,

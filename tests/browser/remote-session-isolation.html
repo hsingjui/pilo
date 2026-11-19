@@ -19,6 +19,7 @@
 			import { RemoteApp } from "../../src/remote/remote-app.tsx";
 			import { WebPiloClient } from "../../src/remote/web-pilo-client.ts";
 			import { sessionKey } from "../../src/remote/remote-app-model.ts";
+			import { REMOTE_SEQUENCE_KEY } from "../../src/remote/remote-client.ts";
 			import { PreferencesProvider } from "../../src/lib/preferences-provider.tsx";
 			import { DEFAULT_KEYBOARD_SHORTCUTS } from "../../src/lib/keyboard-shortcuts.ts";
 			import { i18n, initializeI18n } from "../../src/i18n/index.ts";
@@ -238,7 +239,12 @@
 				Object.keys(mocks).map((name) => [name, WebPiloClient.prototype[name]]),
 			);
 			Object.assign(WebPiloClient.prototype, mocks);
-			window.fetch = (...args) => unexpected(`fetch ${args[0]}`);
+			window.fetch = async (path) => {
+				if (path === "/api/v1/auth/device") {
+					return Response.json({ expiresAtMs: Date.now() + 30 * 86_400_000 });
+				}
+				return unexpected(`fetch ${path}`);
+			};
 			window.setTimeout = (callback, delay, ...args) => {
 				const id = savedSetTimeout.call(window, callback, delay, ...args);
 				if (delay === 5000 || delay === 10000) timers.push({ id, callback });
@@ -296,19 +302,20 @@
 				);
 			}
 			function emit(id, ...events) {
-				flushSync(() =>
-					socket.onMessage({
-						type: "events",
-						events: events.map((event) => ({
-							...event,
-							projectId: project.id,
-							sessionKey: key(id),
-							sequence: ++sequence,
-							timestampMs: Date.now(),
-						})),
-					}),
-				);
+				const frame = {
+					type: "events",
+					events: events.map((event) => ({
+						...event,
+						projectId: project.id,
+						sessionKey: key(id),
+						sequence: ++sequence,
+						timestampMs: Date.now(),
+					})),
+				};
+				flushSync(() => socket.onMessage(frame));
+				return frame;
 			}
+			const delta = (text) => ({ type: "assistant_text_delta", delta: text });
 			function notify(id, text = "Shared plugin notice") {
 				emit(id, {
 					type: "extension_ui_request",
@@ -523,10 +530,86 @@
 				);
 				await settle();
 				noOldContent("target without tasks");
-				assert(unexpectedCalls.length === 0, unexpectedCalls.join("\n"));
 				pass(
 					"failed loads and task-free targets never revive old progress; global notices survive",
 				);
+
+				const streamText = () => app().textContent;
+				emit("C", delta("Fixture stream:"));
+				await until(
+					() => streamText().includes("Fixture stream:"),
+					"live turn",
+				);
+				window.dispatchEvent(new Event("pagehide"));
+				const savedSequence = () => localStorage.getItem(REMOTE_SEQUENCE_KEY);
+				const initialSequence = String(sequence);
+				assert(
+					savedSequence() === initialSequence,
+					"pagehide saves the cursor",
+				);
+
+				const replay = emit("C", delta(" alpha"));
+				emit("C", delta(" beta"));
+				flushSync(() => socket.onMessage(replay));
+				assert(
+					!streamText().includes("Fixture stream: alpha"),
+					"streaming deltas were visible before the flush",
+				);
+				assert(
+					savedSequence() === initialSequence,
+					"a frame wrote the cursor before the persistence timer",
+				);
+				await until(
+					() => streamText().includes("Fixture stream: alpha beta"),
+					"buffered delta frames in order",
+				);
+				const latestSequence = String(sequence);
+				await until(() => savedSequence() === latestSequence, "cursor timer");
+				assert(
+					!streamText().includes("beta alpha"),
+					"replayed delta duplicated",
+				);
+				pass(
+					"delta frames are buffered in order and replay is deduped before persistence",
+				);
+
+				emit("C", delta(" final"));
+				emit("C", { type: "assistant_message_end", stopReason: "stop" });
+				window.dispatchEvent(new Event("pagehide"));
+				assert(
+					savedSequence() === String(sequence),
+					"pagehide saves the newest cursor",
+				);
+				await until(
+					() =>
+						streamText().includes("Fixture stream: alpha beta final") &&
+						!app().querySelector("[data-chat-streaming-status]"),
+					"buffered text finalized in the same turn",
+				);
+				pass(
+					"turn end preserves buffered text and pagehide saves the newest cursor",
+				);
+
+				emit("C", delta("Next C turn"));
+				await until(
+					() => streamText().includes("Next C turn"),
+					"next live turn",
+				);
+				emit("C", delta(" OLD BUFFERED TEXT"));
+				const nextA = await select("A");
+				nextA.resolve(history("A"));
+				await until(
+					() => todo()?.textContent.includes("Task owned by A"),
+					"A ready",
+				);
+				assert(
+					!streamText().includes("OLD BUFFERED TEXT"),
+					"old buffer leaked into A",
+				);
+				pass(
+					"switching with buffered output never injects old text into the target",
+				);
+				assert(unexpectedCalls.length === 0, unexpectedCalls.join("\n"));
 				document.body.dataset.testStatus = "passed";
 			} catch (error) {
 				document.body.dataset.testStatus = "failed";

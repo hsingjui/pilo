@@ -135,9 +135,11 @@
 							);
 							tool.click();
 							await settle();
+							const toolOutput = () =>
+								document.querySelector("pre.scrollbar-pro")?.textContent;
 							assert(
-								document.querySelector("pre.scrollbar-pro"),
-								`${label}: details expanded`,
+								toolOutput() === "tool output\n".repeat(8),
+								`${label}: expanded details show the initial result`,
 							);
 							assert(
 								checkLayout(label) > collapsedTop + 40,
@@ -145,6 +147,10 @@
 							);
 							render(width, virtualized, following, 12);
 							await settle();
+							assert(
+								toolOutput() === "tool output\n".repeat(12),
+								`${label}: expanded details show the replacement result`,
+							);
 							checkLayout(`${label}: output grows`);
 							tool.click();
 							await settle();

@@ -49,6 +49,13 @@ export function useRemoteConnection({
 	});
 	const reconnectAttemptsRef = useRef(0);
 	const needsSnapshotRefreshRef = useRef(false);
+	// Storage seeds a new page; reconnects use the cursor advanced by the transport.
+	const [lastSequenceRef] = useState(() => {
+		const stored = Number(
+			window.localStorage.getItem(REMOTE_SEQUENCE_KEY) ?? "0",
+		);
+		return { current: Number.isFinite(stored) && stored > 0 ? stored : 0 };
+	});
 
 	const networkState: RemoteConnectionState = resolveRemoteConnectionState(
 		browserOnline,
@@ -111,12 +118,9 @@ export function useRemoteConnection({
 		let cancelled = false;
 		let disconnect: (() => void) | undefined;
 		let reconnectTimer: number | undefined;
-		const stored = Number(
-			window.localStorage.getItem(REMOTE_SEQUENCE_KEY) ?? "0",
-		);
 		void client
 			.connectEvents({
-				after: Number.isFinite(stored) && stored > 0 ? stored : undefined,
+				after: lastSequenceRef.current || undefined,
 				onMessage: (message) => {
 					if (!cancelled) onSocketMessageRef.current(message);
 				},
@@ -207,6 +211,7 @@ export function useRemoteConnection({
 	}, [
 		client,
 		handleExpiredAuth,
+		lastSequenceRef,
 		reconnectKey,
 		recoveryGeneration,
 		onSocketMessageRef,
@@ -222,6 +227,7 @@ export function useRemoteConnection({
 		networkState,
 		recoveryState,
 		reconnectNow,
+		lastSequenceRef,
 		resyncKey,
 		setResyncKey,
 		snapshotRefreshKey,

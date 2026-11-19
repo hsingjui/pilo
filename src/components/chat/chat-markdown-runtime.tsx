@@ -29,7 +29,10 @@ import {
 	recordMarkdownParse,
 	recordMarkdownRender,
 } from "@/lib/chat/chat-performance";
-import { createStreamingMarkdownBlockParser } from "@/lib/chat/chat-streaming-markdown";
+import {
+	createStreamingMarkdownBlockParser,
+	openFencedCodeTailChars,
+} from "@/lib/chat/chat-streaming-markdown";
 import { useTheme } from "@/lib/theme-provider";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +41,8 @@ const MARKDOWN_CATCH_UP_CHUNK_CHARS = 2_000;
 const MARKDOWN_CATCH_UP_THRESHOLD_CHARS = 4_000;
 const MARKDOWN_CATCH_UP_INTERVAL_MS = 50;
 const LONG_STREAMING_MARKDOWN_CHARS = 16_000;
+// An open fence is re-rendered whole on each commit, even early in a reply.
+const LONG_STREAMING_CODE_BLOCK_CHARS = 4_000;
 const LONG_STREAMING_MARKDOWN_INTERVAL_MS = 180;
 const MAX_ANIMATED_STREAMING_CHARS = 64 * 1024;
 type MarkdownMathPlugin = NonNullable<PluginConfig["math"]>;
@@ -63,6 +68,14 @@ function loadMarkdownMathPlugin() {
 
 function hasPotentialMathMarkup(value: string) {
 	return value.includes("$") || value.includes("\\(") || value.includes("\\[");
+}
+
+function isLongStreamingPresentation(value: string) {
+	return (
+		value.length >= LONG_STREAMING_MARKDOWN_CHARS ||
+		(value.length >= LONG_STREAMING_CODE_BLOCK_CHARS &&
+			openFencedCodeTailChars(value) >= LONG_STREAMING_CODE_BLOCK_CHARS)
+	);
 }
 
 function markdownCatchUpSlice(value: string, end: number) {
@@ -124,8 +137,7 @@ class MarkdownPresentationBoundary extends Component<
 		const backlogChars = props.text.length - state.presentedText.length;
 		const largeBacklog = backlogChars > MARKDOWN_CATCH_UP_THRESHOLD_CHARS;
 		const longStream =
-			props.isStreaming &&
-			state.presentedText.length >= LONG_STREAMING_MARKDOWN_CHARS;
+			props.isStreaming && isLongStreamingPresentation(state.presentedText);
 		const deferAppend =
 			(largeBacklog ||
 				(!finished &&
@@ -173,7 +185,7 @@ class MarkdownPresentationBoundary extends Component<
 
 		const interval =
 			this.props.isStreaming &&
-			presentedText.length >= LONG_STREAMING_MARKDOWN_CHARS &&
+			isLongStreamingPresentation(presentedText) &&
 			sourceText.length - presentedText.length <=
 				MARKDOWN_CATCH_UP_THRESHOLD_CHARS
 				? LONG_STREAMING_MARKDOWN_INTERVAL_MS

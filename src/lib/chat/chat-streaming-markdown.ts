@@ -276,6 +276,43 @@ export function createStreamingMarkdownBlockParser(
 	};
 }
 
+/**
+ * Length of a top-level fenced code block that is still open at the end of the
+ * streaming source. An open fence stays one live Markdown block, so all of it is
+ * lexed and rendered again on every presentation commit.
+ */
+export function openFencedCodeTailChars(markdown: string): number {
+	let fence: { marker: string; length: number; start: number } | null = null;
+	let lineStart = 0;
+	while (lineStart < markdown.length) {
+		const newline = markdown.indexOf("\n", lineStart);
+		const line = markdown.slice(
+			lineStart,
+			newline < 0 ? markdown.length : newline,
+		);
+		const fenceMatch = FENCED_CODE_START.exec(line);
+		if (fence) {
+			if (
+				fenceMatch &&
+				fenceMatch[1][0] === fence.marker &&
+				fenceMatch[1].length >= fence.length &&
+				line.slice(fenceMatch[0].length).trim().length === 0
+			) {
+				fence = null;
+			}
+		} else if (fenceMatch) {
+			fence = {
+				marker: fenceMatch[1][0],
+				length: fenceMatch[1].length,
+				start: lineStart,
+			};
+		}
+		if (newline < 0) break;
+		lineStart = newline + 1;
+	}
+	return fence ? markdown.length - fence.start : 0;
+}
+
 export function parseFinalMarkdownIntoBlocks(
 	markdown: string,
 	options?: RemendOptions,

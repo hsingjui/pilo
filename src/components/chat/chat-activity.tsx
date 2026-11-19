@@ -342,15 +342,22 @@ function ToolDetail({
 			: null;
 	const preview = toolPreview(activity);
 	const showArgs = hasArgs && preview === null;
-	const result = hasResult ? resultContent(activity.result) : null;
-	const flattenedResult = result ? flattenToolResult(result) : null;
-	const resultText = flattenedResult?.needsRawFallback
-		? formatUnknown(activity.result)
-		: flattenedResult?.text;
-	const detailText = [
-		showArgs ? formatUnknown(activity.args) : null,
-		resultText || null,
-	]
+	// Result-only updates retain the args reference in the reducer.
+	const argsText = useMemo(
+		() => (showArgs ? formatUnknown(activity.args) : null),
+		[activity.args, showArgs],
+	);
+	const { flattenedResult, resultText } = useMemo(() => {
+		const result = hasResult ? resultContent(activity.result) : null;
+		const flattened = result ? flattenToolResult(result) : null;
+		return {
+			flattenedResult: flattened,
+			resultText: flattened?.needsRawFallback
+				? formatUnknown(activity.result)
+				: flattened?.text,
+		};
+	}, [activity.result, hasResult]);
+	const detailText = [argsText, resultText || null]
 		.filter((value): value is string => Boolean(value))
 		.join("\n");
 	const images = flattenedResult?.images ?? [];
