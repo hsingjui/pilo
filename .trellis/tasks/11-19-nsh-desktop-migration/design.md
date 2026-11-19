@@ -132,7 +132,7 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
   - `deb` / `rpm`：声明对 GTK 4（≥ 4.14）、Pango、WebKitGTK 6.0（如使用 `WebView`）的依赖；沿用 `src-tauri/linux/pilo.desktop` 模板和现有图标。
   - `AppImage`：沿用 `scripts/finalize-linux-appimage.sh` 的收尾与校验思路和 `tests/packaging/test-linux-appimage.py`；是否把 GTK 4 打进 AppImage、还是要求宿主提供，待 M7 在真实发行版上验证后决定。
   - Linux 的自动更新对象（现在是签名的 AppImage）与 `nsh/updater` 的归档格式如何对应，待 M7 验证。
-- 自动更新：`nsh/updater` 读取 nsh 格式清单。Tauri 版 → nsh 版的过渡取决于 PRD Open Question 1，候选做法：最后一个 Tauri 版本提示用户手动下载；或让 Tauri 更新器下载并运行 nsh 安装器（待验证）。
+- 自动更新：`nsh/updater` 读取 nsh 格式清单。Tauri 版 → nsh 版的过渡推迟到 M7 开始前决定（PRD Decisions），候选做法：最后一个 Tauri 版本提示用户手动下载；或让 Tauri 更新器下载并运行 nsh 安装器（待验证）。
 - 版本号继续由 `Cargo.toml` `[workspace.package].version` 驱动，`nsh.json` 的版本由脚本同步；发版前仍需向用户确认版本号。
 
 ## 10. 测试
