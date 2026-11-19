@@ -20,6 +20,16 @@
 - Fixtures and `nsh/test` coverage live in `desktop/tests/ui-*`. Check headless
   behavior and native macOS behavior separately; headless checks do not draw.
 - Popover defaults to center (like React); triggers near a window edge must pass `align="start"`.
+- Spinner draws Lucide LoaderCircle at 24pt by default (or `class` size / `size`)
+  and rotates with native `animate-spin` (1000ms linear, infinite), without JS
+  frame callbacks. Unlike React's WAAPI wall-clock anchor, late-mounted spinners
+  start at their own phase: nsh 0.6.0 clamps JS style `animationDelay` to zero
+  or above and exposes no absolute keyframe start time. Stroke color follows
+  `Foreground` or `color`, not arbitrary SVG `currentColor` CSS; no DOM/WAAPI API
+  is exposed. Native keyframes respect reduced motion (React's unqualified
+  `animate-spin` does not). Native macOS window captures confirm rotation keeps
+  running through the fixture's 1.5s JS block; the old JS clock froze. The fixture
+  supports external screen capture without a JS-driven screenshot call.
 - Toast/ToastStack wrap native presentation; callers own a `ToastManager`
   (re-exported from `toast-stack`). Push with `{ timeout: durationInMs }` for
   auto-dismiss; omit timeout for a persistent toast. Advance on a timer, pausing
