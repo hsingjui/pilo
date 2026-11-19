@@ -1,12 +1,12 @@
-import type { PreferencesSnapshot } from "@/lib/host-preferences";
+import type { PreferencesSnapshot } from "@/lib/host-preferences-types";
 import type { TokenUsage } from "./token-usage";
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
-import type { NextPromptSettings } from "../next-prompt";
-import type { PromptEnhancementSettings } from "../prompt-enhancement";
+import type { NextPromptSettings } from "../next-prompt-types";
+import type { PromptEnhancementSettings } from "../prompt-enhancement-types";
 import type { ProjectModelScope } from "../project-model-scope";
-import type { ThemeSettings } from "../theme-settings";
+import type { ThemeSettings } from "../theme-settings-types";
 import type { SessionReadState } from "../session-read-state";
-import type { SessionExternalActivity } from "./sessions";
+import type { SessionExternalActivity } from "./sessions-types";
 
 export type PiProcessState =
 	| "stopped"

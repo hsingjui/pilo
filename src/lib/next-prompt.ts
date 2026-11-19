@@ -1,30 +1,14 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
-import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime";
+import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime-types";
+import type { NextPromptRequest, NextPromptResult } from "./next-prompt-types";
 
-export type NextPromptModel = { provider: string; id: string };
-export type NextPromptSettings = {
-	connectionId: string;
-	enabled: boolean;
-	model: NextPromptModel | null;
-	updatedAtMs: number;
-};
-export type NextPromptRequest = {
-	sessionKey: string;
-	sessionId: string;
-	requestId: string;
-	generation: number;
-	revision: number;
-	cancel?: boolean;
-};
-export type NextPromptResult = {
-	requestId: string;
-	sessionId: string;
-	leafId: string | null;
-	revision: number;
-	text: string | null;
-	status: "ready" | "empty" | "cancelled" | "unavailable";
-};
+export type {
+	NextPromptModel,
+	NextPromptRequest,
+	NextPromptResult,
+	NextPromptSettings,
+} from "./next-prompt-types";
 
 export function traceNextPrompt(
 	stage: string,

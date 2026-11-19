@@ -1,14 +1,13 @@
-import type { PiloPreferences } from "./preferences-provider";
-import type { AppLocale } from "@/i18n/locale";
+import type {
+	PreferencePatch,
+	PreferencesSnapshot,
+} from "./host-preferences-types";
 
-export type HostPreferenceValues = PiloPreferences & { locale: AppLocale };
-export type PreferencesSnapshot = {
-	revision: number;
-	values: HostPreferenceValues;
-};
-export type PreferencePatch = Partial<
-	Omit<HostPreferenceValues, "keyboardShortcuts">
-> & { keyboardShortcuts?: Partial<PiloPreferences["keyboardShortcuts"]> };
+export type {
+	HostPreferenceValues,
+	PreferencePatch,
+	PreferencesSnapshot,
+} from "./host-preferences-types";
 
 export type PreferencesTransport = {
 	load: () => Promise<PreferencesSnapshot>;

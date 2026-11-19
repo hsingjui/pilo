@@ -1,14 +1,22 @@
 import { invoke } from "@tauri-apps/api/core";
 
-/**
- * 字体值：内置标识（随应用打包或系统回退，始终可用）或 DirectWrite
- * 枚举出的系统字体族名（直接作为 CSS family 使用）。
- */
-export type PageFontFamily = "inter" | "system-sans" | (string & {});
-export type MonospaceFontFamily =
-	| "jetbrains-mono"
-	| "system-mono"
-	| (string & {});
+import type {
+	CodeFontSize,
+	MonospaceFontFamily,
+	PageFontFamily,
+	ReadingFontSize,
+	TerminalFontSize,
+	UiFontSize,
+} from "./font-settings-types";
+
+export type {
+	CodeFontSize,
+	MonospaceFontFamily,
+	PageFontFamily,
+	ReadingFontSize,
+	TerminalFontSize,
+	UiFontSize,
+} from "./font-settings-types";
 
 export type FontOption = {
 	value: string;
@@ -42,11 +50,6 @@ export const UI_FONT_SIZE_RANGE: FontSizeRange = { min: 12, max: 18 };
 export const READING_FONT_SIZE_RANGE: FontSizeRange = { min: 12, max: 32 };
 export const CODE_FONT_SIZE_RANGE: FontSizeRange = { min: 10, max: 24 };
 export const TERMINAL_FONT_SIZE_RANGE: FontSizeRange = { min: 10, max: 24 };
-
-export type UiFontSize = number;
-export type ReadingFontSize = number;
-export type CodeFontSize = number;
-export type TerminalFontSize = number;
 
 export const DEFAULT_UI_FONT_SIZE: UiFontSize = 15;
 

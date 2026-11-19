@@ -1,3 +1,7 @@
+import type { ChatConversationImage } from "./conversation-types";
+
+export type { ChatConversationImage } from "./conversation-types";
+
 export const MAX_CHAT_IMAGE_COUNT = 8;
 export const MAX_CHAT_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_CHAT_IMAGE_TOTAL_BYTES = 20 * 1024 * 1024;
@@ -23,21 +27,6 @@ export type ChatImageAttachment = {
 	mimeType: string;
 	size: number;
 	data: string;
-};
-
-/**
- * Lightweight image descriptor kept in conversation state.
- *
- * Local images are backed by the bounded Blob URL cache; history images are
- * loaded lazily from the session JSONL. Base64 payloads stay in submissions
- * only for as long as they are needed to send/recover a request.
- */
-export type ChatConversationImage = {
-	id: string;
-	name?: string;
-	mimeType: string;
-	size?: number;
-	source?: "local";
 };
 
 export type ChatSubmission = {

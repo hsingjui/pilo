@@ -1,6 +1,6 @@
-export const APP_LOCALES = ["zh-CN", "en-US"] as const;
+import type { AppLocale } from "./locale-types";
 
-export type AppLocale = (typeof APP_LOCALES)[number];
+export { APP_LOCALES, type AppLocale } from "./locale-types";
 
 export const LOCALE_STORAGE_KEY = "pilo.locale";
 

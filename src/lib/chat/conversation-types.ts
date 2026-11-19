@@ -4,7 +4,21 @@ import type {
 	AssistantContentItem,
 	AssistantPendingStatus,
 } from "@/lib/chat/chat-activity-state";
-import type { ChatConversationImage } from "@/lib/chat/chat-submission";
+
+/**
+ * Lightweight image descriptor kept in conversation state.
+ *
+ * Local images are backed by the bounded Blob URL cache; history images are
+ * loaded lazily from the session JSONL. Base64 payloads stay in submissions
+ * only for as long as they are needed to send/recover a request.
+ */
+export type ChatConversationImage = {
+	id: string;
+	name?: string;
+	mimeType: string;
+	size?: number;
+	source?: "local";
+};
 
 export type ChatMessage =
 	| {

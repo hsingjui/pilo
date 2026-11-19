@@ -1,24 +1,27 @@
 import type {
 	PreferencePatch,
 	PreferencesSnapshot,
-} from "@/lib/host-preferences";
-import type { ThemeSettings, ThemeSettingsUpdate } from "@/lib/theme-settings";
+} from "@/lib/host-preferences-types";
+import type {
+	ThemeSettings,
+	ThemeSettingsUpdate,
+} from "@/lib/theme-settings-types";
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
 import type {
 	NextPromptModel,
 	NextPromptSettings,
 	NextPromptRequest,
-} from "@/lib/next-prompt";
+} from "@/lib/next-prompt-types";
 import type {
 	PromptEnhancementModel,
 	PromptEnhancementSettings,
-} from "@/lib/prompt-enhancement";
+} from "@/lib/prompt-enhancement-types";
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-client";
 import type {
 	PiModel,
 	PiSessionSnapshot,
 	PiloRuntimeEvent,
-} from "@/lib/api/pi-runtime";
+} from "@/lib/api/pi-runtime-types";
 import type { ProjectPiModels } from "@/lib/api/pi-models";
 import type { Project } from "@/lib/api/projects";
 import type { SessionReadState } from "@/lib/session-read-state";

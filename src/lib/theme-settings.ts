@@ -1,30 +1,12 @@
-import {
-	isThemeCustomCss,
-	readSavedCustomThemes,
-	type SavedCustomTheme,
-} from "@/lib/theme-custom";
+import { isThemeCustomCss, readSavedCustomThemes } from "@/lib/theme-custom";
+import type { Theme, ThemeSettings } from "./theme-settings-types";
 
-export type Theme = "dark" | "light" | "system";
-export type ThemeFamily = "lody" | "claude" | "custom";
-
-export type ThemeSettings = {
-	revision: number;
-	theme: Theme;
-	themeFamily: ThemeFamily;
-	themeCustomCss: string;
-	themeCustomName: string;
-	savedCustomThemes: SavedCustomTheme[];
-};
-
-export type ThemeSettingsUpdate = Partial<
-	Pick<
-		ThemeSettings,
-		"theme" | "themeFamily" | "themeCustomCss" | "themeCustomName"
-	>
-> & {
-	saveCustomTheme?: SavedCustomTheme;
-	deleteCustomTheme?: string;
-};
+export type {
+	Theme,
+	ThemeFamily,
+	ThemeSettings,
+	ThemeSettingsUpdate,
+} from "./theme-settings-types";
 
 export const THEME_CACHE_KEY = "pilo.theme.v1";
 

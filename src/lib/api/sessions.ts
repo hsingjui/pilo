@@ -3,6 +3,9 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { ConversationEvent } from "@/lib/chat/conversation-types";
 import type { PiModel } from "@/lib/api/pi-runtime";
+import type { SessionExternalActivity } from "./sessions-types";
+
+export type { SessionExternalActivity } from "./sessions-types";
 
 export const SESSIONS_CHANGED_EVENT = "pilo:sessions-changed";
 
@@ -43,11 +46,6 @@ export type SessionReconcileResult = {
 	updated: number;
 	removed: number;
 	unchanged: number;
-};
-
-export type SessionExternalActivity = {
-	path: string;
-	turnOpen: boolean;
 };
 
 export type SessionSearchMatch = {

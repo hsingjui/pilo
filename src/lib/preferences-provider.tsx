@@ -55,36 +55,23 @@ import {
 	type PreferencePatch,
 	type PreferencesSnapshot,
 } from "@/lib/host-preferences";
+import type {
+	PiloPreferences,
+	SendMessageShortcut,
+} from "@/lib/host-preferences-types";
 import { LOCALE_STORAGE_KEY } from "@/i18n/locale";
 import { useDeveloperTools } from "@/lib/use-developer-tools";
 import {
 	DEFAULT_KEYBOARD_SHORTCUTS,
 	normalizeKeyboardShortcut,
 	normalizeKeyboardShortcutMap,
-	type KeyboardShortcutMap,
 	type ShortcutCommandId,
 } from "@/lib/keyboard-shortcuts";
-export type SendMessageShortcut = "enter" | "mod-enter";
 
-export type PiloPreferences = {
-	defaultWorkspaceVisibility: Record<string, boolean>;
-	sendMessageShortcut: SendMessageShortcut;
-	keyboardShortcuts: KeyboardShortcutMap;
-	collapseCompletedActivity: boolean;
-	collapseLongMessages: boolean;
-	showWorkDuration: boolean;
-	showPluginNotifications: boolean;
-	desktopNotifications: boolean;
-	developerMode: boolean;
-	pageFontFamily: PageFontFamily;
-	uiFontSize: UiFontSize;
-	readingFontFamily: PageFontFamily;
-	readingFontSize: ReadingFontSize;
-	codeFontFamily: MonospaceFontFamily;
-	codeFontSize: CodeFontSize;
-	terminalFontFamily: MonospaceFontFamily;
-	terminalFontSize: TerminalFontSize;
-};
+export type {
+	PiloPreferences,
+	SendMessageShortcut,
+} from "@/lib/host-preferences-types";
 
 type PreferencesContextValue = PiloPreferences & {
 	setDefaultWorkspaceShown: (connectionId: string, shown: boolean) => void;
