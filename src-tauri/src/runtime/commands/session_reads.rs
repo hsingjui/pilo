@@ -1,28 +1,23 @@
 use tauri::State;
 
-use crate::{domain::SessionReadState, runtime::RuntimeEventBus};
+use crate::{
+    domain::SessionReadState,
+    runtime::{Runtime, handle},
+};
 
 #[tauri::command]
 pub async fn session_read_states(
-    events: State<'_, RuntimeEventBus>,
+    runtime: State<'_, Runtime>,
 ) -> Result<Vec<SessionReadState>, String> {
-    let events = events.inner().clone();
-    tokio::task::spawn_blocking(move || events.session_read_states())
-        .await
-        .map_err(|error| format!("failed to load session read states: {error}"))?
+    handle::session_read_states(&runtime).await
 }
 
 #[tauri::command]
 pub async fn session_mark_read(
-    events: State<'_, RuntimeEventBus>,
+    runtime: State<'_, Runtime>,
     project_id: String,
     session_path: String,
     revision: u64,
 ) -> Result<SessionReadState, String> {
-    let events = events.inner().clone();
-    tokio::task::spawn_blocking(move || {
-        events.mark_session_read(&project_id, &session_path, revision)
-    })
-    .await
-    .map_err(|error| format!("failed to mark session read: {error}"))?
+    handle::session_mark_read(&runtime, project_id, session_path, revision).await
 }

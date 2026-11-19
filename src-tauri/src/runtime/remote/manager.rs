@@ -55,7 +55,7 @@ struct RemoteServerInner {
 
 const MIN_REMOTE_PORT: u16 = 1024;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct RemoteServerManager {
     inner: Arc<Mutex<RemoteServerInner>>,
 }

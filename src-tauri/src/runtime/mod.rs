@@ -22,8 +22,10 @@ pub(crate) mod events;
 mod file_links;
 #[cfg(feature = "tauri")]
 mod git;
+mod handle;
 pub(crate) mod host_events;
 pub(crate) mod host_paths;
+pub(crate) use handle::Runtime;
 #[cfg(feature = "tauri")]
 mod next_prompt;
 pub(crate) mod notifications;
@@ -118,7 +120,20 @@ pub(crate) fn hide_console_window(command: &mut Command) {
 }
 
 #[cfg(feature = "tauri")]
-pub struct PiloRuntime {
+#[derive(Clone, Default)]
+pub struct PiloRuntime(Arc<PiloRuntimeState>);
+
+#[cfg(feature = "tauri")]
+impl std::ops::Deref for PiloRuntime {
+    type Target = PiloRuntimeState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[cfg(feature = "tauri")]
+pub struct PiloRuntimeState {
     pub(crate) chat_sessions: ChatSessions,
     pub(crate) pi_resource_policy: Arc<tokio::sync::RwLock<()>>,
     pub(crate) project_pi_session: Mutex<ServerPiSession>,
@@ -132,7 +147,7 @@ pub struct PiloRuntime {
 }
 
 #[cfg(feature = "tauri")]
-impl Default for PiloRuntime {
+impl Default for PiloRuntimeState {
     fn default() -> Self {
         Self {
             chat_sessions: ChatSessions::default(),

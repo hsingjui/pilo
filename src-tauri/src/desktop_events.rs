@@ -36,7 +36,9 @@ impl HostEvents for TauriHostEvents {
 }
 
 pub(crate) fn from_app(app: &AppHandle) -> Arc<dyn HostEvents> {
-    Arc::new(TauriHostEvents(app.clone()))
+    app.try_state::<crate::runtime::Runtime>()
+        .map(|runtime| Arc::clone(&runtime.host_events))
+        .unwrap_or_else(|| Arc::new(TauriHostEvents(app.clone())))
 }
 
 #[cfg(test)]

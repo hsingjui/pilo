@@ -138,7 +138,8 @@ pub(super) async fn theme_settings_set(
 }
 
 pub(super) async fn session_read_states(State(state): State<RemoteHttpState>) -> Response {
-    match crate::runtime::commands::session_read_states(state.app.state::<RuntimeEventBus>()).await
+    match crate::runtime::handle::session_read_states(&state.app.state::<crate::runtime::Runtime>())
+        .await
     {
         Ok(states) => Json(states).into_response(),
         Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
@@ -157,8 +158,8 @@ pub(super) async fn session_mark_read(
     State(state): State<RemoteHttpState>,
     Json(request): Json<SessionReadRequest>,
 ) -> Response {
-    match crate::runtime::commands::session_mark_read(
-        state.app.state::<RuntimeEventBus>(),
+    match crate::runtime::handle::session_mark_read(
+        &state.app.state::<crate::runtime::Runtime>(),
         request.project_id,
         request.session_path,
         request.revision,

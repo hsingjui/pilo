@@ -169,9 +169,6 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(PiloRuntime::default())
-        .manage(runtime::RuntimeEventBus::for_host())
-        .manage(runtime::RemoteServerManager::default())
         .invoke_handler(tauri::generate_handler![
             greet,
             desktop_open_devtools,
@@ -319,11 +316,14 @@ pub fn run() {
                 app.path().resource_dir()?,
             )?;
             runtime::initialize_server_resource_dir(paths.resource_dir().to_owned());
-            app.manage(paths.clone());
+            let runtime = runtime::Runtime::new(paths.clone(), desktop_events::from_app(app.handle()));
+            app.manage(runtime.paths.clone());
+            app.manage(runtime.core.clone());
+            app.manage(runtime.events.clone());
+            app.manage(runtime.remote.clone());
+            app.manage(runtime);
             initialize_macos_notification_application(app);
             initialize_windows_notification_application(app);
-            app.state::<runtime::RuntimeEventBus>()
-                .initialize_session_reads(paths);
             app.state::<runtime::RuntimeEventBus>()
                 .start_external_activity_poll(app.handle().clone());
             if let Err(error) = desktop_shortcut::install(app.handle()) {
