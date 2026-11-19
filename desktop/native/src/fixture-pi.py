@@ -14,6 +14,10 @@ def widget(key, lines):
     }), flush=True)
 
 
+enhancement = any("You rewrite a user's draft prompt" in arg for arg in sys.argv)
+selected_model = None
+
+
 for line in sys.stdin:
     command = json.loads(line)
     kind = command["type"]
@@ -26,7 +30,12 @@ for line in sys.stdin:
             "name": "Naming Model",
             "reasoning": False,
         }]}
+        if enhancement:
+            data["models"].extend(
+                {"provider": "fixture", "id": model} for model in ("rewrite", "chat")
+            )
     elif kind == "set_model":
+        selected_model = command["modelId"]
         data = {"provider": command["provider"], "id": command["modelId"]}
     elif prediction:
         data = json.loads(command["message"].split(" ", 1)[1])
@@ -61,10 +70,24 @@ for line in sys.stdin:
         ):
             print(json.dumps(event), flush=True)
     if kind == "prompt" and not command.get("id"):
+        reply = '"' + command["message"] + '"\nignored'
+        stop_reason = "stop"
+        error_message = None
+        if enhancement:
+            if not {"--no-session", "--no-tools", "--no-extensions"}.issubset(sys.argv):
+                stop_reason, error_message = "error", "enhancement must not load a session or resources"
+            elif command["message"] == "fail generation":
+                stop_reason, error_message = "error", "fixture generation failed"
+            elif command["message"] == "empty rewrite":
+                reply = '" "'
+            else:
+                reply = f'```text\n"{selected_model}: {command["message"]}"\n```'
         message = {
             "role": "assistant",
-            "content": [{"type": "text", "text": '"' + command["message"] + '"\nignored'}],
-            "stopReason": "stop",
+            "content": [{"type": "text", "text": reply}],
+            "stopReason": stop_reason,
         }
+        if error_message is not None:
+            message["errorMessage"] = error_message
         print(json.dumps({"type": "message_end", "message": message}), flush=True)
         print(json.dumps({"type": "agent_settled"}), flush=True)

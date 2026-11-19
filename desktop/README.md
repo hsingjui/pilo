@@ -120,6 +120,15 @@ Pass the selected model again to retain it when disabling enhancement, or
 pass `null` to follow the chat model. A successful save publishes
 `prompt_enhancement_settings_changed` with `settings`. Saving does not contact Pi.
 
+`enhancePrompt(projectId, draft, model)` returns the rewritten draft as a
+string. The project's connection must enable prompt enhancement. The saved
+model takes precedence over the supplied chat model (`{ provider, id }`);
+pass `null` to let Pi use its default if neither model is specified. The
+Host runs a throwaway Pi process with no session or resources, so the
+rewrite does not enter the transcript or consume the chat queue. The Host
+strips wrapping fences and quotes. Empty drafts, disabled settings,
+unavailable models, empty replies, and Pi failures reject the call.
+
 Use `readProjectImage(projectId, path)` for a project-relative image and
 `readHistoryImage(projectId, sessionPath, imageId, fingerprint?)` for a
 transcript attachment. Both return `Uint8Array` bytes; nsh `Image` accepts
