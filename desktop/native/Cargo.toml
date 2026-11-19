@@ -1,0 +1,15 @@
+[package]
+name = "pilo-desktop"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+nsh-core = "0.6.0"
+# The existing Pilo runtime (the Tauri app's crate): M0 links it whole and
+# calls its AppHandle-free entry points; M1 extracts it from Tauri.
+pilo = { path = "../../src-tauri" }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync"] }

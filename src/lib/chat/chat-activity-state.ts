@@ -1,4 +1,4 @@
-import type { AssistantActivity } from "@/components/chat/chat-activity";
+import type { AssistantActivity } from "@/lib/chat/chat-activity-types";
 
 export type AssistantTextContent = {
 	id: string;

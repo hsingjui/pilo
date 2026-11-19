@@ -20,6 +20,11 @@ impl HostPaths {
             .path()
             .app_data_dir()
             .map_err(|error| format!("failed to resolve Pilo app data directory: {error}"))?;
+        Self::new(app_data_dir)
+    }
+
+    /// A host whose data lives in `app_data_dir`, created if missing.
+    pub(crate) fn new(app_data_dir: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&app_data_dir).map_err(|error| {
             format!(
                 "failed to create Pilo app data directory '{}': {error}",

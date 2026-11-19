@@ -1,0 +1,12 @@
+{
+	"name": "Pilo",
+	"id": "app.hsingjui.pilo.desktop",
+	"version": "1.0.0",
+	"build": 1,
+	"rust": "native",
+	"resolve": {
+		"alias": {
+			"@": "../src"
+		}
+	}
+}

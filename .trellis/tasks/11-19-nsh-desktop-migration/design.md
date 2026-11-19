@@ -1,6 +1,6 @@
 # 桌面端迁移到 nsh · 技术设计
 
-标注为“待 M0 验证”的内容来自 nsh 文档，尚未实测；M0 结论会回写本文件。
+标注为“待 M0 验证”的内容来自 nsh 文档，尚未实测。M0 在 macOS 上的结论已回写（标注“M0 实测”），完整数据见子任务 `11-19-nsh-m0-risk-spikes/research/m0-conclusions.md`。**Windows 项在 M0 中没有运行**，凡涉及 Windows 的仍是待验证。
 
 ## 1. 目标架构
 
@@ -52,6 +52,9 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 | `AppHandle` 发事件 | `session_watcher.rs`、`terminal.rs`、`desktop_notifications.rs` | 定义 `HostEvents` trait（`emit(name, payload)`），Tauri 壳和 nsh 壳各自实现 |
 | `app.state::<T>()` / `State<T>` | command 层 198 处 | 运行时状态收拢到一个 `Runtime` 句柄，壳持有并传给 command / 模块函数 |
 | `tauri::async_runtime::spawn(_blocking)` | 18 处 | 换成 `tokio::spawn` / `spawn_blocking`（运行时自带 Tokio handle） |
+| Agent control 经 `AppHandle` 挂接（M0 发现） | `server_pi.rs` 的 `servers.control_app()`、`runtime/control::attach(app, …)` | 默认的对话启动依赖它；M0 用 `ServerManager::disable_agent_control()` 跳过，抽离时改为运行时句柄 |
+| 本地 `pilo-server` 靠 `current_exe() --pilo-server` 启动（M0 发现） | `server_deploy.rs` | nsh 宿主不认该参数；M0 加了 `initialize_local_server_binary`，打包时把二进制放进应用资源 |
+| 会话索引对账要 `AppHandle`（M0 发现） | `session_index::reconcile` | M0 只读了 SQLite 缓存；抽离时改用 `HostPaths` |
 | `asset_resolver()` 提供 WebUI 资源 | `runtime/remote/api/mod.rs:256` | 定义 `WebAssets` trait；nsh 壳用内嵌目录实现（`include_dir` 一类），Tauri 壳沿用 resolver |
 | `tauri::ipc::Response` 二进制返回 | 历史图片读取 | 运行时返回 `Vec<u8>`，由壳决定编码 |
 
@@ -60,10 +63,10 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 ## 4. 桥接契约（TSX ↔ Rust）
 
 - `desktop/native` 导出模块 `Pilo`，方法集合 = `PiloClient` 接口（`src/lib/api/pilo-client.ts:72`）+ 桌面专属 API（项目、连接、SSH、终端、文件、并行、预览）。
-- 每个方法是 `async fn`，在 `background(…)` 中调用 `pilo-runtime`（Tokio）。参数与返回值用 `#[derive(JsObject)]` 结构体，TypeScript 声明由 nsh 从 Rust 生成，取代手写的 `pi-runtime-types.ts` 桌面部分。
-- 事件：`Pilo.on("runtime", listener)` 返回停止函数，承载 `PiloRuntimeEvent`（含 `sequence`）；`session_watch`、`terminal`、`notification_open_session` 各一个事件名。
-- 高频流式增量在 Rust 侧按帧合并后再回调，避免每个 token 一次跨线程（nsh 性能规则：JS 做得越少越好，跨线程要成批）。合并粒度在 M0 用真实 Pi 会话测定。
-- 二进制（历史图片、项目图片）：待 M0 验证 nsh 的 `Image` 能否直接接收 Rust 返回的字节或本地缓存路径。
+- 每个方法是 `async fn`，把工作 `spawn` 到 `Pilo` 自带的多线程 Tokio runtime 上再 await 其 `JoinHandle`。M0 实测：`nsh_core::background()` 就是 `tokio::spawn`，在同步调用（例如类的构造函数）里没有 Tokio 上下文，会 panic，所以运行时要自己持有 runtime。参数与返回值用 `#[derive(JsObject)]` 结构体，TypeScript 声明由 nsh 从 Rust 生成，取代手写的 `pi-runtime-types.ts` 桌面部分。
+- 事件：承载 `PiloRuntimeEvent`（含 `sequence`）；`session_watch`、`terminal`、`notification_open_session` 各一路。M0 实测可行的形态是拉取式：`await pilo.nextEvents()` 一次取走排队的全部事件（`serde_json::Value` 直接成为 JS 对象，JS 侧不做 JSON 解析），天然成批。`Callback` 是 `Rc`，只能在引擎线程上 `post`，回调式订阅要在 async 成员里转发。
+- 高频流式增量：M0 实测（macOS，1000 事件/秒）跨线程延迟中位数 0.12–0.16 ms，瓶颈不在跨线程而在渲染。两条硬约束：TSX 侧每个显示帧最多写一次 signal（`requestAnimationFrame` 合并）；流式回复不能放在单个文本节点里（否则每次增量重排全文，丢帧 14–26%，分块后为 0%）。真实 Pi 会话经中转只产生 13 个事件，高频数据来自发布在真实事件总线上的合成突发。
+- 二进制（历史图片、项目图片）：M0 没有覆盖，仍待验证 nsh 的 `Image` 能否直接接收 Rust 返回的字节或本地缓存路径（挪到 M2）。
 - TSX 侧保留 `PiloClient` 这层接口，实现为 `nshPiloClient`，这样 `src/lib` 里依赖 `PiloClient` 的纯逻辑可以原样使用。
 
 ## 5. 界面层对应
@@ -73,7 +76,7 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 | Zustand store、`useSyncExternalStore` 外部 store | 模块级 `signal` / `computed` | `chat-conversation-store`、`chat-draft-store` 等按 store 逐个改写 |
 | TanStack Query | signal + 显式加载函数 | 缓存失效由事件驱动，与现在一致 |
 | React hooks（`components/chat` 下 26 个 `use-*` 文件） | 工厂函数返回 signal 与动作 | 迁移工作量的主体 |
-| `src/lib/chat/*` 纯逻辑（29 个文件 4,388 行） | 直接导入复用 | 待 M0 验证 nsh 打包器能否导入 `desktop/` 之外的 TS 文件；不能则抽成共享包 |
+| `src/lib/chat/*` 纯逻辑（29 个文件 4,388 行） | 直接导入复用 | M0 实测：可以直接导入 `desktop/` 之外的文件和根目录 `node_modules`；别名写在 `nsh.json` 的 `resolve.alias`（`tsconfig` 的 `paths` 只管类型）。条件：类型依赖图不能伸到 React/DOM/Tauri 模块，`PiloRuntimeEvent` 引用的设置类型要在 M1 拆到纯 `*-types.ts` 文件 |
 | streamdown + Shiki | `TextView`（流式、代码高亮、表格、公式） | Mermaid 延后，期间按代码块显示源码 |
 | `@pierre/diffs` | `DiffView` | 需按行数计算高度 |
 | xterm | `Terminal` | PTY 仍由 `runtime/terminal.rs` 提供 |
@@ -83,7 +86,7 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 | 虚拟列表（自研 `chat-virtualization`） | `List` | `maintainVisibleContentPosition` 取代粘底逻辑 |
 | lucide-react | `Canvas` 绘制路径数据 | 构建期脚本从 `lucide-react` 生成 |
 | i18next 资源（`src/i18n/resources/*.ts`） | `nsh/i18n` 或直接复用资源对象 | 待 M1 确认插值与复数写法是否兼容 |
-| Textarea + 自研 mention | `Input` 或 `RichEditor`（mention 扩展） | M0 决定用哪一个 |
+| Textarea + 自研 mention | 多行 `Input` | M0 实测（macOS）：两种都通过输入法、`@` 弹层、粘贴图片、拖入文件、Enter / Shift+Enter；选 `Input`，因为与现有文本提及模型一致、可复用 `chat-mentions.ts`。限制：`insertText` 在 macOS / Windows 未实现，插入提及靠改写受控值；弹层按键用 `keymap.bind(…, { when: "always" })`。Windows 输入法未验证 |
 | `chat-find-bar` 对话内查找 | 无对应 | 延后 |
 | `conversation-outline-rail` 对话大纲 | 无对应 | 切换前必须对齐：复用 `src/lib/chat/conversation-outline.ts`，跳转用 `List` 的滚动定位，当前条目用 viewability 事件 |
 
@@ -154,9 +157,9 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 | 风险 | 影响 | 应对 |
 |---|---|---|
 | nsh 仅 5 周，API 变动 | 升级成本、未知缺陷 | 固定版本；缺陷先在应用内绕过并记录；M0 结论由用户逐项判断 |
-| Windows 未验证 | 首要发布平台 | M0 第二项 |
-| 输入法与 `@` 提及 | Composer 是核心交互 | M0 第三项 |
-| Tokio 运行时与 nsh 任务协作 | 桥接方案是否成立 | M0 第一项 |
+| Windows 未验证 | 首要发布平台 | M0 中按用户决定未运行，仍是未知；建议在投入 M3 之前补做 |
+| 输入法与 `@` 提及 | Composer 是核心交互 | macOS 已通过（M0 第三项）；Windows 未验证 |
+| Tokio 运行时与 nsh 任务协作 | 桥接方案是否成立 | macOS 已通过（M0 第一项）：运行时自带 Tokio runtime，真实 Pi 对话可流式渲染 |
 | 双份 UI 维护 | 迁移期间成本 | 待同步清单；缩短迁移周期 |
 | 运行时只在分支上抽离，`main` 持续改同一批文件 | 每次合入都可能冲突 | 不移动文件、替换式改动、每周合入、合入后双版本验证 |
 | Linux 需 GTK 4.14+、macOS 需 14+ | 旧系统用户切换后无法升级 | 已接受（PRD Decisions）；发版说明中写明最低要求 |
