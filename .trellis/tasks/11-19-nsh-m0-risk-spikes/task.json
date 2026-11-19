@@ -3,7 +3,7 @@
   "name": "nsh-m0-risk-spikes",
   "title": "nsh 迁移 M0：风险验证",
   "description": "在投入迁移前验证四项阻断性风险：Rust 运行时接入 nsh、Windows 原生窗口与安装包、Composer 输入法与 @ 提及、现有 TS 纯逻辑在 nsh 中的复用。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

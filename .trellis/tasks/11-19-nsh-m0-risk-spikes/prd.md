@@ -23,13 +23,13 @@
 
 ## Acceptance Criteria
 
-- [ ] nsh 窗口显示来自现有数据目录的真实会话列表，数据经由 Rust 模块而非 HTTP。
-- [ ] 一次真实 Pi 对话的流式输出在 nsh 窗口完整渲染，有延迟与帧率记录。
-- [ ] Windows 上的原生窗口截图、输入法录屏或截图、安装器安装/升级/卸载结果。
-- [ ] `@` 提及、粘贴图片、拖入文件在 macOS 与 Windows 各有通过或不通过的明确结论，并写明选用 `Input` 还是 `RichEditor`。
-- [ ] `conversation-reducer` 在 nsh 中直接复用成功，或给出不能复用的原因和替代方案的工作量。
-- [ ] 四项各有结论和证据，并附继续 / 等待上游修复 / 中止的建议，交用户判断。
-- [ ] `nsh check`、`nsh test` 通过；`cargo check` 通过；Tauri 版 `pnpm build` 与 `cargo check` 不受影响。
+- [x] nsh 窗口显示来自现有数据目录的真实会话列表，数据经由 Rust 模块而非 HTTP。（macOS）
+- [x] 一次真实 Pi 对话的流式输出在 nsh 窗口完整渲染，有延迟与帧率记录。（macOS）
+- [ ] Windows 上的原生窗口截图、输入法录屏或截图、安装器安装/升级/卸载结果。（未运行：用户决定 M0 先不做 Windows）
+- [ ] `@` 提及、粘贴图片、拖入文件在 macOS 与 Windows 各有通过或不通过的明确结论，并写明选用 `Input` 还是 `RichEditor`。（macOS 通过，选 `Input`；Windows 未运行）
+- [x] `conversation-reducer` 在 nsh 中直接复用成功，或给出不能复用的原因和替代方案的工作量。
+- [ ] 四项各有结论和证据，并附继续 / 等待上游修复 / 中止的建议，交用户判断。（三项有结论，见 `research/m0-conclusions.md`；Windows 项没有）
+- [x] `nsh check`、`nsh test` 通过；`cargo check` 通过；Tauri 版 `pnpm build` 与 `cargo check` 不受影响。
 
 ## Out of Scope
 
