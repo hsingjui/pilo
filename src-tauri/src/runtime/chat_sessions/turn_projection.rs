@@ -872,6 +872,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn remote_snapshot_is_truncated_without_reading_history() {
+        let turn = SessionTurn::new(false);
+        let events = RuntimeEventBus::default();
+        let mut reads = 0;
+        let snapshot = turn
+            .snapshot_with_reader(
+                &events,
+                "remote-session",
+                TranscriptWindow::default(),
+                |_| {
+                    reads += 1;
+                    async { Ok(json!({"unexpected": true})) }
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(reads, 0);
+        assert_eq!(snapshot.live, TurnLive::Truncated);
+        assert_eq!(snapshot.history["history"]["events"], json!([]));
+    }
+
+    #[tokio::test]
     async fn remote_stays_truncated_across_start_settle_and_restart() {
         let file = Jsonl::new(b"{}\n");
         let sink = sink(false);
