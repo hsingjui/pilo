@@ -16,7 +16,7 @@ import { scriptedClient } from "./scripted-app-client";
  * The shell over a scripted client with projects on two connections:
  * `pilo` has seven saved sessions (one running a turn, one unread), `notes`
  * has none, `broken` fails to list its sessions, `slow` never answers and
- * `api` is on a remote machine.
+ * `api`, on a remote machine, has the latest session of all.
  */
 const local = { id: "local", name: "Local", kind: { type: "local" } };
 const remote = { id: "c-build", name: "build-box", kind: { type: "ssh" } };
@@ -64,6 +64,15 @@ const sessions: Record<string, () => Promise<SessionIndexEntry[]>> = {
 			session(5, "Wire the transcript store"),
 			session(6, null),
 			{ ...session(7, "Sketch the composer"), titleOverride: "Composer" },
+		]),
+	api: () =>
+		Promise.resolve([
+			{
+				...session(8, "Deploy the build box"),
+				connectionId: remote.id,
+				projectId: "api",
+				cwd: "/code/api",
+			},
 		]),
 	notes: () => Promise.resolve([]),
 	broken: () => Promise.reject(new Error("The session index is locked.")),

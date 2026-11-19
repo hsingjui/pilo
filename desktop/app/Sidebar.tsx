@@ -18,6 +18,8 @@ import type { AppStore } from "../state/app-store";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
 import { Icon } from "../ui/icon";
+import { Menu } from "../ui/menu";
+import { MenuItem } from "../ui/menu-item";
 import { scrollbarLook } from "../ui/scrollbar";
 import { Spinner } from "../ui/spinner";
 import { t } from "./i18n";
@@ -25,6 +27,8 @@ import {
 	connectionSection,
 	isLocal,
 	projectSection,
+	RECENT_SECTION,
+	recentSessions,
 	type SidebarGroup,
 	sidebarGroups,
 	sidebarSessions,
@@ -44,11 +48,21 @@ const SELECTED_ROW =
 const focusRing = () =>
 	focusRingStyle(token("sidebar-ring"), undefined, undefined, { width: 2 });
 
-/** The projects by connection, each with its latest sessions once expanded. */
+const SECTION_HEADER =
+	"min-h-6.5 min-w-0 flex-1 flex-row items-center gap-2 rounded-md px-2";
+const SECTION_TITLE =
+	"min-w-0 shrink truncate font-sans text-sm font-medium text-sidebar-foreground-muted";
+
+/**
+ * The sidebar's list in the saved view: the projects by connection, each
+ * with its latest sessions once expanded, or every project's latest
+ * sessions as one list.
+ */
 export function Sidebar(props: SidebarProps) {
 	// The groups change only with the projects, not with every state change.
 	const projects = computed(() => props.store.state().projects);
 	const groups = computed(() => sidebarGroups(projects()));
+	const view = () => props.settings.settings().view;
 	return (
 		<Scroll
 			testID="sidebar-projects"
@@ -56,11 +70,172 @@ export function Sidebar(props: SidebarProps) {
 			scrollbar={{ vertical: scrollbarLook() }}
 		>
 			<View class="gap-3 pt-1 pr-2.5 pb-3 pl-1.5">
-				<Each of={groups()} key={(group) => group.connection.id}>
-					{(group) => <ConnectionSection {...props} group={group} />}
-				</Each>
+				{() =>
+					view() === "recent" ? (
+						<RecentSection {...props} projects={projects} />
+					) : (
+						<Each of={groups()} key={(group) => group.connection.id}>
+							{(group) => <ConnectionSection {...props} group={group} />}
+						</Each>
+					)
+				}
 			</View>
 		</Scroll>
+	);
+}
+
+/** The menu on a section's header that changes the sidebar's view. */
+function ViewMenu(props: {
+	settings: SidebarSettingsStore;
+	section: Accessor<string>;
+	label: Accessor<string>;
+}) {
+	const { settings } = props;
+	const saved = () => settings.settings();
+	return (
+		<Menu
+			popupClass="min-w-44"
+			trigger={
+				<Button
+					testID={`${props.section()}:menu`}
+					class="size-6 items-center justify-center rounded-sm hover:bg-sidebar-hover"
+					focusVisibleStyle={focusRing()}
+					accessibilityLabel={props.label()}
+				>
+					<Icon name="MoreHorizontal" size={14} />
+				</Button>
+			}
+		>
+			<Text class="px-3 py-1 font-sans text-xs font-medium text-muted-foreground">
+				{() => t("sidebar.view")}
+			</Text>
+			<MenuItem
+				testID="view:projects"
+				icon={<Icon name="Folder" size={14} />}
+				checked={saved().view === "projects"}
+				onSelect={() => void settings.setView("projects")}
+			>
+				<Text>{() => t("sidebar.projects")}</Text>
+			</MenuItem>
+			<MenuItem
+				testID="view:recent"
+				icon={<Icon name="Clock" size={14} />}
+				checked={saved().view === "recent"}
+				onSelect={() => void settings.setView("recent")}
+			>
+				<Text>{() => t("sidebar.recentSessions")}</Text>
+			</MenuItem>
+			<MenuItem
+				testID="view:show-projects"
+				icon={<Icon name="Folder" size={14} />}
+				onSelect={() =>
+					void settings.setShowProjectsInRecents(!saved().showProjectsInRecents)
+				}
+			>
+				<Text class="flex-1">{() => t("sidebar.showProjects")}</Text>
+				<View
+					testID="view:show-projects:switch"
+					class={`h-4 w-7 flex-row items-center rounded-full px-0.5 ${
+						saved().showProjectsInRecents ? "bg-primary" : "bg-switch-track"
+					}`}
+				>
+					<View
+						class={`size-3 rounded-full bg-background ${
+							saved().showProjectsInRecents ? "translate-x-3" : ""
+						}`}
+					/>
+				</View>
+			</MenuItem>
+		</Menu>
+	);
+}
+
+/** Every project's latest sessions as one list, the running ones first. */
+function RecentSection(
+	props: SidebarProps & { projects: Accessor<readonly Project[]> },
+) {
+	const { store, settings } = props;
+	const collapsed = () =>
+		settings.settings().collapsedSections[RECENT_SECTION] ?? false;
+	// The list is of every project, so the ones not read yet are read now.
+	untracked(() => {
+		const { sessionIndexes } = store.state();
+		for (const project of props.projects()) {
+			if (!sessionIndexes[project.id]) void store.loadSessions(project.id);
+		}
+	});
+	const sessions = computed(() =>
+		recentSessions(store.state(), t("app.newChat")),
+	);
+	const projectNames = computed(
+		() =>
+			new Map(props.projects().map((project) => [project.id, project.name])),
+	);
+	const muted = () => token("sidebar-foreground-muted");
+	return (
+		<View testID={RECENT_SECTION} class="gap-(--pilo-sidebar-row-gap)">
+			<Foreground.Provider value={muted}>
+				<View class="flex-row items-center gap-0.5">
+					<Button
+						testID={`${RECENT_SECTION}:toggle`}
+						class={SECTION_HEADER}
+						focusVisibleStyle={focusRing()}
+						accessibilityLabel={
+							collapsed()
+								? t("sidebar.expandRecent")
+								: t("sidebar.collapseRecent")
+						}
+						onPress={() =>
+							void settings.setSectionCollapsed(RECENT_SECTION, !collapsed())
+						}
+					>
+						<Icon name="Clock" size={14} />
+						<Text class={SECTION_TITLE}>
+							{() => t("sidebar.recentSessions")}
+						</Text>
+						{() =>
+							collapsed() ? <Icon name="ChevronRight" size={14} /> : null
+						}
+					</Button>
+					<ViewMenu
+						settings={settings}
+						section={() => RECENT_SECTION}
+						label={() => t("sidebar.recentMenu")}
+					/>
+				</View>
+			</Foreground.Provider>
+			{() => {
+				if (sessions().length === 0) {
+					return (
+						<Text
+							testID={`${RECENT_SECTION}:empty`}
+							class="px-3 py-8 text-center font-sans text-xs text-sidebar-foreground-muted"
+						>
+							{() => t("sidebar.noSessions")}
+						</Text>
+					);
+				}
+				if (collapsed()) return null;
+				return (
+					<Each
+						of={sessions()}
+						key={(session) => `${session.projectId}:${session.sessionPath}`}
+					>
+						{(session) => (
+							<SessionRow
+								store={store}
+								session={session}
+								projectName={() =>
+									settings.settings().showProjectsInRecents
+										? projectNames().get(session().projectId)
+										: undefined
+								}
+							/>
+						)}
+					</Each>
+				);
+			}}
+		</View>
 	);
 }
 
@@ -75,27 +250,36 @@ function ConnectionSection(
 	return (
 		<View testID={section()} class="gap-(--pilo-sidebar-row-gap)">
 			<Foreground.Provider value={muted}>
-				<Button
-					testID={`${section()}:toggle`}
-					class="min-h-6.5 flex-row items-center gap-2 rounded-md px-2"
-					focusVisibleStyle={focusRing()}
-					accessibilityLabel={
-						collapsed()
-							? t("sidebar.expandEnvironment")
-							: t("sidebar.collapseEnvironment")
-					}
-					onPress={() =>
-						void props.settings.setSectionCollapsed(section(), !collapsed())
-					}
-				>
-					<Icon name="Monitor" size={14} />
-					<Text class="min-w-0 shrink truncate font-sans text-sm font-medium text-sidebar-foreground-muted">
-						{() =>
-							isLocal(connection()) ? t("common.local") : connection().name
+				<View class="flex-row items-center gap-0.5">
+					<Button
+						testID={`${section()}:toggle`}
+						class={SECTION_HEADER}
+						focusVisibleStyle={focusRing()}
+						accessibilityLabel={
+							collapsed()
+								? t("sidebar.expandEnvironment")
+								: t("sidebar.collapseEnvironment")
 						}
-					</Text>
-					{() => (collapsed() ? <Icon name="ChevronRight" size={14} /> : null)}
-				</Button>
+						onPress={() =>
+							void props.settings.setSectionCollapsed(section(), !collapsed())
+						}
+					>
+						<Icon name="Monitor" size={14} />
+						<Text class={SECTION_TITLE}>
+							{() =>
+								isLocal(connection()) ? t("common.local") : connection().name
+							}
+						</Text>
+						{() =>
+							collapsed() ? <Icon name="ChevronRight" size={14} /> : null
+						}
+					</Button>
+					<ViewMenu
+						settings={props.settings}
+						section={section}
+						label={() => t("sidebar.connectionMenu")}
+					/>
+				</View>
 			</Foreground.Provider>
 			{() =>
 				collapsed() ? null : (
@@ -262,6 +446,8 @@ function ProjectSessions(props: {
 function SessionRow(props: {
 	store: AppStore;
 	session: Accessor<SidebarSession>;
+	/** The session's project, for a list that mixes projects. */
+	projectName?: Accessor<string | undefined>;
 }) {
 	const session = props.session;
 	const selected = () => {
@@ -291,15 +477,36 @@ function SessionRow(props: {
 					) : null
 				}
 			</View>
-			<Text
-				class={`min-w-0 flex-1 truncate font-sans text-sm ${
-					selected()
-						? "text-sidebar-selection-foreground"
-						: "text-sidebar-foreground"
-				}`}
-			>
-				{() => session().title}
-			</Text>
+			<View class="min-w-0 flex-1">
+				<Text
+					class={`min-w-0 truncate font-sans text-sm ${
+						selected()
+							? "text-sidebar-selection-foreground"
+							: "text-sidebar-foreground"
+					}`}
+				>
+					{() => session().title}
+				</Text>
+				{() => {
+					const name = props.projectName?.();
+					if (!name) return null;
+					return (
+						<View class="h-4 flex-row items-center gap-1">
+							<Icon
+								name="Folder"
+								size={12}
+								color={token("sidebar-foreground-muted")}
+							/>
+							<Text
+								testID={`session:${session().id}:project`}
+								class="min-w-0 flex-1 truncate font-sans text-[11px] text-sidebar-foreground-muted"
+							>
+								{name}
+							</Text>
+						</View>
+					);
+				}}
+			</View>
 			<View class="size-6 items-center justify-center">
 				{() =>
 					session().active ? (

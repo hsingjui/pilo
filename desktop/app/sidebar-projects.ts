@@ -1,3 +1,4 @@
+import { sortSidebarSessionsActiveFirst } from "@/components/sidebar/session-list";
 import type { SidebarSession } from "@/components/sidebar/types";
 import type { Connection } from "@/lib/api/pi-runtime-types";
 import type { Project } from "@/lib/api/projects-types";
@@ -31,6 +32,9 @@ export function connectionSection(connectionId: string) {
 }
 
 /** The storage key of a project's section; collapsed until expanded. */
+/** The key of the recent view's one section. */
+export const RECENT_SECTION = "recent";
+
 export function projectSection(projectId: string) {
 	return `ws:${projectId}`;
 }
@@ -77,4 +81,16 @@ function latestMessageAt(entry: SessionIndexEntry) {
 		entry.lastMessageAt ?? entry.updatedAt ?? entry.createdAt,
 	);
 	return Number.isNaN(date.getTime()) ? new Date(entry.indexedAtMs) : date;
+}
+
+/** How many sessions the recent view lists, as in the Tauri app. */
+const RECENT_SESSION_LIMIT = 50;
+
+/** The latest sessions of every project: the running ones, then by time. */
+export function recentSessions(state: AppState, untitled: string) {
+	return sortSidebarSessionsActiveFirst(
+		state.projects.flatMap((project) =>
+			sidebarSessions(state, project.id, untitled),
+		),
+	).slice(0, RECENT_SESSION_LIMIT);
 }
