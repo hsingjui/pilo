@@ -18,6 +18,15 @@ const variants = {
 	link: "text-primary underline-offset-4 hover:underline",
 };
 
+const foregrounds = {
+	default: "primary-foreground",
+	destructive: "destructive-foreground",
+	outline: "foreground",
+	secondary: "button-secondary-foreground",
+	ghost: "foreground",
+	link: "primary",
+} as const satisfies Record<keyof typeof variants, string>;
+
 const sizes = {
 	default: "h-(--pilo-button-height) px-4 py-2",
 	sm: "h-(--pilo-button-sm-height) px-3 py-0 text-xs",
@@ -56,18 +65,7 @@ function shadow(variant: ButtonProps["variant"]): StyleProp<ViewStyle> {
 
 export function Button(props: ButtonProps) {
 	const [local, rest] = split(props, ["variant", "size", "class", "style"]);
-	const foreground = () =>
-		token(
-			local.variant === "destructive"
-				? "destructive-foreground"
-				: local.variant === "secondary"
-					? "button-secondary-foreground"
-					: local.variant === "link"
-						? "primary"
-						: local.variant === "ghost" || local.variant === "outline"
-							? "foreground"
-							: "primary-foreground",
-		);
+	const foreground = () => token(foregrounds[local.variant ?? "default"]);
 	return (
 		<Foreground.Provider value={foreground}>
 			<BaseButton
