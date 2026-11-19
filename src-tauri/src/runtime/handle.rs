@@ -70,7 +70,20 @@ impl std::ops::Deref for Runtime {
     }
 }
 
+impl Drop for RuntimeState {
+    fn drop(&mut self) {
+        self.events.close_streams();
+    }
+}
+
 impl Runtime {
+    pub fn subscribe_events(
+        &self,
+        limits: super::events::EventQueueLimits,
+    ) -> super::events::EventStream {
+        self.events.subscribe_events(limits)
+    }
+
     pub fn new(paths: HostPaths, host_events: Arc<dyn HostEvents>) -> Self {
         let events = RuntimeEventBus::for_host();
         events.initialize_session_reads(paths.clone());
@@ -118,6 +131,7 @@ impl Runtime {
     }
 
     pub async fn shutdown(&self) {
+        self.events.close_streams();
         self.servers.begin_shutdown();
         let teardown = async {
             log::info!(target: "shutdown", "remote webui: stopping");

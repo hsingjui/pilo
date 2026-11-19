@@ -16,10 +16,14 @@ use tokio::sync::{broadcast, watch};
 use super::debug_trace::runtime_trace;
 
 mod model;
+#[cfg(test)]
+mod recovery_tests;
 mod session_reads;
+mod stream;
 mod trace;
 
 pub use model::*;
+pub use stream::{EventBatch, EventQueueLimits, EventStream};
 use trace::traceable_runtime_event;
 
 pub const RUNTIME_EVENT_NAME: &str = "pilo://runtime";
@@ -137,6 +141,7 @@ struct EventSubscriber {
 
 #[derive(Clone)]
 pub struct RuntimeEventBus {
+    streams: Arc<StdMutex<stream::StreamRegistry>>,
     channels: Arc<StdMutex<HashMap<String, EventSubscriber>>>,
     web_sender: watch::Sender<()>,
     web_queue: Arc<StdMutex<WebEventQueue>>,
@@ -152,6 +157,7 @@ impl Default for RuntimeEventBus {
     fn default() -> Self {
         let (web_sender, _) = watch::channel(());
         Self {
+            streams: Arc::new(StdMutex::new(stream::StreamRegistry::default())),
             channels: Arc::new(StdMutex::new(HashMap::new())),
             web_sender,
             web_queue: Arc::new(StdMutex::new(WebEventQueue {
@@ -171,6 +177,25 @@ impl Default for RuntimeEventBus {
 }
 
 impl RuntimeEventBus {
+    pub(crate) fn subscribe_events(&self, limits: EventQueueLimits) -> EventStream {
+        let _publish_guard = self
+            .replay
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        EventStream::subscribe(&self.streams, self.latest_sequence(), limits)
+    }
+
+    pub(crate) fn close_streams(&self) {
+        let _publish_guard = self
+            .replay
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.streams
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .close();
+    }
+
     /// Host bus: Web events are buffered only while Remote WebUI runs.
     pub fn for_host() -> Self {
         let bus = Self::default();
@@ -297,6 +322,10 @@ impl RuntimeEventBus {
                 usize::MAX
             };
             // Publish under the same lock so concurrent sessions keep sequence order.
+            self.streams
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .publish(&sequenced, bytes);
             let mut queue = self
                 .web_queue
                 .lock()

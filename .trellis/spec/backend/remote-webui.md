@@ -21,6 +21,109 @@ session state, and it must not call Tauri-specific types from Application code.
 
 ## 2. Signatures
 
+### Independent host event readers (`runtime/events/stream.rs`)
+
+```rust
+Runtime::subscribe_events(&self, limits: EventQueueLimits) -> EventStream
+EventQueueLimits { pub max_events: usize, pub max_bytes: usize }
+EventStream::start_sequence(&self) -> u64
+EventStream::next_batch(&mut self, max: usize) -> impl Future<Output = EventBatch>
+EventStream::try_next_batch(&mut self, max: usize) -> Option<EventBatch>
+enum EventBatch {
+    Events(Vec<Arc<SequencedRuntimeEvent>>),
+    Gap { first_missed: u64, last_missed: u64 },
+    Closed,
+}
+```
+
+- Each `Send + 'static` stream owns an independent bounded queue, even when
+  Remote WebUI is off. Subscription and publication use the same publish lock.
+  `start_sequence` is the latest sequence at subscription; delivery starts at
+  `start_sequence + 1` unless overflow is explicitly reported by a gap.
+- Events in every batch are contiguous and ordered by sequence. Byte accounting
+  sums serialized sequenced-envelope sizes; it excludes fixed queue/Arc metadata
+  and batches already handed to the caller. `SequencedRuntimeEvent` keeps its
+  existing flattened JSON representation.
+- Overflow drops the queued events **and the overflowing event**, clears their
+  byte accounting, and records an inclusive missed range. Later events remain
+  readable behind the gap. Reading `Gap` does not clear these later events;
+  publication while the client re-bootstraps keeps filling the same queue.
+  Further overflow before reading coalesces the missed range. An event larger
+  than `max_bytes` is dropped with a gap, never stalls the stream, and never
+  bypasses the byte bound. Either zero queue limit reports gaps for every event.
+- `try_next_batch` returns `None` only for an open, empty stream. A zero `max`
+  returns an empty event batch without consuming events or a gap. A positive
+  `max` caps the number of returned events; gaps do not count as events.
+- Awaiting `next_batch` is cancel-safe: cancelling a pending read consumes
+  nothing. Dropping a stream unsubscribes. No stream holds a strong Runtime
+  reference. Runtime drop or shutdown clears pending data, wakes readers with
+  `Closed`, and permanently closes existing and subsequent subscriptions.
+- Tauri `runtime_subscribe_events` / `emit_runtime` still deliver unsequenced
+  envelopes through the existing channel. WebUI keeps its independent shared
+  live/replay queues and original gap/replay behavior.
+
+### Re-bootstrap event classes
+
+Clients may see a session event already reflected in state when re-bootstrapping
+mid-stream. There is **no session metadata cursor and no delta suppression**.
+A transcript-snapshot watermark is a separate follow-up. For a chat session
+created after the bootstrap cut and absent from the snapshot, every event
+applies. Do not discard such events because the snapshot lacks a row.
+Pi session-family events in the legacy project-Pi lane may omit `sessionKey`;
+preserve that lane's generation/routing rules rather than discarding its events.
+
+- **A: full value** — safe to apply twice (replace the relevant value), or refetch.
+- **B: invalidate only** — refetch the authoritative value; never increment a
+  counter or append state based on the notification. Completion IDs identify
+  receipts; `SessionTurnCompleted` is not an increment instruction.
+- **C: chat-session-scoped** — may repeat after re-bootstrap; no deduplication
+  guarantee until a transcript watermark accompanies the transcript snapshot.
+
+The exhaustive match in `events/recovery_tests.rs` must classify every variant;
+adding a variant without classifying it fails test compilation. Update this table
+with that match. No non-session append/counter event currently needs conversion.
+
+| RuntimeEvent variant | Class |
+| --- | --- |
+| `PreferencesChanged` | A |
+| `ConfigurationChanged` | B |
+| `ThemeSettingsChanged` | A |
+| `SessionTurnCompleted` | B |
+| `SessionsIndexed` | B |
+| `SessionIndexError` | B |
+| `ExternalSessionActivityChanged` | A |
+| `SessionReadStateChanged` | A |
+| `CacheKeepAliveSettingsChanged` | A |
+| `NextPromptSettingsChanged` | A |
+| `PromptEnhancementSettingsChanged` | A |
+| `ProjectModelScopeChanged` | A |
+| `ProcessState` | C |
+| `RpcMessage` | C |
+| `UserMessageStart` | C |
+| `AssistantMessageStart` | C |
+| `AssistantUsageUpdate` | C |
+| `AssistantTextDelta` | C |
+| `AssistantTextSnapshot` | C |
+| `AssistantThinkingStart` | C |
+| `AssistantThinkingDelta` | C |
+| `AssistantThinkingEnd` | C |
+| `ToolExecutionStart` | C |
+| `ToolExecutionUpdate` | C |
+| `ToolExecutionEnd` | C |
+| `PiReattached` | C |
+| `AssistantMessageEnd` | C |
+| `QueueUpdate` | C |
+| `CompactionStart` | C |
+| `CompactionEnd` | C |
+| `AutoRetryStart` | C |
+| `AutoRetryEnd` | C |
+| `SummarizationRetryScheduled` | C |
+| `SummarizationRetryAttemptStart` | C |
+| `SummarizationRetryFinished` | C |
+| `ExtensionUiRequest` | C |
+| `RuntimeLog` | C |
+| `RuntimeError` | C |
+
 ### Tauri commands (desktop transport)
 
 Parsed in `runtime/commands/remote.rs`; registered in `lib.rs`:
