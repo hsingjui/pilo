@@ -1,6 +1,6 @@
 # nsh 桌面端功能对齐清单（M1）
 
-**状态：待 jui 确认。** 对照的是 `nsh-migration` 在 [03ba45f](https://github.com/hsingjui/pilo/tree/03ba45f) 合入 main 后的 **Tauri 桌面端与 React WebUI**，不是 M0 原型。以下均为验收要求，不代表 nsh 已实现或通过。后续合入 main 时，把新出现的桌面功能或回归用例补进对应行，记录来源提交。
+**状态：jui 于 2026-11-19 确认按本清单执行。** 「必须对齐」是 macOS 切换门槛；WebView 数据按下表交接。对照的是 `nsh-migration` 在 [03ba45f](https://github.com/hsingjui/pilo/tree/03ba45f) 合入 main 后的 **Tauri 桌面端与 React WebUI**，不是 M0 原型。以下均为验收要求，不代表 nsh 已实现或通过。后续合入 main 时，把新出现的桌面功能或回归用例补进对应行，记录来源提交。
 
 本轮仅在云端 macOS 开发与验收；macOS 14 是计划的最低版本。Mac 上仍要走通 **Local 和 SSH**（SSH 是连接类型，不是桌面发布平台）；Windows / Linux 桌面、WSL 和对应打包验证延后，不删除已有运行时接口或数据。WebUI 保留 React，原有浏览器和移动端行为保持不变，唯一已批准的变化是自定义主题改用 token。功能范围以 [PRD](prd.md) 为准，里程碑见[执行计划](implement.md)。
 
@@ -44,7 +44,7 @@
 
 相同代码可能同时运行于 Tauri WebView 和浏览器；存储按 origin 隔离。下表的「处理」只指 **旧 macOS Tauri WebView → nsh 原生桌面**，不会清理浏览器值。Host SQLite 和 Pi JSONL 不是 localStorage；不得用前端缓存覆盖已初始化的 Host 数据。缓存丢弃不等于功能丢弃。
 
-| 键 | 当前数据 / 来源 | 建议处理 |
+| 键 | 当前数据 / 来源 | 切换时的处理 |
 | --- | --- | --- |
 | `pilo.preferences.v1` | [偏好](../../../src/lib/preferences-provider.tsx)：启动缓存；Tauri 在首次初始化时也可用它导入旧偏好。 | Host 已初始化时不复制；没有 Host 数据的旧安装先走 Tauri 的现有导入，验证后再升级，不能默默用默认值覆盖。 |
 | `pilo.locale` | [语言](../../../src/i18n/locale.ts)：启动语言，参与首次 Host 偏好初始化。 | 同上，已初始化的 Host locale 优先。 |
@@ -56,12 +56,12 @@
 | `pilo.boot.hasProjects` | [启动提示](../../../src/components/chat/chat-empty-hero.tsx)：根据是否有可见项目写 `0` / `1`。 | 不导出；原生界面由 bootstrap 计算。 |
 | `pilo.composerSendMode.v1` | [发送模式](../../../src/lib/chat/composer-send-mode.ts)：`steer` / `follow_up` / `send_now`；不是 Host 的发送键设置。 | 保留，按枚举校验后一次性导入原生桌面偏好。 |
 | `pilo.projectEditor.v1` | [项目打开方式](../../../src/lib/project-editor.ts)：已选编辑器或打开工具。 | 保留；无效值回退到默认，按当前平台/连接过滤。 |
-| `pilo.sidebarWidth` | [侧栏宽度](../../../src/components/sidebar/use-sidebar-layout.ts)：像素数。 | 建议升级时重置，nsh 后续仍保存新宽度。 |
+| `pilo.sidebarWidth` | [侧栏宽度](../../../src/components/sidebar/use-sidebar-layout.ts)：像素数。 | 升级时重置，nsh 后续仍保存新宽度。 |
 | `pilo.collapsedSections` | [侧栏折叠](../../../src/components/sidebar/app-sidebar.tsx)：环境/项目 ID 到布尔值。 | 保留；仅接受布尔值，忽略失效 ID。 |
 | `pilo.sidebarOrganizeMode` | [侧栏视图](../../../src/components/sidebar/app-sidebar.tsx)：`projects` / `recent`。 | 保留，按枚举校验。 |
 | `pilo.sidebarShowProjectsInRecents` | [最近视图](../../../src/components/sidebar/app-sidebar.tsx)：是否显示项目名。 | 保留，按 `0` / `1` 校验。 |
-| `pilo.terminal.layout.v1` | [终端布局](../../../src/components/terminal-dock.tsx)：`{height}`，不含终端会话或输出。 | 建议升级时重置，nsh 后续仍保存新高度。 |
-| `pilo.chatInputHistory.v1` | [输入历史](../../../src/lib/chat/chat-input-history.ts)：按项目保存最近 100 条文本，不是未发送草稿，可能包含敏感内容。 | 建议只在用户选择保留时本机导入；不上传、不写日志、不跨设备同步。不从 Pi JSONL 擅自重建。 |
+| `pilo.terminal.layout.v1` | [终端布局](../../../src/components/terminal-dock.tsx)：`{height}`，不含终端会话或输出。 | 升级时重置，nsh 后续仍保存新高度。 |
+| `pilo.chatInputHistory.v1` | [输入历史](../../../src/lib/chat/chat-input-history.ts)：按项目保存最近 100 条文本，不是未发送草稿，可能包含敏感内容。 | 默认不导出；只在用户选择保留时在本机交接。不上传、不写日志、不跨设备同步；不从 Pi JSONL 擅自重建。 |
 | `pilo.debug.chatPerformance` | [性能开关](../../../src/lib/chat/chat-performance.ts)：浏览器调试标记。 | 不导出；使用 nsh 调试入口。 |
 
 未发送的文字草稿由[内存 store](../../../src/components/chat/chat-draft-store.ts)管理；桌面会话切换用[内存 UI 缓存](../../../src/components/app/chat-ui-state-cache.ts)。没有对应的 localStorage 键，也没有旧版重启后恢复草稿的承诺。
@@ -77,13 +77,8 @@
 
 `pilo.remote.pairing-context.v1` 属于 [sessionStorage](../../../src/remote/remote-pairing-model.ts)（临时配对上下文），不在清单或导出范围内。
 
-## 迁移验收与待确认项
+## 数据迁移验收
 
 - [ ] **常规升级：** 用隔离副本记录旧数据路径（Tauri bundle ID `app.hsingjui.pilo`）、连接、项目顺序、会话/未读、偏好、主题和已配对浏览器。退出 Tauri 后由 nsh 读取原有数据目录；不开两个 Host 同时写库，不复制或改写 Pi JSONL。确认现有浏览器无需重配，撤销的设备仍拒绝连接。
 - [ ] **旧安装：** 覆盖「只有旧 WebView 缓存」「Host 已有不同设置」「无旧存储」「部分键无效」「重复导入及中断重试」。不能覆盖已有 SQLite 或已保存的 nsh 偏好；两端主题只转换一次，并可看到不能转换的规则。
-- [ ] **本机偏好交接：** 若选择最后一版 Tauri 导出，只允许表中同意保留的键，从当前 WebView 导出，不读取 WebKit 私有数据库。交接文件有版本、仅当前用户可读，导入成功后清理；旧版原存储保留。若 M7 选择不经最后一版 Tauri，必须说明如何完成旧缓存导入、何时提示用户布局重置或历史无法交接。
-
-**请 jui 确认：**
-
-1. 上面 macOS「必须」项（含 Local + SSH、已配对 WebUI、原生壳和数据升级）是否可作为切换门槛？沿用已经决定的三个桌面延后项；这次不再决定 M7 的更新过渡方式。
-2. 旧 WebView 数据是否按这个默认值交接：保留发送模式、默认打开方式与侧栏视图/展开状态，重置侧栏宽度和终端高度，已发送输入历史仅由用户选择后在本机保留？
+- [ ] **本机偏好交接：** 验证发送模式、默认打开方式及侧栏视图和折叠状态保留；侧栏宽度和终端高度重置；未选择保留时不导出输入历史，选择后仅本机导入。若选择最后一版 Tauri 导出，只从当前 WebView 读取允许交接的键，不读取 WebKit 私有数据库。交接文件有版本、仅当前用户可读，导入成功后清理，旧版原存储保留。若 M7 选择不经最后一版 Tauri，必须说明如何完成旧缓存导入、何时提示用户布局重置或历史无法交接。
