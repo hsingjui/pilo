@@ -2,6 +2,7 @@ import { Text, View, mount, setTheme, signal, token, type Tokens } from "nsh";
 import { Button } from "nsh/base";
 import {
 	createThemeTokenCatalog,
+	isColorKind,
 	nativeFontFamily,
 	parseThemeColor,
 	parseThemeLength,
@@ -24,14 +25,14 @@ export const custom = {
 	light: {
 		primary: "#c2512e",
 		ring: "#abc",
-		foreground: "#12abEF80",
+		"pilo-composer-border": "#12abEF80",
 		border: "rgb(255 0 128)",
-		muted: "rgba(255, 0, 128, 0.5)",
-		card: "rgb(100% 0% 50% / 50%)",
+		"pilo-user-bubble-bg": "rgba(255, 0, 128, 0.5)",
+		"pilo-user-bubble-border": "rgb(100% 0% 50% / 50%)",
 		popover: "hsl(120deg 100% 25%)",
-		secondary: "hsla(240, 100%, 50%, 0.25)",
-		hover: "hsl(14 61.7% 47% / 0.1)",
-		input: "transparent",
+		"pilo-sidebar-border-color": "hsla(240, 100%, 50%, 0.25)",
+		"pilo-mobile-selected-background": "hsl(14 61.7% 47% / 0.1)",
+		"pilo-composer-background": "transparent",
 	},
 	dark: { primary: "hsl(225 7.1% 11%)" },
 } satisfies CustomThemeTokens;
@@ -48,7 +49,7 @@ function mismatches(appearance: "light" | "dark"): string[] {
 		const kind = catalog.get(name);
 		const actual = token(name as keyof Tokens);
 		const want =
-			kind === "color"
+			kind !== undefined && isColorKind(kind)
 				? parseThemeColor(value)
 				: kind === "length"
 					? parseThemeLength(value)
@@ -88,7 +89,7 @@ mount(() => (
 		<Button
 			onPress={() => {
 				const result = validateCustomThemeTokens(
-					{ light: { primary: "hsl(14 61.7 47%)" } },
+					{ light: { primary: "#c2512e80" } },
 					catalog,
 				);
 				if (result.ok) {

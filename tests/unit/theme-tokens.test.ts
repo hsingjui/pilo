@@ -4,6 +4,8 @@ import test from "node:test";
 
 import {
 	createThemeTokenCatalog,
+	isColorKind,
+	isValidThemeTokenValue,
 	nativeFontFamily,
 	parseThemeColor,
 	parseThemeLength,
@@ -37,8 +39,8 @@ test("the catalog takes each base token's kind from its value", () => {
 		"pilo-bubble-radius": "length",
 		"z-dialog": "number",
 		"pilo-menu-checked-background": "color",
-		primary: "color",
-		ring: "color",
+		primary: "opaque-color",
+		ring: "opaque-color",
 	});
 	assert.throws(
 		() => createThemeTokenCatalog({ theme: { "pilo-padding": "1px 2px" } }),
@@ -50,7 +52,7 @@ test("the generated Lody theme yields a catalog", () => {
 	const lody = createThemeTokenCatalog(
 		readJson("../../desktop/theme.json").cssVars,
 	);
-	assert.equal(lody.get("primary"), "color");
+	assert.equal(lody.get("primary"), "opaque-color");
 	assert.equal(lody.get("pilo-menu-checked-background"), "color");
 	assert.equal(lody.get("pilo-composer-radius"), "length");
 	assert.equal(lody.get("pilo-mobile-button-height"), "length");
@@ -102,6 +104,68 @@ test("color forms nsh or the WebUI cannot both read are rejected", () => {
 		"14 61.7% 47%",
 	])
 		assert.equal(parseThemeColor(input), undefined, input);
+});
+
+test("HSL channel colors take no alpha, full --pilo-* colors do", () => {
+	for (const value of ["#c2512e", "#c2512eff", "hsl(14 61.7% 47% / 1)"])
+		assert.equal(isValidThemeTokenValue("opaque-color", value), true, value);
+	for (const value of ["#c2512e80", "rgba(0, 0, 0, 0.5)", "transparent"]) {
+		assert.equal(isValidThemeTokenValue("opaque-color", value), false, value);
+		assert.equal(isValidThemeTokenValue("color", value), true, value);
+	}
+	assert.deepEqual(
+		validateCustomThemeTokens({ light: { primary: "#c2512e80" } }, catalog),
+		{
+			ok: false,
+			issues: [
+				{
+					code: "invalid-value",
+					scope: "light",
+					token: "primary",
+					expected: "opaque-color",
+				},
+			],
+		},
+	);
+});
+
+test("opaque colors are exactly the tokens the WebUI CSS holds as HSL channels", () => {
+	const channels = /^-?[\d.]+(?:deg)?\s+[\d.]+%\s+[\d.]+%$/;
+	for (const [css, json] of [
+		["lody-theme.css", "theme.json"],
+		["claude-theme.css", "claude-theme.json"],
+	]) {
+		const source = readFileSync(
+			new URL(`../../src/styles/${css}`, import.meta.url),
+			"utf8",
+		).replace(/\/\*[\s\S]*?\*\//g, "");
+		const raw = new Map<string, string[]>();
+		for (const [, name, value] of source.matchAll(
+			/--([a-z\d-]+)\s*:\s*([^;]+);/g,
+		))
+			raw.set(name, [
+				...(raw.get(name) ?? []),
+				value.trim().replace(/\s+/g, " "),
+			]);
+		const isChannels = (name: string, seen: string[] = []): boolean =>
+			(raw.get(name) ?? []).every((value) => {
+				const alias = /^var\(--([a-z\d-]+)\)$/.exec(value)?.[1];
+				return alias && !seen.includes(alias)
+					? isChannels(alias, [...seen, name])
+					: channels.test(value);
+			});
+		const themeCatalog = createThemeTokenCatalog(
+			readJson(`../../desktop/${json}`).cssVars,
+		);
+		for (const [name, kind] of themeCatalog) {
+			if (!isColorKind(kind)) continue;
+			assert.equal(
+				kind === "opaque-color",
+				isChannels(name),
+				`${css} --${name}`,
+			);
+		}
+	}
 });
 
 test("lengths are non-negative px or rem, in points", () => {
@@ -191,7 +255,7 @@ test("every problem is reported and nothing is accepted", () => {
 				code: "invalid-value",
 				scope: "dark",
 				token: "ring",
-				expected: "color",
+				expected: "opaque-color",
 			},
 		],
 	});

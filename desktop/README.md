@@ -53,7 +53,9 @@ A custom theme is a token table shared by the desktop and the WebUI, checked by
 - Token names are the built-in theme's `cssVars` names without `--`
   (`createThemeTokenCatalog`); the kind of each comes from its built-in value.
   Values are strings: colors in hex, `rgb()`/`rgba()`, `hsl()`/`hsla()` or
-  `transparent`; lengths in non-negative `px` or `rem`; plain numbers; font
+  `transparent`, opaque only for the non-`pilo-` colors (`opaque-color`: the
+  WebUI holds them as HSL channels used as `hsl(var(--x) / a)`, so they cannot
+  carry their own alpha; `--pilo-*` colors are full colors and may); lengths in non-negative `px` or `rem`; plain numbers; font
   family lists (nsh uses the first family, the WebUI the whole list).
 - `validateCustomThemeTokens` rejects the whole table and lists every problem
   if anything is wrong, so the current theme stays. Pass

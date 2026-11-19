@@ -10,7 +10,21 @@
 export const THEME_TOKEN_SCOPES = ["theme", "light", "dark"] as const;
 export type ThemeTokenScope = (typeof THEME_TOKEN_SCOPES)[number];
 
-export type ThemeTokenKind = "color" | "length" | "number" | "font";
+/**
+ * `opaque-color`：WebUI 把这些颜色存成 HSL 通道（`H S% L%`），按
+ * `hsl(var(--x) / a)` 使用，放不下自身透明度，所以只接受不透明颜色。
+ * `color`：WebUI 里本身就是完整颜色的 `--pilo-*` token，可以带透明度。
+ */
+export type ThemeTokenKind =
+	| "color"
+	| "opaque-color"
+	| "length"
+	| "number"
+	| "font";
+
+export function isColorKind(kind: ThemeTokenKind): boolean {
+	return kind === "color" || kind === "opaque-color";
+}
 
 /** 保存的自定义主题内容：每个值都是校验过的字符串。 */
 export type CustomThemeTokens = Partial<
@@ -196,7 +210,7 @@ function baseKind(name: string, value: string | number): ThemeTokenKind {
 	if (name.startsWith("font-")) return "font";
 	if (typeof value === "number") return "number";
 	if (parseThemeColor(value) !== undefined || NATIVE_ONLY_COLOR.test(value))
-		return "color";
+		return name.startsWith("pilo-") ? "color" : "opaque-color";
 	if (parseThemeLength(value) !== undefined) return "length";
 	if (parseNumber(value) !== undefined) return "number";
 	throw new Error(`Unsupported base theme token --${name}: ${value}`);
@@ -228,6 +242,8 @@ export function isValidThemeTokenValue(
 	switch (kind) {
 		case "color":
 			return parseThemeColor(value) !== undefined;
+		case "opaque-color":
+			return parseThemeColor(value)?.endsWith("ff") === true;
 		case "length":
 			return parseThemeLength(value) !== undefined;
 		case "number":
@@ -265,7 +281,7 @@ export function validateCustomThemeTokens(
 			const kind = catalog.get(token);
 			if (kind === undefined) {
 				issues.push({ code: "unknown-token", scope, token });
-			} else if (scope !== "theme" && kind !== "color") {
+			} else if (scope !== "theme" && !isColorKind(kind)) {
 				issues.push({ code: "appearance-not-allowed", scope, token });
 			} else if (
 				scope !== "theme" &&
