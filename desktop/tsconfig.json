@@ -7,12 +7,9 @@
 			"nsh": ["./.nsh/types/nsh/index.d.ts"],
 			"nsh/*": ["./.nsh/types/nsh/*.d.ts"],
 			"app/*": ["./.nsh/types/app/*.d.ts"],
-			"@/lib/chat/conversation-runtime-adapter": [
-				"./types/conversation-runtime-adapter.d.ts"
-			],
 			"@/*": ["../src/*"]
 		}
 	},
 	"include": ["**/*.ts", "**/*.tsx"],
-	"exclude": ["native/target"]
+	"exclude": ["native/target", "spikes/m0"]
 }

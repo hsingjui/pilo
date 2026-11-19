@@ -1,16 +1,15 @@
-// M0 spike 4: live runtime events reduce through the shared runtime adapter.
-// `nsh check` types the adapter through `types/conversation-runtime-adapter.d.ts`.
 import { expect, test } from "nsh/test";
 
+import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime-types";
 import {
 	createConversationState,
 	reduceConversation,
 } from "@/lib/chat/conversation-reducer";
 import { toConversationAction } from "@/lib/chat/conversation-runtime-adapter";
-import { reducerContext } from "../src/reducer-context";
+import { reducerContext } from "./reducer-context";
 
 test("live runtime events reduce through the runtime adapter", () => {
-	const live = [
+	const live: PiloRuntimeEvent[] = [
 		{ type: "assistant_message_start", generation: 1 },
 		{ type: "assistant_text_delta", generation: 1, delta: "hel" },
 		{ type: "assistant_text_delta", generation: 1, delta: "lo" },

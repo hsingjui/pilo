@@ -1,6 +1,3 @@
-// M0 spike 4: the chat logic of `src/lib/chat` runs unchanged in nsh.
-// It is imported from outside `desktop/`, through the `@/` alias, and pulls
-// in a third-party package (`i18next`, via `src/i18n`).
 import { expect, test } from "nsh/test";
 
 import {
