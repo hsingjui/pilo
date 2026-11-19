@@ -58,6 +58,7 @@ export type PiloNative = Pick<
 	| "searchSessions"
 	| "generateSessionTitle"
 	| "deleteSession"
+	| "loadHistory"
 	| "readHistoryImage"
 	| "readProjectImage"
 	| "loadConnectionModels"
@@ -126,6 +127,7 @@ type BridgedPiloClient = Pick<
 	| "searchSessions"
 	| "generateSessionTitle"
 	| "deleteSession"
+	| "loadHistory"
 	| "readHistoryImage"
 	| "readProjectImage"
 	| "loadConnectionModels"
@@ -223,6 +225,24 @@ export class NshPiloClient implements BridgedPiloClient {
 			projectId,
 			sessionPath,
 		)) as SessionDeleteResult;
+	}
+
+	/**
+	 * A window of a saved session's history, read from its file without
+	 * starting Pi; by default the last 256 messages with the message index.
+	 * It is the settled history only: it has no place in the event stream,
+	 * so a turn in progress is not in it and events cannot be applied on top.
+	 */
+	async loadHistory(
+		projectId: string,
+		sessionPath: string,
+		options?: PiloClientHistoryOptions,
+	): Promise<SessionHistoryResult> {
+		return (await this.pilo.loadHistory(
+			projectId,
+			sessionPath,
+			options,
+		)) as SessionHistoryResult;
 	}
 
 	/**

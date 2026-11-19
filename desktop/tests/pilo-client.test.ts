@@ -46,6 +46,10 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 		searchSessions: answer("searchSessions", [{ sessionId: "s1" }]),
 		generateSessionTitle: answer("generateSessionTitle", "Repair the parser"),
 		deleteSession: answer("deleteSession", { method: "trash" }),
+		loadHistory: answer("loadHistory", {
+			history: { totalMessages: 2 },
+			fingerprint: { fileSize: 9, fileMtimeNs: "7" },
+		}),
 		readHistoryImage: answer("readHistoryImage", new Uint8Array([1, 2])),
 		readProjectImage: answer("readProjectImage", new Uint8Array([3])),
 		loadConnectionModels: answer("loadConnectionModels", [{ id: "m1" }]),
@@ -523,6 +527,39 @@ test("a transcript snapshot the native module refuses rejects with its error", a
 	expect(caught).toBe(failure);
 });
 
+test("a history read passes its session and window and returns the native answer", async () => {
+	const { pilo, calls } = fakeNative();
+	const client = new NshPiloClient(pilo);
+	const options = {
+		startMessage: 4,
+		messageLimit: 40,
+		includeMessageIndex: false,
+		fingerprint: { fileSize: 9, fileMtimeNs: "7" },
+	};
+
+	expect(await client.loadHistory("p1", "/s.jsonl", options)).toEqual({
+		history: { totalMessages: 2 },
+		fingerprint: { fileSize: 9, fileMtimeNs: "7" },
+	});
+	await client.loadHistory("p1", "/s.jsonl");
+	expect(calls).toEqual([
+		["loadHistory", "p1", "/s.jsonl", options],
+		["loadHistory", "p1", "/s.jsonl", undefined],
+	]);
+});
+
+test("a history read the native module refuses rejects with its error", async () => {
+	const failure = new Error("No such file or directory");
+	const { pilo } = fakeNative({ loadHistory: () => Promise.reject(failure) });
+	let caught: unknown;
+	await new NshPiloClient(pilo)
+		.loadHistory("p1", "/gone.jsonl")
+		.catch((error: unknown) => {
+			caught = error;
+		});
+	expect(caught).toBe(failure);
+});
+
 /** A native event stream whose polls the test answers one at a time. */
 function fakeEventStream() {
 	const polls: {
@@ -754,6 +791,13 @@ test("the client requests and cancels a next-prompt suggestion through the nativ
 test("the client takes idle, active and truncated transcript snapshots through the native module", async () => {
 	const app = await open("./pilo-client-transcript-fixture.tsx");
 	await app.waitFor("text:client transcript snapshots verified", {
+		timeout: 30_000,
+	});
+});
+
+test("the client reads settled session history through the native module", async () => {
+	const app = await open("./pilo-client-history-fixture.tsx");
+	await app.waitFor("text:client settled history verified", {
 		timeout: 30_000,
 	});
 });
