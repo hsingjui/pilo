@@ -94,3 +94,30 @@ test("a narrow window keeps the workspace once the sidebar is collapsed", async 
 	await app.press("id:sidebar-collapse");
 	expect(app.shows("id:workspace >> text:Add a project first")).toBe(true);
 });
+
+test("the shell fixtures show the theme saved in their Host", async () => {
+	const claude = { "fixture.theme": "claude" };
+	const sidebar = (app: Awaited<ReturnType<typeof open>>) =>
+		app.viewStyle("id:sidebar")?.backgroundColor;
+
+	const native = await open("./app-shell-fixture.tsx", {
+		...desktop,
+		storage: claude,
+	});
+	await native.waitFor("id:workspace-title");
+	expect(sidebar(native)).toBe("#fafaf9ff");
+
+	const scripted = await open("./app-shell-states-fixture.tsx", {
+		...desktop,
+		storage: { ...claude, "fixture.scenario": "empty" },
+	});
+	await scripted.waitFor("id:workspace-title");
+	expect(sidebar(scripted)).toBe("#fafaf9ff");
+
+	// No theme is known before the first snapshot: the shell stays in Lody.
+	const starting = await open("./app-shell-states-fixture.tsx", {
+		...desktop,
+		storage: { ...claude, "fixture.scenario": "starting" },
+	});
+	expect(sidebar(starting)).toBe("#f7f8faff");
+});

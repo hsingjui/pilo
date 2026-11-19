@@ -1,16 +1,18 @@
 import { mount, Storage } from "nsh";
 
 import type { Project } from "@/lib/api/projects-types";
+import type { ThemeSettings } from "@/lib/theme-settings-types";
 import "../app/fonts";
 import { AppShell } from "../app/AppShell";
 import { initializeI18n } from "../app/i18n";
 import { AppStore } from "../state/app-store";
-import { applyFixtureTheme } from "./app-shell-theme";
+import { fixtureThemeFamily } from "./fixture-theme";
 import { type AppScript, scriptedClient } from "./scripted-app-client";
 
 /**
  * The shell over a scripted client, for the startups the native runtime does
- * not produce on demand. The test names one with `open`'s `storage`:
+ * not produce on demand, in the theme the test saved. The test names one with
+ * `open`'s `storage`:
  * `starting` never answers, `failed` fails its first two tries, `empty` has
  * no project and `closed` loads, then loses its runtime.
  */
@@ -38,8 +40,12 @@ const scripts: Record<Scenario, AppScript> = {
 
 async function run() {
 	const scenario = (await Storage.getItem("fixture.scenario")) as Scenario;
-	await applyFixtureTheme();
-	const runtime = scriptedClient(scripts[scenario]);
+	const themeSettings = {
+		revision: 1,
+		theme: "system",
+		themeFamily: await fixtureThemeFamily(),
+	} as ThemeSettings;
+	const runtime = scriptedClient({ ...scripts[scenario], themeSettings });
 	const store = new AppStore(runtime.client);
 	mount(AppShell, { store });
 	await store.start();
