@@ -89,6 +89,8 @@ function withSessionIndex(
 	projectId: string,
 	update: (current: SessionIndexState | undefined) => SessionIndexState,
 ): AppState {
+	// A load can finish after its project was removed.
+	if (!state.projects.some(({ id }) => id === projectId)) return state;
 	return {
 		...state,
 		sessionIndexes: {

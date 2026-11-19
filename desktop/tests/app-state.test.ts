@@ -235,6 +235,15 @@ test("session lists of removed projects are dropped", () => {
 		},
 	});
 	expect(Object.keys(bootstrapped.sessionIndexes)).toEqual(["p1"]);
+
+	// A load that finishes after its project was removed changes nothing.
+	expect(
+		reduce(bootstrapped, {
+			type: "sessions_loaded",
+			projectId: "p2",
+			sessions: [session("b")],
+		}),
+	).toBe(bootstrapped);
 });
 
 test("read revisions only grow and a full load removes deleted sessions", () => {
