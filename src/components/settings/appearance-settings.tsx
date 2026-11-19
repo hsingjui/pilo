@@ -296,10 +296,9 @@ export function AppearanceSettings() {
 									themeFamily: "custom",
 									saveCustomTheme: {
 										name: draftName,
-										css: supportsThemeTokens
-											? (existingTheme?.css ?? "")
-											: draftCss,
-										tokens: validation.ok ? validation.tokens : {},
+										...(supportsThemeTokens
+											? { tokens: validation.ok ? validation.tokens : {} }
+											: { css: draftCss }),
 									},
 								});
 								setDraftName(draftName.trim());

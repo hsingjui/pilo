@@ -48,6 +48,6 @@ export type ThemeSettingsUpdate = Partial<
 		| "themeCustomName"
 	>
 > & {
-	saveCustomTheme?: SavedCustomTheme;
+	saveCustomTheme?: Omit<SavedCustomTheme, "css"> & { css?: string };
 	deleteCustomTheme?: string;
 };

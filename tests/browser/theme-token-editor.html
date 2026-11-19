@@ -92,6 +92,12 @@
 					};
 					if (update.saveCustomTheme) {
 						const item = update.saveCustomTheme;
+						const css =
+							item.css ??
+							settings.savedCustomThemes.find(
+								(entry) => entry.name === item.name.trim(),
+							)?.css ??
+							settings.themeCustomCss;
 						settings = {
 							...settings,
 							...(legacy
@@ -105,14 +111,13 @@
 										},
 									}),
 							themeCustomName: item.name.trim(),
-							...(legacy
-								? { themeCustomCss: item.css }
-								: { themeCustomTokens: item.tokens }),
+							themeCustomCss: css,
+							...(legacy ? {} : { themeCustomTokens: item.tokens }),
 							savedCustomThemes: [
 								...settings.savedCustomThemes.filter(
 									(entry) => entry.name !== item.name,
 								),
-								{ ...item, name: item.name.trim() },
+								{ ...item, css, name: item.name.trim() },
 							],
 						};
 					}
@@ -303,6 +308,11 @@
 					"Save must send tokens to Host client",
 				);
 				assert(
+					!Object.hasOwn(updates[0].saveCustomTheme, "css") &&
+						!Object.hasOwn(updates[0], "themeCustomCss"),
+					"New token theme must omit CSS keys",
+				);
+				assert(
 					style().includes("--primary:210 50% 40%"),
 					"Saved token not applied",
 				);
@@ -317,6 +327,33 @@
 					),
 					"Conversion diagnostics must never be cached",
 				);
+				input("primary light", "#446688");
+				await tick();
+				save().click();
+				await tick();
+				await tick();
+				assert(
+					updates.at(-1).saveCustomTheme.name === "Ocean" &&
+						!Object.hasOwn(updates.at(-1).saveCustomTheme, "css") &&
+						!Object.hasOwn(updates.at(-1), "themeCustomCss"),
+					"Same-name token save must omit CSS keys",
+				);
+				input("Theme name", "Ocean copy");
+				await tick();
+				save().click();
+				await tick();
+				await tick();
+				assert(
+					updates.at(-1).saveCustomTheme.name === "Ocean copy" &&
+						!Object.hasOwn(updates.at(-1).saveCustomTheme, "css"),
+					"Renamed token save must omit CSS",
+				);
+				assert(
+					settings.savedCustomThemes.every(
+						(entry) => entry.css === "body{display:none}",
+					),
+					"Mock Host must retain CSS for existing and new names",
+				);
 				window.themeFixture.theme.applyThemeSettings({
 					...settings,
 					revision: settings.revision + 1,
@@ -328,7 +365,7 @@
 				assert(
 					window.themeFixture.theme.theme === "dark" &&
 						window.themeFixture.theme.revision === settings.revision + 1 &&
-						window.themeFixture.theme.savedCustomThemes.length === 1,
+						window.themeFixture.theme.savedCustomThemes.length === 2,
 					"Invalid tokens must not drop mode, saved themes or revision",
 				);
 				window.themeFixture.theme.applyThemeSettings(settings);
@@ -373,6 +410,19 @@
 					"Saved theme must show its own conversion issues, not current issues",
 				);
 				input("Theme name", "Recovered copy");
+				assert(
+					!Object.hasOwn(updates.at(-1), "themeCustomCss"),
+					"Token selection must omit current CSS",
+				);
+				window.themeFixture.theme.updateThemeSettings({
+					themeCustomTokens: settings.themeCustomTokens,
+				});
+				await tick();
+				await tick();
+				assert(
+					!Object.hasOwn(updates.at(-1), "themeCustomCss"),
+					"Token-only update must omit current CSS",
+				);
 				const issueRegion = document.querySelector(
 					'section[aria-label="Unconverted CSS details"]',
 				);

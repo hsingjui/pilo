@@ -94,6 +94,31 @@ test("all legacy updates and initial migration omit token keys", () => {
 	);
 });
 
+test("token save and selection payloads leave CSS preservation to the Host", () => {
+	const tokens = { light: { primary: "#fff" } };
+	const updates: ThemeSettingsUpdate[] = [
+		{ saveCustomTheme: { name: "Green", tokens } },
+		{ saveCustomTheme: { name: "New name", tokens } },
+		{
+			themeFamily: "custom",
+			themeCustomName: "Green",
+			themeCustomTokens: tokens,
+		},
+		{ themeCustomTokens: tokens },
+	];
+	for (const update of updates) {
+		const payload = compatibleThemeUpdate(update, true);
+		assert.equal(Object.hasOwn(payload, "themeCustomCss"), false);
+		assert.equal(Object.hasOwn(payload.saveCustomTheme ?? {}, "css"), false);
+		assert.deepEqual(payload, update);
+	}
+	const wipe = { saveCustomTheme: { name: "Green", css: "", tokens } };
+	assert.deepEqual(compatibleThemeUpdate(wipe, true), wipe);
+	assert.deepEqual(compatibleThemeUpdate(wipe, false), {
+		saveCustomTheme: { name: "Green", css: "" },
+	});
+});
+
 test("conversion diagnostics are read-only and excluded from every outgoing mode", () => {
 	const themeCustomConversion = {
 		current: [{ kind: "rule", reason: "malformed", text: "bad {" }],
