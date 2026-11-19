@@ -45,6 +45,7 @@ async fn winc_windows_executable() -> PathBuf {
 }
 
 pub(crate) async fn open(
+    runtime: &super::Runtime,
     project: &Project,
     app: ProjectApp,
     path: Option<&str>,
@@ -124,8 +125,11 @@ pub(crate) async fn open(
         }
         ProjectApp::Explorer => {
             // Explorer's command-line parser splits unquoted commas in otherwise valid paths.
+            let runtime = runtime.clone();
             return tokio::task::spawn_blocking(move || {
-                tauri_plugin_opener::open_path(directory, None::<&str>)
+                runtime
+                    .shell()?
+                    .open_path(&directory)
                     .map_err(|error| format!("failed to launch app: {error}"))
             })
             .await

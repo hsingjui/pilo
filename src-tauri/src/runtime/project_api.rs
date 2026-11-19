@@ -24,7 +24,7 @@ pub async fn project_open_in_app(
     path: Option<String>,
 ) -> Result<(), String> {
     let project = project::ready(runtime, &runtime.servers, &id).await?;
-    super::project_opener::open(&project, app, path.as_deref()).await
+    super::project_opener::open(runtime, &project, app, path.as_deref()).await
 }
 
 #[cfg(feature = "tauri")]

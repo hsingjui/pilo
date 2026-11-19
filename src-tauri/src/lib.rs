@@ -350,7 +350,6 @@ pub fn run() {
                 tauri::ActivationPolicy::Regular
             });
             desktop_window::create_main_window(app, start_hidden)?;
-            app.state::<PiloRuntime>().servers.initialize_control(app.handle().clone());
             app.state::<PiloRuntime>().chat_sessions.start_idle_reaper();
 
             let remote_app = app.handle().clone();

@@ -9,12 +9,12 @@ use std::sync::Arc;
 use pilo_protocol::{ControlCommand, ControlContext, ControlReply, ControlRequest};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Manager};
 use tokio::task::{JoinHandle, JoinSet};
 
 use super::{
-    PiloRuntime, RuntimeEventBus, commands,
+    Runtime,
     events::{RuntimeEvent, RuntimeEventEnvelope},
+    handle::WeakRuntime,
     project,
     server_client::{SERVER_DISCONNECTED_EVENT, ServerClient},
     storage,
@@ -25,7 +25,7 @@ pub(crate) struct ControlLease {
     client: Arc<ServerClient>,
     stream: String,
     task: JoinHandle<()>,
-    app: AppHandle,
+    runtime: WeakRuntime,
     source_project: String,
     source_connection: String,
 }
@@ -35,7 +35,7 @@ impl ControlLease {
         if Arc::ptr_eq(&self.client, previous) {
             self.task.abort();
             self.task = spawn_dispatcher(
-                self.app.clone(),
+                self.runtime.clone(),
                 client.clone(),
                 &self.stream,
                 self.source_project.clone(),
@@ -62,16 +62,16 @@ impl Drop for ControlLease {
 }
 
 pub(crate) async fn attach(
-    app: AppHandle,
+    runtime: &Runtime,
     client: Arc<ServerClient>,
     stream: String,
     project_id: &str,
     local: bool,
 ) -> Result<(ControlContext, ControlLease), String> {
     // Resolve from Host storage, never from a caller-supplied source identity.
-    let source = project::get(&app.state::<crate::runtime::Runtime>(), project_id)?;
+    let source = project::get(runtime, project_id)?;
     let task = spawn_dispatcher(
-        app.clone(),
+        runtime.downgrade(),
         client.clone(),
         &stream,
         source.id.clone(),
@@ -81,7 +81,7 @@ pub(crate) async fn attach(
         client: client.clone(),
         stream: stream.clone(),
         task,
-        app,
+        runtime: runtime.downgrade(),
         source_project: source.id,
         source_connection: source.connection.id,
     };
@@ -96,8 +96,7 @@ pub(crate) async fn attach(
         };
         if !path.is_file() {
             return Err(
-                "Windows ctl runtime is unavailable; start development with pnpm tauri dev"
-                    .to_owned(),
+                "Windows ctl runtime is unavailable; start development with pnpm dev".to_owned(),
             );
         }
         Some(path.to_string_lossy().into_owned())
@@ -113,7 +112,7 @@ pub(crate) async fn attach(
 }
 
 fn spawn_dispatcher(
-    app: AppHandle,
+    runtime: WeakRuntime,
     client: Arc<ServerClient>,
     stream: &str,
     source_project: String,
@@ -131,7 +130,7 @@ fn spawn_dispatcher(
                     if event.event != "control.request" { continue }
                     let Ok(request) = serde_json::from_value::<ControlRequest>(event.data) else { continue };
                     let client = dispatcher.clone();
-                    let app = app.clone();
+                    let Ok(runtime) = runtime.upgrade() else { break };
                     let source_project = source_project.clone();
                     let source_connection = source_connection.clone();
                     if work.len() >= 16 {
@@ -140,7 +139,7 @@ fn spawn_dispatcher(
                     }
                     work.spawn(async move {
                         // This task is independent of the transport reader and can call the same Server.
-                        let result = tokio::time::timeout(std::time::Duration::from_secs(55), execute(&app, request.command, &source_project, &source_connection)).await
+                        let result = tokio::time::timeout(std::time::Duration::from_secs(55), execute(&runtime, request.command, &source_project, &source_connection)).await
                             .unwrap_or_else(|_| Err("Pilo control execution timed out; write outcome may be unknown; do not automatically retry".to_owned()));
                         let reply = match result { Ok(result) => ControlReply { result: Some(result), error: None }, Err(error) => ControlReply { result: None, error: Some(error) } };
                         let _ = client.request("control.respond", json!({ "id": request.id, "reply": reply })).await;
@@ -152,11 +151,10 @@ fn spawn_dispatcher(
     })
 }
 
-pub(crate) fn changed(app: &AppHandle) {
-    app.state::<RuntimeEventBus>()
-        .send(RuntimeEventEnvelope::global(
-            RuntimeEvent::ConfigurationChanged,
-        ));
+pub(crate) fn changed(runtime: &Runtime) {
+    runtime.events.send(RuntimeEventEnvelope::global(
+        RuntimeEvent::ConfigurationChanged,
+    ));
 }
 
 fn decode<T: DeserializeOwned>(value: Value) -> Result<T, String> {
@@ -175,20 +173,19 @@ fn required(value: Option<&str>, kind: &str) -> Result<String, String> {
 }
 
 async fn execute(
-    app: &AppHandle,
+    runtime: &Runtime,
     command: ControlCommand,
     source_project: &str,
     source_connection: &str,
 ) -> Result<Value, String> {
-    let runtime = app.state::<PiloRuntime>();
     match command.method.as_str() {
         "status" => Ok(
             json!({ "version": env!("CARGO_PKG_VERSION"), "hostPid": std::process::id(), "sourceProjectId": source_project, "sourceConnectionId": source_connection }),
         ),
         "settings.list" => Ok(catalog()),
-        "settings.get" | "settings.set" | "settings.reset" => settings(app, command).await,
+        "settings.get" | "settings.set" | "settings.reset" => settings(runtime, command).await,
         "connections.list" => {
-            let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
+            let db = storage::open(&runtime.paths)?;
             storage::ensure_local_connection(&db)?;
             storage::list_connections(&db)?.into_iter().map(|connection| {
                 let has_password = matches!(connection.kind, ConnectionKind::Ssh { .. }) && super::credentials::has_ssh_password(&connection.id);
@@ -218,11 +215,10 @@ async fn execute(
             }
             let id = save.connection.id.clone();
             let shown = save.connection.shown_in_home;
-            if let Some(existing) = storage::get_connection(
-                &storage::open(&crate::desktop_paths::from_app(app)?)?,
-                &save.connection.id,
-            )? && std::mem::discriminant(&existing.kind)
-                != std::mem::discriminant(&save.connection.kind)
+            if let Some(existing) =
+                storage::get_connection(&storage::open(&runtime.paths)?, &save.connection.id)?
+                && std::mem::discriminant(&existing.kind)
+                    != std::mem::discriminant(&save.connection.kind)
             {
                 return Err(
                     "cannot change an existing connection kind; create a new connection ID"
@@ -231,9 +227,9 @@ async fn execute(
             }
             match &save.connection.kind {
                 ConnectionKind::Ssh { .. } => {
-                    commands::ssh_connection_save(
-                        app.state::<super::Runtime>(),
-                        commands::SaveSshConnectionRequest {
+                    super::connections::ssh::ssh_connection_save(
+                        runtime,
+                        super::connections::ssh::SaveSshConnectionRequest {
                             connection: save.connection,
                             password: save.password,
                             local_pi_resources: None,
@@ -242,38 +238,28 @@ async fn execute(
                     .await?;
                 }
                 ConnectionKind::Wsl { .. } => {
-                    commands::wsl_connection_save(app.state::<super::Runtime>(), save.connection)?;
+                    super::connections::wsl::wsl_connection_save(runtime, save.connection)?;
                 }
                 ConnectionKind::Local => {
                     if save.password.is_some() {
                         return Err("password is only supported for SSH".to_owned());
                     }
-                    storage::upsert_connection(
-                        &storage::open(&crate::desktop_paths::from_app(app)?)?,
-                        &save.connection,
-                    )?;
+                    storage::upsert_connection(&storage::open(&runtime.paths)?, &save.connection)?;
                 }
             };
-            let connection =
-                commands::connection_shown_in_home_set(app.state::<super::Runtime>(), id, shown)?;
-            changed(app);
+            let connection = super::connections::connection_shown_in_home_set(runtime, id, shown)?;
+            changed(runtime);
             Ok(
                 json!({ "hasPassword": matches!(connection.kind, ConnectionKind::Ssh { .. }) && super::credentials::has_ssh_password(&connection.id), "connection": connection, "effect": "new sessions use the saved connection; existing processes are not restarted" }),
             )
         }
-        "projects.list" => encode(project::list(&app.state::<crate::runtime::Runtime>())?),
+        "projects.list" => encode(project::list(runtime)?),
         "projects.add" => {
             let connection = required(command.connection_id.as_deref(), "--connection")?;
             let path = required(command.key.as_deref(), "project path")?;
-            let added = project::add(
-                &app.state::<crate::runtime::Runtime>(),
-                &runtime.servers,
-                connection,
-                path,
-            )
-            .await?;
+            let added = project::add(runtime, &runtime.servers, connection, path).await?;
             runtime.chat_sessions.open_project(&added.id).await?;
-            changed(app);
+            changed(runtime);
             encode(added)
         }
         _ => Err("unknown Pilo control command".to_owned()),
@@ -313,4 +299,65 @@ fn validate_connection(connection: &crate::domain::Connection) -> Result<(), Str
         return Err("local is reserved for the Local connection".to_owned());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn control_uses_runtime_state_and_reports_invalid_commands() {
+        let root = std::env::temp_dir().join(format!(
+            "pilo-control-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let host = Arc::new(crate::runtime::host_events::RecordingEvents::default());
+        let runtime = Runtime::new(
+            crate::runtime::host_paths::HostPaths::new(root.clone(), root.clone()).unwrap(),
+            host,
+        );
+        let status = execute(
+            &runtime,
+            decode(json!({"method": "status"})).unwrap(),
+            "project",
+            "local",
+        )
+        .await
+        .unwrap();
+        assert_eq!(status["sourceProjectId"], "project");
+        assert_eq!(status["sourceConnectionId"], "local");
+        let get =
+            || decode(json!({"method": "settings.get", "key": "preferences.uiFontSize"})).unwrap();
+        let original = execute(&runtime, get(), "project", "local").await.unwrap();
+        execute(
+            &runtime,
+            decode(json!({"method": "settings.set", "key": "preferences.uiFontSize", "value": 16}))
+                .unwrap(),
+            "project",
+            "local",
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            execute(&runtime, get(), "project", "local").await.unwrap()["value"],
+            16
+        );
+        assert!(execute(&runtime, decode(json!({"method": "settings.reset", "key": "preferences.uiFontSize", "value": false})).unwrap(), "project", "local").await.is_err());
+        assert!(
+            execute(
+                &runtime,
+                decode(json!({"method": ""})).unwrap(),
+                "project",
+                "local"
+            )
+            .await
+            .is_err()
+        );
+        assert!(!original["value"].is_null());
+        drop(runtime);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

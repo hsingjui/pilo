@@ -7,9 +7,8 @@ use tauri::State;
 mod ssh;
 mod wsl;
 pub use ssh::{
-    SaveSshConnectionRequest, ssh_agent_identities_list, ssh_connection_list,
-    ssh_connection_password_get, ssh_connection_remove, ssh_connection_save, ssh_connection_test,
-    ssh_connection_test_draft,
+    ssh_agent_identities_list, ssh_connection_list, ssh_connection_password_get,
+    ssh_connection_remove, ssh_connection_save, ssh_connection_test, ssh_connection_test_draft,
 };
 pub use wsl::{
     wsl_connection_list, wsl_connection_remove, wsl_connection_save, wsl_connection_test,

@@ -2,7 +2,6 @@ use std::sync::{
     Arc, Mutex as StdMutex, Weak,
     atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
 };
-use tauri::Manager as _;
 
 use std::time::{Duration, Instant};
 
@@ -451,10 +450,10 @@ impl ServerPiSession {
                 let mut control_stream = None;
                 let mut remote_control = None;
                 if options.agent_control {
-                    let app = servers.control_app()?;
+                    let runtime = servers.control_runtime()?;
                     let control_id = format!("control:{stream_id}");
                     let (_, lease) = super::control::attach(
-                        app.clone(),
+                        &runtime,
                         client.clone(),
                         control_id.clone(),
                         &project.id,
@@ -475,13 +474,10 @@ impl ServerPiSession {
                         .iter()
                         .any(|extension| matches!(extension, BuiltinExtension::SshWorkspace { .. }))
                     {
-                        let original = super::project::get(
-                            &app.state::<crate::runtime::Runtime>(),
-                            &project.id,
-                        )?;
+                        let original = super::project::get(&runtime, &project.id)?;
                         let remote_client = servers.client(&original.connection).await?;
                         let (context, lease) = super::control::attach(
-                            app,
+                            &runtime,
                             remote_client,
                             format!("remote-control:{stream_id}"),
                             &project.id,

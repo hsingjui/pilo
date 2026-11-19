@@ -51,7 +51,7 @@ pub(super) fn retryable_read_method(method: &str) -> bool {
 
 #[derive(Default)]
 pub struct ServerManager {
-    control_app: std::sync::Mutex<Option<tauri::AppHandle>>,
+    control_runtime: std::sync::Mutex<super::super::handle::WeakRuntime>,
     clients: Mutex<HashMap<String, CachedServerClient>>,
     connection_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     admission: RwLock<()>,
@@ -65,19 +65,19 @@ struct CachedServerClient {
 }
 
 impl ServerManager {
-    pub(crate) fn initialize_control(&self, app: tauri::AppHandle) {
+    pub(crate) fn initialize_control(&self, runtime: &super::super::Runtime) {
         *self
-            .control_app
+            .control_runtime
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(app);
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = runtime.downgrade();
     }
 
-    pub(crate) fn control_app(&self) -> Result<tauri::AppHandle, String> {
-        self.control_app
+    pub(crate) fn control_runtime(&self) -> Result<super::super::Runtime, String> {
+        self.control_runtime
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
-            .ok_or_else(|| "Pilo Host control is unavailable".to_owned())
+            .upgrade()
     }
 
     const SHUTTING_DOWN: &str = "pilo-server manager is shutting down";
@@ -131,7 +131,7 @@ impl ServerManager {
 
     fn ssh_target_is_current(&self, connection: &Connection) -> Result<bool, String> {
         use crate::runtime::storage;
-        let db = storage::open(&crate::desktop_paths::from_app(&self.control_app()?)?)?;
+        let db = storage::open(&self.control_runtime()?.paths)?;
         Ok(storage::get_connection(&db, &connection.id)?
             .is_some_and(|current| current.kind == connection.kind))
     }
@@ -319,10 +319,10 @@ impl ServerManager {
     }
 
     pub(crate) fn begin_shutdown(&self) {
-        self.control_app
+        *self
+            .control_runtime
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Default::default();
         self.shutdown.store(true, Ordering::Release);
         self.shutdown_notify.notify_waiters();
     }

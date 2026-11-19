@@ -11,6 +11,13 @@ Implementation: `crates/pilo-protocol/src/control.rs`,
 `crates/pilo-server/src/control.rs`, `runtime/control.rs` and
 `runtime/control/{catalog,settings}.rs`.
 
+Control resolves Host state through the shared `Runtime`, not shell-managed
+state. Server managers, idle dispatchers and control leases retain weak Runtime
+handles so they cannot keep their owning sessions alive. Each executing request
+upgrades its handle for the duration of that operation. Native desktop settings
+delegate through `HostShell`; the Tauri shell adapter keeps the existing OS
+registration behavior and errors.
+
 ## Contract
 
 - No arguments still starts the stdio Server. `--version` / `--fingerprint`

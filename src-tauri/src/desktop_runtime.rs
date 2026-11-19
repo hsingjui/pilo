@@ -26,6 +26,39 @@ pub(crate) fn assets(app: &AppHandle) -> Arc<dyn crate::runtime::web_assets::Web
 }
 
 impl HostShell for TauriHostShell {
+    fn desktop_setting(
+        &self,
+        key: String,
+        value: Option<serde_json::Value>,
+    ) -> crate::runtime::handle::HostSettingFuture {
+        let app = self.0.clone();
+        Box::pin(async move {
+            let result = match (key.as_str(), value) {
+                ("desktop.autostart", None) => serde_json::to_value(
+                    crate::runtime::desktop_startup::desktop_autostart_get(app).await?,
+                ),
+                ("desktop.autostart", Some(value)) => serde_json::to_value(
+                    crate::runtime::desktop_startup::desktop_autostart_set(app, decode(value)?)
+                        .await?,
+                ),
+                ("desktop.exitOnClose", None) => {
+                    serde_json::to_value(crate::desktop_tray::desktop_exit_on_close_get(app).await?)
+                }
+                ("desktop.exitOnClose", Some(value)) => serde_json::to_value(
+                    crate::desktop_tray::desktop_exit_on_close_set(app, decode(value)?).await?,
+                ),
+                ("desktop.showShortcut", None) => {
+                    serde_json::to_value(crate::desktop_shortcut::desktop_shortcut_get(app).await?)
+                }
+                ("desktop.showShortcut", Some(value)) => serde_json::to_value(
+                    crate::desktop_shortcut::desktop_shortcut_set(app, decode(value)?).await?,
+                ),
+                _ => return Err("unknown desktop setting".to_owned()),
+            };
+            result.map_err(|_| "control result serialization failed".to_owned())
+        })
+    }
+
     fn cache_dir(&self) -> Result<PathBuf, String> {
         self.0
             .path()
@@ -45,6 +78,11 @@ impl HostShell for TauriHostShell {
             .pick_folder()
             .map(|path| path.to_string_lossy().into_owned())
     }
+}
+
+fn decode<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> Result<T, String> {
+    serde_json::from_value(value)
+        .map_err(|_| "invalid control value; consult settings list for the schema".to_owned())
 }
 
 pub(crate) fn shell(app: &AppHandle) -> Arc<dyn HostShell> {

@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, Weak};
 
 use super::{RuntimeEventBus, host_events::HostEvents, host_paths::HostPaths};
 
@@ -6,6 +6,28 @@ pub(crate) trait HostShell: Send + Sync {
     fn cache_dir(&self) -> Result<std::path::PathBuf, String>;
     fn open_path(&self, path: &std::path::Path) -> Result<(), String>;
     fn pick_directory(&self) -> Option<String>;
+    fn desktop_setting(
+        &self,
+        _key: String,
+        _value: Option<serde_json::Value>,
+    ) -> HostSettingFuture {
+        Box::pin(async { Err("host desktop settings are unavailable".to_owned()) })
+    }
+}
+
+pub(crate) type HostSettingFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>;
+
+#[derive(Clone, Default)]
+pub(crate) struct WeakRuntime(Weak<RuntimeState>);
+
+impl WeakRuntime {
+    pub(crate) fn upgrade(&self) -> Result<Runtime, String> {
+        self.0
+            .upgrade()
+            .map(Runtime)
+            .ok_or_else(|| "Pilo Host control is unavailable".to_owned())
+    }
 }
 
 #[derive(Clone)]
@@ -15,7 +37,7 @@ pub(crate) struct RuntimeState {
     pub(crate) paths: HostPaths,
     pub(crate) host_events: Arc<dyn HostEvents>,
     pub(crate) events: RuntimeEventBus,
-    shell: Option<Arc<dyn HostShell>>,
+    shell: OnceLock<Arc<dyn HostShell>>,
     web_assets: OnceLock<Arc<dyn super::web_assets::WebAssets>>,
     #[cfg(feature = "tauri")]
     pub(crate) core: super::PiloRuntime,
@@ -44,30 +66,41 @@ impl Runtime {
     pub(crate) fn new(paths: HostPaths, host_events: Arc<dyn HostEvents>) -> Self {
         let events = RuntimeEventBus::for_host();
         events.initialize_session_reads(paths.clone());
-        Self(Arc::new(RuntimeState {
+        let runtime = Self(Arc::new(RuntimeState {
             paths,
             host_events,
             events,
-            shell: None,
+            shell: OnceLock::new(),
             web_assets: OnceLock::new(),
             #[cfg(feature = "tauri")]
             core: super::PiloRuntime::default(),
             #[cfg(feature = "tauri")]
             remote: super::RemoteServerManager::default(),
-        }))
+        }));
+        #[cfg(feature = "tauri")]
+        runtime.servers.initialize_control(&runtime);
+        runtime
     }
 
-    pub(crate) fn with_shell(mut self, shell: Arc<dyn HostShell>) -> Result<Self, String> {
-        Arc::get_mut(&mut self.0)
-            .ok_or("runtime is already shared")?
-            .shell = Some(shell);
+    pub(crate) fn with_shell(self, shell: Arc<dyn HostShell>) -> Result<Self, String> {
+        if Arc::strong_count(&self.0) != 1 {
+            return Err("runtime is already shared".to_owned());
+        }
+        self.shell
+            .set(shell)
+            .map_err(|_| "host shell is already configured")?;
         Ok(self)
     }
 
     pub(crate) fn shell(&self) -> Result<&dyn HostShell, String> {
         self.shell
-            .as_deref()
+            .get()
+            .map(Arc::as_ref)
             .ok_or_else(|| "host shell services are unavailable".to_owned())
+    }
+
+    pub(crate) fn downgrade(&self) -> WeakRuntime {
+        WeakRuntime(Arc::downgrade(&self.0))
     }
 
     pub(crate) fn with_web_assets(
@@ -121,6 +154,28 @@ pub(crate) async fn session_mark_read(
 mod tests {
     use super::super::host_events::RecordingEvents;
     use super::*;
+
+    #[cfg(feature = "tauri")]
+    #[tokio::test]
+    async fn agent_control_resolves_the_same_runtime_without_retaining_it() {
+        let runtime = Runtime::new(
+            HostPaths::for_test(std::path::PathBuf::new()),
+            Arc::new(RecordingEvents::default()),
+        );
+        let servers = runtime.servers.clone();
+        let shared = servers.control_runtime().unwrap();
+        assert!(Arc::ptr_eq(&runtime.0, &shared.0));
+        let weak = runtime.downgrade();
+        drop(shared);
+        drop(runtime);
+        assert!(weak.upgrade().is_err());
+        assert!(servers.control_runtime().is_err());
+        assert!(
+            super::super::server_client::ServerManager::default()
+                .control_runtime()
+                .is_err()
+        );
+    }
 
     #[tokio::test]
     async fn cloned_runtime_shares_state_and_read_storage_without_a_shell() {

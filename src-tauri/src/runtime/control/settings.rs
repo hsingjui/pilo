@@ -1,34 +1,32 @@
 use pilo_protocol::ControlCommand;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Manager};
 
 use super::{changed, decode, encode, required};
 use crate::domain::ThemeSettingsUpdate;
-use crate::runtime::{RuntimeEventBus, commands, preferences, project, storage};
+use crate::runtime::{Runtime, preferences, project, storage};
 
-pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result<Value, String> {
+pub(super) async fn settings(runtime: &Runtime, command: ControlCommand) -> Result<Value, String> {
     let key = required(command.key.as_deref(), "setting key")?;
     let get = command.method == "settings.get";
     let reset = command.method == "settings.reset";
     if reset && key != "connection.cacheKeepAlive" && !command.value.is_null() {
         return Err("this setting reset does not accept a JSON value".to_owned());
     }
-    let events = app.state::<RuntimeEventBus>();
+    let events = &runtime.events;
     if let Some(name) = key.strip_prefix("preferences.") {
         let default = preferences::defaults()
             .get(name)
             .cloned()
             .ok_or("unknown preference")?;
         if get {
-            let snapshot = preferences::load(&crate::desktop_paths::from_app(app)?)?;
+            let snapshot = preferences::load(&runtime.paths)?;
             return Ok(
                 json!({ "key": key, "value": snapshot.values.get(name), "revision": snapshot.revision }),
             );
         }
         let mut patch = serde_json::Map::new();
         patch.insert(name.to_owned(), if reset { default } else { command.value });
-        let snapshot =
-            preferences::save(&crate::desktop_paths::from_app(app)?, &events, patch, false)?;
+        let snapshot = preferences::save(&runtime.paths, events, patch, false)?;
         return Ok(
             json!({ "key": key, "value": snapshot.values.get(name), "revision": snapshot.revision, "effect": if name == "desktopNotifications" { "saved; delivery still requires OS/browser notification permission" } else { "saved" } }),
         );
@@ -53,12 +51,9 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
         }
         let defaults = encode(crate::domain::ThemeSettings::default())?;
         if get {
-            let settings = crate::runtime::appearance::load(
-                crate::desktop_paths::from_app(app)?,
-                events.inner().clone(),
-                None,
-            )
-            .await?;
+            let settings =
+                crate::runtime::appearance::load(runtime.paths.clone(), events.clone(), None)
+                    .await?;
             let settings = encode(settings)?;
             return settings
                 .get(name)
@@ -80,65 +75,35 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
         update.insert(name.to_owned(), value);
         let update: ThemeSettingsUpdate = decode(Value::Object(update))?;
         return encode(
-            crate::runtime::appearance::save(
-                crate::desktop_paths::from_app(app)?,
-                events.inner().clone(),
-                update,
-            )
-            .await?,
+            crate::runtime::appearance::save(runtime.paths.clone(), events.clone(), update).await?,
         );
     }
     let value = command.value;
     let result = match key.as_str() {
-        "desktop.autostart" => {
-            if get {
-                encode(crate::runtime::desktop_startup::desktop_autostart_get(app.clone()).await?)
+        "desktop.autostart" | "desktop.exitOnClose" | "desktop.showShortcut" => {
+            let value = if get {
+                None
             } else {
-                encode(
-                    crate::runtime::desktop_startup::desktop_autostart_set(
-                        app.clone(),
-                        decode(if reset { json!("disabled") } else { value })?,
-                    )
-                    .await?,
-                )
-            }
-        }
-        "desktop.exitOnClose" => {
-            if get {
-                encode(crate::desktop_tray::desktop_exit_on_close_get(app.clone()).await?)
-            } else {
-                encode(
-                    crate::desktop_tray::desktop_exit_on_close_set(
-                        app.clone(),
-                        decode(if reset { json!(false) } else { value })?,
-                    )
-                    .await?,
-                )
-            }
-        }
-        "desktop.showShortcut" => {
-            if get {
-                encode(crate::desktop_shortcut::desktop_shortcut_get(app.clone()).await?)
-            } else {
-                let shortcut: String = decode(if reset {
-                    json!(crate::domain::DEFAULT_SHOW_SHORTCUT)
+                Some(if reset {
+                    match key.as_str() {
+                        "desktop.autostart" => json!("disabled"),
+                        "desktop.exitOnClose" => json!(false),
+                        _ => json!(crate::domain::DEFAULT_SHOW_SHORTCUT),
+                    }
                 } else {
                     value
-                })?;
-                encode(crate::desktop_shortcut::desktop_shortcut_set(app.clone(), shortcut).await?)
-            }
+                })
+            };
+            runtime.shell()?.desktop_setting(key.clone(), value).await
         }
         "project.models" => {
             let id = required(command.project_id.as_deref(), "--project")?;
             if get {
-                encode(project::load_model_scope(
-                    &app.state::<crate::runtime::Runtime>(),
-                    &id,
-                )?)
+                encode(project::load_model_scope(runtime, &id)?)
             } else {
                 encode(project::save_model_scope(
-                    &app.state::<crate::runtime::Runtime>(),
-                    &events,
+                    runtime,
+                    events,
                     &id,
                     decode(if reset { Value::Null } else { value })?,
                 )?)
@@ -149,14 +114,13 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
         | "connection.promptEnhancement"
         | "connection.cacheKeepAlive" => {
             let id = required(command.connection_id.as_deref(), "--connection")?;
-            storage::get_connection(&storage::open(&crate::desktop_paths::from_app(app)?)?, &id)?
+            storage::get_connection(&storage::open(&runtime.paths)?, &id)?
                 .ok_or("target connection not found")?;
             match key.as_str() {
                 "connection.namingModel" => {
                     if get {
-                        encode(commands::connection_naming_model_get(
-                            app.state::<crate::runtime::Runtime>(),
-                            id,
+                        encode(crate::runtime::connections::connection_naming_model_get(
+                            runtime, id,
                         )?)
                     } else {
                         #[derive(serde::Deserialize)]
@@ -169,19 +133,15 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                         let (provider, model_id) = model
                             .map(|model| (Some(model.provider), Some(model.model_id)))
                             .unwrap_or_default();
-                        encode(commands::connection_naming_model_set(
-                            app.state::<crate::runtime::Runtime>(),
-                            id,
-                            provider,
-                            model_id,
+                        encode(crate::runtime::connections::connection_naming_model_set(
+                            runtime, id, provider, model_id,
                         )?)
                     }
                 }
                 "connection.nextPrompt" => {
                     if get {
-                        encode(commands::next_prompt_settings_get(
-                            app.state::<crate::runtime::Runtime>(),
-                            id,
+                        encode(crate::runtime::next_prompt::next_prompt_settings_get(
+                            runtime, id,
                         )?)
                     } else {
                         #[derive(serde::Deserialize)]
@@ -195,8 +155,8 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                         } else {
                             value
                         })?;
-                        encode(commands::next_prompt_settings_set(
-                            app.state::<crate::runtime::Runtime>(),
+                        encode(crate::runtime::next_prompt::next_prompt_settings_set(
+                            runtime,
                             id,
                             settings.enabled,
                             settings.model,
@@ -205,10 +165,11 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                 }
                 "connection.promptEnhancement" => {
                     if get {
-                        encode(commands::prompt_enhancement_settings_get(
-                            app.state::<crate::runtime::Runtime>(),
-                            id,
-                        )?)
+                        encode(
+                            crate::runtime::prompt_enhancement::prompt_enhancement_settings_get(
+                                runtime, id,
+                            )?,
+                        )
                     } else {
                         #[derive(serde::Deserialize)]
                         #[serde(deny_unknown_fields)]
@@ -221,20 +182,23 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                         } else {
                             value
                         })?;
-                        encode(commands::prompt_enhancement_settings_set(
-                            app.state::<crate::runtime::Runtime>(),
-                            id,
-                            settings.enabled,
-                            settings.model,
-                        )?)
+                        encode(
+                            crate::runtime::prompt_enhancement::prompt_enhancement_settings_set(
+                                runtime,
+                                id,
+                                settings.enabled,
+                                settings.model,
+                            )?,
+                        )
                     }
                 }
                 _ => {
                     if get {
-                        encode(commands::cache_keep_alive_settings_list(
-                            app.state::<crate::runtime::Runtime>(),
-                            id,
-                        )?)
+                        encode(
+                            crate::runtime::cache_keep_alive::cache_keep_alive_settings_list(
+                                runtime, id,
+                            )?,
+                        )
                     } else {
                         let mut settings = value
                             .as_object()
@@ -254,8 +218,8 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                         settings.insert("connectionId".to_owned(), json!(id));
                         settings.entry("updatedAtMs".to_owned()).or_insert(json!(0));
                         encode(
-                            commands::cache_keep_alive_settings_set(
-                                app.state::<crate::runtime::Runtime>(),
+                            crate::runtime::cache_keep_alive::cache_keep_alive_settings_set(
+                                runtime,
                                 decode(Value::Object(settings))?,
                             )
                             .await?,
@@ -268,24 +232,16 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
             if !get {
                 return Err("remote.devices is read-only".to_owned());
             }
-            encode(
-                app.state::<crate::runtime::RemoteServerManager>()
-                    .snapshot(&app.state::<crate::runtime::Runtime>())
-                    .await?
-                    .devices,
-            )
+            encode(&runtime.remote.snapshot(runtime).await?.devices)
         }
         "remote.deviceName" | "remote.revokeDevice" => {
             if get || reset {
                 return Err("remote device actions require settings set".to_owned());
             }
-            let remote = app.state::<crate::runtime::RemoteServerManager>();
+            let remote = &runtime.remote;
             let state = if key == "remote.revokeDevice" {
                 remote
-                    .revoke_device(
-                        &app.state::<crate::runtime::Runtime>(),
-                        &decode::<String>(value)?,
-                    )
+                    .revoke_device(runtime, &decode::<String>(value)?)
                     .await?
             } else {
                 #[derive(serde::Deserialize)]
@@ -296,35 +252,26 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                 }
                 let rename: Rename = decode(value)?;
                 remote
-                    .rename_device(
-                        &app.state::<crate::runtime::Runtime>(),
-                        &rename.device_id,
-                        &rename.name,
-                    )
+                    .rename_device(runtime, &rename.device_id, &rename.name)
                     .await?
             };
             encode(state.devices)
         }
         "remote.enabled" | "remote.port" | "remote.publicBaseUrl" | "remote.addresses" => {
-            let remote = app.state::<crate::runtime::RemoteServerManager>();
+            let remote = &runtime.remote;
             let state = if get {
-                remote
-                    .snapshot(&app.state::<crate::runtime::Runtime>())
-                    .await?
+                remote.snapshot(runtime).await?
             } else {
                 match key.as_str() {
                     "remote.enabled" => {
                         remote
-                            .set_enabled(
-                                &app.state::<crate::runtime::Runtime>(),
-                                decode(if reset { json!(false) } else { value })?,
-                            )
+                            .set_enabled(runtime, decode(if reset { json!(false) } else { value })?)
                             .await?
                     }
                     "remote.port" => {
                         remote
                             .set_port(
-                                &app.state::<crate::runtime::Runtime>(),
+                                runtime,
                                 decode(if reset {
                                     json!(crate::domain::random_remote_port())
                                 } else {
@@ -336,7 +283,7 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                     "remote.publicBaseUrl" => {
                         remote
                             .set_public_base_url(
-                                &app.state::<crate::runtime::Runtime>(),
+                                runtime,
                                 &decode::<String>(if reset { json!("") } else { value })?,
                             )
                             .await?
@@ -348,9 +295,7 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                                     .to_owned(),
                             );
                         }
-                        remote
-                            .set_addresses(&app.state::<crate::runtime::Runtime>(), decode(value)?)
-                            .await?
+                        remote.set_addresses(runtime, decode(value)?).await?
                     }
                 }
             };
@@ -369,7 +314,7 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
         _ => Err("unknown setting key; use settings list".to_owned()),
     }?;
     if !get {
-        changed(app);
+        changed(runtime);
     }
     Ok(
         json!({ "key": key, "value": result, "connectionId": command.connection_id, "projectId": command.project_id }),
