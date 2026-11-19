@@ -185,6 +185,26 @@ the repo root, or set `PILO_SERVER_BINARY` to an absolute path. Development
 WebUI assets come from `dist/`; a packaged app will stage them under
 `Contents/Resources/webui` and the server under `Contents/Resources/runtime`.
 
+## Chat transcripts
+
+`ChatTranscriptStore` (`state/chat-transcript-store.ts`) holds the transcript
+of the open chat. Opening a chat starts nothing.
+
+- With Pi running, it reads `chatTranscriptSnapshot` and applies the chat's
+  later events, so a turn streams. A gap, a reconnect, or a newer Pi process
+  takes a fresh snapshot.
+- Without a snapshot, it shows the session file's settled history from
+  `loadHistory`: no Pi, a stopped or failed process, or a snapshot that is
+  truncated with no turn running or again after the turn settled. A truncated
+  snapshot of a running turn shows nothing new until that turn has settled.
+- A chat on settled history tries a snapshot again when Pi comes up and once
+  when each turn starts, so a local chat goes back to streaming.
+
+Known gap: SSH and WSL snapshots are always truncated, so a remote chat's
+running turn does not stream in nsh yet. It appears when the turn has
+settled. The follow-up is to apply live events on top of settled history, as
+the WebUI does.
+
 ## Built-in themes
 
 From the repository root, run `pnpm desktop:generate:themes` after editing

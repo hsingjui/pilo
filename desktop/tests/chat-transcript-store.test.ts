@@ -4,7 +4,9 @@ import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import type {
 	PiloClientEvent,
 	PiloClientEventOptions,
+	PiloClientHistoryOptions,
 } from "@/lib/api/pilo-client";
+import type { SessionHistoryResult } from "@/lib/api/sessions-types";
 import type { ConversationReducerContext } from "@/lib/chat/conversation-types";
 import type {
 	ChatTranscriptSnapshot,
@@ -17,6 +19,7 @@ import {
 } from "../state/chat-transcript-store";
 
 const chat = { sessionKey: "k1", projectId: "p1", generation: 1 };
+const target = { sessionKey: "k1", projectId: "p1", sessionPath: "/s.jsonl" };
 
 function context(): ConversationReducerContext {
 	let id = 0;
@@ -28,10 +31,39 @@ function context(): ConversationReducerContext {
 	};
 }
 
-const runtime = (state: string, generation = chat.generation) =>
-	({ snapshot: { state, generation } }) as ChatSessionRuntimeState;
+const runtime = (
+	state: string,
+	generation = chat.generation,
+	rest: Partial<ChatSessionRuntimeState> = {},
+) =>
+	({
+		activeTurn: false,
+		...rest,
+		snapshot: { state, generation },
+	}) as ChatSessionRuntimeState;
 const running = runtime("running");
+/** A Pi that is running a turn, as a truncated snapshot's chat usually is. */
+const busy = runtime("running", chat.generation, { activeTurn: true });
 const stopped = runtime("stopped");
+/** A session file's settled history: one question per text. */
+const history = (...questions: string[]) =>
+	({
+		history: {
+			events: questions.map((text) => ({ type: "user_message_start", text })),
+		},
+		fingerprint: null,
+	}) as unknown as SessionHistoryResult;
+const asked = (sequence: number, text: string): PiloClientEvent => ({
+	...chat,
+	type: "user_message_start",
+	text,
+	sequence,
+});
+const replying = (sequence: number): PiloClientEvent => ({
+	...chat,
+	type: "assistant_message_start",
+	sequence,
+});
 const process = (
 	sequence: number,
 	state: string,
@@ -96,11 +128,21 @@ const settled = (sequence: number): PiloClientEvent => ({
 
 type Reply<T> = { resolve: (value: T) => void; reject: (error: Error) => void };
 
-/** A client whose snapshot calls the test answers one at a time. */
+/**
+ * A client whose snapshot calls the test answers one at a time. A history
+ * read answers `answers.history` at once, or waits for the test when that
+ * is `null`.
+ */
 function fakeClient() {
 	const snapshots: Reply<ChatTranscriptSnapshot>[] = [];
+	const histories: (Reply<SessionHistoryResult> & {
+		projectId: string;
+		sessionPath: string;
+		options?: PiloClientHistoryOptions;
+	})[] = [];
 	const answers = {
 		runtime: running as ChatSessionRuntimeState | null,
+		history: history("settled") as SessionHistoryResult | null,
 		/** How many times the runtime state was read. */
 		reads: 0,
 	};
@@ -111,11 +153,16 @@ function fakeClient() {
 		},
 		chatTranscriptSnapshot: () =>
 			new Promise((resolve, reject) => snapshots.push({ resolve, reject })),
+		loadHistory: (projectId, sessionPath, options) =>
+			new Promise((resolve, reject) => {
+				histories.push({ projectId, sessionPath, options, resolve, reject });
+				if (answers.history) resolve(answers.history);
+			}),
 	};
 	const store = new ChatTranscriptStore(client, context());
 	const texts = () =>
 		store.state().conversation?.messages.map((message) => message.text);
-	return { store, snapshots, answers, texts };
+	return { store, snapshots, histories, answers, texts };
 }
 
 /** Lets the calls already answered run to their next wait. */
@@ -125,11 +172,12 @@ test("a chat opens as loading and shows its snapshot", async () => {
 	const { store, snapshots, texts } = fakeClient();
 	expect(store.state().status).toBe("closed");
 
-	const opened = store.open(chat.sessionKey, true);
+	const opened = store.open(target, true);
 	expect(store.state()).toEqual({
 		sessionKey: "k1",
 		status: "loading",
 		conversation: null,
+		source: null,
 	});
 	await settle();
 	snapshots[0]?.resolve(snapshot(10));
@@ -141,7 +189,7 @@ test("a chat opens as loading and shows its snapshot", async () => {
 
 test("events that arrive while the snapshot is awaited are applied above its cut only", async () => {
 	const { store, snapshots, texts } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const opened = store.open(target, true);
 	await settle();
 	store.receive([delta(9, " stale"), delta(10, " at the cut")]);
 	store.receive([delta(11, " two"), delta(12, " other", { sessionKey: "k2" })]);
@@ -156,7 +204,7 @@ test("events that arrive while the snapshot is awaited are applied above its cut
 
 test("a ready chat follows its later events and ignores other chats", async () => {
 	const { store, snapshots, texts } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const opened = store.open(target, true);
 	await settle();
 	snapshots[0]?.resolve(snapshot(10, turn("one")));
 	await opened;
@@ -176,7 +224,7 @@ test("a ready chat follows its later events and ignores other chats", async () =
 
 test("after lost events the chat is read again and keeps what it showed meanwhile", async () => {
 	const { store, snapshots, texts } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const opened = store.open(target, true);
 	await settle();
 	snapshots[0]?.resolve(snapshot(10, turn("one")));
 	await opened;
@@ -198,7 +246,7 @@ test("after lost events the chat is read again and keeps what it showed meanwhil
 
 test("an event of a newer Pi process takes a fresh snapshot", async () => {
 	const { store, snapshots, texts } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const opened = store.open(target, true);
 	await settle();
 	snapshots[0]?.resolve(snapshot(10, turn("one")));
 	await opened;
@@ -224,7 +272,7 @@ test("an event of a newer Pi process takes a fresh snapshot", async () => {
 
 test("a newer Pi process seen while the snapshot was awaited takes another", async () => {
 	const { store, snapshots } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const opened = store.open(target, true);
 	await settle();
 	store.receive([delta(11, "new", { generation: 2 })]);
 	snapshots[0]?.resolve(snapshot(10));
@@ -240,8 +288,9 @@ test("a newer Pi process seen while the snapshot was awaited takes another", asy
 });
 
 test("a truncated snapshot shows nothing new and is taken again once when the turn settles", async () => {
-	const { store, snapshots, texts } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const { store, snapshots, histories, answers, texts } = fakeClient();
+	answers.runtime = busy;
+	const opened = store.open(target, true);
 	await settle();
 	snapshots[0]?.resolve(snapshot(10, { type: "truncated" }));
 	await opened;
@@ -251,11 +300,13 @@ test("a truncated snapshot shows nothing new and is taken again once when the tu
 		sessionKey: "k1",
 		status: "loading",
 		conversation: null,
+		source: null,
 	});
 	// The running turn's events are not applied, and ask for nothing.
 	store.receive([delta(11, "partial"), delta(12, " reply")]);
 	await settle();
 	expect(snapshots.length).toBe(1);
+	expect(histories.length).toBe(0);
 	expect(store.state().conversation).toBe(null);
 
 	store.receive([settled(13)]);
@@ -265,31 +316,63 @@ test("a truncated snapshot shows nothing new and is taken again once when the tu
 	await settle();
 
 	expect(store.state().status).toBe("ready");
+	expect(store.state().source).toBe("snapshot");
 	expect(texts()).toEqual(["saved"]);
+	expect(histories.length).toBe(0);
 });
 
 test("a truncated snapshot keeps the transcript the chat showed before", async () => {
-	const { store, snapshots, texts } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const { store, snapshots, answers, texts } = fakeClient();
+	const opened = store.open(target, true);
 	await settle();
 	snapshots[0]?.resolve(snapshot(10, turn("one")));
 	await opened;
 
+	answers.runtime = busy;
 	const refreshed = store.refresh();
 	await settle();
 	snapshots[1]?.resolve(snapshot(20, { type: "truncated" }));
 	await refreshed;
 
 	expect(store.state().status).toBe("loading");
+	expect(store.state().source).toBe("snapshot");
 	expect(texts()).toEqual(["saved", "asked", "one"]);
 	// Later events are not put on top of a transcript that may have a hole.
 	store.receive([delta(21, " two")]);
 	expect(texts()).toEqual(["saved", "asked", "one"]);
 });
 
-test("a chat that is truncated again after its turn settled is not asked a third time", async () => {
-	const { store, snapshots } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+test("a chat truncated again after its turn settled shows its settled history", async () => {
+	const { store, snapshots, histories, answers, texts } = fakeClient();
+	answers.runtime = busy;
+	const opened = store.open(target, true);
+	await settle();
+	snapshots[0]?.resolve(snapshot(10, { type: "truncated" }));
+	await opened;
+	answers.runtime = running;
+	store.receive([settled(11)]);
+	await settle();
+	snapshots[1]?.resolve(snapshot(11, { type: "truncated" }));
+	await settle();
+
+	expect(
+		histories.map(({ projectId, sessionPath }) => [projectId, sessionPath]),
+	).toEqual([["p1", "/s.jsonl"]]);
+	expect(store.state().status).toBe("ready");
+	expect(store.state().source).toBe("history");
+	expect(texts()).toEqual(["settled"]);
+	// Events are not applied on settled history, and these ask for nothing.
+	store.receive([delta(12, "more"), process(13, "running")]);
+	await settle();
+	expect(texts()).toEqual(["settled"]);
+	expect(snapshots.length).toBe(2);
+	expect(histories.length).toBe(1);
+});
+
+test("a chat on settled history goes back to a snapshot when its next turn starts", async () => {
+	const { store, snapshots, histories, answers, texts } = fakeClient();
+	answers.runtime = busy;
+	const opened = store.open(target, true);
 	await settle();
 	snapshots[0]?.resolve(snapshot(10, { type: "truncated" }));
 	await opened;
@@ -297,21 +380,104 @@ test("a chat that is truncated again after its turn settled is not asked a third
 	await settle();
 	snapshots[1]?.resolve(snapshot(11, { type: "truncated" }));
 	await settle();
+	expect(store.state().source).toBe("history");
 
-	expect(store.state()).toEqual({
-		sessionKey: "k1",
-		status: "not_loaded",
-		conversation: null,
-	});
-	// Later turns settling do not start it over.
-	store.receive([delta(12, "more"), settled(13), settled(14)]);
+	// The next turn of a local chat can be rebuilt again.
+	store.receive([asked(20, "asked"), replying(21)]);
+	await settle();
+	expect(snapshots.length).toBe(3);
+	store.receive([delta(22, "one")]);
+	snapshots[2]?.resolve(snapshot(21, turn("")));
+	await settle();
+
+	expect(store.state().status).toBe("ready");
+	expect(store.state().source).toBe("snapshot");
+	expect(texts()).toEqual(["saved", "asked", "one"]);
+	// From here the turn streams, with nothing more asked.
+	store.receive([delta(23, " two"), settled(24)]);
+	await settle();
+	expect(texts()).toEqual(["saved", "asked", "one two"]);
+	expect(snapshots.length).toBe(3);
+	expect(histories.length).toBe(1);
+});
+
+test("a chat that stays truncated costs two snapshots and one history read per turn", async () => {
+	const { store, snapshots, histories, answers, texts } = fakeClient();
+	// A remote chat: its snapshots are truncated even with no turn running.
+	const opened = store.open(target, true);
+	await settle();
+	snapshots[0]?.resolve(snapshot(10, { type: "truncated" }));
+	await opened;
+	expect(store.state().status).toBe("ready");
+	expect(store.state().source).toBe("history");
+	expect(snapshots.length).toBe(1);
+	expect(histories.length).toBe(1);
+
+	for (const [turnNumber, base] of [
+		[1, 20],
+		[2, 40],
+	] as const) {
+		answers.runtime = busy;
+		answers.history = history("settled", `turn ${turnNumber}`);
+		store.receive([asked(base, "asked"), replying(base + 1)]);
+		await settle();
+		// One snapshot when the turn starts.
+		expect(snapshots.length).toBe(2 * turnNumber);
+		snapshots.at(-1)?.resolve(snapshot(base + 1, { type: "truncated" }));
+		await settle();
+		// The rest of the turn asks for nothing and shows nothing.
+		store.receive([
+			delta(base + 2, "one"),
+			replying(base + 3),
+			asked(base + 4, "steer"),
+		]);
+		await settle();
+		expect(snapshots.length).toBe(2 * turnNumber);
+		expect(histories.length).toBe(turnNumber);
+		expect(texts()?.at(-1)).toBe(turnNumber === 1 ? "settled" : "turn 1");
+
+		// One snapshot and one history read when it has settled.
+		answers.runtime = running;
+		store.receive([settled(base + 5)]);
+		await settle();
+		expect(snapshots.length).toBe(2 * turnNumber + 1);
+		snapshots.at(-1)?.resolve(snapshot(base + 5, { type: "truncated" }));
+		await settle();
+		expect(histories.length).toBe(turnNumber + 1);
+		expect(store.state().status).toBe("ready");
+		expect(store.state().source).toBe("history");
+		expect(texts()).toEqual(["settled", `turn ${turnNumber}`]);
+	}
+});
+
+test("a turn the runtime state does not report yet is still asked for only once", async () => {
+	const { store, snapshots, histories } = fakeClient();
+	const opened = store.open(target, true);
+	await settle();
+	snapshots[0]?.resolve(snapshot(10, { type: "truncated" }));
+	await opened;
+
+	// The turn has started, but the runtime state still says none is running,
+	// so the truncated snapshot is answered with settled history at once.
+	store.receive([asked(20, "asked")]);
+	await settle();
+	snapshots[1]?.resolve(snapshot(20, { type: "truncated" }));
+	await settle();
+	expect(histories.length).toBe(2);
+	store.receive([replying(21), delta(22, "one"), replying(23)]);
 	await settle();
 	expect(snapshots.length).toBe(2);
+	expect(histories.length).toBe(2);
+
+	store.receive([settled(24)]);
+	await settle();
+	expect(snapshots.length).toBe(3);
 });
 
 test("a turn that settled while its truncated snapshot was on the way is read again at once", async () => {
-	const { store, snapshots, texts } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const { store, snapshots, answers, texts } = fakeClient();
+	answers.runtime = busy;
+	const opened = store.open(target, true);
 	await settle();
 	store.receive([settled(11)]);
 	snapshots[0]?.resolve(snapshot(10, { type: "truncated" }));
@@ -326,8 +492,9 @@ test("a turn that settled while its truncated snapshot was on the way is read ag
 });
 
 test("a settle from before a truncated snapshot's cut does not count for it", async () => {
-	const { store, snapshots } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const { store, snapshots, answers } = fakeClient();
+	answers.runtime = busy;
+	const opened = store.open(target, true);
 	await settle();
 	store.receive([settled(9)]);
 	snapshots[0]?.resolve(snapshot(10, { type: "truncated" }));
@@ -348,8 +515,9 @@ for (const [name, event] of [
 	],
 ] as const) {
 	test(`${name} ends the wait of a truncated chat`, async () => {
-		const { store, snapshots } = fakeClient();
-		const opened = store.open(chat.sessionKey, true);
+		const { store, snapshots, answers } = fakeClient();
+		answers.runtime = busy;
+		const opened = store.open(target, true);
 		await settle();
 		snapshots[0]?.resolve(snapshot(10, { type: "truncated" }));
 		await opened;
@@ -361,8 +529,9 @@ for (const [name, event] of [
 }
 
 test("a reattached Pi with a turn running does not end the wait", async () => {
-	const { store, snapshots } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const { store, snapshots, answers } = fakeClient();
+	answers.runtime = busy;
+	const opened = store.open(target, true);
 	await settle();
 	snapshots[0]?.resolve(snapshot(10, { type: "truncated" }));
 	await opened;
@@ -380,30 +549,118 @@ test("a reattached Pi with a turn running does not end the wait", async () => {
 	expect(snapshots.length).toBe(1);
 });
 
-for (const [name, runtime] of [
+for (const [name, state] of [
 	["never started", null],
 	["stopped", stopped],
+	["failed", runtime("failed")],
 ] as const) {
-	test(`a chat whose Pi is ${name} is left not loaded, with no snapshot asked`, async () => {
-		const { store, snapshots, answers } = fakeClient();
-		answers.runtime = runtime;
-		await store.open(chat.sessionKey, true);
+	test(`a chat whose Pi is ${name} shows its settled history, with no snapshot asked`, async () => {
+		const { store, snapshots, histories, answers, texts } = fakeClient();
+		answers.runtime = state;
+		await store.open(target, true);
 
-		expect(store.state()).toEqual({
-			sessionKey: "k1",
-			status: "not_loaded",
-			conversation: null,
-		});
+		expect(store.state().status).toBe("ready");
+		expect(store.state().source).toBe("history");
+		expect(texts()).toEqual(["settled"]);
 		expect(snapshots.length).toBe(0);
-		store.receive([delta(11, "text"), settled(12)]);
-		await settle();
-		expect(snapshots.length).toBe(0);
+		expect(histories.length).toBe(1);
+		expect(histories[0]?.projectId).toBe("p1");
+		expect(histories[0]?.sessionPath).toBe("/s.jsonl");
+		expect(histories[0]?.options).toBe(undefined);
 	});
 }
 
+test("the session file the runtime knows and the window of the chat are the ones read", async () => {
+	const { store, histories, answers } = fakeClient();
+	answers.runtime = runtime("stopped", 1, { sessionPath: "/runtime.jsonl" });
+	const window = { messageLimit: 40, includeMessageIndex: true };
+	await store.open(target, true, window);
+
+	expect(histories[0]?.sessionPath).toBe("/runtime.jsonl");
+	expect(histories[0]?.options).toEqual(window);
+});
+
+test("a chat that was never saved and has no Pi is empty", async () => {
+	const { store, snapshots, histories, answers } = fakeClient();
+	answers.runtime = null;
+	await store.open({ sessionKey: "k1", projectId: "p1" }, true);
+
+	expect(store.state().status).toBe("ready");
+	expect(store.state().source).toBe("history");
+	expect(store.state().conversation?.messages).toEqual([]);
+	expect(snapshots.length).toBe(0);
+	expect(histories.length).toBe(0);
+});
+
+test("an unsaved chat that stays truncated after its turn is left not loaded", async () => {
+	const { store, snapshots, histories, answers } = fakeClient();
+	answers.runtime = busy;
+	const opened = store.open({ sessionKey: "k1", projectId: "p1" }, true);
+	await settle();
+	snapshots[0]?.resolve(snapshot(10, { type: "truncated" }));
+	await opened;
+	store.receive([settled(11)]);
+	await settle();
+	snapshots[1]?.resolve(snapshot(11, { type: "truncated" }));
+	await settle();
+
+	expect(store.state()).toEqual({
+		sessionKey: "k1",
+		status: "not_loaded",
+		conversation: null,
+		source: null,
+	});
+	expect(histories.length).toBe(0);
+	// It is asked again when its next turn starts, not before.
+	store.receive([delta(12, "more")]);
+	await settle();
+	expect(snapshots.length).toBe(2);
+	store.receive([asked(13, "next")]);
+	await settle();
+	expect(snapshots.length).toBe(3);
+});
+
+test("settled history that cannot be read fails the chat and says why", async () => {
+	const { store, histories, answers } = fakeClient();
+	answers.runtime = null;
+	answers.history = null;
+	const opened = store.open(target, true);
+	await settle();
+	histories[0]?.reject(new Error("No such file or directory"));
+	await opened;
+
+	expect(store.state()).toEqual({
+		sessionKey: "k1",
+		status: "failed",
+		conversation: null,
+		source: null,
+		message: "No such file or directory",
+	});
+});
+
+test("settled history that answers after another chat was opened is not shown", async () => {
+	const { store, histories, answers, texts } = fakeClient();
+	answers.runtime = null;
+	answers.history = null;
+	const opened = store.open(target, true);
+	await settle();
+	const other = store.open(
+		{ ...target, sessionKey: "k2", sessionPath: "/other.jsonl" },
+		true,
+	);
+	await settle();
+	histories[1]?.resolve(history("other chat"));
+	await other;
+	histories[0]?.resolve(history("first chat"));
+	await opened;
+
+	expect(store.state().sessionKey).toBe("k2");
+	expect(texts()).toEqual(["other chat"]);
+});
+
 test("a failed read says why and keeps the transcript; a refresh reads again", async () => {
 	const { store, snapshots, texts } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const opened = store.open(target, true);
 	await settle();
 	snapshots[0]?.resolve(snapshot(10));
 	await opened;
@@ -428,7 +685,7 @@ test("a failed read says why and keeps the transcript; a refresh reads again", a
 
 test("a snapshot that answers after a newer read or a close is not shown", async () => {
 	const { store, snapshots, texts } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const opened = store.open(target, true);
 	await settle();
 	const refreshed = store.refresh();
 	await settle();
@@ -438,7 +695,7 @@ test("a snapshot that answers after a newer read or a close is not shown", async
 	await opened;
 	expect(texts()).toEqual(["saved", "asked", "newer"]);
 
-	const reopened = store.open(chat.sessionKey, true);
+	const reopened = store.open(target, true);
 	await settle();
 	store.close();
 	snapshots[2]?.resolve(snapshot(30));
@@ -447,6 +704,7 @@ test("a snapshot that answers after a newer read or a close is not shown", async
 		sessionKey: null,
 		status: "closed",
 		conversation: null,
+		source: null,
 	});
 	store.receive([delta(31, "ignored")]);
 	expect(store.state().conversation).toBe(null);
@@ -454,12 +712,12 @@ test("a snapshot that answers after a newer read or a close is not shown", async
 
 test("opening another chat drops the first one's transcript and events", async () => {
 	const { store, snapshots, texts } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const opened = store.open(target, true);
 	await settle();
 	snapshots[0]?.resolve(snapshot(10, turn("one")));
 	await opened;
 
-	const other = store.open("k2", true);
+	const other = store.open({ ...target, sessionKey: "k2" }, true);
 	expect(store.state().conversation).toBe(null);
 	await settle();
 	store.receive([delta(11, " first chat")]);
@@ -472,11 +730,11 @@ test("opening another chat drops the first one's transcript and events", async (
 
 test("opening another chat without the event stream drops the first one's read", async () => {
 	const { store, snapshots } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const opened = store.open(target, true);
 	await settle();
 	expect(snapshots.length).toBe(1);
 
-	await store.open("k2", false);
+	await store.open({ ...target, sessionKey: "k2" }, false);
 	store.receive([delta(11, "second chat", { sessionKey: "k2" })]);
 	snapshots[0]?.resolve(snapshot(10, turn("first chat")));
 	await opened;
@@ -485,14 +743,16 @@ test("opening another chat without the event stream drops the first one's read",
 		sessionKey: "k2",
 		status: "loading",
 		conversation: null,
+		source: null,
 	});
 });
 
-test("a chat that was not loaded is read once when its Pi starts running", async () => {
-	const { store, snapshots, answers, texts } = fakeClient();
+test("a chat showing settled history moves to a snapshot when its Pi starts running", async () => {
+	const { store, snapshots, histories, answers, texts } = fakeClient();
 	answers.runtime = null;
-	await store.open(chat.sessionKey, true);
-	expect(store.state().status).toBe("not_loaded");
+	await store.open(target, true);
+	expect(store.state().source).toBe("history");
+	expect(texts()).toEqual(["settled"]);
 	expect(answers.reads).toBe(1);
 
 	// Pi is being started for the chat, as the first prompt does.
@@ -505,25 +765,26 @@ test("a chat that was not loaded is read once when its Pi starts running", async
 	await settle();
 	expect(answers.reads).toBe(2);
 	expect(snapshots.length).toBe(1);
-	// The turn's first events arrive while that snapshot is on its way.
-	store.receive([
-		{ ...chat, type: "user_message_start", text: "asked", sequence: 13 },
-		{ ...chat, type: "assistant_message_start", sequence: 14 },
-	]);
+	// The settled history stays up while the snapshot is on its way.
+	expect(texts()).toEqual(["settled"]);
+	// The turn's first events arrive meanwhile.
+	store.receive([asked(13, "asked"), replying(14)]);
 	snapshots[0]?.resolve(snapshot(12));
 	await settle();
 	store.receive([delta(15, "one")]);
 
 	expect(store.state().status).toBe("ready");
+	expect(store.state().source).toBe("snapshot");
 	expect(texts()).toEqual(["saved", "asked", "one"]);
 	expect(answers.reads).toBe(2);
 	expect(snapshots.length).toBe(1);
+	expect(histories.length).toBe(1);
 });
 
-test("a not loaded chat is read on the first event of a Pi process it had not seen", async () => {
+test("a chat on settled history is read on the first event of a Pi process it had not seen", async () => {
 	const { store, snapshots, answers, texts } = fakeClient();
 	answers.runtime = null;
-	await store.open(chat.sessionKey, true);
+	await store.open(target, true);
 
 	// The process came up without its running state being seen here.
 	answers.runtime = running;
@@ -541,23 +802,29 @@ test("a not loaded chat is read on the first event of a Pi process it had not se
 	expect(snapshots.length).toBe(1);
 });
 
-test("events of a Pi process that gave no transcript do not read the chat again", async () => {
-	const { store, snapshots, answers } = fakeClient();
+test("events of a Pi process that is not running do not read the chat again", async () => {
+	const { store, snapshots, histories, answers } = fakeClient();
 	answers.runtime = stopped;
-	await store.open(chat.sessionKey, true);
+	await store.open(target, true);
 	expect(answers.reads).toBe(1);
 
-	store.receive([delta(11, "late"), process(12, "stopped"), settled(13)]);
+	store.receive([
+		delta(11, "late"),
+		asked(12, "late"),
+		process(13, "stopped"),
+		settled(14),
+	]);
 	await settle();
 	expect(answers.reads).toBe(1);
 	expect(snapshots.length).toBe(0);
-	expect(store.state().status).toBe("not_loaded");
+	expect(histories.length).toBe(1);
+	expect(store.state().source).toBe("history");
 });
 
 test("a Pi that is still starting when the chat is read is read again once it runs", async () => {
 	const { store, snapshots, answers, texts } = fakeClient();
 	answers.runtime = runtime("starting");
-	const opened = store.open(chat.sessionKey, true);
+	const opened = store.open(target, true);
 	// The running state arrives before the read of the starting one is done.
 	store.receive([process(11, "running")]);
 	answers.runtime = running;
@@ -574,7 +841,7 @@ test("a Pi that is still starting when the chat is read is read again once it ru
 test("the first event of an unseen Pi process during a read that finds none reads again", async () => {
 	const { store, snapshots, answers, texts } = fakeClient();
 	answers.runtime = null;
-	const opened = store.open(chat.sessionKey, true);
+	const opened = store.open(target, true);
 	store.receive([delta(11, "one")]);
 	answers.runtime = running;
 	await opened;
@@ -591,7 +858,7 @@ test("the first event of an unseen Pi process during a read that finds none read
 
 test("a failed chat is read again when a newer Pi process runs, not by the old one's events", async () => {
 	const { store, snapshots, answers, texts } = fakeClient();
-	const opened = store.open(chat.sessionKey, true);
+	const opened = store.open(target, true);
 	await settle();
 	snapshots[0]?.reject(new Error("chat session is closing"));
 	await opened;
@@ -614,7 +881,7 @@ test("a failed chat is read again when a newer Pi process runs, not by the old o
 
 test("a chat opened without the event stream waits for a refresh", async () => {
 	const { store, snapshots, texts } = fakeClient();
-	await store.open(chat.sessionKey, false);
+	await store.open(target, false);
 	await settle();
 	expect(snapshots.length).toBe(0);
 	expect(store.state().status).toBe("loading");
@@ -694,7 +961,7 @@ test("the app store passes a chat's events on while its own bootstrap is in flig
 	const started = app.start();
 	await settle();
 	expect(app.connected).toBe(true);
-	const opened = chatStore.open(chat.sessionKey, app.connected);
+	const opened = chatStore.open(target, app.connected);
 	await settle();
 	snapshots[0]?.resolve(snapshot(10, turn("one")));
 	await opened;
@@ -717,7 +984,7 @@ test("a gap in the event stream reads the open chat again", async () => {
 	await settle();
 	bootstraps[0]?.resolve(bootstrap(5));
 	await started;
-	const opened = chatStore.open(chat.sessionKey, app.connected);
+	const opened = chatStore.open(target, app.connected);
 	await settle();
 	snapshots[0]?.resolve(snapshot(10, turn("one")));
 	await opened;
@@ -740,7 +1007,7 @@ test("a reconnected event stream reads the open chat again", async () => {
 	await settle();
 	bootstraps[0]?.resolve(bootstrap(5));
 	await started;
-	const opened = chatStore.open(chat.sessionKey, app.connected);
+	const opened = chatStore.open(target, app.connected);
 	await settle();
 	snapshots[0]?.resolve(snapshot(10, turn("one")));
 	await opened;
@@ -759,7 +1026,7 @@ test("a reconnected event stream reads the open chat again", async () => {
 
 test("a chat opened before the app connected is read when it connects", async () => {
 	const { app, chatStore, snapshots, bootstraps, bootstrap, texts } = fakeApp();
-	await chatStore.open(chat.sessionKey, app.connected);
+	await chatStore.open(target, app.connected);
 	expect(snapshots.length).toBe(0);
 
 	const started = app.start();
@@ -776,6 +1043,13 @@ test("a chat opened before the app connected is read when it connects", async ()
 test("the store follows a chat's transcript through the native module", async () => {
 	const app = await open("./chat-transcript-store-fixture.tsx");
 	await app.waitFor("text:chat transcript followed through the store", {
+		timeout: 30_000,
+	});
+});
+
+test("the store shows a saved chat's settled history through the native module", async () => {
+	const app = await open("./chat-transcript-history-fixture.tsx");
+	await app.waitFor("text:settled history shown through the store", {
 		timeout: 30_000,
 	});
 });

@@ -30,12 +30,17 @@ async function run() {
 	const fixture = new ChatFixture(false);
 	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
 	let snapshots = 0;
+	let histories = 0;
 	const chat = new ChatTranscriptStore(
 		{
 			chatState: (sessionKey) => client.chatState(sessionKey),
 			chatTranscriptSnapshot(sessionKey, window) {
 				snapshots += 1;
 				return client.chatTranscriptSnapshot(sessionKey, window);
+			},
+			loadHistory(project, sessionPath, options) {
+				histories += 1;
+				return client.loadHistory(project, sessionPath, options);
 			},
 		},
 		context(),
@@ -45,7 +50,8 @@ async function run() {
 		chat.state().conversation?.messages.map((message) => message.text);
 	const shows = (...expected: string[]) =>
 		JSON.stringify(texts()) === JSON.stringify(expected);
-	const describe = () => JSON.stringify({ ...chat.state(), snapshots });
+	const describe = () =>
+		JSON.stringify({ ...chat.state(), snapshots, histories });
 	// A second listener, to know what the runtime has sent so far.
 	const received: PiloClientEvent[] = [];
 	let wake = () => {};
@@ -79,10 +85,13 @@ async function run() {
 			onStatus: () => wake(),
 		});
 
-		// A chat with no Pi is not loaded, and opening it starts none.
-		await chat.open(savedKey, app.connected);
+		// A chat with no Pi and nothing read from a session file is empty, and
+		// opening it starts none.
+		await chat.open({ sessionKey: savedKey, projectId }, app.connected);
 		assert(
-			chat.state().status === "not_loaded" &&
+			chat.state().status === "ready" &&
+				chat.state().source === "history" &&
+				chat.state().conversation?.messages.length === 0 &&
 				snapshots === 0 &&
 				(await client.chatState(savedKey)) === null,
 			`unexpected state for a chat with no Pi: ${describe()}`,
@@ -97,19 +106,22 @@ async function run() {
 				message: { role: "user", content: "saved question" },
 			})}\n`,
 		);
-		// Starting Pi and sending a prompt, as the first message of a chat
-		// does, loads the transcript without it being opened again.
+		// Starting Pi and sending a prompt, as the first message does, moves
+		// the transcript onto a snapshot without it being opened again, so
+		// the turn streams.
 		await client.startChat({ projectId, sessionKey: savedKey, sessionPath });
 		await prompt(savedKey);
 		await until(
 			() =>
 				chat.state().status === "ready" &&
+				chat.state().source === "snapshot" &&
 				shows("saved question", "new question", "partial reply"),
 			"the started chat's transcript with its running turn",
 		);
 		const reply = chat.state().conversation?.messages.at(-1);
 		assert(
 			snapshots === 1 &&
+				histories === 0 &&
 				chat.state().conversation?.active !== null &&
 				reply?.role === "assistant" &&
 				reply.streaming === true,
@@ -120,6 +132,7 @@ async function run() {
 		await chat.refresh();
 		assert(
 			chat.state().status === "ready" &&
+				chat.state().source === "snapshot" &&
 				snapshots === 2 &&
 				shows("saved question", "new question", "partial reply") &&
 				chat.state().conversation?.active !== null,
@@ -143,25 +156,28 @@ async function run() {
 				),
 			"the unsaved chat's reply",
 		);
-		await chat.open(unsavedKey, app.connected);
+		await chat.open({ sessionKey: unsavedKey, projectId }, app.connected);
 		assert(
 			chat.state().status === "loading" &&
 				chat.state().conversation === null &&
 				snapshots === 3,
 			`unexpected state for a truncated snapshot: ${describe()}`,
 		);
-		// Stopping Pi ends the turn; the one read after it finds no Pi.
+		// Stopping Pi ends the turn. The one read after it finds no Pi and no
+		// session file, so the chat is empty.
 		await client.stopChat(unsavedKey);
 		await until(
-			() => chat.state().status === "not_loaded",
+			() => chat.state().status !== "loading",
 			"the stopped chat leaving the loading state",
 		);
 		await new Promise((resolve) => setTimeout(resolve, 200));
 		assert(
-			chat.state().status === "not_loaded" &&
-				chat.state().conversation === null &&
-				snapshots === 3,
-			`the stopped chat was read again: ${describe()}`,
+			chat.state().status === "ready" &&
+				chat.state().source === "history" &&
+				chat.state().conversation?.messages.length === 0 &&
+				snapshots === 3 &&
+				histories === 0,
+			`unexpected state for a stopped unsaved chat: ${describe()}`,
 		);
 	} finally {
 		app.stop();
