@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, Copy } from "lucide-react";
+import { toast } from "sonner";
+import { copyText } from "@/lib/copy-text";
 
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
 
@@ -14,8 +16,7 @@ export function ChatCopyButton({ text }: { text: string }) {
 	useEffect(() => () => window.clearTimeout(resetTimer.current), []);
 
 	function handleCopy() {
-		void navigator.clipboard
-			.writeText(text)
+		void copyText(text)
 			.then(() => {
 				window.clearTimeout(resetTimer.current);
 				setCopied(true);
@@ -23,7 +24,7 @@ export function ChatCopyButton({ text }: { text: string }) {
 					setCopied(false);
 				}, COPY_RESET_DELAY_MS);
 			})
-			.catch(() => {});
+			.catch(() => toast.error(t("chat.copyFailed")));
 	}
 
 	const label = copied ? t("chat.copied") : t("chat.copy");
