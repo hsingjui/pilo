@@ -74,17 +74,18 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 | TanStack Query | signal + 显式加载函数 | 缓存失效由事件驱动，与现在一致 |
 | React hooks（`components/chat` 下 26 个 `use-*` 文件） | 工厂函数返回 signal 与动作 | 迁移工作量的主体 |
 | `src/lib/chat/*` 纯逻辑（29 个文件 4,388 行） | 直接导入复用 | 待 M0 验证 nsh 打包器能否导入 `desktop/` 之外的 TS 文件；不能则抽成共享包 |
-| streamdown + Shiki | `TextView`（流式、代码高亮、表格、公式） | Mermaid 无对应 |
+| streamdown + Shiki | `TextView`（流式、代码高亮、表格、公式） | Mermaid 延后，期间按代码块显示源码 |
 | `@pierre/diffs` | `DiffView` | 需按行数计算高度 |
 | xterm | `Terminal` | PTY 仍由 `runtime/terminal.rs` 提供 |
 | Radix（Dialog / Popover / Menu / Tooltip / Tabs / Select） | `nsh/base` 同名组件 | 无样式，样式用 Tailwind 类重写 |
 | cmdk | `Command` | |
-| dnd-kit（项目排序） | 无高层 API | 用 pan 手势自实现，或先用菜单“上移/下移”替代 |
+| dnd-kit（项目排序） | 无高层 API | 切换前用菜单“上移 / 下移”替代，拖拽延后 |
 | 虚拟列表（自研 `chat-virtualization`） | `List` | `maintainVisibleContentPosition` 取代粘底逻辑 |
 | lucide-react | `Canvas` 绘制路径数据 | 构建期脚本从 `lucide-react` 生成 |
 | i18next 资源（`src/i18n/resources/*.ts`） | `nsh/i18n` 或直接复用资源对象 | 待 M1 确认插值与复数写法是否兼容 |
 | Textarea + 自研 mention | `Input` 或 `RichEditor`（mention 扩展） | M0 决定用哪一个 |
-| `chat-find-bar` 对话内查找 | 无对应 | 需自实现或延后 |
+| `chat-find-bar` 对话内查找 | 无对应 | 延后 |
+| `conversation-outline-rail` 对话大纲 | 无对应 | 切换前必须对齐：复用 `src/lib/chat/conversation-outline.ts`，跳转用 `List` 的滚动定位，当前条目用 viewability 事件 |
 
 ## 6. 主题
 
@@ -131,7 +132,7 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
   - `deb` / `rpm`：声明对 GTK 4（≥ 4.14）、Pango、WebKitGTK 6.0（如使用 `WebView`）的依赖；沿用 `src-tauri/linux/pilo.desktop` 模板和现有图标。
   - `AppImage`：沿用 `scripts/finalize-linux-appimage.sh` 的收尾与校验思路和 `tests/packaging/test-linux-appimage.py`；是否把 GTK 4 打进 AppImage、还是要求宿主提供，待 M7 在真实发行版上验证后决定。
   - Linux 的自动更新对象（现在是签名的 AppImage）与 `nsh/updater` 的归档格式如何对应，待 M7 验证。
-- 自动更新：`nsh/updater` 读取 nsh 格式清单。Tauri 版 → nsh 版的过渡取决于 PRD Open Question 2，候选做法：最后一个 Tauri 版本提示用户手动下载；或让 Tauri 更新器下载并运行 nsh 安装器（待验证）。
+- 自动更新：`nsh/updater` 读取 nsh 格式清单。Tauri 版 → nsh 版的过渡取决于 PRD Open Question 1，候选做法：最后一个 Tauri 版本提示用户手动下载；或让 Tauri 更新器下载并运行 nsh 安装器（待验证）。
 - 版本号继续由 `Cargo.toml` `[workspace.package].version` 驱动，`nsh.json` 的版本由脚本同步；发版前仍需向用户确认版本号。
 
 ## 10. 测试
@@ -161,6 +162,6 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 | Linux 需 GTK 4.14+、macOS 需 14+ | 旧系统用户切换后无法升级 | 已接受（PRD Decisions）；发版说明中写明最低要求 |
 | 自定义主题格式变更波及 WebUI | 带选择器的自定义 CSS 两端都失效；WebUI 需要改动 | 已接受（PRD Decisions）；自动转换 + 转换报告；原始 CSS 保留一个版本周期 |
 | Linux 三种包需自写打包脚本 | nsh 无现成支持，AppImage 携带 GTK 4 的可行性未知 | M7 专项；复用现有 AppImage 收尾脚本与测试 |
-| 无 Mermaid、查找、拖拽排序 | 功能回退 | PRD Open Question 1；必要时用 `WebView` 承载 Mermaid（待验证） |
+| 无 Mermaid、查找、拖拽排序 | 功能回退 | 已定：大纲切换前对齐，其余三项延后（PRD Decisions）；Mermaid 之后可用 `WebView` 承载（待验证） |
 
 回退：切换发版前 Tauri 版本始终可发；切换后保留 `src-tauri/` 一个版本周期再删除。
