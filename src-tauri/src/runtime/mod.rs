@@ -72,6 +72,7 @@ pub(crate) mod storage;
 pub(crate) mod tasks;
 mod terminal;
 mod token_usage;
+pub(crate) mod web_assets;
 #[allow(dead_code)]
 mod wsl;
 

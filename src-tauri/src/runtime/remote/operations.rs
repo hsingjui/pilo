@@ -1,5 +1,3 @@
-use tauri::AppHandle;
-
 use crate::domain::{RemoteAccessAddress, RemoteAccessConfig};
 
 use super::RemoteHostState;
@@ -15,18 +13,13 @@ pub async fn remote_lan_addresses(_runtime: &Runtime) -> Result<Vec<String>, Str
 
 pub async fn remote_set_enabled(
     runtime: &Runtime,
-    app: AppHandle,
     enabled: bool,
 ) -> Result<RemoteHostState, String> {
-    runtime.remote.set_enabled(runtime, app, enabled).await
+    runtime.remote.set_enabled(runtime, enabled).await
 }
 
-pub async fn remote_set_port(
-    runtime: &Runtime,
-    app: AppHandle,
-    port: u16,
-) -> Result<RemoteHostState, String> {
-    runtime.remote.set_port(runtime, app, port).await
+pub async fn remote_set_port(runtime: &Runtime, port: u16) -> Result<RemoteHostState, String> {
+    runtime.remote.set_port(runtime, port).await
 }
 
 pub async fn remote_set_public_base_url(

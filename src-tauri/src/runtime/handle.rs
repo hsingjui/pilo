@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use super::{RuntimeEventBus, host_events::HostEvents, host_paths::HostPaths};
 
@@ -16,6 +16,7 @@ pub(crate) struct RuntimeState {
     pub(crate) host_events: Arc<dyn HostEvents>,
     pub(crate) events: RuntimeEventBus,
     shell: Option<Arc<dyn HostShell>>,
+    web_assets: OnceLock<Arc<dyn super::web_assets::WebAssets>>,
     #[cfg(feature = "tauri")]
     pub(crate) core: super::PiloRuntime,
     #[cfg(feature = "tauri")]
@@ -48,6 +49,7 @@ impl Runtime {
             host_events,
             events,
             shell: None,
+            web_assets: OnceLock::new(),
             #[cfg(feature = "tauri")]
             core: super::PiloRuntime::default(),
             #[cfg(feature = "tauri")]
@@ -66,6 +68,20 @@ impl Runtime {
         self.shell
             .as_deref()
             .ok_or_else(|| "host shell services are unavailable".to_owned())
+    }
+
+    pub(crate) fn with_web_assets(
+        self,
+        assets: Arc<dyn super::web_assets::WebAssets>,
+    ) -> Result<Self, String> {
+        self.web_assets
+            .set(assets)
+            .map_err(|_| "web assets are already configured")?;
+        Ok(self)
+    }
+
+    pub(crate) fn web_assets(&self) -> Option<&dyn super::web_assets::WebAssets> {
+        self.web_assets.get().map(Arc::as_ref)
     }
 }
 

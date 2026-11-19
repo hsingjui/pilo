@@ -317,6 +317,7 @@ pub fn run() {
             )?;
             runtime::initialize_server_resource_dir(paths.resource_dir().to_owned());
             let runtime = runtime::Runtime::new(paths.clone(), desktop_events::from_app(app.handle()))
+                .with_web_assets(desktop_runtime::assets(app.handle()))?
                 .with_shell(desktop_runtime::shell(app.handle()))?;
             app.manage(runtime.paths.clone());
             app.manage(runtime.core.clone());
@@ -355,7 +356,7 @@ pub fn run() {
             let remote_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let remote = remote_app.state::<runtime::RemoteServerManager>();
-                if let Err(error) = remote.restore(&remote_app.state::<runtime::Runtime>(), remote_app.clone()).await {
+                if let Err(error) = remote.restore(&remote_app.state::<runtime::Runtime>()).await {
                     log::error!(target: "remote-webui", "failed to restore Remote WebUI: {error}");
                 }
             });

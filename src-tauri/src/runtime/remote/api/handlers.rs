@@ -8,10 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tauri::Manager;
-
 use crate::runtime::{
-    PiloRuntime,
     chat_service::{self, ChatSessionRequest},
     pi_workspace, remote_fs, session_history, storage,
 };
@@ -75,8 +72,12 @@ pub(super) async fn local_pi_resources_set(
     State(state): State<RemoteHttpState>,
     Json(update): Json<LocalPiResourcesUpdate>,
 ) -> Response {
-    match pi_workspace::set_local_pi_resources(&state.app, &update.connection_id, update.enabled)
-        .await
+    match pi_workspace::set_local_pi_resources(
+        &state.runtime,
+        &update.connection_id,
+        update.enabled,
+    )
+    .await
     {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) if error == pi_workspace::RESOURCES_BUSY => {
@@ -191,13 +192,7 @@ pub(super) async fn sessions(
             Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
         };
     }
-    match crate::runtime::commands::session_reconcile(
-        state.app.clone(),
-        state.app.state::<PiloRuntime>(),
-        project.id,
-    )
-    .await
-    {
+    match crate::runtime::session_api::session_reconcile(&state.runtime, project.id).await {
         Ok(result) => Json(result.sessions).into_response(),
         Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
     }

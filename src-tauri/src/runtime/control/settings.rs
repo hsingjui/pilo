@@ -317,7 +317,6 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                         remote
                             .set_enabled(
                                 &app.state::<crate::runtime::Runtime>(),
-                                app.clone(),
                                 decode(if reset { json!(false) } else { value })?,
                             )
                             .await?
@@ -326,7 +325,6 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                         remote
                             .set_port(
                                 &app.state::<crate::runtime::Runtime>(),
-                                app.clone(),
                                 decode(if reset {
                                     json!(crate::domain::random_remote_port())
                                 } else {

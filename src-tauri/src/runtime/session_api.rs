@@ -1,10 +1,17 @@
 use super::{Runtime, project, storage};
 #[cfg(feature = "tauri")]
+use super::{
+    events::{RuntimeEvent, RuntimeEventEnvelope},
+    session_history, session_index,
+};
+#[cfg(feature = "tauri")]
 use super::{pi_workspace, session_activity::SessionExternalActivity};
+#[cfg(feature = "tauri")]
+use crate::domain::SessionReconcileResult;
 use crate::domain::{SessionIndexEntry, SessionUiStateUpdate};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "tauri")]
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 #[cfg(feature = "tauri")]
 fn session_runtime_project(
     runtime: &Runtime,
@@ -154,6 +161,229 @@ pub struct SessionSearchMatch {
     pub role: String,
     pub snippet: String,
     pub timestamp: Option<serde_json::Value>,
+}
+
+#[cfg(feature = "tauri")]
+struct BackgroundSessionIndexLease {
+    manager: Arc<StdMutex<session_index::BackgroundSessionIndexManager>>,
+    project_id: String,
+    armed: bool,
+}
+
+#[cfg(feature = "tauri")]
+impl BackgroundSessionIndexLease {
+    fn new(
+        manager: Arc<StdMutex<session_index::BackgroundSessionIndexManager>>,
+        project_id: String,
+    ) -> Self {
+        Self {
+            manager,
+            project_id,
+            armed: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+#[cfg(feature = "tauri")]
+impl Drop for BackgroundSessionIndexLease {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let mut manager = self
+            .manager
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        manager.worker_aborted(&self.project_id);
+    }
+}
+
+#[cfg(feature = "tauri")]
+pub async fn session_reconcile(
+    runtime: &Runtime,
+    project_id: String,
+) -> Result<SessionReconcileResult, String> {
+    let project = project::get(runtime, &project_id)?;
+    let host_paths = runtime.paths.clone();
+    let work = session_index::reconcile(&host_paths, &runtime.servers, &project).await?;
+    if !work.deferred_paths.is_empty() {
+        let should_start_background_index = {
+            let mut manager = runtime
+                .background_session_index
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            manager.enqueue(&project.id, work.deferred_paths)
+        };
+        if should_start_background_index {
+            let background_events = runtime.events.clone();
+            let host_events = runtime.host_events.clone();
+            let background_servers = Arc::clone(&runtime.servers);
+            let background_manager = Arc::clone(&runtime.background_session_index);
+            let background_project = project.clone();
+            tokio::spawn(async move {
+                let mut lease = BackgroundSessionIndexLease::new(
+                    Arc::clone(&background_manager),
+                    background_project.id.clone(),
+                );
+                let mut indexed_total = 0_usize;
+                let mut failure = None;
+                loop {
+                    let batch = {
+                        let mut manager = background_manager
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        manager.next_batch_or_finish(
+                            &background_project.id,
+                            session_index::BACKGROUND_SESSION_INDEX_BATCH,
+                        )
+                    };
+                    let Some(batch) = batch else {
+                        lease.disarm();
+                        break;
+                    };
+                    let paths = batch
+                        .iter()
+                        .map(|(path, _)| path.clone())
+                        .collect::<Vec<_>>();
+                    match session_index::index_paths(
+                        &host_paths,
+                        &background_servers,
+                        &background_project,
+                        &paths,
+                    )
+                    .await
+                    {
+                        Ok(indexed) => {
+                            indexed_total += indexed;
+                            background_manager
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                .complete_batch(&background_project.id, &batch);
+                        }
+                        Err(error) => {
+                            failure = Some(error);
+                            break;
+                        }
+                    }
+                    tokio::task::yield_now().await;
+                }
+                if indexed_total > 0 {
+                    let _ = host_events.emit_serialized(
+                        "pilo://sessions",
+                        serde_json::json!({
+                            "type": "indexed",
+                            "projectId": background_project.id,
+                        }),
+                    );
+                    background_events.send(RuntimeEventEnvelope::global(
+                        RuntimeEvent::SessionsIndexed {
+                            project_id: background_project.id.clone(),
+                        },
+                    ));
+                }
+                if let Some(error) = failure {
+                    let message = format!("background session indexing failed: {error}");
+                    background_events.send(RuntimeEventEnvelope::global(
+                        RuntimeEvent::SessionIndexError {
+                            project_id: background_project.id.clone(),
+                            message: message.clone(),
+                        },
+                    ));
+                    let _ = host_events.emit_serialized(
+                        "pilo://sessions",
+                        serde_json::json!({
+                            "type": "error",
+                            "projectId": background_project.id,
+                            "message": message,
+                        }),
+                    );
+                }
+            });
+        }
+    }
+    Ok(work.result)
+}
+#[cfg(feature = "tauri")]
+#[allow(clippy::too_many_arguments)]
+pub async fn session_history(
+    runtime: &Runtime,
+    project_id: String,
+    session_path: String,
+    expected_file_size: Option<u64>,
+    expected_file_mtime_ns: Option<String>,
+    start_message: Option<usize>,
+    message_limit: Option<usize>,
+    include_message_index: Option<bool>,
+) -> Result<Vec<u8>, String> {
+    let project = session_runtime_project(runtime, &project_id)?;
+    let expected_fingerprint =
+        expected_session_fingerprint(expected_file_size, expected_file_mtime_ns)?;
+    let serialized = if let Some(message_limit) = message_limit {
+        session_history::read_history_window_json(
+            &runtime.servers,
+            &runtime.session_history_cache,
+            &project,
+            &session_path,
+            expected_fingerprint,
+            start_message,
+            message_limit,
+            include_message_index.unwrap_or(false),
+        )
+        .await?
+    } else {
+        session_history::read_history_json(
+            &runtime.servers,
+            &runtime.session_history_cache,
+            &project,
+            &session_path,
+            expected_fingerprint,
+        )
+        .await?
+    };
+    Ok(serialized)
+}
+
+#[cfg(feature = "tauri")]
+pub async fn session_history_image(
+    runtime: &Runtime,
+    project_id: String,
+    session_path: String,
+    image_id: String,
+    expected_file_size: Option<u64>,
+    expected_file_mtime_ns: Option<String>,
+) -> Result<Vec<u8>, String> {
+    let project = session_runtime_project(runtime, &project_id)?;
+    let expected_fingerprint =
+        expected_session_fingerprint(expected_file_size, expected_file_mtime_ns)?;
+    let bytes = session_history::read_history_image_bytes(
+        &runtime.servers,
+        &runtime.session_history_cache,
+        &project,
+        &session_path,
+        &image_id,
+        expected_fingerprint,
+    )
+    .await?;
+    Ok(bytes)
+}
+
+#[cfg(feature = "tauri")]
+fn expected_session_fingerprint(
+    expected_file_size: Option<u64>,
+    expected_file_mtime_ns: Option<String>,
+) -> Result<Option<(u64, u64)>, String> {
+    let expected_file_mtime_ns = expected_file_mtime_ns
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .map_err(|error| format!("invalid expected session mtime '{value}': {error}"))
+        })
+        .transpose()?;
+    Ok(expected_file_size.zip(expected_file_mtime_ns))
 }
 
 #[cfg(test)]

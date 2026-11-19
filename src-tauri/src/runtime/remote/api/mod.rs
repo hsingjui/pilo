@@ -15,7 +15,6 @@ use axum::{
     routing::{get, post},
 };
 use serde_json::{Value, json};
-use tauri::AppHandle;
 use tokio::sync::watch;
 use tower_http::timeout::TimeoutLayer;
 
@@ -39,7 +38,6 @@ const AUTH_FAILURE_LIMIT: usize = 5;
 
 #[derive(Clone)]
 pub(crate) struct RemoteHttpState {
-    app: AppHandle,
     runtime: Runtime,
     pairing: Arc<PairingSession>,
     rate_limiter: Arc<AuthRateLimiter>,
@@ -102,14 +100,12 @@ struct AuthSession {
 }
 
 pub(crate) fn router(
-    app: AppHandle,
     runtime: Runtime,
     pairing: Arc<PairingSession>,
     shutdown: watch::Receiver<bool>,
     auth_generation: watch::Receiver<u64>,
 ) -> Router {
     let state = RemoteHttpState {
-        app,
         runtime,
         pairing,
         rate_limiter: Arc::new(AuthRateLimiter::default()),
@@ -246,6 +242,10 @@ fn asset_cache_control(path: &str, spa_fallback: bool) -> &'static str {
 }
 
 async fn asset(State(state): State<RemoteHttpState>, uri: Uri) -> Response {
+    serve_asset(state.runtime.web_assets(), uri)
+}
+
+fn serve_asset(assets: Option<&dyn crate::runtime::web_assets::WebAssets>, uri: Uri) -> Response {
     let requested_path = uri.path().trim_start_matches('/');
     if requested_path.starts_with("api/") {
         return StatusCode::NOT_FOUND.into_response();
@@ -255,14 +255,13 @@ async fn asset(State(state): State<RemoteHttpState>, uri: Uri) -> Response {
     } else {
         requested_path
     };
-    let resolver = state.app.asset_resolver();
     let mut spa_fallback = false;
-    let asset = resolver.get(path.to_owned()).or_else(|| {
+    let asset = assets.and_then(|assets| assets.get(path)).or_else(|| {
         if !allows_spa_fallback(path) {
             return None;
         }
         spa_fallback = true;
-        resolver.get("index.html".to_owned())
+        assets.and_then(|assets| assets.get("index.html"))
     });
     let Some(asset) = asset else {
         return StatusCode::NOT_FOUND.into_response();
@@ -298,7 +297,44 @@ fn api_error(status: StatusCode, message: &str) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use super::{allows_spa_fallback, asset_cache_control};
+    use super::*;
+
+    struct MemoryAssets;
+
+    impl crate::runtime::web_assets::WebAssets for MemoryAssets {
+        fn get(&self, path: &str) -> Option<crate::runtime::web_assets::WebAsset> {
+            (path == "index.html").then(|| crate::runtime::web_assets::WebAsset {
+                bytes: b"<html>memory webui</html>".to_vec(),
+                mime_type: "text/html".into(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn serves_in_memory_assets_and_preserves_fallback_and_missing_routes() {
+        for path in ["/", "/chat/session"] {
+            let response = serve_asset(Some(&MemoryAssets), Uri::from_static(path));
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.headers()[header::CONTENT_TYPE], "text/html");
+            assert_eq!(
+                axum::body::to_bytes(response.into_body(), 1024)
+                    .await
+                    .unwrap()
+                    .as_ref(),
+                b"<html>memory webui</html>"
+            );
+        }
+        for path in ["/api/missing", "/assets/missing.js"] {
+            assert_eq!(
+                serve_asset(Some(&MemoryAssets), Uri::from_static(path)).status(),
+                StatusCode::NOT_FOUND
+            );
+        }
+        assert_eq!(
+            serve_asset(None, Uri::from_static("/")).status(),
+            StatusCode::NOT_FOUND
+        );
+    }
 
     #[test]
     fn spa_fallback_is_only_used_for_client_routes() {

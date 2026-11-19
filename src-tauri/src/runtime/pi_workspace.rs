@@ -1,7 +1,6 @@
 use std::fs;
 
 use pilo_protocol::{BuiltinExtension, SshWorkspaceConfig};
-use tauri::{AppHandle, Manager};
 
 use crate::domain::{ConnectionKind, PiRuntime, Project};
 
@@ -10,14 +9,13 @@ use super::{host_paths::HostPaths, ssh, storage};
 pub(crate) const RESOURCES_BUSY: &str = "SSH_LOCAL_PI_RESOURCES_BUSY";
 
 pub(crate) async fn set_local_pi_resources(
-    app: &AppHandle,
+    runtime: &super::Runtime,
     connection_id: &str,
     enabled: bool,
 ) -> Result<(), String> {
-    let runtime = app.state::<super::PiloRuntime>();
     let _policy = runtime.pi_resource_policy.write().await;
     {
-        let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
+        let db = storage::open(&runtime.paths)?;
         let connection = storage::get_connection(&db, connection_id)?
             .ok_or_else(|| "SSH connection not found".to_owned())?;
         if connection.pi_runtime != PiRuntime::Local
@@ -29,18 +27,13 @@ pub(crate) async fn set_local_pi_resources(
             return Ok(());
         }
     }
-    stop_for_resource_change(
-        &crate::desktop_paths::from_app(app)?,
-        &runtime,
-        connection_id,
-    )
-    .await?;
-    storage::set_local_pi_resources(
-        &storage::open(&crate::desktop_paths::from_app(app)?)?,
-        connection_id,
-        enabled,
-    )?;
-    super::control::changed(app);
+    stop_for_resource_change(&runtime.paths, runtime, connection_id).await?;
+    storage::set_local_pi_resources(&storage::open(&runtime.paths)?, connection_id, enabled)?;
+    runtime
+        .events
+        .send(super::events::RuntimeEventEnvelope::global(
+            super::events::RuntimeEvent::ConfigurationChanged,
+        ));
     Ok(())
 }
 
@@ -90,13 +83,6 @@ pub(crate) struct PiRuntimeProfile {
     pub disable_builtin_tools: bool,
     pub disable_extension_discovery: bool,
     pub disable_context_files: bool,
-}
-
-pub(crate) fn resolve_session_project(
-    app: &AppHandle,
-    project: &Project,
-) -> Result<Project, String> {
-    resolve_session_project_with_paths(&crate::desktop_paths::from_app(app)?, project)
 }
 
 pub(crate) fn resolve_session_project_with_paths(

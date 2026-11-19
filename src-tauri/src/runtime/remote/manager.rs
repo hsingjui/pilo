@@ -5,7 +5,6 @@ use std::{
 };
 
 use serde::Serialize;
-use tauri::AppHandle;
 use tokio::{
     sync::{Mutex, watch},
     task::JoinHandle,
@@ -61,13 +60,13 @@ pub(crate) struct RemoteServerManager {
 }
 
 impl RemoteServerManager {
-    pub(crate) async fn restore(&self, runtime: &Runtime, app: AppHandle) -> Result<(), String> {
+    pub(crate) async fn restore(&self, runtime: &Runtime) -> Result<(), String> {
         let paths = runtime.paths.clone();
         let config = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
         if !config.enabled {
             return Ok(());
         }
-        if let Err(error) = self.start(runtime, app, config.port).await {
+        if let Err(error) = self.start(runtime, config.port).await {
             self.inner.lock().await.last_error = Some(error.clone());
             return Err(error);
         }
@@ -77,13 +76,12 @@ impl RemoteServerManager {
     pub(crate) async fn set_enabled(
         &self,
         runtime: &Runtime,
-        app: AppHandle,
         enabled: bool,
     ) -> Result<RemoteHostState, String> {
         let paths = runtime.paths.clone();
         let mut config = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
         if enabled {
-            self.start(runtime, app.clone(), config.port).await?;
+            self.start(runtime, config.port).await?;
             config.enabled = true;
         } else {
             self.stop().await;
@@ -97,7 +95,6 @@ impl RemoteServerManager {
     pub(crate) async fn set_port(
         &self,
         runtime: &Runtime,
-        app: AppHandle,
         port: u16,
     ) -> Result<RemoteHostState, String> {
         if port < MIN_REMOTE_PORT {
@@ -180,7 +177,7 @@ impl RemoteServerManager {
         })
         .await
         .map_err(|_| "Remote WebUI port task failed".to_owned())??;
-        if was_running && let Err(error) = self.start(runtime, app.clone(), port).await {
+        if was_running && let Err(error) = self.start(runtime, port).await {
             self.inner.lock().await.last_error = Some(error.clone());
             return Err(error);
         }
@@ -427,7 +424,7 @@ impl RemoteServerManager {
         }
     }
 
-    async fn start(&self, runtime: &Runtime, app: AppHandle, port: u16) -> Result<(), String> {
+    async fn start(&self, runtime: &Runtime, port: u16) -> Result<(), String> {
         let mut inner = self.inner.lock().await;
         if inner.running.is_some() {
             return Ok(());
@@ -457,7 +454,6 @@ impl RemoteServerManager {
         let events = runtime.events.clone();
         events.set_web_events_enabled(true);
         let router = api::router(
-            app,
             runtime.clone(),
             pairing.clone(),
             shutdown_rx,
