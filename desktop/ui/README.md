@@ -10,8 +10,9 @@
   When switching themes, pair `setTheme({ cssVars: theme.cssVars })` with
   `setStyleTheme(theme.styleVars)`; pair both with `null` to restore Lody.
   The helper follows light/dark appearance with the same fallback order as NSH.
-- Compose icons as children. Icons default to 16 points and the foreground token;
-  pass a semantic color explicitly inside colored controls. An icon without an
+- Compose icons as children. Icons default to 16 points and the nearest
+  `Foreground` context (provided by Button), or the foreground token outside it.
+  An explicit icon color overrides the context. An icon without an
   accessibility label is decorative; icon-only controls need a control label.
 - Fixtures and `nsh/test` coverage live in `desktop/tests/ui-*`. Check headless
   behavior and native macOS behavior separately; headless checks do not draw.

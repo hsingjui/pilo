@@ -24,6 +24,7 @@ test("Button renders every variant and size with token geometry, including empty
 	expect(app.enabled("id:empty")).toBe(true);
 	await app.press("id:measure");
 	expect(app.shows("text:All 24 button sizes match")).toBe(true);
+	expect(app.shows("text:All row centers align")).toBe(true);
 	expect(app.viewStyle("id:custom")?.backgroundColor).toBe("#123456ff");
 	expect(app.viewStyle("id:custom")?.opacity).toBeGreaterThan(0.799);
 	expect(app.viewStyle("id:custom")?.opacity).toBeLessThan(0.801);
@@ -101,4 +102,27 @@ test("Button backgrounds follow theme JSON values, hover states and runtime Clau
 	expect(app.viewStyle("id:default-default")?.backgroundColor).toBe(
 		lodyPrimary,
 	);
+});
+
+test("Button provides variant foregrounds to decorative icons and follows runtime theme changes", async () => {
+	const app = await open("./ui-button-fixture.tsx", {
+		platform: "macos",
+		width: 1100,
+		height: 900,
+	});
+	for (const theme of ["lody", "claude"]) {
+		if (theme === "claude") await app.press("id:claude");
+		for (const [variant, name] of [
+			["default", "primary-foreground"],
+			["secondary", "button-secondary-foreground"],
+			["destructive", "destructive-foreground"],
+			["outline", "foreground"],
+			["ghost", "foreground"],
+			["link", "primary"],
+		]) {
+			expect(app.viewStyle(`id:foreground-${variant}`)?.backgroundColor).toBe(
+				app.viewStyle(`id:reference-${name}`)?.backgroundColor,
+			);
+		}
+	}
 });

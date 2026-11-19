@@ -1,9 +1,10 @@
-import { split, type StyleProp, type ViewStyle } from "nsh";
+import { split, token, type StyleProp, type ViewStyle } from "nsh";
 import {
 	Button as BaseButton,
 	type ButtonProps as BaseButtonProps,
 } from "nsh/base";
 import { styleVar } from "./theme-style";
+import { Foreground } from "./foreground";
 
 const variants = {
 	default: "bg-primary text-primary-foreground hover:bg-button-hover",
@@ -55,11 +56,25 @@ function shadow(variant: ButtonProps["variant"]): StyleProp<ViewStyle> {
 
 export function Button(props: ButtonProps) {
 	const [local, rest] = split(props, ["variant", "size", "class", "style"]);
+	const foreground = () =>
+		token(
+			local.variant === "destructive"
+				? "destructive-foreground"
+				: local.variant === "secondary"
+					? "button-secondary-foreground"
+					: local.variant === "link"
+						? "primary"
+						: local.variant === "ghost" || local.variant === "outline"
+							? "foreground"
+							: "primary-foreground",
+		);
 	return (
-		<BaseButton
-			{...rest}
-			class={buttonVariants(local)}
-			style={[shadow(local.variant), local.style]}
-		/>
+		<Foreground.Provider value={foreground}>
+			<BaseButton
+				{...rest}
+				class={buttonVariants(local)}
+				style={[shadow(local.variant), local.style]}
+			/>
+		</Foreground.Provider>
 	);
 }

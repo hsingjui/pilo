@@ -1,5 +1,6 @@
-import { Canvas, Path2D, token, type CanvasProps } from "nsh";
+import { Canvas, Path2D, type CanvasProps } from "nsh";
 import icons from "../app/lucide-icons.json";
+import { Foreground } from "./foreground";
 
 export type IconName = keyof typeof icons;
 
@@ -16,6 +17,7 @@ export interface IconProps extends Pick<
 export function Icon(props: IconProps) {
 	const icon = icons[props.name];
 	if (!icon) throw new RangeError(`Unknown icon: ${props.name}`);
+	const foreground = Foreground();
 	const paths = icon.paths.map((entry: { d: string; fill?: boolean }) => ({
 		path: new Path2D(entry.d),
 		fill: entry.fill,
@@ -35,8 +37,8 @@ export function Icon(props: IconProps) {
 			accessibilityElementsHidden={!props.accessibilityLabel}
 			draw={(cx, size) => {
 				cx.scale(size.width / icon.size, size.height / icon.size);
-				cx.strokeStyle = props.color ?? token("foreground");
-				cx.fillStyle = props.color ?? token("foreground");
+				cx.strokeStyle = props.color ?? foreground();
+				cx.fillStyle = props.color ?? foreground();
 				cx.lineWidth = 2;
 				cx.lineCap = "round";
 				cx.lineJoin = "round";
