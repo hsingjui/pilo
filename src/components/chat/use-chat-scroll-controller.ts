@@ -103,6 +103,8 @@ export function useChatScrollController({
 		handleScroll: handleStickyScroll,
 		scrollToBottom,
 		stopScroll,
+		captureReadingAnchor,
+		readingAnchorRows,
 	} = useChatStickyScroll({
 		enabled: scrollEnabled,
 		vlistRef: virtualizerRef,
@@ -378,6 +380,8 @@ export function useChatScrollController({
 		activeOutlineIndex,
 		syncScrollState,
 		scrollToBottom,
+		captureReadingAnchor,
+		readingAnchorRows,
 		handleOutlineJump,
 		jumpToMessageIndex,
 		handleScrollEnd,
