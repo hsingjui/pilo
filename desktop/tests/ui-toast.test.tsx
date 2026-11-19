@@ -9,7 +9,7 @@ test("Toast shows, respects duration, persists without a timeout and dismisses m
 	});
 	expect(app.shows("id:toast-Timed")).toBe(false);
 	await app.press("id:timed");
-	expect(app.shows("id:toast-Timed")).toBe(true);
+	await app.waitFor("id:toast-Timed");
 	await app.wait(800);
 	expect(app.shows("id:toast-Timed")).toBe(true);
 	await app.wait(250);
@@ -19,7 +19,7 @@ test("Toast shows, respects duration, persists without a timeout and dismisses m
 	expect(app.shows("id:toast-Manual")).toBe(true);
 	await app.hover("id:toast-Manual");
 	await app.press("label:Dismiss Manual");
-	expect(app.shows("id:toast-Manual")).toBe(false);
+	await app.waitFor("id:toast-Manual", { state: "gone" });
 });
 
 test("Toast close button supplies its resting and hover foreground to nested icons and text", async () => {
@@ -71,17 +71,19 @@ test("ToastStack takes oldest-first children and Escape dismisses newest-first, 
 		clock: {},
 	});
 	await app.press("id:stack");
+	await app.waitFor("id:toast-Third");
 	expect(app.texts().filter((text) => text.endsWith(" notification"))).toEqual([
 		"First notification",
 		"Second notification",
 		"Third notification",
 	]);
 	await app.keyboard.press("escape");
-	expect(app.shows("id:toast-Third")).toBe(false);
+	await app.waitFor("id:toast-Third", { state: "gone" });
 	expect(app.shows("id:toast-Second")).toBe(true);
 	await app.keyboard.press("escape");
+	await app.waitFor("id:toast-Second", { state: "gone" });
 	await app.keyboard.press("escape");
-	expect(app.shows("id:toast-First")).toBe(false);
+	await app.waitFor("id:toast-First", { state: "gone" });
 	await app.keyboard.press("escape");
 });
 

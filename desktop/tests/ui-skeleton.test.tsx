@@ -27,7 +27,7 @@ test("Skeleton keeps explicit and empty geometry with reduced motion", async () 
 	});
 	expect(app.shows("text:Reduced motion: static bones")).toBe(true);
 	await app.press("id:measure");
-	expect(app.shows("text:288x12, 736x0")).toBe(true);
+	await app.waitFor("text:288x12, 736x0");
 });
 
 test("Skeleton fixture blocks JS for at least 1.5 seconds then resumes", async () => {

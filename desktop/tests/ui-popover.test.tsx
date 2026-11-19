@@ -8,14 +8,15 @@ test("Popover opens by trigger and closes on Escape and outside press", async ()
 	});
 	expect(app.shows("text:Popover content")).toBe(false);
 	await app.press("id:trigger");
-	expect(app.shows("text:Popover content")).toBe(true);
-	expect(app.shows("text:Open: true")).toBe(true);
+	await app.waitFor("text:Popover content");
+	await app.waitFor("text:Open: true");
 	await app.keyboard.press("escape");
-	expect(app.shows("text:Popover content")).toBe(false);
+	await app.waitFor("text:Popover content", { state: "gone" });
 	await app.press("id:trigger");
+	await app.waitFor("text:Popover content");
 	await app.press("id:outside");
-	expect(app.shows("text:Popover content")).toBe(false);
-	expect(app.shows("text:Open: false")).toBe(true);
+	await app.waitFor("text:Popover content", { state: "gone" });
+	await app.waitFor("text:Open: false");
 });
 
 test("Popover also owns uncontrolled state and toggles closed from its trigger", async () => {
@@ -25,9 +26,9 @@ test("Popover also owns uncontrolled state and toggles closed from its trigger",
 		height: 600,
 	});
 	await app.press("id:uncontrolled");
-	expect(app.shows("text:Uncontrolled content")).toBe(true);
+	await app.waitFor("text:Uncontrolled content");
 	await app.press("id:uncontrolled");
-	expect(app.shows("text:Uncontrolled content")).toBe(false);
+	await app.waitFor("text:Uncontrolled content", { state: "gone" });
 });
 
 test("Popover preserves native center alignment and supports explicit start alignment", async () => {

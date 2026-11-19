@@ -7,13 +7,13 @@ test("Tabs report presses, follow caller selection and leave panels to the calle
 	const selectedColor = app.viewStyle("id:reference-selected")?.backgroundColor;
 	expect(app.viewStyle("id:overview")?.backgroundColor).toBe(selectedColor);
 	await app.press("id:history");
-	expect(app.shows("text:History panel")).toBe(true);
-	expect(app.shows("text:Overview panel")).toBe(false);
+	await app.waitFor("text:History panel");
+	await app.waitFor("text:Overview panel", { state: "gone" });
 	expect(app.viewStyle("id:history")?.backgroundColor).toBe(selectedColor);
 	expect(app.viewStyle("id:overview")?.backgroundColor).not.toBe(selectedColor);
-	expect(app.shows("text:Presses: 1")).toBe(true);
+	await app.waitFor("text:Presses: 1");
 	await app.press("id:overview");
-	expect(app.shows("text:Overview panel")).toBe(true);
+	await app.waitFor("text:Overview panel");
 });
 
 test("Tabs permit an empty list, ignore disabled tabs and do not own selection", async () => {
@@ -27,7 +27,7 @@ test("Tabs permit an empty list, ignore disabled tabs and do not own selection",
 	expect(app.shows("text:Overview panel")).toBe(true);
 	const color = app.viewStyle("id:fixed-selected")?.backgroundColor;
 	await app.press("id:fixed-other");
-	expect(app.shows("text:Presses: 1")).toBe(true);
+	await app.waitFor("text:Presses: 1");
 	expect(app.viewStyle("id:fixed-selected")?.backgroundColor).toBe(color);
 	expect(app.viewStyle("id:fixed-other")?.backgroundColor).not.toBe(color);
 });

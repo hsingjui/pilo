@@ -7,12 +7,12 @@ test("Switch uses theme track colors and reports controlled changes in both dire
 	);
 	expect(app.shows("text:Checked: false; changes: 0")).toBe(true);
 	await app.press("id:switch");
-	expect(app.shows("text:Checked: true; changes: 1")).toBe(true);
+	await app.waitFor("text:Checked: true; changes: 1");
 	expect(app.viewStyle("id:switch")?.backgroundColor).toBe(
 		app.viewStyle("id:reference-on")?.backgroundColor,
 	);
 	await app.press("id:switch");
-	expect(app.shows("text:Checked: false; changes: 2")).toBe(true);
+	await app.waitFor("text:Checked: false; changes: 2");
 	expect(app.viewStyle("id:switch")?.backgroundColor).toBe(
 		app.viewStyle("id:reference-off")?.backgroundColor,
 	);

@@ -8,7 +8,7 @@ test("Dialog opens and closes through actions, Escape and the backdrop, includin
 	});
 	expect(app.shows("text:Edit session")).toBe(false);
 	await app.press("id:open");
-	expect(app.shows("text:Edit session")).toBe(true);
+	await app.waitFor("text:Edit session");
 	await app.waitUntil(() => !app.shows("text:Center: pending"));
 	const center = Number(
 		app
@@ -19,19 +19,20 @@ test("Dialog opens and closes through actions, Escape and the backdrop, includin
 	expect(center).toBeGreaterThanOrEqual(299);
 	expect(center).toBeLessThanOrEqual(301);
 	await app.press("id:close");
+	await app.waitFor("text:Edit session", { state: "gone" });
 	const geometry =
 		app.texts().find((text) => text.startsWith("Geometry: ")) ?? "";
 	expect(geometry).toContain('"x":169');
 	expect(geometry).toContain('"width":462');
 	expect(geometry).toContain('"gap":16');
-	expect(app.shows("text:Edit session")).toBe(false);
 	await app.press("id:open");
+	await app.waitFor("text:Edit session");
 	await app.keyboard.press("escape");
-	expect(app.shows("text:Edit session")).toBe(false);
+	await app.waitFor("text:Edit session", { state: "gone" });
 	await app.press("id:alert");
-	expect(app.shows("text:Confirm action")).toBe(true);
+	await app.waitFor("text:Confirm action");
 	await app.press("id:backdrop");
-	expect(app.shows("text:Confirm action")).toBe(false);
+	await app.waitFor("text:Confirm action", { state: "gone" });
 });
 
 test("Dialog keyboard focus cycles inside the modal", async () => {
@@ -41,15 +42,16 @@ test("Dialog keyboard focus cycles inside the modal", async () => {
 		height: 600,
 	});
 	await app.press("id:open");
+	await app.waitFor("id:first");
 	await app.type("id:first", "A title");
 	expect(app.shows("text:Focus: first")).toBe(true);
 	await app.keyboard.press("tab");
-	expect(app.shows("text:Focus: second")).toBe(true);
+	await app.waitFor("text:Focus: second");
 	for (let i = 0; i < 5; i++) {
 		await app.keyboard.press("tab");
 		expect(app.shows("text:Focus: outside")).toBe(false);
 	}
-	expect(app.shows("text:Focus: first")).toBe(true);
+	await app.waitFor("text:Focus: first");
 });
 
 test("Dialog scrolls tall content within viewport margins and follows window resizing", async () => {

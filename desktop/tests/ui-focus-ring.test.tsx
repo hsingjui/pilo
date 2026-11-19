@@ -54,14 +54,14 @@ test("Gallery controls retain keyboard activation and the pointer scrollbar adds
 	await app.press("id:before-bar");
 	await app.keyboard.press("tab");
 	await app.keyboard.press("space");
-	expect(app.shows("text:After scrollbar · 1")).toBe(true);
+	await app.waitFor("text:After scrollbar · 1");
 	for (let i = 0; i < 4; i++) await app.keyboard.press("shift+tab");
 	await app.keyboard.press("space");
-	expect(app.shows("text:Switch: true")).toBe(true);
+	await app.waitFor("text:Switch: true");
 	await app.keyboard.press("tab");
 	await app.keyboard.press("tab");
 	await app.keyboard.press("enter");
-	expect(app.shows("text:Fast")).toBe(true);
+	await app.waitFor("text:Fast");
 	await app.keyboard.press("escape");
 });
 
@@ -74,6 +74,7 @@ test("Input and Button take keyboard focus at the Dialog content edges in both t
 	for (const [index, theme] of ["Lody", "Claude"].entries()) {
 		if (theme === "Claude") await app.press("id:claude");
 		await app.press("id:open");
+		await app.waitFor(`text:Full-width bottom button · ${index}`);
 		await app.keyboard.press("tab");
 		expect(
 			app.texts().some((text) => text.endsWith("Input focused: true")),
@@ -83,9 +84,10 @@ test("Input and Button take keyboard focus at the Dialog content edges in both t
 			app.texts().some((text) => text.endsWith("Input focused: false")),
 		).toBe(true);
 		await app.keyboard.press("space");
-		expect(app.shows(`text:Full-width bottom button · ${index + 1}`)).toBe(
-			true,
-		);
+		await app.waitFor(`text:Full-width bottom button · ${index + 1}`);
 		await app.keyboard.press("escape");
+		await app.waitFor(`text:Full-width bottom button · ${index + 1}`, {
+			state: "gone",
+		});
 	}
 });

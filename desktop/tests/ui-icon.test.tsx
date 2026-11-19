@@ -9,7 +9,7 @@ test("Icon renders every generated entry, exposes optional labels and keeps its 
 	}
 	expect(app.shows("label:Palette icon")).toBe(true);
 	await app.press("Measure icons");
-	expect(app.shows("text:16x16, 24x24, 32x32")).toBe(true);
+	await app.waitFor("text:16x16, 24x24, 32x32");
 });
 
 test("Icon rejects an unknown or empty name at an untyped boundary", () => {

@@ -7,14 +7,15 @@ test("Select shows its placeholder, ignores disabled items, and reports a contro
 		height: 650,
 	});
 	await app.press("text:Choose a model");
+	await app.waitFor("text:Unavailable");
 	expect(app.enabled("text:Unavailable")).toBe(false);
 	await expect(app.press("text:Unavailable")).rejects.toThrow();
 	expect(app.shows("text:Value: none; changes: 0")).toBe(true);
 	await app.press("text:Quality");
-	expect(app.shows("text:Value: quality; changes: 1")).toBe(true);
-	expect(app.shows("text:Choose a model")).toBe(false);
+	await app.waitFor("text:Value: quality; changes: 1");
+	await app.waitFor("text:Choose a model", { state: "gone" });
+	await app.waitFor("text:Unavailable", { state: "gone" });
 	expect(app.count("text:Quality")).toBe(1);
-	expect(app.shows("text:Unavailable")).toBe(false);
 });
 
 test("Select supports uncontrolled defaults, disabled triggers and empty items", async () => {
@@ -26,11 +27,12 @@ test("Select supports uncontrolled defaults, disabled triggers and empty items",
 	expect(app.enabled("text:Disabled select")).toBe(false);
 	await expect(app.press("text:Disabled select")).rejects.toThrow();
 	await app.press("text:Fast");
+	await app.waitFor("text:Quality");
 	await app.press("text:Quality");
-	expect(app.shows("text:Quality")).toBe(true);
-	expect(app.shows("text:Fast")).toBe(false);
+	await app.waitFor("text:Fast", { state: "gone" });
+	await app.waitFor("text:Quality");
 	await app.press("text:Empty select");
-	expect(app.shows("text:No options")).toBe(true);
+	await app.waitFor("text:No options");
 	await app.keyboard.press("escape");
-	expect(app.shows("text:No options")).toBe(false);
+	await app.waitFor("text:No options", { state: "gone" });
 });

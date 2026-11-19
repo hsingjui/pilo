@@ -8,7 +8,7 @@ test("Spinner matches Lucide geometry, supports class and explicit size, labels 
 	});
 	expect(app.shows("label:Loading")).toBe(true);
 	await app.press("id:measure");
-	expect(app.shows("text:24x24, 14x14, 32x32")).toBe(true);
+	await app.waitFor("text:24x24, 14x14, 32x32");
 	await app.press("id:extra");
 	await app.press("id:extra");
 	await app.press("id:claude");

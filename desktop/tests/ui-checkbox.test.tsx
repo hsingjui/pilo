@@ -8,18 +8,12 @@ test("Checkbox toggles, resolves indeterminate to checked, and preserves caller 
 	});
 	expect(app.shows("label:Choose session")).toBe(true);
 	await app.press("id:control");
-	expect(app.shows("text:Checked: true · Mixed: true/false · Changes: 1")).toBe(
-		true,
-	);
+	await app.waitFor("text:Checked: true · Mixed: true/false · Changes: 1");
 	await app.press("id:control");
 	await app.press("id:mixed");
-	expect(
-		app.shows("text:Checked: false · Mixed: false/true · Changes: 3"),
-	).toBe(true);
+	await app.waitFor("text:Checked: false · Mixed: false/true · Changes: 3");
 	await app.press("id:mixed");
-	expect(
-		app.shows("text:Checked: false · Mixed: false/false · Changes: 4"),
-	).toBe(true);
+	await app.waitFor("text:Checked: false · Mixed: false/false · Changes: 4");
 	await app.press("id:locked");
 	expect(app.texts().some((text) => text.includes("Locked event: false"))).toBe(
 		true,
@@ -51,7 +45,7 @@ test("Checkbox ignores disabled presses and keeps empty/checked geometry", async
 		app.shows("text:Checked: false · Mixed: true/false · Changes: 0"),
 	).toBe(true);
 	await app.press("id:measure");
-	expect(app.shows("text:16x16, 16x16")).toBe(true);
+	await app.waitFor("text:16x16, 16x16");
 });
 
 test("Checkbox matches checked, mixed and unchecked colors in both themes and appearances", async () => {
@@ -89,13 +83,9 @@ test("Checkbox takes keyboard focus and activates with Space and Return", async 
 	await app.press("id:before");
 	await app.keyboard.press("tab");
 	await app.keyboard.press("space");
-	expect(app.shows("text:Checked: true · Mixed: true/false · Changes: 1")).toBe(
-		true,
-	);
+	await app.waitFor("text:Checked: true · Mixed: true/false · Changes: 1");
 	await app.keyboard.press("enter");
-	expect(
-		app.shows("text:Checked: false · Mixed: true/false · Changes: 2"),
-	).toBe(true);
+	await app.waitFor("text:Checked: false · Mixed: true/false · Changes: 2");
 });
 
 test("Checkbox fixture resumes after blocking JS during its native focus transition", async () => {

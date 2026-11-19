@@ -13,10 +13,10 @@ test("Input starts empty, reports typed changes, submits and clears", async () =
 	await app.clear("id:input");
 	expect(app.value("id:input")).toBe("");
 	await app.press("id:measure");
-	expect(app.shows("text:Field height: 36")).toBe(true);
-	expect(
-		app.shows(`text:Shadow: ${lody.styleVars.theme["pilo-field-shadow"]}`),
-	).toBe(true);
+	await app.waitFor("text:Field height: 36");
+	await app.waitFor(
+		`text:Shadow: ${lody.styleVars.theme["pilo-field-shadow"]}`,
+	);
 });
 
 test("Input supports uncontrolled defaults and multiline edits, and rejects disabled edits", async () => {

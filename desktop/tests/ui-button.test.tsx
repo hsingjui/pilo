@@ -23,8 +23,8 @@ test("Button renders every variant and size with token geometry, including empty
 	}
 	expect(app.enabled("id:empty")).toBe(true);
 	await app.press("id:measure");
-	expect(app.shows("text:All 24 button sizes match")).toBe(true);
-	expect(app.shows("text:All row centers align")).toBe(true);
+	await app.waitFor("text:All 24 button sizes match");
+	await app.waitFor("text:All row centers align");
 	expect(app.viewStyle("id:custom")?.backgroundColor).toBe("#123456ff");
 	expect(app.viewStyle("id:custom")?.opacity).toBeGreaterThan(0.799);
 	expect(app.viewStyle("id:custom")?.opacity).toBeLessThan(0.801);
@@ -37,7 +37,7 @@ test("Button fires onPress and disabled buttons reject presses without firing", 
 		height: 900,
 	});
 	await app.press("id:press");
-	expect(app.shows("text:Pressed: 1")).toBe(true);
+	await app.waitFor("text:Pressed: 1");
 	expect(app.enabled("id:disabled")).toBe(false);
 	expect(app.viewStyle("id:disabled")?.opacity).toBe(0.5);
 	await expect(app.press("id:disabled")).rejects.toMatchObject({
@@ -77,27 +77,23 @@ test("Button backgrounds follow theme JSON values, hover states and runtime Clau
 	);
 	await app.hover("id:claude");
 	await app.press("id:claude");
+	await app.waitFor(
+		`text:Shadow: ${claude.styleVars.theme["pilo-button-primary-shadow"]}`,
+	);
 	expect(app.viewStyle("id:default-default")?.backgroundColor).not.toBe(
 		lodyPrimary,
 	);
 	expect(app.viewStyle("id:default-default")?.backgroundColor).toBe(
 		app.viewStyle("id:reference-primary")?.backgroundColor,
 	);
-	expect(
-		app.shows(
-			`text:Shadow: ${claude.styleVars.theme["pilo-button-primary-shadow"]}`,
-		),
-	).toBe(true);
 	await app.setColorScheme("dark");
 	expect(app.viewStyle("id:default-default")?.backgroundColor).toBe(
 		app.viewStyle("id:reference-primary")?.backgroundColor,
 	);
 	await app.press("id:restore");
-	expect(
-		app.shows(
-			`text:Shadow: ${lody.styleVars.theme["pilo-button-primary-shadow"]}`,
-		),
-	).toBe(true);
+	await app.waitFor(
+		`text:Shadow: ${lody.styleVars.theme["pilo-button-primary-shadow"]}`,
+	);
 	await app.setColorScheme("light");
 	expect(app.viewStyle("id:default-default")?.backgroundColor).toBe(
 		lodyPrimary,
