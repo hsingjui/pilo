@@ -174,7 +174,7 @@ export function AppearanceSettings() {
 						className="gap-1.5 px-2 font-normal pointer-coarse:min-h-11"
 					>
 						<a
-							href={`${REPOSITORY_URL}/blob/main/docs/THEMES.md`}
+							href={`${REPOSITORY_URL}/blob/nsh-migration/desktop/README.md#custom-themes`}
 							target="_blank"
 							rel="noopener noreferrer"
 						>

@@ -68,7 +68,14 @@ export function ThemeTokenEditor({
 	}
 	return (
 		<div className="space-y-4">
+			<label
+				htmlFor="theme-token-search"
+				className="block text-xs text-muted-foreground"
+			>
+				{t("settings.themeTokenSearch")}
+			</label>
 			<Input
+				id="theme-token-search"
 				aria-label={t("settings.themeTokenSearch")}
 				placeholder={t("settings.themeTokenSearch")}
 				value={search}
@@ -121,6 +128,8 @@ export function ThemeTokenEditor({
 												item.scope === scope,
 										);
 										const id = `theme-token-${scope}-${token}`;
+										const parsedColor =
+											kind === "color" ? parseThemeColor(value) : undefined;
 										const color =
 											kind === "color"
 												? parseThemeColor(value || placeholder)
@@ -171,9 +180,13 @@ export function ThemeTokenEditor({
 													>
 														{t(
 															issue.code === "invalid-value" &&
-																issue.expected === "opaque-color"
+																issue.expected === "opaque-color" &&
+																parsedColor !== undefined &&
+																!parsedColor.endsWith("ff")
 																? "settings.themeTokenAlphaError"
-																: "settings.themeTokenInvalid",
+																: kind === "color"
+																	? "settings.themeTokenColorError"
+																	: "settings.themeTokenInvalid",
 															{ kind: t(label) },
 														)}
 													</p>

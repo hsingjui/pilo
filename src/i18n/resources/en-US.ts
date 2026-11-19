@@ -339,6 +339,8 @@ const enUS = {
 		themeFonts: "Fonts",
 		themeTokenValue: "Value",
 		themeTokenInvalid: "Invalid {{kind}} value",
+		themeTokenColorError:
+			"Not a valid color. Use hex (#rgb[a] or #rrggbb[aa]), rgb()/rgba(), hsl()/hsla(), or transparent.",
 		themeTokenAlphaError:
 			"This color token requires an opaque color (alpha = 1).",
 		themeDocumentation: "Theme guide",

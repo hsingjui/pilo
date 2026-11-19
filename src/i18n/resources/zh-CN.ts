@@ -330,6 +330,8 @@ const zhCN = {
 		themeFonts: "字体",
 		themeTokenValue: "取值",
 		themeTokenInvalid: "无效的{{kind}}取值",
+		themeTokenColorError:
+			"无效颜色。支持十六进制（#rgb[a] 或 #rrggbb[aa]）、rgb()/rgba()、hsl()/hsla() 或 transparent。",
 		themeTokenAlphaError: "此颜色令牌不支持透明度，请使用不透明颜色。",
 		themeDocumentation: "编写指南",
 		themeMode: "明暗模式",

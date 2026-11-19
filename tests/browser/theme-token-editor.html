@@ -95,6 +95,19 @@
 			async function run() {
 				await tick();
 				await tick();
+				const search = document.querySelector(
+					'input[aria-label="Filter tokens"]',
+				);
+				assert(
+					search.placeholder === "Filter tokens",
+					"Search needs a visible empty-state placeholder",
+				);
+				assert(
+					document
+						.querySelector(`label[for="${search.id}"]`)
+						?.textContent.trim() === "Filter tokens",
+					"Search needs a persistent visible label",
+				);
 				input("Theme name", "Ocean");
 				input("Filter tokens", "primary");
 				await tick();
@@ -107,6 +120,18 @@
 				assert(
 					document.querySelector('[role="alert"]'),
 					"Inline validation required",
+				);
+				const colorError = document.querySelector('[role="alert"]').textContent;
+				assert(
+					colorError.includes("Not a valid color") &&
+						colorError.includes("rgb()/rgba()") &&
+						colorError.includes("hsl()/hsla()") &&
+						colorError.includes("transparent"),
+					"Unparseable colors need accepted-form guidance",
+				);
+				assert(
+					!colorError.includes("alpha = 1"),
+					"Unparseable colors must not show an alpha error",
 				);
 				assert(
 					style() === before && updates.length === 0,
