@@ -33,6 +33,58 @@ struct SessionCompletion {
     completion_id: String,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::host_events::HostEvents;
+
+    struct Completed(std::sync::mpsc::Sender<()>);
+
+    impl HostEvents for Completed {
+        fn emit(&self, _name: &str, payload: serde_json::Value) -> Result<(), String> {
+            if payload["type"] == "session_read_state_changed" {
+                self.0.send(()).map_err(|error| error.to_string())?;
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn completion_worker_runs_without_a_current_or_initialized_runtime() {
+        assert!(tokio::runtime::Handle::try_current().is_err());
+        let root = std::env::temp_dir().join(format!(
+            "pilo-completion-worker-{}-{}",
+            std::process::id(),
+            storage::now_ms()
+        ));
+        let paths = HostPaths::new(root.clone(), root.join("resources")).unwrap();
+        let runtime = Runtime::new(
+            paths,
+            Arc::new(crate::runtime::host_events::RecordingEvents::default()),
+        );
+        let db = storage::open_with_paths(&runtime.paths).unwrap();
+        storage::ensure_local_connection(&db).unwrap();
+        db.execute_batch(
+            "INSERT INTO projects(id,connection_id,name,path,metadata_json,created_at_ms,last_opened_at_ms)
+             VALUES('project','local','test','/test','{\"cwd\":\"/test\",\"gitBranch\":null,\"piVersion\":\"test\",\"refreshedAtMs\":0}',0,0);",
+        ).unwrap();
+        drop(db);
+        let (send, receive) = std::sync::mpsc::channel();
+        runtime
+            .events
+            .subscribe("test", 1, Arc::new(Completed(send)));
+        runtime
+            .events
+            .record_session_completion("project".into(), "session".into());
+        receive.recv_timeout(Duration::from_secs(5)).unwrap();
+        let states = runtime.events.session_read_states().unwrap();
+        assert_eq!(states.len(), 1);
+        assert_eq!(states[0].completed_revision, 1);
+        drop(runtime);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
 #[derive(Default)]
 pub(super) struct SessionCompletionQueue {
     worker_running: bool,
