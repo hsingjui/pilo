@@ -373,6 +373,21 @@ impl ChatFixture {
         self.0.data_dir()
     }
 
+    /// Writes a transcript in the isolated project directory.
+    pub fn seed_transcript(&self, entries: String) -> Result<String, String> {
+        let Self(BootstrapFixture(dir)) = self;
+        let path = dir.join("transcript.jsonl");
+        let header = serde_json::json!({
+            "type": "session",
+            "version": 3,
+            "id": "nsh-transcript-fixture",
+            "cwd": dir,
+            "timestamp": "2026-01-01T00:00:00.000Z",
+        });
+        fs::write(&path, format!("{header}\n{entries}")).map_err(|error| error.to_string())?;
+        Ok(path.to_string_lossy().into_owned())
+    }
+
     /// Selects the synthetic Pi naming model for this fixture connection.
     pub fn configure_naming_model(&self) -> Result<(), String> {
         let Self(BootstrapFixture(dir)) = self;

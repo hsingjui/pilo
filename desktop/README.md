@@ -16,9 +16,6 @@ It returns `{ type: "events", events }` with ordered, sequenced runtime envelope
 overflow, or `{ type: "closed" }` when the runtime shuts down. The queue is
 bounded to 2,048 events or 16 MiB of serialized envelopes, whichever is reached
 first. On a gap, bootstrap again and keep polling the same `Pilo` instance.
-Until a transcript snapshot carries its own sequence, do not discard queued
-chat deltas based on `eventSequence`; defer transcript reloads until the turn
-is idle.
 
 Use `loadPreferences()` and `savePreferences(patch)` to read or update the
 existing Host preferences. Both return the current revision and complete
@@ -108,6 +105,29 @@ no-op if the session is not running.
 `chatState(sessionKey)` returns the live runtime metadata and Pi process
 snapshot for that key, or `null` if no state is available. It does not return
 transcript text.
+`chatTranscriptSnapshot(sessionKey: string, window?): Promise<unknown>`
+captures an existing chat's transcript without starting Pi; it rejects unknown
+or closing sessions. The optional window is
+`{ startMessage?: number, messageLimit?: number, includeMessageIndex?: boolean }`.
+Omit `messageLimit` for all messages. When supplied, the reader clamps it to
+1–256, defaults to the tail when `startMessage` is omitted, and includes the
+message index on request. The result has
+`{ eventSequence, sessionKey, generation, history, live }`. `history` is the
+existing history response, including its fingerprint; `live` is
+`{ type: "idle" }`, `{ type: "active", events }`, or `{ type: "truncated" }`.
+
+Subscribe before requesting the snapshot and keep polling the same stream.
+For an idle cut, history is settled and there are no live events. For an active
+cut, history ends at the start-of-turn boundary and `live.events` holds the
+ordered runtime event payloads captured through the cut. Replace that session's
+transcript with history, apply all `live.events` if active, then replay stream
+events for the same session and generation strictly above `eventSequence`.
+Discard buffered events at or below that cut only for that transcript, not
+other sessions or global state. A gap or generation change requires a fresh
+cut. On `truncated`, do not apply its empty history or resume replay from that
+cut; wait for Host activity to confirm the turn settled and then refetch.
+SSH/WSL cuts are always truncated; those connections need the settled-history
+reader instead. The bootstrap sequence is not a substitute for a transcript cut.
 `sendChatCommand(sessionKey, command)` forwards a Pi RPC command object to
 the running session. The promise resolves once the command is sent; consume
 its response and any turn events via `nextEvents()`.

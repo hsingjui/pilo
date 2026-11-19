@@ -48,6 +48,18 @@ for line in sys.stdin:
         }
         result.update(leafId="fixture-leaf", text="What comes next?", status="ready")
         widget("pilo.next-prompt.v1", [json.dumps(result)])
+    if kind == "prompt" and command.get("id") == "fixture-transcript-turn":
+        for event in (
+            {"type": "agent_start"},
+            {"type": "message_start", "message": {
+                "role": "user", "content": [{"type": "text", "text": command["message"]}],
+            }},
+            {"type": "message_start", "message": {"role": "assistant"}},
+            {"type": "message_update", "assistantMessageEvent": {
+                "type": "text_delta", "delta": "partial reply",
+            }},
+        ):
+            print(json.dumps(event), flush=True)
     if kind == "prompt" and not command.get("id"):
         message = {
             "role": "assistant",

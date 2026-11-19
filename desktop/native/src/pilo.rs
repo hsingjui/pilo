@@ -9,7 +9,7 @@ use pilo_lib::{
     domain::SessionReadState,
     initialize_local_server_binary,
     runtime::{
-        Runtime,
+        Runtime, TranscriptWindow,
         appearance::{theme_settings_get, theme_settings_set},
         cache_keep_alive::{cache_keep_alive_settings_list, cache_keep_alive_settings_set},
         connections::connection_models_get,
@@ -640,6 +640,26 @@ impl Pilo {
         Self::with_runtime(this, move |runtime| async move {
             serde_json::to_value(chat_session_state(&runtime, session_key).await?)
                 .map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Captures persisted history and the live transcript at an ordered event cut.
+    pub async fn chat_transcript_snapshot(
+        this: Instance<Self>,
+        session_key: String,
+        window: Option<JsonValue>,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let window: TranscriptWindow = window
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| error.to_string())?
+                .unwrap_or_default();
+            let snapshot = runtime
+                .chat_transcript_snapshot(&session_key, window)
+                .await?;
+            serde_json::to_value(snapshot).map_err(|error| error.to_string())
         })
         .await
     }
