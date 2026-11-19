@@ -2,7 +2,7 @@
 
 ## 前置
 
-- PRD 的 Open Questions 全部确认，`design.md` 按结论更新。
+- PRD 的决策已全部确认（见 `prd.md` Decisions）；Tauri 版 → nsh 版的升级过渡方式推迟到 M7 开始前。
 - 分支 `nsh-migration`，基于 `main`。
 - 每周把 `main` 合入 `nsh-migration` 一次；合入后跑一遍“验证命令”中的 Rust 与 WebUI 部分，确认分支上的 Tauri 版仍可用。
 - 每个里程碑是一个子任务，按 Trellis 流程单独规划、实现、检查、归档；后续子任务在前一个结束时创建，避免计划过期。
@@ -11,7 +11,7 @@
 
 | 里程碑 | 子任务 | 交付物 | 替换的现有代码 | 依赖 |
 |---|---|---|---|---|
-| M0 | `11-19-nsh-m0-risk-spikes` | 四项风险结论 + 继续/中止决定 | — | — |
+| M0 | `11-19-nsh-m0-risk-spikes` | 四项风险结论与证据，供用户判断 | — | — |
 | M1 | 运行时抽离与地基 | `src-tauri` 运行时去 Tauri 依赖（原路径）；`desktop/` 骨架、主题、图标、基础组件、i18n；功能对齐清单 | `src/ui`（2,154 行）、`src/styles`（1,150 行） | M0 |
 | M2 | 桥接与数据层 | `Pilo` Rust 模块覆盖 `PiloClient`；signal 状态；应用启动、项目与会话列表 | `src/lib/api`（3,623 行）、`components/app`（3,958 行） | M1 |
 | M3 | Chat | 消息列、工具活动、Markdown、Diff、Composer、队列、模型与运行配置 | `components/chat`（19,306 行） | M2 |
@@ -110,7 +110,7 @@ pnpm test:unit
 
 ## 评审点
 
-- M0 结束：继续 / 中止。
+- M0 结束：用户逐项判断四项结论，决定继续 / 等待上游修复 / 中止（不预设止损标准）。
 - M1 结束：功能对齐清单确认。
 - M3 结束：Chat 与 Tauri 版逐项对照演示。
 - M7 开始前：发版切换确认；同时决定 Tauri 版 → nsh 版的升级过渡方式。
