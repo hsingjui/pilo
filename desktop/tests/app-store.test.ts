@@ -542,6 +542,35 @@ test("opening an unread session acknowledges its completed turns once", async ()
 	expect(store.state().navigation).toEqual({ projectId: "p2", session: null });
 });
 
+test("a turn completed in the open session is acknowledged when asked", async () => {
+	const fake = fakeClient();
+	fake.answers.readStates = [read("open", 3, 3), read("other", 2, 2)];
+	const store = new AppStore(fake.client);
+	const started = store.start();
+	await settle();
+	fake.bootstraps[0]?.resolve(snapshot(10, 3, "p1"));
+	await started;
+
+	// Nothing is open, and then nothing in the open session is unseen.
+	store.acknowledgeOpenSession();
+	store.selectSession("p1", "open");
+	store.acknowledgeOpenSession();
+	expect(fake.marked).toEqual([]);
+
+	// A turn that ends in another session is not the open one's.
+	fake.emit(
+		events(
+			[11, { type: "session_read_state_changed", state: read("other", 3, 2) }],
+			[12, { type: "session_read_state_changed", state: read("open", 4, 3) }],
+		),
+	);
+	store.acknowledgeOpenSession();
+	expect(fake.marked).toEqual([
+		{ projectId: "p1", sessionPath: "open", revision: 4 },
+	]);
+	expect(store.state().navigation.session?.sessionPath).toBe("open");
+});
+
 test("a failed acknowledgment leaves the session open and unread", async () => {
 	const fake = fakeClient();
 	fake.answers.readStates = [read("unread", 3, 1)];

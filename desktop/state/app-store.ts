@@ -117,19 +117,31 @@ export class AppStore {
 
 	/**
 	 * Opens a session and, as the user is now looking at it, acknowledges its
-	 * completed turns. The state follows the runtime's read-state event.
+	 * completed turns.
 	 */
 	selectSession(projectId: string, sessionPath: string) {
 		this.apply({ type: "session_selected", projectId, sessionPath });
+		const opened = this.current().navigation.session;
+		if (opened?.projectId === projectId && opened.sessionPath === sessionPath) {
+			this.acknowledgeOpenSession();
+		}
+	}
+
+	/**
+	 * Tells the runtime the user has seen the open session's completed turns,
+	 * when it has any they have not. The state follows the runtime's read-state
+	 * event.
+	 */
+	acknowledgeOpenSession() {
 		const state = this.current();
 		const opened = state.navigation.session;
 		if (
-			opened?.projectId !== projectId ||
-			opened.sessionPath !== sessionPath ||
-			!isSessionUnread(state, projectId, sessionPath)
+			!opened ||
+			!isSessionUnread(state, opened.projectId, opened.sessionPath)
 		) {
 			return;
 		}
+		const { projectId, sessionPath } = opened;
 		const read = state.readStates[readStateKey(projectId, sessionPath)];
 		if (!read) return;
 		this.client

@@ -179,6 +179,10 @@ including active turns; it does not wait for a reply to finish.
 Call `markSessionRead(projectId, sessionPath, revision)` with the positive
 safe-integer revision the client observed. It returns the resulting read
 state without moving it backward or past the latest completed revision.
+The app marks the open session read while it is the active app. macOS tests
+run their apps in the background, so that case runs there only with
+`nsh test --target macos --foreground tests/read-open-session.test.ts` and
+is passed over in the plain macOS run.
 
 Build the local development server with `cargo build -p pilo-server` from
 the repo root, or set `PILO_SERVER_BINARY` to an absolute path. Development
