@@ -839,9 +839,8 @@
 
 /*
  * 触屏没有 hover，消息上 hover-only 的复制、时间戳等操作会永久不可见。
- * 条件由 remote-app.tsx 的 useIsTouchDevice 等价判断写入 [data-touch-reveal]；
- * 该条件是 (hover: none) and (pointer: coarse)，没有对应的单一 Tailwind variant
- * （pointer-coarse: 只判断指针类型、不判断 hover），因此用属性选择器。
+ * WebUI 通过 [data-touch-reveal] 匹配 (hover: none) and (pointer: coarse)；
+ * 共享样式另以 (pointer: coarse) 覆盖桌面端及支持 hover 的粗指针设备。
  */
 [data-touch-reveal] .touch-reveal {
 	opacity: 1;
