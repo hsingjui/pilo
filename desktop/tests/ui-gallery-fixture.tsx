@@ -1,4 +1,12 @@
-import { mount, setTheme, signal, Text, View } from "nsh";
+import {
+	mount,
+	setTheme,
+	signal,
+	Text,
+	View,
+	type Bounds,
+	type ViewRef,
+} from "nsh";
 import "../app/fonts";
 import claude from "../claude-theme.json";
 import { Button } from "../ui/button";
@@ -28,6 +36,11 @@ mount(() => {
 	const floating = signal(false);
 	const dialog = signal(false);
 	const model = signal<string | null>(null);
+	const alignment = signal("Not measured");
+	let popoverTrigger: ViewRef | undefined;
+	let menuTrigger: ViewRef | undefined;
+	let popoverBounds: Bounds | undefined;
+	let menuBounds: Bounds | undefined;
 	return (
 		<View class="flex-1 bg-background p-8 gap-6 font-sans text-foreground">
 			<View class="flex-row items-center justify-between">
@@ -197,15 +210,42 @@ mount(() => {
 				>
 					<Text>Open dialog</Text>
 				</Button>
+				<Button
+					testID="measure-floating"
+					variant="outline"
+					onPress={async () => {
+						const [popover, menu] = await Promise.all([
+							popoverTrigger?.measure(),
+							menuTrigger?.measure(),
+						]);
+						if (popover && menu && popoverBounds && menuBounds)
+							alignment.set(
+								`Popover: ${popoverBounds.origin.x.toFixed(1)} / ${popover.pagePosition.x.toFixed(1)}; Menu: ${menuBounds.origin.x.toFixed(1)} / ${menu.pagePosition.x.toFixed(1)}`,
+							);
+					}}
+				>
+					<Text>Measure alignment</Text>
+				</Button>
 			</View>
+			<Text class="text-xs text-muted-foreground">{() => alignment()}</Text>
 			<View class="flex-row gap-8">
 				<View class="w-72 gap-2 items-start">
 					<Text class="text-lg font-semibold">Popover</Text>
 					<Popover
+						align="start"
+						popupClass="w-72"
+						onPosition={({ bounds }) => {
+							popoverBounds = bounds;
+						}}
 						open={floating()}
 						onOpenChange={({ open }) => floating.set(open)}
 						trigger={
-							<Button variant="outline">
+							<Button
+								variant="outline"
+								ref={(view) => {
+									popoverTrigger = view;
+								}}
+							>
 								<Text>Session details</Text>
 							</Button>
 						}
@@ -221,10 +261,18 @@ mount(() => {
 				<View class="w-72 gap-2 items-start">
 					<Text class="text-lg font-semibold">Menu</Text>
 					<Menu
+						onPosition={({ bounds }) => {
+							menuBounds = bounds;
+						}}
 						open={floating()}
 						onOpenChange={({ open }) => floating.set(open)}
 						trigger={
-							<Button variant="outline">
+							<Button
+								variant="outline"
+								ref={(view) => {
+									menuTrigger = view;
+								}}
+							>
 								<Text>Session actions</Text>
 							</Button>
 						}
