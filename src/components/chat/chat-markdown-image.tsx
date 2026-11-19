@@ -46,6 +46,109 @@ type ImageState =
 	| { status: "error" }
 	| { status: "pending" };
 
+function ImagePlaceholder({
+	error,
+	unavailable = false,
+}: {
+	error: boolean;
+	unavailable?: boolean;
+}) {
+	const { t } = useTranslation();
+	return error ? (
+		<span className="inline-flex flex-col items-center gap-2" role="alert">
+			<ImageOff className="size-5" />
+			<span>
+				{t(unavailable ? "chat.imageUnavailable" : "chat.loadImageFailed")}
+			</span>
+			{!unavailable ? (
+				<span className="underline underline-offset-2">
+					{t("common.retry")}
+				</span>
+			) : null}
+		</span>
+	) : (
+		<Spinner className="size-5" />
+	);
+}
+
+function ExternalMarkdownImage({
+	src,
+	alt,
+	className,
+	width,
+	height,
+	onLoad,
+	onError,
+	...props
+}: ComponentPropsWithoutRef<"img"> & { src: string }) {
+	const { t } = useTranslation();
+	const [status, setStatus] = useState<"pending" | "ready" | "error">(
+		"pending",
+	);
+	const [attempt, setAttempt] = useState(0);
+	const label = alt || t("chat.image");
+	return (
+		<button
+			type="button"
+			aria-label={
+				status === "error"
+					? `${t("chat.loadImageFailed")}. ${t("common.retry")}`
+					: t("chat.viewImage", { name: label })
+			}
+			disabled={status === "pending"}
+			onClick={() => {
+				if (status === "ready")
+					openChatImageLightbox({ url: src, name: label });
+				else {
+					setStatus("pending");
+					setAttempt((value) => value + 1);
+				}
+			}}
+			className={cn(
+				"my-2 inline-grid max-w-full overflow-hidden rounded-lg border border-foreground/10 bg-muted/40 align-middle focus-visible:outline-2 focus-visible:outline-ring",
+				status !== "ready" && "min-h-28 min-w-44 text-xs text-muted-foreground",
+			)}
+			style={
+				width && height
+					? { width, aspectRatio: `${width} / ${height}` }
+					: undefined
+			}
+		>
+			{status !== "error" ? (
+				<img
+					{...props}
+					key={attempt}
+					src={src}
+					alt={alt ?? ""}
+					width={width}
+					height={height}
+					loading="lazy"
+					decoding="async"
+					onLoad={(event) => {
+						setStatus("ready");
+						onLoad?.(event);
+					}}
+					onError={(event) => {
+						setStatus("error");
+						onError?.(event);
+					}}
+					className={cn(
+						"col-start-1 row-start-1 max-h-96 max-w-full object-contain",
+						width && height && "h-full min-h-0 w-full",
+						status === "pending" && "invisible",
+						className,
+					)}
+				/>
+			) : null}
+			{status !== "ready" ? (
+				<span className="col-start-1 row-start-1 flex items-center justify-center px-3 py-4">
+					<ImagePlaceholder error={status === "error"} />
+				</span>
+			) : null}
+		</button>
+	);
+}
+
 function ProjectMarkdownImage({
 	path,
 	mimeType,
@@ -89,7 +192,7 @@ function ProjectMarkdownImage({
 			title={path}
 			aria-label={
 				state.status === "error"
-					? t("chat.loadImageFailed")
+					? `${t("chat.loadImageFailed")}. ${t("common.retry")}`
 					: t("chat.viewImage", { name: label })
 			}
 			disabled={!scope || state.status === "pending"}
@@ -120,15 +223,11 @@ function ProjectMarkdownImage({
 					onError={() => setState({ status: "error" })}
 					className="max-h-96 max-w-full object-contain"
 				/>
-			) : !scope || state.status === "error" ? (
-				<span className="inline-flex flex-col items-center gap-2" role="alert">
-					<ImageOff className="size-5" />
-					<span>
-						{scope ? t("chat.loadImageFailed") : t("chat.imageUnavailable")}
-					</span>
-				</span>
 			) : (
-				<Spinner className="size-5" />
+				<ImagePlaceholder
+					error={!scope || state.status === "error"}
+					unavailable={!scope}
+				/>
 			)}
 		</button>
 	);
@@ -153,23 +252,13 @@ export function MarkdownImage({
 	);
 	if (source.type === "external")
 		return (
-			<button
-				type="button"
-				aria-label={t("chat.viewImage", { name: alt || t("chat.image") })}
-				onClick={() =>
-					openChatImageLightbox({ url: source.url, name: alt || "image" })
-				}
-				className="my-2 inline-flex max-w-full overflow-hidden rounded-lg align-middle focus-visible:outline-2 focus-visible:outline-ring"
-			>
-				<img
-					{...props}
-					src={source.url}
-					alt={alt ?? ""}
-					loading="lazy"
-					decoding="async"
-					className={cn("max-h-96 max-w-full object-contain", className)}
-				/>
-			</button>
+			<ExternalMarkdownImage
+				{...props}
+				key={source.url}
+				src={source.url}
+				alt={alt}
+				className={className}
+			/>
 		);
 	if (source.type === "invalid")
 		return (

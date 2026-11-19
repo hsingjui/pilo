@@ -17,10 +17,30 @@ import {
 	MARKDOWN_COMPONENTS,
 	MARKDOWN_REHYPE_PLUGINS,
 } from "../../src/components/chat/chat-markdown-components.tsx";
-import { ChatMarkdownImageScopeProvider } from "../../src/components/chat/chat-markdown-image.tsx";
+import {
+	ChatMarkdownImageScopeProvider,
+	MarkdownImage,
+} from "../../src/components/chat/chat-markdown-image.tsx";
 import { initializeI18n } from "../../src/i18n/index.ts";
 
 await initializeI18n("en-US");
+
+test("external image loading reserves supplied dimensions and supports empty alt text", () => {
+	const markup = renderToStaticMarkup(
+		createElement(MarkdownImage, {
+			src: "https://example.com/loading.png",
+			alt: "",
+			width: 240,
+			height: 140,
+		}),
+	);
+	assert.match(markup, /width="240"/);
+	assert.match(markup, /height="140"/);
+	assert.match(markup, /aspect-ratio:240 \/ 140/);
+	assert.match(markup, /disabled=""/);
+	assert.match(markup, /alt=""/);
+	assert.match(markup, /invisible/);
+});
 
 test("Markdown image paths are decoded and normalized relative to the project", () => {
 	assert.deepEqual(resolveMarkdownImageSource("./screenshots/page.png"), {
