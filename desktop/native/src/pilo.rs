@@ -16,7 +16,6 @@ use pilo_lib::{
         initialize_server_resource_dir,
         preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
         project_api::project_list,
-        runtime_api::chat_session_states,
         session_api::session_reconcile,
         tasks,
         web_assets::{WebAsset, WebAssets},
@@ -120,13 +119,16 @@ fn load_projects(runtime: &Runtime) -> Result<Vec<JsonValue>, String> {
     encode_list(project_list(runtime)?)
 }
 
-/// The initial project catalog and runtime snapshots. The event cursor is not yet available.
+/// The initial project catalog and runtime snapshots with their event cut.
 #[derive(JsObject)]
 pub struct Bootstrap {
+    /// The runtime event sequence before reading snapshot state.
+    pub event_sequence: u64,
     /// Projects with their saved connection and metadata.
     pub projects: Vec<JsonValue>,
     /// Snapshots of chat sessions currently held by the runtime.
     pub chat_sessions: Vec<JsonValue>,
+    pub preferences: NativePreferencesSnapshot,
 }
 
 /// The current revision and complete Host preference values.
@@ -175,14 +177,17 @@ pub struct Pilo {
 impl Pilo {
     async fn load_bootstrap(host: Host) -> Result<Bootstrap, String> {
         let host = host.lock().await;
-        let runtime = host.as_ref().ok_or(CLOSED)?;
-        let project_runtime = runtime.clone();
-        let projects = tokio::task::spawn_blocking(move || load_projects(&project_runtime))
-            .await
-            .map_err(|error| format!("failed to load projects: {error}"))??;
+        let runtime = host.as_ref().ok_or(CLOSED)?.clone();
+        let executor = tokio::runtime::Handle::current();
+        let snapshot =
+            tokio::task::spawn_blocking(move || executor.block_on(runtime.bootstrap_snapshot()))
+                .await
+                .map_err(|error| format!("failed to load bootstrap snapshot: {error}"))??;
         Ok(Bootstrap {
-            projects,
-            chat_sessions: encode_list(chat_session_states(runtime).await?)?,
+            event_sequence: snapshot.event_sequence,
+            projects: encode_list(snapshot.projects)?,
+            chat_sessions: encode_list(snapshot.chat_sessions)?,
+            preferences: snapshot.preferences.into(),
         })
     }
 
@@ -274,7 +279,7 @@ impl Pilo {
         })
     }
 
-    /// Reads the saved project catalog and live chat snapshots.
+    /// Reads the saved project catalog, live chat snapshots and Host preferences.
     pub async fn bootstrap(this: Instance<Self>) -> Result<Bootstrap, String> {
         let task = this.with(|pilo| pilo.executor.spawn(Self::load_bootstrap(pilo.host.clone())));
         task.await

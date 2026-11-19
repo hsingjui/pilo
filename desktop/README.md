@@ -5,8 +5,9 @@
 `new Pilo()` uses the same macOS data directory as Tauri: the bundle ID
 `app.hsingjui.pilo` under `~/Library/Application Support` (with `.dev` for
 debug builds). Tests can pass a separate absolute path. Call `bootstrap()`
-for saved projects and live chat snapshots, and await `shutdown()` before
-quitting the app. Bootstrap does not yet include the event cursor.
+for saved projects, live chat snapshots, Host preferences and `eventSequence`.
+The sequence is captured before reading the snapshot state; it is not a
+transcript watermark. Await `shutdown()` before quitting the app.
 
 Use `loadPreferences()` and `savePreferences(patch)` to read or update the
 existing Host preferences. Both return the current revision and complete
