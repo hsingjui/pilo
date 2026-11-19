@@ -291,8 +291,8 @@ pub async fn project_fs_read_dir(
     remote_fs::read_dir(&runtime.servers, &project, &path).await
 }
 
-pub fn local_pick_project_directory(runtime: &Runtime) -> Option<String> {
-    runtime.shell().ok()?.pick_directory()
+pub fn local_pick_project_directory(runtime: &Runtime) -> Result<Option<String>, String> {
+    Ok(runtime.shell()?.pick_directory())
 }
 
 pub async fn connection_fs_read_dir(
@@ -397,4 +397,55 @@ pub async fn project_discover(
     connection_id: String,
 ) -> Result<Vec<DiscoveredProject>, String> {
     project::discover(runtime, &runtime.servers, connection_id).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::{handle::HostShell, host_events::RecordingEvents, host_paths::HostPaths};
+    use std::path::{Path, PathBuf};
+
+    struct Picker(Option<&'static str>);
+
+    impl HostShell for Picker {
+        fn cache_dir(&self) -> Result<PathBuf, String> {
+            Ok(PathBuf::new())
+        }
+
+        fn open_path(&self, _path: &Path) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn pick_directory(&self) -> Option<String> {
+            self.0.map(str::to_owned)
+        }
+    }
+
+    #[test]
+    fn directory_picker_reports_missing_host_services() {
+        let runtime = Runtime::new(
+            HostPaths::for_test(PathBuf::new()),
+            Arc::new(RecordingEvents::default()),
+        );
+        assert_eq!(
+            local_pick_project_directory(&runtime),
+            Err("host shell services are unavailable".to_owned())
+        );
+    }
+
+    #[test]
+    fn directory_picker_preserves_selection_and_user_cancellation() {
+        for selection in [Some("/workspace"), None] {
+            let runtime = Runtime::new(
+                HostPaths::for_test(PathBuf::new()),
+                Arc::new(RecordingEvents::default()),
+            )
+            .with_shell(Arc::new(Picker(selection)))
+            .unwrap();
+            assert_eq!(
+                local_pick_project_directory(&runtime),
+                Ok(selection.map(str::to_owned))
+            );
+        }
+    }
 }

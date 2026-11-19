@@ -265,7 +265,7 @@ pub async fn project_fs_read_dir(
 }
 
 #[tauri::command]
-pub fn local_pick_project_directory(runtime: State<'_, Runtime>) -> Option<String> {
+pub fn local_pick_project_directory(runtime: State<'_, Runtime>) -> Result<Option<String>, String> {
     super::super::project_api::local_pick_project_directory(&runtime)
 }
 
