@@ -1,6 +1,7 @@
 import { split, token } from "nsh";
 import { Tooltip as BaseTooltip, type TooltipProps } from "nsh/base";
 import { styleVar } from "./theme-style";
+import { classNames } from "./class-names";
 
 export type { TooltipProps } from "nsh/base";
 
@@ -9,12 +10,10 @@ export function Tooltip(props: TooltipProps) {
 	return (
 		<BaseTooltip
 			{...rest}
-			class={[
+			class={classNames(
 				"overflow-hidden rounded-(--pilo-radius-md) border border-(--pilo-tooltip-border) bg-popover bg-(--tooltip-background) text-popover-foreground text-(--tooltip-foreground) px-3 py-1.5 text-xs font-sans",
 				local.class,
-			]
-				.filter(Boolean)
-				.join(" ")}
+			)}
 			style={[
 				{
 					boxShadow: styleVar("pilo-tooltip-shadow"),

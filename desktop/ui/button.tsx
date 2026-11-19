@@ -5,6 +5,7 @@ import {
 } from "nsh/base";
 import { styleVar } from "./theme-style";
 import { Foreground } from "./foreground";
+import { classNames } from "./class-names";
 
 const variants = {
 	default: "bg-primary text-primary-foreground hover:bg-button-hover",
@@ -42,14 +43,12 @@ export interface ButtonProps extends BaseButtonProps {
 export function buttonVariants(
 	props: Pick<ButtonProps, "variant" | "size" | "class"> = {},
 ) {
-	return [
+	return classNames(
 		"flex-row items-center justify-center gap-(--pilo-button-gap) whitespace-nowrap rounded-(--pilo-radius-md) text-sm font-medium font-sans text-foreground transition-[color,background-color,border-color,scale] active:scale-[0.96] focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring/60 disabled:opacity-50",
 		variants[props.variant ?? "default"],
 		sizes[props.size ?? "default"],
 		props.class,
-	]
-		.filter(Boolean)
-		.join(" ");
+	);
 }
 
 function shadow(variant: ButtonProps["variant"]): StyleProp<ViewStyle> {
