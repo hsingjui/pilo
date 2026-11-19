@@ -3,8 +3,12 @@ import type {
 	PiloClientEventOptions,
 } from "@/lib/api/pilo-client";
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
+import type { ConversationEvent } from "@/lib/chat/conversation-types";
 import type { Project } from "@/lib/api/projects-types";
-import type { SessionIndexEntry } from "@/lib/api/sessions-types";
+import type {
+	SessionHistoryResult,
+	SessionIndexEntry,
+} from "@/lib/api/sessions-types";
 import type {
 	HostPreferenceValues,
 	PreferencesSnapshot,
@@ -13,6 +17,7 @@ import type { SessionReadState } from "@/lib/session-read-state";
 import type { ThemeSettings } from "@/lib/theme-settings-types";
 import type { NshPiloClientBootstrap } from "../client/nsh-pilo-client";
 import type { AppStoreClient } from "../state/app-store";
+import type { ChatTranscriptClient } from "../state/chat-transcript-store";
 
 export type AppScript = {
 	projects?: Project[];
@@ -21,6 +26,8 @@ export type AppScript = {
 	/** A project's saved sessions; none when left out. */
 	sessions?: (projectId: string) => Promise<SessionIndexEntry[]>;
 	chatSessions?: ChatSessionRuntimeState[];
+	/** A saved session's settled history; no events when left out. */
+	history?: (sessionPath: string) => Promise<ConversationEvent[]>;
 	readStates?: SessionReadState[];
 	/** Replaces a bootstrap's answer; `undefined` answers from the script. */
 	bootstrap?: (attempt: number) => Promise<NshPiloClientBootstrap> | undefined;
@@ -62,7 +69,7 @@ export function scriptedClient(script: AppScript = {}) {
 		};
 		for (const listener of listeners) listener.onMessage(message);
 	};
-	const client: AppStoreClient = {
+	const client: AppStoreClient & ChatTranscriptClient = {
 		get closed() {
 			return closed;
 		},
@@ -84,6 +91,13 @@ export function scriptedClient(script: AppScript = {}) {
 				script.chatSessions?.find((chat) => chat.sessionKey === sessionKey) ??
 					null,
 			),
+		// No Pi runs for a scripted chat, so its transcript is its history.
+		chatTranscriptSnapshot: () => Promise.reject(new Error("no Pi is running")),
+		loadHistory: async (_projectId, sessionPath) =>
+			({
+				history: { events: (await script.history?.(sessionPath)) ?? [] },
+				fingerprint: null,
+			}) as SessionHistoryResult,
 		listProjects: () => Promise.resolve(projects),
 		listSessions: (projectId) =>
 			script.sessions?.(projectId) ?? Promise.resolve([]),

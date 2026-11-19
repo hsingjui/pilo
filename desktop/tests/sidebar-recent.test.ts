@@ -94,14 +94,15 @@ test("recent sessions name their project once the menu's switch is on", async ()
 
 test("a recent session opens from the list and the list collapses", async () => {
 	const app = await openRecent();
-	// The workspace starts on the first project and follows the session's.
+	// The workspace starts on the first project, then shows the session's
+	// chat (the fixture's sessions have no messages) in the session's project.
 	expect(app.texts().slice(-2)).toEqual(["api", "/code/api"]);
 	await app.press("id:session:s3");
 	await app.waitUntil(
 		() => app.viewStyle("id:session:s3")?.backgroundColor === SELECTED,
 	);
 	expect(app.viewStyle("id:session:s8")?.backgroundColor).toBeUndefined();
-	expect(app.texts().slice(-2)).toEqual(["pilo", "/code/pilo"]);
+	await app.waitFor("id:workspace >> id:chat-empty >> text:pilo");
 
 	await app.press("id:recent:toggle");
 	await app.waitFor("id:session:s3", { state: "gone" });

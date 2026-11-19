@@ -4,8 +4,10 @@ import type { Project } from "@/lib/api/projects-types";
 import type { ThemeSettings } from "@/lib/theme-settings-types";
 import "../app/fonts";
 import { AppShell } from "../app/AppShell";
+import { conversationContext } from "../app/open-chat";
 import { initializeI18n } from "../app/i18n";
 import { AppStore } from "../state/app-store";
+import { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { fixtureThemeFamily } from "./fixture-theme";
 import { type AppScript, scriptedClient } from "./scripted-app-client";
 
@@ -47,8 +49,9 @@ async function run() {
 		themeFamily: await fixtureThemeFamily(),
 	} as ThemeSettings;
 	const runtime = scriptedClient({ ...scripts[scenario], themeSettings });
-	const store = new AppStore(runtime.client);
-	mount(AppShell, { store });
+	const chat = new ChatTranscriptStore(runtime.client, conversationContext());
+	const store = new AppStore(runtime.client, chat);
+	mount(AppShell, { store, chat });
 	await store.start();
 	if (scenario === "closed") setTimeout(runtime.close, 50);
 }

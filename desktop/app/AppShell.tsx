@@ -1,9 +1,11 @@
-import { type Accessor, computed, signal, Text, View } from "nsh";
+import { type Accessor, computed, type JSX, signal, Text, View } from "nsh";
 import { currentWindow, titleBar } from "nsh/desktop";
 
 import type { Project } from "@/lib/api/projects-types";
+import { ChatMessageList } from "../chat/chat-message-list";
 import { activeProject } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
+import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { followSavedAppearance } from "./appearance";
@@ -19,12 +21,15 @@ const TITLE_BAR_HEIGHT = 44;
 export interface AppShellProps {
 	/** The app state the shell shows; whoever mounts the shell starts it. */
 	store: AppStore;
+	/** The open session's transcript; whoever mounts the shell keeps it open. */
+	chat: Pick<ChatTranscriptStore, "state" | "refresh">;
 }
 
 export function AppShell(props: AppShellProps) {
-	const { store } = props;
+	const { store, chat } = props;
 	const status = computed(() => store.state().status);
 	const project = computed(() => activeProject(store.state()));
+	const sessionOpen = computed(() => store.state().navigation.session !== null);
 	const collapsed = signal(false);
 	const sidebarSettings = new SidebarSettingsStore();
 	void sidebarSettings.load();
@@ -45,6 +50,10 @@ export function AppShell(props: AppShellProps) {
 		>
 			<Icon name="PanelLeft" />
 		</Button>
+	);
+	/** A page of the workspace that is not a chat, in its middle. */
+	const centered = (page: JSX.Element) => (
+		<View class="flex-1 items-center justify-center gap-2 p-6">{page}</View>
 	);
 	return (
 		<View testID="app" class="flex-1 flex-row bg-background">
@@ -87,30 +96,55 @@ export function AppShell(props: AppShellProps) {
 							: null
 					}
 				</View>
-				<View
-					testID="workspace"
-					class="min-w-0 flex-1 items-center justify-center gap-2 p-6"
-				>
+				<View testID="workspace" class="min-h-0 min-w-0 flex-1">
 					{() => {
 						const current = status();
 						switch (current.type) {
 							case "starting":
-								return <StartupLoading />;
+								return centered(<StartupLoading />);
 							case "failed":
-								return (
+								return centered(
 									<StartupFailure
 										message={() => current.message}
 										onRetry={() => store.retry()}
-									/>
+									/>,
 								);
 							case "closed":
-								return <RuntimeStopped />;
+								return centered(<RuntimeStopped />);
 							case "ready":
-								return <ProjectPlaceholder project={project} />;
+								return sessionOpen() ? (
+									<ChatMessageList
+										transcript={chat.state}
+										onRetry={() => chat.refresh()}
+										empty={() => <NewSession project={project} />}
+									/>
+								) : (
+									centered(<ProjectPlaceholder project={project} />)
+								);
 						}
 					}}
 				</View>
 			</View>
+		</View>
+	);
+}
+
+/** What a session without messages shows, until the new session view. */
+function NewSession(props: { project: Accessor<Project | null> }) {
+	return (
+		<View class="max-w-full items-center gap-2">
+			<Text
+				testID="new-session-title"
+				class="text-center font-sans text-xl font-semibold text-foreground"
+			>
+				{() => t("app.newChat")}
+			</Text>
+			<Text
+				testID="new-session-project"
+				class="text-center font-sans text-sm text-muted-foreground"
+			>
+				{() => props.project()?.name ?? ""}
+			</Text>
 		</View>
 	);
 }

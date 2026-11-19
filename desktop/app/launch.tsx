@@ -16,7 +16,7 @@ export async function launch(pilo: PiloNative) {
 	const chat = new ChatTranscriptStore(client, conversationContext());
 	const store = new AppStore(client, chat);
 	followOpenSession(store, chat);
-	mount(AppShell, { store });
+	mount(AppShell, { store, chat });
 	await client
 		.savePreferences({ locale: appLocale() }, true)
 		.catch((error: unknown) => {

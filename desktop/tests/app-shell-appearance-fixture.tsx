@@ -6,8 +6,10 @@ import type { HostPreferenceValues } from "@/lib/host-preferences-types";
 import type { ThemeSettings } from "@/lib/theme-settings-types";
 import "../app/fonts";
 import { AppShell } from "../app/AppShell";
+import { conversationContext } from "../app/open-chat";
 import { initializeI18n } from "../app/i18n";
 import { AppStore } from "../state/app-store";
+import { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { HOST_DEFAULT_VALUES, scriptedClient } from "./scripted-app-client";
 
 /**
@@ -34,7 +36,8 @@ async function run() {
 		preferences: { revision: 1, values },
 		themeSettings: theme(1, await stored("fixture.theme")),
 	});
-	const store = new AppStore(runtime.client);
+	const chat = new ChatTranscriptStore(runtime.client, conversationContext());
+	const store = new AppStore(runtime.client, chat);
 	let revision = 1;
 	const preferenceChange = (
 		label: string,
@@ -66,7 +69,7 @@ async function run() {
 	);
 	mount(() => (
 		<View class="flex-1">
-			<AppShell store={store} />
+			<AppShell store={store} chat={chat} />
 			<View class="flex-row flex-wrap gap-2">
 				{preferenceChange("Save English", { locale: "en-US" })}
 				{preferenceChange("Save Georgia and Menlo", {
