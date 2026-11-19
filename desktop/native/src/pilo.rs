@@ -1,4 +1,5 @@
 use std::{
+    future::Future,
     path::{Component, Path, PathBuf},
     sync::{Arc, OnceLock},
 };
@@ -14,6 +15,7 @@ use pilo_lib::{
         preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
         project_api::project_list,
         runtime_api::chat_session_states,
+        session_api::session_reconcile,
         tasks,
         web_assets::{WebAsset, WebAssets},
     },
@@ -94,11 +96,26 @@ async fn stop_host(host: Host) {
     }
 }
 
+async fn run_with_runtime<T, F>(
+    host: Host,
+    operation: impl FnOnce(Runtime) -> F,
+) -> Result<T, String>
+where
+    F: Future<Output = Result<T, String>>,
+{
+    let runtime = host.lock().await.as_ref().ok_or(CLOSED)?.clone();
+    operation(runtime).await
+}
+
 fn encode_list(values: Vec<impl Serialize>) -> Result<Vec<JsonValue>, String> {
     values
         .into_iter()
         .map(|value| serde_json::to_value(value).map_err(|error| error.to_string()))
         .collect()
+}
+
+fn load_projects(runtime: &Runtime) -> Result<Vec<JsonValue>, String> {
+    encode_list(project_list(runtime)?)
 }
 
 /// The initial project catalog and runtime snapshots. The event cursor is not yet available.
@@ -138,11 +155,11 @@ impl Pilo {
         let host = host.lock().await;
         let runtime = host.as_ref().ok_or(CLOSED)?;
         let project_runtime = runtime.clone();
-        let projects = tokio::task::spawn_blocking(move || project_list(&project_runtime))
+        let projects = tokio::task::spawn_blocking(move || load_projects(&project_runtime))
             .await
             .map_err(|error| format!("failed to load projects: {error}"))??;
         Ok(Bootstrap {
-            projects: encode_list(projects)?,
+            projects,
             chat_sessions: encode_list(chat_session_states(runtime).await?)?,
         })
     }
@@ -153,13 +170,12 @@ impl Pilo {
     ) -> Result<T, String> {
         let task = this.with(|pilo| {
             let host = pilo.host.clone();
-            pilo.executor.spawn(async move {
-                let host = host.lock().await;
-                let runtime = host.as_ref().ok_or(CLOSED)?.clone();
-                tokio::task::spawn_blocking(move || operation(&runtime))
-                    .await
-                    .map_err(|error| format!("Pilo runtime task failed: {error}"))?
-            })
+            pilo.executor
+                .spawn(run_with_runtime(host, move |runtime| async move {
+                    tokio::task::spawn_blocking(move || operation(&runtime))
+                        .await
+                        .map_err(|error| format!("Pilo runtime task failed: {error}"))?
+                }))
         });
         task.await
             .map_err(|error| format!("Pilo runtime task failed: {error}"))?
@@ -230,6 +246,27 @@ impl Pilo {
         let task = this.with(|pilo| pilo.executor.spawn(Self::load_bootstrap(pilo.host.clone())));
         task.await
             .map_err(|error| format!("failed to bootstrap Pilo: {error}"))?
+    }
+
+    /// Reads the saved project catalog without loading live chat snapshots.
+    pub async fn list_projects(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
+        Self::with_runtime_blocking(this, load_projects).await
+    }
+
+    /// Reconciles the project's session index and returns its saved sessions.
+    pub async fn list_sessions(
+        this: Instance<Self>,
+        project_id: String,
+    ) -> Result<Vec<JsonValue>, String> {
+        let task = this.with(|pilo| {
+            let host = pilo.host.clone();
+            pilo.executor
+                .spawn(run_with_runtime(host, move |runtime| async move {
+                    encode_list(session_reconcile(&runtime, project_id).await?.sessions)
+                }))
+        });
+        task.await
+            .map_err(|error| format!("failed to load sessions: {error}"))?
     }
 
     /// Reads the complete Host preferences from the runtime's SQLite index.
@@ -361,6 +398,34 @@ mod tests {
             std::fs::remove_dir(database).unwrap();
             assert!(Pilo::load_bootstrap(pilo.host.clone()).await.is_ok());
             stop_host(pilo.host.clone()).await;
+        });
+    }
+
+    #[test]
+    fn runtime_operation_does_not_block_shutdown() {
+        let data = tempfile::tempdir().unwrap();
+        let pilo = Pilo::new(Some(data.path().to_str().unwrap().into())).unwrap();
+        pilo.executor.block_on(async {
+            let (admitted, ready) = tokio::sync::oneshot::channel();
+            let (finish, pending) = tokio::sync::oneshot::channel();
+            let operation = tokio::spawn(run_with_runtime(pilo.host.clone(), |_| async move {
+                admitted.send(()).unwrap();
+                pending.await.unwrap();
+                Ok(())
+            }));
+            ready.await.unwrap();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                stop_host(pilo.host.clone()),
+            )
+            .await
+            .expect("shutdown waited for an admitted operation");
+            assert_eq!(
+                run_with_runtime(pilo.host.clone(), |_| async { Ok(()) }).await,
+                Err(CLOSED.to_owned()),
+            );
+            finish.send(()).unwrap();
+            operation.await.unwrap().unwrap();
         });
     }
 

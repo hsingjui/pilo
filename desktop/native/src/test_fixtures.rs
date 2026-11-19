@@ -6,6 +6,10 @@ use std::{
 };
 
 use nsh_core::prelude::*;
+use pilo_lib::{
+    domain::SessionIndexEntry,
+    runtime::{host_paths::HostPaths, storage},
+};
 
 pub(crate) fn register(registry: &mut Registry) {
     registry.module::<ImageFixture>();
@@ -62,6 +66,38 @@ impl BootstrapFixture {
     /// Returns the fixture directory.
     pub fn data_dir(&self) -> String {
         self.0.to_string_lossy().into_owned()
+    }
+
+    /// Saves an indexed session for a fixture project without starting Pi.
+    pub fn seed_indexed_session(&self, project_id: String, cwd: String) -> Result<(), String> {
+        let paths = HostPaths::new(self.0.clone(), self.0.clone())?;
+        let db = storage::open(&paths)?;
+        storage::upsert_session(
+            &db,
+            &SessionIndexEntry {
+                connection_id: "local".into(),
+                project_id,
+                pi_session_id: "saved-session".into(),
+                session_path: self
+                    .0
+                    .join("saved-session.jsonl")
+                    .to_string_lossy()
+                    .into_owned(),
+                name: Some("Saved session".into()),
+                cwd,
+                created_at: "2026-01-01T00:00:00Z".into(),
+                updated_at: "2026-01-01T00:00:01Z".into(),
+                message_count: 1,
+                last_message_at: Some("2026-01-01T00:00:01Z".into()),
+                first_user_message_preview: None,
+                file_size: 100,
+                file_mtime_ns: 1_767_225_601_000_000_001,
+                last_offset: 100,
+                indexed_at_ms: 1_767_225_601_000,
+                pinned: false,
+                title_override: None,
+            },
+        )
     }
 }
 
