@@ -2,11 +2,14 @@ import type {
 	PiloClientEvent,
 	PiloClientEventOptions,
 } from "@/lib/api/pilo-client";
+import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import type { Project } from "@/lib/api/projects-types";
+import type { SessionIndexEntry } from "@/lib/api/sessions-types";
 import type {
 	HostPreferenceValues,
 	PreferencesSnapshot,
 } from "@/lib/host-preferences-types";
+import type { SessionReadState } from "@/lib/session-read-state";
 import type { ThemeSettings } from "@/lib/theme-settings-types";
 import type { NshPiloClientBootstrap } from "../client/nsh-pilo-client";
 import type { AppStoreClient } from "../state/app-store";
@@ -15,6 +18,10 @@ export type AppScript = {
 	projects?: Project[];
 	preferences?: PreferencesSnapshot;
 	themeSettings?: ThemeSettings;
+	/** A project's saved sessions; none when left out. */
+	sessions?: (projectId: string) => Promise<SessionIndexEntry[]>;
+	chatSessions?: ChatSessionRuntimeState[];
+	readStates?: SessionReadState[];
 	/** Replaces a bootstrap's answer; `undefined` answers from the script. */
 	bootstrap?: (attempt: number) => Promise<NshPiloClientBootstrap> | undefined;
 };
@@ -45,6 +52,16 @@ export function scriptedClient(script: AppScript = {}) {
 	let attempts = 0;
 	let sequence = 0;
 	let closed = false;
+	/** Delivers runtime events to the app, in order. */
+	const emit = (...events: object[]) => {
+		const message = {
+			type: "events" as const,
+			events: events.map(
+				(event) => ({ ...event, sequence: ++sequence }) as PiloClientEvent,
+			),
+		};
+		for (const listener of listeners) listener.onMessage(message);
+	};
 	const client: AppStoreClient = {
 		get closed() {
 			return closed;
@@ -55,18 +72,28 @@ export function scriptedClient(script: AppScript = {}) {
 				script.bootstrap?.(attempts) ??
 				Promise.resolve({
 					projects,
-					chatSessions: [],
+					chatSessions: script.chatSessions ?? [],
 					latestSequence: sequence,
 					preferences: script.preferences ?? HOST_DEFAULT_PREFERENCES,
 				})
 			);
 		},
 		listProjects: () => Promise.resolve(projects),
-		listSessions: () => Promise.resolve([]),
-		loadSessionReadStates: () => Promise.resolve([]),
+		listSessions: (projectId) =>
+			script.sessions?.(projectId) ?? Promise.resolve([]),
+		loadSessionReadStates: () => Promise.resolve(script.readStates ?? []),
 		loadThemeSettings: () =>
 			Promise.resolve(script.themeSettings ?? HOST_DEFAULT_THEME),
-		markSessionRead: () => Promise.reject(new Error("no session to mark")),
+		markSessionRead(projectId, sessionPath, revision) {
+			const read = script.readStates?.find(
+				(state) =>
+					state.projectId === projectId && state.sessionPath === sessionPath,
+			);
+			if (!read) return Promise.reject(new Error("no session to mark"));
+			const state = { ...read, readRevision: revision };
+			emit({ type: "session_read_state_changed", state });
+			return Promise.resolve(state);
+		},
 		connectEvents(options) {
 			listeners.add(options);
 			options.onStatus(true);
@@ -77,16 +104,7 @@ export function scriptedClient(script: AppScript = {}) {
 	};
 	return {
 		client,
-		/** Delivers runtime events to the app, in order. */
-		emit(...events: object[]) {
-			const message = {
-				type: "events" as const,
-				events: events.map(
-					(event) => ({ ...event, sequence: ++sequence }) as PiloClientEvent,
-				),
-			};
-			for (const listener of listeners) listener.onMessage(message);
-		},
+		emit,
 		/** The runtime shuts down: its event stream ends for good. */
 		close() {
 			closed = true;

@@ -23,6 +23,7 @@ const project = {
 	id: "p1",
 	name: "pilo",
 	path: "/Users/pilo/code/pilo",
+	connection: { id: "local", name: "Local", kind: { type: "local" } },
 } as Project;
 
 const scripts: Record<Scenario, AppScript> = {

@@ -8,6 +8,8 @@ import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { followSavedAppearance } from "./appearance";
 import { t } from "./i18n";
+import { Sidebar } from "./Sidebar";
+import { SidebarSettingsStore } from "./sidebar-settings";
 
 /** The sidebar's width until the user resizes it, as in the Tauri app. */
 const SIDEBAR_WIDTH = 292;
@@ -24,6 +26,8 @@ export function AppShell(props: AppShellProps) {
 	const status = computed(() => store.state().status);
 	const project = computed(() => activeProject(store.state()));
 	const collapsed = signal(false);
+	const sidebarSettings = new SidebarSettingsStore();
+	void sidebarSettings.load();
 	followSavedAppearance(store.state);
 	// The app draws its own title bar: the sidebar and the main area reach
 	// the window's top edge, beside the system's window controls.
@@ -59,11 +63,11 @@ export function AppShell(props: AppShellProps) {
 						>
 							{toggle("sidebar-collapse", () => t("sidebar.collapseSidebar"))}
 						</View>
-						<View class="gap-2 px-4 py-2">
-							<Text class="font-sans text-sm font-semibold text-sidebar-foreground">
-								Pilo
-							</Text>
-						</View>
+						{() =>
+							status().type === "ready" && sidebarSettings.loaded() ? (
+								<Sidebar store={store} settings={sidebarSettings} />
+							) : null
+						}
 					</View>
 				)
 			}

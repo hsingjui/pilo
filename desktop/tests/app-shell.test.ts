@@ -14,7 +14,7 @@ function openStates(scenario: string) {
 test("the shell starts on the native runtime and shows the default workspace", async () => {
 	const app = await open("./app-shell-fixture.tsx", desktop);
 	await app.waitFor("id:workspace-title");
-	expect(app.shows("id:sidebar >> text:Pilo")).toBe(true);
+	expect(app.shows("id:sidebar >> text:Default workspace")).toBe(true);
 	expect(app.shows("id:workspace >> text:Default workspace")).toBe(true);
 	expect(app.shows("id:startup-loading")).toBe(false);
 	expect(app.shows("id:startup-failed")).toBe(false);
@@ -81,7 +81,7 @@ test("the sidebar collapses and expands from the title bar", async () => {
 	expect(app.shows("id:workspace-title")).toBe(true);
 
 	await app.press("id:sidebar-expand");
-	expect(app.shows("id:sidebar >> text:Pilo")).toBe(true);
+	expect(app.shows("id:sidebar >> id:sidebar-projects")).toBe(true);
 	expect(app.shows("id:sidebar-expand")).toBe(false);
 });
 
@@ -94,7 +94,7 @@ test("the smallest window shows the sidebar beside the workspace", async () => {
 	await app.waitFor("id:workspace-title");
 	expect(config.window.minSize.width).toBe(768);
 	expect(config.window.minSize.height).toBe(600);
-	expect(app.shows("id:sidebar >> text:Pilo")).toBe(true);
+	expect(app.shows("id:sidebar >> id:sidebar-projects")).toBe(true);
 	expect(app.shows("id:sidebar-collapse")).toBe(true);
 	expect(app.shows("id:workspace >> text:Add a project first")).toBe(true);
 });
