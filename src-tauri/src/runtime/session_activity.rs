@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::Project;
 
+#[cfg(feature = "tauri")]
 use super::{PiloRuntime, events::PiProcessState, server_client::ServerClient};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -11,6 +12,7 @@ pub struct SessionExternalActivity {
     pub turn_open: bool,
 }
 
+#[cfg(feature = "tauri")]
 pub(crate) async fn external_session_activities_for_project(
     runtime: &PiloRuntime,
     project: &Project,
@@ -58,6 +60,7 @@ fn session_has_external_open_turn(
         .any(|activity| activity.turn_open && activity.path == session_path)
 }
 
+#[cfg(feature = "tauri")]
 pub(crate) async fn reject_external_session_owner(
     runtime: &PiloRuntime,
     project: &Project,

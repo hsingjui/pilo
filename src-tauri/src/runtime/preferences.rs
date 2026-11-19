@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+#[cfg(feature = "tauri")]
 use tauri::AppHandle;
 
+#[cfg(feature = "tauri")]
 use super::{
     RuntimeEventBus,
     events::{RuntimeEvent, RuntimeEventEnvelope},
@@ -33,6 +35,7 @@ pub(crate) fn defaults() -> Map<String, Value> {
     }).as_object().cloned().unwrap_or_default()
 }
 
+#[cfg(feature = "tauri")]
 pub(crate) fn validate(patch: &Map<String, Value>) -> Result<(), String> {
     let defaults = defaults();
     for (key, value) in patch {
@@ -85,10 +88,12 @@ pub(crate) fn validate(patch: &Map<String, Value>) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(feature = "tauri")]
 fn valid_shortcut(shortcut: &str) -> bool {
     crate::desktop_shortcut::validate_application_shortcut(shortcut).is_ok()
 }
 
+#[cfg(feature = "tauri")]
 pub(crate) fn validate_shortcuts(values: &Map<String, Value>, global: &str) -> Result<(), String> {
     let shortcuts = values
         .get("keyboardShortcuts")
@@ -112,10 +117,12 @@ pub(crate) fn validate_shortcuts(values: &Map<String, Value>, global: &str) -> R
     Ok(())
 }
 
+#[cfg(feature = "tauri")]
 pub(crate) fn load(app: &AppHandle) -> Result<PreferencesSnapshot, String> {
     storage::get_preferences(&storage::open(&crate::desktop_paths::from_app(app)?)?)
 }
 
+#[cfg(feature = "tauri")]
 pub(crate) fn save(
     app: &AppHandle,
     events: &RuntimeEventBus,

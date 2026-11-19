@@ -10,16 +10,18 @@ use std::{
 use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+#[cfg(feature = "tauri")]
 use tauri::{AppHandle, Manager as _};
 use tokio::{sync::Mutex as AsyncMutex, task::JoinHandle};
 
 use crate::domain::Project;
 
+use super::{connection_diagnostics::request_failure_reason, host_events::HostEvents};
+
+#[cfg(feature = "tauri")]
 use super::{
     PiloRuntime, RuntimeEventBus,
-    connection_diagnostics::request_failure_reason,
     events::PiProcessState,
-    host_events::HostEvents,
     pi_workspace,
     server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager},
     session_index,
@@ -50,6 +52,7 @@ enum SessionWatchEvent {
     },
 }
 
+#[cfg(feature = "tauri")]
 struct WatchHandle {
     project: Project,
     live: Arc<AtomicBool>,
@@ -58,11 +61,13 @@ struct WatchHandle {
     task: JoinHandle<()>,
 }
 
+#[cfg(feature = "tauri")]
 #[derive(Default)]
 pub struct SessionWatcherManager {
     watchers: HashMap<String, WatchHandle>,
 }
 
+#[cfg(feature = "tauri")]
 impl SessionWatcherManager {
     pub async fn start(
         &mut self,
@@ -317,6 +322,7 @@ impl SessionWatcherManager {
 /// drive external activity refreshes. Pilo's own running sessions write on
 /// every message; changes limited to those paths cannot reveal an external
 /// turn and are skipped.
+#[cfg(feature = "tauri")]
 async fn refresh_external_activity(
     app: &AppHandle,
     project_id: &str,

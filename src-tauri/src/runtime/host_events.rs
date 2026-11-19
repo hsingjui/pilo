@@ -3,6 +3,13 @@ use serde_json::Value;
 
 pub trait HostEvents: Send + Sync {
     fn emit(&self, name: &str, payload: Value) -> Result<(), String>;
+
+    fn emit_runtime(&self, event: super::events::RuntimeEventEnvelope) -> Result<(), String> {
+        self.emit(
+            super::events::RUNTIME_EVENT_NAME,
+            serde_json::to_value(event).map_err(|error| error.to_string())?,
+        )
+    }
 }
 
 impl dyn HostEvents + '_ {

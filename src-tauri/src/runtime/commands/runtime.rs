@@ -18,7 +18,11 @@ pub fn runtime_subscribe_events(
     events: State<'_, RuntimeEventBus>,
     channel: Channel<RuntimeEventEnvelope>,
 ) {
-    events.subscribe(window.label(), channel);
+    events.subscribe(
+        window.label(),
+        channel.id(),
+        Arc::new(crate::desktop_events::TauriChannelEvents(channel)),
+    );
 }
 
 const APPROVE_PROJECT_MCP_SCRIPT: &str = r#"

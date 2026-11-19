@@ -14,12 +14,10 @@ mod connection_models;
 #[cfg(feature = "tauri")]
 mod control;
 mod credentials;
-#[cfg(feature = "tauri")]
 pub(crate) mod debug_trace;
 #[cfg(feature = "tauri")]
 pub(crate) mod desktop_startup;
-#[cfg(feature = "tauri")]
-mod events;
+pub(crate) mod events;
 #[cfg(feature = "tauri")]
 mod file_links;
 #[cfg(feature = "tauri")]
@@ -32,15 +30,12 @@ mod next_prompt;
 pub mod nsh_spike;
 #[cfg(feature = "tauri")]
 mod parallel;
-#[cfg(feature = "tauri")]
 mod pi_event_adapters;
-#[cfg(feature = "tauri")]
 mod pi_events;
 #[cfg(feature = "tauri")]
 mod pi_oneshot;
 #[cfg(feature = "tauri")]
 mod pi_workspace;
-#[cfg(feature = "tauri")]
 mod preferences;
 #[cfg(feature = "tauri")]
 mod preview;
@@ -61,21 +56,17 @@ mod server_deploy;
 mod server_pi;
 #[cfg(feature = "tauri")]
 mod server_pi_events;
-#[cfg(feature = "tauri")]
 mod session_activity;
 #[cfg(feature = "tauri")]
 mod session_history;
 #[cfg(feature = "tauri")]
 mod session_index;
-#[cfg(feature = "tauri")]
 mod session_snapshot;
-#[cfg(feature = "tauri")]
 mod session_watcher;
 #[allow(dead_code)]
 pub(crate) mod ssh;
 pub(crate) mod storage;
 pub(crate) mod tasks;
-#[cfg(feature = "tauri")]
 mod terminal;
 mod token_usage;
 #[allow(dead_code)]
@@ -90,7 +81,6 @@ use tokio::sync::Mutex;
 
 #[cfg(feature = "tauri")]
 use chat_sessions::ChatSessions;
-#[cfg(feature = "tauri")]
 pub(crate) use events::RuntimeEventBus;
 #[cfg(feature = "tauri")]
 use parallel::ParallelAgentManager;

@@ -8,9 +8,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use super::host_events::HostEvents;
 use serde::Serialize;
 use serde_json::json;
-use tauri::{AppHandle, Manager, ipc::Channel};
 use tokio::sync::{broadcast, watch};
 
 use super::debug_trace::runtime_trace;
@@ -21,6 +21,8 @@ mod trace;
 
 pub use model::*;
 use trace::traceable_runtime_event;
+
+pub const RUNTIME_EVENT_NAME: &str = "pilo://runtime";
 
 const WEB_EVENT_CHANNEL_CAPACITY: usize = 512;
 const WEB_EVENT_CHANNEL_MAX_BYTES: usize = 64 * 1024 * 1024;
@@ -128,8 +130,14 @@ pub struct SequencedRuntimeEvent {
 }
 
 #[derive(Clone)]
+struct EventSubscriber {
+    channel_id: u32,
+    events: Arc<dyn HostEvents>,
+}
+
+#[derive(Clone)]
 pub struct RuntimeEventBus {
-    channels: Arc<StdMutex<HashMap<String, Channel<RuntimeEventEnvelope>>>>,
+    channels: Arc<StdMutex<HashMap<String, EventSubscriber>>>,
     web_sender: watch::Sender<()>,
     web_queue: Arc<StdMutex<WebEventQueue>>,
     replay: Arc<StdMutex<EventReplay>>,
@@ -187,13 +195,15 @@ impl RuntimeEventBus {
         }
     }
 
-    pub fn subscribe(&self, window_label: &str, channel: Channel<RuntimeEventEnvelope>) {
-        let channel_id = channel.id();
+    pub fn subscribe(&self, window_label: &str, channel_id: u32, events: Arc<dyn HostEvents>) {
         // Reload replaces only this window's channel; other windows stay subscribed.
         self.channels
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(window_label.to_owned(), channel);
+            .insert(
+                window_label.to_owned(),
+                EventSubscriber { channel_id, events },
+            );
         runtime_trace(
             "channel.subscribe",
             None,
@@ -356,7 +366,7 @@ impl RuntimeEventBus {
                     None,
                     json!({
                         "windowLabel": window_label,
-                        "channelId": channel.id(),
+                        "channelId": channel.channel_id,
                         "sequence": sequence,
                         "payloadBytes": payload_bytes,
                         "event": event_type,
@@ -364,7 +374,7 @@ impl RuntimeEventBus {
                     }),
                 );
             }
-            if let Err(error) = channel.send(sequenced.event.clone()) {
+            if let Err(error) = channel.events.emit_runtime(sequenced.event.clone()) {
                 if let Some((event_type, detail)) = trace.as_ref() {
                     runtime_trace(
                         "channel.send_error",
@@ -372,7 +382,7 @@ impl RuntimeEventBus {
                         None,
                         json!({
                             "windowLabel": window_label,
-                            "channelId": channel.id(),
+                            "channelId": channel.channel_id,
                             "sequence": sequence,
                             "payloadBytes": payload_bytes,
                             "event": event_type,
@@ -383,7 +393,7 @@ impl RuntimeEventBus {
                 }
                 log::error!(
                     target: "runtime-events",
-                    "failed to send Tauri channel event to {window_label}: {error}"
+                    "failed to send host channel event to {window_label}: {error}"
                 );
             }
         }
@@ -400,10 +410,8 @@ pub struct TauriEventSink {
 }
 
 impl TauriEventSink {
-    pub fn new(app: AppHandle) -> Self {
-        Self {
-            events: app.state::<RuntimeEventBus>().inner().clone(),
-        }
+    pub(crate) fn from_bus(events: RuntimeEventBus) -> Self {
+        Self { events }
     }
 }
 
@@ -417,6 +425,48 @@ impl RuntimeEventSink for TauriEventSink {
 mod tests {
     use super::*;
     use crate::runtime::token_usage::TokenUsage;
+
+    #[test]
+    fn host_subscribers_receive_envelopes_and_isolate_delivery_failures() {
+        use crate::runtime::host_events::RecordingEvents;
+        let bus = RuntimeEventBus::default();
+        let first = Arc::new(RecordingEvents::default());
+        let second = Arc::new(RecordingEvents::default());
+        bus.send(RuntimeEventEnvelope::global(
+            RuntimeEvent::ConfigurationChanged,
+        ));
+        assert!(first.events.lock().unwrap().is_empty());
+        bus.subscribe("first", 1, first.clone());
+        bus.subscribe("second", 2, second.clone());
+        first.fail.store(true, Ordering::Relaxed);
+        let envelope = RuntimeEventEnvelope::session(
+            "chat".into(),
+            "project".into(),
+            RuntimeEvent::AssistantTextDelta {
+                generation: 7,
+                delta: String::new(),
+            },
+        );
+        bus.send(envelope.clone());
+        assert!(first.events.lock().unwrap().is_empty());
+        assert_eq!(
+            *second.events.lock().unwrap(),
+            vec![(
+                RUNTIME_EVENT_NAME.into(),
+                serde_json::to_value(&envelope).unwrap()
+            )]
+        );
+        assert_eq!(bus.replay_after(0).unwrap().len(), 2);
+        bus.unsubscribe("second");
+        first.fail.store(false, Ordering::Relaxed);
+        bus.send(envelope.clone());
+        assert_eq!(first.events.lock().unwrap().len(), 1);
+        assert_eq!(second.events.lock().unwrap().len(), 1);
+        bus.subscribe("first", 3, second.clone());
+        bus.send(envelope);
+        assert_eq!(first.events.lock().unwrap().len(), 1);
+        assert_eq!(second.events.lock().unwrap().len(), 2);
+    }
 
     #[test]
     fn runtime_event_has_stable_chat_shape() {
