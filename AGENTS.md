@@ -27,6 +27,12 @@ export HTTP_PROXY=http://127.0.0.1:7890
 export HTTPS_PROXY=http://127.0.0.1:7890
 ```
 
+## 迁移过渡期
+
+上述 WSL/Windows 环境说明针对现有 Tauri 壳。`desktop/` 是迁移应用目录：视图在 `desktop/app/`，基础组件在 `desktop/ui/`。
+
+当前发版与平台范围、两套 UI 的修改归属、运行时抽离及逐功能测试提交要求，统一见 [nsh 迁移协作规则](.trellis/spec/desktop/quality-guidelines.md#迁移协作规则)；桌面验证命令见同页[验证命令](.trellis/spec/desktop/quality-guidelines.md#验证命令)。完整入口为 [nsh 规范](.trellis/spec/desktop/index.md)和[功能对齐清单](.trellis/tasks/11-19-nsh-desktop-migration/feature-parity.md)。
+
 ## Tech Stack
 
 ### Desktop
