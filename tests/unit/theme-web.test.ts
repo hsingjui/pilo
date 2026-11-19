@@ -3,10 +3,75 @@ import test from "node:test";
 import {
 	renderCustomThemeCss,
 	CUSTOM_THEME_CATALOG,
+	readCustomThemeTokens,
+	validateWebThemeTokens,
 } from "../../src/lib/theme-web.ts";
 import mapping from "../../src/lib/theme-web-map.json" with { type: "json" };
 import { readSavedCustomThemes } from "../../src/lib/theme-custom.ts";
 import { readCachedTheme } from "../../src/lib/theme-settings.ts";
+import { normalizeThemeSettings } from "../../src/lib/theme-compat.ts";
+
+test("stored tables recover valid entries without relaxing update validation", () => {
+	const input = {
+		theme: {
+			primary: "#fff",
+			unknown: "1px",
+			"font-sans": "Arial",
+			"pilo-bubble-radius": "bad",
+		},
+		light: {
+			primary: "#000",
+			background: "#123",
+			"font-sans": "Arial",
+			border: "bad",
+		},
+		dark: { primary: "#123", background: "#456", "pilo-bubble-radius": "12px" },
+	};
+	const expected = {
+		theme: { primary: "#fff", "font-sans": "Arial" },
+		light: { background: "#123" },
+		dark: { background: "#456" },
+	};
+	assert.deepEqual(readCustomThemeTokens(input), expected);
+	assert.equal(validateWebThemeTokens(input).ok, false);
+	assert.equal(renderCustomThemeCss(input), "");
+	assert.deepEqual(
+		readSavedCustomThemes([{ name: "Partial", tokens: input }])[0].tokens,
+		expected,
+	);
+	assert.deepEqual(
+		normalizeThemeSettings({
+			revision: 1,
+			theme: "light",
+			themeFamily: "custom",
+			themeCustomCss: "",
+			themeCustomName: "",
+			savedCustomThemes: [],
+			themeCustomTokens: input,
+		}).themeCustomTokens,
+		expected,
+	);
+});
+
+test("stored tables ignore malformed containers and keep valid sibling scopes", () => {
+	for (const input of [undefined, null, [], "bad", 4])
+		assert.deepEqual(readCustomThemeTokens(input), {});
+	assert.deepEqual(
+		readCustomThemeTokens({
+			theme: [],
+			light: null,
+			dark: { primary: "#fff", border: 5 },
+			other: { primary: "#000" },
+		}),
+		{ dark: { primary: "#fff" } },
+	);
+	assert.deepEqual(
+		readCustomThemeTokens({
+			theme: { primary: "#ffffff80", background: "#fff" },
+		}),
+		{ theme: { background: "#fff" } },
+	);
+});
 
 test("maps every catalog token and reverses fonts", () => {
 	for (const [token, entry] of Object.entries(mapping)) {

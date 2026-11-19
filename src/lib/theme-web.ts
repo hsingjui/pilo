@@ -4,6 +4,7 @@ import {
 	createThemeTokenCatalog,
 	parseThemeColor,
 	validateCustomThemeTokens,
+	THEME_TOKEN_SCOPES,
 	type CustomThemeTokens,
 } from "./theme-tokens";
 
@@ -55,6 +56,24 @@ export function renderCustomThemeCss(input: unknown): string {
 }
 
 export function readCustomThemeTokens(input: unknown): CustomThemeTokens {
-	const result = validateWebThemeTokens(input ?? {});
-	return result.ok ? result.tokens : {};
+	if (typeof input !== "object" || input === null || Array.isArray(input))
+		return {};
+	let tokens: CustomThemeTokens = {};
+	for (const scope of THEME_TOKEN_SCOPES) {
+		const entries: unknown = Reflect.get(input, scope);
+		if (
+			typeof entries !== "object" ||
+			entries === null ||
+			Array.isArray(entries)
+		)
+			continue;
+		for (const [token, value] of Object.entries(entries)) {
+			const result = validateWebThemeTokens({
+				...tokens,
+				[scope]: { ...tokens[scope], [token]: value },
+			});
+			if (result.ok) tokens = result.tokens;
+		}
+	}
+	return tokens;
 }
