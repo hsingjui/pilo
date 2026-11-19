@@ -16,3 +16,13 @@
   accessibility label is decorative; icon-only controls need a control label.
 - Fixtures and `nsh/test` coverage live in `desktop/tests/ui-*`. Check headless
   behavior and native macOS behavior separately; headless checks do not draw.
+- Toast/ToastStack wrap native presentation; callers own a `ToastManager`
+  (re-exported from `toast-stack`). Push with `{ timeout: durationInMs }` for
+  auto-dismiss; omit timeout for a persistent toast. Advance on a timer, pausing
+  while `onExpandedChange` reports expansion, and render `visible(limit)` oldest
+  first with stable `Each` keys and each entry's `transitionStatus`. Wire
+  `onDismissRequest` to `dismiss(id)` and stack `onCancel` to the newest toast.
+  Place the stack in an `Overlay` at its matching edge; dispose the manager and
+  timer on cleanup. See `ui-toast-fixture.tsx` for a complete lifecycle example.
+  Variants match Sonner: neutral surfaces with semantic success/info/warning/error
+  icons. `closeLabel` lets callers localize the close control.
