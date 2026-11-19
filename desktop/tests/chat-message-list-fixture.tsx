@@ -117,7 +117,13 @@ async function long(count: number): Promise<ConversationState> {
 }
 
 function ready(conversation: ConversationState): ChatTranscriptState {
-	return { sessionKey, status: "ready", conversation, source: "history" };
+	return {
+		sessionKey,
+		status: "ready",
+		conversation,
+		historyPrefix: [],
+		source: "history",
+	};
 }
 
 function settled(events: ConversationEvent[]) {
@@ -128,6 +134,7 @@ const loading: ChatTranscriptState = {
 	sessionKey,
 	status: "loading",
 	conversation: null,
+	historyPrefix: [],
 	source: null,
 };
 

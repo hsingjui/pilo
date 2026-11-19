@@ -6,10 +6,14 @@ import type {
 	PiloClientEventOptions,
 	PiloClientHistoryOptions,
 } from "@/lib/api/pilo-client";
-import type { SessionHistoryResult } from "@/lib/api/sessions-types";
+import type {
+	SessionHistoryMessageIndexEntry,
+	SessionHistoryResult,
+} from "@/lib/api/sessions-types";
 import type { ConversationReducerContext } from "@/lib/chat/conversation-types";
 import type {
 	ChatTranscriptSnapshot,
+	ChatTranscriptWindow,
 	NshPiloClientBootstrap,
 } from "../client/nsh-pilo-client";
 import { AppStore, type AppStoreClient } from "../state/app-store";
@@ -126,6 +130,42 @@ const settled = (sequence: number): PiloClientEvent => ({
 	sequence,
 });
 
+/** What every read asks for, as the WebUI's first read of a session does. */
+const firstWindow = { messageLimit: 80, includeMessageIndex: true };
+
+/** The index entry of a saved message; even ones are the user's. */
+const entry = (at: number): SessionHistoryMessageIndexEntry => ({
+	id: `entry-${at}`,
+	role: at % 2 === 0 ? "user" : "assistant",
+	preview: `preview ${at}`,
+	estimatedChars: 100 + at,
+});
+/**
+ * A window of a session of `total` messages that starts at `start`: its
+ * questions and replies, with the session's whole message index.
+ */
+const windowed = (total: number, start: number) =>
+	({
+		history: {
+			events: Array.from({ length: total - start }, (_, offset) =>
+				(start + offset) % 2 === 0
+					? { type: "user_message_start", text: `question ${start + offset}` }
+					: [
+							{ type: "assistant_message_start" },
+							{
+								type: "assistant_text_delta",
+								delta: `reply ${start + offset}`,
+							},
+							{ type: "assistant_turn_end", stopReason: "stop" },
+						],
+			).flat(),
+			messageIndex: Array.from({ length: total }, (_, at) => entry(at)),
+			windowStartMessage: start,
+			totalMessages: total,
+		},
+		fingerprint: { fileSize: total, fileMtimeNs: "1" },
+	}) as unknown as SessionHistoryResult;
+
 type Reply<T> = { resolve: (value: T) => void; reject: (error: Error) => void };
 
 /**
@@ -134,7 +174,9 @@ type Reply<T> = { resolve: (value: T) => void; reject: (error: Error) => void };
  * is `null`.
  */
 function fakeClient() {
-	const snapshots: Reply<ChatTranscriptSnapshot>[] = [];
+	const snapshots: (Reply<ChatTranscriptSnapshot> & {
+		window?: ChatTranscriptWindow;
+	})[] = [];
 	const histories: (Reply<SessionHistoryResult> & {
 		projectId: string;
 		sessionPath: string;
@@ -151,8 +193,10 @@ function fakeClient() {
 			answers.reads += 1;
 			return Promise.resolve(answers.runtime);
 		},
-		chatTranscriptSnapshot: () =>
-			new Promise((resolve, reject) => snapshots.push({ resolve, reject })),
+		chatTranscriptSnapshot: (_sessionKey, window) =>
+			new Promise((resolve, reject) =>
+				snapshots.push({ window, resolve, reject }),
+			),
 		loadHistory: (projectId, sessionPath, options) =>
 			new Promise((resolve, reject) => {
 				histories.push({ projectId, sessionPath, options, resolve, reject });
@@ -177,6 +221,7 @@ test("a chat opens as loading and shows its snapshot", async () => {
 		sessionKey: "k1",
 		status: "loading",
 		conversation: null,
+		historyPrefix: [],
 		source: null,
 	});
 	await settle();
@@ -300,6 +345,7 @@ test("a truncated snapshot shows nothing new and is taken again once when the tu
 		sessionKey: "k1",
 		status: "loading",
 		conversation: null,
+		historyPrefix: [],
 		source: null,
 	});
 	// The running turn's events are not applied, and ask for nothing.
@@ -566,18 +612,25 @@ for (const [name, state] of [
 		expect(histories.length).toBe(1);
 		expect(histories[0]?.projectId).toBe("p1");
 		expect(histories[0]?.sessionPath).toBe("/s.jsonl");
-		expect(histories[0]?.options).toBe(undefined);
+		expect(histories[0]?.options).toEqual(firstWindow);
 	});
 }
 
-test("the session file the runtime knows and the window of the chat are the ones read", async () => {
+test("the session file the runtime knows is the one read", async () => {
 	const { store, histories, answers } = fakeClient();
 	answers.runtime = runtime("stopped", 1, { sessionPath: "/runtime.jsonl" });
-	const window = { messageLimit: 40, includeMessageIndex: true };
-	await store.open(target, true, window);
+	await store.open(target, true);
 
 	expect(histories[0]?.sessionPath).toBe("/runtime.jsonl");
-	expect(histories[0]?.options).toEqual(window);
+});
+
+test("a snapshot is asked for the session's last messages and its index", async () => {
+	const { store, snapshots } = fakeClient();
+	const opened = store.open(target, true);
+	await settle();
+	expect(snapshots[0]?.window).toEqual(firstWindow);
+	snapshots[0]?.resolve(snapshot(10));
+	await opened;
 });
 
 test("a chat that was never saved and has no Pi is empty", async () => {
@@ -608,6 +661,7 @@ test("an unsaved chat that stays truncated after its turn is left not loaded", a
 		sessionKey: "k1",
 		status: "not_loaded",
 		conversation: null,
+		historyPrefix: [],
 		source: null,
 	});
 	expect(histories.length).toBe(0);
@@ -633,6 +687,7 @@ test("settled history that cannot be read fails the chat and says why", async ()
 		sessionKey: "k1",
 		status: "failed",
 		conversation: null,
+		historyPrefix: [],
 		source: null,
 		message: "No such file or directory",
 	});
@@ -704,6 +759,7 @@ test("a snapshot that answers after a newer read or a close is not shown", async
 		sessionKey: null,
 		status: "closed",
 		conversation: null,
+		historyPrefix: [],
 		source: null,
 	});
 	store.receive([delta(31, "ignored")]);
@@ -743,6 +799,7 @@ test("opening another chat without the event stream drops the first one's read",
 		sessionKey: "k2",
 		status: "loading",
 		conversation: null,
+		historyPrefix: [],
 		source: null,
 	});
 });
@@ -1052,5 +1109,164 @@ test("the store shows a saved chat's settled history through the native module",
 	const app = await open("./chat-transcript-history-fixture.tsx");
 	await app.waitFor("text:settled history shown through the store", {
 		timeout: 30_000,
+	});
+});
+
+test("the saved messages before the loaded ones are placeholders from the session's index", async () => {
+	const { store, answers, texts } = fakeClient();
+	answers.runtime = null;
+	answers.history = windowed(6, 4);
+	await store.open(target, true);
+
+	expect(texts()).toEqual(["question 4", "reply 5"]);
+	expect(store.state().historyPrefix).toEqual(
+		[0, 1, 2, 3].map((at) => ({
+			id: `entry-${at}`,
+			role: at % 2 === 0 ? "user" : "assistant",
+			text: `preview ${at}`,
+			time: "",
+			timestampMs: undefined,
+			historyPlaceholder: true,
+			historyEstimatedChars: 100 + at,
+		})),
+	);
+});
+
+test("a loaded message has the id of its index entry, which its placeholder would have", async () => {
+	const { store, answers } = fakeClient();
+	answers.runtime = null;
+	answers.history = windowed(6, 2);
+	await store.open(target, true);
+
+	expect(store.messages().map(({ id }) => id)).toEqual(
+		[0, 1, 2, 3, 4, 5].map((at) => `entry-${at}`),
+	);
+	expect(
+		store.messages().map((message) => message.historyPlaceholder === true),
+	).toEqual([true, true, false, false, false, false]);
+});
+
+test("a snapshot's saved messages take the index ids and the turn's keep their own", async () => {
+	const { store, snapshots } = fakeClient();
+	const opened = store.open(target, true);
+	await settle();
+	snapshots[0]?.resolve({
+		...snapshot(10, turn("one")),
+		history: windowed(4, 2),
+	});
+	await opened;
+
+	expect(store.state().source).toBe("snapshot");
+	expect(store.state().historyPrefix.map(({ id }) => id)).toEqual([
+		"entry-0",
+		"entry-1",
+	]);
+	const loaded = store.state().conversation?.messages ?? [];
+	expect(loaded.map(({ text }) => text)).toEqual([
+		"question 2",
+		"reply 3",
+		"asked",
+		"one",
+	]);
+	expect(loaded.slice(0, 2).map(({ id }) => id)).toEqual([
+		"entry-2",
+		"entry-3",
+	]);
+	// The running turn is in no index yet.
+	expect(loaded.slice(2).some(({ id }) => id.startsWith("entry-"))).toBe(false);
+});
+
+test("a read with no message index, or of the whole session, has no placeholders", async () => {
+	const { store, answers } = fakeClient();
+	answers.runtime = null;
+	await store.open(target, true);
+	expect(store.state().historyPrefix).toEqual([]);
+	// With nothing before them, the messages are the conversation's own array.
+	expect(store.messages()).toBe(store.state().conversation?.messages);
+
+	answers.history = windowed(4, 0);
+	await store.open(target, true);
+	expect(store.state().historyPrefix).toEqual([]);
+	expect(store.messages().length).toBe(4);
+});
+
+test("a streaming turn changes the conversation and leaves the placeholders as they are", async () => {
+	const { store, snapshots } = fakeClient();
+	const opened = store.open(target, true);
+	await settle();
+	snapshots[0]?.resolve({
+		...snapshot(10, turn("one")),
+		history: windowed(500, 420),
+	});
+	await opened;
+	const prefix = store.state().historyPrefix;
+	const before = store.state().conversation;
+	expect(prefix.length).toBe(420);
+
+	store.receive([delta(11, " two")]);
+	store.receive([delta(12, " three")]);
+
+	expect(store.state().conversation).not.toBe(before);
+	expect(store.state().historyPrefix).toBe(prefix);
+	const messages = store.messages();
+	expect(messages.length).toBe(420 + 80 + 2);
+	expect(messages.at(-1)?.text).toBe("one two three");
+	expect(messages[419]).toBe(prefix[419]);
+	// Joined once for what the chat holds now, and again only after a change.
+	expect(store.messages()).toBe(messages);
+	store.receive([delta(13, " four")]);
+	expect(store.messages()).not.toBe(messages);
+	expect(store.messages().at(-1)?.text).toBe("one two three four");
+});
+
+test("a later read replaces the placeholders, and they stay while it is awaited", async () => {
+	const { store, answers, histories } = fakeClient();
+	answers.runtime = null;
+	answers.history = windowed(6, 4);
+	await store.open(target, true);
+	const prefix = store.state().historyPrefix;
+
+	answers.history = null;
+	const refreshed = store.refresh();
+	await settle();
+	expect(store.state().status).toBe("loading");
+	expect(store.state().historyPrefix).toBe(prefix);
+
+	histories[1]?.resolve(windowed(8, 5));
+	await refreshed;
+	expect(store.state().historyPrefix.map(({ id }) => id)).toEqual(
+		[0, 1, 2, 3, 4].map((at) => `entry-${at}`),
+	);
+	expect(store.messages().length).toBe(8);
+});
+
+test("another chat, a failed read and a closed store do not show a chat's placeholders", async () => {
+	const { store, answers, histories } = fakeClient();
+	answers.runtime = null;
+	answers.history = windowed(6, 4);
+	await store.open(target, true);
+	expect(store.state().historyPrefix.length).toBe(4);
+
+	answers.history = null;
+	const other = store.open({ ...target, sessionKey: "k2" }, true);
+	expect(store.state().historyPrefix).toEqual([]);
+	expect(store.messages()).toEqual([]);
+	await settle();
+	histories[1]?.reject(new Error("no such file"));
+	await other;
+	expect(store.state().status).toBe("failed");
+	expect(store.state().historyPrefix).toEqual([]);
+
+	answers.history = windowed(6, 4);
+	await store.open(target, true);
+	store.close();
+	expect(store.state().historyPrefix).toEqual([]);
+	expect(store.messages()).toEqual([]);
+});
+
+test("a long session shows its last messages over placeholders, through the native module", async () => {
+	const app = await open("./chat-transcript-window-fixture.tsx");
+	await app.waitFor("text:long session shown through the store", {
+		timeout: 60_000,
 	});
 });

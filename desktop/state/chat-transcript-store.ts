@@ -1,8 +1,15 @@
 import { type Accessor, signal } from "nsh";
 
+import {
+	buildHistoryPrefix,
+	INITIAL_HISTORY_MESSAGE_COUNT,
+} from "@/components/chat/chat-history-window-model";
+import { createChatHistoryWindowStore } from "@/components/chat/chat-history-window-store";
 import type { PiloClientEvent } from "@/lib/api/pilo-client";
+import type { SessionHistory } from "@/lib/api/sessions-types";
 import { replayConversationEvents } from "@/lib/chat/conversation-replay";
 import type {
+	ChatMessage,
 	ConversationReducerContext,
 	ConversationState,
 } from "@/lib/chat/conversation-types";
@@ -13,6 +20,7 @@ import type {
 } from "../client/nsh-pilo-client";
 import {
 	applyChatEvents,
+	conversationFromHistory,
 	conversationFromSnapshot,
 	followsSnapshot,
 } from "./chat-transcript";
@@ -40,8 +48,20 @@ export type ChatTranscriptState = {
 	 * it has no session file), `failed` when the read itself failed.
 	 */
 	status: "closed" | "loading" | "ready" | "not_loaded" | "failed";
-	/** What the chat shows; kept from before while a newer read is awaited. */
+	/**
+	 * The chat's newest messages, and the turn in progress; kept from before
+	 * while a newer read is awaited. A read loads the session's last
+	 * messages, and the events of the chat add to them.
+	 */
 	conversation: ConversationState | null;
+	/**
+	 * Every saved message before the conversation's, oldest first. One that
+	 * is not loaded is a placeholder: `historyPlaceholder` is set, `text` is
+	 * a preview and `historyEstimatedChars` its estimated length. It has the
+	 * id the message keeps once loaded. The array changes only when the chat
+	 * is read again, not as a turn streams.
+	 */
+	historyPrefix: readonly ChatMessage[];
 	/**
 	 * Where the conversation came from. One from a `snapshot` is exact and
 	 * follows the chat's events as they arrive. One from the session file's
@@ -52,11 +72,20 @@ export type ChatTranscriptState = {
 	message?: string;
 };
 
+const noMessages: readonly ChatMessage[] = [];
+
 const closed: ChatTranscriptState = {
 	sessionKey: null,
 	status: "closed",
 	conversation: null,
+	historyPrefix: noMessages,
 	source: null,
+};
+
+/** What a read asks for: the session's last messages and its message index. */
+const firstWindow: ChatTranscriptWindow = {
+	messageLimit: INITIAL_HISTORY_MESSAGE_COUNT,
+	includeMessageIndex: true,
 };
 
 /** Whether the event says no turn is running in the chat any more. */
@@ -89,15 +118,51 @@ function startsTurn(event: PiloClientEvent) {
  * runtime cannot rebuild the chat's turns, as for every remote chat), the
  * session file's settled history is shown instead, and a snapshot is tried
  * again when Pi comes up and when the next turn starts.
+ *
+ * Either way a read loads only the session's last messages. The ones before
+ * them are held in the Tauri app's history window store and shown as
+ * `historyPrefix`.
  */
 export class ChatTranscriptStore {
 	private readonly current = signal(closed);
 	readonly state: Accessor<ChatTranscriptState> = this.current;
+	/**
+	 * Every message of the chat in order: the history prefix, then the
+	 * conversation's. The array is built when this is read after either
+	 * changed, which costs a copy of the prefix: reading it for each event
+	 * of a streaming turn is what a long session pays for. It is not a
+	 * `computed`, which would build it for each event whether read or not.
+	 */
+	readonly messages: Accessor<readonly ChatMessage[]> = () => {
+		const { conversation, historyPrefix } = this.current();
+		const loaded = conversation?.messages ?? noMessages;
+		if (historyPrefix.length === 0) return loaded;
+		if (
+			this.joined?.historyPrefix !== historyPrefix ||
+			this.joined.loaded !== loaded
+		) {
+			this.joined = {
+				historyPrefix,
+				loaded,
+				messages: [...historyPrefix, ...loaded],
+			};
+		}
+		return this.joined.messages;
+	};
+	/** What `messages` last joined. */
+	private joined:
+		| {
+				historyPrefix: readonly ChatMessage[];
+				loaded: readonly ChatMessage[];
+				messages: readonly ChatMessage[];
+		  }
+		| undefined;
 
 	private readonly client: ChatTranscriptClient;
 	private readonly context: ConversationReducerContext;
 	private target: ChatTranscriptTarget | undefined;
-	private window: ChatTranscriptWindow | undefined;
+	/** The session's message index and which of its older messages are loaded. */
+	private readonly older = createChatHistoryWindowStore();
 	/** Counts reads, so one superseded by a newer read is dropped. */
 	private reads = 0;
 	/** The chat's events since the read in flight was requested. */
@@ -127,18 +192,14 @@ export class ChatTranscriptStore {
 	}
 
 	/** Shows the chat; `connected` says whether events are being received. */
-	open(
-		target: ChatTranscriptTarget,
-		connected: boolean,
-		window?: ChatTranscriptWindow,
-	) {
+	open(target: ChatTranscriptTarget, connected: boolean) {
 		this.reset();
 		this.target = target;
-		this.window = window;
 		this.current.set({
 			sessionKey: target.sessionKey,
 			status: "loading",
 			conversation: null,
+			historyPrefix: noMessages,
 			source: null,
 		});
 		// Without the event stream there is nothing to apply on top of a
@@ -154,6 +215,8 @@ export class ChatTranscriptStore {
 	/** Forgets the chat that was open, and drops a read of it in flight. */
 	private reset() {
 		this.reads += 1;
+		this.older.initialize([], 0);
+		this.joined = undefined;
 		this.target = undefined;
 		this.buffer = undefined;
 		this.cut = undefined;
@@ -252,6 +315,20 @@ export class ChatTranscriptStore {
 		}
 	}
 
+	/**
+	 * Takes the message index a read came with, and gives the messages
+	 * before the read's window, none of them loaded yet. A read with no
+	 * index, as of a chat with no session file, has none before it.
+	 */
+	private prefixOf({
+		messageIndex = [],
+		windowStartMessage = 0,
+	}: Pick<SessionHistory, "messageIndex" | "windowStartMessage"> = {}) {
+		this.older.initialize(messageIndex, windowStartMessage);
+		const prefix = buildHistoryPrefix(this.older.getSnapshot());
+		return prefix.length > 0 ? prefix : noMessages;
+	}
+
 	private flush(events: PiloClientEvent[]) {
 		const state = this.current();
 		if (events.length === 0 || !state.conversation || !this.cut) return;
@@ -288,13 +365,16 @@ export class ChatTranscriptStore {
 				sessionKey,
 				status: "loading",
 				conversation: shown.conversation,
+				historyPrefix: shown.historyPrefix,
 				source: shown.source,
 			});
 		}
 		/** Ends the read; `after` is the snapshot's cut, when it took one. */
 		const finish = (
 			next: Pick<ChatTranscriptState, "status" | "message"> &
-				Partial<Pick<ChatTranscriptState, "conversation" | "source">>,
+				Partial<
+					Pick<ChatTranscriptState, "conversation" | "historyPrefix" | "source">
+				>,
 			after = -1,
 		) => {
 			const buffered = this.buffer ?? [];
@@ -302,6 +382,7 @@ export class ChatTranscriptStore {
 			this.current.set({
 				sessionKey,
 				conversation: shown.conversation,
+				historyPrefix: shown.historyPrefix,
 				source: shown.source,
 				...next,
 			});
@@ -316,7 +397,7 @@ export class ChatTranscriptStore {
 			if (this.running) {
 				const snapshot = await this.client.chatTranscriptSnapshot(
 					sessionKey,
-					this.window,
+					firstWindow,
 				);
 				if (this.reads !== read) return;
 				const conversation = conversationFromSnapshot(
@@ -333,6 +414,7 @@ export class ChatTranscriptStore {
 					const buffered = finish({
 						status: "ready",
 						conversation,
+						historyPrefix: this.prefixOf(snapshot.history.history),
 						source: "snapshot",
 					});
 					for (const event of buffered) this.see(event);
@@ -353,17 +435,20 @@ export class ChatTranscriptStore {
 			// No snapshot can be had now: the settled history is what there is.
 			const sessionPath = runtime?.sessionPath ?? target.sessionPath;
 			let result: Pick<ChatTranscriptState, "status"> &
-				Partial<Pick<ChatTranscriptState, "conversation" | "source">>;
+				Partial<
+					Pick<ChatTranscriptState, "conversation" | "historyPrefix" | "source">
+				>;
 			if (sessionPath) {
 				const { history } = await this.client.loadHistory(
 					target.projectId,
 					sessionPath,
-					this.window,
+					firstWindow,
 				);
 				if (this.reads !== read) return;
 				result = {
 					status: "ready",
-					conversation: replayConversationEvents(history.events, this.context),
+					conversation: conversationFromHistory(history, this.context),
+					historyPrefix: this.prefixOf(history),
 					source: "history",
 				};
 			} else if (this.running) {
@@ -373,6 +458,7 @@ export class ChatTranscriptStore {
 				result = {
 					status: "ready",
 					conversation: replayConversationEvents([], this.context),
+					historyPrefix: this.prefixOf(),
 					source: "history",
 				};
 			}

@@ -200,6 +200,24 @@ of the open chat. Opening a chat starts nothing.
 - A chat on settled history tries a snapshot again when Pi comes up and once
   when each turn starts, so a local chat goes back to streaming.
 
+Either read loads the session's last 80 messages and its message index, as
+the WebUI's first read does, so a long session is never replayed whole. The
+state has two parts:
+
+- `conversation`: the loaded messages and the turn in progress.
+- `historyPrefix`: every saved message before them, oldest first. They are
+  placeholders built from the index by the Tauri app's history window store:
+  `historyPlaceholder` is set, `text` is a preview, and the id is the one the
+  message has once loaded. This array does not change while a turn streams.
+
+`messages()` on the store joins the two for a list that wants one array. It
+copies the prefix whenever either part changed, so reading it for each
+streamed event costs about 0.14 ms in a 10,000-message session, against
+0.006 ms for the event itself.
+
+Known gap: placeholders are not loaded yet; loading the visible range of
+them is the next step.
+
 Known gap: SSH and WSL snapshots are always truncated, so a remote chat's
 running turn does not stream in nsh yet. It appears when the turn has
 settled. The follow-up is to apply live events on top of settled history, as

@@ -4,7 +4,11 @@ import { Pilo, SessionFilesFixture } from "app/native";
 import type { ConversationReducerContext } from "@/lib/chat/conversation-types";
 import { NshPiloClient } from "../client/nsh-pilo-client";
 import { AppStore } from "../state/app-store";
+import { conversationFromHistory } from "../state/chat-transcript";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
+// The session file of one real Pi chat (relay/deepseek-flash), entry by
+// entry as Pi wrote it: three turns, with one bash tool call, two, and none.
+import recordedSession from "./chat-transcript-session-recording.json";
 
 const projectId = "session-files";
 const sessionKey = "nsh-transcript-history-fixture";
@@ -78,14 +82,11 @@ async function run() {
 			`unexpected settled history: ${describe()}`,
 		);
 
-		// Opened with a window, only that part of the session is read.
-		await chat.open({ sessionKey, projectId, sessionPath }, app.connected, {
-			messageLimit: 1,
-		});
+		// A session this short is loaded whole, with nothing before it.
 		assert(
-			chat.state().status === "ready" &&
-				JSON.stringify(texts()) === JSON.stringify(["second question"]),
-			`unexpected history window: ${describe()}`,
+			chat.state().historyPrefix.length === 0 &&
+				chat.messages() === chat.state().conversation?.messages,
+			`unexpected placeholders of a short session: ${describe()}`,
 		);
 
 		// A session file that is gone fails the chat with the runtime's reason.
@@ -116,7 +117,77 @@ async function run() {
 		await client.shutdown();
 		fixture.dispose();
 	}
+	await realSession();
 	status.set("settled history shown through the store");
+}
+
+/**
+ * In a real session with tool calls, a window that starts at any message
+ * replays to messages with the ids and roles of the session's index, so a
+ * message keeps the id its placeholder had.
+ */
+async function realSession() {
+	const jsonl = recordedSession
+		.map((entry) => JSON.stringify(entry))
+		.join("\n");
+	const fixture = new SessionFilesFixture(`${jsonl}\n`);
+	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
+	const chat = new ChatTranscriptStore(client, context());
+	const app = new AppStore(client, chat);
+	const sessionPath = fixture.sessionPath();
+	try {
+		await app.start();
+		await chat.open({ sessionKey, projectId, sessionPath }, app.connected);
+		const loaded = chat.state().conversation?.messages ?? [];
+		const tools = loaded.map((message) =>
+			message.role === "assistant"
+				? (message.content?.filter((item) => item.type === "tool").length ?? 0)
+				: 0,
+		);
+		assert(
+			chat.state().status === "ready" &&
+				JSON.stringify(loaded.map(({ role }) => role)) ===
+					JSON.stringify([
+						"user",
+						"assistant",
+						"user",
+						"assistant",
+						"user",
+						"assistant",
+					]) &&
+				JSON.stringify(tools) === JSON.stringify([0, 1, 0, 2, 0, 0]),
+			`unexpected real session: ${JSON.stringify(loaded)}`,
+		);
+		for (let limit = 1; limit <= loaded.length; limit += 1) {
+			const { history } = await client.loadHistory(projectId, sessionPath, {
+				messageLimit: limit,
+				includeMessageIndex: true,
+			});
+			const index = history.messageIndex ?? [];
+			const start = history.windowStartMessage ?? -1;
+			const { messages } = conversationFromHistory(history, context());
+			assert(
+				index.length === loaded.length &&
+					start === index.length - limit &&
+					messages.length === limit &&
+					messages.every(
+						(message, offset) =>
+							message.id === index[start + offset]?.id &&
+							message.role === index[start + offset]?.role &&
+							message.id === loaded[start + offset]?.id,
+					),
+				`a window of ${limit} differs from the index: ${JSON.stringify({
+					start,
+					messages: messages.map(({ id, role }) => [id, role]),
+					index: index.map(({ id, role }) => [id, role]),
+				})}`,
+			);
+		}
+	} finally {
+		app.stop();
+		await client.shutdown();
+		fixture.dispose();
+	}
 }
 
 mount(() => (

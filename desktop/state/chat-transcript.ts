@@ -1,5 +1,7 @@
+import { alignHistoryMessages } from "@/components/chat/chat-history-window-model";
 import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime-types";
 import type { PiloClientEvent } from "@/lib/api/pilo-client";
+import type { SessionHistory } from "@/lib/api/sessions-types";
 import {
 	coalesceConversationActions,
 	reduceConversationActions,
@@ -57,6 +59,22 @@ export function followsSnapshot(
 }
 
 /**
+ * The conversation of a window of saved history. When the window came with
+ * the session's message index, each message takes the id of its index
+ * entry, which is the id its placeholder has while it is not loaded.
+ */
+export function conversationFromHistory(
+	history: SessionHistory,
+	context: ConversationReducerContext,
+): ConversationState {
+	const conversation = replayConversationEvents(history.events, context);
+	const { messageIndex, windowStartMessage } = history;
+	return messageIndex && windowStartMessage !== undefined
+		? alignHistoryMessages(conversation, messageIndex, windowStartMessage)
+		: conversation;
+}
+
+/**
  * The conversation a transcript snapshot stands for, which replaces whatever
  * the chat showed before: its saved history, then the turn in progress, then
  * the events of `streamed` that follow the snapshot. `streamed` is what the
@@ -71,10 +89,7 @@ export function conversationFromSnapshot(
 	context: ConversationReducerContext,
 ): ConversationState | null {
 	if (snapshot.live.type === "truncated") return null;
-	let conversation = replayConversationEvents(
-		snapshot.history.history.events,
-		context,
-	);
+	let conversation = conversationFromHistory(snapshot.history.history, context);
 	if (snapshot.live.type === "active") {
 		conversation = applyChatEvents(conversation, snapshot.live.events, context);
 	}

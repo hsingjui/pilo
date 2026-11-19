@@ -25,6 +25,7 @@ function state(
 		sessionKey: status === "closed" ? null : "chat",
 		status,
 		conversation: messages === undefined ? null : conversation(messages),
+		historyPrefix: [],
 		source: messages === undefined ? null : "history",
 	};
 }

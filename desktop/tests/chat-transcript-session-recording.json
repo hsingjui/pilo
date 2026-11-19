@@ -1,0 +1,517 @@
+[
+	{
+		"type": "session",
+		"version": 3,
+		"id": "01a1f540-11d4-76cd-b171-f99724d4aa0b",
+		"timestamp": "2026-11-19T19:19:39.220Z",
+		"cwd": "/private/var/folders/jj/fwmm45ns4dz80954vdr61l2w0000gn/T/pilo-nsh-test-63387-0"
+	},
+	{
+		"type": "model_change",
+		"id": "125bcb9d",
+		"parentId": null,
+		"timestamp": "2026-11-19T19:19:39.233Z",
+		"provider": "relay",
+		"modelId": "deepseek-flash"
+	},
+	{
+		"type": "thinking_level_change",
+		"id": "5edcd38d",
+		"parentId": "125bcb9d",
+		"timestamp": "2026-11-19T19:19:39.233Z",
+		"thinkingLevel": "off"
+	},
+	{
+		"type": "message",
+		"id": "672f73e3",
+		"parentId": "5edcd38d",
+		"timestamp": "2026-11-19T19:19:39.247Z",
+		"message": {
+			"role": "system",
+			"content": "",
+			"sections": {
+				"preamble": "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.",
+				"tools": "<tools>\n- read: Read file contents\n- bash: Execute bash commands (ls, grep, find, etc.)\n- edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call\n- write: Create or overwrite files\n\nAdditional tools may be available.\n</tools>",
+				"rules": "<rules>\n- Use bash for file operations like ls, rg, find\n- Use read to examine files instead of cat or sed.\n- You can inspect PI_* environment variables for current model and session details.\n- Use edit for targeted changes. Batch changes to one file in a single call.\n- Each edits[].oldText must exactly and uniquely match the original file. Keep matches short and non-overlapping; merge nearby changes without including large unchanged regions.\n- Use write only for new files or complete rewrites.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
+				"docs": "<docs>\nPi documentation (read only when the user asks about the harness itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/README.md\n- Additional docs: /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/docs\n- Examples: /opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/examples (extensions, custom tools, SDK)\n- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory\n- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)\n- Before implementing harness changes, read the relevant docs and examples in full, following related cross-references.\n</docs>",
+				"addendum": "<addendum>\nPilo application control is available through bash: invoke the executable in PILO_CTL with the ctl subcommand (POSIX: \"$PILO_CTL\" ctl; PowerShell: & $env:PILO_CTL ctl). Start with ctl --help and ctl settings list. This controls the running Pilo Host; use explicit --connection/--project for scoped writes. Never print PILO_CONTROL_TOKEN or put credentials in command arguments; use --stdin JSON. Failed writes must not be automatically retried.\n</addendum>",
+				"cwd": "<cwd>\n/private/var/folders/jj/fwmm45ns4dz80954vdr61l2w0000gn/T/pilo-nsh-test-63387-0\n</cwd>"
+			},
+			"timestamp": 1795115979246,
+			"toolsAdded": [
+				{
+					"name": "read",
+					"description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+					"parameters": {
+						"type": "object",
+						"required": ["path"],
+						"properties": {
+							"path": {
+								"type": "string",
+								"description": "Path to the file to read (relative or absolute)"
+							},
+							"offset": {
+								"type": "number",
+								"description": "Line number to start reading from (1-indexed)"
+							},
+							"limit": {
+								"type": "number",
+								"description": "Maximum number of lines to read"
+							}
+						}
+					},
+					"constrainedSampling": {
+						"type": "json_schema",
+						"strict": "prefer"
+					}
+				},
+				{
+					"name": "bash",
+					"description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+					"parameters": {
+						"type": "object",
+						"required": ["command"],
+						"properties": {
+							"command": {
+								"type": "string",
+								"description": "Shell command to execute"
+							},
+							"timeout": {
+								"type": "number",
+								"description": "Timeout in seconds (optional, no default timeout)"
+							}
+						}
+					},
+					"constrainedSampling": {
+						"type": "json_schema",
+						"strict": "prefer"
+					}
+				},
+				{
+					"name": "edit",
+					"description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+					"parameters": {
+						"type": "object",
+						"required": ["path", "edits"],
+						"properties": {
+							"path": {
+								"type": "string",
+								"description": "Path to the file to edit (relative or absolute)"
+							},
+							"edits": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"required": ["oldText", "newText"],
+									"properties": {
+										"oldText": {
+											"type": "string",
+											"description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+										},
+										"newText": {
+											"type": "string",
+											"description": "Replacement text for this targeted edit."
+										}
+									}
+								},
+								"description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+							}
+						}
+					},
+					"constrainedSampling": {
+						"type": "json_schema",
+						"strict": "prefer"
+					}
+				},
+				{
+					"name": "write",
+					"description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+					"parameters": {
+						"type": "object",
+						"required": ["path", "content"],
+						"properties": {
+							"path": {
+								"type": "string",
+								"description": "Path to the file to write (relative or absolute)"
+							},
+							"content": {
+								"type": "string",
+								"description": "Content to write to the file"
+							}
+						}
+					},
+					"constrainedSampling": {
+						"type": "json_schema",
+						"strict": "prefer"
+					}
+				}
+			]
+		}
+	},
+	{
+		"type": "message",
+		"id": "905f002d",
+		"parentId": "672f73e3",
+		"timestamp": "2026-11-19T19:19:39.247Z",
+		"message": {
+			"role": "user",
+			"content": [
+				{
+					"type": "text",
+					"text": "Run the bash command `echo WINDOW_ONE` and then reply only with ONE."
+				}
+			],
+			"timestamp": 1795115979245
+		}
+	},
+	{
+		"type": "message",
+		"id": "0510eacd",
+		"parentId": "905f002d",
+		"timestamp": "2026-11-19T19:19:40.483Z",
+		"message": {
+			"role": "assistant",
+			"content": [
+				{
+					"type": "toolCall",
+					"id": "chatcmpl-tool-b5053c09ed23ddb8",
+					"name": "bash",
+					"arguments": {
+						"command": "echo WINDOW_ONE"
+					}
+				}
+			],
+			"api": "openai-completions",
+			"provider": "relay",
+			"model": "deepseek-flash",
+			"usage": {
+				"input": 954,
+				"output": 42,
+				"cacheRead": 640,
+				"cacheWrite": 0,
+				"reasoning": 0,
+				"totalTokens": 1636,
+				"cost": {
+					"input": 0,
+					"output": 0,
+					"cacheRead": 0,
+					"cacheWrite": 0,
+					"total": 0,
+					"totalFromProvider": false
+				}
+			},
+			"stopReason": "toolUse",
+			"timestamp": 1795115979253,
+			"responseId": "8a00e2230b1f4f97b21fa91be5d3a350",
+			"responseModel": "deepseek-v4-1-flash-1017",
+			"rawStopReason": "tool_calls",
+			"durationMs": 1230,
+			"thinkingLevel": "off"
+		}
+	},
+	{
+		"type": "message",
+		"id": "d87c1b39",
+		"parentId": "0510eacd",
+		"timestamp": "2026-11-19T19:19:40.491Z",
+		"message": {
+			"role": "toolResult",
+			"toolCallId": "chatcmpl-tool-b5053c09ed23ddb8",
+			"toolName": "bash",
+			"content": [
+				{
+					"type": "text",
+					"text": "WINDOW_ONE\n"
+				}
+			],
+			"isError": false,
+			"durationMs": 5,
+			"timestamp": 1795115980491
+		}
+	},
+	{
+		"type": "message",
+		"id": "609a60ff",
+		"parentId": "d87c1b39",
+		"timestamp": "2026-11-19T19:19:42.191Z",
+		"message": {
+			"role": "assistant",
+			"content": [
+				{
+					"type": "text",
+					"text": "ONE"
+				}
+			],
+			"api": "openai-completions",
+			"provider": "relay",
+			"model": "deepseek-flash",
+			"usage": {
+				"input": 117,
+				"output": 2,
+				"cacheRead": 1536,
+				"cacheWrite": 0,
+				"reasoning": 0,
+				"totalTokens": 1655,
+				"cost": {
+					"input": 0,
+					"output": 0,
+					"cacheRead": 0,
+					"cacheWrite": 0,
+					"total": 0,
+					"totalFromProvider": false
+				}
+			},
+			"stopReason": "stop",
+			"timestamp": 1795115980492,
+			"responseId": "5478ebc130ce4b60ab72790224d54984",
+			"responseModel": "deepseek-v4-1-flash-1017",
+			"rawStopReason": "stop",
+			"durationMs": 1698,
+			"thinkingLevel": "off"
+		}
+	},
+	{
+		"type": "message",
+		"id": "e0584d0e",
+		"parentId": "609a60ff",
+		"timestamp": "2026-11-19T19:19:42.255Z",
+		"message": {
+			"role": "user",
+			"content": [
+				{
+					"type": "text",
+					"text": "Run the bash command `echo WINDOW_TWO`, then run `echo WINDOW_THREE`, and then reply only with TWO."
+				}
+			],
+			"timestamp": 1795115982255
+		}
+	},
+	{
+		"type": "message",
+		"id": "efca1bd5",
+		"parentId": "e0584d0e",
+		"timestamp": "2026-11-19T19:19:43.745Z",
+		"message": {
+			"role": "assistant",
+			"content": [
+				{
+					"type": "toolCall",
+					"id": "chatcmpl-tool-b6b9b4a4261e5c2d",
+					"name": "bash",
+					"arguments": {
+						"command": "echo WINDOW_TWO"
+					}
+				}
+			],
+			"api": "openai-completions",
+			"provider": "relay",
+			"model": "deepseek-flash",
+			"usage": {
+				"input": 151,
+				"output": 42,
+				"cacheRead": 1536,
+				"cacheWrite": 0,
+				"reasoning": 0,
+				"totalTokens": 1729,
+				"cost": {
+					"input": 0,
+					"output": 0,
+					"cacheRead": 0,
+					"cacheWrite": 0,
+					"total": 0,
+					"totalFromProvider": false
+				}
+			},
+			"stopReason": "toolUse",
+			"timestamp": 1795115982256,
+			"responseId": "7240fccaff914afa90fb86eb52c89daa",
+			"responseModel": "deepseek-v4-1-flash-1017",
+			"rawStopReason": "tool_calls",
+			"durationMs": 1489,
+			"thinkingLevel": "off"
+		}
+	},
+	{
+		"type": "message",
+		"id": "42a40266",
+		"parentId": "efca1bd5",
+		"timestamp": "2026-11-19T19:19:43.748Z",
+		"message": {
+			"role": "toolResult",
+			"toolCallId": "chatcmpl-tool-b6b9b4a4261e5c2d",
+			"toolName": "bash",
+			"content": [
+				{
+					"type": "text",
+					"text": "WINDOW_TWO\n"
+				}
+			],
+			"isError": false,
+			"durationMs": 3,
+			"timestamp": 1795115983748
+		}
+	},
+	{
+		"type": "message",
+		"id": "975fdd1c",
+		"parentId": "42a40266",
+		"timestamp": "2026-11-19T19:19:45.039Z",
+		"message": {
+			"role": "assistant",
+			"content": [
+				{
+					"type": "toolCall",
+					"id": "chatcmpl-tool-86d963d1ce31c28a",
+					"name": "bash",
+					"arguments": {
+						"command": "echo WINDOW_THREE"
+					}
+				}
+			],
+			"api": "openai-completions",
+			"provider": "relay",
+			"model": "deepseek-flash",
+			"usage": {
+				"input": 82,
+				"output": 42,
+				"cacheRead": 1664,
+				"cacheWrite": 0,
+				"reasoning": 0,
+				"totalTokens": 1788,
+				"cost": {
+					"input": 0,
+					"output": 0,
+					"cacheRead": 0,
+					"cacheWrite": 0,
+					"total": 0,
+					"totalFromProvider": false
+				}
+			},
+			"stopReason": "toolUse",
+			"timestamp": 1795115983749,
+			"responseId": "f0382e6dc4984b87bb18506c7e91ea67",
+			"responseModel": "deepseek-v4-1-flash-1017",
+			"rawStopReason": "tool_calls",
+			"durationMs": 1290,
+			"thinkingLevel": "off"
+		}
+	},
+	{
+		"type": "message",
+		"id": "1b8a433a",
+		"parentId": "975fdd1c",
+		"timestamp": "2026-11-19T19:19:45.042Z",
+		"message": {
+			"role": "toolResult",
+			"toolCallId": "chatcmpl-tool-86d963d1ce31c28a",
+			"toolName": "bash",
+			"content": [
+				{
+					"type": "text",
+					"text": "WINDOW_THREE\n"
+				}
+			],
+			"isError": false,
+			"durationMs": 3,
+			"timestamp": 1795115985042
+		}
+	},
+	{
+		"type": "message",
+		"id": "25cd678d",
+		"parentId": "1b8a433a",
+		"timestamp": "2026-11-19T19:19:45.664Z",
+		"message": {
+			"role": "assistant",
+			"content": [
+				{
+					"type": "text",
+					"text": "TWO"
+				}
+			],
+			"api": "openai-completions",
+			"provider": "relay",
+			"model": "deepseek-flash",
+			"usage": {
+				"input": 141,
+				"output": 3,
+				"cacheRead": 1664,
+				"cacheWrite": 0,
+				"reasoning": 0,
+				"totalTokens": 1808,
+				"cost": {
+					"input": 0,
+					"output": 0,
+					"cacheRead": 0,
+					"cacheWrite": 0,
+					"total": 0,
+					"totalFromProvider": false
+				}
+			},
+			"stopReason": "stop",
+			"timestamp": 1795115985043,
+			"responseId": "9bd56e208e054d2c81eae4bc7bc93635",
+			"responseModel": "deepseek-v4-1-flash-1017",
+			"rawStopReason": "stop",
+			"durationMs": 621,
+			"thinkingLevel": "off"
+		}
+	},
+	{
+		"type": "message",
+		"id": "d054b3c9",
+		"parentId": "25cd678d",
+		"timestamp": "2026-11-19T19:19:45.851Z",
+		"message": {
+			"role": "user",
+			"content": [
+				{
+					"type": "text",
+					"text": "Reply only with THREE."
+				}
+			],
+			"timestamp": 1795115985851
+		}
+	},
+	{
+		"type": "message",
+		"id": "8362c280",
+		"parentId": "d054b3c9",
+		"timestamp": "2026-11-19T19:19:46.467Z",
+		"message": {
+			"role": "assistant",
+			"content": [
+				{
+					"type": "text",
+					"text": "THREE"
+				}
+			],
+			"api": "openai-completions",
+			"provider": "relay",
+			"model": "deepseek-flash",
+			"usage": {
+				"input": 24,
+				"output": 3,
+				"cacheRead": 1792,
+				"cacheWrite": 0,
+				"reasoning": 0,
+				"totalTokens": 1819,
+				"cost": {
+					"input": 0,
+					"output": 0,
+					"cacheRead": 0,
+					"cacheWrite": 0,
+					"total": 0,
+					"totalFromProvider": false
+				}
+			},
+			"stopReason": "stop",
+			"timestamp": 1795115985852,
+			"responseId": "9222fd36495c48eb8f185fed1c62e716",
+			"responseModel": "deepseek-v4-1-flash-1017",
+			"rawStopReason": "stop",
+			"durationMs": 615,
+			"thinkingLevel": "off"
+		}
+	}
+]
