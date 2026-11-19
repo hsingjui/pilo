@@ -901,6 +901,7 @@ const enUS = {
 		expandSidebar: "Expand sidebar",
 		adjustSidebar: "Adjust sidebar width",
 		noSessions: "No sessions",
+		loadedSessionCount: "Sessions {{visible}} / {{total}}",
 		viewAll: "View all",
 	},
 	file: {

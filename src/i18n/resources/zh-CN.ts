@@ -869,6 +869,7 @@ const zhCN = {
 		expandSidebar: "展开侧边栏",
 		adjustSidebar: "调整侧边栏宽度",
 		noSessions: "暂无会话",
+		loadedSessionCount: "会话 {{visible}} / {{total}}",
 		viewAll: "查看全部",
 	},
 	file: {

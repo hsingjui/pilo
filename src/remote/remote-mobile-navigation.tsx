@@ -121,11 +121,18 @@ function MobileNavigationSurface({
 function MobileSessionLoadSentinel({ onLoadMore }: { onLoadMore: () => void }) {
 	const sentinelRef = useRef<HTMLDivElement>(null);
 
+	// Session updates re-render the drawer often; keep one observer per batch.
+	const onLoadMoreRef = useRef(onLoadMore);
+	useEffect(() => {
+		onLoadMoreRef.current = onLoadMore;
+	}, [onLoadMore]);
+
 	useEffect(() => {
 		const sentinel = sentinelRef.current;
 		if (!sentinel) return;
+		const loadMore = () => onLoadMoreRef.current();
 		if (typeof IntersectionObserver === "undefined") {
-			const frame = requestAnimationFrame(onLoadMore);
+			const frame = requestAnimationFrame(loadMore);
 			return () => cancelAnimationFrame(frame);
 		}
 
@@ -133,7 +140,7 @@ function MobileSessionLoadSentinel({ onLoadMore }: { onLoadMore: () => void }) {
 			(entries) => {
 				if (!entries.some((entry) => entry.isIntersecting)) return;
 				observer.disconnect();
-				onLoadMore();
+				loadMore();
 			},
 			{
 				root: sentinel.closest("[data-mobile-session-scroll]"),
@@ -142,7 +149,7 @@ function MobileSessionLoadSentinel({ onLoadMore }: { onLoadMore: () => void }) {
 		);
 		observer.observe(sentinel);
 		return () => observer.disconnect();
-	}, [onLoadMore]);
+	}, []);
 
 	return <div ref={sentinelRef} className="h-px" aria-hidden="true" />;
 }
@@ -497,12 +504,15 @@ export function RemoteMobileNavigation({
 																			aria-live="polite"
 																			aria-atomic="true"
 																		>
-																			{t("common.sessions")} {visibleCount} /{" "}
-																			{projectSessions.length}
+																			{t("sidebar.loadedSessionCount", {
+																				visible: visibleCount,
+																				total: projectSessions.length,
+																			})}
 																		</p>
 																	) : null}
 																	{visibleCount < projectSessions.length ? (
 																		<MobileSessionLoadSentinel
+																			key={visibleCount}
 																			onLoadMore={() =>
 																				setProjectSessionLimits((current) => ({
 																					...current,

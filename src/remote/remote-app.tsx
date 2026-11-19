@@ -415,24 +415,39 @@ function RemoteWorkspace() {
 	// 移动端侧栏长按删除：删除后从本地索引移除，避免整个侧栏重刷。
 	const { client, handleExpiredAuth } = connection;
 	const { removeIndexedSession } = sessions;
+	const deletingSessionKeysRef = useRef(new Set<string>());
 	const handleDeleteMobileSession = useCallback(
 		(sessionId: string, projectId: string) => {
 			const session = sidebarSessions.find(
 				(item) => item.projectId === projectId && item.id === sessionId,
 			);
 			if (!session || !client) return;
+			const deletingKey = `${projectId}:${session.sessionPath}`;
+			const deleting = deletingSessionKeysRef.current;
+			if (deleting.has(deletingKey)) return;
+			deleting.add(deletingKey);
 			void client
 				.deleteSession(session.projectId, session.sessionPath)
-				.then(() => {
+				.then((result) => {
 					removeIndexedSession(projectId, session.sessionPath);
+					toast.success(
+						result.method === "trash"
+							? t("app.sessionTrashed")
+							: t("app.sessionDeleted"),
+					);
 				})
 				.catch((error) => {
 					if (!handleExpiredAuth(error)) {
-						console.debug("Failed to delete remote session", error);
+						toast.error(t("app.deleteSessionFailed"), {
+							description: userErrorMessage(error),
+						});
 					}
+				})
+				.finally(() => {
+					deleting.delete(deletingKey);
 				});
 		},
-		[client, handleExpiredAuth, removeIndexedSession, sidebarSessions],
+		[client, handleExpiredAuth, removeIndexedSession, sidebarSessions, t],
 	);
 
 	if (!token) {
