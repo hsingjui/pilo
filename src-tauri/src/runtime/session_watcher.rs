@@ -10,8 +10,6 @@ use std::{
 use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-#[cfg(feature = "tauri")]
-use tauri::{AppHandle, Manager as _};
 use tokio::{sync::Mutex as AsyncMutex, task::JoinHandle};
 
 use crate::domain::Project;
@@ -20,7 +18,7 @@ use super::{connection_diagnostics::request_failure_reason, host_events::HostEve
 
 #[cfg(feature = "tauri")]
 use super::{
-    PiloRuntime, RuntimeEventBus,
+    Runtime,
     events::PiProcessState,
     pi_workspace,
     server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager},
@@ -72,7 +70,7 @@ impl SessionWatcherManager {
     pub async fn start(
         &mut self,
         servers: Arc<ServerManager>,
-        app: AppHandle,
+        runtime: Runtime,
         project: Project,
     ) -> Result<(), String> {
         self.stop(&project.id).await;
@@ -80,9 +78,10 @@ impl SessionWatcherManager {
             return Ok(());
         }
         let started = Instant::now();
-        let host_paths = crate::desktop_paths::from_app(&app)?;
-        let session_project = pi_workspace::resolve_session_project(&app, &project)
-            .inspect_err(|error| log_start_failure(&project.id, "resolve", started, error))?;
+        let host_paths = runtime.paths.clone();
+        let session_project =
+            pi_workspace::resolve_session_project_with_paths(&runtime.paths, &project)
+                .inspect_err(|error| log_start_failure(&project.id, "resolve", started, error))?;
         let client = servers
             .client(&session_project.connection)
             .await
@@ -107,12 +106,12 @@ impl SessionWatcherManager {
         let event_project = project.clone();
         let live = Arc::new(AtomicBool::new(true));
         let event_live = Arc::clone(&live);
-        let event_app = app.clone();
+        let event_runtime = runtime.clone();
         let event_servers = Arc::clone(&servers);
         let event_client = Arc::clone(&current_client);
         let task = tokio::spawn(async move {
             let mut notices = WatchEvents {
-                events: crate::desktop_events::from_app(&event_app),
+                events: event_runtime.host_events.clone(),
                 project_id: project_id.clone(),
                 project_hash: project_hash.clone(),
                 errors: RepeatedFailureLog::default(),
@@ -140,7 +139,7 @@ impl SessionWatcherManager {
                                     .and_then(Value::as_bool)
                                     .unwrap_or(paths.is_empty() && removed_paths.is_empty());
                                 refresh_external_activity(
-                                    &event_app,
+                                    &event_runtime,
                                     &project_id,
                                     full_refresh,
                                     &paths,
@@ -246,12 +245,10 @@ impl SessionWatcherManager {
                                     log::info!(target: "session-watcher", "recovered projectHash={project_hash} connectionId={:?} attempts={attempts} elapsedMs={} suppressedFailures={suppressed} suppressedErrors={suppressed_errors}", connection.id, reconnect_started.elapsed().as_millis());
                                     notices.changed();
                                     // Turns may have started or ended while disconnected.
-                                    event_app
-                                        .state::<RuntimeEventBus>()
-                                        .schedule_external_activity_refresh(
-                                            &event_app,
-                                            &project_id,
-                                        );
+                                    event_runtime.events.schedule_external_activity_refresh(
+                                        &event_runtime,
+                                        &project_id,
+                                    );
                                     break;
                                 }
                                 Err(error) => ("watch_start", error),
@@ -279,8 +276,9 @@ impl SessionWatcherManager {
             },
         );
         // Catch writes between the initial snapshot and watcher registration.
-        app.state::<RuntimeEventBus>()
-            .schedule_external_activity_refresh(&app, &project.id);
+        runtime
+            .events
+            .schedule_external_activity_refresh(&runtime, &project.id);
         Ok(())
     }
 
@@ -324,15 +322,14 @@ impl SessionWatcherManager {
 /// turn and are skipped.
 #[cfg(feature = "tauri")]
 async fn refresh_external_activity(
-    app: &AppHandle,
+    runtime: &Runtime,
     project_id: &str,
     full_refresh: bool,
     paths: &[String],
     removed_paths: &[String],
 ) {
     if !full_refresh && removed_paths.is_empty() {
-        let owned_paths = app
-            .state::<PiloRuntime>()
+        let owned_paths = runtime
             .chat_sessions
             .states()
             .await
@@ -350,8 +347,9 @@ async fn refresh_external_activity(
             return;
         }
     }
-    app.state::<RuntimeEventBus>()
-        .schedule_external_activity_refresh(app, project_id);
+    runtime
+        .events
+        .schedule_external_activity_refresh(runtime, project_id);
 }
 
 fn string_array(data: &Value, key: &str) -> Vec<String> {

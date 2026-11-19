@@ -5,8 +5,6 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-#[cfg(feature = "tauri")]
-use tauri::{AppHandle, Manager as _};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -15,7 +13,7 @@ use crate::{
 };
 
 #[cfg(feature = "tauri")]
-use crate::runtime::{PiloRuntime, pi_workspace, project, session_activity};
+use crate::runtime::{Runtime, pi_workspace, project, session_activity};
 
 use super::{RuntimeEvent, RuntimeEventBus, RuntimeEventEnvelope};
 
@@ -89,7 +87,7 @@ impl RuntimeEventBus {
     #[cfg(feature = "tauri")]
     pub(crate) async fn external_session_activity(
         &self,
-        runtime: &PiloRuntime,
+        runtime: &Runtime,
         project: &Project,
     ) -> Result<Vec<SessionExternalActivity>, String> {
         self.update_external_session_activity(
@@ -157,16 +155,15 @@ impl RuntimeEventBus {
     #[cfg(feature = "tauri")]
     async fn refresh_cached_external_activity(
         &self,
-        app: &AppHandle,
+        runtime: &Runtime,
         project_id: &str,
     ) -> Result<(), String> {
-        let runtime = app.state::<PiloRuntime>();
         if runtime.servers.is_shutting_down() {
             return Ok(());
         }
-        let project = pi_workspace::resolve_session_project(
-            app,
-            &project::get(&app.state::<crate::runtime::Runtime>(), project_id)?,
+        let project = pi_workspace::resolve_session_project_with_paths(
+            &runtime.paths,
+            &project::get(runtime, project_id)?,
         )?;
         if project.default_workspace_pending() {
             return Ok(());
@@ -177,7 +174,7 @@ impl RuntimeEventBus {
         };
         self.update_external_session_activity(&project, async {
             let activities = session_activity::external_session_activities_for_project(
-                &runtime,
+                runtime,
                 &project,
                 Some(&client),
             )
@@ -199,7 +196,7 @@ impl RuntimeEventBus {
     /// Refreshes one project's external activity off the caller's task. Triggers
     /// that arrive while a refresh runs collapse into one delayed rerun.
     #[cfg(feature = "tauri")]
-    pub(crate) fn schedule_external_activity_refresh(&self, app: &AppHandle, project_id: &str) {
+    pub(crate) fn schedule_external_activity_refresh(&self, runtime: &Runtime, project_id: &str) {
         {
             let mut refreshes = self
                 .external_activity_refreshes
@@ -212,12 +209,12 @@ impl RuntimeEventBus {
             refreshes.insert(project_id.to_owned(), false);
         }
         let events = self.clone();
-        let app = app.clone();
+        let runtime = runtime.clone();
         let project_id = project_id.to_owned();
         crate::runtime::tasks::spawn(async move {
             loop {
                 if let Err(error) = events
-                    .refresh_cached_external_activity(&app, &project_id)
+                    .refresh_cached_external_activity(&runtime, &project_id)
                     .await
                 {
                     log::debug!(target: "session-reads", "external activity refresh failed: {error}");
@@ -253,7 +250,7 @@ impl RuntimeEventBus {
     /// external Pi that exits mid-turn, a fallback-inferred turn going stale,
     /// and projects without a live session watcher.
     #[cfg(feature = "tauri")]
-    pub(crate) fn start_external_activity_poll(&self, app: AppHandle) {
+    pub(crate) fn start_external_activity_poll(&self, runtime: Runtime) {
         let events = self.clone();
         crate::runtime::tasks::spawn(async move {
             let mut tick = tokio::time::interval(EXTERNAL_ACTIVITY_POLL_INTERVAL);
@@ -261,7 +258,6 @@ impl RuntimeEventBus {
             tick.tick().await;
             loop {
                 tick.tick().await;
-                let runtime = app.state::<PiloRuntime>();
                 if runtime.servers.is_shutting_down() {
                     return;
                 }
@@ -272,12 +268,15 @@ impl RuntimeEventBus {
                     .keys()
                     .cloned()
                     .collect::<HashSet<_>>();
-                let Ok(projects) = project::list(&app.state::<crate::runtime::Runtime>()) else {
+                let Ok(projects) = project::list(&runtime) else {
                     continue;
                 };
                 let mut projects = projects
                     .iter()
-                    .filter_map(|project| pi_workspace::resolve_session_project(&app, project).ok())
+                    .filter_map(|project| {
+                        pi_workspace::resolve_session_project_with_paths(&runtime.paths, project)
+                            .ok()
+                    })
                     .filter(|project| !project.default_workspace_pending())
                     .collect::<Vec<_>>();
                 {
@@ -293,7 +292,7 @@ impl RuntimeEventBus {
                         .await
                         .is_some()
                     {
-                        events.schedule_external_activity_refresh(&app, &project.id);
+                        events.schedule_external_activity_refresh(&runtime, &project.id);
                     }
                 }
             }

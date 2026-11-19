@@ -10,11 +10,10 @@
 use std::{sync::Arc, time::Duration};
 
 use serde_json::{Value, json};
-use tauri::{AppHandle, Manager as _};
 use tokio::sync::mpsc;
 
 use super::{
-    PiloRuntime,
+    Runtime,
     events::{PiProcessState, RuntimeEvent, RuntimeEventSink},
     pi_workspace, project,
     server_pi::{PiLaunchOptions, ServerPiSession},
@@ -76,8 +75,7 @@ pub(super) async fn request(
 /// helper only guarantees that the process is always stopped, and that a
 /// timeout, an error stop reason or a dead process becomes an `Err`.
 pub(crate) async fn generate_text(
-    app: &AppHandle,
-    runtime: &PiloRuntime,
+    runtime: &Runtime,
     project_id: &str,
     mut launch: PiLaunchOptions,
     prompt: String,
@@ -92,9 +90,9 @@ pub(crate) async fn generate_text(
     // `session` stays outside the deadline so that an elapsed budget drops the
     // session and lets `Drop` schedule the cleanup instead of leaking a stream.
     tokio::time::timeout(timeout, async {
-        let project = project::ready(&app.state::<crate::runtime::Runtime>(), &runtime.servers, project_id).await?;
+        let project = project::ready(runtime, &runtime.servers, project_id).await?;
         let (sender, mut receiver) = mpsc::unbounded_channel();
-        let runtime_project = pi_workspace::resolve_session_project(app, &project)?;
+        let runtime_project = pi_workspace::resolve_session_project_with_paths(&runtime.paths, &project)?;
         session
             .spawn(
                 Arc::clone(&runtime.servers),

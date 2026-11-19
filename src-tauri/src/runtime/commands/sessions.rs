@@ -1,14 +1,14 @@
 use std::sync::{Arc, Mutex as StdMutex};
 
-use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
+use super::super::session_api::SessionDeleteResult;
 use crate::domain::{SessionIndexEntry, SessionReconcileResult, SessionUiStateUpdate};
 
 use super::super::{
-    PiloRuntime,
+    PiloRuntime, Runtime,
     events::{RuntimeEvent, RuntimeEventBus, RuntimeEventEnvelope},
-    pi_workspace, project, session_index, storage,
+    pi_workspace, project, session_index,
 };
 
 mod history;
@@ -17,7 +17,7 @@ mod naming;
 pub use history::{
     session_external_activity, session_history, session_history_image, session_search,
 };
-pub use naming::{generate_session_title, session_generate_title};
+pub use naming::session_generate_title;
 
 fn session_runtime_project(
     app: &AppHandle,
@@ -64,8 +64,11 @@ impl Drop for BackgroundSessionIndexLease {
 }
 
 #[tauri::command]
-pub fn session_list(app: AppHandle, project_id: String) -> Result<Vec<SessionIndexEntry>, String> {
-    session_index::list_cached(&crate::desktop_paths::from_app(&app)?, &project_id)
+pub fn session_list(
+    runtime: State<'_, Runtime>,
+    project_id: String,
+) -> Result<Vec<SessionIndexEntry>, String> {
+    super::super::session_api::session_list(&runtime, project_id)
 }
 
 #[tauri::command]
@@ -181,98 +184,35 @@ pub async fn session_reconcile(
 
 #[tauri::command]
 pub async fn session_watch_start(
-    app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
+    runtime: State<'_, Runtime>,
     project_id: String,
 ) -> Result<(), String> {
-    let project = project::get(&app.state::<crate::runtime::Runtime>(), &project_id)?;
-    runtime
-        .session_watchers
-        .lock()
-        .await
-        .start(Arc::clone(&runtime.servers), app, project)
-        .await
+    super::super::session_api::session_watch_start(&runtime, project_id).await
 }
 
 #[tauri::command]
 pub async fn session_watch_stop(
-    runtime: State<'_, PiloRuntime>,
+    runtime: State<'_, Runtime>,
     project_id: String,
 ) -> Result<(), String> {
-    runtime
-        .session_watchers
-        .lock()
-        .await
-        .stop(&project_id)
-        .await;
-    Ok(())
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionDeleteResult {
-    method: String,
+    super::super::session_api::session_watch_stop(&runtime, project_id).await
 }
 
 #[tauri::command]
 pub async fn session_delete(
-    app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
+    runtime: State<'_, Runtime>,
     project_id: String,
     session_path: String,
 ) -> Result<SessionDeleteResult, String> {
-    let project = session_runtime_project(&app, &project_id)?;
-    let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
-    let indexed = storage::get_session(&db, &session_path, Some(&project.id))?
-        .ok_or_else(|| format!("session '{session_path}' is not indexed"))?;
-    if indexed.project_id != project.id {
-        return Err("session belongs to a different project".to_owned());
-    }
-
-    runtime
-        .chat_sessions
-        .stop_session_file(&project, &session_path)
-        .await?;
-    super::super::session_activity::reject_external_session_owner(
-        &runtime,
-        &project,
-        Some(&session_path),
-    )
-    .await?;
-
-    let value = runtime
-        .servers
-        .request(
-            &project.connection,
-            "session.delete",
-            serde_json::json!({ "path": session_path }),
-        )
-        .await?;
-    let method = value
-        .get("method")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("unlink")
-        .to_owned();
-    storage::remove_session_for_project(&db, &project.id, &indexed.session_path)?;
-    runtime
-        .session_history_cache
-        .lock()
-        .await
-        .invalidate(&project, &indexed.session_path);
-    Ok(SessionDeleteResult { method })
+    super::super::session_api::session_delete(&runtime, project_id, session_path).await
 }
 
 #[tauri::command]
 pub fn session_update_ui_state(
-    app: AppHandle,
+    runtime: State<'_, Runtime>,
     session_path: String,
     update: SessionUiStateUpdate,
     project_id: Option<String>,
 ) -> Result<SessionIndexEntry, String> {
-    storage::update_session_ui_state(
-        &storage::open(&crate::desktop_paths::from_app(&app)?)?,
-        &session_path,
-        &update,
-        project_id.as_deref(),
-    )
+    super::super::session_api::session_update_ui_state(&runtime, session_path, update, project_id)
 }

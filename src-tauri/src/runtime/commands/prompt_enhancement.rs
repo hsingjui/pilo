@@ -2,7 +2,7 @@ use tauri::{AppHandle, State};
 
 use crate::domain::{PromptEnhancementModel, PromptEnhancementSettings};
 
-use super::super::{PiloRuntime, RuntimeEventBus, prompt_enhancement};
+use super::super::{RuntimeEventBus, prompt_enhancement};
 
 #[tauri::command]
 pub fn prompt_enhancement_settings_get(
@@ -35,13 +35,12 @@ pub fn prompt_enhancement_settings_set(
 #[tauri::command]
 pub async fn prompt_enhance(
     app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
+    runtime: State<'_, super::super::Runtime>,
     project_id: String,
     draft: String,
     model: Option<PromptEnhancementModel>,
 ) -> Result<String, String> {
     prompt_enhancement::enhance(
-        &app,
         &runtime,
         &crate::desktop_paths::from_app(&app)?,
         &project_id,

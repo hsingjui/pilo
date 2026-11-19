@@ -189,7 +189,10 @@ pub(super) async fn sessions(
         Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
     };
     if query.cached {
-        return match crate::runtime::commands::session_list(state.app.clone(), project.id) {
+        return match crate::runtime::session_api::session_list(
+            &state.app.state::<crate::runtime::Runtime>(),
+            project.id,
+        ) {
             Ok(sessions) => Json(sessions).into_response(),
             Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
         };
@@ -218,9 +221,8 @@ pub(super) async fn sessions_search(
     State(state): State<RemoteHttpState>,
     Query(query): Query<SessionSearchQuery>,
 ) -> Response {
-    match crate::runtime::commands::session_search(
-        state.app.clone(),
-        state.app.state::<PiloRuntime>(),
+    match crate::runtime::session_api::session_search(
+        &state.app.state::<crate::runtime::Runtime>(),
         query.project_id,
         query.query,
         Some(query.limit.unwrap_or(24).clamp(1, 100)),
@@ -242,11 +244,10 @@ pub(super) async fn sessions_external_activity(
         Ok(project) => project,
         Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
     };
-    let runtime = state.app.state::<PiloRuntime>();
     match state
         .app
         .state::<RuntimeEventBus>()
-        .external_session_activity(&runtime, &project)
+        .external_session_activity(&state.app.state::<crate::runtime::Runtime>(), &project)
         .await
     {
         Ok(activities) => Json(activities).into_response(),
@@ -485,9 +486,8 @@ pub(super) async fn session_title(
     State(state): State<RemoteHttpState>,
     Json(request): Json<SessionTitleRequest>,
 ) -> Response {
-    let runtime = state.app.state::<PiloRuntime>();
-    match crate::runtime::commands::generate_session_title(
-        &state.app,
+    let runtime = state.app.state::<crate::runtime::Runtime>();
+    match crate::runtime::session_naming::generate_session_title(
         &runtime,
         &request.project_id,
         &request.message,
@@ -512,9 +512,8 @@ pub(super) async fn session_delete(
     State(state): State<RemoteHttpState>,
     Json(request): Json<SessionDeleteRequest>,
 ) -> Response {
-    match crate::runtime::commands::session_delete(
-        state.app.clone(),
-        state.app.state::<PiloRuntime>(),
+    match crate::runtime::session_api::session_delete(
+        &state.app.state::<crate::runtime::Runtime>(),
         request.project_id,
         request.session_path,
     )
@@ -727,8 +726,7 @@ pub(super) async fn prompt_enhance(
     Json(input): Json<PromptEnhanceInput>,
 ) -> Response {
     match crate::runtime::prompt_enhancement::enhance(
-        &state.app,
-        &state.app.state::<PiloRuntime>(),
+        &state.app.state::<crate::runtime::Runtime>(),
         &state.paths,
         &input.project_id,
         &input.draft,

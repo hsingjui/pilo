@@ -1,62 +1,28 @@
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use crate::runtime::{
-    PiloRuntime, RuntimeEventBus, session_activity::SessionExternalActivity, session_history,
+    PiloRuntime, Runtime, session_activity::SessionExternalActivity, session_history,
 };
 
 use super::session_runtime_project;
+use crate::runtime::session_api::SessionSearchMatch;
 
 #[tauri::command]
 pub async fn session_external_activity(
-    app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
+    runtime: State<'_, Runtime>,
     project_id: String,
 ) -> Result<Vec<SessionExternalActivity>, String> {
-    let project = session_runtime_project(&app, &project_id)?;
-    app.state::<RuntimeEventBus>()
-        .external_session_activity(&runtime, &project)
-        .await
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionSearchMatch {
-    pub session_path: String,
-    pub session_id: String,
-    pub role: String,
-    pub snippet: String,
-    pub timestamp: Option<serde_json::Value>,
+    crate::runtime::session_api::session_external_activity(&runtime, project_id).await
 }
 
 #[tauri::command]
 pub async fn session_search(
-    app: AppHandle,
-    runtime: State<'_, PiloRuntime>,
+    runtime: State<'_, Runtime>,
     project_id: String,
     query: String,
     limit: Option<usize>,
 ) -> Result<Vec<SessionSearchMatch>, String> {
-    let query = query.trim();
-    if query.is_empty() {
-        return Ok(Vec::new());
-    }
-    let project = session_runtime_project(&app, &project_id)?;
-    if project.default_workspace_pending() {
-        return Ok(Vec::new());
-    }
-    runtime
-        .servers
-        .request_typed(
-            &project.connection,
-            "session.search",
-            serde_json::json!({
-                "project": project.path,
-                "query": query,
-                "limit": limit.unwrap_or(24),
-            }),
-        )
-        .await
+    crate::runtime::session_api::session_search(&runtime, project_id, query, limit).await
 }
 
 #[tauri::command]

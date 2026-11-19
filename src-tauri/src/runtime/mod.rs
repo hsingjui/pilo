@@ -63,10 +63,12 @@ mod server_pi;
 #[cfg(feature = "tauri")]
 mod server_pi_events;
 mod session_activity;
+mod session_api;
 #[cfg(feature = "tauri")]
 mod session_history;
 #[cfg(feature = "tauri")]
 mod session_index;
+mod session_naming;
 mod session_snapshot;
 mod session_watcher;
 #[allow(dead_code)]

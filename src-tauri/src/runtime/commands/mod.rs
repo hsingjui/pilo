@@ -54,7 +54,7 @@ pub use runtime::{
     runtime_stop_pi, runtime_subscribe_events,
 };
 pub use sessions::{
-    generate_session_title, session_delete, session_external_activity, session_generate_title,
-    session_history, session_history_image, session_list, session_reconcile, session_search,
+    session_delete, session_external_activity, session_generate_title, session_history,
+    session_history_image, session_list, session_reconcile, session_search,
     session_update_ui_state, session_watch_start, session_watch_stop,
 };

@@ -11,12 +11,10 @@
 
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager as _};
-
 use crate::domain::{PromptEnhancementModel, PromptEnhancementSettings};
 
 use super::{
-    PiloRuntime, RuntimeEventBus,
+    Runtime, RuntimeEventBus,
     events::{RuntimeEvent, RuntimeEventEnvelope},
     host_paths::HostPaths,
     pi_oneshot, project,
@@ -153,8 +151,7 @@ fn resolve_model(
 }
 
 pub(crate) async fn enhance(
-    app: &AppHandle,
-    runtime: &PiloRuntime,
+    runtime: &Runtime,
     paths: &HostPaths,
     project_id: &str,
     draft: &str,
@@ -165,7 +162,7 @@ pub(crate) async fn enhance(
         return Err("Draft is empty".to_owned());
     }
 
-    let project = project::get(&app.state::<crate::runtime::Runtime>(), project_id)?;
+    let project = project::get(runtime, project_id)?;
     let settings = load(paths, &project.connection.id)?;
     if !settings.enabled {
         return Err("Prompt enhancement is disabled for this connection".to_owned());
@@ -174,7 +171,6 @@ pub(crate) async fn enhance(
     let (provider, model_id) = resolve_model(&settings, model)?;
 
     let text = pi_oneshot::generate_text(
-        app,
         runtime,
         project_id,
         PiLaunchOptions {
