@@ -25,6 +25,7 @@ import type {
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
 import type {
 	NextPromptModel,
+	NextPromptRequest,
 	NextPromptSettings,
 } from "@/lib/next-prompt-types";
 import type {
@@ -60,6 +61,7 @@ export type PiloNative = Pick<
 	| "saveCacheKeepAliveSettings"
 	| "loadNextPromptSettings"
 	| "saveNextPromptSettings"
+	| "requestNextPrompt"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "loadPreferences"
@@ -99,6 +101,7 @@ type BridgedPiloClient = Pick<
 	| "saveCacheKeepAliveSettings"
 	| "loadNextPromptSettings"
 	| "saveNextPromptSettings"
+	| "requestNextPrompt"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "connectEvents"
@@ -287,6 +290,15 @@ export class NshPiloClient implements BridgedPiloClient {
 			enabled,
 			model,
 		)) as NextPromptSettings;
+	}
+
+	/**
+	 * Asks a running, idle chat for a next-prompt suggestion, or cancels the
+	 * request with the same identity. It resolves once the request is sent;
+	 * the suggestion arrives through `connectEvents`.
+	 */
+	requestNextPrompt(request: NextPromptRequest) {
+		return this.pilo.requestNextPrompt(request);
 	}
 
 	loadSessionReadStates() {

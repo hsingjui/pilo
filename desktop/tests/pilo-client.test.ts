@@ -70,6 +70,7 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 			enabled: true,
 			updatedAtMs: 9,
 		}),
+		requestNextPrompt: answer("requestNextPrompt", undefined),
 		loadSessionReadStates: answer("loadSessionReadStates", [readState]),
 		markSessionRead: answer("markSessionRead", readState),
 		loadPreferences: answer("loadPreferences", preferences),
@@ -445,6 +446,45 @@ test("next-prompt settings the native module refuses reject with its error", asy
 	}
 });
 
+test("a next-prompt request and its cancellation pass through to the native module", async () => {
+	const { pilo, calls } = fakeNative();
+	const client = new NshPiloClient(pilo);
+	const request = {
+		sessionKey: "k1",
+		sessionId: "s1",
+		requestId: "r1",
+		generation: 2,
+		revision: 7,
+	};
+
+	expect(await client.requestNextPrompt(request)).toBe(undefined);
+	await client.requestNextPrompt({ ...request, cancel: true });
+	expect(calls).toEqual([
+		["requestNextPrompt", request],
+		["requestNextPrompt", { ...request, cancel: true }],
+	]);
+});
+
+test("a next-prompt request the native module refuses rejects with its error", async () => {
+	const failure = new Error("prediction session is not running");
+	const { pilo } = fakeNative({
+		requestNextPrompt: () => Promise.reject(failure),
+	});
+	let caught: unknown;
+	await new NshPiloClient(pilo)
+		.requestNextPrompt({
+			sessionKey: "k1",
+			sessionId: "s1",
+			requestId: "r1",
+			generation: 2,
+			revision: 7,
+		})
+		.catch((error: unknown) => {
+			caught = error;
+		});
+	expect(caught).toBe(failure);
+});
+
 /** A native event stream whose polls the test answers one at a time. */
 function fakeEventStream() {
 	const polls: {
@@ -662,6 +702,13 @@ test("the client loads and saves cache keep-alive policies through the native mo
 test("the client loads and saves next-prompt settings through the native module", async () => {
 	const app = await open("./pilo-client-next-prompt-fixture.tsx");
 	await app.waitFor("text:client next-prompt settings verified", {
+		timeout: 30_000,
+	});
+});
+
+test("the client requests and cancels a next-prompt suggestion through the native module", async () => {
+	const app = await open("./pilo-client-next-prompt-request-fixture.tsx");
+	await app.waitFor("text:client next-prompt suggestion and cancel verified", {
 		timeout: 30_000,
 	});
 });
