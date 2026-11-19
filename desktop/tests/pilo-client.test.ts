@@ -49,6 +49,11 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 			models: null,
 			updatedAtMs: 0,
 		}),
+		saveModelScope: answer("saveModelScope", {
+			projectId: "p1",
+			models: [],
+			updatedAtMs: 9,
+		}),
 		loadSessionReadStates: answer("loadSessionReadStates", [readState]),
 		markSessionRead: answer("markSessionRead", readState),
 		loadPreferences: answer("loadPreferences", preferences),
@@ -293,6 +298,42 @@ test("an uncached catalog is null and a rejected model call keeps its error", as
 	}
 });
 
+test("saving a model scope passes the list, an empty list or null and returns the saved scope", async () => {
+	const { pilo, calls } = fakeNative();
+	const client = new NshPiloClient(pilo);
+	const models = [
+		{ provider: "relay", modelId: "m1", thinkingLevel: "high" as const },
+		{ provider: "relay", modelId: "m2", thinkingLevel: null, isDefault: true },
+	];
+
+	expect(await client.saveModelScope("p1", models)).toEqual({
+		projectId: "p1",
+		models: [],
+		updatedAtMs: 9,
+	});
+	await client.saveModelScope("p1", []);
+	await client.saveModelScope("p1", null);
+	expect(calls).toEqual([
+		["saveModelScope", "p1", models],
+		["saveModelScope", "p1", []],
+		["saveModelScope", "p1", null],
+	]);
+});
+
+test("a model scope the native module refuses rejects with its error", async () => {
+	const failure = new Error("model scope can contain only one default model");
+	const { pilo } = fakeNative({
+		saveModelScope: () => Promise.reject(failure),
+	});
+	let caught: unknown;
+	await new NshPiloClient(pilo)
+		.saveModelScope("p1", [])
+		.catch((error: unknown) => {
+			caught = error;
+		});
+	expect(caught).toBe(failure);
+});
+
 /** A native event stream whose polls the test answers one at a time. */
 function fakeEventStream() {
 	const polls: {
@@ -493,9 +534,9 @@ test("the client reads project and session image bytes through the native module
 	});
 });
 
-test("the client loads connection models, a saved catalog and a model scope through the native module", async () => {
+test("the client loads connection models and a saved catalog, and loads and saves a model scope through the native module", async () => {
 	const app = await open("./pilo-client-models-fixture.tsx");
-	await app.waitFor("text:client model catalogs and scope verified", {
+	await app.waitFor("text:client model catalogs and scope saves verified", {
 		timeout: 30_000,
 	});
 });

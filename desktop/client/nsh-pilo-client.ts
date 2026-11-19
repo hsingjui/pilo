@@ -18,7 +18,10 @@ import type {
 	SessionIndexEntry,
 	SessionSearchMatch,
 } from "@/lib/api/sessions-types";
-import type { ProjectModelScope } from "@/lib/project-model-scope";
+import type {
+	ProjectModelScope,
+	ProjectScopedModel,
+} from "@/lib/project-model-scope";
 import type {
 	PreferencePatch,
 	PreferencesSnapshot,
@@ -47,6 +50,7 @@ export type PiloNative = Pick<
 	| "loadConnectionModels"
 	| "loadModels"
 	| "loadModelScope"
+	| "saveModelScope"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "loadPreferences"
@@ -81,6 +85,7 @@ type BridgedPiloClient = Pick<
 	| "loadConnectionModels"
 	| "loadModels"
 	| "loadModelScope"
+	| "saveModelScope"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "connectEvents"
@@ -208,6 +213,21 @@ export class NshPiloClient implements BridgedPiloClient {
 	/** The project's model scope; `models: null` means it inherits Pi's. */
 	async loadModelScope(projectId: string): Promise<ProjectModelScope> {
 		return (await this.pilo.loadModelScope(projectId)) as ProjectModelScope;
+	}
+
+	/**
+	 * Replaces the project's model scope with the ordered list, `[]` for an
+	 * empty one, or restores inheriting Pi's with `null`. Listeners also get
+	 * the new scope as a `project_model_scope_changed` event.
+	 */
+	async saveModelScope(
+		projectId: string,
+		models: ProjectScopedModel[] | null,
+	): Promise<ProjectModelScope> {
+		return (await this.pilo.saveModelScope(
+			projectId,
+			models,
+		)) as ProjectModelScope;
 	}
 
 	loadSessionReadStates() {
