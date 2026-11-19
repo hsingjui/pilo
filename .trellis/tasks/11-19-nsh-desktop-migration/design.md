@@ -90,7 +90,12 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 
 - `desktop/theme.json` 是 Lody 基础主题（shadcn 风格 token + Pilo 自有 token：`sidebar`、`hover`、`bubble-radius`、`composer-radius` 等）。
 - 主题族切换 = 基础主题与该族 token 表合并后 `setTheme`；亮/暗用 `setColorScheme`。
-- `ThemeSettings` 结构（`theme`、`themeFamily`、`savedCustomThemes`）保留，存储位置不变；自定义主题内容由 CSS 文本改为 token 表（取决于 PRD Open Question 1）。
+- `ThemeSettings` 结构（`theme`、`themeFamily`、`savedCustomThemes`）保留，存储位置不变；自定义主题内容由 CSS 文本改为 token 表（PRD Decisions），桌面端与 WebUI 共用：
+  - 格式：`{ light: Record<token, value>, dark: Record<token, value>, theme: Record<token, value> }`，与 nsh `setTheme` 的 `cssVars` 同构；可用 token 的清单与取值类型由基础主题定义，作为两端共用的校验依据。
+  - 桌面端：与基础主题合并后 `setTheme`。
+  - WebUI：把 token 表渲染成 `:root` / `.dark` 下的 CSS 变量注入，替换现在注入整段用户 CSS 的做法（`src/lib/theme-custom.ts`、`theme-provider.tsx`、`src/remote/use-remote-theme.ts`）。
+  - 旧数据转换：在 Rust 运行时读取设置时进行一次，解析 `:root` 与 `.dark` 中的变量声明（HSL 三元组转为颜色值），其余规则原文保留在转换报告里供界面展示；转换幂等，原始 CSS 文本保留一个版本周期以便回退。
+  - 编辑界面由 CSS 文本框改为 token 表编辑（两端各实现一份，校验逻辑共用纯 TS）。
 - 构建期脚本从 `src/styles/lody-theme.css`、`claude-theme.css` 生成 token JSON，保证 WebUI 与桌面端同源。
 - 用户输入的 token 先校验再应用（无效值会让 `setTheme` 整体失败）。
 
@@ -126,7 +131,7 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
   - `deb` / `rpm`：声明对 GTK 4（≥ 4.14）、Pango、WebKitGTK 6.0（如使用 `WebView`）的依赖；沿用 `src-tauri/linux/pilo.desktop` 模板和现有图标。
   - `AppImage`：沿用 `scripts/finalize-linux-appimage.sh` 的收尾与校验思路和 `tests/packaging/test-linux-appimage.py`；是否把 GTK 4 打进 AppImage、还是要求宿主提供，待 M7 在真实发行版上验证后决定。
   - Linux 的自动更新对象（现在是签名的 AppImage）与 `nsh/updater` 的归档格式如何对应，待 M7 验证。
-- 自动更新：`nsh/updater` 读取 nsh 格式清单。Tauri 版 → nsh 版的过渡取决于 PRD Open Question 3，候选做法：最后一个 Tauri 版本提示用户手动下载；或让 Tauri 更新器下载并运行 nsh 安装器（待验证）。
+- 自动更新：`nsh/updater` 读取 nsh 格式清单。Tauri 版 → nsh 版的过渡取决于 PRD Open Question 2，候选做法：最后一个 Tauri 版本提示用户手动下载；或让 Tauri 更新器下载并运行 nsh 安装器（待验证）。
 - 版本号继续由 `Cargo.toml` `[workspace.package].version` 驱动，`nsh.json` 的版本由脚本同步；发版前仍需向用户确认版本号。
 
 ## 10. 测试
@@ -154,7 +159,8 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 | 双份 UI 维护 | 迁移期间成本 | 待同步清单；缩短迁移周期 |
 | 运行时只在分支上抽离，`main` 持续改同一批文件 | 每次合入都可能冲突 | 不移动文件、替换式改动、每周合入、合入后双版本验证 |
 | Linux 需 GTK 4.14+、macOS 需 14+ | 旧系统用户切换后无法升级 | 已接受（PRD Decisions）；发版说明中写明最低要求 |
+| 自定义主题格式变更波及 WebUI | 带选择器的自定义 CSS 两端都失效；WebUI 需要改动 | 已接受（PRD Decisions）；自动转换 + 转换报告；原始 CSS 保留一个版本周期 |
 | Linux 三种包需自写打包脚本 | nsh 无现成支持，AppImage 携带 GTK 4 的可行性未知 | M7 专项；复用现有 AppImage 收尾脚本与测试 |
-| 无 Mermaid、查找、拖拽排序 | 功能回退 | PRD Open Question 2；必要时用 `WebView` 承载 Mermaid（待验证） |
+| 无 Mermaid、查找、拖拽排序 | 功能回退 | PRD Open Question 1；必要时用 `WebView` 承载 Mermaid（待验证） |
 
 回退：切换发版前 Tauri 版本始终可发；切换后保留 `src-tauri/` 一个版本周期再删除。

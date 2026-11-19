@@ -33,11 +33,12 @@ M4、M5、M6 互不依赖，可在 M3 之后任意顺序进行。
 1. 按 `design.md` 第 3 节在原路径上去掉运行时的 Tauri 依赖（不移动文件），Tauri 壳放到 `tauri` feature 之后；分支上的 Tauri 版回归通过。
 2. 建立 `desktop/`：`nsh.json`、`theme.json`、字体、`native/` crate 空壳。
 3. 构建期脚本：主题 CSS → token JSON；`lucide-react` → 图标数据。
-4. 基础组件：按钮、图标按钮、输入、弹层、菜单、对话框、tooltip、toast、tabs、select、开关、滚动条。
-5. i18n 接入，确认现有资源可直接使用。
-6. 产出功能对齐清单（逐个页面、逐个交互，标注必须 / 可延后 / 放弃）。
-7. 列出 WebView `localStorage` 键及处理方式。
-8. 写入 `.trellis/spec/` 的 nsh 桌面端规范初稿；更新 `AGENTS.md` 过渡期规则。
+4. 自定义主题 token 表：定义格式与 token 清单、共用校验逻辑、Rust 侧旧 CSS 转换与转换报告；WebUI 改为按 token 表注入变量并换成 token 编辑界面。
+5. 基础组件：按钮、图标按钮、输入、弹层、菜单、对话框、tooltip、toast、tabs、select、开关、滚动条。
+6. i18n 接入，确认现有资源可直接使用。
+7. 产出功能对齐清单（逐个页面、逐个交互，标注必须 / 可延后 / 放弃）。
+8. 列出 WebView `localStorage` 键及处理方式。
+9. 写入 `.trellis/spec/` 的 nsh 桌面端规范初稿；更新 `AGENTS.md` 过渡期规则。
 
 ### M2 桥接与数据层
 
