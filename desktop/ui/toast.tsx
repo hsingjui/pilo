@@ -3,7 +3,7 @@ import {
 	Toast as BaseToast,
 	type ToastProps as BaseToastProps,
 } from "nsh/base";
-import { Button } from "./button";
+import { ToastCloseButton } from "./toast-close-button";
 import { classNames } from "./class-names";
 import { Foreground } from "./foreground";
 import { Icon, type IconName } from "./icon";
@@ -73,15 +73,10 @@ export function Toast(props: ToastProps) {
 			</View>
 			{() =>
 				local.closeButton !== false && local.onDismissRequest ? (
-					<Button
-						variant="ghost"
-						size="icon"
-						class="size-5 p-0 text-muted-foreground hover:text-popover-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+					<ToastCloseButton
 						accessibilityLabel={local.closeLabel ?? "Dismiss notification"}
 						onPress={local.onDismissRequest}
-					>
-						<Icon name="X" size={14} color={token("muted-foreground")} />
-					</Button>
+					/>
 				) : null
 			}
 		</BaseToast>

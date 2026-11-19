@@ -13,6 +13,8 @@ import claude from "../claude-theme.json";
 import { Button } from "../ui/button";
 import { Foreground } from "../ui/foreground";
 import { Toast } from "../ui/toast";
+import { ToastCloseButton } from "../ui/toast-close-button";
+import { Icon } from "../ui/icon";
 import { ToastManager, ToastStack } from "../ui/toast-stack";
 import { setStyleTheme } from "../ui/theme-style";
 
@@ -163,6 +165,26 @@ mount(() => {
 					</Each>
 				</ToastStack>
 			</Overlay>
+			<View class="flex-row gap-4 items-center">
+				<Text>Close icon hover</Text>
+				<ToastCloseButton
+					testID="close-preview"
+					class="opacity-100"
+					accessibilityLabel="Close preview"
+				>
+					<Icon name="X" size={14} />
+					<View class="absolute opacity-0 pointer-events-none">
+						<ColorProbe name="close" />
+						<Text>Close inherited text</Text>
+					</View>
+				</ToastCloseButton>
+				<View class="absolute opacity-0 pointer-events-none">
+					<View testID="close-muted" class="size-px bg-muted-foreground" />
+					<View testID="close-hover" class="size-px bg-popover-foreground" />
+					<Text class="text-muted-foreground">Close resting reference</Text>
+					<Text class="text-popover-foreground">Close hover reference</Text>
+				</View>
+			</View>
 		</View>
 	);
 });

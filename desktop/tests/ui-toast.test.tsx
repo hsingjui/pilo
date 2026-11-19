@@ -22,6 +22,47 @@ test("Toast shows, respects duration, persists without a timeout and dismisses m
 	expect(app.shows("id:toast-Manual")).toBe(false);
 });
 
+test("Toast close button supplies its resting and hover foreground to nested icons and text", async () => {
+	const app = await open("./ui-toast-fixture.tsx", {
+		platform: "macos",
+		width: 1280,
+		height: 900,
+	});
+	for (const theme of ["Lody", "Claude"]) {
+		if (theme === "Claude") await app.press("id:claude");
+		expect(app.viewStyle("id:color-close")?.backgroundColor).toBe(
+			app.viewStyle("id:close-muted")?.backgroundColor,
+		);
+		expect(app.spanStyle("text:Close inherited text").color).toBe(
+			app.spanStyle("text:Close resting reference").color,
+		);
+		await app.hover("id:close-preview");
+		await app.waitUntil(
+			() =>
+				app.spanStyle("text:Close inherited text").color ===
+				app.spanStyle("text:Close hover reference").color,
+		);
+		expect(app.viewStyle("id:color-close")?.backgroundColor).toBe(
+			app.viewStyle("id:close-hover")?.backgroundColor,
+		);
+		expect(app.spanStyle("text:Close inherited text").color).toBe(
+			app.spanStyle("text:Close hover reference").color,
+		);
+		await app.hover("id:claude");
+		await app.waitUntil(
+			() =>
+				app.spanStyle("text:Close inherited text").color ===
+				app.spanStyle("text:Close resting reference").color,
+		);
+		expect(app.viewStyle("id:color-close")?.backgroundColor).toBe(
+			app.viewStyle("id:close-muted")?.backgroundColor,
+		);
+		expect(app.spanStyle("text:Close inherited text").color).toBe(
+			app.spanStyle("text:Close resting reference").color,
+		);
+	}
+});
+
 test("ToastStack takes oldest-first children and Escape dismisses newest-first, including an empty stack", async () => {
 	const app = await open("./ui-toast-fixture.tsx", {
 		platform: "macos",
