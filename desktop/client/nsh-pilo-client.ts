@@ -24,6 +24,10 @@ import type {
 } from "@/lib/project-model-scope";
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
 import type {
+	NextPromptModel,
+	NextPromptSettings,
+} from "@/lib/next-prompt-types";
+import type {
 	PreferencePatch,
 	PreferencesSnapshot,
 } from "@/lib/host-preferences-types";
@@ -54,6 +58,8 @@ export type PiloNative = Pick<
 	| "saveModelScope"
 	| "loadCacheKeepAliveSettings"
 	| "saveCacheKeepAliveSettings"
+	| "loadNextPromptSettings"
+	| "saveNextPromptSettings"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "loadPreferences"
@@ -91,6 +97,8 @@ type BridgedPiloClient = Pick<
 	| "saveModelScope"
 	| "loadCacheKeepAliveSettings"
 	| "saveCacheKeepAliveSettings"
+	| "loadNextPromptSettings"
+	| "saveNextPromptSettings"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "connectEvents"
@@ -254,6 +262,31 @@ export class NshPiloClient implements BridgedPiloClient {
 		return (await this.pilo.saveCacheKeepAliveSettings(
 			settings,
 		)) as CacheKeepAliveSettings;
+	}
+
+	/** The connection's next-prompt settings; disabled when never saved. */
+	async loadNextPromptSettings(
+		connectionId: string,
+	): Promise<NextPromptSettings> {
+		return (await this.pilo.loadNextPromptSettings(
+			connectionId,
+		)) as NextPromptSettings;
+	}
+
+	/**
+	 * Replaces the connection's next-prompt settings; a `null` model follows
+	 * the chat's. Listeners also get them as `next_prompt_settings_changed`.
+	 */
+	async saveNextPromptSettings(
+		connectionId: string,
+		enabled: boolean,
+		model: NextPromptModel | null,
+	): Promise<NextPromptSettings> {
+		return (await this.pilo.saveNextPromptSettings(
+			connectionId,
+			enabled,
+			model,
+		)) as NextPromptSettings;
 	}
 
 	loadSessionReadStates() {

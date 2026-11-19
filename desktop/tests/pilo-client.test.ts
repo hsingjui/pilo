@@ -59,6 +59,17 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 			modelId: "m1",
 			updatedAtMs: 9,
 		}),
+		loadNextPromptSettings: answer("loadNextPromptSettings", {
+			connectionId: "local",
+			enabled: false,
+			model: null,
+			updatedAtMs: 0,
+		}),
+		saveNextPromptSettings: answer("saveNextPromptSettings", {
+			connectionId: "local",
+			enabled: true,
+			updatedAtMs: 9,
+		}),
 		loadSessionReadStates: answer("loadSessionReadStates", [readState]),
 		markSessionRead: answer("markSessionRead", readState),
 		loadPreferences: answer("loadPreferences", preferences),
@@ -391,6 +402,49 @@ test("a cache keep-alive policy the native module refuses rejects with its error
 	}
 });
 
+test("next-prompt calls pass their arguments and return the native answers", async () => {
+	const { pilo, calls } = fakeNative();
+	const client = new NshPiloClient(pilo);
+	const model = { provider: "relay", id: "m1" };
+
+	expect(await client.loadNextPromptSettings("local")).toEqual({
+		connectionId: "local",
+		enabled: false,
+		model: null,
+		updatedAtMs: 0,
+	});
+	expect(await client.saveNextPromptSettings("local", true, model)).toEqual({
+		connectionId: "local",
+		enabled: true,
+		updatedAtMs: 9,
+	});
+	await client.saveNextPromptSettings("local", false, null);
+	expect(calls).toEqual([
+		["loadNextPromptSettings", "local"],
+		["saveNextPromptSettings", "local", true, model],
+		["saveNextPromptSettings", "local", false, null],
+	]);
+});
+
+test("next-prompt settings the native module refuses reject with its error", async () => {
+	const failure = new Error("Connection 'gone' was not found");
+	const { pilo } = fakeNative({
+		loadNextPromptSettings: () => Promise.reject(failure),
+		saveNextPromptSettings: () => Promise.reject(failure),
+	});
+	const client = new NshPiloClient(pilo);
+	for (const call of [
+		client.loadNextPromptSettings("gone"),
+		client.saveNextPromptSettings("gone", false, null),
+	]) {
+		let caught: unknown;
+		await call.catch((error: unknown) => {
+			caught = error;
+		});
+		expect(caught).toBe(failure);
+	}
+});
+
 /** A native event stream whose polls the test answers one at a time. */
 function fakeEventStream() {
 	const polls: {
@@ -601,6 +655,13 @@ test("the client loads connection models and a saved catalog, and loads and save
 test("the client loads and saves cache keep-alive policies through the native module", async () => {
 	const app = await open("./pilo-client-keep-alive-fixture.tsx");
 	await app.waitFor("text:client cache keep-alive policies verified", {
+		timeout: 30_000,
+	});
+});
+
+test("the client loads and saves next-prompt settings through the native module", async () => {
+	const app = await open("./pilo-client-next-prompt-fixture.tsx");
+	await app.waitFor("text:client next-prompt settings verified", {
 		timeout: 30_000,
 	});
 });
