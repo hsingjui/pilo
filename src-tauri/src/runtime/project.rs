@@ -20,7 +20,10 @@ pub(crate) fn load_model_scope(
     app: &AppHandle,
     project_id: &str,
 ) -> Result<crate::domain::ProjectModelScope, String> {
-    storage::get_project_model_scope(&storage::open(app)?, project_id)
+    storage::get_project_model_scope(
+        &storage::open(&crate::desktop_paths::from_app(app)?)?,
+        project_id,
+    )
 }
 
 pub(crate) fn save_model_scope(
@@ -29,7 +32,11 @@ pub(crate) fn save_model_scope(
     project_id: &str,
     models: Option<Vec<crate::domain::ProjectScopedModel>>,
 ) -> Result<crate::domain::ProjectModelScope, String> {
-    let scope = storage::set_project_model_scope(&storage::open(app)?, project_id, models)?;
+    let scope = storage::set_project_model_scope(
+        &storage::open(&crate::desktop_paths::from_app(app)?)?,
+        project_id,
+        models,
+    )?;
     events.send(RuntimeEventEnvelope {
         session_key: None,
         project_id: Some(project_id.to_owned()),
@@ -42,7 +49,7 @@ pub(crate) fn save_model_scope(
 }
 
 pub fn list(app: &AppHandle) -> Result<Vec<Project>, String> {
-    let db = storage::open(app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
     storage::ensure_local_connection(&db)?;
     for connection in storage::list_connections(&db)? {
         let key = default_workspace_key(&connection.id);
@@ -120,7 +127,7 @@ pub(crate) async fn ready(
     id: &str,
 ) -> Result<Project, String> {
     ready_with_paths(
-        &super::host_paths::HostPaths::from_app(app)?,
+        &crate::desktop_paths::from_app(app)?,
         servers,
         app.state::<super::RuntimeEventBus>().inner(),
         id,
@@ -129,7 +136,7 @@ pub(crate) async fn ready(
 }
 
 pub fn get(app: &AppHandle, id: &str) -> Result<Project, String> {
-    storage::get_project(&storage::open(app)?, id)?
+    storage::get_project(&storage::open(&crate::desktop_paths::from_app(app)?)?, id)?
         .ok_or_else(|| format!("Project '{id}' was not found"))
 }
 
@@ -143,7 +150,7 @@ pub async fn add(
     let (connection, metadata) = inspect(servers, connection, path).await?;
     let normalized_path = metadata.cwd.clone();
     let id = Project::stable_id(&connection.id, &normalized_path);
-    let db = storage::open(app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
     let now = storage::now_ms();
     let created_at_ms = storage::get_project(&db, &id)?
         .map(|project| project.created_at_ms)
@@ -183,13 +190,20 @@ pub async fn refresh(
         created_at_ms: current.created_at_ms,
         last_opened_at_ms: current.last_opened_at_ms,
     };
-    storage::upsert_project(&storage::open(app)?, &project)?;
+    storage::upsert_project(
+        &storage::open(&crate::desktop_paths::from_app(app)?)?,
+        &project,
+    )?;
     Ok(project)
 }
 
 pub fn touch(app: &AppHandle, id: &str) -> Result<Project, String> {
     get(app, id)?;
-    storage::touch_project(&storage::open(app)?, id, storage::now_ms())?;
+    storage::touch_project(
+        &storage::open(&crate::desktop_paths::from_app(app)?)?,
+        id,
+        storage::now_ms(),
+    )?;
     get(app, id)
 }
 
@@ -199,7 +213,7 @@ pub fn remove(app: &AppHandle, id: &str) -> Result<Vec<Project>, String> {
             "The default workspace cannot be removed; hide it in the connection menu".to_owned(),
         );
     }
-    let db = storage::open(app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
     if !storage::remove_project(&db, id)? {
         return Err(format!("Project '{id}' was not found"));
     }
@@ -212,7 +226,7 @@ pub fn reorder(
     connection_id: &str,
     project_ids: &[String],
 ) -> Result<Vec<Project>, String> {
-    let mut db = storage::open(app)?;
+    let mut db = storage::open(&crate::desktop_paths::from_app(app)?)?;
     let default_id = Project::default_workspace_id(connection_id);
     let mut ordered = project_ids.to_vec();
     if !ordered.contains(&default_id) && storage::get_project(&db, &default_id)?.is_some() {
@@ -252,7 +266,7 @@ pub async fn discover(
 }
 
 pub fn resolve_connection(app: &AppHandle, connection_id: &str) -> Result<Connection, String> {
-    let db = storage::open(app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
     if connection_id == "local" {
         return storage::ensure_local_connection(&db);
     }

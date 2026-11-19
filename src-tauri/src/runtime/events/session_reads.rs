@@ -49,7 +49,8 @@ impl RuntimeEventBus {
         *self
             .session_read_paths
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(HostPaths::from_app(app)?);
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(crate::desktop_paths::from_app(app)?);
         Ok(())
     }
 

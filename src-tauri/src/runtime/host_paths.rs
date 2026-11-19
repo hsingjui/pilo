@@ -1,37 +1,38 @@
 use std::{fs, path::PathBuf};
 
-use tauri::{AppHandle, Manager};
-
 const DB_FILE_NAME: &str = "pilo.sqlite3";
 
 #[derive(Clone, Debug)]
 pub(crate) struct HostPaths {
     app_data_dir: PathBuf,
+    resource_dir: PathBuf,
 }
 
 impl HostPaths {
     #[cfg(test)]
     pub(crate) fn for_test(app_data_dir: PathBuf) -> Self {
-        Self { app_data_dir }
-    }
-
-    pub(crate) fn from_app(app: &AppHandle) -> Result<Self, String> {
-        let app_data_dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|error| format!("failed to resolve Pilo app data directory: {error}"))?;
-        Self::new(app_data_dir)
+        Self {
+            app_data_dir,
+            resource_dir: PathBuf::new(),
+        }
     }
 
     /// A host whose data lives in `app_data_dir`, created if missing.
-    pub(crate) fn new(app_data_dir: PathBuf) -> Result<Self, String> {
+    pub(crate) fn new(app_data_dir: PathBuf, resource_dir: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&app_data_dir).map_err(|error| {
             format!(
                 "failed to create Pilo app data directory '{}': {error}",
                 app_data_dir.display()
             )
         })?;
-        Ok(Self { app_data_dir })
+        Ok(Self {
+            app_data_dir,
+            resource_dir,
+        })
+    }
+
+    pub(crate) fn resource_dir(&self) -> &std::path::Path {
+        &self.resource_dir
     }
 
     pub(crate) fn database_path(&self) -> PathBuf {
@@ -56,7 +57,24 @@ pub(crate) fn fnv1a_64(bytes: &[u8]) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::fnv1a_64;
+    use super::{HostPaths, fnv1a_64};
+
+    #[test]
+    fn host_paths_create_data_and_preserve_resource_directory() {
+        let root = std::env::temp_dir().join(format!("pilo-host-paths-{}", std::process::id()));
+        let data = root.join("data");
+        let resources = root.join("resources");
+        let paths = HostPaths::new(data.clone(), resources.clone()).unwrap();
+        assert!(data.is_dir());
+        assert_eq!(paths.database_path(), data.join("pilo.sqlite3"));
+        assert_eq!(paths.resource_dir(), resources);
+        assert!(!resources.exists());
+        assert!(HostPaths::new(std::path::PathBuf::new(), resources.clone()).is_ok());
+        let file = root.join("file");
+        std::fs::write(&file, b"").unwrap();
+        assert!(HostPaths::new(file, resources).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn project_anchor_hash_is_stable() {

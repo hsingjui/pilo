@@ -31,7 +31,7 @@ pub(crate) async fn load(
         json!({ "connectionId": connection_id }),
     );
     let connection = {
-        let db = storage::open(app)?;
+        let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
         let connection = if connection_id == "local" {
             storage::ensure_local_connection(&db)?
         } else {

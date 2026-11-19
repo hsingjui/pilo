@@ -1,6 +1,7 @@
 #![recursion_limit = "256"]
 
 mod desktop_notifications;
+mod desktop_paths;
 mod desktop_shortcut;
 mod desktop_tray;
 mod desktop_window;
@@ -294,7 +295,12 @@ pub fn run() {
         .setup(|app| {
             use tauri::Manager;
 
-            runtime::initialize_server_resource_dir(app.path().resource_dir()?);
+            let paths = runtime::host_paths::HostPaths::new(
+                app.path().app_data_dir().map_err(|error| format!("failed to resolve Pilo app data directory: {error}"))?,
+                app.path().resource_dir()?,
+            )?;
+            runtime::initialize_server_resource_dir(paths.resource_dir().to_owned());
+            app.manage(paths);
             initialize_macos_notification_application(app);
             initialize_windows_notification_application(app);
             app.state::<runtime::RuntimeEventBus>()

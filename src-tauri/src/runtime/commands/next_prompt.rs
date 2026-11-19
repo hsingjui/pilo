@@ -2,14 +2,14 @@ use tauri::{AppHandle, State};
 
 use crate::domain::{NextPromptModel, NextPromptRequest, NextPromptSettings};
 
-use super::super::{PiloRuntime, RuntimeEventBus, host_paths::HostPaths, next_prompt};
+use super::super::{PiloRuntime, RuntimeEventBus, next_prompt};
 
 #[tauri::command]
 pub fn next_prompt_settings_get(
     app: AppHandle,
     connection_id: String,
 ) -> Result<NextPromptSettings, String> {
-    next_prompt::load(&HostPaths::from_app(&app)?, &connection_id)
+    next_prompt::load(&crate::desktop_paths::from_app(&app)?, &connection_id)
 }
 
 #[tauri::command]
@@ -21,7 +21,7 @@ pub fn next_prompt_settings_set(
     model: Option<NextPromptModel>,
 ) -> Result<NextPromptSettings, String> {
     next_prompt::save(
-        &HostPaths::from_app(&app)?,
+        &crate::desktop_paths::from_app(&app)?,
         &events,
         &connection_id,
         enabled,
@@ -35,5 +35,5 @@ pub async fn next_prompt_request(
     runtime: State<'_, PiloRuntime>,
     request: NextPromptRequest,
 ) -> Result<(), String> {
-    next_prompt::request(&HostPaths::from_app(&app)?, &runtime, request).await
+    next_prompt::request(&crate::desktop_paths::from_app(&app)?, &runtime, request).await
 }

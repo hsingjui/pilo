@@ -137,7 +137,7 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
         | "connection.promptEnhancement"
         | "connection.cacheKeepAlive" => {
             let id = required(command.connection_id.as_deref(), "--connection")?;
-            storage::get_connection(&storage::open(app)?, &id)?
+            storage::get_connection(&storage::open(&crate::desktop_paths::from_app(app)?)?, &id)?
                 .ok_or("target connection not found")?;
             match key.as_str() {
                 "connection.namingModel" => {

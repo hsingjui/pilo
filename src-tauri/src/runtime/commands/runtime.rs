@@ -7,9 +7,7 @@ use super::super::{
     PiloRuntime,
     chat_service::{self, ChatSessionRequest},
     events::{RuntimeEventBus, RuntimeEventEnvelope, TauriEventSink},
-    git,
-    host_paths::HostPaths,
-    pi_workspace, project,
+    git, pi_workspace, project,
     server_pi::PiLaunchOptions,
     session_snapshot::PiSessionSnapshot,
 };
@@ -141,7 +139,7 @@ pub async fn chat_session_prepare(
     builtin_extensions: Option<Vec<pilo_protocol::BuiltinExtension>>,
 ) -> Result<PiSessionSnapshot, String> {
     chat_service::prepare(
-        &HostPaths::from_app(&app)?,
+        &crate::desktop_paths::from_app(&app)?,
         &runtime,
         events.inner().clone(),
         ChatSessionRequest {
@@ -171,7 +169,7 @@ pub async fn chat_session_start(
     builtin_extensions: Option<Vec<pilo_protocol::BuiltinExtension>>,
 ) -> Result<PiSessionSnapshot, String> {
     chat_service::start(
-        &HostPaths::from_app(&app)?,
+        &crate::desktop_paths::from_app(&app)?,
         &runtime,
         events.inner().clone(),
         ChatSessionRequest {

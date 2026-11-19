@@ -6,7 +6,7 @@ use tauri_plugin_autostart::ManagerExt;
 pub(crate) const AUTOSTART_ARG: &str = "--autostart";
 
 pub(crate) fn saved_mode(app: &AppHandle) -> Result<AutostartMode, String> {
-    storage::get_autostart_mode(&storage::open(app)?)
+    storage::get_autostart_mode(&storage::open(&crate::desktop_paths::from_app(app)?)?)
 }
 
 fn set_enabled(app: &AppHandle, enabled: bool) -> Result<(), String> {
@@ -37,7 +37,7 @@ pub(crate) fn load(app: &AppHandle) -> Result<AutostartMode, String> {
 }
 
 pub(crate) fn save(app: &AppHandle, mode: AutostartMode) -> Result<AutostartMode, String> {
-    let mut db = storage::open(app)?;
+    let mut db = storage::open(&crate::desktop_paths::from_app(app)?)?;
     // Serialize settings writes across main/session windows, with rollback on OS failure.
     let tx = db
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)

@@ -102,14 +102,15 @@ pub(crate) fn install(app: &AppHandle) -> Result<(), String> {
             .build(),
     )
     .map_err(|error| error.to_string())?;
-    let saved = storage::get_show_shortcut(&storage::open(app)?)?;
+    let saved = storage::get_show_shortcut(&storage::open(&crate::desktop_paths::from_app(app)?)?)?;
     app.global_shortcut()
         .register(parse(&saved)?)
         .map_err(|error| format!("failed to register {saved}: {error}"))
 }
 
 fn load(app: &AppHandle) -> Result<ShortcutSettings, String> {
-    let shortcut = storage::get_show_shortcut(&storage::open(app)?)?;
+    let shortcut =
+        storage::get_show_shortcut(&storage::open(&crate::desktop_paths::from_app(app)?)?)?;
     let registered = app
         .try_state::<GlobalShortcut<tauri::Wry>>()
         .is_some_and(|manager| parse(&shortcut).is_ok_and(|key| manager.is_registered(key)));
@@ -194,7 +195,7 @@ pub(crate) async fn desktop_shortcut_set(
         let manager = app
             .try_state::<GlobalShortcut<tauri::Wry>>()
             .ok_or("global shortcut service unavailable; restart Pilo")?;
-        let mut db = storage::open(&app)?;
+        let mut db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
         // An immediate transaction also serializes changes from multiple windows.
         let tx = db
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)

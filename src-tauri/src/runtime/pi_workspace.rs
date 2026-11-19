@@ -17,7 +17,7 @@ pub(crate) async fn set_local_pi_resources(
     let runtime = app.state::<super::PiloRuntime>();
     let _policy = runtime.pi_resource_policy.write().await;
     {
-        let db = storage::open(app)?;
+        let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
         let connection = storage::get_connection(&db, connection_id)?
             .ok_or_else(|| "SSH connection not found".to_owned())?;
         if connection.pi_runtime != PiRuntime::Local
@@ -30,7 +30,11 @@ pub(crate) async fn set_local_pi_resources(
         }
     }
     stop_for_resource_change(app, &runtime, connection_id).await?;
-    storage::set_local_pi_resources(&storage::open(app)?, connection_id, enabled)?;
+    storage::set_local_pi_resources(
+        &storage::open(&crate::desktop_paths::from_app(app)?)?,
+        connection_id,
+        enabled,
+    )?;
     super::control::changed(app);
     Ok(())
 }
@@ -40,7 +44,7 @@ pub(crate) async fn stop_for_resource_change(
     runtime: &super::PiloRuntime,
     connection_id: &str,
 ) -> Result<(), String> {
-    let projects = storage::list_projects(&storage::open(app)?)?
+    let projects = storage::list_projects(&storage::open(&crate::desktop_paths::from_app(app)?)?)?
         .into_iter()
         .filter(|project| project.connection.id == connection_id)
         .map(|project| project.id)
@@ -87,7 +91,7 @@ pub(crate) fn resolve_session_project(
     app: &AppHandle,
     project: &Project,
 ) -> Result<Project, String> {
-    resolve_session_project_with_paths(&HostPaths::from_app(app)?, project)
+    resolve_session_project_with_paths(&crate::desktop_paths::from_app(app)?, project)
 }
 
 pub(crate) fn resolve_session_project_with_paths(
@@ -108,7 +112,12 @@ pub(crate) async fn resolve_pi_runtime(
     project: &Project,
     extensions: Vec<String>,
 ) -> Result<PiRuntimeProfile, String> {
-    resolve_checked_pi_runtime_with_paths(&HostPaths::from_app(app)?, project, extensions).await
+    resolve_checked_pi_runtime_with_paths(
+        &crate::desktop_paths::from_app(app)?,
+        project,
+        extensions,
+    )
+    .await
 }
 
 pub(crate) async fn resolve_checked_pi_runtime_with_paths(
@@ -216,7 +225,7 @@ fn local_session_anchor(paths: &HostPaths, project_id: &str) -> Result<std::path
 /// Remove the local anchor directory that holds a Local-Pi project's session
 /// files, so a re-added project does not resurrect the previous sessions.
 pub(crate) fn remove_session_anchor(app: &AppHandle, project_id: &str) -> Result<(), String> {
-    let paths = HostPaths::from_app(app)?;
+    let paths = crate::desktop_paths::from_app(app)?;
     let path = paths.session_anchor_path(project_id);
     match fs::remove_dir_all(&path) {
         Ok(()) => Ok(()),

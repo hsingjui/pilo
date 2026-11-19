@@ -33,7 +33,7 @@ pub async fn connection_models_get(
 
 #[tauri::command]
 pub fn connection_naming_model_list(app: AppHandle) -> Result<Vec<ConnectionNamingModel>, String> {
-    storage::list_connection_naming_models(&storage::open(&app)?)
+    storage::list_connection_naming_models(&storage::open(&crate::desktop_paths::from_app(&app)?)?)
 }
 
 #[tauri::command]
@@ -41,7 +41,10 @@ pub fn connection_naming_model_get(
     app: AppHandle,
     connection_id: String,
 ) -> Result<Option<ConnectionNamingModel>, String> {
-    storage::get_connection_naming_model(&storage::open(&app)?, &connection_id)
+    storage::get_connection_naming_model(
+        &storage::open(&crate::desktop_paths::from_app(&app)?)?,
+        &connection_id,
+    )
 }
 
 #[tauri::command]
@@ -56,7 +59,7 @@ pub fn connection_naming_model_set(
         return Err("connection id cannot be empty".to_owned());
     }
 
-    let db = storage::open(&app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
     match (provider, model_id) {
         (None, None) => {
             storage::clear_connection_naming_model(&db, connection_id)?;
@@ -90,7 +93,7 @@ pub fn connection_shown_in_home_set(
     if id.is_empty() {
         return Err("connection id is required".to_owned());
     }
-    let db = storage::open(&app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
     if !storage::set_connection_shown_in_home(&db, id, shown)? {
         return Err(format!("Connection '{id}' was not found"));
     }
@@ -100,7 +103,7 @@ pub fn connection_shown_in_home_set(
 
 #[tauri::command]
 pub fn local_connection_get(app: AppHandle) -> Result<Connection, String> {
-    storage::ensure_local_connection(&storage::open(&app)?)
+    storage::ensure_local_connection(&storage::open(&crate::desktop_paths::from_app(&app)?)?)
 }
 
 #[tauri::command]
@@ -115,7 +118,7 @@ pub fn connection_settings_update(
     if id.is_empty() || name.is_empty() {
         return Err("connection id and name are required".to_owned());
     }
-    let db = storage::open(&app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
     let mut connection = if id == "local" {
         storage::ensure_local_connection(&db)?
     } else {
@@ -137,7 +140,7 @@ pub async fn connection_pi_probe(
     id: String,
     executable: Option<String>,
 ) -> Result<PiExecutableInfo, String> {
-    let db = storage::open(&app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
     let connection = if id == "local" {
         storage::ensure_local_connection(&db)?
     } else {
@@ -174,7 +177,7 @@ pub struct ConnectionHealth {
 }
 
 fn get_connection(app: &AppHandle, id: &str) -> Result<Connection, String> {
-    let db = storage::open(app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
     if id == "local" {
         storage::ensure_local_connection(&db)
     } else {
@@ -281,11 +284,12 @@ async fn stop_connection_projects(
     runtime: &PiloRuntime,
     connection_id: &str,
 ) -> Result<(), String> {
-    let project_ids = storage::list_projects(&storage::open(app)?)?
-        .into_iter()
-        .filter(|project| project.connection.id == connection_id)
-        .map(|project| project.id)
-        .collect::<Vec<_>>();
+    let project_ids =
+        storage::list_projects(&storage::open(&crate::desktop_paths::from_app(app)?)?)?
+            .into_iter()
+            .filter(|project| project.connection.id == connection_id)
+            .map(|project| project.id)
+            .collect::<Vec<_>>();
     for project_id in project_ids {
         runtime.chat_sessions.stop_project(&project_id).await?;
     }

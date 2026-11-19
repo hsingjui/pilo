@@ -62,7 +62,7 @@ pub(crate) struct RemoteServerManager {
 
 impl RemoteServerManager {
     pub(crate) async fn restore(&self, app: AppHandle) -> Result<(), String> {
-        let paths = HostPaths::from_app(&app)?;
+        let paths = crate::desktop_paths::from_app(&app)?;
         let config = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
         if !config.enabled {
             return Ok(());
@@ -79,7 +79,7 @@ impl RemoteServerManager {
         app: AppHandle,
         enabled: bool,
     ) -> Result<RemoteHostState, String> {
-        let paths = HostPaths::from_app(&app)?;
+        let paths = crate::desktop_paths::from_app(&app)?;
         let mut config = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
         if enabled {
             self.start(app.clone(), config.port).await?;
@@ -103,7 +103,7 @@ impl RemoteServerManager {
                 "Remote WebUI port must be between {MIN_REMOTE_PORT} and 65535"
             ));
         }
-        let paths = HostPaths::from_app(&app)?;
+        let paths = crate::desktop_paths::from_app(&app)?;
         let mut config = storage::get_remote_host_config(&storage::open_with_paths(&paths)?)?;
         if config.port == port {
             return self.snapshot(&app).await;
@@ -189,7 +189,7 @@ impl RemoteServerManager {
         &self,
         app: &AppHandle,
     ) -> Result<RemoteHostState, String> {
-        let paths = HostPaths::from_app(app)?;
+        let paths = crate::desktop_paths::from_app(app)?;
         let inner = self.inner.lock().await;
         let running = inner
             .running
@@ -213,7 +213,7 @@ impl RemoteServerManager {
         config: RemoteAccessConfig,
     ) -> Result<RemoteHostState, String> {
         let config = access::normalize_config(config)?;
-        let paths = HostPaths::from_app(&app)?;
+        let paths = crate::desktop_paths::from_app(&app)?;
         let inner = self.inner.lock().await;
         let lan_base_url = inner
             .running
@@ -293,7 +293,7 @@ impl RemoteServerManager {
         app: &AppHandle,
         device_id: &str,
     ) -> Result<RemoteHostState, String> {
-        let paths = HostPaths::from_app(app)?;
+        let paths = crate::desktop_paths::from_app(app)?;
         let db = storage::open_with_paths(&paths)?;
         if !storage::revoke_remote_device(&db, device_id, storage::now_ms())? {
             return Err(format!(
@@ -313,7 +313,7 @@ impl RemoteServerManager {
         device_id: &str,
         name: &str,
     ) -> Result<RemoteHostState, String> {
-        let paths = HostPaths::from_app(app)?;
+        let paths = crate::desktop_paths::from_app(app)?;
         let db = storage::open_with_paths(&paths)?;
         let name = super::auth::normalize_device_name(Some(name));
         if !storage::rename_remote_device(&db, device_id, &name)? {
@@ -325,7 +325,7 @@ impl RemoteServerManager {
     }
 
     pub(crate) async fn snapshot(&self, app: &AppHandle) -> Result<RemoteHostState, String> {
-        let paths = HostPaths::from_app(app)?;
+        let paths = crate::desktop_paths::from_app(app)?;
         let inner = self.inner.lock().await;
         let running = inner.running.as_ref().map(|server| {
             (
@@ -438,7 +438,7 @@ impl RemoteServerManager {
             .map_err(|error| format!("failed to read Remote WebUI listener address: {error}"))?
             .port();
         let lan_base_url = format!("http://{}:{actual_port}", lan_ip());
-        let paths = HostPaths::from_app(&app)?;
+        let paths = crate::desktop_paths::from_app(&app)?;
         let pairing = Arc::new(PairingSession::default());
         let pairing_for_init = pairing.clone();
         let paths_for_init = paths.clone();

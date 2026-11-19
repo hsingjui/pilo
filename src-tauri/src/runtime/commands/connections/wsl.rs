@@ -21,7 +21,7 @@ pub struct WslConnectionInfo {
 
 #[tauri::command]
 pub fn wsl_connection_list(app: AppHandle) -> Result<Vec<WslConnectionInfo>, String> {
-    let db = storage::open(&app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
     storage::list_connections(&db)?
         .into_iter()
         .filter(|connection| matches!(connection.kind, ConnectionKind::Wsl { .. }))
@@ -53,7 +53,7 @@ pub fn wsl_connection_save(
     connection: Connection,
 ) -> Result<WslConnectionInfo, String> {
     ensure_wsl_connection(&connection)?;
-    let db = storage::open(&app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
     storage::upsert_connection(&db, &connection)?;
     Ok(WslConnectionInfo {
         project_count: storage::connection_project_count(&db, &connection.id)?,
@@ -68,7 +68,7 @@ pub async fn wsl_connection_remove(
     id: String,
 ) -> Result<(), String> {
     stop_connection_projects(&app, &runtime, &id).await?;
-    let db = storage::open(&app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
     storage::remove_connection(&db, &id)?;
     Ok(())
 }

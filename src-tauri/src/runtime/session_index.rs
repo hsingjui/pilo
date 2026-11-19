@@ -3,10 +3,10 @@ use std::{
     collections::{BTreeMap, HashMap},
 };
 
+use super::host_paths::HostPaths;
 use pilo_protocol::SessionFile;
 use rusqlite::{Connection as SqliteConnection, Transaction, TransactionBehavior};
 use serde_json::Value;
-use tauri::AppHandle;
 
 use crate::domain::{Project, SessionIndexEntry, SessionReconcileResult};
 
@@ -142,26 +142,29 @@ fn write_transaction(db: &mut SqliteConnection) -> Result<Transaction<'_>, Strin
         .map_err(|error| error.to_string())
 }
 
-pub fn list_cached(app: &AppHandle, project_id: &str) -> Result<Vec<SessionIndexEntry>, String> {
-    storage::list_sessions(&storage::open(app)?, project_id)
+pub fn list_cached(
+    host_paths: &HostPaths,
+    project_id: &str,
+) -> Result<Vec<SessionIndexEntry>, String> {
+    storage::list_sessions(&storage::open(host_paths)?, project_id)
 }
 
 pub async fn reconcile(
-    app: &AppHandle,
+    host_paths: &HostPaths,
     servers: &ServerManager,
     project: &Project,
 ) -> Result<SessionReconcileWork, String> {
     if project.default_workspace_pending() {
         return Ok(SessionReconcileWork {
             result: SessionReconcileResult {
-                sessions: list_cached(app, &project.id)?,
+                sessions: list_cached(host_paths, &project.id)?,
                 ..SessionReconcileResult::default()
             },
             deferred_paths: Vec::new(),
         });
     }
-    let session_project = pi_workspace::resolve_session_project(app, project)?;
-    let mut db = storage::open(app)?;
+    let session_project = pi_workspace::resolve_session_project_with_paths(host_paths, project)?;
+    let mut db = storage::open(host_paths)?;
     let cached = storage::list_sessions(&db, &project.id)?;
     let files = scan_files(
         servers,
@@ -234,16 +237,16 @@ pub async fn reconcile(
 }
 
 pub async fn index_paths(
-    app: &AppHandle,
+    host_paths: &HostPaths,
     servers: &ServerManager,
     project: &Project,
     paths: &[String],
 ) -> Result<usize, String> {
-    reconcile_paths(app, servers, project, paths, &[]).await
+    reconcile_paths(host_paths, servers, project, paths, &[]).await
 }
 
 pub async fn reconcile_paths(
-    app: &AppHandle,
+    host_paths: &HostPaths,
     servers: &ServerManager,
     project: &Project,
     paths: &[String],
@@ -252,9 +255,9 @@ pub async fn reconcile_paths(
     if paths.is_empty() && removed_paths.is_empty() {
         return Ok(0);
     }
-    let session_project = pi_workspace::resolve_session_project(app, project)?;
+    let session_project = pi_workspace::resolve_session_project_with_paths(host_paths, project)?;
     let files = scan_files(servers, &session_project, &[], None, paths).await?;
-    let mut db = storage::open(app)?;
+    let mut db = storage::open(host_paths)?;
     let transaction = write_transaction(&mut db)?;
     let mut changed = 0_usize;
     for path in removed_paths {

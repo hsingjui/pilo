@@ -12,7 +12,7 @@ pub(crate) mod desktop_startup;
 mod events;
 mod file_links;
 mod git;
-mod host_paths;
+pub(crate) mod host_paths;
 mod next_prompt;
 pub mod nsh_spike;
 mod parallel;

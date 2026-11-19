@@ -188,7 +188,7 @@ async fn execute(
         "settings.list" => Ok(catalog()),
         "settings.get" | "settings.set" | "settings.reset" => settings(app, command).await,
         "connections.list" => {
-            let db = storage::open(app)?;
+            let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
             storage::ensure_local_connection(&db)?;
             storage::list_connections(&db)?.into_iter().map(|connection| {
                 let has_password = matches!(connection.kind, ConnectionKind::Ssh { .. }) && super::credentials::has_ssh_password(&connection.id);
@@ -218,10 +218,11 @@ async fn execute(
             }
             let id = save.connection.id.clone();
             let shown = save.connection.shown_in_home;
-            if let Some(existing) =
-                storage::get_connection(&storage::open(app)?, &save.connection.id)?
-                && std::mem::discriminant(&existing.kind)
-                    != std::mem::discriminant(&save.connection.kind)
+            if let Some(existing) = storage::get_connection(
+                &storage::open(&crate::desktop_paths::from_app(app)?)?,
+                &save.connection.id,
+            )? && std::mem::discriminant(&existing.kind)
+                != std::mem::discriminant(&save.connection.kind)
             {
                 return Err(
                     "cannot change an existing connection kind; create a new connection ID"
@@ -248,7 +249,10 @@ async fn execute(
                     if save.password.is_some() {
                         return Err("password is only supported for SSH".to_owned());
                     }
-                    storage::upsert_connection(&storage::open(app)?, &save.connection)?;
+                    storage::upsert_connection(
+                        &storage::open(&crate::desktop_paths::from_app(app)?)?,
+                        &save.connection,
+                    )?;
                 }
             };
             let connection = commands::connection_shown_in_home_set(app.clone(), id, shown)?;

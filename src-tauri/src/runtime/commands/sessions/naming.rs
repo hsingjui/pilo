@@ -35,8 +35,10 @@ pub async fn generate_session_title(
     }
 
     let project = project::get(app, project_id)?;
-    let naming_model =
-        storage::get_connection_naming_model(&storage::open(app)?, &project.connection.id)?;
+    let naming_model = storage::get_connection_naming_model(
+        &storage::open(&crate::desktop_paths::from_app(app)?)?,
+        &project.connection.id,
+    )?;
     let Some(naming_model) = naming_model else {
         return Ok(None);
     };

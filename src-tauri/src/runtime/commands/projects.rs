@@ -89,7 +89,7 @@ pub fn project_model_scope_set(
 
 #[tauri::command]
 pub fn project_model_cache_list(app: AppHandle) -> Result<Vec<ProjectModelCache>, String> {
-    storage::list_project_model_cache(&storage::open(&app)?)
+    storage::list_project_model_cache(&storage::open(&crate::desktop_paths::from_app(&app)?)?)
 }
 
 #[tauri::command]
@@ -110,7 +110,10 @@ pub fn project_model_cache_set(
         default_thinking_level,
         refreshed_at_ms,
     };
-    storage::upsert_project_model_cache(&storage::open(&app)?, &cache)?;
+    storage::upsert_project_model_cache(
+        &storage::open(&crate::desktop_paths::from_app(&app)?)?,
+        &cache,
+    )?;
     Ok(cache)
 }
 

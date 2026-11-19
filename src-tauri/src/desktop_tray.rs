@@ -101,9 +101,11 @@ pub(crate) fn desktop_tray_set_labels(app: AppHandle, labels: TrayLabels) -> Res
 
 #[tauri::command]
 pub(crate) async fn desktop_exit_on_close_get(app: AppHandle) -> Result<bool, String> {
-    tauri::async_runtime::spawn_blocking(move || storage::get_exit_on_close(&storage::open(&app)?))
-        .await
-        .map_err(|error| error.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        storage::get_exit_on_close(&storage::open(&crate::desktop_paths::from_app(&app)?)?)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -112,7 +114,10 @@ pub(crate) async fn desktop_exit_on_close_set(
     enabled: bool,
 ) -> Result<bool, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        storage::set_exit_on_close(&storage::open(&app)?, enabled)?;
+        storage::set_exit_on_close(
+            &storage::open(&crate::desktop_paths::from_app(&app)?)?,
+            enabled,
+        )?;
         Ok(enabled)
     })
     .await
@@ -123,7 +128,8 @@ pub(crate) fn handle_window_event(window: &tauri::Window, event: &tauri::WindowE
     let app = window.app_handle();
     let result = match event {
         tauri::WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
-            let exit_on_close = storage::open(app)
+            let exit_on_close = crate::desktop_paths::from_app(app)
+                .and_then(|paths| storage::open(&paths))
                 .and_then(|db| storage::get_exit_on_close(&db))
                 .unwrap_or_else(|error| {
                     log::error!(target: "desktop", "failed to load close behavior: {error}");

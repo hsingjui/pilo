@@ -74,6 +74,7 @@ impl SessionWatcherManager {
             return Ok(());
         }
         let started = Instant::now();
+        let host_paths = crate::desktop_paths::from_app(&app)?;
         let session_project = pi_workspace::resolve_session_project(&app, &project)
             .inspect_err(|error| log_start_failure(&project.id, "resolve", started, error))?;
         let client = servers
@@ -144,7 +145,7 @@ impl SessionWatcherManager {
                                     notices.changed();
                                 } else {
                                     match session_index::reconcile_paths(
-                                        &event_app,
+                                        &host_paths,
                                         &event_servers,
                                         &event_project,
                                         &paths,

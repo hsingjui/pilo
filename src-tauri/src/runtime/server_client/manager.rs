@@ -141,7 +141,7 @@ impl ServerManager {
 
     fn ssh_target_is_current(&self, connection: &Connection) -> Result<bool, String> {
         use crate::runtime::storage;
-        let db = storage::open(&self.control_app()?)?;
+        let db = storage::open(&crate::desktop_paths::from_app(&self.control_app()?)?)?;
         Ok(storage::get_connection(&db, &connection.id)?
             .is_some_and(|current| current.kind == connection.kind))
     }

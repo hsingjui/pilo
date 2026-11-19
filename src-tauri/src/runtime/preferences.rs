@@ -113,7 +113,7 @@ pub(crate) fn validate_shortcuts(values: &Map<String, Value>, global: &str) -> R
 }
 
 pub(crate) fn load(app: &AppHandle) -> Result<PreferencesSnapshot, String> {
-    storage::get_preferences(&storage::open(app)?)
+    storage::get_preferences(&storage::open(&crate::desktop_paths::from_app(app)?)?)
 }
 
 pub(crate) fn save(
@@ -138,7 +138,11 @@ pub(crate) fn save(
         }
     }
     validate(&patch)?;
-    let snapshot = storage::patch_preferences(&mut storage::open(app)?, patch, migrate)?;
+    let snapshot = storage::patch_preferences(
+        &mut storage::open(&crate::desktop_paths::from_app(app)?)?,
+        patch,
+        migrate,
+    )?;
     events.send(RuntimeEventEnvelope::global(
         RuntimeEvent::PreferencesChanged {
             settings: snapshot.clone(),

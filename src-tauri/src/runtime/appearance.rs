@@ -14,7 +14,7 @@ pub(crate) async fn load(
     initial: Option<ThemeSettings>,
 ) -> Result<ThemeSettings, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let db = storage::open(&app)?;
+        let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
         if let Some(initial) = initial {
             let current = storage::get_theme_settings(&db)?;
             if current.revision > 0 {
@@ -41,7 +41,10 @@ pub(crate) async fn save(
     update: ThemeSettingsUpdate,
 ) -> Result<ThemeSettings, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let settings = storage::update_theme_settings(&mut storage::open(&app)?, update)?;
+        let settings = storage::update_theme_settings(
+            &mut storage::open(&crate::desktop_paths::from_app(&app)?)?,
+            update,
+        )?;
         events.send(RuntimeEventEnvelope::global(
             RuntimeEvent::ThemeSettingsChanged {
                 settings: settings.clone(),

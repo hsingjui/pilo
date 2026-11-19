@@ -65,7 +65,7 @@ impl Drop for BackgroundSessionIndexLease {
 
 #[tauri::command]
 pub fn session_list(app: AppHandle, project_id: String) -> Result<Vec<SessionIndexEntry>, String> {
-    session_index::list_cached(&app, &project_id)
+    session_index::list_cached(&crate::desktop_paths::from_app(&app)?, &project_id)
 }
 
 #[tauri::command]
@@ -75,7 +75,13 @@ pub async fn session_reconcile(
     project_id: String,
 ) -> Result<SessionReconcileResult, String> {
     let project = project::get(&app, &project_id)?;
-    let work = session_index::reconcile(&app, &runtime.servers, &project).await?;
+    let host_paths = crate::desktop_paths::from_app(&app)?;
+    let work = session_index::reconcile(
+        &crate::desktop_paths::from_app(&app)?,
+        &runtime.servers,
+        &project,
+    )
+    .await?;
     if !work.deferred_paths.is_empty() {
         let should_start_background_index = {
             let mut manager = runtime
@@ -115,7 +121,7 @@ pub async fn session_reconcile(
                         .map(|(path, _)| path.clone())
                         .collect::<Vec<_>>();
                     match session_index::index_paths(
-                        &background_app,
+                        &host_paths,
                         &background_servers,
                         &background_project,
                         &paths,
@@ -220,7 +226,7 @@ pub async fn session_delete(
     session_path: String,
 ) -> Result<SessionDeleteResult, String> {
     let project = session_runtime_project(&app, &project_id)?;
-    let db = storage::open(&app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
     let indexed = storage::get_session(&db, &session_path, Some(&project.id))?
         .ok_or_else(|| format!("session '{session_path}' is not indexed"))?;
     if indexed.project_id != project.id {
@@ -268,7 +274,7 @@ pub fn session_update_ui_state(
     project_id: Option<String>,
 ) -> Result<SessionIndexEntry, String> {
     storage::update_session_ui_state(
-        &storage::open(&app)?,
+        &storage::open(&crate::desktop_paths::from_app(&app)?)?,
         &session_path,
         &update,
         project_id.as_deref(),

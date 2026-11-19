@@ -6,7 +6,6 @@ use std::{
 };
 
 use rusqlite::{Connection as SqliteConnection, Transaction, TransactionBehavior, params};
-use tauri::AppHandle;
 
 use super::super::host_paths::HostPaths;
 static INITIALIZED_DATABASES: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
@@ -18,8 +17,8 @@ pub fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
-pub fn open(app: &AppHandle) -> Result<SqliteConnection, String> {
-    open_with_paths(&HostPaths::from_app(app)?)
+pub fn open(paths: &HostPaths) -> Result<SqliteConnection, String> {
+    open_with_paths(paths)
 }
 
 pub(crate) fn open_with_paths(paths: &HostPaths) -> Result<SqliteConnection, String> {

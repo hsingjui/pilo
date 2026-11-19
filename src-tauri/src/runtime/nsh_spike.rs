@@ -28,7 +28,7 @@ impl SpikeHost {
     /// `server_binary` as their `pilo-server`.
     pub fn open(app_data_dir: PathBuf, server_binary: PathBuf) -> Result<Self, String> {
         super::initialize_local_server_binary(server_binary);
-        let paths = HostPaths::new(app_data_dir)?;
+        let paths = HostPaths::new(app_data_dir, PathBuf::new())?;
         storage::open_with_paths(&paths)?;
         let runtime = Arc::new(PiloRuntime::default());
         // Agent control attaches through the Tauri app (`runtime::control`).

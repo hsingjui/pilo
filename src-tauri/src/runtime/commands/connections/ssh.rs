@@ -47,7 +47,7 @@ fn ensure_ssh_connection(connection: &Connection) -> Result<(), String> {
 
 #[tauri::command]
 pub fn ssh_connection_list(app: AppHandle) -> Result<Vec<SshConnectionInfo>, String> {
-    let db = storage::open(&app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
     storage::list_connections(&db)?
         .into_iter()
         .filter(|connection| matches!(connection.kind, ConnectionKind::Ssh { .. }))
@@ -84,7 +84,7 @@ pub async fn ssh_connection_save(
     }
     let _policy = runtime.pi_resource_policy.write().await;
     let current = {
-        let db = storage::open(&app)?;
+        let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
         storage::get_local_pi_resources(&db, &request.connection.id)?
     };
     let enabled = request.connection.pi_runtime == crate::domain::PiRuntime::Local
@@ -97,7 +97,7 @@ pub async fn ssh_connection_save(
         )
         .await?;
     }
-    let mut db = storage::open(&app)?;
+    let mut db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
     let db = db.transaction().map_err(|error| error.to_string())?;
     if password_auth {
         if let Some(password) = request.password.as_deref() {
@@ -121,7 +121,7 @@ pub async fn ssh_connection_save(
 
 #[tauri::command]
 pub fn ssh_connection_password_get(app: AppHandle, id: String) -> Result<Option<String>, String> {
-    let db = storage::open(&app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
     let connection = storage::get_connection(&db, id.trim())?
         .ok_or_else(|| format!("SSH connection '{id}' was not found"))?;
     ensure_ssh_connection(&connection)?;
@@ -136,7 +136,7 @@ pub async fn ssh_connection_remove(
 ) -> Result<(), String> {
     let _policy = runtime.pi_resource_policy.write().await;
     stop_connection_projects(&app, &runtime, &id).await?;
-    let db = storage::open(&app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
     storage::remove_connection(&db, &id)?;
     credentials::delete_ssh_password(&id)?;
     Ok(())
@@ -148,7 +148,7 @@ pub async fn ssh_connection_test(
     runtime: State<'_, PiloRuntime>,
     id: String,
 ) -> Result<ConnectionTestResult, String> {
-    let db = storage::open(&app)?;
+    let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
     let connection = storage::get_connection(&db, &id)?
         .ok_or_else(|| format!("SSH connection '{id}' was not found"))?;
     ensure_ssh_connection(&connection)?;
