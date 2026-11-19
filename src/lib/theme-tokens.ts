@@ -85,8 +85,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** 有限的十进制数；位数太多溢出成 `Infinity` 的视为无效。 */
 function parseNumber(text: string): number | undefined {
-	return PLAIN_NUMBER.test(text) ? Number(text) : undefined;
+	if (!PLAIN_NUMBER.test(text)) return;
+	const value = Number(text);
+	return Number.isFinite(value) ? value : undefined;
 }
 
 /** 0–1 的数字或百分比；超出范围视为无效。 */
@@ -190,8 +193,10 @@ export function parseThemeColor(value: string): string | undefined {
 export function parseThemeLength(value: string): number | undefined {
 	const match = LENGTH.exec(value.trim());
 	if (!match) return;
-	const points = Number(match[1]) * (match[2] === "rem" ? 16 : 1);
-	return points >= 0 ? points : undefined;
+	const number = parseNumber(match[1]);
+	if (number === undefined) return;
+	const points = number * (match[2] === "rem" ? 16 : 1);
+	return Number.isFinite(points) && points >= 0 ? points : undefined;
 }
 
 /** nsh 字体 token 只读字体列表里的第一个字体（去掉引号）；WebUI 用整个列表。 */

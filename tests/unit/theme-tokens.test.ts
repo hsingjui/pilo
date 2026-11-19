@@ -168,6 +168,28 @@ test("opaque colors are exactly the tokens the WebUI CSS holds as HSL channels",
 	}
 });
 
+test("numbers that overflow to Infinity are rejected everywhere", () => {
+	const huge = "9".repeat(400);
+	for (const input of [
+		`hsl(${huge} 50% 50%)`,
+		`hsl(${huge}deg 50% 50%)`,
+		`hsl(0 ${huge}% 50%)`,
+		`hsl(0 50% 50% / ${huge}%)`,
+		`rgb(${huge} 0 0)`,
+		`rgba(0, 0, 0, ${huge})`,
+	]) {
+		assert.equal(parseThemeColor(input), undefined, input);
+		assert.equal(isValidThemeTokenValue("opaque-color", input), false, input);
+	}
+	assert.equal(parseThemeLength(`${huge}px`), undefined);
+	assert.equal(parseThemeLength(`${"9".repeat(308)}rem`), undefined);
+	assert.equal(isValidThemeTokenValue("number", huge), false);
+	assert.equal(
+		parseThemeColor("hsl(-3600.5 50% 50%)"),
+		parseThemeColor("hsl(359.5 50% 50%)"),
+	);
+});
+
 test("lengths are non-negative px or rem, in points", () => {
 	assert.equal(parseThemeLength("12px"), 12);
 	assert.equal(parseThemeLength("0.75rem"), 12);
