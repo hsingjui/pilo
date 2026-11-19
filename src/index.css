@@ -790,6 +790,13 @@
 	:root[data-remote-webui] [data-chat-composer-input] {
 		font-size: max(16px, var(--pilo-reading-font-size));
 	}
+
+	/* Header icons are 28px for desktop density; landscape phones and tablets
+	   use this layout too, so keep the 44px touch floor across the whole range. */
+	[data-remote-webui] > main > header button {
+		min-width: 2.75rem;
+		min-height: 2.75rem;
+	}
 }
 
 @media (max-width: 639px) {
@@ -828,11 +835,6 @@
 	/* 手机上消息与输入框应该占满宽度，94% 在 390px 下仍会浪费掉两侧各 12px。 */
 	[data-remote-webui] {
 		--conversation-max-width: 100%;
-	}
-
-	[data-remote-webui] > main > header button {
-		min-width: 2.5rem;
-		min-height: 2.5rem;
 	}
 }
 

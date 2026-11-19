@@ -68,7 +68,7 @@ export function ChatPendingQueue({
 											type="button"
 											variant="ghost"
 											size="icon"
-											className="size-7 rounded-md motion-reduce:active:scale-100"
+											className="size-7 rounded-md motion-reduce:active:scale-100 pointer-coarse:-my-2 pointer-coarse:size-11"
 											aria-label={t("chat.retrieveEdit")}
 											onClick={() => onEdit?.(item)}
 										>
@@ -83,7 +83,7 @@ export function ChatPendingQueue({
 											type="button"
 											variant="ghost"
 											size="icon"
-											className="size-7 rounded-md motion-reduce:active:scale-100"
+											className="size-7 rounded-md motion-reduce:active:scale-100 pointer-coarse:-my-2 pointer-coarse:size-11"
 											aria-label={t("chat.interruptSend")}
 											onClick={() => onSendNow?.(item)}
 										>

@@ -892,9 +892,11 @@ function RemoteWorkspace() {
 							</Dialog>
 
 							{visibleError ? (
+								// Anchor below the header: the bottom edge belongs to the composer
+								// and soft keyboard, while file tabs hide the composer region.
 								<div
 									role="alert"
-									className="fixed inset-x-3 bottom-24 z-50 mx-auto max-w-lg rounded-xl border border-destructive/30 bg-background px-3 py-2 text-xs shadow-lg"
+									className="fixed inset-x-3 top-[calc(env(safe-area-inset-top)+3.25rem)] z-50 mx-auto max-w-lg rounded-xl border border-destructive/30 bg-background px-3 py-2 text-xs shadow-lg"
 								>
 									<div className="flex items-start gap-2">
 										<p className="min-w-0 flex-1 break-words text-destructive">

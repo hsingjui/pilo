@@ -647,6 +647,8 @@ actions go there and appear only for persisted sessions (`session && !session.te
   When verification is authorized, delay history/RPC loads and cover A → B,
   A → B → C, A → draft, failed loads, identical notification IDs/messages across
   sessions, and old-session events arriving during the switch on narrow/wide WebUI.
+  On coarse pointers, keep each `PiExtensionNotifications` dismiss button's
+  44px hit area inside its own row, even for consecutive single-line notices.
   Regression page: `tests/browser/remote-session-isolation.html` mounts the real
   `RemoteApp` with deferred Host/Pi fixtures and restores browser state on exit.
 - Keep `ChatComposer.submitBlocked` separate from `disabled`: it blocks the
