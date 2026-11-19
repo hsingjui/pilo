@@ -130,20 +130,7 @@ fn serialize(
     window: TranscriptWindow,
     fingerprint: Option<SessionFileFingerprint>,
 ) -> Result<Value, String> {
-    let (history, index) = serialize_windowed_history(parser.finish())?;
-    let bytes = match window.message_limit {
-        Some(limit) => serialize_history_window_response(
-            &history,
-            &index,
-            window.start_message,
-            limit,
-            window.include_message_index,
-            fingerprint,
-        ),
-        None => serialize_history_response(&history, fingerprint),
-    };
-    serde_json::from_slice(&bytes)
-        .map_err(|error| format!("transcript history serialization failed: {error}"))
+    serialize_windowed_projection(parser.finish(), window, fingerprint)
 }
 
 pub(crate) async fn read_transcript_history(
@@ -165,6 +152,44 @@ pub(super) fn read_local_history(
     base: Option<&TranscriptBase>,
     window: TranscriptWindow,
 ) -> Result<Value, String> {
+    let (history, fingerprint) = read_local_projection(path, base)?;
+    serialize_windowed_projection(history, window, Some(fingerprint))
+}
+
+pub(super) fn serialize_windowed_projection(
+    history: super::types::SessionHistory,
+    window: TranscriptWindow,
+    fingerprint: Option<SessionFileFingerprint>,
+) -> Result<Value, String> {
+    let (history, index) = serialize_windowed_history(history)?;
+    serialize_projection_window(&history, &index, window, fingerprint)
+}
+
+pub(super) fn serialize_projection_window(
+    history: &[u8],
+    index: &super::cache::SessionHistoryWindowIndex,
+    window: TranscriptWindow,
+    fingerprint: Option<SessionFileFingerprint>,
+) -> Result<Value, String> {
+    let bytes = match window.message_limit {
+        Some(limit) => serialize_history_window_response(
+            history,
+            index,
+            window.start_message,
+            limit,
+            window.include_message_index,
+            fingerprint,
+        ),
+        None => serialize_history_response(history, fingerprint),
+    };
+    serde_json::from_slice(&bytes)
+        .map_err(|error| format!("transcript history serialization failed: {error}"))
+}
+
+pub(super) fn read_local_projection(
+    path: &Path,
+    base: Option<&TranscriptBase>,
+) -> Result<(super::types::SessionHistory, SessionFileFingerprint), String> {
     let mut file =
         File::open(path).map_err(|error| format!("transcript history open failed: {error}"))?;
     let before = file.metadata().map_err(|error| error.to_string())?;
@@ -202,14 +227,13 @@ pub(super) fn read_local_history(
         .map_err(|error| error.to_string())?
         .as_nanos();
     let file_mtime_ns = u64::try_from(mtime).map_err(|error| error.to_string())?;
-    serialize(
-        parser,
-        window,
-        Some(SessionFileFingerprint {
+    Ok((
+        parser.finish(),
+        SessionFileFingerprint {
             file_size: size,
             file_mtime_ns,
-        }),
-    )
+        },
+    ))
 }
 
 #[cfg(test)]

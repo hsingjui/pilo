@@ -71,6 +71,13 @@ pub async fn read_history_json(
 ) -> Result<Vec<u8>, String> {
     let (storage, _, fingerprint) =
         load_history(servers, cache, project, path, expected_fingerprint).await?;
+    respond_with_history(storage, fingerprint).await
+}
+
+async fn respond_with_history(
+    storage: HistoryStorage,
+    fingerprint: Option<SessionFileFingerprint>,
+) -> Result<Vec<u8>, String> {
     match storage {
         HistoryStorage::Memory(serialized) => {
             Ok(serialize_history_response(&serialized, fingerprint))
@@ -97,6 +104,27 @@ pub async fn read_history_window_json(
 ) -> Result<Vec<u8>, String> {
     let (storage, index, fingerprint) =
         load_history(servers, cache, project, path, expected_fingerprint).await?;
+    respond_with_window(
+        storage,
+        index,
+        start_message,
+        message_limit,
+        include_message_index,
+        fingerprint,
+    )
+    .await
+}
+
+// Thin pass-through from Tauri commands: splitting the arguments would only move them around.
+#[allow(clippy::too_many_arguments)]
+async fn respond_with_window(
+    storage: HistoryStorage,
+    index: Arc<SessionHistoryWindowIndex>,
+    start_message: Option<usize>,
+    message_limit: usize,
+    include_message_index: bool,
+    fingerprint: Option<SessionFileFingerprint>,
+) -> Result<Vec<u8>, String> {
     match storage {
         HistoryStorage::Memory(serialized) => Ok(serialize_history_window_response(
             &serialized,
@@ -126,7 +154,7 @@ async fn load_history(
     path: &str,
     expected_fingerprint: Option<(u64, u64)>,
 ) -> Result<LoadedHistory, String> {
-    let key = cache_key(project, path);
+    let key = cache_key(&project.id, path);
     let load_lock = cache.lock().await.load_lock(&key);
     let _load_guard = load_lock.lock().await;
     let mut source_confirmed = expected_fingerprint.is_none();
@@ -236,7 +264,19 @@ async fn load_incremental(
         target: "session-history",
         "incremental history load read {bytes_read} bytes from offset {start}"
     );
-    let key = cache_key(project, path);
+    let key = cache_key(&project.id, path);
+    store_loaded_history(cache, key, fingerprint, storage, index, load_permit).await
+}
+
+/// Caches a freshly loaded projection under its fingerprint in memory or on disk.
+async fn store_loaded_history(
+    cache: &tokio::sync::Mutex<SessionHistoryCache>,
+    key: String,
+    fingerprint: SessionFileFingerprint,
+    storage: HistoryStorage,
+    index: Arc<SessionHistoryWindowIndex>,
+    load_permit: &LoadPermit,
+) -> Result<LoadedHistory, String> {
     match storage {
         HistoryStorage::Memory(serialized) => {
             store_history(

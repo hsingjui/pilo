@@ -356,7 +356,7 @@ impl SessionHistoryCache {
     }
 
     pub(crate) fn invalidate(&mut self, project: &Project, path: &str) {
-        let key = cache_key(project, path);
+        let key = cache_key(&project.id, path);
         self.remove(&key);
         self.remove_image_locations(&key);
     }
@@ -409,8 +409,8 @@ fn estimated_history_bytes(fingerprint: SessionFileFingerprint) -> usize {
         .saturating_mul(SESSION_HISTORY_CACHE_ESTIMATE_MULTIPLIER)
 }
 
-pub(super) fn cache_key(project: &Project, path: &str) -> String {
-    format!("{}\0{path}", project.id)
+pub(super) fn cache_key(project_id: &str, path: &str) -> String {
+    format!("{project_id}\0{path}")
 }
 
 pub(super) fn fingerprint_from_metadata(metadata: &Value) -> Option<SessionFileFingerprint> {

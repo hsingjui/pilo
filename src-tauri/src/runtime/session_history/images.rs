@@ -24,7 +24,7 @@ pub async fn read_history_image_bytes(
     image_id: &str,
     expected_fingerprint: Option<(u64, u64)>,
 ) -> Result<Vec<u8>, String> {
-    let key = cache_key(project, path);
+    let key = cache_key(&project.id, path);
     let load_lock = cache.lock().await.load_lock(&key);
     let load_guard = load_lock.lock().await;
     let fingerprint = match expected_fingerprint {
