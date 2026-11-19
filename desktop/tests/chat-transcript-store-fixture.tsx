@@ -85,18 +85,21 @@ async function run() {
 			onStatus: () => wake(),
 		});
 
-		// A chat with no Pi and nothing read from a session file is empty, and
-		// opening it starts none.
-		await chat.open({ sessionKey: savedKey, projectId }, app.connected);
+		// A chat with no Pi and no session file is empty, and opening it
+		// starts none.
+		await chat.open({ sessionKey: unsavedKey, projectId }, app.connected);
 		assert(
 			chat.state().status === "ready" &&
 				chat.state().source === "history" &&
 				chat.state().conversation?.messages.length === 0 &&
 				snapshots === 0 &&
-				(await client.chatState(savedKey)) === null,
-			`unexpected state for a chat with no Pi: ${describe()}`,
+				histories === 0 &&
+				(await client.chatState(unsavedKey)) === null,
+			`unexpected state for a new chat with no Pi: ${describe()}`,
 		);
 
+		// A saved chat with no Pi shows its settled history, and opening it
+		// starts none.
 		const sessionPath = fixture.seedTranscript(
 			`${JSON.stringify({
 				type: "message",
@@ -106,6 +109,20 @@ async function run() {
 				message: { role: "user", content: "saved question" },
 			})}\n`,
 		);
+		await chat.open(
+			{ sessionKey: savedKey, projectId, sessionPath },
+			app.connected,
+		);
+		assert(
+			chat.state().status === "ready" &&
+				chat.state().source === "history" &&
+				shows("saved question") &&
+				snapshots === 0 &&
+				histories === 1 &&
+				(await client.chatState(savedKey)) === null,
+			`unexpected state for a saved chat with no Pi: ${describe()}`,
+		);
+
 		// Starting Pi and sending a prompt, as the first message does, moves
 		// the transcript onto a snapshot without it being opened again, so
 		// the turn streams.
@@ -121,7 +138,7 @@ async function run() {
 		const reply = chat.state().conversation?.messages.at(-1);
 		assert(
 			snapshots === 1 &&
-				histories === 0 &&
+				histories === 1 &&
 				chat.state().conversation?.active !== null &&
 				reply?.role === "assistant" &&
 				reply.streaming === true,
@@ -176,7 +193,7 @@ async function run() {
 				chat.state().source === "history" &&
 				chat.state().conversation?.messages.length === 0 &&
 				snapshots === 3 &&
-				histories === 0,
+				histories === 1,
 			`unexpected state for a stopped unsaved chat: ${describe()}`,
 		);
 	} finally {
