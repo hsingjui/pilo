@@ -81,15 +81,29 @@ test("cached settings normalize missing and invalid token fields", () => {
 			false,
 		);
 		cache = JSON.stringify({
+			themeCustomTokenCss: "",
 			themeCustomTokens: { light: { primary: "#fff" } },
 		});
 		assert.deepEqual(readCachedTheme("system").themeCustomTokens, {
 			light: { primary: "#fff" },
 		});
 		cache = JSON.stringify({
+			themeCustomTokenCss: "",
 			themeCustomTokens: { theme: { primary: "bad" } },
 		});
 		assert.deepEqual(readCachedTheme("system").themeCustomTokens, {});
+		cache = JSON.stringify({
+			themeCustomCss: ":root{--primary:120 60% 40%;}",
+			themeCustomTokens: {},
+		});
+		assert.equal(
+			Object.hasOwn(readCachedTheme("system"), "themeCustomTokens"),
+			false,
+		);
+		assert.equal(
+			readCachedTheme("system").themeCustomCss,
+			":root{--primary:120 60% 40%;}",
+		);
 	} finally {
 		if (original) Object.defineProperty(globalThis, "localStorage", original);
 		else Reflect.deleteProperty(globalThis, "localStorage");

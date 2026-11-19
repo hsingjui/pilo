@@ -158,7 +158,9 @@ export function ThemeProvider({
 				THEME_CACHE_KEY,
 				JSON.stringify({
 					...settings,
-					themeCustomTokenCss: customThemeCss(settings),
+					...(supportsThemeTokens(settings)
+						? { themeCustomTokenCss: customThemeCss(settings) }
+						: {}),
 				}),
 			);
 			localStorage.setItem(storageKey, theme);

@@ -105,6 +105,7 @@ test("boot is inline classic before the bundle and injects cached CSS synchronou
 	assert.doesNotMatch(script, /\bimport\b|\bawait\b/);
 	for (const cached of [
 		legacy,
+		{ ...legacy, themeCustomTokens: {} },
 		{
 			...legacy,
 			themeCustomTokens: {},

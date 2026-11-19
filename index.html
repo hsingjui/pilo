@@ -98,9 +98,11 @@
 								localStorage.getItem("pilo.preferences.v1") ||
 								"{}",
 						);
-						const css = Object.hasOwn(prefs, "themeCustomTokens")
-							? prefs.themeCustomTokenCss
-							: prefs.themeCustomCss;
+						const css =
+							Object.hasOwn(prefs, "themeCustomTokens") &&
+							typeof prefs.themeCustomTokenCss === "string"
+								? prefs.themeCustomTokenCss
+								: prefs.themeCustomCss;
 						if (typeof css === "string" && css) {
 							const customStyle = document.createElement("style");
 							customStyle.id = "pilo-custom-theme-css";
