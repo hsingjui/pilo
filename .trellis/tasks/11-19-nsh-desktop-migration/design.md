@@ -90,7 +90,7 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 
 - `desktop/theme.json` 是 Lody 基础主题（shadcn 风格 token + Pilo 自有 token：`sidebar`、`hover`、`bubble-radius`、`composer-radius` 等）。
 - 主题族切换 = 基础主题与该族 token 表合并后 `setTheme`；亮/暗用 `setColorScheme`。
-- `ThemeSettings` 结构（`theme`、`themeFamily`、`savedCustomThemes`）保留，存储位置不变；自定义主题内容由 CSS 文本改为 token 表（取决于 PRD Open Question 2）。
+- `ThemeSettings` 结构（`theme`、`themeFamily`、`savedCustomThemes`）保留，存储位置不变；自定义主题内容由 CSS 文本改为 token 表（取决于 PRD Open Question 1）。
 - 构建期脚本从 `src/styles/lody-theme.css`、`claude-theme.css` 生成 token JSON，保证 WebUI 与桌面端同源。
 - 用户输入的 token 先校验再应用（无效值会让 `setTheme` 整体失败）。
 
@@ -121,8 +121,12 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 - 新增 release 流水线：`nsh package --target windows|macos|linux`，WebUI 仍先 `pnpm build` 再内嵌。
 - Windows：Inno Setup 每用户安装器；代码签名沿用现有方式（如有）。
 - macOS：`.app` 需自行签名、公证并打成发布包。
-- Linux：nsh 只产出目录与 `tar.gz`；`deb` / `rpm` / `AppImage` 取决于 PRD Open Question 1。
-- 自动更新：`nsh/updater` 读取 nsh 格式清单。Tauri 版 → nsh 版的过渡取决于 PRD Open Question 4，候选做法：最后一个 Tauri 版本提示用户手动下载；或让 Tauri 更新器下载并运行 nsh 安装器（待验证）。
+- Linux：nsh 只产出目录与 `tar.gz`，`deb` / `rpm` / `AppImage` 由仓库脚本在其上生成（PRD Decisions）：
+  - 构建机从 `ubuntu-22.04` 升到 `ubuntu-24.04`（22.04 的 GTK 版本低于 4.14）。
+  - `deb` / `rpm`：声明对 GTK 4（≥ 4.14）、Pango、WebKitGTK 6.0（如使用 `WebView`）的依赖；沿用 `src-tauri/linux/pilo.desktop` 模板和现有图标。
+  - `AppImage`：沿用 `scripts/finalize-linux-appimage.sh` 的收尾与校验思路和 `tests/packaging/test-linux-appimage.py`；是否把 GTK 4 打进 AppImage、还是要求宿主提供，待 M7 在真实发行版上验证后决定。
+  - Linux 的自动更新对象（现在是签名的 AppImage）与 `nsh/updater` 的归档格式如何对应，待 M7 验证。
+- 自动更新：`nsh/updater` 读取 nsh 格式清单。Tauri 版 → nsh 版的过渡取决于 PRD Open Question 3，候选做法：最后一个 Tauri 版本提示用户手动下载；或让 Tauri 更新器下载并运行 nsh 安装器（待验证）。
 - 版本号继续由 `Cargo.toml` `[workspace.package].version` 驱动，`nsh.json` 的版本由脚本同步；发版前仍需向用户确认版本号。
 
 ## 10. 测试
@@ -149,7 +153,8 @@ src/                    保留：WebUI 及其用到的共享组件、src/lib 纯
 | Tokio 运行时与 nsh 任务协作 | 桥接方案是否成立 | M0 第一项 |
 | 双份 UI 维护 | 迁移期间成本 | 待同步清单；缩短迁移周期 |
 | 运行时只在分支上抽离，`main` 持续改同一批文件 | 每次合入都可能冲突 | 不移动文件、替换式改动、每周合入、合入后双版本验证 |
-| Linux / macOS 支持范围收窄 | 部分用户无法升级 | PRD Open Question 1 |
-| 无 Mermaid、查找、拖拽排序 | 功能回退 | PRD Open Question 3；必要时用 `WebView` 承载 Mermaid（待验证） |
+| Linux 需 GTK 4.14+、macOS 需 14+ | 旧系统用户切换后无法升级 | 已接受（PRD Decisions）；发版说明中写明最低要求 |
+| Linux 三种包需自写打包脚本 | nsh 无现成支持，AppImage 携带 GTK 4 的可行性未知 | M7 专项；复用现有 AppImage 收尾脚本与测试 |
+| 无 Mermaid、查找、拖拽排序 | 功能回退 | PRD Open Question 2；必要时用 `WebView` 承载 Mermaid（待验证） |
 
 回退：切换发版前 Tauri 版本始终可发；切换后保留 `src-tauri/` 一个版本周期再删除。

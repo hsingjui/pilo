@@ -76,12 +76,13 @@ M4、M5、M6 互不依赖，可在 M3 之后任意顺序进行。
 
 1. 把 `src-tauri/src/runtime` 与 `domain` 搬到 `crates/pilo-runtime`。
 2. 三平台 `nsh package` 流水线，内嵌 WebUI 与 `pilo-server` 资源。
-3. Windows 全量验证（PRD 验收项）；macOS、Linux 冒烟。
-4. 现有数据目录升级验证。
-5. 更新过渡方案落地。
-6. 性能对比记录。
-7. 删除 `src-tauri/` 壳与 `src/` 中仅桌面端使用的文件；更新 `AGENTS.md`、README、spec。
-8. 发版前向用户确认版本号。
+3. Linux 打包脚本：在 `nsh package --target linux` 的产物上生成 `deb`、`rpm`、`AppImage`；构建机升到 `ubuntu-24.04`；改写 `tests/packaging` 的 AppImage 测试。
+4. Windows 全量验证（PRD 验收项）；macOS 冒烟；Linux 三种包各验证一次。
+5. 现有数据目录升级验证。
+6. 更新过渡方案落地。
+7. 性能对比记录。
+8. 删除 `src-tauri/` 壳与 `src/` 中仅桌面端使用的文件；更新 `AGENTS.md`、README、spec。
+9. 发版前向用户确认版本号。
 
 ## 验证命令
 

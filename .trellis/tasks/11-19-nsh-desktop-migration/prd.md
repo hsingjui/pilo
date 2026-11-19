@@ -56,7 +56,8 @@
 - [ ] 使用 Tauri 版本的现有数据目录启动 nsh 版本：项目、会话、偏好、主题、已配对的 Remote 设备全部保留。
 - [ ] WebUI 在 nsh Host 下通过现有验证（浏览器配对、对话、移动端窄屏），`src/remote/` 无功能回退。
 - [ ] Windows：安装包安装、覆盖升级、卸载；中文输入法输入；托盘、全局快捷键、单实例、开机启动、系统通知、自动更新各验证一次。
-- [ ] macOS、Linux：安装包启动并完成一次完整对话。
+- [ ] macOS（14 及以上）：安装包启动并完成一次完整对话。
+- [ ] Linux：`deb`、`rpm`、`AppImage` 三种包各在一个满足 GTK 4.14+ 的发行版上安装、启动并完成一次完整对话；桌面入口和图标正确。
 - [ ] 长会话（2000 条以上真实历史）滚动、流式输出时的帧率和内存不差于同机 Tauri 版本，数据记录在任务 `research/`。
 - [ ] `cargo fmt --all --check`、`cargo check`、`cargo clippy --all-targets --all-features -- -D warnings`、`nsh check`、`nsh test` 通过；WebUI 侧 `pnpm check`、`pnpm build` 通过。
 - [ ] `.trellis/spec/` 新增 nsh 桌面端的目录结构、组件、状态和桥接规范；`AGENTS.md` 的技术栈、架构图、UI 规则和 Validation 更新为迁移后的状态。
@@ -75,14 +76,14 @@
 - 在长期分支 `nsh-migration` 上进行，新界面代码放在仓库内的独立目录，与 `src/` 并列（2026-11-19，用户确认方向）。
 - 使用 Trellis 工作流，父任务 + 按里程碑的子任务（2026-11-19，用户确认）。
 - Rust 运行时去 Tauri 依赖只在 `nsh-migration` 分支上做，`main` 保持不动（2026-11-19，用户确认）。由此产生的约束：迁移分支负责解决每次合入 `main` 时的冲突；抽离阶段不移动文件，降低冲突面（见 `design.md` 第 3 节）。
+- 平台范围（2026-11-19，用户确认）：macOS 最低版本升到 14；Linux 继续发 `deb` / `rpm` / `AppImage`，由仓库内的打包脚本基于 `nsh package` 的产物生成；Windows 改用 Inno Setup 安装器。Linux 运行环境需要 GTK 4.14+（约 Ubuntu 24.04 起），更旧的发行版在切换后无法升级。
 
 ## Open Questions
 
 按影响排序，逐个确认；全部确认前不进入实现。
 
-1. **平台支持范围下调是否接受**：macOS 最低版本升到 14；Linux 需要 GTK 4.14+ 且 nsh 只产出 `tar.gz`（现有 `deb` / `rpm` / `AppImage` 需自行打包或放弃）；Windows 安装器由 NSIS 换成 Inno Setup。
-2. **自定义主题格式**：任意 CSS 改为 token 表，带选择器的规则失效；是否接受，旧主题是否提供转换。
-3. **切换发版的功能范围**：Mermaid、对话内查找、侧边栏拖拽排序、outline rail 等 nsh 无现成能力的功能，是切换前必须对齐，还是可以延后。
-4. **从 Tauri 版自动更新到 nsh 版的过渡方式**：两套更新器清单与签名格式不同。
-5. **界面语言**：TSX + Rust 模块（推荐，可热更新、可复用现有 TS 纯逻辑），还是纯 Rust。
-6. **止损标准**：M0 哪些项不通过即中止迁移。
+1. **自定义主题格式**：任意 CSS 改为 token 表，带选择器的规则失效；是否接受，旧主题是否提供转换。
+2. **切换发版的功能范围**：Mermaid、对话内查找、侧边栏拖拽排序、outline rail 等 nsh 无现成能力的功能，是切换前必须对齐，还是可以延后。
+3. **从 Tauri 版自动更新到 nsh 版的过渡方式**：两套更新器清单与签名格式不同。
+4. **界面语言**：TSX + Rust 模块（推荐，可热更新、可复用现有 TS 纯逻辑），还是纯 Rust。
+5. **止损标准**：M0 哪些项不通过即中止迁移。
