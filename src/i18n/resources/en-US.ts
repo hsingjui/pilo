@@ -328,7 +328,8 @@ const enUS = {
 		themeFamilyLody: "Lody",
 		themeFamilyClaude: "Claude",
 		themeFamilyCustom: "Custom",
-		themeCustomCss: "Custom tokens",
+		themeCustomCss: "Custom CSS",
+		themeCustomTokens: "Custom tokens",
 		themeTokenSearch: "Filter tokens",
 		themeTokensHint:
 			"Leave empty to keep built-in values. Light colors also apply in dark mode unless overridden.",

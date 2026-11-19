@@ -13,15 +13,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { i18n } from "@/i18n";
 import { listenRuntimeEvents } from "@/lib/api/pi-runtime";
+import { CUSTOM_THEME_STYLE_ID } from "@/lib/theme-custom";
 import {
-	CUSTOM_THEME_STYLE_ID,
-	readSavedCustomThemes,
-} from "@/lib/theme-custom";
-import {
-	readCustomThemeTokens,
-	renderCustomThemeCss,
-	validateWebThemeTokens,
-} from "@/lib/theme-web";
+	compatibleThemeUpdate,
+	customThemeCss,
+	legacyThemeInitial,
+	normalizeThemeSettings,
+	supportsThemeTokens,
+} from "@/lib/theme-compat";
 import {
 	readCachedTheme,
 	THEME_CACHE_KEY,
@@ -44,6 +43,7 @@ export function nextCycledTheme(current: Theme): Theme {
 }
 
 type ThemeProviderState = ThemeSettings & {
+	supportsThemeTokens: boolean;
 	resolvedTheme: ResolvedTheme;
 	setTheme: (theme: Theme) => void;
 	applyThemeSettings: (settings: ThemeSettings) => void;
@@ -59,6 +59,7 @@ const ThemeProviderContext = createContext<ThemeProviderState>({
 	themeFamily: "lody",
 	themeCustomCss: "",
 	themeCustomTokens: {},
+	supportsThemeTokens: false,
 	themeCustomName: "",
 	savedCustomThemes: [],
 	resolvedTheme: "light",
@@ -85,7 +86,9 @@ export function ThemeProvider({
 	const [settings, setSettings] = useState(() =>
 		readCachedTheme(defaultTheme, storageKey, familyStorageKey),
 	);
-	const { theme, themeFamily, themeCustomTokens } = settings;
+	const { theme, themeFamily, themeCustomTokens, themeCustomCss } = settings;
+	const [tokenCapability, setTokenCapability] = useState(false);
+	const tokenCapabilityRef = useRef(false);
 	const initialSettingsRef = useRef(settings);
 	const revisionRef = useRef(-1);
 	const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -103,13 +106,10 @@ export function ThemeProvider({
 	);
 	const applyThemeSettings = useCallback((next: ThemeSettings) => {
 		if (next.revision <= revisionRef.current) return;
-		if (!validateWebThemeTokens(next.themeCustomTokens ?? {}).ok) return;
 		revisionRef.current = next.revision;
-		setSettings({
-			...next,
-			themeCustomTokens: readCustomThemeTokens(next.themeCustomTokens),
-			savedCustomThemes: readSavedCustomThemes(next.savedCustomThemes),
-		});
+		tokenCapabilityRef.current = supportsThemeTokens(next);
+		setTokenCapability(tokenCapabilityRef.current);
+		setSettings(normalizeThemeSettings(next));
 	}, []);
 
 	useEffect(() => {
@@ -118,7 +118,7 @@ export function ThemeProvider({
 		let unlisten: (() => void) | undefined;
 		const refresh = async () => {
 			const next = await invoke<ThemeSettings>("theme_settings_get", {
-				initial: initialSettingsRef.current,
+				initial: legacyThemeInitial(initialSettingsRef.current),
 			});
 			if (!disposed) applyThemeSettings(next);
 		};
@@ -154,7 +154,13 @@ export function ThemeProvider({
 
 	useEffect(() => {
 		try {
-			localStorage.setItem(THEME_CACHE_KEY, JSON.stringify(settings));
+			localStorage.setItem(
+				THEME_CACHE_KEY,
+				JSON.stringify({
+					...settings,
+					themeCustomTokenCss: customThemeCss(settings),
+				}),
+			);
 			localStorage.setItem(storageKey, theme);
 			localStorage.setItem(familyStorageKey, themeFamily);
 		} catch {
@@ -169,9 +175,8 @@ export function ThemeProvider({
 			el.id = CUSTOM_THEME_STYLE_ID;
 			document.head.appendChild(el);
 		}
-		el.textContent =
-			themeFamily === "custom" ? renderCustomThemeCss(themeCustomTokens) : "";
-	}, [themeFamily, themeCustomTokens]);
+		el.textContent = customThemeCss(settings);
+	}, [settings]);
 
 	const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(getSystemTheme);
 
@@ -201,7 +206,7 @@ export function ThemeProvider({
 		const root = window.document.documentElement;
 		// 主题翻转会让几乎所有元素的颜色/边框/阴影同时变化，任由过渡播放会整页拖影。
 		// 先挂上禁用类、强制 reflow，翻转后在下一帧移除，让后续交互恢复过渡。
-		const applied = `${themeFamily}:${resolvedTheme}:${themeFamily === "custom" ? JSON.stringify(themeCustomTokens) : ""}`;
+		const applied = `${themeFamily}:${resolvedTheme}:${themeFamily === "custom" ? (tokenCapability ? JSON.stringify(themeCustomTokens) : themeCustomCss) : ""}`;
 		const switching =
 			appliedThemeRef.current !== null && appliedThemeRef.current !== applied;
 		appliedThemeRef.current = applied;
@@ -236,24 +241,34 @@ export function ThemeProvider({
 				});
 			});
 		}
-	}, [resolvedTheme, themeFamily, themeCustomTokens]);
+	}, [
+		resolvedTheme,
+		themeFamily,
+		themeCustomTokens,
+		themeCustomCss,
+		tokenCapability,
+	]);
 
 	const updateSettings = useCallback(
 		(update: ThemeSettingsUpdate) => {
 			if (!DESKTOP_RUNTIME && !remoteWriterRef.current) return;
 			writeQueueRef.current = writeQueueRef.current
 				.then(async () => {
+					const payload = compatibleThemeUpdate(
+						update,
+						tokenCapabilityRef.current,
+					);
 					if (!DESKTOP_RUNTIME) {
 						const writer = remoteWriterRef.current;
-						if (writer) applyThemeSettings(await writer(update));
+						if (writer) applyThemeSettings(await writer(payload));
 						return;
 					}
 					// Initialize legacy desktop settings before the first edit, even if startup loading failed.
 					await invoke<ThemeSettings>("theme_settings_get", {
-						initial: initialSettingsRef.current,
+						initial: legacyThemeInitial(initialSettingsRef.current),
 					});
 					const next = await invoke<ThemeSettings>("theme_settings_set", {
-						update,
+						update: payload,
 					});
 					applyThemeSettings(next);
 				})
@@ -273,6 +288,7 @@ export function ThemeProvider({
 	const value = useMemo(
 		() => ({
 			...settings,
+			supportsThemeTokens: tokenCapability,
 			resolvedTheme,
 			setTheme,
 			applyThemeSettings,
@@ -281,6 +297,7 @@ export function ThemeProvider({
 		}),
 		[
 			settings,
+			tokenCapability,
 			resolvedTheme,
 			setTheme,
 			applyThemeSettings,

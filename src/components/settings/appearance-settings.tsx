@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Check, ExternalLink, Trash2 } from "lucide-react";
 
 import { validateWebThemeTokens } from "@/lib/theme-web";
+import { CUSTOM_CSS_PLACEHOLDER } from "@/lib/theme-custom";
+import { compatibleThemeUpdate } from "@/lib/theme-compat";
 import { useTheme, type Theme, type ThemeFamily } from "@/lib/theme-provider";
 import { REPOSITORY_URL } from "@/lib/use-release-notes";
 import { cn } from "@/lib/utils";
@@ -14,6 +16,7 @@ import {
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
+	Textarea,
 } from "@/ui";
 import {
 	SETTINGS_CONTAINER_CLASS,
@@ -44,36 +47,58 @@ export function AppearanceSettings() {
 	const {
 		theme,
 		themeFamily,
-		themeCustomTokens,
+		themeCustomTokens = {},
+		themeCustomCss,
+		supportsThemeTokens,
 		themeCustomName,
 		savedCustomThemes,
 		updateThemeSettings,
 	} = useTheme();
-	const updateSettings = updateThemeSettings;
+	const updateSettings: typeof updateThemeSettings = (update) =>
+		updateThemeSettings(compatibleThemeUpdate(update, supportsThemeTokens));
 	const activeSavedTheme = savedCustomThemes.find(
 		(item) =>
 			item.name === themeCustomName &&
-			themeTokensKey(item.tokens) === themeTokensKey(themeCustomTokens),
+			(supportsThemeTokens
+				? themeTokensKey(item.tokens ?? {}) ===
+					themeTokensKey(themeCustomTokens)
+				: item.css === themeCustomCss),
 	);
 	const sourceName = activeSavedTheme?.name ?? "";
 	const [draftTokens, setDraftTokens] = useState(() =>
 		editableThemeTokens(themeCustomTokens),
 	);
-	const draftKey = themeTokensKey(draftTokens);
-	const currentKey = themeTokensKey(themeCustomTokens);
+	const [draftCss, setDraftCss] = useState(themeCustomCss);
+	const draftKey = supportsThemeTokens ? themeTokensKey(draftTokens) : draftCss;
+	const currentKey = supportsThemeTokens
+		? themeTokensKey(themeCustomTokens)
+		: themeCustomCss;
 	const validation = validateWebThemeTokens(draftTokens);
 	const [draftName, setDraftName] = useState(sourceName);
 	const [draftSource, setDraftSource] = useState({
 		key: currentKey,
 		name: sourceName,
+		tokens: supportsThemeTokens,
 	});
-	if (draftSource.key !== currentKey || draftSource.name !== sourceName) {
+	if (
+		draftSource.key !== currentKey ||
+		draftSource.name !== sourceName ||
+		draftSource.tokens !== supportsThemeTokens
+	) {
 		// Follow remote edits only while the local draft is unchanged.
-		if (draftKey === draftSource.key && draftName === draftSource.name) {
+		if (
+			draftSource.tokens !== supportsThemeTokens ||
+			(draftKey === draftSource.key && draftName === draftSource.name)
+		) {
 			setDraftTokens(editableThemeTokens(themeCustomTokens));
+			setDraftCss(themeCustomCss);
 			setDraftName(sourceName);
 		}
-		setDraftSource({ key: currentKey, name: sourceName });
+		setDraftSource({
+			key: currentKey,
+			name: sourceName,
+			tokens: supportsThemeTokens,
+		});
 	}
 	const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 	const existingTheme = savedCustomThemes.find(
@@ -83,14 +108,16 @@ export function AppearanceSettings() {
 		themeFamily === "custom" &&
 		themeCustomName === draftName.trim() &&
 		existingTheme !== undefined &&
-		themeTokensKey(existingTheme.tokens) === draftKey &&
+		(supportsThemeTokens
+			? themeTokensKey(existingTheme.tokens ?? {})
+			: existingTheme.css) === draftKey &&
 		currentKey === draftKey;
 
 	return (
 		<div
 			className={cn(
 				SETTINGS_CONTAINER_CLASS,
-				"pb-[max(1rem,env(safe-area-inset-bottom))]",
+				supportsThemeTokens && "pb-[max(1rem,env(safe-area-inset-bottom))]",
 			)}
 		>
 			<SettingsSection>
@@ -150,11 +177,14 @@ export function AppearanceSettings() {
 								onSelect={() => {
 									updateSettings({
 										themeFamily: "custom",
-										themeCustomTokens: item.tokens,
+										...(supportsThemeTokens
+											? { themeCustomTokens: item.tokens ?? {} }
+											: { themeCustomCss: item.css }),
 										themeCustomName: item.name,
 									});
 									setDraftName(item.name);
-									setDraftTokens(editableThemeTokens(item.tokens));
+									setDraftTokens(editableThemeTokens(item.tokens ?? {}));
+									setDraftCss(item.css);
 								}}
 								onDelete={() => setDeleteTarget(item.name)}
 								label={item.name}
@@ -165,7 +195,11 @@ export function AppearanceSettings() {
 			</SettingsSection>
 
 			<SettingsSection
-				title={t("settings.themeCustomCss")}
+				title={t(
+					supportsThemeTokens
+						? "settings.themeCustomTokens"
+						: "settings.themeCustomCss",
+				)}
 				headerRight={
 					<Button
 						asChild
@@ -174,7 +208,7 @@ export function AppearanceSettings() {
 						className="gap-1.5 px-2 font-normal pointer-coarse:min-h-11"
 					>
 						<a
-							href={`${REPOSITORY_URL}/blob/nsh-migration/desktop/README.md#custom-themes`}
+							href={`${REPOSITORY_URL}/blob/main/${supportsThemeTokens ? "desktop/README.md#custom-themes" : "docs/THEMES.md"}`}
 							target="_blank"
 							rel="noopener noreferrer"
 						>
@@ -194,7 +228,21 @@ export function AppearanceSettings() {
 					/>
 				</SettingsRow>
 				<div className="space-y-3 p-3">
-					<ThemeTokenEditor tokens={draftTokens} onChange={setDraftTokens} />
+					{supportsThemeTokens ? (
+						<ThemeTokenEditor tokens={draftTokens} onChange={setDraftTokens} />
+					) : (
+						<Textarea
+							aria-label={t("settings.themeCustomCss")}
+							value={draftCss}
+							onChange={(event) => setDraftCss(event.target.value)}
+							placeholder={CUSTOM_CSS_PLACEHOLDER}
+							spellCheck={false}
+							autoCapitalize="off"
+							autoCorrect="off"
+							rows={14}
+							className="min-h-56 resize-y font-mono text-xs leading-[1.6] [tab-size:2]"
+						/>
+					)}
 					<div className="flex flex-wrap items-center justify-end gap-2">
 						{saved ? (
 							<output className="text-xs text-muted-foreground">
@@ -205,13 +253,16 @@ export function AppearanceSettings() {
 							type="button"
 							variant="ghost"
 							size="sm"
-							className="min-h-11"
+							className={
+								supportsThemeTokens ? "min-h-11" : "pointer-coarse:min-h-11"
+							}
 							disabled={
 								draftKey === currentKey &&
 								draftName === (activeSavedTheme?.name ?? "")
 							}
 							onClick={() => {
 								setDraftTokens(editableThemeTokens(themeCustomTokens));
+								setDraftCss(themeCustomCss);
 								setDraftName(activeSavedTheme?.name ?? "");
 							}}
 						>
@@ -220,16 +271,24 @@ export function AppearanceSettings() {
 						<Button
 							type="button"
 							size="sm"
-							className="min-h-11"
-							disabled={!draftName.trim() || saved || !validation.ok}
+							className={
+								supportsThemeTokens ? "min-h-11" : "pointer-coarse:min-h-11"
+							}
+							disabled={
+								!draftName.trim() ||
+								saved ||
+								(supportsThemeTokens && !validation.ok)
+							}
 							onClick={() => {
-								if (!validation.ok) return;
+								if (supportsThemeTokens && !validation.ok) return;
 								updateSettings({
 									themeFamily: "custom",
 									saveCustomTheme: {
 										name: draftName,
-										css: existingTheme?.css ?? "",
-										tokens: validation.tokens,
+										css: supportsThemeTokens
+											? (existingTheme?.css ?? "")
+											: draftCss,
+										tokens: validation.ok ? validation.tokens : {},
 									},
 								});
 								setDraftName(draftName.trim());

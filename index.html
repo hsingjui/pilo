@@ -22,8 +22,7 @@
 			@layer theme, base, components, utilities;
 		</style>
 		<link rel="stylesheet" href="/src/styles/theme-presets.css" />
-		<script type="module">
-			import { renderCustomThemeCss } from "/src/lib/theme-web.ts";
+		<script>
 			(() => {
 				const sidebarWidthStorageKey = "pilo.sidebarWidth";
 				const minSidebarWidth = 240;
@@ -91,7 +90,7 @@
 						? storedFamily
 						: "lody";
 				document.documentElement.dataset.themeFamily = themeFamily;
-				// ThemeProvider takes over this token-only style after mounting.
+				// ThemeProvider takes over the cached style after mounting.
 				if (themeFamily === "custom") {
 					try {
 						const prefs = JSON.parse(
@@ -99,8 +98,10 @@
 								localStorage.getItem("pilo.preferences.v1") ||
 								"{}",
 						);
-						const css = renderCustomThemeCss(prefs.themeCustomTokens ?? {});
-						if (css) {
+						const css = Object.hasOwn(prefs, "themeCustomTokens")
+							? prefs.themeCustomTokenCss
+							: prefs.themeCustomCss;
+						if (typeof css === "string" && css) {
 							const customStyle = document.createElement("style");
 							customStyle.id = "pilo-custom-theme-css";
 							customStyle.textContent = css;

@@ -10,8 +10,9 @@ export type ThemeSettings = {
 	themeFamily: ThemeFamily;
 	themeCustomCss: string;
 	// Token contract: Host fields arrive in D2; missing fields normalize to {}.
-	// themeCustomCss / saved css remain one release for rollback, never injection.
-	themeCustomTokens: CustomThemeTokens;
+	// themeCustomCss / saved css remain one release for rollback.
+	// Until the Host sends this field, CSS remains the active contract.
+	themeCustomTokens?: CustomThemeTokens;
 	themeCustomName: string;
 	savedCustomThemes: SavedCustomTheme[];
 };

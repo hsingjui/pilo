@@ -38,7 +38,9 @@ export function readCachedTheme(
 	}
 	return {
 		revision: 0,
-		themeCustomTokens: readCustomThemeTokens(stored.themeCustomTokens),
+		...(Object.hasOwn(stored, "themeCustomTokens")
+			? { themeCustomTokens: readCustomThemeTokens(stored.themeCustomTokens) }
+			: {}),
 		theme:
 			stored.theme === "light" ||
 			stored.theme === "dark" ||

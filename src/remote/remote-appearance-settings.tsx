@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Palette } from "lucide-react";
+import { useTheme } from "@/lib/theme-provider";
 import {
 	Button,
 	Dialog,
@@ -18,6 +19,8 @@ const AppearanceSettings = lazy(() =>
 export function RemoteAppearanceSettings() {
 	const { t } = useTranslation();
 	const [open, setOpen] = useState(false);
+	const { supportsThemeTokens } = useTheme();
+	if (!supportsThemeTokens) return null;
 	return (
 		<>
 			<Button

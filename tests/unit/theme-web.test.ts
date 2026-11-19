@@ -76,7 +76,10 @@ test("cached settings normalize missing and invalid token fields", () => {
 		},
 	});
 	try {
-		assert.deepEqual(readCachedTheme("system").themeCustomTokens, {});
+		assert.equal(
+			Object.hasOwn(readCachedTheme("system"), "themeCustomTokens"),
+			false,
+		);
 		cache = JSON.stringify({
 			themeCustomTokens: { light: { primary: "#fff" } },
 		});
