@@ -26,12 +26,17 @@ function placeholders(messages: Messages, prefix = ""): Map<string, string[]> {
 }
 
 test("the shell starts in the system language, falling back to English", async () => {
-	const chinese = await open("../App.tsx", { locale: "zh-Hans-CN" });
-	expect(chinese.shows("id:workspace >> text:选择项目")).toBe(true);
-	const english = await open("../App.tsx", { locale: "en-US" });
-	expect(english.shows("id:workspace >> text:Select a project")).toBe(true);
-	const french = await open("../App.tsx", { locale: "fr-FR" });
-	expect(french.shows("id:workspace >> text:Select a project")).toBe(true);
+	const shell = (locale: string) =>
+		open("./app-shell-states-fixture.tsx", {
+			locale,
+			storage: { "fixture.scenario": "empty" },
+		});
+	const chinese = await shell("zh-Hans-CN");
+	await chinese.waitFor("id:workspace >> text:请先添加项目");
+	const english = await shell("en-US");
+	await english.waitFor("id:workspace >> text:Add a project first");
+	const french = await shell("fr-FR");
+	await french.waitFor("id:workspace >> text:Add a project first");
 });
 
 test("switching the locale re-renders interpolated text and moves the nsh locale", async () => {

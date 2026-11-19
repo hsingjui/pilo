@@ -1,8 +1,8 @@
-import { mount } from "nsh";
+import { Pilo } from "app/native";
 
 import "./app/fonts";
-import { AppShell } from "./app/AppShell";
 import { initializeI18n } from "./app/i18n";
+import { launch } from "./app/launch";
 
 initializeI18n();
-mount(AppShell);
+void launch(new Pilo());

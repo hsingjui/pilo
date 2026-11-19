@@ -10,8 +10,8 @@ import mono500 from "../fonts/jetbrains-mono-latin-500-normal.woff2?url";
 import mono700 from "../fonts/jetbrains-mono-latin-700-normal.woff2?url";
 
 test("the bundled app fonts register under their theme family names", async () => {
-	const app = await open("../App.tsx");
-	expect(app.shows("text:Pilo")).toBe(true);
+	const app = await open("./app-shell-fixture.tsx");
+	await app.waitFor("id:sidebar >> text:Pilo");
 	for (const source of [inter400, inter500, inter600, inter700]) {
 		expect((await registerFont(source)).family).toBe("Inter");
 	}

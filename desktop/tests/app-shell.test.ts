@@ -1,12 +1,66 @@
 import { expect, open, test } from "nsh/test";
 
-test("the shell renders its sidebar and workspace at desktop and narrow widths", async () => {
-	const app = await open("../App.tsx", { width: 1100, height: 720 });
+const desktop = { platform: "macos", width: 1100, height: 720 } as const;
+
+function openStates(scenario: string) {
+	return open("./app-shell-states-fixture.tsx", {
+		...desktop,
+		storage: { "fixture.scenario": scenario },
+	});
+}
+
+test("the shell starts on the native runtime and shows the default workspace", async () => {
+	const app = await open("./app-shell-fixture.tsx", desktop);
+	await app.waitFor("id:workspace-title");
 	expect(app.shows("id:sidebar >> text:Pilo")).toBe(true);
-	expect(app.shows("id:workspace >> text:Select a project")).toBe(true);
-	expect(app.shows("text:pilo-desktop")).toBe(true);
+	expect(app.shows("id:workspace >> text:Default workspace")).toBe(true);
+	expect(app.shows("id:startup-loading")).toBe(false);
+	expect(app.shows("id:startup-failed")).toBe(false);
 	expect(app.viewStyle("id:sidebar")?.backgroundColor).toBe("#f7f8faff");
 	await app.setViewport(390, 844);
 	expect(app.shows("id:sidebar >> text:Pilo")).toBe(true);
-	expect(app.shows("id:workspace >> text:Select a project")).toBe(true);
+	expect(app.shows("id:workspace-title")).toBe(true);
+});
+
+test("the shell says it is loading until the first snapshot arrives", async () => {
+	const app = await openStates("starting");
+	expect(app.shows("id:workspace >> text:Loading…")).toBe(true);
+	expect(app.shows("id:workspace-title")).toBe(false);
+	expect(app.shows("id:startup-failed")).toBe(false);
+});
+
+test("a failed startup shows its error and recovers on retry", async () => {
+	const app = await openStates("failed");
+	await app.waitFor("id:startup-failed");
+	expect(app.shows("id:startup-failed >> text:Failed to load")).toBe(true);
+	expect(
+		app.shows("id:startup-failed >> text:The Pilo database is locked."),
+	).toBe(true);
+	expect(app.shows("id:workspace-title")).toBe(false);
+
+	await app.press("id:startup-retry");
+	await app.waitFor("id:startup-failed >> text:The Pi runtime is missing.");
+	expect(app.shows("text:The Pilo database is locked.")).toBe(false);
+	expect(app.enabled("id:startup-retry")).toBe(true);
+
+	await app.press("id:startup-retry");
+	await app.waitFor("id:workspace >> text:pilo");
+	expect(app.texts()).toContain("/Users/pilo/code/pilo");
+	expect(app.shows("id:startup-failed")).toBe(false);
+});
+
+test("a ready app without projects asks for one", async () => {
+	const app = await openStates("empty");
+	await app.waitFor("id:workspace-title");
+	expect(app.shows("id:workspace >> text:Add a project first")).toBe(true);
+	expect(app.shows("id:startup-failed")).toBe(false);
+});
+
+test("a runtime that shut down shows a failure without a retry", async () => {
+	const app = await openStates("closed");
+	await app.waitFor("id:startup-failed");
+	expect(app.shows("id:workspace >> text:An unexpected error occurred.")).toBe(
+		true,
+	);
+	expect(app.shows("id:startup-retry")).toBe(false);
 });
