@@ -205,7 +205,7 @@ export function ChatFindLayer({
 			{open ? (
 				<div
 					ref={barRef}
-					className="absolute end-3 top-2 z-20 flex items-center gap-1 rounded-lg border border-border/70 bg-popover/95 py-1 ps-2 pe-1 shadow-md backdrop-blur"
+					className="absolute end-3 top-2 z-20 flex w-[23rem] max-w-[calc(100%-1.5rem)] items-center gap-1 rounded-lg border border-border/70 bg-popover/95 py-1 ps-2 pe-1 shadow-md backdrop-blur focus-within:ring-1 focus-within:ring-ring/60"
 				>
 					<Search className="size-3.5 shrink-0 text-muted-foreground" />
 					<input
@@ -213,7 +213,7 @@ export function ChatFindLayer({
 						value={query}
 						aria-label={t("chat.find.placeholder")}
 						placeholder={t("chat.find.placeholder")}
-						className="h-6 w-44 min-w-0 bg-transparent text-sm text-foreground outline-hidden placeholder:text-muted-foreground"
+						className="h-6 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-hidden placeholder:text-muted-foreground"
 						onChange={(event) => {
 							setQuery(event.target.value);
 							setActiveIndex(0);
@@ -230,7 +230,7 @@ export function ChatFindLayer({
 							}
 						}}
 					/>
-					<span className="min-w-12 text-center text-xs tabular-nums text-muted-foreground">
+					<span className="max-w-20 shrink-0 truncate text-center text-xs tabular-nums text-muted-foreground">
 						{matches.length > 0
 							? t("chat.find.matchCount", {
 									current: safeIndex + 1,
@@ -243,7 +243,7 @@ export function ChatFindLayer({
 					<Button
 						variant="ghost"
 						size="icon"
-						className="size-6"
+						className="size-6 shrink-0 pointer-coarse:size-[44px]"
 						disabled={matches.length === 0}
 						aria-label={t("chat.find.previous")}
 						onClick={() => step(-1)}
@@ -253,7 +253,7 @@ export function ChatFindLayer({
 					<Button
 						variant="ghost"
 						size="icon"
-						className="size-6"
+						className="size-6 shrink-0 pointer-coarse:size-[44px]"
 						disabled={matches.length === 0}
 						aria-label={t("chat.find.next")}
 						onClick={() => step(1)}
@@ -263,7 +263,7 @@ export function ChatFindLayer({
 					<Button
 						variant="ghost"
 						size="icon"
-						className="size-6"
+						className="size-6 shrink-0 pointer-coarse:size-[44px]"
 						aria-label={t("chat.find.close")}
 						onClick={onClose}
 					>

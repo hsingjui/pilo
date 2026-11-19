@@ -151,7 +151,7 @@ function MessageAction({
 					type="button"
 					variant="ghost"
 					size="icon"
-					className="size-7 rounded-md text-muted-foreground touch-reveal opacity-0 transition-opacity duration-100 group-hover:opacity-100 focus-visible:opacity-100"
+					className="size-7 rounded-md text-muted-foreground touch-reveal opacity-0 transition-opacity duration-100 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:size-[44px]"
 					aria-label={label}
 					disabled={disabled}
 					onClick={onClick}
