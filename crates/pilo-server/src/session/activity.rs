@@ -230,407 +230,139 @@ struct ExternalPiProcess {
     session_path: Option<PathBuf>,
 }
 
-#[cfg(target_os = "linux")]
+/// Lists Pi processes running in `project` that Pilo does not own.
+///
+/// Command lines are read for every process (microseconds each); the cwd is
+/// read only for Pi-shaped candidates. A fresh `System` per call keeps no
+/// process handles open between polls and cannot confuse reused PIDs.
 fn external_pi_processes(project: &Path, owned_pids: &HashSet<u32>) -> Vec<ExternalPiProcess> {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+
     let project = project
         .canonicalize()
         .unwrap_or_else(|_| project.to_path_buf());
-    let Ok(entries) = std::fs::read_dir("/proc") else {
+    let Ok(mut system) = System::new() else {
         return Vec::new();
     };
-    entries
-        .flatten()
-        .filter_map(|entry| entry.file_name().to_string_lossy().parse::<u32>().ok())
-        .filter(|pid| *pid != std::process::id() && !owned_pids.contains(pid))
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing()
+            .without_tasks()
+            .with_cmd(UpdateKind::Always),
+    );
+    let server_pid = std::process::id();
+    let processes = system.processes();
+    let pi_processes = processes
+        .values()
+        .filter(|process| process.thread_kind().is_none())
+        .filter(|process| looks_like_pi_command(&command_args(process.cmd())))
+        .collect::<Vec<_>>();
+    let pi_pids = pi_processes
+        .iter()
+        .map(|process| process.pid())
+        .collect::<HashSet<_>>();
+    // Launchers (`pi.cmd`, version-manager shims) form a chain of Pi-shaped
+    // processes for one agent; count only the innermost so one agent is one
+    // fallback candidate. A shell in between marks a separately started Pi.
+    // Explicit `--session` paths always count: they deduplicate by path, and a
+    // Pi-shaped tool command must not hide its agent's session.
+    let launchers = pi_processes
+        .iter()
+        .flat_map(|process| {
+            ancestors(processes, process)
+                .take_while(|ancestor| pi_pids.contains(&ancestor.pid()))
+                .map(sysinfo::Process::pid)
+        })
+        .collect::<HashSet<_>>();
+    let candidates = pi_processes
+        .into_iter()
+        .filter(|process| process.pid().as_u32() != server_pid)
+        .filter(|process| {
+            !launchers.contains(&process.pid())
+                || explicit_session_path(&command_args(process.cmd()), Path::new("")).is_some()
+        })
+        .filter(|process| !owned_by_pilo(processes, process, owned_pids))
+        .map(sysinfo::Process::pid)
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&candidates),
+        false,
+        ProcessRefreshKind::nothing()
+            .without_tasks()
+            .with_cwd(UpdateKind::Always),
+    );
+    candidates
+        .iter()
         .filter_map(|pid| {
-            let cwd = std::fs::read_link(format!("/proc/{pid}/cwd"))
-                .ok()
-                .and_then(|cwd| cwd.canonicalize().ok().or(Some(cwd)))?;
-            if cwd != project {
-                return None;
-            }
-            let command = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
-            if !looks_like_pi_command(&command) {
+            let process = system.process(*pid)?;
+            let cwd = process.cwd()?;
+            let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+            if !same_project_path(&cwd, &project) {
                 return None;
             }
             Some(ExternalPiProcess {
-                session_path: explicit_session_path(&command, &cwd),
+                session_path: explicit_session_path(&command_args(process.cmd()), &cwd),
             })
         })
         .collect()
 }
 
-#[cfg(target_os = "macos")]
-fn external_pi_processes(project: &Path, owned_pids: &HashSet<u32>) -> Vec<ExternalPiProcess> {
-    let project = project
-        .canonicalize()
-        .unwrap_or_else(|_| project.to_path_buf());
-    let Ok(output) = std::process::Command::new("/bin/ps")
-        .args(["-axww", "-o", "pid=,command="])
-        .output()
-    else {
-        return Vec::new();
-    };
-    if !output.status.success() {
-        return Vec::new();
-    }
+type ProcessMap = std::collections::HashMap<sysinfo::Pid, sysinfo::Process>;
 
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line
-                .trim_start()
-                .splitn(2, |character: char| character.is_ascii_whitespace());
-            let pid = fields.next()?.parse::<u32>().ok()?;
-            if pid == std::process::id() || owned_pids.contains(&pid) {
-                return None;
-            }
-            let command = fields.next()?.trim();
-            if !looks_like_pi_command(command.as_bytes()) {
-                return None;
-            }
-            let cwd = macos_process_cwd(pid)?;
-            let cwd = cwd.canonicalize().unwrap_or(cwd);
-            if cwd != project {
-                return None;
-            }
-            Some(ExternalPiProcess {
-                session_path: explicit_session_path(command.as_bytes(), &cwd),
-            })
-        })
-        .collect()
+/// Pilo owns its Pi process tree, not only the direct child: Windows starts Pi
+/// through a `pi.cmd` launcher whose node descendants are the real agent.
+fn owned_by_pilo(
+    processes: &ProcessMap,
+    process: &sysinfo::Process,
+    owned_pids: &HashSet<u32>,
+) -> bool {
+    std::iter::once(process)
+        .chain(ancestors(processes, process))
+        .any(|process| owned_pids.contains(&process.pid().as_u32()))
 }
 
-#[cfg(target_os = "macos")]
-fn macos_process_cwd(pid: u32) -> Option<PathBuf> {
-    let pid = pid.to_string();
-    let output = std::process::Command::new("/usr/sbin/lsof")
-        .args(["-a", "-p", &pid, "-d", "cwd", "-Fn"])
-        .output()
-        .ok()?;
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .find_map(|line| {
-            line.strip_prefix('n')
-                .filter(|path| !path.is_empty())
-                .map(PathBuf::from)
-        })
+fn ancestors<'a>(
+    processes: &'a ProcessMap,
+    process: &'a sysinfo::Process,
+) -> impl Iterator<Item = &'a sysinfo::Process> {
+    const MAX_ANCESTORS: usize = 64;
+    let mut current = process;
+    std::iter::from_fn(move || {
+        let parent = processes.get(&current.parent()?)?;
+        // A parent that started after its child is an unrelated reused PID.
+        if parent.start_time() > current.start_time() {
+            return None;
+        }
+        current = parent;
+        Some(parent)
+    })
+    .take(MAX_ANCESTORS)
 }
 
 #[cfg(windows)]
-// Windows does not expose another process's cwd through the standard process
-// listing APIs. Read the drive-specific or UNC cwd from a short-lived PowerShell
-// probe; keeping this here avoids unsafe Rust and a platform-only native
-// dependency in the server crate.
-fn external_pi_processes(project: &Path, owned_pids: &HashSet<u32>) -> Vec<ExternalPiProcess> {
-    use std::os::windows::process::CommandExt;
-
-    let project = project
-        .canonicalize()
-        .unwrap_or_else(|_| project.to_path_buf());
-    let project_value = project.to_string_lossy().into_owned();
-    let output = std::process::Command::new("powershell.exe")
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            WINDOWS_PROCESS_ACTIVITY_SCRIPT,
-        ])
-        .env("PILO_ACTIVITY_PROJECT", project_value)
-        .creation_flags(0x0800_0000)
-        .output();
-    let Ok(output) = output else {
-        return Vec::new();
-    };
-    if !output.status.success() {
-        return Vec::new();
-    }
-
-    let Ok(stdout) = String::from_utf8(output.stdout) else {
-        return Vec::new();
-    };
-    stdout
-        .lines()
-        .filter_map(|line| {
-            let process = serde_json::from_str::<Value>(line).ok()?;
-            let pid = process.get("pid")?.as_u64()? as u32;
-            if pid == std::process::id() || owned_pids.contains(&pid) {
-                return None;
-            }
-            let command = process.get("command")?.as_str()?;
-            if !looks_like_pi_command(command.as_bytes()) {
-                return None;
-            }
-            let cwd = PathBuf::from(process.get("cwd")?.as_str()?);
-            if !windows_paths_equal(&cwd, &project) {
-                return None;
-            }
-            Some(ExternalPiProcess {
-                session_path: explicit_session_path(command.as_bytes(), &cwd),
-            })
-        })
-        .collect()
-}
-
-#[cfg(windows)]
-fn windows_paths_equal(left: &Path, right: &Path) -> bool {
-    let left = left.canonicalize().unwrap_or_else(|_| left.to_path_buf());
-    let right = right.canonicalize().unwrap_or_else(|_| right.to_path_buf());
-    left.to_string_lossy()
+fn same_project_path(cwd: &Path, project: &Path) -> bool {
+    cwd.to_string_lossy()
         .trim_end_matches(['\\', '/'])
-        .eq_ignore_ascii_case(right.to_string_lossy().trim_end_matches(['\\', '/']))
+        .eq_ignore_ascii_case(project.to_string_lossy().trim_end_matches(['\\', '/']))
 }
 
-#[cfg(windows)]
-const WINDOWS_PROCESS_ACTIVITY_SCRIPT: &str = r#"
-$ErrorActionPreference = 'SilentlyContinue'
-$utf8 = [System.Text.UTF8Encoding]::new($false)
-[Console]::OutputEncoding = $utf8
-$OutputEncoding = $utf8
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
-
-public static class PiloProcessActivity {
-    [StructLayout(LayoutKind.Sequential)]
-    private struct ProcessBasicInformation {
-        public IntPtr ExitStatus;
-        public IntPtr PebBaseAddress;
-        public IntPtr AffinityMask;
-        public IntPtr BasePriority;
-        public IntPtr UniqueProcessId;
-        public IntPtr InheritedFromUniqueProcessId;
-    }
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr OpenProcess(uint access, bool inheritHandle, uint processId);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool CloseHandle(IntPtr handle);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool IsWow64Process(IntPtr process, out bool wow64Process);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool ReadProcessMemory(
-        IntPtr process,
-        IntPtr address,
-        byte[] buffer,
-        int size,
-        out int bytesRead);
-
-    [DllImport("ntdll.dll")]
-    private static extern int NtQueryInformationProcess(
-        IntPtr process,
-        int informationClass,
-        out ProcessBasicInformation information,
-        int informationLength,
-        out int returnLength);
-
-    public static string CurrentDirectory(int processId, string project) {
-        if (String.IsNullOrEmpty(project)) return null;
-        if (project.StartsWith("\\\\?\\UNC\\", StringComparison.OrdinalIgnoreCase))
-            project = "\\\\" + project.Substring(8);
-        else if (project.StartsWith("\\\\?\\", StringComparison.Ordinal))
-            project = project.Substring(4);
-        bool isUnc = project.StartsWith("\\\\", StringComparison.Ordinal);
-        if (!isUnc && (project.Length < 2 || project[1] != ':')) return null;
-
-        IntPtr process = OpenProcess(0x1010, false, (uint)processId);
-        if (process == IntPtr.Zero) return null;
-        try {
-            bool wow64;
-            if (!IsWow64Process(process, out wow64)) return null;
-            if (wow64) return null;
-
-            ProcessBasicInformation information;
-            int returnLength;
-            if (NtQueryInformationProcess(
-                process,
-                0,
-                out information,
-                Marshal.SizeOf<ProcessBasicInformation>(),
-                out returnLength) != 0) return null;
-
-            int pointerSize = IntPtr.Size;
-            IntPtr parameters = ReadPointer(
-                process,
-                Add(information.PebBaseAddress, pointerSize == 8 ? 0x20 : 0x10),
-                pointerSize);
-            if (parameters == IntPtr.Zero) return null;
-            if (isUnc)
-                return ReadCurrentDirectory(process, parameters, pointerSize);
-
-            IntPtr environment = ReadPointer(
-                process,
-                Add(parameters, pointerSize == 8 ? 0x80 : 0x48),
-                pointerSize);
-            if (environment != IntPtr.Zero) {
-                byte[] buffer = new byte[64 * 1024];
-                int bytesRead;
-                if (ReadProcessMemory(process, environment, buffer, buffer.Length, out bytesRead)) {
-                    string block = Encoding.Unicode.GetString(buffer, 0, bytesRead);
-                    string prefix = "=" + Char.ToUpperInvariant(project[0]) + ":";
-                    foreach (string entry in block.Split('\0')) {
-                        if (entry.StartsWith(prefix + "=", StringComparison.OrdinalIgnoreCase))
-                            return entry.Substring(prefix.Length + 1);
-                    }
-                }
-            }
-            return ReadDriveDirectory(process, parameters, pointerSize, project[0]);
-        } finally {
-            CloseHandle(process);
-        }
-    }
-
-    private static string ReadCurrentDirectory(
-        IntPtr process,
-        IntPtr parameters,
-        int pointerSize) {
-        IntPtr currentDirectory = Add(parameters, pointerSize == 8 ? 0x38 : 0x24);
-        return ReadUnicodeString(process, Add(currentDirectory, pointerSize), pointerSize);
-    }
-
-    private static string ReadDriveDirectory(
-        IntPtr process,
-        IntPtr parameters,
-        int pointerSize,
-        char driveLetter) {
-        int drive = Char.ToUpperInvariant(driveLetter) - 'A';
-        if (drive < 0 || drive >= 26) return null;
-        int directorySize = pointerSize == 8 ? 0x18 : 0x10;
-        int directoriesOffset = pointerSize == 8 ? 0xf0 : 0x90;
-        IntPtr directory = Add(
-            Add(parameters, directoriesOffset),
-            drive * directorySize);
-        return ReadUnicodeString(process, Add(directory, 8), pointerSize);
-    }
-
-    private static string ReadUnicodeString(
-        IntPtr process,
-        IntPtr unicodeString,
-        int pointerSize) {
-        byte[] lengthBuffer = new byte[2];
-        int bytesRead;
-        if (!ReadProcessMemory(process, unicodeString, lengthBuffer, 2, out bytesRead)
-            || bytesRead != 2) return null;
-        int length = BitConverter.ToUInt16(lengthBuffer, 0);
-        if (length == 0) return null;
-        IntPtr buffer = ReadPointer(process, Add(unicodeString, pointerSize), pointerSize);
-        if (buffer == IntPtr.Zero) return null;
-        byte[] path = new byte[length];
-        if (!ReadProcessMemory(process, buffer, path, length, out bytesRead)
-            || bytesRead != length) return null;
-        return Encoding.Unicode.GetString(path);
-    }
-
-    private static IntPtr ReadPointer(IntPtr process, IntPtr address, int pointerSize) {
-        byte[] buffer = new byte[pointerSize];
-        int bytesRead;
-        if (!ReadProcessMemory(process, address, buffer, pointerSize, out bytesRead)
-            || bytesRead != pointerSize) return IntPtr.Zero;
-        return pointerSize == 8
-            ? new IntPtr(BitConverter.ToInt64(buffer, 0))
-            : new IntPtr(BitConverter.ToInt32(buffer, 0));
-    }
-
-    private static IntPtr Add(IntPtr address, int offset) {
-        return new IntPtr(address.ToInt64() + offset);
-    }
-}
-'@
-Get-CimInstance Win32_Process | ForEach-Object {
-    if ($_.ProcessId -eq $PID -or [String]::IsNullOrEmpty($_.CommandLine)) { return }
-    $cwd = [PiloProcessActivity]::CurrentDirectory(
-        [int]$_.ProcessId,
-        $env:PILO_ACTIVITY_PROJECT)
-    if (-not [String]::IsNullOrEmpty($cwd)) {
-        [PSCustomObject]@{
-            pid = [int]$_.ProcessId
-            cwd = $cwd
-            command = $_.CommandLine
-        } | ConvertTo-Json -Compress
-    }
-}
-"#;
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
-fn external_pi_processes(_project: &Path, _owned_pids: &HashSet<u32>) -> Vec<ExternalPiProcess> {
-    Vec::new()
+#[cfg(not(windows))]
+fn same_project_path(cwd: &Path, project: &Path) -> bool {
+    cwd == project
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-fn command_args(command: &[u8]) -> Vec<String> {
-    if command.contains(&0) {
-        return command
-            .split(|byte| *byte == 0)
-            .filter(|arg| !arg.is_empty())
-            .map(|arg| String::from_utf8_lossy(arg).into_owned())
-            .collect();
-    }
+fn command_args(command: &[std::ffi::OsString]) -> Vec<String> {
     command
-        .split(|byte| byte.is_ascii_whitespace())
-        .filter(|arg| !arg.is_empty())
-        .map(|arg| String::from_utf8_lossy(arg).into_owned())
+        .iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
         .collect()
 }
 
-#[cfg(windows)]
-fn command_args(command: &[u8]) -> Vec<String> {
-    let mut args = Vec::new();
-    let mut current = Vec::new();
-    let mut in_quotes = false;
-    let mut backslashes = 0;
-
-    let push_backslashes = |current: &mut Vec<u8>, count: usize| {
-        current.extend(std::iter::repeat_n(b'\\', count));
-    };
-    let push_argument = |args: &mut Vec<String>, current: &mut Vec<u8>| {
-        if !current.is_empty() {
-            args.push(String::from_utf8_lossy(current).into_owned());
-            current.clear();
-        }
-    };
-
-    let mut index = 0;
-    while index < command.len() {
-        let byte = command[index];
-        if byte == b'\\' {
-            backslashes += 1;
-            index += 1;
-            continue;
-        }
-        if byte == b'"' {
-            push_backslashes(&mut current, backslashes / 2);
-            if backslashes % 2 == 1 {
-                current.push(b'"');
-            } else {
-                in_quotes = !in_quotes;
-            }
-            backslashes = 0;
-            index += 1;
-            continue;
-        }
-
-        push_backslashes(&mut current, backslashes);
-        backslashes = 0;
-        if byte.is_ascii_whitespace() && !in_quotes {
-            push_argument(&mut args, &mut current);
-        } else {
-            current.push(byte);
-        }
-        index += 1;
-    }
-    push_backslashes(&mut current, backslashes);
-    push_argument(&mut args, &mut current);
-    args
-}
-
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
-fn explicit_session_path(command: &[u8], cwd: &Path) -> Option<PathBuf> {
-    let args = command_args(command);
+fn explicit_session_path(args: &[String], cwd: &Path) -> Option<PathBuf> {
     let value = args.windows(2).find_map(|window| {
         (window[0] == "--session" || window[0] == "-s").then(|| window[1].trim_matches(['"', '\'']))
     })?;
@@ -645,14 +377,9 @@ fn explicit_session_path(command: &[u8], cwd: &Path) -> Option<PathBuf> {
     })
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
-fn looks_like_pi_command(command: &[u8]) -> bool {
-    let args = command_args(command)
-        .into_iter()
-        .map(|arg| arg.replace('\\', "/"))
-        .collect::<Vec<_>>();
+fn looks_like_pi_command(args: &[String]) -> bool {
     args.iter().any(|arg| {
-        let lower = arg.to_ascii_lowercase();
+        let lower = arg.replace('\\', "/").to_ascii_lowercase();
         lower.ends_with("/pi")
             || lower.ends_with("/pi.exe")
             || lower.ends_with("/pi.cmd")
@@ -669,36 +396,48 @@ mod tests {
 
     use super::{OPEN_TURN_STALE_AFTER, explicit_session_path, looks_like_pi_command};
 
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
     #[test]
     fn recognizes_pi_cli_shapes() {
-        assert!(looks_like_pi_command(
-            b"/usr/bin/node\0/x/pi-coding-agent/dist/bundle/cli.js\0"
-        ));
-        assert!(looks_like_pi_command(
-            b"/home/u/.local/bin/pi\0--session\0/tmp/a.jsonl\0"
-        ));
-        assert!(looks_like_pi_command(
-            b"/opt/homebrew/bin/node /Users/u/.pi/agent/node_modules/pi-coding-agent/dist/bundle/cli.js --mode rpc"
-        ));
-        assert!(!looks_like_pi_command(b"/usr/bin/node\0server.js\0"));
+        assert!(looks_like_pi_command(&args(&[
+            "/usr/bin/node",
+            "/x/pi-coding-agent/dist/bundle/cli.js"
+        ])));
+        assert!(looks_like_pi_command(&args(&[
+            "/home/u/.local/bin/pi",
+            "--session",
+            "/tmp/a.jsonl"
+        ])));
+        assert!(looks_like_pi_command(&args(&[
+            "C:\\Users\\u\\AppData\\Local\\pnpm\\pi.CMD"
+        ])));
+        assert!(!looks_like_pi_command(&args(&[
+            "/usr/bin/node",
+            "server.js"
+        ])));
     }
 
     #[test]
     fn extracts_explicit_session_path() {
         assert_eq!(
-            explicit_session_path(b"pi\0--session\0/tmp/a.jsonl\0", Path::new("/work")),
+            explicit_session_path(
+                &args(&["pi", "--session", "/tmp/a.jsonl"]),
+                Path::new("/work")
+            ),
             Some(PathBuf::from("/tmp/a.jsonl"))
         );
         assert_eq!(
-            explicit_session_path(b"pi\0-s\0relative/a.jsonl\0", Path::new("/work")),
+            explicit_session_path(&args(&["pi", "-s", "relative/a.jsonl"]), Path::new("/work")),
             Some(PathBuf::from("/work/relative/a.jsonl"))
         );
         assert_eq!(
-            explicit_session_path(b"pi --session /tmp/a.jsonl", Path::new("/work")),
-            Some(PathBuf::from("/tmp/a.jsonl"))
-        );
-        assert_eq!(
-            explicit_session_path(b"pi\0--session\0session-id\0", Path::new("/work")),
+            explicit_session_path(
+                &args(&["pi", "--session", "session-id"]),
+                Path::new("/work")
+            ),
             None
         );
     }

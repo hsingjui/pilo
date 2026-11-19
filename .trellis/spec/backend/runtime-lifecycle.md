@@ -20,6 +20,11 @@ Frontend controller eviction alone is not backend process cleanup.
   prompt preflight uses `PI_PROMPT_RPC_TIMEOUT_MS = 120_000`.
 - `session_activity(...)` distinguishes process-confirmed `--session` paths from
   project-matched fallback candidates before reading their last JSONL message.
+  Processes come from `sysinfo` (fresh `System` per call: command lines for all
+  processes, cwd only for Pi-shaped ones); no PowerShell, `ps` or `lsof`. A Pi
+  process or any ancestor in `owned_pids` is Pilo's (`pi.cmd` launches the node
+  agent as a grandchild). A contiguous chain of Pi-shaped processes counts as one
+  fallback candidate (innermost), but every explicit `--session` path counts.
 - `ChatSessions::state(...)` / `states()` read registered `SessionSnapshotReader`
   handles without awaiting the Pi startup/RPC session mutex. Remove readers with
   their processes on eviction, detach, project stop and global shutdown.
