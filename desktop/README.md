@@ -81,6 +81,15 @@ settings and returns the updated snapshot with a larger `updatedAtMs`.
 Pass the selected model again to retain it when disabling prediction, or
 pass `null` to follow the chat model. A successful save publishes
 `next_prompt_settings_changed` with `settings`. Saving does not contact Pi.
+`requestNextPrompt({ sessionKey, sessionId, requestId, generation, revision, cancel? })`
+returns `Promise<void>` once the command is sent to the existing Pi process;
+it never starts a chat. Use the running chat's generation, Pi's session ID,
+and the settings' `updatedAtMs` as the revision. Predictions require an idle,
+ready chat and current enabled settings. Set `cancel: true` with the same
+request identity to cancel, even if the settings have since changed.
+Results arrive through `nextEvents` as `extension_ui_request` events with
+`method: "setWidget"`, `widgetKey: "pilo.next-prompt.v1"`, and one JSON result
+in `widgetLines`; match the session, generation, request ID, and revision.
 
 Use `readProjectImage(projectId, path)` for a project-relative image and
 `readHistoryImage(projectId, sessionPath, imageId, fingerprint?)` for a

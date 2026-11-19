@@ -3,9 +3,21 @@ import json
 import os
 import sys
 
+
+def widget(key, lines):
+    print(json.dumps({
+        "type": "extension_ui_request",
+        "id": key,
+        "method": "setWidget",
+        "widgetKey": key,
+        "widgetLines": lines,
+    }), flush=True)
+
+
 for line in sys.stdin:
     command = json.loads(line)
     kind = command["type"]
+    prediction = kind == "prompt" and command["message"].startswith("/pilo-next-prompt ")
     data = command.get("probe", {})
     if kind == "get_available_models":
         data = {"models": [{
@@ -16,6 +28,8 @@ for line in sys.stdin:
         }]}
     elif kind == "set_model":
         data = {"provider": command["provider"], "id": command["modelId"]}
+    elif prediction:
+        data = json.loads(command["message"].split(" ", 1)[1])
     if command.get("id") == "fixture-shutdown":
         with open("fixture-pi.pid", "w") as marker:
             marker.write(str(os.getpid()))
@@ -26,6 +40,14 @@ for line in sys.stdin:
         "success": True,
         "data": data,
     }), flush=True)
+    if kind == "get_state" and command.get("id") == "fixture-next-prompt-ready":
+        widget("pilo.next-prompt.ready.v1", ["ready"])
+    if prediction and not data["cancel"]:
+        result = {
+            key: data[key] for key in ("requestId", "sessionId", "revision")
+        }
+        result.update(leafId="fixture-leaf", text="What comes next?", status="ready")
+        widget("pilo.next-prompt.v1", [json.dumps(result)])
     if kind == "prompt" and not command.get("id"):
         message = {
             "role": "assistant",

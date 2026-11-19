@@ -18,7 +18,7 @@ use pilo_lib::{
         host_events::HostEvents,
         host_paths::HostPaths,
         initialize_server_resource_dir,
-        next_prompt::{next_prompt_settings_get, next_prompt_settings_set},
+        next_prompt::{next_prompt_request, next_prompt_settings_get, next_prompt_settings_set},
         preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
         project_api::{
             project_fs_read_image, project_list, project_model_cache_list, project_model_scope_get,
@@ -490,6 +490,18 @@ impl Pilo {
             let model = serde_json::from_value(model).map_err(|error| error.to_string())?;
             let settings = next_prompt_settings_set(runtime, connection_id, enabled, model)?;
             serde_json::to_value(settings).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Requests or cancels next-prompt assistance in an existing chat.
+    pub async fn request_next_prompt(
+        this: Instance<Self>,
+        request: JsonValue,
+    ) -> Result<(), String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let request = serde_json::from_value(request).map_err(|error| error.to_string())?;
+            next_prompt_request(&runtime, request).await
         })
         .await
     }
