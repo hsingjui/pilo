@@ -1,0 +1,288 @@
+import { expect, test } from "nsh/test";
+
+import type { PiloClientEvent } from "@/lib/api/pilo-client";
+import type { Project } from "@/lib/api/projects-types";
+import type { SessionIndexEntry } from "@/lib/api/sessions-types";
+import type { PreferencesSnapshot } from "@/lib/host-preferences-types";
+import type { SessionReadState } from "@/lib/session-read-state";
+import type { ThemeSettings } from "@/lib/theme-settings-types";
+import {
+	type AppAction,
+	type AppState,
+	createAppState,
+	isSessionUnread,
+	isStaleEvent,
+	readStateKey,
+	reduceAppState,
+} from "../state/app-state";
+
+const project = (id: string) => ({ id, name: id }) as Project;
+const preferences = (revision: number) =>
+	({ revision, locale: "en-US" }) as unknown as PreferencesSnapshot;
+const theme = (revision: number) => ({ revision }) as ThemeSettings;
+const session = (sessionPath: string) =>
+	({ projectId: "p1", sessionPath }) as SessionIndexEntry;
+const read = (
+	sessionPath: string,
+	completedRevision: number,
+	readRevision: number,
+): SessionReadState => ({
+	projectId: "p1",
+	sessionPath,
+	completedRevision,
+	readRevision,
+});
+const event = (sequence: number, body: object) =>
+	({ ...body, sequence }) as PiloClientEvent;
+
+function reduce(state: AppState, ...actions: AppAction[]) {
+	return actions.reduce(reduceAppState, state);
+}
+
+/** A ready state whose bootstrap cut is sequence 10. */
+function ready(...actions: AppAction[]) {
+	return reduce(
+		createAppState(),
+		{
+			type: "bootstrapped",
+			snapshot: {
+				projects: [project("p1"), project("p2")],
+				chatSessions: [],
+				latestSequence: 10,
+				preferences: preferences(3),
+			},
+		},
+		...actions,
+	);
+}
+
+test("the state starts empty and a bootstrap makes it ready", () => {
+	expect(createAppState()).toEqual({
+		status: { type: "starting" },
+		latestSequence: 0,
+		projects: [],
+		chatSessions: [],
+		preferences: null,
+		themeSettings: null,
+		sessionIndexes: {},
+		readStates: {},
+	});
+
+	const state = ready();
+	expect(state.status).toEqual({ type: "ready" });
+	expect(state.latestSequence).toBe(10);
+	expect(state.projects.map(({ id }) => id)).toEqual(["p1", "p2"]);
+	expect(state.preferences).toEqual(preferences(3));
+});
+
+test("a failed bootstrap keeps the last data and a later one recovers", () => {
+	const failed = ready({ type: "bootstrap_failed", message: "disk error" });
+	expect(failed.status).toEqual({ type: "failed", message: "disk error" });
+	expect(failed.projects.length).toBe(2);
+
+	const recovered = reduce(failed, {
+		type: "bootstrapped",
+		snapshot: {
+			projects: [],
+			chatSessions: [],
+			latestSequence: 20,
+			preferences: preferences(3),
+		},
+	});
+	expect(recovered.status).toEqual({ type: "ready" });
+	expect(recovered.projects).toEqual([]);
+	expect(reduce(recovered, { type: "closed" }).status).toEqual({
+		type: "closed",
+	});
+});
+
+test("preferences and theme settings only move to a newer revision", () => {
+	const state = ready(
+		{ type: "theme_settings_loaded", settings: theme(5) },
+		{
+			type: "event",
+			event: event(11, {
+				type: "preferences_changed",
+				settings: preferences(2),
+			}),
+		},
+		{
+			type: "event",
+			event: event(12, { type: "theme_settings_changed", settings: theme(4) }),
+		},
+		{ type: "theme_settings_loaded", settings: theme(5) },
+	);
+	expect(state.preferences?.revision).toBe(3);
+	expect(state.themeSettings?.revision).toBe(5);
+
+	const newer = reduce(
+		state,
+		{
+			type: "event",
+			event: event(13, {
+				type: "preferences_changed",
+				settings: preferences(4),
+			}),
+		},
+		{
+			type: "event",
+			event: event(14, { type: "theme_settings_changed", settings: theme(6) }),
+		},
+		{
+			type: "bootstrapped",
+			snapshot: {
+				projects: [],
+				chatSessions: [],
+				latestSequence: 12,
+				preferences: preferences(3),
+			},
+		},
+	);
+	expect(newer.preferences?.revision).toBe(4);
+	expect(newer.themeSettings?.revision).toBe(6);
+});
+
+test("snapshot-backed events at or below the bootstrap cut are skipped", () => {
+	const state = ready();
+	const stale = [
+		event(10, { type: "preferences_changed", settings: preferences(9) }),
+		event(10, { type: "theme_settings_changed", settings: theme(9) }),
+		event(9, { type: "configuration_changed" }),
+		event(9, { type: "sessions_indexed", projectId: "p1" }),
+		event(8, { type: "session_index_error", projectId: "p1", message: "x" }),
+		event(7, { type: "session_read_state_changed", state: read("a", 5, 0) }),
+	];
+	for (const item of stale) {
+		expect(isStaleEvent(state, item)).toBe(true);
+		expect(reduce(state, { type: "event", event: item })).toBe(state);
+	}
+
+	expect(
+		isStaleEvent(
+			state,
+			event(11, { type: "preferences_changed", settings: preferences(9) }),
+		),
+	).toBe(false);
+	// The bootstrap cut is not a transcript watermark.
+	expect(
+		isStaleEvent(
+			state,
+			event(4, { type: "assistant_text_delta", generation: 1, delta: "hi" }),
+		),
+	).toBe(false);
+});
+
+test("a session list keeps its entries while it reloads or fails", () => {
+	const loading = ready({ type: "sessions_loading", projectId: "p1" });
+	expect(loading.sessionIndexes).toEqual({
+		p1: { status: "loading", sessions: [] },
+	});
+
+	const loaded = reduce(loading, {
+		type: "sessions_loaded",
+		projectId: "p1",
+		sessions: [session("a")],
+	});
+	expect(loaded.sessionIndexes.p1).toEqual({
+		status: "loaded",
+		sessions: [session("a")],
+	});
+	expect(
+		reduce(loaded, { type: "sessions_loading", projectId: "p1" }).sessionIndexes
+			.p1,
+	).toEqual({ status: "loading", sessions: [session("a")] });
+	expect(
+		reduce(loaded, {
+			type: "sessions_failed",
+			projectId: "p1",
+			message: "offline",
+		}).sessionIndexes.p1,
+	).toEqual({ status: "failed", sessions: [session("a")], message: "offline" });
+	expect(
+		reduce(loaded, {
+			type: "event",
+			event: event(11, {
+				type: "session_index_error",
+				projectId: "p1",
+				message: "index broke",
+			}),
+		}).sessionIndexes.p1,
+	).toEqual({
+		status: "failed",
+		sessions: [session("a")],
+		message: "index broke",
+	});
+});
+
+test("session lists of removed projects are dropped", () => {
+	const state = ready(
+		{ type: "sessions_loaded", projectId: "p1", sessions: [session("a")] },
+		{ type: "sessions_loaded", projectId: "p2", sessions: [session("b")] },
+	);
+	const reloaded = reduce(state, {
+		type: "projects_loaded",
+		projects: [project("p2")],
+	});
+	expect(Object.keys(reloaded.sessionIndexes)).toEqual(["p2"]);
+
+	const bootstrapped = reduce(state, {
+		type: "bootstrapped",
+		snapshot: {
+			projects: [project("p1")],
+			chatSessions: [],
+			latestSequence: 30,
+			preferences: preferences(3),
+		},
+	});
+	expect(Object.keys(bootstrapped.sessionIndexes)).toEqual(["p1"]);
+});
+
+test("read revisions only grow and a full load removes deleted sessions", () => {
+	const state = ready(
+		{
+			type: "read_states_loaded",
+			states: [read("a", 2, 2), read("b", 1, 1)],
+		},
+		{
+			type: "event",
+			event: event(11, {
+				type: "session_read_state_changed",
+				state: read("a", 3, 2),
+			}),
+		},
+	);
+	expect(isSessionUnread(state, "p1", "a")).toBe(true);
+	expect(isSessionUnread(state, "p1", "b")).toBe(false);
+	expect(isSessionUnread(state, "p1", "missing")).toBe(false);
+
+	// An older snapshot must not undo the completion the event reported.
+	const reloaded = reduce(state, {
+		type: "read_states_loaded",
+		states: [read("a", 2, 2)],
+	});
+	expect(reloaded.readStates).toEqual({
+		[readStateKey("p1", "a")]: read("a", 3, 2),
+	});
+
+	const acknowledged = reduce(reloaded, {
+		type: "event",
+		event: event(12, {
+			type: "session_read_state_changed",
+			state: read("a", 3, 3),
+		}),
+	});
+	expect(isSessionUnread(acknowledged, "p1", "a")).toBe(false);
+});
+
+test("events the state does not hold leave it untouched", () => {
+	const state = ready();
+	for (const body of [
+		{ type: "configuration_changed" },
+		{ type: "sessions_indexed", projectId: "p1" },
+		{ type: "assistant_text_delta", generation: 1, delta: "hi" },
+	]) {
+		expect(reduce(state, { type: "event", event: event(11, body) })).toBe(
+			state,
+		);
+	}
+});
