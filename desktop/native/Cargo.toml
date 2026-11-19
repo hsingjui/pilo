@@ -7,4 +7,12 @@ publish = false
 [workspace]
 
 [dependencies]
+mime_guess = "2"
 nsh-core = "0.6.0"
+pilo = { path = "../../src-tauri", default-features = false }
+serde = "1"
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,5 +1,18 @@
 # Pilo desktop (nsh)
 
+## Native runtime
+
+`new Pilo()` uses the same macOS data directory as Tauri: the bundle ID
+`app.hsingjui.pilo` under `~/Library/Application Support` (with `.dev` for
+debug builds). Tests can pass a separate absolute path. Call `bootstrap()`
+for saved projects and live chat snapshots, and await `shutdown()` before
+quitting the app. Bootstrap does not yet include the event cursor.
+
+Build the local development server with `cargo build -p pilo-server` from
+the repo root, or set `PILO_SERVER_BINARY` to an absolute path. Development
+WebUI assets come from `dist/`; a packaged app will stage them under
+`Contents/Resources/webui` and the server under `Contents/Resources/runtime`.
+
 ## Built-in themes
 
 From the repository root, run `pnpm desktop:generate:themes` after editing
