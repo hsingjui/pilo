@@ -371,7 +371,12 @@ spacing, type sizes, or control heights.
   geometry. `useChatStickyScroll` captures the reading anchor (row at the
   viewport top, its offset, last row in view) from the plain list's ref cleanup,
   the last moment those rows are laid out, then realigns `scrollTop` to that row
-  in the layout effect and in resize delivery until two frames need no change.
+  in the layout effect and, until two frames need no change, in a MutationObserver
+  that lives only for that hold (`childList` plus row `style`). Virtua moves rows
+  by rewriting their inline style on every measurement, often in a frame where
+  the content resize notification is deferred, so resize delivery alone left the
+  row displaced by hundreds of px for two frames in a real Pi run. This is the
+  one place that observes attributes: the write is idempotent and short-lived.
   The rows in view stay in `keepMounted` meanwhile: Virtua only learns the
   corrected offset on its next scroll event, so without them one frame paints
   blank in Chromium. Any scroll input releases the anchor, and a held anchor

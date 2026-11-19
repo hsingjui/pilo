@@ -96,6 +96,7 @@ export function useChatStickyScroll({
 	const capturedReadingAnchorRef = useRef<ReadingAnchor | null>(null);
 	const readingAnchorRef = useRef<ReadingAnchor | null>(null);
 	const readingAnchorFrameRef = useRef<number | null>(null);
+	const readingAnchorObserverRef = useRef<MutationObserver | null>(null);
 	const [readingAnchorRows, setReadingAnchorRows] = useState<
 		readonly number[] | null
 	>(null);
@@ -158,6 +159,8 @@ export function useChatStickyScroll({
 		if (!readingAnchorRef.current) return;
 		readingAnchorRef.current = null;
 		setReadingAnchorRows(null);
+		readingAnchorObserverRef.current?.disconnect();
+		readingAnchorObserverRef.current = null;
 		if (readingAnchorFrameRef.current === null) return;
 		cancelAnimationFrame(readingAnchorFrameRef.current);
 		readingAnchorFrameRef.current = null;
@@ -211,10 +214,11 @@ export function useChatStickyScroll({
 		recordStickyScrollMetric("dom-scroll-write");
 	}, [vlistRef]);
 
-	// Virtua learns real row sizes only as rows mount, and each measurement
-	// moves the anchor row again. Until two frames in a row need no correction,
-	// resize delivery realigns it before paint and the rows in view stay mounted,
-	// because Virtua only picks up the corrected offset on its next scroll event.
+	// Virtua learns real row sizes only as rows mount, and every measurement
+	// moves the anchor row again by rewriting row positions. Realign in that
+	// mutation delivery, before it paints, until two frames in a row need no
+	// correction. The rows in view stay mounted meanwhile, because Virtua only
+	// picks up the corrected offset on its next scroll event.
 	const holdReadingAnchor = useCallback(
 		(anchor: ReadingAnchor) => {
 			releaseReadingAnchor();
@@ -226,6 +230,16 @@ export function useChatStickyScroll({
 				),
 			);
 			alignReadingAnchor();
+			const content = scrollElementRef.current?.firstElementChild;
+			if (content) {
+				const observer = new MutationObserver(alignReadingAnchor);
+				observer.observe(content, {
+					childList: true,
+					attributeFilter: ["style"],
+					subtree: true,
+				});
+				readingAnchorObserverRef.current = observer;
+			}
 			const settle = () => {
 				readingAnchorFrameRef.current = requestAnimationFrame(() => {
 					readingAnchorFrameRef.current = null;
@@ -415,7 +429,6 @@ export function useChatStickyScroll({
 			}
 			if (verticalLayoutChanged) {
 				if (ownershipRef.current === "following") clampToBottom();
-				else alignReadingAnchor();
 				syncScrollToLatestVisibility();
 			}
 		});
@@ -442,7 +455,6 @@ export function useChatStickyScroll({
 		};
 	}, [
 		activeAssistantMessageId,
-		alignReadingAnchor,
 		clampToBottom,
 		contentRevision,
 		enabled,
