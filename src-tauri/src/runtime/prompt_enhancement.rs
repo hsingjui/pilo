@@ -11,7 +11,7 @@
 
 use std::time::Duration;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager as _};
 
 use crate::domain::{PromptEnhancementModel, PromptEnhancementSettings};
 
@@ -165,7 +165,7 @@ pub(crate) async fn enhance(
         return Err("Draft is empty".to_owned());
     }
 
-    let project = project::get(app, project_id)?;
+    let project = project::get(&app.state::<crate::runtime::Runtime>(), project_id)?;
     let settings = load(paths, &project.connection.id)?;
     if !settings.enabled {
         return Err("Prompt enhancement is disabled for this connection".to_owned());

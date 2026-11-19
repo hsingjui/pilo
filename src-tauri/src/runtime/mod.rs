@@ -23,7 +23,7 @@ pub(crate) mod events;
 mod file_links;
 #[cfg(feature = "tauri")]
 mod git;
-mod handle;
+pub(crate) mod handle;
 pub(crate) mod host_events;
 pub(crate) mod host_paths;
 pub(crate) use handle::Runtime;
@@ -43,8 +43,8 @@ mod pi_workspace;
 mod preferences;
 #[cfg(feature = "tauri")]
 mod preview;
-#[cfg(feature = "tauri")]
 pub mod project;
+mod project_api;
 #[cfg(feature = "tauri")]
 mod project_opener;
 #[cfg(feature = "tauri")]

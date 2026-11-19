@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use tauri::Manager as _;
 
 use serde_json::Value;
 use tauri::{AppHandle, State, WebviewWindow, ipc::Channel};
@@ -115,7 +116,7 @@ pub async fn project_mcp_server_approve(
     if server_name.is_empty() {
         return Err("MCP server name cannot be empty".to_owned());
     }
-    let project = project::get(&app, project_id.trim())?;
+    let project = project::get(&app.state::<crate::runtime::Runtime>(), project_id.trim())?;
     let runtime_project = pi_workspace::resolve_session_project(&app, &project)?;
     let args = vec![
         "--input-type=module".to_owned(),
@@ -244,8 +245,13 @@ pub async fn project_start_pi(
     id: String,
 ) -> Result<PiSessionSnapshot, String> {
     let _policy = runtime.pi_resource_policy.read().await;
-    let project = project::ready(&app, &runtime.servers, &id).await?;
-    project::touch(&app, &project.id)?;
+    let project = project::ready(
+        &app.state::<crate::runtime::Runtime>(),
+        &runtime.servers,
+        &id,
+    )
+    .await?;
+    project::touch(&app.state::<crate::runtime::Runtime>(), &project.id)?;
     let profile = pi_workspace::resolve_pi_runtime(&app, &project, Vec::new()).await?;
     runtime
         .project_pi_session
@@ -293,7 +299,12 @@ pub async fn runtime_restart_pi(
     let mut session = runtime.project_pi_session.lock().await;
     if session.uses_ssh_workspace() {
         let id = session.snapshot().project_id.ok_or("missing Pi project")?;
-        let project = project::ready(&app, &runtime.servers, &id).await?;
+        let project = project::ready(
+            &app.state::<crate::runtime::Runtime>(),
+            &runtime.servers,
+            &id,
+        )
+        .await?;
         let profile = pi_workspace::resolve_pi_runtime(&app, &project, Vec::new()).await?;
         session.stop().await?;
         return session

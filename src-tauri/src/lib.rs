@@ -7,6 +7,8 @@ mod desktop_notifications;
 #[cfg(feature = "tauri")]
 mod desktop_paths;
 #[cfg(feature = "tauri")]
+mod desktop_runtime;
+#[cfg(feature = "tauri")]
 mod desktop_shortcut;
 #[cfg(feature = "tauri")]
 mod desktop_tray;
@@ -316,7 +318,8 @@ pub fn run() {
                 app.path().resource_dir()?,
             )?;
             runtime::initialize_server_resource_dir(paths.resource_dir().to_owned());
-            let runtime = runtime::Runtime::new(paths.clone(), desktop_events::from_app(app.handle()));
+            let runtime = runtime::Runtime::new(paths.clone(), desktop_events::from_app(app.handle()))
+                .with_shell(desktop_runtime::shell(app.handle()))?;
             app.manage(runtime.paths.clone());
             app.manage(runtime.core.clone());
             app.manage(runtime.events.clone());
@@ -362,7 +365,7 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let servers = std::sync::Arc::clone(&app.state::<PiloRuntime>().servers);
             tauri::async_runtime::spawn(async move {
-                let projects = match runtime::project::list(&app_handle) {
+                let projects = match runtime::project::list(&app_handle.state::<crate::runtime::Runtime>()) {
                     Ok(projects) => projects,
                     Err(error) => {
                         log::error!(target: "server-prewarm", "failed to load projects: {error}");

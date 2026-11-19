@@ -10,7 +10,6 @@ use std::{
 
 use serde::Serialize;
 use serde_json::json;
-use tauri::AppHandle;
 
 use super::host_events::HostEvents;
 
@@ -86,7 +85,7 @@ impl ParallelAgentManager {
     pub async fn create(
         &mut self,
         servers: Arc<ServerManager>,
-        app: AppHandle,
+        runtime: &super::Runtime,
         project: &Project,
         name: String,
         prompt: Option<String>,
@@ -101,7 +100,7 @@ impl ParallelAgentManager {
 
         let status = Arc::new(AtomicU8::new(status_to_u8(ParallelAgentStatus::Starting)));
         let sink = ParallelEventSink {
-            events: crate::desktop_events::from_app(&app),
+            events: runtime.host_events.clone(),
             agent_id: id.clone(),
             status: Arc::clone(&status),
         };
@@ -120,14 +119,19 @@ impl ParallelAgentManager {
             created_at_ms: project.created_at_ms,
             last_opened_at_ms: project.last_opened_at_ms,
         };
-        let profile =
-            match pi_workspace::resolve_pi_runtime(&app, &worktree_project, Vec::new()).await {
-                Ok(profile) => profile,
-                Err(error) => {
-                    let _ = remove_worktree(&servers, project, &branch, &worktree_path).await;
-                    return Err(error);
-                }
-            };
+        let profile = match pi_workspace::resolve_checked_pi_runtime_with_paths(
+            &runtime.paths,
+            &worktree_project,
+            Vec::new(),
+        )
+        .await
+        {
+            Ok(profile) => profile,
+            Err(error) => {
+                let _ = remove_worktree(&servers, project, &branch, &worktree_path).await;
+                return Err(error);
+            }
+        };
         if let Err(error) = session
             .spawn(
                 Arc::clone(&servers),

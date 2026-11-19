@@ -9,13 +9,12 @@ use pilo_server::file_links::{
 };
 use serde::Serialize;
 use serde_json::json;
-use tauri::{AppHandle, Manager, Url};
-use tauri_plugin_opener::OpenerExt;
+use tauri::Url;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::domain::{ConnectionKind, Project};
 
-use super::PiloRuntime;
+use super::Runtime;
 
 fn is_html(path: &Path) -> bool {
     path.extension()
@@ -190,12 +189,8 @@ async fn check_system_file(path: &Path) -> Result<(), String> {
     check_system_header(&header)
 }
 
-async fn cache_document(app: &AppHandle, path: &str, bytes: &[u8]) -> Result<PathBuf, String> {
-    let directory = app
-        .path()
-        .app_cache_dir()
-        .map_err(|error| format!("failed to resolve file link cache: {error}"))?
-        .join("file-links");
+async fn cache_document(runtime: &Runtime, path: &str, bytes: &[u8]) -> Result<PathBuf, String> {
+    let directory = runtime.shell()?.cache_dir()?.join("file-links");
     let mut builder = tokio::fs::DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]
@@ -259,7 +254,7 @@ async fn cache_document(app: &AppHandle, path: &str, bytes: &[u8]) -> Result<Pat
 }
 
 async fn open_remote_file_link(
-    app: &AppHandle,
+    runtime: &Runtime,
     project: &Project,
     url: &str,
     preview: bool,
@@ -272,7 +267,6 @@ async fn open_remote_file_link(
     if !preview {
         check_system_extension(Path::new(&path))?;
     }
-    let runtime = app.state::<PiloRuntime>();
     let (metadata, mut binary) = runtime
         .servers
         .request_with_binary(
@@ -299,11 +293,12 @@ async fn open_remote_file_link(
         return Err("HTML report must resolve to an HTML file".to_owned());
     }
     check_system_header(&bytes[..bytes.len().min(4)])?;
-    let cached = cache_document(app, &metadata.path, &bytes).await?;
+    let cached = cache_document(runtime, &metadata.path, &bytes).await?;
     let result = async {
         check_system_file(&cached).await?;
-        app.opener()
-            .open_path(cached.to_string_lossy(), None::<&str>)
+        runtime
+            .shell()?
+            .open_path(&cached)
             .map_err(|error| format!("failed to open file link: {error}"))
     }
     .await;
@@ -314,13 +309,13 @@ async fn open_remote_file_link(
 }
 
 pub(crate) async fn open_file_link(
-    app: &AppHandle,
+    runtime: &Runtime,
     project: &Project,
     url: &str,
     preview: bool,
 ) -> Result<Option<FileLinkPreview>, String> {
     if !matches!(project.connection.kind, ConnectionKind::Local) {
-        return open_remote_file_link(app, project, url, preview, false).await;
+        return open_remote_file_link(runtime, project, url, preview, false).await;
     }
     let path = checked_file_path(url).await?;
     if preview {
@@ -329,23 +324,26 @@ pub(crate) async fn open_file_link(
     // Validate both names: a harmless symlink name must not disguise an executable.
     check_system_extension(&file_path(url)?)?;
     check_system_file(&path).await?;
-    app.opener()
-        .open_path(path.to_string_lossy(), None::<&str>)
+    runtime
+        .shell()?
+        .open_path(&path)
         .map_err(|error| format!("failed to open file link: {error}"))?;
     Ok(None)
 }
 
 // Retain the original HTML-only command contract for existing callers.
-pub(crate) async fn open(app: &AppHandle, project: &Project, url: &str) -> Result<(), String> {
+pub(crate) async fn open(runtime: &Runtime, project: &Project, url: &str) -> Result<(), String> {
     if !matches!(project.connection.kind, ConnectionKind::Local) {
-        return open_remote_file_link(app, project, url, false, true)
+        return open_remote_file_link(runtime, project, url, false, true)
             .await
             .map(|_| ());
     }
     if !is_html(&file_path(url)?) || !is_html(&checked_file_path(url).await?) {
         return Err("HTML report must resolve to an HTML file".to_owned());
     }
-    open_file_link(app, project, url, false).await.map(|_| ())
+    open_file_link(runtime, project, url, false)
+        .await
+        .map(|_| ())
 }
 
 #[cfg(test)]
@@ -468,8 +466,8 @@ mod tests {
             assert!(read_preview(&path).await.is_err(), "{name}");
         }
         for name in [
-            "app.EXE",
-            "app.exe .",
+            "runtime.EXE",
+            "runtime.exe .",
             "run.cmd",
             "link.lnk",
             "link.url",

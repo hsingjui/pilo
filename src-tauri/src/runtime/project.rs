@@ -1,42 +1,37 @@
 use std::collections::BTreeSet;
 
+use super::Runtime;
 use pilo_protocol::EnvironmentInfo;
 use serde::Deserialize;
 use serde_json::Value;
-use tauri::{AppHandle, Manager};
 
 use crate::domain::{Connection, DiscoveredProject, Project, ProjectMetadata};
 
 use super::{
     events::{RuntimeEvent, RuntimeEventBus, RuntimeEventEnvelope},
-    pi_workspace,
-    server_client::ServerManager,
     storage,
 };
+
+#[cfg(feature = "tauri")]
+use super::{pi_workspace, server_client::ServerManager};
 
 const MAX_DISCOVERED_PROJECTS: usize = 200;
 
 pub(crate) fn load_model_scope(
-    app: &AppHandle,
+    runtime: &Runtime,
     project_id: &str,
 ) -> Result<crate::domain::ProjectModelScope, String> {
-    storage::get_project_model_scope(
-        &storage::open(&crate::desktop_paths::from_app(app)?)?,
-        project_id,
-    )
+    storage::get_project_model_scope(&storage::open(&runtime.paths)?, project_id)
 }
 
 pub(crate) fn save_model_scope(
-    app: &AppHandle,
+    runtime: &Runtime,
     events: &RuntimeEventBus,
     project_id: &str,
     models: Option<Vec<crate::domain::ProjectScopedModel>>,
 ) -> Result<crate::domain::ProjectModelScope, String> {
-    let scope = storage::set_project_model_scope(
-        &storage::open(&crate::desktop_paths::from_app(app)?)?,
-        project_id,
-        models,
-    )?;
+    let scope =
+        storage::set_project_model_scope(&storage::open(&runtime.paths)?, project_id, models)?;
     events.send(RuntimeEventEnvelope {
         session_key: None,
         project_id: Some(project_id.to_owned()),
@@ -48,8 +43,8 @@ pub(crate) fn save_model_scope(
     Ok(scope)
 }
 
-pub fn list(app: &AppHandle) -> Result<Vec<Project>, String> {
-    let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
+pub fn list(runtime: &Runtime) -> Result<Vec<Project>, String> {
+    let db = storage::open(&runtime.paths)?;
     storage::ensure_local_connection(&db)?;
     for connection in storage::list_connections(&db)? {
         let key = default_workspace_key(&connection.id);
@@ -91,6 +86,7 @@ fn default_workspace_key(connection_id: &str) -> String {
     }
 }
 
+#[cfg(feature = "tauri")]
 pub(crate) async fn ready_with_paths(
     paths: &super::host_paths::HostPaths,
     servers: &ServerManager,
@@ -121,36 +117,32 @@ pub(crate) async fn ready_with_paths(
     Ok(project)
 }
 
+#[cfg(feature = "tauri")]
 pub(crate) async fn ready(
-    app: &AppHandle,
+    runtime: &Runtime,
     servers: &ServerManager,
     id: &str,
 ) -> Result<Project, String> {
-    ready_with_paths(
-        &crate::desktop_paths::from_app(app)?,
-        servers,
-        app.state::<super::RuntimeEventBus>().inner(),
-        id,
-    )
-    .await
+    ready_with_paths(&runtime.paths, servers, &runtime.events, id).await
 }
 
-pub fn get(app: &AppHandle, id: &str) -> Result<Project, String> {
-    storage::get_project(&storage::open(&crate::desktop_paths::from_app(app)?)?, id)?
+pub fn get(runtime: &Runtime, id: &str) -> Result<Project, String> {
+    storage::get_project(&storage::open(&runtime.paths)?, id)?
         .ok_or_else(|| format!("Project '{id}' was not found"))
 }
 
+#[cfg(feature = "tauri")]
 pub async fn add(
-    app: &AppHandle,
+    runtime: &Runtime,
     servers: &ServerManager,
     connection_id: String,
     path: String,
 ) -> Result<Project, String> {
-    let connection = resolve_connection(app, &connection_id)?;
+    let connection = resolve_connection(runtime, &connection_id)?;
     let (connection, metadata) = inspect(servers, connection, path).await?;
     let normalized_path = metadata.cwd.clone();
     let id = Project::stable_id(&connection.id, &normalized_path);
-    let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
+    let db = storage::open(&runtime.paths)?;
     let now = storage::now_ms();
     let created_at_ms = storage::get_project(&db, &id)?
         .map(|project| project.created_at_ms)
@@ -168,12 +160,13 @@ pub async fn add(
     Ok(project)
 }
 
+#[cfg(feature = "tauri")]
 pub async fn refresh(
-    app: &AppHandle,
+    runtime: &Runtime,
     servers: &ServerManager,
     id: &str,
 ) -> Result<Project, String> {
-    let current = ready(app, servers, id).await?;
+    let current = ready(runtime, servers, id).await?;
     let default_workspace = current.is_default_workspace();
     let (connection, metadata) = inspect(servers, current.connection, current.path).await?;
     let normalized_path = metadata.cwd.clone();
@@ -190,43 +183,37 @@ pub async fn refresh(
         created_at_ms: current.created_at_ms,
         last_opened_at_ms: current.last_opened_at_ms,
     };
-    storage::upsert_project(
-        &storage::open(&crate::desktop_paths::from_app(app)?)?,
-        &project,
-    )?;
+    storage::upsert_project(&storage::open(&runtime.paths)?, &project)?;
     Ok(project)
 }
 
-pub fn touch(app: &AppHandle, id: &str) -> Result<Project, String> {
-    get(app, id)?;
-    storage::touch_project(
-        &storage::open(&crate::desktop_paths::from_app(app)?)?,
-        id,
-        storage::now_ms(),
-    )?;
-    get(app, id)
+pub fn touch(runtime: &Runtime, id: &str) -> Result<Project, String> {
+    get(runtime, id)?;
+    storage::touch_project(&storage::open(&runtime.paths)?, id, storage::now_ms())?;
+    get(runtime, id)
 }
 
-pub fn remove(app: &AppHandle, id: &str) -> Result<Vec<Project>, String> {
-    if get(app, id)?.is_default_workspace() {
+#[cfg(feature = "tauri")]
+pub fn remove(runtime: &Runtime, id: &str) -> Result<Vec<Project>, String> {
+    if get(runtime, id)?.is_default_workspace() {
         return Err(
             "The default workspace cannot be removed; hide it in the connection menu".to_owned(),
         );
     }
-    let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
+    let db = storage::open(&runtime.paths)?;
     if !storage::remove_project(&db, id)? {
         return Err(format!("Project '{id}' was not found"));
     }
-    pi_workspace::remove_session_anchor(app, id)?;
+    pi_workspace::remove_session_anchor(&runtime.paths, id)?;
     storage::list_projects(&db)
 }
 
 pub fn reorder(
-    app: &AppHandle,
+    runtime: &Runtime,
     connection_id: &str,
     project_ids: &[String],
 ) -> Result<Vec<Project>, String> {
-    let mut db = storage::open(&crate::desktop_paths::from_app(app)?)?;
+    let mut db = storage::open(&runtime.paths)?;
     let default_id = Project::default_workspace_id(connection_id);
     let mut ordered = project_ids.to_vec();
     if !ordered.contains(&default_id) && storage::get_project(&db, &default_id)?.is_some() {
@@ -236,16 +223,17 @@ pub fn reorder(
     storage::list_projects(&db)
 }
 
+#[cfg(feature = "tauri")]
 pub async fn discover(
-    app: &AppHandle,
+    runtime: &Runtime,
     servers: &ServerManager,
     connection_id: String,
 ) -> Result<Vec<DiscoveredProject>, String> {
-    let connection = resolve_connection(app, &connection_id)?;
+    let connection = resolve_connection(runtime, &connection_id)?;
     let headers: Vec<Value> = servers
         .request_typed(&connection, "session.discover", Value::Null)
         .await?;
-    let existing = list(app)?;
+    let existing = list(runtime)?;
     let added_ids = existing
         .iter()
         .map(|project| project.id.as_str())
@@ -265,8 +253,8 @@ pub async fn discover(
         .collect())
 }
 
-pub fn resolve_connection(app: &AppHandle, connection_id: &str) -> Result<Connection, String> {
-    let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
+pub fn resolve_connection(runtime: &Runtime, connection_id: &str) -> Result<Connection, String> {
+    let db = storage::open(&runtime.paths)?;
     if connection_id == "local" {
         return storage::ensure_local_connection(&db);
     }
@@ -274,6 +262,7 @@ pub fn resolve_connection(app: &AppHandle, connection_id: &str) -> Result<Connec
         .ok_or_else(|| format!("Connection '{connection_id}' was not found"))
 }
 
+#[cfg(feature = "tauri")]
 async fn inspect(
     servers: &ServerManager,
     connection: Connection,
@@ -324,6 +313,53 @@ fn parse_session_headers(headers: &[Value]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_project_catalog_and_scope_work_without_a_shell() {
+        let root =
+            std::env::temp_dir().join(format!("pilo-runtime-projects-{}", std::process::id()));
+        let runtime = Runtime::new(
+            super::super::host_paths::HostPaths::new(root.clone(), root.join("resources")).unwrap(),
+            std::sync::Arc::new(super::super::host_events::RecordingEvents::default()),
+        );
+        let projects = super::super::project_api::project_list(&runtime).unwrap();
+        assert_eq!(projects.len(), 1);
+        let id = projects[0].id.clone();
+        assert!(get(&runtime, "missing").is_err());
+        assert_eq!(get(&runtime, &id).unwrap().id, id);
+        assert!(
+            super::super::project_api::project_model_cache_list(&runtime)
+                .unwrap()
+                .is_empty()
+        );
+        let scope = super::super::project_api::project_model_scope_set(
+            &runtime,
+            id.clone(),
+            Some(Vec::new()),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(
+                super::super::project_api::project_model_scope_get(&runtime, id.clone()).unwrap()
+            )
+            .unwrap(),
+            serde_json::to_value(scope).unwrap()
+        );
+        assert_eq!(
+            super::super::project_api::project_touch(&runtime, id.clone())
+                .unwrap()
+                .id,
+            id
+        );
+        assert_eq!(
+            super::super::project_api::project_reorder(&runtime, "local".into(), vec![id])
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(runtime.shell().is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn parses_unique_project_paths_from_session_headers() {

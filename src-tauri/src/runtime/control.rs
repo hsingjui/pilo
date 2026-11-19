@@ -69,7 +69,7 @@ pub(crate) async fn attach(
     local: bool,
 ) -> Result<(ControlContext, ControlLease), String> {
     // Resolve from Host storage, never from a caller-supplied source identity.
-    let source = project::get(&app, project_id)?;
+    let source = project::get(&app.state::<crate::runtime::Runtime>(), project_id)?;
     let task = spawn_dispatcher(
         app.clone(),
         client.clone(),
@@ -261,11 +261,17 @@ async fn execute(
                 json!({ "hasPassword": matches!(connection.kind, ConnectionKind::Ssh { .. }) && super::credentials::has_ssh_password(&connection.id), "connection": connection, "effect": "new sessions use the saved connection; existing processes are not restarted" }),
             )
         }
-        "projects.list" => encode(project::list(app)?),
+        "projects.list" => encode(project::list(&app.state::<crate::runtime::Runtime>())?),
         "projects.add" => {
             let connection = required(command.connection_id.as_deref(), "--connection")?;
             let path = required(command.key.as_deref(), "project path")?;
-            let added = project::add(app, &runtime.servers, connection, path).await?;
+            let added = project::add(
+                &app.state::<crate::runtime::Runtime>(),
+                &runtime.servers,
+                connection,
+                path,
+            )
+            .await?;
             runtime.chat_sessions.open_project(&added.id).await?;
             changed(app);
             encode(added)

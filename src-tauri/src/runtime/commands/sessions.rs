@@ -23,7 +23,7 @@ fn session_runtime_project(
     app: &AppHandle,
     project_id: &str,
 ) -> Result<crate::domain::Project, String> {
-    let project = project::get(app, project_id)?;
+    let project = project::get(&app.state::<crate::runtime::Runtime>(), project_id)?;
     pi_workspace::resolve_session_project(app, &project)
 }
 
@@ -74,7 +74,7 @@ pub async fn session_reconcile(
     runtime: State<'_, PiloRuntime>,
     project_id: String,
 ) -> Result<SessionReconcileResult, String> {
-    let project = project::get(&app, &project_id)?;
+    let project = project::get(&app.state::<crate::runtime::Runtime>(), &project_id)?;
     let host_paths = crate::desktop_paths::from_app(&app)?;
     let work = session_index::reconcile(&host_paths, &runtime.servers, &project).await?;
     if !work.deferred_paths.is_empty() {
@@ -185,7 +185,7 @@ pub async fn session_watch_start(
     runtime: State<'_, PiloRuntime>,
     project_id: String,
 ) -> Result<(), String> {
-    let project = project::get(&app, &project_id)?;
+    let project = project::get(&app.state::<crate::runtime::Runtime>(), &project_id)?;
     runtime
         .session_watchers
         .lock()

@@ -1,4 +1,5 @@
 use std::time::Duration;
+use tauri::Manager as _;
 
 use tauri::{AppHandle, State};
 
@@ -34,7 +35,7 @@ pub async fn generate_session_title(
         return Ok(None);
     }
 
-    let project = project::get(app, project_id)?;
+    let project = project::get(&app.state::<crate::runtime::Runtime>(), project_id)?;
     let naming_model = storage::get_connection_naming_model(
         &storage::open(&crate::desktop_paths::from_app(app)?)?,
         &project.connection.id,

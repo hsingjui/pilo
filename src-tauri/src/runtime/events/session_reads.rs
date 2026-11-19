@@ -164,7 +164,10 @@ impl RuntimeEventBus {
         if runtime.servers.is_shutting_down() {
             return Ok(());
         }
-        let project = pi_workspace::resolve_session_project(app, &project::get(app, project_id)?)?;
+        let project = pi_workspace::resolve_session_project(
+            app,
+            &project::get(&app.state::<crate::runtime::Runtime>(), project_id)?,
+        )?;
         if project.default_workspace_pending() {
             return Ok(());
         }
@@ -269,7 +272,7 @@ impl RuntimeEventBus {
                     .keys()
                     .cloned()
                     .collect::<HashSet<_>>();
-                let Ok(projects) = project::list(&app) else {
+                let Ok(projects) = project::list(&app.state::<crate::runtime::Runtime>()) else {
                     continue;
                 };
                 let mut projects = projects

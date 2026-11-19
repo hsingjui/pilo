@@ -2,6 +2,7 @@ use std::sync::{
     Arc, Mutex as StdMutex, Weak,
     atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
 };
+use tauri::Manager as _;
 
 use std::time::{Duration, Instant};
 
@@ -474,7 +475,10 @@ impl ServerPiSession {
                         .iter()
                         .any(|extension| matches!(extension, BuiltinExtension::SshWorkspace { .. }))
                     {
-                        let original = super::project::get(&app, &project.id)?;
+                        let original = super::project::get(
+                            &app.state::<crate::runtime::Runtime>(),
+                            &project.id,
+                        )?;
                         let remote_client = servers.client(&original.connection).await?;
                         let (context, lease) = super::control::attach(
                             app,

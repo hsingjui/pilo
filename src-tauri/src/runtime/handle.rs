@@ -2,6 +2,12 @@ use std::sync::Arc;
 
 use super::{RuntimeEventBus, host_events::HostEvents, host_paths::HostPaths};
 
+pub(crate) trait HostShell: Send + Sync {
+    fn cache_dir(&self) -> Result<std::path::PathBuf, String>;
+    fn open_path(&self, path: &std::path::Path) -> Result<(), String>;
+    fn pick_directory(&self) -> Option<String>;
+}
+
 #[derive(Clone)]
 pub(crate) struct Runtime(Arc<RuntimeState>);
 
@@ -9,6 +15,7 @@ pub(crate) struct RuntimeState {
     pub(crate) paths: HostPaths,
     pub(crate) host_events: Arc<dyn HostEvents>,
     pub(crate) events: RuntimeEventBus,
+    shell: Option<Arc<dyn HostShell>>,
     #[cfg(feature = "tauri")]
     pub(crate) core: super::PiloRuntime,
     #[cfg(feature = "tauri")]
@@ -40,11 +47,25 @@ impl Runtime {
             paths,
             host_events,
             events,
+            shell: None,
             #[cfg(feature = "tauri")]
             core: super::PiloRuntime::default(),
             #[cfg(feature = "tauri")]
             remote: super::RemoteServerManager::default(),
         }))
+    }
+
+    pub(crate) fn with_shell(mut self, shell: Arc<dyn HostShell>) -> Result<Self, String> {
+        Arc::get_mut(&mut self.0)
+            .ok_or("runtime is already shared")?
+            .shell = Some(shell);
+        Ok(self)
+    }
+
+    pub(crate) fn shell(&self) -> Result<&dyn HostShell, String> {
+        self.shell
+            .as_deref()
+            .ok_or_else(|| "host shell services are unavailable".to_owned())
     }
 }
 

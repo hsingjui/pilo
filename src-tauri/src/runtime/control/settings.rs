@@ -122,10 +122,13 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
         "project.models" => {
             let id = required(command.project_id.as_deref(), "--project")?;
             if get {
-                encode(project::load_model_scope(app, &id)?)
+                encode(project::load_model_scope(
+                    &app.state::<crate::runtime::Runtime>(),
+                    &id,
+                )?)
             } else {
                 encode(project::save_model_scope(
-                    app,
+                    &app.state::<crate::runtime::Runtime>(),
                     &events,
                     &id,
                     decode(if reset { Value::Null } else { value })?,

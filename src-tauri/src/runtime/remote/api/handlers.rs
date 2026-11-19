@@ -28,10 +28,11 @@ pub(super) struct BootstrapResponse {
 }
 
 pub(super) async fn bootstrap(State(state): State<RemoteHttpState>) -> Response {
-    let projects = match crate::runtime::project::list(&state.app) {
-        Ok(projects) => projects,
-        Err(error) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
-    };
+    let projects =
+        match crate::runtime::project::list(&state.app.state::<crate::runtime::Runtime>()) {
+            Ok(projects) => projects,
+            Err(error) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
+        };
     let runtime = state.app.state::<PiloRuntime>();
     let events = state.app.state::<RuntimeEventBus>();
     let local_pi_resources = match local_pi_resources_snapshot(&state.paths) {
@@ -392,12 +393,16 @@ pub(super) async fn project_image(
     Query(query): Query<ProjectImageQuery>,
 ) -> Response {
     let runtime = state.app.state::<PiloRuntime>();
-    let project =
-        match crate::runtime::project::ready(&state.app, &runtime.servers, &query.project_id).await
-        {
-            Ok(project) => project,
-            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-        };
+    let project = match crate::runtime::project::ready(
+        &state.app.state::<crate::runtime::Runtime>(),
+        &runtime.servers,
+        &query.project_id,
+    )
+    .await
+    {
+        Ok(project) => project,
+        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
+    };
     match remote_fs::read_image(&runtime.servers, &project, &query.path).await {
         Ok(bytes) => Response::builder()
             .status(StatusCode::OK)
@@ -425,12 +430,16 @@ pub(super) async fn chat_file_upload(
     data: Bytes,
 ) -> Response {
     let runtime = state.app.state::<PiloRuntime>();
-    let project =
-        match crate::runtime::project::ready(&state.app, &runtime.servers, &query.project_id).await
-        {
-            Ok(project) => project,
-            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-        };
+    let project = match crate::runtime::project::ready(
+        &state.app.state::<crate::runtime::Runtime>(),
+        &runtime.servers,
+        &query.project_id,
+    )
+    .await
+    {
+        Ok(project) => project,
+        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
+    };
     match remote_fs::upload_chat_file(&runtime.servers, &project, &query.name, &data).await {
         Ok(path) => Json(path).into_response(),
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
@@ -449,12 +458,16 @@ pub(super) async fn chat_file_remove(
     Query(query): Query<ChatFileRemoveQuery>,
 ) -> Response {
     let runtime = state.app.state::<PiloRuntime>();
-    let project =
-        match crate::runtime::project::ready(&state.app, &runtime.servers, &query.project_id).await
-        {
-            Ok(project) => project,
-            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-        };
+    let project = match crate::runtime::project::ready(
+        &state.app.state::<crate::runtime::Runtime>(),
+        &runtime.servers,
+        &query.project_id,
+    )
+    .await
+    {
+        Ok(project) => project,
+        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
+    };
     match remote_fs::remove_chat_file(&runtime.servers, &project, &query.path).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
@@ -557,7 +570,10 @@ pub(super) async fn model_scope_get(
     State(state): State<RemoteHttpState>,
     Query(query): Query<ModelsQuery>,
 ) -> Response {
-    match crate::runtime::project::load_model_scope(&state.app, &query.project_id) {
+    match crate::runtime::project::load_model_scope(
+        &state.app.state::<crate::runtime::Runtime>(),
+        &query.project_id,
+    ) {
         Ok(scope) => Json(scope).into_response(),
         Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
     }
@@ -575,7 +591,7 @@ pub(super) async fn model_scope_set(
     Json(request): Json<ModelScopeRequest>,
 ) -> Response {
     match crate::runtime::project::save_model_scope(
-        &state.app,
+        &state.app.state::<crate::runtime::Runtime>(),
         &state.app.state::<RuntimeEventBus>(),
         &request.project_id,
         request.models,
@@ -903,12 +919,16 @@ pub(super) async fn files_search(
     Query(query): Query<FileSearchQuery>,
 ) -> Response {
     let runtime = state.app.state::<PiloRuntime>();
-    let project =
-        match crate::runtime::project::ready(&state.app, &runtime.servers, &query.project_id).await
-        {
-            Ok(project) => project,
-            Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
-        };
+    let project = match crate::runtime::project::ready(
+        &state.app.state::<crate::runtime::Runtime>(),
+        &runtime.servers,
+        &query.project_id,
+    )
+    .await
+    {
+        Ok(project) => project,
+        Err(error) => return api_error(StatusCode::NOT_FOUND, &error),
+    };
     match remote_fs::search(&runtime.servers, &project, &query.query).await {
         Ok(paths) => Json(paths).into_response(),
         Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),

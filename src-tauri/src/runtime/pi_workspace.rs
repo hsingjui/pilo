@@ -229,8 +229,7 @@ fn local_session_anchor(paths: &HostPaths, project_id: &str) -> Result<std::path
 
 /// Remove the local anchor directory that holds a Local-Pi project's session
 /// files, so a re-added project does not resurrect the previous sessions.
-pub(crate) fn remove_session_anchor(app: &AppHandle, project_id: &str) -> Result<(), String> {
-    let paths = crate::desktop_paths::from_app(app)?;
+pub(crate) fn remove_session_anchor(paths: &HostPaths, project_id: &str) -> Result<(), String> {
     let path = paths.session_anchor_path(project_id);
     match fs::remove_dir_all(&path) {
         Ok(()) => Ok(()),
