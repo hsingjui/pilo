@@ -81,6 +81,17 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 			updatedAtMs: 9,
 		}),
 		requestNextPrompt: answer("requestNextPrompt", undefined),
+		loadPromptEnhancementSettings: answer("loadPromptEnhancementSettings", {
+			connectionId: "local",
+			enabled: false,
+			model: null,
+			updatedAtMs: 0,
+		}),
+		savePromptEnhancementSettings: answer("savePromptEnhancementSettings", {
+			connectionId: "local",
+			enabled: true,
+			updatedAtMs: 9,
+		}),
 		loadSessionReadStates: answer("loadSessionReadStates", [readState]),
 		markSessionRead: answer("markSessionRead", readState),
 		loadPreferences: answer("loadPreferences", preferences),
@@ -560,6 +571,47 @@ test("a history read the native module refuses rejects with its error", async ()
 	expect(caught).toBe(failure);
 });
 
+test("prompt enhancement settings calls pass their arguments and return the native answers", async () => {
+	const { pilo, calls } = fakeNative();
+	const client = new NshPiloClient(pilo);
+	const model = { provider: "relay", id: "m1" };
+
+	expect(await client.loadPromptEnhancementSettings("local")).toEqual({
+		connectionId: "local",
+		enabled: false,
+		model: null,
+		updatedAtMs: 0,
+	});
+	expect(
+		await client.savePromptEnhancementSettings("local", true, model),
+	).toEqual({ connectionId: "local", enabled: true, updatedAtMs: 9 });
+	await client.savePromptEnhancementSettings("local", false, null);
+	expect(calls).toEqual([
+		["loadPromptEnhancementSettings", "local"],
+		["savePromptEnhancementSettings", "local", true, model],
+		["savePromptEnhancementSettings", "local", false, null],
+	]);
+});
+
+test("prompt enhancement settings the native module refuses reject with its error", async () => {
+	const failure = new Error("Connection 'gone' was not found");
+	const { pilo } = fakeNative({
+		loadPromptEnhancementSettings: () => Promise.reject(failure),
+		savePromptEnhancementSettings: () => Promise.reject(failure),
+	});
+	const client = new NshPiloClient(pilo);
+	for (const call of [
+		client.loadPromptEnhancementSettings("gone"),
+		client.savePromptEnhancementSettings("gone", false, null),
+	]) {
+		let caught: unknown;
+		await call.catch((error: unknown) => {
+			caught = error;
+		});
+		expect(caught).toBe(failure);
+	}
+});
+
 /** A native event stream whose polls the test answers one at a time. */
 function fakeEventStream() {
 	const polls: {
@@ -798,6 +850,13 @@ test("the client takes idle, active and truncated transcript snapshots through t
 test("the client reads settled session history through the native module", async () => {
 	const app = await open("./pilo-client-history-fixture.tsx");
 	await app.waitFor("text:client settled history verified", {
+		timeout: 30_000,
+	});
+});
+
+test("the client loads and saves prompt enhancement settings through the native module", async () => {
+	const app = await open("./pilo-client-prompt-enhancement-fixture.tsx");
+	await app.waitFor("text:client prompt enhancement settings verified", {
 		timeout: 30_000,
 	});
 });

@@ -35,6 +35,10 @@ import type {
 	NextPromptSettings,
 } from "@/lib/next-prompt-types";
 import type {
+	PromptEnhancementModel,
+	PromptEnhancementSettings,
+} from "@/lib/prompt-enhancement-types";
+import type {
 	PreferencePatch,
 	PreferencesSnapshot,
 } from "@/lib/host-preferences-types";
@@ -70,6 +74,8 @@ export type PiloNative = Pick<
 	| "loadNextPromptSettings"
 	| "saveNextPromptSettings"
 	| "requestNextPrompt"
+	| "loadPromptEnhancementSettings"
+	| "savePromptEnhancementSettings"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "loadPreferences"
@@ -139,6 +145,8 @@ type BridgedPiloClient = Pick<
 	| "loadNextPromptSettings"
 	| "saveNextPromptSettings"
 	| "requestNextPrompt"
+	| "loadPromptEnhancementSettings"
+	| "savePromptEnhancementSettings"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "connectEvents"
@@ -354,6 +362,32 @@ export class NshPiloClient implements BridgedPiloClient {
 	 */
 	requestNextPrompt(request: NextPromptRequest) {
 		return this.pilo.requestNextPrompt(request);
+	}
+
+	/** The connection's prompt enhancement settings; disabled when never saved. */
+	async loadPromptEnhancementSettings(
+		connectionId: string,
+	): Promise<PromptEnhancementSettings> {
+		return (await this.pilo.loadPromptEnhancementSettings(
+			connectionId,
+		)) as PromptEnhancementSettings;
+	}
+
+	/**
+	 * Replaces the connection's prompt enhancement settings; a `null` model
+	 * follows the chat's. Listeners also get them as
+	 * `prompt_enhancement_settings_changed`.
+	 */
+	async savePromptEnhancementSettings(
+		connectionId: string,
+		enabled: boolean,
+		model: PromptEnhancementModel | null,
+	): Promise<PromptEnhancementSettings> {
+		return (await this.pilo.savePromptEnhancementSettings(
+			connectionId,
+			enabled,
+			model,
+		)) as PromptEnhancementSettings;
 	}
 
 	loadSessionReadStates() {
