@@ -60,11 +60,6 @@ function ImagePlaceholder({
 			<span>
 				{t(unavailable ? "chat.imageUnavailable" : "chat.loadImageFailed")}
 			</span>
-			{!unavailable ? (
-				<span className="underline underline-offset-2">
-					{t("common.retry")}
-				</span>
-			) : null}
 		</span>
 	) : (
 		<Spinner className="size-5" />
@@ -92,7 +87,7 @@ function ExternalMarkdownImage({
 			type="button"
 			aria-label={
 				status === "error"
-					? `${t("chat.loadImageFailed")}. ${t("common.retry")}`
+					? t("chat.loadImageFailed")
 					: t("chat.viewImage", { name: label })
 			}
 			disabled={status === "pending"}
@@ -192,7 +187,7 @@ function ProjectMarkdownImage({
 			title={path}
 			aria-label={
 				state.status === "error"
-					? `${t("chat.loadImageFailed")}. ${t("common.retry")}`
+					? t("chat.loadImageFailed")
 					: t("chat.viewImage", { name: label })
 			}
 			disabled={!scope || state.status === "pending"}
