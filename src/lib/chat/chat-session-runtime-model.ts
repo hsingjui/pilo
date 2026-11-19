@@ -1,4 +1,4 @@
-import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-client";
+import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 
 export function chatRpcChangesActivity(message: unknown) {
 	return (
