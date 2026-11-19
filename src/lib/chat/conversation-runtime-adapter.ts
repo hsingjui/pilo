@@ -1,5 +1,5 @@
 import type { ConversationAction } from "@/lib/chat/conversation-types";
-import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime";
+import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime-types";
 
 export function toConversationAction(
 	event: PiloRuntimeEvent,

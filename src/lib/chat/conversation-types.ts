@@ -1,5 +1,5 @@
 import type { TokenUsage } from "@/lib/api/token-usage";
-import type { AssistantActivity } from "@/components/chat/chat-activity";
+import type { AssistantActivity } from "@/lib/chat/chat-activity-types";
 import type {
 	AssistantContentItem,
 	AssistantPendingStatus,

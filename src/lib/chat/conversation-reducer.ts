@@ -15,7 +15,7 @@ import type {
 } from "./conversation-types.ts";
 import type { TokenUsage } from "../api/token-usage.ts";
 
-import { i18n } from "../../i18n/index.ts";
+import { i18n } from "../../i18n/instance.ts";
 
 type AssistantMessage = Extract<ChatMessage, { role: "assistant" }>;
 

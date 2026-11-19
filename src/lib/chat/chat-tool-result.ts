@@ -1,4 +1,4 @@
-import type { ToolCallActivity } from "@/components/chat/chat-activity";
+import type { ToolCallActivity } from "@/lib/chat/chat-activity-types";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === "object" && !Array.isArray(value));

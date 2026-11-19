@@ -55,31 +55,19 @@ import {
 import { formatWorkDuration } from "@/lib/format-duration";
 import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
+import type {
+	AssistantActivity,
+	ThinkingActivity,
+	ToolCallActivity,
+} from "@/lib/chat/chat-activity-types";
 import { Button, Hint, Spinner } from "@/ui";
 
-export type ChatActivityStatus = "complete" | "running";
-
-export type ThinkingActivity = {
-	id: string;
-	type: "thinking";
-	text: string;
-	status: ChatActivityStatus;
-	/** 流式开始/结束时刻；历史回放的消息可能没有，因此是可选的。 */
-	startedAtMs?: number;
-	endedAtMs?: number;
-};
-
-export type ToolCallActivity = {
-	id: string;
-	type: "tool";
-	toolName: string;
-	args?: unknown;
-	result?: unknown;
-	status: ChatActivityStatus;
-	isError?: boolean;
-};
-
-export type AssistantActivity = ThinkingActivity | ToolCallActivity;
+export type {
+	AssistantActivity,
+	ChatActivityStatus,
+	ThinkingActivity,
+	ToolCallActivity,
+} from "@/lib/chat/chat-activity-types";
 
 const PROCESS_TEXT_CLASS = "font-medium leading-snug text-muted-foreground";
 const PROCESS_ICON_CLASS = "size-3.5 shrink-0 text-muted-foreground";
