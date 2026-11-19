@@ -16,14 +16,14 @@ import type {
 	PromptEnhancementModel,
 	PromptEnhancementSettings,
 } from "@/lib/prompt-enhancement-types";
-import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-client";
+import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import type {
 	PiModel,
 	PiSessionSnapshot,
 	PiloRuntimeEvent,
 } from "@/lib/api/pi-runtime-types";
-import type { ProjectPiModels } from "@/lib/api/pi-models";
-import type { Project } from "@/lib/api/projects";
+import type { ProjectPiModels } from "@/lib/api/pi-models-types";
+import type { Project } from "@/lib/api/projects-types";
 import type { SessionReadState } from "@/lib/session-read-state";
 import type {
 	ProjectModelScope,
@@ -35,7 +35,7 @@ import type {
 	SessionHistoryResult,
 	SessionIndexEntry,
 	SessionSearchMatch,
-} from "@/lib/api/sessions";
+} from "@/lib/api/sessions-types";
 
 export type PiloClientBootstrap = {
 	projects: Project[];

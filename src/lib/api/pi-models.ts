@@ -7,25 +7,18 @@ import {
 } from "@/lib/pi-model-catalog-extension";
 import {
 	type PiAgentState,
-	type PiCommand,
 	type PiModel,
 	type PiThinkingLevel,
 	PI_THINKING_LEVELS,
 } from "@/lib/api/pi-runtime";
+import type { ProjectPiModels } from "./pi-models-types";
+
+export * from "./pi-models-types";
 
 const STARTUP_REFRESH_CONCURRENCY = 1;
 /** Bounded wait for the catalog extension to answer before falling back to RPC. */
 const MODEL_CATALOG_TIMEOUT_MS = 20_000;
 const CATALOG_ERROR_TITLE = "pilo-model-catalog:error";
-
-export type ProjectPiModels = {
-	projectId: string;
-	models: PiModel[];
-	commands: PiCommand[] | null;
-	defaultModel: PiModel | null;
-	defaultThinkingLevel: PiThinkingLevel | null;
-	refreshedAtMs: number;
-};
 
 type PiModelCatalogEntry = PiModel & {
 	defaultThinkingLevel: PiThinkingLevel | null;

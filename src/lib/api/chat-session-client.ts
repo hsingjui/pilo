@@ -1,4 +1,3 @@
-import type { CacheKeepAliveStatus } from "@/lib/cache-keep-alive";
 import { invoke } from "@tauri-apps/api/core";
 import {
 	toPiImageContents,
@@ -20,6 +19,9 @@ import {
 	type PiThinkingLevel,
 	type PiloRuntimeEvent,
 } from "@/lib/api/pi-runtime";
+import type { ChatSessionRuntimeState } from "./chat-session-types";
+
+export * from "./chat-session-types";
 
 const DEFAULT_PI_RPC_TIMEOUT_MS = 10_000;
 const COMPACTION_PI_RPC_TIMEOUT_MS = 120_000;
@@ -43,18 +45,6 @@ function traceChatClient(
 		payload: JSON.stringify({ stage, sessionKey, ...detail }),
 	}).catch(() => undefined);
 }
-
-export type ChatSessionRuntimeState = {
-	sessionKey: string;
-	projectId: string;
-	sessionPath?: string | null;
-	prepared: boolean;
-	initialized: boolean;
-	activeTurn: boolean;
-	compacting?: boolean;
-	cacheKeepAlive?: CacheKeepAliveStatus | null;
-	snapshot: PiSessionSnapshot;
-};
 
 export function listChatSessionRuntimeStates() {
 	return invoke<ChatSessionRuntimeState[]>("chat_session_states");

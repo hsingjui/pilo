@@ -1,11 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-import type { ConversationEvent } from "@/lib/chat/conversation-types";
 import type { PiModel } from "@/lib/api/pi-runtime";
-import type { SessionExternalActivity } from "./sessions-types";
+import type {
+	SessionDeleteResult,
+	SessionExternalActivity,
+	SessionHistory,
+	SessionHistoryFingerprint,
+	SessionHistoryResult,
+	SessionIndexEntry,
+	SessionSearchMatch,
+} from "./sessions-types";
 
-export type { SessionExternalActivity } from "./sessions-types";
+export * from "./sessions-types";
 
 export const SESSIONS_CHANGED_EVENT = "pilo:sessions-changed";
 
@@ -13,26 +20,6 @@ export type ConnectionNamingModel = {
 	connectionId: string;
 	provider: string;
 	modelId: string;
-};
-
-export type SessionIndexEntry = {
-	connectionId: string;
-	projectId: string;
-	piSessionId: string;
-	sessionPath: string;
-	name: string | null;
-	cwd: string;
-	createdAt: string;
-	updatedAt: string;
-	messageCount: number;
-	lastMessageAt: string | null;
-	firstUserMessagePreview: string | null;
-	fileSize: number;
-	fileMtimeNs: string;
-	lastOffset: number;
-	indexedAtMs: number;
-	pinned: boolean;
-	titleOverride: string | null;
 };
 
 export type SessionUiStateUpdate = {
@@ -46,56 +33,6 @@ export type SessionReconcileResult = {
 	updated: number;
 	removed: number;
 	unchanged: number;
-};
-
-export type SessionSearchMatch = {
-	sessionPath: string;
-	sessionId: string;
-	role: "user" | "assistant";
-	snippet: string;
-	timestamp: string | number | null;
-};
-
-export type SessionHistoryMessageIndexEntry = {
-	id: string;
-	role: "user" | "assistant" | "compaction";
-	timestampMs?: number;
-	preview: string;
-	estimatedChars: number;
-};
-
-export type SessionHistory = {
-	events: ConversationEvent[];
-	model: { provider: string; id: string } | null;
-	thinkingLevel: string | null;
-	name: string | null;
-	headerMissing?: boolean;
-	sourceMessageCount: number;
-	windowStartMessage?: number;
-	windowMessageCount?: number;
-	totalMessages?: number;
-	messageIndex?: SessionHistoryMessageIndexEntry[];
-	stats?: {
-		userMessages: number;
-		assistantMessages: number;
-		toolCalls: number;
-		toolResults: number;
-		totalMessages: number;
-		tokens: {
-			input: number;
-			output: number;
-			cacheRead: number;
-			cacheWrite: number;
-			total: number;
-		};
-		cost: number;
-		contextTokens: number | null;
-	};
-};
-
-export type SessionHistoryFingerprint = {
-	fileSize: number;
-	fileMtimeNs: string;
 };
 
 /** Raw bytes of one user-image payload from the session JSONL. */
@@ -119,15 +56,6 @@ export async function readSessionHistoryImage(
 	if (response instanceof ArrayBuffer) return new Uint8Array(response);
 	return Uint8Array.from(response);
 }
-
-export type SessionDeleteResult = {
-	method: "trash" | "unlink";
-};
-
-export type SessionHistoryResult = {
-	history: SessionHistory;
-	fingerprint: SessionHistoryFingerprint | null;
-};
 
 export type SessionWatchEvent =
 	| { type: "changed"; projectId: string }

@@ -4,25 +4,11 @@ import { defaultWorkspaceName } from "@/lib/default-workspace";
 import { i18n } from "../../i18n/index.ts";
 import type { FsEntry } from "@/lib/api/files";
 import type { Connection, PiSessionSnapshot } from "@/lib/api/pi-runtime";
+import type { Project } from "./projects-types";
+
+export * from "./projects-types";
 
 export const PROJECTS_CHANGED_EVENT = "pilo:projects-changed";
-
-export type ProjectMetadata = {
-	cwd: string;
-	gitBranch: string | null;
-	piVersion: string;
-	refreshedAtMs: number;
-};
-
-export type Project = {
-	id: string;
-	name: string;
-	path: string;
-	connection: Connection;
-	metadata: ProjectMetadata;
-	createdAtMs: number;
-	lastOpenedAtMs: number;
-};
 
 export type DiscoveredProject = {
 	name: string;
