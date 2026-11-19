@@ -847,3 +847,9 @@
 [data-touch-reveal] .touch-reveal {
 	opacity: 1;
 }
+
+@media (pointer: coarse) {
+	.touch-reveal {
+		opacity: 1;
+	}
+}

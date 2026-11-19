@@ -76,7 +76,7 @@ const Toaster = ({
 					closeButton: cn(
 						"left-auto! right-2.5! top-2.5! size-5! rounded-md! border-transparent! bg-transparent! text-muted-foreground!",
 						"hover:bg-hover! hover:text-popover-foreground! active:scale-[0.92]! flex items-center justify-center select-none",
-						"opacity-0 group-hover/toast:opacity-100 focus-visible:opacity-100",
+						"opacity-0 group-hover/toast:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 pointer-coarse:size-[44px]! pointer-coarse:right-0! pointer-coarse:top-0!",
 						toastOptions?.classNames?.closeButton,
 					),
 				},
