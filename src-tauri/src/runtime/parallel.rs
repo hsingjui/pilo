@@ -10,7 +10,9 @@ use std::{
 
 use serde::Serialize;
 use serde_json::json;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
+
+use super::host_events::HostEvents;
 
 use crate::domain::{ConnectionKind, PiRuntime, Project, ProjectMetadata};
 
@@ -99,7 +101,7 @@ impl ParallelAgentManager {
 
         let status = Arc::new(AtomicU8::new(status_to_u8(ParallelAgentStatus::Starting)));
         let sink = ParallelEventSink {
-            app: app.clone(),
+            events: crate::desktop_events::from_app(&app),
             agent_id: id.clone(),
             status: Arc::clone(&status),
         };
@@ -282,7 +284,7 @@ impl ParallelAgentManager {
 
 #[derive(Clone)]
 struct ParallelEventSink {
-    app: AppHandle,
+    events: Arc<dyn HostEvents>,
     agent_id: String,
     status: Arc<AtomicU8>,
 }
@@ -315,7 +317,7 @@ impl RuntimeEventSink for ParallelEventSink {
         if let Some(status) = next {
             self.status.store(status_to_u8(status), Ordering::Release);
         }
-        let _ = self.app.emit(
+        let _ = self.events.emit_serialized(
             PARALLEL_EVENT_NAME,
             ParallelRuntimeEvent {
                 agent_id: self.agent_id.clone(),

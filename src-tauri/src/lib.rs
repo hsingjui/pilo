@@ -1,6 +1,8 @@
 #![recursion_limit = "256"]
 
 #[cfg(feature = "tauri")]
+mod desktop_events;
+#[cfg(feature = "tauri")]
 mod desktop_notifications;
 #[cfg(feature = "tauri")]
 mod desktop_paths;

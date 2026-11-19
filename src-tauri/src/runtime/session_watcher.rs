@@ -10,7 +10,7 @@ use std::{
 use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Emitter, Manager as _};
+use tauri::{AppHandle, Manager as _};
 use tokio::{sync::Mutex as AsyncMutex, task::JoinHandle};
 
 use crate::domain::Project;
@@ -19,6 +19,7 @@ use super::{
     PiloRuntime, RuntimeEventBus,
     connection_diagnostics::request_failure_reason,
     events::PiProcessState,
+    host_events::HostEvents,
     pi_workspace,
     server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager},
     session_index,
@@ -106,7 +107,7 @@ impl SessionWatcherManager {
         let event_client = Arc::clone(&current_client);
         let task = tokio::spawn(async move {
             let mut notices = WatchEvents {
-                app: event_app.clone(),
+                events: crate::desktop_events::from_app(&event_app),
                 project_id: project_id.clone(),
                 project_hash: project_hash.clone(),
                 errors: RepeatedFailureLog::default(),
@@ -390,7 +391,7 @@ impl RepeatedFailureLog {
 }
 
 struct WatchEvents {
-    app: AppHandle,
+    events: Arc<dyn HostEvents>,
     project_id: String,
     project_hash: String,
     errors: RepeatedFailureLog,
@@ -405,7 +406,11 @@ impl WatchEvents {
             SessionWatchEvent::Backend { .. } => "backend",
             SessionWatchEvent::Error { .. } => "error",
         };
-        if self.app.emit(SESSION_WATCH_EVENT_NAME, event).is_err() {
+        if self
+            .events
+            .emit_serialized(SESSION_WATCH_EVENT_NAME, event)
+            .is_err()
+        {
             if let Some(suppressed) = self.delivery.failure() {
                 log::warn!(target: "session-watcher", "event emission failed projectHash={} event={kind} suppressedFailures={suppressed} reason=tauri_emit_failed", self.project_hash);
             }
@@ -455,6 +460,55 @@ impl WatchEvents {
 #[cfg(test)]
 mod tests {
     use super::{Duration, Instant, RepeatedFailureLog};
+
+    #[test]
+    fn watcher_emits_named_payloads_and_recovers_after_delivery_failure() {
+        let events = std::sync::Arc::new(crate::runtime::host_events::RecordingEvents::default());
+        let mut watcher = super::WatchEvents {
+            events: events.clone(),
+            project_id: "project-1".to_owned(),
+            project_hash: "hash".to_owned(),
+            errors: RepeatedFailureLog::default(),
+            delivery: RepeatedFailureLog::default(),
+        };
+        watcher.changed();
+        watcher.indexed();
+        watcher.backend("");
+        watcher.error("index", "failed");
+        let recorded = events.events.lock().unwrap().clone();
+        assert_eq!(
+            recorded,
+            vec![
+                (
+                    super::SESSION_WATCH_EVENT_NAME.to_owned(),
+                    serde_json::json!({"type":"changed", "projectId":"project-1"})
+                ),
+                (
+                    super::SESSION_WATCH_EVENT_NAME.to_owned(),
+                    serde_json::json!({"type":"indexed", "projectId":"project-1"})
+                ),
+                (
+                    super::SESSION_WATCH_EVENT_NAME.to_owned(),
+                    serde_json::json!({"type":"backend", "projectId":"project-1", "backend":""})
+                ),
+                (
+                    super::SESSION_WATCH_EVENT_NAME.to_owned(),
+                    serde_json::json!({"type":"error", "projectId":"project-1", "message":"failed"})
+                ),
+            ]
+        );
+        events
+            .fail
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        watcher.changed();
+        assert!(watcher.delivery.last_logged.is_some());
+        events
+            .fail
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        watcher.changed();
+        assert!(watcher.delivery.last_logged.is_none());
+        assert_eq!(events.events.lock().unwrap().len(), 5);
+    }
 
     #[test]
     fn repeated_failures_log_once_and_count_suppressed_records() {

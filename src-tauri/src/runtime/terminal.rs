@@ -6,9 +6,9 @@ use std::{
     },
 };
 
+use super::host_events::HostEvents;
 use serde::Serialize;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Emitter};
 use tokio::task::JoinHandle;
 
 use crate::domain::Project;
@@ -18,6 +18,75 @@ use super::server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManage
 pub const TERMINAL_EVENT_NAME: &str = "pilo://terminal";
 
 static TERMINAL_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::host_events::RecordingEvents;
+
+    #[test]
+    fn terminal_events_preserve_bytes_empty_output_exit_and_errors() {
+        let events = RecordingEvents::default();
+        for data in [vec![0, 255, 10], vec![]] {
+            emit_terminal_event(
+                &events,
+                TerminalEvent::Output {
+                    terminal_id: "t".into(),
+                    data: data.clone(),
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                events.events.lock().unwrap().last().unwrap(),
+                &(
+                    TERMINAL_EVENT_NAME.into(),
+                    json!({"type":"output", "terminalId":"t", "data":data})
+                )
+            );
+        }
+        emit_terminal_event(
+            &events,
+            TerminalEvent::Exit {
+                terminal_id: "t".into(),
+            },
+        )
+        .unwrap();
+        emit_terminal_event(
+            &events,
+            TerminalEvent::Error {
+                terminal_id: "t".into(),
+                message: "closed".into(),
+            },
+        )
+        .unwrap();
+        let recorded = events.events.lock().unwrap();
+        assert_eq!(
+            recorded[2],
+            (
+                TERMINAL_EVENT_NAME.into(),
+                json!({"type":"exit", "terminalId":"t"})
+            )
+        );
+        assert_eq!(
+            recorded[3],
+            (
+                TERMINAL_EVENT_NAME.into(),
+                json!({"type":"error", "terminalId":"t", "message":"closed"})
+            )
+        );
+        drop(recorded);
+        events.fail.store(true, Ordering::Relaxed);
+        assert!(
+            emit_terminal_event(
+                &events,
+                TerminalEvent::Exit {
+                    terminal_id: "t".into()
+                }
+            )
+            .is_err()
+        );
+    }
+}
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,6 +115,10 @@ enum TerminalEvent {
     },
 }
 
+fn emit_terminal_event(events: &dyn HostEvents, event: TerminalEvent) -> Result<(), String> {
+    events.emit_serialized(TERMINAL_EVENT_NAME, event)
+}
+
 struct TerminalSession {
     client: Arc<ServerClient>,
     task: JoinHandle<()>,
@@ -60,7 +133,7 @@ impl TerminalManager {
     pub async fn open(
         &mut self,
         servers: Arc<ServerManager>,
-        app: AppHandle,
+        host_events: Arc<dyn HostEvents>,
         project: &Project,
         cols: u16,
         rows: u16,
@@ -73,13 +146,13 @@ impl TerminalManager {
         );
         let mut events = client.subscribe(&terminal_id);
         let event_terminal_id = terminal_id.clone();
-        let event_app = app.clone();
+        let event_events = host_events;
         let event_client = Arc::clone(&client);
         let task = tokio::spawn(async move {
             loop {
                 let Some(event) = events.recv().await else {
-                    let _ = event_app.emit(
-                        TERMINAL_EVENT_NAME,
+                    let _ = emit_terminal_event(
+                        event_events.as_ref(),
                         TerminalEvent::Error {
                             terminal_id: event_terminal_id.clone(),
                             message: "pilo-server terminal connection closed".to_owned(),
@@ -88,8 +161,8 @@ impl TerminalManager {
                     break;
                 };
                 if event.event == SERVER_DISCONNECTED_EVENT {
-                    let _ = event_app.emit(
-                        TERMINAL_EVENT_NAME,
+                    let _ = emit_terminal_event(
+                        event_events.as_ref(),
                         TerminalEvent::Error {
                             terminal_id: event_terminal_id.clone(),
                             message: event
@@ -113,8 +186,8 @@ impl TerminalManager {
                 match event.event.as_str() {
                     "terminal.output" => {
                         let data = event.binary.first().cloned().unwrap_or_default();
-                        let _ = event_app.emit(
-                            TERMINAL_EVENT_NAME,
+                        let _ = emit_terminal_event(
+                            event_events.as_ref(),
                             TerminalEvent::Output {
                                 terminal_id: event_terminal_id.clone(),
                                 data,
@@ -122,8 +195,8 @@ impl TerminalManager {
                         );
                     }
                     "terminal.exit" => {
-                        let _ = event_app.emit(
-                            TERMINAL_EVENT_NAME,
+                        let _ = emit_terminal_event(
+                            event_events.as_ref(),
                             TerminalEvent::Exit {
                                 terminal_id: event_terminal_id.clone(),
                             },
@@ -131,8 +204,8 @@ impl TerminalManager {
                         break;
                     }
                     "terminal.error" => {
-                        let _ = event_app.emit(
-                            TERMINAL_EVENT_NAME,
+                        let _ = emit_terminal_event(
+                            event_events.as_ref(),
                             TerminalEvent::Error {
                                 terminal_id: event_terminal_id.clone(),
                                 message: event

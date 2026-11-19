@@ -202,7 +202,13 @@ pub async fn project_terminal_open(
         .terminals
         .lock()
         .await
-        .open(Arc::clone(&runtime.servers), app, &project, cols, rows)
+        .open(
+            Arc::clone(&runtime.servers),
+            crate::desktop_events::from_app(&app),
+            &project,
+            cols,
+            rows,
+        )
         .await
 }
 

@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex as StdMutex};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::domain::{SessionIndexEntry, SessionReconcileResult, SessionUiStateUpdate};
 
@@ -87,6 +87,7 @@ pub async fn session_reconcile(
         };
         if should_start_background_index {
             let background_app = app.clone();
+            let host_events = crate::desktop_events::from_app(&app);
             let background_servers = Arc::clone(&runtime.servers);
             let background_manager = Arc::clone(&runtime.background_session_index);
             let background_project = project.clone();
@@ -138,7 +139,7 @@ pub async fn session_reconcile(
                     tokio::task::yield_now().await;
                 }
                 if indexed_total > 0 {
-                    let _ = background_app.emit(
+                    let _ = host_events.emit_serialized(
                         "pilo://sessions",
                         serde_json::json!({
                             "type": "indexed",
@@ -163,7 +164,7 @@ pub async fn session_reconcile(
                                 message: message.clone(),
                             },
                         ));
-                    let _ = background_app.emit(
+                    let _ = host_events.emit_serialized(
                         "pilo://sessions",
                         serde_json::json!({
                             "type": "error",

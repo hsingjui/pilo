@@ -24,6 +24,7 @@ mod events;
 mod file_links;
 #[cfg(feature = "tauri")]
 mod git;
+pub(crate) mod host_events;
 pub(crate) mod host_paths;
 #[cfg(feature = "tauri")]
 mod next_prompt;

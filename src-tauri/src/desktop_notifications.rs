@@ -377,8 +377,8 @@ pub fn send_macos_desktop_notification(
     #[cfg(target_os = "macos")]
     {
         use mac_notification_sys::{Notification, NotificationResponse};
-        use tauri::Emitter;
 
+        let events = crate::desktop_events::from_app(&app);
         let icon_path = notification_icon_path(&app);
         std::thread::Builder::new()
             .name("pilo-notification".to_owned())
@@ -406,7 +406,9 @@ pub fn send_macos_desktop_notification(
                     Ok(NotificationResponse::Click | NotificationResponse::ActionButton(_)) => {
                         if let Some(target) = target {
                             focus_main_window(&app);
-                            if let Err(error) = app.emit(NOTIFICATION_OPEN_SESSION_EVENT, target) {
+                            if let Err(error) =
+                                events.emit_serialized(NOTIFICATION_OPEN_SESSION_EVENT, target)
+                            {
                                 log::error!(
                                     target: "notification",
                                     "failed to emit notification target: {error}"
@@ -441,12 +443,12 @@ pub fn send_windows_desktop_notification(
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        use tauri::Emitter;
         use tauri_winrt_notification::{IconCrop, Toast};
         use windows::Win32::System::Com::{
             COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize,
         };
 
+        let events = crate::desktop_events::from_app(&app);
         let WindowsDesktopNotificationRequest {
             title,
             body,
@@ -475,8 +477,8 @@ pub fn send_windows_desktop_notification(
                     toast = toast
                         .on_activated(move |_| {
                             focus_main_window(&click_app);
-                            if let Err(error) =
-                                click_app.emit(NOTIFICATION_OPEN_SESSION_EVENT, target.clone())
+                            if let Err(error) = events
+                                .emit_serialized(NOTIFICATION_OPEN_SESSION_EVENT, target.clone())
                             {
                                 log::error!(
                                     target: "notification",
