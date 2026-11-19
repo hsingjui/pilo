@@ -8,9 +8,24 @@ function openSidebar(storage: Record<string, string> = {}) {
 	return open("./sidebar-projects-fixture.tsx", { ...desktop, storage });
 }
 
-function collapsedSections(app: Awaited<ReturnType<typeof openSidebar>>) {
+type App = Awaited<ReturnType<typeof openSidebar>>;
+
+function collapsedSections(app: App) {
 	return JSON.parse(app.storage()["pilo.collapsedSections"] ?? "{}");
 }
+
+/**
+ * Checks what a press leads to. The press returns before its change is
+ * shown or stored, so the check waits for it; a change that never comes
+ * fails on the value still there.
+ */
+async function becomes(app: App, read: () => unknown, expected: unknown) {
+	const wanted = JSON.stringify(expected);
+	await app.waitUntil(() => JSON.stringify(read()) === wanted).catch(() => {});
+	expect(read()).toEqual(expected);
+}
+
+const rowColor = (app: App, row: string) => app.viewStyle(row)?.backgroundColor;
 
 test("projects are listed by connection, the local one first, and start collapsed", async () => {
 	const app = await openSidebar();
@@ -53,12 +68,12 @@ test("expanding a project lists its running session, then its five latest", asyn
 	expect(collapsedSections(app)).toEqual({ "ws:pilo": false });
 
 	await app.press("id:ws:pilo:view-all");
-	expect(app.shows("id:ws:pilo:view-all")).toBe(false);
-	expect(app.shows("id:session:s2 >> text:Dialog test")).toBe(true);
+	await app.waitFor("id:ws:pilo:view-all", { state: "gone" });
+	await app.waitFor("id:session:s2 >> text:Dialog test");
 
 	await app.press("id:ws:pilo:toggle");
-	expect(app.shows("id:session:s1")).toBe(false);
-	expect(collapsedSections(app)).toEqual({ "ws:pilo": true });
+	await app.waitFor("id:session:s1", { state: "gone" });
+	await becomes(app, () => collapsedSections(app), { "ws:pilo": true });
 });
 
 test("pressing a project or a session opens it and shows it selected", async () => {
@@ -69,20 +84,23 @@ test("pressing a project or a session opens it and shows it selected", async () 
 	await app.waitFor("id:session:s7");
 
 	await app.press("id:ws:pilo:select");
-	expect(app.viewStyle("id:ws:pilo:row")?.backgroundColor).toBe(SELECTED);
-	expect(app.viewStyle("id:ws:api:row")?.backgroundColor).toBeUndefined();
+	await becomes(app, () => rowColor(app, "id:ws:pilo:row"), SELECTED);
+	expect(rowColor(app, "id:ws:api:row")).toBeUndefined();
 	expect(app.texts().slice(-2)).toEqual(["pilo", "/code/pilo"]);
 
 	await app.press("id:session:s5");
-	expect(app.viewStyle("id:session:s5")?.backgroundColor).toBe(SELECTED);
-	expect(app.viewStyle("id:ws:pilo:row")?.backgroundColor).toBeUndefined();
+	await becomes(app, () => rowColor(app, "id:session:s5"), SELECTED);
+	expect(rowColor(app, "id:ws:pilo:row")).toBeUndefined();
 	// Opening an unread session reads it.
 	await app.waitUntil(() => !app.shows("id:session:s5:unread"));
 
 	// An open session outside the latest five takes the oldest one's place.
 	await app.press("id:ws:pilo:view-all");
+	await app.waitFor("id:session:s2");
 	await app.press("id:session:s2");
+	await becomes(app, () => rowColor(app, "id:session:s2"), SELECTED);
 	await app.press("id:ws:pilo:toggle");
+	await app.waitFor("id:session:s2", { state: "gone" });
 	await app.press("id:ws:pilo:toggle");
 	await app.waitFor("id:session:s2");
 	expect(app.shows("id:session:s3")).toBe(false);
@@ -102,7 +120,7 @@ test("a project says when it has no sessions, is still reading them, or failed t
 	expect(app.texts()).toContain("The session index is locked.");
 
 	await app.press("id:ws:slow:toggle");
-	expect(app.shows("id:ws:slow:loading")).toBe(true);
+	await app.waitFor("id:ws:slow:loading");
 	expect(app.shows("id:ws:slow:empty")).toBe(false);
 });
 
@@ -110,9 +128,9 @@ test("a connection's projects hide when it is collapsed, and stay hidden next la
 	const app = await openSidebar();
 	await app.waitFor("id:env:local:toggle");
 	await app.press("id:env:local:toggle");
-	expect(app.shows("id:ws:pilo")).toBe(false);
+	await app.waitFor("id:ws:pilo", { state: "gone" });
 	expect(app.shows("id:ws:api")).toBe(true);
-	expect(collapsedSections(app)).toEqual({ "env:local": true });
+	await becomes(app, () => collapsedSections(app), { "env:local": true });
 
 	const next = await openSidebar(app.storage());
 	await next.waitFor("id:ws:api");
@@ -120,6 +138,6 @@ test("a connection's projects hide when it is collapsed, and stay hidden next la
 	expect(next.shows("id:ws:pilo")).toBe(false);
 
 	await next.press("id:env:local:toggle");
-	expect(next.shows("id:ws:pilo")).toBe(true);
-	expect(collapsedSections(next)).toEqual({ "env:local": false });
+	await next.waitFor("id:ws:pilo");
+	await becomes(next, () => collapsedSections(next), { "env:local": false });
 });

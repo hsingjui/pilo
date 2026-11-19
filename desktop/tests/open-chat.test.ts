@@ -48,10 +48,10 @@ test("the chat closes when the session is closed or is not a saved one", async (
 	await app.press("id:open-saved");
 	await app.waitUntil(() => shown(app)[0].endsWith("ready history"));
 	await app.press("id:close");
-	expect(shown(app)[0]).toBe("chat: null closed null");
+	await app.waitUntil(() => shown(app)[0] === "chat: null closed null");
 
 	await app.press("id:open-held");
 	await app.waitUntil(() => shown(app)[0].endsWith("ready history"));
 	await app.press("id:open-unknown");
-	expect(shown(app)[0]).toBe("chat: null closed null");
+	await app.waitUntil(() => shown(app)[0] === "chat: null closed null");
 });

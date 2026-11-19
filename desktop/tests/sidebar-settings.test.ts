@@ -52,6 +52,10 @@ test("changed settings are saved and read back by the next launch", async () => 
 	await app.press("Show projects");
 	await app.press("Collapse ws:p1");
 	await app.press("Expand env:local");
+	// A press returns before its change is shown and stored.
+	await app.waitUntil(
+		() => app.storage()[SECTIONS]?.includes("env:local") ?? false,
+	);
 	expect(app.texts()).toContain("view: recent");
 	expect(app.texts()).toContain("show projects: true");
 	const saved = app.storage();
@@ -70,6 +74,6 @@ test("changed settings are saved and read back by the next launch", async () => 
 
 	await next.press("Use projects");
 	await next.press("Hide projects");
+	await next.waitUntil(() => next.storage()[SHOW_PROJECTS] === "0");
 	expect(next.storage()[VIEW]).toBe("projects");
-	expect(next.storage()[SHOW_PROJECTS]).toBe("0");
 });

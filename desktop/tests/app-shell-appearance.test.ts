@@ -28,12 +28,27 @@ async function openSaved(
 	return app;
 }
 
-const background = (app: Awaited<ReturnType<typeof openSaved>>) =>
-	app.viewStyle("id:app")?.backgroundColor;
+type App = Awaited<ReturnType<typeof openSaved>>;
+
+const background = (app: App) => app.viewStyle("id:app")?.backgroundColor;
 
 /** The fonts the theme holds, as the fixture's line under the shell names them. */
-const fonts = (app: Awaited<ReturnType<typeof openSaved>>) =>
+const fonts = (app: App) =>
 	app.texts().find((text) => text.startsWith("page "));
+
+/**
+ * Checks what a saved change leads to. The change reaches the shell as a
+ * runtime event after the press has returned, so the check waits for it;
+ * a change that never arrives fails on the value still shown.
+ */
+async function becomes(
+	app: App,
+	read: (app: App) => string | null | undefined,
+	expected: string,
+) {
+	await app.waitUntil(() => read(app) === expected).catch(() => {});
+	expect(read(app)).toBe(expected);
+}
 
 test("the shell shows the saved language and theme instead of the system's", async () => {
 	const app = await openSaved("zh-CN", {
@@ -54,10 +69,10 @@ test("the shell follows saved language and theme changes while it runs", async (
 
 	await app.press("Save English");
 	await app.waitFor("id:workspace >> text:Add a project first");
-	expect(background(app)).toBe(CLAUDE.dark);
+	await becomes(app, background, CLAUDE.dark);
 
 	await app.press("Save Lody light");
-	expect(background(app)).toBe(LODY.light);
+	await becomes(app, background, LODY.light);
 	expect(app.shows("id:workspace >> text:Add a project first")).toBe(true);
 });
 
@@ -70,9 +85,9 @@ test("a saved system appearance follows the system in the saved theme", async ()
 	expect(background(app)).toBe(LODY.light);
 
 	await app.press("Save Claude system");
-	expect(background(app)).toBe(CLAUDE.dark);
+	await becomes(app, background, CLAUDE.dark);
 	await app.setColorScheme("light");
-	expect(background(app)).toBe(CLAUDE.light);
+	await becomes(app, background, CLAUDE.light);
 });
 
 test("a saved custom theme applies over Lody, and an invalid one leaves Lody", async () => {
@@ -84,11 +99,11 @@ test("a saved custom theme applies over Lody, and an invalid one leaves Lody", a
 	expect(background(app)).toBe("#fafaf0ff");
 
 	await app.press("Save Claude system");
-	expect(background(app)).toBe(CLAUDE.light);
+	await becomes(app, background, CLAUDE.light);
 	await app.press("Save invalid custom");
-	expect(background(app)).toBe(LODY.light);
+	await becomes(app, background, LODY.light);
 	await app.press("Save custom");
-	expect(background(app)).toBe("#102030ff");
+	await becomes(app, background, "#102030ff");
 });
 
 test("a custom theme saved without tokens shows Lody", async () => {
@@ -115,31 +130,41 @@ test("the shell follows saved font changes in the theme it shows", async () => {
 	expect(fonts(app)).toBe("page Inter, code JetBrains Mono 14, display Inter");
 
 	await app.press("Save Georgia and Menlo");
-	expect(fonts(app)).toBe("page Georgia, code Menlo 16, display Georgia");
+	await becomes(app, fonts, "page Georgia, code Menlo 16, display Georgia");
 
 	await app.press("Save Claude system");
-	expect(fonts(app)).toBe("page Georgia, code Menlo 16, display Copernicus");
+	await becomes(app, fonts, "page Georgia, code Menlo 16, display Copernicus");
 
 	await app.press("Save system fonts");
-	expect(fonts(app)).toBe(
+	await becomes(
+		app,
+		fonts,
 		"page system, code ui-monospace 16, display Copernicus",
 	);
 	await app.press("Save Lody light");
-	expect(fonts(app)).toBe("page system, code ui-monospace 16, display system");
-	expect(background(app)).toBe(LODY.light);
+	await becomes(
+		app,
+		fonts,
+		"page system, code ui-monospace 16, display system",
+	);
+	await becomes(app, background, LODY.light);
 });
 
 test("saved fonts replace a custom theme's, and its display font stays", async () => {
 	const app = await openSaved("en-US", { theme: "light", themeFamily: "lody" });
 	await app.press("Save custom fonts");
-	expect(fonts(app)).toBe(
+	await becomes(
+		app,
+		fonts,
 		"page Inter, code JetBrains Mono 14, display Times New Roman",
 	);
 
 	await app.press("Save Georgia and Menlo");
-	expect(fonts(app)).toBe(
+	await becomes(
+		app,
+		fonts,
 		"page Georgia, code Menlo 16, display Times New Roman",
 	);
 	await app.press("Save invalid custom");
-	expect(fonts(app)).toBe("page Georgia, code Menlo 16, display Georgia");
+	await becomes(app, fonts, "page Georgia, code Menlo 16, display Georgia");
 });

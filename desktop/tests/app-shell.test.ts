@@ -76,13 +76,13 @@ test("the sidebar collapses and expands from the title bar", async () => {
 	expect(app.shows("id:sidebar-expand")).toBe(false);
 
 	await app.press("id:sidebar-collapse");
-	expect(app.shows("id:sidebar")).toBe(false);
-	expect(app.shows("id:main-title-bar >> id:sidebar-expand")).toBe(true);
+	await app.waitFor("id:sidebar", { state: "gone" });
+	await app.waitFor("id:main-title-bar >> id:sidebar-expand");
 	expect(app.shows("id:workspace-title")).toBe(true);
 
 	await app.press("id:sidebar-expand");
-	expect(app.shows("id:sidebar >> id:sidebar-projects")).toBe(true);
-	expect(app.shows("id:sidebar-expand")).toBe(false);
+	await app.waitFor("id:sidebar >> id:sidebar-projects");
+	await app.waitFor("id:sidebar-expand", { state: "gone" });
 });
 
 test("the smallest window shows the sidebar beside the workspace", async () => {
