@@ -9,6 +9,17 @@ for saved projects, live chat snapshots, Host preferences and `eventSequence`.
 The sequence is captured before reading the snapshot state; it is not a
 transcript watermark. Await `shutdown()` before quitting the app.
 
+Each `Pilo` subscribes to runtime events before its first bootstrap. Use one
+`nextEvents(max)` poll at a time with a positive safe-integer batch size.
+It returns `{ type: "events", events }` with ordered, sequenced runtime envelopes,
+`{ type: "gap", firstMissed, lastMissed }` with the inclusive range dropped on
+overflow, or `{ type: "closed" }` when the runtime shuts down. The queue is
+bounded to 2,048 events or 16 MiB of serialized envelopes, whichever is reached
+first. On a gap, bootstrap again and keep polling the same `Pilo` instance.
+Until a transcript snapshot carries its own sequence, do not discard queued
+chat deltas based on `eventSequence`; defer transcript reloads until the turn
+is idle.
+
 Use `loadPreferences()` and `savePreferences(patch)` to read or update the
 existing Host preferences. Both return the current revision and complete
 values; writes patch only the supplied fields.

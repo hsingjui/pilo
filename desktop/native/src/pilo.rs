@@ -10,6 +10,7 @@ use pilo_lib::{
     initialize_local_server_binary,
     runtime::{
         Runtime,
+        events::{EventBatch, EventQueueLimits, EventStream},
         handle::{session_mark_read, session_read_states},
         host_events::HostEvents,
         host_paths::HostPaths,
@@ -25,6 +26,10 @@ use serde::Serialize;
 use tokio::{runtime::Runtime as Executor, sync::Mutex};
 
 const CLOSED: &str = "Pilo runtime has been shut down";
+const EVENT_QUEUE_LIMITS: EventQueueLimits = EventQueueLimits {
+    max_events: 2048,
+    max_bytes: 16 * 1024 * 1024,
+};
 
 struct ShellEvents;
 
@@ -115,6 +120,24 @@ fn encode_list(values: Vec<impl Serialize>) -> Result<Vec<JsonValue>, String> {
         .collect()
 }
 
+fn encode_event_batch(batch: EventBatch) -> Result<JsonValue, String> {
+    Ok(match batch {
+        EventBatch::Events(events) => serde_json::json!({
+            "type": "events",
+            "events": encode_list(events.iter().map(AsRef::as_ref).collect())?,
+        }),
+        EventBatch::Gap {
+            first_missed,
+            last_missed,
+        } => serde_json::json!({
+            "type": "gap",
+            "firstMissed": first_missed,
+            "lastMissed": last_missed,
+        }),
+        EventBatch::Closed => serde_json::json!({ "type": "closed" }),
+    })
+}
+
 fn load_projects(runtime: &Runtime) -> Result<Vec<JsonValue>, String> {
     encode_list(project_list(runtime)?)
 }
@@ -172,6 +195,7 @@ impl From<SessionReadState> for NativeSessionReadState {
 pub struct Pilo {
     host: Host,
     executor: &'static Executor,
+    event_stream: Arc<Mutex<EventStream>>,
 }
 
 impl Pilo {
@@ -272,10 +296,12 @@ impl Pilo {
         initialize_local_server_binary(server);
         let runtime = Runtime::new(paths, Arc::new(ShellEvents))
             .with_web_assets(Arc::new(ShellWebAssets(web_root)))?;
+        let event_stream = runtime.subscribe_events(EVENT_QUEUE_LIMITS);
         runtime.start_idle_reaper();
         Ok(Self {
             host: Arc::new(Mutex::new(Some(runtime))),
             executor,
+            event_stream: Arc::new(Mutex::new(event_stream)),
         })
     }
 
@@ -284,6 +310,18 @@ impl Pilo {
         let task = this.with(|pilo| pilo.executor.spawn(Self::load_bootstrap(pilo.host.clone())));
         task.await
             .map_err(|error| format!("failed to bootstrap Pilo: {error}"))?
+    }
+
+    /// Waits for an ordered batch, an inclusive gap, or a closed event stream.
+    pub async fn next_events(this: Instance<Self>, max: f64) -> Result<JsonValue, String> {
+        let invalid = "event batch size must be a positive safe integer";
+        if !(1.0..=9_007_199_254_740_991.0).contains(&max) || max.fract() != 0.0 {
+            return Err(invalid.into());
+        }
+        let max = usize::try_from(max as u64).map_err(|_| invalid)?;
+        let stream = this.with(|pilo| pilo.event_stream.clone());
+        let batch = stream.lock().await.next_batch(max).await;
+        encode_event_batch(batch)
     }
 
     /// Reads the saved project catalog without loading live chat snapshots.
@@ -496,6 +534,38 @@ mod tests {
             );
             finish.send(()).unwrap();
             operation.await.unwrap().unwrap();
+        });
+    }
+
+    #[test]
+    fn event_batch_reports_gap_then_preserves_later_events() {
+        let data = tempfile::tempdir().unwrap();
+        let pilo = Pilo::new(Some(data.path().to_str().unwrap().into())).unwrap();
+        pilo.executor.block_on(async {
+            let runtime = pilo.host.lock().await.as_ref().unwrap().clone();
+            let mut stream = runtime.subscribe_events(EventQueueLimits {
+                max_events: 1,
+                max_bytes: EVENT_QUEUE_LIMITS.max_bytes,
+            });
+            let start = stream.start_sequence();
+            for locale in ["zh-CN", "en-US", "zh-CN"] {
+                preferences_patch(
+                    &runtime,
+                    [("locale".to_owned(), JsonValue::from(locale))].into_iter().collect(),
+                    None,
+                )
+                .unwrap();
+            }
+            assert_eq!(
+                encode_event_batch(stream.try_next_batch(1).unwrap()).unwrap(),
+                serde_json::json!({ "type": "gap", "firstMissed": start + 1, "lastMissed": start + 2 }),
+            );
+            let batch = encode_event_batch(stream.try_next_batch(1).unwrap()).unwrap();
+            assert_eq!(batch["type"], "events");
+            assert_eq!(batch["events"][0]["sequence"], start + 3);
+            assert_eq!(batch["events"][0]["type"], "preferences_changed");
+            assert_eq!(batch["events"][0]["settings"]["values"]["locale"], "zh-CN");
+            stop_host(pilo.host.clone()).await;
         });
     }
 
