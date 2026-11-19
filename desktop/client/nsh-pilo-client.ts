@@ -368,8 +368,16 @@ export class NshPiloClient implements BridgedPiloClient {
 		return (await this.pilo.loadPreferences()) as PreferencesSnapshot;
 	}
 
-	async savePreferences(patch: PreferencePatch): Promise<PreferencesSnapshot> {
-		return (await this.pilo.savePreferences(patch)) as PreferencesSnapshot;
+	async savePreferences(
+		patch: PreferencePatch,
+		initial?: boolean,
+	): Promise<PreferencesSnapshot> {
+		// Ordinary saves keep the one-argument native call.
+		const saved =
+			initial === undefined
+				? await this.pilo.savePreferences(patch)
+				: await this.pilo.savePreferences(patch, initial);
+		return saved as PreferencesSnapshot;
 	}
 
 	async loadThemeSettings(): Promise<ThemeSettings> {

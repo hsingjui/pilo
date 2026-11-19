@@ -795,12 +795,13 @@ impl Pilo {
     pub async fn save_preferences(
         this: Instance<Self>,
         patch: JsonValue,
+        initial: Option<bool>,
     ) -> Result<NativePreferencesSnapshot, String> {
-        Self::with_runtime_blocking(this, |runtime| {
+        Self::with_runtime_blocking(this, move |runtime| {
             let JsonValue::Object(patch) = patch else {
                 return Err("Pilo preference patch must be an object".into());
             };
-            preferences_patch(runtime, patch, None).map(Into::into)
+            preferences_patch(runtime, patch, initial).map(Into::into)
         })
         .await
     }

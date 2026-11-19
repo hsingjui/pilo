@@ -17,9 +17,20 @@ overflow, or `{ type: "closed" }` when the runtime shuts down. The queue is
 bounded to 2,048 events or 16 MiB of serialized envelopes, whichever is reached
 first. On a gap, bootstrap again and keep polling the same `Pilo` instance.
 
-Use `loadPreferences()` and `savePreferences(patch)` to read or update the
+Use `loadPreferences()` and `savePreferences(patch, initial?)` to read or update the
 existing Host preferences. Both return the current revision and complete
-values; writes patch only the supplied fields.
+values; ordinary writes patch only the supplied fields. At startup, nsh shows
+the macOS system locale and calls `savePreferences({ locale }, true)` before
+loading app state. The Host only fills in missing values on this one-time
+initialization; an explicitly saved locale wins.
+
+nsh cannot read the Tauri WebView's local storage. An nsh-first launch sets
+the same Host migration flag as Tauri, so legacy preferences still living
+only in the WebView are not imported, even by a later Tauri launch. The
+[parity checklist](../.trellis/tasks/11-19-nsh-desktop-migration/feature-parity.md#webview-localstorage-清单)
+does not copy those preference caches. If an older installation has only
+the WebView caches, let Tauri import them into the Host before switching to
+nsh.
 
 Use `loadThemeSettings()` and `saveThemeSettings(update)` for saved Host
 appearance. Both return the complete Host settings, including
