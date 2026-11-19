@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { generateThemes } from "../../scripts/generate-desktop-themes.mjs";
+import {
+	generateThemes,
+	generateWebThemeMap,
+} from "../../scripts/generate-desktop-themes.mjs";
 
 const lody = `
 @layer base {
@@ -91,4 +94,23 @@ test("checked-in desktop themes match the CSS", () => {
 		},
 	);
 	assert.equal(run.status, 0, run.stderr);
+});
+
+test("WebUI mapping records source channel formats and reverses font names", () => {
+	const map = generateWebThemeMap(lody);
+	assert.deepEqual(map.foreground, {
+		cssVar: "foreground",
+		format: "hsl-channels",
+	});
+	assert.deepEqual(map.linked, { cssVar: "linked", format: "value" });
+	assert.deepEqual(map["font-sans"], {
+		cssVar: "pilo-page-font-family",
+		format: "value",
+	});
+	assert.equal(map["sidebar-width"], undefined);
+	assert.equal(map["foreign-rule"], undefined);
+	assert.throws(
+		() => generateWebThemeMap("@layer base { :root {} }"),
+		/missing/,
+	);
 });

@@ -1,0 +1,778 @@
+{
+	"background": {
+		"cssVar": "background",
+		"format": "hsl-channels"
+	},
+	"border": {
+		"cssVar": "border",
+		"format": "hsl-channels"
+	},
+	"button-hover": {
+		"cssVar": "button-hover",
+		"format": "hsl-channels"
+	},
+	"button-secondary": {
+		"cssVar": "button-secondary",
+		"format": "hsl-channels"
+	},
+	"button-secondary-foreground": {
+		"cssVar": "button-secondary-foreground",
+		"format": "hsl-channels"
+	},
+	"button-secondary-hover": {
+		"cssVar": "button-secondary-hover",
+		"format": "hsl-channels"
+	},
+	"card": {
+		"cssVar": "card",
+		"format": "hsl-channels"
+	},
+	"card-foreground": {
+		"cssVar": "card-foreground",
+		"format": "hsl-channels"
+	},
+	"code-added": {
+		"cssVar": "code-added",
+		"format": "hsl-channels"
+	},
+	"code-background": {
+		"cssVar": "code-background",
+		"format": "hsl-channels"
+	},
+	"code-border": {
+		"cssVar": "code-border",
+		"format": "hsl-channels"
+	},
+	"code-foreground": {
+		"cssVar": "code-foreground",
+		"format": "hsl-channels"
+	},
+	"code-removed": {
+		"cssVar": "code-removed",
+		"format": "hsl-channels"
+	},
+	"control-h": {
+		"cssVar": "control-h",
+		"format": "value"
+	},
+	"destructive": {
+		"cssVar": "destructive",
+		"format": "hsl-channels"
+	},
+	"destructive-foreground": {
+		"cssVar": "destructive-foreground",
+		"format": "hsl-channels"
+	},
+	"foreground": {
+		"cssVar": "foreground",
+		"format": "hsl-channels"
+	},
+	"hover": {
+		"cssVar": "hover",
+		"format": "hsl-channels"
+	},
+	"hover-foreground": {
+		"cssVar": "hover-foreground",
+		"format": "hsl-channels"
+	},
+	"input": {
+		"cssVar": "input",
+		"format": "hsl-channels"
+	},
+	"input-border": {
+		"cssVar": "input-border",
+		"format": "hsl-channels"
+	},
+	"input-field": {
+		"cssVar": "input-field",
+		"format": "hsl-channels"
+	},
+	"input-foreground": {
+		"cssVar": "input-foreground",
+		"format": "hsl-channels"
+	},
+	"input-placeholder": {
+		"cssVar": "input-placeholder",
+		"format": "hsl-channels"
+	},
+	"muted": {
+		"cssVar": "muted",
+		"format": "hsl-channels"
+	},
+	"muted-foreground": {
+		"cssVar": "muted-foreground",
+		"format": "hsl-channels"
+	},
+	"pilo-bubble-radius": {
+		"cssVar": "pilo-bubble-radius",
+		"format": "value"
+	},
+	"pilo-button-gap": {
+		"cssVar": "pilo-button-gap",
+		"format": "value"
+	},
+	"pilo-button-height": {
+		"cssVar": "pilo-button-height",
+		"format": "value"
+	},
+	"pilo-button-icon-size": {
+		"cssVar": "pilo-button-icon-size",
+		"format": "value"
+	},
+	"pilo-button-lg-height": {
+		"cssVar": "pilo-button-lg-height",
+		"format": "value"
+	},
+	"pilo-button-sm-height": {
+		"cssVar": "pilo-button-sm-height",
+		"format": "value"
+	},
+	"font-mono": {
+		"cssVar": "pilo-code-font-family",
+		"format": "value"
+	},
+	"pilo-code-font-size": {
+		"cssVar": "pilo-code-font-size",
+		"format": "value"
+	},
+	"pilo-command-input-height": {
+		"cssVar": "pilo-command-input-height",
+		"format": "value"
+	},
+	"pilo-command-item-gap": {
+		"cssVar": "pilo-command-item-gap",
+		"format": "value"
+	},
+	"pilo-command-item-height": {
+		"cssVar": "pilo-command-item-height",
+		"format": "value"
+	},
+	"pilo-command-touch-height": {
+		"cssVar": "pilo-command-touch-height",
+		"format": "value"
+	},
+	"pilo-composer-attachment-hit-size": {
+		"cssVar": "pilo-composer-attachment-hit-size",
+		"format": "value"
+	},
+	"pilo-composer-attachment-width": {
+		"cssVar": "pilo-composer-attachment-width",
+		"format": "value"
+	},
+	"pilo-composer-background": {
+		"cssVar": "pilo-composer-background",
+		"format": "value"
+	},
+	"pilo-composer-border": {
+		"cssVar": "pilo-composer-border",
+		"format": "value"
+	},
+	"pilo-composer-control-size": {
+		"cssVar": "pilo-composer-control-size",
+		"format": "value"
+	},
+	"pilo-composer-focus-border": {
+		"cssVar": "pilo-composer-focus-border",
+		"format": "value"
+	},
+	"pilo-composer-gap": {
+		"cssVar": "pilo-composer-gap",
+		"format": "value"
+	},
+	"pilo-composer-input-height": {
+		"cssVar": "pilo-composer-input-height",
+		"format": "value"
+	},
+	"pilo-composer-radius": {
+		"cssVar": "pilo-composer-radius",
+		"format": "value"
+	},
+	"pilo-composer-toolbar-gap": {
+		"cssVar": "pilo-composer-toolbar-gap",
+		"format": "value"
+	},
+	"pilo-context-details-radius": {
+		"cssVar": "pilo-context-details-radius",
+		"format": "value"
+	},
+	"pilo-dialog-gap": {
+		"cssVar": "pilo-dialog-gap",
+		"format": "value"
+	},
+	"pilo-dialog-padding": {
+		"cssVar": "pilo-dialog-padding",
+		"format": "value"
+	},
+	"font-display": {
+		"cssVar": "pilo-display-font-family",
+		"format": "value"
+	},
+	"pilo-field-focus-border": {
+		"cssVar": "pilo-field-focus-border",
+		"format": "value"
+	},
+	"pilo-field-height": {
+		"cssVar": "pilo-field-height",
+		"format": "value"
+	},
+	"pilo-field-hover-border": {
+		"cssVar": "pilo-field-hover-border",
+		"format": "value"
+	},
+	"pilo-field-touch-height": {
+		"cssVar": "pilo-field-touch-height",
+		"format": "value"
+	},
+	"pilo-floating-radius": {
+		"cssVar": "pilo-floating-radius",
+		"format": "value"
+	},
+	"pilo-menu-background": {
+		"cssVar": "pilo-menu-background",
+		"format": "value"
+	},
+	"pilo-menu-checked-background": {
+		"cssVar": "pilo-menu-checked-background",
+		"format": "value"
+	},
+	"pilo-menu-edge": {
+		"cssVar": "pilo-menu-edge",
+		"format": "value"
+	},
+	"pilo-menu-item-content-gap": {
+		"cssVar": "pilo-menu-item-content-gap",
+		"format": "value"
+	},
+	"pilo-menu-item-gap": {
+		"cssVar": "pilo-menu-item-gap",
+		"format": "value"
+	},
+	"pilo-menu-item-height": {
+		"cssVar": "pilo-menu-item-height",
+		"format": "value"
+	},
+	"pilo-menu-item-radius": {
+		"cssVar": "pilo-menu-item-radius",
+		"format": "value"
+	},
+	"pilo-menu-padding": {
+		"cssVar": "pilo-menu-padding",
+		"format": "value"
+	},
+	"pilo-menu-radius": {
+		"cssVar": "pilo-menu-radius",
+		"format": "value"
+	},
+	"pilo-menu-touch-height": {
+		"cssVar": "pilo-menu-touch-height",
+		"format": "value"
+	},
+	"pilo-mobile-bubble-radius": {
+		"cssVar": "pilo-mobile-bubble-radius",
+		"format": "value"
+	},
+	"pilo-mobile-button-gap": {
+		"cssVar": "pilo-mobile-button-gap",
+		"format": "value"
+	},
+	"pilo-mobile-button-height": {
+		"cssVar": "pilo-mobile-button-height",
+		"format": "value"
+	},
+	"pilo-mobile-button-icon-size": {
+		"cssVar": "pilo-mobile-button-icon-size",
+		"format": "value"
+	},
+	"pilo-mobile-button-lg-height": {
+		"cssVar": "pilo-mobile-button-lg-height",
+		"format": "value"
+	},
+	"pilo-mobile-button-sm-height": {
+		"cssVar": "pilo-mobile-button-sm-height",
+		"format": "value"
+	},
+	"pilo-mobile-command-input-height": {
+		"cssVar": "pilo-mobile-command-input-height",
+		"format": "value"
+	},
+	"pilo-mobile-command-item-gap": {
+		"cssVar": "pilo-mobile-command-item-gap",
+		"format": "value"
+	},
+	"pilo-mobile-command-item-height": {
+		"cssVar": "pilo-mobile-command-item-height",
+		"format": "value"
+	},
+	"pilo-mobile-composer-attachment-hit-size": {
+		"cssVar": "pilo-mobile-composer-attachment-hit-size",
+		"format": "value"
+	},
+	"pilo-mobile-composer-attachment-width": {
+		"cssVar": "pilo-mobile-composer-attachment-width",
+		"format": "value"
+	},
+	"pilo-mobile-composer-control-size": {
+		"cssVar": "pilo-mobile-composer-control-size",
+		"format": "value"
+	},
+	"pilo-mobile-composer-gap": {
+		"cssVar": "pilo-mobile-composer-gap",
+		"format": "value"
+	},
+	"pilo-mobile-composer-input-height": {
+		"cssVar": "pilo-mobile-composer-input-height",
+		"format": "value"
+	},
+	"pilo-mobile-composer-radius": {
+		"cssVar": "pilo-mobile-composer-radius",
+		"format": "value"
+	},
+	"pilo-mobile-composer-toolbar-gap": {
+		"cssVar": "pilo-mobile-composer-toolbar-gap",
+		"format": "value"
+	},
+	"pilo-mobile-confirm-selected-background": {
+		"cssVar": "pilo-mobile-confirm-selected-background",
+		"format": "value"
+	},
+	"pilo-mobile-context-details-radius": {
+		"cssVar": "pilo-mobile-context-details-radius",
+		"format": "value"
+	},
+	"pilo-mobile-dialog-gap": {
+		"cssVar": "pilo-mobile-dialog-gap",
+		"format": "value"
+	},
+	"pilo-mobile-dialog-padding": {
+		"cssVar": "pilo-mobile-dialog-padding",
+		"format": "value"
+	},
+	"pilo-mobile-env-height": {
+		"cssVar": "pilo-mobile-env-height",
+		"format": "value"
+	},
+	"pilo-mobile-field-height": {
+		"cssVar": "pilo-mobile-field-height",
+		"format": "value"
+	},
+	"pilo-mobile-floating-radius": {
+		"cssVar": "pilo-mobile-floating-radius",
+		"format": "value"
+	},
+	"pilo-mobile-menu-item-content-gap": {
+		"cssVar": "pilo-mobile-menu-item-content-gap",
+		"format": "value"
+	},
+	"pilo-mobile-menu-item-gap": {
+		"cssVar": "pilo-mobile-menu-item-gap",
+		"format": "value"
+	},
+	"pilo-mobile-menu-item-height": {
+		"cssVar": "pilo-mobile-menu-item-height",
+		"format": "value"
+	},
+	"pilo-mobile-menu-item-radius": {
+		"cssVar": "pilo-mobile-menu-item-radius",
+		"format": "value"
+	},
+	"pilo-mobile-menu-padding": {
+		"cssVar": "pilo-mobile-menu-padding",
+		"format": "value"
+	},
+	"pilo-mobile-menu-radius": {
+		"cssVar": "pilo-mobile-menu-radius",
+		"format": "value"
+	},
+	"pilo-mobile-project-height": {
+		"cssVar": "pilo-mobile-project-height",
+		"format": "value"
+	},
+	"pilo-mobile-radius-lg": {
+		"cssVar": "pilo-mobile-radius-lg",
+		"format": "value"
+	},
+	"pilo-mobile-radius-md": {
+		"cssVar": "pilo-mobile-radius-md",
+		"format": "value"
+	},
+	"pilo-mobile-radius-sm": {
+		"cssVar": "pilo-mobile-radius-sm",
+		"format": "value"
+	},
+	"pilo-mobile-radius-xl": {
+		"cssVar": "pilo-mobile-radius-xl",
+		"format": "value"
+	},
+	"pilo-mobile-radius-xs": {
+		"cssVar": "pilo-mobile-radius-xs",
+		"format": "value"
+	},
+	"pilo-mobile-row-action-size": {
+		"cssVar": "pilo-mobile-row-action-size",
+		"format": "value"
+	},
+	"pilo-mobile-row-gap": {
+		"cssVar": "pilo-mobile-row-gap",
+		"format": "value"
+	},
+	"pilo-mobile-select-gap": {
+		"cssVar": "pilo-mobile-select-gap",
+		"format": "value"
+	},
+	"pilo-mobile-select-item-height": {
+		"cssVar": "pilo-mobile-select-item-height",
+		"format": "value"
+	},
+	"pilo-mobile-select-item-radius": {
+		"cssVar": "pilo-mobile-select-item-radius",
+		"format": "value"
+	},
+	"pilo-mobile-select-padding": {
+		"cssVar": "pilo-mobile-select-padding",
+		"format": "value"
+	},
+	"pilo-mobile-selected-background": {
+		"cssVar": "pilo-mobile-selected-background",
+		"format": "value"
+	},
+	"pilo-mobile-selected-ring-width": {
+		"cssVar": "pilo-mobile-selected-ring-width",
+		"format": "value"
+	},
+	"pilo-mobile-session-context-height": {
+		"cssVar": "pilo-mobile-session-context-height",
+		"format": "value"
+	},
+	"pilo-mobile-session-gap": {
+		"cssVar": "pilo-mobile-session-gap",
+		"format": "value"
+	},
+	"pilo-mobile-session-height": {
+		"cssVar": "pilo-mobile-session-height",
+		"format": "value"
+	},
+	"pilo-mobile-session-padding": {
+		"cssVar": "pilo-mobile-session-padding",
+		"format": "value"
+	},
+	"pilo-mobile-sidebar-content-padding": {
+		"cssVar": "pilo-mobile-sidebar-content-padding",
+		"format": "value"
+	},
+	"pilo-mobile-sidebar-header-height": {
+		"cssVar": "pilo-mobile-sidebar-header-height",
+		"format": "value"
+	},
+	"pilo-mobile-sidebar-width": {
+		"cssVar": "pilo-mobile-sidebar-width",
+		"format": "value"
+	},
+	"font-sans": {
+		"cssVar": "pilo-page-font-family",
+		"format": "value"
+	},
+	"pilo-project-selected-foreground": {
+		"cssVar": "pilo-project-selected-foreground",
+		"format": "value"
+	},
+	"pilo-radius-lg": {
+		"cssVar": "pilo-radius-lg",
+		"format": "value"
+	},
+	"pilo-radius-md": {
+		"cssVar": "pilo-radius-md",
+		"format": "value"
+	},
+	"pilo-radius-sm": {
+		"cssVar": "pilo-radius-sm",
+		"format": "value"
+	},
+	"pilo-radius-xl": {
+		"cssVar": "pilo-radius-xl",
+		"format": "value"
+	},
+	"pilo-radius-xs": {
+		"cssVar": "pilo-radius-xs",
+		"format": "value"
+	},
+	"pilo-segment-item-radius": {
+		"cssVar": "pilo-segment-item-radius",
+		"format": "value"
+	},
+	"pilo-segment-padding": {
+		"cssVar": "pilo-segment-padding",
+		"format": "value"
+	},
+	"pilo-segment-radius": {
+		"cssVar": "pilo-segment-radius",
+		"format": "value"
+	},
+	"pilo-select-checked-background": {
+		"cssVar": "pilo-select-checked-background",
+		"format": "value"
+	},
+	"pilo-select-gap": {
+		"cssVar": "pilo-select-gap",
+		"format": "value"
+	},
+	"pilo-select-item-height": {
+		"cssVar": "pilo-select-item-height",
+		"format": "value"
+	},
+	"pilo-select-item-radius": {
+		"cssVar": "pilo-select-item-radius",
+		"format": "value"
+	},
+	"pilo-select-padding": {
+		"cssVar": "pilo-select-padding",
+		"format": "value"
+	},
+	"pilo-sheet-control-height": {
+		"cssVar": "pilo-sheet-control-height",
+		"format": "value"
+	},
+	"pilo-sheet-item-gap": {
+		"cssVar": "pilo-sheet-item-gap",
+		"format": "value"
+	},
+	"pilo-sheet-item-radius": {
+		"cssVar": "pilo-sheet-item-radius",
+		"format": "value"
+	},
+	"pilo-sheet-model-height": {
+		"cssVar": "pilo-sheet-model-height",
+		"format": "value"
+	},
+	"pilo-sheet-padding": {
+		"cssVar": "pilo-sheet-padding",
+		"format": "value"
+	},
+	"pilo-sheet-radius": {
+		"cssVar": "pilo-sheet-radius",
+		"format": "value"
+	},
+	"pilo-sidebar-border-color": {
+		"cssVar": "pilo-sidebar-border-color",
+		"format": "value"
+	},
+	"pilo-sidebar-border-width": {
+		"cssVar": "pilo-sidebar-border-width",
+		"format": "value"
+	},
+	"pilo-sidebar-env-height": {
+		"cssVar": "pilo-sidebar-env-height",
+		"format": "value"
+	},
+	"pilo-sidebar-header-top-inset": {
+		"cssVar": "pilo-sidebar-header-top-inset",
+		"format": "value"
+	},
+	"pilo-sidebar-padding": {
+		"cssVar": "pilo-sidebar-padding",
+		"format": "value"
+	},
+	"pilo-sidebar-project-height": {
+		"cssVar": "pilo-sidebar-project-height",
+		"format": "value"
+	},
+	"pilo-sidebar-radius": {
+		"cssVar": "pilo-sidebar-radius",
+		"format": "value"
+	},
+	"pilo-sidebar-row-gap": {
+		"cssVar": "pilo-sidebar-row-gap",
+		"format": "value"
+	},
+	"pilo-sidebar-selected-background": {
+		"cssVar": "pilo-sidebar-selected-background",
+		"format": "value"
+	},
+	"pilo-sidebar-selected-border": {
+		"cssVar": "pilo-sidebar-selected-border",
+		"format": "value"
+	},
+	"pilo-sidebar-selected-foreground": {
+		"cssVar": "pilo-sidebar-selected-foreground",
+		"format": "value"
+	},
+	"pilo-sidebar-session-context-height": {
+		"cssVar": "pilo-sidebar-session-context-height",
+		"format": "value"
+	},
+	"pilo-sidebar-session-gap": {
+		"cssVar": "pilo-sidebar-session-gap",
+		"format": "value"
+	},
+	"pilo-sidebar-session-height": {
+		"cssVar": "pilo-sidebar-session-height",
+		"format": "value"
+	},
+	"pilo-tooltip-border": {
+		"cssVar": "pilo-tooltip-border",
+		"format": "value"
+	},
+	"pilo-user-bubble-bg": {
+		"cssVar": "pilo-user-bubble-bg",
+		"format": "value"
+	},
+	"pilo-user-bubble-border": {
+		"cssVar": "pilo-user-bubble-border",
+		"format": "value"
+	},
+	"popover": {
+		"cssVar": "popover",
+		"format": "hsl-channels"
+	},
+	"popover-foreground": {
+		"cssVar": "popover-foreground",
+		"format": "hsl-channels"
+	},
+	"primary": {
+		"cssVar": "primary",
+		"format": "hsl-channels"
+	},
+	"primary-foreground": {
+		"cssVar": "primary-foreground",
+		"format": "hsl-channels"
+	},
+	"ring": {
+		"cssVar": "ring",
+		"format": "hsl-channels"
+	},
+	"scrollbar-thumb": {
+		"cssVar": "scrollbar-thumb",
+		"format": "hsl-channels"
+	},
+	"scrollbar-thumb-active": {
+		"cssVar": "scrollbar-thumb-active",
+		"format": "hsl-channels"
+	},
+	"scrollbar-thumb-hover": {
+		"cssVar": "scrollbar-thumb-hover",
+		"format": "hsl-channels"
+	},
+	"secondary": {
+		"cssVar": "secondary",
+		"format": "hsl-channels"
+	},
+	"secondary-foreground": {
+		"cssVar": "secondary-foreground",
+		"format": "hsl-channels"
+	},
+	"sidebar-background": {
+		"cssVar": "sidebar-background",
+		"format": "hsl-channels"
+	},
+	"sidebar-border": {
+		"cssVar": "sidebar-border",
+		"format": "hsl-channels"
+	},
+	"sidebar-foreground": {
+		"cssVar": "sidebar-foreground",
+		"format": "hsl-channels"
+	},
+	"sidebar-foreground-muted": {
+		"cssVar": "sidebar-foreground-muted",
+		"format": "hsl-channels"
+	},
+	"sidebar-hover": {
+		"cssVar": "sidebar-hover",
+		"format": "hsl-channels"
+	},
+	"sidebar-hover-foreground": {
+		"cssVar": "sidebar-hover-foreground",
+		"format": "hsl-channels"
+	},
+	"sidebar-primary": {
+		"cssVar": "sidebar-primary",
+		"format": "hsl-channels"
+	},
+	"sidebar-ring": {
+		"cssVar": "sidebar-ring",
+		"format": "hsl-channels"
+	},
+	"sidebar-selection-foreground": {
+		"cssVar": "sidebar-selection-foreground",
+		"format": "hsl-channels"
+	},
+	"skeleton-line": {
+		"cssVar": "skeleton-line",
+		"format": "hsl-channels"
+	},
+	"skeleton-line-strong": {
+		"cssVar": "skeleton-line-strong",
+		"format": "hsl-channels"
+	},
+	"status-danger": {
+		"cssVar": "status-danger",
+		"format": "hsl-channels"
+	},
+	"status-success": {
+		"cssVar": "status-success",
+		"format": "hsl-channels"
+	},
+	"status-warning": {
+		"cssVar": "status-warning",
+		"format": "hsl-channels"
+	},
+	"switch-track": {
+		"cssVar": "switch-track",
+		"format": "hsl-channels"
+	},
+	"syntax-attr": {
+		"cssVar": "syntax-attr",
+		"format": "hsl-channels"
+	},
+	"syntax-builtin": {
+		"cssVar": "syntax-builtin",
+		"format": "hsl-channels"
+	},
+	"syntax-comment": {
+		"cssVar": "syntax-comment",
+		"format": "hsl-channels"
+	},
+	"syntax-function": {
+		"cssVar": "syntax-function",
+		"format": "hsl-channels"
+	},
+	"syntax-keyword": {
+		"cssVar": "syntax-keyword",
+		"format": "hsl-channels"
+	},
+	"syntax-number": {
+		"cssVar": "syntax-number",
+		"format": "hsl-channels"
+	},
+	"syntax-string": {
+		"cssVar": "syntax-string",
+		"format": "hsl-channels"
+	},
+	"syntax-title": {
+		"cssVar": "syntax-title",
+		"format": "hsl-channels"
+	},
+	"syntax-variable": {
+		"cssVar": "syntax-variable",
+		"format": "hsl-channels"
+	},
+	"z-dialog": {
+		"cssVar": "z-dialog",
+		"format": "value"
+	},
+	"z-dialog-overlay": {
+		"cssVar": "z-dialog-overlay",
+		"format": "value"
+	},
+	"z-popover": {
+		"cssVar": "z-popover",
+		"format": "value"
+	},
+	"z-toast": {
+		"cssVar": "z-toast",
+		"format": "value"
+	},
+	"z-tooltip": {
+		"cssVar": "z-tooltip",
+		"format": "value"
+	}
+}
