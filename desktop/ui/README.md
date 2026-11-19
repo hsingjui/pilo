@@ -30,6 +30,13 @@
   `animate-spin` does not). Native macOS window captures confirm rotation keeps
   running through the fixture's 1.5s JS block; the old JS clock froze. The fixture
   supports external screen capture without a JS-driven screenshot call.
+- Skeleton is decorative, using the line/strong tokens and a per-bone native
+  gradient sweep (58%, 1.35s); reduced motion removes the sweep. Callers own sizes
+  and accessible loading announcements. The native animation graph scales the
+  sweep with layout without restarting its phase. Native captures verify the
+  sweep continues through a 1.5s JS block and redraws its foreground gradient
+  after light-to-dark appearance changes without remounting. Canvas draw reads
+  theme tokens in a reactive effect; `nsh/test` cannot inspect recorded gradient colors.
 - Toast/ToastStack wrap native presentation; callers own a `ToastManager`
   (re-exported from `toast-stack`). Push with `{ timeout: durationInMs }` for
   auto-dismiss; omit timeout for a persistent toast. Advance on a timer, pausing
