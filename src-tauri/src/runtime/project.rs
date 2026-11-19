@@ -123,12 +123,12 @@ pub(crate) async fn ready(
     ready_with_paths(&runtime.paths, servers, &runtime.events, id).await
 }
 
-pub fn get(runtime: &Runtime, id: &str) -> Result<Project, String> {
+pub(crate) fn get(runtime: &Runtime, id: &str) -> Result<Project, String> {
     storage::get_project(&storage::open(&runtime.paths)?, id)?
         .ok_or_else(|| format!("Project '{id}' was not found"))
 }
 
-pub async fn add(
+pub(crate) async fn add(
     runtime: &Runtime,
     servers: &ServerManager,
     connection_id: String,
@@ -156,7 +156,7 @@ pub async fn add(
     Ok(project)
 }
 
-pub async fn refresh(
+pub(crate) async fn refresh(
     runtime: &Runtime,
     servers: &ServerManager,
     id: &str,
@@ -182,13 +182,13 @@ pub async fn refresh(
     Ok(project)
 }
 
-pub fn touch(runtime: &Runtime, id: &str) -> Result<Project, String> {
+pub(crate) fn touch(runtime: &Runtime, id: &str) -> Result<Project, String> {
     get(runtime, id)?;
     storage::touch_project(&storage::open(&runtime.paths)?, id, storage::now_ms())?;
     get(runtime, id)
 }
 
-pub fn remove(runtime: &Runtime, id: &str) -> Result<Vec<Project>, String> {
+pub(crate) fn remove(runtime: &Runtime, id: &str) -> Result<Vec<Project>, String> {
     if get(runtime, id)?.is_default_workspace() {
         return Err(
             "The default workspace cannot be removed; hide it in the connection menu".to_owned(),
@@ -202,7 +202,7 @@ pub fn remove(runtime: &Runtime, id: &str) -> Result<Vec<Project>, String> {
     storage::list_projects(&db)
 }
 
-pub fn reorder(
+pub(crate) fn reorder(
     runtime: &Runtime,
     connection_id: &str,
     project_ids: &[String],
@@ -217,7 +217,7 @@ pub fn reorder(
     storage::list_projects(&db)
 }
 
-pub async fn discover(
+pub(crate) async fn discover(
     runtime: &Runtime,
     servers: &ServerManager,
     connection_id: String,
@@ -246,7 +246,10 @@ pub async fn discover(
         .collect())
 }
 
-pub fn resolve_connection(runtime: &Runtime, connection_id: &str) -> Result<Connection, String> {
+pub(crate) fn resolve_connection(
+    runtime: &Runtime,
+    connection_id: &str,
+) -> Result<Connection, String> {
     let db = storage::open(&runtime.paths)?;
     if connection_id == "local" {
         return storage::ensure_local_connection(&db);

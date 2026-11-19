@@ -214,7 +214,7 @@ impl RuntimeEventBus {
     }
 
     /// Host bus: Web events are buffered only while Remote WebUI runs.
-    pub fn for_host() -> Self {
+    pub(crate) fn for_host() -> Self {
         let bus = Self::default();
         bus.set_web_events_enabled(false);
         bus
@@ -237,7 +237,12 @@ impl RuntimeEventBus {
         }
     }
 
-    pub fn subscribe(&self, window_label: &str, channel_id: u32, events: Arc<dyn HostEvents>) {
+    pub(crate) fn subscribe(
+        &self,
+        window_label: &str,
+        channel_id: u32,
+        events: Arc<dyn HostEvents>,
+    ) {
         // Reload replaces only this window's channel; other windows stay subscribed.
         self.channels
             .lock()
@@ -306,7 +311,7 @@ impl RuntimeEventBus {
         )
     }
 
-    pub fn send(&self, event: RuntimeEventEnvelope) {
+    pub(crate) fn send(&self, event: RuntimeEventEnvelope) {
         self.send_observed(event, |_| {});
     }
 
