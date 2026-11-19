@@ -7,6 +7,9 @@
   hover, active, disabled and keyboard-only focus feedback native.
 - Resolve compound `styleVars` through the shared `theme-style` helper and apply
   them as inline styles; `token()` is for `cssVars`, not compound shadows.
+  When switching themes, pair `setTheme({ cssVars: theme.cssVars })` with
+  `setStyleTheme(theme.styleVars)`; pair both with `null` to restore Lody.
+  The helper follows light/dark appearance with the same fallback order as NSH.
 - Compose icons as children. Icons default to 16 points and the foreground token;
   pass a semantic color explicitly inside colored controls. An icon without an
   accessibility label is decorative; icon-only controls need a control label.
