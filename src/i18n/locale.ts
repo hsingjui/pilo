@@ -1,20 +1,13 @@
 import type { AppLocale } from "./locale-types";
 
-export { APP_LOCALES, type AppLocale } from "./locale-types";
+export {
+	APP_LOCALES,
+	isAppLocale,
+	resolveInitialLocale,
+	type AppLocale,
+} from "./locale-types";
 
 export const LOCALE_STORAGE_KEY = "pilo.locale";
-
-export function isAppLocale(value: unknown): value is AppLocale {
-	return value === "zh-CN" || value === "en-US";
-}
-
-export function resolveInitialLocale(
-	storedLocale: unknown,
-	systemLanguage: string | undefined,
-): AppLocale {
-	if (isAppLocale(storedLocale)) return storedLocale;
-	return systemLanguage?.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";
-}
 
 export function readStoredLocale(storage?: Pick<Storage, "getItem">): unknown {
 	if (storage) {
