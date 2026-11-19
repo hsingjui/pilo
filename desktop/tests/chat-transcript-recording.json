@@ -1,0 +1,656 @@
+{
+	"cut": {
+		"eventSequence": 30,
+		"generation": 1,
+		"history": {
+			"fingerprint": {
+				"fileMtimeNs": "1795109320523854142",
+				"fileSize": 7525
+			},
+			"history": {
+				"events": [
+					{
+						"sourceEntryId": "9d512a13",
+						"text": "Reply only with TRANSCRIPT_BASE.",
+						"timestampMs": 1795109319833,
+						"type": "user_message_start"
+					},
+					{
+						"sourceEntryId": "922ae292",
+						"timestampMs": 1795109320523,
+						"type": "assistant_message_start"
+					},
+					{
+						"delta": "TRANSCRIPT_BASE",
+						"sourceContentIndex": 0,
+						"sourceEntryId": "922ae292",
+						"timestampMs": 1795109320523,
+						"type": "assistant_text_delta"
+					},
+					{
+						"completion": "complete",
+						"stopReason": "stop",
+						"timestampMs": 1795109320523,
+						"type": "assistant_turn_end",
+						"usage": {
+							"cacheRead": 640,
+							"cacheWrite": 0,
+							"cost": 0,
+							"input": 943,
+							"output": 5,
+							"total": 1588
+						}
+					}
+				],
+				"headerMissing": false,
+				"model": {
+					"id": "deepseek-flash",
+					"provider": "relay"
+				},
+				"name": null,
+				"sourceMessageCount": 3,
+				"stats": {
+					"assistantMessages": 1,
+					"contextTokens": 1588,
+					"cost": 0,
+					"tokens": {
+						"cacheRead": 640,
+						"cacheWrite": 0,
+						"input": 943,
+						"output": 5,
+						"total": 1588
+					},
+					"toolCalls": 0,
+					"toolResults": 0,
+					"totalMessages": 2,
+					"userMessages": 1
+				},
+				"thinkingLevel": "off"
+			}
+		},
+		"live": {
+			"events": [
+				{
+					"generation": 1,
+					"id": "f3814c1f-9a6b-4230-a1fb-99ac17972fba",
+					"message": null,
+					"method": "setWidget",
+					"notifyType": null,
+					"options": [],
+					"placeholder": null,
+					"prefill": null,
+					"statusKey": null,
+					"statusText": null,
+					"text": null,
+					"timeout": null,
+					"title": null,
+					"type": "extension_ui_request",
+					"widgetKey": "pilo.cache-keep-alive.v1",
+					"widgetLines": [
+						"{\"ready\":true,\"status\":\"stopped\",\"reason\":\"disabled\",\"provider\":\"relay\",\"modelId\":\"deepseek-flash\",\"expiresAtMs\":0,\"nextWarmAtMs\":null,\"requestCount\":0,\"inputTokens\":0,\"cacheReadTokens\":0,\"cacheWriteTokens\":0,\"outputTokens\":0,\"cost\":0}"
+					],
+					"widgetPlacement": null
+				},
+				{
+					"generation": 1,
+					"message": {
+						"command": "prompt",
+						"data": {
+							"disposition": "started"
+						},
+						"id": "prompt",
+						"success": true,
+						"type": "response"
+					},
+					"type": "rpc_message"
+				},
+				{
+					"generation": 1,
+					"text": "First run the shell command `echo pilo-transcript` with your bash tool. Then write exactly 8 numbered lines of plain text, each one short sentence about a different imaginary bakery.",
+					"type": "user_message_start"
+				},
+				{
+					"generation": 1,
+					"type": "assistant_message_start"
+				},
+				{
+					"generation": 1,
+					"text": "",
+					"type": "assistant_text_snapshot"
+				},
+				{
+					"args": {
+						"command": "echo pilo-transcript"
+					},
+					"generation": 1,
+					"toolCallId": "chatcmpl-tool-a295028c7d174b1b",
+					"toolName": "bash",
+					"type": "tool_execution_start"
+				},
+				{
+					"args": {
+						"command": "echo pilo-transcript"
+					},
+					"generation": 1,
+					"partialResult": {
+						"content": [
+							{
+								"text": "pilo-transcript\n",
+								"type": "text"
+							}
+						],
+						"details": {}
+					},
+					"toolCallId": "chatcmpl-tool-a295028c7d174b1b",
+					"toolName": "bash",
+					"type": "tool_execution_update"
+				},
+				{
+					"generation": 1,
+					"isError": false,
+					"result": {
+						"content": [
+							{
+								"text": "pilo-transcript\n",
+								"type": "text"
+							}
+						],
+						"structuredContent": {
+							"exit_code": 0,
+							"output": "pilo-transcript\n",
+							"truncated": false,
+							"wall_time_seconds": 0
+						}
+					},
+					"toolCallId": "chatcmpl-tool-a295028c7d174b1b",
+					"toolName": "bash",
+					"type": "tool_execution_end"
+				}
+			],
+			"type": "active"
+		},
+		"sessionKey": "nsh-transcript-recording"
+	},
+	"settled": {
+		"eventSequence": 55,
+		"generation": 1,
+		"history": {
+			"fingerprint": {
+				"fileMtimeNs": "1795109323575754330",
+				"fileSize": 10108
+			},
+			"history": {
+				"events": [
+					{
+						"sourceEntryId": "9d512a13",
+						"text": "Reply only with TRANSCRIPT_BASE.",
+						"timestampMs": 1795109319833,
+						"type": "user_message_start"
+					},
+					{
+						"sourceEntryId": "922ae292",
+						"timestampMs": 1795109320523,
+						"type": "assistant_message_start"
+					},
+					{
+						"delta": "TRANSCRIPT_BASE",
+						"sourceContentIndex": 0,
+						"sourceEntryId": "922ae292",
+						"timestampMs": 1795109320523,
+						"type": "assistant_text_delta"
+					},
+					{
+						"completion": "complete",
+						"stopReason": "stop",
+						"timestampMs": 1795109320523,
+						"type": "assistant_turn_end",
+						"usage": {
+							"cacheRead": 640,
+							"cacheWrite": 0,
+							"cost": 0,
+							"input": 943,
+							"output": 5,
+							"total": 1588
+						}
+					},
+					{
+						"sourceEntryId": "c986a68b",
+						"text": "First run the shell command `echo pilo-transcript` with your bash tool. Then write exactly 8 numbered lines of plain text, each one short sentence about a different imaginary bakery.",
+						"timestampMs": 1795109320533,
+						"type": "user_message_start"
+					},
+					{
+						"sourceEntryId": "5a075a43",
+						"timestampMs": 1795109321511,
+						"type": "assistant_message_start"
+					},
+					{
+						"args": {
+							"command": "echo pilo-transcript"
+						},
+						"sourceContentIndex": 0,
+						"sourceEntryId": "5a075a43",
+						"timestampMs": 1795109321511,
+						"toolCallId": "chatcmpl-tool-a295028c7d174b1b",
+						"toolName": "bash",
+						"type": "tool_execution_start"
+					},
+					{
+						"isError": false,
+						"result": {
+							"content": [
+								{
+									"text": "pilo-transcript\n",
+									"type": "text"
+								}
+							],
+							"durationMs": 9
+						},
+						"sourceEntryId": "f73ec32c",
+						"timestampMs": 1795109321526,
+						"toolCallId": "chatcmpl-tool-a295028c7d174b1b",
+						"toolName": "bash",
+						"type": "tool_execution_end"
+					},
+					{
+						"delta": "1. Moonwalk Bakery sells bread only on nights with a full moon.\n2. Copper Kettle Bakes bakes everything in antique kettles for extra charm.\n3. The Sleepy Crumb opens at noon and closes whenever the baker yawns.\n4. Fern & Flour hides a tiny greenhouse behind its display case.\n5. Saltwind Pastries salts every loaf with sea air and stubbornness.\n6. The Ninth Loaf gives away its ninth loaf free every single day.\n7. Paper Lantern Cakes decorates each cake with edible origami.\n8. Hearthquake Bread specializes in loaves that crackle when sliced.",
+						"sourceContentIndex": 0,
+						"sourceEntryId": "ea795f62",
+						"timestampMs": 1795109323575,
+						"type": "assistant_text_delta"
+					},
+					{
+						"completion": "complete",
+						"stopReason": "stop",
+						"timestampMs": 1795109323575,
+						"type": "assistant_turn_end",
+						"usage": {
+							"cacheRead": 3200,
+							"cacheWrite": 0,
+							"cost": 0,
+							"input": 115,
+							"output": 173,
+							"total": 3488
+						}
+					}
+				],
+				"headerMissing": false,
+				"model": {
+					"id": "deepseek-flash",
+					"provider": "relay"
+				},
+				"name": null,
+				"sourceMessageCount": 7,
+				"stats": {
+					"assistantMessages": 3,
+					"contextTokens": 1818,
+					"cost": 0,
+					"tokens": {
+						"cacheRead": 3840,
+						"cacheWrite": 0,
+						"input": 1058,
+						"output": 178,
+						"total": 5076
+					},
+					"toolCalls": 1,
+					"toolResults": 1,
+					"totalMessages": 6,
+					"userMessages": 2
+				},
+				"thinkingLevel": "off"
+			}
+		},
+		"live": {
+			"type": "idle"
+		},
+		"sessionKey": "nsh-transcript-recording"
+	},
+	"streamed": [
+		{
+			"generation": 1,
+			"id": "f3814c1f-9a6b-4230-a1fb-99ac17972fba",
+			"message": null,
+			"method": "setWidget",
+			"notifyType": null,
+			"options": [],
+			"placeholder": null,
+			"prefill": null,
+			"projectId": "chat-fixture",
+			"sequence": 23,
+			"sessionKey": "nsh-transcript-recording",
+			"statusKey": null,
+			"statusText": null,
+			"text": null,
+			"timeout": null,
+			"title": null,
+			"type": "extension_ui_request",
+			"widgetKey": "pilo.cache-keep-alive.v1",
+			"widgetLines": [
+				"{\"ready\":true,\"status\":\"stopped\",\"reason\":\"disabled\",\"provider\":\"relay\",\"modelId\":\"deepseek-flash\",\"expiresAtMs\":0,\"nextWarmAtMs\":null,\"requestCount\":0,\"inputTokens\":0,\"cacheReadTokens\":0,\"cacheWriteTokens\":0,\"outputTokens\":0,\"cost\":0}"
+			],
+			"widgetPlacement": null
+		},
+		{
+			"generation": 1,
+			"message": {
+				"command": "prompt",
+				"data": {
+					"disposition": "started"
+				},
+				"id": "prompt",
+				"success": true,
+				"type": "response"
+			},
+			"projectId": "chat-fixture",
+			"sequence": 24,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "rpc_message"
+		},
+		{
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 25,
+			"sessionKey": "nsh-transcript-recording",
+			"text": "First run the shell command `echo pilo-transcript` with your bash tool. Then write exactly 8 numbered lines of plain text, each one short sentence about a different imaginary bakery.",
+			"type": "user_message_start"
+		},
+		{
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 26,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_message_start"
+		},
+		{
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 27,
+			"sessionKey": "nsh-transcript-recording",
+			"text": "",
+			"type": "assistant_text_snapshot"
+		},
+		{
+			"args": {
+				"command": "echo pilo-transcript"
+			},
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 28,
+			"sessionKey": "nsh-transcript-recording",
+			"toolCallId": "chatcmpl-tool-a295028c7d174b1b",
+			"toolName": "bash",
+			"type": "tool_execution_start"
+		},
+		{
+			"args": {
+				"command": "echo pilo-transcript"
+			},
+			"generation": 1,
+			"partialResult": {
+				"content": [
+					{
+						"text": "pilo-transcript\n",
+						"type": "text"
+					}
+				],
+				"details": {}
+			},
+			"projectId": "chat-fixture",
+			"sequence": 29,
+			"sessionKey": "nsh-transcript-recording",
+			"toolCallId": "chatcmpl-tool-a295028c7d174b1b",
+			"toolName": "bash",
+			"type": "tool_execution_update"
+		},
+		{
+			"generation": 1,
+			"isError": false,
+			"projectId": "chat-fixture",
+			"result": {
+				"content": [
+					{
+						"text": "pilo-transcript\n",
+						"type": "text"
+					}
+				],
+				"structuredContent": {
+					"exit_code": 0,
+					"output": "pilo-transcript\n",
+					"truncated": false,
+					"wall_time_seconds": 0
+				}
+			},
+			"sequence": 30,
+			"sessionKey": "nsh-transcript-recording",
+			"toolCallId": "chatcmpl-tool-a295028c7d174b1b",
+			"toolName": "bash",
+			"type": "tool_execution_end"
+		},
+		{
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 31,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_message_start"
+		},
+		{
+			"delta": "1. Moonwalk Bakery sells bread",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 32,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " only on nights",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 33,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " with a full moon.\n2.",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 34,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " Copper Kettle Bakes bakes everything",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 35,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " in antique kettles for extra charm.\n3. The Sleepy Crumb opens at",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 36,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " noon and closes whenever",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 37,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " the baker yawns.\n4. Fern & Flour hides a tiny",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 38,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " greenhouse behind its",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 39,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " display case.\n5. Saltwind",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 40,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " Pastries salts every loaf with sea",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 41,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " air",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 42,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " and stubbornness.\n6. The Ninth",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 43,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " Loaf gives away its",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 44,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " ninth loaf free every single day.\n7. Paper Lan",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 45,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": "tern Cakes decor",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 46,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": "ates each cake",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 47,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " with edible origami.\n8. Hearthquake Bread specializes",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 48,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " in loaves that crackle when",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 49,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"delta": " sliced.",
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 50,
+			"sessionKey": "nsh-transcript-recording",
+			"type": "assistant_text_delta"
+		},
+		{
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 51,
+			"sessionKey": "nsh-transcript-recording",
+			"text": "1. Moonwalk Bakery sells bread only on nights with a full moon.\n2. Copper Kettle Bakes bakes everything in antique kettles for extra charm.\n3. The Sleepy Crumb opens at noon and closes whenever the baker yawns.\n4. Fern & Flour hides a tiny greenhouse behind its display case.\n5. Saltwind Pastries salts every loaf with sea air and stubbornness.\n6. The Ninth Loaf gives away its ninth loaf free every single day.\n7. Paper Lantern Cakes decorates each cake with edible origami.\n8. Hearthquake Bread specializes in loaves that crackle when sliced.",
+			"type": "assistant_text_snapshot"
+		},
+		{
+			"generation": 1,
+			"id": "89013794-4bab-4971-8675-f0ed237350fd",
+			"message": null,
+			"method": "setWidget",
+			"notifyType": null,
+			"options": [],
+			"placeholder": null,
+			"prefill": null,
+			"projectId": "chat-fixture",
+			"sequence": 52,
+			"sessionKey": "nsh-transcript-recording",
+			"statusKey": null,
+			"statusText": null,
+			"text": null,
+			"timeout": null,
+			"title": null,
+			"type": "extension_ui_request",
+			"widgetKey": "pilo.cache-keep-alive.v1",
+			"widgetLines": [
+				"{\"ready\":true,\"status\":\"stopped\",\"reason\":\"disabled\",\"provider\":\"relay\",\"modelId\":\"deepseek-flash\",\"expiresAtMs\":0,\"nextWarmAtMs\":null,\"requestCount\":0,\"inputTokens\":0,\"cacheReadTokens\":0,\"cacheWriteTokens\":0,\"outputTokens\":0,\"cost\":0}"
+			],
+			"widgetPlacement": null
+		},
+		{
+			"completionId": "4Gua7tOoAGvdy7VFKwv_1A",
+			"projectId": "chat-fixture",
+			"sequence": 53,
+			"sessionPath": "/Users/devin/.pi/agent/sessions/--private-var-folders-jj-fwmm45ns4dz80954vdr61l2w0000gn-T-pilo-nsh-test-36316-0--/2026-11-19T17-28-39-811Z_01a1f4da-7483-7071-9dc0-90cd122e9d72.jsonl",
+			"type": "session_turn_completed"
+		},
+		{
+			"errorMessage": null,
+			"generation": 1,
+			"projectId": "chat-fixture",
+			"sequence": 54,
+			"sessionKey": "nsh-transcript-recording",
+			"stopReason": "stop",
+			"type": "assistant_message_end",
+			"usage": {
+				"cacheRead": 3200,
+				"cacheWrite": 0,
+				"cost": 0,
+				"input": 115,
+				"output": 173,
+				"total": 3488
+			}
+		},
+		{
+			"completionId": "4Gua7tOoAGvdy7VFKwv_1A",
+			"sequence": 55,
+			"state": {
+				"completedRevision": 1,
+				"projectId": "chat-fixture",
+				"readRevision": 0,
+				"sessionPath": "/Users/devin/.pi/agent/sessions/--private-var-folders-jj-fwmm45ns4dz80954vdr61l2w0000gn-T-pilo-nsh-test-36316-0--/2026-11-19T17-28-39-811Z_01a1f4da-7483-7071-9dc0-90cd122e9d72.jsonl"
+			},
+			"type": "session_read_state_changed"
+		}
+	]
+}
