@@ -1,5 +1,7 @@
 import { expect, open, test } from "nsh/test";
 
+import config from "../nsh.json";
+
 const desktop = { platform: "macos", width: 1100, height: 720 } as const;
 
 function openStates(scenario: string) {
@@ -17,9 +19,6 @@ test("the shell starts on the native runtime and shows the default workspace", a
 	expect(app.shows("id:startup-loading")).toBe(false);
 	expect(app.shows("id:startup-failed")).toBe(false);
 	expect(app.viewStyle("id:sidebar")?.backgroundColor).toBe("#f7f8faff");
-	await app.setViewport(390, 844);
-	expect(app.shows("id:sidebar >> text:Pilo")).toBe(true);
-	expect(app.shows("id:workspace-title")).toBe(true);
 });
 
 test("the shell says it is loading until the first snapshot arrives", async () => {
@@ -86,12 +85,17 @@ test("the sidebar collapses and expands from the title bar", async () => {
 	expect(app.shows("id:sidebar-expand")).toBe(false);
 });
 
-test("a narrow window keeps the workspace once the sidebar is collapsed", async () => {
-	const app = await openStates("empty");
+test("the smallest window shows the sidebar beside the workspace", async () => {
+	const app = await open("./app-shell-states-fixture.tsx", {
+		platform: "macos",
+		...config.window.minSize,
+		storage: { "fixture.scenario": "empty" },
+	});
 	await app.waitFor("id:workspace-title");
-	await app.setViewport(390, 720);
+	expect(config.window.minSize.width).toBe(768);
+	expect(config.window.minSize.height).toBe(600);
+	expect(app.shows("id:sidebar >> text:Pilo")).toBe(true);
 	expect(app.shows("id:sidebar-collapse")).toBe(true);
-	await app.press("id:sidebar-collapse");
 	expect(app.shows("id:workspace >> text:Add a project first")).toBe(true);
 });
 

@@ -3,6 +3,16 @@
 	"id": "app.hsingjui.pilo.desktop",
 	"version": "0.4.1",
 	"theme": "theme.json",
+	"window": {
+		"defaultSize": {
+			"width": 1200,
+			"height": 800
+		},
+		"minSize": {
+			"width": 768,
+			"height": 600
+		}
+	},
 	"build": 1,
 	"rust": "native",
 	"resolve": {
