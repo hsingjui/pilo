@@ -25,3 +25,10 @@ test("Pilo forwards Pi RPC commands and delivers responses through events", asyn
 	});
 	await app.waitFor("text:sendChatCommand verified", { timeout: 15000 });
 });
+
+test("Pilo shutdown closes the stream and stops a Pi child mid-turn", async () => {
+	const app = await open("./chat-lifecycle-fixture.tsx", {
+		host: { params: { shutdown: true } },
+	});
+	await app.waitFor("text:shutdown stops Pi mid-turn", { timeout: 15000 });
+});

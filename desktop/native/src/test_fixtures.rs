@@ -7,7 +7,7 @@ use std::{
 
 use nsh_core::prelude::*;
 use pilo_lib::{
-    domain::{Project, ProjectMetadata, SessionIndexEntry},
+    domain::{ConnectionNamingModel, Project, ProjectMetadata, SessionIndexEntry},
     runtime::{host_paths::HostPaths, storage},
 };
 
@@ -177,7 +177,7 @@ impl SessionFilesFixture {
                 path: cwd.clone(),
                 connection: storage::ensure_local_connection(&db)?,
                 metadata: ProjectMetadata {
-                    cwd,
+                    cwd: cwd.clone(),
                     git_branch: None,
                     pi_version: "test".into(),
                     refreshed_at_ms: 1,
@@ -195,20 +195,28 @@ impl SessionFilesFixture {
             .ok_or("Pi agent directory is unavailable")?
             .join("sessions");
         fs::create_dir_all(&sessions).map_err(|error| error.to_string())?;
-        let session = sessions
-            .join(
-                storage
-                    .0
-                    .file_name()
-                    .ok_or("fixture directory has no name")?,
-            )
-            .with_extension("jsonl");
+        let project_sessions = sessions.join(format!(
+            "--{}--",
+            cwd.trim_start_matches('/').replace(['/', '\\', ':'], "-")
+        ));
+        fs::create_dir(&project_sessions).map_err(|error| error.to_string())?;
+        let fixture = Self {
+            storage,
+            session: project_sessions.join("fixture.jsonl"),
+        };
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(&session)
+            .open(&fixture.session)
             .map_err(|error| error.to_string())?;
-        let fixture = Self { storage, session };
+        let header = serde_json::json!({
+            "type": "session",
+            "version": 3,
+            "id": "session-files-fixture",
+            "cwd": cwd,
+            "timestamp": "2025-01-02T03:04:05.000Z",
+        });
+        writeln!(file, "{header}").map_err(|error| error.to_string())?;
         file.write_all(jsonl.as_bytes())
             .map_err(|error| error.to_string())?;
         Ok(fixture)
@@ -228,6 +236,9 @@ impl SessionFilesFixture {
 impl Drop for SessionFilesFixture {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.session);
+        if let Some(dir) = self.session.parent() {
+            let _ = fs::remove_dir(dir);
+        }
     }
 }
 
@@ -277,5 +288,38 @@ impl ChatFixture {
     /// Returns the isolated runtime data directory.
     pub fn data_dir(&self) -> String {
         self.0.data_dir()
+    }
+
+    /// Selects the synthetic Pi naming model for this fixture connection.
+    pub fn configure_naming_model(&self) -> Result<(), String> {
+        let Self(BootstrapFixture(dir)) = self;
+        let paths = HostPaths::new(dir.clone(), dir.clone())?;
+        let db = storage::open(&paths)?;
+        let connection = storage::ensure_local_connection(&db)?;
+        storage::upsert_connection_naming_model(
+            &db,
+            &ConnectionNamingModel {
+                connection_id: connection.id,
+                provider: "fixture".into(),
+                model_id: "naming".into(),
+            },
+        )
+    }
+
+    /// Checks whether the local Pi child reported by the fixture is still alive.
+    pub fn pi_running(&self) -> Result<bool, String> {
+        let Self(BootstrapFixture(dir)) = self;
+        let pid =
+            fs::read_to_string(dir.join("fixture-pi.pid")).map_err(|error| error.to_string())?;
+        let pid = pid.parse::<u32>().map_err(|error| error.to_string())?;
+        if pid == 0 {
+            return Err("invalid fixture Pi pid".into());
+        }
+        std::process::Command::new("/bin/kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .map_err(|error| error.to_string())
     }
 }

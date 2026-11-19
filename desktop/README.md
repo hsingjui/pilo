@@ -32,6 +32,12 @@ Token-only saves keep the legacy CSS.
 `listProjects()` refreshes the saved project catalog without loading live chat
 snapshots. `listSessions(projectId)` uses the same session-index reconciliation
 as the Tauri client and returns saved sessions, not live chat state.
+`searchSessions(projectId, query, limit?)` searches saved message text and
+returns matches with the session path and ID, role, snippet, and timestamp.
+`generateSessionTitle(projectId, message)` uses the connection's naming
+model and returns a title, or `null` if no title is available.
+`deleteSession(projectId, sessionPath)` removes an indexed session and
+returns `{ method: "trash" | "unlink" }`.
 
 Use `readProjectImage(projectId, path)` for a project-relative image and
 `readHistoryImage(projectId, sessionPath, imageId, fingerprint?)` for a
@@ -43,6 +49,8 @@ Use `startChat({ projectId, sessionKey, sessionPath?, noSession?, builtinExtensi
 to start or resume Pi and get its ready process snapshot. Omit `sessionPath`
 for a new session; `noSession` defaults to false. The optional client-selected
 built-in extension is `{ id: "model-catalog" }`.
+The bridge does not accept per-launch inline Pi extension sources. Host-managed
+built-ins and Pi's normal extension discovery do not use that argument.
 `stopChat(sessionKey, reason?)` stops the Pi process for that key and is a
 no-op if the session is not running.
 `chatState(sessionKey)` returns the live runtime metadata and Pi process
@@ -51,6 +59,8 @@ transcript text.
 `sendChatCommand(sessionKey, command)` forwards a Pi RPC command object to
 the running session. The promise resolves once the command is sent; consume
 its response and any turn events via `nextEvents()`.
+`shutdown()` closes the event stream and tears down running Pi processes,
+including active turns; it does not wait for a reply to finish.
 
 `loadSessionReadStates()` reads the saved read revisions across projects.
 Call `markSessionRead(projectId, sessionPath, revision)` with the positive

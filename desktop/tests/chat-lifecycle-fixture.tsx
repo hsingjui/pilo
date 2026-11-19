@@ -218,10 +218,51 @@ async function run() {
 	);
 }
 
+async function shutdownMidTurn() {
+	const fixture = new ChatFixture(false);
+	const pilo = new Pilo(fixture.dataDir());
+	try {
+		await pilo.startChat({ projectId, sessionKey, noSession: true });
+		await pilo.sendChatCommand(sessionKey, {
+			id: "fixture-shutdown",
+			type: "prompt",
+			message: "Keep the turn open",
+		});
+		await readEvents(pilo, (event) => {
+			if (event.type !== "rpc_message") return false;
+			const response = event.message as { id?: string; success?: boolean };
+			return response.id === "fixture-shutdown" && response.success === true;
+		});
+		const state = (await pilo.chatState(sessionKey)) as {
+			activeTurn?: boolean;
+		} | null;
+		if (state?.activeTurn !== true || !fixture.piRunning()) {
+			throw new Error("fixture Pi was not alive in an active turn");
+		}
+		const pending = pilo.nextEvents(32);
+		await pilo.shutdown();
+		const batch = (await pending) as { type: string };
+		if (batch.type !== "closed" || fixture.piRunning()) {
+			throw new Error(
+				"shutdown did not close the stream and stop the Pi child",
+			);
+		}
+		await expectError(
+			pilo.chatState(sessionKey),
+			"Pilo runtime has been shut down",
+		);
+	} finally {
+		await pilo.shutdown();
+		fixture.dispose();
+	}
+	status.set("shutdown stops Pi mid-turn");
+}
+
 mount(() => (
 	<View>
 		<Text>{status}</Text>
 	</View>
 ));
 
-void run().catch((error: unknown) => status.set(String(error)));
+const verify = host.params.shutdown === true ? shutdownMidTurn : run;
+void verify().catch((error: unknown) => status.set(String(error)));

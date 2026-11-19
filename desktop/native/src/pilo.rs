@@ -21,7 +21,8 @@ use pilo_lib::{
         runtime_api::{
             chat_session_send_rpc, chat_session_start, chat_session_state, chat_session_stop,
         },
-        session_api::{session_history_image, session_reconcile},
+        session_api::{session_delete, session_history_image, session_reconcile, session_search},
+        session_naming::session_generate_title,
         tasks,
         web_assets::{WebAsset, WebAssets},
     },
@@ -383,6 +384,53 @@ impl Pilo {
         });
         task.await
             .map_err(|error| format!("failed to load sessions: {error}"))?
+    }
+
+    /// Searches saved session messages for a project.
+    pub async fn search_sessions(
+        this: Instance<Self>,
+        project_id: String,
+        query: String,
+        limit: Option<f64>,
+    ) -> Result<Vec<JsonValue>, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let limit = limit
+                .map(|limit| {
+                    let invalid = "session search limit must be a non-negative safe integer";
+                    if !(0.0..=9_007_199_254_740_991.0).contains(&limit) || limit.fract() != 0.0 {
+                        return Err(invalid.to_owned());
+                    }
+                    usize::try_from(limit as u64).map_err(|_| invalid.to_owned())
+                })
+                .transpose()?;
+            encode_list(session_search(&runtime, project_id, query, limit).await?)
+        })
+        .await
+    }
+
+    /// Generates a title with the connection's naming model, if configured.
+    pub async fn generate_session_title(
+        this: Instance<Self>,
+        project_id: String,
+        message: String,
+    ) -> Result<Option<String>, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            session_generate_title(&runtime, project_id, message).await
+        })
+        .await
+    }
+
+    /// Deletes an indexed session and returns the removal method.
+    pub async fn delete_session(
+        this: Instance<Self>,
+        project_id: String,
+        session_path: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            serde_json::to_value(session_delete(&runtime, project_id, session_path).await?)
+                .map_err(|error| error.to_string())
+        })
+        .await
     }
 
     /// Reads one image attachment from a Pi session's JSONL.
