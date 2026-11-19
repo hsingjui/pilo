@@ -34,6 +34,12 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 		startChat: answer("startChat", { state: "running", generation: 1 }),
 		stopChat: answer("stopChat", undefined),
 		chatState: answer("chatState", null),
+		chatTranscriptSnapshot: answer("chatTranscriptSnapshot", {
+			eventSequence: 12,
+			sessionKey: "k1",
+			generation: 1,
+			live: { type: "idle" },
+		}),
 		sendChatCommand: answer("sendChatCommand", undefined),
 		listProjects: answer("listProjects", [{ id: "p1" }]),
 		listSessions: answer("listSessions", [{ piSessionId: "s1" }]),
@@ -485,6 +491,38 @@ test("a next-prompt request the native module refuses rejects with its error", a
 	expect(caught).toBe(failure);
 });
 
+test("a transcript snapshot passes its session key and window and returns the native answer", async () => {
+	const { pilo, calls } = fakeNative();
+	const client = new NshPiloClient(pilo);
+	const window = { messageLimit: 40, includeMessageIndex: true };
+
+	expect(await client.chatTranscriptSnapshot("k1", window)).toEqual({
+		eventSequence: 12,
+		sessionKey: "k1",
+		generation: 1,
+		live: { type: "idle" },
+	});
+	await client.chatTranscriptSnapshot("k1");
+	expect(calls).toEqual([
+		["chatTranscriptSnapshot", "k1", window],
+		["chatTranscriptSnapshot", "k1", undefined],
+	]);
+});
+
+test("a transcript snapshot the native module refuses rejects with its error", async () => {
+	const failure = new Error("chat session is not running");
+	const { pilo } = fakeNative({
+		chatTranscriptSnapshot: () => Promise.reject(failure),
+	});
+	let caught: unknown;
+	await new NshPiloClient(pilo)
+		.chatTranscriptSnapshot("gone")
+		.catch((error: unknown) => {
+			caught = error;
+		});
+	expect(caught).toBe(failure);
+});
+
 /** A native event stream whose polls the test answers one at a time. */
 function fakeEventStream() {
 	const polls: {
@@ -709,6 +747,13 @@ test("the client loads and saves next-prompt settings through the native module"
 test("the client requests and cancels a next-prompt suggestion through the native module", async () => {
 	const app = await open("./pilo-client-next-prompt-request-fixture.tsx");
 	await app.waitFor("text:client next-prompt suggestion and cancel verified", {
+		timeout: 30_000,
+	});
+});
+
+test("the client takes idle, active and truncated transcript snapshots through the native module", async () => {
+	const app = await open("./pilo-client-transcript-fixture.tsx");
+	await app.waitFor("text:client transcript snapshots verified", {
 		timeout: 30_000,
 	});
 });

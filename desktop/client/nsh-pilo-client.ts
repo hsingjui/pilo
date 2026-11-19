@@ -2,19 +2,25 @@ import type { Pilo } from "app/native";
 
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import type { ProjectPiModels } from "@/lib/api/pi-models-types";
-import type { PiModel, PiSessionSnapshot } from "@/lib/api/pi-runtime-types";
+import type {
+	PiModel,
+	PiloRuntimeEvent,
+	PiSessionSnapshot,
+} from "@/lib/api/pi-runtime-types";
 import type {
 	PiloClient,
 	PiloClientBootstrap,
 	PiloClientEvent,
 	PiloClientEventMessage,
 	PiloClientEventOptions,
+	PiloClientHistoryOptions,
 	PiloClientStartChatInput,
 } from "@/lib/api/pilo-client";
 import type { Project } from "@/lib/api/projects-types";
 import type {
 	SessionDeleteResult,
 	SessionHistoryFingerprint,
+	SessionHistoryResult,
 	SessionIndexEntry,
 	SessionSearchMatch,
 } from "@/lib/api/sessions-types";
@@ -45,6 +51,7 @@ export type PiloNative = Pick<
 	| "startChat"
 	| "stopChat"
 	| "chatState"
+	| "chatTranscriptSnapshot"
 	| "sendChatCommand"
 	| "listProjects"
 	| "listSessions"
@@ -73,6 +80,34 @@ export type PiloNative = Pick<
 
 export type NshPiloClientBootstrap = PiloClientBootstrap & {
 	preferences: PreferencesSnapshot;
+};
+
+/** The messages of a session's saved history a transcript snapshot reads. */
+export type ChatTranscriptWindow = Omit<
+	PiloClientHistoryOptions,
+	"fingerprint"
+>;
+
+/**
+ * A chat's transcript at one point of the event stream. Unless `live` is
+ * truncated, every event of the session up to `eventSequence` is already in
+ * `history` or `live`.
+ */
+export type ChatTranscriptSnapshot = {
+	eventSequence: number;
+	sessionKey: string;
+	generation: number;
+	history: SessionHistoryResult;
+	live:
+		| { type: "idle" }
+		/** The turn in progress, as its events in order up to the cut. */
+		| { type: "active"; events: PiloRuntimeEvent[] }
+		/**
+		 * The running turn cannot be rebuilt from this cut, and `history` is
+		 * empty rather than the session's. Load the transcript again once the
+		 * turn has settled.
+		 */
+		| { type: "truncated" };
 };
 
 /**
@@ -340,6 +375,22 @@ export class NshPiloClient implements BridgedPiloClient {
 		return (await this.pilo.chatState(
 			sessionKey,
 		)) as ChatSessionRuntimeState | null;
+	}
+
+	/**
+	 * The transcript of a started chat, without starting Pi. Connect to the
+	 * events before calling, so that those above the snapshot's
+	 * `eventSequence` can be applied on top of it. Without a window it reads
+	 * the whole saved history.
+	 */
+	async chatTranscriptSnapshot(
+		sessionKey: string,
+		window?: ChatTranscriptWindow,
+	): Promise<ChatTranscriptSnapshot> {
+		return (await this.pilo.chatTranscriptSnapshot(
+			sessionKey,
+			window,
+		)) as ChatTranscriptSnapshot;
 	}
 
 	/**
