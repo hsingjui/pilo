@@ -4,7 +4,7 @@ use tauri::{AppHandle, Manager};
 
 use super::{changed, decode, encode, required};
 use crate::domain::ThemeSettingsUpdate;
-use crate::runtime::{PiloRuntime, RuntimeEventBus, commands, preferences, project, storage};
+use crate::runtime::{RuntimeEventBus, commands, preferences, project, storage};
 
 pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result<Value, String> {
     let key = required(command.key.as_deref(), "setting key")?;
@@ -13,7 +13,6 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
     if reset && key != "connection.cacheKeepAlive" && !command.value.is_null() {
         return Err("this setting reset does not accept a JSON value".to_owned());
     }
-    let runtime = app.state::<PiloRuntime>();
     let events = app.state::<RuntimeEventBus>();
     if let Some(name) = key.strip_prefix("preferences.") {
         let default = preferences::defaults()
@@ -21,14 +20,15 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
             .cloned()
             .ok_or("unknown preference")?;
         if get {
-            let snapshot = preferences::load(app)?;
+            let snapshot = preferences::load(&crate::desktop_paths::from_app(app)?)?;
             return Ok(
                 json!({ "key": key, "value": snapshot.values.get(name), "revision": snapshot.revision }),
             );
         }
         let mut patch = serde_json::Map::new();
         patch.insert(name.to_owned(), if reset { default } else { command.value });
-        let snapshot = preferences::save(app, &events, patch, false)?;
+        let snapshot =
+            preferences::save(&crate::desktop_paths::from_app(app)?, &events, patch, false)?;
         return Ok(
             json!({ "key": key, "value": snapshot.values.get(name), "revision": snapshot.revision, "effect": if name == "desktopNotifications" { "saved; delivery still requires OS/browser notification permission" } else { "saved" } }),
         );
@@ -53,8 +53,12 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
         }
         let defaults = encode(crate::domain::ThemeSettings::default())?;
         if get {
-            let settings =
-                crate::runtime::appearance::load(app.clone(), events.inner().clone(), None).await?;
+            let settings = crate::runtime::appearance::load(
+                crate::desktop_paths::from_app(app)?,
+                events.inner().clone(),
+                None,
+            )
+            .await?;
             let settings = encode(settings)?;
             return settings
                 .get(name)
@@ -76,7 +80,12 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
         update.insert(name.to_owned(), value);
         let update: ThemeSettingsUpdate = decode(Value::Object(update))?;
         return encode(
-            crate::runtime::appearance::save(app.clone(), events.inner().clone(), update).await?,
+            crate::runtime::appearance::save(
+                crate::desktop_paths::from_app(app)?,
+                events.inner().clone(),
+                update,
+            )
+            .await?,
         );
     }
     let value = command.value;
@@ -170,7 +179,10 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                 }
                 "connection.nextPrompt" => {
                     if get {
-                        encode(commands::next_prompt_settings_get(app.clone(), id)?)
+                        encode(commands::next_prompt_settings_get(
+                            app.state::<crate::runtime::Runtime>(),
+                            id,
+                        )?)
                     } else {
                         #[derive(serde::Deserialize)]
                         #[serde(deny_unknown_fields)]
@@ -184,8 +196,7 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                             value
                         })?;
                         encode(commands::next_prompt_settings_set(
-                            app.clone(),
-                            events,
+                            app.state::<crate::runtime::Runtime>(),
                             id,
                             settings.enabled,
                             settings.model,
@@ -194,7 +205,10 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                 }
                 "connection.promptEnhancement" => {
                     if get {
-                        encode(commands::prompt_enhancement_settings_get(app.clone(), id)?)
+                        encode(commands::prompt_enhancement_settings_get(
+                            app.state::<crate::runtime::Runtime>(),
+                            id,
+                        )?)
                     } else {
                         #[derive(serde::Deserialize)]
                         #[serde(deny_unknown_fields)]
@@ -208,8 +222,7 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                             value
                         })?;
                         encode(commands::prompt_enhancement_settings_set(
-                            app.clone(),
-                            events,
+                            app.state::<crate::runtime::Runtime>(),
                             id,
                             settings.enabled,
                             settings.model,
@@ -218,7 +231,10 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                 }
                 _ => {
                     if get {
-                        encode(commands::cache_keep_alive_settings_list(app.clone(), id)?)
+                        encode(commands::cache_keep_alive_settings_list(
+                            app.state::<crate::runtime::Runtime>(),
+                            id,
+                        )?)
                     } else {
                         let mut settings = value
                             .as_object()
@@ -239,9 +255,7 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                         settings.entry("updatedAtMs".to_owned()).or_insert(json!(0));
                         encode(
                             commands::cache_keep_alive_settings_set(
-                                app.clone(),
-                                runtime,
-                                events,
+                                app.state::<crate::runtime::Runtime>(),
                                 decode(Value::Object(settings))?,
                             )
                             .await?,

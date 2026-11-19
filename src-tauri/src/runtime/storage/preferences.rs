@@ -69,7 +69,7 @@ pub(crate) fn patch_preferences(
                 .unwrap_or_default();
             let mut reserved = std::collections::HashSet::new();
             if migrate {
-                reserved.insert(crate::desktop_shortcut::validate_application_shortcut(
+                reserved.insert(crate::runtime::shortcuts::validate_application_shortcut(
                     &global,
                 )?);
                 for value in shortcuts
@@ -77,7 +77,7 @@ pub(crate) fn patch_preferences(
                     .filter_map(Value::as_str)
                     .filter(|value| !value.is_empty())
                 {
-                    reserved.insert(crate::desktop_shortcut::validate_application_shortcut(
+                    reserved.insert(crate::runtime::shortcuts::validate_application_shortcut(
                         value,
                     )?);
                 }
@@ -90,9 +90,9 @@ pub(crate) fn patch_preferences(
                     let mut binding = binding.clone();
                     if migrate
                         && let Some(value) = binding.as_str().filter(|value| !value.is_empty())
-                        && !reserved.insert(crate::desktop_shortcut::validate_application_shortcut(
-                            value,
-                        )?)
+                        && !reserved.insert(
+                            crate::runtime::shortcuts::validate_application_shortcut(value)?,
+                        )
                     {
                         // A Host-initialized shortcut wins over an old browser cache.
                         binding = Value::String(String::new());

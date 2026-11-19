@@ -1,6 +1,4 @@
-#[cfg(feature = "tauri")]
 mod preferences;
-#[cfg(feature = "tauri")]
 pub(crate) use preferences::*;
 mod appearance;
 pub(crate) use appearance::*;

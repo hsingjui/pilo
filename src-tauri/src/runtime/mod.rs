@@ -1,6 +1,4 @@
-#[cfg(feature = "tauri")]
 mod appearance;
-#[cfg(feature = "tauri")]
 mod cache_keep_alive;
 #[cfg(feature = "tauri")]
 mod chat_service;
@@ -27,7 +25,6 @@ pub(crate) mod handle;
 pub(crate) mod host_events;
 pub(crate) mod host_paths;
 pub(crate) use handle::Runtime;
-#[cfg(feature = "tauri")]
 mod next_prompt;
 pub(crate) mod notifications;
 #[cfg(feature = "tauri")]
@@ -47,7 +44,6 @@ pub mod project;
 mod project_api;
 #[cfg(feature = "tauri")]
 mod project_opener;
-#[cfg(feature = "tauri")]
 mod prompt_enhancement;
 #[cfg(feature = "tauri")]
 mod remote;
@@ -71,6 +67,7 @@ mod session_index;
 mod session_naming;
 mod session_snapshot;
 mod session_watcher;
+pub(crate) mod shortcuts;
 #[allow(dead_code)]
 pub(crate) mod ssh;
 pub(crate) mod storage;

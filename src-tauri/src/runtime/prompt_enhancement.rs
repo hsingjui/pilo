@@ -17,10 +17,11 @@ use super::{
     Runtime, RuntimeEventBus,
     events::{RuntimeEvent, RuntimeEventEnvelope},
     host_paths::HostPaths,
-    pi_oneshot, project,
-    server_pi::PiLaunchOptions,
     storage,
 };
+
+#[cfg(feature = "tauri")]
+use super::{pi_oneshot, project, server_pi::PiLaunchOptions};
 
 const PROMPT_ENHANCEMENT_SYSTEM_PROMPT: &str = "You rewrite a user's draft prompt into a clearer, more actionable prompt for a coding agent. Rules: Keep the author's intent; do NOT answer the request, add answers, or start doing the task. Preserve file paths, code snippets, commands, and references verbatim. Make implicit goals explicit: task, scope, constraints, and the expected result. Remove filler; keep the prompt concise but complete. Reply in the same language as the draft. Output ONLY the rewritten prompt text without preamble, quotes, or markdown fences.";
 
@@ -150,6 +151,7 @@ fn resolve_model(
     Ok((Some(provider), Some(id)))
 }
 
+#[cfg(feature = "tauri")]
 pub(crate) async fn enhance(
     runtime: &Runtime,
     paths: &HostPaths,
@@ -188,6 +190,38 @@ pub(crate) async fn enhance(
     .await?;
 
     normalize_enhanced_prompt(&text).ok_or_else(|| "Model returned no prompt text".to_owned())
+}
+
+pub fn prompt_enhancement_settings_get(
+    runtime: &Runtime,
+    connection_id: String,
+) -> Result<PromptEnhancementSettings, String> {
+    load(&runtime.paths, &connection_id)
+}
+
+pub fn prompt_enhancement_settings_set(
+    runtime: &Runtime,
+    connection_id: String,
+    enabled: bool,
+    model: Option<PromptEnhancementModel>,
+) -> Result<PromptEnhancementSettings, String> {
+    save(
+        &runtime.paths,
+        &runtime.events,
+        &connection_id,
+        enabled,
+        model,
+    )
+}
+
+#[cfg(feature = "tauri")]
+pub async fn prompt_enhance(
+    runtime: &Runtime,
+    project_id: String,
+    draft: String,
+    model: Option<PromptEnhancementModel>,
+) -> Result<String, String> {
+    enhance(runtime, &runtime.paths, &project_id, &draft, model).await
 }
 
 #[cfg(test)]

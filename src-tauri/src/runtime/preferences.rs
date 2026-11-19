@@ -1,9 +1,7 @@
+use super::{Runtime, host_paths::HostPaths};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-#[cfg(feature = "tauri")]
-use tauri::AppHandle;
 
-#[cfg(feature = "tauri")]
 use super::{
     RuntimeEventBus,
     events::{RuntimeEvent, RuntimeEventEnvelope},
@@ -35,7 +33,6 @@ pub(crate) fn defaults() -> Map<String, Value> {
     }).as_object().cloned().unwrap_or_default()
 }
 
-#[cfg(feature = "tauri")]
 pub(crate) fn validate(patch: &Map<String, Value>) -> Result<(), String> {
     let defaults = defaults();
     for (key, value) in patch {
@@ -88,17 +85,15 @@ pub(crate) fn validate(patch: &Map<String, Value>) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(feature = "tauri")]
 fn valid_shortcut(shortcut: &str) -> bool {
-    crate::desktop_shortcut::validate_application_shortcut(shortcut).is_ok()
+    crate::runtime::shortcuts::validate_application_shortcut(shortcut).is_ok()
 }
 
-#[cfg(feature = "tauri")]
 pub(crate) fn validate_shortcuts(values: &Map<String, Value>, global: &str) -> Result<(), String> {
     let shortcuts = values
         .get("keyboardShortcuts")
         .ok_or("missing keyboard shortcuts")?;
-    crate::desktop_shortcut::validate_in_app_shortcut_conflicts(global, shortcuts)?;
+    crate::runtime::shortcuts::validate_in_app_shortcut_conflicts(global, shortcuts)?;
     let mut assigned = std::collections::HashSet::new();
     for value in shortcuts
         .as_object()
@@ -107,7 +102,7 @@ pub(crate) fn validate_shortcuts(values: &Map<String, Value>, global: &str) -> R
     {
         let value = value.as_str().ok_or("invalid keyboard shortcut")?;
         if !value.is_empty()
-            && !assigned.insert(crate::desktop_shortcut::validate_application_shortcut(
+            && !assigned.insert(crate::runtime::shortcuts::validate_application_shortcut(
                 value,
             )?)
         {
@@ -117,14 +112,12 @@ pub(crate) fn validate_shortcuts(values: &Map<String, Value>, global: &str) -> R
     Ok(())
 }
 
-#[cfg(feature = "tauri")]
-pub(crate) fn load(app: &AppHandle) -> Result<PreferencesSnapshot, String> {
-    storage::get_preferences(&storage::open(&crate::desktop_paths::from_app(app)?)?)
+pub(crate) fn load(paths: &HostPaths) -> Result<PreferencesSnapshot, String> {
+    storage::get_preferences(&storage::open(paths)?)
 }
 
-#[cfg(feature = "tauri")]
 pub(crate) fn save(
-    app: &AppHandle,
+    paths: &HostPaths,
     events: &RuntimeEventBus,
     mut patch: Map<String, Value>,
     migrate: bool,
@@ -145,15 +138,125 @@ pub(crate) fn save(
         }
     }
     validate(&patch)?;
-    let snapshot = storage::patch_preferences(
-        &mut storage::open(&crate::desktop_paths::from_app(app)?)?,
-        patch,
-        migrate,
-    )?;
+    let snapshot = storage::patch_preferences(&mut storage::open(paths)?, patch, migrate)?;
     events.send(RuntimeEventEnvelope::global(
         RuntimeEvent::PreferencesChanged {
             settings: snapshot.clone(),
         },
     ));
     Ok(snapshot)
+}
+
+pub fn preferences_get(runtime: &Runtime) -> Result<PreferencesSnapshot, String> {
+    load(&runtime.paths)
+}
+
+pub fn preferences_patch(
+    runtime: &Runtime,
+    patch: Map<String, Value>,
+    initial: Option<bool>,
+) -> Result<PreferencesSnapshot, String> {
+    save(
+        &runtime.paths,
+        &runtime.events,
+        patch,
+        initial.unwrap_or(false),
+    )
+}
+
+#[cfg(test)]
+mod runtime_tests {
+    use super::*;
+    use crate::runtime::{
+        appearance, cache_keep_alive, host_events::RecordingEvents, host_paths::HostPaths,
+        next_prompt, prompt_enhancement,
+    };
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn runtime_settings_functions_persist_and_validate_without_a_shell() {
+        let root =
+            std::env::temp_dir().join(format!("pilo-runtime-settings-{}", std::process::id()));
+        let host = Arc::new(RecordingEvents::default());
+        let runtime = Runtime::new(
+            HostPaths::new(root.clone(), root.join("resources")).unwrap(),
+            host.clone(),
+        );
+        runtime.events.subscribe("test", 1, host.clone());
+        let initial = preferences_get(&runtime).unwrap();
+        let settings = preferences_patch(
+            &runtime,
+            json!({"desktopNotifications": false})
+                .as_object()
+                .unwrap()
+                .clone(),
+            None,
+        )
+        .unwrap();
+        assert!(settings.revision > initial.revision);
+        assert_eq!(
+            preferences_get(&runtime).unwrap().values["desktopNotifications"],
+            false
+        );
+        assert!(
+            preferences_patch(
+                &runtime,
+                json!({"unknown": true}).as_object().unwrap().clone(),
+                None
+            )
+            .is_err()
+        );
+        storage::ensure_local_connection(&storage::open(&runtime.paths).unwrap()).unwrap();
+        assert!(
+            cache_keep_alive::cache_keep_alive_settings_list(&runtime, "local".into())
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            !next_prompt::next_prompt_settings_set(&runtime, "local".into(), false, None)
+                .unwrap()
+                .enabled
+        );
+        assert_eq!(
+            next_prompt::next_prompt_settings_get(&runtime, "local".into())
+                .unwrap()
+                .model,
+            None
+        );
+        assert!(
+            !prompt_enhancement::prompt_enhancement_settings_set(
+                &runtime,
+                "local".into(),
+                false,
+                None
+            )
+            .unwrap()
+            .enabled
+        );
+        assert_eq!(
+            prompt_enhancement::prompt_enhancement_settings_get(&runtime, "local".into())
+                .unwrap()
+                .model,
+            None
+        );
+        let before = appearance::theme_settings_get(&runtime, None)
+            .await
+            .unwrap();
+        let update = serde_json::from_value(json!({"theme":"dark"})).unwrap();
+        let theme = appearance::theme_settings_set(&runtime, update)
+            .await
+            .unwrap();
+        assert!(theme.revision > before.revision);
+        assert_eq!(
+            serde_json::to_value(
+                appearance::theme_settings_get(&runtime, None)
+                    .await
+                    .unwrap()
+            )
+            .unwrap()["theme"],
+            "dark"
+        );
+        assert!(!host.events.lock().unwrap().is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

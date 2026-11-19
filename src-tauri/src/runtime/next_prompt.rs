@@ -1,9 +1,11 @@
+#[cfg(feature = "tauri")]
+use super::PiloRuntime;
 use serde_json::json;
 
 use crate::domain::{NextPromptModel, NextPromptRequest, NextPromptSettings};
 
 use super::{
-    PiloRuntime, RuntimeEventBus,
+    Runtime, RuntimeEventBus,
     debug_trace::runtime_trace,
     events::{RuntimeEvent, RuntimeEventEnvelope},
     host_paths::HostPaths,
@@ -38,6 +40,7 @@ pub(crate) fn save(
     Ok(settings)
 }
 
+#[cfg(feature = "tauri")]
 pub(crate) async fn request(
     paths: &HostPaths,
     runtime: &PiloRuntime,
@@ -101,4 +104,34 @@ pub(crate) async fn request(
         &request.session_key, &state.project_id, request.generation, request.cancel,
         json!({ "id": format!("pilo-next-prompt-{}-{}", request.request_id, request.cancel), "type": "prompt", "message": format!("/pilo-next-prompt {payload}") }),
     ).await
+}
+
+pub fn next_prompt_settings_get(
+    runtime: &Runtime,
+    connection_id: String,
+) -> Result<NextPromptSettings, String> {
+    load(&runtime.paths, &connection_id)
+}
+
+pub fn next_prompt_settings_set(
+    runtime: &Runtime,
+    connection_id: String,
+    enabled: bool,
+    model: Option<NextPromptModel>,
+) -> Result<NextPromptSettings, String> {
+    save(
+        &runtime.paths,
+        &runtime.events,
+        &connection_id,
+        enabled,
+        model,
+    )
+}
+
+#[cfg(feature = "tauri")]
+pub async fn next_prompt_request(
+    runtime: &Runtime,
+    request: NextPromptRequest,
+) -> Result<(), String> {
+    self::request(&runtime.paths, runtime, request).await
 }

@@ -88,7 +88,7 @@ pub(super) async fn local_pi_resources_set(
 }
 
 pub(super) async fn preferences_get(State(state): State<RemoteHttpState>) -> Response {
-    match crate::runtime::preferences::load(&state.app) {
+    match crate::runtime::preferences::load(&state.paths) {
         Ok(settings) => Json(settings).into_response(),
         Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
     }
@@ -99,7 +99,7 @@ pub(super) async fn preferences_patch(
     Json(patch): Json<serde_json::Map<String, Value>>,
 ) -> Response {
     match crate::runtime::preferences::save(
-        &state.app,
+        &state.paths,
         &state.app.state::<RuntimeEventBus>(),
         patch,
         false,
@@ -111,7 +111,7 @@ pub(super) async fn preferences_patch(
 
 pub(super) async fn theme_settings(State(state): State<RemoteHttpState>) -> Response {
     match crate::runtime::appearance::load(
-        state.app.clone(),
+        state.paths.clone(),
         state.app.state::<RuntimeEventBus>().inner().clone(),
         None,
     )
@@ -127,7 +127,7 @@ pub(super) async fn theme_settings_set(
     Json(update): Json<crate::domain::ThemeSettingsUpdate>,
 ) -> Response {
     match crate::runtime::appearance::save(
-        state.app.clone(),
+        state.paths.clone(),
         state.app.state::<RuntimeEventBus>().inner().clone(),
         update,
     )
