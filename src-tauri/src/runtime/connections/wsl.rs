@@ -1,6 +1,5 @@
 use crate::domain::{Connection, ConnectionKind, WslDistribution};
 
-#[cfg(feature = "tauri")]
 use super::stop_connection_projects;
 use super::{ConnectionTestResult, Runtime, connection_test_result, storage};
 use crate::runtime::wsl::{WslConnectionError, list_wsl_distributions};
@@ -58,7 +57,6 @@ pub fn wsl_connection_save(
     })
 }
 
-#[cfg(feature = "tauri")]
 pub async fn wsl_connection_remove(runtime: &Runtime, id: String) -> Result<(), String> {
     stop_connection_projects(runtime, &id).await?;
     let db = storage::open(&runtime.paths)?;
@@ -66,7 +64,6 @@ pub async fn wsl_connection_remove(runtime: &Runtime, id: String) -> Result<(), 
     Ok(())
 }
 
-#[cfg(feature = "tauri")]
 pub async fn wsl_connection_test(
     runtime: &Runtime,
     distro: String,

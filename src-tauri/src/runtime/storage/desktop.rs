@@ -1,7 +1,7 @@
 use crate::domain::AutostartMode;
 use rusqlite::{Connection, OptionalExtension, params};
 
-pub(crate) fn get_autostart_mode(db: &Connection) -> Result<AutostartMode, String> {
+pub fn get_autostart_mode(db: &Connection) -> Result<AutostartMode, String> {
     let value: Option<String> = db
         .query_row(
             "SELECT autostart_mode FROM desktop_settings WHERE id = 1",
@@ -16,7 +16,7 @@ pub(crate) fn get_autostart_mode(db: &Connection) -> Result<AutostartMode, Strin
         .map(|mode| mode.unwrap_or_default())
 }
 
-pub(crate) fn set_autostart_mode(db: &Connection, mode: AutostartMode) -> Result<(), String> {
+pub fn set_autostart_mode(db: &Connection, mode: AutostartMode) -> Result<(), String> {
     let value = serde_json::to_string(&mode).map_err(|error| error.to_string())?;
     db.execute(
         "INSERT INTO desktop_settings(id, autostart_mode) VALUES(1, ?1)
@@ -27,7 +27,7 @@ pub(crate) fn set_autostart_mode(db: &Connection, mode: AutostartMode) -> Result
     Ok(())
 }
 
-pub(crate) fn get_show_shortcut(db: &Connection) -> Result<String, String> {
+pub fn get_show_shortcut(db: &Connection) -> Result<String, String> {
     let value: Option<String> = db
         .query_row(
             "SELECT show_shortcut FROM desktop_settings WHERE id = 1",
@@ -40,7 +40,7 @@ pub(crate) fn get_show_shortcut(db: &Connection) -> Result<String, String> {
     Ok(value.unwrap_or_else(|| crate::domain::DEFAULT_SHOW_SHORTCUT.into()))
 }
 
-pub(crate) fn set_show_shortcut(db: &Connection, shortcut: &str) -> Result<(), String> {
+pub fn set_show_shortcut(db: &Connection, shortcut: &str) -> Result<(), String> {
     db.execute(
         r#"INSERT INTO desktop_settings(id, autostart_mode, show_shortcut) VALUES(1, '"disabled"', ?1)
          ON CONFLICT(id) DO UPDATE SET show_shortcut = excluded.show_shortcut"#,
@@ -49,7 +49,7 @@ pub(crate) fn set_show_shortcut(db: &Connection, shortcut: &str) -> Result<(), S
     Ok(())
 }
 
-pub(crate) fn get_exit_on_close(db: &Connection) -> Result<bool, String> {
+pub fn get_exit_on_close(db: &Connection) -> Result<bool, String> {
     db.query_row(
         "SELECT exit_on_close FROM desktop_settings WHERE id = 1",
         [],
@@ -60,7 +60,7 @@ pub(crate) fn get_exit_on_close(db: &Connection) -> Result<bool, String> {
     .map_err(|error| error.to_string())
 }
 
-pub(crate) fn set_exit_on_close(db: &Connection, enabled: bool) -> Result<(), String> {
+pub fn set_exit_on_close(db: &Connection, enabled: bool) -> Result<(), String> {
     db.execute(
         r#"INSERT INTO desktop_settings(id, autostart_mode, exit_on_close) VALUES(1, '"disabled"', ?1)
          ON CONFLICT(id) DO UPDATE SET exit_on_close = excluded.exit_on_close"#,

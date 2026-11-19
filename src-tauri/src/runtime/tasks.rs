@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 
 static HOST_RUNTIME: OnceLock<Handle> = OnceLock::new();
 
-pub(crate) fn initialize(handle: Handle) {
+pub fn initialize(handle: Handle) {
     let _ = HOST_RUNTIME.set(handle);
 }
 

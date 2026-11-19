@@ -1,18 +1,13 @@
 use super::{Runtime, project, storage};
-#[cfg(feature = "tauri")]
 use super::{
     events::{RuntimeEvent, RuntimeEventEnvelope},
     session_history, session_index,
 };
-#[cfg(feature = "tauri")]
 use super::{pi_workspace, session_activity::SessionExternalActivity};
-#[cfg(feature = "tauri")]
 use crate::domain::SessionReconcileResult;
 use crate::domain::{SessionIndexEntry, SessionUiStateUpdate};
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "tauri")]
 use std::sync::{Arc, Mutex as StdMutex};
-#[cfg(feature = "tauri")]
 fn session_runtime_project(
     runtime: &Runtime,
     project_id: &str,
@@ -33,7 +28,6 @@ pub fn session_list(
     storage::list_sessions(&storage::open(&runtime.paths)?, &project_id)
 }
 
-#[cfg(feature = "tauri")]
 pub async fn session_watch_start(runtime: &Runtime, project_id: String) -> Result<(), String> {
     let project = project::get(runtime, &project_id)?;
     runtime
@@ -44,7 +38,6 @@ pub async fn session_watch_start(runtime: &Runtime, project_id: String) -> Resul
         .await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn session_watch_stop(runtime: &Runtime, project_id: String) -> Result<(), String> {
     runtime
         .session_watchers
@@ -55,7 +48,6 @@ pub async fn session_watch_stop(runtime: &Runtime, project_id: String) -> Result
     Ok(())
 }
 
-#[cfg(feature = "tauri")]
 pub async fn session_delete(
     runtime: &Runtime,
     project_id: String,
@@ -112,7 +104,6 @@ pub fn session_update_ui_state(
     )
 }
 
-#[cfg(feature = "tauri")]
 pub async fn session_external_activity(
     runtime: &Runtime,
     project_id: String,
@@ -124,7 +115,6 @@ pub async fn session_external_activity(
         .await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn session_search(
     runtime: &Runtime,
     project_id: String,
@@ -163,14 +153,12 @@ pub struct SessionSearchMatch {
     pub timestamp: Option<serde_json::Value>,
 }
 
-#[cfg(feature = "tauri")]
 struct BackgroundSessionIndexLease {
     manager: Arc<StdMutex<session_index::BackgroundSessionIndexManager>>,
     project_id: String,
     armed: bool,
 }
 
-#[cfg(feature = "tauri")]
 impl BackgroundSessionIndexLease {
     fn new(
         manager: Arc<StdMutex<session_index::BackgroundSessionIndexManager>>,
@@ -188,7 +176,6 @@ impl BackgroundSessionIndexLease {
     }
 }
 
-#[cfg(feature = "tauri")]
 impl Drop for BackgroundSessionIndexLease {
     fn drop(&mut self) {
         if !self.armed {
@@ -202,7 +189,6 @@ impl Drop for BackgroundSessionIndexLease {
     }
 }
 
-#[cfg(feature = "tauri")]
 pub async fn session_reconcile(
     runtime: &Runtime,
     project_id: String,
@@ -307,7 +293,6 @@ pub async fn session_reconcile(
     }
     Ok(work.result)
 }
-#[cfg(feature = "tauri")]
 #[allow(clippy::too_many_arguments)]
 pub async fn session_history(
     runtime: &Runtime,
@@ -347,7 +332,6 @@ pub async fn session_history(
     Ok(serialized)
 }
 
-#[cfg(feature = "tauri")]
 pub async fn session_history_image(
     runtime: &Runtime,
     project_id: String,
@@ -371,7 +355,6 @@ pub async fn session_history_image(
     Ok(bytes)
 }
 
-#[cfg(feature = "tauri")]
 fn expected_session_fingerprint(
     expected_file_size: Option<u64>,
     expected_file_mtime_ns: Option<String>,
@@ -388,6 +371,23 @@ fn expected_session_fingerprint(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn history_fingerprint_accepts_complete_pairs_and_rejects_invalid_times() {
+        assert_eq!(
+            super::expected_session_fingerprint(Some(42), Some("99".into())).unwrap(),
+            Some((42, 99))
+        );
+        assert_eq!(
+            super::expected_session_fingerprint(None, None).unwrap(),
+            None
+        );
+        assert_eq!(
+            super::expected_session_fingerprint(Some(42), None).unwrap(),
+            None
+        );
+        assert!(super::expected_session_fingerprint(Some(42), Some("invalid".into())).is_err());
+    }
+
     use super::*;
 
     #[test]

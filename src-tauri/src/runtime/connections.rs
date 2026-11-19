@@ -8,10 +8,9 @@ use crate::domain::{Connection, ConnectionKind, ConnectionNamingModel};
 
 use super::{Runtime, credentials, storage};
 
-pub(crate) mod ssh;
-pub(crate) mod wsl;
+pub mod ssh;
+pub mod wsl;
 
-#[cfg(feature = "tauri")]
 pub async fn connection_models_get(
     runtime: &Runtime,
     connection_id: String,
@@ -114,7 +113,6 @@ pub fn connection_settings_update(
     Ok(connection)
 }
 
-#[cfg(feature = "tauri")]
 pub async fn connection_pi_probe(
     runtime: &Runtime,
     id: String,
@@ -181,7 +179,6 @@ fn connection_test_result(value: Value) -> Result<ConnectionTestResult, String> 
     })
 }
 
-#[cfg(feature = "tauri")]
 pub async fn connection_health_get(
     runtime: &Runtime,
     id: String,
@@ -243,7 +240,6 @@ pub async fn connection_health_get(
     })
 }
 
-#[cfg(feature = "tauri")]
 pub async fn local_connection_test(runtime: &Runtime) -> Result<ConnectionTestResult, String> {
     let connection = Connection {
         id: "local".to_owned(),
@@ -256,7 +252,6 @@ pub async fn local_connection_test(runtime: &Runtime) -> Result<ConnectionTestRe
     connection_test_result(runtime.servers.test_connection(&connection).await?)
 }
 
-#[cfg(feature = "tauri")]
 async fn stop_connection_projects(runtime: &Runtime, connection_id: &str) -> Result<(), String> {
     let project_ids = storage::list_projects(&storage::open(&runtime.paths)?)?
         .into_iter()

@@ -105,7 +105,11 @@ POST /api/v1/chat/files?projectId=&name= -> JSON server-side absolute path (raw 
 GET  /api/v1/events          -> WebSocket upgrade
 ```
 
-`fallback` serves the embedded Mobile WebUI from the Tauri asset resolver.
+`fallback` serves Mobile WebUI files through the injected `WebAssets` trait.
+The Tauri shell adapter delegates to its asset resolver; headless hosts can
+provide files without linking Tauri. Missing assets retain the existing 404,
+SPA fallback, content-type and cache-control behavior. Tests serve an in-memory
+index file through the same response path.
 
 ### WebSocket protocol
 

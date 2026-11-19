@@ -7,7 +7,7 @@ use crate::domain::{ConnectionKind, Project};
 
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ProjectApp {
+pub enum ProjectApp {
     Explorer,
     Powershell,
     Finder,

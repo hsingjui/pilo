@@ -2,7 +2,7 @@ use std::sync::{Arc, OnceLock, Weak};
 
 use super::{RuntimeEventBus, host_events::HostEvents, host_paths::HostPaths};
 
-pub(crate) trait HostShell: Send + Sync {
+pub trait HostShell: Send + Sync {
     fn cache_dir(&self) -> Result<std::path::PathBuf, String>;
     fn open_path(&self, path: &std::path::Path) -> Result<(), String>;
     fn pick_directory(&self) -> Option<String>;
@@ -15,7 +15,7 @@ pub(crate) trait HostShell: Send + Sync {
     }
 }
 
-pub(crate) type HostSettingFuture =
+pub type HostSettingFuture =
     std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>;
 
 #[derive(Clone, Default)]
@@ -31,21 +31,18 @@ impl WeakRuntime {
 }
 
 #[derive(Clone)]
-pub(crate) struct Runtime(Arc<RuntimeState>);
+pub struct Runtime(Arc<RuntimeState>);
 
-pub(crate) struct RuntimeState {
+pub struct RuntimeState {
     pub(crate) paths: HostPaths,
     pub(crate) host_events: Arc<dyn HostEvents>,
     pub(crate) events: RuntimeEventBus,
     shell: OnceLock<Arc<dyn HostShell>>,
     web_assets: OnceLock<Arc<dyn super::web_assets::WebAssets>>,
-    #[cfg(feature = "tauri")]
     pub(crate) core: super::PiloRuntime,
-    #[cfg(feature = "tauri")]
     pub(crate) remote: super::RemoteServerManager,
 }
 
-#[cfg(feature = "tauri")]
 impl std::ops::Deref for RuntimeState {
     type Target = super::PiloRuntime;
 
@@ -63,7 +60,7 @@ impl std::ops::Deref for Runtime {
 }
 
 impl Runtime {
-    pub(crate) fn new(paths: HostPaths, host_events: Arc<dyn HostEvents>) -> Self {
+    pub fn new(paths: HostPaths, host_events: Arc<dyn HostEvents>) -> Self {
         let events = RuntimeEventBus::for_host();
         events.initialize_session_reads(paths.clone());
         let runtime = Self(Arc::new(RuntimeState {
@@ -72,17 +69,14 @@ impl Runtime {
             events,
             shell: OnceLock::new(),
             web_assets: OnceLock::new(),
-            #[cfg(feature = "tauri")]
             core: super::PiloRuntime::default(),
-            #[cfg(feature = "tauri")]
             remote: super::RemoteServerManager::default(),
         }));
-        #[cfg(feature = "tauri")]
         runtime.servers.initialize_control(&runtime);
         runtime
     }
 
-    pub(crate) fn with_shell(self, shell: Arc<dyn HostShell>) -> Result<Self, String> {
+    pub fn with_shell(self, shell: Arc<dyn HostShell>) -> Result<Self, String> {
         if Arc::strong_count(&self.0) != 1 {
             return Err("runtime is already shared".to_owned());
         }
@@ -99,11 +93,54 @@ impl Runtime {
             .ok_or_else(|| "host shell services are unavailable".to_owned())
     }
 
+    pub fn start_external_activity_poll(&self) {
+        self.events.start_external_activity_poll(self.clone());
+    }
+
+    pub fn start_idle_reaper(&self) {
+        self.chat_sessions.start_idle_reaper();
+    }
+
+    pub async fn restore_remote(&self) -> Result<(), String> {
+        self.remote.restore(self).await
+    }
+
+    pub async fn shutdown(&self) {
+        self.servers.begin_shutdown();
+        let teardown = async {
+            log::info!(target: "shutdown", "remote webui: stopping");
+            self.remote.stop().await;
+            log::info!(target: "shutdown", "chat sessions: stopping");
+            self.chat_sessions.stop_all().await;
+            log::info!(target: "shutdown", "project pi session: stopping");
+            let _ = self.project_pi_session.lock().await.stop().await;
+            log::info!(target: "shutdown", "session watchers: stopping");
+            self.session_watchers.lock().await.stop_all().await;
+            log::info!(target: "shutdown", "terminals: closing");
+            self.terminals.lock().await.close_all().await;
+        };
+        if tokio::time::timeout(std::time::Duration::from_secs(5), teardown)
+            .await
+            .is_err()
+        {
+            log::warn!(target: "shutdown", "graceful shutdown timed out; stopping servers");
+        }
+        // Always close server stdin, even when chat/terminal cleanup timed out.
+        log::info!(target: "shutdown", "servers: stopping");
+        if tokio::time::timeout(std::time::Duration::from_secs(8), self.servers.stop_all())
+            .await
+            .is_err()
+        {
+            log::warn!(target: "shutdown", "server cleanup timed out; exiting");
+        }
+        log::info!(target: "shutdown", "teardown complete");
+    }
+
     pub(crate) fn downgrade(&self) -> WeakRuntime {
         WeakRuntime(Arc::downgrade(&self.0))
     }
 
-    pub(crate) fn with_web_assets(
+    pub fn with_web_assets(
         self,
         assets: Arc<dyn super::web_assets::WebAssets>,
     ) -> Result<Self, String> {
@@ -118,7 +155,7 @@ impl Runtime {
     }
 }
 
-pub(crate) async fn session_read_states(
+pub async fn session_read_states(
     runtime: &Runtime,
 ) -> Result<Vec<crate::domain::SessionReadState>, String> {
     let events = runtime.events.clone();
@@ -127,7 +164,7 @@ pub(crate) async fn session_read_states(
         .map_err(|error| format!("failed to load session read states: {error}"))?
 }
 
-pub(crate) fn runtime_subscribe_events(
+pub fn runtime_subscribe_events(
     runtime: &Runtime,
     window_label: &str,
     channel_id: u32,
@@ -136,7 +173,7 @@ pub(crate) fn runtime_subscribe_events(
     runtime.events.subscribe(window_label, channel_id, events);
 }
 
-pub(crate) async fn session_mark_read(
+pub async fn session_mark_read(
     runtime: &Runtime,
     project_id: String,
     session_path: String,
@@ -155,7 +192,6 @@ mod tests {
     use super::super::host_events::RecordingEvents;
     use super::*;
 
-    #[cfg(feature = "tauri")]
     #[tokio::test]
     async fn agent_control_resolves_the_same_runtime_without_retaining_it() {
         let runtime = Runtime::new(
@@ -175,6 +211,18 @@ mod tests {
                 .control_runtime()
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn empty_runtime_shutdown_revokes_control_and_is_repeatable() {
+        let runtime = Runtime::new(
+            HostPaths::for_test(std::path::PathBuf::new()),
+            Arc::new(RecordingEvents::default()),
+        );
+        assert!(runtime.servers.control_runtime().is_ok());
+        runtime.shutdown().await;
+        assert!(runtime.servers.control_runtime().is_err());
+        runtime.shutdown().await;
     }
 
     #[tokio::test]

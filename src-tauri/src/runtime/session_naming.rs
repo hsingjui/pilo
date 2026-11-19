@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use crate::runtime::Runtime;
-#[cfg(feature = "tauri")]
 use crate::runtime::{pi_oneshot, project, server_pi::PiLaunchOptions, storage};
 
 const SESSION_NAMING_SYSTEM_PROMPT: &str = "Generate a concise title for a coding conversation from the user's first message. Return exactly one plain-text title with no quotes, markdown, explanation, prefix, or suffix. Use the same language as the user. Prefer at most 24 CJK characters or 60 Latin characters.";
@@ -23,7 +22,6 @@ fn normalize_generated_session_title(value: &str) -> Option<String> {
     Some(title)
 }
 
-#[cfg(feature = "tauri")]
 pub async fn generate_session_title(
     runtime: &Runtime,
     project_id: &str,
@@ -63,7 +61,6 @@ pub async fn generate_session_title(
     Ok(normalize_generated_session_title(&title))
 }
 
-#[cfg(feature = "tauri")]
 pub async fn session_generate_title(
     runtime: &Runtime,
     project_id: String,

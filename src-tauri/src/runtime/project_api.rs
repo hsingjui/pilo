@@ -1,4 +1,3 @@
-#[cfg(feature = "tauri")]
 use super::{
     git::{self, GitStatus},
     parallel::ParallelAgentInfo,
@@ -16,7 +15,6 @@ pub fn project_list(runtime: &Runtime) -> Result<Vec<Project>, String> {
     project::list(runtime)
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_open_in_app(
     runtime: &Runtime,
     id: String,
@@ -27,7 +25,6 @@ pub async fn project_open_in_app(
     super::project_opener::open(runtime, &project, app, path.as_deref()).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_open_in_zed_wsl(
     runtime: &Runtime,
     id: String,
@@ -40,7 +37,6 @@ pub async fn project_open_in_zed_wsl(
     super::wsl::open_in_zed(distro, path.as_deref().unwrap_or(&project.path)).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_html_report_open(
     runtime: &Runtime,
     project_id: String,
@@ -50,7 +46,6 @@ pub async fn project_html_report_open(
     super::file_links::open(runtime, &project, &url).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_file_link_open(
     runtime: &Runtime,
     project_id: String,
@@ -103,7 +98,6 @@ pub fn project_model_cache_set(
     Ok(cache)
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_add(
     runtime: &Runtime,
     connection_id: String,
@@ -114,7 +108,6 @@ pub async fn project_add(
     Ok(project)
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_refresh(runtime: &Runtime, id: String) -> Result<Project, String> {
     project::refresh(runtime, &runtime.servers, &id).await
 }
@@ -131,7 +124,6 @@ pub fn project_reorder(
     project::reorder(runtime, &connection_id, &project_ids)
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_remove(runtime: &Runtime, id: String) -> Result<Vec<Project>, String> {
     if project::get(runtime, &id)?.is_default_workspace() {
         return Err(
@@ -142,13 +134,11 @@ pub async fn project_remove(runtime: &Runtime, id: String) -> Result<Vec<Project
     project::remove(runtime, &id)
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_git_status(runtime: &Runtime, id: String) -> Result<GitStatus, String> {
     let project = project::ready(runtime, &runtime.servers, &id).await?;
     git::status(&runtime.servers, &project).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_git_diff(
     runtime: &Runtime,
     id: String,
@@ -159,7 +149,6 @@ pub async fn project_git_diff(
     git::diff(&runtime.servers, &project, path.as_deref(), staged).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_terminal_open(
     runtime: &Runtime,
     id: String,
@@ -181,7 +170,6 @@ pub async fn project_terminal_open(
         .await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn terminal_write(
     runtime: &Runtime,
     terminal_id: String,
@@ -195,7 +183,6 @@ pub async fn terminal_write(
         .await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn terminal_resize(
     runtime: &Runtime,
     terminal_id: String,
@@ -210,12 +197,10 @@ pub async fn terminal_resize(
         .await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn terminal_close(runtime: &Runtime, terminal_id: String) -> Result<(), String> {
     runtime.terminals.lock().await.close(&terminal_id).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn parallel_agent_list(
     runtime: &Runtime,
     project_id: String,
@@ -223,7 +208,6 @@ pub async fn parallel_agent_list(
     Ok(runtime.parallel_agents.lock().await.list(&project_id))
 }
 
-#[cfg(feature = "tauri")]
 pub async fn parallel_agent_create(
     runtime: &Runtime,
     project_id: String,
@@ -246,7 +230,6 @@ pub async fn parallel_agent_create(
         .await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn parallel_agent_send(
     runtime: &Runtime,
     agent_id: String,
@@ -260,12 +243,10 @@ pub async fn parallel_agent_send(
         .await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn parallel_agent_stop(runtime: &Runtime, agent_id: String) -> Result<(), String> {
     runtime.parallel_agents.lock().await.stop(&agent_id).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn parallel_agent_remove(
     runtime: &Runtime,
     project_id: String,
@@ -280,7 +261,6 @@ pub async fn parallel_agent_remove(
         .await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_preview_ports(
     runtime: &Runtime,
     project_id: String,
@@ -289,7 +269,6 @@ pub async fn project_preview_ports(
     preview::detect_ports(&runtime.servers, &project).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_preview_open(
     runtime: &Runtime,
     project_id: String,
@@ -299,12 +278,10 @@ pub async fn project_preview_open(
     runtime.previews.lock().await.open(&project, port).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_preview_close(runtime: &Runtime, preview_id: String) -> Result<(), String> {
     runtime.previews.lock().await.close(&preview_id).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_fs_read_dir(
     runtime: &Runtime,
     id: String,
@@ -318,7 +295,6 @@ pub fn local_pick_project_directory(runtime: &Runtime) -> Option<String> {
     runtime.shell().ok()?.pick_directory()
 }
 
-#[cfg(feature = "tauri")]
 pub async fn connection_fs_read_dir(
     runtime: &Runtime,
     connection_id: String,
@@ -331,7 +307,6 @@ pub async fn connection_fs_read_dir(
     remote_fs::read_connection_dir(&runtime.servers, &connection, &path).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_fs_read_file(
     runtime: &Runtime,
     id: String,
@@ -341,7 +316,6 @@ pub async fn project_fs_read_file(
     remote_fs::read_viewer_file(&runtime.servers, &project, &path).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_fs_read_image(
     runtime: &Runtime,
     id: String,
@@ -351,7 +325,6 @@ pub async fn project_fs_read_image(
     remote_fs::read_image(&runtime.servers, &project, &path).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_chat_file_upload(
     runtime: &Runtime,
     id: String,
@@ -362,7 +335,6 @@ pub async fn project_chat_file_upload(
     remote_fs::upload_chat_file(&runtime.servers, &project, &name, &data).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_chat_file_remove(
     runtime: &Runtime,
     id: String,
@@ -372,7 +344,6 @@ pub async fn project_chat_file_remove(
     remote_fs::remove_chat_file(&runtime.servers, &project, &path).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_fs_write_file(
     runtime: &Runtime,
     id: String,
@@ -383,7 +354,6 @@ pub async fn project_fs_write_file(
     remote_fs::write_file(&runtime.servers, &project, &path, &data).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_fs_stat(
     runtime: &Runtime,
     id: String,
@@ -393,13 +363,11 @@ pub async fn project_fs_stat(
     remote_fs::stat(&runtime.servers, &project, &path).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_fs_mkdir(runtime: &Runtime, id: String, path: String) -> Result<(), String> {
     let project = project::ready(runtime, &runtime.servers, &id).await?;
     remote_fs::mkdir(&runtime.servers, &project, &path).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_fs_rename(
     runtime: &Runtime,
     id: String,
@@ -410,13 +378,11 @@ pub async fn project_fs_rename(
     remote_fs::rename(&runtime.servers, &project, &from, &to).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_fs_remove(runtime: &Runtime, id: String, path: String) -> Result<(), String> {
     let project = project::ready(runtime, &runtime.servers, &id).await?;
     remote_fs::remove(&runtime.servers, &project, &path).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_fs_search(
     runtime: &Runtime,
     id: String,
@@ -426,7 +392,6 @@ pub async fn project_fs_search(
     remote_fs::search(&runtime.servers, &project, &query).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn project_discover(
     runtime: &Runtime,
     connection_id: String,

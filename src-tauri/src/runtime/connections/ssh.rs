@@ -7,7 +7,6 @@ use crate::{
     runtime::ssh::{self, SshAgentIdentity},
 };
 
-#[cfg(feature = "tauri")]
 use super::stop_connection_projects;
 use super::{ConnectionTestResult, Runtime, connection_test_result, credentials, storage};
 
@@ -60,7 +59,6 @@ pub fn ssh_connection_list(runtime: &Runtime) -> Result<Vec<SshConnectionInfo>, 
         .collect()
 }
 
-#[cfg(feature = "tauri")]
 pub async fn ssh_connection_save(
     runtime: &Runtime,
     request: SaveSshConnectionRequest,
@@ -131,7 +129,6 @@ pub fn ssh_connection_password_get(
     Ok(credentials::get_ssh_password(&connection.id).ok())
 }
 
-#[cfg(feature = "tauri")]
 pub async fn ssh_connection_remove(runtime: &Runtime, id: String) -> Result<(), String> {
     let _policy = runtime.pi_resource_policy.write().await;
     stop_connection_projects(runtime, &id).await?;
@@ -141,7 +138,6 @@ pub async fn ssh_connection_remove(runtime: &Runtime, id: String) -> Result<(), 
     Ok(())
 }
 
-#[cfg(feature = "tauri")]
 pub async fn ssh_connection_test(
     runtime: &Runtime,
     id: String,
@@ -154,7 +150,6 @@ pub async fn ssh_connection_test(
 }
 
 // Tests an SSH connection straight from the editor draft, before it is saved.
-#[cfg(feature = "tauri")]
 pub async fn ssh_connection_test_draft(
     runtime: &Runtime,
     connection: Connection,

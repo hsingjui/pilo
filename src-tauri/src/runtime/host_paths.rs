@@ -3,14 +3,14 @@ use std::{fs, path::PathBuf};
 const DB_FILE_NAME: &str = "pilo.sqlite3";
 
 #[derive(Clone, Debug)]
-pub(crate) struct HostPaths {
+pub struct HostPaths {
     app_data_dir: PathBuf,
     resource_dir: PathBuf,
 }
 
 impl HostPaths {
     #[cfg(test)]
-    pub(crate) fn for_test(app_data_dir: PathBuf) -> Self {
+    pub fn for_test(app_data_dir: PathBuf) -> Self {
         Self {
             app_data_dir,
             resource_dir: PathBuf::new(),
@@ -18,7 +18,7 @@ impl HostPaths {
     }
 
     /// A host whose data lives in `app_data_dir`, created if missing.
-    pub(crate) fn new(app_data_dir: PathBuf, resource_dir: PathBuf) -> Result<Self, String> {
+    pub fn new(app_data_dir: PathBuf, resource_dir: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&app_data_dir).map_err(|error| {
             format!(
                 "failed to create Pilo app data directory '{}': {error}",
@@ -31,22 +31,22 @@ impl HostPaths {
         })
     }
 
-    pub(crate) fn resource_dir(&self) -> &std::path::Path {
+    pub fn resource_dir(&self) -> &std::path::Path {
         &self.resource_dir
     }
 
-    pub(crate) fn database_path(&self) -> PathBuf {
+    pub fn database_path(&self) -> PathBuf {
         self.app_data_dir.join(DB_FILE_NAME)
     }
 
-    pub(crate) fn session_anchor_path(&self, project_id: &str) -> PathBuf {
+    pub fn session_anchor_path(&self, project_id: &str) -> PathBuf {
         self.app_data_dir
             .join("pi-workspaces")
             .join(format!("{:016x}", fnv1a_64(project_id.as_bytes())))
     }
 }
 
-pub(crate) fn fnv1a_64(bytes: &[u8]) -> u64 {
+pub fn fnv1a_64(bytes: &[u8]) -> u64 {
     let mut hash = 0xcbf29ce484222325_u64;
     for byte in bytes {
         hash ^= u64::from(*byte);

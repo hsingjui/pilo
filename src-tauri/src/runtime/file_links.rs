@@ -9,8 +9,8 @@ use pilo_server::file_links::{
 };
 use serde::Serialize;
 use serde_json::json;
-use tauri::Url;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use url::Url;
 
 use crate::domain::{ConnectionKind, Project};
 
@@ -116,7 +116,7 @@ fn file_path(value: &str) -> Result<PathBuf, String> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct FileLinkPreview {
+pub struct FileLinkPreview {
     path: String,
     content: String,
 }

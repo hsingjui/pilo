@@ -12,7 +12,6 @@ use super::{
     storage,
 };
 
-#[cfg(feature = "tauri")]
 use super::{pi_workspace, server_client::ServerManager};
 
 const MAX_DISCOVERED_PROJECTS: usize = 200;
@@ -86,7 +85,6 @@ fn default_workspace_key(connection_id: &str) -> String {
     }
 }
 
-#[cfg(feature = "tauri")]
 pub(crate) async fn ready_with_paths(
     paths: &super::host_paths::HostPaths,
     servers: &ServerManager,
@@ -117,7 +115,6 @@ pub(crate) async fn ready_with_paths(
     Ok(project)
 }
 
-#[cfg(feature = "tauri")]
 pub(crate) async fn ready(
     runtime: &Runtime,
     servers: &ServerManager,
@@ -131,7 +128,6 @@ pub fn get(runtime: &Runtime, id: &str) -> Result<Project, String> {
         .ok_or_else(|| format!("Project '{id}' was not found"))
 }
 
-#[cfg(feature = "tauri")]
 pub async fn add(
     runtime: &Runtime,
     servers: &ServerManager,
@@ -160,7 +156,6 @@ pub async fn add(
     Ok(project)
 }
 
-#[cfg(feature = "tauri")]
 pub async fn refresh(
     runtime: &Runtime,
     servers: &ServerManager,
@@ -193,7 +188,6 @@ pub fn touch(runtime: &Runtime, id: &str) -> Result<Project, String> {
     get(runtime, id)
 }
 
-#[cfg(feature = "tauri")]
 pub fn remove(runtime: &Runtime, id: &str) -> Result<Vec<Project>, String> {
     if get(runtime, id)?.is_default_workspace() {
         return Err(
@@ -223,7 +217,6 @@ pub fn reorder(
     storage::list_projects(&db)
 }
 
-#[cfg(feature = "tauri")]
 pub async fn discover(
     runtime: &Runtime,
     servers: &ServerManager,
@@ -262,7 +255,6 @@ pub fn resolve_connection(runtime: &Runtime, connection_id: &str) -> Result<Conn
         .ok_or_else(|| format!("Connection '{connection_id}' was not found"))
 }
 
-#[cfg(feature = "tauri")]
 async fn inspect(
     servers: &ServerManager,
     connection: Connection,

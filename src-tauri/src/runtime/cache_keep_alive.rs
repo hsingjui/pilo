@@ -1,4 +1,3 @@
-#[cfg(feature = "tauri")]
 use super::PiloRuntime;
 use serde_json::json;
 
@@ -18,7 +17,6 @@ pub(crate) fn load(
     storage::list_cache_keep_alive_settings(&storage::open_with_paths(paths)?, connection_id)
 }
 
-#[cfg(feature = "tauri")]
 pub(crate) async fn configure_session(
     paths: &HostPaths,
     runtime: &PiloRuntime,
@@ -33,7 +31,6 @@ pub(crate) async fn configure_session(
         .await
 }
 
-#[cfg(feature = "tauri")]
 pub(crate) async fn save(
     paths: &HostPaths,
     runtime: &PiloRuntime,
@@ -70,7 +67,6 @@ pub fn cache_keep_alive_settings_list(
     load(&runtime.paths, &connection_id)
 }
 
-#[cfg(feature = "tauri")]
 pub async fn cache_keep_alive_settings_set(
     runtime: &Runtime,
     settings: CacheKeepAliveSettings,

@@ -14,8 +14,8 @@ mod desktop_shortcut;
 mod desktop_tray;
 #[cfg(feature = "tauri")]
 mod desktop_window;
-mod domain;
-mod runtime;
+pub mod domain;
+pub mod runtime;
 
 pub use runtime::server_deploy::initialize_local_server_binary;
 
@@ -326,8 +326,7 @@ pub fn run() {
             app.manage(runtime);
             initialize_macos_notification_application(app);
             initialize_windows_notification_application(app);
-            app.state::<runtime::RuntimeEventBus>()
-                .start_external_activity_poll(app.state::<runtime::Runtime>().inner().clone());
+            app.state::<runtime::Runtime>().start_external_activity_poll();
             if let Err(error) = desktop_shortcut::install(app.handle()) {
                 log::error!(target: "desktop", "global show shortcut unavailable: {error}");
             }
@@ -350,12 +349,11 @@ pub fn run() {
                 tauri::ActivationPolicy::Regular
             });
             desktop_window::create_main_window(app, start_hidden)?;
-            app.state::<PiloRuntime>().chat_sessions.start_idle_reaper();
+            app.state::<runtime::Runtime>().start_idle_reaper();
 
             let remote_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let remote = remote_app.state::<runtime::RemoteServerManager>();
-                if let Err(error) = remote.restore(&remote_app.state::<runtime::Runtime>()).await {
+                if let Err(error) = remote_app.state::<runtime::Runtime>().restore_remote().await {
                     log::error!(target: "remote-webui", "failed to restore Remote WebUI: {error}");
                 }
             });
@@ -415,39 +413,7 @@ pub fn run() {
                 let exiting = std::sync::Arc::clone(&exiting);
                 let handle = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    let runtime = handle.state::<PiloRuntime>();
-                    let remote = handle.state::<runtime::RemoteServerManager>();
-                    runtime.servers.begin_shutdown();
-                    // The whole teardown is bounded and always followed by
-                    // exit(0): a stuck pilo-server RPC must never keep the app
-                    // alive. Logs at each step pinpoint where it stalls.
-                    let teardown = async {
-                        log::info!(target: "shutdown", "remote webui: stopping");
-                        remote.stop().await;
-                        log::info!(target: "shutdown", "chat sessions: stopping");
-                        runtime.chat_sessions.stop_all().await;
-                        log::info!(target: "shutdown", "project pi session: stopping");
-                        let _ = runtime.project_pi_session.lock().await.stop().await;
-                        log::info!(target: "shutdown", "session watchers: stopping");
-                        runtime.session_watchers.lock().await.stop_all().await;
-                        log::info!(target: "shutdown", "terminals: closing");
-                        runtime.terminals.lock().await.close_all().await;
-                    };
-                    if tokio::time::timeout(std::time::Duration::from_secs(5), teardown)
-                        .await
-                        .is_err()
-                    {
-                        log::warn!(target: "shutdown", "graceful shutdown timed out; stopping servers");
-                    }
-                    // Always close server stdin, even when chat/terminal cleanup timed out.
-                    log::info!(target: "shutdown", "servers: stopping");
-                    if tokio::time::timeout(std::time::Duration::from_secs(8), runtime.servers.stop_all())
-                        .await
-                        .is_err()
-                    {
-                        log::warn!(target: "shutdown", "server cleanup timed out; exiting");
-                    }
-                    log::info!(target: "shutdown", "teardown complete");
+                    handle.state::<runtime::Runtime>().shutdown().await;
                     // macOS 只有在事件循环正常退出时才会通知 LaunchServices/Dock
                     // 注销应用；从工作线程直接 `std::process::exit` 会让 Dock 残留图标
                     // （表现为「退出后仍在后台运行」）。让 Tauri 走一遍 `RunEvent::Exit`

@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 static SERVER_RESOURCE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
-pub(crate) fn initialize_server_resource_dir(resource_dir: PathBuf) {
+pub fn initialize_server_resource_dir(resource_dir: PathBuf) {
     let _ = SERVER_RESOURCE_DIR.set(resource_dir);
 }
 

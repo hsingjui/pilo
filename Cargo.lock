@@ -3340,6 +3340,7 @@ dependencies = [
  "time",
  "tokio",
  "tower-http",
+ "url",
  "windows 0.61.3",
 ]
 

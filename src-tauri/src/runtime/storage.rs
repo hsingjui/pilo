@@ -6,7 +6,7 @@ mod cache_keep_alive;
 pub(crate) use cache_keep_alive::*;
 mod connections;
 mod desktop;
-pub(crate) use desktop::*;
+pub use desktop::*;
 mod next_prompt;
 mod projects;
 mod prompt_enhancement;

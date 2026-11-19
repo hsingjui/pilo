@@ -13,7 +13,6 @@ use tokio::task::JoinHandle;
 
 use crate::domain::Project;
 
-#[cfg(feature = "tauri")]
 use super::server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager};
 
 pub const TERMINAL_EVENT_NAME: &str = "pilo://terminal";
@@ -120,19 +119,16 @@ fn emit_terminal_event(events: &dyn HostEvents, event: TerminalEvent) -> Result<
     events.emit_serialized(TERMINAL_EVENT_NAME, event)
 }
 
-#[cfg(feature = "tauri")]
 struct TerminalSession {
     client: Arc<ServerClient>,
     task: JoinHandle<()>,
 }
 
-#[cfg(feature = "tauri")]
 #[derive(Default)]
 pub struct TerminalManager {
     sessions: HashMap<String, TerminalSession>,
 }
 
-#[cfg(feature = "tauri")]
 impl TerminalManager {
     pub async fn open(
         &mut self,

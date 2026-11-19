@@ -14,7 +14,7 @@ pub struct DesktopNotificationSessionTarget {
 }
 
 #[cfg(any(test, target_os = "macos", target_os = "windows"))]
-pub(crate) fn emit_open_session(
+pub fn emit_open_session(
     events: &dyn HostEvents,
     target: DesktopNotificationSessionTarget,
 ) -> Result<(), String> {

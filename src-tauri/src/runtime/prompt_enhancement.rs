@@ -20,7 +20,6 @@ use super::{
     storage,
 };
 
-#[cfg(feature = "tauri")]
 use super::{pi_oneshot, project, server_pi::PiLaunchOptions};
 
 const PROMPT_ENHANCEMENT_SYSTEM_PROMPT: &str = "You rewrite a user's draft prompt into a clearer, more actionable prompt for a coding agent. Rules: Keep the author's intent; do NOT answer the request, add answers, or start doing the task. Preserve file paths, code snippets, commands, and references verbatim. Make implicit goals explicit: task, scope, constraints, and the expected result. Remove filler; keep the prompt concise but complete. Reply in the same language as the draft. Output ONLY the rewritten prompt text without preamble, quotes, or markdown fences.";
@@ -151,7 +150,6 @@ fn resolve_model(
     Ok((Some(provider), Some(id)))
 }
 
-#[cfg(feature = "tauri")]
 pub(crate) async fn enhance(
     runtime: &Runtime,
     paths: &HostPaths,
@@ -214,7 +212,6 @@ pub fn prompt_enhancement_settings_set(
     )
 }
 
-#[cfg(feature = "tauri")]
 pub async fn prompt_enhance(
     runtime: &Runtime,
     project_id: String,

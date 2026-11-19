@@ -12,7 +12,6 @@ use crate::{
     runtime::{host_paths::HostPaths, session_activity::SessionExternalActivity, storage},
 };
 
-#[cfg(feature = "tauri")]
 use crate::runtime::{Runtime, pi_workspace, project, session_activity};
 
 use super::{RuntimeEvent, RuntimeEventBus, RuntimeEventEnvelope};
@@ -84,7 +83,6 @@ impl RuntimeEventBus {
         Ok(state)
     }
 
-    #[cfg(feature = "tauri")]
     pub(crate) async fn external_session_activity(
         &self,
         runtime: &Runtime,
@@ -152,7 +150,6 @@ impl RuntimeEventBus {
         result
     }
 
-    #[cfg(feature = "tauri")]
     async fn refresh_cached_external_activity(
         &self,
         runtime: &Runtime,
@@ -195,7 +192,6 @@ impl RuntimeEventBus {
 
     /// Refreshes one project's external activity off the caller's task. Triggers
     /// that arrive while a refresh runs collapse into one delayed rerun.
-    #[cfg(feature = "tauri")]
     pub(crate) fn schedule_external_activity_refresh(&self, runtime: &Runtime, project_id: &str) {
         {
             let mut refreshes = self
@@ -249,7 +245,6 @@ impl RuntimeEventBus {
     /// Host-owned fallback for what session file events cannot report: an
     /// external Pi that exits mid-turn, a fallback-inferred turn going stale,
     /// and projects without a live session watcher.
-    #[cfg(feature = "tauri")]
     pub(crate) fn start_external_activity_poll(&self, runtime: Runtime) {
         let events = self.clone();
         crate::runtime::tasks::spawn(async move {

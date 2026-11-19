@@ -19,7 +19,7 @@ use super::{access, api, pairing::PairingSession};
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct RemoteHostState {
+pub struct RemoteHostState {
     pub enabled: bool,
     pub running: bool,
     pub port: u16,
@@ -140,7 +140,7 @@ impl RemoteServerManager {
                 if previous_url.as_deref() != Some(address.base_url.as_str()) {
                     continue;
                 }
-                let mut url = tauri::Url::parse(&address.base_url).map_err(|error| {
+                let mut url = url::Url::parse(&address.base_url).map_err(|error| {
                     format!("failed to parse Remote WebUI LAN address: {error}")
                 })?;
                 url.set_port(Some(port))

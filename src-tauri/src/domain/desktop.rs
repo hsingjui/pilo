@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub(crate) const DEFAULT_SHOW_SHORTCUT: &str = "mod+alt+p";
+pub const DEFAULT_SHOW_SHORTCUT: &str = "mod+alt+p";
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -12,7 +12,7 @@ pub enum AutostartMode {
 }
 
 impl AutostartMode {
-    pub(crate) fn starts_hidden(self, from_autostart: bool, tray_available: bool) -> bool {
+    pub fn starts_hidden(self, from_autostart: bool, tray_available: bool) -> bool {
         from_autostart && tray_available && self == Self::Tray
     }
 }

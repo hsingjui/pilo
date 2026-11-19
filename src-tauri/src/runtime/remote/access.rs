@@ -7,7 +7,7 @@ pub(crate) fn normalize_base_url(input: &str) -> Result<String, String> {
     if input.len() > 2048 {
         return Err("Remote access URL is too long".to_owned());
     }
-    let url = tauri::Url::parse(input)
+    let url = url::Url::parse(input)
         .map_err(|_| "Remote access URL must be an http:// or https:// root address".to_owned())?;
     if !matches!(url.scheme(), "http" | "https")
         || url.host_str().is_none()

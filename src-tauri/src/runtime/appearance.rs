@@ -66,7 +66,7 @@ pub struct SystemFontFamily {
     pub monospace: bool,
 }
 
-#[cfg(all(feature = "tauri", target_os = "macos"))]
+#[cfg(target_os = "macos")]
 fn enumerate_system_font_families() -> Result<Vec<SystemFontFamily>, String> {
     use core_text::font::new_from_name;
     use core_text::font_descriptor::SymbolicTraitAccessors;
@@ -85,7 +85,7 @@ fn enumerate_system_font_families() -> Result<Vec<SystemFontFamily>, String> {
         .collect())
 }
 
-#[cfg(all(feature = "tauri", target_os = "windows"))]
+#[cfg(target_os = "windows")]
 fn enumerate_system_font_families() -> Result<Vec<SystemFontFamily>, String> {
     use std::collections::BTreeMap;
 
@@ -168,7 +168,6 @@ pub async fn theme_settings_set(
     save(runtime.paths.clone(), runtime.events.clone(), update).await
 }
 
-#[cfg(feature = "tauri")]
 pub async fn system_font_families(_runtime: &Runtime) -> Result<Vec<SystemFontFamily>, String> {
     #[cfg(target_os = "windows")]
     {
@@ -184,7 +183,7 @@ pub async fn system_font_families(_runtime: &Runtime) -> Result<Vec<SystemFontFa
     }
 }
 
-#[cfg(all(test, feature = "tauri", target_os = "macos"))]
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::enumerate_system_font_families;
 

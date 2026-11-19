@@ -1,4 +1,3 @@
-#[cfg(feature = "tauri")]
 use super::PiloRuntime;
 use serde_json::json;
 
@@ -40,7 +39,6 @@ pub(crate) fn save(
     Ok(settings)
 }
 
-#[cfg(feature = "tauri")]
 pub(crate) async fn request(
     paths: &HostPaths,
     runtime: &PiloRuntime,
@@ -128,7 +126,6 @@ pub fn next_prompt_settings_set(
     )
 }
 
-#[cfg(feature = "tauri")]
 pub async fn next_prompt_request(
     runtime: &Runtime,
     request: NextPromptRequest,

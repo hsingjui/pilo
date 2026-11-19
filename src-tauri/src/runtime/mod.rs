@@ -1,110 +1,76 @@
-mod appearance;
-mod cache_keep_alive;
-#[cfg(feature = "tauri")]
+pub mod appearance;
+pub mod cache_keep_alive;
 mod chat_service;
-#[cfg(feature = "tauri")]
 mod chat_sessions;
 #[cfg(feature = "tauri")]
 pub mod commands;
 mod connection_diagnostics;
-#[cfg(feature = "tauri")]
 mod connection_models;
-mod connections;
-#[cfg(feature = "tauri")]
+pub mod connections;
 mod control;
 mod credentials;
-pub(crate) mod debug_trace;
+pub mod debug_trace;
 #[cfg(feature = "tauri")]
 pub(crate) mod desktop_startup;
-pub(crate) mod events;
-#[cfg(feature = "tauri")]
-mod file_links;
-#[cfg(feature = "tauri")]
+pub mod events;
+pub mod file_links;
 mod git;
-pub(crate) mod handle;
-pub(crate) mod host_events;
-pub(crate) mod host_paths;
-pub(crate) use handle::Runtime;
-mod next_prompt;
-pub(crate) mod notifications;
-#[cfg(feature = "tauri")]
+pub mod handle;
+pub mod host_events;
+pub mod host_paths;
+pub use handle::Runtime;
+pub mod next_prompt;
+pub mod notifications;
 mod parallel;
 mod pi_event_adapters;
 mod pi_events;
-#[cfg(feature = "tauri")]
 mod pi_oneshot;
-#[cfg(feature = "tauri")]
 mod pi_workspace;
-mod preferences;
-#[cfg(feature = "tauri")]
+pub mod preferences;
 mod preview;
 pub mod project;
-mod project_api;
-#[cfg(feature = "tauri")]
-mod project_opener;
-mod prompt_enhancement;
-#[cfg(feature = "tauri")]
-mod remote;
-#[cfg(feature = "tauri")]
+pub mod project_api;
+pub mod project_opener;
+pub mod prompt_enhancement;
+pub mod remote;
 mod remote_fs;
-#[cfg(feature = "tauri")]
-mod runtime_api;
-#[cfg(feature = "tauri")]
+pub mod runtime_api;
 pub(crate) mod server_client;
 pub(crate) mod server_deploy;
-#[cfg(feature = "tauri")]
 mod server_pi;
-#[cfg(feature = "tauri")]
 mod server_pi_events;
 mod session_activity;
-mod session_api;
-#[cfg(feature = "tauri")]
+pub mod session_api;
 mod session_history;
-#[cfg(feature = "tauri")]
 mod session_index;
-mod session_naming;
+pub mod session_naming;
 mod session_snapshot;
 mod session_watcher;
 pub(crate) mod shortcuts;
-#[allow(dead_code)]
 pub(crate) mod ssh;
-pub(crate) mod storage;
-pub(crate) mod tasks;
+pub mod storage;
+pub mod tasks;
 mod terminal;
-mod token_usage;
-pub(crate) mod web_assets;
-#[allow(dead_code)]
+pub mod token_usage;
+pub mod web_assets;
 mod wsl;
 
-#[cfg(feature = "tauri")]
 use std::sync::{Arc, Mutex as StdMutex};
 
 use tokio::process::Command;
-#[cfg(feature = "tauri")]
 use tokio::sync::Mutex;
 
-#[cfg(feature = "tauri")]
 use chat_sessions::ChatSessions;
 pub(crate) use events::RuntimeEventBus;
-#[cfg(feature = "tauri")]
 use parallel::ParallelAgentManager;
-#[cfg(feature = "tauri")]
 use preview::PreviewManager;
-#[cfg(feature = "tauri")]
 pub(crate) use remote::RemoteServerManager;
-#[cfg(feature = "tauri")]
 use server_client::ServerManager;
-#[cfg(feature = "tauri")]
-pub(crate) use server_deploy::initialize_server_resource_dir;
-#[cfg(feature = "tauri")]
+pub use server_deploy::initialize_server_resource_dir;
 use server_pi::ServerPiSession;
-#[cfg(feature = "tauri")]
 use session_history::SessionHistoryCache;
-#[cfg(feature = "tauri")]
 use session_index::BackgroundSessionIndexManager;
-#[cfg(feature = "tauri")]
 use session_watcher::SessionWatcherManager;
-#[cfg(feature = "tauri")]
 use terminal::TerminalManager;
 
 /// Pilo 本体是 GUI 程序（没有控制台），Windows 会为它启动的控制台子进程
@@ -120,11 +86,9 @@ pub(crate) fn hide_console_window(command: &mut Command) {
     let _ = command;
 }
 
-#[cfg(feature = "tauri")]
 #[derive(Clone, Default)]
 pub struct PiloRuntime(Arc<PiloRuntimeState>);
 
-#[cfg(feature = "tauri")]
 impl std::ops::Deref for PiloRuntime {
     type Target = PiloRuntimeState;
 
@@ -133,7 +97,6 @@ impl std::ops::Deref for PiloRuntime {
     }
 }
 
-#[cfg(feature = "tauri")]
 pub struct PiloRuntimeState {
     pub(crate) chat_sessions: ChatSessions,
     pub(crate) pi_resource_policy: Arc<tokio::sync::RwLock<()>>,
@@ -147,7 +110,6 @@ pub struct PiloRuntimeState {
     pub(crate) terminals: Mutex<TerminalManager>,
 }
 
-#[cfg(feature = "tauri")]
 impl Default for PiloRuntimeState {
     fn default() -> Self {
         Self {

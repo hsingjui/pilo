@@ -49,7 +49,7 @@ tokio::task_local! {
 }
 
 pub use target::initialize_local_server_binary;
-pub(crate) use target::initialize_server_resource_dir;
+pub use target::initialize_server_resource_dir;
 
 #[cfg(test)]
 pub(super) use target::{ServerArch, installed_server_candidates};

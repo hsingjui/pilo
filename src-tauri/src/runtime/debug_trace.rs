@@ -155,7 +155,7 @@ pub(crate) fn runtime_trace(
     }));
 }
 
-pub(crate) fn append_frontend_trace(payload: &str) -> Result<(), String> {
+pub fn append_frontend_trace(payload: &str) -> Result<(), String> {
     let detail =
         serde_json::from_str::<Value>(payload).unwrap_or_else(|_| json!({ "payload": payload }));
     let stage = detail
