@@ -29,7 +29,12 @@ pub(crate) async fn set_local_pi_resources(
             return Ok(());
         }
     }
-    stop_for_resource_change(app, &runtime, connection_id).await?;
+    stop_for_resource_change(
+        &crate::desktop_paths::from_app(app)?,
+        &runtime,
+        connection_id,
+    )
+    .await?;
     storage::set_local_pi_resources(
         &storage::open(&crate::desktop_paths::from_app(app)?)?,
         connection_id,
@@ -40,11 +45,11 @@ pub(crate) async fn set_local_pi_resources(
 }
 
 pub(crate) async fn stop_for_resource_change(
-    app: &AppHandle,
+    paths: &HostPaths,
     runtime: &super::PiloRuntime,
     connection_id: &str,
 ) -> Result<(), String> {
-    let projects = storage::list_projects(&storage::open(&crate::desktop_paths::from_app(app)?)?)?
+    let projects = storage::list_projects(&storage::open(paths)?)?
         .into_iter()
         .filter(|project| project.connection.id == connection_id)
         .map(|project| project.id)

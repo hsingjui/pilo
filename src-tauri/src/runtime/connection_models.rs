@@ -6,7 +6,6 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use tauri::AppHandle;
 use tokio::sync::mpsc;
 
 use crate::domain::PiRuntime;
@@ -19,7 +18,7 @@ use super::{
 };
 
 pub(crate) async fn load(
-    app: &AppHandle,
+    paths: &super::host_paths::HostPaths,
     runtime: &PiloRuntime,
     connection_id: &str,
 ) -> Result<Vec<Value>, String> {
@@ -31,7 +30,7 @@ pub(crate) async fn load(
         json!({ "connectionId": connection_id }),
     );
     let connection = {
-        let db = storage::open(&crate::desktop_paths::from_app(app)?)?;
+        let db = storage::open(paths)?;
         let connection = if connection_id == "local" {
             storage::ensure_local_connection(&db)?
         } else {

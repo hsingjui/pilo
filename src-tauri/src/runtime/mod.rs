@@ -11,6 +11,7 @@ pub mod commands;
 mod connection_diagnostics;
 #[cfg(feature = "tauri")]
 mod connection_models;
+mod connections;
 #[cfg(feature = "tauri")]
 mod control;
 mod credentials;

@@ -595,10 +595,9 @@ pub(super) async fn connection_models(
     State(state): State<RemoteHttpState>,
     Query(query): Query<NextPromptSettingsQuery>,
 ) -> Response {
-    match crate::runtime::connection_models::load(
-        &state.app,
-        &state.app.state::<PiloRuntime>(),
-        &query.connection_id,
+    match crate::runtime::connections::connection_models_get(
+        &state.app.state::<crate::runtime::Runtime>(),
+        query.connection_id,
     )
     .await
     {

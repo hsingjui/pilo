@@ -15,6 +15,15 @@ pub(crate) struct RuntimeState {
     pub(crate) remote: super::RemoteServerManager,
 }
 
+#[cfg(feature = "tauri")]
+impl std::ops::Deref for RuntimeState {
+    type Target = super::PiloRuntime;
+
+    fn deref(&self) -> &Self::Target {
+        &self.core
+    }
+}
+
 impl std::ops::Deref for Runtime {
     type Target = RuntimeState;
 

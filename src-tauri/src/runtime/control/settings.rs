@@ -142,7 +142,10 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
             match key.as_str() {
                 "connection.namingModel" => {
                     if get {
-                        encode(commands::connection_naming_model_get(app.clone(), id)?)
+                        encode(commands::connection_naming_model_get(
+                            app.state::<crate::runtime::Runtime>(),
+                            id,
+                        )?)
                     } else {
                         #[derive(serde::Deserialize)]
                         #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -155,7 +158,7 @@ pub(super) async fn settings(app: &AppHandle, command: ControlCommand) -> Result
                             .map(|model| (Some(model.provider), Some(model.model_id)))
                             .unwrap_or_default();
                         encode(commands::connection_naming_model_set(
-                            app.clone(),
+                            app.state::<crate::runtime::Runtime>(),
                             id,
                             provider,
                             model_id,

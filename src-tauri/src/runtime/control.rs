@@ -232,8 +232,7 @@ async fn execute(
             match &save.connection.kind {
                 ConnectionKind::Ssh { .. } => {
                     commands::ssh_connection_save(
-                        app.clone(),
-                        app.state::<PiloRuntime>(),
+                        app.state::<super::Runtime>(),
                         commands::SaveSshConnectionRequest {
                             connection: save.connection,
                             password: save.password,
@@ -243,7 +242,7 @@ async fn execute(
                     .await?;
                 }
                 ConnectionKind::Wsl { .. } => {
-                    commands::wsl_connection_save(app.clone(), save.connection)?;
+                    commands::wsl_connection_save(app.state::<super::Runtime>(), save.connection)?;
                 }
                 ConnectionKind::Local => {
                     if save.password.is_some() {
@@ -255,7 +254,8 @@ async fn execute(
                     )?;
                 }
             };
-            let connection = commands::connection_shown_in_home_set(app.clone(), id, shown)?;
+            let connection =
+                commands::connection_shown_in_home_set(app.state::<super::Runtime>(), id, shown)?;
             changed(app);
             Ok(
                 json!({ "hasPassword": matches!(connection.kind, ConnectionKind::Ssh { .. }) && super::credentials::has_ssh_password(&connection.id), "connection": connection, "effect": "new sessions use the saved connection; existing processes are not restarted" }),
