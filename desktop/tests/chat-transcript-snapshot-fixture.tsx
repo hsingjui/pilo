@@ -72,7 +72,7 @@ async function snapshot(
 	return result;
 }
 
-async function fake(pilo: Pilo, fixture: ChatFixture) {
+function seed(fixture: ChatFixture) {
 	const seed = {
 		type: "message",
 		id: "prior-user",
@@ -80,7 +80,29 @@ async function fake(pilo: Pilo, fixture: ChatFixture) {
 		timestamp: "2026-01-01T00:00:01.000Z",
 		message: { role: "user", content: "saved question" },
 	};
-	const path = fixture.seedTranscript(`${JSON.stringify(seed)}\n`);
+	return fixture.seedTranscript(`${JSON.stringify(seed)}\n`);
+}
+
+async function loadThenStart(pilo: Pilo, fixture: ChatFixture) {
+	const path = seed(fixture);
+	const settled = (await pilo.loadHistory(
+		"chat-fixture",
+		path,
+	)) as SessionHistoryResult;
+	if (
+		!settled.fingerprint ||
+		!settled.history.events.some(
+			(event) =>
+				event.type === "user_message_start" && event.text === "saved question",
+		)
+	) {
+		throw new Error(`unexpected settled history: ${JSON.stringify(settled)}`);
+	}
+	await start(pilo, key, path);
+}
+
+async function fake(pilo: Pilo, fixture: ChatFixture) {
+	const path = seed(fixture);
 	const generation = await start(pilo, key, path);
 	const idle = await snapshot(pilo, key, generation, {
 		messageLimit: 1,
@@ -271,10 +293,12 @@ async function real(pilo: Pilo) {
 
 async function run() {
 	const realPi = host.params.realPi === true;
+	const loadHistoryFirst = host.params.loadHistoryFirst === true;
 	const fixture = new ChatFixture(realPi);
 	const pilo = new Pilo(fixture.dataDir());
 	try {
 		if (realPi) await real(pilo);
+		else if (loadHistoryFirst) await loadThenStart(pilo, fixture);
 		else await fake(pilo, fixture);
 	} finally {
 		await pilo.shutdown();
@@ -283,7 +307,9 @@ async function run() {
 	status.set(
 		realPi
 			? "relay/deepseek-flash: history + live + later events matched fresh history"
-			: "idle, active and truncated transcript snapshots verified",
+			: loadHistoryFirst
+				? "seeded session history loaded and chat started"
+				: "idle, active and truncated transcript snapshots verified",
 	);
 }
 

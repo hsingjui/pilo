@@ -2,7 +2,10 @@ use std::{
     fs::{self, DirBuilder, OpenOptions},
     io::{ErrorKind, Write},
     path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use nsh_core::prelude::*;
@@ -251,6 +254,21 @@ impl Drop for BootstrapFixture {
     }
 }
 
+fn create_project_session_dir(cwd: &str) -> Result<PathBuf, String> {
+    let sessions = std::env::var_os("PI_CODING_AGENT_DIR")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".pi/agent")))
+        .ok_or("Pi agent directory is unavailable")?
+        .join("sessions");
+    fs::create_dir_all(&sessions).map_err(|error| error.to_string())?;
+    let project_sessions = sessions.join(format!(
+        "--{}--",
+        cwd.trim_start_matches('/').replace(['/', '\\', ':'], "-")
+    ));
+    fs::create_dir(&project_sessions).map_err(|error| error.to_string())?;
+    Ok(project_sessions)
+}
+
 /// An isolated project and a single synthetic Pi session file.
 #[class]
 struct SessionFilesFixture {
@@ -286,17 +304,7 @@ impl SessionFilesFixture {
         fs::write(storage.0.join("fixture.png"), ImageFixture::bytes())
             .map_err(|error| error.to_string())?;
 
-        let sessions = std::env::var_os("PI_CODING_AGENT_DIR")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".pi/agent")))
-            .ok_or("Pi agent directory is unavailable")?
-            .join("sessions");
-        fs::create_dir_all(&sessions).map_err(|error| error.to_string())?;
-        let project_sessions = sessions.join(format!(
-            "--{}--",
-            cwd.trim_start_matches('/').replace(['/', '\\', ':'], "-")
-        ));
-        fs::create_dir(&project_sessions).map_err(|error| error.to_string())?;
+        let project_sessions = create_project_session_dir(&cwd)?;
         let fixture = Self {
             storage,
             session: project_sessions.join("fixture.jsonl"),
@@ -341,7 +349,10 @@ impl Drop for SessionFilesFixture {
 
 /// An isolated local project with a fixture Pi executable by default.
 #[class]
-struct ChatFixture(BootstrapFixture);
+struct ChatFixture {
+    storage: BootstrapFixture,
+    transcript: Mutex<Option<PathBuf>>,
+}
 
 #[class]
 impl ChatFixture {
@@ -379,32 +390,41 @@ impl ChatFixture {
                 last_opened_at_ms: 1,
             },
         )?;
-        Ok(Self(data))
+        Ok(Self {
+            storage: data,
+            transcript: Mutex::new(None),
+        })
     }
 
     /// Returns the isolated runtime data directory.
     pub fn data_dir(&self) -> String {
-        self.0.data_dir()
+        self.storage.data_dir()
     }
 
-    /// Writes a transcript in the isolated project directory.
+    /// Writes a transcript in the fixture project's Pi session directory.
     pub fn seed_transcript(&self, entries: String) -> Result<String, String> {
-        let Self(BootstrapFixture(dir)) = self;
-        let path = dir.join("transcript.jsonl");
+        let mut transcript = self.transcript.lock().map_err(|error| error.to_string())?;
+        if transcript.is_none() {
+            let sessions = create_project_session_dir(&self.data_dir())?;
+            *transcript = Some(sessions.join("transcript.jsonl"));
+        }
+        let path = transcript
+            .as_ref()
+            .ok_or("fixture transcript path is missing")?;
         let header = serde_json::json!({
             "type": "session",
             "version": 3,
             "id": "nsh-transcript-fixture",
-            "cwd": dir,
+            "cwd": self.storage.0,
             "timestamp": "2026-01-01T00:00:00.000Z",
         });
-        fs::write(&path, format!("{header}\n{entries}")).map_err(|error| error.to_string())?;
+        fs::write(path, format!("{header}\n{entries}")).map_err(|error| error.to_string())?;
         Ok(path.to_string_lossy().into_owned())
     }
 
     /// Selects the synthetic Pi naming model for this fixture connection.
     pub fn configure_naming_model(&self) -> Result<(), String> {
-        let Self(BootstrapFixture(dir)) = self;
+        let dir = &self.storage.0;
         let paths = HostPaths::new(dir.clone(), dir.clone())?;
         let db = storage::open(&paths)?;
         let connection = storage::ensure_local_connection(&db)?;
@@ -420,7 +440,7 @@ impl ChatFixture {
 
     /// Checks whether the local Pi child reported by the fixture is still alive.
     pub fn pi_running(&self) -> Result<bool, String> {
-        let Self(BootstrapFixture(dir)) = self;
+        let dir = &self.storage.0;
         let pid =
             fs::read_to_string(dir.join("fixture-pi.pid")).map_err(|error| error.to_string())?;
         let pid = pid.parse::<u32>().map_err(|error| error.to_string())?;
@@ -433,5 +453,20 @@ impl ChatFixture {
             .status()
             .map(|status| status.success())
             .map_err(|error| error.to_string())
+    }
+}
+
+impl Drop for ChatFixture {
+    fn drop(&mut self) {
+        if let Some(path) = self
+            .transcript
+            .get_mut()
+            .unwrap_or_else(|error| error.into_inner())
+        {
+            let _ = fs::remove_file(path.as_path());
+            if let Some(dir) = path.parent() {
+                let _ = fs::remove_dir(dir);
+            }
+        }
     }
 }
