@@ -14,6 +14,7 @@ import {
 	readStateKey,
 	reduceAppState,
 } from "./app-state";
+import type { ChatTranscriptStore } from "./chat-transcript-store";
 
 export type AppStoreClient = Pick<
 	NshPiloClient,
@@ -38,6 +39,7 @@ export class AppStore {
 	readonly state: Accessor<AppState> = this.current;
 
 	private readonly client: AppStoreClient;
+	private readonly chat: ChatTranscriptStore | undefined;
 	/** Identifies the current event connection; unset while disconnected. */
 	private connection: object | undefined;
 	private disconnect: (() => void) | undefined;
@@ -52,8 +54,19 @@ export class AppStore {
 	private projectReads = 0;
 	private readonly sessionReads = new Map<string, number>();
 
-	constructor(client: AppStoreClient) {
+	/**
+	 * `chat`, when given, is the open chat's transcript: it gets every event
+	 * batch as it arrives, and is read again when the stream lost events or
+	 * was reconnected.
+	 */
+	constructor(client: AppStoreClient, chat?: ChatTranscriptStore) {
 		this.client = client;
+		this.chat = chat;
+	}
+
+	/** Whether runtime events are being received. */
+	get connected() {
+		return this.connection !== undefined;
 	}
 
 	/** Connects to runtime events and loads the first snapshot. */
@@ -69,7 +82,11 @@ export class AppStore {
 
 	private async open() {
 		await this.connect();
-		if (this.connection) await this.sync();
+		if (!this.connection) return;
+		// Events from before this connection are not on top of the chat's
+		// last snapshot any more.
+		void this.chat?.refresh();
+		await this.sync();
 	}
 
 	/** Loads, or loads again, the saved sessions of one project. */
@@ -173,9 +190,13 @@ export class AppStore {
 
 	private receive(message: PiloClientEventMessage) {
 		if (message.type === "resyncRequired") {
+			void this.chat?.refresh();
 			void this.sync();
 		} else if (message.type === "events") {
 			this.resumed = false;
+			// A chat's events are ordered by its own transcript snapshot, not
+			// by the bootstrap, so they do not wait for a sync in flight.
+			this.chat?.receive(message.events);
 			if (this.syncing) {
 				this.pending.push(...message.events);
 			} else {

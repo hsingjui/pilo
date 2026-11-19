@@ -42,7 +42,10 @@ export function applyChatEvents(
  * the chat's events up to the cut, and other chats are not its concern.
  */
 export function followsSnapshot(
-	snapshot: ChatTranscriptSnapshot,
+	snapshot: Pick<
+		ChatTranscriptSnapshot,
+		"sessionKey" | "generation" | "eventSequence"
+	>,
 	event: PiloClientEvent,
 ): boolean {
 	return (
