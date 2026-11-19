@@ -7,7 +7,7 @@ pub async fn session_read_states(
     events: State<'_, RuntimeEventBus>,
 ) -> Result<Vec<SessionReadState>, String> {
     let events = events.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || events.session_read_states())
+    tokio::task::spawn_blocking(move || events.session_read_states())
         .await
         .map_err(|error| format!("failed to load session read states: {error}"))?
 }
@@ -20,7 +20,7 @@ pub async fn session_mark_read(
     revision: u64,
 ) -> Result<SessionReadState, String> {
     let events = events.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         events.mark_session_read(&project_id, &session_path, revision)
     })
     .await

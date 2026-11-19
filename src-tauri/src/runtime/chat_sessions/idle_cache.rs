@@ -24,7 +24,7 @@ impl ChatProcess {
 impl ChatSessions {
     pub(crate) fn start_idle_reaper(&self) {
         let registry = Arc::downgrade(&self.registry);
-        tauri::async_runtime::spawn(async move {
+        crate::runtime::tasks::spawn(async move {
             loop {
                 tokio::time::sleep(IDLE_REAP_INTERVAL).await;
                 let Some(registry) = registry.upgrade() else {

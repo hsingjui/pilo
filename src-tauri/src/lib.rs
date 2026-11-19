@@ -295,6 +295,7 @@ pub fn run() {
         .setup(|app| {
             use tauri::Manager;
 
+            runtime::tasks::initialize(tauri::async_runtime::handle().inner().clone());
             let paths = runtime::host_paths::HostPaths::new(
                 app.path().app_data_dir().map_err(|error| format!("failed to resolve Pilo app data directory: {error}"))?,
                 app.path().resource_dir()?,

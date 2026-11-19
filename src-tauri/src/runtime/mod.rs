@@ -39,6 +39,7 @@ mod session_watcher;
 #[allow(dead_code)]
 pub(crate) mod ssh;
 pub(crate) mod storage;
+pub(crate) mod tasks;
 mod terminal;
 mod token_usage;
 #[allow(dead_code)]

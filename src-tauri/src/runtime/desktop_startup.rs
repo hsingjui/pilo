@@ -59,7 +59,7 @@ pub(crate) fn save(app: &AppHandle, mode: AutostartMode) -> Result<AutostartMode
 
 #[tauri::command]
 pub(crate) async fn desktop_autostart_get(app: AppHandle) -> Result<AutostartMode, String> {
-    tauri::async_runtime::spawn_blocking(move || load(&app))
+    tokio::task::spawn_blocking(move || load(&app))
         .await
         .map_err(|error| error.to_string())?
 }
@@ -69,7 +69,7 @@ pub(crate) async fn desktop_autostart_set(
     app: AppHandle,
     mode: AutostartMode,
 ) -> Result<AutostartMode, String> {
-    tauri::async_runtime::spawn_blocking(move || save(&app, mode))
+    tokio::task::spawn_blocking(move || save(&app, mode))
         .await
         .map_err(|error| error.to_string())?
 }

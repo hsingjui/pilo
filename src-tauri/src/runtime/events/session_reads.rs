@@ -212,7 +212,7 @@ impl RuntimeEventBus {
         let events = self.clone();
         let app = app.clone();
         let project_id = project_id.to_owned();
-        tauri::async_runtime::spawn(async move {
+        crate::runtime::tasks::spawn(async move {
             loop {
                 if let Err(error) = events
                     .refresh_cached_external_activity(&app, &project_id)
@@ -252,7 +252,7 @@ impl RuntimeEventBus {
     /// and projects without a live session watcher.
     pub(crate) fn start_external_activity_poll(&self, app: AppHandle) {
         let events = self.clone();
-        tauri::async_runtime::spawn(async move {
+        crate::runtime::tasks::spawn(async move {
             let mut tick = tokio::time::interval(EXTERNAL_ACTIVITY_POLL_INTERVAL);
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             tick.tick().await;
@@ -342,7 +342,7 @@ impl RuntimeEventBus {
         }
         let events = self.clone();
         // One worker preserves each session's turn order without blocking Pi.
-        tauri::async_runtime::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             loop {
                 let completion = {
                     let mut queue = events

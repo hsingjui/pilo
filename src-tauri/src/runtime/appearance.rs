@@ -13,7 +13,7 @@ pub(crate) async fn load(
     events: RuntimeEventBus,
     initial: Option<ThemeSettings>,
 ) -> Result<ThemeSettings, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         let db = storage::open(&crate::desktop_paths::from_app(&app)?)?;
         if let Some(initial) = initial {
             let current = storage::get_theme_settings(&db)?;
@@ -40,7 +40,7 @@ pub(crate) async fn save(
     events: RuntimeEventBus,
     update: ThemeSettingsUpdate,
 ) -> Result<ThemeSettings, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         let settings = storage::update_theme_settings(
             &mut storage::open(&crate::desktop_paths::from_app(&app)?)?,
             update,
