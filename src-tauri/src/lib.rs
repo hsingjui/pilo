@@ -7,6 +7,9 @@ mod desktop_window;
 mod domain;
 mod runtime;
 
+/// AppHandle-free runtime entry points for the nsh desktop spike (M0).
+pub use runtime::nsh_spike;
+
 use desktop_notifications::{
     initialize_macos_notification_application, initialize_windows_notification_application,
     send_macos_desktop_notification, send_windows_desktop_notification,

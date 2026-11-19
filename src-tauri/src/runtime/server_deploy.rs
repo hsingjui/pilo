@@ -48,7 +48,7 @@ tokio::task_local! {
     pub(super) static TEST_SERVER: std::cell::RefCell<Option<SpawnedServer>>;
 }
 
-pub(crate) use target::initialize_server_resource_dir;
+pub(crate) use target::{initialize_local_server_binary, initialize_server_resource_dir};
 
 #[cfg(test)]
 pub(super) use target::{ServerArch, installed_server_candidates};
@@ -76,6 +76,19 @@ pub(super) async fn spawn_server(
 
     match &connection.kind {
         ConnectionKind::Local => {
+            if let Some(binary) = target::local_server_binary() {
+                let mut command = Command::new(binary);
+                command.env(
+                    "PILO_SERVER_RUNTIME_DIR",
+                    pilo_server::runtime_directory().map_err(|error| error.to_string())?,
+                );
+                return diagnostics.stage("spawn").finish(spawn_piped_server(
+                    command,
+                    &connection.name,
+                    false,
+                    diagnostics,
+                ));
+            }
             // Debug builds embed the current server, so prefer it over the staged
             // resource binary. A stale resource would otherwise shadow the freshly
             // built code and break protocol compatibility in `tauri dev`.

@@ -52,6 +52,8 @@ pub(super) fn retryable_read_method(method: &str) -> bool {
 #[derive(Default)]
 pub struct ServerManager {
     control_app: std::sync::Mutex<Option<tauri::AppHandle>>,
+    /// A host without a Tauri app (the nsh spike) has no agent control.
+    agent_control_disabled: AtomicBool,
     clients: Mutex<HashMap<String, CachedServerClient>>,
     connection_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     admission: RwLock<()>,
@@ -70,6 +72,14 @@ impl ServerManager {
             .control_app
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(app);
+    }
+
+    pub(crate) fn disable_agent_control(&self) {
+        self.agent_control_disabled.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn agent_control_enabled(&self) -> bool {
+        !self.agent_control_disabled.load(Ordering::Acquire)
     }
 
     pub(crate) fn control_app(&self) -> Result<tauri::AppHandle, String> {

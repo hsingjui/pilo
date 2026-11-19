@@ -7,6 +7,18 @@ pub(crate) fn initialize_server_resource_dir(resource_dir: PathBuf) {
     let _ = SERVER_RESOURCE_DIR.set(resource_dir);
 }
 
+static LOCAL_SERVER_BINARY: OnceLock<PathBuf> = OnceLock::new();
+
+/// Runs this `pilo-server` binary for Local connections. A host whose own
+/// executable cannot serve `--pilo-server` (the nsh shell) sets it.
+pub(crate) fn initialize_local_server_binary(binary: PathBuf) {
+    let _ = LOCAL_SERVER_BINARY.set(binary);
+}
+
+pub(crate) fn local_server_binary() -> Option<&'static Path> {
+    LOCAL_SERVER_BINARY.get().map(PathBuf::as_path)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum ServerPlatform {
     Windows,
