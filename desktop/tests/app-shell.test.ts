@@ -64,3 +64,28 @@ test("a runtime that shut down shows a failure without a retry", async () => {
 	);
 	expect(app.shows("id:startup-retry")).toBe(false);
 });
+
+test("the sidebar collapses and expands from the title bar", async () => {
+	const app = await openStates("empty");
+	await app.waitFor("id:workspace-title");
+	expect(app.shows("id:sidebar-title-bar >> id:sidebar-collapse")).toBe(true);
+	expect(app.shows("id:sidebar-expand")).toBe(false);
+
+	await app.press("id:sidebar-collapse");
+	expect(app.shows("id:sidebar")).toBe(false);
+	expect(app.shows("id:main-title-bar >> id:sidebar-expand")).toBe(true);
+	expect(app.shows("id:workspace-title")).toBe(true);
+
+	await app.press("id:sidebar-expand");
+	expect(app.shows("id:sidebar >> text:Pilo")).toBe(true);
+	expect(app.shows("id:sidebar-expand")).toBe(false);
+});
+
+test("a narrow window keeps the workspace once the sidebar is collapsed", async () => {
+	const app = await openStates("empty");
+	await app.waitFor("id:workspace-title");
+	await app.setViewport(390, 720);
+	expect(app.shows("id:sidebar-collapse")).toBe(true);
+	await app.press("id:sidebar-collapse");
+	expect(app.shows("id:workspace >> text:Add a project first")).toBe(true);
+});
