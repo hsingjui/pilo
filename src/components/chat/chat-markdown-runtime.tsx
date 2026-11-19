@@ -288,7 +288,12 @@ const ChatMarkdownBody = memo(function ChatMarkdownBody({
 }) {
 	recordMarkdownRender(text.length);
 	const { t } = useTranslation();
-	const { resolvedTheme: theme, themeFamily, themeCustomTokens } = useTheme();
+	const {
+		resolvedTheme: theme,
+		themeFamily,
+		themeCustomTokens,
+		themeCustomCss,
+	} = useTheme();
 	const streamingVisual = isStreaming || presentationLagging;
 	const needsMath = useMemo(() => hasPotentialMathMarkup(text), [text]);
 	const blockParser = useMemo(
@@ -310,7 +315,7 @@ const ChatMarkdownBody = memo(function ChatMarkdownBody({
 	/* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies -- Read the DOM palette after ThemeProvider's layout effects; family and CSS are explicit invalidation triggers even when mode is unchanged. */
 	useEffect(() => {
 		setMermaidOptions({ config: createMarkdownMermaidConfig(theme) });
-	}, [theme, themeFamily, themeCustomTokens]);
+	}, [theme, themeFamily, themeCustomTokens, themeCustomCss]);
 	/* oxlint-enable react/set-state-in-effect, react/exhaustive-effect-dependencies */
 	// Streamdown's memo ignores mermaid options; a new diagram plugin also refreshes existing SVGs.
 	const mermaidPlugin = useMemo(

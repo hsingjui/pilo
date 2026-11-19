@@ -106,7 +106,8 @@ export function useChatComposerInput({
 		readingFontFamily,
 		uiFontSize,
 	} = usePreferences();
-	const { resolvedTheme, themeFamily, themeCustomCss } = useTheme();
+	const { resolvedTheme, themeFamily, themeCustomCss, themeCustomTokens } =
+		useTheme();
 	const isTouch = useIsTouchDevice();
 	const newlineOnEnter = !desktopShortcuts && isTouch;
 	const editorRef = useRef<HTMLTextAreaElement>(null);
@@ -325,6 +326,7 @@ export function useChatComposerInput({
 		resizeTextarea,
 		resolvedTheme,
 		themeCustomCss,
+		themeCustomTokens,
 		themeFamily,
 		uiFontSize,
 	]);

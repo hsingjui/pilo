@@ -9,6 +9,7 @@ import {
 
 export const CUSTOM_THEME_CATALOG = createThemeTokenCatalog(base.cssVars);
 export const CUSTOM_THEME_BASE = base.cssVars;
+const tokenMapping = new Map(Object.entries(mapping));
 
 export function validateWebThemeTokens(input: unknown) {
 	return validateCustomThemeTokens(input, CUSTOM_THEME_CATALOG);
@@ -41,9 +42,7 @@ export function renderCustomThemeCss(input: unknown): string {
 	const declarations = (tokens: Record<string, string>) =>
 		Object.entries(tokens)
 			.map(([token, value]) => {
-				const entry = Object.entries(mapping).find(
-					([name]) => name === token,
-				)?.[1];
+				const entry = tokenMapping.get(token);
 				return `--${entry?.cssVar ?? token}:${entry?.format === "hsl-channels" ? hslChannels(value) : value};`;
 			})
 			.join("");
