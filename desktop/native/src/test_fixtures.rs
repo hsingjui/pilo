@@ -143,6 +143,21 @@ impl BootstrapFixture {
         Ok(())
     }
 
+    /// Seeds two local model policies in reverse catalog order.
+    pub fn seed_cache_keep_alive_settings(&self) -> Result<(), String> {
+        let paths = HostPaths::new(self.0.clone(), self.0.clone())?;
+        storage::open(&paths)?
+            .execute(
+                "INSERT INTO model_cache_keep_alive_settings
+                 (connection_id, provider, model_id, enabled, cache_ttl_seconds, idle_keep_alive_seconds, updated_at_ms)
+                 VALUES ('local', 'fixture', 'second', 0, 600, 3600, 124),
+                        ('local', 'fixture', 'first', 1, 300, 1800, 123)",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
     /// Saves an indexed session for a fixture project without starting Pi.
     pub fn seed_indexed_session(&self, project_id: String, cwd: String) -> Result<(), String> {
         let paths = HostPaths::new(self.0.clone(), self.0.clone())?;

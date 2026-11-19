@@ -59,6 +59,12 @@ updated scope with a larger `updatedAtMs` and publishes
 `project_model_scope_changed` with `projectId` and `scope`. Neither call
 launches Pi.
 
+`loadCacheKeepAliveSettings(connectionId)` returns the connection's saved
+model policies (ordered by provider and model ID), or `[]` if it has none.
+Each policy has `connectionId`, `provider`, `modelId`, `enabled`,
+`cacheTtlSeconds`, `idleKeepAliveSeconds`, and `updatedAtMs`. An unknown
+connection is rejected. Loading does not launch Pi.
+
 Use `readProjectImage(projectId, path)` for a project-relative image and
 `readHistoryImage(projectId, sessionPath, imageId, fingerprint?)` for a
 transcript attachment. Both return `Uint8Array` bytes; nsh `Image` accepts

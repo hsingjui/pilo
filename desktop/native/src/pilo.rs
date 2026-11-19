@@ -11,6 +11,7 @@ use pilo_lib::{
     runtime::{
         Runtime,
         appearance::{theme_settings_get, theme_settings_set},
+        cache_keep_alive::cache_keep_alive_settings_list,
         connections::connection_models_get,
         events::{EventBatch, EventQueueLimits, EventStream},
         handle::{session_mark_read, session_read_states},
@@ -437,6 +438,17 @@ impl Pilo {
             let models = serde_json::from_value(models).map_err(|error| error.to_string())?;
             let scope = project_model_scope_set(runtime, project_id, models)?;
             serde_json::to_value(scope).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Lists the saved cache keep-alive policies for a connection.
+    pub async fn load_cache_keep_alive_settings(
+        this: Instance<Self>,
+        connection_id: String,
+    ) -> Result<Vec<JsonValue>, String> {
+        Self::with_runtime_blocking(this, move |runtime| {
+            encode_list(cache_keep_alive_settings_list(runtime, connection_id)?)
         })
         .await
     }
