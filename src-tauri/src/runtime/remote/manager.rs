@@ -566,10 +566,10 @@ mod tests {
             std::sync::Arc::new(RecordingEvents::default()),
         );
         runtime.remote.start(&runtime, 0).await.unwrap();
-        let (task, port) = {
+        let task = {
             let inner = runtime.remote.inner.lock().await;
             let running = inner.running.as_ref().unwrap();
-            (running.task.abort_handle(), running.port)
+            running.task.abort_handle()
         };
         let weak = runtime.downgrade();
         drop(runtime);
@@ -581,10 +581,6 @@ mod tests {
         })
         .await
         .unwrap();
-        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, port))
-            .await
-            .unwrap();
-        drop(listener);
         std::fs::remove_dir_all(root).unwrap();
     }
 
