@@ -1,5 +1,6 @@
 import { expect, open, test } from "nsh/test";
 
+import type { PreferencePatch } from "@/lib/host-preferences-types";
 import type { ThemeSettings } from "@/lib/theme-settings-types";
 
 const LODY = { light: "#ffffffff", dark: "#101010ff" };
@@ -9,6 +10,7 @@ async function openSaved(
 	locale: string,
 	theme: Partial<ThemeSettings>,
 	colorScheme: "light" | "dark" = "light",
+	fonts: PreferencePatch = {},
 ) {
 	const app = await open("./app-shell-appearance-fixture.tsx", {
 		platform: "macos",
@@ -19,6 +21,7 @@ async function openSaved(
 		storage: {
 			"fixture.locale": locale,
 			"fixture.theme": JSON.stringify(theme),
+			"fixture.fonts": JSON.stringify(fonts),
 		},
 	});
 	await app.waitFor("id:workspace-title");
@@ -27,6 +30,10 @@ async function openSaved(
 
 const background = (app: Awaited<ReturnType<typeof openSaved>>) =>
 	app.viewStyle("id:app")?.backgroundColor;
+
+/** The fonts the theme holds, as the fixture's line under the shell names them. */
+const fonts = (app: Awaited<ReturnType<typeof openSaved>>) =>
+	app.texts().find((text) => text.startsWith("page "));
 
 test("the shell shows the saved language and theme instead of the system's", async () => {
 	const app = await openSaved("zh-CN", {
@@ -90,4 +97,49 @@ test("a custom theme saved without tokens shows Lody", async () => {
 		themeFamily: "custom",
 	});
 	expect(background(app)).toBe(LODY.dark);
+});
+
+test("the shell shows the saved fonts instead of the theme's", async () => {
+	const app = await openSaved(
+		"en-US",
+		{ theme: "light", themeFamily: "claude" },
+		"light",
+		{ pageFontFamily: "Georgia", codeFontFamily: "Menlo", codeFontSize: 16 },
+	);
+	expect(background(app)).toBe(CLAUDE.light);
+	expect(fonts(app)).toBe("page Georgia, code Menlo 16, display Copernicus");
+});
+
+test("the shell follows saved font changes in the theme it shows", async () => {
+	const app = await openSaved("en-US", { theme: "light", themeFamily: "lody" });
+	expect(fonts(app)).toBe("page Inter, code JetBrains Mono 14, display Inter");
+
+	await app.press("Save Georgia and Menlo");
+	expect(fonts(app)).toBe("page Georgia, code Menlo 16, display Georgia");
+
+	await app.press("Save Claude system");
+	expect(fonts(app)).toBe("page Georgia, code Menlo 16, display Copernicus");
+
+	await app.press("Save system fonts");
+	expect(fonts(app)).toBe(
+		"page system, code ui-monospace 16, display Copernicus",
+	);
+	await app.press("Save Lody light");
+	expect(fonts(app)).toBe("page system, code ui-monospace 16, display system");
+	expect(background(app)).toBe(LODY.light);
+});
+
+test("saved fonts replace a custom theme's, and its display font stays", async () => {
+	const app = await openSaved("en-US", { theme: "light", themeFamily: "lody" });
+	await app.press("Save custom fonts");
+	expect(fonts(app)).toBe(
+		"page Inter, code JetBrains Mono 14, display Times New Roman",
+	);
+
+	await app.press("Save Georgia and Menlo");
+	expect(fonts(app)).toBe(
+		"page Georgia, code Menlo 16, display Times New Roman",
+	);
+	await app.press("Save invalid custom");
+	expect(fonts(app)).toBe("page Georgia, code Menlo 16, display Georgia");
 });

@@ -3,7 +3,10 @@ import type {
 	PiloClientEventOptions,
 } from "@/lib/api/pilo-client";
 import type { Project } from "@/lib/api/projects-types";
-import type { PreferencesSnapshot } from "@/lib/host-preferences-types";
+import type {
+	HostPreferenceValues,
+	PreferencesSnapshot,
+} from "@/lib/host-preferences-types";
 import type { ThemeSettings } from "@/lib/theme-settings-types";
 import type { NshPiloClientBootstrap } from "../client/nsh-pilo-client";
 import type { AppStoreClient } from "../state/app-store";
@@ -17,10 +20,17 @@ export type AppScript = {
 };
 
 /** A new Host's preferences and theme, as far as the shell reads them. */
-const HOST_DEFAULT_PREFERENCES = {
+export const HOST_DEFAULT_VALUES = {
+	locale: "en-US",
+	pageFontFamily: "inter",
+	codeFontFamily: "jetbrains-mono",
+	codeFontSize: 14,
+} as HostPreferenceValues;
+
+const HOST_DEFAULT_PREFERENCES: PreferencesSnapshot = {
 	revision: 0,
-	values: { locale: "en-US" },
-} as PreferencesSnapshot;
+	values: HOST_DEFAULT_VALUES,
+};
 
 const HOST_DEFAULT_THEME = {
 	revision: 0,
