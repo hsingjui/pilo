@@ -39,6 +39,11 @@ transcript attachment. Both return `Uint8Array` bytes; nsh `Image` accepts
 a Blob URL made from those bytes. The optional fingerprint carries
 `fileSize` and the exact `fileMtimeNs` string.
 
+Use `startChat({ projectId, sessionKey, sessionPath?, noSession?, builtinExtensions? })`
+to start or resume Pi and get its ready process snapshot. Omit `sessionPath`
+for a new session; `noSession` defaults to false. The optional client-selected
+built-in extension is `{ id: "model-catalog" }`.
+
 `loadSessionReadStates()` reads the saved read revisions across projects.
 Call `markSessionRead(projectId, sessionPath, revision)` with the positive
 safe-integer revision the client observed. It returns the resulting read

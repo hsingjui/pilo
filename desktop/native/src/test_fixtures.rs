@@ -5,16 +5,19 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use nsh_core::prelude::*;
+use nsh_core::{JsonValue, prelude::*};
 use pilo_lib::{
     domain::{Project, ProjectMetadata, SessionIndexEntry},
-    runtime::{host_paths::HostPaths, storage},
+    runtime::{host_paths::HostPaths, runtime_api::chat_session_send_rpc, storage},
 };
+
+use crate::pilo::Pilo;
 
 pub(crate) fn register(registry: &mut Registry) {
     registry.module::<ImageFixture>();
     registry.class::<BootstrapFixture>();
     registry.class::<SessionFilesFixture>();
+    registry.class::<ChatFixture>();
 }
 
 /// Native image sources for the desktop transport tests.
@@ -162,6 +165,7 @@ struct SessionFilesFixture {
 
 #[class]
 impl SessionFilesFixture {
+    /// Creates a fixture project plus a uniquely named session file.
     pub fn new(jsonl: String) -> Result<Self, String> {
         let storage = BootstrapFixture::new()?;
         let paths = HostPaths::new(storage.0.clone(), storage.0.clone())?;
@@ -212,10 +216,12 @@ impl SessionFilesFixture {
         Ok(fixture)
     }
 
+    /// Returns the isolated runtime data directory.
     pub fn data_dir(&self) -> String {
         self.storage.data_dir()
     }
 
+    /// Returns the path of the synthetic Pi session.
     pub fn session_path(&self) -> String {
         self.session.to_string_lossy().into_owned()
     }
@@ -224,5 +230,68 @@ impl SessionFilesFixture {
 impl Drop for SessionFilesFixture {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.session);
+    }
+}
+
+/// An isolated local project with a fixture Pi executable by default.
+#[class]
+struct ChatFixture(BootstrapFixture);
+
+#[class]
+impl ChatFixture {
+    /// Seeds a test project, optionally using the installed Pi for a real smoke test.
+    pub fn new(real_pi: bool) -> Result<Self, String> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let data = BootstrapFixture::new()?;
+        let paths = HostPaths::new(data.0.clone(), data.0.clone())?;
+        let db = storage::open(&paths)?;
+        let mut connection = storage::ensure_local_connection(&db)?;
+        if !real_pi {
+            let pi = data.0.join("fixture-pi");
+            fs::write(&pi, include_str!("fixture-pi.py")).map_err(|error| error.to_string())?;
+            fs::set_permissions(&pi, fs::Permissions::from_mode(0o700))
+                .map_err(|error| error.to_string())?;
+            connection.pi_executable = Some(pi.to_string_lossy().into_owned());
+            storage::upsert_connection(&db, &connection)?;
+        }
+        let cwd = data.data_dir();
+        storage::upsert_project(
+            &db,
+            &Project {
+                id: "chat-fixture".into(),
+                name: "Chat fixture".into(),
+                path: cwd.clone(),
+                connection,
+                metadata: ProjectMetadata {
+                    cwd,
+                    git_branch: None,
+                    pi_version: "test".into(),
+                    refreshed_at_ms: 1,
+                },
+                created_at_ms: 1,
+                last_opened_at_ms: 1,
+            },
+        )?;
+        Ok(Self(data))
+    }
+
+    /// Returns the isolated runtime data directory.
+    pub fn data_dir(&self) -> String {
+        self.0.data_dir()
+    }
+
+    /// Stimulates a real Pi turn while the production command bridge is pending.
+    pub async fn send(
+        this: Instance<Self>,
+        pilo: Instance<Pilo>,
+        session_key: String,
+        command: JsonValue,
+    ) -> Result<(), String> {
+        let _ = this;
+        Pilo::with_runtime(pilo, move |runtime| async move {
+            chat_session_send_rpc(&runtime, session_key, command).await
+        })
+        .await
     }
 }

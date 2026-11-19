@@ -18,6 +18,7 @@ use pilo_lib::{
         initialize_server_resource_dir,
         preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
         project_api::{project_fs_read_image, project_list},
+        runtime_api::chat_session_start,
         session_api::{session_history_image, session_reconcile},
         tasks,
         web_assets::{WebAsset, WebAssets},
@@ -211,6 +212,22 @@ impl From<SessionReadState> for NativeSessionReadState {
     }
 }
 
+/// Arguments for starting or resuming a Pi chat.
+#[derive(JsObject)]
+pub struct NativeStartChatInput {
+    pub project_id: String,
+    pub session_key: String,
+    pub session_path: Option<String>,
+    pub no_session: Option<bool>,
+    pub builtin_extensions: Option<Vec<NativeChatBuiltinExtension>>,
+}
+
+/// An explicitly selected Host-provided Pi extension.
+#[derive(JsObject)]
+pub struct NativeChatBuiltinExtension {
+    pub id: String,
+}
+
 /// A native host for the shared Pilo runtime.
 #[class]
 pub struct Pilo {
@@ -236,7 +253,7 @@ impl Pilo {
         })
     }
 
-    async fn with_runtime<T, F>(
+    pub(crate) async fn with_runtime<T, F>(
         this: Instance<Self>,
         operation: impl FnOnce(Runtime) -> F + Send + 'static,
     ) -> Result<T, String>
@@ -397,6 +414,38 @@ impl Pilo {
     ) -> Result<Vec<u8>, String> {
         Self::with_runtime(this, move |runtime| async move {
             project_fs_read_image(&runtime, project_id, path).await
+        })
+        .await
+    }
+
+    /// Starts or resumes a Pi chat and returns its ready process snapshot.
+    pub async fn start_chat(
+        this: Instance<Self>,
+        input: NativeStartChatInput,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let builtin_extensions = input
+                .builtin_extensions
+                .map(|extensions| {
+                    let extensions = extensions
+                        .into_iter()
+                        .map(|extension| serde_json::json!({ "id": extension.id }))
+                        .collect();
+                    serde_json::from_value(JsonValue::Array(extensions))
+                        .map_err(|error| error.to_string())
+                })
+                .transpose()?;
+            let snapshot = chat_session_start(
+                &runtime,
+                input.project_id,
+                input.session_key,
+                input.session_path,
+                input.no_session.unwrap_or(false),
+                None,
+                builtin_extensions,
+            )
+            .await?;
+            serde_json::to_value(snapshot).map_err(|error| error.to_string())
         })
         .await
     }
