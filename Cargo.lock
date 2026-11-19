@@ -3318,6 +3318,7 @@ dependencies = [
  "mac-notification-sys",
  "pilo-protocol",
  "pilo-server",
+ "regex",
  "rfd",
  "rusqlite",
  "serde",
