@@ -31,6 +31,10 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 			preferences,
 		}),
 		nextEvents: answer("nextEvents", { type: "closed" }),
+		startChat: answer("startChat", { state: "running", generation: 1 }),
+		stopChat: answer("stopChat", undefined),
+		chatState: answer("chatState", null),
+		sendChatCommand: answer("sendChatCommand", undefined),
 		listProjects: answer("listProjects", [{ id: "p1" }]),
 		listSessions: answer("listSessions", [{ piSessionId: "s1" }]),
 		loadSessionReadStates: answer("loadSessionReadStates", [readState]),
@@ -98,6 +102,58 @@ test("a native rejection reaches the caller unchanged", async () => {
 		caught = error;
 	}
 	expect(caught).toBe(failure);
+});
+
+test("chat calls pass their arguments to the native module and return its answers", async () => {
+	const state = { sessionKey: "k1", activeTurn: false };
+	const { pilo, calls } = fakeNative({
+		chatState: (sessionKey) =>
+			Promise.resolve(sessionKey === "k1" ? state : null),
+	});
+	const client = new NshPiloClient(pilo);
+	const input = {
+		projectId: "p1",
+		sessionKey: "k1",
+		sessionPath: "/sessions/a.jsonl",
+		noSession: false,
+		builtinExtensions: [{ id: "model-catalog" as const }],
+	};
+
+	expect(await client.startChat(input)).toEqual({
+		state: "running",
+		generation: 1,
+	});
+	expect(await client.chatState("k1")).toBe(state);
+	expect(await client.chatState("absent")).toBe(null);
+	await client.sendChatCommand("k1", { id: "c1", type: "get_state" });
+	await client.stopChat("k1", "user closed the chat");
+	await client.stopChat("k1");
+
+	expect(calls).toEqual([
+		["startChat", input],
+		["sendChatCommand", "k1", { id: "c1", type: "get_state" }],
+		["stopChat", "k1", "user closed the chat"],
+		["stopChat", "k1", undefined],
+	]);
+});
+
+test("a chat call the native module rejects reaches the caller unchanged", async () => {
+	const failure = new Error("Chat session 'k1' is not running");
+	const { pilo } = fakeNative({
+		startChat: () => Promise.reject(failure),
+		sendChatCommand: () => Promise.reject(failure),
+	});
+	const client = new NshPiloClient(pilo);
+	for (const call of [
+		client.startChat({ projectId: "p1", sessionKey: "k1" }),
+		client.sendChatCommand("k1", { type: "prompt" }),
+	]) {
+		let caught: unknown;
+		await call.catch((error: unknown) => {
+			caught = error;
+		});
+		expect(caught).toBe(failure);
+	}
 });
 
 /** A native event stream whose polls the test answers one at a time. */
@@ -277,4 +333,11 @@ test("the client delivers native runtime events, a queue overflow gap and shutdo
 		"text:client event delivery, gap resync and shutdown verified",
 		{ timeout: 20_000 },
 	);
+});
+
+test("the client starts, queries, commands and stops a Pi chat through the native module", async () => {
+	const app = await open("./pilo-client-chat-fixture.tsx");
+	await app.waitFor("text:client chat lifecycle and command reply verified", {
+		timeout: 30_000,
+	});
 });

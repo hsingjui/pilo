@@ -1,12 +1,14 @@
 import type { Pilo } from "app/native";
 
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
+import type { PiSessionSnapshot } from "@/lib/api/pi-runtime-types";
 import type {
 	PiloClient,
 	PiloClientBootstrap,
 	PiloClientEvent,
 	PiloClientEventMessage,
 	PiloClientEventOptions,
+	PiloClientStartChatInput,
 } from "@/lib/api/pilo-client";
 import type { Project } from "@/lib/api/projects-types";
 import type { SessionIndexEntry } from "@/lib/api/sessions-types";
@@ -24,6 +26,10 @@ export type PiloNative = Pick<
 	Pilo,
 	| "bootstrap"
 	| "nextEvents"
+	| "startChat"
+	| "stopChat"
+	| "chatState"
+	| "sendChatCommand"
 	| "listProjects"
 	| "listSessions"
 	| "loadSessionReadStates"
@@ -55,6 +61,10 @@ type BridgedPiloClient = Pick<
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "connectEvents"
+	| "startChat"
+	| "stopChat"
+	| "chatState"
+	| "sendChatCommand"
 >;
 
 /** What `nextEvents` resolves with, as `desktop/README.md` lists it. */
@@ -123,6 +133,31 @@ export class NshPiloClient implements BridgedPiloClient {
 
 	async saveThemeSettings(update: ThemeSettingsUpdate): Promise<ThemeSettings> {
 		return (await this.pilo.saveThemeSettings(update)) as ThemeSettings;
+	}
+
+	/** Starts or resumes Pi for the key and resolves once it is ready. */
+	async startChat(input: PiloClientStartChatInput): Promise<PiSessionSnapshot> {
+		return (await this.pilo.startChat(input)) as PiSessionSnapshot;
+	}
+
+	/** Stops Pi for the key; a session that is not running is left alone. */
+	stopChat(sessionKey: string, reason?: string) {
+		return this.pilo.stopChat(sessionKey, reason);
+	}
+
+	/** Live runtime state for the key, without transcript text. */
+	async chatState(sessionKey: string): Promise<ChatSessionRuntimeState | null> {
+		return (await this.pilo.chatState(
+			sessionKey,
+		)) as ChatSessionRuntimeState | null;
+	}
+
+	/**
+	 * Resolves once the Pi RPC command is sent. Its response and the turn's
+	 * events arrive through `connectEvents`.
+	 */
+	sendChatCommand(sessionKey: string, command: Record<string, unknown>) {
+		return this.pilo.sendChatCommand(sessionKey, command);
 	}
 
 	/** Whether the runtime shut down: its event stream never resumes. */
