@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use axum::{
     extract::{
-        Extension, Query, State, WebSocketUpgrade,
+        Extension, Query, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
     response::Response,
@@ -24,7 +24,7 @@ pub(super) struct EventQuery {
 }
 
 pub(super) async fn events(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Extension(auth_session): Extension<AuthSession>,
     Query(query): Query<EventQuery>,
     ws: WebSocketUpgrade,
@@ -51,6 +51,11 @@ async fn event_socket(
     after: Option<u64>,
 ) {
     let events = state.runtime.events.clone();
+    let paths = state.runtime.paths.clone();
+    let mut lifetime = state.runtime.downgrade();
+    let mut shutdown = state.shutdown.clone();
+    let mut auth_generation = state.auth_generation.clone();
+    drop(state);
     let mut receiver = events.subscribe_web();
     let snapshot_sequence = events.latest_sequence();
     log::info!(target: "remote-webui", "event socket opened deviceId={} after={after:?} latestSequence={snapshot_sequence}", auth_session.device.id);
@@ -97,29 +102,31 @@ async fn event_socket(
         }
     }
 
-    let mut shutdown = state.shutdown.clone();
-    let mut auth_generation = state.auth_generation.clone();
     let mut auth_tick = tokio::time::interval(Duration::from_secs(15));
     auth_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     auth_tick.tick().await;
 
     let close_reason = loop {
         tokio::select! {
+            _ = lifetime.closed() => {
+                let _ = socket.send(Message::Close(None)).await;
+                break "runtime dropped";
+            }
             changed = shutdown.changed() => {
-                if changed.is_ok() && *shutdown.borrow() {
+                if changed.is_err() || *shutdown.borrow() {
                     let _ = socket.send(Message::Close(None)).await;
                     break "shutdown";
                 }
             }
             _ = auth_tick.tick() => {
-                if !remote_token_is_valid(&state.runtime.paths, &auth_session.token).await {
+                if !remote_token_is_valid(&paths, &auth_session.token).await {
                     let _ = socket.send(Message::Close(None)).await;
                     break "authentication expired";
                 }
             }
             changed = auth_generation.changed() => {
                 if changed.is_err()
-                    || !remote_token_is_valid(&state.runtime.paths, &auth_session.token).await
+                    || !remote_token_is_valid(&paths, &auth_session.token).await
                 {
                     let _ = socket.send(Message::Close(None)).await;
                     break "authentication changed";

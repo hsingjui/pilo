@@ -6,7 +6,7 @@ use std::{
 
 use axum::{
     Json,
-    extract::{ConnectInfo, Extension, MatchedPath, Request, State},
+    extract::{ConnectInfo, Extension, MatchedPath, Request},
     http::{HeaderMap, StatusCode, header},
     middleware::Next,
     response::{IntoResponse, Response},
@@ -96,7 +96,7 @@ pub(super) struct PairResponse {
 }
 
 pub(super) async fn pairing_info(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     ConnectInfo(address): ConnectInfo<SocketAddr>,
     Json(request): Json<PairingInfoRequest>,
 ) -> Response {
@@ -114,7 +114,7 @@ pub(super) async fn pairing_info(
 }
 
 pub(super) async fn pair(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     ConnectInfo(address): ConnectInfo<SocketAddr>,
     Json(request): Json<PairRequest>,
 ) -> Response {
@@ -196,7 +196,7 @@ pub(super) async fn device_auth(Extension(session): Extension<AuthSession>) -> R
 
 /// 把当前设备授权重置为完整 TTL；token 不变，已建立的连接不受影响。
 pub(super) async fn device_renew(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Extension(session): Extension<AuthSession>,
 ) -> Response {
     let paths = state.runtime.paths.clone();
@@ -213,7 +213,7 @@ pub(super) async fn device_renew(
 }
 
 pub(super) async fn require_auth(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     mut request: Request,
     next: Next,
 ) -> Response {

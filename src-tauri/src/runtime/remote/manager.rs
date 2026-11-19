@@ -450,7 +450,7 @@ impl RemoteServerManager {
         .map_err(|_| "Remote WebUI pairing task failed".to_owned())??;
         let (shutdown, shutdown_rx) = watch::channel(false);
         let (auth_generation, auth_generation_rx) = watch::channel(0_u64);
-        let shutdown_for_task = shutdown.clone();
+        let mut shutdown_for_task = shutdown.subscribe();
         let events = runtime.events.clone();
         events.set_web_events_enabled(true);
         let router = api::router(
@@ -467,9 +467,8 @@ impl RemoteServerManager {
                     router.into_make_service_with_connect_info::<SocketAddr>(),
                 )
                 .with_graceful_shutdown(async move {
-                    let mut shutdown_rx = shutdown_for_task.subscribe();
-                    if !*shutdown_rx.borrow() {
-                        let _ = shutdown_rx.changed().await;
+                    if !*shutdown_for_task.borrow() {
+                        let _ = shutdown_for_task.changed().await;
                     }
                 })
                 .await
@@ -553,6 +552,41 @@ fn lan_ip() -> IpAddr {
 #[cfg(test)]
 mod tests {
     use super::{effective_base_url, normalize_public_base_url};
+
+    #[tokio::test]
+    async fn dropping_runtime_stops_remote_listener_without_shutdown() {
+        use crate::runtime::{Runtime, host_events::RecordingEvents, host_paths::HostPaths};
+        let root = std::env::temp_dir().join(format!(
+            "pilo-remote-drop-{}-{}",
+            std::process::id(),
+            super::storage::now_ms()
+        ));
+        let runtime = Runtime::new(
+            HostPaths::new(root.clone(), root.join("resources")).unwrap(),
+            std::sync::Arc::new(RecordingEvents::default()),
+        );
+        runtime.remote.start(&runtime, 0).await.unwrap();
+        let (task, port) = {
+            let inner = runtime.remote.inner.lock().await;
+            let running = inner.running.as_ref().unwrap();
+            (running.task.abort_handle(), running.port)
+        };
+        let weak = runtime.downgrade();
+        drop(runtime);
+        assert!(weak.upgrade().is_err());
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while !task.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, port))
+            .await
+            .unwrap();
+        drop(listener);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn effective_base_url_prefers_configured_public_url() {

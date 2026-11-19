@@ -18,10 +18,20 @@ pub trait HostShell: Send + Sync {
 pub type HostSettingFuture =
     std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>;
 
-#[derive(Clone, Default)]
-pub(crate) struct WeakRuntime(Weak<RuntimeState>);
+#[derive(Clone)]
+pub(crate) struct WeakRuntime(Weak<RuntimeState>, tokio::sync::watch::Receiver<()>);
+
+impl Default for WeakRuntime {
+    fn default() -> Self {
+        Self(Weak::new(), tokio::sync::watch::channel(()).1)
+    }
+}
 
 impl WeakRuntime {
+    pub(crate) async fn closed(&mut self) {
+        let _ = self.1.changed().await;
+    }
+
     pub(crate) fn upgrade(&self) -> Result<Runtime, String> {
         self.0
             .upgrade()
@@ -34,6 +44,7 @@ impl WeakRuntime {
 pub struct Runtime(Arc<RuntimeState>);
 
 pub struct RuntimeState {
+    lifetime: tokio::sync::watch::Sender<()>,
     pub(crate) paths: HostPaths,
     pub(crate) host_events: Arc<dyn HostEvents>,
     pub(crate) events: RuntimeEventBus,
@@ -64,6 +75,7 @@ impl Runtime {
         let events = RuntimeEventBus::for_host();
         events.initialize_session_reads(paths.clone());
         let runtime = Self(Arc::new(RuntimeState {
+            lifetime: tokio::sync::watch::channel(()).0,
             paths,
             host_events,
             events,
@@ -137,7 +149,7 @@ impl Runtime {
     }
 
     pub(crate) fn downgrade(&self) -> WeakRuntime {
-        WeakRuntime(Arc::downgrade(&self.0))
+        WeakRuntime(Arc::downgrade(&self.0), self.lifetime.subscribe())
     }
 
     pub fn with_web_assets(
@@ -191,6 +203,23 @@ pub async fn session_mark_read(
 mod tests {
     use super::super::host_events::RecordingEvents;
     use super::*;
+
+    #[tokio::test]
+    async fn dropping_runtime_stops_external_activity_poll_without_shutdown() {
+        let runtime = Runtime::new(
+            HostPaths::for_test(std::path::PathBuf::new()),
+            Arc::new(RecordingEvents::default()),
+        );
+        let poll = tokio::spawn(runtime.events.external_activity_poll(runtime.downgrade()));
+        let weak = runtime.downgrade();
+        tokio::task::yield_now().await;
+        drop(runtime);
+        assert!(weak.upgrade().is_err());
+        tokio::time::timeout(std::time::Duration::from_secs(2), poll)
+            .await
+            .unwrap()
+            .unwrap();
+    }
 
     #[tokio::test]
     async fn agent_control_resolves_the_same_runtime_without_retaining_it() {

@@ -246,13 +246,26 @@ impl RuntimeEventBus {
     /// external Pi that exits mid-turn, a fallback-inferred turn going stale,
     /// and projects without a live session watcher.
     pub(crate) fn start_external_activity_poll(&self, runtime: Runtime) {
+        crate::runtime::tasks::spawn(self.external_activity_poll(runtime.downgrade()));
+    }
+
+    pub(crate) fn external_activity_poll(
+        &self,
+        mut runtime: crate::runtime::handle::WeakRuntime,
+    ) -> impl Future<Output = ()> + Send + 'static {
         let events = self.clone();
-        crate::runtime::tasks::spawn(async move {
+        async move {
             let mut tick = tokio::time::interval(EXTERNAL_ACTIVITY_POLL_INTERVAL);
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             tick.tick().await;
             loop {
-                tick.tick().await;
+                tokio::select! {
+                    _ = runtime.closed() => return,
+                    _ = tick.tick() => {}
+                }
+                let Ok(runtime) = runtime.upgrade() else {
+                    return;
+                };
                 if runtime.servers.is_shutting_down() {
                     return;
                 }
@@ -291,7 +304,7 @@ impl RuntimeEventBus {
                     }
                 }
             }
-        });
+        }
     }
 
     pub(crate) fn record_session_completion(&self, project_id: String, session_path: String) {

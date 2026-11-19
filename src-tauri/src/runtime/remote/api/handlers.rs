@@ -1,7 +1,7 @@
 use axum::{
     Json,
     body::{Body, Bytes},
-    extract::{Query, State},
+    extract::Query,
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -24,7 +24,7 @@ pub(super) struct BootstrapResponse {
     local_pi_resources: std::collections::HashMap<String, bool>,
 }
 
-pub(super) async fn bootstrap(State(state): State<RemoteHttpState>) -> Response {
+pub(super) async fn bootstrap(state: RemoteHttpState) -> Response {
     let projects = match crate::runtime::project::list(&state.runtime) {
         Ok(projects) => projects,
         Err(error) => return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
@@ -69,7 +69,7 @@ pub(super) struct LocalPiResourcesUpdate {
 }
 
 pub(super) async fn local_pi_resources_set(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(update): Json<LocalPiResourcesUpdate>,
 ) -> Response {
     match pi_workspace::set_local_pi_resources(
@@ -87,7 +87,7 @@ pub(super) async fn local_pi_resources_set(
     }
 }
 
-pub(super) async fn preferences_get(State(state): State<RemoteHttpState>) -> Response {
+pub(super) async fn preferences_get(state: RemoteHttpState) -> Response {
     match crate::runtime::preferences::load(&state.runtime.paths) {
         Ok(settings) => Json(settings).into_response(),
         Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
@@ -95,7 +95,7 @@ pub(super) async fn preferences_get(State(state): State<RemoteHttpState>) -> Res
 }
 
 pub(super) async fn preferences_patch(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(patch): Json<serde_json::Map<String, Value>>,
 ) -> Response {
     match crate::runtime::preferences::save(
@@ -109,7 +109,7 @@ pub(super) async fn preferences_patch(
     }
 }
 
-pub(super) async fn theme_settings(State(state): State<RemoteHttpState>) -> Response {
+pub(super) async fn theme_settings(state: RemoteHttpState) -> Response {
     match crate::runtime::appearance::load(
         state.runtime.paths.clone(),
         state.runtime.events.clone(),
@@ -123,7 +123,7 @@ pub(super) async fn theme_settings(State(state): State<RemoteHttpState>) -> Resp
 }
 
 pub(super) async fn theme_settings_set(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(update): Json<crate::domain::ThemeSettingsUpdate>,
 ) -> Response {
     match crate::runtime::appearance::save(
@@ -138,7 +138,7 @@ pub(super) async fn theme_settings_set(
     }
 }
 
-pub(super) async fn session_read_states(State(state): State<RemoteHttpState>) -> Response {
+pub(super) async fn session_read_states(state: RemoteHttpState) -> Response {
     match crate::runtime::handle::session_read_states(&state.runtime).await {
         Ok(states) => Json(states).into_response(),
         Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
@@ -154,7 +154,7 @@ pub(super) struct SessionReadRequest {
 }
 
 pub(super) async fn session_mark_read(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(request): Json<SessionReadRequest>,
 ) -> Response {
     match crate::runtime::handle::session_mark_read(
@@ -179,7 +179,7 @@ pub(super) struct SessionsQuery {
 }
 
 pub(super) async fn sessions(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Query(query): Query<SessionsQuery>,
 ) -> Response {
     let project = match get_project(&state.runtime.paths, &query.project_id) {
@@ -207,7 +207,7 @@ pub(super) struct SessionSearchQuery {
 }
 
 pub(super) async fn sessions_search(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Query(query): Query<SessionSearchQuery>,
 ) -> Response {
     match crate::runtime::session_api::session_search(
@@ -224,7 +224,7 @@ pub(super) async fn sessions_search(
 }
 
 pub(super) async fn sessions_external_activity(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Query(query): Query<SessionsQuery>,
 ) -> Response {
     let project = match get_project(&state.runtime.paths, &query.project_id).and_then(|project| {
@@ -256,10 +256,7 @@ pub(super) struct HistoryQuery {
     expected_file_mtime_ns: Option<String>,
 }
 
-pub(super) async fn history(
-    State(state): State<RemoteHttpState>,
-    Query(query): Query<HistoryQuery>,
-) -> Response {
+pub(super) async fn history(state: RemoteHttpState, Query(query): Query<HistoryQuery>) -> Response {
     let project = match get_project(&state.runtime.paths, &query.project_id).and_then(|project| {
         pi_workspace::resolve_session_project_with_paths(&state.runtime.paths, &project)
     }) {
@@ -326,7 +323,7 @@ fn expected_session_fingerprint(
 }
 
 pub(super) async fn history_image(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Query(query): Query<HistoryImageQuery>,
 ) -> Response {
     let project = match get_project(&state.runtime.paths, &query.project_id).and_then(|project| {
@@ -379,7 +376,7 @@ pub(super) struct ProjectImageQuery {
 }
 
 pub(super) async fn project_image(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Query(query): Query<ProjectImageQuery>,
 ) -> Response {
     let runtime = state.runtime.core.clone();
@@ -412,7 +409,7 @@ pub(super) struct ChatFileUploadQuery {
 }
 
 pub(super) async fn chat_file_upload(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Query(query): Query<ChatFileUploadQuery>,
     data: Bytes,
 ) -> Response {
@@ -438,7 +435,7 @@ pub(super) struct ChatFileRemoveQuery {
 }
 
 pub(super) async fn chat_file_remove(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Query(query): Query<ChatFileRemoveQuery>,
 ) -> Response {
     let runtime = state.runtime.core.clone();
@@ -463,7 +460,7 @@ pub(super) struct SessionTitleRequest {
 }
 
 pub(super) async fn session_title(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(request): Json<SessionTitleRequest>,
 ) -> Response {
     let runtime = state.runtime.clone();
@@ -489,7 +486,7 @@ pub(super) struct SessionDeleteRequest {
 /// Mobile WebUI 的会话删除。复用桌面的 `session_delete` 命令，保证
 /// 索引清理与历史缓存失效走同一条路径。
 pub(super) async fn session_delete(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(request): Json<SessionDeleteRequest>,
 ) -> Response {
     match crate::runtime::session_api::session_delete(
@@ -511,10 +508,7 @@ pub(super) struct ModelsQuery {
 }
 
 /// Project model and command catalog shared by Desktop and WebUI.
-pub(super) async fn models(
-    State(state): State<RemoteHttpState>,
-    Query(query): Query<ModelsQuery>,
-) -> Response {
+pub(super) async fn models(state: RemoteHttpState, Query(query): Query<ModelsQuery>) -> Response {
     match storage::open_with_paths(&state.runtime.paths)
         .and_then(|db| storage::list_project_model_cache(&db))
     {
@@ -529,7 +523,7 @@ pub(super) async fn models(
 }
 
 pub(super) async fn models_set(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(mut cache): Json<crate::domain::ProjectModelCache>,
 ) -> Response {
     if let Err(error) = get_project(&state.runtime.paths, &cache.project_id) {
@@ -546,7 +540,7 @@ pub(super) async fn models_set(
 }
 
 pub(super) async fn model_scope_get(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Query(query): Query<ModelsQuery>,
 ) -> Response {
     match crate::runtime::project::load_model_scope(&state.runtime, &query.project_id) {
@@ -563,7 +557,7 @@ pub(super) struct ModelScopeRequest {
 }
 
 pub(super) async fn model_scope_set(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(request): Json<ModelScopeRequest>,
 ) -> Response {
     match crate::runtime::project::save_model_scope(
@@ -584,7 +578,7 @@ pub(super) struct NextPromptSettingsQuery {
 }
 
 pub(super) async fn connection_models(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Query(query): Query<NextPromptSettingsQuery>,
 ) -> Response {
     match crate::runtime::connections::connection_models_get(&state.runtime, query.connection_id)
@@ -596,7 +590,7 @@ pub(super) async fn connection_models(
 }
 
 pub(super) async fn next_prompt_settings_get(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Query(query): Query<NextPromptSettingsQuery>,
 ) -> Response {
     match crate::runtime::next_prompt::load(&state.runtime.paths, &query.connection_id) {
@@ -614,7 +608,7 @@ pub(super) struct NextPromptSettingsInput {
 }
 
 pub(super) async fn next_prompt_settings_set(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(input): Json<NextPromptSettingsInput>,
 ) -> Response {
     match crate::runtime::next_prompt::save(
@@ -630,7 +624,7 @@ pub(super) async fn next_prompt_settings_set(
 }
 
 pub(super) async fn next_prompt_request(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(request): Json<crate::domain::NextPromptRequest>,
 ) -> Response {
     match crate::runtime::next_prompt::request(&state.runtime.paths, &state.runtime.core, request)
@@ -648,7 +642,7 @@ pub(super) struct PromptEnhancementSettingsQuery {
 }
 
 pub(super) async fn prompt_enhancement_settings_get(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Query(query): Query<PromptEnhancementSettingsQuery>,
 ) -> Response {
     match crate::runtime::prompt_enhancement::load(&state.runtime.paths, &query.connection_id) {
@@ -666,7 +660,7 @@ pub(super) struct PromptEnhancementSettingsInput {
 }
 
 pub(super) async fn prompt_enhancement_settings_set(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(input): Json<PromptEnhancementSettingsInput>,
 ) -> Response {
     match crate::runtime::prompt_enhancement::save(
@@ -692,7 +686,7 @@ pub(super) struct PromptEnhanceInput {
 /// The Host's budget covers process start, the RPC, generation and cleanup, so
 /// it returns a real reason instead of the Router's generic 408.
 pub(super) async fn prompt_enhance(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(input): Json<PromptEnhanceInput>,
 ) -> Response {
     match crate::runtime::prompt_enhancement::enhance(
@@ -710,7 +704,7 @@ pub(super) async fn prompt_enhance(
 }
 
 pub(super) async fn cache_keep_alive_settings_list(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Query(query): Query<NextPromptSettingsQuery>,
 ) -> Response {
     match crate::runtime::cache_keep_alive::load(&state.runtime.paths, &query.connection_id) {
@@ -720,7 +714,7 @@ pub(super) async fn cache_keep_alive_settings_list(
 }
 
 pub(super) async fn cache_keep_alive_settings_set(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(settings): Json<crate::domain::CacheKeepAliveSettings>,
 ) -> Response {
     match crate::runtime::cache_keep_alive::save(
@@ -748,7 +742,7 @@ pub(super) struct ChatStartRequest {
 }
 
 pub(super) async fn chat_start(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(request): Json<ChatStartRequest>,
 ) -> Response {
     if !request.builtin_extensions.is_empty()
@@ -800,7 +794,7 @@ pub(super) struct ChatStopRequest {
 }
 
 pub(super) async fn chat_stop(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(request): Json<ChatStopRequest>,
 ) -> Response {
     let runtime = state.runtime.core.clone();
@@ -815,7 +809,7 @@ pub(super) async fn chat_stop(
 }
 
 pub(super) async fn chat_state(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Query(query): Query<ChatStateQuery>,
 ) -> Response {
     let runtime = state.runtime.core.clone();
@@ -830,7 +824,7 @@ pub(super) struct ChatRpcRequest {
 }
 
 pub(super) async fn chat_rpc(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(request): Json<ChatRpcRequest>,
 ) -> Response {
     if let Err(error) = super::validation::validate_remote_rpc(&request.command) {
@@ -856,7 +850,7 @@ pub(super) struct ChatMcpApproveRequest {
 }
 
 pub(super) async fn chat_mcp_approve(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Json(request): Json<ChatMcpApproveRequest>,
 ) -> Response {
     match crate::runtime::runtime_api::project_mcp_server_approve(
@@ -882,7 +876,7 @@ pub(super) struct FileSearchQuery {
 /// composer. It reuses the same `fs.search` host call as Desktop; no file
 /// contents are exposed.
 pub(super) async fn files_search(
-    State(state): State<RemoteHttpState>,
+    state: RemoteHttpState,
     Query(query): Query<FileSearchQuery>,
 ) -> Response {
     let runtime = state.runtime.core.clone();

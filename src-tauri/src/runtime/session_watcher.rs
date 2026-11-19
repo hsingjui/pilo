@@ -57,6 +57,12 @@ struct WatchHandle {
     task: JoinHandle<()>,
 }
 
+impl Drop for WatchHandle {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 #[derive(Default)]
 pub struct SessionWatcherManager {
     watchers: HashMap<String, WatchHandle>,
@@ -102,19 +108,24 @@ impl SessionWatcherManager {
         let event_project = project.clone();
         let live = Arc::new(AtomicBool::new(true));
         let event_live = Arc::clone(&live);
-        let event_runtime = runtime.clone();
+        let host_events = runtime.host_events.clone();
+        let mut event_runtime = runtime.downgrade();
         let event_servers = Arc::clone(&servers);
         let event_client = Arc::clone(&current_client);
         let task = tokio::spawn(async move {
             let mut notices = WatchEvents {
-                events: event_runtime.host_events.clone(),
+                events: host_events,
                 project_id: project_id.clone(),
                 project_hash: project_hash.clone(),
                 errors: RepeatedFailureLog::default(),
                 delivery: RepeatedFailureLog::default(),
             };
             loop {
-                let disconnect_message = match events.recv().await {
+                let event = tokio::select! {
+                    _ = event_runtime.closed() => return,
+                    event = events.recv() => event,
+                };
+                let disconnect_message = match event {
                     Some(event) if event.event == SERVER_DISCONNECTED_EVENT => event
                         .data
                         .get("message")
@@ -122,6 +133,9 @@ impl SessionWatcherManager {
                         .unwrap_or("pilo-server session watcher disconnected")
                         .to_owned(),
                     Some(event) => {
+                        let Ok(event_runtime) = event_runtime.upgrade() else {
+                            return;
+                        };
                         if event.stream_id != event_stream_id {
                             continue;
                         }
@@ -204,7 +218,10 @@ impl SessionWatcherManager {
                 let mut retry_log = RepeatedFailureLog::default();
                 let mut delay = Duration::from_millis(250);
                 loop {
-                    tokio::time::sleep(delay).await;
+                    tokio::select! {
+                        _ = event_runtime.closed() => return,
+                        _ = tokio::time::sleep(delay) => {}
+                    }
                     if event_servers.is_shutting_down() {
                         return;
                     }
@@ -241,6 +258,9 @@ impl SessionWatcherManager {
                                     log::info!(target: "session-watcher", "recovered projectHash={project_hash} connectionId={:?} attempts={attempts} elapsedMs={} suppressedFailures={suppressed} suppressedErrors={suppressed_errors}", connection.id, reconnect_started.elapsed().as_millis());
                                     notices.changed();
                                     // Turns may have started or ended while disconnected.
+                                    let Ok(event_runtime) = event_runtime.upgrade() else {
+                                        return;
+                                    };
                                     event_runtime.events.schedule_external_activity_refresh(
                                         &event_runtime,
                                         &project_id,

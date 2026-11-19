@@ -8,8 +8,8 @@ use std::{
 use axum::{
     Json, Router,
     body::Body,
-    extract::{DefaultBodyLimit, State},
-    http::{StatusCode, Uri, header},
+    extract::{DefaultBodyLimit, FromRequestParts},
+    http::{StatusCode, Uri, header, request::Parts},
     middleware::{from_fn, from_fn_with_state},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -37,12 +37,36 @@ const AUTH_FAILURE_WINDOW: Duration = Duration::from_secs(60);
 const AUTH_FAILURE_LIMIT: usize = 5;
 
 #[derive(Clone)]
-pub(crate) struct RemoteHttpState {
-    runtime: Runtime,
+pub(crate) struct HttpState<R> {
+    runtime: R,
     pairing: Arc<PairingSession>,
     rate_limiter: Arc<AuthRateLimiter>,
     shutdown: watch::Receiver<bool>,
     auth_generation: watch::Receiver<u64>,
+}
+
+type RemoteHttpState = HttpState<Runtime>;
+type RemoteRouterState = HttpState<crate::runtime::handle::WeakRuntime>;
+
+impl FromRequestParts<RemoteRouterState> for RemoteHttpState {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        _parts: &mut Parts,
+        state: &RemoteRouterState,
+    ) -> Result<Self, Self::Rejection> {
+        let runtime = state
+            .runtime
+            .upgrade()
+            .map_err(|error| api_error(StatusCode::SERVICE_UNAVAILABLE, &error))?;
+        Ok(Self {
+            runtime,
+            pairing: state.pairing.clone(),
+            rate_limiter: state.rate_limiter.clone(),
+            shutdown: state.shutdown.clone(),
+            auth_generation: state.auth_generation.clone(),
+        })
+    }
 }
 
 #[derive(Default)]
@@ -105,8 +129,8 @@ pub(crate) fn router(
     shutdown: watch::Receiver<bool>,
     auth_generation: watch::Receiver<u64>,
 ) -> Router {
-    let state = RemoteHttpState {
-        runtime,
+    let state = RemoteRouterState {
+        runtime: runtime.downgrade(),
         pairing,
         rate_limiter: Arc::new(AuthRateLimiter::default()),
         shutdown,
@@ -241,7 +265,7 @@ fn asset_cache_control(path: &str, spa_fallback: bool) -> &'static str {
     }
 }
 
-async fn asset(State(state): State<RemoteHttpState>, uri: Uri) -> Response {
+async fn asset(state: RemoteHttpState, uri: Uri) -> Response {
     serve_asset(state.runtime.web_assets(), uri)
 }
 
@@ -298,6 +322,32 @@ fn api_error(status: StatusCode, message: &str) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn request_state_upgrades_only_while_runtime_is_alive() {
+        let runtime = Runtime::new(
+            HostPaths::for_test(std::path::PathBuf::new()),
+            Arc::new(crate::runtime::host_events::RecordingEvents::default()),
+        );
+        let state = RemoteRouterState {
+            runtime: runtime.downgrade(),
+            pairing: Arc::new(PairingSession::default()),
+            rate_limiter: Arc::new(AuthRateLimiter::default()),
+            shutdown: watch::channel(false).1,
+            auth_generation: watch::channel(0).1,
+        };
+        let (mut parts, ()) = axum::http::Request::new(()).into_parts();
+        let request = RemoteHttpState::from_request_parts(&mut parts, &state)
+            .await
+            .unwrap();
+        drop(request);
+        drop(runtime);
+        let response = RemoteHttpState::from_request_parts(&mut parts, &state)
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
 
     struct MemoryAssets;
 
