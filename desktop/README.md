@@ -205,18 +205,45 @@ the WebUI's first read does, so a long session is never replayed whole. The
 state has two parts:
 
 - `conversation`: the loaded messages and the turn in progress.
-- `historyPrefix`: every saved message before them, oldest first. They are
-  placeholders built from the index by the Tauri app's history window store:
-  `historyPlaceholder` is set, `text` is a preview, and the id is the one the
-  message has once loaded. This array does not change while a turn streams.
+- `historyPrefix`: every saved message before them, oldest first. One that
+  is not loaded is a placeholder built from the index by the Tauri app's
+  history window store: `historyPlaceholder` is set, `text` is a preview,
+  and the id is the one the message has once loaded. This array does not
+  change while a turn streams.
 
 `messages()` on the store joins the two for a list that wants one array. It
 copies the prefix whenever either part changed, so reading it for each
 streamed event costs about 0.14 ms in a 10,000-message session, against
 0.006 ms for the event itself.
 
-Known gap: placeholders are not loaded yet; loading the visible range of
-them is the next step.
+`loadRange(startIndex, endIndex)` loads the placeholders among those
+messages of `messages()`, the range a list shows, as the WebUI's
+`requestHistoryRange` does: 16 messages around the range, in pages of 48
+read with `loadHistory`. The range last asked for stays loaded and is loaded
+again after each read of the chat. The window store keeps at most 200 loaded
+messages: beyond that, the least recently loaded outside the range go back
+to placeholders.
+
+The invariant a list can rely on: message `i` of the session is always at
+index `i` of `messages()`. A message is loaded in the place of its
+placeholder and goes back to a placeholder in the same place; nothing is
+inserted or removed before the conversation's messages; and a read that
+starts its window elsewhere still has the same message at each index.
+
+A page is used only if it comes from the file the chat was read from, by its
+fingerprint, as in the WebUI. Otherwise the chat is read again and the range
+loaded from that read: once for each change of the file, however often a
+range is asked for.
+
+Known gap: while a turn runs, older messages stay previews and load by
+themselves when the turn ends, unless the chat's older messages were already
+loaded before the turn. A snapshot during a turn is of the file as the turn
+found it, and the runtime answers a page of that file only while it still
+holds its history. From `load_history` in the runtime's
+`session_history/reader.rs` it does not in two cases, which were not run: a
+chat opened with Pi already running and scrolled up for the first time
+during a turn, and a chat read again (a gap in the event stream, switching
+back to it) during its second or a later turn.
 
 Known gap: SSH and WSL snapshots are always truncated, so a remote chat's
 running turn does not stream in nsh yet. It appears when the turn has

@@ -1,12 +1,19 @@
 import { type Accessor, signal } from "nsh";
 
 import {
+	alignHistoryMessages,
 	buildHistoryPrefix,
+	HISTORY_PAGE_MESSAGE_COUNT,
+	HISTORY_PREFETCH_MESSAGES,
 	INITIAL_HISTORY_MESSAGE_COUNT,
+	sameHistoryFingerprint,
 } from "@/components/chat/chat-history-window-model";
 import { createChatHistoryWindowStore } from "@/components/chat/chat-history-window-store";
 import type { PiloClientEvent } from "@/lib/api/pilo-client";
-import type { SessionHistory } from "@/lib/api/sessions-types";
+import type {
+	SessionHistoryFingerprint,
+	SessionHistoryResult,
+} from "@/lib/api/sessions-types";
 import { replayConversationEvents } from "@/lib/chat/conversation-replay";
 import type {
 	ChatMessage,
@@ -55,11 +62,13 @@ export type ChatTranscriptState = {
 	 */
 	conversation: ConversationState | null;
 	/**
-	 * Every saved message before the conversation's, oldest first. One that
-	 * is not loaded is a placeholder: `historyPlaceholder` is set, `text` is
-	 * a preview and `historyEstimatedChars` its estimated length. It has the
-	 * id the message keeps once loaded. The array changes only when the chat
-	 * is read again, not as a turn streams.
+	 * Every saved message before the conversation's, oldest first, so that
+	 * message `i` of the session is at index `i`. One that is not loaded is
+	 * a placeholder: `historyPlaceholder` is set, `text` is a preview and
+	 * `historyEstimatedChars` its estimated length. It has the id the
+	 * message keeps once loaded, and `loadRange` loads it in its place. The
+	 * array changes when messages are loaded or the chat is read again, not
+	 * as a turn streams.
 	 */
 	historyPrefix: readonly ChatMessage[];
 	/**
@@ -80,6 +89,20 @@ const closed: ChatTranscriptState = {
 	conversation: null,
 	historyPrefix: noMessages,
 	source: null,
+};
+
+/** The session file a read's placeholders stand for. */
+type SavedHistory = {
+	projectId: string;
+	sessionPath: string;
+	/** The file as the read found it; a page of a changed file is not used. */
+	fingerprint: SessionHistoryFingerprint;
+	/** The messages before the read's window, none of them loaded. */
+	placeholders: readonly ChatMessage[];
+	/** The loaded messages `historyPrefix` was last built with. */
+	shown: ReadonlyMap<number, ChatMessage>;
+	/** The first messages of the pages being read. */
+	pages: Set<number>;
 };
 
 /** What a read asks for: the session's last messages and its message index. */
@@ -121,7 +144,10 @@ function startsTurn(event: PiloClientEvent) {
  *
  * Either way a read loads only the session's last messages. The ones before
  * them are held in the Tauri app's history window store and shown as
- * `historyPrefix`.
+ * `historyPrefix`: placeholders, which `loadRange` loads a page at a time
+ * as the WebUI does. Message `i` of the session is always at index `i` of
+ * `messages()`: a message is loaded, or put back to its placeholder, in its
+ * place.
  */
 export class ChatTranscriptStore {
 	private readonly current = signal(closed);
@@ -163,6 +189,19 @@ export class ChatTranscriptStore {
 	private target: ChatTranscriptTarget | undefined;
 	/** The session's message index and which of its older messages are loaded. */
 	private readonly older = createChatHistoryWindowStore();
+	/** Where the placeholders of the last read can be loaded from, if anywhere. */
+	private saved: SavedHistory | undefined;
+	/** The range of messages last asked for, loaded again after each read. */
+	private wanted: { startIndex: number; endIndex: number } | undefined;
+	/**
+	 * The file a page came from instead of the one the chat was read from,
+	 * when the chat was read again for it; `undefined` when it was not. A
+	 * later page from that same file does not read the chat again, since
+	 * the last read did not get the chat onto it: that costs one read per
+	 * change of the file, however often a range is asked for. A turn ending
+	 * forgets it, since a read may then give another file.
+	 */
+	private rereadFor: SessionHistoryFingerprint | null | undefined;
 	/** Counts reads, so one superseded by a newer read is dropped. */
 	private reads = 0;
 	/** The chat's events since the read in flight was requested. */
@@ -216,6 +255,9 @@ export class ChatTranscriptStore {
 	private reset() {
 		this.reads += 1;
 		this.older.initialize([], 0);
+		this.saved = undefined;
+		this.wanted = undefined;
+		this.rereadFor = undefined;
 		this.joined = undefined;
 		this.target = undefined;
 		this.buffer = undefined;
@@ -239,8 +281,10 @@ export class ChatTranscriptStore {
 		const sessionKey = this.target?.sessionKey;
 		if (sessionKey === undefined) return;
 		const later: PiloClientEvent[] = [];
+		let turnOver = false;
 		for (const event of events) {
 			if (event.sessionKey !== sessionKey) continue;
+			turnOver ||= settles(event);
 			if (this.buffer) {
 				// Looked at when the read in flight is done.
 				this.buffer.push(event);
@@ -258,6 +302,11 @@ export class ChatTranscriptStore {
 			}
 		}
 		this.flush(later);
+		if (turnOver) {
+			// What could not be loaded during the turn may be loadable now.
+			this.rereadFor = undefined;
+			this.fill();
+		}
 	}
 
 	/**
@@ -316,17 +365,129 @@ export class ChatTranscriptStore {
 	}
 
 	/**
+	 * Loads the placeholders among messages `startIndex` to `endIndex` of
+	 * `messages()`, the range a list shows, and a few around them, in the
+	 * WebUI's pages. The messages stay loaded while they are in the range
+	 * last asked for; of the others, only the most recently loaded are kept.
+	 * Asking for messages that are loaded reads nothing.
+	 */
+	loadRange(startIndex: number, endIndex: number) {
+		this.wanted = { startIndex, endIndex };
+		this.fill();
+	}
+
+	/** Reads the pages of the wanted range that are not loaded or on their way. */
+	private fill() {
+		const { saved, wanted } = this;
+		if (!saved || !wanted || this.current().status !== "ready") return;
+		const end = this.older.getSnapshot().runtimeBaseStart - 1;
+		const first = Math.max(0, wanted.startIndex - HISTORY_PREFETCH_MESSAGES);
+		const last = Math.min(end, wanted.endIndex + HISTORY_PREFETCH_MESSAGES);
+		// Keeps the range loaded, and may put others back to placeholders.
+		this.older.setPinnedRange(first, last);
+		this.showPrefix();
+		const size = HISTORY_PAGE_MESSAGE_COUNT;
+		for (
+			let start = Math.floor(first / size) * size;
+			start <= last;
+			start += size
+		) {
+			const pageEnd = Math.min(end, start + size - 1);
+			if (
+				this.older.isRangeHydrated(start, pageEnd) ||
+				saved.pages.has(start)
+			) {
+				continue;
+			}
+			saved.pages.add(start);
+			void this.loadPage(saved, start, pageEnd - start + 1);
+		}
+	}
+
+	private async loadPage(
+		saved: SavedHistory,
+		startMessage: number,
+		messageLimit: number,
+	) {
+		try {
+			const { history, fingerprint } = await this.client.loadHistory(
+				saved.projectId,
+				saved.sessionPath,
+				{
+					startMessage,
+					messageLimit,
+					includeMessageIndex: false,
+					fingerprint: saved.fingerprint,
+				},
+			);
+			if (this.saved !== saved) return;
+			if (!sameHistoryFingerprint(saved.fingerprint, fingerprint)) {
+				// The file changed since the chat was read, so the page may not
+				// be of the messages the placeholders stand for.
+				if (
+					this.rereadFor === undefined ||
+					!sameHistoryFingerprint(this.rereadFor, fingerprint)
+				) {
+					this.rereadFor = fingerprint;
+					void this.read();
+				}
+				return;
+			}
+			const start = history.windowStartMessage ?? startMessage;
+			const { messages } = alignHistoryMessages(
+				replayConversationEvents(history.events, this.context),
+				this.older.getSnapshot().directory,
+				start,
+			);
+			this.older.hydrate(start, messages);
+			this.showPrefix();
+		} catch {
+			// The page stays as placeholders; asking for it again reads it again.
+		} finally {
+			saved.pages.delete(startMessage);
+		}
+	}
+
+	/** Shows the placeholders with the loaded messages in their places. */
+	private showPrefix() {
+		const { saved } = this;
+		const { hydrated } = this.older.getSnapshot();
+		if (!saved || saved.shown === hydrated) return;
+		saved.shown = hydrated;
+		// Not `buildHistoryPrefix`, which would build every placeholder again.
+		const historyPrefix = saved.placeholders.slice();
+		for (const [index, message] of hydrated) historyPrefix[index] = message;
+		this.current.set({ ...this.current(), historyPrefix });
+	}
+
+	/**
 	 * Takes the message index a read came with, and gives the messages
 	 * before the read's window, none of them loaded yet. A read with no
 	 * index, as of a chat with no session file, has none before it.
 	 */
-	private prefixOf({
-		messageIndex = [],
-		windowStartMessage = 0,
-	}: Pick<SessionHistory, "messageIndex" | "windowStartMessage"> = {}) {
+	private prefixOf(
+		projectId: string,
+		result?: SessionHistoryResult,
+		sessionPath?: string | null,
+	) {
+		const { messageIndex = [], windowStartMessage = 0 } = result?.history ?? {};
 		this.older.initialize(messageIndex, windowStartMessage);
-		const prefix = buildHistoryPrefix(this.older.getSnapshot());
-		return prefix.length > 0 ? prefix : noMessages;
+		const snapshot = this.older.getSnapshot();
+		const placeholders = buildHistoryPrefix(snapshot);
+		// Without the file's fingerprint a page could not be told from one of
+		// a changed file, so the placeholders stay as they are.
+		this.saved =
+			placeholders.length > 0 && sessionPath && result?.fingerprint
+				? {
+						projectId,
+						sessionPath,
+						fingerprint: result.fingerprint,
+						placeholders,
+						shown: snapshot.hydrated,
+						pages: new Set(),
+					}
+				: undefined;
+		return placeholders.length > 0 ? placeholders : noMessages;
 	}
 
 	private flush(events: PiloClientEvent[]) {
@@ -382,7 +543,8 @@ export class ChatTranscriptStore {
 			this.current.set({
 				sessionKey,
 				conversation: shown.conversation,
-				historyPrefix: shown.historyPrefix,
+				// Not `shown`'s: messages may have been loaded during the read.
+				historyPrefix: this.current().historyPrefix,
 				source: shown.source,
 				...next,
 			});
@@ -414,9 +576,14 @@ export class ChatTranscriptStore {
 					const buffered = finish({
 						status: "ready",
 						conversation,
-						historyPrefix: this.prefixOf(snapshot.history.history),
+						historyPrefix: this.prefixOf(
+							target.projectId,
+							snapshot.history,
+							runtime?.sessionPath ?? target.sessionPath,
+						),
 						source: "snapshot",
 					});
+					this.fill();
 					for (const event of buffered) this.see(event);
 					if (this.seen !== undefined && this.seen > snapshot.generation) {
 						void this.read();
@@ -439,7 +606,7 @@ export class ChatTranscriptStore {
 					Pick<ChatTranscriptState, "conversation" | "historyPrefix" | "source">
 				>;
 			if (sessionPath) {
-				const { history } = await this.client.loadHistory(
+				const settledHistory = await this.client.loadHistory(
 					target.projectId,
 					sessionPath,
 					firstWindow,
@@ -447,8 +614,15 @@ export class ChatTranscriptStore {
 				if (this.reads !== read) return;
 				result = {
 					status: "ready",
-					conversation: conversationFromHistory(history, this.context),
-					historyPrefix: this.prefixOf(history),
+					conversation: conversationFromHistory(
+						settledHistory.history,
+						this.context,
+					),
+					historyPrefix: this.prefixOf(
+						target.projectId,
+						settledHistory,
+						sessionPath,
+					),
 					source: "history",
 				};
 			} else if (this.running) {
@@ -458,12 +632,13 @@ export class ChatTranscriptStore {
 				result = {
 					status: "ready",
 					conversation: replayConversationEvents([], this.context),
-					historyPrefix: this.prefixOf(),
+					historyPrefix: this.prefixOf(target.projectId),
 					source: "history",
 				};
 			}
 			// Pi may have come up, or a turn started or ended, meanwhile.
 			for (const event of finish(result, after)) this.receive([event]);
+			this.fill();
 		} catch (error) {
 			if (this.reads !== read) return;
 			const later = finish({

@@ -1,6 +1,7 @@
 import { mount, signal, Text, View } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
 
+import { sameHistoryFingerprint } from "@/components/chat/chat-history-window-model";
 import type { PiloClientEvent } from "@/lib/api/pilo-client";
 import type { ConversationReducerContext } from "@/lib/chat/conversation-types";
 import { NshPiloClient } from "../client/nsh-pilo-client";
@@ -26,8 +27,8 @@ function context(): ConversationReducerContext {
 	};
 }
 
-/** A session of `turns` turns, each a question, a tool call and a reply. */
-function longSession() {
+/** A session of `count` turns, each a question, a tool call and a reply. */
+function longSession(count = turns) {
 	const lines: string[] = [];
 	const add = (message: object) => {
 		const at = lines.length;
@@ -41,7 +42,7 @@ function longSession() {
 			}),
 		);
 	};
-	for (let turn = 0; turn < turns; turn += 1) {
+	for (let turn = 0; turn < count; turn += 1) {
 		add({ role: "user", content: `question ${turn}` });
 		add({
 			role: "assistant",
@@ -77,24 +78,57 @@ const elapsed = (since: number) =>
 async function run() {
 	const fixture = new ChatFixture(false);
 	const client = new NshPiloClient(new Pilo(fixture.dataDir()));
-	/** How many saved messages each read of the store returned to replay. */
-	const reads: (number | undefined)[] = [];
+	/**
+	 * Each read the store made: what it was, how many saved messages it
+	 * returned to replay, how long the call took, and whether a page came
+	 * from a file other than the one it was asked of.
+	 */
+	const reads: {
+		read: "state" | "snapshot" | "history" | "page";
+		messages?: number;
+		ms: number;
+		changed?: boolean;
+	}[] = [];
 	const chat = new ChatTranscriptStore(
 		{
-			chatState: (key) => client.chatState(key),
+			async chatState(key) {
+				const since = performance.now();
+				const state = await client.chatState(key);
+				reads.push({ read: "state", ms: elapsed(since) });
+				return state;
+			},
 			async chatTranscriptSnapshot(key, window) {
+				const since = performance.now();
 				const snapshot = await client.chatTranscriptSnapshot(key, window);
-				reads.push(snapshot.history.history.windowMessageCount);
+				reads.push({
+					read: "snapshot",
+					messages: snapshot.history.history.windowMessageCount,
+					ms: elapsed(since),
+				});
 				return snapshot;
 			},
 			async loadHistory(project, path, options) {
+				const since = performance.now();
 				const result = await client.loadHistory(project, path, options);
-				reads.push(result.history.windowMessageCount);
+				reads.push({
+					read: options?.startMessage === undefined ? "history" : "page",
+					messages: result.history.windowMessageCount,
+					ms: elapsed(since),
+					changed:
+						options?.fingerprint !== undefined &&
+						!sameHistoryFingerprint(options.fingerprint, result.fingerprint),
+				});
 				return result;
 			},
 		},
 		context(),
 	);
+	const count = (read: (typeof reads)[number]["read"], changed?: boolean) =>
+		reads.filter(
+			(entry) =>
+				entry.read === read &&
+				(changed === undefined || entry.changed === changed),
+		).length;
 	const app = new AppStore(client, chat);
 	const describe = () => {
 		const { conversation, historyPrefix, ...rest } = chat.state();
@@ -114,10 +148,29 @@ async function run() {
 		let since = performance.now();
 		await chat.open({ sessionKey, projectId, sessionPath }, app.connected);
 		const cold = elapsed(since);
+		// Where that time went: the runtime's two calls, and the rest in JS
+		// (replaying the window and building the placeholders).
+		const coldCalls = Object.fromEntries(
+			reads.map(({ read, ms }) => [read, ms]),
+		);
+		const coldJs =
+			Math.round((cold - reads.reduce((sum, { ms }) => sum + ms, 0)) * 100) /
+			100;
+		// The same read again, which the runtime answers from its cache, with
+		// and without the session's index: the difference is what the index of
+		// 10,000 messages costs to hand over.
+		since = performance.now();
 		const { history } = await client.loadHistory(projectId, sessionPath, {
-			messageLimit: 1,
+			messageLimit: 80,
 			includeMessageIndex: true,
 		});
+		const cachedWithIndex = elapsed(since);
+		since = performance.now();
+		await client.loadHistory(projectId, sessionPath, {
+			messageLimit: 80,
+			includeMessageIndex: false,
+		});
+		const cachedWithoutIndex = elapsed(since);
 		const index = history.messageIndex ?? [];
 		const loaded = chat.state().conversation?.messages ?? [];
 		const start = chat.state().historyPrefix.length;
@@ -166,33 +219,156 @@ async function run() {
 		await chat.open({ sessionKey, projectId, sessionPath }, app.connected);
 		const warm = elapsed(since);
 
-		// With Pi running a turn, the snapshot has the same window and index.
+		/** Whether message `i` of the session is at index `i`, loaded or not. */
+		const inPlace = () =>
+			index.every(
+				(entry, at) =>
+					chat.messages()[at]?.id === entry.id &&
+					chat.messages()[at]?.role === entry.role,
+			);
+		/** The first and last index of each run of loaded messages before `end`. */
+		const loadedRuns = (end = index.length) => {
+			const runs: [number, number][] = [];
+			for (const [at, message] of chat.messages().slice(0, end).entries()) {
+				if (message.historyPlaceholder) continue;
+				const last = runs.at(-1);
+				if (last && last[1] === at - 1) last[1] = at;
+				else runs.push([at, at]);
+			}
+			return JSON.stringify(runs);
+		};
+		const until = async (done: () => boolean, what: string) => {
+			const deadline = Date.now() + 10_000;
+			while (!done()) {
+				if (Date.now() > deadline) {
+					throw new Error(
+						`${what} never happened: ${describe()}, loaded ${loadedRuns()}, ${JSON.stringify(reads.slice(-8))}`,
+					);
+				}
+				await new Promise((resolve) => setTimeout(resolve, 10));
+			}
+		};
+
+		// The range a list shows in the middle of the session is loaded in
+		// two pages, each message in its place, and nothing else is read.
+		since = performance.now();
+		chat.loadRange(5_000, 5_020);
+		await until(
+			() =>
+				loadedRuns() ===
+				JSON.stringify([
+					[4_944, 5_039],
+					[start, 9_999],
+				]),
+			"the middle of the session loading",
+		);
+		const rangeMs = elapsed(since);
+		const middle = chat.messages()[5_000];
+		assert(
+			inPlace() &&
+				chat.messages().length === index.length &&
+				middle?.text === "question 2500" &&
+				chat.messages()[5_001]?.text.includes("reply 2500 word") === true &&
+				count("page") === 2 &&
+				count("page", true) === 0 &&
+				reads
+					.filter(({ read }) => read === "page")
+					.every((page) => page.messages === 48),
+			`unexpected messages after loading a range: ${JSON.stringify(reads.slice(-4))}`,
+		);
+
+		// With Pi running and no turn, the snapshot has the same window and
+		// index, and older messages load from the session file as before.
 		await client.startChat({ projectId, sessionKey, sessionPath });
+		await until(
+			() =>
+				chat.state().source === "snapshot" && chat.state().status === "ready",
+			"the running chat showing a snapshot",
+		);
+		assert(
+			chat.state().historyPrefix.length === start && inPlace(),
+			`unexpected window of the running chat: ${describe()}`,
+		);
+		chat.loadRange(2_000, 2_020);
+		await until(
+			() => chat.messages()[2_000]?.historyPlaceholder === undefined,
+			"older messages of the running chat loading",
+		);
+		assert(
+			inPlace() && chat.messages()[2_000]?.text === "question 1000",
+			`unexpected messages of the running chat: ${describe()}`,
+		);
+
+		// The session file grows twice, as it does with each turn. The runtime
+		// still answers pages from the file as the chat read it, so no page
+		// is of a changed file and the chat is not read again.
+		let grown = turns;
+		const grow = () => {
+			grown += 1;
+			fixture.seedTranscript(longSession(grown));
+		};
+		const pagesBefore = count("page");
+		const snapshotsBefore = count("snapshot");
+		for (const range of [1_000, 3_000]) {
+			grow();
+			chat.loadRange(range, range + 20);
+			await until(
+				() => chat.messages()[range]?.historyPlaceholder === undefined,
+				`messages from ${range} loading from the grown file`,
+			);
+		}
+		const whileTheFileGrew = {
+			pages: count("page") - pagesBefore,
+			pagesOfAChangedFile: count("page", true),
+			chatReads: count("snapshot") - snapshotsBefore,
+		};
+		assert(
+			inPlace() &&
+				whileTheFileGrew.pagesOfAChangedFile === 0 &&
+				whileTheFileGrew.chatReads === 0,
+			`unexpected reads while the file grew: ${JSON.stringify(whileTheFileGrew)}`,
+		);
+
+		// Once another reader has made the runtime read the grown file, a
+		// page comes from a changed file: the chat is read again, once, and
+		// the range loads from the file as it is now.
+		await client.loadHistory(projectId, sessionPath, { messageLimit: 1 });
+		chat.loadRange(7_000, 7_020);
+		await until(
+			() =>
+				chat.messages()[7_000]?.historyPlaceholder === undefined &&
+				chat.state().status === "ready",
+			"messages loading after the runtime read the grown file",
+		);
+		const afterAnotherReader = {
+			pagesOfAChangedFile: count("page", true),
+			chatReads: count("snapshot") - snapshotsBefore,
+		};
+		assert(
+			inPlace() &&
+				chat.messages()[7_000]?.text === "question 3500" &&
+				chat.state().historyPrefix.length === start + 4 &&
+				afterAnotherReader.chatReads === 1,
+			`unexpected reads after the file changed: ${JSON.stringify(afterAnotherReader)}`,
+		);
+
+		// A turn in progress streams on top of the same window.
 		await client.sendChatCommand(sessionKey, {
 			type: "prompt",
 			id: "fixture-transcript-turn",
 			message: "new question",
 		});
-		const deadline = Date.now() + 10_000;
-		while (
-			chat.state().source !== "snapshot" ||
-			!chat.state().conversation?.active
-		) {
-			if (Date.now() > deadline) {
-				throw new Error(`the turn never streamed: ${describe()}`);
-			}
-			await new Promise((resolve) => setTimeout(resolve, 20));
-		}
+		await until(
+			() => Boolean(chat.state().conversation?.active),
+			"the turn streaming",
+		);
 		const prefix = chat.state().historyPrefix;
 		const running = chat.state().conversation?.messages ?? [];
 		assert(
-			prefix.length === start &&
-				prefix[start - 1]?.id === index[start - 1]?.id &&
-				running[0]?.id === index[start]?.id &&
-				running[79]?.id === index[index.length - 1]?.id &&
-				running.at(-2)?.text === "new question" &&
-				running.at(-1)?.role === "assistant",
-			`unexpected window of the running chat: ${describe()}`,
+			running.at(-2)?.text === "new question" &&
+				running.at(-1)?.role === "assistant" &&
+				count("snapshot") - snapshotsBefore === 1,
+			`unexpected window of the streaming chat: ${describe()}`,
 		);
 
 		// More of the reply changes the conversation only: the placeholders
@@ -225,35 +401,97 @@ async function run() {
 		}
 		const perEventJoined = elapsed(since) / 1_000;
 		assert(
-			chat.messages().length === index.length + 2 &&
+			chat.messages().length === prefix.length + running.length &&
 				chat.messages()[0] === prefix[0] &&
 				chat.messages() === chat.messages(),
 			`unexpected joined messages: ${chat.messages().length}`,
 		);
-		// Joining copies the 9,920 placeholders, about twenty times the cost
-		// of the event itself, so it must not happen unless it is read.
+		// Joining copies the placeholders, about twenty times the cost of
+		// the event itself, so it must not happen unless it is read.
 		assert(
 			perEvent * 2 < perEventJoined,
 			`an event costs ${perEvent} ms, and ${perEventJoined} ms with the join`,
 		);
+
+		// While that turn runs, a snapshot is of the file as the turn found
+		// it. When the runtime has since read a grown file, a page is of a
+		// changed file, and so is every page after the chat is read again:
+		// the chat is read once, however many ranges a scrolling list asks
+		// for, and the ranges stay placeholders until the turn is over.
+		grow();
+		await client.loadHistory(projectId, sessionPath, { messageLimit: 1 });
+		const changedBefore = count("page", true);
+		const readsBefore = count("snapshot");
+		chat.loadRange(8_000, 8_020);
+		await until(
+			() => count("page", true) - changedBefore === 4,
+			"the pages of a changed file coming back twice",
+		);
+		for (let at = 0; at < 30; at += 1) {
+			chat.loadRange(6_000 + at * 50, 6_020 + at * 50);
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		chat.loadRange(8_000, 8_020);
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		const duringATurn = {
+			rangesAsked: 32,
+			pagesOfAChangedFile: count("page", true) - changedBefore,
+			chatReads: count("snapshot") - readsBefore,
+		};
+		assert(
+			inPlace() &&
+				chat.state().status === "ready" &&
+				chat.messages()[8_000]?.historyPlaceholder === true &&
+				chat.messages()[6_500]?.historyPlaceholder === true &&
+				duringATurn.pagesOfAChangedFile > 30 &&
+				duringATurn.chatReads === 1,
+			`unexpected reads during a turn: ${JSON.stringify(duringATurn)}, ${describe()}`,
+		);
+
+		// With the turn over, here by stopping Pi, the range last asked for
+		// loads by itself.
+		await client.stopChat(sessionKey);
+		await until(
+			() =>
+				chat.state().source === "history" &&
+				chat.messages()[8_000]?.historyPlaceholder === undefined,
+			"the range loading once the turn is over",
+		);
+		assert(
+			inPlace() && chat.messages()[8_000]?.text === "question 4000",
+			`unexpected messages once the turn is over: ${describe()}`,
+		);
+
 		// No read of the store returned more than its window to replay: the
 		// rest of the session is never replayed, only shown from the index.
 		assert(
-			reads.length >= 3 && reads.every((messages) => messages === 80),
+			reads.every(
+				({ read, messages }) =>
+					read === "state" || messages === (read === "page" ? 48 : 80),
+			),
 			`unexpected reads of a long session: ${JSON.stringify(reads)}`,
 		);
 		console.log(
 			`[transcript-window] ${JSON.stringify({
 				sessionBytes: jsonl.length,
 				messages: index.length,
-				replayedPerRead: reads,
 				openColdMs: cold,
+				openColdCallsMs: coldCalls,
+				openColdJsMs: coldJs,
+				cachedReadWithIndexMs: cachedWithIndex,
+				cachedReadWithoutIndexMs: cachedWithoutIndex,
 				openWarmMs: warm,
+				loadRangeMs: rangeMs,
+				snapshotMs: reads
+					.filter(({ read }) => read === "snapshot")
+					.map(({ ms }) => ms),
 				streamedEventMs: perEvent,
 				streamedEventWithJoinMs: perEventJoined,
+				whileTheFileGrew,
+				afterAnotherReader,
+				duringATurn,
 			})}`,
 		);
-		await client.stopChat(sessionKey);
 	} finally {
 		app.stop();
 		await client.shutdown();

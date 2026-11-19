@@ -142,12 +142,13 @@ const entry = (at: number): SessionHistoryMessageIndexEntry => ({
 });
 /**
  * A window of a session of `total` messages that starts at `start`: its
- * questions and replies, with the session's whole message index.
+ * questions and replies, with the session's whole message index. The
+ * file's fingerprint is its number of messages.
  */
-const windowed = (total: number, start: number) =>
+const windowed = (total: number, start: number, limit = total - start) =>
 	({
 		history: {
-			events: Array.from({ length: total - start }, (_, offset) =>
+			events: Array.from({ length: limit }, (_, offset) =>
 				(start + offset) % 2 === 0
 					? { type: "user_message_start", text: `question ${start + offset}` }
 					: [
@@ -185,6 +186,11 @@ function fakeClient() {
 	const answers = {
 		runtime: running as ChatSessionRuntimeState | null,
 		history: history("settled") as SessionHistoryResult | null,
+		/**
+		 * The session whose pages a read with a start message answers at
+		 * once, as its number of messages; such a read waits when `null`.
+		 */
+		pages: null as number | null,
 		/** How many times the runtime state was read. */
 		reads: 0,
 	};
@@ -200,13 +206,24 @@ function fakeClient() {
 		loadHistory: (projectId, sessionPath, options) =>
 			new Promise((resolve, reject) => {
 				histories.push({ projectId, sessionPath, options, resolve, reject });
-				if (answers.history) resolve(answers.history);
+				if (options?.startMessage === undefined) {
+					if (answers.history) resolve(answers.history);
+				} else if (answers.pages !== null) {
+					resolve(
+						windowed(answers.pages, options.startMessage, options.messageLimit),
+					);
+				}
 			}),
 	};
 	const store = new ChatTranscriptStore(client, context());
 	const texts = () =>
 		store.state().conversation?.messages.map((message) => message.text);
-	return { store, snapshots, histories, answers, texts };
+	/** The page reads so far, as their first message and length. */
+	const pages = () =>
+		histories
+			.filter(({ options }) => options?.startMessage !== undefined)
+			.map(({ options }) => [options?.startMessage, options?.messageLimit]);
+	return { store, snapshots, histories, answers, texts, pages };
 }
 
 /** Lets the calls already answered run to their next wait. */
@@ -1269,4 +1286,553 @@ test("a long session shows its last messages over placeholders, through the nati
 	await app.waitFor("text:long session shown through the store", {
 		timeout: 60_000,
 	});
+});
+
+/** A saved chat of `total` messages with no Pi, opened on its last 80. */
+async function longChat(total = 600) {
+	const fake = fakeClient();
+	fake.answers.runtime = null;
+	fake.answers.history = windowed(total, total - 80);
+	fake.answers.pages = total;
+	await fake.store.open(target, true);
+	/** Which messages are loaded, as the indexes of the first and last of each run. */
+	const loaded = () => {
+		const runs: [number, number][] = [];
+		for (const [at, message] of fake.store.messages().entries()) {
+			if (message.historyPlaceholder) continue;
+			const last = runs.at(-1);
+			if (last && last[1] === at - 1) last[1] = at;
+			else runs.push([at, at]);
+		}
+		return runs;
+	};
+	/** Whether message `i` of the session is at index `i`, loaded or not. */
+	const inPlace = () =>
+		fake.store.messages().every((message, at) => message.id === `entry-${at}`);
+	return { ...fake, loaded, inPlace };
+}
+
+test("a range is loaded in the WebUI's pages, each message in its place", async () => {
+	const { store, histories, pages, loaded, inPlace } = await longChat();
+	expect(loaded()).toEqual([[520, 599]]);
+	const before = store.messages();
+	const { conversation } = store.state();
+
+	store.loadRange(300, 320);
+	// 16 messages around the range, in pages of 48 from a multiple of 48.
+	expect(pages()).toEqual([
+		[240, 48],
+		[288, 48],
+		[336, 48],
+	]);
+	expect(histories[1]?.options).toEqual({
+		startMessage: 240,
+		messageLimit: 48,
+		includeMessageIndex: false,
+		fingerprint: { fileSize: 600, fileMtimeNs: "1" },
+	});
+	expect(histories[1]?.projectId).toBe("p1");
+	expect(histories[1]?.sessionPath).toBe("/s.jsonl");
+	await settle();
+
+	expect(loaded()).toEqual([
+		[240, 383],
+		[520, 599],
+	]);
+	const messages = store.messages();
+	expect(messages.length).toBe(600);
+	expect(inPlace()).toBe(true);
+	expect(messages[240]?.text).toBe("question 240");
+	expect(messages[383]?.text).toBe("reply 383");
+	// The rest are the placeholders they were.
+	expect(messages[239]).toBe(before[239]);
+	expect(messages[384]).toBe(before[384]);
+	// The loaded messages of the chat are not touched.
+	expect(store.state().conversation).toBe(conversation);
+	expect(store.state().status).toBe("ready");
+});
+
+test("what is loaded or on its way is not read again", async () => {
+	const { store, answers, histories, pages, loaded } = await longChat();
+	answers.pages = null;
+	store.loadRange(300, 320);
+	store.loadRange(300, 320);
+	store.loadRange(310, 330);
+	expect(pages().length).toBe(3);
+
+	for (const read of histories.slice(1)) {
+		read.resolve(
+			windowed(
+				600,
+				read.options?.startMessage ?? 0,
+				read.options?.messageLimit,
+			),
+		);
+	}
+	await settle();
+	store.loadRange(300, 320);
+	expect(pages().length).toBe(3);
+
+	// Only the page that is new to the range.
+	answers.pages = 600;
+	store.loadRange(330, 400);
+	expect(pages().slice(3)).toEqual([[384, 48]]);
+	await settle();
+	expect(loaded()).toEqual([
+		[240, 431],
+		[520, 599],
+	]);
+});
+
+test("the page before the loaded messages ends where they begin", async () => {
+	const { store, pages, loaded } = await longChat();
+	// Wholly among the loaded messages and far from the first of them.
+	store.loadRange(560, 580);
+	expect(pages()).toEqual([]);
+
+	// At the top of the loaded messages, the ones just before are read.
+	store.loadRange(525, 540);
+	expect(pages()).toEqual([[480, 40]]);
+	await settle();
+	expect(loaded()).toEqual([[480, 599]]);
+});
+
+test("beyond 200 loaded messages the oldest outside the range go back to placeholders, in place", async () => {
+	const { store, loaded, inPlace } = await longChat(1_000);
+	store.loadRange(0, 100);
+	await settle();
+	expect(loaded()).toEqual([
+		[0, 143],
+		[920, 999],
+	]);
+	const first = store.messages()[0];
+
+	store.loadRange(400, 500);
+	await settle();
+	// 288 were loaded; the range asked for stays, the oldest 88 do not.
+	expect(loaded()).toEqual([
+		[88, 143],
+		[384, 527],
+		[920, 999],
+	]);
+	expect(store.messages().length).toBe(1_000);
+	expect(inPlace()).toBe(true);
+	expect(store.messages()[0]).toEqual({
+		id: "entry-0",
+		role: "user",
+		text: "preview 0",
+		time: "",
+		timestampMs: undefined,
+		historyPlaceholder: true,
+		historyEstimatedChars: 100,
+	});
+	expect(first?.text).toBe("question 0");
+
+	// Asked for again, they are read again.
+	store.loadRange(0, 10);
+	await settle();
+	expect(store.messages()[0]?.text).toBe("question 0");
+	expect(inPlace()).toBe(true);
+});
+
+test("a read with a new window keeps every message at its index and loads the range again", async () => {
+	const { store, answers, pages, loaded, inPlace } = await longChat();
+	store.loadRange(300, 320);
+	await settle();
+
+	// Two turns later the session is four messages longer.
+	answers.history = windowed(604, 524);
+	answers.pages = 604;
+	await store.refresh();
+	expect(store.messages().length).toBe(604);
+	expect(inPlace()).toBe(true);
+	expect(pages().slice(3)).toEqual([
+		[240, 48],
+		[288, 48],
+		[336, 48],
+	]);
+	await settle();
+
+	expect(loaded()).toEqual([
+		[240, 383],
+		[524, 603],
+	]);
+	expect(inPlace()).toBe(true);
+	expect(store.messages()[520]?.historyPlaceholder).toBe(true);
+	expect(store.messages()[520]?.id).toBe("entry-520");
+});
+
+test("a page of a file that changed since the read reads the chat once more, then loads", async () => {
+	const { store, answers, histories, pages, loaded, inPlace } =
+		await longChat();
+	// The file grew after the chat was read.
+	answers.history = windowed(602, 522);
+	answers.pages = 602;
+	store.loadRange(300, 320);
+	await settle();
+	await settle();
+
+	// Three pages of the changed file, one read of the chat, three pages.
+	expect(histories.length - pages().length).toBe(2);
+	expect(pages().length).toBe(6);
+	expect(
+		histories.slice(-3).map(({ options }) => options?.fingerprint?.fileSize),
+	).toEqual([602, 602, 602]);
+	expect(loaded()).toEqual([
+		[240, 383],
+		[522, 601],
+	]);
+	expect(inPlace()).toBe(true);
+});
+
+test("pages that keep coming from a changed file read the chat once for each change of it", async () => {
+	const { store, answers, histories, pages, loaded } = await longChat();
+	const chatReads = () => histories.length - pages().length;
+	const settleAll = async () => {
+		for (let turn = 0; turn < 4; turn += 1) await settle();
+	};
+	// Every page says the file is not the one the chat was read from, and
+	// reading the chat again does not get it onto that file.
+	answers.pages = 602;
+	store.loadRange(300, 320);
+	await settleAll();
+	expect(chatReads()).toBe(2);
+	expect(pages().length).toBe(6);
+	expect(loaded()).toEqual([[520, 599]]);
+	expect(store.state().status).toBe("ready");
+
+	// A list that scrolls asks for range after range: no further read.
+	for (let at = 0; at < 25; at += 1) {
+		store.loadRange(at * 20, at * 20 + 20);
+		await settle();
+	}
+	await settleAll();
+	expect(chatReads()).toBe(2);
+	expect(pages().length).toBeGreaterThan(20);
+	expect(loaded()).toEqual([[520, 599]]);
+
+	// The file changes again: one more read, and no more for that file.
+	answers.pages = 604;
+	for (let at = 0; at < 25; at += 1) {
+		store.loadRange(at * 20, at * 20 + 20);
+		await settle();
+	}
+	await settleAll();
+	expect(chatReads()).toBe(3);
+
+	// Once a read gets the chat onto the file the pages come from, they load.
+	answers.history = windowed(606, 526);
+	answers.pages = 606;
+	store.loadRange(300, 320);
+	await settleAll();
+	expect(chatReads()).toBe(4);
+	expect(loaded()).toEqual([
+		[240, 383],
+		[526, 605],
+	]);
+});
+
+test("a range that could not be loaded during a turn is loaded when the turn is over", async () => {
+	const { store, snapshots, answers } = fakeClient();
+	// The runtime answers pages from a newer file than the one the turn
+	// started on, which is the file a snapshot of the turn is of.
+	answers.pages = 602;
+	const opened = store.open(target, true);
+	await settle();
+	snapshots[0]?.resolve({
+		...snapshot(10, turn("one")),
+		history: windowed(600, 520),
+	});
+	await opened;
+	store.loadRange(300, 320);
+	await settle();
+	expect(snapshots.length).toBe(2);
+	snapshots[1]?.resolve({
+		...snapshot(20, turn("one")),
+		history: windowed(600, 520),
+	});
+	await settle();
+	await settle();
+
+	for (let at = 0; at < 25; at += 1) {
+		store.loadRange(at * 20, at * 20 + 20);
+		await settle();
+	}
+	store.loadRange(300, 320);
+	await settle();
+	expect(snapshots.length).toBe(2);
+	expect(store.messages()[300]?.historyPlaceholder).toBe(true);
+
+	// The turn settles, and a snapshot is then of the file as it is.
+	store.receive([settled(21)]);
+	await settle();
+	expect(snapshots.length).toBe(3);
+	snapshots[2]?.resolve({ ...snapshot(30), history: windowed(602, 522) });
+	await settle();
+	await settle();
+	expect(store.messages()[300]?.text).toBe("question 300");
+	expect(store.messages().length).toBe(602);
+	expect(snapshots.length).toBe(3);
+});
+
+test("a page that arrives for a chat no longer open, or after a newer read, is dropped", async () => {
+	const { store, answers, histories, loaded } = await longChat();
+	answers.pages = null;
+	store.loadRange(300, 320);
+	const pending = histories.slice(1);
+
+	await store.refresh();
+	pending[0]?.resolve(windowed(600, 240, 48));
+	await settle();
+	// The read replaced the placeholders the page was asked for.
+	expect(loaded()).toEqual([[520, 599]]);
+
+	answers.history = windowed(6, 4);
+	await store.open({ ...target, sessionKey: "k2" }, true);
+	pending[1]?.resolve(windowed(600, 288, 48));
+	pending[2]?.reject(new Error("too late"));
+	await settle();
+	expect(store.state().sessionKey).toBe("k2");
+	expect(store.messages().map(({ id }) => id)).toEqual(
+		[0, 1, 2, 3, 4, 5].map((at) => `entry-${at}`),
+	);
+	expect(store.state().historyPrefix.every((m) => m.historyPlaceholder)).toBe(
+		true,
+	);
+});
+
+test("a page that fails stays as placeholders and is read when asked for again", async () => {
+	const { store, answers, histories, pages, loaded, inPlace } =
+		await longChat();
+	answers.pages = null;
+	store.loadRange(240, 250);
+	expect(pages()).toEqual([
+		[192, 48],
+		[240, 48],
+	]);
+	histories[1]?.reject(new Error("the runtime did not answer"));
+	histories[2]?.resolve(windowed(600, 240, 48));
+	await settle();
+
+	expect(store.state().status).toBe("ready");
+	expect(loaded()).toEqual([
+		[240, 287],
+		[520, 599],
+	]);
+	expect(inPlace()).toBe(true);
+
+	answers.pages = 600;
+	store.loadRange(240, 250);
+	expect(pages().slice(2)).toEqual([[192, 48]]);
+	await settle();
+	expect(loaded()).toEqual([
+		[192, 287],
+		[520, 599],
+	]);
+});
+
+test("a range asked for while the chat is being read is loaded when the read is done", async () => {
+	const { store, answers, histories, pages } = fakeClient();
+	answers.runtime = null;
+	answers.history = null;
+	answers.pages = 600;
+	const opened = store.open(target, true);
+	await settle();
+	store.loadRange(300, 320);
+	expect(pages()).toEqual([]);
+
+	histories[0]?.resolve(windowed(600, 520));
+	await opened;
+	expect(pages().length).toBe(3);
+	await settle();
+	expect(store.messages()[300]?.text).toBe("question 300");
+});
+
+test("without the file's fingerprint or its path, placeholders are not loaded", async () => {
+	const { store, answers, pages } = fakeClient();
+	answers.runtime = null;
+	answers.pages = 600;
+	answers.history = { ...windowed(600, 520), fingerprint: null };
+	await store.open(target, true);
+	store.loadRange(300, 320);
+	expect(store.state().historyPrefix.length).toBe(520);
+	expect(pages()).toEqual([]);
+
+	// A closed store has nothing to load either.
+	store.close();
+	store.loadRange(300, 320);
+	expect(pages()).toEqual([]);
+});
+
+test("a running chat loads its older messages from the session file and goes on streaming", async () => {
+	const { store, snapshots, answers, histories, pages } = fakeClient();
+	answers.pages = 600;
+	const opened = store.open(target, true);
+	await settle();
+	snapshots[0]?.resolve({
+		...snapshot(10, turn("one")),
+		history: windowed(600, 520),
+	});
+	await opened;
+
+	store.loadRange(300, 320);
+	expect(pages().length).toBe(3);
+	expect(histories[0]?.sessionPath).toBe("/s.jsonl");
+	await settle();
+	const prefix = store.state().historyPrefix;
+	expect(prefix[300]?.text).toBe("question 300");
+	expect(snapshots.length).toBe(1);
+
+	store.receive([delta(11, " two")]);
+	expect(store.state().historyPrefix).toBe(prefix);
+	expect(store.messages().length).toBe(602);
+	expect(store.messages()[300]).toBe(prefix[300]);
+	expect(store.messages().at(-1)?.text).toBe("one two");
+
+	// A fresh snapshot starts from placeholders and loads the range again.
+	const refreshed = store.refresh();
+	await settle();
+	snapshots[1]?.resolve({
+		...snapshot(20, turn("one two")),
+		history: windowed(600, 520),
+	});
+	await refreshed;
+	expect(pages().length).toBe(6);
+	await settle();
+	expect(store.messages()[300]?.text).toBe("question 300");
+});
+
+test("the range asked for last stays loaded, though its pages were loaded first", async () => {
+	const { store, answers, histories, loaded, inPlace } = await longChat(1_000);
+	answers.pages = null;
+	store.loadRange(0, 100);
+	store.loadRange(400, 500);
+	const [early, late] = [histories.slice(1, 4), histories.slice(4)];
+	const answer = (read: (typeof histories)[number]) =>
+		read.resolve(
+			windowed(
+				1_000,
+				read.options?.startMessage ?? 0,
+				read.options?.messageLimit,
+			),
+		);
+	// The pages of the range now shown arrive before the ones left behind.
+	for (const read of late) answer(read);
+	await settle();
+	for (const read of early) answer(read);
+	await settle();
+
+	// 288 were loaded. What goes is outside the range, oldest first.
+	expect(loaded()).toEqual([
+		[77, 143],
+		[384, 516],
+		[920, 999],
+	]);
+	expect(inPlace()).toBe(true);
+});
+
+test("a range asked for during a later read of the chat waits for that read", async () => {
+	const { store, answers, histories, pages, loaded } = await longChat();
+	answers.history = null;
+	const refreshed = store.refresh();
+	await settle();
+	expect(store.state().status).toBe("loading");
+	store.loadRange(300, 320);
+	expect(pages()).toEqual([]);
+
+	histories[1]?.resolve(windowed(600, 520));
+	await refreshed;
+	expect(pages().length).toBe(3);
+	await settle();
+	expect(loaded()).toEqual([
+		[240, 383],
+		[520, 599],
+	]);
+});
+
+test("pages that load during a read that fails stay loaded", async () => {
+	const { store, answers, histories, loaded, inPlace } = await longChat();
+	answers.pages = null;
+	store.loadRange(300, 320);
+	answers.history = null;
+	const refreshed = store.refresh();
+	await settle();
+	for (const read of histories.slice(1, 4)) {
+		read.resolve(
+			windowed(
+				600,
+				read.options?.startMessage ?? 0,
+				read.options?.messageLimit,
+			),
+		);
+	}
+	await settle();
+	expect(loaded()).toEqual([
+		[240, 383],
+		[520, 599],
+	]);
+
+	histories[4]?.reject(new Error("the runtime did not answer"));
+	await refreshed;
+	expect(store.state().status).toBe("failed");
+	expect(loaded()).toEqual([
+		[240, 383],
+		[520, 599],
+	]);
+	expect(inPlace()).toBe(true);
+});
+
+test("the range asked for in one chat is not loaded in the next", async () => {
+	const { store, answers, pages } = await longChat();
+	store.loadRange(300, 320);
+	await settle();
+	expect(pages().length).toBe(3);
+
+	answers.history = windowed(900, 820);
+	answers.pages = 900;
+	await store.open({ ...target, sessionKey: "k2" }, true);
+	await settle();
+	expect(store.state().historyPrefix.length).toBe(820);
+	expect(pages().length).toBe(3);
+});
+
+test("after pages have loaded, a later page of a changed file reads the chat again", async () => {
+	const { store, answers, histories, pages, loaded } = await longChat();
+	answers.history = windowed(602, 522);
+	answers.pages = 602;
+	store.loadRange(300, 320);
+	await settle();
+	await settle();
+	expect(histories.length - pages().length).toBe(2);
+	expect(loaded()).toEqual([
+		[240, 383],
+		[522, 601],
+	]);
+
+	// The stream lost events, and the file has changed again by the time
+	// the range is loaded for the new read.
+	answers.pages = 604;
+	await store.refresh();
+	await settle();
+	await settle();
+	expect(histories.length - pages().length).toBe(4);
+	expect(pages().length).toBe(12);
+});
+
+test("a file one chat was read again for does not keep the next chat from being read again", async () => {
+	const { store, answers, histories, pages } = await longChat();
+	const chatReads = () => histories.length - pages().length;
+	answers.pages = 602;
+	store.loadRange(300, 320);
+	await settle();
+	await settle();
+	expect(chatReads()).toBe(2);
+
+	// Another chat whose pages come from a file with that same fingerprint.
+	await store.open({ ...target, sessionKey: "k2" }, true);
+	expect(chatReads()).toBe(3);
+	store.loadRange(300, 320);
+	await settle();
+	await settle();
+	expect(chatReads()).toBe(4);
 });
