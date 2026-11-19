@@ -7,7 +7,9 @@ use std::{
 
 use nsh_core::prelude::*;
 use pilo_lib::{
-    domain::{ConnectionNamingModel, Project, ProjectMetadata, SessionIndexEntry},
+    domain::{
+        ConnectionNamingModel, Project, ProjectMetadata, ProjectModelCache, SessionIndexEntry,
+    },
     runtime::{host_paths::HostPaths, storage},
 };
 
@@ -87,6 +89,40 @@ impl BootstrapFixture {
             )
             .map_err(|error| error.to_string())?;
         Ok(())
+    }
+
+    /// Seeds a saved project catalog without starting Pi.
+    pub fn seed_model_cache(&self, project_id: String) -> Result<(), String> {
+        let paths = HostPaths::new(self.0.clone(), self.0.clone())?;
+        let db = storage::open(&paths)?;
+        let model = serde_json::json!({
+            "id": "workspace-model",
+            "name": "Workspace Model",
+            "provider": "workspace",
+            "reasoning": true,
+            "scopeOrder": 0,
+            "scopeThinkingLevel": "low",
+        });
+        storage::upsert_project_model_cache(
+            &db,
+            &ProjectModelCache {
+                project_id,
+                models: vec![model.clone()],
+                commands: Some(vec![serde_json::json!({
+                    "name": "fixture-command",
+                    "source": "extension",
+                    "sourceInfo": {
+                        "path": "fixture-command.ts",
+                        "source": "local",
+                        "scope": "project",
+                        "origin": "top-level",
+                    },
+                })]),
+                default_model: Some(model),
+                default_thinking_level: Some("medium".into()),
+                refreshed_at_ms: 123,
+            },
+        )
     }
 
     /// Saves an indexed session for a fixture project without starting Pi.

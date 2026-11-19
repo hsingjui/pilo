@@ -41,6 +41,9 @@ returns `{ method: "trash" | "unlink" }`.
 
 `loadConnectionModels(connectionId)` queries Pi's current user-level catalog
 for the connection, not a union of project caches.
+`loadModels(projectId)` returns the Host's saved project catalog (models,
+commands, defaults and refresh timestamp), or `null` if none is cached.
+It does not launch Pi or refresh the cache.
 
 Use `readProjectImage(projectId, path)` for a project-relative image and
 `readHistoryImage(projectId, sessionPath, imageId, fingerprint?)` for a

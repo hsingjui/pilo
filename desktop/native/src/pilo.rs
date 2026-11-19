@@ -18,7 +18,7 @@ use pilo_lib::{
         host_paths::HostPaths,
         initialize_server_resource_dir,
         preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
-        project_api::{project_fs_read_image, project_list},
+        project_api::{project_fs_read_image, project_list, project_model_cache_list},
         runtime_api::{
             chat_session_send_rpc, chat_session_start, chat_session_state, chat_session_stop,
         },
@@ -394,6 +394,20 @@ impl Pilo {
     ) -> Result<Vec<JsonValue>, String> {
         Self::with_runtime(this, move |runtime| async move {
             connection_models_get(&runtime, connection_id).await
+        })
+        .await
+    }
+
+    /// Reads a cached project catalog without launching Pi.
+    pub async fn load_models(
+        this: Instance<Self>,
+        project_id: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, move |runtime| {
+            let snapshot = project_model_cache_list(runtime)?
+                .into_iter()
+                .find(|snapshot| snapshot.project_id == project_id);
+            serde_json::to_value(snapshot).map_err(|error| error.to_string())
         })
         .await
     }
