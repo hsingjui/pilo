@@ -1,5 +1,7 @@
 import { Text, View } from "nsh";
 
+import { t } from "./i18n";
+
 export function AppShell() {
 	return (
 		<View
@@ -16,7 +18,7 @@ export function AppShell() {
 			</View>
 			<View testID="workspace" class="min-w-0 flex-1 justify-center gap-2 p-6">
 				<Text class="font-sans text-xl font-semibold text-foreground">
-					Workspace
+					{() => t("app.selectProject")}
 				</Text>
 				<Text class="font-mono text-xs text-muted-foreground">
 					pilo-desktop

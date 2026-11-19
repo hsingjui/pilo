@@ -10,6 +10,6 @@
 			"@/*": ["../src/*"]
 		}
 	},
-	"include": ["**/*.ts", "**/*.tsx"],
+	"include": ["**/*.ts", "**/*.tsx", "../src/@types/i18next.d.ts"],
 	"exclude": ["native/target", "spikes/m0"]
 }
