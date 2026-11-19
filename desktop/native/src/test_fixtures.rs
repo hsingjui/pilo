@@ -99,6 +99,32 @@ impl BootstrapFixture {
             },
         )
     }
+
+    /// Records a fixture session with two completed turns and no acknowledgment.
+    pub fn seed_session_read_state(&self, project_id: String) -> Result<String, String> {
+        let paths = HostPaths::new(self.0.clone(), self.0.clone())?;
+        let mut db = storage::open(&paths)?;
+        let session_path = self
+            .0
+            .join("read-state-session.jsonl")
+            .to_string_lossy()
+            .into_owned();
+        let transaction = db.transaction().map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "UPDATE session_read_revision SET revision = 2 WHERE id = 1",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO session_read_state (project_id, session_path, completed_revision) VALUES (?1, ?2, 2)",
+                [&project_id, &session_path],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(session_path)
+    }
 }
 
 impl Drop for BootstrapFixture {

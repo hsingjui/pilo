@@ -6,9 +6,11 @@ use std::{
 
 use nsh_core::{JsonValue, prelude::*};
 use pilo_lib::{
+    domain::SessionReadState,
     initialize_local_server_binary,
     runtime::{
         Runtime,
+        handle::{session_mark_read, session_read_states},
         host_events::HostEvents,
         host_paths::HostPaths,
         initialize_server_resource_dir,
@@ -143,6 +145,26 @@ impl From<PreferencesSnapshot> for NativePreferencesSnapshot {
     }
 }
 
+/// The completed and acknowledged revisions for a saved session.
+#[derive(JsObject)]
+pub struct NativeSessionReadState {
+    pub project_id: String,
+    pub session_path: String,
+    pub completed_revision: u64,
+    pub read_revision: u64,
+}
+
+impl From<SessionReadState> for NativeSessionReadState {
+    fn from(state: SessionReadState) -> Self {
+        Self {
+            project_id: state.project_id,
+            session_path: state.session_path,
+            completed_revision: state.completed_revision,
+            read_revision: state.read_revision,
+        }
+    }
+}
+
 /// A native host for the shared Pilo runtime.
 #[class]
 pub struct Pilo {
@@ -164,21 +186,32 @@ impl Pilo {
         })
     }
 
+    async fn with_runtime<T, F>(
+        this: Instance<Self>,
+        operation: impl FnOnce(Runtime) -> F + Send + 'static,
+    ) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: Future<Output = Result<T, String>> + Send + 'static,
+    {
+        let task = this.with(|pilo| {
+            let host = pilo.host.clone();
+            pilo.executor.spawn(run_with_runtime(host, operation))
+        });
+        task.await
+            .map_err(|error| format!("Pilo runtime task failed: {error}"))?
+    }
+
     async fn with_runtime_blocking<T: Send + 'static>(
         this: Instance<Self>,
         operation: impl FnOnce(&Runtime) -> Result<T, String> + Send + 'static,
     ) -> Result<T, String> {
-        let task = this.with(|pilo| {
-            let host = pilo.host.clone();
-            pilo.executor
-                .spawn(run_with_runtime(host, move |runtime| async move {
-                    tokio::task::spawn_blocking(move || operation(&runtime))
-                        .await
-                        .map_err(|error| format!("Pilo runtime task failed: {error}"))?
-                }))
-        });
-        task.await
-            .map_err(|error| format!("Pilo runtime task failed: {error}"))?
+        Self::with_runtime(this, move |runtime| async move {
+            tokio::task::spawn_blocking(move || operation(&runtime))
+                .await
+                .map_err(|error| format!("Pilo runtime task failed: {error}"))?
+        })
+        .await
     }
 }
 
@@ -267,6 +300,38 @@ impl Pilo {
         });
         task.await
             .map_err(|error| format!("failed to load sessions: {error}"))?
+    }
+
+    /// Loads the persisted read states across projects.
+    pub async fn load_session_read_states(
+        this: Instance<Self>,
+    ) -> Result<Vec<NativeSessionReadState>, String> {
+        Self::with_runtime(this, |runtime| async move {
+            Ok(session_read_states(&runtime)
+                .await?
+                .into_iter()
+                .map(Into::into)
+                .collect())
+        })
+        .await
+    }
+
+    /// Acknowledges an observed session revision and returns the resulting read state.
+    pub async fn mark_session_read(
+        this: Instance<Self>,
+        project_id: String,
+        session_path: String,
+        revision: f64,
+    ) -> Result<NativeSessionReadState, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            if !(1.0..=9_007_199_254_740_991.0).contains(&revision) || revision.fract() != 0.0 {
+                return Err("session read revision must be a positive safe integer".into());
+            }
+            session_mark_read(&runtime, project_id, session_path, revision as u64)
+                .await
+                .map(Into::into)
+        })
+        .await
     }
 
     /// Reads the complete Host preferences from the runtime's SQLite index.

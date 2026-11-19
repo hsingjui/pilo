@@ -16,6 +16,11 @@ values; writes patch only the supplied fields.
 snapshots. `listSessions(projectId)` uses the same session-index reconciliation
 as the Tauri client and returns saved sessions, not live chat state.
 
+`loadSessionReadStates()` reads the saved read revisions across projects.
+Call `markSessionRead(projectId, sessionPath, revision)` with the positive
+safe-integer revision the client observed. It returns the resulting read
+state without moving it backward or past the latest completed revision.
+
 Build the local development server with `cargo build -p pilo-server` from
 the repo root, or set `PILO_SERVER_BINARY` to an absolute path. Development
 WebUI assets come from `dist/`; a packaged app will stage them under
