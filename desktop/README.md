@@ -39,6 +39,9 @@ model and returns a title, or `null` if no title is available.
 `deleteSession(projectId, sessionPath)` removes an indexed session and
 returns `{ method: "trash" | "unlink" }`.
 
+`loadConnectionModels(connectionId)` queries Pi's current user-level catalog
+for the connection, not a union of project caches.
+
 Use `readProjectImage(projectId, path)` for a project-relative image and
 `readHistoryImage(projectId, sessionPath, imageId, fingerprint?)` for a
 transcript attachment. Both return `Uint8Array` bytes; nsh `Image` accepts

@@ -8,7 +8,12 @@ for line in sys.stdin:
     kind = command["type"]
     data = command.get("probe", {})
     if kind == "get_available_models":
-        data = {"models": [{"provider": "fixture", "id": "naming"}]}
+        data = {"models": [{
+            "provider": "fixture",
+            "id": "naming",
+            "name": "Naming Model",
+            "reasoning": False,
+        }]}
     elif kind == "set_model":
         data = {"provider": command["provider"], "id": command["modelId"]}
     if command.get("id") == "fixture-shutdown":

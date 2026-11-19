@@ -11,6 +11,7 @@ use pilo_lib::{
     runtime::{
         Runtime,
         appearance::{theme_settings_get, theme_settings_set},
+        connections::connection_models_get,
         events::{EventBatch, EventQueueLimits, EventStream},
         handle::{session_mark_read, session_read_states},
         host_events::HostEvents,
@@ -384,6 +385,17 @@ impl Pilo {
         });
         task.await
             .map_err(|error| format!("failed to load sessions: {error}"))?
+    }
+
+    /// Reads Pi's current user-level model catalog for the connection.
+    pub async fn load_connection_models(
+        this: Instance<Self>,
+        connection_id: String,
+    ) -> Result<Vec<JsonValue>, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            connection_models_get(&runtime, connection_id).await
+        })
+        .await
     }
 
     /// Searches saved session messages for a project.
