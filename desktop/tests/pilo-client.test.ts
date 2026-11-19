@@ -54,6 +54,11 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 			models: [],
 			updatedAtMs: 9,
 		}),
+		loadCacheKeepAliveSettings: answer("loadCacheKeepAliveSettings", []),
+		saveCacheKeepAliveSettings: answer("saveCacheKeepAliveSettings", {
+			modelId: "m1",
+			updatedAtMs: 9,
+		}),
 		loadSessionReadStates: answer("loadSessionReadStates", [readState]),
 		markSessionRead: answer("markSessionRead", readState),
 		loadPreferences: answer("loadPreferences", preferences),
@@ -334,6 +339,58 @@ test("a model scope the native module refuses rejects with its error", async () 
 	expect(caught).toBe(failure);
 });
 
+test("cache keep-alive calls pass their arguments and return the native answers", async () => {
+	const policy = {
+		connectionId: "local",
+		provider: "relay",
+		modelId: "m1",
+		enabled: true,
+		cacheTtlSeconds: 300,
+		idleKeepAliveSeconds: 1800,
+		updatedAtMs: 0,
+	};
+	const { pilo, calls } = fakeNative({
+		loadCacheKeepAliveSettings: (connectionId) =>
+			Promise.resolve(connectionId === "local" ? [policy] : []),
+	});
+	const client = new NshPiloClient(pilo);
+
+	expect(await client.loadCacheKeepAliveSettings("local")).toEqual([policy]);
+	expect(await client.loadCacheKeepAliveSettings("other")).toEqual([]);
+	expect(await client.saveCacheKeepAliveSettings(policy)).toEqual({
+		modelId: "m1",
+		updatedAtMs: 9,
+	});
+	expect(calls).toEqual([["saveCacheKeepAliveSettings", policy]]);
+});
+
+test("a cache keep-alive policy the native module refuses rejects with its error", async () => {
+	const failure = new Error("invalid cache keep-alive settings");
+	const { pilo } = fakeNative({
+		loadCacheKeepAliveSettings: () => Promise.reject(failure),
+		saveCacheKeepAliveSettings: () => Promise.reject(failure),
+	});
+	const client = new NshPiloClient(pilo);
+	for (const call of [
+		client.loadCacheKeepAliveSettings("gone"),
+		client.saveCacheKeepAliveSettings({
+			connectionId: "local",
+			provider: "relay",
+			modelId: "m1",
+			enabled: true,
+			cacheTtlSeconds: 1,
+			idleKeepAliveSeconds: 1,
+			updatedAtMs: 0,
+		}),
+	]) {
+		let caught: unknown;
+		await call.catch((error: unknown) => {
+			caught = error;
+		});
+		expect(caught).toBe(failure);
+	}
+});
+
 /** A native event stream whose polls the test answers one at a time. */
 function fakeEventStream() {
 	const polls: {
@@ -537,6 +594,13 @@ test("the client reads project and session image bytes through the native module
 test("the client loads connection models and a saved catalog, and loads and saves a model scope through the native module", async () => {
 	const app = await open("./pilo-client-models-fixture.tsx");
 	await app.waitFor("text:client model catalogs and scope saves verified", {
+		timeout: 30_000,
+	});
+});
+
+test("the client loads and saves cache keep-alive policies through the native module", async () => {
+	const app = await open("./pilo-client-keep-alive-fixture.tsx");
+	await app.waitFor("text:client cache keep-alive policies verified", {
 		timeout: 30_000,
 	});
 });

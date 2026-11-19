@@ -22,6 +22,7 @@ import type {
 	ProjectModelScope,
 	ProjectScopedModel,
 } from "@/lib/project-model-scope";
+import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
 import type {
 	PreferencePatch,
 	PreferencesSnapshot,
@@ -51,6 +52,8 @@ export type PiloNative = Pick<
 	| "loadModels"
 	| "loadModelScope"
 	| "saveModelScope"
+	| "loadCacheKeepAliveSettings"
+	| "saveCacheKeepAliveSettings"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "loadPreferences"
@@ -86,6 +89,8 @@ type BridgedPiloClient = Pick<
 	| "loadModels"
 	| "loadModelScope"
 	| "saveModelScope"
+	| "loadCacheKeepAliveSettings"
+	| "saveCacheKeepAliveSettings"
 	| "loadSessionReadStates"
 	| "markSessionRead"
 	| "connectEvents"
@@ -228,6 +233,27 @@ export class NshPiloClient implements BridgedPiloClient {
 			projectId,
 			models,
 		)) as ProjectModelScope;
+	}
+
+	/** The connection's saved cache keep-alive policies, one per model. */
+	async loadCacheKeepAliveSettings(
+		connectionId: string,
+	): Promise<CacheKeepAliveSettings[]> {
+		return (await this.pilo.loadCacheKeepAliveSettings(
+			connectionId,
+		)) as CacheKeepAliveSettings[];
+	}
+
+	/**
+	 * Saves one model's policy and returns it with the `updatedAtMs` the Host
+	 * assigned. Listeners also get it as `cache_keep_alive_settings_changed`.
+	 */
+	async saveCacheKeepAliveSettings(
+		settings: CacheKeepAliveSettings,
+	): Promise<CacheKeepAliveSettings> {
+		return (await this.pilo.saveCacheKeepAliveSettings(
+			settings,
+		)) as CacheKeepAliveSettings;
 	}
 
 	loadSessionReadStates() {
