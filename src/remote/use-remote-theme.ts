@@ -15,7 +15,19 @@ export function useRemoteTheme({
 	refreshKey: string;
 	onError: (error: unknown) => boolean;
 }) {
-	const { applyThemeSettings } = useTheme();
+	const { applyThemeSettings, bindThemeWriter } = useTheme();
+
+	useEffect(() => {
+		if (!client) return;
+		return bindThemeWriter(async (update) => {
+			try {
+				return await client.saveThemeSettings(update);
+			} catch (error) {
+				onError(error);
+				throw error;
+			}
+		});
+	}, [client, bindThemeWriter, onError]);
 
 	/* oxlint-disable react/exhaustive-effect-dependencies -- Snapshot/replay generations intentionally reload the authoritative Host theme. */
 	useEffect(() => {

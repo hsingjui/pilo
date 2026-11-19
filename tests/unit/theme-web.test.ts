@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	renderCustomThemeCss,
-	validateWebThemeAlpha,
 	CUSTOM_THEME_CATALOG,
 } from "../../src/lib/theme-web.ts";
 import mapping from "../../src/lib/theme-web-map.json" with { type: "json" };
@@ -10,6 +9,10 @@ import { readSavedCustomThemes } from "../../src/lib/theme-custom.ts";
 import { readCachedTheme } from "../../src/lib/theme-settings.ts";
 
 test("maps every catalog token and reverses fonts", () => {
+	for (const [token, entry] of Object.entries(mapping)) {
+		if (entry.format === "hsl-channels")
+			assert.equal(CUSTOM_THEME_CATALOG.get(token), "opaque-color", token);
+	}
 	assert.deepEqual(
 		new Set(Object.keys(mapping)),
 		new Set(CUSTOM_THEME_CATALOG.keys()),
@@ -34,17 +37,6 @@ test("light applies to both appearances and dark overrides only dark", () => {
 		renderCustomThemeCss({ theme: { primary: "hsl(120 100% 50%)" } }),
 		':root[data-theme-family="custom"]{--primary:120 100% 50%;}',
 	);
-});
-
-test("alpha on channel triples is rejected separately", () => {
-	assert.deepEqual(validateWebThemeAlpha({ light: { primary: "#ff000080" } }), [
-		{ code: "alpha-not-supported", scope: "light", token: "primary" },
-	]);
-	assert.deepEqual(
-		validateWebThemeAlpha({ light: { primary: "#ff0000" } }),
-		[],
-	);
-	assert.equal(renderCustomThemeCss({ light: { primary: "transparent" } }), "");
 });
 
 test("invalid and empty tables emit no CSS", () => {

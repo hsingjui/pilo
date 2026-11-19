@@ -44,8 +44,9 @@ export const runtimeEvents = [
 			theme: "dark",
 			themeFamily: "custom",
 			themeCustomCss: ":root {}",
+			themeCustomTokens: {},
 			themeCustomName: "Custom",
-			savedCustomThemes: [{ name: "Custom", css: ":root {}" }],
+			savedCustomThemes: [{ name: "Custom", css: ":root {}", tokens: {} }],
 		},
 	},
 	{

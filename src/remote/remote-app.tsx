@@ -77,6 +77,7 @@ import { useRemotePwa } from "./use-remote-pwa";
 import { useRemoteSessions } from "./use-remote-sessions";
 import { useRemotePreferences } from "./use-remote-preferences";
 import { useRemoteTheme } from "./use-remote-theme";
+import { RemoteAppearanceSettings } from "./remote-appearance-settings";
 
 export function RemoteApp() {
 	return isRemotePairingLocation() ? (
@@ -544,6 +545,7 @@ function RemoteWorkspace() {
 					<span className="min-w-0 flex-1 truncate">
 						{t(remoteConnectionLabelKey(networkState))}
 					</span>
+					<RemoteAppearanceSettings />
 				</div>
 			}
 		/>

@@ -5,47 +5,13 @@ import {
 	parseThemeColor,
 	validateCustomThemeTokens,
 	type CustomThemeTokens,
-	type ThemeTokenIssue,
-	type ThemeTokenScope,
 } from "./theme-tokens";
 
 export const CUSTOM_THEME_CATALOG = createThemeTokenCatalog(base.cssVars);
 export const CUSTOM_THEME_BASE = base.cssVars;
 
-export type WebThemeIssue =
-	| ThemeTokenIssue
-	| {
-			code: "alpha-not-supported";
-			scope: ThemeTokenScope;
-			token: string;
-	  };
-
-export function validateWebThemeAlpha(
-	tokens: CustomThemeTokens,
-): WebThemeIssue[] {
-	const issues: WebThemeIssue[] = [];
-	for (const scope of ["theme", "light", "dark"] as const) {
-		for (const [token, value] of Object.entries(tokens[scope] ?? {})) {
-			const entry = Object.entries(mapping).find(
-				([name]) => name === token,
-			)?.[1];
-			const color = parseThemeColor(value);
-			if (entry?.format === "hsl-channels" && color && !color.endsWith("ff"))
-				issues.push({ code: "alpha-not-supported", scope, token });
-		}
-	}
-	return issues;
-}
-
-export function validateWebThemeTokens(
-	input: unknown,
-):
-	| { ok: true; tokens: CustomThemeTokens }
-	| { ok: false; issues: WebThemeIssue[] } {
-	const result = validateCustomThemeTokens(input, CUSTOM_THEME_CATALOG);
-	if (!result.ok) return result;
-	const issues = validateWebThemeAlpha(result.tokens);
-	return issues.length ? { ok: false, issues } : result;
+export function validateWebThemeTokens(input: unknown) {
+	return validateCustomThemeTokens(input, CUSTOM_THEME_CATALOG);
 }
 
 const round = (n: number) => Number(n.toFixed(4));

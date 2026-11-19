@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, viewport-fit=cover"
+		/>
+		<title>Theme token editor regression</title>
+	</head>
+	<body>
+		<pre id="results" style="white-space: pre-wrap">Running…</pre>
+		<div id="root" style="max-width: 900px; margin: auto; padding: 12px"></div>
+		<script type="module">
+			import "../../src/index.css";
+			import { createElement as h, useEffect } from "react";
+			import { createRoot } from "react-dom/client";
+			import {
+				ThemeProvider,
+				useTheme,
+			} from "../../src/lib/theme-provider.tsx";
+			import { AppearanceSettings } from "../../src/components/settings/appearance-settings.tsx";
+			import { useRemoteTheme } from "../../src/remote/use-remote-theme.ts";
+			import { initializeI18n } from "../../src/i18n/index.ts";
+			await initializeI18n("en-US");
+			document.documentElement.classList.add("pilo-browser");
+			document.documentElement.dataset.remoteWebui = "";
+			let settings = {
+				revision: 1,
+				theme: "light",
+				themeFamily: "lody",
+				themeCustomName: "",
+				themeCustomCss: "body{display:none}",
+				savedCustomThemes: [],
+			};
+			const updates = [];
+			const client = {
+				loadThemeSettings: async () => settings,
+				saveThemeSettings: async (update) => {
+					updates.push(update);
+					settings = {
+						...settings,
+						...update,
+						revision: settings.revision + 1,
+					};
+					if (update.saveCustomTheme) {
+						const item = update.saveCustomTheme;
+						settings = {
+							...settings,
+							themeCustomName: item.name.trim(),
+							themeCustomTokens: item.tokens,
+							savedCustomThemes: [
+								...settings.savedCustomThemes.filter(
+									(entry) => entry.name !== item.name,
+								),
+								{ ...item, name: item.name.trim() },
+							],
+						};
+					}
+					return settings;
+				},
+			};
+			const onError = () => false;
+			function Fixture() {
+				useRemoteTheme({ client, refreshKey: "test", onError });
+				const theme = useTheme();
+				useEffect(() => {
+					window.themeFixture = { theme, updates, client };
+				}, [theme]);
+				return h(AppearanceSettings);
+			}
+			createRoot(document.getElementById("root")).render(
+				h(ThemeProvider, null, h(Fixture)),
+			);
+			const tick = () =>
+				new Promise((resolve) =>
+					requestAnimationFrame(() => requestAnimationFrame(resolve)),
+				);
+			const assert = (value, message) => {
+				if (!value) throw new Error(message);
+			};
+			function input(label, value) {
+				const el = document.querySelector(`input[aria-label="${label}"]`);
+				assert(el, `Missing ${label}`);
+				Object.getOwnPropertyDescriptor(
+					HTMLInputElement.prototype,
+					"value",
+				).set.call(el, value);
+				el.dispatchEvent(new Event("input", { bubbles: true }));
+			}
+			const save = () =>
+				[...document.querySelectorAll("button")].find((el) =>
+					/^(Save and apply|Update and apply)$/.test(el.textContent.trim()),
+				);
+			async function run() {
+				await tick();
+				await tick();
+				input("Theme name", "Ocean");
+				input("Filter tokens", "primary");
+				await tick();
+				const style = () =>
+					document.getElementById("pilo-custom-theme-css").textContent;
+				const before = style();
+				input("primary light", "not-a-color");
+				await tick();
+				assert(save().disabled, "Invalid input must disable save");
+				assert(
+					document.querySelector('[role="alert"]'),
+					"Inline validation required",
+				);
+				assert(
+					style() === before && updates.length === 0,
+					"Invalid draft changed applied theme",
+				);
+				input("primary light", "#33669980");
+				await tick();
+				assert(
+					save().disabled && document.body.textContent.includes("opaque color"),
+					"Alpha must block save",
+				);
+				input("primary light", "#336699");
+				await tick();
+				assert(!save().disabled, "Valid draft must enable save");
+				save().click();
+				await tick();
+				await tick();
+				assert(
+					updates[0].saveCustomTheme.tokens.light.primary === "#336699",
+					"Save must send tokens to Host client",
+				);
+				assert(
+					style().includes("--primary:210 50% 40%"),
+					"Saved token not applied",
+				);
+				const applied = style();
+				window.themeFixture.theme.applyThemeSettings({
+					...settings,
+					revision: settings.revision + 1,
+					themeCustomTokens: { light: { primary: "bad" } },
+				});
+				await tick();
+				assert(style() === applied, "Invalid Host table changed applied theme");
+				input("primary light", "bad-color");
+				await tick();
+				assert(save().disabled, "Invalid update must disable save");
+				assert(
+					document.documentElement.scrollWidth <= innerWidth,
+					"Horizontal overflow",
+				);
+				document.body.dataset.testStatus = "passed";
+				document.getElementById("results").textContent =
+					"PASS: mocked Host load/save, validation, alpha, token rendering, invalid Host update, narrow layout";
+				scrollTo(0, 0);
+			}
+			run().catch((error) => {
+				document.body.dataset.testStatus = "failed";
+				document.getElementById("results").textContent = error.stack;
+			});
+		</script>
+	</body>
+</html>

@@ -48,6 +48,9 @@ type ThemeProviderState = ThemeSettings & {
 	setTheme: (theme: Theme) => void;
 	applyThemeSettings: (settings: ThemeSettings) => void;
 	updateThemeSettings: (update: ThemeSettingsUpdate) => void;
+	bindThemeWriter: (
+		writer: (update: ThemeSettingsUpdate) => Promise<ThemeSettings>,
+	) => () => void;
 };
 
 const ThemeProviderContext = createContext<ThemeProviderState>({
@@ -62,6 +65,7 @@ const ThemeProviderContext = createContext<ThemeProviderState>({
 	setTheme: () => {},
 	applyThemeSettings: () => {},
 	updateThemeSettings: () => {},
+	bindThemeWriter: () => () => {},
 });
 
 const getSystemTheme = (): ResolvedTheme =>
@@ -85,6 +89,18 @@ export function ThemeProvider({
 	const initialSettingsRef = useRef(settings);
 	const revisionRef = useRef(-1);
 	const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
+	const remoteWriterRef = useRef<
+		((update: ThemeSettingsUpdate) => Promise<ThemeSettings>) | null
+	>(null);
+	const bindThemeWriter = useCallback(
+		(writer: (update: ThemeSettingsUpdate) => Promise<ThemeSettings>) => {
+			remoteWriterRef.current = writer;
+			return () => {
+				if (remoteWriterRef.current === writer) remoteWriterRef.current = null;
+			};
+		},
+		[],
+	);
 	const applyThemeSettings = useCallback((next: ThemeSettings) => {
 		if (next.revision <= revisionRef.current) return;
 		if (!validateWebThemeTokens(next.themeCustomTokens ?? {}).ok) return;
@@ -224,9 +240,14 @@ export function ThemeProvider({
 
 	const updateSettings = useCallback(
 		(update: ThemeSettingsUpdate) => {
-			if (!DESKTOP_RUNTIME) return;
+			if (!DESKTOP_RUNTIME && !remoteWriterRef.current) return;
 			writeQueueRef.current = writeQueueRef.current
 				.then(async () => {
+					if (!DESKTOP_RUNTIME) {
+						const writer = remoteWriterRef.current;
+						if (writer) applyThemeSettings(await writer(update));
+						return;
+					}
 					// Initialize legacy desktop settings before the first edit, even if startup loading failed.
 					await invoke<ThemeSettings>("theme_settings_get", {
 						initial: initialSettingsRef.current,
@@ -256,8 +277,16 @@ export function ThemeProvider({
 			setTheme,
 			applyThemeSettings,
 			updateThemeSettings: updateSettings,
+			bindThemeWriter,
 		}),
-		[settings, resolvedTheme, setTheme, applyThemeSettings, updateSettings],
+		[
+			settings,
+			resolvedTheme,
+			setTheme,
+			applyThemeSettings,
+			updateSettings,
+			bindThemeWriter,
+		],
 	);
 
 	return (

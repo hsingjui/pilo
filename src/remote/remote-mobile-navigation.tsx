@@ -38,6 +38,7 @@ import {
 	ROW_ACTION_CLASS,
 } from "@/remote/remote-mobile-rows";
 import type { MobileNavigationMotion } from "./use-mobile-navigation-swipe";
+import { RemoteAppearanceSettings } from "./remote-appearance-settings";
 
 const CommandPalette = lazy(() =>
 	import("@/components/command-palette").then((module) => ({
@@ -556,6 +557,7 @@ export function RemoteMobileNavigation({
 					<span className="min-w-0 flex-1 truncate text-sm text-sidebar-foreground-muted">
 						{t(remoteConnectionLabelKey(connectionState))}
 					</span>
+					<RemoteAppearanceSettings />
 				</footer>
 			</MobileNavigationSurface>
 
