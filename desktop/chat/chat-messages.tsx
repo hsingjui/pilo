@@ -58,7 +58,7 @@ export interface ChatMessagesProps {
 	userBody?: ChatMessageBody<UserChatMessage>;
 	assistantBody?: ChatMessageBody<AssistantChatMessage>;
 	assistantText?: ChatTextBody;
-	/** What the user opened and closed in this chat's replies. */
+	/** What the user opened and closed in this chat. */
 	expansion?: ChatExpansion;
 	preferences?: () => ChatWorkPreferences | undefined;
 	footer?: ListSlot;

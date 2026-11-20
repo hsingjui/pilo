@@ -67,6 +67,7 @@ export function ChatMessageRow(props: ChatMessageRowProps) {
 				return (
 					<ChatCompactionMarker
 						message={message as () => CompactionChatMessage}
+						expansion={props.expansion}
 					/>
 				);
 		}
