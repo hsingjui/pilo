@@ -23,8 +23,8 @@ import { MenuItem } from "../ui/menu-item";
 import { Spinner } from "../ui/spinner";
 import { Tooltip } from "../ui/tooltip";
 import { t } from "./i18n";
+import { createHover } from "../ui/hover";
 import {
-	createHover,
 	HOVER_ACTION,
 	SidebarAction,
 	sidebarFocusRing,

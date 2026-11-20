@@ -1,18 +1,11 @@
-import {
-	type Accessor,
-	colorScheme,
-	type JSX,
-	signal,
-	split,
-	token,
-	View,
-} from "nsh";
+import { colorScheme, type JSX, split, token, View } from "nsh";
 import { Button, type ButtonProps } from "nsh/base";
 
 import { isDefaultWorkspace, type Project } from "@/lib/api/projects-types";
 import { classNames } from "../ui/class-names";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
+import { createHover } from "../ui/hover";
 import { t } from "./i18n";
 
 /** An action of a row that shows while the pointer is over the row. */
@@ -33,21 +26,6 @@ export const sidebarForeground = () =>
 
 export const sidebarFocusRing = () =>
 	focusRingStyle(token("sidebar-ring"), undefined, undefined, { width: 2 });
-
-/**
- * The pointer over a view, for the icons inside it: an icon draws in the
- * foreground it is given, not in the text color a `hover:` class sets.
- */
-export function createHover() {
-	const hovered = signal(false);
-	return {
-		hovered: hovered as Accessor<boolean>,
-		props: {
-			onMouseEnter: () => hovered.set(true),
-			onMouseLeave: () => hovered.set(false),
-		},
-	};
-}
 
 export interface SidebarActionProps extends ButtonProps {
 	/** What screen readers say for the icon. */

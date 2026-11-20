@@ -303,7 +303,13 @@ export function CommandPalette(props: CommandPaletteProps) {
 							<Icon name={row.icon} size={16} class="shrink-0 opacity-60" />
 							<View class="min-w-0 flex-1">
 								<View class="flex-row items-center gap-2">
-									<Text class="font-sans min-w-0 flex-1 truncate text-sm">
+									<Text
+										class={`font-sans min-w-0 flex-1 truncate ${
+											row.snippet
+												? "text-xs font-medium text-foreground/90"
+												: "text-sm"
+										}`}
+									>
 										{entry.label}
 									</Text>
 									{row.role ? (
@@ -318,12 +324,12 @@ export function CommandPalette(props: CommandPaletteProps) {
 									) : null}
 								</View>
 								{row.detail ? (
-									<Text class="font-sans truncate text-xs text-muted-foreground">
+									<Text class="font-sans truncate text-[11px] text-muted-foreground">
 										{row.detail}
 									</Text>
 								) : null}
 								{row.snippet ? (
-									<Text class="font-sans mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+									<Text class="font-sans mt-0.5 line-clamp-2 text-[11px] leading-[1.45] text-muted-foreground">
 										{row.snippet}
 									</Text>
 								) : null}
@@ -349,7 +355,7 @@ export function CommandPalette(props: CommandPaletteProps) {
 						{searching() ? (
 							<View class="flex-row items-center gap-1.5">
 								<Spinner size={12} />
-								<Text class="font-sans text-xs text-muted-foreground">
+								<Text class="font-sans text-[11px] text-muted-foreground">
 									{t("commandPalette.searchingHistory")}
 								</Text>
 							</View>
@@ -372,11 +378,11 @@ function Hint(props: { keys: string; label: () => string }) {
 	return (
 		<View class="flex-row items-center gap-1">
 			<View class="h-5 min-w-5 items-center justify-center rounded-sm bg-muted px-1">
-				<Text class="font-sans text-xs font-medium text-muted-foreground">
+				<Text class="font-sans text-[11px] font-medium text-muted-foreground">
 					{props.keys}
 				</Text>
 			</View>
-			<Text class="font-sans text-xs text-muted-foreground">
+			<Text class="font-sans text-[11px] text-muted-foreground">
 				{props.label()}
 			</Text>
 		</View>

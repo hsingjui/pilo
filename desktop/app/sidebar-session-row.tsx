@@ -1,4 +1,13 @@
-import { type Accessor, type Bounds, signal, Text, token, View } from "nsh";
+import {
+	type Accessor,
+	type Bounds,
+	type InputRef,
+	Overlay,
+	signal,
+	Text,
+	token,
+	View,
+} from "nsh";
 import { Button, ContextMenu } from "nsh/base";
 
 import type { SidebarSession } from "@/components/sidebar/types";
@@ -8,8 +17,9 @@ import { Input } from "../ui/input";
 import { Menu, menuPopupClass, menuPopupStyle } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { Tooltip } from "../ui/tooltip";
+import { createHover } from "../ui/hover";
 import { t } from "./i18n";
-import { createHover, HOVER_ACTION, sidebarFocusRing } from "./sidebar-parts";
+import { HOVER_ACTION, sidebarFocusRing } from "./sidebar-parts";
 import { SessionGlideContext } from "./sidebar-session-glide";
 
 /**
@@ -100,6 +110,8 @@ export function SessionRow(props: {
 	const confirmingDelete = signal(false);
 	const renaming = signal(false);
 	const renameValue = signal("");
+	const renameInput = signal<InputRef | null>(null);
+	let renamePending = false;
 	const menuHover = createHover();
 	const selected = () => {
 		const open = store.state().navigation.session;
@@ -110,6 +122,13 @@ export function SessionRow(props: {
 	};
 	const projectContext = () => Boolean(props.projectName?.());
 
+	const startRenameAfterMenuClose = () => {
+		if (!renamePending) return;
+		renamePending = false;
+		// Let the menu finish restoring focus before the input takes it.
+		renameValue.set(session().title);
+		renaming.set(true);
+	};
 	const submitRename = () => {
 		if (!renaming()) return;
 		const title = renameValue().trim();
@@ -145,8 +164,7 @@ export function SessionRow(props: {
 				indicatorClass="hidden"
 				icon={<Icon name="Pencil" size={14} />}
 				onSelect={() => {
-					renameValue.set(session().title);
-					renaming.set(true);
+					renamePending = true;
 				}}
 			>
 				<Text class="font-sans">{() => t("sidebar.rename")}</Text>
@@ -247,19 +265,28 @@ export function SessionRow(props: {
 			<View class="min-w-0 flex-1">
 				{() =>
 					renaming() ? (
-						<Input
-							testID={`session:${session().id}:rename-input`}
-							autoFocus
-							value={renameValue()}
-							accessibilityLabel={t("sidebar.editSessionTitle")}
-							class="h-6 rounded-sm px-1 text-sm"
-							onChange={(event) => renameValue.set(event.value)}
-							onSubmit={submitRename}
-							onBlur={submitRename}
-							onKeyDown={(event) => {
-								if (event.key === "Escape") renaming.set(false);
-							}}
-						/>
+						<>
+							<Input
+								ref={renameInput.set}
+								testID={`session:${session().id}:rename-input`}
+								autoFocus
+								value={renameValue()}
+								accessibilityLabel={t("sidebar.editSessionTitle")}
+								class="h-6 rounded-sm px-1 text-sm"
+								onChange={(event) => renameValue.set(event.value)}
+								onSubmit={submitRename}
+								onBlur={submitRename}
+								onKeyDown={(event) => {
+									if (event.key === "Escape") renaming.set(false);
+								}}
+							/>
+							{/* Native inputs can keep focus when clicking a non-focusable view. */}
+							<Overlay
+								anchor={renameInput()}
+								style={{ width: 0, height: 0, pointerEvents: "box-none" }}
+								onPressOutside={submitRename}
+							/>
+						</>
 					) : (
 						title()
 					)
@@ -290,6 +317,7 @@ export function SessionRow(props: {
 					menuOpen.set(event.open);
 					resetDelete(event);
 				}}
+				onClose={startRenameAfterMenuClose}
 				align="start"
 				popupStyle={{ minWidth: 0 }}
 				trigger={
@@ -359,6 +387,7 @@ export function SessionRow(props: {
 					contextOpen.set(event.open);
 					resetDelete(event);
 				}}
+				onClose={startRenameAfterMenuClose}
 				popupClass={menuPopupClass}
 				popupStyle={{ ...menuPopupStyle(), minWidth: 0 }}
 				trigger={

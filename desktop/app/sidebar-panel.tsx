@@ -2,6 +2,7 @@ import {
 	type Accessor,
 	appInfo,
 	computed,
+	platform,
 	signal,
 	Text,
 	token,
@@ -14,15 +15,15 @@ import { Button as BaseButton } from "nsh/base";
 import type { Theme } from "@/lib/theme-settings-types";
 import { Button } from "../ui/button";
 import { Foreground } from "../ui/foreground";
-import { Icon } from "../ui/icon";
+import { Icon, type IconName } from "../ui/icon";
 import { Skeleton } from "../ui/skeleton";
 import { styleVar } from "../ui/theme-style";
 import { Tooltip } from "../ui/tooltip";
 import { t } from "./i18n";
 import { Sidebar, type SidebarProps } from "./Sidebar";
 import type { SidebarLayout } from "./sidebar-layout";
+import { createHover } from "../ui/hover";
 import {
-	createHover,
 	SidebarAction,
 	sidebarFocusRing,
 	sidebarForeground,
@@ -137,6 +138,9 @@ export function SidebarPanel(props: SidebarPanelProps) {
 	const { layout } = props;
 	const projectView = signal<string | null>(null);
 	const card = computed(surface);
+	// Center the visible glyphs against the macOS traffic lights without moving the row.
+	const titleTextStyle =
+		platform.os === "macos" ? { transform: [{ translateY: -1 }] } : undefined;
 	// A view of sessions of a project that is gone closes.
 	const viewedProject = computed(() => {
 		const id = projectView();
@@ -175,13 +179,19 @@ export function SidebarPanel(props: SidebarPanelProps) {
 					}}
 				>
 					<View class="min-w-0 flex-1 flex-row items-center gap-1.5 px-2">
-						<Text class="min-w-0 shrink truncate font-sans text-lg font-semibold tracking-tight text-sidebar-foreground">
+						<Text
+							class="min-w-0 shrink truncate font-sans text-lg font-semibold tracking-tight text-sidebar-foreground"
+							style={titleTextStyle}
+						>
 							Pilo
 						</Text>
 						{appInfo().development ? (
 							<View class="shrink-0 flex-row items-center gap-1 rounded-full bg-primary/10 px-1.5 py-px">
 								<View class="size-1.5 animate-pulse rounded-full bg-primary" />
-								<Text class="font-sans text-[11px] font-semibold uppercase leading-4 tracking-wide text-primary">
+								<Text
+									class="font-sans text-[11px] font-semibold uppercase leading-4 tracking-wide text-primary"
+									style={titleTextStyle}
+								>
 									DEV
 								</Text>
 							</View>
@@ -358,35 +368,51 @@ function SidebarLoading() {
 	);
 }
 
-/** The row's look of 「新会话」 and of the project view's back button. */
-const TOOLBAR_ROW =
-	"group min-w-0 flex-1 flex-row items-center gap-1.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-sidebar-hover";
-
-function NewChatButton(props: { onPress: () => void }) {
+/**
+ * A toolbar row of the sidebar: 「新会话」, and the project view's back
+ * button. Its icon and label take the sidebar's hover foreground.
+ */
+function SidebarToolbarRow(props: {
+	testID: string;
+	icon: IconName;
+	label: () => string;
+	onPress: () => void;
+}) {
 	const hover = createHover();
 	const foreground = () =>
 		hover.hovered() ? token("sidebar-hover-foreground") : sidebarForeground();
 	return (
-		<View class="flex-row items-center gap-1">
-			<Foreground.Provider value={foreground}>
-				<BaseButton
-					{...hover.props}
-					testID="sidebar-new-chat"
-					class={TOOLBAR_ROW}
-					focusVisibleStyle={sidebarFocusRing()}
-					onPress={props.onPress}
+		<Foreground.Provider value={foreground}>
+			<BaseButton
+				{...hover.props}
+				testID={props.testID}
+				class="group min-w-0 flex-1 flex-row items-center gap-1.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-sidebar-hover"
+				focusVisibleStyle={sidebarFocusRing()}
+				onPress={props.onPress}
+			>
+				<View class="size-4 shrink-0 items-center justify-center">
+					<Icon name={props.icon} size={16} />
+				</View>
+				<Text
+					class="min-w-0 flex-1 truncate font-sans text-sm"
+					style={{ color: foreground() }}
 				>
-					<View class="size-4 shrink-0 items-center justify-center">
-						<Icon name="SquarePen" size={16} />
-					</View>
-					<Text
-						class="min-w-0 truncate font-sans text-sm"
-						style={{ color: foreground() }}
-					>
-						{() => t("sidebar.newSession")}
-					</Text>
-				</BaseButton>
-			</Foreground.Provider>
+					{props.label}
+				</Text>
+			</BaseButton>
+		</Foreground.Provider>
+	);
+}
+
+function NewChatButton(props: { onPress: () => void }) {
+	return (
+		<View class="flex-row items-center gap-1">
+			<SidebarToolbarRow
+				testID="sidebar-new-chat"
+				icon="SquarePen"
+				label={() => t("sidebar.newSession")}
+				onPress={props.onPress}
+			/>
 		</View>
 	);
 }
@@ -397,28 +423,14 @@ function ProjectSessionsToolbar(props: {
 	onBack: () => void;
 	onNewChat: () => void;
 }) {
-	const hover = createHover();
-	const foreground = () =>
-		hover.hovered() ? token("sidebar-hover-foreground") : sidebarForeground();
 	return (
 		<View class="min-w-0 flex-row items-center gap-0.5 border border-transparent pr-3">
-			<Foreground.Provider value={foreground}>
-				<BaseButton
-					{...hover.props}
-					testID="sidebar-project-view-back"
-					class={TOOLBAR_ROW}
-					focusVisibleStyle={sidebarFocusRing()}
-					onPress={props.onBack}
-				>
-					<Icon name="ArrowLeft" size={16} class="shrink-0" />
-					<Text
-						class="min-w-0 flex-1 truncate font-sans text-sm"
-						style={{ color: foreground() }}
-					>
-						{props.name}
-					</Text>
-				</BaseButton>
-			</Foreground.Provider>
+			<SidebarToolbarRow
+				testID="sidebar-project-view-back"
+				icon="ArrowLeft"
+				label={() => props.name}
+				onPress={props.onBack}
+			/>
 			<SidebarAction
 				testID="sidebar-project-view-new-chat"
 				label={t("sidebar.newSession")}

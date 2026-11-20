@@ -27,10 +27,16 @@ async function becomes(app: App, read: () => unknown, expected: unknown) {
 
 const rowColor = (app: App, row: string) => app.viewStyle(row)?.backgroundColor;
 
+/** The tree's texts, after the title bar and the 「新会话」 row over it. */
+function treeTexts(app: App) {
+	const texts = app.texts();
+	return texts.slice(texts.indexOf("Local"));
+}
+
 test("projects are listed by connection, the local one first, and start collapsed", async () => {
 	const app = await openSidebar();
 	await app.waitFor("id:sidebar-projects >> text:pilo");
-	expect(app.texts().slice(0, 7)).toEqual([
+	expect(treeTexts(app).slice(0, 7)).toEqual([
 		"Local",
 		"pilo",
 		"notes",
@@ -41,8 +47,8 @@ test("projects are listed by connection, the local one first, and start collapse
 	]);
 	expect(app.shows("text:No sessions")).toBe(false);
 	// The first project is the one a new chat would start in.
-	expect(app.viewStyle("id:ws:api:row")?.backgroundColor).toBe(SELECTED);
-	expect(app.viewStyle("id:ws:pilo:row")?.backgroundColor).toBeUndefined();
+	expect(app.viewStyle("id:ws:api:select")?.backgroundColor).toBe(SELECTED);
+	expect(app.viewStyle("id:ws:pilo:select")?.backgroundColor).toBeUndefined();
 });
 
 test("expanding a project lists its running session, then its five latest", async () => {
@@ -67,9 +73,15 @@ test("expanding a project lists its running session, then its five latest", asyn
 	expect(app.count("id:ws:pilo >> id:session:s7:unread")).toBe(0);
 	expect(collapsedSections(app)).toEqual({ "ws:pilo": false });
 
+	// View all opens the project's own list of every session, in place of
+	// the tree; back returns to the tree as it was.
 	await app.press("id:ws:pilo:view-all");
-	await app.waitFor("id:ws:pilo:view-all", { state: "gone" });
+	await app.waitFor("id:sidebar-project-view-back >> text:pilo");
 	await app.waitFor("id:session:s2 >> text:Dialog test");
+	expect(app.shows("id:ws:notes")).toBe(false);
+	await app.press("id:sidebar-project-view-back");
+	await app.waitFor("id:ws:pilo:view-all");
+	expect(app.shows("id:session:s2")).toBe(false);
 
 	await app.press("id:ws:pilo:toggle");
 	await app.waitFor("id:session:s1", { state: "gone" });
@@ -84,8 +96,8 @@ test("pressing a project or a session opens it and shows it selected", async () 
 	await app.waitFor("id:session:s7");
 
 	await app.press("id:ws:pilo:select");
-	await becomes(app, () => rowColor(app, "id:ws:pilo:row"), SELECTED);
-	expect(rowColor(app, "id:ws:api:row")).toBeUndefined();
+	await becomes(app, () => rowColor(app, "id:ws:pilo:select"), SELECTED);
+	expect(rowColor(app, "id:ws:api:select")).toBeUndefined();
 	// Choosing a project opens its new-chat draft.
 	expect(
 		app.shows("id:workspace >> text:What would you like to work on today?"),
@@ -94,7 +106,7 @@ test("pressing a project or a session opens it and shows it selected", async () 
 
 	await app.press("id:session:s5");
 	await becomes(app, () => rowColor(app, "id:session:s5"), SELECTED);
-	expect(rowColor(app, "id:ws:pilo:row")).toBeUndefined();
+	expect(rowColor(app, "id:ws:pilo:select")).toBeUndefined();
 	// Opening an unread session reads it.
 	await app.waitUntil(() => !app.shows("id:session:s5:unread"));
 
@@ -103,6 +115,8 @@ test("pressing a project or a session opens it and shows it selected", async () 
 	await app.waitFor("id:session:s2");
 	await app.press("id:session:s2");
 	await becomes(app, () => rowColor(app, "id:session:s2"), SELECTED);
+	await app.press("id:sidebar-project-view-back");
+	await app.waitFor("id:ws:pilo:toggle");
 	await app.press("id:ws:pilo:toggle");
 	await app.waitFor("id:session:s2", { state: "gone" });
 	await app.press("id:ws:pilo:toggle");
@@ -111,21 +125,42 @@ test("pressing a project or a session opens it and shows it selected", async () 
 	expect(app.shows("id:ws:pilo:view-all")).toBe(true);
 });
 
-test("a project says when it has no sessions, is still reading them, or failed to", async () => {
+function sessionReads(app: App, projectId: string) {
+	return clientCalls(app).filter(
+		(call) => call.call === "listSessions" && call.projectId === projectId,
+	).length;
+}
+
+/** Expands `projectId` and waits until its sessions are read, twice. */
+async function expandAndRead(app: App, projectId: string) {
+	await app.press(`id:ws:${projectId}:toggle`);
+	await app.waitUntil(
+		() =>
+			sessionReads(app, projectId) >= 2 &&
+			!app.shows(`id:ws:${projectId}:loading`),
+	);
+}
+
+test("a project lists nothing without sessions, spins while reading them, and says when that failed", async () => {
 	const app = await openSidebar();
 	await app.waitFor("id:ws:notes:toggle");
 
-	await app.press("id:ws:notes:toggle");
-	await app.waitFor("id:ws:notes:empty");
-	expect(app.texts()).toContain("No sessions");
+	// As React's tree: an expanded project without sessions adds no row.
+	await expandAndRead(app, "notes");
+	const texts = treeTexts(app);
+	expect(texts.slice(texts.indexOf("notes"), texts.indexOf("broken"))).toEqual([
+		"notes",
+	]);
+	expect(app.shows("text:No sessions")).toBe(false);
 
 	await app.press("id:ws:broken:toggle");
 	await app.waitFor("id:ws:broken:failed");
 	expect(app.texts()).toContain("The session index is locked.");
 
+	// A read that has not answered spins on the project's row.
 	await app.press("id:ws:slow:toggle");
 	await app.waitFor("id:ws:slow:loading");
-	expect(app.shows("id:ws:slow:empty")).toBe(false);
+	expect(app.shows("text:No sessions")).toBe(false);
 });
 
 type ClientCall = Record<string, unknown> & { call: string };
@@ -232,8 +267,8 @@ function projectOrder(app: App) {
 test("a project row's menu refreshes its sessions from the runtime", async () => {
 	const app = await openSidebar();
 	await app.waitFor("id:ws:notes:toggle");
-	await app.press("id:ws:notes:toggle");
-	await app.waitFor("id:ws:notes:empty");
+	await expandAndRead(app, "notes");
+	expect(app.shows("id:session:n1")).toBe(false);
 
 	await app.press("id:ws:notes:menu");
 	await app.press("id:ws:notes:menu:refresh");
@@ -249,7 +284,7 @@ test("a project row's menu moves it one place and keeps the new order next launc
 	await becomes(app, () => projectOrder(app), {
 		local: ["notes", "pilo", "broken", "slow"],
 	});
-	expect(app.texts().slice(0, 5)).toEqual([
+	expect(treeTexts(app).slice(0, 5)).toEqual([
 		"Local",
 		"notes",
 		"pilo",
@@ -262,7 +297,7 @@ test("a project row's menu moves it one place and keeps the new order next launc
 	await becomes(app, () => projectOrder(app), {
 		local: ["pilo", "notes", "broken", "slow"],
 	});
-	expect(app.texts().slice(0, 5)).toEqual([
+	expect(treeTexts(app).slice(0, 5)).toEqual([
 		"Local",
 		"pilo",
 		"notes",
@@ -272,7 +307,7 @@ test("a project row's menu moves it one place and keeps the new order next launc
 
 	const next = await openSidebar(app.storage());
 	await next.waitFor("id:ws:pilo");
-	expect(next.texts().slice(0, 5)).toEqual([
+	expect(treeTexts(next).slice(0, 5)).toEqual([
 		"Local",
 		"pilo",
 		"notes",

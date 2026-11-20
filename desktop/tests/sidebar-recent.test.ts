@@ -24,8 +24,18 @@ function openSidebar(storage: Record<string, string> = {}) {
 
 type App = Awaited<ReturnType<typeof openSidebar>>;
 
-/** The sidebar's texts: everything before the landing's hero and picker. */
-const sidebar = (app: App) => app.texts().slice(0, -3);
+/**
+ * The sidebar list's texts: after the title bar and the 「新会话」 row, before
+ * the landing's hero and picker.
+ */
+function sidebar(app: App) {
+	const texts = app.texts();
+	const end = texts.indexOf("What would you like to work on today?");
+	return texts.slice(
+		texts.indexOf("New session") + 1,
+		end < 0 ? undefined : end,
+	);
+}
 
 async function openRecent(storage: Record<string, string> = {}) {
 	const app = await openSidebar({ [VIEW]: "recent", ...storage });
@@ -96,7 +106,7 @@ test("a recent session opens from the list and the list collapses", async () => 
 	const app = await openRecent();
 	// The workspace starts on the first project, then shows the session's
 	// chat (the fixture's sessions have no messages) in the session's project.
-	expect(app.texts().slice(-2)).toEqual(["api", "Add project"]);
+	await app.waitFor("id:landing-project-picker >> text:api");
 	await app.press("id:session:s3");
 	await app.waitUntil(
 		() => app.viewStyle("id:session:s3")?.backgroundColor === SELECTED,
@@ -124,5 +134,5 @@ test("the recent view says so when there is no session", async () => {
 		storage: { "fixture.scenario": "empty", [VIEW]: "recent" },
 	});
 	await app.waitFor("id:recent:empty");
-	expect(app.texts().slice(0, 2)).toEqual(["Recent sessions", "No sessions"]);
+	expect(sidebar(app).slice(0, 2)).toEqual(["Recent sessions", "No sessions"]);
 });

@@ -23,8 +23,8 @@ import { MenuSeparator } from "../ui/menu-separator";
 import { scrollbarLook } from "../ui/scrollbar";
 import { Tooltip } from "../ui/tooltip";
 import { t } from "./i18n";
+import { createHover } from "../ui/hover";
 import {
-	createHover,
 	MiniSwitch,
 	SidebarAction,
 	sidebarFocusRing,
