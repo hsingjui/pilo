@@ -53,6 +53,8 @@ export function AddProjectDialog(props: {
 	open: Signal<boolean>;
 	api: AddProjectApi;
 	onAdd: (connectionId: string, path: string) => Promise<Project>;
+	/** The connection the dialog opens on (a connection row's +). */
+	initialConnectionId?: () => string | null;
 }) {
 	const connections = signal<Connection[]>([]);
 	const connectionId = signal<string | null>(null);
@@ -92,11 +94,13 @@ export function AddProjectDialog(props: {
 		try {
 			const listed = await props.api.listConnections();
 			connections.set(listed);
-			connectionId.update((current) =>
-				current !== null && listed.some((entry) => entry.id === current)
-					? current
-					: (listed[0]?.id ?? null),
-			);
+			const preferred = props.initialConnectionId?.() ?? null;
+			connectionId.update((current) => {
+				const wanted = preferred ?? current;
+				return wanted !== null && listed.some((entry) => entry.id === wanted)
+					? wanted
+					: (listed[0]?.id ?? null);
+			});
 		} catch (caught) {
 			error.set(errorMessage(caught));
 		}
@@ -179,7 +183,7 @@ export function AddProjectDialog(props: {
 				</DialogDescription>
 			</DialogHeader>
 			<View class="gap-1.5">
-				<Text class="text-xs font-medium text-muted-foreground">
+				<Text class="font-sans text-xs font-medium text-muted-foreground">
 					{() => t("project.addTitle")}
 				</Text>
 				<Select
@@ -194,7 +198,7 @@ export function AddProjectDialog(props: {
 				/>
 			</View>
 			<View class="gap-1.5">
-				<Text class="text-xs font-medium text-muted-foreground">
+				<Text class="font-sans text-xs font-medium text-muted-foreground">
 					{() => t("project.projectDirectory")}
 				</Text>
 				<View class="flex-row gap-2">
@@ -251,7 +255,9 @@ export function AddProjectDialog(props: {
 									browserOpen.set(false);
 								}}
 							>
-								<Text>{() => t("project.selectCurrentDirectory")}</Text>
+								<Text class="font-sans">
+									{() => t("project.selectCurrentDirectory")}
+								</Text>
 							</Button>
 						</View>
 						<View class="border-b border-border p-2">
@@ -269,7 +275,7 @@ export function AddProjectDialog(props: {
 										<Spinner />
 									</View>
 								) : directories().length === 0 ? (
-									<Text class="px-3 py-6 text-center text-xs text-muted-foreground">
+									<Text class="font-sans px-3 py-6 text-center text-xs text-muted-foreground">
 										{() =>
 											filter().trim()
 												? t("project.noMatchingFolders", {
@@ -289,7 +295,7 @@ export function AddProjectDialog(props: {
 												}
 											>
 												<Icon name="Folder" color={token("muted-foreground")} />
-												<Text class="flex-1 truncate">
+												<Text class="font-sans flex-1 truncate">
 													{() => entry().name}
 												</Text>
 											</Button>
@@ -303,21 +309,26 @@ export function AddProjectDialog(props: {
 			}
 			{() =>
 				error() ? (
-					<Text testID="add-project-error" class="text-xs text-status-danger">
+					<Text
+						testID="add-project-error"
+						class="font-sans text-xs text-status-danger"
+					>
 						{() => error()}
 					</Text>
 				) : null
 			}
 			<DialogFooter>
 				<Button variant="ghost" onPress={() => props.open.set(false)}>
-					<Text>{() => t("common.cancel")}</Text>
+					<Text class="font-sans">{() => t("common.cancel")}</Text>
 				</Button>
 				<Button
 					testID="add-project-confirm"
 					disabled={busy() || picking() || !path().trim()}
 					onPress={() => void add()}
 				>
-					<Text>{() => (busy() ? t("common.adding") : t("common.add"))}</Text>
+					<Text class="font-sans">
+						{() => (busy() ? t("common.adding") : t("common.add"))}
+					</Text>
 				</Button>
 			</DialogFooter>
 		</Dialog>

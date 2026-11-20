@@ -76,9 +76,13 @@ store.acknowledgeOpenSession();
 
 ## 侧栏
 
+`Sidebar.tsx` 切换连接分组、最近会话和单项目列表。项目行、项目菜单及展开后的会话列表在 `sidebar-project-section.tsx`；三种列表复用 `sidebar-session-row.tsx` 的会话行和 `sidebar-session-glide.tsx` 的悬停高亮。
+
 - 设置键与默认值沿用 WebView（`pilo.collapsedSections` 等；`env:` 分组默认展开，`ws:` 默认折叠），清单见[功能对齐清单](../../tasks/11-19-nsh-desktop-migration/feature-parity.md#webview-localstorage-清单)。
+- `AppShell` 使用 `ResizablePanelGroup` 原生拖动侧栏，默认 292pt，范围 240–480pt。拖动结束由 `SidebarSettingsStore` 将宽度存入 nsh Storage 的 `pilo.sidebarWidth`；折叠按钮只隐藏侧栏，不改保存的宽度。
 - 项目视图：按连接分组，本地在前；展开项目时读取会话，运行中的在前，再取最近五条，其余由「查看全部」原地展开。排序复用 `src/components/sidebar/session-list.ts` 的 `summarizeProjectSessions`。
 - 最近视图：所有项目的会话合并，运行中的在前，再取最近 50 条，复用 `sortSidebarSessionsActiveFirst`。
+- 侧栏通过 `isDefaultWorkspace` 识别内置工作区，按当前界面语言显示 `sidebar.defaultWorkspace`；普通项目沿用已存名称，不写回运行时。
 
 ## 测试约定
 
@@ -100,7 +104,6 @@ store.acknowledgeOpenSession();
 
 nsh 侧的两项已登记在[功能对齐清单](../../tasks/11-19-nsh-desktop-migration/feature-parity.md#nsh-侧差距切换前复核)。外壳自身的差距：
 
-- 侧栏宽度拖动等待 `ResizeSeparator`。
 - 没有 composer 和会话头。
 - 阅读字体、终端字体由聊天和终端部分读取，外壳不应用。
-- 侧栏：分组来自项目的连接，没有项目的连接不显示；默认工作区显示已存名称；连接菜单只有视图项；没有悬停箭头、tooltip 和行菜单；「查看全部」原地展开，Tauri 打开单独的列表；会话读取失败的项目不出现在最近视图，也不提示错误；运行时停止时侧栏为空。
+- 侧栏：分组来自项目的连接，没有项目的连接不显示；连接菜单只有视图项；没有悬停箭头、tooltip 和行菜单；「查看全部」原地展开，Tauri 打开单独的列表；会话读取失败的项目不出现在最近视图，也不提示错误；运行时停止时侧栏为空。

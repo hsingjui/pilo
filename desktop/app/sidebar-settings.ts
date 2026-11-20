@@ -26,6 +26,16 @@ const COLLAPSED_SECTIONS_KEY = "pilo.collapsedSections";
 const PROJECT_ORDER_KEY = "pilo.sidebarProjectOrder";
 const VIEW_KEY = "pilo.sidebarOrganizeMode";
 const SHOW_PROJECTS_IN_RECENTS_KEY = "pilo.sidebarShowProjectsInRecents";
+const WIDTH_KEY = "pilo.sidebarWidth";
+
+// Match the Tauri sidebar's default and resize limits.
+export const MIN_SIDEBAR_WIDTH = 240;
+export const MAX_SIDEBAR_WIDTH = 480;
+const DEFAULT_SIDEBAR_WIDTH = 292;
+
+function clampWidth(width: number): number {
+	return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width));
+}
 
 const DEFAULTS: SidebarSettings = {
 	collapsedSections: {},
@@ -37,19 +47,26 @@ const DEFAULTS: SidebarSettings = {
 /** The sidebar's stored settings: read once from storage, saved on change. */
 export class SidebarSettingsStore {
 	private readonly current = signal(DEFAULTS);
+	private readonly currentWidth = signal(DEFAULT_SIDEBAR_WIDTH);
 	private readonly isLoaded = signal(false);
 
 	readonly settings: Accessor<SidebarSettings> = () => this.current();
+	readonly width: Accessor<number> = () => this.currentWidth();
 	/** False until `load` has read storage; changes before it are lost. */
 	readonly loaded: Accessor<boolean> = () => this.isLoaded();
 
 	async load(): Promise<void> {
-		const [sections, order, view, showProjects] = await Promise.all([
+		const [sections, order, view, showProjects, width] = await Promise.all([
 			Storage.getItem(COLLAPSED_SECTIONS_KEY),
 			Storage.getItem(PROJECT_ORDER_KEY),
 			Storage.getItem(VIEW_KEY),
 			Storage.getItem(SHOW_PROJECTS_IN_RECENTS_KEY),
+			Storage.getItem(WIDTH_KEY),
 		]);
+		const savedWidth = Number.parseInt(width ?? "", 10);
+		if (Number.isFinite(savedWidth)) {
+			this.currentWidth.set(clampWidth(savedWidth));
+		}
 		this.current.set({
 			collapsedSections: parseCollapsedSections(sections),
 			projectOrder: parseProjectOrder(order),
@@ -57,6 +74,17 @@ export class SidebarSettingsStore {
 			showProjectsInRecents: showProjects === "1",
 		});
 		this.isLoaded.set(true);
+	}
+
+	/** Shows a width while a drag moves; `setWidth` saves the one it ends at. */
+	previewWidth(width: number): void {
+		this.currentWidth.set(clampWidth(width));
+	}
+
+	setWidth(width: number): Promise<void> {
+		const next = clampWidth(Math.round(width));
+		this.currentWidth.set(next);
+		return Storage.setItem(WIDTH_KEY, String(next));
 	}
 
 	setSectionCollapsed(id: string, collapsed: boolean): Promise<void> {
