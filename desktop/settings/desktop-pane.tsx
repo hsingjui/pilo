@@ -7,7 +7,12 @@ import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { SettingsRow, SettingsSection } from "./layout";
 
-/** Startup integration: launching at login, via nsh's Application module. */
+/**
+ * Startup integration, as the Tauri `DesktopSettings` (a section inside its
+ * Preferences pane, a tab of its own here). nsh's `Application` reports
+ * launch-at-login as a boolean, so the Tauri version's three-mode select
+ * (off / window / tray) shows as a switch.
+ */
 export function DesktopPane(props: { desktop?: DesktopShell }) {
 	const enabled = signal<boolean | null>(null);
 	const saving = signal(false);
@@ -51,51 +56,69 @@ export function DesktopPane(props: { desktop?: DesktopShell }) {
 		<View class="gap-3">
 			<SettingsSection title={t("desktop.startupAndTray")}>
 				<SettingsRow label={t("desktop.autostart")}>
-					{() => (
-						<Switch
-							testID="settings-launch-at-login"
-							checked={enabled() ?? false}
-							disabled={enabled() === null || saving()}
-							onChange={({ checked }) => void change(checked)}
-						/>
-					)}
+					{() =>
+						startupError() === "desktop.loadFailed" ? (
+							<View class="flex-row flex-wrap items-center gap-2">
+								<Text class="text-xs text-destructive">
+									{t("desktop.loadFailed")}
+								</Text>
+								<Button variant="ghost" size="sm" onPress={() => void load()}>
+									{t("common.retry")}
+								</Button>
+							</View>
+						) : (
+							<View class="flex-row flex-wrap items-center gap-2">
+								<Switch
+									testID="settings-launch-at-login"
+									checked={enabled() ?? false}
+									disabled={enabled() === null || saving()}
+									onChange={({ checked }) => void change(checked)}
+								/>
+								{startupError() === "desktop.saveFailed" ? (
+									<Text class="text-xs text-destructive">
+										{t("desktop.saveFailed")}
+									</Text>
+								) : null}
+							</View>
+						)
+					}
 				</SettingsRow>
-				{() => {
-					const error = startupError();
-					return error ? (
-						<SettingsRow label={t(error)}>
-							{enabled() === null ? (
-								<Button onPress={() => void load()}>{t("common.retry")}</Button>
-							) : null}
-						</SettingsRow>
-					) : null;
-				}}
 				{props.desktop ? (
 					<SettingsRow label={t("desktop.exitOnClose")}>
-						{() => (
-							<Switch
-								checked={props.desktop?.settings()?.exitOnClose ?? false}
-								disabled={
-									!props.desktop?.settings() || props.desktop.savingClose()
-								}
-								onChange={({ checked }) => void changeClose(checked)}
-							/>
-						)}
+						{() =>
+							props.desktop?.loadFailed() ? (
+								<View class="flex-row flex-wrap items-center gap-2">
+									<Text class="text-xs text-destructive">
+										{t("desktop.closeLoadFailed")}
+									</Text>
+									<Button
+										variant="ghost"
+										size="sm"
+										onPress={() => void props.desktop?.load()}
+									>
+										{t("common.retry")}
+									</Button>
+								</View>
+							) : (
+								<View class="flex-row flex-wrap items-center gap-2">
+									<Switch
+										testID="settings-exit-on-close"
+										checked={props.desktop?.settings()?.exitOnClose ?? false}
+										disabled={
+											!props.desktop?.settings() || props.desktop.savingClose()
+										}
+										onChange={({ checked }) => void changeClose(checked)}
+									/>
+									{closeFailed() ? (
+										<Text class="text-xs text-destructive">
+											{t("desktop.closeSaveFailed")}
+										</Text>
+									) : null}
+								</View>
+							)
+						}
 					</SettingsRow>
 				) : null}
-				{() =>
-					props.desktop?.loadFailed() ? (
-						<SettingsRow label={t("desktop.closeLoadFailed")}>
-							<Button onPress={() => void props.desktop?.load()}>
-								{t("common.retry")}
-							</Button>
-						</SettingsRow>
-					) : closeFailed() ? (
-						<Text class="px-3 py-2 text-xs text-destructive">
-							{t("desktop.closeSaveFailed")}
-						</Text>
-					) : null
-				}
 			</SettingsSection>
 		</View>
 	);
