@@ -14,6 +14,7 @@ import type {
 	SessionHistoryFingerprint,
 	SessionHistoryResult,
 } from "@/lib/api/sessions-types";
+import { createConversationState } from "@/lib/chat/conversation-reducer";
 import { replayConversationEvents } from "@/lib/chat/conversation-replay";
 import type {
 	ChatMessage,
@@ -230,20 +231,25 @@ export class ChatTranscriptStore {
 		this.context = context;
 	}
 
-	/** Shows the chat; `connected` says whether events are being received. */
-	open(target: ChatTranscriptTarget, connected: boolean) {
+	/** Shows the chat. A fresh draft has no file or running Pi to read yet. */
+	open(
+		target: ChatTranscriptTarget,
+		connected: boolean,
+		options?: { freshDraft: boolean },
+	) {
+		const freshDraft = options?.freshDraft;
 		this.reset();
 		this.target = target;
 		this.current.set({
 			sessionKey: target.sessionKey,
-			status: "loading",
-			conversation: null,
+			status: freshDraft ? "ready" : "loading",
+			conversation: freshDraft ? createConversationState() : null,
 			historyPrefix: noMessages,
 			source: null,
 		});
-		// Without the event stream there is nothing to apply on top of a
-		// snapshot; `refresh()` reads it once the stream is back.
-		return connected ? this.read() : Promise.resolve();
+		// A draft reads once Pi starts. If disconnected, `refresh()` reads
+		// once the event stream is back.
+		return connected && !freshDraft ? this.read() : Promise.resolve();
 	}
 
 	close() {

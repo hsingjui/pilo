@@ -21,6 +21,7 @@ import {
 } from "@/lib/chat/chat-input-history-cursor";
 import {
 	createChatSubmission,
+	formatChatImageSize,
 	resolveChatImageMimeType,
 	toPiImageContents,
 	chatSubmissionHasContent,
@@ -40,6 +41,7 @@ import {
 	type SessionMention,
 } from "@/lib/chat/session-mentions";
 import type { ComposerSuggestion } from "@/lib/chat/composer-suggestions";
+import { t } from "../app/i18n";
 import { requestPiRpc } from "../client/chat-rpc";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import type { AppState } from "../state/app-state";
@@ -72,6 +74,8 @@ export type ComposerViewState = {
 	images: ChatImageAttachment[];
 	status: string | null;
 };
+
+type ComposerDraft = Pick<ComposerViewState, "value" | "images">;
 
 const INPUT_HISTORY_KEY = "pilo.chatInputHistory.v1";
 const ATTACHMENT_NAME_LIMIT = 80;
@@ -112,10 +116,7 @@ export class ComposerStore {
 	private readonly client: ComposerClient;
 	private readonly app: Accessor<AppState>;
 	private readonly beforeSend?: (sessionKey: string) => Promise<boolean>;
-	private readonly drafts = new Map<
-		string,
-		{ value: string; images: ChatImageAttachment[] }
-	>();
+	private readonly drafts = new Map<string, ComposerDraft>();
 	private readonly stateSignal = signal<ComposerViewState>({
 		value: "",
 		caret: 0,
@@ -203,7 +204,12 @@ export class ComposerStore {
 		this.stateSignal.update((s) => ({ ...s, dragging }));
 	}
 
-	setStatus(status: string | null) {
+	setStatus(status: string | null, sessionKey?: string) {
+		if (
+			sessionKey !== undefined &&
+			this.targetSignal()?.sessionKey !== sessionKey
+		)
+			return;
 		this.stateSignal.update((s) => ({ ...s, status }));
 	}
 
@@ -412,28 +418,52 @@ export class ComposerStore {
 		}
 	}
 
-	/** Inserts picked/dropped files: images as attachments, other files as uploaded `@` mentions. */
-	async addFiles(files: readonly File[]) {
-		const target = this.targetSignal();
+	private draftFor(sessionKey: string): ComposerDraft {
+		return this.targetSignal()?.sessionKey === sessionKey
+			? this.stateSignal()
+			: (this.drafts.get(sessionKey) ?? { value: "", images: [] });
+	}
+
+	private writeDraft(sessionKey: string, draft: ComposerDraft) {
+		const previous = this.draftFor(sessionKey).value;
+		if (previous !== draft.value)
+			discardRemovedChatFiles(previous, draft.value);
+		if (this.targetSignal()?.sessionKey === sessionKey) {
+			this.stateSignal.update((s) => ({
+				...s,
+				value: draft.value,
+				caret: s.value === draft.value ? s.caret : draft.value.length,
+				images: draft.images,
+			}));
+		} else {
+			this.drafts.set(sessionKey, draft);
+		}
+	}
+
+	/** Inserts picked/pasted/dropped files into the draft that requested them. */
+	async addFiles(files: readonly File[], target = this.targetSignal()) {
 		if (!target) return;
+		const { sessionKey, projectId } = target;
 		for (const file of files) {
 			const mime = resolveChatImageMimeType(file);
 			try {
 				const bytes = new Uint8Array(await file.arrayBuffer());
 				if (mime) {
-					if (
-						bytes.length > MAX_CHAT_IMAGE_BYTES ||
-						this.stateSignal().images.length >= MAX_CHAT_IMAGE_COUNT ||
-						this.stateSignal().images.reduce(
-							(total, image) => total + image.size,
-							0,
-						) +
-							bytes.length >
-							MAX_CHAT_IMAGE_TOTAL_BYTES
-					) {
-						this.setStatus(
-							`图片超出限制（最多 ${MAX_CHAT_IMAGE_COUNT} 张，单张 ≤10 MB）`,
-						);
+					const { value, images } = this.draftFor(sessionKey);
+					const limit =
+						images.length >= MAX_CHAT_IMAGE_COUNT
+							? t("chat.maxImages", { count: MAX_CHAT_IMAGE_COUNT })
+							: bytes.length > MAX_CHAT_IMAGE_BYTES
+								? t("chat.imageTooLarge", { name: file.name || "image" })
+								: images.reduce((total, image) => total + image.size, 0) +
+											bytes.length >
+									  MAX_CHAT_IMAGE_TOTAL_BYTES
+									? t("chat.imagesTotalLimit", {
+											size: formatChatImageSize(MAX_CHAT_IMAGE_TOTAL_BYTES),
+										})
+									: null;
+					if (limit) {
+						this.setStatus(limit, sessionKey);
 						continue;
 					}
 					const image: ChatImageAttachment = {
@@ -443,45 +473,53 @@ export class ComposerStore {
 						size: bytes.length,
 						data: bytesToBase64(bytes),
 					};
-					this.stateSignal.update((s) => ({
-						...s,
-						images: [...s.images, image],
-					}));
+					this.writeDraft(sessionKey, { value, images: [...images, image] });
 				} else {
 					const path = await this.client.uploadChatFile(
-						target.projectId,
+						projectId,
 						file.name || "file",
 						bytes,
 					);
 					registerChatFile(path, () =>
-						this.client.removeChatFile(target.projectId, path),
+						this.client.removeChatFile(projectId, path),
 					);
-					const draft = this.mentionDraft();
-					this.setValue(
-						writeChatMentionDraft(
-							[...draft.references, { kind: "file" as const, path }],
+					const { value, images } = this.draftFor(sessionKey);
+					const draft = readChatMentionDraft(value, this.sessionsByValue());
+					this.writeDraft(sessionKey, {
+						value: writeChatMentionDraft(
+							[...draft.references, { kind: "file", path }],
 							draft.text,
 						),
-					);
+						images,
+					});
 				}
-			} catch (error) {
-				this.setStatus(`添加附件失败：${errorMessage(error)}`);
+			} catch {
+				this.setStatus(
+					t("chat.uploadFileFailed", { name: file.name || "file" }),
+					sessionKey,
+				);
 			}
 		}
 	}
 
 	/** Dropped `file:` URIs, read as bytes and attached like picked files. */
 	async addUris(uris: readonly string[]) {
+		const target = this.targetSignal();
+		if (!target) return;
 		for (const uri of uris) {
 			try {
 				const response = await fetch(uri);
 				const bytes = await response.arrayBuffer();
 				const name = attachmentName(uri);
-				await this.addFiles([
-					new File([bytes], name.slice(0, ATTACHMENT_NAME_LIMIT)),
-				]);
-			} catch (error) {
-				this.setStatus(`无法读取拖入的文件：${errorMessage(error)}`);
+				await this.addFiles(
+					[new File([bytes], name.slice(0, ATTACHMENT_NAME_LIMIT))],
+					target,
+				);
+			} catch {
+				this.setStatus(
+					t("chat.uploadFileFailed", { name: attachmentName(uri) }),
+					target.sessionKey,
+				);
 			}
 		}
 	}
@@ -533,10 +571,8 @@ export class ComposerStore {
 		const submission = createChatSubmission(value, images);
 		if (!chatSubmissionHasContent(submission)) return;
 		const running = this.running();
-		if (running && this.compacting()) {
-			this.setStatus("会话正在压缩上下文，请稍后");
-			return;
-		}
+		// A compaction takes no message; the composer blocks sending meanwhile.
+		if (running && this.compacting()) return;
 		this.stateSignal.update((s) => ({
 			...s,
 			sending: true,
@@ -585,7 +621,7 @@ export class ComposerStore {
 			const key = target.sessionKey;
 			this.drafts.delete(key);
 		} catch (error) {
-			this.setStatus(`发送失败：${errorMessage(error)}`);
+			this.setStatus(errorMessage(error));
 		} finally {
 			this.stateSignal.update((s) => ({ ...s, sending: false }));
 		}
@@ -600,7 +636,7 @@ export class ComposerStore {
 				type: "abort",
 			});
 		} catch (error) {
-			this.setStatus(`停止失败：${errorMessage(error)}`);
+			this.setStatus(`${t("chat.stopPiFailed")}: ${errorMessage(error)}`);
 		}
 	}
 }

@@ -5,6 +5,7 @@ import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import type { ComposerClient } from "../composer/composer-store";
 import { ComposerStore } from "../composer/composer-store";
 import { ChatComposer } from "../composer/chat-composer";
+import { initializeI18n } from "../app/i18n";
 import { createAppState, type AppState } from "../state/app-state";
 
 /** Reports each command the composer sends, as a status line for the test. */
@@ -57,6 +58,7 @@ function composerFixture(activeTurn: boolean) {
 }
 
 export function composerFixtureRoot(activeTurn = false) {
+	initializeI18n("en-US");
 	const store = composerFixture(activeTurn);
 	return (
 		<View class="bg-background" style={{ width: 420 }}>

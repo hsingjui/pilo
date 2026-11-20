@@ -14,13 +14,14 @@ async function openApp() {
 	return app;
 }
 
-test("the header shows the session's title, run config and usage", async () => {
+test("the header shows the title; the composer the run config and usage", async () => {
 	const app = await openApp();
 	expect(app.shows("id:session-header >> text:Resize the sidebar")).toBe(true);
-	expect(app.shows("id:session-header >> text:GPT-5")).toBe(true);
-	expect(app.shows("id:session-header >> text:High")).toBe(true);
-	expect(app.shows("id:session-header >> text:21%")).toBe(true);
 	expect(app.shows("id:session-menu-trigger")).toBe(true);
+	expect(app.shows("id:session-header >> text:GPT-5")).toBe(false);
+	expect(app.shows("id:chat-composer >> text:GPT-5")).toBe(true);
+	expect(app.shows("id:chat-composer >> text:High")).toBe(true);
+	expect(app.shows("id:chat-composer >> text:21%")).toBe(true);
 });
 
 test("the session menu copies the id and renames the session", async () => {
@@ -50,5 +51,5 @@ test("the run config menu picks a model and a thinking level", async () => {
 	await app.hover("text:Model");
 	await app.waitFor("id:run-config-model:anthropic:sonnet-4.5");
 	await app.press("id:run-config-model:anthropic:sonnet-4.5");
-	await app.waitFor("id:session-header >> text:Sonnet 4.5");
+	await app.waitFor("id:chat-composer >> text:Sonnet 4.5");
 });

@@ -7,6 +7,7 @@ import {
 	signal,
 	Text,
 	token,
+	untracked,
 	View,
 } from "nsh";
 import { currentWindow } from "nsh/desktop";
@@ -15,6 +16,11 @@ import type { Project } from "@/lib/api/projects-types";
 import { ChatMessageList } from "../chat/chat-message-list";
 import { ChatMarkdown, type ChatMarkdownFileLink } from "../chat/chat-markdown";
 import { ChatTodoCapsule } from "../chat/chat-todo-capsule";
+import {
+	ConversationColumn,
+	ConversationColumnLayout,
+} from "../chat/conversation-column";
+import { DEFAULT_CHAT_REM } from "../chat/layout";
 import { ChatComposer } from "../composer/chat-composer";
 import type { ComposerStore } from "../composer/composer-store";
 import { activeProject } from "../state/app-state";
@@ -64,10 +70,10 @@ export interface AppShellProps {
 	/** The open session's run configuration; a header shows it when present. */
 	runConfig?: Pick<
 		ChatRunConfigStore,
-		"state" | "setModel" | "setThinkingLevel" | "scopeModels"
+		"state" | "setModel" | "setThinkingLevel" | "scopeModels" | "catalogReady"
 	>;
 	/** The active project's model catalog, for the header's picker. */
-	catalog?: Pick<ModelCatalogStore, "state" | "refresh">;
+	catalog?: Pick<ModelCatalogStore, "state" | "refresh" | "saveScope">;
 	/** Renames a saved session in the index. */
 	onRenameSession?: (
 		projectId: string,
@@ -131,9 +137,29 @@ export function AppShell(props: AppShellProps) {
 		const timer = setTimeout(() => expandMounted.set(false), 200);
 		return () => clearTimeout(timer);
 	});
+	const narrowConversation = signal(false);
+	const claudeTheme = computed(
+		() => store.state().themeSettings?.themeFamily === "claude",
+	);
+	const conversationLayout = computed(() => ({
+		claude: claudeTheme(),
+		narrow: narrowConversation(),
+	}));
 	const chatTarget = computed(() => openChatTarget(store.state()));
 	const chatSessionKey = computed(() => chatTarget()?.sessionKey ?? null);
 	effect(() => composer.setTarget(chatTarget()));
+	// Without an open session the workspace holds a new chat in the active
+	// project, as the Tauri landing does, so its composer is always there.
+	effect(() => {
+		const state = store.state();
+		if (state.status.type !== "ready" || state.navigation.session) return;
+		const project = activeProject(state);
+		if (project) untracked(() => store.selectProject(project.id));
+	});
+	/** A new chat with nothing sent yet: the landing, without a session header. */
+	const draftLanding = () =>
+		store.state().navigation.session?.sessionId !== undefined &&
+		chat.messages().length === 0;
 	followSavedAppearance(store.state);
 	keymap.bind({
 		[APP_SHORTCUTS.openCommandPalette]: () =>
@@ -190,8 +216,8 @@ export function AppShell(props: AppShellProps) {
 	const centered = (page: JSX.Element) => (
 		<View class="flex-1 items-center justify-center gap-2 p-6">{page}</View>
 	);
-	return (
-		<View testID="app" class="flex-1 flex-row bg-background">
+	const layout = () => (
+		<View class="flex-1 flex-row">
 			<SidebarPanel
 				store={store}
 				settings={sidebarSettings}
@@ -242,7 +268,13 @@ export function AppShell(props: AppShellProps) {
 						: undefined
 				}
 			/>
-			<View testID="main" class="min-w-0 flex-1">
+			<View
+				testID="main"
+				class="relative min-w-0 flex-1"
+				onLayout={({ bounds }) =>
+					narrowConversation.set(bounds.size.width < 40 * DEFAULT_CHAT_REM)
+				}
+			>
 				<View
 					testID="main-title-bar"
 					desktop={{ windowDrag: true }}
@@ -254,6 +286,38 @@ export function AppShell(props: AppShellProps) {
 					}}
 				>
 					{() => (expandMounted() ? expandButton() : null)}
+					{() =>
+						status().type === "ready" && sessionOpen() && !draftLanding() ? (
+							<SessionHeader
+								logoHidden={collapsed}
+								title={openSessionTitle}
+								sessionId={() =>
+									props.runConfig?.state()?.session?.sessionId ??
+									openSessionEntry()?.piSessionId ??
+									null
+								}
+								sessionPath={() =>
+									props.runConfig?.state()?.session?.sessionPath ??
+									store.state().navigation.session?.sessionPath ??
+									null
+								}
+								compacting={() => props.runConfig?.state()?.compacting ?? false}
+								onRename={
+									props.onRenameSession
+										? (title) => {
+												const session = store.state().navigation.session;
+												if (session?.sessionPath)
+													props.onRenameSession?.(
+														session.projectId,
+														session.sessionPath,
+														title,
+													);
+											}
+										: undefined
+								}
+							/>
+						) : null
+					}
 				</View>
 				<View testID="workspace" class="min-h-0 min-w-0 flex-1">
 					{() => {
@@ -273,56 +337,6 @@ export function AppShell(props: AppShellProps) {
 							case "ready":
 								return sessionOpen() ? (
 									<View class="min-h-0 min-w-0 flex-1 flex-col">
-										<SessionHeader
-											title={openSessionTitle}
-											sessionId={() =>
-												props.runConfig?.state()?.session?.sessionId ??
-												openSessionEntry()?.piSessionId ??
-												null
-											}
-											sessionPath={() =>
-												props.runConfig?.state()?.session?.sessionPath ??
-												store.state().navigation.session?.sessionPath ??
-												null
-											}
-											compacting={() =>
-												props.runConfig?.state()?.compacting ?? false
-											}
-											usage={() => props.runConfig?.state()?.session ?? null}
-											runConfig={() => props.runConfig?.state() ?? null}
-											models={() =>
-												props.runConfig &&
-												props.runConfig.scopeModels.length > 0
-													? props.runConfig.scopeModels
-													: (props.catalog?.state()?.catalog?.models ?? [])
-											}
-											modelsLoading={() => {
-												const catalog = props.catalog?.state();
-												return !catalog?.loaded || catalog.refreshing;
-											}}
-											onModel={(model) => void props.runConfig?.setModel(model)}
-											onThinking={(level) =>
-												void props.runConfig?.setThinkingLevel(level)
-											}
-											onRefreshModels={
-												props.catalog
-													? () => void props.catalog?.refresh()
-													: undefined
-											}
-											onRename={
-												props.onRenameSession
-													? (title) => {
-															const session = store.state().navigation.session;
-															if (session?.sessionPath)
-																props.onRenameSession?.(
-																	session.projectId,
-																	session.sessionPath,
-																	title,
-																);
-														}
-													: undefined
-											}
-										/>
 										<ChatMessageList
 											assistantText={(text) => (
 												<ChatMarkdown
@@ -361,22 +375,76 @@ export function AppShell(props: AppShellProps) {
 												/>
 											)}
 										/>
-										{() => {
-											const sessionKey = chatSessionKey();
-											return sessionKey === null ? null : (
-												<ChatTodoCapsule
-													sessionKey={sessionKey}
-													transcript={chat.state}
-													running={() => composer.running()}
+										{/* The composer rises 16pt over the list, as the React page's
+										    `-mt-4`: the messages end behind the card's rounded top. */}
+										<View
+											testID="chat-composer-region"
+											class="relative z-20 -mt-4 w-full shrink-0 pb-4"
+										>
+											<ConversationColumn class="relative">
+												{() => {
+													const sessionKey = chatSessionKey();
+													return sessionKey === null ? null : (
+														<ChatTodoCapsule
+															sessionKey={sessionKey}
+															transcript={chat.state}
+															running={() => composer.running()}
+														/>
+													);
+												}}
+												<ChatComposer
+													store={composer}
+													sendShortcut={() =>
+														store.state().preferences?.values
+															.sendMessageShortcut
+													}
+													readingFontSize={() =>
+														store.state().preferences?.values.readingFontSize
+													}
+													runConfig={
+														props.runConfig
+															? {
+																	config: () =>
+																		props.runConfig?.state() ?? null,
+																	models: () =>
+																		props.catalog?.state()?.catalog?.models ??
+																		[],
+																	scopeModels: () =>
+																		props.runConfig?.scopeModels ?? [],
+																	scope: () =>
+																		props.catalog?.state()?.scope ?? null,
+																	scopeReady: () =>
+																		props.runConfig?.catalogReady ?? false,
+																	loading: () => {
+																		const catalog = props.catalog?.state();
+																		return (
+																			!catalog?.loaded || catalog.refreshing
+																		);
+																	},
+																	error: () =>
+																		props.catalog?.state()?.error ?? null,
+																	savingScope: () =>
+																		props.catalog?.state()?.savingScope ??
+																		false,
+																	onModel: (model) =>
+																		void props.runConfig?.setModel(model),
+																	onThinking: (level) =>
+																		void props.runConfig?.setThinkingLevel(
+																			level,
+																		),
+																	onRefresh: props.catalog
+																		? () => void props.catalog?.refresh()
+																		: undefined,
+																	onSaveScope: props.catalog
+																		? (models) =>
+																				props.catalog!.saveScope(models)
+																		: undefined,
+																}
+															: undefined
+													}
 												/>
-											);
-										}}
-										<ChatComposer
-											store={composer}
-											sendShortcut={() =>
-												store.state().preferences?.values.sendMessageShortcut
-											}
-										/>
+											</ConversationColumn>
+										</View>
 									</View>
 								) : (
 									centered(
@@ -391,6 +459,13 @@ export function AppShell(props: AppShellProps) {
 					}}
 				</View>
 			</View>
+		</View>
+	);
+	return (
+		<View testID="app" class="flex-1 flex-row bg-background">
+			<ConversationColumnLayout.Provider value={conversationLayout}>
+				{layout()}
+			</ConversationColumnLayout.Provider>
 			{() =>
 				paletteOpen() ? (
 					<CommandPalette
@@ -437,7 +512,7 @@ export function AppShell(props: AppShellProps) {
 							closeLabel={t("common.close")}
 							onDismissRequest={() => props.forker?.dismissNotice()}
 						>
-							<Text>{notice.title}</Text>
+							<Text class="font-sans">{notice.title}</Text>
 						</Toast>
 					</Overlay>
 				) : null;
@@ -505,7 +580,7 @@ function StartupFailure(props: {
 					void props.onRetry().finally(() => retrying.set(false));
 				}}
 			>
-				<Text>{() => t("common.retry")}</Text>
+				<Text class="font-sans">{() => t("common.retry")}</Text>
 			</Button>
 		</View>
 	);
