@@ -73,10 +73,10 @@ export function RemoteLanAddressPicker(props: {
 				);
 				if (state.status === "loading")
 					return (
-						<MenuItem disabled>
+						<MenuItem disabled indicatorClass="hidden">
 							<View class="flex-row items-center gap-2">
 								<Spinner class="size-3.5" />
-								<Text class="text-xs text-muted-foreground">
+								<Text class="font-sans text-xs text-muted-foreground">
 									{t("common.loading")}
 								</Text>
 							</View>
@@ -86,11 +86,12 @@ export function RemoteLanAddressPicker(props: {
 					return (
 						<>
 							<View class="px-3 py-2" testID="remote-lan-address-error">
-								<Text class="text-xs text-muted-foreground">
+								<Text class="font-sans text-xs text-muted-foreground">
 									{t("settings.remoteLanAddressLoadFailed")}
 								</Text>
 							</View>
 							<MenuItem
+								indicatorClass="hidden"
 								onSelect={() => {
 									void load();
 								}}
@@ -102,34 +103,39 @@ export function RemoteLanAddressPicker(props: {
 				if (state.ips.length === 0)
 					return (
 						<View class="px-3 py-2" testID="remote-lan-address-empty">
-							<Text class="text-xs text-muted-foreground">
+							<Text class="font-sans text-xs text-muted-foreground">
 								{t("settings.remoteLanAddressEmpty")}
 							</Text>
 						</View>
 					);
-				return state.ips.map((ip) => {
-					const baseUrl = new URL(`http://${ip}:${props.port}`).origin;
-					const added = existingOrigins.has(baseUrl);
-					return (
-						<MenuItem
-							testID={`remote-lan:${ip}`}
-							class="min-h-11 sm:min-h-8"
-							disabled={props.disabled || added}
-							onSelect={() => props.onAdd(baseUrl)}
-						>
-							<View class="min-w-0 flex-1 flex-row items-center gap-3">
-								<Text class="min-w-0 flex-1 truncate font-mono text-xs">
-									{baseUrl}
-								</Text>
-								{added ? (
-									<Text class="shrink-0 text-[10px] text-muted-foreground">
-										{t("common.added")}
-									</Text>
-								) : null}
-							</View>
-						</MenuItem>
-					);
-				});
+				return (
+					<View class="gap-1">
+						{state.ips.map((ip) => {
+							const baseUrl = new URL(`http://${ip}:${props.port}`).origin;
+							const added = existingOrigins.has(baseUrl);
+							return (
+								<MenuItem
+									testID={`remote-lan:${ip}`}
+									class="min-h-11 sm:min-h-8"
+									indicatorClass="hidden"
+									disabled={props.disabled || added}
+									onSelect={() => props.onAdd(baseUrl)}
+								>
+									<View class="min-w-0 flex-1 flex-row items-center gap-3">
+										<Text class="min-w-0 flex-1 truncate font-mono text-xs">
+											{baseUrl}
+										</Text>
+										{added ? (
+											<Text class="font-sans shrink-0 text-[10px] text-muted-foreground">
+												{t("common.added")}
+											</Text>
+										) : null}
+									</View>
+								</MenuItem>
+							);
+						})}
+					</View>
+				);
 			}}
 		</Menu>
 	);

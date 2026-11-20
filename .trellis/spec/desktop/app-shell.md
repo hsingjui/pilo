@@ -83,6 +83,7 @@ store.acknowledgeOpenSession();
 - 项目视图：按连接分组，本地在前；展开项目时读取会话，运行中的在前，再取最近五条，其余由「查看全部」原地展开。排序复用 `src/components/sidebar/session-list.ts` 的 `summarizeProjectSessions`。
 - 最近视图：所有项目的会话合并，运行中的在前，再取最近 50 条，复用 `sortSidebarSessionsActiveFirst`。
 - 侧栏通过 `isDefaultWorkspace` 识别内置工作区，按当前界面语言显示 `sidebar.defaultWorkspace`；普通项目沿用已存名称，不写回运行时。
+- 底栏与 Tauri `sidebar-footer.tsx` 一致：左侧设置，右侧依次是 Remote 手机按钮和主题切换。Remote 不在设置弹窗里；按钮由 `desktop/settings/remote-dialog.tsx` 的 `createRemoteStatus` 每 3 秒轮询 Host，运行时高亮；弹窗打开时暂停轮询，关闭后立即刷新。弹窗内容是 `RemotePane`，反馈走 `AppToaster` toast。
 
 ## 测试约定
 

@@ -2,6 +2,7 @@ import { mount, Scroll, View } from "nsh";
 
 import type { RemoteHostState } from "@/lib/api/remote-types";
 import "../app/fonts";
+import { AppToaster, AppToasts, AppToastStack } from "../app/app-toasts";
 import { initializeI18n } from "../app/i18n";
 import { RemotePane } from "../settings/remote-pane";
 import { scriptedClient } from "./scripted-app-client";
@@ -56,13 +57,19 @@ const runtime = scriptedClient({
 });
 
 function run() {
-	mount(() => (
-		<Scroll class="flex-1 bg-background">
-			<View class="p-3">
-				<RemotePane client={runtime.client} />
-			</View>
-		</Scroll>
-	));
+	mount(() => {
+		const toasts = new AppToasts();
+		return (
+			<AppToaster.Provider value={toasts}>
+				<Scroll class="flex-1 bg-background">
+					<View class="p-3">
+						<RemotePane client={runtime.client} />
+					</View>
+				</Scroll>
+				<AppToastStack toasts={toasts} />
+			</AppToaster.Provider>
+		);
+	});
 }
 
 initializeI18n();

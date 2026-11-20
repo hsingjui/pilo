@@ -29,7 +29,6 @@ import { ModelCatalogPane } from "./model-catalog-pane";
 import { NextPromptPane } from "./next-prompt-pane";
 import { NotificationsPane } from "./notifications-pane";
 import { PromptEnhancementPane } from "./prompt-enhancement-pane";
-import { RemotePane } from "./remote-pane";
 import { SessionNamingPane } from "./session-naming-pane";
 import { PreferencesPane } from "./preferences-pane";
 import { ShortcutsPane } from "./shortcuts-pane";
@@ -106,7 +105,6 @@ export type SettingsTabId =
 	| "prompt-enhancement"
 	| "cache-keep-alive"
 	| "session-naming"
-	| "remote"
 	| "desktop"
 	| "about";
 
@@ -183,12 +181,6 @@ const SETTINGS_TABS: SettingsTab[] = [
 		section: "project",
 		labelKey: "settings.sessionNaming",
 		icon: "Type",
-	},
-	{
-		id: "remote",
-		section: "other",
-		labelKey: "settings.remote",
-		icon: "Server",
 	},
 	{
 		id: "desktop",
@@ -429,8 +421,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
 												client={props.client}
 											/>
 										);
-									case "remote":
-										return <RemotePane client={props.client} />;
 									case "notifications":
 										return (
 											<NotificationsPane

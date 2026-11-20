@@ -33,6 +33,7 @@ import {
 	SettingsDialog,
 	type SettingsClient,
 } from "../settings/settings-dialog";
+import { createRemoteStatus, RemoteDialog } from "../settings/remote-dialog";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { ErrorState } from "../ui/state-view";
@@ -207,6 +208,8 @@ export function AppShell(props: AppShellProps) {
 		addProjectOpen.set(true);
 	};
 	const client = props.settings;
+	const remoteOpen = signal(false);
+	const remoteStatus = client ? createRemoteStatus(client, remoteOpen) : null;
 	const defaultWorkspaceShown = () =>
 		store.state().preferences?.values.defaultWorkspaceVisibility ?? {};
 	const expandButton = () => (
@@ -255,6 +258,14 @@ export function AppShell(props: AppShellProps) {
 				onSearch={() => paletteOpen.set(true)}
 				onNewChat={newChat}
 				onOpenSettings={client ? () => settingsOpen.set(true) : undefined}
+				remote={
+					remoteStatus
+						? {
+								running: remoteStatus.running,
+								onOpen: () => remoteOpen.set(true),
+							}
+						: undefined
+				}
 				theme={() => store.state().themeSettings?.theme ?? "system"}
 				onTheme={
 					client
@@ -541,6 +552,19 @@ export function AppShell(props: AppShellProps) {
 							onAdd={(connectionId, path) =>
 								store.addProject(connectionId, path)
 							}
+						/>
+					) : null
+				}
+				{() =>
+					client && remoteStatus && remoteOpen() ? (
+						<RemoteDialog
+							client={client}
+							initialState={untracked(remoteStatus.state)}
+							onClose={() => {
+								remoteOpen.set(false);
+								// The button follows a switch flipped in the dialog at once.
+								void remoteStatus.refresh();
+							}}
 						/>
 					) : null
 				}

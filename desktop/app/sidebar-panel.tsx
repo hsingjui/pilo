@@ -47,6 +47,8 @@ export interface SidebarPanelProps extends Omit<
 	onSearch: () => void;
 	onNewChat: () => void;
 	onOpenSettings?: () => void;
+	/** Opens the Remote WebUI dialog; its button glows while the Host runs. */
+	remote?: { running: Accessor<boolean>; onOpen: () => void };
 	/** The saved theme mode, which the footer's button cycles. */
 	theme: Accessor<Theme>;
 	onTheme?: (theme: Theme) => void;
@@ -279,6 +281,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 							</Button>
 						) : null}
 						<View class="ml-auto flex-row items-center gap-1">
+							{props.remote ? <RemoteButton {...props.remote} /> : null}
 							{props.onTheme ? (
 								<ThemeCycleButton theme={props.theme} onTheme={props.onTheme} />
 							) : null}
@@ -439,6 +442,35 @@ function ProjectSessionsToolbar(props: {
 				<Icon name="SquarePen" size={16} />
 			</SidebarAction>
 		</View>
+	);
+}
+
+/** Opens the Remote WebUI dialog, as React's phone button. */
+function RemoteButton(props: {
+	running: Accessor<boolean>;
+	onOpen: () => void;
+}) {
+	return (
+		<Button
+			testID="sidebar-remote"
+			variant="ghost"
+			size="icon"
+			accessibilityLabel={t("settings.remote")}
+			tooltip={
+				<Tooltip>
+					<Text class="font-sans">{() => t("settings.remote")}</Text>
+				</Tooltip>
+			}
+			onPress={props.onOpen}
+		>
+			{() =>
+				props.running() ? (
+					<Icon name="Smartphone" color={token("primary")} />
+				) : (
+					<Icon name="Smartphone" />
+				)
+			}
+		</Button>
 	);
 }
 

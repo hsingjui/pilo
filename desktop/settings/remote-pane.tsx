@@ -3,10 +3,12 @@ import {
 	computed,
 	effect,
 	Clipboard,
+	type InputRef,
 	Path2D,
 	signal,
 	Text,
 	View,
+	windowSize,
 } from "nsh";
 import type {
 	RemoteAccessAddress,
@@ -20,6 +22,7 @@ import {
 	sortRemoteAddresses,
 } from "@/lib/remote-addresses";
 import { randomId } from "@/lib/utils";
+import { AppToaster, showToast } from "../app/app-toasts";
 import { t } from "../app/i18n";
 import { qrMatrix } from "../lib/qr-matrix";
 import { Button } from "../ui/button";
@@ -32,6 +35,8 @@ import { RemoteLanAddressPicker } from "./remote-lan-address-picker";
 import type { SettingsClient } from "./settings-dialog";
 
 const MAX_ADDRESSES = 32;
+/** Tailwind's sm:, where the pairing link and its QR sit side by side. */
+const SM_WIDTH = 640;
 
 /** The pairing link's QR code, drawn like `<QRCodeSVG level="M">`. */
 function PairingQr(props: { url: string; size: number }) {
@@ -100,7 +105,7 @@ function DeviceNameCell(props: {
 							tooltip={t("settings.remoteRenameHint")}
 							onPress={startEditing}
 						>
-							<Text class="font-medium leading-tight text-foreground">
+							<Text class="font-sans font-medium leading-tight text-foreground">
 								{() => props.device().name}
 								{() =>
 									props.device().pairIp ? (
@@ -131,15 +136,18 @@ function DeviceNameCell(props: {
 /**
  * The Remote settings pane: Remote Host on/off and port, LAN access
  * addresses, the pairing link + QR, and paired devices. Mirrors
- * `remote-settings.tsx`; toasts become the inline `notice` line.
+ * `remote-settings.tsx`, toasts included.
  */
-export function RemotePane(props: { client: SettingsClient }) {
+export function RemotePane(props: {
+	client: SettingsClient;
+	/** The state the sidebar already polled, shown before the first load. */
+	initialState?: RemoteHostState | null;
+}) {
 	const client = props.client;
-	const state = signal<RemoteHostState | null>(null);
+	const state = signal<RemoteHostState | null>(props.initialState ?? null);
 	const busy = signal<"toggle" | "port" | "pairing" | string | null>(null);
 	const error = signal<string | null>(null);
-	/** Feedback the React version sends to toasts, shown inline instead. */
-	const notice = signal<string | null>(null);
+	const toasts = AppToaster();
 	const portDraft = signal<string | null>(null);
 	const addressDraft = signal<RemoteAccessAddress[] | null>(null);
 	const savingAddressDraft = signal(false);
@@ -148,6 +156,9 @@ export function RemotePane(props: { client: SettingsClient }) {
 	let savingAddresses = false;
 	let addressRevision = 0;
 	let draftRevision = 0;
+	/** Address fields by row id, so Enter can move to the next row. */
+	const addressInputs = new Map<string, InputRef>();
+	const wide = () => windowSize().width >= SM_WIDTH;
 
 	const addresses = computed(() =>
 		sortRemoteAddresses(state()?.addresses ?? []),
@@ -220,7 +231,11 @@ export function RemotePane(props: { client: SettingsClient }) {
 	const fail = (caught: unknown) => {
 		const message = userErrorMessage(caught);
 		error.set(message);
-		notice.set(null);
+		showToast(toasts, {
+			variant: "error",
+			title: t("settings.remoteActionFailed"),
+			description: message,
+		});
 	};
 
 	const toggle = async (next: boolean) => {
@@ -246,7 +261,10 @@ export function RemotePane(props: { client: SettingsClient }) {
 			return;
 		}
 		if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-			notice.set(t("settings.remotePortInvalid"));
+			showToast(toasts, {
+				variant: "error",
+				title: t("settings.remotePortInvalid"),
+			});
 			portDraft.set(null);
 			return;
 		}
@@ -255,7 +273,10 @@ export function RemotePane(props: { client: SettingsClient }) {
 			state.set(await client.remoteSetPort(port));
 			portDraft.set(null);
 			error.set(null);
-			notice.set(t("settings.remotePortSaved"));
+			showToast(toasts, {
+				variant: "success",
+				title: t("settings.remotePortSaved"),
+			});
 		} catch (caught) {
 			fail(caught);
 		} finally {
@@ -345,11 +366,16 @@ export function RemotePane(props: { client: SettingsClient }) {
 		if (!value) return;
 		try {
 			await Clipboard.writeText(value);
-			notice.set(t("settings.remoteLinkCopied"));
+			showToast(toasts, {
+				variant: "success",
+				title: t("settings.remoteLinkCopied"),
+			});
 		} catch (caught) {
-			notice.set(
-				`${t("settings.remoteCopyFailed")} · ${userErrorMessage(caught)}`,
-			);
+			showToast(toasts, {
+				variant: "error",
+				title: t("settings.remoteCopyFailed"),
+				description: userErrorMessage(caught),
+			});
 		}
 	};
 
@@ -374,6 +400,7 @@ export function RemotePane(props: { client: SettingsClient }) {
 		const next = (addressDraft() ?? addresses()).filter(
 			(item) => item.id !== id,
 		);
+		addressInputs.delete(id);
 		draftRevision += 1;
 		addressDraft.set(next);
 		void saveAddresses(next);
@@ -384,10 +411,18 @@ export function RemotePane(props: { client: SettingsClient }) {
 		const saved = await saveAddresses();
 		if (!saved || draftRevision !== draftRevisionAtStart) return;
 		const empty = saved.find((item) => !item.baseUrl.trim());
+		let focusId: string | null = null;
 		if (empty) {
+			focusId = empty.id;
 			addressDraft.set([...saved]);
 		} else if (saved.length < MAX_ADDRESSES) {
-			addressDraft.set([...saved, { id: randomId(), name: "", baseUrl: "" }]);
+			focusId = randomId();
+			addressDraft.set([...saved, { id: focusId, name: "", baseUrl: "" }]);
+		}
+		// The next (or new) row takes the focus once it is mounted, as React's.
+		if (focusId) {
+			const id = focusId;
+			setTimeout(() => addressInputs.get(id)?.focus(), 0);
 		}
 	};
 
@@ -401,7 +436,7 @@ export function RemotePane(props: { client: SettingsClient }) {
 						<SettingsRow label={t("settings.remoteWebUi")}>
 							<View class="flex-row items-center gap-2">
 								<Spinner class="size-3.5" />
-								<Text class="text-xs text-muted-foreground">
+								<Text class="font-sans text-xs text-muted-foreground">
 									{t("settings.remoteLoading")}
 								</Text>
 							</View>
@@ -414,7 +449,7 @@ export function RemotePane(props: { client: SettingsClient }) {
 							>
 								<View class="flex-row items-center gap-2">
 									<View class="flex-row items-center gap-1.5">
-										<Text class="text-[10px] text-muted-foreground">
+										<Text class="font-sans text-[10px] text-muted-foreground">
 											{t("settings.remotePort")}
 										</Text>
 										<Input
@@ -445,15 +480,6 @@ export function RemotePane(props: { client: SettingsClient }) {
 								</View>
 							</SettingsRow>
 							{() =>
-								notice() ? (
-									<View class="px-3 pb-2" testID="remote-notice">
-										<Text class="text-xs text-muted-foreground">
-											{() => notice()}
-										</Text>
-									</View>
-								) : null
-							}
-							{() =>
 								error() ||
 								current().lastError ||
 								current().addressConfigError ? (
@@ -472,7 +498,7 @@ export function RemotePane(props: { client: SettingsClient }) {
 											onPress={() => void toggle(true)}
 										>
 											<Icon name="RefreshCw" size={14} />
-											<Text class="text-xs">{t("common.retry")}</Text>
+											<Text class="font-sans text-xs">{t("common.retry")}</Text>
 										</Button>
 									</SettingsRow>
 								) : null
@@ -513,6 +539,7 @@ export function RemotePane(props: { client: SettingsClient }) {
 										<View class="flex-row items-center gap-2">
 											<Input
 												testID={`remote-address:${index()}:input`}
+												ref={(ref) => addressInputs.set(address().id, ref)}
 												class="min-h-11 min-w-0 flex-1 font-mono text-xs sm:min-h-9"
 												value={address().baseUrl}
 												placeholder="https://example.com"
@@ -563,7 +590,7 @@ export function RemotePane(props: { client: SettingsClient }) {
 										</View>
 									)}
 								</Each>
-								<Text class="text-xs leading-5 text-muted-foreground">
+								<Text class="font-sans text-xs leading-5 text-muted-foreground">
 									{t("settings.remoteAddressConfigHint")}
 								</Text>
 							</View>
@@ -574,9 +601,19 @@ export function RemotePane(props: { client: SettingsClient }) {
 								<SettingsSection title={t("settings.remotePairing")}>
 									{() =>
 										hasPairingLink() ? (
-											<View class="gap-3 px-3 py-3">
-												<View class="min-w-0 gap-2">
-													<Text class="text-sm font-medium">
+											<View
+												class={
+													wide()
+														? "flex-row items-center gap-3 px-3 py-3"
+														: "gap-3 px-3 py-3"
+												}
+											>
+												<View
+													class={
+														wide() ? "min-w-0 flex-1 gap-2" : "min-w-0 gap-2"
+													}
+												>
+													<Text class="font-sans text-sm font-medium">
 														{t("settings.remoteOpenLink")}
 													</Text>
 													<View
@@ -597,7 +634,7 @@ export function RemotePane(props: { client: SettingsClient }) {
 															}
 														>
 															<Icon name="Copy" size={14} />
-															<Text class="text-xs">
+															<Text class="font-sans text-xs">
 																{t("settings.remoteCopyLink")}
 															</Text>
 														</Button>
@@ -615,17 +652,23 @@ export function RemotePane(props: { client: SettingsClient }) {
 																	<Icon name="RefreshCw" size={14} />
 																)
 															}
-															<Text class="text-xs">
+															<Text class="font-sans text-xs">
 																{t("settings.remoteNewLink")}
 															</Text>
 														</Button>
 													</View>
 												</View>
-												<View class="self-center rounded-xl border bg-white p-2.5">
-													<PairingQr
-														url={current().pairingUrl ?? ""}
-														size={124}
-													/>
+												{/* React's `sm:grid-cols-[minmax(0,1fr)_148px]` column. */}
+												<View
+													class="items-center"
+													style={wide() ? { width: 148 } : undefined}
+												>
+													<View class="rounded-xl border bg-white p-2.5">
+														<PairingQr
+															url={current().pairingUrl ?? ""}
+															size={124}
+														/>
+													</View>
 												</View>
 											</View>
 										) : (
@@ -641,7 +684,7 @@ export function RemotePane(props: { client: SettingsClient }) {
 													onPress={() => void regenerate()}
 												>
 													<Icon name="RefreshCw" size={14} />
-													<Text class="text-xs">
+													<Text class="font-sans text-xs">
 														{t("settings.remoteNewLink")}
 													</Text>
 												</Button>
@@ -655,7 +698,7 @@ export function RemotePane(props: { client: SettingsClient }) {
 						<SettingsSection
 							title={t("settings.remoteDevices")}
 							headerRight={
-								<Text class="text-[11px] text-muted-foreground">
+								<Text class="font-sans text-[11px] text-muted-foreground">
 									{() =>
 										t("settings.remoteDeviceCount", {
 											count: activeDevices().length,
@@ -693,7 +736,7 @@ export function RemotePane(props: { client: SettingsClient }) {
 																	<Icon name="Trash2" size={14} />
 																)
 															}
-															<Text class="text-xs">
+															<Text class="font-sans text-xs">
 																{t("settings.remoteRevoke")}
 															</Text>
 														</Button>
