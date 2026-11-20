@@ -1,4 +1,5 @@
 import {
+	batch,
 	computed,
 	List,
 	type ListRef,
@@ -22,7 +23,7 @@ import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { scrollbarLook } from "../ui/scrollbar";
 import { Tooltip } from "../ui/tooltip";
-import type { ChatExpansion } from "./chat-expansion";
+import { ChatDisclosureAction, type ChatExpansion } from "./chat-expansion";
 import { ChatMessageRow } from "./chat-message-row";
 import { ConversationOutlineRail } from "./conversation-outline-rail";
 import type {
@@ -36,6 +37,7 @@ import { ConversationColumn } from "./conversation-column";
 
 // How close to its end the list still counts as at the end, in points.
 const followThreshold = 4;
+const followEnd = { autoscrollToBottomThreshold: followThreshold };
 // How far the list is scrolled before its top edge fades, in points.
 const fadeAfter = 16;
 
@@ -93,11 +95,22 @@ export function ChatMessages(props: ChatMessagesProps) {
 	const showOutline = computed(() => outline().length >= 2);
 	const firstVisibleIndex = signal(restore?.index ?? 0);
 	const atEnd = signal(restore === null);
+	const followPaused = signal(false);
+	const disclose = (update: () => void) => {
+		// Let the native list keep the visible rows in place when details grow.
+		batch(() => {
+			followPaused.set(true);
+			update();
+		});
+	};
 	const activeOutline = computed(() =>
 		getOutlineIndexForVisibleRange(outline(), firstVisibleIndex(), atEnd()),
 	);
 	const follow = ({ offset, contentSize, size }: ScrollEvent) => {
-		atEnd.set(contentSize.height - (offset.y + size.height) <= followThreshold);
+		const isAtEnd =
+			contentSize.height - (offset.y + size.height) <= followThreshold;
+		atEnd.set(isAtEnd);
+		if (isAtEnd) followPaused.set(false);
 		away.set(
 			shouldShowChatScrollToLatest(
 				{
@@ -176,26 +189,26 @@ export function ChatMessages(props: ChatMessagesProps) {
 				estimatedItemSize={96}
 				initialScrollIndex={restore?.index}
 				initialScrollAtEnd={restore === null}
-				maintainVisibleContentPosition={{
-					autoscrollToBottomThreshold: followThreshold,
-				}}
+				maintainVisibleContentPosition={followPaused() ? undefined : followEnd}
 				scrollbar={{ vertical: scrollbarLook() }}
 				footer={props.footer}
 				onScroll={follow}
 				onViewableItemsChange={reportVisible}
 			>
 				{(message) => (
-					<ChatMessageRow
-						message={message}
-						userBody={props.userBody}
-						assistantBody={props.assistantBody}
-						assistantText={props.assistantText}
-						expansion={props.expansion}
-						preferences={props.preferences}
-						onForkAssistant={props.onForkAssistant}
-						forkingMessageId={props.forkingMessageId}
-						forkDisabled={props.forkDisabled}
-					/>
+					<ChatDisclosureAction.Provider value={disclose}>
+						<ChatMessageRow
+							message={message}
+							userBody={props.userBody}
+							assistantBody={props.assistantBody}
+							assistantText={props.assistantText}
+							expansion={props.expansion}
+							preferences={props.preferences}
+							onForkAssistant={props.onForkAssistant}
+							forkingMessageId={props.forkingMessageId}
+							forkDisabled={props.forkDisabled}
+						/>
+					</ChatDisclosureAction.Provider>
 				)}
 			</List>
 			{() =>
@@ -229,7 +242,10 @@ export function ChatMessages(props: ChatMessagesProps) {
 										</Text>
 									</Tooltip>
 								}
-								onPress={() => list?.scrollToEnd({ animated: false })}
+								onPress={() => {
+									followPaused.set(false);
+									list?.scrollToEnd({ animated: false });
+								}}
 							>
 								<Icon name="ArrowDown" />
 							</Button>

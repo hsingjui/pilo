@@ -3,6 +3,7 @@ import { split, token, View, type ViewProps } from "nsh";
 import { classNames } from "../ui/class-names";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
+import { ChatDisclosureAction } from "./chat-expansion";
 
 export interface ChatDisclosureRowProps extends Omit<ViewProps, "onPress"> {
 	/** Whether what it discloses shows; `undefined` for a row with nothing to disclose. */
@@ -29,6 +30,7 @@ export function ChatDisclosureRow(props: ChatDisclosureRowProps) {
 		"onPress",
 		"children",
 	]);
+	const disclose = ChatDisclosureAction();
 	const color = () =>
 		token(local.tone === "destructive" ? "destructive" : "muted-foreground");
 	return (
@@ -50,7 +52,10 @@ export function ChatDisclosureRow(props: ChatDisclosureRowProps) {
 				focusVisibleStyle={focusRingStyle(token("ring"), undefined, undefined, {
 					width: 2,
 				})}
-				onPress={() => local.onPress?.()}
+				onPress={() => {
+					const onPress = local.onPress;
+					if (onPress) disclose(onPress);
+				}}
 			>
 				{local.children}
 			</View>

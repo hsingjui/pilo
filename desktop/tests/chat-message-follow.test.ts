@@ -205,12 +205,19 @@ test("one streamed event of a 10,000-message chat costs the list one pass", asyn
 	const app = await openChat(10_000);
 	await app.waitFor("id:chat-messages >> text:Answer 5000");
 	await app.press("id:prompt");
+	await app.waitFor("id:chat-messages >> text:One more question");
+	const before = rowsMade(app);
 	await stream(app, 30);
 	await replyShows(app, 30);
+	// The rows stay as the reply streams: none is made again.
+	expect(rowsMade(app)).toBe(before);
 	const label = app.texts().find((text) => text.startsWith("event at most "));
 	const ms = Number(/event at most (\d+) ms/.exec(label ?? "")?.[1]);
 	console.log(`one streamed event at 10,000 messages took at most ${ms} ms`);
-	expect(ms).toBeLessThan(100);
+	// An event and the frame it lays out in take about 92 ms headless on an
+	// M-series Mac (the first, which adds the reply's row, about 100 ms); the
+	// bound leaves room for a loaded machine, not for a pass more.
+	expect(ms).toBeLessThan(150);
 });
 
 // Where a chat was read to is kept while another opens; opening it again

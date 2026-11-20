@@ -1,6 +1,11 @@
-import { signal, type Signal } from "nsh";
+import { context, signal, type Signal } from "nsh";
 
 import type { AssistantContentItem } from "@/lib/chat/chat-activity-state";
+
+/** Lets a manual disclosure yield bottom-following in its message list. */
+export const ChatDisclosureAction = context<(update: () => void) => void>(
+	(update) => update(),
+);
 
 /** The key of a tool call's details, as the WebUI names it. */
 export function chatToolExpansionKey(messageId: string, toolCallId: string) {
