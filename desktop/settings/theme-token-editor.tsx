@@ -66,7 +66,7 @@ function TokenField(props: {
 	const color = props.color;
 	return (
 		<View class="min-w-0 flex-1 gap-1.5">
-			<Text class="text-xs text-muted-foreground">
+			<Text class="font-sans text-xs text-muted-foreground">
 				{() =>
 					String(
 						t(
@@ -226,7 +226,7 @@ export function ThemeTokenEditor(props: {
 	return (
 		<View class="gap-3">
 			<View class="gap-1">
-				<Text class="text-xs text-muted-foreground">
+				<Text class="font-sans text-xs text-muted-foreground">
 					{() => String(t("settings.themeTokenSearch"))}
 				</Text>
 				<Input
@@ -237,12 +237,12 @@ export function ThemeTokenEditor(props: {
 					onChange={(event) => search.set(event.value)}
 				/>
 			</View>
-			<Text class="text-xs text-muted-foreground">
+			<Text class="font-sans text-xs text-muted-foreground">
 				{() => String(t("settings.themeTokensHint"))}
 			</Text>
 			{() =>
 				rows().length === 0 ? (
-					<Text class="text-sm text-muted-foreground">
+					<Text class="font-sans text-sm text-muted-foreground">
 						{() => String(t("settings.themeNoTokens"))}
 					</Text>
 				) : (
@@ -259,7 +259,9 @@ export function ThemeTokenEditor(props: {
 						{(row) => {
 							const item = row();
 							return item.type === "header" ? (
-								<Text class="pt-1 text-sm font-medium">{item.title}</Text>
+								<Text class="font-sans pt-1 text-sm font-medium">
+									{item.title}
+								</Text>
 							) : (
 								<TokenCard
 									tokens={props.tokens}

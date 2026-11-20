@@ -165,7 +165,9 @@ export function AboutPane(props: { client: SettingsClient }) {
 						}}
 					>
 						<Icon name="FolderOpen" size={14} />
-						<Text class="text-xs">{t("settings.openLogDirectoryAction")}</Text>
+						<Text class="font-sans text-xs">
+							{t("settings.openLogDirectoryAction")}
+						</Text>
 						<Icon name="ExternalLink" size={14} class="opacity-60" />
 					</Button>
 				</SettingsRow>
@@ -197,7 +199,7 @@ export function AboutPane(props: { client: SettingsClient }) {
 							onPress={() => void check()}
 						>
 							{status() === "checking" ? <Spinner class="size-3.5" /> : null}
-							<Text class="text-xs">{buttonLabel()}</Text>
+							<Text class="font-sans text-xs">{buttonLabel()}</Text>
 						</Button>
 					</View>
 				</SettingsRow>
@@ -213,7 +215,7 @@ export function AboutPane(props: { client: SettingsClient }) {
 							);
 						}}
 					>
-						<Text class="text-xs">GitHub Releases</Text>
+						<Text class="font-sans text-xs">GitHub Releases</Text>
 						<Icon name="ExternalLink" size={14} class="opacity-60" />
 					</Button>
 				</SettingsRow>

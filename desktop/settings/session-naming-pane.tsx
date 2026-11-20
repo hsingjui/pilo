@@ -116,7 +116,7 @@ export function SessionNamingPane(props: {
 				if (loading())
 					return (
 						<View class="px-3 py-5">
-							<Text class="text-xs text-muted-foreground">
+							<Text class="font-sans text-xs text-muted-foreground">
 								{t("common.loading")}
 							</Text>
 						</View>
@@ -160,7 +160,9 @@ export function SessionNamingPane(props: {
 						? [
 								row,
 								<View class="border-b border-border/60 px-3 py-2 last:border-b-0">
-									<Text class="text-xs text-destructive">{error}</Text>
+									<Text class="font-sans text-xs text-destructive">
+										{error}
+									</Text>
 								</View>,
 							]
 						: [row];

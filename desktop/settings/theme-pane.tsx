@@ -4,6 +4,7 @@ import {
 	openUrl,
 	signal,
 	Text,
+	token,
 	untracked,
 	View,
 } from "nsh";
@@ -66,7 +67,7 @@ function ThemeOption(props: {
 		>
 			<Text class="font-sans truncate text-xs font-medium">{props.label}</Text>
 			{props.selected ? (
-				<Icon name="Check" size={14} class="text-muted-foreground" />
+				<Icon name="Check" size={14} color={token("muted-foreground")} />
 			) : null}
 			{props.onDelete ? (
 				<Button
@@ -77,7 +78,7 @@ function ThemeOption(props: {
 					accessibilityLabel={props.label}
 					onPress={props.onDelete}
 				>
-					<Icon name="Trash2" size={13} class="text-muted-foreground" />
+					<Icon name="Trash2" size={13} color={token("muted-foreground")} />
 				</Button>
 			) : null}
 		</View>
@@ -229,7 +230,7 @@ export function ThemePane(props: {
 							);
 						}}
 					>
-						<Text class="text-xs">
+						<Text class="font-sans text-xs">
 							{() => String(t("settings.themeDocumentation"))}
 						</Text>
 						<Icon name="ExternalLink" size={14} class="opacity-60" />
@@ -257,7 +258,7 @@ export function ThemePane(props: {
 					<View class="flex-row flex-wrap items-center justify-end gap-2">
 						{() =>
 							saved() ? (
-								<Text class="text-xs text-muted-foreground">
+								<Text class="font-sans text-xs text-muted-foreground">
 									{() => String(t("settings.themeSaved"))}
 								</Text>
 							) : null
@@ -277,7 +278,7 @@ export function ThemePane(props: {
 									draftName.set(sourceName());
 								}}
 							>
-								<Text>{t("common.cancel")}</Text>
+								<Text class="font-sans">{t("common.cancel")}</Text>
 							</Button>
 						)}
 						{() => (
@@ -287,7 +288,7 @@ export function ThemePane(props: {
 								disabled={!draftName().trim() || saved() || !validation().ok}
 								onPress={saveDraft}
 							>
-								<Text>
+								<Text class="font-sans">
 									{t(
 										existingTheme()
 											? "settings.updateTheme"

@@ -56,7 +56,7 @@ export function SettingsConfirmDialog(props: {
 					disabled={busy()}
 					onPress={() => props.onOpenChange(false)}
 				>
-					<Text>{t("common.cancel")}</Text>
+					<Text class="font-sans">{t("common.cancel")}</Text>
 				</Button>
 				<Button
 					testID={props.testID ? `${props.testID}-confirm` : undefined}

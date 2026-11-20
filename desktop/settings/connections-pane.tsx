@@ -6,6 +6,7 @@ import {
 	Scroll,
 	signal,
 	Text,
+	token,
 	View,
 } from "nsh";
 
@@ -783,7 +784,7 @@ export function ConnectionsPane(props: {
 					<Text class="truncate font-mono text-[11px] text-muted-foreground">
 						{sshTargetLabel(connection.kind.target)}
 					</Text>
-					<Text class="text-[11px] text-muted-foreground">
+					<Text class="font-sans text-[11px] text-muted-foreground">
 						{t(
 							AUTH_LABEL_KEYS[
 								typeof connection.kind.target.authMethod === "string"
@@ -794,7 +795,7 @@ export function ConnectionsPane(props: {
 					</Text>
 					{connection.kind.target.type === "direct" &&
 					connection.kind.target.proxyJump ? (
-						<Text class="text-[11px] text-muted-foreground">
+						<Text class="font-sans text-[11px] text-muted-foreground">
 							{t("connection.via", {
 								name: connection.kind.target.proxyJump,
 							})}
@@ -825,7 +826,7 @@ export function ConnectionsPane(props: {
 		sshFieldError()?.field === fieldName ? (
 			<Text
 				testID={`settings-ssh-error-${fieldName}`}
-				class="text-[11px] text-destructive"
+				class="font-sans text-[11px] text-destructive"
 			>
 				{sshFieldError()?.message}
 			</Text>
@@ -989,7 +990,9 @@ export function ConnectionsPane(props: {
 						!identities.some((identity) => identity.publicKey === key);
 					return (
 						<View class="min-w-0 gap-1">
-							<Text class="text-xs">{t("connection.sshAgentKey")}</Text>
+							<Text class="font-sans text-xs">
+								{t("connection.sshAgentKey")}
+							</Text>
 							<View class="flex-row gap-2">
 								<View class="min-w-0 flex-1">
 									<Select
@@ -1030,17 +1033,17 @@ export function ConnectionsPane(props: {
 									disabled={waitingForAgent() || sshBusy() || sshTesting()}
 									onPress={() => loadAgentIdentities()}
 								>
-									<Text>{t("common.refresh")}</Text>
+									<Text class="font-sans">{t("common.refresh")}</Text>
 								</Button>
 							</View>
 							<Text
 								testID="settings-ssh-agent-status"
-								class="text-xs text-muted-foreground"
+								class="font-sans text-xs text-muted-foreground"
 							>
 								{agentStatus()}
 							</Text>
 							{identities === null ? (
-								<Text class="text-xs text-muted-foreground">
+								<Text class="font-sans text-xs text-muted-foreground">
 									{t("connection.sshAgentTroubleshooting")}
 								</Text>
 							) : null}
@@ -1075,10 +1078,10 @@ export function ConnectionsPane(props: {
 								<Text class="font-sans text-xs">
 									{t("connection.localPiResources")}
 								</Text>
-								<Text class="text-xs text-muted-foreground">
+								<Text class="font-sans text-xs text-muted-foreground">
 									{t("connection.localPiResourcesDescription")}
 								</Text>
-								<Text class="text-xs text-muted-foreground">
+								<Text class="font-sans text-xs text-muted-foreground">
 									{t("connection.localPiResourcesWarning")}
 								</Text>
 							</View>
@@ -1098,7 +1101,7 @@ export function ConnectionsPane(props: {
 					const revealed = passwordRevealed();
 					return draft.authMethod === "password" ? (
 						<View class="gap-1">
-							<Text class="text-xs">{t("connection.password")}</Text>
+							<Text class="font-sans text-xs">{t("connection.password")}</Text>
 							<View class="flex-row items-center gap-1">
 								<Input
 									testID="settings-ssh-password"
@@ -1145,7 +1148,9 @@ export function ConnectionsPane(props: {
 						<View class="gap-1">
 							<View class="flex-row items-center gap-1">
 								<Icon name="KeyRound" size={14} />
-								<Text class="text-xs">{t("connection.privateKeyPath")}</Text>
+								<Text class="font-sans text-xs">
+									{t("connection.privateKeyPath")}
+								</Text>
 							</View>
 							<Input
 								testID="settings-ssh-identity"
@@ -1208,7 +1213,7 @@ export function ConnectionsPane(props: {
 									size="sm"
 									onPress={() => closeSshEditor()}
 								>
-									<Text>{t("common.cancel")}</Text>
+									<Text class="font-sans">{t("common.cancel")}</Text>
 								</Button>
 								<Button
 									testID="settings-ssh-save"
@@ -1270,7 +1275,7 @@ export function ConnectionsPane(props: {
 						? field(
 								t("connection.runtimeLocation"),
 								<View class="rounded-md border border-border/60 bg-muted/20 px-2 py-1.5">
-									<Text class="text-[11px] text-muted-foreground">
+									<Text class="font-sans text-[11px] text-muted-foreground">
 										{t("connection.localPi")}
 									</Text>
 								</View>,
@@ -1308,7 +1313,7 @@ export function ConnectionsPane(props: {
 					configureError() ? (
 						<Text
 							testID="settings-conn-configure-error"
-							class="text-[11px] text-destructive"
+							class="font-sans text-[11px] text-destructive"
 						>
 							{configureError()}
 						</Text>
@@ -1325,7 +1330,7 @@ export function ConnectionsPane(props: {
 								disabled={busy()}
 								onPress={() => closeConnectionSettings()}
 							>
-								<Text>{t("common.cancel")}</Text>
+								<Text class="font-sans">{t("common.cancel")}</Text>
 							</Button>
 							<Button
 								testID="settings-conn-save"
@@ -1362,7 +1367,7 @@ export function ConnectionsPane(props: {
 				</DialogHeader>
 				<Scroll class="max-h-72 rounded-md border border-border/60">
 					{items === null ? (
-						<Text class="px-3 py-4 text-xs text-muted-foreground">
+						<Text class="font-sans px-3 py-4 text-xs text-muted-foreground">
 							{t("connection.loading")}
 						</Text>
 					) : items.length === 0 ? (
@@ -1377,9 +1382,9 @@ export function ConnectionsPane(props: {
 									<Icon
 										name="Monitor"
 										size={16}
-										class="shrink-0 text-muted-foreground"
+										color={token("muted-foreground")}
 									/>
-									<Text class="min-w-0 flex-1 truncate text-sm">
+									<Text class="font-sans min-w-0 flex-1 truncate text-sm">
 										{distro.name}
 									</Text>
 									<Button
@@ -1389,7 +1394,9 @@ export function ConnectionsPane(props: {
 										disabled={busy() || added}
 										onPress={() => void addWsl(distro.name)}
 									>
-										<Text>{added ? t("common.added") : t("common.add")}</Text>
+										<Text class="font-sans">
+											{added ? t("common.added") : t("common.add")}
+										</Text>
 									</Button>
 								</View>
 							);
@@ -1403,6 +1410,7 @@ export function ConnectionsPane(props: {
 	const addConnectionMenu = () => (
 		<Menu
 			align="end"
+			popupStyle={{ minWidth: 0 }}
 			trigger={
 				<Button
 					testID="settings-conn-add"
@@ -1415,22 +1423,26 @@ export function ConnectionsPane(props: {
 				</Button>
 			}
 		>
-			{IS_WINDOWS ? (
+			<View class="gap-1">
+				{IS_WINDOWS ? (
+					<MenuItem
+						testID="settings-conn-add-wsl"
+						indicatorClass="hidden"
+						icon={<Icon name="Monitor" size={14} />}
+						onSelect={() => openWslPicker()}
+					>
+						<Text class="font-sans">{t("connection.addWsl")}</Text>
+					</MenuItem>
+				) : null}
 				<MenuItem
-					testID="settings-conn-add-wsl"
-					icon={<Icon name="Monitor" size={16} />}
-					onSelect={() => openWslPicker()}
+					testID="settings-conn-add-ssh"
+					indicatorClass="hidden"
+					icon={<Icon name="Server" size={14} />}
+					onSelect={() => openNewSsh()}
 				>
-					<Text>{t("connection.addWsl")}</Text>
+					<Text class="font-sans">{t("connection.addSsh")}</Text>
 				</MenuItem>
-			) : null}
-			<MenuItem
-				testID="settings-conn-add-ssh"
-				icon={<Icon name="Server" size={16} />}
-				onSelect={() => openNewSsh()}
-			>
-				<Text class="font-sans">{t("connection.addSsh")}</Text>
-			</MenuItem>
+			</View>
 		</Menu>
 	);
 
@@ -1477,7 +1489,7 @@ export function ConnectionsPane(props: {
 				{() => localRow()}
 				{() =>
 					loading() ? (
-						<Text class="px-3 py-5 text-xs text-muted-foreground">
+						<Text class="font-sans px-3 py-5 text-xs text-muted-foreground">
 							{t("connection.loading")}
 						</Text>
 					) : (
@@ -1486,14 +1498,14 @@ export function ConnectionsPane(props: {
 							{sshItems().map(sshRow)}
 							{() =>
 								results()["ssh-list"] || results()["wsl-add"] ? (
-									<Text class="px-3 py-2 text-[11px] text-destructive">
+									<Text class="font-sans px-3 py-2 text-[11px] text-destructive">
 										{results()["ssh-list"] ?? results()["wsl-add"]}
 									</Text>
 								) : null
 							}
 							{() =>
 								results()["list"] ? (
-									<Text class="px-3 py-2 text-[11px] text-muted-foreground">
+									<Text class="font-sans px-3 py-2 text-[11px] text-muted-foreground">
 										{results()["list"]}
 									</Text>
 								) : null

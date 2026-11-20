@@ -206,7 +206,9 @@ export function ModelCatalogPane(props: {
 											disabled={saving()[project.id]}
 											onPress={() => saveScope(project, null)}
 										>
-											<Text>{t("settings.modelCatalogInherit")}</Text>
+											<Text class="font-sans">
+												{t("settings.modelCatalogInherit")}
+											</Text>
 										</Button>
 									)}
 									<Button
@@ -303,7 +305,9 @@ export function ModelCatalogPane(props: {
 						? [
 								section,
 								<View class="px-3 py-2">
-									<Text class="text-xs text-destructive">{error}</Text>
+									<Text class="font-sans text-xs text-destructive">
+										{error}
+									</Text>
 								</View>,
 							]
 						: [section];

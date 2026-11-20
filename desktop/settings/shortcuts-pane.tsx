@@ -34,7 +34,7 @@ function ShortcutKeys(props: { shortcut: string }) {
 			{labels.map((label, index) => (
 				<>
 					{index > 0 ? (
-						<Text class="text-[11px] text-muted-foreground">+</Text>
+						<Text class="font-sans text-[11px] text-muted-foreground">+</Text>
 					) : null}
 					<Text
 						class="min-w-6 rounded border border-border/80 bg-muted/55 px-1.5 py-0.5 text-center font-mono text-[11px] text-foreground"
@@ -79,7 +79,7 @@ export function ShortcutsPane(props: {
 										{shortcut ? (
 											<ShortcutKeys shortcut={shortcut} />
 										) : (
-											<Text class="text-xs text-muted-foreground">
+											<Text class="font-sans text-xs text-muted-foreground">
 												{t("shortcuts.unassigned")}
 											</Text>
 										)}

@@ -13,7 +13,7 @@ function IssueRow(props: { issue: ThemeConversionIssue; last: boolean }) {
 		<View
 			class={`min-w-0 gap-1.5 p-3 ${props.last ? "" : "border-b border-border"}`}
 		>
-			<Text class="text-xs font-medium">
+			<Text class="font-sans text-xs font-medium">
 				{() =>
 					String(t(`settings.themeConversionReasons.${props.issue.reason}`))
 				}
@@ -56,7 +56,7 @@ export function ThemeConversionNotice(props: {
 								class="mt-0.5 shrink-0"
 							/>
 							<View class="min-w-0 gap-1">
-								<Text class="text-sm font-medium">
+								<Text class="font-sans text-sm font-medium">
 									{() =>
 										String(
 											t("settings.themeConversionTitle", {
@@ -65,7 +65,7 @@ export function ThemeConversionNotice(props: {
 										)
 									}
 								</Text>
-								<Text class="text-xs leading-relaxed text-muted-foreground">
+								<Text class="font-sans text-xs leading-relaxed text-muted-foreground">
 									{() => String(t("settings.themeConversionHint"))}
 								</Text>
 							</View>

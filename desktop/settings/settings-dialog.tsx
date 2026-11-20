@@ -7,13 +7,15 @@ import {
 	View,
 	windowSize,
 } from "nsh";
-import { Dialog } from "nsh/base";
+import { Button as BaseButton, Dialog } from "nsh/base";
 
 import { Select } from "../ui/select";
 
 import type { AppState } from "../state/app-state";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { classNames } from "../ui/class-names";
+import { focusRingStyle } from "../ui/focus-ring-style";
+import { createHover } from "../ui/hover";
 import { Icon, type IconName } from "../ui/icon";
 import { scrollbarLook } from "../ui/scrollbar";
 import { styleVar } from "../ui/theme-style";
@@ -276,20 +278,23 @@ export function SettingsDialog(props: SettingsDialogProps) {
 											) : null}
 											<View class="gap-0.5">
 												{tabs.map((tab) => {
-													const hovered = signal(false);
+													const hover = createHover();
 													const highlighted = () =>
-														active() === tab.id || hovered();
+														active() === tab.id || hover.hovered();
+													// A plain press target, as React's `<button>`: focusable,
+													// with a keyboard ring, without Button's press scale.
 													return (
-														<View
+														<BaseButton
 															testID={`settings-nav-${tab.id}`}
 															class={classNames(
-																"w-full flex-row items-center gap-2.5 rounded-md px-2.5 py-1.5",
+																"w-full flex-row items-center gap-2.5 rounded-md px-2.5 py-1.5 transition-colors",
 																active() === tab.id
 																	? "bg-secondary"
 																	: "hover:bg-secondary/50",
 															)}
-															onMouseEnter={() => hovered.set(true)}
-															onMouseLeave={() => hovered.set(false)}
+															focusVisibleStyle={focusRingStyle(token("ring"))}
+															accessibilityLabel={String(t(tab.labelKey))}
+															{...hover.props}
 															onPress={() => active.set(tab.id)}
 														>
 															<Icon
@@ -312,7 +317,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 															>
 																{() => String(t(tab.labelKey))}
 															</Text>
-														</View>
+														</BaseButton>
 													);
 												})}
 											</View>

@@ -172,7 +172,7 @@ export function NotificationsPane(props: {
 				</SettingsRow>
 				{() =>
 					failure() ? (
-						<Text class="px-3 py-2 text-xs text-destructive">
+						<Text class="font-sans px-3 py-2 text-xs text-destructive">
 							{t(failure() ?? "settings.testNotificationFailed")}
 						</Text>
 					) : null

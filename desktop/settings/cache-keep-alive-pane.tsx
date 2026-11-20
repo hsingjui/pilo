@@ -271,12 +271,14 @@ export function CacheKeepAlivePane(props: {
 
 	return (
 		<View class="min-w-0 gap-3">
-			<Text class="text-xs leading-5 text-muted-foreground">
+			<Text class="font-sans text-xs leading-5 text-muted-foreground">
 				{t("settings.cacheKeepAliveDescription")}
 			</Text>
 			{() =>
 				catalogError() ? (
-					<Text class="text-sm text-destructive">{catalogError()}</Text>
+					<Text class="font-sans text-sm text-destructive">
+						{catalogError()}
+					</Text>
 				) : null
 			}
 			{() => {
@@ -339,7 +341,9 @@ export function CacheKeepAlivePane(props: {
 											}
 										>
 											<Icon name="Plus" size={14} />
-											<Text>{t("settings.cacheKeepAliveAddModel")}</Text>
+											<Text class="font-sans">
+												{t("settings.cacheKeepAliveAddModel")}
+											</Text>
 										</Button>
 									}
 								>
@@ -359,7 +363,7 @@ export function CacheKeepAlivePane(props: {
 											t("settings.cacheKeepAliveModel"),
 										)}
 										empty={
-											<Text class="text-muted-foreground">
+											<Text class="font-sans text-muted-foreground">
 												{t("chat.noModelMatches")}
 											</Text>
 										}
@@ -378,7 +382,7 @@ export function CacheKeepAlivePane(props: {
 								if (!loaded()[connectionId])
 									return (
 										<View class="px-3 py-3">
-											<Text class="text-xs text-muted-foreground">
+											<Text class="font-sans text-xs text-muted-foreground">
 												{t("common.loading")}
 											</Text>
 										</View>
@@ -386,26 +390,26 @@ export function CacheKeepAlivePane(props: {
 								const header = (
 									<View class="flex-row items-center border-b border-border/60 px-3 py-2">
 										<View class="min-w-0 flex-1">
-											<Text class="text-xs font-medium text-muted-foreground">
+											<Text class="font-sans text-xs font-medium text-muted-foreground">
 												{t("settings.cacheKeepAliveModel")}
 											</Text>
 										</View>
 										<View class="w-28">
-											<Text class="text-xs font-medium text-muted-foreground">
+											<Text class="font-sans text-xs font-medium text-muted-foreground">
 												{`${t("settings.cacheKeepAliveTtlLabel")} (${t(
 													"settings.cacheKeepAliveMinutes",
 												)})`}
 											</Text>
 										</View>
 										<View class="w-32">
-											<Text class="text-xs font-medium text-muted-foreground">
+											<Text class="font-sans text-xs font-medium text-muted-foreground">
 												{`${t("settings.cacheKeepAliveDurationLabel")} (${t(
 													"settings.cacheKeepAliveMinutes",
 												)})`}
 											</Text>
 										</View>
 										<View class="w-20 items-center">
-											<Text class="text-xs font-medium text-muted-foreground">
+											<Text class="font-sans text-xs font-medium text-muted-foreground">
 												{t("settings.cacheKeepAliveEnabledLabel")}
 											</Text>
 										</View>
@@ -497,7 +501,7 @@ export function CacheKeepAlivePane(props: {
 									) : null;
 								const error = errors()[connectionId] ? (
 									<View class="px-3 py-2">
-										<Text class="text-xs text-destructive">
+										<Text class="font-sans text-xs text-destructive">
 											{errors()[connectionId]}
 										</Text>
 									</View>

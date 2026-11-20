@@ -59,7 +59,7 @@ export function DesktopPane(props: { desktop?: DesktopShell }) {
 					{() =>
 						startupError() === "desktop.loadFailed" ? (
 							<View class="flex-row flex-wrap items-center gap-2">
-								<Text class="text-xs text-destructive">
+								<Text class="font-sans text-xs text-destructive">
 									{t("desktop.loadFailed")}
 								</Text>
 								<Button variant="ghost" size="sm" onPress={() => void load()}>
@@ -75,7 +75,7 @@ export function DesktopPane(props: { desktop?: DesktopShell }) {
 									onChange={({ checked }) => void change(checked)}
 								/>
 								{startupError() === "desktop.saveFailed" ? (
-									<Text class="text-xs text-destructive">
+									<Text class="font-sans text-xs text-destructive">
 										{t("desktop.saveFailed")}
 									</Text>
 								) : null}
@@ -88,7 +88,7 @@ export function DesktopPane(props: { desktop?: DesktopShell }) {
 						{() =>
 							props.desktop?.loadFailed() ? (
 								<View class="flex-row flex-wrap items-center gap-2">
-									<Text class="text-xs text-destructive">
+									<Text class="font-sans text-xs text-destructive">
 										{t("desktop.closeLoadFailed")}
 									</Text>
 									<Button

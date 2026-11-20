@@ -135,10 +135,10 @@ export function ConnectionModelSelect(props: {
 		props.value !== props.noneValue &&
 		!items().some((item) => item.value === props.value);
 	return (
-		<View class="flex-row items-center gap-2">
+		<View class="w-80 min-w-0 max-w-full flex-row items-center gap-2">
 			<Select
 				testID={props.testID}
-				class="w-[280px]"
+				class="flex-1"
 				items={items()}
 				value={unavailable() ? null : props.value}
 				placeholder={
@@ -159,7 +159,7 @@ export function ConnectionModelSelect(props: {
 			<Button
 				variant="ghost"
 				size="icon"
-				class="size-8"
+				class="size-8 shrink-0"
 				disabled={list().loading}
 				accessibilityLabel={t("settings.refreshModels")}
 				onPress={() => props.lists.refresh(props.connection.id)}

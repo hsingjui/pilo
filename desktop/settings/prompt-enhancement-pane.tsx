@@ -122,12 +122,14 @@ export function PromptEnhancementPane(props: {
 
 	return (
 		<View class="min-w-0 gap-3">
-			<Text class="text-xs leading-5 text-muted-foreground">
+			<Text class="font-sans text-xs leading-5 text-muted-foreground">
 				{t("settings.promptEnhancementDescription")}
 			</Text>
 			{() =>
 				catalogError() ? (
-					<Text class="text-sm text-destructive">{catalogError()}</Text>
+					<Text class="font-sans text-sm text-destructive">
+						{catalogError()}
+					</Text>
 				) : null
 			}
 			<SettingsSection title={t("settings.promptEnhancementModel")}>
@@ -175,7 +177,9 @@ export function PromptEnhancementPane(props: {
 							? [
 									row,
 									<View class="border-b border-border/60 px-3 py-2 last:border-b-0">
-										<Text class="text-xs text-destructive">{error}</Text>
+										<Text class="font-sans text-xs text-destructive">
+											{error}
+										</Text>
 									</View>,
 								]
 							: [row];
