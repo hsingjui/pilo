@@ -1,4 +1,5 @@
 import {
+	computed,
 	List,
 	type ListRef,
 	type ListSlot,
@@ -11,6 +12,10 @@ import {
 } from "nsh";
 
 import { shouldShowChatScrollToLatest } from "@/lib/chat/chat-scroll-to-latest";
+import {
+	buildConversationOutline,
+	getOutlineIndexForVisibleRange,
+} from "@/lib/chat/conversation-outline";
 import type { ChatMessage } from "@/lib/chat/conversation-types";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
@@ -18,6 +23,7 @@ import { Icon } from "../ui/icon";
 import { scrollbarLook } from "../ui/scrollbar";
 import { Tooltip } from "../ui/tooltip";
 import { ChatMessageRow } from "./chat-message-row";
+import { ConversationOutlineRail } from "./conversation-outline-rail";
 import type {
 	AssistantChatMessage,
 	ChatMessageBody,
@@ -66,11 +72,27 @@ export function ChatMessages(props: ChatMessagesProps) {
 	let list: ListRef | undefined;
 	const away = signal(false);
 	const scrolled = signal(false);
+	// Las rondas del chat para el raíl del borde izquierdo: el array cambia
+	// con cada evento, así que el cómputo queda perezoso hasta que se lee.
+	const outline = computed(() => buildConversationOutline(props.messages()));
+	const activeOutline = signal(-1);
+	let atEnd = true;
+	const syncActiveOutline = () => {
+		activeOutline.set(
+			getOutlineIndexForVisibleRange(
+				untracked(outline),
+				visible?.start ?? 0,
+				atEnd,
+			),
+		);
+	};
 	// A chat opened before comes back where it was read to: the row, from
 	// `initialScrollIndex`, and its offset, from the first viewable report.
 	const restore = props.restorePosition ?? null;
 	let restoring = restore !== null;
 	const follow = ({ offset, contentSize, size }: ScrollEvent) => {
+		atEnd = contentSize.height - (offset.y + size.height) <= followThreshold;
+		syncActiveOutline();
 		away.set(
 			shouldShowChatScrollToLatest(
 				{
@@ -123,7 +145,21 @@ export function ChatMessages(props: ChatMessagesProps) {
 		}
 		if (visible?.start === start && visible?.end === end) return;
 		visible = { start, end };
+		syncActiveOutline();
 		props.onVisibleRangeChange?.(start, end);
+	};
+	// Salta a la ronda del raíl: su mensaje del usuario al borde superior.
+	// Aunque el mensaje sea un marcador aún no cargado, `scrollToIndex`
+	// llega a su fila y `onVisibleRangeChange` pide su página al dueño.
+	const jumpToOutline = (index: number) => {
+		const entry = untracked(outline)[index];
+		if (!entry) return;
+		activeOutline.set(index);
+		list?.scrollToIndex({
+			index: entry.messageIndex,
+			viewPosition: 0,
+			animated: false,
+		});
 	};
 	return (
 		<View class="min-h-0 flex-1">
@@ -156,6 +192,15 @@ export function ChatMessages(props: ChatMessagesProps) {
 			{() =>
 				scrolled() ? (
 					<View class="pointer-events-none absolute inset-x-0 top-0 h-12 bg-linear-to-b from-background to-transparent" />
+				) : null
+			}
+			{() =>
+				outline().length >= 2 ? (
+					<ConversationOutlineRail
+						entries={outline}
+						activeIndex={activeOutline}
+						onJump={jumpToOutline}
+					/>
 				) : null
 			}
 			{() =>
