@@ -13,6 +13,7 @@ import type {
 	ProjectScopedModel,
 } from "@/lib/project-model-scope";
 import type {
+	SessionDeleteResult,
 	SessionHistory,
 	SessionHistoryResult,
 	SessionIndexEntry,
@@ -51,6 +52,10 @@ export type ScriptedChatClient = PiCommandClient & {
 		query: string,
 		limit?: number,
 	) => Promise<SessionSearchMatch[]>;
+	deleteSession: (
+		projectId: string,
+		sessionPath: string,
+	) => Promise<SessionDeleteResult>;
 };
 
 export type AppScript = {
@@ -105,6 +110,11 @@ export type AppScript = {
 		query: string,
 		limit?: number,
 	) => SessionSearchMatch[] | Promise<SessionSearchMatch[]>;
+	/** What `deleteSession` resolves with; `{ method: "trash" }` by default. */
+	onDeleteSession?: (
+		projectId: string,
+		sessionPath: string,
+	) => SessionDeleteResult;
 };
 
 /** A new Host's preferences and theme, as far as the shell reads them. */
@@ -135,6 +145,10 @@ export function scriptedClient(script: AppScript = {}) {
 	const modelScopes = new Map(Object.entries(script.modelScopes ?? {}));
 	const running = new Set<string>();
 	const removed: string[] = [];
+	/** UI state written through `updateSessionUiState`, by session path. */
+	const uiState = new Map<string, SessionUiStateUpdate>();
+	/** Session paths deleted through `deleteSession`, gone from `listSessions`. */
+	const deleted = new Set<string>();
 	let attempts = 0;
 	let sequence = 0;
 	let closed = false;
@@ -230,6 +244,7 @@ export function scriptedClient(script: AppScript = {}) {
 			return Promise.resolve(scope);
 		},
 		updateSessionUiState(sessionPath, update, projectId) {
+			uiState.set(sessionPath, update);
 			return Promise.resolve(
 				script.onUpdateSessionUiState?.(sessionPath, update, projectId) ??
 					({
@@ -241,6 +256,14 @@ export function scriptedClient(script: AppScript = {}) {
 		},
 		searchSessions: (projectId, query, limit) =>
 			Promise.resolve(script.onSearchSessions?.(projectId, query, limit) ?? []),
+		deleteSession(projectId, sessionPath) {
+			deleted.add(sessionPath);
+			return Promise.resolve(
+				script.onDeleteSession?.(projectId, sessionPath) ?? {
+					method: "trash" as const,
+				},
+			);
+		},
 		loadHistory: async (_projectId, sessionPath) =>
 			({
 				history: {
@@ -257,8 +280,12 @@ export function scriptedClient(script: AppScript = {}) {
 					projects.filter((project) => project.id !== projectId),
 			);
 		},
-		listSessions: (projectId) =>
-			script.sessions?.(projectId) ?? Promise.resolve([]),
+		listSessions: async (projectId) => {
+			const listed = (await script.sessions?.(projectId)) ?? [];
+			return listed
+				.filter((entry) => !deleted.has(entry.sessionPath))
+				.map((entry) => ({ ...entry, ...uiState.get(entry.sessionPath) }));
+		},
 		loadSessionReadStates: () => Promise.resolve(script.readStates ?? []),
 		loadThemeSettings: () =>
 			Promise.resolve(script.themeSettings ?? HOST_DEFAULT_THEME),

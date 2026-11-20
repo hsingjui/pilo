@@ -989,6 +989,8 @@ function fakeApp() {
 		removeProject: () => Promise.resolve([]),
 		loadSessionReadStates: () => Promise.resolve([]),
 		markSessionRead: () => Promise.reject(new Error("unused")),
+		updateSessionUiState: () => Promise.reject(new Error("unused")),
+		deleteSession: () => Promise.reject(new Error("unused")),
 		loadThemeSettings: () =>
 			Promise.resolve({ revision: 1 } as Awaited<
 				ReturnType<AppStoreClient["loadThemeSettings"]>

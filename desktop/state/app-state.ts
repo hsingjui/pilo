@@ -72,6 +72,11 @@ export type AppAction =
 	| { type: "sessions_failed"; projectId: string; message: string }
 	| { type: "project_selected"; projectId: string }
 	| { type: "session_selected"; projectId: string; sessionPath: string }
+	| {
+			type: "session_deleted";
+			projectId: string;
+			sessionPath: string;
+	  }
 	/** One chat's runtime state as just read; `null` when it has none. */
 	| {
 			type: "chat_session_loaded";
@@ -372,6 +377,24 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 			return {
 				...state,
 				navigation: { projectId, session: { projectId, sessionPath } },
+			};
+		}
+		case "session_deleted": {
+			const next = withSessionIndex(state, action.projectId, (current) => ({
+				status: current?.status ?? "loaded",
+				sessions: (current?.sessions ?? []).filter(
+					(entry) => entry.sessionPath !== action.sessionPath,
+				),
+			}));
+			const open = next.navigation.session;
+			if (
+				open?.projectId !== action.projectId ||
+				open.sessionPath !== action.sessionPath
+			)
+				return next;
+			return {
+				...next,
+				navigation: { ...next.navigation, session: null },
 			};
 		}
 		case "chat_session_loaded": {

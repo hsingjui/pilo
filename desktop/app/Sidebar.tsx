@@ -10,7 +10,7 @@ import {
 	untracked,
 	View,
 } from "nsh";
-import { Button } from "nsh/base";
+import { Button, ContextMenu } from "nsh/base";
 
 import { summarizeProjectSessions } from "@/components/sidebar/session-list";
 import type { SidebarSession } from "@/components/sidebar/types";
@@ -20,6 +20,7 @@ import type { AppStore } from "../state/app-store";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
 import { Icon } from "../ui/icon";
+import { Input } from "../ui/input";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { MenuSeparator } from "../ui/menu-separator";
@@ -578,75 +579,221 @@ function SessionRow(props: {
 	/** The session's project, for a list that mixes projects. */
 	projectName?: Accessor<string | undefined>;
 }) {
+	const { store } = props;
 	const session = props.session;
+	const hovered = signal(false);
+	const menuOpen = signal(false);
+	const contextOpen = signal(false);
+	const confirmingDelete = signal(false);
+	const renaming = signal(false);
+	const renameValue = signal("");
 	const selected = () => {
-		const open = props.store.state().navigation.session;
+		const open = store.state().navigation.session;
 		return (
 			open?.projectId === session().projectId &&
 			open.sessionPath === session().sessionPath
 		);
 	};
-	return (
-		<Button
-			testID={`session:${session().id}`}
-			class={selected() ? `${ROW} ${SELECTED_ROW}` : ROW}
-			focusVisibleStyle={focusRing()}
-			selected={selected()}
-			onPress={() =>
-				props.store.selectSession(session().projectId, session().sessionPath)
-			}
-		>
-			<View class="h-6 w-4 items-center justify-center">
-				{() =>
-					!session().active && session().unread ? (
-						<View
-							testID={`session:${session().id}:unread`}
-							class="size-1.5 rounded-full bg-sidebar-primary"
-						/>
-					) : null
-				}
-			</View>
-			<View class="min-w-0 flex-1">
-				<Text
-					class={`min-w-0 truncate font-sans text-sm ${
-						selected()
-							? "text-sidebar-selection-foreground"
-							: "text-sidebar-foreground dark:text-sidebar-foreground/75"
-					}`}
-				>
-					{() => session().title}
-				</Text>
-				{() => {
-					const name = props.projectName?.();
-					if (!name) return null;
-					return (
-						<View class="h-4 flex-row items-center gap-1">
-							<Icon
-								name="Folder"
-								size={12}
-								color={token("sidebar-foreground-muted")}
-							/>
-							<Text
-								testID={`session:${session().id}:project`}
-								class="min-w-0 flex-1 truncate font-sans text-[11px] text-sidebar-foreground-muted"
-							>
-								{name}
-							</Text>
-						</View>
-					);
+
+	const submitRename = () => {
+		if (!renaming()) return;
+		const title = renameValue().trim();
+		renaming.set(false);
+		if (title && title !== session().title) {
+			void store.renameSession(
+				session().projectId,
+				session().sessionPath,
+				title,
+			);
+		}
+	};
+
+	/** The menu's delete is a two-step confirm: the item stays open once. */
+	const confirmDelete = () => {
+		if (!confirmingDelete()) {
+			confirmingDelete.set(true);
+			return;
+		}
+		confirmingDelete.set(false);
+		menuOpen.set(false);
+		contextOpen.set(false);
+		void store.deleteSession(session().projectId, session().sessionPath);
+	};
+
+	const menuItems = () => (
+		<>
+			<MenuItem
+				testID={`session:${session().id}:rename`}
+				icon={<Icon name="Pencil" size={14} />}
+				onSelect={() => {
+					renameValue.set(session().title);
+					renaming.set(true);
 				}}
+			>
+				<Text>{() => t("sidebar.rename")}</Text>
+			</MenuItem>
+			<MenuItem
+				testID={`session:${session().id}:refresh`}
+				icon={<Icon name="RefreshCw" size={14} />}
+				disabled={session().active}
+				onSelect={() => void store.loadSessions(session().projectId)}
+			>
+				<Text>{() => t("chat.refreshSession")}</Text>
+			</MenuItem>
+			<MenuItem
+				testID={`session:${session().id}:delete`}
+				icon={<Icon name="Trash2" size={14} />}
+				variant="destructive"
+				closeOnSelect={false}
+				onSelect={confirmDelete}
+			>
+				<Text>
+					{() =>
+						confirmingDelete()
+							? t("sidebar.confirmDelete")
+							: t("sidebar.delete")
+					}
+				</Text>
+			</MenuItem>
+		</>
+	);
+
+	const resetDelete = ({ open }: { open: boolean }) => {
+		if (!open) confirmingDelete.set(false);
+	};
+
+	const title = (
+		<Text
+			class={`min-w-0 truncate font-sans text-sm ${
+				selected()
+					? "text-sidebar-selection-foreground"
+					: "text-sidebar-foreground dark:text-sidebar-foreground/75"
+			}`}
+		>
+			{() => session().title}
+		</Text>
+	);
+	const projectTag = () => {
+		const name = props.projectName?.();
+		if (!name) return null;
+		return (
+			<View class="h-4 flex-row items-center gap-1">
+				<Icon
+					name="Folder"
+					size={12}
+					color={token("sidebar-foreground-muted")}
+				/>
+				<Text
+					testID={`session:${session().id}:project`}
+					class="min-w-0 flex-1 truncate font-sans text-[11px] text-sidebar-foreground-muted"
+				>
+					{name}
+				</Text>
 			</View>
-			<View class="size-6 items-center justify-center">
-				{() =>
-					session().active ? (
-						<Spinner
-							testID={`session:${session().id}:running`}
-							size={12}
-							color={token("sidebar-primary")}
-						/>
-					) : null
+		);
+	};
+
+	return (
+		<View
+			class="relative"
+			onMouseEnter={() => hovered.set(true)}
+			onMouseLeave={() => hovered.set(false)}
+		>
+			<ContextMenu
+				testID={`session:${session().id}:context`}
+				open={contextOpen()}
+				onOpenChange={(event) => {
+					contextOpen.set(event.open);
+					resetDelete(event);
+				}}
+				popupClass="min-w-44"
+				trigger={
+					renaming() ? (
+						<View class={selected() ? `${ROW} ${SELECTED_ROW}` : ROW}>
+							<View class="h-6 w-4 shrink-0" />
+							<View class="min-w-0 flex-1">
+								<Input
+									testID={`session:${session().id}:rename-input`}
+									autoFocus
+									value={renameValue()}
+									accessibilityLabel={t("sidebar.editSessionTitle")}
+									class="h-6 rounded-sm px-1 text-sm"
+									onChange={(event) => renameValue.set(event.value)}
+									onSubmit={submitRename}
+									onKeyDown={(event) => {
+										if (event.key === "Escape") renaming.set(false);
+									}}
+								/>
+								{projectTag}
+							</View>
+							<View class="size-6 shrink-0" />
+						</View>
+					) : (
+						<Button
+							testID={`session:${session().id}`}
+							class={selected() ? `${ROW} ${SELECTED_ROW}` : ROW}
+							focusVisibleStyle={focusRing()}
+							selected={selected()}
+							onPress={() =>
+								store.selectSession(session().projectId, session().sessionPath)
+							}
+						>
+							<View class="h-6 w-4 items-center justify-center">
+								{() =>
+									!session().active && session().unread ? (
+										<View
+											testID={`session:${session().id}:unread`}
+											class="size-1.5 rounded-full bg-sidebar-primary"
+										/>
+									) : null
+								}
+							</View>
+							<View class="min-w-0 flex-1">
+								{title}
+								{projectTag}
+							</View>
+							<View class="size-6 items-center justify-center">
+								{() =>
+									session().active ? (
+										<Spinner
+											testID={`session:${session().id}:running`}
+											size={12}
+											color={token("sidebar-primary")}
+										/>
+									) : null
+								}
+							</View>
+						</Button>
+					)
 				}
-			</View>
-		</Button>
+			>
+				{menuItems}
+			</ContextMenu>
+			{() =>
+				renaming() || !(hovered() || menuOpen() || contextOpen()) ? null : (
+					<Menu
+						class="absolute top-1/2 right-1 size-6 -translate-y-1/2"
+						open={menuOpen()}
+						onOpenChange={(event) => {
+							menuOpen.set(event.open);
+							resetDelete(event);
+						}}
+						align="end"
+						trigger={
+							<Button
+								testID={`session:${session().id}:menu`}
+								class="size-6 items-center justify-center rounded-sm hover:bg-sidebar-foreground/15"
+								focusVisibleStyle={focusRing()}
+								accessibilityLabel={t("sidebar.moreActions")}
+							>
+								<Icon name="MoreHorizontal" size={14} />
+							</Button>
+						}
+					>
+						{menuItems}
+					</Menu>
+				)
+			}
+		</View>
 	);
 }
