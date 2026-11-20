@@ -1,11 +1,11 @@
-import { computed, type JSX, type ListSlot, View } from "nsh";
+import { computed, type JSX, type ListSlot, untracked, View } from "nsh";
 
 import type { ChatMessage } from "@/lib/chat/conversation-types";
 import type { ChatTranscriptState } from "../state/chat-transcript-store";
 import { ChatHistorySkeleton } from "./chat-history-skeleton";
 import { chatListView } from "./chat-list-view";
 import { ChatLoadFailure } from "./chat-load-failure";
-import { ChatMessages } from "./chat-messages";
+import { ChatMessages, type ChatScrollPosition } from "./chat-messages";
 import { ChatTurnWaiting } from "./chat-turn-waiting";
 import type {
 	AssistantChatMessage,
@@ -45,6 +45,16 @@ export interface ChatMessageListProps {
 export function ChatMessageList(props: ChatMessageListProps) {
 	const { transcript } = props;
 	const sessionKey = computed(() => transcript().sessionKey);
+	// Where each chat was read to, so one opened again comes back there.
+	const positions = new Map<string, ChatScrollPosition>();
+	const savedPosition = () => {
+		const key = untracked(sessionKey);
+		return key === null ? null : (positions.get(key) ?? null);
+	};
+	const readPosition = (position: ChatScrollPosition) => {
+		const key = untracked(sessionKey);
+		if (key !== null) positions.set(key, position);
+	};
 	const view = computed(() =>
 		chatListView(transcript(), props.messages().length),
 	);
@@ -83,6 +93,8 @@ export function ChatMessageList(props: ChatMessageListProps) {
 								assistantBody={props.assistantBody}
 								footer={props.footer}
 								onVisibleRangeChange={props.onVisibleRangeChange}
+								restorePosition={savedPosition()}
+								onScrollPositionChange={readPosition}
 							/>
 						);
 				}

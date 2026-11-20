@@ -14,6 +14,7 @@ import { replayConversationEvents } from "@/lib/chat/conversation-replay";
 import type {
 	ChatMessage,
 	ConversationEvent,
+	ConversationState,
 } from "@/lib/chat/conversation-types";
 import "../app/fonts";
 import { initializeI18n } from "../app/i18n";
@@ -32,7 +33,9 @@ import { fixtureThemeFamily } from "./fixture-theme";
  * as a new read gives it, the loaded messages starting two further on when
  * `fixture.unloaded` of the first are placeholders. `measure` says where the
  * first prompt in view is, where the end of the list is and how tall the
- * window is, so the test sees whether the list moved.
+ * window is, so the test sees whether the list moved. `other` switches to
+ * a second chat and back, so the test sees whether the list comes back
+ * where the first was read to.
  */
 async function run() {
 	const count = Number(await Storage.getItem("fixture.count"));
@@ -47,18 +50,27 @@ async function run() {
 		setStyleTheme(claude.styleVars);
 	}
 	const reducer = context();
-	let conversation = await long(count, reducer);
+	// The chats the fixture can show: `a` is the one `count` makes, `b` the
+	// one `other` switches to and back.
+	const chats: Record<
+		string,
+		{ conversation: ConversationState; unloaded: number }
+	> = {
+		a: { conversation: await long(count, reducer), unloaded },
+	};
+	let current = "a";
+	const chat = () => chats[current];
 	const transcript = signal<ChatTranscriptState>({
-		sessionKey: "chat-fixture",
+		sessionKey: "chat-a",
 		status: "ready",
-		conversation,
+		conversation: chat().conversation,
 		historyPrefix: [],
 		source: "snapshot",
 	});
 	// The chat as the store joins it: placeholders, then the loaded messages.
 	const joined = (): ChatMessage[] =>
-		conversation.messages.map((message, index) =>
-			index < unloaded
+		chat().conversation.messages.map((message, index) =>
+			index < chat().unloaded
 				? {
 						...message,
 						historyPlaceholder: true,
@@ -69,11 +81,15 @@ async function run() {
 	const messages = signal(joined());
 	const bodies = signal(0);
 	const show = () => {
-		transcript.set({ ...transcript(), conversation });
+		transcript.set({ ...transcript(), conversation: chat().conversation });
 		messages.set(joined());
 	};
 	const apply = (...events: ConversationEvent[]) => {
-		conversation = replayConversationEvents(events, reducer, conversation);
+		chat().conversation = replayConversationEvents(
+			events,
+			reducer,
+			chat().conversation,
+		);
 		show();
 	};
 	const timestampMs = startedAt + count * 60_000;
@@ -86,9 +102,9 @@ async function run() {
 	// placeholders, as the store's pages do.
 	const reportRange = (start: number, end: number) => {
 		ranges.set(`${ranges().replace("none", "")}${start}-${end},`);
-		if (start < unloaded && !hold) {
+		if (start < chat().unloaded && !hold) {
 			setTimeout(() => {
-				unloaded = Math.min(unloaded, start);
+				chat().unloaded = Math.min(chat().unloaded, start);
 				show();
 			}, 0);
 		}
@@ -107,7 +123,7 @@ async function run() {
 		);
 		// The first prompt under the bar, then that prompt again.
 		const prompt =
-			shown.find(({ text }) => text === anchor) ??
+			shown.find(({ text, y }) => text === anchor && y !== undefined) ??
 			shown
 				.filter(({ y }) => y !== undefined && y > 60)
 				.sort((a, b) => (a.y ?? 0) - (b.y ?? 0))[0];
@@ -147,15 +163,35 @@ async function run() {
 		// the range the list reported, and a margin around them, loaded, so
 		// a read's window can only move outside that.
 		reread() {
-			conversation = {
-				...conversation,
-				messages: conversation.messages.map((message) =>
+			chat().conversation = {
+				...chat().conversation,
+				messages: chat().conversation.messages.map((message) =>
 					message.role === "assistant"
 						? { ...message, id: `${message.id}-read-again` }
 						: message,
 				),
 			};
 			show();
+		},
+		// The other chat, as opening another session shows it; `other`
+		// again is the way back to this one.
+		other() {
+			void (async () => {
+				chats.b ??= {
+					conversation: await long(20, reducer),
+					unloaded: 0,
+				};
+				current = current === "a" ? "b" : "a";
+				// The other chat's list remakes its rows; the cells the map held
+				// went with the last list.
+				prompts.clear();
+				transcript.set({
+					...transcript(),
+					sessionKey: `chat-${current}`,
+					conversation: chat().conversation,
+				});
+				messages.set(joined());
+			})();
 		},
 		measure: () => void measure(),
 	};

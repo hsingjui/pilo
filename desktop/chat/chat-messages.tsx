@@ -37,6 +37,13 @@ const fadeAfter = 16;
  */
 const rowKey = (_: ChatMessage, index: number) => String(index);
 
+/** Where a chat was read to: the row at the viewport's start and how far
+ * past its start, as the list's `measureScrollPosition` gives them. */
+export interface ChatScrollPosition {
+	index: number;
+	offset: number;
+}
+
 export interface ChatMessagesProps {
 	messages: () => readonly ChatMessage[];
 	userBody?: ChatMessageBody<UserChatMessage>;
@@ -44,6 +51,10 @@ export interface ChatMessagesProps {
 	footer?: ListSlot;
 	/** The first and last rows on screen, as their places in the chat. */
 	onVisibleRangeChange?: (startIndex: number, endIndex: number) => void;
+	/** Where the chat was read to when it was open before; at its end without it. */
+	restorePosition?: ChatScrollPosition | null;
+	/** Where the chat is read to, kept as it scrolls. */
+	onScrollPositionChange?: (position: ChatScrollPosition) => void;
 }
 
 /**
@@ -55,6 +66,10 @@ export function ChatMessages(props: ChatMessagesProps) {
 	let list: ListRef | undefined;
 	const away = signal(false);
 	const scrolled = signal(false);
+	// A chat opened before comes back where it was read to: the row, from
+	// `initialScrollIndex`, and its offset, from the first viewable report.
+	const restore = props.restorePosition ?? null;
+	let restoring = restore !== null;
 	const follow = ({ offset, contentSize, size }: ScrollEvent) => {
 		away.set(
 			shouldShowChatScrollToLatest(
@@ -67,6 +82,26 @@ export function ChatMessages(props: ChatMessagesProps) {
 			),
 		);
 		scrolled.set(offset.y > fadeAfter);
+		keepPosition();
+	};
+	let measuring = false;
+	// The position is kept as the list scrolls, so the chat can be read to
+	// the same place when it is opened again; one measure at a time, the
+	// last of a run of scrolls winning.
+	const keepPosition = () => {
+		if (measuring || !props.onScrollPositionChange || list === undefined) {
+			return;
+		}
+		measuring = true;
+		void list
+			.measureScrollPosition()
+			.then((position) => {
+				measuring = false;
+				if (position) props.onScrollPositionChange?.(position);
+			})
+			.catch(() => {
+				measuring = false;
+			});
 	};
 	let visible: { start: number; end: number } | undefined;
 	const reportVisible = (info: { viewableItems: ViewToken<ChatMessage>[] }) => {
@@ -78,6 +113,14 @@ export function ChatMessages(props: ChatMessagesProps) {
 			if (token.index > end) end = token.index;
 		}
 		if (start === Number.POSITIVE_INFINITY) return;
+		if (restoring && restore !== null) {
+			restoring = false;
+			list?.scrollToIndex({
+				index: restore.index,
+				viewOffset: -restore.offset,
+				animated: false,
+			});
+		}
 		if (visible?.start === start && visible?.end === end) return;
 		visible = { start, end };
 		props.onVisibleRangeChange?.(start, end);
@@ -92,7 +135,8 @@ export function ChatMessages(props: ChatMessagesProps) {
 				each={props.messages()}
 				keyExtractor={rowKey}
 				estimatedItemSize={96}
-				initialScrollAtEnd
+				initialScrollIndex={restore?.index}
+				initialScrollAtEnd={restore === null}
 				maintainVisibleContentPosition={{
 					autoscrollToBottomThreshold: followThreshold,
 				}}

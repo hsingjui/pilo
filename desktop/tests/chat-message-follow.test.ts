@@ -213,6 +213,29 @@ test("one streamed event of a 10,000-message chat costs the list one pass", asyn
 	expect(ms).toBeLessThan(100);
 });
 
+// Where a chat was read to is kept while another opens; opening it again
+// puts the same rows where they were, its place in the chat and its offset
+// past the row alike.
+test("a chat opened again comes back where it was read to", async () => {
+	const app = await openChat(60);
+	await app.waitFor("id:chat-messages >> text:Answer 30");
+	await app.scroll("id:chat-messages", -2400);
+	await app.waitFor("id:chat-scroll-latest");
+	const before = await measure(app);
+
+	await app.press("id:other");
+	await app.waitFor("id:chat-messages >> text:Answer 10");
+
+	await app.press("id:other");
+	const after = await measureOnce(app, (at) => at.prompt === before.prompt);
+	expect(after.prompt).toBe(before.prompt);
+	// The headless engine restores the row but not its offset; a platform
+	// puts both back.
+	if (await drawn(app)) {
+		expect(Math.abs(after.y - before.y)).toBeLessThan(4);
+	}
+});
+
 test("the way back to the latest message returns to the end, and the list follows again", async () => {
 	const app = await openChat(40);
 	await app.waitFor("id:chat-messages >> text:Answer 20");

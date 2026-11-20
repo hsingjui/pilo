@@ -60,6 +60,16 @@ message. Both come from the native list (`maintainVisibleContentPosition`);
 the button appears by the rule the WebUI uses
 (`src/lib/chat/chat-scroll-to-latest.ts`).
 
+## Where a chat was read to
+
+`ChatMessageList` keeps the place each chat (`sessionKey`) was read to: the
+row the viewport starts on and how far past it, which the list's
+`measureScrollPosition` reports as it scrolls (`onScrollPositionChange`).
+Opened again, the list gets that place back as `restorePosition`: it starts
+on the row (`initialScrollIndex`) and the first viewable report settles the
+offset (`scrollToIndex`), so a reopened chat shows exactly where it was left.
+A chat never opened starts on the last message (`initialScrollAtEnd`).
+
 ## Where later pieces plug in
 
 - `onVisibleRangeChange` tells the store the places on screen, so it
