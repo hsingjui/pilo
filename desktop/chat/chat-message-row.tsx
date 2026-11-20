@@ -16,6 +16,12 @@ export interface ChatMessageRowProps {
 	message: () => ChatMessage;
 	userBody?: ChatMessageBody<UserChatMessage>;
 	assistantBody?: ChatMessageBody<AssistantChatMessage>;
+	/** Forks the session at an assistant message; absent where forking is off. */
+	onForkAssistant?: (messageId: string) => void;
+	/** The assistant message a fork is running for. */
+	forkingMessageId?: () => string | null;
+	/** A turn in flight or a pending read disables forking. */
+	forkDisabled?: () => boolean;
 }
 
 /**
@@ -43,6 +49,9 @@ export function ChatMessageRow(props: ChatMessageRowProps) {
 					<ChatAssistantMessage
 						message={message as () => AssistantChatMessage}
 						body={props.assistantBody}
+						onFork={props.onForkAssistant}
+						forking={() => props.forkingMessageId?.() === message().id}
+						forkDisabled={props.forkDisabled}
 					/>
 				);
 			case "compaction":

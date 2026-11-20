@@ -55,6 +55,12 @@ export interface ChatMessagesProps {
 	userBody?: ChatMessageBody<UserChatMessage>;
 	assistantBody?: ChatMessageBody<AssistantChatMessage>;
 	footer?: ListSlot;
+	/** Forks the session at an assistant message; absent where forking is off. */
+	onForkAssistant?: (messageId: string) => void;
+	/** The assistant message a fork is running for. */
+	forkingMessageId?: () => string | null;
+	/** A turn in flight or a pending read disables forking. */
+	forkDisabled?: () => boolean;
 	/** The first and last rows on screen, as their places in the chat. */
 	onVisibleRangeChange?: (startIndex: number, endIndex: number) => void;
 	/** Where the chat was read to when it was open before; at its end without it. */
@@ -186,6 +192,9 @@ export function ChatMessages(props: ChatMessagesProps) {
 						message={message}
 						userBody={props.userBody}
 						assistantBody={props.assistantBody}
+						onForkAssistant={props.onForkAssistant}
+						forkingMessageId={props.forkingMessageId}
+						forkDisabled={props.forkDisabled}
 					/>
 				)}
 			</List>

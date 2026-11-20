@@ -12,8 +12,10 @@ import {
 	conversationContext,
 	followOpenSession,
 	followRunConfig,
+	openChatTarget,
 } from "./open-chat";
 import { followOpenSessionRead } from "./read-open-session";
+import { SessionForker } from "./session-fork";
 
 /**
  * Starts the app on `pilo`: shows the shell, loads the app state, keeps the
@@ -26,6 +28,22 @@ export async function launch(pilo: PiloNative) {
 	const composer = new ComposerStore({ client, app: store.state });
 	const catalog = new ModelCatalogStore(client);
 	const runConfig = new ChatRunConfigStore(client, catalog.state);
+	const forker = new SessionForker(client, {
+		target: () => openChatTarget(store.state()),
+		messages: () => chat.messages(),
+		disabled: () => {
+			const target = openChatTarget(store.state());
+			const held = store
+				.state()
+				.chatSessions.find((c) => c.sessionKey === target?.sessionKey);
+			return chat.state().status !== "ready" || (held?.activeTurn ?? false);
+		},
+		onForked: (projectId, sessionPath) => {
+			void store
+				.loadSessions(projectId)
+				.then(() => store.selectSession(projectId, sessionPath));
+		},
+	});
 	followOpenSession(store, chat);
 	followOpenSessionRead(store);
 	followRunConfig(store, runConfig, catalog);
@@ -35,6 +53,7 @@ export async function launch(pilo: PiloNative) {
 		composer,
 		runConfig,
 		catalog,
+		forker,
 		onRenameSession: (projectId, sessionPath, title) =>
 			void client
 				.updateSessionUiState(

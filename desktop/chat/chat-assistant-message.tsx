@@ -1,6 +1,8 @@
 import { computed, Text, View } from "nsh";
 
 import { t } from "../app/i18n";
+import { Button } from "../ui/button";
+import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
 import { ChatMarkdown } from "./chat-markdown";
 import type {
@@ -15,6 +17,12 @@ const stalled = "PILO_STREAM_STALLED:";
 export function ChatAssistantMessage(props: {
 	message: () => AssistantChatMessage;
 	body?: ChatMessageBody<AssistantChatMessage>;
+	/** Forks the session at this reply; absent where forking is off. */
+	onFork?: (messageId: string) => void;
+	/** This reply's fork is running. */
+	forking?: () => boolean;
+	/** Another fork, or a turn in flight, disables the button. */
+	forkDisabled?: () => boolean;
 }) {
 	const { message } = props;
 	// A reply that failed or was stopped before any text has no body.
@@ -27,6 +35,15 @@ export function ChatAssistantMessage(props: {
 	// What became of a finished turn: it was stopped, or when it ended.
 	const ending = computed(() =>
 		message().stopReason === "aborted" ? t("chat.stopped") : message().time,
+	);
+	// Only a cleanly finished reply can be a fork point, as in the Tauri app.
+	const canFork = computed(
+		() =>
+			props.onFork != null &&
+			message().streaming !== true &&
+			message().completion !== "continued" &&
+			!message().errorMessage &&
+			message().stopReason !== "aborted",
 	);
 	return (
 		<ConversationColumn class="py-3">
@@ -63,8 +80,42 @@ export function ChatAssistantMessage(props: {
 							accessibilityLabel={t("chat.waitingResponse")}
 						/>
 					</View>
-				) : ending() ? (
-					<View class="mt-0.5 h-7 justify-center">
+				) : ending() || canFork() ? (
+					<View class="mt-0.5 h-7 flex-row items-center gap-2">
+						{() =>
+							canFork() ? (
+								<Button
+									testID={`fork:${message().id}`}
+									variant="ghost"
+									size="sm"
+									disabled={
+										(props.forkDisabled?.() ?? false) ||
+										(props.forking?.() ?? false)
+									}
+									accessibilityLabel={t("chat.forkNewSession")}
+									onPress={() => props.onFork?.(message().id)}
+								>
+									{() =>
+										props.forking?.() ? (
+											<Spinner size={13} class="text-muted-foreground" />
+										) : (
+											<Icon
+												name="GitFork"
+												size={13}
+												class="text-muted-foreground"
+											/>
+										)
+									}
+									<Text class="text-xs text-muted-foreground">
+										{() =>
+											props.forking?.()
+												? t("chat.forking")
+												: t("chat.forkNewSession")
+										}
+									</Text>
+								</Button>
+							) : null
+						}
 						<Text class="font-sans text-xs text-muted-foreground">
 							{ending}
 						</Text>

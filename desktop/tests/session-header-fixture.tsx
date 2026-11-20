@@ -15,7 +15,9 @@ import {
 	conversationContext,
 	followOpenSession,
 	followRunConfig,
+	openChatTarget,
 } from "../app/open-chat";
+import { SessionForker } from "../app/session-fork";
 import { AppStore } from "../state/app-store";
 import { ComposerStore } from "../composer/composer-store";
 import { ChatRunConfigStore } from "../state/chat-run-config";
@@ -106,6 +108,27 @@ const replies: Record<string, unknown> = {
 	set_thinking_level: null,
 };
 
+/** The source session's Pi entries: two user/assistant pairs, leaf at a2. */
+const entriesReply = {
+	entries: [
+		{ id: "u1", parentId: null, type: "message", message: { role: "user" } },
+		{
+			id: "a1",
+			parentId: "u1",
+			type: "message",
+			message: { role: "assistant" },
+		},
+		{ id: "u2", parentId: "a1", type: "message", message: { role: "user" } },
+		{
+			id: "a2",
+			parentId: "u2",
+			type: "message",
+			message: { role: "assistant" },
+		},
+	],
+	leafId: "a2",
+};
+
 async function run() {
 	const themeSettings = {
 		revision: 1,
@@ -113,6 +136,7 @@ async function run() {
 		themeFamily: await fixtureThemeFamily(),
 	} as ThemeSettings;
 	let entry = session;
+	let forkedEntry: SessionIndexEntry | null = null;
 	let runtime!: ReturnType<typeof scriptedClient>;
 	runtime = scriptedClient({
 		projects: [
@@ -128,7 +152,8 @@ async function run() {
 			} as Project,
 		],
 		themeSettings,
-		sessions: () => Promise.resolve([entry]),
+		sessions: () =>
+			Promise.resolve(forkedEntry ? [entry, forkedEntry] : [entry]),
 		onUpdateSessionUiState: (sessionPath, update) => {
 			entry = {
 				...entry,
@@ -139,7 +164,33 @@ async function run() {
 			runtime.emit({ type: "sessions_indexed", projectId: "pilo" });
 			return entry;
 		},
-		history: () => Promise.resolve(turn(0, "Resize the sidebar", "Done.")),
+		history: () =>
+			Promise.resolve([
+				...turn(0, "Resize the sidebar", "Done."),
+				...turn(1, "Widen it too", "Done again."),
+			]),
+		onSnapshot: (sessionKey) =>
+			sessionKey === "k4"
+				? {
+						eventSequence: 0,
+						sessionKey,
+						generation: 1,
+						history: {
+							history: {
+								events: [
+									...turn(0, "Resize the sidebar", "Done."),
+									...turn(1, "Widen it too", "Done again."),
+								],
+								model: { provider: "openai", id: "gpt-5" },
+								thinkingLevel: "high",
+								name: "Resize the sidebar",
+								sourceMessageCount: 4,
+							},
+							fingerprint: null,
+						},
+						live: { type: "idle" },
+					}
+				: undefined,
 		historyMeta: {
 			model: { provider: "openai", id: "gpt-5" },
 			thinkingLevel: "high",
@@ -156,18 +207,53 @@ async function run() {
 		],
 		models: { pilo: catalog },
 		modelScopes: { pilo: { projectId: "pilo", models: null, updatedAtMs: 1 } },
-		onCommand: (_sessionKey, command) => {
-			const data = replies[command.type as string];
-			if (data === undefined) return undefined;
+		onCommand: (sessionKey, command) => {
+			const forking = sessionKey.includes("fork-runtime");
 			if (command.type === "get_state") {
+				const state = replies.get_state as Record<string, unknown>;
 				return {
-					data: { ...data, sessionName: entry.titleOverride ?? session.name },
+					data: forking
+						? {
+								...state,
+								sessionId: "s5",
+								sessionFile: "/sessions/forked.jsonl",
+								sessionName: null,
+							}
+						: {
+								...state,
+								sessionName: entry.titleOverride ?? session.name,
+							},
 				};
 			}
-			return { data };
+			if (command.type === "get_entries") {
+				return { data: entriesReply };
+			}
+			if (command.type === "fork" || command.type === "clone") {
+				if (!forkedEntry) {
+					forkedEntry = {
+						...session,
+						piSessionId: "s5",
+						sessionPath: "/sessions/forked.jsonl",
+						name: null,
+						firstUserMessagePreview: "Widen it too",
+					};
+					runtime.emit({ type: "sessions_indexed", projectId: "pilo" });
+				}
+				// The scripted clone answers cancelled, covering that path.
+				return { data: { cancelled: command.type === "clone" } };
+			}
+			const data = replies[command.type as string];
+			return data === undefined ? undefined : { data };
 		},
 	});
-	const chat = new ChatTranscriptStore(runtime.client, conversationContext());
+	// Deterministic message ids, so tests can name a row's fork button.
+	const ids = { user: 0, assistant: 0, compaction: 0 };
+	const context = {
+		...conversationContext(),
+		createMessageId: (kind: "user" | "assistant" | "compaction"): string =>
+			`${kind}-m${++ids[kind]}`,
+	};
+	const chat = new ChatTranscriptStore(runtime.client, context);
 	const store = new AppStore(runtime.client, chat);
 	const composer = new ComposerStore({
 		client: composerStubClient(runtime.client),
@@ -175,6 +261,16 @@ async function run() {
 	});
 	const models = new ModelCatalogStore(runtime.client);
 	const runConfig = new ChatRunConfigStore(runtime.client, models.state);
+	const forker = new SessionForker(runtime.client, {
+		target: () => openChatTarget(store.state()),
+		messages: () => chat.messages(),
+		disabled: () => chat.state().status !== "ready",
+		onForked: (projectId, sessionPath) => {
+			void store
+				.loadSessions(projectId)
+				.then(() => store.selectSession(projectId, sessionPath));
+		},
+	});
 	followOpenSession(store, chat);
 	followRunConfig(store, runConfig, models);
 	mount(AppShell, {
@@ -183,6 +279,7 @@ async function run() {
 		composer,
 		runConfig,
 		catalog: models,
+		forker,
 		onRenameSession: (projectId, sessionPath, title) =>
 			void runtime.client.updateSessionUiState(
 				sessionPath,

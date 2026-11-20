@@ -74,6 +74,13 @@ export type AppScript = {
 	onStartChat?: (
 		input: PiloClientStartChatInput,
 	) => PiSessionSnapshot | Promise<PiSessionSnapshot>;
+	/**
+	 * The transcript snapshot `chatTranscriptSnapshot` resolves with;
+	 * "no Pi is running" when left out, as before.
+	 */
+	onSnapshot?: (
+		sessionKey: string,
+	) => import("../client/nsh-pilo-client").ChatTranscriptSnapshot | undefined;
 	/** A project's saved model catalog; `loadModels` answers null otherwise. */
 	models?: Record<string, ProjectPiModels>;
 	/** A project's saved model scope; null inherits Pi when left out. */
@@ -148,8 +155,13 @@ export function scriptedClient(script: AppScript = {}) {
 				script.chatSessions?.find((chat) => chat.sessionKey === sessionKey) ??
 					null,
 			),
-		// No Pi runs for a scripted chat, so its transcript is its history.
-		chatTranscriptSnapshot: () => Promise.reject(new Error("no Pi is running")),
+		// No Pi runs for a scripted chat unless the script says otherwise.
+		chatTranscriptSnapshot: (sessionKey) => {
+			const snapshot = script.onSnapshot?.(sessionKey);
+			return snapshot
+				? Promise.resolve(snapshot)
+				: Promise.reject(new Error("no Pi is running"));
+		},
 		startChat(input) {
 			running.add(input.sessionKey);
 			return Promise.resolve(

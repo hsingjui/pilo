@@ -3,6 +3,7 @@ import {
 	computed,
 	effect,
 	type JSX,
+	Overlay,
 	signal,
 	Text,
 	View,
@@ -21,10 +22,12 @@ import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 import type { ModelCatalogStore } from "../state/model-catalog";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
+import { Toast } from "../ui/toast";
 import { followSavedAppearance } from "./appearance";
 import { t } from "./i18n";
 import { openChatTarget } from "./open-chat";
 import { SessionHeader } from "./session-header";
+import type { SessionForker } from "./session-fork";
 import { Sidebar } from "./Sidebar";
 import { SidebarSettingsStore } from "./sidebar-settings";
 
@@ -60,6 +63,8 @@ export interface AppShellProps {
 		sessionPath: string,
 		title: string,
 	) => void;
+	/** Forks the open session at an assistant message. */
+	forker?: Pick<SessionForker, "state" | "forkAssistant" | "dismissNotice">;
 }
 
 export function AppShell(props: AppShellProps) {
@@ -230,6 +235,20 @@ export function AppShell(props: AppShellProps) {
 													onFileLink={props.onFileLink}
 												/>
 											)}
+											onForkAssistant={
+												props.forker
+													? (messageId) =>
+															void props.forker?.forkAssistant(messageId)
+													: undefined
+											}
+											forkingMessageId={() =>
+												props.forker?.state().forkingMessageId ?? null
+											}
+											forkDisabled={() =>
+												chat.state().status !== "ready" ||
+												(props.forker?.state().forkingMessageId ?? null) !==
+													null
+											}
 											transcript={chat.state}
 											messages={() => chat.messages()}
 											onRetry={() => chat.refresh()}
@@ -252,6 +271,24 @@ export function AppShell(props: AppShellProps) {
 					}}
 				</View>
 			</View>
+			{() => {
+				const notice = props.forker?.state().notice;
+				return notice ? (
+					<Overlay class="top-14 right-4 w-96">
+						<Toast
+							testID={`fork-notice-${notice.id}`}
+							transitionStatus="present"
+							variant={notice.kind}
+							description={notice.description}
+							accessibilityLabel={notice.title}
+							closeLabel={t("common.close")}
+							onDismissRequest={() => props.forker?.dismissNotice()}
+						>
+							<Text>{notice.title}</Text>
+						</Toast>
+					</Overlay>
+				) : null;
+			}}
 		</View>
 	);
 }
