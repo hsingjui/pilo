@@ -9,11 +9,7 @@ import { Switch } from "../ui/switch";
 import type { SettingsClient } from "./settings-dialog";
 import { SettingsRow, SettingsSection } from "./layout";
 
-/**
- * The general preferences: language, send shortcut, the conversation
- * collapses, plugin notifications and developer mode, as the Tauri
- * `PreferencesSettings` pane (its desktop block is a tab of its own here).
- */
+/** General preferences: language, send shortcut, conversation folding and plugin notifications. */
 export function PreferencesPane(props: {
 	state: Accessor<AppState>;
 	client: Pick<SettingsClient, "savePreferences">;
@@ -81,18 +77,6 @@ export function PreferencesPane(props: {
 						]}
 						value={values()?.locale ?? "en-US"}
 						onChange={(event) => locale(event.value)}
-					/>
-				</SettingsRow>
-			</SettingsSection>
-			<SettingsSection title={t("settings.developer")}>
-				<SettingsRow
-					label={t("settings.developerMode")}
-					helper={t("settings.developerModeDescription")}
-				>
-					<Switch
-						testID="settings-developer-mode"
-						checked={values()?.developerMode ?? false}
-						onChange={(event) => save({ developerMode: event.checked })}
 					/>
 				</SettingsRow>
 			</SettingsSection>
