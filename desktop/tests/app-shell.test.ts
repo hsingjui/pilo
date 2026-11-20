@@ -11,14 +11,20 @@ function openStates(scenario: string) {
 	});
 }
 
-test("the shell starts on the native runtime and shows the default workspace", async () => {
+test("the shell starts on the native runtime and lands on the default workspace", async () => {
 	const app = await open("./app-shell-fixture.tsx", desktop);
 	await app.waitFor("id:workspace-title");
-	expect(app.shows("id:sidebar >> text:Default workspace")).toBe(true);
-	expect(app.shows("id:workspace >> text:Default workspace")).toBe(true);
+	// As React's tree, the default workspace stays out of the sidebar until
+	// its connection's menu shows it; the landing's picker starts on it.
+	expect(app.shows("id:sidebar >> text:Default workspace")).toBe(false);
+	expect(app.shows("id:landing-project-picker >> text:Default workspace")).toBe(
+		true,
+	);
 	expect(app.shows("id:startup-loading")).toBe(false);
 	expect(app.shows("id:startup-failed")).toBe(false);
-	expect(app.viewStyle("id:sidebar")?.backgroundColor).toBe("#f7f8faff");
+	expect(app.viewStyle("id:sidebar-surface")?.backgroundColor).toBe(
+		"#f7f8faff",
+	);
 });
 
 test("the shell says it is loading until the first snapshot arrives", async () => {
@@ -122,7 +128,7 @@ test("the smallest window shows the sidebar beside the workspace", async () => {
 test("the shell fixtures show the theme saved in their Host", async () => {
 	const claude = { "fixture.theme": "claude" };
 	const sidebar = (app: Awaited<ReturnType<typeof open>>) =>
-		app.viewStyle("id:sidebar")?.backgroundColor;
+		app.viewStyle("id:sidebar-surface")?.backgroundColor;
 
 	const native = await open("./app-shell-fixture.tsx", {
 		...desktop,

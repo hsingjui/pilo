@@ -31,7 +31,7 @@ const WIDTH_KEY = "pilo.sidebarWidth";
 // Match the Tauri sidebar's default and resize limits.
 export const MIN_SIDEBAR_WIDTH = 240;
 export const MAX_SIDEBAR_WIDTH = 480;
-const DEFAULT_SIDEBAR_WIDTH = 292;
+export const DEFAULT_SIDEBAR_WIDTH = 292;
 
 function clampWidth(width: number): number {
 	return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width));

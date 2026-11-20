@@ -86,6 +86,12 @@ export class AppStore {
 		return this.connection !== undefined;
 	}
 
+	/** Reads the theme for the first frame without waiting for the snapshot. */
+	async preloadThemeSettings() {
+		const settings = await this.client.loadThemeSettings();
+		this.apply({ type: "theme_settings_loaded", settings });
+	}
+
 	/** Connects to runtime events and loads the first snapshot. */
 	start() {
 		this.resumed = false;

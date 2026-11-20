@@ -286,6 +286,9 @@ const DEFAULT_REMOTE_HOST: RemoteHostState = {
 export function scriptedClient(script: AppScript = {}) {
 	const listeners = new Set<PiloClientEventOptions>();
 	const projects = script.projects ?? [];
+	const connections = script.connections ?? [
+		{ id: "local", name: "Local", kind: { type: "local" } } as Connection,
+	];
 	const commands: [string, Record<string, unknown>][] = [];
 	const savedModels = new Map<string, ProjectPiModels>();
 	const modelScopes = new Map(Object.entries(script.modelScopes ?? {}));
@@ -445,12 +448,7 @@ export function scriptedClient(script: AppScript = {}) {
 				fingerprint: null,
 			}) as SessionHistoryResult,
 		listProjects: () => Promise.resolve(projects),
-		listConnections: () =>
-			Promise.resolve(
-				script.connections ?? [
-					{ id: "local", name: "Local", kind: { type: "local" } } as Connection,
-				],
-			),
+		listConnections: () => Promise.resolve(connections),
 		addProject: (connectionId, path) => {
 			const created =
 				script.onAddProject?.(connectionId, path) ??
@@ -458,8 +456,9 @@ export function scriptedClient(script: AppScript = {}) {
 					id: `added-${path}`,
 					name: path.replace(/\/+$/, "").split("/").pop() ?? path,
 					path,
-					connectionId,
-				} as unknown as Project);
+					// A project carries its connection, as the Host's does.
+					connection: connections.find(({ id }) => id === connectionId),
+				} as Project);
 			projects.push(created);
 			return Promise.resolve(created);
 		},

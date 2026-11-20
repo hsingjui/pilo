@@ -21,7 +21,7 @@ import {
 	ConversationColumnLayout,
 } from "../chat/conversation-column";
 import { DEFAULT_CHAT_REM } from "../chat/layout";
-import { ChatComposer } from "../composer/chat-composer";
+import { ChatComposer, ChatComposerSkeleton } from "../composer/chat-composer";
 import type { ComposerStore } from "../composer/composer-store";
 import { activeProject } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
@@ -36,6 +36,7 @@ import {
 } from "../settings/settings-dialog";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
+import { ErrorState } from "../ui/state-view";
 import { Toast } from "../ui/toast";
 import { followSavedAppearance } from "./appearance";
 import { CommandPalette } from "./command-palette";
@@ -47,7 +48,7 @@ import { openChatTarget } from "./open-chat";
 import { SessionHeader } from "./session-header";
 import type { SessionForker } from "./session-fork";
 import { createSidebarLayout } from "./sidebar-layout";
-import { SidebarPanel } from "./sidebar-panel";
+import { SidebarPanel, StartupSidebar } from "./sidebar-panel";
 import { SidebarSettingsStore } from "./sidebar-settings";
 
 /** The title bar's height; the system centers its window controls in it. */
@@ -222,7 +223,16 @@ export function AppShell(props: AppShellProps) {
 				store={store}
 				settings={sidebarSettings}
 				layout={sidebarLayout}
-				ready={() => status().type === "ready" && sidebarSettings.loaded()}
+				listState={() => {
+					switch (status().type) {
+						case "starting":
+							return "loading";
+						case "ready":
+							return sidebarSettings.loaded() ? "ready" : "loading";
+						default:
+							return "hidden";
+					}
+				}}
 				titleBar={() => ({ height: barHeight(), left: titleBar().left })}
 				onSearch={() => paletteOpen.set(true)}
 				onNewChat={newChat}
@@ -324,7 +334,7 @@ export function AppShell(props: AppShellProps) {
 						const current = status();
 						switch (current.type) {
 							case "starting":
-								return centered(<StartupLoading />);
+								return <StartupLoading />;
 							case "failed":
 								return centered(
 									<StartupFailure
@@ -521,67 +531,75 @@ export function AppShell(props: AppShellProps) {
 	);
 }
 
+/** The first frame, before the Host theme is available to mount AppShell. */
+export function StartupFrame() {
+	const window = currentWindow();
+	window.set({ titleBar: { style: "hidden", height: TITLE_BAR_HEIGHT } });
+	const titleBar = () => ({
+		height: window.titleBar().height || TITLE_BAR_HEIGHT,
+		left: window.titleBar().left,
+	});
+	return (
+		<View class="flex-1 flex-row bg-background">
+			<StartupSidebar titleBar={titleBar} />
+			<View class="min-w-0 flex-1">
+				<View
+					desktop={{ windowDrag: true }}
+					style={{ height: titleBar().height }}
+				/>
+				<View testID="workspace" class="min-h-0 flex-1">
+					<StartupLoading />
+				</View>
+			</View>
+		</View>
+	);
+}
+
+/**
+ * The workspace before the Host answers: the landing and composer the chat
+ * page opens with, in their loading forms, as React's loading fallback.
+ */
 function StartupLoading() {
 	return (
-		<Text
-			testID="startup-loading"
-			class="font-sans text-sm text-muted-foreground"
-		>
-			{() => t("common.loading")}
-		</Text>
+		<View testID="startup-loading" class="min-h-0 min-w-0 flex-1">
+			<View class="min-h-0 flex-1 justify-center">
+				<ConversationColumn>
+					<SessionLanding loading />
+				</ConversationColumn>
+			</View>
+			<View class="relative z-20 -mt-4 w-full shrink-0 pb-4">
+				<ConversationColumn class="relative">
+					<ChatComposerSkeleton showModel />
+				</ConversationColumn>
+			</View>
+		</View>
+	);
+}
+
+/** The runtime shut down under the app; only a new launch starts another. */
+function RuntimeStopped() {
+	return (
+		<ErrorState
+			testID="runtime-stopped"
+			title={() => t("app.runtimeStopped")}
+			description={() => t("app.runtimeStoppedDescription")}
+		/>
 	);
 }
 
 /** Startup did not finish; with `onRetry` the user can run it again. */
-/** The runtime shut down under the app; only a new launch starts another. */
-function RuntimeStopped() {
-	return (
-		<View
-			testID="runtime-stopped"
-			role="alert"
-			class="max-w-md items-center gap-4"
-		>
-			<Text class="text-center font-sans text-lg font-medium text-foreground">
-				{() => t("app.runtimeStopped")}
-			</Text>
-			<Text class="text-center font-sans text-sm text-muted-foreground">
-				{() => t("app.runtimeStoppedDescription")}
-			</Text>
-		</View>
-	);
-}
-
 function StartupFailure(props: {
 	message: () => string;
 	onRetry: () => Promise<void>;
 }) {
-	const retrying = signal(false);
 	return (
-		<View
+		<ErrorState
 			testID="startup-failed"
-			role="alert"
-			class="max-w-md items-center gap-4"
-		>
-			<Text class="text-center font-sans text-lg font-medium text-foreground">
-				{() => t("common.loadFailed")}
-			</Text>
-			<Text
-				testID="startup-failed-message"
-				class="text-center font-sans text-sm text-muted-foreground"
-			>
-				{props.message}
-			</Text>
-			<Button
-				testID="startup-retry"
-				variant="outline"
-				disabled={retrying()}
-				onPress={() => {
-					retrying.set(true);
-					void props.onRetry().finally(() => retrying.set(false));
-				}}
-			>
-				<Text class="font-sans">{() => t("common.retry")}</Text>
-			</Button>
-		</View>
+			title={() => t("common.loadFailed")}
+			description={props.message}
+			onRetry={props.onRetry}
+			retryLabel={() => t("common.retry")}
+			retryTestID="startup-retry"
+		/>
 	);
 }

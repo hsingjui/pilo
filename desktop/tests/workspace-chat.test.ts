@@ -16,8 +16,9 @@ async function openApp() {
 
 test("the workspace shows the open session's messages, and the project's page without one", async () => {
 	const app = await openApp();
-	expect(app.shows("id:workspace >> id:workspace-title")).toBe(true);
-	expect(app.shows("id:chat-message-list")).toBe(false);
+	// The workspace starts on a new chat in the first project: its landing.
+	await app.waitFor("id:workspace >> id:chat-empty >> id:workspace-title");
+	expect(app.shows("id:chat-messages")).toBe(false);
 
 	await app.press("id:session:s4");
 	await app.waitFor("id:workspace >> id:chat-messages");

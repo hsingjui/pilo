@@ -15,6 +15,7 @@ import type { Theme } from "@/lib/theme-settings-types";
 import { Button } from "../ui/button";
 import { Foreground } from "../ui/foreground";
 import { Icon } from "../ui/icon";
+import { Skeleton } from "../ui/skeleton";
 import { styleVar } from "../ui/theme-style";
 import { Tooltip } from "../ui/tooltip";
 import { t } from "./i18n";
@@ -27,7 +28,11 @@ import {
 	sidebarForeground,
 	sidebarProjectName,
 } from "./sidebar-parts";
-import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH } from "./sidebar-settings";
+import {
+	DEFAULT_SIDEBAR_WIDTH,
+	MAX_SIDEBAR_WIDTH,
+	MIN_SIDEBAR_WIDTH,
+} from "./sidebar-settings";
 
 export interface SidebarPanelProps extends Omit<
 	SidebarProps,
@@ -35,7 +40,7 @@ export interface SidebarPanelProps extends Omit<
 > {
 	layout: SidebarLayout;
 	/** The list shows once the app and the sidebar's settings are ready. */
-	ready: Accessor<boolean>;
+	listState: Accessor<"loading" | "ready" | "hidden">;
 	/** The system's title bar: its height and the room its controls take. */
 	titleBar: Accessor<{ height: number; left: number }>;
 	onSearch: () => void;
@@ -153,7 +158,11 @@ export function SidebarPanel(props: SidebarPanelProps) {
 			}}
 			accessibilityElementsHidden={layout.collapsed()}
 		>
-			<View class="relative min-h-0 flex-1" style={card().style}>
+			<View
+				testID="sidebar-surface"
+				class="relative min-h-0 flex-1"
+				style={card().style}
+			>
 				<View
 					testID="sidebar-title-bar"
 					desktop={{ windowDrag: true }}
@@ -221,22 +230,27 @@ export function SidebarPanel(props: SidebarPanelProps) {
 						borderBottomRightRadius: card().radius,
 					}}
 				>
-					{() =>
-						props.ready() ? (
-							<Sidebar
-								store={props.store}
-								settings={props.settings}
-								viewedProject={viewedProject}
-								onViewProject={(id) => projectView.set(id)}
-								defaultWorkspaceShown={props.defaultWorkspaceShown}
-								onDefaultWorkspaceShown={props.onDefaultWorkspaceShown}
-								onAddProject={props.onAddProject}
-								onRemoveConnection={props.onRemoveConnection}
-							/>
-						) : (
-							<View class="min-h-0 flex-1" />
-						)
-					}
+					{() => {
+						switch (props.listState()) {
+							case "ready":
+								return (
+									<Sidebar
+										store={props.store}
+										settings={props.settings}
+										viewedProject={viewedProject}
+										onViewProject={(id) => projectView.set(id)}
+										defaultWorkspaceShown={props.defaultWorkspaceShown}
+										onDefaultWorkspaceShown={props.onDefaultWorkspaceShown}
+										onAddProject={props.onAddProject}
+										onRemoveConnection={props.onRemoveConnection}
+									/>
+								);
+							case "loading":
+								return <SidebarLoading />;
+							case "hidden":
+								return <View class="min-h-0 flex-1" />;
+						}
+					}}
 					<View class="relative shrink-0 flex-row items-center gap-1 border-t border-sidebar-border px-1.5 py-1">
 						{props.onOpenSettings ? (
 							<Button
@@ -288,6 +302,58 @@ export function SidebarPanel(props: SidebarPanelProps) {
 					</View>
 				)
 			}
+		</View>
+	);
+}
+
+/** The sidebar outline before its interactive panel mounts. */
+export function StartupSidebar(props: Pick<SidebarPanelProps, "titleBar">) {
+	const card = computed(surface);
+	return (
+		<View class="h-full shrink-0" style={{ width: DEFAULT_SIDEBAR_WIDTH }}>
+			<View class="min-h-0 flex-1" style={card().style}>
+				<View
+					desktop={{ windowDrag: true }}
+					class="shrink-0 justify-center"
+					style={{
+						height: props.titleBar().height,
+						marginTop: -card().top,
+						paddingLeft: Math.max(14, props.titleBar().left - card().left + 8),
+					}}
+				>
+					<Skeleton strong class="h-4 w-10" />
+				</View>
+				<View class="-mt-1 h-8 shrink-0 justify-center px-3.5">
+					<Skeleton class="h-3 w-24" />
+				</View>
+				<SidebarLoading />
+				<View class="shrink-0 flex-row justify-between border-t border-sidebar-border px-3 py-2.5">
+					<Skeleton class="size-4" />
+					<Skeleton class="size-4" />
+				</View>
+			</View>
+		</View>
+	);
+}
+
+function SidebarLoading() {
+	return (
+		<View
+			testID="sidebar-loading"
+			class="mt-2 min-h-0 flex-1 overflow-hidden px-3 pt-1"
+		>
+			<View class="h-(--pilo-sidebar-env-height) shrink-0 flex-row items-center gap-2">
+				<Skeleton strong class="size-3.5 shrink-0" />
+				<Skeleton strong class="h-3 w-16" />
+			</View>
+			<Each of={["w-[48%]", "w-[58%]", "w-[42%]"]}>
+				{(width) => (
+					<View class="h-(--pilo-sidebar-project-height) shrink-0 flex-row items-center gap-2 pl-2">
+						<Skeleton class="size-3.5 shrink-0" />
+						<Skeleton class={`h-3 ${width()}`} />
+					</View>
+				)}
+			</Each>
 		</View>
 	);
 }

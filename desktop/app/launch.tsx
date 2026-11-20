@@ -1,4 +1,4 @@
-import { mount } from "nsh";
+import { computed, mount } from "nsh";
 import { isAvailable, Window } from "nsh/desktop";
 
 import type { PiloClientEvent } from "@/lib/api/pilo-client";
@@ -8,7 +8,7 @@ import { AppStore } from "../state/app-store";
 import { ChatRunConfigStore } from "../state/chat-run-config";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { ModelCatalogStore } from "../state/model-catalog";
-import { AppShell } from "./AppShell";
+import { AppShell, type AppShellProps, StartupFrame } from "./AppShell";
 import {
 	connectDesktopShell,
 	type DesktopSettingsClient,
@@ -75,7 +75,7 @@ export async function launch(
 	followOpenSession(store, chat);
 	followOpenSessionRead(store);
 	followRunConfig(store, runConfig, catalog);
-	mount(AppShell, {
+	const shellProps: AppShellProps = {
 		store,
 		chat,
 		composer,
@@ -90,6 +90,21 @@ export async function launch(
 			void store.renameSession(projectId, sessionPath, title),
 		readProjectImage: (projectId, path) =>
 			client.readProjectImage(projectId, path),
+	};
+	const showShell = computed(() => {
+		const { themeSettings, status } = store.state();
+		return (
+			themeSettings !== null ||
+			status.type === "failed" ||
+			status.type === "closed"
+		);
+	});
+	mount(
+		() => () => (showShell() ? <AppShell {...shellProps} /> : <StartupFrame />),
+	);
+	// The normal sync still reloads the theme after its bootstrap cut.
+	void store.preloadThemeSettings().catch((error: unknown) => {
+		console.warn("Failed to preload Host theme", error);
 	});
 	await client
 		.savePreferences({ locale: appLocale() }, true)

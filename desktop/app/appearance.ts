@@ -49,7 +49,18 @@ export function followSavedAppearance(state: Accessor<AppState>) {
 		if (savedLocale && savedLocale !== untracked(appLocale))
 			void setAppLocale(savedLocale);
 	});
-	effect(() => showTheme(theme(), pageSans(), codeMono(), codeFontSize()));
+	const themeInputs = computed(
+		() => [theme(), pageSans(), codeMono(), codeFontSize()] as const,
+	);
+	// Effects run after rendering; set the theme before building the first layout.
+	let applied = untracked(themeInputs);
+	showTheme(...applied);
+	effect(() => {
+		const next = themeInputs();
+		if (next === applied) return;
+		showTheme(...next);
+		applied = next;
+	});
 }
 
 function showTheme(

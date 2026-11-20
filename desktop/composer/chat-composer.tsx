@@ -40,6 +40,7 @@ import { createHover } from "../ui/hover";
 import { Icon, type IconName } from "../ui/icon";
 import { menuPopupClass, menuPopupStyle } from "../ui/menu";
 import { menuRowClass } from "../ui/menu-row";
+import { Skeleton } from "../ui/skeleton";
 import { styleVar } from "../ui/theme-style";
 import { Tooltip } from "../ui/tooltip";
 import { ComposerActions } from "./composer-actions";
@@ -104,6 +105,41 @@ function inputHeight(contentHeight: number, fontSize: number) {
 			Math.ceil(contentHeight) + INPUT_PADDING,
 			lineHeight * MAX_ROWS + INPUT_PADDING,
 		),
+	);
+}
+
+/** The empty composer's geometry, without mounting input or menu behavior. */
+export function ChatComposerSkeleton(props: { showModel: boolean }) {
+	return (
+		<View class={COMPOSER_SURFACE} style={surfaceStyle(false)}>
+			<View
+				class="px-1 pt-2"
+				style={{ height: inputHeight(0, DEFAULT_READING_FONT_SIZE) }}
+			>
+				<Skeleton class="h-2.5 w-[42%] rounded-full" />
+			</View>
+			<View class={COMPOSER_TOOLBAR} style={toolbarStyle()}>
+				<View class="h-(--pilo-composer-control-size) w-(--pilo-composer-attachment-width) shrink-0 items-center justify-center">
+					<Skeleton class="size-4" />
+				</View>
+				{props.showModel ? (
+					<View class="-ml-1 min-w-0 shrink flex-row items-center gap-1 px-2">
+						<Skeleton class="size-4 shrink-0" />
+						<Skeleton class="h-2.5 w-20 min-w-0 shrink rounded-full" />
+					</View>
+				) : null}
+				<View class="ml-auto shrink-0 flex-row items-center gap-1.5">
+					<View class="flex-row items-center gap-1 px-1.5">
+						<Skeleton class="size-3.5" />
+						<Skeleton class="size-3" />
+					</View>
+					<Skeleton
+						strong
+						class="size-(--pilo-composer-control-size) rounded-full"
+					/>
+				</View>
+			</View>
+		</View>
 	);
 }
 

@@ -5,7 +5,7 @@ import type { ThemeSettings } from "@/lib/theme-settings-types";
 import "../app/fonts";
 import { ComposerStore } from "../composer/composer-store";
 import { AppShell } from "../app/AppShell";
-import { conversationContext } from "../app/open-chat";
+import { conversationContext, followOpenSession } from "../app/open-chat";
 import { initializeI18n } from "../app/i18n";
 import { AppStore } from "../state/app-store";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
@@ -57,6 +57,8 @@ async function run() {
 		client: composerStubClient(runtime.client),
 		app: store.state,
 	});
+	// The shell opens a new chat in the active project, as the app's launch.
+	followOpenSession(store, chat);
 	mount(AppShell, { store, chat, composer, projectClient: runtime.client });
 	await store.start();
 	if (scenario === "closed") setTimeout(runtime.close, 50);
