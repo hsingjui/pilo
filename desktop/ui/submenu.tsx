@@ -1,4 +1,4 @@
-import { split, Text, View } from "nsh";
+import { split, Text, token, View } from "nsh";
 import {
 	Submenu as BaseSubmenu,
 	type SubmenuProps as BaseSubmenuProps,
@@ -20,7 +20,11 @@ export function Submenu(props: SubmenuProps) {
 				local.trigger ?? (
 					<View class={classNames(menuRowClass, "justify-between")}>
 						<Text class="font-sans">{local.label}</Text>
-						<Icon name="ChevronRight" size={14} />
+						<Icon
+							name="ChevronRight"
+							size={14}
+							color={token("muted-foreground")}
+						/>
 					</View>
 				)
 			}

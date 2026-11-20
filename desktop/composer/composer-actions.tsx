@@ -117,13 +117,7 @@ export function ComposerActions(props: {
 							checked={props.sendMode() === entry.mode}
 							accessibilityLabel={t(entry.label)}
 							class="py-1"
-							icon={
-								<Icon
-									name={entry.icon}
-									size={14}
-									color={token("muted-foreground")}
-								/>
-							}
+							icon={<Icon name={entry.icon} size={14} />}
 							onSelect={() => props.onSendModeChange(entry.mode)}
 						>
 							<View class="min-w-0 flex-1">

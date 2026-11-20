@@ -26,6 +26,9 @@ export function MenuItem(props: MenuItemProps) {
 	]);
 	const foreground = () =>
 		token(local.variant === "destructive" ? "destructive" : "foreground");
+	// Leading icons are muted, as React's menu icon slot; destructive stays red.
+	const iconForeground = () =>
+		token(local.variant === "destructive" ? "destructive" : "muted-foreground");
 	return (
 		<Foreground.Provider value={foreground}>
 			<BaseMenuItem
@@ -43,7 +46,11 @@ export function MenuItem(props: MenuItemProps) {
 				)}
 				indicator={local.indicator ?? <Icon name="Check" size={14} />}
 			>
-				{local.icon}
+				{local.icon ? (
+					<Foreground.Provider value={iconForeground}>
+						{local.icon}
+					</Foreground.Provider>
+				) : null}
 				{local.children}
 				{local.shortcut ? (
 					<Text class="ml-auto pl-4 font-mono text-xs text-muted-foreground">

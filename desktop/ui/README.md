@@ -17,6 +17,12 @@
   `Foreground` context (provided by Button), or the foreground token outside it.
   An explicit icon color overrides the context. An icon without an
   accessibility label is decorative; icon-only controls need a control label.
+  Icon and Spinner are canvases: a `text-*` class does not color them; pass
+  `color={token(...)}` or provide `Foreground`.
+- `MenuItem` draws its `icon` muted (`destructive` for destructive items), as
+  React's menu icon slot; callers pass no icon color. Submenu chevrons are muted.
+- `createHover` (`hover.ts`) tracks the pointer for icon foregrounds that a
+  `hover:` class cannot reach; spread `hover.props` on the view.
 - Fixtures and `nsh/test` coverage live in `desktop/tests/ui-*`. Check headless
   behavior and native macOS behavior separately; headless checks do not draw.
 - Popover defaults to center (like React); triggers near a window edge must pass `align="start"`.
