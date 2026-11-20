@@ -21,7 +21,6 @@ import {
 import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import { useChatFindMatch } from "@/components/chat/chat-find-context";
 import type { AssistantContentItem } from "@/lib/chat/chat-activity-state";
-import type { ChatMessage } from "@/lib/chat/conversation-types";
 import { formatWorkDuration } from "@/lib/format-duration";
 import { usePreferences } from "@/lib/preferences-provider";
 import { cn } from "@/lib/utils";
@@ -144,23 +143,6 @@ const CollapsibleMessageBody = memo(function CollapsibleMessageBody({
 		</div>
 	);
 });
-
-export function getAssistantMessageContent(
-	message: Extract<ChatMessage, { role: "assistant" }>,
-): AssistantContentItem[] {
-	if (message.content) return message.content;
-
-	const content: AssistantContentItem[] = [];
-	if (message.activity) content.push(...message.activity);
-	if (message.text) {
-		content.push({
-			id: `${message.id}-text`,
-			type: "text",
-			text: message.text,
-		});
-	}
-	return content;
-}
 
 export function renderAssistantContentNodes({
 	messageId,

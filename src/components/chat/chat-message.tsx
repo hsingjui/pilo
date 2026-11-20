@@ -5,7 +5,6 @@ import { Coins, GitFork } from "lucide-react";
 import { ChatAgentActivityIndicator } from "@/components/chat/chat-agent-activity";
 import {
 	AssistantWorkedRegion,
-	getAssistantMessageContent,
 	renderAssistantContentNodes,
 } from "@/components/chat/chat-assistant-work";
 import { ChatCopyButton } from "@/components/chat/chat-copy-button";
@@ -15,6 +14,7 @@ import { useIsTouchDevice } from "@/components/chat/chat-composer-run-config";
 import { hasTokenUsage, type TokenUsage } from "@/lib/api/token-usage";
 import {
 	getAssistantActivities,
+	getAssistantMessageContent,
 	getAssistantStreamingState,
 	splitAssistantContentForDisplay,
 	type AssistantContentItem,

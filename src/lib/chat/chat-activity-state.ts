@@ -1,4 +1,5 @@
 import type { AssistantActivity } from "@/lib/chat/chat-activity-types";
+import type { ChatMessage } from "@/lib/chat/conversation-types";
 
 export type AssistantTextContent = {
 	id: string;
@@ -106,6 +107,24 @@ export function summarizeAssistantActivity(
 		editFileCount: editPaths.size + editCallsWithoutPath,
 		commandCount,
 	};
+}
+
+/** A reply's content in order; a reply saved before content items keeps its activity, then its text. */
+export function getAssistantMessageContent(
+	message: Extract<ChatMessage, { role: "assistant" }>,
+): AssistantContentItem[] {
+	if (message.content) return message.content;
+
+	const content: AssistantContentItem[] = [];
+	if (message.activity) content.push(...message.activity);
+	if (message.text) {
+		content.push({
+			id: `${message.id}-text`,
+			type: "text",
+			text: message.text,
+		});
+	}
+	return content;
 }
 
 export function getAssistantActivities(
