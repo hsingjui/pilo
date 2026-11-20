@@ -19,6 +19,8 @@
 	"build": 1,
 	"capabilities": {
 		"application": true,
+		"clipboard": true,
+		"picker": true,
 		"notifications": true,
 		"statusBar": true,
 		"openUrl": { "schemes": ["https"] }

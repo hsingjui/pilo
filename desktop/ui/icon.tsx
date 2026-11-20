@@ -11,6 +11,8 @@ export interface IconProps extends Pick<
 	name: IconName;
 	size?: number;
 	color?: string;
+	/** Fills every path too, as Lucide's `fill-current`. */
+	fill?: boolean;
 	accessibilityLabel?: string;
 }
 
@@ -49,7 +51,7 @@ export function Icon(props: IconProps) {
 				cx.lineCap = "round";
 				cx.lineJoin = "round";
 				for (const { path, fill } of paths()) {
-					if (fill) cx.fill(path);
+					if (fill || props.fill) cx.fill(path);
 					cx.stroke(path);
 				}
 			}}
