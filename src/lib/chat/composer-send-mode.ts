@@ -1,11 +1,15 @@
-export type ComposerSendMode = "steer" | "follow_up" | "send_now";
+import {
+	COMPOSER_SEND_MODE_STORAGE_KEY,
+	DEFAULT_COMPOSER_SEND_MODE,
+	isComposerSendMode,
+	type ComposerSendMode,
+} from "@/lib/chat/send-mode";
 
-const STORAGE_KEY = "pilo.composerSendMode.v1";
-const DEFAULT_SEND_MODE: ComposerSendMode = "steer";
+export { isComposerSendMode } from "@/lib/chat/send-mode";
+export type { ComposerSendMode } from "@/lib/chat/send-mode";
 
-export function isComposerSendMode(value: unknown): value is ComposerSendMode {
-	return value === "steer" || value === "follow_up" || value === "send_now";
-}
+const STORAGE_KEY = COMPOSER_SEND_MODE_STORAGE_KEY;
+const DEFAULT_SEND_MODE = DEFAULT_COMPOSER_SEND_MODE;
 
 /**
  * The send mode is a sticky frontend choice: it survives reloads and project or
