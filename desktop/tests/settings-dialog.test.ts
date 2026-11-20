@@ -74,7 +74,10 @@ test("the nav moves between panes", async () => {
 	expect(app.shows("id:settings-theme-token-search")).toBe(true);
 	await app.press("id:settings-nav-fonts");
 	await app.waitFor("id:settings-code-font");
-	expect(app.shows("id:settings-fonts-reset-sizes")).toBe(true);
+	await app.press("id:settings-fonts-reset");
+	await app.waitFor("id:settings-fonts-reset-sizes");
+	expect(app.shows("id:settings-fonts-reset-families")).toBe(true);
+	await app.keyboard.press("escape");
 	await app.press("id:settings-nav-model-catalog");
 	await app.waitFor("id:settings-catalog-model-pilo-claude-sonnet-4");
 	await app.press("id:settings-nav-next-prompt");

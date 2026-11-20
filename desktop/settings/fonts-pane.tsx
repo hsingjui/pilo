@@ -23,6 +23,9 @@ import type { PreferencePatch } from "@/lib/host-preferences-types";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
+import { Icon } from "../ui/icon";
+import { Menu } from "../ui/menu";
+import { MenuItem } from "../ui/menu-item";
 import { FontSelect, type FontSelectGroup } from "./font-select";
 import { FontSizeInput } from "./font-size-input";
 import { SettingsRow, SettingsSection } from "./layout";
@@ -92,11 +95,18 @@ export function FontsPane(props: {
 			<SettingsSection
 				title={t("settings.font")}
 				actions={
-					<View class="flex-row gap-1">
-						<Button
+					<Menu
+						align="end"
+						trigger={
+							<Button testID="settings-fonts-reset" variant="ghost" size="sm">
+								<Text>{t("settings.resetDefault")}</Text>
+								<Icon name="ChevronDown" size={14} />
+							</Button>
+						}
+					>
+						<MenuItem
 							testID="settings-fonts-reset-families"
-							variant="ghost"
-							onPress={() =>
+							onSelect={() =>
 								save({
 									pageFontFamily: DEFAULT_PAGE_FONT_FAMILY,
 									readingFontFamily: DEFAULT_READING_FONT_FAMILY,
@@ -106,11 +116,10 @@ export function FontsPane(props: {
 							}
 						>
 							{t("settings.resetFonts")}
-						</Button>
-						<Button
+						</MenuItem>
+						<MenuItem
 							testID="settings-fonts-reset-sizes"
-							variant="ghost"
-							onPress={() =>
+							onSelect={() =>
 								save({
 									uiFontSize: DEFAULT_UI_FONT_SIZE,
 									readingFontSize: DEFAULT_READING_FONT_SIZE,
@@ -120,8 +129,8 @@ export function FontsPane(props: {
 							}
 						>
 							{t("settings.resetFontSizes")}
-						</Button>
-					</View>
+						</MenuItem>
+					</Menu>
 				}
 			>
 				<SettingsRow label={t("settings.pageFont")}>
