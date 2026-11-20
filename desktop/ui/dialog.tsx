@@ -11,11 +11,13 @@ export function Dialog(props: DialogProps) {
 		"style",
 		"backdropClass",
 		"backdropStyle",
+		"animation",
 		"children",
 	]);
 	return (
 		<BaseDialog
 			{...rest}
+			animation={local.animation ?? "fade"}
 			class={classNames(
 				"w-[90%] max-w-lg self-center my-auto overflow-hidden rounded-(--pilo-radius-lg) border border-border bg-background text-foreground font-sans",
 				local.class,

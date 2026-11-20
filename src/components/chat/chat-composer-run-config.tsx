@@ -273,7 +273,7 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 				<DialogPrimitive.Content
 					className={cn(
 						"fixed inset-x-0 bottom-[var(--remote-keyboard-bottom,0px)] z-[var(--z-dialog)] mx-auto max-h-[calc(var(--remote-viewport-height,100dvh)*0.85)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-t-(--pilo-sheet-radius) border-t border-border/70 bg-popover pb-[max(0.75rem,env(safe-area-inset-bottom))] text-popover-foreground shadow-(--pilo-shadow-floating)",
-						"motion-safe:duration-200 motion-safe:data-[state=open]:animate-in motion-safe:data-[state=open]:slide-in-from-bottom motion-safe:data-[state=closed]:animate-out motion-safe:data-[state=closed]:slide-out-to-bottom",
+						"motion-safe:duration-200 motion-safe:data-[state=open]:animate-in motion-safe:data-[state=open]:fade-in-0 motion-safe:data-[state=closed]:animate-out motion-safe:data-[state=closed]:fade-out-0",
 					)}
 				>
 					<DialogPrimitive.Title className="sr-only">

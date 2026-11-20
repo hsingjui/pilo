@@ -101,7 +101,7 @@ function PiExtensionUiDialogContent({
 			className={cn(
 				menuSurfaceClassName,
 				"mb-2 block overflow-hidden p-0",
-				"animate-in fade-in-0 slide-in-from-bottom-1 duration-150",
+				"animate-in fade-in-0 duration-150",
 			)}
 			style={menuSurfaceStyle}
 		>
