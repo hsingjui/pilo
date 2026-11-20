@@ -36,6 +36,12 @@ export interface ChatMessageListProps {
 	assistantText?: ChatTextBody;
 	/** The Host preferences that fold and time a reply's work; its defaults without them. */
 	preferences?: () => ChatWorkPreferences | undefined;
+	/** Forks the session at an assistant message; absent where forking is off. */
+	onForkAssistant?: (messageId: string) => void;
+	/** The assistant message a fork is running for. */
+	forkingMessageId?: () => string | null;
+	/** A turn in flight or a pending read disables forking. */
+	forkDisabled?: () => boolean;
 	/** Under the last message, scrolling with the messages. */
 	footer?: ListSlot;
 	/**
@@ -112,6 +118,9 @@ export function ChatMessageList(props: ChatMessageListProps) {
 								assistantText={props.assistantText}
 								expansion={expansionFor()}
 								preferences={props.preferences}
+								onForkAssistant={props.onForkAssistant}
+								forkingMessageId={props.forkingMessageId}
+								forkDisabled={props.forkDisabled}
 								footer={props.footer}
 								onVisibleRangeChange={props.onVisibleRangeChange}
 								restorePosition={savedPosition()}

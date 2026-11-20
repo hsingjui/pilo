@@ -1,5 +1,23 @@
-import type { ChatSessionRuntimeState } from "@/components/chat/chat-page-utils";
-import type { PiSessionStats } from "@/lib/api/pi-runtime";
+import type { PiSessionStats } from "@/lib/api/pi-runtime-types";
+
+/** 会话头与 composer 展示用的会话运行态覆盖层。 */
+export type ChatSessionRuntimeState = {
+	sessionId?: string;
+	sessionPath?: string;
+	name?: string;
+	tokens?: {
+		input?: number;
+		output?: number;
+		cacheRead?: number;
+		cacheWrite?: number;
+	};
+	cost?: number;
+	contextTokens?: number | null;
+	contextWindow?: number;
+	contextPercent?: number | null;
+	/** Pi 在压缩后暂时不返回占用，此时保留上一次已知值并置为 true。 */
+	contextStale?: boolean;
+};
 
 function isKnownContextValue(value: number | null | undefined) {
 	return typeof value === "number" && Number.isFinite(value);

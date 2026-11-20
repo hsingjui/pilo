@@ -145,6 +145,27 @@ export type PiCompactionResult = {
 	estimatedTokensAfter: number;
 };
 
+export type PiSessionStats = {
+	userMessages?: number;
+	assistantMessages?: number;
+	toolCalls?: number;
+	toolResults?: number;
+	totalMessages?: number;
+	tokens?: {
+		input?: number;
+		output?: number;
+		cacheRead?: number;
+		cacheWrite?: number;
+		total?: number;
+	};
+	cost?: number;
+	contextUsage?: {
+		tokens?: number | null;
+		contextWindow?: number;
+		percent?: number | null;
+	};
+};
+
 export type PiSessionEntry = {
 	id: string;
 	parentId: string | null;

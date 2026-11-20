@@ -70,6 +70,17 @@ on the row (`initialScrollIndex`) and the first viewable report settles the
 offset (`scrollToIndex`), so a reopened chat shows exactly where it was left.
 A chat never opened starts on the last message (`initialScrollAtEnd`).
 
+## The outline rail
+
+`ConversationOutlineRail` draws the chat's rounds — one per user message,
+built with the WebUI's `buildConversationOutline` — as ticks on the list's
+left edge. A press or Enter jumps to that round's message with
+`scrollToIndex`; a message still not loaded is a placeholder row at its
+index, so the jump lands on it and the visible-range report asks the store
+for its page. The active tick follows the scroll: it is the last round that
+starts on or before the first visible row (`getOutlineIndexForVisibleRange`),
+the last one while the list sits at its end.
+
 ## Where later pieces plug in
 
 - `onVisibleRangeChange` tells the store the places on screen, so it

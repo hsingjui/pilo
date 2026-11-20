@@ -2,12 +2,18 @@ import { computed, effect, untracked } from "nsh";
 
 import { chatSessionKey } from "@/lib/api/chat-session-key";
 import type { ConversationReducerContext } from "@/lib/chat/conversation-types";
+import {
+	getProjectScopeDefaultModel,
+	isPiScopeCatalogResolved,
+} from "@/lib/pi-model-selection";
 import type { AppState } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
+import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type {
 	ChatTranscriptStore,
 	ChatTranscriptTarget,
 } from "../state/chat-transcript-store";
+import type { ModelCatalogStore } from "../state/model-catalog";
 
 /** Ids and times for the messages this app builds, as the Tauri app makes them. */
 export function conversationContext(): ConversationReducerContext {
@@ -62,5 +68,76 @@ export function followOpenSession(store: AppStore, chat: ChatTranscriptStore) {
 			if (next) void chat.open(next, store.connected);
 			else chat.close();
 		});
+	});
+}
+
+/**
+ * A new chat's initial run configuration: the project Scope's default model
+ * and thinking level; empty while the catalog or the scope is unresolved.
+ */
+function initialRunConfig(catalog: ModelCatalogStore) {
+	const state = catalog.state();
+	const models = state?.catalog?.models;
+	if (!models) return {};
+	const scopeResolved =
+		state?.scope?.models != null || isPiScopeCatalogResolved(models);
+	const model = scopeResolved
+		? (getProjectScopeDefaultModel(models, state?.scope) ??
+			state?.catalog?.defaultModel ??
+			null)
+		: null;
+	return {
+		initialModel: model ?? undefined,
+		initialThinkingLevel:
+			model?.scopeThinkingLevel ??
+			state?.catalog?.defaultThinkingLevel ??
+			undefined,
+	};
+}
+
+/**
+ * Keeps `runConfig` on the session that is open in `store` and `catalog` on
+ * its project: a saved session's config seeds from history and Pi, a new one
+ * starts from the project's Scope default.
+ */
+export function followRunConfig(
+	store: AppStore,
+	runConfig: ChatRunConfigStore,
+	catalog: ModelCatalogStore,
+) {
+	const projectId = computed(() => store.state().navigation.projectId);
+	effect(() => {
+		const next = projectId();
+		untracked(() => {
+			if (next) void catalog.open(next);
+		});
+	});
+	const target = computed(() => JSON.stringify(openChatTarget(store.state())));
+	effect(() => {
+		const next = JSON.parse(target()) as ChatTranscriptTarget | null;
+		untracked(() => {
+			if (next) {
+				void runConfig.open(
+					next,
+					next.sessionPath ? {} : initialRunConfig(catalog),
+				);
+			} else {
+				runConfig.close();
+			}
+		});
+	});
+	// A scope default that resolved after a new chat opened still applies.
+	effect(() => {
+		const state = catalog.state();
+		const next = openChatTarget(store.state());
+		if (!next?.sessionPath && state?.loaded) {
+			const { initialModel, initialThinkingLevel } = initialRunConfig(catalog);
+			untracked(() =>
+				runConfig.adoptInitial(
+					initialModel ?? null,
+					initialThinkingLevel ?? null,
+				),
+			);
+		}
 	});
 }

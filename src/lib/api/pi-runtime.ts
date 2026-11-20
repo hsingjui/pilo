@@ -11,6 +11,7 @@ import type {
 	PiModel,
 	PiModelCycleResult,
 	PiSessionSnapshot,
+	PiSessionStats,
 	PiThinkingLevel,
 	PiloRuntimeEvent,
 	WslDistribution,
@@ -425,27 +426,6 @@ export function setPiSessionName(name: string): Promise<void> {
 		name,
 	});
 }
-
-export type PiSessionStats = {
-	userMessages?: number;
-	assistantMessages?: number;
-	toolCalls?: number;
-	toolResults?: number;
-	totalMessages?: number;
-	tokens?: {
-		input?: number;
-		output?: number;
-		cacheRead?: number;
-		cacheWrite?: number;
-		total?: number;
-	};
-	cost?: number;
-	contextUsage?: {
-		tokens?: number | null;
-		contextWindow?: number;
-		percent?: number | null;
-	};
-};
 
 export function getPiSessionStats(): Promise<PiSessionStats> {
 	return requestPiRpc({ type: "get_session_stats" });

@@ -3,6 +3,7 @@ import {
 	computed,
 	effect,
 	type JSX,
+	Overlay,
 	signal,
 	Text,
 	View,
@@ -16,12 +17,17 @@ import { ChatComposer } from "../composer/chat-composer";
 import type { ComposerStore } from "../composer/composer-store";
 import { activeProject } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
+import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
+import type { ModelCatalogStore } from "../state/model-catalog";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
+import { Toast } from "../ui/toast";
 import { followSavedAppearance } from "./appearance";
 import { t } from "./i18n";
 import { openChatTarget } from "./open-chat";
+import { SessionHeader } from "./session-header";
+import type { SessionForker } from "./session-fork";
 import { Sidebar } from "./Sidebar";
 import { SidebarSettingsStore } from "./sidebar-settings";
 
@@ -44,6 +50,21 @@ export interface AppShellProps {
 	readProjectImage?: (projectId: string, path: string) => Promise<Uint8Array>;
 	/** What a project file link in a reply does when pressed (a workspace tab, M5). */
 	onFileLink?: (link: ChatMarkdownFileLink) => void;
+	/** The open session's run configuration; a header shows it when present. */
+	runConfig?: Pick<
+		ChatRunConfigStore,
+		"state" | "setModel" | "setThinkingLevel" | "scopeModels"
+	>;
+	/** The active project's model catalog, for the header's picker. */
+	catalog?: Pick<ModelCatalogStore, "state" | "refresh">;
+	/** Renames a saved session in the index. */
+	onRenameSession?: (
+		projectId: string,
+		sessionPath: string,
+		title: string,
+	) => void;
+	/** Forks the open session at an assistant message. */
+	forker?: Pick<SessionForker, "state" | "forkAssistant" | "dismissNotice">;
 }
 
 export function AppShell(props: AppShellProps) {
@@ -51,6 +72,25 @@ export function AppShell(props: AppShellProps) {
 	const status = computed(() => store.state().status);
 	const project = computed(() => activeProject(store.state()));
 	const sessionOpen = computed(() => store.state().navigation.session !== null);
+	/** The open session's index entry, for its title and Pi session id. */
+	const openSessionEntry = () => {
+		const open = store.state().navigation.session;
+		if (!open) return null;
+		return (
+			store
+				.state()
+				.sessionIndexes[open.projectId]?.sessions.find(
+					(entry) => entry.sessionPath === open.sessionPath,
+				) ?? null
+		);
+	};
+	/** The title the header shows: Pi's name wins over the index entry's. */
+	const openSessionTitle = () =>
+		props.runConfig?.state()?.session?.name ??
+		openSessionEntry()?.titleOverride ??
+		openSessionEntry()?.name ??
+		openSessionEntry()?.firstUserMessagePreview ??
+		t("app.newChat");
 	const collapsed = signal(false);
 	const sidebarSettings = new SidebarSettingsStore();
 	void sidebarSettings.load();
@@ -136,6 +176,56 @@ export function AppShell(props: AppShellProps) {
 							case "ready":
 								return sessionOpen() ? (
 									<View class="min-h-0 min-w-0 flex-1 flex-col">
+										<SessionHeader
+											title={openSessionTitle}
+											sessionId={() =>
+												props.runConfig?.state()?.session?.sessionId ??
+												openSessionEntry()?.piSessionId ??
+												null
+											}
+											sessionPath={() =>
+												props.runConfig?.state()?.session?.sessionPath ??
+												store.state().navigation.session?.sessionPath ??
+												null
+											}
+											compacting={() =>
+												props.runConfig?.state()?.compacting ?? false
+											}
+											usage={() => props.runConfig?.state()?.session ?? null}
+											runConfig={() => props.runConfig?.state() ?? null}
+											models={() =>
+												props.runConfig &&
+												props.runConfig.scopeModels.length > 0
+													? props.runConfig.scopeModels
+													: (props.catalog?.state()?.catalog?.models ?? [])
+											}
+											modelsLoading={() => {
+												const catalog = props.catalog?.state();
+												return !catalog?.loaded || catalog.refreshing;
+											}}
+											onModel={(model) => void props.runConfig?.setModel(model)}
+											onThinking={(level) =>
+												void props.runConfig?.setThinkingLevel(level)
+											}
+											onRefreshModels={
+												props.catalog
+													? () => void props.catalog?.refresh()
+													: undefined
+											}
+											onRename={
+												props.onRenameSession
+													? (title) => {
+															const session = store.state().navigation.session;
+															if (session)
+																props.onRenameSession?.(
+																	session.projectId,
+																	session.sessionPath,
+																	title,
+																);
+														}
+													: undefined
+											}
+										/>
 										<ChatMessageList
 											assistantText={(text) => (
 												<ChatMarkdown
@@ -146,6 +236,20 @@ export function AppShell(props: AppShellProps) {
 												/>
 											)}
 											preferences={() => store.state().preferences?.values}
+											onForkAssistant={
+												props.forker
+													? (messageId) =>
+															void props.forker?.forkAssistant(messageId)
+													: undefined
+											}
+											forkingMessageId={() =>
+												props.forker?.state().forkingMessageId ?? null
+											}
+											forkDisabled={() =>
+												chat.state().status !== "ready" ||
+												(props.forker?.state().forkingMessageId ?? null) !==
+													null
+											}
 											transcript={chat.state}
 											messages={() => chat.messages()}
 											onRetry={() => chat.refresh()}
@@ -168,6 +272,24 @@ export function AppShell(props: AppShellProps) {
 					}}
 				</View>
 			</View>
+			{() => {
+				const notice = props.forker?.state().notice;
+				return notice ? (
+					<Overlay class="top-14 right-4 w-96">
+						<Toast
+							testID={`fork-notice-${notice.id}`}
+							transitionStatus="present"
+							variant={notice.kind}
+							description={notice.description}
+							accessibilityLabel={notice.title}
+							closeLabel={t("common.close")}
+							onDismissRequest={() => props.forker?.dismissNotice()}
+						>
+							<Text>{notice.title}</Text>
+						</Toast>
+					</Overlay>
+				) : null;
+			}}
 		</View>
 	);
 }

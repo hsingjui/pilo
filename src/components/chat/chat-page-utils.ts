@@ -7,6 +7,8 @@ import type {
 import type { Project } from "@/lib/api/projects";
 
 export { formatTime } from "@/lib/chat/format-time";
+export type { ChatSessionRuntimeState } from "@/lib/chat/session-stats";
+import type { ChatSessionRuntimeState } from "@/lib/chat/session-stats";
 
 export type ChatSession = {
 	id: string;
@@ -20,24 +22,6 @@ export type ChatSession = {
 	externalTurnOpen?: boolean;
 	initialModel?: PiModel;
 	initialThinkingLevel?: PiThinkingLevel;
-};
-
-export type ChatSessionRuntimeState = {
-	sessionId?: string;
-	sessionPath?: string;
-	name?: string;
-	tokens?: {
-		input?: number;
-		output?: number;
-		cacheRead?: number;
-		cacheWrite?: number;
-	};
-	cost?: number;
-	contextTokens?: number | null;
-	contextWindow?: number;
-	contextPercent?: number | null;
-	/** Pi 在压缩后暂时不返回占用，此时保留上一次已知值并置为 true。 */
-	contextStale?: boolean;
 };
 
 export async function readCurrentPiSessionState(

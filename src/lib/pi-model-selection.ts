@@ -1,4 +1,4 @@
-import type { PiModel, PiThinkingLevel } from "@/lib/api/pi-runtime";
+import type { PiModel, PiThinkingLevel } from "@/lib/api/pi-runtime-types";
 import type {
 	ProjectModelScope,
 	ProjectScopedModel,
@@ -153,4 +153,19 @@ export function getPiQuickCycleThinkingLevel(
 	return typeof model.scopeOrder === "number"
 		? (model.scopeThinkingLevel ?? model.defaultThinkingLevel ?? null)
 		: (model.defaultThinkingLevel ?? null);
+}
+
+/** Display names of the thinking levels, as the picker shows them. */
+export const PI_THINKING_LEVEL_LABELS: Record<PiThinkingLevel, string> = {
+	off: "Off",
+	minimal: "Minimal",
+	low: "Low",
+	medium: "Medium",
+	high: "High",
+	xhigh: "XHigh",
+	max: "Max",
+};
+
+export function piThinkingLevelLabel(level: PiThinkingLevel | null): string {
+	return level ? PI_THINKING_LEVEL_LABELS[level] : "—";
 }

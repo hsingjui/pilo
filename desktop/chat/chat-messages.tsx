@@ -1,4 +1,5 @@
 import {
+	computed,
 	List,
 	type ListRef,
 	type ListSlot,
@@ -11,6 +12,10 @@ import {
 } from "nsh";
 
 import { shouldShowChatScrollToLatest } from "@/lib/chat/chat-scroll-to-latest";
+import {
+	buildConversationOutline,
+	getOutlineIndexForVisibleRange,
+} from "@/lib/chat/conversation-outline";
 import type { ChatMessage } from "@/lib/chat/conversation-types";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
@@ -19,6 +24,7 @@ import { scrollbarLook } from "../ui/scrollbar";
 import { Tooltip } from "../ui/tooltip";
 import type { ChatExpansion } from "./chat-expansion";
 import { ChatMessageRow } from "./chat-message-row";
+import { ConversationOutlineRail } from "./conversation-outline-rail";
 import type {
 	AssistantChatMessage,
 	ChatMessageBody,
@@ -56,6 +62,12 @@ export interface ChatMessagesProps {
 	expansion?: ChatExpansion;
 	preferences?: () => ChatWorkPreferences | undefined;
 	footer?: ListSlot;
+	/** Forks the session at an assistant message; absent where forking is off. */
+	onForkAssistant?: (messageId: string) => void;
+	/** The assistant message a fork is running for. */
+	forkingMessageId?: () => string | null;
+	/** A turn in flight or a pending read disables forking. */
+	forkDisabled?: () => boolean;
 	/** The first and last rows on screen, as their places in the chat. */
 	onVisibleRangeChange?: (startIndex: number, endIndex: number) => void;
 	/** Where the chat was read to when it was open before; at its end without it. */
@@ -73,11 +85,27 @@ export function ChatMessages(props: ChatMessagesProps) {
 	let list: ListRef | undefined;
 	const away = signal(false);
 	const scrolled = signal(false);
+	// Las rondas del chat para el raíl del borde izquierdo: el array cambia
+	// con cada evento, así que el cómputo queda perezoso hasta que se lee.
+	const outline = computed(() => buildConversationOutline(props.messages()));
+	const activeOutline = signal(-1);
+	let atEnd = true;
+	const syncActiveOutline = () => {
+		activeOutline.set(
+			getOutlineIndexForVisibleRange(
+				untracked(outline),
+				visible?.start ?? 0,
+				atEnd,
+			),
+		);
+	};
 	// A chat opened before comes back where it was read to: the row, from
 	// `initialScrollIndex`, and its offset, from the first viewable report.
 	const restore = props.restorePosition ?? null;
 	let restoring = restore !== null;
 	const follow = ({ offset, contentSize, size }: ScrollEvent) => {
+		atEnd = contentSize.height - (offset.y + size.height) <= followThreshold;
+		syncActiveOutline();
 		away.set(
 			shouldShowChatScrollToLatest(
 				{
@@ -130,7 +158,21 @@ export function ChatMessages(props: ChatMessagesProps) {
 		}
 		if (visible?.start === start && visible?.end === end) return;
 		visible = { start, end };
+		syncActiveOutline();
 		props.onVisibleRangeChange?.(start, end);
+	};
+	// Salta a la ronda del raíl: su mensaje del usuario al borde superior.
+	// Aunque el mensaje sea un marcador aún no cargado, `scrollToIndex`
+	// llega a su fila y `onVisibleRangeChange` pide su página al dueño.
+	const jumpToOutline = (index: number) => {
+		const entry = untracked(outline)[index];
+		if (!entry) return;
+		activeOutline.set(index);
+		list?.scrollToIndex({
+			index: entry.messageIndex,
+			viewPosition: 0,
+			animated: false,
+		});
 	};
 	return (
 		<View class="min-h-0 flex-1">
@@ -160,12 +202,24 @@ export function ChatMessages(props: ChatMessagesProps) {
 						assistantText={props.assistantText}
 						expansion={props.expansion}
 						preferences={props.preferences}
+						onForkAssistant={props.onForkAssistant}
+						forkingMessageId={props.forkingMessageId}
+						forkDisabled={props.forkDisabled}
 					/>
 				)}
 			</List>
 			{() =>
 				scrolled() ? (
 					<View class="pointer-events-none absolute inset-x-0 top-0 h-12 bg-linear-to-b from-background to-transparent" />
+				) : null
+			}
+			{() =>
+				outline().length >= 2 ? (
+					<ConversationOutlineRail
+						entries={outline}
+						activeIndex={activeOutline}
+						onJump={jumpToOutline}
+					/>
 				) : null
 			}
 			{() =>

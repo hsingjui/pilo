@@ -3,11 +3,19 @@ import { mount } from "nsh";
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
 import { ComposerStore } from "../composer/composer-store";
 import { AppStore } from "../state/app-store";
+import { ChatRunConfigStore } from "../state/chat-run-config";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
+import { ModelCatalogStore } from "../state/model-catalog";
 import { AppShell } from "./AppShell";
 import { appLocale } from "./i18n";
-import { conversationContext, followOpenSession } from "./open-chat";
+import {
+	conversationContext,
+	followOpenSession,
+	followRunConfig,
+	openChatTarget,
+} from "./open-chat";
 import { followOpenSessionRead } from "./read-open-session";
+import { SessionForker } from "./session-fork";
 
 /**
  * Starts the app on `pilo`: shows the shell, loads the app state, keeps the
@@ -18,12 +26,50 @@ export async function launch(pilo: PiloNative) {
 	const chat = new ChatTranscriptStore(client, conversationContext());
 	const store = new AppStore(client, chat);
 	const composer = new ComposerStore({ client, app: store.state });
+	const catalog = new ModelCatalogStore(client);
+	const runConfig = new ChatRunConfigStore(client, catalog.state);
+	const forker = new SessionForker(client, {
+		target: () => openChatTarget(store.state()),
+		messages: () => chat.messages(),
+		disabled: () => {
+			const target = openChatTarget(store.state());
+			const held = store
+				.state()
+				.chatSessions.find((c) => c.sessionKey === target?.sessionKey);
+			return chat.state().status !== "ready" || (held?.activeTurn ?? false);
+		},
+		onForked: (projectId, sessionPath) => {
+			void store
+				.loadSessions(projectId)
+				.then(() => store.selectSession(projectId, sessionPath));
+		},
+	});
 	followOpenSession(store, chat);
 	followOpenSessionRead(store);
+	followRunConfig(store, runConfig, catalog);
 	mount(AppShell, {
 		store,
 		chat,
 		composer,
+		runConfig,
+		catalog,
+		forker,
+		onRenameSession: (projectId, sessionPath, title) =>
+			void client
+				.updateSessionUiState(
+					sessionPath,
+					{
+						pinned:
+							store
+								.state()
+								.sessionIndexes[projectId]?.sessions.find(
+									(entry) => entry.sessionPath === sessionPath,
+								)?.pinned ?? false,
+						titleOverride: title,
+					},
+					projectId,
+				)
+				.catch((error: unknown) => console.warn("Failed to rename", error)),
 		readProjectImage: (projectId, path) =>
 			client.readProjectImage(projectId, path),
 	});

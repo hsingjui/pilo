@@ -1,6 +1,9 @@
-import { i18n } from "../../i18n/index.ts";
+import { i18n } from "../../i18n/instance.ts";
 import type { ChatMessage } from "@/lib/chat/conversation-types";
-import type { PiSessionEntries, PiSessionEntry } from "@/lib/api/pi-runtime";
+import type {
+	PiSessionEntries,
+	PiSessionEntry,
+} from "@/lib/api/pi-runtime-types";
 
 export type PiAssistantForkTarget =
 	| { type: "clone" }

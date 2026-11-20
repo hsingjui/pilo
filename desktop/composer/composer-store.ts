@@ -40,6 +40,7 @@ import {
 	type SessionMention,
 } from "@/lib/chat/session-mentions";
 import type { ComposerSuggestion } from "@/lib/chat/composer-suggestions";
+import { requestPiRpc } from "../client/chat-rpc";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import type { AppState } from "../state/app-state";
 
@@ -73,7 +74,6 @@ export type ComposerViewState = {
 };
 
 const INPUT_HISTORY_KEY = "pilo.chatInputHistory.v1";
-const COMMAND_RPC_TIMEOUT_MS = 5000;
 const ATTACHMENT_NAME_LIMIT = 80;
 
 let attachmentSequence = 0;
@@ -135,9 +135,7 @@ export class ComposerStore {
 	private histories: HistoryStore | null = null;
 	private historyCursor: number | null = null;
 	private fileQuery: { query: string; request: number } | null = null;
-	private rpcSequence = 0;
 	private commandsRequest = 0;
-	private disconnect: (() => void) | null = null;
 
 	readonly state: Accessor<ComposerViewState>;
 	readonly target: Accessor<ComposerTarget | null>;
@@ -387,12 +385,11 @@ export class ComposerStore {
 		const target = this.targetSignal();
 		if (!target || this.commandsSignal()) return;
 		const request = ++this.commandsRequest;
-		const id = `nsh-composer-${++this.rpcSequence}`;
 		try {
-			const reply = await this.requestPiRpc<{ commands: PiCommand[] }>(
+			const reply = await requestPiRpc<{ commands: PiCommand[] }>(
+				this.client,
 				target.sessionKey,
-				{ type: "get_commands", id },
-				id,
+				{ type: "get_commands" },
 			);
 			if (this.commandsRequest !== request) return;
 			const commands = reply?.commands ?? [];
@@ -407,80 +404,6 @@ export class ComposerStore {
 		} catch {
 			if (this.commandsRequest === request) this.commandsSignal.set([]);
 		}
-	}
-
-	/**
-	 * A request/response Pi RPC over the command channel: the reply arrives as
-	 * an `rpc_message` session event with the command's `id`.
-	 */
-	private requestPiRpc<T>(
-		sessionKey: string,
-		command: Record<string, unknown>,
-		id: string,
-	): Promise<T | null> {
-		return new Promise<T | null>((resolve, reject) => {
-			let settled = false;
-			const timer = setTimeout(() => {
-				finish();
-				resolve(null);
-			}, COMMAND_RPC_TIMEOUT_MS);
-			const finish = () => {
-				if (settled) return;
-				settled = true;
-				clearTimeout(timer);
-				this.disconnect?.();
-				this.disconnect = null;
-			};
-			this.client
-				.connectEvents({
-					onMessage: (message) => {
-						if (settled || message.type !== "events") return;
-						for (const event of message.events) {
-							if (
-								event.type !== "rpc_message" ||
-								event.sessionKey !== sessionKey
-							)
-								continue;
-							const reply = event.message;
-							if (
-								typeof reply !== "object" ||
-								reply === null ||
-								(reply as Record<string, unknown>).type !== "response" ||
-								(reply as Record<string, unknown>).id !== id
-							)
-								continue;
-							const data = reply as {
-								data?: T;
-								success?: boolean;
-								error?: string;
-							};
-							finish();
-							if (data.success === false)
-								reject(new Error(data.error ?? "Pi command failed"));
-							else resolve(data.data ?? null);
-							return;
-						}
-					},
-					onStatus: (connected) => {
-						if (!connected && !settled) {
-							finish();
-							resolve(null);
-						}
-					},
-				})
-				.then((disconnect) => {
-					if (settled) {
-						disconnect();
-						return;
-					}
-					this.disconnect = disconnect;
-					return this.client.sendChatCommand(sessionKey, command);
-				})
-				.catch((error: unknown) => {
-					finish();
-					reject(error instanceof Error ? error : new Error(String(error)));
-				});
-		});
 	}
 
 	/** Inserts picked/dropped files: images as attachments, other files as uploaded `@` mentions. */
