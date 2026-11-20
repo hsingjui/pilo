@@ -54,7 +54,7 @@ M4、M5、M6 互不依赖，可在 M3 之后任意顺序进行。
 3. 工作活动：三级折叠、各工具渲染、diff、todo 胶囊、agent 活动、compaction。
 4. Composer：多行、输入法、`@` 文件与会话提及、命令建议、附件、粘贴与拖入、输入历史、草稿。
 5. 发送流程：steer / follow-up 队列、中止、恢复提示、下一句建议、提示词增强。
-6. 模型选择、thinking 控制、上下文用量、session header 与菜单、fork。
+6. ✅ 模型选择、thinking 控制、上下文用量、session header 与菜单、fork。
 7. Pi 扩展 UI 对话框与通知。
 8. 对话大纲（outline rail）：条目列表、点击跳转、滚动时高亮当前条目。
 9. 延后项的替代表现：Mermaid 代码块显示源码；不提供查找入口。
