@@ -77,6 +77,7 @@ export class ChatRunConfigStore {
 	private disconnect: (() => void) | undefined;
 	private opens = 0;
 	private requests = 0;
+	private applying: Promise<void> | undefined;
 	/** A new chat's initial config, pushed on the first agent state. */
 	private pendingInitial: {
 		model: PiModel | null;
@@ -98,6 +99,8 @@ export class ChatRunConfigStore {
 	): Promise<void> {
 		const open = ++this.opens;
 		this.disconnect?.();
+		this.disconnect = undefined;
+		this.applying = undefined;
 		this.pendingInitial = target.sessionPath
 			? null
 			: {
@@ -120,15 +123,20 @@ export class ChatRunConfigStore {
 			ready: false,
 			error: null,
 		});
-		this.disconnect = await this.client.connectEvents({
+		const disconnect = await this.client.connectEvents({
 			onMessage: (message) => {
-				if (message.type !== "events") return;
+				if (open !== this.opens || message.type !== "events") return;
 				for (const event of message.events) {
 					if (event.sessionKey === target.sessionKey) this.applyEvent(event);
 				}
 			},
 			onStatus: () => {},
 		});
+		if (open !== this.opens) {
+			disconnect();
+			return;
+		}
+		this.disconnect = disconnect;
 		if (target.sessionPath) {
 			void this.applyHistoryMetadata(open, target);
 		}
@@ -143,7 +151,14 @@ export class ChatRunConfigStore {
 	adoptInitial(model: PiModel | null, level: PiThinkingLevel | null): void {
 		const initial = this.pendingInitial;
 		const state = this.current();
-		if (!initial || !state || state.modelDirty || state.thinkingDirty) return;
+		if (
+			!initial ||
+			!state ||
+			state.changing ||
+			state.modelDirty ||
+			state.thinkingDirty
+		)
+			return;
 		initial.model = model ?? initial.model;
 		initial.level = level ?? initial.level;
 		this.update({
@@ -157,6 +172,8 @@ export class ChatRunConfigStore {
 		this.opens += 1;
 		this.disconnect?.();
 		this.disconnect = undefined;
+		this.applying = undefined;
+		this.pendingInitial = null;
 		this.current.set(null);
 	}
 
@@ -167,9 +184,15 @@ export class ChatRunConfigStore {
 	): Promise<void> {
 		if (!target.sessionPath) return;
 		const result = await this.client
-			.loadHistory(target.projectId, target.sessionPath)
+			.loadHistory(target.projectId, target.sessionPath, {
+				// An empty event window still includes the header and stats.
+				startMessage: Number.MAX_SAFE_INTEGER,
+				messageLimit: 1,
+				includeMessageIndex: false,
+			})
 			.catch(() => null);
-		if (!result || open !== this.opens) return;
+		const current = this.current();
+		if (!result || !current || open !== this.opens) return;
 		const { history } = result;
 		let historicalModel: PiModel | null = null;
 		if (history.model) {
@@ -184,22 +207,28 @@ export class ChatRunConfigStore {
 			};
 		}
 		const stats = history.stats;
-		const previous = this.current()?.session;
+		const previous = current.session;
 		this.update({
 			headerMissing: history.headerMissing ?? false,
 			session: {
 				...previous,
-				name: history.name ?? previous?.name,
-				tokens: stats?.tokens ?? previous?.tokens,
-				cost: stats?.cost ?? previous?.cost,
-				contextTokens: stats?.contextTokens ?? previous?.contextTokens,
+				name: previous?.name ?? history.name ?? undefined,
+				tokens: previous?.tokens ?? stats?.tokens,
+				cost: previous?.cost ?? stats?.cost,
+				contextTokens: previous?.contextTokens ?? stats?.contextTokens,
 			},
-			...(historicalModel ? { model: historicalModel } : {}),
-			...(history.thinkingLevel &&
+			...(!current.modelDirty && !previous?.sessionId && historicalModel
+				? {
+						model: historicalModel,
+						thinkingLevels: [...getPiModelThinkingLevels(historicalModel)],
+					}
+				: {}),
+			...(!current.thinkingDirty &&
+			!previous?.sessionId &&
+			history.thinkingLevel &&
 			PI_THINKING_LEVELS.includes(history.thinkingLevel as PiThinkingLevel)
 				? { thinkingLevel: history.thinkingLevel as PiThinkingLevel }
 				: {}),
-			thinkingLevels: [...getPiModelThinkingLevels(historicalModel)],
 		});
 	}
 
@@ -232,9 +261,10 @@ export class ChatRunConfigStore {
 	 * Re-reads Pi's state and stats and merges them. A dirty selection is
 	 * pushed to a running Pi; otherwise the live values are adopted.
 	 */
-	async refresh(open = this.opens): Promise<void> {
+	async refresh(open = this.opens, apply = true): Promise<void> {
 		const state = this.current();
-		if (!state) return;
+		if (!state || open !== this.opens) return;
+		const { sessionKey } = state;
 		const request = ++this.requests;
 		const runtime = await this.client
 			.chatState(state.sessionKey)
@@ -244,71 +274,21 @@ export class ChatRunConfigStore {
 			this.update({ ready: true, compacting: runtime?.compacting ?? false });
 			return;
 		}
-		const agentState = await this.rpc<PiAgentState>({ type: "get_state" });
+		if (apply && runtime.initialized) {
+			await this.applySelection().catch(() => {});
+			if (request !== this.requests || open !== this.opens) return;
+		}
+		const agentState = await this.rpc<PiAgentState>(sessionKey, {
+			type: "get_state",
+		});
 		if (request !== this.requests || open !== this.opens) return;
 		if (!agentState) {
 			this.update({ ready: true });
 			return;
 		}
-		let changed = false;
-		const latest = this.current();
-		if (!latest) return;
-		if (latest.sessionPath) {
-			if (
-				latest.modelDirty &&
-				latest.model &&
-				(agentState.model?.provider !== latest.model.provider ||
-					agentState.model.id !== latest.model.id)
-			) {
-				await this.rpc({
-					type: "set_model",
-					provider: latest.model.provider,
-					modelId: latest.model.id,
-				});
-				changed = true;
-			}
-			if (
-				latest.thinkingDirty &&
-				latest.thinkingLevel &&
-				agentState.thinkingLevel !== latest.thinkingLevel
-			) {
-				await this.rpc({
-					type: "set_thinking_level",
-					level: latest.thinkingLevel,
-				});
-				changed = true;
-			}
-		} else if (this.pendingInitial?.model || this.pendingInitial?.level) {
-			const initial = this.pendingInitial!;
-			this.pendingInitial = null;
-			if (
-				initial.model &&
-				(agentState.model?.provider !== initial.model.provider ||
-					agentState.model.id !== initial.model.id)
-			) {
-				await this.rpc({
-					type: "set_model",
-					provider: initial.model.provider,
-					modelId: initial.model.id,
-				});
-				changed = true;
-			}
-			if (
-				initial.level &&
-				(changed || agentState.thinkingLevel !== initial.level)
-			) {
-				await this.rpc({ type: "set_thinking_level", level: initial.level });
-				changed = true;
-			}
-			// 已确定的初始配置也按手动选择处理，目录晚到不再覆盖。
-			this.update({ modelDirty: true, thinkingDirty: true });
-		}
-		const [liveState, stats, thinking] = await Promise.all([
-			changed
-				? this.rpc<PiAgentState>({ type: "get_state" })
-				: Promise.resolve(agentState),
-			this.rpc<PiSessionStats>({ type: "get_session_stats" }),
-			this.rpc<{ levels: PiThinkingLevel[] }>({
+		const [stats, thinking] = await Promise.all([
+			this.rpc<PiSessionStats>(sessionKey, { type: "get_session_stats" }),
+			this.rpc<{ levels: PiThinkingLevel[] }>(sessionKey, {
 				type: "get_available_thinking_levels",
 			}),
 		]);
@@ -316,18 +296,19 @@ export class ChatRunConfigStore {
 		const current = this.current();
 		if (!current) return;
 		const patch: Partial<ChatRunConfigState> = { ready: true };
-		if (!current.modelDirty && liveState?.model) {
-			patch.model = liveState.model;
-			patch.thinkingLevels = [...getPiModelThinkingLevels(liveState.model)];
+		if (!current.modelDirty && agentState.model) {
+			patch.model = agentState.model;
+			patch.thinkingLevels = [...getPiModelThinkingLevels(agentState.model)];
 		}
-		if (!current.thinkingDirty && liveState) {
-			patch.thinkingLevel = liveState.thinkingLevel;
+		if (!current.thinkingDirty && !current.changing) {
+			patch.thinkingLevel = agentState.thinkingLevel;
 		}
-		if (thinking?.levels) patch.thinkingLevels = thinking.levels;
+		if (thinking?.levels && !current.changing)
+			patch.thinkingLevels = thinking.levels;
 		const overlay: ChatSessionRuntimeState = {
-			sessionId: liveState?.sessionId ?? agentState.sessionId,
-			sessionPath: liveState?.sessionFile ?? agentState.sessionFile,
-			name: liveState?.sessionName ?? agentState.sessionName,
+			sessionId: agentState.sessionId,
+			sessionPath: agentState.sessionFile,
+			name: agentState.sessionName,
 			tokens: stats?.tokens,
 			cost: stats?.cost,
 			contextTokens: stats?.contextUsage?.tokens,
@@ -365,159 +346,162 @@ export class ChatRunConfigStore {
 	async refreshStats(): Promise<void> {
 		const state = this.current();
 		if (!state) return;
+		const open = this.opens;
 		const request = ++this.requests;
-		const stats = await this.rpc<PiSessionStats>({ type: "get_session_stats" });
-		if (request !== this.requests || !stats || !this.current()) return;
+		const stats = await this.rpc<PiSessionStats>(state.sessionKey, {
+			type: "get_session_stats",
+		});
+		if (request !== this.requests || open !== this.opens || !stats) return;
 		this.update({
-			session: mergeSessionStats(this.current()!.session, stats),
+			session: mergeSessionStats(this.current()?.session ?? null, stats),
 		});
 	}
 
-	/** Picks a model; pushed to a running Pi, local for a saved session. */
+	/** Waits for the target Pi to confirm the selection before sending. */
+	async prepareToSend(sessionKey: string): Promise<boolean> {
+		const open = this.opens;
+		if (this.current()?.sessionKey !== sessionKey) return false;
+		await this.applySelection();
+		return open === this.opens;
+	}
+
+	/** Picks a model; pushed to a live chat, kept local for a saved session. */
 	async setModel(model: PiModel): Promise<void> {
-		const state = this.current();
-		if (!state || state.changing) return;
-		this.update({
+		await this.choose({
+			model,
 			modelDirty: true,
 			thinkingDirty: false,
-			error: null,
+			thinkingLevels: [...getPiModelThinkingLevels(model)],
+			thinkingLevel:
+				model.defaultThinkingLevel ?? this.current()?.thinkingLevel ?? null,
 		});
-		if (state.sessionPath) {
-			this.update({
-				model,
-				thinkingLevels: [...getPiModelThinkingLevels(model)],
-				thinkingLevel: model.defaultThinkingLevel ?? state.thinkingLevel,
-			});
-			return;
-		}
-		const previousModel = state.model;
-		const request = ++this.requests;
-		this.update({ changing: true, model });
-		try {
-			await this.ensurePi(state);
-			await this.rpcOrThrow({
-				type: "set_model",
-				provider: model.provider,
-				modelId: model.id,
-			});
-			const [liveState, thinking] = await Promise.all([
-				this.rpc<PiAgentState>({ type: "get_state" }),
-				this.rpc<{ levels: PiThinkingLevel[] }>({
-					type: "get_available_thinking_levels",
-				}),
-			]);
-			if (request !== this.requests) return;
-			this.update({
-				model: liveState?.model ?? model,
-				thinkingLevel: liveState?.thinkingLevel ?? state.thinkingLevel,
-				...(thinking?.levels ? { thinkingLevels: thinking.levels } : {}),
-				changing: false,
-			});
-		} catch (error) {
-			if (request !== this.requests) return;
-			this.update({
-				model: previousModel,
-				changing: false,
-				error: error instanceof Error ? error.message : String(error),
-			});
-		}
 	}
 
-	/** Picks a thinking level with the same saved/live split as the model. */
 	async setThinkingLevel(level: PiThinkingLevel): Promise<void> {
-		const state = this.current();
-		if (!state || state.changing) return;
-		this.update({ thinkingDirty: true, thinkingLevel: level, error: null });
-		if (state.sessionPath) return;
-		const request = ++this.requests;
-		this.update({ changing: true });
-		try {
-			await this.ensurePi(state);
-			await this.rpcOrThrow({ type: "set_thinking_level", level });
-			if (request !== this.requests) return;
-			this.update({ changing: false });
-		} catch (error) {
-			if (request !== this.requests) return;
-			this.update({
-				changing: false,
-				error: error instanceof Error ? error.message : String(error),
-			});
-		}
+		await this.choose({ thinkingDirty: true, thinkingLevel: level });
 	}
 
-	/**
-	 * Cycles to the Scope's next model with its scope thinking level. Does
-	 * nothing while the catalog or scope is unresolved.
-	 */
+	/** Cycles to the next model and thinking level in the resolved Scope. */
 	async cycleScopeModel(): Promise<void> {
-		const state = this.current();
-		const catalog = this.catalog();
-		if (!state || state.changing || !this.catalogReady || !catalog?.scope)
-			return;
-		const next = getNextPiScopeModel(this.scopeModels, state.model);
+		if (!this.catalogReady || !this.catalog()?.scope) return;
+		const next = getNextPiScopeModel(
+			this.scopeModels,
+			this.current()?.model ?? null,
+		);
 		if (!next) return;
 		const level = getPiQuickCycleThinkingLevel(next);
-		this.update({ modelDirty: true, thinkingDirty: false, error: null });
-		if (state.sessionPath) {
-			this.update({
-				model: next,
-				thinkingLevels: [...getPiModelThinkingLevels(next)],
-				...(level != null ? { thinkingLevel: level } : {}),
-			});
-			return;
-		}
-		const request = ++this.requests;
-		this.update({ changing: true, model: next });
-		try {
-			await this.ensurePi(state);
-			await this.rpcOrThrow({
-				type: "set_model",
-				provider: next.provider,
-				modelId: next.id,
-			});
-			if (level != null) {
-				await this.rpcOrThrow({ type: "set_thinking_level", level });
-			}
-			const liveState = await this.rpc<PiAgentState>({ type: "get_state" });
-			if (request !== this.requests) return;
-			this.update({
-				model: next,
-				thinkingLevel:
-					liveState?.thinkingLevel ??
-					next.scopeThinkingLevel ??
-					state.thinkingLevel,
-				changing: false,
-			});
-		} catch (error) {
-			if (request !== this.requests) return;
-			this.update({
-				changing: false,
-				error: error instanceof Error ? error.message : String(error),
-			});
-		}
-	}
-
-	private async ensurePi(state: ChatRunConfigState): Promise<void> {
-		await this.client.startChat({
-			projectId: state.projectId,
-			sessionKey: state.sessionKey,
-			sessionPath: state.sessionPath,
+		await this.choose({
+			model: next,
+			modelDirty: true,
+			thinkingDirty: level != null,
+			thinkingLevels: [...getPiModelThinkingLevels(next)],
+			...(level != null ? { thinkingLevel: level } : {}),
 		});
 	}
 
-	private rpc<T>(command: Record<string, unknown>): Promise<T | undefined> {
-		return requestPiRpcReply<T>(
-			this.client,
-			this.current()?.sessionKey ?? "",
-			command,
-			RPC_TIMEOUT_MS,
-		).then((reply) => reply?.data);
+	private async choose(patch: Partial<ChatRunConfigState>): Promise<void> {
+		const state = this.current();
+		if (!state || state.changing) return;
+		const open = this.opens;
+		this.requests += 1;
+		this.pendingInitial = null;
+		this.update({ ...patch, error: null });
+		if (state.sessionPath) return;
+		try {
+			await this.applySelection(true);
+			await this.refresh(open, false);
+		} catch {
+			// The selection stays pending and sending reports a failed write.
+		}
 	}
 
-	private async rpcOrThrow(command: Record<string, unknown>): Promise<void> {
+	/** Startup refresh and sending share one config write for the open chat. */
+	private async applySelection(start = false): Promise<void> {
+		if (this.applying) return this.applying;
+		const state = this.current();
+		if (!state) return;
+		const initial = this.pendingInitial;
+		const model = state.modelDirty ? state.model : initial?.model;
+		const level = state.thinkingDirty ? state.thinkingLevel : initial?.level;
+		if (!model && !level) return;
+		const open = this.opens;
+		const { projectId, sessionKey, sessionPath } = state;
+		this.applying = Promise.resolve()
+			.then(async () => {
+				if (open !== this.opens) return;
+				if (start)
+					await this.client.startChat({ projectId, sessionKey, sessionPath });
+				if (open !== this.opens) return;
+				const agent = await this.rpc<PiAgentState>(sessionKey, {
+					type: "get_state",
+				});
+				if (open !== this.opens) return;
+				if (!agent) throw new Error("Pi did not return its run configuration");
+				const modelChanged =
+					model &&
+					(agent.model?.provider !== model.provider ||
+						agent.model.id !== model.id);
+				if (modelChanged) {
+					await this.rpcOrThrow(sessionKey, {
+						type: "set_model",
+						provider: model.provider,
+						modelId: model.id,
+					});
+					if (open !== this.opens) return;
+				}
+				if (level && (modelChanged || agent.thinkingLevel !== level)) {
+					await this.rpcOrThrow(sessionKey, {
+						type: "set_thinking_level",
+						level,
+					});
+					if (open !== this.opens) return;
+				}
+				if (initial) {
+					this.pendingInitial = null;
+					this.update({
+						modelDirty: state.modelDirty || initial.model !== null,
+						thinkingDirty: state.thinkingDirty || initial.level !== null,
+					});
+				}
+			})
+			.catch((error: unknown) => {
+				if (open !== this.opens) return;
+				this.update({
+					error: error instanceof Error ? error.message : String(error),
+				});
+				throw error;
+			})
+			.finally(() => {
+				if (open !== this.opens) return;
+				this.applying = undefined;
+				this.update({ changing: false });
+			});
+		this.update({ changing: true, error: null });
+		return this.applying;
+	}
+
+	private rpc<T>(
+		sessionKey: string,
+		command: Record<string, unknown>,
+	): Promise<T | undefined> {
+		return requestPiRpcReply<T>(
+			this.client,
+			sessionKey,
+			command,
+			RPC_TIMEOUT_MS,
+		).then(
+			(reply) => reply?.data,
+			() => undefined,
+		);
+	}
+
+	private async rpcOrThrow(
+		sessionKey: string,
+		command: Record<string, unknown>,
+	): Promise<void> {
 		const reply = await requestPiRpcReply(
 			this.client,
-			this.current()?.sessionKey ?? "",
+			sessionKey,
 			command,
 			RPC_TIMEOUT_MS,
 		);

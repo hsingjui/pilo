@@ -111,6 +111,7 @@ type HistoryStore = Record<string, string[]>;
 export class ComposerStore {
 	private readonly client: ComposerClient;
 	private readonly app: Accessor<AppState>;
+	private readonly beforeSend?: (sessionKey: string) => Promise<boolean>;
 	private readonly drafts = new Map<
 		string,
 		{ value: string; images: ChatImageAttachment[] }
@@ -142,9 +143,14 @@ export class ComposerStore {
 	readonly commands: Accessor<readonly ComposerSuggestion[] | null>;
 	readonly fileSuggestions: Accessor<readonly ComposerSuggestion[]>;
 
-	constructor(deps: { client: ComposerClient; app: Accessor<AppState> }) {
+	constructor(deps: {
+		client: ComposerClient;
+		app: Accessor<AppState>;
+		beforeSend?: (sessionKey: string) => Promise<boolean>;
+	}) {
 		this.client = deps.client;
 		this.app = deps.app;
+		this.beforeSend = deps.beforeSend;
 		this.state = this.stateSignal;
 		this.target = this.targetSignal;
 		this.commands = this.commandsSignal;
@@ -547,6 +553,10 @@ export class ComposerStore {
 					});
 				}
 			}
+			if (this.targetSignal() !== target) return;
+			if (this.beforeSend && !(await this.beforeSend(target.sessionKey)))
+				return;
+			if (this.targetSignal() !== target) return;
 			const commands = running
 				? this.commandFor(sendMode, submission)
 				: [

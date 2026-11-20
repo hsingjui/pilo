@@ -25,9 +25,13 @@ export async function launch(pilo: PiloNative) {
 	const client = new NshPiloClient(pilo);
 	const chat = new ChatTranscriptStore(client, conversationContext());
 	const store = new AppStore(client, chat);
-	const composer = new ComposerStore({ client, app: store.state });
 	const catalog = new ModelCatalogStore(client);
 	const runConfig = new ChatRunConfigStore(client, catalog.state);
+	const composer = new ComposerStore({
+		client,
+		app: store.state,
+		beforeSend: (sessionKey) => runConfig.prepareToSend(sessionKey),
+	});
 	const forker = new SessionForker(client, {
 		target: () => openChatTarget(store.state()),
 		messages: () => chat.messages(),
