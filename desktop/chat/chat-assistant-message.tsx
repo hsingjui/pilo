@@ -1,9 +1,10 @@
-import { computed, Text, View } from "nsh";
+import { computed, signal, Text, View } from "nsh";
 
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
+import { Tooltip } from "../ui/tooltip";
 import { ChatMarkdown } from "./chat-markdown";
 import type {
 	AssistantChatMessage,
@@ -25,6 +26,9 @@ export function ChatAssistantMessage(props: {
 	forkDisabled?: () => boolean;
 }) {
 	const { message } = props;
+	// The action row under a finished reply shows on hover or keyboard focus,
+	// like the Tauri message footer.
+	const hovered = signal(false);
 	// A reply that failed or was stopped before any text has no body.
 	const hasText = computed(() => message().text.length > 0);
 	const error = computed(() => {
@@ -46,7 +50,11 @@ export function ChatAssistantMessage(props: {
 			message().stopReason !== "aborted",
 	);
 	return (
-		<ConversationColumn class="py-3">
+		<ConversationColumn
+			class="py-3"
+			onMouseEnter={() => hovered.set(true)}
+			onMouseLeave={() => hovered.set(false)}
+		>
 			{props.body ? (
 				<View selectable>{props.body(message)}</View>
 			) : (
@@ -81,38 +89,51 @@ export function ChatAssistantMessage(props: {
 						/>
 					</View>
 				) : ending() || canFork() ? (
-					<View class="mt-0.5 h-7 flex-row items-center gap-2">
+					<View
+						class="mt-0.5 min-h-7 flex-row flex-wrap items-center gap-2"
+						style={{
+							opacity: hovered() ? 100 : 0,
+							transitionProperty: "opacity",
+							transitionDuration: "150ms",
+						}}
+						focusWithinStyle={{ opacity: 100 }}
+					>
 						{() =>
 							canFork() ? (
 								<Button
 									testID={`fork:${message().id}`}
 									variant="ghost"
-									size="sm"
+									size="icon"
+									class="size-7 rounded-md text-muted-foreground"
 									disabled={
 										(props.forkDisabled?.() ?? false) ||
 										(props.forking?.() ?? false)
 									}
 									accessibilityLabel={t("chat.forkNewSession")}
+									tooltip={
+										<Tooltip>
+											<Text>
+												{() =>
+													props.forking?.()
+														? t("chat.forking")
+														: t("chat.forkNewSession")
+												}
+											</Text>
+										</Tooltip>
+									}
 									onPress={() => props.onFork?.(message().id)}
 								>
 									{() =>
 										props.forking?.() ? (
-											<Spinner size={13} class="text-muted-foreground" />
+											<Spinner size={14} class="text-muted-foreground" />
 										) : (
 											<Icon
 												name="GitFork"
-												size={13}
+												size={14}
 												class="text-muted-foreground"
 											/>
 										)
 									}
-									<Text class="text-xs text-muted-foreground">
-										{() =>
-											props.forking?.()
-												? t("chat.forking")
-												: t("chat.forkNewSession")
-										}
-									</Text>
 								</Button>
 							) : null
 						}

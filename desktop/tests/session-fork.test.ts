@@ -14,14 +14,16 @@ async function openApp() {
 	return app;
 }
 
-test("an assistant reply shows a fork action", async () => {
+test("an assistant reply shows a fork action on hover", async () => {
 	const app = await openApp();
+	await app.hover("text:Done.");
 	await app.waitFor("id:fork:assistant-m1");
 	expect(app.shows("id:fork:assistant-m2")).toBe(true);
 });
 
 test("forking at a mid-session reply opens the forked session", async () => {
 	const app = await openApp();
+	await app.hover("text:Done.");
 	await app.waitFor("id:fork:assistant-m1");
 	await app.press("id:fork:assistant-m1");
 	// The forked session joins the index and becomes the open one.
@@ -32,6 +34,7 @@ test("forking at a mid-session reply opens the forked session", async () => {
 
 test("a cancelled clone reports itself instead of failing", async () => {
 	const app = await openApp();
+	await app.hover("text:Done again.");
 	await app.waitFor("id:fork:assistant-m2");
 	// The last reply ends the branch, so a clone runs; it answers cancelled.
 	await app.press("id:fork:assistant-m2");
