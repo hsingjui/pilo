@@ -1,5 +1,4 @@
 import { type Accessor, Text, View } from "nsh";
-import { NumberInput } from "nsh/base";
 
 import {
 	CODE_FONT_SIZE_RANGE,
@@ -24,24 +23,20 @@ import type { PreferencePatch } from "@/lib/host-preferences-types";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
-import { Select, type SelectItem } from "../ui/select";
+import { FontSelect, type FontSelectGroup } from "./font-select";
+import { FontSizeInput } from "./font-size-input";
 import { SettingsRow, SettingsSection } from "./layout";
 import type { SettingsClient } from "./settings-dialog";
 
-// i18n 初期化後に評価されるよう、Select items は遅延生成する。
-const pageItems = (): SelectItem[] =>
-	PAGE_FONT_BUILTIN_OPTIONS.map((option) => ({
-		value: option.value,
-		title: option.label || t("settings.systemDefault"),
-		group: t("settings.builtIn"),
-	}));
+// i18n 初期化後に評価されるよう、groups は遅延生成する。システムフォントの
+// 列挙はまだ Tauri ランタイム側にあるため、組み込みグループのみ。
+const pageGroups = (): FontSelectGroup[] => [
+	{ label: t("settings.builtIn"), options: PAGE_FONT_BUILTIN_OPTIONS },
+];
 
-const monoItems = (): SelectItem[] =>
-	MONOSPACE_FONT_BUILTIN_OPTIONS.map((option) => ({
-		value: option.value,
-		title: option.label || t("settings.systemMonospace"),
-		group: t("settings.builtIn"),
-	}));
+const monoGroups = (): FontSelectGroup[] => [
+	{ label: t("settings.builtIn"), options: MONOSPACE_FONT_BUILTIN_OPTIONS },
+];
 
 /**
  * Fonts: page / reading / code / terminal family + size. Built-in families
@@ -59,46 +54,44 @@ export function FontsPane(props: {
 	};
 	const size = (
 		testID: string,
+		label: string,
 		value: number | undefined,
 		fallback: number,
 		range: FontSizeRange,
 		saveValue: (next: number) => void,
 	) => (
-		<NumberInput
+		<FontSizeInput
 			testID={testID}
 			class="w-20"
+			label={label}
 			min={range.min}
 			max={range.max}
-			step={1}
 			value={value ?? fallback}
-			onChange={({ value: next }) => {
-				if (next !== null && next >= range.min && next <= range.max)
-					saveValue(next);
-			}}
+			onChange={saveValue}
 		/>
 	);
 	const family = (
 		testID: string,
-		items: SelectItem[],
+		label: string,
+		groups: FontSelectGroup[],
 		value: string | undefined,
 		fallback: string,
 		saveValue: (next: string) => void,
 	) => (
-		<Select
+		<FontSelect
 			testID={testID}
 			class="w-[200px]"
-			items={items}
+			accessibilityLabel={label}
+			groups={groups}
 			value={value ?? fallback}
-			onChange={({ value: next }) => {
-				if (next) saveValue(next);
-			}}
+			onChange={saveValue}
 		/>
 	);
 	return (
 		<View class="gap-3">
 			<SettingsSection
 				title={t("settings.font")}
-				headerRight={
+				actions={
 					<View class="flex-row gap-1">
 						<Button
 							testID="settings-fonts-reset-families"
@@ -135,7 +128,8 @@ export function FontsPane(props: {
 					{() =>
 						family(
 							"settings-page-font",
-							pageItems(),
+							t("settings.pageFont"),
+							pageGroups(),
 							values()?.pageFontFamily,
 							DEFAULT_PAGE_FONT_FAMILY,
 							(next) => save({ pageFontFamily: next }),
@@ -144,6 +138,7 @@ export function FontsPane(props: {
 					{() =>
 						size(
 							"settings-ui-font-size",
+							t("settings.pageFont"),
 							values()?.uiFontSize,
 							DEFAULT_UI_FONT_SIZE,
 							UI_FONT_SIZE_RANGE,
@@ -158,7 +153,8 @@ export function FontsPane(props: {
 					{() =>
 						family(
 							"settings-reading-font",
-							pageItems(),
+							t("settings.readingFont"),
+							pageGroups(),
 							values()?.readingFontFamily,
 							DEFAULT_READING_FONT_FAMILY,
 							(next) => save({ readingFontFamily: next }),
@@ -167,6 +163,7 @@ export function FontsPane(props: {
 					{() =>
 						size(
 							"settings-reading-font-size",
+							t("settings.readingFont"),
 							values()?.readingFontSize,
 							DEFAULT_READING_FONT_SIZE,
 							READING_FONT_SIZE_RANGE,
@@ -178,7 +175,8 @@ export function FontsPane(props: {
 					{() =>
 						family(
 							"settings-code-font",
-							monoItems(),
+							t("settings.codeFont"),
+							monoGroups(),
 							values()?.codeFontFamily,
 							DEFAULT_CODE_FONT_FAMILY,
 							(next) => save({ codeFontFamily: next }),
@@ -187,6 +185,7 @@ export function FontsPane(props: {
 					{() =>
 						size(
 							"settings-code-font-size",
+							t("settings.codeFont"),
 							values()?.codeFontSize,
 							DEFAULT_CODE_FONT_SIZE,
 							CODE_FONT_SIZE_RANGE,
@@ -198,7 +197,8 @@ export function FontsPane(props: {
 					{() =>
 						family(
 							"settings-terminal-font",
-							monoItems(),
+							t("settings.terminalFont"),
+							monoGroups(),
 							values()?.terminalFontFamily,
 							DEFAULT_TERMINAL_FONT_FAMILY,
 							(next) => save({ terminalFontFamily: next }),
@@ -207,6 +207,7 @@ export function FontsPane(props: {
 					{() =>
 						size(
 							"settings-terminal-font-size",
+							t("settings.terminalFont"),
 							values()?.terminalFontSize,
 							DEFAULT_TERMINAL_FONT_SIZE,
 							TERMINAL_FONT_SIZE_RANGE,
