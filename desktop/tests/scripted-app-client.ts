@@ -646,13 +646,16 @@ export function scriptedClient(script: AppScript = {}) {
 		saveThemeSettings(update) {
 			const { saveCustomTheme, deleteCustomTheme, ...rest } = update;
 			let savedCustomThemes = themeSettings.savedCustomThemes;
-			if (saveCustomTheme)
+			if (saveCustomTheme) {
+				const name = saveCustomTheme.name.trim();
 				savedCustomThemes = [
-					...(savedCustomThemes ?? []).filter(
-						(theme) => theme.name !== saveCustomTheme.name,
-					),
-					saveCustomTheme as SavedCustomTheme,
+					...(savedCustomThemes ?? []).filter((theme) => theme.name !== name),
+					{ ...saveCustomTheme, name } as SavedCustomTheme,
 				];
+				// Host behavior: saving applies the theme's tokens and name.
+				rest.themeCustomTokens = saveCustomTheme.tokens;
+				rest.themeCustomName = name;
+			}
 			if (deleteCustomTheme)
 				savedCustomThemes = (savedCustomThemes ?? []).filter(
 					(theme) => theme.name !== deleteCustomTheme,

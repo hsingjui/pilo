@@ -73,6 +73,7 @@ function ThemeOption(props: {
 					variant="ghost"
 					size="icon"
 					class="size-6 shrink-0"
+					testID={props.testID ? `${props.testID}-delete` : undefined}
 					accessibilityLabel={props.label}
 					onPress={props.onDelete}
 				>
@@ -236,15 +237,13 @@ export function ThemePane(props: {
 				}
 			>
 				<SettingsRow label={t("settings.themeName")}>
-					{() => (
-						<Input
-							testID="settings-theme-name"
-							class="w-64"
-							value={draftName()}
-							placeholder={t("settings.themeNamePlaceholder")}
-							onChange={({ value }) => draftName.set(value)}
-						/>
-					)}
+					<Input
+						testID="settings-theme-name"
+						class="w-64"
+						value={draftName()}
+						placeholder={t("settings.themeNamePlaceholder")}
+						onChange={({ value }) => draftName.set(value)}
+					/>
 				</SettingsRow>
 				<View class="gap-3 p-3">
 					<ThemeConversionNotice
@@ -278,7 +277,7 @@ export function ThemePane(props: {
 									draftName.set(sourceName());
 								}}
 							>
-								{t("common.cancel")}
+								<Text>{t("common.cancel")}</Text>
 							</Button>
 						)}
 						{() => (
@@ -288,11 +287,13 @@ export function ThemePane(props: {
 								disabled={!draftName().trim() || saved() || !validation().ok}
 								onPress={saveDraft}
 							>
-								{t(
-									existingTheme()
-										? "settings.updateTheme"
-										: "settings.saveTheme",
-								)}
+								<Text>
+									{t(
+										existingTheme()
+											? "settings.updateTheme"
+											: "settings.saveTheme",
+									)}
+								</Text>
 							</Button>
 						)}
 					</View>

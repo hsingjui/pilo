@@ -23,9 +23,7 @@ function IssueRow(props: { issue: ThemeConversionIssue; last: boolean }) {
 					{props.issue.selector}
 				</Text>
 			) : null}
-			<Text class="font-mono text-xs leading-relaxed whitespace-pre-wrap">
-				{props.issue.text}
-			</Text>
+			<Text class="font-mono text-xs leading-relaxed">{props.issue.text}</Text>
 		</View>
 	);
 }

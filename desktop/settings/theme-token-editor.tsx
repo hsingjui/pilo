@@ -98,26 +98,20 @@ function TokenField(props: {
 						}}
 					</View>
 				) : null}
-				{() => {
-					const value = props.tokens()[props.scope]?.[props.token] ?? "";
-					return (
-						<Input
-							testID={id}
-							class="min-w-0 flex-1 font-mono text-xs"
-							accessibilityLabel={`${props.token} ${props.scope}`}
-							value={value}
-							placeholder={baseValue(props.scope, props.token)}
-							autoCapitalize="none"
-							autoCorrect={false}
-							onChange={(event) =>
-								props.onChange(props.scope, props.token, event.value)
-							}
-						/>
-					);
-				}}
+				<Input
+					testID={id}
+					class="min-w-0 flex-1 font-mono text-xs"
+					accessibilityLabel={`${props.token} ${props.scope}`}
+					value={props.tokens()[props.scope]?.[props.token] ?? ""}
+					placeholder={baseValue(props.scope, props.token)}
+					autoCapitalize="none"
+					autoCorrect={false}
+					onChange={(event) =>
+						props.onChange(props.scope, props.token, event.value)
+					}
+				/>
 			</View>
 			{() => {
-				const value = props.tokens()[props.scope]?.[props.token] ?? "";
 				const issue = props
 					.issues()
 					.find(
@@ -127,6 +121,7 @@ function TokenField(props: {
 							item.scope === props.scope,
 					);
 				if (!issue) return null;
+				const value = props.tokens()[props.scope]?.[props.token] ?? "";
 				const parsedColor = color ? parseThemeColor(value) : undefined;
 				const label = String(t(props.labelKey));
 				const message =
