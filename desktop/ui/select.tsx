@@ -17,7 +17,10 @@ export function Select(props: SelectProps) {
 		"popupStyle",
 		"listClass",
 		"itemClass",
+		"groupClass",
+		"searchClass",
 		"renderItem",
+		"renderGroup",
 	]);
 	const value = signal(local.defaultValue ?? null);
 	const current = () => (local.value === undefined ? value() : local.value);
@@ -69,6 +72,14 @@ export function Select(props: SelectProps) {
 			itemClass={classNames(
 				"group flex-row min-h-(--pilo-select-item-height) rounded-(--pilo-select-item-radius) pl-2 pr-8 py-1.5 text-sm font-sans focus:bg-hover focus:text-hover-foreground selected:bg-(--pilo-select-checked-background) disabled:opacity-50",
 				local.itemClass,
+			)}
+			groupClass={classNames(
+				"px-2 py-1.5 text-xs font-medium text-muted-foreground",
+				local.groupClass,
+			)}
+			searchClass={classNames(
+				"h-8 flex-1 bg-transparent px-3 text-sm outline-hidden placeholder:text-muted-foreground border-b border-border",
+				local.searchClass,
 			)}
 			renderItem={
 				local.renderItem ??
