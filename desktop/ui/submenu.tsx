@@ -14,11 +14,12 @@ export function Submenu(props: SubmenuProps) {
 	const [local, rest] = split(props, ["label", "trigger"]);
 	return (
 		<BaseSubmenu
+			offset={12}
 			{...rest}
 			trigger={
 				local.trigger ?? (
 					<View class={classNames(menuRowClass, "justify-between")}>
-						<Text>{local.label}</Text>
+						<Text class="font-sans">{local.label}</Text>
 						<Icon name="ChevronRight" size={14} />
 					</View>
 				)
