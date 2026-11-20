@@ -10,6 +10,17 @@ import { createAppState, type AppState } from "../state/app-state";
 /** Reports each command the composer sends, as a status line for the test. */
 const activity = signal("idle");
 
+/** A client whose composer-only methods are stubs, for shell fixtures. */
+export function composerStubClient(client: object): ComposerClient {
+	return {
+		...client,
+		searchProjectFiles: async () => [],
+		uploadChatFile: async (_p: string, name: string) =>
+			`/attachments/abcdefghijklmnopqrstuA/${name}`,
+		removeChatFile: async () => {},
+	} as unknown as ComposerClient;
+}
+
 function composerFixture(activeTurn: boolean) {
 	const client = {
 		startChat: async (_options: Record<string, unknown>) => {

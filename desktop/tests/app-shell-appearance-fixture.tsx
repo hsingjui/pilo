@@ -6,10 +6,12 @@ import type { HostPreferenceValues } from "@/lib/host-preferences-types";
 import type { ThemeSettings } from "@/lib/theme-settings-types";
 import "../app/fonts";
 import { AppShell } from "../app/AppShell";
+import { ComposerStore } from "../composer/composer-store";
 import { conversationContext } from "../app/open-chat";
 import { initializeI18n } from "../app/i18n";
 import { AppStore } from "../state/app-store";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
+import { composerStubClient } from "./composer-fixture";
 import { HOST_DEFAULT_VALUES, scriptedClient } from "./scripted-app-client";
 
 /**
@@ -38,6 +40,10 @@ async function run() {
 	});
 	const chat = new ChatTranscriptStore(runtime.client, conversationContext());
 	const store = new AppStore(runtime.client, chat);
+	const composer = new ComposerStore({
+		client: composerStubClient(runtime.client),
+		app: store.state,
+	});
 	let revision = 1;
 	const preferenceChange = (
 		label: string,
@@ -69,7 +75,7 @@ async function run() {
 	);
 	mount(() => (
 		<View class="flex-1">
-			<AppShell store={store} chat={chat} />
+			<AppShell store={store} chat={chat} composer={composer} />
 			<View class="flex-row flex-wrap gap-2">
 				{preferenceChange("Save English", { locale: "en-US" })}
 				{preferenceChange("Save Georgia and Menlo", {

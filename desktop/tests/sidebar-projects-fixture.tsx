@@ -11,7 +11,9 @@ import { AppShell } from "../app/AppShell";
 import { conversationContext, followOpenSession } from "../app/open-chat";
 import { initializeI18n } from "../app/i18n";
 import { AppStore } from "../state/app-store";
+import { ComposerStore } from "../composer/composer-store";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
+import { composerStubClient } from "./composer-fixture";
 import { fixtureThemeFamily } from "./fixture-theme";
 import { scriptedClient } from "./scripted-app-client";
 
@@ -150,8 +152,12 @@ async function run() {
 	});
 	const chat = new ChatTranscriptStore(runtime.client, conversationContext());
 	const store = new AppStore(runtime.client, chat);
+	const composer = new ComposerStore({
+		client: composerStubClient(runtime.client),
+		app: store.state,
+	});
 	followOpenSession(store, chat);
-	mount(AppShell, { store, chat });
+	mount(AppShell, { store, chat, composer });
 	await store.start();
 }
 

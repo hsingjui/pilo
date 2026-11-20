@@ -1,8 +1,18 @@
-import { type Accessor, computed, type JSX, signal, Text, View } from "nsh";
+import {
+	type Accessor,
+	computed,
+	effect,
+	type JSX,
+	signal,
+	Text,
+	View,
+} from "nsh";
 import { currentWindow, titleBar } from "nsh/desktop";
 
 import type { Project } from "@/lib/api/projects-types";
 import { ChatMessageList } from "../chat/chat-message-list";
+import { ChatComposer } from "../composer/chat-composer";
+import type { ComposerStore } from "../composer/composer-store";
 import { activeProject } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
@@ -10,6 +20,7 @@ import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { followSavedAppearance } from "./appearance";
 import { t } from "./i18n";
+import { openChatTarget } from "./open-chat";
 import { Sidebar } from "./Sidebar";
 import { SidebarSettingsStore } from "./sidebar-settings";
 
@@ -26,16 +37,19 @@ export interface AppShellProps {
 		ChatTranscriptStore,
 		"state" | "messages" | "refresh" | "loadRange"
 	>;
+	/** The open session's composer; whoever mounts the shell targets it. */
+	composer: ComposerStore;
 }
 
 export function AppShell(props: AppShellProps) {
-	const { store, chat } = props;
+	const { store, chat, composer } = props;
 	const status = computed(() => store.state().status);
 	const project = computed(() => activeProject(store.state()));
 	const sessionOpen = computed(() => store.state().navigation.session !== null);
 	const collapsed = signal(false);
 	const sidebarSettings = new SidebarSettingsStore();
 	void sidebarSettings.load();
+	effect(() => composer.setTarget(openChatTarget(store.state())));
 	followSavedAppearance(store.state);
 	// The app draws its own title bar: the sidebar and the main area reach
 	// the window's top edge, beside the system's window controls.
@@ -116,15 +130,23 @@ export function AppShell(props: AppShellProps) {
 								return centered(<RuntimeStopped />);
 							case "ready":
 								return sessionOpen() ? (
-									<ChatMessageList
-										transcript={chat.state}
-										messages={() => chat.messages()}
-										onRetry={() => chat.refresh()}
-										onVisibleRangeChange={(start, end) =>
-											chat.loadRange(start, end)
-										}
-										empty={() => <NewSession project={project} />}
-									/>
+									<View class="min-h-0 min-w-0 flex-1 flex-col">
+										<ChatMessageList
+											transcript={chat.state}
+											messages={() => chat.messages()}
+											onRetry={() => chat.refresh()}
+											onVisibleRangeChange={(start, end) =>
+												chat.loadRange(start, end)
+											}
+											empty={() => <NewSession project={project} />}
+										/>
+										<ChatComposer
+											store={composer}
+											sendShortcut={() =>
+												store.state().preferences?.values.sendMessageShortcut
+											}
+										/>
+									</View>
 								) : (
 									centered(<ProjectPlaceholder project={project} />)
 								);

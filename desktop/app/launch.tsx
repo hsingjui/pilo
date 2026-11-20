@@ -1,6 +1,7 @@
 import { mount } from "nsh";
 
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
+import { ComposerStore } from "../composer/composer-store";
 import { AppStore } from "../state/app-store";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { AppShell } from "./AppShell";
@@ -16,9 +17,10 @@ export async function launch(pilo: PiloNative) {
 	const client = new NshPiloClient(pilo);
 	const chat = new ChatTranscriptStore(client, conversationContext());
 	const store = new AppStore(client, chat);
+	const composer = new ComposerStore({ client, app: store.state });
 	followOpenSession(store, chat);
 	followOpenSessionRead(store);
-	mount(AppShell, { store, chat });
+	mount(AppShell, { store, chat, composer });
 	await client
 		.savePreferences({ locale: appLocale() }, true)
 		.catch((error: unknown) => {

@@ -47,7 +47,7 @@ import type { AppState } from "../state/app-state";
 export type ComposerTarget = {
 	sessionKey: string;
 	projectId: string;
-	sessionPath?: string;
+	sessionPath?: string | null;
 };
 
 export type ComposerClient = Pick<
