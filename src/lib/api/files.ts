@@ -2,15 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { i18n } from "../../i18n/index.ts";
 import { registerChatFile } from "@/lib/chat/chat-file-lifecycle";
 
-export type FsEntryKind = "file" | "directory" | "symlink" | "other";
-
-export type FsEntry = {
-	path: string;
-	name: string;
-	kind: FsEntryKind;
-	size: number;
-	modifiedAtMs?: number;
-};
+export type { FsEntry, FsEntryKind } from "./files-types";
+import type { FsEntry } from "./files-types";
 
 export function readProjectDir(
 	projectId: string,
