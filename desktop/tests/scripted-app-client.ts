@@ -22,12 +22,20 @@ import type {
 } from "@/lib/api/sessions-types";
 import type {
 	HostPreferenceValues,
+	PreferencePatch,
 	PreferencesSnapshot,
 } from "@/lib/host-preferences-types";
 import type { SessionReadState } from "@/lib/session-read-state";
-import type { ThemeSettings } from "@/lib/theme-settings-types";
+import type {
+	ThemeSettings,
+	ThemeSettingsUpdate,
+} from "@/lib/theme-settings-types";
+import type { SavedCustomTheme } from "@/lib/theme-custom";
 import type { PiCommandClient } from "../client/chat-rpc";
-import type { NshPiloClientBootstrap } from "../client/nsh-pilo-client";
+import type {
+	NshPiloClient,
+	NshPiloClientBootstrap,
+} from "../client/nsh-pilo-client";
 import type { AppStoreClient } from "../state/app-store";
 import type { ChatTranscriptClient } from "../state/chat-transcript-store";
 
@@ -57,6 +65,12 @@ export type ScriptedChatClient = PiCommandClient & {
 		sessionPath: string,
 	) => Promise<SessionDeleteResult>;
 };
+
+/** The native calls the settings panes make; the script answers them. */
+export type ScriptedSettingsClient = Pick<
+	NshPiloClient,
+	"loadPreferences" | "savePreferences" | "saveThemeSettings"
+>;
 
 export type AppScript = {
 	projects?: Project[];
@@ -152,6 +166,10 @@ export function scriptedClient(script: AppScript = {}) {
 	let attempts = 0;
 	let sequence = 0;
 	let closed = false;
+	let preferences = script.preferences ?? HOST_DEFAULT_PREFERENCES;
+	let themeSettings = script.themeSettings ?? HOST_DEFAULT_THEME;
+	/** Every `savePreferences` patch, in order. */
+	const preferencePatches: PreferencePatch[] = [];
 	/** Delivers runtime events to the app, in order. */
 	const emit = (...events: object[]) => {
 		const message = {
@@ -162,7 +180,10 @@ export function scriptedClient(script: AppScript = {}) {
 		};
 		for (const listener of listeners) listener.onMessage(message);
 	};
-	const client: AppStoreClient & ChatTranscriptClient & ScriptedChatClient = {
+	const client: AppStoreClient &
+		ChatTranscriptClient &
+		ScriptedChatClient &
+		ScriptedSettingsClient = {
 		get closed() {
 			return closed;
 		},
@@ -287,8 +308,48 @@ export function scriptedClient(script: AppScript = {}) {
 				.map((entry) => ({ ...entry, ...uiState.get(entry.sessionPath) }));
 		},
 		loadSessionReadStates: () => Promise.resolve(script.readStates ?? []),
-		loadThemeSettings: () =>
-			Promise.resolve(script.themeSettings ?? HOST_DEFAULT_THEME),
+		loadPreferences: () => Promise.resolve(preferences),
+		savePreferences(patch, _initial) {
+			preferencePatches.push(patch);
+			const { keyboardShortcuts, ...rest } = patch;
+			preferences = {
+				revision: preferences.revision + 1,
+				values: {
+					...preferences.values,
+					...rest,
+					keyboardShortcuts: {
+						...preferences.values.keyboardShortcuts,
+						...keyboardShortcuts,
+					},
+				},
+			};
+			emit({ type: "preferences_changed", settings: preferences });
+			return Promise.resolve(preferences);
+		},
+		loadThemeSettings: () => Promise.resolve(themeSettings),
+		saveThemeSettings(update) {
+			const { saveCustomTheme, deleteCustomTheme, ...rest } = update;
+			let savedCustomThemes = themeSettings.savedCustomThemes;
+			if (saveCustomTheme)
+				savedCustomThemes = [
+					...(savedCustomThemes ?? []).filter(
+						(theme) => theme.name !== saveCustomTheme.name,
+					),
+					saveCustomTheme as SavedCustomTheme,
+				];
+			if (deleteCustomTheme)
+				savedCustomThemes = (savedCustomThemes ?? []).filter(
+					(theme) => theme.name !== deleteCustomTheme,
+				);
+			themeSettings = {
+				...themeSettings,
+				...rest,
+				savedCustomThemes,
+				revision: themeSettings.revision + 1,
+			};
+			emit({ type: "theme_settings_changed", settings: themeSettings });
+			return Promise.resolve(themeSettings);
+		},
 		markSessionRead(projectId, sessionPath, revision) {
 			const read = script.readStates?.find(
 				(state) =>
@@ -310,6 +371,8 @@ export function scriptedClient(script: AppScript = {}) {
 	return {
 		client,
 		emit,
+		/** Every `savePreferences` patch, in order. */
+		preferencePatches,
 		/** Every command sent through `sendChatCommand`, in order. */
 		commands,
 		/** Every project `removeProject` was asked to drop, in order. */
