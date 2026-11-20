@@ -1,4 +1,13 @@
-import { Clipboard, type JSX, signal, Text, token, View } from "nsh";
+import {
+	Canvas,
+	Clipboard,
+	type JSX,
+	Path2D,
+	signal,
+	Text,
+	token,
+	View,
+} from "nsh";
 
 import type { PiModel, PiThinkingLevel } from "@/lib/api/pi-runtime-types";
 import type { ChatSessionRuntimeState } from "@/lib/chat/session-stats";
@@ -47,6 +56,61 @@ export interface SessionHeaderProps {
 const copyFailed = () => console.warn("Failed to copy to the clipboard");
 const copy = (text: string) => void Clipboard.writeText(text).catch(copyFailed);
 
+/** Pi's mark, the paths of the Tauri app's PiLogo (viewBox 800). */
+const PI_LOGO_PATHS = [
+	"M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z",
+	"M517.36 400H634.72V634.72H517.36Z",
+].map((d) => new Path2D(d));
+
+function PiLogo(props: { size?: number; color?: string }) {
+	return (
+		<Canvas
+			style={{ width: props.size ?? 16, height: props.size ?? 16 }}
+			accessible={false}
+			draw={(cx, size) => {
+				cx.scale(size.width / 800, size.height / 800);
+				cx.fillStyle = props.color ?? token("muted-foreground");
+				for (const path of PI_LOGO_PATHS) cx.fill(path, "evenodd");
+			}}
+		/>
+	);
+}
+
+/** The context usage ring the Tauri composer's usage trigger shows. */
+function ContextRing(props: { percent: () => number }) {
+	return (
+		<Canvas
+			style={{ width: 16, height: 16 }}
+			accessible={false}
+			draw={(cx, size) => {
+				cx.scale(size.width / 24, size.height / 24);
+				cx.strokeStyle = token("muted-foreground");
+				cx.lineWidth = 2;
+				cx.lineCap = "round";
+				cx.globalAlpha = 0.25;
+				cx.beginPath();
+				cx.arc(12, 12, 10, 0, Math.PI * 2);
+				cx.stroke();
+				cx.globalAlpha = 0.7;
+				cx.beginPath();
+				cx.arc(
+					12,
+					12,
+					10,
+					-Math.PI / 2,
+					-Math.PI / 2 + (Math.PI * 2 * props.percent()) / 100,
+				);
+				cx.stroke();
+			}}
+		/>
+	);
+}
+
+/** The Tauri's percent format: at most one decimal. */
+function formatPercent(percent: number) {
+	return percent >= 100 ? "100%" : `${Math.round(percent * 10) / 10}%`;
+}
+
 /** The row above the chat: title, run config, context usage and the menu. */
 export function SessionHeader(props: SessionHeaderProps) {
 	const config = () => props.runConfig();
@@ -55,7 +119,8 @@ export function SessionHeader(props: SessionHeaderProps) {
 		piThinkingLevelLabel(config()?.thinkingLevel ?? null);
 	const usagePercent = () => props.usage()?.contextPercent;
 	const usageLabel = () =>
-		usagePercent() == null ? "—" : `${Math.round(usagePercent()!)}%`;
+		usagePercent() == null ? "—" : formatPercent(usagePercent()!);
+	const usageStale = () => props.usage()?.contextStale === true;
 	return (
 		<View
 			testID="session-header"
@@ -82,14 +147,15 @@ export function SessionHeader(props: SessionHeaderProps) {
 			}
 			<View
 				testID="session-header-usage"
-				class="flex-row items-center px-2"
+				class="flex-row items-center gap-1 px-2"
+				style={{ opacity: usageStale() ? 60 : 100 }}
 				tooltip={
 					<Tooltip>
 						<Text>
 							{() =>
 								usagePercent() == null
 									? t("chat.contextUsageUnknown")
-									: props.usage()?.contextStale
+									: usageStale()
 										? t("chat.contextUsageKnownPending")
 										: t("chat.contextUsage", { percent: usageLabel() })
 							}
@@ -97,9 +163,18 @@ export function SessionHeader(props: SessionHeaderProps) {
 					</Tooltip>
 				}
 			>
-				<Text class="font-sans text-xs text-muted-foreground">
-					{usageLabel}
-				</Text>
+				{() =>
+					usagePercent() == null ? (
+						<Icon name="CircleDashed" size={16} class="text-muted-foreground" />
+					) : (
+						<>
+							<Text class="font-sans text-xs font-medium tabular-nums text-muted-foreground">
+								{usageLabel}
+							</Text>
+							<ContextRing percent={() => usagePercent()!} />
+						</>
+					)
+				}
 			</View>
 			<RunConfigMenu
 				config={config}
@@ -110,17 +185,21 @@ export function SessionHeader(props: SessionHeaderProps) {
 						testID="run-config-trigger"
 						variant="ghost"
 						size="sm"
+						class="gap-1.5 text-muted-foreground"
 						disabled={!config()?.ready}
 						accessibilityLabel={t("chat.runConfigLabel", {
 							model: modelLabel(),
 							thinking: thinkingLabel(),
 						})}
 					>
-						<Text class="max-w-40 truncate font-sans text-xs">
+						<PiLogo size={16} />
+						<Text class="max-w-40 truncate font-sans text-xs text-muted-foreground">
 							{modelLabel}
 						</Text>
 						<Text class="font-sans text-xs text-muted-foreground/60">·</Text>
-						<Text class="font-sans text-xs">{thinkingLabel}</Text>
+						<Text class="font-sans text-xs text-muted-foreground">
+							{thinkingLabel}
+						</Text>
 					</Button>
 				}
 				onModel={props.onModel}
