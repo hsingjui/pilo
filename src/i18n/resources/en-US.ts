@@ -883,8 +883,10 @@ const enUS = {
 		confirmRename: "Confirm {{label}}",
 	},
 	commandPalette: {
+		title: "Command palette",
 		placeholder: "Search projects, sessions, or messages…",
 		noResults: "No matching results",
+		actionGroup: "Actions",
 		projectGroup: "Projects",
 		sessionGroup: "Sessions",
 		recentSessions: "Recent sessions",

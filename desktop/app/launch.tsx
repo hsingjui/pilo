@@ -54,6 +54,7 @@ export async function launch(pilo: PiloNative) {
 		runConfig,
 		catalog,
 		forker,
+		searchSessions: client,
 		onRenameSession: (projectId, sessionPath, title) =>
 			void client
 				.updateSessionUiState(

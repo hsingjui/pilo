@@ -848,8 +848,10 @@ const zhCN = {
 	},
 	commandPalette: {
 		...enUS.commandPalette,
+		title: "命令面板",
 		placeholder: "搜索项目、会话或消息…",
 		noResults: "没有找到相关内容",
+		actionGroup: "操作",
 		projectGroup: "项目",
 		sessionGroup: "会话",
 		recentSessions: "最近会话",
