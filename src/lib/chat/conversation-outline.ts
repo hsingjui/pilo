@@ -1,5 +1,5 @@
 import { skillInvocationSummary } from "./skill-invocation.ts";
-import { i18n } from "../../i18n/index.ts";
+import { i18n } from "../../i18n/instance.ts";
 
 export type ConversationOutlineMessage = {
 	id: string;
@@ -91,4 +91,25 @@ export function buildConversationOutline(
 	}
 	closeRound();
 	return entries;
+}
+
+/**
+ * El índice de la entrada de la ronda que se está leyendo: la última que
+ * empieza en `firstVisibleIndex` o antes. Con la lista pegada al final
+ * (`isAtEnd`) es la última: el mensaje más reciente manda aunque el tope
+ * del viewport siga dentro de una ronda anterior. Sin entradas, `-1`.
+ */
+export function getOutlineIndexForVisibleRange(
+	entries: readonly ConversationOutlineEntry[],
+	firstVisibleIndex: number,
+	isAtEnd: boolean,
+) {
+	if (entries.length === 0) return -1;
+	if (isAtEnd) return entries.length - 1;
+	let active = 0;
+	for (const [index, entry] of entries.entries()) {
+		if (entry.messageIndex > firstVisibleIndex) break;
+		active = index;
+	}
+	return active;
 }
