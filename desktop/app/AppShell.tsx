@@ -6,6 +6,7 @@ import {
 	Overlay,
 	signal,
 	Text,
+	token,
 	View,
 } from "nsh";
 import { currentWindow } from "nsh/desktop";
@@ -39,11 +40,10 @@ import { SessionLanding } from "./landing";
 import { openChatTarget } from "./open-chat";
 import { SessionHeader } from "./session-header";
 import type { SessionForker } from "./session-fork";
-import { Sidebar } from "./Sidebar";
+import { createSidebarLayout } from "./sidebar-layout";
+import { SidebarPanel } from "./sidebar-panel";
 import { SidebarSettingsStore } from "./sidebar-settings";
 
-/** The sidebar's width until the user resizes it, as in the Tauri app. */
-const SIDEBAR_WIDTH = 292;
 /** The title bar's height; the system centers its window controls in it. */
 const TITLE_BAR_HEIGHT = 44;
 
@@ -109,12 +109,28 @@ export function AppShell(props: AppShellProps) {
 		openSessionEntry()?.name ??
 		openSessionEntry()?.firstUserMessagePreview ??
 		t("app.newChat");
-	const collapsed = signal(false);
 	const paletteOpen = signal(false);
 	const settingsOpen = signal(false);
 	const addProjectOpen = signal(false);
+	const addProjectConnection = signal<string | null>(null);
 	const sidebarSettings = new SidebarSettingsStore();
 	void sidebarSettings.load();
+	const sidebarLayout = createSidebarLayout(sidebarSettings);
+	const collapsed = sidebarLayout.collapsed;
+	// The expand button fades in once the sidebar has collapsed, and out as
+	// it opens, as the Tauri header's button does.
+	const expandMounted = signal(false);
+	const expandVisible = signal(false);
+	effect(() => {
+		if (collapsed()) {
+			expandMounted.set(true);
+			const timer = setTimeout(() => expandVisible.set(true), 0);
+			return () => clearTimeout(timer);
+		}
+		expandVisible.set(false);
+		const timer = setTimeout(() => expandMounted.set(false), 200);
+		return () => clearTimeout(timer);
+	});
 	const chatTarget = computed(() => openChatTarget(store.state()));
 	const chatSessionKey = computed(() => chatTarget()?.sessionKey ?? null);
 	effect(() => composer.setTarget(chatTarget()));
@@ -136,86 +152,108 @@ export function AppShell(props: AppShellProps) {
 	window.set({ titleBar: { style: "hidden", height: TITLE_BAR_HEIGHT } });
 	const titleBar = () => window.titleBar();
 	const barHeight = () => titleBar().height || TITLE_BAR_HEIGHT;
-	const toggle = (testID: string, label: () => string) => (
-		<Button
-			testID={testID}
-			variant="ghost"
-			size="icon"
-			accessibilityLabel={label()}
-			onPress={() => collapsed.update((value) => !value)}
+	const newChat = () => {
+		const project = activeProject(store.state());
+		if (project) store.selectProject(project.id);
+		else if (props.projectClient) openAddProject(null);
+	};
+	const openAddProject = (connectionId: string | null) => {
+		addProjectConnection.set(connectionId);
+		addProjectOpen.set(true);
+	};
+	const client = props.settings;
+	const defaultWorkspaceShown = () =>
+		store.state().preferences?.values.defaultWorkspaceVisibility ?? {};
+	const expandButton = () => (
+		<View
+			class={`absolute top-0 bottom-0 z-10 justify-center transition-opacity duration-200 ease-out ${
+				expandVisible() ? "opacity-100 delay-200" : "opacity-0"
+			}`}
+			style={{
+				left: titleBar().left > 0 ? titleBar().left + 6 : 6,
+				pointerEvents: collapsed() ? "auto" : "none",
+			}}
 		>
-			<Icon name="PanelLeft" />
-		</Button>
+			<Button
+				testID="sidebar-expand"
+				variant="ghost"
+				size="icon"
+				class="size-7 shrink-0"
+				accessibilityLabel={t("navigation.expandSidebar")}
+				onPress={() => sidebarLayout.setCollapsed(false)}
+			>
+				<Icon name="PanelLeft" size={16} color={token("muted-foreground")} />
+			</Button>
+		</View>
 	);
-	const search = (
-		<Button
-			testID="sidebar-search"
-			variant="ghost"
-			size="icon"
-			accessibilityLabel={t("sidebar.searchSessions")}
-			onPress={() => paletteOpen.set(true)}
-		>
-			<Icon name="Search" />
-		</Button>
-	);
-	const settings = props.settings ? (
-		<Button
-			testID="sidebar-settings"
-			variant="ghost"
-			size="icon"
-			accessibilityLabel={t("settings.title")}
-			onPress={() => settingsOpen.set(true)}
-		>
-			<Icon name="Settings" />
-		</Button>
-	) : null;
 	/** A page of the workspace that is not a chat, in its middle. */
 	const centered = (page: JSX.Element) => (
 		<View class="flex-1 items-center justify-center gap-2 p-6">{page}</View>
 	);
 	return (
 		<View testID="app" class="flex-1 flex-row bg-background">
-			{() =>
-				collapsed() ? null : (
-					<View
-						testID="sidebar"
-						class="shrink-0 border-r border-sidebar-border bg-sidebar-background"
-						style={{ width: SIDEBAR_WIDTH }}
-					>
-						<View
-							testID="sidebar-title-bar"
-							desktop={{ windowDrag: true }}
-							class="flex-row items-center justify-end px-2"
-							style={{ height: barHeight(), paddingLeft: titleBar().left }}
-						>
-							{search}
-							{settings}
-							{toggle("sidebar-collapse", () => t("sidebar.collapseSidebar"))}
-						</View>
-						{() =>
-							status().type === "ready" && sidebarSettings.loaded() ? (
-								<Sidebar store={store} settings={sidebarSettings} />
-							) : null
-						}
-					</View>
-				)
-			}
+			<SidebarPanel
+				store={store}
+				settings={sidebarSettings}
+				layout={sidebarLayout}
+				ready={() => status().type === "ready" && sidebarSettings.loaded()}
+				titleBar={() => ({ height: barHeight(), left: titleBar().left })}
+				onSearch={() => paletteOpen.set(true)}
+				onNewChat={newChat}
+				onOpenSettings={client ? () => settingsOpen.set(true) : undefined}
+				theme={() => store.state().themeSettings?.theme ?? "system"}
+				onTheme={
+					client
+						? (theme) =>
+								void client
+									.saveThemeSettings({ theme })
+									.catch((error: unknown) => {
+										console.error(t("settings.themeSaveFailed"), error);
+									})
+						: undefined
+				}
+				defaultWorkspaceShown={defaultWorkspaceShown}
+				onDefaultWorkspaceShown={
+					client
+						? (connectionId, shown) =>
+								void client
+									.savePreferences({
+										defaultWorkspaceVisibility: { [connectionId]: shown },
+									})
+									.catch((error: unknown) => {
+										console.error("Saving the default workspace failed", error);
+									})
+						: undefined
+				}
+				onAddProject={props.projectClient ? openAddProject : undefined}
+				onRemoveConnection={
+					client
+						? (connection) => {
+								const removal =
+									connection.kind.type === "wsl"
+										? client.removeWslConnection(connection.id)
+										: connection.kind.type === "ssh"
+											? client.removeSshConnection(connection.id)
+											: null;
+								void removal?.catch((error: unknown) => {
+									console.error(t("project.removeConnectionFailed"), error);
+								});
+							}
+						: undefined
+				}
+			/>
 			<View testID="main" class="min-w-0 flex-1">
 				<View
 					testID="main-title-bar"
 					desktop={{ windowDrag: true }}
-					class="flex-row items-center px-2"
+					class="relative flex-row items-center px-2"
 					style={{
 						height: barHeight(),
 						paddingLeft: collapsed() ? titleBar().left + 8 : 8,
 						paddingRight: titleBar().right + 8,
 					}}
 				>
-					{() =>
-						collapsed()
-							? toggle("sidebar-expand", () => t("sidebar.expandSidebar"))
-							: null
-					}
+					{() => (expandMounted() ? expandButton() : null)}
 				</View>
 				<View testID="workspace" class="min-h-0 min-w-0 flex-1">
 					{() => {
@@ -319,7 +357,7 @@ export function AppShell(props: AppShellProps) {
 												<SessionLanding
 													store={store}
 													project={project}
-													onAddProject={() => addProjectOpen.set(true)}
+													onAddProject={() => openAddProject(null)}
 												/>
 											)}
 										/>
@@ -345,7 +383,7 @@ export function AppShell(props: AppShellProps) {
 										<SessionLanding
 											store={store}
 											project={project}
-											onAddProject={() => addProjectOpen.set(true)}
+											onAddProject={() => openAddProject(null)}
 										/>,
 									)
 								);
@@ -381,6 +419,7 @@ export function AppShell(props: AppShellProps) {
 					<AddProjectDialog
 						open={addProjectOpen}
 						api={props.projectClient}
+						initialConnectionId={addProjectConnection}
 						onAdd={(connectionId, path) => store.addProject(connectionId, path)}
 					/>
 				) : null
