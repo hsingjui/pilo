@@ -36,6 +36,15 @@ pnpm desktop:generate:icons --check
 
 Inter、JetBrains Mono 的字体来自根依赖，与 Web 字体对应；具体字重、依赖版本和 OFL 许可证见 `desktop/fonts/README.md`，注册回归见 `desktop/tests/fonts.test.ts`。
 
+### 已知问题：macOS 上 nsh 文字比 Tauri/WebUI 粗
+
+这是 nsh 的渲染行为，不是字体选错或字重解析错误（2026-11-20 确认，nsh 0.6.1）。
+
+- 主因：`nsh-platform-macos-0.6.1/src/text/raster.rs` 的 `paint_into` 写死了 `set_allows_font_smoothing(true)` 和 `set_should_smooth_fonts(true)`，macOS font smoothing 会加粗笔画。Tauri/WebUI 的 `src/index.css` 用了 `-webkit-font-smoothing: antialiased`，等于关闭它。实测开 smoothing 的 400 看起来接近关 smoothing 的 500；nsh 没有开关，App 层改不了。
+- 次因：字体本身缺少某档字重时，CoreText 会就近选字面。nsh 的 `family_font` 用 family + `kCTFontWeightTrait`（AppKit `NSFontWeight*`）解析。例如 `HarmonyOS Sans SC` 只有 Thin/Light/Regular/Medium/Bold/Black，`font-semibold`（600 → `NSFontWeightSemibold`）会拿到 Bold；PingFang SC 有 Semibold，不受影响。`desktop/` 里有大量 `font-medium`/`font-semibold`，两者叠加后更明显。
+- 400/500 解析正确：Regular → Regular，Medium → Medium。
+- 处理方向（未实施）：向 nsh 上游提 issue/PR，增加关闭 font smoothing 的选项；短期可在本仓库用 `[patch.crates-io]` 修补 nsh。不要靠整体降低 `desktop/` 字重来规避，否则会和 WebUI 字重不一致。
+
 ## i18n
 
 `desktop/app/i18n.ts` 复用 `src/i18n/instance.ts` 和 `src/i18n/options.ts`；资源是 `src/i18n/resources/en-US.ts`、`src/i18n/resources/zh-CN.ts`。共享导入边界见[目录与边界](./directory-structure.md#状态和共享代码)。
