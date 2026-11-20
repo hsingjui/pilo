@@ -49,6 +49,16 @@ test("the nav moves between panes", async () => {
 	await app.press("id:settings-nav-fonts");
 	await app.waitFor("id:settings-code-font");
 	expect(app.shows("id:settings-fonts-reset-sizes")).toBe(true);
+	await app.press("id:settings-nav-model-catalog");
+	await app.waitFor("id:settings-catalog-model-pilo-claude-sonnet-4");
+	await app.press("id:settings-nav-next-prompt");
+	await app.waitFor("id:settings-next-prompt-local");
+	await app.press("id:settings-nav-prompt-enhancement");
+	await app.waitFor("id:settings-prompt-enhancement-local");
+	await app.press("id:settings-nav-cache-keep-alive");
+	await app.waitFor("id:settings-keep-alive-local-claude-sonnet-4");
+	await app.press("id:settings-nav-session-naming");
+	await app.waitFor("id:settings-naming-model-local");
 	await app.press("id:settings-nav-desktop");
 	await app.waitFor("id:settings-launch-at-login");
 	await app.press("id:settings-nav-about");

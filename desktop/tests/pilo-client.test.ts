@@ -69,6 +69,14 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 		readHistoryImage: answer("readHistoryImage", new Uint8Array([1, 2])),
 		readProjectImage: answer("readProjectImage", new Uint8Array([3])),
 		loadConnectionModels: answer("loadConnectionModels", [{ id: "m1" }]),
+		loadNamingModels: answer("loadNamingModels", [
+			{ connectionId: "local", provider: "anthropic", modelId: "m1" },
+		]),
+		saveNamingModel: answer("saveNamingModel", {
+			connectionId: "local",
+			provider: "anthropic",
+			modelId: "m1",
+		}),
 		loadModels: answer("loadModels", { projectId: "p1", models: [] }),
 		saveModels: answer("saveModels", { projectId: "p1", models: [] }),
 		loadModelScope: answer("loadModelScope", {

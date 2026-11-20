@@ -53,10 +53,71 @@ async function run() {
 			keyboardShortcuts,
 		},
 	} as PreferencesSnapshot;
+	const models = [
+		{
+			id: "claude-sonnet-4",
+			name: "Claude Sonnet 4",
+			provider: "anthropic",
+			reasoning: true,
+		},
+		{
+			id: "gpt-5-mini",
+			name: "GPT-5 mini",
+			provider: "openai",
+			reasoning: false,
+		},
+	];
 	const runtime = scriptedClient({
 		projects: [project],
 		preferences,
 		themeSettings,
+		connectionModels: { local: models },
+		models: {
+			pilo: {
+				projectId: "pilo",
+				models,
+				commands: null,
+				defaultModel: null,
+				defaultThinkingLevel: null,
+				refreshedAtMs: Date.now(),
+			},
+		},
+		namingModels: [
+			{
+				connectionId: "local",
+				provider: "anthropic",
+				modelId: "claude-sonnet-4",
+			},
+		],
+		nextPrompt: {
+			local: {
+				connectionId: "local",
+				enabled: true,
+				model: { provider: "anthropic", id: "claude-sonnet-4" },
+				updatedAtMs: 1,
+			},
+		},
+		promptEnhancement: {
+			local: {
+				connectionId: "local",
+				enabled: false,
+				model: null,
+				updatedAtMs: 1,
+			},
+		},
+		cacheKeepAlive: {
+			local: [
+				{
+					connectionId: "local",
+					provider: "anthropic",
+					modelId: "claude-sonnet-4",
+					enabled: true,
+					cacheTtlSeconds: 300,
+					idleKeepAliveSeconds: 1800,
+					updatedAtMs: 1,
+				},
+			],
+		},
 	});
 	const chat = new ChatTranscriptStore(runtime.client, conversationContext());
 	const store = new AppStore(runtime.client, chat);

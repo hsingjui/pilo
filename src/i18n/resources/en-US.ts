@@ -170,6 +170,10 @@ const enUS = {
 		promptEnhancementFollowModel: "Follow chat model",
 		sessionNaming: "Session naming",
 		modelCatalog: "Model catalog",
+		modelCatalogInherit: "Inherit Pi models",
+		modelCatalogEmpty:
+			"No cached models. Refresh to fetch the project\u2019s catalog.",
+		modelCatalogScoped: "{{count}} models scoped",
 		desktop: "Desktop",
 		pendingPane: "This pane is not available yet.",
 		remote: "Remote",

@@ -1,5 +1,11 @@
 import type { ConversationEvent } from "@/lib/chat/conversation-types";
 
+export type ConnectionNamingModel = {
+	connectionId: string;
+	provider: string;
+	modelId: string;
+};
+
 export type SessionExternalActivity = {
 	path: string;
 	turnOpen: boolean;

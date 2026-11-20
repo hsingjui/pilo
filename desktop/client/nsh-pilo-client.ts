@@ -19,6 +19,7 @@ import type {
 	PiloClientStartChatInput,
 } from "@/lib/api/pilo-client";
 import type { Project } from "@/lib/api/projects-types";
+import type { ConnectionNamingModel } from "@/lib/api/sessions-types";
 import type {
 	SessionDeleteResult,
 	SessionHistoryFingerprint,
@@ -82,6 +83,8 @@ export type PiloNative = Pick<
 	| "saveModels"
 	| "loadModelScope"
 	| "saveModelScope"
+	| "loadNamingModels"
+	| "saveNamingModel"
 	| "loadCacheKeepAliveSettings"
 	| "saveCacheKeepAliveSettings"
 	| "loadNextPromptSettings"
@@ -396,6 +399,24 @@ export class NshPiloClient implements BridgedPiloClient {
 			projectId,
 			models,
 		)) as ProjectModelScope;
+	}
+
+	/** Each connection's saved session-naming model. */
+	async loadNamingModels(): Promise<ConnectionNamingModel[]> {
+		return (await this.pilo.loadNamingModels()) as ConnectionNamingModel[];
+	}
+
+	/** Sets or clears (null, null) a connection's session-naming model. */
+	async saveNamingModel(
+		connectionId: string,
+		provider: string | null,
+		modelId: string | null,
+	): Promise<ConnectionNamingModel | null> {
+		return (await this.pilo.saveNamingModel(
+			connectionId,
+			provider,
+			modelId,
+		)) as ConnectionNamingModel | null;
 	}
 
 	/** The connection's saved cache keep-alive policies, one per model. */

@@ -17,10 +17,15 @@ import { scrollbarLook } from "../ui/scrollbar";
 import { styleVar } from "../ui/theme-style";
 import { t } from "../app/i18n";
 import { AboutPane } from "./about-pane";
+import { CacheKeepAlivePane } from "./cache-keep-alive-pane";
 import { DesktopPane } from "./desktop-pane";
 import { FontsPane } from "./fonts-pane";
 import { PendingPane } from "./layout";
+import { ModelCatalogPane } from "./model-catalog-pane";
+import { NextPromptPane } from "./next-prompt-pane";
 import { NotificationsPane } from "./notifications-pane";
+import { PromptEnhancementPane } from "./prompt-enhancement-pane";
+import { SessionNamingPane } from "./session-naming-pane";
 import { PreferencesPane } from "./preferences-pane";
 import { ShortcutsPane } from "./shortcuts-pane";
 import { ThemePane } from "./theme-pane";
@@ -28,7 +33,21 @@ import { ThemePane } from "./theme-pane";
 /** The native calls the settings panes make; grows as panes land. */
 export type SettingsClient = Pick<
 	NshPiloClient,
-	"savePreferences" | "saveThemeSettings"
+	| "savePreferences"
+	| "saveThemeSettings"
+	| "loadConnectionModels"
+	| "loadModels"
+	| "saveModels"
+	| "loadModelScope"
+	| "saveModelScope"
+	| "loadNamingModels"
+	| "saveNamingModel"
+	| "loadCacheKeepAliveSettings"
+	| "saveCacheKeepAliveSettings"
+	| "loadNextPromptSettings"
+	| "saveNextPromptSettings"
+	| "loadPromptEnhancementSettings"
+	| "savePromptEnhancementSettings"
 >;
 
 export interface SettingsDialogProps {
@@ -282,6 +301,38 @@ export function SettingsDialog(props: SettingsDialogProps) {
 								case "fonts":
 									return (
 										<FontsPane state={props.state} client={props.client} />
+									);
+								case "model-catalog":
+									return (
+										<ModelCatalogPane
+											state={props.state}
+											client={props.client}
+										/>
+									);
+								case "next-prompt":
+									return (
+										<NextPromptPane state={props.state} client={props.client} />
+									);
+								case "prompt-enhancement":
+									return (
+										<PromptEnhancementPane
+											state={props.state}
+											client={props.client}
+										/>
+									);
+								case "cache-keep-alive":
+									return (
+										<CacheKeepAlivePane
+											state={props.state}
+											client={props.client}
+										/>
+									);
+								case "session-naming":
+									return (
+										<SessionNamingPane
+											state={props.state}
+											client={props.client}
+										/>
 									);
 								case "notifications":
 									return (

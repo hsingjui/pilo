@@ -13,8 +13,8 @@ use pilo_lib::{
         appearance::{theme_settings_get, theme_settings_set},
         cache_keep_alive::{cache_keep_alive_settings_list, cache_keep_alive_settings_set},
         connections::{
-            connection_models_get, local_connection_get, ssh::ssh_connection_list,
-            wsl::wsl_connection_list,
+            connection_models_get, connection_naming_model_list, connection_naming_model_set,
+            local_connection_get, ssh::ssh_connection_list, wsl::wsl_connection_list,
         },
         events::{EventBatch, EventQueueLimits, EventStream},
         handle::{HostShell, session_mark_read, session_read_states},
@@ -556,6 +556,30 @@ impl Pilo {
                 cache.refreshed_at_ms,
             )?;
             serde_json::to_value(cache).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Lists each connection's saved session-naming model.
+    pub async fn load_naming_models(this: Instance<Self>) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, move |runtime| {
+            let models = connection_naming_model_list(runtime)?;
+            serde_json::to_value(models).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Sets or clears a connection's session-naming model.
+    pub async fn save_naming_model(
+        this: Instance<Self>,
+        connection_id: String,
+        provider: Option<String>,
+        model_id: Option<String>,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, move |runtime| {
+            let model =
+                connection_naming_model_set(runtime, connection_id, provider, model_id)?;
+            serde_json::to_value(model).map_err(|error| error.to_string())
         })
         .await
     }

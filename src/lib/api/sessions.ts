@@ -17,12 +17,6 @@ export * from "./sessions-types";
 
 export const SESSIONS_CHANGED_EVENT = "pilo:sessions-changed";
 
-export type ConnectionNamingModel = {
-	connectionId: string;
-	provider: string;
-	modelId: string;
-};
-
 export type SessionReconcileResult = {
 	sessions: SessionIndexEntry[];
 	added: number;

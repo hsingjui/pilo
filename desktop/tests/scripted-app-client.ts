@@ -6,7 +6,21 @@ import type {
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import type { ProjectPiModels } from "@/lib/api/pi-models-types";
 import type { FsEntry } from "@/lib/api/files-types";
-import type { Connection, PiSessionSnapshot } from "@/lib/api/pi-runtime-types";
+import type {
+	Connection,
+	PiModel,
+	PiSessionSnapshot,
+} from "@/lib/api/pi-runtime-types";
+import type { ConnectionNamingModel } from "@/lib/api/sessions-types";
+import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
+import type {
+	NextPromptModel,
+	NextPromptSettings,
+} from "@/lib/next-prompt-types";
+import type {
+	PromptEnhancementModel,
+	PromptEnhancementSettings,
+} from "@/lib/prompt-enhancement-types";
 import type { Project } from "@/lib/api/projects-types";
 import type { ConversationEvent } from "@/lib/chat/conversation-types";
 import type {
@@ -77,7 +91,18 @@ export type ScriptedChatClient = PiCommandClient & {
 /** The native calls the settings panes make; the script answers them. */
 export type ScriptedSettingsClient = Pick<
 	NshPiloClient,
-	"loadPreferences" | "savePreferences" | "saveThemeSettings"
+	| "loadPreferences"
+	| "savePreferences"
+	| "saveThemeSettings"
+	| "loadConnectionModels"
+	| "loadNamingModels"
+	| "saveNamingModel"
+	| "loadCacheKeepAliveSettings"
+	| "saveCacheKeepAliveSettings"
+	| "loadNextPromptSettings"
+	| "saveNextPromptSettings"
+	| "loadPromptEnhancementSettings"
+	| "savePromptEnhancementSettings"
 >;
 
 export type AppScript = {
@@ -118,6 +143,16 @@ export type AppScript = {
 	models?: Record<string, ProjectPiModels>;
 	/** A project's saved model scope; null inherits Pi when left out. */
 	modelScopes?: Record<string, ProjectModelScope | null>;
+	/** The catalog `loadConnectionModels` answers per connection. */
+	connectionModels?: Record<string, PiModel[]>;
+	/** The naming models `loadNamingModels` answers. */
+	namingModels?: ConnectionNamingModel[];
+	/** A connection's saved cache keep-alive policies. */
+	cacheKeepAlive?: Record<string, CacheKeepAliveSettings[]>;
+	/** A connection's saved next-prompt settings; disabled when left out. */
+	nextPrompt?: Record<string, NextPromptSettings>;
+	/** A connection's saved prompt enhancement settings. */
+	promptEnhancement?: Record<string, PromptEnhancementSettings>;
 	/** The catalog `removeProject` resolves with; minus the project otherwise. */
 	onRemoveProject?: (projectId: string) => Project[];
 	/** The connections `listConnections` resolves with; Local otherwise. */
@@ -173,6 +208,16 @@ export function scriptedClient(script: AppScript = {}) {
 	const commands: [string, Record<string, unknown>][] = [];
 	const savedModels = new Map<string, ProjectPiModels>();
 	const modelScopes = new Map(Object.entries(script.modelScopes ?? {}));
+	const namingModels = new Map(
+		(script.namingModels ?? []).map((model) => [model.connectionId, model]),
+	);
+	const keepAlivePolicies = new Map(
+		Object.entries(script.cacheKeepAlive ?? {}),
+	);
+	const nextPromptSettings = new Map(Object.entries(script.nextPrompt ?? {}));
+	const promptEnhancementSettings = new Map(
+		Object.entries(script.promptEnhancement ?? {}),
+	);
 	const running = new Set<string>();
 	const removed: string[] = [];
 	/** UI state written through `updateSessionUiState`, by session path. */
@@ -344,6 +389,74 @@ export function scriptedClient(script: AppScript = {}) {
 			return listed
 				.filter((entry) => !deleted.has(entry.sessionPath))
 				.map((entry) => ({ ...entry, ...uiState.get(entry.sessionPath) }));
+		},
+		loadConnectionModels: (connectionId) =>
+			Promise.resolve(script.connectionModels?.[connectionId] ?? []),
+		loadNamingModels: () => Promise.resolve([...namingModels.values()]),
+		saveNamingModel(connectionId, provider, modelId) {
+			const model =
+				provider && modelId ? { connectionId, provider, modelId } : null;
+			if (model) namingModels.set(connectionId, model);
+			else namingModels.delete(connectionId);
+			return Promise.resolve(model);
+		},
+		loadCacheKeepAliveSettings: (connectionId) =>
+			Promise.resolve(keepAlivePolicies.get(connectionId) ?? []),
+		saveCacheKeepAliveSettings(settings) {
+			const saved = { ...settings, updatedAtMs: Date.now() };
+			const rows = (keepAlivePolicies.get(settings.connectionId) ?? []).filter(
+				(row) =>
+					row.provider !== settings.provider ||
+					row.modelId !== settings.modelId,
+			);
+			keepAlivePolicies.set(settings.connectionId, [...rows, saved]);
+			return Promise.resolve(saved);
+		},
+		loadNextPromptSettings: (connectionId) =>
+			Promise.resolve(
+				nextPromptSettings.get(connectionId) ?? {
+					connectionId,
+					enabled: false,
+					model: null,
+					updatedAtMs: 0,
+				},
+			),
+		saveNextPromptSettings(
+			connectionId,
+			enabled: boolean,
+			model: NextPromptModel | null,
+		) {
+			const saved = {
+				connectionId,
+				enabled,
+				model,
+				updatedAtMs: Date.now(),
+			};
+			nextPromptSettings.set(connectionId, saved);
+			return Promise.resolve(saved);
+		},
+		loadPromptEnhancementSettings: (connectionId) =>
+			Promise.resolve(
+				promptEnhancementSettings.get(connectionId) ?? {
+					connectionId,
+					enabled: false,
+					model: null,
+					updatedAtMs: 0,
+				},
+			),
+		savePromptEnhancementSettings(
+			connectionId,
+			enabled: boolean,
+			model: PromptEnhancementModel | null,
+		) {
+			const saved = {
+				connectionId,
+				enabled,
+				model,
+				updatedAtMs: Date.now(),
+			};
+			promptEnhancementSettings.set(connectionId, saved);
+			return Promise.resolve(saved);
 		},
 		loadSessionReadStates: () => Promise.resolve(script.readStates ?? []),
 		loadPreferences: () => Promise.resolve(preferences),
