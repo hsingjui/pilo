@@ -318,8 +318,10 @@ function ProjectSection(
 		settings.settings().collapsedSections[section()] ?? true;
 	const selected = () => {
 		const state = store.state();
+		const open = state.navigation.session;
 		return (
-			state.navigation.session === null && activeProject(state)?.id === id()
+			(open?.projectId === id() && open.sessionId !== undefined) ||
+			(open === null && activeProject(state)?.id === id())
 		);
 	};
 	const siblings = () => props.group().projects;

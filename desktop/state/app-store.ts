@@ -4,12 +4,14 @@ import type {
 	PiloClientEvent,
 	PiloClientEventMessage,
 } from "@/lib/api/pilo-client";
+import type { Project } from "@/lib/api/projects-types";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import {
 	type AppAction,
 	type AppState,
 	changesChatSession,
 	createAppState,
+	createDraftSessionId,
 	isSessionUnread,
 	isStaleEvent,
 	readStateKey,
@@ -22,6 +24,7 @@ export type AppStoreClient = Pick<
 	| "bootstrap"
 	| "chatState"
 	| "listProjects"
+	| "addProject"
 	| "listSessions"
 	| "removeProject"
 	| "loadSessionReadStates"
@@ -119,9 +122,20 @@ export class AppStore {
 		this.apply({ type: "projects_loaded", projects });
 	}
 
+	/** Adds a project on a connection, then reloads the catalog. */
+	async addProject(connectionId: string, path: string): Promise<Project> {
+		const project = await this.client.addProject(connectionId, path);
+		await this.reloadProjects();
+		return project;
+	}
+
 	/** Chooses the project for a new chat and closes the open session. */
 	selectProject(projectId: string) {
-		this.apply({ type: "project_selected", projectId });
+		this.apply({
+			type: "project_selected",
+			projectId,
+			sessionId: createDraftSessionId(),
+		});
 	}
 
 	/**
@@ -176,13 +190,14 @@ export class AppStore {
 	acknowledgeOpenSession() {
 		const state = this.current();
 		const opened = state.navigation.session;
+		const { projectId, sessionPath } = opened ?? {};
 		if (
-			!opened ||
-			!isSessionUnread(state, opened.projectId, opened.sessionPath)
+			!projectId ||
+			!sessionPath ||
+			!isSessionUnread(state, projectId, sessionPath)
 		) {
 			return;
 		}
-		const { projectId, sessionPath } = opened;
 		const read = state.readStates[readStateKey(projectId, sessionPath)];
 		if (!read) return;
 		this.client

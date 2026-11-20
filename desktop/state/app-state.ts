@@ -1,4 +1,5 @@
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
+import { chatSessionKey } from "@/lib/api/chat-session-key";
 import type { PiloClientEvent } from "@/lib/api/pilo-client";
 import type { Project } from "@/lib/api/projects-types";
 import type { SessionIndexEntry } from "@/lib/api/sessions-types";
@@ -23,7 +24,25 @@ export type SessionIndexState = {
 	message?: string;
 };
 
-export type SessionSelection = { projectId: string; sessionPath: string };
+/**
+ * The open session: a saved one by its session file, or a chat that was
+ * never saved by the session id the app made for it.
+ */
+export type SessionSelection = {
+	projectId: string;
+	/** The saved session's file; unset for a chat that was never saved. */
+	sessionPath?: string;
+	/** A never-saved chat's app-made session id. */
+	sessionId?: string;
+};
+
+let draftSessionSequence = 0;
+
+/** The session id a new chat holds until Pi saves it to a file. */
+export function createDraftSessionId() {
+	draftSessionSequence += 1;
+	return `draft-session-${Date.now()}-${draftSessionSequence}`;
+}
 
 /**
  * What the user is looking at. It is kept in memory only, like the selection
@@ -70,7 +89,7 @@ export type AppAction =
 			sessions: SessionIndexEntry[];
 	  }
 	| { type: "sessions_failed"; projectId: string; message: string }
-	| { type: "project_selected"; projectId: string }
+	| { type: "project_selected"; projectId: string; sessionId?: string }
 	| { type: "session_selected"; projectId: string; sessionPath: string }
 	| {
 			type: "session_deleted";
@@ -367,9 +386,20 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 			}));
 		case "project_selected":
 			if (!hasProject(state.projects, action.projectId)) return state;
+			// Choosing a project opens a new chat in it, as the Tauri app does;
+			// without a draft session id it only lands on the project picker.
 			return {
 				...state,
-				navigation: { projectId: action.projectId, session: null },
+				navigation: {
+					projectId: action.projectId,
+					session:
+						action.sessionId !== undefined
+							? {
+									projectId: action.projectId,
+									sessionId: action.sessionId,
+								}
+							: null,
+				},
 			};
 		case "session_selected": {
 			const { projectId, sessionPath } = action;
@@ -403,9 +433,29 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 				action.sessionKey,
 				action.chat,
 			);
-			return chatSessions === state.chatSessions
-				? state
-				: { ...state, chatSessions };
+			const open = state.navigation.session;
+			// Once Pi saves a new chat it becomes that file's saved session.
+			const adopt =
+				open?.sessionId !== undefined &&
+				action.chat?.sessionPath != null &&
+				chatSessionKey(open.projectId, open.sessionId) === action.sessionKey
+					? action.chat.sessionPath
+					: null;
+			if (chatSessions === state.chatSessions && adopt === null) return state;
+			return {
+				...state,
+				chatSessions,
+				navigation:
+					adopt === null
+						? state.navigation
+						: {
+								projectId: open!.projectId,
+								session: {
+									projectId: open!.projectId,
+									sessionPath: adopt,
+								},
+							},
+			};
 		}
 		case "event":
 			return reduceEvent(state, action.event);

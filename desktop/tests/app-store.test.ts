@@ -87,6 +87,7 @@ function fakeClient() {
 				sessionLists.push({ projectId, resolve, reject }),
 			),
 		removeProject: () => Promise.resolve([]),
+		addProject: () => Promise.reject(new Error("not scripted")),
 		loadSessionReadStates: () => Promise.resolve(answers.readStates),
 		markSessionRead(projectId, sessionPath, revision) {
 			marked.push({ projectId, sessionPath, revision });
@@ -542,7 +543,10 @@ test("opening an unread session acknowledges its completed turns once", async ()
 	expect(fake.marked.length).toBe(1);
 
 	store.selectProject("p2");
-	expect(store.state().navigation).toEqual({ projectId: "p2", session: null });
+	const selected = store.state().navigation.session;
+	expect(selected?.projectId).toBe("p2");
+	expect(selected?.sessionPath).toBeUndefined();
+	expect(typeof selected?.sessionId).toBe("string");
 });
 
 test("a turn completed in the open session is acknowledged when asked", async () => {

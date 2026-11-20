@@ -199,7 +199,7 @@ async function run() {
 		app: store.state,
 	});
 	followOpenSession(store, chat);
-	mount(AppShell, { store, chat, composer });
+	mount(AppShell, { store, chat, composer, projectClient: runtime.client });
 	await store.start();
 }
 

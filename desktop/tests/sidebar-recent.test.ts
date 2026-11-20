@@ -24,8 +24,8 @@ function openSidebar(storage: Record<string, string> = {}) {
 
 type App = Awaited<ReturnType<typeof openSidebar>>;
 
-/** The sidebar's texts: everything before the workspace's title and path. */
-const sidebar = (app: App) => app.texts().slice(0, -2);
+/** The sidebar's texts: everything before the landing's hero and picker. */
+const sidebar = (app: App) => app.texts().slice(0, -3);
 
 async function openRecent(storage: Record<string, string> = {}) {
 	const app = await openSidebar({ [VIEW]: "recent", ...storage });
@@ -96,7 +96,7 @@ test("a recent session opens from the list and the list collapses", async () => 
 	const app = await openRecent();
 	// The workspace starts on the first project, then shows the session's
 	// chat (the fixture's sessions have no messages) in the session's project.
-	expect(app.texts().slice(-2)).toEqual(["api", "/code/api"]);
+	expect(app.texts().slice(-2)).toEqual(["api", "Add project"]);
 	await app.press("id:session:s3");
 	await app.waitUntil(
 		() => app.viewStyle("id:session:s3")?.backgroundColor === SELECTED,
@@ -106,7 +106,7 @@ test("a recent session opens from the list and the list collapses", async () => 
 
 	await app.press("id:recent:toggle");
 	await app.waitFor("id:session:s3", { state: "gone" });
-	expect(sidebar(app)).toEqual(["Recent sessions"]);
+	expect(app.shows("id:sidebar >> text:Port the settings page")).toBe(false);
 	const collapsed = JSON.stringify({ recent: true });
 	await app.waitUntil(
 		() => app.storage()["pilo.collapsedSections"] === collapsed,

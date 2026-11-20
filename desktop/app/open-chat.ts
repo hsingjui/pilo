@@ -43,6 +43,16 @@ export function openChatTarget(state: AppState): ChatTranscriptTarget | null {
 	const open = state.navigation.session;
 	if (!open) return null;
 	const { projectId, sessionPath } = open;
+	if (!sessionPath) {
+		// A chat that was never saved answers to the id the app made for it,
+		// and to the file Pi saves it to once it has one.
+		if (!open.sessionId) return null;
+		const sessionKey = chatSessionKey(projectId, open.sessionId);
+		const held = state.chatSessions.find(
+			(chat) => chat.sessionKey === sessionKey,
+		);
+		return { sessionKey, projectId, sessionPath: held?.sessionPath };
+	}
 	const held = state.chatSessions.find(
 		(chat) => chat.projectId === projectId && chat.sessionPath === sessionPath,
 	);

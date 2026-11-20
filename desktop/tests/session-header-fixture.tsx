@@ -280,6 +280,7 @@ async function run() {
 		runConfig,
 		catalog: models,
 		forker,
+		projectClient: runtime.client,
 		onRenameSession: (projectId, sessionPath, title) =>
 			void runtime.client.updateSessionUiState(
 				sessionPath,

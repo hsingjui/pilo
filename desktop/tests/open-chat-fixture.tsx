@@ -82,7 +82,15 @@ async function run() {
 			<Button testID="open-unknown" onPress={open("gone")}>
 				<Text>Open a session that is not saved</Text>
 			</Button>
-			<Button testID="close" onPress={() => store.selectProject(project.id)}>
+			<Button
+				testID="close"
+				onPress={() => {
+					const open = store.state().navigation.session;
+					if (open?.sessionPath) {
+						void store.deleteSession(open.projectId, open.sessionPath);
+					}
+				}}
+			>
 				<Text>Close the session</Text>
 			</Button>
 			<Button

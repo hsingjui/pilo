@@ -60,6 +60,7 @@ export async function launch(pilo: PiloNative) {
 		forker,
 		searchSessions: client,
 		settings: client,
+		projectClient: client,
 		onRenameSession: (projectId, sessionPath, title) =>
 			void store.renameSession(projectId, sessionPath, title),
 		readProjectImage: (projectId, path) =>

@@ -15,7 +15,10 @@ export function followOpenSessionRead(store: AppStore) {
 		if (lifecycle() !== "active") return null;
 		const state = store.state();
 		const open = state.navigation.session;
-		if (!open || !isSessionUnread(state, open.projectId, open.sessionPath)) {
+		if (
+			!open?.sessionPath ||
+			!isSessionUnread(state, open.projectId, open.sessionPath)
+		) {
 			return null;
 		}
 		const read =

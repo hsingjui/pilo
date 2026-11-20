@@ -32,17 +32,19 @@ test("the workspace shows the open session's messages, and the project's page wi
 	}
 	expect(app.shows("id:workspace-title")).toBe(false);
 
-	// Selecting the project leaves the session.
+	// Selecting the project leaves the session for its new-chat draft.
 	await app.press("id:ws:pilo:select");
-	await app.waitFor("id:workspace >> id:workspace-title");
-	expect(app.shows("id:chat-message-list")).toBe(false);
+	await app.waitFor("id:workspace >> id:chat-empty >> id:workspace-title");
+	expect(app.shows("id:chat-messages")).toBe(false);
 });
 
 test("a session without messages shows the new session page", async () => {
 	const app = await openApp();
 	await app.press("id:session:s6");
-	await app.waitFor("id:workspace >> id:chat-empty >> id:new-session-title");
-	expect(app.shows("id:chat-empty >> text:New session")).toBe(true);
+	await app.waitFor("id:workspace >> id:chat-empty >> id:workspace-title");
+	expect(
+		app.shows("id:chat-empty >> text:What would you like to work on today?"),
+	).toBe(true);
 	expect(app.shows("id:chat-empty >> text:pilo")).toBe(true);
 
 	// Another session's messages take its place.

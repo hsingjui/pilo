@@ -1,5 +1,4 @@
 import {
-	type Accessor,
 	computed,
 	effect,
 	type JSX,
@@ -33,6 +32,8 @@ import { Toast } from "../ui/toast";
 import { followSavedAppearance } from "./appearance";
 import { CommandPalette } from "./command-palette";
 import { t } from "./i18n";
+import { AddProjectDialog, type AddProjectApi } from "./add-project-dialog";
+import { SessionLanding } from "./landing";
 import { openChatTarget } from "./open-chat";
 import { SessionHeader } from "./session-header";
 import type { SessionForker } from "./session-fork";
@@ -77,6 +78,8 @@ export interface AppShellProps {
 	searchSessions?: Pick<NshPiloClient, "searchSessions">;
 	/** The settings panes' saves and reads; no settings entry without it. */
 	settings?: SettingsClient;
+	/** The client calls the add-project dialog needs; `undefined` hides it. */
+	projectClient?: AddProjectApi;
 }
 
 export function AppShell(props: AppShellProps) {
@@ -106,6 +109,7 @@ export function AppShell(props: AppShellProps) {
 	const collapsed = signal(false);
 	const paletteOpen = signal(false);
 	const settingsOpen = signal(false);
+	const addProjectOpen = signal(false);
 	const sidebarSettings = new SidebarSettingsStore();
 	void sidebarSettings.load();
 	const chatTarget = computed(() => openChatTarget(store.state()));
@@ -266,7 +270,7 @@ export function AppShell(props: AppShellProps) {
 												props.onRenameSession
 													? (title) => {
 															const session = store.state().navigation.session;
-															if (session)
+															if (session?.sessionPath)
 																props.onRenameSession?.(
 																	session.projectId,
 																	session.sessionPath,
@@ -306,7 +310,13 @@ export function AppShell(props: AppShellProps) {
 											onVisibleRangeChange={(start, end) =>
 												chat.loadRange(start, end)
 											}
-											empty={() => <NewSession project={project} />}
+											empty={() => (
+												<SessionLanding
+													store={store}
+													project={project}
+													onAddProject={() => addProjectOpen.set(true)}
+												/>
+											)}
 										/>
 										{() => {
 											const sessionKey = chatSessionKey();
@@ -326,7 +336,13 @@ export function AppShell(props: AppShellProps) {
 										/>
 									</View>
 								) : (
-									centered(<ProjectPlaceholder project={project} />)
+									centered(
+										<SessionLanding
+											store={store}
+											project={project}
+											onAddProject={() => addProjectOpen.set(true)}
+										/>,
+									)
 								);
 						}
 					}}
@@ -354,6 +370,15 @@ export function AppShell(props: AppShellProps) {
 					/>
 				) : null
 			}
+			{() =>
+				props.projectClient ? (
+					<AddProjectDialog
+						open={addProjectOpen}
+						api={props.projectClient}
+						onAdd={(connectionId, path) => store.addProject(connectionId, path)}
+					/>
+				) : null
+			}
 			{() => {
 				const notice = props.forker?.state().notice;
 				return notice ? (
@@ -372,26 +397,6 @@ export function AppShell(props: AppShellProps) {
 					</Overlay>
 				) : null;
 			}}
-		</View>
-	);
-}
-
-/** What a session without messages shows, until the new session view. */
-function NewSession(props: { project: Accessor<Project | null> }) {
-	return (
-		<View class="max-w-full items-center gap-2">
-			<Text
-				testID="new-session-title"
-				class="text-center font-sans text-xl font-semibold text-foreground"
-			>
-				{() => t("app.newChat")}
-			</Text>
-			<Text
-				testID="new-session-project"
-				class="text-center font-sans text-sm text-muted-foreground"
-			>
-				{() => props.project()?.name ?? ""}
-			</Text>
 		</View>
 	);
 }
@@ -457,26 +462,6 @@ function StartupFailure(props: {
 			>
 				<Text>{() => t("common.retry")}</Text>
 			</Button>
-		</View>
-	);
-}
-
-/** Stands where the chat of the chosen project will be. */
-function ProjectPlaceholder(props: { project: Accessor<Project | null> }) {
-	return (
-		<View class="max-w-full items-center gap-2">
-			<Text
-				testID="workspace-title"
-				class="text-center font-sans text-xl font-semibold text-foreground"
-			>
-				{() => props.project()?.name ?? t("app.addProjectFirst")}
-			</Text>
-			<Text
-				testID="workspace-path"
-				class="text-center font-mono text-xs text-muted-foreground"
-			>
-				{() => props.project()?.path ?? ""}
-			</Text>
 		</View>
 	);
 }

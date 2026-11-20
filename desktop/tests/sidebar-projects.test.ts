@@ -86,7 +86,11 @@ test("pressing a project or a session opens it and shows it selected", async () 
 	await app.press("id:ws:pilo:select");
 	await becomes(app, () => rowColor(app, "id:ws:pilo:row"), SELECTED);
 	expect(rowColor(app, "id:ws:api:row")).toBeUndefined();
-	expect(app.texts().slice(-2)).toEqual(["pilo", "/code/pilo"]);
+	// Choosing a project opens its new-chat draft.
+	expect(
+		app.shows("id:workspace >> text:What would you like to work on today?"),
+	).toBe(true);
+	expect(app.shows("id:landing-project-picker")).toBe(true);
 
 	await app.press("id:session:s5");
 	await becomes(app, () => rowColor(app, "id:session:s5"), SELECTED);

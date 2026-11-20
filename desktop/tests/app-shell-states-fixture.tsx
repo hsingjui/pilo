@@ -57,7 +57,7 @@ async function run() {
 		client: composerStubClient(runtime.client),
 		app: store.state,
 	});
-	mount(AppShell, { store, chat, composer });
+	mount(AppShell, { store, chat, composer, projectClient: runtime.client });
 	await store.start();
 	if (scenario === "closed") setTimeout(runtime.close, 50);
 }

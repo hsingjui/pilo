@@ -1,18 +1,10 @@
-import {
-	Canvas,
-	Clipboard,
-	type JSX,
-	Path2D,
-	signal,
-	Text,
-	token,
-	View,
-} from "nsh";
+import { Canvas, Clipboard, type JSX, signal, Text, token, View } from "nsh";
 
 import type { PiModel, PiThinkingLevel } from "@/lib/api/pi-runtime-types";
 import type { ChatSessionRuntimeState } from "@/lib/chat/session-stats";
 import { piThinkingLevelLabel } from "@/lib/pi-model-selection";
 import type { ChatRunConfigState } from "../state/chat-run-config";
+import { PiLogo } from "./pi-logo";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
 import { DialogDescription } from "../ui/dialog-description";
@@ -55,26 +47,6 @@ export interface SessionHeaderProps {
 
 const copyFailed = () => console.warn("Failed to copy to the clipboard");
 const copy = (text: string) => void Clipboard.writeText(text).catch(copyFailed);
-
-/** Pi's mark, the paths of the Tauri app's PiLogo (viewBox 800). */
-const PI_LOGO_PATHS = [
-	"M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z",
-	"M517.36 400H634.72V634.72H517.36Z",
-].map((d) => new Path2D(d));
-
-function PiLogo(props: { size?: number; color?: string }) {
-	return (
-		<Canvas
-			style={{ width: props.size ?? 16, height: props.size ?? 16 }}
-			accessible={false}
-			draw={(cx, size) => {
-				cx.scale(size.width / 800, size.height / 800);
-				cx.fillStyle = props.color ?? token("muted-foreground");
-				for (const path of PI_LOGO_PATHS) cx.fill(path, "evenodd");
-			}}
-		/>
-	);
-}
 
 /** The context usage ring the Tauri composer's usage trigger shows. */
 function ContextRing(props: { percent: () => number }) {

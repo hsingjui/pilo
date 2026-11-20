@@ -985,6 +985,7 @@ function fakeApp() {
 			new Promise((resolve, reject) => bootstraps.push({ resolve, reject })),
 		chatState: () => Promise.resolve(null),
 		listProjects: () => Promise.resolve([]),
+		addProject: () => Promise.reject(new Error("not scripted")),
 		listSessions: () => Promise.resolve([]),
 		removeProject: () => Promise.resolve([]),
 		loadSessionReadStates: () => Promise.resolve([]),

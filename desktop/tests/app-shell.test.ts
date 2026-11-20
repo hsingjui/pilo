@@ -44,7 +44,7 @@ test("a failed startup shows its error and recovers on retry", async () => {
 
 	await app.press("id:startup-retry");
 	await app.waitFor("id:workspace >> text:pilo");
-	expect(app.texts()).toContain("/Users/pilo/code/pilo");
+	expect(app.shows("id:landing-project-picker")).toBe(true);
 	expect(app.shows("id:startup-failed")).toBe(false);
 });
 
@@ -52,7 +52,27 @@ test("a ready app without projects asks for one", async () => {
 	const app = await openStates("empty");
 	await app.waitFor("id:workspace-title");
 	expect(app.shows("id:workspace >> text:Add a project first")).toBe(true);
+	expect(app.shows("id:landing-add-project")).toBe(true);
+	expect(app.shows("id:landing-project-picker")).toBe(false);
 	expect(app.shows("id:startup-failed")).toBe(false);
+});
+
+test("the landing adds a project through the dialog", async () => {
+	const app = await openStates("empty");
+	await app.waitFor("id:workspace-title");
+
+	await app.press("id:landing-add-project");
+	await app.waitFor("id:add-project-dialog");
+	expect(app.shows("id:add-project-path")).toBe(true);
+	expect(app.enabled("id:add-project-confirm")).toBe(false);
+
+	await app.type("id:add-project-path", "/code/added-project");
+	expect(app.enabled("id:add-project-confirm")).toBe(true);
+	await app.press("id:add-project-confirm");
+
+	await app.waitFor("id:landing-project-picker");
+	expect(app.shows("id:add-project-dialog")).toBe(false);
+	expect(app.texts()).toContain("added-project");
 });
 
 test("a runtime that shut down says so and asks for a restart", async () => {
