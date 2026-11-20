@@ -98,3 +98,83 @@ test("the nav moves between panes", async () => {
 	await app.waitFor("id:settings-repository");
 	expect(app.shows("id:settings-send-shortcut")).toBe(false);
 });
+
+test("the model settings panes cover every configured connection", async () => {
+	const app = await openApp();
+	await app.press("id:sidebar-settings");
+	await app.waitFor("id:settings-dialog");
+	await app.press("id:settings-nav-next-prompt");
+	await app.waitFor("id:settings-next-prompt-ssh:prod");
+	expect(app.shows("id:settings-next-prompt-wsl:Ubuntu")).toBe(true);
+	expect(app.shows("id:settings-next-prompt-model-ssh:prod")).toBe(true);
+	await app.press("id:settings-nav-prompt-enhancement");
+	await app.waitFor("id:settings-prompt-enhancement-ssh:prod");
+	expect(app.shows("id:settings-prompt-enhancement-wsl:Ubuntu")).toBe(true);
+	await app.press("id:settings-nav-session-naming");
+	await app.waitFor("id:settings-naming-model-ssh:prod");
+	expect(app.shows("id:settings-naming-model-wsl:Ubuntu")).toBe(true);
+	await app.press("id:settings-nav-cache-keep-alive");
+	await app.waitFor("id:settings-keep-alive-add-ssh:prod");
+	expect(app.shows("id:settings-keep-alive-add-wsl:Ubuntu")).toBe(true);
+});
+
+test("a next-prompt settings event updates the pane", async () => {
+	const app = await openApp();
+	await app.press("id:sidebar-settings");
+	await app.waitFor("id:settings-dialog");
+	await app.press("id:settings-nav-next-prompt");
+	await app.waitFor("id:settings-next-prompt-local");
+	await app.host.send("fixture", "emit-next-prompt");
+	await app.waitFor("text:GPT-5 mini · openai");
+});
+
+test("the keep-alive picker adds a model", async () => {
+	const app = await openApp();
+	await app.press("id:sidebar-settings");
+	await app.waitFor("id:settings-dialog");
+	await app.press("id:settings-nav-cache-keep-alive");
+	await app.waitFor("id:settings-keep-alive-add-local");
+	await app.press("id:settings-keep-alive-add-local");
+	await app.waitFor("text:GPT-5 mini · openai");
+	await app.press("text:GPT-5 mini · openai");
+	await app.waitFor("id:settings-keep-alive-local-gpt-5-mini");
+});
+
+test("a keep-alive settings event updates a row", async () => {
+	const app = await openApp();
+	await app.press("id:sidebar-settings");
+	await app.waitFor("id:settings-dialog");
+	await app.press("id:settings-nav-cache-keep-alive");
+	await app.waitFor("id:settings-keep-alive-ttl-local-claude-sonnet-4");
+	await app.host.send("fixture", "emit-keep-alive");
+	await app.waitFor("id:settings-keep-alive-local-claude-sonnet-4");
+	expect(app.value("id:settings-keep-alive-ttl-local-claude-sonnet-4")).toBe(
+		"10",
+	);
+});
+
+test("a keep-alive edit commits on blur and Escape cancels it", async () => {
+	const app = await openApp();
+	await app.press("id:sidebar-settings");
+	await app.waitFor("id:settings-dialog");
+	await app.press("id:settings-nav-cache-keep-alive");
+	await app.waitFor("id:settings-keep-alive-ttl-local-claude-sonnet-4");
+	const ttl = "id:settings-keep-alive-ttl-local-claude-sonnet-4";
+	const duration = "id:settings-keep-alive-duration-local-claude-sonnet-4";
+	await app.clear(ttl);
+	await app.type(ttl, "12");
+	// Moving focus commits the draft: the probe reads the saved row.
+	await app.type(duration, "");
+	await app.host.send("fixture", "probe-keep-alive");
+	await app.waitUntil(
+		() => app.storage()["keep-alive-probe"] === "claude-sonnet-4:true:720:1800",
+	);
+	await app.clear(duration);
+	await app.type(duration, "40");
+	await app.keyboard.press("escape");
+	await app.type(ttl, "");
+	await app.host.send("fixture", "probe-keep-alive");
+	await app.waitUntil(
+		() => app.storage()["keep-alive-probe"] === "claude-sonnet-4:true:720:1800",
+	);
+});

@@ -1,4 +1,4 @@
-import { mount, setTheme, Text, View } from "nsh";
+import { host, mount, setTheme, signal, Storage, Text, View } from "nsh";
 
 import type { Connection } from "@/lib/api/pi-runtime-types";
 import type { Project } from "@/lib/api/projects-types";
@@ -26,7 +26,10 @@ import { HOST_DEFAULT_VALUES, scriptedClient } from "./scripted-app-client";
 /**
  * The shell over a scripted client with its settings wired, for the settings
  * dialog: `settings-probe` echoes a saved preference so a test sees a write
- * land, and the theme buttons swap Lody and Claude for screenshots.
+ * land, the theme buttons swap Lody and Claude for screenshots, and the
+ * `host.on("fixture", ...)` events emit scripted settings events / write the
+ * keep-alive rows to storage so a test can drive them behind the modal
+ * dialog on every target.
  */
 const local = { id: "local", name: "Local", kind: { type: "local" } };
 
@@ -171,6 +174,45 @@ async function run() {
 				comment: "jui@mac",
 			},
 		],
+	});
+	host.on("fixture", (name) => {
+		if (name === "emit-next-prompt")
+			runtime.emit({
+				type: "next_prompt_settings_changed",
+				settings: {
+					connectionId: "local",
+					enabled: true,
+					model: { provider: "openai", id: "gpt-5-mini" },
+					updatedAtMs: Date.now(),
+				},
+			});
+		if (name === "emit-keep-alive")
+			runtime.emit({
+				type: "cache_keep_alive_settings_changed",
+				settings: {
+					connectionId: "local",
+					provider: "anthropic",
+					modelId: "claude-sonnet-4",
+					enabled: true,
+					cacheTtlSeconds: 600,
+					idleKeepAliveSeconds: 1800,
+					updatedAtMs: Date.now(),
+				},
+			});
+		if (name === "probe-keep-alive")
+			void Storage.removeItem("keep-alive-probe")
+				.then(() => runtime.client.loadCacheKeepAliveSettings("local"))
+				.then((rows) =>
+					Storage.setItem(
+						"keep-alive-probe",
+						rows
+							.map(
+								(row) =>
+									`${row.modelId}:${row.enabled}:${row.cacheTtlSeconds}:${row.idleKeepAliveSeconds}`,
+							)
+							.join(","),
+					),
+				);
 	});
 	const chat = new ChatTranscriptStore(runtime.client, conversationContext());
 	const store = new AppStore(runtime.client, chat);

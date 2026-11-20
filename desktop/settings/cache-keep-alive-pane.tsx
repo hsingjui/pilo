@@ -1,4 +1,12 @@
-import { type Accessor, signal, Text, View } from "nsh";
+import {
+	type Accessor,
+	cleanup,
+	effect,
+	keymap,
+	signal,
+	Text,
+	View,
+} from "nsh";
 
 import { NumberInput } from "nsh/base";
 
@@ -6,195 +14,495 @@ import {
 	type CacheKeepAliveSettings,
 	defaultCacheKeepAliveSettings,
 } from "@/lib/cache-keep-alive";
+import type { Connection } from "@/lib/api/pi-runtime-types";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
-import { Select, type SelectItem } from "../ui/select";
+import { Button } from "../ui/button";
+import { Command } from "../ui/command";
+import { Icon } from "../ui/icon";
+import { Popover } from "../ui/popover";
 import { Switch } from "../ui/switch";
 import {
 	ConnectionModelLists,
 	connectionLabel,
 	modelKey,
-	paneConnections,
+	paneConnectionCatalog,
+	settingsErrorMessage,
 } from "./connection-settings";
 import { SettingsRow, SettingsSection } from "./layout";
 import type { SettingsClient } from "./settings-dialog";
 
-const TTL_MINUTES_RANGE = { min: 1, max: 1440 };
+/** Cache TTL and idle keep-alive bounds, the React inputs' minutes ranges. */
+const TTL_MINUTES_RANGE = { min: 10 / 60, max: 1440 };
 const DURATION_MINUTES_RANGE = { min: 1, max: 1440 };
 
+const rowKey = (row: Pick<CacheKeepAliveSettings, "provider" | "modelId">) =>
+	modelKey(row.provider, row.modelId);
+
 /**
- * Cache keep-alive policies per connection: one row per saved model with its
- * TTL, its idle keep-alive duration and the switch; unconfigured models join
- * through the add Select.
+ * Cache keep-alive policies per connection: a table of only the enabled
+ * rows (model · cache TTL minutes · keep-alive minutes · switch), plus the
+ * add-model picker — a searchable list, as
+ * `ConnectionCacheKeepAliveSettings`. Edits commit on blur or Enter and
+ * Escape drops the draft; saves serialize per connection so a blur save and
+ * a switch press cannot reorder each other.
  */
 export function CacheKeepAlivePane(props: {
 	state: Accessor<AppState>;
 	client: SettingsClient;
 }) {
 	const lists = new ConnectionModelLists(props.client);
+	const connections = signal<Connection[]>([]);
+	const catalogError = signal<string | null>(null);
 	const policies = signal<Record<string, CacheKeepAliveSettings[]>>({});
-	const loaded = new Set<string>();
-	const ensure = (connectionId: string) => {
-		if (loaded.has(connectionId)) return;
-		loaded.add(connectionId);
-		props.client
-			.loadCacheKeepAliveSettings(connectionId)
-			.then((rows) => policies.set({ ...policies(), [connectionId]: rows }))
-			.catch((error: unknown) => {
-				console.error(String(error));
-			});
+	const loaded = signal<Record<string, boolean>>({});
+	const errors = signal<Record<string, string | undefined>>({});
+	/** Pending saves per row, as React's `pending` count. */
+	const pending = signal<Record<string, number>>({});
+	/** Rows whose enable/disable save is in flight, as React's `disabling`. */
+	const toggling = signal<Record<string, boolean>>({});
+	const adding = signal<Record<string, boolean>>({});
+	const pickerOpen = signal<Record<string, boolean>>({});
+	/** Typed but uncommitted minutes per row. */
+	const drafts = signal<
+		Record<string, { ttl: number | null; duration: number | null } | undefined>
+	>({});
+	/** One save at a time per connection, as React's saveQueue. */
+	const queues = new Map<string, Promise<boolean>>();
+	let alive = true;
+	cleanup(() => {
+		alive = false;
+	});
+
+	// Escape drops the uncommitted minutes of every row, as React's
+	// `handleKeyDown` did; the key still reaches the field and any popover.
+	keymap.bind(
+		"escape",
+		() => {
+			const next = { ...drafts() };
+			let changed = false;
+			for (const key of Object.keys(next))
+				if (next[key] !== undefined) {
+					next[key] = undefined;
+					changed = true;
+				}
+			if (changed) drafts.set(next);
+		},
+		{ when: "always", passThrough: true },
+	);
+
+	const setError = (connectionId: string, error: string | null) =>
+		errors.set({ ...errors(), [connectionId]: error ?? undefined });
+	const rows = (connectionId: string) => policies()[connectionId] ?? [];
+	const mergeRow = (saved: CacheKeepAliveSettings) => {
+		const key = rowKey(saved);
+		const merged = rows(saved.connectionId).map((row) =>
+			rowKey(row) === key && row.updatedAtMs <= saved.updatedAtMs ? saved : row,
+		);
+		if (!merged.some((row) => rowKey(row) === key)) merged.push(saved);
+		policies.set({ ...policies(), [saved.connectionId]: merged });
 	};
-	const save = (settings: CacheKeepAliveSettings) => {
+	const mergeRows = (connectionId: string, next: CacheKeepAliveSettings[]) => {
+		const merged = new Map(
+			rows(connectionId).map((row) => [rowKey(row), row] as const),
+		);
+		for (const row of next)
+			if ((merged.get(rowKey(row))?.updatedAtMs ?? -1) <= row.updatedAtMs)
+				merged.set(rowKey(row), row);
+		policies.set({ ...policies(), [connectionId]: [...merged.values()] });
+	};
+	const loadSettings = (connection: Connection) => {
 		props.client
-			.saveCacheKeepAliveSettings(settings)
-			.then((saved) => {
-				const rows = (policies()[settings.connectionId] ?? []).filter(
-					(row) =>
-						row.provider !== saved.provider || row.modelId !== saved.modelId,
-				);
-				policies.set({
-					...policies(),
-					[settings.connectionId]: [...rows, saved],
-				});
+			.loadCacheKeepAliveSettings(connection.id)
+			.then((next) => {
+				if (!alive) return;
+				mergeRows(connection.id, next);
+				loaded.set({ ...loaded(), [connection.id]: true });
 			})
 			.catch((error: unknown) => {
-				console.error(String(error));
+				if (!alive) return;
+				setError(connection.id, settingsErrorMessage(error));
+				loaded.set({ ...loaded(), [connection.id]: true });
 			});
 	};
+
+	void paneConnectionCatalog(props.client)
+		.then((catalog) => {
+			if (!alive) return;
+			connections.set(catalog);
+			for (const connection of catalog) {
+				void lists.state(connection.id);
+				loadSettings(connection);
+			}
+		})
+		.catch((error: unknown) => {
+			if (alive) catalogError.set(settingsErrorMessage(error));
+		});
+
+	effect(() => {
+		let stop: (() => void) | undefined;
+		let disposed = false;
+		void props.client
+			.connectEvents({
+				onMessage(message) {
+					if (message.type !== "events") return;
+					for (const event of message.events)
+						if (event.type === "cache_keep_alive_settings_changed")
+							mergeRow(event.settings);
+				},
+				onStatus() {},
+			})
+			.then((unlisten) => {
+				if (disposed) unlisten();
+				else stop = unlisten;
+			})
+			.catch(() => undefined);
+		return () => {
+			disposed = true;
+			stop?.();
+		};
+	});
+
+	/** Serialized per connection; resolves true when the save landed. */
+	const save = (settings: CacheKeepAliveSettings): Promise<boolean> => {
+		const connectionId = settings.connectionId;
+		const key = `${connectionId}\n${rowKey(settings)}`;
+		const run = (queues.get(connectionId) ?? Promise.resolve(true)).then(
+			async () => {
+				pending.set({ ...pending(), [key]: (pending()[key] ?? 0) + 1 });
+				try {
+					const saved = await props.client.saveCacheKeepAliveSettings(settings);
+					if (!alive) return false;
+					mergeRow(saved);
+					setError(connectionId, null);
+					return true;
+				} catch (error) {
+					if (alive) setError(connectionId, settingsErrorMessage(error));
+					return false;
+				} finally {
+					if (alive)
+						pending.set({ ...pending(), [key]: (pending()[key] ?? 1) - 1 });
+				}
+			},
+		);
+		queues.set(
+			connectionId,
+			run.catch(() => false),
+		);
+		return run;
+	};
+
+	/** The row's committed values, drafts applied, as React's `commit`. */
+	const commit = (
+		connection: Connection,
+		row: CacheKeepAliveSettings,
+		enabled = row.enabled,
+	) => {
+		const key = `${connection.id}\n${rowKey(row)}`;
+		const draft = drafts()[key];
+		const ttl = draft?.ttl ?? row.cacheTtlSeconds / 60;
+		const duration = draft?.duration ?? row.idleKeepAliveSeconds / 60;
+		const latest =
+			rows(connection.id).find(
+				(candidate) => rowKey(candidate) === rowKey(row),
+			) ?? row;
+		const filled = ttl !== null && duration !== null;
+		// As React's validity gate: empty or out-of-range fields only block a
+		// save that keeps the row enabled.
+		if (!filled && enabled) {
+			drafts.set({ ...drafts(), [key]: undefined });
+			return;
+		}
+		const next = {
+			...latest,
+			enabled,
+			...(filled
+				? {
+						cacheTtlSeconds: Math.round(ttl! * 60),
+						idleKeepAliveSeconds: Math.round(duration! * 60),
+					}
+				: {}),
+		};
+		if (
+			next.enabled === latest.enabled &&
+			next.cacheTtlSeconds === latest.cacheTtlSeconds &&
+			next.idleKeepAliveSeconds === latest.idleKeepAliveSeconds
+		) {
+			drafts.set({ ...drafts(), [key]: undefined });
+			return;
+		}
+		void save(next).then((saved) => {
+			if (saved) drafts.set({ ...drafts(), [key]: undefined });
+		});
+	};
+
+	const toggle = (connection: Connection, row: CacheKeepAliveSettings) => {
+		const key = `${connection.id}\n${rowKey(row)}`;
+		if (toggling()[key]) return;
+		toggling.set({ ...toggling(), [key]: true });
+		commit(connection, { ...row, enabled: !row.enabled });
+		// `commit` queues the save; clear the disabling flag once it settles.
+		void (queues.get(connection.id) ?? Promise.resolve()).finally(() => {
+			if (alive) toggling.set({ ...toggling(), [key]: false });
+		});
+	};
+
+	const add = (connection: Connection, modelId: string) => {
+		if (adding()[connection.id]) return;
+		const list = lists.state(connection.id)();
+		const model = list.models.find(
+			(candidate) => modelKey(candidate.provider, candidate.id) === modelId,
+		);
+		if (!model) return;
+		adding.set({ ...adding(), [connection.id]: true });
+		const settings = {
+			...(rows(connection.id).find(
+				(row) => row.provider === model.provider && row.modelId === model.id,
+			) ??
+				defaultCacheKeepAliveSettings(connection.id, model.provider, model.id)),
+			enabled: true,
+		};
+		void save(settings).then((saved) => {
+			if (!alive) return;
+			adding.set({ ...adding(), [connection.id]: false });
+			if (saved) pickerOpen.set({ ...pickerOpen(), [connection.id]: false });
+		});
+	};
+
 	return (
-		<View class="gap-3">
+		<View class="min-w-0 gap-3">
+			<Text class="text-xs leading-5 text-muted-foreground">
+				{t("settings.cacheKeepAliveDescription")}
+			</Text>
+			{() =>
+				catalogError() ? (
+					<Text class="text-sm text-destructive">{catalogError()}</Text>
+				) : null
+			}
 			{() => {
-				const connections = paneConnections(props.state().projects);
-				if (connections.length === 0)
-					return (
-						<View class="px-3 py-4">
-							<Text class="text-sm text-muted-foreground">
-								{t("settings.noConnections")}
-							</Text>
-						</View>
-					);
-				return connections.map((connection) => {
-					ensure(connection.id);
-					const rows = () => policies()[connection.id] ?? [];
-					const list = () => lists.state(connection.id)();
+				const conns = connections();
+				if (!conns.length && !catalogError()) return null;
+				return conns.map((connection) => {
+					const connectionId = connection.id;
+					const list = () => lists.state(connectionId)();
+					const enabledRows = () =>
+						rows(connectionId).filter((row) => row.enabled);
 					const configured = () =>
-						new Set(rows().map((row) => modelKey(row.provider, row.modelId)));
-					const addItems = (): SelectItem[] =>
-						list()
-							.models.filter(
-								(model) =>
-									!configured().has(modelKey(model.provider, model.id)),
-							)
-							.map((model) => ({
-								value: modelKey(model.provider, model.id),
-								title: `${model.name || model.id} · ${model.provider}`,
-							}));
+						new Set(enabledRows().map((row) => rowKey(row)));
+					const available = () =>
+						list().models.filter(
+							(model) => !configured().has(modelKey(model.provider, model.id)),
+						);
+					const modelName = (row: CacheKeepAliveSettings) =>
+						list().models.find(
+							(model) =>
+								model.provider === row.provider && model.id === row.modelId,
+						)?.name || row.modelId;
 					return (
 						<SettingsSection
 							title={connectionLabel(connection)}
+							headerRight={
+								<Button
+									variant="ghost"
+									size="icon"
+									class="size-8"
+									disabled={list().loading}
+									accessibilityLabel={t("settings.refreshModels")}
+									onPress={() => lists.refresh(connectionId)}
+								>
+									<Icon
+										name="RefreshCw"
+										size={14}
+										class={list().loading ? "animate-spin" : undefined}
+									/>
+								</Button>
+							}
 							actions={
-								<Select
-									testID={`settings-keep-alive-add-${connection.id}`}
-									class="w-[220px]"
-									items={[
-										{
-											value: "add",
-											title: t("settings.cacheKeepAliveAddModel"),
-										},
-										...addItems(),
-									]}
-									value="add"
-									onChange={({ value }) => {
-										if (!value || value === "add") return;
-										const model = list().models.find(
-											(candidate) =>
-												modelKey(candidate.provider, candidate.id) === value,
-										);
-										if (!model) return;
-										save({
-											...(rows().find(
-												(row) =>
-													row.provider === model.provider &&
-													row.modelId === model.id,
-											) ??
-												defaultCacheKeepAliveSettings(
-													connection.id,
-													model.provider,
-													model.id,
-												)),
-											enabled: true,
-										});
-									}}
-								/>
+								<Popover
+									open={pickerOpen()[connectionId] ?? false}
+									onOpenChange={({ open }) =>
+										pickerOpen.set({
+											...pickerOpen(),
+											[connectionId]: open,
+										})
+									}
+									align="end"
+									popupClass="w-80 p-0 overflow-hidden"
+									trigger={
+										<Button
+											testID={`settings-keep-alive-add-${connectionId}`}
+											variant="ghost"
+											size="sm"
+											class="h-8 gap-1 px-2 text-muted-foreground hover:text-foreground"
+											disabled={
+												!loaded()[connectionId] || adding()[connectionId]
+											}
+										>
+											<Icon name="Plus" size={14} />
+											<Text>{t("settings.cacheKeepAliveAddModel")}</Text>
+										</Button>
+									}
+								>
+									<Command
+										items={available().map((model) => ({
+											id: modelKey(model.provider, model.id),
+											label: `${model.name || model.id} · ${model.provider}`,
+											keywords: [model.name, model.id, model.provider].filter(
+												Boolean,
+											),
+											disabled: adding()[connectionId],
+										}))}
+										autoFocus
+										placeholder={String(t("chat.searchModels"))}
+										searchAccessibilityLabel={String(t("chat.searchModels"))}
+										accessibilityLabel={String(
+											t("settings.cacheKeepAliveModel"),
+										)}
+										empty={
+											<Text class="text-muted-foreground">
+												{t("chat.noModelMatches")}
+											</Text>
+										}
+										onSelect={({ id }) => add(connection, id)}
+										onCancel={() =>
+											pickerOpen.set({
+												...pickerOpen(),
+												[connectionId]: false,
+											})
+										}
+									/>
+								</Popover>
 							}
 						>
 							{() => {
-								const current = rows();
-								if (current.length === 0)
+								if (!loaded()[connectionId])
 									return (
-										<View class="px-3 py-4">
-											<Text class="text-sm text-muted-foreground">
-												{() =>
-													String(
-														t(
-															list().models.length
-																? "settings.cacheKeepAliveEmpty"
-																: "settings.cacheKeepAliveNoModels",
-														),
-													)
-												}
+										<View class="px-3 py-3">
+											<Text class="text-xs text-muted-foreground">
+												{t("common.loading")}
 											</Text>
 										</View>
 									);
-								return current.map((row) => {
-									const name =
-										list().models.find(
-											(model) =>
-												model.provider === row.provider &&
-												model.id === row.modelId,
-										)?.name || row.modelId;
+								const header = (
+									<View class="flex-row items-center border-b border-border/60 px-3 py-2">
+										<View class="min-w-0 flex-1">
+											<Text class="text-xs font-medium text-muted-foreground">
+												{t("settings.cacheKeepAliveModel")}
+											</Text>
+										</View>
+										<View class="w-28">
+											<Text class="text-xs font-medium text-muted-foreground">
+												{`${t("settings.cacheKeepAliveTtlLabel")} (${t(
+													"settings.cacheKeepAliveMinutes",
+												)})`}
+											</Text>
+										</View>
+										<View class="w-32">
+											<Text class="text-xs font-medium text-muted-foreground">
+												{`${t("settings.cacheKeepAliveDurationLabel")} (${t(
+													"settings.cacheKeepAliveMinutes",
+												)})`}
+											</Text>
+										</View>
+										<View class="w-20 items-center">
+											<Text class="text-xs font-medium text-muted-foreground">
+												{t("settings.cacheKeepAliveEnabledLabel")}
+											</Text>
+										</View>
+									</View>
+								);
+								const body = enabledRows().map((row) => {
+									const key = `${connectionId}\n${rowKey(row)}`;
+									const draft = () => drafts()[key];
+									const disabling = () => toggling()[key] ?? false;
 									return (
-										<SettingsRow label={`${name} · ${row.provider}`}>
-											<NumberInput
-												testID={`settings-keep-alive-ttl-${connection.id}-${row.modelId}`}
-												class="w-20"
-												min={TTL_MINUTES_RANGE.min}
-												max={TTL_MINUTES_RANGE.max}
-												step={1}
-												value={Math.round(row.cacheTtlSeconds / 60)}
-												onChange={({ value }) => {
-													if (value === null) return;
-													save({
-														...row,
-														cacheTtlSeconds: value * 60,
-													});
-												}}
-											/>
-											<NumberInput
-												testID={`settings-keep-alive-duration-${connection.id}-${row.modelId}`}
-												class="w-20"
-												min={DURATION_MINUTES_RANGE.min}
-												max={DURATION_MINUTES_RANGE.max}
-												step={1}
-												value={Math.round(row.idleKeepAliveSeconds / 60)}
-												onChange={({ value }) => {
-													if (value === null) return;
-													save({
-														...row,
-														idleKeepAliveSeconds: value * 60,
-													});
-												}}
-											/>
-											<Switch
-												testID={`settings-keep-alive-${connection.id}-${row.modelId}`}
-												checked={row.enabled}
-												onChange={({ checked }) =>
-													save({ ...row, enabled: checked })
-												}
-											/>
+										<SettingsRow label={modelName(row)} helper={row.provider}>
+											<View class="flex-row items-center gap-2">
+												<NumberInput
+													testID={`settings-keep-alive-ttl-${connectionId}-${row.modelId}`}
+													class="w-28"
+													inputClass="tabular-nums"
+													min={TTL_MINUTES_RANGE.min}
+													max={TTL_MINUTES_RANGE.max}
+													step={1}
+													disabled={disabling()}
+													accessibilityLabel={t("settings.cacheKeepAliveTtl")}
+													value={draft()?.ttl ?? row.cacheTtlSeconds / 60}
+													onChange={({ value }) =>
+														drafts.set({
+															...drafts(),
+															[key]: {
+																ttl: value,
+																duration:
+																	draft()?.duration ??
+																	row.idleKeepAliveSeconds / 60,
+															},
+														})
+													}
+													onSubmit={() => commit(connection, row)}
+													onBlur={() => commit(connection, row)}
+												/>
+												<NumberInput
+													testID={`settings-keep-alive-duration-${connectionId}-${row.modelId}`}
+													class="w-32"
+													inputClass="tabular-nums"
+													min={DURATION_MINUTES_RANGE.min}
+													max={DURATION_MINUTES_RANGE.max}
+													step={1}
+													disabled={disabling()}
+													accessibilityLabel={t(
+														"settings.cacheKeepAliveDuration",
+													)}
+													value={
+														draft()?.duration ?? row.idleKeepAliveSeconds / 60
+													}
+													onChange={({ value }) =>
+														drafts.set({
+															...drafts(),
+															[key]: {
+																ttl: draft()?.ttl ?? row.cacheTtlSeconds / 60,
+																duration: value,
+															},
+														})
+													}
+													onSubmit={() => commit(connection, row)}
+													onBlur={() => commit(connection, row)}
+												/>
+												<View class="w-20 items-center">
+													<Switch
+														testID={`settings-keep-alive-${connectionId}-${row.modelId}`}
+														checked={row.enabled}
+														disabled={disabling()}
+														accessibilityLabel={t(
+															"settings.cacheKeepAliveEnabled",
+														)}
+														onChange={() => toggle(connection, row)}
+													/>
+												</View>
+											</View>
 										</SettingsRow>
 									);
 								});
+								const empty =
+									enabledRows().length === 0 && !errors()[connectionId] ? (
+										<View class="px-3 py-3">
+											<Text class="text-xs text-muted-foreground">
+												{t(
+													available().length
+														? "settings.cacheKeepAliveEmpty"
+														: "settings.cacheKeepAliveNoModels",
+												)}
+											</Text>
+										</View>
+									) : null;
+								const error = errors()[connectionId] ? (
+									<View class="px-3 py-2">
+										<Text class="text-xs text-destructive">
+											{errors()[connectionId]}
+										</Text>
+									</View>
+								) : null;
+								return [header, ...body, empty, error];
 							}}
 						</SettingsSection>
 					);

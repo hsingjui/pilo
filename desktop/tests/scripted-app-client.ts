@@ -112,6 +112,7 @@ export type ScriptedSettingsClient = Pick<
 	| "saveNextPromptSettings"
 	| "loadPromptEnhancementSettings"
 	| "savePromptEnhancementSettings"
+	| "connectEvents"
 	| "getLocalConnection"
 	| "testLocalConnection"
 	| "updateConnectionSettings"
