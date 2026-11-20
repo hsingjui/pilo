@@ -9,21 +9,29 @@ export const PI_RPC_TIMEOUT_MS = 5000;
 
 let rpcSequence = 0;
 
+/** An `rpc_message` response, as Pi replies it. */
+export type PiRpcReply<T> = {
+	data?: T;
+	success?: boolean;
+	error?: string;
+};
+
 /**
  * A request/response Pi RPC over the command channel: the command is sent
  * with a unique `id`, and its reply arrives as an `rpc_message` session
- * event carrying the same `id`. Resolves `null` when the reply never comes
- * (timeout or a dropped event stream) and rejects on a `success: false`
- * reply or a send failure.
+ * event carrying the same `id`. Resolves the reply — a success reply can
+ * carry no `data` — or `null` when the reply never comes (timeout or a
+ * dropped event stream), and rejects on a `success: false` reply or a
+ * send failure.
  */
-export function requestPiRpc<T>(
+export function requestPiRpcReply<T>(
 	client: PiCommandClient,
 	sessionKey: string,
 	command: Record<string, unknown>,
 	timeoutMs = PI_RPC_TIMEOUT_MS,
-): Promise<T | null> {
+): Promise<PiRpcReply<T> | null> {
 	const id = `nsh-rpc-${++rpcSequence}`;
-	return new Promise<T | null>((resolve, reject) => {
+	return new Promise<PiRpcReply<T> | null>((resolve, reject) => {
 		let settled = false;
 		let disconnect: (() => void) | null = null;
 		const finish = () => {
@@ -52,15 +60,11 @@ export function requestPiRpc<T>(
 							(reply as Record<string, unknown>).id !== id
 						)
 							continue;
-						const data = reply as {
-							data?: T;
-							success?: boolean;
-							error?: string;
-						};
+						const data = reply as PiRpcReply<T>;
 						finish();
 						if (data.success === false)
 							reject(new Error(data.error ?? "Pi command failed"));
-						else resolve(data.data ?? null);
+						else resolve(data);
 						return;
 					}
 				},
@@ -84,4 +88,19 @@ export function requestPiRpc<T>(
 				reject(error instanceof Error ? error : new Error(String(error)));
 			});
 	});
+}
+
+/**
+ * {@link requestPiRpcReply} for callers that only want the reply's `data`:
+ * `null` when the reply never came or it carried none.
+ */
+export function requestPiRpc<T>(
+	client: PiCommandClient,
+	sessionKey: string,
+	command: Record<string, unknown>,
+	timeoutMs = PI_RPC_TIMEOUT_MS,
+): Promise<T | null> {
+	return requestPiRpcReply<T>(client, sessionKey, command, timeoutMs).then(
+		(reply) => reply?.data ?? null,
+	);
 }

@@ -1,4 +1,4 @@
-import type { PiModel, PiThinkingLevel } from "@/lib/api/pi-runtime";
+import type { PiModel, PiThinkingLevel } from "@/lib/api/pi-runtime-types";
 import type {
 	ProjectModelScope,
 	ProjectScopedModel,
