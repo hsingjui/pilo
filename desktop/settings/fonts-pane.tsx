@@ -1,4 +1,4 @@
-import { type Accessor, Text, View } from "nsh";
+import { type Accessor, type JSX, Text, token, View, windowSize } from "nsh";
 
 import {
 	CODE_FONT_SIZE_RANGE,
@@ -23,6 +23,7 @@ import type { PreferencePatch } from "@/lib/host-preferences-types";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
+import { classNames } from "../ui/class-names";
 import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
@@ -91,6 +92,22 @@ export function FontsPane(props: {
 			value={value ?? fallback}
 			onChange={saveValue}
 		/>
+	);
+	/** Tailwind's sm:, as SettingsRow's; under it the label stacks above. */
+	const narrow = () => windowSize().width < 640;
+	/** A preview row as the Tauri's `sm:grid-cols-[120px_minmax(0,1fr)]`. */
+	const previewRow = (label: string, content: JSX.Element) => (
+		<View
+			class={classNames(
+				"min-w-0 px-3 py-3 border-b border-border/60 last:border-b-0",
+				narrow() ? "gap-2" : "flex-row items-start gap-4",
+			)}
+		>
+			<View class={narrow() ? undefined : "w-[120px] shrink-0"}>
+				<Text class="pt-1 text-xs text-muted-foreground">{label}</Text>
+			</View>
+			<View class="min-w-0 flex-1">{content}</View>
+		</View>
 	);
 	return (
 		<View class="gap-3">
@@ -231,40 +248,148 @@ export function FontsPane(props: {
 			</SettingsSection>
 
 			<SettingsSection title={t("settings.fontPreview")}>
-				<SettingsRow label={t("settings.codeFont")}>
-					<View class="min-w-0 flex-1 rounded-md border border-border bg-muted/40 px-3 py-2">
+				{previewRow(
+					t("settings.pageFont"),
+					<View class="rounded-md border border-border/60 bg-background p-3 gap-1.5">
 						{() => (
 							<Text
+								class="text-sm font-medium"
 								style={{
-									fontFamily: getMonospaceFontFamilyStack(
-										values()?.codeFontFamily ?? DEFAULT_CODE_FONT_FAMILY,
+									fontFamily: getPageFontFamilyStack(
+										values()?.pageFontFamily ?? DEFAULT_PAGE_FONT_FAMILY,
 									),
-									fontSize: values()?.codeFontSize ?? DEFAULT_CODE_FONT_SIZE,
 								}}
 							>
-								{'const message = "Hello, 你好！";'}
+								{t("settings.title")}
 							</Text>
 						)}
-					</View>
-				</SettingsRow>
-				<SettingsRow label={t("settings.terminalFont")}>
-					<View class="min-w-0 flex-1 rounded-md border border-border/60 bg-background px-3 py-2">
 						{() => (
 							<Text
+								class="text-xs leading-[1.45] text-muted-foreground"
 								style={{
-									fontFamily: getMonospaceFontFamilyStack(
-										values()?.terminalFontFamily ??
-											DEFAULT_TERMINAL_FONT_FAMILY,
+									fontFamily: getPageFontFamilyStack(
+										values()?.pageFontFamily ?? DEFAULT_PAGE_FONT_FAMILY,
+									),
+								}}
+							>
+								{t("settings.fontPreviewText")}
+							</Text>
+						)}
+					</View>,
+				)}
+				{previewRow(
+					t("settings.readingFont"),
+					<View class="min-w-0 flex-1 gap-2">
+						{() => (
+							<Text
+								class="font-semibold leading-[1.75]"
+								style={{
+									fontFamily: getPageFontFamilyStack(
+										values()?.readingFontFamily ?? DEFAULT_READING_FONT_FAMILY,
 									),
 									fontSize:
-										values()?.terminalFontSize ?? DEFAULT_TERMINAL_FONT_SIZE,
+										values()?.readingFontSize ?? DEFAULT_READING_FONT_SIZE,
 								}}
 							>
-								{'~/pilo $ echo "Hello, 你好！ 0123456789"'}
+								{t("settings.fontPreviewHeading")}
 							</Text>
 						)}
-					</View>
-				</SettingsRow>
+						{() => (
+							<Text
+								class="leading-[1.75]"
+								style={{
+									fontFamily: getPageFontFamilyStack(
+										values()?.readingFontFamily ?? DEFAULT_READING_FONT_FAMILY,
+									),
+									fontSize:
+										values()?.readingFontSize ?? DEFAULT_READING_FONT_SIZE,
+								}}
+							>
+								{t("settings.fontPreviewReadingText")}
+							</Text>
+						)}
+						{() => (
+							<Text
+								class="leading-[1.75]"
+								style={{
+									fontFamily: getPageFontFamilyStack(
+										values()?.readingFontFamily ?? DEFAULT_READING_FONT_FAMILY,
+									),
+									fontSize:
+										values()?.readingFontSize ?? DEFAULT_READING_FONT_SIZE,
+								}}
+							>
+								{t("settings.fontPreviewText")}
+							</Text>
+						)}
+					</View>,
+				)}
+				{previewRow(
+					t("settings.codeFont"),
+					<View class="min-w-0 flex-1 overflow-hidden rounded-md border border-code-border bg-code-background">
+						<View class="border-b border-code-border px-3 py-1.5">
+							<Text class="text-[10px] text-muted-foreground">TypeScript</Text>
+						</View>
+						<View class="p-3">
+							{() => (
+								<Text
+									class="text-code-foreground leading-[1.4]"
+									style={{
+										fontFamily: getMonospaceFontFamilyStack(
+											values()?.codeFontFamily ?? DEFAULT_CODE_FONT_FAMILY,
+										),
+										fontSize: values()?.codeFontSize ?? DEFAULT_CODE_FONT_SIZE,
+									}}
+								>
+									<Text class="text-syntax-keyword">const</Text>
+									{" message = "}
+									<Text class="text-syntax-string">{'"Hello, 你好！"'}</Text>
+									{";\n"}
+									<Text class="text-syntax-keyword">const</Text>
+									{" count = "}
+									<Text class="text-syntax-number">12345</Text>
+									{";\n"}
+									<Text class="text-syntax-function">console.log</Text>
+									{"(message, count);"}
+								</Text>
+							)}
+						</View>
+					</View>,
+				)}
+				{previewRow(
+					t("settings.terminalFont"),
+					<View class="min-w-0 flex-1 rounded-md border border-border/60 bg-background p-3">
+						{() => {
+							const fontSize =
+								values()?.terminalFontSize ?? DEFAULT_TERMINAL_FONT_SIZE;
+							return (
+								<Text
+									class="leading-[1.15]"
+									style={{
+										fontFamily: getMonospaceFontFamilyStack(
+											values()?.terminalFontFamily ??
+												DEFAULT_TERMINAL_FONT_FAMILY,
+										),
+										fontSize,
+									}}
+								>
+									<Text class="text-muted-foreground">~/pilo</Text>
+									{' $ echo "Hello, 你好！ 0123456789"\n'}
+									{"Hello, 你好！ 0123456789\n"}
+									<Text class="text-muted-foreground">~/pilo</Text>
+									{" $ "}
+									<View
+										style={{
+											width: Math.round(fontSize * 0.6),
+											height: fontSize,
+											backgroundColor: token("foreground"),
+										}}
+									/>
+								</Text>
+							);
+						}}
+					</View>,
+				)}
 			</SettingsSection>
 		</View>
 	);
