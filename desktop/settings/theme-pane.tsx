@@ -1,13 +1,18 @@
-import { type Accessor, signal, Text, View } from "nsh";
-import { Editor } from "nsh/base";
+import {
+	type Accessor,
+	effect,
+	openUrl,
+	signal,
+	Text,
+	untracked,
+	View,
+} from "nsh";
 
 import type { ThemeSettingsUpdate } from "@/lib/theme-settings-types";
 import type { CustomThemeTokens } from "@/lib/theme-tokens";
-import {
-	createThemeTokenCatalog,
-	validateCustomThemeTokens,
-} from "@/lib/theme-tokens";
-import lody from "../theme.json";
+import { editableThemeTokens, themeTokensKey } from "@/lib/theme-token-draft";
+import { validateCustomThemeTokens } from "@/lib/theme-tokens";
+import { CUSTOM_THEME_CATALOG } from "@/lib/theme-web";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
@@ -15,11 +20,14 @@ import { classNames } from "../ui/class-names";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
 import { Select } from "../ui/select";
-import { SettingsRow, SettingsSection, SettingsStatus } from "./layout";
+import { SettingsRow, SettingsSection } from "./layout";
 import { SettingsConfirmDialog } from "./settings-confirm-dialog";
+import { ThemeConversionNotice } from "./theme-conversion-notice";
+import { ThemeTokenEditor } from "./theme-token-editor";
 import type { SettingsClient } from "./settings-dialog";
 
-const catalog = createThemeTokenCatalog(lody.cssVars);
+const REPOSITORY_URL = "https://github.com/hsingjui/pilo";
+const CUSTOM_THEME_DOCS_URL = `${REPOSITORY_URL}/blob/main/desktop/README.md#custom-themes`;
 
 const THEME_MODES = [
 	{ value: "light", labelKey: "settings.light" },
@@ -75,13 +83,9 @@ function ThemeOption(props: {
 	);
 }
 
-function tokensJson(tokens: CustomThemeTokens | undefined): string {
-	return JSON.stringify(tokens ?? {}, null, 2);
-}
-
 /**
- * Appearance: theme mode, theme family (Lody / Claude / saved customs), and a
- * JSON editor for the custom token table, saved through `saveThemeSettings`.
+ * Appearance: theme mode, theme family (Lody / Claude / saved customs), and
+ * the custom-theme token table, matching `appearance-settings.tsx`.
  */
 export function ThemePane(props: {
 	state: Accessor<AppState>;
@@ -93,25 +97,53 @@ export function ThemePane(props: {
 			console.error(t("settings.themeSaveFailed"), error);
 		});
 	};
-	const draftName = signal(settings()?.themeCustomName ?? "");
-	const draftTokens = signal(tokensJson(settings()?.themeCustomTokens));
-	const editing = signal(false);
 
-	const parseDraft = () => {
-		try {
-			return { parsed: JSON.parse(draftTokens()) as unknown };
-		} catch {
-			return { parsed: undefined };
+	// The saved theme the settings point at: same name AND same token table.
+	const activeSavedTheme = () =>
+		settings()?.savedCustomThemes?.find(
+			(item) =>
+				item.name === settings()?.themeCustomName &&
+				themeTokensKey(item.tokens ?? {}) ===
+					themeTokensKey(settings()?.themeCustomTokens ?? {}),
+		);
+	const sourceName = () => activeSavedTheme()?.name ?? "";
+	const currentKey = () => themeTokensKey(settings()?.themeCustomTokens ?? {});
+
+	const draftName = signal(sourceName());
+	const draftTokens = signal<CustomThemeTokens>(
+		editableThemeTokens(settings()?.themeCustomTokens ?? {}),
+	);
+	const draftKey = () => themeTokensKey(draftTokens());
+	// The last remote draft source adopted. Remote edits (theme_settings_changed
+	// from another view) flow into the draft only while the local draft still
+	// matches what the remote was when adopted, so they never clobber typing.
+	const draftSource = signal({ key: currentKey(), name: sourceName() });
+	effect(() => {
+		const next = { key: currentKey(), name: sourceName() };
+		const source = draftSource();
+		if (next.key === source.key && next.name === source.name) return;
+		if (
+			untracked(() => draftKey() === source.key) &&
+			untracked(() => draftName() === source.name)
+		) {
+			draftTokens.set(editableThemeTokens(settings()?.themeCustomTokens ?? {}));
+			draftName.set(next.name);
 		}
-	};
-	const validation = () => {
-		const { parsed } = parseDraft();
-		if (parsed === undefined) return { ok: false as const, issue: "json" };
-		const result = validateCustomThemeTokens(parsed, catalog);
-		return result.ok
-			? { ok: true as const, tokens: result.tokens }
-			: { ok: false as const, issue: result.issues[0]?.code ?? "invalid" };
-	};
+		draftSource.set(next);
+	});
+
+	const validation = () =>
+		validateCustomThemeTokens(draftTokens(), CUSTOM_THEME_CATALOG);
+	const existingTheme = () =>
+		settings()?.savedCustomThemes?.find(
+			(item) => item.name === draftName().trim(),
+		);
+	const saved = () =>
+		settings()?.themeFamily === "custom" &&
+		settings()?.themeCustomName === draftName().trim() &&
+		existingTheme() !== undefined &&
+		themeTokensKey(existingTheme()?.tokens ?? {}) === draftKey() &&
+		currentKey() === draftKey();
 
 	const selectSaved = (name: string, tokens: CustomThemeTokens | undefined) => {
 		save({
@@ -120,22 +152,20 @@ export function ThemePane(props: {
 			themeCustomName: name,
 		});
 		draftName.set(name);
-		draftTokens.set(tokensJson(tokens));
+		draftTokens.set(editableThemeTokens(tokens ?? {}));
 	};
 	const deleting = signal<string | null>(null);
-	const deleteSaved = (name: string) => {
-		deleting.set(name);
-	};
 	const saveDraft = () => {
 		const result = validation();
-		if (!result.ok || !draftName().trim()) return;
+		if (!result.ok) return;
 		save({
 			themeFamily: "custom",
 			saveCustomTheme: {
-				name: draftName().trim(),
+				name: draftName(),
 				tokens: result.tokens,
 			},
 		});
+		draftName.set(draftName().trim());
 	};
 
 	return (
@@ -177,14 +207,34 @@ export function ThemePane(props: {
 									settings()?.themeCustomName === item.name
 								}
 								onSelect={() => selectSaved(item.name, item.tokens)}
-								onDelete={() => deleteSaved(item.name)}
+								onDelete={() => deleting.set(item.name)}
 							/>
 						))
 					}
 				</View>
 			</SettingsSection>
 
-			<SettingsSection title={t("settings.themeCustomTokens")}>
+			<SettingsSection
+				title={t("settings.themeCustomTokens")}
+				headerRight={
+					<Button
+						testID="settings-theme-docs"
+						variant="ghost"
+						size="sm"
+						class="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground"
+						onPress={() => {
+							void openUrl(CUSTOM_THEME_DOCS_URL).catch((error: unknown) =>
+								console.error("openUrl failed", error),
+							);
+						}}
+					>
+						<Text class="text-xs">
+							{() => String(t("settings.themeDocumentation"))}
+						</Text>
+						<Icon name="ExternalLink" size={14} class="opacity-60" />
+					</Button>
+				}
+			>
 				<SettingsRow label={t("settings.themeName")}>
 					{() => (
 						<Input
@@ -192,57 +242,59 @@ export function ThemePane(props: {
 							class="w-64"
 							value={draftName()}
 							placeholder={t("settings.themeNamePlaceholder")}
-							onChange={({ value }) => {
-								draftName.set(value);
-								editing.set(true);
-							}}
+							onChange={({ value }) => draftName.set(value)}
 						/>
 					)}
 				</SettingsRow>
-				<View class="gap-2 p-3">
-					<Editor
-						testID="settings-theme-tokens"
-						language="json"
-						softWrap
-						class="h-56 w-full rounded-(--pilo-radius-md) border border-input-border bg-input-field"
-						value={draftTokens()}
-						onChange={({ value }) => {
-							draftTokens.set(value);
-							editing.set(true);
-						}}
+				<View class="gap-3 p-3">
+					<ThemeConversionNotice
+						conversion={settings()?.themeCustomConversion}
+						savedThemeName={sourceName()}
 					/>
-					{() => {
-						const result = validation();
-						return !result.ok && editing() ? (
-							<Text class="text-xs text-destructive">
-								{result.issue === "json"
-									? t("settings.themeTokensInvalidJson")
-									: t("settings.themeTokensInvalid", {
-											code: result.issue,
-										})}
-							</Text>
-						) : null;
-					}}
-					<View class="flex-row items-center justify-end gap-2">
-						<Button
-							testID="settings-theme-cancel"
-							variant="ghost"
-							disabled={!editing()}
-							onPress={() => {
-								draftName.set(settings()?.themeCustomName ?? "");
-								draftTokens.set(tokensJson(settings()?.themeCustomTokens));
-								editing.set(false);
-							}}
-						>
-							{t("common.cancel")}
-						</Button>
-						<Button
-							testID="settings-theme-save"
-							disabled={!draftName().trim() || !validation().ok}
-							onPress={saveDraft}
-						>
-							{t("settings.saveTheme")}
-						</Button>
+					<ThemeTokenEditor
+						tokens={draftTokens}
+						onChange={(tokens) => draftTokens.set(tokens)}
+					/>
+					<View class="flex-row flex-wrap items-center justify-end gap-2">
+						{() =>
+							saved() ? (
+								<Text class="text-xs text-muted-foreground">
+									{() => String(t("settings.themeSaved"))}
+								</Text>
+							) : null
+						}
+						{() => (
+							<Button
+								testID="settings-theme-cancel"
+								variant="ghost"
+								size="sm"
+								disabled={
+									draftKey() === currentKey() && draftName() === sourceName()
+								}
+								onPress={() => {
+									draftTokens.set(
+										editableThemeTokens(settings()?.themeCustomTokens ?? {}),
+									);
+									draftName.set(sourceName());
+								}}
+							>
+								{t("common.cancel")}
+							</Button>
+						)}
+						{() => (
+							<Button
+								testID="settings-theme-save"
+								size="sm"
+								disabled={!draftName().trim() || saved() || !validation().ok}
+								onPress={saveDraft}
+							>
+								{t(
+									existingTheme()
+										? "settings.updateTheme"
+										: "settings.saveTheme",
+								)}
+							</Button>
+						)}
 					</View>
 				</View>
 			</SettingsSection>
