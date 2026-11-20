@@ -48,7 +48,9 @@ export function FontSizeInput(props: {
 					t("settings.fontSizeInputLabel", { font: props.label }),
 				)}
 				suffix={
-					<Text class="text-xs text-muted-foreground px-1 shrink-0">px</Text>
+					<Text class="font-sans text-xs text-muted-foreground px-1 shrink-0">
+						px
+					</Text>
 				}
 				onChange={({ value }) => draft.set(value)}
 				onSubmit={commit}

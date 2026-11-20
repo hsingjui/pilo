@@ -104,7 +104,9 @@ export function FontsPane(props: {
 			)}
 		>
 			<View class={narrow() ? undefined : "w-[120px] shrink-0"}>
-				<Text class="pt-1 text-xs text-muted-foreground">{label}</Text>
+				<Text class="font-sans pt-1 text-xs text-muted-foreground">
+					{label}
+				</Text>
 			</View>
 			<View class="min-w-0 flex-1">{content}</View>
 		</View>
@@ -116,39 +118,44 @@ export function FontsPane(props: {
 				actions={
 					<Menu
 						align="end"
+						popupStyle={{ minWidth: 0 }}
 						trigger={
 							<Button testID="settings-fonts-reset" variant="ghost" size="sm">
-								<Text>{t("settings.resetDefault")}</Text>
+								<Text class="font-sans">{t("settings.resetDefault")}</Text>
 								<Icon name="ChevronDown" size={14} />
 							</Button>
 						}
 					>
-						<MenuItem
-							testID="settings-fonts-reset-families"
-							onSelect={() =>
-								save({
-									pageFontFamily: DEFAULT_PAGE_FONT_FAMILY,
-									readingFontFamily: DEFAULT_READING_FONT_FAMILY,
-									codeFontFamily: DEFAULT_CODE_FONT_FAMILY,
-									terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
-								})
-							}
-						>
-							{t("settings.resetFonts")}
-						</MenuItem>
-						<MenuItem
-							testID="settings-fonts-reset-sizes"
-							onSelect={() =>
-								save({
-									uiFontSize: DEFAULT_UI_FONT_SIZE,
-									readingFontSize: DEFAULT_READING_FONT_SIZE,
-									codeFontSize: DEFAULT_CODE_FONT_SIZE,
-									terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
-								})
-							}
-						>
-							{t("settings.resetFontSizes")}
-						</MenuItem>
+						<View class="gap-1">
+							<MenuItem
+								testID="settings-fonts-reset-families"
+								indicatorClass="hidden"
+								onSelect={() =>
+									save({
+										pageFontFamily: DEFAULT_PAGE_FONT_FAMILY,
+										readingFontFamily: DEFAULT_READING_FONT_FAMILY,
+										codeFontFamily: DEFAULT_CODE_FONT_FAMILY,
+										terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
+									})
+								}
+							>
+								{t("settings.resetFonts")}
+							</MenuItem>
+							<MenuItem
+								testID="settings-fonts-reset-sizes"
+								indicatorClass="hidden"
+								onSelect={() =>
+									save({
+										uiFontSize: DEFAULT_UI_FONT_SIZE,
+										readingFontSize: DEFAULT_READING_FONT_SIZE,
+										codeFontSize: DEFAULT_CODE_FONT_SIZE,
+										terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
+									})
+								}
+							>
+								{t("settings.resetFontSizes")}
+							</MenuItem>
+						</View>
 					</Menu>
 				}
 			>
@@ -328,7 +335,9 @@ export function FontsPane(props: {
 					t("settings.codeFont"),
 					<View class="min-w-0 flex-1 overflow-hidden rounded-md border border-code-border bg-code-background">
 						<View class="border-b border-code-border px-3 py-1.5">
-							<Text class="text-[10px] text-muted-foreground">TypeScript</Text>
+							<Text class="font-sans text-[10px] text-muted-foreground">
+								TypeScript
+							</Text>
 						</View>
 						<View class="p-3">
 							{() => (

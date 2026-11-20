@@ -1,14 +1,13 @@
-import { signal, token, Text, View } from "nsh";
+import { signal, Text, View } from "nsh";
 import type { CommandItem } from "nsh/base";
 
 import { t } from "../app/i18n";
 import type { FontOption } from "@/lib/font-settings";
-import { classNames } from "../ui/class-names";
 import { Command } from "../ui/command";
-import { focusRingStyle } from "../ui/focus-ring-style";
 import { Icon } from "../ui/icon";
 import { Popover } from "../ui/popover";
-import { styleVar } from "../ui/theme-style";
+import { selectItemSpacing } from "../ui/select";
+import { SelectTrigger } from "../ui/select-trigger";
 
 export type FontSelectGroup = {
 	label: string;
@@ -35,6 +34,7 @@ export function FontSelect(props: {
 }) {
 	const open = signal(false);
 	const query = signal("");
+	const triggerWidth = signal<number | undefined>(undefined);
 	const label = (option: FontOption) =>
 		option.labelKey ? String(t(option.labelKey)) : option.label;
 	const optionByValue = () => {
@@ -75,7 +75,10 @@ export function FontSelect(props: {
 		}
 		return list;
 	};
-	const selectedTitle = () => optionByValue().get(props.value);
+	const selectedTitle = () => {
+		const option = optionByValue().get(props.value);
+		return option ? label(option) : props.value;
+	};
 	const itemFamily = (id: string) => {
 		if (id === CUSTOM_ITEM_ID) return customName();
 		return optionByValue().get(id)?.family;
@@ -85,35 +88,27 @@ export function FontSelect(props: {
 			open={open()}
 			onOpenChange={({ open: next }) => open.set(next)}
 			align="start"
-			popupClass="w-72 p-0 overflow-hidden"
+			offset={4}
+			popupClass="p-0 overflow-hidden"
+			popupStyle={{ width: triggerWidth() }}
 			trigger={
-				<View
+				<SelectTrigger
 					testID={props.testID}
 					accessibilityLabel={props.accessibilityLabel}
-					class={classNames(
-						"flex-row w-full items-center justify-between gap-2 h-(--pilo-field-height) rounded-(--pilo-radius-md) border border-input-border bg-input-field px-3 py-2 text-sm font-sans text-input-foreground hover:border-(--pilo-field-hover-border) focus-visible:border-(--pilo-field-focus-border) focus-visible:outline-hidden",
-						props.class,
-					)}
-					style={{ boxShadow: styleVar("pilo-field-shadow") }}
-					focusVisibleStyle={focusRingStyle(
-						token("ring"),
-						styleVar("pilo-field-shadow"),
-					)}
-				>
-					<Text class="flex-1 truncate">
-						{() => (selectedTitle() ? label(selectedTitle()!) : props.value)}
-					</Text>
-					<Icon name="ChevronsUpDown" color={token("input-foreground")} />
-				</View>
+					class={props.class}
+					value={selectedTitle()}
+					onLayout={({ bounds }) => triggerWidth.set(bounds.size.width)}
+				/>
 			}
 		>
 			<Command
 				items={items()}
+				itemStyle={selectItemSpacing()}
 				autoFocus
 				placeholder={String(t("settings.searchFonts"))}
 				searchAccessibilityLabel={String(t("settings.searchFonts"))}
 				empty={
-					<Text class="text-muted-foreground">
+					<Text class="font-sans text-muted-foreground">
 						{t("settings.noMatchingFonts")}
 					</Text>
 				}
@@ -126,9 +121,9 @@ export function FontSelect(props: {
 				renderItem={(entry) => {
 					const family = itemFamily(entry.id);
 					return (
-						<View class="flex-row items-center gap-2 w-full">
+						<View class="min-w-0 flex-row items-center gap-2">
 							<Text
-								class="flex-1 truncate"
+								class="min-w-0 flex-1 truncate"
 								style={family ? { fontFamily: `"${family}"` } : undefined}
 							>
 								{entry.label}
