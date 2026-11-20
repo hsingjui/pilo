@@ -23,6 +23,8 @@
   React's menu icon slot; callers pass no icon color. Submenu chevrons are muted.
 - `createHover` (`hover.ts`) tracks the pointer for icon foregrounds that a
   `hover:` class cannot reach; spread `hover.props` on the view.
+- `StateView`/`EmptyState`/`ErrorState` (`state-view.tsx`) match React's
+  `src/ui/state-view.tsx`; callers pass the copy (title, retry label).
 - Fixtures and `nsh/test` coverage live in `desktop/tests/ui-*`. Check headless
   behavior and native macOS behavior separately; headless checks do not draw.
 - Popover defaults to center (like React); triggers near a window edge must pass `align="start"`.

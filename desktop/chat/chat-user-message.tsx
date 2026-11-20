@@ -1,6 +1,7 @@
-import { platform, signal, Text, View } from "nsh";
+import { platform, Text, View } from "nsh";
 
 import { t } from "../app/i18n";
+import { createHover } from "../ui/hover";
 import { ChatCopyButton } from "./chat-copy-button";
 import type { ChatMessageBody, UserChatMessage } from "./chat-message-types";
 import { ConversationColumn } from "./conversation-column";
@@ -12,16 +13,12 @@ export function ChatUserMessage(props: {
 	body?: ChatMessageBody<UserChatMessage>;
 }) {
 	const { message } = props;
-	const hovered = signal(false);
-	const reveal = () => !platform.desktop || hovered();
+	const hover = createHover();
+	const reveal = () => !platform.desktop || hover.hovered();
 	const hasText = () => Boolean(message().text.trim());
 	return (
 		<ConversationColumn class="items-end py-3">
-			<View
-				class="max-w-[70%] items-end gap-1.5"
-				onMouseEnter={() => hovered.set(true)}
-				onMouseLeave={() => hovered.set(false)}
-			>
+			<View class="max-w-[70%] items-end gap-1.5" {...hover.props}>
 				{() =>
 					message().queued ? (
 						<Text class="font-sans text-xs text-muted-foreground">

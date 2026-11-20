@@ -11,9 +11,9 @@ import { t } from "../app/i18n";
 import type { ChatTranscriptState } from "../state/chat-transcript-store";
 import { Button } from "../ui/button";
 import { classNames } from "../ui/class-names";
+import { focusRingStyle } from "../ui/focus-ring-style";
 import { Icon } from "../ui/icon";
 import { scrollbarLook } from "../ui/scrollbar";
-import { ChatDisclosureRow } from "./chat-disclosure-row";
 import { ChatTodoList } from "./chat-todo-list";
 
 type TodoSnapshot = {
@@ -95,9 +95,17 @@ export function ChatTodoCapsule(props: {
 						)}
 					>
 						<View class="min-w-0 flex-row items-center gap-2 py-1 pl-3 pr-1">
-							<ChatDisclosureRow
-								class="min-w-0 flex-1"
-								expanded={expanded()}
+							{/* React's plain toggle: no hover background, unlike a work row. */}
+							<View
+								role="button"
+								class="min-w-0 flex-1 flex-row items-center gap-2 rounded-md py-1"
+								accessibilityState={{ expanded: expanded() }}
+								focusVisibleStyle={focusRingStyle(
+									token("ring"),
+									undefined,
+									undefined,
+									{ width: 2 },
+								)}
 								accessibilityLabel={t(
 									expanded() ? "chat.todoCollapse" : "chat.todoExpand",
 								)}
@@ -116,7 +124,7 @@ export function ChatTodoCapsule(props: {
 								>
 									<Text
 										class={classNames(
-											"font-sans text-xs font-medium tabular-nums",
+											"font-sans text-[11px] font-medium tabular-nums",
 											complete()
 												? "text-status-success"
 												: "text-muted-foreground",
@@ -128,7 +136,7 @@ export function ChatTodoCapsule(props: {
 								<Text
 									class={classNames(
 										"min-w-0 flex-1 truncate font-sans text-xs font-medium",
-										complete() ? "text-status-success" : "text-foreground",
+										complete() ? "text-status-success" : "text-foreground/90",
 									)}
 								>
 									{current}
@@ -136,8 +144,9 @@ export function ChatTodoCapsule(props: {
 								<Icon
 									name={expanded() ? "ChevronDown" : "ChevronUp"}
 									size={14}
+									color={token("muted-foreground")}
 								/>
-							</ChatDisclosureRow>
+							</View>
 							<Button
 								variant="ghost"
 								size="icon"

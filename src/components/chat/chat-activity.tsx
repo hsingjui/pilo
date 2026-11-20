@@ -508,7 +508,7 @@ const ToolCallActivityView = memo(function ToolCallActivityView({
 					activity.isError && "text-destructive",
 				)}
 			/>
-			<span className="flex min-w-0 flex-1 items-center gap-1.5">
+			<span className="flex min-w-0 flex-1 items-baseline gap-1.5">
 				<span className="max-w-full shrink-0 truncate">{label}</span>
 				{previewLabel && openablePath ? (
 					<Hint label={openablePath}>

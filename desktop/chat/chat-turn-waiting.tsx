@@ -1,4 +1,4 @@
-import { Text, View } from "nsh";
+import { Text, token, View } from "nsh";
 
 import { t } from "../app/i18n";
 import { Spinner } from "../ui/spinner";
@@ -13,7 +13,7 @@ export function ChatTurnWaiting() {
 			testID="chat-turn-waiting"
 			class="min-h-0 flex-1 flex-row items-center justify-center gap-2 p-6"
 		>
-			<Spinner size={16} class="text-muted-foreground" />
+			<Spinner size={16} color={token("muted-foreground")} />
 			<Text class="font-sans text-sm text-muted-foreground">
 				{() => t("chat.waitingResponse")}
 			</Text>

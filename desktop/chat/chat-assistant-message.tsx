@@ -1,4 +1,4 @@
-import { computed, platform, signal, Text, View } from "nsh";
+import { computed, platform, Text, View } from "nsh";
 
 import { hasTokenUsage } from "@/lib/api/token-usage";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@/lib/chat/chat-activity-state";
 
 import { t } from "../app/i18n";
+import { createHover } from "../ui/hover";
 import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
 import { workDurationText } from "./chat-activity-labels";
@@ -73,7 +74,7 @@ export function ChatAssistantMessage(props: {
 	const preferences = () => props.preferences?.() ?? defaultChatWorkPreferences;
 	// The action row under a finished reply shows on hover or keyboard focus,
 	// like the Tauri message footer.
-	const hovered = signal(false);
+	const hover = createHover();
 	const error = computed(() => {
 		const text = message().errorMessage;
 		return text?.startsWith(stalled) ? t("chat.modelStreamStalled") : text;
@@ -138,11 +139,7 @@ export function ChatAssistantMessage(props: {
 			: "";
 	});
 	return (
-		<ConversationColumn
-			class="py-3"
-			onMouseEnter={() => hovered.set(true)}
-			onMouseLeave={() => hovered.set(false)}
-		>
+		<ConversationColumn class="py-3" {...hover.props}>
 			{props.body ? (
 				<View selectable>{props.body(message)}</View>
 			) : (
@@ -195,7 +192,7 @@ export function ChatAssistantMessage(props: {
 							gap: chatPx(8),
 							marginTop: chatPx(2),
 							minHeight: chatPx(28),
-							opacity: !platform.desktop || hovered() ? 1 : 0,
+							opacity: !platform.desktop || hover.hovered() ? 1 : 0,
 						}}
 						focusWithinStyle={{ opacity: 1 }}
 					>

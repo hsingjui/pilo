@@ -1,7 +1,8 @@
-import { type JSX, platform, signal, Text, token } from "nsh";
+import { type JSX, platform, Text, token } from "nsh";
 
 import { Button } from "../ui/button";
 import { Foreground } from "../ui/foreground";
+import { createHover } from "../ui/hover";
 import { Tooltip } from "../ui/tooltip";
 import { chatPx } from "./layout";
 
@@ -14,7 +15,7 @@ export function ChatMessageAction(props: {
 	onPress: () => void;
 	children?: JSX.Element;
 }) {
-	const hovered = signal(false);
+	const hover = createHover();
 	const size = platform.desktop ? chatPx(28) : 44;
 	return (
 		<Button
@@ -36,14 +37,13 @@ export function ChatMessageAction(props: {
 					<Text class="font-sans">{() => props.label}</Text>
 				</Tooltip>
 			}
-			onMouseEnter={() => hovered.set(true)}
-			onMouseLeave={() => hovered.set(false)}
+			{...hover.props}
 			onPress={props.onPress}
 		>
 			<Foreground.Provider
 				value={() =>
 					token(
-						hovered() && !props.disabled
+						hover.hovered() && !props.disabled
 							? "hover-foreground"
 							: "muted-foreground",
 					)

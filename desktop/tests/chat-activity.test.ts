@@ -2,6 +2,11 @@ import { expect, open, test } from "nsh/test";
 
 const desktop = { platform: "macos", width: 1100, height: 720 } as const;
 
+// A tool row reads as one text: its name, an en space, then its preview.
+const EDIT = "text:Edit\u2002main.ts";
+const RUN = "text:Run\u2002pnpm test";
+const TASKS = "text:Tasks\u20021/2 done";
+
 function openChat(scenario: string) {
 	return open("./chat-activity-fixture.tsx", {
 		...desktop,
@@ -14,7 +19,7 @@ test("a finished turn folds its work behind how long it worked, under the final 
 	await app.waitFor("text:Final answer: x is now 2.");
 	expect(app.shows("text:Worked for 1m 15s")).toBe(true);
 	expect(app.shows("text:The file sets x to 1.")).toBe(false);
-	expect(app.shows("text:pnpm test")).toBe(false);
+	expect(app.shows(RUN)).toBe(false);
 });
 
 test("opening the work shows its groups folded behind what each did", async () => {
@@ -24,13 +29,11 @@ test("opening the work shows its groups folded behind what each did", async () =
 	await app.waitFor("text:The file sets x to 1.");
 	expect(app.shows("text:Thought process · Read 1 files")).toBe(true);
 	expect(app.shows("text:Edited 1 files · Ran 1 commands")).toBe(true);
-	expect(app.shows("text:pnpm test")).toBe(false);
+	expect(app.shows(RUN)).toBe(false);
 
 	await app.press("text:Edited 1 files · Ran 1 commands");
-	await app.waitFor("text:pnpm test");
-	expect(app.shows("text:Edit")).toBe(true);
-	expect(app.shows("text:main.ts")).toBe(true);
-	expect(app.shows("text:Run")).toBe(true);
+	await app.waitFor(RUN);
+	expect(app.shows(EDIT)).toBe(true);
 });
 
 test("an edit opens to its diff, a command to how it ended and its output", async () => {
@@ -39,13 +42,13 @@ test("an edit opens to its diff, a command to how it ended and its output", asyn
 	await app.press("text:Worked for 1m 15s");
 	await app.waitFor("text:Edited 1 files · Ran 1 commands");
 	await app.press("text:Edited 1 files · Ran 1 commands");
-	await app.waitFor("text:main.ts");
+	await app.waitFor(EDIT);
 
-	await app.press("text:main.ts");
+	await app.press(EDIT);
 	await app.waitFor("text:export const x = 2;");
 	expect(app.shows("text:export const x = 1;")).toBe(true);
 
-	await app.press("text:pnpm test");
+	await app.press(RUN);
 	await app.waitFor("text:Exit code 0");
 	expect(app.shows("text:1.5 s")).toBe(true);
 	expect(app.shows("text:all passed")).toBe(true);
@@ -73,15 +76,15 @@ test("with folding and durations off, the work shows open and untimed", async ()
 	expect(app.shows("text:Work activity")).toBe(true);
 	expect(app.shows("text:Worked for 1m 15s")).toBe(false);
 	expect(app.shows("text:The file sets x to 1.")).toBe(true);
-	expect(app.shows("text:pnpm test")).toBe(true);
-	expect(app.shows("text:main.ts")).toBe(true);
+	expect(app.shows(RUN)).toBe(true);
+	expect(app.shows(EDIT)).toBe(true);
 });
 
 test("a running turn keeps its work open and says what it is doing", async () => {
 	const app = await openChat("running");
 	await app.waitFor("text:Run…");
 	expect(app.shows("text:Work activity")).toBe(true);
-	expect(app.shows("text:pnpm test")).toBe(true);
+	expect(app.shows(RUN)).toBe(true);
 	// The group a text has followed is finished, so it folds.
 	expect(app.shows("text:Thought process · Read 1 files")).toBe(true);
 	expect(app.shows("id:chat-reply-streaming >> text:Processing…")).toBe(true);
@@ -129,10 +132,9 @@ test("a task list tool shows its progress and opens to its tasks", async () => {
 	await app.press("text:Worked for 4s");
 	await app.waitFor("text:Ran 1 commands");
 	await app.press("text:Ran 1 commands");
-	await app.waitFor("text:1/2 done");
-	expect(app.shows("text:Tasks")).toBe(true);
+	await app.waitFor(TASKS);
 
-	await app.press("text:1/2 done");
+	await app.press(TASKS);
 	await app.waitFor("text:Change x");
 	expect(app.shows("text:Read the file")).toBe(true);
 });

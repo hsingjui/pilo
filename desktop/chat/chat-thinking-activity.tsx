@@ -8,7 +8,7 @@ import { Icon } from "../ui/icon";
 import { Tooltip } from "../ui/tooltip";
 import { workDurationText } from "./chat-activity-labels";
 import { ChatDisclosureRow } from "./chat-disclosure-row";
-import type { ChatExpansion } from "./chat-expansion";
+import { ChatDisclosureAction, type ChatExpansion } from "./chat-expansion";
 import { ChatMarkdown } from "./chat-markdown";
 
 // How much thinking renders at first, and how much more each press shows.
@@ -38,6 +38,7 @@ export function ChatThinkingActivity(props: {
 	showDuration: () => boolean;
 }) {
 	const { activity } = props;
+	const disclose = ChatDisclosureAction();
 	const running = computed(() => activity().status === "running");
 	const open = computed(() =>
 		props.expansion.isOpen(props.expansionKey(), false),
@@ -122,7 +123,9 @@ export function ChatThinkingActivity(props: {
 									variant="ghost"
 									size="sm"
 									onPress={() =>
-										revealed.update((value) => value + THINKING_REVEAL_CHARS)
+										disclose(() =>
+											revealed.update((value) => value + THINKING_REVEAL_CHARS),
+										)
 									}
 								>
 									<Text class="font-sans">

@@ -70,7 +70,6 @@ export function ChatToolActivity(props: {
 		const path = filePath();
 		return skillName() ?? (path ? fileBasename(path) : preview());
 	});
-	const hasPreview = computed(() => Boolean(previewLabel()));
 	const hasDetails = computed(() => {
 		const { args, result } = activity();
 		return (
@@ -112,27 +111,24 @@ export function ChatToolActivity(props: {
 						size={14}
 					/>
 				)}
-				<View class="min-w-0 flex-1 flex-row items-center gap-1.5">
-					<Text
-						class={
-							failed()
-								? "max-w-full shrink-0 truncate font-sans text-base font-medium leading-snug text-destructive"
-								: "max-w-full shrink-0 truncate font-sans text-base font-medium leading-snug text-muted-foreground"
-						}
-					>
-						{label}
-					</Text>
-					{() =>
-						hasPreview() ? (
-							<Text
-								class="w-0 min-w-0 flex-1 truncate font-mono text-muted-foreground"
-								style={{ fontSize: token("pilo-code-font-size") }}
-							>
-								{() => previewLabel() ?? ""}
-							</Text>
-						) : null
+				<Text
+					class={
+						failed()
+							? "min-w-0 flex-1 truncate font-sans text-base font-medium text-destructive"
+							: "min-w-0 flex-1 truncate font-sans text-base font-medium text-muted-foreground"
 					}
-				</View>
+				>
+					{label}
+					<Text
+						class="font-mono font-normal text-muted-foreground"
+						style={{ fontSize: token("pilo-code-font-size") }}
+					>
+						{() => {
+							const value = previewLabel();
+							return value ? `\u2002${value}` : "";
+						}}
+					</Text>
+				</Text>
 				{() =>
 					status() === "failed" ? (
 						<Icon name="CircleAlert" size={14} />
