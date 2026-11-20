@@ -1,4 +1,4 @@
-import { languageForPath } from "@/lib/code-highlighter";
+import { languageForPath } from "@/lib/code-languages";
 import type { WorkspaceLineRange } from "@/lib/project-workspace";
 
 function hasUnsafePathCharacters(value: string): boolean {

@@ -1,7 +1,18 @@
-import type { Project } from "@/lib/api/projects";
-import type { ChatProjectImageScope } from "@/lib/chat/chat-image-media";
+import type { Project } from "@/lib/api/projects-types";
 import { resolveChatImageMimeType } from "@/lib/chat/chat-submission";
 import { workspaceFileKey } from "@/lib/project-workspace";
+
+/** The project a Markdown document belongs to: how its images are read. */
+export type ChatProjectImageScope = {
+	projectId: string;
+	projectPath?: string;
+	sessionKey: string;
+	baseDirectory?: string;
+	readImage?: (
+		projectId: string,
+		path: string,
+	) => Promise<Uint8Array<ArrayBuffer>>;
+};
 
 /** Outside-project documents never gain access to their neighbouring system files. */
 export function projectMarkdownImageScope(

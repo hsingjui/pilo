@@ -8,6 +8,7 @@ import {
 	type ChatConversationImage,
 	type ChatImageAttachment,
 } from "@/lib/chat/chat-submission";
+import type { ChatProjectImageScope } from "@/lib/chat/chat-markdown-images";
 
 /**
  * Images render from Blob object URLs instead of multi-megabyte data: URLs.
@@ -144,16 +145,7 @@ export function loadChatHistoryImageUrl(
 	});
 }
 
-export type ChatProjectImageScope = {
-	projectId: string;
-	projectPath?: string;
-	sessionKey: string;
-	baseDirectory?: string;
-	readImage?: (
-		projectId: string,
-		path: string,
-	) => Promise<Uint8Array<ArrayBuffer>>;
-};
+export type { ChatProjectImageScope } from "@/lib/chat/chat-markdown-images";
 
 export function loadChatProjectImageUrl(
 	path: string,

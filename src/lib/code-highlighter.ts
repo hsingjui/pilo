@@ -1,3 +1,6 @@
+import type { CodeLanguage } from "./code-languages";
+import { languageForPath } from "./code-languages";
+
 export const CODE_THEME_NAME = "pilo-css-vars";
 
 export const CODE_LANGUAGE_LOADERS = {
@@ -15,44 +18,15 @@ export const CODE_LANGUAGE_LOADERS = {
 	yaml: () => import("@shikijs/langs/yaml"),
 	html: () => import("@shikijs/langs/html"),
 	css: () => import("@shikijs/langs/css"),
-};
+} satisfies Record<CodeLanguage, () => Promise<unknown>>;
 
-export type CodeLanguage = keyof typeof CODE_LANGUAGE_LOADERS;
-
-const LANGUAGE_BY_EXTENSION: Record<string, CodeLanguage> = {
-	ts: "typescript",
-	mts: "typescript",
-	cts: "typescript",
-	tsx: "tsx",
-	js: "javascript",
-	mjs: "javascript",
-	cjs: "javascript",
-	jsx: "jsx",
-	json: "json",
-	sh: "bash",
-	bash: "bash",
-	zsh: "shellscript",
-	md: "markdown",
-	mdx: "markdown",
-	py: "python",
-	rs: "rust",
-	go: "go",
-	yml: "yaml",
-	yaml: "yaml",
-	html: "html",
-	htm: "html",
-	css: "css",
-};
+export type { CodeLanguage } from "./code-languages";
+export { languageForPath } from "./code-languages";
 
 type Highlighter = Awaited<ReturnType<typeof createHighlighter>>;
 
 let highlighterPromise: Promise<Highlighter> | null = null;
 const languagePromises = new Map<CodeLanguage, Promise<Highlighter>>();
-
-export function languageForPath(path: string): CodeLanguage | null {
-	const extension = path.split(".").pop()?.toLowerCase();
-	return extension ? (LANGUAGE_BY_EXTENSION[extension] ?? null) : null;
-}
 
 async function createHighlighter() {
 	const [
