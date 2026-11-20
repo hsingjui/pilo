@@ -13,31 +13,7 @@ import {
 	type ThemeTokenScope,
 } from "@/lib/theme-tokens";
 
-export function editableThemeTokens(
-	tokens: CustomThemeTokens,
-): CustomThemeTokens {
-	const theme = { ...tokens.theme };
-	const light = { ...tokens.light };
-	for (const [token, value] of Object.entries(theme)) {
-		const kind = CUSTOM_THEME_CATALOG.get(token);
-		if (kind && isColorKind(kind)) {
-			light[token] = value;
-			delete theme[token];
-		}
-	}
-	return { theme, light, dark: { ...tokens.dark } };
-}
-
-export function themeTokensKey(tokens: CustomThemeTokens): string {
-	const editable = editableThemeTokens(tokens);
-	return JSON.stringify(
-		(["theme", "light", "dark"] as const).map((scope) =>
-			[...CUSTOM_THEME_CATALOG.keys()].map(
-				(token) => editable[scope]?.[token] ?? "",
-			),
-		),
-	);
-}
+export { editableThemeTokens, themeTokensKey } from "@/lib/theme-token-draft";
 
 const GROUPS = [
 	["color", "settings.themeColors"],
