@@ -133,7 +133,11 @@ function TokenField(props: {
 						: color
 							? t("settings.themeTokenColorError")
 							: t("settings.themeTokenInvalid", { kind: label });
-				return <Text class="text-xs text-destructive">{String(message)}</Text>;
+				return (
+					<Text class="font-sans text-xs text-destructive">
+						{String(message)}
+					</Text>
+				);
 			}}
 		</View>
 	);

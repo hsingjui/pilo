@@ -65,7 +65,7 @@ export function SettingsConfirmDialog(props: {
 					disabled={busy()}
 					onPress={props.onConfirm}
 				>
-					<Text>
+					<Text class="font-sans">
 						{() =>
 							busy()
 								? (props.busyLabel ?? t("common.processing"))

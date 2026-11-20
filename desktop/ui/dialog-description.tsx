@@ -6,7 +6,7 @@ export function DialogDescription(props: TextProps) {
 	return (
 		<Text
 			{...rest}
-			class={classNames("text-sm text-muted-foreground", local.class)}
+			class={classNames("font-sans text-sm text-muted-foreground", local.class)}
 		>
 			{local.children}
 		</Text>

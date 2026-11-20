@@ -333,7 +333,7 @@ export function FontsPane(props: {
 						<View class="p-3">
 							{() => (
 								<Text
-									class="text-code-foreground leading-[1.4]"
+									class="font-sans text-code-foreground leading-[1.4]"
 									style={{
 										fontFamily: getMonospaceFontFamilyStack(
 											values()?.codeFontFamily ?? DEFAULT_CODE_FONT_FAMILY,
@@ -364,7 +364,7 @@ export function FontsPane(props: {
 								values()?.terminalFontSize ?? DEFAULT_TERMINAL_FONT_SIZE;
 							return (
 								<Text
-									class="leading-[1.15]"
+									class="font-sans leading-[1.15]"
 									style={{
 										fontFamily: getMonospaceFontFamilyStack(
 											values()?.terminalFontFamily ??

@@ -330,30 +330,17 @@ A custom theme is a token table shared by the desktop and the WebUI, checked by
 
 ## Saved fonts
 
-`followSavedAppearance` (`app/appearance.ts`) shows the fonts saved in the
-Host's preferences by setting theme tokens over the theme it shows, as the
-Tauri app sets its CSS variables over the theme's:
+`followSavedAppearance` (`app/appearance.ts`) applies the saved page and code
+fonts to `font-sans` and `font-mono`. Lody also uses the page font for
+`font-display`; Claude and custom themes keep their own display font when set.
+Until preferences load, the page font falls back to Noto Sans SC on Windows
+and the system UI font elsewhere, and the code font to system monospace.
 
-| Preference       | Token                 | Used by                     |
-| ---------------- | --------------------- | --------------------------- |
-| `pageFontFamily` | `font-sans`           | `font-sans` text            |
-| `codeFontFamily` | `font-mono`           | `font-mono` text            |
-| `codeFontSize`   | `pilo-code-font-size` | nothing yet (chat and diff) |
-
-- The saved fonts replace the theme's own `font-sans`, `font-mono` and
-  `pilo-code-font-size`, a custom theme's included. Lody's `font-display` is
-  the page font; Claude and a custom theme that names one keep theirs.
-- The stacks come from `src/lib/font-stacks.ts`. nsh uses the first family
-  only: `inter` and `jetbrains-mono` are the bundled fonts, `system-sans` and
-  `system-mono` the system's, any other value a font installed on the machine.
-  A font that is not installed shows in the system font, code included, and
-  nsh logs a warning; the WebUI would fall back through the rest of the stack.
+- `codeFontSize` still sets `pilo-code-font-size`, and the composer still uses
+  `readingFontSize`.
 - `uiFontSize` is not applied. The Tauri app scales every size by it through
   the root font size; nsh 0.6.0 has no text size an app can set (`fontScale`
   is read-only).
-- `readingFontFamily`, `readingFontSize`, `terminalFontFamily` and
-  `terminalFontSize` belong to the chat and the terminal, which read them
-  from the app state.
 
 ## Native images
 

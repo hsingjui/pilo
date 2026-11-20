@@ -130,7 +130,7 @@ function GlobalShortcutSetting(props: { desktop: DesktopShell }) {
 				{() =>
 					props.desktop.loadFailed() ? (
 						<View class="flex-row flex-wrap items-center gap-2">
-							<Text class="text-xs text-destructive">
+							<Text class="font-sans text-xs text-destructive">
 								{t("desktop.shortcutLoadFailed")}
 							</Text>
 							<Button
@@ -187,12 +187,12 @@ function GlobalShortcutSetting(props: { desktop: DesktopShell }) {
 				!props.desktop.loadFailed() && props.desktop.settings() ? (
 					<>
 						{failed() ? (
-							<Text class="px-3 py-2 text-xs text-destructive">
+							<Text class="font-sans px-3 py-2 text-xs text-destructive">
 								{t("desktop.shortcutSaveFailed")}
 							</Text>
 						) : !props.desktop.registered() ? (
 							<View class="px-3 py-2 flex-row flex-wrap items-center gap-2">
-								<Text class="min-w-0 flex-1 text-xs text-destructive">
+								<Text class="font-sans min-w-0 flex-1 text-xs text-destructive">
 									{t("desktop.shortcutUnavailable")}
 								</Text>
 								<Button

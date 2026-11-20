@@ -486,7 +486,7 @@ export function CacheKeepAlivePane(props: {
 								const empty =
 									enabledRows().length === 0 && !errors()[connectionId] ? (
 										<View class="px-3 py-3">
-											<Text class="text-xs text-muted-foreground">
+											<Text class="font-sans text-xs text-muted-foreground">
 												{t(
 													available().length
 														? "settings.cacheKeepAliveEmpty"

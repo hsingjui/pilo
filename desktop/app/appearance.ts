@@ -2,6 +2,7 @@ import {
 	type Accessor,
 	computed,
 	effect,
+	platform,
 	setColorScheme,
 	setTheme,
 	untracked,
@@ -11,7 +12,6 @@ import {
 	getMonospaceFontFamilyStack,
 	getPageFontFamilyStack,
 } from "@/lib/font-stacks";
-import type { HostPreferenceValues } from "@/lib/host-preferences-types";
 import type { ThemeSettings } from "@/lib/theme-settings-types";
 import {
 	createThemeTokenCatalog,
@@ -26,85 +26,70 @@ import { setStyleTheme } from "../ui/theme-style";
 import { appLocale, setAppLocale } from "./i18n";
 
 const catalog = createThemeTokenCatalog(lody.cssVars);
+const defaultPageFont =
+	platform.os === "windows" ? "Noto Sans SC" : "system-sans";
 
-/**
- * Shows the app in the language, appearance, theme and fonts the user saved,
- * once the app state holds them and whenever they change. Call while
- * rendering.
- *
- * The saved UI font size is not shown: nsh has no text size an app can set.
- */
+/** Follow saved appearance, using platform fonts until preferences load. */
 export function followSavedAppearance(state: Accessor<AppState>) {
-	const saved = <K extends keyof HostPreferenceValues>(name: K) =>
-		computed(() => state().preferences?.values[name]);
-	const locale = saved("locale");
-	const pageFont = saved("pageFontFamily");
-	const codeFont = saved("codeFontFamily");
-	const codeFontSize = saved("codeFontSize");
+	const locale = computed(() => state().preferences?.values.locale);
+	const pageSans = computed(() =>
+		getPageFontFamilyStack(
+			state().preferences?.values.pageFontFamily ?? defaultPageFont,
+		),
+	);
+	const codeMono = computed(() =>
+		getMonospaceFontFamilyStack(
+			state().preferences?.values.codeFontFamily ?? "system-mono",
+		),
+	);
+	const codeFontSize = computed(() => state().preferences?.values.codeFontSize);
 	const theme = computed(() => state().themeSettings);
 	effect(() => {
 		const savedLocale = locale();
 		if (savedLocale && savedLocale !== untracked(appLocale))
 			void setAppLocale(savedLocale);
 	});
-	effect(() => {
-		const settings = theme();
-		if (!settings) return;
-		const page = pageFont();
-		const code = codeFont();
-		const size = codeFontSize();
-		showTheme(
-			settings,
-			page !== undefined && code !== undefined && size !== undefined
-				? fontTokens(page, code, size)
-				: undefined,
-		);
+	effect(() => showTheme(theme(), pageSans(), codeMono(), codeFontSize()));
+}
+
+function showTheme(
+	settings: ThemeSettings | null,
+	pageSans: string,
+	codeMono: string,
+	codeSize: number | undefined,
+) {
+	setColorScheme(settings?.theme ?? "system");
+	const isClaude = settings?.themeFamily === "claude";
+	setStyleTheme(isClaude ? claude.styleVars : null);
+	const vars = isClaude ? claude.cssVars : lodyTheme(settings, pageSans);
+	setTheme({
+		cssVars: {
+			...vars,
+			theme: {
+				...vars.theme,
+				"font-sans": pageSans,
+				"font-mono": codeMono,
+				...(codeSize === undefined
+					? {}
+					: { "pilo-code-font-size": `${codeSize}px` }),
+			},
+		},
 	});
 }
 
-type FontTokens = ReturnType<typeof fontTokens>;
-
-/** The saved fonts as the theme tokens that show them. */
-function fontTokens(page: string, code: string, codeSize: number) {
-	return {
-		"font-sans": getPageFontFamilyStack(page),
-		"font-mono": getMonospaceFontFamilyStack(code),
-		"pilo-code-font-size": `${codeSize}px`,
-	};
-}
-
-/** The saved fonts replace the theme's own, a custom theme's included. */
-function showTheme(settings: ThemeSettings, fonts: FontTokens | undefined) {
-	setColorScheme(settings.theme);
-	const isClaude = settings.themeFamily === "claude";
-	setStyleTheme(isClaude ? claude.styleVars : null);
-	const vars = isClaude ? claude.cssVars : lodyTheme(settings, fonts);
-	setTheme({ cssVars: fonts ? withTokens(vars, fonts) : vars });
-}
-
-/**
- * Lody, with the saved custom tokens over it when the theme is a valid custom
- * one. Lody's display font is the page font; a custom theme may name another.
- */
+/** Lody uses the page font for display unless a custom theme overrides it. */
 function lodyTheme(
-	settings: ThemeSettings,
-	fonts: FontTokens | undefined,
+	settings: ThemeSettings | null,
+	pageSans: string,
 ): ThemeCssVars {
-	const base = fonts
-		? withTokens(lody.cssVars, { "font-display": fonts["font-sans"] })
-		: lody.cssVars;
-	if (settings.themeFamily !== "custom") return base;
+	const base = {
+		...lody.cssVars,
+		theme: { ...lody.cssVars.theme, "font-display": pageSans },
+	};
+	if (settings?.themeFamily !== "custom") return base;
 	const custom = validateCustomThemeTokens(
 		settings.themeCustomTokens ?? {},
 		catalog,
 	);
 	return custom.ok ? resolveCustomTheme(base, custom.tokens) : base;
-}
-
-/** `vars` with `tokens` set for both appearances. */
-function withTokens(
-	vars: ThemeCssVars,
-	tokens: Record<string, string>,
-): ThemeCssVars {
-	return { ...vars, theme: { ...vars.theme, ...tokens } };
 }

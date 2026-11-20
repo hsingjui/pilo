@@ -46,7 +46,10 @@ export function Select(props: SelectProps) {
 						)}
 					>
 						<Text
-							class={classNames("flex-1", !title() && "text-input-placeholder")}
+							class={classNames(
+								"flex-1 font-sans",
+								!title() && "text-input-placeholder",
+							)}
 						>
 							{() => title() ?? props.placeholder ?? ""}
 						</Text>
@@ -85,7 +88,7 @@ export function Select(props: SelectProps) {
 				local.renderItem ??
 				((item) => (
 					<View class="flex-row items-center gap-2 w-full">
-						<Text class="flex-1">{item.title}</Text>
+						<Text class="font-sans flex-1">{item.title}</Text>
 						<Icon
 							name="Check"
 							size={14}

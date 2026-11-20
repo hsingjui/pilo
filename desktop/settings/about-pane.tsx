@@ -116,12 +116,12 @@ export function AboutPane(props: { client: SettingsClient }) {
 					</View>
 					<View class="min-w-0 gap-1">
 						<View class="flex-row items-center gap-2">
-							<Text class="text-lg font-semibold tracking-tight text-foreground">
+							<Text class="font-sans text-lg font-semibold tracking-tight text-foreground">
 								Pilo
 							</Text>
 							<SettingsStatus>v{info.version}</SettingsStatus>
 						</View>
-						<Text class="text-xs leading-relaxed text-muted-foreground">
+						<Text class="font-sans text-xs leading-relaxed text-muted-foreground">
 							{() => t("about.description")}
 						</Text>
 					</View>
@@ -146,7 +146,7 @@ export function AboutPane(props: { client: SettingsClient }) {
 						}}
 					>
 						<Icon name="Code2" size={14} />
-						<Text class="text-xs">GitHub</Text>
+						<Text class="font-sans text-xs">GitHub</Text>
 						<Icon name="ExternalLink" size={14} class="opacity-60" />
 					</Button>
 				</SettingsRow>

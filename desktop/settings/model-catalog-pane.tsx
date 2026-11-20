@@ -234,7 +234,7 @@ export function ModelCatalogPane(props: {
 								if (rows.length === 0)
 									return (
 										<View class="px-3 py-4">
-											<Text class="text-sm text-muted-foreground">
+											<Text class="font-sans text-sm text-muted-foreground">
 												{t("settings.modelCatalogEmpty")}
 											</Text>
 										</View>
