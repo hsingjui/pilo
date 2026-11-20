@@ -1,21 +1,46 @@
 import { type Signal, signal, View } from "nsh";
 
 import type { Connection, PiModel } from "@/lib/api/pi-runtime-types";
-import type { Project } from "@/lib/api/projects-types";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Select, type SelectItem } from "../ui/select";
 
-/** The connections the loaded projects use, in first-seen order. */
-export function paneConnections(projects: readonly Project[]): Connection[] {
-	const seen = new Map<string, Connection>();
-	for (const project of projects) {
-		if (!seen.has(project.connection.id))
-			seen.set(project.connection.id, project.connection);
-	}
-	return [...seen.values()];
+export type ConnectionCatalogClient = Pick<
+	NshPiloClient,
+	"getLocalConnection" | "listWslConnections" | "listSshConnections"
+>;
+
+/**
+ * Local plus every configured WSL and SSH connection, in the order
+ * `listConnectionCatalog` returns — every configured connection, not only the
+ * ones a loaded project uses. Local falls back to the default entry on
+ * failure; a WSL or SSH failure omits that group, as `Promise.allSettled`
+ * did.
+ */
+export async function paneConnectionCatalog(
+	client: ConnectionCatalogClient,
+): Promise<Connection[]> {
+	const [local, wsl, ssh] = await Promise.allSettled([
+		client.getLocalConnection(),
+		client.listWslConnections(),
+		client.listSshConnections(),
+	]);
+	const connections: Connection[] = [
+		local.status === "fulfilled"
+			? local.value
+			: { id: "local", name: "Local", kind: { type: "local" } },
+	];
+	if (wsl.status === "fulfilled")
+		connections.push(...wsl.value.map((info) => info.connection));
+	if (ssh.status === "fulfilled")
+		connections.push(...ssh.value.map((info) => info.connection));
+	return connections;
+}
+
+export function settingsErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 export function connectionLabel(connection: Connection): string {
@@ -64,12 +89,18 @@ export class ConnectionModelLists {
 		entry.set({ ...entry(), loading: true, error: null });
 		this.client
 			.loadConnectionModels(connectionId)
-			.then((models) => entry.set({ models, loading: false, error: null }))
+			.then((models) =>
+				entry.set({
+					models: uniqueModels(models),
+					loading: false,
+					error: null,
+				}),
+			)
 			.catch((error: unknown) =>
 				entry.set({
 					...entry(),
 					loading: false,
-					error: String(error),
+					error: settingsErrorMessage(error),
 				}),
 			);
 	}
@@ -77,7 +108,9 @@ export class ConnectionModelLists {
 
 /**
  * One connection's model Select plus its refresh button, the row shared by
- * the suggestion / enhancement / naming settings.
+ * the suggestion / enhancement / naming settings. A saved value missing from
+ * the catalog shows `settings.modelUnavailable`, as the React SelectValue
+ * placeholder did; the refresh button is disabled while the catalog loads.
  */
 export function ConnectionModelSelect(props: {
 	testID?: string;
@@ -88,21 +121,30 @@ export function ConnectionModelSelect(props: {
 	noneTitle: string;
 	value: string;
 	onPick: (model: PiModel | null) => void;
+	disabled?: boolean;
 }) {
 	const list = () => props.lists.state(props.connection.id)();
+	const items = () => [
+		{ value: props.noneValue, title: props.noneTitle },
+		...list().models.map((model) => ({
+			value: modelKey(model.provider, model.id),
+			title: `${model.name || model.id} · ${model.provider}`,
+		})),
+	];
+	const unavailable = () =>
+		props.value !== props.noneValue &&
+		!items().some((item) => item.value === props.value);
 	return (
 		<View class="flex-row items-center gap-2">
 			<Select
 				testID={props.testID}
 				class="w-[280px]"
-				items={[
-					{ value: props.noneValue, title: props.noneTitle },
-					...list().models.map((model) => ({
-						value: modelKey(model.provider, model.id),
-						title: `${model.name || model.id} · ${model.provider}`,
-					})),
-				]}
-				value={props.value}
+				items={items()}
+				value={unavailable() ? null : props.value}
+				placeholder={
+					unavailable() ? t("settings.modelUnavailable") : props.noneTitle
+				}
+				disabled={props.disabled}
 				onChange={({ value }) => {
 					if (!value || value === props.noneValue) {
 						props.onPick(null);
@@ -118,6 +160,7 @@ export function ConnectionModelSelect(props: {
 				variant="ghost"
 				size="icon"
 				class="size-8"
+				disabled={list().loading}
 				accessibilityLabel={t("settings.refreshModels")}
 				onPress={() => props.lists.refresh(props.connection.id)}
 			>
@@ -129,4 +172,11 @@ export function ConnectionModelSelect(props: {
 			</Button>
 		</View>
 	);
+}
+
+/** Models deduped by `[provider, id]`, as the React model Selects did. */
+export function uniqueModels(models: readonly PiModel[]): PiModel[] {
+	return [
+		...new Map(models.map((m) => [modelKey(m.provider, m.id), m])).values(),
+	];
 }

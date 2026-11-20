@@ -52,6 +52,7 @@ export type SettingsClient = Pick<
 	| "saveNextPromptSettings"
 	| "loadPromptEnhancementSettings"
 	| "savePromptEnhancementSettings"
+	| "connectEvents"
 	| "getLocalConnection"
 	| "testLocalConnection"
 	| "updateConnectionSettings"
