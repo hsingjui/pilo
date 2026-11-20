@@ -13,6 +13,7 @@ import {
 import { currentWindow } from "nsh/desktop";
 
 import type { Project } from "@/lib/api/projects-types";
+import { ChatAgentActivityIndicator } from "../chat/chat-agent-activity";
 import { ChatMessageList } from "../chat/chat-message-list";
 import { ChatMarkdown, type ChatMarkdownFileLink } from "../chat/chat-markdown";
 import { ChatTodoCapsule } from "../chat/chat-todo-capsule";
@@ -311,7 +312,6 @@ export function AppShell(props: AppShellProps) {
 									store.state().navigation.session?.sessionPath ??
 									null
 								}
-								compacting={() => props.runConfig?.state()?.compacting ?? false}
 								onRename={
 									props.onRenameSession
 										? (title) => {
@@ -377,6 +377,21 @@ export function AppShell(props: AppShellProps) {
 											onVisibleRangeChange={(start, end) =>
 												chat.loadRange(start, end)
 											}
+											// Compaction shows under the last message, as React's viewport.
+											footer={() => (
+												<View>
+													{() =>
+														props.runConfig?.state()?.compacting ? (
+															<ConversationColumn class="py-3">
+																<ChatAgentActivityIndicator
+																	testID="chat-compacting"
+																	label={() => t("chat.compacting")}
+																/>
+															</ConversationColumn>
+														) : null
+													}
+												</View>
+											)}
 											empty={() => (
 												<SessionLanding
 													store={store}

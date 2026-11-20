@@ -1,4 +1,4 @@
-import { Clipboard, signal, Text, token, View } from "nsh";
+import { Clipboard, signal, Text, View } from "nsh";
 
 import { PiLogo } from "./pi-logo";
 import { Button } from "../ui/button";
@@ -12,7 +12,6 @@ import { Input } from "../ui/input";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { MenuSeparator } from "../ui/menu-separator";
-import { Spinner } from "../ui/spinner";
 import { Tooltip } from "../ui/tooltip";
 import { t } from "./i18n";
 
@@ -23,8 +22,6 @@ export interface SessionHeaderProps {
 	sessionId: () => string | null;
 	/** The session's file path; `null` while it is unsaved. */
 	sessionPath: () => string | null;
-	/** Pi is compacting the context. */
-	compacting: () => boolean;
 	/** Renames the session in the index; omitted for an unsaved one. */
 	onRename?: (title: string) => void;
 	/** The sidebar is collapsed: its expand button floats over the logo. */
@@ -35,8 +32,8 @@ const copyFailed = () => console.warn("Failed to copy to the clipboard");
 const copy = (text: string) => void Clipboard.writeText(text).catch(copyFailed);
 
 /**
- * The open session's part of the main title bar: its title tab, compaction
- * and the menu. It fills the bar beside the window controls, as the React
+ * The open session's part of the main title bar: its title tab and the
+ * menu. It fills the bar beside the window controls, as the React
  * header does on its draggable top row.
  */
 export function SessionHeader(props: SessionHeaderProps) {
@@ -68,20 +65,7 @@ export function SessionHeader(props: SessionHeaderProps) {
 					</Text>
 				</View>
 			</View>
-			{() =>
-				props.compacting() ? (
-					<View
-						testID="session-header-compacting"
-						class="flex-row items-center gap-1.5 px-2"
-					>
-						<Spinner size={13} color={token("muted-foreground")} />
-						<Text class="font-sans text-xs text-muted-foreground">
-							{() => t("chat.compacting")}
-						</Text>
-					</View>
-				) : null
-			}
-			<View class="shrink-0 flex-row items-center gap-1">
+			<View class="shrink-0 flex-row items-center gap-1 pr-2">
 				<SessionHeaderMenu
 					sessionId={props.sessionId}
 					sessionPath={props.sessionPath}
