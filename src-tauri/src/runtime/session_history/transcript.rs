@@ -151,11 +151,11 @@ pub(crate) async fn read_transcript_history(
     project_id: &str,
 ) -> Result<Value, String> {
     let key = cache_key(project_id, &path);
-    // Same order as load_history: the per-key load lock first, then a cold
-    // slot. Neither the turn lock nor the event publish lock is held here.
+    // Same order as load_history: the per-key load lock first; a cold slot is
+    // only taken on a miss. Neither the turn lock nor the event publish lock
+    // is held here.
     let load_lock = history_cache.lock().await.load_lock(&key);
     let _load_guard = load_lock.lock().await;
-    let permit = super::reader::acquire_cold_load().await?;
 
     let probe_base = base.clone();
     let probe_path = path.clone();
@@ -190,6 +190,7 @@ pub(crate) async fn read_transcript_history(
         return serve_transcript_window(storage, index, window, fingerprint).await;
     }
 
+    let permit = super::reader::acquire_cold_load().await?;
     let incremental = history_cache
         .lock()
         .await
