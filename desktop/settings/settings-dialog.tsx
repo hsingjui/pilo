@@ -17,8 +17,11 @@ import { scrollbarLook } from "../ui/scrollbar";
 import { styleVar } from "../ui/theme-style";
 import { t } from "../app/i18n";
 import { AboutPane } from "./about-pane";
+import { DesktopPane } from "./desktop-pane";
 import { PendingPane } from "./layout";
+import { NotificationsPane } from "./notifications-pane";
 import { PreferencesPane } from "./preferences-pane";
+import { ShortcutsPane } from "./shortcuts-pane";
 
 /** The native calls the settings panes make; grows as panes land. */
 export type SettingsClient = Pick<NshPiloClient, "savePreferences">;
@@ -267,6 +270,17 @@ export function SettingsDialog(props: SettingsDialogProps) {
 											client={props.client}
 										/>
 									);
+								case "notifications":
+									return (
+										<NotificationsPane
+											state={props.state}
+											client={props.client}
+										/>
+									);
+								case "shortcuts":
+									return <ShortcutsPane state={props.state} />;
+								case "desktop":
+									return <DesktopPane />;
 								case "about":
 									return <AboutPane />;
 								default:

@@ -2,6 +2,11 @@ import { mount, setTheme, Text, View } from "nsh";
 
 import type { Connection } from "@/lib/api/pi-runtime-types";
 import type { Project } from "@/lib/api/projects-types";
+import type { PreferencesSnapshot } from "@/lib/host-preferences-types";
+import {
+	type KeyboardShortcutMap,
+	SHORTCUT_COMMANDS,
+} from "@/lib/keyboard-shortcuts-types";
 import type { ThemeSettings } from "@/lib/theme-settings-types";
 import "../app/fonts";
 import { AppShell } from "../app/AppShell";
@@ -16,7 +21,7 @@ import claude from "../claude-theme.json";
 import lody from "../theme.json";
 import { composerStubClient } from "./composer-fixture";
 import { fixtureThemeFamily } from "./fixture-theme";
-import { scriptedClient } from "./scripted-app-client";
+import { HOST_DEFAULT_VALUES, scriptedClient } from "./scripted-app-client";
 
 /**
  * The shell over a scripted client with its settings wired, for the settings
@@ -38,8 +43,19 @@ async function run() {
 		theme: "system",
 		themeFamily: await fixtureThemeFamily(),
 	} as ThemeSettings;
+	const keyboardShortcuts = Object.fromEntries(
+		SHORTCUT_COMMANDS.map((command) => [command.id, command.defaultShortcut]),
+	) as KeyboardShortcutMap;
+	const preferences = {
+		revision: 1,
+		values: {
+			...HOST_DEFAULT_VALUES,
+			keyboardShortcuts,
+		},
+	} as PreferencesSnapshot;
 	const runtime = scriptedClient({
 		projects: [project],
+		preferences,
 		themeSettings,
 	});
 	const chat = new ChatTranscriptStore(runtime.client, conversationContext());

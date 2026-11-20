@@ -39,6 +39,12 @@ test("the nav moves between panes", async () => {
 	const app = await openApp();
 	await app.press("id:sidebar-settings");
 	await app.waitFor("id:settings-dialog");
+	await app.press("id:settings-nav-notifications");
+	await app.waitFor("id:settings-desktop-notifications");
+	await app.press("id:settings-nav-shortcuts");
+	expect(app.shows("text:New session")).toBe(true);
+	await app.press("id:settings-nav-desktop");
+	await app.waitFor("id:settings-launch-at-login");
 	await app.press("id:settings-nav-about");
 	await app.waitFor("id:settings-repository");
 	expect(app.shows("id:settings-send-shortcut")).toBe(false);
