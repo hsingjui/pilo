@@ -1,5 +1,6 @@
 import { type Accessor, signal } from "nsh";
 
+import { chatSessionKey } from "@/lib/api/chat-session-key";
 import type {
 	PiloClientEvent,
 	PiloClientEventMessage,
@@ -133,8 +134,20 @@ export class AppStore {
 		return project;
 	}
 
-	/** Chooses the project for a new chat and closes the open session. */
+	/** Opens a new chat in the project, or keeps its already open draft. */
 	selectProject(projectId: string) {
+		const state = this.current();
+		const open = state.navigation.session;
+		if (open?.projectId === projectId && open.sessionId !== undefined) {
+			const sessionKey = chatSessionKey(projectId, open.sessionId);
+			const hasMessages =
+				this.chat?.state().sessionKey === sessionKey &&
+				this.chat.messages().length > 0;
+			const active = state.chatSessions.some(
+				(chat) => chat.sessionKey === sessionKey && chat.activeTurn,
+			);
+			if (!hasMessages && !active) return;
+		}
 		this.apply({
 			type: "project_selected",
 			projectId,

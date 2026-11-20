@@ -75,8 +75,16 @@ export function followOpenSession(store: AppStore, chat: ChatTranscriptStore) {
 	effect(() => {
 		const next = JSON.parse(target()) as ChatTranscriptTarget | null;
 		untracked(() => {
-			if (next) void chat.open(next, store.connected);
-			else chat.close();
+			if (!next) {
+				chat.close();
+				return;
+			}
+			const freshDraft =
+				!next.sessionPath &&
+				!store
+					.state()
+					.chatSessions.some((held) => held.sessionKey === next.sessionKey);
+			void chat.open(next, store.connected, { freshDraft });
 		});
 	});
 }

@@ -85,7 +85,6 @@ export function ChatMessageList(props: ChatMessageListProps) {
 	return (
 		<View testID="chat-message-list" class="min-h-0 min-w-0 flex-1">
 			{() => {
-				sessionKey();
 				switch (view()) {
 					case "closed":
 						return null;
@@ -110,6 +109,8 @@ export function ChatMessageList(props: ChatMessageListProps) {
 							</View>
 						);
 					case "messages":
+						// Only the message list is tied to a session, not the empty page.
+						sessionKey();
 						return (
 							<ChatMessages
 								messages={props.messages}
