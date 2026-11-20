@@ -413,26 +413,36 @@ async function run() {
 			`an event costs ${perEvent} ms, and ${perEventJoined} ms with the join`,
 		);
 
-		// While that turn runs, a snapshot is of the file as the turn found
-		// it. When the runtime has since read a grown file, a page is of a
-		// changed file, and so is every page after the chat is read again:
-		// the chat is read once, however many ranges a scrolling list asks
-		// for, and the ranges stay placeholders until the turn is over.
+		// While that turn runs, a page of a file that has grown since the
+		// chat was read is of a changed file: the chat is read again, once.
+		// The runtime serves that snapshot from the projection its pages come
+		// from, so the range then loads from the file as it is now, during
+		// the turn, and so do the ranges a scrolling list asks for after it,
+		// without another read of the chat.
 		grow();
 		await client.loadHistory(projectId, sessionPath, { messageLimit: 1 });
 		const changedBefore = count("page", true);
 		const readsBefore = count("snapshot");
 		chat.loadRange(8_000, 8_020);
 		await until(
-			() => count("page", true) - changedBefore === 4,
-			"the pages of a changed file coming back twice",
+			() =>
+				chat.messages()[8_000]?.historyPlaceholder === undefined &&
+				chat.state().status === "ready",
+			"the range loading from the grown file during the turn",
 		);
 		for (let at = 0; at < 30; at += 1) {
 			chat.loadRange(6_000 + at * 50, 6_020 + at * 50);
 			await new Promise((resolve) => setTimeout(resolve, 10));
 		}
+		await until(
+			() => chat.messages()[7_450]?.historyPlaceholder === undefined,
+			"the range scrolled to last loading during the turn",
+		);
 		chat.loadRange(8_000, 8_020);
-		await new Promise((resolve) => setTimeout(resolve, 300));
+		await until(
+			() => chat.messages()[8_000]?.historyPlaceholder === undefined,
+			"the first range loading again during the turn",
+		);
 		const duringATurn = {
 			rangesAsked: 32,
 			pagesOfAChangedFile: count("page", true) - changedBefore,
@@ -441,15 +451,14 @@ async function run() {
 		assert(
 			inPlace() &&
 				chat.state().status === "ready" &&
-				chat.messages()[8_000]?.historyPlaceholder === true &&
-				chat.messages()[6_500]?.historyPlaceholder === true &&
-				duringATurn.pagesOfAChangedFile > 30 &&
+				chat.messages()[8_000]?.text === "question 4000" &&
+				duringATurn.pagesOfAChangedFile > 0 &&
 				duringATurn.chatReads === 1,
 			`unexpected reads during a turn: ${JSON.stringify(duringATurn)}, ${describe()}`,
 		);
 
-		// With the turn over, here by stopping Pi, the range last asked for
-		// loads by itself.
+		// With the turn over, here by stopping Pi, the chat is read from its
+		// settled history again and the range last asked for loads by itself.
 		await client.stopChat(sessionKey);
 		await until(
 			() =>
@@ -458,7 +467,9 @@ async function run() {
 			"the range loading once the turn is over",
 		);
 		assert(
-			inPlace() && chat.messages()[8_000]?.text === "question 4000",
+			inPlace() &&
+				!chat.state().conversation?.active &&
+				chat.messages()[8_000]?.text === "question 4000",
 			`unexpected messages once the turn is over: ${describe()}`,
 		);
 

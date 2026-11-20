@@ -118,8 +118,15 @@ function settles(event: PiloClientEvent) {
 		event.type === "assistant_message_end" ||
 		event.type === "runtime_error" ||
 		(event.type === "pi_reattached" && !event.active) ||
-		(event.type === "process_state" &&
-			(event.state === "failed" || event.state === "stopped"))
+		piExited(event)
+	);
+}
+
+/** Whether the event says the chat's Pi process is gone. */
+function piExited(event: PiloClientEvent) {
+	return (
+		event.type === "process_state" &&
+		(event.state === "failed" || event.state === "stopped")
 	);
 }
 
@@ -300,8 +307,10 @@ export class ChatTranscriptStore {
 					this.flush(later);
 					void this.read();
 				} else if (followsSnapshot(this.cut, event)) {
-					if (event.type === "pi_reattached") {
-						// Reattachment may have missed Pi events without a Host stream gap.
+					if (event.type === "pi_reattached" || piExited(event)) {
+						// Reattachment may have missed Pi events without a Host stream
+						// gap; a Pi that exited leaves the settled history, without
+						// the turn it may have been running.
 						this.flush(later);
 						void this.read();
 					} else {
