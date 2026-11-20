@@ -105,15 +105,13 @@ their generation/revision changed during the read.
 - **Truncated**: the runtime cannot establish exact reconstruction. Causes include
   missing/unsafe starts, attachment mid-turn, autonomous Pi turns (queued
   follow-ups, compaction retries or extensions), overflow, invalidated prefixes,
-  or unsupported connections. Do not apply its empty history as authoritative,
+  or unavailable history. Do not apply its empty history as authoritative,
   append suspect live data, or resume deltas onto an uncertain transcript. **Hold
   off until Host activity confirms idle/settle, then refetch authoritative
   history/a fresh snapshot.** Do not repeatedly splice snapshots during the
-  unsafe turn. Remote/SSH/WSL sessions are always `Truncated` in this version,
-  even when idle: use the existing settled-history reader for those connections,
-  not a loop waiting for their snapshot's `live` to become `Idle`.
+  unsafe turn.
 
-Local settle resets the projection and releases its base; the next prompt records
+Settling resets the projection and releases its base; the next prompt records
 a new boundary. A generation bump resets ownership. Unknown or closing sessions
 return `Err`; this API does not start or resurrect a Pi process.
 
@@ -166,6 +164,15 @@ Identity/size/mtime stability and the tail are checked around the history read;
 mtime change without growth conservatively truncates, including an mtime-only
 touch. Growth may change mtime because appends are expected. Failure returns
 `Truncated`. Only the snapshot path reads the full prefix needed for history.
+
+For SSH/WSL, the same turn projection uses `session.read` on the running Pi
+process's pilo-server client. Capture checks size and mtime across the bounded
+tail read; it times out after two seconds without rejecting the prompt. Snapshot
+reads are capped at the recorded size, validate the tail before cache reuse
+and after a cold read, and use the same history cache. The current protocol
+has no file identity for remote reads; a replacement with a matching tail and
+compatible metadata can go undetected. A Pi reattachment is a fresh cut, even
+if the Host event stream itself did not report a gap.
 
 This is an **append-only assumption, not a full-prefix integrity proof**. Two
 known blind spots, covered by tests, are an earlier-prefix rewrite outside the

@@ -1,9 +1,13 @@
 use std::sync::Arc;
 
-use serde_json::Value;
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::domain::Project;
-use crate::runtime::server_client::ServerManager;
+use crate::runtime::{
+    server_client::{ServerClient, ServerManager},
+    transcript::TranscriptWindow,
+};
 
 use super::{
     cache::{
@@ -38,26 +42,145 @@ pub(super) async fn acquire_cold_load() -> Result<Arc<tokio::sync::OwnedSemaphor
         .map_err(|_| "session history loading is shutting down".to_owned())
 }
 
+#[derive(Clone, Copy)]
+enum HistorySource<'a> {
+    Project(&'a ServerManager, &'a Project),
+    Chat(&'a ServerClient, Option<&'a RemoteTranscriptBase>),
+}
+
+impl HistorySource<'_> {
+    fn boundary(self) -> Option<SessionFileFingerprint> {
+        match self {
+            Self::Chat(_, Some(base)) => Some(base.fingerprint),
+            _ => None,
+        }
+    }
+
+    async fn chunk(
+        self,
+        path: &str,
+        offset: u64,
+        limit: usize,
+    ) -> Result<(Value, Vec<u8>), String> {
+        let params = json!({ "path": path, "offset": offset, "limit": limit });
+        let (metadata, mut binary) = match self {
+            Self::Project(servers, project) => {
+                servers
+                    .request_with_binary(&project.connection, "session.read", params, Vec::new())
+                    .await?
+            }
+            Self::Chat(client, _) => {
+                client
+                    .request_with_binary("session.read", params, Vec::new())
+                    .await?
+            }
+        };
+        if binary.len() != 1 {
+            return Err(format!(
+                "session.read expected one binary attachment, got {}",
+                binary.len()
+            ));
+        }
+        Ok((metadata, binary.remove(0)))
+    }
+
+    async fn fingerprint(self, path: &str) -> Result<Option<SessionFileFingerprint>, String> {
+        if let Self::Chat(_, Some(base)) = self {
+            if path != base.path.as_str() {
+                return Err(HISTORY_CHANGED_DURING_READ.to_owned());
+            }
+            let (fingerprint, digest) = remote_tail(self, path, base.fingerprint.file_size).await?;
+            if !prefix_still_present(base.fingerprint, fingerprint) || digest != base.tail_digest {
+                return Err(HISTORY_CHANGED_DURING_READ.to_owned());
+            }
+            return Ok(Some(base.fingerprint));
+        }
+        let (metadata, _) = self.chunk(path, 0, 0).await?;
+        Ok(fingerprint_from_metadata(&metadata))
+    }
+}
+
 pub(super) async fn read_fingerprint(
     servers: &ServerManager,
     project: &Project,
     path: &str,
 ) -> Result<Option<SessionFileFingerprint>, String> {
-    let (metadata, binary) = servers
-        .request_with_binary(
-            &project.connection,
-            "session.read",
-            serde_json::json!({ "path": path, "offset": 0, "limit": 0 }),
-            Vec::new(),
-        )
-        .await?;
-    if binary.len() != 1 {
-        return Err(format!(
-            "session.read expected one binary attachment, got {}",
-            binary.len()
-        ));
+    HistorySource::Project(servers, project)
+        .fingerprint(path)
+        .await
+}
+
+pub(crate) struct RemoteTranscriptBase {
+    path: String,
+    fingerprint: SessionFileFingerprint,
+    tail_digest: [u8; 32],
+}
+
+impl RemoteTranscriptBase {
+    pub(crate) fn size(&self) -> u64 {
+        self.fingerprint.file_size
     }
-    Ok(fingerprint_from_metadata(&metadata))
+}
+
+fn prefix_still_present(base: SessionFileFingerprint, current: SessionFileFingerprint) -> bool {
+    current.file_size > base.file_size || current == base
+}
+
+async fn remote_tail(
+    source: HistorySource<'_>,
+    path: &str,
+    size: u64,
+) -> Result<(SessionFileFingerprint, [u8; 32]), String> {
+    let start = size.saturating_sub(super::transcript::TAIL_BYTES as u64);
+    let len = (size - start) as usize;
+    let (metadata, bytes) = source.chunk(path, start, len).await?;
+    let fingerprint = fingerprint_from_metadata(&metadata)
+        .ok_or_else(|| "session.read returned no fingerprint".to_owned())?;
+    if bytes.len() != len || (len > 0 && bytes.last() != Some(&b'\n')) {
+        return Err(HISTORY_CHANGED_DURING_READ.to_owned());
+    }
+    Ok((fingerprint, Sha256::digest(&bytes).into()))
+}
+
+pub(crate) async fn record_remote_transcript_base(
+    client: &ServerClient,
+    path: String,
+) -> Result<RemoteTranscriptBase, String> {
+    let source = HistorySource::Chat(client, None);
+    let fingerprint = source
+        .fingerprint(&path)
+        .await?
+        .ok_or_else(|| "session.read returned no fingerprint".to_owned())?;
+    let (current, tail_digest) = remote_tail(source, &path, fingerprint.file_size).await?;
+    if current != fingerprint {
+        return Err(HISTORY_CHANGED_DURING_READ.to_owned());
+    }
+    Ok(RemoteTranscriptBase {
+        path,
+        fingerprint,
+        tail_digest,
+    })
+}
+
+pub(crate) async fn read_remote_transcript_history(
+    client: &ServerClient,
+    project_id: &str,
+    path: &str,
+    base: Option<&RemoteTranscriptBase>,
+    window: TranscriptWindow,
+    cache: &tokio::sync::Mutex<SessionHistoryCache>,
+) -> Result<Value, String> {
+    let (storage, index, fingerprint) = load_history_from(
+        HistorySource::Chat(client, base),
+        cache,
+        project_id,
+        path,
+        None,
+    )
+    .await?;
+    let fingerprint =
+        fingerprint.ok_or_else(|| "session.read returned no fingerprint".to_owned())?;
+    super::transcript::serve_transcript_window(storage, index, window, fingerprint).await
 }
 
 /// Lazily loads one user-image payload from the session JSONL is implemented in
@@ -154,7 +277,24 @@ async fn load_history(
     path: &str,
     expected_fingerprint: Option<(u64, u64)>,
 ) -> Result<LoadedHistory, String> {
-    let key = cache_key(&project.id, path);
+    load_history_from(
+        HistorySource::Project(servers, project),
+        cache,
+        &project.id,
+        path,
+        expected_fingerprint,
+    )
+    .await
+}
+
+async fn load_history_from(
+    source: HistorySource<'_>,
+    cache: &tokio::sync::Mutex<SessionHistoryCache>,
+    project_id: &str,
+    path: &str,
+    expected_fingerprint: Option<(u64, u64)>,
+) -> Result<LoadedHistory, String> {
+    let key = cache_key(project_id, path);
     let load_lock = cache.lock().await.load_lock(&key);
     let _load_guard = load_lock.lock().await;
     let mut source_confirmed = expected_fingerprint.is_none();
@@ -163,7 +303,7 @@ async fn load_history(
             file_size,
             file_mtime_ns,
         }),
-        None => read_fingerprint(servers, project, path).await?,
+        None => source.fingerprint(path).await?,
     };
     while let Some(candidate) = fingerprint {
         let mut history_cache = cache.lock().await;
@@ -178,7 +318,7 @@ async fn load_history(
         }
         // An older client window can miss even when the cache is already current.
         drop(history_cache);
-        fingerprint = read_fingerprint(servers, project, path).await?;
+        fingerprint = source.fingerprint(path).await?;
         source_confirmed = true;
     }
     let load_permit = acquire_cold_load().await?;
@@ -189,7 +329,7 @@ async fn load_history(
         && source_confirmed
         && fingerprint.is_some_and(|source| source.file_size > base.2.file_size)
     {
-        match load_incremental(servers, cache, project, path, base, &load_permit).await {
+        match load_incremental(source, cache, &key, path, base, &load_permit).await {
             Ok(loaded) => return Ok(loaded),
             Err(reason) => log::debug!(
                 target: "session-history",
@@ -197,8 +337,7 @@ async fn load_history(
             ),
         }
     }
-    let (history, fingerprint) =
-        read_file(servers, project, path, Arc::clone(&load_permit)).await?;
+    let (history, fingerprint) = read_file_from(source, path, Arc::clone(&load_permit)).await?;
     let serialization_permit = Arc::clone(&load_permit);
     let (serialized, index) = tokio::task::spawn_blocking(move || {
         // Blocking work keeps its reservation even if the HTTP caller leaves.
@@ -213,9 +352,9 @@ async fn load_history(
 /// Rereads the source from the cached checkpoint and reprojects only that tail.
 /// Any error means the caller falls back to a full read.
 async fn load_incremental(
-    servers: &ServerManager,
+    source: HistorySource<'_>,
     cache: &tokio::sync::Mutex<SessionHistoryCache>,
-    project: &Project,
+    key: &str,
     path: &str,
     (previous, previous_index, previous_fingerprint): (
         HistoryStorage,
@@ -233,7 +372,7 @@ async fn load_incremental(
     }
     let start = state.checkpoint.file_offset;
     let image_locations = state.prefix_image_locations(&previous_index.image_locations);
-    let (parser, fingerprint, bytes_read) = read_source(servers, project, path, start, || {
+    let (parser, fingerprint, bytes_read) = read_source(source, path, start, || {
         HistoryParser::resume(
             state.clone(),
             image_locations.clone(),
@@ -264,8 +403,15 @@ async fn load_incremental(
         target: "session-history",
         "incremental history load read {bytes_read} bytes from offset {start}"
     );
-    let key = cache_key(&project.id, path);
-    store_loaded_history(cache, key, fingerprint, storage, index, load_permit).await
+    store_loaded_history(
+        cache,
+        key.to_owned(),
+        fingerprint,
+        storage,
+        index,
+        load_permit,
+    )
+    .await
 }
 
 /// Caches a freshly loaded projection under its fingerprint in memory or on disk.
@@ -349,7 +495,15 @@ pub(super) async fn read_file(
     path: &str,
     load_permit: LoadPermit,
 ) -> Result<(SessionHistory, Option<SessionFileFingerprint>), String> {
-    let (parser, fingerprint, _) = read_source(servers, project, path, 0, || {
+    read_file_from(HistorySource::Project(servers, project), path, load_permit).await
+}
+
+async fn read_file_from(
+    source: HistorySource<'_>,
+    path: &str,
+    load_permit: LoadPermit,
+) -> Result<(SessionHistory, Option<SessionFileFingerprint>), String> {
+    let (parser, fingerprint, _) = read_source(source, path, 0, || {
         HistoryParser::with_load_permit(Arc::clone(&load_permit))
     })
     .await?;
@@ -358,17 +512,16 @@ pub(super) async fn read_file(
         .map_err(|error| format!("history parsing task failed: {error}"))
 }
 
-/// Feeds the source from `start` up to its size when first read into a fresh
-/// parser, retrying when the file is replaced mid-read. Returns the byte count read.
+/// Feeds the source from `start` up to the recorded boundary or its initial
+/// size, retrying when the file changes mid-read. Returns the byte count read.
 async fn read_source(
-    servers: &ServerManager,
-    project: &Project,
+    source: HistorySource<'_>,
     path: &str,
     start: u64,
     new_parser: impl Fn() -> HistoryParser,
 ) -> Result<(HistoryParser, Option<SessionFileFingerprint>, u64), String> {
     for attempt in 0..=HISTORY_CHANGED_READ_RETRIES {
-        match read_source_once(servers, project, path, start, new_parser()).await {
+        match read_source_once(source, path, start, new_parser()).await {
             Err(error)
                 if error == HISTORY_CHANGED_DURING_READ
                     && attempt < HISTORY_CHANGED_READ_RETRIES =>
@@ -382,55 +535,40 @@ async fn read_source(
 }
 
 async fn read_source_once(
-    servers: &ServerManager,
-    project: &Project,
+    source: HistorySource<'_>,
     path: &str,
     start: u64,
     mut parser: HistoryParser,
 ) -> Result<(HistoryParser, Option<SessionFileFingerprint>, u64), String> {
     const CHUNK_BYTES: usize = 16 * 1024 * 1024;
     let mut cursor = start;
-    let mut fingerprint = None;
-    let mut snapshot_size = None;
+    let boundary = source.boundary();
+    let mut fingerprint = boundary;
+    let mut snapshot_size = boundary.map(|base| base.file_size);
     loop {
-        let remaining = snapshot_size
-            .map(|size: u64| size.saturating_sub(cursor) as usize)
-            .unwrap_or(CHUNK_BYTES);
-        if snapshot_size.is_some() && remaining == 0 {
+        let limit = snapshot_size.map_or(CHUNK_BYTES, |size| {
+            size.saturating_sub(cursor).min(CHUNK_BYTES as u64) as usize
+        });
+        if limit == 0 {
+            if boundary.is_some() {
+                source.fingerprint(path).await?;
+            }
             return Ok((parser, fingerprint, cursor - start));
         }
-        let (metadata, binary) = servers
-            .request_with_binary(
-                &project.connection,
-                "session.read",
-                serde_json::json!({ "path": path, "offset": cursor, "limit": CHUNK_BYTES.min(remaining) }),
-                Vec::new(),
-            )
-            .await?;
-        if binary.len() != 1 {
-            return Err(format!(
-                "session.read expected one binary attachment, got {}",
-                binary.len()
-            ));
-        }
-        if let Some(chunk_fingerprint) = fingerprint_from_metadata(&metadata) {
-            match fingerprint {
-                Some(existing) => {
-                    let target_size = snapshot_size.unwrap_or(existing.file_size);
-                    if chunk_fingerprint.file_size < target_size
-                        || (chunk_fingerprint.file_size == target_size
-                            && chunk_fingerprint.file_mtime_ns != existing.file_mtime_ns)
-                    {
-                        return Err(HISTORY_CHANGED_DURING_READ.to_owned());
-                    }
-                }
-                None => {
-                    snapshot_size = Some(chunk_fingerprint.file_size);
-                    fingerprint = Some(chunk_fingerprint);
-                }
+        let (metadata, chunk) = source.chunk(path, cursor, limit).await?;
+        match (fingerprint, fingerprint_from_metadata(&metadata)) {
+            (Some(existing), Some(current)) if !prefix_still_present(existing, current) => {
+                return Err(HISTORY_CHANGED_DURING_READ.to_owned());
             }
+            (None, Some(current)) => {
+                snapshot_size = Some(current.file_size);
+                fingerprint = Some(current);
+            }
+            (_, None) if boundary.is_some() => {
+                return Err("session.read returned no fingerprint".to_owned());
+            }
+            _ => {}
         }
-        let chunk = binary.into_iter().next().expect("binary length checked");
         let next_offset = metadata
             .get("nextOffset")
             .and_then(Value::as_u64)
@@ -442,6 +580,13 @@ async fn read_source_once(
         if next_offset != cursor.saturating_add(chunk.len() as u64) {
             return Err("invalid pilo-server session chunk offset".to_owned());
         }
+        if let Some(base) = boundary
+            && (next_offset > base.file_size
+                || (eof && next_offset < base.file_size)
+                || (next_offset == base.file_size && chunk.last() != Some(&b'\n')))
+        {
+            return Err(HISTORY_CHANGED_DURING_READ.to_owned());
+        }
         let empty = chunk.is_empty();
         parser = tokio::task::spawn_blocking(move || {
             parser.push(&chunk);
@@ -449,10 +594,10 @@ async fn read_source_once(
         })
         .await
         .map_err(|error| format!("history parsing task failed: {error}"))?;
-        if snapshot_size.is_some_and(|size| next_offset >= size)
-            || eof
-            || parser.verification_failed()
-        {
+        if parser.verification_failed() {
+            return Ok((parser, fingerprint, next_offset - start));
+        }
+        if boundary.is_none() && (snapshot_size.is_some_and(|size| next_offset >= size) || eof) {
             return Ok((parser, fingerprint, next_offset - start));
         }
         if empty {

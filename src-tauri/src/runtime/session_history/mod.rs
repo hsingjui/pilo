@@ -19,6 +19,9 @@ pub(crate) use cache::SessionHistoryCache;
 #[cfg(test)]
 pub(crate) use cache::cache_key;
 pub use images::read_history_image_bytes;
+pub(crate) use reader::{
+    RemoteTranscriptBase, read_remote_transcript_history, record_remote_transcript_base,
+};
 pub use reader::{read_history_json, read_history_window_json};
 
 #[cfg(test)]

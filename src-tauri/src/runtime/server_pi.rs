@@ -124,6 +124,14 @@ pub(crate) struct SessionSnapshotReader {
 }
 
 impl SessionSnapshotReader {
+    pub(crate) fn server_client(&self) -> Option<Arc<ServerClient>> {
+        self.state
+            .client
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
     pub(crate) fn cache_keep_alive(&self) -> Option<crate::domain::CacheKeepAliveStatus> {
         self.state
             .cache_keep_alive

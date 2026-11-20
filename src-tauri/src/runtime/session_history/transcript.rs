@@ -24,7 +24,7 @@ use super::{
 };
 use crate::runtime::transcript::TranscriptWindow;
 
-const TAIL_BYTES: usize = 64 * 1024;
+pub(super) const TAIL_BYTES: usize = 64 * 1024;
 
 #[derive(Clone)]
 pub(crate) struct TranscriptBase {
@@ -258,7 +258,7 @@ pub(crate) async fn read_transcript_history(
     serve_transcript_window(storage, index, window, fingerprint).await
 }
 
-async fn serve_transcript_window(
+pub(super) async fn serve_transcript_window(
     storage: HistoryStorage,
     index: Arc<SessionHistoryWindowIndex>,
     window: TranscriptWindow,

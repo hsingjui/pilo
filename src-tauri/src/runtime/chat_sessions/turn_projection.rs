@@ -8,8 +8,10 @@ use crate::runtime::events::{
     turn_projection::{TurnLimits, TurnLive, TurnProjection},
 };
 use crate::runtime::{
+    server_pi::SessionSnapshotReader,
     session_history::{
-        SessionHistoryCache, TranscriptBase, empty_transcript_history, read_transcript_history,
+        RemoteTranscriptBase, SessionHistoryCache, TranscriptBase, empty_transcript_history,
+        read_remote_transcript_history, read_transcript_history, record_remote_transcript_base,
         record_transcript_base,
     },
     transcript::{TranscriptSnapshot, TranscriptWindow},
@@ -29,12 +31,27 @@ pub(super) struct PromptStart {
 }
 
 pub(super) struct SessionTurn {
-    local: bool,
+    enabled: bool,
+    remote: Option<SessionSnapshotReader>,
     state: Mutex<TurnState>,
 }
 
+enum TurnBase {
+    Local(Arc<TranscriptBase>),
+    Remote(RemoteTranscriptBase),
+}
+
+impl TurnBase {
+    fn size(&self) -> u64 {
+        match self {
+            Self::Local(base) => base.size,
+            Self::Remote(base) => base.size(),
+        }
+    }
+}
+
 struct TurnState {
-    base: Option<Arc<TranscriptBase>>,
+    base: Option<Arc<TurnBase>>,
     projection: TurnProjection,
     generation: u64,
     sequence: u64,
@@ -96,15 +113,54 @@ impl SessionTurn {
         history_cache: &tokio::sync::Mutex<SessionHistoryCache>,
         project_id: &str,
     ) -> Result<TranscriptSnapshot, String> {
-        self.snapshot_with_reader(events, session_key, window, |base| {
+        let Some(reader) = &self.remote else {
+            return self
+                .snapshot_with_reader(events, session_key, window, |base| {
+                    let path = path.clone();
+                    async move {
+                        match (path, base) {
+                            (Some(path), base) => {
+                                read_transcript_history(
+                                    path,
+                                    base,
+                                    window,
+                                    history_cache,
+                                    project_id,
+                                )
+                                .await
+                            }
+                            (None, None) => empty_transcript_history(window),
+                            (None, Some(_)) => Err("transcript source is unavailable".to_owned()),
+                        }
+                    }
+                })
+                .await;
+        };
+        self.snapshot_with_source(events, session_key, window, |base| {
             let path = path.clone();
             async move {
-                match path {
-                    Some(path) => {
-                        read_transcript_history(path, base, window, history_cache, project_id).await
+                match (path, base.as_deref()) {
+                    (Some(path), base) => {
+                        let base = match base {
+                            Some(TurnBase::Remote(base)) => Some(base),
+                            None => None,
+                            _ => return Err("transcript source has changed".to_owned()),
+                        };
+                        let client = reader
+                            .server_client()
+                            .ok_or_else(|| "transcript source is unavailable".to_owned())?;
+                        read_remote_transcript_history(
+                            &client,
+                            project_id,
+                            &path,
+                            base,
+                            window,
+                            history_cache,
+                        )
+                        .await
                     }
-                    None if base.is_none() => empty_transcript_history(window),
-                    None => Err("transcript source is unavailable".to_owned()),
+                    (None, None) => empty_transcript_history(window),
+                    (None, Some(_)) => Err("transcript source is unavailable".to_owned()),
                 }
             }
         })
@@ -119,6 +175,26 @@ impl SessionTurn {
         session_key: &str,
         window: TranscriptWindow,
         mut read: impl FnMut(Option<Arc<TranscriptBase>>) -> F,
+    ) -> Result<TranscriptSnapshot, String> {
+        self.snapshot_with_source(events, session_key, window, |base| {
+            let read = match base.as_deref() {
+                Some(TurnBase::Local(base)) => Ok(read(Some(Arc::clone(base)))),
+                None => Ok(read(None)),
+                _ => Err("transcript source has changed".to_owned()),
+            };
+            async { read?.await }
+        })
+        .await
+    }
+
+    async fn snapshot_with_source<
+        F: std::future::Future<Output = Result<serde_json::Value, String>>,
+    >(
+        &self,
+        events: &RuntimeEventBus,
+        session_key: &str,
+        window: TranscriptWindow,
+        mut read: impl FnMut(Option<Arc<TurnBase>>) -> F,
     ) -> Result<TranscriptSnapshot, String> {
         for attempt in 0..3 {
             let (projection, base, generation, revision, event_sequence) = events
@@ -187,16 +263,17 @@ impl SessionTurn {
         Err("session changed while transcript was being read; retry the snapshot".to_owned())
     }
 
-    pub(super) fn new(local: bool) -> Self {
+    pub(super) fn new(enabled: bool) -> Self {
         let mut projection = TurnProjection::new(TurnLimits {
             max_events: 2048,
             max_bytes: 16 * 1024 * 1024,
         });
-        if !local {
+        if !enabled {
             projection.truncate();
         }
         Self {
-            local,
+            enabled,
+            remote: None,
             state: Mutex::new(TurnState {
                 base: None,
                 projection,
@@ -208,6 +285,13 @@ impl SessionTurn {
                 expected_users: VecDeque::new(),
                 prompt_id: None,
             }),
+        }
+    }
+
+    pub(super) fn new_remote(reader: SessionSnapshotReader) -> Self {
+        Self {
+            remote: Some(reader),
+            ..Self::new(true)
         }
     }
 
@@ -248,7 +332,7 @@ impl SessionTurn {
             if !state.generation(generation) {
                 return None;
             }
-            if !self.local {
+            if !self.enabled {
                 state.projection.truncate();
                 return None;
             }
@@ -269,10 +353,28 @@ impl SessionTurn {
         let Some(token) = token else {
             return;
         };
-        let base = tokio::task::spawn_blocking(move || path.and_then(record_transcript_base))
-            .await
-            .ok()
-            .flatten();
+        let base = match (path, &self.remote) {
+            (Some(path), Some(reader)) => match reader.server_client() {
+                Some(client) => {
+                    // A slow or unavailable history probe must not block sending a prompt.
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        record_remote_transcript_base(&client, path),
+                    )
+                    .await
+                    .ok()
+                    .and_then(Result::ok)
+                    .map(TurnBase::Remote)
+                }
+                None => None,
+            },
+            (Some(path), None) => tokio::task::spawn_blocking(move || record_transcript_base(path))
+                .await
+                .ok()
+                .flatten()
+                .map(TurnBase::Local),
+            (None, _) => None,
+        };
         events.with_publish_lock(|| {
             let mut state = self
                 .state
@@ -287,8 +389,8 @@ impl SessionTurn {
                 return;
             }
             if let Some(base) = base {
-                state.projection.begin(base.size);
-                state.base = Some(base);
+                state.projection.begin(base.size());
+                state.base = Some(Arc::new(base));
                 state.awaiting_agent_start = true;
             } else {
                 state.projection.truncate();
@@ -305,7 +407,7 @@ impl SessionTurn {
                 .state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if self.local && state.prompt_id.as_deref() == prompt_id && !state.running {
+            if self.enabled && state.prompt_id.as_deref() == prompt_id && !state.running {
                 state.reset();
             } else {
                 state.cancel_user(prompt_id);
@@ -322,7 +424,7 @@ impl SessionTurn {
             if !state.generation(generation) {
                 return;
             }
-            if !self.local || !state.awaiting_agent_start {
+            if !self.enabled || !state.awaiting_agent_start {
                 state.projection.truncate();
             }
             state.awaiting_agent_start = false;
@@ -345,7 +447,7 @@ impl SessionTurn {
         {
             return;
         }
-        if !self.local {
+        if !self.enabled {
             state.projection.truncate();
             return;
         }

@@ -222,15 +222,17 @@ impl ChatSessions {
             } else {
                 let session =
                     ServerPiSession::with_builtin_extensions(launch.builtin_extensions.clone());
+                let reader = session.snapshot_reader();
                 registry
                     .snapshots
-                    .insert(session_key.to_owned(), session.snapshot_reader());
+                    .insert(session_key.to_owned(), reader.clone());
+                let turn = match project.connection.kind {
+                    crate::domain::ConnectionKind::Local => turn_projection::SessionTurn::new(true),
+                    _ => turn_projection::SessionTurn::new_remote(reader),
+                };
                 let process = Arc::new(ChatProcess {
                     events: events.clone(),
-                    turn: Arc::new(turn_projection::SessionTurn::new(matches!(
-                        project.connection.kind,
-                        crate::domain::ConnectionKind::Local
-                    ))),
+                    turn: Arc::new(turn),
                     project_id: project.id.clone(),
                     no_session: launch.no_session,
                     extensions: launch.extensions.clone(),
