@@ -12,15 +12,19 @@ use pilo_lib::{
         Runtime, TranscriptWindow,
         appearance::{theme_settings_get, theme_settings_set},
         cache_keep_alive::{cache_keep_alive_settings_list, cache_keep_alive_settings_set},
-        connections::connection_models_get,
+        connections::{
+            connection_models_get, local_connection_get, ssh::ssh_connection_list,
+            wsl::wsl_connection_list,
+        },
         events::{EventBatch, EventQueueLimits, EventStream},
-        handle::{session_mark_read, session_read_states},
+        handle::{HostShell, session_mark_read, session_read_states},
         host_events::HostEvents,
         host_paths::HostPaths,
         initialize_server_resource_dir,
         next_prompt::{next_prompt_request, next_prompt_settings_get, next_prompt_settings_set},
         preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
         project_api::{
+            connection_fs_read_dir, local_pick_project_directory, project_add,
             project_chat_file_remove, project_chat_file_upload, project_fs_read_image,
             project_fs_search, project_list, project_model_cache_list, project_model_cache_set,
             project_model_scope_get, project_model_scope_set, project_remove,
@@ -58,6 +62,27 @@ impl HostEvents for ShellEvents {
 }
 
 struct ShellWebAssets(PathBuf);
+
+/// The nsh host's shell: a native folder picker and a cache under the data dir.
+struct NshHostShell {
+    cache_dir: PathBuf,
+}
+
+impl HostShell for NshHostShell {
+    fn cache_dir(&self) -> Result<PathBuf, String> {
+        Ok(self.cache_dir.clone())
+    }
+
+    fn open_path(&self, _path: &Path) -> Result<(), String> {
+        Err("opening paths is unsupported on this host".to_owned())
+    }
+
+    fn pick_directory(&self) -> Option<String> {
+        rfd::FileDialog::new()
+            .pick_folder()
+            .map(|path| path.to_string_lossy().into_owned())
+    }
+}
 
 impl WebAssets for ShellWebAssets {
     fn get(&self, path: &str) -> Option<WebAsset> {
@@ -327,7 +352,7 @@ impl Pilo {
             .ok()
             .and_then(|path| path.parent().map(|dir| dir.join("../Resources")))
             .ok_or("could not locate Pilo application resources")?;
-        let paths = HostPaths::new(data_dir, resources.clone())?;
+        let paths = HostPaths::new(data_dir.clone(), resources.clone())?;
         let executor = executor()?;
         let workspace = workspace();
         let web_root = if cfg!(debug_assertions) {
@@ -357,6 +382,9 @@ impl Pilo {
         initialize_server_resource_dir(resources);
         initialize_local_server_binary(server);
         let runtime = Runtime::new(paths, Arc::new(ShellEvents))
+            .with_shell(Arc::new(NshHostShell {
+                cache_dir: data_dir.join("cache"),
+            }))?
             .with_web_assets(Arc::new(ShellWebAssets(web_root)))?;
         let event_stream = runtime.subscribe_events(EVENT_QUEUE_LIMITS);
         runtime.start_idle_reaper();
@@ -389,6 +417,61 @@ impl Pilo {
     /// Reads the saved project catalog without loading live chat snapshots.
     pub async fn list_projects(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
         Self::with_runtime_blocking(this, load_projects).await
+    }
+
+    /// The connections a project can live on (local, WSL, SSH).
+    pub async fn list_connections(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
+        Self::with_runtime_blocking(this, |runtime| {
+            let mut connections = vec![local_connection_get(&runtime)?];
+            connections.extend(
+                wsl_connection_list(&runtime)?
+                    .into_iter()
+                    .map(|info| info.connection),
+            );
+            connections.extend(
+                ssh_connection_list(&runtime)?
+                    .into_iter()
+                    .map(|info| info.connection),
+            );
+            encode_list(connections)
+        })
+        .await
+    }
+
+    /// Adds a project directory on a connection to the catalog.
+    pub async fn add_project(
+        this: Instance<Self>,
+        connection_id: String,
+        path: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let project = project_add(&runtime, connection_id, path).await?;
+            serde_json::to_value(project).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Reads a directory on a non-local connection for the remote browser.
+    pub async fn read_connection_dir(
+        this: Instance<Self>,
+        connection_id: String,
+        path: String,
+    ) -> Result<Vec<JsonValue>, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            encode_list(connection_fs_read_dir(&runtime, connection_id, path).await?)
+        })
+        .await
+    }
+
+    /// The host's native folder picker; `null` when dismissed.
+    pub async fn pick_local_project_directory(
+        this: Instance<Self>,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, |runtime| {
+            serde_json::to_value(local_pick_project_directory(&runtime)?)
+                .map_err(|error| error.to_string())
+        })
+        .await
     }
 
     /// Removes the project from the catalog, stopping its chats first.

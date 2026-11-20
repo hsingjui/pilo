@@ -52,6 +52,14 @@ the project and returns the path an `@` mention references;
 `deleteSession(projectId, sessionPath)` removes an indexed session and
 returns `{ method: "trash" | "unlink" }`.
 
+`listConnections()` returns Local plus every WSL and SSH connection.
+`addProject(connectionId, path)` adds a project to the catalog, like the
+Tauri client's `addProject`. `readConnectionDir(connectionId, path?)`
+lists one directory level on the connection (`/` when omitted), for the
+remote folder browser. `pickLocalProjectDirectory()` opens the host's
+native folder picker and resolves with the chosen path, or `null` when
+cancelled; it is host-only like the Tauri dialog's local browse.
+
 `loadHistory(projectId, sessionPath, options?)` reads settled Pi history
 without starting a chat. It returns `{ history, fingerprint }` and uses the
 same reader and defaults as the Tauri client. Options are `startMessage`

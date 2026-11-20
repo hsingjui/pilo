@@ -1,8 +1,10 @@
 import type { Pilo } from "app/native";
 
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
+import type { FsEntry } from "@/lib/api/files-types";
 import type { ProjectPiModels } from "@/lib/api/pi-models-types";
 import type {
+	Connection,
 	PiModel,
 	PiloRuntimeEvent,
 	PiSessionSnapshot,
@@ -59,7 +61,11 @@ export type PiloNative = Pick<
 	| "chatTranscriptSnapshot"
 	| "sendChatCommand"
 	| "listProjects"
+	| "addProject"
 	| "removeProject"
+	| "listConnections"
+	| "readConnectionDir"
+	| "pickLocalProjectDirectory"
 	| "listSessions"
 	| "searchSessions"
 	| "searchProjectFiles"
@@ -211,9 +217,35 @@ export class NshPiloClient implements BridgedPiloClient {
 		return (await this.pilo.listProjects()) as Project[];
 	}
 
+	/** The connections a project can live on (local, WSL, SSH). */
+	async listConnections(): Promise<Connection[]> {
+		return (await this.pilo.listConnections()) as Connection[];
+	}
+
+	/** Adds the connection's directory to the catalog. */
+	async addProject(connectionId: string, path: string): Promise<Project> {
+		return (await this.pilo.addProject(connectionId, path)) as Project;
+	}
+
 	/** Removes the project; the answer is the catalog the runtime saved. */
 	async removeProject(projectId: string): Promise<Project[]> {
 		return (await this.pilo.removeProject(projectId)) as Project[];
+	}
+
+	/** Reads a directory on a non-local connection for the remote browser. */
+	async readConnectionDir(
+		connectionId: string,
+		path?: string,
+	): Promise<FsEntry[]> {
+		return (await this.pilo.readConnectionDir(
+			connectionId,
+			path ?? "/",
+		)) as FsEntry[];
+	}
+
+	/** The host's native folder picker; `null` when dismissed. */
+	async pickLocalProjectDirectory(): Promise<string | null> {
+		return (await this.pilo.pickLocalProjectDirectory()) as string | null;
 	}
 
 	async listSessions(projectId: string): Promise<SessionIndexEntry[]> {

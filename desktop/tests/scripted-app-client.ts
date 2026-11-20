@@ -5,9 +5,10 @@ import type {
 } from "@/lib/api/pilo-client";
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import type { ProjectPiModels } from "@/lib/api/pi-models-types";
-import type { PiSessionSnapshot } from "@/lib/api/pi-runtime-types";
-import type { ConversationEvent } from "@/lib/chat/conversation-types";
+import type { FsEntry } from "@/lib/api/files-types";
+import type { Connection, PiSessionSnapshot } from "@/lib/api/pi-runtime-types";
 import type { Project } from "@/lib/api/projects-types";
+import type { ConversationEvent } from "@/lib/chat/conversation-types";
 import type {
 	ProjectModelScope,
 	ProjectScopedModel,
@@ -41,6 +42,13 @@ import type { ChatTranscriptClient } from "../state/chat-transcript-store";
 
 /** The native calls the scripted client answers beyond the app stores. */
 export type ScriptedChatClient = PiCommandClient & {
+	listConnections: () => Promise<Connection[]>;
+	addProject: (connectionId: string, path: string) => Promise<Project>;
+	readConnectionDir: (
+		connectionId: string,
+		path?: string,
+	) => Promise<FsEntry[]>;
+	pickLocalProjectDirectory: () => Promise<string | null>;
 	startChat: (input: PiloClientStartChatInput) => Promise<PiSessionSnapshot>;
 	stopChat: (sessionKey: string, reason?: string) => Promise<void>;
 	loadModels: (projectId: string) => Promise<ProjectPiModels | null>;
@@ -112,6 +120,14 @@ export type AppScript = {
 	modelScopes?: Record<string, ProjectModelScope | null>;
 	/** The catalog `removeProject` resolves with; minus the project otherwise. */
 	onRemoveProject?: (projectId: string) => Project[];
+	/** The connections `listConnections` resolves with; Local otherwise. */
+	connections?: Connection[];
+	/** The project `addProject` resolves with; a derived one by default. */
+	onAddProject?: (connectionId: string, path: string) => Project;
+	/** The folders `readConnectionDir` resolves with; none by default. */
+	onReadConnectionDir?: (connectionId: string, path?: string) => FsEntry[];
+	/** The path `pickLocalProjectDirectory` resolves with; null by default. */
+	onPickLocalProjectDirectory?: () => string | null;
 	/** The index entry `updateSessionUiState` resolves with. */
 	onUpdateSessionUiState?: (
 		sessionPath: string,
@@ -294,6 +310,28 @@ export function scriptedClient(script: AppScript = {}) {
 				fingerprint: null,
 			}) as SessionHistoryResult,
 		listProjects: () => Promise.resolve(projects),
+		listConnections: () =>
+			Promise.resolve(
+				script.connections ?? [
+					{ id: "local", name: "Local", kind: { type: "local" } } as Connection,
+				],
+			),
+		addProject: (connectionId, path) => {
+			const created =
+				script.onAddProject?.(connectionId, path) ??
+				({
+					id: `added-${path}`,
+					name: path.replace(/\/+$/, "").split("/").pop() ?? path,
+					path,
+					connectionId,
+				} as unknown as Project);
+			projects.push(created);
+			return Promise.resolve(created);
+		},
+		readConnectionDir: (connectionId, path) =>
+			Promise.resolve(script.onReadConnectionDir?.(connectionId, path) ?? []),
+		pickLocalProjectDirectory: () =>
+			Promise.resolve(script.onPickLocalProjectDirectory?.() ?? null),
 		removeProject: (projectId) => {
 			removed.push(projectId);
 			return Promise.resolve(
