@@ -12,6 +12,7 @@ import { AssistantMessage } from "@/components/chat/chat-message";
 import { UserMessage } from "@/components/chat/chat-user-message";
 import { CompactionMessage } from "@/components/chat/compaction-message";
 import type { ChatMessage } from "@/lib/chat/conversation-types";
+import { historyPlaceholderHeight } from "@/lib/chat/history-placeholder-height";
 
 type MessageRowProps = {
 	message: ChatMessage;
@@ -23,13 +24,7 @@ type MessageRowProps = {
 };
 
 function HistoryMessagePlaceholder({ message }: { message: ChatMessage }) {
-	const estimatedChars = message.historyEstimatedChars ?? message.text.length;
-	const estimatedHeight =
-		message.role === "user"
-			? Math.min(152, 52 + Math.ceil(estimatedChars / 90) * 20)
-			: message.role === "compaction"
-				? 40
-				: Math.min(360, 72 + Math.ceil(estimatedChars / 110) * 20);
+	const estimatedHeight = historyPlaceholderHeight(message);
 	return (
 		<ConversationColumn className="py-2 sm:py-3">
 			<div
