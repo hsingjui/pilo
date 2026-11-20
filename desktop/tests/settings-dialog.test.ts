@@ -91,7 +91,7 @@ test("the nav moves between panes", async () => {
 	await app.press("id:settings-nav-connections");
 	await app.waitFor("id:settings-conn-test-ssh:prod");
 	expect(app.shows("id:settings-conn-test-local")).toBe(true);
-	expect(app.shows("id:settings-ssh-add")).toBe(true);
+	expect(app.shows("id:settings-conn-add")).toBe(true);
 	await app.press("id:settings-nav-desktop");
 	await app.waitFor("id:settings-launch-at-login");
 	await app.press("id:settings-nav-about");

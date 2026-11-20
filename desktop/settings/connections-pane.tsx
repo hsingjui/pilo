@@ -1,4 +1,13 @@
-import { type Accessor, type JSX, signal, Text, View } from "nsh";
+import {
+	type Accessor,
+	type JSX,
+	effect,
+	platform,
+	Scroll,
+	signal,
+	Text,
+	View,
+} from "nsh";
 
 import type {
 	SshAgentIdentity,
@@ -8,24 +17,28 @@ import type {
 import type {
 	Connection,
 	PiRuntime,
+	SshAuthMethod,
 	SshTarget,
 	WslDistribution,
 } from "@/lib/api/pi-runtime-types";
+import { userErrorMessage } from "@/lib/app-error";
 import type { AppState } from "../state/app-state";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
-import { DialogDescription } from "../ui/dialog-description";
 import { DialogFooter } from "../ui/dialog-footer";
 import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
+import { Menu } from "../ui/menu";
+import { MenuItem } from "../ui/menu-item";
 import { Select } from "../ui/select";
 import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
-import { SettingsRow, SettingsSection, SettingsStatus } from "./layout";
+import { Tooltip } from "../ui/tooltip";
+import { SettingsSection } from "./layout";
 import { SettingsConfirmDialog } from "./settings-confirm-dialog";
 
 /** The native calls the pane makes; tests pass a scripted stand-in. */
@@ -34,7 +47,6 @@ export type ConnectionsClient = Pick<
 	| "getLocalConnection"
 	| "updateConnectionSettings"
 	| "setConnectionShownInHome"
-	| "getConnectionHealth"
 	| "probeConnectionPi"
 	| "testLocalConnection"
 	| "listSshConnections"
@@ -51,9 +63,16 @@ export type ConnectionsClient = Pick<
 	| "testWslConnection"
 >;
 
-function errorMessage(error: unknown) {
-	return error instanceof Error ? error.message : String(error);
-}
+const IS_WINDOWS = platform.os === "windows";
+
+const AUTH_LABEL_KEYS: Record<
+	SshAuthMethod,
+	"connection.sshAgent" | "connection.password" | "connection.privateKey"
+> = {
+	agent: "connection.sshAgent",
+	password: "connection.password",
+	key: "connection.privateKey",
+};
 
 function sshTargetLabel(target: SshTarget): string {
 	if (target.type === "config_host") return target.host;
@@ -71,7 +90,7 @@ type SshDraft = {
 	hostname: string;
 	port: string;
 	user: string;
-	authMethod: "agent" | "password" | "key";
+	authMethod: SshAuthMethod;
 	agentPublicKey: string | null;
 	identityFile: string;
 	password: string;
@@ -80,6 +99,7 @@ type SshDraft = {
 	piExecutable: string;
 	piRuntime: PiRuntime;
 	localPiResources: boolean;
+	initialLocalPiResources: boolean;
 };
 
 function newConnectionId() {
@@ -105,6 +125,7 @@ function emptyDraft(): SshDraft {
 		piExecutable: "",
 		piRuntime: "workspace",
 		localPiResources: false,
+		initialLocalPiResources: false,
 	};
 }
 
@@ -113,10 +134,10 @@ function draftFromInfo(info: SshConnectionInfo): SshDraft {
 		info.connection.kind.type === "ssh" ? info.connection.kind.target : null;
 	if (!target) return emptyDraft();
 	const auth = target.authMethod;
-	const authMethod =
-		typeof auth === "string" ? (auth as SshDraft["authMethod"]) : "agent";
-	const agentPublicKey = typeof auth === "string" ? null : auth.agent_key;
-	const base = {
+	const authMethod: SshAuthMethod = typeof auth === "string" ? auth : "agent";
+	const agentPublicKey = typeof auth === "string" ? "" : auth.agent_key;
+	const localPiResources = info.localPiResources ?? false;
+	const base: SshDraft = {
 		...emptyDraft(),
 		id: info.connection.id,
 		name: info.connection.name,
@@ -125,7 +146,8 @@ function draftFromInfo(info: SshConnectionInfo): SshDraft {
 		hasPassword: info.hasPassword,
 		piExecutable: info.connection.piExecutable ?? "",
 		piRuntime: info.connection.piRuntime ?? "workspace",
-		localPiResources: info.localPiResources ?? false,
+		localPiResources,
+		initialLocalPiResources: localPiResources,
 	};
 	if (target.type === "config_host") {
 		return { ...base, mode: "config", hostname: target.host };
@@ -170,8 +192,17 @@ function connectionFromDraft(draft: SshDraft): Connection {
 	};
 }
 
-/** The "name + Pi path" editor shared by local and WSL connections. */
-type ConfigureDraft = { id: string; name: string; piExecutable: string };
+/** The "name + Pi path" editor shared by local, WSL and SSH connections. */
+type ConfigureDraft = {
+	connection: Connection;
+	name: string;
+	piExecutable: string;
+};
+
+type SshFieldError = {
+	field: "identityFile" | "password";
+	message: string;
+};
 
 export function ConnectionsPane(props: {
 	state: Accessor<AppState>;
@@ -181,18 +212,41 @@ export function ConnectionsPane(props: {
 	const local = signal<Connection | null>(null);
 	const wslItems = signal<WslConnectionInfo[]>([]);
 	const sshItems = signal<SshConnectionInfo[]>([]);
+	/** `undefined` while loading, `null` when the agent could not be read. */
+	const agentIdentities = signal<SshAgentIdentity[] | null | undefined>(
+		undefined,
+	);
 	const distros = signal<WslDistribution[] | null>(null);
-	const agentKeys = signal<SshAgentIdentity[] | null>(null);
 	const loading = signal(true);
 	const testing = signal<Set<string>>(new Set());
-	/** Per-connection diagnostics line after a test runs. */
+	/** Per-connection diagnostics line, in place of React's toasts. */
 	const results = signal<Record<string, string>>({});
-	const configure = signal<ConfigureDraft | null>(null);
-	const sshEditor = signal<SshDraft | null>(null);
-	const removing = signal<Connection | null>(null);
-	const removingBusy = signal(false);
+	/* Drafts are plain objects, not signals: a signal holding the draft
+	 * would re-render the whole dialog on every keystroke and drop input
+	 * focus. Fine-grained `{() =>}` watchers around the controls that
+	 * depend on the draft keep them live while text fields stay mounted. */
+	let configureDraft: ConfigureDraft | null = null;
+	const configureOpen = signal(false);
+	/** Re-read the draft for the footer state. */
+	const configureFormRev = signal(0);
+	/** Re-read the draft for the probed Pi path. */
+	const configurePiRev = signal(0);
+	const probing = signal(false);
+	const configureError = signal<string | null>(null);
+	let sshDraft: SshDraft | null = null;
+	const sshEditorOpen = signal(false);
+	/** Bumps when a field changes which sections the form shows. */
+	const sshStructRev = signal(0);
+	/** Bumps on every draft edit; watchers re-read the draft then. */
+	const sshFormRev = signal(0);
 	const sshBusy = signal(false);
-	const sshError = signal<string | null>(null);
+	const sshTesting = signal(false);
+	const sshStatus = signal<string | null>(null);
+	const sshFieldError = signal<SshFieldError | null>(null);
+	const passwordRevealed = signal(false);
+	const wslPickerOpen = signal(false);
+	const removing = signal<Connection | null>(null);
+	const busy = signal(false);
 
 	const setTesting = (id: string, value: boolean) => {
 		const next = new Set(testing());
@@ -204,6 +258,16 @@ export function ConnectionsPane(props: {
 	const setResult = (id: string, text: string) =>
 		results.set({ ...results(), [id]: text });
 
+	const connectionLabel = (connection: Connection): string =>
+		connection.kind.type === "local" ? t("common.local") : connection.name;
+
+	const projectCount = (id: string, fallback: number) => {
+		const count = props
+			.state()
+			.projects.filter((project) => project.connection.id === id).length;
+		return count > 0 ? count : fallback;
+	};
+
 	const refresh = async () => {
 		const [localResult, sshResult, wslResult] = await Promise.allSettled([
 			client.getLocalConnection(),
@@ -212,301 +276,471 @@ export function ConnectionsPane(props: {
 		]);
 		if (localResult.status === "fulfilled") local.set(localResult.value);
 		if (sshResult.status === "fulfilled") sshItems.set(sshResult.value);
+		else setResult("ssh-list", t("connection.sshLoadFailed"));
 		if (wslResult.status === "fulfilled") wslItems.set(wslResult.value);
 		loading.set(false);
-		ensureDistros();
-	};
-	refresh();
-
-	const ensureDistros = () => {
-		if (distros() !== null) return;
-		client
-			.listWslDistributions()
-			.then(distros.set)
-			.catch(() => distros.set([]));
 	};
 
-	const ensureAgentKeys = () => {
-		if (agentKeys() !== null) return;
-		client
-			.listSshAgentIdentities()
-			.then(agentKeys.set)
-			.catch(() => agentKeys.set([]));
-	};
+	/* The project list reloads on host configuration changes; reload the
+	 * connection catalog with it, like React's configurationRevision effect. */
+	effect(() => {
+		void props.state().projects;
+		void refresh();
+	});
 
-	const diagnose = async (id: string) => {
+	const testConnection = async (connection: Connection) => {
+		const id = connection.id;
 		setTesting(id, true);
-		setResult(id, "");
 		try {
-			const health = await client.getConnectionHealth(id);
-			if (!health.reachable) {
-				setResult(
-					id,
-					`${t("connection.connectionFailed", {
-						name: connectionLabel(id),
-					})} · ${health.error ?? ""}`,
-				);
-				return;
-			}
-			const pi = health.pi
-				? `${health.pi.executable} ${health.pi.version}`
-				: (health.piError ??
-					t("connection.piUnavailable", {
-						name: connectionLabel(id),
-					}));
+			const result =
+				connection.kind.type === "local"
+					? await client.testLocalConnection()
+					: connection.kind.type === "wsl"
+						? await client.testWslConnection(connection.kind.distro)
+						: await client.testSshConnection(id);
 			setResult(
 				id,
-				`${t("connection.available", { name: connectionLabel(id) })} · ${
-					health.latencyMs
-				}ms · ${pi}`,
+				`${t("connection.available", {
+					name: connectionLabel(connection),
+				})} · pilo-server ${result.serverVersion} · protocol ${
+					result.protocolVersion
+				}`,
 			);
 		} catch (caught) {
 			setResult(
 				id,
-				`${t("connection.connectionFailed")}: ${errorMessage(caught)}`,
+				`${t("connection.connectionFailed", {
+					name: connectionLabel(connection),
+				})} · ${userErrorMessage(caught)}`,
 			);
 		} finally {
 			setTesting(id, false);
 		}
 	};
 
-	const connectionLabel = (id: string): string => {
-		if (id === "local") return t("common.local");
-		return (
-			sshItems().find((item) => item.connection.id === id)?.connection.name ??
-			wslItems().find((item) => item.connection.id === id)?.connection.name ??
-			id
-		);
-	};
-
-	const saveConfigure = async () => {
-		const draft = configure();
-		if (!draft) return;
-		setTesting(draft.id, true);
-		try {
-			const saved = await client.updateConnectionSettings(
-				draft.id,
-				draft.name.trim(),
-				draft.piExecutable.trim() || null,
-			);
-			if (draft.id === "local") local.set(saved);
-			configure.set(null);
-			await refresh();
-		} catch (caught) {
-			setResult(draft.id, errorMessage(caught));
-		} finally {
-			setTesting(draft.id, false);
-		}
-	};
-
-	const probePi = async (id: string, executable: string) => {
-		setTesting(`${id}:pi`, true);
-		try {
-			const info = await client.probeConnectionPi(
-				id,
-				executable.trim() || null,
-			);
-			setResult(id, `${info.executable} ${info.version}`);
-		} catch (caught) {
-			setResult(id, errorMessage(caught));
-		} finally {
-			setTesting(`${id}:pi`, false);
-		}
-	};
-
-	const toggleHome = async (connection: Connection, shown: boolean) => {
+	const toggleShown = async (connection: Connection, shown: boolean) => {
 		try {
 			await client.setConnectionShownInHome(connection.id, shown);
 			await refresh();
 		} catch (caught) {
-			setResult(connection.id, errorMessage(caught));
+			setResult(
+				connection.id,
+				`${t("connection.saveFailed")} · ${userErrorMessage(caught)}`,
+			);
+		}
+	};
+
+	const openConnectionSettings = (connection: Connection) => {
+		configureError.set(null);
+		configureDraft = {
+			connection,
+			name: connection.name,
+			piExecutable: connection.piExecutable ?? "",
+		};
+		configureOpen.set(true);
+	};
+
+	const closeConnectionSettings = () => {
+		configureDraft = null;
+		configureOpen.set(false);
+	};
+
+	const saveConnectionSettings = async () => {
+		const draft = configureDraft;
+		if (!draft?.name.trim()) return;
+		busy.set(true);
+		configureError.set(null);
+		try {
+			await client.updateConnectionSettings(
+				draft.connection.id,
+				draft.name.trim(),
+				draft.piExecutable.trim() || null,
+			);
+			closeConnectionSettings();
+			await refresh();
+			setResult(draft.connection.id, t("connection.connectionSaved"));
+		} catch (caught) {
+			configureError.set(
+				`${t("connection.saveFailed")} · ${userErrorMessage(caught)}`,
+			);
+		} finally {
+			busy.set(false);
+		}
+	};
+
+	const probePi = async () => {
+		const draft = configureDraft;
+		if (!draft) return;
+		probing.set(true);
+		configureError.set(null);
+		try {
+			const info = await client.probeConnectionPi(
+				draft.connection.id,
+				draft.piExecutable.trim() || null,
+			);
+			if (configureDraft?.connection.id === draft.connection.id) {
+				configureDraft.piExecutable = info.executable;
+				configurePiRev.update((n) => n + 1);
+			}
+			setResult(
+				draft.connection.id,
+				`${t("connection.piAvailable", {
+					name: connectionLabel(draft.connection),
+				})} · ${[info.executable, info.version].filter(Boolean).join(" · ")}`,
+			);
+		} catch (caught) {
+			configureError.set(
+				`${t("connection.piUnavailable", {
+					name: connectionLabel(draft.connection),
+				})} · ${userErrorMessage(caught)}`,
+			);
+		} finally {
+			probing.set(false);
 		}
 	};
 
 	const addWsl = async (distro: string) => {
-		const connection: Connection = {
-			id: `wsl:${distro}`,
-			name: `WSL · ${distro}`,
-			kind: { type: "wsl", distro },
-			piRuntime: "workspace",
-		};
-		setTesting(`wsl:${distro}`, true);
+		busy.set(true);
 		try {
-			await client.saveWslConnection(connection);
+			await client.saveWslConnection({
+				id: `wsl:${distro}`,
+				name: `WSL · ${distro}`,
+				kind: { type: "wsl", distro },
+			});
 			await refresh();
+			setResult(`wsl:${distro}`, t("connection.wslAdded", { name: distro }));
 		} catch (caught) {
-			setResult("wsl-add", errorMessage(caught));
+			setResult(
+				"wsl-add",
+				`${t("connection.wslAddFailed")} · ${userErrorMessage(caught)}`,
+			);
 		} finally {
-			setTesting(`wsl:${distro}`, false);
+			busy.set(false);
 		}
 	};
 
 	const removeConnection = async () => {
 		const connection = removing();
-		if (!connection || removingBusy()) return;
-		removingBusy.set(true);
+		if (!connection || busy() || connection.kind.type === "local") return;
+		busy.set(true);
 		try {
-			if (connection.kind.type === "ssh") {
-				await client.removeSshConnection(connection.id);
-			} else {
+			if (connection.kind.type === "wsl") {
 				await client.removeWslConnection(connection.id);
+			} else {
+				await client.removeSshConnection(connection.id);
 			}
-			removing.set(null);
 			await refresh();
+			removing.set(null);
+			/* The row is gone by now; the pane-level line carries the result. */
+			setResult(
+				"list",
+				t("connection.removed", { name: connectionLabel(connection) }),
+			);
 		} catch (caught) {
-			setResult(connection.id, errorMessage(caught));
+			setResult(
+				connection.id,
+				`${t("connection.removeFailed")} · ${userErrorMessage(caught)}`,
+			);
 		} finally {
-			removingBusy.set(false);
+			busy.set(false);
 		}
 	};
 
+	const loadAgentIdentities = () => {
+		agentIdentities.set(undefined);
+		client
+			.listSshAgentIdentities()
+			.then((identities) => agentIdentities.set(identities))
+			.catch(() => agentIdentities.set(null));
+	};
+
+	const openSshEditor = async (info: SshConnectionInfo) => {
+		sshFieldError.set(null);
+		sshStatus.set(null);
+		passwordRevealed.set(false);
+		const form = draftFromInfo(info);
+		/* 编辑时直接回填已保存的密码，无需在输入框里提示“已保存”。 */
+		if (form.authMethod === "password" && form.hasPassword && !form.password) {
+			try {
+				form.password = (await client.getSshConnectionPassword(form.id)) ?? "";
+			} catch {
+				/* 读取失败时保持为空，保存时沿用已存密码 */
+			}
+		}
+		sshDraft = form;
+		sshEditorOpen.set(true);
+		if (form.authMethod === "agent") loadAgentIdentities();
+	};
+
+	const openNewSsh = () => {
+		sshFieldError.set(null);
+		sshStatus.set(null);
+		passwordRevealed.set(false);
+		sshDraft = emptyDraft();
+		sshEditorOpen.set(true);
+		loadAgentIdentities();
+	};
+
+	const closeSshEditor = () => {
+		sshDraft = null;
+		sshEditorOpen.set(false);
+		sshFieldError.set(null);
+		passwordRevealed.set(false);
+	};
+
+	const patchDraft = (patch: Partial<SshDraft>) => {
+		const draft = sshDraft;
+		if (!draft) return;
+		Object.assign(draft, patch);
+		if ("authMethod" in patch || "mode" in patch || "piRuntime" in patch)
+			sshStructRev.update((n) => n + 1);
+		sshFormRev.update((n) => n + 1);
+		if (sshFieldError()) sshFieldError.set(null);
+		if (patch.authMethod === "agent" && agentIdentities() === undefined)
+			loadAgentIdentities();
+	};
+
+	/** The effective agent key: explicit pick, else the only detected key. */
+	const agentPublicKey = (): string =>
+		sshDraft?.agentPublicKey ??
+		(agentIdentities()?.length === 1
+			? (agentIdentities()?.[0].publicKey ?? "")
+			: "");
+
+	const waitingForAgent = () =>
+		sshDraft?.authMethod === "agent" && agentIdentities() === undefined;
+
 	const saveSsh = async () => {
-		const draft = sshEditor();
-		if (!draft || sshBusy()) return;
+		const base = sshDraft;
+		if (!base || !base.name.trim() || !base.hostname.trim()) return;
+		if (
+			base.mode === "direct" &&
+			base.authMethod === "key" &&
+			!base.identityFile.trim()
+		) {
+			sshFieldError.set({
+				field: "identityFile",
+				message: t("connection.privateKeyRequired"),
+			});
+			return;
+		}
+		if (base.authMethod === "password" && !base.password && !base.hasPassword) {
+			sshFieldError.set({
+				field: "password",
+				message: t("connection.passwordRequired"),
+			});
+			return;
+		}
+		const draft = { ...base, agentPublicKey: agentPublicKey() };
 		sshBusy.set(true);
-		sshError.set(null);
+		sshStatus.set(null);
 		try {
 			await client.saveSshConnection(
 				connectionFromDraft(draft),
-				draft.authMethod === "password" ? draft.password || null : null,
-				draft.localPiResources,
+				draft.password || undefined,
+				draft.localPiResources === draft.initialLocalPiResources
+					? undefined
+					: draft.localPiResources,
 			);
-			sshEditor.set(null);
+			closeSshEditor();
 			await refresh();
+			setResult(draft.id, t("connection.sshSaved"));
 		} catch (caught) {
-			sshError.set(errorMessage(caught));
+			sshStatus.set(
+				`${t("connection.sshSaveFailed")} · ${
+					String(caught).includes("SSH_LOCAL_PI_RESOURCES_BUSY")
+						? t("connection.localPiResourcesBusy")
+						: userErrorMessage(caught)
+				}`,
+			);
 		} finally {
 			sshBusy.set(false);
 		}
 	};
 
 	const testSshDraft = async () => {
-		const draft = sshEditor();
-		if (!draft || sshBusy()) return;
-		sshBusy.set(true);
-		sshError.set(null);
+		const base = sshDraft;
+		if (!base) return;
+		const draft = { ...base, agentPublicKey: agentPublicKey() };
+		const label = draft.name.trim() || draft.hostname.trim();
+		sshTesting.set(true);
+		sshStatus.set(null);
 		try {
 			const result = await client.testSshConnectionDraft(
 				connectionFromDraft(draft),
-				draft.authMethod === "password" ? draft.password || null : null,
+				draft.password || undefined,
 			);
-			sshError.set(
-				`${t("connection.available", { name: draft.name || draft.hostname })} · ${
+			sshStatus.set(
+				`${t("connection.available", { name: label })} · pilo-server ${
 					result.serverVersion
-				}`,
+				} · protocol ${result.protocolVersion}`,
 			);
 		} catch (caught) {
-			sshError.set(errorMessage(caught));
+			sshStatus.set(
+				`${t("connection.connectionFailed", { name: label })} · ${userErrorMessage(caught)}`,
+			);
 		} finally {
-			sshBusy.set(false);
+			sshTesting.set(false);
 		}
 	};
 
-	const sshValid = () => {
-		const draft = sshEditor();
-		if (!draft) return false;
-		if (!draft.name.trim() || !draft.hostname.trim()) return false;
-		if (draft.authMethod === "key" && !draft.identityFile.trim()) return false;
-		if (
-			draft.authMethod === "password" &&
-			!draft.hasPassword &&
-			!draft.password
-		)
-			return false;
-		return true;
+	const openWslPicker = () => {
+		wslPickerOpen.set(true);
+		if (IS_WINDOWS && distros() === null) {
+			client
+				.listWslDistributions()
+				.then((items) => distros.set(items))
+				.catch((caught) => {
+					distros.set([]);
+					setResult(
+						"wsl-add",
+						`${t("connection.loadWslFailed")} · ${userErrorMessage(caught)}`,
+					);
+				});
+		}
 	};
 
-	const patchDraft = (patch: Partial<SshDraft>) =>
-		sshEditor.set({ ...sshEditor()!, ...patch });
+	const addedDistros = () =>
+		new Set(
+			wslItems().flatMap((info) =>
+				info.connection.kind.type === "wsl"
+					? [info.connection.kind.distro]
+					: [],
+			),
+		);
 
-	const actions = (connection: Connection, editor: "ssh" | "configure") => (
-		<View class="flex-row items-center gap-1.5">
-			<Button
-				testID={`settings-conn-test-${connection.id}`}
-				variant="outline"
-				disabled={testing().has(connection.id)}
-				onPress={() => void diagnose(connection.id)}
-			>
-				{() =>
-					testing().has(connection.id) ? (
-						<Spinner size={12} />
-					) : (
-						<Text>{t("connection.test")}</Text>
-					)
-				}
-			</Button>
-			<Button
-				testID={`settings-conn-edit-${connection.id}`}
-				variant="outline"
-				onPress={() => {
-					if (editor === "ssh") {
-						const info = sshItems().find(
-							(item) => item.connection.id === connection.id,
-						);
-						sshEditor.set(info ? draftFromInfo(info) : emptyDraft());
-						sshError.set(null);
-						ensureAgentKeys();
-					} else {
-						configure.set({
-							id: connection.id,
-							name: connection.name,
-							piExecutable: connection.piExecutable ?? "",
-						});
-					}
-				}}
-			>
-				<Text>{t("connection.configure")}</Text>
-			</Button>
-			{connection.kind.type !== "local" ? (
-				<Button
-					testID={`settings-conn-remove-${connection.id}`}
-					variant="outline"
-					onPress={() => removing.set(connection)}
-				>
-					<Icon name="Trash2" size={13} />
-				</Button>
-			) : null}
-		</View>
+	const connectionIcon = (connection: Connection): JSX.Element => (
+		<Icon
+			name={
+				connection.kind.type === "local"
+					? "Laptop"
+					: connection.kind.type === "wsl"
+						? "Monitor"
+						: "Server"
+			}
+			size={14}
+		/>
 	);
 
+	const hint = (label: string) => (
+		<Tooltip>
+			<Text>{label}</Text>
+		</Tooltip>
+	);
+
+	const rowButton = (button: {
+		testID: string;
+		label: string;
+		icon: JSX.Element;
+		disabled: boolean;
+		destructive?: boolean;
+		selected?: boolean;
+		onPress: () => void;
+	}) => (
+		<Button
+			testID={button.testID}
+			variant="ghost"
+			size="icon"
+			class={`h-8 w-8 text-muted-foreground hover:text-foreground${
+				button.destructive
+					? " hover:bg-destructive/10 hover:text-destructive"
+					: ""
+			}`}
+			disabled={button.disabled}
+			selected={button.selected}
+			accessibilityLabel={button.label}
+			tooltip={hint(button.label)}
+			onPress={button.onPress}
+		>
+			{button.icon}
+		</Button>
+	);
+
+	const rowBusy = (connection: Connection) =>
+		busy() || probing() || testing().has(connection.id);
+
 	const connectionRow = (
-		title: string,
-		detail: string,
 		connection: Connection,
-		editor: "ssh" | "configure",
-		projectCount: number,
+		description: JSX.Element,
+		projectCountValue: number,
+		shownInHome: boolean,
+		options: { edit?: () => void; remove?: () => void } = {},
 	) => (
-		<View class="border-border/60 border-b px-3 py-2.5 last:border-b-0">
-			<View class="flex-row items-center gap-3">
-				<View class="min-w-0 flex-1">
-					<Text class="truncate text-sm font-medium">{title}</Text>
-					<Text class="truncate text-xs text-muted-foreground">
-						{() =>
-							`${detail} · ${
-								projectCount
-									? t("connection.projectCount", { count: projectCount })
-									: t("connection.unlinkedProjects")
-							}`
-						}
-					</Text>
+		<View class="px-3 py-2.5 hover:bg-hover/30">
+			<View class="flex-row items-center gap-2.5">
+				<View class="size-6 shrink-0 items-center justify-center text-foreground/70">
+					{connectionIcon(connection)}
 				</View>
-				{actions(connection, editor)}
-			</View>
-			<View class="mt-2 flex-row items-center gap-2">
-				<Text class="text-xs text-muted-foreground">
-					{() => t("connection.shownInHome")}
-				</Text>
-				<Switch
-					testID={`settings-conn-home-${connection.id}`}
-					checked={connection.shownInHome ?? false}
-					onChange={({ checked }) => void toggleHome(connection, checked)}
-				/>
+				<View class="min-w-0 flex-1">
+					<Text class="truncate text-sm font-medium">
+						{connectionLabel(connection)}
+					</Text>
+					<View class="mt-0.5 flex-row flex-wrap items-center gap-x-2 gap-y-0.5">
+						{description}
+						<Text class="text-[11px] text-muted-foreground">
+							{() =>
+								projectCountValue > 0
+									? t("connection.projectCount", {
+											count: projectCountValue,
+										})
+									: t("connection.unlinkedProjects")
+							}
+						</Text>
+					</View>
+				</View>
+				<View class="shrink-0 flex-row items-center gap-1">
+					{rowButton({
+						testID: `settings-conn-home-${connection.id}`,
+						label: t("connection.shownInHome"),
+						icon: <Icon name={shownInHome ? "Eye" : "EyeOff"} size={16} />,
+						disabled: rowBusy(connection),
+						selected: shownInHome,
+						onPress: () => void toggleShown(connection, !shownInHome),
+					})}
+					{rowButton({
+						testID: `settings-conn-test-${connection.id}`,
+						label: t("connection.test"),
+						icon: testing().has(connection.id) ? (
+							<Spinner size={16} />
+						) : (
+							<Icon name="Wifi" size={16} />
+						),
+						disabled: rowBusy(connection),
+						onPress: () => void testConnection(connection),
+					})}
+					{rowButton({
+						testID: `settings-conn-configure-${connection.id}`,
+						label: t("connection.configure"),
+						icon: <Icon name="Settings2" size={16} />,
+						disabled: rowBusy(connection),
+						onPress: () => openConnectionSettings(connection),
+					})}
+					{options.edit
+						? rowButton({
+								testID: `settings-conn-edit-${connection.id}`,
+								label: t("connection.editSsh"),
+								icon: <Icon name="Pencil" size={16} />,
+								disabled: rowBusy(connection),
+								onPress: options.edit,
+							})
+						: null}
+					{options.remove
+						? rowButton({
+								testID: `settings-conn-remove-${connection.id}`,
+								label: t("connection.remove"),
+								icon: <Icon name="Trash2" size={16} />,
+								disabled: rowBusy(connection),
+								destructive: true,
+								onPress: options.remove,
+							})
+						: null}
+				</View>
 			</View>
 			{() =>
 				results()[connection.id] ? (
 					<Text
 						testID={`settings-conn-result-${connection.id}`}
-						class="mt-1.5 text-xs text-muted-foreground"
+						class="mt-1.5 text-[11px] text-muted-foreground"
 					>
 						{results()[connection.id]}
 					</Text>
@@ -518,264 +752,295 @@ export function ConnectionsPane(props: {
 	const localRow = () => {
 		const connection = local();
 		if (!connection) return null;
-		return (
-			<View class="px-3 py-2.5">
-				<View class="flex-row items-center gap-3">
-					<View class="min-w-0 flex-1">
-						<Text class="truncate text-sm font-medium">{connection.name}</Text>
-						<Text class="truncate text-xs text-muted-foreground">
-							{() =>
-								connection.piExecutable ?? String(t("connection.autoDetect"))
-							}
-						</Text>
-					</View>
-					{actions(connection, "configure")}
-				</View>
-				<View class="mt-2 flex-row items-center gap-2">
-					<Text class="text-xs text-muted-foreground">
-						{() => t("connection.shownInHome")}
-					</Text>
-					<Switch
-						testID="settings-conn-home-local"
-						checked={connection.shownInHome ?? true}
-						onChange={({ checked }) => void toggleHome(connection, checked)}
-					/>
-				</View>
-				{() =>
-					results()["local"] ? (
-						<Text
-							testID="settings-conn-result-local"
-							class="mt-1.5 text-xs text-muted-foreground"
-						>
-							{results()["local"]}
-						</Text>
-					) : null
-				}
-			</View>
-		);
-	};
-
-	const sshRow = (info: SshConnectionInfo) => {
-		const connection = info.connection;
-		const target =
-			connection.kind.type === "ssh"
-				? sshTargetLabel(connection.kind.target)
-				: "";
 		return connectionRow(
-			connection.name,
-			`${t("connection.sshLabel")} · ${target}${
-				info.localPiResources ? ` · ${t("connection.localPiResources")}` : ""
-			}`,
 			connection,
-			"ssh",
-			info.projectCount,
+			<Text class="text-[11px] text-muted-foreground">
+				{t("connection.localMachine")}
+			</Text>,
+			projectCount(connection.id, 0),
+			connection.shownInHome ?? true,
 		);
 	};
 
 	const wslRow = (info: WslConnectionInfo) => {
 		const connection = info.connection;
 		return connectionRow(
-			connection.name,
-			t("connection.wslLabel"),
 			connection,
-			"configure",
-			info.projectCount,
+			<Text class="text-[11px] text-muted-foreground">
+				{t("connection.wslLabel")}
+			</Text>,
+			projectCount(connection.id, info.projectCount),
+			connection.shownInHome ?? false,
+			{ remove: () => removing.set(connection) },
 		);
 	};
 
-	const missingDistros = () => {
-		const saved = new Set(
-			wslItems().map((info) =>
-				info.connection.kind.type === "wsl" ? info.connection.kind.distro : "",
-			),
+	const sshRow = (info: SshConnectionInfo) => {
+		const connection = info.connection;
+		const description =
+			connection.kind.type === "ssh" ? (
+				<>
+					<Text class="truncate font-mono text-[11px] text-muted-foreground">
+						{sshTargetLabel(connection.kind.target)}
+					</Text>
+					<Text class="text-[11px] text-muted-foreground">
+						{t(
+							AUTH_LABEL_KEYS[
+								typeof connection.kind.target.authMethod === "string"
+									? connection.kind.target.authMethod
+									: "agent"
+							],
+						)}
+					</Text>
+					{connection.kind.target.type === "direct" &&
+					connection.kind.target.proxyJump ? (
+						<Text class="text-[11px] text-muted-foreground">
+							{t("connection.via", {
+								name: connection.kind.target.proxyJump,
+							})}
+						</Text>
+					) : null}
+				</>
+			) : null;
+		return connectionRow(
+			connection,
+			description,
+			projectCount(connection.id, info.projectCount),
+			connection.shownInHome ?? false,
+			{
+				edit: () => void openSshEditor(info),
+				remove: () => removing.set(connection),
+			},
 		);
-		return (distros() ?? []).filter((distro) => !saved.has(distro.name));
 	};
 
 	const field = (label: string, child: JSX.Element) => (
-		<View class="gap-1.5">
-			<Text class="text-xs font-medium text-muted-foreground">{label}</Text>
+		<View class="gap-1">
+			<Text class="text-xs">{label}</Text>
 			{child}
 		</View>
 	);
 
+	const fieldError = (fieldName: SshFieldError["field"]) => () =>
+		sshFieldError()?.field === fieldName ? (
+			<Text
+				testID={`settings-ssh-error-${fieldName}`}
+				class="text-[11px] text-destructive"
+			>
+				{sshFieldError()?.message}
+			</Text>
+		) : null;
+
+	const agentStatus = () => {
+		const identities = agentIdentities();
+		if (identities === undefined) return t("connection.sshAgentChecking");
+		if (identities === null) return t("connection.sshAgentUnavailable");
+		const key = agentPublicKey();
+		if (key && !identities.some((identity) => identity.publicKey === key))
+			return t("connection.sshAgentKeyMissing");
+		return identities.length > 0
+			? t("connection.sshAgentDetected")
+			: t("connection.sshAgentEmpty");
+	};
+
 	const sshEditorDialog = () => {
-		const draft = sshEditor();
+		const draft = sshDraft;
 		if (!draft) return null;
-		const isPassword = draft.authMethod === "password";
 		return (
 			<Dialog
 				testID="settings-ssh-editor"
 				open={true}
-				accessibilityLabel={t("settings.editSshConnection")}
+				accessibilityLabel={
+					draft.name
+						? t("settings.editSshConnection")
+						: t("settings.addSshConnection")
+				}
+				class="max-w-lg"
 				onOpenChange={({ open }) => {
-					if (!open) sshEditor.set(null);
+					if (!open) closeSshEditor();
 				}}
 			>
 				<DialogHeader>
 					<DialogTitle>
-						{() =>
-							sshItems().some((item) => item.connection.id === draft.id)
+						{() => {
+							void sshFormRev();
+							return draft.name
 								? t("settings.editSshConnection")
-								: t("settings.addSshConnection")
-						}
+								: t("settings.addSshConnection");
+						}}
 					</DialogTitle>
 				</DialogHeader>
-				{field(
-					t("connection.nameLabel"),
-					<Input
-						testID="settings-ssh-name"
-						value={draft.name}
-						onChange={(event) => patchDraft({ name: event.value })}
-					/>,
-				)}
-				{field(
-					t("settings.connectionMethod"),
-					<Select
-						testID="settings-ssh-mode"
-						items={[
-							{
-								value: "direct",
-								title: String(t("settings.directConnection")),
-							},
-							{
-								value: "config",
-								title: String(t("settings.sshConfigHost")),
-							},
-						]}
-						value={draft.mode}
-						onChange={(event) =>
-							patchDraft({ mode: event.value as SshDraft["mode"] })
-						}
-					/>,
-				)}
-				{field(
-					draft.mode === "config"
-						? t("settings.hostAlias")
-						: t("settings.host"),
-					<Input
-						testID="settings-ssh-host"
-						value={draft.hostname}
-						onChange={(event) => patchDraft({ hostname: event.value })}
-					/>,
-				)}
-				{draft.mode === "direct" ? (
-					<View class="flex-row gap-2">
-						<View class="flex-1 gap-1.5">
-							<Text class="text-xs font-medium text-muted-foreground">
-								{t("settings.username")}
-							</Text>
-							<Input
-								testID="settings-ssh-user"
-								value={draft.user}
-								onChange={(event) => patchDraft({ user: event.value })}
-							/>
-						</View>
-						<View class="w-24 gap-1.5">
-							<Text class="text-xs font-medium text-muted-foreground">
-								{t("settings.port")}
-							</Text>
-							<Input
-								testID="settings-ssh-port"
-								value={draft.port}
-								onChange={(event) => patchDraft({ port: event.value })}
-							/>
-						</View>
+				<View class="flex-row gap-3">
+					<View class="flex-1 gap-1">
+						<Text class="text-xs">{t("settings.connectionName")}</Text>
+						<Input
+							testID="settings-ssh-name"
+							value={draft.name}
+							placeholder={String(t("settings.productionServer"))}
+							onChange={(event) => patchDraft({ name: event.value })}
+						/>
 					</View>
-				) : null}
-				{field(
-					t("settings.authentication"),
-					<Select
-						testID="settings-ssh-auth"
-						items={[
-							{ value: "agent", title: String(t("connection.sshAgent")) },
-							{
-								value: "password",
-								title: String(t("connection.password")),
-							},
-							{
-								value: "key",
-								title: String(t("connection.privateKey")),
-							},
-						]}
-						value={draft.authMethod}
-						onChange={(event) =>
-							patchDraft({
-								authMethod: event.value as SshDraft["authMethod"],
-							})
-						}
-					/>,
-				)}
-				{draft.authMethod === "agent" && (agentKeys()?.length ?? 0) > 0
-					? field(
-							t("connection.sshAgentKey"),
-							<Select
-								testID="settings-ssh-agent-key"
-								items={[
-									{
-										value: "default",
-										title: String(t("connection.sshAgentAuto")),
-									},
-									...(agentKeys() ?? []).map((key) => ({
-										value: key.publicKey,
-										title: `${key.comment || key.fingerprint}`,
-									})),
-								]}
-								value={draft.agentPublicKey ?? "default"}
-								onChange={(event) =>
-									patchDraft({
-										agentPublicKey:
-											event.value === "default" ? null : event.value,
-									})
-								}
-							/>,
-						)
-					: null}
-				{draft.authMethod === "key"
-					? field(
-							t("connection.privateKeyPath"),
-							<Input
-								testID="settings-ssh-identity"
-								value={draft.identityFile}
-								placeholder="~/.ssh/id_ed25519"
-								onChange={(event) => patchDraft({ identityFile: event.value })}
-							/>,
-						)
-					: null}
-				{isPassword
-					? field(
-							t("connection.sshPassword"),
-							<Input
-								testID="settings-ssh-password"
-								value={draft.password}
-								placeholder={
-									draft.hasPassword
-										? "••••••••"
-										: String(t("connection.password"))
-								}
-								onChange={(event) => patchDraft({ password: event.value })}
-							/>,
-						)
-					: null}
-				{draft.mode === "direct"
-					? field(
-							t("connection.proxyJump"),
-							<Input
-								testID="settings-ssh-proxy"
-								value={draft.proxyJump}
-								onChange={(event) => patchDraft({ proxyJump: event.value })}
-							/>,
-						)
-					: null}
-				{field(
-					t("connection.piPathLabel"),
-					<Input
-						testID="settings-ssh-pi"
-						value={draft.piExecutable}
-						placeholder={String(t("connection.autoDetectPlaceholder"))}
-						onChange={(event) => patchDraft({ piExecutable: event.value })}
-					/>,
-				)}
+					<View class="flex-1 gap-1">
+						<Text class="text-xs">{t("settings.connectionMethod")}</Text>
+						<Select
+							testID="settings-ssh-mode"
+							items={[
+								{
+									value: "direct",
+									title: String(t("settings.directConnection")),
+								},
+								{
+									value: "config",
+									title: String(t("settings.sshConfigHost")),
+								},
+							]}
+							value={draft.mode}
+							onChange={(event) =>
+								patchDraft({
+									mode: event.value as SshDraft["mode"],
+								})
+							}
+						/>
+					</View>
+				</View>
+				{() => {
+					void sshStructRev();
+					return field(
+						draft.mode === "config"
+							? t("connection.hostAlias")
+							: t("connection.host"),
+						<Input
+							testID="settings-ssh-host"
+							value={draft.hostname}
+							placeholder={draft.mode === "config" ? "devbox" : "example.com"}
+							onChange={(event) => patchDraft({ hostname: event.value })}
+						/>,
+					);
+				}}
+				{() => {
+					void sshStructRev();
+					return draft.mode === "direct" ? (
+						<View class="flex-row gap-3">
+							<View class="flex-1 gap-1">
+								<Text class="text-xs">{t("connection.username")}</Text>
+								<Input
+									testID="settings-ssh-user"
+									value={draft.user}
+									placeholder="root"
+									onChange={(event) => patchDraft({ user: event.value })}
+								/>
+							</View>
+							<View class="w-24 gap-1">
+								<Text class="text-xs">{t("connection.port")}</Text>
+								<Input
+									testID="settings-ssh-port"
+									value={draft.port}
+									onChange={(event) => patchDraft({ port: event.value })}
+								/>
+							</View>
+						</View>
+					) : null;
+				}}
+				{() => {
+					void sshStructRev();
+					return field(
+						t("connection.authentication"),
+						<Select
+							testID="settings-ssh-auth"
+							items={[
+								{ value: "agent", title: String(t("connection.sshAgent")) },
+								{
+									value: "password",
+									title: String(t("connection.password")),
+								},
+								...(draft.mode === "direct"
+									? [
+											{
+												value: "key",
+												title: String(t("connection.privateKey")),
+											},
+										]
+									: []),
+							]}
+							value={draft.authMethod}
+							onChange={(event) =>
+								patchDraft({
+									authMethod: event.value as SshAuthMethod,
+								})
+							}
+						/>,
+					);
+				}}
+				{() => {
+					void sshStructRev();
+					void sshFormRev();
+					if (draft.authMethod !== "agent") return null;
+					const identities = agentIdentities();
+					const key = agentPublicKey();
+					const savedKeyMissing =
+						Boolean(key) &&
+						identities != null &&
+						!identities.some((identity) => identity.publicKey === key);
+					return (
+						<View class="min-w-0 gap-1">
+							<Text class="text-xs">{t("connection.sshAgentKey")}</Text>
+							<View class="flex-row gap-2">
+								<View class="min-w-0 flex-1">
+									<Select
+										testID="settings-ssh-agent-key"
+										items={[
+											{
+												value: "auto",
+												title: String(t("connection.sshAgentAuto")),
+											},
+											...(savedKeyMissing
+												? [
+														{
+															value: key,
+															title: String(t("connection.sshAgentSavedKey")),
+														},
+													]
+												: []),
+											...(identities ?? []).map((identity) => ({
+												value: identity.publicKey,
+												title: identity.comment
+													? `${identity.comment} · ${identity.fingerprint}`
+													: identity.fingerprint,
+											})),
+										]}
+										value={key || "auto"}
+										onChange={(event) =>
+											patchDraft({
+												agentPublicKey:
+													event.value === "auto" ? "" : event.value,
+											})
+										}
+									/>
+								</View>
+								<Button
+									testID="settings-ssh-agent-refresh"
+									variant="outline"
+									size="sm"
+									disabled={waitingForAgent() || sshBusy() || sshTesting()}
+									onPress={() => loadAgentIdentities()}
+								>
+									<Text>{t("common.refresh")}</Text>
+								</Button>
+							</View>
+							<Text
+								testID="settings-ssh-agent-status"
+								class="text-xs text-muted-foreground"
+							>
+								{agentStatus()}
+							</Text>
+							{identities === null ? (
+								<Text class="text-xs text-muted-foreground">
+									{t("connection.sshAgentTroubleshooting")}
+								</Text>
+							) : null}
+						</View>
+					);
+				}}
 				{field(
 					t("connection.runtimeLocation"),
 					<Select
@@ -796,115 +1061,366 @@ export function ConnectionsPane(props: {
 						}
 					/>,
 				)}
-				{draft.piRuntime === "local" ? (
-					<View class="flex-row items-center justify-between">
-						<Text class="text-xs font-medium text-muted-foreground">
-							{t("connection.localPiResources")}
+				{() => {
+					void sshStructRev();
+					return draft.piRuntime === "local" ? (
+						<View class="flex-row items-start gap-3">
+							<View class="min-w-0 flex-1 gap-1 py-2">
+								<Text class="text-xs">{t("connection.localPiResources")}</Text>
+								<Text class="text-xs text-muted-foreground">
+									{t("connection.localPiResourcesDescription")}
+								</Text>
+								<Text class="text-xs text-muted-foreground">
+									{t("connection.localPiResourcesWarning")}
+								</Text>
+							</View>
+							<Switch
+								testID="settings-ssh-local-resources"
+								checked={draft.localPiResources}
+								disabled={sshBusy()}
+								onChange={({ checked }) =>
+									patchDraft({ localPiResources: checked })
+								}
+							/>
+						</View>
+					) : null;
+				}}
+				{() => {
+					void sshStructRev();
+					const revealed = passwordRevealed();
+					return draft.authMethod === "password" ? (
+						<View class="gap-1">
+							<Text class="text-xs">{t("connection.password")}</Text>
+							<View class="flex-row items-center gap-1">
+								<Input
+									testID="settings-ssh-password"
+									class="flex-1"
+									masked={!revealed}
+									value={draft.password}
+									placeholder={String(t("connection.sshPassword"))}
+									onChange={(event) => patchDraft({ password: event.value })}
+								/>
+								{() => {
+									void sshFormRev();
+									const shown = passwordRevealed();
+									return (
+										<Button
+											testID="settings-ssh-password-reveal"
+											variant="ghost"
+											size="icon"
+											class="h-8 w-8 text-muted-foreground hover:text-foreground"
+											disabled={!draft.password}
+											accessibilityLabel={
+												shown
+													? t("settings.hidePassword")
+													: t("settings.showPassword")
+											}
+											tooltip={hint(
+												shown
+													? t("settings.hidePassword")
+													: t("settings.showPassword"),
+											)}
+											onPress={() => passwordRevealed.set(!passwordRevealed())}
+										>
+											<Icon name={shown ? "EyeOff" : "Eye"} size={16} />
+										</Button>
+									);
+								}}
+							</View>
+							{fieldError("password")}
+						</View>
+					) : null;
+				}}
+				{() => {
+					void sshStructRev();
+					return draft.mode === "direct" && draft.authMethod === "key" ? (
+						<View class="gap-1">
+							<View class="flex-row items-center gap-1">
+								<Icon name="KeyRound" size={14} />
+								<Text class="text-xs">{t("connection.privateKeyPath")}</Text>
+							</View>
+							<Input
+								testID="settings-ssh-identity"
+								value={draft.identityFile}
+								placeholder="~/.ssh/id_ed25519"
+								onChange={(event) => patchDraft({ identityFile: event.value })}
+							/>
+							{fieldError("identityFile")}
+						</View>
+					) : null;
+				}}
+				{() => {
+					void sshStructRev();
+					return draft.mode === "direct"
+						? field(
+								t("connection.proxyJump"),
+								<Input
+									testID="settings-ssh-proxy"
+									value={draft.proxyJump}
+									placeholder="user@jump.example.com:22"
+									onChange={(event) => patchDraft({ proxyJump: event.value })}
+								/>,
+							)
+						: null;
+				}}
+				{() =>
+					sshStatus() ? (
+						<Text
+							testID="settings-ssh-error"
+							class="text-xs text-muted-foreground"
+						>
+							{sshStatus()}
 						</Text>
-						<Switch
-							testID="settings-ssh-local-resources"
-							checked={draft.localPiResources}
-							onChange={({ checked }) =>
-								patchDraft({ localPiResources: checked })
-							}
-						/>
-					</View>
-				) : null}
-				{sshError() ? (
-					<Text
-						testID="settings-ssh-error"
-						class="text-xs text-muted-foreground"
-					>
-						{sshError()}
-					</Text>
-				) : null}
-				<DialogFooter>
-					<Button
-						testID="settings-ssh-test"
-						variant="outline"
-						disabled={sshBusy() || !draft.hostname.trim()}
-						onPress={() => void testSshDraft()}
-					>
-						<Text>{t("connection.testConnection")}</Text>
-					</Button>
-					<Button
-						testID="settings-ssh-save"
-						disabled={sshBusy() || !sshValid()}
-						onPress={() => void saveSsh()}
-					>
-						<Text>{t("common.save")}</Text>
-					</Button>
-				</DialogFooter>
+					) : null
+				}
+				{() => {
+					void sshFormRev();
+					const busyNow = sshBusy();
+					const testingNow = sshTesting();
+					const waiting = waitingForAgent();
+					return (
+						<View class="mt-1 flex-row flex-wrap items-center justify-between gap-2">
+							<Button
+								testID="settings-ssh-test"
+								variant="outline"
+								size="sm"
+								disabled={busyNow || testingNow || waiting}
+								onPress={() => void testSshDraft()}
+							>
+								<Text>
+									{testingNow
+										? t("connection.testingConnection")
+										: t("connection.testConnection")}
+								</Text>
+							</Button>
+							<View class="flex-row gap-2">
+								<Button
+									testID="settings-ssh-cancel"
+									variant="outline"
+									size="sm"
+									onPress={() => closeSshEditor()}
+								>
+									<Text>{t("common.cancel")}</Text>
+								</Button>
+								<Button
+									testID="settings-ssh-save"
+									size="sm"
+									disabled={
+										busyNow ||
+										waiting ||
+										!draft.name.trim() ||
+										!draft.hostname.trim()
+									}
+									onPress={() => void saveSsh()}
+								>
+									<Text>{busyNow ? t("common.saving") : t("common.save")}</Text>
+								</Button>
+							</View>
+						</View>
+					);
+				}}
 			</Dialog>
 		);
 	};
 
 	const configureDialog = () => {
-		const draft = configure();
+		const draft = configureDraft;
 		if (!draft) return null;
+		const usesLocalPi =
+			draft.connection.kind.type === "ssh" &&
+			draft.connection.piRuntime === "local";
 		return (
 			<Dialog
 				testID="settings-conn-configure"
 				open={true}
 				accessibilityLabel={t("connection.configureTitle")}
+				class="max-w-md"
 				onOpenChange={({ open }) => {
-					if (!open) configure.set(null);
+					if (!open) closeConnectionSettings();
 				}}
 			>
 				<DialogHeader>
 					<DialogTitle>{t("connection.configureTitle")}</DialogTitle>
-					<DialogDescription>
-						{t("connection.connectionSettingsDescription")}
-					</DialogDescription>
 				</DialogHeader>
 				{field(
-					t("connection.nameLabel"),
+					t("connection.name"),
 					<Input
 						testID="settings-conn-name"
 						value={draft.name}
-						onChange={(event) => configure.set({ ...draft, name: event.value })}
+						onChange={(event) => {
+							draft.name = event.value;
+							configureFormRev.update((n) => n + 1);
+						}}
 					/>,
 				)}
-				{field(
-					t("connection.piPathLabel"),
-					<View class="flex-row gap-2">
-						<Input
-							testID="settings-conn-pi"
-							class="flex-1"
-							value={draft.piExecutable}
-							placeholder={String(t("connection.autoDetectPlaceholder"))}
-							onChange={(event) =>
-								configure.set({ ...draft, piExecutable: event.value })
-							}
-						/>
-						<Button
-							testID="settings-conn-probe"
-							variant="outline"
-							disabled={testing().has(`${draft.id}:pi`)}
-							onPress={() => void probePi(draft.id, draft.piExecutable)}
+				{() => {
+					void configurePiRev();
+					const disabled = busy() || probing();
+					return usesLocalPi
+						? field(
+								t("connection.runtimeLocation"),
+								<View class="rounded-md border border-border/60 bg-muted/20 px-2 py-1.5">
+									<Text class="text-[11px] text-muted-foreground">
+										{t("connection.localPi")}
+									</Text>
+								</View>,
+							)
+						: field(
+								t("connection.piPath"),
+								<View class="flex-row gap-2">
+									<Input
+										testID="settings-conn-pi"
+										class="flex-1 font-mono"
+										value={draft.piExecutable}
+										placeholder={String(t("connection.autoDetect"))}
+										onChange={(event) => {
+											draft.piExecutable = event.value;
+											configureFormRev.update((n) => n + 1);
+										}}
+									/>
+									<Button
+										testID="settings-conn-probe"
+										variant="outline"
+										size="sm"
+										disabled={disabled}
+										onPress={() => void probePi()}
+									>
+										<Text>
+											{probing()
+												? t("connection.detecting")
+												: t("connection.detectPi")}
+										</Text>
+									</Button>
+								</View>,
+							);
+				}}
+				{() =>
+					configureError() ? (
+						<Text
+							testID="settings-conn-configure-error"
+							class="text-[11px] text-destructive"
 						>
-							{() =>
-								testing().has(`${draft.id}:pi`) ? (
-									<Spinner size={12} />
-								) : (
-									<Text>{t("connection.detectPi")}</Text>
-								)
-							}
-						</Button>
-					</View>,
-				)}
-				<DialogFooter>
-					<Button
-						testID="settings-conn-save"
-						disabled={!draft.name.trim() || testing().has(draft.id)}
-						onPress={() => void saveConfigure()}
-					>
-						<Text>{t("common.save")}</Text>
-					</Button>
-				</DialogFooter>
+							{configureError()}
+						</Text>
+					) : null
+				}
+				{() => {
+					void configureFormRev();
+					return (
+						<DialogFooter>
+							<Button
+								testID="settings-conn-cancel"
+								variant="outline"
+								size="sm"
+								disabled={busy()}
+								onPress={() => closeConnectionSettings()}
+							>
+								<Text>{t("common.cancel")}</Text>
+							</Button>
+							<Button
+								testID="settings-conn-save"
+								size="sm"
+								disabled={busy() || !draft.name.trim()}
+								onPress={() => void saveConnectionSettings()}
+							>
+								<Text>{busy() ? t("common.saving") : t("common.save")}</Text>
+							</Button>
+						</DialogFooter>
+					);
+				}}
 			</Dialog>
 		);
 	};
+
+	const wslPickerDialog = () => {
+		if (!wslPickerOpen()) return null;
+		const items = distros();
+		return (
+			<Dialog
+				testID="settings-wsl-picker"
+				open={true}
+				accessibilityLabel={t("connection.addWslTitle")}
+				class="max-w-md"
+				onOpenChange={({ open }) => {
+					if (!open) wslPickerOpen.set(false);
+				}}
+			>
+				<DialogHeader>
+					<DialogTitle>{t("connection.addWslTitle")}</DialogTitle>
+				</DialogHeader>
+				<Scroll class="max-h-72 rounded-md border border-border/60">
+					{items === null ? (
+						<Text class="px-3 py-4 text-xs text-muted-foreground">
+							{t("connection.loading")}
+						</Text>
+					) : items.length === 0 ? (
+						<Text class="px-3 py-4 text-xs text-muted-foreground">
+							{t("connection.noWsl")}
+						</Text>
+					) : (
+						items.map((distro) => {
+							const added = addedDistros().has(distro.name);
+							return (
+								<View class="flex-row items-center gap-3 border-border/60 border-b px-3 py-2 last:border-b-0">
+									<Icon
+										name="Monitor"
+										size={16}
+										class="shrink-0 text-muted-foreground"
+									/>
+									<Text class="min-w-0 flex-1 truncate text-sm">
+										{distro.name}
+									</Text>
+									<Button
+										testID={`settings-wsl-add-${distro.name}`}
+										variant="outline"
+										size="sm"
+										disabled={busy() || added}
+										onPress={() => void addWsl(distro.name)}
+									>
+										<Text>{added ? t("common.added") : t("common.add")}</Text>
+									</Button>
+								</View>
+							);
+						})
+					)}
+				</Scroll>
+			</Dialog>
+		);
+	};
+
+	const addConnectionMenu = () => (
+		<Menu
+			align="end"
+			trigger={
+				<Button
+					testID="settings-conn-add"
+					variant="outline"
+					size="icon"
+					accessibilityLabel={t("connection.addConnection")}
+					tooltip={hint(t("connection.addConnection"))}
+				>
+					<Icon name="Plus" size={16} />
+				</Button>
+			}
+		>
+			{IS_WINDOWS ? (
+				<MenuItem
+					testID="settings-conn-add-wsl"
+					icon={<Icon name="Monitor" size={16} />}
+					onSelect={() => openWslPicker()}
+				>
+					<Text>{t("connection.addWsl")}</Text>
+				</MenuItem>
+			) : null}
+			<MenuItem
+				testID="settings-conn-add-ssh"
+				icon={<Icon name="Server" size={16} />}
+				onSelect={() => openNewSsh()}
+			>
+				<Text>{t("connection.addSsh")}</Text>
+			</MenuItem>
+		</Menu>
+	);
 
 	const removeDialog = () => {
 		const connection = removing();
@@ -912,11 +1428,15 @@ export function ConnectionsPane(props: {
 			<SettingsConfirmDialog
 				testID="settings-conn-remove-dialog"
 				open={connection !== null}
-				title={t("connection.removeQuestion")}
+				title={
+					connection
+						? `${t("connection.removeQuestion")} · ${connectionLabel(connection)}`
+						: t("connection.removeQuestion")
+				}
 				description={
 					connection
 						? `${t("connection.removeDescription", {
-								name: connection.name,
+								name: connectionLabel(connection),
 							})}${
 								connection.kind.type === "ssh"
 									? t("connection.sshCredentialsDeleted")
@@ -926,7 +1446,7 @@ export function ConnectionsPane(props: {
 				}
 				confirmLabel={t("connection.confirmRemove")}
 				busyLabel={t("connection.removing")}
-				busy={removingBusy()}
+				busy={busy()}
 				destructive
 				onOpenChange={(open) => {
 					if (!open) removing.set(null);
@@ -938,75 +1458,41 @@ export function ConnectionsPane(props: {
 
 	return (
 		<View class="gap-3">
-			<SettingsSection title={t("connection.localMachine")}>
-				{() => (loading() ? null : localRow())}
-			</SettingsSection>
 			<SettingsSection
-				title={t("connection.wslLabel")}
-				actions={
-					<Select
-						testID="settings-wsl-add"
-						items={[
-							{
-								value: "add",
-								title: String(t("connection.addWsl")),
-							},
-							...missingDistros().map((distro) => ({
-								value: distro.name,
-								title: distro.name,
-							})),
-						]}
-						value="add"
-						onChange={(event) => {
-							if (event.value && event.value !== "add")
-								void addWsl(event.value);
-						}}
-					/>
-				}
+				title={t("settings.connections")}
+				actions={addConnectionMenu()}
 			>
+				{() => localRow()}
 				{() =>
-					wslItems().length === 0 ? (
-						<View class="px-3 py-4">
-							<Text class="text-sm text-muted-foreground">
-								{t("connection.noWsl")}
-							</Text>
-						</View>
+					loading() ? (
+						<Text class="px-3 py-5 text-xs text-muted-foreground">
+							{t("connection.loading")}
+						</Text>
 					) : (
-						wslItems().map(wslRow)
+						<>
+							{wslItems().map(wslRow)}
+							{sshItems().map(sshRow)}
+							{() =>
+								results()["ssh-list"] || results()["wsl-add"] ? (
+									<Text class="px-3 py-2 text-[11px] text-destructive">
+										{results()["ssh-list"] ?? results()["wsl-add"]}
+									</Text>
+								) : null
+							}
+							{() =>
+								results()["list"] ? (
+									<Text class="px-3 py-2 text-[11px] text-muted-foreground">
+										{results()["list"]}
+									</Text>
+								) : null
+							}
+						</>
 					)
 				}
 			</SettingsSection>
-			<SettingsSection
-				title={t("connection.sshLabel")}
-				actions={
-					<Button
-						testID="settings-ssh-add"
-						variant="outline"
-						onPress={() => {
-							sshEditor.set(emptyDraft());
-							sshError.set(null);
-							ensureAgentKeys();
-						}}
-					>
-						<Icon name="Plus" size={13} />
-						<Text>{t("connection.addSsh")}</Text>
-					</Button>
-				}
-			>
-				{() =>
-					sshItems().length === 0 ? (
-						<View class="px-3 py-4">
-							<Text class="text-sm text-muted-foreground">
-								{t("settings.noConnections")}
-							</Text>
-						</View>
-					) : (
-						sshItems().map(sshRow)
-					)
-				}
-			</SettingsSection>
-			{() => sshEditorDialog()}
-			{() => configureDialog()}
+			{() => (sshEditorOpen() ? sshEditorDialog() : null)}
+			{() => (configureOpen() ? configureDialog() : null)}
+			{() => wslPickerDialog()}
 			{() => removeDialog()}
 		</View>
 	);
