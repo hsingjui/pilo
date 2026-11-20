@@ -434,15 +434,25 @@ impl Pilo {
             .unwrap_or_else(|| {
                 if cfg!(debug_assertions) {
                     let target = format!("{}-apple-darwin", std::env::consts::ARCH);
-                    let binary = workspace
-                        .join("target")
-                        .join(target)
-                        .join("debug/pilo-server");
-                    if binary.is_file() {
-                        binary
-                    } else {
-                        workspace.join("target/debug/pilo-server")
-                    }
+                    // nsh builds the crate from a generated manifest under
+                    // desktop/.nsh, so the workspace root may be any ancestor;
+                    // pick the first target dir that actually has the server.
+                    let mut roots: Vec<PathBuf> = Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .ancestors()
+                        .map(|dir| dir.to_path_buf())
+                        .collect();
+                    roots.push(workspace.clone());
+                    let mut candidates = roots.iter().flat_map(|root| {
+                        [
+                            root.join("target")
+                                .join(&target)
+                                .join("debug/pilo-server"),
+                            root.join("target/debug/pilo-server"),
+                        ]
+                    });
+                    candidates
+                        .find(|binary| binary.is_file())
+                        .unwrap_or_else(|| workspace.join("target/debug/pilo-server"))
                 } else {
                     resources.join("runtime/pilo-server-darwin-aarch64")
                 }
