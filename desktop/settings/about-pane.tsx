@@ -39,7 +39,7 @@ export function AboutPane() {
 						{meta.version}
 					</Text>
 				</SettingsRow>
-				<SettingsRow label={t("settings.repository")}>
+				<SettingsRow label={t("settings.repository")} ghostEdge="both">
 					<Button
 						testID="settings-repository"
 						variant="ghost"

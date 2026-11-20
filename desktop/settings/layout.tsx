@@ -1,7 +1,12 @@
 import type { JSX } from "nsh";
-import { Text, View } from "nsh";
+import { Text, View, windowSize } from "nsh";
 
 import { classNames } from "../ui/class-names";
+
+/** Tailwind's sm:, measured on the window as the Tauri's viewport. */
+const SM_WIDTH = 640;
+
+const narrow = () => windowSize().width < SM_WIDTH;
 
 /** A bordered card with an optional header, as `SettingsSection` in Tauri. */
 export function SettingsSection(props: {
@@ -24,12 +29,16 @@ export function SettingsSection(props: {
 					<View class="min-h-10 flex-row items-center justify-between gap-2 border-b border-border/70 bg-muted/40 px-3 py-1.5">
 						<View class="min-w-0 flex-1">
 							{props.title ? (
-								<Text class="text-xs font-semibold text-muted-foreground">
+								<Text class="text-xs font-semibold leading-tight text-muted-foreground">
 									{props.title}
 								</Text>
 							) : null}
 						</View>
-						{props.headerRight ?? null}
+						{props.headerRight ? (
+							<View class="min-w-0 shrink-0 flex-row items-center justify-end">
+								{props.headerRight}
+							</View>
+						) : null}
 					</View>
 				) : null
 			}
@@ -38,37 +47,78 @@ export function SettingsSection(props: {
 	);
 }
 
-/** A label and helper on the left, controls on the right. */
+/**
+ * A label and helper on the left, controls on the right. Rows stack under
+ * sm: the controls sit under the label, flush left; at sm: they right-align
+ * in a `minmax(0,1fr) auto` track, as `SettingsRow` in Tauri.
+ */
 export function SettingsRow(props: {
 	label: string;
 	helper?: string;
 	children?: JSX.Element;
 	class?: string;
+	/**
+	 * Ghost buttons lose their own padding to the row's edge, as Tauri's
+	 * `[data-button-variant=ghost]` compensation: `"end"` for a ghost last
+	 * control (-mr-2 at sm:), `"both"` when the controls are a single ghost
+	 * button (also -ml-2 under sm:). The margin goes on the controls box, so
+	 * `"end"` is only exact when the ghost is the outermost last child.
+	 */
+	ghostEdge?: "end" | "both";
 }) {
-	return (
+	const controls = () =>
+		props.children ? (
+			<View
+				class={classNames(
+					"min-w-0 flex-row flex-wrap items-center gap-2 text-sm",
+					narrow() ? "w-full" : "shrink-0 justify-end pl-4",
+				)}
+				style={{
+					marginLeft: narrow() && props.ghostEdge === "both" ? -8 : 0,
+					marginRight: !narrow() && props.ghostEdge ? -8 : 0,
+				}}
+			>
+				{props.children}
+			</View>
+		) : null;
+	const label = (
 		<View
 			class={classNames(
-				"gap-2 px-3 py-2 flex-col border-b border-border/60 last:border-b-0",
-				props.class,
+				"min-w-0",
+				!narrow() && props.helper ? "max-w-[520px]" : undefined,
+				!narrow() && "flex-1",
 			)}
 		>
-			<View class="flex-row items-center gap-4">
-				<View class="min-w-0 flex-1">
-					<Text class="font-medium leading-tight text-foreground">
-						{props.label}
-					</Text>
-				</View>
-				{props.children ? (
-					<View class="min-w-0 shrink-0 flex-row items-center gap-2">
-						{props.children}
-					</View>
-				) : null}
-			</View>
+			<Text class="font-medium leading-tight text-foreground">
+				{props.label}
+			</Text>
 			{props.helper ? (
-				<Text class="text-xs leading-[1.4] text-muted-foreground">
+				<Text class="text-[11px] leading-[1.4] text-muted-foreground">
 					{props.helper}
 				</Text>
 			) : null}
+		</View>
+	);
+	return (
+		<View
+			class={classNames(
+				"gap-2 px-3 py-2 border-b border-border/60 last:border-b-0",
+				props.class,
+			)}
+		>
+			{() =>
+				narrow() ? (
+					<>
+						{label}
+						{controls()}
+					</>
+				) : (
+					<View class="flex-row items-center gap-4">
+						{label}
+						{controls()}
+					</View>
+				)
+			}
 		</View>
 	);
 }
@@ -89,7 +139,7 @@ export function SettingsStatus(props: {
 		>
 			<Text
 				class={classNames(
-					"text-[10px] font-medium",
+					"text-[11px] font-medium",
 					props.muted ? "text-muted-foreground" : "text-foreground/80",
 				)}
 			>

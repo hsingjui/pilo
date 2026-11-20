@@ -83,7 +83,10 @@ export function NotificationsPane(props: {
 						/>
 					)}
 				</SettingsRow>
-				<SettingsRow label={t("settings.notificationPermission")}>
+				<SettingsRow
+					label={t("settings.notificationPermission")}
+					ghostEdge="end"
+				>
 					<View class="flex-row items-center gap-1.5">
 						{() => (
 							<SettingsStatus muted={permission() !== "granted"}>
@@ -104,7 +107,7 @@ export function NotificationsPane(props: {
 						</Button>
 					</View>
 				</SettingsRow>
-				<SettingsRow label={t("settings.testNotification")}>
+				<SettingsRow label={t("settings.testNotification")} ghostEdge="both">
 					<Button
 						testID="settings-send-test-notification"
 						variant="ghost"
