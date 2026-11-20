@@ -59,7 +59,7 @@ async function stream(app: App, upTo: number) {
 /** Waits for the reply's row to show line `upTo`, at the end of the list. */
 function replyShows(app: App, upTo: number) {
 	return app.waitUntil(() =>
-		app.texts().some((text) => text.endsWith(`Reply line ${upTo}\n`)),
+		app.texts().some((text) => text === `Reply line ${upTo}`),
 	);
 }
 

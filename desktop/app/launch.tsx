@@ -20,7 +20,13 @@ export async function launch(pilo: PiloNative) {
 	const composer = new ComposerStore({ client, app: store.state });
 	followOpenSession(store, chat);
 	followOpenSessionRead(store);
-	mount(AppShell, { store, chat, composer });
+	mount(AppShell, {
+		store,
+		chat,
+		composer,
+		readProjectImage: (projectId, path) =>
+			client.readProjectImage(projectId, path),
+	});
 	await client
 		.savePreferences({ locale: appLocale() }, true)
 		.catch((error: unknown) => {

@@ -2,6 +2,7 @@ import { computed, Text, View } from "nsh";
 
 import { t } from "../app/i18n";
 import { Spinner } from "../ui/spinner";
+import { ChatMarkdown } from "./chat-markdown";
 import type {
 	AssistantChatMessage,
 	ChatMessageBody,
@@ -35,9 +36,7 @@ export function ChatAssistantMessage(props: {
 				() =>
 					hasText() ? (
 						<View selectable>
-							<Text class="font-sans text-base leading-[1.6] text-foreground">
-								{() => message().text}
-							</Text>
+							<ChatMarkdown text={() => message().text} />
 						</View>
 					) : null
 			)}

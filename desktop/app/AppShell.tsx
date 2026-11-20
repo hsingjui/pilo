@@ -11,6 +11,10 @@ import { currentWindow, titleBar } from "nsh/desktop";
 
 import type { Project } from "@/lib/api/projects-types";
 import { ChatMessageList } from "../chat/chat-message-list";
+import {
+	ChatMarkdown,
+	type ChatMarkdownFileLink,
+} from "../chat/chat-markdown";
 import { ChatComposer } from "../composer/chat-composer";
 import type { ComposerStore } from "../composer/composer-store";
 import { activeProject } from "../state/app-state";
@@ -39,6 +43,10 @@ export interface AppShellProps {
 	>;
 	/** The open session's composer; whoever mounts the shell targets it. */
 	composer: ComposerStore;
+	/** Reads a project-relative image's bytes (reply `![…](path)` previews). */
+	readProjectImage?: (projectId: string, path: string) => Promise<Uint8Array>;
+	/** What a project file link in a reply does when pressed (a workspace tab, M5). */
+	onFileLink?: (link: ChatMarkdownFileLink) => void;
 }
 
 export function AppShell(props: AppShellProps) {
@@ -132,6 +140,14 @@ export function AppShell(props: AppShellProps) {
 								return sessionOpen() ? (
 									<View class="min-h-0 min-w-0 flex-1 flex-col">
 										<ChatMessageList
+											assistantBody={(message) => (
+												<ChatMarkdown
+													text={() => message().text}
+													project={project}
+													readProjectImage={props.readProjectImage}
+													onFileLink={props.onFileLink}
+												/>
+											)}
 											transcript={chat.state}
 											messages={() => chat.messages()}
 											onRetry={() => chat.refresh()}

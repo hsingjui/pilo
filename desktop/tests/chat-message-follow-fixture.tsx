@@ -145,7 +145,7 @@ async function run() {
 				const t0 = performance.now();
 				apply({
 					type: "assistant_text_delta",
-					delta: `Reply line ${streamed()}\n`,
+					delta: `Reply line ${streamed()}\n\n`,
 					timestampMs,
 				});
 				// The event's cost is its apply plus the frame it lays out in.
