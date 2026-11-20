@@ -84,6 +84,43 @@ test("a running turn keeps its work open and says what it is doing", async () =>
 	expect(app.shows("text:pnpm test")).toBe(true);
 	// The group a text has followed is finished, so it folds.
 	expect(app.shows("text:Thought process · Read 1 files")).toBe(true);
+	expect(app.shows("id:chat-reply-streaming >> text:Processing…")).toBe(true);
+	expect(app.shows("id:chat-reply-footer")).toBe(false);
+});
+
+test("a turn with nothing back yet says it waits for the response", async () => {
+	const app = await openChat("waiting");
+	await app.waitFor("id:chat-reply-streaming >> text:Waiting for response…");
+	expect(app.shows("id:chat-reply-footer")).toBe(false);
+});
+
+test("a turn still thinking says so", async () => {
+	const app = await openChat("thinking");
+	await app.waitFor("id:chat-reply-streaming >> text:Thinking…");
+	expect(app.shows("text:Processing…")).toBe(false);
+});
+
+test("a turn that only answered says when it ended and how long it worked", async () => {
+	const app = await openChat("answered");
+	await app.waitFor("text:x is 1.");
+	expect(app.shows("id:chat-reply-streaming")).toBe(false);
+	expect(app.shows("id:chat-reply-footer >> text:09:00")).toBe(true);
+	expect(app.shows("id:chat-reply-duration")).toBe(true);
+	expect(app.texts().slice(-4)).toEqual(["x is 1.", "09:00", "·", "5s"]);
+});
+
+test("with durations off, the footer keeps only when the turn ended", async () => {
+	const app = await openChat("untimed");
+	await app.waitFor("text:x is 1.");
+	expect(app.shows("id:chat-reply-footer >> text:09:00")).toBe(true);
+	expect(app.shows("id:chat-reply-duration")).toBe(false);
+});
+
+test("a turn that worked says how long only on its work, not in the footer", async () => {
+	const app = await openChat("settled");
+	await app.waitFor("text:Worked for 1m 15s");
+	expect(app.shows("id:chat-reply-footer >> text:09:01")).toBe(true);
+	expect(app.shows("id:chat-reply-duration")).toBe(false);
 });
 
 test("a task list tool shows its progress and opens to its tasks", async () => {

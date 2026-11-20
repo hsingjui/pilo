@@ -67,6 +67,8 @@ test("a settled chat shows its prompts, replies and how each turn ended", async 
 		"From the session index of each project.",
 		"The sidebar asks the app store for a project's index when the project is expanded, and the store reads it through the Pilo client. Pi's JSONL files stay the source of truth; the index only lists them.",
 		"09:00",
+		"·",
+		"0s",
 		"Context compacted · 48,210 tokens · 09:01",
 		"Rename the helper and run the checks.",
 		"09:02",
@@ -76,19 +78,27 @@ test("a settled chat shows its prompts, replies and how each turn ended", async 
 		"09:03",
 		"The model returned an empty response.",
 		"09:03",
+		"·",
+		"0s",
 		"Summarize what changed.",
 		"09:04",
 		"One helper was renamed; nothing else changed.",
 		"09:04",
+		"·",
+		"0s",
 	]);
 	expect(app.shows("id:chat-history-loading")).toBe(false);
 });
 
 test("a reply still coming shows its text so far and that more is on its way", async () => {
 	const app = await openList("streaming");
-	await app.waitFor("id:chat-messages >> text:Running");
-	expect(app.shows("id:chat-reply-streaming")).toBe(true);
-	expect(app.texts().slice(-3)).toEqual(["And the tests?", "09:05", "Running"]);
+	await app.waitFor("id:chat-reply-streaming >> text:Processing…");
+	expect(app.texts().slice(-4)).toEqual([
+		"And the tests?",
+		"09:05",
+		"Running",
+		"Processing…",
+	]);
 });
 
 test("a settled chat shows no reply as still coming", async () => {

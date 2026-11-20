@@ -18,6 +18,10 @@ import { context, startedAt } from "./chat-conversation-fixture";
  *   `showWorkDuration` turned off.
  * - `running`: the turn is still running its command.
  * - `todos`: a settled turn that wrote a task list.
+ * - `waiting`: a turn sent, nothing back yet.
+ * - `thinking`: a turn still thinking.
+ * - `answered`: a turn that only answered, in 5 seconds.
+ * - `untimed`: `answered` with `showWorkDuration` turned off.
  */
 
 const at = (seconds: number) => startedAt + seconds * 1000;
@@ -131,11 +135,20 @@ const todos: ConversationEvent[] = [
 	{ type: "assistant_turn_end", stopReason: "stop", timestampMs: at(4) },
 ];
 
+const answer: ConversationEvent[] = [
+	{ type: "assistant_text_delta", delta: "x is 1.", timestampMs: at(3) },
+	{ type: "assistant_turn_end", stopReason: "stop", timestampMs: at(5) },
+];
+
 const scenarios: Record<string, ConversationEvent[]> = {
 	settled: [...prompt, ...work, ...commandEnd],
 	expanded: [...prompt, ...work, ...commandEnd],
 	running: [...prompt, ...work],
 	todos: [...prompt, ...todos],
+	waiting: prompt,
+	thinking: [...prompt, ...work.slice(0, 2)],
+	answered: [...prompt, ...answer],
+	untimed: [...prompt, ...answer],
 };
 
 async function run() {
@@ -152,6 +165,7 @@ async function run() {
 		source: "history",
 	};
 	const expanded = scenario === "expanded";
+	const untimed = expanded || scenario === "untimed";
 	mount(() => (
 		<View class="flex-1">
 			<ChatMessageList
@@ -159,7 +173,7 @@ async function run() {
 				messages={() => state.conversation?.messages ?? []}
 				preferences={() => ({
 					collapseCompletedActivity: !expanded,
-					showWorkDuration: !expanded,
+					showWorkDuration: !untimed,
 				})}
 			/>
 		</View>

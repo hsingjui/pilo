@@ -1,10 +1,18 @@
 import { computed, signal, Text, View } from "nsh";
 
+import {
+	getAssistantActivities,
+	getAssistantMessageContent,
+	getAssistantStreamingState,
+} from "@/lib/chat/chat-activity-state";
+
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
 import { Tooltip } from "../ui/tooltip";
+import { workDurationText } from "./chat-activity-labels";
+import { ChatAgentActivityIndicator } from "./chat-agent-activity";
 import { ChatAssistantWork } from "./chat-assistant-work";
 import { ChatExpansion } from "./chat-expansion";
 import { ChatMarkdown } from "./chat-markdown";
@@ -53,10 +61,8 @@ export function ChatAssistantMessage(props: {
 		const text = message().errorMessage;
 		return text?.startsWith(stalled) ? t("chat.modelStreamStalled") : text;
 	});
-	const streaming = computed(() => message().streaming === true);
-	// What became of a finished turn: it was stopped, or when it ended.
-	const ending = computed(() =>
-		message().stopReason === "aborted" ? t("chat.stopped") : message().time,
+	const activity = computed(() =>
+		getAssistantActivities(getAssistantMessageContent(message())),
 	);
 	// Only a cleanly finished reply can be a fork point, as in the Tauri app.
 	const canFork = computed(
@@ -67,6 +73,28 @@ export function ChatAssistantMessage(props: {
 			!message().errorMessage &&
 			message().stopReason !== "aborted",
 	);
+	// What a running reply is doing, in words; nothing once it settles.
+	const streamingLabel = computed(() => {
+		const { text, streaming, pendingStatus } = message();
+		const state = getAssistantStreamingState({
+			text,
+			activity: activity(),
+			streaming,
+			emptyState: pendingStatus ?? "waitingResponse",
+		});
+		return state ? t(`chat.${state}`) : "";
+	});
+	const stopped = computed(() => message().stopReason === "aborted");
+	const time = () => message().time;
+	// How long the turn worked, when no work header says it already.
+	const duration = computed(() => {
+		const durationMs = message().workDurationMs;
+		return preferences().showWorkDuration &&
+			activity().length === 0 &&
+			durationMs !== undefined
+			? workDurationText(durationMs)
+			: "";
+	});
 	return (
 		<ConversationColumn
 			class="py-3"
@@ -97,20 +125,25 @@ export function ChatAssistantMessage(props: {
 				) : null
 			}
 			{() =>
-				streaming() ? (
-					<View class="mt-0.5 h-7 justify-center">
-						<Spinner
+				streamingLabel() ? (
+					<View class="mt-1 min-h-6 justify-center">
+						<ChatAgentActivityIndicator
 							testID="chat-reply-streaming"
-							size={14}
-							class="text-muted-foreground"
-							accessibilityLabel={t("chat.waitingResponse")}
+							label={streamingLabel}
 						/>
 					</View>
-				) : ending() || canFork() ? (
+				) : stopped() ? (
+					<View class="mt-1 min-h-6 justify-center">
+						<Text class="font-sans text-xs text-muted-foreground">
+							{t("chat.stopped")}
+						</Text>
+					</View>
+				) : time() || duration() || canFork() ? (
 					<View
+						testID="chat-reply-footer"
 						class="mt-0.5 min-h-7 flex-row flex-wrap items-center gap-2"
 						style={{
-							opacity: hovered() ? 100 : 0,
+							opacity: !props.onFork || hovered() ? 100 : 0,
 							transitionProperty: "opacity",
 							transitionDuration: "150ms",
 						}}
@@ -155,9 +188,34 @@ export function ChatAssistantMessage(props: {
 								</Button>
 							) : null
 						}
-						<Text class="font-sans text-xs text-muted-foreground">
-							{ending}
-						</Text>
+						{() =>
+							time() ? (
+								<Text class="font-sans text-xs text-muted-foreground">
+									{time}
+								</Text>
+							) : null
+						}
+						{() =>
+							time() && duration() ? (
+								<Text
+									class="font-sans text-xs text-muted-foreground"
+									accessible={false}
+									accessibilityElementsHidden
+								>
+									·
+								</Text>
+							) : null
+						}
+						{() =>
+							duration() ? (
+								<Text
+									testID="chat-reply-duration"
+									class="font-mono text-xs text-muted-foreground"
+								>
+									{duration}
+								</Text>
+							) : null
+						}
 					</View>
 				) : null
 			}

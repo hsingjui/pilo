@@ -7,9 +7,12 @@ test("the list shows a saved chat from the transcript store, then its running tu
 	await app.waitFor("id:chat-messages >> text:Saved question 10");
 	expect(app.shows("id:chat-history-loading")).toBe(false);
 	expect(app.shows("id:chat-reply-streaming")).toBe(false);
-	expect(app.texts()).toContain(
-		"Saved answer 10\nIt runs over a few lines,\nas a reply usually does.",
-	);
+	expect(app.texts().slice(-4)).toEqual([
+		"Saved answer 10 It runs over a few lines, as a reply usually does.",
+		"09:19",
+		"·",
+		"1m 00s",
+	]);
 
 	await app.press("id:prompt");
 	await app.waitFor("id:chat-messages >> text:new question", {
