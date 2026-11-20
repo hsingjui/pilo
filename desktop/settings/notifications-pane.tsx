@@ -3,6 +3,7 @@ import {
 	Notifications,
 	type NotificationPermission,
 	signal,
+	Text,
 	View,
 } from "nsh";
 
@@ -27,7 +28,12 @@ const PERMISSION_KEYS: Record<
 	unavailable: "settings.unavailable",
 };
 
-/** System notifications: the toggle, the OS permission, and a test send. */
+/**
+ * System notifications: the toggle, the OS permission, and a test send, as
+ * the Tauri `NotificationSettings`. Its Windows-only "Managed by system"
+ * status has no nsh counterpart (the permission is always queryable here),
+ * and its failure toasts show inline instead.
+ */
 export function NotificationsPane(props: {
 	state: Accessor<AppState>;
 	client: SettingsClient;
@@ -35,41 +41,75 @@ export function NotificationsPane(props: {
 	const permission = signal<NotificationPermission | null>(null);
 	const checking = signal(false);
 	const testing = signal(false);
+	const failure = signal<
+		| "settings.enableNotificationsFailed"
+		| "settings.testNotificationFailed"
+		| null
+	>(null);
+	const values = () => props.state().preferences?.values;
+	const save = (desktopNotifications: boolean) => {
+		props.client
+			.savePreferences({ desktopNotifications })
+			.catch((error: unknown) => {
+				console.error(t("settings.preferencesSaveFailed"), error);
+			});
+	};
 	const refresh = () => {
 		checking.set(true);
 		Notifications.permission()
-			.then((next) => permission.set(next))
+			.then((next) => {
+				permission.set(next);
+				if (next !== "granted" && values()?.desktopNotifications) save(false);
+			})
 			.catch(() => permission.set("unavailable"))
 			.finally(() => checking.set(false));
 	};
 	refresh();
-	const values = () => props.state().preferences?.values;
+	const ensurePermission = async () => {
+		if (
+			(await Notifications.permission().catch(() => "unavailable" as const)) ===
+			"granted"
+		)
+			return true;
+		return (
+			(await Notifications.requestPermission().catch(
+				() => "denied" as const,
+			)) === "granted"
+		);
+	};
 	const changeEnabled = (enabled: boolean) => {
-		const done = (granted: boolean) => {
-			permission.set(granted ? "granted" : (permission() ?? "default"));
-			props.client
-				.savePreferences({ desktopNotifications: granted && enabled })
-				.catch((error: unknown) => {
-					console.error(t("settings.preferencesSaveFailed"), error);
-				});
-		};
+		failure.set(null);
 		if (!enabled) {
-			done(false);
+			save(false);
 			return;
 		}
-		Notifications.requestPermission()
-			.then((next) => done(next === "granted"))
-			.catch(() => done(false));
+		void ensurePermission().then((granted) => {
+			save(granted);
+			if (!granted) {
+				failure.set("settings.enableNotificationsFailed");
+				void refresh();
+			}
+		});
 	};
 	const sendTest = () => {
+		failure.set(null);
 		testing.set(true);
-		Notifications.show({
-			id: "pilo-settings-test",
-			title: t("notifications.testTitle"),
-			body: t("notifications.testBody"),
-		})
-			.catch(() => false)
-			.finally(() => testing.set(false));
+		void ensurePermission()
+			.then(async (granted) => {
+				if (!granted) return false;
+				return Notifications.show({
+					id: "pilo-settings-test",
+					title: t("notifications.testTitle"),
+					body: t("notifications.testBody"),
+				}).catch(() => false);
+			})
+			.then((sent) => {
+				if (!sent) failure.set("settings.testNotificationFailed");
+			})
+			.finally(() => {
+				testing.set(false);
+				refresh();
+			});
 	};
 	return (
 		<View class="gap-3">
@@ -90,7 +130,7 @@ export function NotificationsPane(props: {
 					<View class="flex-row items-center gap-1.5">
 						{() => (
 							<SettingsStatus muted={permission() !== "granted"}>
-								{permission() === null
+								{checking() || permission() === null
 									? t("settings.testing")
 									: t(PERMISSION_KEYS[permission() ?? "unavailable"])}
 							</SettingsStatus>
@@ -103,7 +143,13 @@ export function NotificationsPane(props: {
 							disabled={checking()}
 							onPress={refresh}
 						>
-							<Icon name="RefreshCw" size={14} />
+							{() => (
+								<Icon
+									name="RefreshCw"
+									size={14}
+									class={checking() ? "animate-spin" : undefined}
+								/>
+							)}
 						</Button>
 					</View>
 				</SettingsRow>
@@ -111,9 +157,12 @@ export function NotificationsPane(props: {
 					<Button
 						testID="settings-send-test-notification"
 						variant="ghost"
+						size="sm"
+						class="text-muted-foreground hover:text-foreground"
 						disabled={testing()}
 						onPress={sendTest}
 					>
+						<Icon name="Send" size={14} />
 						{() =>
 							testing()
 								? t("settings.sending")
@@ -121,6 +170,13 @@ export function NotificationsPane(props: {
 						}
 					</Button>
 				</SettingsRow>
+				{() =>
+					failure() ? (
+						<Text class="px-3 py-2 text-xs text-destructive">
+							{t(failure() ?? "settings.testNotificationFailed")}
+						</Text>
+					) : null
+				}
 			</SettingsSection>
 		</View>
 	);
