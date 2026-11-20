@@ -21,6 +21,10 @@ import type {
 	WslDistribution,
 } from "@/lib/api/pi-runtime-types";
 import type { ConnectionNamingModel } from "@/lib/api/sessions-types";
+import type {
+	RemoteAccessAddress,
+	RemoteHostState,
+} from "@/lib/api/remote-types";
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
 import type {
 	NextPromptModel,
@@ -131,6 +135,16 @@ export type ScriptedSettingsClient = Pick<
 	| "saveWslConnection"
 	| "removeWslConnection"
 	| "testWslConnection"
+	| "remoteHostState"
+	| "remoteLanAddresses"
+	| "remoteSetEnabled"
+	| "remoteSetPort"
+	| "remoteSetPublicBaseUrl"
+	| "remoteSetAddresses"
+	| "remotePairingRegenerate"
+	| "remoteDeviceRevoke"
+	| "remoteDeviceRename"
+	| "connectEvents"
 >;
 
 export type AppScript = {
@@ -222,6 +236,12 @@ export type AppScript = {
 		projectId: string,
 		sessionPath: string,
 	) => SessionDeleteResult;
+	/** The Remote Host state `remoteHostState` answers; stopped when left out. */
+	remoteHost?: RemoteHostState;
+	/** What `remoteHostState` rejects with when set. */
+	remoteHostError?: string;
+	/** The LAN IPs `remoteLanAddresses` answers; none when left out. */
+	remoteLanIps?: string[];
 };
 
 /** A new Host's preferences and theme, as far as the shell reads them. */
@@ -242,6 +262,24 @@ const HOST_DEFAULT_THEME = {
 	theme: "system",
 	themeFamily: "lody",
 } as ThemeSettings;
+
+/** A stopped Remote Host on the default port, as a fresh install reports it. */
+const DEFAULT_REMOTE_HOST: RemoteHostState = {
+	enabled: false,
+	running: false,
+	port: 48_001,
+	baseUrl: null,
+	publicBaseUrl: "",
+	addresses: [{ id: "lan", name: "", baseUrl: "http://192.168.1.5:48001" }],
+	entryAddressId: "lan",
+	addressConfigError: null,
+	pairingRemainingUses: 0,
+	pairingTotalUses: 0,
+	pairingUrl: null,
+	pairingExpiresAtMs: null,
+	lastError: null,
+	devices: [],
+};
 
 /** A client for the app store that answers from `script`, without a runtime. */
 export function scriptedClient(script: AppScript = {}) {
@@ -279,6 +317,7 @@ export function scriptedClient(script: AppScript = {}) {
 	let closed = false;
 	let preferences = script.preferences ?? HOST_DEFAULT_PREFERENCES;
 	let themeSettings = script.themeSettings ?? HOST_DEFAULT_THEME;
+	let remoteHost = script.remoteHost ?? DEFAULT_REMOTE_HOST;
 	/** Every `savePreferences` patch, in order. */
 	const preferencePatches: PreferencePatch[] = [];
 	/** Delivers runtime events to the app, in order. */
@@ -679,6 +718,65 @@ export function scriptedClient(script: AppScript = {}) {
 			const state = { ...read, readRevision: revision };
 			emit({ type: "session_read_state_changed", state });
 			return Promise.resolve(state);
+		},
+		remoteHostState() {
+			if (script.remoteHostError)
+				return Promise.reject(new Error(script.remoteHostError));
+			return Promise.resolve(remoteHost);
+		},
+		remoteLanAddresses() {
+			return Promise.resolve(script.remoteLanIps ?? []);
+		},
+		remoteSetEnabled(enabled: boolean) {
+			remoteHost = { ...remoteHost, enabled, running: enabled };
+			emit({ type: "configuration_changed" });
+			return Promise.resolve(remoteHost);
+		},
+		remoteSetPort(port: number) {
+			remoteHost = { ...remoteHost, port };
+			emit({ type: "configuration_changed" });
+			return Promise.resolve(remoteHost);
+		},
+		remoteSetPublicBaseUrl(url: string) {
+			remoteHost = { ...remoteHost, publicBaseUrl: url };
+			emit({ type: "configuration_changed" });
+			return Promise.resolve(remoteHost);
+		},
+		remoteSetAddresses(
+			addresses: RemoteAccessAddress[],
+			entryAddressId: string,
+		) {
+			remoteHost = { ...remoteHost, addresses, entryAddressId };
+			emit({ type: "configuration_changed" });
+			return Promise.resolve(remoteHost);
+		},
+		remotePairingRegenerate() {
+			remoteHost = {
+				...remoteHost,
+				pairingUrl: `${remoteHost.pairingUrl}-regen`,
+			};
+			emit({ type: "configuration_changed" });
+			return Promise.resolve(remoteHost);
+		},
+		remoteDeviceRevoke(deviceId: string) {
+			remoteHost = {
+				...remoteHost,
+				devices: remoteHost.devices.map((device) =>
+					device.id === deviceId ? { ...device, revokedAtMs: 1 } : device,
+				),
+			};
+			emit({ type: "configuration_changed" });
+			return Promise.resolve(remoteHost);
+		},
+		remoteDeviceRename(deviceId: string, name: string) {
+			remoteHost = {
+				...remoteHost,
+				devices: remoteHost.devices.map((device) =>
+					device.id === deviceId ? { ...device, name } : device,
+				),
+			};
+			emit({ type: "configuration_changed" });
+			return Promise.resolve(remoteHost);
 		},
 		connectEvents(options) {
 			listeners.add(options);

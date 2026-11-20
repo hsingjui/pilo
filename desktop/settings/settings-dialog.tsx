@@ -29,6 +29,7 @@ import { ModelCatalogPane } from "./model-catalog-pane";
 import { NextPromptPane } from "./next-prompt-pane";
 import { NotificationsPane } from "./notifications-pane";
 import { PromptEnhancementPane } from "./prompt-enhancement-pane";
+import { RemotePane } from "./remote-pane";
 import { SessionNamingPane } from "./session-naming-pane";
 import { PreferencesPane } from "./preferences-pane";
 import { ShortcutsPane } from "./shortcuts-pane";
@@ -71,6 +72,16 @@ export type SettingsClient = Pick<
 	| "saveWslConnection"
 	| "removeWslConnection"
 	| "testWslConnection"
+	| "remoteHostState"
+	| "remoteLanAddresses"
+	| "remoteSetEnabled"
+	| "remoteSetPort"
+	| "remoteSetPublicBaseUrl"
+	| "remoteSetAddresses"
+	| "remotePairingRegenerate"
+	| "remoteDeviceRevoke"
+	| "remoteDeviceRename"
+	| "connectEvents"
 >;
 
 export interface SettingsDialogProps {
@@ -417,6 +428,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
 												client={props.client}
 											/>
 										);
+									case "remote":
+										return <RemotePane client={props.client} />;
 									case "notifications":
 										return (
 											<NotificationsPane

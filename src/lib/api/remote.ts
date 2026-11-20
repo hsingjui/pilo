@@ -1,37 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type RemoteDevice = {
-	id: string;
-	name: string;
-	pairIp: string;
-	createdAtMs: number;
-	lastSeenAtMs: number;
-	expiresAtMs: number;
-	revokedAtMs: number | null;
-};
+import type { RemoteAccessAddress, RemoteHostState } from "./remote-types";
 
-export type RemoteAccessAddress = {
-	id: string;
-	name: string;
-	baseUrl: string;
-};
-
-export type RemoteHostState = {
-	enabled: boolean;
-	running: boolean;
-	port: number;
-	baseUrl: string | null;
-	publicBaseUrl: string;
-	addresses: RemoteAccessAddress[];
-	entryAddressId: string;
-	addressConfigError: string | null;
-	pairingRemainingUses: number;
-	pairingTotalUses: number;
-	pairingUrl: string | null;
-	pairingExpiresAtMs: number | null;
-	lastError: string | null;
-	devices: RemoteDevice[];
-};
+export type {
+	RemoteAccessAddress,
+	RemoteDevice,
+	RemoteHostState,
+} from "./remote-types";
 
 export function getRemoteHostState(): Promise<RemoteHostState> {
 	return invoke<RemoteHostState>("remote_host_state");

@@ -56,6 +56,10 @@ import type {
 	PreferencesSnapshot,
 } from "@/lib/host-preferences-types";
 import type {
+	RemoteAccessAddress,
+	RemoteHostState,
+} from "@/lib/api/remote-types";
+import type {
 	ThemeSettings,
 	ThemeSettingsUpdate,
 } from "@/lib/theme-settings-types";
@@ -126,6 +130,15 @@ export type PiloNative = Pick<
 	| "savePreferences"
 	| "loadThemeSettings"
 	| "saveThemeSettings"
+	| "remoteHostState"
+	| "remoteLanAddresses"
+	| "remoteSetEnabled"
+	| "remoteSetPort"
+	| "remoteSetPublicBaseUrl"
+	| "remoteSetAddresses"
+	| "remotePairingRegenerate"
+	| "remoteDeviceRevoke"
+	| "remoteDeviceRename"
 	| "shutdown"
 >;
 
@@ -734,6 +747,65 @@ export class NshPiloClient implements BridgedPiloClient {
 	sendChatCommand(sessionKey: string, command: Record<string, unknown>) {
 		return this.pilo.sendChatCommand(sessionKey, command);
 	}
+
+	/** The Remote Host's live state: enabled/running, addresses, pairing, devices. */
+	async remoteHostState(): Promise<RemoteHostState> {
+		return (await this.pilo.remoteHostState()) as RemoteHostState;
+	}
+
+	/** The machine's LAN IPs for the Remote Host address picker. */
+	async remoteLanAddresses(): Promise<string[]> {
+		return (await this.pilo.remoteLanAddresses()) as string[];
+	}
+
+	/** Enables or disables the Remote Host; resolves with the live state. */
+	async remoteSetEnabled(enabled: boolean): Promise<RemoteHostState> {
+		return (await this.pilo.remoteSetEnabled(enabled)) as RemoteHostState;
+	}
+
+	/** Sets the Remote Host's listen port; resolves with the live state. */
+	async remoteSetPort(port: number): Promise<RemoteHostState> {
+		return (await this.pilo.remoteSetPort(port)) as RemoteHostState;
+	}
+
+	/** Sets the Remote Host's public base URL; resolves with the live state. */
+	async remoteSetPublicBaseUrl(url: string): Promise<RemoteHostState> {
+		return (await this.pilo.remoteSetPublicBaseUrl(url)) as RemoteHostState;
+	}
+
+	/** Replaces the access addresses and entry selection; resolves with the live state. */
+	async remoteSetAddresses(
+		addresses: RemoteAccessAddress[],
+		entryAddressId: string,
+	): Promise<RemoteHostState> {
+		return (await this.pilo.remoteSetAddresses(
+			addresses,
+			entryAddressId,
+		)) as RemoteHostState;
+	}
+
+	/** Regenerates the pairing link; resolves with the live state. */
+	async remotePairingRegenerate(): Promise<RemoteHostState> {
+		return (await this.pilo.remotePairingRegenerate()) as RemoteHostState;
+	}
+
+	/** Revokes a paired device; resolves with the live state. */
+	async remoteDeviceRevoke(deviceId: string): Promise<RemoteHostState> {
+		return (await this.pilo.remoteDeviceRevoke(deviceId)) as RemoteHostState;
+	}
+
+	/** Renames a paired device; resolves with the live state. */
+	async remoteDeviceRename(
+		deviceId: string,
+		name: string,
+	): Promise<RemoteHostState> {
+		return (await this.pilo.remoteDeviceRename(
+			deviceId,
+			name,
+		)) as RemoteHostState;
+	}
+
+	/** Opens the app's log directory in the file manager. */
 
 	/** Whether the runtime shut down: its event stream never resumes. */
 	get closed() {

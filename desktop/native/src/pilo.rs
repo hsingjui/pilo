@@ -6,7 +6,7 @@ use std::{
 
 use nsh_core::{JsonValue, prelude::*};
 use pilo_lib::{
-    domain::{Connection, SessionReadState},
+    domain::{Connection, RemoteAccessAddress, SessionReadState},
     initialize_local_server_binary,
     runtime::{
         Runtime, TranscriptWindow,
@@ -41,6 +41,11 @@ use pilo_lib::{
         },
         prompt_enhancement::{
             prompt_enhance, prompt_enhancement_settings_get, prompt_enhancement_settings_set,
+        },
+        remote::{
+            remote_device_rename, remote_device_revoke, remote_host_state, remote_lan_addresses,
+            remote_pairing_regenerate, remote_set_addresses, remote_set_enabled, remote_set_port,
+            remote_set_public_base_url,
         },
         runtime_api::{
             chat_session_send_rpc, chat_session_start, chat_session_state, chat_session_stop,
@@ -1136,6 +1141,110 @@ impl Pilo {
         })
         .await
     }
+
+    /// Returns the Remote Host's live state (enabled, addresses, pairing, devices).
+    pub async fn remote_host_state(this: Instance<Self>) -> Result<JsonValue, String> {
+        Self::with_runtime(this, |runtime| async move {
+            let state = remote_host_state(&runtime).await?;
+            serde_json::to_value(state).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Lists the machine's LAN IPs for the Remote Host address picker.
+    pub async fn remote_lan_addresses(this: Instance<Self>) -> Result<JsonValue, String> {
+        Self::with_runtime(this, |runtime| async move {
+            let addresses = remote_lan_addresses(&runtime).await?;
+            serde_json::to_value(addresses).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Enables or disables the Remote Host.
+    pub async fn remote_set_enabled(
+        this: Instance<Self>,
+        enabled: bool,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let state = remote_set_enabled(&runtime, enabled).await?;
+            serde_json::to_value(state).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Sets the Remote Host's listen port.
+    pub async fn remote_set_port(this: Instance<Self>, port: f64) -> Result<JsonValue, String> {
+        if !port.is_finite() || port.fract() != 0.0 || !(0.0..=65535.0).contains(&port) {
+            return Err(format!("invalid port: {port}"));
+        }
+        Self::with_runtime(this, move |runtime| async move {
+            let state = remote_set_port(&runtime, port as u16).await?;
+            serde_json::to_value(state).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Sets the Remote Host's public base URL.
+    pub async fn remote_set_public_base_url(
+        this: Instance<Self>,
+        public_base_url: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let state = remote_set_public_base_url(&runtime, public_base_url).await?;
+            serde_json::to_value(state).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Replaces the Remote Host's access addresses and entry selection.
+    pub async fn remote_set_addresses(
+        this: Instance<Self>,
+        addresses: JsonValue,
+        entry_address_id: String,
+    ) -> Result<JsonValue, String> {
+        let addresses: Vec<RemoteAccessAddress> =
+            serde_json::from_value(addresses).map_err(|error| error.to_string())?;
+        Self::with_runtime(this, move |runtime| async move {
+            let state = remote_set_addresses(&runtime, addresses, entry_address_id).await?;
+            serde_json::to_value(state).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Regenerates the Remote Host's pairing link.
+    pub async fn remote_pairing_regenerate(this: Instance<Self>) -> Result<JsonValue, String> {
+        Self::with_runtime(this, |runtime| async move {
+            let state = remote_pairing_regenerate(&runtime).await?;
+            serde_json::to_value(state).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Revokes a paired Remote device.
+    pub async fn remote_device_revoke(
+        this: Instance<Self>,
+        device_id: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let state = remote_device_revoke(&runtime, device_id).await?;
+            serde_json::to_value(state).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Renames a paired Remote device.
+    pub async fn remote_device_rename(
+        this: Instance<Self>,
+        device_id: String,
+        name: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let state = remote_device_rename(&runtime, device_id, name).await?;
+            serde_json::to_value(state).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
 
     /// Stops a Pi chat; stopping an absent session succeeds.
     pub async fn stop_chat(
