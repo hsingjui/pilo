@@ -168,6 +168,21 @@ export class ChatRunConfigStore {
 		});
 	}
 
+	/** Enriches a saved chat's model when its project catalog arrives. */
+	enrichSavedModel(): void {
+		const state = this.current();
+		if (!state?.sessionPath || !state.model || state.session?.sessionId) return;
+		const model = findMatchingPiModel(
+			this.catalogModels(state.projectId),
+			state.model,
+		);
+		if (!model || model === state.model) return;
+		this.update({
+			model,
+			thinkingLevels: [...getPiModelThinkingLevels(model)],
+		});
+	}
+
 	close(): void {
 		this.opens += 1;
 		this.disconnect?.();
@@ -197,7 +212,7 @@ export class ChatRunConfigStore {
 		let historicalModel: PiModel | null = null;
 		if (history.model) {
 			historicalModel = findMatchingPiModel(
-				this.catalogModels(),
+				this.catalogModels(current.projectId),
 				history.model,
 			) ?? {
 				provider: history.model.provider,
@@ -232,8 +247,9 @@ export class ChatRunConfigStore {
 		});
 	}
 
-	private catalogModels(): readonly PiModel[] {
-		return this.catalog()?.catalog?.models ?? [];
+	private catalogModels(projectId: string): readonly PiModel[] {
+		const catalog = this.catalog()?.catalog;
+		return catalog?.projectId === projectId ? catalog.models : [];
 	}
 
 	/** Whether the catalog knows every model's Scope membership. */

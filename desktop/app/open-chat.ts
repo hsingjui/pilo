@@ -144,11 +144,14 @@ export function followRunConfig(
 			}
 		});
 	});
-	// A scope default that resolved after a new chat opened still applies.
+	// A late catalog still enriches saved models or supplies new-chat defaults.
 	effect(() => {
 		const state = catalog.state();
 		const next = openChatTarget(store.state());
-		if (!next?.sessionPath && state?.loaded) {
+		if (!state?.loaded) return;
+		if (next?.sessionPath) {
+			untracked(() => runConfig.enrichSavedModel());
+		} else {
 			const { initialModel, initialThinkingLevel } = initialRunConfig(catalog);
 			untracked(() =>
 				runConfig.adoptInitial(
