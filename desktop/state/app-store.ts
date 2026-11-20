@@ -23,6 +23,7 @@ export type AppStoreClient = Pick<
 	| "chatState"
 	| "listProjects"
 	| "listSessions"
+	| "removeProject"
 	| "loadSessionReadStates"
 	| "loadThemeSettings"
 	| "markSessionRead"
@@ -108,6 +109,12 @@ export class AppStore {
 			action = { type: "sessions_failed", projectId, message: describe(error) };
 		}
 		if (this.sessionReads.get(projectId) === read) this.apply(action);
+	}
+
+	/** Removes a project; the runtime's answer replaces the catalog. */
+	async removeProject(projectId: string) {
+		const projects = await this.client.removeProject(projectId);
+		this.apply({ type: "projects_loaded", projects });
 	}
 
 	/** Chooses the project for a new chat and closes the open session. */

@@ -320,6 +320,9 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 			return {
 				...state,
 				projects: action.projects,
+				chatSessions: state.chatSessions.filter((chat) =>
+					hasProject(action.projects, chat.projectId),
+				),
 				sessionIndexes: withoutRemovedProjects(
 					state.sessionIndexes,
 					action.projects,

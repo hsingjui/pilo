@@ -42,6 +42,7 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 		}),
 		sendChatCommand: answer("sendChatCommand", undefined),
 		listProjects: answer("listProjects", [{ id: "p1" }]),
+		removeProject: answer("removeProject", [{ id: "p1" }]),
 		listSessions: answer("listSessions", [{ piSessionId: "s1" }]),
 		searchSessions: answer("searchSessions", [{ sessionId: "s1" }]),
 		searchProjectFiles: answer("searchProjectFiles", ["src/main.ts"]),

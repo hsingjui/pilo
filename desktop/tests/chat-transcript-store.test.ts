@@ -986,6 +986,7 @@ function fakeApp() {
 		chatState: () => Promise.resolve(null),
 		listProjects: () => Promise.resolve([]),
 		listSessions: () => Promise.resolve([]),
+		removeProject: () => Promise.resolve([]),
 		loadSessionReadStates: () => Promise.resolve([]),
 		markSessionRead: () => Promise.reject(new Error("unused")),
 		loadThemeSettings: () =>

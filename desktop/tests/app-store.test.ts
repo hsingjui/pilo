@@ -86,6 +86,7 @@ function fakeClient() {
 			new Promise((resolve, reject) =>
 				sessionLists.push({ projectId, resolve, reject }),
 			),
+		removeProject: () => Promise.resolve([]),
 		loadSessionReadStates: () => Promise.resolve(answers.readStates),
 		markSessionRead(projectId, sessionPath, revision) {
 			marked.push({ projectId, sessionPath, revision });

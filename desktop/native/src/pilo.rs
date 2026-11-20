@@ -23,7 +23,7 @@ use pilo_lib::{
         project_api::{
             project_chat_file_remove, project_chat_file_upload, project_fs_read_image,
             project_fs_search, project_list, project_model_cache_list, project_model_cache_set,
-            project_model_scope_get, project_model_scope_set,
+            project_model_scope_get, project_model_scope_set, project_remove,
         },
         prompt_enhancement::{
             prompt_enhance, prompt_enhancement_settings_get, prompt_enhancement_settings_set,
@@ -389,6 +389,17 @@ impl Pilo {
     /// Reads the saved project catalog without loading live chat snapshots.
     pub async fn list_projects(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
         Self::with_runtime_blocking(this, load_projects).await
+    }
+
+    /// Removes the project from the catalog, stopping its chats first.
+    pub async fn remove_project(
+        this: Instance<Self>,
+        project_id: String,
+    ) -> Result<Vec<JsonValue>, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            encode_list(project_remove(&runtime, project_id).await?)
+        })
+        .await
     }
 
     /// Reconciles the project's session index and returns its saved sessions.

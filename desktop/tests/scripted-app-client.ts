@@ -91,6 +91,8 @@ export type AppScript = {
 	models?: Record<string, ProjectPiModels>;
 	/** A project's saved model scope; null inherits Pi when left out. */
 	modelScopes?: Record<string, ProjectModelScope | null>;
+	/** The catalog `removeProject` resolves with; minus the project otherwise. */
+	onRemoveProject?: (projectId: string) => Project[];
 	/** The index entry `updateSessionUiState` resolves with. */
 	onUpdateSessionUiState?: (
 		sessionPath: string,
@@ -132,6 +134,7 @@ export function scriptedClient(script: AppScript = {}) {
 	const savedModels = new Map<string, ProjectPiModels>();
 	const modelScopes = new Map(Object.entries(script.modelScopes ?? {}));
 	const running = new Set<string>();
+	const removed: string[] = [];
 	let attempts = 0;
 	let sequence = 0;
 	let closed = false;
@@ -247,6 +250,13 @@ export function scriptedClient(script: AppScript = {}) {
 				fingerprint: null,
 			}) as SessionHistoryResult,
 		listProjects: () => Promise.resolve(projects),
+		removeProject: (projectId) => {
+			removed.push(projectId);
+			return Promise.resolve(
+				script.onRemoveProject?.(projectId) ??
+					projects.filter((project) => project.id !== projectId),
+			);
+		},
 		listSessions: (projectId) =>
 			script.sessions?.(projectId) ?? Promise.resolve([]),
 		loadSessionReadStates: () => Promise.resolve(script.readStates ?? []),
@@ -275,6 +285,8 @@ export function scriptedClient(script: AppScript = {}) {
 		emit,
 		/** Every command sent through `sendChatCommand`, in order. */
 		commands,
+		/** Every project `removeProject` was asked to drop, in order. */
+		removed,
 		/** The runtime shuts down: its event stream ends for good. */
 		close() {
 			closed = true;
