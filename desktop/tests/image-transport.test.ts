@@ -1,8 +1,20 @@
 import { expect, open, test } from "nsh/test";
 
-test("Image accepts a Blob URL from native bytes and a native absolute path", async () => {
+test("Image accepts a Blob URL from native bytes, and refuses a local path no fs.read grant covers", async () => {
 	const app = await open("./image-transport-fixture.tsx");
 	expect(app.shows("text:native Uint8Array")).toBe(true);
+
+	// The app declares its capabilities without `fs`, as the chat shows no
+	// local file by path (the React app does not either): a native absolute
+	// path is refused before it is read.
+	await app.waitUntil(() =>
+		app
+			.texts()
+			.some(
+				(value) =>
+					value.startsWith("path: ") && value.includes("is not granted"),
+			),
+	);
 
 	// The headless host never decodes images, but can fail submitted sources.
 	try {
@@ -16,15 +28,9 @@ test("Image accepts a Blob URL from native bytes and a native absolute path", as
 			throw error;
 		}
 		await app.waitFor("text:bytes: 32x32");
-		await app.waitFor("text:path: 32x32");
 		return;
 	}
-
-	await app.failImages("*/src-tauri/icons/32x32.png");
-	expect(
+	await app.waitUntil(() =>
 		app.texts().some((value) => value.startsWith("bytes: failed to load ")),
-	).toBe(true);
-	expect(
-		app.texts().some((value) => value.startsWith("path: failed to load ")),
-	).toBe(true);
+	);
 });
