@@ -157,7 +157,13 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 
 	return (
 		<TextView
-			class={props.class ?? "text-base text-foreground"}
+			class={props.class ?? "font-sans text-base text-foreground"}
+			// The root's font reaches every part: code keeps the bundled mono.
+			classes={{
+				code: "font-mono",
+				codeBlockCode: "font-mono",
+				keyboard: "font-mono",
+			}}
 			selectable
 			links="report"
 			codeBlockActions={[{ id: "copy" }]}

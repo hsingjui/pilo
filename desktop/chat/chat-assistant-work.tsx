@@ -1,10 +1,8 @@
 import { computed, Text, untracked, View } from "nsh";
 
-import {
-	type AssistantContentItem,
-	getAssistantActivities,
-	getAssistantMessageContent,
-	splitAssistantContentForDisplay,
+import type {
+	AssistantContentDisplaySections,
+	AssistantContentItem,
 } from "@/lib/chat/chat-activity-state";
 import type { AssistantActivity } from "@/lib/chat/chat-activity-types";
 
@@ -196,28 +194,16 @@ function WorkedRegion(
  * in order under an open work header; once it ends, the work before the
  * final text folds behind one header and the final text stays below it.
  */
-export function ChatAssistantWork(props: WorkContext) {
-	const { message } = props;
-	const content = computed(() => getAssistantMessageContent(message()));
-	const hasActivity = computed(
-		() => getAssistantActivities(content()).length > 0,
-	);
-	const keepWorkExpanded = computed(() => {
-		const { streaming, completion, stopReason } = message();
-		const finished = streaming !== true && completion !== "continued";
-		const interrupted =
-			completion === "interrupted" || stopReason === "aborted";
-		return !finished || interrupted;
-	});
-	const sections = computed(() =>
-		splitAssistantContentForDisplay(
-			content(),
-			!keepWorkExpanded(),
-			Boolean(message().errorMessage),
-		),
-	);
+export function ChatAssistantWork(
+	props: WorkContext & {
+		sections: () => AssistantContentDisplaySections;
+		workActive: () => boolean;
+	},
+) {
+	const { message, sections } = props;
+	const finalContent = () => sections().final;
 	const layout = computed(() =>
-		keepWorkExpanded() && hasActivity()
+		props.workActive()
 			? "active"
 			: sections().hasCollapsedWork
 				? "folded"
@@ -226,7 +212,7 @@ export function ChatAssistantWork(props: WorkContext) {
 	return () => {
 		switch (layout()) {
 			case "active":
-				return <WorkedRegion {...props} content={content} active />;
+				return <WorkedRegion {...props} content={finalContent} active />;
 			case "folded":
 				return (
 					<View class="w-full">
@@ -235,19 +221,19 @@ export function ChatAssistantWork(props: WorkContext) {
 							content={() => sections().work}
 							active={false}
 							followedByTextAfterContent={() =>
-								sections().final.some(
+								finalContent().some(
 									(item) => item.type === "text" && item.text.length > 0,
 								)
 							}
 						/>
-						<WorkSegments {...props} content={() => sections().final} />
+						<WorkSegments {...props} content={finalContent} />
 					</View>
 				);
 			case "plain":
 				return (
 					<WorkSegments
 						{...props}
-						content={content}
+						content={finalContent}
 						durationMs={() => message().workDurationMs}
 					/>
 				);

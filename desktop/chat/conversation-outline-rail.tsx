@@ -1,5 +1,8 @@
 import {
+	batch,
 	computed,
+	effect,
+	platform,
 	signal,
 	Text,
 	token,
@@ -7,32 +10,40 @@ import {
 	View,
 	type KeyEvent,
 	type ViewRef,
+	type WheelEvent,
 } from "nsh";
+import { Tooltip } from "nsh/base";
 
-import {
-	sampleOutlineEntries,
-	type ConversationOutlineEntry,
-} from "@/lib/chat/conversation-outline";
+import type { ConversationOutlineEntry } from "@/lib/chat/conversation-outline";
 import { t } from "../app/i18n";
 import { focusRingStyle } from "../ui/focus-ring-style";
-import { Tooltip } from "../ui/tooltip";
+import { styleVar } from "../ui/theme-style";
+import {
+	conversationColumnGeometry,
+	ConversationColumnLayout,
+} from "./conversation-column";
+import { chatPx, DEFAULT_CHAT_REM } from "./layout";
 
-/** Altura del hueco de cada marca, como en la WebUI. */
+const MIN_PANE_WIDTH = 35 * DEFAULT_CHAT_REM;
 const TICK_PITCH = 8;
-/** Anchura en reposo de la marca según el peso de la ronda. */
+const TICK_HEIGHT = 2.5;
 const TICK_WIDTHS = [10, 13, 16, 20] as const;
-/** Anchura de la marca activa. */
 const ACTIVE_TICK_WIDTH = 24;
-/** Anchura del raíl. */
-const RAIL_WIDTH = 46;
-/** Margen interior a la izquierda de las marcas. */
+const ACTIVE_OVERHANG = 4;
 const TRACK_INSET = 8;
-/** Ensanche de las marcas alrededor de la apuntada: campana gaussiana como
- * en la WebUI. */
 const HOVER_WIDTH = 38;
+const TRACK_WIDTH = HOVER_WIDTH + ACTIVE_OVERHANG;
 const BELL_BASE_WIDTH = 15;
 const BELL_SIGMA = 1.8;
 const BELL_RADIUS = 4;
+const NAVIGATION_KEYS = [
+	"arrowdown",
+	"arrowup",
+	"home",
+	"end",
+	"enter",
+	"space",
+];
 
 function tickWidth(resting: number, index: number, hoveredIndex: number) {
 	if (hoveredIndex < 0) return resting;
@@ -44,137 +55,240 @@ function tickWidth(resting: number, index: number, hoveredIndex: number) {
 }
 
 export interface ConversationOutlineRailProps {
-	/** Las rondas del chat, una por mensaje del usuario. */
 	entries: () => readonly ConversationOutlineEntry[];
-	/** La entrada que se está leyendo. */
 	activeIndex: () => number;
-	/** Salta a la ronda `index` de la lista. */
 	onJump: (index: number) => void;
 }
 
-/**
- * Las rondas de la conversación como marcas apiladas en el borde izquierdo:
- * cada una salta a su mensaje del usuario (aunque aún no esté cargado),
- * la activa sigue al scroll y el ratón y el teclado la recorren. No se
- * muestra con menos de dos rondas. Las marcas se muestrean de forma
- * uniforme para caber siempre en la mitad del raíl (conservando la
- * primera y la última): en macOS las pulsaciones dentro de un `Scroll`
- * no llegan a los hijos, así que el raíl no desplaza sus marcas.
- */
 export function ConversationOutlineRail(props: ConversationOutlineRailProps) {
-	const focused = signal(-1);
-	const hovered = signal(-1);
-	const railHeight = signal(0);
-	const ticks: (ViewRef | undefined)[] = [];
+	if (!platform.desktop) return null;
 
-	const displayed = computed(() =>
-		sampleOutlineEntries(
-			props.entries(),
-			Math.floor(Math.max(railHeight() / 2 - 16, TICK_PITCH) / TICK_PITCH),
-		),
+	const layout = ConversationColumnLayout();
+	const viewport = signal({ width: 0, height: 0 });
+	const offset = signal(0);
+	const hoveredRow = signal(-1);
+	const focused = signal<number | null>(null);
+	const focusTarget = signal<number | null>(null);
+	const count = computed(() => props.entries().length);
+	const trackWidth = computed(() => {
+		const { width } = viewport();
+		if (width < MIN_PANE_WIDTH) return 0;
+		const { widthPercent, maxWidth, paddingHorizontal } =
+			conversationColumnGeometry(layout().claude, layout().narrow);
+		const columnWidth = Math.min((width * widthPercent) / 100, maxWidth);
+		const gutter = (width - columnWidth) / 2 + paddingHorizontal;
+		return Math.min(TRACK_WIDTH, gutter - TRACK_INSET);
+	});
+	const capacity = computed(() =>
+		Math.max(0, Math.floor((viewport().height / 2 - 16) / TICK_PITCH)),
 	);
-	// La marca activa es la última mostrada cuya ronda no pasa de la activa.
-	const activeTick = computed(() => {
-		const active = props.activeIndex();
-		let found = -1;
-		for (const [position, tick] of displayed().entries()) {
-			if (tick.index > active) break;
-			found = position;
-		}
-		return found;
+	const showRail = computed(() => trackWidth() > 0 && capacity() > 0);
+	const maxStart = computed(() => Math.max(0, count() - capacity()));
+	const start = computed(() =>
+		Math.min(maxStart(), Math.round(offset() / TICK_PITCH)),
+	);
+
+	// Keep real press targets outside Scroll, which has swallowed child presses
+	// on macOS. A contiguous window keeps every round reachable without sampling.
+	const displayed = computed(() =>
+		props
+			.entries()
+			.slice(start(), start() + capacity())
+			.map((entry, row) => ({ entry, index: start() + row })),
+	);
+	const hoveredIndex = () => (hoveredRow() < 0 ? -1 : start() + hoveredRow());
+	const activeTick = computed(() => displayed()[props.activeIndex() - start()]);
+	const showActiveTick = computed(() => activeTick() !== undefined);
+	const widthAt = (tick: { entry: ConversationOutlineEntry; index: number }) =>
+		tickWidth(TICK_WIDTHS[tick.entry.weight], tick.index, hoveredIndex());
+	const activeWidth = () => {
+		const tick = activeTick();
+		return Math.min(
+			trackWidth(),
+			Math.max(ACTIVE_TICK_WIDTH, tick ? widthAt(tick) + ACTIVE_OVERHANG : 0),
+		);
+	};
+	const tabStop = computed(() => {
+		const requested = focusTarget() ?? focused() ?? props.activeIndex();
+		return Math.max(
+			start(),
+			Math.min(requested, start() + displayed().length - 1),
+		);
 	});
 
-	const onKeyDown = (e: KeyEvent) => {
-		const shown = untracked(displayed);
-		let next = -1;
-		if (e.key === "ArrowDown") next = Math.min(focused() + 1, shown.length - 1);
-		if (e.key === "ArrowUp") next = Math.max(focused() - 1, 0);
-		if (e.key === "Home") next = 0;
-		if (e.key === "End") next = shown.length - 1;
-		if (next >= 0 && next !== focused()) {
-			ticks[next]?.focus();
+	const reveal = (index: number, slots: number) => {
+		if (index < start()) offset.set(index * TICK_PITCH);
+		else if (index >= start() + slots)
+			offset.set((index - slots + 1) * TICK_PITCH);
+	};
+	effect(() => {
+		const active = props.activeIndex();
+		const slots = capacity();
+		const limit = maxStart() * TICK_PITCH;
+		if (slots === 0) return;
+		untracked(() => {
+			offset.set(Math.min(offset(), limit));
+			if (active >= 0) reveal(focusTarget() ?? active, slots);
+		});
+	});
+
+	const onWheel = (event: WheelEvent) => {
+		if (event.modifiers.control || event.delta.y === 0) return;
+		const delta =
+			event.delta.y * (event.deltaMode === "lines" ? TICK_PITCH : 1);
+		offset.set(
+			Math.max(0, Math.min(maxStart() * TICK_PITCH, offset() + delta)),
+		);
+	};
+	const onKeyDown = (event: KeyEvent, index: number) => {
+		const { alt, control, platform, shift } = event.modifiers;
+		if (alt || control || platform || shift) return;
+		if (event.key === "Enter" || event.key === " ") {
+			if (!event.repeat) props.onJump(index);
 			return;
 		}
-		if (e.key === "Enter" || e.key === " ") {
-			const tick = shown[focused()];
-			if (tick) props.onJump(tick.index);
-		}
+		let next = index;
+		if (event.key === "ArrowDown") next = Math.min(index + 1, count() - 1);
+		if (event.key === "ArrowUp") next = Math.max(index - 1, 0);
+		if (event.key === "Home") next = 0;
+		if (event.key === "End") next = count() - 1;
+		if (next === index) return;
+		batch(() => {
+			reveal(next, capacity());
+			focusTarget.set(next);
+		});
 	};
 
 	return (
 		<View
-			testID="chat-outline-rail"
-			accessibilityLabel={t("chat.messageNavigation")}
-			role="navigation"
-			class="pointer-events-none absolute inset-y-0 left-0 items-start justify-center"
-			style={{ width: RAIL_WIDTH, zIndex: 20 }}
-			onLayout={({ bounds }) => railHeight.set(bounds.size.height)}
-			onKeyDown={onKeyDown}
+			class="absolute inset-0 items-start justify-center"
+			style={{ pointerEvents: "box-none", zIndex: 20 }}
+			onLayout={({ bounds }) => viewport.set(bounds.size)}
 		>
-			<View
-				class="pointer-events-auto py-2"
-				style={{ maxHeight: Math.max(railHeight() / 2, TICK_PITCH) }}
-			>
-				<View class="flex-col" style={{ paddingLeft: TRACK_INSET }}>
-					<Each of={displayed()} key="index">
-						{(tick, index) => (
-							<View
-								testID={`chat-outline-tick-${index()}`}
-								focusable
-								accessibilityLabel={tick().entry.title}
-								ref={(node: ViewRef) => (ticks[index()] = node)}
-								focusVisibleStyle={focusRingStyle(token("ring"))}
-								class="pointer-events-auto flex-row items-center"
-								style={{ height: TICK_PITCH }}
-								onFocus={() => focused.set(index())}
-								onBlur={() => focused.set(-1)}
-								onMouseEnter={() => hovered.set(index())}
-								onMouseLeave={() => hovered.set(-1)}
-								onPress={() => props.onJump(tick().index)}
-								tooltip={
-									<Tooltip placement="right" delay={200}>
-										<View class="w-72 gap-1.5">
-											<Text class="font-sans text-sm font-medium leading-snug">
-												{() => tick().entry.title}
-											</Text>
-											<Text class="font-sans text-xs leading-relaxed text-muted-foreground">
-												{() => tick().entry.preview || t("chat.noPiReply")}
-											</Text>
-										</View>
-									</Tooltip>
-								}
-							>
-								{() => {
-									const active = index() === activeTick();
-									const resting = tickWidth(
-										TICK_WIDTHS[tick().entry.weight],
-										index(),
-										hovered(),
-									);
-									return (
+			{() =>
+				showRail() && (
+					<View
+						testID="chat-outline-rail"
+						accessibilityLabel={t("chat.messageNavigation")}
+						role="navigation"
+						class="relative shrink-0"
+						style={{ marginLeft: TRACK_INSET, width: trackWidth() }}
+						onWheel={maxStart() > 0 ? onWheel : undefined}
+						onMouseMove={({ position }) =>
+							hoveredRow.set(Math.floor(position.y / TICK_PITCH))
+						}
+						onMouseLeave={() => hoveredRow.set(-1)}
+					>
+						<Each of={displayed()} key="index">
+							{(tick) => {
+								let button: ViewRef | undefined;
+								const index = () => tick().index;
+								effect(() => {
+									if (focusTarget() === index()) button?.focus();
+								});
+								return (
+									<View
+										testID={`chat-outline-tick-${index()}`}
+										role="button"
+										accessibilityLabel={tick().entry.title}
+										accessibilityState={{
+											current: index() === props.activeIndex(),
+										}}
+										focusable={index() === tabStop()}
+										captureKeys={NAVIGATION_KEYS}
+										ref={(node) => (button = node)}
+										focusVisibleStyle={focusRingStyle(token("ring"))}
+										class="w-full shrink-0 flex-row items-center"
+										style={{ height: TICK_PITCH }}
+										onFocus={() => {
+											focused.set(index());
+											focusTarget.set(null);
+										}}
+										onBlur={() => {
+											if (focused() === index()) focused.set(null);
+										}}
+										onKeyDown={(event) => onKeyDown(event, index())}
+										onPress={() => {
+											if (focused() !== index()) focusTarget.set(index());
+											props.onJump(index());
+										}}
+										tooltip={
+											<Tooltip
+												placement="right"
+												delay={200}
+												class="gap-1.5 rounded-lg border border-border bg-popover p-3"
+												style={{
+													width: 18 * DEFAULT_CHAT_REM,
+													boxShadow: styleVar("pilo-shadow-floating"),
+													zIndex: token("z-popover"),
+												}}
+											>
+												<Text
+													class="font-sans font-medium text-popover-foreground"
+													style={{
+														fontSize: chatPx(14),
+														lineHeight: chatPx(17.5),
+														numberOfLines: 3,
+													}}
+												>
+													{() => tick().entry.title}
+												</Text>
+												{() => {
+													const preview = tick().entry.preview;
+													return preview ? (
+														<Text
+															class="font-sans text-muted-foreground"
+															style={{
+																fontSize: chatPx(12),
+																lineHeight: chatPx(19.5),
+																numberOfLines: 6,
+															}}
+														>
+															{preview}
+														</Text>
+													) : null;
+												}}
+											</Tooltip>
+										}
+									>
 										<View
-											class={
-												active
-													? "rounded-full bg-foreground/80"
-													: "rounded-full bg-muted-foreground/45 hover:bg-muted-foreground/80 focus:bg-foreground/80"
-											}
+											class={`pointer-events-none rounded-full duration-150 ease-out ${
+												index() === hoveredIndex()
+													? "bg-muted-foreground/80"
+													: "bg-muted-foreground/45"
+											}`}
 											style={{
-												height: 2,
-												width: active
-													? Math.max(ACTIVE_TICK_WIDTH, resting + 4)
-													: resting,
-												transitionProperty: "all",
-												transitionDuration: "150ms",
-												transitionTimingFunction: "ease-out",
+												height: TICK_HEIGHT,
+												width: Math.min(trackWidth(), widthAt(tick())),
+												transitionProperty: "background-color,width",
 											}}
 										/>
-									);
-								}}
-							</View>
-						)}
-					</Each>
-				</View>
-			</View>
+									</View>
+								);
+							}}
+						</Each>
+						{() =>
+							showActiveTick() && (
+								<View
+									class="pointer-events-none absolute left-0 top-0 rounded-full bg-foreground/80 duration-150 ease-out"
+									style={{
+										height: TICK_HEIGHT,
+										width: activeWidth(),
+										transform: [
+											{
+												translateY:
+													(props.activeIndex() - start()) * TICK_PITCH +
+													(TICK_PITCH - TICK_HEIGHT) / 2,
+											},
+										],
+										transitionProperty: "transform,width",
+									}}
+								/>
+							)
+						}
+					</View>
+				)
+			}
 		</View>
 	);
 }
