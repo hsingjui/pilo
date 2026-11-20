@@ -26,6 +26,30 @@ test("mod+, opens the settings dialog", async () => {
 	await app.waitFor("id:settings-dialog");
 });
 
+test("the close button dismisses the dialog", async () => {
+	const app = await openApp();
+	await app.press("id:sidebar-settings");
+	await app.waitFor("id:settings-dialog");
+	await app.press("id:settings-dialog-close");
+	await app.waitFor("id:settings-dialog", { state: "gone" });
+});
+
+test("under md the nav collapses into a select in the header", async () => {
+	const app = await openApp();
+	await app.press("id:sidebar-settings");
+	await app.waitFor("id:settings-dialog");
+	expect(app.shows("id:settings-nav")).toBe(true);
+	await app.setViewport(700, 720);
+	await app.waitFor("id:settings-nav", { state: "gone" });
+	await app.waitFor("id:settings-tab-select");
+	await app.press("id:settings-tab-select");
+	await app.press("text:About");
+	await app.waitFor("id:settings-repository");
+	await app.setViewport(1100, 720);
+	await app.waitFor("id:settings-nav");
+	await app.waitFor("id:settings-tab-select", { state: "gone" });
+});
+
 test("a preferences switch saves through the client", async () => {
 	const app = await openApp();
 	await app.press("id:sidebar-settings");
