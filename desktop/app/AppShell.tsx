@@ -84,10 +84,10 @@ export function AppShell(props: AppShellProps) {
 				) ?? null
 		);
 	};
-	/** The title the header shows: Pi's name wins over the index entry's. */
+	/** An explicit rename wins; otherwise prefer Pi's current name. */
 	const openSessionTitle = () =>
-		props.runConfig?.state()?.session?.name ??
 		openSessionEntry()?.titleOverride ??
+		props.runConfig?.state()?.session?.name ??
 		openSessionEntry()?.name ??
 		openSessionEntry()?.firstUserMessagePreview ??
 		t("app.newChat");
