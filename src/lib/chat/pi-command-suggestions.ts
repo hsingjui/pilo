@@ -1,5 +1,5 @@
 import type { PiCommand } from "@/lib/api/pi-runtime";
-import type { ComposerSuggestion } from "@/components/chat/chat-composer-suggestions";
+import type { ComposerSuggestion } from "@/lib/chat/composer-suggestions";
 
 export type PiCommandSuggestion = ComposerSuggestion & {
 	kind: "command";

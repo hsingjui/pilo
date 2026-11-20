@@ -1,7 +1,8 @@
-import type { ComposerSuggestion } from "@/components/chat/chat-composer-suggestions";
+import {
+	FILE_SUGGESTION_LIMIT,
+	type ComposerSuggestion,
+} from "@/lib/chat/composer-suggestions";
 import { fileMentionValue } from "@/lib/chat/chat-mentions";
-
-const FILE_SUGGESTION_LIMIT = 5;
 
 function fileSuggestionScore(path: string, query: string) {
 	if (!query) return 1;
