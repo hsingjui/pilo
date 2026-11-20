@@ -13,9 +13,12 @@ export type {
 } from "./connections-types";
 
 import type {
+	ConnectionHealth,
 	ConnectionTestResult,
+	PiExecutableInfo,
 	WslConnectionInfo,
 } from "./connections-types";
+import type { WslDistribution } from "./pi-runtime-types";
 
 export type { WslDistribution } from "./pi-runtime-types";
 
