@@ -8,7 +8,7 @@ import {
 	Text,
 	View,
 } from "nsh";
-import { currentWindow, titleBar } from "nsh/desktop";
+import { currentWindow } from "nsh/desktop";
 
 import type { Project } from "@/lib/api/projects-types";
 import { ChatMessageList } from "../chat/chat-message-list";
@@ -22,6 +22,7 @@ import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 import type { ModelCatalogStore } from "../state/model-catalog";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
+import { APP_SHORTCUTS } from "../shortcuts";
 import {
 	SettingsDialog,
 	type SettingsClient,
@@ -31,6 +32,7 @@ import { Icon } from "../ui/icon";
 import { Toast } from "../ui/toast";
 import { followSavedAppearance } from "./appearance";
 import { CommandPalette } from "./command-palette";
+import type { DesktopShell } from "./desktop-shell";
 import { t } from "./i18n";
 import { AddProjectDialog, type AddProjectApi } from "./add-project-dialog";
 import { SessionLanding } from "./landing";
@@ -80,6 +82,7 @@ export interface AppShellProps {
 	settings?: SettingsClient;
 	/** The client calls the add-project dialog needs; `undefined` hides it. */
 	projectClient?: AddProjectApi;
+	desktop?: DesktopShell;
 }
 
 export function AppShell(props: AppShellProps) {
@@ -117,20 +120,21 @@ export function AppShell(props: AppShellProps) {
 	effect(() => composer.setTarget(chatTarget()));
 	followSavedAppearance(store.state);
 	keymap.bind({
-		"mod+k": () => paletteOpen.update((open) => !open),
-		"mod+n": () => {
+		[APP_SHORTCUTS.openCommandPalette]: () =>
+			paletteOpen.update((open) => !open),
+		[APP_SHORTCUTS.newChat]: () => {
 			const project = activeProject(store.state());
 			if (project) store.selectProject(project.id);
 		},
-		"mod+,": () => {
+		[APP_SHORTCUTS.openSettings]: () => {
 			if (props.settings) settingsOpen.set(true);
 		},
 	});
 	// The app draws its own title bar: the sidebar and the main area reach
 	// the window's top edge, beside the system's window controls.
-	currentWindow().set({
-		titleBar: { style: "hidden", height: TITLE_BAR_HEIGHT },
-	});
+	const window = currentWindow();
+	window.set({ titleBar: { style: "hidden", height: TITLE_BAR_HEIGHT } });
+	const titleBar = () => window.titleBar();
 	const barHeight = () => titleBar().height || TITLE_BAR_HEIGHT;
 	const toggle = (testID: string, label: () => string) => (
 		<Button
@@ -204,6 +208,7 @@ export function AppShell(props: AppShellProps) {
 					style={{
 						height: barHeight(),
 						paddingLeft: collapsed() ? titleBar().left + 8 : 8,
+						paddingRight: titleBar().right + 8,
 					}}
 				>
 					{() =>
@@ -367,6 +372,7 @@ export function AppShell(props: AppShellProps) {
 						onClose={() => settingsOpen.set(false)}
 						state={store.state}
 						client={props.settings}
+						desktop={props.desktop}
 					/>
 				) : null
 			}

@@ -1,4 +1,5 @@
 import { mount } from "nsh";
+import { isAvailable, Window } from "nsh/desktop";
 
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
 import { ComposerStore } from "../composer/composer-store";
@@ -7,6 +8,10 @@ import { ChatRunConfigStore } from "../state/chat-run-config";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { ModelCatalogStore } from "../state/model-catalog";
 import { AppShell } from "./AppShell";
+import {
+	connectDesktopShell,
+	type DesktopSettingsClient,
+} from "./desktop-shell";
 import { appLocale } from "./i18n";
 import {
 	conversationContext,
@@ -21,10 +26,21 @@ import { SessionForker } from "./session-fork";
  * Starts the app on `pilo`: shows the shell, loads the app state, keeps the
  * open session's transcript read and marks its finished turns as seen.
  */
-export async function launch(pilo: PiloNative) {
+export async function launch(
+	pilo: PiloNative,
+	desktopSettings?: DesktopSettingsClient,
+) {
 	const client = new NshPiloClient(pilo);
 	const chat = new ChatTranscriptStore(client, conversationContext());
 	const store = new AppStore(client, chat);
+	const main = isAvailable ? Window.get("main") : null;
+	const desktop =
+		main && desktopSettings
+			? connectDesktopShell(main, desktopSettings, async () => {
+					store.stop();
+					await client.shutdown();
+				})
+			: undefined;
 	const catalog = new ModelCatalogStore(client);
 	const runConfig = new ChatRunConfigStore(client, catalog.state);
 	const composer = new ComposerStore({
@@ -61,6 +77,7 @@ export async function launch(pilo: PiloNative) {
 		searchSessions: client,
 		settings: client,
 		projectClient: client,
+		desktop,
 		onRenameSession: (projectId, sessionPath, title) =>
 			void store.renameSession(projectId, sessionPath, title),
 		readProjectImage: (projectId, path) =>
@@ -71,5 +88,5 @@ export async function launch(pilo: PiloNative) {
 		.catch((error: unknown) => {
 			console.warn("Failed to initialize Host locale", error);
 		});
-	return store.start();
+	if (!desktop?.isQuitting()) await store.start();
 }

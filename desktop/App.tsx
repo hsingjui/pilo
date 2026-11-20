@@ -5,4 +5,5 @@ import { initializeI18n } from "./app/i18n";
 import { launch } from "./app/launch";
 
 initializeI18n();
-void launch(new Pilo());
+const pilo = new Pilo();
+void launch(pilo, pilo);

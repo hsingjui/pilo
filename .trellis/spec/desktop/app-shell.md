@@ -2,7 +2,7 @@
 
 ## 入口与边界
 
-`desktop/App.tsx` 只注册字体、初始化 i18n 并调用 `launch(new Pilo())`。`desktop/app/launch.tsx` 依次创建 `NshPiloClient`、`ChatTranscriptStore`、`AppStore(client, chat)`，接上 `followOpenSession(store, chat)` 与 `followOpenSessionRead(store)`，再 `mount(AppShell, { store, chat })`，把已保存的界面语言写入 Host 偏好（`client.savePreferences`），最后 `store.start()`。
+`desktop/App.tsx` 注册字体、初始化 i18n 并把 `Pilo` 实例交给 `launch`。`desktop/app/launch.tsx` 创建客户端和状态 store，接上桌面生命周期和打开会话的订阅，再挂载 `AppShell`、初始化 Host 语言偏好，最后 `store.start()`。
 
 | 路径                               | 职责                                                   |
 | ---------------------------------- | ------------------------------------------------------ |
@@ -15,6 +15,24 @@
 | `desktop/app/read-open-session.ts` | 应用处于 active 时把打开会话的完成轮次标为已读         |
 
 业务接线只放 `desktop/app`。`desktop/chat`（消息列表）、`desktop/ui`（基础组件）、`desktop/state`、`desktop/client` 由各自的任务维护；外壳缺少能力时向对应任务提出，不在外壳里复制或改写。
+
+## 主窗口
+
+- `desktop/nsh.json` 的 `window.restoreBounds` 由 nsh 保存和恢复窗口位置、大小与模式，并根据当前显示器调整恢复位置。没有保存状态时居中打开。窗口状态不进 Host SQLite，也不读取旧 Tauri 的窗口状态。
+- `AppShell` 保留系统窗口框架和按钮，只绘制内容顶栏和拖动区。用 `WindowRef.titleBar()` 的 `left` / `right` 避开系统按钮，不按平台写死按钮宽度。
+- `singleInstance: true` 由 nsh 宿主处理。再次启动、托盘显示、已注册的全局快捷键复用主窗口的 `focus()`，由 nsh 显示窗口并恢复最小化。
+- `desktop-shell.ts` 接管主窗口 `closePress`。`exitOnClose` 为 `false` 且已注册快捷键或已收到托盘操作时，普通关闭隐藏主窗口，Host 继续运行。nsh 的 `Tray.set()` 不返回安装结果；没有已知恢复途径、设置未加载或系统关闭时走退出，不让窗口藏起来无法恢复。托盘的「隐藏」是显式操作，不受 `exitOnClose` 影响。
+- 托盘退出、`quitRequest` 和需要退出的关闭请求共用幂等流程：停止监听运行时事件，等 `client.shutdown()`，再 `Application.quit()`。监听 `quitRequest` 后调用 `Application.setQuitRequestOptions({ system: true })`，把 macOS 注销、重启和关机也接入该流程。不要把等待放进最终的 `quit` 事件：nsh 只为该事件提供 200 ms。
+- 登录启动只读写 nsh 原生系统开关；当前 API 不提供登录启动标记，不能实现只在登录启动时后台隐藏。开发宿主和安装包的系统能力不同，不以 headless 结果代替原生验收。
+
+## 桌面设置
+
+- **范围**：仅 nsh 主窗口。桌面设置不上 WebUI API，不改变 Host 事件或会话读写协议。
+- **签名**：`Pilo.loadDesktopSettings() → { showShortcut, exitOnClose }`、`saveExitOnClose(enabled) → void`、`saveShowShortcut(shortcut) → void`。三者复用 `desktop_settings`，各写入只改变自己的列。`showShortcut` 缺省 `mod+alt+p`，`exitOnClose` 缺省 `false`。
+- **快捷键检查**：注册前与 `desktop/shortcuts.ts` 的实际绑定比较平台键位，包括尚未启用的 `mod+enter` 发送键。拒绝冲突时不更改旧绑定或数据库；启动时发现已保存的冲突键则显示为未生效，保留原值供用户修改。
+- **快捷键写入**：先注册新的键，后持久化，再释放旧键；写入使用立即事务检查已持久化的应用内快捷键冲突。系统拒绝注册不写库，数据库拒绝保存只释放新键，保留旧键和原设置。相同的物理键不重复注册。
+- **验收**：原生窗口拖动、调整大小、最小化/最大化；普通和最大化状态分别退出重开，再拔副屏重开；从托盘、快捷键和二次启动恢复窗口；占用新快捷键时旧键仍生效；隐藏时 Pi 继续工作，显式退出时 Host 清理。
+- **错误示例**：先释放旧快捷键再尝试注册新键会在注册冲突时丢失恢复入口。正确做法是 `register(next) → saveShowShortcut(next) → unregister(previous)`；保存失败则仅 `unregister(next)`。
 
 ## 打开会话的 transcript
 

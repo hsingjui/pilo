@@ -3,7 +3,10 @@
 	"id": "app.hsingjui.pilo.desktop",
 	"version": "0.4.1",
 	"theme": "theme.json",
+	"singleInstance": true,
 	"window": {
+		"defaultPosition": "center",
+		"restoreBounds": true,
 		"defaultSize": {
 			"width": 1200,
 			"height": 800
@@ -17,6 +20,7 @@
 	"capabilities": {
 		"application": true,
 		"notifications": true,
+		"statusBar": true,
 		"openUrl": { "schemes": ["https"] }
 	},
 	"rust": "native",

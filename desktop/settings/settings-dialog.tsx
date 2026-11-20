@@ -15,6 +15,7 @@ import { classNames } from "../ui/class-names";
 import { Icon, type IconName } from "../ui/icon";
 import { scrollbarLook } from "../ui/scrollbar";
 import { styleVar } from "../ui/theme-style";
+import type { DesktopShell } from "../app/desktop-shell";
 import { t } from "../app/i18n";
 import { AboutPane } from "./about-pane";
 import { CacheKeepAlivePane } from "./cache-keep-alive-pane";
@@ -56,6 +57,7 @@ export interface SettingsDialogProps {
 	/** The app state the panes read (preferences, theme, projects). */
 	state: Accessor<AppState>;
 	client: SettingsClient;
+	desktop?: DesktopShell;
 }
 
 export type SettingsTabId =
@@ -342,9 +344,14 @@ export function SettingsDialog(props: SettingsDialogProps) {
 										/>
 									);
 								case "shortcuts":
-									return <ShortcutsPane state={props.state} />;
+									return (
+										<ShortcutsPane
+											state={props.state}
+											desktop={props.desktop}
+										/>
+									);
 								case "desktop":
-									return <DesktopPane />;
+									return <DesktopPane desktop={props.desktop} />;
 								case "about":
 									return <AboutPane />;
 								default:

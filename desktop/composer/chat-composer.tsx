@@ -22,6 +22,7 @@ import { sessionMentionValue } from "@/lib/chat/session-mentions";
 import type { ComposerSendMode } from "@/lib/chat/send-mode";
 import type { SendMessageShortcut } from "@/lib/host-preferences-types";
 
+import { APP_SHORTCUTS } from "../shortcuts";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
@@ -122,7 +123,11 @@ export function ChatComposer(props: ChatComposerProps) {
 	// "mod+enter" submits when the preference says so; Return stays a newline.
 	effect(() => {
 		if (!modEnter()) return;
-		cleanup(keymap.bind("mod+enter", () => submit(), { when: "always" }));
+		cleanup(
+			keymap.bind(APP_SHORTCUTS.sendMessage, () => submit(), {
+				when: "always",
+			}),
+		);
 	});
 
 	// File suggestions follow the `@` query, debounced.

@@ -49,6 +49,24 @@ pub fn set_show_shortcut(db: &Connection, shortcut: &str) -> Result<(), String> 
     Ok(())
 }
 
+/// Persists a shortcut already registered by a native shell, checking for
+/// conflicts with the current application shortcuts in the same transaction.
+pub fn save_registered_show_shortcut(
+    paths: &crate::runtime::host_paths::HostPaths,
+    shortcut: &str,
+) -> Result<(), String> {
+    let mut db = super::open(paths)?;
+    let transaction = db
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    crate::runtime::shortcuts::validate_in_app_shortcut_conflicts(
+        shortcut,
+        &super::get_preferences(&transaction)?.values["keyboardShortcuts"],
+    )?;
+    set_show_shortcut(&transaction, shortcut)?;
+    transaction.commit().map_err(|error| error.to_string())
+}
+
 pub fn get_exit_on_close(db: &Connection) -> Result<bool, String> {
     db.query_row(
         "SELECT exit_on_close FROM desktop_settings WHERE id = 1",

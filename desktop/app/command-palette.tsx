@@ -4,6 +4,7 @@ import type { CommandItem } from "nsh/base";
 import type { SessionSearchMatch } from "@/lib/api/sessions-types";
 import { displayProjectPath } from "@/lib/project-path";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
+import { APP_SHORTCUTS } from "../shortcuts";
 import { activeProject } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
 import { Command } from "../ui/command";
@@ -115,13 +116,13 @@ export function CommandPalette(props: CommandPaletteProps) {
 			actions.push({
 				id: "action:new-session",
 				label: t("app.newChat"),
-				shortcut: "mod+n",
+				shortcut: APP_SHORTCUTS.newChat,
 			});
 		if (props.onOpenSettings)
 			actions.push({
 				id: "action:settings",
 				label: t("settings.title"),
-				shortcut: "mod+,",
+				shortcut: APP_SHORTCUTS.openSettings,
 			});
 		return actions.filter(
 			(action) => !q || action.label.toLocaleLowerCase().includes(q),

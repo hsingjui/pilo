@@ -40,7 +40,7 @@ use pilo_lib::{
             session_search, session_update_ui_state,
         },
         session_naming::session_generate_title,
-        tasks,
+        storage, tasks,
         web_assets::{WebAsset, WebAssets},
     },
 };
@@ -111,13 +111,17 @@ fn workspace() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+fn data_identifier(development: bool) -> &'static str {
+    if development {
+        "app.hsingjui.pilo.dev"
+    } else {
+        "app.hsingjui.pilo"
+    }
+}
+
 fn default_data_dir(home: &Path, development: bool) -> PathBuf {
     home.join("Library/Application Support")
-        .join(if development {
-            "app.hsingjui.pilo.dev"
-        } else {
-            "app.hsingjui.pilo"
-        })
+        .join(data_identifier(development))
 }
 
 fn executor() -> Result<&'static Executor, String> {
@@ -225,6 +229,13 @@ pub struct Bootstrap {
     pub preferences: NativePreferencesSnapshot,
 }
 
+/// Desktop-only preferences shared with the previous shell.
+#[derive(JsObject)]
+pub struct NativeDesktopSettings {
+    pub show_shortcut: String,
+    pub exit_on_close: bool,
+}
+
 /// The current revision and complete Host preference values.
 #[derive(JsObject)]
 pub struct NativePreferencesSnapshot {
@@ -281,6 +292,7 @@ pub struct NativeChatBuiltinExtension {
 #[class]
 pub struct Pilo {
     host: Host,
+    paths: HostPaths,
     executor: &'static Executor,
     event_stream: Arc<Mutex<EventStream>>,
 }
@@ -333,15 +345,23 @@ impl Pilo {
 
 #[class]
 impl Pilo {
-    /// Opens Pilo on the existing macOS Tauri data directory, or an explicit absolute directory.
+    /// Opens Pilo on the existing Tauri data directory, or an explicit absolute directory.
     pub fn new(data_dir: Option<String>) -> Result<Self, String> {
         let data_dir = match data_dir {
             Some(path) => PathBuf::from(path),
             None => {
-                let home = std::env::var_os("HOME")
+                let variable = if cfg!(windows) { "APPDATA" } else { "HOME" };
+                let base = std::env::var_os(variable)
                     .filter(|value| !value.is_empty())
-                    .ok_or("could not find the Pilo data directory: HOME is unavailable")?;
-                default_data_dir(Path::new(&home), cfg!(debug_assertions))
+                    .ok_or_else(|| {
+                        format!("could not find the Pilo data directory: {variable} is unavailable")
+                    })?;
+                let development = cfg!(debug_assertions);
+                if cfg!(windows) {
+                    PathBuf::from(base).join(data_identifier(development))
+                } else {
+                    default_data_dir(Path::new(&base), development)
+                }
             }
         };
         if !data_dir.is_absolute() {
@@ -381,7 +401,7 @@ impl Pilo {
             });
         initialize_server_resource_dir(resources);
         initialize_local_server_binary(server);
-        let runtime = Runtime::new(paths, Arc::new(ShellEvents))
+        let runtime = Runtime::new(paths.clone(), Arc::new(ShellEvents))
             .with_shell(Arc::new(NshHostShell {
                 cache_dir: data_dir.join("cache"),
             }))?
@@ -390,6 +410,7 @@ impl Pilo {
         runtime.start_idle_reaper();
         Ok(Self {
             host: Arc::new(Mutex::new(Some(runtime))),
+            paths,
             executor,
             event_stream: Arc::new(Mutex::new(event_stream)),
         })
@@ -989,6 +1010,39 @@ impl Pilo {
             session_mark_read(&runtime, project_id, session_path, revision as u64)
                 .await
                 .map(Into::into)
+        })
+        .await
+    }
+
+    /// Reads the saved global show shortcut and main-window close behavior.
+    pub async fn load_desktop_settings(
+        this: Instance<Self>,
+    ) -> Result<NativeDesktopSettings, String> {
+        let paths = this.with(|pilo| pilo.paths.clone());
+        Self::with_runtime_blocking(this, move |_| {
+            let db = storage::open(&paths)?;
+            Ok(NativeDesktopSettings {
+                show_shortcut: storage::get_show_shortcut(&db)?,
+                exit_on_close: storage::get_exit_on_close(&db)?,
+            })
+        })
+        .await
+    }
+
+    /// Saves whether closing the main window quits Pilo instead of hiding it.
+    pub async fn save_exit_on_close(this: Instance<Self>, enabled: bool) -> Result<(), String> {
+        let paths = this.with(|pilo| pilo.paths.clone());
+        Self::with_runtime_blocking(this, move |_| {
+            storage::set_exit_on_close(&storage::open(&paths)?, enabled)
+        })
+        .await
+    }
+
+    /// Saves only after the shell has registered the key with the OS.
+    pub async fn save_show_shortcut(this: Instance<Self>, shortcut: String) -> Result<(), String> {
+        let paths = this.with(|pilo| pilo.paths.clone());
+        Self::with_runtime_blocking(this, move |_| {
+            storage::save_registered_show_shortcut(&paths, &shortcut)
         })
         .await
     }
