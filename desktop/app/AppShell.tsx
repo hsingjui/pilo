@@ -11,10 +11,7 @@ import { currentWindow, titleBar } from "nsh/desktop";
 
 import type { Project } from "@/lib/api/projects-types";
 import { ChatMessageList } from "../chat/chat-message-list";
-import {
-	ChatMarkdown,
-	type ChatMarkdownFileLink,
-} from "../chat/chat-markdown";
+import { ChatMarkdown, type ChatMarkdownFileLink } from "../chat/chat-markdown";
 import { ChatComposer } from "../composer/chat-composer";
 import type { ComposerStore } from "../composer/composer-store";
 import { activeProject } from "../state/app-state";
