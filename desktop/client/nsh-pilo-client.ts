@@ -23,6 +23,7 @@ import type {
 	SessionHistoryResult,
 	SessionIndexEntry,
 	SessionSearchMatch,
+	SessionUiStateUpdate,
 } from "@/lib/api/sessions-types";
 import type {
 	ProjectModelScope,
@@ -65,11 +66,13 @@ export type PiloNative = Pick<
 	| "removeChatFile"
 	| "generateSessionTitle"
 	| "deleteSession"
+	| "updateSessionUiState"
 	| "loadHistory"
 	| "readHistoryImage"
 	| "readProjectImage"
 	| "loadConnectionModels"
 	| "loadModels"
+	| "saveModels"
 	| "loadModelScope"
 	| "saveModelScope"
 	| "loadCacheKeepAliveSettings"
@@ -263,6 +266,22 @@ export class NshPiloClient implements BridgedPiloClient {
 	}
 
 	/**
+	 * Updates an indexed session's pin state or title override; the index
+	 * reports the new entry through `sessions_indexed`.
+	 */
+	async updateSessionUiState(
+		sessionPath: string,
+		update: SessionUiStateUpdate,
+		projectId?: string,
+	): Promise<SessionIndexEntry> {
+		return (await this.pilo.updateSessionUiState(
+			sessionPath,
+			update,
+			projectId,
+		)) as SessionIndexEntry;
+	}
+
+	/**
 	 * A window of a saved session's history, read from its file without
 	 * starting Pi; by default the last 256 messages with the message index.
 	 * It is the settled history only: it has no place in the event stream,
@@ -314,6 +333,11 @@ export class NshPiloClient implements BridgedPiloClient {
 	 */
 	async loadModels(projectId: string): Promise<ProjectPiModels | null> {
 		return (await this.pilo.loadModels(projectId)) as ProjectPiModels | null;
+	}
+
+	/** Persists a refreshed catalog snapshot as the project's model cache. */
+	async saveModels(snapshot: ProjectPiModels): Promise<ProjectPiModels> {
+		return (await this.pilo.saveModels(snapshot)) as ProjectPiModels;
 	}
 
 	/** The project's model scope; `models: null` means it inherits Pi's. */

@@ -22,8 +22,8 @@ use pilo_lib::{
         preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
         project_api::{
             project_chat_file_remove, project_chat_file_upload, project_fs_read_image,
-            project_fs_search, project_list, project_model_cache_list, project_model_scope_get,
-            project_model_scope_set,
+            project_fs_search, project_list, project_model_cache_list, project_model_cache_set,
+            project_model_scope_get, project_model_scope_set,
         },
         prompt_enhancement::{
             prompt_enhance, prompt_enhancement_settings_get, prompt_enhancement_settings_set,
@@ -33,7 +33,7 @@ use pilo_lib::{
         },
         session_api::{
             session_delete, session_history, session_history_image, session_reconcile,
-            session_search,
+            session_search, session_update_ui_state,
         },
         session_naming::session_generate_title,
         tasks,
@@ -444,6 +444,28 @@ impl Pilo {
         .await
     }
 
+    /// Persists a refreshed project model catalog snapshot.
+    pub async fn save_models(
+        this: Instance<Self>,
+        snapshot: JsonValue,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, move |runtime| {
+            let cache: pilo_lib::domain::ProjectModelCache =
+                serde_json::from_value(snapshot).map_err(|error| error.to_string())?;
+            let cache = project_model_cache_set(
+                runtime,
+                cache.project_id,
+                cache.models,
+                cache.commands,
+                cache.default_model,
+                cache.default_thinking_level,
+                cache.refreshed_at_ms,
+            )?;
+            serde_json::to_value(cache).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
     /// Replaces a project's saved model scope or restores Pi inheritance.
     pub async fn save_model_scope(
         this: Instance<Self>,
@@ -642,6 +664,21 @@ impl Pilo {
         Self::with_runtime(this, move |runtime| async move {
             serde_json::to_value(session_delete(&runtime, project_id, session_path).await?)
                 .map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Updates an indexed session's pin state or title override.
+    pub async fn update_session_ui_state(
+        this: Instance<Self>,
+        session_path: String,
+        update: JsonValue,
+        project_id: Option<String>,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, move |runtime| {
+            let update = serde_json::from_value(update).map_err(|error| error.to_string())?;
+            let entry = session_update_ui_state(runtime, session_path, update, project_id)?;
+            serde_json::to_value(entry).map_err(|error| error.to_string())
         })
         .await
     }

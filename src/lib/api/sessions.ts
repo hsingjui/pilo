@@ -10,6 +10,7 @@ import type {
 	SessionHistoryResult,
 	SessionIndexEntry,
 	SessionSearchMatch,
+	SessionUiStateUpdate,
 } from "./sessions-types";
 
 export * from "./sessions-types";
@@ -20,11 +21,6 @@ export type ConnectionNamingModel = {
 	connectionId: string;
 	provider: string;
 	modelId: string;
-};
-
-export type SessionUiStateUpdate = {
-	pinned: boolean;
-	titleOverride: string | null;
 };
 
 export type SessionReconcileResult = {

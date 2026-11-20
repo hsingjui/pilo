@@ -49,6 +49,11 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 		removeChatFile: answer("removeChatFile", undefined),
 		generateSessionTitle: answer("generateSessionTitle", "Repair the parser"),
 		deleteSession: answer("deleteSession", { method: "trash" }),
+		updateSessionUiState: answer("updateSessionUiState", {
+			sessionPath: "/s.jsonl",
+			titleOverride: "Renamed",
+			pinned: false,
+		}),
 		loadHistory: answer("loadHistory", {
 			history: { totalMessages: 2 },
 			fingerprint: { fileSize: 9, fileMtimeNs: "7" },
@@ -57,6 +62,7 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 		readProjectImage: answer("readProjectImage", new Uint8Array([3])),
 		loadConnectionModels: answer("loadConnectionModels", [{ id: "m1" }]),
 		loadModels: answer("loadModels", { projectId: "p1", models: [] }),
+		saveModels: answer("saveModels", { projectId: "p1", models: [] }),
 		loadModelScope: answer("loadModelScope", {
 			projectId: "p1",
 			models: null,
@@ -236,6 +242,17 @@ test("session search, title and deletion pass their arguments and return the nat
 	expect(await client.deleteSession("p1", "/s.jsonl")).toEqual({
 		method: "trash",
 	});
+	expect(
+		await client.updateSessionUiState(
+			"/s.jsonl",
+			{ pinned: false, titleOverride: "Renamed" },
+			"p1",
+		),
+	).toEqual({
+		sessionPath: "/s.jsonl",
+		titleOverride: "Renamed",
+		pinned: false,
+	});
 	expect(calls).toEqual([
 		["searchSessions", "p1", "needle", 5],
 		["searchSessions", "p1", "needle", undefined],
@@ -244,6 +261,12 @@ test("session search, title and deletion pass their arguments and return the nat
 		["removeChatFile", "p1", "/attachments/aQ/note.md"],
 		["generateSessionTitle", "p1", "Repair the parser"],
 		["deleteSession", "p1", "/s.jsonl"],
+		[
+			"updateSessionUiState",
+			"/s.jsonl",
+			{ pinned: false, titleOverride: "Renamed" },
+			"p1",
+		],
 	]);
 });
 
@@ -319,10 +342,23 @@ test("model calls pass their arguments and return the native answers", async () 
 		models: null,
 		updatedAtMs: 0,
 	});
+	const snapshot = {
+		projectId: "p1",
+		models: [],
+		commands: null,
+		defaultModel: null,
+		defaultThinkingLevel: null,
+		refreshedAtMs: 5,
+	};
+	expect(await client.saveModels(snapshot)).toEqual({
+		projectId: "p1",
+		models: [],
+	});
 	expect(calls).toEqual([
 		["loadConnectionModels", "local"],
 		["loadModels", "p1"],
 		["loadModelScope", "p1"],
+		["saveModels", snapshot],
 	]);
 });
 

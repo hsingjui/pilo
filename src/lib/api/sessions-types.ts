@@ -25,6 +25,11 @@ export type SessionIndexEntry = {
 	titleOverride: string | null;
 };
 
+export type SessionUiStateUpdate = {
+	pinned: boolean;
+	titleOverride: string | null;
+};
+
 export type SessionSearchMatch = {
 	sessionPath: string;
 	sessionId: string;
