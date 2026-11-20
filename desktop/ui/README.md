@@ -25,6 +25,10 @@
   `hover:` class cannot reach; spread `hover.props` on the view.
 - `StateView`/`EmptyState`/`ErrorState` (`state-view.tsx`) match React's
   `src/ui/state-view.tsx`; callers pass the copy (title, retry label).
+- App-wide toasts (copy results, settings feedback, fork notices) go through
+  `AppToaster`/`showToast` in `app/app-toasts.tsx`, shown top center as
+  React's Sonner. Fixtures that render a pane alone provide their own
+  `AppToaster.Provider` and `AppToastStack`.
 - Fixtures and `nsh/test` coverage live in `desktop/tests/ui-*`. Check headless
   behavior and native macOS behavior separately; headless checks do not draw.
 - Popover defaults to center (like React); triggers near a window edge must pass `align="start"`.

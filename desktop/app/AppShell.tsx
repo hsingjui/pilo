@@ -3,9 +3,7 @@ import {
 	effect,
 	type JSX,
 	keymap,
-	Overlay,
 	signal,
-	Text,
 	token,
 	untracked,
 	View,
@@ -38,7 +36,7 @@ import {
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { ErrorState } from "../ui/state-view";
-import { Toast } from "../ui/toast";
+import { AppToaster, AppToasts, AppToastStack } from "./app-toasts";
 import { followSavedAppearance } from "./appearance";
 import { CommandPalette } from "./command-palette";
 import type { DesktopShell } from "./desktop-shell";
@@ -47,7 +45,10 @@ import { AddProjectDialog, type AddProjectApi } from "./add-project-dialog";
 import { SessionLanding } from "./landing";
 import { openChatTarget } from "./open-chat";
 import { SessionHeader } from "./session-header";
-import type { SessionForker } from "./session-fork";
+import {
+	NOTICE_MS as FORK_NOTICE_MS,
+	type SessionForker,
+} from "./session-fork";
 import { createSidebarLayout } from "./sidebar-layout";
 import { SidebarPanel, StartupSidebar } from "./sidebar-panel";
 import { SidebarSettingsStore } from "./sidebar-settings";
@@ -163,6 +164,22 @@ export function AppShell(props: AppShellProps) {
 		store.state().navigation.session?.sessionId !== undefined &&
 		chat.messages().length === 0;
 	followSavedAppearance(store.state);
+	const toasts = new AppToasts();
+	// A fork's outcome joins the app's toasts once per notice.
+	let forkNotice: number | null = null;
+	effect(() => {
+		const notice = props.forker?.state().notice;
+		if (!notice || notice.id === forkNotice) return;
+		forkNotice = notice.id;
+		untracked(() =>
+			toasts.show({
+				variant: notice.kind,
+				title: notice.title,
+				description: notice.description,
+				timeout: FORK_NOTICE_MS,
+			}),
+		);
+	});
 	keymap.bind({
 		[APP_SHORTCUTS.openCommandPalette]: () =>
 			paletteOpen.update((open) => !open),
@@ -487,62 +504,49 @@ export function AppShell(props: AppShellProps) {
 		</View>
 	);
 	return (
-		<View testID="app" class="flex-1 flex-row bg-background">
-			<ConversationColumnLayout.Provider value={conversationLayout}>
-				{layout()}
-			</ConversationColumnLayout.Provider>
-			{() =>
-				paletteOpen() ? (
-					<CommandPalette
-						store={store}
-						searchSessions={props.searchSessions}
-						onOpenSettings={
-							props.settings ? () => settingsOpen.set(true) : undefined
-						}
-						onClose={() => paletteOpen.set(false)}
-					/>
-				) : null
-			}
-			{() =>
-				props.settings ? (
-					<SettingsDialog
-						open={settingsOpen}
-						onClose={() => settingsOpen.set(false)}
-						state={store.state}
-						client={props.settings}
-						desktop={props.desktop}
-					/>
-				) : null
-			}
-			{() =>
-				props.projectClient ? (
-					<AddProjectDialog
-						open={addProjectOpen}
-						api={props.projectClient}
-						initialConnectionId={addProjectConnection}
-						onAdd={(connectionId, path) => store.addProject(connectionId, path)}
-					/>
-				) : null
-			}
-			{() => {
-				const notice = props.forker?.state().notice;
-				return notice ? (
-					<Overlay class="top-14 right-4 w-96">
-						<Toast
-							testID={`fork-notice-${notice.id}`}
-							transitionStatus="present"
-							variant={notice.kind}
-							description={notice.description}
-							accessibilityLabel={notice.title}
-							closeLabel={t("common.close")}
-							onDismissRequest={() => props.forker?.dismissNotice()}
-						>
-							<Text class="font-sans">{notice.title}</Text>
-						</Toast>
-					</Overlay>
-				) : null;
-			}}
-		</View>
+		<AppToaster.Provider value={toasts}>
+			<View testID="app" class="flex-1 flex-row bg-background">
+				<ConversationColumnLayout.Provider value={conversationLayout}>
+					{layout()}
+				</ConversationColumnLayout.Provider>
+				{() =>
+					paletteOpen() ? (
+						<CommandPalette
+							store={store}
+							searchSessions={props.searchSessions}
+							onOpenSettings={
+								props.settings ? () => settingsOpen.set(true) : undefined
+							}
+							onClose={() => paletteOpen.set(false)}
+						/>
+					) : null
+				}
+				{() =>
+					props.settings ? (
+						<SettingsDialog
+							open={settingsOpen}
+							onClose={() => settingsOpen.set(false)}
+							state={store.state}
+							client={props.settings}
+							desktop={props.desktop}
+						/>
+					) : null
+				}
+				{() =>
+					props.projectClient ? (
+						<AddProjectDialog
+							open={addProjectOpen}
+							api={props.projectClient}
+							initialConnectionId={addProjectConnection}
+							onAdd={(connectionId, path) =>
+								store.addProject(connectionId, path)
+							}
+						/>
+					) : null
+				}
+				<AppToastStack toasts={toasts} />
+			</View>
+		</AppToaster.Provider>
 	);
 }
 

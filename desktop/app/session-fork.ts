@@ -42,7 +42,8 @@ export type SessionForkOptions = {
 
 const RPC_TIMEOUT_MS = 10_000;
 const FORK_TIMEOUT_MS = 30_000;
-const NOTICE_MS = 6_000;
+/** How long a fork notice shows. */
+export const NOTICE_MS = 6_000;
 let noticeSequence = 0;
 
 /**

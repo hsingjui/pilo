@@ -1,5 +1,6 @@
 import { Clipboard, signal, Text, View } from "nsh";
 
+import { AppToaster, showToast } from "./app-toasts";
 import { PiLogo } from "./pi-logo";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
@@ -27,9 +28,6 @@ export interface SessionHeaderProps {
 	/** The sidebar is collapsed: its expand button floats over the logo. */
 	logoHidden?: () => boolean;
 }
-
-const copyFailed = () => console.warn("Failed to copy to the clipboard");
-const copy = (text: string) => void Clipboard.writeText(text).catch(copyFailed);
 
 /**
  * The open session's part of the main title bar: its title tab and the
@@ -85,12 +83,20 @@ function SessionHeaderMenu(props: {
 	onRename?: (title: string) => void;
 }) {
 	const renameOpen = signal(false);
+	const toasts = AppToaster();
+	const copy = (text: string) =>
+		void Clipboard.writeText(text)
+			.then(() =>
+				showToast(toasts, { variant: "success", title: t("chat.copied") }),
+			)
+			.catch(() =>
+				showToast(toasts, { variant: "error", title: t("chat.copyFailed") }),
+			);
 	return (
 		<>
 			<Menu
 				align="end"
-				popupClass="max-w-64"
-				popupStyle={{ minWidth: 0 }}
+				popupClass="w-72"
 				trigger={
 					<Button
 						testID="session-menu-trigger"
@@ -98,6 +104,11 @@ function SessionHeaderMenu(props: {
 						size="icon"
 						class="size-7"
 						accessibilityLabel={t("chat.sessionMenu")}
+						tooltip={
+							<Tooltip>
+								<Text class="font-sans">{() => t("chat.sessionMenu")}</Text>
+							</Tooltip>
+						}
 					>
 						<Icon name="MoreHorizontal" size={16} />
 					</Button>
