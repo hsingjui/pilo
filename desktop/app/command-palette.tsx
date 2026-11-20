@@ -17,6 +17,8 @@ export interface CommandPaletteProps {
 	store: AppStore;
 	/** Searches saved message text; the message group is absent without it. */
 	searchSessions?: Pick<NshPiloClient, "searchSessions">;
+	/** Opens the settings dialog; the settings action is absent without it. */
+	onOpenSettings?: () => void;
 	onClose: () => void;
 }
 
@@ -108,11 +110,19 @@ export function CommandPalette(props: CommandPaletteProps) {
 	const newSessionProject = () => activeProject(store.state());
 	const actionResults = computed(() => {
 		const q = normalized();
-		const newChat = t("app.newChat");
-		const actions: { id: string; label: string }[] = [
-			{ id: "action:new-session", label: newChat },
-		];
-		if (!newSessionProject()) return [];
+		const actions: { id: string; label: string; shortcut?: string }[] = [];
+		if (newSessionProject())
+			actions.push({
+				id: "action:new-session",
+				label: t("app.newChat"),
+				shortcut: "mod+n",
+			});
+		if (props.onOpenSettings)
+			actions.push({
+				id: "action:settings",
+				label: t("settings.title"),
+				shortcut: "mod+,",
+			});
 		return actions.filter(
 			(action) => !q || action.label.toLocaleLowerCase().includes(q),
 		);
@@ -132,10 +142,19 @@ export function CommandPalette(props: CommandPaletteProps) {
 					id: action.id,
 					label: action.label,
 					group: t("commandPalette.actionGroup"),
-					shortcut: "mod+n",
-					keywords: ["new", "chat", "session"],
+					shortcut: action.shortcut,
+					keywords:
+						action.id === "action:settings"
+							? ["settings", "preferences", "options"]
+							: ["new", "chat", "session"],
 				},
-				{ icon: "SquarePen", detail: newSessionProject()?.name },
+				{
+					icon: action.id === "action:settings" ? "Settings" : "SquarePen",
+					detail:
+						action.id === "action:settings"
+							? undefined
+							: newSessionProject()?.name,
+				},
 			);
 		}
 		for (const project of projectResults()) {
@@ -243,6 +262,8 @@ export function CommandPalette(props: CommandPaletteProps) {
 		if (id === "action:new-session") {
 			const project = newSessionProject();
 			if (project) store.selectProject(project.id);
+		} else if (id === "action:settings") {
+			props.onOpenSettings?.();
 		} else if (id.startsWith("project:")) {
 			store.selectProject(id.slice("project:".length));
 		} else if (id.startsWith("session:")) {

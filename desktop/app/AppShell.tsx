@@ -22,6 +22,10 @@ import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 import type { ModelCatalogStore } from "../state/model-catalog";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
+import {
+	SettingsDialog,
+	type SettingsClient,
+} from "../settings/settings-dialog";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Toast } from "../ui/toast";
@@ -70,6 +74,8 @@ export interface AppShellProps {
 	forker?: Pick<SessionForker, "state" | "forkAssistant" | "dismissNotice">;
 	/** Searches saved message text for the command palette. */
 	searchSessions?: Pick<NshPiloClient, "searchSessions">;
+	/** The settings panes' saves and reads; no settings entry without it. */
+	settings?: SettingsClient;
 }
 
 export function AppShell(props: AppShellProps) {
@@ -98,6 +104,7 @@ export function AppShell(props: AppShellProps) {
 		t("app.newChat");
 	const collapsed = signal(false);
 	const paletteOpen = signal(false);
+	const settingsOpen = signal(false);
 	const sidebarSettings = new SidebarSettingsStore();
 	void sidebarSettings.load();
 	effect(() => composer.setTarget(openChatTarget(store.state())));
@@ -107,6 +114,9 @@ export function AppShell(props: AppShellProps) {
 		"mod+n": () => {
 			const project = activeProject(store.state());
 			if (project) store.selectProject(project.id);
+		},
+		"mod+,": () => {
+			if (props.settings) settingsOpen.set(true);
 		},
 	});
 	// The app draws its own title bar: the sidebar and the main area reach
@@ -137,6 +147,17 @@ export function AppShell(props: AppShellProps) {
 			<Icon name="Search" />
 		</Button>
 	);
+	const settings = props.settings ? (
+		<Button
+			testID="sidebar-settings"
+			variant="ghost"
+			size="icon"
+			accessibilityLabel={t("settings.title")}
+			onPress={() => settingsOpen.set(true)}
+		>
+			<Icon name="Settings" />
+		</Button>
+	) : null;
 	/** A page of the workspace that is not a chat, in its middle. */
 	const centered = (page: JSX.Element) => (
 		<View class="flex-1 items-center justify-center gap-2 p-6">{page}</View>
@@ -157,6 +178,7 @@ export function AppShell(props: AppShellProps) {
 							style={{ height: barHeight(), paddingLeft: titleBar().left }}
 						>
 							{search}
+							{settings}
 							{toggle("sidebar-collapse", () => t("sidebar.collapseSidebar"))}
 						</View>
 						{() =>
@@ -301,7 +323,20 @@ export function AppShell(props: AppShellProps) {
 					<CommandPalette
 						store={store}
 						searchSessions={props.searchSessions}
+						onOpenSettings={
+							props.settings ? () => settingsOpen.set(true) : undefined
+						}
 						onClose={() => paletteOpen.set(false)}
+					/>
+				) : null
+			}
+			{() =>
+				props.settings ? (
+					<SettingsDialog
+						open={settingsOpen}
+						onClose={() => settingsOpen.set(false)}
+						state={store.state}
+						client={props.settings}
 					/>
 				) : null
 			}

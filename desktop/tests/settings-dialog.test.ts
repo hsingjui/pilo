@@ -1,0 +1,45 @@
+import { expect, open, test } from "nsh/test";
+
+async function openApp() {
+	const app = await open("./settings-dialog-fixture.tsx", {
+		platform: "macos",
+		width: 1100,
+		height: 720,
+		locale: "en-US",
+	});
+	await app.waitFor("id:sidebar-settings");
+	return app;
+}
+
+test("the sidebar gear opens the settings dialog", async () => {
+	const app = await openApp();
+	await app.press("id:sidebar-settings");
+	await app.waitFor("id:settings-dialog");
+	expect(app.shows("id:settings-nav-preferences")).toBe(true);
+	expect(app.shows("id:settings-nav-about")).toBe(true);
+	expect(app.shows("id:settings-send-shortcut")).toBe(true);
+});
+
+test("mod+, opens the settings dialog", async () => {
+	const app = await openApp();
+	await app.keyboard.press("mod+,");
+	await app.waitFor("id:settings-dialog");
+});
+
+test("a preferences switch saves through the client", async () => {
+	const app = await openApp();
+	await app.press("id:sidebar-settings");
+	await app.waitFor("id:settings-dialog");
+	await app.press("id:settings-collapse-long");
+	await app.waitFor("text:true");
+	expect(app.shows("id:settings-collapse-long")).toBe(true);
+});
+
+test("the nav moves between panes", async () => {
+	const app = await openApp();
+	await app.press("id:sidebar-settings");
+	await app.waitFor("id:settings-dialog");
+	await app.press("id:settings-nav-about");
+	await app.waitFor("id:settings-repository");
+	expect(app.shows("id:settings-send-shortcut")).toBe(false);
+});

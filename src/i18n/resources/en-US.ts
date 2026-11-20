@@ -169,6 +169,9 @@ const enUS = {
 		promptEnhancementModel: "Enhancement model",
 		promptEnhancementFollowModel: "Follow chat model",
 		sessionNaming: "Session naming",
+		modelCatalog: "Model catalog",
+		desktop: "Desktop",
+		pendingPane: "This pane is not available yet.",
 		remote: "Remote",
 		remoteWebUi: "Remote WebUI",
 		remoteDescription:

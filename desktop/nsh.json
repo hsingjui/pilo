@@ -14,6 +14,9 @@
 		}
 	},
 	"build": 1,
+	"capabilities": {
+		"openUrl": { "schemes": ["https"] }
+	},
 	"rust": "native",
 	"resolve": {
 		"alias": {
