@@ -1,28 +1,32 @@
-import { computed, signal, Text, View } from "nsh";
+import { computed, platform, signal, Text, View } from "nsh";
 
+import { hasTokenUsage } from "@/lib/api/token-usage";
 import {
 	getAssistantActivities,
 	getAssistantMessageContent,
 	getAssistantStreamingState,
+	splitAssistantContentForDisplay,
 } from "@/lib/chat/chat-activity-state";
 
 import { t } from "../app/i18n";
-import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
-import { Tooltip } from "../ui/tooltip";
 import { workDurationText } from "./chat-activity-labels";
 import { ChatAgentActivityIndicator } from "./chat-agent-activity";
 import { ChatAssistantWork } from "./chat-assistant-work";
+import { ChatCopyButton } from "./chat-copy-button";
 import { ChatExpansion } from "./chat-expansion";
 import { ChatMarkdown } from "./chat-markdown";
+import { ChatMessageAction } from "./chat-message-action";
 import type {
 	AssistantChatMessage,
 	ChatMessageBody,
 	ChatTextBody,
 	ChatWorkPreferences,
 } from "./chat-message-types";
+import { ChatTurnUsage } from "./chat-turn-usage";
 import { ConversationColumn } from "./conversation-column";
+import { chatMetadataText, chatPx } from "./layout";
 
 const stalled = "PILO_STREAM_STALLED:";
 
@@ -33,6 +37,19 @@ export const defaultChatWorkPreferences: ChatWorkPreferences = {
 };
 
 const markdownText: ChatTextBody = (text) => <ChatMarkdown text={text} />;
+
+function FooterSeparator() {
+	return (
+		<Text
+			class="font-sans text-muted-foreground"
+			style={chatMetadataText}
+			accessible={false}
+			accessibilityElementsHidden
+		>
+			·
+		</Text>
+	);
+}
 
 /** A reply: its texts and work, then what became of the turn. */
 export function ChatAssistantMessage(props: {
@@ -61,9 +78,34 @@ export function ChatAssistantMessage(props: {
 		const text = message().errorMessage;
 		return text?.startsWith(stalled) ? t("chat.modelStreamStalled") : text;
 	});
-	const activity = computed(() =>
-		getAssistantActivities(getAssistantMessageContent(message())),
+	const content = computed(() => getAssistantMessageContent(message()));
+	const activity = computed(() => getAssistantActivities(content()));
+	const keepWorkExpanded = computed(() => {
+		const { streaming, completion, stopReason } = message();
+		return (
+			streaming === true ||
+			completion === "continued" ||
+			completion === "interrupted" ||
+			stopReason === "aborted"
+		);
+	});
+	const sections = computed(() =>
+		splitAssistantContentForDisplay(
+			content(),
+			!keepWorkExpanded(),
+			Boolean(message().errorMessage),
+		),
 	);
+	const copyText = computed(() =>
+		sections()
+			.final.flatMap((item) => (item.type === "text" ? [item.text] : []))
+			.join(""),
+	);
+	const hasCopyText = () => Boolean(copyText().trim());
+	const turnUsage = computed(() => {
+		const usage = message().usage;
+		return hasTokenUsage(usage) ? usage : null;
+	});
 	// Only a cleanly finished reply can be a fork point, as in the Tauri app.
 	const canFork = computed(
 		() =>
@@ -106,6 +148,8 @@ export function ChatAssistantMessage(props: {
 			) : (
 				<ChatAssistantWork
 					message={message}
+					sections={sections}
+					workActive={() => keepWorkExpanded() && activity().length > 0}
 					expansion={expansion}
 					preferences={preferences}
 					text={props.text ?? markdownText}
@@ -138,84 +182,76 @@ export function ChatAssistantMessage(props: {
 							{t("chat.stopped")}
 						</Text>
 					</View>
-				) : time() || duration() || canFork() ? (
+				) : message().streaming !== true &&
+				  (hasCopyText() ||
+						time() ||
+						duration() ||
+						turnUsage() ||
+						canFork()) ? (
 					<View
 						testID="chat-reply-footer"
-						class="mt-0.5 min-h-7 flex-row flex-wrap items-center gap-2"
+						class="flex-row flex-wrap items-center transition-opacity duration-150"
 						style={{
-							opacity: !props.onFork || hovered() ? 100 : 0,
-							transitionProperty: "opacity",
-							transitionDuration: "150ms",
+							gap: chatPx(8),
+							marginTop: chatPx(2),
+							minHeight: chatPx(28),
+							opacity: !platform.desktop || hovered() ? 1 : 0,
 						}}
-						focusWithinStyle={{ opacity: 100 }}
+						focusWithinStyle={{ opacity: 1 }}
 					>
+						{() => (hasCopyText() ? <ChatCopyButton text={copyText} /> : null)}
 						{() =>
 							canFork() ? (
-								<Button
+								<ChatMessageAction
 									testID={`fork:${message().id}`}
-									variant="ghost"
-									size="icon"
-									class="size-7 rounded-md text-muted-foreground"
 									disabled={
 										(props.forkDisabled?.() ?? false) ||
 										(props.forking?.() ?? false)
 									}
-									accessibilityLabel={t("chat.forkNewSession")}
-									tooltip={
-										<Tooltip>
-											<Text>
-												{() =>
-													props.forking?.()
-														? t("chat.forking")
-														: t("chat.forkNewSession")
-												}
-											</Text>
-										</Tooltip>
-									}
+									label={t(
+										props.forking?.() ? "chat.forking" : "chat.forkNewSession",
+									)}
 									onPress={() => props.onFork?.(message().id)}
 								>
 									{() =>
 										props.forking?.() ? (
-											<Spinner size={14} class="text-muted-foreground" />
+											<Spinner size={chatPx(14)} />
 										) : (
-											<Icon
-												name="GitFork"
-												size={14}
-												class="text-muted-foreground"
-											/>
+											<Icon name="GitFork" size={chatPx(14)} />
 										)
 									}
-								</Button>
+								</ChatMessageAction>
 							) : null
 						}
 						{() =>
 							time() ? (
-								<Text class="font-sans text-xs text-muted-foreground">
+								<Text
+									class="font-sans tabular-nums text-muted-foreground"
+									style={chatMetadataText}
+								>
 									{time}
 								</Text>
 							) : null
 						}
-						{() =>
-							time() && duration() ? (
-								<Text
-									class="font-sans text-xs text-muted-foreground"
-									accessible={false}
-									accessibilityElementsHidden
-								>
-									·
-								</Text>
-							) : null
-						}
+						{() => (time() && duration() ? <FooterSeparator /> : null)}
 						{() =>
 							duration() ? (
 								<Text
 									testID="chat-reply-duration"
-									class="font-mono text-xs text-muted-foreground"
+									class="font-mono tabular-nums text-muted-foreground"
+									style={chatMetadataText}
 								>
 									{duration}
 								</Text>
 							) : null
 						}
+						{() =>
+							turnUsage() && (time() || duration()) ? <FooterSeparator /> : null
+						}
+						{() => {
+							const usage = turnUsage();
+							return usage ? <ChatTurnUsage usage={usage} /> : null;
+						}}
 					</View>
 				) : null
 			}

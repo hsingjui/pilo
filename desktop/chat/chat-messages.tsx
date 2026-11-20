@@ -85,27 +85,19 @@ export function ChatMessages(props: ChatMessagesProps) {
 	let list: ListRef | undefined;
 	const away = signal(false);
 	const scrolled = signal(false);
-	// Las rondas del chat para el raíl del borde izquierdo: el array cambia
-	// con cada evento, así que el cómputo queda perezoso hasta que se lee.
-	const outline = computed(() => buildConversationOutline(props.messages()));
-	const activeOutline = signal(-1);
-	let atEnd = true;
-	const syncActiveOutline = () => {
-		activeOutline.set(
-			getOutlineIndexForVisibleRange(
-				untracked(outline),
-				visible?.start ?? 0,
-				atEnd,
-			),
-		);
-	};
 	// A chat opened before comes back where it was read to: the row, from
 	// `initialScrollIndex`, and its offset, from the first viewable report.
 	const restore = props.restorePosition ?? null;
 	let restoring = restore !== null;
+	const outline = computed(() => buildConversationOutline(props.messages()));
+	const showOutline = computed(() => outline().length >= 2);
+	const firstVisibleIndex = signal(restore?.index ?? 0);
+	const atEnd = signal(restore === null);
+	const activeOutline = computed(() =>
+		getOutlineIndexForVisibleRange(outline(), firstVisibleIndex(), atEnd()),
+	);
 	const follow = ({ offset, contentSize, size }: ScrollEvent) => {
-		atEnd = contentSize.height - (offset.y + size.height) <= followThreshold;
-		syncActiveOutline();
+		atEnd.set(contentSize.height - (offset.y + size.height) <= followThreshold);
 		away.set(
 			shouldShowChatScrollToLatest(
 				{
@@ -158,16 +150,14 @@ export function ChatMessages(props: ChatMessagesProps) {
 		}
 		if (visible?.start === start && visible?.end === end) return;
 		visible = { start, end };
-		syncActiveOutline();
+		firstVisibleIndex.set(start);
 		props.onVisibleRangeChange?.(start, end);
 	};
-	// Salta a la ronda del raíl: su mensaje del usuario al borde superior.
-	// Aunque el mensaje sea un marcador aún no cargado, `scrollToIndex`
-	// llega a su fila y `onVisibleRangeChange` pide su página al dueño.
+	// Jump to the prompt, even if its row is still a placeholder. The visible
+	// range report then asks the transcript store for that page.
 	const jumpToOutline = (index: number) => {
 		const entry = untracked(outline)[index];
 		if (!entry) return;
-		activeOutline.set(index);
 		list?.scrollToIndex({
 			index: entry.messageIndex,
 			viewPosition: 0,
@@ -214,7 +204,7 @@ export function ChatMessages(props: ChatMessagesProps) {
 				) : null
 			}
 			{() =>
-				outline().length >= 2 ? (
+				showOutline() ? (
 					<ConversationOutlineRail
 						entries={outline}
 						activeIndex={activeOutline}
@@ -234,7 +224,9 @@ export function ChatMessages(props: ChatMessagesProps) {
 								accessibilityLabel={t("chat.scrollLatest")}
 								tooltip={
 									<Tooltip>
-										<Text>{() => t("chat.scrollLatest")}</Text>
+										<Text class="font-sans">
+											{() => t("chat.scrollLatest")}
+										</Text>
 									</Tooltip>
 								}
 								onPress={() => list?.scrollToEnd({ animated: false })}

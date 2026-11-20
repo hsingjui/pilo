@@ -90,7 +90,7 @@ export function ChatTodoCapsule(props: {
 					<View
 						testID="chat-todo-capsule"
 						class={classNames(
-							"mx-3 mb-1 min-w-0 shrink-0 overflow-hidden rounded-(--pilo-radius-lg) border bg-muted",
+							"mb-1 w-full min-w-0 shrink-0 overflow-hidden rounded-xl border bg-muted",
 							complete() ? "border-status-success/30" : "border-border/70",
 						)}
 					>

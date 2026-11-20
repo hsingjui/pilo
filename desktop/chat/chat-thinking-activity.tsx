@@ -5,6 +5,7 @@ import type { ThinkingActivity } from "@/lib/chat/chat-activity-types";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
+import { Tooltip } from "../ui/tooltip";
 import { workDurationText } from "./chat-activity-labels";
 import { ChatDisclosureRow } from "./chat-disclosure-row";
 import type { ChatExpansion } from "./chat-expansion";
@@ -78,6 +79,20 @@ export function ChatThinkingActivity(props: {
 				expanded={hasDetails() ? open() : undefined}
 				disabled={!hasDetails()}
 				class={open() ? "bg-hover" : undefined}
+				tooltip={
+					showPreview() ? (
+						<Tooltip class="max-w-80" delay={300} margin={16}>
+							<Text class="line-clamp-24 font-sans">
+								{() => {
+									const { text } = activity();
+									return text.length > THINKING_REVEAL_CHARS
+										? `${text.slice(0, THINKING_REVEAL_CHARS)}\n…`
+										: text;
+								}}
+							</Text>
+						</Tooltip>
+					) : undefined
+				}
 				onPress={() => props.expansion.setOpen(props.expansionKey(), !open())}
 			>
 				<Icon name="Sparkles" size={14} />
@@ -86,7 +101,7 @@ export function ChatThinkingActivity(props: {
 				</Text>
 				{() =>
 					showPreview() ? (
-						<Text class="min-w-0 flex-1 truncate font-sans text-base leading-snug text-muted-foreground/75">
+						<Text class="w-0 min-w-0 flex-1 truncate font-sans text-base leading-snug text-muted-foreground/75">
 							{preview}
 						</Text>
 					) : (
@@ -98,7 +113,7 @@ export function ChatThinkingActivity(props: {
 				showDetails() ? (
 					<View class="items-start pt-0.5">
 						<ChatMarkdown
-							class="text-base text-muted-foreground"
+							class="font-sans text-base text-muted-foreground"
 							text={() => activity().text.slice(0, visibleEnd())}
 						/>
 						{() =>
@@ -110,7 +125,9 @@ export function ChatThinkingActivity(props: {
 										revealed.update((value) => value + THINKING_REVEAL_CHARS)
 									}
 								>
-									<Text>{() => t("chat.showMoreThinking")}</Text>
+									<Text class="font-sans">
+										{() => t("chat.showMoreThinking")}
+									</Text>
 								</Button>
 							) : null
 						}

@@ -97,8 +97,10 @@ export function ChatToolActivity(props: {
 				}
 				tooltip={
 					preview() ? (
-						<Tooltip>
-							<Text>{() => preview() ?? ""}</Text>
+						<Tooltip class="max-w-80" delay={300} margin={16}>
+							<Text class="line-clamp-24 font-sans">
+								{() => preview() ?? ""}
+							</Text>
 						</Tooltip>
 					) : undefined
 				}
@@ -123,7 +125,7 @@ export function ChatToolActivity(props: {
 					{() =>
 						hasPreview() ? (
 							<Text
-								class="min-w-0 truncate font-mono text-muted-foreground"
+								class="w-0 min-w-0 flex-1 truncate font-mono text-muted-foreground"
 								style={{ fontSize: token("pilo-code-font-size") }}
 							>
 								{() => previewLabel() ?? ""}

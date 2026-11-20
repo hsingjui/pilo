@@ -53,7 +53,7 @@ export function ChatLoadFailure(props: {
 					disabled={retrying()}
 					onPress={() => void retry()}
 				>
-					<Text>{() => t("common.retry")}</Text>
+					<Text class="font-sans">{() => t("common.retry")}</Text>
 				</Button>
 			) : null}
 		</View>
