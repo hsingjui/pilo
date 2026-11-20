@@ -10,7 +10,7 @@ import {
 import {
 	mergeRefreshedSessionState,
 	mergeSessionStats,
-} from "@/components/chat/chat-session-config-model";
+} from "@/lib/chat/session-stats";
 import {
 	readCurrentPiSessionState,
 	type ChatSession,
