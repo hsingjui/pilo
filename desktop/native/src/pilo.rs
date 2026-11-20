@@ -1056,6 +1056,8 @@ mod tests {
         });
     }
 
+    // Windows creates symlinks only with Developer Mode or admin rights.
+    #[cfg(unix)]
     #[test]
     fn web_assets_only_serves_files_inside_its_root() {
         let data = tempfile::tempdir().unwrap();

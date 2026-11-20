@@ -1,7 +1,7 @@
 use std::{
     fs::{self, DirBuilder, OpenOptions},
     io::{ErrorKind, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Mutex,
         atomic::{AtomicU64, Ordering},
@@ -53,6 +53,7 @@ impl BootstrapFixture {
     pub fn new() -> Result<Self, String> {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let root = std::env::temp_dir();
+        #[cfg_attr(not(unix), allow(unused_mut))]
         let mut builder = DirBuilder::new();
         #[cfg(unix)]
         {
@@ -347,6 +348,29 @@ impl Drop for SessionFilesFixture {
     }
 }
 
+/// Writes the fixture Pi into `dir` and returns the executable to launch:
+/// the Node script itself on Unix, a `.cmd` launcher running it with Node on
+/// Windows, which cannot execute a script by its shebang. Node is already
+/// required where Pi runs.
+fn write_fixture_pi(dir: &Path) -> Result<PathBuf, String> {
+    let script = dir.join("fixture-pi.mjs");
+    fs::write(&script, include_str!("fixture-pi.mjs")).map_err(|error| error.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o700))
+            .map_err(|error| error.to_string())?;
+        Ok(script)
+    }
+    #[cfg(windows)]
+    {
+        let launcher = dir.join("fixture-pi.cmd");
+        fs::write(&launcher, "@node \"%~dp0fixture-pi.mjs\" %*\r\n")
+            .map_err(|error| error.to_string())?;
+        Ok(launcher)
+    }
+}
+
 /// An isolated local project with a fixture Pi executable by default.
 #[class]
 struct ChatFixture {
@@ -358,17 +382,12 @@ struct ChatFixture {
 impl ChatFixture {
     /// Seeds a test project, optionally using the installed Pi for a real smoke test.
     pub fn new(real_pi: bool) -> Result<Self, String> {
-        use std::os::unix::fs::PermissionsExt;
-
         let data = BootstrapFixture::new()?;
         let paths = HostPaths::new(data.0.clone(), data.0.clone())?;
         let db = storage::open(&paths)?;
         let mut connection = storage::ensure_local_connection(&db)?;
         if !real_pi {
-            let pi = data.0.join("fixture-pi");
-            fs::write(&pi, include_str!("fixture-pi.py")).map_err(|error| error.to_string())?;
-            fs::set_permissions(&pi, fs::Permissions::from_mode(0o700))
-                .map_err(|error| error.to_string())?;
+            let pi = write_fixture_pi(&data.0)?;
             connection.pi_executable = Some(pi.to_string_lossy().into_owned());
             storage::upsert_connection(&db, &connection)?;
         }
@@ -447,13 +466,33 @@ impl ChatFixture {
         if pid == 0 {
             return Err("invalid fixture Pi pid".into());
         }
-        std::process::Command::new("/bin/kill")
-            .args(["-0", &pid.to_string()])
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|status| status.success())
-            .map_err(|error| error.to_string())
+        process_alive(pid)
     }
+}
+
+#[cfg(unix)]
+fn process_alive(pid: u32) -> Result<bool, String> {
+    std::process::Command::new("/bin/kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(windows)]
+fn process_alive(pid: u32) -> Result<bool, String> {
+    // CSV rows quote each field: `"node.exe","1234",...`; no match prints an
+    // informational line without the quoted PID.
+    let output = std::process::Command::new("tasklist.exe")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map_err(|error| error.to_string())?;
+    if !output.status.success() {
+        return Err(format!("tasklist exited with {}", output.status));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).contains(&format!("\",\"{pid}\",")))
 }
 
 impl Drop for ChatFixture {
