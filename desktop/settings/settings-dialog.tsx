@@ -19,6 +19,7 @@ import type { DesktopShell } from "../app/desktop-shell";
 import { t } from "../app/i18n";
 import { AboutPane } from "./about-pane";
 import { CacheKeepAlivePane } from "./cache-keep-alive-pane";
+import { ConnectionsPane } from "./connections-pane";
 import { DesktopPane } from "./desktop-pane";
 import { FontsPane } from "./fonts-pane";
 import { PendingPane } from "./layout";
@@ -49,6 +50,24 @@ export type SettingsClient = Pick<
 	| "saveNextPromptSettings"
 	| "loadPromptEnhancementSettings"
 	| "savePromptEnhancementSettings"
+	| "getLocalConnection"
+	| "testLocalConnection"
+	| "updateConnectionSettings"
+	| "setConnectionShownInHome"
+	| "getConnectionHealth"
+	| "probeConnectionPi"
+	| "listSshConnections"
+	| "listSshAgentIdentities"
+	| "getSshConnectionPassword"
+	| "saveSshConnection"
+	| "removeSshConnection"
+	| "testSshConnection"
+	| "testSshConnectionDraft"
+	| "listWslDistributions"
+	| "listWslConnections"
+	| "saveWslConnection"
+	| "removeWslConnection"
+	| "testWslConnection"
 >;
 
 export interface SettingsDialogProps {
@@ -303,6 +322,13 @@ export function SettingsDialog(props: SettingsDialogProps) {
 								case "fonts":
 									return (
 										<FontsPane state={props.state} client={props.client} />
+									);
+								case "connections":
+									return (
+										<ConnectionsPane
+											state={props.state}
+											client={props.client}
+										/>
 									);
 								case "model-catalog":
 									return (

@@ -5,34 +5,19 @@ import type { Connection } from "@/lib/api/pi-runtime";
 import { localConnection, notifyProjectsChanged } from "@/lib/api/projects";
 import { listSshConnections } from "@/lib/api/ssh-connections";
 
-export type ConnectionTestResult = {
-	protocolVersion: number;
-	serverVersion: string;
-};
+export type {
+	ConnectionHealth,
+	ConnectionTestResult,
+	PiExecutableInfo,
+	WslConnectionInfo,
+} from "./connections-types";
 
-export type PiExecutableInfo = {
-	executable: string;
-	version: string;
-};
+import type {
+	ConnectionTestResult,
+	WslConnectionInfo,
+} from "./connections-types";
 
-export type ConnectionHealth = {
-	reachable: boolean;
-	latencyMs: number;
-	protocolVersion?: number | null;
-	serverVersion?: string | null;
-	pi?: PiExecutableInfo | null;
-	error?: string | null;
-	piError?: string | null;
-};
-
-export type WslConnectionInfo = {
-	connection: Connection;
-	projectCount: number;
-};
-
-export type WslDistribution = {
-	name: string;
-};
+export type { WslDistribution } from "./pi-runtime-types";
 
 export function listWslConnections(): Promise<WslConnectionInfo[]> {
 	return invoke<WslConnectionInfo[]>("wsl_connection_list");

@@ -118,6 +118,57 @@ async function run() {
 				},
 			],
 		},
+		localConnection: {
+			id: "local",
+			name: "Local",
+			kind: { type: "local" },
+			piExecutable: "pi",
+			piRuntime: "workspace",
+			shownInHome: true,
+		},
+		sshConnections: [
+			{
+				connection: {
+					id: "ssh:prod",
+					name: "prod-server",
+					kind: {
+						type: "ssh",
+						target: {
+							type: "direct",
+							hostname: "prod.example.com",
+							port: 22,
+							user: "deploy",
+							authMethod: "agent",
+						},
+					},
+					piRuntime: "workspace",
+					shownInHome: true,
+				},
+				projectCount: 2,
+				hasPassword: false,
+				localPiResources: true,
+			},
+		],
+		wslConnections: [
+			{
+				connection: {
+					id: "wsl:Ubuntu",
+					name: "WSL · Ubuntu",
+					kind: { type: "wsl", distro: "Ubuntu" },
+					piRuntime: "workspace",
+					shownInHome: true,
+				},
+				projectCount: 1,
+			},
+		],
+		wslDistributions: [{ name: "Ubuntu" }, { name: "Debian" }],
+		sshAgentIdentities: [
+			{
+				publicKey: "ssh-ed25519 AAAA test",
+				fingerprint: "SHA256:abc123",
+				comment: "jui@mac",
+			},
+		],
 	});
 	const chat = new ChatTranscriptStore(runtime.client, conversationContext());
 	const store = new AppStore(runtime.client, chat);

@@ -5,18 +5,9 @@ import type { Connection } from "@/lib/api/pi-runtime";
 import type { ConnectionTestResult } from "@/lib/api/connections";
 import { notifyProjectsChanged } from "@/lib/api/projects";
 
-export type SshConnectionInfo = {
-	connection: Connection;
-	projectCount: number;
-	hasPassword: boolean;
-	localPiResources?: boolean;
-};
+export type { SshAgentIdentity, SshConnectionInfo } from "./connections-types";
 
-export type SshAgentIdentity = {
-	publicKey: string;
-	fingerprint: string;
-	comment: string;
-};
+import type { SshAgentIdentity, SshConnectionInfo } from "./connections-types";
 
 export function listSshAgentIdentities(): Promise<SshAgentIdentity[]> {
 	return invoke<SshAgentIdentity[]>("ssh_agent_identities_list");

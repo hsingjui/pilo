@@ -49,6 +49,60 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 			"pickLocalProjectDirectory",
 			"/code/picked",
 		),
+		getLocalConnection: answer("getLocalConnection", { id: "local" }),
+		updateConnectionSettings: answer("updateConnectionSettings", {
+			id: "local",
+		}),
+		setConnectionShownInHome: answer("setConnectionShownInHome", {
+			id: "local",
+			shownInHome: false,
+		}),
+		getConnectionHealth: answer("getConnectionHealth", {
+			reachable: true,
+			latencyMs: 4,
+		}),
+		probeConnectionPi: answer("probeConnectionPi", {
+			executable: "pi",
+			version: "0.4.1",
+		}),
+		testLocalConnection: answer("testLocalConnection", {
+			protocolVersion: 1,
+			serverVersion: "0.1.0",
+		}),
+		listSshConnections: answer("listSshConnections", [
+			{ connection: { id: "ssh-1" }, projectCount: 0, hasPassword: false },
+		]),
+		listSshAgentIdentities: answer("listSshAgentIdentities", [
+			{ publicKey: "ssh-ed25519 AAAA", fingerprint: "SHA256:x", comment: "k" },
+		]),
+		saveSshConnection: answer("saveSshConnection", {
+			connection: { id: "ssh-1" },
+			projectCount: 0,
+			hasPassword: true,
+		}),
+		getSshConnectionPassword: answer("getSshConnectionPassword", "s3cret"),
+		removeSshConnection: answer("removeSshConnection", undefined),
+		testSshConnection: answer("testSshConnection", {
+			protocolVersion: 1,
+			serverVersion: "0.1.0",
+		}),
+		testSshConnectionDraft: answer("testSshConnectionDraft", {
+			protocolVersion: 1,
+			serverVersion: "0.1.0",
+		}),
+		listWslDistributions: answer("listWslDistributions", [{ name: "Ubuntu" }]),
+		listWslConnections: answer("listWslConnections", [
+			{ connection: { id: "wsl:Ubuntu" }, projectCount: 1 },
+		]),
+		saveWslConnection: answer("saveWslConnection", {
+			connection: { id: "wsl:Ubuntu" },
+			projectCount: 0,
+		}),
+		removeWslConnection: answer("removeWslConnection", undefined),
+		testWslConnection: answer("testWslConnection", {
+			protocolVersion: 1,
+			serverVersion: "0.1.0",
+		}),
 		removeProject: answer("removeProject", [{ id: "p1" }]),
 		listSessions: answer("listSessions", [{ piSessionId: "s1" }]),
 		searchSessions: answer("searchSessions", [{ sessionId: "s1" }]),

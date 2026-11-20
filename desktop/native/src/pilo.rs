@@ -6,15 +6,25 @@ use std::{
 
 use nsh_core::{JsonValue, prelude::*};
 use pilo_lib::{
-    domain::SessionReadState,
+    domain::{Connection, SessionReadState},
     initialize_local_server_binary,
     runtime::{
         Runtime, TranscriptWindow,
         appearance::{theme_settings_get, theme_settings_set},
         cache_keep_alive::{cache_keep_alive_settings_list, cache_keep_alive_settings_set},
         connections::{
-            connection_models_get, connection_naming_model_list, connection_naming_model_set,
-            local_connection_get, ssh::ssh_connection_list, wsl::wsl_connection_list,
+            connection_health_get, connection_models_get, connection_naming_model_list,
+            connection_naming_model_set, connection_pi_probe, connection_settings_update,
+            connection_shown_in_home_set, local_connection_get, local_connection_test,
+            ssh::{
+                SaveSshConnectionRequest, ssh_agent_identities_list, ssh_connection_list,
+                ssh_connection_password_get, ssh_connection_remove, ssh_connection_save,
+                ssh_connection_test, ssh_connection_test_draft,
+            },
+            wsl::{
+                wsl_connection_list, wsl_connection_remove, wsl_connection_save,
+                wsl_connection_test, wsl_list_distributions,
+            },
         },
         events::{EventBatch, EventQueueLimits, EventStream},
         handle::{HostShell, session_mark_read, session_read_states},
@@ -459,6 +469,210 @@ impl Pilo {
         .await
     }
 
+    /// The local connection row, created if the catalog does not have it yet.
+    pub async fn get_local_connection(this: Instance<Self>) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, |runtime| {
+            serde_json::to_value(local_connection_get(&runtime)?).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Renames a connection and sets its custom Pi executable path.
+    pub async fn update_connection_settings(
+        this: Instance<Self>,
+        id: String,
+        name: String,
+        pi_executable: Option<String>,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, move |runtime| {
+            let connection = connection_settings_update(&runtime, id, name, pi_executable)?;
+            serde_json::to_value(connection).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Toggles whether a connection shows in the home environment list.
+    pub async fn set_connection_shown_in_home(
+        this: Instance<Self>,
+        id: String,
+        shown: bool,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, move |runtime| {
+            let connection = connection_shown_in_home_set(&runtime, id, shown)?;
+            serde_json::to_value(connection).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Pings the connection and probes its Pi executable for diagnostics.
+    pub async fn get_connection_health(
+        this: Instance<Self>,
+        id: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let health = connection_health_get(&runtime, id).await?;
+            serde_json::to_value(health).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Probes a Pi executable path on a connection without saving it.
+    pub async fn probe_connection_pi(
+        this: Instance<Self>,
+        id: String,
+        executable: Option<String>,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let info = connection_pi_probe(&runtime, id, executable).await?;
+            serde_json::to_value(info).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Pings the local pilo-server connection.
+    pub async fn test_local_connection(this: Instance<Self>) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let result = local_connection_test(&runtime).await?;
+            serde_json::to_value(result).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// The SSH connections in the catalog, with project counts and secret flags.
+    pub async fn list_ssh_connections(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
+        Self::with_runtime_blocking(this, |runtime| encode_list(ssh_connection_list(&runtime)?))
+            .await
+    }
+
+    /// The SSH agent's public identities, for the connection editor.
+    pub async fn list_ssh_agent_identities(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            encode_list(ssh_agent_identities_list(&runtime).await?)
+        })
+        .await
+    }
+
+    /// Saves an SSH connection draft; `password` replaces its stored secret.
+    pub async fn save_ssh_connection(
+        this: Instance<Self>,
+        request: JsonValue,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let request: SaveSshConnectionRequest =
+                serde_json::from_value(request).map_err(|error| error.to_string())?;
+            let info = ssh_connection_save(&runtime, request).await?;
+            serde_json::to_value(info).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// The stored password of an SSH connection, or null when it has none.
+    pub async fn get_ssh_connection_password(
+        this: Instance<Self>,
+        id: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, move |runtime| {
+            serde_json::to_value(ssh_connection_password_get(&runtime, id)?)
+                .map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Removes an SSH connection, stopping its projects first.
+    pub async fn remove_ssh_connection(
+        this: Instance<Self>,
+        id: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            ssh_connection_remove(&runtime, id).await?;
+            Ok(JsonValue::Null)
+        })
+        .await
+    }
+
+    /// Pings a saved SSH connection.
+    pub async fn test_ssh_connection(
+        this: Instance<Self>,
+        id: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let result = ssh_connection_test(&runtime, id).await?;
+            serde_json::to_value(result).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Pings an SSH draft before it is saved.
+    pub async fn test_ssh_connection_draft(
+        this: Instance<Self>,
+        connection: JsonValue,
+        password: Option<String>,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let connection: Connection =
+                serde_json::from_value(connection).map_err(|error| error.to_string())?;
+            let result = ssh_connection_test_draft(&runtime, connection, password).await?;
+            serde_json::to_value(result).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// The WSL distributions on the host; errors when WSL is unavailable.
+    pub async fn list_wsl_distributions(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            encode_list(
+                wsl_list_distributions(&runtime)
+                    .await
+                    .map_err(|error| error.to_string())?,
+            )
+        })
+        .await
+    }
+
+    /// The WSL connections in the catalog, with project counts.
+    pub async fn list_wsl_connections(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
+        Self::with_runtime_blocking(this, |runtime| encode_list(wsl_connection_list(&runtime)?))
+            .await
+    }
+
+    /// Saves a WSL connection row.
+    pub async fn save_wsl_connection(
+        this: Instance<Self>,
+        connection: JsonValue,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime_blocking(this, move |runtime| {
+            let connection: Connection =
+                serde_json::from_value(connection).map_err(|error| error.to_string())?;
+            let info = wsl_connection_save(&runtime, connection)?;
+            serde_json::to_value(info).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Removes a WSL connection, stopping its projects first.
+    pub async fn remove_wsl_connection(
+        this: Instance<Self>,
+        id: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            wsl_connection_remove(&runtime, id).await?;
+            Ok(JsonValue::Null)
+        })
+        .await
+    }
+
+    /// Pings a WSL distribution before or after saving it as a connection.
+    pub async fn test_wsl_connection(
+        this: Instance<Self>,
+        distro: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let result = wsl_connection_test(&runtime, distro).await?;
+            serde_json::to_value(result).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
     /// Adds a project directory on a connection to the catalog.
     pub async fn add_project(
         this: Instance<Self>,
@@ -485,9 +699,7 @@ impl Pilo {
     }
 
     /// The host's native folder picker; `null` when dismissed.
-    pub async fn pick_local_project_directory(
-        this: Instance<Self>,
-    ) -> Result<JsonValue, String> {
+    pub async fn pick_local_project_directory(this: Instance<Self>) -> Result<JsonValue, String> {
         Self::with_runtime_blocking(this, |runtime| {
             serde_json::to_value(local_pick_project_directory(&runtime)?)
                 .map_err(|error| error.to_string())
@@ -598,8 +810,7 @@ impl Pilo {
         model_id: Option<String>,
     ) -> Result<JsonValue, String> {
         Self::with_runtime_blocking(this, move |runtime| {
-            let model =
-                connection_naming_model_set(runtime, connection_id, provider, model_id)?;
+            let model = connection_naming_model_set(runtime, connection_id, provider, model_id)?;
             serde_json::to_value(model).map_err(|error| error.to_string())
         })
         .await

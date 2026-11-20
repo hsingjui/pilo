@@ -7,9 +7,18 @@ import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import type { ProjectPiModels } from "@/lib/api/pi-models-types";
 import type { FsEntry } from "@/lib/api/files-types";
 import type {
+	ConnectionHealth,
+	ConnectionTestResult,
+	PiExecutableInfo,
+	SshAgentIdentity,
+	SshConnectionInfo,
+	WslConnectionInfo,
+} from "@/lib/api/connections-types";
+import type {
 	Connection,
 	PiModel,
 	PiSessionSnapshot,
+	WslDistribution,
 } from "@/lib/api/pi-runtime-types";
 import type { ConnectionNamingModel } from "@/lib/api/sessions-types";
 import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
@@ -103,6 +112,24 @@ export type ScriptedSettingsClient = Pick<
 	| "saveNextPromptSettings"
 	| "loadPromptEnhancementSettings"
 	| "savePromptEnhancementSettings"
+	| "getLocalConnection"
+	| "testLocalConnection"
+	| "updateConnectionSettings"
+	| "setConnectionShownInHome"
+	| "getConnectionHealth"
+	| "probeConnectionPi"
+	| "listSshConnections"
+	| "listSshAgentIdentities"
+	| "getSshConnectionPassword"
+	| "saveSshConnection"
+	| "removeSshConnection"
+	| "testSshConnection"
+	| "testSshConnectionDraft"
+	| "listWslDistributions"
+	| "listWslConnections"
+	| "saveWslConnection"
+	| "removeWslConnection"
+	| "testWslConnection"
 >;
 
 export type AppScript = {
@@ -157,6 +184,20 @@ export type AppScript = {
 	onRemoveProject?: (projectId: string) => Project[];
 	/** The connections `listConnections` resolves with; Local otherwise. */
 	connections?: Connection[];
+	/** The local connection `getLocalConnection` resolves with. */
+	localConnection?: Connection;
+	/** The SSH connections `listSshConnections` resolves with. */
+	sshConnections?: SshConnectionInfo[];
+	/** The WSL connections `listWslConnections` resolves with. */
+	wslConnections?: WslConnectionInfo[];
+	/** The distributions `listWslDistributions` resolves with. */
+	wslDistributions?: WslDistribution[];
+	/** The identities `listSshAgentIdentities` resolves with. */
+	sshAgentIdentities?: SshAgentIdentity[];
+	/** A connection's health `getConnectionHealth` resolves with; ok otherwise. */
+	connectionHealth?: Record<string, ConnectionHealth>;
+	/** An SSH connection's stored password. */
+	sshPasswords?: Record<string, string>;
 	/** The project `addProject` resolves with; a derived one by default. */
 	onAddProject?: (connectionId: string, path: string) => Project;
 	/** The folders `readConnectionDir` resolves with; none by default. */
@@ -215,6 +256,14 @@ export function scriptedClient(script: AppScript = {}) {
 		Object.entries(script.cacheKeepAlive ?? {}),
 	);
 	const nextPromptSettings = new Map(Object.entries(script.nextPrompt ?? {}));
+	let localConnection = script.localConnection;
+	let sshInfos = [...(script.sshConnections ?? [])];
+	let wslInfos = [...(script.wslConnections ?? [])];
+	const sshPasswords = { ...(script.sshPasswords ?? {}) };
+	const okTest: ConnectionTestResult = {
+		protocolVersion: 1,
+		serverVersion: "0.20.0",
+	};
 	const promptEnhancementSettings = new Map(
 		Object.entries(script.promptEnhancement ?? {}),
 	);
@@ -458,6 +507,122 @@ export function scriptedClient(script: AppScript = {}) {
 			promptEnhancementSettings.set(connectionId, saved);
 			return Promise.resolve(saved);
 		},
+		getLocalConnection: () =>
+			Promise.resolve(
+				localConnection ?? {
+					id: "local",
+					name: "Local",
+					kind: { type: "local" },
+					shownInHome: true,
+				},
+			),
+		testLocalConnection: () => Promise.resolve(okTest),
+		updateConnectionSettings(id, name, piExecutable) {
+			if (id === "local") {
+				localConnection = {
+					...(localConnection ?? {
+						id: "local",
+						name: "Local",
+						kind: { type: "local" },
+						shownInHome: true,
+					}),
+					name,
+					piExecutable: piExecutable ?? undefined,
+				} as Connection;
+				return Promise.resolve(localConnection);
+			}
+			const sshInfo = sshInfos.find((info) => info.connection.id === id);
+			if (sshInfo) {
+				sshInfo.connection = {
+					...sshInfo.connection,
+					name,
+					piExecutable: piExecutable ?? undefined,
+				};
+				return Promise.resolve(sshInfo.connection);
+			}
+			const wslInfo = wslInfos.find((info) => info.connection.id === id);
+			if (wslInfo) {
+				wslInfo.connection = {
+					...wslInfo.connection,
+					name,
+					piExecutable: piExecutable ?? undefined,
+				};
+				return Promise.resolve(wslInfo.connection);
+			}
+			return Promise.resolve({
+				id,
+				name,
+				piExecutable: piExecutable ?? undefined,
+			} as Connection);
+		},
+		setConnectionShownInHome(id, shown) {
+			const target =
+				id === "local"
+					? localConnection
+					: (sshInfos.find((info) => info.connection.id === id)?.connection ??
+						wslInfos.find((info) => info.connection.id === id)?.connection);
+			if (target) target.shownInHome = shown;
+			return Promise.resolve(
+				target ?? ({ id, name: id, shownInHome: shown } as Connection),
+			);
+		},
+		getConnectionHealth: (id) =>
+			Promise.resolve(
+				script.connectionHealth?.[id] ?? {
+					reachable: true,
+					latencyMs: 4,
+				},
+			),
+		probeConnectionPi: (_id, executable) =>
+			Promise.resolve({
+				executable: executable ?? "pi",
+				version: "0.20.0",
+			}),
+		listSshConnections: () =>
+			Promise.resolve(sshInfos.map((info) => ({ ...info }))),
+		listSshAgentIdentities: () =>
+			Promise.resolve(script.sshAgentIdentities ?? []),
+		getSshConnectionPassword: (id) =>
+			Promise.resolve(script.sshPasswords?.[id] ?? null),
+		saveSshConnection(connection, password, localPiResources) {
+			if (password != null) {
+				sshPasswords[connection.id] = password;
+			}
+			const info = {
+				connection,
+				projectCount: 0,
+				hasPassword: password != null,
+				localPiResources,
+			};
+			sshInfos = [
+				...sshInfos.filter((i) => i.connection.id !== connection.id),
+				info,
+			];
+			return Promise.resolve(info);
+		},
+		removeSshConnection(id) {
+			sshInfos = sshInfos.filter((info) => info.connection.id !== id);
+			delete sshPasswords[id];
+			return Promise.resolve();
+		},
+		testSshConnection: (_id) => Promise.resolve(okTest),
+		testSshConnectionDraft: (_connection, _password) => Promise.resolve(okTest),
+		listWslDistributions: () => Promise.resolve(script.wslDistributions ?? []),
+		listWslConnections: () =>
+			Promise.resolve(wslInfos.map((info) => ({ ...info }))),
+		saveWslConnection(connection) {
+			const info = { connection, projectCount: 0 };
+			wslInfos = [
+				...wslInfos.filter((i) => i.connection.id !== connection.id),
+				info,
+			];
+			return Promise.resolve(info);
+		},
+		removeWslConnection(id) {
+			wslInfos = wslInfos.filter((info) => info.connection.id !== id);
+			return Promise.resolve();
+		},
+		testWslConnection: (_distro) => Promise.resolve(okTest),
 		loadSessionReadStates: () => Promise.resolve(script.readStates ?? []),
 		loadPreferences: () => Promise.resolve(preferences),
 		savePreferences(patch, _initial) {

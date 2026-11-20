@@ -8,6 +8,7 @@ import type {
 	PiModel,
 	PiloRuntimeEvent,
 	PiSessionSnapshot,
+	WslDistribution,
 } from "@/lib/api/pi-runtime-types";
 import type {
 	PiloClient,
@@ -18,6 +19,14 @@ import type {
 	PiloClientHistoryOptions,
 	PiloClientStartChatInput,
 } from "@/lib/api/pilo-client";
+import type {
+	ConnectionHealth,
+	ConnectionTestResult,
+	PiExecutableInfo,
+	SshAgentIdentity,
+	SshConnectionInfo,
+	WslConnectionInfo,
+} from "@/lib/api/connections-types";
 import type { Project } from "@/lib/api/projects-types";
 import type { ConnectionNamingModel } from "@/lib/api/sessions-types";
 import type {
@@ -67,6 +76,24 @@ export type PiloNative = Pick<
 	| "listConnections"
 	| "readConnectionDir"
 	| "pickLocalProjectDirectory"
+	| "getLocalConnection"
+	| "updateConnectionSettings"
+	| "setConnectionShownInHome"
+	| "getConnectionHealth"
+	| "probeConnectionPi"
+	| "testLocalConnection"
+	| "listSshConnections"
+	| "listSshAgentIdentities"
+	| "saveSshConnection"
+	| "getSshConnectionPassword"
+	| "removeSshConnection"
+	| "testSshConnection"
+	| "testSshConnectionDraft"
+	| "listWslDistributions"
+	| "listWslConnections"
+	| "saveWslConnection"
+	| "removeWslConnection"
+	| "testWslConnection"
 	| "listSessions"
 	| "searchSessions"
 	| "searchProjectFiles"
@@ -249,6 +276,127 @@ export class NshPiloClient implements BridgedPiloClient {
 	/** The host's native folder picker; `null` when dismissed. */
 	async pickLocalProjectDirectory(): Promise<string | null> {
 		return (await this.pilo.pickLocalProjectDirectory()) as string | null;
+	}
+
+	/** The local connection row, created if the catalog does not have it yet. */
+	async getLocalConnection(): Promise<Connection> {
+		return (await this.pilo.getLocalConnection()) as Connection;
+	}
+
+	/** Renames a connection and sets its custom Pi executable path. */
+	async updateConnectionSettings(
+		id: string,
+		name: string,
+		piExecutable: string | null,
+	): Promise<Connection> {
+		return (await this.pilo.updateConnectionSettings(
+			id,
+			name,
+			piExecutable,
+		)) as Connection;
+	}
+
+	/** Toggles whether a connection shows in the home environment list. */
+	async setConnectionShownInHome(
+		id: string,
+		shown: boolean,
+	): Promise<Connection> {
+		return (await this.pilo.setConnectionShownInHome(id, shown)) as Connection;
+	}
+
+	/** Pings the connection and probes its Pi executable for diagnostics. */
+	async getConnectionHealth(id: string): Promise<ConnectionHealth> {
+		return (await this.pilo.getConnectionHealth(id)) as ConnectionHealth;
+	}
+
+	/** Probes a Pi executable path on a connection without saving it. */
+	async probeConnectionPi(
+		id: string,
+		executable?: string | null,
+	): Promise<PiExecutableInfo> {
+		return (await this.pilo.probeConnectionPi(
+			id,
+			executable ?? null,
+		)) as PiExecutableInfo;
+	}
+
+	/** Pings the local pilo-server connection. */
+	async testLocalConnection(): Promise<ConnectionTestResult> {
+		return (await this.pilo.testLocalConnection()) as ConnectionTestResult;
+	}
+
+	/** The SSH connections in the catalog, with project counts and secret flags. */
+	async listSshConnections(): Promise<SshConnectionInfo[]> {
+		return (await this.pilo.listSshConnections()) as SshConnectionInfo[];
+	}
+
+	/** The SSH agent's public identities, for the connection editor. */
+	async listSshAgentIdentities(): Promise<SshAgentIdentity[]> {
+		return (await this.pilo.listSshAgentIdentities()) as SshAgentIdentity[];
+	}
+
+	/** Saves an SSH connection draft; `password` replaces its stored secret. */
+	async saveSshConnection(
+		connection: Connection,
+		password?: string | null,
+		localPiResources?: boolean,
+	): Promise<SshConnectionInfo> {
+		return (await this.pilo.saveSshConnection({
+			connection,
+			password: password ?? null,
+			localPiResources: localPiResources ?? null,
+		})) as SshConnectionInfo;
+	}
+
+	/** The stored password of an SSH connection, or null when it has none. */
+	async getSshConnectionPassword(id: string): Promise<string | null> {
+		return (await this.pilo.getSshConnectionPassword(id)) as string | null;
+	}
+
+	/** Removes an SSH connection, stopping its projects first. */
+	async removeSshConnection(id: string): Promise<void> {
+		await this.pilo.removeSshConnection(id);
+	}
+
+	/** Pings a saved SSH connection. */
+	async testSshConnection(id: string): Promise<ConnectionTestResult> {
+		return (await this.pilo.testSshConnection(id)) as ConnectionTestResult;
+	}
+
+	/** Pings an SSH draft before it is saved. */
+	async testSshConnectionDraft(
+		connection: Connection,
+		password?: string | null,
+	): Promise<ConnectionTestResult> {
+		return (await this.pilo.testSshConnectionDraft(
+			connection,
+			password ?? null,
+		)) as ConnectionTestResult;
+	}
+
+	/** The WSL distributions on the host; errors when WSL is unavailable. */
+	async listWslDistributions(): Promise<WslDistribution[]> {
+		return (await this.pilo.listWslDistributions()) as WslDistribution[];
+	}
+
+	/** The WSL connections in the catalog, with project counts. */
+	async listWslConnections(): Promise<WslConnectionInfo[]> {
+		return (await this.pilo.listWslConnections()) as WslConnectionInfo[];
+	}
+
+	/** Saves a WSL connection row. */
+	async saveWslConnection(connection: Connection): Promise<WslConnectionInfo> {
+		return (await this.pilo.saveWslConnection(connection)) as WslConnectionInfo;
+	}
+
+	/** Removes a WSL connection, stopping its projects first. */
+	async removeWslConnection(id: string): Promise<void> {
+		await this.pilo.removeWslConnection(id);
+	}
+
+	/** Pings a WSL distribution before or after saving it as a connection. */
+	async testWslConnection(distro: string): Promise<ConnectionTestResult> {
+		return (await this.pilo.testWslConnection(distro)) as ConnectionTestResult;
 	}
 
 	async listSessions(projectId: string): Promise<SessionIndexEntry[]> {
