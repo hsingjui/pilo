@@ -21,7 +21,8 @@ use pilo_lib::{
         next_prompt::{next_prompt_request, next_prompt_settings_get, next_prompt_settings_set},
         preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
         project_api::{
-            project_fs_read_image, project_list, project_model_cache_list, project_model_scope_get,
+            project_chat_file_remove, project_chat_file_upload, project_fs_read_image,
+            project_fs_search, project_list, project_model_cache_list, project_model_scope_get,
             project_model_scope_set,
         },
         prompt_enhancement::{
@@ -579,6 +580,43 @@ impl Pilo {
                 })
                 .transpose()?;
             encode_list(session_search(&runtime, project_id, query, limit).await?)
+        })
+        .await
+    }
+
+    /// Stores a composer attachment inside the project and returns its path.
+    pub async fn upload_chat_file(
+        this: Instance<Self>,
+        project_id: String,
+        name: String,
+        data: Vec<u8>,
+    ) -> Result<String, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            project_chat_file_upload(&runtime, project_id, name, data).await
+        })
+        .await
+    }
+
+    /// Removes a stored composer attachment.
+    pub async fn remove_chat_file(
+        this: Instance<Self>,
+        project_id: String,
+        path: String,
+    ) -> Result<(), String> {
+        Self::with_runtime(this, move |runtime| async move {
+            project_chat_file_remove(&runtime, project_id, path).await
+        })
+        .await
+    }
+
+    /// Searches project file paths for composer `@` mentions.
+    pub async fn search_project_files(
+        this: Instance<Self>,
+        project_id: String,
+        query: String,
+    ) -> Result<Vec<String>, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            project_fs_search(&runtime, project_id, query).await
         })
         .await
     }

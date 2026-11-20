@@ -44,6 +44,9 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 		listProjects: answer("listProjects", [{ id: "p1" }]),
 		listSessions: answer("listSessions", [{ piSessionId: "s1" }]),
 		searchSessions: answer("searchSessions", [{ sessionId: "s1" }]),
+		searchProjectFiles: answer("searchProjectFiles", ["src/main.ts"]),
+		uploadChatFile: answer("uploadChatFile", "/attachments/aQ/note.md"),
+		removeChatFile: answer("removeChatFile", undefined),
 		generateSessionTitle: answer("generateSessionTitle", "Repair the parser"),
 		deleteSession: answer("deleteSession", { method: "trash" }),
 		loadHistory: answer("loadHistory", {
@@ -222,6 +225,11 @@ test("session search, title and deletion pass their arguments and return the nat
 	expect(await client.searchSessions("p1", "needle")).toEqual([
 		{ sessionId: "s1" },
 	]);
+	expect(await client.searchProjectFiles("p1", "ma")).toEqual(["src/main.ts"]);
+	expect(
+		await client.uploadChatFile("p1", "note.md", new Uint8Array([1, 2])),
+	).toBe("/attachments/aQ/note.md");
+	await client.removeChatFile("p1", "/attachments/aQ/note.md");
 	expect(await client.generateSessionTitle("p1", "Repair the parser")).toBe(
 		"Repair the parser",
 	);
@@ -231,6 +239,9 @@ test("session search, title and deletion pass their arguments and return the nat
 	expect(calls).toEqual([
 		["searchSessions", "p1", "needle", 5],
 		["searchSessions", "p1", "needle", undefined],
+		["searchProjectFiles", "p1", "ma"],
+		["uploadChatFile", "p1", "note.md", new Uint8Array([1, 2])],
+		["removeChatFile", "p1", "/attachments/aQ/note.md"],
 		["generateSessionTitle", "p1", "Repair the parser"],
 		["deleteSession", "p1", "/s.jsonl"],
 	]);

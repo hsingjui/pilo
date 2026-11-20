@@ -44,6 +44,11 @@ as the Tauri client and returns saved sessions, not live chat state.
 returns matches with the session path and ID, role, snippet, and timestamp.
 `generateSessionTitle(projectId, message)` uses the connection's naming
 model and returns a title, or `null` if no title is available.
+`searchProjectFiles(projectId, query)` returns the project-relative file
+paths matching a query, for composer `@` mentions.
+`uploadChatFile(projectId, name, data)` stores a composer attachment inside
+the project and returns the path an `@` mention references;
+`removeChatFile(projectId, path)` removes one.
 `deleteSession(projectId, sessionPath)` removes an indexed session and
 returns `{ method: "trash" | "unlink" }`.
 

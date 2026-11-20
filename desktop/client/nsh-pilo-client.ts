@@ -60,6 +60,9 @@ export type PiloNative = Pick<
 	| "listProjects"
 	| "listSessions"
 	| "searchSessions"
+	| "searchProjectFiles"
+	| "uploadChatFile"
+	| "removeChatFile"
 	| "generateSessionTitle"
 	| "deleteSession"
 	| "loadHistory"
@@ -219,6 +222,28 @@ export class NshPiloClient implements BridgedPiloClient {
 			query,
 			limit,
 		)) as SessionSearchMatch[];
+	}
+
+	/** Project file paths matching the query, for composer `@` mentions. */
+	async searchProjectFiles(
+		projectId: string,
+		query: string,
+	): Promise<string[]> {
+		return (await this.pilo.searchProjectFiles(projectId, query)) as string[];
+	}
+
+	/** Stores a composer attachment inside the project and returns its path. */
+	async uploadChatFile(
+		projectId: string,
+		name: string,
+		data: Uint8Array,
+	): Promise<string> {
+		return (await this.pilo.uploadChatFile(projectId, name, data)) as string;
+	}
+
+	/** Removes a stored composer attachment. */
+	async removeChatFile(projectId: string, path: string): Promise<void> {
+		await this.pilo.removeChatFile(projectId, path);
 	}
 
 	/** A title from the naming model, or null when none is configured. */
