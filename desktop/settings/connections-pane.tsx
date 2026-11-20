@@ -26,6 +26,7 @@ import { Select } from "../ui/select";
 import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
 import { SettingsRow, SettingsSection, SettingsStatus } from "./layout";
+import { SettingsConfirmDialog } from "./settings-confirm-dialog";
 
 /** The native calls the pane makes; tests pass a scripted stand-in. */
 export type ConnectionsClient = Pick<
@@ -189,6 +190,7 @@ export function ConnectionsPane(props: {
 	const configure = signal<ConfigureDraft | null>(null);
 	const sshEditor = signal<SshDraft | null>(null);
 	const removing = signal<Connection | null>(null);
+	const removingBusy = signal(false);
 	const sshBusy = signal(false);
 	const sshError = signal<string | null>(null);
 
@@ -341,7 +343,8 @@ export function ConnectionsPane(props: {
 
 	const removeConnection = async () => {
 		const connection = removing();
-		if (!connection) return;
+		if (!connection || removingBusy()) return;
+		removingBusy.set(true);
 		try {
 			if (connection.kind.type === "ssh") {
 				await client.removeSshConnection(connection.id);
@@ -352,6 +355,8 @@ export function ConnectionsPane(props: {
 			await refresh();
 		} catch (caught) {
 			setResult(connection.id, errorMessage(caught));
+		} finally {
+			removingBusy.set(false);
 		}
 	};
 
@@ -903,38 +908,31 @@ export function ConnectionsPane(props: {
 
 	const removeDialog = () => {
 		const connection = removing();
-		if (!connection) return null;
 		return (
-			<Dialog
+			<SettingsConfirmDialog
 				testID="settings-conn-remove-dialog"
-				open={true}
-				accessibilityLabel={t("connection.removeQuestion")}
-				onOpenChange={({ open }) => {
+				open={connection !== null}
+				title={t("connection.removeQuestion")}
+				description={
+					connection
+						? `${t("connection.removeDescription", {
+								name: connection.name,
+							})}${
+								connection.kind.type === "ssh"
+									? t("connection.sshCredentialsDeleted")
+									: ""
+							}`
+						: null
+				}
+				confirmLabel={t("connection.confirmRemove")}
+				busyLabel={t("connection.removing")}
+				busy={removingBusy()}
+				destructive
+				onOpenChange={(open) => {
 					if (!open) removing.set(null);
 				}}
-			>
-				<DialogHeader>
-					<DialogTitle>{t("connection.removeQuestion")}</DialogTitle>
-					<DialogDescription>
-						{() =>
-							String(
-								t("connection.removeDescription", {
-									name: connection.name,
-								}),
-							)
-						}
-					</DialogDescription>
-				</DialogHeader>
-				<DialogFooter>
-					<Button
-						testID="settings-conn-remove-confirm"
-						variant="destructive"
-						onPress={() => void removeConnection()}
-					>
-						<Text>{t("connection.confirmRemove")}</Text>
-					</Button>
-				</DialogFooter>
-			</Dialog>
+				onConfirm={() => void removeConnection()}
+			/>
 		);
 	};
 

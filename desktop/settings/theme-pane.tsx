@@ -1,5 +1,5 @@
 import { type Accessor, signal, Text, View } from "nsh";
-import { AlertDialog, Editor } from "nsh/base";
+import { Editor } from "nsh/base";
 
 import type { ThemeSettingsUpdate } from "@/lib/theme-settings-types";
 import type { CustomThemeTokens } from "@/lib/theme-tokens";
@@ -16,6 +16,7 @@ import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
 import { Select } from "../ui/select";
 import { SettingsRow, SettingsSection, SettingsStatus } from "./layout";
+import { SettingsConfirmDialog } from "./settings-confirm-dialog";
 import type { SettingsClient } from "./settings-dialog";
 
 const catalog = createThemeTokenCatalog(lody.cssVars);
@@ -121,17 +122,9 @@ export function ThemePane(props: {
 		draftName.set(name);
 		draftTokens.set(tokensJson(tokens));
 	};
+	const deleting = signal<string | null>(null);
 	const deleteSaved = (name: string) => {
-		void AlertDialog.show({
-			title: t("settings.deleteTheme", { name }),
-			description: t("settings.deleteThemeDescription"),
-			actions: [
-				{ id: "cancel", label: t("common.cancel"), role: "cancel" },
-				{ id: "delete", label: t("common.delete"), role: "destructive" },
-			],
-		}).then(({ action }) => {
-			if (action === "delete") save({ deleteCustomTheme: name });
-		});
+		deleting.set(name);
 	};
 	const saveDraft = () => {
 		const result = validation();
@@ -253,6 +246,24 @@ export function ThemePane(props: {
 					</View>
 				</View>
 			</SettingsSection>
+			{() => (
+				<SettingsConfirmDialog
+					testID="settings-theme-delete-dialog"
+					open={deleting() !== null}
+					title={t("settings.deleteTheme", { name: deleting() ?? "" })}
+					description={t("settings.deleteThemeDescription")}
+					confirmLabel={t("common.delete")}
+					destructive
+					onOpenChange={(open) => {
+						if (!open) deleting.set(null);
+					}}
+					onConfirm={() => {
+						const name = deleting();
+						if (name !== null) save({ deleteCustomTheme: name });
+						deleting.set(null);
+					}}
+				/>
+			)}
 		</View>
 	);
 }
