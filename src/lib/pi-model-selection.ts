@@ -154,3 +154,18 @@ export function getPiQuickCycleThinkingLevel(
 		? (model.scopeThinkingLevel ?? model.defaultThinkingLevel ?? null)
 		: (model.defaultThinkingLevel ?? null);
 }
+
+/** Display names of the thinking levels, as the picker shows them. */
+export const PI_THINKING_LEVEL_LABELS: Record<PiThinkingLevel, string> = {
+	off: "Off",
+	minimal: "Minimal",
+	low: "Low",
+	medium: "Medium",
+	high: "High",
+	xhigh: "XHigh",
+	max: "Max",
+};
+
+export function piThinkingLevelLabel(level: PiThinkingLevel | null): string {
+	return level ? PI_THINKING_LEVEL_LABELS[level] : "—";
+}
