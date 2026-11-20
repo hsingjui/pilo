@@ -124,6 +124,85 @@ test("a project says when it has no sessions, is still reading them, or failed t
 	expect(app.shows("id:ws:slow:empty")).toBe(false);
 });
 
+type ClientCall = Record<string, unknown> & { call: string };
+
+function clientCalls(app: App): ClientCall[] {
+	return JSON.parse(app.storage()["pilo.test.clientCalls"] ?? "[]");
+}
+
+test("a session row's menu renames it inline and refreshes the list", async () => {
+	const app = await openSidebar({
+		"pilo.collapsedSections": JSON.stringify({ "ws:pilo": false }),
+	});
+	await app.waitFor("id:session:s4");
+
+	// A right-click opens the row's menu at the pointer.
+	await app.rightClick("id:session:s4");
+	await app.waitFor("id:session:s4:rename");
+
+	// Rename switches the row to an input; Enter submits it.
+	await app.press("id:session:s4:rename");
+	await app.waitFor("id:session:s4:rename-input");
+	await app.clear("id:session:s4:rename-input");
+	await app.type("id:session:s4:rename-input", "Grow the sidebar");
+	await app.keyboard.press("enter");
+	const renamed = () =>
+		clientCalls(app).filter((call) => call.call === "updateSessionUiState");
+	await becomes(app, renamed, [
+		{
+			call: "updateSessionUiState",
+			sessionPath: "/sessions/s4.jsonl",
+			update: { pinned: false, titleOverride: "Grow the sidebar" },
+			projectId: "pilo",
+		},
+	]);
+	// The renamed entry comes back with the index read the update triggers.
+	await app.waitFor("id:session:s4 >> text:Grow the sidebar");
+
+	// Refresh reads the project's sessions again.
+	await app.rightClick("id:session:s4");
+	await app.waitFor("id:session:s4:refresh");
+	const reads = () =>
+		clientCalls(app).filter(
+			(call) => call.call === "listSessions" && call.projectId === "pilo",
+		).length;
+	const before = reads();
+	await app.press("id:session:s4:refresh");
+	await becomes(app, reads, before + 1);
+});
+
+test("a session row's delete asks again, then removes and closes it", async () => {
+	const app = await openSidebar({
+		"pilo.collapsedSections": JSON.stringify({ "ws:pilo": false }),
+	});
+	await app.waitFor("id:session:s4");
+	await app.press("id:session:s4");
+	await app.waitFor("id:session-header");
+
+	// The row's trailing button opens the same menu.
+	await app.hover("id:session:s4");
+	await app.press("id:session:s4:menu");
+	await app.waitFor("id:session:s4:delete");
+
+	// The first press only arms the confirm; the menu stays open. Choosing
+	// with the keys works on every platform a pointer press may miss on.
+	await app.keyboard.press("end");
+	await app.keyboard.press("enter");
+	await app.waitFor("text:Confirm delete");
+	expect(app.shows("id:session:s4")).toBe(true);
+	expect(app.shows("id:session-header")).toBe(true);
+
+	await app.keyboard.press("enter");
+	await app.waitFor("id:session:s4", { state: "gone" });
+	expect(clientCalls(app)).toContainEqual({
+		call: "deleteSession",
+		projectId: "pilo",
+		sessionPath: "/sessions/s4.jsonl",
+	});
+	// Deleting the open session closes it.
+	await app.waitFor("id:session-header", { state: "gone" });
+});
+
 test("a connection's projects hide when it is collapsed, and stay hidden next launch", async () => {
 	const app = await openSidebar();
 	await app.waitFor("id:env:local:toggle");
@@ -140,4 +219,74 @@ test("a connection's projects hide when it is collapsed, and stay hidden next la
 	await next.press("id:env:local:toggle");
 	await next.waitFor("id:ws:pilo");
 	await becomes(next, () => collapsedSections(next), { "env:local": false });
+});
+
+function projectOrder(app: App) {
+	return JSON.parse(app.storage()["pilo.sidebarProjectOrder"] ?? "{}");
+}
+
+test("a project row's menu refreshes its sessions from the runtime", async () => {
+	const app = await openSidebar();
+	await app.waitFor("id:ws:notes:toggle");
+	await app.press("id:ws:notes:toggle");
+	await app.waitFor("id:ws:notes:empty");
+
+	await app.press("id:ws:notes:menu");
+	await app.press("id:ws:notes:menu:refresh");
+	await app.waitFor("id:session:n1 >> text:Sketch the notes app");
+});
+
+test("a project row's menu moves it one place and keeps the new order next launch", async () => {
+	const app = await openSidebar();
+	await app.waitFor("id:ws:pilo:menu");
+
+	await app.press("id:ws:pilo:menu");
+	await app.press("id:ws:pilo:menu:move-down");
+	await becomes(app, () => projectOrder(app), {
+		local: ["notes", "pilo", "broken", "slow"],
+	});
+	expect(app.texts().slice(0, 5)).toEqual([
+		"Local",
+		"notes",
+		"pilo",
+		"broken",
+		"slow",
+	]);
+
+	await app.press("id:ws:pilo:menu");
+	await app.press("id:ws:pilo:menu:move-up");
+	await becomes(app, () => projectOrder(app), {
+		local: ["pilo", "notes", "broken", "slow"],
+	});
+	expect(app.texts().slice(0, 5)).toEqual([
+		"Local",
+		"pilo",
+		"notes",
+		"broken",
+		"slow",
+	]);
+
+	const next = await openSidebar(app.storage());
+	await next.waitFor("id:ws:pilo");
+	expect(next.texts().slice(0, 5)).toEqual([
+		"Local",
+		"pilo",
+		"notes",
+		"broken",
+		"slow",
+	]);
+});
+
+test("removing a project asks once, then drops its row", async () => {
+	const app = await openSidebar();
+	await app.waitFor("id:ws:broken:menu");
+
+	await app.press("id:ws:broken:menu");
+	await app.press("id:ws:broken:menu:remove");
+	await app.waitFor("text:Confirm removal");
+	expect(app.shows("id:ws:broken")).toBe(true);
+
+	await app.press("id:ws:broken:menu:remove");
+	await app.waitFor("id:ws:broken", { state: "gone" });
+	expect(app.shows("id:ws:pilo")).toBe(true);
 });

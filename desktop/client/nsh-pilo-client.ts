@@ -59,6 +59,7 @@ export type PiloNative = Pick<
 	| "chatTranscriptSnapshot"
 	| "sendChatCommand"
 	| "listProjects"
+	| "removeProject"
 	| "listSessions"
 	| "searchSessions"
 	| "searchProjectFiles"
@@ -208,6 +209,11 @@ export class NshPiloClient implements BridgedPiloClient {
 
 	async listProjects(): Promise<Project[]> {
 		return (await this.pilo.listProjects()) as Project[];
+	}
+
+	/** Removes the project; the answer is the catalog the runtime saved. */
+	async removeProject(projectId: string): Promise<Project[]> {
+		return (await this.pilo.removeProject(projectId)) as Project[];
 	}
 
 	async listSessions(projectId: string): Promise<SessionIndexEntry[]> {

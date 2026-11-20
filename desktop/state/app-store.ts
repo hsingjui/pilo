@@ -23,9 +23,12 @@ export type AppStoreClient = Pick<
 	| "chatState"
 	| "listProjects"
 	| "listSessions"
+	| "removeProject"
 	| "loadSessionReadStates"
 	| "loadThemeSettings"
 	| "markSessionRead"
+	| "updateSessionUiState"
+	| "deleteSession"
 	| "connectEvents"
 	| "closed"
 >;
@@ -110,6 +113,12 @@ export class AppStore {
 		if (this.sessionReads.get(projectId) === read) this.apply(action);
 	}
 
+	/** Removes a project; the runtime's answer replaces the catalog. */
+	async removeProject(projectId: string) {
+		const projects = await this.client.removeProject(projectId);
+		this.apply({ type: "projects_loaded", projects });
+	}
+
 	/** Chooses the project for a new chat and closes the open session. */
 	selectProject(projectId: string) {
 		this.apply({ type: "project_selected", projectId });
@@ -125,6 +134,38 @@ export class AppStore {
 		if (opened?.projectId === projectId && opened.sessionPath === sessionPath) {
 			this.acknowledgeOpenSession();
 		}
+	}
+
+	/**
+	 * Renames a saved session. The sidebar shows the new title from the
+	 * `sessions_indexed` event the runtime sends after the write.
+	 */
+	renameSession(projectId: string, sessionPath: string, title: string) {
+		const session = this.current().sessionIndexes[projectId]?.sessions.find(
+			(entry) => entry.sessionPath === sessionPath,
+		);
+		if (!session) return Promise.resolve();
+		return this.client
+			.updateSessionUiState(
+				sessionPath,
+				{ pinned: session.pinned, titleOverride: title },
+				projectId,
+			)
+			.then(() => undefined)
+			.catch((error: unknown) => {
+				console.error("Renaming the session failed", error);
+			});
+	}
+
+	/** Deletes a saved session; the one open in the chat pane closes. */
+	async deleteSession(projectId: string, sessionPath: string) {
+		try {
+			await this.client.deleteSession(projectId, sessionPath);
+		} catch (error) {
+			console.error("Deleting the session failed", error);
+			return;
+		}
+		this.apply({ type: "session_deleted", projectId, sessionPath });
 	}
 
 	/**

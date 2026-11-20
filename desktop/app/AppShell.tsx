@@ -3,6 +3,7 @@ import {
 	computed,
 	effect,
 	type JSX,
+	keymap,
 	Overlay,
 	signal,
 	Text,
@@ -21,10 +22,12 @@ import type { AppStore } from "../state/app-store";
 import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 import type { ModelCatalogStore } from "../state/model-catalog";
+import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Toast } from "../ui/toast";
 import { followSavedAppearance } from "./appearance";
+import { CommandPalette } from "./command-palette";
 import { t } from "./i18n";
 import { openChatTarget } from "./open-chat";
 import { SessionHeader } from "./session-header";
@@ -66,6 +69,8 @@ export interface AppShellProps {
 	) => void;
 	/** Forks the open session at an assistant message. */
 	forker?: Pick<SessionForker, "state" | "forkAssistant" | "dismissNotice">;
+	/** Searches saved message text for the command palette. */
+	searchSessions?: Pick<NshPiloClient, "searchSessions">;
 }
 
 export function AppShell(props: AppShellProps) {
@@ -93,12 +98,20 @@ export function AppShell(props: AppShellProps) {
 		openSessionEntry()?.firstUserMessagePreview ??
 		t("app.newChat");
 	const collapsed = signal(false);
+	const paletteOpen = signal(false);
 	const sidebarSettings = new SidebarSettingsStore();
 	void sidebarSettings.load();
 	const chatTarget = computed(() => openChatTarget(store.state()));
 	const chatSessionKey = computed(() => chatTarget()?.sessionKey ?? null);
 	effect(() => composer.setTarget(chatTarget()));
 	followSavedAppearance(store.state);
+	keymap.bind({
+		"mod+k": () => paletteOpen.update((open) => !open),
+		"mod+n": () => {
+			const project = activeProject(store.state());
+			if (project) store.selectProject(project.id);
+		},
+	});
 	// The app draws its own title bar: the sidebar and the main area reach
 	// the window's top edge, beside the system's window controls.
 	currentWindow().set({
@@ -114,6 +127,17 @@ export function AppShell(props: AppShellProps) {
 			onPress={() => collapsed.update((value) => !value)}
 		>
 			<Icon name="PanelLeft" />
+		</Button>
+	);
+	const search = (
+		<Button
+			testID="sidebar-search"
+			variant="ghost"
+			size="icon"
+			accessibilityLabel={t("sidebar.searchSessions")}
+			onPress={() => paletteOpen.set(true)}
+		>
+			<Icon name="Search" />
 		</Button>
 	);
 	/** A page of the workspace that is not a chat, in its middle. */
@@ -135,6 +159,7 @@ export function AppShell(props: AppShellProps) {
 							class="flex-row items-center justify-end px-2"
 							style={{ height: barHeight(), paddingLeft: titleBar().left }}
 						>
+							{search}
 							{toggle("sidebar-collapse", () => t("sidebar.collapseSidebar"))}
 						</View>
 						{() =>
@@ -285,6 +310,15 @@ export function AppShell(props: AppShellProps) {
 					}}
 				</View>
 			</View>
+			{() =>
+				paletteOpen() ? (
+					<CommandPalette
+						store={store}
+						searchSessions={props.searchSessions}
+						onClose={() => paletteOpen.set(false)}
+					/>
+				) : null
+			}
 			{() => {
 				const notice = props.forker?.state().notice;
 				return notice ? (

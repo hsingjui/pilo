@@ -58,22 +58,9 @@ export async function launch(pilo: PiloNative) {
 		runConfig,
 		catalog,
 		forker,
+		searchSessions: client,
 		onRenameSession: (projectId, sessionPath, title) =>
-			void client
-				.updateSessionUiState(
-					sessionPath,
-					{
-						pinned:
-							store
-								.state()
-								.sessionIndexes[projectId]?.sessions.find(
-									(entry) => entry.sessionPath === sessionPath,
-								)?.pinned ?? false,
-						titleOverride: title,
-					},
-					projectId,
-				)
-				.catch((error: unknown) => console.warn("Failed to rename", error)),
+			void store.renameSession(projectId, sessionPath, title),
 		readProjectImage: (projectId, path) =>
 			client.readProjectImage(projectId, path),
 	});

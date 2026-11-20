@@ -8,8 +8,15 @@ import { type AppState, isSessionUnread } from "../state/app-state";
 /** A connection and its projects, as the sidebar groups them. */
 export type SidebarGroup = { connection: Connection; projects: Project[] };
 
-/** The projects by connection, in their own order, the local one first. */
-export function sidebarGroups(projects: readonly Project[]): SidebarGroup[] {
+/**
+ * The projects by connection, in their own order, the local one first. Each
+ * group follows the connection's saved order; projects it does not name keep
+ * their catalog places after the ordered ones.
+ */
+export function sidebarGroups(
+	projects: readonly Project[],
+	order: Record<string, readonly string[]> = {},
+): SidebarGroup[] {
 	const groups = new Map<string, SidebarGroup>();
 	for (const project of projects) {
 		const { connection } = project;
@@ -17,9 +24,42 @@ export function sidebarGroups(projects: readonly Project[]): SidebarGroup[] {
 		if (group) group.projects.push(project);
 		else groups.set(connection.id, { connection, projects: [project] });
 	}
+	for (const group of groups.values()) {
+		const saved = order[group.connection.id];
+		if (saved) group.projects = bySavedOrder(group.projects, saved);
+	}
 	return [...groups.values()].sort(
 		(a, b) => Number(isLocal(b.connection)) - Number(isLocal(a.connection)),
 	);
+}
+
+function bySavedOrder(
+	projects: readonly Project[],
+	order: readonly string[],
+): Project[] {
+	const rank = new Map(order.map((id, index) => [id, index]));
+	return [...projects].sort(
+		(a, b) =>
+			(rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+			(rank.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+	);
+}
+
+/**
+ * The connection's project order with the project moved one place, or null
+ * when it cannot move (the edge or not in the list).
+ */
+export function movedProjectOrder(
+	projects: readonly Project[],
+	projectId: string,
+	delta: -1 | 1,
+): string[] | null {
+	const from = projects.findIndex((project) => project.id === projectId);
+	const to = from + delta;
+	if (from < 0 || to < 0 || to >= projects.length) return null;
+	const order = projects.map((project) => project.id);
+	[order[from], order[to]] = [order[to], order[from]];
+	return order;
 }
 
 export function isLocal(connection: Connection) {

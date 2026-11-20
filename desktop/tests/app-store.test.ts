@@ -86,6 +86,7 @@ function fakeClient() {
 			new Promise((resolve, reject) =>
 				sessionLists.push({ projectId, resolve, reject }),
 			),
+		removeProject: () => Promise.resolve([]),
 		loadSessionReadStates: () => Promise.resolve(answers.readStates),
 		markSessionRead(projectId, sessionPath, revision) {
 			marked.push({ projectId, sessionPath, revision });
@@ -93,6 +94,8 @@ function fakeClient() {
 				? Promise.reject(new Error("read state was not saved"))
 				: Promise.resolve(read(sessionPath, revision, revision));
 		},
+		updateSessionUiState: () => Promise.reject(new Error("unused")),
+		deleteSession: () => Promise.reject(new Error("unused")),
 		loadThemeSettings: () =>
 			answers.themeSettings instanceof Error
 				? Promise.reject(answers.themeSettings)

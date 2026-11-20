@@ -1,4 +1,4 @@
-import { mount } from "nsh";
+import { mount, Storage } from "nsh";
 
 import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import type { ConversationEvent } from "@/lib/chat/conversation-types";
@@ -61,6 +61,9 @@ function session(day: number, title: string | null): SessionIndexEntry {
 	};
 }
 
+// Expanding `notes` reads its sessions twice, both empty; every read
+// after answers with its session, so a refresh has something new to show.
+let notesReads = 0;
 const sessions: Record<string, () => Promise<SessionIndexEntry[]>> = {
 	pilo: () =>
 		Promise.resolve([
@@ -81,7 +84,19 @@ const sessions: Record<string, () => Promise<SessionIndexEntry[]>> = {
 				cwd: "/code/api",
 			},
 		]),
-	notes: () => Promise.resolve([]),
+	notes: () =>
+		Promise.resolve(
+			notesReads++ < 2
+				? []
+				: [
+						{
+							...session(9, "Sketch the notes app"),
+							projectId: "notes",
+							piSessionId: "n1",
+							sessionPath: "/sessions/n1.jsonl",
+						},
+					],
+		),
 	broken: () => Promise.reject(new Error("The session index is locked.")),
 	slow: () => new Promise(() => {}),
 };
@@ -121,6 +136,14 @@ async function run() {
 		theme: "system",
 		themeFamily: await fixtureThemeFamily(),
 	} as ThemeSettings;
+	/** `pilo`'s index entries, for `updateSessionUiState` to answer with. */
+	const piloIndex = await sessions.pilo();
+	/** The calls the app made on the client, for the test to read via storage. */
+	const clientCalls: Record<string, unknown>[] = [];
+	const record = (call: Record<string, unknown>) => {
+		clientCalls.push(call);
+		void Storage.setItem("pilo.test.clientCalls", JSON.stringify(clientCalls));
+	};
 	const runtime = scriptedClient({
 		projects: [
 			project("api", remote),
@@ -130,7 +153,26 @@ async function run() {
 			project("slow", local),
 		],
 		themeSettings,
-		sessions: (projectId) => sessions[projectId]?.() ?? Promise.resolve([]),
+		sessions: (projectId) => {
+			record({ call: "listSessions", projectId });
+			return sessions[projectId]?.() ?? Promise.resolve([]);
+		},
+		onUpdateSessionUiState(sessionPath, update, projectId) {
+			record({ call: "updateSessionUiState", sessionPath, update, projectId });
+			const entry = piloIndex.find(
+				(known) => known.sessionPath === sessionPath,
+			);
+			runtime.emit({
+				type: "sessions_indexed",
+				projectId: projectId ?? "pilo",
+			});
+			return { ...entry, ...update } as SessionIndexEntry;
+		},
+		onDeleteSession(projectId, sessionPath) {
+			record({ call: "deleteSession", projectId, sessionPath });
+			runtime.emit({ type: "sessions_indexed", projectId });
+			return { method: "trash" as const };
+		},
 		history: (sessionPath) => histories[sessionPath]?.() ?? Promise.resolve([]),
 		chatSessions: [
 			{

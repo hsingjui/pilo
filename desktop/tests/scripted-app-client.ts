@@ -13,9 +13,11 @@ import type {
 	ProjectScopedModel,
 } from "@/lib/project-model-scope";
 import type {
+	SessionDeleteResult,
 	SessionHistory,
 	SessionHistoryResult,
 	SessionIndexEntry,
+	SessionSearchMatch,
 	SessionUiStateUpdate,
 } from "@/lib/api/sessions-types";
 import type {
@@ -45,6 +47,15 @@ export type ScriptedChatClient = PiCommandClient & {
 		update: SessionUiStateUpdate,
 		projectId?: string,
 	) => Promise<SessionIndexEntry>;
+	searchSessions: (
+		projectId: string,
+		query: string,
+		limit?: number,
+	) => Promise<SessionSearchMatch[]>;
+	deleteSession: (
+		projectId: string,
+		sessionPath: string,
+	) => Promise<SessionDeleteResult>;
 };
 
 export type AppScript = {
@@ -85,12 +96,25 @@ export type AppScript = {
 	models?: Record<string, ProjectPiModels>;
 	/** A project's saved model scope; null inherits Pi when left out. */
 	modelScopes?: Record<string, ProjectModelScope | null>;
+	/** The catalog `removeProject` resolves with; minus the project otherwise. */
+	onRemoveProject?: (projectId: string) => Project[];
 	/** The index entry `updateSessionUiState` resolves with. */
 	onUpdateSessionUiState?: (
 		sessionPath: string,
 		update: SessionUiStateUpdate,
 		projectId?: string,
 	) => SessionIndexEntry;
+	/** The message matches `searchSessions` resolves with; none when left out. */
+	onSearchSessions?: (
+		projectId: string,
+		query: string,
+		limit?: number,
+	) => SessionSearchMatch[] | Promise<SessionSearchMatch[]>;
+	/** What `deleteSession` resolves with; `{ method: "trash" }` by default. */
+	onDeleteSession?: (
+		projectId: string,
+		sessionPath: string,
+	) => SessionDeleteResult;
 };
 
 /** A new Host's preferences and theme, as far as the shell reads them. */
@@ -120,6 +144,11 @@ export function scriptedClient(script: AppScript = {}) {
 	const savedModels = new Map<string, ProjectPiModels>();
 	const modelScopes = new Map(Object.entries(script.modelScopes ?? {}));
 	const running = new Set<string>();
+	const removed: string[] = [];
+	/** UI state written through `updateSessionUiState`, by session path. */
+	const uiState = new Map<string, SessionUiStateUpdate>();
+	/** Session paths deleted through `deleteSession`, gone from `listSessions`. */
+	const deleted = new Set<string>();
 	let attempts = 0;
 	let sequence = 0;
 	let closed = false;
@@ -215,6 +244,7 @@ export function scriptedClient(script: AppScript = {}) {
 			return Promise.resolve(scope);
 		},
 		updateSessionUiState(sessionPath, update, projectId) {
+			uiState.set(sessionPath, update);
 			return Promise.resolve(
 				script.onUpdateSessionUiState?.(sessionPath, update, projectId) ??
 					({
@@ -222,6 +252,16 @@ export function scriptedClient(script: AppScript = {}) {
 						pinned: update.pinned,
 						titleOverride: update.titleOverride,
 					} as SessionIndexEntry),
+			);
+		},
+		searchSessions: (projectId, query, limit) =>
+			Promise.resolve(script.onSearchSessions?.(projectId, query, limit) ?? []),
+		deleteSession(projectId, sessionPath) {
+			deleted.add(sessionPath);
+			return Promise.resolve(
+				script.onDeleteSession?.(projectId, sessionPath) ?? {
+					method: "trash" as const,
+				},
 			);
 		},
 		loadHistory: async (_projectId, sessionPath) =>
@@ -233,8 +273,19 @@ export function scriptedClient(script: AppScript = {}) {
 				fingerprint: null,
 			}) as SessionHistoryResult,
 		listProjects: () => Promise.resolve(projects),
-		listSessions: (projectId) =>
-			script.sessions?.(projectId) ?? Promise.resolve([]),
+		removeProject: (projectId) => {
+			removed.push(projectId);
+			return Promise.resolve(
+				script.onRemoveProject?.(projectId) ??
+					projects.filter((project) => project.id !== projectId),
+			);
+		},
+		listSessions: async (projectId) => {
+			const listed = (await script.sessions?.(projectId)) ?? [];
+			return listed
+				.filter((entry) => !deleted.has(entry.sessionPath))
+				.map((entry) => ({ ...entry, ...uiState.get(entry.sessionPath) }));
+		},
 		loadSessionReadStates: () => Promise.resolve(script.readStates ?? []),
 		loadThemeSettings: () =>
 			Promise.resolve(script.themeSettings ?? HOST_DEFAULT_THEME),
@@ -261,6 +312,8 @@ export function scriptedClient(script: AppScript = {}) {
 		emit,
 		/** Every command sent through `sendChatCommand`, in order. */
 		commands,
+		/** Every project `removeProject` was asked to drop, in order. */
+		removed,
 		/** The runtime shuts down: its event stream ends for good. */
 		close() {
 			closed = true;
