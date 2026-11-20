@@ -141,3 +141,73 @@ test("a connection's projects hide when it is collapsed, and stay hidden next la
 	await next.waitFor("id:ws:pilo");
 	await becomes(next, () => collapsedSections(next), { "env:local": false });
 });
+
+function projectOrder(app: App) {
+	return JSON.parse(app.storage()["pilo.sidebarProjectOrder"] ?? "{}");
+}
+
+test("a project row's menu refreshes its sessions from the runtime", async () => {
+	const app = await openSidebar();
+	await app.waitFor("id:ws:notes:toggle");
+	await app.press("id:ws:notes:toggle");
+	await app.waitFor("id:ws:notes:empty");
+
+	await app.press("id:ws:notes:menu");
+	await app.press("id:ws:notes:menu:refresh");
+	await app.waitFor("id:session:n1 >> text:Sketch the notes app");
+});
+
+test("a project row's menu moves it one place and keeps the new order next launch", async () => {
+	const app = await openSidebar();
+	await app.waitFor("id:ws:pilo:menu");
+
+	await app.press("id:ws:pilo:menu");
+	await app.press("id:ws:pilo:menu:move-down");
+	await becomes(app, () => projectOrder(app), {
+		local: ["notes", "pilo", "broken", "slow"],
+	});
+	expect(app.texts().slice(0, 5)).toEqual([
+		"Local",
+		"notes",
+		"pilo",
+		"broken",
+		"slow",
+	]);
+
+	await app.press("id:ws:pilo:menu");
+	await app.press("id:ws:pilo:menu:move-up");
+	await becomes(app, () => projectOrder(app), {
+		local: ["pilo", "notes", "broken", "slow"],
+	});
+	expect(app.texts().slice(0, 5)).toEqual([
+		"Local",
+		"pilo",
+		"notes",
+		"broken",
+		"slow",
+	]);
+
+	const next = await openSidebar(app.storage());
+	await next.waitFor("id:ws:pilo");
+	expect(next.texts().slice(0, 5)).toEqual([
+		"Local",
+		"pilo",
+		"notes",
+		"broken",
+		"slow",
+	]);
+});
+
+test("removing a project asks once, then drops its row", async () => {
+	const app = await openSidebar();
+	await app.waitFor("id:ws:broken:menu");
+
+	await app.press("id:ws:broken:menu");
+	await app.press("id:ws:broken:menu:remove");
+	await app.waitFor("text:Confirm removal");
+	expect(app.shows("id:ws:broken")).toBe(true);
+
+	await app.press("id:ws:broken:menu:remove");
+	await app.waitFor("id:ws:broken", { state: "gone" });
+	expect(app.shows("id:ws:pilo")).toBe(true);
+});

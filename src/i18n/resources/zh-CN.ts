@@ -884,6 +884,8 @@ const zhCN = {
 		refreshingSessions: "正在刷新会话",
 		projectMenu: "项目菜单",
 		refreshSessions: "刷新会话",
+		moveUp: "上移",
+		moveDown: "下移",
 		newSession: "新建会话",
 		moreActions: "更多操作",
 		removeProject: "移除项目",

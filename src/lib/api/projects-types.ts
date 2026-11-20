@@ -16,3 +16,8 @@ export type Project = {
 	createdAtMs: number;
 	lastOpenedAtMs: number;
 };
+
+/** Built-in project IDs are stable across hiding, renaming and restarts. */
+export function isDefaultWorkspace(project: { id: string }): boolean {
+	return project.id.startsWith("default-workspace:");
+}

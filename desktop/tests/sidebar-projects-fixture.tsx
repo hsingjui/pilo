@@ -61,6 +61,9 @@ function session(day: number, title: string | null): SessionIndexEntry {
 	};
 }
 
+// Expanding `notes` reads its sessions twice, both empty; every read
+// after answers with its session, so a refresh has something new to show.
+let notesReads = 0;
 const sessions: Record<string, () => Promise<SessionIndexEntry[]>> = {
 	pilo: () =>
 		Promise.resolve([
@@ -81,7 +84,19 @@ const sessions: Record<string, () => Promise<SessionIndexEntry[]>> = {
 				cwd: "/code/api",
 			},
 		]),
-	notes: () => Promise.resolve([]),
+	notes: () =>
+		Promise.resolve(
+			notesReads++ < 2
+				? []
+				: [
+						{
+							...session(9, "Sketch the notes app"),
+							projectId: "notes",
+							piSessionId: "n1",
+							sessionPath: "/sessions/n1.jsonl",
+						},
+					],
+		),
 	broken: () => Promise.reject(new Error("The session index is locked.")),
 	slow: () => new Promise(() => {}),
 };

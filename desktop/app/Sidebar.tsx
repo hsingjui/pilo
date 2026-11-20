@@ -3,6 +3,7 @@ import {
 	colorScheme,
 	computed,
 	Scroll,
+	type Signal,
 	signal,
 	Text,
 	token,
@@ -13,7 +14,7 @@ import { Button } from "nsh/base";
 
 import { summarizeProjectSessions } from "@/components/sidebar/session-list";
 import type { SidebarSession } from "@/components/sidebar/types";
-import type { Project } from "@/lib/api/projects-types";
+import { isDefaultWorkspace, type Project } from "@/lib/api/projects-types";
 import { activeProject } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
 import { focusRingStyle } from "../ui/focus-ring-style";
@@ -21,12 +22,14 @@ import { Foreground } from "../ui/foreground";
 import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
+import { MenuSeparator } from "../ui/menu-separator";
 import { scrollbarLook } from "../ui/scrollbar";
 import { Spinner } from "../ui/spinner";
 import { t } from "./i18n";
 import {
 	connectionSection,
 	isLocal,
+	movedProjectOrder,
 	projectSection,
 	RECENT_SECTION,
 	recentSessions,
@@ -68,7 +71,9 @@ const SECTION_TITLE =
 export function Sidebar(props: SidebarProps) {
 	// The groups change only with the projects, not with every state change.
 	const projects = computed(() => props.store.state().projects);
-	const groups = computed(() => sidebarGroups(projects()));
+	const groups = computed(() =>
+		sidebarGroups(projects(), props.settings.settings().projectOrder),
+	);
 	const view = () => props.settings.settings().view;
 	return (
 		<Scroll
@@ -299,7 +304,12 @@ function ConnectionSection(
 	);
 }
 
-function ProjectSection(props: SidebarProps & { project: Accessor<Project> }) {
+function ProjectSection(
+	props: SidebarProps & {
+		project: Accessor<Project>;
+		group: Accessor<SidebarGroup>;
+	},
+) {
 	const { store, settings } = props;
 	const id = () => props.project().id;
 	const section = () => projectSection(id());
@@ -311,6 +321,16 @@ function ProjectSection(props: SidebarProps & { project: Accessor<Project> }) {
 			state.navigation.session === null && activeProject(state)?.id === id()
 		);
 	};
+	const siblings = () => props.group().projects;
+	const movable = () =>
+		!isDefaultWorkspace(props.project()) && siblings().length > 1;
+	const move = (delta: -1 | 1) => {
+		const order = movedProjectOrder(siblings(), id(), delta);
+		if (order) {
+			void settings.setProjectOrder(props.project().connection.id, order);
+		}
+	};
+	const confirmingRemove = signal(false);
 	const foreground = () =>
 		selected()
 			? token("pilo-project-selected-foreground")
@@ -357,12 +377,114 @@ function ProjectSection(props: SidebarProps & { project: Accessor<Project> }) {
 							{() => props.project().name}
 						</Text>
 					</Button>
+					<ProjectMenu
+						section={section}
+						canMove={
+							movable()
+								? (delta) => movedProjectOrder(siblings(), id(), delta) !== null
+								: undefined
+						}
+						removable={!isDefaultWorkspace(props.project())}
+						confirmingRemove={confirmingRemove}
+						onRefresh={() => void store.loadSessions(id())}
+						onMove={move}
+						onRemove={() =>
+							void store.removeProject(id()).catch((error: unknown) => {
+								console.error("Removing the project failed", error);
+							})
+						}
+					/>
 				</View>
 			</Foreground.Provider>
 			{() =>
 				collapsed() ? null : <ProjectSessions store={store} projectId={id} />
 			}
 		</View>
+	);
+}
+
+/** The ⋯ menu on a project row: refresh, reorder and remove. */
+function ProjectMenu(props: {
+	section: Accessor<string>;
+	/** Set when the project can reorder: reports whether a step is in range. */
+	canMove: ((delta: -1 | 1) => boolean) | undefined;
+	/** The default workspace cannot be removed, as in the Tauri app. */
+	removable: boolean;
+	confirmingRemove: Signal<boolean>;
+	onRefresh: () => void;
+	onMove: (delta: -1 | 1) => void;
+	onRemove: () => void;
+}) {
+	const section = props.section;
+	return (
+		<Menu
+			popupClass="min-w-40"
+			onClose={() => props.confirmingRemove.set(false)}
+			trigger={
+				<Button
+					testID={`${section()}:menu`}
+					class="size-6 items-center justify-center rounded-sm hover:bg-sidebar-hover"
+					focusVisibleStyle={focusRing()}
+					accessibilityLabel={t("sidebar.projectMenu")}
+				>
+					<Icon name="MoreHorizontal" size={14} />
+				</Button>
+			}
+		>
+			<MenuItem
+				testID={`${section()}:menu:refresh`}
+				icon={<Icon name="RefreshCw" size={14} />}
+				onSelect={props.onRefresh}
+			>
+				<Text>{() => t("sidebar.refreshSessions")}</Text>
+			</MenuItem>
+			{props.canMove ? (
+				<>
+					<MenuItem
+						testID={`${section()}:menu:move-up`}
+						icon={<Icon name="ArrowUp" size={14} />}
+						disabled={!props.canMove?.(-1)}
+						onSelect={() => props.onMove(-1)}
+					>
+						<Text>{() => t("sidebar.moveUp")}</Text>
+					</MenuItem>
+					<MenuItem
+						testID={`${section()}:menu:move-down`}
+						icon={<Icon name="ArrowDown" size={14} />}
+						disabled={!props.canMove?.(1)}
+						onSelect={() => props.onMove(1)}
+					>
+						<Text>{() => t("sidebar.moveDown")}</Text>
+					</MenuItem>
+				</>
+			) : null}
+			{props.removable ? (
+				<>
+					<MenuSeparator />
+					<MenuItem
+						testID={`${section()}:menu:remove`}
+						variant="destructive"
+						icon={<Icon name="Trash2" size={14} />}
+						closeOnSelect={false}
+						onSelect={() => {
+							if (!props.confirmingRemove()) {
+								props.confirmingRemove.set(true);
+								return;
+							}
+							props.onRemove();
+						}}
+					>
+						<Text>
+							{() =>
+								props.confirmingRemove()
+									? t("sidebar.confirmRemove")
+									: t("sidebar.removeProject")
+							}
+						</Text>
+					</MenuItem>
+				</>
+			) : null}
+		</Menu>
 	);
 }
 

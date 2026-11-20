@@ -919,6 +919,8 @@ const enUS = {
 		refreshingSessions: "Refreshing sessions",
 		projectMenu: "Project menu",
 		refreshSessions: "Refresh sessions",
+		moveUp: "Move up",
+		moveDown: "Move down",
 		newSession: "New session",
 		moreActions: "More actions",
 		removeProject: "Remove project",

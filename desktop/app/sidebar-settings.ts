@@ -10,6 +10,12 @@ export type SidebarSettings = {
 	 * a key keeps its own default (a project starts collapsed).
 	 */
 	collapsedSections: Record<string, boolean>;
+	/**
+	 * A connection's project order as the row menu's moves leave it, by
+	 * connection id. Projects a saved list does not name keep their catalog
+	 * places after the ordered ones.
+	 */
+	projectOrder: Record<string, readonly string[]>;
 	view: SidebarView;
 	/** The recent view names each session's project. */
 	showProjectsInRecents: boolean;
@@ -17,11 +23,13 @@ export type SidebarSettings = {
 
 /** The Tauri app's localStorage keys, so its stored values carry over. */
 const COLLAPSED_SECTIONS_KEY = "pilo.collapsedSections";
+const PROJECT_ORDER_KEY = "pilo.sidebarProjectOrder";
 const VIEW_KEY = "pilo.sidebarOrganizeMode";
 const SHOW_PROJECTS_IN_RECENTS_KEY = "pilo.sidebarShowProjectsInRecents";
 
 const DEFAULTS: SidebarSettings = {
 	collapsedSections: {},
+	projectOrder: {},
 	view: "projects",
 	showProjectsInRecents: false,
 };
@@ -36,13 +44,15 @@ export class SidebarSettingsStore {
 	readonly loaded: Accessor<boolean> = () => this.isLoaded();
 
 	async load(): Promise<void> {
-		const [sections, view, showProjects] = await Promise.all([
+		const [sections, order, view, showProjects] = await Promise.all([
 			Storage.getItem(COLLAPSED_SECTIONS_KEY),
+			Storage.getItem(PROJECT_ORDER_KEY),
 			Storage.getItem(VIEW_KEY),
 			Storage.getItem(SHOW_PROJECTS_IN_RECENTS_KEY),
 		]);
 		this.current.set({
 			collapsedSections: parseCollapsedSections(sections),
+			projectOrder: parseProjectOrder(order),
 			view: view === "recent" ? "recent" : "projects",
 			showProjectsInRecents: showProjects === "1",
 		});
@@ -59,6 +69,19 @@ export class SidebarSettingsStore {
 			COLLAPSED_SECTIONS_KEY,
 			JSON.stringify(collapsedSections),
 		);
+	}
+
+	/** Saves a connection's project order, as a row's move left it. */
+	setProjectOrder(
+		connectionId: string,
+		order: readonly string[],
+	): Promise<void> {
+		const projectOrder = {
+			...this.current().projectOrder,
+			[connectionId]: order,
+		};
+		this.current.set({ ...this.current(), projectOrder });
+		return Storage.setItem(PROJECT_ORDER_KEY, JSON.stringify(projectOrder));
 	}
 
 	setView(view: SidebarView): Promise<void> {
@@ -92,6 +115,29 @@ function parseCollapsedSections(
 	return Object.fromEntries(
 		Object.entries(parsed).filter(
 			(entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+		),
+	);
+}
+
+/** The stored orders that are string lists; anything else is dropped. */
+function parseProjectOrder(
+	stored: string | null,
+): Record<string, readonly string[]> {
+	if (!stored) return {};
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(stored);
+	} catch {
+		return {};
+	}
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+		return {};
+	}
+	return Object.fromEntries(
+		Object.entries(parsed).filter(
+			(entry): entry is [string, string[]] =>
+				Array.isArray(entry[1]) &&
+				entry[1].every((id) => typeof id === "string"),
 		),
 	);
 }
