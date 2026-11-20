@@ -33,7 +33,11 @@ function composerFixture(activeTurn: boolean) {
 			activity.set(`sent:${(command as { type?: string }).type ?? "?"}`);
 		},
 		connectEvents: async () => () => {},
-		searchProjectFiles: async () => ["src/a.ts"],
+		// "@fail" stands for a search the Host could not run.
+		searchProjectFiles: async (_p: string, query: string) => {
+			if (query === "fail") throw new Error("search failed");
+			return ["src/a.ts"];
+		},
 		uploadChatFile: async (_p: string, name: string) =>
 			`/attachments/abcdefghijklmnopqrstuA/${name}`,
 		removeChatFile: async () => {},
@@ -50,7 +54,21 @@ function composerFixture(activeTurn: boolean) {
 		...createAppState(),
 		projects: [{ id: "p1", name: "Project" }],
 		chatSessions: [chat],
-	} as AppState;
+		// One earlier session for the `@` menu's session tab.
+		sessionIndexes: {
+			p1: {
+				sessions: [
+					{
+						projectId: "p1",
+						connectionId: "local",
+						sessionPath: "/sessions/earlier.jsonl",
+						name: "Earlier chat",
+						updatedAt: "2026-11-01T00:00:00Z",
+					},
+				],
+			},
+		},
+	} as unknown as AppState;
 	const appSignal = signal(app);
 	const store = new ComposerStore({ client, app: appSignal });
 	store.setTarget({ sessionKey: "sa", projectId: "p1" });
