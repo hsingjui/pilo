@@ -88,14 +88,16 @@ export function ModelCatalogPane(props: {
 						<SettingsSection
 							title={project.name}
 							headerRight={
+								scope()?.models ? (
+									<SettingsStatus>
+										{t("settings.modelCatalogScoped", {
+											count: scope()!.models!.length,
+										})}
+									</SettingsStatus>
+								) : null
+							}
+							actions={
 								<View class="flex-row items-center gap-2">
-									{scope()?.models ? (
-										<SettingsStatus>
-											{t("settings.modelCatalogScoped", {
-												count: scope()!.models!.length,
-											})}
-										</SettingsStatus>
-									) : null}
 									{!scope()?.models ? null : (
 										<Button
 											testID={`settings-catalog-inherit-${project.id}`}

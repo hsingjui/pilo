@@ -945,7 +945,7 @@ export function ConnectionsPane(props: {
 			</SettingsSection>
 			<SettingsSection
 				title={t("connection.wslLabel")}
-				headerRight={
+				actions={
 					<Select
 						testID="settings-wsl-add"
 						items={[
@@ -980,7 +980,7 @@ export function ConnectionsPane(props: {
 			</SettingsSection>
 			<SettingsSection
 				title={t("connection.sshLabel")}
-				headerRight={
+				actions={
 					<Button
 						testID="settings-ssh-add"
 						variant="outline"

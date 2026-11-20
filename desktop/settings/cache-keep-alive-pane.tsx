@@ -92,7 +92,7 @@ export function CacheKeepAlivePane(props: {
 					return (
 						<SettingsSection
 							title={connectionLabel(connection)}
-							headerRight={
+							actions={
 								<Select
 									testID={`settings-keep-alive-add-${connection.id}`}
 									class="w-[220px]"

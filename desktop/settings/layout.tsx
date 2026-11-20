@@ -11,7 +11,10 @@ const narrow = () => windowSize().width < SM_WIDTH;
 /** A bordered card with an optional header, as `SettingsSection` in Tauri. */
 export function SettingsSection(props: {
 	title?: string;
+	/** Muted text on the header's right (a count, a scope summary). */
 	headerRight?: JSX.Element;
+	/** Interactive controls on the header's right (buttons, pickers). */
+	actions?: JSX.Element;
 	children: JSX.Element;
 	class?: string;
 	testID?: string;
@@ -25,7 +28,7 @@ export function SettingsSection(props: {
 			)}
 		>
 			{() =>
-				props.title || props.headerRight ? (
+				props.title || props.headerRight || props.actions ? (
 					<View class="min-h-10 flex-row items-center justify-between gap-2 border-b border-border/70 bg-muted/40 px-3 py-1.5">
 						<View class="min-w-0 flex-1">
 							{props.title ? (
@@ -37,6 +40,11 @@ export function SettingsSection(props: {
 						{props.headerRight ? (
 							<View class="min-w-0 shrink-0 flex-row items-center justify-end">
 								{props.headerRight}
+							</View>
+						) : null}
+						{props.actions ? (
+							<View class="shrink-0 flex-row items-center gap-1.5">
+								{props.actions}
 							</View>
 						) : null}
 					</View>
