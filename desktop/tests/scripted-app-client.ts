@@ -16,6 +16,7 @@ import type {
 	SessionHistory,
 	SessionHistoryResult,
 	SessionIndexEntry,
+	SessionSearchMatch,
 	SessionUiStateUpdate,
 } from "@/lib/api/sessions-types";
 import type {
@@ -45,6 +46,11 @@ export type ScriptedChatClient = PiCommandClient & {
 		update: SessionUiStateUpdate,
 		projectId?: string,
 	) => Promise<SessionIndexEntry>;
+	searchSessions: (
+		projectId: string,
+		query: string,
+		limit?: number,
+	) => Promise<SessionSearchMatch[]>;
 };
 
 export type AppScript = {
@@ -91,6 +97,12 @@ export type AppScript = {
 		update: SessionUiStateUpdate,
 		projectId?: string,
 	) => SessionIndexEntry;
+	/** The message matches `searchSessions` resolves with; none when left out. */
+	onSearchSessions?: (
+		projectId: string,
+		query: string,
+		limit?: number,
+	) => SessionSearchMatch[] | Promise<SessionSearchMatch[]>;
 };
 
 /** A new Host's preferences and theme, as far as the shell reads them. */
@@ -224,6 +236,8 @@ export function scriptedClient(script: AppScript = {}) {
 					} as SessionIndexEntry),
 			);
 		},
+		searchSessions: (projectId, query, limit) =>
+			Promise.resolve(script.onSearchSessions?.(projectId, query, limit) ?? []),
 		loadHistory: async (_projectId, sessionPath) =>
 			({
 				history: {
