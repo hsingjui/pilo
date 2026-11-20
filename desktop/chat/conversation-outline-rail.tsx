@@ -27,6 +27,21 @@ const ACTIVE_TICK_WIDTH = 24;
 const RAIL_WIDTH = 46;
 /** Margen interior a la izquierda de las marcas. */
 const TRACK_INSET = 8;
+/** Ensanche de las marcas alrededor de la apuntada: campana gaussiana como
+ * en la WebUI. */
+const HOVER_WIDTH = 38;
+const BELL_BASE_WIDTH = 15;
+const BELL_SIGMA = 1.8;
+const BELL_RADIUS = 4;
+
+function tickWidth(resting: number, index: number, hoveredIndex: number) {
+	if (hoveredIndex < 0) return resting;
+	const distance = Math.abs(index - hoveredIndex);
+	if (distance > BELL_RADIUS) return resting;
+	const bell = Math.exp(-(distance * distance) / (2 * BELL_SIGMA * BELL_SIGMA));
+	const target = BELL_BASE_WIDTH + (HOVER_WIDTH - BELL_BASE_WIDTH) * bell;
+	return resting * (1 - bell) + target * bell;
+}
 
 export interface ConversationOutlineRailProps {
 	/** Las rondas del chat, una por mensaje del usuario. */
@@ -48,6 +63,7 @@ export interface ConversationOutlineRailProps {
  */
 export function ConversationOutlineRail(props: ConversationOutlineRailProps) {
 	const focused = signal(-1);
+	const hovered = signal(-1);
 	const railHeight = signal(0);
 	const ticks: (ViewRef | undefined)[] = [];
 
@@ -112,9 +128,11 @@ export function ConversationOutlineRail(props: ConversationOutlineRailProps) {
 								style={{ height: TICK_PITCH }}
 								onFocus={() => focused.set(index())}
 								onBlur={() => focused.set(-1)}
+								onMouseEnter={() => hovered.set(index())}
+								onMouseLeave={() => hovered.set(-1)}
 								onPress={() => props.onJump(tick().index)}
 								tooltip={
-									<Tooltip>
+									<Tooltip placement="right" delay={200}>
 										<View class="w-72 gap-1.5">
 											<Text class="font-sans text-sm font-medium leading-snug">
 												{() => tick().entry.title}
@@ -128,6 +146,11 @@ export function ConversationOutlineRail(props: ConversationOutlineRailProps) {
 							>
 								{() => {
 									const active = index() === activeTick();
+									const resting = tickWidth(
+										TICK_WIDTHS[tick().entry.weight],
+										index(),
+										hovered(),
+									);
 									return (
 										<View
 											class={
@@ -138,11 +161,11 @@ export function ConversationOutlineRail(props: ConversationOutlineRailProps) {
 											style={{
 												height: 2,
 												width: active
-													? Math.max(
-															ACTIVE_TICK_WIDTH,
-															TICK_WIDTHS[tick().entry.weight] + 4,
-														)
-													: TICK_WIDTHS[tick().entry.weight],
+													? Math.max(ACTIVE_TICK_WIDTH, resting + 4)
+													: resting,
+												transitionProperty: "all",
+												transitionDuration: "150ms",
+												transitionTimingFunction: "ease-out",
 											}}
 										/>
 									);

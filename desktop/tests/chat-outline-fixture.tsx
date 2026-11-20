@@ -44,6 +44,13 @@ async function run() {
 		...Array.from({ length: prefix }, (_, index) => placeholder(index)),
 		...conversation.messages,
 	];
+	// Longitudes variadas para que las marcas del raíl cambien de peso; las
+	// rondas de los tests (1, 5, 6) conservan su texto exacto.
+	const longText = "and a much longer question ".repeat(130);
+	for (const index of [18, 26, 34]) {
+		const message = messages[index];
+		if (message?.role === "user") message.text += ` ${longText}`;
+	}
 	const state: ChatTranscriptState = {
 		sessionKey,
 		status: "ready",
