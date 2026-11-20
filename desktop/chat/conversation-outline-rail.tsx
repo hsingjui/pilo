@@ -1,5 +1,5 @@
 import {
-	Scroll,
+	computed,
 	signal,
 	Text,
 	token,
@@ -9,7 +9,10 @@ import {
 	type ViewRef,
 } from "nsh";
 
-import type { ConversationOutlineEntry } from "@/lib/chat/conversation-outline";
+import {
+	sampleOutlineEntries,
+	type ConversationOutlineEntry,
+} from "@/lib/chat/conversation-outline";
 import { t } from "../app/i18n";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { Tooltip } from "../ui/tooltip";
@@ -38,27 +41,47 @@ export interface ConversationOutlineRailProps {
  * Las rondas de la conversación como marcas apiladas en el borde izquierdo:
  * cada una salta a su mensaje del usuario (aunque aún no esté cargado),
  * la activa sigue al scroll y el ratón y el teclado la recorren. No se
- * muestra con menos de dos rondas.
+ * muestra con menos de dos rondas. Las marcas se muestrean de forma
+ * uniforme para caber siempre en la mitad del raíl (conservando la
+ * primera y la última): en macOS las pulsaciones dentro de un `Scroll`
+ * no llegan a los hijos, así que el raíl no desplaza sus marcas.
  */
 export function ConversationOutlineRail(props: ConversationOutlineRailProps) {
 	const focused = signal(-1);
 	const railHeight = signal(0);
 	const ticks: (ViewRef | undefined)[] = [];
 
+	const displayed = computed(() =>
+		sampleOutlineEntries(
+			props.entries(),
+			Math.floor(Math.max(railHeight() / 2 - 16, TICK_PITCH) / TICK_PITCH),
+		),
+	);
+	// La marca activa es la última mostrada cuya ronda no pasa de la activa.
+	const activeTick = computed(() => {
+		const active = props.activeIndex();
+		let found = -1;
+		for (const [position, tick] of displayed().entries()) {
+			if (tick.index > active) break;
+			found = position;
+		}
+		return found;
+	});
+
 	const onKeyDown = (e: KeyEvent) => {
-		const count = untracked(props.entries).length;
+		const shown = untracked(displayed);
 		let next = -1;
-		if (e.key === "ArrowDown") next = Math.min(focused() + 1, count - 1);
+		if (e.key === "ArrowDown") next = Math.min(focused() + 1, shown.length - 1);
 		if (e.key === "ArrowUp") next = Math.max(focused() - 1, 0);
 		if (e.key === "Home") next = 0;
-		if (e.key === "End") next = count - 1;
+		if (e.key === "End") next = shown.length - 1;
 		if (next >= 0 && next !== focused()) {
 			ticks[next]?.focus();
 			return;
 		}
 		if (e.key === "Enter" || e.key === " ") {
-			const index = focused();
-			if (index >= 0) props.onJump(index);
+			const tick = shown[focused()];
+			if (tick) props.onJump(tick.index);
 		}
 	};
 
@@ -72,39 +95,39 @@ export function ConversationOutlineRail(props: ConversationOutlineRailProps) {
 			onLayout={({ bounds }) => railHeight.set(bounds.size.height)}
 			onKeyDown={onKeyDown}
 		>
-			<Scroll
+			<View
 				class="pointer-events-auto py-2"
 				style={{ maxHeight: Math.max(railHeight() / 2, TICK_PITCH) }}
 			>
 				<View class="flex-col" style={{ paddingLeft: TRACK_INSET }}>
-					<Each of={props.entries()} key="index">
-						{(entry, index) => (
+					<Each of={displayed()} key="index">
+						{(tick, index) => (
 							<View
 								testID={`chat-outline-tick-${index()}`}
 								focusable
-								accessibilityLabel={entry().title}
+								accessibilityLabel={tick().entry.title}
 								ref={(node: ViewRef) => (ticks[index()] = node)}
 								focusVisibleStyle={focusRingStyle(token("ring"))}
 								class="pointer-events-auto flex-row items-center"
 								style={{ height: TICK_PITCH }}
 								onFocus={() => focused.set(index())}
 								onBlur={() => focused.set(-1)}
-								onPress={() => props.onJump(index())}
+								onPress={() => props.onJump(tick().index)}
 								tooltip={
 									<Tooltip>
 										<View class="w-72 gap-1.5">
 											<Text class="font-sans text-sm font-medium leading-snug">
-												{entry().title}
+												{() => tick().entry.title}
 											</Text>
 											<Text class="font-sans text-xs leading-relaxed text-muted-foreground">
-												{() => entry().preview || t("chat.noPiReply")}
+												{() => tick().entry.preview || t("chat.noPiReply")}
 											</Text>
 										</View>
 									</Tooltip>
 								}
 							>
 								{() => {
-									const active = index() === props.activeIndex();
+									const active = index() === activeTick();
 									return (
 										<View
 											class={
@@ -117,9 +140,9 @@ export function ConversationOutlineRail(props: ConversationOutlineRailProps) {
 												width: active
 													? Math.max(
 															ACTIVE_TICK_WIDTH,
-															TICK_WIDTHS[entry().weight] + 4,
+															TICK_WIDTHS[tick().entry.weight] + 4,
 														)
-													: TICK_WIDTHS[entry().weight],
+													: TICK_WIDTHS[tick().entry.weight],
 											}}
 										/>
 									);
@@ -128,7 +151,7 @@ export function ConversationOutlineRail(props: ConversationOutlineRailProps) {
 						)}
 					</Each>
 				</View>
-			</Scroll>
+			</View>
 		</View>
 	);
 }

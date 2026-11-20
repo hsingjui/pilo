@@ -4,6 +4,7 @@ import test from "node:test";
 import {
 	buildConversationOutline,
 	getOutlineIndexForVisibleRange,
+	sampleOutlineEntries,
 } from "../../src/lib/chat/conversation-outline.ts";
 
 const msg = (
@@ -44,4 +45,35 @@ test("at the end the last entry is active even when the top is inside an earlier
 
 test("an empty outline has no active entry", () => {
 	assert.equal(getOutlineIndexForVisibleRange([], 0, false), -1);
+});
+
+test("sampling keeps every entry when they fit", () => {
+	assert.deepEqual(
+		sampleOutlineEntries(entries, 3).map((tick) => tick.index),
+		[0, 1, 2],
+	);
+});
+
+test("sampling over a long outline is uniform and keeps the ends", () => {
+	const many = buildConversationOutline(
+		Array.from({ length: 100 }, (_, index) =>
+			msg(`u${index}`, "user", `ronda ${index}`),
+		),
+	);
+	const ticks = sampleOutlineEntries(many, 10);
+	assert.equal(ticks.length, 10);
+	assert.equal(ticks[0].index, 0);
+	assert.equal(ticks.at(-1)?.index, 99);
+	assert.deepEqual(
+		ticks.map((tick) => tick.index),
+		ticks.map((tick) => tick.index).toSorted((a, b) => a - b),
+	);
+});
+
+test("sampling to one tick keeps the last entry", () => {
+	assert.deepEqual(
+		sampleOutlineEntries(entries, 1).map((tick) => tick.index),
+		[2],
+	);
+	assert.deepEqual(sampleOutlineEntries(entries, 0), []);
 });
