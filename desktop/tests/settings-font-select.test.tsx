@@ -20,7 +20,7 @@ test("FontSelect groups options, previews them and reports a choice", async () =
 	expect(app.shows("text:Helvetica")).toBe(true);
 });
 
-test("FontSelect searches and shows the empty state", async () => {
+test("FontSelect searches and offers the typed name as a custom family", async () => {
 	const app = await open("./settings-font-select-fixture.tsx", {
 		platform: "macos",
 		width: 800,
@@ -31,7 +31,13 @@ test("FontSelect searches and shows the empty state", async () => {
 	await app.type("label:Search fonts…", "helv");
 	await app.waitFor("text:SF Pro", { state: "gone" });
 	expect(app.shows("text:Helvetica")).toBe(true);
-	await app.type("label:Search fonts…", "zzz");
+	// A query that names no option becomes a custom family choice.
+	await app.clear("label:Search fonts…");
+	await app.type("label:Search fonts…", "My Custom Font");
 	await app.waitFor("text:Helvetica", { state: "gone" });
-	expect(app.shows("text:No matching fonts")).toBe(true);
+	expect(app.shows('text:Use "My Custom Font"')).toBe(true);
+	await app.press('text:Use "My Custom Font"');
+	await app.waitFor("text:Value: My Custom Font");
+	// A custom value is no listed option, so the trigger shows it as typed.
+	expect(app.shows("text:My Custom Font")).toBe(true);
 });

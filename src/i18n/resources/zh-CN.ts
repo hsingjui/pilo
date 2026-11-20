@@ -313,6 +313,7 @@ const zhCN = {
 		searchFonts: "搜索字体",
 		systemDefault: "系统默认",
 		noMatchingFonts: "没找到相关字体。",
+		useCustomFont: "使用“{{font}}”",
 		application: "应用信息",
 		openLogDirectoryAction: "打开目录",
 		update: "软件更新",

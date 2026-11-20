@@ -322,6 +322,7 @@ const enUS = {
 		searchFonts: "Search fonts…",
 		systemDefault: "System default",
 		noMatchingFonts: "No matching fonts",
+		useCustomFont: 'Use "{{font}}"',
 		application: "Application",
 		openLogDirectoryAction: "Open log directory",
 		update: "Updates",
