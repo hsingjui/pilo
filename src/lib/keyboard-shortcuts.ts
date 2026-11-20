@@ -1,3 +1,4 @@
+import { formatKeyboardShortcutLabels } from "./keyboard-shortcuts-format";
 import {
 	SHORTCUT_COMMANDS,
 	type KeyboardShortcutMap,
@@ -178,27 +179,7 @@ export function findShortcutConflict(
 export function formatKeyboardShortcut(shortcut: string): string[] {
 	const normalized = normalizeKeyboardShortcut(shortcut);
 	if (!normalized) return [];
-	const isMac = isMacPlatform();
-	return normalized.split("+").map((token) => {
-		if (token === "mod") return isMac ? "⌘" : "Ctrl";
-		if (token === "ctrl") return isMac ? "⌃" : "Ctrl";
-		if (token === "meta") return isMac ? "⌘" : "Win";
-		if (token === "alt") return isMac ? "⌥" : "Alt";
-		if (token === "shift") return isMac ? "⇧" : "Shift";
-		const labels: Record<string, string> = {
-			enter: "Enter",
-			escape: "Esc",
-			space: "Space",
-			tab: "Tab",
-			backspace: "Backspace",
-			delete: "Delete",
-			arrowup: "↑",
-			arrowdown: "↓",
-			arrowleft: "←",
-			arrowright: "→",
-		};
-		return labels[token] ?? (token.length === 1 ? token.toUpperCase() : token);
-	});
+	return formatKeyboardShortcutLabels(normalized, isMacPlatform());
 }
 
 export function formatKeyboardShortcutText(shortcut: string): string {

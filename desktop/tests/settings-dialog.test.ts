@@ -67,6 +67,8 @@ test("the nav moves between panes", async () => {
 	await app.waitFor("id:settings-desktop-notifications");
 	await app.press("id:settings-nav-shortcuts");
 	expect(app.shows("text:New session")).toBe(true);
+	expect(app.shows("text:Composer")).toBe(true);
+	expect(app.shows("text:New line")).toBe(true);
 	await app.press("id:settings-nav-appearance");
 	await app.waitFor("id:settings-theme-mode");
 	expect(app.shows("id:settings-theme-tokens")).toBe(true);
