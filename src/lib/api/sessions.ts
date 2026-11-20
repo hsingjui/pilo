@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { PiModel } from "@/lib/api/pi-runtime";
 import type {
+	ConnectionNamingModel,
 	SessionDeleteResult,
 	SessionExternalActivity,
 	SessionHistory,
