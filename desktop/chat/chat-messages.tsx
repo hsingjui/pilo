@@ -17,10 +17,13 @@ import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { scrollbarLook } from "../ui/scrollbar";
 import { Tooltip } from "../ui/tooltip";
+import type { ChatExpansion } from "./chat-expansion";
 import { ChatMessageRow } from "./chat-message-row";
 import type {
 	AssistantChatMessage,
 	ChatMessageBody,
+	ChatTextBody,
+	ChatWorkPreferences,
 	UserChatMessage,
 } from "./chat-message-types";
 import { ConversationColumn } from "./conversation-column";
@@ -48,6 +51,10 @@ export interface ChatMessagesProps {
 	messages: () => readonly ChatMessage[];
 	userBody?: ChatMessageBody<UserChatMessage>;
 	assistantBody?: ChatMessageBody<AssistantChatMessage>;
+	assistantText?: ChatTextBody;
+	/** What the user opened and closed in this chat's replies. */
+	expansion?: ChatExpansion;
+	preferences?: () => ChatWorkPreferences | undefined;
 	footer?: ListSlot;
 	/** The first and last rows on screen, as their places in the chat. */
 	onVisibleRangeChange?: (startIndex: number, endIndex: number) => void;
@@ -150,6 +157,9 @@ export function ChatMessages(props: ChatMessagesProps) {
 						message={message}
 						userBody={props.userBody}
 						assistantBody={props.assistantBody}
+						assistantText={props.assistantText}
+						expansion={props.expansion}
+						preferences={props.preferences}
 					/>
 				)}
 			</List>

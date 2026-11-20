@@ -40,6 +40,8 @@ export interface ChatMarkdownProps {
 	onFileLink?: (link: ChatMarkdownFileLink) => void;
 	/** What a press on an image not wrapped in a link does (preview, M5). */
 	onImagePress?: (image: TextViewImage) => void;
+	/** The text's size and color; the reply's body without it. */
+	class?: string;
 }
 
 type ProjectImageState =
@@ -155,7 +157,7 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 
 	return (
 		<TextView
-			class="text-base text-foreground"
+			class={props.class ?? "text-base text-foreground"}
 			selectable
 			links="report"
 			codeBlockActions={[{ id: "copy" }]}

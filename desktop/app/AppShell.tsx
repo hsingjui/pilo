@@ -137,14 +137,15 @@ export function AppShell(props: AppShellProps) {
 								return sessionOpen() ? (
 									<View class="min-h-0 min-w-0 flex-1 flex-col">
 										<ChatMessageList
-											assistantBody={(message) => (
+											assistantText={(text) => (
 												<ChatMarkdown
-													text={() => message().text}
+													text={text}
 													project={project}
 													readProjectImage={props.readProjectImage}
 													onFileLink={props.onFileLink}
 												/>
 											)}
+											preferences={() => store.state().preferences?.values}
 											transcript={chat.state}
 											messages={() => chat.messages()}
 											onRetry={() => chat.refresh()}

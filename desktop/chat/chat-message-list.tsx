@@ -3,6 +3,7 @@ import { computed, type JSX, type ListSlot, untracked, View } from "nsh";
 import type { ChatMessage } from "@/lib/chat/conversation-types";
 import type { ChatTranscriptState } from "../state/chat-transcript-store";
 import { ChatHistorySkeleton } from "./chat-history-skeleton";
+import { ChatExpansion } from "./chat-expansion";
 import { chatListView } from "./chat-list-view";
 import { ChatLoadFailure } from "./chat-load-failure";
 import { ChatMessages, type ChatScrollPosition } from "./chat-messages";
@@ -10,6 +11,8 @@ import { ChatTurnWaiting } from "./chat-turn-waiting";
 import type {
 	AssistantChatMessage,
 	ChatMessageBody,
+	ChatTextBody,
+	ChatWorkPreferences,
 	UserChatMessage,
 } from "./chat-message-types";
 
@@ -27,8 +30,12 @@ export interface ChatMessageListProps {
 	empty?: () => JSX.Element;
 	/** Draws a prompt's content in its bubble; plain text without it. */
 	userBody?: ChatMessageBody<UserChatMessage>;
-	/** Draws a reply's content; plain text without it. */
+	/** Draws a whole reply, in place of its texts and work. */
 	assistantBody?: ChatMessageBody<AssistantChatMessage>;
+	/** Draws each text of a reply between its work; Markdown without it. */
+	assistantText?: ChatTextBody;
+	/** The Host preferences that fold and time a reply's work; its defaults without them. */
+	preferences?: () => ChatWorkPreferences | undefined;
 	/** Under the last message, scrolling with the messages. */
 	footer?: ListSlot;
 	/**
@@ -54,6 +61,17 @@ export function ChatMessageList(props: ChatMessageListProps) {
 	const readPosition = (position: ChatScrollPosition) => {
 		const key = untracked(sessionKey);
 		if (key !== null) positions.set(key, position);
+	};
+	// What the user opened and closed in each chat, kept while the app runs.
+	const expansions = new Map<string, ChatExpansion>();
+	const expansionFor = () => {
+		const key = untracked(sessionKey) ?? "";
+		let expansion = expansions.get(key);
+		if (!expansion) {
+			expansion = new ChatExpansion();
+			expansions.set(key, expansion);
+		}
+		return expansion;
 	};
 	const view = computed(() =>
 		chatListView(transcript(), props.messages().length),
@@ -91,6 +109,9 @@ export function ChatMessageList(props: ChatMessageListProps) {
 								messages={props.messages}
 								userBody={props.userBody}
 								assistantBody={props.assistantBody}
+								assistantText={props.assistantText}
+								expansion={expansionFor()}
+								preferences={props.preferences}
 								footer={props.footer}
 								onVisibleRangeChange={props.onVisibleRangeChange}
 								restorePosition={savedPosition()}

@@ -3,10 +3,13 @@ import { computed } from "nsh";
 import type { ChatMessage } from "@/lib/chat/conversation-types";
 import { ChatAssistantMessage } from "./chat-assistant-message";
 import { ChatCompactionMarker } from "./chat-compaction-marker";
+import type { ChatExpansion } from "./chat-expansion";
 import { ChatHistoryPlaceholder } from "./chat-history-placeholder";
 import type {
 	AssistantChatMessage,
 	ChatMessageBody,
+	ChatTextBody,
+	ChatWorkPreferences,
 	CompactionChatMessage,
 	UserChatMessage,
 } from "./chat-message-types";
@@ -16,6 +19,9 @@ export interface ChatMessageRowProps {
 	message: () => ChatMessage;
 	userBody?: ChatMessageBody<UserChatMessage>;
 	assistantBody?: ChatMessageBody<AssistantChatMessage>;
+	assistantText?: ChatTextBody;
+	expansion?: ChatExpansion;
+	preferences?: () => ChatWorkPreferences | undefined;
 }
 
 /**
@@ -43,6 +49,9 @@ export function ChatMessageRow(props: ChatMessageRowProps) {
 					<ChatAssistantMessage
 						message={message as () => AssistantChatMessage}
 						body={props.assistantBody}
+						text={props.assistantText}
+						expansion={props.expansion}
+						preferences={props.preferences}
 					/>
 				);
 			case "compaction":

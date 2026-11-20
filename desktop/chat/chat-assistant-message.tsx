@@ -2,23 +2,41 @@ import { computed, Text, View } from "nsh";
 
 import { t } from "../app/i18n";
 import { Spinner } from "../ui/spinner";
+import { ChatAssistantWork } from "./chat-assistant-work";
+import { ChatExpansion } from "./chat-expansion";
 import { ChatMarkdown } from "./chat-markdown";
 import type {
 	AssistantChatMessage,
 	ChatMessageBody,
+	ChatTextBody,
+	ChatWorkPreferences,
 } from "./chat-message-types";
 import { ConversationColumn } from "./conversation-column";
 
 const stalled = "PILO_STREAM_STALLED:";
 
-/** A reply: its content, then what became of the turn. */
+/** The Host's defaults, while its preferences are not loaded. */
+export const defaultChatWorkPreferences: ChatWorkPreferences = {
+	collapseCompletedActivity: true,
+	showWorkDuration: true,
+};
+
+const markdownText: ChatTextBody = (text) => <ChatMarkdown text={text} />;
+
+/** A reply: its texts and work, then what became of the turn. */
 export function ChatAssistantMessage(props: {
 	message: () => AssistantChatMessage;
+	/** Draws the whole reply instead of its texts and work. */
 	body?: ChatMessageBody<AssistantChatMessage>;
+	/** Draws each text of the reply; Markdown without it. */
+	text?: ChatTextBody;
+	/** What the user opened and closed in this chat. */
+	expansion?: ChatExpansion;
+	preferences?: () => ChatWorkPreferences | undefined;
 }) {
 	const { message } = props;
-	// A reply that failed or was stopped before any text has no body.
-	const hasText = computed(() => message().text.length > 0);
+	const expansion = props.expansion ?? new ChatExpansion();
+	const preferences = () => props.preferences?.() ?? defaultChatWorkPreferences;
 	const error = computed(() => {
 		const text = message().errorMessage;
 		return text?.startsWith(stalled) ? t("chat.modelStreamStalled") : text;
@@ -33,12 +51,12 @@ export function ChatAssistantMessage(props: {
 			{props.body ? (
 				<View selectable>{props.body(message)}</View>
 			) : (
-				() =>
-					hasText() ? (
-						<View selectable>
-							<ChatMarkdown text={() => message().text} />
-						</View>
-					) : null
+				<ChatAssistantWork
+					message={message}
+					expansion={expansion}
+					preferences={preferences}
+					text={props.text ?? markdownText}
+				/>
 			)}
 			{() =>
 				error() ? (
