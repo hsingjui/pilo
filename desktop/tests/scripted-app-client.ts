@@ -13,6 +13,7 @@ import type {
 	ProjectScopedModel,
 } from "@/lib/project-model-scope";
 import type {
+	SessionHistory,
 	SessionHistoryResult,
 	SessionIndexEntry,
 	SessionUiStateUpdate,
@@ -55,6 +56,8 @@ export type AppScript = {
 	chatSessions?: ChatSessionRuntimeState[];
 	/** A saved session's settled history; no events when left out. */
 	history?: (sessionPath: string) => Promise<ConversationEvent[]>;
+	/** Metadata merged into the `loadHistory` answer's `history`. */
+	historyMeta?: Partial<SessionHistory>;
 	readStates?: SessionReadState[];
 	/** Replaces a bootstrap's answer; `undefined` answers from the script. */
 	bootstrap?: (attempt: number) => Promise<NshPiloClientBootstrap> | undefined;
@@ -211,7 +214,10 @@ export function scriptedClient(script: AppScript = {}) {
 		},
 		loadHistory: async (_projectId, sessionPath) =>
 			({
-				history: { events: (await script.history?.(sessionPath)) ?? [] },
+				history: {
+					events: (await script.history?.(sessionPath)) ?? [],
+					...script.historyMeta,
+				},
 				fingerprint: null,
 			}) as SessionHistoryResult,
 		listProjects: () => Promise.resolve(projects),
