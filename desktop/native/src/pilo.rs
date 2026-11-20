@@ -88,8 +88,8 @@ impl HostShell for NshHostShell {
         Ok(self.cache_dir.clone())
     }
 
-    fn open_path(&self, _path: &Path) -> Result<(), String> {
-        Err("opening paths is unsupported on this host".to_owned())
+    fn open_path(&self, path: &Path) -> Result<(), String> {
+        open_path(path)
     }
 
     fn pick_directory(&self) -> Option<String> {
@@ -97,6 +97,39 @@ impl HostShell for NshHostShell {
             .pick_folder()
             .map(|path| path.to_string_lossy().into_owned())
     }
+}
+
+/// Opens a file or directory in the file manager.
+fn open_path(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let mut command = std::process::Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut command = std::process::Command::new("explorer");
+    #[cfg(target_os = "linux")]
+    let mut command = std::process::Command::new("xdg-open");
+    command
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("opening {path:?} failed: {error}"))
+}
+
+/// The app's log directory, as the Tauri `appLogDir` resolves it.
+fn log_directory(development: bool) -> Result<PathBuf, String> {
+    let identifier = data_identifier(development);
+    #[cfg(target_os = "macos")]
+    let base = std::env::home_dir()
+        .ok_or("cannot resolve the home directory")?
+        .join("Library/Logs");
+    #[cfg(target_os = "windows")]
+    let base = std::env::var("APPDATA")
+        .map(PathBuf::from)
+        .map_err(|error| format!("cannot resolve APPDATA: {error}"))?;
+    #[cfg(target_os = "linux")]
+    let base = std::env::home_dir()
+        .ok_or("cannot resolve the home directory")?
+        .join(".local/share");
+    Ok(base.join(identifier))
 }
 
 impl WebAssets for ShellWebAssets {
@@ -1245,6 +1278,12 @@ impl Pilo {
         .await
     }
 
+    /// Opens the app's log directory in the file manager.
+    pub async fn open_log_directory(this: Instance<Self>) -> Result<(), String> {
+        let _ = this;
+        let directory = log_directory(cfg!(debug_assertions))?;
+        open_path(&directory)
+    }
 
     /// Stops a Pi chat; stopping an absent session succeeds.
     pub async fn stop_chat(

@@ -139,6 +139,7 @@ export type PiloNative = Pick<
 	| "remotePairingRegenerate"
 	| "remoteDeviceRevoke"
 	| "remoteDeviceRename"
+	| "openLogDirectory"
 	| "shutdown"
 >;
 
@@ -806,6 +807,9 @@ export class NshPiloClient implements BridgedPiloClient {
 	}
 
 	/** Opens the app's log directory in the file manager. */
+	openLogDirectory() {
+		return this.pilo.openLogDirectory();
+	}
 
 	/** Whether the runtime shut down: its event stream never resumes. */
 	get closed() {

@@ -81,6 +81,7 @@ export type SettingsClient = Pick<
 	| "remotePairingRegenerate"
 	| "remoteDeviceRevoke"
 	| "remoteDeviceRename"
+	| "openLogDirectory"
 	| "connectEvents"
 >;
 
@@ -447,7 +448,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 									case "desktop":
 										return <DesktopPane desktop={props.desktop} />;
 									case "about":
-										return <AboutPane />;
+										return <AboutPane client={props.client} />;
 									default:
 										return (
 											<PendingPane detail={String(t("settings.pendingPane"))} />

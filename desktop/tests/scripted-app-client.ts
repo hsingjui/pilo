@@ -144,6 +144,7 @@ export type ScriptedSettingsClient = Pick<
 	| "remotePairingRegenerate"
 	| "remoteDeviceRevoke"
 	| "remoteDeviceRename"
+	| "openLogDirectory"
 	| "connectEvents"
 >;
 
@@ -718,6 +719,9 @@ export function scriptedClient(script: AppScript = {}) {
 			const state = { ...read, readRevision: revision };
 			emit({ type: "session_read_state_changed", state });
 			return Promise.resolve(state);
+		},
+		openLogDirectory() {
+			return Promise.resolve();
 		},
 		remoteHostState() {
 			if (script.remoteHostError)
