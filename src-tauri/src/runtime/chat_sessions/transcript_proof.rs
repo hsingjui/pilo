@@ -895,3 +895,93 @@ async fn real_pi_transcript_snapshot_proof() {
     child.wait().await.unwrap();
     fixture.runtime.shutdown().await;
 }
+
+#[tokio::test]
+async fn snapshot_during_a_turn_warms_the_boundary_projection() {
+    let mut fixture = Fixture::new().await;
+    fixture.persist(json!({"role":"user","content":"question"}));
+    fixture.prompt(PromptMode::Idle, "pilo-main").await;
+    fixture.end_message(assistant("answer", false));
+    let snapshot = fixture.snapshot().await;
+    assert!(matches!(snapshot.live, TurnLive::Active { .. }));
+    let fingerprint = &snapshot.history["fingerprint"];
+    let key = crate::runtime::session_history::cache_key("project", fixture.path.to_str().unwrap());
+    let stored = fixture
+        .runtime
+        .session_history_cache
+        .lock()
+        .await
+        .cached_projection_for_test(&key)
+        .expect("the snapshot did not store its projection");
+    assert_eq!(
+        (
+            fingerprint["fileSize"].as_u64().unwrap(),
+            fingerprint["fileMtimeNs"]
+                .as_str()
+                .unwrap()
+                .parse::<u64>()
+                .unwrap()
+        ),
+        (stored.0, stored.1)
+    );
+    // The stored projection is the recorded prefix, not the grown file, so a
+    // page load for the same boundary serves it without another parse.
+    assert!(stored.0 < std::fs::metadata(&fixture.path).unwrap().len());
+    fixture.runtime.shutdown().await;
+}
+
+#[tokio::test]
+async fn snapshot_at_an_earlier_boundary_keeps_live_reads_current() {
+    let mut fixture = Fixture::new().await;
+    fixture.persist(json!({"role":"user","content":"question"}));
+    fixture.prompt(PromptMode::Idle, "pilo-main").await;
+    fixture.end_message(assistant("answer", false));
+    let path = fixture.path.to_str().unwrap().to_owned();
+    let key = crate::runtime::session_history::cache_key("project", &path);
+    // A live read caches the projection of the whole file first.
+    let live = read_transcript_history(
+        path.clone(),
+        None,
+        TranscriptWindow::default(),
+        &fixture.runtime.session_history_cache,
+        "project",
+    )
+    .await
+    .unwrap();
+    // The turn's snapshot replaces it with the earlier recorded boundary.
+    let snapshot = fixture.snapshot().await;
+    let stored = fixture
+        .runtime
+        .session_history_cache
+        .lock()
+        .await
+        .cached_projection_for_test(&key)
+        .unwrap();
+    assert_eq!(
+        stored.0,
+        snapshot.history["fingerprint"]["fileSize"]
+            .as_u64()
+            .unwrap()
+    );
+    // A boundary-less read must still return the grown file: it extends the
+    // stored prefix through its checkpoint instead of serving stale content.
+    let current = read_transcript_history(
+        path.clone(),
+        None,
+        TranscriptWindow::default(),
+        &fixture.runtime.session_history_cache,
+        "project",
+    )
+    .await
+    .unwrap();
+    assert_eq!(current, live);
+    let stored = fixture
+        .runtime
+        .session_history_cache
+        .lock()
+        .await
+        .cached_projection_for_test(&key)
+        .unwrap();
+    assert_eq!(stored.2, 1);
+    fixture.runtime.shutdown().await;
+}

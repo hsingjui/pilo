@@ -373,7 +373,7 @@ impl SessionHistoryCache {
     /// (file size, mtime ns, incremental update count) of the cached
     /// projection, whichever store holds it.
     #[cfg(test)]
-    pub(super) fn cached_projection_for_test(&self, key: &str) -> Option<(u64, u64, u32)> {
+    pub(crate) fn cached_projection_for_test(&self, key: &str) -> Option<(u64, u64, u32)> {
         let tuple = |fingerprint: SessionFileFingerprint,
                      index: Option<&SessionHistoryWindowIndex>| {
             (
@@ -448,7 +448,7 @@ fn estimated_history_bytes(fingerprint: SessionFileFingerprint) -> usize {
         .saturating_mul(SESSION_HISTORY_CACHE_ESTIMATE_MULTIPLIER)
 }
 
-pub(super) fn cache_key(project_id: &str, path: &str) -> String {
+pub(crate) fn cache_key(project_id: &str, path: &str) -> String {
     format!("{project_id}\0{path}")
 }
 
