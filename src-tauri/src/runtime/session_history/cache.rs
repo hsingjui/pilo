@@ -355,6 +355,45 @@ impl SessionHistoryCache {
         }
     }
 
+    /// Replaces a cached projection's payload so a test can tell a served
+    /// cache entry from a fresh parse.
+    #[cfg(test)]
+    pub(super) fn replace_cached_projection_for_test(
+        &mut self,
+        key: &str,
+        serialized: Arc<Vec<u8>>,
+        index: Arc<SessionHistoryWindowIndex>,
+    ) {
+        if let Some(entry) = self.entries.get_mut(key) {
+            entry.serialized_json = serialized;
+            entry.window_index = Some(index);
+        }
+    }
+
+    /// (file size, mtime ns, incremental update count) of the cached
+    /// projection, whichever store holds it.
+    #[cfg(test)]
+    pub(super) fn cached_projection_for_test(&self, key: &str) -> Option<(u64, u64, u32)> {
+        let tuple = |fingerprint: SessionFileFingerprint,
+                     index: Option<&SessionHistoryWindowIndex>| {
+            (
+                fingerprint.file_size,
+                fingerprint.file_mtime_ns,
+                index
+                    .and_then(|index| index.incremental.as_ref())
+                    .map_or(0, |state| state.updates),
+            )
+        };
+        self.entries
+            .get(key)
+            .map(|entry| tuple(entry.fingerprint, entry.window_index.as_deref()))
+            .or_else(|| {
+                self.disk_entries
+                    .get(key)
+                    .map(|entry| tuple(entry.fingerprint, Some(entry.index.as_ref())))
+            })
+    }
+
     pub(crate) fn invalidate(&mut self, project: &Project, path: &str) {
         let key = cache_key(&project.id, path);
         self.remove(&key);

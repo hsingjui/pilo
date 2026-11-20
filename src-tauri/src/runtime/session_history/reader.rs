@@ -74,7 +74,7 @@ pub async fn read_history_json(
     respond_with_history(storage, fingerprint).await
 }
 
-async fn respond_with_history(
+pub(super) async fn respond_with_history(
     storage: HistoryStorage,
     fingerprint: Option<SessionFileFingerprint>,
 ) -> Result<Vec<u8>, String> {
@@ -117,7 +117,7 @@ pub async fn read_history_window_json(
 
 // Thin pass-through from Tauri commands: splitting the arguments would only move them around.
 #[allow(clippy::too_many_arguments)]
-async fn respond_with_window(
+pub(super) async fn respond_with_window(
     storage: HistoryStorage,
     index: Arc<SessionHistoryWindowIndex>,
     start_message: Option<usize>,
@@ -269,7 +269,7 @@ async fn load_incremental(
 }
 
 /// Caches a freshly loaded projection under its fingerprint in memory or on disk.
-async fn store_loaded_history(
+pub(super) async fn store_loaded_history(
     cache: &tokio::sync::Mutex<SessionHistoryCache>,
     key: String,
     fingerprint: SessionFileFingerprint,

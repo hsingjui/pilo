@@ -32,7 +32,7 @@ impl Runtime {
         window: TranscriptWindow,
     ) -> Result<TranscriptSnapshot, String> {
         self.chat_sessions
-            .transcript_snapshot(session_key, window)
+            .transcript_snapshot(&self.session_history_cache, session_key, window)
             .await
     }
 }

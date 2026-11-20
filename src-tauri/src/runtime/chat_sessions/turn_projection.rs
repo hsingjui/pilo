@@ -9,7 +9,8 @@ use crate::runtime::events::{
 };
 use crate::runtime::{
     session_history::{
-        TranscriptBase, empty_transcript_history, read_transcript_history, record_transcript_base,
+        SessionHistoryCache, TranscriptBase, empty_transcript_history, read_transcript_history,
+        record_transcript_base,
     },
     transcript::{TranscriptSnapshot, TranscriptWindow},
 };
@@ -92,12 +93,16 @@ impl SessionTurn {
         session_key: &str,
         path: Option<String>,
         window: TranscriptWindow,
+        history_cache: &tokio::sync::Mutex<SessionHistoryCache>,
+        project_id: &str,
     ) -> Result<TranscriptSnapshot, String> {
         self.snapshot_with_reader(events, session_key, window, |base| {
             let path = path.clone();
             async move {
                 match path {
-                    Some(path) => read_transcript_history(path, base, window).await,
+                    Some(path) => {
+                        read_transcript_history(path, base, window, history_cache, project_id).await
+                    }
                     None if base.is_none() => empty_transcript_history(window),
                     None => Err("transcript source is unavailable".to_owned()),
                 }

@@ -613,6 +613,8 @@ async fn publish_during_active_read_is_above_the_cut_and_idle_read_retries() {
                     fixture.path.to_str().unwrap().to_owned(),
                     base,
                     TranscriptWindow::default(),
+                    &fixture.runtime.session_history_cache,
+                    "project",
                 )
             },
         )
@@ -651,6 +653,8 @@ async fn publish_during_active_read_is_above_the_cut_and_idle_read_retries() {
                     fixture.path.to_str().unwrap().to_owned(),
                     base,
                     TranscriptWindow::default(),
+                    &fixture.runtime.session_history_cache,
+                    "project",
                 )
             },
         )

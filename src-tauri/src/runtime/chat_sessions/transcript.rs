@@ -1,11 +1,15 @@
 use std::sync::atomic::Ordering;
 
 use super::ChatSessions;
-use crate::runtime::transcript::{TranscriptSnapshot, TranscriptWindow};
+use crate::runtime::{
+    session_history::SessionHistoryCache,
+    transcript::{TranscriptSnapshot, TranscriptWindow},
+};
 
 impl ChatSessions {
     pub(crate) async fn transcript_snapshot(
         &self,
+        history_cache: &tokio::sync::Mutex<SessionHistoryCache>,
         session_key: &str,
         window: TranscriptWindow,
     ) -> Result<TranscriptSnapshot, String> {
@@ -27,7 +31,14 @@ impl ChatSessions {
             .clone();
         let snapshot = process
             .turn
-            .snapshot(&process.events, session_key, path, window)
+            .snapshot(
+                &process.events,
+                session_key,
+                path,
+                window,
+                history_cache,
+                &process.project_id,
+            )
             .await?;
         if process.closed.load(Ordering::Acquire) {
             return Err("chat session is closing".to_owned());
