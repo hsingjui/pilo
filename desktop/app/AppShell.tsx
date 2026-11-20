@@ -13,6 +13,7 @@ import { currentWindow, titleBar } from "nsh/desktop";
 import type { Project } from "@/lib/api/projects-types";
 import { ChatMessageList } from "../chat/chat-message-list";
 import { ChatMarkdown, type ChatMarkdownFileLink } from "../chat/chat-markdown";
+import { ChatTodoCapsule } from "../chat/chat-todo-capsule";
 import { ChatComposer } from "../composer/chat-composer";
 import type { ComposerStore } from "../composer/composer-store";
 import { activeProject } from "../state/app-state";
@@ -94,7 +95,9 @@ export function AppShell(props: AppShellProps) {
 	const collapsed = signal(false);
 	const sidebarSettings = new SidebarSettingsStore();
 	void sidebarSettings.load();
-	effect(() => composer.setTarget(openChatTarget(store.state())));
+	const chatTarget = computed(() => openChatTarget(store.state()));
+	const chatSessionKey = computed(() => chatTarget()?.sessionKey ?? null);
+	effect(() => composer.setTarget(chatTarget()));
 	followSavedAppearance(store.state);
 	// The app draws its own title bar: the sidebar and the main area reach
 	// the window's top edge, beside the system's window controls.
@@ -258,6 +261,16 @@ export function AppShell(props: AppShellProps) {
 											}
 											empty={() => <NewSession project={project} />}
 										/>
+										{() => {
+											const sessionKey = chatSessionKey();
+											return sessionKey === null ? null : (
+												<ChatTodoCapsule
+													sessionKey={sessionKey}
+													transcript={chat.state}
+													running={() => composer.running()}
+												/>
+											);
+										}}
 										<ChatComposer
 											store={composer}
 											sendShortcut={() =>
