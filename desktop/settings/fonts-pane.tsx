@@ -43,7 +43,8 @@ const monoGroups = (): FontSelectGroup[] => [
 
 /**
  * Fonts: page / reading / code / terminal family + size. Built-in families
- * only — system font enumeration still lives in the Tauri runtime.
+ * plus a family typed into the picker's search — system font enumeration
+ * still lives in the Tauri runtime.
  */
 export function FontsPane(props: {
 	state: Accessor<AppState>;
@@ -80,10 +81,11 @@ export function FontsPane(props: {
 		value: string | undefined,
 		fallback: string,
 		saveValue: (next: string) => void,
+		monospace = false,
 	) => (
 		<FontSelect
 			testID={testID}
-			class="w-[200px]"
+			class={monospace ? "w-[200px] font-mono" : "w-[200px]"}
 			accessibilityLabel={label}
 			groups={groups}
 			value={value ?? fallback}
@@ -189,6 +191,7 @@ export function FontsPane(props: {
 							values()?.codeFontFamily,
 							DEFAULT_CODE_FONT_FAMILY,
 							(next) => save({ codeFontFamily: next }),
+							true,
 						)
 					}
 					{() =>
@@ -211,6 +214,7 @@ export function FontsPane(props: {
 							values()?.terminalFontFamily,
 							DEFAULT_TERMINAL_FONT_FAMILY,
 							(next) => save({ terminalFontFamily: next }),
+							true,
 						)
 					}
 					{() =>
