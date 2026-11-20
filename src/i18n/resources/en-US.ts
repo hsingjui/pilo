@@ -359,6 +359,8 @@ const enUS = {
 		themeFonts: "Fonts",
 		themeTokenValue: "Value",
 		themeTokenInvalid: "Invalid {{kind}} value",
+		themeTokensInvalid: "Invalid theme tokens ({{code}}).",
+		themeTokensInvalidJson: "Theme tokens must be valid JSON.",
 		themeTokenColorError:
 			"Not a valid color. Use hex (#rgb[a] or #rrggbb[aa]), rgb()/rgba(), hsl()/hsla(), or transparent.",
 		themeTokenAlphaError:

@@ -349,6 +349,8 @@ const zhCN = {
 		themeFonts: "字体",
 		themeTokenValue: "取值",
 		themeTokenInvalid: "无效的{{kind}}取值",
+		themeTokensInvalid: "主题令牌无效（{{code}}）。",
+		themeTokensInvalidJson: "主题令牌必须是合法的 JSON。",
 		themeTokenColorError:
 			"无效颜色。支持十六进制（#rgb[a] 或 #rrggbb[aa]）、rgb()/rgba()、hsl()/hsla() 或 transparent。",
 		themeTokenAlphaError: "此颜色令牌不支持透明度，请使用不透明颜色。",

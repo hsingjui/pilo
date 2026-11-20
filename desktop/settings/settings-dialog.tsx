@@ -18,13 +18,18 @@ import { styleVar } from "../ui/theme-style";
 import { t } from "../app/i18n";
 import { AboutPane } from "./about-pane";
 import { DesktopPane } from "./desktop-pane";
+import { FontsPane } from "./fonts-pane";
 import { PendingPane } from "./layout";
 import { NotificationsPane } from "./notifications-pane";
 import { PreferencesPane } from "./preferences-pane";
 import { ShortcutsPane } from "./shortcuts-pane";
+import { ThemePane } from "./theme-pane";
 
 /** The native calls the settings panes make; grows as panes land. */
-export type SettingsClient = Pick<NshPiloClient, "savePreferences">;
+export type SettingsClient = Pick<
+	NshPiloClient,
+	"savePreferences" | "saveThemeSettings"
+>;
 
 export interface SettingsDialogProps {
 	open: () => boolean;
@@ -269,6 +274,14 @@ export function SettingsDialog(props: SettingsDialogProps) {
 											state={props.state}
 											client={props.client}
 										/>
+									);
+								case "appearance":
+									return (
+										<ThemePane state={props.state} client={props.client} />
+									);
+								case "fonts":
+									return (
+										<FontsPane state={props.state} client={props.client} />
 									);
 								case "notifications":
 									return (

@@ -224,11 +224,11 @@ export function resolveSystemMonospaceFamilies(): Promise<readonly string[]> {
 	);
 }
 
-const FONT_FAMILY_COLLATOR = new Intl.Collator("en", { sensitivity: "base" });
-
 /**
  * 大小写不敏感地按名称排序并去重。tsconfig 的 lib 目标还不含
  * `Array#toSorted`，`sort` 又会原地突变，因此对副本排序。
+ * nsh の JS エンジンは Intl.Collator を持たないので遅延生成し、
+ * 非対応環境では localeCompare にフォールバックする。
  */
 function dedupeAndSortFontFamilies(
 	families: readonly SystemFontFamily[],
@@ -243,7 +243,15 @@ function dedupeAndSortFontFamilies(
 		result.push({ family, monospace: item.monospace });
 	}
 	const sorted = [...result];
-	sorted.sort((a, b) => FONT_FAMILY_COLLATOR.compare(a.family, b.family));
+	const collator =
+		typeof Intl !== "undefined" && typeof Intl.Collator === "function"
+			? new Intl.Collator("en", { sensitivity: "base" })
+			: null;
+	sorted.sort((a, b) =>
+		collator
+			? collator.compare(a.family, b.family)
+			: a.family.localeCompare(b.family),
+	);
 	return sorted;
 }
 
