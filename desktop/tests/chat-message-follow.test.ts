@@ -153,11 +153,12 @@ test("a chat that grows past 16 messages keeps the rows in view where they are",
 	expect(after.y).toBe(before.y);
 });
 
-// A read names every reply anew, and moves the loaded messages on when the
-// chat has more than the store loads: a row is its message's place, so
-// neither remakes a row.
+// A read names every reply anew; with history the store has not loaded,
+// the messages it has read stay the ones the list reported, with boxes
+// standing for the rest: a row is its message's place, so neither remakes
+// a row.
 for (const unloaded of [0, 20]) {
-	test(`a chat read again ${unloaded ? "with its loaded messages moved on " : ""}keeps the rows in view and makes none anew`, async () => {
+	test(`a chat read again ${unloaded ? "with its unread history " : ""}keeps the rows in view and makes none anew`, async () => {
 		const app = await openChat(40, unloaded);
 		await app.waitFor("id:chat-messages >> text:Answer 20");
 		await app.scroll("id:chat-messages", -600);
@@ -172,6 +173,45 @@ for (const unloaded of [0, 20]) {
 		expect(rowsMade(app)).toBe(made);
 	});
 }
+
+// The list tells the store which rows are on screen; the store's read
+// turns them into messages, and the rows below the viewport stay boxes at
+// their messages' estimated heights.
+test("a chat's unread messages show as placeholders that load where the list shows them", async () => {
+	const app = await openChat(60, 40);
+	await app.waitFor("id:chat-messages >> text:Answer 30");
+	const ranges = () =>
+		app.texts().find((text) => text.startsWith("visible:")) ?? "";
+	// Opened at the end, the reported range ends at the last message.
+	await app.waitUntil(() => ranges().includes("-59"));
+
+	// Scrolled into the unread part: boxes stand where those messages are.
+	await app.scroll("id:chat-messages", -2400);
+	await app.waitUntil(() => app.shows("id:chat-history-placeholder"));
+	// The reported range follows into them; the fixture's read turns the
+	// shown messages into rows, and the boxes above stay.
+	await app.waitUntil(() => {
+		const last = ranges().split(",").filter(Boolean).at(-1);
+		return last !== undefined && Number(last.split("-")[0]) < 40;
+	});
+	await app.waitUntil(() =>
+		app.texts().some((text) => /^Answer ([1-9]|1[0-9]|20)$/.test(text)),
+	);
+});
+
+// Every streamed event hands the list a new joined array; at 10,000
+// messages the cost of one is a pass over it, not a rebuild of the rows.
+test("one streamed event of a 10,000-message chat costs the list one pass", async () => {
+	const app = await openChat(10_000);
+	await app.waitFor("id:chat-messages >> text:Answer 5000");
+	await app.press("id:prompt");
+	await stream(app, 30);
+	await replyShows(app, 30);
+	const label = app.texts().find((text) => text.startsWith("event at most "));
+	const ms = Number(/event at most (\d+) ms/.exec(label ?? "")?.[1]);
+	console.log(`one streamed event at 10,000 messages took at most ${ms} ms`);
+	expect(ms).toBeLessThan(100);
+});
 
 test("the way back to the latest message returns to the end, and the list follows again", async () => {
 	const app = await openChat(40);

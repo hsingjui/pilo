@@ -39,6 +39,9 @@ async function run() {
 	const lines = Number(await Storage.getItem("fixture.lines"));
 	// How many of the first messages are not loaded: placeholders stand for them.
 	let unloaded = Number(await Storage.getItem("fixture.unloaded"));
+	// With `fixture.hold` the reported range is recorded but never read:
+	// the placeholders it covers stay, for a look at them.
+	const hold = (await Storage.getItem("fixture.hold")) === "1";
 	if ((await fixtureThemeFamily()) === "claude") {
 		setTheme({ cssVars: claude.cssVars });
 		setStyleTheme(claude.styleVars);
@@ -75,7 +78,21 @@ async function run() {
 	};
 	const timestampMs = startedAt + count * 60_000;
 	const streamed = signal(0);
+	const eventMs = signal(0);
 	const measured = signal("");
+	const ranges = signal("visible: none");
+	// The range the list reports, and the read it starts: the reported
+	// messages and the ones below them come in loaded, the ones above stay
+	// placeholders, as the store's pages do.
+	const reportRange = (start: number, end: number) => {
+		ranges.set(`${ranges().replace("none", "")}${start}-${end},`);
+		if (start < unloaded && !hold) {
+			setTimeout(() => {
+				unloaded = Math.min(unloaded, start);
+				show();
+			}, 0);
+		}
+	};
 	let measures = 0;
 	// The prompts on screen, by the cell that shows each.
 	const prompts = new Map<ViewRef, () => ChatMessage>();
@@ -109,21 +126,27 @@ async function run() {
 		stream() {
 			const next = () => {
 				streamed.set(streamed() + 1);
+				const t0 = performance.now();
 				apply({
 					type: "assistant_text_delta",
 					delta: `Reply line ${streamed()}\n`,
 					timestampMs,
 				});
-				if (streamed() % lines !== 0) requestAnimationFrame(next);
+				// The event's cost is its apply plus the frame it lays out in.
+				requestAnimationFrame(() => {
+					eventMs.set(Math.max(eventMs(), Math.round(performance.now() - t0)));
+					if (streamed() % lines !== 0) next();
+				});
 			};
 			next();
 		},
 		end: () =>
 			apply({ type: "assistant_turn_end", stopReason: "stop", timestampMs }),
-		// The chat is read again: the reducer names every reply anew, and the
-		// loaded messages start two further on.
+		// The chat is read again: the reducer names every reply anew, and
+		// the loaded window is the one it was: the store keeps the pages of
+		// the range the list reported, and a margin around them, loaded, so
+		// a read's window can only move outside that.
 		reread() {
-			unloaded += unloaded > 0 ? 2 : 0;
 			conversation = {
 				...conversation,
 				messages: conversation.messages.map((message) =>
@@ -152,7 +175,11 @@ async function run() {
 				<Text class="font-mono text-xs text-foreground">
 					{() => `${bodies()} prompt rows made`}
 				</Text>
+				<Text class="font-mono text-xs text-foreground">
+					{() => `event at most ${eventMs()} ms`}
+				</Text>
 				<Text class="font-mono text-xs text-foreground">{measured}</Text>
+				<Text class="font-mono text-xs text-foreground">{ranges}</Text>
 			</View>
 			<ChatMessageList
 				transcript={transcript}
@@ -170,6 +197,7 @@ async function run() {
 					);
 				}}
 				footer={<View ref={(view) => (end = view)} class="h-px" />}
+				onVisibleRangeChange={reportRange}
 			/>
 		</View>
 	));

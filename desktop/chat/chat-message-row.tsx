@@ -3,6 +3,7 @@ import { computed } from "nsh";
 import type { ChatMessage } from "@/lib/chat/conversation-types";
 import { ChatAssistantMessage } from "./chat-assistant-message";
 import { ChatCompactionMarker } from "./chat-compaction-marker";
+import { ChatHistoryPlaceholder } from "./chat-history-placeholder";
 import type {
 	AssistantChatMessage,
 	ChatMessageBody,
@@ -23,8 +24,12 @@ export interface ChatMessageRowProps {
  */
 export function ChatMessageRow(props: ChatMessageRowProps) {
 	const { message } = props;
+	const placeholder = computed(() => message().historyPlaceholder === true);
 	const role = computed(() => message().role);
 	return () => {
+		if (placeholder()) {
+			return <ChatHistoryPlaceholder message={message} />;
+		}
 		switch (role()) {
 			case "user":
 				return (

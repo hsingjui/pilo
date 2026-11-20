@@ -7,6 +7,7 @@ import {
 	Text,
 	untracked,
 	View,
+	type ViewToken,
 } from "nsh";
 
 import { shouldShowChatScrollToLatest } from "@/lib/chat/chat-scroll-to-latest";
@@ -41,6 +42,8 @@ export interface ChatMessagesProps {
 	userBody?: ChatMessageBody<UserChatMessage>;
 	assistantBody?: ChatMessageBody<AssistantChatMessage>;
 	footer?: ListSlot;
+	/** The first and last rows on screen, as their places in the chat. */
+	onVisibleRangeChange?: (startIndex: number, endIndex: number) => void;
 }
 
 /**
@@ -65,6 +68,20 @@ export function ChatMessages(props: ChatMessagesProps) {
 		);
 		scrolled.set(offset.y > fadeAfter);
 	};
+	let visible: { start: number; end: number } | undefined;
+	const reportVisible = (info: { viewableItems: ViewToken<ChatMessage>[] }) => {
+		let start = Number.POSITIVE_INFINITY;
+		let end = 0;
+		for (const token of info.viewableItems) {
+			if (!token.isViewable) continue;
+			if (token.index < start) start = token.index;
+			if (token.index > end) end = token.index;
+		}
+		if (start === Number.POSITIVE_INFINITY) return;
+		if (visible?.start === start && visible?.end === end) return;
+		visible = { start, end };
+		props.onVisibleRangeChange?.(start, end);
+	};
 	return (
 		<View class="min-h-0 flex-1">
 			<List
@@ -82,6 +99,7 @@ export function ChatMessages(props: ChatMessagesProps) {
 				scrollbar={{ vertical: scrollbarLook() }}
 				footer={props.footer}
 				onScroll={follow}
+				onViewableItemsChange={reportVisible}
 			>
 				{(message) => (
 					<ChatMessageRow

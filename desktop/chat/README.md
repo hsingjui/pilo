@@ -11,6 +11,7 @@ conversation:
 	transcript={() => chat.state()}
 	messages={() => chat.messages()}
 	onRetry={() => chat.refresh()}
+	onVisibleRangeChange={(start, end) => chat.loadRange(start, end)}
 	empty={() => <NewChatHero />}
 />
 ```
@@ -39,6 +40,17 @@ each time the chat is read again. Kept by place, a row stays measured and
 where it is across such a read; fed only the loaded messages, every index
 would shift when the loaded window moves.
 
+## Loading what shows
+
+A message the store has not read yet is a `historyPlaceholder`: its row
+(`ChatHistoryPlaceholder`) is a quiet box at the height the message's
+length estimates, shared with the WebUI's placeholder
+(`src/lib/chat/history-placeholder-height.ts`), so the rows around it
+hold about their final places. The list reports the first and last places
+on screen as `onVisibleRangeChange`; the shell gives it the store's
+`loadRange`, which reads the pages holding them, and the loaded messages
+take their rows' places.
+
 ## Following and reading
 
 At its end the list follows a reply as it grows, and when the turn settles.
@@ -50,6 +62,8 @@ the button appears by the rule the WebUI uses
 
 ## Where later pieces plug in
 
+- `onVisibleRangeChange` tells the store the places on screen, so it
+  reads the pages holding them.
 - `userBody` and `assistantBody` draw a message's content inside its row.
   Without them the row shows the message's plain text; the Markdown renderer
   and tool activity replace it here and leave the list alone.

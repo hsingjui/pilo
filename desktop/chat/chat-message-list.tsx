@@ -31,6 +31,11 @@ export interface ChatMessageListProps {
 	assistantBody?: ChatMessageBody<AssistantChatMessage>;
 	/** Under the last message, scrolling with the messages. */
 	footer?: ListSlot;
+	/**
+	 * The first and last messages on screen (the store's `loadRange`, which
+	 * reads the pages of history holding them).
+	 */
+	onVisibleRangeChange?: (startIndex: number, endIndex: number) => void;
 }
 
 /**
@@ -77,6 +82,7 @@ export function ChatMessageList(props: ChatMessageListProps) {
 								userBody={props.userBody}
 								assistantBody={props.assistantBody}
 								footer={props.footer}
+								onVisibleRangeChange={props.onVisibleRangeChange}
 							/>
 						);
 				}
