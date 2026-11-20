@@ -1,6 +1,7 @@
 import { mount } from "nsh";
 import { isAvailable, Window } from "nsh/desktop";
 
+import type { PiloClientEvent } from "@/lib/api/pilo-client";
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
 import { ComposerStore } from "../composer/composer-store";
 import { AppStore } from "../state/app-store";
@@ -21,6 +22,7 @@ import {
 } from "./open-chat";
 import { followOpenSessionRead } from "./read-open-session";
 import { SessionForker } from "./session-fork";
+import { connectSessionNotifications } from "./session-notifications";
 
 /**
  * Starts the app on `pilo`: shows the shell, loads the app state, keeps the
@@ -32,7 +34,12 @@ export async function launch(
 ) {
 	const client = new NshPiloClient(pilo);
 	const chat = new ChatTranscriptStore(client, conversationContext());
-	const store = new AppStore(client, chat);
+	let notify: ((event: PiloClientEvent) => Promise<void>) | undefined;
+	const store = new AppStore(client, chat, (event) => {
+		void notify?.(event).catch((error: unknown) => {
+			console.warn("Failed to send Pilo session notification", error);
+		});
+	});
 	const main = isAvailable ? Window.get("main") : null;
 	const desktop =
 		main && desktopSettings
@@ -41,6 +48,7 @@ export async function launch(
 					await client.shutdown();
 				})
 			: undefined;
+	if (desktop) notify = connectSessionNotifications(client, store, desktop);
 	const catalog = new ModelCatalogStore(client);
 	const runConfig = new ChatRunConfigStore(client, catalog.state);
 	const composer = new ComposerStore({

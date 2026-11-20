@@ -71,7 +71,11 @@ export class AppStore {
 	 * batch as it arrives, and is read again when the stream lost events or
 	 * was reconnected.
 	 */
-	constructor(client: AppStoreClient, chat?: ChatTranscriptStore) {
+	constructor(
+		client: AppStoreClient,
+		chat?: ChatTranscriptStore,
+		private readonly onLiveEvent?: (event: PiloClientEvent) => void,
+	) {
 		this.client = client;
 		this.chat = chat;
 	}
@@ -282,6 +286,8 @@ export class AppStore {
 	private handle(event: PiloClientEvent) {
 		if (isStaleEvent(this.current(), event)) return;
 		this.apply({ type: "event", event });
+		if (event.sequence > this.current().latestSequence)
+			this.onLiveEvent?.(event);
 		if (event.sessionKey !== undefined && changesChatSession(event)) {
 			void this.loadChatSession(event.sessionKey);
 		}
