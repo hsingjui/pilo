@@ -58,7 +58,7 @@ same reader and defaults as the Tauri client. Options are `startMessage`
 (zero-based; defaults to the tail), `messageLimit` (default 256, clamped to
 1–256), `includeMessageIndex` (default true), and the optional fingerprint
 from a previous read. A missing session is rejected. Use this reader for
-SSH/WSL history or to recover settled history after an unsafe turn; the
+sessions without running Pi or to recover settled history after an unsafe turn; the
 result has no transcript event sequence.
 
 `loadConnectionModels(connectionId)` queries Pi's current user-level catalog
@@ -172,8 +172,10 @@ Discard buffered events at or below that cut only for that transcript, not
 other sessions or global state. A gap or generation change requires a fresh
 cut. On `truncated`, do not apply its empty history or resume replay from that
 cut; wait for Host activity to confirm the turn settled and then refetch.
-SSH/WSL cuts are always truncated; those connections need the settled-history
-reader instead. The bootstrap sequence is not a substitute for a transcript cut.
+Local, SSH and WSL use the same snapshot and event replay. SSH/WSL read the
+pre-prompt history prefix on the running Pi process's pilo-server connection.
+If that prefix is unavailable or cannot be verified, the active snapshot is
+truncated. The bootstrap sequence is not a substitute for a transcript cut.
 `sendChatCommand(sessionKey, command)` forwards a Pi RPC command object to
 the running session. The promise resolves once the command is sent; consume
 its response and any turn events via `nextEvents()`.
@@ -200,14 +202,14 @@ WebUI assets come from `dist/`; a packaged app will stage them under
 of the open chat. Opening a chat starts nothing.
 
 - With Pi running, it reads `chatTranscriptSnapshot` and applies the chat's
-  later events, so a turn streams. A gap, a reconnect, or a newer Pi process
-  takes a fresh snapshot.
+  later events, so a turn streams. A gap, a reconnect, Pi reattachment, or a
+  newer Pi process takes a fresh snapshot.
 - Without a snapshot, it shows the session file's settled history from
   `loadHistory`: no Pi, a stopped or failed process, or a snapshot that is
   truncated with no turn running or again after the turn settled. A truncated
   snapshot of a running turn shows nothing new until that turn has settled.
 - A chat on settled history tries a snapshot again when Pi comes up and once
-  when each turn starts, so a local chat goes back to streaming.
+  when each turn starts, so a chat can go back to streaming.
 
 Either read loads the session's last 80 messages and its message index, as
 the WebUI's first read does, so a long session is never replayed whole. The
@@ -253,11 +255,6 @@ holds its history. From `load_history` in the runtime's
 chat opened with Pi already running and scrolled up for the first time
 during a turn, and a chat read again (a gap in the event stream, switching
 back to it) during its second or a later turn.
-
-Known gap: SSH and WSL snapshots are always truncated, so a remote chat's
-running turn does not stream in nsh yet. It appears when the turn has
-settled. The follow-up is to apply live events on top of settled history, as
-the WebUI does.
 
 ## Built-in themes
 

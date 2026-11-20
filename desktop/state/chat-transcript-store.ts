@@ -138,9 +138,9 @@ function startsTurn(event: PiloClientEvent) {
  * point of the event stream and kept current from the events after that
  * point; the owner passes in every event batch and says when the stream
  * lost events. When no snapshot can be had (no Pi is running, or the
- * runtime cannot rebuild the chat's turns, as for every remote chat), the
- * session file's settled history is shown instead, and a snapshot is tried
- * again when Pi comes up and when the next turn starts.
+ * runtime cannot rebuild the chat's turn), the session file's settled
+ * history is shown instead. A snapshot is tried again when Pi comes up
+ * and when the next turn starts.
  *
  * Either way a read loads only the session's last messages. The ones before
  * them are held in the Tauri app's history window store and shown as
@@ -294,7 +294,13 @@ export class ChatTranscriptStore {
 					this.flush(later);
 					void this.read();
 				} else if (followsSnapshot(this.cut, event)) {
-					later.push(event);
+					if (event.type === "pi_reattached") {
+						// Reattachment may have missed Pi events without a Host stream gap.
+						this.flush(later);
+						void this.read();
+					} else {
+						later.push(event);
+					}
 				}
 				this.see(event);
 			} else {
@@ -329,7 +335,7 @@ export class ChatTranscriptStore {
 				void this.read(true);
 			} else if (startsTurn(event) && !this.tried) {
 				// A turn the runtime can rebuild puts the chat back on a
-				// snapshot; one try per turn, since a remote chat's never can.
+				// snapshot; try only once per turn.
 				this.tried = true;
 				void this.read();
 			}
@@ -562,9 +568,21 @@ export class ChatTranscriptStore {
 					firstWindow,
 				);
 				if (this.reads !== read) return;
+				const events = this.buffer ?? [];
+				if (
+					snapshot.live.type !== "truncated" &&
+					events.some(
+						(event) =>
+							event.type === "pi_reattached" &&
+							followsSnapshot(snapshot, event),
+					)
+				) {
+					void this.read();
+					return;
+				}
 				const conversation = conversationFromSnapshot(
 					snapshot,
-					this.buffer ?? [],
+					events,
 					this.context,
 				);
 				if (conversation) {
