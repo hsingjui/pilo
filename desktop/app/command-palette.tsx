@@ -297,17 +297,17 @@ export function CommandPalette(props: CommandPaletteProps) {
 				listClass="min-h-0 flex-1 p-1"
 				renderItem={(entry) => {
 					const row = results().rows.get(entry.id);
-					if (!row) return <Text>{entry.label}</Text>;
+					if (!row) return <Text class="font-sans">{entry.label}</Text>;
 					return (
 						<View class="w-full flex-row items-center gap-3">
 							<Icon name={row.icon} size={16} class="shrink-0 opacity-60" />
 							<View class="min-w-0 flex-1">
 								<View class="flex-row items-center gap-2">
-									<Text class="min-w-0 flex-1 truncate text-sm">
+									<Text class="font-sans min-w-0 flex-1 truncate text-sm">
 										{entry.label}
 									</Text>
 									{row.role ? (
-										<Text class="text-xs text-muted-foreground">
+										<Text class="font-sans text-xs text-muted-foreground">
 											{row.role === "user"
 												? t("commandPalette.user")
 												: t("common.agent")}
@@ -318,18 +318,18 @@ export function CommandPalette(props: CommandPaletteProps) {
 									) : null}
 								</View>
 								{row.detail ? (
-									<Text class="truncate text-xs text-muted-foreground">
+									<Text class="font-sans truncate text-xs text-muted-foreground">
 										{row.detail}
 									</Text>
 								) : null}
 								{row.snippet ? (
-									<Text class="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+									<Text class="font-sans mt-0.5 line-clamp-2 text-xs text-muted-foreground">
 										{row.snippet}
 									</Text>
 								) : null}
 							</View>
 							{entry.shortcutLabel ? (
-								<Text class="text-xs tracking-widest text-muted-foreground">
+								<Text class="font-sans text-xs tracking-widest text-muted-foreground">
 									{entry.shortcutLabel}
 								</Text>
 							) : null}
@@ -340,7 +340,7 @@ export function CommandPalette(props: CommandPaletteProps) {
 				onSelect={({ id }) => select(id)}
 				onCancel={() => props.onClose()}
 				empty={
-					<Text class="text-muted-foreground">
+					<Text class="font-sans text-muted-foreground">
 						{t("commandPalette.noResults")}
 					</Text>
 				}
@@ -349,7 +349,7 @@ export function CommandPalette(props: CommandPaletteProps) {
 						{searching() ? (
 							<View class="flex-row items-center gap-1.5">
 								<Spinner size={12} />
-								<Text class="text-xs text-muted-foreground">
+								<Text class="font-sans text-xs text-muted-foreground">
 									{t("commandPalette.searchingHistory")}
 								</Text>
 							</View>
@@ -372,11 +372,13 @@ function Hint(props: { keys: string; label: () => string }) {
 	return (
 		<View class="flex-row items-center gap-1">
 			<View class="h-5 min-w-5 items-center justify-center rounded-sm bg-muted px-1">
-				<Text class="text-xs font-medium text-muted-foreground">
+				<Text class="font-sans text-xs font-medium text-muted-foreground">
 					{props.keys}
 				</Text>
 			</View>
-			<Text class="text-xs text-muted-foreground">{props.label()}</Text>
+			<Text class="font-sans text-xs text-muted-foreground">
+				{props.label()}
+			</Text>
 		</View>
 	);
 }

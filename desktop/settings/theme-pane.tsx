@@ -64,7 +64,7 @@ function ThemeOption(props: {
 			onPress={props.onSelect}
 			testID={props.testID}
 		>
-			<Text class="truncate text-xs font-medium">{props.label}</Text>
+			<Text class="font-sans truncate text-xs font-medium">{props.label}</Text>
 			{props.selected ? (
 				<Icon name="Check" size={14} class="text-muted-foreground" />
 			) : null}

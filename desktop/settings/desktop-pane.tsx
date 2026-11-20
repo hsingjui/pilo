@@ -110,7 +110,7 @@ export function DesktopPane(props: { desktop?: DesktopShell }) {
 										onChange={({ checked }) => void changeClose(checked)}
 									/>
 									{closeFailed() ? (
-										<Text class="text-xs text-destructive">
+										<Text class="font-sans text-xs text-destructive">
 											{t("desktop.closeSaveFailed")}
 										</Text>
 									) : null}

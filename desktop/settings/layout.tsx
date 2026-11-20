@@ -32,7 +32,7 @@ export function SettingsSection(props: {
 					<View class="min-h-10 flex-row items-center justify-between gap-2 border-b border-border/70 bg-muted/40 px-3 py-1.5">
 						<View class="min-w-0 flex-1">
 							{props.title ? (
-								<Text class="text-xs font-semibold leading-tight text-muted-foreground">
+								<Text class="font-sans text-xs font-semibold leading-tight text-muted-foreground">
 									{props.title}
 								</Text>
 							) : null}
@@ -97,11 +97,11 @@ export function SettingsRow(props: {
 				!narrow() && "flex-1",
 			)}
 		>
-			<Text class="font-medium leading-tight text-foreground">
+			<Text class="font-sans font-medium leading-tight text-foreground">
 				{props.label}
 			</Text>
 			{props.helper ? (
-				<Text class="text-[11px] leading-[1.4] text-muted-foreground">
+				<Text class="font-sans text-[11px] leading-[1.4] text-muted-foreground">
 					{props.helper}
 				</Text>
 			) : null}
@@ -147,7 +147,7 @@ export function SettingsStatus(props: {
 		>
 			<Text
 				class={classNames(
-					"text-[11px] font-medium",
+					"font-sans text-[11px] font-medium",
 					props.muted ? "text-muted-foreground" : "text-foreground/80",
 				)}
 			>
@@ -161,7 +161,7 @@ export function SettingsStatus(props: {
 export function PendingPane(props: { detail?: string }) {
 	return (
 		<View class="rounded-lg border border-dashed border-border/70 px-4 py-8">
-			<Text class="text-center text-sm text-muted-foreground">
+			<Text class="font-sans text-center text-sm text-muted-foreground">
 				{() => props.detail ?? ""}
 			</Text>
 		</View>

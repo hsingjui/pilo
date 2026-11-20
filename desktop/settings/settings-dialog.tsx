@@ -278,7 +278,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 									return (
 										<View>
 											{section.labelKey ? (
-												<Text class="px-2.5 pb-1 text-xs font-medium text-muted-foreground">
+												<Text class="font-sans px-2.5 pb-1 text-xs font-medium text-muted-foreground">
 													{() => t(section.labelKey ?? "")}
 												</Text>
 											) : null}
@@ -312,7 +312,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 															/>
 															<Text
 																class={classNames(
-																	"flex-1 truncate text-sm font-medium",
+																	"flex-1 truncate font-sans text-sm font-medium",
 																	highlighted()
 																		? "text-secondary-foreground"
 																		: "text-muted-foreground",
@@ -355,7 +355,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 									}}
 								/>
 							) : (
-								<Text class="text-lg font-semibold leading-tight tracking-tight text-foreground">
+								<Text class="font-sans text-lg font-semibold leading-tight tracking-tight text-foreground">
 									{() => String(t(activeTab().labelKey))}
 								</Text>
 							)

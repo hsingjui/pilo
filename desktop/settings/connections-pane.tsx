@@ -624,7 +624,7 @@ export function ConnectionsPane(props: {
 
 	const hint = (label: string) => (
 		<Tooltip>
-			<Text>{label}</Text>
+			<Text class="font-sans">{label}</Text>
 		</Tooltip>
 	);
 
@@ -672,12 +672,12 @@ export function ConnectionsPane(props: {
 					{connectionIcon(connection)}
 				</View>
 				<View class="min-w-0 flex-1">
-					<Text class="truncate text-sm font-medium">
+					<Text class="font-sans truncate text-sm font-medium">
 						{connectionLabel(connection)}
 					</Text>
 					<View class="mt-0.5 flex-row flex-wrap items-center gap-x-2 gap-y-0.5">
 						{description}
-						<Text class="text-[11px] text-muted-foreground">
+						<Text class="font-sans text-[11px] text-muted-foreground">
 							{() =>
 								projectCountValue > 0
 									? t("connection.projectCount", {
@@ -740,7 +740,7 @@ export function ConnectionsPane(props: {
 				results()[connection.id] ? (
 					<Text
 						testID={`settings-conn-result-${connection.id}`}
-						class="mt-1.5 text-[11px] text-muted-foreground"
+						class="font-sans mt-1.5 text-[11px] text-muted-foreground"
 					>
 						{results()[connection.id]}
 					</Text>
@@ -754,7 +754,7 @@ export function ConnectionsPane(props: {
 		if (!connection) return null;
 		return connectionRow(
 			connection,
-			<Text class="text-[11px] text-muted-foreground">
+			<Text class="font-sans text-[11px] text-muted-foreground">
 				{t("connection.localMachine")}
 			</Text>,
 			projectCount(connection.id, 0),
@@ -766,7 +766,7 @@ export function ConnectionsPane(props: {
 		const connection = info.connection;
 		return connectionRow(
 			connection,
-			<Text class="text-[11px] text-muted-foreground">
+			<Text class="font-sans text-[11px] text-muted-foreground">
 				{t("connection.wslLabel")}
 			</Text>,
 			projectCount(connection.id, info.projectCount),
@@ -816,7 +816,7 @@ export function ConnectionsPane(props: {
 
 	const field = (label: string, child: JSX.Element) => (
 		<View class="gap-1">
-			<Text class="text-xs">{label}</Text>
+			<Text class="font-sans text-xs">{label}</Text>
 			{child}
 		</View>
 	);
@@ -872,7 +872,9 @@ export function ConnectionsPane(props: {
 				</DialogHeader>
 				<View class="flex-row gap-3">
 					<View class="flex-1 gap-1">
-						<Text class="text-xs">{t("settings.connectionName")}</Text>
+						<Text class="font-sans text-xs">
+							{t("settings.connectionName")}
+						</Text>
 						<Input
 							testID="settings-ssh-name"
 							value={draft.name}
@@ -881,7 +883,9 @@ export function ConnectionsPane(props: {
 						/>
 					</View>
 					<View class="flex-1 gap-1">
-						<Text class="text-xs">{t("settings.connectionMethod")}</Text>
+						<Text class="font-sans text-xs">
+							{t("settings.connectionMethod")}
+						</Text>
 						<Select
 							testID="settings-ssh-mode"
 							items={[
@@ -922,7 +926,9 @@ export function ConnectionsPane(props: {
 					return draft.mode === "direct" ? (
 						<View class="flex-row gap-3">
 							<View class="flex-1 gap-1">
-								<Text class="text-xs">{t("connection.username")}</Text>
+								<Text class="font-sans text-xs">
+									{t("connection.username")}
+								</Text>
 								<Input
 									testID="settings-ssh-user"
 									value={draft.user}
@@ -931,7 +937,7 @@ export function ConnectionsPane(props: {
 								/>
 							</View>
 							<View class="w-24 gap-1">
-								<Text class="text-xs">{t("connection.port")}</Text>
+								<Text class="font-sans text-xs">{t("connection.port")}</Text>
 								<Input
 									testID="settings-ssh-port"
 									value={draft.port}
@@ -1066,7 +1072,9 @@ export function ConnectionsPane(props: {
 					return draft.piRuntime === "local" ? (
 						<View class="flex-row items-start gap-3">
 							<View class="min-w-0 flex-1 gap-1 py-2">
-								<Text class="text-xs">{t("connection.localPiResources")}</Text>
+								<Text class="font-sans text-xs">
+									{t("connection.localPiResources")}
+								</Text>
 								<Text class="text-xs text-muted-foreground">
 									{t("connection.localPiResourcesDescription")}
 								</Text>
@@ -1167,7 +1175,7 @@ export function ConnectionsPane(props: {
 					sshStatus() ? (
 						<Text
 							testID="settings-ssh-error"
-							class="text-xs text-muted-foreground"
+							class="font-sans text-xs text-muted-foreground"
 						>
 							{sshStatus()}
 						</Text>
@@ -1187,7 +1195,7 @@ export function ConnectionsPane(props: {
 								disabled={busyNow || testingNow || waiting}
 								onPress={() => void testSshDraft()}
 							>
-								<Text>
+								<Text class="font-sans">
 									{testingNow
 										? t("connection.testingConnection")
 										: t("connection.testConnection")}
@@ -1213,7 +1221,9 @@ export function ConnectionsPane(props: {
 									}
 									onPress={() => void saveSsh()}
 								>
-									<Text>{busyNow ? t("common.saving") : t("common.save")}</Text>
+									<Text class="font-sans">
+										{busyNow ? t("common.saving") : t("common.save")}
+									</Text>
 								</Button>
 							</View>
 						</View>
@@ -1285,7 +1295,7 @@ export function ConnectionsPane(props: {
 										disabled={disabled}
 										onPress={() => void probePi()}
 									>
-										<Text>
+										<Text class="font-sans">
 											{probing()
 												? t("connection.detecting")
 												: t("connection.detectPi")}
@@ -1323,7 +1333,9 @@ export function ConnectionsPane(props: {
 								disabled={busy() || !draft.name.trim()}
 								onPress={() => void saveConnectionSettings()}
 							>
-								<Text>{busy() ? t("common.saving") : t("common.save")}</Text>
+								<Text class="font-sans">
+									{busy() ? t("common.saving") : t("common.save")}
+								</Text>
 							</Button>
 						</DialogFooter>
 					);
@@ -1354,7 +1366,7 @@ export function ConnectionsPane(props: {
 							{t("connection.loading")}
 						</Text>
 					) : items.length === 0 ? (
-						<Text class="px-3 py-4 text-xs text-muted-foreground">
+						<Text class="font-sans px-3 py-4 text-xs text-muted-foreground">
 							{t("connection.noWsl")}
 						</Text>
 					) : (
@@ -1417,7 +1429,7 @@ export function ConnectionsPane(props: {
 				icon={<Icon name="Server" size={16} />}
 				onSelect={() => openNewSsh()}
 			>
-				<Text>{t("connection.addSsh")}</Text>
+				<Text class="font-sans">{t("connection.addSsh")}</Text>
 			</MenuItem>
 		</Menu>
 	);

@@ -65,7 +65,7 @@ export function Toast(props: ToastProps) {
 				</View>
 				{() =>
 					local.description ? (
-						<Text class="text-xs text-muted-foreground leading-4">
+						<Text class="font-sans text-xs text-muted-foreground leading-4">
 							{local.description}
 						</Text>
 					) : null

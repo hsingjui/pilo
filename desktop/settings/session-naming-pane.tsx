@@ -124,7 +124,7 @@ export function SessionNamingPane(props: {
 				if (connections().length === 0)
 					return (
 						<View class="px-3 py-5">
-							<Text class="text-xs text-muted-foreground">
+							<Text class="font-sans text-xs text-muted-foreground">
 								{errors()["__catalog"] ?? t("settings.noConnections")}
 							</Text>
 						</View>

@@ -7,7 +7,10 @@ export function DialogTitle(props: TextProps) {
 		<Text
 			role="header"
 			{...rest}
-			class={classNames("text-lg font-semibold leading-tight", local.class)}
+			class={classNames(
+				"font-sans text-lg font-semibold leading-tight",
+				local.class,
+			)}
 		>
 			{local.children}
 		</Text>

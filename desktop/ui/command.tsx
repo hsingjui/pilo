@@ -19,10 +19,10 @@ export type {
 function renderItem(item: CommandEntry) {
 	return (
 		<View class="w-full flex-row items-center gap-(--pilo-command-item-gap)">
-			<Text>{item.label}</Text>
+			<Text class="font-sans">{item.label}</Text>
 			{item.shortcutLabel ? (
 				<View class="ml-auto">
-					<Text class="text-xs tracking-widest text-muted-foreground">
+					<Text class="font-sans text-xs tracking-widest text-muted-foreground">
 						{item.shortcutLabel}
 					</Text>
 				</View>
