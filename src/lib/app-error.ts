@@ -1,4 +1,4 @@
-import { i18n } from "../i18n/index.ts";
+import { i18n } from "../i18n/instance.ts";
 
 export type AppErrorCode =
 	| "pi_not_found"
