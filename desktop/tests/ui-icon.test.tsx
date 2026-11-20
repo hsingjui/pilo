@@ -17,3 +17,19 @@ test("Icon rejects an unknown or empty name at an untyped boundary", () => {
 		expect(() => Icon({ name: name as IconName })).toThrow(RangeError);
 	}
 });
+
+test("Icon redraws when its name changes", async () => {
+	const app = await open("./ui-icon-fixture.tsx");
+	let before: Uint8Array;
+	try {
+		before = await app.screenshot();
+	} catch {
+		return; // headless draws nothing
+	}
+	await app.press("Swap icon");
+	const after = await app.screenshot();
+	const same =
+		before.length === after.length &&
+		before.every((byte, index) => byte === after[index]);
+	expect(same).toBe(false);
+});

@@ -5,6 +5,7 @@ import icons from "../app/lucide-icons.json";
 
 const refs: ViewRef[] = [];
 const result = signal("Not measured");
+const swapped = signal(false);
 
 mount(() => (
 	<View class="gap-2 p-4 bg-background">
@@ -20,6 +21,10 @@ mount(() => (
 				/>
 			))}
 			<Icon name="Palette" color="#ff0000" accessibilityLabel="Palette icon" />
+			<Icon name={swapped() ? "Square" : "Send"} testID="swapped-icon" />
+			<Button onPress={() => swapped.set(!swapped())}>
+				<Text>Swap icon</Text>
+			</Button>
 		</View>
 		<View class="flex-row flex-wrap gap-1">
 			{(Object.keys(icons) as IconName[]).map((name) => (
