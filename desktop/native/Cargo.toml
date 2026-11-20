@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 mime_guess = "2"
-nsh-core = "0.6.0"
+nsh-core = "0.6.1"
 pilo = { path = "../../src-tauri", default-features = false }
 rfd = "0.15"
 serde = "1"

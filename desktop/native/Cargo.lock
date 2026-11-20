@@ -273,7 +273,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "31b698c5f9a010f6573133b09e0de5408834d0c82f8d7475a89fc1867a71cd90"
 dependencies = [
  "axum-core",
- "base64 0.22.1",
+ "base64",
  "bytes",
  "form_urlencoded",
  "futures-util",
@@ -332,12 +332,6 @@ name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
-
-[[package]]
-name = "base64"
-version = "0.23.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "bitflags"
@@ -1636,9 +1630,9 @@ dependencies = [
 
 [[package]]
 name = "nsh-core"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ee5ae33b9d77bb6d2fb31defa94fc7a7b3d5d0125fd9854dcb996e7454ea5bd"
+checksum = "4b45a8b194c6879bcb26c6e430b804e49e97ec0fea5fad8c78d7710fd41f74a6"
 dependencies = [
  "cap-std",
  "chrono",
@@ -1667,9 +1661,9 @@ dependencies = [
 
 [[package]]
 name = "nsh-macros"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f84c52cf7b3a8b3f99c805a7e7ba6f5872cf3ac91b8d8d9bfe7f67b44c0dbe00"
+checksum = "6f1b3ce01247cac072395d42177725e7972de498eb148d37443196d870cdaf2b"
 dependencies = [
  "imagesize",
  "proc-macro2",
@@ -1825,7 +1819,7 @@ name = "pilo"
 version = "0.4.1"
 dependencies = [
  "axum",
- "base64 0.22.1",
+ "base64",
  "core-text",
  "getrandom 0.3.4",
  "global-hotkey",
@@ -2413,7 +2407,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8050abb251097357e24aff63ba2c52a6309ecb7d23a5474023df960a02694d8"
 dependencies = [
  "annotate-snippets",
- "base64 0.23.1",
+ "base64",
  "encoding_rs_io",
  "granit-parser",
  "nohash-hasher",
