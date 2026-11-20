@@ -2,13 +2,19 @@ import { signal, split, token, Text, View } from "nsh";
 import { Select as BaseSelect, type SelectProps } from "nsh/base";
 import { classNames } from "./class-names";
 import { Icon } from "./icon";
+import { SelectTrigger } from "./select-trigger";
 import { styleVar } from "./theme-style";
-import { focusRingStyle } from "./focus-ring-style";
 
 export type { SelectProps, SelectItem } from "nsh/base";
 
+export function selectItemSpacing() {
+	// The scroll view wraps a virtual list, so its gap does not reach the rows.
+	return { marginBottom: Math.max(3, token("pilo-select-gap")) };
+}
+
 export function Select(props: SelectProps) {
 	const [local, rest] = split(props, [
+		"class",
 		"value",
 		"defaultValue",
 		"onChange",
@@ -17,10 +23,10 @@ export function Select(props: SelectProps) {
 		"popupStyle",
 		"listClass",
 		"itemClass",
+		"itemStyle",
 		"groupClass",
 		"searchClass",
 		"renderItem",
-		"renderGroup",
 	]);
 	const value = signal(local.defaultValue ?? null);
 	const current = () => (local.value === undefined ? value() : local.value);
@@ -28,7 +34,10 @@ export function Select(props: SelectProps) {
 		props.items?.find((item) => item.value === current())?.title;
 	return (
 		<BaseSelect
+			cover={false}
+			offset={4}
 			{...rest}
+			class={classNames("min-w-0 max-w-full", local.class)}
 			value={current()}
 			onChange={(event) => {
 				value.set(event.value);
@@ -36,25 +45,11 @@ export function Select(props: SelectProps) {
 			}}
 			trigger={
 				local.trigger ?? (
-					<View
+					<SelectTrigger
 						disabled={props.disabled}
-						class="flex-row w-full items-center justify-between gap-2 h-(--pilo-field-height) rounded-(--pilo-radius-md) border border-input-border bg-input-field px-3 py-2 text-sm font-sans text-input-foreground hover:border-(--pilo-field-hover-border) focus-visible:border-(--pilo-field-focus-border) focus-visible:outline-hidden disabled:bg-muted disabled:opacity-60"
-						style={{ boxShadow: styleVar("pilo-field-shadow") }}
-						focusVisibleStyle={focusRingStyle(
-							token("ring"),
-							styleVar("pilo-field-shadow"),
-						)}
-					>
-						<Text
-							class={classNames(
-								"flex-1 font-sans",
-								!title() && "text-input-placeholder",
-							)}
-						>
-							{() => title() ?? props.placeholder ?? ""}
-						</Text>
-						<Icon name="ChevronDown" color={token("input-foreground")} />
-					</View>
+						value={title()}
+						placeholder={props.placeholder}
+					/>
 				)
 			}
 			popupClass={classNames(
@@ -68,14 +63,12 @@ export function Select(props: SelectProps) {
 				},
 				local.popupStyle,
 			]}
-			listClass={classNames(
-				"p-(--pilo-select-padding) gap-(--pilo-select-gap)",
-				local.listClass,
-			)}
+			listClass={classNames("p-(--pilo-select-padding)", local.listClass)}
 			itemClass={classNames(
-				"group flex-row min-h-(--pilo-select-item-height) rounded-(--pilo-select-item-radius) pl-2 pr-8 py-1.5 text-sm font-sans focus:bg-hover focus:text-hover-foreground selected:bg-(--pilo-select-checked-background) disabled:opacity-50",
+				"group flex-row min-w-0 min-h-(--pilo-select-item-height) rounded-(--pilo-select-item-radius) px-2 py-1.5 text-sm font-sans focus:bg-hover focus:text-hover-foreground selected:bg-(--pilo-select-checked-background) disabled:opacity-50",
 				local.itemClass,
 			)}
+			itemStyle={[selectItemSpacing(), local.itemStyle]}
 			groupClass={classNames(
 				"px-2 py-1.5 text-xs font-medium text-muted-foreground",
 				local.groupClass,
@@ -87,8 +80,8 @@ export function Select(props: SelectProps) {
 			renderItem={
 				local.renderItem ??
 				((item) => (
-					<View class="flex-row items-center gap-2 w-full">
-						<Text class="font-sans flex-1">{item.title}</Text>
+					<View class="min-w-0 flex-1 flex-row items-center gap-2">
+						<Text class="font-sans min-w-0 flex-1 truncate">{item.title}</Text>
 						<Icon
 							name="Check"
 							size={14}

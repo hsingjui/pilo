@@ -24,6 +24,12 @@
 - nsh 的弹层内部有自己的滚动容器；在弹层 `popupClass` 或 `popupStyle` 上设 `gap` 不会给选项行留缝。需要隔开相邻高亮背景时，把 `gap` 放在直接承载菜单项的 `View` 上。会话菜单的 `⋯` 和右键入口共用同一组选项，行间距为 4 pt，见 `desktop/app/sidebar-session-row.tsx`。
 - 在原生窗口复核：短标签不应留下空勾选槽，最长标签（含确认态）不应换行或裁切，相邻行高亮不应相接。仅检查类名不能确认实际宽度或间距。
 
+## 下拉选择
+
+- 普通单选用 `desktop/ui/select.tsx`。字体选择需要搜索、自定义名称和预览，保留 `Popover` + `Command`，触发器复用 `desktop/ui/select-trigger.tsx`。
+- `Select` 和 `Command` 的 `listClass` 作用在外层滚动容器，而不是内部虚拟列表的行容器。用 `selectItemSpacing()` 给 `itemStyle` 加行间距；不要在 `listClass` 上加 `gap` 来隔开高亮背景。
+- 普通 `Select` 的原生弹层跟随触发器宽度，默认从下方展开，空间不足时可向上翻转，不覆盖触发器。字体弹层通过 `onLayout` 读取触发器宽度。先约束触发器宽度，给箭头或勾选标记留空间，长标签采用单行截断。
+
 ## Fixture 模式
 
 `desktop/tests/ui-button-fixture.tsx` 独立 mount 使用组件的应用，`desktop/tests/ui-button.test.tsx` 用 nsh/test 打开它并操作。新增组件沿用这一 fixture + test 模式；验证目标与测试交付节奏见[质量与验证](./quality-guidelines.md)。
