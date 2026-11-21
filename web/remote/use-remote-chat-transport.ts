@@ -30,6 +30,7 @@ import type { PiloClientEventMessage } from "@shared/api/pilo-client";
 import { runtimeErrorMessage } from "@/lib/api/pi-runtime";
 import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime";
 import type { PiExtensionDialogRequest } from "@/components/chat/pi-extension-dialog-request";
+import { isStreamStalled, type RemoteChatQueue } from "./remote-chat-queue";
 import { REMOTE_SEQUENCE_KEY } from "./remote-client";
 import {
 	isRpcResponse,
@@ -45,18 +46,6 @@ type PendingRpc = {
 	timer: number;
 };
 
-export type QueuedSubmission = {
-	submission: ChatSubmission;
-	queueKind: "steer" | "follow_up";
-};
-
-/** Unacknowledged user input of a session the user left; `null` marks a prompt. */
-export type ParkedQueuedSubmission = {
-	clientMessageId: string;
-	submission: ChatSubmission | null;
-};
-
-const STREAM_STALLED_PREFIX = "PILO_STREAM_STALLED:";
 // Replay dedupe uses the in-memory sequence; storage only seeds a new page.
 const SEQUENCE_PERSIST_INTERVAL_MS = 1_000;
 
@@ -90,10 +79,7 @@ type UseRemoteChatTransportOptions = {
 	>;
 	activeSessionKeyRef: MutableRefObject<string | null>;
 	projectMcpApprovalRequestedRef: MutableRefObject<Set<string>>;
-	queuedSubmissionsRef: MutableRefObject<Map<string, QueuedSubmission>>;
-	parkedQueuedSubmissionsRef: MutableRefObject<
-		Map<string, ParkedQueuedSubmission[]>
-	>;
+	queue: RemoteChatQueue;
 	recoverSubmissionsRef: MutableRefObject<
 		| ((sessionKey: string, submissions: readonly ChatSubmission[]) => void)
 		| null
@@ -118,8 +104,7 @@ export function useRemoteChatTransport({
 	handleExtensionRequestRef,
 	activeSessionKeyRef,
 	projectMcpApprovalRequestedRef,
-	queuedSubmissionsRef,
-	parkedQueuedSubmissionsRef,
+	queue,
 	recoverSubmissionsRef,
 	setCompacting,
 	setRetryState,
@@ -206,30 +191,18 @@ export function useRemoteChatTransport({
 							break;
 					}
 					if (action.type === "user_message_start") {
-						const pending = next.pendingUsers[0];
-						if (pending?.queueKind) {
-							queuedSubmissionsRef.current.delete(pending.clientMessageId);
-						}
+						queue.acknowledgeActive(next.pendingUsers[0]);
 					}
 					batch.push(action);
 					if (action.type === "assistant_turn_end") {
 						flush();
-						if (!action.errorMessage?.startsWith(STREAM_STALLED_PREFIX)) {
-							continue;
-						}
-						// Pi's queue has been cleared. Only restore submissions that
-						// have not already been acknowledged by a user-message echo.
-						for (const pending of next.pendingUsers) {
-							if (!pending.queueKind) continue;
-							const id = pending.clientMessageId;
-							const queued = queuedSubmissionsRef.current.get(id);
-							if (!queued) continue;
-							queuedSubmissionsRef.current.delete(id);
-							recovered.push(queued.submission);
-							batch.push({
-								type: "local_user_queue_failed",
-								clientMessageId: id,
-							});
+						if (!isStreamStalled(action.errorMessage)) continue;
+						for (const {
+							clientMessageId,
+							submission,
+						} of queue.takeStalledActive(next.pendingUsers)) {
+							recovered.push(submission);
+							batch.push({ type: "local_user_queue_failed", clientMessageId });
 						}
 						flush();
 					}
@@ -241,7 +214,7 @@ export function useRemoteChatTransport({
 				recoverSubmissionsRef.current?.(sessionKey, recovered);
 			}
 		},
-		[queuedSubmissionsRef, recoverSubmissionsRef, setConversation],
+		[queue, recoverSubmissionsRef, setConversation],
 	);
 
 	/** Removes buffered streaming output; output from another session is dropped. */
@@ -424,31 +397,9 @@ export function useRemoteChatTransport({
 						continue;
 					}
 				}
-				const parked = event.sessionKey
-					? parkedQueuedSubmissionsRef.current.get(event.sessionKey)
-					: undefined;
-				if (event.sessionKey && parked) {
-					// Echoes consume unacknowledged user messages in send order.
-					if (event.type === "user_message_start") parked.shift();
-					const settled =
-						event.type === "assistant_message_end" ||
-						(event.type === "process_state" &&
-							(event.state === "stopped" || event.state === "failed"));
-					if (settled || !parked.some((item) => item.submission)) {
-						parkedQueuedSubmissionsRef.current.delete(event.sessionKey);
-					}
-					if (
-						event.type === "assistant_message_end" &&
-						event.errorMessage?.startsWith(STREAM_STALLED_PREFIX)
-					) {
-						// Pi cleared its queue before settling; return parked input to its session.
-						const recovered = parked.flatMap((item) =>
-							item.submission ? [item.submission] : [],
-						);
-						if (recovered.length > 0) {
-							recoverSubmissionsRef.current?.(event.sessionKey, recovered);
-						}
-					}
+				const recovered = queue.handleParkedEvent(event);
+				if (event.sessionKey && recovered?.length) {
+					recoverSubmissionsRef.current?.(event.sessionKey, recovered);
 				}
 				if (event.sessionKey !== activeSessionKeyRef.current) continue;
 				if (event.type === "extension_ui_request") {
@@ -553,7 +504,7 @@ export function useRemoteChatTransport({
 			deferConversationActions,
 			getConversationState,
 			projectMcpApprovalRequestedRef,
-			parkedQueuedSubmissionsRef,
+			queue,
 			recoverSubmissionsRef,
 			handleExtensionRequestRef,
 			handleModelScopeEvent,

@@ -66,11 +66,8 @@ import { useRemoteChatHistory } from "./use-remote-chat-history";
 import { useRemoteChatFork } from "./use-remote-chat-fork";
 import { useRemoteExtensionUi } from "./use-remote-extension-ui";
 import { useRemoteChatSuggestions } from "./use-remote-chat-suggestions";
-import {
-	type ParkedQueuedSubmission,
-	type QueuedSubmission,
-	useRemoteChatTransport,
-} from "./use-remote-chat-transport";
+import { RemoteChatQueue } from "./remote-chat-queue";
+import { useRemoteChatTransport } from "./use-remote-chat-transport";
 import type { WebPiloClient } from "./web-pilo-client";
 
 type UseRemoteChatOptions = {
@@ -217,33 +214,13 @@ export function useRemoteChat({
 			setHistoryCompletionKey((value) => value + 1);
 		}
 	}, []);
-	const queuedSubmissionsRef = useRef(new Map<string, QueuedSubmission>());
-	const parkedQueuedSubmissionsRef = useRef(
-		new Map<string, ParkedQueuedSubmission[]>(),
-	);
+	const [queue] = useState(() => new RemoteChatQueue());
 	const parkQueuedSubmissions = useCallback(() => {
-		const queued = queuedSubmissionsRef.current;
-		const targetSessionKey = activeSessionKeyRef.current;
-		if (targetSessionKey && queued.size > 0) {
-			// Keep every unacknowledged user message in order so background echoes
-			// consume the right entry; a stalled turn can then restore the rest.
-			const parked = (
-				conversationStore.getSnapshot() ?? initialConversation
-			).pendingUsers.map((pending) => ({
-				clientMessageId: pending.clientMessageId,
-				submission: pending.queueKind
-					? (queued.get(pending.clientMessageId)?.submission ?? null)
-					: null,
-			}));
-			if (parked.some((item) => item.submission)) {
-				parkedQueuedSubmissionsRef.current.set(targetSessionKey, [
-					...(parkedQueuedSubmissionsRef.current.get(targetSessionKey) ?? []),
-					...parked,
-				]);
-			}
-		}
-		queued.clear();
-	}, [conversationStore, initialConversation]);
+		queue.park(
+			activeSessionKeyRef.current,
+			(conversationStore.getSnapshot() ?? initialConversation).pendingUsers,
+		);
+	}, [conversationStore, initialConversation, queue]);
 	const recoverSubmissionsRef = useRef<
 		| ((sessionKey: string, submissions: readonly ChatSubmission[]) => void)
 		| null
@@ -364,8 +341,7 @@ export function useRemoteChat({
 		handleExtensionRequestRef,
 		activeSessionKeyRef,
 		projectMcpApprovalRequestedRef,
-		queuedSubmissionsRef,
-		parkedQueuedSubmissionsRef,
+		queue,
 		recoverSubmissionsRef,
 		setCompacting,
 		setRetryState,
@@ -1006,8 +982,7 @@ export function useRemoteChat({
 		hasIdentifiedSession,
 		pendingProjectMcpPromptsRef,
 		projectMcpApprovalRequestedRef,
-		queuedSubmissionsRef,
-		parkedQueuedSubmissionsRef,
+		queue,
 		ensureDraftRuntime,
 		tryHandleComposerCommand,
 		requestAutoTitle,
