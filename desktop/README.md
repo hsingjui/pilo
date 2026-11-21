@@ -300,6 +300,10 @@ to a 2-unit stroke and round caps/joins. The source data is covered by
 
 ## Custom themes
 
+The nsh settings only offer the built-in themes (Lody, Claude); they no longer
+create, edit or delete custom themes. A custom theme already saved on the Host
+(for example from the Tauri app) still renders as described below.
+
 A custom theme is a token table shared by the desktop and the WebUI, checked by
 `src/lib/theme-tokens.ts` before it is applied:
 

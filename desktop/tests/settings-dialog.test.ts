@@ -71,7 +71,7 @@ test("the nav moves between panes", async () => {
 	expect(app.shows("text:New line")).toBe(true);
 	await app.press("id:settings-nav-appearance");
 	await app.waitFor("id:settings-theme-mode");
-	expect(app.shows("id:settings-theme-token-search")).toBe(true);
+	expect(app.shows("id:settings-theme-token-search")).toBe(false);
 	await app.press("id:settings-nav-fonts");
 	await app.waitFor("id:settings-code-font");
 	await app.press("id:settings-fonts-reset");

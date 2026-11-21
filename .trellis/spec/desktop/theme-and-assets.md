@@ -24,7 +24,7 @@ pnpm desktop:generate:icons --check
 
 切换族时成对调用 `setTheme({ cssVars: theme.cssVars })` 和 `setStyleTheme(theme.styleVars)`；恢复默认 Lody 时两者均传 null。亮暗取对应 appearance 的值。参考 `desktop/tests/ui-gallery-fixture.tsx`，不要只换颜色漏掉阴影。
 
-生成器解析绝对长度计算；源主题没有通用 radius，组件使用命名 Pilo radius token。自定义主题使用 `src/lib/theme-tokens.ts` 的 catalog、`validateCustomThemeTokens`、`resolveCustomTheme` 共用纯逻辑，不接受任意 CSS 选择器；格式为 theme/light/dark token 表，校验失败不应用。详细类型与限制见 `desktop/README.md`，原生解析回归见 `desktop/tests/custom-theme.test.ts`。
+生成器解析绝对长度计算；源主题没有通用 radius，组件使用命名 Pilo radius token。自定义主题使用 `src/lib/theme-tokens.ts` 的 catalog、`validateCustomThemeTokens`、`resolveCustomTheme` 共用纯逻辑，不接受任意 CSS 选择器；格式为 theme/light/dark token 表，校验失败不应用。详细类型与限制见 `desktop/README.md`，原生解析回归见 `desktop/tests/custom-theme.test.ts`。nsh 设置页（`desktop/settings/theme-pane.tsx`）只提供明暗模式和内置主题（Lody/Claude），不再提供新建、编辑、删除自定义主题的入口；Host 上已保存的自定义主题仍由 `desktop/app/appearance.ts` 渲染。
 
 ## 图标
 
