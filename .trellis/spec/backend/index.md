@@ -6,7 +6,7 @@
 
 ## Overview
 
-This directory contains guidelines for backend development in this project (Tauri desktop app + `pilo-protocol` / `pilo-server` crates).
+This directory contains guidelines for backend development in this project (`pilo-runtime`, `pilo-domain`, `pilo-protocol`, and `pilo-server`; see the [desktop specs](../desktop/index.md) for the nsh shell).
 
 ---
 
@@ -25,7 +25,7 @@ This directory contains guidelines for backend development in this project (Taur
 | [Agent Control](./agent-control.md) | Built-in CLI control, session capabilities, shared Host preferences | Filled |
 | [Error Handling](./error-handling.md)           | `Result<T, String>` boundary, error text contract | Filled |
 | [Quality Guidelines](./quality-guidelines.md)   | Code standards, forbidden patterns                | Filled |
-| [Logging Guidelines](./logging-guidelines.md)   | `eprintln!` diagnostics, log levels               | Filled |
+| [Logging Guidelines](./logging-guidelines.md)   | Runtime diagnostic targets and redaction               | Filled |
 | [Remote WebUI & Event Hub](./remote-webui.md)   | Remote HTTP/WS adapter, auth, event replay        | Filled |
 | [Desktop Startup & Tray](./desktop-lifecycle.md) | Login startup, native tray, Dock/taskbar visibility, exit | Filled |
 | [Runtime Resource Lifecycle](./runtime-lifecycle.md) | Idle Pi retention, byte-bounded queues, graceful server cleanup | Filled |

@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/hsingjui/pilo/actions/workflows/ci.yml"><img src="https://github.com/hsingjui/pilo/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
-  <img src="https://img.shields.io/badge/Desktop-Windows%20x64%20%7C%20macOS%20arm64-4B5563?style=flat-square" alt="Desktop releases: Windows x64 and macOS arm64">
+  <img src="https://img.shields.io/badge/Desktop-macOS%20development-4B5563?style=flat-square" alt="Desktop development: macOS">
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2024-3776AB?style=flat-square" alt="Rust 2024 edition"></a>
   <a href="https://github.com/longbridge/nsh"><img src="https://img.shields.io/badge/nsh-0.6-3776AB?style=flat-square" alt="nsh 0.6"></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-3776AB?style=flat-square" alt="React 19"></a>
@@ -29,7 +29,6 @@ Pilo is a desktop client for [Pi Coding Agent](https://pi.dev/), not a separate 
 | Pi stays the source of truth                      | Sessions are read from Pi JSONL files; SQLite only stores rebuildable indexes, caches, and desktop state.                                            |
 | Chat, tools, terminals, files, and diffs together | Pilo renders Pi thinking and tool calls alongside PTY terminals, file operations, preview ports, and Git status/diffs.                               |
 | Parallel agents                                   | Multiple agent streams can run for a project and can be listed, messaged, or stopped independently.                                                  |
-| Native desktop updates                            | Release builds produce updater artifacts for Windows x64 and macOS arm64, and Pilo can check for updates from GitHub Releases.                       |
 
 ## Architecture
 
@@ -80,9 +79,7 @@ The dev build defaults to one Cargo job and no debug symbols to reduce WSL memor
 
 Development binaries stay in Cargo’s standard output directory, for example `target/x86_64-unknown-linux-gnu/debug/pilo-server`, without a second staging copy. Release resources in `resources/` remain unchanged. On startup/connection, Pilo deploys the matching server into its dev runtime directory; the server writes its embedded plugins into `extensions/`. Rebuild after plugin changes and restart Pilo/Pi to load them. Runtime/extension caches use `pilo-dev/server` instead of `pilo/server` (WSL/SSH: `~/.cache/pilo-dev/server`). Pi settings and session files remain shared.
 
-Release packaging stages the complete runtime set automatically. To stage a release runtime manually, use `pnpm server:build:win` on Windows or `bash scripts/build-pilo-server.sh` on macOS/Linux.
-
-The nsh desktop release pipeline is not set up yet.
+The nsh desktop release pipeline and update feed are not set up yet. The separate server-runtime workflow builds the four bundled server targets. To stage a runtime manually, use `pnpm server:build:win` on Windows or `bash scripts/build-pilo-server.sh` on macOS/Linux.
 
 Supported server runtime targets are Linux x64/arm64, Windows x64/arm64, and macOS x64/arm64. An explicit runtime can be built with:
 
@@ -102,12 +99,11 @@ For WSL or SSH, Pilo probes the target platform and deploys the matching `pilo-s
 
 ## Custom themes
 
-Choose **Lody**, **Claude**, or a saved CSS theme in **Settings → Appearance**.
-To create a theme, enter a name and CSS in **Custom CSS**, then choose
-**Save and apply**. Connected WebUI clients follow the desktop Host theme.
-
-See the [theme customization guide](docs/THEMES.md) for a starter theme,
-light/dark overrides, supported tokens, and recovery tips.
+The desktop appearance settings offer **Lody** and **Claude**. To create or
+edit a custom theme, open the theme settings in the connected WebUI. Both
+clients use the active theme saved on the Host. See the [theme customization guide](docs/THEMES.md)
+for examples and supported tokens, and the [desktop theme notes](desktop/README.md#custom-themes)
+for native styling limitations.
 
 ## Images in replies
 
@@ -142,20 +138,20 @@ macOS needs Xcode Command Line Tools. Each checkout needs its own hook installat
 including separate Windows and WSL checkouts. Checks target the current host;
 a WSL pass does not validate Windows or macOS code.
 
-| Command                                                                | Purpose                                                           |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `pnpm check`                                                           | Run oxfmt format checks and oxlint                                |
-| `pnpm format`                                                          | Format the frontend with oxfmt                                    |
-| `pnpm build`                                                           | Type-check and build the frontend                                 |
-| `pnpm test`                                                            | Run Node unit and integration tests                               |
-| `pnpm test:unit`                                                       | Run focused unit and static-rendering tests                       |
-| `pnpm test:integration`                                                | Run CLI/process and Pi extension integration tests (Linux/WSL)    |
-| `cargo fmt --all --check`                                              | Check Rust formatting                                             |
-| `cargo check --workspace --all-targets --all-features`                 | Check the Rust workspace                                          |
-| `cargo test --workspace --all-features`                                | Run Rust workspace tests                                          |
-| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Run Rust lints                                                    |
-| `pnpm server:verify`                                                   | Verify the complete six-target `pilo-server` release resource set |
-| `cd desktop && nsh check` / `nsh test`                                 | Check / test the nsh desktop app and its Rust crate               |
+| Command                                                                | Purpose                                                        |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `pnpm check`                                                           | Run oxfmt format checks and oxlint                             |
+| `pnpm format`                                                          | Format the frontend with oxfmt                                 |
+| `pnpm build`                                                           | Type-check and build the frontend                              |
+| `pnpm test`                                                            | Run Node unit and integration tests                            |
+| `pnpm test:unit`                                                       | Run focused unit and static-rendering tests                    |
+| `pnpm test:integration`                                                | Run CLI/process and Pi extension integration tests (Linux/WSL) |
+| `cargo fmt --all --check`                                              | Check Rust formatting                                          |
+| `cargo check --workspace --all-targets --all-features`                 | Check the Rust workspace                                       |
+| `cargo test --workspace --all-features`                                | Run Rust workspace tests                                       |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Run Rust lints                                                 |
+| `pnpm server:verify`                                                   | Verify the four bundled `pilo-server` release resources        |
+| `cd desktop && nsh check` / `nsh test`                                 | Check / test the nsh desktop app and its Rust crate            |
 
 Test layout, single-file commands and browser regression pages are documented
 in [tests/README.md](tests/README.md). `pnpm test` does not include browser,

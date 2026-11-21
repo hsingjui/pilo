@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/hsingjui/pilo/actions/workflows/ci.yml"><img src="https://github.com/hsingjui/pilo/actions/workflows/ci.yml/badge.svg" alt="CI 状态"></a>
-  <img src="https://img.shields.io/badge/Desktop-Windows%20x64%20%7C%20macOS%20arm64-4B5563?style=flat-square" alt="桌面发行平台：Windows x64 与 macOS arm64">
+  <img src="https://img.shields.io/badge/Desktop-macOS%20development-4B5563?style=flat-square" alt="桌面开发平台：macOS">
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2024-3776AB?style=flat-square" alt="Rust 2024 edition"></a>
   <a href="https://github.com/longbridge/nsh"><img src="https://img.shields.io/badge/nsh-0.6-3776AB?style=flat-square" alt="nsh 0.6"></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-3776AB?style=flat-square" alt="React 19"></a>
@@ -22,14 +22,13 @@ Pilo 是 [Pi Coding Agent](https://pi.dev/) 的桌面客户端，不重新实现
 
 ## 核心能力
 
-| 能力                               | 为什么重要                                                                                            |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Local、WSL、SSH 统一工作区         | 项目保留在原本的环境中；Pilo 会在所选环境中运行 `pilo-server`，不需要先把远程项目复制到桌面端。       |
-| Pi 运行在代码所在环境              | 服务端以项目目录为工作目录启动 `pi --mode rpc`，Local、WSL 与 SSH 使用一致的交互方式。                |
-| Pi 保持事实来源                    | Session 直接读取 Pi 的 JSONL 文件；SQLite 只保存可重建的索引、缓存和桌面状态。                        |
-| Chat、工具、终端、文件与 Diff 同窗 | Pilo 展示 Pi 的思考与工具调用，并整合 PTY 终端、文件操作、预览端口以及 Git 状态/Diff。                |
-| 并行 Agent                         | 同一项目可以运行多个 Agent 流，并分别列出、发送消息或停止。                                           |
-| 原生桌面更新                       | Release 构建会为 Windows x64 与 macOS arm64 生成 updater 产物，Pilo 可以从 GitHub Releases 检查更新。 |
+| 能力                               | 为什么重要                                                                                      |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Local、WSL、SSH 统一工作区         | 项目保留在原本的环境中；Pilo 会在所选环境中运行 `pilo-server`，不需要先把远程项目复制到桌面端。 |
+| Pi 运行在代码所在环境              | 服务端以项目目录为工作目录启动 `pi --mode rpc`，Local、WSL 与 SSH 使用一致的交互方式。          |
+| Pi 保持事实来源                    | Session 直接读取 Pi 的 JSONL 文件；SQLite 只保存可重建的索引、缓存和桌面状态。                  |
+| Chat、工具、终端、文件与 Diff 同窗 | Pilo 展示 Pi 的思考与工具调用，并整合 PTY 终端、文件操作、预览端口以及 Git 状态/Diff。          |
+| 并行 Agent                         | 同一项目可以运行多个 Agent 流，并分别列出、发送消息或停止。                                     |
 
 ## 架构
 
@@ -80,9 +79,7 @@ dev 构建默认使用一个 Cargo job，并关闭调试符号，降低 WSL 内�
 
 开发二进制直接使用 Cargo 标准输出目录，例如 `target/x86_64-unknown-linux-gnu/debug/pilo-server`，不再额外复制一份；`resources/` 中的正式资源保持不变。启动或连接时，Pilo 将匹配的 server 部署到 dev 运行目录，server 自动将内嵌插件释放到 `extensions/`。修改插件后重新构建并重启 Pilo/Pi 即可加载。运行时和插件缓存使用 `pilo-dev/server`，而非正式版的 `pilo/server`（WSL/SSH 为 `~/.cache/pilo-dev/server`）；Pi 设置和会话文件仍然共享。
 
-Release 打包流程仍自动准备完整运行时集合。手动准备正式资源时，Windows 使用 `pnpm server:build:win`，macOS/Linux 使用 `bash scripts/build-pilo-server.sh`。
-
-nsh 桌面端的发版流程尚未建立。
+nsh 桌面端的发版流程和更新源尚未建立。独立的 server 运行时流水线构建四个随包分发的目标。手动准备正式资源时，Windows 使用 `pnpm server:build:win`，macOS/Linux 使用 `bash scripts/build-pilo-server.sh`。
 
 支持的服务端运行时目标为 Linux x64/arm64、Windows x64/arm64 和 macOS x64/arm64。也可以显式构建指定目标：
 
@@ -102,11 +99,8 @@ bash scripts/build-pilo-server.sh <target>
 
 ## 自定义主题
 
-在 **设置 → 外观** 中选择 **Lody**、**Claude** 或已保存的 CSS 主题。
-创建主题时，在 **自定义 CSS** 中填写名称和 CSS，点击 **保存并应用**。
-已连接的 WebUI 会跟随桌面 Host 的主题。
-
-入门示例、明暗模式覆盖、可用令牌及恢复方法见[主题编写指南](docs/THEMES.md)（英文）。
+桌面端外观设置提供 **Lody** 和 **Claude**。要创建或编辑自定义主题，请打开已连接 WebUI 的主题设置。
+两端都使用 Host 保存的当前主题。入门示例及可用令牌见[主题编写指南](docs/THEMES.md)，桌面样式限制见[桌面主题说明](desktop/README.md#custom-themes)（均为英文）。
 
 ## 回复中的图片
 
@@ -137,20 +131,20 @@ bash scripts/build-pilo-server.sh <target>
 安装检查组件。macOS 需要 Xcode Command Line Tools。每份仓库均需单独启用钩子，包括 Windows
 和 WSL 的两份仓库。检查针对当前宿主平台，WSL 通过不代表 Windows 或 macOS 通过。
 
-| 命令                                                                   | 用途                                          |
-| ---------------------------------------------------------------------- | --------------------------------------------- |
-| `pnpm check`                                                           | 运行 oxfmt 格式检查和 oxlint                  |
-| `pnpm format`                                                          | 使用 oxfmt 格式化前端代码                     |
-| `pnpm build`                                                           | TypeScript 类型检查并构建前端                 |
-| `pnpm test`                                                            | 运行 Node 单元测试和集成测试                  |
-| `pnpm test:unit`                                                       | 运行单元测试和静态渲染测试                    |
-| `pnpm test:integration`                                                | 运行 CLI/进程及 Pi 扩展集成测试（Linux/WSL）  |
-| `cargo fmt --all --check`                                              | Rust 格式检查                                 |
-| `cargo check --workspace --all-targets --all-features`                 | Rust workspace 检查                           |
-| `cargo test --workspace --all-features`                                | Rust workspace 测试                           |
-| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Rust lint                                     |
-| `pnpm server:verify`                                                   | 校验发布所需的完整六平台 `pilo-server` 资源集 |
-| `cd desktop && nsh check` / `nsh test`                                 | 检查 / 测试 nsh 桌面应用及其 Rust crate       |
+| 命令                                                                   | 用途                                         |
+| ---------------------------------------------------------------------- | -------------------------------------------- |
+| `pnpm check`                                                           | 运行 oxfmt 格式检查和 oxlint                 |
+| `pnpm format`                                                          | 使用 oxfmt 格式化前端代码                    |
+| `pnpm build`                                                           | TypeScript 类型检查并构建前端                |
+| `pnpm test`                                                            | 运行 Node 单元测试和集成测试                 |
+| `pnpm test:unit`                                                       | 运行单元测试和静态渲染测试                   |
+| `pnpm test:integration`                                                | 运行 CLI/进程及 Pi 扩展集成测试（Linux/WSL） |
+| `cargo fmt --all --check`                                              | Rust 格式检查                                |
+| `cargo check --workspace --all-targets --all-features`                 | Rust workspace 检查                          |
+| `cargo test --workspace --all-features`                                | Rust workspace 测试                          |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Rust lint                                    |
+| `pnpm server:verify`                                                   | 校验随包分发的四个 `pilo-server` 发布资源    |
+| `cd desktop && nsh check` / `nsh test`                                 | 检查 / 测试 nsh 桌面应用及其 Rust crate      |
 
 测试目录、单文件运行命令及浏览器回归页面见 [tests/README.md](tests/README.md)。
 `pnpm test` 不包含浏览器、桌面端或 Rust 测试。

@@ -9,13 +9,10 @@
 ## Overview
 
 - Engine: `rusqlite` (bundled SQLite), no ORM, no query builder.
-- DB file: `pilo.sqlite3` in the host data directory. The Tauri shell resolves
-  `app_data_dir()` and the resource directory once during setup and manages
-  `HostPaths::new(data_dir, resource_dir)`; runtime path code must not resolve
-  paths through `AppHandle`.
-- Opened through `storage::open(&paths)` (or `open_with_paths(&paths)`) in
-  `crates/pilo-runtime/src/storage/schema.rs`. The shell computes the data
-  directory and passes it in `HostPaths` (`desktop/src/pilo/mod.rs`, `Pilo::new`).
+- DB file: `pilo.sqlite3` in the host data directory. `Pilo::new` in
+  `desktop/src/pilo/mod.rs` supplies `HostPaths::new(data_dir, resource_dir)`.
+  `storage::open(&paths)` in `crates/pilo-runtime/src/storage/schema.rs` opens
+  the index; runtime storage code does not resolve desktop-specific paths.
 - Debug desktop builds use the `app.hsingjui.pilo.dev` data directory; release
   builds use `app.hsingjui.pilo` (`data_identifier` in `desktop/src/pilo/shell.rs`).
   Keep their app data and logs separate: a development schema migration can
@@ -132,9 +129,9 @@ colliding paths across projects, scoped delete/rename, ambiguous legacy IPC,
 and desktop/WebUI selection and unread isolation. Migration cannot reconstruct
 rows or preferences already overwritten by the old global path key.
 
-Installed and development builds share `app_data_dir()` when their Tauri
-identifier is the same. After the scoped-key migration, an older binary still
-using `ON CONFLICT(session_path)` fails with `ON CONFLICT clause does not match
+Any two builds pointed at the same Host data directory share the index. After
+the scoped-key migration, an older binary still using `ON CONFLICT(session_path)`
+fails with `ON CONFLICT clause does not match
 any PRIMARY KEY or UNIQUE constraint`. Check running executable paths and the
 actual table/index definitions before changing migrations. Do not restore global
 path uniqueness to accommodate an old process; stop using the incompatible build.

@@ -8,8 +8,7 @@
 
 - Function components only. No class components except the root error boundary
   in `web/main.tsx`.
-- Named exports: `export function ChatCopyButton(...)`. `src/App.tsx` uses a
-  default export because `main.tsx` imports it that way.
+- Named exports: `export function ChatCopyButton(...)`.
 - Inline the props type for small components; declare a named `Props`/options
   type when it is reused or large.
 
@@ -489,112 +488,16 @@ actions go there and appear only for persisted sessions (`session && !session.te
   allow copying its live path while rename/open remain hidden. Do not make
   these gates match the copy gate without updating the handlers' data flow.
 
-## Multi-Window (Tauri)
+## Desktop Windows and Updates
 
-- Create additional windows only through `src/lib/api/window.ts`; do not call the
-  Tauri window API directly from components.
-- Any new window label pattern must be declared in the `windows` list of
-  `src-tauri/capabilities/default.json` (e.g. `"session-*"`), and creating a
-  webview window requires the `core:webview:allow-create-webview-window`
-  permission. A capability that only lists `"main"` leaves the new window
-  without permissions.
-- New windows boot stateless: pass state through URL query params and re-resolve
-  it once the project index is ready (see `readSessionWindowTarget` and the boot
-  effect in `src/App.tsx`, which delegates to `workspace.openSearchSession`).
-- In-conversation find uses `findMessageMatches` in `src/lib/chat/chat-message-search.ts`.
-  User body text stays literal, but references follow their rendered labels and
-  order: optional Skill name, file/session chips, then body. Pass the same scoped
-  `byValue` catalog to `findMessageMatches(messages, query, byValue)` as to the
-  renderer. Reuse `readChatMentionDraft` for parsing/deduplication and
-  `fileMentionName` for file labels; hidden directories, serialized `@` markers
-  and resolved session paths are not search hits. Unknown sessions stay literal.
-  Sent `PathMentionBadge` buttons opt into DOM matching with
-  `data-chat-search-reference`; treat each as a text boundary while still omitting
-  other buttons, icons and popover metadata. Indexing raw reference lines while
-  ignoring their chip buttons creates counted hits with no highlight.
-  Assistant Markdown is projected through
-  the same remark/GFM and raw-HTML/sanitize stages used by Streamdown, retaining
-  code contents but excluding link destinations, fence markers and image alt
-  attributes. Cache projections by immutable content object/source, and skip
-  indexing while the finder is closed. Do not use the outline's
-  `messageSearchText`, which strips code fences.
-  Assistant hits carry `contentId` and `contentOccurrenceIndex`: highlight only
-  the matching `data-chat-search-content-id` text section, not the nth hit in
-  the currently mounted message (collapsed work changes that numbering).
-  Model and DOM matching share `searchTextMatches`: literal, case-insensitive,
-  equivalent whitespace. DOM ranges may cross inline/code-token text nodes;
-  omit controls and code headers, and separate block elements consistently.
-  Streamdown's `[data-streamdown="code-block-body"] > pre > code > span`
-  elements are code lines, not inline tokens: insert line boundaries between
-  them. Three lines `high`, `light`, `highlight` must produce only one hit for
-  `highlight`, while adjacent token spans within one line remain continuous.
-  `[Highlight](https://example.com/Highlight) Highlight` has two targets, not
-  three; both targets must have a visible active range.
-- `ChatFindLayer` owns the active session's `mod+f` shortcut. Read selected
-  text before focusing the find input, including native input/textarea ranges
-  but excluding password fields. Normalize whitespace and seed a non-empty
-  selection; without one, preserve the query. Repeated shortcuts while open
-  must also update the query and focus/select the input after rendering.
-  Previous/next actions (including Enter/Shift+Enter) must request navigation
-  even when the match index stays unchanged: with one match, manually scrolling
-  away and pressing either arrow must return to that exact text range.
-- `ChatFindLayer` provides the active match to shared message components. A
-  selected intermediate-text hit temporarily opens its work disclosure and
-  reveals a bounded content window containing the target; leaving the match
-  restores manual expansion state. Forward/backward reveal budgets are separate:
-  extending one side must not remove already rendered content or load the other
-  side. Anchor the target text when extending a search window, including late
-  row measurements; ordinary non-search reveal must not stop bottom-following.
-  Manual collapse takes precedence over automatic opening for the current hit;
-  a different hit resets that override. Toggle the effective open state, not
-  the underlying manual state. Thinking/tool details are not indexed and
-  must not contribute DOM matches. `jumpToMessageIndex` mounts the target row,
-  then the finder aligns the exact text range; message-top corrections must not
-  override that alignment. Observe DOM text/child changes while finding so
-  expansion and async Markdown rendering refresh highlights. Verify a message
-  with two intermediate hits and two final hits: four ordered targets, correct
-  active highlight, automatic work reveal and restored folding on close.
-- CSS Custom Highlight uses the global `Highlight` constructor with
-  `CSS.highlights`, never `CSS.Highlight`. Prefer the DOM library types over
-  assertions that conceal an invalid browser API shape.
+The React WebUI does not create native session windows or call the desktop
+updater. Current desktop window behavior lives in the [nsh app shell](../desktop/app-shell.md).
+Desktop update UI uses `nsh/updater` in `desktop/settings/about-pane.tsx`; the
+release feed is not set up. Keep the WebUI PWA update and explicit refresh flow
+independent (`web/remote/use-remote-pwa.ts`).
 
-## Desktop Updates
-
-- `SidebarFooter` owns one `useDesktopUpdate()` instance and passes it to settings
-  and `UpdateDialog`. Startup calls `checkForUpdates({ openDialog: false })`;
-  manual checks open the dialog when an update exists. Footer clicks only open
-  the dialog, including during downloads; closing it must not cancel the update.
-- `UpdateDialog` raises its overlay to `z-[var(--z-dialog)]`: settings content
-  already uses that layer, above the default overlay layer. Its portal renders
-  after settings, with the update content after its own overlay, so settings is
-  dimmed while the update dialog remains on top. Do not raise only the content
-  or globally change the shared dialog layer to fix this nested case.
-- `useReleaseNotes(version, fallbackNotes, enabled)` reads the matching GitHub
-  Release's `body` from `/releases/tags/v{version}`, not `/releases/latest`.
-  Release notes can be edited after publishing, while `latest.json` currently
-  contains only a short label. Use its notes as a fallback; a notes request
-  failure must not block installation. Render Markdown through `ChatMarkdown`.
-  Clear failed results when the dialog closes so reopening retries; keep successful
-  results cached. A failed response must not trigger a retry loop while open.
-  Strip the trailing `### 下载安装` section (and its preceding separator) appended
-  by the release workflow from both fetched and fallback notes; leave the actual
-  GitHub Release unchanged. If nothing remains, show the existing empty state.
-- Keep the update dialog's header, release-notes toolbar and install footer outside
-  the scroll region. Use a viewport/safe-area-bounded grid with a `minmax(0, 1fr)`
-  notes row; only the notes region scrolls, with `overscroll-contain`.
-  Give the named notes region `tabIndex={0}` and visible keyboard focus so WebKit
-  users can scroll even when the Markdown contains no links or controls.
-  Do not wrap the Markdown in another bordered card.
-- `installUpdate()` in the error state rechecks for updates before another install
-  attempt. The check closes the previous `Update` handle, including installer
-  bytes retained after an installation failure. Do not download again on that
-  same handle: the updater replaces its bytes reference without freeing the old
-  resource. After rechecking succeeds, the user can start installation again.
-- Download percentages come from updater byte events. If `contentLength` is
-  absent, show downloaded bytes and indeterminate progress, not a guessed
-  percentage. Use native `progress` and `output` elements.
-- This dialog is desktop-only. Keep WebUI's existing PWA toast and refresh
-  update flow unchanged; do not invoke the native updater from the browser.
+Historical Tauri window, in-conversation find, and updater contracts are in
+`git show 612a477:.trellis/spec/frontend/component-guidelines.md`.
 
 ## Copy
 

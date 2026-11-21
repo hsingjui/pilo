@@ -16,7 +16,7 @@ Apply code-spec depth when a change touches:
 - The transport-neutral `PiloClient` boundary (`shared/api/pilo-client.ts` + adapters).
 
 The Remote adapter is a **transport adapter into the same Host** — it must not own
-session state, and it must not call Tauri-specific types from Application code.
+session state, and the runtime must not depend on desktop shell types.
 
 ---
 
@@ -59,9 +59,8 @@ enum EventBatch {
   nothing. Dropping a stream unsubscribes. No stream holds a strong Runtime
   reference. Runtime drop or shutdown clears pending data, wakes readers with
   `Closed`, and permanently closes existing and subsequent subscriptions.
-- Tauri `runtime_subscribe_events` / `emit_runtime` still deliver unsequenced
-  envelopes through the existing channel. WebUI keeps its independent shared
-  live/replay queues and original gap/replay behavior.
+- Desktop consumes an independent sequenced stream via `Pilo.nextEvents(max)`.
+  WebUI keeps its separate live/replay queues and gap/replay behavior.
 
 ### Chat transcript snapshots (`runtime/transcript.rs`)
 
@@ -77,8 +76,8 @@ JSON fields are camelCase. `live` is tagged by `type`: `{"type":"idle"}`,
 `{"type":"active","events":[...]}`, or `{"type":"truncated"}`. `history`
 uses the existing history DTO, window selection and fingerprint; a missing
 `messageLimit` requests all messages, otherwise the reader's 1–256 limit applies.
-This is a runtime API, not a new Tauri command or Remote HTTP endpoint. Existing
-Tauri and WebUI history paths and channel payloads are unchanged.
+This runtime API is exposed through the native `Pilo` bridge. It does not change
+WebUI's HTTP history path or WebSocket payloads.
 
 Subscribe first and keep the stream while awaiting the snapshot. For the selected
 session/generation, replaying **history + live + matching events strictly above
@@ -266,9 +265,9 @@ with that match. No non-session append/counter event currently needs conversion.
 | `RuntimeLog` | C |
 | `RuntimeError` | C |
 
-### Tauri commands (desktop transport)
+### Host operations (desktop transport)
 
-Parsed in `runtime/commands/remote.rs`; registered in `lib.rs`:
+`desktop/src/pilo/mod.rs` exposes these operations through `app/native`:
 
 ```rust
 remote_host_state()                       -> RemoteHostState
@@ -290,32 +289,18 @@ remote_device_rename(deviceId: String, name: String) -> RemoteHostState
 `pairingUrl?`, `pairingExpiresAtMs?`, `pairingRemainingUses`, `pairingTotalUses`,
 `lastError?`, `devices[]`. Desktop alone receives the active pairing URL.
 
-### Desktop runtime subscriptions (`runtime/commands/runtime.rs`)
+### Desktop runtime subscriptions
 
-- `runtime_subscribe_events(window: WebviewWindow, runtime: State<Runtime>, channel)`:
-  Tauri injects the calling window; the frontend still sends only `{ channel }`.
-- `RuntimeEventBus::subscribe(window_label, channel_id, Arc<dyn HostEvents>)` replaces that window's
-  subscription, not other windows. `unsubscribe(window_label)` runs on
-  `WindowEvent::Destroyed`, not a cancellable close request.
-- Desktop commands and WebUI handlers share the cheap, Arc-backed `Runtime` handle. It owns
-  HostPaths, HostEvents, the event bus, core runtime managers and the remote server manager.
-  The desktop setup builds it once; commands unpack arguments and delegate to same-name runtime
-  functions. WebUI request/WebSocket state holds a clone rather than fetching managed state.
-  Compatibility Tauri states remain aliases of those managers for the deferred A4 control,
-  reconcile and binary-response adapters; WebAssets resolution still lives on the Tauri side.
-- `HostEvents: Send + Sync` exposes `emit(name, serde_json::Value) -> Result<(), String>`.
-  Its typed `emit_runtime(RuntimeEventEnvelope)` hook defaults to the internal
-  `pilo://runtime` name. The Tauri shell overrides this hook to send the original
-  typed envelope through its IPC Channel, without a JSON round-trip or a new
-  application-wide event. Channel IDs remain diagnostic metadata.
-- Named events (`pilo://sessions`, `pilo://terminal`, `pilo://parallel-agent`,
-  `pilo://notification-open-session`) retain their existing payloads. Their Tauri
-  adapter lives in `desktop_events.rs`; runtime code serializes through
-  `HostEvents`, never `AppHandle::emit`.
-- Delivery failure must not prevent other subscribers or WebUI replay from
-  receiving the event. Empty payload fields remain intact; serialization errors
-  must return before delivery. Recording-host tests cover these cases, per-window
-  replacement/unsubscribe, and watcher delivery failure/recovery.
+- `Pilo` subscribes to the Host before taking the first bootstrap snapshot.
+  `NshPiloClient` polls `nextEvents(max)` with one call in flight and retains the
+  stream through re-bootstrap after a gap. Follow the recovery contract in
+  [the desktop bridge README](../../../desktop/README.md).
+- Desktop and WebUI share the Arc-backed `Runtime`. The shell sets up
+  `HostPaths`, `HostEvents` and `WebAssets`; WebUI request state holds a clone.
+  Desktop runtime delivery uses `EventStream` only. Background index completion
+  and failure use the sequenced `SessionsIndexed` and `SessionIndexError` events
+  for both clients. `HostEvents` remains a separate port for shell-specific
+  capabilities such as terminals and session watchers; nsh's `ShellEvents` is a no-op.
 
 ### HTTP routes (`runtime/remote/api/mod.rs`)
 
@@ -351,8 +336,8 @@ GET  /api/v1/events          -> WebSocket upgrade
 ```
 
 `fallback` serves Mobile WebUI files through the injected `WebAssets` trait.
-The Tauri shell adapter delegates to its asset resolver; headless hosts can
-provide files without linking Tauri. Missing assets retain the existing 404,
+The nsh `ShellWebAssets` adapter serves from its configured WebUI root;
+headless hosts can inject their own asset resolver. Missing assets retain the existing 404,
 SPA fallback, content-type and cache-control behavior. Tests serve an in-memory
 index file through the same response path.
 
@@ -521,7 +506,10 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   token instead of discarding a newer authorization. Effect cancellation alone
   cannot prevent a late response from deleting credentials.
 - **RPC allowlist**: only chat-mutating/querying commands are forwarded (see
-  `ALLOWED` in `api.rs`). No generic command proxy; Terminal/Files/Git are not exposed.
+  `remote/api/validation.rs`). HTTP validates the command before calling the same
+  `runtime_api::chat_session_send_rpc` operation as the desktop bridge. Chat stop and
+  state use the corresponding Runtime operations too; HTTP owns status/JSON mapping.
+  No generic command proxy; Terminal/Files/Git are not exposed.
 - **Files surfaces**: `GET /api/v1/files/search` forwards host `fs.search` and
   returns paths only. `/files/image` is the image-only exception for Markdown
   replies (see below); generic reads, writes, and directory listing stay private.
@@ -555,19 +543,14 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   finds the token revoked/expired. The signal is therefore **lossy on the socket
   path**: `remote-app.tsx` re-probes `bootstrap` on every socket disconnect so the
   `401 → REMOTE_AUTH_EXPIRED → clear token → pairing screen` chain still runs.
-- **Desktop windows**: keep one Tauri channel per window label. Broadcast each
-  runtime event (including completion and RPC replies) to every registered window.
-  Reload replaces only the caller's channel; destroying a window removes only its
-  subscription. Send outside the registry lock; failure for one window must not
-  prevent delivery to others. Desktop RPC IDs use `pilo-<randomId()>`, not a
-  timestamp plus a window-local counter: concurrent windows sharing a session
-  must not resolve each other's pending requests. Preserve the `pilo-` prefix
-  used for caller-correlated error handling. Web broadcast/replay remains independent.
+- **Desktop delivery**: Desktop and WebUI consume independent queues. Preserve
+  caller-correlated RPC IDs (`pilo-<randomId()>`), not timestamps with a local
+  counter that can collide across clients.
 - **Backpressure**: Web subscribers share a 512-event / 64 MiB serialized-payload
   ring, with independent sequence cursors and payload-free watch notifications.
   A lagging subscriber receives `Lagged` and is told to `resyncRequired` instead
   of blocking the runtime. Events exceeding the live byte limit also create a
-  gap. Desktop Tauri channels remain independent and unaffected. See
+  gap. Desktop event readers remain independent. See
   [Runtime Resource Lifecycle](./runtime-lifecycle.md) for replay/stream limits.
 - **Browser recovery**: Remote Browser owns `online/offline` and foreground
   lifecycle recovery. `navigator.onLine` is advisory only: an already-live
@@ -613,7 +596,7 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   activity-only events refresh bootstrap without scanning all projects. Verify
   that a desktop-created background chat appears in WebUI without manual refresh.
 - **PWA cache boundary**: the Service Worker is progressive enhancement for
-  production Remote Browser on a secure context only. Tauri never registers it.
+  production Remote Browser on a secure context only.
   It may precache the minimal built App Shell, but `/api/v1/**` is always
   network-only and navigation fallback always uses the canonical cached
   `index.html` (never the requested pairing URL). Web updates require explicit
@@ -830,13 +813,6 @@ if sequence > 0
 // Evict at least two events (CAPACITY + 2 sends) before asserting a gap for seq 1.
 ```
 
-```rust
-// Tauri commands expose their arguments flat; many-arg commands are expected.
-#[tauri::command]
-#[allow(clippy::too_many_arguments)] // flat IPC argument surface
-pub async fn chat_session_start(/* … 8 params … */) { … }
-```
-
 ---
 
 LAN discovery: wrong — enumerate interfaces in every `remote_host_state` poll
@@ -871,17 +847,13 @@ Do not return a receipt based on only the reusable secret + address ID.
 - **Manager owns the listener.** `RemoteServerManager` is the single place that
   starts/stops the listener, persists `enabled`, and restores on app start.
   Remote OFF means the listener does not exist.
-- **EventHub over EventBus.** `RuntimeEventBus` keeps Tauri `Channel` subscribers
-  keyed by window label, plus a byte-bounded Web live ring, cursor receivers,
-  watch notifications and replay deque.
-  Wrong: a single global `Option<Channel>` lets the newest window steal all
-  completion/RPC replies. Correct: replace only the subscribing window's channel
-  and fan out to all windows. Replay/sequence live in the adapter layer, never
-  in the Pi runtime.
-- **Transport-neutral client.** `PiloClient` is implemented by `TauriPiloClient`
-  (invoke/channel) and `WebPiloClient` (fetch/WebSocket); only Remote-MVP features
-  are migrated — generic Files/Terminal/Git stay Tauri-only. Project image reads
-  are shared through `PiloClient.readProjectImage`.
+- **Independent event readers.** `RuntimeEventBus` fans sequenced envelopes out
+  to bounded native readers and the Web live/replay queues. A lagging reader must
+  not block the Host or prevent delivery to other readers.
+- **Transport-neutral client.** `NshPiloClient` calls the native bridge;
+  `WebPiloClient` uses HTTP/WebSocket. Share data contracts in `shared/api/`,
+  while keeping generic native-only file, terminal and Git operations out of the
+  Remote API. Project image reads remain shared through `readProjectImage`.
 
 ## Removed Screen Viewing
 
@@ -1023,9 +995,8 @@ access.
   to the input hook rather than toggling `disabled`: upload completion must not
   invoke its disabled-to-enabled autofocus or move the composer before attachment
   contents themselves change.
-- Set `dragDropEnabled: false` for the main and session windows: Windows HTML5
-  file drops otherwise conflict with Tauri's native handler. Visible composers
-  accept drops only inside their closest `[data-chat-panel]` (including new-chat
+- In the WebUI, visible composers accept drops only inside their closest
+  `[data-chat-panel]` (including new-chat
   landing pages), falling back to the composer itself. Leaving that panel clears
   the hint; sidebars, headers and settings cannot add attachments. Window-level
   handlers still prevent file navigation everywhere and ignore modal/disabled

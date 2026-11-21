@@ -1,8 +1,10 @@
 # Theme customization
 
-Create and manage themes in the desktop app under **Settings → Appearance**.
-Custom themes are named CSS overrides, not Pi themes or JSON files. They change
+Create and manage custom themes from the **Theme** (palette) button in the
+connected WebUI. Custom themes are named sets of token overrides that change
 Pilo's interface without changing Pi's terminal theme or agent behavior.
+The native desktop settings offer only **Lody** and **Claude**, but the desktop
+also renders the active custom theme saved on the Host.
 
 - [Quick start](#quick-start)
 - [Save, switch and recover](#save-switch-and-recover)
@@ -13,82 +15,63 @@ Pilo's interface without changing Pi's terminal theme or agent behavior.
 
 ## Quick start
 
-1. Open **Settings → Appearance** in the desktop app. Choose **Light**, **Dark**
-   or **Follow system** under **Color mode**; this is independent of **Theme style**.
-2. Enter a new **Theme name** in **Custom CSS**, then paste the CSS below.
-   Paste only CSS, without Markdown fences or an HTML `<style>` wrapper.
-3. Choose **Save and apply**. The theme is applied immediately and added to
-   **Theme style** next to **Lody** and **Claude**.
-4. Switch between Light and Dark to check both palettes. Check a button's hover
-   and keyboard focus, selected sidebar rows, menus and the chat composer too.
+1. In the connected WebUI, open **Theme** using the palette button.
+2. Under **Custom tokens**, enter a **Theme name**. Use **Filter tokens** to
+   find the names below, then enter each value in its field. You do not paste
+   a stylesheet or a JSON file into the editor.
+3. Choose **Save and apply**. The saved theme appears under **Theme style**
+   next to **Lody** and **Claude**.
+4. Use **Color mode** to check **Light** and **Dark**. Check text contrast,
+   hover, keyboard focus, and the chat composer in both modes.
 
-This starter keeps Lody's layout and changes its accent in both modes:
+| Token                  | Light               | Dark                    | Value (both modes) |
+| ---------------------- | ------------------- | ----------------------- | ------------------ |
+| `primary`              | `hsl(14 61.7% 47%)` | `hsl(15.9 62.4% 59.6%)` |                    |
+| `primary-foreground`   | `#fff`              | `hsl(0 0% 8.2%)`        |                    |
+| `pilo-composer-radius` |                     |                         | `1rem`             |
 
-```css
-:root {
-	--primary: 14 61.7% 47%;
-	--primary-foreground: 0 0% 100%;
-	--button-hover: 14 61.7% 40%;
-	--ring: 14 61.7% 55%;
-	--sidebar-primary: var(--primary);
-	--sidebar-ring: var(--ring);
-	--pilo-composer-radius: 1rem;
-}
-
-:root.dark {
-	--primary: 15.9 62.4% 59.6%;
-	--primary-foreground: 0 0% 8.2%;
-	--button-hover: 15.9 62.4% 65%;
-	--ring: 15.9 62.4% 65%;
-}
-```
-
-Omitted tokens retain Lody's light/dark defaults. Custom CSS does not inherit the
-previously selected theme: selecting Claude before saving does not make Claude
-the base. The editor's placeholder is commented guidance, not applied CSS.
+Custom themes use Lody as the base, regardless of the previously selected theme.
+A light color override also applies in dark mode unless you set a dark override.
+A token with no overrides keeps the preset values.
 
 ## Save, switch and recover
 
-- **Edit:** select a saved theme under **Theme style**, change its CSS, then
+- **Edit:** select a saved theme under **Theme style**, change its tokens, then
   choose **Update and apply**. Typing alone does not preview or save changes.
 - **Create a variation:** change the name and save. Names are trimmed; an existing
   name updates that entry instead of creating a duplicate.
 - **Cancel:** discards editor changes and restores the currently applied custom
-  CSS and its saved name, if any. It does not undo an already saved update.
-- **Switch back:** select **Lody** or **Claude** to stop applying custom CSS.
+  tokens and saved name, if any. It does not undo an already saved update.
+- **Switch back:** select **Lody** or **Claude** to stop applying custom tokens.
   Saved custom themes remain available for later selection.
 - **Delete:** use the theme's trash button and confirm. This removes the saved
-  entry, but its currently applied CSS stays active until you switch themes.
-  To recover the default appearance, select **Lody** rather than just deleting.
-- **Share or back up:** copy the editor's CSS into a `.css` file. Another user
-  can paste it into their editor, name it and save. There is no file-import or
-  export control, and updates do not retain earlier versions.
+  entry, but the applied tokens stay active until you switch themes. To recover
+  the default appearance, select **Lody** rather than just deleting.
+- **Share or back up:** record the token names and values, including the light
+  and dark fields. There is no file import, export, or version history.
 
 Themes are stored on the desktop Host in SQLite; browser storage is a startup
-cache, not the source of truth. Desktop windows and connected WebUI clients
-receive the Host's applied theme, including custom CSS. WebUI has no theme
-editor or independent switching controls, regardless of whether its project
-uses Local, WSL or SSH. In System mode, each client resolves light/dark from its
-own device preference. Theme choices are not per-project or per-connection.
+cache, not the source of truth. A theme change in WebUI updates the active theme
+for the desktop and all connected WebUI clients. In **Follow system** mode,
+each client resolves light or dark from its own device preference. Theme choices
+are not per-project or per-connection.
 
 ## One contract, built-in and saved themes
 
-Pilo lists **Lody**, **Claude** and saved custom themes together under
-Settings → Appearance → Theme style. Lody and Claude are built-in sets of CSS
-token values, not separate component implementations. Custom CSS uses the same
-tokens and renderer, with Lody as its initial defaults. It does not need a Claude
-template, a special family flag or copies of component CSS to achieve either
-built-in appearance.
+Lody and Claude are built-in token presets, not separate component
+implementations. The WebUI editor exposes a validated catalog shared with the
+native desktop. See the [desktop theme notes](../desktop/README.md#custom-themes)
+for the token format and native rendering limits.
 
-Sources:
+WebUI sources:
 
-- [`src/styles/lody-theme.css`](../src/styles/lody-theme.css): complete defaults
+- [`web/styles/lody-theme.css`](../web/styles/lody-theme.css): complete defaults
   and dark-mode values.
-- [`src/styles/claude-theme.css`](../src/styles/claude-theme.css): Claude's
+- [`web/styles/claude-theme.css`](../web/styles/claude-theme.css): Claude's
   light/dark overrides of those tokens.
-- [`src/styles/theme-components.css`](../src/styles/theme-components.css): shared
+- [`web/styles/theme-components.css`](../web/styles/theme-components.css): shared
   component rules; no family selectors.
-- [`src/index.css`](../src/index.css): shared Tailwind mappings, chat styles and
+- [`web/index.css`](../web/index.css): shared Tailwind mappings, chat styles and
   responsive rules.
 
 The only Claude-family selectors choose token values on the document root.
@@ -98,27 +81,19 @@ can express the same differences.
 
 ## Writing a custom theme
 
-Use plain CSS with unlayered `:root` and `:root.dark` overrides. Do not wrap
-it in `@layer`, `@theme` or Tailwind directives: the editor injects CSS directly,
-without a compilation step. Unlayered declarations override the built-in preset
-layers without needing `!important` or a theme-family selector.
+Enter values in the fields shown by the WebUI editor. Search for each token
+without the CSS `--` prefix. Colors take complete values such as `#f0f0ef`,
+`rgb(240 240 239)`, or `hsl(14 61.7% 47%)`; some tokens require opaque colors.
+Lengths take non-negative `px` or `rem` values, such as `0px` or `1rem`.
+Colors have separate light and dark fields; other values apply to both modes.
+The editor does not accept selectors, `var()` references, or arbitrary CSS.
 
-`:root` applies in both modes; `:root.dark` overrides it in dark mode. If a
-change should affect light mode only, use `:root:not(.dark)` instead. Define both
-modes when replacing palette roles, rather than carrying a light palette into
-dark mode accidentally.
-
-| Value kind          | Examples                                                  | Syntax                                                             |
-| ------------------- | --------------------------------------------------------- | ------------------------------------------------------------------ |
-| Palette role        | `--background`, `--primary`, `--sidebar-background`       | HSL triplet: `14 61.7% 47%`, without `hsl()` or `#`                |
-| Component color     | `--pilo-composer-background`, `--pilo-user-bubble-border` | Complete CSS color: `hsl(var(--card))`, `#f0f0ef` or `transparent` |
-| Dimension or radius | `--pilo-composer-radius`, `--pilo-menu-padding`           | CSS length: `1rem`, `6px` or `0`                                   |
-| Shadow              | `--pilo-shadow-floating`                                  | CSS shadow value; see the shadow guidance below                    |
-
-The grouped names below, such as `--pilo-sidebar-margin/height/width` and
-`--primary*`, are documentation shorthand, not literal token names. Set each
-variable separately, for example `--pilo-sidebar-margin` and
-`--primary-foreground`.
+The rest of this guide uses CSS names and examples to explain the WebUI presets.
+These are source references, not snippets to paste into the editor. When
+adapting an example, look up each name in **Filter tokens** and enter a supported
+literal value. Some source variables (such as composite shadows and padding
+shorthand) are not available in the shared editor. Grouped names such as
+`--pilo-sidebar-margin/height/width` and `--primary*` are not literal names.
 
 For example, an edge-attached sidebar is configured with values, just as in
 the built-in Claude theme:
@@ -149,11 +124,11 @@ the built-in Claude theme:
 }
 ```
 
-This example configures part of the appearance; it is not the complete Claude
-palette. The two built-in CSS files are the authoritative values for every
-supported point. All values assigned in either file can also be assigned in
-Custom. Existing saved CSS remains supported; arbitrary selector overrides
-are still available when needed, but are not required for built-in effects.
+This source example configures part of the appearance, not the complete Claude
+palette. The editor lists the subset of preset values that can be customized
+across both clients. If a legacy CSS theme has unconverted rules, the editor
+shows them under **Unconverted CSS**. Review that list before saving: those parts
+are not carried forward as tokens.
 
 ## Desktop and mobile dimensions
 
@@ -383,20 +358,14 @@ the larger details-card and bottom-sheet roles.
 
 ## Troubleshooting
 
-| Symptom                            | What to check                                                                                                                                                                            |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Edits have no visible effect       | Choose **Save and apply** or **Update and apply**. The editor is not a live preview. A name is required.                                                                                 |
-| Colors or controls look wrong      | Check the value kind: `--primary` needs an HSL triplet, while `--pilo-composer-background` needs a complete CSS color. Change foreground and hover roles alongside backgrounds.          |
-| Only one mode looks correct        | Add `:root.dark` overrides and check Color mode. `:root` also applies in dark mode; System follows the current device preference.                                                        |
-| A token does nothing               | Check its exact spelling in the linked preset files. CSS ignores unknown tokens and invalid values without an application error. Some components intentionally override shared defaults. |
-| A copied Claude rule does nothing  | Copy token declarations into `:root` / `:root.dark`, not the original `[data-theme-family="claude"]` selector. Custom themes use a different family identifier.                          |
-| Deleted theme still appears active | Deleting removes the saved entry, not the applied CSS. Select **Lody** or **Claude** to remove custom overrides.                                                                         |
-| WebUI does not match the Host      | Check that it is connected to the intended Host and reconnect or reload. In System mode, devices may legitimately resolve different light/dark modes.                                    |
-
-Before applying broad selector rules, keep a copy of the last working CSS. Custom
-CSS can also affect the settings editor: avoid hiding navigation, disabling
-pointer events or removing focus indicators. There is no separate safe-mode or
-rollback control in the theme editor.
+| Symptom                            | What to check                                                                                                                                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Edits have no visible effect       | Enter a name, fix any validation errors, and choose **Save and apply** or **Update and apply**. The editor is not a live preview.                                              |
+| A color is rejected                | Use a complete color value, such as `hsl(14 61.7% 47%)` rather than the bare HSL channels used by some CSS source variables. Check whether the token requires an opaque color. |
+| Only one mode looks correct        | Set separate light and dark values for affected colors. A light override also applies in dark mode when the dark field is empty.                                               |
+| A token does not appear            | Search without `--`. A CSS variable in a preset may not be part of the editor's shared catalog.                                                                                |
+| Deleted theme still appears active | Deleting removes only the saved entry. Select **Lody** or **Claude** to remove active custom overrides.                                                                        |
+| WebUI does not match the desktop   | Check that WebUI is connected to the intended Host. In **Follow system** mode, devices can resolve to different appearances.                                                   |
 
 ## Startup and safety
 
@@ -406,11 +375,9 @@ custom overrides. There is no duplicated Claude boot palette or geometry branch.
 The system-bar `theme-color` follows computed `--background` after theme changes.
 The preset stylesheet is also included in WebUI offline precaching.
 
-There is no separate theme preview. Save and apply custom CSS to inspect its
-appearance in the application, including menus, focus states and mobile layouts.
-
-Applied CSS is not sandboxed and can load external resources: only use CSS you
-trust. Preserve focus indicators, disabled states and reduced-motion behavior.
+There is no separate theme preview or rollback control. Save and apply the
+custom theme to inspect menus, focus states and mobile layouts. If controls
+become hard to read, switch back to a built-in theme in WebUI or the desktop.
 
 ## Claude reference
 

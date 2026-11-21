@@ -35,17 +35,15 @@ or macOS code paths.
 ## Code Standards
 
 - **Edition 2024**, `resolver = "2"` workspace.
-- Prefer `pub(crate)` over `pub`. Only `domain/*` and command functions need
-  wider visibility.
-- Async commands use `#[tauri::command] pub async fn`; sync ones stay sync.
-  Don't make a command async if it only touches SQLite.
-- Use `State<'_, PiloRuntime>` for shared runtime access;
-  `AppHandle` for storage/app-dir access.
+- Prefer `pub(crate)` over `pub` except for types and operations used by another crate.
+- Host operations take `&Runtime`; storage takes `&HostPaths`. A synchronous
+  SQLite operation stays synchronous in the runtime; the nsh bridge calls it
+  via `Pilo::with_runtime_blocking` to avoid blocking the UI or async executor.
 - Process/IO work is `tokio`-based (`fs`, `io-util`, `process`, `sync`, `time`).
 - Serde types exposed to the frontend use `#[serde(rename_all = "camelCase")]`
   (see `crates/pilo-runtime/src/session_history/types.rs`). Wire fields that must
   keep their name use an explicit `#[serde(rename = "...")]`.
-- Keep `domain/` types plain data; no `Mutex`, no side effects.
+- Keep `pilo-domain` types plain data; no `Mutex`, no side effects.
 
 ## Testing
 
@@ -63,7 +61,7 @@ or macOS code paths.
 - String interpolation into SQL.
 - Adding `anyhow`/`tracing`/new dependencies just for ergonomics — the stack is
   deliberately small.
-- Panicking in a `#[tauri::command]` (poisons the IPC response).
+- Panicking at a native or HTTP request boundary.
 - Blocking the async runtime with synchronous long-running work; use
   `spawn_blocking` / a background thread.
 
@@ -126,86 +124,19 @@ Correct: select a temporary read-only viewer root and reuse server validation.
 - macOS/Windows-only code is gated with `#[cfg(target_os = ...)]` and
   platform dependencies live under `[target.'cfg(...)'.dependencies]` in
   each crate's `Cargo.toml`.
-- `pnpm tauri dev` and desktop-window/installer verification must run on Windows.
-  WSL is for code, `cargo check`, and static validation only.
-
-### Linux Wayland window decorations
-
-- Keep the desktop Tauri dependency at `2.12` or newer and commit `Cargo.lock`.
-  `cargo tree --locked -i tao` must resolve Tao >= 0.36.0; older Tao forces GTK
-  client-side decorations even when KWin supports server-side decorations.
-- When upgrading the Rust `tauri` minor version, update the direct
-  `@tauri-apps/api` dependency and `pnpm-lock.yaml` to the same major/minor.
-  `pnpm build` does not run the Tauri packaging version check; verify the
-  installed API version against `Cargo.lock` before packaging.
-- Keep `app.windows[].decorations: true` in `src-tauri/tauri.conf.json`.
-  The Windows-only builder override in `desktop_window.rs` intentionally disables
-  decorations for its custom title bar; do not extend that override to Linux.
-- Do not use `GTK_CSD=0`, force X11, or install a custom GTK HeaderBar as a fix.
-  The upstream fix is https://tauri.app/release/tao/v0.36.0/.
-- After rebuilding, manually verify KDE title bar buttons and native Wayland
-  scaling on KWin. Static compilation cannot verify compositor behavior.
-- On Linux, initialize GLib's program name from the configured product name
-  before creating the Tauri runtime. GDK uses it as the Wayland `app_id` when
-  GTK application registration is disabled; it must match the case-sensitive
-  desktop entry basename (`Pilo` for `Pilo.desktop`), not `Icon=pilo` or the
-  executable name. This also covers secondary windows.
-- Keep `enableGTKAppId` disabled: enabling it registers on D-Bus and changes
-  multi-instance behavior. Do not change AppImage finalization just to fix the
-  installed deb/rpm window icon. Development builds use `Pilo Dev` and need a
-  matching desktop entry for compositor-provided icons.
+- macOS is the current desktop target. See the [desktop validation rules](../desktop/quality-guidelines.md) for native checks and deferred packaging/platform work.
 
 ### Bundled server resource paths
 
-- Initialize the server resource directory from `app.path().resource_dir()` in
-  Tauri setup, before restoring connections or starting server prewarming.
-- `server_binary` checks explicit `PILO_SERVER_PATH` / `PILO_SERVER_LINUX_PATH`
-  overrides first. Debug builds then require the standard Cargo output
-  `target/<rust-target>/debug/pilo-server` (`pilo-server.exe` on Windows) and never
-  fall back to production resources. Release builds check
-  `<resource_dir>/runtime/<resource_name>`, portable/macOS fallback locations,
-  and staged production resources. Missing release files keep the existing
-  `bundled pilo-server runtime ... is missing` error.
-- Linux resource directories use Tauri's product name, not the executable stem:
-  the deb installs `/usr/bin/pilo` with resources under `/usr/lib/Pilo/runtime`.
-  AppImage resources live under its mount directory. Do not lowercase the
-  product name or infer `/usr/lib/pilo` from the executable.
-- Regression coverage must include the case-sensitive deb/rpm layout and the
-  AppImage mount layout, alongside Windows portable and macOS bundle paths.
-
-### Linux AppImage finalization
-
-- Desktop metadata lives in `bundle.category`, `shortDescription`,
-  `longDescription`, and `homepage`. deb and rpm share
-  `src-tauri/linux/pilo.desktop`; AppImage inherits the deb desktop template.
-  Use a `.desktop` extension: oxfmt treats `.hbs` as HTML and destroys the
-  required line-based desktop entry syntax.
-  Keep `Exec`, `Icon`, `Name`, and categories as Tauri template variables, retain
-  optional MIME associations, and validate the rendered desktop entry with
-  `desktop-file-validate`. Localized comments and search keywords belong in the
-  shared template, not in separate package-specific copies.
-- Align package and desktop descriptions with the English/Chinese README
-  introduction. Application versions inherit `[workspace.package].version`;
-  the optional desktop entry `Version` describes the file format, not Pilo's
-  release version, and must not be bumped with app releases.
-
-- Run `scripts/finalize-linux-appimage.sh <AppImage> <AppDir> <runtime-dir>
-  <AppImage-output-plugin>` after Tauri bundling and before collecting assets.
-  It restores all four original server binaries into the prepared AppDir,
-  removes `libwayland-client.so*` that conflicts with host Mesa/EGL, and removes
-  linuxdeploy's forced `GDK_BACKEND=x11` so GTK can use native Wayland
-  per-monitor scaling while retaining its automatic X11 fallback.
-- Never run linuxdeploy over restored server resources: its ELF patching makes
-  the static PIE Linux runtimes segfault even for `--fingerprint`. Repack with
-  the AppImage output plugin alone, using the copy cached by Tauri.
-- Verify the final extracted image contains byte-identical runtimes, excludes
-  the Wayland client, and runs the native x64 server with the original
-  fingerprint. Missing inputs, changed bytes, or server failure must stop CI.
-- Re-sign the final AppImage with `pnpm tauri signer sign` after replacement;
-  Tauri's initial `.sig` covers the pre-finalization bytes and is stale.
-- Run `python3 tests/packaging/test-linux-appimage.py` for portable orchestration tests.
-  These use a fixture packer; Linux CI must also run final-artifact verification,
-  and desktop testing must validate UI and Pi connections on the target host.
+- `desktop/src/pilo/mod.rs` initializes `HostPaths` and supplies the application
+  resources directory to `initialize_server_resource_dir` before starting the Host.
+- For WSL/SSH, `server_binary` checks `PILO_SERVER_PATH` and the applicable
+  `PILO_SERVER_LINUX_PATH` first. Debug builds use Cargo debug output; they never
+  fall back to release resources. Release builds look in `<resource_dir>/runtime`,
+  adjacent `runtime`, macOS `../Resources/runtime`, and staged `resources/`.
+- `server-runtimes.yml` builds and verifies the bundled server set independently
+  of the desktop. The deleted Tauri packaging rules are historical; do not treat
+  them as nsh packaging instructions.
 
 ### Manual development runtime builds
 
@@ -227,9 +158,9 @@ Dev startup, manual server/extension builds and deployment isolation.
 
 #### 3. Contracts
 
-- Dev startup never builds WSL/SSH runtimes or watches plugins specially. Keep
-  Tauri's normal Rust watcher and the shared desktop/WebUI frontend watchers.
-- Local debug uses the desktop's embedded server. WSL/SSH debug loads manually
+- Dev startup never builds WSL/SSH runtimes or watches plugins specially.
+- Local debug uses a standalone `pilo-server`, normally built with
+  `cargo build -p pilo-server`. WSL/SSH debug loads manually
   built binaries from `target/<rust-target>/debug/pilo-server` (Windows: `.exe`),
   never production fallback.
 - Windows manual builds run through WSL against the Windows checkout; POSIX builds
@@ -254,12 +185,12 @@ Dev startup, manual server/extension builds and deployment isolation.
 
 - Manual build failure: propagate nonzero exit; do not deploy or restart Pi.
 - Missing debug target: explicit error directing users to `pnpm server:build`.
-- No WSL on Windows: manual remote build fails; Local dev startup still works.
+- No WSL on Windows: manual remote build fails; Local can still run its separately built server.
 
 #### 5. Good / Base / Bad Cases
 
 - Good: rebuild after a plugin edit; restart and deploy only dev resources.
-- Base: Local dev compiles its embedded server with the desktop.
+- Base: Local dev runs its standalone debug server.
 - Bad: dev startup forces a cold WSL build, or shares production runtime paths.
 
 #### 6. Tests Required
@@ -270,10 +201,9 @@ Windows WSL paths, missing target errors, plugin deployment on Local/WSL/SSH,
 production/dev coexistence and source sync isolation.
 `current_platform_resolves_its_server_runtime` checks the Cargo filename in
 Debug, or the exact missing-dev-runtime error when no standalone dev build
-exists; Local debug uses the embedded server and needs no manual build.
-Release still requires an existing binary with the packaged resource filename.
-These updated assertions have not been run. No end-to-end runtime validation
-is implied by syntax/lint checks.
+exists. Local requires its standalone binary as well. Release still requires
+an existing binary with the packaged resource filename. Syntax and lint checks
+are not end-to-end runtime validation.
 
 #### 7. Wrong vs Correct
 
@@ -285,7 +215,8 @@ startup only deploys an already built server and its embedded plugins.
 
 #### 1. Scope / Trigger
 
-`server-runtimes.yml` serves standalone main builds and the reusable release job.
+`server-runtimes.yml` runs on `main`, can be dispatched manually, and can be
+called by another workflow. There is no desktop release job yet.
 Check the complete binary set on Ubuntu before scheduling native build runners;
 Cargo dependency caches alone cannot avoid macOS runner queue time.
 
@@ -293,7 +224,7 @@ Cargo dependency caches alone cannot avoid macOS runner queue time.
 
 - `prepare` exports `cache-hit`, `cache-key`, and the resolved stable `toolchain`.
 - The cache key is `pilo-server-runtimes-v1-<sha256>`, hashing `rustc --version`
-  and `git ls-tree -r HEAD` entries for workspace/desktop manifests, `Cargo.lock`,
+  and `git ls-tree -r HEAD` entries for workspace/domain/runtime manifests, `Cargo.lock`,
   `.cargo`, Rust toolchain files, both server/protocol crates (including embedded
   extensions), the build/verification scripts, and the runtime workflow itself.
 - The consumer interface remains the `pilo-server-runtimes` artifact containing
@@ -348,7 +279,7 @@ file verification before handing the artifact to desktop packaging.
 
 `crates/pilo-server/src/environment.rs` owns Pi discovery for Local/WSL/SSH.
 Desktop and WebUI use the same server path; do not implement browser-side or
-Tauri-only executable discovery.
+shell-only executable discovery.
 
 #### 2. Signatures
 

@@ -1,24 +1,23 @@
 # Error Handling
 
-> Backend errors cross the Tauri IPC boundary as **strings**.
+> Host operations return error messages as **strings**; Desktop and WebUI adapt them at their transport boundaries.
 
 ---
 
 ## Convention: `Result<T, String>`
 
-Every `#[tauri::command]` returns `Result<T, String>`:
+For example, from `crates/pilo-runtime/src/connections.rs`:
 
 ```rust
-#[tauri::command]
 pub fn connection_naming_model_get(
-    app: AppHandle,
+    runtime: &Runtime,
     connection_id: String,
 ) -> Result<Option<ConnectionNamingModel>, String> {
-    storage::get_connection_naming_model(&storage::open(&app)?, &connection_id)
+    storage::get_connection_naming_model(&storage::open(&runtime.paths)?, &connection_id)
 }
 ```
 
-- `storage::open(&app)?` already returns `Result<_, String>`, so `?` converts cleanly.
+- `storage::open(&runtime.paths)?` already returns `Result<_, String>`, so `?` propagates its message.
 - Internal helpers may use native result types (`io::Result`, `rusqlite::Result`)
   and map at the boundary. `pilo-runtime` depends on `thiserror` but the raw-string
   boundary convention is what the code actually uses — do not introduce custom

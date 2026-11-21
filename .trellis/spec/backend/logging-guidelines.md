@@ -1,39 +1,14 @@
 # Logging Guidelines
 
-> 状态：Tauri 壳已删除。本文中 Tauri 插件、`src-tauri` 文件与窗口 API 的描述只是历史行为基线；nsh 版实现以 `desktop/` 代码和 [nsh 桌面规范](../desktop/index.md) 为准，对齐后再回写本文。
+## Desktop log sink
 
-Pilo uses `tauri-plugin-log` for desktop log persistence. Rust code logs through
-`log` macros; the plugin writes the desktop log file and handles bounded
-rotation.
-
-## Configuration
-
-`src-tauri/src/lib.rs` registers the log plugin before `setup` with:
-
-- `Debug` level for debug builds and `Info` for release builds;
-- the default Tauri log directory (`app_log_dir()`), with a 5 MB file limit;
-- `RotationStrategy::KeepSome(4)`, giving up to four archived 5 MiB files plus the active file (about 25 MiB total);
-- the `Webview` target so Rust log entries remain visible in DevTools through
-  the frontend `attachLogger()` bridge.
-
-The frontend registers one `attachLogger()` listener from `web/main.tsx` and
-replays backend records through the original browser console methods. It bridges
-only `console.error` and `console.warn` to the plugin's `error` and `warn` APIs.
-`console.log` and other hot-path console output are not persisted. The Rust
-`Webview` target filters records whose target starts with `WEBVIEW_TARGET`, so
-frontend-originated records are persisted to the log file without being echoed
-back into the webview. This target also rejects `tauri_runtime_wry*` records:
-`app.emit("log://log", ...)` evaluates JavaScript, and an invalid/closing WebView
-can log that evaluation failure through `tauri_runtime_wry`. Forwarding that error
-back to the same WebView creates an unbounded log/eval feedback loop. Apply this
-filter only to the Webview target, never globally; file and stdout diagnostics
-must retain runtime errors. When Windows verification is authorized, confirm an
-unavailable WebView cannot amplify one runtime error into repeated log delivery.
-
-The About settings page opens the same directory with `appLogDir()` and the
-`opener` plugin. Scope `opener:allow-open-path` to `$APPLOG`; the bare command
-permission exposes the command but still rejects the path. Do not duplicate the
-path calculation in Rust or TypeScript.
+`pilo-runtime` uses the `log` facade. The nsh shell does not install Pilo's
+former rotating desktop log sink or bridge WebUI console output into it.
+The About action opens the legacy log location resolved by
+`desktop/src/pilo/shell.rs`; it does not enable file logging. Debug runtime
+trace JSONL (`pilo-runtime-trace-<pid>.jsonl` in the system temp directory) is
+separate. The following diagnostic contracts describe records emitted at the
+source, not a guarantee that a file sink is configured.
 
 ## Rust conventions
 
@@ -55,8 +30,7 @@ log::warn!(target: "pilo-server", "[{label}] {message}");
   parsing). Bounded lifecycle/RPC summaries are allowed as described below.
 - `crates/pilo-server` stdout is a protocol channel: only `--version` /
   fingerprint subcommands may print there. Service diagnostics stay on stderr;
-  `crates/pilo-runtime/src/server_client.rs` routes that stderr into the desktop
-  logger.
+  `crates/pilo-runtime/src/server_client.rs` routes that stderr into the Host `log` facade.
 
 ## What to log
 
@@ -85,26 +59,25 @@ streams. Keep timeout, retry, teardown, and public error behavior unchanged.
 ### 2. Signatures
 
 - `runtime_trace(stage, session_key, stream_id, detail)` keeps the existing debug
-  JSONL trace and emits selected metadata to the rotated desktop log in release.
-- `debug_runtime_trace_log(payload)` accepts frontend trace JSON in all builds.
-  `append_frontend_trace` uses the same metadata allowlist; it is not a generic
-  release logger for arbitrary frontend objects.
+  JSONL trace and emits selected metadata through `log` in all builds.
+- `append_frontend_trace(payload)` uses the same metadata allowlist; it is not a
+  generic release logger for arbitrary frontend objects. The former Tauri IPC
+  adapter for this helper was removed.
 
 ### 3. Contracts
 
 - `runtime-diagnostics` records include desktop PID, source, stage, session key,
   stream ID, and allowlisted scalar metadata. Never persist `error`, `message`,
   command bodies, tool arguments/results, or authentication objects here.
-- Correlate `webview.rpc.begin/end`, `chat.send.*`, `server_pi.recv` responses,
-  `channel.send`, and `webview.recv` by the Pi RPC `id`. Initialization uses
-  `chat.control.begin/sent/end`, with `timeoutMs`, `elapsedMs`, and `timedOut`.
+- Correlate `chat.send.*`, `server_pi.recv` responses, and `event.publish` by
+  the Pi RPC `id`. Initialization uses `chat.control.begin/sent/end`, with
+  `timeoutMs`, `elapsedMs`, and `timedOut`.
 - Session mutex acquisition records `lockWaitMs`; client transport summaries
   record envelope `requestId`, method, RPC ID, elapsed/enqueue time, queue capacity,
   and pending request count on timeout. `launcherPid` is the Windows/SSH launcher
   child, not necessarily the environment's actual server PID.
-- `channel.send` includes Channel ID, runtime replay `sequence` and serialized
-  `payloadBytes`; frontend receipt also records its Channel ID. This sequence
-  is **not** the Tauri Channel's internal message index.
+- `event.publish` records the Host `sequence` and serialized `payloadBytes`.
+  It identifies publication, not receipt by the desktop or browser.
 - Persist process state, RPC response, runtime error code and final assistant
   completion metadata, not text/thinking deltas or tool update events.
 - Desktop timeout warnings include `sendCompleted`, `responseReceived`, channel
@@ -123,21 +96,19 @@ streams. Keep timeout, retry, teardown, and public error behavior unchanged.
   Widget result or raw provider error to tracing. Absent usage stays unknown;
   reasoning tokens are already included in output tokens. A release after a
   received result is not a cancellation of pending generation. WebUI client
-  decisions stay in its console; Host result/rejection records persist for both
-  clients. See [Next Prompt](./next-prompt-and-extensions.md).
+  decisions stay in its console; Host result/rejection records use the same runtime diagnostic target. See [Next Prompt](./next-prompt-and-extensions.md).
 - Model refresh uses bounded `model_catalog.*` stages: shared frontend prepare,
   commands, extension versus RPC fallback, scope/thinking probes, persistence,
   cleanup and total time; Host launch resolution, Server readiness and process
   spawn; connection settings catalog reads and cleanup. Record `elapsedMs`,
-  success, counts and catalog source, never model/config/auth objects. Desktop
-  frontend stages use `debug_runtime_trace_log` and the same release allowlist;
+  success, counts and catalog source, never model/config/auth objects.
   WebUI frontend stages stay in its console. Existing `chat.control.*` stages
   identify the wait for Pi's initial `get_state`; process spawn ACK is not Pi
   readiness. Correlate by probe session key/project and stream ID.
 - WebUI browser timeout warnings include RPC/session IDs, elapsed time, command
   transport completion, pending count and last socket sequence/message age.
   These warnings stay in the browser console; shared Host stages and socket
-  open/close/replay-gap/lag/send errors are persisted in the desktop log.
+  open/close/replay-gap/lag/send errors use the Host logger.
 
 ### 4. Validation & Error Matrix
 
@@ -151,8 +122,8 @@ streams. Keep timeout, retry, teardown, and public error behavior unchanged.
 
 ### 5. Good / Base / Bad Cases
 
-- Good: response received by Host and sent to a window, but absent from
-  `webview.recv`, identifies the Desktop delivery boundary as suspect.
+- Good: a response recorded by `event.publish` but not observed in a desktop
+  event batch points to delivery or gap recovery, not the Pi request path.
 - Base: a single Pi initialization times out while other sessions keep delivering.
 - Bad: infer that a caller timeout itself killed all sessions, or log raw RPC data.
 
@@ -186,7 +157,7 @@ server exists. Host-side diagnostics serve both Desktop and WebUI callers.
 
 ### 3. Contracts
 
-- The `connection-diagnostics` target uses the existing rotated desktop log.
+- The `connection-diagnostics` target uses the Host logger.
   Correlate stages with `attemptId` and the context record's host PID/connection
   ID. Context includes Pilo version, host OS/architecture, connection kind,
   SSH mode/auth method, explicit proxy-jump presence and Pi runtime location.
@@ -201,7 +172,7 @@ server exists. Host-side diagnostics serve both Desktop and WebUI callers.
   Never format a keyring error with `Debug` or log its payload/password.
 - SSH launchers receive `PILO_SSH_DIAGNOSTIC_ATTEMPT_ID`. Only askpass children
   with a valid numeric attempt ID emit `[pilo-ssh-askpass]` metadata on stderr:
-  they exit before Tauri logging initializes. Other askpass callers stay quiet.
+  they exit before the desktop app starts. Other askpass callers stay quiet.
   Keep stdout exclusively for the password. Probe/deploy summaries project these
   records into `askpassOk`/`reason`, then strip them from returned error text.
   `askpassOk=None` means no diagnostic report, not proof the helper never ran.
@@ -246,7 +217,7 @@ runtime without changing authentication or frontend behavior.
 ### 1. Scope / Trigger
 
 Shared `ServerClient`/`ServerManager` requests, Remote HTTP outcomes and session
-watcher background work. This is not a blanket wrapper for all Tauri commands.
+watcher background work. This is not a blanket wrapper for all native methods.
 
 ### 2. Signatures
 

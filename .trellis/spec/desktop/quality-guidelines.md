@@ -8,6 +8,10 @@
 - 每个功能完成后立即充分测试并提交，不攒文件合并成一次提交；测试覆盖实际正常、空态和失败行为。
 - nsh 交付分别运行 headless 与 macOS 原生测试；浏览器回归单独验证，结果按功能记录提交、测试、证据。验收项目见[功能对齐清单](../../tasks/11-19-nsh-desktop-migration/feature-parity.md)，测试分层见[迁移设计](../../tasks/11-19-nsh-desktop-migration/design.md#10-测试)。
 
+## macOS 打包待办
+
+建立 nsh 发版流程时，在最终 `.app` 的 `Info.plist` 加入 `NSLocalNetworkUsageDescription`，并确认完整包签名使用约定的 `app.hsingjui.pilo` 标识。仅有 Rust 链接器临时签名时，签名标识可能不匹配 macOS 本地网络授权记录，表现为终端能连而桌面 SSH 报 `No route to host`。验收应检查最终产物签名，并从安装后的应用验证局域网连接，而不只在终端验证 TCP。
+
 ## 测试组织
 
 测试位于 `desktop/tests/`，从 nsh/test 导入 test/expect/open；fixture 是独立 mount 的应用。原生调用采用 `desktop/tests/native.test.ts` 与 `desktop/tests/native-fixture.tsx` 的模式：测试文件 open fixture，fixture 内导入并调用 app/native，不在测试文件直接调用。
