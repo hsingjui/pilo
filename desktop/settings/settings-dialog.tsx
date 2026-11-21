@@ -437,6 +437,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 										return (
 											<ShortcutsPane
 												state={props.state}
+												client={props.client}
 												desktop={props.desktop}
 											/>
 										);
