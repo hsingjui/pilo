@@ -2,6 +2,7 @@
 	"name": "Pilo",
 	"id": "app.hsingjui.pilo.desktop",
 	"version": "0.4.1",
+	"icon": { "macos": "assets/app-icon-macos.png" },
 	"theme": "theme.json",
 	"singleInstance": true,
 	"window": {
