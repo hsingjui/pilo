@@ -190,6 +190,7 @@ export function ChatMessages(props: ChatMessagesProps) {
 				initialScrollIndex={restore?.index}
 				initialScrollAtEnd={restore === null}
 				maintainVisibleContentPosition={followPaused() ? undefined : followEnd}
+				bounces={false}
 				scrollbar={{ vertical: scrollbarLook() }}
 				footer={props.footer}
 				onScroll={follow}

@@ -86,7 +86,9 @@ function RunConfigSubmenu(
 					class={classNames(menuPopupClass, "max-h-full max-w-full")}
 					style={menuPopupStyle()}
 				>
-					<Scroll class="min-h-0 shrink">{local.children}</Scroll>
+					<Scroll class="min-h-0 shrink" bounces={false}>
+						{local.children}
+					</Scroll>
 				</Overlay>
 			) : (
 				local.children

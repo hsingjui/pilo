@@ -1,5 +1,4 @@
 import {
-	Canvas,
 	cleanup,
 	createMotion,
 	type Easing,
@@ -28,18 +27,25 @@ function PulsingDot() {
 	);
 }
 
-/** Draw the glow without adding a second text node for the label. */
+/** The WebUI's `0.08em` drift at the 16pt label size. */
+const HIGHLIGHT_DRIFT = 1.3;
+
+/**
+ * A glowing copy of the label that fades in over it and drifts a hair to the
+ * right (the WebUI's `.chat-agent-activity-label::after`): the glyphs light
+ * up in place, no band of light sweeps across the label's box.
+ */
 function LabelHighlight(props: { label: string }) {
 	const motion = createMotion({
-		initial: { opacity: 0, translateX: -1 },
+		initial: { opacity: 0, translateX: -HIGHLIGHT_DRIFT },
 		enter: {
 			keyframes: [
-				{ offset: 0, opacity: 0, translateX: -1 },
-				{ offset: 0.12, opacity: 0, translateX: -1 },
-				{ offset: 0.24, opacity: 1, translateX: -0.5 },
-				{ offset: 0.42, opacity: 1, translateX: 0.5 },
-				{ offset: 0.58, opacity: 0, translateX: 1 },
-				{ offset: 1, opacity: 0, translateX: 1 },
+				{ offset: 0, opacity: 0, translateX: -HIGHLIGHT_DRIFT },
+				{ offset: 0.12, opacity: 0, translateX: -HIGHLIGHT_DRIFT },
+				{ offset: 0.24, opacity: 1, translateX: 0 },
+				{ offset: 0.42, opacity: 1, translateX: 0 },
+				{ offset: 0.58, opacity: 0, translateX: HIGHLIGHT_DRIFT },
+				{ offset: 1, opacity: 0, translateX: HIGHLIGHT_DRIFT },
 			],
 			duration: (Array.from(props.label).length + 5) * 60 + 2000,
 			easing: easeInOut,
@@ -47,23 +53,31 @@ function LabelHighlight(props: { label: string }) {
 		},
 	});
 	cleanup(() => motion.stop());
+	const primary = () => token("primary");
 	return (
-		<Canvas
+		<View
 			class="absolute inset-0 pointer-events-none"
-			style={{ opacity: motion.opacity }}
+			style={motion.style}
 			accessible={false}
 			accessibilityElementsHidden
-			draw={(cx, { width, height }) => {
-				cx.translate(motion.translateX.mul(width / 2), 0);
-				const glow = cx.createLinearGradient(width / 4, 0, (3 * width) / 4, 0);
-				glow.addColorStop(0, "transparent");
-				glow.addColorStop(0.5, token("primary"));
-				glow.addColorStop(1, "transparent");
-				cx.globalAlpha = 0.14;
-				cx.fillStyle = glow;
-				cx.fillRect(width / 4, 0, width / 2, height);
-			}}
-		/>
+		>
+			<Text
+				class="font-sans text-base font-medium leading-snug"
+				style={{
+					color: `color-mix(in srgb, ${primary()} 96%, transparent)`,
+					textShadow: [
+						{
+							x: 0,
+							y: 0,
+							blur: 11,
+							color: `color-mix(in srgb, ${primary()} 20%, transparent)`,
+						},
+					],
+				}}
+			>
+				{props.label}
+			</Text>
+		</View>
 	);
 }
 

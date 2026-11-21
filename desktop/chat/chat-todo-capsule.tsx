@@ -163,6 +163,7 @@ export function ChatTodoCapsule(props: {
 									class="min-h-0 border-t border-border/60"
 									contentClass="px-3 py-2"
 									style={{ maxHeight: Math.min(240, windowSize().height / 4) }}
+									bounces={false}
 									scrollbar={{ vertical: scrollbarLook() }}
 								>
 									<ChatTodoList items={() => progress().items} />

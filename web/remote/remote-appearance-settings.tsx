@@ -34,7 +34,7 @@ export function RemoteAppearanceSettings() {
 			</Button>
 			{open ? (
 				<Dialog open onOpenChange={setOpen}>
-					<DialogContent className="max-h-[90dvh] w-[calc(100vw-1rem)] max-w-3xl overflow-y-auto p-3 pt-10 sm:p-6">
+					<DialogContent className="max-h-[90dvh] w-[calc(100vw-1rem)] max-w-3xl overflow-y-auto overscroll-y-none p-3 pt-10 sm:p-6">
 						<DialogTitle>{t("settings.theme")}</DialogTitle>
 						<DialogDescription className="sr-only">
 							{t("settings.themeTokensHint")}

@@ -101,6 +101,7 @@ export function Sidebar(props: SidebarProps) {
 					<Scroll
 						testID="sidebar-projects"
 						class="min-h-0 min-w-0 flex-1"
+						bounces={false}
 						scrollbar={{ vertical: scrollbarLook() }}
 					>
 						<View class="min-w-0 pt-1 pr-2.5 pb-3 pl-1.5">

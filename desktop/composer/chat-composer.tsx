@@ -736,6 +736,7 @@ function SuggestionMenu(props: {
 				role="listbox"
 				accessibilityLabel={title()}
 				contentClass="gap-(--pilo-menu-item-gap)"
+				bounces={false}
 				// React's `min(18rem | 13rem, 40% of the viewport)`.
 				style={{
 					maxHeight: Math.min(

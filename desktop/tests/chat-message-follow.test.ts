@@ -2,9 +2,10 @@ import { type App, expect, open, test } from "nsh/test";
 
 const desktop = { platform: "macos", width: 1100, height: 720 } as const;
 
-function openChat(count: number, unloaded = 0) {
+function openChat(count: number, unloaded = 0, reducedMotion = false) {
 	return open("./chat-message-follow-fixture.tsx", {
 		...desktop,
+		reducedMotion,
 		storage: {
 			"fixture.count": String(count),
 			"fixture.lines": "30",
@@ -202,7 +203,8 @@ test("a chat's unread messages show as placeholders that load where the list sho
 // Every streamed event hands the list a new joined array; at 10,000
 // messages the cost of one is a pass over it, not a rebuild of the rows.
 test("one streamed event of a 10,000-message chat costs the list one pass", async () => {
-	const app = await openChat(10_000);
+	// Measure transcript updates, not the independent streaming indicator animation.
+	const app = await openChat(10_000, 0, true);
 	await app.waitFor("id:chat-messages >> text:Answer 5000");
 	await app.press("id:prompt");
 	await app.waitFor("id:chat-messages >> text:One more question");

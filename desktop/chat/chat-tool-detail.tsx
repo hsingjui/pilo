@@ -24,6 +24,7 @@ function ToolText(props: { text: () => string; maxHeight: string }) {
 	return (
 		<Scroll
 			class={`${props.maxHeight} py-0.5 pr-1`}
+			bounces={false}
 			scrollbar={{ vertical: scrollbarLook() }}
 		>
 			<View selectable>
@@ -47,6 +48,7 @@ function ToolDiff(props: { diff: () => string }) {
 		<Scroll
 			testID="chat-tool-diff"
 			class="max-h-64 py-1"
+			bounces={false}
 			scrollbar={{ vertical: scrollbarLook() }}
 		>
 			<View selectable>

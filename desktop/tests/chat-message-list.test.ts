@@ -93,12 +93,9 @@ test("a settled chat shows its prompts, replies and how each turn ended", async 
 test("a reply still coming shows its text so far and that more is on its way", async () => {
 	const app = await openList("streaming");
 	await app.waitFor("id:chat-reply-streaming >> text:Processing…");
-	expect(app.texts().slice(-4)).toEqual([
-		"And the tests?",
-		"09:05",
-		"Running",
-		"Processing…",
-	]);
+	expect(app.shows("id:chat-messages >> text:And the tests?")).toBe(true);
+	expect(app.shows("id:chat-messages >> text:09:05")).toBe(true);
+	expect(app.shows("id:chat-messages >> text:Running")).toBe(true);
 });
 
 test("a settled chat shows no reply as still coming", async () => {

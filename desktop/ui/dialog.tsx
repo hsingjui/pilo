@@ -39,6 +39,7 @@ export function Dialog(props: DialogProps) {
 			<Scroll
 				class="min-h-0 shrink"
 				contentClass="p-(--pilo-dialog-padding) gap-(--pilo-dialog-gap)"
+				bounces={false}
 				scrollbar={{ mode: "always", vertical: scrollbarLook() }}
 			>
 				{local.children}

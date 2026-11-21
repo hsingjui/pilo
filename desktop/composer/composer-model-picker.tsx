@@ -346,6 +346,7 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 			<Scroll
 				class="max-h-56 min-h-0"
 				contentClass="gap-1 pb-1"
+				bounces={false}
 				scrollbar={{ vertical: scrollbarLook() }}
 			>
 				{() => (showModels() ? visibleModels().map(modelRow) : null)}
@@ -443,6 +444,7 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 			<Scroll
 				class="max-h-56 min-h-0"
 				contentClass="gap-1 pb-1"
+				bounces={false}
 				scrollbar={{ vertical: scrollbarLook() }}
 			>
 				{() =>

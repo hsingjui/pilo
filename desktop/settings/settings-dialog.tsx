@@ -244,6 +244,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 							<Scroll
 								class="min-h-0 flex-1"
 								contentClass="p-3 gap-4"
+								bounces={false}
 								scrollbar={{ mode: "always", vertical: scrollbarLook() }}
 							>
 								{SECTIONS.map((section) => {
@@ -342,6 +343,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 					<Scroll
 						class="min-h-0 flex-1"
 						contentClass={classNames("pb-6", compact() ? "px-4" : "px-6")}
+						bounces={false}
 						scrollbar={{ mode: "always", vertical: scrollbarLook() }}
 					>
 						<View
