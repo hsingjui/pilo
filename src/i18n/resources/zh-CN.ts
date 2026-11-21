@@ -180,6 +180,7 @@ const zhCN = {
 		remoteDescription: "通过局域网、外网或组网地址，用其他设备访问 Pilo。",
 		remoteLoading: "正在加载远程访问…",
 		remoteRunning: "运行中",
+		remoteNotRunning: "已启用 · 未运行",
 		remoteStopped: "已关闭",
 		remoteConnected: "远程已连接",
 		remoteOffline: "网络已断开",

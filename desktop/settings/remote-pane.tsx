@@ -447,7 +447,7 @@ export function RemotePane(props: {
 								label={t("settings.remoteWebUi")}
 								helper={t("settings.remoteDescription")}
 							>
-								<View class="flex-row items-center gap-2">
+								<View class="flex-row flex-wrap items-center gap-x-3 gap-y-2">
 									<View class="flex-row items-center gap-1.5">
 										<Text class="font-sans text-[10px] text-muted-foreground">
 											{t("settings.remotePort")}
@@ -463,20 +463,24 @@ export function RemotePane(props: {
 											onSubmit={() => void savePort()}
 										/>
 									</View>
-									<SettingsStatus muted={!current().running}>
-										{() =>
-											current().running
-												? t("settings.remoteRunning")
-												: t("settings.remoteStopped")
-										}
-									</SettingsStatus>
-									<Switch
-										testID="remote-enabled-switch"
-										checked={current().enabled}
-										disabled={busy() === "toggle"}
-										accessibilityLabel={t("settings.remoteWebUi")}
-										onChange={(event) => void toggle(event.checked)}
-									/>
+									<View class="flex-row items-center gap-2">
+										<SettingsStatus muted={!current().running}>
+											{() =>
+												current().running
+													? t("settings.remoteRunning")
+													: current().enabled
+														? t("settings.remoteNotRunning")
+														: t("settings.remoteStopped")
+											}
+										</SettingsStatus>
+										<Switch
+											testID="remote-enabled-switch"
+											checked={current().enabled}
+											disabled={busy() === "toggle"}
+											accessibilityLabel={t("settings.remoteWebUi")}
+											onChange={(event) => void toggle(event.checked)}
+										/>
+									</View>
 								</View>
 							</SettingsRow>
 							{() =>
@@ -748,7 +752,11 @@ export function RemotePane(props: {
 								) : (
 									<SettingsRow
 										label={t("settings.remoteNoDevices")}
-										helper={t("settings.remoteNoDevicesDescription")}
+										helper={
+											pairingVisible() && hasPairingLink()
+												? t("settings.remoteNoDevicesDescription")
+												: undefined
+										}
 									/>
 								)
 							}

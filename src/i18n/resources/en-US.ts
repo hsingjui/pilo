@@ -182,6 +182,7 @@ const enUS = {
 			"Access Pilo through LAN, public or mesh-network addresses.",
 		remoteLoading: "Loading Remote WebUI…",
 		remoteRunning: "Running",
+		remoteNotRunning: "Enabled · Not running",
 		remoteStopped: "Stopped",
 		remoteConnected: "Remote connected",
 		remoteOffline: "Offline",

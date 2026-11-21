@@ -13,7 +13,7 @@ import type { SettingsClient } from "./settings-dialog";
 const POLL_MS = 3_000;
 /** Tailwind's sm:, as the React dialog's `sm:w-[calc(100vw-4rem)]`. */
 const SM_WIDTH = 640;
-const MAX_WIDTH = 680;
+const MAX_WIDTH = 600;
 
 /**
  * The Remote Host's state behind the sidebar's phone button, as React's
@@ -74,7 +74,7 @@ export function RemoteDialog(props: {
 					testID="remote-dialog-close"
 					variant="ghost"
 					size="icon"
-					class="size-6 shrink-0"
+					class="size-8 shrink-0"
 					accessibilityLabel={t("common.close")}
 					onPress={props.onClose}
 				>

@@ -465,8 +465,19 @@ impl Pilo {
             .with_web_assets(Arc::new(ShellWebAssets(web_root)))?;
         let event_stream = runtime.subscribe_events(EVENT_QUEUE_LIMITS);
         runtime.start_idle_reaper();
+        let host = Arc::new(Mutex::new(None));
+        // Finish restoring the saved listener before commands or shutdown can reach the Host.
+        let mut startup = Arc::clone(&host)
+            .try_lock_owned()
+            .map_err(|error| format!("failed to initialize the Pilo host: {error}"))?;
+        executor.spawn(async move {
+            if let Err(error) = runtime.restore_remote().await {
+                eprintln!("failed to restore Remote WebUI: {error}");
+            }
+            *startup = Some(runtime);
+        });
         Ok(Self {
-            host: Arc::new(Mutex::new(Some(runtime))),
+            host,
             paths,
             executor,
             event_stream: Arc::new(Mutex::new(event_stream)),

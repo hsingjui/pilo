@@ -375,7 +375,9 @@ export function RemoteSettings({
 						<SettingsStatus muted={!state.running}>
 							{state.running
 								? t("settings.remoteRunning")
-								: t("settings.remoteStopped")}
+								: state.enabled
+									? t("settings.remoteNotRunning")
+									: t("settings.remoteStopped")}
 						</SettingsStatus>
 						<Switch
 							checked={state.enabled}
@@ -614,7 +616,11 @@ export function RemoteSettings({
 				{activeDevices.length === 0 ? (
 					<SettingsRow
 						label={t("settings.remoteNoDevices")}
-						helper={t("settings.remoteNoDevicesDescription")}
+						helper={
+							state.enabled && state.running && state.pairingUrl
+								? t("settings.remoteNoDevicesDescription")
+								: undefined
+						}
 					/>
 				) : (
 					activeDevices.map((device) => (
