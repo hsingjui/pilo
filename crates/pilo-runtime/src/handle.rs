@@ -190,7 +190,8 @@ pub async fn session_read_states(
         .map_err(|error| format!("failed to load session read states: {error}"))?
 }
 
-pub fn runtime_subscribe_events(
+#[cfg(test)]
+fn runtime_subscribe_events(
     runtime: &Runtime,
     window_label: &str,
     channel_id: u32,

@@ -176,46 +176,6 @@ export type ChatTranscriptSnapshot = {
 };
 
 /**
- * The `PiloClient` calls the native module answers today. The rest of the
- * interface joins this list as the module gains the matching calls, so the
- * client never carries a method that can only fail.
- */
-type BridgedPiloClient = Pick<
-	PiloClient,
-	| "loadPreferences"
-	| "savePreferences"
-	| "bootstrap"
-	| "loadThemeSettings"
-	| "saveThemeSettings"
-	| "listSessions"
-	| "searchSessions"
-	| "generateSessionTitle"
-	| "deleteSession"
-	| "loadHistory"
-	| "readHistoryImage"
-	| "readProjectImage"
-	| "loadConnectionModels"
-	| "loadModels"
-	| "loadModelScope"
-	| "saveModelScope"
-	| "loadCacheKeepAliveSettings"
-	| "saveCacheKeepAliveSettings"
-	| "loadNextPromptSettings"
-	| "saveNextPromptSettings"
-	| "requestNextPrompt"
-	| "loadPromptEnhancementSettings"
-	| "savePromptEnhancementSettings"
-	| "enhancePrompt"
-	| "loadSessionReadStates"
-	| "markSessionRead"
-	| "connectEvents"
-	| "startChat"
-	| "stopChat"
-	| "chatState"
-	| "sendChatCommand"
->;
-
-/**
  * Image bytes as the native module returns them: over an `ArrayBuffer`, never
  * a shared one, which its generated declaration does not say.
  */
@@ -230,12 +190,8 @@ type NativeEventBatch =
 /** Well under the native queue bound of 2,048 events. */
 const EVENT_BATCH_SIZE = 256;
 
-/**
- * `PiloClient` for the nsh desktop app. The native module serializes the same
- * runtime types the Tauri commands return, so this is the one place its
- * untyped JSON takes the shared types.
- */
-export class NshPiloClient implements BridgedPiloClient {
+/** Adapts the nsh native module's JSON to the shared `PiloClient` types. */
+export class NshPiloClient implements PiloClient {
 	private readonly pilo: PiloNative;
 	private readonly listeners = new Set<PiloClientEventOptions>();
 	private polling = false;

@@ -206,7 +206,6 @@ pub async fn session_reconcile(
         };
         if should_start_background_index {
             let background_events = runtime.events.clone();
-            let host_events = runtime.host_events.clone();
             let background_servers = Arc::clone(&runtime.servers);
             let background_manager = Arc::clone(&runtime.background_session_index);
             let background_project = project.clone();
@@ -258,13 +257,6 @@ pub async fn session_reconcile(
                     tokio::task::yield_now().await;
                 }
                 if indexed_total > 0 {
-                    let _ = host_events.emit_serialized(
-                        "pilo://sessions",
-                        serde_json::json!({
-                            "type": "indexed",
-                            "projectId": background_project.id,
-                        }),
-                    );
                     background_events.send(RuntimeEventEnvelope::global(
                         RuntimeEvent::SessionsIndexed {
                             project_id: background_project.id.clone(),
@@ -272,21 +264,12 @@ pub async fn session_reconcile(
                     ));
                 }
                 if let Some(error) = failure {
-                    let message = format!("background session indexing failed: {error}");
                     background_events.send(RuntimeEventEnvelope::global(
                         RuntimeEvent::SessionIndexError {
-                            project_id: background_project.id.clone(),
-                            message: message.clone(),
+                            project_id: background_project.id,
+                            message: format!("background session indexing failed: {error}"),
                         },
                     ));
-                    let _ = host_events.emit_serialized(
-                        "pilo://sessions",
-                        serde_json::json!({
-                            "type": "error",
-                            "projectId": background_project.id,
-                            "message": message,
-                        }),
-                    );
                 }
             });
         }

@@ -8,6 +8,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(test)]
 use super::host_events::HostEvents;
 use serde::Serialize;
 use serde_json::json;
@@ -27,7 +28,8 @@ pub use model::*;
 pub use stream::{EventBatch, EventQueueLimits, EventStream};
 use trace::traceable_runtime_event;
 
-pub const RUNTIME_EVENT_NAME: &str = "pilo://runtime";
+#[cfg(test)]
+pub(crate) const RUNTIME_EVENT_NAME: &str = "pilo://runtime";
 
 const WEB_EVENT_CHANNEL_CAPACITY: usize = 512;
 const WEB_EVENT_CHANNEL_MAX_BYTES: usize = 64 * 1024 * 1024;
@@ -135,15 +137,11 @@ pub struct SequencedRuntimeEvent {
 }
 
 #[derive(Clone)]
-struct EventSubscriber {
-    channel_id: u32,
-    events: Arc<dyn HostEvents>,
-}
-
-#[derive(Clone)]
 pub struct RuntimeEventBus {
     streams: Arc<StdMutex<stream::StreamRegistry>>,
-    channels: Arc<StdMutex<HashMap<String, EventSubscriber>>>,
+    // Existing tests still observe the legacy window envelopes. Production uses sequenced queues.
+    #[cfg(test)]
+    test_channels: Arc<StdMutex<HashMap<String, Arc<dyn HostEvents>>>>,
     web_sender: watch::Sender<()>,
     web_queue: Arc<StdMutex<WebEventQueue>>,
     replay: Arc<StdMutex<EventReplay>>,
@@ -159,7 +157,8 @@ impl Default for RuntimeEventBus {
         let (web_sender, _) = watch::channel(());
         Self {
             streams: Arc::new(StdMutex::new(stream::StreamRegistry::default())),
-            channels: Arc::new(StdMutex::new(HashMap::new())),
+            #[cfg(test)]
+            test_channels: Arc::default(),
             web_sender,
             web_queue: Arc::new(StdMutex::new(WebEventQueue {
                 enabled: true,
@@ -237,39 +236,25 @@ impl RuntimeEventBus {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn subscribe(
         &self,
         window_label: &str,
-        channel_id: u32,
+        _channel_id: u32,
         events: Arc<dyn HostEvents>,
     ) {
-        // Reload replaces only this window's channel; other windows stay subscribed.
-        self.channels
+        self.test_channels
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(
-                window_label.to_owned(),
-                EventSubscriber { channel_id, events },
-            );
-        runtime_trace(
-            "channel.subscribe",
-            None,
-            None,
-            json!({ "windowLabel": window_label, "channelId": channel_id }),
-        );
+            .insert(window_label.to_owned(), events);
     }
 
-    pub fn unsubscribe(&self, window_label: &str) {
-        self.channels
+    #[cfg(test)]
+    fn unsubscribe(&self, window_label: &str) {
+        self.test_channels
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(window_label);
-        runtime_trace(
-            "channel.unsubscribe",
-            None,
-            None,
-            json!({ "windowLabel": window_label }),
-        );
     }
 
     pub(crate) fn subscribe_web(&self) -> WebEventReceiver {
@@ -334,8 +319,6 @@ impl RuntimeEventBus {
                 .ok()
                 .and_then(|duration| i64::try_from(duration.as_millis()).ok());
         }
-        let trace = traceable_runtime_event(&event.event);
-        let session_key = event.session_key.clone();
         let (sequenced, payload_bytes) = {
             let mut replay = self
                 .replay
@@ -399,62 +382,29 @@ impl RuntimeEventBus {
             }
             (sequenced, bytes)
         };
-        let sequence = sequenced.sequence;
-
-        let channels = self
-            .channels
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        if channels.is_empty() {
-            if let Some((event_type, detail)) = trace {
-                runtime_trace(
-                    "channel.drop_no_subscriber",
-                    session_key.as_deref(),
-                    None,
-                    json!({ "event": event_type, "eventDetail": detail }),
-                );
-            }
-            return;
+        if let Some((event_type, detail)) = traceable_runtime_event(&sequenced.event.event) {
+            runtime_trace(
+                "event.publish",
+                sequenced.event.session_key.as_deref(),
+                None,
+                json!({
+                    "sequence": sequenced.sequence,
+                    "payloadBytes": payload_bytes,
+                    "event": event_type,
+                    "eventDetail": detail,
+                }),
+            );
         }
 
-        for (window_label, channel) in channels {
-            if let Some((event_type, detail)) = trace.as_ref() {
-                runtime_trace(
-                    "channel.send",
-                    session_key.as_deref(),
-                    None,
-                    json!({
-                        "windowLabel": window_label,
-                        "channelId": channel.channel_id,
-                        "sequence": sequence,
-                        "payloadBytes": payload_bytes,
-                        "event": event_type,
-                        "eventDetail": detail,
-                    }),
-                );
-            }
-            if let Err(error) = channel.events.emit_runtime(sequenced.event.clone()) {
-                if let Some((event_type, detail)) = trace.as_ref() {
-                    runtime_trace(
-                        "channel.send_error",
-                        session_key.as_deref(),
-                        None,
-                        json!({
-                            "windowLabel": window_label,
-                            "channelId": channel.channel_id,
-                            "sequence": sequence,
-                            "payloadBytes": payload_bytes,
-                            "event": event_type,
-                            "eventDetail": detail,
-                            "error": error.to_string(),
-                        }),
-                    );
-                }
-                log::error!(
-                    target: "runtime-events",
-                    "failed to send host channel event to {window_label}: {error}"
-                );
+        #[cfg(test)]
+        {
+            let channels = self
+                .test_channels
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            for channel in channels.into_values() {
+                let _ = channel.emit_serialized(RUNTIME_EVENT_NAME, &sequenced.event);
             }
         }
     }

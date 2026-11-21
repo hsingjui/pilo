@@ -242,14 +242,14 @@ impl Pilo {
     /// The connections a project can live on (local, WSL, SSH).
     pub async fn list_connections(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
         Self::with_runtime_blocking(this, |runtime| {
-            let mut connections = vec![local_connection_get(&runtime)?];
+            let mut connections = vec![local_connection_get(runtime)?];
             connections.extend(
-                wsl_connection_list(&runtime)?
+                wsl_connection_list(runtime)?
                     .into_iter()
                     .map(|info| info.connection),
             );
             connections.extend(
-                ssh_connection_list(&runtime)?
+                ssh_connection_list(runtime)?
                     .into_iter()
                     .map(|info| info.connection),
             );
@@ -261,7 +261,7 @@ impl Pilo {
     /// The local connection row, created if the catalog does not have it yet.
     pub async fn get_local_connection(this: Instance<Self>) -> Result<JsonValue, String> {
         Self::with_runtime_blocking(this, |runtime| {
-            serde_json::to_value(local_connection_get(&runtime)?).map_err(|error| error.to_string())
+            serde_json::to_value(local_connection_get(runtime)?).map_err(|error| error.to_string())
         })
         .await
     }
@@ -274,7 +274,7 @@ impl Pilo {
         pi_executable: Option<String>,
     ) -> Result<JsonValue, String> {
         Self::with_runtime_blocking(this, move |runtime| {
-            let connection = connection_settings_update(&runtime, id, name, pi_executable)?;
+            let connection = connection_settings_update(runtime, id, name, pi_executable)?;
             serde_json::to_value(connection).map_err(|error| error.to_string())
         })
         .await
@@ -287,7 +287,7 @@ impl Pilo {
         shown: bool,
     ) -> Result<JsonValue, String> {
         Self::with_runtime_blocking(this, move |runtime| {
-            let connection = connection_shown_in_home_set(&runtime, id, shown)?;
+            let connection = connection_shown_in_home_set(runtime, id, shown)?;
             serde_json::to_value(connection).map_err(|error| error.to_string())
         })
         .await
@@ -329,7 +329,7 @@ impl Pilo {
 
     /// The SSH connections in the catalog, with project counts and secret flags.
     pub async fn list_ssh_connections(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, |runtime| encode_list(ssh_connection_list(&runtime)?))
+        Self::with_runtime_blocking(this, |runtime| encode_list(ssh_connection_list(runtime)?))
             .await
     }
 
@@ -361,7 +361,7 @@ impl Pilo {
         id: String,
     ) -> Result<JsonValue, String> {
         Self::with_runtime_blocking(this, move |runtime| {
-            serde_json::to_value(ssh_connection_password_get(&runtime, id)?)
+            serde_json::to_value(ssh_connection_password_get(runtime, id)?)
                 .map_err(|error| error.to_string())
         })
         .await
@@ -420,7 +420,7 @@ impl Pilo {
 
     /// The WSL connections in the catalog, with project counts.
     pub async fn list_wsl_connections(this: Instance<Self>) -> Result<Vec<JsonValue>, String> {
-        Self::with_runtime_blocking(this, |runtime| encode_list(wsl_connection_list(&runtime)?))
+        Self::with_runtime_blocking(this, |runtime| encode_list(wsl_connection_list(runtime)?))
             .await
     }
 
@@ -432,7 +432,7 @@ impl Pilo {
         Self::with_runtime_blocking(this, move |runtime| {
             let connection: Connection =
                 serde_json::from_value(connection).map_err(|error| error.to_string())?;
-            let info = wsl_connection_save(&runtime, connection)?;
+            let info = wsl_connection_save(runtime, connection)?;
             serde_json::to_value(info).map_err(|error| error.to_string())
         })
         .await
@@ -490,7 +490,7 @@ impl Pilo {
     /// The host's native folder picker; `null` when dismissed.
     pub async fn pick_local_project_directory(this: Instance<Self>) -> Result<JsonValue, String> {
         Self::with_runtime_blocking(this, |runtime| {
-            serde_json::to_value(local_pick_project_directory(&runtime)?)
+            serde_json::to_value(local_pick_project_directory(runtime)?)
                 .map_err(|error| error.to_string())
         })
         .await

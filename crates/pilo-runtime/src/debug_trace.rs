@@ -39,10 +39,12 @@ fn log_runtime_diagnostic(
         .and_then(Value::as_str)
         .unwrap_or_default();
     let selected = match stage {
-        "channel.send" | "channel.drop_no_subscriber" | "webview.recv" => matches!(
-            event,
-            "process_state" | "rpc_message" | "runtime_error" | "assistant_message_end"
-        ),
+        "event.publish" | "channel.send" | "channel.drop_no_subscriber" | "webview.recv" => {
+            matches!(
+                event,
+                "process_state" | "rpc_message" | "runtime_error" | "assistant_message_end"
+            )
+        }
         "server_pi.recv" => matches!(
             event,
             "response" | "agent_start" | "agent_end" | "agent_settled"
