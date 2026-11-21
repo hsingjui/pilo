@@ -1,0 +1,298 @@
+use std::fs;
+
+use pilo_protocol::{BuiltinExtension, SshWorkspaceConfig};
+
+use pilo_domain::{ConnectionKind, PiRuntime, Project};
+
+use super::{host_paths::HostPaths, ssh, storage};
+
+pub(crate) const RESOURCES_BUSY: &str = "SSH_LOCAL_PI_RESOURCES_BUSY";
+
+pub(crate) async fn set_local_pi_resources(
+    runtime: &super::Runtime,
+    connection_id: &str,
+    enabled: bool,
+) -> Result<(), String> {
+    let _policy = runtime.pi_resource_policy.write().await;
+    {
+        let db = storage::open(&runtime.paths)?;
+        let connection = storage::get_connection(&db, connection_id)?
+            .ok_or_else(|| "SSH connection not found".to_owned())?;
+        if connection.pi_runtime != PiRuntime::Local
+            || !matches!(connection.kind, ConnectionKind::Ssh { .. })
+        {
+            return Err("This setting requires an SSH connection using local Pi".to_owned());
+        }
+        if storage::get_local_pi_resources(&db, connection_id)? == enabled {
+            return Ok(());
+        }
+    }
+    stop_for_resource_change(&runtime.paths, runtime, connection_id).await?;
+    storage::set_local_pi_resources(&storage::open(&runtime.paths)?, connection_id, enabled)?;
+    runtime
+        .events
+        .send(super::events::RuntimeEventEnvelope::global(
+            super::events::RuntimeEvent::ConfigurationChanged,
+        ));
+    Ok(())
+}
+
+pub(crate) async fn stop_for_resource_change(
+    paths: &HostPaths,
+    runtime: &super::PiloRuntime,
+    connection_id: &str,
+) -> Result<(), String> {
+    let projects = storage::list_projects(&storage::open(paths)?)?
+        .into_iter()
+        .filter(|project| project.connection.id == connection_id)
+        .map(|project| project.id)
+        .collect::<Vec<_>>();
+    let mut session = runtime.project_pi_session.lock().await;
+    let mut agents = runtime.parallel_agents.lock().await;
+    let affects_project_pi = session.uses_ssh_workspace()
+        && session
+            .snapshot()
+            .project_id
+            .is_some_and(|id| projects.contains(&id));
+
+    // Reject existing work before stopping any instance; stop also rechecks Pi-side activity.
+    runtime
+        .chat_sessions
+        .check_idle_for_resource_change(&projects)
+        .await?;
+    if affects_project_pi {
+        session.check_idle().await?;
+    }
+    agents.check_idle_for_resource_change(&projects).await?;
+
+    runtime
+        .chat_sessions
+        .stop_for_resource_change(&projects)
+        .await?;
+    if affects_project_pi {
+        session.stop_if_idle().await?;
+    }
+    agents.stop_for_resource_change(&projects).await?;
+    Ok(())
+}
+
+pub(crate) struct PiRuntimeProfile {
+    pub project: Project,
+    pub extensions: Vec<String>,
+    pub builtin_extensions: Vec<BuiltinExtension>,
+    pub disable_builtin_tools: bool,
+    pub disable_extension_discovery: bool,
+    pub disable_context_files: bool,
+}
+
+pub(crate) fn resolve_session_project_with_paths(
+    paths: &HostPaths,
+    project: &Project,
+) -> Result<Project, String> {
+    if project.default_workspace_pending() {
+        return Ok(project.clone());
+    }
+    match project.connection.pi_runtime {
+        PiRuntime::Workspace => Ok(normalize_local_pi_project(project.clone())),
+        PiRuntime::Local => local_runtime_project(paths, project),
+    }
+}
+
+pub(crate) async fn resolve_checked_pi_runtime_with_paths(
+    paths: &HostPaths,
+    project: &Project,
+    extensions: Vec<String>,
+) -> Result<PiRuntimeProfile, String> {
+    let profile = resolve_pi_runtime_with_paths(paths, project, extensions)?;
+    if let (ConnectionKind::Ssh { target }, [BuiltinExtension::SshWorkspace { config }]) = (
+        &project.connection.kind,
+        profile.builtin_extensions.as_slice(),
+    ) {
+        ssh::check_agent_key_config(target, &config.ssh_args).await?;
+    }
+    Ok(profile)
+}
+
+fn resolve_pi_runtime_with_paths(
+    paths: &HostPaths,
+    project: &Project,
+    extensions: Vec<String>,
+) -> Result<PiRuntimeProfile, String> {
+    match project.connection.pi_runtime {
+        PiRuntime::Workspace => Ok(PiRuntimeProfile {
+            project: normalize_local_pi_project(project.clone()),
+            extensions,
+            builtin_extensions: Vec::new(),
+            disable_builtin_tools: false,
+            disable_extension_discovery: false,
+            disable_context_files: false,
+        }),
+        PiRuntime::Local => {
+            let runtime_project = local_runtime_project(paths, project)?;
+            let ConnectionKind::Ssh { target } = &project.connection.kind else {
+                return Err("Local Pi with a remote workspace requires an SSH project".to_owned());
+            };
+            if !project.path.starts_with('/') {
+                return Err(
+                    "Local Pi SSH workspace currently requires a POSIX remote project path"
+                        .to_owned(),
+                );
+            }
+            let local_pi_resources = storage::get_local_pi_resources(
+                &storage::open_with_paths(paths)?,
+                &project.connection.id,
+            )?;
+            let config = SshWorkspaceConfig {
+                label: project.connection.name.clone(),
+                remote_cwd: project.path.clone(),
+                local_pi_resources,
+                ssh_args: ssh::ssh_base_args(target)?,
+                ssh_environment: ssh::ssh_child_environment(&project.connection)?,
+            };
+            Ok(PiRuntimeProfile {
+                project: runtime_project,
+                extensions,
+                builtin_extensions: vec![BuiltinExtension::SshWorkspace { config }],
+                disable_builtin_tools: true,
+                disable_extension_discovery: !local_pi_resources,
+                disable_context_files: true,
+            })
+        }
+    }
+}
+
+fn local_runtime_project(paths: &HostPaths, project: &Project) -> Result<Project, String> {
+    if !matches!(project.connection.kind, ConnectionKind::Ssh { .. }) {
+        return Err("Local Pi runtime is only valid for SSH projects".to_owned());
+    }
+    let db = storage::open_with_paths(paths)?;
+    let local_connection = storage::ensure_local_connection(&db)?;
+    let path = local_session_anchor(paths, &project.id)?;
+    let mut runtime_project = project.clone();
+    runtime_project.path = path.to_string_lossy().into_owned();
+    runtime_project.connection = local_connection;
+    runtime_project.metadata.cwd = runtime_project.path.clone();
+    runtime_project.metadata.git_branch = None;
+    Ok(normalize_local_pi_project(runtime_project))
+}
+
+fn normalize_local_pi_project(mut project: Project) -> Project {
+    if cfg!(windows) && matches!(project.connection.kind, ConnectionKind::Local) {
+        // Pi encodes cwd as a directory name; a verbatim prefix leaves an illegal '?'.
+        project.path = if let Some(path) = project.path.strip_prefix(r"\\?\UNC\") {
+            format!(r"\\{path}")
+        } else {
+            project
+                .path
+                .strip_prefix(r"\\?\")
+                .unwrap_or(&project.path)
+                .to_owned()
+        };
+        project.metadata.cwd = project.path.clone();
+    }
+    project
+}
+
+fn local_session_anchor(paths: &HostPaths, project_id: &str) -> Result<std::path::PathBuf, String> {
+    let path = paths.session_anchor_path(project_id)?;
+    fs::create_dir_all(&path)
+        .map_err(|error| format!("failed to create local Pi workspace anchor: {error}"))?;
+    Ok(path)
+}
+
+/// Remove the local anchor directory that holds a Local-Pi project's session
+/// files, so a re-added project does not resurrect the previous sessions.
+pub(crate) fn remove_session_anchor(paths: &HostPaths, project_id: &str) -> Result<(), String> {
+    let path = paths.session_anchor_path(project_id)?;
+    match fs::remove_dir_all(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "failed to remove local Pi workspace anchor: {error}"
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pilo_domain::{Connection, ProjectMetadata, SshAuthMethod, SshTarget};
+
+    fn test_project(kind: ConnectionKind, path: &str) -> Project {
+        Project {
+            id: Project::stable_id("test-connection", path),
+            name: "work".to_owned(),
+            path: path.to_owned(),
+            connection: Connection {
+                id: "test-connection".to_owned(),
+                name: "Test".to_owned(),
+                pi_executable: None,
+                pi_runtime: PiRuntime::Workspace,
+                kind,
+                shown_in_home: true,
+            },
+            metadata: ProjectMetadata {
+                cwd: path.to_owned(),
+                git_branch: Some("main".to_owned()),
+                pi_version: "1.0.0".to_owned(),
+                refreshed_at_ms: 1,
+            },
+            created_at_ms: 1,
+            last_opened_at_ms: 2,
+        }
+    }
+
+    fn assert_workspace_adapters(project: &Project, expected_path: &str) {
+        // Workspace adapters must not need a database or touch this directory.
+        let paths = HostPaths::for_test("unused-pi-workspace-test".into());
+        let mut expected = project.clone();
+        expected.path = expected_path.to_owned();
+        expected.metadata.cwd = expected_path.to_owned();
+
+        assert_eq!(
+            resolve_session_project_with_paths(&paths, project).unwrap(),
+            expected
+        );
+        assert_eq!(
+            resolve_pi_runtime_with_paths(&paths, project, Vec::new())
+                .unwrap()
+                .project,
+            expected
+        );
+    }
+
+    #[test]
+    fn local_workspace_adapters_agree_on_pi_cwd_without_changing_identity() {
+        for (path, windows_path) in [
+            (r"D:\work", r"D:\work"),
+            (r"\\?\D:\work", r"D:\work"),
+            (r"\\host\share\work", r"\\host\share\work"),
+            (r"\\?\UNC\host\share\work", r"\\host\share\work"),
+            ("/home/user/work", "/home/user/work"),
+        ] {
+            let project = test_project(ConnectionKind::Local, path);
+            let expected_path = if cfg!(windows) { windows_path } else { path };
+            assert_workspace_adapters(&project, expected_path);
+        }
+    }
+
+    #[test]
+    fn remote_workspace_adapters_leave_paths_unchanged() {
+        for kind in [
+            ConnectionKind::Wsl {
+                distro: "Debian".to_owned(),
+            },
+            ConnectionKind::Ssh {
+                target: SshTarget::ConfigHost {
+                    host: "devbox".to_owned(),
+                    auth_method: SshAuthMethod::Agent,
+                },
+            },
+        ] {
+            for path in ["/srv/work", r"\\?\D:\work", r"\\?\UNC\host\share\work"] {
+                let project = test_project(kind.clone(), path);
+                assert_workspace_adapters(&project, path);
+            }
+        }
+    }
+}

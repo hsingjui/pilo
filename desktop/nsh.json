@@ -25,7 +25,7 @@
 		"statusBar": true,
 		"openUrl": { "schemes": ["https"] }
 	},
-	"rust": "native",
+	"rust": ".",
 	"resolve": {
 		"alias": {
 			"@": "../src"

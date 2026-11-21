@@ -12,7 +12,8 @@ on:
       - ".cargo/**"
       - "rust-toolchain"
       - "rust-toolchain.toml"
-      - "src-tauri/Cargo.toml"
+      - "crates/pilo-domain/Cargo.toml"
+      - "crates/pilo-runtime/Cargo.toml"
       - "crates/pilo-protocol/**"
       - "crates/pilo-server/**"
       - "scripts/build-pilo-server.sh"
@@ -54,7 +55,7 @@ jobs:
               rustc --version
               git ls-tree -r HEAD -- \
                 Cargo.toml Cargo.lock .cargo rust-toolchain rust-toolchain.toml \
-                src-tauri/Cargo.toml crates/pilo-protocol crates/pilo-server \
+                crates/pilo-domain/Cargo.toml crates/pilo-runtime/Cargo.toml crates/pilo-protocol crates/pilo-server \
                 scripts/build-pilo-server.sh scripts/verify-pilo-server-resources.sh \
                 .github/workflows/server-runtimes.yml
             } | sha256sum | cut -d ' ' -f 1

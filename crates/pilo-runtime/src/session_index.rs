@@ -1,0 +1,599 @@
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+};
+
+use super::host_paths::HostPaths;
+use pilo_protocol::SessionFile;
+use rusqlite::{Connection as SqliteConnection, Transaction, TransactionBehavior};
+use serde_json::Value;
+
+use pilo_domain::{Project, SessionIndexEntry, SessionReconcileResult};
+
+use super::{pi_workspace, server_client::ServerManager, storage};
+
+const INITIAL_SESSION_INDEX_LIMIT: usize = 10;
+pub const BACKGROUND_SESSION_INDEX_BATCH: usize = 64;
+/// 只剥离 Windows verbatim 前缀；普通路径（含 POSIX 路径）原样返回，
+/// 不解析 `..`、不做大小写归并。
+fn windows_verbatim_path(value: &str) -> Cow<'_, str> {
+    if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+        return Cow::Owned(format!(r"\\{rest}"));
+    }
+    match value.strip_prefix(r"\\?\") {
+        Some(rest) => Cow::Borrowed(rest),
+        None => Cow::Borrowed(value),
+    }
+}
+
+/// 会话头 cwd 是否属于该项目。Windows 上 `fs::canonicalize` 会把项目路径写成
+/// `\\?\C:\...`，而 Pi 写入会话头的 cwd 是普通形式；两者是同一目录，比较前必须归一化，
+/// 否则带前缀的项目会把所有会话都过滤掉（索引永远为空）。
+fn session_cwd_matches(header_cwd: Option<&str>, project_path: &str) -> bool {
+    let Some(cwd) = header_cwd else {
+        return false;
+    };
+    cwd == project_path || windows_verbatim_path(cwd) == windows_verbatim_path(project_path)
+}
+
+#[derive(Default)]
+pub struct BackgroundSessionIndexManager {
+    projects: HashMap<String, BackgroundSessionIndexProject>,
+}
+
+#[derive(Default)]
+struct BackgroundSessionIndexProject {
+    running: bool,
+    generation: u64,
+    pending_paths: BTreeMap<String, u64>,
+}
+
+impl BackgroundSessionIndexManager {
+    pub fn enqueue(&mut self, project_id: &str, paths: Vec<String>) -> bool {
+        if paths.is_empty() {
+            return false;
+        }
+        let state = self.projects.entry(project_id.to_owned()).or_default();
+        state.generation = state.generation.wrapping_add(1).max(1);
+        let generation = state.generation;
+        for path in paths {
+            state.pending_paths.insert(path, generation);
+        }
+        if state.running {
+            false
+        } else {
+            state.running = true;
+            true
+        }
+    }
+
+    pub fn next_batch_or_finish(
+        &mut self,
+        project_id: &str,
+        limit: usize,
+    ) -> Option<Vec<(String, u64)>> {
+        let empty = self
+            .projects
+            .get(project_id)
+            .is_none_or(|state| state.pending_paths.is_empty());
+        if empty {
+            self.projects.remove(project_id);
+            return None;
+        }
+        let state = self.projects.get(project_id)?;
+        Some(
+            state
+                .pending_paths
+                .iter()
+                .take(limit)
+                .map(|(path, generation)| (path.clone(), *generation))
+                .collect(),
+        )
+    }
+
+    pub fn complete_batch(&mut self, project_id: &str, batch: &[(String, u64)]) {
+        let Some(state) = self.projects.get_mut(project_id) else {
+            return;
+        };
+        for (path, completed_generation) in batch {
+            if state.pending_paths.get(path) == Some(completed_generation) {
+                state.pending_paths.remove(path);
+            }
+        }
+    }
+
+    pub fn worker_aborted(&mut self, project_id: &str) {
+        let remove = match self.projects.get_mut(project_id) {
+            Some(state) => {
+                state.running = false;
+                state.pending_paths.is_empty()
+            }
+            None => false,
+        };
+        if remove {
+            self.projects.remove(project_id);
+        }
+    }
+}
+
+#[derive(Debug)]
+struct SessionFileMeta {
+    path: String,
+    size: u64,
+    mtime_ns: u64,
+    header: Value,
+    unchanged: bool,
+    deferred: bool,
+    name: Option<String>,
+    first_user_message_preview: Option<String>,
+}
+
+pub struct SessionReconcileWork {
+    pub result: SessionReconcileResult,
+    pub deferred_paths: Vec<String>,
+}
+
+// Index writes read (get_session) and then write in the same transaction. Under WAL a deferred
+// transaction that already holds a read snapshot cannot be upgraded to a write when another
+// writer committed in the meantime: SQLite fails immediately with SQLITE_BUSY and busy_timeout
+// does not apply. BEGIN IMMEDIATE takes the write lock up front so contention is waited out.
+fn write_transaction(db: &mut SqliteConnection) -> Result<Transaction<'_>, String> {
+    db.transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())
+}
+
+pub fn list_cached(
+    host_paths: &HostPaths,
+    project_id: &str,
+) -> Result<Vec<SessionIndexEntry>, String> {
+    storage::list_sessions(&storage::open(host_paths)?, project_id)
+}
+
+pub async fn reconcile(
+    host_paths: &HostPaths,
+    servers: &ServerManager,
+    project: &Project,
+) -> Result<SessionReconcileWork, String> {
+    if project.default_workspace_pending() {
+        return Ok(SessionReconcileWork {
+            result: SessionReconcileResult {
+                sessions: list_cached(host_paths, &project.id)?,
+                ..SessionReconcileResult::default()
+            },
+            deferred_paths: Vec::new(),
+        });
+    }
+    let session_project = pi_workspace::resolve_session_project_with_paths(host_paths, project)?;
+    let mut db = storage::open(host_paths)?;
+    let cached = storage::list_sessions(&db, &project.id)?;
+    let files = scan_files(
+        servers,
+        &session_project,
+        &cached,
+        Some(INITIAL_SESSION_INDEX_LIMIT),
+        &[],
+    )
+    .await?;
+    let cached_by_path = cached
+        .iter()
+        .map(|session| (session.session_path.as_str(), session))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut result = SessionReconcileResult::default();
+    let mut seen = Vec::with_capacity(files.len());
+    let mut deferred_paths = Vec::new();
+    let transaction = write_transaction(&mut db)?;
+
+    for file in files {
+        let previous = cached_by_path.get(file.path.as_str()).copied();
+        if file.unchanged {
+            if previous.is_some() {
+                seen.push(file.path);
+                result.unchanged += 1;
+            }
+            continue;
+        }
+        if file.deferred {
+            seen.push(file.path.clone());
+            deferred_paths.push(file.path);
+            continue;
+        }
+        if file.header.get("type").and_then(Value::as_str) != Some("session")
+            || file
+                .header
+                .get("id")
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty)
+        {
+            // A parse failure is not a deletion; retain the last usable index entry.
+            if previous.is_some() {
+                seen.push(file.path);
+            }
+            continue;
+        }
+        if !session_cwd_matches(
+            file.header.get("cwd").and_then(Value::as_str),
+            &session_project.path,
+        ) {
+            continue;
+        }
+
+        seen.push(file.path.clone());
+        let entry = build_index_entry(project, file, previous)?;
+        storage::upsert_session(&transaction, &entry)?;
+        if previous.is_some() {
+            result.updated += 1;
+        } else {
+            result.added += 1;
+        }
+    }
+
+    result.removed = storage::remove_missing_sessions(&transaction, &project.id, &seen)?;
+    transaction.commit().map_err(|error| error.to_string())?;
+    result.sessions = storage::list_sessions(&db, &project.id)?;
+    Ok(SessionReconcileWork {
+        result,
+        deferred_paths,
+    })
+}
+
+pub async fn index_paths(
+    host_paths: &HostPaths,
+    servers: &ServerManager,
+    project: &Project,
+    paths: &[String],
+) -> Result<usize, String> {
+    reconcile_paths(host_paths, servers, project, paths, &[]).await
+}
+
+pub async fn reconcile_paths(
+    host_paths: &HostPaths,
+    servers: &ServerManager,
+    project: &Project,
+    paths: &[String],
+    removed_paths: &[String],
+) -> Result<usize, String> {
+    if paths.is_empty() && removed_paths.is_empty() {
+        return Ok(0);
+    }
+    let session_project = pi_workspace::resolve_session_project_with_paths(host_paths, project)?;
+    let files = scan_files(servers, &session_project, &[], None, paths).await?;
+    let mut db = storage::open(host_paths)?;
+    let transaction = write_transaction(&mut db)?;
+    let mut changed = 0_usize;
+    for path in removed_paths {
+        if storage::remove_session_for_project(&transaction, &project.id, path)? {
+            changed += 1;
+        }
+    }
+    for file in files {
+        if file.unchanged || file.deferred {
+            continue;
+        }
+        if file.header.get("type").and_then(Value::as_str) != Some("session")
+            || file
+                .header
+                .get("id")
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty)
+        {
+            continue;
+        }
+        if !session_cwd_matches(
+            file.header.get("cwd").and_then(Value::as_str),
+            &session_project.path,
+        ) {
+            continue;
+        }
+        let previous = storage::get_session(&transaction, &file.path, Some(&project.id))?;
+        let entry = build_index_entry(project, file, previous.as_ref())?;
+        storage::upsert_session(&transaction, &entry)?;
+        changed += 1;
+    }
+    transaction.commit().map_err(|error| error.to_string())?;
+    Ok(changed)
+}
+
+async fn scan_files(
+    servers: &ServerManager,
+    project: &Project,
+    cached: &[SessionIndexEntry],
+    summary_limit: Option<usize>,
+    paths: &[String],
+) -> Result<Vec<SessionFileMeta>, String> {
+    let known = cached
+        .iter()
+        .map(|session| {
+            serde_json::json!({
+                "path": session.session_path,
+                "size": session.file_size,
+                "mtimeNs": session.file_mtime_ns,
+                // Server-local progress distinguishes old missing titles from confirmed untitled files.
+                "recoverName": session.name.as_deref().is_none_or(|name| name.trim().is_empty()),
+            })
+        })
+        .collect::<Vec<_>>();
+    let files: Vec<SessionFile> = servers
+        .request_typed(
+            &project.connection,
+            "session.scan",
+            serde_json::json!({
+                "project": project.path,
+                "known": known,
+                "summaryLimit": summary_limit,
+                "paths": paths,
+            }),
+        )
+        .await?;
+    Ok(files
+        .into_iter()
+        .map(|file| SessionFileMeta {
+            path: file.path,
+            size: file.size,
+            mtime_ns: file.mtime_ns,
+            header: file.header,
+            unchanged: file.unchanged,
+            deferred: file.deferred,
+            name: file.name,
+            first_user_message_preview: file.first_user_message_preview,
+        })
+        .collect())
+}
+
+fn build_index_entry(
+    project: &Project,
+    file: SessionFileMeta,
+    previous: Option<&SessionIndexEntry>,
+) -> Result<SessionIndexEntry, String> {
+    let pi_session_id = file
+        .header
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("session '{}' has no id", file.path))?
+        .to_owned();
+    // Local-Pi SSH sessions are stored under a local anchor directory, but
+    // the indexed workspace identity remains the authoritative remote cwd.
+    let cwd = project.path.clone();
+    let created_at = file
+        .header
+        .get("timestamp")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+
+    Ok(SessionIndexEntry {
+        connection_id: project.connection.id.clone(),
+        project_id: project.id.clone(),
+        pi_session_id,
+        session_path: file.path,
+        name: file
+            .name
+            .or_else(|| previous.and_then(|value| value.name.clone())),
+        cwd,
+        created_at: created_at.clone(),
+        updated_at: previous
+            .map(|value| value.updated_at.clone())
+            .unwrap_or(created_at),
+        message_count: previous.map(|value| value.message_count).unwrap_or(0),
+        last_message_at: previous.and_then(|value| value.last_message_at.clone()),
+        first_user_message_preview: file
+            .first_user_message_preview
+            .or_else(|| previous.and_then(|value| value.first_user_message_preview.clone())),
+        file_size: file.size,
+        file_mtime_ns: file.mtime_ns,
+        // Indexing extracts metadata, not full history, even when a missing title needs a full
+        // streaming scan. Record the observed size rather than a full-history parser cursor.
+        last_offset: file.size,
+        indexed_at_ms: storage::now_ms(),
+        pinned: previous.is_some_and(|value| value.pinned),
+        title_override: previous.and_then(|value| value.title_override.clone()),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pilo_domain::{Connection, ConnectionKind, ProjectMetadata};
+
+    fn test_project() -> Project {
+        Project {
+            id: "project:local:/work".to_owned(),
+            name: "work".to_owned(),
+            path: "/work".to_owned(),
+            connection: Connection {
+                id: "local".to_owned(),
+                name: "Local".to_owned(),
+                pi_executable: None,
+                pi_runtime: pilo_domain::PiRuntime::default(),
+                kind: ConnectionKind::Local,
+                shown_in_home: true,
+            },
+            metadata: ProjectMetadata {
+                cwd: "/work".to_owned(),
+                git_branch: Some("main".to_owned()),
+                pi_version: "1.0.0".to_owned(),
+                refreshed_at_ms: 1,
+            },
+            created_at_ms: 1,
+            last_opened_at_ms: 1,
+        }
+    }
+
+    #[test]
+    fn lightweight_index_uses_scan_summary_without_parsing_session_body() {
+        let project = test_project();
+        let entry = build_index_entry(
+            &project,
+            SessionFileMeta {
+                path: "/sessions/a.jsonl".to_owned(),
+                size: 500 * 1024 * 1024,
+                mtime_ns: 42,
+                header: serde_json::json!({
+                    "type": "session",
+                    "id": "session-a",
+                    "timestamp": "2026-01-01T00:00:00.000Z",
+                    "cwd": "/work"
+                }),
+                unchanged: false,
+                deferred: false,
+                name: Some("Indexed name".to_owned()),
+                first_user_message_preview: Some("hello world".to_owned()),
+            },
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(entry.name.as_deref(), Some("Indexed name"));
+        assert_eq!(
+            entry.first_user_message_preview.as_deref(),
+            Some("hello world")
+        );
+        assert_eq!(entry.message_count, 0);
+        assert_eq!(entry.last_message_at, None);
+        assert_eq!(entry.last_offset, entry.file_size);
+    }
+
+    #[test]
+    fn lightweight_index_preserves_cached_summary_when_scan_has_no_new_summary() {
+        let project = test_project();
+        let previous = SessionIndexEntry {
+            connection_id: "local".to_owned(),
+            project_id: project.id.clone(),
+            pi_session_id: "session-a".to_owned(),
+            session_path: "/sessions/a.jsonl".to_owned(),
+            name: Some("Existing name".to_owned()),
+            cwd: "/work".to_owned(),
+            created_at: "2026-01-01T00:00:00.000Z".to_owned(),
+            updated_at: "2026-01-01T00:00:00.000Z".to_owned(),
+            message_count: 99,
+            last_message_at: Some("2026-01-01T01:00:00.000Z".to_owned()),
+            first_user_message_preview: Some("existing preview".to_owned()),
+            file_size: 100,
+            file_mtime_ns: 1,
+            last_offset: 100,
+            indexed_at_ms: 1,
+            pinned: true,
+            title_override: None,
+        };
+        let entry = build_index_entry(
+            &project,
+            SessionFileMeta {
+                path: previous.session_path.clone(),
+                size: 200,
+                mtime_ns: 2,
+                header: serde_json::json!({
+                    "type": "session",
+                    "id": "session-a",
+                    "timestamp": "2026-01-01T00:00:00.000Z",
+                    "cwd": "/work"
+                }),
+                unchanged: false,
+                deferred: false,
+                name: None,
+                first_user_message_preview: None,
+            },
+            Some(&previous),
+        )
+        .unwrap();
+
+        assert_eq!(entry.name, previous.name);
+        assert_eq!(
+            entry.first_user_message_preview,
+            previous.first_user_message_preview
+        );
+        assert_eq!(entry.message_count, previous.message_count);
+        assert_eq!(entry.last_message_at, previous.last_message_at);
+        assert_eq!(entry.last_offset, 200);
+        assert!(entry.pinned);
+    }
+
+    #[test]
+    fn background_index_manager_merges_pending_paths_without_starting_a_second_worker() {
+        let mut manager = BackgroundSessionIndexManager::default();
+        assert!(manager.enqueue("project", vec!["b".to_owned(), "a".to_owned()]));
+        assert!(!manager.enqueue("project", vec!["c".to_owned()]));
+
+        let first = manager.next_batch_or_finish("project", 2).unwrap();
+        assert_eq!(
+            first
+                .iter()
+                .map(|(path, _)| path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "b"]
+        );
+
+        assert!(!manager.enqueue("project", vec!["a".to_owned()]));
+        manager.complete_batch("project", &first);
+        let second = manager.next_batch_or_finish("project", 8).unwrap();
+        assert_eq!(
+            second
+                .iter()
+                .map(|(path, _)| path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "c"]
+        );
+        manager.complete_batch("project", &second);
+        assert!(manager.next_batch_or_finish("project", 8).is_none());
+    }
+
+    #[test]
+    fn background_index_manager_keeps_inflight_paths_after_worker_abort() {
+        let mut manager = BackgroundSessionIndexManager::default();
+        assert!(manager.enqueue("project", vec!["a".to_owned()]));
+        let first = manager.next_batch_or_finish("project", 8).unwrap();
+        assert_eq!(first[0].0, "a");
+
+        manager.worker_aborted("project");
+        assert!(manager.enqueue("project", vec!["b".to_owned()]));
+        let retried = manager.next_batch_or_finish("project", 8).unwrap();
+        assert_eq!(
+            retried
+                .iter()
+                .map(|(path, _)| path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "b"]
+        );
+    }
+
+    #[test]
+    fn session_cwd_matches_verbatim_project_paths() {
+        for (header_cwd, project_path, expected) in [
+            (Some(r"E:\my_projects\pilo"), r"E:\my_projects\pilo", true),
+            (
+                Some(r"E:\my_projects\pilo"),
+                r"\\?\E:\my_projects\pilo",
+                true,
+            ),
+            (
+                Some(r"\\?\E:\my_projects\pilo"),
+                r"E:\my_projects\pilo",
+                true,
+            ),
+            (None, r"E:\my_projects\pilo", false),
+            (
+                Some(r"E:\my_projects\other"),
+                r"\\?\E:\my_projects\pilo",
+                false,
+            ),
+            (Some("/root/code/pilo"), "/root/code/pilo", true),
+            (Some("/root/code/pilo"), "/root/code/other", false),
+        ] {
+            assert_eq!(
+                session_cwd_matches(header_cwd, project_path),
+                expected,
+                "cwd={header_cwd:?} project={project_path}"
+            );
+        }
+    }
+
+    #[test]
+    fn verbatim_windows_paths_lose_their_prefix() {
+        for (input, expected) in [
+            (r"\\?\UNC\server\share\code", r"\\server\share\code"),
+            (r"\\?\E:\my_projects\pilo", r"E:\my_projects\pilo"),
+            (r"E:\my_projects\pilo", r"E:\my_projects\pilo"),
+            ("/root/code/pilo", "/root/code/pilo"),
+        ] {
+            assert_eq!(windows_verbatim_path(input), expected, "input={input}");
+        }
+    }
+}

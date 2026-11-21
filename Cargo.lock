@@ -1027,7 +1027,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "pilo"
+name = "pilo-domain"
+version = "0.4.1"
+dependencies = [
+ "getrandom",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "pilo-protocol"
+version = "0.4.1"
+dependencies = [
+ "prost",
+ "prost-build",
+ "protoc-bin-vendored",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "pilo-runtime"
 version = "0.4.1"
 dependencies = [
  "axum",
@@ -1037,6 +1059,7 @@ dependencies = [
  "global-hotkey",
  "keyring",
  "log",
+ "pilo-domain",
  "pilo-protocol",
  "pilo-server",
  "regex",
@@ -1050,18 +1073,6 @@ dependencies = [
  "tower-http",
  "url",
  "windows 0.61.3",
-]
-
-[[package]]
-name = "pilo-protocol"
-version = "0.4.1"
-dependencies = [
- "prost",
- "prost-build",
- "protoc-bin-vendored",
- "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]

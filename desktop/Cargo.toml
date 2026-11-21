@@ -1,0 +1,20 @@
+[package]
+name = "pilo-desktop"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+mime_guess = "2"
+nsh-core = "0.6.1"
+pilo-domain = { path = "../crates/pilo-domain" }
+pilo-runtime = { path = "../crates/pilo-runtime" }
+rfd = "0.15"
+serde = "1"
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
+
+[dev-dependencies]
+tempfile = "3"

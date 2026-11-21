@@ -1,0 +1,305 @@
+use pilo_protocol::CommandOutput;
+use serde::Serialize;
+use serde_json::json;
+
+use pilo_domain::{ConnectionKind, Project};
+
+use super::server_client::ServerManager;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitFileStatus {
+    pub path: String,
+    pub original_path: Option<String>,
+    pub index_status: String,
+    pub worktree_status: String,
+    pub staged: bool,
+    pub unstaged: bool,
+    pub untracked: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitStatus {
+    pub branch: Option<String>,
+    pub files: Vec<GitFileStatus>,
+}
+
+pub async fn status(servers: &ServerManager, project: &Project) -> Result<GitStatus, String> {
+    let prefix = run_checked(servers, project, "git", &["rev-parse", "--show-prefix"]).await?;
+    let prefix = String::from_utf8_lossy(&prefix);
+    let prefix = prefix.trim_end_matches(['\r', '\n']);
+    let branch = branch(servers, project).await;
+    let output = run_checked(
+        servers,
+        project,
+        "git",
+        &[
+            "--no-optional-locks",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--",
+            ".",
+        ],
+    )
+    .await?;
+    Ok(GitStatus {
+        branch,
+        files: parse_porcelain_v1_z(&output)
+            .into_iter()
+            .filter_map(|mut file| {
+                file.path = file.path.strip_prefix(prefix)?.to_owned();
+                if let Some(original) = &file.original_path {
+                    file.original_path =
+                        Some(original.strip_prefix(prefix).unwrap_or(original).to_owned());
+                }
+                Some(file)
+            })
+            .collect(),
+    })
+}
+
+pub async fn diff(
+    servers: &ServerManager,
+    project: &Project,
+    path: Option<&str>,
+    staged: bool,
+) -> Result<String, String> {
+    if let Some(path) = path {
+        validate_diff_path(project, path)?;
+    }
+    let mut args = vec![
+        "--literal-pathspecs".to_owned(),
+        "--no-pager".to_owned(),
+        "diff".to_owned(),
+        "--no-ext-diff".to_owned(),
+        "--no-textconv".to_owned(),
+        "--relative".to_owned(),
+        "--no-color".to_owned(),
+        "--unified=3".to_owned(),
+    ];
+    if staged {
+        args.push("--cached".to_owned());
+    }
+    args.extend(["--".to_owned(), path.unwrap_or(".").to_owned()]);
+
+    let output = run_checked_owned(servers, project, "git", &args).await?;
+    if !output.is_empty() || staged || path.is_none() {
+        return Ok(String::from_utf8_lossy(&output).into_owned());
+    }
+
+    let Some(path) = path else {
+        return Ok(String::new());
+    };
+    if !is_untracked(servers, project, path).await? {
+        return Ok(String::new());
+    }
+
+    let args = vec![
+        "--no-pager".to_owned(),
+        "diff".to_owned(),
+        "--no-index".to_owned(),
+        "--no-ext-diff".to_owned(),
+        "--no-textconv".to_owned(),
+        "--no-color".to_owned(),
+        "--unified=3".to_owned(),
+        "--".to_owned(),
+        if cfg!(windows) && matches!(project.connection.kind, ConnectionKind::Local) {
+            "NUL".to_owned()
+        } else {
+            "/dev/null".to_owned()
+        },
+        path.to_owned(),
+    ];
+    let output = run(servers, project, "git", &args, &[]).await?;
+    if output.code == Some(0) || output.code == Some(1) {
+        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+    }
+    Err(command_error("git", &output))
+}
+
+fn validate_diff_path(project: &Project, path: &str) -> Result<(), String> {
+    let windows = cfg!(windows) && matches!(project.connection.kind, ConnectionKind::Local);
+    if path.is_empty()
+        || path.contains('\0')
+        || path.starts_with('/')
+        || (windows && (path.starts_with('\\') || path.as_bytes().get(1) == Some(&b':')))
+        || path
+            .split(|character| character == '/' || (windows && character == '\\'))
+            .any(|part| matches!(part, "" | "." | ".."))
+    {
+        return Err("Git diff path must be a project-relative file path".to_owned());
+    }
+    Ok(())
+}
+
+pub async fn run_checked_owned(
+    servers: &ServerManager,
+    project: &Project,
+    program: &str,
+    args: &[String],
+) -> Result<Vec<u8>, String> {
+    let output = run(servers, project, program, args, &[]).await?;
+    if output.code == Some(0) {
+        Ok(output.stdout)
+    } else {
+        Err(command_error(program, &output))
+    }
+}
+
+pub async fn run_checked(
+    servers: &ServerManager,
+    project: &Project,
+    program: &str,
+    args: &[&str],
+) -> Result<Vec<u8>, String> {
+    let args = args
+        .iter()
+        .map(|value| (*value).to_owned())
+        .collect::<Vec<_>>();
+    run_checked_owned(servers, project, program, &args).await
+}
+
+pub async fn run(
+    servers: &ServerManager,
+    project: &Project,
+    program: &str,
+    args: &[String],
+    input: &[u8],
+) -> Result<CommandOutput, String> {
+    let (value, mut binary) = servers
+        .request_with_binary(
+            &project.connection,
+            "command.run",
+            json!({
+                "project": project.path,
+                "program": program,
+                "args": args,
+            }),
+            vec![input.to_vec()],
+        )
+        .await?;
+    if binary.len() != 2 {
+        return Err(format!(
+            "command.run expected stdout/stderr attachments, got {}",
+            binary.len()
+        ));
+    }
+    let stderr = binary.pop().expect("binary length checked");
+    let stdout = binary.pop().expect("binary length checked");
+    Ok(CommandOutput {
+        code: value
+            .get("code")
+            .and_then(serde_json::Value::as_i64)
+            .map(|code| code as i32),
+        stdout,
+        stderr,
+    })
+}
+
+async fn branch(servers: &ServerManager, project: &Project) -> Option<String> {
+    if let Ok(output) = run_checked(
+        servers,
+        project,
+        "git",
+        &["symbolic-ref", "--quiet", "--short", "HEAD"],
+    )
+    .await
+    {
+        let value = String::from_utf8_lossy(&output).trim().to_owned();
+        if !value.is_empty() {
+            return Some(value);
+        }
+    }
+    let output = run_checked(servers, project, "git", &["rev-parse", "--short", "HEAD"])
+        .await
+        .ok()?;
+    let value = String::from_utf8_lossy(&output).trim().to_owned();
+    (!value.is_empty()).then(|| format!("detached@{value}"))
+}
+
+async fn is_untracked(
+    servers: &ServerManager,
+    project: &Project,
+    path: &str,
+) -> Result<bool, String> {
+    let output = run_checked_owned(
+        servers,
+        project,
+        "git",
+        &[
+            "--literal-pathspecs".to_owned(),
+            "ls-files".to_owned(),
+            "--others".to_owned(),
+            "--exclude-standard".to_owned(),
+            "--".to_owned(),
+            path.to_owned(),
+        ],
+    )
+    .await?;
+    Ok(!output.is_empty())
+}
+
+fn command_error(program: &str, output: &CommandOutput) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.trim().is_empty() {
+        format!("'{program}' exited with {:?}", output.code)
+    } else {
+        format!("'{program}' failed: {}", stderr.trim())
+    }
+}
+
+fn parse_porcelain_v1_z(bytes: &[u8]) -> Vec<GitFileStatus> {
+    let mut records = bytes.split(|byte| *byte == 0).peekable();
+    let mut files = Vec::new();
+    while let Some(record) = records.next() {
+        if record.len() < 4 {
+            continue;
+        }
+        let index = record[0] as char;
+        let worktree = record[1] as char;
+        let path = String::from_utf8_lossy(&record[3..]).into_owned();
+        let renamed = matches!(index, 'R' | 'C') || matches!(worktree, 'R' | 'C');
+        let original_path = if renamed {
+            records
+                .next()
+                .filter(|value| !value.is_empty())
+                .map(|value| String::from_utf8_lossy(value).into_owned())
+        } else {
+            None
+        };
+        let untracked = index == '?' && worktree == '?';
+        files.push(GitFileStatus {
+            path,
+            original_path,
+            index_status: index.to_string(),
+            worktree_status: worktree.to_string(),
+            staged: !matches!(index, ' ' | '?'),
+            unstaged: worktree != ' ' || untracked,
+            untracked,
+        });
+    }
+    files
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_porcelain_status_and_rename_records() {
+        let bytes = b" M src/App.tsx\0A  new.txt\0?? notes.txt\0R  new-name.ts\0old-name.ts\0";
+        let files = parse_porcelain_v1_z(bytes);
+        assert_eq!(files.len(), 4);
+        assert_eq!(files[0].path, "src/App.tsx");
+        assert!(files[0].unstaged);
+        assert!(!files[0].staged);
+        assert_eq!(files[1].index_status, "A");
+        assert!(files[1].staged);
+        assert!(files[2].untracked);
+        assert_eq!(files[3].path, "new-name.ts");
+        assert_eq!(files[3].original_path.as_deref(), Some("old-name.ts"));
+    }
+}
