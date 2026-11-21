@@ -186,21 +186,27 @@ export function AboutPane(props: { client: SettingsClient }) {
 						) : status() === "available" && availableVersion() ? (
 							<SettingsStatus>v{availableVersion()}</SettingsStatus>
 						) : null}
-						<Button
-							testID="settings-update-check"
-							variant="outline"
-							size="sm"
-							class="h-8 gap-1.5 px-2 text-xs font-normal"
-							disabled={
-								status() === "checking" ||
-								status() === "downloading" ||
-								status() === "installing"
-							}
-							onPress={() => void check()}
-						>
-							{status() === "checking" ? <Spinner class="size-3.5" /> : null}
-							<Text class="font-sans text-xs">{buttonLabel()}</Text>
-						</Button>
+						{() => (
+							<Button
+								testID="settings-update-check"
+								variant="ghost"
+								size="sm"
+								class="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+								disabled={
+									status() === "checking" ||
+									status() === "downloading" ||
+									status() === "installing"
+								}
+								onPress={() => void check()}
+							>
+								{status() === "checking" ? (
+									<Spinner class="size-3.5" />
+								) : (
+									<Icon name="RefreshCw" size={14} />
+								)}
+								<Text class="font-sans text-xs">{buttonLabel()}</Text>
+							</Button>
+						)}
 					</View>
 				</SettingsRow>
 				<SettingsRow label={t("settings.releaseNotes")} ghostEdge="both">

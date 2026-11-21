@@ -1,10 +1,18 @@
-import { computed, effect, signal, Text, untracked, View } from "nsh";
+import {
+	type Accessor,
+	computed,
+	effect,
+	signal,
+	Text,
+	untracked,
+	View,
+} from "nsh";
 import type { CommandItem } from "nsh/base";
 
 import type { SessionSearchMatch } from "@/lib/api/sessions-types";
+import type { KeyboardShortcutMap } from "@/lib/keyboard-shortcuts-types";
 import { displayProjectPath } from "@/lib/project-path";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
-import { APP_SHORTCUTS } from "../shortcuts";
 import { activeProject } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
 import { Command } from "../ui/command";
@@ -16,6 +24,7 @@ import { sidebarSessions } from "./sidebar-projects";
 
 export interface CommandPaletteProps {
 	store: AppStore;
+	shortcuts: Accessor<Partial<KeyboardShortcutMap>>;
 	/** Searches saved message text; the message group is absent without it. */
 	searchSessions?: Pick<NshPiloClient, "searchSessions">;
 	/** Opens the settings dialog; the settings action is absent without it. */
@@ -48,7 +57,7 @@ const CONTENT_LIMIT = 30;
 
 /**
  * The global search: projects, sessions, and the messages of every project,
- * then the actions. `mod+k` opens it; a session or a project goes straight to
+ * then the actions. A session or a project goes straight to
  * it, a match opens its session.
  */
 export function CommandPalette(props: CommandPaletteProps) {
@@ -116,13 +125,13 @@ export function CommandPalette(props: CommandPaletteProps) {
 			actions.push({
 				id: "action:new-session",
 				label: t("app.newChat"),
-				shortcut: APP_SHORTCUTS.newChat,
+				shortcut: props.shortcuts()["new-chat"],
 			});
 		if (props.onOpenSettings)
 			actions.push({
 				id: "action:settings",
 				label: t("settings.title"),
-				shortcut: APP_SHORTCUTS.openSettings,
+				shortcut: props.shortcuts()["open-settings"],
 			});
 		return actions.filter(
 			(action) => !q || action.label.toLocaleLowerCase().includes(q),

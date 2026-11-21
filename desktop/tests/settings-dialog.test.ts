@@ -153,6 +153,31 @@ test("a keep-alive settings event updates a row", async () => {
 	);
 });
 
+test("the shortcuts pane records, resets rows and resets all", async () => {
+	const app = await openApp();
+	await app.press("id:sidebar-settings");
+	await app.waitFor("id:settings-dialog");
+	await app.press("id:settings-nav-shortcuts");
+	await app.waitFor("text:New session");
+	// The fixture presets custom shortcuts on two rows; a box press swaps in
+	// the recorder. Headless keys never reach inputs, so capture is covered
+	// by pressing through to the resets instead.
+	await app.press("id:shortcut-box-new-chat");
+	await app.waitFor("id:shortcut-recorder");
+	await app.press("id:shortcut-box-toggle-sidebar");
+	await app.waitFor("id:shortcut-recorder");
+	await app.press("label:Reset New session shortcut to default");
+	await app.host.send("fixture", "probe-shortcuts");
+	await app.waitUntil(() =>
+		app.storage()["shortcut-patches"]?.includes('"new-chat":"mod+n"'),
+	);
+	await app.press("id:shortcuts-reset-all");
+	await app.host.send("fixture", "probe-shortcuts");
+	await app.waitUntil(() =>
+		app.storage()["shortcut-patches"]?.includes('"toggle-sidebar":"mod+b"'),
+	);
+});
+
 test("a keep-alive edit commits on blur and Escape cancels it", async () => {
 	const app = await openApp();
 	await app.press("id:sidebar-settings");

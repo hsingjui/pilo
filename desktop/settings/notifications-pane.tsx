@@ -135,40 +135,42 @@ export function NotificationsPane(props: {
 									: t(PERMISSION_KEYS[permission() ?? "unavailable"])}
 							</SettingsStatus>
 						)}
-						<Button
-							testID="settings-recheck-permission"
-							variant="ghost"
-							size="icon"
-							accessibilityLabel={t("settings.recheckPermission")}
-							disabled={checking()}
-							onPress={refresh}
-						>
-							{() => (
+						{() => (
+							<Button
+								testID="settings-recheck-permission"
+								variant="ghost"
+								size="icon"
+								accessibilityLabel={t("settings.recheckPermission")}
+								disabled={checking()}
+								onPress={refresh}
+							>
 								<Icon
 									name="RefreshCw"
 									size={14}
 									class={checking() ? "animate-spin" : undefined}
 								/>
-							)}
-						</Button>
+							</Button>
+						)}
 					</View>
 				</SettingsRow>
 				<SettingsRow label={t("settings.testNotification")} ghostEdge="both">
-					<Button
-						testID="settings-send-test-notification"
-						variant="ghost"
-						size="sm"
-						class="text-muted-foreground hover:text-foreground"
-						disabled={testing()}
-						onPress={sendTest}
-					>
-						<Icon name="Send" size={14} />
-						{() =>
-							testing()
-								? t("settings.sending")
-								: t("settings.sendTestNotification")
-						}
-					</Button>
+					{() => (
+						<Button
+							testID="settings-send-test-notification"
+							variant="ghost"
+							size="sm"
+							class="text-muted-foreground hover:text-foreground"
+							disabled={testing()}
+							onPress={sendTest}
+						>
+							<Icon name="Send" size={14} />
+							<Text class="font-sans">
+								{testing()
+									? t("settings.sending")
+									: t("settings.sendTestNotification")}
+							</Text>
+						</Button>
+					)}
 				</SettingsRow>
 				{() =>
 					failure() ? (

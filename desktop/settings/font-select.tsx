@@ -97,6 +97,7 @@ export function FontSelect(props: {
 					accessibilityLabel={props.accessibilityLabel}
 					class={props.class}
 					value={selectedTitle()}
+					icon="ChevronsUpDown"
 					onLayout={({ bounds }) => triggerWidth.set(bounds.size.width)}
 				/>
 			}

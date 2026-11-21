@@ -1024,6 +1024,7 @@ const zhCN = {
 		focusComposer: "开始输入",
 		queueMessage: "排队发送",
 		unassigned: "未设置",
+		unavailable: "此快捷键在桌面应用中不可用。",
 		defaultOccupied: "默认按键已被占用。",
 		defaultOccupiedDescription: "与“{{label}}”冲突，可先全部重置。",
 		modifierRequired: "请使用组合键或功能键。",

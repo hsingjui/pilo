@@ -3,6 +3,7 @@ import { NumberInput } from "nsh/base";
 
 import { t } from "../app/i18n";
 import { classNames } from "../ui/class-names";
+import { styleVar } from "../ui/theme-style";
 
 /**
  * A font size field, as `font-size-input.tsx` in the Tauri app: typing edits a
@@ -32,14 +33,24 @@ export function FontSizeInput(props: {
 	};
 	return (
 		<View
-			class={classNames("flex-row", props.class)}
+			class={classNames(
+				"h-(--pilo-field-height) flex-row items-center rounded-(--pilo-radius-md) border border-input-border bg-input-field pr-3",
+				props.class,
+			)}
+			style={{ boxShadow: styleVar("pilo-field-shadow") }}
 			onKeyDown={(event) => {
 				if (event.key === "Escape") draft.set(undefined);
 			}}
 		>
+			{/* One bordered field with `px` inside, as in Tauri; the suffix slot
+			 * wraps under the field and the steppers draw as their own box in
+			 * this nsh build, so `px` is a sibling and the controls are hidden. */}
 			<NumberInput
 				testID={props.testID}
-				class="flex-1"
+				class="min-w-0 flex-1 border-0 bg-transparent"
+				controlsRight
+				controlsClass="hidden"
+				inputClass="pl-3 shadow-none"
 				value={draft() ?? props.value}
 				min={props.min}
 				max={props.max}
@@ -47,15 +58,11 @@ export function FontSizeInput(props: {
 				accessibilityLabel={String(
 					t("settings.fontSizeInputLabel", { font: props.label }),
 				)}
-				suffix={
-					<Text class="font-sans text-xs text-muted-foreground px-1 shrink-0">
-						px
-					</Text>
-				}
 				onChange={({ value }) => draft.set(value)}
 				onSubmit={commit}
 				onBlur={commit}
 			/>
+			<Text class="font-sans shrink-0 text-xs text-muted-foreground">px</Text>
 		</View>
 	);
 }

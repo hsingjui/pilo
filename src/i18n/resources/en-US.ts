@@ -1067,6 +1067,7 @@ const enUS = {
 		focusComposer: "Focus composer",
 		queueMessage: "Queue message",
 		unassigned: "Not set",
+		unavailable: "This shortcut is not available in the desktop app.",
 		defaultOccupied: "Default shortcut is already in use",
 		defaultOccupiedDescription:
 			"“{{label}}” is using this shortcut. Reset all shortcuts first.",

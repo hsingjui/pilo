@@ -1,8 +1,10 @@
 import {
+	cleanup,
 	computed,
 	effect,
 	type JSX,
 	keymap,
+	platform,
 	signal,
 	token,
 	untracked,
@@ -28,7 +30,12 @@ import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 import type { ModelCatalogStore } from "../state/model-catalog";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
-import { APP_SHORTCUTS } from "../shortcuts";
+import { defaultKeyboardShortcuts } from "@/lib/keyboard-shortcuts-core";
+import type {
+	KeyboardShortcutMap,
+	ShortcutCommandId,
+} from "@/lib/keyboard-shortcuts-types";
+import { nshAppShortcut } from "../shortcuts";
 import {
 	SettingsDialog,
 	type SettingsClient,
@@ -121,6 +128,8 @@ export function AppShell(props: AppShellProps) {
 		t("app.newChat");
 	const paletteOpen = signal(false);
 	const settingsOpen = signal(false);
+	const recordingShortcut = signal(false);
+	const registeredShortcuts = signal<Partial<KeyboardShortcutMap>>({});
 	const addProjectOpen = signal(false);
 	const addProjectConnection = signal<string | null>(null);
 	const sidebarSettings = new SidebarSettingsStore();
@@ -181,16 +190,36 @@ export function AppShell(props: AppShellProps) {
 			}),
 		);
 	});
-	keymap.bind({
-		[APP_SHORTCUTS.openCommandPalette]: () =>
-			paletteOpen.update((open) => !open),
-		[APP_SHORTCUTS.newChat]: () => {
+	// App shortcuts follow the saved map, so recordings in the shortcuts pane
+	// rebind live; a command bound to "" is unassigned, as the Tauri app does.
+	effect(() => {
+		// The native keymap runs before a focused view's key capture.
+		if (settingsOpen() && recordingShortcut()) return;
+		const isMac = platform.os === "macos";
+		const stored = store.state().preferences?.values.keyboardShortcuts;
+		const defaults = defaultKeyboardShortcuts(isMac);
+		const bound: Partial<KeyboardShortcutMap> = {};
+		const bind = (id: ShortcutCommandId, handler: () => void) => {
+			const shortcut = nshAppShortcut(stored?.[id] ?? defaults[id], isMac);
+			if (!shortcut) return;
+			try {
+				cleanup(keymap.bind(shortcut, handler));
+				bound[id] = shortcut;
+			} catch (error) {
+				// A binding saved by another client may not be valid on nsh.
+				console.warn(`Skipping unsupported shortcut for ${id}`, error);
+			}
+		};
+		bind("open-command-palette", () => paletteOpen.update((open) => !open));
+		bind("new-chat", () => {
 			const project = activeProject(store.state());
 			if (project) store.selectProject(project.id);
-		},
-		[APP_SHORTCUTS.openSettings]: () => {
+		});
+		bind("open-settings", () => {
 			if (props.settings) settingsOpen.set(true);
-		},
+		});
+		bind("toggle-sidebar", () => sidebarLayout.setCollapsed(!collapsed()));
+		registeredShortcuts.set(bound);
 	});
 	// The app draws its own title bar: the sidebar and the main area reach
 	// the window's top edge, beside the system's window controls.
@@ -525,6 +554,7 @@ export function AppShell(props: AppShellProps) {
 						<CommandPalette
 							store={store}
 							searchSessions={props.searchSessions}
+							shortcuts={registeredShortcuts}
 							onOpenSettings={
 								props.settings ? () => settingsOpen.set(true) : undefined
 							}
@@ -537,6 +567,9 @@ export function AppShell(props: AppShellProps) {
 						<SettingsDialog
 							open={settingsOpen}
 							onClose={() => settingsOpen.set(false)}
+							onShortcutRecordingChange={(recording) =>
+								recordingShortcut.set(recording)
+							}
 							state={store.state}
 							client={props.settings}
 							desktop={props.desktop}

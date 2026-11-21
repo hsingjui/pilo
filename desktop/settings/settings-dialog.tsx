@@ -89,6 +89,7 @@ export type SettingsClient = Pick<
 export interface SettingsDialogProps {
 	open: () => boolean;
 	onClose: () => void;
+	onShortcutRecordingChange?: (recording: boolean) => void;
 	/** The app state the panes read (preferences, theme, projects). */
 	state: Accessor<AppState>;
 	client: SettingsClient;
@@ -437,7 +438,9 @@ export function SettingsDialog(props: SettingsDialogProps) {
 										return (
 											<ShortcutsPane
 												state={props.state}
+												client={props.client}
 												desktop={props.desktop}
+												onRecordingChange={props.onShortcutRecordingChange}
 											/>
 										);
 									case "desktop":
