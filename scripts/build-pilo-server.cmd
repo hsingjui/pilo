@@ -17,7 +17,7 @@ if not defined ARCH (
   exit /b 2
 )
 
-set "RESOURCE=src-tauri\resources\pilo-server-windows-%ARCH%.exe"
+set "RESOURCE=resources\pilo-server-windows-%ARCH%.exe"
 
 echo Building pilo-server windows-%ARCH% release
 cargo build -p pilo-server --release || exit /b 1

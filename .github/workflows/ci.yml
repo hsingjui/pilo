@@ -67,10 +67,7 @@ jobs:
             build-essential \
             curl \
             file \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
             libssl-dev \
-            libwebkit2gtk-4.1-dev \
             libxdo-dev \
             pkg-config \
             wget
@@ -79,9 +76,6 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
-
-      - name: Create build directories
-        run: mkdir -p dist src-tauri/resources
 
       - name: Check Rust formatting
         run: cargo fmt --all --check

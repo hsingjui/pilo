@@ -11,7 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
-src-tauri/resources/pilo-server-*
+resources/pilo-server-*
 /target/
 
 # Local scratch files and diagnostic test outputs

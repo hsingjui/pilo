@@ -1498,20 +1498,9 @@ mod tests {
     #[test]
     fn uses_tauri_data_locations() {
         let home = Path::new("/Users/example");
-        for (development, config, identifier) in [
-            (
-                false,
-                include_str!("../../../src-tauri/tauri.conf.json"),
-                "app.hsingjui.pilo",
-            ),
-            (
-                true,
-                include_str!("../../../src-tauri/tauri.dev.conf.json"),
-                "app.hsingjui.pilo.dev",
-            ),
-        ] {
-            let tauri: JsonValue = serde_json::from_str(config).unwrap();
-            assert_eq!(tauri["identifier"], identifier);
+        for (development, identifier) in
+            [(false, "app.hsingjui.pilo"), (true, "app.hsingjui.pilo.dev")]
+        {
             assert_eq!(
                 default_data_dir(home, development),
                 home.join("Library/Application Support").join(identifier)

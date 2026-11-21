@@ -31,13 +31,13 @@ struct ImageFixture;
 impl ImageFixture {
     /// The fixture PNG as native bytes.
     pub fn bytes() -> Vec<u8> {
-        include_bytes!("../../../src-tauri/icons/32x32.png").to_vec()
+        include_bytes!("../../tests/fixtures/image-32.png").to_vec()
     }
 
     /// The fixture PNG as an absolute local path.
     pub fn path() -> String {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../src-tauri/icons/32x32.png")
+            .join("../tests/fixtures/image-32.png")
             .to_string_lossy()
             .into_owned()
     }

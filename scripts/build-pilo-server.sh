@@ -10,7 +10,7 @@ if [[ "${1:-}" == '--dev' ]]; then
   shift
 fi
 PROFILE="${PILO_SERVER_PROFILE:-release}"
-RESOURCE_DIR="$ROOT_DIR/src-tauri/resources"
+RESOURCE_DIR="$ROOT_DIR/resources"
 if [[ "$DEV_BUILD" == 1 ]]; then
   PROFILE='debug'
   export CARGO_TARGET_DIR="$ROOT_DIR/target"

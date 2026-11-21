@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
-RESOURCE_DIR="$ROOT_DIR/src-tauri/resources"
+RESOURCE_DIR="$ROOT_DIR/resources"
 
 REQUIRED=(
   pilo-server-windows-x86_64.exe

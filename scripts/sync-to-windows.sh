@@ -21,10 +21,10 @@ RSYNC_EXCLUDES=(
   "--exclude=dist/"
   "--exclude=.vite/"
   "--exclude=target/"
-  "--exclude=src-tauri/resources/pilo-server-*"
+  "--exclude=resources/pilo-server-*"
 )
 
-INOTIFY_EXCLUDE='(^|/)(\.git|\.idea|\.vscode|\.pi|\.trellis|\.agents|\.tmp|[^/]*\.local|node_modules|dist|\.vite|target)(/|$)|/tests/tmp(/|$)|/src-tauri/resources/pilo-server-[^/]*$'
+INOTIFY_EXCLUDE='(^|/)(\.git|\.idea|\.vscode|\.pi|\.trellis|\.agents|\.tmp|[^/]*\.local|node_modules|dist|\.vite|target)(/|$)|/tests/tmp(/|$)|/resources/pilo-server-[^/]*$'
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {

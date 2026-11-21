@@ -66,7 +66,7 @@ jobs:
         id: runtimes
         uses: actions/cache/restore@v5
         with:
-          path: src-tauri/resources/pilo-server-*
+          path: resources/pilo-server-*
           key: ${{ steps.inputs.outputs.cache-key }}
 
       - name: Verify cached runtime set
@@ -79,7 +79,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: pilo-server-runtimes
-          path: src-tauri/resources/pilo-server-*
+          path: resources/pilo-server-*
           if-no-files-found: error
           retention-days: 14
 
@@ -143,14 +143,14 @@ jobs:
       - name: Inspect runtime
         shell: bash
         run: |
-          test -s "src-tauri/resources/${{ matrix.resource }}"
-          wc -c "src-tauri/resources/${{ matrix.resource }}"
+          test -s "resources/${{ matrix.resource }}"
+          wc -c "resources/${{ matrix.resource }}"
 
       - name: Upload runtime
         uses: actions/upload-artifact@v7
         with:
           name: pilo-server-${{ matrix.target }}
-          path: src-tauri/resources/${{ matrix.resource }}
+          path: resources/${{ matrix.resource }}
           if-no-files-found: error
           retention-days: 14
 
@@ -168,7 +168,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           pattern: pilo-server-*
-          path: src-tauri/resources
+          path: resources
           merge-multiple: true
 
       - name: Verify complete runtime set
@@ -179,12 +179,12 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: pilo-server-runtimes
-          path: src-tauri/resources/pilo-server-*
+          path: resources/pilo-server-*
           if-no-files-found: error
           retention-days: 14
 
       - name: Save verified runtime set
         uses: actions/cache/save@v5
         with:
-          path: src-tauri/resources/pilo-server-*
+          path: resources/pilo-server-*
           key: ${{ needs.prepare.outputs.cache-key }}

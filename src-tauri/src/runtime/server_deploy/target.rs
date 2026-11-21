@@ -179,7 +179,7 @@ pub(crate) fn server_binary(target: ServerTarget) -> Result<PathBuf, String> {
         ));
     }
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    candidates.push(manifest.join("resources").join(resource_name));
+    candidates.push(manifest.join("../resources").join(resource_name));
 
     candidates.into_iter().find(|path| path.is_file()).ok_or_else(|| {
         format!(

@@ -3,16 +3,12 @@ pub mod bootstrap;
 pub mod cache_keep_alive;
 mod chat_service;
 mod chat_sessions;
-#[cfg(feature = "tauri")]
-pub mod commands;
 mod connection_diagnostics;
 mod connection_models;
 pub mod connections;
 mod control;
 mod credentials;
 pub mod debug_trace;
-#[cfg(feature = "tauri")]
-pub(crate) mod desktop_startup;
 pub mod events;
 pub mod file_links;
 mod git;
