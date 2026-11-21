@@ -1,9 +1,9 @@
-import { replayConversationEvents } from "@/lib/chat/conversation-replay";
+import { replayConversationEvents } from "@shared/chat/conversation-replay";
 import type {
 	ConversationEvent,
 	ConversationReducerContext,
 	ConversationState,
-} from "@/lib/chat/conversation-types";
+} from "@shared/chat/conversation-types";
 
 /** Conversations for the chat fixtures, built by the shared reducer. */
 

@@ -4,7 +4,7 @@ import test from "node:test";
 import {
 	parseSkillInvocation,
 	skillInvocationSummary,
-} from "../../src/lib/chat/skill-invocation.ts";
+} from "../../shared/chat/skill-invocation.ts";
 
 const expandedText = [
 	'<skill name="animate" location="/root/.agents/skills/animate/SKILL.md">',

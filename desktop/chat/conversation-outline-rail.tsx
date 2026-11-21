@@ -14,7 +14,7 @@ import {
 } from "nsh";
 import { Tooltip } from "nsh/base";
 
-import type { ConversationOutlineEntry } from "@/lib/chat/conversation-outline";
+import type { ConversationOutlineEntry } from "@shared/chat/conversation-outline";
 import { t } from "../app/i18n";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { styleVar } from "../ui/theme-style";

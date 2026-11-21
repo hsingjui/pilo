@@ -1,6 +1,6 @@
 import { mount, signal, Text } from "nsh";
 import { Pilo, SessionFilesFixture } from "app/native";
-import type { SessionHistoryResult } from "@/lib/api/sessions-types";
+import type { SessionHistoryResult } from "@shared/api/sessions-types";
 
 const status = signal("loading settled history");
 

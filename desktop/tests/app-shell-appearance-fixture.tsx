@@ -1,9 +1,9 @@
 import { mount, Storage, Text, token, View } from "nsh";
 import { Button } from "nsh/base";
 
-import type { AppLocale } from "@/i18n/locale-types";
-import type { HostPreferenceValues } from "@/lib/host-preferences-types";
-import type { ThemeSettings } from "@/lib/theme-settings-types";
+import type { AppLocale } from "@shared/i18n/locale-types";
+import type { HostPreferenceValues } from "@shared/host-preferences-types";
+import type { ThemeSettings } from "@shared/theme-settings-types";
 import "../app/fonts";
 import { AppShell } from "../app/AppShell";
 import { ComposerStore } from "../composer/composer-store";

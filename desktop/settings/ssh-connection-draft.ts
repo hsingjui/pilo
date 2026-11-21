@@ -1,10 +1,10 @@
-import type { SshConnectionInfo } from "@/lib/api/connections-types";
+import type { SshConnectionInfo } from "@shared/api/connections-types";
 import type {
 	Connection,
 	PiRuntime,
 	SshAuthMethod,
 	SshTarget,
-} from "@/lib/api/pi-runtime-types";
+} from "@shared/api/pi-runtime-types";
 
 export const AUTH_LABEL_KEYS: Record<
 	SshAuthMethod,

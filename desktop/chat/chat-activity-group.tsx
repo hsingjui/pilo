@@ -4,12 +4,12 @@ import {
 	shouldAutoCollapseAssistantActivity,
 	shouldInitiallyOpenAssistantActivity,
 	summarizeAssistantActivity,
-} from "@/lib/chat/chat-activity-state";
+} from "@shared/chat/chat-activity-state";
 import type {
 	AssistantActivity,
 	ThinkingActivity,
 	ToolCallActivity,
-} from "@/lib/chat/chat-activity-types";
+} from "@shared/chat/chat-activity-types";
 
 import { t } from "../app/i18n";
 import { Icon } from "../ui/icon";

@@ -1,8 +1,8 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, ChatFixture, Pilo } from "app/native";
 
-import type { PiloClientEvent } from "@/lib/api/pilo-client";
-import type { ProjectScopedModel } from "@/lib/project-model-scope";
+import type { PiloClientEvent } from "@shared/api/pilo-client";
+import type { ProjectScopedModel } from "@shared/project-model-scope";
 import { NshPiloClient } from "../client/nsh-pilo-client";
 
 const status = signal("loading models through the client");

@@ -3,7 +3,7 @@ import { expect, open, test } from "nsh/test";
 import type {
 	PiloClientEventMessage,
 	PiloClientEventOptions,
-} from "@/lib/api/pilo-client";
+} from "@shared/api/pilo-client";
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
 
 type Call = [method: string, ...args: unknown[]];

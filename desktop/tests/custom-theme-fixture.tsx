@@ -9,7 +9,7 @@ import {
 	resolveCustomTheme,
 	validateCustomThemeTokens,
 	type CustomThemeTokens,
-} from "@/lib/theme-tokens";
+} from "@shared/theme-tokens";
 import lody from "../theme.json";
 
 const catalog = createThemeTokenCatalog(lody.cssVars);

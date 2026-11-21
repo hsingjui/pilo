@@ -6,8 +6,8 @@ import {
 	discardRemovedChatFiles,
 	registerChatFile,
 	retainChatFiles,
-} from "../../src/lib/chat/chat-file-lifecycle.ts";
-import { fileMentionValue } from "../../src/lib/chat/chat-mentions.ts";
+} from "../../shared/chat/chat-file-lifecycle.ts";
+import { fileMentionValue } from "../../shared/chat/chat-mentions.ts";
 
 const path = "/project/attachments/AAAAAAAAAAAAAAAAAAAAAA/report.txt";
 

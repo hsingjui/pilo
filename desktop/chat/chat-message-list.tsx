@@ -1,6 +1,6 @@
 import { computed, type JSX, type ListSlot, untracked, View } from "nsh";
 
-import type { ChatMessage } from "@/lib/chat/conversation-types";
+import type { ChatMessage } from "@shared/chat/conversation-types";
 import type { ChatTranscriptState } from "../state/chat-transcript-store";
 import { ChatHistorySkeleton } from "./chat-history-skeleton";
 import { ChatExpansion } from "./chat-expansion";

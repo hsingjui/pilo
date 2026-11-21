@@ -6,7 +6,7 @@ import {
 	isChatInputHistoryCursorValid,
 	moveChatInputHistory,
 	readChatInputHistory,
-} from "../../src/lib/chat/chat-input-history.ts";
+} from "../../web/lib/chat/chat-input-history.ts";
 
 const entries = ["first", "/compact", "third"];
 

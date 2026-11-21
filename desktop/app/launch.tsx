@@ -1,7 +1,7 @@
 import { computed, mount } from "nsh";
 import { displays, isAvailable, Window, type WindowRef } from "nsh/desktop";
 
-import type { PiloClientEvent } from "@/lib/api/pilo-client";
+import type { PiloClientEvent } from "@shared/api/pilo-client";
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
 import { ComposerStore } from "../composer/composer-store";
 import { AppStore } from "../state/app-store";

@@ -1,11 +1,11 @@
 import { expect, test } from "nsh/test";
 
-import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime-types";
+import type { PiloRuntimeEvent } from "@shared/api/pi-runtime-types";
 import {
 	createConversationState,
 	reduceConversation,
-} from "@/lib/chat/conversation-reducer";
-import { toConversationAction } from "@/lib/chat/conversation-runtime-adapter";
+} from "@shared/chat/conversation-reducer";
+import { toConversationAction } from "@shared/chat/conversation-runtime-adapter";
 import { reducerContext } from "./reducer-context";
 
 test("live runtime events reduce through the runtime adapter", () => {

@@ -20,7 +20,7 @@ export interface StateViewProps {
 }
 
 /**
- * An empty, loading or failed page part, as React's `src/ui/state-view.tsx`:
+ * An empty, loading or failed page part, as the WebUI's `web/ui/state-view.tsx`:
  * the icon in a muted circle (bare and large for `hero`), a title, its
  * description and an action. Icons draw in the foreground they are given;
  * pass `muted-foreground` (`hero`: `foreground`) as React's circle does.

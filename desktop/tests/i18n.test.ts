@@ -1,8 +1,8 @@
 import { computed } from "nsh";
 import { expect, open, test } from "nsh/test";
 
-import { i18n } from "@/i18n/instance";
-import { i18nInitOptions, resources } from "@/i18n/options.ts";
+import { i18n } from "@shared/i18n/instance";
+import { i18nInitOptions, resources } from "@shared/i18n/options.ts";
 
 import { appLocale, initializeI18n, setAppLocale, t } from "../app/i18n";
 

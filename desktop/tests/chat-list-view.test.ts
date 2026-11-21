@@ -1,6 +1,6 @@
 import { expect, test } from "nsh/test";
 
-import type { ConversationState } from "@/lib/chat/conversation-types";
+import type { ConversationState } from "@shared/chat/conversation-types";
 import { chatListView } from "../chat/chat-list-view";
 import type { ChatTranscriptState } from "../state/chat-transcript-store";
 

@@ -1,6 +1,6 @@
 import { computed } from "nsh";
 
-import type { ChatMessage } from "@/lib/chat/conversation-types";
+import type { ChatMessage } from "@shared/chat/conversation-types";
 import { ChatAssistantMessage } from "./chat-assistant-message";
 import { ChatCompactionMarker } from "./chat-compaction-marker";
 import type { ChatExpansion } from "./chat-expansion";

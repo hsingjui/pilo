@@ -1,11 +1,14 @@
 import { Scroll, signal, Text, token, View } from "nsh";
 
-import type { PiModel } from "@/lib/api/pi-runtime-types";
-import { getProjectScopeDraft, piModelsMatch } from "@/lib/pi-model-selection";
+import type { PiModel } from "@shared/api/pi-runtime-types";
+import {
+	getProjectScopeDraft,
+	piModelsMatch,
+} from "@shared/pi-model-selection";
 import type {
 	ProjectModelScope,
 	ProjectScopedModel,
-} from "@/lib/project-model-scope";
+} from "@shared/project-model-scope";
 
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";

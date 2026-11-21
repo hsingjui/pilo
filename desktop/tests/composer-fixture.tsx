@@ -1,7 +1,7 @@
 import { mount, Text, View, signal } from "nsh";
 import "../app/fonts";
 
-import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
+import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import type { ComposerClient } from "../composer/composer-store";
 import { ComposerStore } from "../composer/composer-store";
 import { ChatComposer } from "../composer/chat-composer";

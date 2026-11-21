@@ -1,6 +1,6 @@
 import { mount, setTheme, signal, Storage, Text, View } from "nsh";
 
-import type { ChatMessage } from "@/lib/chat/conversation-types";
+import type { ChatMessage } from "@shared/chat/conversation-types";
 import "../app/fonts";
 import { initializeI18n } from "../app/i18n";
 import { ChatMessageList } from "../chat/chat-message-list";

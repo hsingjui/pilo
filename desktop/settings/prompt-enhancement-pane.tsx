@@ -1,7 +1,7 @@
 import { type Accessor, cleanup, effect, signal, Text, View } from "nsh";
 
-import type { Connection } from "@/lib/api/pi-runtime-types";
-import type { PromptEnhancementSettings } from "@/lib/prompt-enhancement-types";
+import type { Connection } from "@shared/api/pi-runtime-types";
+import type { PromptEnhancementSettings } from "@shared/prompt-enhancement-types";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import { Switch } from "../ui/switch";

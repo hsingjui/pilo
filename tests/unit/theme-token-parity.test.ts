@@ -5,7 +5,7 @@ import {
 	createThemeTokenCatalog,
 	parseThemeColor,
 	validateCustomThemeTokens,
-} from "../../src/lib/theme-tokens.ts";
+} from "../../shared/theme-tokens.ts";
 
 const [header, ...cases] = readFileSync(
 	new URL("../fixtures/theme-token-cases.jsonl", import.meta.url),

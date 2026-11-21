@@ -8,7 +8,7 @@ import {
 	summarizeChatImages,
 	toPiImageContents,
 	type ChatImageAttachment,
-} from "../../src/lib/chat/chat-submission.ts";
+} from "../../shared/chat/chat-submission.ts";
 
 const image: ChatImageAttachment = {
 	id: "image-1",

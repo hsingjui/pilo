@@ -1,11 +1,11 @@
 import { type Accessor, signal } from "nsh";
 
-import { chatSessionKey } from "@/lib/api/chat-session-key";
+import { chatSessionKey } from "@shared/api/chat-session-key";
 import type {
 	PiloClientEvent,
 	PiloClientEventMessage,
-} from "@/lib/api/pilo-client";
-import type { Project } from "@/lib/api/projects-types";
+} from "@shared/api/pilo-client";
+import type { Project } from "@shared/api/projects-types";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import {
 	type AppAction,

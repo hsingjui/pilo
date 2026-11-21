@@ -1,6 +1,6 @@
 import { type Signal, signal, View } from "nsh";
 
-import type { Connection, PiModel } from "@/lib/api/pi-runtime-types";
+import type { Connection, PiModel } from "@shared/api/pi-runtime-types";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";

@@ -3,13 +3,13 @@ import { expect, test } from "nsh/test";
 import {
 	createConversationState,
 	reduceConversation as reduceByRelativePath,
-} from "../../src/lib/chat/conversation-reducer.ts";
-import { replayConversationEvents } from "../../src/lib/chat/conversation-replay.ts";
+} from "@shared/chat/conversation-reducer.ts";
+import { replayConversationEvents } from "@shared/chat/conversation-replay.ts";
 import type {
 	ConversationEvent,
 	ConversationReducerContext,
-} from "../../src/lib/chat/conversation-types.ts";
-import { reduceConversation } from "@/lib/chat/conversation-reducer";
+} from "@shared/chat/conversation-types.ts";
+import { reduceConversation } from "@shared/chat/conversation-reducer";
 
 function context(): ConversationReducerContext {
 	let messageId = 0;

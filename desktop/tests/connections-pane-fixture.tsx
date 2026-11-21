@@ -1,7 +1,7 @@
 import { mount, Scroll, View } from "nsh";
 
-import type { Connection } from "@/lib/api/pi-runtime-types";
-import type { Project } from "@/lib/api/projects-types";
+import type { Connection } from "@shared/api/pi-runtime-types";
+import type { Project } from "@shared/api/projects-types";
 import "../app/fonts";
 import { initializeI18n } from "../app/i18n";
 import { conversationContext } from "../app/open-chat";

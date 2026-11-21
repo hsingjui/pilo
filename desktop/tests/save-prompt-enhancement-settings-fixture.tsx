@@ -3,7 +3,7 @@ import { BootstrapFixture, Pilo } from "app/native";
 import type {
 	PromptEnhancementModel,
 	PromptEnhancementSettings,
-} from "@/lib/prompt-enhancement-types";
+} from "@shared/prompt-enhancement-types";
 
 const status = signal("saving prompt enhancement settings");
 const model = { provider: "fixture", id: "rewrite" };

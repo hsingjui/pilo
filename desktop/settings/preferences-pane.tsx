@@ -1,7 +1,7 @@
 import { type Accessor, View } from "nsh";
 
-import { isAppLocale } from "@/i18n/locale-types";
-import type { PreferencePatch } from "@/lib/host-preferences-types";
+import { isAppLocale } from "@shared/i18n/locale-types";
+import type { PreferencePatch } from "@shared/host-preferences-types";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import { Select } from "../ui/select";

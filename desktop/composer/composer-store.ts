@@ -1,24 +1,24 @@
 import { type Accessor, signal } from "nsh";
 import { Storage } from "nsh";
 
-import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
-import type { PiCommand } from "@/lib/api/pi-runtime-types";
+import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
+import type { PiCommand } from "@shared/api/pi-runtime-types";
 import {
 	discardRemovedChatFiles,
 	registerChatFile,
 	retainChatFiles,
-} from "@/lib/chat/chat-file-lifecycle";
+} from "@shared/chat/chat-file-lifecycle";
 import {
 	fileMentionValue,
 	readChatMentionDraft,
 	writeChatMentionDraft,
-} from "@/lib/chat/chat-mentions";
+} from "@shared/chat/chat-mentions";
 import {
 	CHAT_INPUT_HISTORY_LIMIT,
 	isChatInputHistoryCursorValid,
 	moveChatInputHistory,
 	type ChatInputHistoryDirection,
-} from "@/lib/chat/chat-input-history-cursor";
+} from "@shared/chat/chat-input-history-cursor";
 import {
 	createChatSubmission,
 	formatChatImageSize,
@@ -29,18 +29,18 @@ import {
 	MAX_CHAT_IMAGE_COUNT,
 	MAX_CHAT_IMAGE_TOTAL_BYTES,
 	type ChatImageAttachment,
-} from "@/lib/chat/chat-submission";
+} from "@shared/chat/chat-submission";
 import {
 	COMPOSER_SEND_MODE_STORAGE_KEY,
 	DEFAULT_COMPOSER_SEND_MODE,
 	isComposerSendMode,
 	type ComposerSendMode,
-} from "@/lib/chat/send-mode";
+} from "@shared/chat/send-mode";
 import {
 	sessionMentionValue,
 	type SessionMention,
-} from "@/lib/chat/session-mentions";
-import type { ComposerSuggestion } from "@/lib/chat/composer-suggestions";
+} from "@shared/chat/session-mentions";
+import type { ComposerSuggestion } from "@shared/chat/composer-suggestions";
 import { t } from "../app/i18n";
 import { requestPiRpc } from "../client/chat-rpc";
 import type { NshPiloClient } from "../client/nsh-pilo-client";

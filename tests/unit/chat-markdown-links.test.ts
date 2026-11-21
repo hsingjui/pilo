@@ -8,13 +8,13 @@ import { Streamdown, defaultUrlTransform } from "streamdown";
 import {
 	resolveMarkdownFileLink,
 	resolveMarkdownFileUrl,
-} from "../../src/lib/chat/chat-markdown-links.ts";
+} from "../../shared/chat/chat-markdown-links.ts";
 import {
 	MARKDOWN_COMPONENTS,
 	MARKDOWN_REHYPE_PLUGINS,
-} from "../../src/components/chat/chat-markdown-components.tsx";
-import { openFileLink } from "../../src/lib/api/file-links.ts";
-import { initializeI18n } from "../../src/i18n/index.ts";
+} from "../../web/components/chat/chat-markdown-components.tsx";
+import { openFileLink } from "../../web/lib/api/file-links.ts";
+import { initializeI18n } from "../../web/i18n/index.ts";
 
 await initializeI18n("en-US");
 
@@ -274,7 +274,7 @@ test("oversized dotted hrefs are rejected without blocking the Markdown plugin",
 			"--eval",
 			`
 			import assert from "node:assert/strict";
-			import { rehypeRelativeFileLinks, resolveMarkdownFileLink } from "./src/lib/chat/chat-markdown-links.ts";
+			import { rehypeRelativeFileLinks, resolveMarkdownFileLink } from "./shared/chat/chat-markdown-links.ts";
 			for (const href of [".".repeat(100_000), "a.b.".repeat(25_000) + "ts:12"]) {
 				const node = { tagName: "a", properties: { href } };
 				rehypeRelativeFileLinks()(node);

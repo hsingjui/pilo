@@ -8,17 +8,17 @@
 	<body>
 		<div id="root"></div>
 		<script type="module">
-			import "../../src/index.css";
+			import "../../web/index.css";
 			import { createElement as h, useEffect, useState } from "react";
 			import { createRoot } from "react-dom/client";
-			import { initializeI18n } from "../../src/i18n/index.ts";
+			import { initializeI18n } from "../../web/i18n/index.ts";
 			import {
 				PreferencesProvider,
 				usePreferences,
-			} from "../../src/lib/preferences-provider.tsx";
-			import { ChatCopyButton } from "../../src/components/chat/chat-copy-button.tsx";
-			import { MarkdownImage } from "../../src/components/chat/chat-markdown-image.tsx";
-			import { PiExtensionUiDialog } from "../../src/components/chat/pi-extension-ui-dialog.tsx";
+			} from "../../web/lib/preferences-provider.tsx";
+			import { ChatCopyButton } from "../../web/components/chat/chat-copy-button.tsx";
+			import { MarkdownImage } from "../../web/components/chat/chat-markdown-image.tsx";
+			import { PiExtensionUiDialog } from "../../web/components/chat/pi-extension-ui-dialog.tsx";
 			import {
 				Dialog,
 				DialogContent,
@@ -26,10 +26,10 @@
 				DialogFooter,
 				Button,
 				TooltipProvider,
-			} from "../../src/ui/index.ts";
-			import { Toaster } from "../../src/ui/sonner.tsx";
+			} from "../../web/ui/index.ts";
+			import { Toaster } from "../../web/ui/sonner.tsx";
 			import { toast } from "sonner";
-			import { bindHostPreferences } from "../../src/lib/host-preferences.ts";
+			import { bindHostPreferences } from "../../web/lib/host-preferences.ts";
 
 			if (new URLSearchParams(location.search).has("remote"))
 				document.documentElement.dataset.remoteWebui = "";

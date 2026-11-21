@@ -7,21 +7,21 @@ import { Streamdown, defaultUrlTransform } from "streamdown";
 import {
 	projectMarkdownImageScope,
 	resolveMarkdownImageSource,
-} from "../../src/lib/chat/chat-markdown-images.ts";
+} from "../../shared/chat/chat-markdown-images.ts";
 import {
 	loadChatHistoryImageUrl,
 	loadChatProjectImageUrl,
-} from "../../src/lib/chat/chat-image-media.ts";
-import { MAX_CHAT_IMAGE_BYTES } from "../../src/lib/chat/chat-submission.ts";
+} from "../../web/lib/chat/chat-image-media.ts";
+import { MAX_CHAT_IMAGE_BYTES } from "../../shared/chat/chat-submission.ts";
 import {
 	MARKDOWN_COMPONENTS,
 	MARKDOWN_REHYPE_PLUGINS,
-} from "../../src/components/chat/chat-markdown-components.tsx";
+} from "../../web/components/chat/chat-markdown-components.tsx";
 import {
 	ChatMarkdownImageScopeProvider,
 	MarkdownImage,
-} from "../../src/components/chat/chat-markdown-image.tsx";
-import { initializeI18n } from "../../src/i18n/index.ts";
+} from "../../web/components/chat/chat-markdown-image.tsx";
+import { initializeI18n } from "../../web/i18n/index.ts";
 
 await initializeI18n("en-US");
 

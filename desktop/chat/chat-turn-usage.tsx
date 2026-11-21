@@ -8,8 +8,8 @@ import {
 	View,
 } from "nsh";
 
-import type { TokenUsage } from "@/lib/api/token-usage";
-import { formatCompactTokens, formatCost } from "@/lib/format-numbers";
+import type { TokenUsage } from "@shared/api/token-usage";
+import { formatCompactTokens, formatCost } from "@shared/format-numbers";
 
 import { t } from "../app/i18n";
 import { focusRingStyle } from "../ui/focus-ring-style";

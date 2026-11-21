@@ -1,5 +1,5 @@
 // node --experimental-strip-types 既不认识 JSX，也不认 "@/..." 别名。
-// 这个 loader 只补这两件事：把 "@/x" 映射到 src/x，用已装好的 typescript 转译 .tsx。
+// 这个 loader 只补这两件事：把 "@/x" 映射到 web/x、"@shared/x" 映射到 shared/x，用已装好的 typescript 转译 .tsx。
 // 纯 .ts 仍交给 node 自带的类型擦除，本 loader 不碰。
 import { statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -8,7 +8,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isMainThread } from "node:worker_threads";
 import ts from "typescript";
 
-const SRC = pathToFileURL(`${process.cwd()}/src/`);
+const WEB = pathToFileURL(`${process.cwd()}/web/`);
+const SHARED = pathToFileURL(`${process.cwd()}/shared/`);
 const CANDIDATES = ["", ".ts", ".tsx", "/index.ts", "/index.tsx"];
 
 const isFile = (path) => {
@@ -21,7 +22,9 @@ const isFile = (path) => {
 
 export async function resolve(specifier, context, nextResolve) {
 	let base;
-	if (specifier.startsWith("@/")) base = new URL(specifier.slice(2), SRC);
+	if (specifier.startsWith("@shared/"))
+		base = new URL(specifier.slice("@shared/".length), SHARED);
+	else if (specifier.startsWith("@/")) base = new URL(specifier.slice(2), WEB);
 	else if (specifier.startsWith("."))
 		base = new URL(specifier, context.parentURL);
 	else return nextResolve(specifier, context);

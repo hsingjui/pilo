@@ -9,6 +9,49 @@
 	"rules": {
 		"react/react-in-jsx-scope": "off"
 	},
+	"overrides": [
+		{
+			"files": ["shared/**"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"group": [
+									"react",
+									"react-*",
+									"react/*",
+									"nsh",
+									"nsh/*",
+									"app/*",
+									"@/*",
+									"@tauri-apps/*"
+								],
+								"message": "shared/ is plain TypeScript for both the WebUI and the desktop."
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			"files": ["web/**"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"group": ["nsh", "nsh/*", "app/*"],
+								"message": "web/ must not import the desktop (nsh) app."
+							}
+						]
+					}
+				]
+			}
+		}
+	],
 	"ignorePatterns": [".pi/**", "desktop/**", "dist/**", "target/**"],
 	"env": {
 		"builtin": true,

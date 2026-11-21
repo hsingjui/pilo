@@ -1,8 +1,8 @@
 import { host, mount, signal, Text } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
-import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime-types";
-import type { SessionHistoryResult } from "@/lib/api/sessions-types";
-import type { ConversationEvent } from "@/lib/chat/conversation-types";
+import type { PiloRuntimeEvent } from "@shared/api/pi-runtime-types";
+import type { SessionHistoryResult } from "@shared/api/sessions-types";
+import type { ConversationEvent } from "@shared/chat/conversation-types";
 
 const key = "nsh-transcript-snapshot";
 const status = signal("checking transcript snapshots");

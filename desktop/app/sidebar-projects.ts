@@ -1,8 +1,8 @@
-import { sortSidebarSessionsActiveFirst } from "@/components/sidebar/session-list";
-import type { SidebarSession } from "@/components/sidebar/types";
-import type { Connection } from "@/lib/api/pi-runtime-types";
-import type { Project } from "@/lib/api/projects-types";
-import type { SessionIndexEntry } from "@/lib/api/sessions-types";
+import { sortSidebarSessionsActiveFirst } from "@shared/sidebar/session-list";
+import type { SidebarSession } from "@shared/sidebar/sidebar-types";
+import type { Connection } from "@shared/api/pi-runtime-types";
+import type { Project } from "@shared/api/projects-types";
+import type { SessionIndexEntry } from "@shared/api/sessions-types";
 import { type AppState, isSessionUnread } from "../state/app-state";
 
 /** A connection and its projects, as the sidebar groups them. */

@@ -16,13 +16,13 @@
 		<pre id="results">Running…</pre>
 		<div id="root" style="max-width: 720px; margin: 16px"></div>
 		<script type="module">
-			import "../../src/index.css";
+			import "../../web/index.css";
 			import { createElement, Suspense } from "react";
 			import { createRoot } from "react-dom/client";
-			import { ChatMarkdown } from "../../src/components/chat/chat-markdown.tsx";
-			import { ChatMarkdownImageScopeProvider } from "../../src/components/chat/chat-markdown-image.tsx";
-			import { ChatImageLightbox } from "../../src/components/chat/chat-image-viewer.tsx";
-			import { initializeI18n } from "../../src/i18n/index.ts";
+			import { ChatMarkdown } from "../../web/components/chat/chat-markdown.tsx";
+			import { ChatMarkdownImageScopeProvider } from "../../web/components/chat/chat-markdown-image.tsx";
+			import { ChatImageLightbox } from "../../web/components/chat/chat-image-viewer.tsx";
+			import { initializeI18n } from "../../web/i18n/index.ts";
 
 			await initializeI18n("en-US");
 			const reads = [];

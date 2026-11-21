@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createChatHistoryWindowStore } from "../../src/components/chat/chat-history-window-store.ts";
-import type { ChatMessage } from "../../src/lib/chat/conversation-types.ts";
-import type { SessionHistoryMessageIndexEntry } from "../../src/lib/api/sessions.ts";
+import { createChatHistoryWindowStore } from "../../shared/chat/chat-history-window-store.ts";
+import type { ChatMessage } from "../../shared/chat/conversation-types.ts";
+import type { SessionHistoryMessageIndexEntry } from "../../web/lib/api/sessions.ts";
 
 function descriptor(index: number): SessionHistoryMessageIndexEntry {
 	return {

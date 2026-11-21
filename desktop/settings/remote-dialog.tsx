@@ -1,6 +1,6 @@
 import { type Accessor, effect, signal, View, windowSize } from "nsh";
 
-import type { RemoteHostState } from "@/lib/api/remote-types";
+import type { RemoteHostState } from "@shared/api/remote-types";
 import { AppToaster, AppToasts, AppToastStack } from "../app/app-toasts";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";

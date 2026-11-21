@@ -10,13 +10,13 @@
 		<pre id="results">Running…</pre>
 		<div id="root"></div>
 		<script type="module">
-			import "../../src/index.css";
+			import "../../web/index.css";
 			import { createElement as h } from "react";
 			import { createRoot } from "react-dom/client";
-			import { ChatComposer } from "../../src/components/chat/chat-composer.tsx";
-			import { PreferencesProvider } from "../../src/lib/preferences-provider.tsx";
-			import { TooltipProvider } from "../../src/ui/tooltip.tsx";
-			import { initializeI18n } from "../../src/i18n/index.ts";
+			import { ChatComposer } from "../../web/components/chat/chat-composer.tsx";
+			import { PreferencesProvider } from "../../web/lib/preferences-provider.tsx";
+			import { TooltipProvider } from "../../web/ui/tooltip.tsx";
+			import { initializeI18n } from "../../web/i18n/index.ts";
 
 			if (new URLSearchParams(location.search).has("remote"))
 				document.documentElement.dataset.remoteWebui = "";

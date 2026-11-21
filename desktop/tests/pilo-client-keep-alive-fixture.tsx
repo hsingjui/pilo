@@ -1,8 +1,8 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
 
-import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
-import type { PiloClientEvent } from "@/lib/api/pilo-client";
+import type { CacheKeepAliveSettings } from "@shared/cache-keep-alive";
+import type { PiloClientEvent } from "@shared/api/pilo-client";
 import { NshPiloClient } from "../client/nsh-pilo-client";
 
 const status = signal("loading cache keep-alive policies through the client");

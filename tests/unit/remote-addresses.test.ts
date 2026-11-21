@@ -4,7 +4,7 @@ import test from "node:test";
 import {
 	remoteAddressConfig,
 	sameAddressList,
-} from "../../src/lib/remote-addresses.ts";
+} from "../../shared/remote-addresses.ts";
 
 const lan = { id: "lan", name: "", baseUrl: "http://192.168.1.5:47653" };
 const publicAddress = {

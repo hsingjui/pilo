@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { toAppError, userErrorMessage } from "../../src/lib/app-error.ts";
+import { toAppError, userErrorMessage } from "../../shared/app-error.ts";
 
 test("normalizes Pi lookup failures", () => {
 	const error = toAppError("Pi executable was not found in PATH");

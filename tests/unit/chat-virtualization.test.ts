@@ -5,7 +5,7 @@ import {
 	PLAIN_SHORT_CHAT_HARD_MAX_MESSAGES,
 	shouldInitializeShortChatPromoted,
 	shouldRenderPlainShortChat,
-} from "../../src/lib/chat/chat-virtualization.ts";
+} from "../../web/lib/chat/chat-virtualization.ts";
 
 test("cold history skips the plain renderer before deferred promotion", () => {
 	const promoted = shouldInitializeShortChatPromoted({

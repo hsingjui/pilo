@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createFileSuggestions } from "../../src/components/chat/chat-file-suggestions.ts";
+import { createFileSuggestions } from "../../web/components/chat/chat-file-suggestions.ts";
 
 test("file suggestions show files for an empty @ query", () => {
 	const suggestions = createFileSuggestions(

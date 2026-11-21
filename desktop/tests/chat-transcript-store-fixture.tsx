@@ -1,8 +1,8 @@
 import { mount, signal, Text, View } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
 
-import type { PiloClientEvent } from "@/lib/api/pilo-client";
-import type { ConversationReducerContext } from "@/lib/chat/conversation-types";
+import type { PiloClientEvent } from "@shared/api/pilo-client";
+import type { ConversationReducerContext } from "@shared/chat/conversation-types";
 import { NshPiloClient } from "../client/nsh-pilo-client";
 import { AppStore } from "../state/app-store";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";

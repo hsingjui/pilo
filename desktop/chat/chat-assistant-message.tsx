@@ -1,12 +1,12 @@
 import { computed, platform, Text, View } from "nsh";
 
-import { hasTokenUsage } from "@/lib/api/token-usage";
+import { hasTokenUsage } from "@shared/api/token-usage";
 import {
 	getAssistantActivities,
 	getAssistantMessageContent,
 	getAssistantStreamingState,
 	splitAssistantContentForDisplay,
-} from "@/lib/chat/chat-activity-state";
+} from "@shared/chat/chat-activity-state";
 
 import { t } from "../app/i18n";
 import { createHover } from "../ui/hover";

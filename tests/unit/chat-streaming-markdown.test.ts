@@ -6,7 +6,7 @@ import {
 	openFencedCodeTailChars,
 	parseFinalMarkdownIntoBlocks,
 	type StreamingMarkdownParseMetrics,
-} from "../../src/lib/chat/chat-streaming-markdown.ts";
+} from "../../web/lib/chat/chat-streaming-markdown.ts";
 
 const FIXTURES = [
 	{

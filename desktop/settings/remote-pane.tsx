@@ -14,14 +14,14 @@ import type {
 	RemoteAccessAddress,
 	RemoteDevice,
 	RemoteHostState,
-} from "@/lib/api/remote-types";
-import { userErrorMessage } from "@/lib/app-error";
+} from "@shared/api/remote-types";
+import { userErrorMessage } from "@shared/app-error";
 import {
 	remoteAddressConfig,
 	sameAddressList,
 	sortRemoteAddresses,
-} from "@/lib/remote-addresses";
-import { randomId } from "@/lib/utils";
+} from "@shared/remote-addresses";
+import { randomId } from "@shared/random-id";
 import { AppToaster, showToast } from "../app/app-toasts";
 import { t } from "../app/i18n";
 import { qrMatrix } from "../lib/qr-matrix";

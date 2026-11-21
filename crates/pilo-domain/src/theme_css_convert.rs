@@ -469,7 +469,7 @@ mod tests {
 
     #[test]
     fn complete_legacy_placeholder_reports_unrepresentable_layout() {
-        let source = include_str!("../../../src/lib/theme-custom.ts");
+        let source = include_str!("../../../shared/theme-custom.ts");
         let example = source
             .split(" * :root {")
             .nth(1)

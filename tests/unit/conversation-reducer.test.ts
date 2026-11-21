@@ -1,24 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { PiloRuntimeEvent } from "../../src/lib/api/pi-runtime-types.ts";
+import type { PiloRuntimeEvent } from "../../shared/api/pi-runtime-types.ts";
 
 import {
 	createConversationState,
 	reduceConversation,
-} from "../../src/lib/chat/conversation-reducer.ts";
+} from "../../shared/chat/conversation-reducer.ts";
 import {
 	coalesceConversationActions,
 	reduceConversationActions,
 	replayConversationEvents,
 	replayConversationEventsBatched,
-} from "../../src/lib/chat/conversation-replay.ts";
-import { toConversationAction } from "../../src/lib/chat/conversation-runtime-adapter.ts";
+} from "../../shared/chat/conversation-replay.ts";
+import { toConversationAction } from "../../shared/chat/conversation-runtime-adapter.ts";
 import type {
 	ConversationAction,
 	ConversationEvent,
 	ConversationReducerContext,
-} from "../../src/lib/chat/conversation-types.ts";
+} from "../../shared/chat/conversation-types.ts";
 
 function context(): ConversationReducerContext {
 	let messageId = 0;

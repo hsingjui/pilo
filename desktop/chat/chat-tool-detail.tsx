@@ -1,6 +1,6 @@
 import { computed, Image, Scroll, Text, token, View } from "nsh";
 
-import type { ToolCallActivity } from "@/lib/chat/chat-activity-types";
+import type { ToolCallActivity } from "@shared/chat/chat-activity-types";
 import {
 	diffLineStyle,
 	flattenToolResult,
@@ -9,8 +9,8 @@ import {
 	toolEditDiff,
 	toolPreview,
 	toolResultImageUrl,
-} from "@/lib/chat/chat-tool-result";
-import type { ChatTodoItem } from "@/lib/chat/chat-todos";
+} from "@shared/chat/chat-tool-result";
+import type { ChatTodoItem } from "@shared/chat/chat-todos";
 
 import { appLocale, t } from "../app/i18n";
 import { scrollbarLook } from "../ui/scrollbar";

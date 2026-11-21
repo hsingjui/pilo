@@ -1,11 +1,11 @@
 import { Canvas, Text, token, View } from "nsh";
 
-import type { ChatSessionRuntimeState } from "@/lib/chat/session-stats";
+import type { ChatSessionRuntimeState } from "@shared/chat/session-stats";
 import {
 	finiteNumber,
 	formatCompactTokens,
 	formatCost,
-} from "@/lib/format-numbers";
+} from "@shared/format-numbers";
 
 import { t } from "../app/i18n";
 import { Foreground } from "../ui/foreground";

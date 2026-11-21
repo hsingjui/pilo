@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { promptEnhancementModel } from "../../src/lib/prompt-enhancement.ts";
+import { promptEnhancementModel } from "../../web/lib/prompt-enhancement.ts";
 
 test("prompt enhancement follows the selected chat model", () => {
 	assert.deepEqual(

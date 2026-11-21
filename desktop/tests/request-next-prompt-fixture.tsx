@@ -1,7 +1,7 @@
 import { host, mount, signal, Text } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
-import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime-types";
-import { decodeNextPromptResult } from "@/lib/next-prompt";
+import type { PiloRuntimeEvent } from "@shared/api/pi-runtime-types";
+import { decodeNextPromptResult } from "@shared/next-prompt";
 
 const sessionKey = "nsh-next-prompt-fixture";
 const status = signal("checking next-prompt request");

@@ -11,14 +11,14 @@ import {
 import {
 	getMonospaceFontFamilyStack,
 	getPageFontFamilyStack,
-} from "@/lib/font-stacks";
-import type { ThemeSettings } from "@/lib/theme-settings-types";
+} from "@shared/font-stacks";
+import type { ThemeSettings } from "@shared/theme-settings-types";
 import {
 	createThemeTokenCatalog,
 	resolveCustomTheme,
 	type ThemeCssVars,
 	validateCustomThemeTokens,
-} from "@/lib/theme-tokens";
+} from "@shared/theme-tokens";
 import claude from "../claude-theme.json";
 import type { AppState } from "../state/app-state";
 import lody from "../theme.json";

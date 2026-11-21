@@ -25,11 +25,11 @@ import {
 	activeSuggestionQuery,
 	type ComposerSuggestion,
 	type MentionTab,
-} from "@/lib/chat/composer-suggestions";
-import { formatChatImageSize } from "@/lib/chat/chat-submission";
-import { sessionMentionValue } from "@/lib/chat/session-mentions";
-import { DEFAULT_READING_FONT_SIZE } from "@/lib/font-settings";
-import type { SendMessageShortcut } from "@/lib/host-preferences-types";
+} from "@shared/chat/composer-suggestions";
+import { formatChatImageSize } from "@shared/chat/chat-submission";
+import { sessionMentionValue } from "@shared/chat/session-mentions";
+import { DEFAULT_READING_FONT_SIZE } from "@shared/font-settings";
+import type { SendMessageShortcut } from "@shared/host-preferences-types";
 
 import { t } from "../app/i18n";
 import { DEFAULT_CHAT_REM } from "../chat/layout";

@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ChatSessionRuntimeState } from "../../src/lib/api/chat-session-types.ts";
+import type { ChatSessionRuntimeState } from "../../shared/api/chat-session-types.ts";
 import {
 	chatRpcRenamesSession,
 	chatRuntimeHasOpenTurn,
 	findReusableChatRuntime,
 	runtimeSessionIdFromKey,
-} from "../../src/lib/chat/chat-session-runtime-model.ts";
+} from "../../shared/chat/chat-session-runtime-model.ts";
 
 function runtime(
 	sessionKey: string,

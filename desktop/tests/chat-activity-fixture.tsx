@@ -1,7 +1,7 @@
 import { mount, Storage, View } from "nsh";
 
-import type { ConversationEvent } from "@/lib/chat/conversation-types";
-import { replayConversationEvents } from "@/lib/chat/conversation-replay";
+import type { ConversationEvent } from "@shared/chat/conversation-types";
+import { replayConversationEvents } from "@shared/chat/conversation-replay";
 import "../app/fonts";
 import { initializeI18n } from "../app/i18n";
 import { ChatMessageList } from "../chat/chat-message-list";

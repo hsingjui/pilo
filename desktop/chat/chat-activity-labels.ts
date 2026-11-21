@@ -1,10 +1,10 @@
 import type {
 	AssistantActivity,
 	ToolCallActivity,
-} from "@/lib/chat/chat-activity-types";
-import type { AssistantActivitySummary } from "@/lib/chat/chat-activity-state";
-import { isChatTodoTool } from "@/lib/chat/chat-todos";
-import { formatWorkDuration } from "@/lib/format-duration";
+} from "@shared/chat/chat-activity-types";
+import type { AssistantActivitySummary } from "@shared/chat/chat-activity-state";
+import { isChatTodoTool } from "@shared/chat/chat-todos";
+import { formatWorkDuration } from "@shared/format-duration";
 
 import { t } from "../app/i18n";
 import type { IconName } from "../ui/icon";

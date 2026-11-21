@@ -1,9 +1,9 @@
 import { lifecycle, mount, signal, Text, View } from "nsh";
 import { Button } from "nsh/base";
 
-import type { Project } from "@/lib/api/projects-types";
-import type { SessionIndexEntry } from "@/lib/api/sessions-types";
-import type { SessionReadState } from "@/lib/session-read-state";
+import type { Project } from "@shared/api/projects-types";
+import type { SessionIndexEntry } from "@shared/api/sessions-types";
+import type { SessionReadState } from "@shared/session-read-state";
 import { followOpenSessionRead } from "../app/read-open-session";
 import { isSessionUnread } from "../state/app-state";
 import { AppStore } from "../state/app-store";

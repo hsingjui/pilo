@@ -14,7 +14,8 @@
 		"noEmit": true,
 		"jsx": "react-jsx",
 		"paths": {
-			"@/*": ["./src/*"]
+			"@/*": ["./web/*"],
+			"@shared/*": ["./shared/*"]
 		},
 
 		/* Linting */
@@ -23,6 +24,7 @@
 		"noUnusedParameters": true,
 		"noFallthroughCasesInSwitch": true
 	},
-	"include": ["src"],
+	"include": ["web", "shared"],
+	"exclude": ["shared/runtime-globals.d.ts"],
 	"references": [{ "path": "./tsconfig.node.json" }]
 }

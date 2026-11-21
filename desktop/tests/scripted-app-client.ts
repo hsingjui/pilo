@@ -2,10 +2,10 @@ import type {
 	PiloClientEvent,
 	PiloClientEventOptions,
 	PiloClientStartChatInput,
-} from "@/lib/api/pilo-client";
-import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
-import type { ProjectPiModels } from "@/lib/api/pi-models-types";
-import type { FsEntry } from "@/lib/api/files-types";
+} from "@shared/api/pilo-client";
+import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
+import type { ProjectPiModels } from "@shared/api/pi-models-types";
+import type { FsEntry } from "@shared/api/files-types";
 import type {
 	ConnectionHealth,
 	ConnectionTestResult,
@@ -13,33 +13,33 @@ import type {
 	SshAgentIdentity,
 	SshConnectionInfo,
 	WslConnectionInfo,
-} from "@/lib/api/connections-types";
+} from "@shared/api/connections-types";
 import type {
 	Connection,
 	PiModel,
 	PiSessionSnapshot,
 	WslDistribution,
-} from "@/lib/api/pi-runtime-types";
-import type { ConnectionNamingModel } from "@/lib/api/sessions-types";
+} from "@shared/api/pi-runtime-types";
+import type { ConnectionNamingModel } from "@shared/api/sessions-types";
 import type {
 	RemoteAccessAddress,
 	RemoteHostState,
-} from "@/lib/api/remote-types";
-import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
+} from "@shared/api/remote-types";
+import type { CacheKeepAliveSettings } from "@shared/cache-keep-alive";
 import type {
 	NextPromptModel,
 	NextPromptSettings,
-} from "@/lib/next-prompt-types";
+} from "@shared/next-prompt-types";
 import type {
 	PromptEnhancementModel,
 	PromptEnhancementSettings,
-} from "@/lib/prompt-enhancement-types";
-import type { Project } from "@/lib/api/projects-types";
-import type { ConversationEvent } from "@/lib/chat/conversation-types";
+} from "@shared/prompt-enhancement-types";
+import type { Project } from "@shared/api/projects-types";
+import type { ConversationEvent } from "@shared/chat/conversation-types";
 import type {
 	ProjectModelScope,
 	ProjectScopedModel,
-} from "@/lib/project-model-scope";
+} from "@shared/project-model-scope";
 import type {
 	SessionDeleteResult,
 	SessionHistory,
@@ -47,18 +47,18 @@ import type {
 	SessionIndexEntry,
 	SessionSearchMatch,
 	SessionUiStateUpdate,
-} from "@/lib/api/sessions-types";
+} from "@shared/api/sessions-types";
 import type {
 	HostPreferenceValues,
 	PreferencePatch,
 	PreferencesSnapshot,
-} from "@/lib/host-preferences-types";
-import type { SessionReadState } from "@/lib/session-read-state";
+} from "@shared/host-preferences-types";
+import type { SessionReadState } from "@shared/session-read-state";
 import type {
 	ThemeSettings,
 	ThemeSettingsUpdate,
-} from "@/lib/theme-settings-types";
-import type { SavedCustomTheme } from "@/lib/theme-custom";
+} from "@shared/theme-settings-types";
+import type { SavedCustomTheme } from "@shared/theme-custom";
 import type { PiCommandClient } from "../client/chat-rpc";
 import type {
 	NshPiloClient,

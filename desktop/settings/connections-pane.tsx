@@ -3,9 +3,9 @@ import { type Accessor, effect, platform, signal, Text, View } from "nsh";
 import type {
 	SshConnectionInfo,
 	WslConnectionInfo,
-} from "@/lib/api/connections-types";
-import type { Connection } from "@/lib/api/pi-runtime-types";
-import { userErrorMessage } from "@/lib/app-error";
+} from "@shared/api/connections-types";
+import type { Connection } from "@shared/api/pi-runtime-types";
+import { userErrorMessage } from "@shared/app-error";
 import type { AppState } from "../state/app-state";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { t } from "../app/i18n";

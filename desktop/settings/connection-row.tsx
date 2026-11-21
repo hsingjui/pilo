@@ -1,6 +1,6 @@
 import { type Accessor, type JSX, Text, View } from "nsh";
 
-import type { Connection } from "@/lib/api/pi-runtime-types";
+import type { Connection } from "@shared/api/pi-runtime-types";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";

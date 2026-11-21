@@ -8,12 +8,12 @@ import {
 	readChatMentionParts,
 	writeChatMentionDraft,
 	type ChatMention,
-} from "../../src/lib/chat/chat-mentions.ts";
-import { createChatSubmission } from "../../src/lib/chat/chat-submission.ts";
+} from "../../shared/chat/chat-mentions.ts";
+import { createChatSubmission } from "../../shared/chat/chat-submission.ts";
 import {
 	sessionMentionValue,
 	type SessionMention,
-} from "../../src/lib/chat/session-mentions.ts";
+} from "../../shared/chat/session-mentions.ts";
 
 const session: SessionMention = {
 	connectionId: "local",

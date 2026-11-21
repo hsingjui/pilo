@@ -1,7 +1,7 @@
 import { expect, open, test } from "nsh/test";
 
-import type { PreferencePatch } from "@/lib/host-preferences-types";
-import type { ThemeSettings } from "@/lib/theme-settings-types";
+import type { PreferencePatch } from "@shared/host-preferences-types";
+import type { ThemeSettings } from "@shared/theme-settings-types";
 
 const LODY = { light: "#ffffffff", dark: "#101010ff" };
 const CLAUDE = { light: "#fcfcfcff", dark: "#151515ff" };

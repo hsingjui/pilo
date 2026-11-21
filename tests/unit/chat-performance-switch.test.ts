@@ -4,7 +4,7 @@ import test from "node:test";
 import {
 	summarizeChatSessionSwitchSamples,
 	type ChatSessionSwitchSample,
-} from "../../src/lib/chat/chat-performance-switch.ts";
+} from "../../web/lib/chat/chat-performance-switch.ts";
 
 function sample(
 	durationMs: number,

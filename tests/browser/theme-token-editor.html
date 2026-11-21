@@ -12,17 +12,17 @@
 		<pre id="results" style="white-space: pre-wrap">Running…</pre>
 		<div id="root" style="max-width: 900px; margin: auto; padding: 12px"></div>
 		<script type="module">
-			import "../../src/index.css";
+			import "../../web/index.css";
 			import { createElement as h, useEffect } from "react";
 			import { createRoot } from "react-dom/client";
 			import {
 				ThemeProvider,
 				useTheme,
-			} from "../../src/lib/theme-provider.tsx";
-			import { AppearanceSettings } from "../../src/components/settings/appearance-settings.tsx";
-			import { RemoteAppearanceSettings } from "../../src/remote/remote-appearance-settings.tsx";
-			import { useRemoteTheme } from "../../src/remote/use-remote-theme.ts";
-			import { initializeI18n } from "../../src/i18n/index.ts";
+			} from "../../web/lib/theme-provider.tsx";
+			import { AppearanceSettings } from "../../web/components/settings/appearance-settings.tsx";
+			import { RemoteAppearanceSettings } from "../../web/remote/remote-appearance-settings.tsx";
+			import { useRemoteTheme } from "../../web/remote/use-remote-theme.ts";
+			import { initializeI18n } from "../../web/i18n/index.ts";
 			await initializeI18n("en-US");
 			document.documentElement.classList.add("pilo-browser");
 			document.documentElement.dataset.remoteWebui = "";

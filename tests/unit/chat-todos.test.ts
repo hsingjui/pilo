@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { AssistantContentItem } from "../../src/lib/chat/chat-activity-state.ts";
-import type { ChatMessage } from "../../src/lib/chat/conversation-types.ts";
+import type { AssistantContentItem } from "../../shared/chat/chat-activity-state.ts";
+import type { ChatMessage } from "../../shared/chat/conversation-types.ts";
 import {
 	isChatTodoTool,
 	latestTurnChatTodos,
 	parseChatTodos,
-} from "../../src/lib/chat/chat-todos.ts";
+} from "../../shared/chat/chat-todos.ts";
 
 /** magic-context 的 `todowrite` 真实调用形状。 */
 function todoCall(args: unknown): AssistantContentItem {

@@ -1,0 +1,389 @@
+import type { PreferencesSnapshot } from "@shared/host-preferences-types";
+import type { TokenUsage } from "./token-usage";
+import type { CacheKeepAliveSettings } from "@shared/cache-keep-alive";
+import type { NextPromptSettings } from "../next-prompt-types";
+import type { PromptEnhancementSettings } from "../prompt-enhancement-types";
+import type { ProjectModelScope } from "../project-model-scope";
+import type { ThemeSettings } from "../theme-settings-types";
+import type { SessionReadState } from "../session-read-state";
+import type { SessionExternalActivity } from "./sessions-types";
+
+export type PiProcessState =
+	| "stopped"
+	| "starting"
+	| "running"
+	| "stopping"
+	| "failed";
+
+export type RuntimeErrorCode =
+	| "spawn_failed"
+	| "process_io"
+	| "rpc_decode"
+	| "rpc_framing"
+	| "rpc_response"
+	| "process_exit"
+	| "process_wait";
+
+export type SshAuthMethod = "agent" | "password" | "key";
+
+type SshTargetAuth = SshAuthMethod | { agent_key: string };
+
+export type SshTarget =
+	| { type: "config_host"; host: string; authMethod: SshTargetAuth }
+	| {
+			type: "direct";
+			hostname: string;
+			port: number | null;
+			user: string | null;
+			identityFile: string | null;
+			authMethod: SshTargetAuth;
+			proxyJump: string | null;
+	  };
+
+export type ConnectionKind =
+	| { type: "local" }
+	| { type: "wsl"; distro: string }
+	| { type: "ssh"; target: SshTarget };
+
+/** Pi 进程运行位置：远程主机（默认）或本地本机。 */
+export type PiRuntime = "workspace" | "local";
+
+export type Connection = {
+	id: string;
+	name: string;
+	piExecutable?: string | null;
+	piRuntime?: PiRuntime;
+	kind: ConnectionKind;
+	/** 是否在首页（侧边栏环境列表）显示该连接。偏好存于主机，桌面端与 WebUI 共用。 */
+	shownInHome?: boolean;
+};
+
+export type PiPromptResult = {
+	disposition: "started" | "queued" | "handled";
+};
+
+export type PiSessionSnapshot = {
+	generation: number;
+	state: PiProcessState;
+	connection: Connection | null;
+	projectId: string | null;
+};
+
+export type PiThinkingLevel =
+	| "off"
+	| "minimal"
+	| "low"
+	| "medium"
+	| "high"
+	| "xhigh"
+	| "max";
+
+export const PI_THINKING_LEVELS: PiThinkingLevel[] = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+];
+
+export type PiModel = {
+	id: string;
+	name: string;
+	provider: string;
+	reasoning: boolean;
+	input?: string[];
+	contextWindow?: number;
+	maxTokens?: number;
+	/** Pi-resolved default for this model (per-model override > global default, clamped). */
+	defaultThinkingLevel?: PiThinkingLevel;
+	/** Thinking levels Pi reports as available after this model is selected. */
+	thinkingLevels?: PiThinkingLevel[];
+	/** Pi scoped-model cycle order. null means scope was resolved and this model is outside it. */
+	scopeOrder?: number | null;
+	/** Thinking level Pi applies when this model is selected through the scoped-model cycle. */
+	scopeThinkingLevel?: PiThinkingLevel | null;
+};
+
+export type PiModelCycleResult = {
+	model: PiModel;
+	thinkingLevel: PiThinkingLevel;
+	isScoped: boolean;
+};
+
+export type PiAgentState = {
+	model: PiModel | null;
+	thinkingLevel: PiThinkingLevel;
+	isStreaming: boolean;
+	isCompacting: boolean;
+	sessionFile?: string;
+	sessionId?: string;
+	sessionName?: string;
+	messageCount: number;
+	pendingMessageCount: number;
+	autoCompactionEnabled?: boolean;
+};
+
+export type PiCommand = {
+	name: string;
+	description?: string;
+	source: "extension" | "prompt" | "skill";
+	sourceInfo: {
+		path: string;
+		source: string;
+		scope: "user" | "project" | "temporary";
+		origin: "package" | "top-level";
+		baseDir?: string;
+	};
+};
+
+export type PiCompactionResult = {
+	summary: string;
+	firstKeptEntryId: string;
+	tokensBefore: number;
+	estimatedTokensAfter: number;
+};
+
+export type PiSessionStats = {
+	userMessages?: number;
+	assistantMessages?: number;
+	toolCalls?: number;
+	toolResults?: number;
+	totalMessages?: number;
+	tokens?: {
+		input?: number;
+		output?: number;
+		cacheRead?: number;
+		cacheWrite?: number;
+		total?: number;
+	};
+	cost?: number;
+	contextUsage?: {
+		tokens?: number | null;
+		contextWindow?: number;
+		percent?: number | null;
+	};
+};
+
+export type PiSessionEntry = {
+	id: string;
+	parentId: string | null;
+	type: string;
+	message?: {
+		role?: string;
+	};
+};
+
+export type PiSessionEntries = {
+	entries: PiSessionEntry[];
+	leafId: string | null;
+};
+
+export type WslDistribution = {
+	name: string;
+};
+
+export type PiloRuntimeEvent = {
+	sessionKey?: string;
+	projectId?: string;
+	/** Host publication time, preserved across reconnect replay. */
+	timestampMs?: number;
+} & (
+	| {
+			type: "preferences_changed";
+			settings: PreferencesSnapshot;
+	  }
+	| { type: "configuration_changed" }
+	| { type: "theme_settings_changed"; settings: ThemeSettings }
+	| { type: "project_model_scope_changed"; scope: ProjectModelScope }
+	| { type: "sessions_indexed"; projectId: string }
+	| { type: "session_index_error"; projectId: string; message: string }
+	| {
+			/** Host-detected open turns of external Pi processes in one project. */
+			type: "external_session_activity_changed";
+			projectId: string;
+			activities: SessionExternalActivity[];
+	  }
+	| {
+			type: "cache_keep_alive_settings_changed";
+			settings: CacheKeepAliveSettings;
+	  }
+	| { type: "next_prompt_settings_changed"; settings: NextPromptSettings }
+	| {
+			type: "prompt_enhancement_settings_changed";
+			settings: PromptEnhancementSettings;
+	  }
+	| {
+			type: "session_turn_completed";
+			projectId: string;
+			sessionPath: string;
+			completionId: string;
+	  }
+	| {
+			type: "session_read_state_changed";
+			state: SessionReadState;
+			completionId?: string;
+	  }
+	| {
+			type: "pi_reattached";
+			generation: number;
+			active: boolean;
+			compacting: boolean;
+	  }
+	| {
+			type: "process_state";
+			generation: number;
+			state: PiProcessState;
+	  }
+	| {
+			type: "rpc_message";
+			generation: number;
+			message: unknown;
+	  }
+	| {
+			type: "user_message_start";
+			generation: number;
+			text: string;
+	  }
+	| {
+			type: "assistant_message_start";
+			generation: number;
+	  }
+	| {
+			type: "assistant_usage_update";
+			generation: number;
+			usage: TokenUsage;
+	  }
+	| {
+			type: "assistant_text_delta";
+			generation: number;
+			delta: string;
+	  }
+	| {
+			type: "assistant_text_snapshot";
+			generation: number;
+			text: string;
+	  }
+	| {
+			type: "assistant_thinking_start";
+			generation: number;
+	  }
+	| {
+			type: "assistant_thinking_delta";
+			generation: number;
+			delta: string;
+	  }
+	| {
+			type: "assistant_thinking_end";
+			generation: number;
+	  }
+	| {
+			type: "tool_execution_start";
+			generation: number;
+			toolCallId: string;
+			toolName: string;
+			args: unknown;
+	  }
+	| {
+			type: "tool_execution_update";
+			generation: number;
+			toolCallId: string;
+			toolName: string;
+			args: unknown;
+			partialResult: unknown;
+	  }
+	| {
+			type: "tool_execution_end";
+			generation: number;
+			toolCallId: string;
+			toolName: string;
+			result: unknown;
+			isError: boolean;
+	  }
+	| {
+			type: "assistant_message_end";
+			generation: number;
+			stopReason: string | null;
+			errorMessage: string | null;
+			/** 当前回复段累计的模型用量；Pi 未上报时为 null。 */
+			usage: TokenUsage | null;
+	  }
+	| {
+			type: "queue_update";
+			generation: number;
+			steering: string[];
+			followUp: string[];
+	  }
+	| { type: "compaction_start"; generation: number; reason: string }
+	| {
+			type: "compaction_end";
+			generation: number;
+			reason: string;
+			result: PiCompactionResult | null;
+			aborted: boolean;
+			willRetry: boolean;
+			errorMessage: string | null;
+	  }
+	| {
+			type: "auto_retry_start";
+			generation: number;
+			attempt: number;
+			maxAttempts: number;
+			delayMs: number;
+			errorMessage: string;
+	  }
+	| {
+			type: "auto_retry_end";
+			generation: number;
+			success: boolean;
+			attempt: number;
+			finalError: string | null;
+	  }
+	| {
+			type: "summarization_retry_scheduled";
+			generation: number;
+			attempt: number;
+			maxAttempts: number;
+			delayMs: number;
+			errorMessage: string;
+	  }
+	| {
+			type: "summarization_retry_attempt_start";
+			generation: number;
+			source: string;
+			reason: string | null;
+	  }
+	| { type: "summarization_retry_finished"; generation: number }
+	| {
+			type: "extension_ui_request";
+			generation: number;
+			id: string;
+			method: string;
+			title: string | null;
+			message: string | null;
+			options: string[];
+			placeholder: string | null;
+			prefill: string | null;
+			timeout: number | null;
+			notifyType: "info" | "warning" | "error" | null;
+			statusKey: string | null;
+			statusText: string | null;
+			widgetKey: string | null;
+			widgetLines: string[] | null;
+			widgetPlacement: string | null;
+			text: string | null;
+	  }
+	| {
+			type: "runtime_log";
+			generation: number;
+			stream: "stderr";
+			message: string;
+	  }
+	| {
+			type: "runtime_error";
+			generation: number;
+			code: RuntimeErrorCode;
+			message: string;
+	  }
+);

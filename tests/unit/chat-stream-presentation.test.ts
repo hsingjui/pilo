@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createConversationState } from "../../src/lib/chat/conversation-reducer.ts";
+import { createConversationState } from "../../shared/chat/conversation-reducer.ts";
 import {
 	getActiveStreamingPresentationChars,
 	getStreamingPresentationIntervalMs,
-} from "../../src/lib/chat/chat-stream-presentation.ts";
+} from "../../web/lib/chat/chat-stream-presentation.ts";
 
 test("streaming presentation cadence slows as the growing tail gets larger", () => {
 	assert.equal(getStreamingPresentationIntervalMs(0), 50);

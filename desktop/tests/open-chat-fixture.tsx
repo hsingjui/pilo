@@ -1,12 +1,12 @@
 import { mount, signal, Text, View } from "nsh";
 import { Button } from "nsh/base";
 
-import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
-import type { Project } from "@/lib/api/projects-types";
+import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
+import type { Project } from "@shared/api/projects-types";
 import type {
 	SessionHistoryResult,
 	SessionIndexEntry,
-} from "@/lib/api/sessions-types";
+} from "@shared/api/sessions-types";
 import { conversationContext, followOpenSession } from "../app/open-chat";
 import { AppStore } from "../state/app-store";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";

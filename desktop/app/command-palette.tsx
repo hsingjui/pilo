@@ -9,9 +9,9 @@ import {
 } from "nsh";
 import type { CommandItem } from "nsh/base";
 
-import type { SessionSearchMatch } from "@/lib/api/sessions-types";
-import type { KeyboardShortcutMap } from "@/lib/keyboard-shortcuts-types";
-import { displayProjectPath } from "@/lib/project-path";
+import type { SessionSearchMatch } from "@shared/api/sessions-types";
+import type { KeyboardShortcutMap } from "@shared/keyboard-shortcuts-types";
+import { displayProjectPath } from "@shared/project-path";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { activeProject } from "../state/app-state";
 import type { AppStore } from "../state/app-store";

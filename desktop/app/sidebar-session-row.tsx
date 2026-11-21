@@ -10,7 +10,7 @@ import {
 } from "nsh";
 import { Button, ContextMenu } from "nsh/base";
 
-import type { SidebarSession } from "@/components/sidebar/types";
+import type { SidebarSession } from "@shared/sidebar/sidebar-types";
 import type { AppStore } from "../state/app-store";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";

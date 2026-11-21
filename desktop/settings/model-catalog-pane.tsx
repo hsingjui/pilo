@@ -1,11 +1,11 @@
 import { type Accessor, cleanup, effect, signal, Text, View } from "nsh";
 
-import type { ProjectPiModels } from "@/lib/api/pi-models-types";
-import type { Project } from "@/lib/api/projects-types";
+import type { ProjectPiModels } from "@shared/api/pi-models-types";
+import type { Project } from "@shared/api/projects-types";
 import type {
 	ProjectModelScope,
 	ProjectScopedModel,
-} from "@/lib/project-model-scope";
+} from "@shared/project-model-scope";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";

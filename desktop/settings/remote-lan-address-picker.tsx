@@ -1,7 +1,7 @@
 import { signal, Text, View } from "nsh";
-import type { RemoteAccessAddress } from "@/lib/api/remote-types";
-import { userErrorMessage } from "@/lib/app-error";
-import { remoteAddressConfig } from "@/lib/remote-addresses";
+import type { RemoteAccessAddress } from "@shared/api/remote-types";
+import { userErrorMessage } from "@shared/app-error";
+import { remoteAddressConfig } from "@shared/remote-addresses";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";

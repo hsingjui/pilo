@@ -1,8 +1,8 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
 
-import type { PiloClientEvent } from "@/lib/api/pilo-client";
-import type { PromptEnhancementSettings } from "@/lib/prompt-enhancement-types";
+import type { PiloClientEvent } from "@shared/api/pilo-client";
+import type { PromptEnhancementSettings } from "@shared/prompt-enhancement-types";
 import { NshPiloClient } from "../client/nsh-pilo-client";
 
 const status = signal("loading prompt enhancement settings through the client");

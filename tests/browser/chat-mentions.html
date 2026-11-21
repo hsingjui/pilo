@@ -10,24 +10,24 @@
 		<pre id="results">Running…</pre>
 		<div id="root" style="padding: 16px"></div>
 		<script type="module">
-			import "../../src/index.css";
+			import "../../web/index.css";
 			import { createElement as h, useEffect, useState } from "react";
 			import { createRoot } from "react-dom/client";
-			import { ChatComposer } from "../../src/components/chat/chat-composer.tsx";
-			import { UserMessage } from "../../src/components/chat/chat-user-message.tsx";
-			import { ChatImageLightbox } from "../../src/components/chat/chat-image-viewer.tsx";
-			import { useChatFileOpener } from "../../src/components/chat/chat-file-open-context.tsx";
-			import { createFileSuggestions } from "../../src/components/chat/chat-file-suggestions.ts";
+			import { ChatComposer } from "../../web/components/chat/chat-composer.tsx";
+			import { UserMessage } from "../../web/components/chat/chat-user-message.tsx";
+			import { ChatImageLightbox } from "../../web/components/chat/chat-image-viewer.tsx";
+			import { useChatFileOpener } from "../../web/components/chat/chat-file-open-context.tsx";
+			import { createFileSuggestions } from "../../web/components/chat/chat-file-suggestions.ts";
 			import {
 				SessionMentionProvider,
 				SessionMentionScope,
-			} from "../../src/components/chat/session-mention-context.tsx";
-			import { PreferencesProvider } from "../../src/lib/preferences-provider.tsx";
-			import { TooltipProvider } from "../../src/ui/tooltip.tsx";
-			import { initializeI18n } from "../../src/i18n/index.ts";
+			} from "../../web/components/chat/session-mention-context.tsx";
+			import { PreferencesProvider } from "../../web/lib/preferences-provider.tsx";
+			import { TooltipProvider } from "../../web/ui/tooltip.tsx";
+			import { initializeI18n } from "../../web/i18n/index.ts";
 
-			import { cacheLocalChatImages } from "../../src/lib/chat/chat-image-media.ts";
-			import { registerChatFile } from "../../src/lib/chat/chat-file-lifecycle.ts";
+			import { cacheLocalChatImages } from "../../web/lib/chat/chat-image-media.ts";
+			import { registerChatFile } from "../../shared/chat/chat-file-lifecycle.ts";
 
 			if (new URLSearchParams(location.search).has("remote"))
 				document.documentElement.dataset.remoteWebui = "";

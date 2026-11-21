@@ -5,11 +5,11 @@ import {
 	CUSTOM_THEME_CATALOG,
 	readCustomThemeTokens,
 	validateWebThemeTokens,
-} from "../../src/lib/theme-web.ts";
-import mapping from "../../src/lib/theme-web-map.json" with { type: "json" };
-import { readSavedCustomThemes } from "../../src/lib/theme-custom.ts";
-import { readCachedTheme } from "../../src/lib/theme-settings.ts";
-import { normalizeThemeSettings } from "../../src/lib/theme-compat.ts";
+} from "../../shared/theme-web.ts";
+import mapping from "../../shared/theme-web-map.json" with { type: "json" };
+import { readSavedCustomThemes } from "../../shared/theme-custom.ts";
+import { readCachedTheme } from "../../web/lib/theme-settings.ts";
+import { normalizeThemeSettings } from "../../web/lib/theme-compat.ts";
 
 test("stored tables recover valid entries without relaxing update validation", () => {
 	const input = {

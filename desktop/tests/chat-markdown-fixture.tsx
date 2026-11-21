@@ -1,6 +1,6 @@
 import { mount, signal, Storage, Text, View } from "nsh";
 
-import { replayConversationEvents } from "@/lib/chat/conversation-replay";
+import { replayConversationEvents } from "@shared/chat/conversation-replay";
 import "../app/fonts";
 import { initializeI18n } from "../app/i18n";
 import { ChatMarkdown, type ChatMarkdownFileLink } from "../chat/chat-markdown";

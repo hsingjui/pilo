@@ -7,9 +7,9 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { ComposerRunConfig } from "../../src/components/chat/chat-composer-run-config.tsx";
-import { initializeI18n } from "../../src/i18n/index.ts";
-import type { PiModel } from "../../src/lib/api/pi-runtime.ts";
+import { ComposerRunConfig } from "../../web/components/chat/chat-composer-run-config.tsx";
+import { initializeI18n } from "../../web/i18n/index.ts";
+import type { PiModel } from "../../web/lib/api/pi-runtime.ts";
 
 const model: PiModel = {
 	id: "m1",

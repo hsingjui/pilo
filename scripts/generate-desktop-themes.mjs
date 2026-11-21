@@ -161,7 +161,7 @@ export function generateThemes(lodyCss, claudeCss) {
 
 function readCss(name) {
 	return readFileSync(
-		new URL(`../src/styles/${name}-theme.css`, import.meta.url),
+		new URL(`../web/styles/${name}-theme.css`, import.meta.url),
 		"utf8",
 	);
 }
@@ -199,7 +199,7 @@ if (
 ) {
 	const { lody, claude } = generateThemes(readCss("lody"), readCss("claude"));
 	writeGenerated(
-		new URL("../src/lib/theme-web-map.json", import.meta.url),
+		new URL("../shared/theme-web-map.json", import.meta.url),
 		generateWebThemeMap(readCss("lody")),
 		"pnpm desktop:generate:themes",
 	);

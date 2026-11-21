@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ThemeConversionNotice } from "../../src/components/settings/theme-conversion-notice.tsx";
+import { ThemeConversionNotice } from "../../web/components/settings/theme-conversion-notice.tsx";
 import type {
 	ThemeCustomConversion,
 	ThemeConversionIssue,
-} from "../../src/lib/theme-settings-types.ts";
-import { i18n, initializeI18n } from "../../src/i18n/index.ts";
+} from "../../shared/theme-settings-types.ts";
+import { i18n, initializeI18n } from "../../web/i18n/index.ts";
 
 await initializeI18n("en-US");
 

@@ -1,7 +1,7 @@
 import { computed, View } from "nsh";
 
-import type { ChatMessage } from "@/lib/chat/conversation-types";
-import { historyPlaceholderHeight } from "@/lib/chat/history-placeholder-height";
+import type { ChatMessage } from "@shared/chat/conversation-types";
+import { historyPlaceholderHeight } from "@shared/chat/history-placeholder-height";
 
 import { ConversationColumn } from "./conversation-column";
 

@@ -1,12 +1,12 @@
 import { expect, test } from "nsh/test";
 
-import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime-types";
-import type { PiloClientEvent } from "@/lib/api/pilo-client";
-import { replayConversationEvents } from "@/lib/chat/conversation-replay";
+import type { PiloRuntimeEvent } from "@shared/api/pi-runtime-types";
+import type { PiloClientEvent } from "@shared/api/pilo-client";
+import { replayConversationEvents } from "@shared/chat/conversation-replay";
 import type {
 	ConversationReducerContext,
 	ConversationState,
-} from "@/lib/chat/conversation-types";
+} from "@shared/chat/conversation-types";
 import { initializeI18n, setAppLocale } from "../app/i18n";
 import type { ChatTranscriptSnapshot } from "../client/nsh-pilo-client";
 import {

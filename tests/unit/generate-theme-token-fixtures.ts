@@ -3,7 +3,7 @@ import {
 	createThemeTokenCatalog,
 	parseThemeColor,
 	validateCustomThemeTokens,
-} from "../../src/lib/theme-tokens.ts";
+} from "../../shared/theme-tokens.ts";
 
 const base = JSON.parse(
 	readFileSync(new URL("../../desktop/theme.json", import.meta.url), "utf8"),

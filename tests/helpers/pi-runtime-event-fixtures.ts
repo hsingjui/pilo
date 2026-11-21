@@ -1,4 +1,4 @@
-import type { PiloRuntimeEvent } from "../../src/lib/api/pi-runtime-types.ts";
+import type { PiloRuntimeEvent } from "../../shared/api/pi-runtime-types.ts";
 
 export const runtimeEvents = [
 	{

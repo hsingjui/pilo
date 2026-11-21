@@ -2,11 +2,11 @@ import { Image, openUrl, signal, Text, View, type Signal } from "nsh";
 import { TextView } from "nsh/base";
 import type { TextViewImage, TextViewLinkPressEvent } from "nsh/base";
 
-import type { Project } from "@/lib/api/projects-types";
-import { resolveMarkdownImageSource } from "@/lib/chat/chat-markdown-images";
-import { resolveMarkdownFileLink } from "@/lib/chat/chat-markdown-links";
-import { MAX_CHAT_IMAGE_BYTES } from "@/lib/chat/chat-submission";
-import type { WorkspaceLineRange } from "@/lib/project-workspace";
+import type { Project } from "@shared/api/projects-types";
+import { resolveMarkdownImageSource } from "@shared/chat/chat-markdown-images";
+import { resolveMarkdownFileLink } from "@shared/chat/chat-markdown-links";
+import { MAX_CHAT_IMAGE_BYTES } from "@shared/chat/chat-submission";
+import type { WorkspaceLineRange } from "@shared/project-workspace";
 
 import { t } from "../app/i18n";
 
@@ -63,7 +63,7 @@ function bytesToBase64(bytes: Uint8Array): string {
  * and re-renders only the blocks that changed while the text streams in
  * (`options.streaming`), so no JS parser adapter or throttle is needed.
  * External links open with `openUrl`; file links and project images use
- * the shared resolvers of `src/lib/chat` — the same path limits and
+ * the shared resolvers of `shared/chat` — the same path limits and
  * errors as the WebUI.
  */
 export function ChatMarkdown(props: ChatMarkdownProps) {

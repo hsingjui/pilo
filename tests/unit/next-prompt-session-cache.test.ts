@@ -1,20 +1,20 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 
-import type { PiloClient } from "../../src/lib/api/pilo-client.ts";
+import type { PiloClient } from "../../shared/api/pilo-client.ts";
 import type {
 	PiAgentState,
 	PiModel,
 	PiloRuntimeEvent,
-} from "../../src/lib/api/pi-runtime.ts";
+} from "../../web/lib/api/pi-runtime.ts";
 import type {
 	NextPromptRequest,
 	NextPromptSettings,
-} from "../../src/lib/next-prompt.ts";
+} from "../../shared/next-prompt.ts";
 import {
 	createNextPromptSessionCache,
 	type NextPromptSessionOptions,
-} from "../../src/lib/next-prompt-session-cache.ts";
+} from "../../web/lib/next-prompt-session-cache.ts";
 
 const model: PiModel = {
 	provider: "test",

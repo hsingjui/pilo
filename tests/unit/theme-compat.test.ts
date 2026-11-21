@@ -8,11 +8,11 @@ import {
 	legacyThemeInitial,
 	normalizeThemeSettings,
 	supportsThemeTokens,
-} from "../../src/lib/theme-compat.ts";
+} from "../../web/lib/theme-compat.ts";
 import type {
 	ThemeSettings,
 	ThemeSettingsUpdate,
-} from "../../src/lib/theme-settings-types.ts";
+} from "../../shared/theme-settings-types.ts";
 
 const legacy: ThemeSettings = {
 	revision: 4,
@@ -164,7 +164,7 @@ test("boot is inline classic before the bundle and injects cached CSS synchronou
 	);
 	const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 	assert.ok(script);
-	assert.ok(html.indexOf("<script>") < html.indexOf("/src/main.tsx"));
+	assert.ok(html.indexOf("<script>") < html.indexOf("/web/main.tsx"));
 	assert.doesNotMatch(script, /\bimport\b|\bawait\b/);
 	for (const cached of [
 		legacy,

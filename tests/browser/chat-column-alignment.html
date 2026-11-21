@@ -11,17 +11,17 @@
 		<pre id="results">Running…</pre>
 		<div id="root"></div>
 		<script type="module">
-			import "../../src/index.css";
+			import "../../web/index.css";
 			import { createElement as h, useRef } from "react";
 			import { createRoot } from "react-dom/client";
-			import { ConversationColumn } from "../../src/components/chat/chat-conversation-column.tsx";
-			import { ChatComposerSurface } from "../../src/components/chat/chat-composer-frame.tsx";
-			import { UserMessage } from "../../src/components/chat/chat-user-message.tsx";
-			import { useScrollbarGutterWidth } from "../../src/components/chat/use-scrollbar-gutter.ts";
-			import { useMediaQuery } from "../../src/remote/remote-app-model.ts";
-			import { PreferencesProvider } from "../../src/lib/preferences-provider.tsx";
-			import { TooltipProvider } from "../../src/ui/tooltip.tsx";
-			import { initializeI18n } from "../../src/i18n/index.ts";
+			import { ConversationColumn } from "../../web/components/chat/chat-conversation-column.tsx";
+			import { ChatComposerSurface } from "../../web/components/chat/chat-composer-frame.tsx";
+			import { UserMessage } from "../../web/components/chat/chat-user-message.tsx";
+			import { useScrollbarGutterWidth } from "../../web/components/chat/use-scrollbar-gutter.ts";
+			import { useMediaQuery } from "../../web/remote/remote-app-model.ts";
+			import { PreferencesProvider } from "../../web/lib/preferences-provider.tsx";
+			import { TooltipProvider } from "../../web/ui/tooltip.tsx";
+			import { initializeI18n } from "../../web/i18n/index.ts";
 
 			await initializeI18n("en-US");
 			const root = createRoot(document.getElementById("root"));

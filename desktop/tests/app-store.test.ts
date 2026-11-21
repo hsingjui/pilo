@@ -4,13 +4,13 @@ import type {
 	PiloClientEvent,
 	PiloClientEventMessage,
 	PiloClientEventOptions,
-} from "@/lib/api/pilo-client";
-import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
-import type { Project } from "@/lib/api/projects-types";
-import type { SessionIndexEntry } from "@/lib/api/sessions-types";
-import type { PreferencesSnapshot } from "@/lib/host-preferences-types";
-import type { SessionReadState } from "@/lib/session-read-state";
-import type { ThemeSettings } from "@/lib/theme-settings-types";
+} from "@shared/api/pilo-client";
+import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
+import type { Project } from "@shared/api/projects-types";
+import type { SessionIndexEntry } from "@shared/api/sessions-types";
+import type { PreferencesSnapshot } from "@shared/host-preferences-types";
+import type { SessionReadState } from "@shared/session-read-state";
+import type { ThemeSettings } from "@shared/theme-settings-types";
 import type { NshPiloClientBootstrap } from "../client/nsh-pilo-client";
 import { AppStore, type AppStoreClient } from "../state/app-store";
 

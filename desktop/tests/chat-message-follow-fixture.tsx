@@ -10,12 +10,12 @@ import {
 	windowSize,
 } from "nsh";
 
-import { replayConversationEvents } from "@/lib/chat/conversation-replay";
+import { replayConversationEvents } from "@shared/chat/conversation-replay";
 import type {
 	ChatMessage,
 	ConversationEvent,
 	ConversationState,
-} from "@/lib/chat/conversation-types";
+} from "@shared/chat/conversation-types";
 import "../app/fonts";
 import { initializeI18n } from "../app/i18n";
 import { ChatMessageList } from "../chat/chat-message-list";

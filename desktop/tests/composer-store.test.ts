@@ -1,6 +1,6 @@
 import { expect, test } from "nsh/test";
 
-import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
+import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import type { AppState } from "../state/app-state";
 import { createAppState } from "../state/app-state";
 import type {

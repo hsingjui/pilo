@@ -12,7 +12,7 @@ import {
 } from "nsh";
 import { Button as BaseButton } from "nsh/base";
 
-import type { Theme } from "@/lib/theme-settings-types";
+import type { Theme } from "@shared/theme-settings-types";
 import { Button } from "../ui/button";
 import { Foreground } from "../ui/foreground";
 import { Icon, type IconName } from "../ui/icon";

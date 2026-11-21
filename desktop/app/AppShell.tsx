@@ -12,7 +12,7 @@ import {
 } from "nsh";
 import { currentWindow } from "nsh/desktop";
 
-import type { Project } from "@/lib/api/projects-types";
+import type { Project } from "@shared/api/projects-types";
 import { ChatAgentActivityIndicator } from "../chat/chat-agent-activity";
 import { ChatMessageList } from "../chat/chat-message-list";
 import { ChatMarkdown, type ChatMarkdownFileLink } from "../chat/chat-markdown";
@@ -30,11 +30,11 @@ import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 import type { ModelCatalogStore } from "../state/model-catalog";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
-import { defaultKeyboardShortcuts } from "@/lib/keyboard-shortcuts-core";
+import { defaultKeyboardShortcuts } from "@shared/keyboard-shortcuts-core";
 import type {
 	KeyboardShortcutMap,
 	ShortcutCommandId,
-} from "@/lib/keyboard-shortcuts-types";
+} from "@shared/keyboard-shortcuts-types";
 import { nshAppShortcut } from "../shortcuts";
 import {
 	SettingsDialog,

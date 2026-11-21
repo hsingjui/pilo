@@ -1,10 +1,10 @@
-import type { PiModelProbeClient } from "@/lib/api/pi-models-probe";
+import type { PiModelProbeClient } from "@shared/api/pi-models-probe";
 import type {
 	PiSessionSnapshot,
 	PiloRuntimeEvent,
-} from "@/lib/api/pi-runtime-types";
-import type { PiloClientStartChatInput } from "@/lib/api/pilo-client";
-import { chatSessionKey } from "@/lib/api/chat-session-key";
+} from "@shared/api/pi-runtime-types";
+import type { PiloClientStartChatInput } from "@shared/api/pilo-client";
+import { chatSessionKey } from "@shared/api/chat-session-key";
 import { requestPiRpcReply, type PiCommandClient } from "./chat-rpc";
 
 /** The model-catalog probe RPC wait; the same 10 s the Tauri probe uses. */

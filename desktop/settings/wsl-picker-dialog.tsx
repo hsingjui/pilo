@@ -1,7 +1,7 @@
 import { platform, Scroll, signal, Text, token, View } from "nsh";
 
-import type { WslDistribution } from "@/lib/api/pi-runtime-types";
-import { userErrorMessage } from "@/lib/app-error";
+import type { WslDistribution } from "@shared/api/pi-runtime-types";
+import { userErrorMessage } from "@shared/app-error";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";

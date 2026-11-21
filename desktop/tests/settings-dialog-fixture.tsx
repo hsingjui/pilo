@@ -1,13 +1,13 @@
 import { host, mount, setTheme, signal, Storage, Text, View } from "nsh";
 
-import type { Connection } from "@/lib/api/pi-runtime-types";
-import type { Project } from "@/lib/api/projects-types";
-import type { PreferencesSnapshot } from "@/lib/host-preferences-types";
+import type { Connection } from "@shared/api/pi-runtime-types";
+import type { Project } from "@shared/api/projects-types";
+import type { PreferencesSnapshot } from "@shared/host-preferences-types";
 import {
 	type KeyboardShortcutMap,
 	SHORTCUT_COMMANDS,
-} from "@/lib/keyboard-shortcuts-types";
-import type { ThemeSettings } from "@/lib/theme-settings-types";
+} from "@shared/keyboard-shortcuts-types";
+import type { ThemeSettings } from "@shared/theme-settings-types";
 import "../app/fonts";
 import { AppShell } from "../app/AppShell";
 import { conversationContext, followOpenSession } from "../app/open-chat";

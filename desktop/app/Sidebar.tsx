@@ -11,9 +11,9 @@ import {
 } from "nsh";
 import { Button } from "nsh/base";
 
-import { sortSidebarSessionsByRecency } from "@/components/sidebar/session-list";
-import type { Connection } from "@/lib/api/pi-runtime-types";
-import { isDefaultWorkspace, type Project } from "@/lib/api/projects-types";
+import { sortSidebarSessionsByRecency } from "@shared/sidebar/session-list";
+import type { Connection } from "@shared/api/pi-runtime-types";
+import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
 import type { AppStore } from "../state/app-store";
 import { Foreground } from "../ui/foreground";
 import { Icon } from "../ui/icon";

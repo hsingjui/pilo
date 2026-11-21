@@ -17,13 +17,13 @@ import {
 	normalizeKeyboardShortcut,
 	shortcutFromKeyEvent,
 	type ShortcutKeyEvent,
-} from "@/lib/keyboard-shortcuts-core";
-import { formatKeyboardShortcutLabels } from "@/lib/keyboard-shortcuts-format";
+} from "@shared/keyboard-shortcuts-core";
+import { formatKeyboardShortcutLabels } from "@shared/keyboard-shortcuts-format";
 import {
 	SHORTCUT_COMMANDS,
 	type ShortcutCommandId,
-} from "@/lib/keyboard-shortcuts-types";
-import type { PreferencePatch } from "@/lib/host-preferences-types";
+} from "@shared/keyboard-shortcuts-types";
+import type { PreferencePatch } from "@shared/host-preferences-types";
 import { nshAppShortcut } from "../shortcuts";
 import type { AppState } from "../state/app-state";
 import type { DesktopShell } from "../app/desktop-shell";

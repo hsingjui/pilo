@@ -2,7 +2,7 @@ import { signal, Text, View } from "nsh";
 import type { CommandItem } from "nsh/base";
 
 import { t } from "../app/i18n";
-import type { FontOption } from "@/lib/font-settings";
+import type { FontOption } from "@shared/font-settings";
 import { Command } from "../ui/command";
 import { Icon } from "../ui/icon";
 import { Popover } from "../ui/popover";

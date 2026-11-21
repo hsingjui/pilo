@@ -5,7 +5,7 @@ import {
 	latestTurnChatTodoSource,
 	type ChatTodoProgress,
 	type ChatTodoTurnSource,
-} from "@/lib/chat/chat-todos";
+} from "@shared/chat/chat-todos";
 
 import { t } from "../app/i18n";
 import type { ChatTranscriptState } from "../state/chat-transcript-store";

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { cacheKeepAliveHitRate } from "../../src/lib/cache-keep-alive.ts";
+import { cacheKeepAliveHitRate } from "../../shared/cache-keep-alive.ts";
 
 test("keep-alive cache hit rate includes uncached input and cache writes", () => {
 	assert.equal(

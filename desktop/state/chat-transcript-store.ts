@@ -7,20 +7,20 @@ import {
 	HISTORY_PREFETCH_MESSAGES,
 	INITIAL_HISTORY_MESSAGE_COUNT,
 	sameHistoryFingerprint,
-} from "@/components/chat/chat-history-window-model";
-import { createChatHistoryWindowStore } from "@/components/chat/chat-history-window-store";
-import type { PiloClientEvent } from "@/lib/api/pilo-client";
+} from "@shared/chat/chat-history-window-model";
+import { createChatHistoryWindowStore } from "@shared/chat/chat-history-window-store";
+import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type {
 	SessionHistoryFingerprint,
 	SessionHistoryResult,
-} from "@/lib/api/sessions-types";
-import { createConversationState } from "@/lib/chat/conversation-reducer";
-import { replayConversationEvents } from "@/lib/chat/conversation-replay";
+} from "@shared/api/sessions-types";
+import { createConversationState } from "@shared/chat/conversation-reducer";
+import { replayConversationEvents } from "@shared/chat/conversation-replay";
 import type {
 	ChatMessage,
 	ConversationReducerContext,
 	ConversationState,
-} from "@/lib/chat/conversation-types";
+} from "@shared/chat/conversation-types";
 import type {
 	ChatTranscriptSnapshot,
 	ChatTranscriptWindow,

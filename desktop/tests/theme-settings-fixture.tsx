@@ -1,6 +1,6 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
-import type { ThemeSettings } from "../../src/lib/theme-settings-types";
+import type { ThemeSettings } from "@shared/theme-settings-types";
 
 const fixture = new BootstrapFixture();
 const status = signal("loading Host theme settings");

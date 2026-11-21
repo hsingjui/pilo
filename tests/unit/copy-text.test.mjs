@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { copyText } from "../../src/lib/copy-text.ts";
+import { copyText } from "../../web/lib/copy-text.ts";
 
 function set(name, value) {
 	Object.defineProperty(globalThis, name, { configurable: true, value });

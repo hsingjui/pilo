@@ -1,6 +1,6 @@
 import { effect, Notifications, signal, untracked } from "nsh";
 
-import type { PiloClientEvent } from "@/lib/api/pilo-client";
+import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import type { AppStore } from "../state/app-store";
 import type { DesktopShell } from "./desktop-shell";

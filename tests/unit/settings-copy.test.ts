@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import enUS from "../../src/i18n/resources/en-US.ts";
-import zhCN from "../../src/i18n/resources/zh-CN.ts";
+import enUS from "../../shared/i18n/resources/en-US.ts";
+import zhCN from "../../shared/i18n/resources/zh-CN.ts";
 
 test("Chinese settings menus and core labels stay within two to four characters", () => {
 	const labels = {

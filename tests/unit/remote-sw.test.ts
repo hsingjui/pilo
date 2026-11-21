@@ -4,7 +4,7 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 
 const source = readFileSync(
-	new URL("../../src/remote/sw.js", import.meta.url),
+	new URL("../../web/remote/sw.js", import.meta.url),
 	"utf8",
 );
 

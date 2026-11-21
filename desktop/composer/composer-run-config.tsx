@@ -10,12 +10,12 @@ import {
 	type Bounds,
 } from "nsh";
 
-import type { PiModel, PiThinkingLevel } from "@/lib/api/pi-runtime-types";
-import { piThinkingLevelLabel } from "@/lib/pi-model-selection";
+import type { PiModel, PiThinkingLevel } from "@shared/api/pi-runtime-types";
+import { piThinkingLevelLabel } from "@shared/pi-model-selection";
 import type {
 	ProjectModelScope,
 	ProjectScopedModel,
-} from "@/lib/project-model-scope";
+} from "@shared/project-model-scope";
 
 import { t } from "../app/i18n";
 import { PiLogo } from "../app/pi-logo";

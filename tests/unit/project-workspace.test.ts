@@ -6,11 +6,11 @@ import {
 	reduceProjectWorkspaces,
 	workspaceFileKey,
 	type ProjectWorkspace,
-} from "../../src/lib/project-workspace.ts";
+} from "../../shared/project-workspace.ts";
 import {
 	fileLinkPreviewKind,
 	resolveMarkdownFileUrl,
-} from "../../src/lib/chat/chat-markdown-links.ts";
+} from "../../shared/chat/chat-markdown-links.ts";
 
 const empty = () => new Map<string, ProjectWorkspace>();
 const file = (path: string) => ({ path, content: `contents of ${path}` });

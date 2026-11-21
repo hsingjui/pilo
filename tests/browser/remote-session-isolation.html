@@ -11,18 +11,18 @@
 		<pre id="results">Running…</pre>
 		<div id="root"></div>
 		<script type="module">
-			import "../../src/index.css";
+			import "../../web/index.css";
 			import { createElement as h } from "react";
 			import { flushSync } from "react-dom";
 			import { createRoot } from "react-dom/client";
 			import { Toaster, toast } from "sonner";
-			import { RemoteApp } from "../../src/remote/remote-app.tsx";
-			import { WebPiloClient } from "../../src/remote/web-pilo-client.ts";
-			import { sessionKey } from "../../src/remote/remote-app-model.ts";
-			import { REMOTE_SEQUENCE_KEY } from "../../src/remote/remote-client.ts";
-			import { PreferencesProvider } from "../../src/lib/preferences-provider.tsx";
-			import { DEFAULT_KEYBOARD_SHORTCUTS } from "../../src/lib/keyboard-shortcuts.ts";
-			import { i18n, initializeI18n } from "../../src/i18n/index.ts";
+			import { RemoteApp } from "../../web/remote/remote-app.tsx";
+			import { WebPiloClient } from "../../web/remote/web-pilo-client.ts";
+			import { sessionKey } from "../../web/remote/remote-app-model.ts";
+			import { REMOTE_SEQUENCE_KEY } from "../../web/remote/remote-client.ts";
+			import { PreferencesProvider } from "../../web/lib/preferences-provider.tsx";
+			import { DEFAULT_KEYBOARD_SHORTCUTS } from "../../web/lib/keyboard-shortcuts.ts";
+			import { i18n, initializeI18n } from "../../web/i18n/index.ts";
 
 			await initializeI18n("en-US");
 			const results = document.getElementById("results");

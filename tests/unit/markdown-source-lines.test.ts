@@ -7,9 +7,9 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 
-import { highlightProjectFile } from "../../src/lib/code-highlighter.ts";
-import { normalizeTexMathDelimiters } from "../../src/lib/markdown-single-dollar-math.ts";
-import { rehypeMarkdownSourceLines } from "../../src/lib/markdown-source-lines.ts";
+import { highlightProjectFile } from "../../web/lib/code-highlighter.ts";
+import { normalizeTexMathDelimiters } from "../../web/lib/markdown-single-dollar-math.ts";
+import { rehypeMarkdownSourceLines } from "../../web/lib/markdown-source-lines.ts";
 
 type SourceNode = Parameters<ReturnType<typeof rehypeMarkdownSourceLines>>[0];
 const processor = unified()

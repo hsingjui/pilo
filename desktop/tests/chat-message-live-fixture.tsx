@@ -1,7 +1,7 @@
 import { host, mount, signal, Text, View } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
 
-import type { ConversationReducerContext } from "@/lib/chat/conversation-types";
+import type { ConversationReducerContext } from "@shared/chat/conversation-types";
 import "../app/fonts";
 import { initializeI18n } from "../app/i18n";
 import { ChatMessageList } from "../chat/chat-message-list";

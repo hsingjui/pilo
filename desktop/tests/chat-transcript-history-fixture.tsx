@@ -1,7 +1,7 @@
 import { mount, signal, Text, View } from "nsh";
 import { Pilo, SessionFilesFixture } from "app/native";
 
-import type { ConversationReducerContext } from "@/lib/chat/conversation-types";
+import type { ConversationReducerContext } from "@shared/chat/conversation-types";
 import { NshPiloClient } from "../client/nsh-pilo-client";
 import { AppStore } from "../state/app-store";
 import { conversationFromHistory } from "../state/chat-transcript";

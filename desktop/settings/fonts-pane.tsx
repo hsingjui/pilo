@@ -18,8 +18,8 @@ import {
 	getMonospaceFontFamilyStack,
 	getPageFontFamilyStack,
 	type FontSizeRange,
-} from "@/lib/font-settings";
-import type { PreferencePatch } from "@/lib/host-preferences-types";
+} from "@shared/font-settings";
+import type { PreferencePatch } from "@shared/host-preferences-types";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";

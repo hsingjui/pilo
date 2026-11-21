@@ -11,9 +11,9 @@ import {
 } from "nsh";
 import { Button } from "nsh/base";
 
-import { summarizeProjectSessions } from "@/components/sidebar/session-list";
-import { isDefaultWorkspace, type Project } from "@/lib/api/projects-types";
-import { displayProjectPath } from "@/lib/project-path";
+import { summarizeProjectSessions } from "@shared/sidebar/session-list";
+import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
+import { displayProjectPath } from "@shared/project-path";
 import { activeProject } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
 import { Foreground } from "../ui/foreground";

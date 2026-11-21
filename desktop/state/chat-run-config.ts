@@ -1,18 +1,18 @@
 import { type Accessor, signal } from "nsh";
 
-import type { ProjectPiModels } from "@/lib/api/pi-models-types";
+import type { ProjectPiModels } from "@shared/api/pi-models-types";
 import type {
 	PiAgentState,
 	PiModel,
 	PiSessionStats,
 	PiThinkingLevel,
-} from "@/lib/api/pi-runtime-types";
-import { PI_THINKING_LEVELS } from "@/lib/api/pi-runtime-types";
-import type { ChatSessionRuntimeState } from "@/lib/chat/session-stats";
+} from "@shared/api/pi-runtime-types";
+import { PI_THINKING_LEVELS } from "@shared/api/pi-runtime-types";
+import type { ChatSessionRuntimeState } from "@shared/chat/session-stats";
 import {
 	mergeRefreshedSessionState,
 	mergeSessionStats,
-} from "@/lib/chat/session-stats";
+} from "@shared/chat/session-stats";
 import {
 	findMatchingPiModel,
 	getNextPiScopeModel,
@@ -20,8 +20,8 @@ import {
 	getPiQuickCycleThinkingLevel,
 	getProjectScopeModels,
 	isPiScopeCatalogResolved,
-} from "@/lib/pi-model-selection";
-import type { PiloClientEvent } from "@/lib/api/pilo-client";
+} from "@shared/pi-model-selection";
+import type { PiloClientEvent } from "@shared/api/pilo-client";
 import { requestPiRpcReply, type PiCommandClient } from "../client/chat-rpc";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import type { ChatTranscriptTarget } from "./chat-transcript-store";

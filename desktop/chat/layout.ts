@@ -1,4 +1,4 @@
-import { DEFAULT_UI_FONT_SIZE } from "@/lib/font-settings";
+import { DEFAULT_UI_FONT_SIZE } from "@shared/font-settings";
 
 /** Tauri's default root size, for matching rem-based chat geometry in points. */
 export const DEFAULT_CHAT_REM = (16 * DEFAULT_UI_FONT_SIZE) / 14;

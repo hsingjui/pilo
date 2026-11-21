@@ -12,7 +12,7 @@ import {
 	resolveCustomTheme,
 	validateCustomThemeTokens,
 	type ThemeCssVars,
-} from "../../src/lib/theme-tokens.ts";
+} from "../../shared/theme-tokens.ts";
 
 const base: ThemeCssVars = {
 	theme: {
@@ -136,7 +136,7 @@ test("opaque colors are exactly the tokens the WebUI CSS holds as HSL channels",
 		["claude-theme.css", "claude-theme.json"],
 	]) {
 		const source = readFileSync(
-			new URL(`../../src/styles/${css}`, import.meta.url),
+			new URL(`../../web/styles/${css}`, import.meta.url),
 			"utf8",
 		).replace(/\/\*[\s\S]*?\*\//g, "");
 		const raw = new Map<string, string[]>();

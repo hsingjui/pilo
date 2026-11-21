@@ -12,7 +12,7 @@ export default defineConfig(() => ({
 		tailwindcss(),
 		VitePWA({
 			strategies: "injectManifest",
-			srcDir: "src/remote",
+			srcDir: "web/remote",
 			filename: "sw.js",
 			injectRegister: false,
 			manifest: false,
@@ -57,7 +57,11 @@ export default defineConfig(() => ({
 	},
 	resolve: {
 		alias: [
-			{ find: "@", replacement: path.resolve(import.meta.dirname, "./src") },
+			{
+				find: "@shared",
+				replacement: path.resolve(import.meta.dirname, "./shared"),
+			},
+			{ find: "@", replacement: path.resolve(import.meta.dirname, "./web") },
 		],
 	},
 

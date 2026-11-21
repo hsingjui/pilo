@@ -1,8 +1,8 @@
 import { expect, test } from "nsh/test";
 
-import type { ProjectPiModels } from "@/lib/api/pi-models-types";
-import type { PiAgentState, PiModel } from "@/lib/api/pi-runtime-types";
-import type { ProjectModelScope } from "@/lib/project-model-scope";
+import type { ProjectPiModels } from "@shared/api/pi-models-types";
+import type { PiAgentState, PiModel } from "@shared/api/pi-runtime-types";
+import type { ProjectModelScope } from "@shared/project-model-scope";
 import { ModelCatalogStore } from "../state/model-catalog";
 import { scriptedClient } from "./scripted-app-client";
 

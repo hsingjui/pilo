@@ -1,6 +1,6 @@
 import { mount, signal, Text } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
-import type { PromptEnhancementSettings } from "@/lib/prompt-enhancement-types";
+import type { PromptEnhancementSettings } from "@shared/prompt-enhancement-types";
 
 const status = signal("loading prompt enhancement settings");
 

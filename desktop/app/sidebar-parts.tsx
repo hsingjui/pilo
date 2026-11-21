@@ -1,7 +1,7 @@
 import { colorScheme, type JSX, split, token, View } from "nsh";
 import { Button, type ButtonProps } from "nsh/base";
 
-import { isDefaultWorkspace, type Project } from "@/lib/api/projects-types";
+import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
 import { classNames } from "../ui/class-names";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";

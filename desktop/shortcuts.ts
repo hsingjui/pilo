@@ -1,4 +1,4 @@
-import { normalizeKeyboardShortcut } from "@/lib/keyboard-shortcuts-core";
+import { normalizeKeyboardShortcut } from "@shared/keyboard-shortcuts-core";
 
 /** nsh's built-in bindings, reserved from the system-wide show shortcut. */
 export const APP_SHORTCUTS = {

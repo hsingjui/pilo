@@ -4,7 +4,7 @@ import test from "node:test";
 import {
 	remoteConnectionLabelKey,
 	resolveRemoteConnectionState,
-} from "../../src/remote/remote-connection-state.ts";
+} from "../../web/remote/remote-connection-state.ts";
 
 test("a live socket takes precedence over navigator online hints", () => {
 	assert.equal(resolveRemoteConnectionState(false, true), "connected");

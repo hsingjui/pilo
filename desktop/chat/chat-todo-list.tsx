@@ -1,6 +1,6 @@
 import { token, Text, View } from "nsh";
 
-import type { ChatTodoItem, ChatTodoStatus } from "@/lib/chat/chat-todos";
+import type { ChatTodoItem, ChatTodoStatus } from "@shared/chat/chat-todos";
 
 import { t } from "../app/i18n";
 import { Icon, type IconName } from "../ui/icon";

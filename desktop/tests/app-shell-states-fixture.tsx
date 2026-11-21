@@ -1,7 +1,7 @@
 import { mount, Storage } from "nsh";
 
-import type { Project } from "@/lib/api/projects-types";
-import type { ThemeSettings } from "@/lib/theme-settings-types";
+import type { Project } from "@shared/api/projects-types";
+import type { ThemeSettings } from "@shared/theme-settings-types";
 import "../app/fonts";
 import { ComposerStore } from "../composer/composer-store";
 import { AppShell } from "../app/AppShell";

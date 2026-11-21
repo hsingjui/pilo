@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createProjectDraftCache } from "../../src/components/app/chat-ui-state-cache.ts";
+import { createProjectDraftCache } from "../../web/components/app/chat-ui-state-cache.ts";
 
 test("scopes drafts per project and drops empty values", () => {
 	const cache = createProjectDraftCache();

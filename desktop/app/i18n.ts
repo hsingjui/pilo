@@ -2,9 +2,12 @@ import type { TFunction } from "i18next";
 import { locale as systemLocale, signal } from "nsh";
 import { setLocale } from "nsh/i18n";
 
-import { i18n } from "@/i18n/instance";
-import { resolveInitialLocale, type AppLocale } from "@/i18n/locale-types.ts";
-import { i18nInitOptions } from "@/i18n/options.ts";
+import { i18n } from "@shared/i18n/instance";
+import {
+	resolveInitialLocale,
+	type AppLocale,
+} from "@shared/i18n/locale-types.ts";
+import { i18nInitOptions } from "@shared/i18n/options.ts";
 
 const shownLocale = signal<AppLocale>("en-US");
 

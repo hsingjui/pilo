@@ -3,7 +3,7 @@ import { mount, signal, Text, View } from "nsh";
 import {
 	MONOSPACE_FONT_BUILTIN_OPTIONS,
 	PAGE_FONT_BUILTIN_OPTIONS,
-} from "@/lib/font-settings";
+} from "@shared/font-settings";
 import "../app/fonts";
 import { initializeI18n, t } from "../app/i18n";
 import { FontSelect } from "../settings/font-select";

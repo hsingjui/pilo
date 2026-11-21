@@ -1,10 +1,10 @@
 import { expect, test } from "nsh/test";
 import { signal } from "nsh";
 
-import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
-import type { ProjectPiModels } from "@/lib/api/pi-models-types";
-import type { PiAgentState, PiModel } from "@/lib/api/pi-runtime-types";
-import type { SessionHistory } from "@/lib/api/sessions-types";
+import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
+import type { ProjectPiModels } from "@shared/api/pi-models-types";
+import type { PiAgentState, PiModel } from "@shared/api/pi-runtime-types";
+import type { SessionHistory } from "@shared/api/sessions-types";
 import type { AppScript } from "./scripted-app-client";
 import { scriptedClient } from "./scripted-app-client";
 import { ChatRunConfigStore } from "../state/chat-run-config";

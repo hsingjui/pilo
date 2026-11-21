@@ -1,16 +1,16 @@
 import { expect, open, test } from "nsh/test";
 
-import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
+import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import type {
 	PiloClientEvent,
 	PiloClientEventOptions,
 	PiloClientHistoryOptions,
-} from "@/lib/api/pilo-client";
+} from "@shared/api/pilo-client";
 import type {
 	SessionHistoryMessageIndexEntry,
 	SessionHistoryResult,
-} from "@/lib/api/sessions-types";
-import type { ConversationReducerContext } from "@/lib/chat/conversation-types";
+} from "@shared/api/sessions-types";
+import type { ConversationReducerContext } from "@shared/chat/conversation-types";
 import type {
 	ChatTranscriptSnapshot,
 	ChatTranscriptWindow,

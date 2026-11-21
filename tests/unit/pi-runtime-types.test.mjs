@@ -12,7 +12,7 @@ test("runtime wire payloads and the conversation adapter type-check without brow
 			),
 			fileURLToPath(
 				new URL(
-					"../../src/lib/chat/conversation-runtime-adapter.ts",
+					"../../shared/chat/conversation-runtime-adapter.ts",
 					import.meta.url,
 				),
 			),
@@ -26,7 +26,7 @@ test("runtime wire payloads and the conversation adapter type-check without brow
 			noEmit: true,
 			strict: true,
 			types: [],
-			paths: { "@/*": [`${root}src/*`] },
+			paths: { "@shared/*": [`${root}shared/*`] },
 		},
 	);
 

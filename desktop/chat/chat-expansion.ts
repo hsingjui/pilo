@@ -1,6 +1,6 @@
 import { context, signal, type Signal } from "nsh";
 
-import type { AssistantContentItem } from "@/lib/chat/chat-activity-state";
+import type { AssistantContentItem } from "@shared/chat/chat-activity-state";
 
 /** Lets a manual disclosure yield bottom-following in its message list. */
 export const ChatDisclosureAction = context<(update: () => void) => void>(

@@ -7,8 +7,8 @@ import {
 	refreshProjectPiModels,
 	type PiModelProbeClient,
 	type ProjectPiModels,
-} from "../../src/lib/api/pi-models.ts";
-import type { PiCommand, PiModel } from "../../src/lib/api/pi-runtime.ts";
+} from "../../web/lib/api/pi-models.ts";
+import type { PiCommand, PiModel } from "../../web/lib/api/pi-runtime.ts";
 
 const model: PiModel = {
 	id: "test-model",

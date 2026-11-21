@@ -4,7 +4,7 @@ import test from "node:test";
 import {
 	scrollChatViewportToRealBottom,
 	shouldShowChatScrollToLatest,
-} from "../../src/components/chat/chat-sticky-scroll-dom.ts";
+} from "../../web/components/chat/chat-sticky-scroll-dom.ts";
 import {
 	appendAssistantTextContent,
 	appendAssistantThinkingContent,
@@ -18,16 +18,16 @@ import {
 	summarizeAssistantActivity,
 	upsertToolContent,
 	type AssistantContentItem,
-} from "../../src/lib/chat/chat-activity-state.ts";
-import { buildConversationOutline } from "../../src/lib/chat/conversation-outline.ts";
+} from "../../shared/chat/chat-activity-state.ts";
+import { buildConversationOutline } from "../../shared/chat/conversation-outline.ts";
 import {
 	getOutlineIndexForMessageIndex,
 	getOutlineIndexForScrollOffset,
 	shouldInitializeShortChatPromoted,
 	shouldPromoteShortChatVirtualization,
 	shouldRenderPlainShortChat,
-} from "../../src/lib/chat/chat-virtualization.ts";
-import { formatWorkDuration } from "../../src/lib/format-duration.ts";
+} from "../../web/lib/chat/chat-virtualization.ts";
+import { formatWorkDuration } from "../../shared/format-duration.ts";
 
 function runBottomClampMode(mode: "dom-only" | "virtua-only" | "none") {
 	const calls: number[] = [];

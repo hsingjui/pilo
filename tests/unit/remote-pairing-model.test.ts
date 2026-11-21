@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { pairingTargetAddress } from "../../src/remote/remote-pairing-model.ts";
+import { pairingTargetAddress } from "../../web/remote/remote-pairing-model.ts";
 
 const lan = { id: "lan", name: "", baseUrl: "http://192.168.1.5:47653" };
 const publicAddress = {

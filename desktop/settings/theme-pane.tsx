@@ -1,6 +1,6 @@
 import { type Accessor, Text, token, View } from "nsh";
 
-import type { ThemeSettingsUpdate } from "@/lib/theme-settings-types";
+import type { ThemeSettingsUpdate } from "@shared/theme-settings-types";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import { classNames } from "../ui/class-names";

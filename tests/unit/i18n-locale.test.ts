@@ -5,7 +5,7 @@ import {
 	isAppLocale,
 	resolveInitialLocale,
 	LOCALE_STORAGE_KEY,
-} from "../../src/i18n/locale.ts";
+} from "../../web/i18n/locale.ts";
 
 test("accepts only the two supported locales", () => {
 	assert.equal(isAppLocale("zh-CN"), true);

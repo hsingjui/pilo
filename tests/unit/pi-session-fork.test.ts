@@ -4,10 +4,10 @@ import test from "node:test";
 import {
 	getActivePiBranch,
 	resolveAssistantForkTarget,
-} from "../../src/lib/chat/pi-session-fork.ts";
-import type { ChatMessage } from "../../src/lib/chat/conversation-types.ts";
-import type { PiSessionEntries } from "../../src/lib/api/pi-runtime.ts";
-import { initializeI18n, i18n } from "../../src/i18n/index.ts";
+} from "../../shared/chat/pi-session-fork.ts";
+import type { ChatMessage } from "../../shared/chat/conversation-types.ts";
+import type { PiSessionEntries } from "../../web/lib/api/pi-runtime.ts";
+import { initializeI18n, i18n } from "../../web/i18n/index.ts";
 
 await initializeI18n("zh-CN");
 

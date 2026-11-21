@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createChatUiStateCache } from "../../src/components/app/chat-ui-state-cache.ts";
+import { createChatUiStateCache } from "../../web/components/app/chat-ui-state-cache.ts";
 import {
 	sortSidebarSessionsActiveFirst,
 	summarizeProjectSessions,
-} from "../../src/components/sidebar/session-list.ts";
-import type { SidebarSession } from "../../src/components/sidebar/types.ts";
+} from "../../shared/sidebar/session-list.ts";
+import type { SidebarSession } from "../../web/components/sidebar/types.ts";
 import {
 	MAX_OPEN_CHAT_CONTROLLERS,
 	MAX_OPEN_CHAT_ESTIMATED_HISTORY_BYTES,
@@ -23,10 +23,10 @@ import {
 	trimOpenedChats,
 	upsertOpenedChat,
 	type OpenChat,
-} from "../../src/components/app/app-chat-state.ts";
-import type { ChatSession } from "../../src/components/chat/chat-page-utils.ts";
-import type { Project } from "../../src/lib/api/projects.ts";
-import type { SessionIndexEntry } from "../../src/lib/api/sessions.ts";
+} from "../../web/components/app/app-chat-state.ts";
+import type { ChatSession } from "../../web/components/chat/chat-page-utils.ts";
+import type { Project } from "../../web/lib/api/projects.ts";
+import type { SessionIndexEntry } from "../../web/lib/api/sessions.ts";
 
 const project: Project = {
 	id: "project:local:/project",

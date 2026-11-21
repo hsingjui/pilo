@@ -1,12 +1,12 @@
 import { type Accessor, signal } from "nsh";
 
-import { chatSessionKey } from "@/lib/api/chat-session-key";
+import { chatSessionKey } from "@shared/api/chat-session-key";
 import type {
 	PiAgentState,
 	PiSessionEntries,
-} from "@/lib/api/pi-runtime-types";
-import type { ChatMessage } from "@/lib/chat/conversation-types";
-import { resolveAssistantForkTarget } from "@/lib/chat/pi-session-fork";
+} from "@shared/api/pi-runtime-types";
+import type { ChatMessage } from "@shared/chat/conversation-types";
+import { resolveAssistantForkTarget } from "@shared/chat/pi-session-fork";
 import { requestPiRpcReply, type PiCommandClient } from "../client/chat-rpc";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import type { ChatTranscriptTarget } from "../state/chat-transcript-store";

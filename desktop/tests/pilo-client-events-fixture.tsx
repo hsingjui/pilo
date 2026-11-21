@@ -1,7 +1,7 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
 
-import type { PiloClientEventMessage } from "@/lib/api/pilo-client";
+import type { PiloClientEventMessage } from "@shared/api/pilo-client";
 import { NshPiloClient } from "../client/nsh-pilo-client";
 
 /** More events than the native queue's 2,048, even after one batch is taken. */

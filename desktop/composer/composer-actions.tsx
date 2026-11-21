@@ -1,6 +1,6 @@
 import { Text, token, View } from "nsh";
 
-import type { ComposerSendMode } from "@/lib/chat/send-mode";
+import type { ComposerSendMode } from "@shared/chat/send-mode";
 
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";

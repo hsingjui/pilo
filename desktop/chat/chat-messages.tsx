@@ -12,12 +12,12 @@ import {
 	type ViewToken,
 } from "nsh";
 
-import { shouldShowChatScrollToLatest } from "@/lib/chat/chat-scroll-to-latest";
+import { shouldShowChatScrollToLatest } from "@shared/chat/chat-scroll-to-latest";
 import {
 	buildConversationOutline,
 	getOutlineIndexForVisibleRange,
-} from "@/lib/chat/conversation-outline";
-import type { ChatMessage } from "@/lib/chat/conversation-types";
+} from "@shared/chat/conversation-outline";
+import type { ChatMessage } from "@shared/chat/conversation-types";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";

@@ -1,18 +1,18 @@
-import { alignHistoryMessages } from "@/components/chat/chat-history-window-model";
-import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime-types";
-import type { PiloClientEvent } from "@/lib/api/pilo-client";
-import type { SessionHistory } from "@/lib/api/sessions-types";
+import { alignHistoryMessages } from "@shared/chat/chat-history-window-model";
+import type { PiloRuntimeEvent } from "@shared/api/pi-runtime-types";
+import type { PiloClientEvent } from "@shared/api/pilo-client";
+import type { SessionHistory } from "@shared/api/sessions-types";
 import {
 	coalesceConversationActions,
 	reduceConversationActions,
 	replayConversationEvents,
-} from "@/lib/chat/conversation-replay";
-import { toConversationAction } from "@/lib/chat/conversation-runtime-adapter";
+} from "@shared/chat/conversation-replay";
+import { toConversationAction } from "@shared/chat/conversation-runtime-adapter";
 import type {
 	ConversationAction,
 	ConversationReducerContext,
 	ConversationState,
-} from "@/lib/chat/conversation-types";
+} from "@shared/chat/conversation-types";
 import type { ChatTranscriptSnapshot } from "../client/nsh-pilo-client";
 
 /**

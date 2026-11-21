@@ -6,7 +6,7 @@ import {
 	shellInfo,
 } from "nsh/updater";
 
-import { userErrorMessage } from "@/lib/app-error";
+import { userErrorMessage } from "@shared/app-error";
 import { t } from "../app/i18n";
 import appIcon from "../assets/app-icon.png";
 import { Button } from "../ui/button";

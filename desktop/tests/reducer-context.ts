@@ -1,4 +1,4 @@
-import type { ConversationReducerContext } from "@/lib/chat/conversation-types";
+import type { ConversationReducerContext } from "@shared/chat/conversation-types";
 
 export function reducerContext(
 	now: () => number = Date.now,

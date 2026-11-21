@@ -1,8 +1,8 @@
 import { computed, type Signal, signal, Text, token, View } from "nsh";
 
-import type { FsEntry } from "@/lib/api/files-types";
-import type { Connection } from "@/lib/api/pi-runtime-types";
-import type { Project } from "@/lib/api/projects-types";
+import type { FsEntry } from "@shared/api/files-types";
+import type { Connection } from "@shared/api/pi-runtime-types";
+import type { Project } from "@shared/api/projects-types";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";

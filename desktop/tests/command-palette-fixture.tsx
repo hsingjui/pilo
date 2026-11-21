@@ -1,10 +1,10 @@
 import { mount, setTheme, signal, Text, View } from "nsh";
 
-import type { ConversationEvent } from "@/lib/chat/conversation-types";
-import type { Connection } from "@/lib/api/pi-runtime-types";
-import type { Project } from "@/lib/api/projects-types";
-import type { SessionIndexEntry } from "@/lib/api/sessions-types";
-import type { ThemeSettings } from "@/lib/theme-settings-types";
+import type { ConversationEvent } from "@shared/chat/conversation-types";
+import type { Connection } from "@shared/api/pi-runtime-types";
+import type { Project } from "@shared/api/projects-types";
+import type { SessionIndexEntry } from "@shared/api/sessions-types";
+import type { ThemeSettings } from "@shared/theme-settings-types";
 import "../app/fonts";
 import { AppShell } from "../app/AppShell";
 import { conversationContext, followOpenSession } from "../app/open-chat";

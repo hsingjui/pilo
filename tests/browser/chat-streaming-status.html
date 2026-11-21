@@ -10,15 +10,15 @@
 		<pre id="results">Running…</pre>
 		<div id="root"></div>
 		<script type="module">
-			import "../../src/index.css";
+			import "../../web/index.css";
 			import { createElement as h } from "react";
 			import { createRoot } from "react-dom/client";
 			import { Virtualizer } from "virtua";
-			import { AssistantMessage } from "../../src/components/chat/chat-message.tsx";
-			import { ChatExpansionStateProvider } from "../../src/components/chat/chat-expansion-state.tsx";
-			import { PreferencesProvider } from "../../src/lib/preferences-provider.tsx";
-			import { TooltipProvider } from "../../src/ui/tooltip.tsx";
-			import { initializeI18n } from "../../src/i18n/index.ts";
+			import { AssistantMessage } from "../../web/components/chat/chat-message.tsx";
+			import { ChatExpansionStateProvider } from "../../web/components/chat/chat-expansion-state.tsx";
+			import { PreferencesProvider } from "../../web/lib/preferences-provider.tsx";
+			import { TooltipProvider } from "../../web/ui/tooltip.tsx";
+			import { initializeI18n } from "../../web/i18n/index.ts";
 
 			await initializeI18n("en-US");
 			const root = createRoot(document.getElementById("root"));

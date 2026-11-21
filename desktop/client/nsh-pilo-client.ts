@@ -1,15 +1,15 @@
 import type { Pilo } from "app/native";
 
-import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
-import type { FsEntry } from "@/lib/api/files-types";
-import type { ProjectPiModels } from "@/lib/api/pi-models-types";
+import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
+import type { FsEntry } from "@shared/api/files-types";
+import type { ProjectPiModels } from "@shared/api/pi-models-types";
 import type {
 	Connection,
 	PiModel,
 	PiloRuntimeEvent,
 	PiSessionSnapshot,
 	WslDistribution,
-} from "@/lib/api/pi-runtime-types";
+} from "@shared/api/pi-runtime-types";
 import type {
 	PiloClient,
 	PiloClientBootstrap,
@@ -18,7 +18,7 @@ import type {
 	PiloClientEventOptions,
 	PiloClientHistoryOptions,
 	PiloClientStartChatInput,
-} from "@/lib/api/pilo-client";
+} from "@shared/api/pilo-client";
 import type {
 	ConnectionHealth,
 	ConnectionTestResult,
@@ -26,9 +26,9 @@ import type {
 	SshAgentIdentity,
 	SshConnectionInfo,
 	WslConnectionInfo,
-} from "@/lib/api/connections-types";
-import type { Project } from "@/lib/api/projects-types";
-import type { ConnectionNamingModel } from "@/lib/api/sessions-types";
+} from "@shared/api/connections-types";
+import type { Project } from "@shared/api/projects-types";
+import type { ConnectionNamingModel } from "@shared/api/sessions-types";
 import type {
 	SessionDeleteResult,
 	SessionHistoryFingerprint,
@@ -36,33 +36,33 @@ import type {
 	SessionIndexEntry,
 	SessionSearchMatch,
 	SessionUiStateUpdate,
-} from "@/lib/api/sessions-types";
+} from "@shared/api/sessions-types";
 import type {
 	ProjectModelScope,
 	ProjectScopedModel,
-} from "@/lib/project-model-scope";
-import type { CacheKeepAliveSettings } from "@/lib/cache-keep-alive";
+} from "@shared/project-model-scope";
+import type { CacheKeepAliveSettings } from "@shared/cache-keep-alive";
 import type {
 	NextPromptModel,
 	NextPromptRequest,
 	NextPromptSettings,
-} from "@/lib/next-prompt-types";
+} from "@shared/next-prompt-types";
 import type {
 	PromptEnhancementModel,
 	PromptEnhancementSettings,
-} from "@/lib/prompt-enhancement-types";
+} from "@shared/prompt-enhancement-types";
 import type {
 	PreferencePatch,
 	PreferencesSnapshot,
-} from "@/lib/host-preferences-types";
+} from "@shared/host-preferences-types";
 import type {
 	RemoteAccessAddress,
 	RemoteHostState,
-} from "@/lib/api/remote-types";
+} from "@shared/api/remote-types";
 import type {
 	ThemeSettings,
 	ThemeSettingsUpdate,
-} from "@/lib/theme-settings-types";
+} from "@shared/theme-settings-types";
 
 /** The native calls the client makes; a test can pass a stand-in. */
 export type PiloNative = Pick<

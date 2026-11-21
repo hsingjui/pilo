@@ -8,9 +8,9 @@ import {
 	getPiQuickCycleThinkingLevel,
 	getProjectScopeDefaultModel,
 	getProjectScopeDraft,
-} from "../../src/lib/pi-model-selection.ts";
-import type { PiModel } from "../../src/lib/api/pi-runtime.ts";
-import type { ProjectModelScope } from "../../src/lib/project-model-scope.ts";
+} from "../../shared/pi-model-selection.ts";
+import type { PiModel } from "../../web/lib/api/pi-runtime.ts";
+import type { ProjectModelScope } from "../../shared/project-model-scope.ts";
 
 function model(id: string, overrides: Partial<PiModel> = {}): PiModel {
 	return {

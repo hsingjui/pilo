@@ -1,6 +1,6 @@
 import { computed, signal, Text, View } from "nsh";
 
-import type { ThinkingActivity } from "@/lib/chat/chat-activity-types";
+import type { ThinkingActivity } from "@shared/chat/chat-activity-types";
 
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";

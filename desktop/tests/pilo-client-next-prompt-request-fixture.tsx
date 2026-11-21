@@ -1,9 +1,9 @@
 import { mount, signal, Text, View } from "nsh";
 import { ChatFixture, Pilo } from "app/native";
 
-import type { PiloClientEvent } from "@/lib/api/pilo-client";
-import { decodeNextPromptResult } from "@/lib/next-prompt";
-import type { NextPromptRequest } from "@/lib/next-prompt-types";
+import type { PiloClientEvent } from "@shared/api/pilo-client";
+import { decodeNextPromptResult } from "@shared/next-prompt";
+import type { NextPromptRequest } from "@shared/next-prompt-types";
 import { NshPiloClient } from "../client/nsh-pilo-client";
 
 const sessionKey = "nsh-client-next-prompt-fixture";

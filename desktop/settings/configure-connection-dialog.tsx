@@ -1,7 +1,7 @@
 import { signal, Text, View } from "nsh";
 
-import type { Connection } from "@/lib/api/pi-runtime-types";
-import { userErrorMessage } from "@/lib/app-error";
+import type { Connection } from "@shared/api/pi-runtime-types";
+import { userErrorMessage } from "@shared/app-error";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";

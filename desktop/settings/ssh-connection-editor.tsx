@@ -3,9 +3,9 @@ import { signal, Text, View } from "nsh";
 import type {
 	SshAgentIdentity,
 	SshConnectionInfo,
-} from "@/lib/api/connections-types";
-import type { PiRuntime, SshAuthMethod } from "@/lib/api/pi-runtime-types";
-import { userErrorMessage } from "@/lib/app-error";
+} from "@shared/api/connections-types";
+import type { PiRuntime, SshAuthMethod } from "@shared/api/pi-runtime-types";
+import { userErrorMessage } from "@shared/app-error";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";

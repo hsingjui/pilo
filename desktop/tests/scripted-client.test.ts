@@ -1,6 +1,6 @@
 import { expect, test } from "nsh/test";
 
-import type { PiloClientEventOptions } from "@/lib/api/pilo-client";
+import type { PiloClientEventOptions } from "@shared/api/pilo-client";
 import { requestPiRpc } from "../client/chat-rpc";
 import { scriptedClient } from "./scripted-app-client";
 

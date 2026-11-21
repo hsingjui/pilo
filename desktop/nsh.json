@@ -28,7 +28,7 @@
 	"rust": ".",
 	"resolve": {
 		"alias": {
-			"@": "../src"
+			"@shared": "../shared"
 		}
 	}
 }

@@ -1,8 +1,8 @@
 import { mount, signal, Text, View } from "nsh";
 import { BootstrapFixture, Pilo } from "app/native";
 
-import type { PiloClientEvent } from "@/lib/api/pilo-client";
-import type { NextPromptSettings } from "@/lib/next-prompt-types";
+import type { PiloClientEvent } from "@shared/api/pilo-client";
+import type { NextPromptSettings } from "@shared/next-prompt-types";
 import { NshPiloClient } from "../client/nsh-pilo-client";
 
 const status = signal("loading next-prompt settings through the client");

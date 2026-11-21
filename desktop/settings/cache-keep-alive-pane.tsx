@@ -13,8 +13,8 @@ import { NumberInput } from "nsh/base";
 import {
 	type CacheKeepAliveSettings,
 	defaultCacheKeepAliveSettings,
-} from "@/lib/cache-keep-alive";
-import type { Connection } from "@/lib/api/pi-runtime-types";
+} from "@shared/cache-keep-alive";
+import type { Connection } from "@shared/api/pi-runtime-types";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";

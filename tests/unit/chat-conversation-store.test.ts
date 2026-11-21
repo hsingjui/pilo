@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createChatConversationStore } from "../../src/components/chat/chat-conversation-store.ts";
-import { createConversationState } from "../../src/lib/chat/conversation-reducer.ts";
+import { createChatConversationStore } from "../../web/components/chat/chat-conversation-store.ts";
+import { createConversationState } from "../../shared/chat/conversation-reducer.ts";
 
 test("conversation store only notifies mounted subscribers", () => {
 	const store = createChatConversationStore();

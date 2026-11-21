@@ -10,15 +10,15 @@
 		<pre id="results">Running…</pre>
 		<div id="root"></div>
 		<script type="module">
-			import "../../src/index.css";
+			import "../../web/index.css";
 			import { createElement as h, createRef } from "react";
 			import { createRoot } from "react-dom/client";
-			import { createChatConversationStore } from "../../src/components/chat/chat-conversation-store.ts";
-			import { createConversationState } from "../../src/lib/chat/conversation-reducer.ts";
-			import { RemoteConversationViewport } from "../../src/remote/remote-conversation-viewport.tsx";
-			import { PreferencesProvider } from "../../src/lib/preferences-provider.tsx";
-			import { TooltipProvider } from "../../src/ui/tooltip.tsx";
-			import { initializeI18n } from "../../src/i18n/index.ts";
+			import { createChatConversationStore } from "../../web/components/chat/chat-conversation-store.ts";
+			import { createConversationState } from "../../shared/chat/conversation-reducer.ts";
+			import { RemoteConversationViewport } from "../../web/remote/remote-conversation-viewport.tsx";
+			import { PreferencesProvider } from "../../web/lib/preferences-provider.tsx";
+			import { TooltipProvider } from "../../web/ui/tooltip.tsx";
+			import { initializeI18n } from "../../web/i18n/index.ts";
 
 			await initializeI18n("en-US");
 			const root = createRoot(document.getElementById("root"));

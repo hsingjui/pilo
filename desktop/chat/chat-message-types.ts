@@ -1,6 +1,6 @@
 import type { JSX } from "nsh";
 
-import type { ChatMessage } from "@/lib/chat/conversation-types";
+import type { ChatMessage } from "@shared/chat/conversation-types";
 
 export type UserChatMessage = Extract<ChatMessage, { role: "user" }>;
 export type AssistantChatMessage = Extract<ChatMessage, { role: "assistant" }>;

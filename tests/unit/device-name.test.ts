@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { describeDevice } from "../../src/lib/device-name.ts";
+import { describeDevice } from "../../web/lib/device-name.ts";
 
 test("Android UA resolves to model and browser", () => {
 	assert.equal(

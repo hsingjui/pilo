@@ -5,7 +5,7 @@ import {
 	buildConversationOutline,
 	getOutlineIndexForVisibleRange,
 	sampleOutlineEntries,
-} from "../../src/lib/chat/conversation-outline.ts";
+} from "../../shared/chat/conversation-outline.ts";
 
 const msg = (
 	id: string,

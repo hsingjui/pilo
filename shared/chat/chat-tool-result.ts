@@ -1,0 +1,246 @@
+import type { ToolCallActivity } from "@shared/chat/chat-activity-types";
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+export function formatUnknown(value: unknown) {
+	if (typeof value === "string") return value;
+	try {
+		const serialized = JSON.stringify(value, null, 2);
+		return serialized ?? String(value);
+	} catch {
+		return String(value);
+	}
+}
+
+export function resultContent(value: unknown): {
+	blocks: unknown[];
+	metadata: Record<string, unknown> | null;
+	fallback: string | null;
+} {
+	if (!isRecord(value)) {
+		return { blocks: [], metadata: null, fallback: formatUnknown(value) };
+	}
+	const blocks = Array.isArray(value.content) ? value.content : [];
+	const metadata = Object.fromEntries(
+		Object.entries(value).filter(([key]) => key !== "content"),
+	);
+	return {
+		blocks,
+		metadata: Object.keys(metadata).length > 0 ? metadata : null,
+		fallback:
+			blocks.length === 0 && Object.keys(metadata).length === 0
+				? formatUnknown(value)
+				: null,
+	};
+}
+
+function structuredToolOutput(value: unknown) {
+	if (!isRecord(value)) return null;
+	const structured = value.structuredContent;
+	return isRecord(structured) && typeof structured.output === "string"
+		? {
+				output: structured.output,
+				exitCode: structured.exit_code,
+				wallTimeSeconds: structured.wall_time_seconds,
+				truncated: structured.truncated,
+			}
+		: null;
+}
+
+function structuredTextOutput(text: string) {
+	if (!text.trimStart().startsWith("{")) return null;
+	try {
+		return structuredToolOutput(JSON.parse(text));
+	} catch {
+		return null;
+	}
+}
+
+type ToolResultImage = { data: string; mimeType: string };
+
+function isToolResultImage(block: unknown): block is ToolResultImage {
+	return (
+		isRecord(block) &&
+		block.type === "image" &&
+		typeof block.data === "string" &&
+		typeof block.mimeType === "string" &&
+		block.mimeType.startsWith("image/")
+	);
+}
+
+export function singleToolResultImage(result: unknown): ToolResultImage | null {
+	if (!isRecord(result) || !Array.isArray(result.content)) return null;
+	let image: ToolResultImage | null = null;
+	for (const block of result.content) {
+		if (!isToolResultImage(block)) continue;
+		if (image) return null;
+		image = block;
+	}
+	return image;
+}
+
+export function toolResultImageUrl(image: ToolResultImage) {
+	return `data:${image.mimeType};base64,${image.data}`;
+}
+
+export function flattenToolResult(result: ReturnType<typeof resultContent>) {
+	const text: string[] = [];
+	const metadataOutput = structuredToolOutput(result.metadata);
+	const structuredOutputs = metadataOutput ? [metadataOutput] : [];
+	const images: Array<ToolResultImage & { key: string }> = [];
+	const imageOccurrences = new Map<string, number>();
+
+	for (const block of result.blocks) {
+		const blockText =
+			typeof block === "string"
+				? block
+				: isRecord(block) &&
+					  block.type === "text" &&
+					  typeof block.text === "string"
+					? block.text
+					: null;
+		if (blockText !== null) {
+			const structured = structuredTextOutput(blockText);
+			if (structured) structuredOutputs.push(structured);
+			else text.push(blockText);
+			continue;
+		}
+		if (isToolResultImage(block)) {
+			const baseKey = `${block.mimeType}:${block.data.length}:${block.data.slice(0, 32)}`;
+			const occurrence = (imageOccurrences.get(baseKey) ?? 0) + 1;
+			imageOccurrences.set(baseKey, occurrence);
+			images.push({
+				data: block.data,
+				mimeType: block.mimeType,
+				key: `${baseKey}:${occurrence}`,
+			});
+			continue;
+		}
+		text.push(formatUnknown(block));
+	}
+
+	for (const structured of structuredOutputs) {
+		// MCP may return the same output as both text and structured content.
+		const output = structured.output.trim();
+		if (
+			!text.some((part) => part.trim() === output) &&
+			text.join("\n").trim() !== output
+		) {
+			text.push(structured.output);
+		}
+	}
+	if (result.fallback) text.push(result.fallback);
+
+	const execution = structuredOutputs[0];
+	const exitCode = execution?.exitCode;
+	const wallTimeSeconds = execution?.wallTimeSeconds;
+	return {
+		text: text.filter(Boolean).join("\n"),
+		images,
+		needsRawFallback:
+			structuredOutputs.length === 0 &&
+			!text.some(Boolean) &&
+			images.length === 0,
+		exitCode:
+			typeof exitCode === "number" && Number.isInteger(exitCode)
+				? exitCode
+				: null,
+		wallTimeSeconds:
+			typeof wallTimeSeconds === "number" &&
+			Number.isFinite(wallTimeSeconds) &&
+			wallTimeSeconds >= 0
+				? wallTimeSeconds
+				: null,
+		truncated: execution?.truncated === true,
+	};
+}
+
+export function toolEditDiff(result: unknown) {
+	if (!isRecord(result)) return null;
+	const details = result.details;
+	if (!isRecord(details)) return null;
+	const diff = details.diff;
+	if (typeof diff === "string" && diff.trim()) return diff;
+	const patch = details.patch;
+	return typeof patch === "string" && patch.trim() ? patch : null;
+}
+
+export function keyedDiffLines(diff: string) {
+	const occurrences = new Map<string, number>();
+	return diff.split("\n").map((line) => {
+		const occurrence = (occurrences.get(line) ?? 0) + 1;
+		occurrences.set(line, occurrence);
+		return { line, key: `${line}:${occurrence}` };
+	});
+}
+
+export function diffLineStyle(line: string) {
+	if (line.startsWith("+") && !line.startsWith("+++")) {
+		return {
+			marker: "+",
+			content: line.slice(1),
+			className: "bg-code-added/[0.07] text-foreground/80",
+			markerClassName: "text-code-added",
+		};
+	}
+	if (line.startsWith("-") && !line.startsWith("---")) {
+		return {
+			marker: "−",
+			content: line.slice(1),
+			className: "bg-destructive/[0.06] text-foreground/80",
+			markerClassName: "text-destructive",
+		};
+	}
+	if (
+		line.startsWith("@@") ||
+		line.startsWith("---") ||
+		line.startsWith("+++") ||
+		line.trim() === "..."
+	) {
+		return {
+			marker: "",
+			content: line,
+			className: "text-muted-foreground",
+			markerClassName: "",
+		};
+	}
+	return {
+		marker: "",
+		content: line,
+		className: "text-muted-foreground",
+		markerClassName: "",
+	};
+}
+
+export function fileBasename(path: string) {
+	const normalized = path.replace(/[\\/]+$/, "");
+	const parts = normalized.split(/[\\/]/);
+	return parts[parts.length - 1] || path;
+}
+
+export function toolPreview(activity: ToolCallActivity) {
+	if (!isRecord(activity.args)) return null;
+	for (const key of [
+		"command",
+		"path",
+		"filePath",
+		"query",
+		"pattern",
+		"url",
+	]) {
+		const value = activity.args[key];
+		if (typeof value === "string" && value.trim()) return value.trim();
+	}
+	return null;
+}
+
+export function toolFilePath(activity: ToolCallActivity) {
+	if (!isRecord(activity.args)) return null;
+	for (const key of ["path", "filePath"]) {
+		const value = activity.args[key];
+		if (typeof value === "string" && value.trim()) return value.trim();
+	}
+	return null;
+}

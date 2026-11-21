@@ -6,7 +6,7 @@
 		"dev": "node scripts/dev.mjs",
 		"desktop:generate:icons": "node scripts/generate-desktop-icons.mjs",
 		"desktop:generate:themes": "node scripts/generate-desktop-themes.mjs",
-		"build": "tsc && vite build",
+		"build": "tsc -p shared && tsc && vite build",
 		"preview": "vite preview",
 		"server:build": "node scripts/build-server.mjs",
 		"server:build:win": "scripts\\build-pilo-server.cmd",

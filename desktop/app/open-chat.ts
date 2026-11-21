@@ -1,11 +1,11 @@
 import { computed, effect, untracked } from "nsh";
 
-import { chatSessionKey } from "@/lib/api/chat-session-key";
-import type { ConversationReducerContext } from "@/lib/chat/conversation-types";
+import { chatSessionKey } from "@shared/api/chat-session-key";
+import type { ConversationReducerContext } from "@shared/chat/conversation-types";
 import {
 	getProjectScopeDefaultModel,
 	isPiScopeCatalogResolved,
-} from "@/lib/pi-model-selection";
+} from "@shared/pi-model-selection";
 import type { AppState } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
 import type { ChatRunConfigStore } from "../state/chat-run-config";

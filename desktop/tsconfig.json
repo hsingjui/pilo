@@ -7,9 +7,9 @@
 			"nsh": ["./.nsh/types/nsh/index.d.ts"],
 			"nsh/*": ["./.nsh/types/nsh/*.d.ts"],
 			"app/*": ["./.nsh/types/app/*.d.ts"],
-			"@/*": ["../src/*"]
+			"@shared/*": ["../shared/*"]
 		}
 	},
-	"include": ["**/*.ts", "**/*.tsx", "../src/@types/i18next.d.ts"],
+	"include": ["**/*.ts", "**/*.tsx", "../shared/@types/i18next.d.ts"],
 	"exclude": ["target", "spikes/m0"]
 }

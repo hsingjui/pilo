@@ -3,8 +3,8 @@ import { computed, Text, untracked, View } from "nsh";
 import type {
 	AssistantContentDisplaySections,
 	AssistantContentItem,
-} from "@/lib/chat/chat-activity-state";
-import type { AssistantActivity } from "@/lib/chat/chat-activity-types";
+} from "@shared/chat/chat-activity-state";
+import type { AssistantActivity } from "@shared/chat/chat-activity-types";
 
 import { t } from "../app/i18n";
 import { Icon } from "../ui/icon";

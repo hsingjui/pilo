@@ -1,17 +1,17 @@
 import { computed, Text, token, View } from "nsh";
 
-import type { ToolCallActivity } from "@/lib/chat/chat-activity-types";
+import type { ToolCallActivity } from "@shared/chat/chat-activity-types";
 import {
 	fileBasename,
 	isRecord,
 	toolFilePath,
 	toolPreview,
-} from "@/lib/chat/chat-tool-result";
+} from "@shared/chat/chat-tool-result";
 import {
 	countChatTodos,
 	isChatTodoTool,
 	parseChatTodos,
-} from "@/lib/chat/chat-todos";
+} from "@shared/chat/chat-todos";
 
 import { t } from "../app/i18n";
 import { Icon } from "../ui/icon";

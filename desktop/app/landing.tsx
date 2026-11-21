@@ -9,7 +9,7 @@ import {
 } from "nsh";
 import { Button as BaseButton } from "nsh/base";
 
-import { isDefaultWorkspace, type Project } from "@/lib/api/projects-types";
+import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
 import { ConversationColumnLayout } from "../chat/conversation-column";
 import type { AppStore } from "../state/app-store";
 import { Button } from "../ui/button";

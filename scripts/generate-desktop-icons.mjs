@@ -45,7 +45,7 @@ export function findLucideImports(path, code) {
 
 /** Icons the WebUI imports from lucide-react, plus those only the desktop names. */
 function readSourceIcons() {
-	const source = fileURLToPath(new URL("../src/", import.meta.url));
+	const source = fileURLToPath(new URL("../web/", import.meta.url));
 	const desktopOnly = JSON.parse(
 		readFileSync(
 			new URL("../desktop/app/lucide-icon-names.json", import.meta.url),

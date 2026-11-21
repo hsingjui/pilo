@@ -1,17 +1,17 @@
 import { type Accessor, signal } from "nsh";
 
-import type { ProjectPiModels } from "@/lib/api/pi-models-types";
-import { probeProjectPiModels } from "@/lib/api/pi-models-probe";
-import type { PiModel } from "@/lib/api/pi-runtime-types";
+import type { ProjectPiModels } from "@shared/api/pi-models-types";
+import { probeProjectPiModels } from "@shared/api/pi-models-probe";
+import type { PiModel } from "@shared/api/pi-runtime-types";
 import type {
 	ProjectModelScope,
 	ProjectScopedModel,
-} from "@/lib/project-model-scope";
+} from "@shared/project-model-scope";
 import {
 	getProjectScopeDefaultModel,
 	getProjectScopeModels,
 	isPiScopeCatalogResolved,
-} from "@/lib/pi-model-selection";
+} from "@shared/pi-model-selection";
 import { createNshModelProbe } from "../client/model-probe";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 
