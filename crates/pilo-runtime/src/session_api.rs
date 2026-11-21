@@ -1,7 +1,8 @@
 use super::{Runtime, project, storage};
 use super::{
     events::{RuntimeEvent, RuntimeEventEnvelope},
-    session_history, session_index,
+    session_history,
+    session_index::{self, SessionScanClient},
 };
 use super::{pi_workspace, session_activity::SessionExternalActivity};
 use pilo_domain::SessionReconcileResult;
@@ -29,12 +30,19 @@ pub fn session_list(
 }
 
 pub async fn session_watch_start(runtime: &Runtime, project_id: String) -> Result<(), String> {
+    let _scan = lock_session_index(runtime, &project_id).await;
     let project = project::get(runtime, &project_id)?;
+    if project.default_workspace_pending() {
+        return Ok(());
+    }
+    let session_project =
+        pi_workspace::resolve_session_project_with_paths(&runtime.paths, &project)?;
+    let client = runtime.servers.client(&session_project.connection).await?;
     runtime
         .session_watchers
         .lock()
         .await
-        .start(Arc::clone(&runtime.servers), runtime.clone(), project)
+        .start(runtime, &project, session_project, client)
         .await
 }
 
@@ -68,6 +76,7 @@ pub async fn session_delete(
     super::session_activity::reject_external_session_owner(runtime, &project, Some(&session_path))
         .await?;
 
+    let _scan = lock_session_index(runtime, &project_id).await;
     let value = runtime
         .servers
         .request(
@@ -189,13 +198,52 @@ impl Drop for BackgroundSessionIndexLease {
     }
 }
 
+pub(crate) async fn lock_session_index(
+    runtime: &Runtime,
+    project_id: &str,
+) -> tokio::sync::OwnedMutexGuard<()> {
+    let lock = runtime
+        .background_session_index
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .scan_lock(project_id);
+    lock.lock_owned().await
+}
+
 pub async fn session_reconcile(
     runtime: &Runtime,
     project_id: String,
 ) -> Result<SessionReconcileResult, String> {
+    let _scan = lock_session_index(runtime, &project_id).await;
     let project = project::get(runtime, &project_id)?;
-    let host_paths = runtime.paths.clone();
-    let work = session_index::reconcile(&host_paths, &runtime.servers, &project).await?;
+    if !project.default_workspace_pending() {
+        let session_project =
+            pi_workspace::resolve_session_project_with_paths(&runtime.paths, &project)?;
+        // Connect outside the watcher registry lock; another project's scan must
+        // not wait for a cold SSH/WSL connection. Register before taking the snapshot.
+        let client = runtime.servers.client(&session_project.connection).await?;
+        let _ = runtime
+            .session_watchers
+            .lock()
+            .await
+            .start(runtime, &project, session_project, client)
+            .await;
+    }
+    reconcile_project_sessions(
+        runtime,
+        &project,
+        SessionScanClient::Managed(&runtime.servers),
+    )
+    .await
+}
+
+// Callers hold the project's index lock across the scan and commit.
+pub(crate) async fn reconcile_project_sessions(
+    runtime: &Runtime,
+    project: &pilo_domain::Project,
+    client: SessionScanClient<'_>,
+) -> Result<SessionReconcileResult, String> {
+    let work = session_index::reconcile(&runtime.paths, client, project).await?;
     if !work.deferred_paths.is_empty() {
         let should_start_background_index = {
             let mut manager = runtime
@@ -206,7 +254,7 @@ pub async fn session_reconcile(
         };
         if should_start_background_index {
             let background_events = runtime.events.clone();
-            let background_servers = Arc::clone(&runtime.servers);
+            let background_runtime = runtime.downgrade();
             let background_manager = Arc::clone(&runtime.background_session_index);
             let background_project = project.clone();
             tokio::spawn(async move {
@@ -234,14 +282,41 @@ pub async fn session_reconcile(
                         .iter()
                         .map(|(path, _)| path.clone())
                         .collect::<Vec<_>>();
-                    match session_index::index_paths(
-                        &host_paths,
-                        &background_servers,
-                        &background_project,
-                        &paths,
-                    )
-                    .await
-                    {
+                    let Ok(runtime) = background_runtime.upgrade() else {
+                        break;
+                    };
+                    let _scan = lock_session_index(&runtime, &background_project.id).await;
+                    let current_project = match project::get(&runtime, &background_project.id) {
+                        Ok(project)
+                            if project.connection.kind == background_project.connection.kind
+                                && project.connection.pi_runtime
+                                    == background_project.connection.pi_runtime
+                                && project.path == background_project.path =>
+                        {
+                            project
+                        }
+                        _ => break,
+                    };
+                    let result = async {
+                        let session_project = pi_workspace::resolve_session_project_with_paths(
+                            &runtime.paths,
+                            &current_project,
+                        )?;
+                        let client = runtime
+                            .servers
+                            .cached_client(&session_project.connection)
+                            .await
+                            .ok_or("pilo-server disconnected during background session indexing")?;
+                        session_index::reconcile_paths(
+                            &runtime.paths,
+                            SessionScanClient::Existing(&client),
+                            &current_project,
+                            &paths,
+                            &[],
+                        )
+                        .await
+                    };
+                    match result.await {
                         Ok(indexed) => {
                             indexed_total += indexed;
                             background_manager

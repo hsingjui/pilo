@@ -131,7 +131,10 @@ pub async fn project_remove(runtime: &Runtime, id: String) -> Result<Vec<Project
         );
     }
     runtime.chat_sessions.stop_project(&id).await?;
-    project::remove(runtime, &id)
+    let _scan = super::session_api::lock_session_index(runtime, &id).await;
+    let projects = project::remove(runtime, &id)?;
+    runtime.session_watchers.lock().await.stop(&id).await;
+    Ok(projects)
 }
 
 pub async fn project_git_status(runtime: &Runtime, id: String) -> Result<GitStatus, String> {

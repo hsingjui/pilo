@@ -335,8 +335,8 @@ function reportsState(message: unknown) {
 /**
  * Whether the event can mean a project's saved sessions changed: a reply
  * ended, so Pi may have written the session file (a new chat's first), or
- * Pi took a session name. The Tauri app read the list again on these, as
- * nsh gets no session file watcher events.
+ * Pi took a session name. These events request a scan, unlike index updates
+ * that the Host has already committed.
  */
 export function changesSessionIndex(event: PiloClientEvent): boolean {
 	return (

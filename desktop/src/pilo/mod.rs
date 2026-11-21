@@ -49,7 +49,7 @@ use pilo_runtime::{
     },
     session_api::{
         session_delete, session_external_activity, session_history, session_history_image,
-        session_reconcile, session_search, session_update_ui_state,
+        session_list, session_reconcile, session_search, session_update_ui_state,
     },
     session_naming::session_generate_title,
     storage,
@@ -196,8 +196,7 @@ impl Pilo {
             .with_web_assets(Arc::new(ShellWebAssets(web_root)))?;
         let event_stream = runtime.subscribe_events(EVENT_QUEUE_LIMITS);
         runtime.start_idle_reaper();
-        // Without session watchers this poll is how external Pi turns are seen,
-        // as the Tauri shell started it at setup.
+        // Covers unavailable watchers and external Pi exits without a file write.
         runtime.start_external_activity_poll();
         let host = Arc::new(Mutex::new(None));
         // Finish restoring the saved listener before commands or shutdown can reach the Host.
@@ -510,11 +509,18 @@ impl Pilo {
         .await
     }
 
-    /// Reconciles the project's session index and returns its saved sessions.
+    /// Reconciles the session index, or reads it without a scan when `cached` is true.
     pub async fn list_sessions(
         this: Instance<Self>,
         project_id: String,
+        cached: Option<bool>,
     ) -> Result<Vec<JsonValue>, String> {
+        if cached == Some(true) {
+            return Self::with_runtime_blocking(this, move |runtime| {
+                encode_list(session_list(runtime, project_id)?)
+            })
+            .await;
+        }
         let task = this.with(|pilo| {
             let host = pilo.host.clone();
             pilo.executor

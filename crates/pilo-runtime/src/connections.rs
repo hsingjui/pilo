@@ -260,6 +260,12 @@ async fn stop_connection_projects(runtime: &Runtime, connection_id: &str) -> Res
         .collect::<Vec<_>>();
     for project_id in project_ids {
         runtime.chat_sessions.stop_project(&project_id).await?;
+        runtime
+            .session_watchers
+            .lock()
+            .await
+            .stop(&project_id)
+            .await;
     }
     Ok(())
 }

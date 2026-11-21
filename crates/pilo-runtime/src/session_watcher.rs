@@ -18,13 +18,15 @@ use super::{connection_diagnostics::request_failure_reason, host_events::HostEve
 
 use super::{
     Runtime,
-    events::PiProcessState,
-    pi_workspace,
-    server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager},
-    session_index,
+    events::{PiProcessState, RuntimeEvent, RuntimeEventEnvelope},
+    pi_workspace, project,
+    server_client::{SERVER_DISCONNECTED_EVENT, ServerClient},
+    session_api,
+    session_index::{self, SessionScanClient},
 };
 
 pub const SESSION_WATCH_EVENT_NAME: &str = "pilo://sessions";
+const WATCH_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -71,32 +73,28 @@ pub struct SessionWatcherManager {
 impl SessionWatcherManager {
     pub async fn start(
         &mut self,
-        servers: Arc<ServerManager>,
-        runtime: Runtime,
-        project: Project,
+        runtime: &Runtime,
+        project: &Project,
+        session_project: Project,
+        client: Arc<ServerClient>,
     ) -> Result<(), String> {
-        self.stop(&project.id).await;
-        if project.default_workspace_pending() {
+        if self.covers(&session_project) || runtime.servers.is_shutting_down() {
             return Ok(());
         }
+        self.stop(&project.id).await;
         let started = Instant::now();
-        let host_paths = runtime.paths.clone();
-        let session_project =
-            pi_workspace::resolve_session_project_with_paths(&runtime.paths, &project)
-                .inspect_err(|error| log_start_failure(&project.id, "resolve", started, error))?;
-        let client = servers
-            .client(&session_project.connection)
-            .await
-            .inspect_err(|error| log_start_failure(&project.id, "connect", started, error))?;
         let stream_id = format!("session-watch:{}", project.id);
         let mut events = client.subscribe(&stream_id);
-        client
-            .request(
+        tokio::time::timeout(
+            WATCH_REQUEST_TIMEOUT,
+            client.request(
                 "session.watch_start",
                 json!({ "streamId": stream_id, "project": session_project.path }),
-            )
-            .await
-            .inspect_err(|error| log_start_failure(&project.id, "watch_start", started, error))?;
+            ),
+        )
+        .await
+        .unwrap_or_else(|_| Err("pilo-server request 'session.watch_start' timed out".to_owned()))
+        .inspect_err(|error| log_start_failure(&project.id, "watch_start", started, error))?;
         // Project and stream IDs embed the workspace path; log only a digest.
         let project_hash = format!("{:x}", Sha256::digest(project.id.as_bytes()));
         log::info!(target: "session-watcher", "started projectHash={project_hash} connectionId={:?} elapsedMs={}", session_project.connection.id, started.elapsed().as_millis());
@@ -105,14 +103,15 @@ impl SessionWatcherManager {
         let project_id = project.id.clone();
         let project_path = session_project.path.clone();
         let connection = session_project.connection.clone();
-        let event_project = project.clone();
+        let watched_project = session_project.clone();
         let live = Arc::new(AtomicBool::new(true));
         let event_live = Arc::clone(&live);
         let host_events = runtime.host_events.clone();
         let mut event_runtime = runtime.downgrade();
-        let event_servers = Arc::clone(&servers);
+        let event_servers = Arc::clone(&runtime.servers);
         let event_client = Arc::clone(&current_client);
         let task = tokio::spawn(async move {
+            let mut client = client;
             let mut notices = WatchEvents {
                 events: host_events,
                 project_id: project_id.clone(),
@@ -156,31 +155,16 @@ impl SessionWatcherManager {
                                     &removed_paths,
                                 )
                                 .await;
-                                if full_refresh {
-                                    notices.changed();
-                                } else {
-                                    match session_index::reconcile_paths(
-                                        &host_paths,
-                                        &event_servers,
-                                        &event_project,
+                                notices
+                                    .refresh_index(
+                                        &event_runtime,
+                                        &watched_project,
+                                        &client,
+                                        full_refresh,
                                         &paths,
                                         &removed_paths,
                                     )
-                                    .await
-                                    {
-                                        Ok(changed) if changed > 0 => notices.indexed(),
-                                        Ok(_) => {}
-                                        Err(error) => {
-                                            notices.error(
-                                                "index",
-                                                format!(
-                                                    "targeted session indexing failed: {error}"
-                                                ),
-                                            );
-                                            notices.changed();
-                                        }
-                                    }
-                                }
+                                    .await;
                             }
                             "session.backend" => notices.backend(
                                 event
@@ -200,6 +184,20 @@ impl SessionWatcherManager {
                                         .and_then(serde_json::Value::as_str)
                                         .unwrap_or("pilo-server session watcher failed"),
                                 );
+                                event_runtime.events.schedule_external_activity_refresh(
+                                    &event_runtime,
+                                    &project_id,
+                                );
+                                notices
+                                    .refresh_index(
+                                        &event_runtime,
+                                        &watched_project,
+                                        &client,
+                                        true,
+                                        &[],
+                                        &[],
+                                    )
+                                    .await;
                             }
                             _ => {}
                         }
@@ -252,12 +250,12 @@ impl SessionWatcherManager {
                             {
                                 Ok(_) => {
                                     events = next_events;
+                                    client = next_client;
                                     event_live.store(true, Ordering::Relaxed);
                                     let suppressed = retry_log.recover().unwrap_or(0);
                                     let suppressed_errors = notices.errors.recover().unwrap_or(0);
                                     log::info!(target: "session-watcher", "recovered projectHash={project_hash} connectionId={:?} attempts={attempts} elapsedMs={} suppressedFailures={suppressed} suppressedErrors={suppressed_errors}", connection.id, reconnect_started.elapsed().as_millis());
-                                    notices.changed();
-                                    // Turns may have started or ended while disconnected.
+                                    // Turns and session files may have changed while disconnected.
                                     let Ok(event_runtime) = event_runtime.upgrade() else {
                                         return;
                                     };
@@ -265,6 +263,16 @@ impl SessionWatcherManager {
                                         &event_runtime,
                                         &project_id,
                                     );
+                                    notices
+                                        .refresh_index(
+                                            &event_runtime,
+                                            &watched_project,
+                                            &client,
+                                            true,
+                                            &[],
+                                            &[],
+                                        )
+                                        .await;
                                     break;
                                 }
                                 Err(error) => ("watch_start", error),
@@ -291,10 +299,10 @@ impl SessionWatcherManager {
                 task,
             },
         );
-        // Catch writes between the initial snapshot and watcher registration.
+        // Seed activity for external turns that started before registration.
         runtime
             .events
-            .schedule_external_activity_refresh(&runtime, &project.id);
+            .schedule_external_activity_refresh(runtime, &project.id);
         Ok(())
     }
 
@@ -304,13 +312,15 @@ impl SessionWatcherManager {
         };
         handle.task.abort();
         let client = handle.current_client.lock().await.clone();
-        let result = client
-            .request(
+        let result = tokio::time::timeout(
+            WATCH_REQUEST_TIMEOUT,
+            client.request(
                 "session.watch_stop",
                 json!({ "streamId": handle.stream_id }),
-            )
-            .await;
-        log::info!(target: "session-watcher", "stopped projectHash={:x} remoteStopOk={}", Sha256::digest(project_id.as_bytes()), result.is_ok());
+            ),
+        )
+        .await;
+        log::info!(target: "session-watcher", "stopped projectHash={:x} remoteStopOk={}", Sha256::digest(project_id.as_bytes()), matches!(result, Ok(Ok(_))));
         true
     }
 
@@ -325,11 +335,13 @@ impl SessionWatcherManager {
         self.watchers.get(&project.id).is_some_and(|watcher| {
             !watcher.task.is_finished()
                 && watcher.live.load(Ordering::Relaxed)
-                && watcher.project.connection.id == project.connection.id
-                && watcher.project.connection.kind == project.connection.kind
-                && watcher.project.path == project.path
+                && same_session_scope(&watcher.project, project)
         })
     }
+}
+
+fn same_session_scope(a: &Project, b: &Project) -> bool {
+    a.connection.id == b.connection.id && a.connection.kind == b.connection.kind && a.path == b.path
 }
 
 /// External Pi turns start and end with session file writes, so file changes
@@ -418,6 +430,68 @@ struct WatchEvents {
 }
 
 impl WatchEvents {
+    async fn refresh_index(
+        &mut self,
+        runtime: &Runtime,
+        watched_project: &Project,
+        client: &ServerClient,
+        full_refresh: bool,
+        paths: &[String],
+        removed_paths: &[String],
+    ) {
+        let _scan = session_api::lock_session_index(runtime, &self.project_id).await;
+        if runtime.servers.is_shutting_down() {
+            return;
+        }
+        let Ok(project) = project::get(runtime, &self.project_id) else {
+            return;
+        };
+        let Ok(session_project) =
+            pi_workspace::resolve_session_project_with_paths(&runtime.paths, &project)
+        else {
+            return;
+        };
+        if !same_session_scope(watched_project, &session_project) {
+            return;
+        }
+        let client = SessionScanClient::Existing(client);
+        if !full_refresh {
+            match session_index::reconcile_paths(
+                &runtime.paths,
+                client,
+                &project,
+                paths,
+                removed_paths,
+            )
+            .await
+            {
+                Ok(0) => return,
+                Ok(_) => {
+                    self.publish_indexed(runtime);
+                    return;
+                }
+                Err(error) => self.error(
+                    "index",
+                    format!("targeted session indexing failed: {error}"),
+                ),
+            }
+        }
+        self.changed();
+        match session_api::reconcile_project_sessions(runtime, &project, client).await {
+            Ok(_) => self.publish_indexed(runtime),
+            Err(error) => self.error("index", format!("session reconciliation failed: {error}")),
+        }
+    }
+
+    fn publish_indexed(&mut self, runtime: &Runtime) {
+        self.indexed();
+        runtime.events.send(RuntimeEventEnvelope::global(
+            RuntimeEvent::SessionsIndexed {
+                project_id: self.project_id.clone(),
+            },
+        ));
+    }
+
     fn emit(&mut self, event: SessionWatchEvent) {
         let kind = match &event {
             SessionWatchEvent::Changed { .. } => "changed",

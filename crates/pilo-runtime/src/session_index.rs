@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
+    sync::{Arc, Weak},
 };
 
 use super::host_paths::HostPaths;
@@ -10,7 +11,17 @@ use serde_json::Value;
 
 use pilo_domain::{Project, SessionIndexEntry, SessionReconcileResult};
 
-use super::{pi_workspace, server_client::ServerManager, storage};
+use super::{
+    pi_workspace,
+    server_client::{ServerClient, ServerManager},
+    storage,
+};
+
+#[derive(Clone, Copy)]
+pub(crate) enum SessionScanClient<'a> {
+    Managed(&'a ServerManager),
+    Existing(&'a ServerClient),
+}
 
 const INITIAL_SESSION_INDEX_LIMIT: usize = 10;
 pub const BACKGROUND_SESSION_INDEX_BATCH: usize = 64;
@@ -39,6 +50,7 @@ fn session_cwd_matches(header_cwd: Option<&str>, project_path: &str) -> bool {
 #[derive(Default)]
 pub struct BackgroundSessionIndexManager {
     projects: HashMap<String, BackgroundSessionIndexProject>,
+    scan_locks: HashMap<String, Weak<tokio::sync::Mutex<()>>>,
 }
 
 #[derive(Default)]
@@ -49,6 +61,17 @@ struct BackgroundSessionIndexProject {
 }
 
 impl BackgroundSessionIndexManager {
+    pub(crate) fn scan_lock(&mut self, project_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.scan_locks.retain(|_, lock| lock.strong_count() > 0);
+        if let Some(lock) = self.scan_locks.get(project_id).and_then(Weak::upgrade) {
+            return lock;
+        }
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        self.scan_locks
+            .insert(project_id.to_owned(), Arc::downgrade(&lock));
+        lock
+    }
+
     pub fn enqueue(&mut self, project_id: &str, paths: Vec<String>) -> bool {
         if paths.is_empty() {
             return false;
@@ -149,9 +172,9 @@ pub fn list_cached(
     storage::list_sessions(&storage::open(host_paths)?, project_id)
 }
 
-pub async fn reconcile(
+pub(crate) async fn reconcile(
     host_paths: &HostPaths,
-    servers: &ServerManager,
+    client: SessionScanClient<'_>,
     project: &Project,
 ) -> Result<SessionReconcileWork, String> {
     if project.default_workspace_pending() {
@@ -167,7 +190,7 @@ pub async fn reconcile(
     let mut db = storage::open(host_paths)?;
     let cached = storage::list_sessions(&db, &project.id)?;
     let files = scan_files(
-        servers,
+        client,
         &session_project,
         &cached,
         Some(INITIAL_SESSION_INDEX_LIMIT),
@@ -236,18 +259,9 @@ pub async fn reconcile(
     })
 }
 
-pub async fn index_paths(
+pub(crate) async fn reconcile_paths(
     host_paths: &HostPaths,
-    servers: &ServerManager,
-    project: &Project,
-    paths: &[String],
-) -> Result<usize, String> {
-    reconcile_paths(host_paths, servers, project, paths, &[]).await
-}
-
-pub async fn reconcile_paths(
-    host_paths: &HostPaths,
-    servers: &ServerManager,
+    client: SessionScanClient<'_>,
     project: &Project,
     paths: &[String],
     removed_paths: &[String],
@@ -256,7 +270,11 @@ pub async fn reconcile_paths(
         return Ok(0);
     }
     let session_project = pi_workspace::resolve_session_project_with_paths(host_paths, project)?;
-    let files = scan_files(servers, &session_project, &[], None, paths).await?;
+    let files = if paths.is_empty() {
+        Vec::new()
+    } else {
+        scan_files(client, &session_project, &[], None, paths).await?
+    };
     let mut db = storage::open(host_paths)?;
     let transaction = write_transaction(&mut db)?;
     let mut changed = 0_usize;
@@ -294,7 +312,7 @@ pub async fn reconcile_paths(
 }
 
 async fn scan_files(
-    servers: &ServerManager,
+    client: SessionScanClient<'_>,
     project: &Project,
     cached: &[SessionIndexEntry],
     summary_limit: Option<usize>,
@@ -312,18 +330,24 @@ async fn scan_files(
             })
         })
         .collect::<Vec<_>>();
-    let files: Vec<SessionFile> = servers
-        .request_typed(
-            &project.connection,
-            "session.scan",
-            serde_json::json!({
-                "project": project.path,
-                "known": known,
-                "summaryLimit": summary_limit,
-                "paths": paths,
-            }),
+    let params = serde_json::json!({
+        "project": project.path,
+        "known": known,
+        "summaryLimit": summary_limit,
+        "paths": paths,
+    });
+    let files: Vec<SessionFile> = match client {
+        SessionScanClient::Managed(servers) => {
+            servers
+                .request_typed(&project.connection, "session.scan", params)
+                .await?
+        }
+        // A background watcher must not reconnect or replace a newer client.
+        SessionScanClient::Existing(client) => serde_json::from_value(
+            client.request("session.scan", params).await?,
         )
-        .await?;
+        .map_err(|error| format!("invalid pilo-server response for session.scan: {error}"))?,
+    };
     Ok(files
         .into_iter()
         .map(|file| SessionFileMeta {

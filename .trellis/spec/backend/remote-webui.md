@@ -300,7 +300,18 @@ remote_device_rename(deviceId: String, name: String) -> RemoteHostState
   Desktop runtime delivery uses `EventStream` only. Background index completion
   and failure use the sequenced `SessionsIndexed` and `SessionIndexError` events
   for both clients. `HostEvents` remains a separate port for shell-specific
-  capabilities such as terminals and session watchers; nsh's `ShellEvents` is a no-op.
+  capabilities such as terminals; nsh's `ShellEvents` is a no-op.
+- The first session reconciliation registers a Host-owned watcher for the
+  resolved project scope before scanning. Later reconciliations reuse a live
+  watcher for that scope. A watch setup failure does not fail the scan. Watch
+  changes index the affected files; a directory-wide change or recovery triggers
+  a full reconciliation. Serialize project scans through commit, then publish
+  `sessions_indexed { projectId }` on the runtime bus. Do not rely on the legacy
+  `pilo://sessions` shell event.
+- On `sessions_indexed`, desktop reads `listSessions(projectId, true)` and WebUI
+  reads `GET /api/v1/sessions?projectId=…&cached=true`. These are cache reads,
+  not new scans. User refresh and resync still reconcile. The external Pi
+  activity push updates running indicators, not index membership.
 
 ### HTTP routes (`runtime/remote/api/mod.rs`)
 

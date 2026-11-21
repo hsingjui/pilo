@@ -421,9 +421,13 @@ The following targeted regressions remain to be added with explicit authorizatio
   fallback candidates retain stale-tail filtering; a terminal message larger than
   128 KiB remains idle; trailing metadata/partial lines do not hide the last message;
   a named live process whose file has no `message` entry yet stays active.
-  Also cover a write between the initial snapshot and watcher registration,
-  a finished watcher falling back on an existing connection, and an obsolete
-  refresh leaving the replacement SSH client untouched. A tray-only Host must
+  Also cover an external Pi creating its first JSONL while the initial session
+  scan is in flight, a turn that starts and ends between activity polls, a
+  finished watcher falling back on an existing connection, and an obsolete
+  refresh leaving the replacement SSH client untouched. Desktop and WebUI
+  should list the new path without a manual refresh, independently of the
+  running indicator, and a watcher reconnect should catch files written while
+  disconnected. A tray-only Host must
   not start a WSL or SSH server for a background probe. In Desktop and WebUI,
   a late open snapshot must not undo an already received close push.
   These assertion points are requirements, not a claim of checks already run.

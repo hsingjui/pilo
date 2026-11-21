@@ -371,8 +371,15 @@ export class NshPiloClient implements PiloClient {
 		return (await this.pilo.testWslConnection(distro)) as ConnectionTestResult;
 	}
 
-	async listSessions(projectId: string): Promise<SessionIndexEntry[]> {
-		return (await this.pilo.listSessions(projectId)) as SessionIndexEntry[];
+	async listSessions(
+		projectId: string,
+		cached = false,
+	): Promise<SessionIndexEntry[]> {
+		return (
+			cached
+				? await this.pilo.listSessions(projectId, true)
+				: await this.pilo.listSessions(projectId)
+		) as SessionIndexEntry[];
 	}
 
 	/** Messages of the project's saved sessions that contain the query. */

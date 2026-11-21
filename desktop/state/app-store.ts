@@ -88,7 +88,11 @@ export class AppStore {
 	/** Counts project reads, so a reload superseded by a newer read is dropped. */
 	private projectReads = 0;
 	private readonly sessionReads = new Map<string, number>();
-	private readonly sessionRefreshes = new Map<string, { again: boolean }>();
+	private readonly sessionScans = new Map<string, Promise<void>>();
+	private readonly sessionRefreshes = new Map<
+		string,
+		{ next: "cache" | "scan" | null }
+	>();
 	/** Counts external activity reads, so one a push or newer read overtook is dropped. */
 	private readonly externalReads = new Map<string, number>();
 	/** Counts applied bootstraps, each of which replaces the chat states. */
@@ -173,7 +177,34 @@ export class AppStore {
 	 * user did not ask for (`showProgress` false) keeps the project row as it
 	 * is, as the Tauri app's background refreshes do.
 	 */
-	async loadSessions(projectId: string, showProgress = true) {
+	loadSessions(projectId: string, showProgress = true) {
+		const scan = this.readSessions(projectId, showProgress, false).finally(
+			() => {
+				if (this.sessionScans.get(projectId) === scan) {
+					this.sessionScans.delete(projectId);
+				}
+			},
+		);
+		this.sessionScans.set(projectId, scan);
+		return scan;
+	}
+
+	private async readCachedSessions(projectId: string) {
+		// A cache read can only see committed scans, so wait before claiming a read sequence.
+		let scan = this.sessionScans.get(projectId);
+		while (scan) {
+			// oxlint-disable-next-line no-await-in-loop -- A newer scan may have started in the meantime.
+			await scan;
+			scan = this.sessionScans.get(projectId);
+		}
+		await this.readSessions(projectId, false, true);
+	}
+
+	private async readSessions(
+		projectId: string,
+		showProgress: boolean,
+		cached: boolean,
+	) {
 		const read = (this.sessionReads.get(projectId) ?? 0) + 1;
 		this.sessionReads.set(projectId, read);
 		if (showProgress) {
@@ -184,10 +215,10 @@ export class AppStore {
 		}
 		let action: AppAction;
 		try {
-			const sessions = await this.client.listSessions(projectId);
+			const sessions = await this.client.listSessions(projectId, cached);
 			action = { type: "sessions_loaded", projectId, sessions };
 		} catch (error) {
-			// A background scan must not replace an already loaded list with an error.
+			// A background read must not replace an already loaded list with an error.
 			if (
 				!showProgress &&
 				this.current().sessionIndexes[projectId]?.status === "loaded"
@@ -428,24 +459,34 @@ export class AppStore {
 			}
 		}
 		if (index || projectId === state.navigation.projectId) {
-			void this.refreshSessionIndex(projectId);
+			void this.refreshSessionIndex(
+				projectId,
+				event.type === "sessions_indexed" ? "cache" : "scan",
+			);
 		}
 	}
 
-	/** Title and turn events may arrive together; let the current scan finish first. */
-	private async refreshSessionIndex(projectId: string) {
+	/** Coalesce updates without letting a cache read replace a queued scan. */
+	private async refreshSessionIndex(
+		projectId: string,
+		mode: "cache" | "scan" = "scan",
+	) {
 		const pending = this.sessionRefreshes.get(projectId);
 		if (pending) {
-			pending.again = true;
+			if (pending.next !== "scan") pending.next = mode;
 			return;
 		}
-		const refresh = { again: false };
+		const refresh: { next: "cache" | "scan" | null } = { next: mode };
 		this.sessionRefreshes.set(projectId, refresh);
 		try {
-			do {
-				refresh.again = false;
-				await this.loadSessions(projectId, false);
-			} while (refresh.again);
+			while (refresh.next) {
+				const mode = refresh.next;
+				refresh.next = null;
+				// oxlint-disable-next-line no-await-in-loop -- Keep background reads for this project serial.
+				await (mode === "cache"
+					? this.readCachedSessions(projectId)
+					: this.loadSessions(projectId, false));
+			}
 		} finally {
 			this.sessionRefreshes.delete(projectId);
 		}
