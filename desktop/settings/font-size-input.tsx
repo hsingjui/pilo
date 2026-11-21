@@ -2,7 +2,6 @@ import { signal, Text, View } from "nsh";
 import { NumberInput } from "nsh/base";
 
 import { t } from "../app/i18n";
-import { classNames } from "../ui/class-names";
 
 /**
  * A font size field, as `font-size-input.tsx` in the Tauri app: typing edits a
@@ -32,14 +31,14 @@ export function FontSizeInput(props: {
 	};
 	return (
 		<View
-			class={classNames("relative flex-row", props.class)}
+			class="relative w-fit"
 			onKeyDown={(event) => {
 				if (event.key === "Escape") draft.set(undefined);
 			}}
 		>
 			<NumberInput
 				testID={props.testID}
-				class="flex-1"
+				class={props.class}
 				inputClass="pr-9"
 				value={draft() ?? props.value}
 				min={props.min}
