@@ -113,8 +113,9 @@ function ShortcutRecorder(props: {
 }) {
 	return (
 		<Input
+			testID="shortcut-recorder"
 			autoFocus
-			class={`${SHORTCUT_BOX_CLASS} ${SHORTCUT_BOX_RECORDING_CLASS} font-sans text-xs text-muted-foreground`}
+			class={`${SHORTCUT_BOX_CLASS} ${SHORTCUT_BOX_RECORDING_CLASS} w-40 font-sans text-xs text-muted-foreground`}
 			accessibilityLabel={props.label}
 			placeholder={t("settings.pressNewShortcut")}
 			value=""
@@ -238,6 +239,7 @@ export function ShortcutsPane(props: {
 					actions={() =>
 						sectionIndex === 0 ? (
 							<Button
+								testID="shortcuts-reset-all"
 								variant="ghost"
 								size="icon"
 								class={SHORTCUT_RESET_CLASS}
@@ -269,6 +271,7 @@ export function ShortcutsPane(props: {
 											/>
 										) : (
 											<Button
+												testID={`shortcut-box-${command.id}`}
 												variant="ghost"
 												class={`${SHORTCUT_BOX_CLASS} ${SHORTCUT_BOX_IDLE_CLASS}`}
 												accessibilityLabel={t("shortcuts.change", {

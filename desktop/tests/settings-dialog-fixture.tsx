@@ -46,9 +46,14 @@ async function run() {
 		theme: "system",
 		themeFamily: await fixtureThemeFamily(),
 	} as ThemeSettings;
-	const keyboardShortcuts = Object.fromEntries(
-		SHORTCUT_COMMANDS.map((command) => [command.id, command.defaultShortcut]),
-	) as KeyboardShortcutMap;
+	const keyboardShortcuts = {
+		...Object.fromEntries(
+			SHORTCUT_COMMANDS.map((command) => [command.id, command.defaultShortcut]),
+		),
+		// Two custom bindings keep the row and header resets pressable.
+		"new-chat": "mod+shift+p",
+		"toggle-sidebar": "mod+shift+o",
+	} as KeyboardShortcutMap;
 	const preferences = {
 		revision: 1,
 		values: {
@@ -199,6 +204,11 @@ async function run() {
 					updatedAtMs: Date.now(),
 				},
 			});
+		if (name === "probe-shortcuts")
+			void Storage.setItem(
+				"shortcut-patches",
+				JSON.stringify(runtime.preferencePatches),
+			);
 		if (name === "probe-keep-alive")
 			void Storage.removeItem("keep-alive-probe")
 				.then(() => runtime.client.loadCacheKeepAliveSettings("local"))
