@@ -10,6 +10,10 @@ mod test_fixtures;
 
 #[native_module("app/native")]
 fn native(registry: &mut Registry) {
+    // nsh's generated macOS runners register native modules before starting the app.
+    if let Some(status) = pilo_runtime::handle_ssh_askpass() {
+        std::process::exit(status);
+    }
     registry.module::<AppInfo>();
     registry.class::<pilo::Pilo>();
     #[cfg(debug_assertions)]

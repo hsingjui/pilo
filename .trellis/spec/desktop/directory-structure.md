@@ -33,3 +33,13 @@ nsh TSX 使用 `signal`、`computed`、`mount`；组件约定集中在[基础组
 - `Pilo` 构造时通过 `runtime.subscribe_events` 订阅，早于首次 bootstrap。`nextEvents(max)` 返回 events/gap/closed 批次；队列有容量限制，溢出 gap 为包含端点的丢失区间。`ShellEvents.emit` 为空实现；运行时事件批次来自独立 EventStream。见 `desktop/tests/runtime-events-fixture.tsx`、`desktop/tests/runtime-events.test.ts`。
 - 轮询协议依 `desktop/README.md`：每次只发起一个 nextEvents，max 为正安全整数；gap 后在同一 Pilo 实例重新 bootstrap 并继续轮询；在 transcript 自带序列前不按 eventSequence 丢弃聊天增量，transcript 重载延后到 turn idle。
 - 壳维护 Tokio executor、数据路径和资源解析。默认数据路径沿用旧 Tauri 标识，不以 nsh 应用 ID 替换；测试使用隔离路径，见[数据与兼容](../../tasks/11-19-nsh-desktop-migration/design.md#8-数据与兼容)及[数据迁移验收](../../tasks/11-19-nsh-desktop-migration/feature-parity.md#数据迁移验收)。退出前等待 `shutdown()`，见 `desktop/README.md`。偏好、项目/会话列表及已读状态接口也以该 README 和原生实现为准。
+
+### SSH 密码认证入口
+
+- **范围**：SSH 密码模式的部署、隧道、Local Pi SSH 工作区；不影响 SSH agent 或私钥模式。
+- **入口**：nsh 的 macOS 开发和打包 runner 都在启动应用前注册原生模块。`desktop/src/lib.rs` 在注册时调用 `pilo_runtime::handle_ssh_askpass() -> Option<i32>`，只有收到退出码才立即退出。
+- **输入**：`PILO_SSH_ASKPASS_CONNECTION_ID` 指向系统凭据，`SSH_ASKPASS` 必须指向当前可执行文件，且 `SSH_ASKPASS_REQUIRE=force`。不满足时按普通应用启动，不读取凭据。
+- **结果**：成功只向 stdout 写密码并刷新，然后返回 0；凭据读取或输出失败返回非零。stderr 只允许[诊断元数据](../backend/logging-guidelines.md#connection-startup-diagnostics)。
+- **好 / 基线 / 错误**：密码子进程回答 OpenSSH；普通启动和 SSH agent 照旧；缺失密码不能打开第二个应用窗口或返回成功。
+- **验收**：macOS 开发和安装版分别验证密码连接、错误密码、SSH agent 连接及普通启动；密码不得出现在日志、参数或环境变量中。
+- **不要**在 `Pilo::new()` 或 TSX 挂载后再处理 askpass；nsh 可能先按单实例规则把子进程当作第二次启动处理。

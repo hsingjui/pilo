@@ -24,7 +24,7 @@ fn log_access<T>(
         result.is_ok(),
         started.elapsed().as_millis()
     );
-    // Askpass exits before Tauri initializes the logger. Its stderr is captured by SSH.
+    // Askpass exits before the desktop app starts. Its stderr is captured by SSH.
     if std::env::var_os(super::ssh::ASKPASS_CONNECTION_ENV).is_some() {
         if let Some(attempt_id) = std::env::var(super::ssh::ASKPASS_ATTEMPT_ENV)
             .ok()

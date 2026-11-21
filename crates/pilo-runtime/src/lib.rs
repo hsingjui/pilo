@@ -77,7 +77,7 @@ pub(crate) fn hide_console_window(command: &mut Command) {
     let _ = command;
 }
 
-/// Answers an `SSH_ASKPASS` invocation from the environment; returns whether this process was one.
-pub fn handle_ssh_askpass() -> bool {
+/// Answers an `SSH_ASKPASS` invocation and returns its exit status, or `None` on normal startup.
+pub fn handle_ssh_askpass() -> Option<i32> {
     ssh::print_askpass_password_from_environment()
 }

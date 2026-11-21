@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fs, process::Stdio, time::Duration};
+use std::{collections::BTreeMap, fs, io::Write, process::Stdio, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose};
 use serde::Serialize;
@@ -435,18 +435,22 @@ pub(crate) fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
-pub fn print_askpass_password_from_environment() -> bool {
-    let Some(connection_id) = std::env::var_os(ASKPASS_CONNECTION_ENV) else {
-        return false;
-    };
-    let connection_id = connection_id.to_string_lossy();
-    match super::credentials::get_ssh_password(&connection_id) {
-        Ok(password) => {
-            print!("{password}");
-            true
-        }
-        Err(_) => true,
+pub(super) fn print_askpass_password_from_environment() -> Option<i32> {
+    let connection_id = std::env::var(ASKPASS_CONNECTION_ENV).ok()?;
+    // Other nsh runners (such as the type describer) must not answer the prompt.
+    if std::env::var("SSH_ASKPASS_REQUIRE").ok()?.as_str() != "force"
+        || std::env::var_os("SSH_ASKPASS")? != std::env::current_exe().ok()?.into_os_string()
+    {
+        return None;
     }
+    let Ok(password) = super::credentials::get_ssh_password(&connection_id) else {
+        return Some(1);
+    };
+    let mut stdout = std::io::stdout().lock();
+    let result = stdout
+        .write_all(password.as_bytes())
+        .and_then(|()| stdout.flush());
+    Some(i32::from(result.is_err()))
 }
 
 #[cfg(test)]
