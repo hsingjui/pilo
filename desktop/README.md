@@ -38,6 +38,10 @@ appearance. Both return the complete Host settings, including
 `themeCustomTokens` and the read-only `themeCustomConversion` report.
 Token-only saves keep the legacy CSS.
 
+`systemFontFamilies()` lists the installed font families as
+`{ family, monospace }`, using CoreText (macOS) or DirectWrite (Windows) for
+the monospace trait; other platforms return none.
+
 `listProjects()` refreshes the saved project catalog without loading live chat
 snapshots. `listSessions(projectId)` uses the same session-index reconciliation
 as the Tauri client and returns saved sessions, not live chat state.

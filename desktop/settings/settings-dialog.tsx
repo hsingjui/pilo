@@ -79,7 +79,9 @@ export type SettingsClient = Pick<
 	| "remoteDeviceRename"
 	| "openLogDirectory"
 	| "connectEvents"
->;
+> &
+	/** Optional: without it the font pickers offer only built-in families. */
+	Partial<Pick<NshPiloClient, "systemFontFamilies">>;
 
 export interface SettingsDialogProps {
 	open: () => boolean;

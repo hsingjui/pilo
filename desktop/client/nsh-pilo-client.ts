@@ -60,12 +60,16 @@ import type {
 	RemoteAccessAddress,
 	RemoteHostState,
 } from "@shared/api/remote-types";
+import type { SystemFontFamily } from "@shared/font-settings";
 import type {
 	ThemeSettings,
 	ThemeSettingsUpdate,
 } from "@shared/theme-settings-types";
 
-/** The native calls the client makes; a test can pass a stand-in. */
+/**
+ * The native calls the client makes; a test can pass a stand-in. Font
+ * enumeration is optional so stand-ins without it fall back to built-ins.
+ */
 export type PiloNative = Pick<
 	Pilo,
 	| "bootstrap"
@@ -143,7 +147,8 @@ export type PiloNative = Pick<
 	| "remoteDeviceRename"
 	| "openLogDirectory"
 	| "shutdown"
->;
+> &
+	Partial<Pick<Pilo, "systemFontFamilies">>;
 
 export type NshPiloClientBootstrap = PiloClientBootstrap & {
 	preferences: PreferencesSnapshot;
@@ -696,6 +701,12 @@ export class NshPiloClient implements PiloClient {
 
 	async saveThemeSettings(update: ThemeSettingsUpdate): Promise<ThemeSettings> {
 		return (await this.pilo.saveThemeSettings(update)) as ThemeSettings;
+	}
+
+	/** The installed font families; none when the native side cannot list them. */
+	async systemFontFamilies(): Promise<SystemFontFamily[]> {
+		const families = await this.pilo.systemFontFamilies?.();
+		return (families ?? []) as SystemFontFamily[];
 	}
 
 	/** Starts or resumes Pi for the key and resolves once it is ready. */

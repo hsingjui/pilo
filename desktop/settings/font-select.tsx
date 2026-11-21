@@ -18,11 +18,10 @@ export type FontSelectGroup = {
 const CUSTOM_ITEM_ID = "\x00custom";
 
 /**
- * A searchable picker of font families grouped by section, as
- * `font-select.tsx` in the Tauri app: a trigger opens a popover whose
- * command list previews every option in its own font. The search's text is
- * offered as a custom family too (`useCustomFont`), since system fonts are
- * not enumerated here the way `system_font_families` lists them for Tauri.
+ * A searchable picker of font families grouped by section: a trigger opens a
+ * popover whose command list previews every option in its own font. The
+ * search's text is offered as a custom family too (`useCustomFont`), for a
+ * family the system list leaves out.
  */
 export function FontSelect(props: {
 	value: string;

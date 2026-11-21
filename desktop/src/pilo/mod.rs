@@ -8,7 +8,7 @@ use nsh_core::{JsonValue, prelude::*};
 use pilo_domain::{Connection, RemoteAccessAddress};
 use pilo_runtime::{
     Runtime, TranscriptWindow,
-    appearance::{theme_settings_get, theme_settings_set},
+    appearance::{system_font_families, theme_settings_get, theme_settings_set},
     cache_keep_alive::{cache_keep_alive_settings_list, cache_keep_alive_settings_set},
     connections::{
         connection_health_get, connection_models_get, connection_naming_model_list,
@@ -1229,6 +1229,15 @@ impl Pilo {
             let update = serde_json::from_value(update).map_err(|error| error.to_string())?;
             let settings = theme_settings_set(&runtime, update).await?;
             serde_json::to_value(settings).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Lists the installed font families with the platform's monospace trait.
+    pub async fn system_font_families(this: Instance<Self>) -> Result<JsonValue, String> {
+        Self::with_runtime(this, |runtime| async move {
+            let families = system_font_families(&runtime).await?;
+            serde_json::to_value(families).map_err(|error| error.to_string())
         })
         .await
     }

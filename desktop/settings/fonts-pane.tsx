@@ -1,4 +1,13 @@
-import { type Accessor, type JSX, Text, token, View, windowSize } from "nsh";
+import {
+	type Accessor,
+	cleanup,
+	type JSX,
+	signal,
+	Text,
+	token,
+	View,
+	windowSize,
+} from "nsh";
 
 import {
 	CODE_FONT_SIZE_RANGE,
@@ -17,7 +26,9 @@ import {
 	UI_FONT_SIZE_RANGE,
 	getMonospaceFontFamilyStack,
 	getPageFontFamilyStack,
+	systemFontOptionGroups,
 	type FontSizeRange,
+	type SystemFontFamily,
 } from "@shared/font-settings";
 import type { PreferencePatch } from "@shared/host-preferences-types";
 import type { AppState } from "../state/app-state";
@@ -32,25 +43,45 @@ import { FontSizeInput } from "./font-size-input";
 import { SettingsRow, SettingsSection } from "./layout";
 import type { SettingsClient } from "./settings-dialog";
 
-// i18n 初期化後に評価されるよう、groups は遅延生成する。システムフォントの
-// 列挙はまだ Tauri ランタイム側にあるため、組み込みグループのみ。
-const pageGroups = (): FontSelectGroup[] => [
-	{ label: t("settings.builtIn"), options: PAGE_FONT_BUILTIN_OPTIONS },
-];
+/** One enumeration per app run; a failed one is retried when the pane opens again. */
+let systemFonts: Promise<SystemFontFamily[]> | undefined;
 
-const monoGroups = (): FontSelectGroup[] => [
-	{ label: t("settings.builtIn"), options: MONOSPACE_FONT_BUILTIN_OPTIONS },
-];
+function loadSystemFonts(client: SettingsClient): Promise<SystemFontFamily[]> {
+	if (!client.systemFontFamilies) return Promise.resolve([]);
+	systemFonts ??= client.systemFontFamilies().catch((error: unknown) => {
+		console.warn("system font enumeration failed", error);
+		systemFonts = undefined;
+		return [];
+	});
+	return systemFonts;
+}
 
 /**
- * Fonts: page / reading / code / terminal family + size. Built-in families
- * plus a family typed into the picker's search — system font enumeration
- * still lives in the Tauri runtime.
+ * Fonts: page / reading / code / terminal family + size. Built-in families,
+ * the installed ones the Host lists, and a family typed into the picker's
+ * search.
  */
 export function FontsPane(props: {
 	state: Accessor<AppState>;
 	client: SettingsClient;
 }) {
+	const system = signal(systemFontOptionGroups([]));
+	let alive = true;
+	cleanup(() => {
+		alive = false;
+	});
+	void loadSystemFonts(props.client).then((families) => {
+		if (alive) system.set(systemFontOptionGroups(families));
+	});
+	// Built per read so the labels follow the current locale.
+	const pageGroups = (): FontSelectGroup[] => [
+		{ label: t("settings.builtIn"), options: PAGE_FONT_BUILTIN_OPTIONS },
+		{ label: t("settings.systemFonts"), options: system().page },
+	];
+	const monoGroups = (): FontSelectGroup[] => [
+		{ label: t("settings.builtIn"), options: MONOSPACE_FONT_BUILTIN_OPTIONS },
+		{ label: t("settings.systemMonospace"), options: system().monospace },
+	];
 	const values = () => props.state().preferences?.values;
 	const save = (patch: PreferencePatch) => {
 		props.client.savePreferences(patch).catch((error: unknown) => {
@@ -95,7 +126,7 @@ export function FontsPane(props: {
 	);
 	/** Tailwind's sm:, as SettingsRow's; under it the label stacks above. */
 	const narrow = () => windowSize().width < 640;
-	/** A preview row as the Tauri's `sm:grid-cols-[120px_minmax(0,1fr)]`. */
+	/** A preview row: a 120pt label column beside the preview, stacked when narrow. */
 	const previewRow = (label: string, content: JSX.Element) => (
 		<View
 			class={classNames(

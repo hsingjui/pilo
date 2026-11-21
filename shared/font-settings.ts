@@ -39,6 +39,69 @@ export const MONOSPACE_FONT_BUILTIN_OPTIONS: ReadonlyArray<FontOption> = [
 	{ value: "system-mono", label: "", labelKey: "settings.systemMonospace" },
 ];
 
+/** 宿主枚举出的系统字体族及其原生等宽判定。 */
+export type SystemFontFamily = {
+	family: string;
+	monospace: boolean;
+};
+
+/** 随应用打包、已在内置分组出现的字体族；系统分组跳过它们。 */
+const BUNDLED_FONT_FAMILIES = new Set(
+	[...PAGE_FONT_BUILTIN_OPTIONS, ...MONOSPACE_FONT_BUILTIN_OPTIONS]
+		.map((option) => option.family?.toLowerCase())
+		.filter((family): family is string => Boolean(family)),
+);
+
+/**
+ * 符号/图标字体（选中后文字会变成不可读字形），不进入页面字体候选；
+ * 等宽候选已由原生等宽判定过滤。
+ */
+const SYMBOL_FONT_FAMILY_PATTERN =
+	/\b(?:wingdings|webdings|marlett|dingbat|emoji|fluent icons|mdl\d|symbol)/i;
+
+function systemFontOptions(families: Iterable<string>): FontOption[] {
+	return [...families].map((family) => ({
+		value: family,
+		label: family,
+		family,
+	}));
+}
+
+/**
+ * 系统字体的页面与等宽候选：去空白、大小写不敏感去重并按名称排序，
+ * 跳过与内置字体重名的族；页面候选再去掉符号字体。
+ */
+export function systemFontOptionGroups(families: readonly SystemFontFamily[]): {
+	page: FontOption[];
+	monospace: FontOption[];
+} {
+	const seen = new Set<string>();
+	const unique: SystemFontFamily[] = [];
+	for (const item of families) {
+		const family = item.family.trim();
+		const key = family.toLowerCase();
+		if (!key || seen.has(key) || BUNDLED_FONT_FAMILIES.has(key)) continue;
+		seen.add(key);
+		unique.push({ family, monospace: item.monospace });
+	}
+	// The nsh engine has no `Intl.Collator`: compare case-insensitively by hand.
+	unique.sort((a, b) => {
+		const left = a.family.toLowerCase();
+		const right = b.family.toLowerCase();
+		return left < right ? -1 : left > right ? 1 : 0;
+	});
+	return {
+		page: systemFontOptions(
+			unique
+				.map((item) => item.family)
+				.filter((family) => !SYMBOL_FONT_FAMILY_PATTERN.test(family)),
+		),
+		monospace: systemFontOptions(
+			unique.filter((item) => item.monospace).map((item) => item.family),
+		),
+	};
+}
+
 export type FontSizeRange = { min: number; max: number };
 
 export const UI_FONT_SIZE_RANGE: FontSizeRange = { min: 12, max: 18 };

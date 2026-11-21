@@ -58,7 +58,7 @@ pub(crate) async fn save(
 ///
 /// 等宽判定用平台原生能力（DirectWrite `IsMonospacedFont` / CoreText
 /// `kCTFontMonoSpaceTrait`），比前端 canvas 逐字测量的启发式更准，而且整个
-/// 枚举+判定跑在 Tauri 的 worker 线程，不阻塞 webview 主线程。
+/// 枚举+判定跑在阻塞线程池里，不占用调用方的异步运行时。
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemFontFamily {
@@ -169,13 +169,11 @@ pub async fn theme_settings_set(
 }
 
 pub async fn system_font_families(_runtime: &Runtime) -> Result<Vec<SystemFontFamily>, String> {
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
-        enumerate_system_font_families()
-    }
-    #[cfg(target_os = "macos")]
-    {
-        enumerate_system_font_families()
+        tokio::task::spawn_blocking(enumerate_system_font_families)
+            .await
+            .map_err(|error| format!("system font enumeration task failed: {error}"))?
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
