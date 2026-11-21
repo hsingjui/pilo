@@ -35,7 +35,10 @@ import { type PiModel, runtimeErrorMessage } from "@/lib/api/pi-runtime";
 import { usePreferences } from "@/lib/preferences-provider";
 import { useTheme } from "@/lib/theme-provider";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
-import { keyboardEventMatchesShortcut } from "@/lib/keyboard-shortcuts";
+import {
+	keyboardEventMatchesShortcut,
+	normalizeKeyboardShortcut,
+} from "@/lib/keyboard-shortcuts";
 import { useIsTouchDevice } from "@/components/chat/chat-composer-run-config";
 import {
 	DEFAULT_SUGGESTIONS,
@@ -150,8 +153,12 @@ export function useChatComposerInput({
 
 	useKeyboardShortcut(
 		keyboardShortcuts["focus-composer"],
-		() => editorRef.current?.focus(),
-		{ enabled: !disabled && desktopShortcuts },
+		() => {
+			const editor = editorRef.current;
+			if (!editor || editor.closest("[inert]")) return false;
+			editor.focus();
+		},
+		{ enabled: !disabled },
 	);
 
 	// 挂载或从后台切回该会话（新开会话、点击通知打开会话、侧边栏切换）时
@@ -421,9 +428,15 @@ export function useChatComposerInput({
 			});
 	};
 
+	const focusShortcut = normalizeKeyboardShortcut(
+		keyboardShortcuts["focus-composer"],
+	);
 	const showFocusHint =
-		desktopShortcuts &&
+		Boolean(focusShortcut) &&
+		// Browsers reserve the primary modifier + L for the address bar.
+		(desktopShortcuts || focusShortcut !== "mod+l") &&
 		!disabled &&
+		!sendingNow &&
 		submissionText.length === 0 &&
 		attachments.length === 0;
 
@@ -591,13 +604,24 @@ export function useChatComposerInput({
 	};
 
 	const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+		const composing = isImeComposingKeyboardEvent(event);
+		const shouldSubmitWithEnter =
+			event.key === "Enter" &&
+			!event.shiftKey &&
+			!event.altKey &&
+			!composing &&
+			(sendMessageShortcut === "enter"
+				? !event.ctrlKey && !event.metaKey
+				: event.ctrlKey || event.metaKey);
+
 		// 排队发送走独立快捷键（默认 Alt+Enter），只在此轮运行时才有意义；
 		// 它不属于“回车发送 / 修饰键发送”偏好，因此在两种偏好下都能用。
 		// 必须排在 newlineOnEnter 之前：触屏 WebUI 把 Enter 设成换行，
 		// 否则实体键盘上的 Alt+Enter 会被换行分支直接吞掉。
 		const shouldQueueWithShortcut =
 			running &&
-			!isImeComposingKeyboardEvent(event) &&
+			!shouldSubmitWithEnter &&
+			!composing &&
 			keyboardEventMatchesShortcut(event, keyboardShortcuts["queue-message"]);
 
 		if (shouldQueueWithShortcut) {
@@ -608,11 +632,6 @@ export function useChatComposerInput({
 
 		if (newlineOnEnter && event.key === "Enter") return;
 
-		const primaryShortcutModifierMatches =
-			sendMessageShortcut === "enter"
-				? !event.ctrlKey && !event.metaKey
-				: event.ctrlKey || event.metaKey;
-
 		if (
 			historyCursorRef.current !== null &&
 			(event.key === "ArrowUp" || event.key === "ArrowDown") &&
@@ -621,7 +640,7 @@ export function useChatComposerInput({
 			return;
 		}
 
-		if (suggestionMenuOpen && !isImeComposingKeyboardEvent(event)) {
+		if (suggestionMenuOpen && !composing) {
 			if (
 				event.key === "Tab" &&
 				!event.shiftKey &&
@@ -689,13 +708,6 @@ export function useChatComposerInput({
 		}
 
 		if (handleHistoryNavigation(event)) return;
-
-		const shouldSubmitWithEnter =
-			event.key === "Enter" &&
-			!event.shiftKey &&
-			!event.altKey &&
-			!isImeComposingKeyboardEvent(event) &&
-			primaryShortcutModifierMatches;
 
 		if (shouldSubmitWithEnter) {
 			event.preventDefault();

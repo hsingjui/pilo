@@ -1,7 +1,6 @@
 import {
 	type Accessor,
-	cleanup,
-	effect,
+	type JSX,
 	keymap,
 	platform,
 	signal,
@@ -14,7 +13,6 @@ import {
 	findShortcutConflict,
 	getShortcutCommand,
 	isSafeGlobalShortcut,
-	normalizeKeyboardShortcut,
 	shortcutFromKeyEvent,
 	type ShortcutKeyEvent,
 } from "@shared/keyboard-shortcuts-core";
@@ -24,7 +22,7 @@ import {
 	type ShortcutCommandId,
 } from "@shared/keyboard-shortcuts-types";
 import type { PreferencePatch } from "@shared/host-preferences-types";
-import { nshAppShortcut } from "../shortcuts";
+import { isReservedSendShortcut, nshAppShortcut } from "../shortcuts";
 import type { AppState } from "../state/app-state";
 import type { DesktopShell } from "../app/desktop-shell";
 import { t } from "../app/i18n";
@@ -52,9 +50,6 @@ const SHORTCUT_BOX_RECORDING_CLASS = "border-ring bg-accent/60";
 const SHORTCUT_RESET_CLASS = "size-7 shrink-0";
 
 const IS_MAC = platform.os === "macos";
-const EDITABLE_COMMANDS = SHORTCUT_COMMANDS.filter(
-	(command) => command.section === "app",
-);
 
 /** One keystroke as the Tauri pane's kbd chips: `⌘ + ⇧ + M` for `mod+shift+m`. */
 function ShortcutKeys(props: { shortcut: string }) {
@@ -115,22 +110,37 @@ function noticeText(notice: ShortcutNotice): string {
 	return `${t("shortcuts.conflict")} ${t("shortcuts.conflictDescription", { label: notice.label ?? "" })}`;
 }
 
-/** A focusable view receives raw keys on macOS; a native input does not. */
+/** Keep the same focused control when switching between display and capture. */
 function ShortcutRecorder(props: {
+	testID?: string;
 	label: string;
+	recording: Accessor<boolean>;
+	disabled?: boolean;
+	onStart: () => void;
 	onCapture: (shortcut: string) => void;
 	onCancel: () => void;
+	children: JSX.Element;
 }) {
 	return (
 		<View
-			testID="shortcut-recorder"
-			focusable
-			ref={(view) => view.focus()}
-			captureKeys="all"
-			class={`${SHORTCUT_BOX_CLASS} ${SHORTCUT_BOX_RECORDING_CLASS} w-40`}
+			testID={props.recording() ? "shortcut-recorder" : props.testID}
+			role="button"
+			disabled={!props.recording() && props.disabled}
+			captureKeys={props.recording() ? "all" : "none"}
+			class={`${SHORTCUT_BOX_CLASS} ${
+				props.recording()
+					? `${SHORTCUT_BOX_RECORDING_CLASS} w-40`
+					: `${SHORTCUT_BOX_IDLE_CLASS} justify-center hover:bg-hover focus-visible:border-ring`
+			} disabled:opacity-50`}
 			accessibilityLabel={props.label}
-			onBlur={props.onCancel}
+			onPress={() => {
+				if (!props.recording()) props.onStart();
+			}}
+			onBlur={() => {
+				if (props.recording()) props.onCancel();
+			}}
 			onKeyDown={(event) => {
+				if (!props.recording()) return;
 				if (
 					event.key === "Escape" ||
 					(event.key === "Tab" &&
@@ -146,9 +156,15 @@ function ShortcutRecorder(props: {
 				if (next) props.onCapture(next);
 			}}
 		>
-			<Text class="font-sans text-xs text-muted-foreground">
-				{t("settings.pressNewShortcut")}
-			</Text>
+			{() =>
+				props.recording() ? (
+					<Text class="font-sans text-xs text-muted-foreground">
+						{t("settings.pressNewShortcut")}
+					</Text>
+				) : (
+					props.children
+				)
+			}
 		</View>
 	);
 }
@@ -157,7 +173,6 @@ export function ShortcutsPane(props: {
 	state: Accessor<AppState>;
 	client: Pick<SettingsClient, "savePreferences">;
 	desktop?: DesktopShell;
-	onRecordingChange?: (recording: boolean) => void;
 }) {
 	const map = () => props.state().preferences?.values.keyboardShortcuts;
 	const sendShortcut = () =>
@@ -170,8 +185,6 @@ export function ShortcutsPane(props: {
 		if (recording() === id) recording.set(null);
 	};
 	const notice = signal<ShortcutNotice | null>(null);
-	effect(() => props.onRecordingChange?.(recording() !== null));
-	cleanup(() => props.onRecordingChange?.(false));
 
 	const save = (patch: PreferencePatch) => {
 		notice.set(null);
@@ -183,7 +196,7 @@ export function ShortcutsPane(props: {
 
 	const shortcutFor = (id: ShortcutCommandId) => map()?.[id] ?? defaults[id];
 	const hasCustomShortcut = () =>
-		EDITABLE_COMMANDS.some(({ id }) => shortcutFor(id) !== defaults[id]);
+		SHORTCUT_COMMANDS.some(({ id }) => shortcutFor(id) !== defaults[id]);
 	const findConflict = (commandId: ShortcutCommandId, shortcut: string) => {
 		const native = nshAppShortcut(shortcut, IS_MAC);
 		return (
@@ -193,7 +206,7 @@ export function ShortcutsPane(props: {
 				shortcut,
 				IS_MAC,
 			) ??
-			EDITABLE_COMMANDS.find(
+			SHORTCUT_COMMANDS.find(
 				({ id }) =>
 					id !== commandId &&
 					native &&
@@ -208,8 +221,7 @@ export function ShortcutsPane(props: {
 		if (!show) return true;
 		const conflict = shortcuts.some(
 			(shortcut) =>
-				normalizeKeyboardShortcut(shortcut, IS_MAC) ===
-				normalizeKeyboardShortcut(show, IS_MAC),
+				nshAppShortcut(shortcut, IS_MAC) === nshAppShortcut(show, IS_MAC),
 		);
 		if (!conflict) return true;
 		notice.set({ kind: "conflict", label: t("desktop.show") });
@@ -233,6 +245,10 @@ export function ShortcutsPane(props: {
 		const nativeShortcut = nshAppShortcut(next, IS_MAC);
 		if (!nativeShortcut) return;
 		try {
+			if (isReservedSendShortcut(nativeShortcut)) {
+				notice.set({ kind: "conflict", label: t("settings.sendShortcut") });
+				return;
+			}
 			// Only bind validates both syntax and platform-reserved keys.
 			keymap.bind(nativeShortcut, () => {}, { passThrough: true })();
 		} catch {
@@ -259,7 +275,7 @@ export function ShortcutsPane(props: {
 
 	const resetAll = () => {
 		const keyboardShortcuts = Object.fromEntries(
-			EDITABLE_COMMANDS.map(({ id }) => [id, defaults[id]]),
+			SHORTCUT_COMMANDS.map(({ id }) => [id, defaults[id]]),
 		);
 		if (!freeOfDesktopConflict(Object.values(keyboardShortcuts))) return;
 		save({ keyboardShortcuts });
@@ -301,67 +317,42 @@ export function ShortcutsPane(props: {
 						(command) => command.section === section.id,
 					).map((command) => (
 						<SettingsRow label={t(command.labelKey)}>
-							{() => {
-								const shortcut = shortcutFor(command.id);
-								const keys = () =>
-									shortcut ? (
-										<ShortcutKeys shortcut={shortcut} />
-									) : (
-										<Text class="font-sans text-xs text-muted-foreground">
-											{t("shortcuts.unassigned")}
-										</Text>
-									);
-								if (command.section !== "app") {
-									return (
-										<View
-											class={`${SHORTCUT_BOX_CLASS} ${SHORTCUT_BOX_IDLE_CLASS}`}
-										>
-											{keys()}
-										</View>
-									);
-								}
-								const isCustom = shortcut !== defaults[command.id];
-								return (
-									<View class="flex-row items-center gap-1.5">
-										{recording() === command.id ? (
-											<ShortcutRecorder
-												label={t("shortcuts.change", {
-													label: t(command.labelKey),
-												})}
-												onCapture={(next) => assign(command.id, next)}
-												onCancel={() => stopRecording(command.id)}
-											/>
+							<View class="flex-row items-center gap-1.5">
+								<ShortcutRecorder
+									testID={`shortcut-box-${command.id}`}
+									label={t("shortcuts.change", { label: t(command.labelKey) })}
+									recording={() => recording() === command.id}
+									onStart={() => {
+										notice.set(null);
+										recording.set(command.id);
+									}}
+									onCapture={(next) => assign(command.id, next)}
+									onCancel={() => stopRecording(command.id)}
+								>
+									{() => {
+										const shortcut = shortcutFor(command.id);
+										return shortcut ? (
+											<ShortcutKeys shortcut={shortcut} />
 										) : (
-											<Button
-												testID={`shortcut-box-${command.id}`}
-												variant="ghost"
-												class={`${SHORTCUT_BOX_CLASS} ${SHORTCUT_BOX_IDLE_CLASS}`}
-												accessibilityLabel={t("shortcuts.change", {
-													label: t(command.labelKey),
-												})}
-												onPress={() => {
-													notice.set(null);
-													recording.set(command.id);
-												}}
-											>
-												{keys()}
-											</Button>
-										)}
-										<Button
-											variant="ghost"
-											size="icon"
-											class={`${SHORTCUT_RESET_CLASS} ${isCustom ? "" : "invisible"}`}
-											accessibilityLabel={t("shortcuts.reset", {
-												label: t(command.labelKey),
-											})}
-											disabled={!isCustom}
-											onPress={() => reset(command.id)}
-										>
-											<Icon name="RotateCcw" size={14} />
-										</Button>
-									</View>
-								);
-							}}
+											<Text class="font-sans text-xs text-muted-foreground">
+												{t("shortcuts.unassigned")}
+											</Text>
+										);
+									}}
+								</ShortcutRecorder>
+								<Button
+									variant="ghost"
+									size="icon"
+									class={`${SHORTCUT_RESET_CLASS} ${shortcutFor(command.id) === defaults[command.id] ? "invisible" : ""}`}
+									accessibilityLabel={t("shortcuts.reset", {
+										label: t(command.labelKey),
+									})}
+									disabled={shortcutFor(command.id) === defaults[command.id]}
+									onPress={() => reset(command.id)}
+								>
+									<Icon name="RotateCcw" size={14} />
+								</Button>
+							</View>
 						</SettingsRow>
 					))}
 				</SettingsSection>
@@ -444,31 +435,24 @@ function GlobalShortcutSetting(props: {
 						</View>
 					) : (
 						<View class="flex-row items-center gap-1.5">
-							{props.recording() ? (
-								<ShortcutRecorder
-									label={t("shortcuts.change", { label: t("desktop.show") })}
-									onCapture={capture}
-									onCancel={() => props.onRecordingChange(false)}
-								/>
-							) : (
-								<Button
-									variant="ghost"
-									class={`${SHORTCUT_BOX_CLASS} ${SHORTCUT_BOX_IDLE_CLASS}`}
-									accessibilityLabel={t("shortcuts.change", {
-										label: t("desktop.show"),
-									})}
-									disabled={!props.desktop.settings() || saving()}
-									onPress={() => props.onRecordingChange(true)}
-								>
-									{props.desktop.settings() ? (
+							<ShortcutRecorder
+								label={t("shortcuts.change", { label: t("desktop.show") })}
+								recording={props.recording}
+								disabled={!props.desktop.settings() || saving()}
+								onStart={() => props.onRecordingChange(true)}
+								onCapture={capture}
+								onCancel={() => props.onRecordingChange(false)}
+							>
+								{() =>
+									props.desktop.settings() ? (
 										<ShortcutKeys shortcut={saved()} />
 									) : (
 										<Text class="font-sans text-xs text-muted-foreground">
 											{t("common.loading")}
 										</Text>
-									)}
-								</Button>
-							)}
+									)
+								}
+							</ShortcutRecorder>
 							<Button
 								testID="settings-shortcut-reset"
 								variant="ghost"

@@ -621,7 +621,7 @@ export function ChatComposer({
 								editorRef.current?.focus({ preventScroll: true });
 						}}
 					/>
-					<div className="relative min-w-0">
+					<div className="relative flex min-w-0 items-start">
 						<Textarea
 							data-chat-composer-input=""
 							key={editorKey}
@@ -715,8 +715,8 @@ export function ChatComposer({
 							}
 							className={cn(
 								CHAT_COMPOSER_TEXTAREA_CLASS_NAME,
-								"w-full min-w-0",
-								ghostText ? "pr-20" : showFocusHint && "pr-16",
+								"min-w-0 flex-1",
+								ghostText && "pr-20",
 							)}
 						/>
 
@@ -742,25 +742,25 @@ export function ChatComposer({
 									</span>
 								</Button>
 							) : null}
-
-							{showFocusHint && !ghostText ? (
-								<div
-									className="flex items-center gap-0.5 font-mono text-2xs text-muted-foreground opacity-70 transition-opacity group-focus-within:opacity-0"
-									aria-hidden="true"
-								>
-									{formatKeyboardShortcut(
-										keyboardShortcuts["focus-composer"],
-									).map((label, index) => (
-										<span key={label} className="flex items-center gap-0.5">
-											{index > 0 ? <span>+</span> : null}
-											<kbd className="rounded border border-border/70 bg-muted/50 px-1 py-px">
-												{label}
-											</kbd>
-										</span>
-									))}
-								</div>
-							) : null}
 						</div>
+
+						{showFocusHint && !ghostText ? (
+							<div
+								className="pointer-events-none hidden h-(--pilo-composer-line-height) shrink-0 items-center gap-[3px] font-sans text-[12px] leading-none text-muted-foreground group-focus-within:invisible pointer-fine:flex"
+								aria-hidden="true"
+							>
+								{formatKeyboardShortcut(
+									keyboardShortcuts["focus-composer"],
+								).map((label, index) => (
+									<span key={label} className="flex items-center gap-[3px]">
+										{index > 0 ? <span>+</span> : null}
+										<kbd className="inline-flex h-[21px] min-w-[17px] items-center justify-center rounded-[5px] border border-border/60 bg-muted/50 px-1 font-sans">
+											{label}
+										</kbd>
+									</span>
+								))}
+							</div>
+						) : null}
 					</div>
 				</div>
 

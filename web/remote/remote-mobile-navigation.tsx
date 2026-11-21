@@ -12,6 +12,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useTranslation } from "react-i18next";
 import { isDefaultWorkspace } from "@/lib/default-workspace";
 import { usePreferences } from "@/lib/preferences-provider";
+import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { Search, SquarePen, Wifi, WifiOff, X } from "lucide-react";
 
 import type { SessionSearchTarget } from "@/components/command-palette";
@@ -191,9 +192,30 @@ export function RemoteMobileNavigation({
 	onRefreshSession: (sessionId: string, projectId: string) => Promise<void>;
 }) {
 	const { t } = useTranslation();
-	const { defaultWorkspaceVisibility } = usePreferences();
+	const { keyboardShortcuts, defaultWorkspaceVisibility } = usePreferences();
 	const [mode, setMode] = useState<SidebarEnvView>("projects");
 	const [paletteOpen, setPaletteOpen] = useState(false);
+	const openPalette = () => {
+		// Close the drawer first so the two focus traps do not overlap.
+		onOpenChange(false);
+		setPaletteOpen(true);
+	};
+	useKeyboardShortcut(
+		keyboardShortcuts["open-command-palette"],
+		(event) => {
+			if (paletteOpen) setPaletteOpen(false);
+			else if (
+				!open ||
+				(event.target instanceof Element &&
+					event.target
+						.closest('[role="dialog"]')
+						?.hasAttribute("data-mobile-navigation-swipe"))
+			)
+				openPalette();
+			else return false;
+		},
+		{ enabled: Boolean(client), allowInDialog: open || paletteOpen },
+	);
 	const [projectSessionLimits, setProjectSessionLimits] = useState<
 		Record<string, number>
 	>({});
@@ -301,11 +323,7 @@ export function RemoteMobileNavigation({
 						type="button"
 						className={ROW_ACTION_CLASS}
 						aria-label={t("sidebar.searchSessions")}
-						onClick={() => {
-							// 抽屉是 modal，先关闭再叠一层搜索面板，避免两个焦点陷阱打架。
-							onOpenChange(false);
-							setPaletteOpen(true);
-						}}
+						onClick={openPalette}
 					>
 						<Search className="size-4" aria-hidden="true" />
 					</button>

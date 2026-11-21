@@ -592,14 +592,15 @@ export class ComposerStore {
 		}
 	}
 
-	/** Sends the draft: as a prompt, or per send mode while a turn runs. */
-	async submit() {
+	/** Sends the draft, optionally forcing a follow-up for this send only. */
+	async submit(mode?: "follow_up") {
 		const target = this.targetSignal();
 		const { value, images, sending, composing, sendMode } = this.stateSignal();
 		if (!target || sending || composing) return;
 		const submission = createChatSubmission(value, images);
 		if (!chatSubmissionHasContent(submission)) return;
 		const running = this.running();
+		if (mode === "follow_up" && !running) return;
 		// A compaction takes no message; the composer blocks sending meanwhile.
 		if (running && this.compacting()) return;
 		// The draft leaves the composer at once, as in the Tauri app; it comes
@@ -647,9 +648,11 @@ export class ComposerStore {
 			if (this.beforeSend && !(await this.beforeSend(target.sessionKey)))
 				return;
 			if (this.targetSignal()?.sessionKey !== target.sessionKey) return;
+			if (mode === "follow_up" && (!this.running() || this.compacting()))
+				return;
 			let disposition: PiPromptResult["disposition"] | undefined;
 			if (running) {
-				for (const command of this.commandFor(sendMode, submission)) {
+				for (const command of this.commandFor(mode ?? sendMode, submission)) {
 					await this.client.sendChatCommand(target.sessionKey, command);
 				}
 			} else {

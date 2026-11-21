@@ -60,6 +60,12 @@ import {
 import type { SidebarEnv } from "@/components/sidebar/types";
 import { LocalPiResourcesField } from "@/components/settings/local-pi-resources-field";
 import { userErrorMessage } from "@shared/app-error";
+import {
+	getNextPiModel,
+	getPiQuickCycleThinkingLevel,
+} from "@shared/pi-model-selection";
+import { usePreferences } from "@/lib/preferences-provider";
+import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
 import { saveRemoteLocalPiResources } from "./remote-client";
 import { RemotePairingPage } from "./remote-pairing-page";
 import { isRemotePairingLocation } from "./remote-pairing-model";
@@ -92,6 +98,7 @@ export function RemoteApp() {
 
 function RemoteWorkspace() {
 	const { t } = useTranslation();
+	const { keyboardShortcuts } = usePreferences();
 	const socketHandlerRef = useRef<(message: PiloClientEventMessage) => void>(
 		() => {},
 	);
@@ -460,6 +467,78 @@ function RemoteWorkspace() {
 		[client, handleExpiredAuth, removeIndexedSession, sidebarSessions, t],
 	);
 
+	const workspaceTab = chat.activeProject
+		? workspaces.state.get(chat.activeProject.id)?.activeTab
+		: undefined;
+	const workspaceTabOpen = Boolean(
+		workspaceTab && workspaceTab.kind !== "chat",
+	);
+	const newChatInProject = (projectId = chat.activeProjectId) => {
+		if (projectId) workspaces.selectFile(projectId, null);
+		chat.startDraft(projectId || undefined);
+	};
+	const newChat = () => newChatInProject();
+	const shortcutsEnabled = Boolean(token && client);
+	useKeyboardShortcut(keyboardShortcuts["new-chat"], newChat, {
+		enabled: shortcutsEnabled && projects.length > 0,
+	});
+	useKeyboardShortcut(
+		keyboardShortcuts["toggle-sidebar"],
+		(event) => {
+			if (isNarrow) {
+				if (
+					mobileNavigationOpen &&
+					event.target instanceof Element &&
+					!event.target
+						.closest('[role="dialog"]')
+						?.hasAttribute("data-mobile-navigation-swipe")
+				)
+					return false;
+				setMobileNavigationOpen((open) => !open);
+			} else {
+				setSidebarCollapsed((collapsed) => !collapsed);
+			}
+		},
+		{
+			enabled: shortcutsEnabled,
+			allowInDialog: isNarrow && mobileNavigationOpen,
+		},
+	);
+	const canCycleModel =
+		shortcutsEnabled &&
+		!workspaceTabOpen &&
+		!chat.readOnly &&
+		Boolean(chat.activeProjectId) &&
+		chat.historyReady &&
+		!chatBusy &&
+		!chat.changingModel &&
+		!chat.modelLoading &&
+		!chat.draftConfigPending &&
+		!chat.composerLocked;
+	useKeyboardShortcut(
+		keyboardShortcuts["cycle-model"],
+		() => {
+			const next = getNextPiModel(chat.models, chat.selectedModel);
+			if (next) void chat.changeModel(next);
+			else if (!chat.models.length && chat.activeProjectId)
+				void chat.loadDraftCatalog(chat.activeProjectId);
+			else return false;
+		},
+		{ enabled: canCycleModel },
+	);
+	useKeyboardShortcut(
+		keyboardShortcuts["cycle-scoped-model"],
+		() => {
+			const next = getNextPiModel(chat.modelScope.models, chat.selectedModel);
+			if (!next) return false;
+			void chat.changeModel(next, getPiQuickCycleThinkingLevel(next));
+		},
+		{
+			enabled:
+				canCycleModel && chat.modelScope.catalogReady && !chat.modelScope.error,
+		},
+	);
+
 	if (!token) {
 		return (
 			<div className="flex min-h-[var(--remote-viewport-height,100dvh)] items-center justify-center bg-background p-6">
@@ -475,12 +554,6 @@ function RemoteWorkspace() {
 		);
 	}
 
-	const workspaceTab = chat.activeProject
-		? workspaces.state.get(chat.activeProject.id)?.activeTab
-		: undefined;
-	const workspaceTabOpen = Boolean(
-		workspaceTab && workspaceTab.kind !== "chat",
-	);
 	const inlineUpdateNotice =
 		showUpdateNotice && isNarrow ? (
 			<NoticeCard className="flex items-center gap-1 py-1 pl-3 pr-1">
@@ -530,8 +603,8 @@ function RemoteWorkspace() {
 			selectedSessionId={chat.identifiedSessionId ?? null}
 			onSelectSession={chat.handleSelectSession}
 			onRefreshSession={chat.refreshSession}
-			onNewChat={() => chat.startDraft(chat.activeProjectId || undefined)}
-			onNewChatInProject={(projectId) => chat.startDraft(projectId)}
+			onNewChat={newChat}
+			onNewChatInProject={newChatInProject}
 			onRefreshProjectSessions={(projectId) =>
 				void refreshProjectSessions(projectId, true)
 			}
@@ -586,11 +659,7 @@ function RemoteWorkspace() {
 									connectionState={networkState}
 									refreshingProjectIds={refreshingProjectIds}
 									onSelectSession={chat.handleSelectSession}
-									onNewChat={(projectId) =>
-										chat.startDraft(
-											projectId ?? chat.activeProjectId ?? undefined,
-										)
-									}
+									onNewChat={newChatInProject}
 									onRefreshProjectSessions={(projectId) =>
 										void refreshProjectSessions(projectId, true)
 									}
@@ -603,11 +672,7 @@ function RemoteWorkspace() {
 									project={chat.activeProject}
 									session={chat.headerSession ?? undefined}
 									sessionState={chat.chatState ?? undefined}
-									onNewChat={
-										isNarrow
-											? () => chat.startDraft(chat.activeProjectId || undefined)
-											: undefined
-									}
+									onNewChat={isNarrow ? newChat : undefined}
 									onNewTemporaryChat={
 										isNarrow
 											? () =>
@@ -882,6 +947,7 @@ function RemoteWorkspace() {
 												runConfigTriggerLoading={chat.loadingConversation}
 												modelError={chat.modelError ?? fatalError}
 												modelDisabled={
+													chat.changingModel ||
 													chat.readOnly ||
 													!chat.historyReady ||
 													!chat.activeProjectId
@@ -909,6 +975,7 @@ function RemoteWorkspace() {
 													chat.composerSelectedThinkingLevel
 												}
 												thinkingDisabled={
+													chat.changingModel ||
 													chat.readOnly ||
 													!chat.historyReady ||
 													!chat.activeProjectId ||

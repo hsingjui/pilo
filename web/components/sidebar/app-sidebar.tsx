@@ -113,9 +113,11 @@ export function AppSidebar({
 		string | null
 	>(null);
 	const { keyboardShortcuts, defaultWorkspaceVisibility } = usePreferences();
-	useKeyboardShortcut(keyboardShortcuts["open-command-palette"], () => {
-		if (client) setPaletteOpen((open) => !open);
-	});
+	useKeyboardShortcut(
+		keyboardShortcuts["open-command-palette"],
+		() => setPaletteOpen((open) => !open),
+		{ enabled: Boolean(client), allowInDialog: paletteOpen },
+	);
 	const [collapsedSections, setCollapsedSections] = useState<
 		Record<string, boolean>
 	>(readCollapsedSections);

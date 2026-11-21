@@ -4,7 +4,6 @@ import {
 	computed,
 	effect,
 	type JSX,
-	keymap,
 	platform,
 	signal,
 	token,
@@ -36,7 +35,8 @@ import type {
 	KeyboardShortcutMap,
 	ShortcutCommandId,
 } from "@shared/keyboard-shortcuts-types";
-import { nshAppShortcut } from "../shortcuts";
+import { getNextPiModel } from "@shared/pi-model-selection";
+import { bindAppShortcut } from "../shortcuts";
 import {
 	SettingsDialog,
 	type SettingsClient,
@@ -82,7 +82,12 @@ export interface AppShellProps {
 	/** The open session's run configuration; a header shows it when present. */
 	runConfig?: Pick<
 		ChatRunConfigStore,
-		"state" | "setModel" | "setThinkingLevel" | "scopeModels" | "catalogReady"
+		| "state"
+		| "setModel"
+		| "setThinkingLevel"
+		| "cycleScopeModel"
+		| "scopeModels"
+		| "catalogReady"
 	>;
 	/** The active project's model catalog, for the header's picker. */
 	catalog?: Pick<ModelCatalogStore, "state" | "refresh" | "saveScope">;
@@ -131,10 +136,17 @@ export function AppShell(props: AppShellProps) {
 		t("app.newChat");
 	const paletteOpen = signal(false);
 	const settingsOpen = signal(false);
-	const recordingShortcut = signal(false);
 	const registeredShortcuts = signal<Partial<KeyboardShortcutMap>>({});
 	const addProjectOpen = signal(false);
 	const addProjectConnection = signal<string | null>(null);
+	const remoteOpen = signal(false);
+	const modalOpen = () => settingsOpen() || addProjectOpen() || remoteOpen();
+	const defaults = defaultKeyboardShortcuts(platform.os === "macos");
+	const shortcuts = computed(
+		() => store.state().preferences?.values.keyboardShortcuts ?? defaults,
+	);
+	const sessionShortcuts = () =>
+		modalOpen() || paletteOpen() ? null : shortcuts();
 	const sidebarSettings = props.sidebarSettings ?? new SidebarSettingsStore();
 	if (!sidebarSettings.loaded()) void sidebarSettings.load();
 	const sidebarLayout = createSidebarLayout(sidebarSettings);
@@ -200,37 +212,6 @@ export function AppShell(props: AppShellProps) {
 			}),
 		);
 	});
-	// App shortcuts follow the saved map, so recordings in the shortcuts pane
-	// rebind live; a command bound to "" is unassigned, as the Tauri app does.
-	effect(() => {
-		// The native keymap runs before a focused view's key capture.
-		if (settingsOpen() && recordingShortcut()) return;
-		const isMac = platform.os === "macos";
-		const stored = store.state().preferences?.values.keyboardShortcuts;
-		const defaults = defaultKeyboardShortcuts(isMac);
-		const bound: Partial<KeyboardShortcutMap> = {};
-		const bind = (id: ShortcutCommandId, handler: () => void) => {
-			const shortcut = nshAppShortcut(stored?.[id] ?? defaults[id], isMac);
-			if (!shortcut) return;
-			try {
-				cleanup(keymap.bind(shortcut, handler));
-				bound[id] = shortcut;
-			} catch (error) {
-				// A binding saved by another client may not be valid on nsh.
-				console.warn(`Skipping unsupported shortcut for ${id}`, error);
-			}
-		};
-		bind("open-command-palette", () => paletteOpen.update((open) => !open));
-		bind("new-chat", () => {
-			const project = activeProject(store.state());
-			if (project) store.selectProject(project.id);
-		});
-		bind("open-settings", () => {
-			if (props.settings) settingsOpen.set(true);
-		});
-		bind("toggle-sidebar", () => sidebarLayout.setCollapsed(!collapsed()));
-		registeredShortcuts.set(bound);
-	});
 	// The app draws its own title bar: the sidebar and the main area reach
 	// the window's top edge, beside the system's window controls.
 	const window = currentWindow();
@@ -246,8 +227,65 @@ export function AppShell(props: AppShellProps) {
 		addProjectConnection.set(connectionId);
 		addProjectOpen.set(true);
 	};
+	const cycleModel = (scoped: boolean) => {
+		const runConfig = props.runConfig;
+		const config = runConfig?.state();
+		const catalog = props.catalog?.state();
+		const draft = composer.state();
+		if (
+			!runConfig ||
+			!config?.ready ||
+			config.sessionKey !== chatSessionKey() ||
+			config.changing ||
+			config.compacting ||
+			composer.running() ||
+			draft.sending ||
+			draft.composing ||
+			chat.state().status !== "ready" ||
+			catalog?.projectId !== config.projectId ||
+			!catalog.loaded ||
+			catalog.refreshing
+		)
+			return;
+		if (!catalog.catalog) {
+			void props.catalog?.refresh();
+			return;
+		}
+		if (scoped) {
+			void runConfig.cycleScopeModel();
+			return;
+		}
+		const next = getNextPiModel(catalog.catalog.models, config.model);
+		if (next) void runConfig.setModel(next);
+	};
+	// Native keymaps run before a focused view's key capture, including the recorder.
+	effect(() => {
+		if (modalOpen()) return;
+		const map = shortcuts();
+		const bound: Partial<KeyboardShortcutMap> = {};
+		const bind = (id: ShortcutCommandId, handler: () => void) => {
+			const binding = bindAppShortcut(id, map[id] ?? defaults[id], handler);
+			if (!binding) return;
+			cleanup(binding.dispose);
+			bound[id] = binding.shortcut;
+		};
+		bind("open-command-palette", () => paletteOpen.update((open) => !open));
+		bind("new-chat", () => {
+			if (!paletteOpen() && status().type === "ready") newChat();
+		});
+		if (props.settings)
+			bind("open-settings", () => {
+				paletteOpen.set(false);
+				settingsOpen.set(true);
+			});
+		bind("toggle-sidebar", () => sidebarLayout.setCollapsed(!collapsed()));
+		if (props.runConfig && props.catalog && !paletteOpen() && sessionOpen()) {
+			bind("cycle-model", () => cycleModel(false));
+			bind("cycle-scoped-model", () => cycleModel(true));
+		}
+		registeredShortcuts.set(bound);
+	});
 	const client = props.settings;
-	const remoteOpen = signal(false);
 	const remoteStatus = client ? createRemoteStatus(client, remoteOpen) : null;
 	const defaultWorkspaceShown = () =>
 		store.state().preferences?.values.defaultWorkspaceVisibility ?? {};
@@ -486,6 +524,7 @@ export function AppShell(props: AppShellProps) {
 												}}
 												<ChatComposer
 													store={composer}
+													shortcuts={sessionShortcuts}
 													sendShortcut={() =>
 														store.state().preferences?.values
 															.sendMessageShortcut
@@ -577,9 +616,6 @@ export function AppShell(props: AppShellProps) {
 						<SettingsDialog
 							open={settingsOpen}
 							onClose={() => settingsOpen.set(false)}
-							onShortcutRecordingChange={(recording) =>
-								recordingShortcut.set(recording)
-							}
 							state={store.state}
 							client={props.settings}
 							desktop={props.desktop}

@@ -30,10 +30,13 @@ import { formatChatImageSize } from "@shared/chat/chat-submission";
 import { sessionMentionValue } from "@shared/chat/session-mentions";
 import { DEFAULT_READING_FONT_SIZE } from "@shared/font-settings";
 import type { SendMessageShortcut } from "@shared/host-preferences-types";
+import { normalizeKeyboardShortcut } from "@shared/keyboard-shortcuts-core";
+import { formatKeyboardShortcutLabels } from "@shared/keyboard-shortcuts-format";
+import type { KeyboardShortcutMap } from "@shared/keyboard-shortcuts-types";
 
 import { t } from "../app/i18n";
 import { DEFAULT_CHAT_REM } from "../chat/layout";
-import { APP_SHORTCUTS } from "../shortcuts";
+import { APP_SHORTCUTS, bindAppShortcut } from "../shortcuts";
 import { Button } from "../ui/button";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { createHover } from "../ui/hover";
@@ -146,6 +149,8 @@ export function ChatComposerSkeleton(props: { showModel: boolean }) {
 export interface ChatComposerProps {
 	/** The open chat's composer state and actions. */
 	store: ComposerStore;
+	/** Null suspends session shortcuts while a dialog or command palette is open. */
+	shortcuts?: () => KeyboardShortcutMap | null;
 	/** The configured submit shortcut; Enter submits by default. */
 	sendShortcut?: () => SendMessageShortcut | undefined;
 	/** The reading font size the messages use, in points. */
@@ -166,6 +171,7 @@ export function ChatComposer(props: ChatComposerProps) {
 	const dismissedQuery = signal<string | null>(null);
 	const contentHeight = signal(0);
 	const focused = signal(false);
+	const focusShortcutLabels = signal<string[]>([]);
 	const surface = signal<ViewRef | undefined>(undefined);
 	let input: InputRef | undefined;
 
@@ -317,6 +323,30 @@ export function ChatComposer(props: ChatComposerProps) {
 		cleanup(keymap.bind(bindings, { when: "always", repeat: true }));
 	});
 
+	effect(() => {
+		const shortcut = props.shortcuts?.()?.["focus-composer"];
+		const binding =
+			shortcut && store.target()
+				? bindAppShortcut("focus-composer", shortcut, () => input?.focus())
+				: undefined;
+		const isMac = platform.os === "macos";
+		const normalized = binding && normalizeKeyboardShortcut(shortcut, isMac);
+		focusShortcutLabels.set(
+			normalized ? formatKeyboardShortcutLabels(normalized, isMac) : [],
+		);
+		if (binding) cleanup(binding.dispose);
+	});
+	effect(() => {
+		const map = props.shortcuts?.();
+		if (!map || !focused() || !running() || store.compacting()) return;
+		const binding = bindAppShortcut(
+			"queue-message",
+			map["queue-message"],
+			() => void store.submit("follow_up"),
+		);
+		if (binding) cleanup(binding.dispose);
+	});
+
 	// "mod+enter" submits when the preference says so; Return stays a newline.
 	effect(() => {
 		if (!focused() || !modEnter()) return;
@@ -407,6 +437,13 @@ export function ChatComposer(props: ChatComposerProps) {
 		};
 	};
 
+	const showFocusHint = () =>
+		platform.desktop &&
+		!focused() &&
+		!state().value &&
+		!attachments().images.length &&
+		!attachments().references.length &&
+		focusShortcutLabels().length > 0;
 	const fontSize = () => props.readingFontSize?.() ?? DEFAULT_READING_FONT_SIZE;
 	const disabled = () => store.target() === null;
 	const blocked = () =>
@@ -474,47 +511,74 @@ export function ChatComposer(props: ChatComposerProps) {
 						</View>
 					) : null
 				}
-				<BaseInput
-					ref={(ref) => {
-						input = ref;
-					}}
-					testID="chat-composer-input"
-					multiline
-					autoCorrect={false}
-					autoCapitalize="none"
-					disabled={disabled()}
-					readonly={disabled()}
-					submitBehavior={modEnter() ? "newline" : "submit"}
-					pasteBehavior="insert"
-					value={state().value}
-					accessibilityLabel={t("chat.composerPlaceholder")}
-					placeholder={
-						attachments().images.length === 0 &&
-						attachments().references.length === 0
-							? t("chat.composerPlaceholder")
-							: undefined
+				<View class="min-w-0 flex-row items-start">
+					<BaseInput
+						ref={(ref) => {
+							input = ref;
+						}}
+						testID="chat-composer-input"
+						multiline
+						autoCorrect={false}
+						autoCapitalize="none"
+						disabled={disabled()}
+						readonly={disabled()}
+						submitBehavior={modEnter() ? "newline" : "submit"}
+						pasteBehavior="insert"
+						value={state().value}
+						accessibilityLabel={t("chat.composerPlaceholder")}
+						placeholder={
+							attachments().images.length === 0 &&
+							attachments().references.length === 0
+								? t("chat.composerPlaceholder")
+								: undefined
+						}
+						// The size goes in the class: an inline `fontSize` reaches the typed
+						// text but not the placeholder, which then sits larger and lower.
+						class={`min-w-0 flex-1 border-0 bg-transparent px-1 font-sans text-[${fontSize()}px] text-input-foreground placeholder:text-input-placeholder`}
+						style={{
+							height: inputHeight(contentHeight(), fontSize()),
+							minHeight: 0,
+							paddingTop: INPUT_PADDING / 2,
+							paddingBottom: INPUT_PADDING / 2,
+						}}
+						onContentSizeChange={({ size }) => contentHeight.set(size.height)}
+						onFocus={() => focused.set(true)}
+						onBlur={() => focused.set(false)}
+						onChange={({ value }) => store.setValue(value)}
+						onSelectionChange={({ end }) => store.setCaret(end)}
+						onCompositionChange={({ composing }) =>
+							store.setComposing(composing)
+						}
+						onSubmit={() => submit()}
+						onPaste={({ files, uris }) => {
+							if (files.length) void store.addFiles(files);
+							if (uris.length) void store.addUris(uris);
+						}}
+					/>
+					{() =>
+						showFocusHint() ? (
+							<View
+								class="mt-0.5 shrink-0 flex-row items-center gap-[3px]"
+								style={{ pointerEvents: "none" }}
+							>
+								{focusShortcutLabels().map((label, index) => (
+									<>
+										{index > 0 ? (
+											<Text class="font-sans text-xs text-muted-foreground">
+												+
+											</Text>
+										) : null}
+										<View class="h-[21px] min-w-[17px] items-center justify-center rounded-[5px] border border-border/60 bg-muted/50 px-1">
+											<Text class="font-sans text-xs text-muted-foreground">
+												{label}
+											</Text>
+										</View>
+									</>
+								))}
+							</View>
+						) : null
 					}
-					// The size goes in the class: an inline `fontSize` reaches the typed
-					// text but not the placeholder, which then sits larger and lower.
-					class={`w-full min-w-0 border-0 bg-transparent px-1 font-sans text-[${fontSize()}px] text-input-foreground placeholder:text-input-placeholder`}
-					style={{
-						height: inputHeight(contentHeight(), fontSize()),
-						minHeight: 0,
-						paddingTop: INPUT_PADDING / 2,
-						paddingBottom: INPUT_PADDING / 2,
-					}}
-					onContentSizeChange={({ size }) => contentHeight.set(size.height)}
-					onFocus={() => focused.set(true)}
-					onBlur={() => focused.set(false)}
-					onChange={({ value }) => store.setValue(value)}
-					onSelectionChange={({ end }) => store.setCaret(end)}
-					onCompositionChange={({ composing }) => store.setComposing(composing)}
-					onSubmit={() => submit()}
-					onPaste={({ files, uris }) => {
-						if (files.length) void store.addFiles(files);
-						if (uris.length) void store.addUris(uris);
-					}}
-				/>
+				</View>
 				<View
 					testID="chat-composer-toolbar"
 					class={COMPOSER_TOOLBAR}
@@ -745,6 +809,16 @@ function SuggestionMenu(props: {
 	);
 }
 
+function ComposerKeyHint(props: { label: string }) {
+	return (
+		<View class="shrink-0 rounded-sm border border-border/70 bg-muted/50 px-1">
+			<Text class="font-mono text-[11px] text-muted-foreground">
+				{props.label}
+			</Text>
+		</View>
+	);
+}
+
 /** The `@` menu's file and session tabs, with the Tab hint while they have the keys. */
 function MentionTabs(props: {
 	tab: () => MentionTab;
@@ -800,11 +874,7 @@ function MentionTabs(props: {
 			{() =>
 				props.categoryFocused() && platform.desktop ? (
 					<View class="ml-auto min-w-0 shrink flex-row items-center gap-1.5 pl-2 pr-1">
-						<View class="shrink-0 rounded-sm border border-border/70 bg-muted/50 px-1">
-							<Text class="font-mono text-[11px] text-muted-foreground">
-								Tab
-							</Text>
-						</View>
+						<ComposerKeyHint label="Tab" />
 						<Text class="min-w-0 shrink truncate font-sans text-[11px] text-muted-foreground">
 							{() => t("chat.mentionTabSwitchHint")}
 						</Text>

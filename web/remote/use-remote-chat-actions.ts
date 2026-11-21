@@ -761,15 +761,23 @@ export function useRemoteChatActions({
 		runLocalAction,
 	]);
 
+	const changingModelKeysRef = useRef(new Set<string>());
+	const [changingModelKeys, setChangingModelKeys] = useState(new Set<string>());
 	const changeModel = useCallback(
-		async (model: PiModel) => {
+		async (model: PiModel, thinkingLevel?: PiThinkingLevel | null) => {
 			if (!hasIdentifiedSession) {
 				setDraftModel(model);
-				setDraftThinkingLevel(model.defaultThinkingLevel ?? null);
+				setDraftThinkingLevel(
+					thinkingLevel ?? model.defaultThinkingLevel ?? null,
+				);
 				return;
 			}
 			if (!activeSessionKey) return;
 			const targetSessionKey = activeSessionKey;
+			const pending = changingModelKeysRef.current;
+			if (pending.has(targetSessionKey)) return;
+			pending.add(targetSessionKey);
+			setChangingModelKeys(new Set(pending));
 			const isActiveSession = () =>
 				activeSessionKeyRef.current === targetSessionKey;
 			try {
@@ -785,9 +793,23 @@ export function useRemoteChatActions({
 						current ? { ...current, model: next } : current,
 					);
 				}
+				// Once the model changes, finish configuring that session even after navigation.
+				if (thinkingLevel != null) {
+					await rpcForSession<void>(targetSessionKey, {
+						type: "set_thinking_level",
+						level: thinkingLevel,
+					});
+					if (isActiveSession())
+						setAgentState((current) =>
+							current ? { ...current, thinkingLevel } : current,
+						);
+				}
 			} catch (error) {
 				if (isActiveSession())
 					setFatalError(error instanceof Error ? error.message : String(error));
+			} finally {
+				pending.delete(targetSessionKey);
+				setChangingModelKeys(new Set(pending));
 			}
 		},
 		[
@@ -850,6 +872,8 @@ export function useRemoteChatActions({
 		handleSendQueuedNow,
 		handleSendNow,
 		stop,
+		changingModel:
+			activeSessionKey !== null && changingModelKeys.has(activeSessionKey),
 		changeModel,
 		changeThinking,
 		recoverSubmissions,

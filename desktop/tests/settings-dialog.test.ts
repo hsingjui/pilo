@@ -157,13 +157,15 @@ test("the shortcuts pane records, resets rows and resets all", async () => {
 	await app.waitFor("id:settings-dialog");
 	await app.press("id:settings-nav-shortcuts");
 	await app.waitFor("text:New session");
-	// The fixture presets custom shortcuts on two rows; a box press swaps in
-	// the recorder. Headless keys never reach inputs, so capture is covered
-	// by pressing through to the resets instead.
+	// Headless cannot send raw recorder keys. Check that recording moves to
+	// the pressed row, then exercise the per-row and bulk preference patches.
 	await app.press("id:shortcut-box-new-chat");
 	await app.waitFor("id:shortcut-recorder");
+	expect(app.shows("id:shortcut-box-new-chat")).toBe(false);
 	await app.press("id:shortcut-box-toggle-sidebar");
 	await app.waitFor("id:shortcut-recorder");
+	expect(app.shows("id:shortcut-box-new-chat")).toBe(true);
+	expect(app.shows("id:shortcut-box-toggle-sidebar")).toBe(false);
 	await app.press("label:Reset New session shortcut to default");
 	await app.host.send("fixture", "probe-shortcuts");
 	await app.waitUntil(() =>

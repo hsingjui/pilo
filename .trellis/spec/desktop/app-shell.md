@@ -35,6 +35,12 @@
 - **验收**：原生窗口拖动、调整大小、最小化/最大化；普通和最大化状态分别退出重开，再拔副屏重开；从托盘、快捷键和二次启动恢复窗口；占用新快捷键时旧键仍生效；隐藏时 Pi 继续工作，显式退出时 Host 清理；有目标的通知在窗口隐藏和冷启动时打开正确会话，关闭通知开关、主动取消或目标已删除时不产生错误跳转。
 - **错误示例**：先释放旧快捷键再尝试注册新键会在注册冲突时丢失恢复入口。正确做法是 `register(next) → saveShowShortcut(next) → unregister(previous)`；保存失败则仅 `unregister(next)`。
 
+## 应用内快捷键
+
+- 桌面跟随 Host 的 `keyboardShortcuts`；空字符串不绑定。`AppShell` 绑定导航与模型动作，`ChatComposer` 绑定输入框聚焦和排队。应用内绑定使用 `when: "always"`，让快捷键在原生输入框有焦点时也能生效；设置、添加项目和 Remote 弹窗打开时暂停这些绑定，避免在录制时触发动作。
+- 模型切换只作用于当前已就绪的空闲会话。切换全部模型使用项目目录；切换常用模型只在项目的有效 Scope 内循环，并沿用该模型的推理级别，不回退到全部模型。排队键仅在输入框聚焦且正在生成时发送 `follow_up`，不改变常驻发送模式。
+- WebUI 读取同一份 Host 键位；只处理浏览器实际发给页面的按键。浏览器保留 `Cmd/Ctrl+L` 等组合时，可在桌面设置里改用不冲突的键位。
+
 ## 打开会话的 transcript
 
 `followOpenSession` 按下面的顺序决定 `ChatTranscriptStore.open({ sessionKey, projectId, sessionPath }, connected)` 的目标，这是与聊天部分的契约，发起聊天时必须使用同一个 key：
