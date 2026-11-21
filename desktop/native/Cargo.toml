@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 mime_guess = "2"
 nsh-core = "0.6.1"
-pilo = { path = "../../src-tauri", default-features = false }
+pilo_lib = { package = "pilo", path = "../../src-tauri", default-features = false }
 rfd = "0.15"
 serde = "1"
 serde_json = "1"
