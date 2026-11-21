@@ -58,14 +58,14 @@ Pilo is currently built from source. Development requires Node.js 22, pnpm (CI u
 
 Pilo discovers `pi` from `PATH` by default. Each connection can also be configured with a custom Pi executable path in Settings.
 
-The desktop app is built with [nsh](https://github.com/longbridge/nsh) (install the `nsh` 0.6.1 CLI). Only macOS is currently developed and verified.
+The desktop app is built with [nsh](https://github.com/longbridge/nsh). The same development command is used on macOS, Windows, and Linux; it requires the `nsh` 0.6.1 CLI on `PATH`. The desktop app has only been verified on macOS.
 
 ```bash
 pnpm install
-pnpm dev          # keeps dist/ (the WebUI the Host serves) rebuilt, and starts Vite
-cd desktop
-nsh dev           # the desktop app with hot reload
+pnpm dev          # starts both the nsh desktop app and WebUI dev services
 ```
+
+The WebUI dev services start Vite (`http://localhost:1420`) and keep the Host-served `dist/` up to date. Use `pnpm dev --frontend` for WebUI only, or run `nsh dev` from `desktop/` for desktop only.
 
 Local uses `target/debug/pilo-server` (`cargo build -p pilo-server`). For WSL/SSH, build a development server for the remote target, then start or restart Pilo:
 
@@ -89,7 +89,7 @@ bash scripts/build-pilo-server.sh <target>
 
 ## Quick Start
 
-1. Start Pilo with `nsh dev` in `desktop/`.
+1. Run `pnpm dev` from the repo root to start Pilo and the WebUI dev services.
 2. Use the default Local connection, or add a WSL or SSH connection.
 3. If Pi is not available as `pi` on `PATH`, set its executable path for that connection in Settings and run the Pi probe.
 4. Add a project directory and open a session.

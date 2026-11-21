@@ -58,13 +58,21 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 
 try {
 	// The Host serves the WebUI from dist/; the Vite server hosts the browser tests.
+	const vite = "node_modules/vite/bin/vite.js";
 	const commands = [
-		["node_modules/vite/bin/vite.js"],
-		["node_modules/vite/bin/vite.js", "build", "--watch"],
+		[process.execPath, root, vite],
+		[process.execPath, root, vite, "build", "--watch"],
 	];
-	for (const args of commands) {
-		const child = spawn(process.execPath, args, {
-			cwd: root,
+	if (!process.argv.includes("--frontend")) {
+		commands.push([
+			"nsh",
+			fileURLToPath(new URL("../desktop/", import.meta.url)),
+			"dev",
+		]);
+	}
+	for (const [command, cwd, ...args] of commands) {
+		const child = spawn(command, args, {
+			cwd,
 			stdio: "inherit",
 			detached: process.platform !== "win32",
 		});

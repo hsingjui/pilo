@@ -58,14 +58,14 @@ Pilo 当前以源码构建为主。开发需要 Node.js 22、pnpm（CI 使用 10
 
 Pilo 默认从 `PATH` 自动发现 `pi`。也可以在 Settings 中为每个 Connection 单独指定 Pi 可执行文件路径。
 
-桌面端基于 [nsh](https://github.com/longbridge/nsh) 构建（需安装 `nsh` 0.6.1 CLI），目前只在 macOS 上开发和验证。
+桌面端基于 [nsh](https://github.com/longbridge/nsh) 构建。在 macOS、Windows、Linux 上使用相同的开发启动命令，需将 `nsh` 0.6.1 CLI 加入 `PATH`。桌面端目前只在 macOS 上验证。
 
 ```bash
 pnpm install
-pnpm dev          # 持续重建 dist/（Host 提供的 WebUI），并启动 Vite
-cd desktop
-nsh dev           # 启动桌面应用，支持热更新
+pnpm dev          # 同时启动 nsh 桌面端和 WebUI 开发服务
 ```
+
+WebUI 开发服务会启动 Vite（`http://localhost:1420`），并持续重建 Host 提供 WebUI 用的 `dist/`。只跑 WebUI 用 `pnpm dev --frontend`；只跑桌面则进入 `desktop/` 运行 `nsh dev`。
 
 Local 使用 `target/debug/pilo-server`（`cargo build -p pilo-server`）。WSL/SSH 请先为远程目标构建开发 server，再启动或重启 Pilo：
 
@@ -89,7 +89,7 @@ bash scripts/build-pilo-server.sh <target>
 
 ## 快速开始
 
-1. 在 `desktop/` 中运行 `nsh dev` 启动 Pilo。
+1. 在仓库根目录运行 `pnpm dev` 启动 Pilo 和 WebUI 开发服务。
 2. 使用默认的 Local Connection，或添加 WSL / SSH Connection。
 3. 如果 `pi` 不在 `PATH` 中，在 Settings 中为对应 Connection 指定 Pi 可执行文件路径并执行探测。
 4. 添加项目目录并打开 Session。
