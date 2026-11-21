@@ -24,6 +24,7 @@ import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { classNames } from "../ui/class-names";
 import { Menu, menuPopupClass, menuPopupStyle } from "../ui/menu";
+import { MenuCheck } from "../ui/menu-check";
 import { MenuItem } from "../ui/menu-item";
 import { menuRowClass } from "../ui/menu-row";
 import { Skeleton } from "../ui/skeleton";
@@ -217,13 +218,7 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 									onSelect={() => props.onThinking(level)}
 								>
 									<Text class="font-sans">{piThinkingLevelLabel(level)}</Text>
-									<View class="size-4 shrink-0 items-center justify-center">
-										{() =>
-											thinking() === level ? (
-												<Icon name="Check" size={14} />
-											) : null
-										}
-									</View>
+									<MenuCheck checked={() => thinking() === level} />
 								</MenuItem>
 							))
 						}

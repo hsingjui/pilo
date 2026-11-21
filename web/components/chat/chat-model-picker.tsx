@@ -9,8 +9,15 @@ import {
 import { useTranslation } from "react-i18next";
 
 import {
+	addProjectScopeDraftModels,
 	getProjectScopeDraft,
+	getUnavailableProjectScopeDraftModels,
+	isProjectScopeDraftDirty,
 	piModelsMatch,
+	projectScopeDraftHasModel,
+	toggleProjectScopeDefaultModel,
+	toggleProjectScopeDraftModel,
+	type ProjectScopeDraft,
 } from "@shared/pi-model-selection";
 import { runtimeErrorMessage, type PiModel } from "@/lib/api/pi-runtime";
 import type {
@@ -65,10 +72,7 @@ export function ChatModelPicker({
 	} | null>(null);
 	const listRef = useRef<HTMLDivElement>(null);
 	const [view, setView] = useState<"all" | "scope">("scope");
-	const [draft, setDraft] = useState<{
-		initial: ProjectScopedModel[];
-		models: ProjectScopedModel[];
-	} | null>(null);
+	const [draft, setDraft] = useState<ProjectScopeDraft | null>(null);
 	const [saveError, setSaveError] = useState<string | null>(null);
 	const editing = canEditScope && draft !== null;
 	const searchRef = useRef<HTMLInputElement>(null);
@@ -128,45 +132,18 @@ export function ChatModelPicker({
 	}, [activeValue, editing]);
 	const unavailable =
 		editing && draft
-			? [...draft.initial, ...draft.models].filter(
-					(entry, index, entries) =>
-						!availableModels.some(
-							(model) =>
-								model.provider === entry.provider && model.id === entry.modelId,
-						) &&
-						entries.findIndex(
-							(candidate) =>
-								candidate.provider === entry.provider &&
-								candidate.modelId === entry.modelId,
-						) === index &&
-						matches(entry.provider, entry.modelId),
+			? getUnavailableProjectScopeDraftModels(draft, availableModels).filter(
+					(entry) => matches(entry.provider, entry.modelId),
 				)
 			: [];
-	const dirty =
-		draft !== null &&
-		JSON.stringify(draft.initial) !== JSON.stringify(draft.models);
+	const dirty = isProjectScopeDraftDirty(draft);
 
 	const toggle = (provider: string, modelId: string) => {
-		setDraft((current) => {
-			if (!current) return current;
-			const exists = current.models.some(
-				(entry) => entry.provider === provider && entry.modelId === modelId,
-			);
-			const entry = current.initial.find(
-				(candidate) =>
-					candidate.provider === provider && candidate.modelId === modelId,
-			) ?? { provider, modelId, thinkingLevel: null };
-			return {
-				...current,
-				models: exists
-					? current.models.filter(
-							(candidate) =>
-								candidate.provider !== provider ||
-								candidate.modelId !== modelId,
-						)
-					: [...current.models, { ...entry, isDefault: false }],
-			};
-		});
+		setDraft((current) =>
+			current
+				? toggleProjectScopeDraftModel(current, provider, modelId)
+				: current,
+		);
 	};
 	const save = async (nextModels: ProjectScopedModel[] | null) => {
 		if (!modelScope || saving) return;
@@ -181,17 +158,13 @@ export function ChatModelPicker({
 	const toggleDefault = (model: PiModel) => {
 		if (!modelScope?.scope || !scopeReady || saving || listLoading || disabled)
 			return;
-		const value = identity(model.provider, model.id);
-		const nextModels = getProjectScopeDraft(
-			modelScope.models,
-			modelScope.scope,
+		void save(
+			toggleProjectScopeDefaultModel(
+				modelScope.models,
+				modelScope.scope,
+				model,
+			),
 		);
-		for (const entry of nextModels) {
-			entry.isDefault =
-				identity(entry.provider, entry.modelId) === value &&
-				defaultScopeValue !== value;
-		}
-		void save(nextModels);
 	};
 	const listPaddingClassName = compact
 		? "px-(--pilo-ui-menu-padding) pb-(--pilo-ui-menu-padding)"
@@ -225,12 +198,7 @@ export function ChatModelPicker({
 				<Checkbox
 					id={checkboxId}
 					aria-label={`${name || modelId} · ${provider} · ${modelId}${available ? "" : ` · ${t("chat.scopeUnavailable")}`}`}
-					checked={
-						draft?.models.some(
-							(entry) =>
-								entry.provider === provider && entry.modelId === modelId,
-						) ?? false
-					}
+					checked={projectScopeDraftHasModel(draft, provider, modelId)}
 					disabled={saving}
 					onCheckedChange={() => toggle(provider, modelId)}
 				/>
@@ -395,35 +363,11 @@ export function ChatModelPicker({
 						className={actionClassName}
 						disabled={saving}
 						onClick={() =>
-							setDraft((current) => {
-								if (!current) return current;
-								const additions = visibleModels
-									.filter(
-										(model) =>
-											!current.models.some(
-												(entry) =>
-													entry.provider === model.provider &&
-													entry.modelId === model.id,
-											),
-									)
-									.map((model) => {
-										const initial = current.initial.find(
-											(entry) =>
-												entry.provider === model.provider &&
-												entry.modelId === model.id,
-										);
-										return {
-											provider: model.provider,
-											modelId: model.id,
-											thinkingLevel: initial?.thinkingLevel ?? null,
-											isDefault: false,
-										};
-									});
-								return {
-									...current,
-									models: [...current.models, ...additions],
-								};
-							})
+							setDraft((current) =>
+								current
+									? addProjectScopeDraftModels(current, visibleModels)
+									: current,
+							)
 						}
 					>
 						{t("chat.selectSearchResults")}

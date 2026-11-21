@@ -105,8 +105,118 @@ export function getProjectScopeDraft(
 	);
 }
 
-/** The input is already the effective Scope; never fall back to all models. */
-export function getNextPiScopeModel(
+export type ProjectScopeDraft = {
+	initial: readonly ProjectScopedModel[];
+	models: ProjectScopedModel[];
+};
+
+function scopeMemberMatches(
+	entry: ProjectScopedModel,
+	provider: string,
+	modelId: string,
+): boolean {
+	return entry.provider === provider && entry.modelId === modelId;
+}
+
+export function projectScopeDraftHasModel(
+	draft: ProjectScopeDraft | null,
+	provider: string,
+	modelId: string,
+): boolean {
+	return (
+		draft?.models.some((entry) =>
+			scopeMemberMatches(entry, provider, modelId),
+		) ?? false
+	);
+}
+
+export function isProjectScopeDraftDirty(
+	draft: ProjectScopeDraft | null,
+): boolean {
+	return (
+		draft !== null &&
+		JSON.stringify(draft.initial) !== JSON.stringify(draft.models)
+	);
+}
+
+/** Keep removed initial members visible so they can be re-added. */
+export function getUnavailableProjectScopeDraftModels(
+	draft: ProjectScopeDraft,
+	available: readonly PiModel[],
+): ProjectScopedModel[] {
+	return [...draft.initial, ...draft.models].filter(
+		(entry, index, entries) =>
+			!available.some((model) =>
+				scopeMemberMatches(entry, model.provider, model.id),
+			) &&
+			entries.findIndex((candidate) =>
+				scopeMemberMatches(candidate, entry.provider, entry.modelId),
+			) === index,
+	);
+}
+
+export function toggleProjectScopeDraftModel(
+	draft: ProjectScopeDraft,
+	provider: string,
+	modelId: string,
+): ProjectScopeDraft {
+	const matches = (entry: ProjectScopedModel) =>
+		scopeMemberMatches(entry, provider, modelId);
+	if (draft.models.some(matches)) {
+		return {
+			...draft,
+			models: draft.models.filter((entry) => !matches(entry)),
+		};
+	}
+	const entry = draft.initial.find(matches) ?? {
+		provider,
+		modelId,
+		thinkingLevel: null,
+	};
+	return {
+		...draft,
+		models: [...draft.models, { ...entry, isDefault: false }],
+	};
+}
+
+export function addProjectScopeDraftModels(
+	draft: ProjectScopeDraft,
+	models: readonly PiModel[],
+): ProjectScopeDraft {
+	const additions = models
+		.filter(
+			(model) => !projectScopeDraftHasModel(draft, model.provider, model.id),
+		)
+		.map((model) => ({
+			provider: model.provider,
+			modelId: model.id,
+			thinkingLevel:
+				draft.initial.find((entry) =>
+					scopeMemberMatches(entry, model.provider, model.id),
+				)?.thinkingLevel ?? null,
+			isDefault: false,
+		}));
+	return { ...draft, models: [...draft.models, ...additions] };
+}
+
+export function toggleProjectScopeDefaultModel(
+	models: readonly PiModel[],
+	scope: ProjectModelScope,
+	model: PiModel,
+): ProjectScopedModel[] {
+	const current = scope.models?.find((entry) => entry.isDefault);
+	const wasDefault =
+		current && scopeMemberMatches(current, model.provider, model.id);
+	const next = getProjectScopeDraft(models, scope);
+	for (const entry of next) {
+		entry.isDefault =
+			!wasDefault && scopeMemberMatches(entry, model.provider, model.id);
+	}
+	return next;
+}
+
+/** Cycle the supplied list as-is, including an empty or custom Scope. */
+export function getNextPiModel(
 	models: readonly PiModel[],
 	currentModel: PiModel | null,
 ): PiModel | null {
@@ -115,6 +225,9 @@ export function getNextPiScopeModel(
 	const next = models[(index + 1) % models.length] ?? null;
 	return piModelsMatch(next, currentModel) ? null : next;
 }
+
+/** The input is already the effective Scope; never fall back to all models. */
+export const getNextPiScopeModel = getNextPiModel;
 
 /** Keep Host-resolved Scope/thinking metadata when live RPC returns bare models. */
 export function reconcilePiModelCatalog(

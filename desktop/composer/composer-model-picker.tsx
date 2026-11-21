@@ -2,8 +2,15 @@ import { Scroll, signal, Text, token, View } from "nsh";
 
 import type { PiModel } from "@shared/api/pi-runtime-types";
 import {
+	addProjectScopeDraftModels,
 	getProjectScopeDraft,
+	getUnavailableProjectScopeDraftModels,
+	isProjectScopeDraftDirty,
 	piModelsMatch,
+	projectScopeDraftHasModel,
+	toggleProjectScopeDefaultModel,
+	toggleProjectScopeDraftModel,
+	type ProjectScopeDraft,
 } from "@shared/pi-model-selection";
 import type {
 	ProjectModelScope,
@@ -15,6 +22,7 @@ import { Button } from "../ui/button";
 import { classNames } from "../ui/class-names";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
+import { MenuCheck } from "../ui/menu-check";
 import { MenuItem } from "../ui/menu-item";
 import { scrollbarLook } from "../ui/scrollbar";
 import { Spinner } from "../ui/spinner";
@@ -42,11 +50,6 @@ export interface ComposerModelPickerProps {
 	onSaveScope?: (models: ProjectScopedModel[] | null) => Promise<void>;
 }
 
-type ScopeDraft = {
-	initial: ProjectScopedModel[];
-	models: ProjectScopedModel[];
-};
-
 function identity(provider: string, id: string) {
 	return JSON.stringify([provider, id]);
 }
@@ -61,7 +64,7 @@ const ROW_CLASS = "px-2";
 export function ComposerModelPicker(props: ComposerModelPickerProps) {
 	const query = signal("");
 	const view = signal<"scope" | "all">("scope");
-	const draft = signal<ScopeDraft | null>(null);
+	const draft = signal<ProjectScopeDraft | null>(null);
 	const saveError = signal<string | null>(null);
 
 	const editing = () => draft() !== null;
@@ -83,35 +86,15 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 	};
 	const listError = () => saveError() ?? props.error();
 	const busy = () => props.loading() || props.saving();
-	const inDraft = (provider: string, modelId: string) =>
-		draft()?.models.some(
-			(entry) => entry.provider === provider && entry.modelId === modelId,
-		) ?? false;
 	const unavailable = () => {
 		const current = draft();
-		if (!current) return [];
-		const available = props.models();
-		return [...current.initial, ...current.models].filter(
-			(entry, index, entries) =>
-				!available.some(
-					(model) =>
-						model.provider === entry.provider && model.id === entry.modelId,
-				) &&
-				entries.findIndex(
-					(candidate) =>
-						candidate.provider === entry.provider &&
-						candidate.modelId === entry.modelId,
-				) === index &&
-				matches(entry.provider, entry.modelId),
-		);
+		return current
+			? getUnavailableProjectScopeDraftModels(current, props.models()).filter(
+					(entry) => matches(entry.provider, entry.modelId),
+				)
+			: [];
 	};
-	const dirty = () => {
-		const current = draft();
-		return (
-			current !== null &&
-			JSON.stringify(current.initial) !== JSON.stringify(current.models)
-		);
-	};
+	const dirty = () => isProjectScopeDraftDirty(draft());
 
 	const save = async (models: ProjectScopedModel[] | null) => {
 		if (!props.onSaveScope || props.saving()) return;
@@ -126,15 +109,8 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 	const toggleDefault = (model: PiModel) => {
 		const scope = props.scope();
 		if (!scope || !scopeReady() || busy() || props.disabled()) return;
-		const value = identity(model.provider, model.id);
-		const current = defaultValue();
 		void save(
-			getProjectScopeDraft(props.scopeModels(), scope).map((entry) => ({
-				...entry,
-				isDefault:
-					identity(entry.provider, entry.modelId) === value &&
-					current !== value,
-			})),
+			toggleProjectScopeDefaultModel(props.scopeModels(), scope, model),
 		);
 	};
 	const startEditing = () => {
@@ -146,40 +122,13 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 	};
 	const toggle = (provider: string, modelId: string) => {
 		const current = draft();
-		if (!current) return;
-		const exists = inDraft(provider, modelId);
-		const entry = current.initial.find(
-			(candidate) =>
-				candidate.provider === provider && candidate.modelId === modelId,
-		) ?? { provider, modelId, thinkingLevel: null };
-		draft.set({
-			...current,
-			models: exists
-				? current.models.filter(
-						(candidate) =>
-							candidate.provider !== provider || candidate.modelId !== modelId,
-					)
-				: [...current.models, { ...entry, isDefault: false }],
-		});
+		if (current)
+			draft.set(toggleProjectScopeDraftModel(current, provider, modelId));
 	};
 	const selectSearchResults = () => {
 		const current = draft();
-		if (!current) return;
-		const additions = visibleModels()
-			.filter((model) => !inDraft(model.provider, model.id))
-			.map((model) => {
-				const initial = current.initial.find(
-					(entry) =>
-						entry.provider === model.provider && entry.modelId === model.id,
-				);
-				return {
-					provider: model.provider,
-					modelId: model.id,
-					thinkingLevel: initial?.thinkingLevel ?? null,
-					isDefault: false,
-				};
-			});
-		draft.set({ ...current, models: [...current.models, ...additions] });
+		if (current)
+			draft.set(addProjectScopeDraftModels(current, visibleModels()));
 	};
 
 	const refreshButton = () => (
@@ -213,7 +162,8 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 					value={query()}
 					placeholder={t("chat.searchModels")}
 					accessibilityLabel={t("chat.searchModels")}
-					class="h-8 pl-8 text-sm"
+					size="sm"
+					class="pl-8"
 					onChange={(event) => query.set(event.value)}
 				/>
 				<View class="pointer-events-none absolute inset-y-0 left-2.5 justify-center">
@@ -272,9 +222,7 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 					<Text class="max-w-28 shrink-0 truncate font-sans text-xs text-muted-foreground">
 						{model.provider}
 					</Text>
-					<View class="size-4 shrink-0 items-center justify-center">
-						{() => (selected() ? <Icon name="Check" size={14} /> : null)}
-					</View>
+					<MenuCheck checked={selected} />
 				</MenuItem>
 				{showStar ? (
 					<Button
@@ -312,7 +260,7 @@ export function ComposerModelPicker(props: ComposerModelPickerProps) {
 		name: string,
 		available: boolean,
 	) => {
-		const checked = () => inDraft(provider, modelId);
+		const checked = () => projectScopeDraftHasModel(draft(), provider, modelId);
 		const detail = `${provider}${available ? "" : ` · ${t("chat.scopeUnavailable")}`}`;
 		return (
 			<MenuItem
