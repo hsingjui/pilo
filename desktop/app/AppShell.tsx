@@ -239,6 +239,7 @@ export function AppShell(props: AppShellProps) {
 			config.changing ||
 			config.compacting ||
 			composer.running() ||
+			composer.readOnly() ||
 			draft.sending ||
 			draft.composing ||
 			chat.state().status !== "ready" ||
@@ -473,6 +474,7 @@ export function AppShell(props: AppShellProps) {
 											}
 											forkDisabled={() =>
 												chat.state().status !== "ready" ||
+												composer.readOnly() ||
 												(props.forker?.state().forkingMessageId ?? null) !==
 													null
 											}

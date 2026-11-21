@@ -17,6 +17,7 @@ import type {
 import type { AssistantPendingStatus } from "@shared/chat/chat-activity-state";
 import { createConversationState } from "@shared/chat/conversation-reducer";
 import {
+	markExternalTurnLive,
 	reduceConversationActions,
 	replayConversationEvents,
 } from "@shared/chat/conversation-replay";
@@ -246,6 +247,8 @@ export class ChatTranscriptStore {
 	private rereadFor: SessionHistoryFingerprint | null | undefined;
 	/** Counts reads, so one superseded by a newer read is dropped. */
 	private reads = 0;
+	/** Whether the file changed during the current history request. */
+	private historyRead: { changed: boolean } | undefined;
 	/** The chat's events since the read in flight was requested. */
 	private buffer: PiloClientEvent[] | undefined;
 	/** The snapshot the conversation was built from, while it is exact. */
@@ -270,6 +273,12 @@ export class ChatTranscriptStore {
 	private fresh = false;
 	/** The prompt sent from this app that Pi has not echoed yet. */
 	private local: LocalTurn | undefined;
+	/**
+	 * Whether an external Pi runs a turn in the open chat's session: its
+	 * saved history then ends in that turn, which shows as running. Set by
+	 * the owner for whichever chat is open, so a new chat does not reset it.
+	 */
+	private external = false;
 
 	constructor(
 		client: ChatTranscriptClient,
@@ -313,6 +322,47 @@ export class ChatTranscriptStore {
 	 */
 	adoptSessionPath(sessionPath: string) {
 		if (this.target) this.target = { ...this.target, sessionPath };
+	}
+
+	/**
+	 * Whether an external Pi runs a turn in the open chat's session. Its
+	 * settled history then shows the turn as running; once the turn is over,
+	 * the history is read again.
+	 */
+	setExternalTurnOpen(open: boolean) {
+		if (this.external === open) return;
+		this.external = open;
+		if (!open) {
+			this.historyChanged();
+			return;
+		}
+		const state = this.current();
+		if (
+			!this.running &&
+			state.status === "ready" &&
+			state.source === "history" &&
+			state.conversation
+		) {
+			this.current.set({
+				...state,
+				conversation: markExternalTurnLive(state.conversation),
+			});
+		}
+	}
+
+	/**
+	 * The open chat's session file changed. Without a Pi of this app running
+	 * for the chat, the writer is another one (an external Pi), and its turn
+	 * reaches this app only through the file, so it is read again.
+	 */
+	historyChanged() {
+		if (this.running) return;
+		if (this.historyRead) {
+			this.historyRead.changed = true;
+			return;
+		}
+		const { status, source } = this.current();
+		if (status === "ready" && source === "history") void this.read();
 	}
 
 	/**
@@ -407,6 +457,7 @@ export class ChatTranscriptStore {
 	/** Forgets the chat that was open, and drops a read of it in flight. */
 	private reset() {
 		this.reads += 1;
+		this.historyRead = undefined;
 		this.older.initialize([], 0);
 		this.saved = undefined;
 		this.wanted = undefined;
@@ -699,6 +750,7 @@ export class ChatTranscriptStore {
 		if (!target) return;
 		const { sessionKey } = target;
 		const shown = this.current();
+		this.historyRead = undefined;
 		this.buffer = [];
 		this.cut = undefined;
 		this.waiting = false;
@@ -810,16 +862,21 @@ export class ChatTranscriptStore {
 					Pick<ChatTranscriptState, "conversation" | "historyPrefix" | "source">
 				>;
 			if (sessionPath) {
+				this.historyRead = { changed: false };
 				const settledHistory = await this.client.loadHistory(
 					target.projectId,
 					sessionPath,
 					firstWindow,
 				);
 				if (this.reads !== read) return;
+				const saved = conversationFromHistory(
+					settledHistory.history,
+					this.context,
+				);
 				result = {
 					status: "ready",
 					conversation: this.withLocal(
-						conversationFromHistory(settledHistory.history, this.context),
+						this.external ? markExternalTurnLive(saved) : saved,
 					),
 					historyPrefix: this.prefixOf(
 						target.projectId,
@@ -851,6 +908,12 @@ export class ChatTranscriptStore {
 				message: error instanceof Error ? error.message : String(error),
 			});
 			for (const event of later) this.receive([event]);
+		} finally {
+			if (this.reads === read && this.historyRead) {
+				const { changed } = this.historyRead;
+				this.historyRead = undefined;
+				if (changed && !this.running) void this.read();
+			}
 		}
 	}
 }

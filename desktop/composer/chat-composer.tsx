@@ -74,13 +74,17 @@ const focusShadow = () =>
 
 const COMPOSER_SURFACE =
 	"relative w-full rounded-(--pilo-composer-radius) border border-(--pilo-composer-border) bg-(--pilo-composer-background)";
+/** A read-only chat's composer, dimmed as the Tauri composer's `muted` surface. */
+const COMPOSER_SURFACE_MUTED =
+	"relative w-full rounded-(--pilo-composer-radius) border border-border/60 bg-muted";
 const COMPOSER_TOOLBAR =
 	"-ml-1 min-w-0 flex-row items-center gap-(--pilo-composer-toolbar-gap)";
 
-function surfaceStyle(focused: boolean) {
+function surfaceStyle(focused: boolean, muted = false) {
 	return {
-		borderColor: focused ? token("pilo-composer-focus-border") : undefined,
-		boxShadow: focused ? focusShadow() : composerShadow(),
+		borderColor:
+			focused && !muted ? token("pilo-composer-focus-border") : undefined,
+		boxShadow: focused && !muted ? focusShadow() : composerShadow(),
 		gap: token("pilo-composer-gap") * CHAT_SCALE,
 		paddingHorizontal: DEFAULT_CHAT_REM * 0.5,
 		paddingVertical: DEFAULT_CHAT_REM * 0.375,
@@ -440,12 +444,14 @@ export function ChatComposer(props: ChatComposerProps) {
 	const showFocusHint = () =>
 		platform.desktop &&
 		!focused() &&
+		!readOnly() &&
 		!state().value &&
 		!attachments().images.length &&
 		!attachments().references.length &&
 		focusShortcutLabels().length > 0;
 	const fontSize = () => props.readingFontSize?.() ?? DEFAULT_READING_FONT_SIZE;
-	const disabled = () => store.target() === null;
+	const readOnly = () => store.readOnly();
+	const disabled = () => store.target() === null || readOnly();
 	const blocked = () =>
 		disabled() || state().sending || (running() && store.compacting());
 	const config = () => props.runConfig?.config() ?? null;
@@ -454,11 +460,13 @@ export function ChatComposer(props: ChatComposerProps) {
 		<View
 			testID="chat-composer"
 			class="relative w-full"
-			onFileDragEnter={() => store.setDragging(true)}
+			onFileDragEnter={() => {
+				if (!readOnly()) store.setDragging(true);
+			}}
 			onFileDragLeave={() => store.setDragging(false)}
 			onFileDrop={({ uris }) => {
 				store.setDragging(false);
-				void store.addUris(uris);
+				if (!readOnly()) void store.addUris(uris);
 			}}
 		>
 			{() =>
@@ -480,8 +488,8 @@ export function ChatComposer(props: ChatComposerProps) {
 				ref={(ref) => surface.set(ref)}
 				testID="chat-composer-surface"
 				onLayout={({ bounds }) => surfaceWidth.set(bounds.size.width)}
-				class={COMPOSER_SURFACE}
-				style={surfaceStyle(focused())}
+				class={readOnly() ? COMPOSER_SURFACE_MUTED : COMPOSER_SURFACE}
+				style={surfaceStyle(focused(), readOnly())}
 			>
 				{() =>
 					attachments().images.length > 0 ||
@@ -524,13 +532,16 @@ export function ChatComposer(props: ChatComposerProps) {
 						readonly={disabled()}
 						submitBehavior={modEnter() ? "newline" : "submit"}
 						pasteBehavior="insert"
-						value={state().value}
+						// A read-only chat keeps its draft for later and shows why it is locked.
+						value={readOnly() ? "" : state().value}
 						accessibilityLabel={t("chat.composerPlaceholder")}
 						placeholder={
-							attachments().images.length === 0 &&
-							attachments().references.length === 0
-								? t("chat.composerPlaceholder")
-								: undefined
+							readOnly()
+								? t("chat.externalReadOnly")
+								: attachments().images.length === 0 &&
+									  attachments().references.length === 0
+									? t("chat.composerPlaceholder")
+									: undefined
 						}
 						// The size goes in the class: an inline `fontSize` reaches the typed
 						// text but not the placeholder, which then sits larger and lower.
@@ -544,8 +555,12 @@ export function ChatComposer(props: ChatComposerProps) {
 						onContentSizeChange={({ size }) => contentHeight.set(size.height)}
 						onFocus={() => focused.set(true)}
 						onBlur={() => focused.set(false)}
-						onChange={({ value }) => store.setValue(value)}
-						onSelectionChange={({ end }) => store.setCaret(end)}
+						onChange={({ value }) => {
+							if (!readOnly()) store.setValue(value);
+						}}
+						onSelectionChange={({ end }) => {
+							if (!readOnly()) store.setCaret(end);
+						}}
 						onCompositionChange={({ composing }) =>
 							store.setComposing(composing)
 						}
@@ -600,7 +615,9 @@ export function ChatComposer(props: ChatComposerProps) {
 					>
 						<Icon name="Plus" size={16} color={token("muted-foreground")} />
 					</Button>
-					{props.runConfig ? <ComposerRunConfig {...props.runConfig} /> : null}
+					{props.runConfig ? (
+						<ComposerRunConfig {...props.runConfig} readOnly={readOnly} />
+					) : null}
 					{props.runConfig ? (
 						<ComposerContextUsage
 							usage={() => config()?.session ?? null}

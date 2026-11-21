@@ -53,6 +53,8 @@ export interface ComposerRunConfigProps {
 	onRefresh?: () => void;
 	/** Saves the project Scope; without it the picker cannot edit it. */
 	onSaveScope?: (models: ProjectScopedModel[] | null) => Promise<void>;
+	/** The session is read-only here, so its model cannot be changed. */
+	readOnly?: () => boolean;
 }
 
 /** A submenu trigger row: its label and the current value, dimmed. */
@@ -129,7 +131,7 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 					size="sm"
 					class="-ml-1 h-(--pilo-composer-control-size) min-w-0 shrink gap-1 rounded-(--pilo-radius-md) px-2 text-xs font-normal"
 					activeStyle={{ scale: 1 }}
-					disabled={!props.config()?.ready}
+					disabled={!props.config()?.ready || !!props.readOnly?.()}
 					accessibilityLabel={t("chat.runConfigLabel", {
 						model: modelPending() ? t("chat.loadingModels") : modelLabel(),
 						thinking: thinkingPending()

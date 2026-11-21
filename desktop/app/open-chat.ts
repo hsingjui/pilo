@@ -6,7 +6,7 @@ import {
 	getProjectScopeDefaultModel,
 	isPiScopeCatalogResolved,
 } from "@shared/pi-model-selection";
-import type { AppState } from "../state/app-state";
+import { type AppState, isExternalTurnOpen } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
 import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type {
@@ -105,6 +105,54 @@ export function followOpenSession(store: AppStore, chat: ChatTranscriptStore) {
 					.state()
 					.chatSessions.some((held) => held.sessionKey === next.sessionKey);
 			void chat.open(next, store.connected, { freshDraft });
+		});
+	});
+	// An external Pi's turn shows as running, and reaches the chat through
+	// the session file, as the Tauri app follows it.
+	const external = computed(() => {
+		const state = store.state();
+		const open = openChatTarget(state);
+		return (
+			!!open && isExternalTurnOpen(state, open.projectId, open.sessionPath)
+		);
+	});
+	effect(() => {
+		const open = external();
+		untracked(() => chat.setExternalTurnOpen(open));
+	});
+	const file = computed(
+		() => {
+			const state = store.state();
+			const open = openChatTarget(state);
+			if (!open?.sessionPath) return null;
+			const entry = state.sessionIndexes[open.projectId]?.sessions.find(
+				(session) => session.sessionPath === open.sessionPath,
+			);
+			return entry
+				? {
+						sessionKey: open.sessionKey,
+						version: `${entry.fileSize}:${entry.fileMtimeNs}`,
+					}
+				: null;
+		},
+		{
+			equals: (a, b) =>
+				a?.sessionKey === b?.sessionKey && a?.version === b?.version,
+		},
+	);
+	let indexed: { sessionKey: string; version: string } | null = null;
+	effect(() => {
+		const next = file();
+		untracked(() => {
+			const previous = indexed;
+			indexed = next;
+			if (
+				previous &&
+				next &&
+				previous.sessionKey === next.sessionKey &&
+				previous.version !== next.version
+			)
+				chat.historyChanged();
 		});
 	});
 }

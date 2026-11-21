@@ -46,7 +46,7 @@ import { chatRuntimeHasOpenTurn } from "@shared/chat/chat-session-runtime-model"
 import { t } from "../app/i18n";
 import { requestPiRpc, requestPiRpcOutcome } from "../client/chat-rpc";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
-import type { AppState } from "../state/app-state";
+import { type AppState, isExternalTurnOpen } from "../state/app-state";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 
 /** The open chat the composer talks to. */
@@ -268,6 +268,18 @@ export class ComposerStore {
 
 	compacting(): boolean {
 		return Boolean(this.chatState()?.compacting);
+	}
+
+	/**
+	 * An external Pi runs a turn in the open chat's session, so it is read-only
+	 * here, as in the Tauri app.
+	 */
+	readOnly(): boolean {
+		const target = this.targetSignal();
+		return (
+			!!target &&
+			isExternalTurnOpen(this.app(), target.projectId, target.sessionPath)
+		);
 	}
 
 	/** Sessions the `@` menu offers, newest first, as mention draft entries. */
@@ -596,7 +608,7 @@ export class ComposerStore {
 	async submit(mode?: "follow_up") {
 		const target = this.targetSignal();
 		const { value, images, sending, composing, sendMode } = this.stateSignal();
-		if (!target || sending || composing) return;
+		if (!target || sending || composing || this.readOnly()) return;
 		const submission = createChatSubmission(value, images);
 		if (!chatSubmissionHasContent(submission)) return;
 		const running = this.running();

@@ -188,3 +188,49 @@ export async function replayConversationEventsBatched(
 
 	return replayBatch(0, initialState);
 }
+
+function reviveExternalActivity<
+	T extends {
+		type: string;
+		status?: "complete" | "running";
+		result?: unknown;
+	},
+>(item: T): T {
+	return item.type === "tool" && item.result === undefined
+		? { ...item, status: "running" }
+		: item;
+}
+
+/**
+ * Shows the saved history's unfinished last reply as still running, for a
+ * session whose turn an external Pi is running: the reply is live, not
+ * interrupted, and its tools without a result are still at work.
+ */
+export function markExternalTurnLive(
+	state: ConversationState,
+): ConversationState {
+	if (state.active) return state;
+	const index = state.messages.length - 1;
+	const message = state.messages[index];
+	if (message?.role !== "assistant" || message.completion !== "interrupted")
+		return state;
+	const messages = state.messages.slice();
+	messages[index] = {
+		...message,
+		content: message.content?.map(reviveExternalActivity),
+		activity: message.activity?.map(reviveExternalActivity),
+		streaming: true,
+		completion: undefined,
+		errorMessage: undefined,
+	};
+	return {
+		...state,
+		messages,
+		active: {
+			turnStartedAtMs: message.timestampMs,
+			assistantUpdatedAtMs: message.timestampMs,
+			assistantMessageId: message.id,
+			firstRuntimeUserSeen: false,
+		},
+	};
+}

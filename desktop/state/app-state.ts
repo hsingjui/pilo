@@ -171,6 +171,19 @@ export function isSessionUnread(
 	return read !== undefined && read.completedRevision > read.readRevision;
 }
 
+/** Whether an external Pi runs a turn in the saved session, as last reported. */
+export function isExternalTurnOpen(
+	state: AppState,
+	projectId: string,
+	sessionPath: string | null | undefined,
+) {
+	return (
+		!!sessionPath &&
+		state.externalActivity[projectId]?.[runtimeSessionPathKey(sessionPath)] !==
+			undefined
+	);
+}
+
 function newer<T extends { revision: number }>(current: T | null, next: T) {
 	return current === null || next.revision > current.revision ? next : current;
 }
