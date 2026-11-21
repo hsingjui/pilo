@@ -271,8 +271,8 @@ are not a source for Connection-owned choices.
   loader-compatible syntax. Bun's module loader may reject canonical Windows
   paths even when the file exists. Preserve ordinary Windows paths, spaces,
   Unicode, and all non-Windows paths; keep canonical paths for filesystem IO.
-  Regression tests in `runtime_streams/pi.rs` cover both conversions and
-  platform gating without requiring a Windows host for the string cases.
+  Regression tests in `runtime_streams/pi/launch.rs` cover both conversions
+  and platform gating without requiring a Windows host for the string cases.
   Normal chat loads stream-guard, next-prompt and cache-keep-alive; model probe
   loads model-catalog (plus SSH tools
   only when required by its profile); parallel/direct Pi load only their profile.

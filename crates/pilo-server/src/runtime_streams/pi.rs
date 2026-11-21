@@ -1,25 +1,26 @@
+mod launch;
+mod output;
+mod trace;
+
 use std::{
     process::Stdio,
     sync::{Arc, Mutex as StdMutex, Weak},
 };
 
-#[cfg(debug_assertions)]
-use std::{
-    fs::OpenOptions,
-    io::Write,
-    time::{SystemTime, UNIX_EPOCH},
-};
-
-use pilo_protocol::{BuiltinExtension, Envelope, MAX_BINARY_PAYLOAD_BYTES};
+use pilo_protocol::{BuiltinExtension, MAX_BINARY_PAYLOAD_BYTES};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::{
-    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    io::AsyncWriteExt,
     process::{Child, ChildStdin},
     sync::Mutex,
 };
 
-use crate::environment::{default_workspace_path, process_command, resolve_pi_executable};
+use launch::{PiLaunch, build_launch_command};
+use output::spawn_output_tasks;
+use trace::trace_pi;
+
+use crate::environment::resolve_pi_executable;
 use crate::{PiOutputTasks, PiStarts, ServerState};
 
 pub(crate) struct PiProcess {
@@ -320,110 +321,12 @@ async fn stop_registered_pi(
         .map_err(|_| "Pi stop task ended unexpectedly".to_owned())?
 }
 
-const STALL_CLEAR_QUEUE_ID: &str = "pilo-stall-clear-queue";
 const STALLED_INPUT_CLOSED: &str = "PILO_STALLED_TURN_INPUT_CLOSED";
-const STALL_QUEUE_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 fn queues_chat_input(command: &str) -> bool {
     matches!(command, "prompt" | "steer" | "follow_up")
 }
 
-fn ended_with_stream_stall(event: &Value) -> bool {
-    event["messages"]
-        .as_array()
-        .and_then(|messages| {
-            messages
-                .iter()
-                .rev()
-                .find(|message| message["role"] == "assistant")
-        })
-        .and_then(|message| message["errorMessage"].as_str())
-        .is_some_and(|error| error.starts_with("PILO_STREAM_STALLED:"))
-}
-
-async fn clear_stalled_pi_queue<R: AsyncBufRead + Unpin>(
-    reader: &mut R,
-    stdin: &Weak<Mutex<ChildStdin>>,
-    work: &StdMutex<PiWork>,
-    writer: &crate::output::ServerWriter,
-    stream_id: &str,
-) -> Result<(), String> {
-    let mut sent = false;
-    loop {
-        // An earlier steer may still be awaiting an async Pi input handler.
-        let input_pending = work
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .has_pending_chat_input();
-        if !sent && !input_pending {
-            let mut command =
-                serde_json::to_vec(&json!({ "id": STALL_CLEAR_QUEUE_ID, "type": "clear_queue" }))
-                    .map_err(|error| error.to_string())?;
-            command.push(b'\n');
-            let pipe = stdin.upgrade().ok_or("Pi stdin closed")?;
-            let mut pipe = pipe.lock().await;
-            pipe.write_all(&command)
-                .await
-                .map_err(|error| error.to_string())?;
-            pipe.flush().await.map_err(|error| error.to_string())?;
-            sent = true;
-        }
-        let bytes = read_rpc_line(reader)
-            .await
-            .map_err(|error| error.to_string())?
-            .ok_or("Pi exited before clearing its stalled queue")?;
-        trace_pi_rpc_line(stream_id, &bytes);
-        if let Ok(event) = serde_json::from_slice::<Value>(&bytes) {
-            if sent
-                && event["type"] == "response"
-                && event["id"] == STALL_CLEAR_QUEUE_ID
-                && event["command"] == "clear_queue"
-            {
-                return if event["success"].as_bool() == Some(true) {
-                    Ok(())
-                } else {
-                    Err("Pi rejected clear_queue".to_owned())
-                };
-            }
-            work.lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .observe(&event);
-        }
-        writer
-            .send(Envelope::event_with_binary(
-                stream_id.to_owned(),
-                "pi.rpc_json",
-                Value::Null,
-                vec![bytes],
-            ))
-            .await?;
-    }
-}
-
-async fn read_rpc_line<R: AsyncBufRead + Unpin>(
-    reader: &mut R,
-) -> std::io::Result<Option<Vec<u8>>> {
-    let mut line = Vec::new();
-    loop {
-        let buffer = reader.fill_buf().await?;
-        if buffer.is_empty() {
-            return Ok((!line.is_empty()).then_some(line));
-        }
-        let newline = buffer.iter().position(|byte| *byte == b'\n');
-        let bytes = newline.unwrap_or(buffer.len());
-        if line.len().saturating_add(bytes) > MAX_BINARY_PAYLOAD_BYTES {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Pi stdout RPC line exceeds the byte limit",
-            ));
-        }
-        line.extend_from_slice(&buffer[..bytes]);
-        reader.consume(bytes + usize::from(newline.is_some()));
-        if newline.is_some() {
-            return Ok(Some(line));
-        }
-    }
-}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PiStartParams {
@@ -484,178 +387,6 @@ pub(crate) struct PiStopParams {
     only_if_idle: bool,
 }
 
-fn trace_pi(stage: &str, stream_id: &str, detail: Value) {
-    if matches!(stage, "pi.start" | "pi.stop" | "pi.stdout_closed") {
-        eprintln!(
-            "[runtime-diagnostics] {}",
-            json!({
-                "pid": std::process::id(), "stage": stage, "streamId": stream_id, "detail": detail,
-            })
-        );
-    }
-    #[cfg(debug_assertions)]
-    {
-        let ts_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_millis())
-            .unwrap_or_default();
-        let record = json!({
-            "tsMs": ts_ms,
-            "pid": std::process::id(),
-            "source": "pilo-server",
-            "stage": stage,
-            "sessionKey": Value::Null,
-            "streamId": stream_id,
-            "detail": detail,
-        });
-        let path =
-            std::env::temp_dir().join(format!("pilo-runtime-trace-{}.jsonl", std::process::id()));
-        let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
-            return;
-        };
-        let mut line = record.to_string();
-        line.push('\n');
-        let _ = file.write_all(line.as_bytes());
-    }
-}
-
-/// Write an inline extension source to a content-addressed temp file so it can
-/// be loaded with an explicit `--extension` flag. Pi runs in this environment,
-/// so the file must live on the local (possibly remote-managed) filesystem.
-fn materialize_extension(source: &str) -> Result<std::path::PathBuf, String> {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    std::hash::Hash::hash(source, &mut hasher);
-    let dir = std::env::temp_dir().join("pilo-extensions");
-    std::fs::create_dir_all(&dir)
-        .map_err(|error| format!("failed to create extension dir: {error}"))?;
-    prune_stale_extensions(&dir);
-    let path = dir.join(format!("{:016x}.js", std::hash::Hasher::finish(&hasher)));
-    if !path.exists() {
-        std::fs::write(&path, source)
-            .map_err(|error| format!("failed to write extension file: {error}"))?;
-    }
-    Ok(path)
-}
-
-/// Extensions are content-addressed, so distinct SSH configurations accumulate
-/// distinct files. Drop entries far older than any realistic Pi session.
-fn prune_stale_extensions(dir: &std::path::Path) {
-    const MAX_AGE: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 60 * 60);
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let now = std::time::SystemTime::now();
-    for entry in entries.flatten() {
-        let Ok(modified) = entry.metadata().and_then(|metadata| metadata.modified()) else {
-            continue;
-        };
-        if now.duration_since(modified).is_ok_and(|age| age > MAX_AGE) {
-            let _ = std::fs::remove_file(entry.path());
-        }
-    }
-}
-
-fn append_inline_extensions(args: &mut Vec<String>, sources: &[String]) -> Result<(), String> {
-    for source in sources.iter().filter(|source| !source.trim().is_empty()) {
-        let path = materialize_extension(source)?;
-        args.extend(["--extension".to_owned(), extension_path_argument(&path)]);
-    }
-    Ok(())
-}
-
-fn extension_path_argument(path: &std::path::Path) -> String {
-    let value = path.to_string_lossy();
-    if cfg!(windows) {
-        normalize_windows_extension_path(&value)
-    } else {
-        value.into_owned()
-    }
-}
-
-fn normalize_windows_extension_path(value: &str) -> String {
-    // Bun's module loader cannot resolve the verbatim paths returned by canonicalize.
-    if let Some(value) = value.strip_prefix(r"\\?\UNC\") {
-        return format!(r"\\{value}");
-    }
-    value.strip_prefix(r"\\?\").unwrap_or(value).to_owned()
-}
-
-/// Windows batch launchers (`pi.cmd`, `pi.bat`) reach the CLI through
-/// `cmd.exe`, whose argument parsing rejects a newline outright. Native
-/// launchers such as `pi` or `pi.exe` pass the value straight through, so a
-/// multi-line system prompt keeps its paragraphs and lists there.
-fn is_batch_launcher(executable: &str) -> bool {
-    std::path::Path::new(executable)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat")
-        })
-}
-
-fn system_prompt_argument(executable: &str, prompt: &str) -> String {
-    if cfg!(windows) && is_batch_launcher(executable) {
-        prompt.replace(['\r', '\n'], " ")
-    } else {
-        prompt.to_owned()
-    }
-}
-
-fn trace_pi_rpc_line(stream_id: &str, bytes: &[u8]) {
-    #[cfg(debug_assertions)]
-    {
-        let Ok(message) = serde_json::from_slice::<Value>(bytes) else {
-            return;
-        };
-        let Some(event_type) = message.get("type").and_then(Value::as_str) else {
-            return;
-        };
-        let traceable = matches!(
-            event_type,
-            "response"
-                | "agent_start"
-                | "agent_end"
-                | "agent_settled"
-                | "turn_start"
-                | "turn_end"
-                | "message_start"
-                | "message_end"
-                | "tool_execution_start"
-                | "tool_execution_end"
-                | "queue_update"
-                | "compaction_start"
-                | "compaction_end"
-                | "auto_retry_start"
-                | "auto_retry_end"
-        );
-        if !traceable {
-            return;
-        }
-        let role = message.pointer("/message/role").and_then(Value::as_str);
-        let stop_reason = message
-            .pointer("/message/stopReason")
-            .and_then(Value::as_str);
-        trace_pi(
-            "pi.stdout",
-            stream_id,
-            json!({
-                "event": event_type,
-                "id": message.get("id"),
-                "command": message.get("command"),
-                "success": message.get("success"),
-                "role": role,
-                "stopReason": stop_reason,
-                "willRetry": message.get("willRetry"),
-                "toolCallId": message.get("toolCallId"),
-                "toolName": message.get("toolName"),
-            }),
-        );
-    }
-
-    #[cfg(not(debug_assertions))]
-    let _ = (stream_id, bytes);
-}
-
 pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Result<Value, String> {
     let (pi_executable, path) =
         resolve_pi_executable(state, params.pi_executable.as_deref()).await?;
@@ -668,165 +399,10 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
         );
         return Ok(json!({ "alreadyRunning": true }));
     }
-    let mut args = vec!["--mode".to_owned(), "rpc".to_owned()];
-    if params.no_session {
-        args.push("--no-session".to_owned());
-    } else if let Some(path) = params.session_path.as_ref() {
-        args.extend(["--session".to_owned(), path.clone()]);
-    }
-    let ssh_workspace = params.builtin_extensions.iter().find_map(|extension| {
-        if let BuiltinExtension::SshWorkspace { config } = extension {
-            Some(config)
-        } else {
-            None
-        }
-    });
-    let host_resources = ssh_workspace.is_some_and(|config| config.local_pi_resources)
-        && !params.disable_resources
-        && !params.disable_extension_discovery
-        && !params
-            .builtin_extensions
-            .contains(&BuiltinExtension::ModelCatalog);
-    let ssh_only = ssh_workspace.is_some() && !host_resources;
-    if params.disable_resources {
-        args.push("--no-tools".to_owned());
-    }
-    if params.disable_builtin_tools || ssh_workspace.is_some() {
-        args.push("--no-builtin-tools".to_owned());
-    }
-    if params.disable_resources || params.disable_extension_discovery || ssh_only {
-        args.push("--no-extensions".to_owned());
-    }
-    if params.disable_resources || params.disable_context_files || ssh_workspace.is_some() {
-        args.push("--no-context-files".to_owned());
-    }
-    if params.disable_resources || ssh_only {
-        args.extend([
-            "--no-skills".to_owned(),
-            "--no-prompt-templates".to_owned(),
-            "--no-themes".to_owned(),
-        ]);
-    }
-    if params.disable_resources || ssh_workspace.is_some() {
-        // The Pi cwd is a Host-side session anchor, not the SSH project.
-        args.push("--no-approve".to_owned());
-    }
-    if ssh_workspace.is_none() {
-        append_inline_extensions(&mut args, &params.extensions)?;
-    }
-    let mut ssh_workspace_config = None;
-    let mut builtin_names = std::collections::HashSet::new();
-    for extension in &params.builtin_extensions {
-        let filename = crate::extensions::filename(extension);
-        if !builtin_names.insert(filename) {
-            return Err("duplicate Pi builtin extension".to_owned());
-        }
-        if let BuiltinExtension::SshWorkspace { config } = extension {
-            if !config.remote_cwd.starts_with('/')
-                || config.remote_cwd.contains('\0')
-                || config.ssh_args.is_empty()
-                || config.ssh_args.iter().any(|arg| arg.contains('\0'))
-                || config.ssh_environment.iter().any(|(key, value)| {
-                    key.is_empty() || key.contains(['=', '\0']) || value.contains('\0')
-                })
-            {
-                return Err("invalid SSH workspace configuration".to_owned());
-            }
-            ssh_workspace_config =
-                Some(serde_json::to_string(config).map_err(|error| error.to_string())?);
-        }
-        args.extend([
-            "--extension".to_owned(),
-            extension_path_argument(&state.extensions_dir.join(filename)),
-        ]);
-    }
-    if host_resources {
-        args.extend(["--extension".to_owned(), "builtin:mcp".to_owned()]);
-        append_inline_extensions(&mut args, &params.extensions)?;
-    }
-    if let Some(provider) = params.provider.as_ref() {
-        args.extend(["--provider".to_owned(), provider.clone()]);
-    }
-    if let Some(model) = params.model.as_ref() {
-        args.extend(["--model".to_owned(), model.clone()]);
-    }
-    if let Some(thinking) = params.thinking.as_ref() {
-        args.extend(["--thinking".to_owned(), thinking.clone()]);
-    }
-    if let Some(system_prompt) = params.system_prompt.as_ref() {
-        args.extend([
-            "--system-prompt".to_owned(),
-            system_prompt_argument(&pi_executable, system_prompt),
-        ]);
-    }
-    let control = params
-        .control_stream_id
-        .as_deref()
-        .map(|stream| {
-            state
-                .agent_control
-                .context(stream)
-                .ok_or_else(|| "unregistered Pilo control context".to_owned())
-        })
-        .transpose()?;
-    if control.is_some() {
-        args.extend(["--append-system-prompt".to_owned(), "Pilo application control is available through bash: invoke the executable in PILO_CTL with the ctl subcommand (POSIX: \"$PILO_CTL\" ctl; PowerShell: & $env:PILO_CTL ctl). Start with ctl --help and ctl settings list. This controls the running Pilo Host; use explicit --connection/--project for scoped writes. Never print PILO_CONTROL_TOKEN or put credentials in command arguments; use --stdin JSON. Failed writes must not be automatically retried.".to_owned()]);
-    }
-    // An empty, Server-owned cwd excludes every workspace's .pi configuration
-    // while preserving Pi's user settings, credentials and provider extensions.
-    let cwd = if params.user_scope {
-        if !params.no_session || params.control_stream_id.is_some() {
-            return Err("user model probes require an isolated no-session process".to_owned());
-        }
-        let cwd = crate::extensions::runtime_directory()
-            .map_err(|error| format!("model catalog directory unavailable: {error}"))?
-            .join("model-catalog");
-        std::fs::create_dir_all(&cwd)
-            .map_err(|error| format!("failed to create model catalog directory: {error}"))?;
-        cwd
-    } else {
-        std::path::PathBuf::from(&params.project)
-    };
-    let mut command = process_command(&pi_executable, &args, &path);
-    for key in [
-        "PILO_CTL",
-        "PILO_CONTROL_ENDPOINT",
-        "PILO_CONTROL_TOKEN",
-        "PILO_REMOTE_CONTROL",
-    ] {
-        command.env_remove(key);
-    }
-    if let Some(control) = control {
-        command
-            .env("PILO_CTL", control.executable)
-            .env("PILO_CONTROL_ENDPOINT", control.endpoint)
-            .env("PILO_CONTROL_TOKEN", control.token);
-    }
-    if let Some(control) = &params.remote_control {
-        command.env(
-            "PILO_REMOTE_CONTROL",
-            serde_json::to_string(control)
-                .map_err(|_| "invalid remote control context".to_owned())?,
-        );
-    }
-    command
-        .current_dir(&cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    // Never inherit another launcher/session's workspace configuration.
-    command.env_remove("PILO_SSH_WORKSPACE_CONFIG");
-    command.env_remove("PILO_SSH_LOCAL_WORKSPACE");
-    if let Some(config) = ssh_workspace_config {
-        command.env("PILO_SSH_WORKSPACE_CONFIG", config);
-        if host_resources {
-            let path = default_workspace_path("local", cfg!(debug_assertions))?;
-            command.env("PILO_SSH_LOCAL_WORKSPACE", path);
-        }
-    }
-    #[cfg(unix)]
-    command.process_group(0);
+    let PiLaunch {
+        mut command,
+        uses_ssh_workspace,
+    } = build_launch_command(state, &params, &pi_executable, &path)?;
     // Wait for old output tasks before allowing a replacement to publish any events.
     let old_output = state
         .pi_output_tasks
@@ -874,7 +450,7 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
     let watch_stalls = params
         .builtin_extensions
         .contains(&BuiltinExtension::StreamGuard);
-    let track_work = state.retain_pi || ssh_workspace.is_some() || watch_stalls;
+    let track_work = state.retain_pi || uses_ssh_workspace || watch_stalls;
     processes.insert(
         params.stream_id.clone(),
         PiProcess {
@@ -885,199 +461,20 @@ pub(crate) async fn pi_start(state: &ServerState, params: PiStartParams) -> Resu
         },
     );
 
-    let stream_id = params.stream_id.clone();
-    let writer = state.writer.clone();
-    let pi = Arc::clone(&state.pi);
-    let starts = Arc::clone(&state.pi_starts);
-    let stops = Arc::clone(&state.pi_stops);
-    let outputs = Arc::clone(&state.pi_output_tasks);
-    let stdout_identity = stdin_identity.clone();
-    let agent_control = state.agent_control.clone();
-    let control_stream = params.control_stream_id.clone();
-    let stdout_task = tokio::spawn(async move {
-        let mut reader = BufReader::new(stdout);
-        let mut settle_after_stop = None;
-        loop {
-            match read_rpc_line(&mut reader).await {
-                Ok(Some(bytes)) => {
-                    trace_pi_rpc_line(&stream_id, &bytes);
-                    let mut clear_queue = false;
-                    if track_work && let Ok(event) = serde_json::from_slice::<Value>(&bytes) {
-                        let mut work = work
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner);
-                        work.observe(&event);
-                        if watch_stalls {
-                            match event["type"].as_str() {
-                                Some("agent_end") => {
-                                    let stalled = ended_with_stream_stall(&event);
-                                    work.clearing_stalled_queue = stalled;
-                                    work.stalled_input_closed = stalled;
-                                }
-                                Some("agent_settled") if work.clearing_stalled_queue => {
-                                    clear_queue = work.queued || work.has_pending_chat_input();
-                                    work.clearing_stalled_queue = clear_queue;
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                    if clear_queue {
-                        // Abort leaves Pi's queue intact. Do not let clients restore
-                        // their drafts until Pi acknowledges clearing it.
-                        let result = tokio::time::timeout(
-                            STALL_QUEUE_CLEANUP_TIMEOUT,
-                            clear_stalled_pi_queue(
-                                &mut reader,
-                                &stdout_identity,
-                                &work,
-                                &writer,
-                                &stream_id,
-                            ),
-                        )
-                        .await;
-                        match result {
-                            Ok(Ok(())) => {
-                                work.lock()
-                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                    .clearing_stalled_queue = false
-                            }
-                            failure => {
-                                eprintln!(
-                                    "[runtime-diagnostics] stalled queue cleanup failed streamId={stream_id}: {failure:?}"
-                                );
-                                settle_after_stop = Some(bytes);
-                                break;
-                            }
-                        }
-                    }
-                    if writer
-                        .send(Envelope::event_with_binary(
-                            stream_id.clone(),
-                            "pi.rpc_json",
-                            Value::Null,
-                            vec![bytes],
-                        ))
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-                Ok(None) => break,
-                Err(error) => {
-                    let _ = writer
-                        .send(Envelope::event(
-                            stream_id.clone(),
-                            "pi.error",
-                            json!({ "message": error.to_string() }),
-                        ))
-                        .await;
-                    break;
-                }
-            }
-        }
-        let exit_status = match stop_registered_pi(
-            &pi,
-            &starts,
-            &stops,
-            &outputs,
-            &stream_id,
-            Some(&stdout_identity),
-            false,
-        )
-        .await
-        {
-            Ok(Some(status)) => Some(status),
-            Ok(None) => return,
-            Err(error) => {
-                eprintln!(
-                    "[runtime-diagnostics] Pi stdout cleanup failed streamId={stream_id} error={error}"
-                );
-                None
-            }
-        };
-        if let Some(stream) = control_stream {
-            agent_control.revoke(&stream);
-        }
-        if let Some(bytes) = settle_after_stop {
-            // A failed clear must never leave a process that can replay the old queue.
-            let _ = writer
-                .send(Envelope::event_with_binary(
-                    stream_id.clone(),
-                    "pi.rpc_json",
-                    Value::Null,
-                    vec![bytes],
-                ))
-                .await;
-        }
-        let code = exit_status.as_ref().and_then(|status| status.code());
-        let success = exit_status.as_ref().is_some_and(|status| status.success());
-        trace_pi(
-            "pi.stdout_closed",
-            &stream_id,
-            json!({ "code": code, "success": success }),
-        );
-        let _ = writer
-            .send(Envelope::event(
-                stream_id.clone(),
-                "pi.stdout_closed",
-                json!({ "code": code, "success": success }),
-            ))
-            .await;
-        let _processes = pi.lock().await;
-        let output = {
-            let mut outputs = outputs
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if outputs
-                .get(&stream_id)
-                .is_some_and(|(identity, _)| identity.ptr_eq(&stdout_identity))
-            {
-                outputs.remove(&stream_id)
-            } else {
-                None
-            }
-        };
-        if let Some((_, [_, stderr_task])) = output {
-            stderr_task.abort();
-            let _ = stderr_task.await;
-        }
-    });
-    let stream_id = params.stream_id.clone();
-    let writer = state.writer.clone();
-    let stderr_task = tokio::spawn(async move {
-        let mut reader = BufReader::new(stderr);
-        let mut buffer = vec![0_u8; 4096];
-        loop {
-            match reader.read(&mut buffer).await {
-                Ok(0) => break,
-                Ok(read) => {
-                    if writer
-                        .send(Envelope::event_with_binary(
-                            stream_id.clone(),
-                            "pi.stderr",
-                            Value::Null,
-                            vec![buffer[..read].to_vec()],
-                        ))
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    });
+    let output_tasks = spawn_output_tasks(
+        state,
+        &params,
+        (stdout, stderr),
+        &stdin_identity,
+        work,
+        track_work,
+        watch_stalls,
+    );
     state
         .pi_output_tasks
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .insert(
-            params.stream_id,
-            (stdin_identity, [stdout_task, stderr_task]),
-        );
+        .insert(params.stream_id, (stdin_identity, output_tasks));
     drop(processes);
     Ok(json!({ "started": true }))
 }
@@ -1211,96 +608,4 @@ pub(crate) async fn pi_stop(state: &ServerState, params: PiStopParams) -> Result
         state.agent_control.revoke(&control_stream);
     }
     Ok(Value::Null)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{extension_path_argument, normalize_windows_extension_path};
-    use std::path::Path;
-
-    #[test]
-    fn windows_extension_paths_use_loader_compatible_syntax() {
-        for (input, expected) in [
-            (
-                r"\\?\C:\Users\Lenovo\AppData\Local\Pilo\server\extensions\model-catalog.js",
-                r"C:\Users\Lenovo\AppData\Local\Pilo\server\extensions\model-catalog.js",
-            ),
-            (
-                r"\\?\C:\Users\测试 用户\Pilo\extensions\next-prompt.js",
-                r"C:\Users\测试 用户\Pilo\extensions\next-prompt.js",
-            ),
-            (
-                r"\\?\UNC\server\shared folder\extensions\model-catalog.js",
-                r"\\server\shared folder\extensions\model-catalog.js",
-            ),
-            (
-                r"C:\Temp\pilo-extensions\inline.js",
-                r"C:\Temp\pilo-extensions\inline.js",
-            ),
-            (
-                r"\\server\share\extension.js",
-                r"\\server\share\extension.js",
-            ),
-        ] {
-            assert_eq!(normalize_windows_extension_path(input), expected);
-        }
-    }
-
-    #[test]
-    fn only_batch_launchers_are_treated_as_cmd_wrapped() {
-        use super::is_batch_launcher;
-
-        for launcher in [r"C:\tools\pi.cmd", "pi.cmd", "pi.CMD", r"C:\Pilo\pi.bat"] {
-            assert!(
-                is_batch_launcher(launcher),
-                "{launcher} should be a batch launcher"
-            );
-        }
-        for launcher in [
-            "pi",
-            "pi.exe",
-            r"C:\tools\pi.exe",
-            r"C:\dir.cmd\pi",
-            "/usr/bin/pi",
-        ] {
-            assert!(
-                !is_batch_launcher(launcher),
-                "{launcher} should not be a batch launcher"
-            );
-        }
-    }
-
-    #[test]
-    fn multiline_system_prompts_only_collapse_for_batch_launchers() {
-        use super::system_prompt_argument;
-
-        let prompt = "Line one\r\nLine two\nLine three";
-        let batch = system_prompt_argument("pi.cmd", prompt);
-        let native = system_prompt_argument("pi.exe", prompt);
-        if cfg!(windows) {
-            assert_eq!(batch, "Line one  Line two Line three");
-        } else {
-            assert_eq!(batch, prompt);
-        }
-        assert_eq!(native, prompt);
-    }
-
-    #[test]
-    fn extension_path_arguments_only_normalize_on_windows() {
-        let verbatim = r"\\?\C:\Pilo\extensions\model-catalog.js";
-        assert_eq!(
-            extension_path_argument(Path::new(verbatim)),
-            if cfg!(windows) {
-                r"C:\Pilo\extensions\model-catalog.js"
-            } else {
-                verbatim
-            }
-        );
-        let ordinary = if cfg!(windows) {
-            r"C:\Users\测试 用户\extensions\inline.js"
-        } else {
-            "/home/测试 用户/.cache/pilo/server/extensions/model-catalog.js"
-        };
-        assert_eq!(extension_path_argument(Path::new(ordinary)), ordinary);
-    }
 }
