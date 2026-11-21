@@ -1,8 +1,10 @@
 import {
+	cleanup,
 	computed,
 	effect,
 	type JSX,
 	keymap,
+	platform,
 	signal,
 	token,
 	untracked,
@@ -28,7 +30,11 @@ import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 import type { ModelCatalogStore } from "../state/model-catalog";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
-import { APP_SHORTCUTS } from "../shortcuts";
+import {
+	defaultKeyboardShortcuts,
+	normalizeKeyboardShortcut,
+} from "@/lib/keyboard-shortcuts-core";
+import type { ShortcutCommandId } from "@/lib/keyboard-shortcuts-types";
 import {
 	SettingsDialog,
 	type SettingsClient,
@@ -181,16 +187,30 @@ export function AppShell(props: AppShellProps) {
 			}),
 		);
 	});
-	keymap.bind({
-		[APP_SHORTCUTS.openCommandPalette]: () =>
-			paletteOpen.update((open) => !open),
-		[APP_SHORTCUTS.newChat]: () => {
+	// App shortcuts follow the saved map, so recordings in the shortcuts pane
+	// rebind live; a command bound to "" is unassigned, as the Tauri app does.
+	effect(() => {
+		const isMac = platform.os === "macos";
+		const stored = store.state().preferences?.values.keyboardShortcuts;
+		const defaults = defaultKeyboardShortcuts(isMac);
+		const bound: Record<string, () => void> = {};
+		const bind = (id: ShortcutCommandId, handler: () => void) => {
+			const shortcut = normalizeKeyboardShortcut(
+				stored?.[id] ?? defaults[id],
+				isMac,
+			);
+			if (shortcut) bound[shortcut] = handler;
+		};
+		bind("open-command-palette", () => paletteOpen.update((open) => !open));
+		bind("new-chat", () => {
 			const project = activeProject(store.state());
 			if (project) store.selectProject(project.id);
-		},
-		[APP_SHORTCUTS.openSettings]: () => {
+		});
+		bind("open-settings", () => {
 			if (props.settings) settingsOpen.set(true);
-		},
+		});
+		bind("toggle-sidebar", () => sidebarLayout.setCollapsed(!collapsed()));
+		cleanup(keymap.bind(bound));
 	});
 	// The app draws its own title bar: the sidebar and the main area reach
 	// the window's top edge, beside the system's window controls.
