@@ -18,9 +18,9 @@ are not a source for Connection-owned choices.
 
 ## 2. Signatures
 
-- Tauri `next_prompt_settings_get(connectionId) -> NextPromptSettings`;
-  `next_prompt_settings_set(connectionId, enabled, model) -> NextPromptSettings`;
-  `next_prompt_request(request: NextPromptRequest) -> ()`.
+- Desktop native (`desktop/src/pilo/mod.rs`) `loadNextPromptSettings(connectionId) -> NextPromptSettings`;
+  `saveNextPromptSettings(connectionId, enabled, model) -> NextPromptSettings`;
+  `requestNextPrompt(request: NextPromptRequest) -> ()`.
 - Authenticated HTTP `GET /api/v1/next-prompt/settings?connectionId=...`;
   `POST /api/v1/next-prompt/settings` with `{ connectionId, enabled, model }`;
   `POST /api/v1/next-prompt/request` with the request directly, returning `{ ok: true }`.

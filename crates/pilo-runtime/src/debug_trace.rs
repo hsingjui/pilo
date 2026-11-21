@@ -28,7 +28,6 @@ fn append_record(record: &Value) {
 }
 
 fn log_runtime_diagnostic(
-    source: &str,
     stage: &str,
     session_key: Option<&str>,
     stream_id: Option<&str>,
@@ -39,7 +38,7 @@ fn log_runtime_diagnostic(
         .and_then(Value::as_str)
         .unwrap_or_default();
     let selected = match stage {
-        "event.publish" | "channel.send" | "channel.drop_no_subscriber" | "webview.recv" => {
+        "event.publish" => {
             matches!(
                 event,
                 "process_state" | "rpc_message" | "runtime_error" | "assistant_message_end"
@@ -53,16 +52,6 @@ fn log_runtime_diagnostic(
             stage.starts_with("chat.")
                 || stage.starts_with("model_catalog.")
                 || stage.starts_with("next_prompt.")
-                || matches!(
-                    stage,
-                    "channel.subscribe"
-                        | "channel.unsubscribe"
-                        | "channel.send_error"
-                        | "webview.channel.subscribe.begin"
-                        | "webview.channel.subscribe.end"
-                        | "webview.rpc.begin"
-                        | "webview.rpc.end"
-                )
         }
     };
     if !selected {
@@ -99,7 +88,6 @@ fn log_runtime_diagnostic(
         "prepared",
         "initialized",
         "activeTurn",
-        "windowLabel",
         "clientId",
         "timeoutMs",
         "elapsedMs",
@@ -111,7 +99,6 @@ fn log_runtime_diagnostic(
         "timedOut",
         "sequence",
         "payloadBytes",
-        "channelId",
         "sendCompleted",
         "responseReceived",
     ] {
@@ -123,13 +110,12 @@ fn log_runtime_diagnostic(
         }
     }
     let record = json!({
-        "pid": std::process::id(), "source": source, "stage": stage,
+        "pid": std::process::id(), "source": "runtime", "stage": stage,
         "sessionKey": session_key, "streamId": stream_id,
         "event": event, "detail": safe,
     });
     if metadata.get("ok").and_then(Value::as_bool) == Some(false)
         || metadata.get("success").and_then(Value::as_bool) == Some(false)
-        || matches!(stage, "channel.send_error" | "channel.drop_no_subscriber")
         || event == "runtime_error"
     {
         log::warn!(target: "runtime-diagnostics", "{record}");
@@ -144,51 +130,15 @@ pub(crate) fn runtime_trace(
     stream_id: Option<&str>,
     detail: Value,
 ) {
-    log_runtime_diagnostic("tauri", stage, session_key, stream_id, &detail);
+    log_runtime_diagnostic(stage, session_key, stream_id, &detail);
     #[cfg(debug_assertions)]
     append_record(&json!({
         "tsMs": timestamp_ms(),
         "pid": std::process::id(),
-        "source": "tauri",
+        "source": "runtime",
         "stage": stage,
         "sessionKey": session_key,
         "streamId": stream_id,
         "detail": detail,
     }));
-}
-
-pub fn append_frontend_trace(payload: &str) -> Result<(), String> {
-    let detail =
-        serde_json::from_str::<Value>(payload).unwrap_or_else(|_| json!({ "payload": payload }));
-    let stage = detail
-        .get("stage")
-        .and_then(Value::as_str)
-        .unwrap_or("webview.recv");
-    log_runtime_diagnostic(
-        "webview",
-        stage,
-        detail.get("sessionKey").and_then(Value::as_str),
-        None,
-        &detail,
-    );
-    #[cfg(debug_assertions)]
-    {
-        let stage = detail
-            .get("stage")
-            .and_then(Value::as_str)
-            .unwrap_or("webview.recv")
-            .to_owned();
-        let session_key = detail.get("sessionKey").cloned().unwrap_or(Value::Null);
-        append_record(&json!({
-            "tsMs": timestamp_ms(),
-            "pid": std::process::id(),
-            "source": "webview",
-            "stage": stage,
-            "sessionKey": session_key,
-            "streamId": Value::Null,
-            "detail": detail,
-        }));
-    }
-
-    Ok(())
 }

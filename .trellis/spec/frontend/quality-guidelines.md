@@ -16,8 +16,8 @@ pnpm test:integration # tests/integration/**/*.test.{ts,mjs}
 pnpm test:packaging # Python AppImage orchestration tests (Linux/WSL)
 ```
 
-Run `pnpm format`, `pnpm check`, `pnpm build` for any frontend change. Full
-desktop verification (`pnpm tauri dev`) runs on Windows.
+Run `pnpm format`, `pnpm check`, `pnpm build` for any frontend change. Desktop
+verification runs `nsh check` / `nsh test` in `desktop/` (see the desktop spec).
 
 ## Formatting (oxfmt)
 
@@ -97,7 +97,7 @@ Selection assertions do not replace visual verification in the desktop WebView.
 - No unrelated refactors or formatting churn in a feature change.
 - Preserve type safety (see `type-safety.md`) and accessibility (`jsx-a11y`).
 - Reuse `web/ui` primitives and `web/lib` helpers before writing new ones.
-- Keep Tauri access in `shared/*`; components stay declarative.
+- Keep transport access behind `PiloClient` (`shared/api/pilo-client.ts`); components stay declarative.
 - Built-in user-facing copy supports `zh-CN` and `en-US` through the i18n layer
   (`web/i18n`); code identifiers stay English (see "Internationalization").
 

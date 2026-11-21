@@ -9,7 +9,7 @@ Owners: `runtime/connection_models.rs`, `ServerPiSession::spawn_connection`,
 
 ## 2. Signatures
 
-- Tauri `connection_models_get(connectionId) -> PiModel[]`.
+- Desktop native (`desktop/src/pilo/mod.rs`) `loadConnectionModels(connectionId) -> PiModel[]`.
 - Authenticated HTTP `GET /api/v1/connections/models?connectionId=... -> PiModel[]`.
 - `PiloClient.loadConnectionModels(connectionId)` uses the same Host service on
   desktop and WebUI. No database catalog, Project ID, or cache-write endpoint.

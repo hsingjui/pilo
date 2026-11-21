@@ -213,7 +213,7 @@ pub(super) async fn respond_with_history(
     }
 }
 
-// Thin pass-through from Tauri commands: splitting the arguments would only move them around.
+// Thin pass-through from the Host entry points: splitting the arguments would only move them around.
 #[allow(clippy::too_many_arguments)]
 pub async fn read_history_window_json(
     servers: &ServerManager,
@@ -238,7 +238,7 @@ pub async fn read_history_window_json(
     .await
 }
 
-// Thin pass-through from Tauri commands: splitting the arguments would only move them around.
+// Thin pass-through from the Host entry points: splitting the arguments would only move them around.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn respond_with_window(
     storage: HistoryStorage,

@@ -9,8 +9,8 @@ chat status notices. Owners: `runtime/cache_keep_alive.rs`,
 
 ## 2. Signatures
 
-- Tauri `cache_keep_alive_settings_list(connectionId)` and
-  `cache_keep_alive_settings_set(settings)`.
+- Desktop native (`desktop/src/pilo/mod.rs`) `loadCacheKeepAliveSettings(connectionId)` and
+  `saveCacheKeepAliveSettings(settings)`.
 - Authenticated HTTP `GET /api/v1/cache-keep-alive/settings?connectionId=...`
   and `POST` to that path with the settings directly.
 - Settings: `{ connectionId, provider, modelId, enabled, cacheTtlSeconds,

@@ -15,8 +15,8 @@ Control resolves Host state through the shared `Runtime`, not shell-managed
 state. Server managers, idle dispatchers and control leases retain weak Runtime
 handles so they cannot keep their owning sessions alive. Each executing request
 upgrades its handle for the duration of that operation. Native desktop settings
-delegate through `HostShell`; the Tauri shell adapter keeps the existing OS
-registration behavior and errors.
+delegate through `HostShell`; the nsh shell adapter (`desktop/src/pilo/shell.rs`)
+keeps the existing OS registration behavior and errors.
 
 ## Contract
 
@@ -108,8 +108,9 @@ registration behavior and errors.
 Use the managed Server deployment and connection pool, never a globally installed
 CLI or guessed localhost instance. Multiple instances/dev-release builds get
 different endpoints and tokens. Windows debug GUI processes cannot supply a
-console CLI: `scripts/tauri.mjs` builds the adjacent `pilo-server.exe` before
-Windows development launch. Release uses its existing bundled console Server.
+console CLI, so Windows development needs an adjacent console `pilo-server.exe`;
+the nsh Windows launch for this is not set up yet. Release uses its bundled
+console Server.
 
 For local Pi with an SSH workspace, Host also registers a lease on the workspace's
 managed remote Server. `PILO_REMOTE_CONTROL` reaches the built-in SSH extension;

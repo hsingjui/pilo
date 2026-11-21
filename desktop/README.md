@@ -2,7 +2,7 @@
 
 ## Native runtime
 
-`new Pilo()` uses the Tauri data directory: `app.hsingjui.pilo` under
+`new Pilo()` keeps the earlier Tauri releases' data directory: `app.hsingjui.pilo` under
 `%APPDATA%` on Windows or `~/Library/Application Support` on macOS, with
 `.dev` appended for debug builds. Tests can pass a separate absolute path.
 Call `bootstrap()` for saved projects, live chat snapshots, Host preferences
@@ -43,8 +43,8 @@ Token-only saves keep the legacy CSS.
 the monospace trait; other platforms return none.
 
 `listProjects()` refreshes the saved project catalog without loading live chat
-snapshots. `listSessions(projectId)` uses the same session-index reconciliation
-as the Tauri client and returns saved sessions, not live chat state.
+snapshots. `listSessions(projectId)` reconciles the session index and returns
+saved sessions, not live chat state.
 `searchSessions(projectId, query, limit?)` searches saved message text and
 returns matches with the session path and ID, role, snippet, and timestamp.
 `generateSessionTitle(projectId, message)` uses the connection's naming
@@ -58,16 +58,16 @@ the project and returns the path an `@` mention references;
 returns `{ method: "trash" | "unlink" }`.
 
 `listConnections()` returns Local plus every WSL and SSH connection.
-`addProject(connectionId, path)` adds a project to the catalog, like the
-Tauri client's `addProject`. `readConnectionDir(connectionId, path?)`
+`addProject(connectionId, path)` adds a project to the catalog.
+`readConnectionDir(connectionId, path?)`
 lists one directory level on the connection (`/` when omitted), for the
 remote folder browser. `pickLocalProjectDirectory()` opens the host's
 native folder picker and resolves with the chosen path, or `null` when
-cancelled; it is host-only like the Tauri dialog's local browse.
+cancelled; it is host-only.
 
 `loadHistory(projectId, sessionPath, options?)` reads settled Pi history
 without starting a chat. It returns `{ history, fingerprint }` and uses the
-same reader and defaults as the Tauri client. Options are `startMessage`
+same reader and defaults as the WebUI. Options are `startMessage`
 (zero-based; defaults to the tail), `messageLimit` (default 256, clamped to
 1–256), `includeMessageIndex` (default true), and the optional fingerprint
 from a previous read. A missing session is rejected. Use this reader for
@@ -233,10 +233,9 @@ state has two parts:
 
 - `conversation`: the loaded messages and the turn in progress.
 - `historyPrefix`: every saved message before them, oldest first. One that
-  is not loaded is a placeholder built from the index by the Tauri app's
-  history window store: `historyPlaceholder` is set, `text` is a preview,
-  and the id is the one the message has once loaded. This array does not
-  change while a turn streams.
+  is not loaded is a placeholder built from the index: `historyPlaceholder`
+  is set, `text` is a preview, and the id is the one the message has once
+  loaded. This array does not change while a turn streams.
 
 `messages()` on the store joins the two for a list that wants one array. It
 copies the prefix whenever either part changed, so reading it for each
@@ -355,13 +354,13 @@ and the system UI font elsewhere, and the code font to system monospace.
   thinking and the work rows. `ChatMarkdown` replaces `TextView`'s fixed
   reading typography (15pt text, 27/20/17pt headings, 13pt code, 14pt
   tables) with the WebUI's, relative to that size.
-- `uiFontSize` is not applied. The Tauri app scales every size by it through
-  the root font size; nsh 0.6.0 has no text size an app can set (`fontScale`
-  is read-only).
+- `uiFontSize` is not applied: nsh 0.6.1 has no text size an app can set
+  (`fontScale` is read-only).
 
 ## Native images
 
-nsh 0.6.0 returns Rust `Vec<u8>` as `Uint8Array`, but `Image.src` does
+nsh 0.6.1 returns Rust `Vec<u8>` as `Uint8Array`, but `Image.src` does
 not take the array directly. Pass a `URL.createObjectURL(new Blob([bytes],
-{ type: mimeType }))` URL and revoke it when no longer needed. A native
-absolute local file path also works as `Image.src`.
+{ type: mimeType }))` URL and revoke it when no longer needed. A local
+absolute path is not used: since `nsh.json` declares capabilities without
+`fs.read`, nsh rejects it (`tests/image-transport.test.ts`).

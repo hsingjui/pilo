@@ -5,7 +5,7 @@
 //! consumes the chat session's queue and stays available while another turn is
 //! still running. It never answers the request itself.
 //!
-//! Desktop and the Remote WebUI share this module through the Tauri commands
+//! Desktop and the Remote WebUI share this module through the native class
 //! and the authenticated HTTP routes; the settings row is the same SQLite row,
 //! keyed by the original project's Connection.
 

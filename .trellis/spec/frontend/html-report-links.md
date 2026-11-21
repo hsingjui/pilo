@@ -54,7 +54,7 @@ see [Git Workspace Tab](./git-workspace.md). WebUI has no Git UI or routes.
 
 Owners: `shared/chat/chat-markdown-links.ts`, `web/lib/api/file-links.ts`,
 `crates/pilo-runtime/src/file_links.rs`, `shared/project-workspace.ts`,
-`src/components/app/project-workspace-*.tsx`, `web/components/project-viewer.tsx`.
+`web/components/app/project-workspace-*.tsx`, `web/components/project-viewer.tsx`.
 
 ## 3. Contracts
 
@@ -222,8 +222,9 @@ Owners: `shared/chat/chat-markdown-links.ts`, `web/lib/api/file-links.ts`,
   Resolve the saved project before launching; require an absolute existing regular
   file/directory. Windows strips verbatim drive/UNC prefixes and maps WSL POSIX
   paths to `\\wsl.localhost\<distro>\...`; never treat SSH paths as local paths.
-  Windows directory opening delegates to `tauri_plugin_opener::open_path` with
-  the default file manager from `spawn_blocking`. Do not pass the directory
+  Windows directory opening delegates to the shell's `open_path`
+  (`desktop/src/pilo/shell.rs`) with the default file manager from
+  `spawn_blocking`. Do not pass the directory
   directly to `explorer.exe`: its parser splits commas in unquoted paths, while
   Rust's automatic argument quoting only covers whitespace. Preserve literal
   drive/UNC/WSL paths, including comma-only names and root directories.

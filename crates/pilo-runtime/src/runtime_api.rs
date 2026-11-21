@@ -1,13 +1,9 @@
-use std::sync::Arc;
-
 use serde_json::Value;
 
 use super::{
     Runtime,
     chat_service::{self, ChatSessionRequest},
-    events::TauriEventSink,
     git, pi_workspace, project,
-    server_pi::PiLaunchOptions,
     session_snapshot::PiSessionSnapshot,
 };
 
@@ -113,34 +109,7 @@ pub async fn project_mcp_server_approve(
         .map(|_| ())
 }
 
-// Tauri commands expose their arguments flat; the chat session fields are part of the command surface.
-#[allow(clippy::too_many_arguments)]
-pub async fn chat_session_prepare(
-    runtime: &Runtime,
-    project_id: String,
-    session_key: String,
-    session_path: Option<String>,
-    no_session: bool,
-    extensions: Option<Vec<String>>,
-    builtin_extensions: Option<Vec<pilo_protocol::BuiltinExtension>>,
-) -> Result<PiSessionSnapshot, String> {
-    chat_service::prepare(
-        &runtime.paths,
-        runtime,
-        runtime.events.clone(),
-        ChatSessionRequest {
-            project_id,
-            session_key,
-            session_path,
-            no_session,
-            extensions: extensions.unwrap_or_default(),
-            builtin_extensions: builtin_extensions.unwrap_or_default(),
-        },
-    )
-    .await
-}
-
-// Tauri commands expose their arguments flat; the chat session fields are part of the command surface.
+// The native class passes the chat session fields flat, as its JS method takes them.
 #[allow(clippy::too_many_arguments)]
 pub async fn chat_session_start(
     runtime: &Runtime,
@@ -187,17 +156,6 @@ pub async fn chat_session_stop(
         .await
 }
 
-pub async fn chat_session_detach(
-    runtime: &Runtime,
-    session_key: String,
-    reason: Option<String>,
-) -> Result<(), String> {
-    runtime
-        .chat_sessions
-        .detach(&session_key, reason.as_deref())
-        .await
-}
-
 pub async fn chat_session_state(
     runtime: &Runtime,
     session_key: String,
@@ -211,92 +169,10 @@ pub async fn chat_session_states(
     Ok(runtime.chat_sessions.states().await)
 }
 
-pub async fn project_start_pi(runtime: &Runtime, id: String) -> Result<PiSessionSnapshot, String> {
-    let _policy = runtime.pi_resource_policy.read().await;
-    let project = project::ready(runtime, &runtime.servers, &id).await?;
-    project::touch(runtime, &project.id)?;
-    let profile =
-        pi_workspace::resolve_checked_pi_runtime_with_paths(&runtime.paths, &project, Vec::new())
-            .await?;
-    runtime
-        .project_pi_session
-        .lock()
-        .await
-        .spawn(
-            Arc::clone(&runtime.servers),
-            TauriEventSink::from_bus(runtime.events.clone()),
-            &profile.project,
-            project_pi_options(&profile),
-        )
-        .await
-}
-
-fn project_pi_options(profile: &pi_workspace::PiRuntimeProfile) -> PiLaunchOptions {
-    PiLaunchOptions {
-        agent_control: true,
-        extensions: profile.extensions.clone(),
-        builtin_extensions: profile.builtin_extensions.clone(),
-        disable_builtin_tools: profile.disable_builtin_tools,
-        disable_extension_discovery: profile.disable_extension_discovery,
-        disable_context_files: profile.disable_context_files,
-        ..PiLaunchOptions::default()
-    }
-}
-
-pub async fn runtime_get_pi_state(runtime: &Runtime) -> Result<PiSessionSnapshot, String> {
-    Ok(runtime.project_pi_session.lock().await.snapshot())
-}
-
-pub async fn runtime_stop_pi(runtime: &Runtime) -> Result<PiSessionSnapshot, String> {
-    runtime.project_pi_session.lock().await.stop().await
-}
-
-pub async fn runtime_restart_pi(runtime: &Runtime) -> Result<PiSessionSnapshot, String> {
-    let _policy = runtime.pi_resource_policy.read().await;
-    let mut session = runtime.project_pi_session.lock().await;
-    if session.uses_ssh_workspace() {
-        let id = session.snapshot().project_id.ok_or("missing Pi project")?;
-        let project = project::ready(runtime, &runtime.servers, &id).await?;
-        let profile = pi_workspace::resolve_checked_pi_runtime_with_paths(
-            &runtime.paths,
-            &project,
-            Vec::new(),
-        )
-        .await?;
-        session.stop().await?;
-        return session
-            .spawn(
-                Arc::clone(&runtime.servers),
-                TauriEventSink::from_bus(runtime.events.clone()),
-                &profile.project,
-                project_pi_options(&profile),
-            )
-            .await;
-    }
-    session
-        .restart(
-            Arc::clone(&runtime.servers),
-            TauriEventSink::from_bus(runtime.events.clone()),
-        )
-        .await
-}
-
-pub async fn runtime_abort_pi(runtime: &Runtime) -> Result<(), String> {
-    runtime.project_pi_session.lock().await.abort().await
-}
-
-pub async fn runtime_send_rpc(runtime: &Runtime, command: Value) -> Result<(), String> {
-    let _policy = runtime.pi_resource_policy.read().await;
-    runtime
-        .project_pi_session
-        .lock()
-        .await
-        .send_rpc(command)
-        .await
-}
-
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
 
     #[tokio::test]
@@ -317,13 +193,6 @@ mod tests {
             chat_session_send_rpc(&runtime, "missing".into(), Value::Null)
                 .await
                 .is_err()
-        );
-        assert!(
-            runtime_get_pi_state(&runtime)
-                .await
-                .unwrap()
-                .project_id
-                .is_none()
         );
         std::fs::remove_dir_all(root).unwrap();
     }

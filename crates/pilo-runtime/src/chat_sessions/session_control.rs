@@ -415,49 +415,4 @@ impl ChatSessions {
         }
         Ok(())
     }
-
-    pub async fn detach(&self, session_key: &str, reason: Option<&str>) -> Result<(), String> {
-        let process = self.close_process(session_key).await;
-        let Some(process) = process else {
-            runtime_trace(
-                "chat.detach",
-                Some(session_key),
-                None,
-                json!({ "found": false, "reason": reason }),
-            );
-            return Ok(());
-        };
-
-        let detached_session_key = session_key.to_owned();
-        let detached_reason = reason.map(str::to_owned);
-        runtime_trace(
-            "chat.detach",
-            Some(session_key),
-            None,
-            json!({ "found": true, "reason": reason }),
-        );
-
-        tokio::spawn(async move {
-            let mut session = process.session.lock().await;
-            runtime_trace(
-                "chat.detach.stop.begin",
-                Some(&detached_session_key),
-                session.stream_id(),
-                json!({ "reason": detached_reason }),
-            );
-            let result = session.stop().await;
-            runtime_trace(
-                "chat.detach.stop.end",
-                Some(&detached_session_key),
-                session.stream_id(),
-                json!({
-                    "ok": result.is_ok(),
-                    "reason": detached_reason,
-                    "error": result.as_ref().err(),
-                }),
-            );
-        });
-
-        Ok(())
-    }
 }

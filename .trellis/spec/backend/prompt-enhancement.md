@@ -15,9 +15,9 @@ settings fields and `ChatComposer`.
 
 ## 2. Signatures
 
-- Tauri `prompt_enhancement_settings_get(connectionId) -> PromptEnhancementSettings`;
-  `prompt_enhancement_settings_set(connectionId, enabled, model) -> PromptEnhancementSettings`;
-  `prompt_enhance(projectId, draft, model) -> String`.
+- Desktop native (`desktop/src/pilo/mod.rs`) `loadPromptEnhancementSettings(connectionId) -> PromptEnhancementSettings`;
+  `savePromptEnhancementSettings(connectionId, enabled, model) -> PromptEnhancementSettings`;
+  `enhancePrompt(projectId, draft, model) -> String`.
 - Authenticated HTTP `GET /api/v1/prompt-enhancement/settings?connectionId=...`;
   `POST /api/v1/prompt-enhancement/settings` with `{ connectionId, enabled, model }`;
   `POST /api/v1/prompt-enhancement/enhance` with `{ projectId, draft, model }`,

@@ -92,7 +92,7 @@ pub(super) async fn spawn_server(
             }
             // Debug builds embed the current server, so prefer it over the staged
             // resource binary. A stale resource would otherwise shadow the freshly
-            // built code and break protocol compatibility in `tauri dev`.
+            // built code and break protocol compatibility in `nsh dev`.
             if cfg!(debug_assertions) {
                 let executable = std::env::current_exe()
                     .map_err(|error| format!("failed to locate Pilo executable: {error}"))?;

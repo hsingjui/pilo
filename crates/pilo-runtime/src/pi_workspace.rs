@@ -47,31 +47,19 @@ pub(crate) async fn stop_for_resource_change(
         .filter(|project| project.connection.id == connection_id)
         .map(|project| project.id)
         .collect::<Vec<_>>();
-    let mut session = runtime.project_pi_session.lock().await;
     let mut agents = runtime.parallel_agents.lock().await;
-    let affects_project_pi = session.uses_ssh_workspace()
-        && session
-            .snapshot()
-            .project_id
-            .is_some_and(|id| projects.contains(&id));
 
     // Reject existing work before stopping any instance; stop also rechecks Pi-side activity.
     runtime
         .chat_sessions
         .check_idle_for_resource_change(&projects)
         .await?;
-    if affects_project_pi {
-        session.check_idle().await?;
-    }
     agents.check_idle_for_resource_change(&projects).await?;
 
     runtime
         .chat_sessions
         .stop_for_resource_change(&projects)
         .await?;
-    if affects_project_pi {
-        session.stop_if_idle().await?;
-    }
     agents.stop_for_resource_change(&projects).await?;
     Ok(())
 }

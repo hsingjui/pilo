@@ -97,7 +97,7 @@ export const MOCK_CONVERSATIONS: Record<string, ChatMessage[]> = {
 		{
 			id: "s1-a4",
 			role: "assistant",
-			text: "`pnpm format`、`pnpm check`、`pnpm build` 全部通过。构建只有一个已有的 chunk 体积警告，和这次改动无关。视觉效果需要你这边 `pnpm tauri dev` 确认。",
+			text: "`pnpm format`、`pnpm check`、`pnpm build` 全部通过。构建只有一个已有的 chunk 体积警告，和这次改动无关。视觉效果需要你这边 `pnpm dev` 确认。",
 			time: "11:32",
 			activity: ["pnpm format", "pnpm check", "pnpm build"].map(
 				(command, index) => ({
@@ -169,7 +169,7 @@ export const MOCK_CONVERSATIONS: Record<string, ChatMessage[]> = {
 				"| scroll 节流 | `chat-page.tsx` | rAF 合并滚动事件 |",
 				"| 气泡上限 | `chat-page.tsx` | 窄窗口 85% / 桌面 70% |",
 				"",
-				"验证命令都过了，`tauri dev` 里重点看两处：快速滚动时 outline 高亮是否跟手，以及窄窗口下用户气泡换行观感。",
+				"验证命令都过了，`pnpm dev` 里重点看两处：快速滚动时 outline 高亮是否跟手，以及窄窗口下用户气泡换行观感。",
 			].join("\n"),
 			time: "11:49",
 			activity: [
@@ -248,7 +248,7 @@ export const MOCK_CONVERSATIONS: Record<string, ChatMessage[]> = {
 		{
 			id: "s3-a1",
 			role: "assistant",
-			text: "前端通过统一的 Tauri `Channel` 接收 RuntimeEvent，再按 `type` 分发。Runtime 自己负责 generation 过滤，所以 React 不需要知道旧进程的事件。\n\n当前代际关系可以写成 $g_{next} > g_{active}$，旧 generation 的事件直接丢弃。\n\n```mermaid\nflowchart LR\n  Pi[Pi RPC] --> Runtime[Pilo Runtime]\n  Runtime --> Channel[Tauri IPC Channel]\n  Channel --> React[React UI]\n```",
+			text: "前端通过统一的事件队列接收 RuntimeEvent，再按 `type` 分发。Runtime 自己负责 generation 过滤，所以 React 不需要知道旧进程的事件。\n\n当前代际关系可以写成 $g_{next} > g_{active}$，旧 generation 的事件直接丢弃。\n\n```mermaid\nflowchart LR\n  Pi[Pi RPC] --> Runtime[Pilo Runtime]\n  Runtime --> Queue[Event Queue]\n  Queue --> React[React UI]\n```",
 			time: "16:09",
 		},
 	],

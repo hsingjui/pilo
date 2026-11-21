@@ -116,10 +116,8 @@
 				if (/Mac|iPhone|iPad|iPod/.test(navigator.platform)) {
 					document.documentElement.classList.add("pilo-macos");
 				}
-				if (!("__TAURI_INTERNALS__" in window)) {
-					document.documentElement.classList.add("pilo-browser");
-					document.documentElement.setAttribute("data-remote-webui", "");
-				}
+				document.documentElement.classList.add("pilo-browser");
+				document.documentElement.setAttribute("data-remote-webui", "");
 				const colorScheme = dark ? "dark" : "light";
 				document.documentElement.style.colorScheme = colorScheme;
 				document

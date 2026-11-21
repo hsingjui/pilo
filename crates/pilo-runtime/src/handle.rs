@@ -138,8 +138,6 @@ impl Runtime {
             self.remote.stop().await;
             log::info!(target: "shutdown", "chat sessions: stopping");
             self.chat_sessions.stop_all().await;
-            log::info!(target: "shutdown", "project pi session: stopping");
-            let _ = self.project_pi_session.lock().await.stop().await;
             log::info!(target: "shutdown", "session watchers: stopping");
             crate::session_watcher::SessionWatcherManager::stop_all(&self.session_watchers).await;
             log::info!(target: "shutdown", "terminals: closing");

@@ -10,7 +10,7 @@
 - Exported hook is camelCase starting with `use`: `useChatRuntime`.
 - App-shell orchestration hooks live in `web/components/app/` (`use-app-catalog`,
   `use-app-chat-workspace`, `use-opened-chat-controllers`).
-- Feature-local hooks live in the feature folder (`src/components/chat/use-*.ts`).
+- Feature-local hooks live in the feature folder (`web/components/chat/use-*.ts`).
 - Cross-cutting hooks live in `shared/`.
 
 ## Patterns

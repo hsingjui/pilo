@@ -8,8 +8,8 @@ or session JSONL. Both transports use the Host's database.
 
 ## 2. Signatures
 
-- Tauri: `project_model_scope_get(projectId) -> ProjectModelScope` and
-  `project_model_scope_set(projectId, models) -> ProjectModelScope`.
+- Desktop native (`desktop/src/pilo/mod.rs`): `loadModelScope(projectId) -> ProjectModelScope` and
+  `saveModelScope(projectId, models) -> ProjectModelScope`.
 - Authenticated HTTP: `GET /api/v1/models/scope?projectId=...` and
   `POST /api/v1/models/scope` with `{ projectId, models }`.
 - `PiloClient.loadModelScope(projectId)` / `saveModelScope(projectId, models)`.
@@ -156,7 +156,7 @@ or session JSONL. Both transports use the Host's database.
 | Duplicate provider + model ID | `model scope contains duplicate model identities` |
 | Multiple marked default members | `model scope can contain only one default model`; no write/event |
 | Omitted `isDefault` in stored JSON/request | Decode as false; no implicit first-item default |
-| Invalid thinking level | Serde/Tauri or JSON extraction rejects the request |
+| Invalid thinking level | Serde or JSON extraction rejects the request |
 | Valid but unavailable member | Saved unchanged; excluded from effective selection/cycling |
 | SQLite/read/write failure | Error propagates; failed writes publish no event |
 | Scope read fails | Display error; do not reinterpret as inheritance |
@@ -267,7 +267,8 @@ not mean its Pi process is still running when reopened.
   `POST /api/v1/models` saves it and assigns the Host timestamp.
 - `WebPiloClient.loadModels(projectId, force = false)` reads cache first and
   invokes `refreshProjectPiModels(projectId, transport)` only when forced or
-  incomplete. Desktop uses the same refresh function with the Tauri transport.
+  incomplete. Desktop reads and saves the cache through the native
+  `loadModels` / `saveModels`.
 
 ### 3. Contracts
 

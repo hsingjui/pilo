@@ -139,7 +139,7 @@ pub struct SequencedRuntimeEvent {
 #[derive(Clone)]
 pub struct RuntimeEventBus {
     streams: Arc<StdMutex<stream::StreamRegistry>>,
-    // Existing tests still observe the legacy window envelopes. Production uses sequenced queues.
+    // Tests observe per-subscriber envelopes here; production delivers through sequenced queues.
     #[cfg(test)]
     test_channels: Arc<StdMutex<HashMap<String, Arc<dyn HostEvents>>>>,
     web_sender: watch::Sender<()>,
@@ -412,23 +412,6 @@ impl RuntimeEventBus {
 
 pub trait RuntimeEventSink: Clone + Send + Sync + 'static {
     fn send(&self, event: RuntimeEvent);
-}
-
-#[derive(Clone)]
-pub struct TauriEventSink {
-    events: RuntimeEventBus,
-}
-
-impl TauriEventSink {
-    pub(crate) fn from_bus(events: RuntimeEventBus) -> Self {
-        Self { events }
-    }
-}
-
-impl RuntimeEventSink for TauriEventSink {
-    fn send(&self, event: RuntimeEvent) {
-        self.events.send(RuntimeEventEnvelope::global(event));
-    }
 }
 
 #[cfg(test)]

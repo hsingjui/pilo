@@ -573,8 +573,8 @@ Historical Tauri window, in-conversation find, and updater contracts are in
   identification, session switching, slash commands and mobile soft-keyboard
   focus. No reply completion is required to resume editing.
 - Reuse `FileMentionBadge` / `SessionMentionBadge` for path popovers and previews.
-  On desktop only (`isTauri()`), file badges use `useChatFileOpen` when its
-  `canOpenFile(path)` allows activation: text/code opens the existing project
+  When a file opener is registered (`useChatFileOpener`), file badges use
+  `useChatFileOpen` when its `canOpenFile(path)` allows activation: text/code opens the existing project
   workspace tab, repeated clicks reuse it, and images retain the shared lightbox.
   `canPreviewFileMention` also gates activation by the existing text-preview and
   image-MIME classifiers (HTML/HTM is inert source here, not a system launch).

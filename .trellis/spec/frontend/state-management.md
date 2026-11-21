@@ -325,6 +325,8 @@ consumed pending item's ID so the reducer and transport confirm the same message
 
 ## Desktop Developer Mode
 
+> 状态：历史契约。下文的 F12 / `desktop_open_devtools` / WebView2 实现随 Tauri 壳一起删除；nsh 桌面端尚未接入调试工具，`developerMode` 偏好仍保存在 Host。重新实现前按 nsh 能力重写本节。
+
 ### 1. Scope / Trigger
 
 Desktop Preferences exposes a Host-backed opt-in for inspecting the current

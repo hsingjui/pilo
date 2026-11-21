@@ -110,13 +110,6 @@ pub struct PiLaunchOptions {
     pub agent_control: bool,
 }
 
-struct Launch {
-    connection: Connection,
-    project_id: Option<String>,
-    project: String,
-    options: PiLaunchOptions,
-}
-
 #[derive(Clone)]
 pub(crate) struct SessionSnapshotReader {
     metadata: Arc<StdMutex<PiSessionSnapshot>>,
@@ -157,7 +150,6 @@ pub struct ServerPiSession {
     generation: u64,
     snapshot_metadata: Arc<StdMutex<PiSessionSnapshot>>,
     state: Arc<StateCell>,
-    launch: Option<Launch>,
     stream_id: Option<String>,
     event_task: Option<JoinHandle<()>>,
     recovery: Option<(Weak<ServerManager>, Connection)>,
@@ -257,7 +249,6 @@ impl ServerPiSession {
                 project_id: None,
             })),
             state: Arc::new(StateCell::default()),
-            launch: None,
             stream_id: None,
             event_task: None,
             recovery: None,
@@ -590,12 +581,6 @@ impl ServerPiSession {
             generation,
             state: PiProcessState::Running,
         });
-        self.launch = Some(Launch {
-            connection: project.connection.clone(),
-            project_id: Some(project.id.clone()),
-            project: project.path.clone(),
-            options: options.clone(),
-        });
         Ok(self.snapshot())
     }
 
@@ -621,10 +606,6 @@ impl ServerPiSession {
             )
             .await
             .map(|_| ())
-    }
-
-    pub async fn abort(&self) -> Result<(), String> {
-        self.send_rpc(json!({ "type": "abort" })).await
     }
 
     pub(crate) async fn check_idle(&self) -> Result<(), String> {
@@ -714,38 +695,6 @@ impl ServerPiSession {
         self.stream_id = None;
         self.recovery = None;
         Ok(self.snapshot())
-    }
-
-    pub async fn restart<S: RuntimeEventSink>(
-        &mut self,
-        servers: Arc<ServerManager>,
-        sink: S,
-    ) -> Result<PiSessionSnapshot, String> {
-        let launch = self
-            .launch
-            .as_ref()
-            .ok_or_else(|| "no previous Pi launch configuration is available".to_owned())?;
-        let project = Project {
-            id: launch.project_id.clone().unwrap_or_default(),
-            name: String::new(),
-            path: launch.project.clone(),
-            connection: launch.connection.clone(),
-            metadata: pilo_domain::ProjectMetadata {
-                cwd: launch.project.clone(),
-                git_branch: None,
-                pi_version: String::new(),
-                refreshed_at_ms: 0,
-            },
-            created_at_ms: 0,
-            last_opened_at_ms: 0,
-        };
-        let options = launch.options.clone();
-        let ssh = self.recovery.is_some();
-        let stopped = self.stop().await;
-        if ssh {
-            stopped?;
-        }
-        self.spawn(servers, sink, &project, options).await
     }
 }
 

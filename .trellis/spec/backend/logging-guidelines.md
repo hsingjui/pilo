@@ -60,9 +60,7 @@ streams. Keep timeout, retry, teardown, and public error behavior unchanged.
 
 - `runtime_trace(stage, session_key, stream_id, detail)` keeps the existing debug
   JSONL trace and emits selected metadata through `log` in all builds.
-- `append_frontend_trace(payload)` uses the same metadata allowlist; it is not a
-  generic release logger for arbitrary frontend objects. The former Tauri IPC
-  adapter for this helper was removed.
+- There is no frontend trace entry point; `source` is always `runtime`.
 
 ### 3. Contracts
 
