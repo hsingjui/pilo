@@ -705,6 +705,9 @@ const enUS = {
 		queueFailed: "Failed to queue message",
 		retrieveFailed: "Failed to retrieve; message restored to composer",
 		immediateSendFailed: "Unable to send message immediately",
+		promptNotSent: "Couldn't send the message. Your draft was restored.",
+		promptUnconfirmed:
+			"Pi didn't confirm the message. Your draft was restored; check the conversation before sending it again.",
 		stopPiFailed: "Failed to stop Pi",
 		searchModels: "Search models",
 		scopedModels: "Preferred",

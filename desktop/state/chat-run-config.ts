@@ -9,10 +9,8 @@ import type {
 } from "@shared/api/pi-runtime-types";
 import { PI_THINKING_LEVELS } from "@shared/api/pi-runtime-types";
 import type { ChatSessionRuntimeState } from "@shared/chat/session-stats";
-import {
-	mergeRefreshedSessionState,
-	mergeSessionStats,
-} from "@shared/chat/session-stats";
+import { chatRpcRenamesSession } from "@shared/chat/chat-session-runtime-model";
+import { mergeSessionStats } from "@shared/chat/session-stats";
 import {
 	findMatchingPiModel,
 	getNextPiScopeModel,
@@ -77,6 +75,7 @@ export class ChatRunConfigStore {
 	private disconnect: (() => void) | undefined;
 	private opens = 0;
 	private requests = 0;
+	private statsRequests = 0;
 	private applying: Promise<void> | undefined;
 	/** A new chat's initial config, pushed on the first agent state. */
 	private pendingInitial: {
@@ -302,16 +301,18 @@ export class ChatRunConfigStore {
 			this.update({ ready: true });
 			return;
 		}
-		const [stats, thinking] = await Promise.all([
-			this.rpc<PiSessionStats>(sessionKey, { type: "get_session_stats" }),
-			this.rpc<{ levels: PiThinkingLevel[] }>(sessionKey, {
-				type: "get_available_thinking_levels",
-			}),
-		]);
-		if (request !== this.requests || open !== this.opens) return;
 		const current = this.current();
 		if (!current) return;
-		const patch: Partial<ChatRunConfigState> = { ready: true };
+		// Pi's identity and title are usable before the slower stats requests finish.
+		const patch: Partial<ChatRunConfigState> = {
+			ready: true,
+			session: {
+				...current.session,
+				sessionId: agentState.sessionId,
+				sessionPath: agentState.sessionFile,
+				name: agentState.sessionName,
+			},
+		};
 		if (!current.modelDirty && agentState.model) {
 			patch.model = agentState.model;
 			patch.thinkingLevels = [...getPiModelThinkingLevels(agentState.model)];
@@ -319,20 +320,21 @@ export class ChatRunConfigStore {
 		if (!current.thinkingDirty && !current.changing) {
 			patch.thinkingLevel = agentState.thinkingLevel;
 		}
-		if (thinking?.levels && !current.changing)
-			patch.thinkingLevels = thinking.levels;
-		const overlay: ChatSessionRuntimeState = {
-			sessionId: agentState.sessionId,
-			sessionPath: agentState.sessionFile,
-			name: agentState.sessionName,
-			tokens: stats?.tokens,
-			cost: stats?.cost,
-			contextTokens: stats?.contextUsage?.tokens,
-			contextWindow: stats?.contextUsage?.contextWindow,
-			contextPercent: stats?.contextUsage?.percent,
-		};
-		patch.session = mergeRefreshedSessionState(current.session, overlay);
 		this.update(patch);
+		const [, thinking] = await Promise.all([
+			this.refreshStats(),
+			this.rpc<{ levels: PiThinkingLevel[] }>(sessionKey, {
+				type: "get_available_thinking_levels",
+			}),
+		]);
+		if (
+			request === this.requests &&
+			open === this.opens &&
+			thinking?.levels &&
+			!this.current()?.changing
+		) {
+			this.update({ thinkingLevels: thinking.levels });
+		}
 	}
 
 	/** Session events move compaction state and refresh stats at turn ends. */
@@ -355,6 +357,11 @@ export class ChatRunConfigStore {
 			case "assistant_message_end":
 				void this.refreshStats();
 				return;
+			case "rpc_message":
+				// The header shows Pi's new session name, as from automatic naming.
+				if (chatRpcRenamesSession(event.message))
+					void this.refresh(this.opens, false);
+				return;
 		}
 	}
 
@@ -363,11 +370,11 @@ export class ChatRunConfigStore {
 		const state = this.current();
 		if (!state) return;
 		const open = this.opens;
-		const request = ++this.requests;
+		const request = ++this.statsRequests;
 		const stats = await this.rpc<PiSessionStats>(state.sessionKey, {
 			type: "get_session_stats",
 		});
-		if (request !== this.requests || open !== this.opens || !stats) return;
+		if (request !== this.statsRequests || open !== this.opens || !stats) return;
 		this.update({
 			session: mergeSessionStats(this.current()?.session ?? null, stats),
 		});

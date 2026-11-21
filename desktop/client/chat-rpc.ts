@@ -16,23 +16,22 @@ export type PiRpcReply<T> = {
 	error?: string;
 };
 
-/**
- * A request/response Pi RPC over the command channel: the command is sent
- * with a unique `id`, and its reply arrives as an `rpc_message` session
- * event carrying the same `id`. Resolves the reply — a success reply can
- * carry no `data` — or `null` when the reply never comes (timeout or a
- * dropped event stream), and rejects on a `success: false` reply or a
- * send failure.
- */
-export function requestPiRpcReply<T>(
+type PiRpcOutcome<T> =
+	| { type: "reply"; reply: PiRpcReply<T> }
+	| { type: "not_sent" }
+	| { type: "unconfirmed"; dispatchError?: Error };
+
+/** Sends a Pi RPC, distinguishing a missing reply from a command never dispatched. */
+export function requestPiRpcOutcome<T>(
 	client: PiCommandClient,
 	sessionKey: string,
 	command: Record<string, unknown>,
 	timeoutMs = PI_RPC_TIMEOUT_MS,
-): Promise<PiRpcReply<T> | null> {
+): Promise<PiRpcOutcome<T>> {
 	const id = `nsh-rpc-${++rpcSequence}`;
-	return new Promise<PiRpcReply<T> | null>((resolve, reject) => {
+	return new Promise<PiRpcOutcome<T>>((resolve, reject) => {
 		let settled = false;
+		let dispatched = false;
 		let disconnect: (() => void) | null = null;
 		const finish = () => {
 			if (settled) return;
@@ -41,10 +40,11 @@ export function requestPiRpcReply<T>(
 			disconnect?.();
 			disconnect = null;
 		};
-		const timer = setTimeout(() => {
+		const noReply = () => {
 			finish();
-			resolve(null);
-		}, timeoutMs);
+			resolve({ type: dispatched ? "unconfirmed" : "not_sent" });
+		};
+		const timer = setTimeout(noReply, timeoutMs);
 		client
 			.connectEvents({
 				onMessage: (message) => {
@@ -64,15 +64,12 @@ export function requestPiRpcReply<T>(
 						finish();
 						if (data.success === false)
 							reject(new Error(data.error ?? "Pi command failed"));
-						else resolve(data);
+						else resolve({ type: "reply", reply: data });
 						return;
 					}
 				},
 				onStatus: (connected) => {
-					if (!connected && !settled) {
-						finish();
-						resolve(null);
-					}
+					if (!connected && !settled) noReply();
 				},
 			})
 			.then((disposer) => {
@@ -81,13 +78,37 @@ export function requestPiRpcReply<T>(
 					return;
 				}
 				disconnect = disposer;
+				dispatched = true;
 				return client.sendChatCommand(sessionKey, { ...command, id });
 			})
 			.catch((error: unknown) => {
+				if (settled) return;
 				finish();
-				reject(error instanceof Error ? error : new Error(String(error)));
+				const cause = error instanceof Error ? error : new Error(String(error));
+				// The Host can lose its Server connection after the write to Pi.
+				if (dispatched) resolve({ type: "unconfirmed", dispatchError: cause });
+				else reject(cause);
 			});
 	});
+}
+
+/** Resolves the correlated Pi reply (even without `data`), or `null` if missing. */
+export async function requestPiRpcReply<T>(
+	client: PiCommandClient,
+	sessionKey: string,
+	command: Record<string, unknown>,
+	timeoutMs = PI_RPC_TIMEOUT_MS,
+): Promise<PiRpcReply<T> | null> {
+	const outcome = await requestPiRpcOutcome<T>(
+		client,
+		sessionKey,
+		command,
+		timeoutMs,
+	);
+	if (outcome.type === "unconfirmed" && outcome.dispatchError) {
+		throw outcome.dispatchError;
+	}
+	return outcome.type === "reply" ? outcome.reply : null;
 }
 
 /**

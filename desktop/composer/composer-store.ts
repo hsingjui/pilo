@@ -2,7 +2,7 @@ import { type Accessor, signal } from "nsh";
 import { Storage } from "nsh";
 
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
-import type { PiCommand } from "@shared/api/pi-runtime-types";
+import type { PiCommand, PiPromptResult } from "@shared/api/pi-runtime-types";
 import {
 	discardRemovedChatFiles,
 	registerChatFile,
@@ -23,6 +23,7 @@ import {
 	createChatSubmission,
 	formatChatImageSize,
 	resolveChatImageMimeType,
+	summarizeChatImages,
 	toPiImageContents,
 	chatSubmissionHasContent,
 	MAX_CHAT_IMAGE_BYTES,
@@ -41,10 +42,12 @@ import {
 	type SessionMention,
 } from "@shared/chat/session-mentions";
 import type { ComposerSuggestion } from "@shared/chat/composer-suggestions";
+import { chatRuntimeHasOpenTurn } from "@shared/chat/chat-session-runtime-model";
 import { t } from "../app/i18n";
-import { requestPiRpc } from "../client/chat-rpc";
+import { requestPiRpc, requestPiRpcOutcome } from "../client/chat-rpc";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import type { AppState } from "../state/app-state";
+import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 
 /** The open chat the composer talks to. */
 export type ComposerTarget = {
@@ -75,7 +78,18 @@ export type ComposerViewState = {
 	status: string | null;
 };
 
-type ComposerDraft = Pick<ComposerViewState, "value" | "images">;
+type ComposerDraft = Pick<ComposerViewState, "value" | "images"> & {
+	status?: ComposerViewState["status"];
+};
+
+/** Where a prompt that starts a turn shows before Pi echoes it. */
+export type ComposerTranscript = Pick<
+	ChatTranscriptStore,
+	"submitLocal" | "setLocalStatus" | "dropLocal"
+>;
+
+/** How long Pi may take to accept a prompt, as the WebUI waits. */
+const PROMPT_REPLY_TIMEOUT_MS = 120_000;
 
 const INPUT_HISTORY_KEY = "pilo.chatInputHistory.v1";
 const ATTACHMENT_NAME_LIMIT = 80;
@@ -116,6 +130,11 @@ export class ComposerStore {
 	private readonly client: ComposerClient;
 	private readonly app: Accessor<AppState>;
 	private readonly beforeSend?: (sessionKey: string) => Promise<boolean>;
+	private readonly transcript?: ComposerTranscript;
+	private readonly onPromptStarted?: (
+		target: ComposerTarget,
+		text: string,
+	) => void;
 	private readonly drafts = new Map<string, ComposerDraft>();
 	private readonly stateSignal = signal<ComposerViewState>({
 		value: "",
@@ -148,10 +167,16 @@ export class ComposerStore {
 		client: ComposerClient;
 		app: Accessor<AppState>;
 		beforeSend?: (sessionKey: string) => Promise<boolean>;
+		/** Shows a prompt that starts a turn at once, before Pi takes it. */
+		transcript?: ComposerTranscript;
+		/** Called once Pi started a turn for a prompt (not a steer or follow-up). */
+		onPromptStarted?: (target: ComposerTarget, text: string) => void;
 	}) {
 		this.client = deps.client;
 		this.app = deps.app;
 		this.beforeSend = deps.beforeSend;
+		this.transcript = deps.transcript;
+		this.onPromptStarted = deps.onPromptStarted;
 		this.state = this.stateSignal;
 		this.target = this.targetSignal;
 		this.commands = this.commandsSignal;
@@ -169,8 +194,8 @@ export class ComposerStore {
 		const previous = this.targetSignal();
 		if (previous?.sessionKey === target?.sessionKey) return;
 		if (previous) {
-			const { value, images } = this.stateSignal();
-			this.drafts.set(previous.sessionKey, { value, images });
+			const { value, images, status } = this.stateSignal();
+			this.drafts.set(previous.sessionKey, { value, images, status });
 		}
 		const next = target ? this.drafts.get(target.sessionKey) : undefined;
 		this.fileSuggestionsSignal.set([]);
@@ -182,7 +207,7 @@ export class ComposerStore {
 			value: next?.value ?? "",
 			caret: next?.value.length ?? 0,
 			images: next?.images ?? [],
-			status: null,
+			status: next?.status ?? null,
 		}));
 	}
 
@@ -573,58 +598,139 @@ export class ComposerStore {
 		const running = this.running();
 		// A compaction takes no message; the composer blocks sending meanwhile.
 		if (running && this.compacting()) return;
+		// The draft leaves the composer at once, as in the Tauri app; it comes
+		// back if it is not sent.
+		this.historyCursor = null;
 		this.stateSignal.update((s) => ({
 			...s,
+			value: "",
+			caret: 0,
+			images: [],
 			sending: true,
 			status: null,
 		}));
+		// A prompt that starts a turn shows in the chat while Pi starts and
+		// takes it.
+		const local = running
+			? null
+			: (this.transcript?.submitLocal(
+					target.sessionKey,
+					submission.text,
+					summarizeChatImages(submission.images),
+				) ?? null);
+		const localStatus = (status?: "starting" | "sending") => {
+			if (local) this.transcript?.setLocalStatus(local, status);
+		};
+		let sent = false;
+		let failure: string | undefined;
 		try {
 			if (!running) {
 				const chat = await this.client.chatState(target.sessionKey);
+				const current = this.targetSignal();
+				if (current?.sessionKey !== target.sessionKey) return;
 				if (!chat?.initialized) {
+					localStatus("starting");
 					await this.client.startChat({
-						projectId: target.projectId,
-						sessionKey: target.sessionKey,
-						...(target.sessionPath ? { sessionPath: target.sessionPath } : {}),
+						projectId: current.projectId,
+						sessionKey: current.sessionKey,
+						...(current.sessionPath
+							? { sessionPath: current.sessionPath }
+							: {}),
 					});
 				}
 			}
-			if (this.targetSignal() !== target) return;
+			if (this.targetSignal()?.sessionKey !== target.sessionKey) return;
 			if (this.beforeSend && !(await this.beforeSend(target.sessionKey)))
 				return;
-			if (this.targetSignal() !== target) return;
-			const commands = running
-				? this.commandFor(sendMode, submission)
-				: [
-						{
-							type: "prompt",
-							message: submission.text,
-							...(submission.images.length > 0
-								? {
-										images: toPiImageContents(submission.images),
-									}
-								: {}),
-						},
-					];
-			for (const command of commands) {
-				await this.client.sendChatCommand(target.sessionKey, command);
+			if (this.targetSignal()?.sessionKey !== target.sessionKey) return;
+			let disposition: PiPromptResult["disposition"] | undefined;
+			if (running) {
+				for (const command of this.commandFor(sendMode, submission)) {
+					await this.client.sendChatCommand(target.sessionKey, command);
+				}
+			} else {
+				localStatus("sending");
+				const outcome = await requestPiRpcOutcome<PiPromptResult>(
+					this.client,
+					target.sessionKey,
+					{
+						type: "prompt",
+						message: submission.text,
+						...(submission.images.length > 0
+							? { images: toPiImageContents(submission.images) }
+							: {}),
+					},
+					PROMPT_REPLY_TIMEOUT_MS,
+				);
+				if (outcome.type !== "reply") {
+					if (outcome.type === "unconfirmed") {
+						// Pi may already reference the files, even if the draft is restored.
+						retainChatFiles(submission.text);
+						failure = t("chat.promptUnconfirmed");
+					} else {
+						failure = t("chat.promptNotSent");
+					}
+					return;
+				}
+				disposition = outcome.reply.data?.disposition;
 			}
+			sent = true;
 			retainChatFiles(submission.text);
+			if (!running) {
+				if (disposition !== "handled") {
+					localStatus();
+					if (disposition !== "queued") {
+						this.onPromptStarted?.(target, submission.text);
+					}
+				} else if (
+					local &&
+					!chatRuntimeHasOpenTurn(
+						await this.client.chatState(target.sessionKey),
+					)
+				) {
+					// An input handler took the prompt without starting a turn.
+					this.transcript?.dropLocal(local);
+				}
+			}
 			await this.appendHistory(target.projectId, submission.text);
-			this.historyCursor = null;
-			this.stateSignal.update((s) => ({
-				...s,
-				value: "",
-				caret: 0,
-				images: [],
-			}));
-			const key = target.sessionKey;
-			this.drafts.delete(key);
 		} catch (error) {
-			this.setStatus(errorMessage(error));
+			failure = errorMessage(error);
+			if (sent) this.setStatus(failure, target.sessionKey);
 		} finally {
+			if (!sent) {
+				if (local) this.transcript?.dropLocal(local);
+				this.restoreDraft(target.sessionKey, {
+					value,
+					images,
+					status: failure,
+				});
+			}
 			this.stateSignal.update((s) => ({ ...s, sending: false }));
 		}
+	}
+
+	/**
+	 * Puts a draft that was not sent back in its chat's composer, before
+	 * whatever was typed there since.
+	 */
+	private restoreDraft(sessionKey: string, draft: ComposerDraft) {
+		const join = (later?: ComposerDraft): ComposerDraft => ({
+			value: [draft.value, later?.value].filter(Boolean).join("\n\n"),
+			images: [...draft.images, ...(later?.images ?? [])],
+			status: draft.status ?? later?.status,
+		});
+		if (this.targetSignal()?.sessionKey !== sessionKey) {
+			this.drafts.set(sessionKey, join(this.drafts.get(sessionKey)));
+			return;
+		}
+		const { value, images, status } = join(this.stateSignal());
+		this.stateSignal.update((s) => ({
+			...s,
+			value,
+			caret: value.length,
+			images,
+			status: status ?? null,
+		}));
 	}
 
 	/** Stops the running turn. */

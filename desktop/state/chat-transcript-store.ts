@@ -14,10 +14,16 @@ import type {
 	SessionHistoryFingerprint,
 	SessionHistoryResult,
 } from "@shared/api/sessions-types";
+import type { AssistantPendingStatus } from "@shared/chat/chat-activity-state";
 import { createConversationState } from "@shared/chat/conversation-reducer";
-import { replayConversationEvents } from "@shared/chat/conversation-replay";
+import {
+	reduceConversationActions,
+	replayConversationEvents,
+} from "@shared/chat/conversation-replay";
 import type {
+	ChatConversationImage,
 	ChatMessage,
+	ConversationAction,
 	ConversationReducerContext,
 	ConversationState,
 } from "@shared/chat/conversation-types";
@@ -105,6 +111,34 @@ type SavedHistory = {
 	/** The first messages of the pages being read. */
 	pages: Set<number>;
 };
+
+/**
+ * A prompt sent from this app as the chat's next turn, shown before Pi
+ * echoes it: the actions that put it and its pending reply on screen.
+ */
+type LocalTurn = {
+	clientMessageId: string;
+	actions: ConversationAction[];
+};
+
+/** The conversation without a local turn's prompt and pending reply. */
+function withoutLocalTurn(
+	conversation: ConversationState,
+	clientMessageId: string,
+): ConversationState {
+	const owned = conversation.active?.localClientMessageId === clientMessageId;
+	const replyId = owned ? conversation.active?.assistantMessageId : undefined;
+	return {
+		...conversation,
+		messages: conversation.messages.filter(
+			(message) => message.id !== clientMessageId && message.id !== replyId,
+		),
+		pendingUsers: conversation.pendingUsers.filter(
+			(pending) => pending.clientMessageId !== clientMessageId,
+		),
+		active: owned ? null : conversation.active,
+	};
+}
 
 /** What a read asks for: the session's last messages and its message index. */
 const firstWindow: ChatTranscriptWindow = {
@@ -229,6 +263,13 @@ export class ChatTranscriptStore {
 	private running = false;
 	/** Whether a snapshot was already tried for the turn now running. */
 	private tried = false;
+	/**
+	 * Whether the chat is a new one that nothing was read for: its first Pi
+	 * starts after the chat was opened, so each of its events arrives here.
+	 */
+	private fresh = false;
+	/** The prompt sent from this app that Pi has not echoed yet. */
+	private local: LocalTurn | undefined;
 
 	constructor(
 		client: ChatTranscriptClient,
@@ -247,6 +288,7 @@ export class ChatTranscriptStore {
 		const freshDraft = options?.freshDraft;
 		this.reset();
 		this.target = target;
+		this.fresh = !!freshDraft;
 		this.current.set({
 			sessionKey: target.sessionKey,
 			status: freshDraft ? "ready" : "loading",
@@ -264,6 +306,95 @@ export class ChatTranscriptStore {
 		this.current.set(closed);
 	}
 
+	/**
+	 * Shows a prompt the user sent as the open chat's next turn, with a
+	 * pending reply, as the Tauri app does before Pi has started or echoed
+	 * it; Pi's echo then takes its place. Gives the turn's id, or `null` when
+	 * the chat is not open, not shown yet, or already has such a turn.
+	 */
+	submitLocal(
+		sessionKey: string,
+		text: string,
+		images: ChatConversationImage[],
+	): string | null {
+		if (
+			this.target?.sessionKey !== sessionKey ||
+			!this.current().conversation ||
+			this.local
+		) {
+			return null;
+		}
+		const timestampMs = this.context.now();
+		const clientMessageId = this.context.createMessageId("user");
+		this.local = {
+			clientMessageId,
+			actions: [
+				{
+					type: "local_user_submit",
+					clientMessageId,
+					text,
+					images,
+					timestampMs,
+				},
+				{ type: "local_assistant_pending", timestampMs, pendingStatus: null },
+			],
+		};
+		this.applyLocal(this.local.actions);
+		return clientMessageId;
+	}
+
+	/**
+	 * What a local turn's pending reply waits for: Pi to start, or Pi to take
+	 * the prompt; nothing once it has.
+	 */
+	setLocalStatus(clientMessageId: string, status?: AssistantPendingStatus) {
+		const { local } = this;
+		if (local?.clientMessageId !== clientMessageId) return;
+		const action: ConversationAction = {
+			type: "local_assistant_status",
+			clientMessageId,
+			status,
+		};
+		local.actions.push(action);
+		this.applyLocal([action]);
+	}
+
+	/** Takes back a local turn whose prompt did not start a turn. */
+	dropLocal(clientMessageId: string) {
+		if (this.local?.clientMessageId !== clientMessageId) return;
+		this.local = undefined;
+		const state = this.current();
+		if (!state.conversation) return;
+		this.current.set({
+			...state,
+			conversation: withoutLocalTurn(state.conversation, clientMessageId),
+		});
+	}
+
+	private applyLocal(actions: readonly ConversationAction[]) {
+		const state = this.current();
+		if (!state.conversation) return;
+		this.current.set({
+			...state,
+			conversation: reduceConversationActions(
+				state.conversation,
+				actions,
+				this.context,
+			),
+		});
+	}
+
+	/** A conversation a read gave, with the local turn still waiting for Pi. */
+	private withLocal(conversation: ConversationState) {
+		return this.local
+			? reduceConversationActions(
+					conversation,
+					this.local.actions,
+					this.context,
+				)
+			: conversation;
+	}
+
 	/** Forgets the chat that was open, and drops a read of it in flight. */
 	private reset() {
 		this.reads += 1;
@@ -279,6 +410,8 @@ export class ChatTranscriptStore {
 		this.seen = undefined;
 		this.running = false;
 		this.tried = false;
+		this.fresh = false;
+		this.local = undefined;
 	}
 
 	/**
@@ -298,6 +431,11 @@ export class ChatTranscriptStore {
 		for (const event of events) {
 			if (event.sessionKey !== sessionKey) continue;
 			turnOver ||= settles(event);
+			// Pi's echo of the local prompt, or the end of its process, takes
+			// the place of what was shown for it.
+			if (event.type === "user_message_start" || settles(event)) {
+				this.local = undefined;
+			}
 			if (this.buffer) {
 				// Looked at when the read in flight is done.
 				this.buffer.push(event);
@@ -317,6 +455,19 @@ export class ChatTranscriptStore {
 						later.push(event);
 					}
 				}
+				this.see(event);
+			} else if (this.fresh && "generation" in event) {
+				// A new chat's first Pi: all of its events follow the empty
+				// conversation, so they are applied as they come, without a
+				// snapshot read that would replace the turn on screen.
+				this.fresh = false;
+				this.running = true;
+				this.cut = {
+					sessionKey,
+					generation: event.generation,
+					eventSequence: event.sequence - 1,
+				};
+				later.push(event);
 				this.see(event);
 			} else {
 				this.react(event);
@@ -542,6 +693,7 @@ export class ChatTranscriptStore {
 		this.buffer = [];
 		this.cut = undefined;
 		this.waiting = false;
+		this.fresh = false;
 		if (shown.status !== "loading") {
 			this.current.set({
 				sessionKey,
@@ -563,7 +715,8 @@ export class ChatTranscriptStore {
 			this.buffer = undefined;
 			this.current.set({
 				sessionKey,
-				conversation: shown.conversation,
+				// Not `shown`'s: a local turn may have been shown during the read.
+				conversation: this.current().conversation,
 				// Not `shown`'s: messages may have been loaded during the read.
 				historyPrefix: this.current().historyPrefix,
 				source: shown.source,
@@ -601,6 +754,15 @@ export class ChatTranscriptStore {
 					this.context,
 				);
 				if (conversation) {
+					// A snapshot taken after Pi took the local prompt holds its echo.
+					if (
+						snapshot.live.type === "active" &&
+						snapshot.live.events.some(
+							(event) => event.type === "user_message_start",
+						)
+					) {
+						this.local = undefined;
+					}
 					this.cut = {
 						sessionKey,
 						generation: snapshot.generation,
@@ -608,7 +770,7 @@ export class ChatTranscriptStore {
 					};
 					const buffered = finish({
 						status: "ready",
-						conversation,
+						conversation: this.withLocal(conversation),
 						historyPrefix: this.prefixOf(
 							target.projectId,
 							snapshot.history,
@@ -647,9 +809,8 @@ export class ChatTranscriptStore {
 				if (this.reads !== read) return;
 				result = {
 					status: "ready",
-					conversation: conversationFromHistory(
-						settledHistory.history,
-						this.context,
+					conversation: this.withLocal(
+						conversationFromHistory(settledHistory.history, this.context),
 					),
 					historyPrefix: this.prefixOf(
 						target.projectId,
@@ -664,7 +825,9 @@ export class ChatTranscriptStore {
 			} else {
 				result = {
 					status: "ready",
-					conversation: replayConversationEvents([], this.context),
+					conversation: this.withLocal(
+						replayConversationEvents([], this.context),
+					),
 					historyPrefix: this.prefixOf(target.projectId),
 					source: "history",
 				};

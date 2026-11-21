@@ -163,7 +163,10 @@ export function AppShell(props: AppShellProps) {
 	}));
 	const chatTarget = computed(() => openChatTarget(store.state()));
 	const chatSessionKey = computed(() => chatTarget()?.sessionKey ?? null);
-	effect(() => composer.setTarget(chatTarget()));
+	effect(() => {
+		const target = chatTarget();
+		untracked(() => composer.setTarget(target));
+	});
 	// Without an open session the workspace holds a new chat in the active
 	// project, as the Tauri landing does, so its composer is always there.
 	effect(() => {

@@ -18,7 +18,9 @@ export function chatRpcRenamesSession(message: unknown) {
 		"type" in message &&
 		message.type === "response" &&
 		"command" in message &&
-		message.command === "set_session_name"
+		message.command === "set_session_name" &&
+		"success" in message &&
+		message.success === true
 	);
 }
 

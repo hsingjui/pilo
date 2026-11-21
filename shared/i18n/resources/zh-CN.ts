@@ -669,6 +669,9 @@ const zhCN = {
 		queueFailed: "无法排队发送",
 		retrieveFailed: "取回失败，消息已恢复到输入框",
 		immediateSendFailed: "无法立即发送消息",
+		promptNotSent: "消息未能发出，已恢复草稿。",
+		promptUnconfirmed:
+			"Pi 未确认收到消息，已恢复草稿。请先查看会话，再决定是否重新发送。",
 		stopPiFailed: "停止 Pi 失败",
 		model: "模型",
 		searchModels: "搜索模型",

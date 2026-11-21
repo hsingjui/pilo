@@ -15,7 +15,7 @@ import {
 	connectDesktopShell,
 	type DesktopSettingsClient,
 } from "./desktop-shell";
-import { appLocale } from "./i18n";
+import { appLocale, t } from "./i18n";
 import {
 	conversationContext,
 	followOpenSession,
@@ -24,6 +24,7 @@ import {
 } from "./open-chat";
 import { followOpenSessionRead } from "./read-open-session";
 import { SessionForker } from "./session-fork";
+import { createSessionAutoTitle } from "./session-auto-title";
 import { connectSessionNotifications } from "./session-notifications";
 import { SidebarSettingsStore } from "./sidebar-settings";
 
@@ -161,10 +162,19 @@ export async function launch(
 	if (desktop) notify = connectSessionNotifications(client, store, desktop);
 	const catalog = new ModelCatalogStore(client);
 	const runConfig = new ChatRunConfigStore(client, catalog.state);
-	const composer = new ComposerStore({
+	const composer: ComposerStore = new ComposerStore({
 		client,
 		app: store.state,
 		beforeSend: (sessionKey) => runConfig.prepareToSend(sessionKey),
+		transcript: chat,
+		onPromptStarted: createSessionAutoTitle(client, (target, error) =>
+			composer.setStatus(
+				`${t("settings.automaticNamingFailed")}: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+				target.sessionKey,
+			),
+		),
 	});
 	const forker = new SessionForker(client, {
 		target: () => openChatTarget(store.state()),

@@ -8,28 +8,33 @@ import type {
 	ComposerTarget,
 } from "../composer/composer-store";
 import { ComposerStore } from "../composer/composer-store";
+import { scriptedClient } from "./scripted-app-client";
 
 type Sent = { command: Record<string, unknown>; sessionKey: string };
 
 function fakeClient(overrides: Partial<ComposerClient> = {}) {
 	const sent: Sent[] = [];
 	const started: Record<string, unknown>[] = [];
-	const client = {
-		startChat: async (options: Record<string, unknown>) => {
+	const { client: runtime } = scriptedClient({
+		onCommand: () => ({ success: true }),
+	});
+	const client: ComposerClient = {
+		startChat: (options) => {
 			started.push(options);
-			return { state: "running", generation: 1 } as never;
+			return runtime.startChat(options);
 		},
 		chatState: async () => null,
-		sendChatCommand: async (sessionKey: string, command: object) => {
-			sent.push({ sessionKey, command: command as Record<string, unknown> });
+		sendChatCommand: (sessionKey, command) => {
+			sent.push({ sessionKey, command });
+			return runtime.sendChatCommand(sessionKey, command);
 		},
-		connectEvents: async () => () => {},
+		connectEvents: runtime.connectEvents,
 		searchProjectFiles: async () => ["src/a.ts", "src/b.ts"],
 		uploadChatFile: async (_projectId: string, name: string) =>
 			`/attachments/abcdefghijklmnopqrstuA/${name}`,
 		removeChatFile: async () => {},
 		...overrides,
-	} as unknown as ComposerClient;
+	};
 	return { client, sent, started };
 }
 
@@ -78,12 +83,11 @@ test("submit prompts an idle chat and clears the draft", async () => {
 	store.setValue("do the thing");
 	await store.submit();
 	expect(started).toEqual([{ projectId: "p1", sessionKey: "sa" }]);
-	expect(sent).toEqual([
-		{
-			sessionKey: "sa",
-			command: { type: "prompt", message: "do the thing" },
-		},
-	]);
+	expect(sent.length).toBe(1);
+	expect(sent[0]?.sessionKey).toBe("sa");
+	const { id, ...command } = sent[0]!.command;
+	expect(typeof id).toBe("string");
+	expect(command).toEqual({ type: "prompt", message: "do the thing" });
 	expect(store.state().value).toBe("");
 });
 

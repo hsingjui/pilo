@@ -7,6 +7,7 @@ import { ComposerStore } from "../composer/composer-store";
 import { ChatComposer } from "../composer/chat-composer";
 import { initializeI18n } from "../app/i18n";
 import { createAppState, type AppState } from "../state/app-state";
+import { scriptedClient } from "./scripted-app-client";
 
 /** Reports each command the composer sends, as a status line for the test. */
 const activity = signal("idle");
@@ -23,16 +24,20 @@ export function composerStubClient(client: object): ComposerClient {
 }
 
 function composerFixture(activeTurn: boolean) {
-	const client = {
-		startChat: async (_options: Record<string, unknown>) => {
+	const { client: runtime } = scriptedClient({
+		onCommand: () => ({ success: true }),
+	});
+	const client: ComposerClient = {
+		startChat: (options) => {
 			activity.set("started");
-			return { state: "running", generation: 1 };
+			return runtime.startChat(options);
 		},
 		chatState: async () => null,
-		sendChatCommand: async (_sessionKey: string, command: object) => {
-			activity.set(`sent:${(command as { type?: string }).type ?? "?"}`);
+		sendChatCommand: (sessionKey, command) => {
+			activity.set(`sent:${String(command.type ?? "?")}`);
+			return runtime.sendChatCommand(sessionKey, command);
 		},
-		connectEvents: async () => () => {},
+		connectEvents: runtime.connectEvents,
 		// "@fail" stands for a search the Host could not run.
 		searchProjectFiles: async (_p: string, query: string) => {
 			if (query === "fail") throw new Error("search failed");
@@ -41,7 +46,7 @@ function composerFixture(activeTurn: boolean) {
 		uploadChatFile: async (_p: string, name: string) =>
 			`/attachments/abcdefghijklmnopqrstuA/${name}`,
 		removeChatFile: async () => {},
-	} as unknown as ComposerClient;
+	};
 
 	const chat = {
 		sessionKey: "sa",
