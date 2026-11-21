@@ -8,6 +8,8 @@ import {
 	View,
 } from "nsh";
 
+import { ChatReadingFont, readingTextStyle } from "./chat-reading-font";
+
 // The WebUI's `ease-in-out`.
 const easeInOut: Easing = [0.42, 0, 0.58, 1];
 
@@ -53,6 +55,7 @@ function LabelHighlight(props: { label: string }) {
 		},
 	});
 	cleanup(() => motion.stop());
+	const readingFont = ChatReadingFont();
 	const primary = () => token("primary");
 	return (
 		<View
@@ -62,8 +65,9 @@ function LabelHighlight(props: { label: string }) {
 			accessibilityElementsHidden
 		>
 			<Text
-				class="font-sans text-base font-medium leading-snug"
+				class="font-sans font-medium leading-snug"
 				style={{
+					...readingTextStyle(readingFont()),
 					color: `color-mix(in srgb, ${primary()} 96%, transparent)`,
 					textShadow: [
 						{
@@ -90,6 +94,7 @@ export function ChatAgentActivityIndicator(props: {
 	label: () => string;
 	testID?: string;
 }) {
+	const readingFont = ChatReadingFont();
 	return (
 		<View testID={props.testID} class="flex-row items-center gap-1.5">
 			<View
@@ -112,7 +117,10 @@ export function ChatAgentActivityIndicator(props: {
 				{() =>
 					reduceMotion() ? null : <LabelHighlight label={props.label()} />
 				}
-				<Text class="font-sans text-base font-medium leading-snug text-primary">
+				<Text
+					class="font-sans font-medium leading-snug text-primary"
+					style={readingTextStyle(readingFont())}
+				>
 					{props.label}
 				</Text>
 			</View>

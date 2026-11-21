@@ -1,6 +1,19 @@
-import { Image, openUrl, signal, Text, View, type Signal } from "nsh";
+import {
+	computed,
+	Image,
+	openUrl,
+	signal,
+	Text,
+	token,
+	View,
+	type Signal,
+} from "nsh";
 import { TextView } from "nsh/base";
-import type { TextViewImage, TextViewLinkPressEvent } from "nsh/base";
+import type {
+	TextViewImage,
+	TextViewLinkPressEvent,
+	TextViewStyles,
+} from "nsh/base";
 
 import type { Project } from "@shared/api/projects-types";
 import { resolveMarkdownImageSource } from "@shared/chat/chat-markdown-images";
@@ -9,6 +22,7 @@ import { MAX_CHAT_IMAGE_BYTES } from "@shared/chat/chat-submission";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
 
 import { t } from "../app/i18n";
+import { ChatReadingFont } from "./chat-reading-font";
 
 /** What a project file link resolved to (`resolveMarkdownFileLink`). */
 export interface ChatMarkdownFileLink {
@@ -40,8 +54,56 @@ export interface ChatMarkdownProps {
 	onFileLink?: (link: ChatMarkdownFileLink) => void;
 	/** What a press on an image not wrapped in a link does (preview, M5). */
 	onImagePress?: (image: TextViewImage) => void;
-	/** The text's size and color; the reply's body without it. */
+	/** The text's color; the reply's foreground without it. */
 	class?: string;
+	/**
+	 * Thinking's typography (the WebUI's thinking details): tighter lines,
+	 * headings at the text's size in medium weight.
+	 */
+	compact?: boolean;
+}
+
+/**
+ * The WebUI's chat Markdown typography (`MARKDOWN_BASE_CLASSNAME`) at the
+ * reading size, in place of `TextView`'s own fixed sizes (15pt text, 27, 20
+ * and 17pt headings, 13pt code, 14pt tables), which ignored the font
+ * settings and outweighed the rest of the page.
+ */
+function markdownStyles(
+	fontFamily: string,
+	size: number,
+	codeSize: number,
+	compact: boolean,
+): TextViewStyles {
+	const text = (scale: number, lineHeight: number) => ({
+		fontSize: size * scale,
+		lineHeight: size * scale * lineHeight,
+	});
+	const headings: TextViewStyles = compact
+		? { heading: { ...text(1, 1.5), fontWeight: 500, letterSpacing: 0 } }
+		: {
+				heading1: { ...text(1.3, 1.35), letterSpacing: size * 1.3 * -0.025 },
+				heading2: { ...text(1.15, 1.4), letterSpacing: size * 1.15 * -0.025 },
+				heading3: { ...text(1, 1.5), letterSpacing: 0 },
+				heading4: { ...text(1, 1.5), letterSpacing: 0 },
+				heading5: {
+					...text(0.92, 1.5),
+					letterSpacing: size * 0.92 * 0.025,
+					textTransform: "uppercase",
+				},
+				heading6: {
+					...text(0.92, 1.5),
+					letterSpacing: size * 0.92 * 0.025,
+					textTransform: "uppercase",
+				},
+			};
+	return {
+		root: { fontFamily, ...text(1, compact ? 1.5 : 1.75) },
+		...headings,
+		code: { fontSize: codeSize },
+		codeBlock: { fontSize: codeSize, lineHeight: codeSize * 1.4 },
+		table: text(0.92, 1.5),
+	};
 }
 
 type ProjectImageState =
@@ -67,6 +129,15 @@ function bytesToBase64(bytes: Uint8Array): string {
  * errors as the WebUI.
  */
 export function ChatMarkdown(props: ChatMarkdownProps) {
+	const readingFont = ChatReadingFont();
+	const styles = computed(() =>
+		markdownStyles(
+			readingFont().fontFamily,
+			readingFont().fontSize,
+			token("pilo-code-font-size"),
+			props.compact ?? false,
+		),
+	);
 	// A data: URL per project-relative image path, read once and kept.
 	const images = new Map<string, Signal<ProjectImageState>>();
 	const projectImage = (path: string, mimeType: string) => {
@@ -157,13 +228,14 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 
 	return (
 		<TextView
-			class={props.class ?? "font-sans text-base text-foreground"}
+			class={props.class ?? "text-foreground"}
 			// The root's font reaches every part: code keeps the bundled mono.
 			classes={{
 				code: "font-mono",
 				codeBlockCode: "font-mono",
 				keyboard: "font-mono",
 			}}
+			styles={styles()}
 			selectable
 			links="report"
 			codeBlockActions={[{ id: "copy" }]}

@@ -17,6 +17,7 @@ import type {
 	ChatTextBody,
 	ChatWorkPreferences,
 } from "./chat-message-types";
+import { ChatReadingFont, readingTextStyle } from "./chat-reading-font";
 
 /** A reply's content as it shows: each text, and each run of work between. */
 type WorkSegment =
@@ -140,6 +141,7 @@ function WorkedRegion(
 	},
 ) {
 	const { expansion } = props;
+	const readingFont = ChatReadingFont();
 	const key = computed(
 		() =>
 			`worked:${props.message().id}:${props.active ? "active" : "complete"}`,
@@ -169,7 +171,10 @@ function WorkedRegion(
 				{() => (
 					<Icon name={open() ? "ChevronDown" : "ChevronRight"} size={14} />
 				)}
-				<Text class="min-w-0 flex-1 truncate font-sans text-base font-medium leading-snug text-muted-foreground">
+				<Text
+					class="min-w-0 flex-1 truncate font-sans font-medium leading-snug text-muted-foreground"
+					style={readingTextStyle(readingFont())}
+				>
 					{label}
 				</Text>
 			</ChatDisclosureRow>

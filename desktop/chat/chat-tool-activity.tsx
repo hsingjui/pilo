@@ -20,6 +20,7 @@ import { Tooltip } from "../ui/tooltip";
 import { toolIconName, toolLabel, toolSkillName } from "./chat-activity-labels";
 import { ChatDisclosureRow } from "./chat-disclosure-row";
 import type { ChatExpansion } from "./chat-expansion";
+import { ChatReadingFont, readingTextStyle } from "./chat-reading-font";
 import { ChatToolDetail } from "./chat-tool-detail";
 
 /**
@@ -33,6 +34,7 @@ export function ChatToolActivity(props: {
 	expansionKey: () => string;
 }) {
 	const { activity } = props;
+	const readingFont = ChatReadingFont();
 	const open = computed(() =>
 		props.expansion.isOpen(props.expansionKey(), false),
 	);
@@ -114,9 +116,10 @@ export function ChatToolActivity(props: {
 				<Text
 					class={
 						failed()
-							? "min-w-0 flex-1 truncate font-sans text-base font-medium text-destructive"
-							: "min-w-0 flex-1 truncate font-sans text-base font-medium text-muted-foreground"
+							? "min-w-0 flex-1 truncate font-sans font-medium leading-snug text-destructive"
+							: "min-w-0 flex-1 truncate font-sans font-medium leading-snug text-muted-foreground"
 					}
+					style={readingTextStyle(readingFont())}
 				>
 					{label}
 					<Text

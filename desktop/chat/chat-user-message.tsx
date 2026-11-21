@@ -5,6 +5,7 @@ import { createHover } from "../ui/hover";
 import { ChatCopyButton } from "./chat-copy-button";
 import type { ChatMessageBody, UserChatMessage } from "./chat-message-types";
 import { ConversationColumn } from "./conversation-column";
+import { ChatReadingFont, readingTextStyle } from "./chat-reading-font";
 import { chatMetadataText, chatPx } from "./layout";
 
 /** A prompt the user sent: a bubble at the end of the column. */
@@ -14,6 +15,7 @@ export function ChatUserMessage(props: {
 }) {
 	const { message } = props;
 	const hover = createHover();
+	const readingFont = ChatReadingFont();
 	const reveal = () => !platform.desktop || hover.hovered();
 	const hasText = () => Boolean(message().text.trim());
 	return (
@@ -37,7 +39,10 @@ export function ChatUserMessage(props: {
 					{props.body ? (
 						props.body(message)
 					) : (
-						<Text class="font-sans text-base leading-[1.6] text-foreground">
+						<Text
+							class="font-sans leading-[1.6] text-foreground"
+							style={readingTextStyle(readingFont())}
+						>
 							{() => message().text}
 						</Text>
 					)}

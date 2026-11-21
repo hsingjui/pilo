@@ -22,6 +22,7 @@ import {
 import { ChatDisclosureRow } from "./chat-disclosure-row";
 import { type ChatExpansion, chatToolExpansionKey } from "./chat-expansion";
 import type { ChatWorkPreferences } from "./chat-message-types";
+import { ChatReadingFont, readingTextStyle } from "./chat-reading-font";
 import { ChatThinkingActivity } from "./chat-thinking-activity";
 import { ChatToolActivity } from "./chat-tool-activity";
 
@@ -48,6 +49,7 @@ export interface ChatActivityGroupProps {
  */
 export function ChatActivityGroup(props: ChatActivityGroupProps) {
 	const { activity, expansion } = props;
+	const readingFont = ChatReadingFont();
 	const groupKey = computed(() => `${props.expansionKey()}:group`);
 	const running = computed(() =>
 		activity().some((item) => item.status === "running"),
@@ -109,16 +111,25 @@ export function ChatActivityGroup(props: ChatActivityGroupProps) {
 					{() =>
 						hasDuration() ? (
 							<View class="shrink-0 flex-row items-center">
-								<Text class="font-sans text-base font-medium leading-snug text-foreground/75">
+								<Text
+									class="font-sans font-medium leading-snug text-foreground/75"
+									style={readingTextStyle(readingFont())}
+								>
 									{() => t("chat.workDuration", { duration: duration() })}
 								</Text>
-								<Text class="mx-1 font-sans text-base leading-snug text-muted-foreground/60">
+								<Text
+									class="mx-1 font-sans leading-snug text-muted-foreground/60"
+									style={readingTextStyle(readingFont())}
+								>
 									·
 								</Text>
 							</View>
 						) : null
 					}
-					<Text class="min-w-0 flex-1 truncate font-sans text-base font-medium leading-snug text-muted-foreground">
+					<Text
+						class="min-w-0 flex-1 truncate font-sans font-medium leading-snug text-muted-foreground"
+						style={readingTextStyle(readingFont())}
+					>
 						{label}
 					</Text>
 				</View>

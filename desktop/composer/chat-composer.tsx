@@ -35,6 +35,7 @@ import { formatKeyboardShortcutLabels } from "@shared/keyboard-shortcuts-format"
 import type { KeyboardShortcutMap } from "@shared/keyboard-shortcuts-types";
 
 import { t } from "../app/i18n";
+import { ChatReadingFont } from "../chat/chat-reading-font";
 import { DEFAULT_CHAT_REM } from "../chat/layout";
 import { APP_SHORTCUTS, bindAppShortcut } from "../shortcuts";
 import { Button } from "../ui/button";
@@ -157,8 +158,6 @@ export interface ChatComposerProps {
 	shortcuts?: () => KeyboardShortcutMap | null;
 	/** The configured submit shortcut; Enter submits by default. */
 	sendShortcut?: () => SendMessageShortcut | undefined;
-	/** The reading font size the messages use, in points. */
-	readingFontSize?: () => number | undefined;
 	/** The model · thinking control; the toolbar leaves it out without one. */
 	runConfig?: ComposerRunConfigProps;
 }
@@ -170,6 +169,7 @@ export interface ChatComposerProps {
  */
 export function ChatComposer(props: ChatComposerProps) {
 	const store = props.store;
+	const readingFont = ChatReadingFont();
 	const surfaceWidth = signal(0);
 	const index = signal(0);
 	const dismissedQuery = signal<string | null>(null);
@@ -449,7 +449,6 @@ export function ChatComposer(props: ChatComposerProps) {
 		!attachments().images.length &&
 		!attachments().references.length &&
 		focusShortcutLabels().length > 0;
-	const fontSize = () => props.readingFontSize?.() ?? DEFAULT_READING_FONT_SIZE;
 	const readOnly = () => store.readOnly();
 	const disabled = () => store.target() === null || readOnly();
 	const blocked = () =>
@@ -545,9 +544,10 @@ export function ChatComposer(props: ChatComposerProps) {
 						}
 						// The size goes in the class: an inline `fontSize` reaches the typed
 						// text but not the placeholder, which then sits larger and lower.
-						class={`min-w-0 flex-1 border-0 bg-transparent px-1 font-sans text-[${fontSize()}px] text-input-foreground placeholder:text-input-placeholder`}
+						class={`min-w-0 flex-1 border-0 bg-transparent px-1 text-[${readingFont().fontSize}px] text-input-foreground placeholder:text-input-placeholder`}
 						style={{
-							height: inputHeight(contentHeight(), fontSize()),
+							fontFamily: readingFont().fontFamily,
+							height: inputHeight(contentHeight(), readingFont().fontSize),
 							minHeight: 0,
 							paddingTop: INPUT_PADDING / 2,
 							paddingBottom: INPUT_PADDING / 2,

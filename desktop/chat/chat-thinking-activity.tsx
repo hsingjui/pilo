@@ -10,6 +10,7 @@ import { workDurationText } from "./chat-activity-labels";
 import { ChatDisclosureRow } from "./chat-disclosure-row";
 import { ChatDisclosureAction, type ChatExpansion } from "./chat-expansion";
 import { ChatMarkdown } from "./chat-markdown";
+import { ChatReadingFont, readingTextStyle } from "./chat-reading-font";
 
 // How much thinking renders at first, and how much more each press shows.
 const THINKING_REVEAL_CHARS = 8_000;
@@ -39,6 +40,7 @@ export function ChatThinkingActivity(props: {
 }) {
 	const { activity } = props;
 	const disclose = ChatDisclosureAction();
+	const readingFont = ChatReadingFont();
 	const running = computed(() => activity().status === "running");
 	const open = computed(() =>
 		props.expansion.isOpen(props.expansionKey(), false),
@@ -97,12 +99,18 @@ export function ChatThinkingActivity(props: {
 				onPress={() => props.expansion.setOpen(props.expansionKey(), !open())}
 			>
 				<Icon name="Sparkles" size={14} />
-				<Text class="shrink-0 font-sans text-base font-medium leading-snug text-muted-foreground">
+				<Text
+					class="shrink-0 font-sans font-medium leading-snug text-muted-foreground"
+					style={readingTextStyle(readingFont())}
+				>
 					{label}
 				</Text>
 				{() =>
 					showPreview() ? (
-						<Text class="w-0 min-w-0 flex-1 truncate font-sans text-base leading-snug text-muted-foreground/75">
+						<Text
+							class="w-0 min-w-0 flex-1 truncate font-sans leading-snug text-muted-foreground/75"
+							style={readingTextStyle(readingFont())}
+						>
 							{preview}
 						</Text>
 					) : (
@@ -114,7 +122,8 @@ export function ChatThinkingActivity(props: {
 				showDetails() ? (
 					<View class="items-start pt-0.5">
 						<ChatMarkdown
-							class="font-sans text-base text-muted-foreground"
+							class="text-muted-foreground"
+							compact
 							text={() => activity().text.slice(0, visibleEnd())}
 						/>
 						{() =>

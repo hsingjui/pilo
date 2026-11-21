@@ -16,6 +16,7 @@ import type { Project } from "@shared/api/projects-types";
 import { ChatAgentActivityIndicator } from "../chat/chat-agent-activity";
 import { ChatMessageList } from "../chat/chat-message-list";
 import { ChatMarkdown, type ChatMarkdownFileLink } from "../chat/chat-markdown";
+import { ChatReadingFont, chatReadingFont } from "../chat/chat-reading-font";
 import { ChatTodoCapsule } from "../chat/chat-todo-capsule";
 import {
 	ConversationColumn,
@@ -173,6 +174,19 @@ export function AppShell(props: AppShellProps) {
 		claude: claudeTheme(),
 		narrow: narrowConversation(),
 	}));
+	// Only a change of the font settings reaches the chat's texts.
+	const readingFontSize = computed(
+		() => store.state().preferences?.values.readingFontSize,
+	);
+	const readingFontFamily = computed(
+		() => store.state().preferences?.values.readingFontFamily,
+	);
+	const readingFont = computed(() =>
+		chatReadingFont({
+			readingFontSize: readingFontSize(),
+			readingFontFamily: readingFontFamily(),
+		}),
+	);
 	const chatTarget = computed(() => openChatTarget(store.state()));
 	const chatSessionKey = computed(() => chatTarget()?.sessionKey ?? null);
 	effect(() => {
@@ -531,9 +545,6 @@ export function AppShell(props: AppShellProps) {
 														store.state().preferences?.values
 															.sendMessageShortcut
 													}
-													readingFontSize={() =>
-														store.state().preferences?.values.readingFontSize
-													}
 													runConfig={
 														props.runConfig
 															? {
@@ -598,7 +609,9 @@ export function AppShell(props: AppShellProps) {
 		<AppToaster.Provider value={toasts}>
 			<View testID="app" class="flex-1 flex-row bg-background">
 				<ConversationColumnLayout.Provider value={conversationLayout}>
-					{layout()}
+					<ChatReadingFont.Provider value={readingFont}>
+						{layout()}
+					</ChatReadingFont.Provider>
 				</ConversationColumnLayout.Provider>
 				{() =>
 					paletteOpen() ? (

@@ -56,10 +56,7 @@ export function ChatCompactionMarker(props: {
 			{() =>
 				open() ? (
 					<View class="mt-2 rounded-(--pilo-radius-lg) border border-border bg-muted/30 px-3 py-2">
-						<ChatMarkdown
-							class="font-sans text-base text-muted-foreground"
-							text={summary}
-						/>
+						<ChatMarkdown class="text-muted-foreground" text={summary} />
 					</View>
 				) : null
 			}

@@ -345,7 +345,12 @@ Until preferences load, the page font falls back to Noto Sans SC on Windows
 and the system UI font elsewhere, and the code font to system monospace.
 
 - `codeFontSize` still sets `pilo-code-font-size`, and the composer still uses
-  `readingFontSize`.
+  `readingFontSize`. The chat's texts follow `readingFontSize` and
+  `readingFontFamily` through `ChatReadingFont` (`chat/chat-reading-font.ts`,
+  provided by `AppShell`), as the WebUI's message column: replies, prompts,
+  thinking and the work rows. `ChatMarkdown` replaces `TextView`'s fixed
+  reading typography (15pt text, 27/20/17pt headings, 13pt code, 14pt
+  tables) with the WebUI's, relative to that size.
 - `uiFontSize` is not applied. The Tauri app scales every size by it through
   the root font size; nsh 0.6.0 has no text size an app can set (`fontScale`
   is read-only).
