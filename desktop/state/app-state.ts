@@ -2,14 +2,20 @@ import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import { chatSessionKey } from "@shared/api/chat-session-key";
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type { Project } from "@shared/api/projects-types";
-import type { SessionIndexEntry } from "@shared/api/sessions-types";
+import type {
+	SessionExternalActivity,
+	SessionIndexEntry,
+} from "@shared/api/sessions-types";
 import type { PreferencesSnapshot } from "@shared/host-preferences-types";
 import type { SessionReadState } from "@shared/session-read-state";
 import type { ThemeSettings } from "@shared/theme-settings-types";
 import {
 	chatRpcChangesActivity,
 	chatRpcRenamesSession,
+	chatRuntimeShowsActivity,
+	runtimeSessionPathKey,
 } from "@shared/chat/chat-session-runtime-model";
+import { reuseSessionEntries } from "@shared/sidebar/session-index";
 
 export type StartupStatus =
 	| { type: "starting" }
@@ -37,11 +43,17 @@ export type SessionSelection = {
 };
 
 let draftSessionSequence = 0;
+const DRAFT_SESSION_PREFIX = "draft-session-";
 
 /** The session id a new chat holds until Pi saves it to a file. */
 export function createDraftSessionId() {
 	draftSessionSequence += 1;
-	return `draft-session-${Date.now()}-${draftSessionSequence}`;
+	return `${DRAFT_SESSION_PREFIX}${Date.now()}-${draftSessionSequence}`;
+}
+
+/** Whether the session id is one `createDraftSessionId` made. */
+export function isDraftSessionId(sessionId: string) {
+	return sessionId.startsWith(DRAFT_SESSION_PREFIX);
 }
 
 /**
@@ -61,6 +73,17 @@ export type AppState = {
 	latestSequence: number;
 	projects: Project[];
 	chatSessions: ChatSessionRuntimeState[];
+	/**
+	 * When each running chat (by session key) was first seen running, so the
+	 * sidebar keeps running sessions in a stable order as their files change.
+	 */
+	runningSince: Record<string, number>;
+	/**
+	 * The saved sessions an external Pi (one this app did not start) runs a
+	 * turn in, by project and then by `runtimeSessionPathKey` of the file,
+	 * each with when it was first seen running.
+	 */
+	externalActivity: Record<string, Record<string, number>>;
 	preferences: PreferencesSnapshot | null;
 	themeSettings: ThemeSettings | null;
 	sessionIndexes: Record<string, SessionIndexState>;
@@ -89,6 +112,11 @@ export type AppAction =
 			sessions: SessionIndexEntry[];
 	  }
 	| { type: "sessions_failed"; projectId: string; message: string }
+	| {
+			type: "external_activity_loaded";
+			projectId: string;
+			activities: SessionExternalActivity[];
+	  }
 	| { type: "project_selected"; projectId: string; sessionId?: string }
 	| { type: "session_selected"; projectId: string; sessionPath: string }
 	| {
@@ -110,6 +138,8 @@ export function createAppState(): AppState {
 		latestSequence: 0,
 		projects: [],
 		chatSessions: [],
+		runningSince: {},
+		externalActivity: {},
 		preferences: null,
 		themeSettings: null,
 		sessionIndexes: {},
@@ -177,16 +207,48 @@ function mergeReadState(
 	};
 }
 
-function withoutRemovedProjects(
-	sessionIndexes: AppState["sessionIndexes"],
+function withoutRemovedProjects<T>(
+	byProject: Record<string, T>,
 	projects: Project[],
-) {
+): Record<string, T> {
 	const projectIds = new Set(projects.map(({ id }) => id));
 	return Object.fromEntries(
-		Object.entries(sessionIndexes).filter(([projectId]) =>
+		Object.entries(byProject).filter(([projectId]) =>
 			projectIds.has(projectId),
 		),
 	);
+}
+
+/**
+ * A project's external open turns as just reported. A file that keeps
+ * running keeps the time it was first seen; nothing changes when the set of
+ * files is the same.
+ */
+function withExternalActivity(
+	state: AppState,
+	projectId: string,
+	activities: readonly SessionExternalActivity[],
+	now = Date.now(),
+): AppState {
+	if (!hasProject(state.projects, projectId)) return state;
+	const previous = state.externalActivity[projectId] ?? {};
+	const next: Record<string, number> = {};
+	for (const activity of activities) {
+		if (!activity.turnOpen) continue;
+		const key = runtimeSessionPathKey(activity.path);
+		next[key] = previous[key] ?? now;
+	}
+	const keys = Object.keys(next);
+	if (
+		keys.length === Object.keys(previous).length &&
+		keys.every((key) => key in previous)
+	) {
+		return state;
+	}
+	const externalActivity = { ...state.externalActivity };
+	if (keys.length === 0) delete externalActivity[projectId];
+	else externalActivity[projectId] = next;
+	return { ...state, externalActivity };
 }
 
 function hasProject(projects: Project[], projectId: string) {
@@ -270,6 +332,19 @@ function reportsState(message: unknown) {
 	);
 }
 
+/**
+ * Whether the event can mean a project's saved sessions changed: a reply
+ * ended, so Pi may have written the session file (a new chat's first), or
+ * Pi took a session name. The Tauri app read the list again on these, as
+ * nsh gets no session file watcher events.
+ */
+export function changesSessionIndex(event: PiloClientEvent): boolean {
+	return (
+		event.type === "assistant_message_end" ||
+		(event.type === "rpc_message" && chatRpcRenamesSession(event.message))
+	);
+}
+
 function withChatSession(
 	chatSessions: ChatSessionRuntimeState[],
 	sessionKey: string,
@@ -282,6 +357,57 @@ function withChatSession(
 	return chat
 		? chatSessions.map((held, at) => (at === index ? chat : held))
 		: chatSessions.filter((_, at) => at !== index);
+}
+
+/**
+ * The running chats' start times after `chatSessions` changed: a chat that
+ * keeps running keeps its time, one that stopped is dropped.
+ */
+function withRunningSince(
+	state: AppState,
+	chatSessions: ChatSessionRuntimeState[],
+	now = Date.now(),
+): AppState {
+	const runningSince: Record<string, number> = {};
+	let changed = false;
+	for (const chat of chatSessions) {
+		if (!chatRuntimeShowsActivity(chat)) continue;
+		const since = state.runningSince[chat.sessionKey];
+		runningSince[chat.sessionKey] = since ?? now;
+		if (since === undefined) changed = true;
+	}
+	if (
+		!changed &&
+		Object.keys(runningSince).length === Object.keys(state.runningSince).length
+	) {
+		return { ...state, chatSessions };
+	}
+	return { ...state, chatSessions, runningSince };
+}
+
+/** Pi allocates a path before writing it. Only an indexed file promotes a draft. */
+function adoptIndexedSession(state: AppState): AppState {
+	const open = state.navigation.session;
+	if (!open?.sessionId) return state;
+	const key = chatSessionKey(open.projectId, open.sessionId);
+	const path = state.chatSessions.find(
+		(chat) => chat.sessionKey === key,
+	)?.sessionPath;
+	if (
+		!path ||
+		!state.sessionIndexes[open.projectId]?.sessions.some(
+			(entry) => entry.sessionPath === path,
+		)
+	) {
+		return state;
+	}
+	return {
+		...state,
+		navigation: {
+			projectId: open.projectId,
+			session: { projectId: open.projectId, sessionPath: path },
+		},
+	};
 }
 
 function reduceEvent(state: AppState, event: PiloClientEvent): AppState {
@@ -303,6 +429,8 @@ function reduceEvent(state: AppState, event: PiloClientEvent): AppState {
 				sessions: current?.sessions ?? [],
 				message: event.message,
 			}));
+		case "external_session_activity_changed":
+			return withExternalActivity(state, event.projectId, event.activities);
 		case "session_read_state_changed": {
 			const key = readStateKey(event.state.projectId, event.state.sessionPath);
 			return {
@@ -323,14 +451,17 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 		case "bootstrapped": {
 			const { snapshot } = action;
 			return {
-				...state,
+				...withRunningSince(state, snapshot.chatSessions),
 				status: { type: "ready" },
 				latestSequence: snapshot.latestSequence,
 				projects: snapshot.projects,
-				chatSessions: snapshot.chatSessions,
 				preferences: newer(state.preferences, snapshot.preferences),
 				sessionIndexes: withoutRemovedProjects(
 					state.sessionIndexes,
+					snapshot.projects,
+				),
+				externalActivity: withoutRemovedProjects(
+					state.externalActivity,
 					snapshot.projects,
 				),
 				navigation: withKnownSelection(state.navigation, snapshot.projects),
@@ -342,13 +473,19 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 			return { ...state, status: { type: "closed" } };
 		case "projects_loaded":
 			return {
-				...state,
-				projects: action.projects,
-				chatSessions: state.chatSessions.filter((chat) =>
-					hasProject(action.projects, chat.projectId),
+				...withRunningSince(
+					state,
+					state.chatSessions.filter((chat) =>
+						hasProject(action.projects, chat.projectId),
+					),
 				),
+				projects: action.projects,
 				sessionIndexes: withoutRemovedProjects(
 					state.sessionIndexes,
+					action.projects,
+				),
+				externalActivity: withoutRemovedProjects(
+					state.externalActivity,
 					action.projects,
 				),
 				navigation: withKnownSelection(state.navigation, action.projects),
@@ -373,17 +510,31 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 				status: "loading",
 				sessions: current?.sessions ?? [],
 			}));
-		case "sessions_loaded":
-			return withSessionIndex(state, action.projectId, () => ({
-				status: "loaded",
-				sessions: action.sessions,
-			}));
+		case "sessions_loaded": {
+			const current = state.sessionIndexes[action.projectId];
+			// Unchanged entries keep their identity, so their rows stay as they are.
+			const sessions = reuseSessionEntries(
+				current?.sessions ?? [],
+				action.sessions,
+			);
+			if (current?.status === "loaded" && sessions === current.sessions) {
+				return state;
+			}
+			return adoptIndexedSession(
+				withSessionIndex(state, action.projectId, () => ({
+					status: "loaded",
+					sessions,
+				})),
+			);
+		}
 		case "sessions_failed":
 			return withSessionIndex(state, action.projectId, (current) => ({
 				status: "failed",
 				sessions: current?.sessions ?? [],
 				message: action.message,
 			}));
+		case "external_activity_loaded":
+			return withExternalActivity(state, action.projectId, action.activities);
 		case "project_selected":
 			if (!hasProject(state.projects, action.projectId)) return state;
 			// Choosing a project opens a new chat in it, as the Tauri app does;
@@ -433,29 +584,9 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 				action.sessionKey,
 				action.chat,
 			);
-			const open = state.navigation.session;
-			// Once Pi saves a new chat it becomes that file's saved session.
-			const adopt =
-				open?.sessionId !== undefined &&
-				action.chat?.sessionPath != null &&
-				chatSessionKey(open.projectId, open.sessionId) === action.sessionKey
-					? action.chat.sessionPath
-					: null;
-			if (chatSessions === state.chatSessions && adopt === null) return state;
-			return {
-				...state,
-				chatSessions,
-				navigation:
-					adopt === null
-						? state.navigation
-						: {
-								projectId: open!.projectId,
-								session: {
-									projectId: open!.projectId,
-									sessionPath: adopt,
-								},
-							},
-			};
+			return chatSessions === state.chatSessions
+				? state
+				: adoptIndexedSession(withRunningSince(state, chatSessions));
 		}
 		case "event":
 			return reduceEvent(state, action.event);

@@ -31,6 +31,7 @@ import type { Project } from "@shared/api/projects-types";
 import type { ConnectionNamingModel } from "@shared/api/sessions-types";
 import type {
 	SessionDeleteResult,
+	SessionExternalActivity,
 	SessionHistoryFingerprint,
 	SessionHistoryResult,
 	SessionIndexEntry,
@@ -105,6 +106,7 @@ export type PiloNative = Pick<
 	| "removeChatFile"
 	| "generateSessionTitle"
 	| "deleteSession"
+	| "externalSessionActivity"
 	| "updateSessionUiState"
 	| "loadHistory"
 	| "readHistoryImage"
@@ -411,6 +413,18 @@ export class NshPiloClient implements PiloClient {
 	/** A title from the naming model, or null when none is configured. */
 	generateSessionTitle(projectId: string, message: string) {
 		return this.pilo.generateSessionTitle(projectId, message);
+	}
+
+	/**
+	 * The project's sessions an external Pi (one this app did not start) runs
+	 * a turn in; later changes arrive as `external_session_activity_changed`.
+	 */
+	async externalSessionActivity(
+		projectId: string,
+	): Promise<SessionExternalActivity[]> {
+		return (await this.pilo.externalSessionActivity(
+			projectId,
+		)) as SessionExternalActivity[];
 	}
 
 	/** Deletes a session that `listSessions` has returned. */

@@ -96,7 +96,7 @@ export function useRemoteChatAutoTitle({
 							current ? { ...current, name } : current,
 						);
 					}
-					void refreshProjectSessions(activeProjectId, true);
+					void refreshProjectSessions(activeProjectId, false);
 				})
 				.catch((error) => {
 					if (!handleExpiredAuth(error)) {

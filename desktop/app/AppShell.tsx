@@ -175,10 +175,14 @@ export function AppShell(props: AppShellProps) {
 		const project = activeProject(state);
 		if (project) untracked(() => store.selectProject(project.id));
 	});
-	/** A new chat with nothing sent yet: the landing, without a session header. */
-	const draftLanding = () =>
-		store.state().navigation.session?.sessionId !== undefined &&
-		chat.messages().length === 0;
+	/** Keep the mounted header when a reply streams or the sidebar index changes. */
+	const showSessionHeader = computed(() => {
+		if (status().type !== "ready" || !sessionOpen()) return false;
+		return (
+			store.state().navigation.session?.sessionId === undefined ||
+			chat.messages().length > 0
+		);
+	});
 	followSavedAppearance(store.state);
 	const toasts = new AppToasts();
 	// A fork's outcome joins the app's toasts once per notice.
@@ -361,7 +365,7 @@ export function AppShell(props: AppShellProps) {
 				>
 					{() => (expandMounted() ? expandButton() : null)}
 					{() =>
-						status().type === "ready" && sessionOpen() && !draftLanding() ? (
+						showSessionHeader() ? (
 							<SessionHeader
 								logoHidden={collapsed}
 								title={openSessionTitle}

@@ -192,7 +192,11 @@ export class ComposerStore {
 	/** Swaps the open chat; each session keeps its own unsent draft. */
 	setTarget(target: ComposerTarget | null) {
 		const previous = this.targetSignal();
-		if (previous?.sessionKey === target?.sessionKey) return;
+		if (previous?.sessionKey === target?.sessionKey) {
+			if (previous?.sessionPath !== target?.sessionPath)
+				this.targetSignal.set(target);
+			return;
+		}
 		if (previous) {
 			const { value, images, status } = this.stateSignal();
 			this.drafts.set(previous.sessionKey, { value, images, status });

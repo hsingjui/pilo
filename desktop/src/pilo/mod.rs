@@ -48,8 +48,8 @@ use pilo_runtime::{
         chat_session_send_rpc, chat_session_start, chat_session_state, chat_session_stop,
     },
     session_api::{
-        session_delete, session_history, session_history_image, session_reconcile, session_search,
-        session_update_ui_state,
+        session_delete, session_external_activity, session_history, session_history_image,
+        session_reconcile, session_search, session_update_ui_state,
     },
     session_naming::session_generate_title,
     storage,
@@ -196,6 +196,9 @@ impl Pilo {
             .with_web_assets(Arc::new(ShellWebAssets(web_root)))?;
         let event_stream = runtime.subscribe_events(EVENT_QUEUE_LIMITS);
         runtime.start_idle_reaper();
+        // Without session watchers this poll is how external Pi turns are seen,
+        // as the Tauri shell started it at setup.
+        runtime.start_external_activity_poll();
         let host = Arc::new(Mutex::new(None));
         // Finish restoring the saved listener before commands or shutdown can reach the Host.
         let mut startup = Arc::clone(&host)
@@ -790,6 +793,17 @@ impl Pilo {
     ) -> Result<Option<String>, String> {
         Self::with_runtime(this, move |runtime| async move {
             session_generate_title(&runtime, project_id, message).await
+        })
+        .await
+    }
+
+    /// Reads which of the project's sessions an external Pi runs a turn in.
+    pub async fn external_session_activity(
+        this: Instance<Self>,
+        project_id: String,
+    ) -> Result<Vec<JsonValue>, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            encode_list(session_external_activity(&runtime, project_id).await?)
         })
         .await
     }

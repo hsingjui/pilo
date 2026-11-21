@@ -182,6 +182,15 @@ export class ChatRunConfigStore {
 		});
 	}
 
+	/**
+	 * The open new chat now has the file Pi saves it to. It is the same chat:
+	 * the selection and a write of it in flight are kept, and Pi is started
+	 * on that file from now on.
+	 */
+	adoptSessionPath(sessionPath: string): void {
+		if (this.current()) this.update({ sessionPath });
+	}
+
 	close(): void {
 		this.opens += 1;
 		this.disconnect?.();

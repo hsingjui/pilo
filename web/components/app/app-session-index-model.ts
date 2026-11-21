@@ -1,12 +1,9 @@
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import {
-	chatRuntimeHasOpenTurn,
+	chatRuntimeShowsActivity,
 	runtimeSessionPathKey,
 } from "@shared/chat/chat-session-runtime-model";
-import type {
-	SessionExternalActivity,
-	SessionIndexEntry,
-} from "@/lib/api/sessions";
+import type { SessionExternalActivity } from "@/lib/api/sessions";
 
 export type ProjectExternalActivity = {
 	openTurnPaths: ReadonlySet<string>;
@@ -48,8 +45,7 @@ export function runtimeActivityFromStates(
 	for (const state of states) {
 		if (
 			(projectIds && !projectIds.has(state.projectId)) ||
-			(!chatRuntimeHasOpenTurn(state) &&
-				!(state.compacting && state.snapshot.state === "running")) ||
+			!chatRuntimeShowsActivity(state) ||
 			!state.sessionPath
 		) {
 			continue;
@@ -76,55 +72,7 @@ export function toProjectExternalActivity(
 	};
 }
 
-export function sameSessionIndexEntry(
-	a: SessionIndexEntry,
-	b: SessionIndexEntry,
-) {
-	return (
-		a.connectionId === b.connectionId &&
-		a.projectId === b.projectId &&
-		a.piSessionId === b.piSessionId &&
-		a.sessionPath === b.sessionPath &&
-		a.name === b.name &&
-		a.cwd === b.cwd &&
-		a.createdAt === b.createdAt &&
-		a.updatedAt === b.updatedAt &&
-		a.messageCount === b.messageCount &&
-		a.lastMessageAt === b.lastMessageAt &&
-		a.firstUserMessagePreview === b.firstUserMessagePreview &&
-		a.fileSize === b.fileSize &&
-		a.fileMtimeNs === b.fileMtimeNs &&
-		a.lastOffset === b.lastOffset &&
-		a.pinned === b.pinned &&
-		a.titleOverride === b.titleOverride
-	);
-}
-
-export function mergeProjectSessions(
-	current: SessionIndexEntry[],
-	projectId: string,
-	sessions: SessionIndexEntry[],
-) {
-	const previousByPath = new Map(
-		current
-			.filter((session) => session.projectId === projectId)
-			.map((session) => [session.sessionPath, session] as const),
-	);
-	const nextProjectSessions = sessions.map((session) => {
-		const previous = previousByPath.get(session.sessionPath);
-		return previous && sameSessionIndexEntry(previous, session)
-			? previous
-			: session;
-	});
-	const next = [
-		...current.filter((session) => session.projectId !== projectId),
-		...nextProjectSessions,
-	];
-	if (
-		next.length === current.length &&
-		next.every((session, index) => session === current[index])
-	) {
-		return current;
-	}
-	return next;
-}
+export {
+	mergeProjectSessions,
+	sameSessionIndexEntry,
+} from "@shared/sidebar/session-index";

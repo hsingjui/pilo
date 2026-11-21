@@ -65,6 +65,8 @@ test("the state starts empty and a bootstrap makes it ready", () => {
 		latestSequence: 0,
 		projects: [],
 		chatSessions: [],
+		runningSince: {},
+		externalActivity: {},
 		preferences: null,
 		themeSettings: null,
 		sessionIndexes: {},
@@ -363,8 +365,22 @@ test("a selection survives a new project list only while its project does", () =
 	).toEqual({ projectId: null, session: null });
 });
 
-const chat = (sessionKey: string, activeTurn = false) =>
-	({ sessionKey, projectId: "p1", activeTurn }) as ChatSessionRuntimeState;
+const chat = (
+	sessionKey: string,
+	activeTurn = false,
+): ChatSessionRuntimeState => ({
+	sessionKey,
+	projectId: "p1",
+	prepared: true,
+	initialized: true,
+	activeTurn,
+	snapshot: {
+		generation: 1,
+		state: "running",
+		connection: null,
+		projectId: "p1",
+	},
+});
 
 test("a chat's runtime state is added, replaced in place and removed", () => {
 	const started = ready(

@@ -307,6 +307,15 @@ export class ChatTranscriptStore {
 	}
 
 	/**
+	 * The open new chat now has the file Pi saves it to; it is the same chat,
+	 * so nothing is read again. The file is where its settled history is read
+	 * from once Pi no longer runs for it.
+	 */
+	adoptSessionPath(sessionPath: string) {
+		if (this.target) this.target = { ...this.target, sessionPath };
+	}
+
+	/**
 	 * Shows a prompt the user sent as the open chat's next turn, with a
 	 * pending reply, as the Tauri app does before Pi has started or echoed
 	 * it; Pi's echo then takes its place. Gives the turn's id, or `null` when

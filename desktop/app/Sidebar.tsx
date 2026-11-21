@@ -39,6 +39,7 @@ import {
 	recentSessions,
 	type SidebarGroup,
 	sidebarGroups,
+	sessionRowKey,
 	sidebarSessions,
 } from "./sidebar-projects";
 import { SessionGlide } from "./sidebar-session-glide";
@@ -88,13 +89,14 @@ export function Sidebar(props: SidebarProps) {
 			),
 		}));
 	});
-	const view = () => props.settings.settings().view;
-	// A new list starts at its top, as the Tauri sidebar resets its scroll.
+	const view = computed(() => props.settings.settings().view);
+	const viewedProjectId = computed(() => props.viewedProject()?.id ?? null);
+	// Only a change of view resets scroll; session rows update by path.
 	return (
 		<View class="mt-2 min-h-0 min-w-0 flex-1">
 			{() => {
 				const recent = view() === "recent";
-				const projectId = props.viewedProject()?.id ?? null;
+				const projectId = viewedProjectId();
 				return (
 					<Scroll
 						testID="sidebar-projects"
@@ -236,8 +238,9 @@ function RecentSection(
 		}
 	});
 	const sessions = computed(() =>
-		recentSessions(store.state(), t("app.newChat")),
+		recentSessions(store.state(), t("app.newChat"), store.startedDraft()),
 	);
+	const hasSessions = computed(() => sessions().length > 0);
 	const projectNames = computed(
 		() =>
 			new Map(
@@ -292,15 +295,11 @@ function RecentSection(
 				</Menu>
 			</SectionHeader>
 			{() => {
-				if (sessions().length === 0)
-					return <NoSessions testID={RECENT_SECTION} />;
+				if (!hasSessions()) return <NoSessions testID={RECENT_SECTION} />;
 				if (collapsed()) return null;
 				return (
 					<SessionGlide>
-						<Each
-							of={sessions()}
-							key={(session) => `${session.projectId}:${session.sessionPath}`}
-						>
+						<Each of={sessions()} key={sessionRowKey}>
 							{(session) => (
 								<SessionRow
 									store={store}
@@ -458,17 +457,23 @@ function AllProjectSessions(props: { store: AppStore; projectId: string }) {
 	const { store } = props;
 	const sessions = computed(() =>
 		sortSidebarSessionsByRecency(
-			sidebarSessions(store.state(), props.projectId, t("app.newChat")),
+			sidebarSessions(
+				store.state(),
+				props.projectId,
+				t("app.newChat"),
+				store.startedDraft(),
+			),
 		),
 	);
+	const hasSessions = computed(() => sessions().length > 0);
 	return (
 		<View testID={`${projectSection(props.projectId)}:all`}>
 			{() =>
-				sessions().length === 0 ? (
+				!hasSessions() ? (
 					<NoSessions testID={projectSection(props.projectId)} />
 				) : (
 					<SessionGlide>
-						<Each of={sessions()} key={(session) => session.sessionPath}>
+						<Each of={sessions()} key={sessionRowKey}>
 							{(session) => <SessionRow store={store} session={session} />}
 						</Each>
 					</SessionGlide>

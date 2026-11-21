@@ -1,6 +1,5 @@
 import { mount, Storage } from "nsh";
 
-import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import type { ConversationEvent } from "@shared/chat/conversation-types";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import type { Project } from "@shared/api/projects-types";
@@ -25,7 +24,11 @@ import { scriptedClient } from "./scripted-app-client";
  * sessions, `s4` has two settled turns, `s7` has one that cannot be read at
  * first, and the others have no message.
  */
-const local = { id: "local", name: "Local", kind: { type: "local" } };
+const local: Connection = {
+	id: "local",
+	name: "Local",
+	kind: { type: "local" },
+};
 const remote = { id: "c-build", name: "build-box", kind: { type: "ssh" } };
 
 function project(id: string, connection: object): Project {
@@ -179,9 +182,16 @@ async function run() {
 				sessionKey: "running",
 				projectId: "pilo",
 				sessionPath: "/sessions/s1.jsonl",
+				prepared: true,
+				initialized: true,
 				activeTurn: true,
-				snapshot: { generation: 1 },
-			} as ChatSessionRuntimeState,
+				snapshot: {
+					generation: 1,
+					state: "running",
+					connection: local,
+					projectId: "pilo",
+				},
+			},
 		],
 		readStates: [
 			{

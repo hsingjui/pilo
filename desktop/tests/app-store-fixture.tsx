@@ -79,12 +79,9 @@ async function run() {
 		// Seeding writes behind the runtime's back, so load the snapshot again.
 		await store.retry();
 		await eventually(
-			() => state().sessionIndexes[local.id]?.status === "loaded",
-			"the loaded session list was not loaded again with the snapshot",
-		);
-		assert(
-			state().sessionIndexes[local.id]?.sessions[0]?.piSessionId ===
-				"saved-session" && isSessionUnread(state(), local.id, sessionPath),
+			() =>
+				state().sessionIndexes[local.id]?.sessions[0]?.piSessionId ===
+					"saved-session" && isSessionUnread(state(), local.id, sessionPath),
 			"the indexed session or its unread turn did not reach the state",
 		);
 		store.selectSession(local.id, sessionPath);

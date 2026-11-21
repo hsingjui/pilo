@@ -35,6 +35,16 @@ export function chatRuntimeHasOpenTurn(
 	);
 }
 
+/** Whether the sidebar shows the chat as running: an open turn, or a compaction. */
+export function chatRuntimeShowsActivity(
+	state: ChatSessionRuntimeState | null | undefined,
+) {
+	return (
+		chatRuntimeHasOpenTurn(state) ||
+		(state?.compacting === true && state.snapshot.state === "running")
+	);
+}
+
 // Pi and the session index can spell the same Windows path with different separators.
 export function runtimeSessionPathKey(path: string): string {
 	return /^[a-z]:[\\/]/i.test(path) || path.startsWith("\\\\")

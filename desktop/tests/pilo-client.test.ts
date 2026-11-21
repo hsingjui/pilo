@@ -111,6 +111,7 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 		removeChatFile: answer("removeChatFile", undefined),
 		generateSessionTitle: answer("generateSessionTitle", "Repair the parser"),
 		deleteSession: answer("deleteSession", { method: "trash" }),
+		externalSessionActivity: answer("externalSessionActivity", []),
 		updateSessionUiState: answer("updateSessionUiState", {
 			sessionPath: "/s.jsonl",
 			titleOverride: "Renamed",

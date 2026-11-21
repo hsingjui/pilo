@@ -1,4 +1,4 @@
-import { type Accessor, signal } from "nsh";
+import { type Accessor, computed, signal } from "nsh";
 
 import { chatSessionKey } from "@shared/api/chat-session-key";
 import type {
@@ -11,6 +11,7 @@ import {
 	type AppAction,
 	type AppState,
 	changesChatSession,
+	changesSessionIndex,
 	createAppState,
 	createDraftSessionId,
 	isSessionUnread,
@@ -20,22 +21,47 @@ import {
 } from "./app-state";
 import type { ChatTranscriptStore } from "./chat-transcript-store";
 
-export type AppStoreClient = Pick<
-	NshPiloClient,
-	| "bootstrap"
-	| "chatState"
-	| "listProjects"
-	| "addProject"
-	| "listSessions"
-	| "removeProject"
-	| "loadSessionReadStates"
-	| "loadThemeSettings"
-	| "markSessionRead"
-	| "updateSessionUiState"
-	| "deleteSession"
-	| "connectEvents"
-	| "closed"
->;
+export type AppStoreClient = Partial<
+	// Optional: a client without the probe shows no external Pi turns.
+	Pick<NshPiloClient, "externalSessionActivity">
+> &
+	Pick<
+		NshPiloClient,
+		| "bootstrap"
+		| "chatState"
+		| "listProjects"
+		| "addProject"
+		| "listSessions"
+		| "removeProject"
+		| "loadSessionReadStates"
+		| "loadThemeSettings"
+		| "markSessionRead"
+		| "updateSessionUiState"
+		| "deleteSession"
+		| "connectEvents"
+		| "closed"
+	>;
+
+/** The open new chat once a prompt was sent from it, as the sidebar lists it. */
+export type StartedDraft = {
+	/** The first prompt on one line; empty for a prompt of images only. */
+	title: string;
+	/** Whether a turn shows as running, before Pi reports one too. */
+	active: boolean;
+	/** When the first prompt was sent. */
+	startedAt: number;
+};
+
+function sameDraft(a: StartedDraft | null, b: StartedDraft | null) {
+	return (
+		a === b ||
+		(a !== null &&
+			b !== null &&
+			a.title === b.title &&
+			a.active === b.active &&
+			a.startedAt === b.startedAt)
+	);
+}
 
 /**
  * The app state as one signal, kept current from the Pilo client: a bootstrap
@@ -62,6 +88,9 @@ export class AppStore {
 	/** Counts project reads, so a reload superseded by a newer read is dropped. */
 	private projectReads = 0;
 	private readonly sessionReads = new Map<string, number>();
+	private readonly sessionRefreshes = new Map<string, { again: boolean }>();
+	/** Counts external activity reads, so one a push or newer read overtook is dropped. */
+	private readonly externalReads = new Map<string, number>();
 	/** Counts applied bootstraps, each of which replaces the chat states. */
 	private bootstraps = 0;
 	/** The chats whose runtime state is being read, and whether to read again. */
@@ -80,6 +109,33 @@ export class AppStore {
 		this.client = client;
 		this.chat = chat;
 	}
+
+	/**
+	 * The open new chat once a prompt was sent from it, read from its
+	 * transcript, so the sidebar lists it before Pi has saved it (the Tauri
+	 * app's pending opened chat). It changes only with what the row shows,
+	 * not with each streamed event.
+	 */
+	readonly startedDraft: Accessor<StartedDraft | null> = computed(
+		(previous) => {
+			const open = this.current().navigation.session;
+			if (!this.chat || !open?.sessionId) return null;
+			const { sessionKey, conversation } = this.chat.state();
+			if (sessionKey !== chatSessionKey(open.projectId, open.sessionId)) {
+				return null;
+			}
+			const first = conversation?.messages.find(
+				(message) => message.role === "user",
+			);
+			if (!first) return null;
+			return {
+				title: first.text.replace(/\s+/g, " ").trim(),
+				active: conversation?.active != null,
+				startedAt: first.timestampMs ?? previous?.startedAt ?? Date.now(),
+			};
+		},
+		{ equals: sameDraft },
+	);
 
 	/** Whether runtime events are being received. */
 	get connected() {
@@ -112,16 +168,32 @@ export class AppStore {
 		await this.sync();
 	}
 
-	/** Loads, or loads again, the saved sessions of one project. */
-	async loadSessions(projectId: string) {
+	/**
+	 * Loads, or loads again, the saved sessions of one project. A read the
+	 * user did not ask for (`showProgress` false) keeps the project row as it
+	 * is, as the Tauri app's background refreshes do.
+	 */
+	async loadSessions(projectId: string, showProgress = true) {
 		const read = (this.sessionReads.get(projectId) ?? 0) + 1;
 		this.sessionReads.set(projectId, read);
-		this.apply({ type: "sessions_loading", projectId });
+		if (showProgress) {
+			this.apply({ type: "sessions_loading", projectId });
+			// Pushes keep it current from here, as the Tauri app read it once
+			// per project it lists.
+			void this.loadExternalActivity(projectId);
+		}
 		let action: AppAction;
 		try {
 			const sessions = await this.client.listSessions(projectId);
 			action = { type: "sessions_loaded", projectId, sessions };
 		} catch (error) {
+			// A background scan must not replace an already loaded list with an error.
+			if (
+				!showProgress &&
+				this.current().sessionIndexes[projectId]?.status === "loaded"
+			) {
+				return;
+			}
 			action = { type: "sessions_failed", projectId, message: describe(error) };
 		}
 		if (this.sessionReads.get(projectId) === read) this.apply(action);
@@ -159,6 +231,11 @@ export class AppStore {
 			projectId,
 			sessionId: createDraftSessionId(),
 		});
+	}
+
+	/** Opens again a new chat Pi has not saved yet, by its draft session id. */
+	selectDraft(projectId: string, sessionId: string) {
+		this.apply({ type: "project_selected", projectId, sessionId });
 	}
 
 	/**
@@ -304,6 +381,10 @@ export class AppStore {
 
 	private handle(event: PiloClientEvent) {
 		if (isStaleEvent(this.current(), event)) return;
+		if (event.type === "external_session_activity_changed") {
+			const reads = this.externalReads.get(event.projectId) ?? 0;
+			this.externalReads.set(event.projectId, reads + 1);
+		}
 		this.apply({ type: "event", event });
 		if (event.sequence > this.current().latestSequence)
 			this.onLiveEvent?.(event);
@@ -313,10 +394,60 @@ export class AppStore {
 		if (event.type === "configuration_changed") {
 			void this.reloadProjects();
 		} else if (
-			event.type === "sessions_indexed" &&
-			event.projectId in this.current().sessionIndexes
+			event.type === "sessions_indexed" ||
+			event.type === "assistant_message_start" ||
+			changesSessionIndex(event)
 		) {
-			void this.loadSessions(event.projectId);
+			this.refreshSessionsFor(event);
+		}
+	}
+
+	/** Reads a project's saved sessions again after an event that can change them. */
+	private refreshSessionsFor(event: PiloClientEvent) {
+		const state = this.current();
+		const chat = state.chatSessions.find(
+			(chat) => chat.sessionKey === event.sessionKey,
+		);
+		const projectId = event.projectId ?? chat?.projectId;
+		if (!projectId) return;
+		const index = state.sessionIndexes[projectId];
+		if (event.type === "assistant_message_start") {
+			// The user message is on disk by now. Find the new file without
+			// waiting for the reply, but don't scan for each tool step of saved chats.
+			const path = chat?.sessionPath;
+			const open = state.navigation.session;
+			const openDraft =
+				open?.sessionId &&
+				chatSessionKey(open.projectId, open.sessionId) === event.sessionKey;
+			if (
+				path
+					? index?.sessions.some((entry) => entry.sessionPath === path)
+					: !openDraft
+			) {
+				return;
+			}
+		}
+		if (index || projectId === state.navigation.projectId) {
+			void this.refreshSessionIndex(projectId);
+		}
+	}
+
+	/** Title and turn events may arrive together; let the current scan finish first. */
+	private async refreshSessionIndex(projectId: string) {
+		const pending = this.sessionRefreshes.get(projectId);
+		if (pending) {
+			pending.again = true;
+			return;
+		}
+		const refresh = { again: false };
+		this.sessionRefreshes.set(projectId, refresh);
+		try {
+			do {
+				refresh.again = false;
+				await this.loadSessions(projectId, false);
+			} while (refresh.again);
+		} finally {
+			this.sessionRefreshes.delete(projectId);
 		}
 	}
 
@@ -348,6 +479,25 @@ export class AppStore {
 			}
 		} while (read.again);
 		this.chatReads.delete(sessionKey);
+	}
+
+	/**
+	 * Reads which of the project's sessions an external Pi runs a turn in.
+	 * The Host pushes later changes; a push that arrives meanwhile wins.
+	 */
+	private async loadExternalActivity(projectId: string) {
+		if (!this.client.externalSessionActivity) return;
+		const read = (this.externalReads.get(projectId) ?? 0) + 1;
+		this.externalReads.set(projectId, read);
+		try {
+			const activities = await this.client.externalSessionActivity(projectId);
+			if (this.externalReads.get(projectId) === read) {
+				this.apply({ type: "external_activity_loaded", projectId, activities });
+			}
+		} catch (error) {
+			// Unknown activity is not proof that external turns ended.
+			console.debug("Reading external Pi activity failed", error);
+		}
 	}
 
 	private async reloadProjects() {
@@ -398,7 +548,9 @@ export class AppStore {
 					{ type: "read_states_loaded", states },
 				);
 				for (const projectId of Object.keys(this.current().sessionIndexes)) {
-					void this.loadSessions(projectId);
+					void this.refreshSessionIndex(projectId);
+					// Pushes may have been missed while the stream was out.
+					void this.loadExternalActivity(projectId);
 				}
 				this.synced = true;
 			} catch (error) {

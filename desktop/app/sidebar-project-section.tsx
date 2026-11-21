@@ -36,6 +36,7 @@ import {
 	movedProjectOrder,
 	projectSection,
 	type SidebarGroup,
+	sessionRowKey,
 	sidebarSessions,
 } from "./sidebar-projects";
 import { SessionGlide, SessionGlideContext } from "./sidebar-session-glide";
@@ -345,23 +346,29 @@ function ProjectSessions(props: {
 	});
 	const sessions = computed(() => {
 		const state = store.state();
-		const listed = sidebarSessions(state, props.projectId(), t("app.newChat"));
+		const listed = sidebarSessions(
+			state,
+			props.projectId(),
+			t("app.newChat"),
+			store.startedDraft(),
+		);
 		const open = state.navigation.session;
 		const opened =
-			open?.projectId === props.projectId()
-				? listed.find((session) => session.sessionPath === open.sessionPath)
-				: undefined;
-		return summarizeProjectSessions(listed, opened?.id ?? null);
+			open?.projectId !== props.projectId()
+				? undefined
+				: open.sessionPath
+					? listed.find((session) => session.sessionPath === open.sessionPath)
+							?.id
+					: open.sessionId;
+		return summarizeProjectSessions(listed, opened ?? null);
 	});
+	const hasSessions = computed(() => sessions().visible.length > 0);
 	return (
 		<>
 			{() =>
-				sessions().visible.length > 0 ? (
+				hasSessions() ? (
 					<SessionGlide>
-						<Each
-							of={sessions().visible}
-							key={(session) => session.sessionPath}
-						>
+						<Each of={sessions().visible} key={sessionRowKey}>
 							{(session) => <SessionRow store={store} session={session} />}
 						</Each>
 						{() =>

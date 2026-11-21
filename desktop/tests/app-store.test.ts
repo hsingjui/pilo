@@ -239,7 +239,10 @@ test("events move the state and reload what they name", async () => {
 	expect(Object.values(state.readStates)).toEqual([read("a", 1, 0)]);
 	expect(projectLists.length).toBe(1);
 	expect(sessionLists.map(({ projectId }) => projectId)).toEqual(["p1", "p1"]);
-	expect(state.sessionIndexes.p1?.status).toBe("loading");
+	expect(state.sessionIndexes.p1).toEqual({
+		status: "loaded",
+		sessions: [session("p1", "a")],
+	});
 
 	projectLists[0]?.resolve([project("p1"), project("p3")]);
 	sessionLists[1]?.resolve([session("p1", "a"), session("p1", "b")]);
@@ -283,10 +286,10 @@ test("a gap bootstraps again and events during the resync wait for it", async ()
 	expect(state.preferences?.revision).toBe(7);
 	// Only the configuration change after the cut reloads the projects.
 	expect(projectLists.length).toBe(1);
-	// The session list that was loaded is loaded again.
+	// The session list refreshes without going back to the loading state.
 	expect(sessionLists.map(({ projectId }) => projectId)).toEqual(["p1", "p1"]);
 	expect(state.sessionIndexes.p1).toEqual({
-		status: "loading",
+		status: "loaded",
 		sessions: [session("p1", "a")],
 	});
 
@@ -605,8 +608,22 @@ test("the state follows the real native module through events, a gap and shutdow
 	);
 });
 
-const chat = (sessionKey: string, activeTurn = false) =>
-	({ sessionKey, projectId: "p1", activeTurn }) as ChatSessionRuntimeState;
+const chat = (
+	sessionKey: string,
+	activeTurn = false,
+): ChatSessionRuntimeState => ({
+	sessionKey,
+	projectId: "p1",
+	prepared: true,
+	initialized: true,
+	activeTurn,
+	snapshot: {
+		generation: 1,
+		state: "running",
+		connection: null,
+		projectId: "p1",
+	},
+});
 const chatEvent = (sequence: number, sessionKey: string, type: string) =>
 	[sequence, { type, sessionKey, projectId: "p1", generation: 1 }] as [
 		number,

@@ -113,12 +113,15 @@ export function SessionRow(props: {
 	const renameInput = signal<InputRef | null>(null);
 	let renamePending = false;
 	const menuHover = createHover();
+	// A new chat Pi has not saved yet has no file to rename, refresh or delete.
+	// Its row is another one once saved (rows are kept by file), so this holds.
+	const saved = session().sessionPath !== "";
 	const selected = () => {
 		const open = store.state().navigation.session;
-		return (
-			open?.projectId === session().projectId &&
-			open.sessionPath === session().sessionPath
-		);
+		if (open?.projectId !== session().projectId) return false;
+		return saved
+			? open.sessionPath === session().sessionPath
+			: !open.sessionPath && open.sessionId === session().id;
 	};
 	const projectContext = () => Boolean(props.projectName?.());
 
@@ -310,42 +313,44 @@ export function SessionRow(props: {
 					/>
 				) : null
 			}
-			<Menu
-				class="absolute top-0 -left-1 z-20 size-6"
-				open={menuOpen()}
-				onOpenChange={(event) => {
-					menuOpen.set(event.open);
-					resetDelete(event);
-				}}
-				onClose={startRenameAfterMenuClose}
-				align="start"
-				popupStyle={{ minWidth: 0 }}
-				trigger={
-					<Button
-						{...menuHover.props}
-						testID={`session:${session().id}:menu`}
-						class={`size-6 items-center justify-center rounded-md duration-100 hover:bg-sidebar-foreground/15 ${shownWhileMenu(
-							HOVER_ACTION,
-							"bg-sidebar-foreground/15 opacity-100",
-						)}`}
-						style={{ transitionProperty: "opacity, background-color" }}
-						focusVisibleStyle={sidebarFocusRing()}
-						accessibilityLabel={t("sidebar.moreActions")}
-					>
-						<Icon
-							name="MoreHorizontal"
-							size={14}
-							color={token(
-								menuHover.hovered() || menuOpen()
-									? "sidebar-foreground"
-									: "sidebar-foreground-muted",
-							)}
-						/>
-					</Button>
-				}
-			>
-				{menuItems}
-			</Menu>
+			{saved ? (
+				<Menu
+					class="absolute top-0 -left-1 z-20 size-6"
+					open={menuOpen()}
+					onOpenChange={(event) => {
+						menuOpen.set(event.open);
+						resetDelete(event);
+					}}
+					onClose={startRenameAfterMenuClose}
+					align="start"
+					popupStyle={{ minWidth: 0 }}
+					trigger={
+						<Button
+							{...menuHover.props}
+							testID={`session:${session().id}:menu`}
+							class={`size-6 items-center justify-center rounded-md duration-100 hover:bg-sidebar-foreground/15 ${shownWhileMenu(
+								HOVER_ACTION,
+								"bg-sidebar-foreground/15 opacity-100",
+							)}`}
+							style={{ transitionProperty: "opacity, background-color" }}
+							focusVisibleStyle={sidebarFocusRing()}
+							accessibilityLabel={t("sidebar.moreActions")}
+						>
+							<Icon
+								name="MoreHorizontal"
+								size={14}
+								color={token(
+									menuHover.hovered() || menuOpen()
+										? "sidebar-foreground"
+										: "sidebar-foreground-muted",
+								)}
+							/>
+						</Button>
+					}
+				>
+					{menuItems}
+				</Menu>
+			) : null}
 		</View>
 	);
 	const trailing = () => (
@@ -361,14 +366,16 @@ export function SessionRow(props: {
 					/>
 				) : null
 			}
-			<ConfirmDeleteButton
-				testID={`session:${session().id}:delete-button`}
-				class={`absolute top-0 right-0 z-20 ${shownWhileMenu(
-					HOVER_ACTION,
-					"opacity-100",
-				)}`}
-				onConfirm={deleteSession}
-			/>
+			{saved ? (
+				<ConfirmDeleteButton
+					testID={`session:${session().id}:delete-button`}
+					class={`absolute top-0 right-0 z-20 ${shownWhileMenu(
+						HOVER_ACTION,
+						"opacity-100",
+					)}`}
+					onConfirm={deleteSession}
+				/>
+			) : null}
 		</View>
 	);
 
@@ -382,6 +389,7 @@ export function SessionRow(props: {
 		>
 			<ContextMenu
 				testID={`session:${session().id}:context`}
+				disabled={!saved}
 				open={contextOpen()}
 				onOpenChange={(event) => {
 					contextOpen.set(event.open);
@@ -411,7 +419,12 @@ export function SessionRow(props: {
 								</Tooltip>
 							}
 							onPress={() =>
-								store.selectSession(session().projectId, session().sessionPath)
+								saved
+									? store.selectSession(
+											session().projectId,
+											session().sessionPath,
+										)
+									: store.selectDraft(session().projectId, session().id)
 							}
 						>
 							{content()}

@@ -84,7 +84,10 @@ export function CommandPalette(props: CommandPaletteProps) {
 		const state = store.state();
 		return state.projects
 			.flatMap((project) =>
-				sidebarSessions(state, project.id, t("app.newChat")),
+				// New chats Pi has not saved yet are not sessions to open by file.
+				sidebarSessions(state, project.id, t("app.newChat")).filter(
+					(session) => session.sessionPath !== "",
+				),
 			)
 			.sort(
 				(a, b) => b.latestMessageAt.getTime() - a.latestMessageAt.getTime(),

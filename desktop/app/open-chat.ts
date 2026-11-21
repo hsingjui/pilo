@@ -44,14 +44,10 @@ export function openChatTarget(state: AppState): ChatTranscriptTarget | null {
 	if (!open) return null;
 	const { projectId, sessionPath } = open;
 	if (!sessionPath) {
-		// A chat that was never saved answers to the id the app made for it,
-		// and to the file Pi saves it to once it has one.
-		if (!open.sessionId) return null;
-		const sessionKey = chatSessionKey(projectId, open.sessionId);
-		const held = state.chatSessions.find(
-			(chat) => chat.sessionKey === sessionKey,
-		);
-		return { sessionKey, projectId, sessionPath: held?.sessionPath };
+		// A path returned during Pi startup is not yet a saved session.
+		return open.sessionId
+			? { sessionKey: chatSessionKey(projectId, open.sessionId), projectId }
+			: null;
 	}
 	const held = state.chatSessions.find(
 		(chat) => chat.projectId === projectId && chat.sessionPath === sessionPath,
@@ -68,15 +64,39 @@ export function openChatTarget(state: AppState): ChatTranscriptTarget | null {
 	};
 }
 
+/**
+ * Whether `next` is the new chat `previous` showed, now that Pi has named the
+ * file it saves it to: the same chat, not another one to open again.
+ */
+function namesDraftFile(
+	previous: ChatTranscriptTarget | null,
+	next: ChatTranscriptTarget,
+): next is ChatTranscriptTarget & { sessionPath: string } {
+	return (
+		previous !== null &&
+		previous.sessionKey === next.sessionKey &&
+		previous.projectId === next.projectId &&
+		!previous.sessionPath &&
+		!!next.sessionPath
+	);
+}
+
 /** Keeps `chat` on the session that is open in `store`, closed without one. */
 export function followOpenSession(store: AppStore, chat: ChatTranscriptStore) {
 	// Compared as text, so the chat is opened again only when it is another.
 	const target = computed(() => JSON.stringify(openChatTarget(store.state())));
+	let shown: ChatTranscriptTarget | null = null;
 	effect(() => {
 		const next = JSON.parse(target()) as ChatTranscriptTarget | null;
 		untracked(() => {
+			const previous = shown;
+			shown = next;
 			if (!next) {
 				chat.close();
+				return;
+			}
+			if (namesDraftFile(previous, next)) {
+				chat.adoptSessionPath(next.sessionPath);
 				return;
 			}
 			const freshDraft =
@@ -131,10 +151,16 @@ export function followRunConfig(
 		});
 	});
 	const target = computed(() => JSON.stringify(openChatTarget(store.state())));
+	let shown: ChatTranscriptTarget | null = null;
 	effect(() => {
 		const next = JSON.parse(target()) as ChatTranscriptTarget | null;
 		untracked(() => {
-			if (next) {
+			const previous = shown;
+			shown = next;
+			if (next && namesDraftFile(previous, next)) {
+				// Opening it again would drop the selection a send is applying.
+				runConfig.adoptSessionPath(next.sessionPath);
+			} else if (next) {
 				void runConfig.open(
 					next,
 					next.sessionPath ? {} : initialRunConfig(catalog),
