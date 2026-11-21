@@ -1,4 +1,4 @@
-import type { ChatSession } from "@/components/chat/chat-page";
+import type { ChatSession } from "@/components/chat/chat-page-utils";
 import { i18n } from "../../i18n/index.ts";
 import type { ChatImageAttachment } from "@/lib/chat/chat-submission";
 import type { SidebarSession } from "@/components/sidebar/types";

@@ -1,4 +1,4 @@
-import { listChatSessionRuntimeStates } from "@/lib/api/chat-session-client";
+import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import {
 	chatRuntimeHasOpenTurn,
 	runtimeSessionPathKey,
@@ -41,7 +41,7 @@ export function sameRuntimeActivity(
 }
 
 export function runtimeActivityFromStates(
-	states: Awaited<ReturnType<typeof listChatSessionRuntimeStates>>,
+	states: readonly ChatSessionRuntimeState[],
 	projectIds?: ReadonlySet<string>,
 ): ProjectRuntimeActivity {
 	const mutable = new Map<string, Set<string>>();

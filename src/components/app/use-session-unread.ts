@@ -3,7 +3,7 @@ import { useState } from "react";
 import { chatUiStateKey } from "@/components/app/app-chat-state";
 
 import type { SidebarSession } from "@/components/sidebar/types";
-import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-client";
+import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import {
 	chatRuntimeHasOpenTurn,
 	runtimeSessionIdFromKey,

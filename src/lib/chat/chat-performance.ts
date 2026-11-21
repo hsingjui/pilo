@@ -1,5 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
-
 import type { ChatSessionSwitchSample } from "@/lib/chat/chat-performance-switch";
 
 const CHAT_PERF_STORAGE_KEY = "pilo.debug.chatPerformance";
@@ -264,11 +262,6 @@ function maybeReport(now = performance.now(), force = false) {
 		jsHeapTotalMb: heap.total,
 	};
 	console.info("[Pilo perf] chat", report);
-	if (import.meta.env.DEV) {
-		void invoke("debug_chat_performance_log", {
-			payload: JSON.stringify(report),
-		}).catch(() => undefined);
-	}
 	emitReport(report);
 	state.counters = EMPTY_COUNTERS();
 }
@@ -300,16 +293,6 @@ export function recordChatSessionSwitchStart(
 	toSessionId: string,
 ) {
 	if (!isChatPerformanceDebugEnabled() || fromSessionId === toSessionId) return;
-	if (import.meta.env.DEV) {
-		void invoke("debug_chat_performance_log", {
-			payload: JSON.stringify({
-				timestamp: new Date().toISOString(),
-				type: "switch_start",
-				fromSessionId,
-				toSessionId,
-			}),
-		}).catch(() => undefined);
-	}
 	state.pendingSwitch = {
 		fromSessionId,
 		toSessionId,
@@ -324,28 +307,8 @@ export function recordChatSessionSwitchStart(
 export function recordChatSessionSwitchReady(sessionId: string) {
 	if (!isChatPerformanceDebugEnabled()) return;
 	const pending = state.pendingSwitch;
-	if (import.meta.env.DEV) {
-		void invoke("debug_chat_performance_log", {
-			payload: JSON.stringify({
-				timestamp: new Date().toISOString(),
-				type: "switch_ready",
-				readySessionId: sessionId,
-				requestedSessionId: pending?.toSessionId ?? null,
-			}),
-		}).catch(() => undefined);
-	}
 	if (!pending) return;
 	if (state.observer) recordLongTaskEntries(state.observer.takeRecords());
-	if (import.meta.env.DEV && pending.toSessionId !== sessionId) {
-		void invoke("debug_chat_performance_log", {
-			payload: JSON.stringify({
-				timestamp: new Date().toISOString(),
-				type: "switch_id_mismatch",
-				requestedSessionId: pending.toSessionId,
-				readySessionId: sessionId,
-			}),
-		}).catch(() => undefined);
-	}
 	// Only the active viewport reports ready, so its first ready layout after a
 	// selection is the switch completion even when a draft controller was
 	// re-keyed to the Pi session id between selection and layout.
@@ -376,11 +339,6 @@ export function recordChatSessionSwitchReady(sessionId: string) {
 	state.context.lastSwitchFrom = pending.fromSessionId;
 	state.context.lastSwitchTo = sessionId;
 	state.context.lastSwitchMs = sample.durationMs;
-	if (import.meta.env.DEV) {
-		void invoke("debug_chat_performance_log", {
-			payload: JSON.stringify({ type: "switch_sample", ...sample }),
-		}).catch(() => undefined);
-	}
 	maybeReport(performance.now(), true);
 }
 

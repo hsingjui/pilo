@@ -1,4 +1,3 @@
-import { isTauri } from "@tauri-apps/api/core";
 import { FileCode2, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -79,7 +78,7 @@ export function FileMentionBadge({
 	const fileOpener = useChatFileOpen();
 	const title = fileMentionName(path);
 	const onOpen =
-		isTauri() && canPreviewFileMention(path) && fileOpener?.canOpenFile(path)
+		canPreviewFileMention(path) && fileOpener?.canOpenFile(path)
 			? () => fileOpener.openFile(path)
 			: undefined;
 	return (

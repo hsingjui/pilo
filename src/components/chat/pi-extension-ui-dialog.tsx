@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 
 import { useIsTouchDevice } from "@/components/chat/chat-composer-run-config";
-import type { PiExtensionDialogRequest } from "@/components/chat/use-pi-session-features";
+import type { PiExtensionDialogRequest } from "@/components/chat/pi-extension-dialog-request";
 import { cn } from "@/lib/utils";
 import {
 	isImeComposingKeyboardEvent,

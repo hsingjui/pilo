@@ -13,12 +13,7 @@ import { isDefaultWorkspace } from "@/lib/default-workspace";
 import { PanelLeft, Search, SquarePen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/lib/preferences-provider";
-import { tauriPiloClient } from "@/lib/api/tauri-pilo-client";
 import { useKeyboardShortcut } from "@/lib/use-keyboard-shortcut";
-import {
-	IS_MACOS,
-	TRAFFIC_LIGHT_ALIGNED_SIDEBAR_ACTIONS,
-} from "@/components/title-bar";
 import { ProjectSessionsToolbar } from "./project-sessions-toolbar";
 import { SidebarTree } from "./sidebar-tree";
 import { SIDEBAR_ACTION } from "./sidebar-row-parts";
@@ -88,6 +83,7 @@ function readShowProjectsInRecents(): boolean {
 }
 
 export function AppSidebar({
+	client,
 	envs,
 	projects,
 	sessions,
@@ -117,9 +113,9 @@ export function AppSidebar({
 		string | null
 	>(null);
 	const { keyboardShortcuts, defaultWorkspaceVisibility } = usePreferences();
-	useKeyboardShortcut(keyboardShortcuts["open-command-palette"], () =>
-		setPaletteOpen((open) => !open),
-	);
+	useKeyboardShortcut(keyboardShortcuts["open-command-palette"], () => {
+		if (client) setPaletteOpen((open) => !open);
+	});
 	const [collapsedSections, setCollapsedSections] = useState<
 		Record<string, boolean>
 	>(readCollapsedSections);
@@ -323,13 +319,7 @@ export function AppSidebar({
 				)}
 			>
 				<div className="relative flex flex-col bg-sidebar text-sidebar-foreground pilo-sidebar-surface">
-					<header
-						data-tauri-drag-region="deep"
-						className={cn(
-							"group/sidebar-header relative flex shrink-0 items-center px-1.5",
-							IS_MACOS ? "h-[72px] pt-7" : "h-11",
-						)}
-					>
+					<header className="group/sidebar-header relative flex h-11 shrink-0 items-center px-1.5">
 						<div className="flex min-w-0 items-center gap-1.5 px-2">
 							<span className="min-w-0 select-none truncate text-lg font-semibold tracking-tight text-sidebar-foreground">
 								Pilo
@@ -342,22 +332,18 @@ export function AppSidebar({
 							) : null}
 						</div>
 						{!collapsed && !settledCollapsed ? (
-							<div
-								className={cn(
-									// Match the scroll body inset and row action padding.
-									"absolute right-2.5 flex h-7 items-center gap-0.5 border border-transparent px-2",
-									// 扣除主题顶部内缩及容器半高，字体缩放后仍对齐原生红绿灯。
-									IS_MACOS ? TRAFFIC_LIGHT_ALIGNED_SIDEBAR_ACTIONS : "top-2",
-								)}
-							>
-								<button
-									type="button"
-									className={SIDEBAR_ACTION}
-									aria-label={t("sidebar.searchSessions")}
-									onClick={() => setPaletteOpen(true)}
-								>
-									<Search className="size-4" />
-								</button>
+							// Match the scroll body inset and row action padding.
+							<div className="absolute right-2.5 top-2 flex h-7 items-center gap-0.5 border border-transparent px-2">
+								{client ? (
+									<button
+										type="button"
+										className={SIDEBAR_ACTION}
+										aria-label={t("sidebar.searchSessions")}
+										onClick={() => setPaletteOpen(true)}
+									>
+										<Search className="size-4" />
+									</button>
+								) : null}
 								<button
 									type="button"
 									className={SIDEBAR_ACTION}
@@ -452,10 +438,10 @@ export function AppSidebar({
 					/>
 				)}
 			</aside>
-			{paletteOpen ? (
+			{client && paletteOpen ? (
 				<Suspense fallback={null}>
 					<CommandPalette
-						client={tauriPiloClient}
+						client={client}
 						open
 						onOpenChange={setPaletteOpen}
 						projects={projects}

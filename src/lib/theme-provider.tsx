@@ -9,15 +9,12 @@ import {
 	useState,
 } from "react";
 
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { i18n } from "@/i18n";
-import { listenRuntimeEvents } from "@/lib/api/pi-runtime";
 import { CUSTOM_THEME_STYLE_ID } from "@/lib/theme-custom";
 import {
 	compatibleThemeUpdate,
 	customThemeCss,
-	legacyThemeInitial,
 	normalizeThemeSettings,
 	supportsThemeTokens,
 } from "@/lib/theme-compat";
@@ -31,9 +28,6 @@ import {
 
 export type { Theme, ThemeFamily } from "@/lib/theme-settings";
 export type ResolvedTheme = "light" | "dark";
-
-const DESKTOP_RUNTIME =
-	typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 export const THEME_CYCLE_ORDER: readonly Theme[] = ["light", "dark", "system"];
 
@@ -89,7 +83,6 @@ export function ThemeProvider({
 	const { theme, themeFamily, themeCustomTokens, themeCustomCss } = settings;
 	const [tokenCapability, setTokenCapability] = useState(false);
 	const tokenCapabilityRef = useRef(false);
-	const initialSettingsRef = useRef(settings);
 	const revisionRef = useRef(-1);
 	const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
 	const remoteWriterRef = useRef<
@@ -111,46 +104,6 @@ export function ThemeProvider({
 		setTokenCapability(tokenCapabilityRef.current);
 		setSettings(normalizeThemeSettings(next));
 	}, []);
-
-	useEffect(() => {
-		if (!DESKTOP_RUNTIME) return;
-		let disposed = false;
-		let unlisten: (() => void) | undefined;
-		const refresh = async () => {
-			const next = await invoke<ThemeSettings>("theme_settings_get", {
-				initial: legacyThemeInitial(initialSettingsRef.current),
-			});
-			if (!disposed) applyThemeSettings(next);
-		};
-		const onVisible = () => {
-			if (document.visibilityState === "visible")
-				void refresh().catch(reportLoadError);
-		};
-		const reportLoadError = (error: unknown) => {
-			if (!disposed)
-				toast.error(i18n.t("settings.themeLoadFailed"), {
-					description: String(error),
-				});
-		};
-		void (async () => {
-			const cleanup = await listenRuntimeEvents((event) => {
-				if (!disposed && event.type === "theme_settings_changed")
-					applyThemeSettings(event.settings);
-			});
-			if (disposed) {
-				cleanup();
-				return;
-			}
-			unlisten = cleanup;
-			await refresh();
-		})().catch(reportLoadError);
-		document.addEventListener("visibilitychange", onVisible);
-		return () => {
-			disposed = true;
-			unlisten?.();
-			document.removeEventListener("visibilitychange", onVisible);
-		};
-	}, [applyThemeSettings]);
 
 	useEffect(() => {
 		try {
@@ -255,26 +208,15 @@ export function ThemeProvider({
 
 	const updateSettings = useCallback(
 		(update: ThemeSettingsUpdate) => {
-			if (!DESKTOP_RUNTIME && !remoteWriterRef.current) return;
+			if (!remoteWriterRef.current) return;
 			writeQueueRef.current = writeQueueRef.current
 				.then(async () => {
 					const payload = compatibleThemeUpdate(
 						update,
 						tokenCapabilityRef.current,
 					);
-					if (!DESKTOP_RUNTIME) {
-						const writer = remoteWriterRef.current;
-						if (writer) applyThemeSettings(await writer(payload));
-						return;
-					}
-					// Initialize legacy desktop settings before the first edit, even if startup loading failed.
-					await invoke<ThemeSettings>("theme_settings_get", {
-						initial: legacyThemeInitial(initialSettingsRef.current),
-					});
-					const next = await invoke<ThemeSettings>("theme_settings_set", {
-						update: payload,
-					});
-					applyThemeSettings(next);
+					const writer = remoteWriterRef.current;
+					if (writer) applyThemeSettings(await writer(payload));
 				})
 				.catch((error: unknown) => {
 					toast.error(i18n.t("settings.themeSaveFailed"), {

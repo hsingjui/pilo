@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { PiloClient } from "@/lib/api/pilo-client";
 import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime";
-import { listenRuntimeEvents, runtimeErrorMessage } from "@/lib/api/pi-runtime";
+import { runtimeErrorMessage } from "@/lib/api/pi-runtime";
 import type {
 	PromptEnhancementModel,
 	PromptEnhancementSettings,
@@ -11,10 +11,9 @@ import type {
 /**
  * Host-owned prompt enhancement settings for one Connection.
  *
- * Desktop reads them through the Tauri command and the Remote WebUI through the
- * authenticated HTTP route, so both clients show the same switch and model.
- * The listener is internal because every composer surface needs it: a second
- * window or the WebUI must not leave a stale switch behind.
+ * The Remote WebUI reads them through the authenticated HTTP route and feeds
+ * Host events from its socket into `handleEvent`, so a change made elsewhere
+ * does not leave a stale switch behind.
  */
 export function usePromptEnhancementSettings(
 	client: PiloClient | null,
@@ -136,21 +135,6 @@ export function usePromptEnhancementSettings(
 		},
 		[accept, connectionId],
 	);
-	useEffect(() => {
-		let disposed = false;
-		let stop: (() => void) | undefined;
-		void listenRuntimeEvents(handleEvent)
-			.then((unlisten) => {
-				if (disposed) unlisten();
-				else stop = unlisten;
-			})
-			// The Remote WebUI receives Host events over its socket, not this channel.
-			.catch(() => undefined);
-		return () => {
-			disposed = true;
-			stop?.();
-		};
-	}, [handleEvent]);
 	const current =
 		state.client === client && state.connectionId === connectionId;
 	return {

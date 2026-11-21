@@ -520,6 +520,7 @@ function RemoteWorkspace() {
 
 	const sidebarNode = (
 		<AppSidebar
+			client={connection.client}
 			collapsed={sidebarCollapsed}
 			onCollapse={() => setSidebarCollapsed(true)}
 			envs={envs}

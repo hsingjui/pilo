@@ -1,16 +1,12 @@
 // @ts-expect-error type error without @types/node package
-import process from "node:process";
-// @ts-expect-error type error without @types/node package
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-const host = process.env.TAURI_DEV_HOST;
-
 // https://vite.dev/config/
-export default defineConfig(({ command }) => ({
+export default defineConfig(() => ({
 	plugins: [
 		react(),
 		tailwindcss(),
@@ -29,7 +25,7 @@ export default defineConfig(({ command }) => ({
 					"pilo-*.png",
 					"assets/{index,theme-presets}-*.css",
 					// Group optional chunks so absent ones don't trigger unmatched-glob warnings.
-					"assets/{index,remote-app,react,rolldown-runtime,utils,i18nInstance,core,bundle-mjs,draft-project-picker,use-pi-session-features,folder,wifi,send,trash,pencil,ellipsis,sessions}-*.js",
+					"assets/{index,remote-app,react,rolldown-runtime,utils,i18nInstance,core,bundle-mjs,draft-project-picker,folder,wifi,send,trash,pencil,ellipsis,sessions}-*.js",
 					"assets/inter-latin-*-normal-*.woff2",
 					"assets/jetbrains-mono-latin-*-normal-*.woff2",
 				],
@@ -62,41 +58,17 @@ export default defineConfig(({ command }) => ({
 	resolve: {
 		alias: [
 			{ find: "@", replacement: path.resolve(import.meta.dirname, "./src") },
-			// Replace only the full bundle; preserve shiki/core and engine imports.
-			{
-				find: /^shiki$/,
-				replacement: path.resolve(
-					import.meta.dirname,
-					"./src/lib/git-diff-shiki.ts",
-				),
-			},
-			// Shiki accepts Vite's WASM initializer; avoid a base64 JS payload.
-			...(command === "build"
-				? [{ find: "shiki/wasm", replacement: "shiki/onig.wasm?init" }]
-				: []),
 		],
 	},
 
-	// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-	//
-	// 1. prevent Vite from obscuring rust errors
 	clearScreen: false,
-	// 2. tauri expects a fixed port, fail if that port is not available
 	server: {
+		// The browser regression pages are documented at this address.
 		port: 1420,
 		strictPort: true,
-		host: host || false,
-		hmr: host
-			? {
-					protocol: "ws",
-					host,
-
-					port: 1421,
-				}
-			: undefined,
 		watch: {
-			// 3. tell Vite to ignore watching `src-tauri` and the workspace target dir
-			ignored: ["**/src-tauri/**", "**/target/**"],
+			// Cargo output under the workspace target dir is not a frontend input.
+			ignored: ["**/target/**"],
 		},
 	},
 }));

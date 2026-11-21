@@ -17,8 +17,8 @@ import { describeDevice } from "@/lib/device-name";
 import { defaultWorkspaceName } from "@/lib/default-workspace";
 import { registerChatFile } from "@/lib/chat/chat-file-lifecycle";
 import type { SessionReadState } from "@/lib/session-read-state";
-import type { RemoteAccessAddress } from "@/lib/api/remote";
-import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-client";
+import type { RemoteAccessAddress } from "@/lib/api/remote-types";
+import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import type {
 	PiloClientBootstrap,
 	PiloClientEventMessage,

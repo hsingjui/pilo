@@ -41,7 +41,7 @@ import type {
 	SessionIndexEntry,
 	SessionSearchMatch,
 } from "@/lib/api/sessions";
-import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-client";
+import type { ChatSessionRuntimeState } from "@/lib/api/chat-session-types";
 import {
 	approveRemoteProjectMcpServer,
 	connectRemoteEvents,

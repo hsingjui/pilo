@@ -1,5 +1,3 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
-
 import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime-types";
 import type { NextPromptRequest, NextPromptResult } from "./next-prompt-types";
 
@@ -29,11 +27,7 @@ export function traceNextPrompt(
 		status: detail.status,
 		elapsedMs: detail.elapsedMs,
 	});
-	if (isTauri()) {
-		void invoke("debug_runtime_trace_log", { payload }).catch(() => undefined);
-	} else {
-		console.info("[next-prompt]", payload);
-	}
+	console.info("[next-prompt]", payload);
 }
 
 export function decodeNextPromptResult(

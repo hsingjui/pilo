@@ -1,5 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
-
 import type {
 	CodeFontSize,
 	MonospaceFontFamily,
@@ -40,9 +38,6 @@ export const MONOSPACE_FONT_BUILTIN_OPTIONS: ReadonlyArray<FontOption> = [
 	},
 	{ value: "system-mono", label: "", labelKey: "settings.systemMonospace" },
 ];
-
-/** 随应用打包的字体族名（小写）；全量枚举时跳过，避免与内置候选重复。 */
-const BUNDLED_FONT_FAMILIES = new Set(["inter", "jetbrains mono"]);
 
 export type FontSizeRange = { min: number; max: number };
 
@@ -179,103 +174,4 @@ export function isCodeFontSize(value: unknown): value is CodeFontSize {
 
 export function isTerminalFontSize(value: unknown): value is TerminalFontSize {
 	return isFontSize(value, TERMINAL_FONT_SIZE_RANGE);
-}
-
-/** 后端返回的系统字体族及其原生等宽判定。 */
-export type SystemFontFamily = {
-	family: string;
-	monospace: boolean;
-};
-
-let systemFontFamiliesPromise: Promise<readonly SystemFontFamily[]> | null =
-	null;
-
-/**
- * 全量枚举系统已安装字体族（含原生等宽判定）。整个会话只查询一次并缓存；
- * 枚举失败时回退为空列表，下拉退化为仅内置候选。
- */
-function resolveSystemFonts(): Promise<readonly SystemFontFamily[]> {
-	if (!systemFontFamiliesPromise) {
-		systemFontFamiliesPromise = invoke<SystemFontFamily[]>(
-			"system_font_families",
-		)
-			.then((families) => dedupeAndSortFontFamilies(families))
-			.catch((error) => {
-				console.warn("system_font_families failed", error);
-				// 清空缓存允许下次打开设置时重试，避免首帧失败被永久缓存。
-				systemFontFamiliesPromise = null;
-				return [];
-			});
-	}
-	return systemFontFamiliesPromise;
-}
-
-/** 全部系统字体族名，供页面字体候选使用。 */
-export function resolveSystemFontFamilies(): Promise<readonly string[]> {
-	return resolveSystemFonts().then((families) =>
-		families.map((item) => item.family),
-	);
-}
-
-/** 依据后端原生等宽判定过滤出的等宽字体族名。 */
-export function resolveSystemMonospaceFamilies(): Promise<readonly string[]> {
-	return resolveSystemFonts().then((families) =>
-		families.filter((item) => item.monospace).map((item) => item.family),
-	);
-}
-
-/**
- * 大小写不敏感地按名称排序并去重。tsconfig 的 lib 目标还不含
- * `Array#toSorted`，`sort` 又会原地突变，因此对副本排序。
- * nsh の JS エンジンは Intl.Collator を持たないので遅延生成し、
- * 非対応環境では localeCompare にフォールバックする。
- */
-function dedupeAndSortFontFamilies(
-	families: readonly SystemFontFamily[],
-): SystemFontFamily[] {
-	const seen = new Set<string>();
-	const result: SystemFontFamily[] = [];
-	for (const item of families) {
-		const family = item.family.trim();
-		const key = family.toLowerCase();
-		if (!key || seen.has(key)) continue;
-		seen.add(key);
-		result.push({ family, monospace: item.monospace });
-	}
-	const sorted = [...result];
-	const collator =
-		typeof Intl !== "undefined" && typeof Intl.Collator === "function"
-			? new Intl.Collator("en", { sensitivity: "base" })
-			: null;
-	sorted.sort((a, b) =>
-		collator
-			? collator.compare(a.family, b.family)
-			: a.family.localeCompare(b.family),
-	);
-	return sorted;
-}
-
-/** 系统字体族转下拉选项；跳过与随应用打包字体重名的族，避免重复。 */
-export function buildSystemFontOptions(
-	systemFamilies: readonly string[],
-): FontOption[] {
-	const options: FontOption[] = [];
-	for (const family of systemFamilies) {
-		if (BUNDLED_FONT_FAMILIES.has(family.toLowerCase())) continue;
-		options.push({ value: family, label: family, family });
-	}
-	return options;
-}
-
-/**
- * 符号/图标字体（选中后页面文字会变成不可读字形），不进入页面字体候选。
- * 仅用于页面字体列表；等宽列表由 canvas 测量自行过滤。
- */
-const SYMBOL_FONT_FAMILY_PATTERN =
-	/\b(?:wingdings|webdings|marlett|dingbat|emoji|fluent icons|mdl\d|symbol)/i;
-
-export function filterSymbolFontFamilies(
-	families: readonly string[],
-): string[] {
-	return families.filter((family) => !SYMBOL_FONT_FAMILY_PATTERN.test(family));
 }

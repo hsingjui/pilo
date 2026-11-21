@@ -13,7 +13,7 @@ import {
 	projectMcpApprovalServer,
 	sameExtensionDialogRequest,
 	type PiExtensionDialogRequest,
-} from "@/components/chat/use-pi-session-features";
+} from "@/components/chat/pi-extension-dialog-request";
 import { runtimeErrorMessage } from "@/lib/api/pi-runtime";
 import { usePreferences } from "@/lib/preferences-provider";
 import type { RemoteRpc } from "./use-remote-chat-transport";

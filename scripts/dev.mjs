@@ -57,14 +57,11 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 }
 
 try {
-	const frontend = process.argv.includes("--frontend");
-	// WebUI serves dist/ from disk; desktop uses the Vite dev server.
-	const commands = frontend
-		? [
-				["node_modules/vite/bin/vite.js"],
-				["node_modules/vite/bin/vite.js", "build", "--watch"],
-			]
-		: [["scripts/tauri.mjs", "dev", "--features", "webdriver"]];
+	// The Host serves the WebUI from dist/; the Vite server hosts the browser tests.
+	const commands = [
+		["node_modules/vite/bin/vite.js"],
+		["node_modules/vite/bin/vite.js", "build", "--watch"],
+	];
 	for (const args of commands) {
 		const child = spawn(process.execPath, args, {
 			cwd: root,

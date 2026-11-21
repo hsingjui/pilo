@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ChatSessionRuntimeState } from "../../src/lib/api/chat-session-client.ts";
+import type { ChatSessionRuntimeState } from "../../src/lib/api/chat-session-types.ts";
 import {
 	chatRpcRenamesSession,
 	chatRuntimeHasOpenTurn,

@@ -1,31 +1,4 @@
-import type { MutableRefObject } from "react";
-
 import type { AppError } from "@/lib/app-error";
-import type { createChatSessionClient } from "@/lib/api/chat-session-client";
-import type { ChatSubmission } from "@/lib/chat/chat-submission";
-
-export type ChatSessionClient = ReturnType<typeof createChatSessionClient>;
-
-export type ActiveTurn = {
-	sessionId: string;
-	sessionTitle: string;
-	sessionTitleReady?: Promise<string | undefined>;
-	projectId: string;
-	notificationSessionId: string;
-	generation: number | null;
-	promptSent: boolean;
-	runtimeStarted?: boolean;
-	queueReady: boolean;
-	preserveQueuedOnRelease: boolean;
-	suppressResultNotification?: boolean;
-	discardRuntimeEvents?: boolean;
-	stopRuntimeRequested?: boolean;
-};
-
-export type DiscardedRuntimeBarrier = {
-	turn: ActiveTurn;
-	generation: number;
-};
 
 export type ChatRuntimeRecoveryMessageKey =
 	| ""
@@ -55,22 +28,3 @@ export type ChatRuntimeRecoveryState =
 			messageKey: ChatRuntimeRecoveryMessageKey;
 			error?: AppError;
 	  };
-
-export type BufferedQueuedMessage = {
-	turn: ActiveTurn;
-	clientMessageId: string;
-	submission: ChatSubmission;
-	queued: "steer" | "follow_up";
-	timestampMs: number;
-};
-
-export type BeginTurn = (
-	submission: ChatSubmission,
-	options?: {
-		appendUserMessage?: boolean;
-		preserveDraft?: boolean;
-		preserveScroll?: boolean;
-	},
-) => Promise<void>;
-
-export type BeginTurnRef = MutableRefObject<BeginTurn | null>;

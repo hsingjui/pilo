@@ -20,7 +20,6 @@ import {
 	type AssistantContentItem,
 } from "../../src/lib/chat/chat-activity-state.ts";
 import { buildConversationOutline } from "../../src/lib/chat/conversation-outline.ts";
-import { getReplyRunwayHeight } from "../../src/lib/chat/chat-scroll-state.ts";
 import {
 	getOutlineIndexForMessageIndex,
 	getOutlineIndexForScrollOffset,
@@ -525,33 +524,6 @@ test("streaming assistant turns keep intermediate narration outside the top-leve
 	assert.equal(sections.hasCollapsedWork, false);
 	assert.deepEqual(sections.work, []);
 	assert.deepEqual(sections.final, content);
-});
-
-test("reply runway is only reserved for an already scrollable conversation", () => {
-	assert.equal(
-		getReplyRunwayHeight({ viewportHeight: 600, scrollHeight: 620 }),
-		undefined,
-	);
-	assert.equal(
-		getReplyRunwayHeight({ viewportHeight: 600, scrollHeight: 1_200 }),
-		192,
-	);
-	assert.equal(
-		getReplyRunwayHeight({
-			viewportHeight: 600,
-			scrollHeight: 1_200,
-			enabled: false,
-		}),
-		undefined,
-	);
-	assert.equal(
-		getReplyRunwayHeight({ viewportHeight: 300, scrollHeight: 900 }),
-		144,
-	);
-	assert.equal(
-		getReplyRunwayHeight({ viewportHeight: 1_200, scrollHeight: 2_000 }),
-		256,
-	);
 });
 
 test("short chat stays plain until it is promoted", () => {

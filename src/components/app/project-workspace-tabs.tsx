@@ -5,13 +5,11 @@ import {
 	FileCog,
 	FileJson2,
 	FileText,
-	GitBranch,
 	Palette,
 	SquareTerminal,
 	X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { isTauri } from "@tauri-apps/api/core";
 
 import { ProjectWorkspaceContext } from "@/components/app/project-workspace-context";
 
@@ -130,11 +128,10 @@ export function ProjectWorkspaceTabs({
 }) {
 	const { t } = useTranslation();
 	const workspace = useContext(ProjectWorkspaceContext);
-	const { files, activeTab, gitOpen } =
+	const { files, activeTab } =
 		(projectId ? workspace?.state.get(projectId) : undefined) ??
 		EMPTY_PROJECT_WORKSPACE;
-	const showGit = isTauri() && gitOpen;
-	const hasTabs = files.length > 0 || showGit;
+	const hasTabs = files.length > 0;
 	const listRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
 		const selected = listRef.current?.querySelector<HTMLButtonElement>(
@@ -250,18 +247,6 @@ export function ProjectWorkspaceTabs({
 					<span className="min-w-0 truncate">{chatTitle}</span>
 				</button>
 			</Hint>
-			{showGit ? (
-				<CloseableWorkspaceTab
-					kind="git"
-					label="Git"
-					hint={t("file.viewChanges")}
-					selected={activeTab.kind === "git"}
-					onSelect={() => select({ kind: "git" })}
-					onClose={() => close({ kind: "git" })}
-				>
-					<GitBranch aria-hidden="true" className="size-4 shrink-0" />
-				</CloseableWorkspaceTab>
-			) : null}
 			{files.map((file) => (
 				<CloseableWorkspaceTab
 					key={file.path}

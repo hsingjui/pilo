@@ -3,24 +3,14 @@ import { ProjectWorkspaceContext } from "@/components/app/project-workspace-cont
 import {
 	MessageSquareDashed,
 	PanelLeft,
-	GitBranch,
 	SquarePen,
 	TerminalSquare,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { isTauri } from "@tauri-apps/api/core";
 
-import {
-	CUSTOM_TITLEBAR,
-	IS_MACOS,
-	TRAFFIC_LIGHT_ALIGNED_HEADER,
-	TRAFFIC_LIGHT_GUTTER,
-} from "@/components/title-bar";
 import { ProjectWorkspaceTabs } from "@/components/app/project-workspace-tabs";
-import { ProjectEditorMenu } from "@/components/project-editor-menu";
 import type { Project } from "@/lib/api/projects";
 import { cn } from "@/lib/utils";
-import { isSessionWindow } from "@/lib/api/window";
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@/ui";
 import type { ChatSession, ChatSessionRuntimeState } from "./chat-page-utils";
 import { SessionHeaderMenu } from "./chat-session-header-menu";
@@ -38,7 +28,6 @@ export function SessionHeader({
 	onRenameSession,
 	onFindInSession,
 	onOpenInNewWindow,
-	reserveWindowControls = false,
 	sidebarCollapsed = false,
 	overlay = false,
 	temporary = false,
@@ -56,48 +45,33 @@ export function SessionHeader({
 	onRenameSession?: (title: string) => void;
 	onFindInSession?: () => void;
 	onOpenInNewWindow?: () => void;
-	reserveWindowControls?: boolean;
 	sidebarCollapsed?: boolean;
 	overlay?: boolean;
 	/** 落地页无 session 时，用临时会话草稿态显示临时标识。 */
 	temporary?: boolean;
 }) {
 	const { t } = useTranslation();
-	const editorProject = isTauri() ? project : null;
 	const workspace = useContext(ProjectWorkspaceContext);
 	const activeTab = project
 		? workspace?.state.get(project.id)?.activeTab
 		: undefined;
-	const activeFilePath =
-		activeTab?.kind === "file" ? activeTab.path : undefined;
 	const workspaceActive = Boolean(activeTab && activeTab.kind !== "chat");
-	// 会话窗口的 TitleBar 额外渲染置顶按钮（见 App.tsx 的 showAlwaysOnTop），
-	// 需要按多一个控件宽度避让，否则会压住菜单按钮。
-	const reserveWithPin =
-		reserveWindowControls && CUSTOM_TITLEBAR && isSessionWindow();
 	const temporaryActive = Boolean(session?.temporary || temporary);
 	return (
 		<header
-			data-tauri-drag-region="deep"
 			className={cn(
-				"flex h-11 shrink-0 items-center bg-background",
-				IS_MACOS ? TRAFFIC_LIGHT_ALIGNED_HEADER : "mt-0.5",
+				"mt-0.5 flex h-11 shrink-0 items-center bg-background",
 				overlay ? "absolute inset-x-0 top-0 z-30" : "relative",
 				workspaceActive && "z-40",
-				IS_MACOS && sidebarCollapsed && TRAFFIC_LIGHT_GUTTER,
-				reserveWindowControls &&
-					(reserveWithPin ? "pr-[10.25rem]" : "pr-[7.75rem]"),
 			)}
 		>
 			{/* 展开按钮悬浮在标题左侧 logo 位（不占布局，标题在侧栏开合全程不位移），
-			    折叠完成后（延迟 200ms 与侧栏收起过渡对齐）淡入；macOS 收起时避让交通灯 */}
+			    折叠完成后（延迟 200ms 与侧栏收起过渡对齐）淡入 */}
 			<div
 				aria-hidden={!sidebarCollapsed}
 				className={cn(
 					"absolute top-1/2 z-10 -translate-y-1/2 transition-opacity duration-200 ease-out motion-reduce:transition-none",
-					// macOS 全程停在红绿灯右侧：展开时该按钮虽在淡出，若切回 left-1.5 会
-					// 正好压在红绿灯下方。
-					IS_MACOS ? "left-[4.875rem]" : "left-1.5",
+					"left-1.5",
 					sidebarCollapsed
 						? "opacity-100 delay-200"
 						: "pointer-events-none opacity-0",
@@ -149,17 +123,11 @@ export function SessionHeader({
 					</svg>
 				)}
 			</ProjectWorkspaceTabs>
-			{editorProject ||
-			onNewTemporaryChat ||
+			{onNewTemporaryChat ||
 			onNewChat ||
 			onOpenTerminal ||
 			(session && !session.temporary) ? (
-				<div
-					className={cn(
-						"flex shrink-0 items-center gap-1 pr-2",
-						reserveWindowControls && "-translate-y-1",
-					)}
-				>
+				<div className="flex shrink-0 items-center gap-1 pr-2">
 					{onOpenTerminal ? (
 						<Tooltip>
 							<TooltipTrigger asChild>
@@ -222,30 +190,6 @@ export function SessionHeader({
 								</Button>
 							</TooltipTrigger>
 							<TooltipContent>{t("app.temporaryChat")}</TooltipContent>
-						</Tooltip>
-					) : null}
-					{editorProject ? (
-						<ProjectEditorMenu
-							project={editorProject}
-							filePath={activeFilePath ?? undefined}
-						/>
-					) : null}
-					{editorProject && workspace ? (
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button
-									variant="ghost"
-									size="icon"
-									className="size-7 [@media(pointer:coarse)]:size-11"
-									data-open-git=""
-									aria-label={t("file.viewChanges")}
-									aria-pressed={activeTab?.kind === "git"}
-									onClick={() => workspace.openGit(editorProject.id)}
-								>
-									<GitBranch aria-hidden="true" className="size-4" />
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent>{t("file.viewChanges")}</TooltipContent>
 						</Tooltip>
 					) : null}
 					{session && !session.temporary ? (

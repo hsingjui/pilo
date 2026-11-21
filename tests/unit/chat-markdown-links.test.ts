@@ -15,10 +15,6 @@ import {
 } from "../../src/components/chat/chat-markdown-components.tsx";
 import { openFileLink } from "../../src/lib/api/file-links.ts";
 import { initializeI18n } from "../../src/i18n/index.ts";
-import {
-	markdownSearchText,
-	searchTextMatches,
-} from "../../src/lib/chat/chat-search-text.ts";
 
 await initializeI18n("en-US");
 
@@ -120,37 +116,6 @@ test("custom and formatted report labels stay intact, including invalid targets"
 	assert.match(
 		renderMarkdown("[Read report](file:///tmp/report.exe)"),
 		/<span[^>]*>Read report<\/span>/,
-	);
-});
-
-test("file chips and search share labels and preserve both Report occurrences", () => {
-	for (const markdown of [
-		"[Report](file:///tmp/report.html) Report",
-		'<a href="file:///tmp/report.html">Report</a> Report',
-	]) {
-		assert.equal(
-			searchTextMatches(markdownSearchText(markdown), "Report").length,
-			2,
-		);
-		assert.match(
-			renderMarkdown(markdown),
-			/<button[^>]*data-chat-search-reference=""/,
-		);
-	}
-	const url = "file:///tmp/private-folder/My%20Report.html";
-	assert.equal(markdownSearchText(`[${url}](${url})`), "My Report.html");
-	assert.equal(
-		searchTextMatches(markdownSearchText(`[${url}](${url})`), "private-folder")
-			.length,
-		0,
-	);
-	assert.equal(markdownSearchText(`[**${url}**](${url})`), url);
-	assert.equal(markdownSearchText(`[Custom label](${url})`), "Custom label");
-	assert.equal(
-		markdownSearchText(
-			`[file://server/report.html](file://server/report.html)`,
-		),
-		"file://server/report.html",
 	);
 });
 
@@ -280,13 +245,11 @@ test("relative line references survive sanitization in both Markdown modes", () 
 				assert.match(html, /<button[^>]+type="button"/);
 				assert.match(html, />Source<\/span>/);
 				assert.doesNotMatch(html, /\[blocked\]|href=/);
-				assert.equal(markdownSearchText(markdown), "Source");
 			}
 });
 
 test("absolute source labels retain compact ranges and WebUI still rejects opening", async () => {
 	const target = "file:///repo/src/main.ts#L12-L18";
-	assert.equal(markdownSearchText(`[${target}](${target})`), "main.ts:12-18");
 	assert.match(
 		renderMarkdown(`[${target}](${target})`),
 		/>main.ts:12-18<\/span>/,

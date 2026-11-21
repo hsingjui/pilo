@@ -21,7 +21,7 @@ import { createChatConversationStore } from "@/components/chat/chat-conversation
 import { createChatDraftStore } from "@/components/chat/chat-draft-store";
 import { INITIAL_HISTORY_MESSAGE_COUNT } from "@/components/chat/chat-conversation-model";
 import type { ChatSession } from "@/components/chat/chat-page-utils";
-import type { PiExtensionDialogRequest } from "@/components/chat/use-pi-session-features";
+import type { PiExtensionDialogRequest } from "@/components/chat/pi-extension-dialog-request";
 import type {
 	ChatImageAttachment,
 	ChatSubmission,

@@ -1,8 +1,4 @@
-import { readProjectImage } from "@/lib/api/files";
-import {
-	readSessionHistoryImage,
-	type SessionHistoryFingerprint,
-} from "@/lib/api/sessions";
+import type { SessionHistoryFingerprint } from "@/lib/api/sessions";
 import {
 	MAX_CHAT_IMAGE_BYTES,
 	type ChatConversationImage,
@@ -134,7 +130,8 @@ export function loadChatHistoryImageUrl(
 	scope: ChatHistoryImageScope,
 ): Promise<string> {
 	return loadCachedImageUrl(key, async () => {
-		const readImage = scope.readImage ?? readSessionHistoryImage;
+		const readImage = scope.readImage;
+		if (!readImage) throw new Error("Session images cannot be read here");
 		const bytes = await readImage(
 			scope.projectId,
 			scope.sessionPath,
@@ -157,10 +154,9 @@ export function loadChatProjectImageUrl(
 	return loadCachedImageUrl(
 		key,
 		async () => {
-			const bytes = await (scope.readImage ?? readProjectImage)(
-				scope.projectId,
-				path,
-			);
+			if (!scope.readImage)
+				throw new Error("Project images cannot be read here");
+			const bytes = await scope.readImage(scope.projectId, path);
 			if (bytes.length > MAX_CHAT_IMAGE_BYTES)
 				throw new Error("Image is too large");
 			return new Blob([bytes], { type: mimeType });

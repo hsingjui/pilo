@@ -26,9 +26,6 @@ importers:
       '@fontsource/jetbrains-mono':
         specifier: ^5.3.0
         version: 5.3.0
-      '@pierre/diffs':
-        specifier: 1.5.2
-        version: 1.5.2(@shikijs/themes@4.1.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@radix-ui/react-avatar':
         specifier: ^1.2.6
         version: 1.2.6(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -80,30 +77,6 @@ importers:
       '@tanstack/react-virtual':
         specifier: 3.14.11
         version: 3.14.11(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@tauri-apps/api':
-        specifier: ^2.12.4
-        version: 2.12.4
-      '@tauri-apps/plugin-log':
-        specifier: ^2.9.2
-        version: 2.9.2
-      '@tauri-apps/plugin-notification':
-        specifier: ^2.4.0
-        version: 2.4.0
-      '@tauri-apps/plugin-opener':
-        specifier: ^2
-        version: 2.5.5
-      '@tauri-apps/plugin-process':
-        specifier: ^2.3.1
-        version: 2.3.1
-      '@tauri-apps/plugin-updater':
-        specifier: ^2.11.0
-        version: 2.11.0
-      '@xterm/addon-fit':
-        specifier: ^0.11.0
-        version: 0.11.0
-      '@xterm/xterm':
-        specifier: ^6.0.0
-        version: 6.0.0
       bowser:
         specifier: ^2.14.1
         version: 2.14.1
@@ -143,9 +116,6 @@ importers:
       react-i18next:
         specifier: ^17.0.14
         version: 17.0.14(i18next@26.4.2(typescript@6.0.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@6.0.3)
-      react-resizable-panels:
-        specifier: ^4.12.4
-        version: 4.12.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       rehype-raw:
         specifier: ^7.0.0
         version: 7.0.0
@@ -189,9 +159,6 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.2.2(jiti@2.7.0)(terser@5.51.2))
-      '@tauri-apps/cli':
-        specifier: ^2
-        version: 2.11.4
       '@types/react':
         specifier: ^19.1.8
         version: 19.2.18
@@ -1070,41 +1037,6 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@pierre/diffs@1.5.2':
-    resolution: {integrity: sha512-QVxIWQEnNoko22k63maERzozd29+FtaUNpRrZiw603WMe5R1mFSED+jMtPkcVP3SDYS1DWg5K7sa7sJbr3xkNQ==}
-    peerDependencies:
-      react: ^18.3.1 || ^19.0.0
-      react-dom: ^18.3.1 || ^19.0.0
-    peerDependenciesMeta:
-      react:
-        optional: true
-      react-dom:
-        optional: true
-
-  '@pierre/theme@2.0.0':
-    resolution: {integrity: sha512-yNDd9GYLQl1mEUJR8AneJ5e4ohLIHQd/wZLWr4fagt78vS2RwwZNW530vVgHqXFAyFVcFlRmGUD5ramXH46OXw==}
-    engines: {vscode: ^1.0.0}
-
-  '@pierre/theming@1.0.1':
-    resolution: {integrity: sha512-WCI5Qd7iprDpISL9fBYOLe8RV53+b7mFNA3bPzl60/2CKCSrsKN8zEcep6Y3BAzvARlmca50zGjDodqPGiTUKA==}
-    peerDependencies:
-      '@pierre/theme': ^1.1.0 || ^2.0.0
-      '@shikijs/themes': ^3.0.0 || ^4.0.0
-      react: ^18.3.1 || ^19.0.0
-      react-dom: ^18.3.1 || ^19.0.0
-      shiki: ^3.0.0 || ^4.0.0
-    peerDependenciesMeta:
-      '@pierre/theme':
-        optional: true
-      '@shikijs/themes':
-        optional: true
-      react:
-        optional: true
-      react-dom:
-        optional: true
-      shiki:
-        optional: true
-
   '@radix-ui/number@1.1.3':
     resolution: {integrity: sha512-Road2bidD0uu/1BGDOWNdPI06g0lIRy6IF9GZcIrDK2KGItfor8IQwQa+yM2ERgHM1MmHxaxpTzk0/Jp42lNfA==}
 
@@ -1842,10 +1774,6 @@ packages:
     resolution: {integrity: sha512-jLJtSJeuFffqX6/inRE1zqU5aFv2hrszvYgq3OjbAgFRZiWv7abKMDdQzYxuSDfmUPQozZvI/kuy6VMTvnvqTQ==}
     engines: {node: '>=20'}
 
-  '@shikijs/core@4.5.0':
-    resolution: {integrity: sha512-6CIgwq+bt2JZ3OSjb/nBkkwEf/CfpHcbam+Mg5Pllco7HAGRQ2/EFhZrrJtbyNTgKwknfVS+llsXGygiDGwJWw==}
-    engines: {node: '>=20'}
-
   '@shikijs/engine-javascript@4.1.0':
     resolution: {integrity: sha512-YquhawCUgaBfhsS72e2Y/dI59gCBNPHu3fEO/tvLaXrTssxZrY5ddjtNLTwndrMgPo8b3IscE+xoICDzpTmlFQ==}
     engines: {node: '>=20'}
@@ -1862,24 +1790,12 @@ packages:
     resolution: {integrity: sha512-zx2/2Uwj2q9X3KSyYREEhXO23xBw5WUhP4orK2lE4r+t9JGITmEe0JH+wPmJhqHpOT2bRRs6lAL945+LDvOAGw==}
     engines: {node: '>=20'}
 
-  '@shikijs/primitive@4.5.0':
-    resolution: {integrity: sha512-UM7ShlA8oz0OWxLLO8BmO9Ip6fVqdkt8yF0EH7nOCqHfrx1eEAzF0ZUVK7L+I8NEgeu1PEWSRlxaiPPeCb4iDg==}
-    engines: {node: '>=20'}
-
   '@shikijs/themes@4.1.0':
     resolution: {integrity: sha512-emCcTnUM7yO2wltYbaxm+yLvcCI4+h8XBKc4KmJ7EZUXoSGjcCHifkI//R4OFit9ewpg7H2/9tjOuXrT2v/Knw==}
     engines: {node: '>=20'}
 
-  '@shikijs/transformers@4.5.0':
-    resolution: {integrity: sha512-LM7twi043qCC3gRyGQfjoC2/sowzbEltWuruyRtT3RlBlk1hKzWk9ETnU7RcDBoVWQBmC8Mebnr7p28W7kPoaA==}
-    engines: {node: '>=20'}
-
   '@shikijs/types@4.1.0':
     resolution: {integrity: sha512-3EQWX54fMpniOrDblzAhiwiJwpiTMW6+B9DWyUd9ska483tbayFYuw47UxwuPknI31bKnySfVQ/QW+jFL4rFdA==}
-    engines: {node: '>=20'}
-
-  '@shikijs/types@4.5.0':
-    resolution: {integrity: sha512-drtPrtD8N0DENyD2cyt6Ajy+IWsiCLgMxODwLTpvH1UsN6a9jf90tNTPjqwHvA+0Lzu9e0txk8DjfqH1p9UJRw==}
     engines: {node: '>=20'}
 
   '@shikijs/vscode-textmate@10.0.2':
@@ -1992,103 +1908,6 @@ packages:
 
   '@tanstack/virtual-core@3.17.9':
     resolution: {integrity: sha512-M8Bzy7CCMvUjRiuoHVH9mRjyUVczRs8v8RcUEphLFGc445ZP4KQ15Y1sLqhQqJi/HgGJrxfCHnEnIX0x9mVrBg==}
-
-  '@tauri-apps/api@2.11.1':
-    resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
-
-  '@tauri-apps/api@2.12.4':
-    resolution: {integrity: sha512-pVmfis+4zT8H0Qhp3xPZx9Ju7kpzvA6rr/PSJPyuwfvucTQ8sVt61NYU9KMkK703UFlYadFmjKA4HhybOtN0gg==}
-
-  '@tauri-apps/cli-darwin-arm64@2.11.4':
-    resolution: {integrity: sha512-1ryOF3ZhpZ/nemHV5zVwBQBz9jDGKmKPvWPADOhc83ig0P4bMc2iER4NbC6r9sjeIZ6RVQ4g3RZIYvezhcl4TQ==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@tauri-apps/cli-darwin-x64@2.11.4':
-    resolution: {integrity: sha512-uFsGQAAfuyz1k/yGLmkWfkBlgKAqZfxqlHmLWx81QU27RJWfmbNHCIq8T8w1e+VClleIuZUjpHWfoE4E3DLo3A==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [darwin]
-
-  '@tauri-apps/cli-linux-arm-gnueabihf@2.11.4':
-    resolution: {integrity: sha512-IaHZn5CdBL21oUmjiVOS1ctw6Ip1O0pjp70FwOWmYz1myWe0SY96ZIj2FYf7pT0m8bI2h/hrs5ZbEXXh44/MkQ==}
-    engines: {node: '>= 10'}
-    cpu: [arm]
-    os: [linux]
-
-  '@tauri-apps/cli-linux-arm64-gnu@2.11.4':
-    resolution: {integrity: sha512-N41/ukTRVe6XSuUTESuFdGeOW2i7k62tK+6gHK5Kd5/q5RPvvi19GaWAVPPb9u95HSGmTChSolBfzynUsssFaA==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [linux]
-    libc: [glibc]
-
-  '@tauri-apps/cli-linux-arm64-musl@2.11.4':
-    resolution: {integrity: sha512-v277UnT/fB64xAfSroL5N3Km3tLmvATWqJJw/wRI+g6o+HkeD0slyE7gOhNs1MbjE41R7bQOTxMVoL3aomUJmw==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [linux]
-    libc: [musl]
-
-  '@tauri-apps/cli-linux-riscv64-gnu@2.11.4':
-    resolution: {integrity: sha512-qqgNkQ2u1yZHxjhxsZaxUtRDW8dIqIYm33rx/mzwQv0SfY9x1B+iraj8vWeFiXjjSVVhEMepXSOts1TqPzvXNQ==}
-    engines: {node: '>= 10'}
-    cpu: [riscv64]
-    os: [linux]
-    libc: [glibc]
-
-  '@tauri-apps/cli-linux-x64-gnu@2.11.4':
-    resolution: {integrity: sha512-2VRNWl84FOH0m2giiDkO2h0QXlcMJeX+zJDpI5kDIQAx6s+geF3v48F4DXfJez4GS/FdoDGnPnw1C2iYGbQ7bQ==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [linux]
-    libc: [glibc]
-
-  '@tauri-apps/cli-linux-x64-musl@2.11.4':
-    resolution: {integrity: sha512-o9GyhYor/nc7xarmwDE3ka2szuW3uuZzXjHWh64Q8YX5AtSgxdQkFWzrY4O8KiGtVNvFBI14H3Q49Qj5TOIP/A==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [linux]
-    libc: [musl]
-
-  '@tauri-apps/cli-win32-arm64-msvc@2.11.4':
-    resolution: {integrity: sha512-ld5Ehb598m0VkYyylRPNeCFsBe/km0jxis6KgMpl3IGY6I/i1RwQXO05I1AsXUXO2WC6AvB/Lw4qTf/asiuEiQ==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [win32]
-
-  '@tauri-apps/cli-win32-ia32-msvc@2.11.4':
-    resolution: {integrity: sha512-12Hxi0XX/H5VFxO/bGgHkFWhml9VMgEOu9CidjeCeTNQ1l6fpUlbiGgSP7CLI3PFtW9/FfbeHieZ+kyWK5H7CA==}
-    engines: {node: '>= 10'}
-    cpu: [ia32]
-    os: [win32]
-
-  '@tauri-apps/cli-win32-x64-msvc@2.11.4':
-    resolution: {integrity: sha512-+vDiqBIU5dMISg/wNvX3sF+ZHfgJGJ5T0AcO+EHNXV9GGAG+P5fzodlDXD3QdKCRgZxMoCm5PPvj3BqLNjBthw==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [win32]
-
-  '@tauri-apps/cli@2.11.4':
-    resolution: {integrity: sha512-R8xGtMpwyetawSqm9kYOuMmEqkhUbvcUy8n0aNXIxollKBLESUu5f4Fx+64hgASYm1H+jSWq6jCW6zqTnH6hqQ==}
-    engines: {node: '>= 10'}
-    hasBin: true
-
-  '@tauri-apps/plugin-log@2.9.2':
-    resolution: {integrity: sha512-QC2uTQyC+4269xawGXzVLDzIvMB2JwzZHd1lg3ltXtXqrauwikqlbNt6Tm3H++1RN0gPtcvp4cBc5bF6u/DUnw==}
-
-  '@tauri-apps/plugin-notification@2.4.0':
-    resolution: {integrity: sha512-xlJXMcUoKOjNupzDue5wrEsa1wytf+l/2gCAPhafHyP683Y3N7J/8clUWLZ3vpnwkpT2C1zcLMMQFjjecIG2xg==}
-
-  '@tauri-apps/plugin-opener@2.5.5':
-    resolution: {integrity: sha512-xvzGai5aQds8j8R8RsUK/lW6pGG50YgOYIPLzvkqmkwAj7dfySOD7sGtejRzvVdMmv1EQfKVEFh1MvmDp8QR0g==}
-
-  '@tauri-apps/plugin-process@2.3.1':
-    resolution: {integrity: sha512-nCa4fGVaDL/B9ai03VyPOjfAHRHSBz5v6F/ObsB73r/dA3MHHhZtldaDMIc0V/pnUw9ehzr2iEG+XkSEyC0JJA==}
-
-  '@tauri-apps/plugin-updater@2.11.0':
-    resolution: {integrity: sha512-AE36XkOoSna24G40jZMY15nzAnkXEPL/73tGoseGrtGOHuI/cZwWzHpZFLjKXDPgzYZ435z1gHu28LgrsBwIxQ==}
 
   '@trickfilm400/rollup-plugin-off-main-thread@3.0.0-pre1':
     resolution: {integrity: sha512-/67zpWDBLV+oYAEL682s1ktXL0HgqX76f6gaVGkGnVZlBbm1zd0v4Bz8MFF2GGhoX9rvfq3KSQHubFHwa6w6/Q==}
@@ -2252,12 +2071,6 @@ packages:
         optional: true
       oxc-transform-react:
         optional: true
-
-  '@xterm/addon-fit@0.11.0':
-    resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
-
-  '@xterm/xterm@6.0.0':
-    resolution: {integrity: sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==}
 
   acorn@8.18.0:
     resolution: {integrity: sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==}
@@ -2638,10 +2451,6 @@ packages:
 
   devlop@1.1.0:
     resolution: {integrity: sha512-RWmIqhcFf1lRYBvNmr7qTNuyCt/7/ns2jbpp1+PalgE/rDQcBT0fioSMUpJ93irlUhC5hrg4cYqe6U+0ImW0rA==}
-
-  diff@9.0.0:
-    resolution: {integrity: sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==}
-    engines: {node: '>=0.3.1'}
 
   dompurify@3.4.15:
     resolution: {integrity: sha512-EUBjM+B+lkDE41iE82DDSCfkoPGfXx8IxFxPMjNzm/Uk4xDet77rTN9wqlxlVg71kK7XGuUMv6wUxJUwwv+Xyw==}
@@ -3199,9 +3008,6 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
-  lru_map@0.4.1:
-    resolution: {integrity: sha512-I+lBvqMMFfqaV8CJCISjI3wbjmwVu/VyOoU7+qtu9d7ioW5klMgsTTiUOUp+DJvfTTzKXoPbyC6YfgkNcyPSOg==}
-
   lucide-react@1.43.0:
     resolution: {integrity: sha512-ubtnda1fVK5ky0PNEpOmB0wiwhpZUyJiol4K14KCm+QKvuCkfUu54Et/rIjyupJpwiJ5Hg+BLQE86/GEsS+IgQ==}
     peerDependencies:
@@ -3540,12 +3346,6 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
-
-  react-resizable-panels@4.12.4:
-    resolution: {integrity: sha512-SOsSj4e9U7vxL15MbgTfl35IO4vxSW4Xb0b1gtJVbRPWv7FOezcgOA00Mi0jP8XqC3y7jOQxpsGs/9zLKHPitA==}
-    peerDependencies:
-      react: ^18.0.0 || ^19.0.0
-      react-dom: ^18.0.0 || ^19.0.0
 
   react-style-singleton@2.2.3:
     resolution: {integrity: sha512-b6jSvxvVnyptAiLjbkWLE/lOnR4lfTtDAl+eUC7RZy+QQWc6wRzIV2CE6xBuMmDxc2qIihtDCZD5NPOFl7fRBQ==}
@@ -5019,31 +4819,6 @@ snapshots:
   '@oxlint/binding-win32-x64-msvc@1.82.0':
     optional: true
 
-  '@pierre/diffs@1.5.2(@shikijs/themes@4.1.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
-    dependencies:
-      '@pierre/theme': 2.0.0
-      '@pierre/theming': 1.0.1(@pierre/theme@2.0.0)(@shikijs/themes@4.1.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(shiki@4.1.0)
-      '@shikijs/transformers': 4.5.0
-      diff: 9.0.0
-      hast-util-to-html: 9.0.5
-      lru_map: 0.4.1
-      shiki: 4.1.0
-    optionalDependencies:
-      react: 19.2.8
-      react-dom: 19.2.8(react@19.2.8)
-    transitivePeerDependencies:
-      - '@shikijs/themes'
-
-  '@pierre/theme@2.0.0': {}
-
-  '@pierre/theming@1.0.1(@pierre/theme@2.0.0)(@shikijs/themes@4.1.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(shiki@4.1.0)':
-    optionalDependencies:
-      '@pierre/theme': 2.0.0
-      '@shikijs/themes': 4.1.0
-      react: 19.2.8
-      react-dom: 19.2.8(react@19.2.8)
-      shiki: 4.1.0
-
   '@radix-ui/number@1.1.3': {}
 
   '@radix-ui/primitive@1.1.7': {}
@@ -5683,14 +5458,6 @@ snapshots:
       '@types/hast': 3.0.5
       hast-util-to-html: 9.0.5
 
-  '@shikijs/core@4.5.0':
-    dependencies:
-      '@shikijs/primitive': 4.5.0
-      '@shikijs/types': 4.5.0
-      '@shikijs/vscode-textmate': 10.0.2
-      '@types/hast': 3.0.5
-      hast-util-to-html: 9.0.5
-
   '@shikijs/engine-javascript@4.1.0':
     dependencies:
       '@shikijs/types': 4.1.0
@@ -5712,27 +5479,11 @@ snapshots:
       '@shikijs/vscode-textmate': 10.0.2
       '@types/hast': 3.0.5
 
-  '@shikijs/primitive@4.5.0':
-    dependencies:
-      '@shikijs/types': 4.5.0
-      '@shikijs/vscode-textmate': 10.0.2
-      '@types/hast': 3.0.5
-
   '@shikijs/themes@4.1.0':
     dependencies:
       '@shikijs/types': 4.1.0
 
-  '@shikijs/transformers@4.5.0':
-    dependencies:
-      '@shikijs/core': 4.5.0
-      '@shikijs/types': 4.5.0
-
   '@shikijs/types@4.1.0':
-    dependencies:
-      '@shikijs/vscode-textmate': 10.0.2
-      '@types/hast': 3.0.5
-
-  '@shikijs/types@4.5.0':
     dependencies:
       '@shikijs/vscode-textmate': 10.0.2
       '@types/hast': 3.0.5
@@ -5823,77 +5574,6 @@ snapshots:
       react-dom: 19.2.8(react@19.2.8)
 
   '@tanstack/virtual-core@3.17.9': {}
-
-  '@tauri-apps/api@2.11.1': {}
-
-  '@tauri-apps/api@2.12.4': {}
-
-  '@tauri-apps/cli-darwin-arm64@2.11.4':
-    optional: true
-
-  '@tauri-apps/cli-darwin-x64@2.11.4':
-    optional: true
-
-  '@tauri-apps/cli-linux-arm-gnueabihf@2.11.4':
-    optional: true
-
-  '@tauri-apps/cli-linux-arm64-gnu@2.11.4':
-    optional: true
-
-  '@tauri-apps/cli-linux-arm64-musl@2.11.4':
-    optional: true
-
-  '@tauri-apps/cli-linux-riscv64-gnu@2.11.4':
-    optional: true
-
-  '@tauri-apps/cli-linux-x64-gnu@2.11.4':
-    optional: true
-
-  '@tauri-apps/cli-linux-x64-musl@2.11.4':
-    optional: true
-
-  '@tauri-apps/cli-win32-arm64-msvc@2.11.4':
-    optional: true
-
-  '@tauri-apps/cli-win32-ia32-msvc@2.11.4':
-    optional: true
-
-  '@tauri-apps/cli-win32-x64-msvc@2.11.4':
-    optional: true
-
-  '@tauri-apps/cli@2.11.4':
-    optionalDependencies:
-      '@tauri-apps/cli-darwin-arm64': 2.11.4
-      '@tauri-apps/cli-darwin-x64': 2.11.4
-      '@tauri-apps/cli-linux-arm-gnueabihf': 2.11.4
-      '@tauri-apps/cli-linux-arm64-gnu': 2.11.4
-      '@tauri-apps/cli-linux-arm64-musl': 2.11.4
-      '@tauri-apps/cli-linux-riscv64-gnu': 2.11.4
-      '@tauri-apps/cli-linux-x64-gnu': 2.11.4
-      '@tauri-apps/cli-linux-x64-musl': 2.11.4
-      '@tauri-apps/cli-win32-arm64-msvc': 2.11.4
-      '@tauri-apps/cli-win32-ia32-msvc': 2.11.4
-      '@tauri-apps/cli-win32-x64-msvc': 2.11.4
-
-  '@tauri-apps/plugin-log@2.9.2':
-    dependencies:
-      '@tauri-apps/api': 2.11.1
-
-  '@tauri-apps/plugin-notification@2.4.0':
-    dependencies:
-      '@tauri-apps/api': 2.11.1
-
-  '@tauri-apps/plugin-opener@2.5.5':
-    dependencies:
-      '@tauri-apps/api': 2.11.1
-
-  '@tauri-apps/plugin-process@2.3.1':
-    dependencies:
-      '@tauri-apps/api': 2.11.1
-
-  '@tauri-apps/plugin-updater@2.11.0':
-    dependencies:
-      '@tauri-apps/api': 2.11.1
 
   '@trickfilm400/rollup-plugin-off-main-thread@3.0.0-pre1':
     dependencies:
@@ -6070,10 +5750,6 @@ snapshots:
     dependencies:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.2.2(jiti@2.7.0)(terser@5.51.2)
-
-  '@xterm/addon-fit@0.11.0': {}
-
-  '@xterm/xterm@6.0.0': {}
 
   acorn@8.18.0: {}
 
@@ -6485,8 +6161,6 @@ snapshots:
   devlop@1.1.0:
     dependencies:
       dequal: 2.0.3
-
-  diff@9.0.0: {}
 
   dompurify@3.4.15:
     optionalDependencies:
@@ -7124,8 +6798,6 @@ snapshots:
     dependencies:
       yallist: 3.1.1
 
-  lru_map@0.4.1: {}
-
   lucide-react@1.43.0(react@19.2.8):
     dependencies:
       react: 19.2.8
@@ -7714,11 +7386,6 @@ snapshots:
       use-sidecar: 1.1.3(@types/react@19.2.18)(react@19.2.8)
     optionalDependencies:
       '@types/react': 19.2.18
-
-  react-resizable-panels@4.12.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
-    dependencies:
-      react: 19.2.8
-      react-dom: 19.2.8(react@19.2.8)
 
   react-style-singleton@2.2.3(@types/react@19.2.18)(react@19.2.8):
     dependencies:

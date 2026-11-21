@@ -17,7 +17,6 @@
 				usePreferences,
 			} from "../../src/lib/preferences-provider.tsx";
 			import { ChatCopyButton } from "../../src/components/chat/chat-copy-button.tsx";
-			import { ChatFindLayer } from "../../src/components/chat/chat-find-bar.tsx";
 			import { MarkdownImage } from "../../src/components/chat/chat-markdown-image.tsx";
 			import { PiExtensionUiDialog } from "../../src/components/chat/pi-extension-ui-dialog.tsx";
 			import {
@@ -80,17 +79,6 @@
 								h("option", { key: size, value: size }, size),
 							),
 						),
-					),
-					h(
-						"div",
-						{ id: "find", style: { position: "relative", height: 80 } },
-						h(ChatFindLayer, {
-							active: true,
-							open: true,
-							onOpen() {},
-							onClose() {},
-							messages: [],
-						}),
 					),
 					h(
 						"div",

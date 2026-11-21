@@ -29,7 +29,7 @@ import { toConversationAction } from "@/lib/chat/conversation-runtime-adapter";
 import type { PiloClientEventMessage } from "@/lib/api/pilo-client";
 import { runtimeErrorMessage } from "@/lib/api/pi-runtime";
 import type { PiloRuntimeEvent } from "@/lib/api/pi-runtime";
-import type { PiExtensionDialogRequest } from "@/components/chat/use-pi-session-features";
+import type { PiExtensionDialogRequest } from "@/components/chat/pi-extension-dialog-request";
 import { REMOTE_SEQUENCE_KEY } from "./remote-client";
 import {
 	isRpcResponse,

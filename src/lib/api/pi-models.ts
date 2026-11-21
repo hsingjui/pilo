@@ -1,6 +1,3 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
-
-import { createChatSessionClient } from "@/lib/api/chat-session-client";
 import {
 	probeProjectPiModels,
 	type PiModelProbeTransport,
@@ -13,14 +10,11 @@ export type {
 	PiModelProbeTransport,
 } from "./pi-models-probe";
 
-const STARTUP_REFRESH_CONCURRENCY = 1;
-
 type ProjectPiModelsListener = (snapshot: ProjectPiModels) => void;
 
 const modelCache = new Map<string, ProjectPiModels>();
 const pendingRefreshes = new Map<string, Promise<ProjectPiModels>>();
 const listeners = new Map<string, Set<ProjectPiModelsListener>>();
-let hydrationPromise: Promise<void> | null = null;
 
 function publishProjectPiModels(snapshot: ProjectPiModels): ProjectPiModels {
 	const current = modelCache.get(snapshot.projectId);
@@ -31,19 +25,6 @@ function publishProjectPiModels(snapshot: ProjectPiModels): ProjectPiModels {
 		listener(snapshot);
 	}
 	return snapshot;
-}
-
-async function persistProjectPiModels(
-	snapshot: ProjectPiModels,
-): Promise<ProjectPiModels> {
-	return invoke<ProjectPiModels>("project_model_cache_set", {
-		projectId: snapshot.projectId,
-		models: snapshot.models,
-		commands: snapshot.commands,
-		defaultModel: snapshot.defaultModel,
-		defaultThinkingLevel: snapshot.defaultThinkingLevel,
-		refreshedAtMs: snapshot.refreshedAtMs,
-	});
 }
 
 export function getCachedProjectPiModels(
@@ -82,50 +63,22 @@ export function subscribeProjectPiModels(
 	};
 }
 
-export async function hydrateProjectPiModels(): Promise<void> {
-	if (hydrationPromise) return hydrationPromise;
-	hydrationPromise = invoke<ProjectPiModels[]>("project_model_cache_list")
-		.then((snapshots) => {
-			for (const snapshot of snapshots) publishProjectPiModels(snapshot);
-		})
-		.catch((error) => {
-			hydrationPromise = null;
-			throw error;
-		});
-	return hydrationPromise;
-}
-
 function traceModelCatalog(stage: string, detail: Record<string, unknown>) {
 	const payload = {
 		stage: `model_catalog.${stage}`,
 		...detail,
 	};
 	console.info("[model-catalog]", payload);
-	if (isTauri()) {
-		void invoke("debug_runtime_trace_log", {
-			payload: JSON.stringify(payload),
-		}).catch(() => undefined);
-	}
 }
 
 export function refreshProjectPiModels(
 	projectId: string,
-	transport?: PiModelProbeTransport,
+	transport: PiModelProbeTransport,
 ): Promise<ProjectPiModels> {
 	const pending = pendingRefreshes.get(projectId);
 	if (pending) return pending;
 
-	const effectiveTransport: PiModelProbeTransport = transport ?? {
-		cached: getCachedProjectPiModels(projectId),
-		createClient: (project, sessionKey) =>
-			createChatSessionClient(project, sessionKey, undefined, {
-				noSession: true,
-				owner: "model_probe",
-				builtinExtensions: [{ id: "model-catalog" }],
-			}),
-		persist: persistProjectPiModels,
-	};
-	const refresh = probeProjectPiModels(projectId, effectiveTransport, {
+	const refresh = probeProjectPiModels(projectId, transport, {
 		onTrace: traceModelCatalog,
 	}).then((snapshot) => publishProjectPiModels(snapshot));
 
@@ -137,27 +90,4 @@ export function refreshProjectPiModels(
 	};
 	void refresh.then(clearPending, clearPending);
 	return refresh;
-}
-
-export async function refreshAllProjectPiModels(
-	projectIds: readonly string[],
-): Promise<void> {
-	const queue = [...new Set(projectIds)];
-	let nextIndex = 0;
-	const worker = async (): Promise<void> => {
-		const projectId = queue[nextIndex++];
-		if (!projectId) return;
-		try {
-			await refreshProjectPiModels(projectId);
-		} catch (error) {
-			console.warn(`Failed to refresh Pi models for ${projectId}`, error);
-		}
-		return worker();
-	};
-	await Promise.all(
-		Array.from(
-			{ length: Math.min(STARTUP_REFRESH_CONCURRENCY, queue.length) },
-			() => worker(),
-		),
-	);
 }

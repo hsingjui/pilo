@@ -6,7 +6,7 @@ import { validateWebThemeTokens } from "@/lib/theme-web";
 import { CUSTOM_CSS_PLACEHOLDER } from "@/lib/theme-custom";
 import { compatibleThemeUpdate } from "@/lib/theme-compat";
 import { useTheme, type Theme, type ThemeFamily } from "@/lib/theme-provider";
-import { REPOSITORY_URL } from "@/lib/use-release-notes";
+import { REPOSITORY_URL } from "@/lib/repository";
 import { cn } from "@/lib/utils";
 import {
 	Button,

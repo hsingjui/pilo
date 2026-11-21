@@ -8,7 +8,7 @@ import {
 	TriangleAlert,
 } from "lucide-react";
 
-import type { ChatRuntimeRecoveryState } from "@/components/chat/use-chat-runtime";
+import type { ChatRuntimeRecoveryState } from "@/components/chat/chat-runtime-types";
 import { appErrorActionLabel, appErrorMessage } from "@/lib/app-error";
 import { Button, NoticeCard, NoticeIcon, Spinner } from "@/ui";
 

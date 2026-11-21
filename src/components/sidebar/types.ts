@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import type { PiloClient } from "@/lib/api/pilo-client";
+
 export type SidebarEnv = {
 	id: string;
 	name: string;
@@ -33,6 +35,8 @@ export type SidebarSession = {
 };
 
 export type AppSidebarProps = {
+	/** Session search in the command palette; the palette is hidden without it. */
+	client?: PiloClient | null;
 	envs: SidebarEnv[];
 	projects: SidebarProject[];
 	sessions: SidebarSession[];

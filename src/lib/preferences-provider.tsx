@@ -35,7 +35,6 @@ import {
 	type TerminalFontSize,
 	type UiFontSize,
 } from "@/lib/font-settings";
-import { invoke, isTauri } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import {
 	i18n,
@@ -43,24 +42,15 @@ import {
 	persistLocale,
 	updateDocumentLocale,
 } from "@/i18n";
-import { listenRuntimeEvents } from "@/lib/api/pi-runtime";
-import { CONFIGURATION_CHANGED_EVENT } from "@/lib/use-configuration-revision";
-import { notifyConnectionsChanged } from "@/lib/api/connection-events";
 import {
-	bindHostPreferences,
-	publishHostPreferences,
-	refreshHostPreferences,
 	subscribeHostPreferences,
 	writeHostPreferences,
 	type PreferencePatch,
-	type PreferencesSnapshot,
 } from "@/lib/host-preferences";
 import type {
 	PiloPreferences,
 	SendMessageShortcut,
 } from "@/lib/host-preferences-types";
-import { LOCALE_STORAGE_KEY } from "@/i18n/locale";
-import { useDeveloperTools } from "@/lib/use-developer-tools";
 import {
 	DEFAULT_KEYBOARD_SHORTCUTS,
 	normalizeKeyboardShortcut,
@@ -241,10 +231,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 	}, []);
 	const revisionRef = useRef({ binding: -1, revision: -1 });
 	const localeQueueRef = useRef<Promise<void>>(Promise.resolve());
-	const initialRef = useRef({
-		...preferences,
-		locale: i18n.language === "zh-CN" ? "zh-CN" : "en-US",
-	});
 	useEffect(
 		() =>
 			subscribeHostPreferences((snapshot, binding) => {
@@ -269,69 +255,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 			}),
 		[applyCurrentPreferences],
 	);
-
-	useEffect(() => {
-		if (!isTauri()) return;
-		try {
-			for (const key of [STORAGE_KEY, LOCALE_STORAGE_KEY]) {
-				const legacy = window.localStorage.getItem(key);
-				if (
-					legacy !== null &&
-					window.localStorage.getItem(`${key}.legacy`) === null
-				) {
-					window.localStorage.setItem(`${key}.legacy`, legacy);
-				}
-			}
-		} catch {
-			/* Migration can proceed without a writable browser cache. */
-		}
-		let disposed = false;
-		let unlisten: (() => void) | undefined;
-		const listening = listenRuntimeEvents((event) => {
-			if (disposed) return;
-			if (event.type === "preferences_changed")
-				publishHostPreferences(event.settings);
-			if (event.type === "configuration_changed") {
-				notifyConnectionsChanged();
-				window.dispatchEvent(new Event(CONFIGURATION_CHANGED_EVENT));
-			}
-		}).then((cleanup) => {
-			if (disposed) cleanup();
-			else unlisten = cleanup;
-		});
-		const connection = bindHostPreferences(
-			{
-				load: () => invoke<PreferencesSnapshot>("preferences_get"),
-				patch: (patch) =>
-					invoke<PreferencesSnapshot>("preferences_patch", { patch }),
-			},
-			async () => {
-				await listening;
-				return invoke<PreferencesSnapshot>("preferences_patch", {
-					patch: initialRef.current,
-					initial: true,
-				});
-			},
-		);
-		void connection.ready.catch((error: unknown) =>
-			toast.error(i18n.t("settings.preferencesLoadFailed"), {
-				description: String(error),
-			}),
-		);
-		const visible = () => {
-			if (document.visibilityState === "visible")
-				void refreshHostPreferences().catch((error: unknown) =>
-					console.warn("Failed to refresh Host preferences", error),
-				);
-		};
-		document.addEventListener("visibilitychange", visible);
-		return () => {
-			disposed = true;
-			unlisten?.();
-			connection.dispose();
-			document.removeEventListener("visibilitychange", visible);
-		};
-	}, []);
 
 	const setPreferences = useCallback(
 		(update: (current: PiloPreferences) => PiloPreferences) => {
@@ -376,7 +299,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 		},
 		[applyCurrentPreferences],
 	);
-	useDeveloperTools(preferences.developerMode, preferences.keyboardShortcuts);
 
 	useLayoutEffect(() => {
 		const root = document.documentElement;
