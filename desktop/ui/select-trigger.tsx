@@ -2,6 +2,7 @@ import { Text, token, View, type ViewProps } from "nsh";
 import { classNames } from "./class-names";
 import { focusRingStyle } from "./focus-ring-style";
 import { Icon, type IconName } from "./icon";
+import { fieldSizes } from "./input";
 import { styleVar } from "./theme-style";
 
 type SelectTriggerProps = Pick<
@@ -12,6 +13,8 @@ type SelectTriggerProps = Pick<
 	placeholder?: string | null;
 	/** The trailing icon's name; a ChevronDown when unset. */
 	icon?: IconName;
+	/** The height, as Input's: `sm` for compact rows such as settings. */
+	size?: keyof typeof fieldSizes;
 };
 
 export function SelectTrigger(props: SelectTriggerProps) {
@@ -22,7 +25,8 @@ export function SelectTrigger(props: SelectTriggerProps) {
 			disabled={props.disabled}
 			onLayout={props.onLayout}
 			class={classNames(
-				"flex-row min-w-0 max-w-full items-center justify-between gap-2 h-(--pilo-field-height) rounded-(--pilo-radius-md) border border-input-border bg-input-field px-3 py-2 text-sm font-sans text-input-foreground hover:border-(--pilo-field-hover-border) focus-visible:border-(--pilo-field-focus-border) focus-visible:outline-hidden disabled:bg-muted disabled:opacity-60",
+				"flex-row min-w-0 max-w-full items-center justify-between gap-2 rounded-(--pilo-radius-md) border border-input-border bg-input-field text-sm font-sans text-input-foreground hover:border-(--pilo-field-hover-border) focus-visible:border-(--pilo-field-focus-border) focus-visible:outline-hidden disabled:bg-muted disabled:opacity-60",
+				fieldSizes[props.size ?? "default"],
 				props.class ?? "w-full",
 			)}
 			style={{ boxShadow: styleVar("pilo-field-shadow") }}

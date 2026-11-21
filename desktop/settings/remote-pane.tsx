@@ -1,18 +1,14 @@
 import {
-	Canvas,
 	computed,
 	effect,
 	Clipboard,
 	type InputRef,
-	Path2D,
 	signal,
 	Text,
 	View,
-	windowSize,
 } from "nsh";
 import type {
 	RemoteAccessAddress,
-	RemoteDevice,
 	RemoteHostState,
 } from "@shared/api/remote-types";
 import { userErrorMessage } from "@shared/app-error";
@@ -24,114 +20,23 @@ import {
 import { randomId } from "@shared/random-id";
 import { AppToaster, showToast } from "../app/app-toasts";
 import { t } from "../app/i18n";
-import { qrMatrix } from "../lib/qr-matrix";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
 import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
-import { SettingsRow, SettingsSection, SettingsStatus } from "./layout";
+import {
+	SETTINGS_TEXT_BUTTON_CLASS,
+	SettingsRow,
+	SettingsSection,
+	SettingsStatus,
+} from "./layout";
+import { RemoteDevicesSection } from "./remote-devices-section";
 import { RemoteLanAddressPicker } from "./remote-lan-address-picker";
+import { RemotePairingSection } from "./remote-pairing-section";
 import type { SettingsClient } from "./settings-dialog";
 
 const MAX_ADDRESSES = 32;
-/** Tailwind's sm:, where the pairing link and its QR sit side by side. */
-const SM_WIDTH = 640;
-
-/** The pairing link's QR code, drawn like `<QRCodeSVG level="M">`. */
-function PairingQr(props: { url: string; size: number }) {
-	const matrix = computed(() => qrMatrix(props.url));
-	return (
-		<Canvas
-			testID="remote-pairing-qr"
-			accessibilityLabel={t("settings.remotePairing")}
-			accessible
-			style={{ width: props.size, height: props.size }}
-			draw={(cx, size) => {
-				const modules = matrix();
-				const scale = Math.min(size.width, size.height) / modules.length;
-				cx.fillStyle = "#ffffff";
-				cx.fillRect(0, 0, size.width, size.height);
-				cx.fillStyle = "#000000";
-				const path = new Path2D();
-				for (let y = 0; y < modules.length; y++)
-					for (let x = 0; x < modules.length; x++)
-						if (modules[y][x])
-							path.rect(x * scale, y * scale, scale + 0.5, scale + 0.5);
-				cx.fill(path);
-			}}
-		/>
-	);
-}
-
-/** A device name that turns into a rename field (double-click / pencil / Enter). */
-function DeviceNameCell(props: {
-	device: () => RemoteDevice;
-	onRename: (name: string) => void;
-}) {
-	const editing = signal(false);
-	const draft = signal(props.device().name);
-	const commit = () => {
-		const next = draft().trim();
-		editing.set(false);
-		if (next && next !== props.device().name) props.onRename(next);
-	};
-	const startEditing = () => {
-		draft.set(props.device().name);
-		editing.set(true);
-	};
-	return (
-		<View class="flex-row items-center gap-1.5">
-			{() =>
-				editing() ? (
-					<Input
-						testID={`remote-device:${props.device().id}:rename-input`}
-						class="h-7 w-full text-sm"
-						autoFocus
-						value={draft()}
-						accessibilityLabel={t("settings.remoteRename")}
-						onChange={(event) => draft.set(event.value)}
-						onBlur={commit}
-						onSubmit={commit}
-						onKeyDown={(event) => {
-							if (event.key === "Escape") editing.set(false);
-						}}
-					/>
-				) : (
-					<>
-						<Button
-							variant="ghost"
-							class="h-auto px-0 text-left font-medium leading-tight text-foreground"
-							tooltip={t("settings.remoteRenameHint")}
-							onPress={startEditing}
-						>
-							<Text class="font-sans font-medium leading-tight text-foreground">
-								{() => props.device().name}
-								{() =>
-									props.device().pairIp ? (
-										<Text class="ml-2 font-mono text-[10px] font-normal text-muted-foreground">
-											{` ${props.device().pairIp}`}
-										</Text>
-									) : null
-								}
-							</Text>
-						</Button>
-						<Button
-							variant="ghost"
-							size="icon"
-							class="size-5 text-muted-foreground hover:text-foreground"
-							accessibilityLabel={t("settings.remoteRename")}
-							tooltip={t("settings.remoteRenameHint")}
-							onPress={startEditing}
-						>
-							<Icon name="Pencil" size={12} />
-						</Button>
-					</>
-				)
-			}
-		</View>
-	);
-}
 
 /**
  * The Remote settings pane: Remote Host on/off and port, LAN access
@@ -158,7 +63,6 @@ export function RemotePane(props: {
 	let draftRevision = 0;
 	/** Address fields by row id, so Enter can move to the next row. */
 	const addressInputs = new Map<string, InputRef>();
-	const wide = () => windowSize().width >= SM_WIDTH;
 
 	const addresses = computed(() =>
 		sortRemoteAddresses(state()?.addresses ?? []),
@@ -174,7 +78,6 @@ export function RemotePane(props: {
 		return Boolean(current?.enabled && current.running);
 	});
 	const hasPairingLink = computed(() => Boolean(state()?.pairingUrl));
-	const hasDevices = computed(() => activeDevices().length > 0);
 
 	const refresh = async () => {
 		try {
@@ -498,7 +401,7 @@ export function RemotePane(props: {
 									>
 										<Button
 											variant="ghost"
-											class="h-8 gap-1.5 px-2 text-xs font-normal"
+											class={SETTINGS_TEXT_BUTTON_CLASS}
 											onPress={() => void toggle(true)}
 										>
 											<Icon name="RefreshCw" size={14} />
@@ -602,165 +505,23 @@ export function RemotePane(props: {
 
 						{() =>
 							pairingVisible() ? (
-								<SettingsSection title={t("settings.remotePairing")}>
-									{() =>
-										hasPairingLink() ? (
-											<View
-												class={
-													wide()
-														? "flex-row items-center gap-3 px-3 py-3"
-														: "gap-3 px-3 py-3"
-												}
-											>
-												<View
-													class={
-														wide() ? "min-w-0 flex-1 gap-2" : "min-w-0 gap-2"
-													}
-												>
-													<Text class="font-sans text-sm font-medium">
-														{t("settings.remoteOpenLink")}
-													</Text>
-													<View
-														testID="remote-pairing-url"
-														class="truncate rounded-md border bg-muted/30 px-2.5 py-1.5"
-													>
-														<Text class="truncate font-mono text-[10px] leading-5">
-															{() => current().pairingUrl}
-														</Text>
-													</View>
-													<View class="flex-row flex-wrap gap-1.5">
-														<Button
-															variant="outline"
-															class="h-8 gap-1.5 px-2 text-xs font-normal"
-															testID="remote-pairing-copy"
-															onPress={() =>
-																void copyToClipboard(current().pairingUrl)
-															}
-														>
-															<Icon name="Copy" size={14} />
-															<Text class="font-sans text-xs">
-																{t("settings.remoteCopyLink")}
-															</Text>
-														</Button>
-														<Button
-															variant="ghost"
-															class="h-8 gap-1.5 px-2 text-xs font-normal"
-															testID="remote-pairing-regenerate"
-															disabled={busy() === "pairing"}
-															onPress={() => void regenerate()}
-														>
-															{() =>
-																busy() === "pairing" ? (
-																	<Spinner class="size-3.5" />
-																) : (
-																	<Icon name="RefreshCw" size={14} />
-																)
-															}
-															<Text class="font-sans text-xs">
-																{t("settings.remoteNewLink")}
-															</Text>
-														</Button>
-													</View>
-												</View>
-												{/* React's `sm:grid-cols-[minmax(0,1fr)_148px]` column. */}
-												<View
-													class="items-center"
-													style={wide() ? { width: 148 } : undefined}
-												>
-													<View class="rounded-xl border bg-white p-2.5">
-														<PairingQr
-															url={current().pairingUrl ?? ""}
-															size={124}
-														/>
-													</View>
-												</View>
-											</View>
-										) : (
-											<SettingsRow
-												label={t("settings.remotePairingExpired")}
-												helper={t("settings.remotePairingExpiredDescription")}
-											>
-												<Button
-													variant="outline"
-													class="h-8 gap-1.5 px-2 text-xs font-normal"
-													testID="remote-pairing-regenerate"
-													disabled={busy() === "pairing"}
-													onPress={() => void regenerate()}
-												>
-													<Icon name="RefreshCw" size={14} />
-													<Text class="font-sans text-xs">
-														{t("settings.remoteNewLink")}
-													</Text>
-												</Button>
-											</SettingsRow>
-										)
-									}
-								</SettingsSection>
+								<RemotePairingSection
+									hasLink={hasPairingLink}
+									url={() => current().pairingUrl}
+									regenerating={() => busy() === "pairing"}
+									onCopy={() => void copyToClipboard(current().pairingUrl)}
+									onRegenerate={() => void regenerate()}
+								/>
 							) : null
 						}
 
-						<SettingsSection
-							title={t("settings.remoteDevices")}
-							headerRight={
-								<Text class="font-sans text-[11px] text-muted-foreground">
-									{() =>
-										t("settings.remoteDeviceCount", {
-											count: activeDevices().length,
-										})
-									}
-								</Text>
-							}
-						>
-							{() =>
-								hasDevices() ? (
-									<Each of={activeDevices()} key={(device) => device.id}>
-										{(device) => (
-											<View class="gap-2 px-3 py-2 border-b border-border/60 last:border-b-0">
-												<View class="flex-row items-center gap-4">
-													<View class="min-w-0 flex-1">
-														<DeviceNameCell
-															device={device}
-															onRename={(name) =>
-																void rename(device().id, name)
-															}
-														/>
-													</View>
-													<View class="min-w-0 shrink-0 justify-end pl-4">
-														<Button
-															variant="ghost"
-															class="h-8 gap-1.5 px-2 text-xs font-normal"
-															testID={`remote-device:${device().id}:revoke`}
-															disabled={busy() === device().id}
-															onPress={() => void revoke(device().id)}
-														>
-															{() =>
-																busy() === device().id ? (
-																	<Spinner class="size-3.5" />
-																) : (
-																	<Icon name="Trash2" size={14} />
-																)
-															}
-															<Text class="font-sans text-xs">
-																{t("settings.remoteRevoke")}
-															</Text>
-														</Button>
-													</View>
-												</View>
-											</View>
-										)}
-									</Each>
-								) : (
-									<SettingsRow
-										label={t("settings.remoteNoDevices")}
-										helper={
-											pairingVisible() && hasPairingLink()
-												? t("settings.remoteNoDevicesDescription")
-												: undefined
-										}
-									/>
-								)
-							}
-						</SettingsSection>
+						<RemoteDevicesSection
+							devices={activeDevices}
+							showEmptyHint={() => pairingVisible() && hasPairingLink()}
+							isRevoking={(deviceId) => busy() === deviceId}
+							onRename={(deviceId, name) => void rename(deviceId, name)}
+							onRevoke={(deviceId) => void revoke(deviceId)}
+						/>
 					</>
 				) : null
 			}

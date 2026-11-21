@@ -2,17 +2,19 @@ import { type Accessor, View } from "nsh";
 
 import { isAppLocale } from "@shared/i18n/locale-types";
 import type { PreferencePatch } from "@shared/host-preferences-types";
+import type { DesktopShell } from "../app/desktop-shell";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import { Select } from "../ui/select";
 import { Switch } from "../ui/switch";
-import type { SettingsClient } from "./settings-dialog";
+import { DesktopStartupSection } from "./desktop-startup-section";
 import { SettingsRow, SettingsSection } from "./layout";
+import type { SettingsClient } from "./settings-dialog";
 
-/** General preferences: language, send shortcut, conversation folding and plugin notifications. */
 export function PreferencesPane(props: {
 	state: Accessor<AppState>;
 	client: Pick<SettingsClient, "savePreferences">;
+	desktop?: DesktopShell;
 }) {
 	const values = () => props.state().preferences?.values;
 	const save = (patch: PreferencePatch) => {
@@ -33,6 +35,7 @@ export function PreferencesPane(props: {
 				<SettingsRow label={t("settings.sendShortcut")}>
 					<Select
 						testID="settings-send-shortcut"
+						size="sm"
 						class="w-[180px]"
 						items={[
 							{ value: "enter", title: "Enter" },
@@ -70,6 +73,7 @@ export function PreferencesPane(props: {
 				<SettingsRow label={t("settings.language")}>
 					<Select
 						testID="settings-language"
+						size="sm"
 						class="w-[180px]"
 						items={[
 							{ value: "zh-CN", title: t("settings.languageChinese") },
@@ -80,6 +84,7 @@ export function PreferencesPane(props: {
 					/>
 				</SettingsRow>
 			</SettingsSection>
+			<DesktopStartupSection desktop={props.desktop} />
 		</View>
 	);
 }

@@ -6,9 +6,11 @@ import type {
 } from "@shared/api/connections-types";
 import type { PiRuntime, SshAuthMethod } from "@shared/api/pi-runtime-types";
 import { userErrorMessage } from "@shared/app-error";
+import { AppToasts, AppToastStack } from "../app/app-toasts";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
+import { DialogClose } from "../ui/dialog-close";
 import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
 import { Icon } from "../ui/icon";
@@ -16,6 +18,7 @@ import { Input } from "../ui/input";
 import { Select } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { field, fieldError, hint } from "./connection-form";
+import { SETTINGS_ICON_BUTTON_CLASS } from "./layout";
 import {
 	connectionFromDraft,
 	draftFromInfo,
@@ -177,27 +180,24 @@ export function createSshEditor(deps: {
 		}
 	};
 
-	const test = async () => {
+	const test = async (toasts: AppToasts) => {
 		const base = sshDraft;
 		if (!base) return;
 		const draft = { ...base, agentPublicKey: agentPublicKey() };
 		const label = draft.name.trim() || draft.hostname.trim();
 		testing.set(true);
-		status.set(null);
 		try {
 			const result = await client.testSshConnectionDraft(
 				connectionFromDraft(draft),
 				draft.password || undefined,
 			);
-			status.set(
-				`${t("connection.available", { name: label })} · pilo-server ${
-					result.serverVersion
-				} · protocol ${result.protocolVersion}`,
-			);
+			const title = t("connection.available", { name: label });
+			const description = `pilo-server ${result.serverVersion} · protocol ${result.protocolVersion}`;
+			toasts.show({ variant: "success", title, description });
 		} catch (caught) {
-			status.set(
-				`${t("connection.connectionFailed", { name: label })} · ${userErrorMessage(caught)}`,
-			);
+			const title = t("connection.connectionFailed", { name: label });
+			const description = userErrorMessage(caught);
+			toasts.show({ variant: "error", title, description });
 		} finally {
 			testing.set(false);
 		}
@@ -234,6 +234,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 	const editor = props.editor;
 	const draft = editor.draft();
 	if (!draft) return null;
+	const toasts = new AppToasts();
 	const err = () => editor.fieldErrorState();
 	return (
 		<Dialog
@@ -263,6 +264,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 				<View class="flex-1 gap-1">
 					<Text class="font-sans text-xs">{t("settings.connectionName")}</Text>
 					<Input
+						size="sm"
 						testID="settings-ssh-name"
 						value={draft.name}
 						placeholder={String(t("settings.productionServer"))}
@@ -274,6 +276,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 						{t("settings.connectionMethod")}
 					</Text>
 					<Select
+						size="sm"
 						testID="settings-ssh-mode"
 						items={[
 							{
@@ -301,6 +304,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 						? t("connection.hostAlias")
 						: t("connection.host"),
 					<Input
+						size="sm"
 						testID="settings-ssh-host"
 						value={draft.hostname}
 						placeholder={draft.mode === "config" ? "devbox" : "example.com"}
@@ -315,6 +319,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 						<View class="flex-1 gap-1">
 							<Text class="font-sans text-xs">{t("connection.username")}</Text>
 							<Input
+								size="sm"
 								testID="settings-ssh-user"
 								value={draft.user}
 								placeholder="root"
@@ -324,6 +329,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 						<View class="w-24 gap-1">
 							<Text class="font-sans text-xs">{t("connection.port")}</Text>
 							<Input
+								size="sm"
 								testID="settings-ssh-port"
 								value={draft.port}
 								onChange={(event) => editor.patchDraft({ port: event.value })}
@@ -337,6 +343,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 				return field(
 					t("connection.authentication"),
 					<Select
+						size="sm"
 						testID="settings-ssh-auth"
 						items={[
 							{ value: "agent", title: String(t("connection.sshAgent")) },
@@ -378,6 +385,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 						<View class="flex-row gap-2">
 							<View class="min-w-0 flex-1">
 								<Select
+									size="sm"
 									testID="settings-ssh-agent-key"
 									items={[
 										{
@@ -436,6 +444,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 			{field(
 				t("connection.runtimeLocation"),
 				<Select
+					size="sm"
 					testID="settings-ssh-runtime"
 					items={[
 						{
@@ -487,6 +496,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 						<Text class="font-sans text-xs">{t("connection.password")}</Text>
 						<View class="flex-row items-center gap-1">
 							<Input
+								size="sm"
 								testID="settings-ssh-password"
 								class="flex-1"
 								masked={!revealed}
@@ -504,7 +514,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 										testID="settings-ssh-password-reveal"
 										variant="ghost"
 										size="icon"
-										class="h-8 w-8 text-muted-foreground hover:text-foreground"
+										class={`${SETTINGS_ICON_BUTTON_CLASS} text-muted-foreground hover:text-foreground`}
 										disabled={!draft.password}
 										accessibilityLabel={
 											shown
@@ -540,6 +550,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 							</Text>
 						</View>
 						<Input
+							size="sm"
 							testID="settings-ssh-identity"
 							value={draft.identityFile}
 							placeholder="~/.ssh/id_ed25519"
@@ -557,6 +568,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 					? field(
 							t("connection.proxyJump"),
 							<Input
+								size="sm"
 								testID="settings-ssh-proxy"
 								value={draft.proxyJump}
 								placeholder="user@jump.example.com:22"
@@ -589,7 +601,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 							variant="outline"
 							size="sm"
 							disabled={busyNow || testingNow || waiting}
-							onPress={() => void editor.test()}
+							onPress={() => void editor.test(toasts)}
 						>
 							<Text class="font-sans">
 								{testingNow
@@ -625,13 +637,11 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 					</View>
 				);
 			}}
-			<View
+			<DialogClose
 				accessibilityLabel={t("common.close")}
-				class="absolute right-3 top-3 size-6 items-center justify-center rounded-xs opacity-70 hover:opacity-100"
 				onPress={() => editor.close()}
-			>
-				<Icon name="X" size={16} />
-			</View>
+			/>
+			<AppToastStack toasts={toasts} />
 		</Dialog>
 	);
 }

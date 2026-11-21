@@ -5,7 +5,8 @@ import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
-import { Select, type SelectItem } from "../ui/select";
+import { Select } from "../ui/select";
+import { SETTINGS_ICON_BUTTON_CLASS } from "./layout";
 
 export type ConnectionCatalogClient = Pick<
 	NshPiloClient,
@@ -138,6 +139,7 @@ export function ConnectionModelSelect(props: {
 		<View class="w-80 min-w-0 max-w-full flex-row items-center gap-2">
 			<Select
 				testID={props.testID}
+				size="sm"
 				class="flex-1"
 				items={items()}
 				value={unavailable() ? null : props.value}
@@ -156,21 +158,34 @@ export function ConnectionModelSelect(props: {
 					if (model) props.onPick(model);
 				}}
 			/>
-			<Button
-				variant="ghost"
-				size="icon"
-				class="size-8 shrink-0"
-				disabled={list().loading}
-				accessibilityLabel={t("settings.refreshModels")}
+			<RefreshModelsButton
+				loading={list().loading}
 				onPress={() => props.lists.refresh(props.connection.id)}
-			>
-				<Icon
-					name="RefreshCw"
-					size={14}
-					class={list().loading ? "animate-spin" : undefined}
-				/>
-			</Button>
+			/>
 		</View>
+	);
+}
+
+/** The compact ghost button that reloads a connection's model catalog, spinning while it loads. */
+export function RefreshModelsButton(props: {
+	loading: boolean;
+	onPress: () => void;
+}) {
+	return (
+		<Button
+			variant="ghost"
+			size="icon"
+			class={SETTINGS_ICON_BUTTON_CLASS}
+			disabled={props.loading}
+			accessibilityLabel={t("settings.refreshModels")}
+			onPress={props.onPress}
+		>
+			<Icon
+				name="RefreshCw"
+				size={14}
+				class={props.loading ? "animate-spin" : undefined}
+			/>
+		</Button>
 	);
 }
 

@@ -8,8 +8,6 @@ import {
 	View,
 } from "nsh";
 
-import { NumberInput } from "nsh/base";
-
 import {
 	type CacheKeepAliveSettings,
 	defaultCacheKeepAliveSettings,
@@ -20,16 +18,22 @@ import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Command } from "../ui/command";
 import { Icon } from "../ui/icon";
+import { NumberInput } from "../ui/number-input";
 import { Popover } from "../ui/popover";
 import { Switch } from "../ui/switch";
 import {
 	ConnectionModelLists,
+	RefreshModelsButton,
 	connectionLabel,
 	modelKey,
 	paneConnectionCatalog,
 	settingsErrorMessage,
 } from "./connection-settings";
-import { SettingsRow, SettingsSection } from "./layout";
+import {
+	SETTINGS_TEXT_BUTTON_CLASS,
+	SettingsRow,
+	SettingsSection,
+} from "./layout";
 import type { SettingsClient } from "./settings-dialog";
 
 /** Cache TTL and idle keep-alive bounds, the React inputs' minutes ranges. */
@@ -304,20 +308,10 @@ export function CacheKeepAlivePane(props: {
 						<SettingsSection
 							title={connectionLabel(connection)}
 							headerRight={
-								<Button
-									variant="ghost"
-									size="icon"
-									class="size-8"
-									disabled={list().loading}
-									accessibilityLabel={t("settings.refreshModels")}
+								<RefreshModelsButton
+									loading={list().loading}
 									onPress={() => lists.refresh(connectionId)}
-								>
-									<Icon
-										name="RefreshCw"
-										size={14}
-										class={list().loading ? "animate-spin" : undefined}
-									/>
-								</Button>
+								/>
 							}
 							actions={
 								<Popover
@@ -334,8 +328,7 @@ export function CacheKeepAlivePane(props: {
 										<Button
 											testID={`settings-keep-alive-add-${connectionId}`}
 											variant="ghost"
-											size="sm"
-											class="h-8 gap-1 px-2 text-muted-foreground hover:text-foreground"
+											class={`${SETTINGS_TEXT_BUTTON_CLASS} text-muted-foreground hover:text-foreground`}
 											disabled={
 												!loaded()[connectionId] || adding()[connectionId]
 											}
@@ -388,7 +381,7 @@ export function CacheKeepAlivePane(props: {
 										</View>
 									);
 								const header = (
-									<View class="flex-row items-center border-b border-border/60 px-3 py-2">
+									<View class="flex-row items-center gap-2 border-b border-border/60 px-3 py-2">
 										<View class="min-w-0 flex-1">
 											<Text class="font-sans text-xs font-medium text-muted-foreground">
 												{t("settings.cacheKeepAliveModel")}
@@ -424,6 +417,7 @@ export function CacheKeepAlivePane(props: {
 											<View class="flex-row items-center gap-2">
 												<NumberInput
 													testID={`settings-keep-alive-ttl-${connectionId}-${row.modelId}`}
+													size="sm"
 													class="w-28"
 													inputClass="tabular-nums"
 													min={TTL_MINUTES_RANGE.min}
@@ -448,6 +442,7 @@ export function CacheKeepAlivePane(props: {
 												/>
 												<NumberInput
 													testID={`settings-keep-alive-duration-${connectionId}-${row.modelId}`}
+													size="sm"
 													class="w-32"
 													inputClass="tabular-nums"
 													min={DURATION_MINUTES_RANGE.min}

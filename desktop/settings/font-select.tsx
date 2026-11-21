@@ -95,6 +95,7 @@ export function FontSelect(props: {
 				<SelectTrigger
 					testID={props.testID}
 					accessibilityLabel={props.accessibilityLabel}
+					size="sm"
 					class={props.class}
 					value={selectedTitle()}
 					icon="ChevronsUpDown"

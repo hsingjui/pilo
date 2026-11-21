@@ -78,8 +78,6 @@ test("the nav moves between panes", async () => {
 	await app.waitFor("id:settings-fonts-reset-sizes");
 	expect(app.shows("id:settings-fonts-reset-families")).toBe(true);
 	await app.keyboard.press("escape");
-	await app.press("id:settings-nav-model-catalog");
-	await app.waitFor("id:settings-catalog-model-pilo-claude-sonnet-4");
 	await app.press("id:settings-nav-next-prompt");
 	await app.waitFor("id:settings-next-prompt-local");
 	await app.press("id:settings-nav-prompt-enhancement");
@@ -92,8 +90,8 @@ test("the nav moves between panes", async () => {
 	await app.waitFor("id:settings-conn-test-ssh:prod");
 	expect(app.shows("id:settings-conn-test-local")).toBe(true);
 	expect(app.shows("id:settings-conn-add")).toBe(true);
-	await app.press("id:settings-nav-desktop");
-	await app.waitFor("id:settings-launch-at-login");
+	await app.press("id:settings-nav-preferences");
+	await app.waitFor("text:Launch at login");
 	await app.press("id:settings-nav-about");
 	await app.waitFor("id:settings-repository");
 	expect(app.shows("id:settings-send-shortcut")).toBe(false);

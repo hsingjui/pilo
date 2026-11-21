@@ -70,6 +70,7 @@ export function ThemePane(props: {
 					{() => (
 						<Select
 							testID="settings-theme-mode"
+							size="sm"
 							class="w-[180px]"
 							items={modeItems()}
 							value={settings()?.theme ?? "system"}

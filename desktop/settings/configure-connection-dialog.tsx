@@ -2,14 +2,16 @@ import { signal, Text, View } from "nsh";
 
 import type { Connection } from "@shared/api/pi-runtime-types";
 import { userErrorMessage } from "@shared/app-error";
+import { AppToasts, AppToastStack } from "../app/app-toasts";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
+import { DialogClose } from "../ui/dialog-close";
 import { DialogFooter } from "../ui/dialog-footer";
 import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
-import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
+import { Spinner } from "../ui/spinner";
 import { field } from "./connection-form";
 import type { ConfigureDraft } from "./ssh-connection-draft";
 import type { ConnectionsClient } from "./connections-pane";
@@ -71,11 +73,10 @@ export function createConfigureDialog(deps: {
 		}
 	};
 
-	const probePi = async () => {
+	const probePi = async (toasts: AppToasts) => {
 		const draft = configureDraft;
 		if (!draft) return;
 		probing.set(true);
-		error.set(null);
 		try {
 			const info = await client.probeConnectionPi(
 				draft.connection.id,
@@ -85,18 +86,23 @@ export function createConfigureDialog(deps: {
 				configureDraft.piExecutable = info.executable;
 				piRev.update((n) => n + 1);
 			}
-			deps.setResult(
-				draft.connection.id,
-				`${t("connection.piAvailable", {
+			toasts.show({
+				variant: "success",
+				title: t("connection.piAvailable", {
 					name: deps.connectionLabel(draft.connection),
-				})} · ${[info.executable, info.version].filter(Boolean).join(" · ")}`,
-			);
+				}),
+				description: [info.executable, info.version]
+					.filter(Boolean)
+					.join(" · "),
+			});
 		} catch (caught) {
-			error.set(
-				`${t("connection.piUnavailable", {
+			toasts.show({
+				variant: "error",
+				title: t("connection.piUnavailable", {
 					name: deps.connectionLabel(draft.connection),
-				})} · ${userErrorMessage(caught)}`,
-			);
+				}),
+				description: userErrorMessage(caught),
+			});
 		} finally {
 			probing.set(false);
 		}
@@ -123,6 +129,7 @@ export function ConfigureConnectionDialog(props: { dialog: ConfigureDialog }) {
 	const dialog = props.dialog;
 	const draft = dialog.draft();
 	if (!draft) return null;
+	const toasts = new AppToasts();
 	const usesLocalPi =
 		draft.connection.kind.type === "ssh" &&
 		draft.connection.piRuntime === "local";
@@ -142,6 +149,7 @@ export function ConfigureConnectionDialog(props: { dialog: ConfigureDialog }) {
 			{field(
 				t("connection.name"),
 				<Input
+					size="sm"
 					testID="settings-conn-name"
 					value={draft.name}
 					onChange={(event) => {
@@ -152,7 +160,8 @@ export function ConfigureConnectionDialog(props: { dialog: ConfigureDialog }) {
 			)}
 			{() => {
 				void dialog.piRev();
-				const disabled = dialog.busy() || dialog.probing();
+				const probing = dialog.probing();
+				const disabled = dialog.busy() || probing;
 				return usesLocalPi
 					? field(
 							t("connection.runtimeLocation"),
@@ -166,6 +175,7 @@ export function ConfigureConnectionDialog(props: { dialog: ConfigureDialog }) {
 							t("connection.piPath"),
 							<View class="flex-row gap-2">
 								<Input
+									size="sm"
 									testID="settings-conn-pi"
 									class="flex-1 font-mono"
 									value={draft.piExecutable}
@@ -179,14 +189,25 @@ export function ConfigureConnectionDialog(props: { dialog: ConfigureDialog }) {
 									testID="settings-conn-probe"
 									variant="outline"
 									size="sm"
-									disabled={disabled}
-									onPress={() => void dialog.probePi()}
-								>
-									<Text class="font-sans">
-										{dialog.probing()
+									class="shrink-0"
+									accessibilityLabel={
+										probing
 											? t("connection.detecting")
-											: t("connection.detectPi")}
-									</Text>
+											: t("connection.detectPi")
+									}
+									disabled={disabled}
+									onPress={() => void dialog.probePi(toasts)}
+								>
+									<View class="relative items-center justify-center">
+										<Text class={probing ? "font-sans invisible" : "font-sans"}>
+											{t("connection.detectPi")}
+										</Text>
+										{probing ? (
+											<View class="absolute inset-0 items-center justify-center">
+												<Spinner size={14} />
+											</View>
+										) : null}
+									</View>
 								</Button>
 							</View>,
 						);
@@ -227,13 +248,11 @@ export function ConfigureConnectionDialog(props: { dialog: ConfigureDialog }) {
 					</DialogFooter>
 				);
 			}}
-			<View
+			<DialogClose
 				accessibilityLabel={t("common.close")}
-				class="absolute right-3 top-3 size-6 items-center justify-center rounded-xs opacity-70 hover:opacity-100"
 				onPress={() => dialog.close()}
-			>
-				<Icon name="X" size={16} />
-			</View>
+			/>
+			<AppToastStack toasts={toasts} />
 		</Dialog>
 	);
 }

@@ -12,7 +12,12 @@ import appIcon from "../assets/app-icon.png";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
-import { SettingsRow, SettingsSection, SettingsStatus } from "./layout";
+import {
+	SETTINGS_TEXT_BUTTON_CLASS,
+	SettingsRow,
+	SettingsSection,
+	SettingsStatus,
+} from "./layout";
 import type { SettingsClient } from "./settings-dialog";
 
 const REPOSITORY_URL = "https://github.com/hsingjui/pilo";
@@ -138,7 +143,7 @@ export function AboutPane(props: { client: SettingsClient }) {
 						testID="settings-repository"
 						variant="ghost"
 						size="sm"
-						class="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground"
+						class={`${SETTINGS_TEXT_BUTTON_CLASS} text-muted-foreground`}
 						onPress={() => {
 							void openUrl(REPOSITORY_URL).catch((error: unknown) =>
 								console.error("openUrl failed", error),
@@ -155,7 +160,7 @@ export function AboutPane(props: { client: SettingsClient }) {
 						testID="settings-open-log-directory"
 						variant="ghost"
 						size="sm"
-						class="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground"
+						class={`${SETTINGS_TEXT_BUTTON_CLASS} text-muted-foreground`}
 						onPress={() => {
 							void props.client
 								.openLogDirectory()
@@ -191,7 +196,7 @@ export function AboutPane(props: { client: SettingsClient }) {
 								testID="settings-update-check"
 								variant="ghost"
 								size="sm"
-								class="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+								class={`${SETTINGS_TEXT_BUTTON_CLASS} text-muted-foreground hover:text-foreground`}
 								disabled={
 									status() === "checking" ||
 									status() === "downloading" ||
@@ -214,7 +219,7 @@ export function AboutPane(props: { client: SettingsClient }) {
 						testID="settings-release-notes"
 						variant="ghost"
 						size="sm"
-						class="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground"
+						class={`${SETTINGS_TEXT_BUTTON_CLASS} text-muted-foreground`}
 						onPress={() => {
 							void openUrl(RELEASES_URL).catch((error: unknown) =>
 								console.error("openUrl failed", error),

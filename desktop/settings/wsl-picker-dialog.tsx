@@ -5,6 +5,7 @@ import { userErrorMessage } from "@shared/app-error";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
+import { DialogClose } from "../ui/dialog-close";
 import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
 import { Icon } from "../ui/icon";
@@ -132,13 +133,10 @@ export function WslPickerDialog(props: { picker: WslPicker }) {
 					);
 				}}
 			</Scroll>
-			<View
+			<DialogClose
 				accessibilityLabel={t("common.close")}
-				class="absolute right-3 top-3 size-6 items-center justify-center rounded-xs opacity-70 hover:opacity-100"
 				onPress={() => picker.open.set(false)}
-			>
-				<Icon name="X" size={16} />
-			</View>
+			/>
 		</Dialog>
 	);
 }

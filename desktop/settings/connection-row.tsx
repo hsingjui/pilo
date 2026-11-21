@@ -6,6 +6,7 @@ import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
 import { hint } from "./connection-form";
+import { SETTINGS_ICON_BUTTON_CLASS } from "./layout";
 
 function connectionIcon(connection: Connection): JSX.Element {
 	return (
@@ -36,7 +37,7 @@ function rowButton(button: {
 			testID={button.testID}
 			variant="ghost"
 			size="icon"
-			class={`h-8 w-8 text-muted-foreground hover:text-foreground${
+			class={`${SETTINGS_ICON_BUTTON_CLASS} text-muted-foreground hover:text-foreground${
 				button.destructive
 					? " hover:bg-destructive/10 hover:text-destructive"
 					: ""

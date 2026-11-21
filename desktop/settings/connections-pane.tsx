@@ -6,6 +6,7 @@ import type {
 } from "@shared/api/connections-types";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import { userErrorMessage } from "@shared/app-error";
+import { AppToasts, AppToastStack } from "../app/app-toasts";
 import type { AppState } from "../state/app-state";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { t } from "../app/i18n";
@@ -13,7 +14,7 @@ import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
-import { SettingsSection } from "./layout";
+import { SETTINGS_HEADER_ICON_BUTTON_CLASS, SettingsSection } from "./layout";
 import { SettingsConfirmDialog } from "./settings-confirm-dialog";
 import { ConnectionRow } from "./connection-row";
 import { hint } from "./connection-form";
@@ -57,12 +58,13 @@ export function ConnectionsPane(props: {
 	client: ConnectionsClient;
 }) {
 	const client = props.client;
+	const toasts = new AppToasts();
 	const local = signal<Connection | null>(null);
 	const wslItems = signal<WslConnectionInfo[]>([]);
 	const sshItems = signal<SshConnectionInfo[]>([]);
 	const loading = signal(true);
 	const testing = signal<Set<string>>(new Set());
-	/** Per-connection diagnostics line, in place of React's toasts. */
+	/** Persistent per-connection diagnostics. */
 	const results = signal<Record<string, string>>({});
 	const removing = signal<Connection | null>(null);
 	const busy = signal(false);
@@ -139,21 +141,17 @@ export function ConnectionsPane(props: {
 					: connection.kind.type === "wsl"
 						? await client.testWslConnection(connection.kind.distro)
 						: await client.testSshConnection(id);
-			setResult(
-				id,
-				`${t("connection.available", {
-					name: connectionLabel(connection),
-				})} · pilo-server ${result.serverVersion} · protocol ${
-					result.protocolVersion
-				}`,
-			);
+			const title = t("connection.available", {
+				name: connectionLabel(connection),
+			});
+			const description = `pilo-server ${result.serverVersion} · protocol ${result.protocolVersion}`;
+			toasts.show({ variant: "success", title, description });
 		} catch (caught) {
-			setResult(
-				id,
-				`${t("connection.connectionFailed", {
-					name: connectionLabel(connection),
-				})} · ${userErrorMessage(caught)}`,
-			);
+			const title = t("connection.connectionFailed", {
+				name: connectionLabel(connection),
+			});
+			const description = userErrorMessage(caught);
+			toasts.show({ variant: "error", title, description });
 		} finally {
 			setTesting(id, false);
 		}
@@ -301,10 +299,11 @@ export function ConnectionsPane(props: {
 					testID="settings-conn-add"
 					variant="outline"
 					size="icon"
+					class={SETTINGS_HEADER_ICON_BUTTON_CLASS}
 					accessibilityLabel={t("connection.addConnection")}
 					tooltip={hint(t("connection.addConnection"))}
 				>
-					<Icon name="Plus" size={16} />
+					<Icon name="Plus" size={14} />
 				</Button>
 			}
 		>
@@ -411,6 +410,8 @@ export function ConnectionsPane(props: {
 			}
 			{() => (wslPicker.open() ? <WslPickerDialog picker={wslPicker} /> : null)}
 			{() => removeDialog()}
+			{/* Mount in the settings dialog, above the window-level overlay. */}
+			<AppToastStack toasts={toasts} />
 		</View>
 	);
 }

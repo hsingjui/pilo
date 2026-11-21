@@ -233,6 +233,7 @@ export function AddProjectDialog(props: {
 								testID="add-project-browser-up"
 								variant="ghost"
 								size="icon"
+								class="size-(--pilo-button-sm-height) shrink-0"
 								disabled={browserPath() === "/" || loadingEntries()}
 								onPress={() =>
 									void loadDirectory(parentRemotePath(browserPath()))

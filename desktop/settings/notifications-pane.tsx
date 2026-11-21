@@ -12,7 +12,13 @@ import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Switch } from "../ui/switch";
-import { SettingsRow, SettingsSection, SettingsStatus } from "./layout";
+import {
+	SETTINGS_ICON_BUTTON_CLASS,
+	SETTINGS_TEXT_BUTTON_CLASS,
+	SettingsRow,
+	SettingsSection,
+	SettingsStatus,
+} from "./layout";
 import type { SettingsClient } from "./settings-dialog";
 
 const PERMISSION_KEYS: Record<
@@ -140,6 +146,7 @@ export function NotificationsPane(props: {
 								testID="settings-recheck-permission"
 								variant="ghost"
 								size="icon"
+								class={SETTINGS_ICON_BUTTON_CLASS}
 								accessibilityLabel={t("settings.recheckPermission")}
 								disabled={checking()}
 								onPress={refresh}
@@ -158,8 +165,7 @@ export function NotificationsPane(props: {
 						<Button
 							testID="settings-send-test-notification"
 							variant="ghost"
-							size="sm"
-							class="text-muted-foreground hover:text-foreground"
+							class={`${SETTINGS_TEXT_BUTTON_CLASS} text-muted-foreground hover:text-foreground`}
 							disabled={testing()}
 							onPress={sendTest}
 						>

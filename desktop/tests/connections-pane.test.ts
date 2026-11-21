@@ -31,9 +31,8 @@ test("local, WSL and SSH rows render with their details", async () => {
 test("testing a connection reports the server version", async () => {
 	const app = await openPane();
 	await app.press("id:settings-conn-test-local");
-	await app.waitFor(
-		"text:Local is available · pilo-server 0.20.0 · protocol 1",
-	);
+	await app.waitFor("text:Local is available");
+	expect(app.shows("text:pilo-server 0.20.0 · protocol 1")).toBe(true);
 });
 
 test("the home toggle stays interactive", async () => {
@@ -96,7 +95,8 @@ test("the configure dialog detects Pi and saves", async () => {
 	expect(app.shows("id:settings-conn-probe")).toBe(true);
 	expect(app.shows("id:settings-conn-cancel")).toBe(true);
 	await app.press("id:settings-conn-probe");
-	await app.waitFor("text:Local Pi is available · pi · 0.20.0");
+	await app.waitFor("text:Local Pi is available");
+	expect(app.shows("text:pi · 0.20.0")).toBe(true);
 	expect(app.value("id:settings-conn-pi")).toBe("pi");
 	await app.press("id:settings-conn-cancel");
 	await app.waitFor("id:settings-conn-configure-ssh:prod");

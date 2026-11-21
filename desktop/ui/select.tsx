@@ -1,11 +1,20 @@
 import { signal, split, token, Text, View } from "nsh";
-import { Select as BaseSelect, type SelectProps } from "nsh/base";
+import {
+	Select as BaseSelect,
+	type SelectProps as BaseSelectProps,
+} from "nsh/base";
 import { classNames } from "./class-names";
 import { Icon } from "./icon";
+import type { fieldSizes } from "./input";
 import { SelectTrigger } from "./select-trigger";
 import { styleVar } from "./theme-style";
 
-export type { SelectProps, SelectItem } from "nsh/base";
+export type { SelectItem } from "nsh/base";
+
+export interface SelectProps extends BaseSelectProps {
+	/** The default trigger's height, as Input's: `sm` for compact rows such as settings. */
+	size?: keyof typeof fieldSizes;
+}
 
 export function selectItemSpacing() {
 	// The scroll view wraps a virtual list, so its gap does not reach the rows.
@@ -27,6 +36,7 @@ export function Select(props: SelectProps) {
 		"groupClass",
 		"searchClass",
 		"renderItem",
+		"size",
 	]);
 	const value = signal(local.defaultValue ?? null);
 	const current = () => (local.value === undefined ? value() : local.value);
@@ -46,6 +56,7 @@ export function Select(props: SelectProps) {
 			trigger={
 				local.trigger ?? (
 					<SelectTrigger
+						size={local.size}
 						disabled={props.disabled}
 						value={title()}
 						placeholder={props.placeholder}

@@ -14,6 +14,7 @@ import { Select } from "../ui/select";
 import type { AppState } from "../state/app-state";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { classNames } from "../ui/class-names";
+import { DialogClose } from "../ui/dialog-close";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { createHover } from "../ui/hover";
 import { Icon, type IconName } from "../ui/icon";
@@ -24,10 +25,8 @@ import { t } from "../app/i18n";
 import { AboutPane } from "./about-pane";
 import { CacheKeepAlivePane } from "./cache-keep-alive-pane";
 import { ConnectionsPane } from "./connections-pane";
-import { DesktopPane } from "./desktop-pane";
 import { FontsPane } from "./fonts-pane";
 import { PendingPane } from "./layout";
-import { ModelCatalogPane } from "./model-catalog-pane";
 import { NextPromptPane } from "./next-prompt-pane";
 import { NotificationsPane } from "./notifications-pane";
 import { PromptEnhancementPane } from "./prompt-enhancement-pane";
@@ -42,10 +41,6 @@ export type SettingsClient = Pick<
 	| "savePreferences"
 	| "saveThemeSettings"
 	| "loadConnectionModels"
-	| "loadModels"
-	| "saveModels"
-	| "loadModelScope"
-	| "saveModelScope"
 	| "loadNamingModels"
 	| "saveNamingModel"
 	| "loadCacheKeepAliveSettings"
@@ -103,12 +98,10 @@ export type SettingsTabId =
 	| "notifications"
 	| "shortcuts"
 	| "connections"
-	| "model-catalog"
 	| "next-prompt"
 	| "prompt-enhancement"
 	| "cache-keep-alive"
 	| "session-naming"
-	| "desktop"
 	| "about";
 
 type SettingsTab = {
@@ -156,12 +149,6 @@ const SETTINGS_TABS: SettingsTab[] = [
 		icon: "Plug",
 	},
 	{
-		id: "model-catalog",
-		section: "project",
-		labelKey: "settings.modelCatalog",
-		icon: "ListTodo",
-	},
-	{
 		id: "next-prompt",
 		section: "project",
 		labelKey: "settings.nextPrompt",
@@ -184,12 +171,6 @@ const SETTINGS_TABS: SettingsTab[] = [
 		section: "project",
 		labelKey: "settings.sessionNaming",
 		icon: "Type",
-	},
-	{
-		id: "desktop",
-		section: "other",
-		labelKey: "settings.desktop",
-		icon: "Monitor",
 	},
 	{
 		id: "about",
@@ -375,6 +356,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 											<PreferencesPane
 												state={props.state}
 												client={props.client}
+												desktop={props.desktop}
 											/>
 										);
 									case "appearance":
@@ -392,27 +374,10 @@ export function SettingsDialog(props: SettingsDialogProps) {
 												client={props.client}
 											/>
 										);
-									case "model-catalog":
-										return (
-											<ModelCatalogPane
-												state={props.state}
-												client={props.client}
-											/>
-										);
 									case "next-prompt":
-										return (
-											<NextPromptPane
-												state={props.state}
-												client={props.client}
-											/>
-										);
+										return <NextPromptPane client={props.client} />;
 									case "prompt-enhancement":
-										return (
-											<PromptEnhancementPane
-												state={props.state}
-												client={props.client}
-											/>
-										);
+										return <PromptEnhancementPane client={props.client} />;
 									case "cache-keep-alive":
 										return (
 											<CacheKeepAlivePane
@@ -443,8 +408,6 @@ export function SettingsDialog(props: SettingsDialogProps) {
 												onRecordingChange={props.onShortcutRecordingChange}
 											/>
 										);
-									case "desktop":
-										return <DesktopPane desktop={props.desktop} />;
 									case "about":
 										return <AboutPane client={props.client} />;
 									default:
@@ -456,14 +419,11 @@ export function SettingsDialog(props: SettingsDialogProps) {
 						</View>
 					</Scroll>
 				</View>
-				<View
+				<DialogClose
 					testID="settings-dialog-close"
 					accessibilityLabel={t("common.close")}
-					class="absolute right-3 top-3 size-6 items-center justify-center rounded-xs opacity-70 hover:opacity-100"
 					onPress={() => props.onClose()}
-				>
-					<Icon name="X" size={16} />
-				</View>
+				/>
 			</View>
 		</Dialog>
 	);

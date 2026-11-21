@@ -30,6 +30,13 @@
 - `Select` 和 `Command` 的 `listClass` 作用在外层滚动容器，而不是内部虚拟列表的行容器。用 `selectItemSpacing()` 给 `itemStyle` 加行间距；不要在 `listClass` 上加 `gap` 来隔开高亮背景。
 - 普通 `Select` 的原生弹层跟随触发器宽度，默认从下方展开，空间不足时可向上翻转，不覆盖触发器。字体弹层通过 `onLayout` 读取触发器宽度。先约束触发器宽度，给箭头或勾选标记留空间，长标签采用单行截断。
 
+## 控件高度与复用
+
+- 同一行相邻的输入框、下拉和按钮必须同高。`Input`、`Select`/`SelectTrigger`、`NumberInput`（`desktop/ui/number-input.tsx`）默认高度为 `--pilo-field-height`（36 pt），`size="sm"` 时为 `--pilo-button-sm-height`（32 pt），与 `Button size="sm"` 一致。
+- 设置页沿用 Tauri 的紧凑控件（`SETTINGS_CONTROL_CLASS = h-8`）：字段一律传 `size="sm"`，旁边的按钮用 `desktop/settings/layout.tsx` 的 `SETTINGS_ICON_BUTTON_CLASS` / `SETTINGS_TEXT_BUTTON_CLASS`；`SettingsSection` 标题栏的图标按钮用 `SETTINGS_HEADER_ICON_BUTTON_CLASS`（28 pt）。不要用 `style={{ height }}` 把按钮硬拉到字段高度。
+- 数字输入用 `desktop/ui/number-input.tsx`，不要直接用 `nsh/base` 的 `NumberInput`（它没有自带外观）。弹窗右上角的关闭按钮用 `desktop/ui/dialog-close.tsx`。隐藏 `MenuItem` 前置勾选、改在行尾显示勾选时用 `desktop/ui/menu-check.tsx`。
+- 设置里的 `Select` 和聊天里的 `Menu` 弹层外观不同是有意为之，与 WebUI 的 Select / DropdownMenu 对应，各自由主题 token（`pilo-select-*`、`pilo-menu-*`）控制，不要互相替换。
+
 ## Fixture 模式
 
 `desktop/tests/ui-button-fixture.tsx` 独立 mount 使用组件的应用，`desktop/tests/ui-button.test.tsx` 用 nsh/test 打开它并操作。新增组件沿用这一 fixture + test 模式；验证目标与测试交付节奏见[质量与验证](./quality-guidelines.md)。

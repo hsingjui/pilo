@@ -8,6 +8,20 @@ const SM_WIDTH = 640;
 
 const narrow = () => windowSize().width < SM_WIDTH;
 
+/*
+ * Settings rows use Tauri's compact 32pt controls: `size="sm"` on Input,
+ * Select and NumberInput, and these classes on Buttons beside them, so a
+ * row's fields and buttons share one height.
+ */
+/** A ghost icon button in a settings row (refresh, reveal, row actions). */
+export const SETTINGS_ICON_BUTTON_CLASS =
+	"size-(--pilo-button-sm-height) shrink-0";
+/** A ghost text button in a settings row: a 14pt icon and a short label. */
+export const SETTINGS_TEXT_BUTTON_CLASS =
+	"h-(--pilo-button-sm-height) gap-1.5 px-2 text-xs font-normal";
+/** An icon button in a SettingsSection header, as Tauri's 28pt header actions. */
+export const SETTINGS_HEADER_ICON_BUTTON_CLASS = "size-7 shrink-0";
+
 /** A bordered card with an optional header, as `SettingsSection` in Tauri. */
 export function SettingsSection(props: {
 	title?: string;
