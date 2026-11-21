@@ -260,7 +260,7 @@ export function ConversationOutlineRail(props: ConversationOutlineRailProps) {
 											style={{
 												height: TICK_HEIGHT,
 												width: Math.min(trackWidth(), widthAt(tick())),
-												transitionProperty: "background-color,width",
+												transitionProperty: "background-color",
 											}}
 										/>
 									</View>
@@ -281,7 +281,7 @@ export function ConversationOutlineRail(props: ConversationOutlineRailProps) {
 													(TICK_PITCH - TICK_HEIGHT) / 2,
 											},
 										],
-										transitionProperty: "transform,width",
+										transitionProperty: "transform",
 									}}
 								/>
 							)
