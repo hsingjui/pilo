@@ -42,11 +42,14 @@ export function FontSizeInput(props: {
 				if (event.key === "Escape") draft.set(undefined);
 			}}
 		>
-			{/* The field look wraps the steppers too, as in Tauri; the suffix slot
-			 * wraps under the field in this nsh build, so `px` is a sibling. */}
+			{/* One bordered field with `px` inside, as in Tauri; the suffix slot
+			 * wraps under the field and the steppers draw as their own box in
+			 * this nsh build, so `px` is a sibling and the controls are hidden. */}
 			<NumberInput
 				testID={props.testID}
 				class="min-w-0 flex-1 border-0 bg-transparent"
+				controlsRight
+				controlsClass="hidden"
 				inputClass="shadow-none"
 				value={draft() ?? props.value}
 				min={props.min}
