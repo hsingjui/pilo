@@ -52,7 +52,6 @@ export type AppSidebarProps = {
 	onNewChat?: () => void;
 	onNewChatInProject?: (projectId: string) => void;
 	onFocusProject?: (projectId: string) => void;
-	onReorderProjects?: (connectionId: string, projectIds: string[]) => void;
 	onDeleteProject?: (projectId: string) => void;
 	onDeleteConnection?: (connectionId: string) => void;
 	onAddProject?: (connectionId?: string) => void;

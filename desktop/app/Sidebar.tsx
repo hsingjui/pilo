@@ -443,7 +443,6 @@ function ConnectionSection(
 								settings={props.settings}
 								onViewProject={props.onViewProject}
 								project={project}
-								group={props.group}
 							/>
 						)}
 					</Each>

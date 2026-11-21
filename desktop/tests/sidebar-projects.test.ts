@@ -260,10 +260,6 @@ test("a connection's projects hide when it is collapsed, and stay hidden next la
 	await becomes(next, () => collapsedSections(next), { "env:local": false });
 });
 
-function projectOrder(app: App) {
-	return JSON.parse(app.storage()["pilo.sidebarProjectOrder"] ?? "{}");
-}
-
 test("a project row's menu refreshes its sessions from the runtime", async () => {
 	const app = await openSidebar();
 	await app.waitFor("id:ws:notes:toggle");
@@ -275,15 +271,11 @@ test("a project row's menu refreshes its sessions from the runtime", async () =>
 	await app.waitFor("id:session:n1 >> text:Sketch the notes app");
 });
 
-test("a project row's menu moves it one place and keeps the new order next launch", async () => {
-	const app = await openSidebar();
+test("a previously saved project order is honored without menu reorder actions", async () => {
+	const app = await openSidebar({
+		"pilo.sidebarProjectOrder": JSON.stringify({ local: ["notes", "pilo"] }),
+	});
 	await app.waitFor("id:ws:pilo:menu");
-
-	await app.press("id:ws:pilo:menu");
-	await app.press("id:ws:pilo:menu:move-down");
-	await becomes(app, () => projectOrder(app), {
-		local: ["notes", "pilo", "broken", "slow"],
-	});
 	expect(treeTexts(app).slice(0, 5)).toEqual([
 		"Local",
 		"notes",
@@ -293,27 +285,10 @@ test("a project row's menu moves it one place and keeps the new order next launc
 	]);
 
 	await app.press("id:ws:pilo:menu");
-	await app.press("id:ws:pilo:menu:move-up");
-	await becomes(app, () => projectOrder(app), {
-		local: ["pilo", "notes", "broken", "slow"],
-	});
-	expect(treeTexts(app).slice(0, 5)).toEqual([
-		"Local",
-		"pilo",
-		"notes",
-		"broken",
-		"slow",
-	]);
-
-	const next = await openSidebar(app.storage());
-	await next.waitFor("id:ws:pilo");
-	expect(treeTexts(next).slice(0, 5)).toEqual([
-		"Local",
-		"pilo",
-		"notes",
-		"broken",
-		"slow",
-	]);
+	await app.waitFor("id:ws:pilo:menu:refresh");
+	expect(app.shows("id:ws:pilo:menu:remove")).toBe(true);
+	expect(app.shows("id:ws:pilo:menu:move-up")).toBe(false);
+	expect(app.shows("id:ws:pilo:menu:move-down")).toBe(false);
 });
 
 test("removing a project asks once, then drops its row", async () => {

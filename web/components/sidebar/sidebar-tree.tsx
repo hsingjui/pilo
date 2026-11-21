@@ -1,25 +1,10 @@
-import { lazy, Suspense, useCallback, useRef, type RefObject } from "react";
+import { lazy, Suspense, useCallback, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
-import { isDefaultWorkspace } from "@/lib/default-workspace";
-import {
-	closestCenter,
-	DndContext,
-	PointerSensor,
-	type DragEndEvent,
-	useSensor,
-	useSensors,
-} from "@dnd-kit/core";
-import {
-	arrayMove,
-	SortableContext,
-	verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
 import { ScrollArea } from "@/ui";
 import { EnvRow } from "./env-row";
 import { ProjectRow } from "./project-row";
 import { RecentSectionHeader } from "./recent-section-header";
 import { SessionRow, SessionRowGlide } from "./session-row";
-import { SortableProjectBlock } from "./sortable-project-block";
 import { summarizeProjectSessions } from "@shared/sidebar/session-list";
 import type {
 	SidebarEnv,
@@ -59,7 +44,6 @@ type SidebarTreeProps = {
 	onAddProject?: (connectionId?: string) => void;
 	onDeleteConnection?: (connectionId: string) => void;
 	onRefreshProjectSessions?: (projectId: string) => void;
-	onReorderProjects?: (connectionId: string, projectIds: string[]) => void;
 	onSelectSession: (sessionId: string, projectId: string) => void;
 	onRenameSession: (
 		sessionId: string,
@@ -72,7 +56,6 @@ type SidebarTreeProps = {
 
 /**
  * Sidebar scroll body: recent-session view or the per-connection project tree.
- * Keeps the DnD wiring and virtualized session rendering out of the shell.
  */
 export function SidebarTree({
 	scrollViewportRef,
@@ -99,40 +82,12 @@ export function SidebarTree({
 	onAddProject,
 	onDeleteConnection,
 	onRefreshProjectSessions,
-	onReorderProjects,
 	onSelectSession,
 	onRenameSession,
 	onDeleteSession,
 	onRefreshSession,
 }: SidebarTreeProps) {
 	const { t } = useTranslation();
-	const suppressProjectClickRef = useRef(false);
-	const projectDragSensors = useSensors(
-		useSensor(PointerSensor, {
-			activationConstraint: { distance: 6 },
-		}),
-	);
-
-	const handleProjectDragEnd = useCallback(
-		(envId: string, event: DragEndEvent) => {
-			const { active, over } = event;
-			if (
-				!over ||
-				active.id === over.id ||
-				isDefaultWorkspace({ id: String(active.id) }) ||
-				isDefaultWorkspace({ id: String(over.id) })
-			)
-				return;
-			const order = (projectsByEnv.get(envId) ?? []).map(
-				(project) => project.id,
-			);
-			const fromIndex = order.indexOf(String(active.id));
-			const toIndex = order.indexOf(String(over.id));
-			if (fromIndex < 0 || toIndex < 0) return;
-			onReorderProjects?.(envId, arrayMove(order, fromIndex, toIndex));
-		},
-		[onReorderProjects, projectsByEnv],
-	);
 
 	const renderSession = useCallback(
 		(session: SidebarSession) => {
@@ -252,118 +207,79 @@ export function SidebarTree({
 									onAddProject={onAddProject}
 									onDeleteConnection={onDeleteConnection}
 								/>
-								{!envCollapsed ? (
-									<>
-										<DndContext
-											sensors={projectDragSensors}
-											collisionDetection={closestCenter}
-											onDragStart={() => {
-												suppressProjectClickRef.current = true;
-											}}
-											onDragCancel={() => {
-												window.setTimeout(() => {
-													suppressProjectClickRef.current = false;
-												}, 0);
-											}}
-											onDragEnd={(event) => {
-												handleProjectDragEnd(env.id, event);
-												window.setTimeout(() => {
-													suppressProjectClickRef.current = false;
-												}, 0);
-											}}
-										>
-											<SortableContext
-												items={envProjects.map((project) => project.id)}
-												strategy={verticalListSortingStrategy}
-											>
-												{envProjects.map((project) => {
-													const projectCollapsed =
-														collapsedSections[`ws:${project.id}`] ?? true;
-													const projectSessions =
-														sessionsByProject.get(project.id) ?? [];
-													const projectSessionSummary = projectCollapsed
-														? null
-														: summarizeProjectSessions(
-																projectSessions,
-																selectedProjectId === project.id
-																	? activeSessionId
-																	: null,
-															);
-													return (
-														<SortableProjectBlock
-															key={project.id}
-															id={project.id}
-															disabled={
-																isDefaultWorkspace(project) ||
-																refreshingProjectIds.has(project.id) ||
-																envProjects.length < 2
-															}
-															row={
-																<ProjectRow
-																	project={project}
-																	env={env}
-																	collapsed={projectCollapsed}
-																	selected={
-																		activeSessionId === null &&
-																		selectedProjectId === project.id
-																	}
-																	refreshing={refreshingProjectIds.has(
-																		project.id,
-																	)}
-																	onSelect={() => {
-																		if (suppressProjectClickRef.current) return;
-																		onFocusProject?.(project.id);
-																		onNewChatInProject?.(project.id);
-																	}}
-																	onToggle={() => {
-																		const key = `ws:${project.id}`;
-																		onToggleSection(key, true);
-																		if (projectCollapsed)
-																			onRefreshProjectSessions?.(project.id);
-																	}}
-																	onNewChat={onNewChatInProject}
-																	onDelete={onDeleteProject}
-																	onRefreshSessions={
-																		onRefreshProjectSessions
-																			? () =>
-																					onRefreshProjectSessions(project.id)
-																			: undefined
-																	}
-																/>
-															}
-														>
-															{projectSessionSummary ? (
-																<SessionRowGlide>
-																	{projectSessionSummary.visible.map(
-																		renderSession,
-																	)}
-																	{projectSessionSummary.hiddenCount > 0 ? (
-																		<button
-																			type="button"
-																			data-session-row=""
-																			className="relative flex w-full items-center gap-1.5 rounded-md border border-transparent bg-transparent px-2 py-1 text-left text-xs text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover group-hover/glide:hover:bg-transparent hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sidebar-ring"
-																			onClick={() =>
-																				onOpenProjectSessionsView(project.id)
-																			}
-																		>
-																			<span
-																				aria-hidden="true"
-																				className="h-4 w-4 shrink-0"
-																			/>
-																			<span className="min-w-0 flex-1 truncate">
-																				{t("sidebar.viewAll")}
-																			</span>
-																		</button>
-																	) : null}
-																</SessionRowGlide>
-															) : null}
-														</SortableProjectBlock>
+								{!envCollapsed
+									? envProjects.map((project) => {
+											const projectCollapsed =
+												collapsedSections[`ws:${project.id}`] ?? true;
+											const projectSessions =
+												sessionsByProject.get(project.id) ?? [];
+											const projectSessionSummary = projectCollapsed
+												? null
+												: summarizeProjectSessions(
+														projectSessions,
+														selectedProjectId === project.id
+															? activeSessionId
+															: null,
 													);
-												})}
-											</SortableContext>
-										</DndContext>
-									</>
-								) : null}
+											return (
+												<div
+													key={project.id}
+													className="relative grid w-full min-w-0 gap-px overflow-visible rounded-md"
+												>
+													<ProjectRow
+														project={project}
+														env={env}
+														collapsed={projectCollapsed}
+														selected={
+															activeSessionId === null &&
+															selectedProjectId === project.id
+														}
+														refreshing={refreshingProjectIds.has(project.id)}
+														onSelect={() => {
+															onFocusProject?.(project.id);
+															onNewChatInProject?.(project.id);
+														}}
+														onToggle={() => {
+															const key = `ws:${project.id}`;
+															onToggleSection(key, true);
+															if (projectCollapsed)
+																onRefreshProjectSessions?.(project.id);
+														}}
+														onNewChat={onNewChatInProject}
+														onDelete={onDeleteProject}
+														onRefreshSessions={
+															onRefreshProjectSessions
+																? () => onRefreshProjectSessions(project.id)
+																: undefined
+														}
+													/>
+													{projectSessionSummary ? (
+														<SessionRowGlide>
+															{projectSessionSummary.visible.map(renderSession)}
+															{projectSessionSummary.hiddenCount > 0 ? (
+																<button
+																	type="button"
+																	data-session-row=""
+																	className="relative flex w-full items-center gap-1.5 rounded-md border border-transparent bg-transparent px-2 py-1 text-left text-xs text-sidebar-foreground-muted transition-colors hover:bg-sidebar-hover group-hover/glide:hover:bg-transparent hover:text-sidebar-hover-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sidebar-ring"
+																	onClick={() =>
+																		onOpenProjectSessionsView(project.id)
+																	}
+																>
+																	<span
+																		aria-hidden="true"
+																		className="h-4 w-4 shrink-0"
+																	/>
+																	<span className="min-w-0 flex-1 truncate">
+																		{t("sidebar.viewAll")}
+																	</span>
+																</button>
+															) : null}
+														</SessionRowGlide>
+													) : null}
+												</div>
+											);
+										})
+									: null}
 							</section>
 						);
 					})

@@ -56,23 +56,6 @@ function bySavedOrder(
 	);
 }
 
-/**
- * The connection's project order with the project moved one place, or null
- * when it cannot move (the edge or not in the list).
- */
-export function movedProjectOrder(
-	projects: readonly Project[],
-	projectId: string,
-	delta: -1 | 1,
-): string[] | null {
-	const from = projects.findIndex((project) => project.id === projectId);
-	const to = from + delta;
-	if (from < 0 || to < 0 || to >= projects.length) return null;
-	const order = projects.map((project) => project.id);
-	[order[from], order[to]] = [order[to], order[from]];
-	return order;
-}
-
 export function isLocal(connection: Connection) {
 	return connection.kind.type === "local";
 }

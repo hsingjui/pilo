@@ -33,9 +33,7 @@ import {
 } from "./sidebar-parts";
 import {
 	isLocal,
-	movedProjectOrder,
 	projectSection,
-	type SidebarGroup,
 	sessionRowKey,
 	sidebarSessions,
 } from "./sidebar-projects";
@@ -48,7 +46,6 @@ export function ProjectSection(props: {
 	settings: SidebarSettingsStore;
 	onViewProject: (projectId: string) => void;
 	project: Accessor<Project>;
-	group: Accessor<SidebarGroup>;
 }) {
 	const { store, settings } = props;
 	const id = () => props.project().id;
@@ -67,15 +64,6 @@ export function ProjectSection(props: {
 	// Reading the sessions again, as the Tauri row's `refreshing`.
 	const refreshing = () =>
 		store.state().sessionIndexes[id()]?.status === "loading";
-	const siblings = () => props.group().projects;
-	const movable = () =>
-		!isDefaultWorkspace(props.project()) && siblings().length > 1;
-	const move = (delta: -1 | 1) => {
-		const order = movedProjectOrder(siblings(), id(), delta);
-		if (order) {
-			void settings.setProjectOrder(props.project().connection.id, order);
-		}
-	};
 	const menuOpen = signal(false);
 	const confirmingRemove = signal(false);
 	const hover = createHover();
@@ -196,16 +184,9 @@ export function ProjectSection(props: {
 								actionClass={hoverAction}
 								refreshing={refreshing}
 								open={menuOpen}
-								canMove={
-									movable()
-										? (delta) =>
-												movedProjectOrder(siblings(), id(), delta) !== null
-										: undefined
-								}
 								removable={!isDefaultWorkspace(props.project())}
 								confirmingRemove={confirmingRemove}
 								onRefresh={() => void store.loadSessions(id())}
-								onMove={move}
 								onRemove={() =>
 									void store.removeProject(id()).catch((error: unknown) => {
 										console.error("Removing the project failed", error);
@@ -240,19 +221,16 @@ export function ProjectSection(props: {
 	);
 }
 
-/** The ⋯ menu on a project row: refresh, reorder and remove. */
+/** The ⋯ menu on a project row: refresh and remove. */
 function ProjectMenu(props: {
 	section: Accessor<string>;
 	actionClass: Accessor<string>;
 	refreshing: Accessor<boolean>;
 	open: Signal<boolean>;
-	/** Set when the project can reorder: reports whether a step is in range. */
-	canMove: ((delta: -1 | 1) => boolean) | undefined;
 	/** The default workspace cannot be removed, as in the Tauri app. */
 	removable: boolean;
 	confirmingRemove: Signal<boolean>;
 	onRefresh: () => void;
-	onMove: (delta: -1 | 1) => void;
 	onRemove: () => void;
 }) {
 	const section = props.section;
@@ -283,26 +261,6 @@ function ProjectMenu(props: {
 			>
 				<Text class="font-sans">{() => t("sidebar.refreshSessions")}</Text>
 			</MenuItem>
-			{props.canMove ? (
-				<>
-					<MenuItem
-						testID={`${section()}:menu:move-up`}
-						icon={<Icon name="ArrowUp" size={14} />}
-						disabled={!props.canMove?.(-1)}
-						onSelect={() => props.onMove(-1)}
-					>
-						<Text class="font-sans">{() => t("sidebar.moveUp")}</Text>
-					</MenuItem>
-					<MenuItem
-						testID={`${section()}:menu:move-down`}
-						icon={<Icon name="ArrowDown" size={14} />}
-						disabled={!props.canMove?.(1)}
-						onSelect={() => props.onMove(1)}
-					>
-						<Text class="font-sans">{() => t("sidebar.moveDown")}</Text>
-					</MenuItem>
-				</>
-			) : null}
 			{props.removable ? (
 				<MenuItem
 					testID={`${section()}:menu:remove`}

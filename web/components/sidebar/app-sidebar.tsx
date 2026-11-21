@@ -101,7 +101,6 @@ export function AppSidebar({
 	onNewChat,
 	onNewChatInProject,
 	onFocusProject,
-	onReorderProjects,
 	onDeleteProject,
 	onDeleteConnection,
 	onAddProject,
@@ -406,7 +405,6 @@ export function AppSidebar({
 							onAddProject={onAddProject}
 							onDeleteConnection={onDeleteConnection}
 							onRefreshProjectSessions={onRefreshProjectSessions}
-							onReorderProjects={onReorderProjects}
 							onSelectSession={handleSelectSession}
 							onRenameSession={handleRenameSession}
 							onDeleteSession={handleDeleteSession}

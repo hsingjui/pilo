@@ -11,9 +11,9 @@ export type SidebarSettings = {
 	 */
 	collapsedSections: Record<string, boolean>;
 	/**
-	 * A connection's project order as the row menu's moves leave it, by
-	 * connection id. Projects a saved list does not name keep their catalog
-	 * places after the ordered ones.
+	 * A connection's previously saved project order, by connection id.
+	 * Projects a saved list does not name keep their catalog places after the
+	 * ordered ones.
 	 */
 	projectOrder: Record<string, readonly string[]>;
 	view: SidebarView;
@@ -97,19 +97,6 @@ export class SidebarSettingsStore {
 			COLLAPSED_SECTIONS_KEY,
 			JSON.stringify(collapsedSections),
 		);
-	}
-
-	/** Saves a connection's project order, as a row's move left it. */
-	setProjectOrder(
-		connectionId: string,
-		order: readonly string[],
-	): Promise<void> {
-		const projectOrder = {
-			...this.current().projectOrder,
-			[connectionId]: order,
-		};
-		this.current.set({ ...this.current(), projectOrder });
-		return Storage.setItem(PROJECT_ORDER_KEY, JSON.stringify(projectOrder));
 	}
 
 	setView(view: SidebarView): Promise<void> {
