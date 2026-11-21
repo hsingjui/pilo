@@ -50,6 +50,7 @@ use tokio::{
 };
 
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const STDERR_INFO_PREFIX: &str = "[pilo-info] ";
 const MAX_IN_FLIGHT_REQUESTS: usize = 64;
 
 pub fn binary_fingerprint(path: &Path) -> io::Result<String> {
@@ -106,7 +107,7 @@ impl ServerState {
     fn new(retain_pi: bool) -> io::Result<Self> {
         let extensions_dir = extensions::deploy()?;
         eprintln!(
-            "[runtime-diagnostics] server started pid={} version={SERVER_VERSION} maxInFlight={MAX_IN_FLIGHT_REQUESTS}",
+            "{STDERR_INFO_PREFIX}[runtime-diagnostics] server started pid={} version={SERVER_VERSION} maxInFlight={MAX_IN_FLIGHT_REQUESTS}",
             std::process::id()
         );
         Ok(Self {

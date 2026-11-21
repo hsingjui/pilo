@@ -12,6 +12,8 @@ use std::{
 use pilo_protocol::SessionFile;
 use serde_json::Value;
 
+use crate::STDERR_INFO_PREFIX;
+
 pub(crate) use project_scan::session_scan;
 pub(crate) use summary::scan_index;
 use summary::{SESSION_INDEX_MAX_PARSE_BYTES, scan_index_windows, scan_session_name};
@@ -160,14 +162,14 @@ fn read_session_summary_from<R: Read + Seek>(
             let Some(header) = recover_session_header(&candidate.path, project) else {
                 return Ok(None);
             };
-            eprintln!(
-                "[session-index] indexing headerless session as read-only: {}",
-                candidate.path_text
-            );
             // Include the first message in the summary; recovery never changes the JSONL.
             reader
                 .seek(SeekFrom::Start(0))
                 .map_err(|error| error.to_string())?;
+            eprintln!(
+                "{STDERR_INFO_PREFIX}[session-index] indexing headerless session as read-only: {}",
+                candidate.path_text
+            );
             break header;
         }
         if consumed >= SESSION_INDEX_HEADER_BYTES {

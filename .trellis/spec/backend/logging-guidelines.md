@@ -30,7 +30,10 @@ log::warn!(target: "pilo-server", "[{label}] {message}");
   parsing). Bounded lifecycle/RPC summaries are allowed as described below.
 - `crates/pilo-server` stdout is a protocol channel: only `--version` /
   fingerprint subcommands may print there. Service diagnostics stay on stderr;
-  `crates/pilo-runtime/src/server_client.rs` routes that stderr into the Host `log` facade.
+  `crates/pilo-runtime/src/server_client.rs` forwards newline-delimited records to
+  the Host `log` facade, bounding each read to 4 KiB. Only complete lines with
+  `pilo_server::STDERR_INFO_PREFIX` (`[pilo-info] `) become `info`; unmarked
+  stderr and overlong fragments remain warnings.
 
 ## What to log
 

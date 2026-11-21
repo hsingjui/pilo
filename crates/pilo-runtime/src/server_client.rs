@@ -14,7 +14,10 @@ use std::{
 use pilo_protocol::{Envelope, PROTOCOL_VERSION, SERVER_CAPABILITIES, ServerPing};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncReadExt, BufReader},
+    sync::{Mutex, mpsc, oneshot},
+};
 
 use pilo_domain::Connection;
 
@@ -31,6 +34,7 @@ pub(crate) use manager::ServerManager;
 pub use transport::{SERVER_DISCONNECTED_EVENT, ServerEventReceiver};
 
 const REQUEST_CAPACITY: usize = 256;
+const MAX_STDERR_RECORD_BYTES: u64 = 4096;
 const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(75);
 
@@ -68,7 +72,7 @@ impl ServerClient {
                 child,
                 stdin,
                 stdout,
-                mut stderr,
+                stderr,
                 reused_deployment,
             } = diagnostics
                 .stage("prepare_server")
@@ -97,19 +101,35 @@ impl ServerClient {
             });
             let label = connection.name.clone();
             tokio::spawn(async move {
-                let mut buffer = vec![0_u8; 4096];
+                let mut stderr = BufReader::new(stderr);
+                let mut buffer = Vec::new();
+                let mut continuation = false;
                 loop {
-                    match tokio::io::AsyncReadExt::read(&mut stderr, &mut buffer).await {
+                    buffer.clear();
+                    match (&mut stderr)
+                        .take(MAX_STDERR_RECORD_BYTES)
+                        .read_until(b'\n', &mut buffer)
+                        .await
+                    {
                         Ok(0) => break,
                         Err(error) => {
                             log::warn!(target: "connection-diagnostics", "stderr read failed attemptId={attempt_id} launcherPid={launcher_pid:?} kind={:?} osCode={:?}", error.kind(), error.raw_os_error());
                             break;
                         }
-                        Ok(read) => log::warn!(
-                            target: "pilo-server",
-                            "[{label}] attemptId={attempt_id} {}",
-                            String::from_utf8_lossy(&buffer[..read]).trim_end()
-                        ),
+                        Ok(_) => {}
+                    }
+                    // Launcher stderr is unstructured and may exceed the per-record limit.
+                    let terminated = buffer.ends_with(b"\n");
+                    let complete = !continuation && terminated;
+                    continuation = !terminated;
+                    let text = String::from_utf8_lossy(&buffer);
+                    let text = text.trim_end();
+                    if complete
+                        && let Some(text) = text.strip_prefix(pilo_server::STDERR_INFO_PREFIX)
+                    {
+                        log::info!(target: "pilo-server", "[{label}] attemptId={attempt_id} {text}");
+                    } else if !text.is_empty() {
+                        log::warn!(target: "pilo-server", "[{label}] attemptId={attempt_id} {text}");
                     }
                 }
             });
