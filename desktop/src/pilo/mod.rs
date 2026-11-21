@@ -1,11 +1,11 @@
 use std::{
     future::Future,
-    path::{Component, Path, PathBuf},
-    sync::{Arc, OnceLock},
+    path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use nsh_core::{JsonValue, prelude::*};
-use pilo_domain::{Connection, RemoteAccessAddress, SessionReadState};
+use pilo_domain::{Connection, RemoteAccessAddress};
 use pilo_runtime::{
     Runtime, TranscriptWindow,
     appearance::{theme_settings_get, theme_settings_set},
@@ -24,17 +24,16 @@ use pilo_runtime::{
             wsl_list_distributions,
         },
     },
-    events::{EventBatch, EventQueueLimits, EventStream},
-    handle::{HostShell, session_mark_read, session_read_states},
-    host_events::HostEvents,
+    events::{EventQueueLimits, EventStream},
+    handle::{session_mark_read, session_read_states},
     host_paths::HostPaths,
     initialize_local_server_binary, initialize_server_resource_dir,
     next_prompt::{next_prompt_request, next_prompt_settings_get, next_prompt_settings_set},
-    preferences::{PreferencesSnapshot, preferences_get, preferences_patch},
+    preferences::{preferences_get, preferences_patch},
     project_api::{
         connection_fs_read_dir, local_pick_project_directory, project_add,
         project_chat_file_remove, project_chat_file_upload, project_fs_read_image,
-        project_fs_search, project_list, project_model_cache_list, project_model_cache_set,
+        project_fs_search, project_model_cache_list, project_model_cache_set,
         project_model_scope_get, project_model_scope_set, project_remove,
     },
     prompt_enhancement::{
@@ -53,295 +52,30 @@ use pilo_runtime::{
         session_update_ui_state,
     },
     session_naming::session_generate_title,
-    storage, tasks,
-    web_assets::{WebAsset, WebAssets},
+    storage,
 };
-use serde::Serialize;
 use tokio::{runtime::Runtime as Executor, sync::Mutex};
 
-const CLOSED: &str = "Pilo runtime has been shut down";
+mod encode;
+mod host;
+mod objects;
+mod shell;
+
+use encode::{encode_event_batch, encode_list, history_fingerprint_args, load_projects};
+use host::{CLOSED, Host, run_with_runtime, stop_host};
+use objects::{
+    Bootstrap, NativeDesktopSettings, NativeHistoryFingerprint, NativeHistoryOptions,
+    NativePreferencesSnapshot, NativeSessionReadState, NativeStartChatInput,
+};
+use shell::{
+    NshHostShell, ShellEvents, ShellWebAssets, data_identifier, default_data_dir, executor,
+    log_directory, open_path, workspace,
+};
+
 const EVENT_QUEUE_LIMITS: EventQueueLimits = EventQueueLimits {
     max_events: 2048,
     max_bytes: 16 * 1024 * 1024,
 };
-
-struct ShellEvents;
-
-impl HostEvents for ShellEvents {
-    fn emit(&self, _name: &str, _payload: JsonValue) -> Result<(), String> {
-        Ok(())
-    }
-}
-
-struct ShellWebAssets(PathBuf);
-
-/// The nsh host's shell: a native folder picker and a cache under the data dir.
-struct NshHostShell {
-    cache_dir: PathBuf,
-}
-
-impl HostShell for NshHostShell {
-    fn cache_dir(&self) -> Result<PathBuf, String> {
-        Ok(self.cache_dir.clone())
-    }
-
-    fn open_path(&self, path: &Path) -> Result<(), String> {
-        open_path(path)
-    }
-
-    fn pick_directory(&self) -> Option<String> {
-        rfd::FileDialog::new()
-            .pick_folder()
-            .map(|path| path.to_string_lossy().into_owned())
-    }
-}
-
-/// Opens a file or directory in the file manager.
-fn open_path(path: &Path) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    let mut command = std::process::Command::new("open");
-    #[cfg(target_os = "windows")]
-    let mut command = std::process::Command::new("explorer");
-    #[cfg(target_os = "linux")]
-    let mut command = std::process::Command::new("xdg-open");
-    command
-        .arg(path)
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| format!("opening {path:?} failed: {error}"))
-}
-
-/// The app's log directory, as the Tauri `appLogDir` resolves it.
-fn log_directory(development: bool) -> Result<PathBuf, String> {
-    let identifier = data_identifier(development);
-    #[cfg(target_os = "macos")]
-    let base = std::env::home_dir()
-        .ok_or("cannot resolve the home directory")?
-        .join("Library/Logs");
-    #[cfg(target_os = "windows")]
-    let base = std::env::var("APPDATA")
-        .map(PathBuf::from)
-        .map_err(|error| format!("cannot resolve APPDATA: {error}"))?;
-    #[cfg(target_os = "linux")]
-    let base = std::env::home_dir()
-        .ok_or("cannot resolve the home directory")?
-        .join(".local/share");
-    Ok(base.join(identifier))
-}
-
-impl WebAssets for ShellWebAssets {
-    fn get(&self, path: &str) -> Option<WebAsset> {
-        let path = Path::new(path);
-        if !path
-            .components()
-            .all(|part| matches!(part, Component::Normal(_)))
-        {
-            return None;
-        }
-        let root = self.0.canonicalize().ok()?;
-        let file = root.join(path).canonicalize().ok()?;
-        if !file.starts_with(root) || !file.is_file() {
-            return None;
-        }
-        Some(WebAsset {
-            bytes: std::fs::read(file).ok()?,
-            mime_type: mime_guess::from_path(path)
-                .first_or_octet_stream()
-                .to_string(),
-        })
-    }
-}
-
-fn workspace() -> Result<&'static Path, String> {
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    // nsh may generate the manifest under desktop/.nsh instead of using desktop/.
-    manifest_dir
-        .ancestors()
-        .find(|dir| dir.join("Cargo.toml").is_file() && dir.join("pnpm-workspace.yaml").is_file())
-        .ok_or_else(|| {
-            format!(
-                "could not locate the Pilo workspace from {}",
-                manifest_dir.display()
-            )
-        })
-}
-
-fn data_identifier(development: bool) -> &'static str {
-    if development {
-        "app.hsingjui.pilo.dev"
-    } else {
-        "app.hsingjui.pilo"
-    }
-}
-
-fn default_data_dir(home: &Path, development: bool) -> PathBuf {
-    home.join("Library/Application Support")
-        .join(data_identifier(development))
-}
-
-fn executor() -> Result<&'static Executor, String> {
-    static EXECUTOR: OnceLock<Result<Executor, String>> = OnceLock::new();
-    EXECUTOR
-        .get_or_init(|| {
-            let executor = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .thread_name("pilo-runtime")
-                .build()
-                .map_err(|error| format!("failed to start the Pilo executor: {error}"))?;
-            tasks::initialize(executor.handle().clone());
-            Ok(executor)
-        })
-        .as_ref()
-        .map_err(Clone::clone)
-}
-
-type Host = Arc<Mutex<Option<Runtime>>>;
-
-async fn stop_host(host: Host) {
-    let mut host = host.lock().await;
-    if let Some(runtime) = host.take() {
-        runtime.shutdown().await;
-    }
-}
-
-async fn run_with_runtime<T, F>(
-    host: Host,
-    operation: impl FnOnce(Runtime) -> F,
-) -> Result<T, String>
-where
-    F: Future<Output = Result<T, String>>,
-{
-    let runtime = host.lock().await.as_ref().ok_or(CLOSED)?.clone();
-    operation(runtime).await
-}
-
-fn encode_list(values: Vec<impl Serialize>) -> Result<Vec<JsonValue>, String> {
-    values
-        .into_iter()
-        .map(|value| serde_json::to_value(value).map_err(|error| error.to_string()))
-        .collect()
-}
-
-fn encode_event_batch(batch: EventBatch) -> Result<JsonValue, String> {
-    Ok(match batch {
-        EventBatch::Events(events) => serde_json::json!({
-            "type": "events",
-            "events": encode_list(events.iter().map(AsRef::as_ref).collect())?,
-        }),
-        EventBatch::Gap {
-            first_missed,
-            last_missed,
-        } => serde_json::json!({
-            "type": "gap",
-            "firstMissed": first_missed,
-            "lastMissed": last_missed,
-        }),
-        EventBatch::Closed => serde_json::json!({ "type": "closed" }),
-    })
-}
-
-fn load_projects(runtime: &Runtime) -> Result<Vec<JsonValue>, String> {
-    encode_list(project_list(runtime)?)
-}
-
-fn history_fingerprint_args(
-    fingerprint: Option<NativeHistoryFingerprint>,
-) -> Result<(Option<u64>, Option<String>), String> {
-    let Some(fingerprint) = fingerprint else {
-        return Ok((None, None));
-    };
-    let size = fingerprint.file_size;
-    if !(0.0..=9_007_199_254_740_991.0).contains(&size) || size.fract() != 0.0 {
-        return Err("session history file size must be a non-negative safe integer".into());
-    }
-    Ok((Some(size as u64), Some(fingerprint.file_mtime_ns)))
-}
-
-/// A session file's size and exact modification time, as returned by the runtime.
-#[derive(JsObject)]
-pub struct NativeHistoryFingerprint {
-    pub file_size: f64,
-    pub file_mtime_ns: String,
-}
-
-#[derive(Default, JsObject)]
-pub struct NativeHistoryOptions {
-    pub start_message: Option<f64>,
-    pub message_limit: Option<f64>,
-    pub include_message_index: Option<bool>,
-    pub fingerprint: Option<NativeHistoryFingerprint>,
-}
-
-/// The initial project catalog and runtime snapshots with their event cut.
-#[derive(JsObject)]
-pub struct Bootstrap {
-    /// The runtime event sequence before reading snapshot state.
-    pub event_sequence: u64,
-    /// Projects with their saved connection and metadata.
-    pub projects: Vec<JsonValue>,
-    /// Snapshots of chat sessions currently held by the runtime.
-    pub chat_sessions: Vec<JsonValue>,
-    pub preferences: NativePreferencesSnapshot,
-}
-
-/// Desktop-only preferences shared with the previous shell.
-#[derive(JsObject)]
-pub struct NativeDesktopSettings {
-    pub show_shortcut: String,
-    pub exit_on_close: bool,
-}
-
-/// The current revision and complete Host preference values.
-#[derive(JsObject)]
-pub struct NativePreferencesSnapshot {
-    pub revision: u64,
-    pub values: JsonValue,
-}
-
-impl From<PreferencesSnapshot> for NativePreferencesSnapshot {
-    fn from(snapshot: PreferencesSnapshot) -> Self {
-        Self {
-            revision: snapshot.revision,
-            values: JsonValue::Object(snapshot.values),
-        }
-    }
-}
-
-/// The completed and acknowledged revisions for a saved session.
-#[derive(JsObject)]
-pub struct NativeSessionReadState {
-    pub project_id: String,
-    pub session_path: String,
-    pub completed_revision: u64,
-    pub read_revision: u64,
-}
-
-impl From<SessionReadState> for NativeSessionReadState {
-    fn from(state: SessionReadState) -> Self {
-        Self {
-            project_id: state.project_id,
-            session_path: state.session_path,
-            completed_revision: state.completed_revision,
-            read_revision: state.read_revision,
-        }
-    }
-}
-
-/// Arguments for starting or resuming a Pi chat.
-#[derive(JsObject)]
-pub struct NativeStartChatInput {
-    pub project_id: String,
-    pub session_key: String,
-    pub session_path: Option<String>,
-    pub no_session: Option<bool>,
-    pub builtin_extensions: Option<Vec<NativeChatBuiltinExtension>>,
-}
-
-/// An explicitly selected Host-provided Pi extension.
-#[derive(JsObject)]
-pub struct NativeChatBuiltinExtension {
-    pub id: String,
-}
 
 /// A native host for the shared Pilo runtime.
 #[class]
@@ -1485,167 +1219,4 @@ impl Drop for Pilo {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use pilo_domain::{Project, ProjectMetadata};
-    use pilo_runtime::storage;
-
-    #[test]
-    fn uses_tauri_data_locations() {
-        let home = Path::new("/Users/example");
-        for (development, identifier) in [
-            (false, "app.hsingjui.pilo"),
-            (true, "app.hsingjui.pilo.dev"),
-        ] {
-            assert_eq!(
-                default_data_dir(home, development),
-                home.join("Library/Application Support").join(identifier)
-            );
-        }
-    }
-
-    #[test]
-    fn disconnected_shell_discards_host_events_without_error() {
-        assert!(
-            ShellEvents
-                .emit("pilo://session-watch", JsonValue::Null)
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn bootstrap_reads_existing_projects_and_shutdown_closes_the_handle() {
-        let data = tempfile::tempdir().unwrap();
-        let paths = HostPaths::new(data.path().into(), data.path().into()).unwrap();
-        let db = storage::open(&paths).unwrap();
-        let project = Project {
-            id: "saved-project".into(),
-            name: "Saved project".into(),
-            path: "/projects/saved".into(),
-            connection: storage::ensure_local_connection(&db).unwrap(),
-            metadata: ProjectMetadata {
-                cwd: "/projects/saved".into(),
-                git_branch: Some("main".into()),
-                pi_version: "test".into(),
-                refreshed_at_ms: 2,
-            },
-            created_at_ms: 1,
-            last_opened_at_ms: 3,
-        };
-        storage::upsert_project(&db, &project).unwrap();
-        drop(db);
-
-        let pilo = Pilo::new(Some(data.path().to_str().unwrap().into())).unwrap();
-        pilo.executor.block_on(async {
-            let initial = Pilo::load_bootstrap(pilo.host.clone()).await.unwrap();
-            let saved = initial
-                .projects
-                .iter()
-                .find(|item| item["id"] == project.id)
-                .unwrap();
-            assert_eq!(saved, &serde_json::to_value(project).unwrap());
-            assert!(initial.chat_sessions.is_empty());
-
-            let host = pilo.host.clone();
-            let ((), ()) = tokio::join!(stop_host(host.clone()), stop_host(host.clone()));
-            assert!(matches!(Pilo::load_bootstrap(host).await, Err(error) if error == CLOSED));
-        });
-    }
-
-    #[test]
-    fn bootstrap_surfaces_database_errors() {
-        let data = tempfile::tempdir().unwrap();
-        let database = data.path().join("pilo.sqlite3");
-        std::fs::create_dir(&database).unwrap();
-        let pilo = Pilo::new(Some(data.path().to_str().unwrap().into())).unwrap();
-        pilo.executor.block_on(async {
-            let result = Pilo::load_bootstrap(pilo.host.clone()).await;
-            assert!(
-                matches!(result, Err(error) if error.contains("failed to open Pilo SQLite index"))
-            );
-            std::fs::remove_dir(database).unwrap();
-            assert!(Pilo::load_bootstrap(pilo.host.clone()).await.is_ok());
-            stop_host(pilo.host.clone()).await;
-        });
-    }
-
-    #[test]
-    fn runtime_operation_does_not_block_shutdown() {
-        let data = tempfile::tempdir().unwrap();
-        let pilo = Pilo::new(Some(data.path().to_str().unwrap().into())).unwrap();
-        pilo.executor.block_on(async {
-            let (admitted, ready) = tokio::sync::oneshot::channel();
-            let (finish, pending) = tokio::sync::oneshot::channel();
-            let operation = tokio::spawn(run_with_runtime(pilo.host.clone(), |_| async move {
-                admitted.send(()).unwrap();
-                pending.await.unwrap();
-                Ok(())
-            }));
-            ready.await.unwrap();
-            tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                stop_host(pilo.host.clone()),
-            )
-            .await
-            .expect("shutdown waited for an admitted operation");
-            assert_eq!(
-                run_with_runtime(pilo.host.clone(), |_| async { Ok(()) }).await,
-                Err(CLOSED.to_owned()),
-            );
-            finish.send(()).unwrap();
-            operation.await.unwrap().unwrap();
-        });
-    }
-
-    #[test]
-    fn event_batch_reports_gap_then_preserves_later_events() {
-        let data = tempfile::tempdir().unwrap();
-        let pilo = Pilo::new(Some(data.path().to_str().unwrap().into())).unwrap();
-        pilo.executor.block_on(async {
-            let runtime = pilo.host.lock().await.as_ref().unwrap().clone();
-            let mut stream = runtime.subscribe_events(EventQueueLimits {
-                max_events: 1,
-                max_bytes: EVENT_QUEUE_LIMITS.max_bytes,
-            });
-            let start = stream.start_sequence();
-            for locale in ["zh-CN", "en-US", "zh-CN"] {
-                preferences_patch(
-                    &runtime,
-                    [("locale".to_owned(), JsonValue::from(locale))].into_iter().collect(),
-                    None,
-                )
-                .unwrap();
-            }
-            assert_eq!(
-                encode_event_batch(stream.try_next_batch(1).unwrap()).unwrap(),
-                serde_json::json!({ "type": "gap", "firstMissed": start + 1, "lastMissed": start + 2 }),
-            );
-            let batch = encode_event_batch(stream.try_next_batch(1).unwrap()).unwrap();
-            assert_eq!(batch["type"], "events");
-            assert_eq!(batch["events"][0]["sequence"], start + 3);
-            assert_eq!(batch["events"][0]["type"], "preferences_changed");
-            assert_eq!(batch["events"][0]["settings"]["values"]["locale"], "zh-CN");
-            stop_host(pilo.host.clone()).await;
-        });
-    }
-
-    // Windows creates symlinks only with Developer Mode or admin rights.
-    #[cfg(unix)]
-    #[test]
-    fn web_assets_only_serves_files_inside_its_root() {
-        let data = tempfile::tempdir().unwrap();
-        let root = data.path().join("webui");
-        let external = data.path().join("outside");
-        std::fs::create_dir(&root).unwrap();
-        std::fs::write(root.join("index.html"), b"<p>Pilo</p>").unwrap();
-        std::fs::write(&external, b"not an asset").unwrap();
-        std::os::unix::fs::symlink(external, root.join("link")).unwrap();
-        let assets = ShellWebAssets(root);
-        let index = assets.get("index.html").unwrap();
-        assert_eq!(index.mime_type, "text/html");
-        assert_eq!(index.bytes, b"<p>Pilo</p>");
-        for path in ["", "../outside", "/index.html", "missing", "link"] {
-            assert!(assets.get(path).is_none(), "{path}");
-        }
-    }
-}
+mod tests;
