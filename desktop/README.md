@@ -201,9 +201,12 @@ run their apps in the background, so that case runs there only with
 is passed over in the plain macOS run.
 
 Build the local development server with `cargo build -p pilo-server` from
-the repo root, or set `PILO_SERVER_BINARY` to an absolute path. Development
-WebUI assets come from `dist/`; a packaged app will stage them under
-`Contents/Resources/webui` and the server under `Contents/Resources/runtime`.
+the repo root. The app prefers `target/debug/pilo-server` and falls back to
+`target/<arch>-apple-darwin/debug/pilo-server`; `PILO_SERVER_BINARY` can override
+both with an absolute path. Development WebUI assets come from the same repo
+root's `dist/`, even when nsh generates its own manifest. A packaged app will
+stage WebUI assets under `Contents/Resources/webui` and the server under
+`Contents/Resources/runtime`.
 
 ## Chat transcripts
 

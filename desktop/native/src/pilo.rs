@@ -155,8 +155,18 @@ impl WebAssets for ShellWebAssets {
     }
 }
 
-fn workspace() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+fn workspace() -> Result<&'static Path, String> {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    // nsh may generate the manifest under desktop/.nsh instead of using desktop/native.
+    manifest_dir
+        .ancestors()
+        .find(|dir| dir.join("Cargo.toml").is_file() && dir.join("pnpm-workspace.yaml").is_file())
+        .ok_or_else(|| {
+            format!(
+                "could not locate the Pilo workspace from {}",
+                manifest_dir.display()
+            )
+        })
 }
 
 fn data_identifier(development: bool) -> &'static str {
@@ -422,41 +432,30 @@ impl Pilo {
             .ok_or("could not locate Pilo application resources")?;
         let paths = HostPaths::new(data_dir.clone(), resources.clone())?;
         let executor = executor()?;
-        let workspace = workspace();
-        let web_root = if cfg!(debug_assertions) {
-            workspace.join("dist")
+        let (web_root, default_server) = if cfg!(debug_assertions) {
+            let workspace = workspace()?;
+            let server = workspace.join("target/debug/pilo-server");
+            let target = format!("{}-apple-darwin", std::env::consts::ARCH);
+            let target_server = workspace
+                .join("target")
+                .join(target)
+                .join("debug/pilo-server");
+            let server = if !server.is_file() && target_server.is_file() {
+                target_server
+            } else {
+                server
+            };
+            (workspace.join("dist"), server)
         } else {
-            resources.join("webui")
+            (
+                resources.join("webui"),
+                resources.join("runtime/pilo-server-darwin-aarch64"),
+            )
         };
         let server = std::env::var_os("PILO_SERVER_BINARY")
             .filter(|path| !path.is_empty())
             .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                if cfg!(debug_assertions) {
-                    let target = format!("{}-apple-darwin", std::env::consts::ARCH);
-                    // nsh builds the crate from a generated manifest under
-                    // desktop/.nsh, so the workspace root may be any ancestor;
-                    // pick the first target dir that actually has the server.
-                    let mut roots: Vec<PathBuf> = Path::new(env!("CARGO_MANIFEST_DIR"))
-                        .ancestors()
-                        .map(|dir| dir.to_path_buf())
-                        .collect();
-                    roots.push(workspace.clone());
-                    let mut candidates = roots.iter().flat_map(|root| {
-                        [
-                            root.join("target")
-                                .join(&target)
-                                .join("debug/pilo-server"),
-                            root.join("target/debug/pilo-server"),
-                        ]
-                    });
-                    candidates
-                        .find(|binary| binary.is_file())
-                        .unwrap_or_else(|| workspace.join("target/debug/pilo-server"))
-                } else {
-                    resources.join("runtime/pilo-server-darwin-aarch64")
-                }
-            });
+            .unwrap_or(default_server);
         initialize_server_resource_dir(resources);
         initialize_local_server_binary(server);
         let runtime = Runtime::new(paths.clone(), Arc::new(ShellEvents))
