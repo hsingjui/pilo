@@ -25,8 +25,11 @@ use pilo_domain::{Project, RemoteDevice};
 
 use super::pairing::PairingSession;
 
-mod handlers;
+mod chat;
+mod host;
 mod middleware;
+mod model_settings;
+mod sessions;
 mod validation;
 mod ws;
 
@@ -136,80 +139,81 @@ pub(crate) fn router(
     };
 
     let protected = Router::new()
-        .route("/api/v1/bootstrap", get(handlers::bootstrap))
+        .route("/api/v1/bootstrap", get(host::bootstrap))
         .route("/api/v1/auth/device", get(middleware::device_auth))
         .route("/api/v1/auth/device/renew", post(middleware::device_renew))
         .route(
             "/api/v1/connections/local-pi-resources",
-            post(handlers::local_pi_resources_set),
+            post(host::local_pi_resources_set),
         )
         .route(
             "/api/v1/preferences",
-            get(handlers::preferences_get).post(handlers::preferences_patch),
+            get(host::preferences_get).post(host::preferences_patch),
         )
         .route(
             "/api/v1/theme",
-            get(handlers::theme_settings).post(handlers::theme_settings_set),
+            get(host::theme_settings).post(host::theme_settings_set),
         )
-        .route("/api/v1/sessions", get(handlers::sessions))
+        .route("/api/v1/sessions", get(sessions::sessions))
         .route(
             "/api/v1/sessions/read-state",
-            get(handlers::session_read_states).post(handlers::session_mark_read),
+            get(sessions::session_read_states).post(sessions::session_mark_read),
         )
-        .route("/api/v1/sessions/search", get(handlers::sessions_search))
+        .route("/api/v1/sessions/search", get(sessions::sessions_search))
         .route(
             "/api/v1/sessions/external-activity",
-            get(handlers::sessions_external_activity),
+            get(sessions::sessions_external_activity),
         )
-        .route("/api/v1/history", get(handlers::history))
-        .route("/api/v1/history/image", get(handlers::history_image))
-        .route("/api/v1/sessions/title", post(handlers::session_title))
-        .route("/api/v1/sessions/delete", post(handlers::session_delete))
+        .route("/api/v1/history", get(sessions::history))
+        .route("/api/v1/history/image", get(sessions::history_image))
+        .route("/api/v1/sessions/title", post(sessions::session_title))
+        .route("/api/v1/sessions/delete", post(sessions::session_delete))
         .route(
             "/api/v1/models",
-            get(handlers::models).post(handlers::models_set),
+            get(model_settings::models).post(model_settings::models_set),
         )
         .route(
             "/api/v1/connections/models",
-            get(handlers::connection_models),
+            get(model_settings::connection_models),
         )
         .route(
             "/api/v1/models/scope",
-            get(handlers::model_scope_get).post(handlers::model_scope_set),
+            get(model_settings::model_scope_get).post(model_settings::model_scope_set),
         )
         .route(
             "/api/v1/next-prompt/settings",
-            get(handlers::next_prompt_settings_get).post(handlers::next_prompt_settings_set),
+            get(model_settings::next_prompt_settings_get)
+                .post(model_settings::next_prompt_settings_set),
         )
         .route(
             "/api/v1/next-prompt/request",
-            post(handlers::next_prompt_request),
+            post(model_settings::next_prompt_request),
         )
         .route(
             "/api/v1/prompt-enhancement/settings",
-            get(handlers::prompt_enhancement_settings_get)
-                .post(handlers::prompt_enhancement_settings_set),
+            get(model_settings::prompt_enhancement_settings_get)
+                .post(model_settings::prompt_enhancement_settings_set),
         )
         .route(
             "/api/v1/prompt-enhancement/enhance",
-            post(handlers::prompt_enhance),
+            post(model_settings::prompt_enhance),
         )
         .route(
             "/api/v1/cache-keep-alive/settings",
-            get(handlers::cache_keep_alive_settings_list)
-                .post(handlers::cache_keep_alive_settings_set),
+            get(model_settings::cache_keep_alive_settings_list)
+                .post(model_settings::cache_keep_alive_settings_set),
         )
-        .route("/api/v1/chat/start", post(handlers::chat_start))
-        .route("/api/v1/chat/stop", post(handlers::chat_stop))
-        .route("/api/v1/chat/state", get(handlers::chat_state))
-        .route("/api/v1/chat/rpc", post(handlers::chat_rpc))
-        .route("/api/v1/chat/mcp-approve", post(handlers::chat_mcp_approve))
-        .route("/api/v1/files/search", get(handlers::files_search))
-        .route("/api/v1/files/image", get(handlers::project_image))
+        .route("/api/v1/chat/start", post(chat::chat_start))
+        .route("/api/v1/chat/stop", post(chat::chat_stop))
+        .route("/api/v1/chat/state", get(chat::chat_state))
+        .route("/api/v1/chat/rpc", post(chat::chat_rpc))
+        .route("/api/v1/chat/mcp-approve", post(chat::chat_mcp_approve))
+        .route("/api/v1/files/search", get(chat::files_search))
+        .route("/api/v1/files/image", get(chat::project_image))
         .route(
             "/api/v1/chat/files",
-            post(handlers::chat_file_upload)
-                .delete(handlers::chat_file_remove)
+            post(chat::chat_file_upload)
+                .delete(chat::chat_file_remove)
                 .layer(DefaultBodyLimit::max(crate::remote_fs::MAX_CHAT_FILE_BYTES)),
         )
         .route("/api/v1/events", get(ws::events))
