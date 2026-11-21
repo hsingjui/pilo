@@ -23,15 +23,11 @@ import {
 } from "lucide-react";
 
 import type { ChatDraftStore } from "@/components/chat/chat-draft-store";
-import { FileMentionBadge } from "@/components/chat/path-mention-badge";
-import { SessionMentionBadge } from "@/components/chat/session-mention-badge";
 import { discardRemovedChatFiles } from "@shared/chat/chat-file-lifecycle";
 import {
 	fileMentionPath,
-	fileMentionName,
 	readChatMentionDraft,
 	writeChatMentionDraft,
-	type ChatMention,
 } from "@shared/chat/chat-mentions";
 import {
 	useSessionMentions,
@@ -41,8 +37,6 @@ import {
 	sessionMentionValue,
 	type SessionMention,
 } from "@shared/chat/session-mentions";
-import { ChatImageThumbnail } from "@/components/chat/chat-image-viewer";
-import { ComposerAttachment } from "@/components/chat/composer-attachment";
 
 import { formatKeyboardShortcut } from "@/lib/keyboard-shortcuts";
 import {
@@ -69,6 +63,7 @@ import {
 	Textarea,
 } from "@/ui";
 import { ComposerActions } from "@/components/chat/chat-composer-actions";
+import { ChatComposerAttachmentTray } from "@/components/chat/chat-composer-attachment-tray";
 import { ComposerContextUsage } from "@/components/chat/composer-context-usage";
 import type { ChatSessionRuntimeState } from "@/components/chat/chat-page-utils";
 import {
@@ -79,7 +74,7 @@ import {
 	ChatComposerSurface,
 } from "@/components/chat/chat-composer-frame";
 import { ComposerRunConfig } from "@/components/chat/chat-composer-run-config";
-import { useChatComposerAttachments } from "@/components/chat/use-chat-composer-attachments";
+import { useChatComposerAttachmentTray } from "@/components/chat/use-chat-composer-attachment-tray";
 import { useChatComposerInput } from "@/components/chat/use-chat-composer-input";
 import {
 	ComposerSuggestionMenu,
@@ -257,92 +252,27 @@ export function ChatComposer({
 		readingFontSize,
 		readingFontFamily,
 	} = usePreferences();
-	const attachmentScope = attachmentScopeKey ?? historyKey;
-	const [attachmentOrder, setAttachmentOrder] = useState<{
-		scope: typeof attachmentScope;
-		keys: string[];
-	}>({ scope: attachmentScope, keys: [] });
 	const {
 		fileInputRef,
 		attachments,
-		updateImages,
 		handleFiles,
 		handlePaste,
 		processing,
 		dragging,
-	} = useChatComposerAttachments({
+		orderedItems,
+		removeAttachment,
+		removeLastAttachment,
+	} = useChatComposerAttachmentTray({
 		images,
 		onImagesChange,
 		onUploadFile,
-		scopeKey: attachmentScope,
+		scopeKey: editorKey,
 		disabled,
 		rootRef,
-		onAttachmentsAdded: (paths, orderedKeys) => {
-			setAttachmentOrder((current) => ({
-				scope: attachmentScope,
-				keys: [
-					...new Set([
-						...(current.scope === attachmentScope ? current.keys : []),
-						...orderedKeys,
-					]),
-				],
-			}));
-			if (paths.length === 0) return;
-			onNextPromptDismiss?.();
-			changeDraft(
-				writeChatMentionDraft(
-					[
-						...mentionDraft.references,
-						...paths.map((path) => ({ kind: "file" as const, path })),
-					],
-					mentionDraft.text,
-				),
-			);
-		},
+		mentionDraft,
+		changeDraft,
+		onNextPromptDismiss,
 	});
-	const attachmentItems = useMemo(
-		() =>
-			new Map<
-				string,
-				| { kind: "image"; attachment: ChatImageAttachment }
-				| { kind: "reference"; mention: ChatMention; index: number }
-			>([
-				...attachments.map(
-					(attachment) =>
-						[
-							`image:${attachment.id}`,
-							{ kind: "image" as const, attachment },
-						] as const,
-				),
-				...mentionDraft.references.map(
-					(mention, index) =>
-						[
-							`${mention.kind}:${mention.path}`,
-							{ kind: "reference" as const, mention, index },
-						] as const,
-				),
-			]),
-		[attachments, mentionDraft.references],
-	);
-	const orderedAttachmentKeys = useMemo(() => {
-		const previousKeys =
-			attachmentOrder.scope === attachmentScope ? attachmentOrder.keys : [];
-		const previousKeySet = new Set(previousKeys);
-		return [
-			...previousKeys.filter((key) => attachmentItems.has(key)),
-			...[...attachmentItems.keys()].filter((key) => !previousKeySet.has(key)),
-		];
-	}, [attachmentOrder, attachmentScope, attachmentItems]);
-	// Keep one insertion order across images and references, before layout effects run.
-	if (
-		attachmentOrder.scope !== attachmentScope ||
-		attachmentOrder.keys.length !== orderedAttachmentKeys.length ||
-		attachmentOrder.keys.some(
-			(key, index) => key !== orderedAttachmentKeys[index],
-		)
-	) {
-		setAttachmentOrder({ scope: attachmentScope, keys: orderedAttachmentKeys });
-	}
 
 	const {
 		sendMode,
@@ -426,45 +356,14 @@ export function ChatComposer({
 		[connectionId, byValue, onNextPromptDismiss, mentionDraft, changeDraft],
 	);
 
-	const removeLastAttachment = useCallback(
-		(textarea: HTMLTextAreaElement) => {
-			if (
-				disabled ||
-				sendingNow ||
-				textarea.selectionStart !== 0 ||
-				textarea.selectionEnd !== 0
-			)
-				return false;
-			const key = orderedAttachmentKeys[orderedAttachmentKeys.length - 1];
-			const item = key ? attachmentItems.get(key) : undefined;
-			if (!item || (item.kind === "image" && processing)) return false;
-			onNextPromptDismiss?.();
-			if (item.kind === "image") {
-				updateImages(
-					attachments.filter((image) => image.id !== item.attachment.id),
-				);
-			} else {
-				changeDraft(
-					writeChatMentionDraft(
-						mentionDraft.references.filter((_, index) => index !== item.index),
-						mentionDraft.text,
-					),
-				);
-			}
-			return true;
-		},
-		[
-			disabled,
-			sendingNow,
-			processing,
-			orderedAttachmentKeys,
-			attachmentItems,
-			attachments,
-			updateImages,
-			mentionDraft,
-			changeDraft,
-			onNextPromptDismiss,
-		],
+	const removeAttachmentAtCaret = useCallback(
+		(textarea: HTMLTextAreaElement) =>
+			!disabled &&
+			!sendingNow &&
+			textarea.selectionStart === 0 &&
+			textarea.selectionEnd === 0 &&
+			removeLastAttachment(),
+		[disabled, sendingNow, removeLastAttachment],
 	);
 
 	useLayoutEffect(() => {
@@ -478,12 +377,12 @@ export function ChatComposer({
 				!event.cancelable
 			)
 				return;
-			if (removeLastAttachment(textarea)) event.preventDefault();
+			if (removeAttachmentAtCaret(textarea)) event.preventDefault();
 		};
 		textarea.addEventListener("beforeinput", handleBeforeInput);
 		return () => textarea.removeEventListener("beforeinput", handleBeforeInput);
 		// oxlint-disable-next-line react/exhaustive-effect-dependencies -- Scope changes remount the keyed textarea, so its native listener must be rebound.
-	}, [editorRef, removeLastAttachment, attachmentScopeKey, historyKey]);
+	}, [editorRef, removeAttachmentAtCaret, attachmentScopeKey, historyKey]);
 
 	useEffect(() => {
 		const element = rootRef.current;
@@ -713,82 +612,15 @@ export function ChatComposer({
 						} as CSSProperties
 					}
 				>
-					{attachments.length > 0 || mentionDraft.references.length > 0 ? (
-						<div
-							data-chat-composer-attachments=""
-							data-chat-composer-references=""
-							className="mb-1 flex max-h-[min(8rem,25dvh,var(--pilo-composer-attachments-max-height,8rem))] min-w-0 flex-wrap items-center gap-1.5 overflow-y-auto overscroll-contain p-1"
-						>
-							{orderedAttachmentKeys.map((key) => {
-								const item = attachmentItems.get(key);
-								if (!item) return null;
-								if (item.kind === "image") {
-									const { attachment } = item;
-									return (
-										<ComposerAttachment
-											key={key}
-											kind="image"
-											disabled={disabled || sendingNow || processing}
-											removeLabel={t("chat.removeAttachment", {
-												name: attachment.name,
-											})}
-											onRemove={() =>
-												updateImages(
-													attachments.filter(
-														(image) => image.id !== attachment.id,
-													),
-												)
-											}
-										>
-											<ChatImageThumbnail
-												compact
-												image={{
-													id: attachment.id,
-													name: attachment.name,
-													mimeType: attachment.mimeType,
-													size: attachment.size,
-													source: "local",
-												}}
-											/>
-										</ComposerAttachment>
-									);
-								}
-								const { mention, index } = item;
-								return (
-									<ComposerAttachment
-										key={key}
-										kind="reference"
-										disabled={disabled || sendingNow}
-										removeLabel={
-											mention.kind === "session"
-												? t("chat.removeSessionMention", {
-														title: mention.session.title,
-													})
-												: t("chat.removeAttachment", {
-														name: fileMentionName(mention.path),
-													})
-										}
-										onRemove={() => {
-											onNextPromptDismiss?.();
-											changeDraft(
-												writeChatMentionDraft(
-													mentionDraft.references.filter((_, i) => i !== index),
-													mentionDraft.text,
-												),
-											);
-											editorRef.current?.focus({ preventScroll: true });
-										}}
-									>
-										{mention.kind === "session" ? (
-											<SessionMentionBadge mention={mention.session} compact />
-										) : (
-											<FileMentionBadge path={mention.path} compact />
-										)}
-									</ComposerAttachment>
-								);
-							})}
-						</div>
-					) : null}
+					<ChatComposerAttachmentTray
+						items={orderedItems}
+						disabled={disabled || sendingNow}
+						processing={processing}
+						onRemove={(key) => {
+							if (removeAttachment(key) === "reference")
+								editorRef.current?.focus({ preventScroll: true });
+						}}
+					/>
 					<div className="relative min-w-0">
 						<Textarea
 							data-chat-composer-input=""
@@ -827,7 +659,7 @@ export function ChatComposer({
 									!event.metaKey &&
 									!event.altKey &&
 									!isImeComposingKeyboardEvent(event) &&
-									removeLastAttachment(event.currentTarget)
+									removeAttachmentAtCaret(event.currentTarget)
 								) {
 									event.preventDefault();
 									return;
