@@ -78,7 +78,7 @@ store.acknowledgeOpenSession();
 
 - 语言、主题从应用状态读取并应用；字体见 `desktop/README.md` 的 Saved fonts：页面字体写入 `font-sans`，代码字体写入 `font-mono`，代码字号写入 `pilo-code-font-size`。
 - 颜色用 token。只在暗色生效的变体用 `dark:` class；颜色是值而不是 class 时用 `colorScheme()`。例：暗色下未选中的侧栏行为前景色的 75%，与 Tauri 相同。
-- 不在单个组件里模拟界面字号缩放，见下方差距。
+- 不在单个组件里模拟界面字号缩放，见下方差距。聊天区和侧栏按 Tauri 默认界面字号 15（根字号 16×15/14）换算：聊天用 `desktop/chat/layout.ts` 的 `chatPx`，侧栏文字和行高用 `desktop/app/sidebar-parts.tsx` 的 `sidebarText`、`sidebarRowHeight`，不随用户设置变化。
 
 ## 侧栏
 

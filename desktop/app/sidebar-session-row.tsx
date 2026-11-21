@@ -16,10 +16,14 @@ import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
 import { Menu, menuPopupClass, menuPopupStyle } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
-import { Tooltip } from "../ui/tooltip";
 import { createHover } from "../ui/hover";
 import { t } from "./i18n";
-import { HOVER_ACTION, sidebarFocusRing } from "./sidebar-parts";
+import {
+	HOVER_ACTION,
+	sidebarFocusRing,
+	sidebarRowHeight,
+	sidebarText,
+} from "./sidebar-parts";
 import { SessionGlideContext } from "./sidebar-session-glide";
 
 /**
@@ -75,7 +79,10 @@ function ConfirmDeleteButton(props: {
 				confirming() ? (
 					<>
 						<View class="pointer-events-none absolute inset-0 rounded-full bg-destructive/12 dark:bg-destructive/35" />
-						<Text class="shrink-0 whitespace-nowrap font-sans text-[11px] font-medium leading-none text-destructive">
+						<Text
+							class="shrink-0 whitespace-nowrap font-sans font-medium leading-none text-destructive"
+							style={sidebarText["2xs"]}
+						>
 							{() => t("sidebar.confirmDelete")}
 						</Text>
 					</>
@@ -207,9 +214,7 @@ export function SessionRow(props: {
 	const rowClass = () => {
 		const classes = [
 			"group relative w-full min-w-0 flex-row items-center rounded-md border border-transparent",
-			projectContext()
-				? "min-h-(--pilo-sidebar-session-context-height) px-2 py-1"
-				: "min-h-(--pilo-sidebar-session-height) px-2 py-0.5",
+			projectContext() ? "px-2 py-1" : "px-2 py-0.5",
 		];
 		if (selected()) {
 			classes.push(
@@ -222,17 +227,25 @@ export function SessionRow(props: {
 		}
 		return classes.join(" ");
 	};
+	const rowStyle = () => ({
+		minHeight: sidebarRowHeight(
+			projectContext()
+				? "pilo-sidebar-session-context-height"
+				: "pilo-sidebar-session-height",
+		),
+	});
 	const shownWhileMenu = (hidden: string, shown: string) =>
 		menuOpen() ? shown : hidden;
 
 	const title = () => (
 		<View class="h-6 min-w-0 flex-row items-center">
 			<Text
-				class={`min-w-0 flex-1 truncate font-sans text-sm ${
+				class={`min-w-0 flex-1 truncate font-sans ${
 					selected()
 						? "text-sidebar-selection-foreground"
 						: "text-sidebar-foreground dark:text-sidebar-foreground/75"
 				}`}
+				style={sidebarText.sm}
 			>
 				{() => session().title}
 			</Text>
@@ -251,7 +264,8 @@ export function SessionRow(props: {
 				/>
 				<Text
 					testID={`session:${session().id}:project`}
-					class="min-w-0 flex-1 truncate font-sans text-[11px] leading-tight text-sidebar-foreground-muted"
+					class="min-w-0 flex-1 truncate font-sans leading-tight text-sidebar-foreground-muted"
+					style={sidebarText["2xs"]}
 				>
 					{name}
 				</Text>
@@ -275,7 +289,8 @@ export function SessionRow(props: {
 								autoFocus
 								value={renameValue()}
 								accessibilityLabel={t("sidebar.editSessionTitle")}
-								class="h-6 rounded-sm px-1 text-sm"
+								class="h-6 rounded-sm px-1"
+								style={{ fontSize: sidebarText.sm.fontSize }}
 								onChange={(event) => renameValue.set(event.value)}
 								onSubmit={submitRename}
 								onBlur={submitRename}
@@ -400,24 +415,17 @@ export function SessionRow(props: {
 				popupStyle={{ ...menuPopupStyle(), minWidth: 0 }}
 				trigger={
 					renaming() ? (
-						<View class={rowClass()}>{content()}</View>
+						<View class={rowClass()} style={rowStyle()}>
+							{content()}
+						</View>
 					) : (
 						<Button
 							testID={`session:${session().id}`}
 							class={rowClass()}
+							style={rowStyle()}
 							focusVisibleStyle={sidebarFocusRing()}
 							selected={selected()}
 							accessibilityLabel={session().title}
-							tooltip={
-								<Tooltip
-									placement="right"
-									align="start"
-									delay={600}
-									class="max-w-[420px]"
-								>
-									<Text class="font-sans">{() => session().title}</Text>
-								</Tooltip>
-							}
 							onPress={() =>
 								saved
 									? store.selectSession(

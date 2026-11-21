@@ -1,13 +1,16 @@
 import {
 	type Accessor,
 	type Bounds,
+	cleanup,
 	computed,
+	Overlay,
 	type Signal,
 	signal,
 	Text,
 	token,
 	untracked,
 	View,
+	type ViewRef,
 } from "nsh";
 import { Button } from "nsh/base";
 
@@ -21,7 +24,7 @@ import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { Spinner } from "../ui/spinner";
-import { Tooltip } from "../ui/tooltip";
+import { tooltipStyle } from "../ui/tooltip";
 import { t } from "./i18n";
 import { createHover } from "../ui/hover";
 import {
@@ -30,6 +33,8 @@ import {
 	sidebarFocusRing,
 	sidebarForeground,
 	sidebarProjectName,
+	sidebarRowHeight,
+	sidebarText,
 } from "./sidebar-parts";
 import {
 	isLocal,
@@ -67,6 +72,20 @@ export function ProjectSection(props: {
 	const menuOpen = signal(false);
 	const confirmingRemove = signal(false);
 	const hover = createHover();
+	const row = signal<ViewRef | null>(null);
+	const detailsOpen = signal(false);
+	let detailsTimer: ReturnType<typeof setTimeout> | undefined;
+	const cancelDetailsTimer = () => clearTimeout(detailsTimer);
+	cleanup(cancelDetailsTimer);
+	const closeDetails = () => {
+		cancelDetailsTimer();
+		detailsOpen.set(false);
+	};
+	const scheduleCloseDetails = () => {
+		cancelDetailsTimer();
+		// Give the pointer time to cross the gap between the row and the panel.
+		if (detailsOpen()) detailsTimer = setTimeout(closeDetails, 200);
+	};
 	const foreground = () => {
 		if (selected()) return token("pilo-project-selected-foreground");
 		if (refreshing()) return token("sidebar-foreground-muted");
@@ -82,7 +101,7 @@ export function ProjectSection(props: {
 	};
 	const rowClass = () => {
 		const classes = [
-			"group relative min-h-(--pilo-sidebar-project-height) w-full min-w-0 flex-row items-center gap-1.5 rounded-md border border-transparent px-2 py-0.5 transition-colors",
+			"group relative w-full min-w-0 flex-row items-center gap-1.5 rounded-md border border-transparent px-2 py-0.5 transition-colors",
 		];
 		if (selected()) {
 			classes.push(
@@ -99,11 +118,27 @@ export function ProjectSection(props: {
 	return (
 		<View testID={section()} class="w-full min-w-0 gap-px">
 			<Foreground.Provider value={foreground}>
-				<View testID={`${section()}:row`}>
+				<View ref={row.set} testID={`${section()}:row`}>
 					<Button
-						{...hover.props}
 						testID={`${section()}:select`}
+						onMouseEnter={() => {
+							hover.props.onMouseEnter();
+							cancelDetailsTimer();
+							if (!detailsOpen() && !menuOpen()) {
+								detailsTimer = setTimeout(
+									() => detailsOpen.set(!menuOpen()),
+									600,
+								);
+							}
+						}}
+						onMouseLeave={() => {
+							hover.props.onMouseLeave();
+							scheduleCloseDetails();
+						}}
 						class={rowClass()}
+						style={{
+							minHeight: sidebarRowHeight("pilo-sidebar-project-height"),
+						}}
 						focusVisibleStyle={sidebarFocusRing()}
 						selected={selected()}
 						accessibilityLabel={
@@ -111,27 +146,7 @@ export function ProjectSection(props: {
 								? t("sidebar.refreshingProject", { name: name() })
 								: name()
 						}
-						tooltip={
-							<Tooltip
-								placement="right"
-								align="start"
-								delay={600}
-								class="max-w-[420px]"
-							>
-								<View class="gap-0.5">
-									<Text class="font-sans text-xs">
-										{() =>
-											isLocal(props.project().connection)
-												? t("common.local")
-												: props.project().connection.name
-										}
-									</Text>
-									<Text class="font-mono text-[11px] leading-snug">
-										{() => displayProjectPath(props.project().path)}
-									</Text>
-								</View>
-							</Tooltip>
-						}
+						onPressDown={closeDetails}
 						onPress={() => {
 							if (!refreshing()) store.selectProject(id());
 						}}
@@ -162,8 +177,8 @@ export function ProjectSection(props: {
 							/>
 						</Button>
 						<Text
-							class="min-w-0 flex-1 truncate font-sans text-xs font-semibold"
-							style={{ color: foreground() }}
+							class="min-w-0 flex-1 truncate font-sans font-semibold"
+							style={{ ...sidebarText.xs, color: foreground() }}
 						>
 							{name}
 						</Text>
@@ -206,6 +221,40 @@ export function ProjectSection(props: {
 				</View>
 			</Foreground.Provider>
 			{() =>
+				detailsOpen() && !menuOpen() && row() ? (
+					<Overlay
+						anchor={row()}
+						placement="right"
+						align="start"
+						offset={4}
+						margin={4}
+						onCancel={closeDetails}
+						onPressOutside={closeDetails}
+						style={{ zIndex: token("z-tooltip") }}
+					>
+						<View
+							class="max-w-[420px] gap-0.5 overflow-hidden rounded-(--pilo-radius-md) border border-(--pilo-tooltip-border) px-3 py-1.5"
+							style={tooltipStyle()}
+							onMouseEnter={cancelDetailsTimer}
+							onMouseLeave={scheduleCloseDetails}
+						>
+							<Text class="font-sans text-xs">
+								{() =>
+									isLocal(props.project().connection)
+										? t("common.local")
+										: props.project().connection.name
+								}
+							</Text>
+							<View selectable>
+								<Text class="font-mono text-[11px] leading-snug">
+									{() => displayProjectPath(props.project().path)}
+								</Text>
+							</View>
+						</View>
+					</Overlay>
+				) : null
+			}
+			{() =>
 				collapsed() ? null : (
 					<ProjectSessions
 						store={store}
@@ -236,7 +285,7 @@ function ProjectMenu(props: {
 	const section = props.section;
 	return (
 		<Menu
-			popupClass="min-w-32"
+			popupStyle={{ minWidth: 0 }}
 			align="start"
 			open={props.open()}
 			onOpenChange={(event) => {
@@ -253,38 +302,42 @@ function ProjectMenu(props: {
 				</SidebarAction>
 			}
 		>
-			<MenuItem
-				testID={`${section()}:menu:refresh`}
-				icon={<Icon name="RefreshCw" size={14} />}
-				disabled={props.refreshing()}
-				onSelect={props.onRefresh}
-			>
-				<Text class="font-sans">{() => t("sidebar.refreshSessions")}</Text>
-			</MenuItem>
-			{props.removable ? (
+			<View class="gap-1">
 				<MenuItem
-					testID={`${section()}:menu:remove`}
-					variant="destructive"
-					icon={<Icon name="Trash2" size={14} />}
+					testID={`${section()}:menu:refresh`}
+					indicatorClass="hidden"
+					icon={<Icon name="RefreshCw" size={14} />}
 					disabled={props.refreshing()}
-					closeOnSelect={false}
-					onSelect={() => {
-						if (!props.confirmingRemove()) {
-							props.confirmingRemove.set(true);
-							return;
-						}
-						props.onRemove();
-					}}
+					onSelect={props.onRefresh}
 				>
-					<Text class="font-sans">
-						{() =>
-							props.confirmingRemove()
-								? t("sidebar.confirmRemove")
-								: t("sidebar.removeProject")
-						}
-					</Text>
+					<Text class="font-sans">{() => t("sidebar.refreshSessions")}</Text>
 				</MenuItem>
-			) : null}
+				{props.removable ? (
+					<MenuItem
+						testID={`${section()}:menu:remove`}
+						indicatorClass="hidden"
+						variant="destructive"
+						icon={<Icon name="Trash2" size={14} />}
+						disabled={props.refreshing()}
+						closeOnSelect={false}
+						onSelect={() => {
+							if (!props.confirmingRemove()) {
+								props.confirmingRemove.set(true);
+								return;
+							}
+							props.onRemove();
+						}}
+					>
+						<Text class="font-sans">
+							{() =>
+								props.confirmingRemove()
+									? t("sidebar.confirmRemove")
+									: t("sidebar.removeProject")
+							}
+						</Text>
+					</MenuItem>
+				) : null}
+			</View>
 		</Menu>
 	);
 }
@@ -349,7 +402,8 @@ function ProjectSessions(props: {
 					<Text
 						testID={`${section()}:failed`}
 						role="alert"
-						class="px-3 py-2 text-center font-sans text-xs text-destructive"
+						class="px-3 py-2 text-center font-sans text-destructive"
+						style={sidebarText.xs}
 					>
 						{current.message ?? t("common.loadFailed")}
 					</Text>
@@ -377,7 +431,10 @@ function ViewAllRow(props: { testID: string; onPress: () => void }) {
 				onPress={props.onPress}
 			>
 				<View class="size-4 shrink-0" />
-				<Text class="min-w-0 flex-1 truncate font-sans text-xs text-sidebar-foreground-muted group-hover:text-sidebar-hover-foreground">
+				<Text
+					class="min-w-0 flex-1 truncate font-sans text-sidebar-foreground-muted group-hover:text-sidebar-hover-foreground"
+					style={sidebarText.xs}
+				>
 					{() => t("sidebar.viewAll")}
 				</Text>
 			</Button>

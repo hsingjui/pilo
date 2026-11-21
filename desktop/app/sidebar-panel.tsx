@@ -28,6 +28,8 @@ import {
 	sidebarFocusRing,
 	sidebarForeground,
 	sidebarProjectName,
+	sidebarRowHeight,
+	sidebarText,
 } from "./sidebar-parts";
 import {
 	DEFAULT_SIDEBAR_WIDTH,
@@ -180,24 +182,17 @@ export function SidebarPanel(props: SidebarPanelProps) {
 						paddingLeft: Math.max(6, props.titleBar().left - card().left),
 					}}
 				>
-					<View class="min-w-0 flex-1 flex-row items-center gap-1.5 px-2">
+					<View class="min-w-0 flex-1 flex-row items-center px-2">
 						<Text
-							class="min-w-0 shrink truncate font-sans text-lg font-semibold tracking-tight text-sidebar-foreground"
+							class={`min-w-0 shrink truncate font-sans text-lg font-semibold tracking-tight ${
+								appInfo().development
+									? "text-primary"
+									: "text-sidebar-foreground"
+							}`}
 							style={titleTextStyle}
 						>
 							Pilo
 						</Text>
-						{appInfo().development ? (
-							<View class="shrink-0 flex-row items-center gap-1 rounded-full bg-primary/10 px-1.5 py-px">
-								<View class="size-1.5 animate-pulse rounded-full bg-primary" />
-								<Text
-									class="font-sans text-[11px] font-semibold uppercase leading-4 tracking-wide text-primary"
-									style={titleTextStyle}
-								>
-									DEV
-								</Text>
-							</View>
-						) : null}
 					</View>
 					{() =>
 						layout.collapsed() || layout.settledCollapsed() ? null : (
@@ -354,11 +349,8 @@ export function StartupSidebar(
 						paddingLeft: Math.max(6, props.titleBar().left - card().left),
 					}}
 				>
-					<View class="min-w-0 flex-1 flex-row items-center gap-1.5 px-2">
+					<View class="min-w-0 flex-1 flex-row items-center px-2">
 						<Skeleton strong class="h-4 w-10" />
-						{appInfo().development ? (
-							<Skeleton class="h-4 w-10 rounded-full" />
-						) : null}
 					</View>
 					<View class="mr-1 h-7 shrink-0 flex-row items-center gap-0.5 border border-transparent px-2">
 						{titleAction()}
@@ -390,13 +382,19 @@ function SidebarLoading() {
 			testID="sidebar-loading"
 			class="mt-2 min-h-0 flex-1 overflow-hidden px-3 pt-1"
 		>
-			<View class="h-(--pilo-sidebar-env-height) shrink-0 flex-row items-center gap-2">
+			<View
+				class="shrink-0 flex-row items-center gap-2"
+				style={{ height: sidebarRowHeight("pilo-sidebar-env-height") }}
+			>
 				<Skeleton strong class="size-3.5 shrink-0" />
 				<Skeleton strong class="h-3 w-16" />
 			</View>
 			<Each of={["w-[48%]", "w-[58%]", "w-[42%]"]}>
 				{(width) => (
-					<View class="h-(--pilo-sidebar-project-height) shrink-0 flex-row items-center gap-2 pl-2">
+					<View
+						class="shrink-0 flex-row items-center gap-2 pl-2"
+						style={{ height: sidebarRowHeight("pilo-sidebar-project-height") }}
+					>
 						<Skeleton class="size-3.5 shrink-0" />
 						<Skeleton class={`h-3 ${width()}`} />
 					</View>
@@ -432,8 +430,8 @@ function SidebarToolbarRow(props: {
 					<Icon name={props.icon} size={16} />
 				</View>
 				<Text
-					class="min-w-0 flex-1 truncate font-sans text-sm"
-					style={{ color: foreground() }}
+					class="min-w-0 flex-1 truncate font-sans"
+					style={{ ...sidebarText.sm, color: foreground() }}
 				>
 					{props.label}
 				</Text>

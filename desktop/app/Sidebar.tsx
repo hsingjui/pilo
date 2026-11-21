@@ -29,6 +29,8 @@ import {
 	SidebarAction,
 	sidebarFocusRing,
 	sidebarProjectName,
+	sidebarRowHeight,
+	sidebarText,
 } from "./sidebar-parts";
 import { ProjectSection } from "./sidebar-project-section";
 import {
@@ -61,7 +63,7 @@ export interface SidebarProps {
 
 /** A connection's or the recent view's header (`pilo-sidebar-env-*`). */
 const SECTION_HEADER =
-	"group min-h-(--pilo-sidebar-env-height) flex-row items-center gap-0.5 rounded-md border border-transparent pr-2";
+	"group flex-row items-center gap-0.5 rounded-md border border-transparent pr-2";
 const SECTION_TOGGLE =
 	"min-h-[26px] min-w-0 flex-1 flex-row items-center gap-2 rounded-md border border-transparent px-2";
 /** A section of the tree: `mb-3 last:mb-0 space-y-(--pilo-sidebar-row-gap)`. */
@@ -191,7 +193,10 @@ function SectionHeader(props: {
 	const foreground = () =>
 		token(hover.hovered() ? "sidebar-foreground" : "sidebar-foreground-muted");
 	return (
-		<View class={SECTION_HEADER}>
+		<View
+			class={SECTION_HEADER}
+			style={{ minHeight: sidebarRowHeight("pilo-sidebar-env-height") }}
+		>
 			<Foreground.Provider value={foreground}>
 				<Button
 					{...hover.props}
@@ -203,8 +208,8 @@ function SectionHeader(props: {
 				>
 					<Icon name={props.icon} size={14} class="shrink-0 opacity-80" />
 					<Text
-						class="min-w-0 shrink truncate font-sans text-sm font-medium"
-						style={{ color: foreground() }}
+						class="min-w-0 shrink truncate font-sans font-medium"
+						style={{ ...sidebarText.sm, color: foreground() }}
 					>
 						{props.title}
 					</Text>
@@ -324,7 +329,8 @@ function NoSessions(props: { testID: string }) {
 	return (
 		<Text
 			testID={`${props.testID}:empty`}
-			class="px-3 py-8 text-center font-sans text-xs text-sidebar-foreground-muted"
+			class="px-3 py-8 text-center font-sans text-sidebar-foreground-muted"
+			style={sidebarText.xs}
 		>
 			{() => t("sidebar.noSessions")}
 		</Text>

@@ -2,11 +2,31 @@ import { colorScheme, type JSX, split, token, View } from "nsh";
 import { Button, type ButtonProps } from "nsh/base";
 
 import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
+import { chatPx } from "../chat/layout";
 import { classNames } from "../ui/class-names";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
 import { createHover } from "../ui/hover";
 import { t } from "./i18n";
+
+/**
+ * The sidebar's type at the Tauri app's default UI size, as the chat's
+ * (`chat/layout.ts`): Tailwind's `text-sm`, `text-xs` and `text-2xs` there.
+ */
+export const sidebarText = {
+	sm: { fontSize: chatPx(14), lineHeight: chatPx(20) },
+	xs: { fontSize: chatPx(12), lineHeight: chatPx(16) },
+	"2xs": { fontSize: chatPx(11) },
+} as const;
+
+/** A `pilo-sidebar-*` row height at the Tauri app's default UI size. */
+export const sidebarRowHeight = (
+	name:
+		| "pilo-sidebar-env-height"
+		| "pilo-sidebar-project-height"
+		| "pilo-sidebar-session-height"
+		| "pilo-sidebar-session-context-height",
+) => chatPx(token(name));
 
 /** An action of a row that shows while the pointer is over the row. */
 export const HOVER_ACTION =

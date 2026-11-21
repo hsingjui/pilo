@@ -321,16 +321,17 @@ export function AppSidebar({
 			>
 				<div className="relative flex flex-col bg-sidebar text-sidebar-foreground pilo-sidebar-surface">
 					<header className="group/sidebar-header relative flex h-11 shrink-0 items-center px-1.5">
-						<div className="flex min-w-0 items-center gap-1.5 px-2">
-							<span className="min-w-0 select-none truncate text-lg font-semibold tracking-tight text-sidebar-foreground">
+						<div className="flex min-w-0 items-center px-2">
+							<span
+								className={cn(
+									"min-w-0 select-none truncate text-lg font-semibold tracking-tight",
+									import.meta.env.DEV
+										? "text-primary"
+										: "text-sidebar-foreground",
+								)}
+							>
 								Pilo
 							</span>
-							{import.meta.env.DEV ? (
-								<span className="inline-flex shrink-0 select-none items-center gap-1 rounded-full bg-primary/10 px-1.5 py-[1px] text-2xs font-semibold uppercase leading-4 tracking-wide text-primary">
-									<span className="size-1.5 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
-									DEV
-								</span>
-							) : null}
 						</div>
 						{!collapsed && !settledCollapsed ? (
 							// Match the scroll body inset and row action padding.
