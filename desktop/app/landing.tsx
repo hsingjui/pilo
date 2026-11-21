@@ -18,6 +18,7 @@ import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { Skeleton } from "../ui/skeleton";
+import { displayFontFamily } from "./appearance";
 import { t } from "./i18n";
 import { PiLogo } from "./pi-logo";
 
@@ -69,7 +70,7 @@ export function SessionLanding(
 						layout().narrow ? "text-2xl" : "text-3xl"
 					}`}
 					style={{
-						fontFamily: token("font-display"),
+						fontFamily: displayFontFamily(),
 						opacity: loading ? 0 : 1,
 					}}
 				>

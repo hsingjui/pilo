@@ -36,6 +36,8 @@ pnpm desktop:generate:icons --check
 
 Inter、JetBrains Mono 的字体来自根依赖，与 Web 字体对应；具体字重、依赖版本和 OFL 许可证见 `desktop/fonts/README.md`，注册回归见 `desktop/tests/fonts.test.ts`。
 
+nsh 0.6.1 解析 `cssVars` 中的字体 token 时只保留第一项。需要回退栈的桌面标题使用 `desktop/app/appearance.ts` 的 `displayFontFamily()` 作为 inline `fontFamily`，不要用 `token("font-display")` 读取回退栈。
+
 ### 已知问题：macOS 上 nsh 文字比 Tauri/WebUI 粗
 
 这是 nsh 的渲染行为，不是字体选错或字重解析错误（2026-11-20 确认，nsh 0.6.1）。

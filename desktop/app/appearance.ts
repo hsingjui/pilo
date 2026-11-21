@@ -5,6 +5,7 @@ import {
 	platform,
 	setColorScheme,
 	setTheme,
+	signal,
 	Storage,
 	untracked,
 } from "nsh";
@@ -29,6 +30,9 @@ import { appLocale, setAppLocale } from "./i18n";
 const catalog = createThemeTokenCatalog(lody.cssVars);
 const defaultPageFont =
 	platform.os === "windows" ? "Noto Sans SC" : "system-sans";
+
+// nsh 0.6.1 keeps only the first family when parsing font tokens.
+export const displayFontFamily = signal(lody.cssVars.theme["font-display"]);
 
 /** What the first frame needs of the theme, before the Host answers. */
 export type StartupTheme = Pick<
@@ -147,6 +151,8 @@ function showTheme(
 	const isClaude = settings?.themeFamily === "claude";
 	setStyleTheme(isClaude ? claude.styleVars : null);
 	const vars = isClaude ? claude.cssVars : lodyTheme(settings, pageSans);
+	const display = vars.theme?.["font-display"];
+	displayFontFamily.set(typeof display === "string" ? display : pageSans);
 	setTheme({
 		cssVars: {
 			...vars,
