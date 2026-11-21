@@ -31,7 +31,7 @@ export function FontSizeInput(props: {
 	};
 	return (
 		<View
-			class="relative w-fit"
+			style={{ position: "relative", width: "fit-content" }}
 			onKeyDown={(event) => {
 				if (event.key === "Escape") draft.set(undefined);
 			}}
