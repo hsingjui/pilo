@@ -141,7 +141,7 @@ impl Runtime {
             log::info!(target: "shutdown", "project pi session: stopping");
             let _ = self.project_pi_session.lock().await.stop().await;
             log::info!(target: "shutdown", "session watchers: stopping");
-            self.session_watchers.lock().await.stop_all().await;
+            crate::session_watcher::SessionWatcherManager::stop_all(&self.session_watchers).await;
             log::info!(target: "shutdown", "terminals: closing");
             self.terminals.lock().await.close_all().await;
         };

@@ -88,6 +88,7 @@ store.acknowledgeOpenSession();
 - `AppShell` 使用 `ResizablePanelGroup` 原生拖动侧栏，默认 292pt，范围 240–480pt。拖动结束由 `SidebarSettingsStore` 将宽度存入 nsh Storage 的 `pilo.sidebarWidth`；折叠按钮只隐藏侧栏，不改保存的宽度。
 - 项目视图：按连接分组，本地在前；展开项目时读取会话，运行中的在前，再取最近五条，其余由「查看全部」原地展开。排序复用 `shared/sidebar/session-list.ts` 的 `summarizeProjectSessions`。
 - 最近视图：所有项目的会话合并，运行中的在前，再取最近 50 条，复用 `sortSidebarSessionsActiveFirst`。
+- `AppStore` 静默刷新侧栏。`SessionsIndexed` 仅读索引，其他会话事件只在项目没有活动监听时扫描。两种后台读取都可能读到索引缓存，必须等同项目在途扫描完成后再分配读取序号，否则迟到的手动刷新结果会被丢弃。
 - 侧栏通过 `isDefaultWorkspace` 识别内置工作区，按当前界面语言显示 `sidebar.defaultWorkspace`；普通项目沿用已存名称，不写回运行时。
 - 底栏与 Tauri `sidebar-footer.tsx` 一致：左侧设置，右侧依次是 Remote 手机按钮和主题切换。Remote 不在设置弹窗里；按钮由 `desktop/settings/remote-dialog.tsx` 的 `createRemoteStatus` 每 3 秒轮询 Host，运行时高亮；弹窗打开时暂停轮询，关闭后立即刷新。弹窗内容是 `RemotePane`，反馈走 `AppToaster` toast。
 

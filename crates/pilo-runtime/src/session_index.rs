@@ -149,6 +149,14 @@ struct SessionFileMeta {
     deferred: bool,
     name: Option<String>,
     first_user_message_preview: Option<String>,
+    name_scanned: bool,
+}
+
+impl SessionFileMeta {
+    /// The fingerprint to store when this scan searched the whole file for a name.
+    fn name_scan(&self) -> Option<(u64, u64)> {
+        self.name_scanned.then_some((self.size, self.mtime_ns))
+    }
 }
 
 pub struct SessionReconcileWork {
@@ -189,10 +197,12 @@ pub(crate) async fn reconcile(
     let session_project = pi_workspace::resolve_session_project_with_paths(host_paths, project)?;
     let mut db = storage::open(host_paths)?;
     let cached = storage::list_sessions(&db, &project.id)?;
+    let name_scans = storage::session_name_scans(&db, &project.id)?;
     let files = scan_files(
         client,
         &session_project,
         &cached,
+        &name_scans,
         Some(INITIAL_SESSION_INDEX_LIMIT),
         &[],
     )
@@ -241,8 +251,10 @@ pub(crate) async fn reconcile(
         }
 
         seen.push(file.path.clone());
+        let name_scan = file.name_scan();
         let entry = build_index_entry(project, file, previous)?;
         storage::upsert_session(&transaction, &entry)?;
+        storage::set_session_name_scan(&transaction, &project.id, &entry.session_path, name_scan)?;
         if previous.is_some() {
             result.updated += 1;
         } else {
@@ -273,7 +285,7 @@ pub(crate) async fn reconcile_paths(
     let files = if paths.is_empty() {
         Vec::new()
     } else {
-        scan_files(client, &session_project, &[], None, paths).await?
+        scan_files(client, &session_project, &[], &HashMap::new(), None, paths).await?
     };
     let mut db = storage::open(host_paths)?;
     let transaction = write_transaction(&mut db)?;
@@ -303,8 +315,10 @@ pub(crate) async fn reconcile_paths(
             continue;
         }
         let previous = storage::get_session(&transaction, &file.path, Some(&project.id))?;
+        let name_scan = file.name_scan();
         let entry = build_index_entry(project, file, previous.as_ref())?;
         storage::upsert_session(&transaction, &entry)?;
+        storage::set_session_name_scan(&transaction, &project.id, &entry.session_path, name_scan)?;
         changed += 1;
     }
     transaction.commit().map_err(|error| error.to_string())?;
@@ -315,20 +329,13 @@ async fn scan_files(
     client: SessionScanClient<'_>,
     project: &Project,
     cached: &[SessionIndexEntry],
+    name_scans: &HashMap<String, (u64, u64)>,
     summary_limit: Option<usize>,
     paths: &[String],
 ) -> Result<Vec<SessionFileMeta>, String> {
     let known = cached
         .iter()
-        .map(|session| {
-            serde_json::json!({
-                "path": session.session_path,
-                "size": session.file_size,
-                "mtimeNs": session.file_mtime_ns,
-                // Server-local progress distinguishes old missing titles from confirmed untitled files.
-                "recoverName": session.name.as_deref().is_none_or(|name| name.trim().is_empty()),
-            })
-        })
+        .map(|session| known_file(session, name_scans))
         .collect::<Vec<_>>();
     let params = serde_json::json!({
         "project": project.path,
@@ -359,8 +366,28 @@ async fn scan_files(
             deferred: file.deferred,
             name: file.name,
             first_user_message_preview: file.first_user_message_preview,
+            name_scanned: file.name_scanned,
         })
         .collect())
+}
+
+/// One indexed file as `session.scan` compares it. An untitled file asks
+/// pilo-server to recover its name, unless the Host stored that this very
+/// fingerprint was already searched whole: pilo-server's own progress is lost
+/// when it restarts, and searching every untitled file again is a full read.
+fn known_file(session: &SessionIndexEntry, name_scans: &HashMap<String, (u64, u64)>) -> Value {
+    let untitled = session
+        .name
+        .as_deref()
+        .is_none_or(|name| name.trim().is_empty());
+    let confirmed =
+        name_scans.get(&session.session_path) == Some(&(session.file_size, session.file_mtime_ns));
+    serde_json::json!({
+        "path": session.session_path,
+        "size": session.file_size,
+        "mtimeNs": session.file_mtime_ns,
+        "recoverName": untitled && !confirmed,
+    })
 }
 
 fn build_index_entry(
@@ -461,6 +488,7 @@ mod tests {
                 deferred: false,
                 name: Some("Indexed name".to_owned()),
                 first_user_message_preview: Some("hello world".to_owned()),
+                name_scanned: false,
             },
             None,
         )
@@ -514,6 +542,7 @@ mod tests {
                 deferred: false,
                 name: None,
                 first_user_message_preview: None,
+                name_scanned: false,
             },
             Some(&previous),
         )
@@ -619,5 +648,83 @@ mod tests {
         ] {
             assert_eq!(windows_verbatim_path(input), expected, "input={input}");
         }
+    }
+
+    fn indexed(name: Option<&str>, file_size: u64, file_mtime_ns: u64) -> SessionIndexEntry {
+        SessionIndexEntry {
+            connection_id: "local".to_owned(),
+            project_id: test_project().id,
+            pi_session_id: "session-a".to_owned(),
+            session_path: "/sessions/a.jsonl".to_owned(),
+            name: name.map(str::to_owned),
+            cwd: "/work".to_owned(),
+            created_at: String::new(),
+            updated_at: String::new(),
+            message_count: 0,
+            last_message_at: None,
+            first_user_message_preview: None,
+            file_size,
+            file_mtime_ns,
+            last_offset: file_size,
+            indexed_at_ms: 0,
+            pinned: false,
+            title_override: None,
+        }
+    }
+
+    #[test]
+    fn confirmed_untitled_fingerprint_skips_name_recovery_until_the_file_changes() {
+        let scans = HashMap::from([("/sessions/a.jsonl".to_owned(), (100, 7))]);
+        let recover = |session: &SessionIndexEntry, scans: &HashMap<String, (u64, u64)>| {
+            known_file(session, scans)["recoverName"].as_bool().unwrap()
+        };
+
+        // Searched whole at this size and mtime: no full read after a server restart.
+        assert!(!recover(&indexed(None, 100, 7), &scans));
+        assert!(!recover(&indexed(Some("  "), 100, 7), &scans));
+        // The file changed since, or was never confirmed: recover as before.
+        assert!(recover(&indexed(None, 120, 8), &scans));
+        assert!(recover(&indexed(None, 100, 7), &HashMap::new()));
+        // A named file never asks.
+        assert!(!recover(&indexed(Some("Title"), 120, 8), &HashMap::new()));
+    }
+
+    #[test]
+    fn name_scan_fingerprints_round_trip_through_the_index() {
+        let root = std::env::temp_dir().join(format!(
+            "pilo-session-name-scans-{}-{}",
+            std::process::id(),
+            storage::now_ms()
+        ));
+        let paths = HostPaths::new(root.clone(), root.join("resources")).unwrap();
+        let db = storage::open(&paths).unwrap();
+        let mut project = test_project();
+        project.connection = storage::ensure_local_connection(&db).unwrap();
+        storage::upsert_project(&db, &project).unwrap();
+        let session = indexed(None, 100, 7);
+        storage::upsert_session(&db, &session).unwrap();
+        assert!(
+            storage::session_name_scans(&db, &project.id)
+                .unwrap()
+                .is_empty()
+        );
+
+        storage::set_session_name_scan(&db, &project.id, &session.session_path, Some((100, 7)))
+            .unwrap();
+        // Reindexing the row keeps the fingerprint; only an explicit write replaces it.
+        storage::upsert_session(&db, &session).unwrap();
+        assert_eq!(
+            storage::session_name_scans(&db, &project.id).unwrap(),
+            HashMap::from([(session.session_path.clone(), (100, 7))])
+        );
+
+        storage::set_session_name_scan(&db, &project.id, &session.session_path, None).unwrap();
+        assert!(
+            storage::session_name_scans(&db, &project.id)
+                .unwrap()
+                .is_empty()
+        );
+        drop(db);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -260,11 +260,9 @@ async fn stop_connection_projects(runtime: &Runtime, connection_id: &str) -> Res
         .collect::<Vec<_>>();
     for project_id in project_ids {
         runtime.chat_sessions.stop_project(&project_id).await?;
-        runtime
-            .session_watchers
-            .lock()
-            .await
-            .stop(&project_id)
+        // Ordered with this project's watcher starts, which hold the same lock.
+        let _scan = super::session_api::lock_session_index(runtime, &project_id).await;
+        super::session_watcher::SessionWatcherManager::stop(&runtime.session_watchers, &project_id)
             .await;
     }
     Ok(())

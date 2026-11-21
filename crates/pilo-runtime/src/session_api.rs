@@ -4,7 +4,9 @@ use super::{
     session_history,
     session_index::{self, SessionScanClient},
 };
-use super::{pi_workspace, session_activity::SessionExternalActivity};
+use super::{
+    pi_workspace, session_activity::SessionExternalActivity, session_watcher::SessionWatcherManager,
+};
 use pilo_domain::SessionReconcileResult;
 use pilo_domain::{SessionIndexEntry, SessionUiStateUpdate};
 use serde::{Deserialize, Serialize};
@@ -38,21 +40,18 @@ pub async fn session_watch_start(runtime: &Runtime, project_id: String) -> Resul
     let session_project =
         pi_workspace::resolve_session_project_with_paths(&runtime.paths, &project)?;
     let client = runtime.servers.client(&session_project.connection).await?;
-    runtime
-        .session_watchers
-        .lock()
-        .await
-        .start(runtime, &project, session_project, client)
-        .await
+    SessionWatcherManager::start(
+        &runtime.session_watchers,
+        runtime,
+        &project,
+        session_project,
+        client,
+    )
+    .await
 }
 
 pub async fn session_watch_stop(runtime: &Runtime, project_id: String) -> Result<(), String> {
-    runtime
-        .session_watchers
-        .lock()
-        .await
-        .stop(&project_id)
-        .await;
+    SessionWatcherManager::stop(&runtime.session_watchers, &project_id).await;
     Ok(())
 }
 
@@ -73,10 +72,10 @@ pub async fn session_delete(
         .chat_sessions
         .stop_session_file(&project, &session_path)
         .await?;
-    super::session_activity::reject_external_session_owner(runtime, &project, Some(&session_path))
-        .await?;
 
     let _scan = lock_session_index(runtime, &project_id).await;
+    super::session_activity::reject_external_session_owner(runtime, &project, Some(&session_path))
+        .await?;
     let value = runtime
         .servers
         .request(
@@ -222,12 +221,14 @@ pub async fn session_reconcile(
         // Connect outside the watcher registry lock; another project's scan must
         // not wait for a cold SSH/WSL connection. Register before taking the snapshot.
         let client = runtime.servers.client(&session_project.connection).await?;
-        let _ = runtime
-            .session_watchers
-            .lock()
-            .await
-            .start(runtime, &project, session_project, client)
-            .await;
+        let _ = SessionWatcherManager::start(
+            &runtime.session_watchers,
+            runtime,
+            &project,
+            session_project,
+            client,
+        )
+        .await;
     }
     reconcile_project_sessions(
         runtime,
@@ -235,6 +236,29 @@ pub async fn session_reconcile(
         SessionScanClient::Managed(&runtime.servers),
     )
     .await
+}
+
+/// Event-driven refresh: a live session watcher already keeps the index
+/// current, so only an unwatched project (never started, failed or errored)
+/// is scanned, which also restarts its watcher.
+pub async fn session_refresh_unwatched(
+    runtime: &Runtime,
+    project_id: String,
+) -> Result<Vec<SessionIndexEntry>, String> {
+    let project = project::get(runtime, &project_id)?;
+    if !project.default_workspace_pending() {
+        let session_project =
+            pi_workspace::resolve_session_project_with_paths(&runtime.paths, &project)?;
+        if runtime
+            .session_watchers
+            .lock()
+            .await
+            .covers(&session_project)
+        {
+            return session_list(runtime, project_id);
+        }
+    }
+    Ok(session_reconcile(runtime, project_id).await?.sessions)
 }
 
 // Callers hold the project's index lock across the scan and commit.

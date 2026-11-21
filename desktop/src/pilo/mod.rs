@@ -49,7 +49,8 @@ use pilo_runtime::{
     },
     session_api::{
         session_delete, session_external_activity, session_history, session_history_image,
-        session_list, session_reconcile, session_search, session_update_ui_state,
+        session_list, session_reconcile, session_refresh_unwatched, session_search,
+        session_update_ui_state,
     },
     session_naming::session_generate_title,
     storage,
@@ -510,10 +511,12 @@ impl Pilo {
     }
 
     /// Reconciles the session index, or reads it without a scan when `cached` is true.
+    /// With `unwatched_only`, scans only when no live session watcher covers the project.
     pub async fn list_sessions(
         this: Instance<Self>,
         project_id: String,
         cached: Option<bool>,
+        unwatched_only: Option<bool>,
     ) -> Result<Vec<JsonValue>, String> {
         if cached == Some(true) {
             return Self::with_runtime_blocking(this, move |runtime| {
@@ -521,11 +524,17 @@ impl Pilo {
             })
             .await;
         }
+        let unwatched_only = unwatched_only == Some(true);
         let task = this.with(|pilo| {
             let host = pilo.host.clone();
             pilo.executor
                 .spawn(run_with_runtime(host, move |runtime| async move {
-                    encode_list(session_reconcile(&runtime, project_id).await?.sessions)
+                    let sessions = if unwatched_only {
+                        session_refresh_unwatched(&runtime, project_id).await?
+                    } else {
+                        session_reconcile(&runtime, project_id).await?.sessions
+                    };
+                    encode_list(sessions)
                 }))
         });
         task.await

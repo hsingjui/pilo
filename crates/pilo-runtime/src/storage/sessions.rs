@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use rusqlite::{Connection as SqliteConnection, OptionalExtension, params};
 
@@ -108,6 +108,49 @@ pub fn upsert_session(db: &SqliteConnection, session: &SessionIndexEntry) -> Res
          ON CONFLICT(project_id,session_path) DO UPDATE SET connection_id=excluded.connection_id,project_id=excluded.project_id,pi_session_id=excluded.pi_session_id,name=excluded.name,cwd=excluded.cwd,created_at=excluded.created_at,updated_at=excluded.updated_at,message_count=excluded.message_count,last_message_at=excluded.last_message_at,first_user_message_preview=excluded.first_user_message_preview,file_size=excluded.file_size,file_mtime_ns=excluded.file_mtime_ns,last_offset=excluded.last_offset,indexed_at_ms=excluded.indexed_at_ms",
         params![session.connection_id,session.project_id,session.pi_session_id,session.session_path,session.name,session.cwd,session.created_at,session.updated_at,session.message_count as i64,session.last_message_at,session.first_user_message_preview,session.file_size as i64,session.file_mtime_ns as i64,session.last_offset as i64,session.indexed_at_ms as i64]
     ).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+/// The file size and mtime at which each of the project's sessions was last
+/// searched whole for a session name, by session path.
+pub fn session_name_scans(
+    db: &SqliteConnection,
+    project_id: &str,
+) -> Result<HashMap<String, (u64, u64)>, String> {
+    let mut statement = db
+        .prepare(
+            "SELECT session_path,name_scanned_size,name_scanned_mtime_ns FROM sessions
+             WHERE project_id=?1 AND name_scanned_size IS NOT NULL AND name_scanned_mtime_ns IS NOT NULL",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![project_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                (row.get::<_, i64>(1)? as u64, row.get::<_, i64>(2)? as u64),
+            ))
+        })
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<HashMap<_, _>, _>>()
+        .map_err(|error| error.to_string())
+}
+
+/// Records the fingerprint of a whole-file session name search, or clears it.
+pub fn set_session_name_scan(
+    db: &SqliteConnection,
+    project_id: &str,
+    session_path: &str,
+    scanned: Option<(u64, u64)>,
+) -> Result<(), String> {
+    let (size, mtime_ns) = scanned.map_or((None, None), |(size, mtime_ns)| {
+        (Some(size as i64), Some(mtime_ns as i64))
+    });
+    db.execute(
+        "UPDATE sessions SET name_scanned_size=?3,name_scanned_mtime_ns=?4
+         WHERE project_id=?1 AND session_path=?2",
+        params![project_id, session_path, size, mtime_ns],
+    )
+    .map_err(|error| error.to_string())?;
     Ok(())
 }
 

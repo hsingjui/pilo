@@ -71,17 +71,28 @@ pub struct SessionWatcherManager {
 }
 
 impl SessionWatcherManager {
+    /// Starts the project's watcher unless a live one covers it. The registry
+    /// lock is held only to read and change the map, never across a pilo-server
+    /// request, so a slow connection cannot stall other projects. Callers hold
+    /// the project's session index lock, which orders starts and stops of one
+    /// project.
     pub async fn start(
-        &mut self,
+        watchers: &AsyncMutex<Self>,
         runtime: &Runtime,
         project: &Project,
         session_project: Project,
         client: Arc<ServerClient>,
     ) -> Result<(), String> {
-        if self.covers(&session_project) || runtime.servers.is_shutting_down() {
-            return Ok(());
+        let previous = {
+            let mut registry = watchers.lock().await;
+            if registry.covers(&session_project) || runtime.servers.is_shutting_down() {
+                return Ok(());
+            }
+            registry.watchers.remove(&project.id)
+        };
+        if let Some(previous) = previous {
+            stop_handle(&project.id, previous).await;
         }
-        self.stop(&project.id).await;
         let started = Instant::now();
         let stream_id = format!("session-watch:{}", project.id);
         let mut events = client.subscribe(&stream_id);
@@ -289,16 +300,24 @@ impl SessionWatcherManager {
                 }
             }
         });
-        self.watchers.insert(
-            project.id.clone(),
-            WatchHandle {
-                project: session_project,
-                live,
-                current_client,
-                stream_id,
-                task,
-            },
-        );
+        let handle = WatchHandle {
+            project: session_project,
+            live,
+            current_client,
+            stream_id,
+            task,
+        };
+        let mut registry = watchers.lock().await;
+        // Shutdown drains the registry; a watcher started meanwhile must not outlive it.
+        if runtime.servers.is_shutting_down() {
+            drop(registry);
+            stop_handle(&project.id, handle).await;
+            return Ok(());
+        }
+        // The index lock keeps another start of this project out, so nothing
+        // is replaced here; a stray handle would only be aborted on drop.
+        registry.watchers.insert(project.id.clone(), handle);
+        drop(registry);
         // Seed activity for external turns that started before registration.
         runtime
             .events
@@ -306,28 +325,18 @@ impl SessionWatcherManager {
         Ok(())
     }
 
-    pub async fn stop(&mut self, project_id: &str) -> bool {
-        let Some(handle) = self.watchers.remove(project_id) else {
+    pub async fn stop(watchers: &AsyncMutex<Self>, project_id: &str) -> bool {
+        let Some(handle) = watchers.lock().await.watchers.remove(project_id) else {
             return false;
         };
-        handle.task.abort();
-        let client = handle.current_client.lock().await.clone();
-        let result = tokio::time::timeout(
-            WATCH_REQUEST_TIMEOUT,
-            client.request(
-                "session.watch_stop",
-                json!({ "streamId": handle.stream_id }),
-            ),
-        )
-        .await;
-        log::info!(target: "session-watcher", "stopped projectHash={:x} remoteStopOk={}", Sha256::digest(project_id.as_bytes()), matches!(result, Ok(Ok(_))));
+        stop_handle(project_id, handle).await;
         true
     }
 
-    pub async fn stop_all(&mut self) {
-        let ids = self.watchers.keys().cloned().collect::<Vec<_>>();
-        for id in ids {
-            self.stop(&id).await;
+    pub async fn stop_all(watchers: &AsyncMutex<Self>) {
+        let handles = watchers.lock().await.watchers.drain().collect::<Vec<_>>();
+        for (id, handle) in handles {
+            stop_handle(&id, handle).await;
         }
     }
 
@@ -338,6 +347,22 @@ impl SessionWatcherManager {
                 && same_session_scope(&watcher.project, project)
         })
     }
+}
+
+/// Aborts a removed watcher and asks pilo-server to stop its stream, outside
+/// the registry lock.
+async fn stop_handle(project_id: &str, handle: WatchHandle) {
+    handle.task.abort();
+    let client = handle.current_client.lock().await.clone();
+    let result = tokio::time::timeout(
+        WATCH_REQUEST_TIMEOUT,
+        client.request(
+            "session.watch_stop",
+            json!({ "streamId": handle.stream_id }),
+        ),
+    )
+    .await;
+    log::info!(target: "session-watcher", "stopped projectHash={:x} remoteStopOk={}", Sha256::digest(project_id.as_bytes()), matches!(result, Ok(Ok(_))));
 }
 
 fn same_session_scope(a: &Project, b: &Project) -> bool {
@@ -505,7 +530,7 @@ impl WatchEvents {
             .is_err()
         {
             if let Some(suppressed) = self.delivery.failure() {
-                log::warn!(target: "session-watcher", "event emission failed projectHash={} event={kind} suppressedFailures={suppressed} reason=tauri_emit_failed", self.project_hash);
+                log::warn!(target: "session-watcher", "event emission failed projectHash={} event={kind} suppressedFailures={suppressed} reason=emit_failed", self.project_hash);
             }
         } else if let Some(suppressed) = self.delivery.recover() {
             log::info!(target: "session-watcher", "event emission resumed projectHash={} event={kind} suppressedFailures={suppressed}", self.project_hash);

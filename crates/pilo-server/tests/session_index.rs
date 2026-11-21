@@ -166,6 +166,8 @@ async fn unchanged_titles_recover_retry_until_host_stores_and_rescan_after_resta
     for known in [&untitled, &blank] {
         let scanned = server.scan_one(known).await;
         assert!(!scanned.unchanged);
+        // The Host stores this to stop asking after a restart.
+        assert!(scanned.name_scanned);
         assert!(
             scanned
                 .name

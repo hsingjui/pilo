@@ -16,6 +16,15 @@ pub(crate) async fn external_session_activities_for_project(
     project: &Project,
     cached_client: Option<&ServerClient>,
 ) -> Result<Vec<SessionExternalActivity>, String> {
+    query_external_session_activities(runtime, project, cached_client, true).await
+}
+
+async fn query_external_session_activities(
+    runtime: &PiloRuntime,
+    project: &Project,
+    cached_client: Option<&ServerClient>,
+    allow_cached_processes: bool,
+) -> Result<Vec<SessionExternalActivity>, String> {
     if project.default_workspace_pending() {
         return Ok(Vec::new());
     }
@@ -36,6 +45,7 @@ pub(crate) async fn external_session_activities_for_project(
     let params = serde_json::json!({
         "project": project.path,
         "ownedSessionPaths": owned_session_paths,
+        "allowCachedProcesses": allow_cached_processes,
     });
     if let Some(client) = cached_client {
         let value = client.request("session.activity", params).await?;
@@ -66,7 +76,7 @@ pub(crate) async fn reject_external_session_owner(
     let Some(session_path) = session_path else {
         return Ok(());
     };
-    let activities = external_session_activities_for_project(runtime, project, None).await?;
+    let activities = query_external_session_activities(runtime, project, None, false).await?;
     if session_has_external_open_turn(&activities, session_path) {
         return Err(
             "session is currently owned by an external Pi process; Pilo opened it in read-only observer mode"

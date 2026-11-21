@@ -98,6 +98,7 @@ pub(crate) fn session_scan(params: SessionScanParams) -> Result<Value, String> {
             deferred: true,
             name: None,
             first_user_message_preview: None,
+            name_scanned: false,
         }));
         return to_value(files);
     }
@@ -138,6 +139,7 @@ pub(crate) fn session_scan(params: SessionScanParams) -> Result<Value, String> {
                 deferred: false,
                 name: None,
                 first_user_message_preview: None,
+                name_scanned: false,
             });
             continue;
         }
@@ -152,6 +154,7 @@ pub(crate) fn session_scan(params: SessionScanParams) -> Result<Value, String> {
                 deferred: true,
                 name: None,
                 first_user_message_preview: None,
+                name_scanned: false,
             });
             continue;
         }

@@ -102,6 +102,7 @@ fn summarize_session_file(
             deferred: false,
             name: None,
             first_user_message_preview: None,
+            name_scanned: false,
         }
     });
     Ok(Some(file))
@@ -267,6 +268,7 @@ fn read_session_summary_from<R: Read + Seek>(
         deferred: false,
         name: summary.name,
         first_user_message_preview: summary.first_user_message_preview,
+        name_scanned: summary.name_scanned,
     }))
 }
 

@@ -197,6 +197,7 @@ pub(super) fn initialize_schema(db: &SqliteConnection) -> Result<(), String> {
     )
     .map_err(|error| format!("failed to initialize Pilo SQLite schema: {error}"))?;
     ensure_session_project_keys(db)?;
+    ensure_session_columns(db)?;
     ensure_connection_columns(db)?;
     ensure_project_columns(db)?;
     ensure_project_model_cache_columns(db)?;
@@ -394,6 +395,21 @@ fn column_exists(db: &SqliteConnection, table: &str, name: &str) -> Result<bool,
     )
     .map(|exists| exists != 0)
     .map_err(|error| error.to_string())
+}
+
+/// `name_scanned_*` hold the file size and mtime at which pilo-server last
+/// searched the whole file for a session name; a row without a name and with
+/// the same fingerprint is confirmed untitled and is not searched again.
+fn ensure_session_columns(db: &SqliteConnection) -> Result<(), String> {
+    for column in ["name_scanned_size", "name_scanned_mtime_ns"] {
+        if !column_exists(db, "sessions", column)? {
+            db.execute_batch(&format!(
+                "ALTER TABLE sessions ADD COLUMN {column} INTEGER;"
+            ))
+            .map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 fn ensure_project_columns(db: &SqliteConnection) -> Result<(), String> {

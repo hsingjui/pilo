@@ -245,6 +245,11 @@ pub struct SessionFile {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_user_message_preview: Option<String>,
+    /// The whole file was searched for a session name at this size and mtime.
+    /// Without a `name`, the Host may store it as confirmed untitled and stop
+    /// asking pilo-server to recover the name until the file changes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub name_scanned: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

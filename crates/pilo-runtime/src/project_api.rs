@@ -133,7 +133,7 @@ pub async fn project_remove(runtime: &Runtime, id: String) -> Result<Vec<Project
     runtime.chat_sessions.stop_project(&id).await?;
     let _scan = super::session_api::lock_session_index(runtime, &id).await;
     let projects = project::remove(runtime, &id)?;
-    runtime.session_watchers.lock().await.stop(&id).await;
+    crate::session_watcher::SessionWatcherManager::stop(&runtime.session_watchers, &id).await;
     Ok(projects)
 }
 

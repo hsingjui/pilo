@@ -79,6 +79,8 @@ export interface PiloClient {
 	loadThemeSettings(): Promise<ThemeSettings>;
 	saveThemeSettings(update: ThemeSettingsUpdate): Promise<ThemeSettings>;
 	listSessions(projectId: string): Promise<SessionIndexEntry[]>;
+	/** The Host's session index as it stands, without a scan. */
+	listCachedSessions(projectId: string): Promise<SessionIndexEntry[]>;
 	loadSessionReadStates(): Promise<SessionReadState[]>;
 	markSessionRead(
 		projectId: string,

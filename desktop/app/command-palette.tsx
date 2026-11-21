@@ -73,11 +73,16 @@ export function CommandPalette(props: CommandPaletteProps) {
 	const projectById = computed(
 		() => new Map(projects().map((project) => [project.id, project])),
 	);
-	// Opening reads every project's sessions again, as the Tauri palette's
-	// per-project `listSessions` does.
+	// Opening reads the sessions of projects not read yet, or whose read
+	// failed. Read ones stay current through the Host's session watchers, so
+	// they are not scanned again on every open.
 	untracked(() => {
-		for (const project of store.state().projects) {
-			void store.loadSessions(project.id);
+		const { projects, sessionIndexes } = store.state();
+		for (const project of projects) {
+			const status = sessionIndexes[project.id]?.status;
+			if (status === undefined || status === "failed") {
+				void store.loadSessions(project.id);
+			}
 		}
 	});
 	const catalog = computed(() => {

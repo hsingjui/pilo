@@ -348,8 +348,8 @@ function reportsState(message: unknown) {
 /**
  * Whether the event can mean a project's saved sessions changed: a reply
  * ended, so Pi may have written the session file (a new chat's first), or
- * Pi took a session name. These events request a scan, unlike index updates
- * that the Host has already committed.
+ * Pi took a session name. These events ask the Host to scan a project its
+ * session watcher does not cover, unlike index updates it has committed.
  */
 export function changesSessionIndex(event: PiloClientEvent): boolean {
 	return (

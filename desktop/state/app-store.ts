@@ -91,7 +91,7 @@ export class AppStore {
 	private readonly sessionScans = new Map<string, Promise<void>>();
 	private readonly sessionRefreshes = new Map<
 		string,
-		{ next: "cache" | "scan" | null }
+		{ next: "cache" | "unwatched" | null }
 	>();
 	/** Counts external activity reads, so one a push or newer read overtook is dropped. */
 	private readonly externalReads = new Map<string, number>();
@@ -178,32 +178,43 @@ export class AppStore {
 	 * is, as the Tauri app's background refreshes do.
 	 */
 	loadSessions(projectId: string, showProgress = true) {
-		const scan = this.readSessions(projectId, showProgress, false).finally(
-			() => {
-				if (this.sessionScans.get(projectId) === scan) {
-					this.sessionScans.delete(projectId);
-				}
-			},
+		return this.trackScan(
+			projectId,
+			this.readSessions(projectId, showProgress, "scan"),
 		);
+	}
+
+	/** Track reads that may scan so background index reads can wait for them. */
+	private trackScan(projectId: string, read: Promise<void>) {
+		const scan = read.finally(() => {
+			if (this.sessionScans.get(projectId) === scan) {
+				this.sessionScans.delete(projectId);
+			}
+		});
 		this.sessionScans.set(projectId, scan);
 		return scan;
 	}
 
-	private async readCachedSessions(projectId: string) {
-		// A cache read can only see committed scans, so wait before claiming a read sequence.
+	private async readBackgroundSessions(
+		projectId: string,
+		mode: "cache" | "unwatched",
+	) {
+		// Both modes can return the cached index. Wait for scans to commit
+		// before claiming a read sequence so an older index cannot win.
 		let scan = this.sessionScans.get(projectId);
 		while (scan) {
 			// oxlint-disable-next-line no-await-in-loop -- A newer scan may have started in the meantime.
 			await scan;
 			scan = this.sessionScans.get(projectId);
 		}
-		await this.readSessions(projectId, false, true);
+		const read = this.readSessions(projectId, false, mode);
+		return mode === "unwatched" ? this.trackScan(projectId, read) : read;
 	}
 
 	private async readSessions(
 		projectId: string,
 		showProgress: boolean,
-		cached: boolean,
+		mode: "scan" | "cache" | "unwatched",
 	) {
 		const read = (this.sessionReads.get(projectId) ?? 0) + 1;
 		this.sessionReads.set(projectId, read);
@@ -215,7 +226,11 @@ export class AppStore {
 		}
 		let action: AppAction;
 		try {
-			const sessions = await this.client.listSessions(projectId, cached);
+			const sessions = await this.client.listSessions(
+				projectId,
+				mode === "cache",
+				mode === "unwatched",
+			);
 			action = { type: "sessions_loaded", projectId, sessions };
 		} catch (error) {
 			// A background read must not replace an already loaded list with an error.
@@ -459,9 +474,11 @@ export class AppStore {
 			}
 		}
 		if (index || projectId === state.navigation.projectId) {
+			// The Host's session watcher indexes file writes itself; a turn or
+			// rename event scans only a project it does not watch.
 			void this.refreshSessionIndex(
 				projectId,
-				event.type === "sessions_indexed" ? "cache" : "scan",
+				event.type === "sessions_indexed" ? "cache" : "unwatched",
 			);
 		}
 	}
@@ -469,23 +486,21 @@ export class AppStore {
 	/** Coalesce updates without letting a cache read replace a queued scan. */
 	private async refreshSessionIndex(
 		projectId: string,
-		mode: "cache" | "scan" = "scan",
+		mode: "cache" | "unwatched",
 	) {
 		const pending = this.sessionRefreshes.get(projectId);
 		if (pending) {
-			if (pending.next !== "scan") pending.next = mode;
+			if (pending.next !== "unwatched") pending.next = mode;
 			return;
 		}
-		const refresh: { next: "cache" | "scan" | null } = { next: mode };
+		const refresh: { next: "cache" | "unwatched" | null } = { next: mode };
 		this.sessionRefreshes.set(projectId, refresh);
 		try {
 			while (refresh.next) {
 				const mode = refresh.next;
 				refresh.next = null;
 				// oxlint-disable-next-line no-await-in-loop -- Keep background reads for this project serial.
-				await (mode === "cache"
-					? this.readCachedSessions(projectId)
-					: this.loadSessions(projectId, false));
+				await this.readBackgroundSessions(projectId, mode);
 			}
 		} finally {
 			this.sessionRefreshes.delete(projectId);
@@ -589,7 +604,7 @@ export class AppStore {
 					{ type: "read_states_loaded", states },
 				);
 				for (const projectId of Object.keys(this.current().sessionIndexes)) {
-					void this.refreshSessionIndex(projectId);
+					void this.refreshSessionIndex(projectId, "unwatched");
 					// Pushes may have been missed while the stream was out.
 					void this.loadExternalActivity(projectId);
 				}

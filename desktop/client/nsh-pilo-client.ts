@@ -371,15 +371,28 @@ export class NshPiloClient implements PiloClient {
 		return (await this.pilo.testWslConnection(distro)) as ConnectionTestResult;
 	}
 
+	/**
+	 * The project's saved sessions after a scan, or as indexed when `cached`.
+	 * With `unwatchedOnly`, the Host scans only when no live session watcher
+	 * keeps the index current, and reads the index otherwise.
+	 */
 	async listSessions(
 		projectId: string,
 		cached = false,
+		unwatchedOnly = false,
 	): Promise<SessionIndexEntry[]> {
 		return (
 			cached
 				? await this.pilo.listSessions(projectId, true)
-				: await this.pilo.listSessions(projectId)
+				: unwatchedOnly
+					? await this.pilo.listSessions(projectId, false, true)
+					: await this.pilo.listSessions(projectId)
 		) as SessionIndexEntry[];
+	}
+
+	/** The Host's session index as it stands, without a scan. */
+	listCachedSessions(projectId: string): Promise<SessionIndexEntry[]> {
+		return this.listSessions(projectId, true);
 	}
 
 	/** Messages of the project's saved sessions that contain the query. */

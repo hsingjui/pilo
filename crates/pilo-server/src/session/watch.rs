@@ -28,21 +28,58 @@ pub(crate) struct SessionWatchStopParams {
 }
 fn session_watch_paths(project: &str) -> Result<(PathBuf, PathBuf), String> {
     let agent = agent_dir().ok_or_else(|| "Pi agent directory is unavailable".to_owned())?;
-    let sessions = agent.join("sessions");
-    let target = sessions.join(session_dir_key(project));
-    let watch_root = if target.is_dir() {
-        target.clone()
-    } else if sessions.is_dir() {
-        sessions
-    } else if agent.is_dir() {
-        agent
-    } else {
-        return Err(format!(
-            "Pi agent directory '{}' is not accessible",
-            agent.display()
-        ));
-    };
+    let target = agent.join("sessions").join(session_dir_key(project));
+    let watch_root = nearest_watch_root(&target)
+        .ok_or_else(|| format!("Pi agent directory '{}' is not accessible", agent.display()))?;
     Ok((target, watch_root))
+}
+
+/// The deepest existing directory on the way to the project's session
+/// directory: the directory itself, else `sessions`, else the agent directory.
+/// Pi keeps session files flat in it, so a non-recursive watch of it, or of
+/// the parent its creation shows in, is enough.
+fn nearest_watch_root(target: &Path) -> Option<PathBuf> {
+    target
+        .ancestors()
+        .take(3)
+        .find(|path| path.is_dir())
+        .map(Path::to_path_buf)
+}
+
+fn watch_session_root(watcher: &mut impl Watcher, root: &Path) -> Result<(), String> {
+    watcher
+        .watch(root, RecursiveMode::NonRecursive)
+        .map_err(|error| {
+            format!(
+                "failed to watch Pi session directory '{}': {error}",
+                root.display()
+            )
+        })
+}
+
+/// Moves to the deepest existing root. Recheck after registering: a child
+/// can appear before the new non-recursive watch can report its creation.
+/// A root change asks for a full refresh to catch writes missed in transit.
+fn rearm_watch(
+    watcher: &mut impl Watcher,
+    root: &mut PathBuf,
+    target: &Path,
+) -> Result<bool, String> {
+    let mut changed = false;
+    // There are three candidate directory levels; bound retries if they keep changing.
+    for _ in 0..3 {
+        let next = nearest_watch_root(target)
+            .ok_or_else(|| "no accessible Pi session directory or parent to watch".to_owned())?;
+        if next == *root {
+            return Ok(changed);
+        }
+        // The old root may already be gone.
+        let _ = watcher.unwatch(root);
+        watch_session_root(watcher, &next)?;
+        *root = next;
+        changed = true;
+    }
+    Err("Pi session watch root kept changing during registration".to_owned())
 }
 
 pub(crate) fn collect_session_change_paths(
@@ -94,25 +131,20 @@ pub(crate) async fn session_watch_start(
         task.abort();
     }
 
-    let (target, watch_root) = session_watch_paths(&params.project)?;
+    let (target, mut watch_root) = session_watch_paths(&params.project)?;
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let mut watcher = notify::recommended_watcher(move |event| {
         let _ = event_tx.send(event);
     })
     .map_err(|error| format!("failed to create session watcher: {error}"))?;
-    watcher
-        .watch(&watch_root, RecursiveMode::Recursive)
-        .map_err(|error| {
-            format!(
-                "failed to watch Pi session directory '{}': {error}",
-                watch_root.display()
-            )
-        })?;
+    watch_session_root(&mut watcher, &watch_root)?;
+    rearm_watch(&mut watcher, &mut watch_root, &target)?;
 
     let stream_id = params.stream_id.clone();
     let writer = state.writer.clone();
     let task = tokio::spawn(async move {
-        let _watcher = watcher;
+        let mut watcher = watcher;
+        let mut watch_root = watch_root;
         if writer
             .send(Envelope::event(
                 stream_id.clone(),
@@ -132,27 +164,45 @@ pub(crate) async fn session_watch_start(
             match event {
                 Ok(event) => {
                     let mut touched = HashSet::new();
-                    let mut full_refresh = false;
+                    let mut errors = Vec::new();
+                    let mut full_refresh = match rearm_watch(&mut watcher, &mut watch_root, &target)
+                    {
+                        Ok(changed) => changed,
+                        Err(error) => {
+                            errors.push(error);
+                            true
+                        }
+                    };
                     if !collect_session_change_paths(
                         &event,
                         &target,
                         &mut touched,
                         &mut full_refresh,
-                    ) {
+                    ) && !full_refresh
+                    {
                         continue;
                     }
-                    let mut errors = Vec::new();
                     let mut deadline = tokio::time::Instant::now() + SESSION_WATCH_DEBOUNCE;
                     let mut channel_closed = false;
                     loop {
                         match tokio::time::timeout_at(deadline, event_rx.recv()).await {
                             Ok(Some(Ok(next))) => {
+                                let rearmed =
+                                    match rearm_watch(&mut watcher, &mut watch_root, &target) {
+                                        Ok(changed) => changed,
+                                        Err(error) => {
+                                            errors.push(error);
+                                            true
+                                        }
+                                    };
+                                full_refresh |= rearmed;
                                 if collect_session_change_paths(
                                     &next,
                                     &target,
                                     &mut touched,
                                     &mut full_refresh,
-                                ) {
+                                ) || rearmed
+                                {
                                     deadline = tokio::time::Instant::now() + SESSION_WATCH_DEBOUNCE;
                                 }
                             }

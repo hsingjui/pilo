@@ -74,8 +74,10 @@ export function CommandPalette({
 	useEffect(() => {
 		if (!open) return;
 		let disposed = false;
+		// The Host index, not a scan of every project on each open: watched
+		// projects stay current, and the sidebar scans the ones it shows.
 		void Promise.allSettled(
-			projects.map((project) => client.listSessions(project.id)),
+			projects.map((project) => client.listCachedSessions(project.id)),
 		).then((results) => {
 			if (disposed) return;
 			const byKey = new Map(

@@ -326,7 +326,11 @@ impl RuntimeEventBus {
                     .keys()
                     .cloned()
                     .collect::<HashSet<_>>();
-                let Ok(projects) = project::list(&runtime) else {
+                // Read-only: `project::list` also inserts default workspaces, a
+                // write the bootstrap already does and a poll must not repeat.
+                let Ok(projects) =
+                    storage::open(&runtime.paths).and_then(|db| storage::list_projects(&db))
+                else {
                     continue;
                 };
                 let mut projects = projects

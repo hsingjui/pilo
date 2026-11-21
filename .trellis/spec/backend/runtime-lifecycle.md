@@ -18,10 +18,11 @@ Frontend controller eviction alone is not backend process cleanup.
   the matching Pi `response`, not just successful command transport.
   `PiPromptResult` is `{ disposition: "started" | "queued" | "handled" }`;
   prompt preflight uses `PI_PROMPT_RPC_TIMEOUT_MS = 120_000`.
-- `session_activity(...)` distinguishes process-confirmed `--session` paths from
-  project-matched fallback candidates before reading their last JSONL message.
-  Processes come from `sysinfo` (fresh `System` per call: command lines for all
-  processes, cwd only for Pi-shaped ones); no PowerShell, `ps` or `lsof`. A Pi
+- `session.activity({ project, ownedSessionPaths?, allowCachedProcesses? })`
+  distinguishes process-confirmed `--session` paths from project-matched fallback
+  candidates before reading their last JSONL message. Processes come from `sysinfo`
+  (fresh `System` per enumeration: command lines for all processes, cwd only for
+  Pi-shaped ones); no PowerShell, `ps` or `lsof`. A Pi
   process or any ancestor in `owned_pids` is Pilo's (`pi.cmd` launches the node
   agent as a grandchild). A contiguous chain of Pi-shaped processes counts as one
   fallback candidate (innermost), but every explicit `--session` path counts.
@@ -81,6 +82,14 @@ Frontend controller eviction alone is not backend process cleanup.
 - Before reconnecting an SSH stream or session watcher, verify the saved target
   under the per-connection setup lock. Recovery must never evict a client for a
   different target with the same connection ID.
+- Watch the deepest existing directory on the path from the Pi agent directory
+  to the project session directory. Recheck after registering each non-recursive
+  watch: a child created before registration will not necessarily emit an event.
+  Register before the initial scan; a later root change requests a full refresh.
+- Only observational activity queries set `allowCachedProcesses: true`, reusing
+  the process list for at most one second when the Pilo PID set still matches.
+  Omitted or `false` always enumerates. Starting or deleting a saved session
+  checks for an external open turn without reusing the process list.
 - Without a bridge, SSH drains Pi output without replaying token deltas. Pending
   input, active turns (through `agent_settled`), compaction, unanswered dialogs,
   and the built-in cache-warming lease keep the daemon alive. The daemon closes
@@ -315,7 +324,8 @@ Frontend controller eviction alone is not backend process cleanup.
 | Unexpected `failed` during a turn | Desktop surfaces an interruption warning; reconnect on the next prompt, no reconnect button or automatic Pi restart |
 | WebUI runtime fails | Clear turn/compaction/retry; next send checks Host and resumes original path |
 | Confirmed external `--session` tail is older than 60 seconds | Infer activity from the final message, not age |
-| External probe fails | Keep last activity; unknown is not completion |
+| External probe fails | Keep last activity; unknown is not completion. A failed ownership check blocks start/delete |
+| Session directory appears between root selection and registration | Recheck the root without waiting for another filesystem event |
 | Background idle stop fails | Log warning; do not block another chat launch |
 | Replay byte/count eviction | Older sequence returns `None`; WebUI resyncs |
 | Event over 16 MiB replay limit but within 64 MiB live limit | Deliver live; clear replay and expose the gap |
@@ -421,8 +431,10 @@ The following targeted regressions remain to be added with explicit authorizatio
   fallback candidates retain stale-tail filtering; a terminal message larger than
   128 KiB remains idle; trailing metadata/partial lines do not hide the last message;
   a named live process whose file has no `message` entry yet stays active.
-  Also cover an external Pi creating its first JSONL while the initial session
-  scan is in flight, a turn that starts and ends between activity polls, a
+  Also cover an external Pi starting an open turn after the observation snapshot
+  but before start/delete checks, creation of the session directory between root
+  selection and watch registration, a first JSONL while the initial session scan
+  is in flight, a turn that starts and ends between activity polls, a
   finished watcher falling back on an existing connection, and an obsolete
   refresh leaving the replacement SSH client untouched. Desktop and WebUI
   should list the new path without a manual refresh, independently of the

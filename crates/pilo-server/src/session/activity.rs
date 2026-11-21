@@ -21,6 +21,9 @@ pub(crate) struct SessionActivityParams {
     project: String,
     #[serde(default)]
     owned_session_paths: Vec<String>,
+    /// Only observational callers may reuse a process snapshot.
+    #[serde(default)]
+    allow_cached_processes: bool,
 }
 
 #[derive(Serialize)]
@@ -35,7 +38,7 @@ pub(crate) fn session_activity(
     owned_pids: HashSet<u32>,
 ) -> Result<Value, String> {
     let project = PathBuf::from(params.project.trim());
-    let processes = external_pi_processes(&project, &owned_pids);
+    let processes = external_pi_processes(&project, &owned_pids, params.allow_cached_processes);
     if processes.is_empty() {
         return to_value(Vec::<SessionActivity>::new());
     }
@@ -230,17 +233,78 @@ struct ExternalPiProcess {
     session_path: Option<PathBuf>,
 }
 
-/// Lists Pi processes running in `project` that Pilo does not own.
-///
-/// Command lines are read for every process (microseconds each); the cwd is
-/// read only for Pi-shaped candidates. A fresh `System` per call keeps no
-/// process handles open between polls and cannot confuse reused PIDs.
-fn external_pi_processes(project: &Path, owned_pids: &HashSet<u32>) -> Vec<ExternalPiProcess> {
-    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+/// How long one process enumeration answers `session.activity` calls. A poll
+/// or a burst of file changes asks once per project; they share one scan.
+const PI_PROCESS_SNAPSHOT_TTL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// A Pi-shaped process as last enumerated, before the per-call project and
+/// ownership filters.
+struct PiProcessEntry {
+    /// The process and its ancestors, innermost first. Pilo owns its Pi
+    /// process tree, not only the direct child: Windows starts Pi through a
+    /// `pi.cmd` launcher whose node descendants are the real agent.
+    lineage: Vec<u32>,
+    args: Vec<String>,
+    cwd: PathBuf,
+}
+
+struct PiProcessSnapshot {
+    taken_at: std::time::Instant,
+    /// Pilo's processes when taken: one that started or exited since must not
+    /// be judged from an older process list.
+    owned_pids: HashSet<u32>,
+    entries: Vec<PiProcessEntry>,
+}
+
+/// Lists Pi processes running in `project` that Pilo does not own. Callers
+/// doing an ownership check always enumerate; observational calls may reuse
+/// the latest snapshot within [`PI_PROCESS_SNAPSHOT_TTL`].
+fn external_pi_processes(
+    project: &Path,
+    owned_pids: &HashSet<u32>,
+    allow_cached_processes: bool,
+) -> Vec<ExternalPiProcess> {
+    static SNAPSHOT: std::sync::Mutex<Option<PiProcessSnapshot>> = std::sync::Mutex::new(None);
 
     let project = project
         .canonicalize()
         .unwrap_or_else(|_| project.to_path_buf());
+    let mut snapshot = SNAPSHOT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let reuse = allow_cached_processes
+        && snapshot.as_ref().is_some_and(|snapshot| {
+            snapshot.taken_at.elapsed() < PI_PROCESS_SNAPSHOT_TTL
+                && snapshot.owned_pids == *owned_pids
+        });
+    if !reuse {
+        *snapshot = Some(PiProcessSnapshot {
+            taken_at: std::time::Instant::now(),
+            owned_pids: owned_pids.clone(),
+            entries: pi_process_entries(),
+        });
+    }
+    snapshot
+        .as_ref()
+        .map(|snapshot| snapshot.entries.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .filter(|entry| !entry.lineage.iter().any(|pid| owned_pids.contains(pid)))
+        .filter(|entry| same_project_path(&entry.cwd, &project))
+        .map(|entry| ExternalPiProcess {
+            session_path: explicit_session_path(&entry.args, &entry.cwd),
+        })
+        .collect()
+}
+
+/// Enumerates the Pi agents on this machine, other than this server.
+///
+/// Command lines are read for every process (microseconds each); the cwd is
+/// read only for Pi-shaped candidates. A fresh `System` per scan keeps no
+/// process handles open between polls and cannot confuse reused PIDs.
+fn pi_process_entries() -> Vec<PiProcessEntry> {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+
     let Ok(mut system) = System::new() else {
         return Vec::new();
     };
@@ -282,48 +346,40 @@ fn external_pi_processes(project: &Path, owned_pids: &HashSet<u32>) -> Vec<Exter
             !launchers.contains(&process.pid())
                 || explicit_session_path(&command_args(process.cmd()), Path::new("")).is_some()
         })
-        .filter(|process| !owned_by_pilo(processes, process, owned_pids))
-        .map(sysinfo::Process::pid)
+        .map(|process| {
+            let lineage = std::iter::once(process)
+                .chain(ancestors(processes, process))
+                .map(|process| process.pid().as_u32())
+                .collect::<Vec<_>>();
+            (process.pid(), lineage)
+        })
         .collect::<Vec<_>>();
     if candidates.is_empty() {
         return Vec::new();
     }
+    let pids = candidates.iter().map(|(pid, _)| *pid).collect::<Vec<_>>();
     system.refresh_processes_specifics(
-        ProcessesToUpdate::Some(&candidates),
+        ProcessesToUpdate::Some(&pids),
         false,
         ProcessRefreshKind::nothing()
             .without_tasks()
             .with_cwd(UpdateKind::Always),
     );
     candidates
-        .iter()
-        .filter_map(|pid| {
-            let process = system.process(*pid)?;
+        .into_iter()
+        .filter_map(|(pid, lineage)| {
+            let process = system.process(pid)?;
             let cwd = process.cwd()?;
-            let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
-            if !same_project_path(&cwd, &project) {
-                return None;
-            }
-            Some(ExternalPiProcess {
-                session_path: explicit_session_path(&command_args(process.cmd()), &cwd),
+            Some(PiProcessEntry {
+                lineage,
+                args: command_args(process.cmd()),
+                cwd: cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf()),
             })
         })
         .collect()
 }
 
 type ProcessMap = std::collections::HashMap<sysinfo::Pid, sysinfo::Process>;
-
-/// Pilo owns its Pi process tree, not only the direct child: Windows starts Pi
-/// through a `pi.cmd` launcher whose node descendants are the real agent.
-fn owned_by_pilo(
-    processes: &ProcessMap,
-    process: &sysinfo::Process,
-    owned_pids: &HashSet<u32>,
-) -> bool {
-    std::iter::once(process)
-        .chain(ancestors(processes, process))
-        .any(|process| owned_pids.contains(&process.pid().as_u32()))
-}
 
 fn ancestors<'a>(
     processes: &'a ProcessMap,
