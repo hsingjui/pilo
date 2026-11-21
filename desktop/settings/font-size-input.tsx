@@ -50,7 +50,7 @@ export function FontSizeInput(props: {
 				class="min-w-0 flex-1 border-0 bg-transparent"
 				controlsRight
 				controlsClass="hidden"
-				inputClass="shadow-none"
+				inputClass="pl-3 shadow-none"
 				value={draft() ?? props.value}
 				min={props.min}
 				max={props.max}
