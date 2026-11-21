@@ -1,6 +1,9 @@
 use std::{
     collections::VecDeque,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use crate::events::{
@@ -32,6 +35,7 @@ pub(super) struct PromptStart {
 
 pub(super) struct SessionTurn {
     enabled: bool,
+    may_be_unwritten: AtomicBool,
     remote: Option<SessionSnapshotReader>,
     state: Mutex<TurnState>,
 }
@@ -39,6 +43,8 @@ pub(super) struct SessionTurn {
 enum TurnBase {
     Local(Arc<TranscriptBase>),
     Remote(RemoteTranscriptBase),
+    /// Pi had not written the new session file yet, so the turn starts on an empty prefix.
+    Unwritten,
 }
 
 impl TurnBase {
@@ -46,8 +52,22 @@ impl TurnBase {
         match self {
             Self::Local(base) => base.size,
             Self::Remote(base) => base.size(),
+            Self::Unwritten => 0,
         }
     }
+}
+
+/// Whether a session read failed because the file does not exist (yet); the
+/// Server reports the I/O error text, which ends with the OS error code.
+fn unwritten_session_error(error: &str) -> bool {
+    error.ends_with("(os error 2)")
+}
+
+async fn local_session_unwritten(path: &str) -> bool {
+    matches!(
+        tokio::fs::metadata(path).await,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound
+    )
 }
 
 struct TurnState {
@@ -120,14 +140,24 @@ impl SessionTurn {
                     async move {
                         match (path, base) {
                             (Some(path), base) => {
-                                read_transcript_history(
-                                    path,
+                                let unanchored = base.is_none();
+                                let result = read_transcript_history(
+                                    path.clone(),
                                     base,
                                     window,
                                     history_cache,
                                     project_id,
                                 )
-                                .await
+                                .await;
+                                if result.is_ok() {
+                                    self.mark_persisted();
+                                } else if unanchored
+                                    && self.may_be_unwritten.load(Ordering::Acquire)
+                                    && local_session_unwritten(&path).await
+                                {
+                                    return empty_transcript_history(window);
+                                }
+                                result
                             }
                             (None, None) => empty_transcript_history(window),
                             (None, Some(_)) => Err("transcript source is unavailable".to_owned()),
@@ -143,13 +173,14 @@ impl SessionTurn {
                     (Some(path), base) => {
                         let base = match base {
                             Some(TurnBase::Remote(base)) => Some(base),
+                            Some(TurnBase::Unwritten) => return empty_transcript_history(window),
                             None => None,
                             _ => return Err("transcript source has changed".to_owned()),
                         };
                         let client = reader
                             .server_client()
                             .ok_or_else(|| "transcript source is unavailable".to_owned())?;
-                        read_remote_transcript_history(
+                        let result = read_remote_transcript_history(
                             &client,
                             project_id,
                             &path,
@@ -157,7 +188,21 @@ impl SessionTurn {
                             window,
                             history_cache,
                         )
-                        .await
+                        .await;
+                        match result {
+                            Err(error)
+                                if base.is_none()
+                                    && self.may_be_unwritten.load(Ordering::Acquire)
+                                    && unwritten_session_error(&error) =>
+                            {
+                                empty_transcript_history(window)
+                            }
+                            Ok(history) => {
+                                self.mark_persisted();
+                                Ok(history)
+                            }
+                            Err(error) => Err(error),
+                        }
                     }
                     (None, None) => empty_transcript_history(window),
                     (None, Some(_)) => Err("transcript source is unavailable".to_owned()),
@@ -178,11 +223,17 @@ impl SessionTurn {
     ) -> Result<TranscriptSnapshot, String> {
         self.snapshot_with_source(events, session_key, window, |base| {
             let read = match base.as_deref() {
-                Some(TurnBase::Local(base)) => Ok(read(Some(Arc::clone(base)))),
-                None => Ok(read(None)),
+                Some(TurnBase::Local(base)) => Ok(Some(read(Some(Arc::clone(base))))),
+                Some(TurnBase::Unwritten) => Ok(None),
+                None => Ok(Some(read(None))),
                 _ => Err("transcript source has changed".to_owned()),
             };
-            async { read?.await }
+            async move {
+                match read? {
+                    Some(read) => read.await,
+                    None => empty_transcript_history(window),
+                }
+            }
         })
         .await
     }
@@ -273,6 +324,7 @@ impl SessionTurn {
         }
         Self {
             enabled,
+            may_be_unwritten: AtomicBool::new(false),
             remote: None,
             state: Mutex::new(TurnState {
                 base: None,
@@ -293,6 +345,15 @@ impl SessionTurn {
             remote: Some(reader),
             ..Self::new(true)
         }
+    }
+
+    pub(super) fn allow_unwritten(self) -> Self {
+        self.may_be_unwritten.store(true, Ordering::Release);
+        self
+    }
+
+    pub(super) fn mark_persisted(&self) {
+        self.may_be_unwritten.store(false, Ordering::Release);
     }
 
     pub(super) async fn send_prompt<F: std::future::Future<Output = Result<(), String>>>(
@@ -355,24 +416,37 @@ impl SessionTurn {
         };
         let base = match (path, &self.remote) {
             (Some(path), Some(reader)) => match reader.server_client() {
-                Some(client) => {
-                    // A slow or unavailable history probe must not block sending a prompt.
-                    tokio::time::timeout(
-                        std::time::Duration::from_secs(2),
-                        record_remote_transcript_base(&client, path),
-                    )
-                    .await
-                    .ok()
-                    .and_then(Result::ok)
-                    .map(TurnBase::Remote)
-                }
+                // A slow or unavailable history probe must not block sending a prompt.
+                Some(client) => match tokio::time::timeout(
+                    std::time::Duration::from_secs(2),
+                    record_remote_transcript_base(&client, path),
+                )
+                .await
+                {
+                    Ok(Ok(base)) => Some(TurnBase::Remote(base)),
+                    Ok(Err(error))
+                        if self.may_be_unwritten.load(Ordering::Acquire)
+                            && unwritten_session_error(&error) =>
+                    {
+                        Some(TurnBase::Unwritten)
+                    }
+                    _ => None,
+                },
                 None => None,
             },
-            (Some(path), None) => tokio::task::spawn_blocking(move || record_transcript_base(path))
-                .await
-                .ok()
-                .flatten()
-                .map(TurnBase::Local),
+            (Some(path), None) => {
+                if self.may_be_unwritten.load(Ordering::Acquire)
+                    && local_session_unwritten(&path).await
+                {
+                    Some(TurnBase::Unwritten)
+                } else {
+                    tokio::task::spawn_blocking(move || record_transcript_base(path))
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(TurnBase::Local)
+                }
+            }
             (None, _) => None,
         };
         events.with_publish_lock(|| {
@@ -388,7 +462,13 @@ impl SessionTurn {
                 state.prompt_id = prompt_id;
                 return;
             }
-            if let Some(base) = base {
+            if let Some(base) = base.filter(|base| {
+                !matches!(base, TurnBase::Unwritten)
+                    || self.may_be_unwritten.load(Ordering::Acquire)
+            }) {
+                if !matches!(base, TurnBase::Unwritten) {
+                    self.mark_persisted();
+                }
                 state.projection.begin(base.size());
                 state.base = Some(Arc::new(base));
                 state.awaiting_agent_start = true;
@@ -461,6 +541,8 @@ impl SessionTurn {
                 return;
             }
             RuntimeEvent::AssistantMessageEnd { .. } => {
+                // Pi has persisted the conversation by the end of the turn.
+                self.mark_persisted();
                 state.reset();
                 return;
             }

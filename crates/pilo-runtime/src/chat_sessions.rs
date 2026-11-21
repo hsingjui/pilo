@@ -230,6 +230,11 @@ impl ChatSessions {
                     pilo_domain::ConnectionKind::Local => turn_projection::SessionTurn::new(true),
                     _ => turn_projection::SessionTurn::new_remote(reader),
                 };
+                let turn = if session_path.is_none() && !launch.no_session {
+                    turn.allow_unwritten()
+                } else {
+                    turn
+                };
                 let process = Arc::new(ChatProcess {
                     events: events.clone(),
                     turn: Arc::new(turn),
@@ -279,6 +284,7 @@ impl ChatSessions {
             return Err("session Pi isolation mode changed while running".to_owned());
         }
         if let Some(path) = session_path {
+            process.turn.mark_persisted();
             let mut current = process
                 .session_path
                 .lock()
