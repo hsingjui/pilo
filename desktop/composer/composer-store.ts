@@ -155,6 +155,15 @@ export class ComposerStore {
 	>([]);
 	private histories: HistoryStore | null = null;
 	private historyCursor: number | null = null;
+	/**
+	 * The send in flight, so Stop can end it at any stage: before the prompt
+	 * goes out it just stops there; once Pi has it, the turn is aborted.
+	 */
+	private activeSubmit: {
+		sessionKey: string;
+		dispatched: boolean;
+		stopped: boolean;
+	} | null = null;
 	private fileQuery: { query: string; request: number } | null = null;
 	private commandsRequest = 0;
 
@@ -640,11 +649,17 @@ export class ComposerStore {
 		};
 		let sent = false;
 		let failure: string | undefined;
+		const submit = {
+			sessionKey: target.sessionKey,
+			dispatched: false,
+			stopped: false,
+		};
+		this.activeSubmit = submit;
 		try {
 			if (!running) {
 				const chat = await this.client.chatState(target.sessionKey);
 				const current = this.targetSignal();
-				if (current?.sessionKey !== target.sessionKey) return;
+				if (current?.sessionKey !== target.sessionKey || submit.stopped) return;
 				if (!chat?.initialized) {
 					localStatus("starting");
 					await this.client.startChat({
@@ -656,19 +671,30 @@ export class ComposerStore {
 					});
 				}
 			}
-			if (this.targetSignal()?.sessionKey !== target.sessionKey) return;
+			if (
+				this.targetSignal()?.sessionKey !== target.sessionKey ||
+				submit.stopped
+			)
+				return;
 			if (this.beforeSend && !(await this.beforeSend(target.sessionKey)))
 				return;
-			if (this.targetSignal()?.sessionKey !== target.sessionKey) return;
+			if (
+				this.targetSignal()?.sessionKey !== target.sessionKey ||
+				submit.stopped
+			)
+				return;
 			if (mode === "follow_up" && (!this.running() || this.compacting()))
 				return;
 			let disposition: PiPromptResult["disposition"] | undefined;
 			if (running) {
 				for (const command of this.commandFor(mode ?? sendMode, submission)) {
+					if (submit.stopped) return;
+					submit.dispatched = true;
 					await this.client.sendChatCommand(target.sessionKey, command);
 				}
 			} else {
 				localStatus("sending");
+				submit.dispatched = true;
 				const outcome = await requestPiRpcOutcome<PiPromptResult>(
 					this.client,
 					target.sessionKey,
@@ -692,6 +718,17 @@ export class ComposerStore {
 					return;
 				}
 				disposition = outcome.reply.data?.disposition;
+				// Stop may have reached Pi before the turn began; end it now.
+				if (submit.stopped && disposition !== "handled") {
+					void this.client
+						.sendChatCommand(target.sessionKey, { type: "abort" })
+						.catch((error) =>
+							this.setStatus(
+								`${t("chat.stopPiFailed")}: ${errorMessage(error)}`,
+								target.sessionKey,
+							),
+						);
+				}
 			}
 			sent = true;
 			retainChatFiles(submission.text);
@@ -724,6 +761,7 @@ export class ComposerStore {
 					status: failure,
 				});
 			}
+			if (this.activeSubmit === submit) this.activeSubmit = null;
 			this.stateSignal.update((s) => ({ ...s, sending: false }));
 		}
 	}
@@ -752,10 +790,16 @@ export class ComposerStore {
 		}));
 	}
 
-	/** Stops the running turn. */
+	/** Stops the running turn, or the send that is about to start one. */
 	async stop() {
 		const target = this.targetSignal();
 		if (!target) return;
+		const submit = this.activeSubmit;
+		if (submit?.sessionKey === target.sessionKey) {
+			submit.stopped = true;
+			// Nothing has reached Pi yet: the send ends at its next step.
+			if (!submit.dispatched && !this.running()) return;
+		}
 		try {
 			await this.client.sendChatCommand(target.sessionKey, {
 				type: "abort",

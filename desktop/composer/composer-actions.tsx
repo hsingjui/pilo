@@ -7,7 +7,6 @@ import { Button } from "../ui/button";
 import { Icon, type IconName } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
-import { Spinner } from "../ui/spinner";
 import { Tooltip } from "../ui/tooltip";
 
 const SEND_MODE_OPTIONS = [
@@ -39,7 +38,8 @@ const SEND_MODE_OPTIONS = [
 /**
  * The composer toolbar's right end, as the React `ComposerActions`: how a
  * message sent during a turn goes (steer, queue, interrupt), then the round
- * send button, which stops the turn while the draft is empty.
+ * send button, which stops the turn while the draft is empty and stops a
+ * send that is still on its way.
  */
 export function ComposerActions(props: {
 	sendMode: () => ComposerSendMode;
@@ -59,7 +59,8 @@ export function ComposerActions(props: {
 		SEND_MODE_OPTIONS[0];
 	const modeLabel = () =>
 		t("chat.sendModeCurrent", { mode: t(option().label) });
-	const showStop = () => props.running() && !props.hasContent();
+	const showStop = () =>
+		props.sending() || (props.running() && !props.hasContent());
 	const actionLabel = () =>
 		showStop()
 			? t("chat.stop")
@@ -149,9 +150,7 @@ export function ComposerActions(props: {
 				onPress={() => (showStop() ? props.onStop() : props.onSend())}
 			>
 				{() =>
-					props.sending() ? (
-						<Spinner size={14} color={token("background")} />
-					) : showStop() ? (
+					showStop() ? (
 						<Icon name="Square" size={12} fill color={token("background")} />
 					) : (
 						<Icon name="ArrowUp" size={16} color={token("background")} />
