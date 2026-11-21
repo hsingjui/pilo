@@ -1,5 +1,5 @@
 import { computed, mount } from "nsh";
-import { isAvailable, Window } from "nsh/desktop";
+import { displays, isAvailable, Window, type WindowRef } from "nsh/desktop";
 
 import type { PiloClientEvent } from "@/lib/api/pilo-client";
 import { NshPiloClient, type PiloNative } from "../client/nsh-pilo-client";
@@ -8,6 +8,7 @@ import { AppStore } from "../state/app-store";
 import { ChatRunConfigStore } from "../state/chat-run-config";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { ModelCatalogStore } from "../state/model-catalog";
+import manifest from "../nsh.json";
 import { AppShell, type AppShellProps, StartupFrame } from "./AppShell";
 import {
 	connectDesktopShell,
@@ -23,6 +24,48 @@ import {
 import { followOpenSessionRead } from "./read-open-session";
 import { SessionForker } from "./session-fork";
 import { connectSessionNotifications } from "./session-notifications";
+
+function fitMainWindow(main: WindowRef) {
+	const [display, secondDisplay] = displays();
+	const state = main.state();
+	// Leave multi-display layouts and restored window modes to nsh.
+	if (!display || secondDisplay || !state || state.mode !== "normal") return;
+	const area = display.visibleBounds;
+	const { origin, size } = state.bounds;
+	const { size: content } = state.contentBounds;
+	const minSize = manifest.window.minSize;
+	const availableWidth = area.size.width - (size.width - content.width);
+	const availableHeight = area.size.height - (size.height - content.height);
+	if (availableWidth <= 0 || availableHeight <= 0) return;
+	const minWidth = Math.max(1, Math.floor(availableWidth * 0.9));
+	const minHeight = Math.max(1, Math.floor(availableHeight * 0.9));
+	if (minWidth < minSize.width || minHeight < minSize.height) {
+		main.set({
+			minSize: {
+				width: Math.min(minSize.width, minWidth),
+				height: Math.min(minSize.height, minHeight),
+			},
+		});
+	}
+	const width = Math.min(size.width, area.size.width);
+	const height = Math.min(size.height, area.size.height);
+	const x = Math.min(
+		Math.max(origin.x, area.origin.x),
+		area.origin.x + area.size.width - width,
+	);
+	const y = Math.min(
+		Math.max(origin.y, area.origin.y),
+		area.origin.y + area.size.height - height,
+	);
+	if (
+		width !== size.width ||
+		height !== size.height ||
+		x !== origin.x ||
+		y !== origin.y
+	) {
+		main.setBounds({ origin: { x, y }, size: { width, height } });
+	}
+}
 
 /**
  * Starts the app on `pilo`: shows the shell, loads the app state, keeps the
@@ -41,6 +84,7 @@ export async function launch(
 		});
 	});
 	const main = isAvailable ? Window.get("main") : null;
+	if (main) fitMainWindow(main);
 	const desktop =
 		main && desktopSettings
 			? connectDesktopShell(main, desktopSettings, async () => {

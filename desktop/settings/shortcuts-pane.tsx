@@ -1,4 +1,13 @@
-import { type Accessor, platform, signal, Text, View } from "nsh";
+import {
+	type Accessor,
+	cleanup,
+	effect,
+	keymap,
+	platform,
+	signal,
+	Text,
+	View,
+} from "nsh";
 
 import {
 	defaultKeyboardShortcuts,
@@ -15,12 +24,12 @@ import {
 	type ShortcutCommandId,
 } from "@/lib/keyboard-shortcuts-types";
 import type { PreferencePatch } from "@/lib/host-preferences-types";
+import { nshAppShortcut } from "../shortcuts";
 import type { AppState } from "../state/app-state";
 import type { DesktopShell } from "../app/desktop-shell";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
-import { Input } from "../ui/input";
 import { styleVar } from "../ui/theme-style";
 import type { SettingsClient } from "./settings-dialog";
 import { SettingsRow, SettingsSection } from "./layout";
@@ -43,6 +52,9 @@ const SHORTCUT_BOX_RECORDING_CLASS = "border-ring bg-accent/60";
 const SHORTCUT_RESET_CLASS = "size-7 shrink-0";
 
 const IS_MAC = platform.os === "macos";
+const EDITABLE_COMMANDS = SHORTCUT_COMMANDS.filter(
+	(command) => command.section === "app",
+);
 
 /** One keystroke as the Tauri pane's kbd chips: `⌘ + ⇧ + M` for `mod+shift+m`. */
 function ShortcutKeys(props: { shortcut: string }) {
@@ -88,12 +100,14 @@ function keyEventParts(event: {
 }
 
 type ShortcutNotice = {
-	kind: "modifier" | "conflict" | "default";
+	kind: "modifier" | "conflict" | "default" | "unavailable" | "save";
 	label?: string;
 };
 
 /** The validation feedback Tauri raises as a toast; nsh surfaces it inline. */
 function noticeText(notice: ShortcutNotice): string {
+	if (notice.kind === "unavailable") return t("shortcuts.unavailable");
+	if (notice.kind === "save") return t("settings.preferencesSaveFailed");
 	if (notice.kind === "modifier")
 		return `${t("shortcuts.modifierRequired")} ${t("shortcuts.modifierDescription")}`;
 	if (notice.kind === "default")
@@ -101,29 +115,29 @@ function noticeText(notice: ShortcutNotice): string {
 	return `${t("shortcuts.conflict")} ${t("shortcuts.conflictDescription", { label: notice.label ?? "" })}`;
 }
 
-/**
- * The capture target a recording row swaps in: a focused input reporting every
- * keystroke through `onKeyDown` (typed text never lands because `value` stays
- * empty), as the Tauri pane's recording button.
- */
+/** A focusable view receives raw keys on macOS; a native input does not. */
 function ShortcutRecorder(props: {
 	label: string;
 	onCapture: (shortcut: string) => void;
 	onCancel: () => void;
 }) {
 	return (
-		<Input
+		<View
 			testID="shortcut-recorder"
-			autoFocus
-			class={`${SHORTCUT_BOX_CLASS} ${SHORTCUT_BOX_RECORDING_CLASS} w-40 font-sans text-xs text-muted-foreground`}
+			focusable
+			ref={(view) => view.focus()}
+			captureKeys="all"
+			class={`${SHORTCUT_BOX_CLASS} ${SHORTCUT_BOX_RECORDING_CLASS} w-40`}
 			accessibilityLabel={props.label}
-			placeholder={t("settings.pressNewShortcut")}
-			value=""
-			autoCapitalize="none"
-			autoCorrect={false}
-			onChange={() => {}}
+			onBlur={props.onCancel}
 			onKeyDown={(event) => {
-				if (event.key === "Escape") {
+				if (
+					event.key === "Escape" ||
+					(event.key === "Tab" &&
+						!event.modifiers.platform &&
+						!event.modifiers.control &&
+						!event.modifiers.alt)
+				) {
 					props.onCancel();
 					return;
 				}
@@ -131,7 +145,11 @@ function ShortcutRecorder(props: {
 				const next = shortcutFromKeyEvent(keyEventParts(event), IS_MAC);
 				if (next) props.onCapture(next);
 			}}
-		/>
+		>
+			<Text class="font-sans text-xs text-muted-foreground">
+				{t("settings.pressNewShortcut")}
+			</Text>
+		</View>
 	);
 }
 
@@ -139,6 +157,7 @@ export function ShortcutsPane(props: {
 	state: Accessor<AppState>;
 	client: Pick<SettingsClient, "savePreferences">;
 	desktop?: DesktopShell;
+	onRecordingChange?: (recording: boolean) => void;
 }) {
 	const map = () => props.state().preferences?.values.keyboardShortcuts;
 	const sendShortcut = () =>
@@ -147,19 +166,41 @@ export function ShortcutsPane(props: {
 	const defaults = defaultKeyboardShortcuts(IS_MAC);
 
 	const recording = signal<ShortcutCommandId | "desktop" | null>(null);
+	const stopRecording = (id: ShortcutCommandId | "desktop") => {
+		if (recording() === id) recording.set(null);
+	};
 	const notice = signal<ShortcutNotice | null>(null);
+	effect(() => props.onRecordingChange?.(recording() !== null));
+	cleanup(() => props.onRecordingChange?.(false));
 
 	const save = (patch: PreferencePatch) => {
+		notice.set(null);
 		void props.client.savePreferences(patch).catch((error: unknown) => {
 			console.error(t("settings.preferencesSaveFailed"), error);
+			notice.set({ kind: "save" });
 		});
 	};
 
+	const shortcutFor = (id: ShortcutCommandId) => map()?.[id] ?? defaults[id];
 	const hasCustomShortcut = () =>
-		sendShortcut() !== "enter" ||
-		SHORTCUT_COMMANDS.some(
-			(command) => (map()?.[command.id] ?? "") !== defaults[command.id],
+		EDITABLE_COMMANDS.some(({ id }) => shortcutFor(id) !== defaults[id]);
+	const findConflict = (commandId: ShortcutCommandId, shortcut: string) => {
+		const native = nshAppShortcut(shortcut, IS_MAC);
+		return (
+			findShortcutConflict(
+				{ ...defaults, ...map() },
+				commandId,
+				shortcut,
+				IS_MAC,
+			) ??
+			EDITABLE_COMMANDS.find(
+				({ id }) =>
+					id !== commandId &&
+					native &&
+					native === nshAppShortcut(shortcutFor(id), IS_MAC),
+			)?.id
 		);
+	};
 
 	/** The saved global shortcut must not collide with an in-app one. */
 	const freeOfDesktopConflict = (shortcuts: readonly string[]) => {
@@ -180,8 +221,7 @@ export function ShortcutsPane(props: {
 			notice.set({ kind: "modifier" });
 			return;
 		}
-		const current = { ...defaults, ...map() };
-		const conflictId = findShortcutConflict(current, commandId, next, IS_MAC);
+		const conflictId = findConflict(commandId, next);
 		if (conflictId) {
 			notice.set({
 				kind: "conflict",
@@ -190,19 +230,22 @@ export function ShortcutsPane(props: {
 			return;
 		}
 		if (!freeOfDesktopConflict([next])) return;
-		save({ keyboardShortcuts: { ...current, [commandId]: next } });
-		notice.set(null);
+		const nativeShortcut = nshAppShortcut(next, IS_MAC);
+		if (!nativeShortcut) return;
+		try {
+			// Only bind validates both syntax and platform-reserved keys.
+			keymap.bind(nativeShortcut, () => {}, { passThrough: true })();
+		} catch {
+			notice.set({ kind: "unavailable" });
+			return;
+		}
+		save({ keyboardShortcuts: { [commandId]: next } });
 		recording.set(null);
 	};
 
 	const reset = (commandId: ShortcutCommandId) => {
 		const fallback = defaults[commandId];
-		const conflictId = findShortcutConflict(
-			{ ...defaults, ...map() },
-			commandId,
-			fallback,
-			IS_MAC,
-		);
+		const conflictId = findConflict(commandId, fallback);
 		if (conflictId) {
 			notice.set({
 				kind: "default",
@@ -211,16 +254,15 @@ export function ShortcutsPane(props: {
 			return;
 		}
 		if (!freeOfDesktopConflict([fallback])) return;
-		save({
-			keyboardShortcuts: { ...defaults, ...map(), [commandId]: fallback },
-		});
-		notice.set(null);
+		save({ keyboardShortcuts: { [commandId]: fallback } });
 	};
 
 	const resetAll = () => {
-		if (!freeOfDesktopConflict(Object.values(defaults))) return;
-		save({ keyboardShortcuts: { ...defaults }, sendMessageShortcut: "enter" });
-		notice.set(null);
+		const keyboardShortcuts = Object.fromEntries(
+			EDITABLE_COMMANDS.map(({ id }) => [id, defaults[id]]),
+		);
+		if (!freeOfDesktopConflict(Object.values(keyboardShortcuts))) return;
+		save({ keyboardShortcuts });
 		recording.set(null);
 	};
 
@@ -230,7 +272,10 @@ export function ShortcutsPane(props: {
 				<GlobalShortcutSetting
 					desktop={props.desktop}
 					recording={() => recording() === "desktop"}
-					onRecordingChange={(next) => recording.set(next ? "desktop" : null)}
+					onRecordingChange={(next) => {
+						if (next) recording.set("desktop");
+						else stopRecording("desktop");
+					}}
 				/>
 			) : null}
 			{SHORTCUT_SECTIONS.map((section, sectionIndex) => (
@@ -257,7 +302,24 @@ export function ShortcutsPane(props: {
 					).map((command) => (
 						<SettingsRow label={t(command.labelKey)}>
 							{() => {
-								const shortcut = map()?.[command.id] ?? "";
+								const shortcut = shortcutFor(command.id);
+								const keys = () =>
+									shortcut ? (
+										<ShortcutKeys shortcut={shortcut} />
+									) : (
+										<Text class="font-sans text-xs text-muted-foreground">
+											{t("shortcuts.unassigned")}
+										</Text>
+									);
+								if (command.section !== "app") {
+									return (
+										<View
+											class={`${SHORTCUT_BOX_CLASS} ${SHORTCUT_BOX_IDLE_CLASS}`}
+										>
+											{keys()}
+										</View>
+									);
+								}
 								const isCustom = shortcut !== defaults[command.id];
 								return (
 									<View class="flex-row items-center gap-1.5">
@@ -267,7 +329,7 @@ export function ShortcutsPane(props: {
 													label: t(command.labelKey),
 												})}
 												onCapture={(next) => assign(command.id, next)}
-												onCancel={() => recording.set(null)}
+												onCancel={() => stopRecording(command.id)}
 											/>
 										) : (
 											<Button
@@ -282,13 +344,7 @@ export function ShortcutsPane(props: {
 													recording.set(command.id);
 												}}
 											>
-												{shortcut ? (
-													<ShortcutKeys shortcut={shortcut} />
-												) : (
-													<Text class="font-sans text-xs text-muted-foreground">
-														{t("shortcuts.unassigned")}
-													</Text>
-												)}
+												{keys()}
 											</Button>
 										)}
 										<Button

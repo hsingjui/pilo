@@ -182,6 +182,7 @@ const enUS = {
 			"Access Pilo through LAN, public or mesh-network addresses.",
 		remoteLoading: "Loading Remote WebUI…",
 		remoteRunning: "Running",
+		remoteNotRunning: "Enabled · Not running",
 		remoteStopped: "Stopped",
 		remoteConnected: "Remote connected",
 		remoteOffline: "Offline",
@@ -1066,6 +1067,7 @@ const enUS = {
 		focusComposer: "Focus composer",
 		queueMessage: "Queue message",
 		unassigned: "Not set",
+		unavailable: "This shortcut is not available in the desktop app.",
 		defaultOccupied: "Default shortcut is already in use",
 		defaultOccupiedDescription:
 			"“{{label}}” is using this shortcut. Reset all shortcuts first.",
