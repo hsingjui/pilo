@@ -29,7 +29,7 @@ test("the shell starts on the native runtime and lands on the default workspace"
 
 test("the shell says it is loading until the first snapshot arrives", async () => {
 	const app = await openStates("starting");
-	expect(app.shows("id:workspace >> text:Loading…")).toBe(true);
+	expect(app.shows("id:workspace >> label:Loading…")).toBe(true);
 	expect(app.shows("id:workspace-title")).toBe(false);
 	expect(app.shows("id:startup-failed")).toBe(false);
 });

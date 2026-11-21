@@ -30,6 +30,6 @@ test("the shell shows loading while the Host locale seed is pending", async () =
 		host: { params: { mode: "pending" } },
 	});
 	await app.waitFor("id:startup-loading");
-	expect(app.shows("id:workspace >> text:Loading…")).toBe(true);
+	expect(app.shows("id:workspace >> label:Loading…")).toBe(true);
 	expect(app.shows("id:workspace-title")).toBe(false);
 });

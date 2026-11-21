@@ -319,30 +319,65 @@ export function SidebarPanel(props: SidebarPanelProps) {
 	);
 }
 
-/** The sidebar outline before its interactive panel mounts. */
-export function StartupSidebar(props: Pick<SidebarPanelProps, "titleBar">) {
+/**
+ * The sidebar outline before its interactive panel mounts, laid out as the
+ * panel's title bar, new-session row and footer so nothing moves when it does.
+ */
+export function StartupSidebar(
+	props: Pick<SidebarPanelProps, "titleBar"> & { width?: Accessor<number> },
+) {
 	const card = computed(surface);
+	/** A footer button's place: `Button size="icon"` around a 16pt icon. */
+	const footerButton = () => (
+		<View class="size-(--pilo-button-icon-size) items-center justify-center">
+			<Skeleton class="size-4" />
+		</View>
+	);
+	/** A title bar action's place: `SidebarAction` around a 16pt icon. */
+	const titleAction = () => (
+		<View class="size-6 items-center justify-center">
+			<Skeleton class="size-4" />
+		</View>
+	);
 	return (
-		<View class="h-full shrink-0" style={{ width: DEFAULT_SIDEBAR_WIDTH }}>
+		<View
+			class="h-full shrink-0"
+			style={{ width: props.width?.() ?? DEFAULT_SIDEBAR_WIDTH }}
+		>
 			<View class="min-h-0 flex-1" style={card().style}>
 				<View
 					desktop={{ windowDrag: true }}
-					class="shrink-0 justify-center"
+					class="shrink-0 flex-row items-center px-1.5"
 					style={{
 						height: props.titleBar().height,
 						marginTop: -card().top,
-						paddingLeft: Math.max(14, props.titleBar().left - card().left + 8),
+						paddingLeft: Math.max(6, props.titleBar().left - card().left),
 					}}
 				>
-					<Skeleton strong class="h-4 w-10" />
+					<View class="min-w-0 flex-1 flex-row items-center gap-1.5 px-2">
+						<Skeleton strong class="h-4 w-10" />
+						{appInfo().development ? (
+							<Skeleton class="h-4 w-10 rounded-full" />
+						) : null}
+					</View>
+					<View class="mr-1 h-7 shrink-0 flex-row items-center gap-0.5 border border-transparent px-2">
+						{titleAction()}
+						{titleAction()}
+					</View>
 				</View>
-				<View class="-mt-1 h-8 shrink-0 justify-center px-3.5">
-					<Skeleton class="h-3 w-24" />
+				<View class="-mt-1 shrink-0 px-1.5">
+					<View class="h-8 flex-row items-center gap-1.5 px-2">
+						<Skeleton class="size-4 shrink-0" />
+						<Skeleton class="h-3 w-16" />
+					</View>
 				</View>
 				<SidebarLoading />
-				<View class="shrink-0 flex-row justify-between border-t border-sidebar-border px-3 py-2.5">
-					<Skeleton class="size-4" />
-					<Skeleton class="size-4" />
+				<View class="shrink-0 flex-row items-center gap-1 border-t border-sidebar-border px-1.5 py-1">
+					{footerButton()}
+					<View class="ml-auto flex-row items-center gap-1">
+						{footerButton()}
+						{footerButton()}
+					</View>
 				</View>
 			</View>
 		</View>

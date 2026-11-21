@@ -1,4 +1,5 @@
 import {
+	type Accessor,
 	cleanup,
 	computed,
 	effect,
@@ -100,6 +101,8 @@ export interface AppShellProps {
 	/** The client calls the add-project dialog needs; `undefined` hides it. */
 	projectClient?: AddProjectApi;
 	desktop?: DesktopShell;
+	/** The sidebar's stored settings, when the launch has already loaded them. */
+	sidebarSettings?: SidebarSettingsStore;
 }
 
 export function AppShell(props: AppShellProps) {
@@ -132,8 +135,8 @@ export function AppShell(props: AppShellProps) {
 	const registeredShortcuts = signal<Partial<KeyboardShortcutMap>>({});
 	const addProjectOpen = signal(false);
 	const addProjectConnection = signal<string | null>(null);
-	const sidebarSettings = new SidebarSettingsStore();
-	void sidebarSettings.load();
+	const sidebarSettings = props.sidebarSettings ?? new SidebarSettingsStore();
+	if (!sidebarSettings.loaded()) void sidebarSettings.load();
 	const sidebarLayout = createSidebarLayout(sidebarSettings);
 	const collapsed = sidebarLayout.collapsed;
 	// The expand button fades in once the sidebar has collapsed, and out as
@@ -608,23 +611,40 @@ export function AppShell(props: AppShellProps) {
 }
 
 /** The first frame, before the Host theme is available to mount AppShell. */
-export function StartupFrame() {
+export function StartupFrame(props: {
+	/** The saved theme is Claude's, whose conversation column is wider. */
+	claude?: boolean;
+	/** The saved sidebar width; the default one without it. */
+	sidebarWidth?: Accessor<number>;
+}) {
 	const window = currentWindow();
 	window.set({ titleBar: { style: "hidden", height: TITLE_BAR_HEIGHT } });
 	const titleBar = () => ({
 		height: window.titleBar().height || TITLE_BAR_HEIGHT,
 		left: window.titleBar().left,
 	});
+	const narrow = signal(false);
+	const columnLayout = computed(() => ({
+		claude: props.claude ?? false,
+		narrow: narrow(),
+	}));
 	return (
 		<View class="flex-1 flex-row bg-background">
-			<StartupSidebar titleBar={titleBar} />
-			<View class="min-w-0 flex-1">
+			<StartupSidebar titleBar={titleBar} width={props.sidebarWidth} />
+			<View
+				class="min-w-0 flex-1"
+				onLayout={({ bounds }) =>
+					narrow.set(bounds.size.width < 40 * DEFAULT_CHAT_REM)
+				}
+			>
 				<View
 					desktop={{ windowDrag: true }}
 					style={{ height: titleBar().height }}
 				/>
 				<View testID="workspace" class="min-h-0 flex-1">
-					<StartupLoading />
+					<ConversationColumnLayout.Provider value={columnLayout}>
+						<StartupLoading />
+					</ConversationColumnLayout.Provider>
 				</View>
 			</View>
 		</View>
@@ -637,7 +657,13 @@ export function StartupFrame() {
  */
 function StartupLoading() {
 	return (
-		<View testID="startup-loading" class="min-h-0 min-w-0 flex-1">
+		<View
+			testID="startup-loading"
+			role="progressbar"
+			accessible
+			accessibilityLabel={t("common.loading")}
+			class="min-h-0 min-w-0 flex-1"
+		>
 			<View class="min-h-0 flex-1 justify-center">
 				<ConversationColumn>
 					<SessionLanding loading />

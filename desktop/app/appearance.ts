@@ -5,6 +5,7 @@ import {
 	platform,
 	setColorScheme,
 	setTheme,
+	Storage,
 	untracked,
 } from "nsh";
 
@@ -29,6 +30,66 @@ const catalog = createThemeTokenCatalog(lody.cssVars);
 const defaultPageFont =
 	platform.os === "windows" ? "Noto Sans SC" : "system-sans";
 
+/** What the first frame needs of the theme, before the Host answers. */
+export type StartupTheme = Pick<
+	ThemeSettings,
+	"theme" | "themeFamily" | "themeCustomTokens"
+>;
+const STARTUP_THEME_KEY = "pilo.startupTheme";
+
+/**
+ * Shows the theme the last run saved, so a launch or reload does not flash
+ * the default theme before the Host's settings arrive.
+ */
+export async function showStartupTheme(): Promise<StartupTheme | null> {
+	const saved = parseStartupTheme(
+		await Storage.getItem(STARTUP_THEME_KEY).catch(() => null),
+	);
+	if (saved) {
+		showTheme(
+			saved,
+			getPageFontFamilyStack(defaultPageFont),
+			getMonospaceFontFamilyStack("system-mono"),
+			undefined,
+		);
+	}
+	return saved;
+}
+
+function parseStartupTheme(stored: string | null): StartupTheme | null {
+	if (!stored) return null;
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(stored);
+	} catch {
+		return null;
+	}
+	if (typeof parsed !== "object" || parsed === null) return null;
+	const { theme, themeFamily, themeCustomTokens } = parsed as Record<
+		string,
+		unknown
+	>;
+	if (theme !== "dark" && theme !== "light" && theme !== "system") {
+		return null;
+	}
+	if (
+		themeFamily !== "lody" &&
+		themeFamily !== "claude" &&
+		themeFamily !== "custom"
+	) {
+		return null;
+	}
+	// showTheme validates custom tokens before using them.
+	return {
+		theme,
+		themeFamily,
+		themeCustomTokens:
+			typeof themeCustomTokens === "object" && themeCustomTokens !== null
+				? (themeCustomTokens as StartupTheme["themeCustomTokens"])
+				: undefined,
+	};
+}
+
 /** Follow saved appearance, using platform fonts until preferences load. */
 export function followSavedAppearance(state: Accessor<AppState>) {
 	const locale = computed(() => state().preferences?.values.locale);
@@ -44,6 +105,19 @@ export function followSavedAppearance(state: Accessor<AppState>) {
 	);
 	const codeFontSize = computed(() => state().preferences?.values.codeFontSize);
 	const theme = computed(() => state().themeSettings);
+	const startupTheme = computed(() => {
+		const settings = theme();
+		if (!settings) return null;
+		const { theme: scheme, themeFamily, themeCustomTokens } = settings;
+		return JSON.stringify({ theme: scheme, themeFamily, themeCustomTokens });
+	});
+	effect(() => {
+		const saved = startupTheme();
+		if (!saved) return;
+		void Storage.setItem(STARTUP_THEME_KEY, saved).catch((error: unknown) => {
+			console.warn("Failed to save the startup theme", error);
+		});
+	});
 	effect(() => {
 		const savedLocale = locale();
 		if (savedLocale && savedLocale !== untracked(appLocale))
@@ -64,7 +138,7 @@ export function followSavedAppearance(state: Accessor<AppState>) {
 }
 
 function showTheme(
-	settings: ThemeSettings | null,
+	settings: StartupTheme | null,
 	pageSans: string,
 	codeMono: string,
 	codeSize: number | undefined,
@@ -90,7 +164,7 @@ function showTheme(
 
 /** Lody uses the page font for display unless a custom theme overrides it. */
 function lodyTheme(
-	settings: ThemeSettings | null,
+	settings: StartupTheme | null,
 	pageSans: string,
 ): ThemeCssVars {
 	const base = {

@@ -1,4 +1,4 @@
-import { computed, mount } from "nsh";
+import { computed, mount, Storage } from "nsh";
 import { displays, isAvailable, Window, type WindowRef } from "nsh/desktop";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
@@ -10,6 +10,7 @@ import { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { ModelCatalogStore } from "../state/model-catalog";
 import manifest from "../nsh.json";
 import { AppShell, type AppShellProps, StartupFrame } from "./AppShell";
+import { showStartupTheme } from "./appearance";
 import {
 	connectDesktopShell,
 	type DesktopSettingsClient,
@@ -24,6 +25,69 @@ import {
 import { followOpenSessionRead } from "./read-open-session";
 import { SessionForker } from "./session-fork";
 import { connectSessionNotifications } from "./session-notifications";
+import { SidebarSettingsStore } from "./sidebar-settings";
+
+/** Set once the main window has taken its first-launch size. */
+const INITIAL_WINDOW_SIZED_KEY = "pilo.initialWindowSized";
+/** The share of the display's usable area the first window takes. */
+const INITIAL_WINDOW_SHARE = { width: 0.7, height: 0.92 } as const;
+/** The first window's largest size: past it, a large display shows it centered. */
+const INITIAL_WINDOW_MAX = { width: 1200, height: 960 } as const;
+
+/**
+ * Sizes the main window to its display on the app's first launch and
+ * centers it there; later launches keep where the user left it
+ * (`restoreBounds`). False when it left the window as it was.
+ */
+async function sizeMainWindowOnFirstLaunch(main: WindowRef) {
+	const sized = await Storage.getItem(INITIAL_WINDOW_SIZED_KEY).catch(
+		() => null,
+	);
+	if (sized) return false;
+	const state = main.state();
+	const display =
+		state?.display ?? displays().find((d) => d.primary) ?? displays()[0];
+	if (!state || state.mode !== "normal" || !display) return false;
+	const area = display.visibleBounds;
+	const { size } = state.bounds;
+	const { size: content } = state.contentBounds;
+	const minSize = manifest.window.minSize;
+	// The bounds are the outer frame; the minimum size is the content's.
+	const minWidth = minSize.width + (size.width - content.width);
+	const minHeight = minSize.height + (size.height - content.height);
+	// A display smaller than the least window is `fitMainWindow`'s.
+	if (area.size.width < minWidth || area.size.height < minHeight) return false;
+	const width = Math.min(
+		Math.max(
+			Math.round(area.size.width * INITIAL_WINDOW_SHARE.width),
+			minWidth,
+		),
+		INITIAL_WINDOW_MAX.width,
+		area.size.width,
+	);
+	const height = Math.min(
+		Math.max(
+			Math.round(area.size.height * INITIAL_WINDOW_SHARE.height),
+			minHeight,
+		),
+		INITIAL_WINDOW_MAX.height,
+		area.size.height,
+	);
+	main.setBounds({
+		origin: {
+			x: Math.round(area.origin.x + (area.size.width - width) / 2),
+			y: Math.round(area.origin.y + (area.size.height - height) / 2),
+		},
+		size: { width, height },
+		animated: false,
+	});
+	void Storage.setItem(INITIAL_WINDOW_SIZED_KEY, "1").catch(
+		(error: unknown) => {
+			console.warn("Failed to save the first-launch window size", error);
+		},
+	);
+	return true;
+}
 
 function fitMainWindow(main: WindowRef) {
 	const [display, secondDisplay] = displays();
@@ -84,7 +148,9 @@ export async function launch(
 		});
 	});
 	const main = isAvailable ? Window.get("main") : null;
-	if (main) fitMainWindow(main);
+	// The first-launch size fits its display already; `fitMainWindow` would
+	// read the bounds from before it.
+	if (main && !(await sizeMainWindowOnFirstLaunch(main))) fitMainWindow(main);
 	const desktop =
 		main && desktopSettings
 			? connectDesktopShell(main, desktopSettings, async () => {
@@ -119,6 +185,15 @@ export async function launch(
 	followOpenSession(store, chat);
 	followOpenSessionRead(store);
 	followRunConfig(store, runConfig, catalog);
+	// The first frame takes the saved theme and sidebar width, so a launch or
+	// reload neither flashes the default theme nor resizes its outline.
+	const sidebarSettings = new SidebarSettingsStore();
+	const [startupTheme] = await Promise.all([
+		showStartupTheme(),
+		sidebarSettings.load().catch((error: unknown) => {
+			console.warn("Failed to load the sidebar settings", error);
+		}),
+	]);
 	const shellProps: AppShellProps = {
 		store,
 		chat,
@@ -130,6 +205,7 @@ export async function launch(
 		settings: client,
 		projectClient: client,
 		desktop,
+		sidebarSettings,
 		onRenameSession: (projectId, sessionPath, title) =>
 			void store.renameSession(projectId, sessionPath, title),
 		readProjectImage: (projectId, path) =>
@@ -144,7 +220,15 @@ export async function launch(
 		);
 	});
 	mount(
-		() => () => (showShell() ? <AppShell {...shellProps} /> : <StartupFrame />),
+		() => () =>
+			showShell() ? (
+				<AppShell {...shellProps} />
+			) : (
+				<StartupFrame
+					claude={startupTheme?.themeFamily === "claude"}
+					sidebarWidth={sidebarSettings.width}
+				/>
+			),
 	);
 	// The normal sync still reloads the theme after its bootstrap cut.
 	void store.preloadThemeSettings().catch((error: unknown) => {

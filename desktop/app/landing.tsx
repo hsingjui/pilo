@@ -79,10 +79,11 @@ export function SessionLanding(
 			</View>
 			{() =>
 				"loading" in props ? (
-					<View class="min-h-(--pilo-button-sm-height) justify-center px-2">
-						<Text class="font-sans text-sm text-muted-foreground">
-							{() => t("common.loading")}
-						</Text>
+					// The project picker's outline: name, connection and chevron.
+					<View class="min-h-(--pilo-button-sm-height) flex-row items-center justify-center gap-1.5 px-2">
+						<Skeleton class="h-3.5 w-20" />
+						<Skeleton class="h-3 w-12" />
+						<Skeleton class="size-3.5" />
 					</View>
 				) : projects().length > 0 ? (
 					<LandingProjectPicker

@@ -32,11 +32,11 @@ test("the shell starts in the system language, falling back to English", async (
 			storage: { "fixture.scenario": "starting" },
 		});
 	const chinese = await shell("zh-Hans-CN");
-	await chinese.waitFor("id:workspace >> text:加载中…");
+	await chinese.waitFor("id:workspace >> label:加载中…");
 	const english = await shell("en-US");
-	await english.waitFor("id:workspace >> text:Loading…");
+	await english.waitFor("id:workspace >> label:Loading…");
 	const french = await shell("fr-FR");
-	await french.waitFor("id:workspace >> text:Loading…");
+	await french.waitFor("id:workspace >> label:Loading…");
 });
 
 test("switching the locale re-renders interpolated text and moves the nsh locale", async () => {
