@@ -32,7 +32,7 @@ export function FontSizeInput(props: {
 	};
 	return (
 		<View
-			class={classNames("flex-row", props.class)}
+			class={classNames("relative flex-row", props.class)}
 			onKeyDown={(event) => {
 				if (event.key === "Escape") draft.set(undefined);
 			}}
@@ -40,6 +40,7 @@ export function FontSizeInput(props: {
 			<NumberInput
 				testID={props.testID}
 				class="flex-1"
+				inputClass="pr-9"
 				value={draft() ?? props.value}
 				min={props.min}
 				max={props.max}
@@ -47,15 +48,15 @@ export function FontSizeInput(props: {
 				accessibilityLabel={String(
 					t("settings.fontSizeInputLabel", { font: props.label }),
 				)}
-				suffix={
-					<Text class="font-sans text-xs text-muted-foreground px-1 shrink-0">
-						px
-					</Text>
-				}
 				onChange={({ value }) => draft.set(value)}
 				onSubmit={commit}
 				onBlur={commit}
 			/>
+			{/* `px` sits inside the field as in Tauri; the suffix slot renders
+			 * under the input in this build, so it is overlaid instead. */}
+			<View class="pointer-events-none absolute top-0 right-2 bottom-0 justify-center">
+				<Text class="font-sans text-xs text-muted-foreground">px</Text>
+			</View>
 		</View>
 	);
 }

@@ -1,7 +1,7 @@
 import { Text, token, View, type ViewProps } from "nsh";
 import { classNames } from "./class-names";
 import { focusRingStyle } from "./focus-ring-style";
-import { Icon } from "./icon";
+import { Icon, type IconName } from "./icon";
 import { styleVar } from "./theme-style";
 
 type SelectTriggerProps = Pick<
@@ -10,6 +10,8 @@ type SelectTriggerProps = Pick<
 > & {
 	value?: string | null;
 	placeholder?: string | null;
+	/** The trailing icon's name; a ChevronDown when unset. */
+	icon?: IconName;
 };
 
 export function SelectTrigger(props: SelectTriggerProps) {
@@ -37,7 +39,10 @@ export function SelectTrigger(props: SelectTriggerProps) {
 			>
 				{() => props.value ?? props.placeholder ?? ""}
 			</Text>
-			<Icon name="ChevronDown" color={token("input-foreground")} />
+			<Icon
+				name={props.icon ?? "ChevronDown"}
+				color={token("input-foreground")}
+			/>
 		</View>
 	);
 }

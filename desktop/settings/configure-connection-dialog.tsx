@@ -8,6 +8,7 @@ import { Dialog } from "../ui/dialog";
 import { DialogFooter } from "../ui/dialog-footer";
 import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
+import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
 import { field } from "./connection-form";
 import type { ConfigureDraft } from "./ssh-connection-draft";
@@ -226,6 +227,13 @@ export function ConfigureConnectionDialog(props: { dialog: ConfigureDialog }) {
 					</DialogFooter>
 				);
 			}}
+			<View
+				accessibilityLabel={t("common.close")}
+				class="absolute right-3 top-3 size-6 items-center justify-center rounded-xs opacity-70 hover:opacity-100"
+				onPress={() => dialog.close()}
+			>
+				<Icon name="X" size={16} />
+			</View>
 		</Dialog>
 	);
 }
