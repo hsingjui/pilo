@@ -8,10 +8,10 @@
 
 - File names are kebab-case: `use-chat-runtime.ts`, `use-keyboard-shortcut.ts`.
 - Exported hook is camelCase starting with `use`: `useChatRuntime`.
-- App-shell orchestration hooks live in `src/components/app/` (`use-app-catalog`,
+- App-shell orchestration hooks live in `web/components/app/` (`use-app-catalog`,
   `use-app-chat-workspace`, `use-opened-chat-controllers`).
 - Feature-local hooks live in the feature folder (`src/components/chat/use-*.ts`).
-- Cross-cutting hooks live in `src/lib/`.
+- Cross-cutting hooks live in `shared/`.
 
 ## Patterns
 
@@ -44,12 +44,12 @@ array rather than capturing an entire hook result object.
 
 - **Hook** when it needs React state, effects, refs, or context.
 - **Plain function** when it is pure. Logic that is testable without React
-  belongs in `src/lib/*.ts` and is unit-tested in `tests/` — don't bury it in a
+  belongs in `shared/*.ts` and is unit-tested in `tests/` — don't bury it in a
   hook. Example: `conversation-reducer.ts`, `chat-submission.ts`.
 
 ## Data Fetching
 
-There is **no TanStack Query / SWR**. Fetch by calling typed `src/lib` functions
+There is **no TanStack Query / SWR**. Fetch by calling typed `web/lib` functions
 inside `useEffect` or event handlers, and store results in local state or a
 custom external store. (`AGENTS.md` lists TanStack Query as intended, but the
 codebase does not use it.)

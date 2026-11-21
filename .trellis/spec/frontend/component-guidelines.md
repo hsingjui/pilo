@@ -7,7 +7,7 @@
 ## Component Style
 
 - Function components only. No class components except the root error boundary
-  in `src/main.tsx`.
+  in `web/main.tsx`.
 - Named exports: `export function ChatCopyButton(...)`. `src/App.tsx` uses a
   default export because `main.tsx` imports it that way.
 - Inline the props type for small components; declare a named `Props`/options
@@ -20,7 +20,7 @@ export function ChatCopyButton({ text }: { text: string }) {
 }
 ```
 
-## `src/ui` Primitives
+## `web/ui` Primitives
 
 Follow the shadcn/ui shape:
 
@@ -97,7 +97,7 @@ re-styling them.
   waits for `document.readyState === "complete"` or a one-shot window `load`
   event, removed on cleanup, so precaching does not contend with initial assets.
 - Chat and project-file highlighting share `getCodeHighlighter(language)` from
-  `src/lib/code-highlighter.ts`, using one JS regex engine and CSS-variable theme.
+  `web/lib/code-highlighter.ts`, using one JS regex engine and CSS-variable theme.
   Load only the requested grammar (plus its bundled dependencies); do not load
   the full supported-language list on the first code block. Cache concurrent
   requests per language and evict failed loads so later requests can retry.
@@ -213,10 +213,10 @@ spacing, type sizes, or control heights.
 ## Theme Families
 
 - Lody and Claude are built-in token configurations, not privileged component
-  branches. `src/styles/lody-theme.css` owns the defaults, and
-  `src/styles/claude-theme.css` only overrides token values. Custom CSS overrides
+  branches. `web/styles/lody-theme.css` owns the defaults, and
+  `web/styles/claude-theme.css` only overrides token values. Custom CSS overrides
   that same contract. `theme-components.css` is the family-independent native
-  renderer; `src/index.css` maps runtime aliases into Tailwind. Do not add
+  renderer; `web/index.css` maps runtime aliases into Tailwind. Do not add
   `claude:` variants, family-conditioned component rules or a template-loading
   path to implement built-in effects. Every new built-in difference must have
   the same customization point available to Custom. See `docs/THEMES.md`.
@@ -398,7 +398,7 @@ spacing, type sizes, or control heights.
   disappearing-content report still needs real-device confirmation.
 - Keep the composer's original single-row toolbar, model label truncation,
   visible reasoning level and context percentage across theme families. Preserve
-  WebUI's narrow-screen rules in `src/index.css`, including its compact attachment
+  WebUI's narrow-screen rules in `web/index.css`, including its compact attachment
   gutter and enlarged touch hit areas. Theme changes must not add wrapping or
   hide metadata through container queries.
 - The delivery-mode picker stays icon-based and visible while idle or running.
@@ -442,7 +442,7 @@ spacing, type sizes, or control heights.
   text, images or runtime state. WebUI still closes mobile navigation on reuse.
   Existing/started sessions (including optimistic first-message startup), stale
   selected paths, project changes and mode changes must still create a new draft.
-- `SessionHeader` (`src/components/chat/chat-session-header.tsx`) owns the right-side
+- `SessionHeader` (`web/components/chat/chat-session-header.tsx`) owns the right-side
 action group (terminal / temporary chat / panel / session menu). New per-session
 actions go there and appear only for persisted sessions (`session && !session.temporary`).
 - Session actions that need chat data flow as optional callbacks from `App.tsx`
@@ -608,7 +608,7 @@ actions go there and appear only for persisted sessions (`session && !session.te
   type; same-connection cross-project references are allowed. The lazy-loading
   `ChatPageLoadingFallback` also needs the session connection scope so its enabled
   composer and first-message preview resolve the same references as `ChatPage`.
-- `readChatMentionParts(value, sessions)` in `src/lib/chat/chat-mentions.ts`
+- `readChatMentionParts(value, sessions)` in `shared/chat/chat-mentions.ts`
   projects completed file/session references and text in source order, with
   UTF-16 offsets, for sent/history rendering, search and upload cleanup.
 - The composer uses `readChatMentionDraft` to collect completed references into

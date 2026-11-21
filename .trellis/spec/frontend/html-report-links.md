@@ -52,9 +52,9 @@ see [Git Workspace Tab](./git-workspace.md). WebUI has no Git UI or routes.
   and optional `lineRange`, and Git; `selectFile(id, null)`
   still selects chat. Files have `{ path, content, html?: string | null }`.
 
-Owners: `src/lib/chat/chat-markdown-links.ts`, `src/lib/api/file-links.ts`,
-`src-tauri/src/runtime/file_links.rs`, `src/lib/project-workspace.ts`,
-`src/components/app/project-workspace-*.tsx`, `src/components/project-viewer.tsx`.
+Owners: `shared/chat/chat-markdown-links.ts`, `web/lib/api/file-links.ts`,
+`crates/pilo-runtime/src/file_links.rs`, `shared/project-workspace.ts`,
+`src/components/app/project-workspace-*.tsx`, `web/components/project-viewer.tsx`.
 
 ## 3. Contracts
 

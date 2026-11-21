@@ -1,10 +1,12 @@
 # Desktop Git Workspace Tab
 
+> 状态：React 版 Git 标签随 Tauri 前端一起删除（`src/components/git-*` 等 UI 路径只在 git 历史中）。后端 `crates/pilo-runtime/src/git.rs` 与本文的读取契约保留，作为 nsh 工作区（M5）的实现依据。
+
 ## 1. Scope / Trigger
 
 Git is a desktop-only, project-scoped, read-only workspace tab beside chat and file tabs. WebUI intentionally has no Git entry, tab, client adapter or HTTP route. The old right sidebar and its Files/Agents/Preview frontend pages are removed; independent backend APIs remain. No staging, commit, discard, branch management, history or remote synchronization UI.
 
-Owners: `src/lib/project-workspace.ts`, `src/components/app/project-workspace-{context,tabs,panel}.tsx`, `src/components/chat/chat-session-header.tsx`, `src/components/git-workspace.tsx`, `src/components/git-diff-viewer.tsx`, `src/components/git-workspace-skeleton.tsx`, `src/lib/api/git.ts`, `src-tauri/src/runtime/{git.rs,commands/projects.rs}`.
+Owners: `shared/project-workspace.ts`, `src/components/app/project-workspace-{context,tabs,panel}.tsx`, `web/components/chat/chat-session-header.tsx`, `src/components/git-workspace.tsx`, `src/components/git-diff-viewer.tsx`, `src/components/git-workspace-skeleton.tsx`, `src/lib/api/git.ts`, `crates/pilo-runtime/src/{git.rs,commands/projects.rs}`.
 
 ## 2. Signatures
 

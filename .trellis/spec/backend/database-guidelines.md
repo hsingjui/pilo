@@ -14,16 +14,14 @@
   `HostPaths::new(data_dir, resource_dir)`; runtime path code must not resolve
   paths through `AppHandle`.
 - Opened through `storage::open(&paths)` (or `open_with_paths(&paths)`) in
-  `src-tauri/src/runtime/storage/schema.rs`. Shell-bound adapters obtain the
-  managed paths through `desktop_paths::from_app(&app)`.
-- `pnpm tauri dev` (also used by `pnpm dev`) automatically merges
-  `src-tauri/tauri.dev.conf.json` through `scripts/tauri.mjs`. Development uses
-  `app.hsingjui.pilo.dev`; release retains `app.hsingjui.pilo`. Keep their app
-  data, logs and WebView storage separate: a development schema migration can
+  `crates/pilo-runtime/src/storage/schema.rs`. The shell computes the data
+  directory and passes it in `HostPaths` (`desktop/src/pilo/mod.rs`, `Pilo::new`).
+- Debug desktop builds use the `app.hsingjui.pilo.dev` data directory; release
+  builds use `app.hsingjui.pilo` (`data_identifier` in `desktop/src/pilo/shell.rs`).
+  Keep their app data and logs separate: a development schema migration can
   make the shared database incompatible with an older installed release.
-  Direct `pnpm exec tauri dev` / `cargo tauri dev` bypass the wrapper and must
-  explicitly pass `--config src-tauri/tauri.dev.conf.json`. Pi JSONL remains
-  shared; never copy or delete the release database to initialize dev.
+  Pi JSONL remains shared; never copy or delete the release database to
+  initialize dev.
 - The Pi JSONL files are the single source of truth; SQLite only indexes/caches
   (`sessions`, `project_model_cache`, `session_ui_state`, …). Never copy full
   conversation data into the DB.
@@ -552,6 +550,6 @@ channel, with authenticated snapshot reads for recovery.
 
 ## Testing
 
-Storage unit tests live in `src-tauri/src/runtime/storage.rs` under `#[cfg(test)]`
+Storage unit tests live in `crates/pilo-runtime/src/storage.rs` under `#[cfg(test)]`
 and use `SqliteConnection::open_in_memory()`. Add an in-memory test for every
 new storage function.

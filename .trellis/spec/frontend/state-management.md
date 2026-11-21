@@ -8,12 +8,12 @@
 
 | Kind                   | Where                                                            | Mechanism                                                               |
 | ---------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| App-global prefs/theme | `src/lib/preferences-provider.tsx`, `src/lib/theme-provider.tsx` | React Context + `useState`, exposed via `usePreferences()` / theme hook |
-| App-global locale      | `src/i18n/`                                                      | i18next instance + `useTranslation()`; bootstrap before React renders   |
-| App shell state        | `src/App.tsx`                                                    | `useState` + orchestration hooks in `src/components/app/`               |
+| App-global prefs/theme | `web/lib/preferences-provider.tsx`, `web/lib/theme-provider.tsx` | React Context + `useState`, exposed via `usePreferences()` / theme hook |
+| App-global locale      | `shared/i18n/`                                                      | i18next instance + `useTranslation()`; bootstrap before React renders   |
+| App shell state        | `src/App.tsx`                                                    | `useState` + orchestration hooks in `web/components/app/`               |
 | Feature state          | feature components                                               | `useState` / `useReducer`                                               |
-| Hot runtime state      | `src/components/chat/chat-conversation-store.ts`                 | external store + `useSyncExternalStore`                                 |
-| Server data            | `src/lib/api/*.ts`                                                   | `invoke`/`listen`, results held in component/feature state              |
+| Hot runtime state      | `web/components/chat/chat-conversation-store.ts`                 | external store + `useSyncExternalStore`                                 |
+| Server data            | `shared/api/*.ts`                                                   | `invoke`/`listen`, results held in component/feature state              |
 
 ## Rules
 
@@ -305,14 +305,14 @@ consumed pending item's ID so the reducer and transport confirm the same message
   `pilo.preferences.v1` is only a startup cache / desktop migration source.
   UI, reading, code and terminal fonts/sizes are independent. Defaults are UI 15px, reading 16px, code 14px and
   terminal 14px; accepted sizes are finite numbers within the ranges in
-  `src/lib/font-settings.ts`.
+  `shared/font-settings.ts`.
 - UI scaling uses a fixed 14px Tailwind `text-sm` baseline, not the configurable
   default size. Reading/code/terminal sizes stay independent of rem geometry.
   Legacy `pageFontSize` / `conversationFontSize` migrate to reading size;
   a missing reading font family falls back to the stored page font family.
 - `resetFontFamilies()` resets only the four families; `resetFontSizes()` resets
   only the four sizes. Neither action changes unrelated preferences.
-- `src/main.tsx` marks the HTML root with `data-remote-webui` before WebUI boot,
+- `web/main.tsx` marks the HTML root with `data-remote-webui` before WebUI boot,
   including pairing, error pages and portaled menus. At widths up to 1023px,
   mobile UI text uses the former default scale (`text-sm` 16px with the normal
   browser root size), without scaling rem geometry. UI/reading fonts use the

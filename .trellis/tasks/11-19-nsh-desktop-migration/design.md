@@ -19,21 +19,24 @@ pilo-desktop（nsh 壳，Rust）        Remote API（Axum，已有）
 
 ## 2. 目录布局
 
+2026-11-21 起（用户确认提前删除 Tauri，发版流程另行建立）：
+
 ```text
 crates/
   pilo-protocol/        不变
   pilo-server/          不变
-src-tauri/              过渡期保留原路径：runtime/ 与 domain/ 去掉 Tauri 依赖后可单独编译；
-                        Tauri 壳、command 胶水、插件接线放在 `tauri` feature 之后
-desktop/                新：nsh 应用
-  nsh.json  theme.json  App.tsx
-  native/               Rust crate（pilo-desktop）：#[native_module("app/native")]，依赖 pilo-runtime
-  app/ chat/ sidebar/ settings/ ui/ lib/      TSX 与 signal 状态
-  tests/                *.test.tsx（nsh test）
-src/                    保留：WebUI 及其用到的共享组件、src/lib 纯逻辑
+  pilo-domain/          原 src-tauri/src/domain
+  pilo-runtime/         原 src-tauri/src/runtime（去掉 commands 与启动胶水）
+desktop/                nsh 应用；本身也是 Rust crate（desktop/Cargo.toml + desktop/src，nsh.json "rust": "."）
+  App.tsx  nsh.json  theme.json
+  src/pilo/             Pilo class 与壳适配（shell / host / encode / objects）
+  app/ chat/ composer/ settings/ state/ ui/ client/   TSX 与 signal 状态
+  tests/                nsh test
+web/                    React WebUI（原 src/ 的 WebUI 部分）
+shared/                 两端共用的纯 TS（原 src/lib 等，@shared/*）
 ```
 
-目录名 `desktop/` 为暂定名。M7 切换发版时把 `src-tauri/src/runtime` 与 `domain` 搬到 `crates/pilo-runtime`，删除 Tauri 壳以及 `src/` 中只被桌面端使用的文件。
+Tauri 壳、Tauri 版 React 桌面前端与 Tauri 发版流水线已删除；第 3 节「不移动文件」的约束随之失效，保留作历史记录。
 
 ## 3. Rust 运行时抽离
 

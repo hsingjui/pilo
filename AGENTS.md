@@ -15,10 +15,7 @@ Pilo 不重新实现 Agent 能力，而是作为 Pi 的桌面入口。
 
 ## Environment
 
-- 开发环境：WSL (Debian)
-- 运行目标：Windows Desktop
-- WSL 仅用于代码开发、构建检查和静态验证。
-- `pnpm tauri dev`、桌面窗口验证、安装包验证必须在 Windows 侧执行。
+- 当前在 macOS 上开发和验证桌面端；Windows / Linux 桌面、WSL 与打包验证延后（见迁移规则）。
 
 安装依赖前设置代理：
 
@@ -29,26 +26,37 @@ export HTTPS_PROXY=http://127.0.0.1:7890
 
 ## 迁移过渡期
 
-上述 WSL/Windows 环境说明针对现有 Tauri 壳。`desktop/` 是迁移应用目录：视图在 `desktop/app/`，基础组件在 `desktop/ui/`。
+Tauri 壳已移除，桌面端只剩 nsh 版本。平台范围、两端修改归属与逐功能测试提交要求，统一见 [nsh 迁移协作规则](.trellis/spec/desktop/quality-guidelines.md#迁移协作规则)；完整入口为 [nsh 规范](.trellis/spec/desktop/index.md)和[功能对齐清单](.trellis/tasks/11-19-nsh-desktop-migration/feature-parity.md)。
 
-当前发版与平台范围、两套 UI 的修改归属、运行时抽离及逐功能测试提交要求，统一见 [nsh 迁移协作规则](.trellis/spec/desktop/quality-guidelines.md#迁移协作规则)；桌面验证命令见同页[验证命令](.trellis/spec/desktop/quality-guidelines.md#验证命令)。完整入口为 [nsh 规范](.trellis/spec/desktop/index.md)和[功能对齐清单](.trellis/tasks/11-19-nsh-desktop-migration/feature-parity.md)。
+## Directory Layout
+
+```text
+crates/pilo-protocol/   Pilo ↔ pilo-server 的 protobuf 线协议
+crates/pilo-server/     运行在代码所在环境的 server 与 Pi 扩展
+crates/pilo-domain/     纯数据模型与校验
+crates/pilo-runtime/    Host 运行时：连接、项目、会话、Pi RPC、Remote WebUI
+desktop/                nsh 桌面应用（TSX），本身也是 Rust crate（desktop/src，"rust": "."）
+web/                    React WebUI（浏览器 / 移动端）
+shared/                 两端共用的纯 TypeScript（`@shared/*`）
+resources/              pilo-server 各平台产物（不入库）
+```
+
+依赖方向：`desktop`、`web` → `shared`；`desktop/src` → `pilo-runtime` → `pilo-domain` / `pilo-server` → `pilo-protocol`。`shared/` 只写纯 TypeScript（`tsc -p shared` 与 oxlint 把关），`web` 与 `desktop` 互不导入。
 
 ## Tech Stack
 
 ### Desktop
 
-- Tauri 2
+- nsh 0.6.1（TSX 界面 + Rust 原生模块）
 - Rust 2024
 
-### Frontend
+### WebUI
 
 - React 19
 - TypeScript
 - Vite
 - Tailwind CSS
 - shadcn/ui 风格组件
-- TanStack Query
-- Zustand
 - oxfmt
 - oxlint
 
@@ -67,17 +75,13 @@ export HTTPS_PROXY=http://127.0.0.1:7890
 ## Architecture
 
 ```text
-React UI
-    ↓
-Tauri Commands / Events
-    ↓
-Pilo Runtime
-    ↓
-Connection Layer
-    ↓
-Pi RPC
-    ↓
-pi --mode rpc
+nsh desktop (desktop/)            React WebUI (web/)
+    ↓ app/native (desktop/src)        ↓ HTTP / WebSocket
+            Pilo Runtime (crates/pilo-runtime)
+                    ↓
+            Connection Layer
+                    ↓
+         pilo-server → Pi RPC → pi --mode rpc
 ```
 
 ## Core Concepts
@@ -132,38 +136,34 @@ Pi 应该运行在代码所在环境。
 
 ## UI
 
-Pilo 有两套 UI 入口，共享同一套组件：
+Pilo 有两套 UI 入口，各自实现界面、共用 `shared/` 里的逻辑：
 
-- **桌面端** — Tauri 窗口。
-- **WebUI** — `src/remote/`，浏览器访问的远程界面（Local/WSL/SSH 均可通过它接入）。
+- **桌面端** — nsh 应用，`desktop/`。
+- **WebUI** — React，`web/`（入口 `web/remote/`），浏览器访问的远程界面。
 
-修改 UI 时必须同时覆盖两端，并考虑移动端适配：
+用户可见的功能改动默认两端都要做；与界面无关的逻辑（类型、状态推导、协议解析、格式化）放进 `shared/`，两端直接导入，不要各写一份。
 
-- 一个 UI 改动默认意味着桌面端和 WebUI 都要生效。能复用就复用共享组件（如 `ChatComposer`），不要为 WebUI 复制一份。
-- 共享组件只在确有设备差异时才做响应式分支，例如触屏用点按（`Popover`）替代 hover（`HoverCard`）；有差异时用 props 或 class 表达，而不是新建组件。
-- 移动端适配是必需项，不是可选优化：窄屏布局、足够大的触控目标、安全区（safe-area）、软键盘 inset、viewport 行为。
-- 验证要覆盖两端：桌面端按 `## Validation` 的流程，WebUI 可直接在浏览器验证。如果一个改动只在一端可见，说明漏了另一端。
+WebUI 的移动端适配是必需项：窄屏布局、足够大的触控目标、安全区（safe-area）、软键盘 inset、viewport 行为。
 
 ## Development Guidelines
 
 - 保持架构简单，避免过早抽象。
-- UI 和 Runtime 分离。
-- 不在 React 中直接调用系统能力。
-- 不在 Tauri Command 中堆积业务逻辑。
+- UI 和 Runtime 分离：业务逻辑放 `crates/pilo-runtime`，`desktop/src` 只做参数转换和壳能力（路径、事件、资源、文件选择）。
 - 新功能优先考虑是否适用于 Local/WSL/SSH 三种环境。
 - 不复制 Pi 已有能力。
 
 ## Validation
 
-修改前端：
+修改 WebUI / shared：
 
 ```bash
 pnpm format
 pnpm check
 pnpm build
+pnpm test
 ```
 
-其中 `pnpm format` 使用 oxfmt，`pnpm check` 执行 oxfmt 格式检查和 oxlint。
+`pnpm check` 执行 oxfmt 格式检查和 oxlint；`pnpm build` 先跑 `tsc -p shared`（无 DOM 的纯 TS 检查）。
 
 修改 Rust：
 
@@ -173,15 +173,17 @@ cargo check
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-完整桌面验证（Windows）：
+修改桌面端（含 `desktop/src` 和被它用到的 `shared/`）：
 
 ```bash
-pnpm tauri dev
+cd desktop
+nsh check
+nsh test
 ```
 
 ## Release
 
-发布新版本（bump `Cargo.toml` 的 `[workspace.package].version`、打 tag、推送触发 release workflow）前，必须先向用户确认目标版本号，得到确认后才能执行。`Cargo.lock` 中 workspace 包的版本需同步更新；tag 版本必须与 `Cargo.toml` 一致（release preflight 会校验）。
+nsh 版发版流程尚未建立（原 Tauri release workflow 已删除）。发布新版本前，必须先向用户确认目标版本号；`Cargo.toml` 的 `[workspace.package].version`、`Cargo.lock` 中 workspace 包版本与 tag 必须一致。
 
 <!-- TRELLIS:START -->
 

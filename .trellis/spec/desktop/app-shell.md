@@ -40,7 +40,7 @@
 `followOpenSession` 按下面的顺序决定 `ChatTranscriptStore.open({ sessionKey, projectId, sessionPath }, connected)` 的目标，这是与聊天部分的契约，发起聊天时必须使用同一个 key：
 
 1. 应用状态 `chatSessions` 中有同一项目、同一会话路径的聊天：用它自己的 `sessionKey`。
-2. 否则用会话索引条目的 `chatSessionKey(projectId, piSessionId)`（`src/lib/api/chat-session-key.ts`）。
+2. 否则用会话索引条目的 `chatSessionKey(projectId, piSessionId)`（`shared/api/chat-session-key.ts`）。
 3. 没有选中会话，或索引里没有该会话：`close()`。
 
 目标不变时不重新打开。导航里已打开但还没有目标的会话（索引未读到或已不在索引）显示空工作区。测试见 `desktop/tests/open-chat.test.ts`。
@@ -80,7 +80,7 @@ store.acknowledgeOpenSession();
 
 - 设置键与默认值沿用 WebView（`pilo.collapsedSections` 等；`env:` 分组默认展开，`ws:` 默认折叠），清单见[功能对齐清单](../../tasks/11-19-nsh-desktop-migration/feature-parity.md#webview-localstorage-清单)。
 - `AppShell` 使用 `ResizablePanelGroup` 原生拖动侧栏，默认 292pt，范围 240–480pt。拖动结束由 `SidebarSettingsStore` 将宽度存入 nsh Storage 的 `pilo.sidebarWidth`；折叠按钮只隐藏侧栏，不改保存的宽度。
-- 项目视图：按连接分组，本地在前；展开项目时读取会话，运行中的在前，再取最近五条，其余由「查看全部」原地展开。排序复用 `src/components/sidebar/session-list.ts` 的 `summarizeProjectSessions`。
+- 项目视图：按连接分组，本地在前；展开项目时读取会话，运行中的在前，再取最近五条，其余由「查看全部」原地展开。排序复用 `shared/sidebar/session-list.ts` 的 `summarizeProjectSessions`。
 - 最近视图：所有项目的会话合并，运行中的在前，再取最近 50 条，复用 `sortSidebarSessionsActiveFirst`。
 - 侧栏通过 `isDefaultWorkspace` 识别内置工作区，按当前界面语言显示 `sidebar.defaultWorkspace`；普通项目沿用已存名称，不写回运行时。
 - 底栏与 Tauri `sidebar-footer.tsx` 一致：左侧设置，右侧依次是 Remote 手机按钮和主题切换。Remote 不在设置弹窗里；按钮由 `desktop/settings/remote-dialog.tsx` 的 `createRemoteStatus` 每 3 秒轮询 Host，运行时高亮；弹窗打开时暂停轮询，关闭后立即刷新。弹窗内容是 `RemotePane`，反馈走 `AppToaster` toast。

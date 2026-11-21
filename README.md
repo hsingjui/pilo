@@ -14,7 +14,7 @@
   <a href="https://github.com/hsingjui/pilo/actions/workflows/ci.yml"><img src="https://github.com/hsingjui/pilo/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <img src="https://img.shields.io/badge/Desktop-Windows%20x64%20%7C%20macOS%20arm64-4B5563?style=flat-square" alt="Desktop releases: Windows x64 and macOS arm64">
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2024-3776AB?style=flat-square" alt="Rust 2024 edition"></a>
-  <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Tauri-2-3776AB?style=flat-square" alt="Tauri 2"></a>
+  <a href="https://github.com/longbridge/nsh"><img src="https://img.shields.io/badge/nsh-0.6-3776AB?style=flat-square" alt="nsh 0.6"></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-3776AB?style=flat-square" alt="React 19"></a>
 </p>
 
@@ -38,7 +38,7 @@ Pilo consists of a desktop app and a `pilo-server` process that runs in the sele
 ```text
 ┌──────────────────────────────┐
 │        Pilo Desktop          │
-│       React + Tauri 2        │
+│   nsh (TSX + Rust runtime)   │
 └──────────────┬───────────────┘
                │ pilo-protocol / stdio
                ▼
@@ -59,40 +59,30 @@ Pilo is currently built from source. Development requires Node.js 22, pnpm (CI u
 
 Pilo discovers `pi` from `PATH` by default. Each connection can also be configured with a custom Pi executable path in Settings.
 
-### Windows
-
-```powershell
-pnpm install
-pnpm dev
-```
-
-### macOS / Linux
+The desktop app is built with [nsh](https://github.com/longbridge/nsh) (install the `nsh` 0.6.1 CLI). Only macOS is currently developed and verified.
 
 ```bash
 pnpm install
-pnpm dev
+pnpm dev          # keeps dist/ (the WebUI the Host serves) rebuilt, and starts Vite
+cd desktop
+nsh dev           # the desktop app with hot reload
 ```
 
-`pnpm dev` (or `pnpm tauri dev`) starts development without building WSL/SSH runtimes. Desktop frontend HMR, WebUI asset watching and Tauri's normal Rust rebuild behavior remain enabled; there is no additional server/extension build watcher.
+Local uses `target/debug/pilo-server` (`cargo build -p pilo-server`). For WSL/SSH, build a development server for the remote target, then start or restart Pilo:
 
-Local uses the server embedded in the desktop build. For WSL/SSH, build a development server manually, then start or restart Pilo:
-
-```powershell
+```bash
 pnpm server:build
-pnpm dev
 ```
 
 On Windows, run these commands in the Windows checkout. The manual build uses WSL (Rust and Bash must be installed there), with its native Linux target by default. Set `PILO_DEV_WSL_DISTRO` before building to select a distro, for example `$env:PILO_DEV_WSL_DISTRO = "Debian"`. On macOS/Linux, it builds the native server target. To build another remote target, use `pnpm server:build linux-aarch64`; its Rust target and linker must be installed in the build environment.
 
 The dev build defaults to one Cargo job and no debug symbols to reduce WSL memory use. Override `CARGO_BUILD_JOBS` / `CARGO_PROFILE_DEV_DEBUG` explicitly if needed. Production build settings are unchanged.
 
-Development binaries stay in Cargo’s standard output directory, for example `target/x86_64-unknown-linux-gnu/debug/pilo-server`, without a second staging copy. Release resources in `src-tauri/resources/` remain unchanged. On startup/connection, Pilo deploys the matching server into its dev runtime directory; the server writes its embedded plugins into `extensions/`. Rebuild after plugin changes and restart Pilo/Pi to load them. Runtime/extension caches use `pilo-dev/server` instead of `pilo/server` (WSL/SSH: `~/.cache/pilo-dev/server`). Pi settings and session files remain shared.
-
-`scripts/sync-to-windows.sh` syncs source only, not server build artifacts. Run the manual dev build in the Windows checkout after syncing changes.
+Development binaries stay in Cargo’s standard output directory, for example `target/x86_64-unknown-linux-gnu/debug/pilo-server`, without a second staging copy. Release resources in `resources/` remain unchanged. On startup/connection, Pilo deploys the matching server into its dev runtime directory; the server writes its embedded plugins into `extensions/`. Rebuild after plugin changes and restart Pilo/Pi to load them. Runtime/extension caches use `pilo-dev/server` instead of `pilo/server` (WSL/SSH: `~/.cache/pilo-dev/server`). Pi settings and session files remain shared.
 
 Release packaging stages the complete runtime set automatically. To stage a release runtime manually, use `pnpm server:build:win` on Windows or `bash scripts/build-pilo-server.sh` on macOS/Linux.
 
-Always build release binaries with `pnpm tauri build` (add `--no-bundle` to get only `target/release/pilo.exe`). It enables the `tauri/custom-protocol` feature that embeds `dist/`; a plain `cargo build --release` produces a dev binary that loads `devUrl` and shows “connection refused” outside `pnpm tauri dev`, so the build script rejects it. A local release build only requires the runtime for the host target; the release workflow sets `PILO_REQUIRE_FULL_SERVER_BUNDLE=1` to enforce the complete set.
+The nsh desktop release pipeline is not set up yet.
 
 Supported server runtime targets are Linux x64/arm64, Windows x64/arm64, and macOS x64/arm64. An explicit runtime can be built with:
 
@@ -102,7 +92,7 @@ bash scripts/build-pilo-server.sh <target>
 
 ## Quick Start
 
-1. Start Pilo with `pnpm tauri dev`.
+1. Start Pilo with `nsh dev` in `desktop/`.
 2. Use the default Local connection, or add a WSL or SSH connection.
 3. If Pi is not available as `pi` on `PATH`, set its executable path for that connection in Settings and run the Pi probe.
 4. Add a project directory and open a session.
@@ -143,14 +133,12 @@ commit runs `pnpm check` (frontend formatting and lint), then
 files are not auto-formatted. TypeScript types, Rust workspace checks, Clippy,
 full frontend builds and tests are checked outside this hook. CI still checks
 TypeScript types through `pnpm build`.
-Install the project's Node.js dependencies, Rust and the platform-specific
-Tauri build dependencies first.
+Install the project's Node.js dependencies, Rust and the `nsh` CLI first.
 
 The hook uses Git for Windows' bundled `sh` on Windows and the system `sh`
 on macOS/Linux. Ensure `pnpm` and `cargo` are on the committing process's `PATH`.
 Install Rust check components with `rustup component add rustfmt clippy`.
-Windows needs the MSVC build tools and WebView2; macOS needs Xcode Command Line
-Tools; Linux needs the Tauri system libraries. Each checkout needs its own hook installation,
+macOS needs Xcode Command Line Tools. Each checkout needs its own hook installation,
 including separate Windows and WSL checkouts. Checks target the current host;
 a WSL pass does not validate Windows or macOS code.
 
@@ -162,48 +150,26 @@ a WSL pass does not validate Windows or macOS code.
 | `pnpm test`                                                            | Run Node unit and integration tests                               |
 | `pnpm test:unit`                                                       | Run focused unit and static-rendering tests                       |
 | `pnpm test:integration`                                                | Run CLI/process and Pi extension integration tests (Linux/WSL)    |
-| `pnpm test:packaging`                                                  | Run AppImage orchestration tests (Linux/WSL)                      |
 | `cargo fmt --all --check`                                              | Check Rust formatting                                             |
 | `cargo check --workspace --all-targets --all-features`                 | Check the Rust workspace                                          |
 | `cargo test --workspace --all-features`                                | Run Rust workspace tests                                          |
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Run Rust lints                                                    |
 | `pnpm server:verify`                                                   | Verify the complete six-target `pilo-server` release resource set |
+| `cd desktop && nsh check` / `nsh test`                                 | Check / test the nsh desktop app and its Rust crate               |
 
 Test layout, single-file commands and browser regression pages are documented
 in [tests/README.md](tests/README.md). `pnpm test` does not include browser,
-packaging or Rust tests.
-
-### Desktop WebDriver debugging
-
-Start the desktop development build with `pnpm dev`, then use another terminal
-on the same machine:
-
-```bash
-pnpm debug:desktop                   # Check the embedded WebDriver server
-pnpm debug:desktop windows           # List window labels
-pnpm debug:desktop screenshot        # Save a PNG under logs/ (gitignored)
-pnpm debug:desktop source            # Print the current DOM
-pnpm debug:desktop eval 'return document.activeElement.outerHTML'
-pnpm debug:desktop click 'button'
-pnpm debug:desktop type '[contenteditable="true"]' 'Hello'
-pnpm debug:desktop --window session-123 source
-```
-
-The zero-dependency script connects directly to the existing embedded WebDriver
-at `127.0.0.1:4445`. Use `--port` or `TAURI_WEBDRIVER_PORT` to match a custom
-app port. The default window is `main`; `--help` lists all commands. Each command
-releases its automation session without closing Pilo. Click, typing, and scripts
-operate on real application state; typing appends rather than clearing the field.
-This is desktop WebView debugging, not WebUI browser testing. Release builds do
-not enable the WebDriver plugin. For `pnpm tauri dev`, explicitly add
-`--features webdriver` (`pnpm dev` already does this).
+desktop or Rust tests.
 
 ## Repository layout
 
 | Path                    | Contents                                                                                                        |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `src/`                  | React UI: chat, sessions, sidebar, settings, terminals, and project interactions                                |
-| `src-tauri/`            | Tauri app: commands, runtime managers, connection/project state, and SQLite indexes                             |
+| `desktop/`              | nsh desktop app (TSX) and its Rust crate (`desktop/src`)                                                        |
+| `web/`                  | React WebUI served by the desktop Host to browsers and phones                                                   |
+| `shared/`               | Plain TypeScript shared by the desktop and the WebUI                                                            |
+| `crates/pilo-runtime/`  | Host runtime: connections, projects, sessions, Pi RPC, Remote WebUI, SQLite indexes                             |
+| `crates/pilo-domain/`   | Data models shared by the runtime and its shells                                                                |
 | `crates/pilo-protocol/` | Wire protocol shared by the desktop app and `pilo-server`                                                       |
 | `crates/pilo-server/`   | Pi streams, terminals, filesystem operations, preview ports, and session indexing inside the target environment |
 | `scripts/`              | Runtime build and verification scripts                                                                          |

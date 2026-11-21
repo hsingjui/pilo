@@ -20,7 +20,7 @@ pub fn connection_naming_model_get(
 
 - `storage::open(&app)?` already returns `Result<_, String>`, so `?` converts cleanly.
 - Internal helpers may use native result types (`io::Result`, `rusqlite::Result`)
-  and map at the boundary. `src-tauri` depends on `thiserror` but the raw-string
+  and map at the boundary. `pilo-runtime` depends on `thiserror` but the raw-string
   boundary convention is what the code actually uses — do not introduce custom
   error enums just for a command.
 - Prefix errors with context so the frontend can classify them. Use `format!` /
@@ -42,7 +42,7 @@ if connection_id.is_empty() {
 ## Cross-Boundary Contract
 
 The frontend classifies raw error strings into a typed `AppError` in
-`src/lib/app-error.ts` (`toAppError`). It matches on substrings, so **keep error
+`shared/app-error.ts` (`toAppError`). It matches on substrings, so **keep error
 text stable and descriptive**. Signals the frontend recognizes:
 
 `pi executable` / `not found in path`, `permission denied` + `ssh`,

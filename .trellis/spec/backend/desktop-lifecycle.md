@@ -1,5 +1,7 @@
 # Desktop Startup and Tray Lifecycle
 
+> 状态：Tauri 壳已删除。本文中 Tauri 插件、`src-tauri` 文件与窗口 API 的描述只是历史行为基线；nsh 版实现以 `desktop/` 代码和 [nsh 桌面规范](../desktop/index.md) 为准，对齐后再回写本文。
+
 ## 1. Scope / Trigger
 
 Desktop-only login startup, tray menus/icons, global window activation,

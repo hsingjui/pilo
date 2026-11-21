@@ -43,7 +43,7 @@ or macOS code paths.
   `AppHandle` for storage/app-dir access.
 - Process/IO work is `tokio`-based (`fs`, `io-util`, `process`, `sync`, `time`).
 - Serde types exposed to the frontend use `#[serde(rename_all = "camelCase")]`
-  (see `src-tauri/src/runtime/session_history/types.rs`). Wire fields that must
+  (see `crates/pilo-runtime/src/session_history/types.rs`). Wire fields that must
   keep their name use an explicit `#[serde(rename = "...")]`.
 - Keep `domain/` types plain data; no `Mutex`, no side effects.
 
@@ -125,7 +125,7 @@ Correct: select a temporary read-only viewer root and reuse server validation.
 
 - macOS/Windows-only code is gated with `#[cfg(target_os = ...)]` and
   platform dependencies live under `[target.'cfg(...)'.dependencies]` in
-  `src-tauri/Cargo.toml`.
+  each crate's `Cargo.toml`.
 - `pnpm tauri dev` and desktop-window/installer verification must run on Windows.
   WSL is for code, `cargo check`, and static validation only.
 
@@ -278,7 +278,7 @@ is implied by syntax/lint checks.
 #### 7. Wrong vs Correct
 
 Wrong: dev startup automatically builds remote servers, or dev binaries overwrite
-`src-tauri/resources/`. Correct: explicit dev builds and isolated runtime roots;
+`resources/`. Correct: explicit dev builds and isolated runtime roots;
 startup only deploys an already built server and its embedded plugins.
 
 ### Release server runtime set cache

@@ -19,8 +19,7 @@
 		"hooks:install": "git config --local core.hooksPath .githooks",
 		"test": "pnpm test:unit && pnpm test:integration",
 		"test:unit": "node --experimental-strip-types --import ./tests/helpers/tsx-loader.mjs --test \"tests/unit/**/*.test.ts\" \"tests/unit/**/*.test.mjs\"",
-		"test:integration": "node --experimental-strip-types --import ./tests/helpers/tsx-loader.mjs --test \"tests/integration/**/*.test.ts\" \"tests/integration/**/*.test.mjs\"",
-		"test:packaging": "python3 tests/packaging/test-linux-appimage.py"
+		"test:integration": "node --experimental-strip-types --import ./tests/helpers/tsx-loader.mjs --test \"tests/integration/**/*.test.ts\" \"tests/integration/**/*.test.mjs\""
 	},
 	"dependencies": {
 		"@dnd-kit/core": "^6.3.1",

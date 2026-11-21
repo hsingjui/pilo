@@ -13,7 +13,7 @@ Apply code-spec depth when a change touches:
 - The `RuntimeEventBus` broadcast/replay contract (`runtime/events.rs`).
 - The sequence-pinned chat transcript snapshot and its turn projection.
 - `remote_host_config` / `remote_pairing` / `remote_devices` SQLite tables.
-- The transport-neutral `PiloClient` boundary (`src/lib/api/pilo-client.ts` + adapters).
+- The transport-neutral `PiloClient` boundary (`shared/api/pilo-client.ts` + adapters).
 
 The Remote adapter is a **transport adapter into the same Host** — it must not own
 session state, and it must not call Tauri-specific types from Application code.
@@ -401,7 +401,7 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   legacy `name` values stay in storage but are neither edited nor shown. The
   legacy command edits only the `public` entry.
   The saved-address editor and WebUI pairing choices share
-  `sortRemoteAddresses` from `src/lib/remote-addresses.ts`: RFC1918 IPv4 origins
+  `sortRemoteAddresses` from `shared/remote-addresses.ts`: RFC1918 IPv4 origins
   appear before public/custom origins, preserving order within each group.
   This is display ordering, not default-entry selection or a persistence migration.
   Sort saved editor rows, not the live draft, so typing does not move the focused
@@ -503,7 +503,7 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   migration and restart; the pre-existing port-change clearing policy is separate.
 - **Device identity**: `deviceName` is an optional, client-supplied label. The
   Remote WebUI sends `describeDevice(navigator.userAgent)`
-  (`src/lib/device-name.ts`) — `机型/系统 · 浏览器` — because a raw UA is
+  (`web/lib/device-name.ts`) — `机型/系统 · 浏览器` — because a raw UA is
   unreadable in the device list. New labels append the pairing address name/URL,
   using bounded portions (40 device-name + 36 address characters). `pair_ip` is the pairing request's peer IP from
   `ConnectInfo<SocketAddr>`, not client-supplied.
@@ -867,7 +867,7 @@ Do not return a receipt based on only the reusable secret + address ID.
 ## Design Decisions
 
 - **No daemon / no new crate (Phase 1).** Axum + Tower-HTTP live inside
-  `src-tauri`; Application logic is `runtime/chat_service.rs`, not a God service.
+  `crates/pilo-runtime`; Application logic is `runtime/chat_service.rs`, not a God service.
 - **Manager owns the listener.** `RemoteServerManager` is the single place that
   starts/stops the listener, persists `enabled`, and restores on app start.
   Remote OFF means the listener does not exist.

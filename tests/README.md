@@ -9,8 +9,7 @@ tests/
   unit/         # focused logic, state/store and React static-rendering tests
   integration/  # CLI/process and Pi extension integration tests
   browser/      # real-browser HTML regression pages
-  packaging/    # Linux AppImage packaging/orchestration tests
-  helpers/      # Node TSX transpilation and @/ alias resolution
+  helpers/      # Node TSX transpilation and @/, @shared/ alias resolution
 ```
 
 ## Node suites
@@ -39,10 +38,10 @@ stubs; they do not require a running desktop app or real SSH server. The SSH
 workspace test uses a POSIX shell and filesystem permissions, so run the full
 integration suite on Linux/WSL. It reads the production Server extension and
 simulates both Linux and macOS, redirecting all mux filesystem operations into
-private fixture directories (never the real macOS `/tmp`). Run desktop
-application verification on Windows separately.
+private fixture directories (never the real macOS `/tmp`). The nsh desktop
+has its own suite: `cd desktop && nsh test`.
 
-`tsx-loader.mjs` resolves `@/` against `src/` and transpiles TSX with the already
+`tsx-loader.mjs` resolves `@/` against `web/` and `@shared/` against `shared/`, and transpiles TSX with the already
 installed TypeScript dependency. Node strips ordinary TypeScript types. This
 runner does not replace TypeScript type-checking.
 
@@ -55,11 +54,7 @@ pnpm exec vite --host 127.0.0.1
 Open one of these paths at `http://127.0.0.1:1420`:
 
 - `/tests/browser/cache-keep-alive.html`
-- `/tests/browser/chat-run-config-cache.html` (project Scope default, manual-choice precedence, picker reload and live temporary-session configuration; check desktop and touch/mobile)
 - `/tests/browser/chat-markdown-images.html`
-- `/tests/browser/chat-markdown-links.html` (mocked Local/WSL/SSH opening IPC, remote text tabs/errors and WebUI native-opening guards)
-- `/tests/browser/project-workspace-tabs.html` (shared header file tabs, Markdown/code, retained chat state, project isolation, keyboard and narrow layouts)
-- `/tests/browser/sidebar-header-alignment.html` (mocked macOS header alignment, both built-in themes, UI font sizes 12–18, unclipped focus/hit targets, collapse/expand; also open `?web=1` for WebUI and check a 320px viewport)
 - `/tests/browser/chat-mentions.html`
 - `/tests/browser/chat-scroll-following.html`
 - `/tests/browser/chat-streaming-status.html`
@@ -71,20 +66,14 @@ Open one of these paths at `http://127.0.0.1:1420`:
 Each page reports results and sets `document.body.dataset.testStatus` to
 `passed` or `failed`. These pages are not executed by `pnpm test`. Check both
 desktop and narrow/mobile layouts where applicable. Selection behavior needs
-Chromium and WebKit coverage; browser results do not replace Windows Tauri
-WebView verification.
+Chromium and WebKit coverage.
 
-## Packaging and Rust
+## Rust
 
 ```bash
-# Linux/WSL: fixture-based AppImage orchestration tests, not a real GUI/package run
-pnpm test:packaging
-# Equivalent direct command
-python3 tests/packaging/test-linux-appimage.py
-
-# Rust workspace tests (requires the platform's Tauri system dependencies)
 cargo test --workspace --all-features
+cargo test --manifest-path desktop/Cargo.toml
 ```
 
-`pnpm test` does not include browser, packaging or Rust tests. `pnpm check`
+`pnpm test` does not include browser, desktop or Rust tests. `pnpm check`
 checks formatting/lint only; `pnpm build` type-checks and builds the frontend.

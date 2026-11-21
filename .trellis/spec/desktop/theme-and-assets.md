@@ -15,8 +15,8 @@ pnpm desktop:generate:icons --check
 
 | 输入                                                       | 生成输出                                                                        |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `src/styles/lody-theme.css`、`src/styles/claude-theme.css` | `desktop/theme.json`、`desktop/claude-theme.json`、`src/lib/theme-web-map.json` |
-| `src/` 内具名 lucide-react 图标导入及依赖中的图标数据      | `desktop/app/lucide-icons.json`                                                 |
+| `web/styles/lody-theme.css`、`web/styles/claude-theme.css` | `desktop/theme.json`、`desktop/claude-theme.json`、`shared/theme-web-map.json` |
+| `web/` 内具名 lucide-react 图标导入、`desktop/app/lucide-icon-names.json` 列出的仅桌面图标 | `desktop/app/lucide-icons.json`                                                 |
 
 ## Theme token
 
@@ -24,11 +24,11 @@ pnpm desktop:generate:icons --check
 
 切换族时成对调用 `setTheme({ cssVars: theme.cssVars })` 和 `setStyleTheme(theme.styleVars)`；恢复默认 Lody 时两者均传 null。亮暗取对应 appearance 的值。参考 `desktop/tests/ui-gallery-fixture.tsx`，不要只换颜色漏掉阴影。
 
-生成器解析绝对长度计算；源主题没有通用 radius，组件使用命名 Pilo radius token。自定义主题使用 `src/lib/theme-tokens.ts` 的 catalog、`validateCustomThemeTokens`、`resolveCustomTheme` 共用纯逻辑，不接受任意 CSS 选择器；格式为 theme/light/dark token 表，校验失败不应用。详细类型与限制见 `desktop/README.md`，原生解析回归见 `desktop/tests/custom-theme.test.ts`。nsh 设置页（`desktop/settings/theme-pane.tsx`）只提供明暗模式和内置主题（Lody/Claude），不再提供新建、编辑、删除自定义主题的入口；Host 上已保存的自定义主题仍由 `desktop/app/appearance.ts` 渲染。
+生成器解析绝对长度计算；源主题没有通用 radius，组件使用命名 Pilo radius token。自定义主题使用 `shared/theme-tokens.ts` 的 catalog、`validateCustomThemeTokens`、`resolveCustomTheme` 共用纯逻辑，不接受任意 CSS 选择器；格式为 theme/light/dark token 表，校验失败不应用。详细类型与限制见 `desktop/README.md`，原生解析回归见 `desktop/tests/custom-theme.test.ts`。nsh 设置页（`desktop/settings/theme-pane.tsx`）只提供明暗模式和内置主题（Lody/Claude），不再提供新建、编辑、删除自定义主题的入口；Host 上已保存的自定义主题仍由 `desktop/app/appearance.ts` 渲染。
 
 ## 图标
 
-`desktop/ui/icon.tsx` 的 Icon 用 Canvas/Path2D 缩放生成路径，不在应用运行时引入 lucide-react。生成数据保留原导出名称（含别名）、viewbox size、有序 paths 和 fill 标记；许可证在 `desktop/app/Lucide-LICENSE`。生成器扫描共享 src 的导入，不会因为只在 desktop 写一个新 name 就自动生成。
+`desktop/ui/icon.tsx` 的 Icon 用 Canvas/Path2D 缩放生成路径，不在应用运行时引入 lucide-react。生成数据保留原导出名称（含别名）、viewbox size、有序 paths 和 fill 标记；许可证在 `desktop/app/Lucide-LICENSE`。生成器扫描 `web/` 的导入；只有桌面用到的图标写进 `desktop/app/lucide-icon-names.json` 再重新生成，缺失的名字会让 `nsh check` 报类型错误（`IconName` 来自生成的 JSON）。
 
 ## 字体
 
@@ -40,15 +40,15 @@ Inter、JetBrains Mono 的字体来自根依赖，与 Web 字体对应；具体�
 
 这是 nsh 的渲染行为，不是字体选错或字重解析错误（2026-11-20 确认，nsh 0.6.1）。
 
-- 主因：`nsh-platform-macos-0.6.1/src/text/raster.rs` 的 `paint_into` 写死了 `set_allows_font_smoothing(true)` 和 `set_should_smooth_fonts(true)`，macOS font smoothing 会加粗笔画。Tauri/WebUI 的 `src/index.css` 用了 `-webkit-font-smoothing: antialiased`，等于关闭它。实测开 smoothing 的 400 看起来接近关 smoothing 的 500；nsh 没有开关，App 层改不了。
+- 主因：`nsh-platform-macos-0.6.1/src/text/raster.rs` 的 `paint_into` 写死了 `set_allows_font_smoothing(true)` 和 `set_should_smooth_fonts(true)`，macOS font smoothing 会加粗笔画。Tauri/WebUI 的 `web/index.css` 用了 `-webkit-font-smoothing: antialiased`，等于关闭它。实测开 smoothing 的 400 看起来接近关 smoothing 的 500；nsh 没有开关，App 层改不了。
 - 次因：字体本身缺少某档字重时，CoreText 会就近选字面。nsh 的 `family_font` 用 family + `kCTFontWeightTrait`（AppKit `NSFontWeight*`）解析。例如 `HarmonyOS Sans SC` 只有 Thin/Light/Regular/Medium/Bold/Black，`font-semibold`（600 → `NSFontWeightSemibold`）会拿到 Bold；PingFang SC 有 Semibold，不受影响。`desktop/` 里有大量 `font-medium`/`font-semibold`，两者叠加后更明显。
 - 400/500 解析正确：Regular → Regular，Medium → Medium。
 - 处理方向（未实施）：向 nsh 上游提 issue/PR，增加关闭 font smoothing 的选项；短期可在本仓库用 `[patch.crates-io]` 修补 nsh。不要靠整体降低 `desktop/` 字重来规避，否则会和 WebUI 字重不一致。
 
 ## i18n
 
-`desktop/app/i18n.ts` 复用 `src/i18n/instance.ts` 和 `src/i18n/options.ts`；资源是 `src/i18n/resources/en-US.ts`、`src/i18n/resources/zh-CN.ts`。共享导入边界见[目录与边界](./directory-structure.md#状态和共享代码)。
+`desktop/app/i18n.ts` 复用 `shared/i18n/instance.ts` 和 `shared/i18n/options.ts`；资源是 `shared/i18n/resources/en-US.ts`、`shared/i18n/resources/zh-CN.ts`。共享导入边界见[目录与边界](./directory-structure.md#状态和共享代码)。
 
-启动用 `initializeI18n(storedLocale?)`，切换用 `setAppLocale`，显示用响应式 `t`/`appLocale`。适配同时调用 nsh/i18n 的 setLocale。语言解析由 `src/i18n/locale-types.ts` 负责，不支持的语言回退英语。
+启动用 `initializeI18n(storedLocale?)`，切换用 `setAppLocale`，显示用响应式 `t`/`appLocale`。适配同时调用 nsh/i18n 的 setLocale。语言解析由 `shared/i18n/locale-types.ts` 负责，不支持的语言回退英语。
 
 复数实现不以 `Intl.PluralRules` 为前提：`desktop/tests/i18n.test.ts` 的 without Intl.PluralRules 测试覆盖现有 i18next 路径及 `_one`/`_other`、count 插值的英中文行为。复数测试使用独立测试资源；新增行为的验证遵循[质量与验证](./quality-guidelines.md)。

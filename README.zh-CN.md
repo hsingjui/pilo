@@ -14,7 +14,7 @@
   <a href="https://github.com/hsingjui/pilo/actions/workflows/ci.yml"><img src="https://github.com/hsingjui/pilo/actions/workflows/ci.yml/badge.svg" alt="CI 状态"></a>
   <img src="https://img.shields.io/badge/Desktop-Windows%20x64%20%7C%20macOS%20arm64-4B5563?style=flat-square" alt="桌面发行平台：Windows x64 与 macOS arm64">
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2024-3776AB?style=flat-square" alt="Rust 2024 edition"></a>
-  <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Tauri-2-3776AB?style=flat-square" alt="Tauri 2"></a>
+  <a href="https://github.com/longbridge/nsh"><img src="https://img.shields.io/badge/nsh-0.6-3776AB?style=flat-square" alt="nsh 0.6"></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-3776AB?style=flat-square" alt="React 19"></a>
 </p>
 
@@ -38,7 +38,7 @@ Pilo 由桌面应用和运行在目标 Connection 环境中的 `pilo-server` 组
 ```text
 ┌──────────────────────────────┐
 │        Pilo Desktop          │
-│       React + Tauri 2        │
+│   nsh (TSX + Rust runtime)   │
 └──────────────┬───────────────┘
                │ pilo-protocol / stdio
                ▼
@@ -59,40 +59,30 @@ Pilo 当前以源码构建为主。开发需要 Node.js 22、pnpm（CI 使用 10
 
 Pilo 默认从 `PATH` 自动发现 `pi`。也可以在 Settings 中为每个 Connection 单独指定 Pi 可执行文件路径。
 
-### Windows
-
-```powershell
-pnpm install
-pnpm dev
-```
-
-### macOS / Linux
+桌面端基于 [nsh](https://github.com/longbridge/nsh) 构建（需安装 `nsh` 0.6.1 CLI），目前只在 macOS 上开发和验证。
 
 ```bash
 pnpm install
-pnpm dev
+pnpm dev          # 持续重建 dist/（Host 提供的 WebUI），并启动 Vite
+cd desktop
+nsh dev           # 启动桌面应用，支持热更新
 ```
 
-`pnpm dev`（或 `pnpm tauri dev`）启动时不再构建 WSL/SSH 运行时。桌面前端热更新、WebUI 资源监听和 Tauri 原有的 Rust 自动重编译保持不变，不再增加 server/插件构建监听。
+Local 使用 `target/debug/pilo-server`（`cargo build -p pilo-server`）。WSL/SSH 请先为远程目标构建开发 server，再启动或重启 Pilo：
 
-Local 使用桌面构建中内嵌的 server。WSL/SSH 请先手动构建开发 server，再启动或重启 Pilo：
-
-```powershell
+```bash
 pnpm server:build
-pnpm dev
 ```
 
 Windows 请在 Windows 那份仓库中执行以上命令。手动构建通过 WSL 运行，WSL 中需安装 Rust 和 Bash，默认构建该发行版原生架构的 Linux server。可在构建前指定发行版，例如 `$env:PILO_DEV_WSL_DISTRO = "Debian"`。macOS/Linux 默认构建原生 server。其他远程目标可使用 `pnpm server:build linux-aarch64`，构建环境中需安装对应 Rust target 和链接器。
 
 dev 构建默认使用一个 Cargo job，并关闭调试符号，降低 WSL 内存占用；需要时可显式覆盖 `CARGO_BUILD_JOBS` / `CARGO_PROFILE_DEV_DEBUG`。正式构建参数不变。
 
-开发二进制直接使用 Cargo 标准输出目录，例如 `target/x86_64-unknown-linux-gnu/debug/pilo-server`，不再额外复制一份；`src-tauri/resources/` 中的正式资源保持不变。启动或连接时，Pilo 将匹配的 server 部署到 dev 运行目录，server 自动将内嵌插件释放到 `extensions/`。修改插件后重新构建并重启 Pilo/Pi 即可加载。运行时和插件缓存使用 `pilo-dev/server`，而非正式版的 `pilo/server`（WSL/SSH 为 `~/.cache/pilo-dev/server`）；Pi 设置和会话文件仍然共享。
-
-`scripts/sync-to-windows.sh` 只同步源码，不同步 server 构建产物。同步修改后，请在 Windows 那份仓库中执行手动 dev 构建。
+开发二进制直接使用 Cargo 标准输出目录，例如 `target/x86_64-unknown-linux-gnu/debug/pilo-server`，不再额外复制一份；`resources/` 中的正式资源保持不变。启动或连接时，Pilo 将匹配的 server 部署到 dev 运行目录，server 自动将内嵌插件释放到 `extensions/`。修改插件后重新构建并重启 Pilo/Pi 即可加载。运行时和插件缓存使用 `pilo-dev/server`，而非正式版的 `pilo/server`（WSL/SSH 为 `~/.cache/pilo-dev/server`）；Pi 设置和会话文件仍然共享。
 
 Release 打包流程仍自动准备完整运行时集合。手动准备正式资源时，Windows 使用 `pnpm server:build:win`，macOS/Linux 使用 `bash scripts/build-pilo-server.sh`。
 
-正式版二进制必须用 `pnpm tauri build` 构建（只需可执行文件时加 `--no-bundle`，产物为 `target/release/pilo.exe`）。它会打开 `tauri/custom-protocol` 特性并把 `dist/` 内嵌进二进制；直接执行 `cargo build --release` 得到的是 dev 形态二进制，离开 `pnpm tauri dev` 后会加载 `devUrl` 并显示「拒绝连接」，因此 build script 会直接拒绝这种构建。本地 release 构建只要求当前编译目标的运行时；发布流水线通过 `PILO_REQUIRE_FULL_SERVER_BUNDLE=1` 强制校验完整集合。
+nsh 桌面端的发版流程尚未建立。
 
 支持的服务端运行时目标为 Linux x64/arm64、Windows x64/arm64 和 macOS x64/arm64。也可以显式构建指定目标：
 
@@ -102,7 +92,7 @@ bash scripts/build-pilo-server.sh <target>
 
 ## 快速开始
 
-1. 使用 `pnpm tauri dev` 启动 Pilo。
+1. 在 `desktop/` 中运行 `nsh dev` 启动 Pilo。
 2. 使用默认的 Local Connection，或添加 WSL / SSH Connection。
 3. 如果 `pi` 不在 `PATH` 中，在 Settings 中为对应 Connection 指定 Pi 可执行文件路径并执行探测。
 4. 添加项目目录并打开 Session。
@@ -140,12 +130,11 @@ bash scripts/build-pilo-server.sh <target>
 `pnpm check`（前端格式和 lint）、`pnpm exec tsc --noEmit`（TypeScript 类型检查），
 再执行 Rust 格式检查、workspace 检查和 Clippy；任何一步失败都会阻止提交，
 不会自动格式化文件。钩子不执行完整前端构建或测试。需要先安装项目的 Node.js
-依赖、Rust 和当前平台的 Tauri 构建依赖。
+依赖、Rust 和 `nsh` CLI。
 
 钩子在 Windows 使用 Git for Windows 自带的 `sh`，macOS/Linux 使用系统 `sh`。
 提交进程的 `PATH` 中需有 `pnpm` 和 `cargo`，并通过 `rustup component add rustfmt clippy`
-安装检查组件。Windows 需要 MSVC 构建工具和 WebView2；macOS 需要 Xcode Command
-Line Tools；Linux 需要 Tauri 系统库。每份仓库均需单独启用钩子，包括 Windows
+安装检查组件。macOS 需要 Xcode Command Line Tools。每份仓库均需单独启用钩子，包括 Windows
 和 WSL 的两份仓库。检查针对当前宿主平台，WSL 通过不代表 Windows 或 macOS 通过。
 
 | 命令                                                                   | 用途                                          |
@@ -156,49 +145,29 @@ Line Tools；Linux 需要 Tauri 系统库。每份仓库均需单独启用钩子
 | `pnpm test`                                                            | 运行 Node 单元测试和集成测试                  |
 | `pnpm test:unit`                                                       | 运行单元测试和静态渲染测试                    |
 | `pnpm test:integration`                                                | 运行 CLI/进程及 Pi 扩展集成测试（Linux/WSL）  |
-| `pnpm test:packaging`                                                  | 运行 AppImage 打包编排测试（Linux/WSL）       |
 | `cargo fmt --all --check`                                              | Rust 格式检查                                 |
 | `cargo check --workspace --all-targets --all-features`                 | Rust workspace 检查                           |
 | `cargo test --workspace --all-features`                                | Rust workspace 测试                           |
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Rust lint                                     |
 | `pnpm server:verify`                                                   | 校验发布所需的完整六平台 `pilo-server` 资源集 |
+| `cd desktop && nsh check` / `nsh test`                                 | 检查 / 测试 nsh 桌面应用及其 Rust crate       |
 
 测试目录、单文件运行命令及浏览器回归页面见 [tests/README.md](tests/README.md)。
-`pnpm test` 不包含浏览器、打包或 Rust 测试。
-
-### 桌面 WebDriver 调试
-
-先用 `pnpm dev` 启动桌面开发版，再在同一台机器的另一个终端执行：
-
-```bash
-pnpm debug:desktop                   # 检查内嵌 WebDriver 状态
-pnpm debug:desktop windows           # 列出窗口标签
-pnpm debug:desktop screenshot        # 保存 PNG 到 logs/（已忽略提交）
-pnpm debug:desktop source            # 输出当前 DOM
-pnpm debug:desktop eval 'return document.activeElement.outerHTML'
-pnpm debug:desktop click 'button'
-pnpm debug:desktop type '[contenteditable="true"]' 'Hello'
-pnpm debug:desktop --window session-123 source
-```
-
-脚本零依赖，直接连接已有的内嵌 WebDriver，默认地址为 `127.0.0.1:4445`。
-应用使用自定义端口时，通过 `--port` 或 `TAURI_WEBDRIVER_PORT` 指定相同端口。
-默认操作 `main` 窗口，完整命令见 `--help`。每次执行后释放自动化会话，不关闭 Pilo。
-点击、输入和脚本会操作真实应用状态；输入命令追加文字，不清空原内容。
-此脚本调试桌面 WebView，不替代 WebUI 浏览器测试；正式 release 构建不启用 WebDriver。
-若通过 `pnpm tauri dev` 启动，需显式加上 `--features webdriver`，
-而 `pnpm dev` 已默认启用。
+`pnpm test` 不包含浏览器、桌面端或 Rust 测试。
 
 ## 目录结构
 
-| 路径                    | 内容                                                                |
-| ----------------------- | ------------------------------------------------------------------- |
-| `src/`                  | React UI：聊天、Session、侧边栏、设置、终端与项目交互               |
-| `src-tauri/`            | Tauri 应用：命令、运行时管理、Connection/Project 状态与 SQLite 索引 |
-| `crates/pilo-protocol/` | 桌面应用与 `pilo-server` 共用的通信协议                             |
-| `crates/pilo-server/`   | 运行在目标环境中的 Pi 流、终端、文件系统、预览端口与 Session 索引   |
-| `scripts/`              | 运行时构建与资源校验脚本                                            |
-| `docs/`                 | 设计文档                                                            |
+| 路径                    | 内容                                                              |
+| ----------------------- | ----------------------------------------------------------------- |
+| `desktop/`              | nsh 桌面应用（TSX）及其 Rust crate（`desktop/src`）               |
+| `web/`                  | 桌面 Host 提供给浏览器和手机的 React WebUI                        |
+| `shared/`               | 桌面端与 WebUI 共用的纯 TypeScript                                |
+| `crates/pilo-runtime/`  | Host 运行时：连接、项目、会话、Pi RPC、Remote WebUI、SQLite 索引  |
+| `crates/pilo-domain/`   | 运行时与壳共用的数据模型                                          |
+| `crates/pilo-protocol/` | 桌面应用与 `pilo-server` 共用的通信协议                           |
+| `crates/pilo-server/`   | 运行在目标环境中的 Pi 流、终端、文件系统、预览端口与 Session 索引 |
+| `scripts/`              | 运行时构建与资源校验脚本                                          |
+| `docs/`                 | 设计文档                                                          |
 
 ## 社区
 

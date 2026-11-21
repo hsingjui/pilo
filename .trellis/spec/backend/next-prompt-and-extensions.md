@@ -282,8 +282,7 @@ are not a source for Connection-owned choices.
   optionally setting it. Never replace text in shared deployed source.
 - User-installed extensions remain Pi-native. Inline-source compatibility remains
   for other callers, but these production built-ins do not use it.
-  `src-tauri/src/runtime/pi_ssh_workspace.js` is a legacy copy with no production
-  loading reference. SSH regression tests must read the production source in
+  SSH regression tests must read the production source in
   `crates/pilo-server/extensions/ssh-workspace.js`, supplying child-only config
   through `PILO_SSH_WORKSPACE_CONFIG`. The mux fixture evaluates it with isolated
   imports and maps every filesystem operation into a private directory; simulated

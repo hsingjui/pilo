@@ -45,32 +45,34 @@ reviews:
     - "!target/**"
     - "!node_modules/**"
     - "!coverage/**"
-    - "!src-tauri/gen/**"
+    - "!desktop/.nsh/**"
 
   path_instructions:
-    - path: "src/**"
+    - path: "web/**"
       instructions: |
-        Review React 19, TypeScript, and the shared UI for functional defects,
+        Review React 19, TypeScript, and the WebUI for functional defects,
         async race conditions, state consistency, event listener cleanup,
-        performance regressions, and accessibility problems.
-        Pilo has both a Tauri desktop UI and a WebUI. Shared UI changes must
-        remain compatible with both, including narrow/mobile layouts.
+        performance regressions, and accessibility problems, including
+        narrow/mobile layouts.
         Avoid formatting-only comments: oxfmt and oxlint run in CI.
 
-    - path: "src/remote/**"
+    - path: "shared/**"
+      instructions: |
+        Plain TypeScript used by both the WebUI (React) and the desktop (nsh).
+        Flag imports of React, the DOM, nsh or web/ modules.
+
+    - path: "desktop/**"
+      instructions: |
+        The nsh desktop app (TSX) and its Rust crate (desktop/src). Check
+        native module boundaries, process lifecycle and resource cleanup.
+
+    - path: "web/remote/**"
       instructions: |
         Focus on WebUI behavior, mobile interactions, reconnection, session
         restoration, command discovery, stream/event ordering, and cancellation.
         Check that stale events from an old turn cannot change the current turn.
         Consider touch targets, virtual keyboards, safe areas, and viewport changes.
-        Do not assume desktop-only Tauri APIs are available in the browser.
-
-    - path: "src-tauri/**"
-      instructions: |
-        Review Tauri 2 IPC boundaries, permissions, process lifecycle,
-        error propagation, and resource cleanup. Check cross-platform behavior
-        on Windows, macOS, and Linux, including WSL and SSH integration.
-        Do not claim that an OS-specific change was tested on other platforms.
+        Do not assume desktop-only APIs are available in the browser.
 
     - path: "crates/**"
       instructions: |

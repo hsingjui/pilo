@@ -271,7 +271,7 @@ back to it) during its second or a later turn.
 ## Built-in themes
 
 From the repository root, run `pnpm desktop:generate:themes` after editing
-`src/styles/lody-theme.css` or `src/styles/claude-theme.css`. The checked-in
+`web/styles/lody-theme.css` or `web/styles/claude-theme.css`. The checked-in
 `theme.json` (Lody) and `claude-theme.json` are complete themes; use
 `pnpm desktop:generate:themes --check` to detect stale output.
 
@@ -288,7 +288,8 @@ From the repository root, run `pnpm desktop:generate:themes` after editing
 ## Icons
 
 Run `pnpm desktop:generate:icons` to refresh the Canvas data from the named
-`lucide-react` icon imports in `src/`. Add `--check` to detect stale output.
+`lucide-react` icon imports in `web/` plus the desktop-only names listed in
+`app/lucide-icon-names.json`. Add `--check` to detect stale output.
 The generated `app/lucide-icons.json` uses the original export names, including
 aliases, without bundling React or Lucide.
 
@@ -305,7 +306,7 @@ create, edit or delete custom themes. A custom theme already saved on the Host
 (for example from the Tauri app) still renders as described below.
 
 A custom theme is a token table shared by the desktop and the WebUI, checked by
-`src/lib/theme-tokens.ts` before it is applied:
+`shared/theme-tokens.ts` before it is applied:
 
 ```json
 {

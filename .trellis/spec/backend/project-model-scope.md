@@ -41,7 +41,7 @@ or session JSONL. Both transports use the Host's database.
   Preferences deleted before this migration cannot be recovered.
 - New-chat startup precedence on Desktop and WebUI is explicit user selection,
   then the member marked `isDefault: true` in a custom project Scope, then Pi's
-  own default. `getProjectScopeDefaultModel` in `src/lib/pi-model-selection.ts`
+  own default. `getProjectScopeDefaultModel` in `shared/pi-model-selection.ts`
   resolves that member by provider + model ID against the available catalog,
   retaining its actual Scope order. Missing/inherited/empty/unmarked Scope or an
   unavailable marked member leaves the model to Pi; never implicitly select the
@@ -70,7 +70,7 @@ or session JSONL. Both transports use the Host's database.
   scopeOrder, scopeThinkingLevel and a refresh timestamp for ordering, not TTL.
   Complete caches are reused until explicit refresh; missing/incomplete caches
   are probed once on demand (see Project Catalog and Slash Commands below).
-- `getProjectScopeModels` in `src/lib/pi-model-selection.ts` owns the effective
+- `getProjectScopeModels` in `shared/pi-model-selection.ts` owns the effective
   list. Inheritance orders the Host catalog first, then intersects live available
   identities. Intersecting first could accidentally turn an unavailable Pi Scope
   into the all-model fallback. Custom empty lists never take that fallback.

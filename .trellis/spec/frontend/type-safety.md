@@ -18,7 +18,7 @@ standalone check without a Vite build (there is no separate `typecheck` script).
 - **No `any`.** The codebase has zero `any` / `as any` / `@ts-ignore`. Use
   `unknown` at boundaries and narrow it.
 - Exhaustive unions for domain state. `ConversationState` / `ChatMessage` in
-  `src/lib/chat/conversation-types.ts` are discriminated unions on `role`:
+  `shared/chat/conversation-types.ts` are discriminated unions on `role`:
 
 ```ts
 export type ChatMessage =
@@ -42,12 +42,12 @@ return invoke<SessionIndexEntry[]>("session_list", { projectId });
 - `as` casts are rare. The few in the codebase are at third-party library
   boundaries (Radix/xterm refs) — keep them there, not in app logic.
 - Use `Reflect.get` / explicit narrowing when reading possibly-missing fields
-  off `unknown` objects (see `rawErrorMessage` in `src/lib/app-error.ts`).
+  off `unknown` objects (see `rawErrorMessage` in `shared/app-error.ts`).
 
 ## Error Typing
 
 - Unknown failures go through `toAppError(error: unknown): AppError`
-  (`src/lib/app-error.ts`). Never assume a thrown value is `Error`.
+  (`shared/app-error.ts`). Never assume a thrown value is `Error`.
 
 ## Forbidden
 
@@ -56,4 +56,4 @@ return invoke<SessionIndexEntry[]>("session_list", { projectId });
 - `enum` — use string-literal union types.
 - Duplicating backend types by hand where a shared protocol type exists
   (`crates/pilo-protocol`); when unavoidable, keep the mirror minimal and next
-  to its client function in `src/lib`.
+  to its client function in `web/lib`.

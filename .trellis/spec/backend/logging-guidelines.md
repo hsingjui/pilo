@@ -1,5 +1,7 @@
 # Logging Guidelines
 
+> 状态：Tauri 壳已删除。本文中 Tauri 插件、`src-tauri` 文件与窗口 API 的描述只是历史行为基线；nsh 版实现以 `desktop/` 代码和 [nsh 桌面规范](../desktop/index.md) 为准，对齐后再回写本文。
+
 Pilo uses `tauri-plugin-log` for desktop log persistence. Rust code logs through
 `log` macros; the plugin writes the desktop log file and handles bounded
 rotation.
@@ -14,7 +16,7 @@ rotation.
 - the `Webview` target so Rust log entries remain visible in DevTools through
   the frontend `attachLogger()` bridge.
 
-The frontend registers one `attachLogger()` listener from `src/main.tsx` and
+The frontend registers one `attachLogger()` listener from `web/main.tsx` and
 replays backend records through the original browser console methods. It bridges
 only `console.error` and `console.warn` to the plugin's `error` and `warn` APIs.
 `console.log` and other hot-path console output are not persisted. The Rust
@@ -53,7 +55,7 @@ log::warn!(target: "pilo-server", "[{label}] {message}");
   parsing). Bounded lifecycle/RPC summaries are allowed as described below.
 - `crates/pilo-server` stdout is a protocol channel: only `--version` /
   fingerprint subcommands may print there. Service diagnostics stay on stderr;
-  `src-tauri/src/runtime/server_client.rs` routes that stderr into the desktop
+  `crates/pilo-runtime/src/server_client.rs` routes that stderr into the desktop
   logger.
 
 ## What to log

@@ -57,14 +57,14 @@ automatic JSX).
 ```ts
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseSkillInvocation } from "../../src/lib/chat/skill-invocation.ts";
+import { parseSkillInvocation } from "../../shared/chat/skill-invocation.ts";
 
 test("parses the expanded skill block emitted by Pi", () => {
 	assert.deepEqual(parseSkillInvocation(expandedText), { ... });
 });
 ```
 
-- A new pure module in `src/lib/` that encodes non-trivial logic should ship
+- A new pure module in `shared/` that encodes non-trivial logic should ship
   with a matching `tests/unit/*.test.ts`; no `package.json` file-list change
   is needed.
 - Static rendering does not verify browser interactions or hooks. Use the
@@ -72,7 +72,7 @@ test("parses the expanded skill block emitted by Pi", () => {
 
 ### Browser Selection Regression
 
-`src/lib/dom-text-selection.ts` handles unmodified left-button triple-click
+`web/lib/dom-text-selection.ts` handles unmodified left-button triple-click
 `mousedown` and `mouseup` for prose in the shared desktop/WebUI bootstrap.
 Schedule tightening with `requestAnimationFrame`: the native `mousedown` default
 must establish its paragraph range first, but normalization must happen before
@@ -96,15 +96,15 @@ Selection assertions do not replace visual verification in the desktop WebView.
 
 - No unrelated refactors or formatting churn in a feature change.
 - Preserve type safety (see `type-safety.md`) and accessibility (`jsx-a11y`).
-- Reuse `src/ui` primitives and `src/lib` helpers before writing new ones.
-- Keep Tauri access in `src/lib/*`; components stay declarative.
+- Reuse `web/ui` primitives and `web/lib` helpers before writing new ones.
+- Keep Tauri access in `shared/*`; components stay declarative.
 - Built-in user-facing copy supports `zh-CN` and `en-US` through the i18n layer
-  (`src/i18n`); code identifiers stay English (see "Internationalization").
+  (`web/i18n`); code identifiers stay English (see "Internationalization").
 
 ## Internationalization (i18n)
 
-- Bundled resources live in `src/i18n/resources/{en-US,zh-CN}.ts`. English is the
-  schema/source; `src/@types/i18next.d.ts` type-checks keys (strictKeyChecks).
+- Bundled resources live in `shared/i18n/resources/{en-US,zh-CN}.ts`. English is the
+  schema/source; `shared/@types/i18next.d.ts` type-checks keys (strictKeyChecks).
 - Add new built-in copy through `t("semantic.key")` in both resources. Never
   hard-code one language in components.
 - Translate at the presentation boundary. Static registries keep stable IDs

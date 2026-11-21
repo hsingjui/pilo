@@ -3,7 +3,7 @@
 - One named component per kebab-case `.tsx` file. Import directly from `desktop/ui`.
 - Wrap `nsh/base` behavior; keep application state and copy in callers. Use only
   native props, not React/DOM props (`class`, not `className`; no `asChild`).
-- Match `src/ui` variants and geometry with theme-token Tailwind classes. Keep
+- Match `web/ui` variants and geometry with theme-token Tailwind classes. Keep
   hover, active, disabled and keyboard-only focus feedback native.
 - Resolve compound `styleVars` through the shared `theme-style` helper and apply
   them as inline styles; `token()` is for `cssVars`, not compound shadows.
@@ -24,7 +24,7 @@
 - `createHover` (`hover.ts`) tracks the pointer for icon foregrounds that a
   `hover:` class cannot reach; spread `hover.props` on the view.
 - `StateView`/`EmptyState`/`ErrorState` (`state-view.tsx`) match React's
-  `src/ui/state-view.tsx`; callers pass the copy (title, retry label).
+  `web/ui/state-view.tsx`; callers pass the copy (title, retry label).
 - App-wide toasts (copy results, settings feedback, fork notices) go through
   `AppToaster`/`showToast` in `app/app-toasts.tsx`, shown top center as
   React's Sonner. Fixtures that render a pane alone provide their own

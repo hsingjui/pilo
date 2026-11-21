@@ -6,9 +6,9 @@
 
 ## Overview
 
-This directory contains guidelines for frontend development in this project (React 19 + Tauri).
+This directory contains guidelines for the React 19 WebUI (`web/`) and the shared TypeScript it uses (`shared/`).
 
-迁移分支的原生桌面另见 [nsh 桌面规范](../desktop/index.md)；本目录继续适用于 React/WebUI 与现有 Tauri 前端。
+原生桌面见 [nsh 桌面规范](../desktop/index.md)。Tauri 前端已删除，本目录里提到的桌面专属 React 组件只在 git 历史中。
 
 ---
 
