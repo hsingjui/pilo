@@ -1,8 +1,8 @@
 /**
  * The display labels of a normalized keystroke's tokens, by platform.
  *
- * Shared so the nsh desktop (no DOM `navigator`) shows the same keys as the
- * Tauri pane: the caller passes `isMac` (`platform.os === "macos"`).
+ * Shared so the nsh desktop (no DOM `navigator`) and WebUI format keys identically:
+ * the caller passes `isMac` (`platform.os === "macos"`).
  */
 export function formatKeyboardShortcutLabels(
 	shortcut: string,

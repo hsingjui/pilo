@@ -7,14 +7,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::{sync::Mutex as AsyncMutex, task::JoinHandle};
 
 use pilo_domain::Project;
 
-use super::{connection_diagnostics::request_failure_reason, host_events::HostEvents};
+use super::connection_diagnostics::request_failure_reason;
 
 use super::{
     Runtime,
@@ -25,31 +24,7 @@ use super::{
     session_index::{self, SessionScanClient},
 };
 
-pub const SESSION_WATCH_EVENT_NAME: &str = "pilo://sessions";
 const WATCH_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum SessionWatchEvent {
-    Changed {
-        #[serde(rename = "projectId")]
-        project_id: String,
-    },
-    Indexed {
-        #[serde(rename = "projectId")]
-        project_id: String,
-    },
-    Backend {
-        #[serde(rename = "projectId")]
-        project_id: String,
-        backend: String,
-    },
-    Error {
-        #[serde(rename = "projectId")]
-        project_id: String,
-        message: String,
-    },
-}
 
 struct WatchHandle {
     project: Project,
@@ -117,18 +92,15 @@ impl SessionWatcherManager {
         let watched_project = session_project.clone();
         let live = Arc::new(AtomicBool::new(true));
         let event_live = Arc::clone(&live);
-        let host_events = runtime.host_events.clone();
         let mut event_runtime = runtime.downgrade();
         let event_servers = Arc::clone(&runtime.servers);
         let event_client = Arc::clone(&current_client);
         let task = tokio::spawn(async move {
             let mut client = client;
             let mut notices = WatchEvents {
-                events: host_events,
                 project_id: project_id.clone(),
                 project_hash: project_hash.clone(),
                 errors: RepeatedFailureLog::default(),
-                delivery: RepeatedFailureLog::default(),
             };
             loop {
                 let event = tokio::select! {
@@ -177,13 +149,7 @@ impl SessionWatcherManager {
                                     )
                                     .await;
                             }
-                            "session.backend" => notices.backend(
-                                event
-                                    .data
-                                    .get("backend")
-                                    .and_then(serde_json::Value::as_str)
-                                    .unwrap_or("server"),
-                            ),
+                            "session.backend" => {}
                             "session.error" => {
                                 // The failed notification may have been the only write.
                                 event_live.store(false, Ordering::Relaxed);
@@ -447,11 +413,9 @@ impl RepeatedFailureLog {
 }
 
 struct WatchEvents {
-    events: Arc<dyn HostEvents>,
     project_id: String,
     project_hash: String,
     errors: RepeatedFailureLog,
-    delivery: RepeatedFailureLog,
 }
 
 impl WatchEvents {
@@ -501,7 +465,6 @@ impl WatchEvents {
                 ),
             }
         }
-        self.changed();
         match session_api::reconcile_project_sessions(runtime, &project, client).await {
             Ok(_) => self.publish_indexed(runtime),
             Err(error) => self.error("index", format!("session reconciliation failed: {error}")),
@@ -509,51 +472,11 @@ impl WatchEvents {
     }
 
     fn publish_indexed(&mut self, runtime: &Runtime) {
-        self.indexed();
         runtime.events.send(RuntimeEventEnvelope::global(
             RuntimeEvent::SessionsIndexed {
                 project_id: self.project_id.clone(),
             },
         ));
-    }
-
-    fn emit(&mut self, event: SessionWatchEvent) {
-        let kind = match &event {
-            SessionWatchEvent::Changed { .. } => "changed",
-            SessionWatchEvent::Indexed { .. } => "indexed",
-            SessionWatchEvent::Backend { .. } => "backend",
-            SessionWatchEvent::Error { .. } => "error",
-        };
-        if self
-            .events
-            .emit_serialized(SESSION_WATCH_EVENT_NAME, event)
-            .is_err()
-        {
-            if let Some(suppressed) = self.delivery.failure() {
-                log::warn!(target: "session-watcher", "event emission failed projectHash={} event={kind} suppressedFailures={suppressed} reason=emit_failed", self.project_hash);
-            }
-        } else if let Some(suppressed) = self.delivery.recover() {
-            log::info!(target: "session-watcher", "event emission resumed projectHash={} event={kind} suppressedFailures={suppressed}", self.project_hash);
-        }
-    }
-
-    fn changed(&mut self) {
-        self.emit(SessionWatchEvent::Changed {
-            project_id: self.project_id.clone(),
-        });
-    }
-
-    fn indexed(&mut self) {
-        self.emit(SessionWatchEvent::Indexed {
-            project_id: self.project_id.clone(),
-        });
-    }
-
-    fn backend(&mut self, backend: &str) {
-        self.emit(SessionWatchEvent::Backend {
-            project_id: self.project_id.clone(),
-            backend: backend.to_owned(),
-        });
     }
 
     fn error(&mut self, stage: &'static str, message: impl Into<String>) {
@@ -568,65 +491,12 @@ impl WatchEvents {
                 log::warn!(target: "session-watcher", "watch error projectHash={} stage={stage} suppressedFailures={suppressed} reason={reason}", self.project_hash);
             }
         }
-        self.emit(SessionWatchEvent::Error {
-            project_id: self.project_id.clone(),
-            message,
-        });
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Duration, Instant, RepeatedFailureLog};
-
-    #[test]
-    fn watcher_emits_named_payloads_and_recovers_after_delivery_failure() {
-        let events = std::sync::Arc::new(crate::host_events::RecordingEvents::default());
-        let mut watcher = super::WatchEvents {
-            events: events.clone(),
-            project_id: "project-1".to_owned(),
-            project_hash: "hash".to_owned(),
-            errors: RepeatedFailureLog::default(),
-            delivery: RepeatedFailureLog::default(),
-        };
-        watcher.changed();
-        watcher.indexed();
-        watcher.backend("");
-        watcher.error("index", "failed");
-        let recorded = events.events.lock().unwrap().clone();
-        assert_eq!(
-            recorded,
-            vec![
-                (
-                    super::SESSION_WATCH_EVENT_NAME.to_owned(),
-                    serde_json::json!({"type":"changed", "projectId":"project-1"})
-                ),
-                (
-                    super::SESSION_WATCH_EVENT_NAME.to_owned(),
-                    serde_json::json!({"type":"indexed", "projectId":"project-1"})
-                ),
-                (
-                    super::SESSION_WATCH_EVENT_NAME.to_owned(),
-                    serde_json::json!({"type":"backend", "projectId":"project-1", "backend":""})
-                ),
-                (
-                    super::SESSION_WATCH_EVENT_NAME.to_owned(),
-                    serde_json::json!({"type":"error", "projectId":"project-1", "message":"failed"})
-                ),
-            ]
-        );
-        events
-            .fail
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        watcher.changed();
-        assert!(watcher.delivery.last_logged.is_some());
-        events
-            .fail
-            .store(false, std::sync::atomic::Ordering::Relaxed);
-        watcher.changed();
-        assert!(watcher.delivery.last_logged.is_none());
-        assert_eq!(events.events.lock().unwrap().len(), 5);
-    }
 
     #[test]
     fn repeated_failures_log_once_and_count_suppressed_records() {

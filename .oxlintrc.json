@@ -25,8 +25,7 @@
 									"nsh",
 									"nsh/*",
 									"app/*",
-									"@/*",
-									"@tauri-apps/*"
+									"@/*"
 								],
 								"message": "shared/ is plain TypeScript for both the WebUI and the desktop."
 							}

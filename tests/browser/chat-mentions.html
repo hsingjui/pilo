@@ -40,8 +40,13 @@
 			const openFile = (candidate) => openedFiles.push(candidate);
 			// Match the desktop opener's broad path capability; badges must reject binary types.
 			const canOpenFile = (candidate) => candidate.length > 0;
+			let setFileOpenerEnabled = () => {};
 			function FileOpenerFixture() {
-				useChatFileOpener(openFile, canOpenFile);
+				const [enabled, setEnabled] = useState(true);
+				useEffect(() => {
+					setFileOpenerEnabled = setEnabled;
+				}, []);
+				useChatFileOpener(enabled ? openFile : undefined, canOpenFile);
 				return null;
 			}
 			function sampleImages(count) {
@@ -585,15 +590,14 @@
 						await expectDraft("", "");
 						expectPlaceholder(true);
 
-						const previousTauri = globalThis.isTauri;
 						try {
-							for (const native of [true, false]) {
-								globalThis.isTauri = native;
+							for (const openerEnabled of [true, false]) {
+								setFileOpenerEnabled(openerEnabled);
 								await reset("");
 								await reset(token, "");
 								const preview = refs()[0].querySelector("button");
 								const before = openedFiles.length;
-								if (native) {
+								if (openerEnabled) {
 									assert(
 										preview.getAttribute("aria-label") === `Open file ${path}`,
 										"Desktop file chip still describes path-only activation",
@@ -637,7 +641,7 @@
 									"Removing a file chip opened the file",
 								);
 							}
-							globalThis.isTauri = true;
+							setFileOpenerEnabled(true);
 							for (const binaryPath of [
 								"report.pdf",
 								"archive.zip",
@@ -681,7 +685,7 @@
 								);
 							}
 						} finally {
-							globalThis.isTauri = previousTauri;
+							setFileOpenerEnabled(true);
 							await reset("");
 						}
 

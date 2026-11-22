@@ -11,5 +11,5 @@
 		}
 	},
 	"include": ["**/*.ts", "**/*.tsx", "../shared/@types/i18next.d.ts"],
-	"exclude": ["target", "spikes/m0"]
+	"exclude": ["target"]
 }

@@ -19,7 +19,6 @@ pub mod host_events;
 pub mod host_paths;
 pub use handle::Runtime;
 pub mod next_prompt;
-pub mod notifications;
 mod parallel;
 mod pi_event_adapters;
 mod pi_events;

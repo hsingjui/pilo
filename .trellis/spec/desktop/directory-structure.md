@@ -17,7 +17,6 @@
 | `desktop/theme.json`、`desktop/claude-theme.json` | 生成的完整主题                                              |
 | `desktop/Cargo.toml`、`desktop/src/`              | 应用自己的 Rust crate（独立 workspace），导出 `app/native`  |
 | `desktop/tests/`                                  | nsh 测试及独立打开的 fixture 应用                           |
-| `desktop/spikes/m0/`                              | 归档原型，不是正式入口；已从桌面 tsconfig 排除              |
 
 ## 状态和共享代码
 
