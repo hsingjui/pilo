@@ -85,6 +85,28 @@ export function resolveMarkdownImageSource(
 		: { type: "invalid" };
 }
 
+/** Resolves the suggested filename for saving a data/blob image; undefined for external URLs. */
+export function lightboxDownloadName({
+	url,
+	name,
+}: {
+	url: string;
+	name: string;
+}): string | undefined {
+	if (url.startsWith("blob:")) return name || "image";
+	const inlineMimeType = /^data:(image\/[a-z0-9.+-]+);base64,/i.exec(url)?.[1];
+	if (!inlineMimeType) return undefined;
+	const mimeType = resolveChatImageMimeType({ name: "", type: inlineMimeType });
+	if (!mimeType) return undefined;
+	if (
+		name.includes(".") &&
+		resolveChatImageMimeType({ name, type: "" }) === mimeType
+	)
+		return name;
+	// Pi can convert the image, so the download must use the result's format.
+	return `${name.replace(/\.[^.]+$/, "") || "image"}.${mimeType.slice("image/".length)}`;
+}
+
 type ImageNode = {
 	tagName?: string;
 	properties?: Record<string, unknown>;

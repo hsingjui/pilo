@@ -117,3 +117,16 @@ fn event_batch_reports_gap_then_preserves_later_events() {
         stop_host(pilo.host.clone()).await;
     });
 }
+
+#[test]
+fn sanitize_save_file_name_strips_directories_and_control_chars() {
+    assert_eq!(shell::sanitize_save_file_name("shot.png"), "shot.png");
+    assert_eq!(
+        shell::sanitize_save_file_name("../../nested/dir/shot.webp"),
+        "shot.webp"
+    );
+    assert_eq!(shell::sanitize_save_file_name(r"C:\tmp\pic.jpg"), "pic.jpg");
+    assert_eq!(shell::sanitize_save_file_name(""), "image");
+    assert_eq!(shell::sanitize_save_file_name(".."), "image");
+    assert_eq!(shell::sanitize_save_file_name("bad\nname.png"), "image");
+}

@@ -74,7 +74,8 @@ use objects::{
 };
 use shell::{
     NshHostShell, ShellEvents, ShellWebAssets, data_identifier, default_data_dir, executor,
-    init_file_logger, open_path, resolve_log_directory, server_resource_name, workspace,
+    init_file_logger, open_path, resolve_log_directory, save_file_bytes, server_resource_name,
+    workspace,
 };
 
 const EVENT_QUEUE_LIMITS: EventQueueLimits = EventQueueLimits {
@@ -931,6 +932,20 @@ impl Pilo {
             project_fs_read_image(&runtime, project_id, path).await
         })
         .await
+    }
+
+    /// Saves image bytes through the native save dialog; returns `false` if canceled.
+    pub async fn save_image(
+        this: Instance<Self>,
+        suggested_name: String,
+        bytes: Vec<u8>,
+    ) -> Result<bool, String> {
+        let task = this.with(|pilo| {
+            pilo.executor
+                .spawn(async move { save_file_bytes(&suggested_name, &bytes).await })
+        });
+        task.await
+            .map_err(|error| format!("failed to save image: {error}"))?
     }
 
     /// Starts or resumes a Pi chat and returns its ready process snapshot.

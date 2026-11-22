@@ -1,4 +1,5 @@
 import { computed, Image, Scroll, Text, token, View } from "nsh";
+import { Button as BaseButton } from "nsh/base";
 
 import type { ToolCallActivity } from "@shared/chat/chat-activity-types";
 import {
@@ -13,8 +14,10 @@ import {
 import type { ChatTodoItem } from "@shared/chat/chat-todos";
 
 import { appLocale, t } from "../app/i18n";
+import { focusRingStyle } from "../ui/focus-ring-style";
 import { scrollbarLook } from "../ui/scrollbar";
 import { ChatCopyButton } from "./chat-copy-button";
+import { ChatMediaActions } from "./chat-media-actions";
 import { ChatTodoList } from "./chat-todo-list";
 
 const codeText = "font-mono leading-[1.4] text-muted-foreground";
@@ -141,6 +144,7 @@ export function ChatToolDetail(props: {
 	todos: () => ChatTodoItem[] | null;
 }) {
 	const { activity } = props;
+	const media = ChatMediaActions();
 	const diff = computed(() => {
 		const current = activity();
 		return current.toolName.toLowerCase() === "edit" && !current.isError
@@ -246,12 +250,27 @@ export function ChatToolDetail(props: {
 				}
 				<Each of={images()} key={(image) => image.key}>
 					{(image) => (
-						<Image
-							src={toolResultImageUrl(image())}
-							accessibilityLabel={t("chat.toolResultImage")}
-							class="mt-1 max-h-80 max-w-full rounded-(--pilo-radius-md)"
-							style={{ objectFit: "contain" }}
-						/>
+						<BaseButton
+							testID="chat-tool-result-image"
+							class="mt-1 self-start overflow-hidden rounded-(--pilo-radius-md) focus-visible:outline-hidden"
+							focusVisibleStyle={focusRingStyle(token("ring"))}
+							accessibilityLabel={t("chat.viewImage", {
+								name: t("chat.toolResultImage"),
+							})}
+							onPress={() =>
+								media.openImage?.({
+									url: toolResultImageUrl(image()),
+									name: t("chat.toolResultImage"),
+								})
+							}
+						>
+							<Image
+								src={toolResultImageUrl(image())}
+								accessibilityLabel={t("chat.toolResultImage")}
+								class="max-h-80 max-w-full rounded-(--pilo-radius-md)"
+								style={{ objectFit: "contain" }}
+							/>
+						</BaseButton>
 					)}
 				</Each>
 			</View>

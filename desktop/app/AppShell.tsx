@@ -15,8 +15,13 @@ import { currentWindow } from "nsh/desktop";
 import type { Project } from "@shared/api/projects-types";
 import { CacheKeepAliveNotice } from "../chat/cache-keep-alive-notice";
 import { ChatAgentActivityIndicator } from "../chat/chat-agent-activity";
+import { ChatImageLightbox } from "../chat/chat-image-lightbox";
 import { ChatMessageList } from "../chat/chat-message-list";
 import { ChatMarkdown, type ChatMarkdownFileLink } from "../chat/chat-markdown";
+import {
+	ChatMediaActions,
+	type ChatImagePreview,
+} from "../chat/chat-media-actions";
 import { ChatReadingFont, chatReadingFont } from "../chat/chat-reading-font";
 import { ChatTodoCapsule } from "../chat/chat-todo-capsule";
 import {
@@ -89,6 +94,8 @@ export interface AppShellProps {
 	assistanceClient?: ComposerAssistanceClient;
 	/** Reads a project-relative image's bytes (reply `![…](path)` previews). */
 	readProjectImage?: (projectId: string, path: string) => Promise<Uint8Array>;
+	/** Prompts the user to save an image from the preview lightbox. */
+	saveImage?: (suggestedName: string, bytes: Uint8Array) => Promise<boolean>;
 	/** What a project file link in a reply does when pressed (a workspace tab, M5). */
 	onFileLink?: (link: ChatMarkdownFileLink) => void;
 	/** The open session's run configuration; a header shows it when present. */
@@ -137,6 +144,10 @@ export function AppShell(props: AppShellProps) {
 	const project = computed(() => activeProject(store.state()));
 	const hasProject = computed(() => project() !== null);
 	const sessionOpen = computed(() => store.state().navigation.session !== null);
+	const previewImage = signal<ChatImagePreview | null>(null);
+	const mediaActions = {
+		openImage: (image: ChatImagePreview) => previewImage.set(image),
+	};
 	/** The open session's index entry, for its title and Pi session id. */
 	const openSessionEntry = () => {
 		const open = store.state().navigation.session;
@@ -816,64 +827,71 @@ export function AppShell(props: AppShellProps) {
 	);
 	return (
 		<AppToaster.Provider value={toasts}>
-			<View testID="app" class="flex-1 flex-row bg-background">
-				<ConversationColumnLayout.Provider value={conversationLayout}>
-					<ChatReadingFont.Provider value={readingFont}>
-						{layout()}
-					</ChatReadingFont.Provider>
-				</ConversationColumnLayout.Provider>
-				{() =>
-					paletteOpen() ? (
-						<CommandPalette
-							store={store}
-							searchSessions={props.searchSessions}
-							shortcuts={registeredShortcuts}
-							onOpenSettings={
-								props.settings ? () => settingsOpen.set(true) : undefined
-							}
-							onClose={() => paletteOpen.set(false)}
-						/>
-					) : null
-				}
-				{() =>
-					props.settings ? (
-						<SettingsDialog
-							open={settingsOpen}
-							onClose={() => settingsOpen.set(false)}
-							state={store.state}
-							client={props.settings}
-							desktop={props.desktop}
-							notifications={props.notifications}
-						/>
-					) : null
-				}
-				{() =>
-					props.projectClient ? (
-						<AddProjectDialog
-							open={addProjectOpen}
-							api={props.projectClient}
-							initialConnectionId={addProjectConnection}
-							onAdd={(connectionId, path) =>
-								store.addProject(connectionId, path)
-							}
-						/>
-					) : null
-				}
-				{() =>
-					client && remoteStatus && remoteOpen() ? (
-						<RemoteDialog
-							client={client}
-							initialState={untracked(remoteStatus.state)}
-							onClose={() => {
-								remoteOpen.set(false);
-								// The button follows a switch flipped in the dialog at once.
-								void remoteStatus.refresh();
-							}}
-						/>
-					) : null
-				}
-				<AppToastStack toasts={toasts} />
-			</View>
+			<ChatMediaActions.Provider value={mediaActions}>
+				<View testID="app" class="flex-1 flex-row bg-background">
+					<ConversationColumnLayout.Provider value={conversationLayout}>
+						<ChatReadingFont.Provider value={readingFont}>
+							{layout()}
+						</ChatReadingFont.Provider>
+					</ConversationColumnLayout.Provider>
+					{() =>
+						paletteOpen() ? (
+							<CommandPalette
+								store={store}
+								searchSessions={props.searchSessions}
+								shortcuts={registeredShortcuts}
+								onOpenSettings={
+									props.settings ? () => settingsOpen.set(true) : undefined
+								}
+								onClose={() => paletteOpen.set(false)}
+							/>
+						) : null
+					}
+					{() =>
+						props.settings ? (
+							<SettingsDialog
+								open={settingsOpen}
+								onClose={() => settingsOpen.set(false)}
+								state={store.state}
+								client={props.settings}
+								desktop={props.desktop}
+								notifications={props.notifications}
+							/>
+						) : null
+					}
+					{() =>
+						props.projectClient ? (
+							<AddProjectDialog
+								open={addProjectOpen}
+								api={props.projectClient}
+								initialConnectionId={addProjectConnection}
+								onAdd={(connectionId, path) =>
+									store.addProject(connectionId, path)
+								}
+							/>
+						) : null
+					}
+					{() =>
+						client && remoteStatus && remoteOpen() ? (
+							<RemoteDialog
+								client={client}
+								initialState={untracked(remoteStatus.state)}
+								onClose={() => {
+									remoteOpen.set(false);
+									// The button follows a switch flipped in the dialog at once.
+									void remoteStatus.refresh();
+								}}
+							/>
+						) : null
+					}
+					<ChatImageLightbox
+						image={previewImage}
+						onClose={() => previewImage.set(null)}
+						onSaveImage={props.saveImage}
+					/>
+					<AppToastStack toasts={toasts} />
+				</View>
+			</ChatMediaActions.Provider>
 		</AppToaster.Provider>
 	);
 }

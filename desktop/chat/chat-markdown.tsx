@@ -20,10 +20,12 @@ import type { Project } from "@shared/api/projects-types";
 import { resolveMarkdownImageSource } from "@shared/chat/chat-markdown-images";
 import { resolveMarkdownFileLink } from "@shared/chat/chat-markdown-links";
 import { MAX_CHAT_IMAGE_BYTES } from "@shared/chat/chat-submission";
+import { fileBasename } from "@shared/chat/chat-tool-result";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
 
 import { AppToaster } from "../app/app-toasts";
 import { t } from "../app/i18n";
+import { ChatMediaActions, type ChatImagePreview } from "./chat-media-actions";
 import { ChatReadingFont } from "./chat-reading-font";
 
 /** What a project file link resolved to (`resolveMarkdownFileLink`). */
@@ -56,8 +58,8 @@ export interface ChatMarkdownProps {
 	 * path.
 	 */
 	onFileLink?: (link: ChatMarkdownFileLink) => void;
-	/** What a press on an image not wrapped in a link does (preview, M5). */
-	onImagePress?: (image: TextViewImage) => void;
+	/** What a press on an image not wrapped in a link does (defaults to ChatMediaActions.openImage). */
+	onImagePress?: (image: ChatImagePreview) => void;
 	/** The text's color; the reply's foreground without it. */
 	class?: string;
 	/**
@@ -112,7 +114,7 @@ function markdownStyles(
 
 type ProjectImageState =
 	| { type: "loading" }
-	| { type: "ready"; url: string }
+	| { type: "ready"; url: string; size: number }
 	| { type: "error" };
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -121,6 +123,67 @@ function bytesToBase64(bytes: Uint8Array): string {
 		binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
 	}
 	return btoa(binary);
+}
+
+const MAX_INLINE_IMAGE_HEIGHT = 384;
+
+function MarkdownImageFrame(props: {
+	src: string;
+	alt: string;
+	width?: TextViewImage["width"];
+	height?: TextViewImage["height"];
+}) {
+	const natural = signal<{ width: number; height: number } | null>(null);
+	const sizeStyle = computed(() => {
+		if (props.width !== undefined || props.height !== undefined) {
+			return {
+				width: props.width,
+				height: props.height,
+				maxWidth: "100%" as const,
+				maxHeight: MAX_INLINE_IMAGE_HEIGHT,
+			};
+		}
+		const size = natural();
+		if (size && size.width > 0 && size.height > 0) {
+			const scale =
+				size.height > MAX_INLINE_IMAGE_HEIGHT
+					? MAX_INLINE_IMAGE_HEIGHT / size.height
+					: 1;
+			return {
+				width: Math.max(1, Math.round(size.width * scale)),
+				height: Math.max(1, Math.round(size.height * scale)),
+				maxWidth: "100%" as const,
+				maxHeight: MAX_INLINE_IMAGE_HEIGHT,
+			};
+		}
+		return {
+			minWidth: 48,
+			minHeight: 48,
+			maxWidth: "100%" as const,
+			maxHeight: MAX_INLINE_IMAGE_HEIGHT,
+		};
+	});
+	return (
+		<View
+			testID="chat-markdown-image"
+			accessible
+			role="button"
+			accessibilityLabel={t("chat.viewImage", { name: props.alt })}
+			class="my-1 self-start overflow-hidden rounded-(--pilo-radius-lg) border border-foreground/10 bg-muted/40"
+		>
+			<Image
+				src={props.src}
+				accessibilityLabel={props.alt}
+				onLoad={({ size }) => {
+					if (size.width > 0 && size.height > 0) natural.set(size);
+				}}
+				style={{
+					...sizeStyle(),
+					objectFit: "contain",
+				}}
+			/>
+		</View>
+	);
 }
 
 /**
@@ -135,6 +198,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 export function ChatMarkdown(props: ChatMarkdownProps) {
 	const readingFont = ChatReadingFont();
 	const toasts = AppToaster();
+	const media = ChatMediaActions();
 	const styles = computed(() =>
 		markdownStyles(
 			readingFont().fontFamily,
@@ -153,18 +217,19 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 			images: new Map<string, Signal<ProjectImageState>>(),
 		};
 	});
-	const projectImage = (path: string, mimeType: string) => {
-		const { images, projectId } = imageCache();
-		const cached = images.get(path);
-		if (cached) return cached;
-		const state = signal<ProjectImageState>({ type: "loading" });
-		images.set(path, state);
+	const loadProjectImage = (
+		state: Signal<ProjectImageState>,
+		currentProjectId: string | undefined,
+		path: string,
+		mimeType: string,
+	) => {
 		const read = props.readProjectImage;
-		if (!projectId || !read) {
+		if (!currentProjectId || !read) {
 			state.set({ type: "error" });
-			return state;
+			return;
 		}
-		void read(projectId, path)
+		state.set({ type: "loading" });
+		void read(currentProjectId, path)
 			.then((bytes) => {
 				if (bytes.length > MAX_CHAT_IMAGE_BYTES) {
 					throw new Error("image exceeds chat size limit");
@@ -172,16 +237,36 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 				state.set({
 					type: "ready",
 					url: `data:${mimeType};base64,${bytesToBase64(bytes)}`,
+					size: bytes.length,
 				});
 			})
 			.catch(() => state.set({ type: "error" }));
+	};
+	const projectImage = (path: string, mimeType: string) => {
+		const { images, projectId: currentProjectId } = imageCache();
+		const cached = images.get(path);
+		if (cached) return cached;
+		const state = signal<ProjectImageState>({ type: "loading" });
+		images.set(path, state);
+		loadProjectImage(state, currentProjectId, path, mimeType);
 		return state;
 	};
+	const retryProjectImage = (path: string, mimeType: string) => {
+		const { images, projectId: currentProjectId } = imageCache();
+		let state = images.get(path);
+		if (!state) {
+			state = signal<ProjectImageState>({ type: "loading" });
+			images.set(path, state);
+		}
+		loadProjectImage(state, currentProjectId, path, mimeType);
+	};
 
-	const fallback = (image: TextViewImage) => (
+	const fallback = (image: TextViewImage, retryable = false) => (
 		<View class="my-1 rounded-(--pilo-radius-lg) border border-border bg-muted px-3 py-2">
 			<Text class="font-sans text-xs text-muted-foreground">
-				{image.alt ? image.alt : t("chat.imageUnavailable")}
+				{image.alt
+					? image.alt
+					: t(retryable ? "chat.loadImageFailed" : "chat.imageUnavailable")}
 			</Text>
 		</View>
 	);
@@ -195,43 +280,70 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 		if (link) props.onFileLink?.(link);
 	};
 
-	const renderImage = (image: TextViewImage) => {
+	const openImagePreview = (preview: ChatImagePreview) => {
+		const handler = props.onImagePress ?? media.openImage;
+		handler?.(preview);
+	};
+
+	const pressImage = (image: TextViewImage) => {
 		const source = resolveMarkdownImageSource(
 			image.src,
 			props.imageBaseDirectory?.(),
 		);
 		if (source.type === "external") {
+			openImagePreview({
+				url: source.url,
+				name: image.alt || fileBasename(source.url) || t("chat.image"),
+			});
+			return;
+		}
+		if (source.type !== "project") return;
+		const current = projectImage(source.path, source.mimeType)();
+		if (current.type === "ready") {
+			openImagePreview({
+				url: current.url,
+				name: fileBasename(source.path) || image.alt || t("chat.image"),
+				size: current.size,
+			});
+		} else if (current.type === "error") {
+			retryProjectImage(source.path, source.mimeType);
+		}
+	};
+
+	const renderImage = (image: TextViewImage) => {
+		const source = resolveMarkdownImageSource(
+			image.src,
+			props.imageBaseDirectory?.(),
+		);
+		const label = image.alt || t("chat.image");
+		if (source.type === "external") {
 			return (
-				<Image
+				<MarkdownImageFrame
 					src={source.url}
-					accessibilityLabel={image.alt}
-					style={{
-						width: image.width,
-						height: image.height,
-						maxWidth: "100%",
-					}}
+					alt={label}
+					width={image.width}
+					height={image.height}
 				/>
 			);
 		}
 		if (source.type !== "project") return fallback(image);
+		const projectLabel =
+			image.alt || fileBasename(source.path) || t("chat.image");
 		return (
 			<View>
 				{() => {
 					const current = projectImage(source.path, source.mimeType)();
 					if (current.type === "ready") {
 						return (
-							<Image
+							<MarkdownImageFrame
 								src={current.url}
-								accessibilityLabel={image.alt}
-								style={{
-									width: image.width,
-									height: image.height,
-									maxWidth: "100%",
-								}}
+								alt={projectLabel}
+								width={image.width}
+								height={image.height}
 							/>
 						);
 					}
-					if (current.type === "error") return fallback(image);
+					if (current.type === "error") return fallback(image, true);
 					return <View class="my-1 h-12 rounded-(--pilo-radius-lg) bg-muted" />;
 				}}
 			</View>
@@ -260,7 +372,7 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 			markdown={props.text()}
 			options={{ streaming: true }}
 			onLinkPress={pressLink}
-			onImagePress={(event) => props.onImagePress?.(event.image)}
+			onImagePress={(event) => pressImage(event.image)}
 			onCodeBlockAction={handleCodeBlockAction}
 			renderImage={renderImage}
 		/>

@@ -22,9 +22,9 @@ import {
 	loadChatHistoryImageUrl,
 	type ChatHistoryImageScope,
 } from "@/lib/chat/chat-image-media";
+import { lightboxDownloadName } from "@shared/chat/chat-markdown-images";
 import {
 	formatChatImageSize,
-	resolveChatImageMimeType,
 	type ChatConversationImage,
 } from "@shared/chat/chat-submission";
 import { isImeComposingNativeKeyboardEvent } from "@/lib/ime";
@@ -168,21 +168,6 @@ function useChatImageLightboxState() {
 		},
 		() => lightboxState,
 	);
-}
-
-function lightboxDownloadName({ url, name }: ChatImageLightboxPayload) {
-	if (url.startsWith("blob:")) return name || "image";
-	const inlineMimeType = /^data:(image\/[a-z0-9.+-]+);base64,/i.exec(url)?.[1];
-	if (!inlineMimeType) return undefined;
-	const mimeType = resolveChatImageMimeType({ name: "", type: inlineMimeType });
-	if (!mimeType) return undefined;
-	if (
-		name.includes(".") &&
-		resolveChatImageMimeType({ name, type: "" }) === mimeType
-	)
-		return name;
-	// Pi can convert the image, so the download must use the result's format.
-	return `${name.replace(/\.[^.]+$/, "") || "image"}.${mimeType.slice("image/".length)}`;
 }
 
 export const ChatImageLightbox = memo(function ChatImageLightbox() {

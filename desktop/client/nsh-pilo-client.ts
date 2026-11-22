@@ -154,6 +154,7 @@ export type PiloNative = Pick<
 			Pilo,
 			| "systemFontFamilies"
 			| "projectOpenInApp"
+			| "saveImage"
 			| "openTerminal"
 			| "writeTerminal"
 			| "resizeTerminal"
@@ -548,6 +549,12 @@ export class NshPiloClient implements PiloClient {
 	/** The bytes of an image at a path relative to the project. */
 	async readProjectImage(projectId: string, path: string) {
 		return (await this.pilo.readProjectImage(projectId, path)) as ImageBytes;
+	}
+
+	/** Prompts the user to save image bytes; returns false when canceled. */
+	async saveImage(suggestedName: string, bytes: Uint8Array): Promise<boolean> {
+		if (!this.pilo.saveImage) throw unavailable("saveImage");
+		return await this.pilo.saveImage(suggestedName, bytes);
 	}
 
 	/** Pi's current user-level model catalog for the connection. */

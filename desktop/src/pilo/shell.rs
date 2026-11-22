@@ -111,6 +111,40 @@ pub(super) fn open_path(path: &Path) -> Result<(), String> {
         .map_err(|error| format!("opening {path:?} failed: {error}"))
 }
 
+/// Extracts a safe single filename for a native save dialog.
+pub(super) fn sanitize_save_file_name(suggested_name: &str) -> String {
+    let trimmed = suggested_name.trim();
+    let candidate = trimmed
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or_default()
+        .trim();
+    if candidate.is_empty()
+        || candidate == "."
+        || candidate == ".."
+        || candidate.chars().any(char::is_control)
+    {
+        return "image".to_owned();
+    }
+    candidate.to_owned()
+}
+
+/// Prompts the user for a destination path and writes `bytes`; returns `false` when canceled.
+pub(super) async fn save_file_bytes(suggested_name: &str, bytes: &[u8]) -> Result<bool, String> {
+    let file_name = sanitize_save_file_name(suggested_name);
+    let Some(handle) = rfd::AsyncFileDialog::new()
+        .set_file_name(&file_name)
+        .save_file()
+        .await
+    else {
+        return Ok(false);
+    };
+    tokio::fs::write(handle.path(), bytes)
+        .await
+        .map_err(|error| format!("failed to save file: {error}"))?;
+    Ok(true)
+}
+
 /// The app's log directory, keeping the existing platform log location.
 pub(super) fn log_directory(development: bool) -> Result<PathBuf, String> {
     let identifier = data_identifier(development);
