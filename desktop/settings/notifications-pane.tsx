@@ -1,12 +1,15 @@
 import {
 	type Accessor,
-	Notifications,
 	type NotificationPermission,
 	signal,
 	Text,
 	View,
 } from "nsh";
 
+import {
+	defaultDesktopNotifications,
+	type DesktopNotificationsApi,
+} from "../app/desktop-notifications";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
@@ -43,7 +46,9 @@ const PERMISSION_KEYS: Record<
 export function NotificationsPane(props: {
 	state: Accessor<AppState>;
 	client: SettingsClient;
+	notifications?: DesktopNotificationsApi;
 }) {
+	const notifications = props.notifications ?? defaultDesktopNotifications();
 	const permission = signal<NotificationPermission | null>(null);
 	const checking = signal(false);
 	const testing = signal(false);
@@ -62,7 +67,8 @@ export function NotificationsPane(props: {
 	};
 	const refresh = () => {
 		checking.set(true);
-		Notifications.permission()
+		notifications
+			.permission()
 			.then((next) => {
 				permission.set(next);
 				if (next !== "granted" && values()?.desktopNotifications) save(false);
@@ -73,14 +79,14 @@ export function NotificationsPane(props: {
 	refresh();
 	const ensurePermission = async () => {
 		if (
-			(await Notifications.permission().catch(() => "unavailable" as const)) ===
+			(await notifications.permission().catch(() => "unavailable" as const)) ===
 			"granted"
 		)
 			return true;
 		return (
-			(await Notifications.requestPermission().catch(
-				() => "denied" as const,
-			)) === "granted"
+			(await notifications
+				.requestPermission()
+				.catch(() => "denied" as const)) === "granted"
 		);
 	};
 	const changeEnabled = (enabled: boolean) => {
@@ -103,11 +109,14 @@ export function NotificationsPane(props: {
 		void ensurePermission()
 			.then(async (granted) => {
 				if (!granted) return false;
-				return Notifications.show({
-					id: "pilo-settings-test",
-					title: t("notifications.testTitle"),
-					body: t("notifications.testBody"),
-				}).catch(() => false);
+				return notifications
+					.show({
+						id: "pilo-settings-test",
+						title: t("notifications.testTitle"),
+						body: t("notifications.testBody"),
+						waitForClick: false,
+					})
+					.catch(() => false);
 			})
 			.then((sent) => {
 				if (!sent) failure.set("settings.testNotificationFailed");

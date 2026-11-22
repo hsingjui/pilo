@@ -1,8 +1,12 @@
-import { effect, Notifications, signal, untracked } from "nsh";
+import { effect, signal, untracked } from "nsh";
 
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import type { AppStore } from "../state/app-store";
+import {
+	defaultDesktopNotifications,
+	type DesktopNotificationsApi,
+} from "./desktop-notifications";
 import type { DesktopShell } from "./desktop-shell";
 import { t } from "./i18n";
 
@@ -29,10 +33,11 @@ export function connectSessionNotifications(
 	client: Pick<NshPiloClient, "chatState">,
 	store: AppStore,
 	desktop: Pick<DesktopShell, "show" | "isQuitting">,
+	notifications: DesktopNotificationsApi = defaultDesktopNotifications(),
 ) {
 	const requested = signal<ReturnType<typeof decodeTarget>>(null);
 	let loading: ReturnType<typeof decodeTarget> = null;
-	Notifications.on("press", ({ id }) => {
+	notifications.onPress(({ id }) => {
 		const target = decodeTarget(id);
 		if (!target || desktop.isQuitting()) return;
 		desktop.show();
@@ -102,7 +107,7 @@ export function connectSessionNotifications(
 			event.stopReason === "error" || Boolean(event.errorMessage?.trim());
 		const label = t(failed ? "notifications.error" : "notifications.completed");
 		const name = (session?.titleOverride ?? session?.name)?.trim();
-		await Notifications.show({
+		await notifications.show({
 			id: SESSION_PREFIX + JSON.stringify([projectId, sessionPath]),
 			title: name
 				? `${Array.from(name).slice(0, 100).join("")} · ${label}`
@@ -114,6 +119,7 @@ export function connectSessionNotifications(
 			body: t(
 				failed ? "notifications.errorBody" : "notifications.completedBody",
 			),
+			waitForClick: true,
 		});
 	};
 }

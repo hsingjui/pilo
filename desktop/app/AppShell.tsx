@@ -54,6 +54,7 @@ import { ErrorState } from "../ui/state-view";
 import { AppToaster, AppToasts, AppToastStack } from "./app-toasts";
 import { followSavedAppearance } from "./appearance";
 import { CommandPalette } from "./command-palette";
+import type { DesktopNotificationsApi } from "./desktop-notifications";
 import type { DesktopShell } from "./desktop-shell";
 import { t } from "./i18n";
 import { AddProjectDialog, type AddProjectApi } from "./add-project-dialog";
@@ -117,6 +118,7 @@ export interface AppShellProps {
 	/** The client calls the add-project dialog needs; `undefined` hides it. */
 	projectClient?: AddProjectApi;
 	desktop?: DesktopShell;
+	notifications?: DesktopNotificationsApi;
 	/** The project terminals the title bar opens in tabs; none without it. */
 	terminals?: TerminalStore;
 	/** Opens a project in Finder, Ghostty and the like, for quick open. */
@@ -841,6 +843,7 @@ export function AppShell(props: AppShellProps) {
 							state={store.state}
 							client={props.settings}
 							desktop={props.desktop}
+							notifications={props.notifications}
 						/>
 					) : null
 				}

@@ -20,6 +20,7 @@ import { createHover } from "../ui/hover";
 import { Icon, type IconName } from "../ui/icon";
 import { scrollbarLook } from "../ui/scrollbar";
 import { styleVar } from "../ui/theme-style";
+import type { DesktopNotificationsApi } from "../app/desktop-notifications";
 import type { DesktopShell } from "../app/desktop-shell";
 import { t } from "../app/i18n";
 import { AboutPane } from "./about-pane";
@@ -90,6 +91,7 @@ export interface SettingsDialogProps {
 	state: Accessor<AppState>;
 	client: SettingsClient;
 	desktop?: DesktopShell;
+	notifications?: DesktopNotificationsApi;
 }
 
 export type SettingsTabId =
@@ -400,6 +402,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
 											<NotificationsPane
 												state={props.state}
 												client={props.client}
+												notifications={props.notifications}
 											/>
 										);
 									case "shortcuts":

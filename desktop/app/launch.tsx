@@ -13,6 +13,10 @@ import manifest from "../nsh.json";
 import { AppShell, type AppShellProps, StartupFrame } from "./AppShell";
 import { showStartupTheme } from "./appearance";
 import {
+	defaultDesktopNotifications,
+	type DesktopNotificationsApi,
+} from "./desktop-notifications";
+import {
 	connectDesktopShell,
 	type DesktopSettingsClient,
 } from "./desktop-shell";
@@ -141,6 +145,7 @@ function fitMainWindow(main: WindowRef) {
 export async function launch(
 	pilo: PiloNative,
 	desktopSettings?: DesktopSettingsClient,
+	notifications: DesktopNotificationsApi = defaultDesktopNotifications(),
 ) {
 	const client = new NshPiloClient(pilo);
 	const chat = new ChatTranscriptStore(client, conversationContext());
@@ -165,7 +170,8 @@ export async function launch(
 					await client.shutdown();
 				})
 			: undefined;
-	if (desktop) notify = connectSessionNotifications(client, store, desktop);
+	if (desktop)
+		notify = connectSessionNotifications(client, store, desktop, notifications);
 	const catalog = new ModelCatalogStore(client);
 	const runConfig = new ChatRunConfigStore(client, catalog.state);
 	const composer: ComposerStore = new ComposerStore({
@@ -225,6 +231,7 @@ export async function launch(
 		settings: client,
 		projectClient: client,
 		desktop,
+		notifications,
 		sidebarSettings,
 		terminals: new TerminalStore(client),
 		openProjectInApp: (projectId, app, path) =>
