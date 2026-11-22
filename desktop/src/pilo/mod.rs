@@ -36,6 +36,7 @@ use pilo_runtime::{
         project_fs_search, project_model_cache_list, project_model_cache_set,
         project_model_scope_get, project_model_scope_set, project_remove,
     },
+    project_opener::ProjectApp,
     prompt_enhancement::{
         prompt_enhance, prompt_enhancement_settings_get, prompt_enhancement_settings_set,
     },
@@ -1252,6 +1253,22 @@ impl Pilo {
         Self::with_runtime(this, |runtime| async move {
             let families = system_font_families(&runtime).await?;
             serde_json::to_value(families).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Opens the project, or a path in it, in a desktop app: `finder`,
+    /// `ghostty`, `winc`, `explorer` or `powershell`.
+    pub async fn project_open_in_app(
+        this: Instance<Self>,
+        project_id: String,
+        app: String,
+        path: Option<String>,
+    ) -> Result<(), String> {
+        let app: ProjectApp = serde_json::from_value(JsonValue::String(app))
+            .map_err(|error| format!("unsupported app: {error}"))?;
+        Self::with_runtime(this, move |runtime| async move {
+            project_api::project_open_in_app(&runtime, project_id, app, path).await
         })
         .await
     }

@@ -206,6 +206,9 @@ terminalId, data }` with base64 `data`, `{ type: "exit", terminalId }` and
 16 MiB, the oldest dropped first; `nextTerminalEvents` returns `[]` once the
 runtime has shut down. The app shows each terminal in a title-bar
 tab with `nsh/base`'s `Terminal`, decoding the output as streamed UTF-8.
+`projectOpenInApp(projectId, app, path?)` opens the project in `finder`,
+`ghostty`, `winc`, `explorer` or `powershell`; editors open through their
+URL schemes (`zed`, `vscode`, `cursor` in `capabilities.openUrl`).
 
 `loadSessionReadStates()` reads the saved read revisions across projects.
 Call `markSessionRead(projectId, sessionPath, revision)` with the positive

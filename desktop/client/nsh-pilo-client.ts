@@ -153,6 +153,7 @@ export type PiloNative = Pick<
 		Pick<
 			Pilo,
 			| "systemFontFamilies"
+			| "projectOpenInApp"
 			| "openTerminal"
 			| "writeTerminal"
 			| "resizeTerminal"
@@ -160,6 +161,14 @@ export type PiloNative = Pick<
 			| "nextTerminalEvents"
 		>
 	>;
+
+/** The desktop apps the runtime opens a project in (not the editors' URLs). */
+export type ProjectNativeApp =
+	| "finder"
+	| "ghostty"
+	| "winc"
+	| "explorer"
+	| "powershell";
 
 /** A shell the runtime runs in a project's environment. */
 export type TerminalInfo = { id: string; projectId: string; title: string };
@@ -849,6 +858,16 @@ export class NshPiloClient implements PiloClient {
 	/** Opens the app's log directory in the file manager. */
 	openLogDirectory() {
 		return this.pilo.openLogDirectory(process.logFile);
+	}
+
+	/** Opens the project, or a path in it, in a desktop app. */
+	async openProjectInApp(
+		projectId: string,
+		app: ProjectNativeApp,
+		path?: string,
+	): Promise<void> {
+		if (!this.pilo.projectOpenInApp) throw unavailable("projectOpenInApp");
+		await this.pilo.projectOpenInApp(projectId, app, path);
 	}
 
 	/** Opens a shell in the project; its output comes from `nextTerminalEvents`. */

@@ -8,6 +8,7 @@ import { AppStore } from "../state/app-store";
 import { ChatRunConfigStore } from "../state/chat-run-config";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { ModelCatalogStore } from "../state/model-catalog";
+import { TerminalStore } from "../state/terminal-store";
 import manifest from "../nsh.json";
 import { AppShell, type AppShellProps, StartupFrame } from "./AppShell";
 import { showStartupTheme } from "./appearance";
@@ -18,6 +19,7 @@ import {
 import { appLocale, t } from "./i18n";
 import {
 	conversationContext,
+	endLeftTemporaryChats,
 	followOpenSession,
 	followRunConfig,
 	openChatTarget,
@@ -197,6 +199,9 @@ export async function launch(
 		},
 	});
 	followOpenSession(store, chat);
+	endLeftTemporaryChats(store, (sessionKey, reason) =>
+		client.stopChat(sessionKey, reason),
+	);
 	followOpenSessionRead(store);
 	followRunConfig(store, runConfig, catalog);
 	// The first frame takes the saved theme and sidebar width, so a launch or
@@ -221,6 +226,9 @@ export async function launch(
 		projectClient: client,
 		desktop,
 		sidebarSettings,
+		terminals: new TerminalStore(client),
+		openProjectInApp: (projectId, app, path) =>
+			client.openProjectInApp(projectId, app, path),
 		onRenameSession: (projectId, sessionPath, title) =>
 			void store.renameSession(projectId, sessionPath, title),
 		readProjectImage: (projectId, path) =>

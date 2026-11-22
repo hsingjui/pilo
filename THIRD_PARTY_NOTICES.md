@@ -22,7 +22,7 @@ This repository-level notice records the origin and modification of the Lody-der
 
 ## Winc
 
-- Asset: `src/assets/editors/winc.svg`, the unmodified Winc application icon.
+- Asset: `web/assets/editors/winc.svg` and `desktop/assets/editors/winc.svg`, the unmodified Winc application icon.
 - Source: https://github.com/DEEIX-AI/Winc/blob/dev/crates/winc-app/assets/icon.svg
 - Copyright 2026 Chenyme and DEEIX AI
 - License: Apache License 2.0. See [LICENSE](./LICENSE) for the full license text.

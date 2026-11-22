@@ -30,7 +30,7 @@ import {
 	type ComposerAssistanceClient,
 } from "../composer/composer-assistance";
 import type { ComposerStore } from "../composer/composer-store";
-import { activeProject } from "../state/app-state";
+import { activeProject, isTemporarySessionId } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
 import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
@@ -59,7 +59,11 @@ import { t } from "./i18n";
 import { AddProjectDialog, type AddProjectApi } from "./add-project-dialog";
 import { SessionLanding } from "./landing";
 import { openChatTarget } from "./open-chat";
+import { HeaderActions } from "./header-actions";
 import { SessionHeader } from "./session-header";
+import { TerminalLayer } from "./terminal-view";
+import type { ProjectNativeApp } from "../client/nsh-pilo-client";
+import type { TerminalStore } from "../state/terminal-store";
 import {
 	NOTICE_MS as FORK_NOTICE_MS,
 	type SessionForker,
@@ -113,6 +117,14 @@ export interface AppShellProps {
 	/** The client calls the add-project dialog needs; `undefined` hides it. */
 	projectClient?: AddProjectApi;
 	desktop?: DesktopShell;
+	/** The project terminals the title bar opens in tabs; none without it. */
+	terminals?: TerminalStore;
+	/** Opens a project in Finder, Ghostty and the like, for quick open. */
+	openProjectInApp?: (
+		projectId: string,
+		app: ProjectNativeApp,
+		path?: string,
+	) => Promise<void>;
 	/** The sidebar's stored settings, when the launch has already loaded them. */
 	sidebarSettings?: SidebarSettingsStore;
 }
@@ -121,6 +133,7 @@ export function AppShell(props: AppShellProps) {
 	const { store, chat, composer } = props;
 	const status = computed(() => store.state().status);
 	const project = computed(() => activeProject(store.state()));
+	const hasProject = computed(() => project() !== null);
 	const sessionOpen = computed(() => store.state().navigation.session !== null);
 	/** The open session's index entry, for its title and Pi session id. */
 	const openSessionEntry = () => {
@@ -134,13 +147,21 @@ export function AppShell(props: AppShellProps) {
 				) ?? null
 		);
 	};
+	/** The open chat is a temporary one, which Pi does not save. */
+	const temporaryOpen = computed(() =>
+		isTemporarySessionId(store.state().navigation.session?.sessionId),
+	);
 	/** An explicit rename wins; otherwise prefer Pi's current name. */
 	const openSessionTitle = () =>
 		openSessionEntry()?.titleOverride ??
 		props.runConfig?.state()?.session?.name ??
 		openSessionEntry()?.name ??
 		openSessionEntry()?.firstUserMessagePreview ??
-		t("app.newChat");
+		(temporaryOpen() ? t("app.temporaryChat") : t("app.newChat"));
+	/** The project's terminal shown in place of its chat, if any. */
+	const shownTerminal = computed(
+		() => props.terminals?.activeTab(project()?.id) ?? null,
+	);
 	const paletteOpen = signal(false);
 	const settingsOpen = signal(false);
 	const registeredShortcuts = signal<Partial<KeyboardShortcutMap>>({});
@@ -264,6 +285,12 @@ export function AppShell(props: AppShellProps) {
 			chat.messages().length > 0
 		);
 	});
+	/** The title bar holds the chat's tab, or at least the project's actions. */
+	const headerShown = computed(
+		() =>
+			status().type === "ready" &&
+			(showSessionHeader() || temporaryOpen() || project() !== null),
+	);
 	followSavedAppearance(store.state);
 	const toasts = new AppToasts();
 	// A fork's outcome joins the app's toasts once per notice.
@@ -297,9 +324,37 @@ export function AppShell(props: AppShellProps) {
 	const barHeight = () => titleBar().height || TITLE_BAR_HEIGHT;
 	const newChat = () => {
 		const project = activeProject(store.state());
+		props.terminals?.select(null);
 		if (project) store.selectProject(project.id);
 		else if (props.projectClient) openAddProject(null);
 	};
+	const newTemporaryChat = (projectId: string) => {
+		props.terminals?.select(null);
+		store.selectTemporary(projectId);
+	};
+	const openTerminal = (projectId: string) => {
+		void props.terminals?.open(projectId).catch((error: unknown) => {
+			console.error(t("terminal.openFailed"), error);
+			toasts.show({
+				variant: "error",
+				title: t("terminal.openFailed"),
+				description: error instanceof Error ? error.message : String(error),
+			});
+		});
+	};
+	if (props.terminals) {
+		const terminals = props.terminals;
+		const projects = computed(() => store.state().projects);
+		effect(() => {
+			const ids = new Set(projects().map(({ id }) => id));
+			untracked(() => terminals.reconcileProjects(ids));
+		});
+	}
+	// Opening another chat brings the chat back in front of the terminals.
+	effect(() => {
+		chatSessionKey();
+		untracked(() => props.terminals?.select(null));
+	});
 	const openAddProject = (connectionId: string | null) => {
 		addProjectConnection.set(connectionId);
 		addProjectOpen.set(true);
@@ -357,7 +412,14 @@ export function AppShell(props: AppShellProps) {
 				settingsOpen.set(true);
 			});
 		bind("toggle-sidebar", () => sidebarLayout.setCollapsed(!collapsed()));
-		if (props.runConfig && props.catalog && !paletteOpen() && sessionOpen()) {
+		if (
+			props.runConfig &&
+			props.catalog &&
+			!paletteOpen() &&
+			sessionOpen() &&
+			// A shell takes Ctrl+P and the like while its terminal is in front.
+			!shownTerminal()
+		) {
 			bind("cycle-model", () => cycleModel(false));
 			bind("cycle-scoped-model", () => cycleModel(true));
 		}
@@ -481,9 +543,11 @@ export function AppShell(props: AppShellProps) {
 				>
 					{() => (expandMounted() ? expandButton() : null)}
 					{() =>
-						showSessionHeader() ? (
+						headerShown() ? (
 							<SessionHeader
 								logoHidden={collapsed}
+								showTitle={() => showSessionHeader() || temporaryOpen()}
+								temporary={temporaryOpen}
 								title={openSessionTitle}
 								sessionId={() =>
 									props.runConfig?.state()?.session?.sessionId ??
@@ -508,11 +572,67 @@ export function AppShell(props: AppShellProps) {
 											}
 										: undefined
 								}
+								terminals={
+									props.terminals
+										? {
+												tabs: () =>
+													props.terminals?.projectTabs(project()?.id) ?? [],
+												activeId: () => shownTerminal()?.id ?? null,
+												onSelect: (id) => props.terminals?.select(id),
+												onClose: (id) => props.terminals?.close(id),
+											}
+										: undefined
+								}
+								actions={
+									<View class="flex-row">
+										{() => {
+											if (!hasProject()) return null;
+											let lastProject = untracked(project)!;
+											const currentProject = () => {
+												const next = project();
+												if (next) lastProject = next;
+												return lastProject;
+											};
+											const terminals = props.terminals;
+											return (
+												<HeaderActions
+													project={currentProject}
+													onOpenTerminal={
+														terminals
+															? () => {
+																	const current = project();
+																	if (current) openTerminal(current.id);
+																}
+															: undefined
+													}
+													terminalRunning={() => {
+														const current = project();
+														return current
+															? (terminals?.projectTabs(current.id) ?? []).some(
+																	(tab) => !tab.exited,
+																)
+															: false;
+													}}
+													terminalOpening={() => terminals?.opening() ?? false}
+													onNewTemporaryChat={() => {
+														const current = project();
+														if (current) newTemporaryChat(current.id);
+													}}
+													temporary={temporaryOpen}
+													openInApp={props.openProjectInApp}
+													onError={(message) =>
+														toasts.show({ variant: "error", title: message })
+													}
+												/>
+											);
+										}}
+									</View>
+								}
 							/>
 						) : null
 					}
 				</View>
-				<View testID="workspace" class="min-h-0 min-w-0 flex-1">
+				<View testID="workspace" class="relative min-h-0 min-w-0 flex-1">
 					{() => {
 						const current = status();
 						switch (current.type) {
@@ -547,10 +667,14 @@ export function AppShell(props: AppShellProps) {
 															void props.forker?.forkAssistant(messageId)
 													: undefined
 											}
+											// A temporary chat has no session file to fork; keep this reactive so
+											// toggling temporary chat never remounts the message list or composer.
+											canForkAssistant={() => !temporaryOpen()}
 											forkingMessageId={() =>
 												props.forker?.state().forkingMessageId ?? null
 											}
 											forkDisabled={() =>
+												temporaryOpen() ||
 												chat.state().status !== "ready" ||
 												composer.readOnly() ||
 												(props.forker?.state().forkingMessageId ?? null) !==
@@ -677,6 +801,13 @@ export function AppShell(props: AppShellProps) {
 								);
 						}
 					}}
+					{props.terminals ? (
+						<TerminalLayer
+							terminals={props.terminals}
+							shown={() => shownTerminal()?.id ?? null}
+							preferences={() => store.state().preferences?.values}
+						/>
+					) : null}
 				</View>
 			</View>
 		</View>

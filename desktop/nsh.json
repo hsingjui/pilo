@@ -24,7 +24,7 @@
 		"picker": true,
 		"notifications": true,
 		"statusBar": true,
-		"openUrl": { "schemes": ["https"] }
+		"openUrl": { "schemes": ["https", "zed", "vscode", "cursor"] }
 	},
 	"rust": ".",
 	"resolve": {

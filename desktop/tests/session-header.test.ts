@@ -53,3 +53,19 @@ test("the run config menu picks a model and a thinking level", async () => {
 	await app.press("id:run-config-model:anthropic:sonnet-4.5");
 	await app.waitFor("id:chat-composer >> text:Sonnet 4.5");
 });
+
+test("the quick open menu fits its items without spurious scrolling", async () => {
+	const app = await openApp();
+	await app.press("id:project-open-choose");
+	await app.waitFor("id:project-open:ghostty");
+	let scrollError: unknown;
+	try {
+		await app.scroll("id:project-open:vscode", 200);
+	} catch (error) {
+		scrollError = error;
+	}
+	expect(scrollError).toBeDefined();
+	expect(String(scrollError)).toMatch(/at 0 of 0/);
+	expect(app.shows("id:project-open:zed")).toBe(true);
+	expect(app.shows("id:project-open:ghostty")).toBe(true);
+});

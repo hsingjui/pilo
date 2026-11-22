@@ -1,13 +1,18 @@
-import { Clipboard, signal, Text, View } from "nsh";
+import { Clipboard, type JSX, signal, Text, token, View } from "nsh";
+import { Button as BaseButton } from "nsh/base";
+
+import type { TerminalTab } from "../state/terminal-store";
 
 import { AppToaster, showToast } from "./app-toasts";
 import { PiLogo } from "./pi-logo";
 import { Button } from "../ui/button";
+import { classNames } from "../ui/class-names";
 import { Dialog } from "../ui/dialog";
 import { DialogDescription } from "../ui/dialog-description";
 import { DialogFooter } from "../ui/dialog-footer";
 import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
+import { focusRingStyle } from "../ui/focus-ring-style";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
 import { Menu } from "../ui/menu";
@@ -27,50 +32,188 @@ export interface SessionHeaderProps {
 	onRename?: (title: string) => void;
 	/** The sidebar is collapsed: its expand button floats over the logo. */
 	logoHidden?: () => boolean;
+	/** The chat's title tab and menu show; a new chat's landing hides them. */
+	showTitle: () => boolean;
+	/** The chat is temporary: a dashed tab, and no session menu. */
+	temporary: () => boolean;
+	/** The project's terminal tabs beside the chat's. */
+	terminals?: {
+		tabs: () => TerminalTab[];
+		/** The terminal in front of the chat; `null` while the chat is. */
+		activeId: () => string | null;
+		onSelect: (terminalId: string | null) => void;
+		onClose: (terminalId: string) => void;
+	};
+	/** The buttons before the session menu (terminal, temporary chat, quick open). */
+	actions?: JSX.Element;
 }
 
 /**
- * The open session's part of the main title bar: its title tab and the
- * menu. It fills the bar beside the window controls, as the React
- * header does on its draggable top row.
+ * The open session's part of the main title bar: its title tab, the
+ * project's terminal tabs, the actions and the menu. It fills the bar beside
+ * the window controls, as the React header does on its draggable top row.
  */
 export function SessionHeader(props: SessionHeaderProps) {
+	const terminalTabs = () => props.terminals?.tabs() ?? [];
+	const hasTabs = () => terminalTabs().length > 0;
+	const chatSelected = () => (props.terminals?.activeId() ?? null) === null;
 	return (
 		<View
-			testID="session-header"
+			testID="main-header"
 			class="h-full min-w-0 flex-1 flex-row items-center"
 		>
-			<View class="min-w-0 flex-1 flex-row items-center">
-				<View
-					class="min-h-8 min-w-0 max-w-[66.666667%] flex-row items-center gap-1.5 rounded-(--pilo-radius-md) px-2"
-					tooltip={
+			<View class="min-w-0 flex-1 flex-row items-center gap-1">
+				{() => {
+					if (!props.showTitle() && !hasTabs()) return null;
+					const tooltip = (
 						<Tooltip>
 							<Text class="font-sans">{() => props.title()}</Text>
 						</Tooltip>
-					}
-				>
-					<View
-						class="transition-opacity duration-200"
-						style={{ opacity: props.logoHidden?.() ? 0 : 0.6 }}
-					>
-						<PiLogo size={16} />
-					</View>
-					<Text
-						testID="session-header-title"
-						class="min-w-0 shrink truncate font-sans text-sm text-foreground"
-					>
-						{() => props.title()}
-					</Text>
-				</View>
+					);
+					const content = (
+						<>
+							{() =>
+								props.temporary() ? (
+									<Icon name="MessageSquareDashed" size={16} />
+								) : (
+									<View
+										class="transition-opacity duration-200"
+										style={{ opacity: props.logoHidden?.() ? 0 : 0.6 }}
+									>
+										<PiLogo size={16} />
+									</View>
+								)
+							}
+							<Text
+								testID="session-header-title"
+								class={classNames(
+									"min-w-0 shrink truncate font-sans text-sm",
+									chatSelected() ? "text-foreground" : "text-muted-foreground",
+								)}
+							>
+								{() => props.title()}
+							</Text>
+						</>
+					);
+					const tabClass = (extra: string | false) =>
+						classNames(
+							"min-h-8 min-w-0 flex-row items-center gap-1.5 rounded-(--pilo-radius-md) border px-2",
+							props.temporary()
+								? "border-dashed border-border"
+								: "border-transparent",
+							extra,
+						);
+					// Beside terminal tabs the title is a tab that brings the chat back.
+					return hasTabs() ? (
+						<BaseButton
+							testID="session-header"
+							class={tabClass(
+								classNames(
+									"min-w-24 max-w-56 focus-visible:outline-hidden",
+									chatSelected() ? "bg-muted/60" : "hover:bg-hover",
+								),
+							)}
+							focusVisibleStyle={focusRingStyle(token("ring"))}
+							role="tab"
+							selected={chatSelected()}
+							accessibilityLabel={props.title()}
+							tooltip={tooltip}
+							onPress={() => props.terminals?.onSelect(null)}
+						>
+							{content}
+						</BaseButton>
+					) : (
+						<View
+							testID="session-header"
+							class={tabClass("max-w-[66.666667%]")}
+							tooltip={tooltip}
+						>
+							{content}
+						</View>
+					);
+				}}
+				{() =>
+					terminalTabs().map((tab) => (
+						<TerminalHeaderTab
+							tab={tab}
+							selected={() => props.terminals?.activeId() === tab.id}
+							onSelect={() => props.terminals?.onSelect(tab.id)}
+							onClose={() => props.terminals?.onClose(tab.id)}
+						/>
+					))
+				}
 			</View>
 			<View class="shrink-0 flex-row items-center gap-1 pr-2">
-				<SessionHeaderMenu
-					sessionId={props.sessionId}
-					sessionPath={props.sessionPath}
-					title={props.title}
-					onRename={props.onRename}
-				/>
+				{props.actions}
+				{() =>
+					props.showTitle() && !props.temporary() ? (
+						<SessionHeaderMenu
+							sessionId={props.sessionId}
+							sessionPath={props.sessionPath}
+							title={props.title}
+							onRename={props.onRename}
+						/>
+					) : null
+				}
 			</View>
+		</View>
+	);
+}
+
+/** A terminal's tab: its shell's title, and a button that closes it. */
+function TerminalHeaderTab(props: {
+	tab: TerminalTab;
+	selected: () => boolean;
+	onSelect: () => void;
+	onClose: () => void;
+}) {
+	const label = () =>
+		`${props.tab.title} ${props.tab.number}${props.tab.exited ? " · exited" : ""}`;
+	return (
+		<View
+			testID={`terminal-tab:${props.tab.id}`}
+			class={classNames(
+				"min-w-28 max-w-56 flex-row items-center rounded-(--pilo-radius-md) border hover:bg-hover",
+				props.selected() ? "border-border bg-muted/60" : "border-border/60",
+			)}
+		>
+			<BaseButton
+				class="min-h-8 min-w-0 flex-1 flex-row items-center gap-1.5 pl-2.5 pr-1 focus-visible:outline-hidden"
+				focusVisibleStyle={focusRingStyle(token("ring"))}
+				role="tab"
+				selected={props.selected()}
+				accessibilityLabel={label()}
+				tooltip={
+					<Tooltip>
+						<Text class="font-sans">{label}</Text>
+					</Tooltip>
+				}
+				onPress={props.onSelect}
+			>
+				<Icon
+					name="SquareTerminal"
+					size={16}
+					color={token(props.selected() ? "foreground" : "muted-foreground")}
+				/>
+				<Text
+					class={classNames(
+						"min-w-0 shrink truncate font-sans text-sm",
+						props.selected() ? "text-foreground" : "text-muted-foreground",
+					)}
+				>
+					{label}
+				</Text>
+			</BaseButton>
+			<Button
+				testID={`terminal-tab-close:${props.tab.id}`}
+				variant="ghost"
+				size="icon"
+				class="mr-1 size-6"
+				accessibilityLabel={t("terminal.close")}
+				onPress={props.onClose}
+			>
+				<Icon name="X" size={14} color={token("muted-foreground")} />
+			</Button>
 		</View>
 	);
 }

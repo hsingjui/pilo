@@ -1,0 +1,195 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1024"
+  height="1024"
+  viewBox="0 0 1024 1024"
+  fill="none"
+>
+  <title>winc App Logo</title>
+
+  <defs>
+    <!-- 蓝色底板 -->
+    <linearGradient
+      id="background"
+      x1="190" y1="52"
+      x2="805" y2="970"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#3296FC"/>
+      <stop offset="0.36" stop-color="#1769FC"/>
+      <stop offset="0.68" stop-color="#064AF3"/>
+      <stop offset="1" stop-color="#0035D2"/>
+    </linearGradient>
+
+    <radialGradient
+      id="blueGlow"
+      cx="0" cy="0" r="1"
+      gradientUnits="userSpaceOnUse"
+      gradientTransform="translate(585 490) rotate(90) scale(540 620)"
+    >
+      <stop stop-color="#034AFF" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#034AFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 白色丝带正面 -->
+    <linearGradient
+      id="ribbon"
+      x1="480" y1="397"
+      x2="480" y2="731"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.42" stop-color="#FAFBFE"/>
+      <stop offset="1" stop-color="#E5EDFC"/>
+    </linearGradient>
+
+    <!-- 中间上行折面 -->
+    <linearGradient
+      id="middleFold"
+      x1="382" y1="548"
+      x2="491" y2="583"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#B1CBFA"/>
+      <stop offset="0.48" stop-color="#C5D9FC"/>
+      <stop offset="1" stop-color="#DCE8FD"/>
+    </linearGradient>
+
+    <linearGradient
+      id="middleShade"
+      x1="460" y1="427"
+      x2="407" y2="669"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#91B4F8" stop-opacity="0.24"/>
+      <stop offset="0.48" stop-color="#B2CDFB" stop-opacity="0"/>
+      <stop offset="1" stop-color="#90B6F9" stop-opacity="0.25"/>
+    </linearGradient>
+
+    <!-- 右侧上行折面 -->
+    <linearGradient
+      id="rightFold"
+      x1="773" y1="437"
+      x2="686" y2="668"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#F5F7FE"/>
+      <stop offset="0.42" stop-color="#E0EAFD"/>
+      <stop offset="0.76" stop-color="#C9DCFC"/>
+      <stop offset="1" stop-color="#B2CDFA"/>
+    </linearGradient>
+
+    <!-- 圆点 -->
+    <linearGradient
+      id="dot"
+      x1="758" y1="306"
+      x2="824" y2="402"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.42" stop-color="#FAFBFF"/>
+      <stop offset="1" stop-color="#DFE8FC"/>
+    </linearGradient>
+
+    <path
+      id="wShape"
+      d="
+        M 178 448
+        C 174 425, 193 405, 219 400
+        C 253 391, 288 402, 301 429
+        C 316 464, 339 533, 357 579
+
+        L 424 447
+        C 440 413, 468 398, 504 397
+        C 547 395, 579 412, 595 445
+        C 612 481, 636 541, 655 586
+
+        L 710 467
+        C 722 440, 739 430, 759 433
+        C 790 435, 817 450, 825 474
+        C 830 487, 823 503, 817 517
+
+        L 754 658
+        C 737 700, 706 729, 664 730
+        C 618 733, 584 711, 565 671
+        C 546 628, 529 567, 513 523
+
+        L 455 654
+        C 435 703, 405 729, 364 730
+        C 318 733, 286 714, 267 679
+        C 246 640, 209 536, 182 464
+        C 179 457, 178 452, 178 448
+        Z
+      "
+    />
+
+    <path
+      id="middleFace"
+      d="
+        M 357 579
+        L 424 447
+        C 429 437, 435 430, 442 427
+        C 461 423, 479 442, 491 467
+        C 500 486, 507 506, 513 523
+        L 450 663
+        C 437 669, 422 667, 409 662
+        C 386 653, 371 618, 357 579
+        Z
+      "
+    />
+
+    <clipPath id="wClip">
+      <use href="#wShape"/>
+    </clipPath>
+  </defs>
+
+  <!-- 四周透明 -->
+  <rect
+    x="52"
+    y="52"
+    width="920"
+    height="918"
+    rx="222"
+    fill="url(#background)"
+  />
+
+  <rect
+    x="52"
+    y="52"
+    width="920"
+    height="918"
+    rx="222"
+    fill="url(#blueGlow)"
+  />
+
+  <!-- 丝带轮廓与折面 -->
+  <use href="#wShape" fill="url(#ribbon)"/>
+
+  <g clip-path="url(#wClip)">
+    <use href="#middleFace" fill="url(#middleFold)"/>
+    <use href="#middleFace" fill="url(#middleShade)"/>
+
+    <path
+      d="
+        M 655 586
+        L 710 467
+        C 722 440, 739 430, 759 433
+        C 790 435, 817 450, 825 474
+        C 830 487, 823 503, 817 517
+        L 754 658
+        C 751 664, 744 667, 736 668
+        C 714 672, 696 661, 682 645
+        C 671 632, 662 608, 655 586
+        Z
+      "
+      fill="url(#rightFold)"
+    />
+  </g>
+
+  <circle
+    cx="790"
+    cy="350"
+    r="59"
+    fill="url(#dot)"
+  />
+</svg>
