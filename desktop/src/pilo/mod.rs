@@ -1288,6 +1288,23 @@ impl Pilo {
         .await
     }
 
+    /// Opens a file link: returns `{ path, content }` when previewing text, or `null` after opening in the system app.
+    pub async fn open_file_link(
+        this: Instance<Self>,
+        project_id: String,
+        url: String,
+        preview: bool,
+    ) -> Result<Option<JsonValue>, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let file =
+                project_api::project_file_link_open(&runtime, project_id, url, preview).await?;
+            file.map(serde_json::to_value)
+                .transpose()
+                .map_err(|error| error.to_string())
+        })
+        .await
+    }
+
     /// Opens a shell in the project's environment and returns its terminal
     /// (`id`, `projectId`, `title`); its output comes from `next_terminal_events`.
     pub async fn open_terminal(

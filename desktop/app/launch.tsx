@@ -9,6 +9,7 @@ import { ChatRunConfigStore } from "../state/chat-run-config";
 import { ChatTranscriptStore } from "../state/chat-transcript-store";
 import { ModelCatalogStore } from "../state/model-catalog";
 import { TerminalStore } from "../state/terminal-store";
+import { WorkspaceStore } from "../state/workspace-store";
 import manifest from "../nsh.json";
 import { AppShell, type AppShellProps, StartupFrame } from "./AppShell";
 import { showStartupTheme } from "./appearance";
@@ -233,9 +234,12 @@ export async function launch(
 		desktop,
 		notifications,
 		sidebarSettings,
+		workspace: new WorkspaceStore(),
 		terminals: new TerminalStore(client),
 		openProjectInApp: (projectId, app, path) =>
 			client.openProjectInApp(projectId, app, path),
+		openFileLink: (projectId, url, preview) =>
+			client.openFileLink(projectId, url, preview),
 		onRenameSession: (projectId, sessionPath, title) =>
 			void store.renameSession(projectId, sessionPath, title),
 		readProjectImage: (projectId, path) =>

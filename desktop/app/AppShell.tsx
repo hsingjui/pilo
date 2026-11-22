@@ -63,13 +63,21 @@ import type { DesktopNotificationsApi } from "./desktop-notifications";
 import type { DesktopShell } from "./desktop-shell";
 import { t } from "./i18n";
 import { AddProjectDialog, type AddProjectApi } from "./add-project-dialog";
+import { FilePreviewLayer } from "./file-preview-view";
 import { SessionLanding } from "./landing";
 import { openChatTarget } from "./open-chat";
+import {
+	canOpenToolFilePath,
+	openMarkdownFileLink,
+	openToolFilePath,
+	type OpenFileLinkClient,
+} from "./open-file-link";
 import { HeaderActions } from "./header-actions";
 import { SessionHeader } from "./session-header";
 import { TerminalLayer } from "./terminal-view";
 import type { ProjectNativeApp } from "../client/nsh-pilo-client";
 import type { TerminalStore } from "../state/terminal-store";
+import { WorkspaceStore } from "../state/workspace-store";
 import {
 	NOTICE_MS as FORK_NOTICE_MS,
 	type SessionForker,
@@ -96,7 +104,11 @@ export interface AppShellProps {
 	readProjectImage?: (projectId: string, path: string) => Promise<Uint8Array>;
 	/** Prompts the user to save an image from the preview lightbox. */
 	saveImage?: (suggestedName: string, bytes: Uint8Array) => Promise<boolean>;
-	/** What a project file link in a reply does when pressed (a workspace tab, M5). */
+	/** Opens a file link via the runtime (returns preview text or launches the system app). */
+	openFileLink?: OpenFileLinkClient;
+	/** Per-project open file preview tabs; created automatically when `openFileLink` is given. */
+	workspace?: WorkspaceStore;
+	/** What a project file link in a reply does when pressed (overrides default workspace handling). */
 	onFileLink?: (link: ChatMarkdownFileLink) => void;
 	/** The open session's run configuration; a header shows it when present. */
 	runConfig?: Pick<
@@ -144,9 +156,36 @@ export function AppShell(props: AppShellProps) {
 	const project = computed(() => activeProject(store.state()));
 	const hasProject = computed(() => project() !== null);
 	const sessionOpen = computed(() => store.state().navigation.session !== null);
+	const toasts = new AppToasts();
+	const workspace =
+		props.workspace ?? (props.openFileLink ? new WorkspaceStore() : undefined);
 	const previewImage = signal<ChatImagePreview | null>(null);
+	const fileOpenContext = workspace
+		? {
+				project,
+				workspace,
+				openFileLink: props.openFileLink,
+				readProjectImage: props.readProjectImage,
+				openImage: (image: ChatImagePreview) => previewImage.set(image),
+				toasts,
+				onFileActivated: () => props.terminals?.select(null),
+			}
+		: null;
+	const handleFileLink =
+		props.onFileLink ??
+		(fileOpenContext
+			? (link: ChatMarkdownFileLink) =>
+					openMarkdownFileLink(fileOpenContext, link)
+			: undefined);
 	const mediaActions = {
 		openImage: (image: ChatImagePreview) => previewImage.set(image),
+		...(fileOpenContext
+			? {
+					canOpenFile: (path: string) =>
+						canOpenToolFilePath(fileOpenContext, path),
+					openFile: (path: string) => openToolFilePath(fileOpenContext, path),
+				}
+			: {}),
 	};
 	/** The open session's index entry, for its title and Pi session id. */
 	const openSessionEntry = () => {
@@ -175,13 +214,21 @@ export function AppShell(props: AppShellProps) {
 	const shownTerminal = computed(
 		() => props.terminals?.activeTab(project()?.id) ?? null,
 	);
+	/** The project's file preview shown in place of its chat, if any. */
+	const shownFile = computed(() =>
+		shownTerminal() ? null : (workspace?.activeFile(project()?.id) ?? null),
+	);
 	const paletteOpen = signal(false);
 	const settingsOpen = signal(false);
 	const registeredShortcuts = signal<Partial<KeyboardShortcutMap>>({});
 	const addProjectOpen = signal(false);
 	const addProjectConnection = signal<string | null>(null);
 	const remoteOpen = signal(false);
-	const modalOpen = () => settingsOpen() || addProjectOpen() || remoteOpen();
+	const modalOpen = () =>
+		settingsOpen() ||
+		addProjectOpen() ||
+		remoteOpen() ||
+		previewImage() !== null;
 	const defaults = defaultKeyboardShortcuts(platform.os === "macos");
 	const shortcuts = computed(
 		() => store.state().preferences?.values.keyboardShortcuts ?? defaults,
@@ -305,7 +352,6 @@ export function AppShell(props: AppShellProps) {
 			(showSessionHeader() || temporaryOpen() || project() !== null),
 	);
 	followSavedAppearance(store.state);
-	const toasts = new AppToasts();
 	// A fork's outcome joins the app's toasts once per notice.
 	let forkNotice: number | null = null;
 	effect(() => {
@@ -336,16 +382,19 @@ export function AppShell(props: AppShellProps) {
 	const titleBar = () => window.titleBar();
 	const barHeight = () => titleBar().height || TITLE_BAR_HEIGHT;
 	const newChat = () => {
-		const project = activeProject(store.state());
+		const current = activeProject(store.state());
 		props.terminals?.select(null);
-		if (project) store.selectProject(project.id);
+		workspace?.selectChat(current?.id);
+		if (current) store.selectProject(current.id);
 		else if (props.projectClient) openAddProject(null);
 	};
 	const newTemporaryChat = (projectId: string) => {
 		props.terminals?.select(null);
+		workspace?.selectChat(projectId);
 		store.selectTemporary(projectId);
 	};
 	const openTerminal = (projectId: string) => {
+		workspace?.selectChat(projectId);
 		void props.terminals?.open(projectId).catch((error: unknown) => {
 			console.error(t("terminal.openFailed"), error);
 			toasts.show({
@@ -355,18 +404,25 @@ export function AppShell(props: AppShellProps) {
 			});
 		});
 	};
-	if (props.terminals) {
+	if (props.terminals || workspace) {
 		const terminals = props.terminals;
 		const projects = computed(() => store.state().projects);
 		effect(() => {
-			const ids = new Set(projects().map(({ id }) => id));
-			untracked(() => terminals.reconcileProjects(ids));
+			const ids = projects().map(({ id }) => id);
+			untracked(() => {
+				terminals?.reconcileProjects(new Set(ids));
+				workspace?.reconcileProjects(ids);
+			});
 		});
 	}
-	// Opening another chat brings the chat back in front of the terminals.
+	// Opening another chat brings the chat back in front of terminals and file previews.
 	effect(() => {
 		chatSessionKey();
-		untracked(() => props.terminals?.select(null));
+		const currentProjectId = untracked(project)?.id;
+		untracked(() => {
+			props.terminals?.select(null);
+			workspace?.selectChat(currentProjectId);
+		});
 	});
 	const openAddProject = (connectionId: string | null) => {
 		addProjectConnection.set(connectionId);
@@ -585,13 +641,38 @@ export function AppShell(props: AppShellProps) {
 											}
 										: undefined
 								}
+								files={
+									workspace
+										? {
+												tabs: () => workspace.files(project()?.id),
+												activePath: () => shownFile()?.file.path ?? null,
+												onSelect: (path) => {
+													const current = project();
+													if (!current) return;
+													props.terminals?.select(null);
+													workspace.selectFile(current.id, path);
+												},
+												onClose: (path) => {
+													const current = project();
+													if (current) workspace.closeFile(current.id, path);
+												},
+											}
+										: undefined
+								}
+								onSelectChat={() => {
+									props.terminals?.select(null);
+									workspace?.selectChat(project()?.id);
+								}}
 								terminals={
 									props.terminals
 										? {
 												tabs: () =>
 													props.terminals?.projectTabs(project()?.id) ?? [],
 												activeId: () => shownTerminal()?.id ?? null,
-												onSelect: (id) => props.terminals?.select(id),
+												onSelect: (id) => {
+													if (id !== null) workspace?.selectChat(project()?.id);
+													props.terminals?.select(id);
+												},
 												onClose: (id) => props.terminals?.close(id),
 											}
 										: undefined
@@ -670,7 +751,7 @@ export function AppShell(props: AppShellProps) {
 													textKey={textKey}
 													project={project}
 													readProjectImage={props.readProjectImage}
-													onFileLink={props.onFileLink}
+													onFileLink={handleFileLink}
 												/>
 											)}
 											preferences={() => store.state().preferences?.values}
@@ -814,6 +895,19 @@ export function AppShell(props: AppShellProps) {
 								);
 						}
 					}}
+					{workspace ? (
+						<FilePreviewLayer
+							workspace={workspace}
+							active={shownFile}
+							projectFor={(projectId) =>
+								store.state().projects.find(({ id }) => id === projectId) ??
+								null
+							}
+							preferences={() => store.state().preferences?.values}
+							readProjectImage={props.readProjectImage}
+							onFileLink={handleFileLink}
+						/>
+					) : null}
 					{props.terminals ? (
 						<TerminalLayer
 							terminals={props.terminals}

@@ -43,6 +43,7 @@ import type {
 	ProjectModelScope,
 	ProjectScopedModel,
 } from "@shared/project-model-scope";
+import type { WorkspaceFile } from "@shared/project-workspace";
 import type { CacheKeepAliveSettings } from "@shared/cache-keep-alive";
 import type {
 	NextPromptModel,
@@ -154,6 +155,7 @@ export type PiloNative = Pick<
 			Pilo,
 			| "systemFontFamilies"
 			| "projectOpenInApp"
+			| "openFileLink"
 			| "saveImage"
 			| "openTerminal"
 			| "writeTerminal"
@@ -875,6 +877,20 @@ export class NshPiloClient implements PiloClient {
 	): Promise<void> {
 		if (!this.pilo.projectOpenInApp) throw unavailable("projectOpenInApp");
 		await this.pilo.projectOpenInApp(projectId, app, path);
+	}
+
+	/** Opens a file link: returns preview content for text files or null after opening natively. */
+	async openFileLink(
+		projectId: string,
+		url: string,
+		preview: boolean,
+	): Promise<WorkspaceFile | null> {
+		if (!this.pilo.openFileLink) throw unavailable("openFileLink");
+		return (await this.pilo.openFileLink(
+			projectId,
+			url,
+			preview,
+		)) as WorkspaceFile | null;
 	}
 
 	/** Opens a shell in the project; its output comes from `nextTerminalEvents`. */

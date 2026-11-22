@@ -937,6 +937,8 @@ const zhCN = {
 		noDiff: "没有可显示的 diff",
 		noDiffDescription: "该文件在当前视图下没有文本差异。",
 		gitRefresh: "刷新 Git 状态",
+		previewMarkdown: "预览",
+		viewSource: "源码",
 		gitReadFailed: "无法读取 Git 状态",
 		gitRepoHint: "请检查当前项目是否为 Git 仓库。",
 		workingTree: "工作区",

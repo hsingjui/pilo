@@ -983,6 +983,8 @@ const enUS = {
 		workingClean: "The working tree has no unstaged changes.",
 		stagedClean: "The staging area has no changes.",
 		openFile: "Open in editor",
+		previewMarkdown: "Preview",
+		viewSource: "Source",
 		changes: "Changes",
 		closeFile: "Close {{name}}",
 		noOpenFiles: "No files open",

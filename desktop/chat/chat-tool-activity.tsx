@@ -1,11 +1,14 @@
 import { computed, Text, token, View } from "nsh";
+import { Button as BaseButton } from "nsh/base";
 
 import type { ToolCallActivity } from "@shared/chat/chat-activity-types";
 import {
 	fileBasename,
 	isRecord,
+	singleToolResultImage,
 	toolFilePath,
 	toolPreview,
+	toolResultImageUrl,
 } from "@shared/chat/chat-tool-result";
 import {
 	countChatTodos,
@@ -14,12 +17,16 @@ import {
 } from "@shared/chat/chat-todos";
 
 import { t } from "../app/i18n";
+import { classNames } from "../ui/class-names";
+import { focusRingStyle } from "../ui/focus-ring-style";
+import { Foreground } from "../ui/foreground";
 import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
 import { Tooltip } from "../ui/tooltip";
 import { toolIconName, toolLabel, toolSkillName } from "./chat-activity-labels";
 import { ChatDisclosureRow } from "./chat-disclosure-row";
-import type { ChatExpansion } from "./chat-expansion";
+import { ChatDisclosureAction, type ChatExpansion } from "./chat-expansion";
+import { ChatMediaActions } from "./chat-media-actions";
 import { ChatReadingFont, readingTextStyle } from "./chat-reading-font";
 import { ChatToolDetail } from "./chat-tool-detail";
 
@@ -35,6 +42,8 @@ export function ChatToolActivity(props: {
 }) {
 	const { activity } = props;
 	const readingFont = ChatReadingFont();
+	const media = ChatMediaActions();
+	const disclose = ChatDisclosureAction();
 	const open = computed(() =>
 		props.expansion.isOpen(props.expansionKey(), false),
 	);
@@ -42,6 +51,22 @@ export function ChatToolActivity(props: {
 	const failed = computed(() => activity().isError === true);
 	const preview = computed(() => toolPreview(activity()));
 	const filePath = computed(() => toolFilePath(activity()));
+	const toolName = computed(() => activity().toolName.toLowerCase());
+	const readImage = computed(() =>
+		toolName() === "read" && !running() && !failed() && filePath()
+			? singleToolResultImage(activity().result)
+			: null,
+	);
+	const openablePath = computed(() => {
+		const path = filePath();
+		const name = toolName();
+		if ((name !== "read" && name !== "write" && name !== "edit") || !path) {
+			return null;
+		}
+		if (readImage() && media.openImage) return path;
+		if (media.openFile && (media.canOpenFile?.(path) ?? true)) return path;
+		return null;
+	});
 	const skillName = computed(() => toolSkillName(activity(), filePath()));
 	// A failed call's list did not take effect: its details show the error.
 	const todos = computed(() => {
@@ -87,61 +112,160 @@ export function ChatToolActivity(props: {
 	const status = computed(() =>
 		failed() ? "failed" : running() ? "running" : null,
 	);
+	const toggleDetails = () => {
+		if (!hasDetails()) return;
+		disclose(() => props.expansion.setOpen(props.expansionKey(), !open()));
+	};
+	const openPath = () => {
+		const path = openablePath();
+		if (!path) return;
+		const image = readImage();
+		if (image && media.openImage) {
+			media.openImage({
+				url: toolResultImageUrl(image),
+				name: fileBasename(path) || path,
+			});
+			return;
+		}
+		media.openFile?.(path);
+	};
+	const rowColor = () => token(failed() ? "destructive" : "muted-foreground");
 	return (
 		<View class="w-full">
-			<ChatDisclosureRow
-				testID="chat-tool"
-				tone={failed() ? "destructive" : "muted"}
-				expanded={hasDetails() ? open() : undefined}
-				disabled={!hasDetails()}
-				class={open() ? "bg-hover" : undefined}
-				accessibilityLabel={
-					previewLabel() ? `${label()} ${previewLabel()}` : label()
+			{() => {
+				const path = openablePath();
+				const value = previewLabel();
+				if (path && value) {
+					return (
+						<Foreground.Provider value={rowColor}>
+							<View
+								testID="chat-tool"
+								class={classNames(
+									"-mx-1 min-h-6 flex-row items-center gap-1.5 rounded-(--pilo-radius-md) px-1 py-0.5",
+									hasDetails() ? "hover:bg-hover" : undefined,
+									open() ? "bg-hover" : undefined,
+								)}
+							>
+								<BaseButton
+									disabled={!hasDetails()}
+									class="shrink-0 flex-row items-center gap-1.5 focus-visible:outline-hidden"
+									focusVisibleStyle={focusRingStyle(token("ring"))}
+									accessibilityLabel={`${label()} ${value}`}
+									onPress={toggleDetails}
+								>
+									<Icon
+										name={toolIconName(
+											activity().toolName,
+											skillName() !== null,
+										)}
+										size={14}
+									/>
+									<Text
+										class={
+											failed()
+												? "shrink-0 font-sans font-medium leading-snug text-destructive"
+												: "shrink-0 font-sans font-medium leading-snug text-muted-foreground"
+										}
+										style={readingTextStyle(readingFont())}
+									>
+										{label}
+									</Text>
+								</BaseButton>
+								<BaseButton
+									testID="chat-tool-file-link"
+									class="min-w-0 shrink rounded-sm bg-muted/50 px-1.5 py-0.5 hover:bg-muted focus-visible:outline-hidden"
+									focusVisibleStyle={focusRingStyle(token("ring"))}
+									accessibilityLabel={t("chat.openFile", { path })}
+									tooltip={
+										<Tooltip class="max-w-96" delay={300} margin={16}>
+											<Text class="font-mono text-xs">{path}</Text>
+										</Tooltip>
+									}
+									onPress={openPath}
+								>
+									<Text
+										class="min-w-0 truncate font-mono font-normal text-muted-foreground"
+										style={{ fontSize: token("pilo-code-font-size") }}
+									>
+										{value}
+									</Text>
+								</BaseButton>
+								<BaseButton
+									disabled={!hasDetails()}
+									class="min-h-5 min-w-2 flex-1 flex-row items-center justify-end focus-visible:outline-hidden"
+									accessibilityLabel={`${label()} ${value}`}
+									onPress={toggleDetails}
+								>
+									{() =>
+										status() === "failed" ? (
+											<Icon name="CircleAlert" size={14} />
+										) : status() === "running" ? (
+											<Spinner size={14} />
+										) : null
+									}
+								</BaseButton>
+							</View>
+						</Foreground.Provider>
+					);
 				}
-				tooltip={
-					preview() ? (
-						<Tooltip class="max-w-80" delay={300} margin={16}>
-							<Text class="line-clamp-24 font-sans">
-								{() => preview() ?? ""}
-							</Text>
-						</Tooltip>
-					) : undefined
-				}
-				onPress={() => props.expansion.setOpen(props.expansionKey(), !open())}
-			>
-				{() => (
-					<Icon
-						name={toolIconName(activity().toolName, skillName() !== null)}
-						size={14}
-					/>
-				)}
-				<Text
-					class={
-						failed()
-							? "min-w-0 flex-1 truncate font-sans font-medium leading-snug text-destructive"
-							: "min-w-0 flex-1 truncate font-sans font-medium leading-snug text-muted-foreground"
-					}
-					style={readingTextStyle(readingFont())}
-				>
-					{label}
-					<Text
-						class="font-mono font-normal text-muted-foreground"
-						style={{ fontSize: token("pilo-code-font-size") }}
+				return (
+					<ChatDisclosureRow
+						testID="chat-tool"
+						tone={failed() ? "destructive" : "muted"}
+						expanded={hasDetails() ? open() : undefined}
+						disabled={!hasDetails()}
+						class={open() ? "bg-hover" : undefined}
+						accessibilityLabel={
+							previewLabel() ? `${label()} ${previewLabel()}` : label()
+						}
+						tooltip={
+							preview() ? (
+								<Tooltip class="max-w-80" delay={300} margin={16}>
+									<Text class="line-clamp-24 font-sans">
+										{() => preview() ?? ""}
+									</Text>
+								</Tooltip>
+							) : undefined
+						}
+						onPress={() =>
+							props.expansion.setOpen(props.expansionKey(), !open())
+						}
 					>
-						{() => {
-							const value = previewLabel();
-							return value ? `\u2002${value}` : "";
-						}}
-					</Text>
-				</Text>
-				{() =>
-					status() === "failed" ? (
-						<Icon name="CircleAlert" size={14} />
-					) : status() === "running" ? (
-						<Spinner size={14} />
-					) : null
-				}
-			</ChatDisclosureRow>
+						{() => (
+							<Icon
+								name={toolIconName(activity().toolName, skillName() !== null)}
+								size={14}
+							/>
+						)}
+						<Text
+							class={
+								failed()
+									? "min-w-0 flex-1 truncate font-sans font-medium leading-snug text-destructive"
+									: "min-w-0 flex-1 truncate font-sans font-medium leading-snug text-muted-foreground"
+							}
+							style={readingTextStyle(readingFont())}
+						>
+							{label}
+							<Text
+								class="font-mono font-normal text-muted-foreground"
+								style={{ fontSize: token("pilo-code-font-size") }}
+							>
+								{() => {
+									const value = previewLabel();
+									return value ? `\u2002${value}` : "";
+								}}
+							</Text>
+						</Text>
+						{() =>
+							status() === "failed" ? (
+								<Icon name="CircleAlert" size={14} />
+							) : status() === "running" ? (
+								<Spinner size={14} />
+							) : null
+						}
+					</ChatDisclosureRow>
+				);
+			}}
 			{() => {
 				// A recycled row must not carry its detail scroll into another call.
 				if (detailKey() === null) return null;
