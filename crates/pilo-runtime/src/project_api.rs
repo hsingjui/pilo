@@ -132,7 +132,10 @@ pub async fn project_remove(runtime: &Runtime, id: String) -> Result<Vec<Project
     }
     runtime.chat_sessions.stop_project(&id).await?;
     let _scan = super::session_api::lock_session_index(runtime, &id).await;
-    let projects = project::remove(runtime, &id)?;
+    let projects = runtime
+        .terminals
+        .remove_project_and_close(&id, || project::remove(runtime, &id))
+        .await?;
     crate::session_watcher::SessionWatcherManager::stop(&runtime.session_watchers, &id).await;
     Ok(projects)
 }
@@ -159,18 +162,27 @@ pub async fn project_terminal_open(
     rows: u16,
 ) -> Result<TerminalInfo, String> {
     let project = project::ready(runtime, &runtime.servers, &id).await?;
-    runtime
+    let (info, session) = runtime
         .terminals
-        .lock()
-        .await
-        .open(
+        .start(
             Arc::clone(&runtime.servers),
-            runtime.host_events.clone(),
+            runtime.terminal_events.clone(),
             &project,
             cols,
             rows,
         )
+        .await?;
+    if let Err((error, session)) = runtime
+        .terminals
+        .commit_if(session, || project::get(runtime, &id).map(|_| ()))
         .await
+    {
+        if let Err(close_error) = session.close().await {
+            log::warn!(target: "terminal", "failed to close terminal {} after project removal: {close_error}", info.id);
+        }
+        return Err(error);
+    }
+    Ok(info)
 }
 
 pub async fn terminal_write(
@@ -178,12 +190,7 @@ pub async fn terminal_write(
     terminal_id: String,
     data: Vec<u8>,
 ) -> Result<(), String> {
-    runtime
-        .terminals
-        .lock()
-        .await
-        .write(&terminal_id, &data)
-        .await
+    runtime.terminals.write(&terminal_id, &data).await
 }
 
 pub async fn terminal_resize(
@@ -192,16 +199,11 @@ pub async fn terminal_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    runtime
-        .terminals
-        .lock()
-        .await
-        .resize(&terminal_id, cols, rows)
-        .await
+    runtime.terminals.resize(&terminal_id, cols, rows).await
 }
 
 pub async fn terminal_close(runtime: &Runtime, terminal_id: String) -> Result<(), String> {
-    runtime.terminals.lock().await.close(&terminal_id).await
+    runtime.terminals.close(&terminal_id).await
 }
 
 pub async fn parallel_agent_list(

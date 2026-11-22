@@ -48,6 +48,7 @@ pub struct RuntimeState {
     pub(crate) paths: HostPaths,
     pub(crate) host_events: Arc<dyn HostEvents>,
     pub(crate) events: RuntimeEventBus,
+    pub(crate) terminal_events: super::terminal::TerminalEventBus,
     shell: OnceLock<Arc<dyn HostShell>>,
     web_assets: OnceLock<Arc<dyn super::web_assets::WebAssets>>,
     pub(crate) core: super::PiloRuntime,
@@ -73,6 +74,7 @@ impl std::ops::Deref for Runtime {
 impl Drop for RuntimeState {
     fn drop(&mut self) {
         self.events.close_streams();
+        self.terminal_events.close();
     }
 }
 
@@ -84,6 +86,13 @@ impl Runtime {
         self.events.subscribe_events(limits)
     }
 
+    pub fn subscribe_terminal_events(
+        &self,
+        max_bytes: usize,
+    ) -> super::terminal::TerminalEventStream {
+        self.terminal_events.subscribe(max_bytes)
+    }
+
     pub fn new(paths: HostPaths, host_events: Arc<dyn HostEvents>) -> Self {
         let events = RuntimeEventBus::for_host();
         events.initialize_session_reads(paths.clone());
@@ -92,6 +101,7 @@ impl Runtime {
             paths,
             host_events,
             events,
+            terminal_events: super::terminal::TerminalEventBus::default(),
             shell: OnceLock::new(),
             web_assets: OnceLock::new(),
             core: super::PiloRuntime::default(),
@@ -132,6 +142,7 @@ impl Runtime {
 
     pub async fn shutdown(&self) {
         self.events.close_streams();
+        self.terminal_events.close();
         self.servers.begin_shutdown();
         let teardown = async {
             log::info!(target: "shutdown", "remote webui: stopping");
@@ -141,7 +152,7 @@ impl Runtime {
             log::info!(target: "shutdown", "session watchers: stopping");
             crate::session_watcher::SessionWatcherManager::stop_all(&self.session_watchers).await;
             log::info!(target: "shutdown", "terminals: closing");
-            self.terminals.lock().await.close_all().await;
+            self.terminals.close_all().await;
         };
         if tokio::time::timeout(std::time::Duration::from_secs(5), teardown)
             .await

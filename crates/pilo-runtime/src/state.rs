@@ -29,7 +29,7 @@ pub struct PiloRuntimeState {
     pub(crate) background_session_index: Arc<StdMutex<BackgroundSessionIndexManager>>,
     pub(crate) session_history_cache: Mutex<SessionHistoryCache>,
     pub(crate) session_watchers: Mutex<SessionWatcherManager>,
-    pub(crate) terminals: Mutex<TerminalManager>,
+    pub(crate) terminals: TerminalManager,
 }
 
 impl Default for PiloRuntimeState {
@@ -45,7 +45,7 @@ impl Default for PiloRuntimeState {
             )),
             session_history_cache: Mutex::new(SessionHistoryCache::default()),
             session_watchers: Mutex::new(SessionWatcherManager::default()),
-            terminals: Mutex::new(TerminalManager::default()),
+            terminals: TerminalManager::default(),
         }
     }
 }

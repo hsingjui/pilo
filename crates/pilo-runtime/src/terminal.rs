@@ -1,90 +1,194 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
+        Arc, Mutex as StdMutex, PoisonError,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
-use super::host_events::HostEvents;
 use serde::Serialize;
 use serde_json::{Value, json};
-use tokio::task::JoinHandle;
+use tokio::{
+    sync::{Mutex as AsyncMutex, Notify},
+    task::JoinHandle,
+};
 
 use pilo_domain::Project;
 
 use super::server_client::{SERVER_DISCONNECTED_EVENT, ServerClient, ServerManager};
 
-pub const TERMINAL_EVENT_NAME: &str = "pilo://terminal";
-
 static TERMINAL_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::host_events::RecordingEvents;
+/// Maximum buffered terminal payload kept per subscriber before dropping the oldest event.
+pub const TERMINAL_QUEUE_MAX_BYTES: usize = 16 * 1024 * 1024;
 
-    #[test]
-    fn terminal_events_preserve_bytes_empty_output_exit_and_errors() {
-        let events = RecordingEvents::default();
-        for data in [vec![0, 255, 10], vec![]] {
-            emit_terminal_event(
-                &events,
-                TerminalEvent::Output {
-                    terminal_id: "t".into(),
-                    data: data.clone(),
-                },
-            )
-            .unwrap();
-            assert_eq!(
-                events.events.lock().unwrap().last().unwrap(),
-                &(
-                    TERMINAL_EVENT_NAME.into(),
-                    json!({"type":"output", "terminalId":"t", "data":data})
-                )
-            );
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TerminalEvent {
+    Output {
+        terminal_id: String,
+        data: Vec<u8>,
+    },
+    Exit {
+        terminal_id: String,
+    },
+    Error {
+        terminal_id: String,
+        message: String,
+    },
+}
+
+impl TerminalEvent {
+    fn approx_bytes(&self) -> usize {
+        match self {
+            Self::Output { terminal_id, data } => 64 + terminal_id.len() + data.len(),
+            Self::Exit { terminal_id } => 64 + terminal_id.len(),
+            Self::Error {
+                terminal_id,
+                message,
+            } => 64 + terminal_id.len() + message.len(),
         }
-        emit_terminal_event(
-            &events,
-            TerminalEvent::Exit {
-                terminal_id: "t".into(),
-            },
-        )
-        .unwrap();
-        emit_terminal_event(
-            &events,
-            TerminalEvent::Error {
-                terminal_id: "t".into(),
-                message: "closed".into(),
-            },
-        )
-        .unwrap();
-        let recorded = events.events.lock().unwrap();
-        assert_eq!(
-            recorded[2],
-            (
-                TERMINAL_EVENT_NAME.into(),
-                json!({"type":"exit", "terminalId":"t"})
-            )
-        );
-        assert_eq!(
-            recorded[3],
-            (
-                TERMINAL_EVENT_NAME.into(),
-                json!({"type":"error", "terminalId":"t", "message":"closed"})
-            )
-        );
-        drop(recorded);
-        events.fail.store(true, Ordering::Relaxed);
-        assert!(
-            emit_terminal_event(
-                &events,
-                TerminalEvent::Exit {
-                    terminal_id: "t".into()
+    }
+}
+
+#[derive(Default)]
+struct TerminalQueueState {
+    events: VecDeque<(usize, TerminalEvent)>,
+    bytes: usize,
+    closed: bool,
+}
+
+struct TerminalStreamInner {
+    max_bytes: usize,
+    queue: StdMutex<TerminalQueueState>,
+    ready: Notify,
+}
+
+impl TerminalStreamInner {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            max_bytes: max_bytes.max(1),
+            queue: StdMutex::new(TerminalQueueState::default()),
+            ready: Notify::new(),
+        }
+    }
+
+    fn push(&self, event: TerminalEvent) {
+        let size = event.approx_bytes();
+        let mut queue = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
+        if queue.closed {
+            return;
+        }
+        queue.bytes += size;
+        queue.events.push_back((size, event));
+        while queue.bytes > self.max_bytes && queue.events.len() > 1 {
+            if let Some((dropped, _)) = queue.events.pop_front() {
+                queue.bytes -= dropped;
+            }
+        }
+        drop(queue);
+        self.ready.notify_one();
+    }
+
+    fn close(&self) {
+        let mut queue = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
+        queue.closed = true;
+        drop(queue);
+        self.ready.notify_waiters();
+    }
+}
+
+/// Ordered, bounded stream of terminal events subscribed from a `Runtime`.
+pub struct TerminalEventStream {
+    inner: Arc<TerminalStreamInner>,
+}
+
+impl TerminalEventStream {
+    /// Waits for at least one event and takes up to `max` in order, or returns
+    /// an empty vector once the runtime has shut down and all queued events are drained.
+    pub async fn next_batch(&self, max: usize) -> Vec<TerminalEvent> {
+        let max = max.max(1);
+        loop {
+            let notified = self.inner.ready.notified();
+            {
+                let mut queue = self
+                    .inner
+                    .queue
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                if !queue.events.is_empty() {
+                    let count = max.min(queue.events.len());
+                    let taken = queue.events.drain(..count).collect::<Vec<_>>();
+                    queue.bytes -= taken.iter().map(|(size, _)| size).sum::<usize>();
+                    return taken.into_iter().map(|(_, event)| event).collect();
                 }
-            )
-            .is_err()
-        );
+                if queue.closed {
+                    return Vec::new();
+                }
+            }
+            notified.await;
+        }
+    }
+}
+
+#[derive(Default)]
+struct TerminalBusState {
+    subscribers: Vec<std::sync::Weak<TerminalStreamInner>>,
+    closed: bool,
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct TerminalEventBus {
+    state: Arc<StdMutex<TerminalBusState>>,
+}
+
+impl TerminalEventBus {
+    pub(crate) fn subscribe(&self, max_bytes: usize) -> TerminalEventStream {
+        let inner = Arc::new(TerminalStreamInner::new(max_bytes));
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if state.closed {
+            inner.close();
+        } else {
+            state.subscribers.retain(|sub| sub.strong_count() > 0);
+            state.subscribers.push(Arc::downgrade(&inner));
+        }
+        TerminalEventStream { inner }
+    }
+
+    pub(crate) fn publish(&self, event: TerminalEvent) {
+        let subscribers = {
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            if state.closed {
+                return;
+            }
+            let mut live = Vec::with_capacity(state.subscribers.len());
+            state.subscribers.retain(|weak| {
+                if let Some(sub) = weak.upgrade() {
+                    live.push(sub);
+                    true
+                } else {
+                    false
+                }
+            });
+            live
+        };
+        for subscriber in subscribers {
+            subscriber.push(event.clone());
+        }
+    }
+
+    pub(crate) fn close(&self) {
+        let subscribers = {
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            state.closed = true;
+            state
+                .subscribers
+                .drain(..)
+                .filter_map(|weak| weak.upgrade())
+                .collect::<Vec<_>>()
+        };
+        for subscriber in subscribers {
+            subscriber.close();
+        }
     }
 }
 
@@ -96,48 +200,41 @@ pub struct TerminalInfo {
     pub title: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum TerminalEvent {
-    Output {
-        #[serde(rename = "terminalId")]
-        terminal_id: String,
-        data: Vec<u8>,
-    },
-    Exit {
-        #[serde(rename = "terminalId")]
-        terminal_id: String,
-    },
-    Error {
-        #[serde(rename = "terminalId")]
-        terminal_id: String,
-        message: String,
-    },
-}
-
-fn emit_terminal_event(events: &dyn HostEvents, event: TerminalEvent) -> Result<(), String> {
-    events.emit_serialized(TERMINAL_EVENT_NAME, event)
-}
-
-struct TerminalSession {
+pub(crate) struct TerminalSession {
+    id: String,
+    project_id: String,
     client: Arc<ServerClient>,
     task: JoinHandle<()>,
+    ended: Arc<AtomicBool>,
+}
+
+impl TerminalSession {
+    pub(crate) async fn close(self) -> Result<(), String> {
+        self.ended.store(true, Ordering::Release);
+        self.task.abort();
+        self.client
+            .request("terminal.close", json!({ "streamId": self.id }))
+            .await
+            .map(|_| ())
+    }
 }
 
 #[derive(Default)]
 pub struct TerminalManager {
-    sessions: HashMap<String, TerminalSession>,
+    sessions: Arc<StdMutex<HashMap<String, TerminalSession>>>,
+    /// Serializes only short metadata/project-removal transitions without holding locks across RPCs.
+    project_gate: AsyncMutex<()>,
 }
 
 impl TerminalManager {
-    pub async fn open(
-        &mut self,
+    pub(crate) async fn start(
+        &self,
         servers: Arc<ServerManager>,
-        host_events: Arc<dyn HostEvents>,
+        terminal_events: TerminalEventBus,
         project: &Project,
         cols: u16,
         rows: u16,
-    ) -> Result<TerminalInfo, String> {
+    ) -> Result<(TerminalInfo, TerminalSession), String> {
         let client = servers.client(&project.connection).await?;
         let terminal_id = format!(
             "terminal-{}-{}",
@@ -146,33 +243,29 @@ impl TerminalManager {
         );
         let mut events = client.subscribe(&terminal_id);
         let event_terminal_id = terminal_id.clone();
-        let event_events = host_events;
         let event_client = Arc::clone(&client);
+        let sessions = Arc::clone(&self.sessions);
+        let ended = Arc::new(AtomicBool::new(false));
+        let event_ended = Arc::clone(&ended);
         let task = tokio::spawn(async move {
             loop {
                 let Some(event) = events.recv().await else {
-                    let _ = emit_terminal_event(
-                        event_events.as_ref(),
-                        TerminalEvent::Error {
-                            terminal_id: event_terminal_id.clone(),
-                            message: "pilo-server terminal connection closed".to_owned(),
-                        },
-                    );
+                    terminal_events.publish(TerminalEvent::Error {
+                        terminal_id: event_terminal_id.clone(),
+                        message: "pilo-server terminal connection closed".to_owned(),
+                    });
                     break;
                 };
                 if event.event == SERVER_DISCONNECTED_EVENT {
-                    let _ = emit_terminal_event(
-                        event_events.as_ref(),
-                        TerminalEvent::Error {
-                            terminal_id: event_terminal_id.clone(),
-                            message: event
-                                .data
-                                .get("message")
-                                .and_then(Value::as_str)
-                                .unwrap_or("pilo-server terminal connection closed")
-                                .to_owned(),
-                        },
-                    );
+                    terminal_events.publish(TerminalEvent::Error {
+                        terminal_id: event_terminal_id.clone(),
+                        message: event
+                            .data
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .unwrap_or("pilo-server terminal connection closed")
+                            .to_owned(),
+                    });
                     if event.data.get("overflow").and_then(Value::as_bool) == Some(true) {
                         let _ = event_client
                             .request("terminal.close", json!({ "streamId": &event_terminal_id }))
@@ -186,41 +279,37 @@ impl TerminalManager {
                 match event.event.as_str() {
                     "terminal.output" => {
                         let data = event.binary.first().cloned().unwrap_or_default();
-                        let _ = emit_terminal_event(
-                            event_events.as_ref(),
-                            TerminalEvent::Output {
-                                terminal_id: event_terminal_id.clone(),
-                                data,
-                            },
-                        );
+                        terminal_events.publish(TerminalEvent::Output {
+                            terminal_id: event_terminal_id.clone(),
+                            data,
+                        });
                     }
                     "terminal.exit" => {
-                        let _ = emit_terminal_event(
-                            event_events.as_ref(),
-                            TerminalEvent::Exit {
-                                terminal_id: event_terminal_id.clone(),
-                            },
-                        );
+                        terminal_events.publish(TerminalEvent::Exit {
+                            terminal_id: event_terminal_id.clone(),
+                        });
                         break;
                     }
                     "terminal.error" => {
-                        let _ = emit_terminal_event(
-                            event_events.as_ref(),
-                            TerminalEvent::Error {
-                                terminal_id: event_terminal_id.clone(),
-                                message: event
-                                    .data
-                                    .get("message")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("terminal error")
-                                    .to_owned(),
-                            },
-                        );
+                        terminal_events.publish(TerminalEvent::Error {
+                            terminal_id: event_terminal_id.clone(),
+                            message: event
+                                .data
+                                .get("message")
+                                .and_then(Value::as_str)
+                                .unwrap_or("terminal error")
+                                .to_owned(),
+                        });
                         break;
                     }
                     _ => {}
                 }
             }
+            event_ended.store(true, Ordering::Release);
+            sessions
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(&event_terminal_id);
         });
         if let Err(error) = client
             .request(
@@ -234,25 +323,54 @@ impl TerminalManager {
             )
             .await
         {
+            ended.store(true, Ordering::Release);
             task.abort();
             return Err(error);
         }
-        self.sessions
-            .insert(terminal_id.clone(), TerminalSession { client, task });
-        Ok(TerminalInfo {
-            id: terminal_id,
+        let info = TerminalInfo {
+            id: terminal_id.clone(),
             project_id: project.id.clone(),
             title: project.name.clone(),
-        })
+        };
+        let session = TerminalSession {
+            id: terminal_id,
+            project_id: project.id.clone(),
+            client,
+            task,
+            ended,
+        };
+        Ok((info, session))
+    }
+
+    /// Commits a started terminal if `check` succeeds; returns the session back for closing on error.
+    pub(crate) async fn commit_if<F>(
+        &self,
+        session: TerminalSession,
+        check: F,
+    ) -> Result<(), (String, TerminalSession)>
+    where
+        F: FnOnce() -> Result<(), String>,
+    {
+        let _gate = self.project_gate.lock().await;
+        if let Err(error) = check() {
+            return Err((error, session));
+        }
+        let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+        if !session.ended.load(Ordering::Acquire) {
+            sessions.insert(session.id.clone(), session);
+        }
+        Ok(())
     }
 
     pub async fn write(&self, terminal_id: &str, data: &[u8]) -> Result<(), String> {
-        let session = self
-            .sessions
-            .get(terminal_id)
-            .ok_or_else(|| format!("terminal '{terminal_id}' is not running"))?;
-        session
-            .client
+        let client = {
+            let sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+            sessions
+                .get(terminal_id)
+                .map(|session| Arc::clone(&session.client))
+                .ok_or_else(|| format!("terminal '{terminal_id}' is not running"))?
+        };
+        client
             .request_with_binary(
                 "terminal.write",
                 json!({ "streamId": terminal_id }),
@@ -263,12 +381,14 @@ impl TerminalManager {
     }
 
     pub async fn resize(&self, terminal_id: &str, cols: u16, rows: u16) -> Result<(), String> {
-        let session = self
-            .sessions
-            .get(terminal_id)
-            .ok_or_else(|| format!("terminal '{terminal_id}' is not running"))?;
-        session
-            .client
+        let client = {
+            let sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+            sessions
+                .get(terminal_id)
+                .map(|session| Arc::clone(&session.client))
+                .ok_or_else(|| format!("terminal '{terminal_id}' is not running"))?
+        };
+        client
             .request(
                 "terminal.resize",
                 json!({ "streamId": terminal_id, "cols": cols, "rows": rows }),
@@ -277,22 +397,128 @@ impl TerminalManager {
             .map(|_| ())
     }
 
-    pub async fn close(&mut self, terminal_id: &str) -> Result<(), String> {
-        let Some(session) = self.sessions.remove(terminal_id) else {
+    pub async fn close(&self, terminal_id: &str) -> Result<(), String> {
+        let Some(session) = self
+            .sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(terminal_id)
+        else {
             return Ok(());
         };
-        session.task.abort();
-        session
-            .client
-            .request("terminal.close", json!({ "streamId": terminal_id }))
-            .await
-            .map(|_| ())
+        session.close().await
     }
 
-    pub async fn close_all(&mut self) {
-        let ids = self.sessions.keys().cloned().collect::<Vec<_>>();
-        for id in ids {
-            let _ = self.close(&id).await;
+    /// Runs `remove_project` serialized with terminal commits, then closes taken sessions outside locks.
+    pub(crate) async fn remove_project_and_close<T, F>(
+        &self,
+        project_id: &str,
+        remove_project: F,
+    ) -> Result<T, String>
+    where
+        F: FnOnce() -> Result<T, String>,
+    {
+        let (result, taken) = {
+            let _gate = self.project_gate.lock().await;
+            let result = remove_project()?;
+            let taken = {
+                let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+                let ids = sessions
+                    .iter()
+                    .filter(|(_, session)| session.project_id == project_id)
+                    .map(|(id, _)| id.clone())
+                    .collect::<Vec<_>>();
+                ids.into_iter()
+                    .filter_map(|id| sessions.remove(&id))
+                    .collect::<Vec<_>>()
+            };
+            (result, taken)
+        };
+        for session in taken {
+            let id = session.id.clone();
+            if let Err(error) = session.close().await {
+                log::warn!(target: "terminal", "failed to close terminal {id} for removed project: {error}");
+            }
         }
+        Ok(result)
+    }
+
+    pub async fn close_all(&self) {
+        let taken = self
+            .sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .drain()
+            .map(|(_, session)| session)
+            .collect::<Vec<_>>();
+        for session in taken {
+            let _ = session.close().await;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn terminal_stream_preserves_bytes_order_and_closes_cleanly() {
+        let bus = TerminalEventBus::default();
+        let stream = bus.subscribe(TERMINAL_QUEUE_MAX_BYTES);
+        let expected = vec![
+            TerminalEvent::Output {
+                terminal_id: "t".into(),
+                data: vec![0, 255, 10],
+            },
+            TerminalEvent::Output {
+                terminal_id: "t".into(),
+                data: vec![],
+            },
+            TerminalEvent::Exit {
+                terminal_id: "t".into(),
+            },
+            TerminalEvent::Error {
+                terminal_id: "t".into(),
+                message: "closed".into(),
+            },
+        ];
+        for event in &expected {
+            bus.publish(event.clone());
+        }
+        assert_eq!(stream.next_batch(2).await, expected[..2]);
+        bus.close();
+        assert_eq!(stream.next_batch(10).await, expected[2..]);
+        assert!(stream.next_batch(10).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn terminal_stream_evicts_oldest_events_above_byte_limit() {
+        let bus = TerminalEventBus::default();
+        let stream = bus.subscribe(160);
+        bus.publish(TerminalEvent::Output {
+            terminal_id: "t".into(),
+            data: vec![1; 100],
+        });
+        bus.publish(TerminalEvent::Output {
+            terminal_id: "t".into(),
+            data: vec![2; 100],
+        });
+        assert_eq!(
+            stream.next_batch(10).await,
+            vec![TerminalEvent::Output {
+                terminal_id: "t".into(),
+                data: vec![2; 100],
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn terminal_stream_close_wakes_pending_waiter() {
+        let bus = TerminalEventBus::default();
+        let stream = bus.subscribe(TERMINAL_QUEUE_MAX_BYTES);
+        let waiter = tokio::spawn(async move { stream.next_batch(16).await });
+        tokio::task::yield_now().await;
+        bus.close();
+        assert!(waiter.await.unwrap().is_empty());
     }
 }
