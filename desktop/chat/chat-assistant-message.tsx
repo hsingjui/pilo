@@ -66,6 +66,8 @@ export function ChatAssistantMessage(props: {
 	preferences?: () => ChatWorkPreferences | undefined;
 	/** Forks the session at this reply; absent where forking is off. */
 	onFork?: (messageId: string) => void;
+	/** Whether the current chat allows forking (e.g. false for temporary chats). */
+	canFork?: () => boolean;
 	/** This reply's fork is running. */
 	forking?: () => boolean;
 	/** Another fork, or a turn in flight, disables the button. */
@@ -113,6 +115,7 @@ export function ChatAssistantMessage(props: {
 	const canFork = computed(
 		() =>
 			props.onFork != null &&
+			(props.canFork?.() ?? true) &&
 			message().streaming !== true &&
 			message().completion !== "continued" &&
 			!message().errorMessage &&

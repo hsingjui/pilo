@@ -46,7 +46,11 @@ import { chatRuntimeHasOpenTurn } from "@shared/chat/chat-session-runtime-model"
 import { t } from "../app/i18n";
 import { requestPiRpc, requestPiRpcOutcome } from "../client/chat-rpc";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
-import { type AppState, isExternalTurnOpen } from "../state/app-state";
+import {
+	type AppState,
+	isExternalTurnOpen,
+	isTemporarySessionKey,
+} from "../state/app-state";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
 
 /** The open chat the composer talks to. */
@@ -683,6 +687,9 @@ export class ComposerStore {
 						sessionKey: current.sessionKey,
 						...(current.sessionPath
 							? { sessionPath: current.sessionPath }
+							: {}),
+						...(isTemporarySessionKey(current.sessionKey)
+							? { noSession: true }
 							: {}),
 					});
 				}

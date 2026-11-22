@@ -220,6 +220,7 @@ const EVENT_BATCH_SIZE = 256;
 /** Adapts the nsh native module's JSON to the shared `PiloClient` types. */
 export class NshPiloClient implements PiloClient {
 	private readonly pilo: PiloNative;
+	private readonly noSessionStarts = new Map<string, Set<Promise<unknown>>>();
 	private readonly listeners = new Set<PiloClientEventOptions>();
 	private polling = false;
 	private streamClosed = false;
@@ -731,11 +732,29 @@ export class NshPiloClient implements PiloClient {
 
 	/** Starts or resumes Pi for the key and resolves once it is ready. */
 	async startChat(input: PiloClientStartChatInput): Promise<PiSessionSnapshot> {
-		return (await this.pilo.startChat(input)) as PiSessionSnapshot;
+		const start = this.pilo.startChat(input);
+		if (!input.noSession) return (await start) as PiSessionSnapshot;
+
+		const key = input.sessionKey;
+		const pending = this.noSessionStarts.get(key) ?? new Set();
+		pending.add(start);
+		this.noSessionStarts.set(key, pending);
+		try {
+			return (await start) as PiSessionSnapshot;
+		} finally {
+			pending.delete(start);
+			if (pending.size === 0) this.noSessionStarts.delete(key);
+		}
 	}
 
 	/** Stops Pi for the key; a session that is not running is left alone. */
-	stopChat(sessionKey: string, reason?: string) {
+	async stopChat(sessionKey: string, reason?: string) {
+		const pending = this.noSessionStarts.get(sessionKey);
+		if (reason === "temporary_chat_left" && pending) {
+			// The Host may not have registered Pi yet. Both sending and changing
+			// the run configuration can have a start in flight for this key.
+			await Promise.allSettled(pending);
+		}
 		return this.pilo.stopChat(sessionKey, reason);
 	}
 

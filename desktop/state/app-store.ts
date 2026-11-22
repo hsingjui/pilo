@@ -14,8 +14,10 @@ import {
 	changesSessionIndex,
 	createAppState,
 	createDraftSessionId,
+	createTemporarySessionId,
 	isSessionUnread,
 	isStaleEvent,
+	isTemporarySessionId,
 	readStateKey,
 	reduceAppState,
 } from "./app-state";
@@ -126,7 +128,13 @@ export class AppStore {
 	readonly startedDraft: Accessor<StartedDraft | null> = computed(
 		(previous) => {
 			const open = this.current().navigation.session;
-			if (!this.chat || !open?.sessionId) return null;
+			// A temporary chat is never listed.
+			if (
+				!this.chat ||
+				!open?.sessionId ||
+				isTemporarySessionId(open.sessionId)
+			)
+				return null;
 			const { sessionKey, conversation } = this.chat.state();
 			if (sessionKey !== chatSessionKey(open.projectId, open.sessionId)) {
 				return null;
@@ -263,23 +271,45 @@ export class AppStore {
 
 	/** Opens a new chat in the project, or keeps its already open draft. */
 	selectProject(projectId: string) {
-		const state = this.current();
-		const open = state.navigation.session;
-		if (open?.projectId === projectId && open.sessionId !== undefined) {
-			const sessionKey = chatSessionKey(projectId, open.sessionId);
-			const hasMessages =
-				this.chat?.state().sessionKey === sessionKey &&
-				this.chat.messages().length > 0;
-			const active = state.chatSessions.some(
-				(chat) => chat.sessionKey === sessionKey && chat.activeTurn,
-			);
-			if (!hasMessages && !active) return;
-		}
+		if (this.keepsOpenDraft(projectId, false)) return;
 		this.apply({
 			type: "project_selected",
 			projectId,
 			sessionId: createDraftSessionId(),
 		});
+	}
+
+	/**
+	 * Opens a temporary chat in the project, which Pi does not save, or keeps
+	 * the empty one already open there.
+	 */
+	selectTemporary(projectId: string) {
+		if (this.keepsOpenDraft(projectId, true)) return;
+		this.apply({
+			type: "project_selected",
+			projectId,
+			sessionId: createTemporarySessionId(),
+		});
+	}
+
+	/** Whether the open chat is an unused new one of that kind in the project. */
+	private keepsOpenDraft(projectId: string, temporary: boolean) {
+		const state = this.current();
+		const open = state.navigation.session;
+		if (
+			open?.projectId !== projectId ||
+			open.sessionId === undefined ||
+			isTemporarySessionId(open.sessionId) !== temporary
+		)
+			return false;
+		const sessionKey = chatSessionKey(projectId, open.sessionId);
+		const hasMessages =
+			this.chat?.state().sessionKey === sessionKey &&
+			this.chat.messages().length > 0;
+		const active = state.chatSessions.some(
+			(chat) => chat.sessionKey === sessionKey && chat.activeTurn,
+		);
+		return !hasMessages && !active;
 	}
 
 	/** Opens again a new chat Pi has not saved yet, by its draft session id. */

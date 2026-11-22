@@ -22,6 +22,7 @@ import {
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import { requestPiRpcReply, type PiCommandClient } from "../client/chat-rpc";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
+import { isTemporarySessionKey } from "./app-state";
 import type { ChatTranscriptTarget } from "./chat-transcript-store";
 import type { ModelCatalogState } from "./model-catalog";
 
@@ -462,7 +463,12 @@ export class ChatRunConfigStore {
 			.then(async () => {
 				if (open !== this.opens) return;
 				if (start)
-					await this.client.startChat({ projectId, sessionKey, sessionPath });
+					await this.client.startChat({
+						projectId,
+						sessionKey,
+						sessionPath,
+						...(isTemporarySessionKey(sessionKey) ? { noSession: true } : {}),
+					});
 				if (open !== this.opens) return;
 				const agent = await this.rpc<PiAgentState>(sessionKey, {
 					type: "get_state",

@@ -66,6 +66,8 @@ export interface ChatMessagesProps {
 	footer?: ListSlot;
 	/** Forks the session at an assistant message; absent where forking is off. */
 	onForkAssistant?: (messageId: string) => void;
+	/** Whether the current chat allows forking at assistant replies. */
+	canForkAssistant?: () => boolean;
 	/** The assistant message a fork is running for. */
 	forkingMessageId?: () => string | null;
 	/** A turn in flight or a pending read disables forking. */
@@ -206,6 +208,7 @@ export function ChatMessages(props: ChatMessagesProps) {
 							expansion={props.expansion}
 							preferences={props.preferences}
 							onForkAssistant={props.onForkAssistant}
+							canForkAssistant={props.canForkAssistant}
 							forkingMessageId={props.forkingMessageId}
 							forkDisabled={props.forkDisabled}
 						/>

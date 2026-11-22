@@ -6,7 +6,11 @@ import {
 	getProjectScopeDefaultModel,
 	isPiScopeCatalogResolved,
 } from "@shared/pi-model-selection";
-import { type AppState, isExternalTurnOpen } from "../state/app-state";
+import {
+	type AppState,
+	isExternalTurnOpen,
+	isTemporarySessionId,
+} from "../state/app-state";
 import type { AppStore } from "../state/app-store";
 import type { ChatRunConfigStore } from "../state/chat-run-config";
 import type {
@@ -153,6 +157,34 @@ export function followOpenSession(store: AppStore, chat: ChatTranscriptStore) {
 				previous.version !== next.version
 			)
 				chat.historyChanged();
+		});
+	});
+}
+
+/**
+ * Ends a temporary chat once another chat is open, as the Tauri app does:
+ * Pi saved nothing of it to come back to.
+ */
+export function endLeftTemporaryChats(
+	store: AppStore,
+	stopChat: (sessionKey: string, reason?: string) => Promise<void>,
+) {
+	const temporaryKey = computed(() => {
+		const open = store.state().navigation.session;
+		return open?.sessionId && isTemporarySessionId(open.sessionId)
+			? chatSessionKey(open.projectId, open.sessionId)
+			: null;
+	});
+	let shown: string | null = null;
+	effect(() => {
+		const next = temporaryKey();
+		untracked(() => {
+			const left = shown;
+			shown = next;
+			if (!left || left === next) return;
+			void stopChat(left, "temporary_chat_left").catch((error: unknown) => {
+				console.warn("Failed to stop the temporary chat", error);
+			});
 		});
 	});
 }

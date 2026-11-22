@@ -6,6 +6,7 @@ import {
 } from "../client/chat-rpc";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import type { ComposerTarget } from "../composer/composer-store";
+import { isTemporarySessionKey } from "../state/app-state";
 
 export type SessionAutoTitleClient = PiCommandClient &
 	Pick<NshPiloClient, "generateSessionTitle">;
@@ -20,7 +21,8 @@ const RPC_TIMEOUT_MS = 10_000;
  * Names a new chat after the first prompt that started a turn in it, as the
  * Tauri app does: the connection's naming model titles the prompt, and Pi
  * takes the title as the session name unless it already has one. A saved
- * session is not renamed, and each chat is titled at most once.
+ * session or a temporary chat is not renamed, and each chat is titled at
+ * most once.
  * `onFailed` hears why naming failed; a title that is turned off is not one.
  */
 export function createSessionAutoTitle(
@@ -30,7 +32,12 @@ export function createSessionAutoTitle(
 	const requested = new Set<string>();
 	return (target: ComposerTarget, text: string) => {
 		const prompt = text.trim();
-		if (target.sessionPath || !prompt || requested.has(target.sessionKey)) {
+		if (
+			target.sessionPath ||
+			!prompt ||
+			requested.has(target.sessionKey) ||
+			isTemporarySessionKey(target.sessionKey)
+		) {
 			return;
 		}
 		requested.add(target.sessionKey);

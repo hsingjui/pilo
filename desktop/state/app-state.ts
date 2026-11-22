@@ -56,6 +56,33 @@ export function isDraftSessionId(sessionId: string) {
 	return sessionId.startsWith(DRAFT_SESSION_PREFIX);
 }
 
+const TEMPORARY_SESSION_PREFIX = "temporary-session-";
+
+/**
+ * The session id of a temporary chat: Pi runs it without a session file
+ * (`noSession`), the sidebar never lists it, and leaving it ends it, as the
+ * Tauri app's temporary chat.
+ */
+export function createTemporarySessionId() {
+	draftSessionSequence += 1;
+	return `${TEMPORARY_SESSION_PREFIX}${Date.now()}-${draftSessionSequence}`;
+}
+
+/** Whether the session id is one `createTemporarySessionId` made. */
+export function isTemporarySessionId(sessionId: string | undefined) {
+	return !!sessionId?.startsWith(TEMPORARY_SESSION_PREFIX);
+}
+
+/** Whether the chat key (`chatSessionKey`) is a temporary chat's. */
+export function isTemporarySessionKey(sessionKey: string) {
+	try {
+		const [, sessionId] = JSON.parse(sessionKey) as unknown[];
+		return typeof sessionId === "string" && isTemporarySessionId(sessionId);
+	} catch {
+		return false;
+	}
+}
+
 /**
  * What the user is looking at. It is kept in memory only, like the selection
  * of the Tauri app: a restart opens the first project with no session.
