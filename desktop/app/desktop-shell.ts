@@ -160,6 +160,19 @@ export function connectDesktopShell(
 		}
 	}
 
+	async function refreshExitOnClose() {
+		if (quitting || savingClose()) return;
+		try {
+			const saved = await client.loadDesktopSettings();
+			if (quitting) return;
+			settings.update((current) =>
+				current ? { ...current, exitOnClose: saved.exitOnClose } : saved,
+			);
+		} catch (error) {
+			console.warn("Failed to refresh Pilo desktop settings", error);
+		}
+	}
+
 	void load();
 	return {
 		settings,
@@ -168,6 +181,7 @@ export function connectDesktopShell(
 		savingShortcut,
 		savingClose,
 		load,
+		refreshExitOnClose,
 		show,
 		isQuitting: () => quitting,
 		saveShortcut,

@@ -143,7 +143,11 @@ export async function launch(
 	const client = new NshPiloClient(pilo);
 	const chat = new ChatTranscriptStore(client, conversationContext());
 	let notify: ((event: PiloClientEvent) => Promise<void>) | undefined;
+	let desktop: ReturnType<typeof connectDesktopShell> | undefined;
 	const store = new AppStore(client, chat, (event) => {
+		if (event.type === "configuration_changed") {
+			void desktop?.refreshExitOnClose();
+		}
 		void notify?.(event).catch((error: unknown) => {
 			console.warn("Failed to send Pilo session notification", error);
 		});
@@ -152,7 +156,7 @@ export async function launch(
 	// The first-launch size fits its display already; `fitMainWindow` would
 	// read the bounds from before it.
 	if (main && !(await sizeMainWindowOnFirstLaunch(main))) fitMainWindow(main);
-	const desktop =
+	desktop =
 		main && desktopSettings
 			? connectDesktopShell(main, desktopSettings, async () => {
 					store.stop();

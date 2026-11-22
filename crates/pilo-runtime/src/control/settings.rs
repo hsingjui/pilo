@@ -87,7 +87,7 @@ pub(super) async fn settings(runtime: &Runtime, command: ControlCommand) -> Resu
             } else {
                 Some(if reset {
                     match key.as_str() {
-                        "desktop.autostart" => json!("disabled"),
+                        "desktop.autostart" => json!(false),
                         "desktop.exitOnClose" => json!(false),
                         _ => json!(pilo_domain::DEFAULT_SHOW_SHORTCUT),
                     }

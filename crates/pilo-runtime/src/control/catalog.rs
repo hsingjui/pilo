@@ -56,8 +56,8 @@ pub(super) fn catalog() -> Value {
         (
             "desktop.autostart",
             "desktop",
-            json!({ "enum": ["disabled", "window", "tray"] }),
-            json!("disabled"),
+            json!({ "type": "boolean", "description": "Managed by the OS login service through the desktop app settings" }),
+            json!(false),
         ),
         (
             "desktop.exitOnClose",
@@ -68,7 +68,7 @@ pub(super) fn catalog() -> Value {
         (
             "desktop.showShortcut",
             "desktop",
-            json!({ "type": "string", "description": "OS global shortcut; registration must succeed" }),
+            json!({ "type": "string", "description": "Read-only over ctl; change in the desktop app settings so the OS registers the shortcut" }),
             json!("mod+alt+p"),
         ),
         (

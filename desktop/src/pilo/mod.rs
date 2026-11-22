@@ -199,6 +199,7 @@ impl Pilo {
         let runtime = Runtime::new(paths.clone(), Arc::new(ShellEvents))
             .with_shell(Arc::new(NshHostShell {
                 cache_dir: data_dir.join("cache"),
+                paths: paths.clone(),
             }))?
             .with_web_assets(Arc::new(ShellWebAssets(web_root)))?;
         let event_stream = runtime.subscribe_events(EVENT_QUEUE_LIMITS);

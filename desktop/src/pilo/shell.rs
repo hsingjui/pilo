@@ -1,4 +1,4 @@
-//! The runtime's host ports as the nsh shell implements them: paths, events, web assets and the folder picker.
+//! The runtime's host ports as the nsh shell implements them: paths, logging, web assets, desktop settings and the folder picker.
 
 use std::{
     fs::{File, OpenOptions},
@@ -11,11 +11,13 @@ use std::{
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use nsh_core::JsonValue;
 use pilo_runtime::{
-    handle::HostShell,
+    handle::{HostSettingFuture, HostShell},
     host_events::HostEvents,
-    tasks,
+    host_paths::HostPaths,
+    storage, tasks,
     web_assets::{WebAsset, WebAssets},
 };
+use serde_json::json;
 use tokio::runtime::Runtime as Executor;
 
 pub(super) struct ShellEvents;
@@ -28,9 +30,10 @@ impl HostEvents for ShellEvents {
 
 pub(super) struct ShellWebAssets(pub(super) PathBuf);
 
-/// The nsh host's shell: a native folder picker and a cache under the data dir.
+/// The nsh host's shell: a native folder picker, desktop settings and a cache under the data dir.
 pub(super) struct NshHostShell {
     pub(super) cache_dir: PathBuf,
+    pub(super) paths: HostPaths,
 }
 
 impl HostShell for NshHostShell {
@@ -46,6 +49,49 @@ impl HostShell for NshHostShell {
         rfd::FileDialog::new()
             .pick_folder()
             .map(|path| path.to_string_lossy().into_owned())
+    }
+
+    fn desktop_setting(&self, key: String, value: Option<JsonValue>) -> HostSettingFuture {
+        let paths = self.paths.clone();
+        Box::pin(async move {
+            match key.as_str() {
+                "desktop.exitOnClose" => {
+                    tokio::task::spawn_blocking(move || match value {
+                        None => {
+                            let db = storage::open(&paths)?;
+                            Ok(json!(storage::get_exit_on_close(&db)?))
+                        }
+                        Some(raw) => {
+                            let enabled = raw
+                                .as_bool()
+                                .ok_or_else(|| "desktop.exitOnClose must be a boolean".to_owned())?;
+                            let db = storage::open(&paths)?;
+                            storage::set_exit_on_close(&db, enabled)?;
+                            Ok(json!(enabled))
+                        }
+                    })
+                    .await
+                    .map_err(|error| format!("desktop setting task failed: {error}"))?
+                }
+                "desktop.showShortcut" => match value {
+                    None => tokio::task::spawn_blocking(move || {
+                        let db = storage::open(&paths)?;
+                        Ok(json!(storage::get_show_shortcut(&db)?))
+                    })
+                    .await
+                    .map_err(|error| format!("desktop setting task failed: {error}"))?,
+                    Some(_) => Err(
+                        "desktop.showShortcut must be changed in the desktop app settings so the OS registers the shortcut"
+                            .to_owned(),
+                    ),
+                },
+                "desktop.autostart" => Err(
+                    "desktop.autostart is managed by the OS login service; change it in the desktop app settings"
+                        .to_owned(),
+                ),
+                _ => Err(format!("unknown desktop setting: {key}")),
+            }
+        })
     }
 }
 
@@ -389,6 +435,67 @@ mod tests {
         let active = std::fs::read_to_string(dir.path().join(LOG_FILE_NAME)).unwrap();
         assert_eq!(backup, "first line 01234\n");
         assert_eq!(active, "second line 5678\n");
+    }
+
+    #[test]
+    fn desktop_setting_reads_and_writes_exit_on_close_and_reports_os_managed_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = HostPaths::new(dir.path().to_path_buf(), dir.path().to_path_buf()).unwrap();
+        let shell = NshHostShell {
+            cache_dir: dir.path().join("cache"),
+            paths,
+        };
+        let rt = executor().unwrap();
+        rt.block_on(async {
+            assert_eq!(
+                shell
+                    .desktop_setting("desktop.exitOnClose".into(), None)
+                    .await
+                    .unwrap(),
+                json!(false)
+            );
+            assert_eq!(
+                shell
+                    .desktop_setting("desktop.exitOnClose".into(), Some(json!(true)))
+                    .await
+                    .unwrap(),
+                json!(true)
+            );
+            assert_eq!(
+                shell
+                    .desktop_setting("desktop.exitOnClose".into(), None)
+                    .await
+                    .unwrap(),
+                json!(true)
+            );
+            assert!(
+                shell
+                    .desktop_setting("desktop.exitOnClose".into(), Some(json!("yes")))
+                    .await
+                    .is_err()
+            );
+            assert_eq!(
+                shell
+                    .desktop_setting("desktop.showShortcut".into(), None)
+                    .await
+                    .unwrap(),
+                json!(pilo_domain::DEFAULT_SHOW_SHORTCUT)
+            );
+            assert!(
+                shell
+                    .desktop_setting("desktop.showShortcut".into(), Some(json!("mod+alt+k")))
+                    .await
+                    .unwrap_err()
+                    .contains("desktop app settings")
+            );
+            assert!(
+                shell
+                    .desktop_setting("desktop.autostart".into(), None)
+                    .await
+                    .unwrap_err()
+                    .contains("OS login service")
+            );
+        });
     }
 
     // Windows creates symlinks only with Developer Mode or admin rights.
