@@ -153,6 +153,7 @@ export class ComposerStore {
 	private readonly fileSuggestionsSignal = signal<
 		readonly ComposerSuggestion[]
 	>([]);
+	private draftVersion = 0;
 	private histories: HistoryStore | null = null;
 	private historyCursor: number | null = null;
 	/**
@@ -214,6 +215,7 @@ export class ComposerStore {
 		this.fileSuggestionsSignal.set([]);
 		this.commandsSignal.set(null);
 		this.historyCursor = null;
+		this.draftVersion++;
 		this.targetSignal.set(target);
 		this.stateSignal.update((s) => ({
 			...s,
@@ -224,10 +226,24 @@ export class ComposerStore {
 		}));
 	}
 
+	/** Identity of the draft, including edits that were undone and chat switches. */
+	get draftRevision() {
+		return this.draftVersion;
+	}
+
+	private updateDraft(change: (state: ComposerViewState) => ComposerViewState) {
+		this.stateSignal.update((current) => {
+			const next = change(current);
+			if (next.value !== current.value || next.images !== current.images)
+				this.draftVersion++;
+			return next;
+		});
+	}
+
 	setValue(value: string, caret = value.length) {
 		const previous = this.stateSignal().value;
 		if (previous !== value) discardRemovedChatFiles(previous, value);
-		this.stateSignal.update((s) => ({ ...s, value, caret }));
+		this.updateDraft((s) => ({ ...s, value, caret }));
 	}
 
 	setCaret(caret: number) {
@@ -402,7 +418,7 @@ export class ComposerStore {
 			return { handled: false };
 		}
 		this.historyCursor = result.cursor;
-		this.stateSignal.update((s) => ({
+		this.updateDraft((s) => ({
 			...s,
 			value: result.value,
 			caret: result.value.length,
@@ -479,7 +495,7 @@ export class ComposerStore {
 		if (previous !== draft.value)
 			discardRemovedChatFiles(previous, draft.value);
 		if (this.targetSignal()?.sessionKey === sessionKey) {
-			this.stateSignal.update((s) => ({
+			this.updateDraft((s) => ({
 				...s,
 				value: draft.value,
 				caret: s.value === draft.value ? s.caret : draft.value.length,
@@ -575,7 +591,7 @@ export class ComposerStore {
 	}
 
 	removeImage(id: string) {
-		this.stateSignal.update((s) => ({
+		this.updateDraft((s) => ({
 			...s,
 			images: s.images.filter((image) => image.id !== id),
 		}));
@@ -627,7 +643,7 @@ export class ComposerStore {
 		// The draft leaves the composer at once, as in the Tauri app; it comes
 		// back if it is not sent.
 		this.historyCursor = null;
-		this.stateSignal.update((s) => ({
+		this.updateDraft((s) => ({
 			...s,
 			value: "",
 			caret: 0,
@@ -781,7 +797,7 @@ export class ComposerStore {
 			return;
 		}
 		const { value, images, status } = join(this.stateSignal());
-		this.stateSignal.update((s) => ({
+		this.updateDraft((s) => ({
 			...s,
 			value,
 			caret: value.length,

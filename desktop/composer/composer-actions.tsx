@@ -1,4 +1,4 @@
-import { Text, token, View } from "nsh";
+import { type JSX, Text, token, View } from "nsh";
 
 import type { ComposerSendMode } from "@shared/chat/send-mode";
 
@@ -49,6 +49,7 @@ const SEND_MODE_OPTIONS = [
  */
 export function ComposerActions(props: {
 	toolbarWidth: () => number;
+	beforeSendMode?: () => JSX.Element;
 	sendMode: () => ComposerSendMode;
 	onSendModeChange: (mode: ComposerSendMode) => void;
 	running: () => boolean;
@@ -82,6 +83,7 @@ export function ComposerActions(props: {
 			class="ml-auto shrink-0 flex-row items-center"
 			style={{ gap: composerActionsGap(props.toolbarWidth()) }}
 		>
+			{props.beforeSendMode}
 			<Menu
 				placement="top"
 				align="end"

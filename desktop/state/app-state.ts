@@ -318,6 +318,11 @@ export function changesChatSession(event: PiloClientEvent): boolean {
 		case "compaction_end":
 		case "runtime_error":
 			return true;
+		case "extension_ui_request":
+			return (
+				event.method === "setWidget" &&
+				event.widgetKey === "pilo.cache-keep-alive.v1"
+			);
 		case "rpc_message":
 			return (
 				chatRpcChangesActivity(event.message) ||

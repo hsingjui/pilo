@@ -18,6 +18,8 @@ import {
 import { Picker } from "nsh";
 import { Button as BaseButton, Input as BaseInput } from "nsh/base";
 
+import { userErrorMessage } from "@shared/app-error";
+import { writeChatMentionDraft } from "@shared/chat/chat-mentions";
 import { formatChatImageSize } from "@shared/chat/chat-submission";
 import {
 	DEFAULT_SUGGESTIONS,
@@ -33,6 +35,7 @@ import { normalizeKeyboardShortcut } from "@shared/keyboard-shortcuts-core";
 import { formatKeyboardShortcutLabels } from "@shared/keyboard-shortcuts-format";
 import type { KeyboardShortcutMap } from "@shared/keyboard-shortcuts-types";
 
+import { AppToaster, showToast } from "../app/app-toasts";
 import { t } from "../app/i18n";
 import { ChatReadingFont } from "../chat/chat-reading-font";
 import { chatMetadataText, chatPx } from "../chat/layout";
@@ -44,9 +47,11 @@ import { Icon, type IconName } from "../ui/icon";
 import { menuPopupClass, menuPopupStyle } from "../ui/menu";
 import { menuRowClass } from "../ui/menu-row";
 import { Skeleton } from "../ui/skeleton";
+import { Spinner } from "../ui/spinner";
 import { styleVar } from "../ui/theme-style";
 import { Tooltip } from "../ui/tooltip";
 import { ComposerActions } from "./composer-actions";
+import type { ComposerAssistance } from "./composer-assistance";
 import { ComposerContextUsage } from "./composer-context-usage";
 import {
 	composerActionsGap,
@@ -64,6 +69,7 @@ import type { ComposerStore } from "./composer-store";
 
 /** The React composer grows to 12 lines, then scrolls. */
 const MAX_ROWS = 12;
+const INPUT_HINT_HEIGHT = chatPx(28);
 
 const composerShadow = () => {
 	const shadow = styleVar("pilo-shadow-composer");
@@ -174,6 +180,7 @@ export function ChatComposerSkeleton(props: { showModel: boolean }) {
 export interface ChatComposerProps {
 	/** The open chat's composer state and actions. */
 	store: ComposerStore;
+	assistance?: ComposerAssistance;
 	/** Null suspends session shortcuts while a dialog or command palette is open. */
 	shortcuts?: () => KeyboardShortcutMap | null;
 	/** The configured submit shortcut; Enter submits by default. */
@@ -427,6 +434,7 @@ export function ChatComposer(props: ChatComposerProps) {
 
 	const submit = () => {
 		if (menuOpen() && items().length > 0) return;
+		if (hasContent() && !state().composing) props.assistance?.dismiss();
 		void store.submit();
 	};
 
@@ -476,6 +484,7 @@ export function ChatComposer(props: ChatComposerProps) {
 	const showFocusHint = () =>
 		platform.desktop &&
 		!focused() &&
+		!ghostText() &&
 		!readOnly() &&
 		!state().value &&
 		!attachments().images.length &&
@@ -486,6 +495,94 @@ export function ChatComposer(props: ChatComposerProps) {
 	const blocked = () =>
 		disabled() || state().sending || (running() && store.compacting());
 	const config = () => props.runConfig?.config() ?? null;
+
+	const assistance = props.assistance;
+	const ghostText = () =>
+		state().composing ? null : (assistance?.result()?.text ?? null);
+	const canAdoptWithTab = () =>
+		focused() && !menuOpen() && props.shortcuts?.() !== null && !!ghostText();
+	const inputRightPadding = () => {
+		if (ghostText()) return canAdoptWithTab() ? 80 : 112;
+		return showFocusHint() ? 64 : 4;
+	};
+	const adoptSuggestion = () => {
+		const text = ghostText();
+		if (!text || menuOpen()) return;
+		assistance?.dismiss();
+		store.setValue(text);
+		input?.setSelection(text.length);
+		input?.focus();
+	};
+	effect(() => {
+		if (
+			!assistance ||
+			!focused() ||
+			menuOpen() ||
+			state().composing ||
+			props.shortcuts?.() === null
+		)
+			return;
+		cleanup(
+			keymap.bind("escape", assistance.dismiss, {
+				when: "always",
+				passThrough: true,
+			}),
+		);
+		if (canAdoptWithTab())
+			cleanup(
+				keymap.bind("tab", adoptSuggestion, { when: "always", forFocus: true }),
+			);
+	});
+
+	const toasts = AppToaster();
+	const enhancing = signal(false);
+	const enhanceLabel = () =>
+		t(enhancing() ? "chat.enhancingPrompt" : "chat.enhancePrompt");
+	const enhanceDisabled = () =>
+		blocked() ||
+		state().composing ||
+		enhancing() ||
+		!store.mentionDraft().text.trim();
+	let disposed = false;
+	cleanup(() => {
+		disposed = true;
+	});
+	const enhanceDraft = async () => {
+		if (!assistance?.canEnhance() || enhanceDisabled()) return;
+		const draft = store.mentionDraft();
+		const revision = store.draftRevision;
+		const stillCurrent = () =>
+			!disposed &&
+			store.draftRevision === revision &&
+			!state().composing &&
+			!readOnly() &&
+			props.shortcuts?.() !== null &&
+			assistance.canEnhance();
+		assistance.dismiss();
+		enhancing.set(true);
+		try {
+			const text = (await assistance.enhance(draft.text.trim())).trim();
+			if (!text || !stillCurrent()) return;
+			const value = writeChatMentionDraft(draft.references, text);
+			store.setValue(value);
+			input?.setSelection(value.length);
+			input?.focus();
+		} catch (error: unknown) {
+			if (stillCurrent())
+				showToast(toasts, {
+					variant: "error",
+					title: t("chat.enhancePromptFailed"),
+					description:
+						(error instanceof Error
+							? error.message
+							: typeof error === "string"
+								? error
+								: "") || userErrorMessage(error),
+				});
+		} finally {
+			if (!disposed) enhancing.set(false);
+		}
+	};
 
 	return (
 		<View
@@ -512,6 +609,34 @@ export function ChatComposer(props: ChatComposerProps) {
 								{() => state().status ?? ""}
 							</Text>
 						</View>
+					</View>
+				) : null
+			}
+			{() =>
+				!state().status && assistance?.result()?.unavailable ? (
+					<View
+						testID="chat-composer-suggestion-unavailable"
+						role="alert"
+						class="mb-2 min-w-0 flex-row items-start gap-2.5 rounded-xl border border-border/60 bg-muted px-3 py-2"
+					>
+						<Icon
+							name="TriangleAlert"
+							class="mt-0.5"
+							size={14}
+							color={token("status-warning")}
+						/>
+						<Text class="min-w-0 flex-1 font-sans text-xs leading-5 text-muted-foreground">
+							{t("settings.nextPromptUnavailable")}
+						</Text>
+						<Button
+							variant="ghost"
+							size="icon"
+							class="-my-1 size-7 shrink-0"
+							accessibilityLabel={t("common.close")}
+							onPress={assistance.dismiss}
+						>
+							<Icon name="X" size={14} color={token("muted-foreground")} />
+						</Button>
 					</View>
 				) : null
 			}
@@ -576,10 +701,11 @@ export function ChatComposer(props: ChatComposerProps) {
 						placeholder={
 							readOnly()
 								? t("chat.externalReadOnly")
-								: attachments().images.length === 0 &&
-									  attachments().references.length === 0
-									? t("chat.composerPlaceholder")
-									: undefined
+								: (ghostText() ??
+									(attachments().images.length === 0 &&
+									attachments().references.length === 0
+										? t("chat.composerPlaceholder")
+										: undefined))
 						}
 						// The size goes in the class: an inline `fontSize` reaches the typed
 						// text but not the placeholder, which then sits larger and lower.
@@ -594,7 +720,7 @@ export function ChatComposer(props: ChatComposerProps) {
 							minHeight: 0,
 							paddingVertical: inputPadding(),
 							paddingLeft: chatPx(4),
-							paddingRight: chatPx(showFocusHint() ? 64 : 4),
+							paddingRight: chatPx(inputRightPadding()),
 						}}
 						onContentSizeChange={({ size }) => {
 							contentHeight.set(size.height);
@@ -619,6 +745,38 @@ export function ChatComposer(props: ChatComposerProps) {
 							if (uris.length) void store.addUris(uris);
 						}}
 					/>
+					{() => {
+						const suggestion = ghostText();
+						return suggestion ? (
+							<Button
+								testID="chat-composer-adopt-suggestion"
+								variant="ghost"
+								size="sm"
+								class="absolute right-0 z-10"
+								style={{
+									height: INPUT_HINT_HEIGHT,
+									gap: chatPx(6),
+									paddingHorizontal: chatPx(8),
+									top:
+										(inputLineHeight(readingFont().fontSize) -
+											INPUT_HINT_HEIGHT) /
+										2,
+								}}
+								accessibilityLabel={t("chat.adoptNextPrompt", {
+									text: suggestion,
+								})}
+								onPress={adoptSuggestion}
+							>
+								<Text
+									class="font-sans text-muted-foreground"
+									style={{ fontSize: chatPx(12) }}
+								>
+									{canAdoptWithTab() ? "→" : t("chat.acceptNextPrompt")}
+								</Text>
+								{canAdoptWithTab() ? <ComposerKeyHint label="Tab" /> : null}
+							</Button>
+						) : null;
+					}}
 					{() =>
 						showFocusHint() ? (
 							<View
@@ -690,6 +848,39 @@ export function ChatComposer(props: ChatComposerProps) {
 					) : null}
 					<ComposerActions
 						toolbarWidth={toolbarWidth}
+						beforeSendMode={() =>
+							assistance?.canEnhance() ? (
+								<Button
+									testID="chat-composer-enhance"
+									variant="ghost"
+									size="icon"
+									style={composerToolButtonSize()}
+									disabled={enhanceDisabled()}
+									accessibilityLabel={enhanceLabel()}
+									tooltip={
+										<Tooltip>
+											<Text class="font-sans">{enhanceLabel}</Text>
+										</Tooltip>
+									}
+									onPress={() => void enhanceDraft()}
+								>
+									{() =>
+										enhancing() ? (
+											<Spinner
+												size={chatPx(14)}
+												color={token("muted-foreground")}
+											/>
+										) : (
+											<Icon
+												name="PencilSparkles"
+												size={chatPx(16)}
+												color={token("muted-foreground")}
+											/>
+										)
+									}
+								</Button>
+							) : null
+						}
 						sendMode={() => state().sendMode}
 						onSendModeChange={(mode) => store.setSendMode(mode)}
 						running={running}

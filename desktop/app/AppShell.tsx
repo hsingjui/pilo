@@ -13,6 +13,7 @@ import {
 import { currentWindow } from "nsh/desktop";
 
 import type { Project } from "@shared/api/projects-types";
+import { CacheKeepAliveNotice } from "../chat/cache-keep-alive-notice";
 import { ChatAgentActivityIndicator } from "../chat/chat-agent-activity";
 import { ChatMessageList } from "../chat/chat-message-list";
 import { ChatMarkdown, type ChatMarkdownFileLink } from "../chat/chat-markdown";
@@ -24,6 +25,10 @@ import {
 } from "../chat/conversation-column";
 import { DEFAULT_CHAT_REM } from "../chat/layout";
 import { ChatComposer, ChatComposerSkeleton } from "../composer/chat-composer";
+import {
+	createComposerAssistance,
+	type ComposerAssistanceClient,
+} from "../composer/composer-assistance";
 import type { ComposerStore } from "../composer/composer-store";
 import { activeProject } from "../state/app-state";
 import type { AppStore } from "../state/app-store";
@@ -76,6 +81,7 @@ export interface AppShellProps {
 	>;
 	/** The open session's composer; whoever mounts the shell targets it. */
 	composer: ComposerStore;
+	assistanceClient?: ComposerAssistanceClient;
 	/** Reads a project-relative image's bytes (reply `![…](path)` previews). */
 	readProjectImage?: (projectId: string, path: string) => Promise<Uint8Array>;
 	/** What a project file link in a reply does when pressed (a workspace tab, M5). */
@@ -193,6 +199,55 @@ export function AppShell(props: AppShellProps) {
 		const target = chatTarget();
 		untracked(() => composer.setTarget(target));
 	});
+	const assistance =
+		props.assistanceClient &&
+		createComposerAssistance(props.assistanceClient, store, () => {
+			const target = composer.target();
+			const sessionKey = target?.sessionKey ?? null;
+			const draft = composer.state();
+			const config = props.runConfig?.state();
+			const currentConfig = config?.sessionKey === sessionKey ? config : null;
+			const transcript = chat.state();
+			const currentProject = project();
+			return {
+				projectId: target?.projectId ?? null,
+				connectionId:
+					currentProject && currentProject.id === target?.projectId
+						? currentProject.connection.id
+						: "",
+				sessionKey,
+				sessionId: currentConfig?.session?.sessionId ?? null,
+				draft: draft.value,
+				hasAttachments: draft.images.length > 0,
+				active: status().type === "ready" && sessionKey === chatSessionKey(),
+				busy:
+					draft.sending ||
+					composer.running() ||
+					Boolean(transcript.conversation?.active),
+				blocked:
+					draft.composing ||
+					composer.readOnly() ||
+					modalOpen() ||
+					paletteOpen(),
+				model: currentConfig?.model ?? null,
+				loading:
+					transcript.sessionKey !== sessionKey || transcript.status !== "ready",
+			};
+		});
+	const cacheNoticeSessions = computed(() => {
+		const sessionKey = chatSessionKey();
+		return sessionKey && assistance ? [sessionKey] : [];
+	});
+	const cacheStatus = (sessionKey: string) =>
+		store.state().chatSessions.find((chat) => chat.sessionKey === sessionKey)
+			?.cacheKeepAlive ?? null;
+	const refreshCacheStatus = () => {
+		const sessionKey = chatSessionKey();
+		if (sessionKey && status().type === "ready")
+			void store.refreshChatSession(sessionKey);
+	};
+	if (assistance) effect(refreshCacheStatus);
+
 	// Without an open session the workspace holds a new chat in the active
 	// project, as the Tauri landing does, so its composer is always there.
 	effect(() => {
@@ -229,6 +284,14 @@ export function AppShell(props: AppShellProps) {
 	// The app draws its own title bar: the sidebar and the main area reach
 	// the window's top edge, beside the system's window controls.
 	const window = currentWindow();
+	if (assistance)
+		cleanup(
+			window.on("focusChange", ({ focused }) => {
+				if (!focused) return;
+				assistance.refreshSettings();
+				refreshCacheStatus();
+			}),
+		);
 	window.set({ titleBar: { style: "hidden", height: TITLE_BAR_HEIGHT } });
 	const titleBar = () => window.titleBar();
 	const barHeight = () => titleBar().height || TITLE_BAR_HEIGHT;
@@ -529,6 +592,17 @@ export function AppShell(props: AppShellProps) {
 											class="relative z-20 -mt-4 w-full shrink-0 pb-4"
 										>
 											<ConversationColumn class="relative">
+												<Each
+													of={cacheNoticeSessions()}
+													key={(sessionKey) => `cache-keep-alive:${sessionKey}`}
+												>
+													{(sessionKey) => (
+														<CacheKeepAliveNotice
+															status={() => cacheStatus(sessionKey())}
+														/>
+													)}
+												</Each>
+
 												{() => {
 													const sessionKey = chatSessionKey();
 													return sessionKey === null ? null : (
@@ -541,6 +615,7 @@ export function AppShell(props: AppShellProps) {
 												}}
 												<ChatComposer
 													store={composer}
+													assistance={assistance}
 													shortcuts={sessionShortcuts}
 													sendShortcut={() =>
 														store.state().preferences?.values

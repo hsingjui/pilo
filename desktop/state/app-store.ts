@@ -73,6 +73,9 @@ export class AppStore {
 	private readonly current = signal(createAppState());
 	readonly state: Accessor<AppState> = this.current;
 
+	private readonly liveListeners = new Set<
+		(event: PiloClientEvent | null) => void
+	>();
 	private readonly client: AppStoreClient;
 	private readonly chat: ChatTranscriptStore | undefined;
 	/** Identifies the current event connection; unset while disconnected. */
@@ -353,13 +356,23 @@ export class AppStore {
 			});
 	}
 
+	/** Null invalidates work that depends on an uninterrupted live stream. */
+	subscribeLiveEvents(listener: (event: PiloClientEvent | null) => void) {
+		this.liveListeners.add(listener);
+		return () => {
+			this.liveListeners.delete(listener);
+		};
+	}
+
 	/** Stops listening to runtime events. */
 	stop() {
 		const disconnect = this.disconnect;
+		const connected = this.connected;
 		this.connection = undefined;
 		this.disconnect = undefined;
 		this.synced = false;
 		disconnect?.();
+		if (connected) for (const listener of this.liveListeners) listener(null);
 	}
 
 	private apply(...actions: AppAction[]) {
@@ -410,6 +423,7 @@ export class AppStore {
 
 	private receive(message: PiloClientEventMessage) {
 		if (message.type === "resyncRequired") {
+			for (const listener of this.liveListeners) listener(null);
 			void this.chat?.refresh();
 			void this.sync();
 		} else if (message.type === "events") {
@@ -432,10 +446,12 @@ export class AppStore {
 			this.externalReads.set(event.projectId, reads + 1);
 		}
 		this.apply({ type: "event", event });
-		if (event.sequence > this.current().latestSequence)
+		if (event.sequence > this.current().latestSequence) {
 			this.onLiveEvent?.(event);
+			for (const listener of this.liveListeners) listener(event);
+		}
 		if (event.sessionKey !== undefined && changesChatSession(event)) {
-			void this.loadChatSession(event.sessionKey);
+			void this.refreshChatSession(event.sessionKey);
 		}
 		if (event.type === "configuration_changed") {
 			void this.reloadProjects();
@@ -512,7 +528,7 @@ export class AppStore {
 	 * the WebUI reads its chat states again on such events. One read per
 	 * chat is in flight at a time; events during it cause one more after.
 	 */
-	private async loadChatSession(sessionKey: string) {
+	async refreshChatSession(sessionKey: string) {
 		const pending = this.chatReads.get(sessionKey);
 		if (pending) {
 			pending.again = true;

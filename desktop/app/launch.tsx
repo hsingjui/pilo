@@ -212,6 +212,7 @@ export async function launch(
 		store,
 		chat,
 		composer,
+		assistanceClient: client,
 		runConfig,
 		catalog,
 		forker,
