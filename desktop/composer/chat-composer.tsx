@@ -18,6 +18,7 @@ import {
 import { Picker } from "nsh";
 import { Button as BaseButton, Input as BaseInput } from "nsh/base";
 
+import { formatChatImageSize } from "@shared/chat/chat-submission";
 import {
 	DEFAULT_SUGGESTIONS,
 	FILE_SUGGESTION_LIMIT,
@@ -26,9 +27,7 @@ import {
 	type ComposerSuggestion,
 	type MentionTab,
 } from "@shared/chat/composer-suggestions";
-import { formatChatImageSize } from "@shared/chat/chat-submission";
 import { sessionMentionValue } from "@shared/chat/session-mentions";
-import { DEFAULT_READING_FONT_SIZE } from "@shared/font-settings";
 import type { SendMessageShortcut } from "@shared/host-preferences-types";
 import { normalizeKeyboardShortcut } from "@shared/keyboard-shortcuts-core";
 import { formatKeyboardShortcutLabels } from "@shared/keyboard-shortcuts-format";
@@ -36,7 +35,7 @@ import type { KeyboardShortcutMap } from "@shared/keyboard-shortcuts-types";
 
 import { t } from "../app/i18n";
 import { ChatReadingFont } from "../chat/chat-reading-font";
-import { DEFAULT_CHAT_REM } from "../chat/layout";
+import { chatMetadataText, chatPx } from "../chat/layout";
 import { APP_SHORTCUTS, bindAppShortcut } from "../shortcuts";
 import { Button } from "../ui/button";
 import { focusRingStyle } from "../ui/focus-ring-style";
@@ -50,6 +49,14 @@ import { Tooltip } from "../ui/tooltip";
 import { ComposerActions } from "./composer-actions";
 import { ComposerContextUsage } from "./composer-context-usage";
 import {
+	composerActionsGap,
+	composerRunConfigStyle,
+	composerSendModeStyle,
+	composerSendSize,
+	composerToolbarGap,
+	composerToolButtonSize,
+} from "./composer-layout";
+import {
 	ComposerRunConfig,
 	type ComposerRunConfigProps,
 } from "./composer-run-config";
@@ -57,9 +64,6 @@ import type { ComposerStore } from "./composer-store";
 
 /** The React composer grows to 12 lines, then scrolls. */
 const MAX_ROWS = 12;
-/** The input keeps its native leading with a small inset above and below. */
-const INPUT_PADDING = 4;
-const CHAT_SCALE = DEFAULT_CHAT_REM / 16;
 
 const composerShadow = () => {
 	const shadow = styleVar("pilo-shadow-composer");
@@ -74,77 +78,93 @@ const focusShadow = () =>
 	) ?? composerShadow();
 
 const COMPOSER_SURFACE =
-	"relative w-full rounded-(--pilo-composer-radius) border border-(--pilo-composer-border) bg-(--pilo-composer-background)";
+	"relative w-full border border-(--pilo-composer-border) bg-(--pilo-composer-background)";
 /** A read-only chat's composer, dimmed as the Tauri composer's `muted` surface. */
 const COMPOSER_SURFACE_MUTED =
-	"relative w-full rounded-(--pilo-composer-radius) border border-border/60 bg-muted";
-const COMPOSER_TOOLBAR =
-	"-ml-1 min-w-0 flex-row items-center gap-(--pilo-composer-toolbar-gap)";
+	"relative w-full border border-border/60 bg-muted";
+const COMPOSER_TOOLBAR = "min-w-0 flex-row items-center";
 
 function surfaceStyle(focused: boolean, muted = false) {
 	return {
 		borderColor:
 			focused && !muted ? token("pilo-composer-focus-border") : undefined,
 		boxShadow: focused && !muted ? focusShadow() : composerShadow(),
-		gap: token("pilo-composer-gap") * CHAT_SCALE,
-		paddingHorizontal: DEFAULT_CHAT_REM * 0.5,
-		paddingVertical: DEFAULT_CHAT_REM * 0.375,
+		borderRadius: chatPx(token("pilo-composer-radius")),
+		gap: chatPx(token("pilo-composer-gap")),
+		paddingHorizontal: chatPx(8),
+		paddingVertical: chatPx(6),
 	};
 }
 
 function toolbarStyle() {
 	return {
-		minHeight:
-			token("pilo-composer-control-size") * CHAT_SCALE + DEFAULT_CHAT_REM / 8,
-		paddingTop: DEFAULT_CHAT_REM / 8,
+		marginLeft: -chatPx(4),
+		gap: composerToolbarGap(),
+		paddingTop: chatPx(2),
 	};
 }
 
-function inputHeight(contentHeight: number, fontSize: number) {
-	// Keep the theme minimum or two rows, whichever is taller, as in Tauri.
-	const lineHeight = Math.max(20, fontSize * 1.25);
-	const min = Math.max(
-		token("pilo-composer-input-height") * CHAT_SCALE,
-		lineHeight * 2 + INPUT_PADDING,
-	);
+const inputMinHeight = () => chatPx(token("pilo-composer-input-height"));
+
+function inputLineHeight(fontSize: number) {
+	return Math.max(chatPx(20), fontSize * 1.25);
+}
+
+function inputHeight(contentHeight: number, leading: number, padding: number) {
+	// Keep the theme minimum or two native lines, whichever is taller, as in Tauri.
 	return Math.max(
-		min,
+		inputMinHeight(),
+		Math.ceil(leading * 2 + padding * 2),
 		Math.min(
-			Math.ceil(contentHeight) + INPUT_PADDING,
-			lineHeight * MAX_ROWS + INPUT_PADDING,
+			Math.ceil(contentHeight + padding * 2),
+			leading * MAX_ROWS + padding * 2,
 		),
 	);
 }
 
 /** The empty composer's geometry, without mounting input or menu behavior. */
 export function ChatComposerSkeleton(props: { showModel: boolean }) {
+	const toolbarWidth = signal(0);
 	return (
 		<View class={COMPOSER_SURFACE} style={surfaceStyle(false)}>
-			<View
-				class="px-1 pt-2"
-				style={{ height: inputHeight(0, DEFAULT_READING_FONT_SIZE) }}
-			>
-				<Skeleton class="h-2.5 w-[42%] rounded-full" />
+			<View class="px-1 pt-2" style={{ height: inputMinHeight() }}>
+				<Skeleton class="h-[9px] w-[42%] rounded-full" />
 			</View>
-			<View class={COMPOSER_TOOLBAR} style={toolbarStyle()}>
-				<View class="h-(--pilo-composer-control-size) w-(--pilo-composer-attachment-width) shrink-0 items-center justify-center">
-					<Skeleton class="size-4" />
+			<View
+				class={COMPOSER_TOOLBAR}
+				style={toolbarStyle()}
+				onLayout={({ bounds }) => toolbarWidth.set(bounds.size.width)}
+			>
+				<View
+					class="shrink-0 items-center justify-center"
+					style={composerToolButtonSize()}
+				>
+					<Skeleton style={{ width: chatPx(16), height: chatPx(16) }} />
 				</View>
 				{props.showModel ? (
-					<View class="-ml-1 min-w-0 shrink flex-row items-center gap-1 px-2">
-						<Skeleton class="size-4 shrink-0" />
-						<Skeleton class="h-2.5 w-20 min-w-0 shrink rounded-full" />
+					<View
+						class="min-w-0 shrink flex-row items-center"
+						style={composerRunConfigStyle(toolbarWidth())}
+					>
+						<Skeleton
+							class="shrink-0"
+							style={{ width: chatPx(16), height: chatPx(16) }}
+						/>
+						<Skeleton
+							class="min-w-0 shrink rounded-full"
+							style={{ width: chatPx(80), height: chatPx(10) }}
+						/>
 					</View>
 				) : null}
-				<View class="ml-auto shrink-0 flex-row items-center gap-1.5">
-					<View class="flex-row items-center gap-1 px-1.5">
-						<Skeleton class="size-3.5" />
-						<Skeleton class="size-3" />
+				<View
+					class="ml-auto shrink-0 flex-row items-center"
+					style={{ gap: composerActionsGap(toolbarWidth()) }}
+				>
+					<View class="flex-row items-center" style={composerSendModeStyle()}>
+						<Skeleton style={{ width: chatPx(14), height: chatPx(14) }} />
+						<Skeleton style={{ width: chatPx(12), height: chatPx(12) }} />
 					</View>
-					<Skeleton
-						strong
-						class="size-(--pilo-composer-control-size) rounded-full"
-					/>
+					<Skeleton strong class="rounded-full" style={composerSendSize()} />
 				</View>
 			</View>
 		</View>
@@ -171,9 +191,21 @@ export function ChatComposer(props: ChatComposerProps) {
 	const store = props.store;
 	const readingFont = ChatReadingFont();
 	const surfaceWidth = signal(0);
+	const toolbarWidth = signal(0);
 	const index = signal(0);
 	const dismissedQuery = signal<string | null>(null);
 	const contentHeight = signal(0);
+	const emptyLine = signal<{ font: ChatReadingFont; height: number } | null>(
+		null,
+	);
+	const inputLeading = () => {
+		const line = emptyLine();
+		return line?.font === readingFont()
+			? line.height
+			: readingFont().fontSize * 1.25;
+	};
+	const inputPadding = () =>
+		Math.max(0, (inputLineHeight(readingFont().fontSize) - inputLeading()) / 2);
 	const focused = signal(false);
 	const focusShortcutLabels = signal<string[]>([]);
 	const surface = signal<ViewRef | undefined>(undefined);
@@ -493,7 +525,14 @@ export function ChatComposer(props: ChatComposerProps) {
 				{() =>
 					attachments().images.length > 0 ||
 					attachments().references.length > 0 ? (
-						<View class="mb-1 min-w-0 flex-row flex-wrap items-center gap-1.5 p-1">
+						<View
+							class="min-w-0 flex-row flex-wrap items-center"
+							style={{
+								marginBottom: chatPx(4),
+								gap: chatPx(6),
+								padding: chatPx(4),
+							}}
+						>
 							{attachments().images.map((image) => (
 								<AttachmentChip
 									label={`${image.name} (${formatChatImageSize(image.size)})`}
@@ -518,7 +557,7 @@ export function ChatComposer(props: ChatComposerProps) {
 						</View>
 					) : null
 				}
-				<View class="min-w-0 flex-row items-start">
+				<View class="relative min-w-0 flex-row items-start">
 					<BaseInput
 						ref={(ref) => {
 							input = ref;
@@ -544,15 +583,25 @@ export function ChatComposer(props: ChatComposerProps) {
 						}
 						// The size goes in the class: an inline `fontSize` reaches the typed
 						// text but not the placeholder, which then sits larger and lower.
-						class={`min-w-0 flex-1 border-0 bg-transparent px-1 text-[${readingFont().fontSize}px] text-input-foreground placeholder:text-input-placeholder`}
+						class={`min-w-0 flex-1 border-0 bg-transparent text-[${readingFont().fontSize}px] text-input-foreground placeholder:text-input-placeholder`}
 						style={{
 							fontFamily: readingFont().fontFamily,
-							height: inputHeight(contentHeight(), readingFont().fontSize),
+							height: inputHeight(
+								state().value && !readOnly() ? contentHeight() : 0,
+								inputLeading(),
+								inputPadding(),
+							),
 							minHeight: 0,
-							paddingTop: INPUT_PADDING / 2,
-							paddingBottom: INPUT_PADDING / 2,
+							paddingVertical: inputPadding(),
+							paddingLeft: chatPx(4),
+							paddingRight: chatPx(showFocusHint() ? 64 : 4),
 						}}
-						onContentSizeChange={({ size }) => contentHeight.set(size.height)}
+						onContentSizeChange={({ size }) => {
+							contentHeight.set(size.height);
+							// nsh reports one native line for an empty value, regardless of the placeholder.
+							if ((!state().value || readOnly()) && size.height > 0)
+								emptyLine.set({ font: readingFont(), height: size.height });
+						}}
 						onFocus={() => focused.set(true)}
 						onBlur={() => focused.set(false)}
 						onChange={({ value }) => {
@@ -573,21 +622,26 @@ export function ChatComposer(props: ChatComposerProps) {
 					{() =>
 						showFocusHint() ? (
 							<View
-								class="mt-0.5 shrink-0 flex-row items-center gap-[3px]"
-								style={{ pointerEvents: "none" }}
+								class="absolute right-0 top-0 z-10 flex-row items-center"
+								style={{
+									height: inputLineHeight(readingFont().fontSize),
+									gap: chatPx(2),
+									opacity: 0.7,
+									pointerEvents: "none",
+								}}
+								accessibilityElementsHidden
 							>
 								{focusShortcutLabels().map((label, index) => (
 									<>
 										{index > 0 ? (
-											<Text class="font-sans text-xs text-muted-foreground">
+											<Text
+												class="font-mono text-muted-foreground"
+												style={chatMetadataText}
+											>
 												+
 											</Text>
 										) : null}
-										<View class="h-[21px] min-w-[17px] items-center justify-center rounded-[5px] border border-border/60 bg-muted/50 px-1">
-											<Text class="font-sans text-xs text-muted-foreground">
-												{label}
-											</Text>
-										</View>
+										<ComposerKeyHint label={label} />
 									</>
 								))}
 							</View>
@@ -598,12 +652,14 @@ export function ChatComposer(props: ChatComposerProps) {
 					testID="chat-composer-toolbar"
 					class={COMPOSER_TOOLBAR}
 					style={toolbarStyle()}
+					onLayout={({ bounds }) => toolbarWidth.set(bounds.size.width)}
 				>
 					<Button
 						testID="chat-composer-attach"
 						variant="ghost"
 						size="icon"
-						class="h-(--pilo-composer-control-size) w-(--pilo-composer-attachment-width) rounded-(--pilo-radius-md)"
+						class="shrink-0"
+						style={composerToolButtonSize()}
 						disabled={blocked()}
 						accessibilityLabel={t("chat.addAttachment")}
 						tooltip={
@@ -613,10 +669,18 @@ export function ChatComposer(props: ChatComposerProps) {
 						}
 						onPress={pickFiles}
 					>
-						<Icon name="Plus" size={16} color={token("muted-foreground")} />
+						<Icon
+							name="Plus"
+							size={chatPx(16)}
+							color={token("muted-foreground")}
+						/>
 					</Button>
 					{props.runConfig ? (
-						<ComposerRunConfig {...props.runConfig} readOnly={readOnly} />
+						<ComposerRunConfig
+							{...props.runConfig}
+							readOnly={readOnly}
+							toolbarWidth={toolbarWidth}
+						/>
 					) : null}
 					{props.runConfig ? (
 						<ComposerContextUsage
@@ -625,6 +689,7 @@ export function ChatComposer(props: ChatComposerProps) {
 						/>
 					) : null}
 					<ComposerActions
+						toolbarWidth={toolbarWidth}
 						sendMode={() => state().sendMode}
 						onSendModeChange={(mode) => store.setSendMode(mode)}
 						running={running}
@@ -640,7 +705,8 @@ export function ChatComposer(props: ChatComposerProps) {
 					state().dragging ? (
 						<View
 							testID="chat-composer-drop"
-							class="absolute inset-0 z-20 items-center justify-center rounded-(--pilo-composer-radius) bg-background/90 px-3"
+							class="absolute inset-0 z-20 items-center justify-center bg-background/90 px-3"
+							style={{ borderRadius: chatPx(token("pilo-composer-radius")) }}
 						>
 							<Text class="font-sans text-sm text-foreground">
 								{() => t("chat.dropFiles")}
@@ -829,8 +895,11 @@ function SuggestionMenu(props: {
 
 function ComposerKeyHint(props: { label: string }) {
 	return (
-		<View class="shrink-0 rounded-sm border border-border/70 bg-muted/50 px-1">
-			<Text class="font-mono text-[11px] text-muted-foreground">
+		<View
+			class="shrink-0 rounded-[4px] border border-border/70 bg-muted/50"
+			style={{ paddingHorizontal: chatPx(4), paddingVertical: 1 }}
+		>
+			<Text class="font-mono text-muted-foreground" style={chatMetadataText}>
 				{props.label}
 			</Text>
 		</View>
@@ -909,19 +978,35 @@ function AttachmentChip(props: {
 	icon: "File" | "MessageSquare";
 	onRemove: () => void;
 }) {
-	// React's `ComposerAttachment`: a borderless muted chip, 12rem at most,
-	// whose remove button fills its height.
 	const hover = createHover();
+	const readingFont = ChatReadingFont();
 	return (
-		<View class="h-7 min-w-0 max-w-48 flex-row items-center rounded-md bg-muted/60">
-			<View class="h-full min-w-0 flex-1 flex-row items-center gap-1.5 px-2">
-				<Icon name={props.icon} size={12} color={token("muted-foreground")} />
-				<Text class="min-w-0 shrink truncate font-sans text-xs text-foreground">
+		<View
+			class="min-w-0 flex-row items-center rounded-md bg-muted/60"
+			style={{
+				height: Math.max(chatPx(28), inputLineHeight(readingFont().fontSize)),
+				maxWidth: chatPx(192),
+			}}
+		>
+			<View
+				class="h-full min-w-0 flex-1 flex-row items-center"
+				style={{ gap: chatPx(6), paddingHorizontal: chatPx(8) }}
+			>
+				<Icon
+					name={props.icon}
+					size={chatPx(12)}
+					color={token("muted-foreground")}
+				/>
+				<Text
+					class="min-w-0 shrink truncate font-sans text-foreground"
+					style={{ fontSize: chatPx(12) }}
+				>
 					{() => props.label}
 				</Text>
 			</View>
 			<BaseButton
-				class="h-full w-6 shrink-0 items-center justify-center rounded-r-md transition-colors hover:bg-hover"
+				class="h-full shrink-0 items-center justify-center rounded-r-md transition-colors hover:bg-hover"
+				style={{ width: chatPx(24) }}
 				focusVisibleStyle={focusRingStyle(token("ring"))}
 				accessibilityLabel={props.removeLabel}
 				{...hover.props}
@@ -929,7 +1014,7 @@ function AttachmentChip(props: {
 			>
 				<Icon
 					name="X"
-					size={12}
+					size={chatPx(12)}
 					color={token(hover.hovered() ? "foreground" : "muted-foreground")}
 				/>
 			</BaseButton>

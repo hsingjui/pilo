@@ -8,9 +8,11 @@ import {
 } from "@shared/format-numbers";
 
 import { t } from "../app/i18n";
+import { chatPx } from "../chat/layout";
 import { Foreground } from "../ui/foreground";
 import { HoverCard } from "../ui/hover-card";
 import { Icon } from "../ui/icon";
+import { composerToolbarGap } from "./composer-layout";
 
 /** At most one decimal, as the React composer's `formatPercent`. */
 function formatPercent(value: number | undefined) {
@@ -24,7 +26,7 @@ function ContextRing(props: { percent: () => number }) {
 	const color = Foreground();
 	return (
 		<Canvas
-			style={{ width: 16, height: 16 }}
+			style={{ width: chatPx(16), height: chatPx(16) }}
 			accessible={false}
 			draw={(cx, size) => {
 				cx.scale(size.width / 24, size.height / 24);
@@ -139,15 +141,25 @@ export function ComposerContextUsage(props: {
 						testID="composer-context-usage"
 						role="button"
 						accessibilityLabel={summary()}
-						class="h-7 shrink-0 flex-row items-center gap-1 rounded-(--pilo-radius-md) pl-1 hover:bg-hover"
-						style={{ opacity: stale() ? 0.6 : 1 }}
+						class="relative shrink-0 flex-row items-center rounded-(--pilo-radius-md) hover:bg-hover"
+						style={{
+							height: chatPx(28),
+							left: chatPx(4),
+							marginLeft: -composerToolbarGap(),
+							paddingLeft: chatPx(4),
+							gap: chatPx(4),
+							opacity: stale() ? 0.6 : 1,
+						}}
 					>
 						{() =>
 							percent() === undefined ? (
-								<Icon name="CircleDashed" size={16} />
+								<Icon name="CircleDashed" size={chatPx(16)} />
 							) : (
 								<>
-									<Text class="font-sans text-xs font-medium leading-none tabular-nums text-muted-foreground">
+									<Text
+										class="font-sans font-medium tabular-nums text-muted-foreground"
+										style={{ fontSize: chatPx(12), lineHeight: chatPx(12) }}
+									>
 										{() => formatPercent(percent())}
 									</Text>
 									<ContextRing percent={ringPercent} />

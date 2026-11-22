@@ -19,6 +19,7 @@ import type {
 
 import { t } from "../app/i18n";
 import { PiLogo } from "../app/pi-logo";
+import { chatPx } from "../chat/layout";
 import type { ChatRunConfigState } from "../state/chat-run-config";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
@@ -29,7 +30,10 @@ import { MenuItem } from "../ui/menu-item";
 import { menuRowClass } from "../ui/menu-row";
 import { Skeleton } from "../ui/skeleton";
 import { Submenu, type SubmenuProps } from "../ui/submenu";
+import { composerRunConfigStyle } from "./composer-layout";
 import { ComposerModelPicker } from "./composer-model-picker";
+
+const triggerTextStyle = { fontSize: chatPx(12), lineHeight: chatPx(15) };
 
 export interface ComposerRunConfigProps {
 	/** The open chat's run configuration; `null` while it opens. */
@@ -104,7 +108,9 @@ function RunConfigSubmenu(
  * composer's `ComposerRunConfig`: Pi's mark, the model's name and the thinking
  * level, a skeleton while they are not known yet.
  */
-export function ComposerRunConfig(props: ComposerRunConfigProps) {
+export function ComposerRunConfig(
+	props: ComposerRunConfigProps & { toolbarWidth: () => number },
+) {
 	const menuBounds = signal<Bounds | null>(null);
 	const selected = () => props.config()?.model ?? null;
 	const modelLabel = () => selected()?.name || selected()?.id || "—";
@@ -129,7 +135,8 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 					testID="run-config-trigger"
 					variant="ghost"
 					size="sm"
-					class="-ml-1 h-(--pilo-composer-control-size) min-w-0 shrink gap-1 rounded-(--pilo-radius-md) px-2 text-xs font-normal"
+					class="min-w-0 shrink font-normal"
+					style={composerRunConfigStyle(props.toolbarWidth())}
 					activeStyle={{ scale: 1 }}
 					disabled={!props.config()?.ready || !!props.readOnly?.()}
 					accessibilityLabel={t("chat.runConfigLabel", {
@@ -139,26 +146,39 @@ export function ComposerRunConfig(props: ComposerRunConfigProps) {
 							: thinkingLabel(),
 					})}
 				>
-					<PiLogo size={16} />
+					<PiLogo size={chatPx(16)} />
 					{() =>
 						modelPending() ? (
-							<Skeleton class="h-2.5 w-20 shrink-0 rounded-full" />
+							<Skeleton
+								class="shrink-0 rounded-full"
+								style={{ width: chatPx(80), height: chatPx(10) }}
+							/>
 						) : (
 							<>
-								<Text class="min-w-0 shrink truncate font-sans text-xs leading-4 text-muted-foreground">
+								<Text
+									class="min-w-0 shrink truncate font-sans text-muted-foreground"
+									style={triggerTextStyle}
+								>
 									{modelLabel}
 								</Text>
 								<Text
 									accessible={false}
 									accessibilityElementsHidden
-									class="shrink-0 font-sans text-xs text-muted-foreground/60"
+									class="shrink-0 font-sans text-muted-foreground/60"
+									style={triggerTextStyle}
 								>
 									·
 								</Text>
 								{thinkingPending() ? (
-									<Skeleton class="h-2.5 w-8 shrink-0 rounded-full" />
+									<Skeleton
+										class="shrink-0 rounded-full"
+										style={{ width: chatPx(32), height: chatPx(10) }}
+									/>
 								) : (
-									<Text class="shrink-0 font-sans text-xs leading-4 text-muted-foreground">
+									<Text
+										class="shrink-0 font-sans text-muted-foreground"
+										style={triggerTextStyle}
+									>
 										{thinkingLabel}
 									</Text>
 								)}

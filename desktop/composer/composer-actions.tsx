@@ -3,11 +3,17 @@ import { Text, token, View } from "nsh";
 import type { ComposerSendMode } from "@shared/chat/send-mode";
 
 import { t } from "../app/i18n";
+import { chatPx } from "../chat/layout";
 import { Button } from "../ui/button";
 import { Icon, type IconName } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { Tooltip } from "../ui/tooltip";
+import {
+	composerActionsGap,
+	composerSendModeStyle,
+	composerSendSize,
+} from "./composer-layout";
 
 const SEND_MODE_OPTIONS = [
 	{
@@ -42,6 +48,7 @@ const SEND_MODE_OPTIONS = [
  * send that is still on its way.
  */
 export function ComposerActions(props: {
+	toolbarWidth: () => number;
 	sendMode: () => ComposerSendMode;
 	onSendModeChange: (mode: ComposerSendMode) => void;
 	running: () => boolean;
@@ -72,7 +79,8 @@ export function ComposerActions(props: {
 	return (
 		<View
 			testID="chat-composer-actions"
-			class="ml-auto shrink-0 flex-row items-center gap-1.5"
+			class="ml-auto shrink-0 flex-row items-center"
+			style={{ gap: composerActionsGap(props.toolbarWidth()) }}
 		>
 			<Menu
 				placement="top"
@@ -83,7 +91,8 @@ export function ComposerActions(props: {
 					<Button
 						testID="chat-composer-send-mode"
 						variant="ghost"
-						class="h-(--pilo-composer-control-size) gap-1 rounded-(--pilo-radius-md) px-1.5"
+						size="sm"
+						style={composerSendModeStyle()}
 						disabled={props.blocked()}
 						accessibilityLabel={modeLabel()}
 						tooltip={
@@ -95,13 +104,13 @@ export function ComposerActions(props: {
 						{() => (
 							<Icon
 								name={option().icon}
-								size={14}
+								size={chatPx(14)}
 								color={token("muted-foreground")}
 							/>
 						)}
 						<Icon
 							name="ChevronDown"
-							size={12}
+							size={chatPx(12)}
 							color={token("muted-foreground")}
 						/>
 					</Button>
@@ -137,7 +146,8 @@ export function ComposerActions(props: {
 				testID="chat-composer-send"
 				variant="ghost"
 				size="icon"
-				class="size-(--pilo-composer-control-size) rounded-full bg-foreground hover:bg-foreground/85 disabled:bg-muted-foreground disabled:opacity-100"
+				class="rounded-full bg-foreground hover:bg-foreground/85 disabled:bg-muted-foreground disabled:opacity-100"
+				style={composerSendSize()}
 				accessibilityLabel={actionLabel()}
 				disabled={showStop() ? false : !props.hasContent() || props.blocked()}
 				tooltip={
@@ -151,9 +161,18 @@ export function ComposerActions(props: {
 			>
 				{() =>
 					showStop() ? (
-						<Icon name="Square" size={12} fill color={token("background")} />
+						<Icon
+							name="Square"
+							size={chatPx(12)}
+							fill
+							color={token("background")}
+						/>
 					) : (
-						<Icon name="ArrowUp" size={16} color={token("background")} />
+						<Icon
+							name="ArrowUp"
+							size={chatPx(16)}
+							color={token("background")}
+						/>
 					)
 				}
 			</Button>
