@@ -7,6 +7,7 @@ publish = false
 [workspace]
 
 [dependencies]
+log = "0.4"
 mime_guess = "2"
 nsh-core = "0.6.1"
 pilo-domain = { path = "../crates/pilo-domain" }

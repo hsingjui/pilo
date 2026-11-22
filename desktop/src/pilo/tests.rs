@@ -24,7 +24,7 @@ fn bootstrap_reads_existing_projects_and_shutdown_closes_the_handle() {
     storage::upsert_project(&db, &project).unwrap();
     drop(db);
 
-    let pilo = Pilo::new(Some(data.path().to_str().unwrap().into())).unwrap();
+    let pilo = Pilo::new(Some(data.path().to_str().unwrap().into()), None).unwrap();
     pilo.executor.block_on(async {
         let initial = Pilo::load_bootstrap(pilo.host.clone()).await.unwrap();
         let saved = initial
@@ -46,7 +46,7 @@ fn bootstrap_surfaces_database_errors() {
     let data = tempfile::tempdir().unwrap();
     let database = data.path().join("pilo.sqlite3");
     std::fs::create_dir(&database).unwrap();
-    let pilo = Pilo::new(Some(data.path().to_str().unwrap().into())).unwrap();
+    let pilo = Pilo::new(Some(data.path().to_str().unwrap().into()), None).unwrap();
     pilo.executor.block_on(async {
         let result = Pilo::load_bootstrap(pilo.host.clone()).await;
         assert!(matches!(result, Err(error) if error.contains("failed to open Pilo SQLite index")));
@@ -59,7 +59,7 @@ fn bootstrap_surfaces_database_errors() {
 #[test]
 fn runtime_operation_does_not_block_shutdown() {
     let data = tempfile::tempdir().unwrap();
-    let pilo = Pilo::new(Some(data.path().to_str().unwrap().into())).unwrap();
+    let pilo = Pilo::new(Some(data.path().to_str().unwrap().into()), None).unwrap();
     pilo.executor.block_on(async {
         let (admitted, ready) = tokio::sync::oneshot::channel();
         let (finish, pending) = tokio::sync::oneshot::channel();
@@ -87,7 +87,7 @@ fn runtime_operation_does_not_block_shutdown() {
 #[test]
 fn event_batch_reports_gap_then_preserves_later_events() {
     let data = tempfile::tempdir().unwrap();
-    let pilo = Pilo::new(Some(data.path().to_str().unwrap().into())).unwrap();
+    let pilo = Pilo::new(Some(data.path().to_str().unwrap().into()), None).unwrap();
     pilo.executor.block_on(async {
         let runtime = pilo.host.lock().await.as_ref().unwrap().clone();
         let mut stream = runtime.subscribe_events(EventQueueLimits {

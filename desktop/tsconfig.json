@@ -7,6 +7,7 @@
 			"nsh": ["./.nsh/types/nsh/index.d.ts"],
 			"nsh/*": ["./.nsh/types/nsh/*.d.ts"],
 			"app/*": ["./.nsh/types/app/*.d.ts"],
+			"process": ["./.nsh/types/process.d.ts"],
 			"@shared/*": ["../shared/*"]
 		}
 	},

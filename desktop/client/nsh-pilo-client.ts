@@ -1,4 +1,5 @@
 import type { Pilo } from "app/native";
+import process from "process";
 
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import type { FsEntry } from "@shared/api/files-types";
@@ -809,7 +810,7 @@ export class NshPiloClient implements PiloClient {
 
 	/** Opens the app's log directory in the file manager. */
 	openLogDirectory() {
-		return this.pilo.openLogDirectory();
+		return this.pilo.openLogDirectory(process.logFile);
 	}
 
 	/** Whether the runtime shut down: its event stream never resumes. */

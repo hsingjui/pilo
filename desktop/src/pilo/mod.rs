@@ -70,7 +70,7 @@ use objects::{
 };
 use shell::{
     NshHostShell, ShellEvents, ShellWebAssets, data_identifier, default_data_dir, executor,
-    log_directory, open_path, server_resource_name, workspace,
+    init_file_logger, open_path, resolve_log_directory, server_resource_name, workspace,
 };
 
 const EVENT_QUEUE_LIMITS: EventQueueLimits = EventQueueLimits {
@@ -136,7 +136,8 @@ impl Pilo {
 #[class]
 impl Pilo {
     /// Opens Pilo on the existing app data directory, or an explicit absolute directory.
-    pub fn new(data_dir: Option<String>) -> Result<Self, String> {
+    pub fn new(data_dir: Option<String>, log_file: Option<String>) -> Result<Self, String> {
+        let default_launch = data_dir.is_none();
         let data_dir = match data_dir {
             Some(path) => PathBuf::from(path),
             None => {
@@ -156,6 +157,11 @@ impl Pilo {
         };
         if !data_dir.is_absolute() {
             return Err("Pilo data directory must be an absolute path".into());
+        }
+        if default_launch
+            && let Ok(log_dir) = resolve_log_directory(log_file.as_deref(), cfg!(debug_assertions))
+        {
+            init_file_logger(log_dir);
         }
 
         let resources = std::env::current_exe()
@@ -1058,10 +1064,15 @@ impl Pilo {
         .await
     }
 
-    /// Opens the app's log directory in the file manager.
-    pub async fn open_log_directory(this: Instance<Self>) -> Result<(), String> {
+    /// Opens the app's log directory in the file manager, preferring nsh's `log_file` parent when set.
+    pub async fn open_log_directory(
+        this: Instance<Self>,
+        log_file: Option<String>,
+    ) -> Result<(), String> {
         let _ = this;
-        let directory = log_directory(cfg!(debug_assertions))?;
+        let directory = resolve_log_directory(log_file.as_deref(), cfg!(debug_assertions))?;
+        std::fs::create_dir_all(&directory)
+            .map_err(|error| format!("creating log directory {directory:?} failed: {error}"))?;
         open_path(&directory)
     }
 

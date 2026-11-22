@@ -1,10 +1,14 @@
 //! The runtime's host ports as the nsh shell implements them: paths, events, web assets and the folder picker.
 
 use std::{
+    fs::{File, OpenOptions},
+    io::Write,
     path::{Component, Path, PathBuf},
-    sync::OnceLock,
+    sync::{Mutex, OnceLock, PoisonError},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
+use log::{Level, LevelFilter, Log, Metadata, Record};
 use nsh_core::JsonValue;
 use pilo_runtime::{
     handle::HostShell,
@@ -60,7 +64,7 @@ pub(super) fn open_path(path: &Path) -> Result<(), String> {
         .map_err(|error| format!("opening {path:?} failed: {error}"))
 }
 
-/// The app's log directory, as the Tauri `appLogDir` resolves it.
+/// The app's log directory, keeping the existing platform log location.
 pub(super) fn log_directory(development: bool) -> Result<PathBuf, String> {
     let identifier = data_identifier(development);
     #[cfg(target_os = "macos")]
@@ -76,6 +80,160 @@ pub(super) fn log_directory(development: bool) -> Result<PathBuf, String> {
         .ok_or("cannot resolve the home directory")?
         .join(".local/share");
     Ok(base.join(identifier))
+}
+
+/// Resolves the directory to open for logs, preferring nsh's packaged `process.logFile` parent when provided.
+pub(super) fn resolve_log_directory(
+    log_file: Option<&str>,
+    development: bool,
+) -> Result<PathBuf, String> {
+    if let Some(parent) = log_file
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(Path::new)
+        .and_then(Path::parent)
+        .filter(|dir| !dir.as_os_str().is_empty())
+    {
+        return Ok(parent.to_path_buf());
+    }
+    log_directory(development)
+}
+
+/// Maximum size of the active log file before rotating to `pilo.log.1`.
+const MAX_LOG_FILE_BYTES: u64 = 5 * 1024 * 1024;
+const LOG_FILE_NAME: &str = "pilo.log";
+const LOG_BACKUP_NAME: &str = "pilo.log.1";
+
+struct LogFileWriter {
+    dir: PathBuf,
+    max_bytes: u64,
+    file: Option<File>,
+    written: u64,
+}
+
+impl LogFileWriter {
+    fn new(dir: PathBuf, max_bytes: u64) -> Self {
+        Self {
+            dir,
+            max_bytes: max_bytes.max(1),
+            file: None,
+            written: 0,
+        }
+    }
+
+    fn write_line(&mut self, line: &str) {
+        let bytes = line.as_bytes();
+        if self.file.is_none() {
+            if std::fs::create_dir_all(&self.dir).is_err() {
+                return;
+            }
+            let path = self.dir.join(LOG_FILE_NAME);
+            let existing_len = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let Ok(file) = OpenOptions::new().create(true).append(true).open(&path) else {
+                return;
+            };
+            self.written = existing_len;
+            self.file = Some(file);
+        }
+        if self.written > 0 && self.written.saturating_add(bytes.len() as u64) > self.max_bytes {
+            self.rotate();
+        }
+        if let Some(file) = self.file.as_mut()
+            && file.write_all(bytes).is_ok()
+        {
+            self.written = self.written.saturating_add(bytes.len() as u64);
+        }
+    }
+
+    fn flush(&mut self) {
+        if let Some(file) = self.file.as_mut() {
+            let _ = file.flush();
+        }
+    }
+
+    fn rotate(&mut self) {
+        self.file = None;
+        let current = self.dir.join(LOG_FILE_NAME);
+        let backup = self.dir.join(LOG_BACKUP_NAME);
+        let _ = std::fs::remove_file(&backup);
+        let _ = std::fs::rename(&current, &backup);
+        if let Ok(file) = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&current)
+        {
+            self.file = Some(file);
+            self.written = 0;
+        }
+    }
+}
+
+struct FileLogger {
+    writer: Mutex<LogFileWriter>,
+}
+
+fn is_pilo_log_target(target: &str) -> bool {
+    matches!(
+        target,
+        "runtime-diagnostics"
+            | "connection-diagnostics"
+            | "session-watcher"
+            | "remote-webui"
+            | "remote-http"
+            | "pilo-server"
+            | "shutdown"
+            | "terminal"
+            | "cache-keep-alive"
+            | "session-history"
+            | "chat-cache"
+    ) || target.starts_with("pilo_")
+        || target.starts_with("pilo::")
+}
+
+impl Log for FileLogger {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+        metadata.level() <= Level::Warn
+            || (metadata.level() <= Level::Info && is_pilo_log_target(metadata.target()))
+    }
+
+    fn log(&self, record: &Record<'_>) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+        let ts_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or_default();
+        let line = format!(
+            "{ts_ms} [{}] [{}] {}\n",
+            record.level(),
+            record.target(),
+            record.args()
+        );
+        let mut writer = self.writer.lock().unwrap_or_else(PoisonError::into_inner);
+        writer.write_line(&line);
+    }
+
+    fn flush(&self) {
+        let mut writer = self.writer.lock().unwrap_or_else(PoisonError::into_inner);
+        writer.flush();
+    }
+}
+
+/// Installs the rolling file logger once when the host has not already installed a `log` logger.
+pub(super) fn init_file_logger(log_dir: PathBuf) {
+    static LOGGER: OnceLock<FileLogger> = OnceLock::new();
+    let mut initialized = false;
+    let logger = LOGGER.get_or_init(|| {
+        initialized = true;
+        FileLogger {
+            writer: Mutex::new(LogFileWriter::new(log_dir, MAX_LOG_FILE_BYTES)),
+        }
+    });
+    if initialized && log::set_logger(logger).is_ok() {
+        log::set_max_level(LevelFilter::Info);
+    }
 }
 
 /// Resolves the packaged `pilo-server` resource filename for the compiled desktop target.
@@ -203,6 +361,34 @@ mod tests {
                 .emit("pilo://session-watch", JsonValue::Null)
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn resolves_log_directory_from_nsh_log_file_when_present() {
+        let dir = resolve_log_directory(Some("/tmp/pilo-logs/app.log"), true).unwrap();
+        assert_eq!(dir, PathBuf::from("/tmp/pilo-logs"));
+        assert_eq!(
+            resolve_log_directory(None, true).unwrap(),
+            log_directory(true).unwrap()
+        );
+        assert_eq!(
+            resolve_log_directory(Some("  "), false).unwrap(),
+            log_directory(false).unwrap()
+        );
+    }
+
+    #[test]
+    fn file_log_writer_creates_and_rotates_log_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut writer = LogFileWriter::new(dir.path().to_path_buf(), 20);
+        writer.write_line("first line 01234\n");
+        writer.write_line("second line 5678\n");
+        writer.flush();
+
+        let backup = std::fs::read_to_string(dir.path().join(LOG_BACKUP_NAME)).unwrap();
+        let active = std::fs::read_to_string(dir.path().join(LOG_FILE_NAME)).unwrap();
+        assert_eq!(backup, "first line 01234\n");
+        assert_eq!(active, "second line 5678\n");
     }
 
     // Windows creates symlinks only with Developer Mode or admin rights.
