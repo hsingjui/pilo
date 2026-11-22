@@ -77,6 +77,8 @@ test("the nav moves between panes", async () => {
 	await app.press("id:settings-fonts-reset");
 	await app.waitFor("id:settings-fonts-reset-sizes");
 	expect(app.shows("id:settings-fonts-reset-families")).toBe(true);
+	expect(app.shows("text:Default fonts")).toBe(true);
+	expect(app.shows("text:Default sizes")).toBe(true);
 	await app.keyboard.press("escape");
 	await app.press("id:settings-nav-next-prompt");
 	await app.waitFor("id:settings-next-prompt-local");
@@ -201,5 +203,29 @@ test("a keep-alive edit commits on blur and Escape cancels it", async () => {
 	await app.host.send("fixture", "probe-keep-alive");
 	await app.waitUntil(
 		() => app.storage()["keep-alive-probe"] === "claude-sonnet-4:true:720:1800",
+	);
+});
+
+test("the fonts reset menu renders its items and resets families and sizes", async () => {
+	const app = await openApp();
+	await app.press("id:sidebar-settings");
+	await app.waitFor("id:settings-dialog");
+	await app.press("id:settings-nav-fonts");
+	await app.waitFor("id:settings-fonts-reset");
+	await app.press("id:settings-fonts-reset");
+	await app.waitFor("text:Default fonts");
+	expect(app.shows("text:Default sizes")).toBe(true);
+	await app.press("text:Default fonts");
+	await app.waitFor("id:settings-fonts-reset-families", { state: "gone" });
+	await app.press("id:settings-fonts-reset");
+	await app.waitFor("text:Default sizes");
+	await app.press("text:Default sizes");
+	await app.waitFor("id:settings-fonts-reset-sizes", { state: "gone" });
+	await app.host.send("fixture", "probe-shortcuts");
+	await app.waitUntil(
+		() =>
+			Boolean(
+				app.storage()["shortcut-patches"]?.includes('"pageFontFamily"'),
+			) && Boolean(app.storage()["shortcut-patches"]?.includes('"uiFontSize"')),
 	);
 });

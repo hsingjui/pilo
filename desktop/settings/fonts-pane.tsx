@@ -170,7 +170,7 @@ export function FontsPane(props: {
 									})
 								}
 							>
-								{t("settings.resetFonts")}
+								<Text class="font-sans">{t("settings.resetFonts")}</Text>
 							</MenuItem>
 							<MenuItem
 								testID="settings-fonts-reset-sizes"
@@ -184,7 +184,7 @@ export function FontsPane(props: {
 									})
 								}
 							>
-								{t("settings.resetFontSizes")}
+								<Text class="font-sans">{t("settings.resetFontSizes")}</Text>
 							</MenuItem>
 						</View>
 					</Menu>
