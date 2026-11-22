@@ -10,6 +10,7 @@ import {
 } from "nsh";
 import { TextView } from "nsh/base";
 import type {
+	TextViewCodeActionEvent,
 	TextViewImage,
 	TextViewLinkPressEvent,
 	TextViewStyles,
@@ -21,6 +22,7 @@ import { resolveMarkdownFileLink } from "@shared/chat/chat-markdown-links";
 import { MAX_CHAT_IMAGE_BYTES } from "@shared/chat/chat-submission";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
 
+import { AppToaster } from "../app/app-toasts";
 import { t } from "../app/i18n";
 import { ChatReadingFont } from "./chat-reading-font";
 
@@ -132,6 +134,7 @@ function bytesToBase64(bytes: Uint8Array): string {
  */
 export function ChatMarkdown(props: ChatMarkdownProps) {
 	const readingFont = ChatReadingFont();
+	const toasts = AppToaster();
 	const styles = computed(() =>
 		markdownStyles(
 			readingFont().fontFamily,
@@ -235,6 +238,12 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 		);
 	};
 
+	const handleCodeBlockAction = (event: TextViewCodeActionEvent) => {
+		if (event.id === "copy") {
+			toasts?.show({ variant: "success", title: t("chat.copied") });
+		}
+	};
+
 	return (
 		<TextView
 			class={props.class ?? "text-foreground"}
@@ -247,11 +256,12 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 			styles={styles()}
 			selectable
 			links="report"
-			codeBlockActions={[{ id: "copy" }]}
+			codeBlockActions={[{ id: "copy", label: t("chat.copyCode") }]}
 			markdown={props.text()}
 			options={{ streaming: true }}
 			onLinkPress={pressLink}
 			onImagePress={(event) => props.onImagePress?.(event.image)}
+			onCodeBlockAction={handleCodeBlockAction}
 			renderImage={renderImage}
 		/>
 	);

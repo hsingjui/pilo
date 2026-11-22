@@ -2,6 +2,7 @@ import { mount, signal, Storage, Text, View } from "nsh";
 
 import { replayConversationEvents } from "@shared/chat/conversation-replay";
 import "../app/fonts";
+import { AppToaster, AppToasts, AppToastStack } from "../app/app-toasts";
 import { initializeI18n } from "../app/i18n";
 import { ChatMarkdown, type ChatMarkdownFileLink } from "../chat/chat-markdown";
 import { ChatMessageList } from "../chat/chat-message-list";
@@ -74,42 +75,46 @@ async function run() {
 	};
 	const file = signal("file:none");
 	const image = signal("image:none");
+	const toasts = new AppToasts();
 	mount(() => (
-		<View class="flex-1">
-			<ChatMessageList
-				transcript={() => state}
-				messages={() => state.conversation?.messages ?? []}
-				{...(scenario === "plain"
-					? {}
-					: {
-							assistantBody: (message) => (
-								<ChatMarkdown
-									text={() => message().text}
-									project={() => ({ id: "p1", path: "/work/demo" })}
-									readProjectImage={async (_projectId, path) => {
-										if (scenario === "readerror") {
-											image.set("image:failed");
-											throw new Error("no file");
+		<AppToaster.Provider value={toasts}>
+			<View class="flex-1">
+				<ChatMessageList
+					transcript={() => state}
+					messages={() => state.conversation?.messages ?? []}
+					{...(scenario === "plain"
+						? {}
+						: {
+								assistantBody: (message) => (
+									<ChatMarkdown
+										text={() => message().text}
+										project={() => ({ id: "p1", path: "/work/demo" })}
+										readProjectImage={async (_projectId, path) => {
+											if (scenario === "readerror") {
+												image.set("image:failed");
+												throw new Error("no file");
+											}
+											image.set(`image:read ${path}`);
+											return pngBytes();
+										}}
+										onFileLink={(link: ChatMarkdownFileLink) =>
+											file.set(`file:${link.url}#${link.lineRange?.start}`)
 										}
-										image.set(`image:read ${path}`);
-										return pngBytes();
-									}}
-									onFileLink={(link: ChatMarkdownFileLink) =>
-										file.set(`file:${link.url}#${link.lineRange?.start}`)
-									}
-								/>
-							),
-						})}
-			/>
-			<View class="flex-row gap-2 p-2">
-				<Text testID="file" class="text-xs">
-					{() => file()}
-				</Text>
-				<Text testID="image-state" class="text-xs">
-					{() => image()}
-				</Text>
+									/>
+								),
+							})}
+				/>
+				<View class="flex-row gap-2 p-2">
+					<Text testID="file" class="text-xs">
+						{() => file()}
+					</Text>
+					<Text testID="image-state" class="text-xs">
+						{() => image()}
+					</Text>
+				</View>
+				<AppToastStack toasts={toasts} />
 			</View>
-		</View>
+		</AppToaster.Provider>
 	));
 }
 

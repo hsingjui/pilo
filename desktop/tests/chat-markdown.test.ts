@@ -63,3 +63,12 @@ test("a project image that cannot be read shows its fallback", async () => {
 	await app.waitFor("text:shot");
 	expect(app.shows("text:Below the image")).toBe(true);
 });
+
+test("a code block's copy button copies the code and shows a toast", async () => {
+	const app = await openChat("reply");
+	await app.waitFor("text:const answer: number = 42;");
+	await app.hover("text:const answer: number = 42;");
+	await app.press("label:Copy code");
+	expect(app.clipboard()).toContain("const answer: number = 42;");
+	await app.waitFor("text:Copied");
+});
