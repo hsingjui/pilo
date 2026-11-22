@@ -1,6 +1,11 @@
 import { expect, open, test } from "nsh/test";
 
-const desktop = { platform: "macos", width: 1100, height: 720 } as const;
+const desktop = {
+	platform: "macos",
+	width: 1100,
+	height: 720,
+	locale: "en-US",
+} as const;
 
 function openLightbox(scenario = "project") {
 	return open("./chat-image-lightbox-fixture.tsx", {

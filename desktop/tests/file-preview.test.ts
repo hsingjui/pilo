@@ -1,6 +1,11 @@
 import { expect, open, test } from "nsh/test";
 
-const desktop = { platform: "macos", width: 1200, height: 800 } as const;
+const desktop = {
+	platform: "macos",
+	width: 1200,
+	height: 800,
+	locale: "en-US",
+} as const;
 
 function openFixture() {
 	return open("./file-preview-fixture.tsx", desktop);
