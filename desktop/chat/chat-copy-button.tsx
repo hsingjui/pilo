@@ -37,6 +37,7 @@ function CopiedIcon() {
 export function ChatCopyButton(props: {
 	text: () => string;
 	visible?: boolean;
+	testID?: string;
 }) {
 	type Status = "chat.copied" | "chat.copyFailed";
 	const feedback = signal<{ text: string; status: Status } | null>(null);
@@ -68,7 +69,7 @@ export function ChatCopyButton(props: {
 
 	return (
 		<ChatMessageAction
-			testID="chat-copy-message"
+			testID={props.testID ?? "chat-copy-message"}
 			label={t(status() ?? "chat.copy")}
 			visible={props.visible}
 			onPress={() => void copy()}

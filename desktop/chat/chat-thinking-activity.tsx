@@ -1,4 +1,4 @@
-import { computed, signal, Text, View } from "nsh";
+import { computed, effect, signal, Text, untracked, View } from "nsh";
 
 import type { ThinkingActivity } from "@shared/chat/chat-activity-types";
 
@@ -50,6 +50,13 @@ export function ChatThinkingActivity(props: {
 	const showDetails = computed(() => hasDetails() && open());
 	const showPreview = computed(() => hasDetails() && !open());
 	const revealed = signal(THINKING_REVEAL_CHARS);
+	// The row is kept by its place, so another block may come into it: that
+	// one starts from the first part again.
+	const activityId = computed(() => activity().id);
+	effect(() => {
+		activityId();
+		untracked(() => revealed.set(THINKING_REVEAL_CHARS));
+	});
 	// Bound the Markdown work even for runaway output, and never cut a
 	// surrogate pair in two.
 	const visibleEnd = computed(() => {

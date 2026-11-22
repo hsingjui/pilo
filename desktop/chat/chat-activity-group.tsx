@@ -138,7 +138,13 @@ export function ChatActivityGroup(props: ChatActivityGroupProps) {
 			{() =>
 				open() ? (
 					<View class="gap-0.5 pt-0.5">
-						<Each of={activity()} key={(item) => item.id}>
+						{/* Kept by place and kind, as the reply's segments are. */}
+						<Each
+							of={activity()}
+							key={(item, index) =>
+								`${index}:${item.type === "thinking" ? "thinking" : "tool"}`
+							}
+						>
 							{(item) =>
 								untracked(item).type === "thinking" ? (
 									<ChatThinkingActivity

@@ -18,7 +18,10 @@ export type ChatMessageBody<T extends ChatMessage> = (
 ) => JSX.Element;
 
 /** What draws one text of a reply, between its work (Markdown by default). */
-export type ChatTextBody = (text: () => string) => JSX.Element;
+export type ChatTextBody = (
+	text: () => string,
+	textKey: () => string,
+) => JSX.Element;
 
 /** The Host preferences that shape how a reply shows its work. */
 export interface ChatWorkPreferences {

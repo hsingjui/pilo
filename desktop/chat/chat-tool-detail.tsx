@@ -14,25 +14,63 @@ import type { ChatTodoItem } from "@shared/chat/chat-todos";
 
 import { appLocale, t } from "../app/i18n";
 import { scrollbarLook } from "../ui/scrollbar";
+import { ChatCopyButton } from "./chat-copy-button";
 import { ChatTodoList } from "./chat-todo-list";
 
 const codeText = "font-mono leading-[1.4] text-muted-foreground";
 const codeSize = () => ({ fontSize: token("pilo-code-font-size") });
 
+/** Lines of a tool's text drawn by one `Text`. */
+const TOOL_TEXT_CHUNK_LINES = 40;
+
+/**
+ * `text` in runs of `TOOL_TEXT_CHUNK_LINES` lines. A text is laid out and
+ * drawn whole: one of a long output is taller than the platform paints off
+ * the main thread, and all of it is made though the scroll view shows a
+ * few lines. As rows of an `Each` in the scroll view, only the runs near
+ * what shows are made.
+ */
+function toolTextChunks(text: string) {
+	const lines = text.split("\n");
+	if (lines.length <= TOOL_TEXT_CHUNK_LINES) return [text];
+	const chunks: string[] = [];
+	for (let start = 0; start < lines.length; start += TOOL_TEXT_CHUNK_LINES) {
+		chunks.push(lines.slice(start, start + TOOL_TEXT_CHUNK_LINES).join("\n"));
+	}
+	// A final line break ends the last line; it starts no line of its own.
+	if (chunks.length > 1 && chunks[chunks.length - 1] === "") chunks.pop();
+	return chunks;
+}
+
 /** A block of code-like text that scrolls past `maxHeight`, as the WebUI's `pre`. */
 function ToolText(props: { text: () => string; maxHeight: string }) {
+	const chunks = computed(() => toolTextChunks(props.text()));
 	return (
-		<Scroll
-			class={`${props.maxHeight} py-0.5 pr-1`}
-			bounces={false}
-			scrollbar={{ vertical: scrollbarLook() }}
-		>
-			<View selectable>
-				<Text class={codeText} style={codeSize()}>
-					{props.text}
-				</Text>
-			</View>
-		</Scroll>
+		<>
+			{/* Native Select All only sees the chunks the scroll view has mounted. */}
+			{() =>
+				chunks().length > 1 ? (
+					<View class="items-end">
+						<ChatCopyButton text={props.text} testID="chat-copy-tool-text" />
+					</View>
+				) : null
+			}
+			<Scroll
+				class={`${props.maxHeight} py-0.5 pr-1`}
+				bounces={false}
+				scrollbar={{ vertical: scrollbarLook() }}
+			>
+				<View selectable>
+					<Each of={chunks()} key="index">
+						{(chunk) => (
+							<Text class={codeText} style={codeSize()}>
+								{chunk}
+							</Text>
+						)}
+					</Each>
+				</View>
+			</Scroll>
+		</>
 	);
 }
 

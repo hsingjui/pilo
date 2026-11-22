@@ -33,6 +33,8 @@ export interface ChatMarkdownFileLink {
 export interface ChatMarkdownProps {
 	/** The reply's Markdown, growing as it streams. */
 	text: () => string;
+	/** The text segment currently shown in a recycled message row. */
+	textKey?: () => string;
 	/**
 	 * The project the chat belongs to: project-relative file links and
 	 * images resolve against its path; without it they render but cannot
@@ -138,30 +140,38 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 			props.compact ?? false,
 		),
 	);
-	// A data: URL per project-relative image path, read once and kept.
-	const images = new Map<string, Signal<ProjectImageState>>();
+	const textKey = computed(() => props.textKey?.());
+	const projectId = computed(() => props.project?.()?.id);
+	// Keep a path's first read while streaming, not across recycled rows.
+	const imageCache = computed(() => {
+		textKey();
+		return {
+			projectId: projectId(),
+			images: new Map<string, Signal<ProjectImageState>>(),
+		};
+	});
 	const projectImage = (path: string, mimeType: string) => {
-		let state = images.get(path);
-		if (state) return state;
-		state = signal<ProjectImageState>({ type: "loading" });
+		const { images, projectId } = imageCache();
+		const cached = images.get(path);
+		if (cached) return cached;
+		const state = signal<ProjectImageState>({ type: "loading" });
 		images.set(path, state);
-		const project = props.project?.();
 		const read = props.readProjectImage;
-		if (!project || !read) {
+		if (!projectId || !read) {
 			state.set({ type: "error" });
 			return state;
 		}
-		void read(project.id, path)
+		void read(projectId, path)
 			.then((bytes) => {
 				if (bytes.length > MAX_CHAT_IMAGE_BYTES) {
 					throw new Error("image exceeds chat size limit");
 				}
-				state!.set({
+				state.set({
 					type: "ready",
 					url: `data:${mimeType};base64,${bytesToBase64(bytes)}`,
 				});
 			})
-			.catch(() => state!.set({ type: "error" }));
+			.catch(() => state.set({ type: "error" }));
 		return state;
 	};
 
@@ -201,11 +211,10 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 			);
 		}
 		if (source.type !== "project") return fallback(image);
-		const state = projectImage(source.path, source.mimeType);
 		return (
 			<View>
 				{() => {
-					const current = state();
+					const current = projectImage(source.path, source.mimeType)();
 					if (current.type === "ready") {
 						return (
 							<Image

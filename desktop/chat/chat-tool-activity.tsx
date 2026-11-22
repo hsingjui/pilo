@@ -81,7 +81,9 @@ export function ChatToolActivity(props: {
 			(result !== undefined && result !== null)
 		);
 	});
-	const showDetails = computed(() => hasDetails() && open());
+	const detailKey = computed(() =>
+		hasDetails() && open() ? props.expansionKey() : null,
+	);
 	const status = computed(() =>
 		failed() ? "failed" : running() ? "running" : null,
 	);
@@ -140,15 +142,17 @@ export function ChatToolActivity(props: {
 					) : null
 				}
 			</ChatDisclosureRow>
-			{() =>
-				showDetails() ? (
+			{() => {
+				// A recycled row must not carry its detail scroll into another call.
+				if (detailKey() === null) return null;
+				return (
 					<ChatToolDetail
 						activity={activity}
 						writeContent={writeContent}
 						todos={todos}
 					/>
-				) : null
-			}
+				);
+			}}
 		</View>
 	);
 }

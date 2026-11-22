@@ -90,17 +90,26 @@ function WorkSegments(
 	const messageId = () => props.message().id;
 	return (
 		<View class="w-full">
-			<Each of={segments()} key={(segment) => `${segment.type}:${segment.id}`}>
+			{/* Kept by place and kind, not id: a list cell reused for another
+				reply keeps its texts and groups and shows the new content in them,
+				rather than making them all again. */}
+			<Each
+				of={segments()}
+				key={(segment, index) => `${index}:${segment.type}`}
+			>
 				{(segment) => {
 					// A segment keeps its type for its key; only its content changes.
 					const current = untracked(segment);
 					if (current.type === "text") {
 						return (
 							<View selectable>
-								{props.text(() => {
-									const value = segment();
-									return value.type === "text" ? value.text : "";
-								})}
+								{props.text(
+									() => {
+										const value = segment();
+										return value.type === "text" ? value.text : "";
+									},
+									() => `${messageId()}:${segment().id}`,
+								)}
 							</View>
 						);
 					}
