@@ -1816,7 +1816,7 @@ dependencies = [
 
 [[package]]
 name = "pilo-desktop"
-version = "0.1.0"
+version = "0.4.1"
 dependencies = [
  "mime_guess",
  "nsh-core",

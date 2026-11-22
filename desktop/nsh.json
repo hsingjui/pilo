@@ -1,6 +1,6 @@
 {
 	"name": "Pilo",
-	"id": "app.hsingjui.pilo.desktop",
+	"id": "app.hsingjui.pilo",
 	"version": "0.4.1",
 	"icon": { "macos": "assets/app-icon-macos.png" },
 	"theme": "theme.json",

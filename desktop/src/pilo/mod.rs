@@ -70,7 +70,7 @@ use objects::{
 };
 use shell::{
     NshHostShell, ShellEvents, ShellWebAssets, data_identifier, default_data_dir, executor,
-    log_directory, open_path, workspace,
+    log_directory, open_path, server_resource_name, workspace,
 };
 
 const EVENT_QUEUE_LIMITS: EventQueueLimits = EventQueueLimits {
@@ -135,7 +135,7 @@ impl Pilo {
 
 #[class]
 impl Pilo {
-    /// Opens Pilo on the existing Tauri data directory, or an explicit absolute directory.
+    /// Opens Pilo on the existing app data directory, or an explicit absolute directory.
     pub fn new(data_dir: Option<String>) -> Result<Self, String> {
         let data_dir = match data_dir {
             Some(path) => PathBuf::from(path),
@@ -181,7 +181,7 @@ impl Pilo {
         } else {
             (
                 resources.join("webui"),
-                resources.join("runtime/pilo-server-darwin-aarch64"),
+                resources.join("runtime").join(server_resource_name()),
             )
         };
         let server = std::env::var_os("PILO_SERVER_BINARY")

@@ -78,6 +78,40 @@ pub(super) fn log_directory(development: bool) -> Result<PathBuf, String> {
     Ok(base.join(identifier))
 }
 
+/// Resolves the packaged `pilo-server` resource filename for the compiled desktop target.
+pub(super) fn server_resource_name() -> &'static str {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    {
+        "pilo-server-darwin-aarch64"
+    }
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    {
+        "pilo-server-darwin-x86_64"
+    }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        "pilo-server-linux-x86_64"
+    }
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    {
+        "pilo-server-linux-aarch64"
+    }
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    {
+        "pilo-server-windows-x86_64.exe"
+    }
+    #[cfg(not(any(
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "macos", target_arch = "x86_64"),
+        all(target_os = "linux", target_arch = "x86_64"),
+        all(target_os = "linux", target_arch = "aarch64"),
+        all(target_os = "windows", target_arch = "x86_64"),
+    )))]
+    {
+        "pilo-server"
+    }
+}
+
 impl WebAssets for ShellWebAssets {
     fn get(&self, path: &str) -> Option<WebAsset> {
         let path = Path::new(path);
