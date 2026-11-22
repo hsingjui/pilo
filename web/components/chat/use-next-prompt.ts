@@ -8,14 +8,18 @@ import {
 } from "react";
 
 import type { ChatDraftStore } from "@/components/chat/chat-draft-store";
-import type { PiloClientEventMessage } from "@shared/api/pilo-client";
+import type {
+	PiloClient,
+	PiloClientEventMessage,
+} from "@shared/api/pilo-client";
 import {
 	createNextPromptSessionCache,
 	type NextPromptSessionOptions,
 } from "@/lib/next-prompt-session-cache";
 import { useNextPromptSettings } from "@/lib/use-next-prompt-settings";
 
-type Options = Omit<NextPromptSessionOptions, "draft"> & {
+type Options = Omit<NextPromptSessionOptions, "draft" | "client"> & {
+	client: PiloClient | null;
 	draftStore: ChatDraftStore;
 	/** Desktop uses the existing multiplexed event channel; WebUI supplies its socket frames. */
 	subscribe?: boolean;

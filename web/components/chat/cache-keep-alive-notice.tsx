@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
-	cacheKeepAliveHitRate,
+	cacheKeepAliveNoticeDelay,
+	cacheKeepAliveStatusMessage,
+	cacheKeepAliveUsage,
 	type CacheKeepAliveStatus,
 } from "@shared/cache-keep-alive";
 import { Button, NoticeCard, NoticeIcon } from "@/ui";
@@ -14,70 +16,20 @@ export function CacheKeepAliveStatusContent({
 	status: CacheKeepAliveStatus;
 }) {
 	const { t, i18n } = useTranslation();
-	const hitRate = cacheKeepAliveHitRate(status);
-	let text;
-	switch (status.reason) {
-		case "warmed":
-		case "scheduled":
-			text = t(
-				status.reason === "warmed"
-					? "settings.cacheKeepAliveWarmed"
-					: "settings.cacheKeepAliveScheduled",
-				{
-					time: status.nextWarmAtMs
-						? new Date(status.nextWarmAtMs).toLocaleTimeString()
-						: "—",
-				},
-			);
-			break;
-		case "window_ending":
-			text = t("settings.cacheKeepAliveWindowEnding");
-			break;
-		case "warming":
-			text = t("settings.cacheKeepAliveWarming");
-			break;
-		case "cache_expired":
-			text = t("settings.cacheKeepAliveExpired");
-			break;
-		case "window_ended":
-			text = t("settings.cacheKeepAliveWindowEnded");
-			break;
-		case "cache_miss":
-			text = t("settings.cacheKeepAliveMiss");
-			break;
-		case "unsupported_request":
-			text = t("settings.cacheKeepAliveUnsupported");
-			break;
-		case "timeout":
-		case "request_failed":
-			text = t("settings.cacheKeepAliveFailed");
-			break;
-		case "running":
-			text = t("settings.cacheKeepAliveRunning");
-			break;
-		case "disabled":
-			text = t("settings.cacheKeepAliveDisabled");
-			break;
-		default:
-			text = t("settings.cacheKeepAliveWaiting");
-	}
-	if (!status.ready) text = t("settings.cacheKeepAliveUnsupported");
+	const text = t(cacheKeepAliveStatusMessage(status), {
+		time: status.nextWarmAtMs
+			? new Date(status.nextWarmAtMs).toLocaleTimeString()
+			: "—",
+	});
 	return (
 		<div className="flex min-w-0 flex-1 flex-col gap-y-0.5 text-xs leading-5 wrap-anywhere text-muted-foreground @min-[32rem]:flex-row @min-[32rem]:flex-wrap @min-[32rem]:items-baseline @min-[32rem]:gap-x-3 @min-[32rem]:gap-y-0">
 			<p>{text}</p>
 			{status.requestCount > 0 ? (
 				<p>
-					{t("settings.cacheKeepAliveUsage", {
-						count: status.requestCount,
-						hitRate:
-							hitRate === null
-								? "—"
-								: new Intl.NumberFormat(i18n.language, {
-										style: "percent",
-										maximumFractionDigits: 1,
-									}).format(hitRate),
-						cost: status.cost === null ? "—" : `$${status.cost.toFixed(6)}`,
-					})}
+					{t(
+						"settings.cacheKeepAliveUsage",
+						cacheKeepAliveUsage(status, i18n.language),
+					)}
 				</p>
 			) : null}
 		</div>
@@ -92,25 +44,15 @@ export function CacheKeepAliveNotice({
 	const { t } = useTranslation();
 	const [dismissed, setDismissed] = useState(false);
 	const [now, setNow] = useState(Date.now);
-	const nextWarmAtMs = status?.nextWarmAtMs;
+	const delay = cacheKeepAliveNoticeDelay(status, now);
 	useEffect(() => {
-		if (dismissed || nextWarmAtMs == null) return;
-		const timer = window.setTimeout(
-			() => setNow(Date.now()),
-			Math.max(0, nextWarmAtMs - 30_000 - Date.now()),
-		);
+		if (dismissed || delay === null || delay === 0) return;
+		const remaining = cacheKeepAliveNoticeDelay(status, Date.now());
+		if (remaining === null) return;
+		const timer = window.setTimeout(() => setNow(Date.now()), remaining);
 		return () => window.clearTimeout(timer);
-	}, [dismissed, nextWarmAtMs]);
-	if (
-		dismissed ||
-		!status ||
-		(status.status === "scheduled" &&
-			(nextWarmAtMs == null || nextWarmAtMs - now > 30_000)) ||
-		["disabled", "waiting_request", "running", "context_changed"].includes(
-			status.reason,
-		)
-	)
-		return null;
+	}, [dismissed, delay, status]);
+	if (dismissed || !status || delay !== 0) return null;
 	return (
 		<NoticeCard
 			announce="status"
