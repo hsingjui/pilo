@@ -93,8 +93,8 @@ export function NotificationsPane(props: {
 			save(granted);
 			if (!granted) {
 				failure.set("settings.enableNotificationsFailed");
-				void refresh();
 			}
+			refresh();
 		});
 	};
 	const sendTest = () => {
