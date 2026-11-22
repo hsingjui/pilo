@@ -2,6 +2,7 @@ import {
 	type Accessor,
 	computed,
 	type JSX,
+	List,
 	Scroll,
 	signal,
 	Text,
@@ -15,6 +16,7 @@ import { sortSidebarSessionsByRecency } from "@shared/sidebar/session-list";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
 import type { AppStore } from "../state/app-store";
+import { chatPx } from "../chat/layout";
 import { Foreground } from "../ui/foreground";
 import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
@@ -99,6 +101,12 @@ export function Sidebar(props: SidebarProps) {
 			{() => {
 				const recent = view() === "recent";
 				const projectId = viewedProjectId();
+				if (!recent && projectId !== null) {
+					// Hundreds of rows: a list of its own that recycles its cells.
+					return (
+						<AllProjectSessions store={props.store} projectId={projectId} />
+					);
+				}
 				return (
 					<Scroll
 						testID="sidebar-projects"
@@ -109,8 +117,6 @@ export function Sidebar(props: SidebarProps) {
 						<View class="min-w-0 pt-1 pr-2.5 pb-3 pl-1.5">
 							{recent ? (
 								<RecentSection {...props} projects={projects} />
-							) : projectId !== null ? (
-								<AllProjectSessions store={props.store} projectId={projectId} />
 							) : (
 								<Each of={groups()} key={(group) => group.connection.id}>
 									{(group) => <ConnectionSection {...props} group={group} />}
@@ -471,21 +477,24 @@ function AllProjectSessions(props: { store: AppStore; projectId: string }) {
 			),
 		),
 	);
-	const hasSessions = computed(() => sessions().length > 0);
+	const section = projectSection(props.projectId);
+	// Rows keep their own hover: the sliding highlight needs every row in
+	// one view, and a list recycles its cells.
 	return (
-		<View testID={`${projectSection(props.projectId)}:all`}>
-			{() =>
-				!hasSessions() ? (
-					<NoSessions testID={projectSection(props.projectId)} />
-				) : (
-					<SessionGlide>
-						<Each of={sessions()} key={sessionRowKey}>
-							{(session) => <SessionRow store={store} session={session} />}
-						</Each>
-					</SessionGlide>
-				)
-			}
-		</View>
+		<List
+			testID={`${section}:all`}
+			class="min-h-0 min-w-0 flex-1"
+			contentClass="pt-1 pr-2.5 pb-3 pl-1.5"
+			contentStyle={{ gap: chatPx(token("pilo-sidebar-session-gap")) }}
+			bounces={false}
+			scrollbar={{ vertical: scrollbarLook() }}
+			each={sessions()}
+			keyExtractor={sessionRowKey}
+			estimatedItemSize={sidebarRowHeight("pilo-sidebar-session-height")}
+			empty={() => <NoSessions testID={section} />}
+		>
+			{(session) => <SessionRow store={store} session={session} />}
+		</List>
 	);
 }
 

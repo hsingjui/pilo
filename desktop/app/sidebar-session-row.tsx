@@ -1,11 +1,15 @@
 import {
 	type Accessor,
 	type Bounds,
+	cleanup,
+	computed,
+	effect,
 	type InputRef,
 	Overlay,
 	signal,
 	Text,
 	token,
+	untracked,
 	View,
 } from "nsh";
 import { Button, ContextMenu } from "nsh/base";
@@ -18,6 +22,7 @@ import { Menu, menuPopupClass, menuPopupStyle } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { createHover } from "../ui/hover";
 import { t } from "./i18n";
+import { sessionRowKey } from "./sidebar-projects";
 import {
 	HOVER_ACTION,
 	sidebarFocusRing,
@@ -28,11 +33,13 @@ import { SessionGlideContext } from "./sidebar-session-glide";
 
 /**
  * The delete button at a session row's end: a first press asks to confirm,
- * which resets after 3.5 s or when the pointer leaves.
+ * which resets after 3.5 s, when the pointer leaves or when the row shows
+ * another session (`resetOn` changes).
  */
 function ConfirmDeleteButton(props: {
 	testID: string;
 	class: string;
+	resetOn: Accessor<string>;
 	onConfirm: () => void;
 }) {
 	const confirming = signal(false);
@@ -42,6 +49,11 @@ function ConfirmDeleteButton(props: {
 		timer = undefined;
 		confirming.set(false);
 	};
+	effect(() => {
+		props.resetOn();
+		untracked(reset);
+	});
+	cleanup(reset);
 	const hover = createHover();
 	return (
 		<Button
@@ -121,12 +133,26 @@ export function SessionRow(props: {
 	let renamePending = false;
 	const menuHover = createHover();
 	// A new chat Pi has not saved yet has no file to rename, refresh or delete.
-	// Its row is another one once saved (rows are kept by file), so this holds.
-	const saved = session().sessionPath !== "";
+	// A list cell is reused for other sessions, so this follows the session.
+	const saved = computed(() => session().sessionPath !== "");
+	// What the row was doing for one session never shows on another: a
+	// recycled cell starts over (a row with its menu open or its title being
+	// edited holds the focus or an overlay, so the list keeps it bound).
+	const rowKey = computed(() => sessionRowKey(session()));
+	effect(() => {
+		rowKey();
+		untracked(() => {
+			renamePending = false;
+			menuOpen.set(false);
+			contextOpen.set(false);
+			confirmingDelete.set(false);
+			renaming.set(false);
+		});
+	});
 	const selected = () => {
 		const open = store.state().navigation.session;
 		if (open?.projectId !== session().projectId) return false;
-		return saved
+		return saved()
 			? open.sessionPath === session().sessionPath
 			: !open.sessionPath && open.sessionId === session().id;
 	};
@@ -328,44 +354,46 @@ export function SessionRow(props: {
 					/>
 				) : null
 			}
-			{saved ? (
-				<Menu
-					class="absolute top-0 -left-1 z-20 size-6"
-					open={menuOpen()}
-					onOpenChange={(event) => {
-						menuOpen.set(event.open);
-						resetDelete(event);
-					}}
-					onClose={startRenameAfterMenuClose}
-					align="start"
-					popupStyle={{ minWidth: 0 }}
-					trigger={
-						<Button
-							{...menuHover.props}
-							testID={`session:${session().id}:menu`}
-							class={`size-6 items-center justify-center rounded-md duration-100 hover:bg-sidebar-foreground/15 ${shownWhileMenu(
-								HOVER_ACTION,
-								"bg-sidebar-foreground/15 opacity-100",
-							)}`}
-							style={{ transitionProperty: "opacity, background-color" }}
-							focusVisibleStyle={sidebarFocusRing()}
-							accessibilityLabel={t("sidebar.moreActions")}
-						>
-							<Icon
-								name="MoreHorizontal"
-								size={14}
-								color={token(
-									menuHover.hovered() || menuOpen()
-										? "sidebar-foreground"
-										: "sidebar-foreground-muted",
-								)}
-							/>
-						</Button>
-					}
-				>
-					{menuItems}
-				</Menu>
-			) : null}
+			{() =>
+				saved() ? (
+					<Menu
+						class="absolute top-0 -left-1 z-20 size-6"
+						open={menuOpen()}
+						onOpenChange={(event) => {
+							menuOpen.set(event.open);
+							resetDelete(event);
+						}}
+						onClose={startRenameAfterMenuClose}
+						align="start"
+						popupStyle={{ minWidth: 0 }}
+						trigger={
+							<Button
+								{...menuHover.props}
+								testID={`session:${session().id}:menu`}
+								class={`size-6 items-center justify-center rounded-md duration-100 hover:bg-sidebar-foreground/15 ${shownWhileMenu(
+									HOVER_ACTION,
+									"bg-sidebar-foreground/15 opacity-100",
+								)}`}
+								style={{ transitionProperty: "opacity, background-color" }}
+								focusVisibleStyle={sidebarFocusRing()}
+								accessibilityLabel={t("sidebar.moreActions")}
+							>
+								<Icon
+									name="MoreHorizontal"
+									size={14}
+									color={token(
+										menuHover.hovered() || menuOpen()
+											? "sidebar-foreground"
+											: "sidebar-foreground-muted",
+									)}
+								/>
+							</Button>
+						}
+					>
+						{menuItems}
+					</Menu>
+				) : null
+			}
 		</View>
 	);
 	const trailing = () => (
@@ -381,16 +409,19 @@ export function SessionRow(props: {
 					/>
 				) : null
 			}
-			{saved ? (
-				<ConfirmDeleteButton
-					testID={`session:${session().id}:delete-button`}
-					class={`absolute top-0 right-0 z-20 ${shownWhileMenu(
-						HOVER_ACTION,
-						"opacity-100",
-					)}`}
-					onConfirm={deleteSession}
-				/>
-			) : null}
+			{() =>
+				saved() ? (
+					<ConfirmDeleteButton
+						testID={`session:${session().id}:delete-button`}
+						resetOn={rowKey}
+						class={`absolute top-0 right-0 z-20 ${shownWhileMenu(
+							HOVER_ACTION,
+							"opacity-100",
+						)}`}
+						onConfirm={deleteSession}
+					/>
+				) : null
+			}
 		</View>
 	);
 
@@ -404,7 +435,7 @@ export function SessionRow(props: {
 		>
 			<ContextMenu
 				testID={`session:${session().id}:context`}
-				disabled={!saved}
+				disabled={!saved()}
 				open={contextOpen()}
 				onOpenChange={(event) => {
 					contextOpen.set(event.open);
@@ -427,7 +458,7 @@ export function SessionRow(props: {
 							selected={selected()}
 							accessibilityLabel={session().title}
 							onPress={() =>
-								saved
+								saved()
 									? store.selectSession(
 											session().projectId,
 											session().sessionPath,
