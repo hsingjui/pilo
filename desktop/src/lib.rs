@@ -4,6 +4,7 @@
 
 use nsh_core::prelude::*;
 
+mod notifications;
 mod pilo;
 #[cfg(debug_assertions)]
 mod test_fixtures;
@@ -15,6 +16,7 @@ fn native(registry: &mut Registry) {
         std::process::exit(status);
     }
     registry.module::<AppInfo>();
+    registry.module::<notifications::DesktopNotifications>();
     registry.class::<pilo::Pilo>();
     #[cfg(debug_assertions)]
     test_fixtures::register(registry);
