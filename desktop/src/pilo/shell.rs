@@ -20,6 +20,7 @@ use pilo_runtime::{
 use serde_json::json;
 use tokio::runtime::Runtime as Executor;
 
+/// No-op host event sink: desktop events use `EventStream` and `TerminalEventStream`.
 pub(super) struct ShellEvents;
 
 impl HostEvents for ShellEvents {

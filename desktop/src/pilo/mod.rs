@@ -7,7 +7,7 @@ use std::{
 use nsh_core::{JsonValue, prelude::*};
 use pilo_domain::{Connection, RemoteAccessAddress};
 use pilo_runtime::{
-    Runtime, TranscriptWindow,
+    Runtime, TERMINAL_QUEUE_MAX_BYTES, TerminalEventStream, TranscriptWindow,
     appearance::{system_font_families, theme_settings_get, theme_settings_set},
     cache_keep_alive::{cache_keep_alive_settings_list, cache_keep_alive_settings_set},
     connections::{
@@ -31,7 +31,7 @@ use pilo_runtime::{
     next_prompt::{next_prompt_request, next_prompt_settings_get, next_prompt_settings_set},
     preferences::{preferences_get, preferences_patch},
     project_api::{
-        connection_fs_read_dir, local_pick_project_directory, project_add,
+        self, connection_fs_read_dir, local_pick_project_directory, project_add,
         project_chat_file_remove, project_chat_file_upload, project_fs_read_image,
         project_fs_search, project_model_cache_list, project_model_cache_set,
         project_model_scope_get, project_model_scope_set, project_remove,
@@ -62,7 +62,10 @@ mod host;
 mod objects;
 mod shell;
 
-use encode::{encode_event_batch, encode_list, history_fingerprint_args, load_projects};
+use encode::{
+    encode_event_batch, encode_list, encode_terminal_events, history_fingerprint_args,
+    load_projects, positive_count, terminal_size,
+};
 use host::{CLOSED, Host, run_with_runtime, stop_host};
 use objects::{
     Bootstrap, NativeDesktopSettings, NativeHistoryFingerprint, NativeHistoryOptions,
@@ -85,6 +88,7 @@ pub struct Pilo {
     paths: HostPaths,
     executor: &'static Executor,
     event_stream: Arc<Mutex<EventStream>>,
+    terminal_events: Arc<TerminalEventStream>,
 }
 
 impl Pilo {
@@ -203,6 +207,7 @@ impl Pilo {
             }))?
             .with_web_assets(Arc::new(ShellWebAssets(web_root)))?;
         let event_stream = runtime.subscribe_events(EVENT_QUEUE_LIMITS);
+        let terminal_events = Arc::new(runtime.subscribe_terminal_events(TERMINAL_QUEUE_MAX_BYTES));
         runtime.start_idle_reaper();
         // Covers unavailable watchers and external Pi exits without a file write.
         runtime.start_external_activity_poll();
@@ -222,6 +227,7 @@ impl Pilo {
             paths,
             executor,
             event_stream: Arc::new(Mutex::new(event_stream)),
+            terminal_events,
         })
     }
 
@@ -234,11 +240,7 @@ impl Pilo {
 
     /// Waits for an ordered batch, an inclusive gap, or a closed event stream.
     pub async fn next_events(this: Instance<Self>, max: f64) -> Result<JsonValue, String> {
-        let invalid = "event batch size must be a positive safe integer";
-        if !(1.0..=9_007_199_254_740_991.0).contains(&max) || max.fract() != 0.0 {
-            return Err(invalid.into());
-        }
-        let max = usize::try_from(max as u64).map_err(|_| invalid)?;
+        let max = positive_count(max, "event batch size")?;
         let stream = this.with(|pilo| pilo.event_stream.clone());
         let batch = stream.lock().await.next_batch(max).await;
         encode_event_batch(batch)
@@ -1252,6 +1254,70 @@ impl Pilo {
             serde_json::to_value(families).map_err(|error| error.to_string())
         })
         .await
+    }
+
+    /// Opens a shell in the project's environment and returns its terminal
+    /// (`id`, `projectId`, `title`); its output comes from `next_terminal_events`.
+    pub async fn open_terminal(
+        this: Instance<Self>,
+        project_id: String,
+        cols: f64,
+        rows: f64,
+    ) -> Result<JsonValue, String> {
+        let (cols, rows) = terminal_size(cols, rows)?;
+        Self::with_runtime(this, move |runtime| async move {
+            let terminal =
+                project_api::project_terminal_open(&runtime, project_id, cols, rows).await?;
+            serde_json::to_value(terminal).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Sends input bytes to a terminal.
+    pub async fn write_terminal(
+        this: Instance<Self>,
+        terminal_id: String,
+        data: Vec<u8>,
+    ) -> Result<(), String> {
+        Self::with_runtime(this, move |runtime| async move {
+            project_api::terminal_write(&runtime, terminal_id, data).await
+        })
+        .await
+    }
+
+    /// Changes a terminal's size in character cells.
+    pub async fn resize_terminal(
+        this: Instance<Self>,
+        terminal_id: String,
+        cols: f64,
+        rows: f64,
+    ) -> Result<(), String> {
+        let (cols, rows) = terminal_size(cols, rows)?;
+        Self::with_runtime(this, move |runtime| async move {
+            project_api::terminal_resize(&runtime, terminal_id, cols, rows).await
+        })
+        .await
+    }
+
+    /// Closes a terminal and its shell; closing an absent one succeeds.
+    pub async fn close_terminal(this: Instance<Self>, terminal_id: String) -> Result<(), String> {
+        Self::with_runtime(this, move |runtime| async move {
+            project_api::terminal_close(&runtime, terminal_id).await
+        })
+        .await
+    }
+
+    /// Waits for terminal events and returns up to `max` in order:
+    /// `{ type: "output", terminalId, data }` with base64 `data`,
+    /// `{ type: "exit", terminalId }` and `{ type: "error", terminalId, message }`.
+    /// Returns an empty list once the runtime has shut down.
+    pub async fn next_terminal_events(
+        this: Instance<Self>,
+        max: f64,
+    ) -> Result<Vec<JsonValue>, String> {
+        let max = positive_count(max, "terminal event batch size")?;
+        let events = this.with(|pilo| pilo.terminal_events.clone());
+        Ok(encode_terminal_events(events.next_batch(max).await))
     }
 
     /// Waits for the runtime to close. Safe to call again after shutdown.

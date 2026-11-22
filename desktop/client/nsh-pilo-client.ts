@@ -149,7 +149,26 @@ export type PiloNative = Pick<
 	| "openLogDirectory"
 	| "shutdown"
 > &
-	Partial<Pick<Pilo, "systemFontFamilies">>;
+	Partial<
+		Pick<
+			Pilo,
+			| "systemFontFamilies"
+			| "openTerminal"
+			| "writeTerminal"
+			| "resizeTerminal"
+			| "closeTerminal"
+			| "nextTerminalEvents"
+		>
+	>;
+
+/** A shell the runtime runs in a project's environment. */
+export type TerminalInfo = { id: string; projectId: string; title: string };
+
+/** What a terminal reports; `output` carries base64 bytes. */
+export type TerminalEvent =
+	| { type: "output"; terminalId: string; data: string }
+	| { type: "exit"; terminalId: string }
+	| { type: "error"; terminalId: string; message: string };
 
 export type NshPiloClientBootstrap = PiloClientBootstrap & {
 	preferences: PreferencesSnapshot;
@@ -813,6 +832,46 @@ export class NshPiloClient implements PiloClient {
 		return this.pilo.openLogDirectory(process.logFile);
 	}
 
+	/** Opens a shell in the project; its output comes from `nextTerminalEvents`. */
+	async openTerminal(
+		projectId: string,
+		cols: number,
+		rows: number,
+	): Promise<TerminalInfo> {
+		if (!this.pilo.openTerminal) throw unavailable("openTerminal");
+		return (await this.pilo.openTerminal(
+			projectId,
+			cols,
+			rows,
+		)) as TerminalInfo;
+	}
+
+	async writeTerminal(terminalId: string, data: Uint8Array): Promise<void> {
+		if (!this.pilo.writeTerminal) throw unavailable("writeTerminal");
+		await this.pilo.writeTerminal(terminalId, data);
+	}
+
+	async resizeTerminal(
+		terminalId: string,
+		cols: number,
+		rows: number,
+	): Promise<void> {
+		if (!this.pilo.resizeTerminal) throw unavailable("resizeTerminal");
+		await this.pilo.resizeTerminal(terminalId, cols, rows);
+	}
+
+	/** Closes the terminal and its shell; an absent one is already closed. */
+	async closeTerminal(terminalId: string): Promise<void> {
+		if (!this.pilo.closeTerminal) throw unavailable("closeTerminal");
+		await this.pilo.closeTerminal(terminalId);
+	}
+
+	/** Waits for the next terminal events, in order. */
+	async nextTerminalEvents(max: number): Promise<TerminalEvent[]> {
+		if (!this.pilo.nextTerminalEvents) throw unavailable("nextTerminalEvents");
+		return (await this.pilo.nextTerminalEvents(max)) as TerminalEvent[];
+	}
+
 	/** Whether the runtime shut down: its event stream never resumes. */
 	get closed() {
 		return this.streamClosed;
@@ -891,6 +950,11 @@ export class NshPiloClient implements PiloClient {
 			notify(() => listener.onStatus(false));
 		}
 	}
+}
+
+/** A native call a stand-in left out. */
+function unavailable(name: string) {
+	return new Error(`The native call ${name} is unavailable`);
 }
 
 /** One listener that throws must not stop the stream for the others. */

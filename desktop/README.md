@@ -195,6 +195,18 @@ its response and any turn events via `nextEvents()`.
 `shutdown()` closes the event stream and tears down running Pi processes,
 including active turns; it does not wait for a reply to finish.
 
+`openTerminal(projectId, cols, rows)` opens a shell in the project's
+environment (local, WSL or SSH, through its pilo-server) and returns
+`{ id, projectId, title }`. `writeTerminal(id, bytes)`,
+`resizeTerminal(id, cols, rows)` and `closeTerminal(id)` act on it; closing an
+absent terminal succeeds. Use one `nextTerminalEvents(max)` poll at a time: it
+waits for at least one event and returns them in order, `{ type: "output",
+terminalId, data }` with base64 `data`, `{ type: "exit", terminalId }` and
+`{ type: "error", terminalId, message }`. Undelivered events are bounded to
+16 MiB, the oldest dropped first; `nextTerminalEvents` returns `[]` once the
+runtime has shut down. The app shows each terminal in a title-bar
+tab with `nsh/base`'s `Terminal`, decoding the output as streamed UTF-8.
+
 `loadSessionReadStates()` reads the saved read revisions across projects.
 Call `markSessionRead(projectId, sessionPath, revision)` with the positive
 safe-integer revision the client observed. It returns the resulting read
