@@ -201,8 +201,8 @@ export interface ChatComposerProps {
 /**
  * The prompt bar under a chat: a growing multiline inline-mention editor with
  * `@` file and session mentions, `/` commands, picked, pasted and dropped
- * attachments in one unified compact row, per-session drafts and per-project
- * input history, and send or stop.
+ * attachments in one unified compact row, per-project drafts and input history,
+ * and send or stop.
  */
 export function ChatComposer(props: ChatComposerProps) {
 	const store = props.store;
@@ -710,6 +710,7 @@ export function ChatComposer(props: ChatComposerProps) {
 					<ComposerRichInput
 						testID="chat-composer-input"
 						sessionKey={() => store.target()?.sessionKey ?? null}
+						projectId={() => store.target()?.projectId ?? null}
 						value={() => (readOnly() ? "" : state().value)}
 						images={() => (readOnly() ? [] : images())}
 						sessionsByValue={sessionsByValue}

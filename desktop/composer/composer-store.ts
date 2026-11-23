@@ -98,9 +98,9 @@ export type ComposerViewState = {
 	status: string | null;
 };
 
-type ComposerDraft = Pick<ComposerViewState, "value" | "images"> & {
-	status?: ComposerViewState["status"];
-};
+type ComposerDraft = Pick<ComposerViewState, "value" | "images">;
+
+const EMPTY_DRAFT: ComposerDraft = { value: "", images: [] };
 
 /** Toast-like feedback emitted by slash commands (e.g. `/compact`). */
 export type ComposerNotice = {
@@ -139,10 +139,8 @@ function errorMessage(error: unknown): string {
 type HistoryStore = Record<string, string[]>;
 
 /**
- * The composer's state for the open chat: its draft, per-project input
- * history, attachments and the send flow. Drafts live per session so switching
- * chats keeps each one's unsent text. History and the send mode persist in the
- * app's `Storage` under the same keys the WebUI uses.
+ * Desktop draft text and images are shared by all chats of a project. Send
+ * feedback stays with its session. History and send mode persist in `Storage`.
  */
 export class ComposerStore {
 	private readonly client: ComposerClient;
@@ -157,7 +155,9 @@ export class ComposerStore {
 	private readonly onNewChat?: () => void;
 	private readonly onCompacted?: (result: PiCompactionResult) => void;
 	private readonly onNotice?: (notice: ComposerNotice) => void;
+	private readonly draftScope: "project" | "session";
 	private readonly drafts = new Map<string, ComposerDraft>();
+	private readonly sessionStatuses = new Map<string, string>();
 	private readonly stateSignal = signal<ComposerViewState>({
 		value: "",
 		caret: 0,
@@ -210,6 +210,7 @@ export class ComposerStore {
 	constructor(deps: {
 		client: ComposerClient;
 		app: Accessor<AppState>;
+		draftScope?: "project" | "session";
 		/** The active project's model and command catalog, for `/` suggestions. */
 		catalog?: Pick<ModelCatalogStore, "state" | "refresh">;
 		beforeSend?: (sessionKey: string) => Promise<boolean>;
@@ -226,6 +227,7 @@ export class ComposerStore {
 	}) {
 		this.client = deps.client;
 		this.app = deps.app;
+		this.draftScope = deps.draftScope ?? "project";
 		this.catalog = deps.catalog;
 		this.beforeSend = deps.beforeSend;
 		this.transcript = deps.transcript;
@@ -286,7 +288,7 @@ export class ComposerStore {
 			.catch(() => {});
 	}
 
-	/** Swaps the open chat; each session keeps its own unsent draft. */
+	/** Swaps the open chat without losing its draft. */
 	setTarget(target: ComposerTarget | null) {
 		const previous = this.targetSignal();
 		if (previous?.sessionKey === target?.sessionKey) {
@@ -295,24 +297,33 @@ export class ComposerStore {
 			return;
 		}
 		if (previous) {
-			const { value, images, status } = this.stateSignal();
-			this.drafts.set(previous.sessionKey, { value, images, status });
+			const { status } = this.stateSignal();
+			if (status !== null)
+				this.sessionStatuses.set(previous.sessionKey, status);
+			else this.sessionStatuses.delete(previous.sessionKey);
 		}
-		const next = target ? this.drafts.get(target.sessionKey) : undefined;
+		const draft = target ? this.draftFor(target) : EMPTY_DRAFT;
 		batch(() => {
 			this.clearFileSuggestions();
 			this.commandsRequest++;
 			this.sessionCommandsSignal.set(null);
 			this.sessionCommandsInFlight = null;
-			this.historyCursor = null;
+			if (
+				!previous ||
+				!target ||
+				this.draftKey(previous) !== this.draftKey(target)
+			) {
+				this.historyCursor = null;
+			}
 			this.draftVersion++;
 			this.targetSignal.set(target);
 			this.stateSignal.update((s) => ({
 				...s,
-				value: next?.value ?? "",
-				caret: next?.value.length ?? 0,
-				images: next?.images ?? [],
-				status: next?.status ?? null,
+				...draft,
+				caret: draft.value.length,
+				status: target
+					? (this.sessionStatuses.get(target.sessionKey) ?? null)
+					: null,
 				composing: false,
 				dragging: false,
 				sending: target ? this.activeSubmits.has(target.sessionKey) : false,
@@ -328,8 +339,11 @@ export class ComposerStore {
 	private updateDraft(change: (state: ComposerViewState) => ComposerViewState) {
 		this.stateSignal.update((current) => {
 			const next = change(current);
-			if (next.value !== current.value || next.images !== current.images)
+			if (next.value !== current.value || next.images !== current.images) {
 				this.draftVersion++;
+				const target = this.targetSignal();
+				if (target) this.cacheDraft(this.draftKey(target), next);
+			}
 			return next;
 		});
 	}
@@ -648,26 +662,35 @@ export class ComposerStore {
 		}
 	}
 
-	private draftFor(sessionKey: string): ComposerDraft {
-		return this.targetSignal()?.sessionKey === sessionKey
-			? this.stateSignal()
-			: (this.drafts.get(sessionKey) ?? { value: "", images: [] });
+	private draftKey(target: ComposerTarget): string {
+		return this.draftScope === "project" ? target.projectId : target.sessionKey;
 	}
 
-	private writeDraft(sessionKey: string, draft: ComposerDraft) {
-		const previous = this.draftFor(sessionKey).value;
+	private draftFor(target: ComposerTarget): ComposerDraft {
+		return this.drafts.get(this.draftKey(target)) ?? EMPTY_DRAFT;
+	}
+
+	private cacheDraft(key: string, { value, images }: ComposerDraft) {
+		if (value || images.length) this.drafts.set(key, { value, images });
+		else this.drafts.delete(key);
+	}
+
+	private writeDraft(target: ComposerTarget, draft: ComposerDraft) {
+		const key = this.draftKey(target);
+		const previous = this.draftFor(target).value;
 		if (previous !== draft.value)
 			discardRemovedChatFiles(previous, draft.value);
-		if (this.targetSignal()?.sessionKey === sessionKey) {
-			this.updateDraft((s) => ({
-				...s,
-				value: draft.value,
-				caret: s.value === draft.value ? s.caret : draft.value.length,
-				images: draft.images,
-			}));
-		} else {
-			this.drafts.set(sessionKey, draft);
+		const current = this.targetSignal();
+		if (!current || this.draftKey(current) !== key) {
+			this.cacheDraft(key, draft);
+			return;
 		}
+		if (previous !== draft.value) this.historyCursor = null;
+		this.updateDraft((s) => ({
+			...s,
+			...draft,
+			caret: s.value === draft.value ? s.caret : draft.value.length,
+		}));
 	}
 
 	/** Inserts picked/pasted/dropped files into the draft that requested them. */
@@ -708,7 +731,8 @@ export class ComposerStore {
 			try {
 				const bytes = new Uint8Array(await file.arrayBuffer());
 				if (mime) {
-					const { value, images } = this.draftFor(sessionKey);
+					const draft = this.draftFor(target);
+					const { images } = draft;
 					const limit =
 						images.length >= MAX_CHAT_IMAGE_COUNT
 							? t("chat.maxImages", { count: MAX_CHAT_IMAGE_COUNT })
@@ -730,7 +754,7 @@ export class ComposerStore {
 						size: bytes.length,
 						data: bytesToBase64(bytes),
 					};
-					this.writeDraft(sessionKey, { value, images: [...images, image] });
+					this.writeDraft(target, { ...draft, images: [...images, image] });
 				} else {
 					const path = await this.client.uploadChatFile(
 						projectId,
@@ -742,12 +766,13 @@ export class ComposerStore {
 						this.removedFilePaths.add(path);
 						return this.client.removeChatFile(projectId, path);
 					});
-					const { value, images } = this.draftFor(sessionKey);
+					const draft = this.draftFor(target);
+					const { value } = draft;
 					const tokenText = fileMentionValue(path);
 					const separator = value.length === 0 || /\s$/.test(value) ? "" : " ";
-					this.writeDraft(sessionKey, {
+					this.writeDraft(target, {
+						...draft,
 						value: `${value}${separator}${tokenText} `,
-						images,
 					});
 				}
 			} catch (error) {
@@ -960,11 +985,11 @@ export class ComposerStore {
 						description: failure,
 					});
 				}
-				this.restoreDraft(target.sessionKey, {
-					value: rawValue,
-					images: rawImages,
-					status: this.onNotice ? undefined : failure,
-				});
+				this.restoreDraft(
+					target,
+					{ value: rawValue, images: rawImages },
+					this.onNotice ? undefined : failure,
+				);
 			}
 			this.activeSubmits.delete(target.sessionKey);
 			if (this.targetSignal()?.sessionKey === target.sessionKey) {
@@ -992,7 +1017,7 @@ export class ComposerStore {
 				...s,
 				value: "",
 				caret: 0,
-				images: [],
+				images: this.draftScope === "project" ? s.images : [],
 				status: null,
 			}));
 			this.onNewChat?.();
@@ -1188,11 +1213,11 @@ export class ComposerStore {
 						description: failure,
 					});
 				}
-				this.restoreDraft(target.sessionKey, {
-					value,
-					images,
-					status: isExtensionCommand && this.onNotice ? undefined : failure,
-				});
+				this.restoreDraft(
+					target,
+					{ value, images },
+					isExtensionCommand && this.onNotice ? undefined : failure,
+				);
 			}
 			this.activeSubmits.delete(target.sessionKey);
 			if (this.targetSignal()?.sessionKey === target.sessionKey) {
@@ -1201,28 +1226,21 @@ export class ComposerStore {
 		}
 	}
 
-	/**
-	 * Puts a draft that was not sent back in its chat's composer, before
-	 * whatever was typed there since.
-	 */
-	private restoreDraft(sessionKey: string, draft: ComposerDraft) {
-		const join = (later?: ComposerDraft): ComposerDraft => ({
-			value: [draft.value, later?.value].filter(Boolean).join("\n\n"),
-			images: [...draft.images, ...(later?.images ?? [])],
-			status: draft.status ?? later?.status,
+	/** Restores the unsent draft before newer edits in its original scope. */
+	private restoreDraft(
+		target: ComposerTarget,
+		draft: ComposerDraft,
+		status?: string,
+	) {
+		const later = this.draftFor(target);
+		this.writeDraft(target, {
+			value: [draft.value, later.value].filter(Boolean).join("\n\n"),
+			images: [...draft.images, ...later.images],
 		});
-		if (this.targetSignal()?.sessionKey !== sessionKey) {
-			this.drafts.set(sessionKey, join(this.drafts.get(sessionKey)));
-			return;
-		}
-		const { value, images, status } = join(this.stateSignal());
-		this.updateDraft((s) => ({
-			...s,
-			value,
-			caret: value.length,
-			images,
-			status: status ?? null,
-		}));
+		if (status === undefined) return;
+		if (this.targetSignal()?.sessionKey === target.sessionKey)
+			this.setStatus(status);
+		else this.sessionStatuses.set(target.sessionKey, status);
 	}
 
 	/** Stops the running turn, or the send that is about to start one. */

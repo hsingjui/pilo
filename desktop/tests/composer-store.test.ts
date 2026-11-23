@@ -69,16 +69,23 @@ function storeFor(
 const targetA: ComposerTarget = { sessionKey: "sa", projectId: "p1" };
 const targetB: ComposerTarget = { sessionKey: "sb", projectId: "p1" };
 
-test("drafts stay with their session", () => {
+test("draft text is shared within a project and isolated between projects", () => {
 	const { client } = fakeClient();
 	const { store } = storeFor(client);
+	const otherProject = { sessionKey: "sc", projectId: "p2" };
 	store.setTarget(targetA);
-	store.setValue("hello a");
+	store.setValue("first draft");
 	store.setTarget(targetB);
+	expect(store.state().value).toBe("first draft");
+	store.setValue("edited draft");
+	store.setTarget(otherProject);
 	expect(store.state().value).toBe("");
-	store.setValue("hello b");
+	store.setValue("other project");
+	store.setTarget(null);
 	store.setTarget(targetA);
-	expect(store.state().value).toBe("hello a");
+	expect(store.state().value).toBe("edited draft");
+	store.setTarget(otherProject);
+	expect(store.state().value).toBe("other project");
 });
 
 test("submit prompts an idle chat and clears the draft", async () => {
@@ -93,6 +100,8 @@ test("submit prompts an idle chat and clears the draft", async () => {
 	const { id, ...command } = sent[0]!.command;
 	expect(typeof id).toBe("string");
 	expect(command).toEqual({ type: "prompt", message: "do the thing" });
+	expect(store.state().value).toBe("");
+	store.setTarget(targetB);
 	expect(store.state().value).toBe("");
 });
 
@@ -153,6 +162,25 @@ test("ArrowUp recalls the project's earlier prompts", async () => {
 	expect(store.state().value).toBe("second");
 });
 
+test("switching before dispatch restores the project draft without losing newer edits", async () => {
+	const { client, sent } = fakeClient();
+	const { store } = storeFor(client);
+	store.setTarget(targetA);
+	store.setValue("unsent text");
+	await store.addFiles([
+		new File([new Uint8Array([0x89, 0x50])], "shot.png", { type: "image/png" }),
+	]);
+
+	const sending = store.submit();
+	store.setTarget(targetB);
+	store.setValue("new text");
+	await sending;
+
+	expect(sent).toHaveLength(0);
+	expect(store.state().value).toBe("unsent text\n\nnew text");
+	expect(store.state().images.map(({ name }) => name)).toEqual(["shot.png"]);
+});
+
 test("picked files upload as mentions; removing them unregisters", async () => {
 	const removed: string[] = [];
 	const { client } = fakeClient({
@@ -172,7 +200,7 @@ test("picked files upload as mentions; removing them unregisters", async () => {
 	expect(removed.length).toBe(1);
 });
 
-test("image files attach as image content, not mentions", async () => {
+test("image attachments are shared within a project but not across projects", async () => {
 	const { client } = fakeClient();
 	const { store } = storeFor(client);
 	store.setTarget(targetA);
@@ -180,10 +208,15 @@ test("image files attach as image content, not mentions", async () => {
 		type: "image/png",
 	});
 	await store.addFiles([png]);
-	expect(store.state().images.length).toBe(1);
+	expect(store.state().images).toHaveLength(1);
 	expect(store.state().value).toBe("");
+	store.setTarget({ sessionKey: "sc", projectId: "p2" });
+	expect(store.state().images).toHaveLength(0);
+	store.setTarget(targetB);
+	expect(store.state().images.map(({ name }) => name)).toEqual(["shot.png"]);
 	store.removeImage(store.state().images[0]!.id);
-	expect(store.state().images.length).toBe(0);
+	store.setTarget(targetA);
+	expect(store.state().images).toHaveLength(0);
 });
 
 function piCommand(
@@ -335,7 +368,7 @@ test("loadCommands triggers catalog refresh when cached commands are missing", a
 	expect(refreshes()).toBe(1);
 });
 
-test("submitting /new clears the draft and invokes onNewChat without prompting Pi", async () => {
+test("submitting /new consumes the command but keeps images for the new chat", async () => {
 	const { client, sent, started } = fakeClient();
 	let created = 0;
 	const app = {
@@ -350,13 +383,18 @@ test("submitting /new clears the draft and invokes onNewChat without prompting P
 		},
 	});
 	store.setTarget(targetA);
+	await store.addFiles([
+		new File([new Uint8Array([0x89, 0x50])], "shot.png", { type: "image/png" }),
+	]);
 	store.setValue("/new");
 
 	await store.submit();
 	expect(created).toBe(1);
 	expect(started).toHaveLength(0);
 	expect(sent).toHaveLength(0);
+	store.setTarget(targetB);
 	expect(store.state().value).toBe("");
+	expect(store.state().images.map(({ name }) => name)).toEqual(["shot.png"]);
 });
 
 test("submitting /compact compacts an idle session and blocks while running", async () => {

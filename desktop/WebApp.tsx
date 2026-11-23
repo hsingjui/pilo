@@ -44,6 +44,7 @@ function MobileRemoteWorkspace(props: {
 	const composer = new ComposerStore({
 		client,
 		app: store.state,
+		draftScope: "session",
 		catalog,
 		beforeSend: (sessionKey) => runConfig.prepareToSend(sessionKey),
 		transcript: chat,

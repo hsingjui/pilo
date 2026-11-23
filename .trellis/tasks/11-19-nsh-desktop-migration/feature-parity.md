@@ -12,7 +12,7 @@
 | M3a · 聊天记录 | [ ] 短/长会话正确加载 Pi JSONL、按需读取较早历史；切换不闪出上一会话内容。流式时，底部跟随；往上读时保住锚点；跨 16 条消息边界、展开工具和图片迟到加载均不甩走正在阅读的内容；可一键回到底部。 | [消息视口](../../../web/components/chat/chat-conversation-viewport.tsx)、[滚动用例](../../../tests/browser/chat-scroll-following.html) |
 | M3b · 回复渲染 | [ ] 流式 Markdown、代码高亮与复制、表格、外链、项目文件链接和图片预览/保存；图片用 Local 与 SSH 的项目相对路径验证，保留错误提示和路径限制。Mermaid 按下表显示源码。 | [Markdown](../../../web/components/chat/chat-markdown.tsx)、[图片](../../../web/components/chat/chat-markdown-image.tsx) |
 | M3c · 工作活动 | [ ] 思考、工具输入/结果、文件变更与 diff、嵌套 agent 活动、todo 胶囊、compaction、耗时和折叠状态；实时与重新读取历史一致。 | [工作活动](../../../web/components/chat/chat-activity.tsx)、[助手工作](../../../web/components/chat/chat-assistant-work.tsx) |
-| M3d · Composer | [ ] 多行、发送/换行快捷键；macOS 拼音组合中 Enter 只上屏，提交后不误发。文件/会话 `@` 提及与斜杠命令可键盘选取/关闭；文件/图片可选择、粘贴、拖入、移除；按项目回看输入历史，切换会话可找回该会话的未发送草稿，不串会话。 | [Composer](../../../web/components/chat/chat-composer.tsx)、[输入实现](../../../web/components/chat/use-chat-composer-input.ts) |
+| M3d · Composer | [ ] 多行、发送/换行快捷键；macOS 拼音组合中 Enter 只上屏，提交后不误发。文件/会话 `@` 提及与斜杠命令可键盘选取/关闭；文件/图片可选择、粘贴、拖入、移除；桌面输入为空时用 `↑` / `↓` 按项目回看已发送输入；同项目切换会话或新建会话时保留未发送的文字和图片，并可从当前历史条目继续翻阅，不串项目。`/new` 只消耗命令文字，保留待发图片。 | [Composer](../../../web/components/chat/chat-composer.tsx)、[输入实现](../../../web/components/chat/use-chat-composer-input.ts) |
 | M3e · 模型与会话 | [x] 模型选择、thinking 档位、上下文用量和项目 Scope 默认/单会话覆盖；会话顶部菜单与 fork 从选定消息分支，原会话不变；会话压缩状态能显示。 | [会话头](../../../web/components/chat/chat-session-header-menu.tsx)、[配置用例](../../../tests/browser/chat-run-config-cache.html) |
 | M3f · Pi 扩展 UI | [ ] select、confirm、input、editor 及扩展通知；支持键盘、取消/超时，切换后响应只发回发起请求的会话。 | [扩展对话框](../../../web/components/chat/pi-extension-ui-dialog.tsx)、[扩展通知](../../../web/components/chat/pi-extension-notifications.tsx) |
 | M3g · 对话大纲 | [ ] 显示用户消息；鼠标和键盘可跳到当前或尚未加载的旧消息，滚动时高亮正确条目。与延后的对话内查找是两件事。 | [大纲](../../../web/components/chat/conversation-outline-rail.tsx)、[对话页](../../../src/components/chat/chat-page.tsx) |
@@ -71,7 +71,7 @@
 | `pilo.chatInputHistory.v1` | [输入历史](../../../web/lib/chat/chat-input-history.ts)：按项目保存最近 100 条文本，不是未发送草稿，可能包含敏感内容。 | 默认不导出；只在用户选择保留时在本机交接。不上传、不写日志、不跨设备同步；不从 Pi JSONL 擅自重建。 |
 | `pilo.debug.chatPerformance` | [性能开关](../../../web/lib/chat/chat-performance.ts)：浏览器调试标记。 | 不导出；使用 nsh 调试入口。 |
 
-未发送的文字草稿由[内存 store](../../../web/components/chat/chat-draft-store.ts)管理；桌面会话切换用[内存 UI 缓存](../../../web/components/app/chat-ui-state-cache.ts)。没有对应的 localStorage 键，也没有旧版重启后恢复草稿的承诺。
+桌面未发送的文字和图片只在当前客户端内存中按项目保留，不写入本地存储、不跨客户端同步，重启后不恢复。远程移动端保持原有的会话草稿和键盘行为。
 
 ### 仅浏览器持有：不进入桌面导出文件
 

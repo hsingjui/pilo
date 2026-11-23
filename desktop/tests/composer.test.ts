@@ -9,18 +9,17 @@ test("the composer types, submits a prompt and clears", async () => {
 	expect(app.shows("id:chat-composer-input >> text:do the thing")).toBe(false);
 });
 
-test("switching chats restores a draft without undoing edits in the other chat", async () => {
+test("switching chats keeps the project draft but starts a fresh undo history", async () => {
 	const app = await open("./composer-idle-fixture.tsx", { platform: "macos" });
-	await app.type("id:chat-composer-input", "draft in A");
+	await app.type("id:chat-composer-input", "project draft");
 	await app.press("id:fixture-switch-chat");
-	await app.type("id:chat-composer-input", "discard this");
+	await app.waitFor("id:chat-composer-input >> text:project draft");
+	await app.type("id:chat-composer-input", " discard this");
 	await app.keyboard.press("mod+z");
-	expect(app.shows("id:chat-composer-input >> text:discard this")).toBe(false);
-	expect(app.shows("id:chat-composer-input >> text:draft in A")).toBe(false);
-	await app.type("id:chat-composer-input", "draft in B");
-	await app.press("id:fixture-switch-chat");
-	await app.waitFor("id:chat-composer-input >> text:draft in A");
-	expect(app.shows("id:chat-composer-input >> text:draft in B")).toBe(false);
+	await app.waitFor("id:chat-composer-input >> text:discard this", {
+		state: "gone",
+	});
+	expect(app.shows("id:chat-composer-input >> text:project draft")).toBe(true);
 });
 
 test("the send button prompts and an unfinished composition does not", async () => {
@@ -137,8 +136,12 @@ test("the @ tabs and rows take the pointer, hover shows full path, and tray remo
 		true,
 	);
 
-	// 移除上方图片芯片同步从输入框移除内联图片节点。
+	// 同项目切换会话后仍能看到图片；移除后，切回去也不会恢复它。
+	await app.press("id:fixture-switch-chat");
+	await app.waitFor("id:chat-composer-mention:image >> text:shot.png");
 	await app.press("label:Remove shot.png");
+	await app.waitFor("id:chat-composer-mention:image", { state: "gone" });
+	await app.press("id:fixture-switch-chat");
 	expect(app.shows("id:chat-composer-image")).toBe(false);
 	expect(app.shows("id:chat-composer-mention:image")).toBe(false);
 });

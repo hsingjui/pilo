@@ -68,6 +68,7 @@ export interface ComposerRichInputHandle {
 export interface ComposerRichInputProps {
 	testID?: string;
 	sessionKey: Accessor<string | null>;
+	projectId: Accessor<string | null>;
 	value: Accessor<string>;
 	images: Accessor<readonly ChatImageAttachment[]>;
 	sessionsByValue: Accessor<ReadonlyMap<string, SessionMention>>;
@@ -123,6 +124,7 @@ export function ComposerRichInput(props: ComposerRichInputProps) {
 				<SessionRichInput
 					input={props}
 					sessionKey={untracked(key)}
+					projectId={untracked(props.projectId)}
 					imageLayouts={imageLayouts}
 				/>
 			)}
@@ -133,11 +135,11 @@ export function ComposerRichInput(props: ComposerRichInputProps) {
 function SessionRichInput(session: {
 	input: ComposerRichInputProps;
 	sessionKey: string | null;
+	projectId: string | null;
 	imageLayouts: Map<string | null, ImageLayout>;
 }) {
 	const props = session.input;
-	const sessionKey = session.sessionKey;
-	const imageLayouts = session.imageLayouts;
+	const { sessionKey, projectId, imageLayouts } = session;
 	const isCurrent = () => props.sessionKey() === sessionKey;
 	const focused = signal(false);
 	const composing = signal(false);
@@ -275,7 +277,7 @@ function SessionRichInput(session: {
 		sessions: ReadonlyMap<string, SessionMention>,
 		images: readonly ChatImageAttachment[],
 	) => {
-		const layout = imageLayouts.get(sessionKey);
+		const layout = imageLayouts.get(projectId);
 		return valueToRichDoc(
 			value,
 			sessions,
@@ -311,11 +313,11 @@ function SessionRichInput(session: {
 	let syncedRevision = editor.revision;
 	const rememberLayout = (doc: RichNodeJSON, value: string) => {
 		if (knownDocImageIds.size) {
-			imageLayouts.set(sessionKey, {
+			imageLayouts.set(projectId, {
 				value,
 				offsets: richDocImageOffsets(doc),
 			});
-		} else imageLayouts.delete(sessionKey);
+		} else imageLayouts.delete(projectId);
 	};
 	let suggestionRevision = -1;
 	let suggestionDisabled = false;
