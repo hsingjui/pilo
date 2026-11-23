@@ -13,7 +13,7 @@ import type { SettingsClient } from "./settings-dialog";
 /**
  * The "+" menu beside the access-address rows: lists the host's LAN IPs as
  * ready-made `http://<ip>:<port>` addresses, dimming the ones already saved.
- * Mirrors `remote-lan-address-picker.tsx` in the Tauri app.
+ * Mirrors `remote-lan-address-picker.tsx` in the WebUI.
  */
 export function RemoteLanAddressPicker(props: {
 	client: SettingsClient;

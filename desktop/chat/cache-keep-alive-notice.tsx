@@ -20,7 +20,7 @@ export function CacheKeepAliveNotice(props: {
 	const dismissed = signal(false);
 	const visible = signal(false);
 	const width = signal(0);
-	// Tauri's 32rem container query measures the card inside its padding and border.
+	// the WebUI's 32rem container query measures the card inside its padding and border.
 	const wide = () => width() >= chatPx(512 + 24) + 2;
 	effect(() => {
 		const delay = dismissed()

@@ -75,7 +75,7 @@ export function projectSection(projectId: string) {
 
 /**
  * The sessions of a project as the sidebar lists them: its new chats Pi has
- * not saved yet, as the Tauri app lists its opened chats, then its saved
+ * not saved yet, as the WebUI lists its opened chats, then its saved
  * ones, each marked running or with a finished turn the user has not seen.
  * `untitled` names a session that has no title and no first message;
  * `draft` is the open new chat once a prompt was sent from it.
@@ -100,7 +100,7 @@ export function sidebarSessions(
 			);
 		}
 	}
-	// Turns an external Pi runs, as the Tauri sidebar shows them.
+	// Turns an external Pi runs, as the WebUI sidebar shows them.
 	for (const [path, since] of Object.entries(
 		state.externalActivity[projectId] ?? {},
 	)) {
@@ -251,7 +251,7 @@ function latestMessageAt(entry: SessionIndexEntry) {
 	return Number.isNaN(date.getTime()) ? new Date(entry.indexedAtMs) : date;
 }
 
-/** How many sessions the recent view lists, as in the Tauri app. */
+/** How many sessions the recent view lists, as in the WebUI. */
 const RECENT_SESSION_LIMIT = 50;
 
 /** The latest sessions of every project: the running ones, then by time. */

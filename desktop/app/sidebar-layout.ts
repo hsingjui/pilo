@@ -13,14 +13,14 @@ import {
 	type SidebarSettingsStore,
 } from "./sidebar-settings";
 
-/** How far an arrow key moves the sidebar's edge, as in the Tauri app. */
+/** How far an arrow key moves the sidebar's edge, as in the WebUI. */
 const RESIZE_STEP = 16;
 /**
  * A drag collapses the sidebar a little below its smallest width, so that
  * pressing the handle at the minimum and jittering does not collapse it.
  */
 const COLLAPSE_AT = MIN_SIDEBAR_WIDTH - 8;
-/** The Tauri sidebar's `transition-[width,opacity] duration-200 ease-out`. */
+/** The WebUI sidebar's `transition-[width,opacity] duration-200 ease-out`. */
 const COLLAPSE_TRANSITION = { type: "easeOut", duration: 200 } as const;
 /** When the collapse has finished, a little after its transition. */
 const SETTLE_MS = 220;
@@ -52,7 +52,7 @@ export interface SidebarLayout {
 
 /**
  * The sidebar's width, its drag and keyboard resizing and its collapse, as
- * the Tauri app's `useSidebarLayout`: dragging below the smallest width
+ * the WebUI's `useSidebarLayout`: dragging below the smallest width
  * collapses it, and the collapse animates the width and the opacity.
  */
 export function createSidebarLayout(

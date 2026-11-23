@@ -61,7 +61,7 @@ const TEMPORARY_SESSION_PREFIX = "temporary-session-";
 /**
  * The session id of a temporary chat: Pi runs it without a session file
  * (`noSession`), the sidebar never lists it, and leaving it ends it, as the
- * Tauri app's temporary chat.
+ * WebUI app's temporary chat.
  */
 export function createTemporarySessionId() {
 	draftSessionSequence += 1;
@@ -85,7 +85,7 @@ export function isTemporarySessionKey(sessionKey: string) {
 
 /**
  * What the user is looking at. It is kept in memory only, like the selection
- * of the Tauri app: a restart opens the first project with no session.
+ * of the WebUI: a restart opens the first project with no session.
  */
 export type Navigation = {
 	/** The project chosen for a new chat; unset until the user picks one. */
@@ -582,7 +582,7 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 			return withExternalActivity(state, action.projectId, action.activities);
 		case "project_selected":
 			if (!hasProject(state.projects, action.projectId)) return state;
-			// Choosing a project opens a new chat in it, as the Tauri app does;
+			// Choosing a project opens a new chat in it, as the WebUI does;
 			// without a draft session id it only lands on the project picker.
 			return {
 				...state,

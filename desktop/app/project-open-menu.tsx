@@ -63,7 +63,7 @@ function OpenerIcon(props: { opener: ProjectOpenerId }) {
 
 /**
  * The header's quick open: a button that opens the project in the app the
- * user chose last, and a menu to open it in another, as the Tauri header's.
+ * user chose last, and a menu to open it in another, as the WebUI header's.
  */
 export function ProjectOpenMenu(props: {
 	project: () => Project;

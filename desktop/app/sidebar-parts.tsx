@@ -10,7 +10,7 @@ import { createHover } from "../ui/hover";
 import { t } from "./i18n";
 
 /**
- * The sidebar's type at the Tauri app's default UI size, as the chat's
+ * The sidebar's type at the WebUI's default UI size, as the chat's
  * (`chat/layout.ts`): Tailwind's `text-sm`, `text-xs` and `text-2xs` there.
  */
 export const sidebarText = {
@@ -19,7 +19,7 @@ export const sidebarText = {
 	"2xs": { fontSize: chatPx(11) },
 } as const;
 
-/** A `pilo-sidebar-*` row height at the Tauri app's default UI size. */
+/** A `pilo-sidebar-*` row height at the WebUI's default UI size. */
 export const sidebarRowHeight = (
 	name:
 		| "pilo-sidebar-env-height"
@@ -54,7 +54,7 @@ export interface SidebarActionProps extends ButtonProps {
 }
 
 /**
- * The sidebar's small icon button (the Tauri app's `SIDEBAR_ACTION`): muted
+ * The sidebar's small icon button (the WebUI's `SIDEBAR_ACTION`): muted
  * until the pointer is over it.
  */
 export function SidebarAction(props: SidebarActionProps) {

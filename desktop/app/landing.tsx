@@ -35,7 +35,7 @@ function connectionLabel(project: Project) {
 }
 
 /**
- * The new-session landing: Pi's hero with the project picker, like the Tauri
+ * The new-session landing: Pi's hero with the project picker, like the WebUI
  * app's empty chat. Without projects it asks for one instead.
  */
 export function SessionLanding(
@@ -108,7 +108,7 @@ export function SessionLanding(
 }
 
 /**
- * The Tauri landing's `DraftProjectPicker`: a borderless trigger with the
+ * The WebUI landing's `DraftProjectPicker`: a borderless trigger with the
  * project and its connection, and a menu of every project.
  */
 function LandingProjectPicker(props: {
@@ -131,7 +131,7 @@ function LandingProjectPicker(props: {
 			// React's `min-w-48 max-w-[calc(100vw-2rem)]`.
 			popupStyle={{ minWidth: 192, maxWidth: windowSize().width - 32 }}
 			trigger={
-				// A plain press target, as the Tauri trigger is: no `Button` press
+				// A plain press target, as the WebUI trigger is: no `Button` press
 				// scale, which would shrink the text while it is held.
 				<BaseButton
 					testID="landing-project-picker"

@@ -21,14 +21,17 @@ export type SidebarSettings = {
 	showProjectsInRecents: boolean;
 };
 
-/** The Tauri app's localStorage keys, so its stored values carry over. */
+/**
+ * The WebUI's localStorage keys. nsh's `Storage` is not the WebView's
+ * localStorage, so values the WebUI saved do not carry over.
+ */
 const COLLAPSED_SECTIONS_KEY = "pilo.collapsedSections";
 const PROJECT_ORDER_KEY = "pilo.sidebarProjectOrder";
 const VIEW_KEY = "pilo.sidebarOrganizeMode";
 const SHOW_PROJECTS_IN_RECENTS_KEY = "pilo.sidebarShowProjectsInRecents";
 const WIDTH_KEY = "pilo.sidebarWidth";
 
-// Match the Tauri sidebar's default and resize limits.
+// Match the WebUI sidebar's default and resize limits.
 export const MIN_SIDEBAR_WIDTH = 240;
 export const MAX_SIDEBAR_WIDTH = 480;
 export const DEFAULT_SIDEBAR_WIDTH = 292;

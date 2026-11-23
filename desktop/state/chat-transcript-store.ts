@@ -231,7 +231,7 @@ function startsTurn(event: PiloClientEvent) {
  * and when the next turn starts.
  *
  * Either way a read loads only the session's last messages. The ones before
- * them are held in the Tauri app's history window store and shown as
+ * them are held in the WebUI's history window store and shown as
  * `historyPrefix`: placeholders, which `loadRange` loads a page at a time
  * as the WebUI does. Message `i` of the session is always at index `i` of
  * `messages()`: a message is loaded, or put back to its placeholder, in its
@@ -461,7 +461,7 @@ export class ChatTranscriptStore {
 
 	/**
 	 * Shows a prompt the user sent as the open chat's next turn, with a
-	 * pending reply, as the Tauri app does before Pi has started or echoed
+	 * pending reply, as the WebUI does before Pi has started or echoed
 	 * it; Pi's echo then takes its place. Gives the turn's id, or `null` when
 	 * the chat is not open, not shown yet, or already has such a turn.
 	 */

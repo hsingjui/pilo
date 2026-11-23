@@ -39,7 +39,7 @@ const PERMISSION_KEYS: Record<
 
 /**
  * System notifications: the toggle, the OS permission, and a test send, as
- * the Tauri `NotificationSettings`. Its Windows-only "Managed by system"
+ * the WebUI `NotificationSettings`. Its Windows-only "Managed by system"
  * status has no nsh counterpart (the permission is always queryable here),
  * and its failure toasts show inline instead.
  */

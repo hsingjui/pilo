@@ -18,7 +18,7 @@ test("the sidebar starts in the projects view with nothing stored", async () => 
 	expect(app.storage()).toEqual({});
 });
 
-test("the sidebar reads the settings the Tauri app stored", async () => {
+test("the sidebar reads the settings stored under the WebUI's keys", async () => {
 	const app = await openSettings({
 		[SECTIONS]: '{"ws:p1":true,"env:local":false}',
 		[VIEW]: "recent",

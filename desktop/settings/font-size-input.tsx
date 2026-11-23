@@ -4,7 +4,7 @@ import { t } from "../app/i18n";
 import { NumberInput } from "../ui/number-input";
 
 /**
- * A font size field, as `font-size-input.tsx` in the Tauri app: typing edits a
+ * A font size field, as `font-size-input.tsx` in the WebUI: typing edits a
  * draft that commits clamped on blur or Enter and reverts on Escape or an
  * empty/invalid field; a `px` suffix sits in the field.
  */

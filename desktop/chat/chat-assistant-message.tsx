@@ -77,7 +77,7 @@ export function ChatAssistantMessage(props: {
 	const expansion = props.expansion ?? new ChatExpansion();
 	const preferences = () => props.preferences?.() ?? defaultChatWorkPreferences;
 	// The action row under a finished reply shows on hover or keyboard focus,
-	// like the Tauri message footer.
+	// like the WebUI message footer.
 	const hover = createHover();
 	const error = computed(() => {
 		const text = message().errorMessage;
@@ -111,7 +111,7 @@ export function ChatAssistantMessage(props: {
 		const usage = message().usage;
 		return hasTokenUsage(usage) ? usage : null;
 	});
-	// Only a cleanly finished reply can be a fork point, as in the Tauri app.
+	// Only a cleanly finished reply can be a fork point, as in the WebUI.
 	const canFork = computed(
 		() =>
 			props.onFork != null &&

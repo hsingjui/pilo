@@ -443,7 +443,7 @@ function OverflowTabsMenu(props: { items: () => readonly AuxTabItem[] }) {
 	);
 }
 
-/** The ⋯ menu: copy id/path and rename, as the Tauri header's. */
+/** The ⋯ menu: copy id/path and rename, as the WebUI header's. */
 function SessionHeaderMenu(props: {
 	sessionId: () => string | null;
 	sessionPath: () => string | null;

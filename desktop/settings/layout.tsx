@@ -3,13 +3,13 @@ import { Text, View, windowSize } from "nsh";
 
 import { classNames } from "../ui/class-names";
 
-/** Tailwind's sm:, measured on the window as the Tauri's viewport. */
+/** Tailwind's sm:, measured on the window as the WebUI's viewport. */
 const SM_WIDTH = 640;
 
 const narrow = () => windowSize().width < SM_WIDTH;
 
 /*
- * Settings rows use Tauri's compact 32pt controls: `size="sm"` on Input,
+ * Settings rows use the WebUI's compact 32pt controls: `size="sm"` on Input,
  * Select and NumberInput, and these classes on Buttons beside them, so a
  * row's fields and buttons share one height.
  */
@@ -19,10 +19,10 @@ export const SETTINGS_ICON_BUTTON_CLASS =
 /** A ghost text button in a settings row: a 14pt icon and a short label. */
 export const SETTINGS_TEXT_BUTTON_CLASS =
 	"h-(--pilo-button-sm-height) gap-1.5 px-2 text-xs font-normal";
-/** An icon button in a SettingsSection header, as Tauri's 28pt header actions. */
+/** An icon button in a SettingsSection header, as the WebUI's 28pt header actions. */
 export const SETTINGS_HEADER_ICON_BUTTON_CLASS = "size-7 shrink-0";
 
-/** A bordered card with an optional header, as `SettingsSection` in Tauri. */
+/** A bordered card with an optional header, as `SettingsSection` in the WebUI. */
 export function SettingsSection(props: {
 	title?: string;
 	/** Muted text on the header's right (a count, a scope summary). */
@@ -72,7 +72,7 @@ export function SettingsSection(props: {
 /**
  * A label and helper on the left, controls on the right. Rows stack under
  * sm: the controls sit under the label, flush left; at sm: they right-align
- * in a `minmax(0,1fr) auto` track, as `SettingsRow` in Tauri.
+ * in a `minmax(0,1fr) auto` track, as `SettingsRow` in the WebUI.
  */
 export function SettingsRow(props: {
 	label: string;
@@ -80,7 +80,7 @@ export function SettingsRow(props: {
 	children?: JSX.Element;
 	class?: string;
 	/**
-	 * Ghost buttons lose their own padding to the row's edge, as Tauri's
+	 * Ghost buttons lose their own padding to the row's edge, as the WebUI's
 	 * `[data-button-variant=ghost]` compensation: `"end"` for a ghost last
 	 * control (-mr-2 at sm:), `"both"` when the controls are a single ghost
 	 * button (also -ml-2 under sm:). The margin goes on the controls box, so
@@ -145,7 +145,7 @@ export function SettingsRow(props: {
 	);
 }
 
-/** A small bordered status chip, as `SettingsStatus` in Tauri. */
+/** A small bordered status chip, as `SettingsStatus` in the WebUI. */
 export function SettingsStatus(props: {
 	muted?: boolean;
 	children: JSX.Element;

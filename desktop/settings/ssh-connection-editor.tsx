@@ -229,7 +229,7 @@ export function createSshEditor(deps: {
 
 export type SshEditor = ReturnType<typeof createSshEditor>;
 
-/** The SSH add/edit dialog, as `ssh-connection-editor` in the Tauri app. */
+/** The SSH add/edit dialog, as `ssh-connection-editor` in the WebUI. */
 export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 	const editor = props.editor;
 	const draft = editor.draft();

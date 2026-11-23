@@ -56,7 +56,7 @@ export interface SidebarPanelProps extends Omit<
 	onTheme?: (theme: Theme) => void;
 }
 
-/** The Tauri sidebar's theme button order. */
+/** The WebUI sidebar's theme button order. */
 const THEME_CYCLE: readonly Theme[] = ["light", "dark", "system"];
 const THEME_ICONS = { light: "Sun", dark: "Moon", system: "Monitor" } as const;
 const THEME_LABELS = {
@@ -97,7 +97,7 @@ function themeValue(name: string): string | number | undefined {
 }
 
 /**
- * The card the sidebar draws its content on (the Tauri
+ * The card the sidebar draws its content on (the WebUI
  * `.pilo-sidebar-surface`): a floating rounded card in Lody, the full height
  * with a right border in Claude.
  */
@@ -133,7 +133,7 @@ function surface() {
 }
 
 /**
- * The sidebar as the Tauri `AppSidebar` draws it: the header with the app's
+ * The sidebar as the WebUI `AppSidebar` draws it: the header with the app's
  * name and its actions, a new session (or the project's sessions' back
  * button), the list, the footer, and the handle on its edge that resizes it
  * or, dragged past its smallest width, collapses it.

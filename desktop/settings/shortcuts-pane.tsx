@@ -37,21 +37,21 @@ const SHORTCUT_SECTIONS = [
 	{ id: "session", titleKey: "settings.shortcutSession" },
 ] as const;
 
-/** The same default the Tauri pane resets to (`DEFAULT_DESKTOP_SHORTCUT`). */
+/** The same default the WebUI pane resets to (`DEFAULT_DESKTOP_SHORTCUT`). */
 const DEFAULT_SHOW_SHORTCUT = "mod+alt+p";
 
-/** The boxed control a shortcut row shows (Tauri's `SHORTCUT_INPUT_CLASS`). */
+/** The boxed control a shortcut row shows (the WebUI's `SHORTCUT_INPUT_CLASS`). */
 const SHORTCUT_BOX_CLASS =
 	"h-9 w-fit min-w-0 max-w-full flex-row items-center gap-1.5 rounded-md border px-2.5";
 const SHORTCUT_BOX_IDLE_CLASS = "border-border/80 bg-background";
 const SHORTCUT_BOX_RECORDING_CLASS = "border-ring bg-accent/60";
 
-/** The ghost icon button Tauri shows for per-row and header resets. */
+/** The ghost icon button the WebUI shows for per-row and header resets. */
 const SHORTCUT_RESET_CLASS = "size-7 shrink-0";
 
 const IS_MAC = platform.os === "macos";
 
-/** One keystroke as the Tauri pane's kbd chips: `⌘ + ⇧ + M` for `mod+shift+m`. */
+/** One keystroke as the WebUI pane's kbd chips: `⌘ + ⇧ + M` for `mod+shift+m`. */
 function ShortcutKeys(props: { shortcut: string }) {
 	const labels = formatKeyboardShortcutLabels(props.shortcut, IS_MAC);
 	return (
@@ -99,7 +99,7 @@ type ShortcutNotice = {
 	label?: string;
 };
 
-/** The validation feedback Tauri raises as a toast; nsh surfaces it inline. */
+/** The validation feedback the WebUI raises as a toast; nsh surfaces it inline. */
 function noticeText(notice: ShortcutNotice): string {
 	if (notice.kind === "unavailable") return t("shortcuts.unavailable");
 	if (notice.kind === "save") return t("settings.preferencesSaveFailed");

@@ -71,7 +71,7 @@ export function ProjectSection(props: {
 			(open === null && activeProject(state)?.id === id())
 		);
 	});
-	// Reading the sessions again, as the Tauri row's `refreshing`.
+	// Reading the sessions again, as the WebUI row's `refreshing`.
 	const refreshing = computed(
 		() => store.state().sessionIndexes[id()]?.status === "loading",
 	);
@@ -102,7 +102,7 @@ export function ProjectSection(props: {
 	const toggle = () => {
 		const expand = collapsed();
 		void settings.setSectionCollapsed(section(), !expand);
-		// Expanding a project reads its sessions again, as in the Tauri app.
+		// Expanding a project reads its sessions again, as in the WebUI.
 		if (expand) void store.loadSessions(id());
 	};
 	const rowClass = () => {
@@ -283,7 +283,7 @@ function ProjectMenu(props: {
 	actionClass: Accessor<string>;
 	refreshing: Accessor<boolean>;
 	open: Signal<boolean>;
-	/** The default workspace cannot be removed, as in the Tauri app. */
+	/** The default workspace cannot be removed, as in the WebUI. */
 	removable: boolean;
 	confirmingRemove: Signal<boolean>;
 	onRefresh: () => void;

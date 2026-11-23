@@ -16,7 +16,7 @@ test("no chat is open until a session is", async () => {
 	expect(shown(app)).toEqual(["chat: null closed null", "reads: "]);
 });
 
-test("opening a saved session reads its transcript under the Tauri chat key", async () => {
+test("opening a saved session reads its transcript under the WebUI chat key", async () => {
 	const app = await openChat();
 	await app.press("id:open-saved");
 	await app.waitUntil(() => shown(app)[0].endsWith("ready history"));

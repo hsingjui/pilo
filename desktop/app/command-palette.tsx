@@ -46,7 +46,7 @@ type Row = {
 	running?: boolean;
 };
 
-/** How long after the last keystroke the message search runs, as in Tauri. */
+/** How long after the last keystroke the message search runs, as in the WebUI. */
 const SEARCH_DEBOUNCE_MS = 220;
 /** Rows shown while the query is empty. */
 const SESSION_LIMIT = 18;
@@ -66,7 +66,7 @@ export function CommandPalette(props: CommandPaletteProps) {
 	const content = signal<ContentResult[]>([]);
 	const searching = signal(false);
 	let request = 0;
-	// Project scans run one at a time to bound the load, as in the Tauri app.
+	// Project scans run one at a time to bound the load, as in the WebUI.
 	let queue: Promise<void> = Promise.resolve();
 
 	const projects = computed(() => store.state().projects);
@@ -390,7 +390,7 @@ export function CommandPalette(props: CommandPaletteProps) {
 	);
 }
 
-/** A key cap and what it does, as in the Tauri palette's footer. */
+/** A key cap and what it does, as in the WebUI palette's footer. */
 function Hint(props: { keys: string; label: () => string }) {
 	return (
 		<View class="flex-row items-center gap-1">

@@ -12,7 +12,7 @@ const PROJECT_EDITORS = [
 
 export type ProjectEditor = (typeof PROJECT_EDITORS)[number]["id"];
 
-/** Every app the quick-open menu offers, in the Tauri app's order. */
+/** Every app the quick-open menu offers, in the WebUI's order. */
 const PROJECT_OPENERS = [
 	...PROJECT_EDITORS,
 	{ id: "winc", name: "Winc" },
@@ -25,7 +25,10 @@ const PROJECT_OPENERS = [
 export type ProjectOpener = (typeof PROJECT_OPENERS)[number];
 export type ProjectOpenerId = ProjectOpener["id"];
 
-/** The Tauri app's localStorage key, so the chosen app carries over. */
+/**
+ * The WebUI's localStorage key. nsh's `Storage` is not the WebView's
+ * localStorage, so the app the WebUI saved does not carry over.
+ */
 const STORAGE_KEY = "pilo.projectEditor.v1";
 
 /** The apps the project can open in on this platform and connection. */
@@ -99,7 +102,7 @@ function utf8Hex(text: string): string {
 
 /**
  * The URL that opens the project, or a path in it, in an editor: a local
- * folder, Zed's and VS Code Remote's WSL and SSH targets, as the Tauri app
+ * folder, Zed's and VS Code Remote's WSL and SSH targets, as the WebUI
  * builds them.
  */
 export function projectEditorUrl(

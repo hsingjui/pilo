@@ -134,7 +134,7 @@ test("a chat that grows past 16 messages keeps the rows in view where they are",
 	await app.scroll("id:chat-messages", -300);
 	const before = await measure(app);
 
-	// The turn makes it 16 messages; the Tauri list changed how it rendered there.
+	// The turn makes it 16 messages; the WebUI list changed how it rendered there.
 	await app.press("id:prompt");
 	await stream(app, 30);
 	const grown = before.end + 30 * 20;

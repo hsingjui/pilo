@@ -43,7 +43,7 @@ function updateErrorMessage(caught: unknown): string {
 }
 
 /**
- * Version, build and updater, as the Tauri `AboutSettings` pane. nsh has no
+ * Version, build and updater, as the WebUI `AboutSettings` pane. nsh has no
  * update dialog: an available update downloads and restarts from the same
  * button. The dev-only preview action is a React-debug control and stays out.
  */

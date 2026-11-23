@@ -94,7 +94,7 @@ const focusShadow = () =>
 
 const COMPOSER_SURFACE =
 	"relative w-full border border-(--pilo-composer-border) bg-(--pilo-composer-background)";
-/** A read-only chat's composer, dimmed as the Tauri composer's `muted` surface. */
+/** A read-only chat's composer, dimmed as the WebUI composer's `muted` surface. */
 const COMPOSER_SURFACE_MUTED =
 	"relative w-full border border-border/60 bg-muted";
 const COMPOSER_TOOLBAR = "min-w-0 flex-row items-center";
@@ -126,7 +126,7 @@ function inputLineHeight(fontSize: number) {
 }
 
 function inputHeight(contentHeight: number, leading: number, padding: number) {
-	// Keep the theme minimum or two native lines, whichever is taller, as in Tauri.
+	// Keep the theme minimum or two native lines, whichever is taller, as in the WebUI.
 	return Math.max(
 		inputMinHeight(),
 		Math.ceil(leading * 2 + padding * 2),

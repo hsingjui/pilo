@@ -11,7 +11,7 @@ import { DialogTitle } from "../ui/dialog-title";
 
 /**
  * A small confirm dialog over the settings surface, as
- * `settings-confirm-dialog.tsx` in the Tauri app: a cancel and a confirm
+ * `settings-confirm-dialog.tsx` in the WebUI: a cancel and a confirm
  * button; while `busy` the dialog cannot be dismissed and the buttons are
  * disabled with the confirm one showing `busyLabel`.
  */

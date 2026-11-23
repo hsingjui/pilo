@@ -73,7 +73,7 @@ const SECTION_TOGGLE =
 const SECTION =
 	"mb-3 w-full min-w-0 gap-(--pilo-sidebar-row-gap) overflow-hidden last:mb-0";
 /**
- * The sidebar's list in the saved view, as the Tauri `SidebarTree`: the
+ * The sidebar's list in the saved view, as the WebUI `SidebarTree`: the
  * projects by connection, each with its latest sessions once expanded, the
  * sessions of one project, or every project's latest sessions as one list.
  */
@@ -505,7 +505,7 @@ function ConnectionSection(
 	);
 }
 
-/** Every session of one project, newest first (the Tauri second view). */
+/** Every session of one project, newest first (the WebUI second view). */
 function AllProjectSessions(
 	props: Pick<SidebarProps, "store" | "onSelectChat"> & { projectId: string },
 ) {

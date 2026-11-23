@@ -19,7 +19,7 @@ import type {
 } from "../state/chat-transcript-store";
 import type { ModelCatalogStore } from "../state/model-catalog";
 
-/** Ids and times for the messages this app builds, as the Tauri app makes them. */
+/** Ids and times for the messages this app builds, as the WebUI makes them. */
 export function conversationContext(): ConversationReducerContext {
 	let sequence = 0;
 	const id = (kind: string) => `local-${kind}-${Date.now()}-${++sequence}`;
@@ -40,7 +40,7 @@ export function conversationContext(): ConversationReducerContext {
  * The chat of the open session, or `null` when no session is open or it is
  * not in its project's saved sessions. A chat the runtime already holds for
  * the session keeps the key it was started with; a saved session without
- * one gets the key the Tauri app gives it. Whoever starts a chat for a
+ * one gets the key the WebUI gives it. Whoever starts a chat for a
  * saved session must use the same key.
  */
 export function openChatTarget(state: AppState): ChatTranscriptTarget | null {
@@ -133,7 +133,7 @@ export function followOpenSession(store: AppStore, chat: ChatTranscriptStore) {
 		});
 	});
 	// An external Pi's turn shows as running, and reaches the chat through
-	// the session file, as the Tauri app follows it.
+	// the session file, as the WebUI follows it.
 	const external = computed(() => {
 		const state = store.state();
 		const open = openChatTarget(state);
@@ -183,7 +183,7 @@ export function followOpenSession(store: AppStore, chat: ChatTranscriptStore) {
 }
 
 /**
- * Ends a temporary chat once another chat is open, as the Tauri app does:
+ * Ends a temporary chat once another chat is open, as the WebUI does:
  * Pi saved nothing of it to come back to.
  */
 export function endLeftTemporaryChats(

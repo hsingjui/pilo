@@ -47,7 +47,7 @@ function errorMessage(error: unknown) {
 /**
  * Adds a project on a connection: a typed path, the host's folder picker for
  * Local, or an inline directory browser for a remote connection — the same
- * flow as the Tauri sidebar's dialog.
+ * flow as the WebUI sidebar's dialog.
  */
 export function AddProjectDialog(props: {
 	open: Signal<boolean>;

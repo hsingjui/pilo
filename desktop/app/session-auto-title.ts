@@ -19,7 +19,7 @@ const RPC_TIMEOUT_MS = 10_000;
 
 /**
  * Names a new chat after the first prompt that started a turn in it, as the
- * Tauri app does: the connection's naming model titles the prompt, and Pi
+ * WebUI app does: the connection's naming model titles the prompt, and Pi
  * takes the title as the session name unless it already has one. A saved
  * session or a temporary chat is not renamed, and each chat is titled at
  * most once.

@@ -189,7 +189,7 @@ const SECTIONS = [
 	{ id: "other", labelKey: "settings.other" },
 ] as const;
 
-// Tailwind's sm: and md:, measured on the window as the Tauri's viewport.
+// Tailwind's sm: and md:, measured on the window as the WebUI's viewport.
 const SM_WIDTH = 640;
 const MD_WIDTH = 768;
 const NAV_WIDTH = 192; // w-48
@@ -199,7 +199,7 @@ const CONTENT_MAX_WIDTH = 1024; // max-w-5xl
 
 /**
  * The settings window: a left navigation of sections and one pane each, as
- * `settings-dialog.tsx` in the Tauri app. Panes read `store.state()` and save
+ * `settings-dialog.tsx` in the WebUI. Panes read `store.state()` and save
  * through `client`.
  */
 export function SettingsDialog(props: SettingsDialogProps) {

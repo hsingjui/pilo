@@ -1,6 +1,6 @@
 import { Canvas, Path2D, token } from "nsh";
 
-/** Pi's mark, the paths of the Tauri app's PiLogo (viewBox 800). */
+/** Pi's mark, the paths of the WebUI's PiLogo (viewBox 800). */
 const PI_LOGO_PATHS = [
 	"M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z",
 	"M517.36 400H634.72V634.72H517.36Z",

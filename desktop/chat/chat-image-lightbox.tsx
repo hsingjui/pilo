@@ -79,7 +79,7 @@ export interface ChatImageLightboxProps {
 }
 
 /**
- * Full-screen image preview dialog matching the Tauri/WebUI lightbox:
+ * Full-screen image preview dialog matching the WebUI lightbox:
  * zoom controls, pan via scroll when zoomed, save for inline images and
  * external open for remote URLs.
  */

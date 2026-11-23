@@ -63,11 +63,11 @@ type DiffResult = {
 	error?: string;
 };
 
-/** 40rem breakpoint matching the Tauri `@min-[40rem]/git` layout split. */
+/** 40rem breakpoint matching the WebUI `@min-[40rem]/git` layout split. */
 const WIDE_BREAKPOINT = 640;
 /** Minimum diff pane width where side-by-side split view is enabled. */
 const SPLIT_MIN_WIDTH = 600;
-/** Default, minimum and diff minimum widths matching Tauri's 16rem / 12rem / 20rem. */
+/** Default, minimum and diff minimum widths matching the WebUI's 16rem / 12rem / 20rem. */
 const DEFAULT_LIST_WIDTH = 256;
 const MIN_LIST_WIDTH = 192;
 const MIN_DIFF_WIDTH = 320;

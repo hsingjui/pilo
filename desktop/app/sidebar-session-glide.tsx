@@ -6,7 +6,7 @@ export const SessionGlideContext = context<{
 
 /**
  * A list of session rows whose hover highlight slides from row to row (the
- * Tauri `SessionRowGlide`), which follows the pointer more closely than each
+ * WebUI `SessionRowGlide`), which follows the pointer more closely than each
  * row fading its own background.
  */
 export function SessionGlide(props: { children?: JSX.Element }) {

@@ -7,7 +7,7 @@ import type { PiloClientStartChatInput } from "@shared/api/pilo-client";
 import { chatSessionKey } from "@shared/api/chat-session-key";
 import { requestPiRpcReply, type PiCommandClient } from "./chat-rpc";
 
-/** The model-catalog probe RPC wait; the same 10 s the Tauri probe uses. */
+/** The model-catalog probe RPC wait; the same 10 s the WebUI probe uses. */
 const PROBE_RPC_TIMEOUT_MS = 10_000;
 
 type ModelProbeHost = PiCommandClient & {

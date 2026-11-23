@@ -283,7 +283,7 @@ export function AppShell(props: AppShellProps) {
 	const sidebarLayout = createSidebarLayout(sidebarSettings);
 	const collapsed = sidebarLayout.collapsed;
 	// The expand button fades in once the sidebar has collapsed, and out as
-	// it opens, as the Tauri header's button does.
+	// it opens, as the WebUI header's button does.
 	const expandMounted = signal(false);
 	const expandVisible = signal(false);
 	effect(() => {
@@ -385,7 +385,7 @@ export function AppShell(props: AppShellProps) {
 	if (assistance) effect(refreshCacheStatus);
 
 	// Without an open session the workspace holds a new chat in the active
-	// project, as the Tauri landing does, so its composer is always there.
+	// project, as the WebUI landing does, so its composer is always there.
 	effect(() => {
 		const state = store.state();
 		if (state.status.type !== "ready" || state.navigation.session) return;

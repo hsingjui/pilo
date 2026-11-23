@@ -142,7 +142,7 @@ type HistoryStore = Record<string, string[]>;
  * The composer's state for the open chat: its draft, per-project input
  * history, attachments and the send flow. Drafts live per session so switching
  * chats keeps each one's unsent text. History and the send mode persist in the
- * app's `Storage` under the same keys the Tauri frontend uses.
+ * app's `Storage` under the same keys the WebUI uses.
  */
 export class ComposerStore {
 	private readonly client: ComposerClient;
@@ -408,7 +408,7 @@ export class ComposerStore {
 
 	/**
 	 * An external Pi runs a turn in the open chat's session, so it is read-only
-	 * here, as in the Tauri app.
+	 * here, as in the WebUI.
 	 */
 	readOnly(): boolean {
 		const target = this.targetSignal();
@@ -483,7 +483,7 @@ export class ComposerStore {
 
 	/**
 	 * Recalls an earlier submission of this project on ArrowUp/Down, the way the
-	 * Tauri composer does: only from an empty draft, and back to empty past the
+	 * WebUI composer does: only from an empty draft, and back to empty past the
 	 * newest entry. Returns whether the key was consumed.
 	 */
 	async navigateHistory(direction: ChatInputHistoryDirection): Promise<{
@@ -1029,7 +1029,7 @@ export class ComposerStore {
 
 		const submit = { dispatched: false, stopped: false };
 		this.activeSubmits.set(target.sessionKey, submit);
-		// The draft leaves the composer at once, as in the Tauri app; it comes
+		// The draft leaves the composer at once, as in the WebUI; it comes
 		// back if it is not sent.
 		this.historyCursor = null;
 		this.updateDraft((s) => ({

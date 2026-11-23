@@ -47,7 +47,7 @@ export const NOTICE_MS = 6_000;
 let noticeSequence = 0;
 
 /**
- * Forks the open chat at an assistant message, as the Tauri app does: a
+ * Forks the open chat at an assistant message, as the WebUI does: a
  * second chat session attaches to the source session file, runs Pi's `fork`
  * (or `clone`, when the reply ends the branch) and reports the new session's
  * file; the source session is not touched.

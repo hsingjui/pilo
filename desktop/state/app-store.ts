@@ -121,7 +121,7 @@ export class AppStore {
 
 	/**
 	 * The open new chat once a prompt was sent from it, read from its
-	 * transcript, so the sidebar lists it before Pi has saved it (the Tauri
+	 * transcript, so the sidebar lists it before Pi has saved it (the WebUI
 	 * app's pending opened chat). It changes only with what the row shows,
 	 * not with each streamed event.
 	 */
@@ -186,7 +186,7 @@ export class AppStore {
 	/**
 	 * Loads, or loads again, the saved sessions of one project. A read the
 	 * user did not ask for (`showProgress` false) keeps the project row as it
-	 * is, as the Tauri app's background refreshes do.
+	 * is, as the WebUI's background refreshes do.
 	 */
 	loadSessions(projectId: string, showProgress = true) {
 		return this.trackScan(
@@ -231,7 +231,7 @@ export class AppStore {
 		this.sessionReads.set(projectId, read);
 		if (showProgress) {
 			this.apply({ type: "sessions_loading", projectId });
-			// Pushes keep it current from here, as the Tauri app read it once
+			// Pushes keep it current from here, as the WebUI read it once
 			// per project it lists.
 			void this.loadExternalActivity(projectId);
 		}

@@ -9,7 +9,7 @@ import { t } from "./i18n";
 import { ProjectOpenMenu } from "./project-open-menu";
 
 /**
- * The title bar's project actions, as the Tauri header's: a new terminal
+ * The title bar's project actions, as the WebUI header's: a new terminal
  * tab, a temporary chat, quick open, and Git changes.
  */
 export function HeaderActions(props: {

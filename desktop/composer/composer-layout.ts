@@ -2,7 +2,7 @@ import { token } from "nsh";
 
 import { chatPx, DEFAULT_CHAT_REM } from "../chat/layout";
 
-/** nsh resolves rem to 16pt; match Tauri's default rem inside the composer. */
+/** nsh resolves rem to 16pt; match the WebUI's default rem inside the composer. */
 const composerControlHeight = () => chatPx(token("pilo-composer-control-size"));
 export const composerToolbarGap = () =>
 	chatPx(token("pilo-composer-toolbar-gap"));
