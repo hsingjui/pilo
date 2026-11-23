@@ -45,7 +45,7 @@ import { chatMetadataText, chatPx } from "../chat/layout";
 import { bindAppShortcut } from "../shortcuts";
 import { Button } from "../ui/button";
 import { FileTypeIcon } from "../ui/file-type-icon";
-import { focusRingStyle } from "../ui/focus-ring-style";
+import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { createHover } from "../ui/hover";
 import { Icon, type IconName } from "../ui/icon";
 import { menuPopupClass, menuPopupStyle } from "../ui/menu";
@@ -735,6 +735,15 @@ export function ChatComposer(props: ChatComposerProps) {
 						canNavigateHistory={() => store.canNavigateHistory()}
 						onHandle={(handle) => {
 							inputHandle = handle;
+							focused.set(false);
+							activeSuggestion.set(null);
+							return () => {
+								// Each mounts the new editor before disposing the old one.
+								if (inputHandle !== handle) return;
+								inputHandle = undefined;
+								focused.set(false);
+								activeSuggestion.set(null);
+							};
 						}}
 						onValueChange={(nextValue) => {
 							if (!readOnly()) store.setValue(nextValue);
@@ -1197,6 +1206,8 @@ function AttachmentChip(props: {
 }) {
 	const removeHover = createHover();
 	const readingFont = ChatReadingFont();
+	const openBlur = blurOnPointerPress();
+	const removeBlur = blurOnPointerPress();
 	return (
 		<View
 			testID={props.testID}
@@ -1207,6 +1218,8 @@ function AttachmentChip(props: {
 			}}
 		>
 			<BaseButton
+				ref={openBlur.ref}
+				onMouseUp={openBlur.onMouseUp}
 				class="h-full min-w-0 flex-1 flex-row items-center rounded-l-md transition-colors hover:bg-hover focus-visible:outline-hidden"
 				style={{
 					gap: chatPx(6),
@@ -1236,6 +1249,8 @@ function AttachmentChip(props: {
 				</Text>
 			</BaseButton>
 			<BaseButton
+				ref={removeBlur.ref}
+				onMouseUp={removeBlur.onMouseUp}
 				class="h-full shrink-0 items-center justify-center rounded-r-md transition-colors hover:bg-hover focus-visible:outline-hidden"
 				style={{ width: chatPx(24), cursor: "pointer" }}
 				focusVisibleStyle={focusRingStyle(token("ring"))}

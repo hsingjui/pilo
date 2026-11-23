@@ -349,7 +349,10 @@ export class ComposerStore {
 			}
 		}
 		const previous = this.stateSignal().value;
-		if (previous !== value) discardRemovedChatFiles(previous, value);
+		if (previous !== value) {
+			this.historyCursor = null;
+			discardRemovedChatFiles(previous, value);
+		}
 		this.updateDraft((s) => ({
 			...s,
 			value,

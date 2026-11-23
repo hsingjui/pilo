@@ -20,6 +20,7 @@ import {
 	RichEditor,
 	RichEditorPlugin,
 	richExtension,
+	type RichEditorRef,
 	type RichEditorSession,
 	type RichNodeJSON,
 	type RichRange,
@@ -82,7 +83,7 @@ export interface ComposerRichInputProps {
 	canPickSuggestion: Accessor<boolean>;
 	canAdoptGhost: Accessor<boolean>;
 	canNavigateHistory: Accessor<boolean>;
-	onHandle?: (handle: ComposerRichInputHandle | undefined) => void;
+	onHandle?: (handle: ComposerRichInputHandle) => () => void;
 	onValueChange: (value: string) => void;
 	onRemoveImage: (id: string) => void;
 	onSuggestionChange: (match: RichSuggestionMatch | null) => void;
@@ -170,26 +171,24 @@ function SessionRichInput(session: {
 	);
 	modEnterSubmitPlugin.captureKeys(["Mod-Enter"], handleEnter);
 
-	// 2) 补全菜单导航插件：仅菜单打开时接管上下/Tab/Escape。
+	// 2) 补全菜单打开时接管 Tab/Escape。
 	const menuPlugin = new RichEditorPlugin("composer-suggestion-menu");
-	menuPlugin.captureKeys(["ArrowUp", "ArrowDown", "Tab", "Escape"], (key) => {
+	menuPlugin.captureKeys(["Tab", "Escape"], (key) => {
 		if (!isCurrent() || props.disabled()) return;
-		if (
-			key === "ArrowUp" ||
-			key === "ArrowDown" ||
-			key === "Tab" ||
-			key === "Escape"
-		) {
-			props.onMenuKey(key);
-		}
+		if (key === "Tab" || key === "Escape") props.onMenuKey(key);
 	});
 
-	// 3) 历史翻阅插件：仅草稿为空或处于历史浏览态时接管上下键。
-	const historyPlugin = new RichEditorPlugin("composer-history");
-	historyPlugin.captureKeys(["ArrowUp", "ArrowDown"], (key) => {
-		if (!isCurrent() || props.disabled()) return;
-		if (key === "ArrowUp") props.onHistoryKey("older");
-		else if (key === "ArrowDown") props.onHistoryKey("newer");
+	// 3) 回填的历史可能是多行或以 / 开头，仍要能继续用上下键翻阅。
+	const arrowPlugin = new RichEditorPlugin("composer-arrows");
+	arrowPlugin.captureKeys(["ArrowUp", "ArrowDown"], (key) => {
+		if (!isCurrent() || props.disabled() || composing() || editor.composing)
+			return;
+		if (key !== "ArrowUp" && key !== "ArrowDown") return;
+		if (props.canNavigateHistory()) {
+			props.onHistoryKey(key === "ArrowUp" ? "older" : "newer");
+		} else if (props.menuOpen()) {
+			props.onMenuKey(key);
+		}
 	});
 
 	// 4) 预测提示插件：仅可按 Tab 采纳预测时接管 Tab / Escape。
@@ -263,7 +262,7 @@ function SessionRichInput(session: {
 			menuPlugin,
 			enterSubmitPlugin,
 			modEnterSubmitPlugin,
-			historyPlugin,
+			arrowPlugin,
 			ghostPlugin,
 			pastePlugin,
 		],
@@ -402,11 +401,7 @@ function SessionRichInput(session: {
 		enterSubmitPlugin.capturing =
 			active && (!props.modEnter() || props.canPickSuggestion());
 		modEnterSubmitPlugin.capturing = active && props.modEnter();
-		historyPlugin.capturing =
-			active &&
-			!menu &&
-			props.canNavigateHistory() &&
-			!props.value().includes("\n");
+		arrowPlugin.capturing = active && (menu || props.canNavigateHistory());
 		ghostPlugin.capturing = active && !menu && props.canAdoptGhost();
 	});
 
@@ -495,9 +490,15 @@ function SessionRichInput(session: {
 		});
 	});
 
+	let editorRef: RichEditorRef | undefined;
 	const handle: ComposerRichInputHandle = {
-		focus: () => editor.focus(),
-		blur: () => editor.blur(),
+		focus: () => {
+			// Focus the mounted view directly instead of queuing a session request.
+			if (isCurrent() && !props.disabled()) editorRef?.focus();
+		},
+		blur: () => {
+			if (isCurrent()) editorRef?.blur();
+		},
 		focusEnd: () => {
 			editor.run(focus("end"));
 		},
@@ -550,20 +551,18 @@ function SessionRichInput(session: {
 			return [text.trimEnd(), ...references.values()].join("\n");
 		},
 	};
-	props.onHandle?.(handle);
+	const releaseHandle = props.onHandle?.(handle);
 
 	cleanup(() => {
 		stopUpdate();
 		stopSelection();
 		stopFocus();
 		stopBlur();
-		props.onHandle?.(undefined);
-		props.onFocusChange(false);
-		props.onSuggestionChange(null);
+		releaseHandle?.();
 		menuPlugin.dispose();
 		enterSubmitPlugin.dispose();
 		modEnterSubmitPlugin.dispose();
-		historyPlugin.dispose();
+		arrowPlugin.dispose();
 		ghostPlugin.dispose();
 		pastePlugin.dispose();
 		editor.dispose();
@@ -581,6 +580,9 @@ function SessionRichInput(session: {
 
 	return (
 		<RichEditor
+			ref={(ref) => {
+				editorRef = ref;
+			}}
 			testID={props.testID}
 			editor={editor}
 			editable={!props.disabled()}
