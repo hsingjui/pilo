@@ -3,11 +3,14 @@ import type { RemoteAccessAddress } from "@shared/api/remote-types";
 import { userErrorMessage } from "@shared/app-error";
 import { remoteAddressConfig } from "@shared/remote-addresses";
 import { t } from "../app/i18n";
-import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { Spinner } from "../ui/spinner";
+import {
+	SETTINGS_HEADER_ICON_BUTTON_CLASS,
+	SettingsIconButton,
+} from "./layout";
 import type { SettingsClient } from "./settings-dialog";
 
 /**
@@ -47,17 +50,15 @@ export function RemoteLanAddressPicker(props: {
 			popupClass="min-w-55"
 			onOpen={() => void load()}
 			trigger={
-				<Button
-					variant="ghost"
-					size="icon"
+				<SettingsIconButton
 					testID="remote-lan-add"
-					class="size-11 shrink-0 sm:size-7"
+					class={SETTINGS_HEADER_ICON_BUTTON_CLASS}
 					disabled={props.disabled}
 					accessibilityLabel={t("settings.remoteAddLanAddress")}
 					tooltip={t("settings.remoteAddLanAddress")}
 				>
 					<Icon name="Plus" size={14} />
-				</Button>
+				</SettingsIconButton>
 			}
 		>
 			{() => {
@@ -116,7 +117,7 @@ export function RemoteLanAddressPicker(props: {
 							return (
 								<MenuItem
 									testID={`remote-lan:${ip}`}
-									class="min-h-11 sm:min-h-8"
+									class="min-h-8"
 									indicatorClass="hidden"
 									disabled={props.disabled || added}
 									onSelect={() => props.onAdd(baseUrl)}

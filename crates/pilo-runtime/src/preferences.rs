@@ -16,7 +16,7 @@ pub struct PreferencesSnapshot {
 }
 
 pub(crate) fn defaults() -> Map<String, Value> {
-    // Keep these defaults and ranges aligned with font-settings / keyboard-shortcuts.
+    // Keep these defaults aligned with font-settings / keyboard-shortcuts.
     json!({
         "locale": "en-US", "sendMessageShortcut": "enter",
         "defaultWorkspaceVisibility": {},
@@ -42,15 +42,9 @@ pub(crate) fn validate(patch: &Map<String, Value>) -> Result<(), String> {
         let valid = match key.as_str() {
             "locale" => matches!(value.as_str(), Some("en-US" | "zh-CN")),
             "sendMessageShortcut" => matches!(value.as_str(), Some("enter" | "mod-enter")),
-            "uiFontSize" => value
+            "uiFontSize" | "readingFontSize" | "codeFontSize" | "terminalFontSize" => value
                 .as_f64()
-                .is_some_and(|size| (12.0..=18.0).contains(&size)),
-            "readingFontSize" => value
-                .as_f64()
-                .is_some_and(|size| (12.0..=32.0).contains(&size)),
-            "codeFontSize" | "terminalFontSize" => value
-                .as_f64()
-                .is_some_and(|size| (10.0..=24.0).contains(&size)),
+                .is_some_and(|size| size.is_finite() && size > 0.0),
             "defaultWorkspaceVisibility" => value.as_object().is_some_and(|connections| {
                 connections.len() <= 1024
                     && connections.iter().all(|(id, shown)| {

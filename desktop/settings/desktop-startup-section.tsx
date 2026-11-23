@@ -1,11 +1,10 @@
-import { signal, Text, View } from "nsh";
+import { cleanup, signal, Text, View } from "nsh";
 import { Application } from "nsh/desktop";
 
 import type { DesktopShell } from "../app/desktop-shell";
 import { t } from "../app/i18n";
-import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
-import { SettingsRow, SettingsSection } from "./layout";
+import { SettingsRetryInline, SettingsRow, SettingsSection } from "./layout";
 
 export function DesktopStartupSection(props: { desktop?: DesktopShell }) {
 	const enabled = signal<boolean | null>(null);
@@ -14,12 +13,17 @@ export function DesktopStartupSection(props: { desktop?: DesktopShell }) {
 		"desktop.loadFailed" | "desktop.saveFailed" | null
 	>(null);
 	const closeFailed = signal(false);
+	let alive = true;
+	cleanup(() => {
+		alive = false;
+	});
 	const load = async () => {
 		startupError.set(null);
 		try {
-			enabled.set(await Application.launchAtLogin());
+			const next = await Application.launchAtLogin();
+			if (alive) enabled.set(next);
 		} catch {
-			startupError.set("desktop.loadFailed");
+			if (alive) startupError.set("desktop.loadFailed");
 		}
 	};
 	void load();
@@ -29,11 +33,12 @@ export function DesktopStartupSection(props: { desktop?: DesktopShell }) {
 		startupError.set(null);
 		try {
 			await Application.setLaunchAtLogin(next);
-			enabled.set(await Application.launchAtLogin());
+			const refreshed = await Application.launchAtLogin();
+			if (alive) enabled.set(refreshed);
 		} catch {
-			startupError.set("desktop.saveFailed");
+			if (alive) startupError.set("desktop.saveFailed");
 		} finally {
-			saving.set(false);
+			if (alive) saving.set(false);
 		}
 	};
 	const changeClose = async (next: boolean) => {
@@ -43,7 +48,7 @@ export function DesktopStartupSection(props: { desktop?: DesktopShell }) {
 		try {
 			await desktop.saveExitOnClose(next);
 		} catch {
-			closeFailed.set(true);
+			if (alive) closeFailed.set(true);
 		}
 	};
 	return (
@@ -51,14 +56,10 @@ export function DesktopStartupSection(props: { desktop?: DesktopShell }) {
 			<SettingsRow label={t("desktop.autostart")}>
 				{() =>
 					startupError() === "desktop.loadFailed" ? (
-						<View class="flex-row flex-wrap items-center gap-2">
-							<Text class="font-sans text-xs text-destructive">
-								{t("desktop.loadFailed")}
-							</Text>
-							<Button variant="ghost" size="sm" onPress={() => void load()}>
-								{t("common.retry")}
-							</Button>
-						</View>
+						<SettingsRetryInline
+							message={t("desktop.loadFailed")}
+							onRetry={() => void load()}
+						/>
 					) : (
 						<View class="flex-row flex-wrap items-center gap-2">
 							<Switch
@@ -80,18 +81,10 @@ export function DesktopStartupSection(props: { desktop?: DesktopShell }) {
 				<SettingsRow label={t("desktop.exitOnClose")}>
 					{() =>
 						props.desktop?.loadFailed() ? (
-							<View class="flex-row flex-wrap items-center gap-2">
-								<Text class="font-sans text-xs text-destructive">
-									{t("desktop.closeLoadFailed")}
-								</Text>
-								<Button
-									variant="ghost"
-									size="sm"
-									onPress={() => void props.desktop?.load()}
-								>
-									{t("common.retry")}
-								</Button>
-							</View>
+							<SettingsRetryInline
+								message={t("desktop.closeLoadFailed")}
+								onRetry={() => void props.desktop?.load()}
+							/>
 						) : (
 							<View class="flex-row flex-wrap items-center gap-2">
 								<Switch

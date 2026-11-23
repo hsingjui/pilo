@@ -1,4 +1,12 @@
-import { type Accessor, effect, platform, signal, Text, View } from "nsh";
+import {
+	type Accessor,
+	cleanup,
+	effect,
+	platform,
+	signal,
+	Text,
+	View,
+} from "nsh";
 
 import type {
 	SshConnectionInfo,
@@ -6,7 +14,7 @@ import type {
 } from "@shared/api/connections-types";
 import type { Connection } from "@shared/api/pi-runtime-types";
 import { userErrorMessage } from "@shared/app-error";
-import { AppToasts, AppToastStack } from "../app/app-toasts";
+import { AppToaster, AppToasts, AppToastStack } from "../app/app-toasts";
 import type { AppState } from "../state/app-state";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { t } from "../app/i18n";
@@ -14,10 +22,18 @@ import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
-import { SETTINGS_HEADER_ICON_BUTTON_CLASS, SettingsSection } from "./layout";
+import { textTooltip } from "../ui/tooltip";
+import {
+	connectionLabel,
+	showConnectionTestToast,
+} from "./connection-settings";
+import {
+	SETTINGS_HEADER_ICON_BUTTON_CLASS,
+	SettingsSection,
+	SettingsSectionMessage,
+} from "./layout";
 import { SettingsConfirmDialog } from "./settings-confirm-dialog";
 import { ConnectionRow } from "./connection-row";
-import { hint } from "./connection-form";
 import {
 	ConfigureConnectionDialog,
 	createConfigureDialog,
@@ -58,7 +74,9 @@ export function ConnectionsPane(props: {
 	client: ConnectionsClient;
 }) {
 	const client = props.client;
-	const toasts = new AppToasts();
+	const inheritedToasts = AppToaster();
+	const ownToasts = inheritedToasts ? null : new AppToasts();
+	const toasts = inheritedToasts ?? ownToasts!;
 	const local = signal<Connection | null>(null);
 	const wslItems = signal<WslConnectionInfo[]>([]);
 	const sshItems = signal<SshConnectionInfo[]>([]);
@@ -68,6 +86,10 @@ export function ConnectionsPane(props: {
 	const results = signal<Record<string, string>>({});
 	const removing = signal<Connection | null>(null);
 	const busy = signal(false);
+	let alive = true;
+	cleanup(() => {
+		alive = false;
+	});
 
 	const setTesting = (id: string, value: boolean) => {
 		const next = new Set(testing());
@@ -78,9 +100,6 @@ export function ConnectionsPane(props: {
 
 	const setResult = (id: string, text: string) =>
 		results.set({ ...results(), [id]: text });
-
-	const connectionLabel = (connection: Connection): string =>
-		connection.kind.type === "local" ? t("common.local") : connection.name;
 
 	const projectCount = (id: string, fallback: number) => {
 		const count = props
@@ -95,6 +114,7 @@ export function ConnectionsPane(props: {
 			client.listSshConnections(),
 			client.listWslConnections(),
 		]);
+		if (!alive) return;
 		if (localResult.status === "fulfilled") local.set(localResult.value);
 		if (sshResult.status === "fulfilled") sshItems.set(sshResult.value);
 		else setResult("ssh-list", t("connection.sshLoadFailed"));
@@ -133,6 +153,7 @@ export function ConnectionsPane(props: {
 
 	const testConnection = async (connection: Connection) => {
 		const id = connection.id;
+		const label = connectionLabel(connection);
 		setTesting(id, true);
 		try {
 			const result =
@@ -141,19 +162,11 @@ export function ConnectionsPane(props: {
 					: connection.kind.type === "wsl"
 						? await client.testWslConnection(connection.kind.distro)
 						: await client.testSshConnection(id);
-			const title = t("connection.available", {
-				name: connectionLabel(connection),
-			});
-			const description = `pilo-server ${result.serverVersion} · protocol ${result.protocolVersion}`;
-			toasts.show({ variant: "success", title, description });
+			showConnectionTestToast(toasts, label, { ok: true, result });
 		} catch (caught) {
-			const title = t("connection.connectionFailed", {
-				name: connectionLabel(connection),
-			});
-			const description = userErrorMessage(caught);
-			toasts.show({ variant: "error", title, description });
+			showConnectionTestToast(toasts, label, { ok: false, error: caught });
 		} finally {
-			setTesting(id, false);
+			if (alive) setTesting(id, false);
 		}
 	};
 
@@ -301,7 +314,7 @@ export function ConnectionsPane(props: {
 					size="icon"
 					class={SETTINGS_HEADER_ICON_BUTTON_CLASS}
 					accessibilityLabel={t("connection.addConnection")}
-					tooltip={hint(t("connection.addConnection"))}
+					tooltip={textTooltip(t("connection.addConnection"))}
 				>
 					<Icon name="Plus" size={14} />
 				</Button>
@@ -373,25 +386,25 @@ export function ConnectionsPane(props: {
 				{() => localRow()}
 				{() =>
 					loading() ? (
-						<Text class="font-sans px-3 py-5 text-xs text-muted-foreground">
+						<SettingsSectionMessage padded="roomy">
 							{t("connection.loading")}
-						</Text>
+						</SettingsSectionMessage>
 					) : (
 						<>
 							{wslItems().map(wslRow)}
 							{sshItems().map(sshRow)}
 							{() =>
 								results()["ssh-list"] || results()["wsl-add"] ? (
-									<Text class="font-sans px-3 py-2 text-[11px] text-destructive">
+									<SettingsSectionMessage tone="error" size="2xs">
 										{results()["ssh-list"] ?? results()["wsl-add"]}
-									</Text>
+									</SettingsSectionMessage>
 								) : null
 							}
 							{() =>
 								results()["list"] ? (
-									<Text class="font-sans px-3 py-2 text-[11px] text-muted-foreground">
+									<SettingsSectionMessage size="2xs">
 										{results()["list"]}
-									</Text>
+									</SettingsSectionMessage>
 								) : null
 							}
 						</>
@@ -410,8 +423,8 @@ export function ConnectionsPane(props: {
 			}
 			{() => (wslPicker.open() ? <WslPickerDialog picker={wslPicker} /> : null)}
 			{() => removeDialog()}
-			{/* Mount in the settings dialog, above the window-level overlay. */}
-			<AppToastStack toasts={toasts} />
+			{/* Standalone fixture fallback; inside SettingsDialog the parent stack renders toasts. */}
+			{ownToasts ? <AppToastStack toasts={ownToasts} /> : null}
 		</View>
 	);
 }

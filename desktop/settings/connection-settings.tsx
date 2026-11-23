@@ -1,12 +1,18 @@
-import { type Signal, signal, View } from "nsh";
+import { effect, type Signal, signal, View } from "nsh";
 
-import type { Connection, PiModel } from "@shared/api/pi-runtime-types";
+import type { ConnectionTestResult } from "@shared/api/connections-types";
+import type {
+	Connection,
+	PiModel,
+	PiloRuntimeEvent,
+} from "@shared/api/pi-runtime-types";
+import { userErrorMessage } from "@shared/app-error";
+import { type AppToasts, showToast } from "../app/app-toasts";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import { t } from "../app/i18n";
-import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Select } from "../ui/select";
-import { SETTINGS_ICON_BUTTON_CLASS } from "./layout";
+import { SettingsIconButton } from "./layout";
 
 export type ConnectionCatalogClient = Pick<
 	NshPiloClient,
@@ -40,8 +46,57 @@ export async function paneConnectionCatalog(
 	return connections;
 }
 
-export function settingsErrorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
+/**
+ * Subscribe a settings pane to runtime events for its lifetime, handling
+ * unmount before the subscription settles and ignoring transport errors.
+ */
+export function subscribeSettingsEvents(
+	client: Pick<NshPiloClient, "connectEvents">,
+	onEvent: (event: PiloRuntimeEvent) => void,
+): void {
+	effect(() => {
+		let stop: (() => void) | undefined;
+		let disposed = false;
+		void client
+			.connectEvents({
+				onMessage(message) {
+					if (message.type !== "events") return;
+					for (const event of message.events) onEvent(event);
+				},
+				onStatus() {},
+			})
+			.then((unlisten) => {
+				if (disposed) unlisten();
+				else stop = unlisten;
+			})
+			.catch(() => undefined);
+		return () => {
+			disposed = true;
+			stop?.();
+		};
+	});
+}
+
+export function showConnectionTestToast(
+	toasts: AppToasts | null,
+	name: string,
+	outcome:
+		| { ok: true; result: ConnectionTestResult }
+		| { ok: false; error: unknown },
+): void {
+	if (outcome.ok) {
+		showToast(toasts, {
+			variant: "success",
+			title: t("connection.available", { name }),
+			description: `pilo-server ${outcome.result.serverVersion} · protocol ${outcome.result.protocolVersion}`,
+		});
+		return;
+	}
+	showToast(toasts, {
+		variant: "error",
+		title: t("connection.connectionFailed", { name }),
+		description: userErrorMessage(outcome.error),
+	});
 }
 
 export function connectionLabel(connection: Connection): string {
@@ -101,7 +156,7 @@ export class ConnectionModelLists {
 				entry.set({
 					...entry(),
 					loading: false,
-					error: settingsErrorMessage(error),
+					error: userErrorMessage(error),
 				}),
 			);
 	}
@@ -172,10 +227,7 @@ export function RefreshModelsButton(props: {
 	onPress: () => void;
 }) {
 	return (
-		<Button
-			variant="ghost"
-			size="icon"
-			class={SETTINGS_ICON_BUTTON_CLASS}
+		<SettingsIconButton
 			disabled={props.loading}
 			accessibilityLabel={t("settings.refreshModels")}
 			onPress={props.onPress}
@@ -185,7 +237,7 @@ export function RefreshModelsButton(props: {
 				size={14}
 				class={props.loading ? "animate-spin" : undefined}
 			/>
-		</Button>
+		</SettingsIconButton>
 	);
 }
 

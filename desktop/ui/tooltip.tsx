@@ -1,4 +1,4 @@
-import { split, token } from "nsh";
+import { split, Text, token } from "nsh";
 import { Tooltip as BaseTooltip, type TooltipProps } from "nsh/base";
 import type { TextStyle } from "nsh/types";
 import { styleVar } from "./theme-style";
@@ -33,5 +33,14 @@ export function Tooltip(props: TooltipProps) {
 			)}
 			style={[tooltipStyle(), { zIndex: token("z-tooltip") }, local.style]}
 		/>
+	);
+}
+
+/** A plain-text tooltip bubble for icon-only controls and short hints. */
+export function textTooltip(label: string | (() => string)) {
+	return (
+		<Tooltip>
+			<Text class="font-sans">{label}</Text>
+		</Tooltip>
 	);
 }

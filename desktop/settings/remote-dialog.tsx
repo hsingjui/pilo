@@ -1,18 +1,17 @@
-import { type Accessor, effect, signal, View, windowSize } from "nsh";
+import { type Accessor, effect, signal, windowSize } from "nsh";
 
 import type { RemoteHostState } from "@shared/api/remote-types";
 import { AppToaster, AppToasts, AppToastStack } from "../app/app-toasts";
 import { t } from "../app/i18n";
-import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
+import { DialogClose } from "../ui/dialog-close";
+import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
-import { Icon } from "../ui/icon";
+import { SETTINGS_SM_WIDTH } from "./layout";
 import { RemotePane } from "./remote-pane";
 import type { SettingsClient } from "./settings-dialog";
 
 const POLL_MS = 3_000;
-/** Tailwind's sm:, as the React dialog's `sm:w-[calc(100vw-4rem)]`. */
-const SM_WIDTH = 640;
 const MAX_WIDTH = 600;
 
 /**
@@ -54,7 +53,7 @@ export function RemoteDialog(props: {
 	const toasts = new AppToasts();
 	const width = () => {
 		const win = windowSize().width;
-		return Math.min(MAX_WIDTH, win - (win < SM_WIDTH ? 32 : 64));
+		return Math.min(MAX_WIDTH, win - (win < SETTINGS_SM_WIDTH ? 32 : 64));
 	};
 	return (
 		<Dialog
@@ -66,24 +65,17 @@ export function RemoteDialog(props: {
 			}}
 			style={{ width: width(), maxWidth: MAX_WIDTH }}
 		>
-			<View class="flex-row items-center justify-between gap-2">
-				<DialogTitle class="min-w-0 flex-1">
-					{() => t("settings.remote")}
-				</DialogTitle>
-				<Button
-					testID="remote-dialog-close"
-					variant="ghost"
-					size="icon"
-					class="size-8 shrink-0"
-					accessibilityLabel={t("common.close")}
-					onPress={props.onClose}
-				>
-					<Icon name="X" size={16} />
-				</Button>
-			</View>
+			<DialogHeader>
+				<DialogTitle>{() => t("settings.remote")}</DialogTitle>
+			</DialogHeader>
 			<AppToaster.Provider value={toasts}>
 				<RemotePane client={props.client} initialState={props.initialState} />
 			</AppToaster.Provider>
+			<DialogClose
+				testID="remote-dialog-close"
+				accessibilityLabel={t("common.close")}
+				onPress={props.onClose}
+			/>
 			{/* A window-level overlay would be behind the native dialog. */}
 			<AppToastStack toasts={toasts} />
 		</Dialog>

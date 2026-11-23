@@ -26,11 +26,18 @@ import { isReservedSendShortcut, nshAppShortcut } from "../shortcuts";
 import type { AppState } from "../state/app-state";
 import type { DesktopShell } from "../app/desktop-shell";
 import { t } from "../app/i18n";
-import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { styleVar } from "../ui/theme-style";
 import type { SettingsClient } from "./settings-dialog";
-import { SettingsRow, SettingsSection } from "./layout";
+import {
+	SETTINGS_HEADER_ICON_BUTTON_CLASS,
+	SETTINGS_ICON_BUTTON_CLASS,
+	SettingsIconButton,
+	SettingsRetryInline,
+	SettingsRow,
+	SettingsSection,
+	SettingsSectionMessage,
+} from "./layout";
 
 const SHORTCUT_SECTIONS = [
 	{ id: "app", titleKey: "settings.shortcutApp" },
@@ -40,14 +47,11 @@ const SHORTCUT_SECTIONS = [
 /** The same default the WebUI pane resets to (`DEFAULT_DESKTOP_SHORTCUT`). */
 const DEFAULT_SHOW_SHORTCUT = "mod+alt+p";
 
-/** The boxed control a shortcut row shows (the WebUI's `SHORTCUT_INPUT_CLASS`). */
+/** The boxed control a shortcut row shows, matching compact 32pt row controls. */
 const SHORTCUT_BOX_CLASS =
-	"h-9 w-fit min-w-0 max-w-full flex-row items-center gap-1.5 rounded-md border px-2.5";
+	"h-(--pilo-button-sm-height) w-fit min-w-0 max-w-full flex-row items-center gap-1.5 rounded-md border px-2.5";
 const SHORTCUT_BOX_IDLE_CLASS = "border-border/80 bg-background";
 const SHORTCUT_BOX_RECORDING_CLASS = "border-ring bg-accent/60";
-
-/** The ghost icon button the WebUI shows for per-row and header resets. */
-const SHORTCUT_RESET_CLASS = "size-7 shrink-0";
 
 const IS_MAC = platform.os === "macos";
 
@@ -299,17 +303,15 @@ export function ShortcutsPane(props: {
 					title={t(section.titleKey)}
 					actions={() =>
 						sectionIndex === 0 ? (
-							<Button
+							<SettingsIconButton
 								testID="shortcuts-reset-all"
-								variant="ghost"
-								size="icon"
-								class={SHORTCUT_RESET_CLASS}
+								class={SETTINGS_HEADER_ICON_BUTTON_CLASS}
 								accessibilityLabel={t("settings.resetAllDefaults")}
 								disabled={!hasCustomShortcut()}
 								onPress={resetAll}
 							>
 								<Icon name="RotateCcw" size={14} />
-							</Button>
+							</SettingsIconButton>
 						) : null
 					}
 				>
@@ -340,10 +342,12 @@ export function ShortcutsPane(props: {
 										);
 									}}
 								</ShortcutRecorder>
-								<Button
-									variant="ghost"
-									size="icon"
-									class={`${SHORTCUT_RESET_CLASS} ${shortcutFor(command.id) === defaults[command.id] ? "invisible" : ""}`}
+								<SettingsIconButton
+									class={
+										shortcutFor(command.id) === defaults[command.id]
+											? "invisible"
+											: undefined
+									}
 									accessibilityLabel={t("shortcuts.reset", {
 										label: t(command.labelKey),
 									})}
@@ -351,7 +355,7 @@ export function ShortcutsPane(props: {
 									onPress={() => reset(command.id)}
 								>
 									<Icon name="RotateCcw" size={14} />
-								</Button>
+								</SettingsIconButton>
 							</View>
 						</SettingsRow>
 					))}
@@ -371,7 +375,7 @@ export function ShortcutsPane(props: {
 							<View class={`${SHORTCUT_BOX_CLASS} border-transparent`}>
 								<ShortcutKeys shortcut={newline()} />
 							</View>
-							<View class={`${SHORTCUT_RESET_CLASS} invisible`} />
+							<View class={`${SETTINGS_ICON_BUTTON_CLASS} invisible`} />
 						</View>
 					)}
 				</SettingsRow>
@@ -421,18 +425,10 @@ function GlobalShortcutSetting(props: {
 			<SettingsRow label={t("desktop.show")} helper={t("desktop.shortcutHint")}>
 				{() =>
 					props.desktop.loadFailed() ? (
-						<View class="flex-row flex-wrap items-center gap-2">
-							<Text class="font-sans text-xs text-destructive">
-								{t("desktop.shortcutLoadFailed")}
-							</Text>
-							<Button
-								variant="ghost"
-								size="sm"
-								onPress={() => void props.desktop.load()}
-							>
-								{t("common.retry")}
-							</Button>
-						</View>
+						<SettingsRetryInline
+							message={t("desktop.shortcutLoadFailed")}
+							onRetry={() => void props.desktop.load()}
+						/>
 					) : (
 						<View class="flex-row items-center gap-1.5">
 							<ShortcutRecorder
@@ -453,11 +449,8 @@ function GlobalShortcutSetting(props: {
 									)
 								}
 							</ShortcutRecorder>
-							<Button
+							<SettingsIconButton
 								testID="settings-shortcut-reset"
-								variant="ghost"
-								size="icon"
-								class={SHORTCUT_RESET_CLASS}
 								accessibilityLabel={t("shortcuts.reset", {
 									label: t("desktop.show"),
 								})}
@@ -469,7 +462,7 @@ function GlobalShortcutSetting(props: {
 								onPress={() => void save(DEFAULT_SHOW_SHORTCUT)}
 							>
 								<Icon name="RotateCcw" size={14} />
-							</Button>
+							</SettingsIconButton>
 						</View>
 					)
 				}
@@ -478,28 +471,22 @@ function GlobalShortcutSetting(props: {
 				!props.desktop.loadFailed() && props.desktop.settings() ? (
 					<>
 						{notice() ? (
-							<Text class="font-sans px-3 py-2 text-xs text-destructive">
+							<SettingsSectionMessage tone="error">
 								{noticeText(notice()!)}
-							</Text>
+							</SettingsSectionMessage>
 						) : null}
 						{failed() ? (
-							<Text class="font-sans px-3 py-2 text-xs text-destructive">
+							<SettingsSectionMessage tone="error">
 								{t("desktop.shortcutSaveFailed")}
-							</Text>
+							</SettingsSectionMessage>
 						) : !props.desktop.registered() ? (
-							<View class="px-3 py-2 flex-row flex-wrap items-center gap-2">
-								<Text class="font-sans min-w-0 flex-1 text-xs text-destructive">
-									{t("desktop.shortcutUnavailable")}
-								</Text>
-								<Button
-									variant="ghost"
-									size="sm"
-									disabled={saving()}
-									onPress={() => void save(saved())}
-								>
-									{t("common.retry")}
-								</Button>
-							</View>
+							<SettingsRetryInline
+								class="px-3 py-2"
+								fill
+								message={t("desktop.shortcutUnavailable")}
+								disabled={saving()}
+								onRetry={() => void save(saved())}
+							/>
 						) : null}
 					</>
 				) : null

@@ -1,7 +1,9 @@
 import { type Accessor, View } from "nsh";
 
+import { userErrorMessage } from "@shared/app-error";
 import { isAppLocale } from "@shared/i18n/locale-types";
 import type { PreferencePatch } from "@shared/host-preferences-types";
+import { AppToaster, showToast } from "../app/app-toasts";
 import type { DesktopShell } from "../app/desktop-shell";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
@@ -16,10 +18,16 @@ export function PreferencesPane(props: {
 	client: Pick<SettingsClient, "savePreferences">;
 	desktop?: DesktopShell;
 }) {
+	const toasts = AppToaster();
 	const values = () => props.state().preferences?.values;
 	const save = (patch: PreferencePatch) => {
 		void props.client.savePreferences(patch).catch((error: unknown) => {
 			console.error(t("settings.preferencesSaveFailed"), error);
+			showToast(toasts, {
+				variant: "error",
+				title: t("settings.preferencesSaveFailed"),
+				description: userErrorMessage(error),
+			});
 		});
 	};
 	const sendShortcut = (value: string | null) => {

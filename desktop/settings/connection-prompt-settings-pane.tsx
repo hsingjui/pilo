@@ -1,9 +1,10 @@
-import { cleanup, effect, signal, Text, View } from "nsh";
+import { cleanup, signal, Text, View } from "nsh";
 
 import type {
 	Connection,
 	PiloRuntimeEvent,
 } from "@shared/api/pi-runtime-types";
+import { userErrorMessage } from "@shared/app-error";
 import type { NextPromptSettings } from "@shared/next-prompt-types";
 import type { PromptEnhancementSettings } from "@shared/prompt-enhancement-types";
 import { t } from "../app/i18n";
@@ -14,9 +15,9 @@ import {
 	connectionLabel,
 	modelKey,
 	paneConnectionCatalog,
-	settingsErrorMessage,
+	subscribeSettingsEvents,
 } from "./connection-settings";
-import { SettingsRow, SettingsSection } from "./layout";
+import { SettingsRow, SettingsSection, SettingsSectionMessage } from "./layout";
 import type { SettingsClient } from "./settings-dialog";
 
 type PromptSettings = NextPromptSettings | PromptEnhancementSettings;
@@ -55,9 +56,11 @@ export function ConnectionPromptSettingsPane(props: {
 	const loadSettings = (connection: Connection) => {
 		props
 			.load(connection.id)
-			.then(mergeSettings)
+			.then((next) => {
+				if (alive) mergeSettings(next);
+			})
 			.catch((error: unknown) => {
-				if (alive) setError(connection.id, settingsErrorMessage(error));
+				if (alive) setError(connection.id, userErrorMessage(error));
 			});
 	};
 
@@ -71,32 +74,12 @@ export function ConnectionPromptSettingsPane(props: {
 			}
 		})
 		.catch((error: unknown) => {
-			if (alive) catalogError.set(settingsErrorMessage(error));
+			if (alive) catalogError.set(userErrorMessage(error));
 		});
 
-	effect(() => {
-		let stop: (() => void) | undefined;
-		let disposed = false;
-		void props.client
-			.connectEvents({
-				onMessage(message) {
-					if (message.type !== "events") return;
-					for (const event of message.events) {
-						const next = props.readEvent(event);
-						if (next) mergeSettings(next);
-					}
-				},
-				onStatus() {},
-			})
-			.then((unlisten) => {
-				if (disposed) unlisten();
-				else stop = unlisten;
-			})
-			.catch(() => undefined);
-		return () => {
-			disposed = true;
-			stop?.();
-		};
+	subscribeSettingsEvents(props.client, (event) => {
+		const next = props.readEvent(event);
+		if (next) mergeSettings(next);
 	});
 
 	const save = (
@@ -114,12 +97,13 @@ export function ConnectionPromptSettingsPane(props: {
 				patch.model === undefined ? (current?.model ?? null) : patch.model,
 			)
 			.then((next) => {
+				if (!alive) return;
 				mergeSettings(next);
 				setError(connectionId, null);
 			})
-			.catch((error: unknown) =>
-				setError(connectionId, settingsErrorMessage(error)),
-			)
+			.catch((error: unknown) => {
+				if (alive) setError(connectionId, userErrorMessage(error));
+			})
 			.finally(() => {
 				if (alive) busy.set({ ...busy(), [connectionId]: false });
 			});
@@ -181,11 +165,9 @@ export function ConnectionPromptSettingsPane(props: {
 						return error
 							? [
 									row,
-									<View class="border-b border-border/60 px-3 py-2 last:border-b-0">
-										<Text class="font-sans text-xs text-destructive">
-											{error}
-										</Text>
-									</View>,
+									<SettingsSectionMessage tone="error" bordered>
+										{error}
+									</SettingsSectionMessage>,
 								]
 							: [row];
 					})

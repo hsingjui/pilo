@@ -1,26 +1,15 @@
-import {
-	type Accessor,
-	Canvas,
-	computed,
-	Path2D,
-	Text,
-	View,
-	windowSize,
-} from "nsh";
+import { type Accessor, Canvas, computed, Path2D, Text, View } from "nsh";
 
 import { t } from "../app/i18n";
 import { qrMatrix } from "../lib/qr-matrix";
-import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
 import {
-	SETTINGS_TEXT_BUTTON_CLASS,
+	isNarrowSettings,
+	SettingsActionButton,
 	SettingsRow,
 	SettingsSection,
 } from "./layout";
-
-/** Tailwind's sm:, where the pairing link and its QR sit side by side. */
-const SM_WIDTH = 640;
 
 /** The pairing link's QR code, drawn like `<QRCodeSVG level="M">`. */
 function PairingQr(props: { url: string; size: number }) {
@@ -55,7 +44,7 @@ export function RemotePairingSection(props: {
 	onCopy: () => void;
 	onRegenerate: () => void;
 }) {
-	const wide = () => windowSize().width >= SM_WIDTH;
+	const wide = () => !isNarrowSettings();
 	return (
 		<SettingsSection title={t("settings.remotePairing")}>
 			{() =>
@@ -73,16 +62,15 @@ export function RemotePairingSection(props: {
 							</Text>
 							<View
 								testID="remote-pairing-url"
-								class="truncate rounded-md border bg-muted/30 px-2.5 py-1.5"
+								class="truncate rounded-md border border-border bg-muted/30 px-2.5 py-1.5"
 							>
 								<Text class="truncate font-mono text-[10px] leading-5">
 									{() => props.url()}
 								</Text>
 							</View>
 							<View class="flex-row flex-wrap gap-1.5">
-								<Button
+								<SettingsActionButton
 									variant="outline"
-									class={SETTINGS_TEXT_BUTTON_CLASS}
 									testID="remote-pairing-copy"
 									onPress={props.onCopy}
 								>
@@ -90,10 +78,8 @@ export function RemotePairingSection(props: {
 									<Text class="font-sans text-xs">
 										{t("settings.remoteCopyLink")}
 									</Text>
-								</Button>
-								<Button
-									variant="ghost"
-									class={SETTINGS_TEXT_BUTTON_CLASS}
+								</SettingsActionButton>
+								<SettingsActionButton
 									testID="remote-pairing-regenerate"
 									disabled={props.regenerating()}
 									onPress={props.onRegenerate}
@@ -108,7 +94,7 @@ export function RemotePairingSection(props: {
 									<Text class="font-sans text-xs">
 										{t("settings.remoteNewLink")}
 									</Text>
-								</Button>
+								</SettingsActionButton>
 							</View>
 						</View>
 						{/* React's `sm:grid-cols-[minmax(0,1fr)_148px]` column. */}
@@ -116,7 +102,7 @@ export function RemotePairingSection(props: {
 							class="items-center"
 							style={wide() ? { width: 148 } : undefined}
 						>
-							<View class="rounded-xl border bg-white p-2.5">
+							<View class="rounded-xl border border-border bg-white p-2.5">
 								<PairingQr url={props.url() ?? ""} size={124} />
 							</View>
 						</View>
@@ -126,9 +112,8 @@ export function RemotePairingSection(props: {
 						label={t("settings.remotePairingExpired")}
 						helper={t("settings.remotePairingExpiredDescription")}
 					>
-						<Button
+						<SettingsActionButton
 							variant="outline"
-							class={SETTINGS_TEXT_BUTTON_CLASS}
 							testID="remote-pairing-regenerate"
 							disabled={props.regenerating()}
 							onPress={props.onRegenerate}
@@ -137,7 +122,7 @@ export function RemotePairingSection(props: {
 							<Text class="font-sans text-xs">
 								{t("settings.remoteNewLink")}
 							</Text>
-						</Button>
+						</SettingsActionButton>
 					</SettingsRow>
 				)
 			}

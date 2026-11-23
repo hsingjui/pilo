@@ -290,7 +290,7 @@ spacing, type sizes, or control heights.
   `@layer theme, base, components, utilities` before injecting cached custom CSS
   so that user CSS cannot accidentally establish the wrong layer order.
   Boot geometry must also match the mounted layout: read cached `uiFontSize`
-  with the same 15 default, 12–18 range and `/ 14` scale as PreferencesProvider;
+  with the same 15 default, positive-size check (no min/max) and `/ 14` scale as PreferencesProvider;
   mobile WebUI stays at 100%, including before `index.css` loads. Its composer
   toolbar mirrors the shared action-group breakpoint and send/stop geometry:
   coarse pointers use a `2rem` visible circle centered in a `2.75rem` slot, not a

@@ -9,11 +9,10 @@ import {
 import { userErrorMessage } from "@shared/app-error";
 import { t } from "../app/i18n";
 import appIcon from "../assets/app-icon.png";
-import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
 import {
-	SETTINGS_TEXT_BUTTON_CLASS,
+	SettingsActionButton,
 	SettingsRow,
 	SettingsSection,
 	SettingsStatus,
@@ -139,11 +138,8 @@ export function AboutPane(props: { client: SettingsClient }) {
 					</Text>
 				</SettingsRow>
 				<SettingsRow label={t("settings.repository")} ghostEdge="both">
-					<Button
+					<SettingsActionButton
 						testID="settings-repository"
-						variant="ghost"
-						size="sm"
-						class={`${SETTINGS_TEXT_BUTTON_CLASS} text-muted-foreground`}
 						onPress={() => {
 							void openUrl(REPOSITORY_URL).catch((error: unknown) =>
 								console.error("openUrl failed", error),
@@ -153,14 +149,11 @@ export function AboutPane(props: { client: SettingsClient }) {
 						<Icon name="Code2" size={14} />
 						<Text class="font-sans text-xs">GitHub</Text>
 						<Icon name="ExternalLink" size={14} class="opacity-60" />
-					</Button>
+					</SettingsActionButton>
 				</SettingsRow>
 				<SettingsRow label={t("settings.logDirectory")} ghostEdge="both">
-					<Button
+					<SettingsActionButton
 						testID="settings-open-log-directory"
-						variant="ghost"
-						size="sm"
-						class={`${SETTINGS_TEXT_BUTTON_CLASS} text-muted-foreground`}
 						onPress={() => {
 							void props.client
 								.openLogDirectory()
@@ -174,29 +167,26 @@ export function AboutPane(props: { client: SettingsClient }) {
 							{t("settings.openLogDirectoryAction")}
 						</Text>
 						<Icon name="ExternalLink" size={14} class="opacity-60" />
-					</Button>
+					</SettingsActionButton>
 				</SettingsRow>
 			</SettingsSection>
 			<SettingsSection title={t("settings.update")}>
 				<SettingsRow
 					label={t("settings.updateCheck")}
 					helper={updateError() ?? undefined}
+					ghostEdge="end"
 				>
 					<View class="flex-row items-center gap-2">
 						{status() === "latest" ? (
-							<SettingsStatus muted>
-								<Icon name="CheckCircle2" size={12} />
+							<SettingsStatus muted icon="CheckCircle2">
 								{t("settings.latest")}
 							</SettingsStatus>
 						) : status() === "available" && availableVersion() ? (
 							<SettingsStatus>v{availableVersion()}</SettingsStatus>
 						) : null}
 						{() => (
-							<Button
+							<SettingsActionButton
 								testID="settings-update-check"
-								variant="ghost"
-								size="sm"
-								class={`${SETTINGS_TEXT_BUTTON_CLASS} text-muted-foreground hover:text-foreground`}
 								disabled={
 									status() === "checking" ||
 									status() === "downloading" ||
@@ -210,16 +200,13 @@ export function AboutPane(props: { client: SettingsClient }) {
 									<Icon name="RefreshCw" size={14} />
 								)}
 								<Text class="font-sans text-xs">{buttonLabel()}</Text>
-							</Button>
+							</SettingsActionButton>
 						)}
 					</View>
 				</SettingsRow>
 				<SettingsRow label={t("settings.releaseNotes")} ghostEdge="both">
-					<Button
+					<SettingsActionButton
 						testID="settings-release-notes"
-						variant="ghost"
-						size="sm"
-						class={`${SETTINGS_TEXT_BUTTON_CLASS} text-muted-foreground`}
 						onPress={() => {
 							void openUrl(RELEASES_URL).catch((error: unknown) =>
 								console.error("openUrl failed", error),
@@ -228,7 +215,7 @@ export function AboutPane(props: { client: SettingsClient }) {
 					>
 						<Text class="font-sans text-xs">GitHub Releases</Text>
 						<Icon name="ExternalLink" size={14} class="opacity-60" />
-					</Button>
+					</SettingsActionButton>
 				</SettingsRow>
 			</SettingsSection>
 		</View>

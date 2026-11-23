@@ -6,8 +6,10 @@ import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
 import { Spinner } from "../ui/spinner";
+import { textTooltip } from "../ui/tooltip";
 import {
-	SETTINGS_TEXT_BUTTON_CLASS,
+	SettingsActionButton,
+	SettingsIconButton,
 	SettingsRow,
 	SettingsSection,
 } from "./layout";
@@ -34,6 +36,7 @@ function DeviceNameCell(props: {
 				editing() ? (
 					<Input
 						testID={`remote-device:${props.device().id}:rename-input`}
+						size="sm"
 						class="h-7 w-full text-sm"
 						autoFocus
 						value={draft()}
@@ -50,7 +53,7 @@ function DeviceNameCell(props: {
 						<Button
 							variant="ghost"
 							class="h-auto px-0 text-left font-medium leading-tight text-foreground"
-							tooltip={t("settings.remoteRenameHint")}
+							tooltip={textTooltip(t("settings.remoteRenameHint"))}
 							onPress={startEditing}
 						>
 							<Text class="font-sans font-medium leading-tight text-foreground">
@@ -64,16 +67,14 @@ function DeviceNameCell(props: {
 								}
 							</Text>
 						</Button>
-						<Button
-							variant="ghost"
-							size="icon"
-							class="size-5 text-muted-foreground hover:text-foreground"
+						<SettingsIconButton
+							class="size-5"
 							accessibilityLabel={t("settings.remoteRename")}
 							tooltip={t("settings.remoteRenameHint")}
 							onPress={startEditing}
 						>
 							<Icon name="Pencil" size={12} />
-						</Button>
+						</SettingsIconButton>
 					</>
 				)
 			}
@@ -106,36 +107,32 @@ export function RemoteDevicesSection(props: {
 				hasDevices() ? (
 					<Each of={props.devices()} key={(device) => device.id}>
 						{(device) => (
-							<View class="gap-2 px-3 py-2 border-b border-border/60 last:border-b-0">
-								<View class="flex-row items-center gap-4">
-									<View class="min-w-0 flex-1">
-										<DeviceNameCell
-											device={device}
-											onRename={(name) => props.onRename(device().id, name)}
-										/>
-									</View>
-									<View class="min-w-0 shrink-0 justify-end pl-4">
-										<Button
-											variant="ghost"
-											class={SETTINGS_TEXT_BUTTON_CLASS}
-											testID={`remote-device:${device().id}:revoke`}
-											disabled={props.isRevoking(device().id)}
-											onPress={() => props.onRevoke(device().id)}
-										>
-											{() =>
-												props.isRevoking(device().id) ? (
-													<Spinner class="size-3.5" />
-												) : (
-													<Icon name="Trash2" size={14} />
-												)
-											}
-											<Text class="font-sans text-xs">
-												{t("settings.remoteRevoke")}
-											</Text>
-										</Button>
-									</View>
-								</View>
-							</View>
+							<SettingsRow
+								ghostEdge="both"
+								label={
+									<DeviceNameCell
+										device={device}
+										onRename={(name) => props.onRename(device().id, name)}
+									/>
+								}
+							>
+								<SettingsActionButton
+									testID={`remote-device:${device().id}:revoke`}
+									disabled={props.isRevoking(device().id)}
+									onPress={() => props.onRevoke(device().id)}
+								>
+									{() =>
+										props.isRevoking(device().id) ? (
+											<Spinner class="size-3.5" />
+										) : (
+											<Icon name="Trash2" size={14} />
+										)
+									}
+									<Text class="font-sans text-xs">
+										{t("settings.remoteRevoke")}
+									</Text>
+								</SettingsActionButton>
+							</SettingsRow>
 						)}
 					</Each>
 				) : (

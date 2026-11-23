@@ -6,11 +6,10 @@ import {
 	Text,
 	token,
 	View,
-	windowSize,
 } from "nsh";
 
+import { userErrorMessage } from "@shared/app-error";
 import {
-	CODE_FONT_SIZE_RANGE,
 	DEFAULT_CODE_FONT_FAMILY,
 	DEFAULT_CODE_FONT_SIZE,
 	DEFAULT_PAGE_FONT_FAMILY,
@@ -21,16 +20,13 @@ import {
 	DEFAULT_UI_FONT_SIZE,
 	MONOSPACE_FONT_BUILTIN_OPTIONS,
 	PAGE_FONT_BUILTIN_OPTIONS,
-	READING_FONT_SIZE_RANGE,
-	TERMINAL_FONT_SIZE_RANGE,
-	UI_FONT_SIZE_RANGE,
 	getMonospaceFontFamilyStack,
 	getPageFontFamilyStack,
 	systemFontOptionGroups,
-	type FontSizeRange,
 	type SystemFontFamily,
 } from "@shared/font-settings";
 import type { PreferencePatch } from "@shared/host-preferences-types";
+import { AppToaster, showToast } from "../app/app-toasts";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import { Button } from "../ui/button";
@@ -40,7 +36,7 @@ import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { FontSelect, type FontSelectGroup } from "./font-select";
 import { FontSizeInput } from "./font-size-input";
-import { SettingsRow, SettingsSection } from "./layout";
+import { isNarrowSettings, SettingsRow, SettingsSection } from "./layout";
 import type { SettingsClient } from "./settings-dialog";
 
 /** One enumeration per app run; a failed one is retried when the pane opens again. */
@@ -82,10 +78,16 @@ export function FontsPane(props: {
 		{ label: t("settings.builtIn"), options: MONOSPACE_FONT_BUILTIN_OPTIONS },
 		{ label: t("settings.systemMonospace"), options: system().monospace },
 	];
+	const toasts = AppToaster();
 	const values = () => props.state().preferences?.values;
 	const save = (patch: PreferencePatch) => {
 		props.client.savePreferences(patch).catch((error: unknown) => {
 			console.error(t("settings.preferencesSaveFailed"), error);
+			showToast(toasts, {
+				variant: "error",
+				title: t("settings.preferencesSaveFailed"),
+				description: userErrorMessage(error),
+			});
 		});
 	};
 	const size = (
@@ -93,15 +95,12 @@ export function FontsPane(props: {
 		label: string,
 		value: number | undefined,
 		fallback: number,
-		range: FontSizeRange,
 		saveValue: (next: number) => void,
 	) => (
 		<FontSizeInput
 			testID={testID}
 			class="w-20"
 			label={label}
-			min={range.min}
-			max={range.max}
 			value={value ?? fallback}
 			onChange={saveValue}
 		/>
@@ -124,17 +123,15 @@ export function FontsPane(props: {
 			onChange={saveValue}
 		/>
 	);
-	/** Tailwind's sm:, as SettingsRow's; under it the label stacks above. */
-	const narrow = () => windowSize().width < 640;
 	/** A preview row: a 120pt label column beside the preview, stacked when narrow. */
 	const previewRow = (label: string, content: JSX.Element) => (
 		<View
 			class={classNames(
 				"min-w-0 px-3 py-3 border-b border-border/60 last:border-b-0",
-				narrow() ? "gap-2" : "flex-row items-start gap-4",
+				isNarrowSettings() ? "gap-2" : "flex-row items-start gap-4",
 			)}
 		>
-			<View class={narrow() ? undefined : "w-[120px] shrink-0"}>
+			<View class={isNarrowSettings() ? undefined : "w-[120px] shrink-0"}>
 				<Text class="font-sans pt-1 text-xs text-muted-foreground">
 					{label}
 				</Text>
@@ -207,7 +204,6 @@ export function FontsPane(props: {
 							t("settings.pageFont"),
 							values()?.uiFontSize,
 							DEFAULT_UI_FONT_SIZE,
-							UI_FONT_SIZE_RANGE,
 							(next) => save({ uiFontSize: next }),
 						)
 					}
@@ -232,7 +228,6 @@ export function FontsPane(props: {
 							t("settings.readingFont"),
 							values()?.readingFontSize,
 							DEFAULT_READING_FONT_SIZE,
-							READING_FONT_SIZE_RANGE,
 							(next) => save({ readingFontSize: next }),
 						)
 					}
@@ -255,7 +250,6 @@ export function FontsPane(props: {
 							t("settings.codeFont"),
 							values()?.codeFontSize,
 							DEFAULT_CODE_FONT_SIZE,
-							CODE_FONT_SIZE_RANGE,
 							(next) => save({ codeFontSize: next }),
 						)
 					}
@@ -278,7 +272,6 @@ export function FontsPane(props: {
 							t("settings.terminalFont"),
 							values()?.terminalFontSize,
 							DEFAULT_TERMINAL_FONT_SIZE,
-							TERMINAL_FONT_SIZE_RANGE,
 							(next) => save({ terminalFontSize: next }),
 						)
 					}

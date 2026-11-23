@@ -1,4 +1,5 @@
 import {
+	cleanup,
 	computed,
 	effect,
 	Clipboard,
@@ -20,13 +21,14 @@ import {
 import { randomId } from "@shared/random-id";
 import { AppToaster, showToast } from "../app/app-toasts";
 import { t } from "../app/i18n";
-import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
 import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
+import { subscribeSettingsEvents } from "./connection-settings";
 import {
-	SETTINGS_TEXT_BUTTON_CLASS,
+	SettingsActionButton,
+	SettingsIconButton,
 	SettingsRow,
 	SettingsSection,
 	SettingsStatus,
@@ -61,6 +63,10 @@ export function RemotePane(props: {
 	let savingAddresses = false;
 	let addressRevision = 0;
 	let draftRevision = 0;
+	let alive = true;
+	cleanup(() => {
+		alive = false;
+	});
 	/** Address fields by row id, so Enter can move to the next row. */
 	const addressInputs = new Map<string, InputRef>();
 
@@ -84,7 +90,7 @@ export function RemotePane(props: {
 			if (savingAddresses) return;
 			const revision = addressRevision;
 			const next = await client.remoteHostState();
-			if (savingAddresses || revision !== addressRevision) return;
+			if (!alive || savingAddresses || revision !== addressRevision) return;
 			const config = remoteAddressConfig(next.addresses, next.entryAddressId);
 			if (
 				config.entryAddressId !== next.entryAddressId &&
@@ -93,35 +99,26 @@ export function RemotePane(props: {
 				savingAddresses = true;
 				addressRevision += 1;
 				try {
-					state.set(
-						await client.remoteSetAddresses(
-							next.addresses,
-							config.entryAddressId,
-						),
+					const updated = await client.remoteSetAddresses(
+						next.addresses,
+						config.entryAddressId,
 					);
+					if (alive) state.set(updated);
 				} finally {
 					savingAddresses = false;
 				}
 			} else {
 				state.set(next);
 			}
-			error.set(null);
+			if (alive) error.set(null);
 		} catch (caught) {
-			error.set(userErrorMessage(caught));
+			if (alive) error.set(userErrorMessage(caught));
 		}
 	};
 
-	effect(() => {
-		void refresh();
-		const disconnect = client.connectEvents({
-			onMessage: (message) => {
-				if (message.type !== "events") return;
-				for (const event of message.events)
-					if (event.type === "configuration_changed") void refresh();
-			},
-			onStatus: () => {},
-		});
-		return () => void disconnect.then((close) => close());
+	void refresh();
+	subscribeSettingsEvents(client, (event) => {
+		if (event.type === "configuration_changed") void refresh();
 	});
 
 	const enabled = computed(() => state()?.enabled ?? false);
@@ -357,7 +354,8 @@ export function RemotePane(props: {
 										</Text>
 										<Input
 											testID="remote-port-input"
-											class="h-7 w-18 text-right font-mono text-[10px]"
+											size="sm"
+											class="w-18 text-right font-mono text-xs"
 											value={portDraft() ?? String(current().port)}
 											disabled={busy() === "port"}
 											accessibilityLabel={t("settings.remotePort")}
@@ -398,15 +396,12 @@ export function RemotePane(props: {
 											current().addressConfigError ??
 											undefined
 										}
+										ghostEdge="both"
 									>
-										<Button
-											variant="ghost"
-											class={SETTINGS_TEXT_BUTTON_CLASS}
-											onPress={() => void toggle(true)}
-										>
+										<SettingsActionButton onPress={() => void toggle(true)}>
 											<Icon name="RefreshCw" size={14} />
 											<Text class="font-sans text-xs">{t("common.retry")}</Text>
-										</Button>
+										</SettingsActionButton>
 									</SettingsRow>
 								) : null
 							}
@@ -446,8 +441,9 @@ export function RemotePane(props: {
 										<View class="flex-row items-center gap-2">
 											<Input
 												testID={`remote-address:${index()}:input`}
+												size="sm"
 												ref={(ref) => addressInputs.set(address().id, ref)}
-												class="min-h-11 min-w-0 flex-1 font-mono text-xs sm:min-h-9"
+												class="min-w-0 flex-1 font-mono text-xs"
 												value={address().baseUrl}
 												placeholder="https://example.com"
 												disabled={Boolean(busy())}
@@ -465,10 +461,7 @@ export function RemotePane(props: {
 												onBlur={() => void saveAddresses()}
 												onSubmit={() => void onAddressSubmit()}
 											/>
-											<Button
-												variant="ghost"
-												size="icon"
-												class="size-11 shrink-0 sm:size-9"
+											<SettingsIconButton
 												testID={`remote-address:${index()}:copy`}
 												disabled={
 													!current().addresses.some(
@@ -479,12 +472,10 @@ export function RemotePane(props: {
 												onPress={() => void copyToClipboard(address().baseUrl)}
 											>
 												<Icon name="Copy" size={16} />
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon"
-												class="size-11 shrink-0 sm:size-9"
+											</SettingsIconButton>
+											<SettingsIconButton
 												testID={`remote-address:${index()}:remove`}
+												destructive
 												disabled={
 													Boolean(busy()) ||
 													(addressDraft() ?? addresses()).length <= 1
@@ -493,7 +484,7 @@ export function RemotePane(props: {
 												onPress={() => removeAddress(address().id)}
 											>
 												<Icon name="Trash2" size={16} />
-											</Button>
+											</SettingsIconButton>
 										</View>
 									)}
 								</Each>

@@ -1,23 +1,31 @@
 import { type Accessor, type JSX, Text, View } from "nsh";
 
-import { Tooltip } from "../ui/tooltip";
+import { classNames } from "../ui/class-names";
+import { Icon, type IconName } from "../ui/icon";
 import type { SshFieldError } from "./ssh-connection-draft";
 
-/** A tooltip body used for icon-only controls. */
-export function hint(label: string) {
+/** A labeled form field: caption above, control below, optional extra footer. */
+export function field(
+	label: string,
+	child: JSX.Element,
+	options?: {
+		class?: string;
+		labelIcon?: IconName;
+		footer?: JSX.Element;
+	},
+) {
 	return (
-		<Tooltip>
-			<Text class="font-sans">{label}</Text>
-		</Tooltip>
-	);
-}
-
-/** A labeled form field: caption above, control below. */
-export function field(label: string, child: JSX.Element) {
-	return (
-		<View class="gap-1">
-			<Text class="font-sans text-xs">{label}</Text>
+		<View class={classNames("gap-1", options?.class)}>
+			{options?.labelIcon ? (
+				<View class="flex-row items-center gap-1">
+					<Icon name={options.labelIcon} size={14} />
+					<Text class="font-sans text-xs">{label}</Text>
+				</View>
+			) : (
+				<Text class="font-sans text-xs">{label}</Text>
+			)}
 			{child}
+			{options?.footer}
 		</View>
 	);
 }

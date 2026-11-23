@@ -27,6 +27,5 @@ test("the update check settles on up to date without a source", async () => {
 	expect(app.shows("text:Release notes")).toBe(true);
 	expect(app.enabled("id:settings-release-notes")).toBe(true);
 	await app.press("id:settings-update-check");
-	// The check icon reads as an object replacement char in the row's text.
-	await app.waitFor("text:￼Up to date");
+	await app.waitFor("text:Up to date");
 });

@@ -1,25 +1,28 @@
 import {
 	type Accessor,
+	cleanup,
 	type NotificationPermission,
 	signal,
 	Text,
 	View,
 } from "nsh";
 
+import { userErrorMessage } from "@shared/app-error";
+import { AppToaster, showToast } from "../app/app-toasts";
 import {
 	defaultDesktopNotifications,
 	type DesktopNotificationsApi,
 } from "../app/desktop-notifications";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
-import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Switch } from "../ui/switch";
 import {
-	SETTINGS_ICON_BUTTON_CLASS,
-	SETTINGS_TEXT_BUTTON_CLASS,
+	SettingsActionButton,
+	SettingsIconButton,
 	SettingsRow,
 	SettingsSection,
+	SettingsSectionMessage,
 	SettingsStatus,
 } from "./layout";
 import type { SettingsClient } from "./settings-dialog";
@@ -48,6 +51,7 @@ export function NotificationsPane(props: {
 	client: SettingsClient;
 	notifications?: DesktopNotificationsApi;
 }) {
+	const toasts = AppToaster();
 	const notifications = props.notifications ?? defaultDesktopNotifications();
 	const permission = signal<NotificationPermission | null>(null);
 	const checking = signal(false);
@@ -57,12 +61,21 @@ export function NotificationsPane(props: {
 		| "settings.testNotificationFailed"
 		| null
 	>(null);
+	let alive = true;
+	cleanup(() => {
+		alive = false;
+	});
 	const values = () => props.state().preferences?.values;
 	const save = (desktopNotifications: boolean) => {
 		props.client
 			.savePreferences({ desktopNotifications })
 			.catch((error: unknown) => {
 				console.error(t("settings.preferencesSaveFailed"), error);
+				showToast(toasts, {
+					variant: "error",
+					title: t("settings.preferencesSaveFailed"),
+					description: userErrorMessage(error),
+				});
 			});
 	};
 	const refresh = () => {
@@ -70,11 +83,16 @@ export function NotificationsPane(props: {
 		notifications
 			.permission()
 			.then((next) => {
+				if (!alive) return;
 				permission.set(next);
 				if (next !== "granted" && values()?.desktopNotifications) save(false);
 			})
-			.catch(() => permission.set("unavailable"))
-			.finally(() => checking.set(false));
+			.catch(() => {
+				if (alive) permission.set("unavailable");
+			})
+			.finally(() => {
+				if (alive) checking.set(false);
+			});
 	};
 	refresh();
 	const ensurePermission = async () => {
@@ -96,6 +114,7 @@ export function NotificationsPane(props: {
 			return;
 		}
 		void ensurePermission().then((granted) => {
+			if (!alive) return;
 			save(granted);
 			if (!granted) {
 				failure.set("settings.enableNotificationsFailed");
@@ -119,9 +138,10 @@ export function NotificationsPane(props: {
 					.catch(() => false);
 			})
 			.then((sent) => {
-				if (!sent) failure.set("settings.testNotificationFailed");
+				if (alive && !sent) failure.set("settings.testNotificationFailed");
 			})
 			.finally(() => {
+				if (!alive) return;
 				testing.set(false);
 				refresh();
 			});
@@ -151,11 +171,8 @@ export function NotificationsPane(props: {
 							</SettingsStatus>
 						)}
 						{() => (
-							<Button
+							<SettingsIconButton
 								testID="settings-recheck-permission"
-								variant="ghost"
-								size="icon"
-								class={SETTINGS_ICON_BUTTON_CLASS}
 								accessibilityLabel={t("settings.recheckPermission")}
 								disabled={checking()}
 								onPress={refresh}
@@ -165,16 +182,14 @@ export function NotificationsPane(props: {
 									size={14}
 									class={checking() ? "animate-spin" : undefined}
 								/>
-							</Button>
+							</SettingsIconButton>
 						)}
 					</View>
 				</SettingsRow>
 				<SettingsRow label={t("settings.testNotification")} ghostEdge="both">
 					{() => (
-						<Button
+						<SettingsActionButton
 							testID="settings-send-test-notification"
-							variant="ghost"
-							class={`${SETTINGS_TEXT_BUTTON_CLASS} text-muted-foreground hover:text-foreground`}
 							disabled={testing()}
 							onPress={sendTest}
 						>
@@ -184,14 +199,14 @@ export function NotificationsPane(props: {
 									? t("settings.sending")
 									: t("settings.sendTestNotification")}
 							</Text>
-						</Button>
+						</SettingsActionButton>
 					)}
 				</SettingsRow>
 				{() =>
 					failure() ? (
-						<Text class="font-sans px-3 py-2 text-xs text-destructive">
+						<SettingsSectionMessage tone="error">
 							{t(failure() ?? "settings.testNotificationFailed")}
-						</Text>
+						</SettingsSectionMessage>
 					) : null
 				}
 			</SettingsSection>

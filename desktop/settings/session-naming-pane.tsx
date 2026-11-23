@@ -1,7 +1,8 @@
-import { type Accessor, cleanup, effect, signal, Text, View } from "nsh";
+import { type Accessor, cleanup, signal } from "nsh";
 
 import type { Connection } from "@shared/api/pi-runtime-types";
 import type { ConnectionNamingModel } from "@shared/api/sessions-types";
+import { userErrorMessage } from "@shared/app-error";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import {
@@ -10,9 +11,9 @@ import {
 	connectionLabel,
 	modelKey,
 	paneConnectionCatalog,
-	settingsErrorMessage,
+	subscribeSettingsEvents,
 } from "./connection-settings";
-import { SettingsRow, SettingsSection } from "./layout";
+import { SettingsRow, SettingsSection, SettingsSectionMessage } from "./layout";
 import type { SettingsClient } from "./settings-dialog";
 
 /**
@@ -53,7 +54,7 @@ export function SessionNamingPane(props: {
 	};
 	void load()
 		.catch((error: unknown) => {
-			if (alive) errors.set({ __catalog: settingsErrorMessage(error) });
+			if (alive) errors.set({ __catalog: userErrorMessage(error) });
 		})
 		.finally(() => {
 			if (alive) loading.set(false);
@@ -61,27 +62,8 @@ export function SessionNamingPane(props: {
 
 	// React re-loaded on its configuration revision; the runtime event is its
 	// equivalent here.
-	effect(() => {
-		let stop: (() => void) | undefined;
-		let disposed = false;
-		void props.client
-			.connectEvents({
-				onMessage(message) {
-					if (message.type !== "events") return;
-					for (const event of message.events)
-						if (event.type === "configuration_changed") void load();
-				},
-				onStatus() {},
-			})
-			.then((unlisten) => {
-				if (disposed) unlisten();
-				else stop = unlisten;
-			})
-			.catch(() => undefined);
-		return () => {
-			disposed = true;
-			stop?.();
-		};
+	subscribeSettingsEvents(props.client, (event) => {
+		if (event.type === "configuration_changed") void load();
 	});
 
 	const save = (
@@ -102,9 +84,9 @@ export function SessionNamingPane(props: {
 				selections.set(next);
 				setError(connectionId, null);
 			})
-			.catch((error: unknown) =>
-				setError(connectionId, settingsErrorMessage(error)),
-			)
+			.catch((error: unknown) => {
+				if (alive) setError(connectionId, userErrorMessage(error));
+			})
 			.finally(() => {
 				if (alive) busy.set({ ...busy(), [connectionId]: false });
 			});
@@ -115,20 +97,21 @@ export function SessionNamingPane(props: {
 			{() => {
 				if (loading())
 					return (
-						<View class="px-3 py-5">
-							<Text class="font-sans text-xs text-muted-foreground">
-								{t("common.loading")}
-							</Text>
-						</View>
+						<SettingsSectionMessage padded="roomy">
+							{t("common.loading")}
+						</SettingsSectionMessage>
 					);
-				if (connections().length === 0)
+				if (connections().length === 0) {
+					const catalogError = errors()["__catalog"];
 					return (
-						<View class="px-3 py-5">
-							<Text class="font-sans text-xs text-muted-foreground">
-								{errors()["__catalog"] ?? t("settings.noConnections")}
-							</Text>
-						</View>
+						<SettingsSectionMessage
+							padded="roomy"
+							tone={catalogError ? "error" : "muted"}
+						>
+							{catalogError ?? t("settings.noConnections")}
+						</SettingsSectionMessage>
 					);
+				}
 				return connections().flatMap((connection) => {
 					const selected = () => selections()[connection.id];
 					const row = (
@@ -159,11 +142,9 @@ export function SessionNamingPane(props: {
 					return error
 						? [
 								row,
-								<View class="border-b border-border/60 px-3 py-2 last:border-b-0">
-									<Text class="font-sans text-xs text-destructive">
-										{error}
-									</Text>
-								</View>,
+								<SettingsSectionMessage tone="error" bordered>
+									{error}
+								</SettingsSectionMessage>,
 							]
 						: [row];
 				});

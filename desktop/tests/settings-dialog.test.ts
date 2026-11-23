@@ -34,6 +34,19 @@ test("the close button dismisses the dialog", async () => {
 	await app.waitFor("id:settings-dialog", { state: "gone" });
 });
 
+test("closing a click-opened settings dialog with Escape does not leave the trigger focused or its tooltip open", async () => {
+	const app = await openApp();
+	await app.press("id:sidebar-settings");
+	await app.waitFor("id:settings-dialog");
+	await app.keyboard.press("escape");
+	await app.waitFor("id:settings-dialog", { state: "gone" });
+	await app.hover("id:workspace-title");
+	await app.wait(50);
+	expect(app.shows("text:Settings")).toBe(false);
+	await app.keyboard.press("space");
+	expect(app.shows("id:settings-dialog")).toBe(false);
+});
+
 test("under md the nav collapses into a select in the header", async () => {
 	const app = await openApp();
 	await app.press("id:sidebar-settings");

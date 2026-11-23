@@ -1,12 +1,10 @@
-import { type Accessor, type JSX, Text, View } from "nsh";
+import { type Accessor, type JSX, Text, token, View } from "nsh";
 
 import type { Connection } from "@shared/api/pi-runtime-types";
 import { t } from "../app/i18n";
-import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
-import { hint } from "./connection-form";
-import { SETTINGS_ICON_BUTTON_CLASS } from "./layout";
+import { SettingsIconButton } from "./layout";
 
 function connectionIcon(connection: Connection): JSX.Element {
 	return (
@@ -19,6 +17,7 @@ function connectionIcon(connection: Connection): JSX.Element {
 						: "Server"
 			}
 			size={14}
+			color={token("muted-foreground")}
 		/>
 	);
 }
@@ -33,23 +32,17 @@ function rowButton(button: {
 	onPress: () => void;
 }) {
 	return (
-		<Button
+		<SettingsIconButton
 			testID={button.testID}
-			variant="ghost"
-			size="icon"
-			class={`${SETTINGS_ICON_BUTTON_CLASS} text-muted-foreground hover:text-foreground${
-				button.destructive
-					? " hover:bg-destructive/10 hover:text-destructive"
-					: ""
-			}`}
 			disabled={button.disabled}
 			selected={button.selected}
+			destructive={button.destructive}
 			accessibilityLabel={button.label}
-			tooltip={hint(button.label)}
+			tooltip={button.label}
 			onPress={button.onPress}
 		>
 			{button.icon}
-		</Button>
+		</SettingsIconButton>
 	);
 }
 
@@ -72,9 +65,9 @@ export function ConnectionRow(props: {
 	const connection = props.connection;
 	const rowBusy = () => props.busy() || props.testing();
 	return (
-		<View class="px-3 py-2.5 hover:bg-hover/30">
+		<View class="border-b border-border/60 px-3 py-2.5 hover:bg-hover/30 last:border-b-0">
 			<View class="flex-row items-center gap-2.5">
-				<View class="size-6 shrink-0 items-center justify-center text-foreground/70">
+				<View class="size-6 shrink-0 items-center justify-center">
 					{connectionIcon(connection)}
 				</View>
 				<View class="min-w-0 flex-1">

@@ -1,13 +1,6 @@
-import {
-	type Accessor,
-	cleanup,
-	effect,
-	keymap,
-	signal,
-	Text,
-	View,
-} from "nsh";
+import { type Accessor, cleanup, keymap, signal, Text, View } from "nsh";
 
+import { userErrorMessage } from "@shared/app-error";
 import {
 	type CacheKeepAliveSettings,
 	defaultCacheKeepAliveSettings,
@@ -15,7 +8,6 @@ import {
 import type { Connection } from "@shared/api/pi-runtime-types";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
-import { Button } from "../ui/button";
 import { Command } from "../ui/command";
 import { Icon } from "../ui/icon";
 import { NumberInput } from "../ui/number-input";
@@ -27,12 +19,13 @@ import {
 	connectionLabel,
 	modelKey,
 	paneConnectionCatalog,
-	settingsErrorMessage,
+	subscribeSettingsEvents,
 } from "./connection-settings";
 import {
-	SETTINGS_TEXT_BUTTON_CLASS,
+	SettingsActionButton,
 	SettingsRow,
 	SettingsSection,
+	SettingsSectionMessage,
 } from "./layout";
 import type { SettingsClient } from "./settings-dialog";
 
@@ -80,19 +73,21 @@ export function CacheKeepAlivePane(props: {
 
 	// Escape drops the uncommitted minutes of every row, as React's
 	// `handleKeyDown` did; the key still reaches the field and any popover.
-	keymap.bind(
-		"escape",
-		() => {
-			const next = { ...drafts() };
-			let changed = false;
-			for (const key of Object.keys(next))
-				if (next[key] !== undefined) {
-					next[key] = undefined;
-					changed = true;
-				}
-			if (changed) drafts.set(next);
-		},
-		{ when: "always", passThrough: true },
+	cleanup(
+		keymap.bind(
+			"escape",
+			() => {
+				const next = { ...drafts() };
+				let changed = false;
+				for (const key of Object.keys(next))
+					if (next[key] !== undefined) {
+						next[key] = undefined;
+						changed = true;
+					}
+				if (changed) drafts.set(next);
+			},
+			{ when: "always", passThrough: true },
+		),
 	);
 
 	const setError = (connectionId: string, error: string | null) =>
@@ -125,7 +120,7 @@ export function CacheKeepAlivePane(props: {
 			})
 			.catch((error: unknown) => {
 				if (!alive) return;
-				setError(connection.id, settingsErrorMessage(error));
+				setError(connection.id, userErrorMessage(error));
 				loaded.set({ ...loaded(), [connection.id]: true });
 			});
 	};
@@ -140,31 +135,12 @@ export function CacheKeepAlivePane(props: {
 			}
 		})
 		.catch((error: unknown) => {
-			if (alive) catalogError.set(settingsErrorMessage(error));
+			if (alive) catalogError.set(userErrorMessage(error));
 		});
 
-	effect(() => {
-		let stop: (() => void) | undefined;
-		let disposed = false;
-		void props.client
-			.connectEvents({
-				onMessage(message) {
-					if (message.type !== "events") return;
-					for (const event of message.events)
-						if (event.type === "cache_keep_alive_settings_changed")
-							mergeRow(event.settings);
-				},
-				onStatus() {},
-			})
-			.then((unlisten) => {
-				if (disposed) unlisten();
-				else stop = unlisten;
-			})
-			.catch(() => undefined);
-		return () => {
-			disposed = true;
-			stop?.();
-		};
+	subscribeSettingsEvents(props.client, (event) => {
+		if (event.type === "cache_keep_alive_settings_changed")
+			mergeRow(event.settings);
 	});
 
 	/** Serialized per connection; resolves true when the save landed. */
@@ -181,7 +157,7 @@ export function CacheKeepAlivePane(props: {
 					setError(connectionId, null);
 					return true;
 				} catch (error) {
-					if (alive) setError(connectionId, settingsErrorMessage(error));
+					if (alive) setError(connectionId, userErrorMessage(error));
 					return false;
 				} finally {
 					if (alive)
@@ -325,10 +301,8 @@ export function CacheKeepAlivePane(props: {
 									align="end"
 									popupClass="w-80 p-0 overflow-hidden"
 									trigger={
-										<Button
+										<SettingsActionButton
 											testID={`settings-keep-alive-add-${connectionId}`}
-											variant="ghost"
-											class={`${SETTINGS_TEXT_BUTTON_CLASS} text-muted-foreground hover:text-foreground`}
 											disabled={
 												!loaded()[connectionId] || adding()[connectionId]
 											}
@@ -337,7 +311,7 @@ export function CacheKeepAlivePane(props: {
 											<Text class="font-sans">
 												{t("settings.cacheKeepAliveAddModel")}
 											</Text>
-										</Button>
+										</SettingsActionButton>
 									}
 								>
 									<Command
@@ -374,11 +348,9 @@ export function CacheKeepAlivePane(props: {
 							{() => {
 								if (!loaded()[connectionId])
 									return (
-										<View class="px-3 py-3">
-											<Text class="font-sans text-xs text-muted-foreground">
-												{t("common.loading")}
-											</Text>
-										</View>
+										<SettingsSectionMessage padded="default">
+											{t("common.loading")}
+										</SettingsSectionMessage>
 									);
 								const header = (
 									<View class="flex-row items-center gap-2 border-b border-border/60 px-3 py-2">
@@ -484,22 +456,18 @@ export function CacheKeepAlivePane(props: {
 								});
 								const empty =
 									enabledRows().length === 0 && !errors()[connectionId] ? (
-										<View class="px-3 py-3">
-											<Text class="font-sans text-xs text-muted-foreground">
-												{t(
-													available().length
-														? "settings.cacheKeepAliveEmpty"
-														: "settings.cacheKeepAliveNoModels",
-												)}
-											</Text>
-										</View>
+										<SettingsSectionMessage padded="default">
+											{t(
+												available().length
+													? "settings.cacheKeepAliveEmpty"
+													: "settings.cacheKeepAliveNoModels",
+											)}
+										</SettingsSectionMessage>
 									) : null;
 								const error = errors()[connectionId] ? (
-									<View class="px-3 py-2">
-										<Text class="font-sans text-xs text-destructive">
-											{errors()[connectionId]}
-										</Text>
-									</View>
+									<SettingsSectionMessage tone="error">
+										{errors()[connectionId]}
+									</SettingsSectionMessage>
 								) : null;
 								return [header, ...body, empty, error];
 							}}

@@ -1,9 +1,13 @@
 import { type Accessor, Text, token, View } from "nsh";
+import { Button as BaseButton } from "nsh/base";
 
+import { userErrorMessage } from "@shared/app-error";
 import type { ThemeSettingsUpdate } from "@shared/theme-settings-types";
+import { AppToaster, showToast } from "../app/app-toasts";
 import type { AppState } from "../state/app-state";
 import { t } from "../app/i18n";
 import { classNames } from "../ui/class-names";
+import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { Icon } from "../ui/icon";
 import { Select } from "../ui/select";
 import { SettingsRow, SettingsSection } from "./layout";
@@ -34,20 +38,28 @@ function ThemeOption(props: {
 	onSelect: () => void;
 	testID?: string;
 }) {
+	const pointerBlur = blurOnPointerPress();
 	return (
-		<View
+		<BaseButton
+			testID={props.testID}
+			ref={pointerBlur.ref}
+			onMouseUp={pointerBlur.onMouseUp}
+			selected={props.selected}
+			accessibilityLabel={props.label}
 			class={classNames(
-				"h-8 flex-row items-center gap-1.5 rounded-md border border-border/70 bg-background px-2.5",
+				"h-(--pilo-button-sm-height) flex-row items-center gap-1.5 rounded-md border border-border/70 bg-background px-2.5 transition-colors hover:bg-hover focus-visible:outline-hidden",
 				props.selected && "border-ring",
 			)}
+			focusVisibleStyle={focusRingStyle(token("ring"))}
 			onPress={props.onSelect}
-			testID={props.testID}
 		>
-			<Text class="font-sans truncate text-xs font-medium">{props.label}</Text>
+			<Text class="font-sans truncate text-xs font-medium text-foreground">
+				{props.label}
+			</Text>
 			{props.selected ? (
 				<Icon name="Check" size={14} color={token("muted-foreground")} />
 			) : null}
-		</View>
+		</BaseButton>
 	);
 }
 
@@ -56,10 +68,16 @@ export function ThemePane(props: {
 	state: Accessor<AppState>;
 	client: SettingsClient;
 }) {
+	const toasts = AppToaster();
 	const settings = () => props.state().themeSettings;
 	const save = (update: ThemeSettingsUpdate) => {
 		props.client.saveThemeSettings(update).catch((error: unknown) => {
 			console.error(t("settings.themeSaveFailed"), error);
+			showToast(toasts, {
+				variant: "error",
+				title: t("settings.themeSaveFailed"),
+				description: userErrorMessage(error),
+			});
 		});
 	};
 

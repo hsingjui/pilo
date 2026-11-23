@@ -6,9 +6,9 @@ pub(super) fn catalog() -> Value {
         let constraint = match key.as_str() {
             "locale" => json!({ "enum": ["en-US", "zh-CN"] }),
             "sendMessageShortcut" => json!({ "enum": ["enter", "mod-enter"] }),
-            "uiFontSize" => json!({ "minimum": 12, "maximum": 18 }),
-            "readingFontSize" => json!({ "minimum": 12, "maximum": 32 }),
-            "codeFontSize" | "terminalFontSize" => json!({ "minimum": 10, "maximum": 24 }),
+            "uiFontSize" | "readingFontSize" | "codeFontSize" | "terminalFontSize" => {
+                json!({ "exclusiveMinimum": 0 })
+            }
             "keyboardShortcuts" => json!({ "description": "partial command-to-shortcut map; empty string unbinds; modifiers mod/ctrl/meta/alt/shift" }),
             "defaultWorkspaceVisibility" => json!({ "description": "partial connection-ID-to-boolean map; missing means hidden; set true to show a default workspace", "maxProperties": 1024, "additionalProperties": { "type": "boolean" } }),
             _ if default.is_string() => json!({ "maxLength": 512, "minLength": 1 }),

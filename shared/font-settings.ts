@@ -102,13 +102,6 @@ export function systemFontOptionGroups(families: readonly SystemFontFamily[]): {
 	};
 }
 
-export type FontSizeRange = { min: number; max: number };
-
-export const UI_FONT_SIZE_RANGE: FontSizeRange = { min: 12, max: 18 };
-export const READING_FONT_SIZE_RANGE: FontSizeRange = { min: 12, max: 32 };
-export const CODE_FONT_SIZE_RANGE: FontSizeRange = { min: 10, max: 24 };
-export const TERMINAL_FONT_SIZE_RANGE: FontSizeRange = { min: 10, max: 24 };
-
 export const DEFAULT_UI_FONT_SIZE: UiFontSize = 15;
 
 export const DEFAULT_PAGE_FONT_FAMILY: PageFontFamily = "inter";
@@ -214,27 +207,23 @@ export function normalizeMonospaceFontFamily(
 	return normalizeFontValue(value, LEGACY_MONOSPACE_FONT_FAMILIES, fallback);
 }
 
-function isFontSize(value: unknown, range: FontSizeRange): value is number {
-	return (
-		typeof value === "number" &&
-		Number.isFinite(value) &&
-		value >= range.min &&
-		value <= range.max
-	);
+/** Font sizes have no upper or lower limit beyond being a positive number. */
+function isFontSize(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
 export function isUiFontSize(value: unknown): value is UiFontSize {
-	return isFontSize(value, UI_FONT_SIZE_RANGE);
+	return isFontSize(value);
 }
 
 export function isReadingFontSize(value: unknown): value is ReadingFontSize {
-	return isFontSize(value, READING_FONT_SIZE_RANGE);
+	return isFontSize(value);
 }
 
 export function isCodeFontSize(value: unknown): value is CodeFontSize {
-	return isFontSize(value, CODE_FONT_SIZE_RANGE);
+	return isFontSize(value);
 }
 
 export function isTerminalFontSize(value: unknown): value is TerminalFontSize {
-	return isFontSize(value, TERMINAL_FONT_SIZE_RANGE);
+	return isFontSize(value);
 }

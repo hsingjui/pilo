@@ -11,14 +11,16 @@ import { t } from "../app/i18n";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
 import { DialogClose } from "../ui/dialog-close";
+import { DialogFooter } from "../ui/dialog-footer";
 import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
 import { Select } from "../ui/select";
 import { Switch } from "../ui/switch";
-import { field, fieldError, hint } from "./connection-form";
-import { SETTINGS_ICON_BUTTON_CLASS } from "./layout";
+import { field, fieldError } from "./connection-form";
+import { showConnectionTestToast } from "./connection-settings";
+import { SettingsIconButton } from "./layout";
 import {
 	connectionFromDraft,
 	draftFromInfo,
@@ -191,13 +193,9 @@ export function createSshEditor(deps: {
 				connectionFromDraft(draft),
 				draft.password || undefined,
 			);
-			const title = t("connection.available", { name: label });
-			const description = `pilo-server ${result.serverVersion} · protocol ${result.protocolVersion}`;
-			toasts.show({ variant: "success", title, description });
+			showConnectionTestToast(toasts, label, { ok: true, result });
 		} catch (caught) {
-			const title = t("connection.connectionFailed", { name: label });
-			const description = userErrorMessage(caught);
-			toasts.show({ variant: "error", title, description });
+			showConnectionTestToast(toasts, label, { ok: false, error: caught });
 		} finally {
 			testing.set(false);
 		}
@@ -261,20 +259,19 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 				</DialogTitle>
 			</DialogHeader>
 			<View class="flex-row gap-3">
-				<View class="flex-1 gap-1">
-					<Text class="font-sans text-xs">{t("settings.connectionName")}</Text>
+				{field(
+					t("settings.connectionName"),
 					<Input
 						size="sm"
 						testID="settings-ssh-name"
 						value={draft.name}
 						placeholder={String(t("settings.productionServer"))}
 						onChange={(event) => editor.patchDraft({ name: event.value })}
-					/>
-				</View>
-				<View class="flex-1 gap-1">
-					<Text class="font-sans text-xs">
-						{t("settings.connectionMethod")}
-					</Text>
+					/>,
+					{ class: "flex-1" },
+				)}
+				{field(
+					t("settings.connectionMethod"),
 					<Select
 						size="sm"
 						testID="settings-ssh-mode"
@@ -294,8 +291,9 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 								mode: event.value as SshDraft["mode"],
 							})
 						}
-					/>
-				</View>
+					/>,
+					{ class: "flex-1" },
+				)}
 			</View>
 			{() => {
 				void editor.structRev();
@@ -316,25 +314,27 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 				void editor.structRev();
 				return draft.mode === "direct" ? (
 					<View class="flex-row gap-3">
-						<View class="flex-1 gap-1">
-							<Text class="font-sans text-xs">{t("connection.username")}</Text>
+						{field(
+							t("connection.username"),
 							<Input
 								size="sm"
 								testID="settings-ssh-user"
 								value={draft.user}
 								placeholder="root"
 								onChange={(event) => editor.patchDraft({ user: event.value })}
-							/>
-						</View>
-						<View class="w-24 gap-1">
-							<Text class="font-sans text-xs">{t("connection.port")}</Text>
+							/>,
+							{ class: "flex-1" },
+						)}
+						{field(
+							t("connection.port"),
 							<Input
 								size="sm"
 								testID="settings-ssh-port"
 								value={draft.port}
 								onChange={(event) => editor.patchDraft({ port: event.value })}
-							/>
-						</View>
+							/>,
+							{ class: "w-24" },
+						)}
 					</View>
 				) : null;
 			}}
@@ -379,66 +379,71 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 					Boolean(key) &&
 					identities != null &&
 					!identities.some((identity) => identity.publicKey === key);
-				return (
-					<View class="min-w-0 gap-1">
-						<Text class="font-sans text-xs">{t("connection.sshAgentKey")}</Text>
-						<View class="flex-row gap-2">
-							<View class="min-w-0 flex-1">
-								<Select
-									size="sm"
-									testID="settings-ssh-agent-key"
-									items={[
-										{
-											value: "auto",
-											title: String(t("connection.sshAgentAuto")),
-										},
-										...(savedKeyMissing
-											? [
-													{
-														value: key,
-														title: String(t("connection.sshAgentSavedKey")),
-													},
-												]
-											: []),
-										...(identities ?? []).map((identity) => ({
-											value: identity.publicKey,
-											title: identity.comment
-												? `${identity.comment} · ${identity.fingerprint}`
-												: identity.fingerprint,
-										})),
-									]}
-									value={key || "auto"}
-									onChange={(event) =>
-										editor.patchDraft({
-											agentPublicKey: event.value === "auto" ? "" : event.value,
-										})
-									}
-								/>
-							</View>
-							<Button
-								testID="settings-ssh-agent-refresh"
-								variant="outline"
+				return field(
+					t("connection.sshAgentKey"),
+					<View class="flex-row gap-2">
+						<View class="min-w-0 flex-1">
+							<Select
 								size="sm"
-								disabled={
-									editor.waitingForAgent() || editor.busy() || editor.testing()
+								testID="settings-ssh-agent-key"
+								items={[
+									{
+										value: "auto",
+										title: String(t("connection.sshAgentAuto")),
+									},
+									...(savedKeyMissing
+										? [
+												{
+													value: key,
+													title: String(t("connection.sshAgentSavedKey")),
+												},
+											]
+										: []),
+									...(identities ?? []).map((identity) => ({
+										value: identity.publicKey,
+										title: identity.comment
+											? `${identity.comment} · ${identity.fingerprint}`
+											: identity.fingerprint,
+									})),
+								]}
+								value={key || "auto"}
+								onChange={(event) =>
+									editor.patchDraft({
+										agentPublicKey: event.value === "auto" ? "" : event.value,
+									})
 								}
-								onPress={() => editor.loadAgentIdentities()}
-							>
-								<Text class="font-sans">{t("common.refresh")}</Text>
-							</Button>
+							/>
 						</View>
-						<Text
-							testID="settings-ssh-agent-status"
-							class="font-sans text-xs text-muted-foreground"
+						<Button
+							testID="settings-ssh-agent-refresh"
+							variant="outline"
+							size="sm"
+							disabled={
+								editor.waitingForAgent() || editor.busy() || editor.testing()
+							}
+							onPress={() => editor.loadAgentIdentities()}
 						>
-							{editor.agentStatus()}
-						</Text>
-						{identities === null ? (
-							<Text class="font-sans text-xs text-muted-foreground">
-								{t("connection.sshAgentTroubleshooting")}
-							</Text>
-						) : null}
-					</View>
+							<Text class="font-sans">{t("common.refresh")}</Text>
+						</Button>
+					</View>,
+					{
+						class: "min-w-0",
+						footer: (
+							<>
+								<Text
+									testID="settings-ssh-agent-status"
+									class="font-sans text-xs text-muted-foreground"
+								>
+									{editor.agentStatus()}
+								</Text>
+								{identities === null ? (
+									<Text class="font-sans text-xs text-muted-foreground">
+										{t("connection.sshAgentTroubleshooting")}
+									</Text>
+								) : null}
+							</>
+						),
+					},
 				);
 			}}
 			{field(
@@ -491,76 +496,66 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 			{() => {
 				void editor.structRev();
 				const revealed = editor.passwordRevealed();
-				return draft.authMethod === "password" ? (
-					<View class="gap-1">
-						<Text class="font-sans text-xs">{t("connection.password")}</Text>
-						<View class="flex-row items-center gap-1">
-							<Input
-								size="sm"
-								testID="settings-ssh-password"
-								class="flex-1"
-								masked={!revealed}
-								value={draft.password}
-								placeholder={String(t("connection.sshPassword"))}
-								onChange={(event) =>
-									editor.patchDraft({ password: event.value })
-								}
-							/>
-							{() => {
-								void editor.formRev();
-								const shown = editor.passwordRevealed();
-								return (
-									<Button
-										testID="settings-ssh-password-reveal"
-										variant="ghost"
-										size="icon"
-										class={`${SETTINGS_ICON_BUTTON_CLASS} text-muted-foreground hover:text-foreground`}
-										disabled={!draft.password}
-										accessibilityLabel={
-											shown
-												? t("settings.hidePassword")
-												: t("settings.showPassword")
-										}
-										tooltip={hint(
-											shown
-												? t("settings.hidePassword")
-												: t("settings.showPassword"),
-										)}
-										onPress={() =>
-											editor.passwordRevealed.set(!editor.passwordRevealed())
-										}
-									>
-										<Icon name={shown ? "EyeOff" : "Eye"} size={16} />
-									</Button>
-								);
-							}}
-						</View>
-						{fieldError(err, "password")}
-					</View>
-				) : null;
+				return draft.authMethod === "password"
+					? field(
+							t("connection.password"),
+							<View class="flex-row items-center gap-1">
+								<Input
+									size="sm"
+									testID="settings-ssh-password"
+									class="flex-1"
+									masked={!revealed}
+									value={draft.password}
+									placeholder={String(t("connection.sshPassword"))}
+									onChange={(event) =>
+										editor.patchDraft({ password: event.value })
+									}
+								/>
+								{() => {
+									void editor.formRev();
+									const shown = editor.passwordRevealed();
+									const label = shown
+										? t("settings.hidePassword")
+										: t("settings.showPassword");
+									return (
+										<SettingsIconButton
+											testID="settings-ssh-password-reveal"
+											disabled={!draft.password}
+											accessibilityLabel={label}
+											tooltip={label}
+											onPress={() =>
+												editor.passwordRevealed.set(!editor.passwordRevealed())
+											}
+										>
+											<Icon name={shown ? "EyeOff" : "Eye"} size={16} />
+										</SettingsIconButton>
+									);
+								}}
+							</View>,
+							{ footer: fieldError(err, "password") },
+						)
+					: null;
 			}}
 			{() => {
 				void editor.structRev();
-				return draft.mode === "direct" && draft.authMethod === "key" ? (
-					<View class="gap-1">
-						<View class="flex-row items-center gap-1">
-							<Icon name="KeyRound" size={14} />
-							<Text class="font-sans text-xs">
-								{t("connection.privateKeyPath")}
-							</Text>
-						</View>
-						<Input
-							size="sm"
-							testID="settings-ssh-identity"
-							value={draft.identityFile}
-							placeholder="~/.ssh/id_ed25519"
-							onChange={(event) =>
-								editor.patchDraft({ identityFile: event.value })
-							}
-						/>
-						{fieldError(err, "identityFile")}
-					</View>
-				) : null;
+				return draft.mode === "direct" && draft.authMethod === "key"
+					? field(
+							t("connection.privateKeyPath"),
+							<Input
+								size="sm"
+								testID="settings-ssh-identity"
+								value={draft.identityFile}
+								placeholder="~/.ssh/id_ed25519"
+								onChange={(event) =>
+									editor.patchDraft({ identityFile: event.value })
+								}
+							/>,
+							{
+								labelIcon: "KeyRound",
+								footer: fieldError(err, "identityFile"),
+							},
+						)
+					: null;
 			}}
 			{() => {
 				void editor.structRev();
@@ -595,7 +590,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 				const testingNow = editor.testing();
 				const waiting = editor.waitingForAgent();
 				return (
-					<View class="mt-1 flex-row flex-wrap items-center justify-between gap-2">
+					<DialogFooter class="mt-1 items-center justify-between">
 						<Button
 							testID="settings-ssh-test"
 							variant="outline"
@@ -634,7 +629,7 @@ export function SshConnectionEditorDialog(props: { editor: SshEditor }) {
 								</Text>
 							</Button>
 						</View>
-					</View>
+					</DialogFooter>
 				);
 			}}
 			<DialogClose
