@@ -45,6 +45,13 @@ export interface SessionHeaderProps {
 	showTitle: () => boolean;
 	/** The chat is temporary: a dashed tab, and no session menu. */
 	temporary: () => boolean;
+	/** The project's Git workspace tab beside the chat's. */
+	git?: {
+		open: () => boolean;
+		active: () => boolean;
+		onSelect: () => void;
+		onClose: () => void;
+	};
 	/** The project's open file preview tabs beside the chat's. */
 	files?: {
 		tabs: () => readonly WorkspaceFile[];
@@ -97,10 +104,25 @@ interface AuxTabItem {
  */
 export function SessionHeader(props: SessionHeaderProps) {
 	const stripWidth = signal(0);
+	const gitOpen = () => props.git?.open() ?? false;
+	const gitActive = () => props.git?.active() ?? false;
 	const fileTabs = () => props.files?.tabs() ?? [];
 	const terminalTabs = () => props.terminals?.tabs() ?? [];
 	const auxTabs = computed<AuxTabItem[]>(() => {
 		const items: AuxTabItem[] = [];
+		if (gitOpen()) {
+			items.push({
+				id: "git",
+				testID: "git-tab",
+				closeTestID: "git-tab-close",
+				icon: "GitBranch",
+				label: () => "Git",
+				tooltip: () => t("file.viewChanges"),
+				closeLabel: () => t("file.closeFile", { name: "Git" }),
+				onSelect: () => props.git?.onSelect(),
+				onClose: () => props.git?.onClose(),
+			});
+		}
 		for (const file of fileTabs()) {
 			const name = fileBasename(file.path) || file.path;
 			items.push({
@@ -135,6 +157,7 @@ export function SessionHeader(props: SessionHeaderProps) {
 	});
 	const hasTabs = computed(() => auxTabs().length > 0);
 	const activeAuxId = computed<string | null>(() => {
+		if (gitActive()) return "git";
 		const activeFile = props.files?.activePath() ?? null;
 		if (activeFile !== null) return `file:${activeFile}`;
 		const activeTerminal = props.terminals?.activeId() ?? null;

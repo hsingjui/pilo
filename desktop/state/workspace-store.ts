@@ -1,9 +1,11 @@
-import { type Accessor, signal } from "nsh";
+import { type Accessor, batch, signal } from "nsh";
 
 import {
+	DEFAULT_GIT_WORKSPACE_VIEW,
 	EMPTY_PROJECT_WORKSPACE,
 	reduceProjectWorkspaces,
 	workspaceFileKey,
+	type GitWorkspaceView,
 	type ProjectWorkspace,
 	type WorkspaceFile,
 	type WorkspaceLineRange,
@@ -81,15 +83,17 @@ export class WorkspaceStore {
 		file: WorkspaceFile,
 		lineRange?: WorkspaceLineRange,
 	): void {
-		this.workspacesSignal.update((state) =>
-			reduceProjectWorkspaces(state, {
-				type: "open",
-				projectId,
-				file,
-				lineRange,
-			}),
-		);
-		this.navigationTokenSignal.update((value) => value + 1);
+		batch(() => {
+			this.workspacesSignal.update((state) =>
+				reduceProjectWorkspaces(state, {
+					type: "open",
+					projectId,
+					file,
+					lineRange,
+				}),
+			);
+			this.navigationTokenSignal.update((value) => value + 1);
+		});
 	}
 
 	selectFile(
@@ -97,17 +101,19 @@ export class WorkspaceStore {
 		path: string | null,
 		lineRange?: WorkspaceLineRange,
 	): void {
-		this.workspacesSignal.update((state) =>
-			reduceProjectWorkspaces(state, {
-				type: "select",
-				projectId,
-				path,
-				lineRange,
-			}),
-		);
-		if (path !== null && lineRange) {
-			this.navigationTokenSignal.update((value) => value + 1);
-		}
+		batch(() => {
+			this.workspacesSignal.update((state) =>
+				reduceProjectWorkspaces(state, {
+					type: "select",
+					projectId,
+					path,
+					lineRange,
+				}),
+			);
+			if (path !== null && lineRange) {
+				this.navigationTokenSignal.update((value) => value + 1);
+			}
+		});
 	}
 
 	selectChat(projectId: string | null | undefined): void {
@@ -118,6 +124,62 @@ export class WorkspaceStore {
 	closeFile(projectId: string, path: string): void {
 		this.workspacesSignal.update((state) =>
 			reduceProjectWorkspaces(state, { type: "close", projectId, path }),
+		);
+	}
+
+	isGitOpen(projectId: string | null | undefined): boolean {
+		return this.projectWorkspace(projectId).gitOpen;
+	}
+
+	isGitActive(projectId: string | null | undefined): boolean {
+		if (!projectId) return false;
+		const workspace = this.projectWorkspace(projectId);
+		return workspace.gitOpen && workspace.activeTab.kind === "git";
+	}
+
+	gitView(projectId: string | null | undefined): GitWorkspaceView {
+		return (
+			this.projectWorkspace(projectId).gitView ?? DEFAULT_GIT_WORKSPACE_VIEW
+		);
+	}
+
+	openGitProjectIds(): string[] {
+		const ids: string[] = [];
+		for (const [projectId, workspace] of this.workspacesSignal()) {
+			if (workspace.gitOpen) ids.push(projectId);
+		}
+		return ids;
+	}
+
+	openGit(projectId: string): void {
+		this.workspacesSignal.update((state) => {
+			const wasOpen = state.get(projectId)?.gitOpen ?? false;
+			const opened = reduceProjectWorkspaces(state, {
+				type: "open-git",
+				projectId,
+			});
+			if (wasOpen) return opened;
+			return reduceProjectWorkspaces(opened, {
+				type: "update-git-view",
+				projectId,
+				view: { showDetail: false },
+			});
+		});
+	}
+
+	closeGit(projectId: string): void {
+		this.workspacesSignal.update((state) =>
+			reduceProjectWorkspaces(state, { type: "close-git", projectId }),
+		);
+	}
+
+	updateGitView(projectId: string, view: Partial<GitWorkspaceView>): void {
+		this.workspacesSignal.update((state) =>
+			reduceProjectWorkspaces(state, {
+				type: "update-git-view",
+				projectId,
+				view,
+			}),
 		);
 	}
 

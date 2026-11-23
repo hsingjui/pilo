@@ -1305,6 +1305,31 @@ impl Pilo {
         .await
     }
 
+    /// Reads the project's Git branch and porcelain file statuses on its connection.
+    pub async fn project_git_status(
+        this: Instance<Self>,
+        project_id: String,
+    ) -> Result<JsonValue, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            let status = project_api::project_git_status(&runtime, project_id).await?;
+            serde_json::to_value(status).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    /// Reads a unified Git diff for a project (or one project-relative file path).
+    pub async fn project_git_diff(
+        this: Instance<Self>,
+        project_id: String,
+        path: Option<String>,
+        staged: bool,
+    ) -> Result<String, String> {
+        Self::with_runtime(this, move |runtime| async move {
+            project_api::project_git_diff(&runtime, project_id, path, staged).await
+        })
+        .await
+    }
+
     /// Opens a shell in the project's environment and returns its terminal
     /// (`id`, `projectId`, `title`); its output comes from `next_terminal_events`.
     pub async fn open_terminal(

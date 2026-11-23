@@ -64,6 +64,10 @@ import type { DesktopShell } from "./desktop-shell";
 import { t } from "./i18n";
 import { AddProjectDialog, type AddProjectApi } from "./add-project-dialog";
 import { FilePreviewLayer } from "./file-preview-view";
+import {
+	GitWorkspaceLayer,
+	type GitWorkspaceClient,
+} from "./git-workspace-view";
 import { SessionLanding } from "./landing";
 import { openChatTarget } from "./open-chat";
 import {
@@ -106,7 +110,9 @@ export interface AppShellProps {
 	saveImage?: (suggestedName: string, bytes: Uint8Array) => Promise<boolean>;
 	/** Opens a file link via the runtime (returns preview text or launches the system app). */
 	openFileLink?: OpenFileLinkClient;
-	/** Per-project open file preview tabs; created automatically when `openFileLink` is given. */
+	/** Native Git status/diff reader for the desktop-only Git workspace tab. */
+	git?: GitWorkspaceClient;
+	/** Per-project open file preview and Git tabs; created automatically when `openFileLink` or `git` is given. */
 	workspace?: WorkspaceStore;
 	/** What a project file link in a reply does when pressed (overrides default workspace handling). */
 	onFileLink?: (link: ChatMarkdownFileLink) => void;
@@ -158,7 +164,8 @@ export function AppShell(props: AppShellProps) {
 	const sessionOpen = computed(() => store.state().navigation.session !== null);
 	const toasts = new AppToasts();
 	const workspace =
-		props.workspace ?? (props.openFileLink ? new WorkspaceStore() : undefined);
+		props.workspace ??
+		(props.openFileLink || props.git ? new WorkspaceStore() : undefined);
 	const previewImage = signal<ChatImagePreview | null>(null);
 	const fileOpenContext = workspace
 		? {
@@ -214,9 +221,17 @@ export function AppShell(props: AppShellProps) {
 	const shownTerminal = computed(
 		() => props.terminals?.activeTab(project()?.id) ?? null,
 	);
+	/** The project whose Git workspace tab is shown in place of its chat, if any. */
+	const shownGitProjectId = computed(() => {
+		if (shownTerminal() || !props.git || !workspace) return null;
+		const currentId = project()?.id ?? null;
+		return currentId && workspace.isGitActive(currentId) ? currentId : null;
+	});
 	/** The project's file preview shown in place of its chat, if any. */
 	const shownFile = computed(() =>
-		shownTerminal() ? null : (workspace?.activeFile(project()?.id) ?? null),
+		shownTerminal() || shownGitProjectId()
+			? null
+			: (workspace?.activeFile(project()?.id) ?? null),
 	);
 	const paletteOpen = signal(false);
 	const settingsOpen = signal(false);
@@ -415,14 +430,15 @@ export function AppShell(props: AppShellProps) {
 			});
 		});
 	}
-	// Opening another chat brings the chat back in front of terminals and file previews.
+	const showChat = (projectId?: string) => {
+		props.terminals?.select(null);
+		workspace?.selectChat(projectId);
+	};
+	// Opening another chat also switches the workspace for non-sidebar navigation.
 	effect(() => {
 		chatSessionKey();
 		const currentProjectId = untracked(project)?.id;
-		untracked(() => {
-			props.terminals?.select(null);
-			workspace?.selectChat(currentProjectId);
-		});
+		untracked(() => showChat(currentProjectId));
 	});
 	const openAddProject = (connectionId: string | null) => {
 		addProjectConnection.set(connectionId);
@@ -543,6 +559,7 @@ export function AppShell(props: AppShellProps) {
 				titleBar={() => ({ height: barHeight(), left: titleBar().left })}
 				onSearch={() => paletteOpen.set(true)}
 				onNewChat={newChat}
+				onSelectChat={showChat}
 				onOpenSettings={client ? () => settingsOpen.set(true) : undefined}
 				remote={
 					remoteStatus
@@ -641,6 +658,24 @@ export function AppShell(props: AppShellProps) {
 											}
 										: undefined
 								}
+								git={
+									workspace && props.git
+										? {
+												open: () => workspace.isGitOpen(project()?.id),
+												active: () => shownGitProjectId() !== null,
+												onSelect: () => {
+													const current = project();
+													if (!current) return;
+													props.terminals?.select(null);
+													workspace.openGit(current.id);
+												},
+												onClose: () => {
+													const current = project();
+													if (current) workspace.closeGit(current.id);
+												},
+											}
+										: undefined
+								}
 								files={
 									workspace
 										? {
@@ -714,6 +749,17 @@ export function AppShell(props: AppShellProps) {
 													}}
 													temporary={temporaryOpen}
 													openInApp={props.openProjectInApp}
+													onOpenGit={
+														workspace && props.git
+															? () => {
+																	const current = project();
+																	if (!current) return;
+																	props.terminals?.select(null);
+																	workspace.openGit(current.id);
+																}
+															: undefined
+													}
+													gitActive={() => shownGitProjectId() !== null}
 													onError={(message) =>
 														toasts.show({ variant: "error", title: message })
 													}
@@ -906,6 +952,24 @@ export function AppShell(props: AppShellProps) {
 							preferences={() => store.state().preferences?.values}
 							readProjectImage={props.readProjectImage}
 							onFileLink={handleFileLink}
+						/>
+					) : null}
+					{workspace && props.git ? (
+						<GitWorkspaceLayer
+							workspace={workspace}
+							activeProjectId={shownGitProjectId}
+							git={props.git}
+							preferences={() => store.state().preferences?.values}
+							canOpenFile={
+								fileOpenContext
+									? (path) => canOpenToolFilePath(fileOpenContext, path)
+									: undefined
+							}
+							onOpenFile={
+								fileOpenContext
+									? (path) => openToolFilePath(fileOpenContext, path)
+									: undefined
+							}
 						/>
 					) : null}
 					{props.terminals ? (

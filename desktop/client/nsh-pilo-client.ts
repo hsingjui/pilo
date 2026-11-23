@@ -3,6 +3,7 @@ import process from "process";
 
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
 import type { FsEntry } from "@shared/api/files-types";
+import type { GitStatus } from "@shared/api/git-types";
 import type { ProjectPiModels } from "@shared/api/pi-models-types";
 import type {
 	Connection,
@@ -156,6 +157,8 @@ export type PiloNative = Pick<
 			| "systemFontFamilies"
 			| "projectOpenInApp"
 			| "openFileLink"
+			| "projectGitStatus"
+			| "projectGitDiff"
 			| "saveImage"
 			| "openTerminal"
 			| "writeTerminal"
@@ -175,6 +178,8 @@ export type ProjectNativeApp =
 
 /** A shell the runtime runs in a project's environment. */
 export type TerminalInfo = { id: string; projectId: string; title: string };
+
+export type { GitFileStatus, GitStatus } from "@shared/api/git-types";
 
 /** What a terminal reports; `output` carries base64 bytes. */
 export type TerminalEvent =
@@ -891,6 +896,25 @@ export class NshPiloClient implements PiloClient {
 			url,
 			preview,
 		)) as WorkspaceFile | null;
+	}
+
+	/** Reads the project's Git branch and changed files on its connection. */
+	async getProjectGitStatus(projectId: string): Promise<GitStatus> {
+		if (!this.pilo.projectGitStatus) throw unavailable("projectGitStatus");
+		return (await this.pilo.projectGitStatus(projectId)) as GitStatus;
+	}
+
+	/** Reads the unified diff for one project-relative path (or the whole project). */
+	async getProjectGitDiff(
+		projectId: string,
+		options: { path?: string; staged: boolean },
+	): Promise<string> {
+		if (!this.pilo.projectGitDiff) throw unavailable("projectGitDiff");
+		return await this.pilo.projectGitDiff(
+			projectId,
+			options.path ?? null,
+			options.staged,
+		);
 	}
 
 	/** Opens a shell in the project; its output comes from `nextTerminalEvents`. */

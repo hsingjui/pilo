@@ -956,6 +956,8 @@ const enUS = {
 			"This change has no text differences. Git metadata is shown below.",
 		rawDiffFallback:
 			"Highlighting is unavailable for this format. Showing the original Git diff.",
+		diffTruncated:
+			"This Git diff is too large to show in full. Showing the beginning only.",
 		statusUntracked: "Untracked",
 		statusAdded: "Added",
 		statusDeleted: "Deleted",
@@ -979,6 +981,7 @@ const enUS = {
 		workingTree: "Working tree",
 		staged: "Staged",
 		fileCount: "{{count}} files",
+		lineChanges: "{{additions}} lines added, {{deletions}} lines deleted",
 		readingGit: "Reading Git status…",
 		noChanges: "No changes",
 		workingClean: "The working tree has no unstaged changes.",

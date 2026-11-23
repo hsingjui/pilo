@@ -222,7 +222,10 @@ export function SidebarPanel(props: SidebarPanelProps) {
 							<ProjectSessionsToolbar
 								name={sidebarProjectName(project)}
 								onBack={() => projectView.set(null)}
-								onNewChat={() => props.store.selectProject(project.id)}
+								onNewChat={() => {
+									props.onSelectChat?.(project.id);
+									props.store.selectProject(project.id);
+								}}
 							/>
 						) : (
 							<NewChatButton onPress={props.onNewChat} />
@@ -244,6 +247,7 @@ export function SidebarPanel(props: SidebarPanelProps) {
 									<Sidebar
 										store={props.store}
 										settings={props.settings}
+										onSelectChat={props.onSelectChat}
 										viewedProject={viewedProject}
 										onViewProject={(id) => projectView.set(id)}
 										defaultWorkspaceShown={props.defaultWorkspaceShown}

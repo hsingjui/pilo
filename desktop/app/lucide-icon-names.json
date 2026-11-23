@@ -1,16 +1,21 @@
 [
 	"Bell",
+	"CheckCheck",
 	"ChevronLeft",
 	"ChevronsUpDown",
 	"Code2",
+	"Columns2",
 	"Eye",
 	"EyeOff",
+	"FileCode",
 	"FolderOpen",
+	"GitBranch",
 	"KeyRound",
 	"Keyboard",
 	"Laptop",
 	"Moon",
 	"RotateCcw",
+	"Rows2",
 	"Server",
 	"Settings",
 	"Settings2",
@@ -18,5 +23,6 @@
 	"Sun",
 	"TextCursorInput",
 	"Type",
-	"WandSparkles"
+	"WandSparkles",
+	"WrapText"
 ]

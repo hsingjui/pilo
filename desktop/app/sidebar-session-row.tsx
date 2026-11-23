@@ -117,6 +117,7 @@ function ConfirmDeleteButton(props: {
 export function SessionRow(props: {
 	store: AppStore;
 	session: Accessor<SidebarSession>;
+	onSelectChat?: (projectId: string) => void;
 	/** The session's project, for a list that mixes projects. */
 	projectName?: Accessor<string | undefined>;
 }) {
@@ -457,14 +458,12 @@ export function SessionRow(props: {
 							focusVisibleStyle={sidebarFocusRing()}
 							selected={selected()}
 							accessibilityLabel={session().title}
-							onPress={() =>
-								saved()
-									? store.selectSession(
-											session().projectId,
-											session().sessionPath,
-										)
-									: store.selectDraft(session().projectId, session().id)
-							}
+							onPress={() => {
+								const { projectId, sessionPath, id } = session();
+								props.onSelectChat?.(projectId);
+								if (sessionPath) store.selectSession(projectId, sessionPath);
+								else store.selectDraft(projectId, id);
+							}}
 						>
 							{content()}
 						</Button>

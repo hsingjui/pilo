@@ -240,6 +240,7 @@ export async function launch(
 			client.openProjectInApp(projectId, app, path),
 		openFileLink: (projectId, url, preview) =>
 			client.openFileLink(projectId, url, preview),
+		git: client,
 		onRenameSession: (projectId, sessionPath, title) =>
 			void store.renameSession(projectId, sessionPath, title),
 		readProjectImage: (projectId, path) =>

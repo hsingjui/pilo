@@ -56,6 +56,7 @@ export interface SidebarProps {
 	/** The project whose every session the list shows instead of the tree. */
 	viewedProject: Accessor<Project | null>;
 	onViewProject: (projectId: string) => void;
+	onSelectChat?: (projectId: string) => void;
 	/** The connections whose default workspace the tree shows. */
 	defaultWorkspaceShown: Accessor<Record<string, boolean>>;
 	onDefaultWorkspaceShown?: (connectionId: string, shown: boolean) => void;
@@ -104,7 +105,11 @@ export function Sidebar(props: SidebarProps) {
 				if (!recent && projectId !== null) {
 					// Hundreds of rows: a list of its own that recycles its cells.
 					return (
-						<AllProjectSessions store={props.store} projectId={projectId} />
+						<AllProjectSessions
+							store={props.store}
+							projectId={projectId}
+							onSelectChat={props.onSelectChat}
+						/>
 					);
 				}
 				return (
@@ -315,6 +320,7 @@ function RecentSection(
 							{(session) => (
 								<SessionRow
 									store={store}
+									onSelectChat={props.onSelectChat}
 									session={session}
 									projectName={() =>
 										settings.settings().showProjectsInRecents
@@ -353,6 +359,7 @@ function ConnectionSection(
 	const collapsed = () =>
 		props.settings.settings().collapsedSections[section()] ?? false;
 	const confirmingRemove = signal(false);
+	const menuOpen = signal(false);
 	const removable = () =>
 		props.onRemoveConnection !== undefined && !isLocal(connection());
 	return (
@@ -388,6 +395,8 @@ function ConnectionSection(
 					</SidebarAction>
 				) : null}
 				<Menu
+					open={menuOpen()}
+					onOpenChange={({ open }) => menuOpen.set(open)}
 					popupClass="w-44"
 					popupStyle={{ minWidth: 0 }}
 					onClose={() => confirmingRemove.set(false)}
@@ -431,6 +440,8 @@ function ConnectionSection(
 										confirmingRemove.set(true);
 										return;
 									}
+									confirmingRemove.set(false);
+									menuOpen.set(false);
 									props.onRemoveConnection?.(connection());
 								}}
 							>
@@ -452,6 +463,7 @@ function ConnectionSection(
 						{(project) => (
 							<ProjectSection
 								store={props.store}
+								onSelectChat={props.onSelectChat}
 								settings={props.settings}
 								onViewProject={props.onViewProject}
 								project={project}
@@ -465,7 +477,9 @@ function ConnectionSection(
 }
 
 /** Every session of one project, newest first (the Tauri second view). */
-function AllProjectSessions(props: { store: AppStore; projectId: string }) {
+function AllProjectSessions(
+	props: Pick<SidebarProps, "store" | "onSelectChat"> & { projectId: string },
+) {
 	const { store } = props;
 	const sessions = computed(() =>
 		sortSidebarSessionsByRecency(
@@ -493,7 +507,13 @@ function AllProjectSessions(props: { store: AppStore; projectId: string }) {
 			estimatedItemSize={sidebarRowHeight("pilo-sidebar-session-height")}
 			empty={() => <NoSessions testID={section} />}
 		>
-			{(session) => <SessionRow store={store} session={session} />}
+			{(session) => (
+				<SessionRow
+					store={store}
+					session={session}
+					onSelectChat={props.onSelectChat}
+				/>
+			)}
 		</List>
 	);
 }

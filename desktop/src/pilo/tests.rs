@@ -130,3 +130,28 @@ fn sanitize_save_file_name_strips_directories_and_control_chars() {
     assert_eq!(shell::sanitize_save_file_name(".."), "image");
     assert_eq!(shell::sanitize_save_file_name("bad\nname.png"), "image");
 }
+
+#[test]
+fn git_commands_reject_unknown_project() {
+    let data = tempfile::tempdir().unwrap();
+    let pilo = Pilo::new(Some(data.path().to_str().unwrap().into()), None).unwrap();
+    pilo.executor.block_on(async {
+        let runtime = pilo.host.lock().await.as_ref().unwrap().clone();
+        assert!(
+            project_api::project_git_status(&runtime, "missing-project".into())
+                .await
+                .is_err()
+        );
+        assert!(
+            project_api::project_git_diff(
+                &runtime,
+                "missing-project".into(),
+                Some("src/lib.rs".into()),
+                false
+            )
+            .await
+            .is_err()
+        );
+        stop_host(pilo.host.clone()).await;
+    });
+}

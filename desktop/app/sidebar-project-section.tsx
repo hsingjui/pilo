@@ -50,11 +50,16 @@ export function ProjectSection(props: {
 	store: AppStore;
 	settings: SidebarSettingsStore;
 	onViewProject: (projectId: string) => void;
+	onSelectChat?: (projectId: string) => void;
 	project: Accessor<Project>;
 }) {
 	const { store, settings } = props;
 	const id = () => props.project().id;
 	const name = () => sidebarProjectName(props.project());
+	const selectProject = () => {
+		props.onSelectChat?.(id());
+		store.selectProject(id());
+	};
 	const section = () => projectSection(id());
 	const collapsed = () =>
 		settings.settings().collapsedSections[section()] ?? true;
@@ -148,7 +153,7 @@ export function ProjectSection(props: {
 						}
 						onPressDown={closeDetails}
 						onPress={() => {
-							if (!refreshing()) store.selectProject(id());
+							if (!refreshing()) selectProject();
 						}}
 					>
 						<Button
@@ -212,7 +217,7 @@ export function ProjectSection(props: {
 								testID={`${section()}:new-chat`}
 								class={hoverAction()}
 								label={t("sidebar.newSession")}
-								onPress={() => store.selectProject(id())}
+								onPress={selectProject}
 							>
 								<Icon name="SquarePen" size={14} />
 							</SidebarAction>
@@ -259,6 +264,7 @@ export function ProjectSection(props: {
 					<ProjectSessions
 						store={store}
 						projectId={id}
+						onSelectChat={props.onSelectChat}
 						onViewAll={() => {
 							props.onViewProject(id());
 							void store.loadSessions(id());
@@ -325,6 +331,8 @@ function ProjectMenu(props: {
 								props.confirmingRemove.set(true);
 								return;
 							}
+							props.confirmingRemove.set(false);
+							props.open.set(false);
 							props.onRemove();
 						}}
 					>
@@ -346,6 +354,7 @@ function ProjectMenu(props: {
 function ProjectSessions(props: {
 	store: AppStore;
 	projectId: Accessor<string>;
+	onSelectChat?: (projectId: string) => void;
 	onViewAll: () => void;
 }) {
 	const { store } = props;
@@ -380,7 +389,13 @@ function ProjectSessions(props: {
 				hasSessions() ? (
 					<SessionGlide>
 						<Each of={sessions().visible} key={sessionRowKey}>
-							{(session) => <SessionRow store={store} session={session} />}
+							{(session) => (
+								<SessionRow
+									store={store}
+									session={session}
+									onSelectChat={props.onSelectChat}
+								/>
+							)}
 						</Each>
 						{() =>
 							sessions().hiddenCount > 0 ? (

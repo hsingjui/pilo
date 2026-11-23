@@ -10,7 +10,7 @@ import { ProjectOpenMenu } from "./project-open-menu";
 
 /**
  * The title bar's project actions, as the Tauri header's: a new terminal
- * tab, a temporary chat and quick open.
+ * tab, a temporary chat, quick open, and Git changes.
  */
 export function HeaderActions(props: {
 	project: () => Project;
@@ -28,6 +28,10 @@ export function HeaderActions(props: {
 		app: ProjectNativeApp,
 		path?: string,
 	) => Promise<void>;
+	/** Opens the project's Git changes tab; omitted when Git is unavailable. */
+	onOpenGit?: () => void;
+	/** The project's Git tab is currently active. */
+	gitActive?: () => boolean;
 	onError: (message: string) => void;
 }) {
 	const tooltip = (label: () => string) => (
@@ -77,6 +81,24 @@ export function HeaderActions(props: {
 					openInApp={props.openInApp}
 					onError={props.onError}
 				/>
+			) : null}
+			{props.onOpenGit ? (
+				<Button
+					testID="header-open-git"
+					variant="ghost"
+					size="icon"
+					class="size-7"
+					selected={props.gitActive?.() ?? false}
+					accessibilityLabel={t("file.viewChanges")}
+					tooltip={tooltip(() => t("file.viewChanges"))}
+					onPress={props.onOpenGit}
+				>
+					<Icon
+						name="GitBranch"
+						size={16}
+						color={props.gitActive?.() ? token("primary") : undefined}
+					/>
+				</Button>
 			) : null}
 		</View>
 	);

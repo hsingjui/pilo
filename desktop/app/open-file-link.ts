@@ -99,7 +99,7 @@ export function openMarkdownFileLink(
 		.then((file) => {
 			if (!file) return;
 			ctx.workspace.openFile(project.id, file, link.lineRange);
-			ctx.onFileActivated?.();
+			if (ctx.project()?.id === project.id) ctx.onFileActivated?.();
 		})
 		.catch((error: unknown) => {
 			ctx.toasts.show({
