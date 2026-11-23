@@ -15,6 +15,71 @@ pub enum ProjectApp {
     Winc,
 }
 
+#[cfg(windows)]
+fn windows_executable_exists(path: &std::path::Path) -> bool {
+    match std::fs::metadata(path) {
+        Ok(metadata) => metadata.is_file(),
+        // Windows Store App Execution Aliases (e.g. WindowsApps\pwsh.exe) can return
+        // ERROR_CANT_ACCESS_FILE (1920) from metadata() while still being launchable.
+        Err(error) if error.raw_os_error() == Some(1920) => {
+            std::fs::symlink_metadata(path).is_ok_and(|metadata| !metadata.is_dir())
+        }
+        Err(_) => false,
+    }
+}
+
+#[cfg(not(windows))]
+fn windows_executable_exists(path: &std::path::Path) -> bool {
+    std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
+}
+
+async fn powershell_windows_executable() -> Result<PathBuf, String> {
+    let mut candidates = Vec::new();
+    if let Some(path) = std::env::var_os("PATH") {
+        for directory in std::env::split_paths(&path).filter(|path| path.is_absolute()) {
+            candidates.push(directory.join("pwsh.exe"));
+        }
+    }
+    if let Some(program_files) = std::env::var_os("ProgramFiles") {
+        candidates.push(
+            PathBuf::from(program_files)
+                .join("PowerShell")
+                .join("7")
+                .join("pwsh.exe"),
+        );
+    }
+    if let Some(program_files_x86) = std::env::var_os("ProgramFiles(x86)") {
+        candidates.push(
+            PathBuf::from(program_files_x86)
+                .join("PowerShell")
+                .join("7")
+                .join("pwsh.exe"),
+        );
+    }
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        candidates.push(
+            PathBuf::from(local_app_data)
+                .join("Microsoft")
+                .join("WindowsApps")
+                .join("pwsh.exe"),
+        );
+    }
+    if let Some(pwsh) = tokio::task::spawn_blocking(move || {
+        candidates
+            .into_iter()
+            .find(|candidate| windows_executable_exists(candidate))
+    })
+    .await
+    .map_err(|error| format!("failed to locate PowerShell: {error}"))?
+    {
+        return Ok(pwsh);
+    }
+    let windows = std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .ok_or_else(|| "Windows system directory is unavailable".to_owned())?;
+    Ok(windows.join("System32/WindowsPowerShell/v1.0/powershell.exe"))
+}
+
 async fn winc_windows_executable() -> PathBuf {
     let mut candidates = Vec::new();
     if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
@@ -136,11 +201,7 @@ pub(crate) async fn open(
             .map_err(|error| format!("failed to launch app: {error}"))?;
         }
         ProjectApp::Powershell => {
-            let windows = std::env::var_os("SystemRoot")
-                .map(PathBuf::from)
-                .ok_or_else(|| "Windows system directory is unavailable".to_owned())?;
-            let mut command =
-                Command::new(windows.join("System32/WindowsPowerShell/v1.0/powershell.exe"));
+            let mut command = Command::new(powershell_windows_executable().await?);
             // Keep paths out of PowerShell source, including quotes and wildcard characters.
             command.env("PILO_OPEN_DIRECTORY", &directory).args([
                 "-NoLogo",
@@ -193,4 +254,24 @@ pub(crate) async fn open(
         ));
     }
     Ok(())
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::powershell_windows_executable;
+
+    #[tokio::test]
+    async fn powershell_opener_resolves_an_existing_powershell_binary() {
+        let executable = powershell_windows_executable().await.unwrap();
+        let name = executable
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        assert!(
+            name == "pwsh.exe" || name == "powershell.exe",
+            "expected pwsh.exe or powershell.exe, got {}",
+            executable.display()
+        );
+    }
 }
