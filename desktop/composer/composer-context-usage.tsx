@@ -1,6 +1,9 @@
-import { Canvas, Text, token, View } from "nsh";
+import { Canvas, computed, Text, token, View } from "nsh";
 
-import type { ChatSessionRuntimeState } from "@shared/chat/session-stats";
+import {
+	getComposerContextUsage,
+	type ChatSessionRuntimeState,
+} from "@shared/chat/session-stats";
 import {
 	finiteNumber,
 	formatCompactTokens,
@@ -12,6 +15,7 @@ import { chatPx } from "../chat/layout";
 import { Foreground } from "../ui/foreground";
 import { HoverCard } from "../ui/hover-card";
 import { Icon } from "../ui/icon";
+import { Popover } from "../ui/popover";
 import { composerToolbarGap } from "./composer-layout";
 
 /** At most one decimal, as the React composer's `formatPercent`. */
@@ -78,23 +82,16 @@ function DetailRow(props: { label: string; value: string; class?: string }) {
  */
 export function ComposerContextUsage(props: {
 	usage: () => ChatSessionRuntimeState | null;
-	/** The selected model's window, while the session reports none. */
+	/** The selected model's window. */
 	contextWindow: () => number | undefined;
+	/** Uses tap-to-open Popover with 40px touch height on mobile / WebUI. */
+	touch?: boolean;
 }) {
-	const contextTokens = () => finiteNumber(props.usage()?.contextTokens);
-	const contextWindow = () =>
-		finiteNumber(props.usage()?.contextWindow) ??
-		finiteNumber(props.contextWindow());
+	const context = computed(() =>
+		getComposerContextUsage(props.usage(), props.contextWindow()),
+	);
 	const stale = () => props.usage()?.contextStale === true;
-	const percent = () => {
-		const reported = finiteNumber(props.usage()?.contextPercent);
-		if (reported !== undefined) return reported;
-		const tokens = contextTokens();
-		const window = contextWindow();
-		if (tokens !== undefined && window !== undefined && window > 0)
-			return (tokens / window) * 100;
-		return !props.usage() && window !== undefined && window > 0 ? 0 : undefined;
-	};
+	const percent = () => context().contextPercent;
 	const ringPercent = () => Math.min(100, Math.max(0, percent() ?? 0));
 	const breakdown = () => {
 		const tokens = props.usage()?.tokens;
@@ -127,49 +124,51 @@ export function ComposerContextUsage(props: {
 				? t("chat.contextUsageKnownPending")
 				: t("chat.contextUsage", { percent: formatPercent(percent()) });
 	const muted = () => token("muted-foreground");
-	return (
-		<HoverCard
-			openDelay={0}
-			closeDelay={150}
-			placement="top"
-			align="end"
-			offset={8}
-			popupClass="w-[248px] overflow-hidden rounded-(--pilo-context-details-radius) p-0"
-			trigger={
-				<Foreground.Provider value={muted}>
-					<View
-						testID="composer-context-usage"
-						role="button"
-						accessibilityLabel={summary()}
-						class="relative shrink-0 flex-row items-center rounded-(--pilo-radius-md) hover:bg-hover"
-						style={{
-							height: chatPx(28),
-							left: chatPx(4),
-							marginLeft: -composerToolbarGap(),
-							paddingLeft: chatPx(4),
-							gap: chatPx(4),
-							opacity: stale() ? 0.6 : 1,
-						}}
-					>
-						{() =>
-							percent() === undefined ? (
-								<Icon name="CircleDashed" size={chatPx(16)} />
-							) : (
-								<>
-									<Text
-										class="font-sans font-medium tabular-nums text-muted-foreground"
-										style={{ fontSize: chatPx(12), lineHeight: chatPx(12) }}
-									>
-										{() => formatPercent(percent())}
-									</Text>
-									<ContextRing percent={ringPercent} />
-								</>
-							)
-						}
-					</View>
-				</Foreground.Provider>
-			}
-		>
+	const trigger = (
+		<Foreground.Provider value={muted}>
+			<View
+				testID="composer-context-usage"
+				role="button"
+				accessibilityLabel={summary()}
+				class="relative shrink-0 flex-row items-center rounded-(--pilo-radius-md) hover:bg-hover active:bg-hover"
+				style={
+					props.touch
+						? {
+								height: 40,
+								paddingHorizontal: 6,
+								gap: 4,
+								opacity: stale() ? 0.6 : 1,
+							}
+						: {
+								height: chatPx(28),
+								left: chatPx(4),
+								marginLeft: -composerToolbarGap(),
+								paddingLeft: chatPx(4),
+								gap: chatPx(4),
+								opacity: stale() ? 0.6 : 1,
+							}
+				}
+			>
+				{() =>
+					percent() === undefined ? (
+						<Icon name="CircleDashed" size={props.touch ? 16 : chatPx(16)} />
+					) : (
+						<>
+							<Text
+								class="font-sans font-medium tabular-nums text-muted-foreground"
+								style={{ fontSize: chatPx(12), lineHeight: chatPx(12) }}
+							>
+								{() => formatPercent(percent())}
+							</Text>
+							<ContextRing percent={ringPercent} />
+						</>
+					)
+				}
+			</View>
+		</Foreground.Provider>
+	);
+	const details = (
+		<>
 			<View class="w-full gap-2 px-2.5 py-2.5">
 				<Text class={sectionTitle}>{() => t("chat.contextSection")}</Text>
 				<View class="flex-row items-baseline justify-between gap-3">
@@ -177,9 +176,10 @@ export function ComposerContextUsage(props: {
 						{() => formatPercent(percent())}
 					</Text>
 					<Text class="font-mono text-[11px] tabular-nums text-muted-foreground">
-						{() =>
-							`${formatCompactTokens(contextTokens())} / ${formatCompactTokens(contextWindow())}`
-						}
+						{() => {
+							const { contextTokens, contextWindow } = context();
+							return `${formatCompactTokens(contextTokens)} / ${formatCompactTokens(contextWindow)}`;
+						}}
 					</Text>
 				</View>
 				<View class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
@@ -235,6 +235,32 @@ export function ComposerContextUsage(props: {
 					</View>
 				) : null
 			}
+		</>
+	);
+	if (props.touch) {
+		return (
+			<Popover
+				placement="top"
+				align="end"
+				offset={8}
+				popupClass="w-[248px] overflow-hidden rounded-(--pilo-context-details-radius) p-0"
+				trigger={trigger}
+			>
+				{details}
+			</Popover>
+		);
+	}
+	return (
+		<HoverCard
+			openDelay={0}
+			closeDelay={150}
+			placement="top"
+			align="end"
+			offset={8}
+			popupClass="w-[248px] overflow-hidden rounded-(--pilo-context-details-radius) p-0"
+			trigger={trigger}
+		>
+			{details}
 		</HoverCard>
 	);
 }

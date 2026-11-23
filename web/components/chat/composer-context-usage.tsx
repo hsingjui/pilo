@@ -3,8 +3,11 @@ import { memo, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { i18n } from "@/i18n";
-import type { ChatSessionRuntimeState } from "@/components/chat/chat-page-utils";
 import { useIsTouchDevice } from "@/components/chat/chat-composer-run-config";
+import {
+	getComposerContextUsage,
+	type ChatSessionRuntimeState,
+} from "@shared/chat/session-stats";
 import {
 	finiteNumber,
 	formatCompactTokens,
@@ -194,20 +197,9 @@ export const ComposerContextUsage = memo(function ComposerContextUsage({
 }: ComposerContextUsageProps) {
 	const { t } = useTranslation();
 	const isTouch = useIsTouchDevice();
-	const contextTokens = finiteNumber(usage?.contextTokens);
-	const contextWindow =
-		finiteNumber(usage?.contextWindow) ?? finiteNumber(modelContextWindow);
-	const reportedPercent = finiteNumber(usage?.contextPercent);
+	const { contextTokens, contextWindow, contextPercent } =
+		getComposerContextUsage(usage, modelContextWindow);
 	const contextStale = usage?.contextStale === true;
-	const emptyContextPercent =
-		!usage && contextWindow !== undefined && contextWindow > 0 ? 0 : undefined;
-	const contextPercent =
-		reportedPercent ??
-		(contextTokens !== undefined &&
-		contextWindow !== undefined &&
-		contextWindow > 0
-			? (contextTokens / contextWindow) * 100
-			: emptyContextPercent);
 
 	const tokens = usage?.tokens;
 	const breakdownRows: Array<[string, number]> = (

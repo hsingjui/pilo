@@ -1,4 +1,5 @@
 import type { PiSessionStats } from "@shared/api/pi-runtime-types";
+import { finiteNumber } from "../format-numbers";
 
 /** 会话头与 composer 展示用的会话运行态覆盖层。 */
 export type ChatSessionRuntimeState = {
@@ -18,6 +19,32 @@ export type ChatSessionRuntimeState = {
 	/** Pi 在压缩后暂时不返回占用，此时保留上一次已知值并置为 true。 */
 	contextStale?: boolean;
 };
+
+/** A model pick changes the window before Pi reports any new session stats. */
+export function getComposerContextUsage(
+	usage: ChatSessionRuntimeState | null | undefined,
+	modelContextWindow: number | undefined,
+) {
+	const contextTokens = finiteNumber(usage?.contextTokens);
+	const reportedWindow = finiteNumber(usage?.contextWindow);
+	const selectedWindow = finiteNumber(modelContextWindow);
+	const contextWindow =
+		selectedWindow !== undefined && selectedWindow > 0
+			? selectedWindow
+			: reportedWindow;
+	let contextPercent: number | undefined;
+	if (contextWindow !== undefined && contextWindow > 0) {
+		if (contextTokens !== undefined) {
+			contextPercent = (contextTokens / contextWindow) * 100;
+		} else if (!usage) {
+			contextPercent = 0;
+		}
+	}
+	if (contextWindow === reportedWindow) {
+		contextPercent ??= finiteNumber(usage?.contextPercent);
+	}
+	return { contextTokens, contextWindow, contextPercent };
+}
 
 function isKnownContextValue(value: number | null | undefined) {
 	return typeof value === "number" && Number.isFinite(value);
