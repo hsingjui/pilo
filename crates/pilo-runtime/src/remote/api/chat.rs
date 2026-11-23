@@ -101,6 +101,35 @@ pub(super) async fn chat_state(
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(super) struct ChatTranscriptQuery {
+    session_key: String,
+    start_message: Option<usize>,
+    message_limit: Option<usize>,
+    #[serde(default)]
+    include_message_index: bool,
+}
+
+pub(super) async fn chat_transcript(
+    state: RemoteHttpState,
+    Query(query): Query<ChatTranscriptQuery>,
+) -> Response {
+    let window = crate::TranscriptWindow {
+        start_message: query.start_message,
+        message_limit: query.message_limit,
+        include_message_index: query.include_message_index,
+    };
+    match state
+        .runtime
+        .chat_transcript_snapshot(&query.session_key, window)
+        .await
+    {
+        Ok(snapshot) => Json(snapshot).into_response(),
+        Err(error) => api_error(StatusCode::BAD_REQUEST, &error),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct ChatRpcRequest {
     session_key: String,
     command: Value,

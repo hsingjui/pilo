@@ -206,6 +206,7 @@ pub(crate) fn router(
         .route("/api/v1/chat/start", post(chat::chat_start))
         .route("/api/v1/chat/stop", post(chat::chat_stop))
         .route("/api/v1/chat/state", get(chat::chat_state))
+        .route("/api/v1/chat/transcript", get(chat::chat_transcript))
         .route("/api/v1/chat/rpc", post(chat::chat_rpc))
         .route("/api/v1/chat/mcp-approve", post(chat::chat_mcp_approve))
         .route("/api/v1/files/search", get(chat::files_search))
@@ -258,11 +259,17 @@ fn allows_spa_fallback(path: &str) -> bool {
 }
 
 fn asset_cache_control(path: &str, spa_fallback: bool) -> &'static str {
-    if spa_fallback || !path.starts_with("assets/") {
-        "no-cache"
-    } else {
-        "public, max-age=31536000, immutable"
+    if spa_fallback || path == "nsh/index.html" || path == "nsh/manifest.webmanifest" {
+        return "no-cache";
     }
+    if path.starts_with("assets/") {
+        return "public, max-age=31536000, immutable";
+    }
+    // `nsh package --target web` emits content-hashed filenames under `nsh/`.
+    if path.starts_with("nsh/") {
+        return "public, max-age=31536000, immutable";
+    }
+    "no-cache"
 }
 
 async fn asset(state: RemoteHttpState, uri: Uri) -> Response {
@@ -274,18 +281,44 @@ fn serve_asset(assets: Option<&dyn crate::web_assets::WebAssets>, uri: Uri) -> R
     if requested_path.starts_with("api/") {
         return StatusCode::NOT_FOUND.into_response();
     }
+    // Redirect `/nsh` to `/nsh/` so relative module and asset paths resolve inside `/nsh/`.
+    if requested_path == "nsh" {
+        let location = match uri.query() {
+            Some(query) => format!("/nsh/?{query}"),
+            None => "/nsh/".to_owned(),
+        };
+        return Response::builder()
+            .status(StatusCode::TEMPORARY_REDIRECT)
+            .header(header::LOCATION, location)
+            .header(header::CACHE_CONTROL, "no-cache")
+            .body(Body::empty())
+            .unwrap_or_else(|error| {
+                api_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("failed to build redirect response: {error}"),
+                )
+            });
+    }
+    let is_nsh_route = requested_path.starts_with("nsh/");
     let path = if requested_path.is_empty() {
         "index.html"
+    } else if requested_path == "nsh/" {
+        "nsh/index.html"
     } else {
         requested_path
     };
     let mut spa_fallback = false;
+    let fallback_index = if is_nsh_route {
+        "nsh/index.html"
+    } else {
+        "index.html"
+    };
     let asset = assets.and_then(|assets| assets.get(path)).or_else(|| {
         if !allows_spa_fallback(path) {
             return None;
         }
         spa_fallback = true;
-        assets.and_then(|assets| assets.get("index.html"))
+        assets.and_then(|assets| assets.get(fallback_index))
     });
     let Some(asset) = asset else {
         return StatusCode::NOT_FOUND.into_response();
@@ -350,10 +383,21 @@ mod tests {
 
     impl crate::web_assets::WebAssets for MemoryAssets {
         fn get(&self, path: &str) -> Option<crate::web_assets::WebAsset> {
-            (path == "index.html").then(|| crate::web_assets::WebAsset {
-                bytes: b"<html>memory webui</html>".to_vec(),
-                mime_type: "text/html".into(),
-            })
+            match path {
+                "index.html" => Some(crate::web_assets::WebAsset {
+                    bytes: b"<html>memory webui</html>".to_vec(),
+                    mime_type: "text/html".into(),
+                }),
+                "nsh/index.html" => Some(crate::web_assets::WebAsset {
+                    bytes: b"<html>nsh webui</html>".to_vec(),
+                    mime_type: "text/html".into(),
+                }),
+                "nsh/app-abc123.js" => Some(crate::web_assets::WebAsset {
+                    bytes: b"console.log('nsh');".to_vec(),
+                    mime_type: "application/javascript".into(),
+                }),
+                _ => None,
+            }
         }
     }
 
@@ -371,7 +415,32 @@ mod tests {
                 b"<html>memory webui</html>"
             );
         }
-        for path in ["/api/missing", "/assets/missing.js"] {
+        let redirect = serve_asset(Some(&MemoryAssets), Uri::from_static("/nsh?mode=rich"));
+        assert_eq!(redirect.status(), StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(redirect.headers()[header::LOCATION], "/nsh/?mode=rich");
+
+        for path in ["/nsh/", "/nsh/chat/session"] {
+            let response = serve_asset(Some(&MemoryAssets), Uri::from_static(path));
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.headers()[header::CONTENT_TYPE], "text/html");
+            assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
+            assert_eq!(
+                axum::body::to_bytes(response.into_body(), 1024)
+                    .await
+                    .unwrap()
+                    .as_ref(),
+                b"<html>nsh webui</html>"
+            );
+        }
+
+        let nsh_script = serve_asset(Some(&MemoryAssets), Uri::from_static("/nsh/app-abc123.js"));
+        assert_eq!(nsh_script.status(), StatusCode::OK);
+        assert_eq!(
+            nsh_script.headers()[header::CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
+
+        for path in ["/api/missing", "/assets/missing.js", "/nsh/missing.js"] {
             assert_eq!(
                 serve_asset(Some(&MemoryAssets), Uri::from_static(path)).status(),
                 StatusCode::NOT_FOUND

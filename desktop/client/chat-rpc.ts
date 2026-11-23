@@ -3,7 +3,10 @@ import type { NshPiloClient } from "./nsh-pilo-client";
 export type PiCommandClient = Pick<
 	NshPiloClient,
 	"sendChatCommand" | "connectEvents"
->;
+> & {
+	/** Namespaces RPCs on transports that broadcast replies to other clients. */
+	readonly rpcIdPrefix?: string;
+};
 
 export const PI_RPC_TIMEOUT_MS = 5000;
 
@@ -28,9 +31,10 @@ export function requestPiRpcOutcome<T>(
 	command: Record<string, unknown>,
 	timeoutMs = PI_RPC_TIMEOUT_MS,
 ): Promise<PiRpcOutcome<T>> {
-	const id = `nsh-rpc-${++rpcSequence}`;
+	const id = `${client.rpcIdPrefix ?? "nsh-rpc"}-${++rpcSequence}`;
 	return new Promise<PiRpcOutcome<T>>((resolve, reject) => {
 		let settled = false;
+		let connected = false;
 		let dispatched = false;
 		let disconnect: (() => void) | null = null;
 		const finish = () => {
@@ -45,6 +49,20 @@ export function requestPiRpcOutcome<T>(
 			resolve({ type: dispatched ? "unconfirmed" : "not_sent" });
 		};
 		const timer = setTimeout(noReply, timeoutMs);
+		const fail = (error: unknown) => {
+			if (settled) return;
+			finish();
+			const cause = error instanceof Error ? error : new Error(String(error));
+			// The Host can lose its Server connection after the write to Pi.
+			if (dispatched) resolve({ type: "unconfirmed", dispatchError: cause });
+			else reject(cause);
+		};
+		const dispatch = async () => {
+			// Registration provides a disposer, not confirmation the stream is live.
+			if (settled || dispatched || !disconnect || !connected) return;
+			dispatched = true;
+			await client.sendChatCommand(sessionKey, { ...command, id });
+		};
 		client
 			.connectEvents({
 				onMessage: (message) => {
@@ -68,8 +86,11 @@ export function requestPiRpcOutcome<T>(
 						return;
 					}
 				},
-				onStatus: (connected) => {
-					if (!connected && !settled) noReply();
+				onStatus: (ready) => {
+					if (settled) return;
+					connected = ready;
+					if (ready) void dispatch().catch(fail);
+					else noReply();
 				},
 			})
 			.then((disposer) => {
@@ -78,17 +99,9 @@ export function requestPiRpcOutcome<T>(
 					return;
 				}
 				disconnect = disposer;
-				dispatched = true;
-				return client.sendChatCommand(sessionKey, { ...command, id });
+				return dispatch();
 			})
-			.catch((error: unknown) => {
-				if (settled) return;
-				finish();
-				const cause = error instanceof Error ? error : new Error(String(error));
-				// The Host can lose its Server connection after the write to Pi.
-				if (dispatched) resolve({ type: "unconfirmed", dispatchError: cause });
-				else reject(cause);
-			});
+			.catch(fail);
 	});
 }
 

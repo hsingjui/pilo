@@ -42,7 +42,10 @@ export type AppStoreClient = Partial<
 		| "deleteSession"
 		| "connectEvents"
 		| "closed"
-	>;
+	> & {
+		/** A transient disconnect leaves subscriptions registered. */
+		readonly reconnectsEvents?: boolean;
+	};
 
 /** The open new chat once a prompt was sent from it, as the sidebar lists it. */
 export type StartedDraft = {
@@ -418,7 +421,12 @@ export class AppStore {
 				if (this.connection === connection) this.receive(message);
 			},
 			onStatus: (connected) => {
-				if (!connected && this.connection === connection) this.dropped();
+				if (connected || this.connection !== connection) return;
+				if (this.client.reconnectsEvents && !this.client.closed) {
+					for (const listener of this.liveListeners) listener(null);
+				} else {
+					this.dropped();
+				}
 			},
 		});
 		if (this.connection === connection) {
