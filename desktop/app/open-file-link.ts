@@ -1,4 +1,5 @@
 import type { Project } from "@shared/api/projects-types";
+import { bytesToBase64 } from "@shared/base64";
 import { resolveMarkdownImageSource } from "@shared/chat/chat-markdown-images";
 import {
 	fileLinkPreviewKind,
@@ -28,14 +29,6 @@ function decodeFileUrlPath(url: string): string {
 		/^\/([a-z]:\/)/i,
 		"$1",
 	);
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-	let binary = "";
-	for (let index = 0; index < bytes.length; index += 0x8000) {
-		binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
-	}
-	return btoa(binary);
 }
 
 export function resolveProjectImageCandidate(

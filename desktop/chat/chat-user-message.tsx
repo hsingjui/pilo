@@ -1,12 +1,13 @@
-import { platform, Text, View } from "nsh";
+import { computed, platform, Text, View } from "nsh";
 
 import { t } from "../app/i18n";
 import { createHover } from "../ui/hover";
 import { ChatCopyButton } from "./chat-copy-button";
 import type { ChatMessageBody, UserChatMessage } from "./chat-message-types";
 import { ConversationColumn } from "./conversation-column";
-import { ChatReadingFont, readingTextStyle } from "./chat-reading-font";
 import { chatMetadataText, chatPx } from "./layout";
+import { ChatUserImages } from "./chat-user-images";
+import { ChatUserMessageBody } from "./chat-user-message-body";
 
 /** A prompt the user sent: a bubble at the end of the column. */
 export function ChatUserMessage(props: {
@@ -15,9 +16,13 @@ export function ChatUserMessage(props: {
 }) {
 	const { message } = props;
 	const hover = createHover();
-	const readingFont = ChatReadingFont();
 	const reveal = () => !platform.desktop || hover.hovered();
 	const hasText = () => Boolean(message().text.trim());
+	const images = () => message().images ?? [];
+	const hasImages = computed(() => images().length > 0);
+	const showBubble = computed(
+		() => Boolean(props.body) || hasText() || !hasImages(),
+	);
 	return (
 		<ConversationColumn class="items-end py-3">
 			<View class="max-w-[70%] items-end gap-1.5" {...hover.props}>
@@ -32,21 +37,21 @@ export function ChatUserMessage(props: {
 						</Text>
 					) : null
 				}
-				<View
-					selectable
-					class="max-w-full rounded-(--pilo-bubble-radius) border border-(--pilo-user-bubble-border) bg-(--pilo-user-bubble-bg) px-4 py-2.5"
-				>
-					{props.body ? (
-						props.body(message)
-					) : (
-						<Text
-							class="font-sans leading-[1.6] text-foreground"
-							style={readingTextStyle(readingFont())}
+				{() => (hasImages() ? <ChatUserImages images={images} /> : null)}
+				{() =>
+					showBubble() ? (
+						<View
+							selectable
+							class="max-w-full rounded-(--pilo-bubble-radius) border border-(--pilo-user-bubble-border) bg-(--pilo-user-bubble-bg) px-4 py-2.5"
 						>
-							{() => message().text}
-						</Text>
-					)}
-				</View>
+							{props.body ? (
+								props.body(message)
+							) : (
+								<ChatUserMessageBody message={message} />
+							)}
+						</View>
+					) : null
+				}
 				{() =>
 					hasText() || message().time ? (
 						<View class="flex-row items-center" style={{ gap: chatPx(6) }}>

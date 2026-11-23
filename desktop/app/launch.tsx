@@ -262,6 +262,8 @@ export async function launch(
 			void store.renameSession(projectId, sessionPath, title),
 		readProjectImage: (projectId, path) =>
 			client.readProjectImage(projectId, path),
+		readHistoryImage: (projectId, sessionPath, imageId) =>
+			client.readHistoryImage(projectId, sessionPath, imageId),
 		saveImage: (suggestedName, bytes) => client.saveImage(suggestedName, bytes),
 	};
 	const showShell = computed(() => {

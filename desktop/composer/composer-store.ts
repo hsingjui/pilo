@@ -54,6 +54,7 @@ import {
 import type { ComposerSuggestion } from "@shared/chat/composer-suggestions";
 import { chatRuntimeHasOpenTurn } from "@shared/chat/chat-session-runtime-model";
 import { appLocale, t } from "../app/i18n";
+import { rememberLocalChatImages } from "../chat/chat-user-image-cache";
 import { requestPiRpc, requestPiRpcOutcome } from "../client/chat-rpc";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import {
@@ -199,6 +200,15 @@ export class ComposerStore {
 	readonly target: Accessor<ComposerTarget | null>;
 	readonly commands: Accessor<readonly ComposerSuggestion[]>;
 	readonly fileSuggestions: Accessor<readonly ComposerSuggestion[]>;
+	private readonly appProjects: Accessor<AppState["projects"]>;
+	private readonly appSessionIndexes: Accessor<AppState["sessionIndexes"]>;
+	private readonly sessionMentionsComputed: Accessor<readonly SessionMention[]>;
+	private readonly sessionsByValueComputed: Accessor<
+		ReadonlyMap<string, SessionMention>
+	>;
+	private readonly mentionDraftComputed: Accessor<
+		ReturnType<typeof readChatMentionDraft>
+	>;
 
 	constructor(deps: {
 		client: ComposerClient;
@@ -232,6 +242,45 @@ export class ComposerStore {
 			createPiCommandSuggestions(this.mergedPiCommands()),
 		);
 		this.fileSuggestions = this.fileSuggestionsSignal;
+		this.appProjects = computed(() => this.app().projects);
+		this.appSessionIndexes = computed(() => this.app().sessionIndexes);
+		this.sessionMentionsComputed = computed(() => {
+			const projects = new Map(
+				this.appProjects().map((project) => [project.id, project]),
+			);
+			return Object.values(this.appSessionIndexes())
+				.flatMap((index) => index.sessions)
+				.flatMap((session): SessionMention[] => {
+					const project = projects.get(session.projectId);
+					if (!project || !session.sessionPath) return [];
+					return [
+						{
+							connectionId: session.connectionId,
+							projectId: session.projectId,
+							path: session.sessionPath,
+							title:
+								session.name ?? session.firstUserMessagePreview ?? "Session",
+							projectName: project.name,
+							updatedAt: Date.parse(session.lastMessageAt ?? session.updatedAt),
+						},
+					];
+				})
+				.sort((a, b) => b.updatedAt - a.updatedAt);
+		});
+		this.sessionsByValueComputed = computed(
+			() =>
+				new Map(
+					this.sessionMentionsComputed().map((mention) => [
+						sessionMentionValue(mention.path),
+						mention,
+					]),
+				),
+		);
+		this.mentionDraftComputed = computed(() => {
+			const value = this.stateSignal().value;
+			if (!value.includes("@")) return { text: value, references: [] };
+			return readChatMentionDraft(value, this.sessionsByValueComputed());
+		});
 		void Storage.getItem(COMPOSER_SEND_MODE_STORAGE_KEY)
 			.then((stored) => {
 				if (isComposerSendMode(stored))
@@ -357,44 +406,16 @@ export class ComposerStore {
 
 	/** Sessions the `@` menu offers, newest first, as mention draft entries. */
 	sessionMentions(): readonly SessionMention[] {
-		const app = this.app();
-		const projects = new Map(
-			app.projects.map((project) => [project.id, project]),
-		);
-		return Object.values(app.sessionIndexes)
-			.flatMap((index) => index.sessions)
-			.flatMap((session): SessionMention[] => {
-				const project = projects.get(session.projectId);
-				if (!project || !session.sessionPath) return [];
-				return [
-					{
-						connectionId: session.connectionId,
-						projectId: session.projectId,
-						path: session.sessionPath,
-						title: session.name ?? session.firstUserMessagePreview ?? "Session",
-						projectName: project.name,
-						updatedAt: Date.parse(session.lastMessageAt ?? session.updatedAt),
-					},
-				];
-			})
-			.sort((a, b) => b.updatedAt - a.updatedAt);
+		return this.sessionMentionsComputed();
 	}
 
 	/** Mention tokens in the current draft, keyed by their written form. */
-	private sessionsByValue(): ReadonlyMap<string, SessionMention> {
-		return new Map(
-			this.sessionMentions().map((mention) => [
-				sessionMentionValue(mention.path),
-				mention,
-			]),
-		);
+	sessionsByValue(): ReadonlyMap<string, SessionMention> {
+		return this.sessionsByValueComputed();
 	}
 
 	mentionDraft() {
-		return readChatMentionDraft(
-			this.stateSignal().value,
-			this.sessionsByValue(),
-		);
+		return this.mentionDraftComputed();
 	}
 
 	private async appendHistory(projectId: string, text: string) {
@@ -944,6 +965,7 @@ export class ComposerStore {
 		// A prompt that starts a turn shows in the chat while Pi starts and
 		// takes it; known or pending-check extension commands skip the local bubble.
 		const message = submission.text;
+		rememberLocalChatImages(submission.images);
 		let local =
 			running || knownExtensionCommand || needsExtensionCheck
 				? null

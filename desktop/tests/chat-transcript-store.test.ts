@@ -264,6 +264,28 @@ test("events that arrive while the snapshot is awaited are applied above its cut
 	expect(texts()).toEqual(["saved", "asked", "one two"]);
 });
 
+test("a cold Pi snapshot retains local images even if the turn settles during the read", async () => {
+	const { store, answers, snapshots } = fakeClient();
+	answers.runtime = stopped;
+	await store.open(target, true);
+	const images = [
+		{ id: "img-1", mimeType: "image/png", source: "local" as const },
+	];
+	const id = store.submitLocal(target.sessionKey, "asked", images);
+	expect(id).not.toBeNull();
+	answers.runtime = running;
+	store.receive([process(11, "running"), asked(12, "asked")]);
+	await settle();
+	store.receive([settled(13)]);
+	snapshots[0]?.resolve(snapshot(12, turn("reply")));
+	await settle();
+	const users = store.messages().filter((message) => message.role === "user");
+	expect(users.map(({ text }) => text)).toEqual(["saved", "asked"]);
+	expect(users[0]?.images).toBeUndefined();
+	expect(users[1]?.id).toBe(id);
+	expect(users[1]?.images).toEqual(images);
+});
+
 test("a truncated idle snapshot does not reuse prefetched history from before the snapshot", async () => {
 	const { store, answers, histories, snapshots, texts } = fakeClient();
 	answers.history = null;

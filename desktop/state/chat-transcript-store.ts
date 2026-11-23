@@ -42,6 +42,7 @@ import {
 	conversationFromHistory,
 	conversationFromSnapshot,
 	followsSnapshot,
+	type LocalImageEcho,
 } from "./chat-transcript";
 import type { SessionHistoryMetadata } from "./chat-run-config";
 
@@ -324,6 +325,8 @@ export class ChatTranscriptStore {
 	private fresh = false;
 	/** The prompt sent from this app that Pi has not echoed yet. */
 	private local: LocalTurn | undefined;
+	/** The acknowledged local images are needed while rebuilding this live turn. */
+	private localImageEcho: (LocalImageEcho & { generation: number }) | undefined;
 	/**
 	 * Whether an external Pi runs a turn in the open chat's session: its
 	 * saved history then ends in that turn, which shows as running.
@@ -563,6 +566,7 @@ export class ChatTranscriptStore {
 		this.tried = false;
 		this.fresh = false;
 		this.local = undefined;
+		this.localImageEcho = undefined;
 		this.external = false;
 		this.historyMetaSignal.set(null);
 	}
@@ -573,6 +577,31 @@ export class ChatTranscriptStore {
 	 */
 	refresh() {
 		return this.target ? this.read() : Promise.resolve();
+	}
+
+	private acknowledgeLocal(
+		text: string,
+		generation: number,
+		sequence?: number,
+	) {
+		const prompt = this.local?.actions.find(
+			(action) => action.type === "local_user_submit",
+		);
+		if (prompt?.images?.length && prompt.text === text) {
+			this.localImageEcho = {
+				text,
+				images: prompt.images,
+				clientMessageId: prompt.clientMessageId,
+				generation,
+				sequence,
+			};
+		} else if (
+			this.localImageEcho?.generation !== generation ||
+			this.localImageEcho.sequence !== sequence
+		) {
+			this.localImageEcho = undefined;
+		}
+		this.local = undefined;
 	}
 
 	/** Takes a batch of runtime events, in order, of any chat or of none. */
@@ -586,8 +615,13 @@ export class ChatTranscriptStore {
 			turnOver ||= settles(event);
 			// Pi's echo of the local prompt, or the end of its process, takes
 			// the place of what was shown for it.
-			if (event.type === "user_message_start" || settles(event)) {
+			if (event.type === "user_message_start") {
+				this.acknowledgeLocal(event.text, event.generation, event.sequence);
+			} else if (settles(event)) {
 				this.local = undefined;
+				// A snapshot in flight may be from before this turn finished.
+				if (event.type !== "assistant_message_end")
+					this.localImageEcho = undefined;
 			}
 			if (this.buffer) {
 				// Looked at when the read in flight is done.
@@ -942,20 +976,27 @@ export class ChatTranscriptStore {
 					void this.read();
 					return;
 				}
+				if (this.local && snapshot.live.type === "active") {
+					const echo = snapshot.live.events.findLast(
+						(event) => event.type === "user_message_start",
+					);
+					if (echo) this.acknowledgeLocal(echo.text, snapshot.generation);
+				}
 				const conversation = conversationFromSnapshot(
 					snapshot,
 					events,
 					this.context,
+					this.localImageEcho?.generation === snapshot.generation
+						? this.localImageEcho
+						: undefined,
 				);
 				if (conversation) {
-					// A snapshot taken after Pi took the local prompt holds its echo.
+					// An idle snapshot after the echo reads the images from saved history.
 					if (
-						snapshot.live.type === "active" &&
-						snapshot.live.events.some(
-							(event) => event.type === "user_message_start",
-						)
+						snapshot.live.type === "idle" &&
+						(this.localImageEcho?.sequence ?? -1) <= snapshot.eventSequence
 					) {
-						this.local = undefined;
+						this.localImageEcho = undefined;
 					}
 					this.cut = {
 						sessionKey,

@@ -500,3 +500,57 @@ test("cold-start extension command is detected after startChat and skips local b
 	expect(store.state().value).toBe("");
 	expect(store.commands().map((item) => item.value)).toEqual(["/deploy"]);
 });
+
+test("sessionMentions and sessionsByValue stay referentially stable across navigation changes", () => {
+	const { client } = fakeClient();
+	const projects = [{ id: "p1", name: "Project" }] as AppState["projects"];
+	const sessionIndexes = {
+		p1: {
+			status: "loaded" as const,
+			sessions: [
+				{
+					connectionId: "local",
+					projectId: "p1",
+					piSessionId: "s1",
+					sessionPath: "/sessions/s1.jsonl",
+					name: "First",
+					cwd: "/project",
+					createdAt: "2026-11-20T00:00:00Z",
+					updatedAt: "2026-11-20T00:00:00Z",
+					messageCount: 2,
+					lastMessageAt: "2026-11-20T00:00:00Z",
+					firstUserMessagePreview: "First",
+					fileSize: 10,
+					fileMtimeNs: "100",
+					lastOffset: 10,
+					indexedAtMs: 0,
+					pinned: false,
+					titleOverride: null,
+				},
+			],
+		},
+	};
+	const app = signal<AppState>({
+		...createAppState(),
+		projects,
+		sessionIndexes,
+		navigation: {
+			projectId: "p1",
+			session: { projectId: "p1", sessionPath: "/sessions/s1.jsonl" },
+		},
+	});
+	const store = new ComposerStore({ client, app });
+	const mentionsBefore = store.sessionMentions();
+	const mapBefore = store.sessionsByValue();
+
+	app.set({
+		...app(),
+		navigation: {
+			projectId: "p1",
+			session: { projectId: "p1", sessionPath: "/sessions/s2.jsonl" },
+		},
+	});
+
+	expect(store.sessionMentions()).toBe(mentionsBefore);
+	expect(store.sessionsByValue()).toBe(mapBefore);
+});

@@ -9,26 +9,48 @@ import {
 } from "@shared/chat/conversation-replay";
 import { toConversationAction } from "@shared/chat/conversation-runtime-adapter";
 import type {
+	ChatConversationImage,
 	ConversationAction,
 	ConversationReducerContext,
 	ConversationState,
 } from "@shared/chat/conversation-types";
 import type { ChatTranscriptSnapshot } from "../client/nsh-pilo-client";
 
-/**
- * Applies a chat's runtime events to its conversation in order, through the
- * WebUI's adapter and reducer. Events that carry no transcript content are
- * skipped.
- */
+export type LocalImageEcho = {
+	text: string;
+	images: ChatConversationImage[];
+	clientMessageId: string;
+	sequence?: number;
+};
+
+/** Applies a chat's runtime events through the shared adapter and reducer. */
 export function applyChatEvents(
 	conversation: ConversationState,
 	events: readonly PiloRuntimeEvent[],
 	context: ConversationReducerContext,
+	localImageEcho?: LocalImageEcho,
 ): ConversationState {
+	const echo =
+		localImageEcho &&
+		events.findLast(
+			(event) =>
+				event.type === "user_message_start" &&
+				(!("sequence" in event) || event.sequence === localImageEcho.sequence),
+		);
 	const actions: ConversationAction[] = [];
 	for (const event of events) {
 		const action = toConversationAction(event);
-		if (action) actions.push(action);
+		if (!action) continue;
+		if (
+			localImageEcho &&
+			event === echo &&
+			action.type === "user_message_start" &&
+			action.text === localImageEcho.text
+		) {
+			action.images = localImageEcho.images;
+			action.sourceEntryId = localImageEcho.clientMessageId;
+		}
+		actions.push(action);
 	}
 	if (actions.length === 0) return conversation;
 	return reduceConversationActions(
@@ -87,15 +109,27 @@ export function conversationFromSnapshot(
 	snapshot: ChatTranscriptSnapshot,
 	streamed: readonly PiloClientEvent[],
 	context: ConversationReducerContext,
+	localImageEcho?: LocalImageEcho,
 ): ConversationState | null {
 	if (snapshot.live.type === "truncated") return null;
-	let conversation = conversationFromHistory(snapshot.history.history, context);
-	if (snapshot.live.type === "active") {
-		conversation = applyChatEvents(conversation, snapshot.live.events, context);
-	}
-	return applyChatEvents(
-		conversation,
-		streamed.filter((event) => followsSnapshot(snapshot, event)),
+	const conversation = conversationFromHistory(
+		snapshot.history.history,
 		context,
+	);
+	const later = streamed.filter((event) => followsSnapshot(snapshot, event));
+	const live = snapshot.live.type === "active" ? snapshot.live.events : [];
+	const echoSequence = localImageEcho?.sequence;
+	const echoAfterSnapshot =
+		echoSequence !== undefined && echoSequence > snapshot.eventSequence;
+	return applyChatEvents(
+		applyChatEvents(
+			conversation,
+			live,
+			context,
+			echoAfterSnapshot ? undefined : localImageEcho,
+		),
+		later,
+		context,
+		echoAfterSnapshot ? localImageEcho : undefined,
 	);
 }

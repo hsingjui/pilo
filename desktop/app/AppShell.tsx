@@ -13,6 +13,7 @@ import {
 import { currentWindow } from "nsh/desktop";
 
 import type { Project } from "@shared/api/projects-types";
+import type { ChatConversationImage } from "@shared/chat/conversation-types";
 import { CacheKeepAliveNotice } from "../chat/cache-keep-alive-notice";
 import { ChatAgentActivityIndicator } from "../chat/chat-agent-activity";
 import { ChatImageLightbox } from "../chat/chat-image-lightbox";
@@ -24,6 +25,7 @@ import {
 } from "../chat/chat-media-actions";
 import { ChatReadingFont, chatReadingFont } from "../chat/chat-reading-font";
 import { ChatTodoCapsule } from "../chat/chat-todo-capsule";
+import { readChatUserImage } from "../chat/chat-user-image-cache";
 import {
 	ConversationColumn,
 	ConversationColumnLayout,
@@ -106,6 +108,12 @@ export interface AppShellProps {
 	assistanceClient?: ComposerAssistanceClient;
 	/** Reads a project-relative image's bytes (reply `![…](path)` previews). */
 	readProjectImage?: (projectId: string, path: string) => Promise<Uint8Array>;
+	/** Reads an image of a saved user message from its session file. */
+	readHistoryImage?: (
+		projectId: string,
+		sessionPath: string,
+		imageId: string,
+	) => Promise<Uint8Array>;
 	/** Prompts the user to save an image from the preview lightbox. */
 	saveImage?: (suggestedName: string, bytes: Uint8Array) => Promise<boolean>;
 	/** Opens a file link via the runtime (returns preview text or launches the system app). */
@@ -188,6 +196,25 @@ export function AppShell(props: AppShellProps) {
 			: undefined);
 	const mediaActions = {
 		openImage: (image: ChatImagePreview) => previewImage.set(image),
+		sessionMentions: () => composer.sessionsByValue(),
+		readUserImage: (image: ChatConversationImage) => {
+			const session = store.state().navigation.session;
+			const config = props.runConfig?.state();
+			const sessionPath =
+				session?.sessionPath ||
+				(config &&
+				config.sessionKey === chatSessionKey() &&
+				config.projectId === session?.projectId
+					? config.session?.sessionPath
+					: undefined);
+			const read = props.readHistoryImage;
+			return readChatUserImage(
+				image,
+				session && sessionPath && read
+					? { projectId: session.projectId, sessionPath, read }
+					: null,
+			);
+		},
 		...(fileOpenContext
 			? {
 					canOpenFile: (path: string) =>

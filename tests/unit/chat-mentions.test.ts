@@ -9,6 +9,7 @@ import {
 	writeChatMentionDraft,
 	type ChatMention,
 } from "../../shared/chat/chat-mentions.ts";
+import { classifyFileType } from "../../shared/chat/file-type-icon.ts";
 import { createChatSubmission } from "../../shared/chat/chat-submission.ts";
 import {
 	sessionMentionValue,
@@ -230,4 +231,33 @@ test("reference shelf deduplicates mixed inline and trailing references", () => 
 		),
 		draft,
 	);
+});
+
+test("classifyFileType maps common extensions and special names with fallback", () => {
+	assert.equal(
+		classifyFileType("desktop/chat/chat-user-message-body.tsx"),
+		"react",
+	);
+	assert.equal(classifyFileType("components/App.jsx"), "react");
+	assert.equal(classifyFileType("shared/chat/chat-mentions.ts"), "typescript");
+	assert.equal(classifyFileType("types/global.d.ts"), "typescript");
+	assert.equal(classifyFileType("scripts/build.mjs"), "javascript");
+	assert.equal(classifyFileType("crates/pilo-runtime/src/lib.rs"), "rust");
+	assert.equal(classifyFileType("desktop/.nsh/rust/description.json"), "json");
+	assert.equal(classifyFileType("README.md"), "markdown");
+	assert.equal(classifyFileType("web/index.css"), "style");
+	assert.equal(classifyFileType("index.html"), "markup");
+	assert.equal(classifyFileType("Dockerfile"), "config");
+	assert.equal(classifyFileType("Cargo.toml"), "config");
+	assert.equal(classifyFileType(".env.local"), "config");
+	assert.equal(classifyFileType("Makefile"), "shell");
+	assert.equal(classifyFileType("scripts/deploy.sh"), "shell");
+	assert.equal(classifyFileType("migrations/001.sql"), "database");
+	assert.equal(classifyFileType("assets/logo.png"), "image");
+	assert.equal(classifyFileType("release.tar.gz"), "archive");
+	assert.equal(classifyFileType("main.swift"), "code");
+	// 兜底
+	assert.equal(classifyFileType("unknown.xyz123"), "file");
+	assert.equal(classifyFileType("NOEXT"), "file");
+	assert.equal(classifyFileType(""), "file");
 });

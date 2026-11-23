@@ -19,6 +19,7 @@ import type {
 import type { Project } from "@shared/api/projects-types";
 import { resolveMarkdownImageSource } from "@shared/chat/chat-markdown-images";
 import { resolveMarkdownFileLink } from "@shared/chat/chat-markdown-links";
+import { bytesToBase64 } from "@shared/base64";
 import { MAX_CHAT_IMAGE_BYTES } from "@shared/chat/chat-submission";
 import { fileBasename } from "@shared/chat/chat-tool-result";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
@@ -116,14 +117,6 @@ type ProjectImageState =
 	| { type: "loading" }
 	| { type: "ready"; url: string; size: number }
 	| { type: "error" };
-
-function bytesToBase64(bytes: Uint8Array): string {
-	let binary = "";
-	for (let index = 0; index < bytes.length; index += 0x8000) {
-		binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
-	}
-	return btoa(binary);
-}
 
 const MAX_INLINE_IMAGE_HEIGHT = 384;
 
