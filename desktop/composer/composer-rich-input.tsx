@@ -318,12 +318,25 @@ function SessionRichInput(session: {
 			});
 		} else imageLayouts.delete(sessionKey);
 	};
-	const syncSuggestion = () => {
+	let suggestionRevision = -1;
+	let suggestionDisabled = false;
+	const syncSuggestion = (doc?: RichNodeJSON) => {
 		if (!isCurrent()) return;
+		const revision = editor.revision;
+		const disabled = props.disabled();
+		// A document edit can emit both update and selectionUpdate.
+		if (revision === suggestionRevision && disabled === suggestionDisabled)
+			return;
+		suggestionRevision = revision;
+		suggestionDisabled = disabled;
+		const noTrigger =
+			revision === syncedRevision &&
+			!lastSyncedValue.includes("@") &&
+			!lastSyncedValue.startsWith("/");
 		props.onSuggestionChange(
-			props.disabled()
+			disabled || noTrigger
 				? null
-				: activeRichSuggestion(editor.doc, editor.selection),
+				: activeRichSuggestion(doc ?? editor.doc, editor.selection),
 		);
 	};
 
@@ -368,7 +381,7 @@ function SessionRichInput(session: {
 	};
 
 	const stopUpdate = editor.on("update", syncFromEditor);
-	const stopSelection = editor.on("selectionUpdate", syncSuggestion);
+	const stopSelection = editor.on("selectionUpdate", () => syncSuggestion());
 	const stopFocus = editor.on("focus", () => {
 		if (!isCurrent()) return;
 		focused.set(true);
@@ -478,7 +491,7 @@ function SessionRichInput(session: {
 			syncedRevision = editor.revision;
 			knownDocImageIds = new Set(richDocImageIds(doc));
 			if (!disabled) rememberLayout(doc, nextValue);
-			syncSuggestion();
+			syncSuggestion(doc);
 		});
 	});
 
