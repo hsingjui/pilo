@@ -9,7 +9,7 @@ use portable_pty::{Child as PtyChild, CommandBuilder, MasterPty, PtySize, native
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::environment::{cached_login_path, default_shell};
+use crate::environment::{cached_login_path, default_shell_in_path};
 use crate::session::windows_verbatim_path;
 use crate::{ServerState, blocking};
 
@@ -61,13 +61,9 @@ pub(crate) async fn terminal_open(
         })
         .map_err(|error| format!("failed to open terminal PTY: {error}"))?;
 
-    let shell = default_shell();
-    let mut command = CommandBuilder::new(shell);
-    #[cfg(windows)]
-    // xterm consumes UTF-8; initialize cmd.exe to emit the same encoding.
-    command.args(["/D", "/K", "chcp 65001>NUL"]);
-    set_project_cwd(&mut command, &params.project);
-    command.env("PATH", cached_login_path(state).await);
+    let path = cached_login_path(state).await;
+    let shell = default_shell_in_path(&path);
+    let command = build_terminal_command(&shell, &params.project, &path);
     let child = pair
         .slave
         .spawn_command(command)
@@ -161,6 +157,47 @@ pub(crate) async fn terminal_open(
     Ok(Value::Null)
 }
 
+#[cfg(any(windows, test))]
+const WINDOWS_POWERSHELL_UTF8_INIT: &str = "[Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [Console]::OutputEncoding";
+
+fn build_terminal_command(shell: &str, project: &str, path: &str) -> CommandBuilder {
+    let mut command = CommandBuilder::new(shell);
+    #[cfg(windows)]
+    command.args(windows_shell_args(shell));
+    set_project_cwd(&mut command, project);
+    command.env("PATH", path);
+    if std::env::var_os("TERM").is_none_or(|value| value.is_empty()) {
+        command.env("TERM", "xterm-256color");
+    }
+    if std::env::var_os("COLORTERM").is_none_or(|value| value.is_empty()) {
+        command.env("COLORTERM", "truecolor");
+    }
+    command
+}
+
+#[cfg(any(windows, test))]
+fn windows_shell_args(shell: &str) -> &'static [&'static str] {
+    let executable = shell
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(shell)
+        .trim_matches('"')
+        .to_ascii_lowercase();
+    match executable.as_str() {
+        // Keep user profiles enabled (no -NoProfile) while aligning ConPTY console
+        // I/O and pipeline encoding with the UTF-8 terminal emulator.
+        "pwsh" | "pwsh.exe" | "powershell" | "powershell.exe" => &[
+            "-NoLogo",
+            "-NoExit",
+            "-Command",
+            WINDOWS_POWERSHELL_UTF8_INIT,
+        ],
+        // Keep AutoRun enabled (no /D) when falling back to cmd.exe.
+        "cmd" | "cmd.exe" => &["/K", "chcp 65001>NUL"],
+        _ => &[],
+    }
+}
+
 /// `fs::canonicalize` 在 Windows 上给出 `\\?\E:\...`，`cmd.exe` 会把它当成 UNC 路径并
 /// 回退到 Windows 目录，终端就在错误的目录里启动。PTY 的 cwd 必须先去掉 verbatim
 /// 前缀；UNC 形式还原为 `\\server\share`，普通路径（含 POSIX 路径）原样保留。
@@ -246,7 +283,7 @@ pub(crate) async fn terminal_close(
 mod tests {
     use portable_pty::CommandBuilder;
 
-    use super::set_project_cwd;
+    use super::{WINDOWS_POWERSHELL_UTF8_INIT, set_project_cwd, windows_shell_args};
 
     fn resolved_cwd(project: &str) -> Option<String> {
         let mut command = CommandBuilder::new("terminal-cwd-test");
@@ -283,5 +320,44 @@ mod tests {
                 "project={project}"
             );
         }
+    }
+
+    #[test]
+    fn windows_shell_args_preserve_profiles_and_initialize_utf8() {
+        for shell in [
+            "pwsh",
+            "pwsh.exe",
+            r"C:\Program Files\PowerShell\7\pwsh.exe",
+            r"C:\Users\dev\AppData\Local\Microsoft\WindowsApps\pwsh.exe",
+            "powershell",
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+        ] {
+            let args = windows_shell_args(shell);
+            assert_eq!(
+                args,
+                &[
+                    "-NoLogo",
+                    "-NoExit",
+                    "-Command",
+                    WINDOWS_POWERSHELL_UTF8_INIT
+                ],
+                "shell={shell}"
+            );
+            assert!(
+                !args.contains(&"-NoProfile"),
+                "PowerShell terminal must load user profile for shell={shell}"
+            );
+        }
+
+        for shell in ["cmd", "cmd.exe", r"C:\Windows\system32\cmd.exe"] {
+            let args = windows_shell_args(shell);
+            assert_eq!(args, &["/K", "chcp 65001>NUL"], "shell={shell}");
+            assert!(
+                !args.contains(&"/D"),
+                "cmd.exe fallback must not disable AutoRun for shell={shell}"
+            );
+        }
+
+        assert!(windows_shell_args(r"C:\Program Files\Git\bin\bash.exe").is_empty());
     }
 }

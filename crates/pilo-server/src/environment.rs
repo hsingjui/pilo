@@ -250,26 +250,103 @@ async fn global_bin_dir(path: &str, name: &str, args: &[&str]) -> Option<PathBuf
 }
 
 pub(crate) fn default_shell() -> String {
-    if cfg!(windows) {
-        return std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_owned());
-    }
-    if let Ok(shell) = std::env::var("SHELL")
-        && Path::new(&shell).is_file()
+    let path = std::env::var("PATH").unwrap_or_default();
+    default_shell_in_path(&path)
+}
+
+pub(crate) fn default_shell_in_path(path: &str) -> String {
+    #[cfg(windows)]
     {
-        return shell;
+        resolve_windows_shell(path)
     }
-    if let (Ok(home), Ok(passwd)) = (
-        std::env::var("HOME"),
-        std::fs::read_to_string("/etc/passwd"),
-    ) {
-        for line in passwd.lines() {
-            let fields = line.split(':').collect::<Vec<_>>();
-            if fields.len() >= 7 && fields[5] == home && Path::new(fields[6]).is_file() {
-                return fields[6].to_owned();
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        if let Ok(shell) = std::env::var("SHELL")
+            && Path::new(&shell).is_file()
+        {
+            return shell;
+        }
+        if let (Ok(home), Ok(passwd)) = (
+            std::env::var("HOME"),
+            std::fs::read_to_string("/etc/passwd"),
+        ) {
+            for line in passwd.lines() {
+                let fields = line.split(':').collect::<Vec<_>>();
+                if fields.len() >= 7 && fields[5] == home && Path::new(fields[6]).is_file() {
+                    return fields[6].to_owned();
+                }
             }
         }
+        "/bin/sh".to_owned()
     }
-    "/bin/sh".to_owned()
+}
+
+#[cfg(windows)]
+fn resolve_windows_shell(path: &str) -> String {
+    let program_files = std::env::var_os("ProgramFiles").map(PathBuf::from);
+    let program_files_x86 = std::env::var_os("ProgramFiles(x86)").map(PathBuf::from);
+    let local_app_data = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    let system_root = std::env::var_os("SystemRoot").map(PathBuf::from);
+    let comspec = std::env::var("COMSPEC").ok();
+    resolve_windows_shell_with(
+        || find_command(path, "pwsh.exe"),
+        || find_command(path, "powershell.exe"),
+        program_files.as_deref(),
+        program_files_x86.as_deref(),
+        local_app_data.as_deref(),
+        system_root.as_deref(),
+        comspec.as_deref(),
+        is_executable_file,
+    )
+}
+
+#[cfg(any(windows, test))]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "injecting Windows environment paths keeps shell fallback resolution testable on all platforms"
+)]
+fn resolve_windows_shell_with(
+    find_pwsh_in_path: impl FnOnce() -> Option<String>,
+    find_powershell_in_path: impl FnOnce() -> Option<String>,
+    program_files: Option<&Path>,
+    program_files_x86: Option<&Path>,
+    local_app_data: Option<&Path>,
+    system_root: Option<&Path>,
+    comspec: Option<&str>,
+    mut exists: impl FnMut(&Path) -> bool,
+) -> String {
+    if let Some(pwsh) = find_pwsh_in_path() {
+        return pwsh;
+    }
+    let pwsh_candidates = [
+        program_files.map(|dir| dir.join("PowerShell").join("7").join("pwsh.exe")),
+        program_files_x86.map(|dir| dir.join("PowerShell").join("7").join("pwsh.exe")),
+        local_app_data.map(|dir| dir.join("Microsoft").join("WindowsApps").join("pwsh.exe")),
+    ];
+    for candidate in pwsh_candidates.into_iter().flatten() {
+        if exists(&candidate) {
+            return candidate.to_string_lossy().into_owned();
+        }
+    }
+    if let Some(system_root) = system_root {
+        let windows_powershell = system_root
+            .join("System32")
+            .join("WindowsPowerShell")
+            .join("v1.0")
+            .join("powershell.exe");
+        if exists(&windows_powershell) {
+            return windows_powershell.to_string_lossy().into_owned();
+        }
+    }
+    if let Some(powershell) = find_powershell_in_path() {
+        return powershell;
+    }
+    comspec
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("cmd.exe")
+        .to_owned()
 }
 
 async fn login_path(shell: &str) -> Option<String> {
@@ -341,8 +418,8 @@ pub(crate) async fn cached_toolchain(state: &ServerState) -> Result<&ToolchainIn
     state
         .toolchain
         .get_or_try_init(|| async {
-            let shell = default_shell();
             let path = cached_login_path(state).await;
+            let shell = default_shell_in_path(&path);
             let home = std::env::var("HOME")
                 .or_else(|_| std::env::var("USERPROFILE"))
                 .unwrap_or_default();
@@ -489,6 +566,30 @@ fn tool_search_path(path: &str) -> String {
     append_search_paths(path, dirs.into_iter().filter(|dir| dir.is_absolute()))
 }
 
+fn is_executable_file(path: &Path) -> bool {
+    match std::fs::metadata(path) {
+        Ok(metadata) => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+            }
+            #[cfg(not(unix))]
+            {
+                metadata.is_file()
+            }
+        }
+        #[cfg(windows)]
+        Err(error) if error.raw_os_error() == Some(1920) => {
+            // Microsoft Store App Execution Aliases (e.g. WindowsApps\pwsh.exe) are
+            // IO_REPARSE_TAG_APPEXECLINK reparse points: metadata() can return
+            // ERROR_CANT_ACCESS_FILE (1920), while CreateProcess runs them normally.
+            std::fs::symlink_metadata(path).is_ok_and(|metadata| !metadata.is_dir())
+        }
+        Err(_) => false,
+    }
+}
+
 fn find_command(path: &str, name: &str) -> Option<String> {
     let has_extension = Path::new(name)
         .extension()
@@ -518,16 +619,8 @@ fn find_command(path: &str, name: &str) -> Option<String> {
     std::env::split_paths(path).find_map(|dir| {
         extensions.iter().find_map(|extension| {
             let candidate = dir.join(format!("{name}{extension}"));
-            let metadata = std::fs::metadata(&candidate).ok()?;
-            if !metadata.is_file() {
+            if !is_executable_file(&candidate) {
                 return None;
-            }
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if metadata.permissions().mode() & 0o111 == 0 {
-                    return None;
-                }
             }
             Some(candidate.to_string_lossy().into_owned())
         })
@@ -665,4 +758,129 @@ fn command_output_text(stdout: &[u8], stderr: &[u8], success: bool) -> Result<St
     }
     let text = if stdout.is_empty() { stderr } else { stdout };
     Ok(String::from_utf8_lossy(text).trim().to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::resolve_windows_shell_with;
+
+    #[test]
+    fn windows_shell_prefers_pwsh_then_powershell_then_comspec() {
+        let program_files = Path::new(r"C:\Program Files");
+        let program_files_x86 = Path::new(r"C:\Program Files (x86)");
+        let local_app_data = Path::new(r"C:\Users\dev\AppData\Local");
+        let system_root = Path::new(r"C:\Windows");
+
+        // 1. pwsh on PATH wins over standard install paths and Windows PowerShell.
+        let path_pwsh = r"C:\Users\dev\AppData\Local\Microsoft\WindowsApps\pwsh.exe";
+        assert_eq!(
+            resolve_windows_shell_with(
+                || Some(path_pwsh.to_owned()),
+                || Some(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe".to_owned()),
+                Some(program_files),
+                Some(program_files_x86),
+                Some(local_app_data),
+                Some(system_root),
+                Some(r"C:\Windows\system32\cmd.exe"),
+                |_| true,
+            ),
+            path_pwsh
+        );
+
+        // 2. Standard Program Files pwsh install when not on PATH.
+        let std_pwsh = program_files.join("PowerShell").join("7").join("pwsh.exe");
+        assert_eq!(
+            resolve_windows_shell_with(
+                || None,
+                || None,
+                Some(program_files),
+                Some(program_files_x86),
+                Some(local_app_data),
+                Some(system_root),
+                Some(r"C:\Windows\system32\cmd.exe"),
+                |candidate| candidate == std_pwsh,
+            ),
+            std_pwsh.to_string_lossy()
+        );
+
+        // 3. WindowsApps pwsh alias when not on PATH or Program Files.
+        let store_pwsh = local_app_data
+            .join("Microsoft")
+            .join("WindowsApps")
+            .join("pwsh.exe");
+        assert_eq!(
+            resolve_windows_shell_with(
+                || None,
+                || None,
+                Some(program_files),
+                Some(program_files_x86),
+                Some(local_app_data),
+                Some(system_root),
+                Some(r"C:\Windows\system32\cmd.exe"),
+                |candidate| candidate == store_pwsh,
+            ),
+            store_pwsh.to_string_lossy()
+        );
+
+        // 4. Windows PowerShell 5.1 when no pwsh exists.
+        let win_powershell = system_root
+            .join("System32")
+            .join("WindowsPowerShell")
+            .join("v1.0")
+            .join("powershell.exe");
+        assert_eq!(
+            resolve_windows_shell_with(
+                || None,
+                || None,
+                Some(program_files),
+                Some(program_files_x86),
+                Some(local_app_data),
+                Some(system_root),
+                Some(r"C:\Windows\system32\cmd.exe"),
+                |candidate| candidate == win_powershell,
+            ),
+            win_powershell.to_string_lossy()
+        );
+
+        // 5. Fallback to COMSPEC, then cmd.exe.
+        assert_eq!(
+            resolve_windows_shell_with(
+                || None,
+                || None,
+                Some(program_files),
+                Some(program_files_x86),
+                Some(local_app_data),
+                Some(system_root),
+                Some(r"C:\Windows\system32\cmd.exe"),
+                |_| false,
+            ),
+            r"C:\Windows\system32\cmd.exe"
+        );
+        assert_eq!(
+            resolve_windows_shell_with(
+                || None,
+                || None,
+                None,
+                None,
+                None,
+                None,
+                Some("   "),
+                |_| false,
+            ),
+            "cmd.exe"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn default_shell_resolves_powershell_on_windows() {
+        let shell = super::default_shell();
+        let lower = shell.to_ascii_lowercase();
+        assert!(
+            lower.ends_with("pwsh.exe") || lower.ends_with("powershell.exe"),
+            "expected pwsh.exe or powershell.exe on Windows, got: {shell}"
+        );
+    }
 }
