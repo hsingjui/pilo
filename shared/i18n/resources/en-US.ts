@@ -1001,6 +1001,7 @@ const enUS = {
 	},
 	terminal: {
 		openFailed: "Unable to open Terminal",
+		outputTruncated: "Older terminal output was discarded",
 		partialCloseFailed: "Some Terminals could not be closed normally",
 		resize: "Adjust terminal height",
 		rename: "Rename Terminal",

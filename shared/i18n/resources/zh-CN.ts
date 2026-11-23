@@ -965,6 +965,7 @@ const zhCN = {
 	terminal: {
 		...enUS.terminal,
 		openFailed: "无法打开 Terminal",
+		outputTruncated: "较早的终端输出已丢弃",
 		partialCloseFailed: "部分 Terminal 未能正常关闭",
 		resize: "调整终端高度",
 		rename: "重命名 Terminal",

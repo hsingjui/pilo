@@ -27,6 +27,7 @@ export type TerminalTab = {
 export type TerminalSink = {
 	/** Output bytes, base64. */
 	output(data: string): void;
+	outputTruncated?(): void;
 	exit(): void;
 	error(message: string): void;
 };
@@ -35,6 +36,15 @@ export type TerminalSink = {
 const INITIAL_COLS = 80;
 const INITIAL_ROWS = 24;
 const EVENT_BATCH_SIZE = 256;
+// Per unattached terminal, including output that arrives before open resolves.
+const MAX_PENDING_OUTPUT_BYTES = 4 * 1024 * 1024;
+
+type PendingTerminal = {
+	output: string[];
+	bytes: number;
+	truncated: boolean;
+	end?: Exclude<TerminalEvent, { type: "output" }>;
+};
 
 /**
  * The project terminals the app holds: their tabs, which one is in front of
@@ -47,10 +57,10 @@ export class TerminalStore {
 	private readonly openingSignal = signal<{
 		projectId: string;
 		removed: boolean;
-		events: Map<string, TerminalEvent[]>;
+		events: Map<string, PendingTerminal>;
 	} | null>(null);
 	private readonly sinks = new Map<string, TerminalSink>();
-	private readonly pending = new Map<string, TerminalEvent[]>();
+	private readonly pending = new Map<string, PendingTerminal>();
 	private polling = false;
 
 	readonly tabs: Accessor<TerminalTab[]> = this.tabsSignal;
@@ -81,7 +91,7 @@ export class TerminalStore {
 		const opening = {
 			projectId,
 			removed: false,
-			events: new Map<string, TerminalEvent[]>(),
+			events: new Map<string, PendingTerminal>(),
 		};
 		this.openingSignal.set(opening);
 		void this.poll();
@@ -104,9 +114,7 @@ export class TerminalStore {
 					projectId: info.projectId,
 					title: info.title,
 					number,
-					exited:
-						kept?.some(({ type }) => type === "exit" || type === "error") ??
-						false,
+					exited: kept?.end !== undefined,
 				},
 			]);
 			this.activeSignal.set(info.id);
@@ -157,9 +165,13 @@ export class TerminalStore {
 	/** Routes the terminal's events to its page, those kept for it first. */
 	attach(terminalId: string, sink: TerminalSink): () => void {
 		this.sinks.set(terminalId, sink);
-		const kept = this.pending.get(terminalId) ?? [];
+		const kept = this.pending.get(terminalId);
 		this.pending.delete(terminalId);
-		for (const event of kept) deliver(sink, event);
+		if (kept) {
+			if (kept.truncated) sink.outputTruncated?.();
+			for (const data of kept.output) sink.output(data);
+			if (kept.end) deliver(sink, kept.end);
+		}
 		return () => {
 			if (this.sinks.get(terminalId) === sink) this.sinks.delete(terminalId);
 		};
@@ -222,10 +234,37 @@ export class TerminalStore {
 				? null
 				: opening?.events;
 		if (!queue) return;
-		const kept = queue.get(event.terminalId) ?? [];
-		kept.push(event);
-		queue.set(event.terminalId, kept);
+		let kept = queue.get(event.terminalId);
+		if (!kept) {
+			kept = { output: [], bytes: 0, truncated: false };
+			queue.set(event.terminalId, kept);
+		}
+		if (event.type !== "output") {
+			kept.end = event;
+			return;
+		}
+		if (!event.data) return;
+		const added = outputBytes(event.data);
+		kept.output.push(event.data);
+		kept.bytes += added;
+		if (kept.bytes <= MAX_PENDING_OUTPUT_BYTES) return;
+		// Drop oldest chunks in batches to avoid shifting the queue on every write.
+		const target = Math.max(
+			MAX_PENDING_OUTPUT_BYTES / 2,
+			Math.min(added, MAX_PENDING_OUTPUT_BYTES),
+		);
+		let remove = 0;
+		while (kept.bytes > target) {
+			kept.bytes -= outputBytes(kept.output[remove++]);
+		}
+		kept.output.splice(0, remove);
+		kept.truncated = true;
 	}
+}
+
+function outputBytes(data: string) {
+	// Charge the retained base64 string (up to two bytes per code unit) and queue overhead.
+	return data.length * 2 + 64;
 }
 
 function deliver(sink: TerminalSink, event: TerminalEvent) {

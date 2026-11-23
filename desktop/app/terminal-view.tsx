@@ -42,6 +42,10 @@ function TerminalView(props: {
 		props.store.attach(id, {
 			output: (data) =>
 				show(decoder.decode(fromBase64(data), { stream: true })),
+			outputTruncated: () => {
+				flush();
+				show(`\r\n[${t("terminal.outputTruncated")}]\r\n`);
+			},
 			exit: () => {
 				flush();
 				show("\r\n[process exited]\r\n");
