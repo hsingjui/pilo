@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use pilo_protocol::CommandOutput;
 use serde::Serialize;
 use serde_json::json;
@@ -16,6 +18,14 @@ pub struct GitFileStatus {
     pub staged: bool,
     pub unstaged: bool,
     pub untracked: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub staged_additions: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub staged_deletions: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unstaged_additions: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unstaged_deletions: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -29,22 +39,26 @@ pub async fn status(servers: &ServerManager, project: &Project) -> Result<GitSta
     let prefix = run_checked(servers, project, "git", &["rev-parse", "--show-prefix"]).await?;
     let prefix = String::from_utf8_lossy(&prefix);
     let prefix = prefix.trim_end_matches(['\r', '\n']);
-    let branch = branch(servers, project).await;
-    let output = run_checked(
-        servers,
-        project,
-        "git",
-        &[
-            "--no-optional-locks",
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=all",
-            "--",
-            ".",
-        ],
-    )
-    .await?;
+    let (branch, output, unstaged_stats, staged_stats) = tokio::join!(
+        branch(servers, project),
+        run_checked(
+            servers,
+            project,
+            "git",
+            &[
+                "--no-optional-locks",
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+                "--",
+                ".",
+            ],
+        ),
+        numstat(servers, project, false),
+        numstat(servers, project, true),
+    );
+    let output = output?;
     Ok(GitStatus {
         branch,
         files: parse_porcelain_v1_z(&output)
@@ -54,6 +68,14 @@ pub async fn status(servers: &ServerManager, project: &Project) -> Result<GitSta
                 if let Some(original) = &file.original_path {
                     file.original_path =
                         Some(original.strip_prefix(prefix).unwrap_or(original).to_owned());
+                }
+                if let Some(&(additions, deletions)) = staged_stats.get(&file.path) {
+                    file.staged_additions = Some(additions);
+                    file.staged_deletions = Some(deletions);
+                }
+                if let Some(&(additions, deletions)) = unstaged_stats.get(&file.path) {
+                    file.unstaged_additions = Some(additions);
+                    file.unstaged_deletions = Some(deletions);
                 }
                 Some(file)
             })
@@ -251,6 +273,64 @@ fn command_error(program: &str, output: &CommandOutput) -> String {
     }
 }
 
+async fn numstat(
+    servers: &ServerManager,
+    project: &Project,
+    staged: bool,
+) -> HashMap<String, (u32, u32)> {
+    let mut args = vec![
+        "--no-optional-locks",
+        "--no-pager",
+        "diff",
+        "--numstat",
+        "-z",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--relative",
+    ];
+    if staged {
+        args.push("--cached");
+    }
+    args.extend(["--", "."]);
+    run_checked(servers, project, "git", &args)
+        .await
+        .map(|bytes| parse_numstat_z(&bytes))
+        .unwrap_or_default()
+}
+
+fn parse_numstat_z(bytes: &[u8]) -> HashMap<String, (u32, u32)> {
+    let mut records = bytes.split(|byte| *byte == 0);
+    let mut stats = HashMap::new();
+    while let Some(record) = records.next() {
+        if record.is_empty() {
+            continue;
+        }
+        let mut parts = record.splitn(3, |byte| *byte == b'\t');
+        let (Some(added), Some(deleted), Some(rest)) = (parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+        let path = if rest.is_empty() {
+            // Rename/copy format under `-z`: "<added>\t<deleted>\t\0<old>\0<new>\0".
+            let _old = records.next();
+            let Some(new_path) = records.next().filter(|value| !value.is_empty()) else {
+                continue;
+            };
+            String::from_utf8_lossy(new_path).into_owned()
+        } else {
+            String::from_utf8_lossy(rest).into_owned()
+        };
+        let Ok(additions) = String::from_utf8_lossy(added).parse::<u32>() else {
+            continue;
+        };
+        let Ok(deletions) = String::from_utf8_lossy(deleted).parse::<u32>() else {
+            continue;
+        };
+        stats.insert(path, (additions, deletions));
+    }
+    stats
+}
+
 fn parse_porcelain_v1_z(bytes: &[u8]) -> Vec<GitFileStatus> {
     let mut records = bytes.split(|byte| *byte == 0).peekable();
     let mut files = Vec::new();
@@ -279,6 +359,10 @@ fn parse_porcelain_v1_z(bytes: &[u8]) -> Vec<GitFileStatus> {
             staged: !matches!(index, ' ' | '?'),
             unstaged: worktree != ' ' || untracked,
             untracked,
+            staged_additions: None,
+            staged_deletions: None,
+            unstaged_additions: None,
+            unstaged_deletions: None,
         });
     }
     files
@@ -301,5 +385,14 @@ mod tests {
         assert!(files[2].untracked);
         assert_eq!(files[3].path, "new-name.ts");
         assert_eq!(files[3].original_path.as_deref(), Some("old-name.ts"));
+    }
+
+    #[test]
+    fn parses_numstat_z_including_renames_and_binaries() {
+        let bytes = b"12\t3\tsrc/App.tsx\0-\t-\tassets/logo.png\x005\t0\t\0old.ts\0new.ts\0";
+        let stats = parse_numstat_z(bytes);
+        assert_eq!(stats.get("src/App.tsx"), Some(&(12, 3)));
+        assert_eq!(stats.get("assets/logo.png"), None);
+        assert_eq!(stats.get("new.ts"), Some(&(5, 0)));
     }
 }
