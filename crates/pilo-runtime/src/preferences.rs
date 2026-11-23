@@ -176,10 +176,7 @@ mod runtime_tests {
         let root =
             std::env::temp_dir().join(format!("pilo-runtime-settings-{}", std::process::id()));
         let host = Arc::new(RecordingEvents::default());
-        let runtime = Runtime::new(
-            HostPaths::new(root.clone(), root.join("resources")).unwrap(),
-            host.clone(),
-        );
+        let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
         runtime.events.subscribe("test", 1, host.clone());
         let initial = preferences_get(&runtime).unwrap();
         let settings = preferences_patch(

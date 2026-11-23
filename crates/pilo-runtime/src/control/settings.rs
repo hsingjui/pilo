@@ -317,7 +317,6 @@ pub(super) async fn settings(runtime: &Runtime, command: ControlCommand) -> Resu
 #[cfg(test)]
 mod theme_tests {
     use super::*;
-    use std::sync::Arc;
 
     #[tokio::test]
     async fn theme_tokens_setting_get_set_reset() {
@@ -329,10 +328,8 @@ mod theme_tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let runtime = Runtime::new(
-            crate::host_paths::HostPaths::new(root.clone(), root.clone()).unwrap(),
-            Arc::new(crate::host_events::RecordingEvents::default()),
-        );
+        let runtime =
+            Runtime::new(crate::host_paths::HostPaths::new(root.clone(), root.clone()).unwrap());
         let command = |method: &str, value: Value| {
             decode(json!({"method":method, "key":"theme.themeCustomTokens", "value":value}))
                 .unwrap()

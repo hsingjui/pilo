@@ -19,7 +19,6 @@ use crate::{
     Runtime,
     chat_sessions::{ChatProcess, event_sink::ChatEventSink},
     events::{EventBatch, EventQueueLimits, EventStream, RuntimeEventSink, SequencedRuntimeEvent},
-    host_events::RecordingEvents,
     host_paths::HostPaths,
     pi_events::PiEventAdapter,
 };
@@ -41,10 +40,7 @@ impl Fixture {
         let path = directory.join("session.jsonl");
         let header = json!({"type":"session", "version":3, "id":unique_id(), "timestamp":"2026-01-01T00:00:00.000Z", "cwd":directory.to_str().unwrap()});
         std::fs::write(&path, format!("{header}\n")).unwrap();
-        let runtime = Runtime::new(
-            HostPaths::for_test(directory.join("data")),
-            Arc::new(RecordingEvents::default()),
-        );
+        let runtime = Runtime::new(HostPaths::for_test(directory.join("data")));
         let mut sink = super::tests::sink(true);
         sink.events = runtime.events.clone();
         *sink.session_path.lock().unwrap() = Some(path.to_str().unwrap().to_owned());

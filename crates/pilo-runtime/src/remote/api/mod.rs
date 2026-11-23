@@ -325,10 +325,7 @@ mod tests {
 
     #[tokio::test]
     async fn request_state_upgrades_only_while_runtime_is_alive() {
-        let runtime = Runtime::new(
-            HostPaths::for_test(std::path::PathBuf::new()),
-            Arc::new(crate::host_events::RecordingEvents::default()),
-        );
+        let runtime = Runtime::new(HostPaths::for_test(std::path::PathBuf::new()));
         let state = RemoteRouterState {
             runtime: runtime.downgrade(),
             pairing: Arc::new(PairingSession::default()),

@@ -318,7 +318,7 @@ pub async fn project_fs_search(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{handle::HostShell, host_events::RecordingEvents, host_paths::HostPaths};
+    use crate::{handle::HostShell, host_paths::HostPaths};
     use std::path::{Path, PathBuf};
 
     struct Picker(Option<&'static str>);
@@ -339,10 +339,7 @@ mod tests {
 
     #[test]
     fn directory_picker_reports_missing_host_services() {
-        let runtime = Runtime::new(
-            HostPaths::for_test(PathBuf::new()),
-            Arc::new(RecordingEvents::default()),
-        );
+        let runtime = Runtime::new(HostPaths::for_test(PathBuf::new()));
         assert_eq!(
             local_pick_project_directory(&runtime),
             Err("host shell services are unavailable".to_owned())
@@ -352,12 +349,9 @@ mod tests {
     #[test]
     fn directory_picker_preserves_selection_and_user_cancellation() {
         for selection in [Some("/workspace"), None] {
-            let runtime = Runtime::new(
-                HostPaths::for_test(PathBuf::new()),
-                Arc::new(RecordingEvents::default()),
-            )
-            .with_shell(Arc::new(Picker(selection)))
-            .unwrap();
+            let runtime = Runtime::new(HostPaths::for_test(PathBuf::new()))
+                .with_shell(Arc::new(Picker(selection)))
+                .unwrap();
             assert_eq!(
                 local_pick_project_directory(&runtime),
                 Ok(selection.map(str::to_owned))

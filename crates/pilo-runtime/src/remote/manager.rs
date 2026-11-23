@@ -553,16 +553,13 @@ mod tests {
 
     #[tokio::test]
     async fn dropping_runtime_stops_remote_listener_without_shutdown() {
-        use crate::{Runtime, host_events::RecordingEvents, host_paths::HostPaths};
+        use crate::{Runtime, host_paths::HostPaths};
         let root = std::env::temp_dir().join(format!(
             "pilo-remote-drop-{}-{}",
             std::process::id(),
             super::storage::now_ms()
         ));
-        let runtime = Runtime::new(
-            HostPaths::new(root.clone(), root.join("resources")).unwrap(),
-            std::sync::Arc::new(RecordingEvents::default()),
-        );
+        let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
         runtime.remote.start(&runtime, 0).await.unwrap();
         let task = {
             let inner = runtime.remote.inner.lock().await;

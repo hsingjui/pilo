@@ -12,22 +12,12 @@ use log::{Level, LevelFilter, Log, Metadata, Record};
 use nsh_core::JsonValue;
 use pilo_runtime::{
     handle::{HostSettingFuture, HostShell},
-    host_events::HostEvents,
     host_paths::HostPaths,
     storage, tasks,
     web_assets::{WebAsset, WebAssets},
 };
 use serde_json::json;
 use tokio::{io::AsyncReadExt, runtime::Runtime as Executor};
-
-/// No-op host event sink: desktop events use `EventStream` and `TerminalEventStream`.
-pub(super) struct ShellEvents;
-
-impl HostEvents for ShellEvents {
-    fn emit(&self, _name: &str, _payload: JsonValue) -> Result<(), String> {
-        Ok(())
-    }
-}
 
 pub(super) struct ShellWebAssets(pub(super) PathBuf);
 
@@ -480,15 +470,6 @@ mod tests {
                 home.join("Library/Application Support").join(identifier)
             );
         }
-    }
-
-    #[test]
-    fn disconnected_shell_discards_host_events_without_error() {
-        assert!(
-            ShellEvents
-                .emit("pilo://session-watch", JsonValue::Null)
-                .is_ok()
-        );
     }
 
     #[test]

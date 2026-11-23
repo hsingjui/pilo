@@ -15,7 +15,8 @@ pub mod events;
 pub mod file_links;
 mod git;
 pub mod handle;
-pub mod host_events;
+#[cfg(test)]
+mod host_events;
 pub mod host_paths;
 pub use handle::Runtime;
 pub mod next_prompt;

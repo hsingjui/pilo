@@ -11,8 +11,6 @@ use std::{
 use serde::Serialize;
 use serde_json::json;
 
-use super::host_events::HostEvents;
-
 use pilo_domain::{ConnectionKind, PiRuntime, Project, ProjectMetadata};
 
 use super::{
@@ -22,7 +20,6 @@ use super::{
     server_pi::{PiLaunchOptions, ServerPiSession},
 };
 
-pub const PARALLEL_EVENT_NAME: &str = "pilo://parallel-agent";
 static AGENT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -46,13 +43,6 @@ pub struct ParallelAgentInfo {
     pub worktree_path: String,
     pub status: ParallelAgentStatus,
     pub created_at_ms: u64,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ParallelRuntimeEvent {
-    agent_id: String,
-    event: RuntimeEvent,
 }
 
 struct ParallelAgent {
@@ -100,8 +90,6 @@ impl ParallelAgentManager {
 
         let status = Arc::new(AtomicU8::new(status_to_u8(ParallelAgentStatus::Starting)));
         let sink = ParallelEventSink {
-            events: runtime.host_events.clone(),
-            agent_id: id.clone(),
             status: Arc::clone(&status),
         };
         let mut session = ServerPiSession::default();
@@ -288,8 +276,6 @@ impl ParallelAgentManager {
 
 #[derive(Clone)]
 struct ParallelEventSink {
-    events: Arc<dyn HostEvents>,
-    agent_id: String,
     status: Arc<AtomicU8>,
 }
 
@@ -321,13 +307,6 @@ impl RuntimeEventSink for ParallelEventSink {
         if let Some(status) = next {
             self.status.store(status_to_u8(status), Ordering::Release);
         }
-        let _ = self.events.emit_serialized(
-            PARALLEL_EVENT_NAME,
-            ParallelRuntimeEvent {
-                agent_id: self.agent_id.clone(),
-                event,
-            },
-        );
     }
 }
 
@@ -479,12 +458,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parallel_sink_emits_agent_routing_and_updates_status_despite_delivery_failure() {
-        let events = Arc::new(crate::host_events::RecordingEvents::default());
+    fn parallel_sink_tracks_agent_status_from_runtime_events() {
         let status = Arc::new(AtomicU8::new(status_to_u8(ParallelAgentStatus::Starting)));
         let sink = ParallelEventSink {
-            events: events.clone(),
-            agent_id: "agent".into(),
             status: status.clone(),
         };
         sink.send(RuntimeEvent::AssistantTextDelta {
@@ -495,14 +471,6 @@ mod tests {
             status.load(Ordering::Acquire),
             status_to_u8(ParallelAgentStatus::Busy)
         );
-        assert_eq!(
-            *events.events.lock().unwrap(),
-            vec![(
-                PARALLEL_EVENT_NAME.into(),
-                json!({"agentId":"agent", "event":{"type":"assistant_text_delta", "generation":1, "delta":""}})
-            )]
-        );
-        events.fail.store(true, Ordering::Relaxed);
         sink.send(RuntimeEvent::AssistantMessageEnd {
             generation: 1,
             stop_reason: None,
@@ -513,7 +481,6 @@ mod tests {
             status.load(Ordering::Acquire),
             status_to_u8(ParallelAgentStatus::Waiting)
         );
-        assert_eq!(events.events.lock().unwrap().len(), 1);
     }
 
     #[test]

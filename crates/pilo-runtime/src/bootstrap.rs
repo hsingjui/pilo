@@ -41,7 +41,6 @@ pub(crate) mod tests {
         events::{
             EventBatch, EventQueueLimits, RuntimeEvent, RuntimeEventBus, RuntimeEventEnvelope,
         },
-        host_events::RecordingEvents,
         host_paths::HostPaths,
         storage,
     };
@@ -77,7 +76,7 @@ pub(crate) mod tests {
             }
             Ok(directory.clone())
         });
-        let runtime = Runtime::new(paths, Arc::new(RecordingEvents::default()));
+        let runtime = Runtime::new(paths);
         assert!(events.set(runtime.events.clone()).is_ok());
         runtime.events.send(RuntimeEventEnvelope::global(
             RuntimeEvent::ConfigurationChanged,
@@ -128,10 +127,7 @@ pub(crate) mod tests {
             std::process::id(),
             storage::now_ms()
         ));
-        let runtime = Runtime::new(
-            HostPaths::for_test(root.clone()),
-            Arc::new(RecordingEvents::default()),
-        );
+        let runtime = Runtime::new(HostPaths::for_test(root.clone()));
         let snapshot = runtime.bootstrap_snapshot().await.unwrap();
         assert_eq!(snapshot.event_sequence, 0);
         assert_eq!(snapshot.projects.len(), 1);
@@ -145,7 +141,7 @@ pub(crate) mod tests {
     async fn bootstrap_propagates_storage_errors() {
         let paths =
             HostPaths::with_data_dir_resolver(PathBuf::new(), || Err("data unavailable".into()));
-        let runtime = Runtime::new(paths, Arc::new(RecordingEvents::default()));
+        let runtime = Runtime::new(paths);
         assert!(
             matches!(runtime.bootstrap_snapshot().await, Err(error) if error == "data unavailable")
         );

@@ -56,10 +56,7 @@ mod tests {
             storage::now_ms()
         ));
         let paths = HostPaths::new(root.clone(), root.join("resources")).unwrap();
-        let runtime = Runtime::new(
-            paths,
-            Arc::new(crate::host_events::RecordingEvents::default()),
-        );
+        let runtime = Runtime::new(paths);
         let db = storage::open_with_paths(&runtime.paths).unwrap();
         storage::ensure_local_connection(&db).unwrap();
         db.execute_batch(

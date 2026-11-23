@@ -228,10 +228,7 @@ mod tests {
     }
 
     fn runtime() -> Runtime {
-        Runtime::new(
-            HostPaths::for_test(std::path::PathBuf::new()),
-            Arc::new(RecordingEvents::default()),
-        )
+        Runtime::new(HostPaths::for_test(std::path::PathBuf::new()))
     }
 
     fn pending_reader(

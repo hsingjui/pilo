@@ -171,7 +171,6 @@ pub async fn chat_session_states(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use super::*;
 
@@ -180,7 +179,6 @@ mod tests {
         let root = std::env::temp_dir().join(format!("pilo-runtime-chat-{}", std::process::id()));
         let runtime = Runtime::new(
             super::super::host_paths::HostPaths::new(root.clone(), root.join("resources")).unwrap(),
-            Arc::new(super::super::host_events::RecordingEvents::default()),
         );
         assert!(chat_session_states(&runtime).await.unwrap().is_empty());
         assert!(

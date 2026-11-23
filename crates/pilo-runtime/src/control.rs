@@ -314,11 +314,8 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let host = Arc::new(crate::host_events::RecordingEvents::default());
-        let runtime = Runtime::new(
-            crate::host_paths::HostPaths::new(root.clone(), root.clone()).unwrap(),
-            host,
-        );
+        let runtime =
+            Runtime::new(crate::host_paths::HostPaths::new(root.clone(), root.clone()).unwrap());
         let status = execute(
             &runtime,
             decode(json!({"method": "status"})).unwrap(),

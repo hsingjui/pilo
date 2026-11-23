@@ -80,7 +80,6 @@ mod tests {
         let root = std::env::temp_dir().join(format!("pilo-runtime-remote-{}", std::process::id()));
         let runtime = Runtime::new(
             crate::host_paths::HostPaths::new(root.clone(), root.join("resources")).unwrap(),
-            std::sync::Arc::new(crate::host_events::RecordingEvents::default()),
         );
         let initial = remote_host_state(&runtime).await.unwrap();
         assert!(!initial.running);

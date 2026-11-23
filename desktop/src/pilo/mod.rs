@@ -73,9 +73,9 @@ use objects::{
     NativePreferencesSnapshot, NativeSessionReadState, NativeStartChatInput,
 };
 use shell::{
-    NshHostShell, ShellEvents, ShellWebAssets, data_identifier, default_data_dir, executor,
-    init_file_logger, open_path, read_local_file, resolve_log_directory, save_file_bytes,
-    server_resource_name, workspace,
+    NshHostShell, ShellWebAssets, data_identifier, default_data_dir, executor, init_file_logger,
+    open_path, read_local_file, resolve_log_directory, save_file_bytes, server_resource_name,
+    workspace,
 };
 
 const EVENT_QUEUE_LIMITS: EventQueueLimits = EventQueueLimits {
@@ -218,7 +218,7 @@ impl Pilo {
             .unwrap_or(default_server);
         initialize_server_resource_dir(resources);
         initialize_local_server_binary(server);
-        let runtime = Runtime::new(paths.clone(), Arc::new(ShellEvents))
+        let runtime = Runtime::new(paths.clone())
             .with_shell(Arc::new(NshHostShell {
                 cache_dir: data_dir.join("cache"),
                 paths: paths.clone(),

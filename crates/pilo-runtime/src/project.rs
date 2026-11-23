@@ -234,7 +234,6 @@ mod tests {
             std::env::temp_dir().join(format!("pilo-runtime-projects-{}", std::process::id()));
         let runtime = Runtime::new(
             super::super::host_paths::HostPaths::new(root.clone(), root.join("resources")).unwrap(),
-            std::sync::Arc::new(super::super::host_events::RecordingEvents::default()),
         );
         let projects = super::super::project_api::project_list(&runtime).unwrap();
         assert_eq!(projects.len(), 1);

@@ -271,17 +271,13 @@ async fn stop_connection_projects(runtime: &Runtime, connection_id: &str) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{host_events::RecordingEvents, host_paths::HostPaths};
-    use std::sync::Arc;
+    use crate::host_paths::HostPaths;
 
     #[test]
     fn connection_functions_preserve_catalog_validation_and_empty_lists() {
         let root =
             std::env::temp_dir().join(format!("pilo-runtime-connections-{}", std::process::id()));
-        let runtime = Runtime::new(
-            HostPaths::new(root.clone(), root.join("resources")).unwrap(),
-            Arc::new(RecordingEvents::default()),
-        );
+        let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
         assert!(connection_naming_model_list(&runtime).unwrap().is_empty());
         assert!(ssh::ssh_connection_list(&runtime).unwrap().is_empty());
         assert!(wsl::wsl_connection_list(&runtime).unwrap().is_empty());

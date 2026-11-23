@@ -135,7 +135,6 @@ mod tests {
         Runtime,
         bootstrap::tests::runtime_with_mid_snapshot_change,
         events::{EventBatch, EventQueueLimits},
-        host_events::RecordingEvents,
         host_paths::HostPaths,
     };
     use std::sync::Arc;
@@ -197,7 +196,7 @@ mod tests {
         let paths = HostPaths::with_data_dir_resolver(std::path::PathBuf::new(), || {
             Err("data unavailable".into())
         });
-        let runtime = Runtime::new(paths, Arc::new(RecordingEvents::default()));
+        let runtime = Runtime::new(paths);
         assert_eq!(
             bootstrap(state(runtime)).await.status(),
             StatusCode::INTERNAL_SERVER_ERROR

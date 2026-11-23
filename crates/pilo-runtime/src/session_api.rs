@@ -478,7 +478,6 @@ mod tests {
             std::env::temp_dir().join(format!("pilo-runtime-sessions-{}", std::process::id()));
         let runtime = Runtime::new(
             super::super::host_paths::HostPaths::new(root.clone(), root.join("resources")).unwrap(),
-            std::sync::Arc::new(super::super::host_events::RecordingEvents::default()),
         );
         assert!(session_list(&runtime, "project".into()).unwrap().is_empty());
         assert!(
