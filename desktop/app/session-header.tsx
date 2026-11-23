@@ -20,7 +20,7 @@ import { DialogDescription } from "../ui/dialog-description";
 import { DialogFooter } from "../ui/dialog-footer";
 import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
-import { focusRingStyle } from "../ui/focus-ring-style";
+import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { createHover } from "../ui/hover";
 import { Icon, type IconName } from "../ui/icon";
 import { Input } from "../ui/input";
@@ -235,34 +235,40 @@ export function SessionHeader(props: SessionHeaderProps) {
 							extra,
 						);
 					// Beside auxiliary tabs the title becomes a matching ghost tab.
-					return hasTabs() ? (
-						<BaseButton
-							testID="session-header"
-							class={tabClass(
-								classNames(
-									"min-w-20 max-w-48 focus-visible:outline-hidden",
-									props.temporary()
-										? chatSelected()
-											? "border-dashed border-border bg-secondary"
-											: "border-dashed border-border/70 hover:bg-hover/70"
-										: chatSelected()
-											? "border-border/70 bg-secondary"
-											: "border-transparent hover:bg-hover/70",
-								),
-							)}
-							focusVisibleStyle={focusRingStyle(token("ring"))}
-							role="tab"
-							selected={chatSelected()}
-							accessibilityLabel={props.title()}
-							tooltip={tooltip}
-							onPress={() => {
-								if (props.onSelectChat) props.onSelectChat();
-								else props.terminals?.onSelect(null);
-							}}
-						>
-							{content}
-						</BaseButton>
-					) : (
+					if (hasTabs()) {
+						const pointerBlur = blurOnPointerPress();
+						return (
+							<BaseButton
+								testID="session-header"
+								ref={pointerBlur.ref}
+								onMouseUp={pointerBlur.onMouseUp}
+								class={tabClass(
+									classNames(
+										"min-w-20 max-w-48 focus-visible:outline-hidden",
+										props.temporary()
+											? chatSelected()
+												? "border-dashed border-border bg-secondary"
+												: "border-dashed border-border/70 hover:bg-hover/70"
+											: chatSelected()
+												? "border-border/70 bg-secondary"
+												: "border-transparent hover:bg-hover/70",
+									),
+								)}
+								focusVisibleStyle={focusRingStyle(token("ring"))}
+								role="tab"
+								selected={chatSelected()}
+								accessibilityLabel={props.title()}
+								tooltip={tooltip}
+								onPress={() => {
+									if (props.onSelectChat) props.onSelectChat();
+									else props.terminals?.onSelect(null);
+								}}
+							>
+								{content}
+							</BaseButton>
+						);
+					}
+					return (
 						<View
 							testID="session-header"
 							class={tabClass(
@@ -326,6 +332,7 @@ function WorkspaceHeaderTab(props: {
 	const hover = createHover();
 	const active = () => props.selected();
 	const showClose = () => active() || hover.hovered();
+	const pointerBlur = blurOnPointerPress();
 	return (
 		<View
 			testID={props.tab.testID}
@@ -338,6 +345,8 @@ function WorkspaceHeaderTab(props: {
 			)}
 		>
 			<BaseButton
+				ref={pointerBlur.ref}
+				onMouseUp={pointerBlur.onMouseUp}
 				class="h-full min-w-0 flex-1 flex-row items-center gap-1.5 pl-2 pr-0.5 focus-visible:outline-hidden"
 				focusVisibleStyle={focusRingStyle(token("ring"))}
 				role="tab"

@@ -18,7 +18,7 @@ import {
 
 import { t } from "../app/i18n";
 import { classNames } from "../ui/class-names";
-import { focusRingStyle } from "../ui/focus-ring-style";
+import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
 import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
@@ -136,6 +136,9 @@ export function ChatToolActivity(props: {
 				const path = openablePath();
 				const value = previewLabel();
 				if (path && value) {
+					const labelBlur = blurOnPointerPress();
+					const linkBlur = blurOnPointerPress();
+					const tailBlur = blurOnPointerPress();
 					return (
 						<Foreground.Provider value={rowColor}>
 							<View
@@ -148,6 +151,8 @@ export function ChatToolActivity(props: {
 							>
 								<BaseButton
 									disabled={!hasDetails()}
+									ref={labelBlur.ref}
+									onMouseUp={labelBlur.onMouseUp}
 									class="shrink-0 flex-row items-center gap-1.5 focus-visible:outline-hidden"
 									focusVisibleStyle={focusRingStyle(token("ring"))}
 									accessibilityLabel={`${label()} ${value}`}
@@ -173,6 +178,8 @@ export function ChatToolActivity(props: {
 								</BaseButton>
 								<BaseButton
 									testID="chat-tool-file-link"
+									ref={linkBlur.ref}
+									onMouseUp={linkBlur.onMouseUp}
 									class="min-w-0 shrink rounded-sm bg-muted/50 px-1.5 py-0.5 hover:bg-muted focus-visible:outline-hidden"
 									focusVisibleStyle={focusRingStyle(token("ring"))}
 									accessibilityLabel={t("chat.openFile", { path })}
@@ -192,6 +199,8 @@ export function ChatToolActivity(props: {
 								</BaseButton>
 								<BaseButton
 									disabled={!hasDetails()}
+									ref={tailBlur.ref}
+									onMouseUp={tailBlur.onMouseUp}
 									class="min-h-5 min-w-2 flex-1 flex-row items-center justify-end focus-visible:outline-hidden"
 									accessibilityLabel={`${label()} ${value}`}
 									onPress={toggleDetails}

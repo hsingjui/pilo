@@ -9,7 +9,7 @@ import {
 } from "@shared/chat/chat-mentions";
 import { parseSkillInvocation } from "@shared/chat/skill-invocation";
 import { t } from "../app/i18n";
-import { focusRingStyle } from "../ui/focus-ring-style";
+import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { Icon, type IconName } from "../ui/icon";
 import { Tooltip } from "../ui/tooltip";
 import { ChatMediaActions } from "./chat-media-actions";
@@ -206,8 +206,11 @@ function Badge(props: {
 			</View>
 		);
 	}
+	const pointerBlur = blurOnPointerPress();
 	return (
 		<BaseButton
+			ref={pointerBlur.ref}
+			onMouseUp={pointerBlur.onMouseUp}
 			class={`${BADGE_CLASS} hover:bg-muted`}
 			style={badgeStyle}
 			focusVisibleStyle={focusRingStyle(token("ring"))}

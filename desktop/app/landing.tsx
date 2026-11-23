@@ -13,7 +13,7 @@ import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
 import { ConversationColumnLayout } from "../chat/conversation-column";
 import type { AppStore } from "../state/app-store";
 import { Button } from "../ui/button";
-import { focusRingStyle } from "../ui/focus-ring-style";
+import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { Icon } from "../ui/icon";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
@@ -123,6 +123,7 @@ function LandingProjectPicker(props: {
 			: t("app.selectProject");
 	};
 	const open = signal(false);
+	const pointerBlur = blurOnPointerPress();
 	return (
 		<Menu
 			align="center"
@@ -135,6 +136,8 @@ function LandingProjectPicker(props: {
 				// scale, which would shrink the text while it is held.
 				<BaseButton
 					testID="landing-project-picker"
+					ref={pointerBlur.ref}
+					onMouseUp={pointerBlur.onMouseUp}
 					class={`min-h-(--pilo-button-sm-height) max-w-full flex-row items-center gap-1.5 rounded-lg px-2 hover:bg-hover focus-visible:outline-hidden ${
 						open() ? "bg-hover" : ""
 					}`}

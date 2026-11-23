@@ -6,7 +6,7 @@ import {
 import { styleVar } from "./theme-style";
 import { Foreground } from "./foreground";
 import { classNames } from "./class-names";
-import { focusRingStyle } from "./focus-ring-style";
+import { blurOnPointerPress, focusRingStyle } from "./focus-ring-style";
 
 const variants = {
 	default: "bg-primary text-primary-foreground hover:bg-button-hover",
@@ -68,12 +68,17 @@ export function Button(props: ButtonProps) {
 		"class",
 		"style",
 		"focusVisibleStyle",
+		"ref",
+		"onMouseUp",
 	]);
+	const pointerBlur = blurOnPointerPress(local);
 	const foreground = () => token(foregrounds[local.variant ?? "default"]);
 	return (
 		<Foreground.Provider value={foreground}>
 			<BaseButton
 				{...rest}
+				ref={pointerBlur.ref}
+				onMouseUp={pointerBlur.onMouseUp}
 				class={buttonVariants(local)}
 				style={[{ boxShadow: shadow(local.variant) }, local.style]}
 				focusVisibleStyle={focusRingStyle(

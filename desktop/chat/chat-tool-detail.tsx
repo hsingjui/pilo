@@ -14,7 +14,7 @@ import {
 import type { ChatTodoItem } from "@shared/chat/chat-todos";
 
 import { appLocale, t } from "../app/i18n";
-import { focusRingStyle } from "../ui/focus-ring-style";
+import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { scrollbarLook } from "../ui/scrollbar";
 import { ChatCopyButton } from "./chat-copy-button";
 import { ChatMediaActions } from "./chat-media-actions";
@@ -249,29 +249,34 @@ export function ChatToolDetail(props: {
 					) : null
 				}
 				<Each of={images()} key={(image) => image.key}>
-					{(image) => (
-						<BaseButton
-							testID="chat-tool-result-image"
-							class="mt-1 self-start overflow-hidden rounded-(--pilo-radius-md) focus-visible:outline-hidden"
-							focusVisibleStyle={focusRingStyle(token("ring"))}
-							accessibilityLabel={t("chat.viewImage", {
-								name: t("chat.toolResultImage"),
-							})}
-							onPress={() =>
-								media.openImage?.({
-									url: toolResultImageUrl(image()),
+					{(image) => {
+						const pointerBlur = blurOnPointerPress();
+						return (
+							<BaseButton
+								testID="chat-tool-result-image"
+								ref={pointerBlur.ref}
+								onMouseUp={pointerBlur.onMouseUp}
+								class="mt-1 self-start overflow-hidden rounded-(--pilo-radius-md) focus-visible:outline-hidden"
+								focusVisibleStyle={focusRingStyle(token("ring"))}
+								accessibilityLabel={t("chat.viewImage", {
 									name: t("chat.toolResultImage"),
-								})
-							}
-						>
-							<Image
-								src={toolResultImageUrl(image())}
-								accessibilityLabel={t("chat.toolResultImage")}
-								class="max-h-80 max-w-full rounded-(--pilo-radius-md)"
-								style={{ objectFit: "contain" }}
-							/>
-						</BaseButton>
-					)}
+								})}
+								onPress={() =>
+									media.openImage?.({
+										url: toolResultImageUrl(image()),
+										name: t("chat.toolResultImage"),
+									})
+								}
+							>
+								<Image
+									src={toolResultImageUrl(image())}
+									accessibilityLabel={t("chat.toolResultImage")}
+									class="max-h-80 max-w-full rounded-(--pilo-radius-md)"
+									style={{ objectFit: "contain" }}
+								/>
+							</BaseButton>
+						);
+					}}
 				</Each>
 			</View>
 		);

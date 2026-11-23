@@ -12,7 +12,7 @@ import { Button as BaseButton } from "nsh/base";
 
 import type { ChatConversationImage } from "@shared/chat/conversation-types";
 import { t } from "../app/i18n";
-import { focusRingStyle } from "../ui/focus-ring-style";
+import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { Icon } from "../ui/icon";
 import { Tooltip } from "../ui/tooltip";
 import { ChatMediaActions } from "./chat-media-actions";
@@ -75,9 +75,12 @@ function ChatUserImage(props: { image: () => ChatConversationImage }) {
 			attempt.set(attempt() + 1);
 		}
 	};
+	const pointerBlur = blurOnPointerPress();
 	return (
 		<BaseButton
 			testID="chat-user-image"
+			ref={pointerBlur.ref}
+			onMouseUp={pointerBlur.onMouseUp}
 			class="size-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-foreground/10 bg-muted/40 focus-visible:outline-hidden"
 			focusVisibleStyle={focusRingStyle(token("ring"))}
 			accessibilityLabel={

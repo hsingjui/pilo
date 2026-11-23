@@ -17,7 +17,7 @@ import { formatChatImageSize } from "@shared/chat/chat-submission";
 
 import { AppToaster } from "../app/app-toasts";
 import { t } from "../app/i18n";
-import { focusRingStyle } from "../ui/focus-ring-style";
+import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { Icon } from "../ui/icon";
 import { scrollbarLook } from "../ui/scrollbar";
 import { Tooltip } from "../ui/tooltip";
@@ -53,9 +53,12 @@ function LightboxIconButton(props: {
 	onPress: () => void;
 	icon: Parameters<typeof Icon>[0]["name"];
 }) {
+	const pointerBlur = blurOnPointerPress();
 	return (
 		<BaseButton
 			testID={props.testID}
+			ref={pointerBlur.ref}
+			onMouseUp={pointerBlur.onMouseUp}
 			disabled={props.disabled?.()}
 			accessibilityLabel={props.label()}
 			class="size-9 items-center justify-center rounded-(--pilo-radius-md) hover:bg-white/15 disabled:opacity-40 focus-visible:outline-hidden"
@@ -186,6 +189,7 @@ export function ChatImageLightbox(props: ChatImageLightboxProps) {
 				const current = props.image();
 				if (!current) return null;
 				const label = current.name || t("chat.image");
+				const resetBlur = blurOnPointerPress();
 				return (
 					<View class="min-h-0 flex-1 flex-col">
 						<View class="flex-row items-center justify-between gap-3 py-1">
@@ -277,6 +281,8 @@ export function ChatImageLightbox(props: ChatImageLightboxProps) {
 							/>
 							<BaseButton
 								testID="lightbox-zoom-reset"
+								ref={resetBlur.ref}
+								onMouseUp={resetBlur.onMouseUp}
 								accessibilityLabel={t("chat.resetImageZoom", {
 									percent: percent(),
 								})}

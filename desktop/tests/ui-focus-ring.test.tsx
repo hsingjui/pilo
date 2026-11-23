@@ -1,5 +1,6 @@
 import { expect, open, test } from "nsh/test";
-import { focusRingStyle } from "../ui/focus-ring-style";
+import type { MouseEvent, ViewRef } from "nsh";
+import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import lody from "../theme.json";
 import claude from "../claude-theme.json";
 
@@ -90,4 +91,26 @@ test("Input and Button take keyboard focus at the Dialog content edges in both t
 			state: "gone",
 		});
 	}
+});
+
+test("blurOnPointerPress blurs on mouse up and forwards ref and onMouseUp", () => {
+	const events: string[] = [];
+	let received: ViewRef | undefined;
+	const fakeNode = {
+		blur: () => events.push("blur"),
+	} as unknown as ViewRef;
+	const fakeEvent = {} as MouseEvent;
+	const props = blurOnPointerPress({
+		ref: (el) => {
+			received = el;
+		},
+		onMouseUp: (event) => {
+			expect(event).toBe(fakeEvent);
+			events.push("mouseUp");
+		},
+	});
+	props.ref(fakeNode);
+	expect(received).toBe(fakeNode);
+	props.onMouseUp(fakeEvent);
+	expect(events).toEqual(["blur", "mouseUp"]);
 });

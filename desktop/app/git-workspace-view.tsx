@@ -22,7 +22,7 @@ import type { GitFileStatus, GitStatus } from "../client/nsh-pilo-client";
 import type { WorkspaceStore } from "../state/workspace-store";
 import { Button } from "../ui/button";
 import { classNames } from "../ui/class-names";
-import { focusRingStyle } from "../ui/focus-ring-style";
+import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
 import { Icon } from "../ui/icon";
 import { scrollbarLook } from "../ui/scrollbar";
 import { Skeleton } from "../ui/skeleton";
@@ -636,9 +636,12 @@ function GitWorkspacePanel(props: {
 											const isSelected = () => mode() === value;
 											const count = () =>
 												value === "staged" ? stagedCount() : workingCount();
+											const pointerBlur = blurOnPointerPress();
 											return (
 												<BaseButton
 													testID={`git-mode-${value}`}
+													ref={pointerBlur.ref}
+													onMouseUp={pointerBlur.onMouseUp}
 													selected={isSelected()}
 													class={classNames(
 														"h-8 min-w-0 flex-1 flex-row items-center justify-center gap-2 rounded-(--pilo-radius-md) px-2 transition-colors focus-visible:outline-hidden",
@@ -739,9 +742,12 @@ function GitWorkspacePanel(props: {
 																? `${hintText()} · ${t("file.lineChanges", changes)}`
 																: hintText();
 														};
+														const pointerBlur = blurOnPointerPress();
 														return (
 															<BaseButton
 																testID={`git-file-row:${file.path}`}
+																ref={pointerBlur.ref}
+																onMouseUp={pointerBlur.onMouseUp}
 																selected={selected()}
 																accessibilityLabel={label()}
 																tooltip={
@@ -860,9 +866,12 @@ function GitWorkspacePanel(props: {
 												props.onOpenFile &&
 												(props.canOpenFile?.(path) ?? true),
 											);
+											const pointerBlur = blurOnPointerPress();
 											return (
 												<BaseButton
 													testID="git-open-file"
+													ref={pointerBlur.ref}
+													onMouseUp={pointerBlur.onMouseUp}
 													disabled={!canOpen}
 													class={classNames(
 														"min-h-8 min-w-0 shrink justify-center rounded-(--pilo-radius-sm) focus-visible:outline-hidden",

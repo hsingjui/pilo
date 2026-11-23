@@ -2,7 +2,7 @@ import { signal, split, token } from "nsh";
 import { Button as BaseButton, type ButtonProps } from "nsh/base";
 import { buttonVariants } from "./button";
 import { classNames } from "./class-names";
-import { focusRingStyle } from "./focus-ring-style";
+import { blurOnPointerPress, focusRingStyle } from "./focus-ring-style";
 import { Foreground } from "./foreground";
 import { Icon } from "./icon";
 
@@ -11,9 +11,12 @@ export function ToastCloseButton(props: ButtonProps) {
 		"class",
 		"children",
 		"focusVisibleStyle",
+		"ref",
+		"onMouseUp",
 		"onMouseEnter",
 		"onMouseLeave",
 	]);
+	const pointerBlur = blurOnPointerPress(local);
 	const hovered = signal(false);
 	const foreground = () =>
 		token(hovered() ? "popover-foreground" : "muted-foreground");
@@ -21,6 +24,8 @@ export function ToastCloseButton(props: ButtonProps) {
 		<Foreground.Provider value={foreground}>
 			<BaseButton
 				{...rest}
+				ref={pointerBlur.ref}
+				onMouseUp={pointerBlur.onMouseUp}
 				class={buttonVariants({
 					variant: "ghost",
 					size: "icon",

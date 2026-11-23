@@ -14,6 +14,7 @@ import { Button as BaseButton } from "nsh/base";
 
 import type { Theme } from "@shared/theme-settings-types";
 import { Button } from "../ui/button";
+import { blurOnPointerPress } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
 import { Icon, type IconName } from "../ui/icon";
 import { Skeleton } from "../ui/skeleton";
@@ -419,12 +420,15 @@ function SidebarToolbarRow(props: {
 	onPress: () => void;
 }) {
 	const hover = createHover();
+	const pointerBlur = blurOnPointerPress();
 	const foreground = () =>
 		hover.hovered() ? token("sidebar-hover-foreground") : sidebarForeground();
 	return (
 		<Foreground.Provider value={foreground}>
 			<BaseButton
 				{...hover.props}
+				ref={pointerBlur.ref}
+				onMouseUp={pointerBlur.onMouseUp}
 				testID={props.testID}
 				class="group min-w-0 flex-1 flex-row items-center gap-1.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-sidebar-hover"
 				focusVisibleStyle={sidebarFocusRing()}
