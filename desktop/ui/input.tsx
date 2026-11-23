@@ -1,4 +1,4 @@
-import { split, token } from "nsh";
+import { platform, split, token } from "nsh";
 import {
 	Input as BaseInput,
 	type InputProps as BaseInputProps,
@@ -11,6 +11,23 @@ export const fieldSizes = {
 	default: "h-(--pilo-field-height) px-3 py-1",
 	sm: "h-(--pilo-button-sm-height) px-2.5 py-0",
 } as const;
+
+const MONO_FONT_CLASS = /(?:^|\s)font-mono(?:\s|$)/;
+
+/**
+ * On Windows, nsh 0.6.1's native Input shifts the baseline of some
+ * user-installed monospace/Nerd fonts (such as Maple Mono NF CN) to the bottom
+ * edge and clips the glyphs. Override `font-mono` fields to Windows' built-in
+ * `ui-monospace` face so single-line inputs stay vertically centered.
+ */
+export function windowsMonoInputStyle(
+	className: string | undefined,
+	os: string = platform.os,
+) {
+	if (os !== "windows" || !className || !MONO_FONT_CLASS.test(className))
+		return undefined;
+	return { fontFamily: "ui-monospace" } as const;
+}
 
 export interface InputProps extends BaseInputProps {
 	/** The single-line height; ignored when `multiline`. */
@@ -42,7 +59,11 @@ export function Input(props: InputProps) {
 			]
 				.filter(Boolean)
 				.join(" ")}
-			style={[{ boxShadow: styleVar("pilo-field-shadow") }, local.style]}
+			style={[
+				{ boxShadow: styleVar("pilo-field-shadow") },
+				windowsMonoInputStyle(local.class),
+				local.style,
+			]}
 			focusVisibleStyle={focusRingStyle(
 				token("ring"),
 				styleVar("pilo-field-shadow"),

@@ -1,5 +1,6 @@
 import { expect, open, test } from "nsh/test";
 import lody from "../theme.json";
+import { windowsMonoInputStyle } from "../ui/input";
 
 test("Input starts empty, reports typed changes, submits and clears", async () => {
 	const app = await open("./ui-input-fixture.tsx", { platform: "macos" });
@@ -34,4 +35,22 @@ test("Input supports uncontrolled defaults and multiline edits, and rejects disa
 	await app.type("id:multiline", "First\nSecond");
 	expect(app.value("id:multiline")).toBe("First\nSecond");
 	expect(app.shows("text:Notes: First\nSecond")).toBe(true);
+});
+
+test("Windows font-mono inputs fall back to ui-monospace to avoid baseline clipping", () => {
+	expect(
+		windowsMonoInputStyle(
+			"h-7 w-18 text-right font-mono text-[10px]",
+			"windows",
+		),
+	).toEqual({ fontFamily: "ui-monospace" });
+	expect(windowsMonoInputStyle("font-mono", "windows")).toEqual({
+		fontFamily: "ui-monospace",
+	});
+	expect(windowsMonoInputStyle("min-h-11 font-sans text-xs", "windows")).toBe(
+		undefined,
+	);
+	expect(
+		windowsMonoInputStyle("h-7 w-18 text-right font-mono text-[10px]", "macos"),
+	).toBe(undefined);
 });
