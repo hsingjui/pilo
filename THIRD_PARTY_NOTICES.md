@@ -10,10 +10,10 @@ Portions of Pilo are derived from or adapted from [Lody](https://github.com/Lody
 - License: Apache License 2.0
 - Modification notice: Files and code portions derived from Lody have been modified, refactored, and adapted by the Pilo project for Pilo's architecture, runtime model, and user interface.
 - Affected areas primarily include:
-  - `src/ui/`
-  - `src/index.css`
-  - `src/lib/ime.ts`
-  - `src/lib/theme-provider.tsx`
+  - `web/ui/`
+  - `web/index.css`
+  - `web/lib/ime.ts`
+  - `web/lib/theme-provider.tsx`
   - portions of `src/components/sidebar/rows.tsx`
 
 The Lody-derived portions remain subject to the Apache License 2.0. Pilo itself is also licensed under Apache License 2.0. See [LICENSE](./LICENSE) for the full license text.
