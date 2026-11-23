@@ -525,7 +525,7 @@ function AllProjectSessions(
 			? open.sessionId
 			: null;
 	});
-	const sessions = computed(
+	const rows = computed(
 		() => {
 			projectIndex();
 			projectExternal();
@@ -533,13 +533,11 @@ function AllProjectSessions(
 			runningSince();
 			readStates();
 			openDraftId();
-			return sortSidebarSessionsByRecency(
-				sidebarSessions(
-					untracked(store.state),
-					props.projectId,
-					t("app.newChat"),
-					store.startedDraft(),
-				),
+			return sidebarSessions(
+				untracked(store.state),
+				props.projectId,
+				t("app.newChat"),
+				store.startedDraft(),
 			);
 		},
 		{
@@ -548,6 +546,7 @@ function AllProjectSessions(
 				previous.every((session, at) => session === next[at]),
 		},
 	);
+	const sessions = computed(() => sortSidebarSessionsByRecency(rows()));
 	const section = projectSection(props.projectId);
 	// Rows keep their own hover: the sliding highlight needs every row in
 	// one view, and a list recycles its cells.
