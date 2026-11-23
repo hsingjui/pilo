@@ -202,7 +202,7 @@ export function AppearanceSettings() {
 						? "settings.themeCustomTokens"
 						: "settings.themeCustomCss",
 				)}
-				headerRight={
+				actions={
 					<Button
 						asChild
 						variant="ghost"
@@ -238,6 +238,7 @@ export function AppearanceSettings() {
 							/>
 							<ThemeTokenEditor
 								tokens={draftTokens}
+								issues={validation.ok ? [] : validation.issues}
 								onChange={setDraftTokens}
 							/>
 						</>

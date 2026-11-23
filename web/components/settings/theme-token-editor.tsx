@@ -10,6 +10,7 @@ import {
 	parseThemeColor,
 	isColorKind,
 	type CustomThemeTokens,
+	type ThemeTokenIssue,
 	type ThemeTokenScope,
 } from "@shared/theme-tokens";
 
@@ -22,17 +23,34 @@ const GROUPS = [
 	["font", "settings.themeFonts"],
 ] as const;
 
+const BASE_BY_SCOPE: Record<ThemeTokenScope, Record<string, unknown>> = {
+	theme: { ...CUSTOM_THEME_BASE.theme, ...CUSTOM_THEME_BASE.light },
+	light: { ...CUSTOM_THEME_BASE.theme, ...CUSTOM_THEME_BASE.light },
+	dark: {
+		...CUSTOM_THEME_BASE.theme,
+		...CUSTOM_THEME_BASE.light,
+		...CUSTOM_THEME_BASE.dark,
+	},
+};
+
 export function ThemeTokenEditor({
 	tokens,
+	issues: providedIssues,
 	onChange,
 }: {
 	tokens: CustomThemeTokens;
+	/** Precomputed validation issues from the parent, if already validated. */
+	issues?: readonly ThemeTokenIssue[];
 	onChange: (tokens: CustomThemeTokens) => void;
 }) {
 	const { t } = useTranslation();
 	const [search, setSearch] = useState("");
-	const validation = validateWebThemeTokens(tokens);
-	const issues = validation.ok ? [] : validation.issues;
+	const issues =
+		providedIssues ??
+		(() => {
+			const validation = validateWebThemeTokens(tokens);
+			return validation.ok ? [] : validation.issues;
+		})();
 	const visible = [...CUSTOM_THEME_CATALOG].filter(([token]) =>
 		token.includes(search.trim().toLowerCase()),
 	);
@@ -91,12 +109,9 @@ export function ThemeTokenEditor({
 										: (["theme"] as const)
 									).map((scope) => {
 										const value = tokens[scope]?.[token] ?? "";
-										const base = {
-											...CUSTOM_THEME_BASE.theme,
-											...CUSTOM_THEME_BASE.light,
-											...(scope === "dark" ? CUSTOM_THEME_BASE.dark : {}),
-										};
-										const placeholder = String(Reflect.get(base, token) ?? "");
+										const placeholder = String(
+											Reflect.get(BASE_BY_SCOPE[scope], token) ?? "",
+										);
 										const issue = issues.find(
 											(item) =>
 												"token" in item &&

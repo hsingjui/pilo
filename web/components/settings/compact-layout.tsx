@@ -1,4 +1,4 @@
-import React, { type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -67,7 +67,7 @@ export function SettingsSection({
 				className,
 			)}
 		>
-			{title || headerRight ? (
+			{title || headerRight || actions ? (
 				<header className="flex min-h-10 items-center justify-between gap-2 border-b border-border/70 bg-muted/40 px-3 py-1.5">
 					<div className="min-w-0 flex-1 leading-tight">
 						{title ? (
@@ -82,26 +82,7 @@ export function SettingsSection({
 						</div>
 					) : null}
 					{actions ? (
-						<div className="flex shrink-0 items-center gap-1.5">
-							{React.Children.map(actions, (child) => {
-								if (
-									!React.isValidElement<{
-										size?: string;
-										variant?: string;
-										className?: string;
-									}>(child)
-								)
-									return child;
-								return React.cloneElement(child, {
-									size: child.props.size ?? "icon",
-									variant: child.props.variant ?? "default",
-									className: cn(
-										"h-7 w-7 rounded-md shadow-xs focus-visible:ring-1 focus-visible:ring-ring/60 [&_svg]:size-3.5",
-										child.props.className,
-									),
-								});
-							})}
-						</div>
+						<div className="flex shrink-0 items-center gap-1.5">{actions}</div>
 					) : null}
 				</header>
 			) : null}
