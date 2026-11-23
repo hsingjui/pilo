@@ -64,7 +64,17 @@ export class ModelCatalogStore {
 	async open(projectId: string): Promise<void> {
 		const open = ++this.opens;
 		this.disconnect?.();
-		this.disconnect = await this.client.connectEvents({
+		this.disconnect = undefined;
+		this.current.set({
+			projectId,
+			catalog: null,
+			scope: null,
+			loaded: false,
+			refreshing: false,
+			savingScope: false,
+			error: null,
+		});
+		const disconnect = await this.client.connectEvents({
 			onMessage: (message) => {
 				if (message.type !== "events") return;
 				for (const event of message.events) {
@@ -79,15 +89,11 @@ export class ModelCatalogStore {
 			},
 			onStatus: () => {},
 		});
-		this.current.set({
-			projectId,
-			catalog: null,
-			scope: null,
-			loaded: false,
-			refreshing: false,
-			savingScope: false,
-			error: null,
-		});
+		if (open !== this.opens) {
+			disconnect();
+			return;
+		}
+		this.disconnect = disconnect;
 		const [catalog, scope] = await Promise.all([
 			this.client.loadModels(projectId).catch(() => null),
 			this.client.loadModelScope(projectId).catch(() => null),

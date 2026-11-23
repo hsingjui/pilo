@@ -195,17 +195,16 @@ export function AppShell(props: AppShellProps) {
 			: {}),
 	};
 	/** The open session's index entry, for its title and Pi session id. */
-	const openSessionEntry = () => {
-		const open = store.state().navigation.session;
-		if (!open) return null;
+	const openSessionEntry = computed(() => {
+		const state = store.state();
+		const open = state.navigation.session;
+		if (!open?.sessionPath) return null;
 		return (
-			store
-				.state()
-				.sessionIndexes[open.projectId]?.sessions.find(
-					(entry) => entry.sessionPath === open.sessionPath,
-				) ?? null
+			state.sessionIndexes[open.projectId]?.sessions.find(
+				(entry) => entry.sessionPath === open.sessionPath,
+			) ?? null
 		);
-	};
+	});
 	/** The open chat is a temporary one, which Pi does not save. */
 	const temporaryOpen = computed(() =>
 		isTemporarySessionId(store.state().navigation.session?.sessionId),
@@ -289,7 +288,12 @@ export function AppShell(props: AppShellProps) {
 			readingFontFamily: readingFontFamily(),
 		}),
 	);
-	const chatTarget = computed(() => openChatTarget(store.state()));
+	const chatTarget = computed(() => openChatTarget(store.state()), {
+		equals: (previous, next) =>
+			previous?.sessionKey === next?.sessionKey &&
+			previous?.projectId === next?.projectId &&
+			previous?.sessionPath === next?.sessionPath,
+	});
 	const chatSessionKey = computed(() => chatTarget()?.sessionKey ?? null);
 	effect(() => {
 		const target = chatTarget();
@@ -339,8 +343,15 @@ export function AppShell(props: AppShellProps) {
 			?.cacheKeepAlive ?? null;
 	const refreshCacheStatus = () => {
 		const sessionKey = chatSessionKey();
-		if (sessionKey && status().type === "ready")
+		if (
+			sessionKey &&
+			status().type === "ready" &&
+			untracked(store.state).chatSessions.some(
+				(held) => held.sessionKey === sessionKey,
+			)
+		) {
 			void store.refreshChatSession(sessionKey);
+		}
 	};
 	if (assistance) effect(refreshCacheStatus);
 

@@ -8,9 +8,13 @@ import {
 	INITIAL_HISTORY_MESSAGE_COUNT,
 	sameHistoryFingerprint,
 } from "@shared/chat/chat-history-window-model";
-import { createChatHistoryWindowStore } from "@shared/chat/chat-history-window-store";
+import {
+	createChatHistoryWindowStore,
+	type ChatHistoryWindowStore,
+} from "@shared/chat/chat-history-window-store";
 import type { PiloClientEvent } from "@shared/api/pilo-client";
 import type {
+	SessionHistory,
 	SessionHistoryFingerprint,
 	SessionHistoryResult,
 } from "@shared/api/sessions-types";
@@ -39,6 +43,7 @@ import {
 	conversationFromSnapshot,
 	followsSnapshot,
 } from "./chat-transcript";
+import type { SessionHistoryMetadata } from "./chat-run-config";
 
 export type ChatTranscriptClient = Pick<
 	NshPiloClient,
@@ -51,6 +56,45 @@ export type ChatTranscriptTarget = {
 	projectId: string;
 	/** The session file; absent for a chat that was never saved. */
 	sessionPath?: string | null;
+};
+
+export type ChatTranscriptOpenOptions = {
+	freshDraft?: boolean;
+	/** Known file fingerprint from the session index for instant cache hits. */
+	expectedFingerprint?: SessionHistoryFingerprint | null;
+	/** Whether Pi is currently known to be running for this session. */
+	knownRunning?: boolean;
+	/** Whether an external Pi currently holds an open turn on this session. */
+	external?: boolean;
+};
+
+export type ChatTranscriptHistoryMetadata = {
+	sessionKey: string;
+	sessionPath: string;
+	history: SessionHistoryMetadata;
+};
+
+function historyMetadata({
+	model,
+	thinkingLevel,
+	name,
+	headerMissing,
+	stats,
+}: SessionHistory): SessionHistoryMetadata {
+	return { model, thinkingLevel, name, headerMissing, stats };
+}
+
+const TRANSCRIPT_CACHE_CAPACITY = 16;
+
+type CachedTranscript = {
+	projectId: string;
+	sessionPath: string;
+	fingerprint: SessionHistoryFingerprint;
+	conversation: ConversationState;
+	older: ChatHistoryWindowStore;
+	saved: SavedHistory | undefined;
+	historyPrefix: readonly ChatMessage[];
+	history: SessionHistoryMetadata;
 };
 
 export type ChatTranscriptState = {
@@ -195,6 +239,11 @@ function startsTurn(event: PiloClientEvent) {
 export class ChatTranscriptStore {
 	private readonly current = signal(closed);
 	readonly state: Accessor<ChatTranscriptState> = this.current;
+	private readonly historyMetaSignal =
+		signal<ChatTranscriptHistoryMetadata | null>(null);
+	/** Metadata from the latest settled history read or cache hit, shared with run config. */
+	readonly historyMetadata: Accessor<ChatTranscriptHistoryMetadata | null> =
+		this.historyMetaSignal;
 	/**
 	 * Every message of the chat in order: the history prefix, then the
 	 * conversation's. The array is built when this is read after either
@@ -231,7 +280,9 @@ export class ChatTranscriptStore {
 	private readonly context: ConversationReducerContext;
 	private target: ChatTranscriptTarget | undefined;
 	/** The session's message index and which of its older messages are loaded. */
-	private readonly older = createChatHistoryWindowStore();
+	private older: ChatHistoryWindowStore = createChatHistoryWindowStore();
+	/** LRU cache of recently opened settled saved histories for instant switching. */
+	private readonly historyCache = new Map<string, CachedTranscript>();
 	/** Where the placeholders of the last read can be loaded from, if anywhere. */
 	private saved: SavedHistory | undefined;
 	/** The range of messages last asked for, loaded again after each read. */
@@ -275,8 +326,7 @@ export class ChatTranscriptStore {
 	private local: LocalTurn | undefined;
 	/**
 	 * Whether an external Pi runs a turn in the open chat's session: its
-	 * saved history then ends in that turn, which shows as running. Set by
-	 * the owner for whichever chat is open, so a new chat does not reset it.
+	 * saved history then ends in that turn, which shows as running.
 	 */
 	private external = false;
 
@@ -292,12 +342,51 @@ export class ChatTranscriptStore {
 	open(
 		target: ChatTranscriptTarget,
 		connected: boolean,
-		options?: { freshDraft: boolean },
+		options?: ChatTranscriptOpenOptions,
 	) {
 		const freshDraft = options?.freshDraft;
 		this.reset();
 		this.target = target;
 		this.fresh = !!freshDraft;
+		this.external = options?.external ?? false;
+		if (
+			!freshDraft &&
+			connected &&
+			options?.knownRunning === false &&
+			target.sessionPath &&
+			options.expectedFingerprint
+		) {
+			const cached = this.historyCache.get(target.sessionKey);
+			if (
+				cached &&
+				cached.projectId === target.projectId &&
+				cached.sessionPath === target.sessionPath &&
+				sameHistoryFingerprint(cached.fingerprint, options.expectedFingerprint)
+			) {
+				// Refresh LRU order.
+				this.historyCache.delete(target.sessionKey);
+				this.historyCache.set(target.sessionKey, cached);
+				this.older = cached.older;
+				this.saved = cached.saved
+					? { ...cached.saved, pages: new Set() }
+					: undefined;
+				this.historyMetaSignal.set({
+					sessionKey: target.sessionKey,
+					sessionPath: target.sessionPath,
+					history: cached.history,
+				});
+				this.current.set({
+					sessionKey: target.sessionKey,
+					status: "ready",
+					conversation: this.external
+						? markExternalTurnLive(cached.conversation)
+						: cached.conversation,
+					historyPrefix: cached.historyPrefix,
+					source: "history",
+				});
+				return Promise.resolve();
+			}
+		}
 		this.current.set({
 			sessionKey: target.sessionKey,
 			status: freshDraft ? "ready" : "loading",
@@ -307,7 +396,9 @@ export class ChatTranscriptStore {
 		});
 		// A draft reads once Pi starts. If disconnected, `refresh()` reads
 		// once the event stream is back.
-		return connected && !freshDraft ? this.read() : Promise.resolve();
+		return connected && !freshDraft
+			? this.read(false, options?.knownRunning === false)
+			: Promise.resolve();
 	}
 
 	close() {
@@ -458,7 +549,7 @@ export class ChatTranscriptStore {
 	private reset() {
 		this.reads += 1;
 		this.historyRead = undefined;
-		this.older.initialize([], 0);
+		this.older = createChatHistoryWindowStore();
 		this.saved = undefined;
 		this.wanted = undefined;
 		this.rereadFor = undefined;
@@ -472,6 +563,8 @@ export class ChatTranscriptStore {
 		this.tried = false;
 		this.fresh = false;
 		this.local = undefined;
+		this.external = false;
+		this.historyMetaSignal.set(null);
 	}
 
 	/**
@@ -690,6 +783,29 @@ export class ChatTranscriptStore {
 		const historyPrefix = saved.placeholders.slice();
 		for (const [index, message] of hydrated) historyPrefix[index] = message;
 		this.current.set({ ...this.current(), historyPrefix });
+		const sessionKey = this.target?.sessionKey;
+		if (sessionKey) {
+			const cached = this.historyCache.get(sessionKey);
+			if (
+				cached &&
+				cached.projectId === saved.projectId &&
+				cached.sessionPath === saved.sessionPath &&
+				sameHistoryFingerprint(cached.fingerprint, saved.fingerprint)
+			) {
+				cached.historyPrefix = historyPrefix;
+				cached.saved = { ...saved, pages: new Set() };
+			}
+		}
+	}
+
+	private rememberHistory(sessionKey: string, entry: CachedTranscript) {
+		this.historyCache.delete(sessionKey);
+		this.historyCache.set(sessionKey, entry);
+		while (this.historyCache.size > TRANSCRIPT_CACHE_CAPACITY) {
+			const oldest = this.historyCache.keys().next().value;
+			if (oldest === undefined) break;
+			this.historyCache.delete(oldest);
+		}
 	}
 
 	/**
@@ -744,11 +860,12 @@ export class ChatTranscriptStore {
 	 * is truncated then, or with no turn running, will not get better by
 	 * waiting, so the settled history is read instead.
 	 */
-	private async read(settled = false) {
+	private async read(settled = false, preloadHistory = false) {
 		const read = ++this.reads;
 		const target = this.target;
 		if (!target) return;
 		const { sessionKey } = target;
+		this.historyCache.delete(sessionKey);
 		const shown = this.current();
 		this.historyRead = undefined;
 		this.buffer = [];
@@ -786,12 +903,28 @@ export class ChatTranscriptStore {
 			return buffered.filter((event) => event.sequence > after);
 		};
 		try {
-			const runtime = await this.client.chatState(sessionKey);
+			const runtimePromise = this.client.chatState(sessionKey);
+			// For idle saved sessions, overlap history loading with the runtime check
+			// to eliminate a sequential IPC round-trip.
+			let prefetchedHistory: Promise<SessionHistoryResult> | undefined;
+			if (preloadHistory && target.sessionPath) {
+				this.historyRead = { changed: false };
+				prefetchedHistory = this.client.loadHistory(
+					target.projectId,
+					target.sessionPath,
+					firstWindow,
+				);
+				// Prevent unhandled rejection if a newer read supersedes this one or Pi is running.
+				void prefetchedHistory.catch(() => {});
+			}
+			const runtime = await runtimePromise;
 			if (this.reads !== read) return;
 			if (runtime) this.sawProcess(runtime.snapshot.generation);
 			this.running = runtime?.snapshot.state === "running";
 			let after = -1;
 			if (this.running) {
+				prefetchedHistory = undefined;
+				this.historyRead = undefined;
 				const snapshot = await this.client.chatTranscriptSnapshot(
 					sessionKey,
 					firstWindow,
@@ -829,13 +962,21 @@ export class ChatTranscriptStore {
 						generation: snapshot.generation,
 						eventSequence: snapshot.eventSequence,
 					};
+					const snapshotPath = runtime?.sessionPath ?? target.sessionPath;
+					if (snapshotPath) {
+						this.historyMetaSignal.set({
+							sessionKey,
+							sessionPath: snapshotPath,
+							history: historyMetadata(snapshot.history.history),
+						});
+					}
 					const buffered = finish({
 						status: "ready",
 						conversation: this.withLocal(conversation),
 						historyPrefix: this.prefixOf(
 							target.projectId,
 							snapshot.history,
-							runtime?.sessionPath ?? target.sessionPath,
+							snapshotPath,
 						),
 						source: "snapshot",
 					});
@@ -862,27 +1003,55 @@ export class ChatTranscriptStore {
 					Pick<ChatTranscriptState, "conversation" | "historyPrefix" | "source">
 				>;
 			if (sessionPath) {
-				this.historyRead = { changed: false };
-				const settledHistory = await this.client.loadHistory(
-					target.projectId,
-					sessionPath,
-					firstWindow,
-				);
+				let settledHistory: SessionHistoryResult;
+				if (prefetchedHistory && sessionPath === target.sessionPath) {
+					settledHistory = await prefetchedHistory;
+				} else {
+					this.historyRead = { changed: false };
+					settledHistory = await this.client.loadHistory(
+						target.projectId,
+						sessionPath,
+						firstWindow,
+					);
+				}
 				if (this.reads !== read) return;
 				const saved = conversationFromHistory(
 					settledHistory.history,
 					this.context,
 				);
+				const historyPrefix = this.prefixOf(
+					target.projectId,
+					settledHistory,
+					sessionPath,
+				);
+				const metadata = historyMetadata(settledHistory.history);
+				this.historyMetaSignal.set({
+					sessionKey,
+					sessionPath,
+					history: metadata,
+				});
+				if (
+					settledHistory.fingerprint &&
+					!this.running &&
+					!this.historyRead?.changed
+				) {
+					this.rememberHistory(sessionKey, {
+						projectId: target.projectId,
+						sessionPath,
+						fingerprint: settledHistory.fingerprint,
+						conversation: saved,
+						older: this.older,
+						saved: this.saved ? { ...this.saved, pages: new Set() } : undefined,
+						historyPrefix,
+						history: metadata,
+					});
+				}
 				result = {
 					status: "ready",
 					conversation: this.withLocal(
 						this.external ? markExternalTurnLive(saved) : saved,
 					),
-					historyPrefix: this.prefixOf(
-						target.projectId,
-						settledHistory,
-						sessionPath,
-					),
+					historyPrefix,
 					source: "history",
 				};
 			} else if (this.running) {

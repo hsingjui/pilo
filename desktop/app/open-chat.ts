@@ -103,12 +103,33 @@ export function followOpenSession(store: AppStore, chat: ChatTranscriptStore) {
 				chat.adoptSessionPath(next.sessionPath);
 				return;
 			}
-			const freshDraft =
-				!next.sessionPath &&
-				!store
-					.state()
-					.chatSessions.some((held) => held.sessionKey === next.sessionKey);
-			void chat.open(next, store.connected, { freshDraft });
+			const state = store.state();
+			const held = state.chatSessions.find(
+				(entry) => entry.sessionKey === next.sessionKey,
+			);
+			const freshDraft = !next.sessionPath && !held;
+			const knownRunning = held?.snapshot?.state === "running";
+			const indexedEntry = next.sessionPath
+				? state.sessionIndexes[next.projectId]?.sessions.find(
+						(entry) => entry.sessionPath === next.sessionPath,
+					)
+				: undefined;
+			const expectedFingerprint =
+				indexedEntry &&
+				typeof indexedEntry.fileSize === "number" &&
+				indexedEntry.fileMtimeNs !== undefined &&
+				String(indexedEntry.fileMtimeNs) !== ""
+					? {
+							fileSize: indexedEntry.fileSize,
+							fileMtimeNs: String(indexedEntry.fileMtimeNs),
+						}
+					: null;
+			void chat.open(next, store.connected, {
+				freshDraft,
+				knownRunning,
+				expectedFingerprint,
+				external: isExternalTurnOpen(state, next.projectId, next.sessionPath),
+			});
 		});
 	});
 	// An external Pi's turn shows as running, and reaches the chat through
@@ -193,22 +214,23 @@ export function endLeftTemporaryChats(
  * A new chat's initial run configuration: the project Scope's default model
  * and thinking level; empty while the catalog or the scope is unresolved.
  */
-function initialRunConfig(catalog: ModelCatalogStore) {
+function initialRunConfig(catalog: ModelCatalogStore, projectId: string) {
 	const state = catalog.state();
-	const models = state?.catalog?.models;
+	if (!state?.loaded || state.projectId !== projectId) return {};
+	const models = state.catalog?.models;
 	if (!models) return {};
 	const scopeResolved =
-		state?.scope?.models != null || isPiScopeCatalogResolved(models);
+		state.scope?.models != null || isPiScopeCatalogResolved(models);
 	const model = scopeResolved
-		? (getProjectScopeDefaultModel(models, state?.scope) ??
-			state?.catalog?.defaultModel ??
+		? (getProjectScopeDefaultModel(models, state.scope) ??
+			state.catalog?.defaultModel ??
 			null)
 		: null;
 	return {
 		initialModel: model ?? undefined,
 		initialThinkingLevel:
 			model?.scopeThinkingLevel ??
-			state?.catalog?.defaultThinkingLevel ??
+			state.catalog?.defaultThinkingLevel ??
 			undefined,
 	};
 }
@@ -222,6 +244,7 @@ export function followRunConfig(
 	store: AppStore,
 	runConfig: ChatRunConfigStore,
 	catalog: ModelCatalogStore,
+	chat?: Pick<ChatTranscriptStore, "historyMetadata">,
 ) {
 	const projectId = computed(() => store.state().navigation.projectId);
 	effect(() => {
@@ -243,22 +266,38 @@ export function followRunConfig(
 			} else if (next) {
 				void runConfig.open(
 					next,
-					next.sessionPath ? {} : initialRunConfig(catalog),
+					next.sessionPath
+						? { skipHistoryLoad: Boolean(chat) }
+						: initialRunConfig(catalog, next.projectId),
 				);
+				const meta = chat ? untracked(chat.historyMetadata) : null;
+				if (meta && meta.sessionKey === next.sessionKey) {
+					runConfig.applyHistory(meta.history, meta.sessionKey);
+				}
 			} else {
 				runConfig.close();
 			}
 		});
 	});
+	if (chat) {
+		effect(() => {
+			const meta = chat.historyMetadata();
+			if (!meta) return;
+			untracked(() => runConfig.applyHistory(meta.history, meta.sessionKey));
+		});
+	}
 	// A late catalog still enriches saved models or supplies new-chat defaults.
 	effect(() => {
 		const state = catalog.state();
 		const next = openChatTarget(store.state());
-		if (!state?.loaded) return;
-		if (next?.sessionPath) {
+		if (!next || !state?.loaded || state.projectId !== next.projectId) return;
+		if (next.sessionPath) {
 			untracked(() => runConfig.enrichSavedModel());
 		} else {
-			const { initialModel, initialThinkingLevel } = initialRunConfig(catalog);
+			const { initialModel, initialThinkingLevel } = initialRunConfig(
+				catalog,
+				next.projectId,
+			);
 			untracked(() =>
 				runConfig.adoptInitial(
 					initialModel ?? null,

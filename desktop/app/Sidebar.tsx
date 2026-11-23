@@ -254,8 +254,37 @@ function RecentSection(
 			if (!sessionIndexes[project.id]) void store.loadSessions(project.id);
 		}
 	});
-	const sessions = computed(() =>
-		recentSessions(store.state(), t("app.newChat"), store.startedDraft()),
+	const sessionIndexes = computed(() => store.state().sessionIndexes);
+	const chatSessions = computed(() => store.state().chatSessions);
+	const runningSince = computed(() => store.state().runningSince);
+	const externalActivity = computed(() => store.state().externalActivity);
+	const readStates = computed(() => store.state().readStates);
+	const openDraft = computed(() => {
+		const open = store.state().navigation.session;
+		return open?.sessionId !== undefined
+			? `${open.projectId}:${open.sessionId}`
+			: null;
+	});
+	const sessions = computed(
+		() => {
+			props.projects();
+			sessionIndexes();
+			chatSessions();
+			runningSince();
+			externalActivity();
+			readStates();
+			openDraft();
+			return recentSessions(
+				untracked(store.state),
+				t("app.newChat"),
+				store.startedDraft(),
+			);
+		},
+		{
+			equals: (previous, next) =>
+				previous.length === next.length &&
+				previous.every((session, at) => session === next[at]),
+		},
 	);
 	const hasSessions = computed(() => sessions().length > 0);
 	const projectNames = computed(
@@ -481,15 +510,43 @@ function AllProjectSessions(
 	props: Pick<SidebarProps, "store" | "onSelectChat"> & { projectId: string },
 ) {
 	const { store } = props;
-	const sessions = computed(() =>
-		sortSidebarSessionsByRecency(
-			sidebarSessions(
-				store.state(),
-				props.projectId,
-				t("app.newChat"),
-				store.startedDraft(),
-			),
-		),
+	const projectIndex = computed(
+		() => store.state().sessionIndexes[props.projectId],
+	);
+	const projectExternal = computed(
+		() => store.state().externalActivity[props.projectId],
+	);
+	const chatSessions = computed(() => store.state().chatSessions);
+	const runningSince = computed(() => store.state().runningSince);
+	const readStates = computed(() => store.state().readStates);
+	const openDraftId = computed(() => {
+		const open = store.state().navigation.session;
+		return open?.projectId === props.projectId && open.sessionId !== undefined
+			? open.sessionId
+			: null;
+	});
+	const sessions = computed(
+		() => {
+			projectIndex();
+			projectExternal();
+			chatSessions();
+			runningSince();
+			readStates();
+			openDraftId();
+			return sortSidebarSessionsByRecency(
+				sidebarSessions(
+					untracked(store.state),
+					props.projectId,
+					t("app.newChat"),
+					store.startedDraft(),
+				),
+			);
+		},
+		{
+			equals: (previous, next) =>
+				previous.length === next.length &&
+				previous.every((session, at) => session === next[at]),
+		},
 	);
 	const section = projectSection(props.projectId);
 	// Rows keep their own hover: the sliding highlight needs every row in

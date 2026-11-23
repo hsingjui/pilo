@@ -894,7 +894,11 @@ impl Pilo {
                 Some(options.include_message_index.unwrap_or(true)),
             )
             .await?;
-            serde_json::from_slice(&history).map_err(|error| error.to_string())
+            tokio::task::spawn_blocking(move || {
+                serde_json::from_slice(&history).map_err(|error| error.to_string())
+            })
+            .await
+            .map_err(|error| format!("failed to parse session history: {error}"))?
         })
         .await
     }

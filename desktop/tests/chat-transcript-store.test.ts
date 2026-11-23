@@ -264,6 +264,21 @@ test("events that arrive while the snapshot is awaited are applied above its cut
 	expect(texts()).toEqual(["saved", "asked", "one two"]);
 });
 
+test("a truncated idle snapshot does not reuse prefetched history from before the snapshot", async () => {
+	const { store, answers, histories, snapshots, texts } = fakeClient();
+	answers.history = null;
+	const opened = store.open(target, true, { knownRunning: false });
+	await settle();
+	expect(histories.length).toBe(1);
+	histories[0]?.resolve(history("stale"));
+	snapshots[0]?.resolve(snapshot(12, { type: "truncated" }));
+	await settle();
+	expect(histories.length).toBe(2);
+	histories[1]?.resolve(history("current"));
+	await opened;
+	expect(texts()).toEqual(["current"]);
+});
+
 test("a ready chat follows its later events and ignores other chats", async () => {
 	const { store, snapshots, texts } = fakeClient();
 	const opened = store.open(target, true);
@@ -1839,4 +1854,102 @@ test("a file one chat was read again for does not keep the next chat from being 
 	await settle();
 	await settle();
 	expect(chatReads()).toBe(4);
+});
+
+test("reopening an unchanged saved session serves the cached transcript synchronously", async () => {
+	const { store, answers, histories, texts } = fakeClient();
+	answers.runtime = null;
+	const fpA = { fileSize: 120, fileMtimeNs: "1000" };
+	const fpB = { fileSize: 240, fileMtimeNs: "2000" };
+	answers.history = {
+		history: {
+			events: [{ type: "user_message_start", text: "from A" }],
+			name: "Session A",
+		},
+		fingerprint: fpA,
+	} as unknown as SessionHistoryResult;
+
+	await store.open(
+		{ sessionKey: "kA", projectId: "p1", sessionPath: "/a.jsonl" },
+		true,
+		{ knownRunning: false, expectedFingerprint: fpA },
+	);
+	expect(texts()).toEqual(["from A"]);
+	expect(store.historyMetadata()?.history.name).toBe("Session A");
+	expect(histories.length).toBe(1);
+	expect(answers.reads).toBe(1);
+
+	answers.history = {
+		history: {
+			events: [{ type: "user_message_start", text: "from B" }],
+			name: "Session B",
+		},
+		fingerprint: fpB,
+	} as unknown as SessionHistoryResult;
+	await store.open(
+		{ sessionKey: "kB", projectId: "p1", sessionPath: "/b.jsonl" },
+		true,
+		{ knownRunning: false, expectedFingerprint: fpB },
+	);
+	expect(texts()).toEqual(["from B"]);
+	expect(histories.length).toBe(2);
+
+	// Reopening A with the same fingerprint resolves synchronously without re-reading.
+	void store.open(
+		{ sessionKey: "kA", projectId: "p1", sessionPath: "/a.jsonl" },
+		true,
+		{ knownRunning: false, expectedFingerprint: fpA },
+	);
+	expect(store.state().status).toBe("ready");
+	expect(store.state().source).toBe("history");
+	expect(texts()).toEqual(["from A"]);
+	expect(store.historyMetadata()?.history.name).toBe("Session A");
+	expect(histories.length).toBe(2);
+	expect(answers.reads).toBe(2);
+
+	// A changed fingerprint invalidates the cache and reads fresh history.
+	const fpA2 = { fileSize: 180, fileMtimeNs: "3000" };
+	answers.history = {
+		history: {
+			events: [{ type: "user_message_start", text: "from A v2" }],
+		},
+		fingerprint: fpA2,
+	} as unknown as SessionHistoryResult;
+	await store.open(
+		{ sessionKey: "kA", projectId: "p1", sessionPath: "/a.jsonl" },
+		true,
+		{ knownRunning: false, expectedFingerprint: fpA2 },
+	);
+	expect(texts()).toEqual(["from A v2"]);
+	expect(histories.length).toBe(3);
+});
+
+test("opening an idle saved session overlaps chatState and loadHistory", async () => {
+	let resolveState: (value: ChatSessionRuntimeState | null) => void = () => {};
+	const calls: string[] = [];
+	const store = new ChatTranscriptStore(
+		{
+			chatState() {
+				calls.push("chatState");
+				return new Promise((resolve) => {
+					resolveState = resolve;
+				});
+			},
+			chatTranscriptSnapshot: () =>
+				Promise.reject(new Error("no Pi is running")),
+			loadHistory() {
+				calls.push("loadHistory");
+				return Promise.resolve(history("parallel"));
+			},
+		},
+		context(),
+	);
+
+	const opened = store.open(target, true, { knownRunning: false });
+	// loadHistory has already been issued before chatState resolves.
+	expect(calls).toEqual(["chatState", "loadHistory"]);
+	resolveState(null);
+	await opened;
+	expect(store.state().status).toBe("ready");
+	expect(store.messages().map((message) => message.text)).toEqual(["parallel"]);
 });

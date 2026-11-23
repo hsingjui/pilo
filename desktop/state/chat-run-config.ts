@@ -8,6 +8,7 @@ import type {
 	PiThinkingLevel,
 } from "@shared/api/pi-runtime-types";
 import { PI_THINKING_LEVELS } from "@shared/api/pi-runtime-types";
+import type { SessionHistory } from "@shared/api/sessions-types";
 import type { ChatSessionRuntimeState } from "@shared/chat/session-stats";
 import { chatRpcRenamesSession } from "@shared/chat/chat-session-runtime-model";
 import { mergeSessionStats } from "@shared/chat/session-stats";
@@ -26,6 +27,11 @@ import { isTemporarySessionKey } from "./app-state";
 import type { ChatTranscriptTarget } from "./chat-transcript-store";
 import type { ModelCatalogState } from "./model-catalog";
 
+export type SessionHistoryMetadata = Pick<
+	SessionHistory,
+	"model" | "thinkingLevel" | "name" | "headerMissing" | "stats"
+>;
+
 export type ChatRunConfigClient = PiCommandClient &
 	Pick<NshPiloClient, "startChat" | "chatState" | "loadHistory">;
 
@@ -33,6 +39,8 @@ export type ChatRunConfigOptions = {
 	/** A new chat's scope-resolved defaults; absent while a scope is pending. */
 	initialModel?: PiModel;
 	initialThinkingLevel?: PiThinkingLevel;
+	/** Skip a separate `loadHistory` call when the transcript store supplies history metadata. */
+	skipHistoryLoad?: boolean;
 };
 
 export type ChatRunConfigState = {
@@ -137,7 +145,7 @@ export class ChatRunConfigStore {
 			return;
 		}
 		this.disconnect = disconnect;
-		if (target.sessionPath) {
+		if (target.sessionPath && !options.skipHistoryLoad) {
 			void this.applyHistoryMetadata(open, target);
 		}
 		await this.refresh(open);
@@ -201,23 +209,14 @@ export class ChatRunConfigStore {
 		this.current.set(null);
 	}
 
-	/** A saved session's model, thinking and stats seed the selection. */
-	private async applyHistoryMetadata(
-		open: number,
-		target: ChatTranscriptTarget,
-	): Promise<void> {
-		if (!target.sessionPath) return;
-		const result = await this.client
-			.loadHistory(target.projectId, target.sessionPath, {
-				// An empty event window still includes the header and stats.
-				startMessage: Number.MAX_SAFE_INTEGER,
-				messageLimit: 1,
-				includeMessageIndex: false,
-			})
-			.catch(() => null);
+	/** Applies metadata from an already loaded history without a second read. */
+	applyHistory(history: SessionHistoryMetadata, sessionKey?: string): void {
 		const current = this.current();
-		if (!result || !current || open !== this.opens) return;
-		const { history } = result;
+		if (
+			!current ||
+			(sessionKey !== undefined && current.sessionKey !== sessionKey)
+		)
+			return;
 		let historicalModel: PiModel | null = null;
 		if (history.model) {
 			historicalModel = findMatchingPiModel(
@@ -232,28 +231,55 @@ export class ChatRunConfigStore {
 		}
 		const stats = history.stats;
 		const previous = current.session;
+		const live = Boolean(previous?.sessionId);
 		this.update({
 			headerMissing: history.headerMissing ?? false,
 			session: {
 				...previous,
-				name: previous?.name ?? history.name ?? undefined,
-				tokens: previous?.tokens ?? stats?.tokens,
-				cost: previous?.cost ?? stats?.cost,
-				contextTokens: previous?.contextTokens ?? stats?.contextTokens,
+				name: live
+					? (previous?.name ?? history.name ?? undefined)
+					: (history.name ?? previous?.name ?? undefined),
+				tokens: live
+					? (previous?.tokens ?? stats?.tokens)
+					: (stats?.tokens ?? previous?.tokens),
+				cost: live
+					? (previous?.cost ?? stats?.cost)
+					: (stats?.cost ?? previous?.cost),
+				contextTokens: live
+					? (previous?.contextTokens ?? stats?.contextTokens)
+					: (stats?.contextTokens ?? previous?.contextTokens),
 			},
-			...(!current.modelDirty && !previous?.sessionId && historicalModel
+			...(!current.modelDirty && !live && historicalModel
 				? {
 						model: historicalModel,
 						thinkingLevels: [...getPiModelThinkingLevels(historicalModel)],
 					}
 				: {}),
 			...(!current.thinkingDirty &&
-			!previous?.sessionId &&
+			!live &&
 			history.thinkingLevel &&
 			PI_THINKING_LEVELS.includes(history.thinkingLevel as PiThinkingLevel)
 				? { thinkingLevel: history.thinkingLevel as PiThinkingLevel }
 				: {}),
 		});
+	}
+
+	/** A saved session's model, thinking and stats seed the selection. */
+	private async applyHistoryMetadata(
+		open: number,
+		target: ChatTranscriptTarget,
+	): Promise<void> {
+		if (!target.sessionPath) return;
+		const result = await this.client
+			.loadHistory(target.projectId, target.sessionPath, {
+				// An empty event window still includes the header and stats.
+				startMessage: Number.MAX_SAFE_INTEGER,
+				messageLimit: 1,
+				includeMessageIndex: false,
+			})
+			.catch(() => null);
+		if (!result || open !== this.opens) return;
+		this.applyHistory(result.history, target.sessionKey);
 	}
 
 	private catalogModels(projectId: string): readonly PiModel[] {

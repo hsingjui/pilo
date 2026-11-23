@@ -63,17 +63,18 @@ export function ProjectSection(props: {
 	const section = () => projectSection(id());
 	const collapsed = () =>
 		settings.settings().collapsedSections[section()] ?? true;
-	const selected = () => {
+	const selected = computed(() => {
 		const state = store.state();
 		const open = state.navigation.session;
 		return (
 			(open?.projectId === id() && open.sessionId !== undefined) ||
 			(open === null && activeProject(state)?.id === id())
 		);
-	};
+	});
 	// Reading the sessions again, as the Tauri row's `refreshing`.
-	const refreshing = () =>
-		store.state().sessionIndexes[id()]?.status === "loading";
+	const refreshing = computed(
+		() => store.state().sessionIndexes[id()]?.status === "loading",
+	);
 	const menuOpen = signal(false);
 	const confirmingRemove = signal(false);
 	const hover = createHover();
@@ -359,29 +360,56 @@ function ProjectSessions(props: {
 }) {
 	const { store } = props;
 	const section = () => projectSection(props.projectId());
-	const index = () => store.state().sessionIndexes[props.projectId()];
+	const index = computed(() => store.state().sessionIndexes[props.projectId()]);
+	const externalActivity = computed(
+		() => store.state().externalActivity[props.projectId()],
+	);
+	const chatSessions = computed(() => store.state().chatSessions);
+	const runningSince = computed(() => store.state().runningSince);
+	const readStates = computed(() => store.state().readStates);
+	// Switching between saved sessions never changes this project's unsaved draft row.
+	const openDraftId = computed(() => {
+		const open = store.state().navigation.session;
+		return open?.projectId === props.projectId() && open.sessionId !== undefined
+			? open.sessionId
+			: null;
+	});
 	// A project that starts expanded has not read its sessions yet.
 	untracked(() => {
 		if (!index()) void store.loadSessions(props.projectId());
 	});
-	const sessions = computed(() => {
-		const state = store.state();
-		const listed = sidebarSessions(
-			state,
+	const listed = computed(() => {
+		index();
+		externalActivity();
+		chatSessions();
+		runningSince();
+		readStates();
+		openDraftId();
+		return sidebarSessions(
+			untracked(store.state),
 			props.projectId(),
 			t("app.newChat"),
 			store.startedDraft(),
 		);
-		const open = state.navigation.session;
-		const opened =
-			open?.projectId !== props.projectId()
-				? undefined
-				: open.sessionPath
-					? listed.find((session) => session.sessionPath === open.sessionPath)
-							?.id
-					: open.sessionId;
-		return summarizeProjectSessions(listed, opened ?? null);
 	});
+	const openedId = computed(() => {
+		const open = store.state().navigation.session;
+		if (open?.projectId !== props.projectId()) return null;
+		if (!open.sessionPath) return open.sessionId ?? null;
+		return (
+			listed().find((session) => session.sessionPath === open.sessionPath)
+				?.id ?? null
+		);
+	});
+	const sessions = computed(
+		() => summarizeProjectSessions(listed(), openedId()),
+		{
+			equals: (previous, next) =>
+				previous.hiddenCount === next.hiddenCount &&
+				previous.visible.length === next.visible.length &&
+				previous.visible.every((session, at) => session === next.visible[at]),
+		},
+	);
 	const hasSessions = computed(() => sessions().visible.length > 0);
 	return (
 		<>

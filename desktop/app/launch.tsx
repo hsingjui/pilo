@@ -210,7 +210,7 @@ export async function launch(
 		client.stopChat(sessionKey, reason),
 	);
 	followOpenSessionRead(store);
-	followRunConfig(store, runConfig, catalog);
+	followRunConfig(store, runConfig, catalog, chat);
 	// The first frame takes the saved theme and sidebar width, so a launch or
 	// reload neither flashes the default theme nor resizes its outline.
 	const sidebarSettings = new SidebarSettingsStore();

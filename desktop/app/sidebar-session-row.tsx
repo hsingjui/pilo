@@ -150,13 +150,14 @@ export function SessionRow(props: {
 			renaming.set(false);
 		});
 	});
-	const selected = () => {
+	const selected = computed(() => {
 		const open = store.state().navigation.session;
-		if (open?.projectId !== session().projectId) return false;
+		const current = session();
+		if (open?.projectId !== current.projectId) return false;
 		return saved()
-			? open.sessionPath === session().sessionPath
-			: !open.sessionPath && open.sessionId === session().id;
-	};
+			? open.sessionPath === current.sessionPath
+			: !open.sessionPath && open.sessionId === current.id;
+	});
 	const projectContext = () => Boolean(props.projectName?.());
 
 	const startRenameAfterMenuClose = () => {
