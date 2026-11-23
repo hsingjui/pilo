@@ -5,7 +5,6 @@ use super::{RuntimeEventBus, host_paths::HostPaths};
 pub trait HostShell: Send + Sync {
     fn cache_dir(&self) -> Result<std::path::PathBuf, String>;
     fn open_path(&self, path: &std::path::Path) -> Result<(), String>;
-    fn pick_directory(&self) -> Option<String>;
     fn desktop_setting(
         &self,
         _key: String,

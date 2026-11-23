@@ -1,4 +1,4 @@
-//! The runtime's host ports as the nsh shell implements them: paths, logging, web assets, desktop settings and the folder picker.
+//! The runtime's host ports as the nsh shell implements them: paths, logging, web assets and desktop settings.
 
 use std::{
     fs::{File, OpenOptions},
@@ -21,7 +21,7 @@ use tokio::{io::AsyncReadExt, runtime::Runtime as Executor};
 
 pub(super) struct ShellWebAssets(pub(super) PathBuf);
 
-/// The nsh host's shell: a native folder picker, desktop settings and a cache under the data dir.
+/// The nsh host's shell: opening paths, desktop settings and a cache under the data dir.
 pub(super) struct NshHostShell {
     pub(super) cache_dir: PathBuf,
     pub(super) paths: HostPaths,
@@ -34,12 +34,6 @@ impl HostShell for NshHostShell {
 
     fn open_path(&self, path: &Path) -> Result<(), String> {
         open_path(path)
-    }
-
-    fn pick_directory(&self) -> Option<String> {
-        rfd::FileDialog::new()
-            .pick_folder()
-            .map(|path| path.to_string_lossy().into_owned())
     }
 
     fn desktop_setting(&self, key: String, value: Option<JsonValue>) -> HostSettingFuture {
@@ -87,6 +81,9 @@ impl HostShell for NshHostShell {
 }
 
 /// Opens a file or directory in the file manager.
+///
+/// The runtime calls this from its own threads, where nsh's engine-thread
+/// `open_path` is unavailable, so it starts the platform opener directly.
 pub(super) fn open_path(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let mut command = std::process::Command::new("open");
@@ -117,22 +114,6 @@ pub(super) fn sanitize_save_file_name(suggested_name: &str) -> String {
         return "image".to_owned();
     }
     candidate.to_owned()
-}
-
-/// Prompts the user for a destination path and writes `bytes`; returns `false` when canceled.
-pub(super) async fn save_file_bytes(suggested_name: &str, bytes: &[u8]) -> Result<bool, String> {
-    let file_name = sanitize_save_file_name(suggested_name);
-    let Some(handle) = rfd::AsyncFileDialog::new()
-        .set_file_name(&file_name)
-        .save_file()
-        .await
-    else {
-        return Ok(false);
-    };
-    tokio::fs::write(handle.path(), bytes)
-        .await
-        .map_err(|error| format!("failed to save file: {error}"))?;
-    Ok(true)
 }
 
 /// The most bytes [`read_local_file`] reads; the composer applies its own, smaller limits.
@@ -433,6 +414,7 @@ pub(super) fn data_identifier(development: bool) -> &'static str {
     }
 }
 
+/// The macOS data directory existing installs use.
 pub(super) fn default_data_dir(home: &Path, development: bool) -> PathBuf {
     home.join("Library/Application Support")
         .join(data_identifier(development))
@@ -459,16 +441,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn uses_tauri_data_locations() {
+    fn keeps_existing_install_data_locations() {
         let home = Path::new("/Users/example");
+        let base = home.join("Library/Application Support");
         for (development, identifier) in [
             (false, "app.hsingjui.pilo"),
             (true, "app.hsingjui.pilo.dev"),
         ] {
-            assert_eq!(
-                default_data_dir(home, development),
-                home.join("Library/Application Support").join(identifier)
-            );
+            assert_eq!(default_data_dir(home, development), base.join(identifier));
         }
     }
 

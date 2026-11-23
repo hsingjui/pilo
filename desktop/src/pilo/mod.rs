@@ -4,7 +4,11 @@ use std::{
     sync::Arc,
 };
 
-use nsh_core::{JsonValue, prelude::*};
+use nsh_core::{
+    JsonValue, element,
+    file_dialog::{OpenDialog, SaveDialog},
+    prelude::*,
+};
 use pilo_domain::{Connection, RemoteAccessAddress};
 use pilo_runtime::{
     Runtime, TERMINAL_QUEUE_MAX_BYTES, TerminalEventStream, TranscriptWindow,
@@ -31,10 +35,10 @@ use pilo_runtime::{
     next_prompt::{next_prompt_request, next_prompt_settings_get, next_prompt_settings_set},
     preferences::{preferences_get, preferences_patch},
     project_api::{
-        self, connection_fs_read_dir, local_pick_project_directory, project_add,
-        project_chat_file_remove, project_chat_file_upload, project_fs_read_image,
-        project_fs_search, project_model_cache_list, project_model_cache_set,
-        project_model_scope_get, project_model_scope_set, project_remove,
+        self, connection_fs_read_dir, project_add, project_chat_file_remove,
+        project_chat_file_upload, project_fs_read_image, project_fs_search,
+        project_model_cache_list, project_model_cache_set, project_model_scope_get,
+        project_model_scope_set, project_remove,
     },
     project_opener::ProjectApp,
     prompt_enhancement::{
@@ -74,7 +78,7 @@ use objects::{
 };
 use shell::{
     NshHostShell, ShellWebAssets, data_identifier, default_data_dir, executor, init_file_logger,
-    open_path, read_local_file, resolve_log_directory, save_file_bytes, server_resource_name,
+    read_local_file, resolve_log_directory, sanitize_save_file_name, server_resource_name,
     workspace,
 };
 
@@ -518,12 +522,14 @@ impl Pilo {
     }
 
     /// The host's native folder picker; `null` when dismissed.
-    pub async fn pick_local_project_directory(this: Instance<Self>) -> Result<JsonValue, String> {
-        Self::with_runtime_blocking(this, |runtime| {
-            serde_json::to_value(local_pick_project_directory(runtime)?)
-                .map_err(|error| error.to_string())
-        })
-        .await
+    pub async fn pick_local_project_directory(
+        this: Instance<Self>,
+    ) -> Result<Option<String>, String> {
+        let _ = this;
+        let folders = element::pick_paths(OpenDialog::folders()).await?;
+        Ok(folders
+            .and_then(|folders| folders.into_iter().next())
+            .map(|folder| folder.to_string_lossy().into_owned()))
     }
 
     /// Removes the project from the catalog, stopping its chats first.
@@ -960,12 +966,15 @@ impl Pilo {
         suggested_name: String,
         bytes: Vec<u8>,
     ) -> Result<bool, String> {
-        let task = this.with(|pilo| {
-            pilo.executor
-                .spawn(async move { save_file_bytes(&suggested_name, &bytes).await })
-        });
+        let dialog = SaveDialog::new().file_name(sanitize_save_file_name(&suggested_name));
+        let Some(path) = element::pick_save_path(dialog).await? else {
+            return Ok(false);
+        };
+        let task = this.with(|pilo| pilo.executor.spawn(tokio::fs::write(path, bytes)));
         task.await
             .map_err(|error| format!("failed to save image: {error}"))?
+            .map_err(|error| format!("failed to save file: {error}"))?;
+        Ok(true)
     }
 
     /// Reads a local file the user pasted or dropped, given as its `file:` URL.
@@ -1122,7 +1131,7 @@ impl Pilo {
         let directory = resolve_log_directory(log_file.as_deref(), cfg!(debug_assertions))?;
         std::fs::create_dir_all(&directory)
             .map_err(|error| format!("creating log directory {directory:?} failed: {error}"))?;
-        open_path(&directory)
+        element::open_path(directory).await
     }
 
     /// Stops a Pi chat; stopping an absent session succeeds.

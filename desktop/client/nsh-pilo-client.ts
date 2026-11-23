@@ -291,7 +291,7 @@ export class NshPiloClient implements PiloClient {
 
 	/** The host's native folder picker; `null` when dismissed. */
 	async pickLocalProjectDirectory(): Promise<string | null> {
-		return (await this.pilo.pickLocalProjectDirectory()) as string | null;
+		return await this.pilo.pickLocalProjectDirectory();
 	}
 
 	/** The local connection row, created if the catalog does not have it yet. */

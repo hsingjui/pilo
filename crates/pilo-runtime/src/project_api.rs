@@ -262,10 +262,6 @@ pub async fn project_preview_close(runtime: &Runtime, preview_id: String) -> Res
     runtime.previews.lock().await.close(&preview_id).await
 }
 
-pub fn local_pick_project_directory(runtime: &Runtime) -> Result<Option<String>, String> {
-    Ok(runtime.shell()?.pick_directory())
-}
-
 pub async fn connection_fs_read_dir(
     runtime: &Runtime,
     connection_id: String,
@@ -313,49 +309,4 @@ pub async fn project_fs_search(
 ) -> Result<Vec<String>, String> {
     let project = project::ready(runtime, &runtime.servers, &id).await?;
     remote_fs::search(&runtime.servers, &project, &query).await
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{handle::HostShell, host_paths::HostPaths};
-    use std::path::{Path, PathBuf};
-
-    struct Picker(Option<&'static str>);
-
-    impl HostShell for Picker {
-        fn cache_dir(&self) -> Result<PathBuf, String> {
-            Ok(PathBuf::new())
-        }
-
-        fn open_path(&self, _path: &Path) -> Result<(), String> {
-            Ok(())
-        }
-
-        fn pick_directory(&self) -> Option<String> {
-            self.0.map(str::to_owned)
-        }
-    }
-
-    #[test]
-    fn directory_picker_reports_missing_host_services() {
-        let runtime = Runtime::new(HostPaths::for_test(PathBuf::new()));
-        assert_eq!(
-            local_pick_project_directory(&runtime),
-            Err("host shell services are unavailable".to_owned())
-        );
-    }
-
-    #[test]
-    fn directory_picker_preserves_selection_and_user_cancellation() {
-        for selection in [Some("/workspace"), None] {
-            let runtime = Runtime::new(HostPaths::for_test(PathBuf::new()))
-                .with_shell(Arc::new(Picker(selection)))
-                .unwrap();
-            assert_eq!(
-                local_pick_project_directory(&runtime),
-                Ok(selection.map(str::to_owned))
-            );
-        }
-    }
 }
