@@ -22,6 +22,10 @@ owns tray, focus, shortcut registration, and quit handling.
   window. An ordinary close hides it only when `exitOnClose` is false and the
   tray has been used or the global show shortcut registered successfully. A
   system close or an explicit quit awaits Host shutdown before `Application.quit()`.
+- Keep transparent tray marks in `assets/branding/tray*.svg`: macOS uses the
+  monochrome template `desktop/assets/tray-template.svg` with transparent eyes;
+  Windows/Linux use the 32px RGBA colored bitmap `desktop/assets/tray.png`
+  (because nsh 0.6.1 tints SVG tray icons as monochrome templates on Windows too).
 - Register a replacement global shortcut before saving it. If saving fails,
   unregister the replacement and keep the previous key. Show the key hint in
   the tray only when registered. Keep global registration separate from the

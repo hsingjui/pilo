@@ -2,7 +2,9 @@ import { effect, keymap, platform, signal } from "nsh";
 import { Application, GlobalShortcut, Tray, type WindowRef } from "nsh/desktop";
 
 import macTrayIcon from "../assets/tray-template.svg";
-import windowsTrayIcon from "../assets/tray.svg";
+// nsh renders SVG tray icons as monochrome templates on Windows too; use the
+// pre-rendered RGBA PNG (from assets/branding/tray.svg) to preserve colors.
+import windowsTrayIcon from "../assets/tray.png";
 import { APP_SHORTCUTS } from "../shortcuts";
 import { t } from "./i18n";
 
