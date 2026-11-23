@@ -1,15 +1,14 @@
 # Tests
 
 Tests are grouped by execution environment, not by source-file location.
-Use Node.js 22 (latest patch) and the existing `node:test` runner; no additional
-JavaScript test framework is required.
+Use Node.js 22+ with the built-in `node:test` runner for pure TypeScript and `pilo-server` integration tests, and `nsh test` for nsh Desktop & WebUI tests.
 
 ```text
+app/tests/      # nsh headless & native UI tests (*.test.ts / *.test.tsx)
 tests/
-  unit/         # focused logic, state/store and React static-rendering tests
-  integration/  # CLI/process and Pi extension integration tests
-  browser/      # real-browser HTML regression pages
-  helpers/      # Node TSX transpilation and @/, @shared/ alias resolution
+  unit/         # pure TS shared logic & script tests (*.spec.ts / *.spec.mjs)
+  integration/  # CLI/process and Pi extension integration tests (*.spec.ts)
+  helpers/      # Node @shared/* alias resolution
 ```
 
 ## Node suites
@@ -22,58 +21,38 @@ pnpm test:unit             # unit suite only
 pnpm test:integration      # integration suite only
 
 # Run one file
-node --experimental-strip-types --import ./tests/helpers/tsx-loader.mjs --test tests/unit/chat-mentions.test.ts
-
-# Filter test names within one file (Node options must precede file paths)
-node --experimental-strip-types --import ./tests/helpers/tsx-loader.mjs --test --test-name-pattern="round-trip" tests/unit/chat-mentions.test.ts
+node --experimental-strip-types --import ./tests/helpers/tsx-loader.mjs --test tests/unit/chat-mentions.spec.ts
 ```
 
-The scripts pass quoted recursive globs to Node so discovery does not depend
-on shell wildcard expansion. Add `*.test.ts` or `*.test.mjs` files under the
-appropriate directory; do not add individual filenames to `package.json`.
+Node test files use `*.spec.ts` / `*.spec.mjs` so running `nsh test` directly at the repository root only discovers `app/tests/*.test.ts(x)`.
 
-Unit tests cover focused modules, including stores and static React rendering.
-Integration tests exercise scripts/processes and Pi extensions with local
-stubs; they do not require a running desktop app or real SSH server. The SSH
-workspace test uses a POSIX shell and filesystem permissions, so run the full
-integration suite on Linux/WSL. It reads the production Server extension and
-simulates both Linux and macOS, redirecting all mux filesystem operations into
-private fixture directories (never the real macOS `/tmp`). The nsh desktop
-has its own suite: `cd desktop && nsh test`.
+## nsh Desktop & WebUI
 
-`tsx-loader.mjs` resolves `@/` against `web/` and `@shared/` against `shared/`, and transpiles TSX with the already
-installed TypeScript dependency. Node strips ordinary TypeScript types. This
-runner does not replace TypeScript type-checking.
-
-## Browser regressions
+Run from the repository root. Native chat fixtures need the local `pilo-server`
+and write synthetic sessions, so give the test run an isolated Pi directory.
 
 ```bash
-pnpm exec vite --host 127.0.0.1
+nsh check
+cargo build -p pilo-server
+PI_CODING_AGENT_DIR="$PWD/target/nsh-test/pi-agent" \
+PILO_SERVER_RUNTIME_DIR="$PWD/target/nsh-test/server" nsh test
 ```
 
-Open one of these paths at `http://127.0.0.1:1420`:
+On Windows (PowerShell):
 
-- `/tests/browser/cache-keep-alive.html`
-- `/tests/browser/chat-markdown-images.html`
-- `/tests/browser/chat-mentions.html`
-- `/tests/browser/chat-scroll-following.html`
-- `/tests/browser/chat-streaming-status.html`
-- `/tests/browser/chat-column-alignment.html` (message/composer edges, symmetric mobile margins, scrolling and desktop gutter; check 320/390/640/768/1023/1024/1440px)
-- `/tests/browser/dom-text-selection.html`
-- `/tests/browser/remote-mobile-navigation.html`
-- `/tests/browser/remote-session-isolation.html` (real WebUI with mocked Host/Pi; delayed history/RPC, rapid switching, late events, notification dedup/expiry, draft navigation, failed loads and global notices; check wide and touch/mobile viewports)
+```powershell
+cargo build -p pilo-server
+$env:PI_CODING_AGENT_DIR = Join-Path $PWD 'target/nsh-test/pi-agent'
+$env:PILO_SERVER_RUNTIME_DIR = Join-Path $PWD 'target/nsh-test/server'
+nsh test
+```
 
-Each page reports results and sets `document.body.dataset.testStatus` to
-`passed` or `failed`. These pages are not executed by `pnpm test`. Check both
-desktop and narrow/mobile layouts where applicable. Selection behavior needs
-Chromium and WebKit coverage.
+If Cargo's output is redirected, set `PILO_SERVER_BINARY` to the absolute path
+of the built server before running `nsh test`.
 
 ## Rust
 
 ```bash
 cargo test --workspace --all-features
-cargo test --manifest-path desktop/Cargo.toml
+cargo test --manifest-path crates/pilo-desktop/Cargo.toml
 ```
-
-`pnpm test` does not include browser, desktop or Rust tests. `pnpm check`
-checks formatting/lint only; `pnpm build` type-checks and builds the frontend.

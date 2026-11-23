@@ -1,4 +1,4 @@
-import base from "../desktop/theme.json" with { type: "json" };
+import base from "../theme/theme.json" with { type: "json" };
 import mapping from "./theme-web-map.json" with { type: "json" };
 import {
 	createThemeTokenCatalog,

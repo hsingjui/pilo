@@ -249,7 +249,12 @@ fn get_project(paths: &HostPaths, project_id: &str) -> Result<Project, String> {
 }
 
 fn allows_spa_fallback(path: &str) -> bool {
-    if path.starts_with("api/") || path.starts_with("assets/") {
+    if path.starts_with("api/")
+        || path.starts_with("assets/")
+        || path.starts_with("icons/")
+        || path.starts_with("facades/")
+        || path.starts_with("browser.")
+    {
         return false;
     }
     !path
@@ -258,15 +263,23 @@ fn allows_spa_fallback(path: &str) -> bool {
         .is_some_and(|segment| segment.contains('.'))
 }
 
+fn has_content_hash_segment(segment: &str) -> bool {
+    // Matches nsh's fingerprinted filenames (`app.50797f7b13.js`, `browser.b998e17dc5`, `192.1b09b59f5c.png`).
+    segment
+        .split('.')
+        .any(|part| part.len() >= 8 && part.bytes().all(|byte| byte.is_ascii_hexdigit()))
+}
+
 fn asset_cache_control(path: &str, spa_fallback: bool) -> &'static str {
-    if spa_fallback || path == "nsh/index.html" || path == "nsh/manifest.webmanifest" {
+    if spa_fallback || path == "index.html" || path == "manifest.webmanifest" {
         return "no-cache";
     }
-    if path.starts_with("assets/") {
-        return "public, max-age=31536000, immutable";
-    }
-    // `nsh package --target web` emits content-hashed filenames under `nsh/`.
-    if path.starts_with("nsh/") {
+    if path.starts_with("assets/")
+        || path.starts_with("facades/")
+        || path.starts_with("icons/")
+        || path.starts_with("browser.")
+        || path.split('/').any(has_content_hash_segment)
+    {
         return "public, max-age=31536000, immutable";
     }
     "no-cache"
@@ -281,44 +294,18 @@ fn serve_asset(assets: Option<&dyn crate::web_assets::WebAssets>, uri: Uri) -> R
     if requested_path.starts_with("api/") {
         return StatusCode::NOT_FOUND.into_response();
     }
-    // Redirect `/nsh` to `/nsh/` so relative module and asset paths resolve inside `/nsh/`.
-    if requested_path == "nsh" {
-        let location = match uri.query() {
-            Some(query) => format!("/nsh/?{query}"),
-            None => "/nsh/".to_owned(),
-        };
-        return Response::builder()
-            .status(StatusCode::TEMPORARY_REDIRECT)
-            .header(header::LOCATION, location)
-            .header(header::CACHE_CONTROL, "no-cache")
-            .body(Body::empty())
-            .unwrap_or_else(|error| {
-                api_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    &format!("failed to build redirect response: {error}"),
-                )
-            });
-    }
-    let is_nsh_route = requested_path.starts_with("nsh/");
     let path = if requested_path.is_empty() {
         "index.html"
-    } else if requested_path == "nsh/" {
-        "nsh/index.html"
     } else {
         requested_path
     };
     let mut spa_fallback = false;
-    let fallback_index = if is_nsh_route {
-        "nsh/index.html"
-    } else {
-        "index.html"
-    };
     let asset = assets.and_then(|assets| assets.get(path)).or_else(|| {
         if !allows_spa_fallback(path) {
             return None;
         }
         spa_fallback = true;
-        assets.and_then(|assets| assets.get(fallback_index))
+        assets.and_then(|assets| assets.get("index.html"))
     });
     let Some(asset) = asset else {
         return StatusCode::NOT_FOUND.into_response();
@@ -385,16 +372,28 @@ mod tests {
         fn get(&self, path: &str) -> Option<crate::web_assets::WebAsset> {
             match path {
                 "index.html" => Some(crate::web_assets::WebAsset {
-                    bytes: b"<html>memory webui</html>".to_vec(),
-                    mime_type: "text/html".into(),
-                }),
-                "nsh/index.html" => Some(crate::web_assets::WebAsset {
                     bytes: b"<html>nsh webui</html>".to_vec(),
                     mime_type: "text/html".into(),
                 }),
-                "nsh/app-abc123.js" => Some(crate::web_assets::WebAsset {
+                "manifest.webmanifest" => Some(crate::web_assets::WebAsset {
+                    bytes: b"{}".to_vec(),
+                    mime_type: "application/manifest+json".into(),
+                }),
+                "app.50797f7b13.js" => Some(crate::web_assets::WebAsset {
                     bytes: b"console.log('nsh');".to_vec(),
                     mime_type: "application/javascript".into(),
+                }),
+                "nsh.04f05f7ecb.wasm" => Some(crate::web_assets::WebAsset {
+                    bytes: b"wasm".to_vec(),
+                    mime_type: "application/wasm".into(),
+                }),
+                "browser.b998e17dc5/runtime.js" => Some(crate::web_assets::WebAsset {
+                    bytes: b"export {};".to_vec(),
+                    mime_type: "application/javascript".into(),
+                }),
+                "icons/192.1b09b59f5c.png" => Some(crate::web_assets::WebAsset {
+                    bytes: b"png".to_vec(),
+                    mime_type: "image/png".into(),
                 }),
                 _ => None,
             }
@@ -403,23 +402,7 @@ mod tests {
 
     #[tokio::test]
     async fn serves_in_memory_assets_and_preserves_fallback_and_missing_routes() {
-        for path in ["/", "/chat/session"] {
-            let response = serve_asset(Some(&MemoryAssets), Uri::from_static(path));
-            assert_eq!(response.status(), StatusCode::OK);
-            assert_eq!(response.headers()[header::CONTENT_TYPE], "text/html");
-            assert_eq!(
-                axum::body::to_bytes(response.into_body(), 1024)
-                    .await
-                    .unwrap()
-                    .as_ref(),
-                b"<html>memory webui</html>"
-            );
-        }
-        let redirect = serve_asset(Some(&MemoryAssets), Uri::from_static("/nsh?mode=rich"));
-        assert_eq!(redirect.status(), StatusCode::TEMPORARY_REDIRECT);
-        assert_eq!(redirect.headers()[header::LOCATION], "/nsh/?mode=rich");
-
-        for path in ["/nsh/", "/nsh/chat/session"] {
+        for path in ["/", "/pair", "/pair/complete", "/chat/session"] {
             let response = serve_asset(Some(&MemoryAssets), Uri::from_static(path));
             assert_eq!(response.status(), StatusCode::OK);
             assert_eq!(response.headers()[header::CONTENT_TYPE], "text/html");
@@ -433,17 +416,40 @@ mod tests {
             );
         }
 
-        let nsh_script = serve_asset(Some(&MemoryAssets), Uri::from_static("/nsh/app-abc123.js"));
-        assert_eq!(nsh_script.status(), StatusCode::OK);
-        assert_eq!(
-            nsh_script.headers()[header::CACHE_CONTROL],
-            "public, max-age=31536000, immutable"
-        );
+        for path in [
+            "/app.50797f7b13.js",
+            "/nsh.04f05f7ecb.wasm",
+            "/browser.b998e17dc5/runtime.js",
+            "/icons/192.1b09b59f5c.png",
+        ] {
+            let response = serve_asset(Some(&MemoryAssets), Uri::from_static(path));
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+            assert_eq!(
+                response.headers()[header::CACHE_CONTROL],
+                "public, max-age=31536000, immutable",
+                "{path}"
+            );
+        }
 
-        for path in ["/api/missing", "/assets/missing.js", "/nsh/missing.js"] {
+        let manifest = serve_asset(
+            Some(&MemoryAssets),
+            Uri::from_static("/manifest.webmanifest"),
+        );
+        assert_eq!(manifest.status(), StatusCode::OK);
+        assert_eq!(manifest.headers()[header::CACHE_CONTROL], "no-cache");
+
+        for path in [
+            "/api/missing",
+            "/assets/missing.js",
+            "/icons/missing.png",
+            "/facades/missing.js",
+            "/browser.b998e17dc5/missing.js",
+            "/missing.js",
+        ] {
             assert_eq!(
                 serve_asset(Some(&MemoryAssets), Uri::from_static(path)).status(),
-                StatusCode::NOT_FOUND
+                StatusCode::NOT_FOUND,
+                "{path}"
             );
         }
         assert_eq!(
@@ -454,8 +460,13 @@ mod tests {
 
     #[test]
     fn spa_fallback_is_only_used_for_client_routes() {
+        assert!(allows_spa_fallback("pair"));
+        assert!(allows_spa_fallback("pair/complete"));
         assert!(allows_spa_fallback("sessions/abc"));
         assert!(!allows_spa_fallback("assets/missing.js"));
+        assert!(!allows_spa_fallback("icons/missing.png"));
+        assert!(!allows_spa_fallback("facades/missing.js"));
+        assert!(!allows_spa_fallback("browser.b998e17dc5/runtime.js"));
         assert!(!allows_spa_fallback("manifest.webmanifest"));
         assert!(!allows_spa_fallback("api/v1/missing"));
     }
@@ -464,14 +475,36 @@ mod tests {
     fn only_fingerprinted_assets_are_immutable() {
         assert_eq!(asset_cache_control("index.html", false), "no-cache");
         assert_eq!(asset_cache_control("sessions/abc", true), "no-cache");
-        assert_eq!(asset_cache_control("sw.js", false), "no-cache");
         assert_eq!(
             asset_cache_control("manifest.webmanifest", false),
             "no-cache"
         );
         assert_eq!(asset_cache_control("pilo-192.png", false), "no-cache");
         assert_eq!(
-            asset_cache_control("assets/app-123.js", false),
+            asset_cache_control("app.50797f7b13.js", false),
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(
+            asset_cache_control("nsh.04f05f7ecb.wasm", false),
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(
+            asset_cache_control(
+                "assets/fonts/inter-latin-400-normal.8909904ab6.woff2",
+                false
+            ),
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(
+            asset_cache_control("browser.b998e17dc5/runtime.js", false),
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(
+            asset_cache_control("facades/nsh.7433008113.js", false),
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(
+            asset_cache_control("icons/192.1b09b59f5c.png", false),
             "public, max-age=31536000, immutable"
         );
     }

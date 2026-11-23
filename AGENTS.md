@@ -15,7 +15,7 @@ Pilo 不重新实现 Agent 能力，而是作为 Pi 的桌面入口。
 
 ## Environment
 
-- 当前在 macOS 上开发和验证桌面端；Windows / Linux 桌面、WSL 与打包验证延后（见迁移规则）。
+- 当前在 macOS 上开发和验证桌面端；Windows / Linux 桌面、WSL 与打包验证延后。
 
 安装依赖前设置代理：
 
@@ -24,47 +24,38 @@ export HTTP_PROXY=http://127.0.0.1:7890
 export HTTPS_PROXY=http://127.0.0.1:7890
 ```
 
-## 迁移过渡期
-
-Tauri 壳已移除，桌面端只剩 nsh 版本。平台范围、两端修改归属与逐功能测试提交要求，统一见 [nsh 迁移协作规则](.trellis/spec/desktop/quality-guidelines.md#迁移协作规则)；完整入口为 [nsh 规范](.trellis/spec/desktop/index.md)和[功能对齐清单](.trellis/tasks/11-19-nsh-desktop-migration/feature-parity.md)。
-
 ## Directory Layout
 
 ```text
+nsh.json                桌面端 nsh 主配置（"rust": "crates/pilo-desktop"）
+App.tsx                 桌面端入口（根目录直接运行 nsh dev / check / test / package）
 crates/pilo-protocol/   Pilo ↔ pilo-server 的 protobuf 线协议
 crates/pilo-server/     运行在代码所在环境的 server 与 Pi 扩展
 crates/pilo-domain/     纯数据模型与校验
-crates/pilo-runtime/    Host 运行时：连接、项目、会话、Pi RPC、Remote WebUI
-desktop/                nsh 桌面应用（TSX），本身也是 Rust crate（desktop/src，"rust": "."）
-web/                    React WebUI（浏览器 / 移动端）
-shared/                 两端共用的纯 TypeScript（`@shared/*`）
+crates/pilo-runtime/    Host 运行时：连接、项目、会话、Pi RPC、Remote WebUI 服务
+crates/pilo-desktop/    桌面端 Rust 原生模块（app/native，独立 workspace）
+app/                    桌面端外壳（shell/、settings/）与两端共用 nsh UI（chat/、composer/、state/、ui/、tests/）
+web/                    Remote WebUI（nsh Web 入口、配对页、远程客户端、移动端壳、共用字体）
+shared/                 纯 TypeScript 领域逻辑与协议（`@shared/*`，无 nsh/DOM）
+theme/                  内置主题源 CSS 与生成的 theme.json / claude-theme.json
+scripts/                构建、代码生成与开发脚本
+tests/                  Node 单元测试与集成测试（*.spec.ts / *.spec.mjs）
 resources/              pilo-server 各平台产物（不入库）
 ```
 
-依赖方向：`desktop`、`web` → `shared`；`desktop/src` → `pilo-runtime` → `pilo-domain` / `pilo-server` → `pilo-protocol`。`shared/` 只写纯 TypeScript（`tsc -p shared` 与 oxlint 把关），`web` 与 `desktop` 互不导入。
+依赖方向：`App.tsx` / `app/`、`web/` → `shared/`；`crates/pilo-desktop` → `pilo-runtime` → `pilo-domain` / `pilo-server` → `pilo-protocol`。`shared/` 只写纯 TypeScript（`tsc -p shared` 与 oxlint 把关）。
 
 ## Tech Stack
 
-### Desktop
+### UI (Desktop & Remote WebUI)
 
-- nsh 0.6.1（TSX 界面 + Rust 原生模块）
-- Rust 2024
-
-### WebUI
-
-- React 19
-- TypeScript
-- Vite
-- Tailwind CSS
-- shadcn/ui 风格组件
-- oxfmt
-- oxlint
+- nsh 0.6.1（TSX 界面，Desktop 走原生宿主，Remote WebUI 走 `nsh package --target web`）
+- TypeScript / oxfmt / oxlint
 
 ### Backend
 
-- Tokio
-- Serde
-- tracing
+- Rust 2024
+- Tokio / Axum / Serde / tracing
 
 ### Pi Integration
 
@@ -75,8 +66,8 @@ resources/              pilo-server 各平台产物（不入库）
 ## Architecture
 
 ```text
-nsh desktop (desktop/)            React WebUI (web/)
-    ↓ app/native (desktop/src)        ↓ HTTP / WebSocket
+nsh Desktop (App.tsx + app/)       nsh Remote WebUI (web/)
+    ↓ app/native (crates/pilo-desktop)   ↓ HTTP / WebSocket
             Pilo Runtime (crates/pilo-runtime)
                     ↓
             Connection Layer
@@ -136,54 +127,56 @@ Pi 应该运行在代码所在环境。
 
 ## UI
 
-Pilo 有两套 UI 入口，各自实现界面、共用 `shared/` 里的逻辑：
+Pilo 桌面端与 Remote WebUI 均基于 nsh 实现，共用 `app/` 里的对话/输入/状态/基础组件与 `shared/` 里的纯 TypeScript 逻辑：
 
-- **桌面端** — nsh 应用，`desktop/`。
-- **WebUI** — React，`web/`（入口 `web/remote/`），浏览器访问的远程界面。
+- **桌面端** — 仓库根 `nsh.json` + `App.tsx` + `app/`。
+- **Remote WebUI** — `web/`（独立 `web/nsh.json`，`web.base: "/"`），构建产出到 `dist/`，由 `crates/pilo-runtime` 直接在 `/` 提供静态服务与 `/pair` 扫码配对。
 
-用户可见的功能改动默认两端都要做；与界面无关的逻辑（类型、状态推导、协议解析、格式化）放进 `shared/`，两端直接导入，不要各写一份。
-
-WebUI 的移动端适配是必需项：窄屏布局、足够大的触控目标、安全区（safe-area）、软键盘 inset、viewport 行为。
+Remote WebUI 的移动端适配是必需项：窄屏布局、足够大的触控目标、安全区（safe-area）、软键盘 inset、viewport 行为。
 
 ## Development Guidelines
 
 - 保持架构简单，避免过早抽象。
-- UI 和 Runtime 分离：业务逻辑放 `crates/pilo-runtime`，`desktop/src` 只做参数转换和壳能力（路径、事件、资源、文件选择）。
+- UI 和 Runtime 分离：业务逻辑放 `crates/pilo-runtime`，`crates/pilo-desktop` 只做参数转换和壳能力（路径、事件、资源、文件选择）。
 - 新功能优先考虑是否适用于 Local/WSL/SSH 三种环境。
 - 不复制 Pi 已有能力。
 
 ## Validation
 
-修改 WebUI / shared：
+修改 TypeScript / shared / scripts：
 
 ```bash
 pnpm format
 pnpm check
-pnpm build
 pnpm test
+pnpm build
+pnpm generate:themes --check
+pnpm generate:icons --check
 ```
-
-`pnpm check` 执行 oxfmt 格式检查和 oxlint；`pnpm build` 先跑 `tsc -p shared`（无 DOM 的纯 TS 检查）。
 
 修改 Rust：
 
 ```bash
 cargo fmt --all --check
-cargo check
-cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt --manifest-path crates/pilo-desktop/Cargo.toml --all --check
+cargo check --workspace --all-targets --all-features
+cargo check --manifest-path crates/pilo-desktop/Cargo.toml --all-targets
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo clippy --manifest-path crates/pilo-desktop/Cargo.toml --all-targets -- -D warnings
+cargo test -p pilo-domain -p pilo-runtime
+cargo test --manifest-path crates/pilo-desktop/Cargo.toml
 ```
 
-修改桌面端（含 `desktop/src` 和被它用到的 `shared/`）：
+修改 nsh 应用（桌面端 & WebUI）：
 
 ```bash
-cd desktop
 nsh check
 nsh test
 ```
 
 ## Release
 
-发布新版本前，必须先向用户确认目标版本号。手动打包、版本一致性与 tag 发版见 [nsh 发版说明](desktop/README.md#release-builds)。
+发布新版本前，必须先向用户确认目标版本号。手动打包、版本一致性与 tag 发版见 [nsh 发版说明](app/README.md#release-builds)。
 
 <!-- TRELLIS:START -->
 

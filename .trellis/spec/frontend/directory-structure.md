@@ -56,7 +56,7 @@ the feature folder.
 shared/
   api/       # PiloClient interface and runtime transport/types
   chat/      # conversation state, replay, submissions, mentions, markdown helpers
-  i18n/      # i18next instance, options and resources
+  i18n/      # typed message lookup and bundled locale resources
   sidebar/   # sidebar session types and list ordering
   *.ts       # cross-feature models (settings, themes, shortcuts, formatting)
 ```

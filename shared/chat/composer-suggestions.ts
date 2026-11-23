@@ -1,4 +1,4 @@
-import type { TFunction } from "i18next";
+import type { t as translate } from "../i18n/translate.ts";
 
 export type ComposerSuggestionKind = "file" | "session" | "command";
 
@@ -25,7 +25,9 @@ export type MentionTab = "file" | "session";
 export const DEFAULT_SUGGESTIONS: readonly ComposerSuggestion[] = [];
 export const FILE_SUGGESTION_LIMIT = 5;
 
-export function piSessionSuggestions(t: TFunction): ComposerSuggestion[] {
+export function piSessionSuggestions(
+	t: typeof translate,
+): ComposerSuggestion[] {
 	return [
 		{
 			kind: "command",

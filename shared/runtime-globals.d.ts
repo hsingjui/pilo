@@ -18,17 +18,28 @@ declare const crypto: {
 	randomUUID?(): string;
 };
 
+declare class URLSearchParams {
+	constructor(init?: string | Record<string, string>);
+	get(name: string): string | null;
+	has(name: string): boolean;
+	set(name: string, value: string): void;
+	delete(name: string): void;
+	toString(): string;
+}
+
 declare class URL {
 	constructor(url: string, base?: string | URL);
 	hash: string;
 	host: string;
 	hostname: string;
 	href: string;
+	readonly origin: string;
 	password: string;
 	pathname: string;
 	port: string;
 	protocol: string;
 	search: string;
+	readonly searchParams: URLSearchParams;
 	username: string;
 }
 

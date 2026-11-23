@@ -13,6 +13,9 @@ dist-ssr
 *.local
 resources/pilo-server-*
 /target/
+crates/pilo-desktop/target/
+.nsh/
+web/.nsh/
 
 # Local scratch files and diagnostic test outputs
 /.tmp/
@@ -32,4 +35,3 @@ docs/chat-streaming-performance-design.md
 *.njsproj
 *.sln
 *.sw?
-

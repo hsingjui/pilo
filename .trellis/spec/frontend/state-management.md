@@ -9,7 +9,7 @@
 | Kind                   | Where                                                            | Mechanism                                                               |
 | ---------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | App-global prefs/theme | `web/lib/preferences-provider.tsx`, `web/lib/theme-provider.tsx` | React Context + `useState`, exposed via `usePreferences()` / theme hook |
-| App-global locale      | `shared/i18n/`                                                      | i18next instance + `useTranslation()`; bootstrap before React renders   |
+| App-global locale      | `app/shell/i18n.ts`                                                 | Reactive `t()` backed by `shared/i18n/translate.ts`                     |
 | App shell state        | `src/App.tsx`                                                    | `useState` + orchestration hooks in `web/components/app/`               |
 | Feature state          | feature components                                               | `useState` / `useReducer`                                               |
 | Hot runtime state      | `web/components/chat/chat-conversation-store.ts`                 | external store + `useSyncExternalStore`                                 |
@@ -262,8 +262,8 @@ consumed pending item's ID so the reducer and transport confirm the same message
   unbinds incompatible entries individually instead of failing all preferences.
   WebUI never imports browser values. Theme continues to use its separate Host
   migration/revision protocol.
-- Language changes go through the same Host patch before i18next, document locale
-  and startup cache are updated; apply incoming language revisions in order.
+- Language changes go through the same Host patch before the translation locale,
+  nsh locale and startup cache are updated; apply incoming language revisions in order.
   System language is only an initial fallback before Host hydration.
 - `configuration_changed` refreshes project/connection catalogs in both shells.
   Native settings panels use `useConfigurationRevision`; existing scoped Runtime

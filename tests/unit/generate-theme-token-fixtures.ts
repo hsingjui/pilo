@@ -6,7 +6,7 @@ import {
 } from "../../shared/theme-tokens.ts";
 
 const base = JSON.parse(
-	readFileSync(new URL("../../desktop/theme.json", import.meta.url), "utf8"),
+	readFileSync(new URL("../../theme/theme.json", import.meta.url), "utf8"),
 );
 const catalog = createThemeTokenCatalog(base.cssVars);
 const cases: { name: string; input: unknown; expected: unknown }[] = [];

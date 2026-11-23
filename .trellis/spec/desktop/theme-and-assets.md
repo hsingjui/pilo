@@ -49,8 +49,8 @@ nsh 0.6.1 解析 `cssVars` 中的字体 token 时只保留第一项。需要回�
 
 ## i18n
 
-`desktop/app/i18n.ts` 复用 `shared/i18n/instance.ts` 和 `shared/i18n/options.ts`；资源是 `shared/i18n/resources/en-US.ts`、`shared/i18n/resources/zh-CN.ts`。共享导入边界见[目录与边界](./directory-structure.md#状态和共享代码)。
+桌面端和 WebUI 都用 `app/shell/i18n.ts` 连接 nsh 与纯 TS 翻译层 `shared/i18n/translate.ts`。翻译键从 `shared/i18n/resources/en-US.ts` 推导，中文缺失时用英文。共享导入边界见[目录与边界](./directory-structure.md#状态和共享代码)。
 
 启动用 `initializeI18n(storedLocale?)`，切换用 `setAppLocale`，显示用响应式 `t`/`appLocale`。适配同时调用 nsh/i18n 的 setLocale。语言解析由 `shared/i18n/locale-types.ts` 负责，不支持的语言回退英语。
 
-复数实现不以 `Intl.PluralRules` 为前提：`desktop/tests/i18n.test.ts` 的 without Intl.PluralRules 测试覆盖现有 i18next 路径及 `_one`/`_other`、count 插值的英中文行为。复数测试使用独立测试资源；新增行为的验证遵循[质量与验证](./quality-guidelines.md)。
+`t(key, values?)` 将 `{{name}}` 一次替换为字面值，不做 HTML 转义，也不再次解释插入的内容。传入数字 `count` 时先查 `_zero`（若为 0）再查本语言的复数后缀，然后查原键；英语的 `1`/`-1` 用 `_one`，中文和其余数量用 `_other`。不依赖 `Intl.PluralRules`。`app/tests/i18n.test.ts` 覆盖切换语言、英文回退、插值和复数。

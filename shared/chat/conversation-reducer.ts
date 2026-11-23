@@ -15,7 +15,7 @@ import type {
 } from "./conversation-types.ts";
 import type { TokenUsage } from "../api/token-usage.ts";
 
-import { i18n } from "../i18n/instance.ts";
+import { t } from "../i18n/translate.ts";
 
 type AssistantMessage = Extract<ChatMessage, { role: "assistant" }>;
 
@@ -176,9 +176,9 @@ function endTurn(
 			? undefined
 			: errorMessage?.trim() ||
 				(stopReason === "error"
-					? i18n.t("chat.responseError")
+					? t("chat.responseError")
 					: completion === "interrupted"
-						? i18n.t("chat.historyReplyInterrupted")
+						? t("chat.historyReplyInterrupted")
 						: undefined);
 	// Consecutive queue echoes must not leave a timestamp-only assistant row.
 	if (

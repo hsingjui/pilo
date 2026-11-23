@@ -99,12 +99,12 @@ Selection assertions do not replace visual verification in the desktop WebView.
 - Reuse `web/ui` primitives and `web/lib` helpers before writing new ones.
 - Keep transport access behind `PiloClient` (`shared/api/pilo-client.ts`); components stay declarative.
 - Built-in user-facing copy supports `zh-CN` and `en-US` through the i18n layer
-  (`web/i18n`); code identifiers stay English (see "Internationalization").
+  (`app/shell/i18n.ts`); code identifiers stay English (see "Internationalization").
 
 ## Internationalization (i18n)
 
-- Bundled resources live in `shared/i18n/resources/{en-US,zh-CN}.ts`. English is the
-  schema/source; `shared/@types/i18next.d.ts` type-checks keys (strictKeyChecks).
+- Bundled resources live in `shared/i18n/resources/{en-US,zh-CN}.ts`.
+  `shared/i18n/translate.ts` derives valid translation keys from the English dictionary.
 - Add new built-in copy through `t("semantic.key")` in both resources. Never
   hard-code one language in components.
 - Translate at the presentation boundary. Static registries keep stable IDs

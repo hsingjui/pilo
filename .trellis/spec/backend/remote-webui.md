@@ -479,8 +479,8 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   Do not introduce popup batches, cross-origin fetch/iframes or arbitrary
   fragment return URLs. Fragment is not a substitute for HTTPS.
 - **Pairing cache boundary**: both auth POST routes apply `Cache-Control:
-  no-store`, including rate-limit and JSON rejection responses. No pairing
-  response, full pairing URL or token may enter the PWA cache.
+  no-store`, including rate-limit and JSON rejection responses. Never cache a
+  pairing response, a full pairing URL, or a token.
 - **Device token TTL**: 30 days absolute. Revoked or expired tokens fail auth
   immediately; live WebSockets re-check every 15 s and on `auth_generation` change.
   Renewal is explicit only: `POST /auth/device/renew` resets the authenticated
@@ -606,14 +606,8 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   events supply their project ID before filtering for the visible session;
   activity-only events refresh bootstrap without scanning all projects. Verify
   that a desktop-created background chat appears in WebUI without manual refresh.
-- **PWA cache boundary**: the Service Worker is progressive enhancement for
-  production Remote Browser on a secure context only.
-  It may precache the minimal built App Shell, but `/api/v1/**` is always
-  network-only and navigation fallback always uses the canonical cached
-  `index.html` (never the requested pairing URL). Web updates require explicit
-  user activation rather than automatically reloading an active chat. A newly
-  activated worker does not claim existing tabs; stale version caches are removed
-  only after every open window in scope is controlled by the current worker.
+- **Online WebUI**: the remote workspace does not require a Service Worker,
+  an offline app shell, or a PWA update prompt.
 
 ---
 

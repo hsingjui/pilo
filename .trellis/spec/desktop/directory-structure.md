@@ -11,7 +11,7 @@
 | `desktop/App.tsx`                                 | 导入字体，初始化 i18n，调用 `launch(new Pilo())`            |
 | `desktop/app/AppShell.tsx`                        | 应用外壳，见[应用外壳](./app-shell.md)；业务视图放 app 层  |
 | `desktop/app/fonts.ts`                            | 字体资源注册入口                                            |
-| `desktop/app/i18n.ts`                             | 共享 i18next 的原生响应式适配                               |
+| `app/shell/i18n.ts`                               | 桌面端与 WebUI 共用的响应式翻译适配                          |
 | `desktop/ui/`                                     | 组件、前景色上下文、主题样式辅助函数                        |
 | `desktop/fonts/`                                  | 应用内字体和许可证                                          |
 | `desktop/theme.json`、`desktop/claude-theme.json` | 生成的完整主题                                              |

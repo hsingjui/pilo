@@ -1,13 +1,10 @@
 {
 	"$schema": "./node_modules/oxlint/configuration_schema.json",
-	"plugins": ["typescript", "unicorn", "oxc", "react", "jsx-a11y"],
+	"plugins": ["typescript", "unicorn", "oxc"],
 	"categories": {
 		"correctness": "error",
 		"suspicious": "warn",
 		"perf": "warn"
-	},
-	"rules": {
-		"react/react-in-jsx-scope": "off"
 	},
 	"overrides": [
 		{
@@ -19,31 +16,14 @@
 						"patterns": [
 							{
 								"group": [
-									"react",
-									"react-*",
-									"react/*",
 									"nsh",
 									"nsh/*",
 									"app/*",
-									"@/*"
+									"react",
+									"react-*",
+									"react/*"
 								],
-								"message": "shared/ is plain TypeScript for both the WebUI and the desktop."
-							}
-						]
-					}
-				]
-			}
-		},
-		{
-			"files": ["web/**"],
-			"rules": {
-				"no-restricted-imports": [
-					"error",
-					{
-						"patterns": [
-							{
-								"group": ["nsh", "nsh/*", "app/*"],
-								"message": "web/ must not import the desktop (nsh) app."
+								"message": "shared/ is plain TypeScript shared across Desktop, Web, and Node tests."
 							}
 						]
 					}
@@ -51,7 +31,16 @@
 			}
 		}
 	],
-	"ignorePatterns": [".pi/**", "desktop/**", "dist/**", "target/**"],
+	"ignorePatterns": [
+		".nsh/**",
+		".pi/**",
+		"App.tsx",
+		"app/**",
+		"crates/**",
+		"dist/**",
+		"target/**",
+		"web/**"
+	],
 	"env": {
 		"builtin": true,
 		"browser": true

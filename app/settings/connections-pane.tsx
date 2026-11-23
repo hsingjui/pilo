@@ -1,0 +1,430 @@
+import {
+	type Accessor,
+	cleanup,
+	effect,
+	platform,
+	signal,
+	Text,
+	View,
+} from "nsh";
+
+import type {
+	SshConnectionInfo,
+	WslConnectionInfo,
+} from "@shared/api/connections-types";
+import type { Connection } from "@shared/api/pi-runtime-types";
+import { userErrorMessage } from "@shared/app-error";
+import { AppToaster, AppToasts, AppToastStack } from "../shell/app-toasts";
+import type { AppState } from "../state/app-state";
+import type { NshPiloClient } from "../client/nsh-pilo-client";
+import { t } from "../shell/i18n";
+import { Button } from "../ui/button";
+import { Icon } from "../ui/icon";
+import { Menu } from "../ui/menu";
+import { MenuItem } from "../ui/menu-item";
+import { textTooltip } from "../ui/tooltip";
+import {
+	connectionLabel,
+	showConnectionTestToast,
+} from "./connection-settings";
+import {
+	SETTINGS_HEADER_ICON_BUTTON_CLASS,
+	SettingsSection,
+	SettingsSectionMessage,
+} from "./layout";
+import { SettingsConfirmDialog } from "./settings-confirm-dialog";
+import { ConnectionRow } from "./connection-row";
+import {
+	ConfigureConnectionDialog,
+	createConfigureDialog,
+} from "./configure-connection-dialog";
+import {
+	createSshEditor,
+	SshConnectionEditorDialog,
+} from "./ssh-connection-editor";
+import { createWslPicker, WslPickerDialog } from "./wsl-picker-dialog";
+import { AUTH_LABEL_KEYS, sshTargetLabel } from "./ssh-connection-draft";
+
+/** The native calls the pane makes; tests pass a scripted stand-in. */
+export type ConnectionsClient = Pick<
+	NshPiloClient,
+	| "getLocalConnection"
+	| "updateConnectionSettings"
+	| "setConnectionShownInHome"
+	| "probeConnectionPi"
+	| "testLocalConnection"
+	| "listSshConnections"
+	| "listSshAgentIdentities"
+	| "saveSshConnection"
+	| "getSshConnectionPassword"
+	| "removeSshConnection"
+	| "testSshConnection"
+	| "testSshConnectionDraft"
+	| "listWslDistributions"
+	| "listWslConnections"
+	| "saveWslConnection"
+	| "removeWslConnection"
+	| "testWslConnection"
+>;
+
+const IS_WINDOWS = platform.os === "windows";
+
+export function ConnectionsPane(props: {
+	state: Accessor<AppState>;
+	client: ConnectionsClient;
+}) {
+	const client = props.client;
+	const inheritedToasts = AppToaster();
+	const ownToasts = inheritedToasts ? null : new AppToasts();
+	const toasts = inheritedToasts ?? ownToasts!;
+	const local = signal<Connection | null>(null);
+	const wslItems = signal<WslConnectionInfo[]>([]);
+	const sshItems = signal<SshConnectionInfo[]>([]);
+	const loading = signal(true);
+	const testing = signal<Set<string>>(new Set());
+	/** Persistent per-connection diagnostics. */
+	const results = signal<Record<string, string>>({});
+	const removing = signal<Connection | null>(null);
+	const busy = signal(false);
+	let alive = true;
+	cleanup(() => {
+		alive = false;
+	});
+
+	const setTesting = (id: string, value: boolean) => {
+		const next = new Set(testing());
+		if (value) next.add(id);
+		else next.delete(id);
+		testing.set(next);
+	};
+
+	const setResult = (id: string, text: string) =>
+		results.set({ ...results(), [id]: text });
+
+	const projectCount = (id: string, fallback: number) => {
+		const count = props
+			.state()
+			.projects.filter((project) => project.connection.id === id).length;
+		return count > 0 ? count : fallback;
+	};
+
+	const refresh = async () => {
+		const [localResult, sshResult, wslResult] = await Promise.allSettled([
+			client.getLocalConnection(),
+			client.listSshConnections(),
+			client.listWslConnections(),
+		]);
+		if (!alive) return;
+		if (localResult.status === "fulfilled") local.set(localResult.value);
+		if (sshResult.status === "fulfilled") sshItems.set(sshResult.value);
+		else setResult("ssh-list", t("connection.sshLoadFailed"));
+		if (wslResult.status === "fulfilled") wslItems.set(wslResult.value);
+		loading.set(false);
+	};
+
+	/* The project list reloads on host configuration changes; reload the
+	 * connection catalog with it, like React's configurationRevision effect. */
+	effect(() => {
+		void props.state().projects;
+		void refresh();
+	});
+
+	const sshEditor = createSshEditor({ client, refresh, setResult });
+	const configureDialog = createConfigureDialog({
+		client,
+		refresh,
+		setResult,
+		connectionLabel,
+	});
+	const addedDistros = () =>
+		new Set(
+			wslItems().flatMap((info) =>
+				info.connection.kind.type === "wsl"
+					? [info.connection.kind.distro]
+					: [],
+			),
+		);
+	const wslPicker = createWslPicker({
+		client,
+		refresh,
+		setResult,
+		addedDistros,
+	});
+
+	const testConnection = async (connection: Connection) => {
+		const id = connection.id;
+		const label = connectionLabel(connection);
+		setTesting(id, true);
+		try {
+			const result =
+				connection.kind.type === "local"
+					? await client.testLocalConnection()
+					: connection.kind.type === "wsl"
+						? await client.testWslConnection(connection.kind.distro)
+						: await client.testSshConnection(id);
+			showConnectionTestToast(toasts, label, { ok: true, result });
+		} catch (caught) {
+			showConnectionTestToast(toasts, label, { ok: false, error: caught });
+		} finally {
+			if (alive) setTesting(id, false);
+		}
+	};
+
+	const toggleShown = async (connection: Connection, shown: boolean) => {
+		try {
+			await client.setConnectionShownInHome(connection.id, shown);
+			await refresh();
+		} catch (caught) {
+			setResult(
+				connection.id,
+				`${t("connection.saveFailed")} · ${userErrorMessage(caught)}`,
+			);
+		}
+	};
+
+	const removeConnection = async () => {
+		const connection = removing();
+		if (!connection || busy() || connection.kind.type === "local") return;
+		busy.set(true);
+		try {
+			if (connection.kind.type === "wsl") {
+				await client.removeWslConnection(connection.id);
+			} else {
+				await client.removeSshConnection(connection.id);
+			}
+			await refresh();
+			removing.set(null);
+			/* The row is gone by now; the pane-level line carries the result. */
+			setResult(
+				"list",
+				t("connection.removed", { name: connectionLabel(connection) }),
+			);
+		} catch (caught) {
+			setResult(
+				connection.id,
+				`${t("connection.removeFailed")} · ${userErrorMessage(caught)}`,
+			);
+		} finally {
+			busy.set(false);
+		}
+	};
+
+	const localRow = () => {
+		const connection = local();
+		if (!connection) return null;
+		return (
+			<ConnectionRow
+				connection={connection}
+				label={connectionLabel(connection)}
+				description={
+					<Text class="font-sans text-[11px] text-muted-foreground">
+						{t("connection.localMachine")}
+					</Text>
+				}
+				projectCount={projectCount(connection.id, 0)}
+				shownInHome={connection.shownInHome ?? true}
+				testing={() => testing().has(connection.id)}
+				busy={() => busy() || configureDialog.probing()}
+				result={() => results()[connection.id]}
+				onToggleShown={(shown) => void toggleShown(connection, shown)}
+				onTest={() => void testConnection(connection)}
+				onConfigure={() => configureDialog.openSettings(connection)}
+			/>
+		);
+	};
+
+	const wslRow = (info: WslConnectionInfo) => {
+		const connection = info.connection;
+		return (
+			<ConnectionRow
+				connection={connection}
+				label={connectionLabel(connection)}
+				description={
+					<Text class="font-sans text-[11px] text-muted-foreground">
+						{t("connection.wslLabel")}
+					</Text>
+				}
+				projectCount={projectCount(connection.id, info.projectCount)}
+				shownInHome={connection.shownInHome ?? false}
+				testing={() => testing().has(connection.id)}
+				busy={() => busy() || configureDialog.probing()}
+				result={() => results()[connection.id]}
+				onToggleShown={(shown) => void toggleShown(connection, shown)}
+				onTest={() => void testConnection(connection)}
+				onConfigure={() => configureDialog.openSettings(connection)}
+				onRemove={() => removing.set(connection)}
+			/>
+		);
+	};
+
+	const sshRow = (info: SshConnectionInfo) => {
+		const connection = info.connection;
+		const description =
+			connection.kind.type === "ssh" ? (
+				<>
+					<Text class="truncate font-mono text-[11px] text-muted-foreground">
+						{sshTargetLabel(connection.kind.target)}
+					</Text>
+					<Text class="font-sans text-[11px] text-muted-foreground">
+						{t(
+							AUTH_LABEL_KEYS[
+								typeof connection.kind.target.authMethod === "string"
+									? connection.kind.target.authMethod
+									: "agent"
+							],
+						)}
+					</Text>
+					{connection.kind.target.type === "direct" &&
+					connection.kind.target.proxyJump ? (
+						<Text class="font-sans text-[11px] text-muted-foreground">
+							{t("connection.via", {
+								name: connection.kind.target.proxyJump,
+							})}
+						</Text>
+					) : null}
+				</>
+			) : null;
+		return (
+			<ConnectionRow
+				connection={connection}
+				label={connectionLabel(connection)}
+				description={description}
+				projectCount={projectCount(connection.id, info.projectCount)}
+				shownInHome={connection.shownInHome ?? false}
+				testing={() => testing().has(connection.id)}
+				busy={() => busy() || configureDialog.probing()}
+				result={() => results()[connection.id]}
+				onToggleShown={(shown) => void toggleShown(connection, shown)}
+				onTest={() => void testConnection(connection)}
+				onConfigure={() => configureDialog.openSettings(connection)}
+				onEdit={() => void sshEditor.openEdit(info)}
+				onRemove={() => removing.set(connection)}
+			/>
+		);
+	};
+
+	const addConnectionMenu = () => (
+		<Menu
+			align="end"
+			popupStyle={{ minWidth: 0 }}
+			trigger={
+				<Button
+					testID="settings-conn-add"
+					variant="outline"
+					size="icon"
+					class={SETTINGS_HEADER_ICON_BUTTON_CLASS}
+					accessibilityLabel={t("connection.addConnection")}
+					tooltip={textTooltip(t("connection.addConnection"))}
+				>
+					<Icon name="Plus" size={14} />
+				</Button>
+			}
+		>
+			<View class="gap-1">
+				{IS_WINDOWS ? (
+					<MenuItem
+						testID="settings-conn-add-wsl"
+						indicatorClass="hidden"
+						icon={<Icon name="Monitor" size={14} />}
+						onSelect={() => wslPicker.openPicker()}
+					>
+						<Text class="font-sans">{t("connection.addWsl")}</Text>
+					</MenuItem>
+				) : null}
+				<MenuItem
+					testID="settings-conn-add-ssh"
+					indicatorClass="hidden"
+					icon={<Icon name="Server" size={14} />}
+					onSelect={() => sshEditor.openNew()}
+				>
+					<Text class="font-sans">{t("connection.addSsh")}</Text>
+				</MenuItem>
+			</View>
+		</Menu>
+	);
+
+	const removeDialog = () => {
+		const connection = removing();
+		return (
+			<SettingsConfirmDialog
+				testID="settings-conn-remove-dialog"
+				open={connection !== null}
+				title={
+					connection
+						? `${t("connection.removeQuestion")} · ${connectionLabel(connection)}`
+						: t("connection.removeQuestion")
+				}
+				description={
+					connection
+						? `${t("connection.removeDescription", {
+								name: connectionLabel(connection),
+							})}${
+								connection.kind.type === "ssh"
+									? t("connection.sshCredentialsDeleted")
+									: ""
+							}`
+						: null
+				}
+				confirmLabel={t("connection.confirmRemove")}
+				busyLabel={t("connection.removing")}
+				busy={busy()}
+				destructive
+				onOpenChange={(open) => {
+					if (!open) removing.set(null);
+				}}
+				onConfirm={() => void removeConnection()}
+			/>
+		);
+	};
+
+	return (
+		<View class="gap-3">
+			<SettingsSection
+				title={t("settings.connections")}
+				actions={addConnectionMenu()}
+			>
+				{() => localRow()}
+				{() =>
+					loading() ? (
+						<SettingsSectionMessage padded="roomy">
+							{t("connection.loading")}
+						</SettingsSectionMessage>
+					) : (
+						<>
+							{wslItems().map(wslRow)}
+							{sshItems().map(sshRow)}
+							{() =>
+								results()["ssh-list"] || results()["wsl-add"] ? (
+									<SettingsSectionMessage tone="error" size="2xs">
+										{results()["ssh-list"] ?? results()["wsl-add"]}
+									</SettingsSectionMessage>
+								) : null
+							}
+							{() =>
+								results()["list"] ? (
+									<SettingsSectionMessage size="2xs">
+										{results()["list"]}
+									</SettingsSectionMessage>
+								) : null
+							}
+						</>
+					)
+				}
+			</SettingsSection>
+			{() =>
+				sshEditor.open() ? (
+					<SshConnectionEditorDialog editor={sshEditor} />
+				) : null
+			}
+			{() =>
+				configureDialog.open() ? (
+					<ConfigureConnectionDialog dialog={configureDialog} />
+				) : null
+			}
+			{() => (wslPicker.open() ? <WslPickerDialog picker={wslPicker} /> : null)}
+			{() => removeDialog()}
+			{/* Standalone fixture fallback; inside SettingsDialog the parent stack renders toasts. */}
+			{ownToasts ? <AppToastStack toasts={ownToasts} /> : null}
+		</View>
+	);
+}

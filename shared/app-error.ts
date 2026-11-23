@@ -1,4 +1,4 @@
-import { i18n } from "./i18n/instance.ts";
+import { t } from "./i18n/translate.ts";
 
 export type AppErrorCode =
 	| "pi_not_found"
@@ -189,18 +189,18 @@ export function toAppError(error: unknown): AppError {
 
 export function appErrorMessage(error: AppError): string {
 	return error.messageKey
-		? i18n.t(error.messageKey)
-		: (error.detail ?? i18n.t("errors.requestFailed"));
+		? t(error.messageKey)
+		: (error.detail ?? t("errors.requestFailed"));
 }
 
 export function appErrorActionLabel(error: AppError): string | null {
 	switch (error.action) {
 		case "retry":
-			return i18n.t("errors.retry");
+			return t("errors.retry");
 		case "reconnect":
-			return i18n.t("errors.reconnect");
+			return t("errors.reconnect");
 		case "settings":
-			return i18n.t("errors.checkSettings");
+			return t("errors.checkSettings");
 		case "none":
 			return null;
 	}

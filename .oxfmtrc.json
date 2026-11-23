@@ -11,5 +11,13 @@
 	"arrowParens": "always",
 	"bracketSameLine": false,
 	"bracketSpacing": true,
-	"ignorePatterns": [".pi/**", ".trellis/**", "dist/**", "target/**"]
+	"ignorePatterns": [
+		".nsh/**",
+		".pi/**",
+		".trellis/**",
+		"crates/pilo-desktop/target/**",
+		"dist/**",
+		"target/**",
+		"web/.nsh/**"
+	]
 }

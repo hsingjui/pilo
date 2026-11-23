@@ -1,0 +1,143 @@
+import { signal, Text, View } from "nsh";
+import type { RemoteAccessAddress } from "@shared/api/remote-types";
+import { userErrorMessage } from "@shared/app-error";
+import { remoteAddressConfig } from "@shared/remote-addresses";
+import { t } from "../shell/i18n";
+import { Icon } from "../ui/icon";
+import { Menu } from "../ui/menu";
+import { MenuItem } from "../ui/menu-item";
+import { Spinner } from "../ui/spinner";
+import {
+	SETTINGS_HEADER_ICON_BUTTON_CLASS,
+	SettingsIconButton,
+} from "./layout";
+import type { SettingsClient } from "./settings-dialog";
+
+/**
+ * The "+" menu beside the access-address rows: lists the host's LAN IPs as
+ * ready-made `http://<ip>:<port>` addresses, dimming the ones already saved.
+ * Mirrors `remote-lan-address-picker.tsx` in the WebUI.
+ */
+export function RemoteLanAddressPicker(props: {
+	client: SettingsClient;
+	port: number;
+	addresses: RemoteAccessAddress[];
+	disabled?: boolean;
+	onAdd: (baseUrl: string) => void;
+}) {
+	type LoadState =
+		| { status: "loading" }
+		| { status: "ready"; ips: string[] }
+		| { status: "error"; message: string };
+	const result = signal<LoadState>({ status: "loading" });
+
+	const load = async () => {
+		result.set({ status: "loading" });
+		try {
+			result.set({
+				status: "ready",
+				ips: await props.client.remoteLanAddresses(),
+			});
+		} catch (caught) {
+			result.set({ status: "error", message: userErrorMessage(caught) });
+		}
+	};
+
+	return (
+		<Menu
+			testID="remote-lan-address-picker"
+			align="end"
+			popupClass="min-w-55"
+			onOpen={() => void load()}
+			trigger={
+				<SettingsIconButton
+					testID="remote-lan-add"
+					class={SETTINGS_HEADER_ICON_BUTTON_CLASS}
+					disabled={props.disabled}
+					accessibilityLabel={t("settings.remoteAddLanAddress")}
+					tooltip={t("settings.remoteAddLanAddress")}
+				>
+					<Icon name="Plus" size={14} />
+				</SettingsIconButton>
+			}
+		>
+			{() => {
+				const state = result();
+				const existingOrigins = new Set(
+					remoteAddressConfig(props.addresses, "").addresses.map((address) => {
+						try {
+							return new URL(address.baseUrl).origin;
+						} catch {
+							return null;
+						}
+					}),
+				);
+				if (state.status === "loading")
+					return (
+						<MenuItem disabled indicatorClass="hidden">
+							<View class="flex-row items-center gap-2">
+								<Spinner class="size-3.5" />
+								<Text class="font-sans text-xs text-muted-foreground">
+									{t("common.loading")}
+								</Text>
+							</View>
+						</MenuItem>
+					);
+				if (state.status === "error")
+					return (
+						<>
+							<View class="px-3 py-2" testID="remote-lan-address-error">
+								<Text class="font-sans text-xs text-muted-foreground">
+									{t("settings.remoteLanAddressLoadFailed")}
+								</Text>
+							</View>
+							<MenuItem
+								indicatorClass="hidden"
+								onSelect={() => {
+									void load();
+								}}
+							>
+								{t("common.retry")}
+							</MenuItem>
+						</>
+					);
+				if (state.ips.length === 0)
+					return (
+						<View class="px-3 py-2" testID="remote-lan-address-empty">
+							<Text class="font-sans text-xs text-muted-foreground">
+								{t("settings.remoteLanAddressEmpty")}
+							</Text>
+						</View>
+					);
+				return (
+					<View class="gap-1">
+						{state.ips.map((ip) => {
+							const baseUrl = new URL(`http://${ip}:${props.port}`).origin;
+							const added = existingOrigins.has(baseUrl);
+							return (
+								<MenuItem
+									testID={`remote-lan:${ip}`}
+									class="min-h-8"
+									indicatorClass="hidden"
+									disabled={props.disabled || added}
+									onSelect={() => props.onAdd(baseUrl)}
+								>
+									<View class="min-w-0 flex-1 flex-row items-center gap-3">
+										<Text class="min-w-0 flex-1 truncate font-mono text-xs">
+											{baseUrl}
+										</Text>
+										{added ? (
+											<Text class="font-sans shrink-0 text-[10px] text-muted-foreground">
+												{t("common.added")}
+											</Text>
+										) : null}
+									</View>
+								</MenuItem>
+							);
+						})}
+					</View>
+				);
+			}}
+		</Menu>
+	);
+}

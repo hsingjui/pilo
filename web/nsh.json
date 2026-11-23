@@ -1,0 +1,23 @@
+{
+	"name": "Pilo",
+	"id": "app.hsingjui.pilo.web",
+	"version": "0.4.1",
+	"icon": "assets/pilo-512.png",
+	"theme": "../theme/theme.json",
+	"web": {
+		"base": "/"
+	},
+	"capabilities": {
+		"clipboard": true,
+		"picker": true,
+		"network": {
+			"hosts": ["*"]
+		},
+		"openUrl": { "schemes": ["http", "https"] }
+	},
+	"resolve": {
+		"alias": {
+			"@shared": "../shared"
+		}
+	}
+}

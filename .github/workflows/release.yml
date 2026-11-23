@@ -52,11 +52,12 @@ jobs:
               if actual != expected:
                   raise SystemExit(f"{label}: expected {expected!r}, got {actual!r}")
 
-          desktop = toml("desktop/Cargo.toml")["package"]
-          check("desktop/Cargo.toml", desktop["version"])
-          check("desktop/nsh.json", json.loads(Path("desktop/nsh.json").read_text(encoding="utf-8"))["version"])
+          desktop = toml("crates/pilo-desktop/Cargo.toml")["package"]
+          check("crates/pilo-desktop/Cargo.toml", desktop["version"])
+          check("nsh.json", json.loads(Path("nsh.json").read_text(encoding="utf-8"))["version"])
+          check("web/nsh.json", json.loads(Path("web/nsh.json").read_text(encoding="utf-8"))["version"])
           members = [toml(f"{path}/Cargo.toml")["package"]["name"] for path in workspace["members"]]
-          for path, names in [("Cargo.lock", members), ("desktop/Cargo.lock", [*members, desktop["name"]])]:
+          for path, names in [("Cargo.lock", members), ("crates/pilo-desktop/Cargo.lock", [*members, desktop["name"]])]:
               local_packages = {pkg["name"]: pkg["version"] for pkg in toml(path)["package"] if "source" not in pkg}
               for name in names:
                   check(f"{path} ({name})", local_packages.get(name))
@@ -105,17 +106,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.12.3
-          run_install: false
-
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "22"
-          cache: pnpm
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -161,13 +155,10 @@ jobs:
           name: pilo-server-runtimes
           path: resources
 
-      - name: Build WebUI
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm build
+      - name: Build nsh WebUI
+        run: node scripts/build-nsh-web.mjs
 
       - name: Package desktop
-        working-directory: desktop
         shell: bash
         env:
           TARGET: ${{ matrix.platform }}
@@ -179,7 +170,7 @@ jobs:
           set -euo pipefail
           bash scripts/verify-pilo-server-resources.sh
           test -s dist/index.html
-          out=desktop/.nsh/release
+          out=.nsh/release
           if [[ "$RUNNER_OS" == "macOS" ]]; then
             test -d "$out/Pilo.app"
             app_resources="$out/Pilo.app/Contents/Resources"
@@ -198,7 +189,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $out = Join-Path $PWD 'desktop/.nsh/release'
+          $out = Join-Path $PWD '.nsh/release'
           $release = Join-Path $PWD 'release-assets'
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
           if (!(Test-Path $iscc)) {
@@ -217,7 +208,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          out=desktop/.nsh/release
+          out=.nsh/release
           app="$out/Pilo.app"
           codesign --force --sign - --timestamp=none --preserve-metadata=entitlements "$app"
           codesign --verify --deep --strict "$app"
@@ -230,7 +221,7 @@ jobs:
       - name: Archive Linux app
         if: runner.os == 'Linux'
         shell: bash
-        run: tar -czf "release-assets/$ASSET.tar.gz" -C desktop/.nsh/release Pilo
+        run: tar -czf "release-assets/$ASSET.tar.gz" -C .nsh/release Pilo
 
       - name: Upload desktop packages
         uses: actions/upload-artifact@v7

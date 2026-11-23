@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
@@ -24,7 +26,6 @@ function shutdown(code) {
 		if (!child.pid) continue;
 		if (process.platform === "win32") {
 			if (child.exitCode !== null || child.signalCode !== null) continue;
-			// Stop descendants as well as the Node launcher.
 			const result = spawnSync(
 				"taskkill.exe",
 				["/PID", String(child.pid), "/T", "/F"],
@@ -33,8 +34,6 @@ function shutdown(code) {
 					timeout: 5000,
 				},
 			);
-			// Ctrl+C reaches every process on the console, so children are usually already
-			// gone and taskkill exits with 128 ("no such process") by the time we get here.
 			if (result.error || (result.status !== 0 && isRunning(child.pid))) {
 				console.error(
 					`Failed to stop dev process tree ${child.pid}`,
@@ -57,32 +56,28 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 }
 
 try {
-	// The Host serves the WebUI from dist/; the Vite server hosts the browser tests.
-	const vite = "node_modules/vite/bin/vite.js";
-	const commands = [
-		[process.execPath, root, vite],
-		[process.execPath, root, vite, "build", "--watch"],
-	];
-	if (!process.argv.includes("--frontend")) {
-		commands.push([
-			"nsh",
-			fileURLToPath(new URL("../desktop/", import.meta.url)),
-			"dev",
-		]);
+	const webOnly = process.argv.includes("--web");
+	if (!webOnly && !fs.existsSync(path.join(root, "dist", "index.html"))) {
+		const built = spawnSync(
+			process.execPath,
+			[path.join(root, "scripts", "build-nsh-web.mjs")],
+			{ cwd: root, stdio: "inherit" },
+		);
+		if (built.status !== 0) process.exit(built.status ?? 1);
 	}
-	for (const [command, cwd, ...args] of commands) {
-		const child = spawn(command, args, {
-			cwd,
-			stdio: "inherit",
-			detached: process.platform !== "win32",
-		});
-		children.push(child);
-		child.on("exit", (code) => shutdown(code ?? 1));
-		child.on("error", (error) => {
-			console.error(error);
-			shutdown(1);
-		});
-	}
+
+	const args = webOnly ? ["dev", "--target", "web", "web"] : ["dev"];
+	const child = spawn("nsh", args, {
+		cwd: root,
+		stdio: "inherit",
+		detached: process.platform !== "win32",
+	});
+	children.push(child);
+	child.on("exit", (code) => shutdown(code ?? 1));
+	child.on("error", (error) => {
+		console.error(error);
+		shutdown(1);
+	});
 } catch (error) {
 	console.error("[pilo-dev] Startup failed:", error);
 	shutdown(1);

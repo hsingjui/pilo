@@ -1,4 +1,4 @@
-import { i18n } from "../i18n/instance.ts";
+import { t } from "../i18n/translate.ts";
 import type { ChatMessage } from "@shared/chat/conversation-types";
 import type {
 	PiSessionEntries,
@@ -21,12 +21,12 @@ export function getActivePiBranch({
 
 	while (currentId) {
 		if (visited.has(currentId)) {
-			throw new Error(i18n.t("errors.forkBranchLoop"));
+			throw new Error(t("errors.forkBranchLoop"));
 		}
 		visited.add(currentId);
 		const entry = byId.get(currentId);
 		if (!entry) {
-			throw new Error(i18n.t("errors.forkMissingParent"));
+			throw new Error(t("errors.forkMissingParent"));
 		}
 		branch.push(entry);
 		currentId = entry.parentId;
@@ -46,7 +46,7 @@ export function resolveAssistantForkTarget(
 			message.id === assistantMessageId && message.role === "assistant",
 	);
 	if (assistantIndex < 0) {
-		throw new Error(i18n.t("errors.forkTargetNotFound"));
+		throw new Error(t("errors.forkTargetNotFound"));
 	}
 
 	const activeUserEntries = getActivePiBranch(sessionEntries).filter(
@@ -60,7 +60,7 @@ export function resolveAssistantForkTarget(
 			(message) => message.role === "user",
 		).length;
 		if (activeUserEntries.length !== visibleUserCount) {
-			throw new Error(i18n.t("errors.sessionChanged"));
+			throw new Error(t("errors.sessionChanged"));
 		}
 		return { type: "clone" };
 	}
@@ -72,7 +72,7 @@ export function resolveAssistantForkTarget(
 
 	const nextUserEntry = activeUserEntries[nextUserOrdinal];
 	if (!nextUserEntry) {
-		throw new Error(i18n.t("errors.forkBranchPointNotFound"));
+		throw new Error(t("errors.forkBranchPointNotFound"));
 	}
 
 	return { type: "fork", entryId: nextUserEntry.id };

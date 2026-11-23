@@ -1,30 +1,22 @@
 {
+	"extends": "./.nsh/tsconfig.json",
 	"compilerOptions": {
-		"target": "ES2020",
-		"useDefineForClassFields": true,
-		"lib": ["ES2020", "DOM"],
-		"module": "ESNext",
-		"skipLibCheck": true,
-
-		/* Bundler mode */
-		"moduleResolution": "bundler",
 		"allowImportingTsExtensions": true,
 		"resolveJsonModule": true,
-		"isolatedModules": true,
-		"noEmit": true,
-		"jsx": "react-jsx",
 		"paths": {
-			"@/*": ["./web/*"],
+			"nsh": ["./.nsh/types/nsh/index.d.ts"],
+			"nsh/*": ["./.nsh/types/nsh/*.d.ts"],
+			"app/*": ["./.nsh/types/app/*.d.ts"],
+			"process": ["./.nsh/types/process.d.ts"],
 			"@shared/*": ["./shared/*"]
-		},
-
-		/* Linting */
-		"strict": true,
-		"noUnusedLocals": true,
-		"noUnusedParameters": true,
-		"noFallthroughCasesInSwitch": true
+		}
 	},
-	"include": ["web", "shared"],
-	"exclude": ["shared/runtime-globals.d.ts"],
-	"references": [{ "path": "./tsconfig.node.json" }]
+	"include": [
+		"App.tsx",
+		"app/**/*.ts",
+		"app/**/*.tsx",
+		"web/**/*.ts",
+		"web/**/*.tsx"
+	],
+	"exclude": ["target", "crates", "dist", "node_modules", "tests", "scripts"]
 }

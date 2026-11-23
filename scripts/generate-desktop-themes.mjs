@@ -161,7 +161,7 @@ export function generateThemes(lodyCss, claudeCss) {
 
 function readCss(name) {
 	return readFileSync(
-		new URL(`../web/styles/${name}-theme.css`, import.meta.url),
+		new URL(`../theme/${name}-theme.css`, import.meta.url),
 		"utf8",
 	);
 }
@@ -201,16 +201,16 @@ if (
 	writeGenerated(
 		new URL("../shared/theme-web-map.json", import.meta.url),
 		generateWebThemeMap(readCss("lody")),
-		"pnpm desktop:generate:themes",
+		"pnpm generate:themes",
 	);
 	writeGenerated(
-		new URL("../desktop/theme.json", import.meta.url),
+		new URL("../theme/theme.json", import.meta.url),
 		lody,
-		"pnpm desktop:generate:themes",
+		"pnpm generate:themes",
 	);
 	writeGenerated(
-		new URL("../desktop/claude-theme.json", import.meta.url),
+		new URL("../theme/claude-theme.json", import.meta.url),
 		claude,
-		"pnpm desktop:generate:themes",
+		"pnpm generate:themes",
 	);
 }

@@ -1,5 +1,5 @@
 import { skillInvocationSummary } from "./skill-invocation.ts";
-import { i18n } from "../i18n/instance.ts";
+import { t } from "../i18n/translate.ts";
 
 export type ConversationOutlineMessage = {
 	id: string;
@@ -101,7 +101,7 @@ function buildOutlineTail(
 export function buildConversationOutline(
 	messages: readonly ConversationOutlineMessage[],
 ): ConversationOutlineEntry[] {
-	return buildOutlineTail(messages, 0, i18n.t("chat.untitledMessage"));
+	return buildOutlineTail(messages, 0, t("chat.untitledMessage"));
 }
 
 /** Reuse finished rounds, skipping the merged history prefix while it is unchanged. */

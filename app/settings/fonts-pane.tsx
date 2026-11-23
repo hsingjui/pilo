@@ -1,0 +1,429 @@
+import {
+	type Accessor,
+	cleanup,
+	type JSX,
+	signal,
+	Text,
+	token,
+	View,
+} from "nsh";
+
+import { userErrorMessage } from "@shared/app-error";
+import {
+	DEFAULT_CODE_FONT_FAMILY,
+	DEFAULT_CODE_FONT_SIZE,
+	DEFAULT_PAGE_FONT_FAMILY,
+	DEFAULT_READING_FONT_FAMILY,
+	DEFAULT_READING_FONT_SIZE,
+	DEFAULT_TERMINAL_FONT_FAMILY,
+	DEFAULT_TERMINAL_FONT_SIZE,
+	DEFAULT_UI_FONT_SIZE,
+	MONOSPACE_FONT_BUILTIN_OPTIONS,
+	PAGE_FONT_BUILTIN_OPTIONS,
+	getMonospaceFontFamilyStack,
+	getPageFontFamilyStack,
+	systemFontOptionGroups,
+	type SystemFontFamily,
+} from "@shared/font-settings";
+import type { PreferencePatch } from "@shared/host-preferences-types";
+import { AppToaster, showToast } from "../shell/app-toasts";
+import type { AppState } from "../state/app-state";
+import { t } from "../shell/i18n";
+import { Button } from "../ui/button";
+import { classNames } from "../ui/class-names";
+import { Icon } from "../ui/icon";
+import { Menu } from "../ui/menu";
+import { MenuItem } from "../ui/menu-item";
+import { FontSelect, type FontSelectGroup } from "./font-select";
+import { FontSizeInput } from "./font-size-input";
+import { isNarrowSettings, SettingsRow, SettingsSection } from "./layout";
+import type { SettingsClient } from "./settings-dialog";
+
+/** One enumeration per app run; a failed one is retried when the pane opens again. */
+let systemFonts: Promise<SystemFontFamily[]> | undefined;
+
+function loadSystemFonts(client: SettingsClient): Promise<SystemFontFamily[]> {
+	if (!client.systemFontFamilies) return Promise.resolve([]);
+	systemFonts ??= client.systemFontFamilies().catch((error: unknown) => {
+		console.warn("system font enumeration failed", error);
+		systemFonts = undefined;
+		return [];
+	});
+	return systemFonts;
+}
+
+/**
+ * Fonts: page / reading / code / terminal family + size. Built-in families,
+ * the installed ones the Host lists, and a family typed into the picker's
+ * search.
+ */
+export function FontsPane(props: {
+	state: Accessor<AppState>;
+	client: SettingsClient;
+}) {
+	const system = signal(systemFontOptionGroups([]));
+	let alive = true;
+	cleanup(() => {
+		alive = false;
+	});
+	void loadSystemFonts(props.client).then((families) => {
+		if (alive) system.set(systemFontOptionGroups(families));
+	});
+	// Built per read so the labels follow the current locale.
+	const pageGroups = (): FontSelectGroup[] => [
+		{ label: t("settings.builtIn"), options: PAGE_FONT_BUILTIN_OPTIONS },
+		{ label: t("settings.systemFonts"), options: system().page },
+	];
+	const monoGroups = (): FontSelectGroup[] => [
+		{ label: t("settings.builtIn"), options: MONOSPACE_FONT_BUILTIN_OPTIONS },
+		{ label: t("settings.systemMonospace"), options: system().monospace },
+	];
+	const toasts = AppToaster();
+	const values = () => props.state().preferences?.values;
+	const save = (patch: PreferencePatch) => {
+		props.client.savePreferences(patch).catch((error: unknown) => {
+			console.error(t("settings.preferencesSaveFailed"), error);
+			showToast(toasts, {
+				variant: "error",
+				title: t("settings.preferencesSaveFailed"),
+				description: userErrorMessage(error),
+			});
+		});
+	};
+	const size = (
+		testID: string,
+		label: string,
+		value: number | undefined,
+		fallback: number,
+		saveValue: (next: number) => void,
+	) => (
+		<FontSizeInput
+			testID={testID}
+			class="w-20"
+			label={label}
+			value={value ?? fallback}
+			onChange={saveValue}
+		/>
+	);
+	const family = (
+		testID: string,
+		label: string,
+		groups: FontSelectGroup[],
+		value: string | undefined,
+		fallback: string,
+		saveValue: (next: string) => void,
+		monospace = false,
+	) => (
+		<FontSelect
+			testID={testID}
+			class={monospace ? "w-[200px] font-mono" : "w-[200px]"}
+			accessibilityLabel={label}
+			groups={groups}
+			value={value ?? fallback}
+			onChange={saveValue}
+		/>
+	);
+	/** A preview row: a 120pt label column beside the preview, stacked when narrow. */
+	const previewRow = (label: string, content: JSX.Element) => (
+		<View
+			class={classNames(
+				"min-w-0 px-3 py-3 border-b border-border/60 last:border-b-0",
+				isNarrowSettings() ? "gap-2" : "flex-row items-start gap-4",
+			)}
+		>
+			<View class={isNarrowSettings() ? undefined : "w-[120px] shrink-0"}>
+				<Text class="font-sans pt-1 text-xs text-muted-foreground">
+					{label}
+				</Text>
+			</View>
+			<View class="min-w-0 flex-1">{content}</View>
+		</View>
+	);
+	return (
+		<View class="gap-3">
+			<SettingsSection
+				title={t("settings.font")}
+				actions={
+					<Menu
+						align="end"
+						popupStyle={{ minWidth: 0 }}
+						trigger={
+							<Button testID="settings-fonts-reset" variant="ghost" size="sm">
+								<Text class="font-sans">{t("settings.resetDefault")}</Text>
+								<Icon name="ChevronDown" size={14} />
+							</Button>
+						}
+					>
+						<View class="gap-1">
+							<MenuItem
+								testID="settings-fonts-reset-families"
+								indicatorClass="hidden"
+								onSelect={() =>
+									save({
+										pageFontFamily: DEFAULT_PAGE_FONT_FAMILY,
+										readingFontFamily: DEFAULT_READING_FONT_FAMILY,
+										codeFontFamily: DEFAULT_CODE_FONT_FAMILY,
+										terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
+									})
+								}
+							>
+								<Text class="font-sans">{t("settings.resetFonts")}</Text>
+							</MenuItem>
+							<MenuItem
+								testID="settings-fonts-reset-sizes"
+								indicatorClass="hidden"
+								onSelect={() =>
+									save({
+										uiFontSize: DEFAULT_UI_FONT_SIZE,
+										readingFontSize: DEFAULT_READING_FONT_SIZE,
+										codeFontSize: DEFAULT_CODE_FONT_SIZE,
+										terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
+									})
+								}
+							>
+								<Text class="font-sans">{t("settings.resetFontSizes")}</Text>
+							</MenuItem>
+						</View>
+					</Menu>
+				}
+			>
+				<SettingsRow label={t("settings.pageFont")}>
+					{() =>
+						family(
+							"settings-page-font",
+							t("settings.pageFont"),
+							pageGroups(),
+							values()?.pageFontFamily,
+							DEFAULT_PAGE_FONT_FAMILY,
+							(next) => save({ pageFontFamily: next }),
+						)
+					}
+					{() =>
+						size(
+							"settings-ui-font-size",
+							t("settings.pageFont"),
+							values()?.uiFontSize,
+							DEFAULT_UI_FONT_SIZE,
+							(next) => save({ uiFontSize: next }),
+						)
+					}
+				</SettingsRow>
+				<SettingsRow
+					label={t("settings.readingFont")}
+					helper={t("settings.readingFontDescription")}
+				>
+					{() =>
+						family(
+							"settings-reading-font",
+							t("settings.readingFont"),
+							pageGroups(),
+							values()?.readingFontFamily,
+							DEFAULT_READING_FONT_FAMILY,
+							(next) => save({ readingFontFamily: next }),
+						)
+					}
+					{() =>
+						size(
+							"settings-reading-font-size",
+							t("settings.readingFont"),
+							values()?.readingFontSize,
+							DEFAULT_READING_FONT_SIZE,
+							(next) => save({ readingFontSize: next }),
+						)
+					}
+				</SettingsRow>
+				<SettingsRow label={t("settings.codeFont")}>
+					{() =>
+						family(
+							"settings-code-font",
+							t("settings.codeFont"),
+							monoGroups(),
+							values()?.codeFontFamily,
+							DEFAULT_CODE_FONT_FAMILY,
+							(next) => save({ codeFontFamily: next }),
+							true,
+						)
+					}
+					{() =>
+						size(
+							"settings-code-font-size",
+							t("settings.codeFont"),
+							values()?.codeFontSize,
+							DEFAULT_CODE_FONT_SIZE,
+							(next) => save({ codeFontSize: next }),
+						)
+					}
+				</SettingsRow>
+				<SettingsRow label={t("settings.terminalFont")}>
+					{() =>
+						family(
+							"settings-terminal-font",
+							t("settings.terminalFont"),
+							monoGroups(),
+							values()?.terminalFontFamily,
+							DEFAULT_TERMINAL_FONT_FAMILY,
+							(next) => save({ terminalFontFamily: next }),
+							true,
+						)
+					}
+					{() =>
+						size(
+							"settings-terminal-font-size",
+							t("settings.terminalFont"),
+							values()?.terminalFontSize,
+							DEFAULT_TERMINAL_FONT_SIZE,
+							(next) => save({ terminalFontSize: next }),
+						)
+					}
+				</SettingsRow>
+			</SettingsSection>
+
+			<SettingsSection title={t("settings.fontPreview")}>
+				{previewRow(
+					t("settings.pageFont"),
+					<View class="rounded-md border border-border/60 bg-background p-3 gap-1.5">
+						{() => (
+							<Text
+								class="text-sm font-medium"
+								style={{
+									fontFamily: getPageFontFamilyStack(
+										values()?.pageFontFamily ?? DEFAULT_PAGE_FONT_FAMILY,
+									),
+								}}
+							>
+								{t("settings.title")}
+							</Text>
+						)}
+						{() => (
+							<Text
+								class="text-xs leading-[1.45] text-muted-foreground"
+								style={{
+									fontFamily: getPageFontFamilyStack(
+										values()?.pageFontFamily ?? DEFAULT_PAGE_FONT_FAMILY,
+									),
+								}}
+							>
+								{t("settings.fontPreviewText")}
+							</Text>
+						)}
+					</View>,
+				)}
+				{previewRow(
+					t("settings.readingFont"),
+					<View class="min-w-0 flex-1 gap-2">
+						{() => (
+							<Text
+								class="font-semibold leading-[1.75]"
+								style={{
+									fontFamily: getPageFontFamilyStack(
+										values()?.readingFontFamily ?? DEFAULT_READING_FONT_FAMILY,
+									),
+									fontSize:
+										values()?.readingFontSize ?? DEFAULT_READING_FONT_SIZE,
+								}}
+							>
+								{t("settings.fontPreviewHeading")}
+							</Text>
+						)}
+						{() => (
+							<Text
+								class="leading-[1.75]"
+								style={{
+									fontFamily: getPageFontFamilyStack(
+										values()?.readingFontFamily ?? DEFAULT_READING_FONT_FAMILY,
+									),
+									fontSize:
+										values()?.readingFontSize ?? DEFAULT_READING_FONT_SIZE,
+								}}
+							>
+								{t("settings.fontPreviewReadingText")}
+							</Text>
+						)}
+						{() => (
+							<Text
+								class="leading-[1.75]"
+								style={{
+									fontFamily: getPageFontFamilyStack(
+										values()?.readingFontFamily ?? DEFAULT_READING_FONT_FAMILY,
+									),
+									fontSize:
+										values()?.readingFontSize ?? DEFAULT_READING_FONT_SIZE,
+								}}
+							>
+								{t("settings.fontPreviewText")}
+							</Text>
+						)}
+					</View>,
+				)}
+				{previewRow(
+					t("settings.codeFont"),
+					<View class="min-w-0 flex-1 overflow-hidden rounded-md border border-code-border bg-code-background">
+						<View class="border-b border-code-border px-3 py-1.5">
+							<Text class="font-sans text-[10px] text-muted-foreground">
+								TypeScript
+							</Text>
+						</View>
+						<View class="p-3">
+							{() => (
+								<Text
+									class="font-sans text-code-foreground leading-[1.4]"
+									style={{
+										fontFamily: getMonospaceFontFamilyStack(
+											values()?.codeFontFamily ?? DEFAULT_CODE_FONT_FAMILY,
+										),
+										fontSize: values()?.codeFontSize ?? DEFAULT_CODE_FONT_SIZE,
+									}}
+								>
+									<Text class="text-syntax-keyword">const</Text>
+									{" message = "}
+									<Text class="text-syntax-string">{'"Hello, 你好！"'}</Text>
+									{";\n"}
+									<Text class="text-syntax-keyword">const</Text>
+									{" count = "}
+									<Text class="text-syntax-number">12345</Text>
+									{";\n"}
+									<Text class="text-syntax-function">console.log</Text>
+									{"(message, count);"}
+								</Text>
+							)}
+						</View>
+					</View>,
+				)}
+				{previewRow(
+					t("settings.terminalFont"),
+					<View class="min-w-0 flex-1 rounded-md border border-border/60 bg-background p-3">
+						{() => {
+							const fontSize =
+								values()?.terminalFontSize ?? DEFAULT_TERMINAL_FONT_SIZE;
+							return (
+								<Text
+									class="font-sans leading-[1.15]"
+									style={{
+										fontFamily: getMonospaceFontFamilyStack(
+											values()?.terminalFontFamily ??
+												DEFAULT_TERMINAL_FONT_FAMILY,
+										),
+										fontSize,
+									}}
+								>
+									<Text class="text-muted-foreground">~/pilo</Text>
+									{' $ echo "Hello, 你好！ 0123456789"\n'}
+									{"Hello, 你好！ 0123456789\n"}
+									<Text class="text-muted-foreground">~/pilo</Text>
+									{" $ "}
+									<View
+										style={{
+											width: Math.round(fontSize * 0.6),
+											height: fontSize,
+											backgroundColor: token("foreground"),
+										}}
+									/>
+								</Text>
+							);
+						}}
+					</View>,
+				)}
+			</SettingsSection>
+		</View>
+	);
+}

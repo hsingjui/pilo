@@ -1,9 +1,7 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import * as lucide from "lucide-react";
 import iconImports from "lucide-react/dynamicIconImports.mjs";
-import ts from "typescript";
 import { writeGenerated } from "./write-generated.mjs";
 
 const iconModules = new Map(
@@ -23,42 +21,14 @@ const shapeAttributes = {
 	polyline: ["points"],
 };
 
-export function findLucideImports(path, code) {
-	const source = ts.createSourceFile(path, code, ts.ScriptTarget.Latest);
-	return source.statements.flatMap((statement) => {
-		if (
-			!ts.isImportDeclaration(statement) ||
-			!ts.isStringLiteral(statement.moduleSpecifier) ||
-			statement.moduleSpecifier.text !== "lucide-react" ||
-			statement.importClause?.isTypeOnly
-		)
-			return [];
-		const { name: defaultImport, namedBindings } = statement.importClause ?? {};
-		if (defaultImport || !namedBindings || !ts.isNamedImports(namedBindings)) {
-			throw new Error(`${path}: use named Lucide icon imports`);
-		}
-		return namedBindings.elements
-			.filter((item) => !item.isTypeOnly)
-			.map(({ propertyName, name }) => (propertyName ?? name).text);
-	});
-}
-
-/** Icons the WebUI imports from lucide-react, plus those only the desktop names. */
+/** Icons declared for the nsh desktop and web apps. */
 function readSourceIcons() {
-	const source = fileURLToPath(new URL("../web/", import.meta.url));
-	const desktopOnly = JSON.parse(
+	return JSON.parse(
 		readFileSync(
-			new URL("../desktop/app/lucide-icon-names.json", import.meta.url),
+			new URL("../app/shell/lucide-icon-names.json", import.meta.url),
 			"utf8",
 		),
 	);
-	return readdirSync(source, { recursive: true, withFileTypes: true })
-		.filter((file) => file.isFile() && /\.[jt]sx?$/.test(file.name))
-		.flatMap(({ parentPath, name }) => {
-			const path = join(parentPath, name);
-			return findLucideImports(path, readFileSync(path, "utf8"));
-		})
-		.concat(desktopOnly);
 }
 
 function rectPath(number) {
@@ -168,8 +138,8 @@ if (
 	pathToFileURL(process.argv[1]).href === import.meta.url
 ) {
 	writeGenerated(
-		new URL("../desktop/app/lucide-icons.json", import.meta.url),
+		new URL("../app/shell/lucide-icons.json", import.meta.url),
 		await generateIcons(readSourceIcons()),
-		"pnpm desktop:generate:icons",
+		"pnpm generate:icons",
 	);
 }

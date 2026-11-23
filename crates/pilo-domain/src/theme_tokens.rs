@@ -239,7 +239,7 @@ pub fn create_theme_token_catalog(base: &Value) -> Result<ThemeTokenCatalog, Str
 
 pub fn theme_token_catalog() -> &'static ThemeTokenCatalog {
     static CATALOG: LazyLock<ThemeTokenCatalog> = LazyLock::new(|| {
-        let base: Value = serde_json::from_str(include_str!("../../../desktop/theme.json"))
+        let base: Value = serde_json::from_str(include_str!("../../../theme/theme.json"))
             .expect("embedded theme JSON");
         create_theme_token_catalog(&base["cssVars"]).expect("embedded theme token kinds")
     });

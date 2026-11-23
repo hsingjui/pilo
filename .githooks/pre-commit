@@ -2,8 +2,9 @@
 
 set -eu
 
-printf '[pre-commit] Checking frontend formatting and lint...\n'
+printf '[pre-commit] Checking formatting, lint and shared types...\n'
 pnpm check
 
 printf '[pre-commit] Checking Rust formatting...\n'
 cargo fmt --all --check
+cargo fmt --manifest-path crates/pilo-desktop/Cargo.toml --all --check
