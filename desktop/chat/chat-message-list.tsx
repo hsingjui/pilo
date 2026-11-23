@@ -62,14 +62,7 @@ export function ChatMessageList(props: ChatMessageListProps) {
 	const sessionKey = computed(() => transcript().sessionKey);
 	// Where each chat was read to, so one opened again comes back there.
 	const positions = new Map<string, ChatScrollPosition>();
-	const savedPosition = () => {
-		const key = untracked(sessionKey);
-		return key === null ? null : (positions.get(key) ?? null);
-	};
-	const readPosition = (position: ChatScrollPosition) => {
-		const key = untracked(sessionKey);
-		if (key !== null) positions.set(key, position);
-	};
+	const historyPrefix = computed(() => transcript().historyPrefix);
 	// What the user opened and closed in each chat, kept while the app runs.
 	const expansions = new Map<string, ChatExpansion>();
 	const expansionFor = () => {
@@ -110,12 +103,13 @@ export function ChatMessageList(props: ChatMessageListProps) {
 								{props.empty?.()}
 							</View>
 						);
-					case "messages":
-						// Only the message list is tied to a session, not the empty page.
-						sessionKey();
+					case "messages": {
+						// Bind both the list and its asynchronous measurements to this chat.
+						const key = sessionKey();
 						return (
 							<ChatMessages
 								messages={props.messages}
+								historyPrefix={historyPrefix}
 								userBody={props.userBody}
 								assistantBody={props.assistantBody}
 								assistantText={props.assistantText}
@@ -127,10 +121,15 @@ export function ChatMessageList(props: ChatMessageListProps) {
 								forkDisabled={props.forkDisabled}
 								footer={props.footer}
 								onVisibleRangeChange={props.onVisibleRangeChange}
-								restorePosition={savedPosition()}
-								onScrollPositionChange={readPosition}
+								restorePosition={
+									key === null ? null : (positions.get(key) ?? null)
+								}
+								onScrollPositionChange={(position) => {
+									if (key !== null) positions.set(key, position);
+								}}
 							/>
 						);
+					}
 				}
 			}}
 		</View>

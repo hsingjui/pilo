@@ -146,8 +146,10 @@ function withAssistant(
 	}
 	const current = next.messages[index];
 	if (!current || current.role !== "assistant") return next;
-	const messages = [...next.messages];
-	messages[index] = update(current);
+	const updated = update(current);
+	if (updated === current) return next;
+	const messages = next.messages.slice();
+	messages[index] = updated;
 	return { ...next, messages };
 }
 

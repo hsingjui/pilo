@@ -1,5 +1,6 @@
 import {
 	batch,
+	cleanup,
 	computed,
 	List,
 	type ListRef,
@@ -14,7 +15,7 @@ import {
 
 import { shouldShowChatScrollToLatest } from "@shared/chat/chat-scroll-to-latest";
 import {
-	buildConversationOutline,
+	createConversationOutline,
 	getOutlineIndexForVisibleRange,
 } from "@shared/chat/conversation-outline";
 import type { ChatMessage } from "@shared/chat/conversation-types";
@@ -57,6 +58,8 @@ export interface ChatScrollPosition {
 
 export interface ChatMessagesProps {
 	messages: () => readonly ChatMessage[];
+	/** The immutable history prefix at the start of `messages()`. */
+	historyPrefix: () => readonly ChatMessage[];
 	userBody?: ChatMessageBody<UserChatMessage>;
 	assistantBody?: ChatMessageBody<AssistantChatMessage>;
 	assistantText?: ChatTextBody;
@@ -93,7 +96,14 @@ export function ChatMessages(props: ChatMessagesProps) {
 	// `initialScrollIndex`, and its offset, from the first viewable report.
 	const restore = props.restorePosition ?? null;
 	let restoring = restore !== null;
-	const outline = computed(() => buildConversationOutline(props.messages()));
+	const updateOutline = createConversationOutline();
+	const outline = computed(() =>
+		updateOutline(
+			props.messages(),
+			props.historyPrefix(),
+			t("chat.untitledMessage"),
+		),
+	);
 	const showOutline = computed(() => outline().length >= 2);
 	const firstVisibleIndex = signal(restore?.index ?? 0);
 	const atEnd = signal(restore === null);
@@ -127,24 +137,34 @@ export function ChatMessages(props: ChatMessagesProps) {
 		keepPosition();
 	};
 	let measuring = false;
-	// The position is kept as the list scrolls, so the chat can be read to
-	// the same place when it is opened again; one measure at a time, the
-	// last of a run of scrolls winning.
+	let measureAgain = false;
+	let stopped = false;
+	const savePosition = props.onScrollPositionChange;
+	// Measure while the list is still mounted; a session switch can remove it at any time.
 	const keepPosition = () => {
-		if (measuring || !props.onScrollPositionChange || list === undefined) {
+		if (stopped || !savePosition || !list) return;
+		if (measuring) {
+			measureAgain = true;
 			return;
 		}
 		measuring = true;
+		measureAgain = false;
 		void list
 			.measureScrollPosition()
-			.then((position) => {
+			.then(
+				(position) => {
+					if (position) savePosition(position);
+				},
+				() => {},
+			)
+			.finally(() => {
 				measuring = false;
-				if (position) props.onScrollPositionChange?.(position);
-			})
-			.catch(() => {
-				measuring = false;
+				if (measureAgain) keepPosition();
 			});
 	};
+	cleanup(() => {
+		stopped = true;
+	});
 	let visible: { start: number; end: number } | undefined;
 	const reportVisible = (info: { viewableItems: ViewToken<ChatMessage>[] }) => {
 		let start = Number.POSITIVE_INFINITY;

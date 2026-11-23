@@ -28,10 +28,13 @@ function plainText(value: string) {
 }
 
 function truncate(value: string, length: number) {
-	const points = Array.from(value);
-	return points.length > length
-		? `${points.slice(0, length).join("").trimEnd()}…`
-		: value;
+	let count = 0;
+	let end = 0;
+	for (const point of value) {
+		if (count++ === length) return `${value.slice(0, end).trimEnd()}…`;
+		end += point.length;
+	}
+	return value;
 }
 
 function weightForLength(length: number): 0 | 1 | 2 | 3 {
@@ -50,8 +53,10 @@ export function messageSearchText(message: ConversationOutlineMessage): string {
 	return plainText(source);
 }
 
-export function buildConversationOutline(
+function buildOutlineTail(
 	messages: readonly ConversationOutlineMessage[],
+	start: number,
+	untitled: string,
 ): ConversationOutlineEntry[] {
 	const entries: ConversationOutlineEntry[] = [];
 	let current: ConversationOutlineEntry | undefined;
@@ -63,20 +68,20 @@ export function buildConversationOutline(
 		currentLength = 0;
 	};
 
-	for (const [messageIndex, message] of messages.entries()) {
+	for (
+		let messageIndex = start;
+		messageIndex < messages.length;
+		messageIndex++
+	) {
+		const message = messages[messageIndex];
 		if (message.role === "compaction") continue;
-		// Skill 调用被 Pi 展开成大段 <skill> 文本，大纲标题用 /skill:<name> 摘要。
-		const sourceText =
-			message.role === "user"
-				? (skillInvocationSummary(message.text) ?? message.text)
-				: message.text;
-		const summary = plainText(sourceText);
 		if (message.role === "user" || !current) {
+			const summary = messageSearchText(message);
 			closeRound();
 			current = {
 				key: message.id,
 				messageIndex,
-				title: truncate(summary || i18n.t("chat.untitledMessage"), 72),
+				title: truncate(summary || untitled, 72),
 				preview: message.role === "assistant" ? truncate(summary, 240) : "",
 				weight: 0,
 			};
@@ -85,12 +90,80 @@ export function buildConversationOutline(
 			continue;
 		}
 		currentLength += message.text.length;
-		if (!current.preview && message.role === "assistant") {
-			current.preview = truncate(summary, 240);
+		if (!current.preview) {
+			current.preview = truncate(messageSearchText(message), 240);
 		}
 	}
 	closeRound();
 	return entries;
+}
+
+export function buildConversationOutline(
+	messages: readonly ConversationOutlineMessage[],
+): ConversationOutlineEntry[] {
+	return buildOutlineTail(messages, 0, i18n.t("chat.untitledMessage"));
+}
+
+/** Reuse finished rounds, skipping the merged history prefix while it is unchanged. */
+export function createConversationOutline() {
+	let previousMessages: readonly ConversationOutlineMessage[] = [];
+	let previousHistory: readonly ConversationOutlineMessage[] | undefined;
+	let previousUntitled: string | undefined;
+	let entries: ConversationOutlineEntry[] = [];
+	return (
+		messages: readonly ConversationOutlineMessage[],
+		historyPrefix: readonly ConversationOutlineMessage[],
+		untitled: string,
+	): readonly ConversationOutlineEntry[] => {
+		let unchanged = 0;
+		if (historyPrefix === previousHistory && untitled === previousUntitled) {
+			if (messages === previousMessages) return entries;
+			unchanged = historyPrefix.length;
+			const commonLength = Math.min(messages.length, previousMessages.length);
+			for (; unchanged < commonLength; unchanged++) {
+				const a = previousMessages[unchanged];
+				const b = messages[unchanged];
+				if (
+					a !== b &&
+					(a.id !== b.id || a.role !== b.role || a.text !== b.text)
+				)
+					break;
+			}
+		}
+		const sameMessages =
+			unchanged === messages.length && unchanged === previousMessages.length;
+		previousMessages = messages;
+		previousHistory = historyPrefix;
+		previousUntitled = untitled;
+		if (sameMessages) return entries;
+
+		// A changed row can start or remove a round, so resume at the preceding round.
+		const from =
+			unchanged === 0
+				? 0
+				: Math.max(
+						0,
+						getOutlineIndexForVisibleRange(entries, unchanged - 1, false),
+					);
+		const start = Math.min(unchanged, entries[from]?.messageIndex ?? unchanged);
+		const tail = buildOutlineTail(messages, start, untitled);
+		if (
+			entries.length === from + tail.length &&
+			tail.every((entry, index) => {
+				const before = entries[from + index];
+				return (
+					entry.key === before.key &&
+					entry.messageIndex === before.messageIndex &&
+					entry.title === before.title &&
+					entry.preview === before.preview &&
+					entry.weight === before.weight
+				);
+			})
+		)
+			return entries;
+		entries = from === 0 ? tail : entries.slice(0, from).concat(tail);
+		return entries;
+	};
 }
 
 /**
@@ -131,10 +204,12 @@ export function getOutlineIndexForVisibleRange(
 ) {
 	if (entries.length === 0) return -1;
 	if (isAtEnd) return entries.length - 1;
-	let active = 0;
-	for (const [index, entry] of entries.entries()) {
-		if (entry.messageIndex > firstVisibleIndex) break;
-		active = index;
+	let low = 0;
+	let high = entries.length;
+	while (low < high) {
+		const mid = Math.floor((low + high) / 2);
+		if (entries[mid].messageIndex <= firstVisibleIndex) low = mid + 1;
+		else high = mid;
 	}
-	return active;
+	return Math.max(0, low - 1);
 }
