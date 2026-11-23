@@ -248,7 +248,6 @@ async fn execute(
                 }
             };
             let connection = super::connections::connection_shown_in_home_set(runtime, id, shown)?;
-            changed(runtime);
             Ok(
                 json!({ "hasPassword": matches!(connection.kind, ConnectionKind::Ssh { .. }) && super::credentials::has_ssh_password(&connection.id), "connection": connection, "effect": "new sessions use the saved connection; existing processes are not restarted" }),
             )

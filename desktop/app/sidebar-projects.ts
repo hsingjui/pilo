@@ -20,9 +20,9 @@ import type { StartedDraft } from "../state/app-store";
 export type SidebarGroup = { connection: Connection; projects: Project[] };
 
 /**
- * The projects by connection, in their own order, the local one first. Each
- * group follows the connection's saved order; projects it does not name keep
- * their catalog places after the ordered ones.
+ * The projects by visible connection, the local one first. Each group follows
+ * the connection's saved order; projects it does not name keep their catalog
+ * places after the ordered ones.
  */
 export function sidebarGroups(
 	projects: readonly Project[],
@@ -31,6 +31,7 @@ export function sidebarGroups(
 	const groups = new Map<string, SidebarGroup>();
 	for (const project of projects) {
 		const { connection } = project;
+		if (connection.shownInHome === false) continue;
 		const group = groups.get(connection.id);
 		if (group) group.projects.push(project);
 		else groups.set(connection.id, { connection, projects: [project] });

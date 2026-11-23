@@ -6,7 +6,11 @@ use serde_json::Value;
 
 use pilo_domain::{Connection, ConnectionKind, ConnectionNamingModel};
 
-use super::{Runtime, credentials, storage};
+use super::{
+    Runtime, credentials,
+    events::{RuntimeEvent, RuntimeEventEnvelope},
+    storage,
+};
 
 pub mod ssh;
 pub mod wsl;
@@ -79,8 +83,12 @@ pub fn connection_shown_in_home_set(
     if !storage::set_connection_shown_in_home(&db, id, shown)? {
         return Err(format!("Connection '{id}' was not found"));
     }
-    storage::get_connection(&db, id)
-        .and_then(|connection| connection.ok_or_else(|| format!("Connection '{id}' was not found")))
+    let connection = storage::get_connection(&db, id)?
+        .ok_or_else(|| format!("Connection '{id}' was not found"))?;
+    runtime.events.send(RuntimeEventEnvelope::global(
+        RuntimeEvent::ConfigurationChanged,
+    ));
+    Ok(connection)
 }
 
 pub fn local_connection_get(runtime: &Runtime) -> Result<Connection, String> {
