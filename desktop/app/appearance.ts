@@ -29,7 +29,13 @@ import { appLocale, setAppLocale } from "./i18n";
 
 const catalog = createThemeTokenCatalog(lody.cssVars);
 const defaultPageFont =
-	platform.os === "windows" ? "Noto Sans SC" : "system-sans";
+	platform.os === "windows"
+		? "Noto Sans SC"
+		: platform.os === "web"
+			? "inter"
+			: "system-sans";
+const defaultMonoFont =
+	platform.os === "web" ? "jetbrains-mono" : "system-mono";
 
 // nsh 0.6.1 keeps only the first family when parsing font tokens.
 export const displayFontFamily = signal(lody.cssVars.theme["font-display"]);
@@ -53,7 +59,7 @@ export async function showStartupTheme(): Promise<StartupTheme | null> {
 		showTheme(
 			saved,
 			getPageFontFamilyStack(defaultPageFont),
-			getMonospaceFontFamilyStack("system-mono"),
+			getMonospaceFontFamilyStack(defaultMonoFont),
 			undefined,
 		);
 	}
@@ -97,16 +103,24 @@ function parseStartupTheme(stored: string | null): StartupTheme | null {
 /** Follow saved appearance, using platform fonts until preferences load. */
 export function followSavedAppearance(state: Accessor<AppState>) {
 	const locale = computed(() => state().preferences?.values.locale);
-	const pageSans = computed(() =>
-		getPageFontFamilyStack(
-			state().preferences?.values.pageFontFamily ?? defaultPageFont,
-		),
-	);
-	const codeMono = computed(() =>
-		getMonospaceFontFamilyStack(
-			state().preferences?.values.codeFontFamily ?? "system-mono",
-		),
-	);
+	const pageSans = computed(() => {
+		const saved = state().preferences?.values.pageFontFamily;
+		if (platform.os === "web") {
+			return getPageFontFamilyStack(
+				!saved || saved === "system-sans" ? "inter" : saved,
+			);
+		}
+		return getPageFontFamilyStack(saved ?? defaultPageFont);
+	});
+	const codeMono = computed(() => {
+		const saved = state().preferences?.values.codeFontFamily;
+		if (platform.os === "web") {
+			return getMonospaceFontFamilyStack(
+				!saved || saved === "system-mono" ? "jetbrains-mono" : saved,
+			);
+		}
+		return getMonospaceFontFamilyStack(saved ?? defaultMonoFont);
+	});
 	const codeFontSize = computed(() => state().preferences?.values.codeFontSize);
 	const theme = computed(() => state().themeSettings);
 	const startupTheme = computed(() => {

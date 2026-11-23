@@ -5,6 +5,7 @@ import {
 	List,
 	type ListRef,
 	type ListSlot,
+	platform,
 	type ScrollEvent,
 	signal,
 	Text,
@@ -257,7 +258,9 @@ export function ChatMessages(props: ChatMessagesProps) {
 								testID="chat-scroll-latest"
 								variant="secondary"
 								size="icon"
-								class="pointer-events-auto size-8 rounded-full border border-border/70 shadow-md"
+								class={`pointer-events-auto rounded-full border border-border/70 shadow-md ${
+									platform.desktop ? "size-8" : "size-11"
+								}`}
 								accessibilityLabel={t("chat.scrollLatest")}
 								tooltip={
 									<Tooltip>

@@ -59,6 +59,8 @@ export function ComposerActions(props: {
 	blocked: () => boolean;
 	sending: () => boolean;
 	sendShortcut: () => "enter" | "mod-enter";
+	/** Uses 40-44px touch-friendly hit targets for mobile / WebUI. */
+	touch?: boolean;
 	onSend: () => void;
 	onStop: () => void;
 }) {
@@ -77,6 +79,56 @@ export function ComposerActions(props: {
 				: t("chat.send");
 	const shortcutHint = () =>
 		props.sendShortcut() === "enter" ? " · Enter" : " · Ctrl/⌘ Enter";
+	const sendModeStyle = () =>
+		props.touch
+			? {
+					height: 40,
+					minWidth: 40,
+					gap: 4,
+					paddingHorizontal: 8,
+					paddingVertical: 0,
+				}
+			: composerSendModeStyle();
+	const sendButtonSize = () =>
+		props.touch ? { width: 32, height: 32 } : composerSendSize();
+	const sendButton = (
+		<Button
+			testID="chat-composer-send"
+			variant="ghost"
+			size="icon"
+			class="rounded-full bg-foreground hover:bg-foreground/85 disabled:bg-muted-foreground disabled:opacity-100"
+			style={sendButtonSize()}
+			accessibilityLabel={actionLabel()}
+			disabled={showStop() ? false : !props.hasContent() || props.blocked()}
+			tooltip={
+				props.touch ? undefined : (
+					<Tooltip>
+						<Text class="font-sans">
+							{() => actionLabel() + (showStop() ? "" : shortcutHint())}
+						</Text>
+					</Tooltip>
+				)
+			}
+			onPress={() => (showStop() ? props.onStop() : props.onSend())}
+		>
+			{() =>
+				showStop() ? (
+					<Icon
+						name="Square"
+						size={props.touch ? 12 : chatPx(12)}
+						fill
+						color={token("background")}
+					/>
+				) : (
+					<Icon
+						name="ArrowUp"
+						size={props.touch ? 16 : chatPx(16)}
+						color={token("background")}
+					/>
+				)
+			}
+		</Button>
+	);
 	return (
 		<View
 			testID="chat-composer-actions"
@@ -94,25 +146,27 @@ export function ComposerActions(props: {
 						testID="chat-composer-send-mode"
 						variant="ghost"
 						size="sm"
-						style={composerSendModeStyle()}
+						style={sendModeStyle()}
 						disabled={props.blocked()}
 						accessibilityLabel={modeLabel()}
 						tooltip={
-							<Tooltip>
-								<Text class="font-sans">{modeLabel}</Text>
-							</Tooltip>
+							props.touch ? undefined : (
+								<Tooltip>
+									<Text class="font-sans">{modeLabel}</Text>
+								</Tooltip>
+							)
 						}
 					>
 						{() => (
 							<Icon
 								name={option().icon}
-								size={chatPx(14)}
+								size={props.touch ? 15 : chatPx(14)}
 								color={token("muted-foreground")}
 							/>
 						)}
 						<Icon
 							name="ChevronDown"
-							size={chatPx(12)}
+							size={props.touch ? 13 : chatPx(12)}
 							color={token("muted-foreground")}
 						/>
 					</Button>
@@ -128,7 +182,7 @@ export function ComposerActions(props: {
 							role="menuitemradio"
 							checked={props.sendMode() === entry.mode}
 							accessibilityLabel={t(entry.label)}
-							class="py-1"
+							class={props.touch ? "min-h-11 py-1.5" : "py-1"}
 							icon={<Icon name={entry.icon} size={14} />}
 							onSelect={() => props.onSendModeChange(entry.mode)}
 						>
@@ -144,40 +198,13 @@ export function ComposerActions(props: {
 					))}
 				</View>
 			</Menu>
-			<Button
-				testID="chat-composer-send"
-				variant="ghost"
-				size="icon"
-				class="rounded-full bg-foreground hover:bg-foreground/85 disabled:bg-muted-foreground disabled:opacity-100"
-				style={composerSendSize()}
-				accessibilityLabel={actionLabel()}
-				disabled={showStop() ? false : !props.hasContent() || props.blocked()}
-				tooltip={
-					<Tooltip>
-						<Text class="font-sans">
-							{() => actionLabel() + (showStop() ? "" : shortcutHint())}
-						</Text>
-					</Tooltip>
-				}
-				onPress={() => (showStop() ? props.onStop() : props.onSend())}
-			>
-				{() =>
-					showStop() ? (
-						<Icon
-							name="Square"
-							size={chatPx(12)}
-							fill
-							color={token("background")}
-						/>
-					) : (
-						<Icon
-							name="ArrowUp"
-							size={chatPx(16)}
-							color={token("background")}
-						/>
-					)
-				}
-			</Button>
+			{props.touch ? (
+				<View class="size-10 shrink-0 items-center justify-center">
+					{sendButton}
+				</View>
+			) : (
+				sendButton
+			)}
 		</View>
 	);
 }

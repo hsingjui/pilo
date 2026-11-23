@@ -10,12 +10,16 @@ import {
 import { DEFAULT_CHAT_REM } from "./layout";
 
 export const ConversationColumnLayout = context<
-	Accessor<{ claude: boolean; narrow: boolean }>
+	Accessor<{ claude: boolean; narrow: boolean; fullWidth?: boolean }>
 >(() => ({ claude: false, narrow: false }));
 
-export function conversationColumnGeometry(claude: boolean, narrow: boolean) {
+export function conversationColumnGeometry(
+	claude: boolean,
+	narrow: boolean,
+	fullWidth = false,
+) {
 	return {
-		widthPercent: claude ? 94 : 80,
+		widthPercent: fullWidth ? 100 : claude ? 94 : 80,
 		maxWidth: (claude ? 48 : 52) * DEFAULT_CHAT_REM,
 		paddingHorizontal: (narrow ? 0.75 : 1) * DEFAULT_CHAT_REM,
 	};
@@ -25,7 +29,11 @@ export function conversationColumnGeometry(claude: boolean, narrow: boolean) {
 export function ConversationColumn(props: ViewProps) {
 	const layout = ConversationColumnLayout();
 	const geometry = computed(() =>
-		conversationColumnGeometry(layout().claude, layout().narrow),
+		conversationColumnGeometry(
+			layout().claude,
+			layout().narrow,
+			layout().fullWidth ?? false,
+		),
 	);
 	const [local, rest] = split(props, ["style", "children"]);
 	return (

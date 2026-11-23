@@ -77,12 +77,12 @@ function SubTrigger(props: { label: () => string; value: () => string }) {
 const useSidePopup = platform.desktop && platform.idiom !== "terminal";
 
 function RunConfigSubmenu(
-	props: SubmenuProps & { anchor: () => Bounds | null },
+	props: SubmenuProps & { anchor: () => Bounds | null; sidePopup?: boolean },
 ) {
-	const [local, rest] = split(props, ["anchor", "children"]);
+	const [local, rest] = split(props, ["anchor", "sidePopup", "children"]);
 	return (
 		<Submenu {...rest} offset={0}>
-			{useSidePopup ? (
+			{local.sidePopup ? (
 				// Keep the native submenu's navigation and use the main card's bottom edge for placement.
 				<Overlay
 					anchor={local.anchor()}
@@ -109,9 +109,14 @@ function RunConfigSubmenu(
  * level, a skeleton while they are not known yet.
  */
 export function ComposerRunConfig(
-	props: ComposerRunConfigProps & { toolbarWidth: () => number },
+	props: ComposerRunConfigProps & {
+		toolbarWidth: () => number;
+		/** Uses 40px touch target and inline submenus for narrow / mobile web. */
+		touch?: boolean;
+	},
 ) {
 	const menuBounds = signal<Bounds | null>(null);
+	const sidePopup = useSidePopup && !props.touch;
 	const selected = () => props.config()?.model ?? null;
 	const modelLabel = () => selected()?.name || selected()?.id || "—";
 	const thinking = () => props.config()?.thinkingLevel ?? null;
@@ -120,14 +125,18 @@ export function ComposerRunConfig(
 		!selected() && (props.loading() || !props.config()?.ready);
 	const thinkingPending = () =>
 		modelPending() || (!thinking() && !props.config()?.ready);
+	const triggerStyle = () => {
+		const base = composerRunConfigStyle(props.toolbarWidth());
+		return props.touch ? { ...base, height: 40 } : base;
+	};
 	return (
 		<Menu
 			placement="top"
 			align="start"
 			offset={8}
-			popupClass={useSidePopup ? undefined : "min-w-56"}
+			popupClass={sidePopup ? undefined : "min-w-56"}
 			// These styles also reach the native submenu shell, which has no in-flow content.
-			popupStyle={useSidePopup ? { minWidth: 0, padding: 0 } : undefined}
+			popupStyle={sidePopup ? { minWidth: 0, padding: 0 } : undefined}
 			onPosition={({ bounds }) => menuBounds.set(bounds)}
 			onClose={() => menuBounds.set(null)}
 			trigger={
@@ -136,7 +145,7 @@ export function ComposerRunConfig(
 					variant="ghost"
 					size="sm"
 					class="min-w-0 shrink font-normal"
-					style={composerRunConfigStyle(props.toolbarWidth())}
+					style={triggerStyle()}
 					activeStyle={{ scale: 1 }}
 					disabled={!props.config()?.ready || !!props.readOnly?.()}
 					accessibilityLabel={t("chat.runConfigLabel", {
@@ -146,7 +155,7 @@ export function ComposerRunConfig(
 							: thinkingLabel(),
 					})}
 				>
-					<PiLogo size={chatPx(16)} />
+					<PiLogo size={props.touch ? 16 : chatPx(16)} />
 					{() =>
 						modelPending() ? (
 							<Skeleton
@@ -191,11 +200,12 @@ export function ComposerRunConfig(
 			<View
 				class={classNames(
 					"gap-1",
-					useSidePopup && "min-w-56 p-(--pilo-menu-padding)",
+					sidePopup && "min-w-56 p-(--pilo-menu-padding)",
 				)}
 			>
 				<RunConfigSubmenu
 					anchor={menuBounds}
+					sidePopup={sidePopup}
 					trigger={
 						<SubTrigger
 							label={() => t("chat.model")}
@@ -222,6 +232,7 @@ export function ComposerRunConfig(
 				</RunConfigSubmenu>
 				<RunConfigSubmenu
 					anchor={menuBounds}
+					sidePopup={sidePopup}
 					disabled={props.savingScope()}
 					trigger={
 						<SubTrigger
@@ -238,7 +249,10 @@ export function ComposerRunConfig(
 									role="menuitemradio"
 									checked={thinking() === level}
 									indicatorClass="hidden"
-									class="min-w-40 justify-between"
+									class={classNames(
+										"min-w-40 justify-between",
+										props.touch && "min-h-11",
+									)}
 									onSelect={() => props.onThinking(level)}
 								>
 									<Text class="font-sans">{piThinkingLevelLabel(level)}</Text>
