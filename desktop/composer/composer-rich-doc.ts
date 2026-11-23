@@ -128,20 +128,35 @@ export function valueToRichDoc(
 	return { type: "doc", content: paragraphs };
 }
 
-function serializeInline(nodes: readonly RichNodeJSON[] | undefined): string {
+function serializeInline(
+	nodes: readonly RichNodeJSON[] | undefined,
+	imageReference?: (id: string) => string,
+): string {
 	let out = "";
+	let afterImage = false;
 	for (const node of nodes ?? []) {
+		let text = "";
+		let isImage = false;
 		if (node.type === "text") {
-			out += node.text ?? "";
+			text = node.text ?? "";
 		} else if (node.type === CHAT_MENTION_NODE_TYPE) {
 			const attrs = node.attrs;
-			if (attrs?.kind !== "image" && typeof attrs?.raw === "string")
-				out += attrs.raw;
+			if (attrs?.kind === "image" && typeof attrs.path === "string") {
+				isImage = true;
+				text = imageReference?.(attrs.path) ?? "";
+			} else if (typeof attrs?.raw === "string") {
+				text = attrs.raw;
+			}
 		} else if (node.type === "hardBreak") {
-			out += "\n";
+			text = "\n";
 		} else if (node.content?.length) {
-			out += serializeInline(node.content);
+			text = serializeInline(node.content, imageReference);
 		}
+		if (!text) continue;
+		if ((afterImage || isImage) && out && !/\s$/.test(out) && !/^\s/.test(text))
+			out += " ";
+		out += text;
+		afterImage = isImage;
 	}
 	return out;
 }
@@ -220,14 +235,15 @@ export function remapRichImageOffsets(
 	);
 }
 
-/** 将文档序列化为草稿纯文本。 */
+/** 将文档序列化为草稿纯文本；仅在发送时传入图片引用。 */
 export function richDocToValue(
 	doc: RichNodeJSON | null | undefined,
+	imageReference?: (id: string) => string,
 ): string {
 	const blocks = doc?.content;
 	if (!blocks?.length) return "";
 	return blocks
-		.map((block) => serializeInline(block.content))
+		.map((block) => serializeInline(block.content, imageReference))
 		.join("\n");
 }
 

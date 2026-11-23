@@ -23,6 +23,7 @@ import {
 	type ComposerSendMode,
 } from "@/lib/chat/composer-send-mode";
 import {
+	chatImageReferences,
 	chatSubmissionHasContent,
 	createChatSubmission,
 	type ChatImageAttachment,
@@ -441,7 +442,18 @@ export function useChatComposerInput({
 		attachments.length === 0;
 
 	const createSubmission = () =>
-		createChatSubmission(submissionText, attachments);
+		createChatSubmission(
+			submissionText,
+			attachments,
+			attachments.length > 0
+				? [
+						submissionText.trimEnd(),
+						...chatImageReferences(attachments, (reference) =>
+							t("chat.imageReference", reference),
+						).values(),
+					].join("\n")
+				: undefined,
+		);
 
 	const rememberSubmission = (submission: ChatSubmission) => {
 		retainChatFiles(submission.text);

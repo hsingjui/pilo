@@ -11,6 +11,7 @@ import {
 import {
 	type ChatImageAttachment,
 	type ChatSubmission,
+	chatSubmissionMessage,
 	summarizeChatImages,
 	toPiImageContents,
 } from "@shared/chat/chat-submission";
@@ -185,7 +186,7 @@ export function useRemoteChatActions({
 				targetSessionKey,
 				{
 					type: "prompt",
-					message: submission.text,
+					message: chatSubmissionMessage(submission),
 					images: toPiImageContents(submission.images),
 				},
 				PI_PROMPT_RPC_TIMEOUT_MS,
@@ -235,6 +236,7 @@ export function useRemoteChatActions({
 				activeSessionKeyRef.current === submissionSessionKey;
 			const now = Date.now();
 			const clientMessageId = randomId();
+			const sentText = chatSubmissionMessage(submission);
 			const descriptors = summarizeChatImages(submission.images);
 			let queuedClientMessageId: string | null = null;
 			// Lock before the first await; React's disabled state may not have rendered yet.
@@ -248,7 +250,7 @@ export function useRemoteChatActions({
 					runLocalAction({
 						type: "local_user_submit",
 						clientMessageId,
-						text: submission.text,
+						text: sentText,
 						images: descriptors,
 						timestampMs: now,
 					});
@@ -266,7 +268,7 @@ export function useRemoteChatActions({
 					runLocalAction({
 						type: "local_user_queue",
 						clientMessageId,
-						text: submission.text,
+						text: sentText,
 						images: descriptors,
 						queueKind: mode,
 						timestampMs: now,
@@ -301,7 +303,7 @@ export function useRemoteChatActions({
 						: (
 								await rpcForSession<PiPromptResult>(submissionSessionKey, {
 									type: mode,
-									message: submission.text,
+									message: sentText,
 									images: toPiImageContents(submission.images),
 								})
 							)?.disposition !== "handled";
@@ -413,7 +415,7 @@ export function useRemoteChatActions({
 						promise.then(() =>
 							rpcForSession<void>(targetSessionKey, {
 								type: queued.queueKind,
-								message: queued.submission.text,
+								message: chatSubmissionMessage(queued.submission),
 								images: toPiImageContents(queued.submission.images),
 							}),
 						),
@@ -509,7 +511,7 @@ export function useRemoteChatActions({
 					runTargetAction({
 						type: "local_user_submit",
 						clientMessageId,
-						text: submission.text,
+						text: chatSubmissionMessage(submission),
 						images: summarizeChatImages(submission.images),
 						timestampMs: now,
 					});
@@ -544,7 +546,7 @@ export function useRemoteChatActions({
 						runTargetAction({
 							type: "local_user_queue",
 							clientMessageId: id,
-							text: pending.submission.text,
+							text: chatSubmissionMessage(pending.submission),
 							images: summarizeChatImages(pending.submission.images),
 							queueKind: pending.queueKind,
 							timestampMs: now,
@@ -556,7 +558,7 @@ export function useRemoteChatActions({
 						promise.then(async () => {
 							await rpcForSession<void>(targetSessionKey, {
 								type: pending.queueKind,
-								message: pending.submission.text,
+								message: chatSubmissionMessage(pending.submission),
 								images: toPiImageContents(pending.submission.images),
 							});
 							replayedCount += 1;

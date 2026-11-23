@@ -31,6 +31,7 @@ import {
 	summarizeChatImages,
 	toPiImageContents,
 	chatSubmissionHasContent,
+	chatSubmissionMessage,
 	MAX_CHAT_IMAGE_BYTES,
 	MAX_CHAT_IMAGE_COUNT,
 	MAX_CHAT_IMAGE_TOTAL_BYTES,
@@ -827,7 +828,7 @@ export class ComposerStore {
 			submission.images.length > 0
 				? { images: toPiImageContents(submission.images) }
 				: {};
-		const message = submission.text;
+		const message = chatSubmissionMessage(submission);
 		switch (mode) {
 			case "steer":
 				return [{ type: "steer", message, ...images }];
@@ -970,11 +971,15 @@ export class ComposerStore {
 	}
 
 	/** Sends the draft, optionally forcing a follow-up for this send only. */
-	async submit(mode?: "follow_up") {
+	async submit(mode?: "follow_up", textWithImageReferences?: string) {
 		const target = this.targetSignal();
 		const { value, images, sending, composing, sendMode } = this.stateSignal();
 		if (!target || sending || composing) return;
-		const submission = createChatSubmission(value, images);
+		const submission = createChatSubmission(
+			value,
+			images,
+			textWithImageReferences,
+		);
 		if (!chatSubmissionHasContent(submission)) return;
 		const slash =
 			mode === undefined ? parseSlashCommand(submission.text) : null;
@@ -1037,7 +1042,7 @@ export class ComposerStore {
 		}));
 		// A prompt that starts a turn shows in the chat while Pi starts and
 		// takes it; known or pending-check extension commands skip the local bubble.
-		const message = submission.text;
+		const message = chatSubmissionMessage(submission);
 		rememberLocalChatImages(submission.images);
 		let local =
 			running || knownExtensionCommand || needsExtensionCheck

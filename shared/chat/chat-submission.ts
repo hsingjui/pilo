@@ -32,6 +32,8 @@ export type ChatImageAttachment = {
 export type ChatSubmission = {
 	text: string;
 	images: ChatImageAttachment[];
+	/** The sent body when image references were added without changing the draft. */
+	message?: string;
 };
 
 export type PiImageContent = {
@@ -40,18 +42,44 @@ export type PiImageContent = {
 	mimeType: string;
 };
 
-export function createChatSubmission(
-	text: string,
-	images: readonly ChatImageAttachment[] = [],
-): ChatSubmission {
+function normalizeChatSubmissionText(text: string): string {
 	const trimmed = text.trim();
 	// Pi splits Skill and extension command names on a literal space, not a newline.
-	const message = trimmed.replace(/^\/\S+/, (command) =>
+	return trimmed.replace(/^\/\S+/, (command) =>
 		trimmed.length > command.length && trimmed[command.length] !== " "
 			? `${command} `
 			: command,
 	);
-	return { text: message, images: [...images] };
+}
+
+export function createChatSubmission(
+	text: string,
+	images: readonly ChatImageAttachment[] = [],
+	message?: string,
+): ChatSubmission {
+	return {
+		text: normalizeChatSubmissionText(text),
+		images: [...images],
+		...(message === undefined
+			? {}
+			: { message: normalizeChatSubmissionText(message) }),
+	};
+}
+
+export function chatSubmissionMessage(submission: ChatSubmission): string {
+	return submission.message ?? submission.text;
+}
+
+export function chatImageReferences(
+	images: readonly Pick<ChatImageAttachment, "id" | "name">[],
+	format: (reference: { index: number; name: string }) => string,
+): Map<string, string> {
+	return new Map(
+		images.map(({ id, name }, index) => [
+			id,
+			format({ index: index + 1, name: name.replace(/[\r\n]+/g, " ") }),
+		]),
+	);
 }
 
 export function chatSubmissionHasContent(submission: ChatSubmission) {

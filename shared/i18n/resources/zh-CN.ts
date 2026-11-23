@@ -708,6 +708,7 @@ const zhCN = {
 		quickModelSwitchFailed: "无法快速切换模型",
 		readReasoningFailed: "无法读取思考等级",
 		reasoningSwitchFailed: "无法切换思考等级",
+		imageReference: "[图 {{index}}：{{name}}]",
 		imageUnsupported: "当前模型不支持图片输入",
 		maxImages: "最多添加 {{count}} 张图片",
 		unsupportedImage: "不支持的图片格式：{{name}}",

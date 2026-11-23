@@ -26,7 +26,10 @@ import {
 } from "nsh/base";
 
 import type { ChatMention } from "@shared/chat/chat-mentions";
-import type { ChatImageAttachment } from "@shared/chat/chat-submission";
+import {
+	chatImageReferences,
+	type ChatImageAttachment,
+} from "@shared/chat/chat-submission";
 import type { SessionMention } from "@shared/chat/session-mentions";
 import { t } from "../app/i18n";
 import {
@@ -58,6 +61,7 @@ export interface ComposerRichInputHandle {
 	insertMentionAt: (range: RichRange, mention: ChatMention) => void;
 	insertTextAt: (range: RichRange, text: string) => void;
 	insertText: (text: string) => void;
+	submissionText: () => string | undefined;
 }
 
 export interface ComposerRichInputProps {
@@ -509,6 +513,28 @@ function SessionRichInput(session: {
 		insertText: (text) => {
 			editor.insertContent(text);
 			syncFromEditor();
+		},
+		submissionText: () => {
+			const images = props.images();
+			if (images.length === 0) return;
+			const value = props.value();
+			const references = chatImageReferences(images, (reference) =>
+				t("chat.imageReference", reference),
+			);
+			// Keep slash commands at the beginning, and never read a stale editor.
+			if (
+				value.trimStart().startsWith("/") ||
+				!isCurrent() ||
+				value !== lastSyncedValue
+			) {
+				return [value.trimEnd(), ...references.values()].join("\n");
+			}
+			const text = richDocToValue(editor.doc, (id) => {
+				const reference = references.get(id);
+				references.delete(id);
+				return reference ?? "";
+			});
+			return [text.trimEnd(), ...references.values()].join("\n");
 		},
 	};
 	props.onHandle?.(handle);

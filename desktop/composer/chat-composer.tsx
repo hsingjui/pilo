@@ -354,7 +354,7 @@ export function ChatComposer(props: ChatComposerProps) {
 		const binding = bindAppShortcut(
 			"queue-message",
 			map["queue-message"],
-			() => void store.submit("follow_up"),
+			() => void store.submit("follow_up", inputHandle?.submissionText()),
 		);
 		if (binding) cleanup(binding.dispose);
 	});
@@ -443,7 +443,7 @@ export function ChatComposer(props: ChatComposerProps) {
 	const submit = () => {
 		if (canPickSuggestion()) return;
 		if (hasContent() && !state().composing) props.assistance?.dismiss();
-		void store.submit();
+		void store.submit(undefined, inputHandle?.submissionText());
 	};
 
 	const pickFiles = () => {

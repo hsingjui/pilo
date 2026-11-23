@@ -744,6 +744,7 @@ const enUS = {
 		quickModelSwitchFailed: "Unable to quick-switch model",
 		readReasoningFailed: "Unable to read reasoning levels",
 		reasoningSwitchFailed: "Unable to switch reasoning level",
+		imageReference: "[Image {{index}}: {{name}}]",
 		imageUnsupported: "The current model does not support image input",
 		maxImages: "You can add up to {{count}} images",
 		unsupportedImage: "Unsupported image format: {{name}}",
