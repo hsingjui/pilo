@@ -899,11 +899,15 @@ export function useRemoteChat({
 	const suggestions = useRemoteChatSuggestions({
 		client,
 		activeProjectId,
+		activeSessionKey,
+		activeSessionKeyRef,
 		commands:
 			catalog?.projectId === activeProjectId
 				? (catalog.commands ?? null)
 				: null,
+		runtimeReady,
 		readOnly,
+		rpcForSession,
 	});
 	const {
 		composerSuggestions,

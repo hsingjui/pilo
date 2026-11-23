@@ -1,8 +1,12 @@
-import { type Accessor, signal } from "nsh";
+import { type Accessor, batch, computed, signal } from "nsh";
 import { Storage } from "nsh";
 
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
-import type { PiCommand, PiPromptResult } from "@shared/api/pi-runtime-types";
+import type {
+	PiCommand,
+	PiCompactionResult,
+	PiPromptResult,
+} from "@shared/api/pi-runtime-types";
 import {
 	discardRemovedChatFiles,
 	registerChatFile,
@@ -32,6 +36,12 @@ import {
 	type ChatImageAttachment,
 } from "@shared/chat/chat-submission";
 import {
+	createPiCommandSuggestions,
+	createPiExtensionCommandNames,
+	mergePiCommands,
+	parseSlashCommand,
+} from "@shared/chat/pi-command-suggestions";
+import {
 	COMPOSER_SEND_MODE_STORAGE_KEY,
 	DEFAULT_COMPOSER_SEND_MODE,
 	isComposerSendMode,
@@ -43,7 +53,7 @@ import {
 } from "@shared/chat/session-mentions";
 import type { ComposerSuggestion } from "@shared/chat/composer-suggestions";
 import { chatRuntimeHasOpenTurn } from "@shared/chat/chat-session-runtime-model";
-import { t } from "../app/i18n";
+import { appLocale, t } from "../app/i18n";
 import { requestPiRpc, requestPiRpcOutcome } from "../client/chat-rpc";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import {
@@ -52,6 +62,7 @@ import {
 	isTemporarySessionKey,
 } from "../state/app-state";
 import type { ChatTranscriptStore } from "../state/chat-transcript-store";
+import type { ModelCatalogStore } from "../state/model-catalog";
 
 /** The open chat the composer talks to. */
 export type ComposerTarget = {
@@ -84,6 +95,13 @@ export type ComposerViewState = {
 
 type ComposerDraft = Pick<ComposerViewState, "value" | "images"> & {
 	status?: ComposerViewState["status"];
+};
+
+/** Toast-like feedback emitted by slash commands (e.g. `/compact`). */
+export type ComposerNotice = {
+	variant?: "default" | "success" | "info" | "warning" | "error";
+	title: string;
+	description?: string;
 };
 
 /** Where a prompt that starts a turn shows before Pi echoes it. */
@@ -133,12 +151,16 @@ type HistoryStore = Record<string, string[]>;
 export class ComposerStore {
 	private readonly client: ComposerClient;
 	private readonly app: Accessor<AppState>;
+	private readonly catalog?: Pick<ModelCatalogStore, "state" | "refresh">;
 	private readonly beforeSend?: (sessionKey: string) => Promise<boolean>;
 	private readonly transcript?: ComposerTranscript;
 	private readonly onPromptStarted?: (
 		target: ComposerTarget,
 		text: string,
 	) => void;
+	private readonly onNewChat?: () => void;
+	private readonly onCompacted?: (result: PiCompactionResult) => void;
+	private readonly onNotice?: (notice: ComposerNotice) => void;
 	private readonly drafts = new Map<string, ComposerDraft>();
 	private readonly stateSignal = signal<ComposerViewState>({
 		value: "",
@@ -151,9 +173,10 @@ export class ComposerStore {
 		status: null,
 	});
 	private readonly targetSignal = signal<ComposerTarget | null>(null);
-	private readonly commandsSignal = signal<
-		readonly ComposerSuggestion[] | null
-	>(null);
+	private readonly sessionCommandsSignal = signal<{
+		sessionKey: string;
+		commands: readonly PiCommand[];
+	} | null>(null);
 	private readonly fileSuggestionsSignal = signal<
 		readonly ComposerSuggestion[]
 	>([]);
@@ -164,36 +187,50 @@ export class ComposerStore {
 	 * The send in flight, so Stop can end it at any stage: before the prompt
 	 * goes out it just stops there; once Pi has it, the turn is aborted.
 	 */
-	private activeSubmit: {
-		sessionKey: string;
-		dispatched: boolean;
-		stopped: boolean;
-	} | null = null;
+	private readonly activeSubmits = new Map<
+		string,
+		{ dispatched: boolean; stopped: boolean }
+	>();
 	private fileQuery: { query: string; request: number } | null = null;
 	private commandsRequest = 0;
+	private sessionCommandsInFlight: string | null = null;
 
 	readonly state: Accessor<ComposerViewState>;
 	readonly target: Accessor<ComposerTarget | null>;
-	readonly commands: Accessor<readonly ComposerSuggestion[] | null>;
+	readonly commands: Accessor<readonly ComposerSuggestion[]>;
 	readonly fileSuggestions: Accessor<readonly ComposerSuggestion[]>;
 
 	constructor(deps: {
 		client: ComposerClient;
 		app: Accessor<AppState>;
+		/** The active project's model and command catalog, for `/` suggestions. */
+		catalog?: Pick<ModelCatalogStore, "state" | "refresh">;
 		beforeSend?: (sessionKey: string) => Promise<boolean>;
 		/** Shows a prompt that starts a turn at once, before Pi takes it. */
 		transcript?: ComposerTranscript;
 		/** Called once Pi started a turn for a prompt (not a steer or follow-up). */
 		onPromptStarted?: (target: ComposerTarget, text: string) => void;
+		/** Starts a new chat when the user submits `/new`. */
+		onNewChat?: () => void;
+		/** Called after `/compact` succeeds so run config / stats can refresh. */
+		onCompacted?: (result: PiCompactionResult) => void;
+		/** Surfaces slash-command notifications as app toasts. */
+		onNotice?: (notice: ComposerNotice) => void;
 	}) {
 		this.client = deps.client;
 		this.app = deps.app;
+		this.catalog = deps.catalog;
 		this.beforeSend = deps.beforeSend;
 		this.transcript = deps.transcript;
 		this.onPromptStarted = deps.onPromptStarted;
+		this.onNewChat = deps.onNewChat;
+		this.onCompacted = deps.onCompacted;
+		this.onNotice = deps.onNotice;
 		this.state = this.stateSignal;
 		this.target = this.targetSignal;
-		this.commands = this.commandsSignal;
+		this.commands = computed(() =>
+			createPiCommandSuggestions(this.mergedPiCommands()),
+		);
 		this.fileSuggestions = this.fileSuggestionsSignal;
 		void Storage.getItem(COMPOSER_SEND_MODE_STORAGE_KEY)
 			.then((stored) => {
@@ -216,18 +253,25 @@ export class ComposerStore {
 			this.drafts.set(previous.sessionKey, { value, images, status });
 		}
 		const next = target ? this.drafts.get(target.sessionKey) : undefined;
-		this.fileSuggestionsSignal.set([]);
-		this.commandsSignal.set(null);
-		this.historyCursor = null;
-		this.draftVersion++;
-		this.targetSignal.set(target);
-		this.stateSignal.update((s) => ({
-			...s,
-			value: next?.value ?? "",
-			caret: next?.value.length ?? 0,
-			images: next?.images ?? [],
-			status: next?.status ?? null,
-		}));
+		batch(() => {
+			this.clearFileSuggestions();
+			this.commandsRequest++;
+			this.sessionCommandsSignal.set(null);
+			this.sessionCommandsInFlight = null;
+			this.historyCursor = null;
+			this.draftVersion++;
+			this.targetSignal.set(target);
+			this.stateSignal.update((s) => ({
+				...s,
+				value: next?.value ?? "",
+				caret: next?.value.length ?? 0,
+				images: next?.images ?? [],
+				status: next?.status ?? null,
+				composing: false,
+				dragging: false,
+				sending: target ? this.activeSubmits.has(target.sessionKey) : false,
+			}));
+		});
 	}
 
 	/** Identity of the draft, including edits that were undone and chat switches. */
@@ -462,29 +506,96 @@ export class ComposerStore {
 		this.fileSuggestionsSignal.set([]);
 	}
 
-	/** Pi's command list, cached per chat; `[]` when the chat cannot answer. */
+	private catalogCommands(): readonly PiCommand[] | null {
+		const target = this.targetSignal();
+		const catalogState = this.catalog?.state();
+		if (!target || catalogState?.catalog?.projectId !== target.projectId) {
+			return null;
+		}
+		return catalogState.catalog.commands ?? null;
+	}
+
+	private currentSessionCommands(): readonly PiCommand[] | null {
+		const target = this.targetSignal();
+		const session = this.sessionCommandsSignal();
+		if (!target || session?.sessionKey !== target.sessionKey) return null;
+		return session.commands;
+	}
+
+	private mergedPiCommands(): PiCommand[] {
+		return mergePiCommands(
+			this.catalogCommands(),
+			this.currentSessionCommands(),
+		);
+	}
+
+	private notify(notice: ComposerNotice) {
+		this.onNotice?.(notice);
+	}
+
+	/**
+	 * Refreshes cached project commands if missing, and merges live session
+	 * commands (including user extension commands) only when Pi is already running.
+	 */
 	async loadCommands() {
 		const target = this.targetSignal();
-		if (!target || this.commandsSignal()) return;
+		if (!target) return;
+		const catalogState = this.catalog?.state();
+		if (
+			this.catalog &&
+			catalogState?.projectId === target.projectId &&
+			catalogState.loaded &&
+			!catalogState.refreshing &&
+			(!catalogState.catalog || catalogState.catalog.commands == null)
+		) {
+			void this.catalog.refresh();
+		}
+		if (
+			this.readOnly() ||
+			this.sessionCommandsSignal()?.sessionKey === target.sessionKey ||
+			this.sessionCommandsInFlight === target.sessionKey
+		) {
+			return;
+		}
 		const request = ++this.commandsRequest;
+		this.sessionCommandsInFlight = target.sessionKey;
 		try {
+			const chat = await this.client.chatState(target.sessionKey);
+			if (
+				this.commandsRequest !== request ||
+				this.targetSignal()?.sessionKey !== target.sessionKey
+			) {
+				return;
+			}
+			// Passive `/` completion must never start a stopped Pi process.
+			if (
+				!chat?.initialized ||
+				(chat.snapshot && chat.snapshot.state !== "running")
+			) {
+				return;
+			}
 			const reply = await requestPiRpc<{ commands: PiCommand[] }>(
 				this.client,
 				target.sessionKey,
 				{ type: "get_commands" },
 			);
-			if (this.commandsRequest !== request) return;
-			const commands = reply?.commands ?? [];
-			this.commandsSignal.set(
-				commands.map((command) => ({
-					kind: "command" as const,
-					value: `/${command.name}`,
-					label: `/${command.name}`,
-					detail: command.description,
-				})),
-			);
+			if (
+				this.commandsRequest !== request ||
+				this.targetSignal()?.sessionKey !== target.sessionKey ||
+				!reply?.commands
+			) {
+				return;
+			}
+			this.sessionCommandsSignal.set({
+				sessionKey: target.sessionKey,
+				commands: reply.commands,
+			});
 		} catch {
-			if (this.commandsRequest === request) this.commandsSignal.set([]);
+			// Keep cached commands and allow retry once Pi is running.
+		} finally {
+			if (this.commandsRequest === request) {
+				this.sessionCommandsInFlight = null;
+			}
 		}
 	}
 
@@ -633,17 +744,192 @@ export class ComposerStore {
 		}
 	}
 
+	private async ensureStartedForSubmit(
+		target: ComposerTarget,
+		submit: { stopped: boolean },
+		onStarting?: () => void,
+	): Promise<boolean> {
+		const chat = await this.client.chatState(target.sessionKey);
+		const current = this.targetSignal();
+		if (current?.sessionKey !== target.sessionKey || submit.stopped) {
+			return false;
+		}
+		if (!chat?.initialized) {
+			onStarting?.();
+			await this.client.startChat({
+				projectId: current.projectId,
+				sessionKey: current.sessionKey,
+				...(current.sessionPath ? { sessionPath: current.sessionPath } : {}),
+				...(isTemporarySessionKey(current.sessionKey)
+					? { noSession: true }
+					: {}),
+			});
+		}
+		if (
+			this.targetSignal()?.sessionKey !== target.sessionKey ||
+			submit.stopped
+		) {
+			return false;
+		}
+		if (this.beforeSend && !(await this.beforeSend(target.sessionKey))) {
+			return false;
+		}
+		return (
+			this.targetSignal()?.sessionKey === target.sessionKey && !submit.stopped
+		);
+	}
+
+	private async fetchLiveSessionCommands(
+		sessionKey: string,
+	): Promise<readonly PiCommand[] | null> {
+		const existing = this.sessionCommandsSignal();
+		if (existing?.sessionKey === sessionKey) return existing.commands;
+		try {
+			const reply = await requestPiRpc<{ commands: PiCommand[] }>(
+				this.client,
+				sessionKey,
+				{ type: "get_commands" },
+			);
+			if (!reply?.commands) return null;
+			if (this.targetSignal()?.sessionKey === sessionKey) {
+				this.sessionCommandsSignal.set({
+					sessionKey,
+					commands: reply.commands,
+				});
+			}
+			return reply.commands;
+		} catch {
+			return null;
+		}
+	}
+
+	private async executeCompact(
+		target: ComposerTarget,
+		customInstructions: string,
+		rawValue: string,
+		rawImages: ChatImageAttachment[],
+	) {
+		const submit = { dispatched: false, stopped: false };
+		this.activeSubmits.set(target.sessionKey, submit);
+		this.historyCursor = null;
+		this.updateDraft((s) => ({
+			...s,
+			value: "",
+			caret: 0,
+			images: [],
+			sending: true,
+			status: null,
+		}));
+		let sent = false;
+		let failure: string | undefined;
+		try {
+			if (!(await this.ensureStartedForSubmit(target, submit))) return;
+			submit.dispatched = true;
+			const outcome = await requestPiRpcOutcome<PiCompactionResult>(
+				this.client,
+				target.sessionKey,
+				{
+					type: "compact",
+					...(customInstructions ? { customInstructions } : {}),
+				},
+				PROMPT_REPLY_TIMEOUT_MS,
+			);
+			if (outcome.type !== "reply" || !outcome.reply.data) {
+				failure =
+					outcome.type === "unconfirmed"
+						? t("chat.promptUnconfirmed")
+						: t("chat.compactFailedAction");
+				return;
+			}
+			const result = outcome.reply.data;
+			sent = true;
+			const locale = appLocale();
+			this.notify({
+				variant: "success",
+				title: t("chat.compactSuccess"),
+				description: `${result.tokensBefore.toLocaleString(locale)} → ${result.estimatedTokensAfter.toLocaleString(locale)} tokens`,
+			});
+			this.onCompacted?.(result);
+			await this.appendHistory(target.projectId, rawValue);
+		} catch (error) {
+			failure = errorMessage(error);
+		} finally {
+			if (!sent) {
+				if (failure) {
+					this.notify({
+						variant: "error",
+						title: t("chat.compactFailedAction"),
+						description: failure,
+					});
+				}
+				this.restoreDraft(target.sessionKey, {
+					value: rawValue,
+					images: rawImages,
+					status: this.onNotice ? undefined : failure,
+				});
+			}
+			this.activeSubmits.delete(target.sessionKey);
+			if (this.targetSignal()?.sessionKey === target.sessionKey) {
+				this.stateSignal.update((s) => ({ ...s, sending: false }));
+			}
+		}
+	}
+
 	/** Sends the draft, optionally forcing a follow-up for this send only. */
 	async submit(mode?: "follow_up") {
 		const target = this.targetSignal();
 		const { value, images, sending, composing, sendMode } = this.stateSignal();
-		if (!target || sending || composing || this.readOnly()) return;
+		if (!target || sending || composing) return;
 		const submission = createChatSubmission(value, images);
 		if (!chatSubmissionHasContent(submission)) return;
+		const slash =
+			mode === undefined ? parseSlashCommand(submission.text) : null;
+		if (slash?.name === "new") {
+			this.historyCursor = null;
+			this.updateDraft((s) => ({
+				...s,
+				value: "",
+				caret: 0,
+				images: [],
+				status: null,
+			}));
+			this.onNewChat?.();
+			return;
+		}
+		if (this.readOnly()) return;
 		const running = this.running();
+		if (slash?.name === "compact") {
+			if (running) {
+				this.notify({
+					variant: "info",
+					title: t("chat.waitCompaction"),
+				});
+				return;
+			}
+			await this.executeCompact(target, slash.args, value, images);
+			return;
+		}
 		if (mode === "follow_up" && !running) return;
 		// A compaction takes no message; the composer blocks sending meanwhile.
 		if (running && this.compacting()) return;
+
+		const knownCommands = !running && slash ? this.mergedPiCommands() : [];
+		const knownExtensionCommand =
+			!running &&
+			slash !== null &&
+			createPiExtensionCommandNames(knownCommands).has(slash.name);
+		const needsExtensionCheck =
+			!running &&
+			slash !== null &&
+			!knownExtensionCommand &&
+			this.currentSessionCommands() === null &&
+			!knownCommands.some(
+				(command) =>
+					command.name === slash.name && command.source !== "extension",
+			);
+
+		const submit = { dispatched: false, stopped: false };
+		this.activeSubmits.set(target.sessionKey, submit);
 		// The draft leaves the composer at once, as in the Tauri app; it comes
 		// back if it is not sent.
 		this.historyCursor = null;
@@ -656,58 +942,66 @@ export class ComposerStore {
 			status: null,
 		}));
 		// A prompt that starts a turn shows in the chat while Pi starts and
-		// takes it.
-		const local = running
-			? null
-			: (this.transcript?.submitLocal(
-					target.sessionKey,
-					submission.text,
-					summarizeChatImages(submission.images),
-				) ?? null);
+		// takes it; known or pending-check extension commands skip the local bubble.
+		const message = submission.text;
+		let local =
+			running || knownExtensionCommand || needsExtensionCheck
+				? null
+				: (this.transcript?.submitLocal(
+						target.sessionKey,
+						message,
+						summarizeChatImages(submission.images),
+					) ?? null);
 		const localStatus = (status?: "starting" | "sending") => {
 			if (local) this.transcript?.setLocalStatus(local, status);
 		};
 		let sent = false;
+		let isExtensionCommand = knownExtensionCommand;
 		let failure: string | undefined;
-		const submit = {
-			sessionKey: target.sessionKey,
-			dispatched: false,
-			stopped: false,
-		};
-		this.activeSubmit = submit;
 		try {
 			if (!running) {
-				const chat = await this.client.chatState(target.sessionKey);
-				const current = this.targetSignal();
-				if (current?.sessionKey !== target.sessionKey || submit.stopped) return;
-				if (!chat?.initialized) {
-					localStatus("starting");
-					await this.client.startChat({
-						projectId: current.projectId,
-						sessionKey: current.sessionKey,
-						...(current.sessionPath
-							? { sessionPath: current.sessionPath }
-							: {}),
-						...(isTemporarySessionKey(current.sessionKey)
-							? { noSession: true }
-							: {}),
-					});
+				if (
+					!(await this.ensureStartedForSubmit(target, submit, () =>
+						localStatus("starting"),
+					))
+				) {
+					return;
 				}
+			} else if (
+				this.targetSignal()?.sessionKey !== target.sessionKey ||
+				submit.stopped ||
+				(this.beforeSend && !(await this.beforeSend(target.sessionKey))) ||
+				this.targetSignal()?.sessionKey !== target.sessionKey ||
+				submit.stopped
+			) {
+				return;
 			}
-			if (
-				this.targetSignal()?.sessionKey !== target.sessionKey ||
-				submit.stopped
-			)
-				return;
-			if (this.beforeSend && !(await this.beforeSend(target.sessionKey)))
-				return;
-			if (
-				this.targetSignal()?.sessionKey !== target.sessionKey ||
-				submit.stopped
-			)
-				return;
 			if (mode === "follow_up" && (!this.running() || this.compacting()))
 				return;
+
+			if (needsExtensionCheck && slash) {
+				const liveCommands = await this.fetchLiveSessionCommands(
+					target.sessionKey,
+				);
+				if (
+					this.targetSignal()?.sessionKey !== target.sessionKey ||
+					submit.stopped
+				) {
+					return;
+				}
+				isExtensionCommand =
+					liveCommands !== null &&
+					createPiExtensionCommandNames(liveCommands).has(slash.name);
+				if (!isExtensionCommand) {
+					local =
+						this.transcript?.submitLocal(
+							target.sessionKey,
+							message,
+							summarizeChatImages(submission.images),
+						) ?? null;
+				}
+			}
+
 			let disposition: PiPromptResult["disposition"] | undefined;
 			if (running) {
 				for (const command of this.commandFor(mode ?? sendMode, submission)) {
@@ -715,6 +1009,12 @@ export class ComposerStore {
 					submit.dispatched = true;
 					await this.client.sendChatCommand(target.sessionKey, command);
 				}
+			} else if (isExtensionCommand && slash) {
+				submit.dispatched = true;
+				await this.client.sendChatCommand(target.sessionKey, {
+					type: "prompt",
+					message: slash.raw,
+				});
 			} else {
 				localStatus("sending");
 				submit.dispatched = true;
@@ -723,7 +1023,7 @@ export class ComposerStore {
 					target.sessionKey,
 					{
 						type: "prompt",
-						message: submission.text,
+						message,
 						...(submission.images.length > 0
 							? { images: toPiImageContents(submission.images) }
 							: {}),
@@ -755,7 +1055,7 @@ export class ComposerStore {
 			}
 			sent = true;
 			retainChatFiles(submission.text);
-			if (!running) {
+			if (!running && !isExtensionCommand) {
 				if (disposition !== "handled") {
 					localStatus();
 					if (disposition !== "queued") {
@@ -778,14 +1078,23 @@ export class ComposerStore {
 		} finally {
 			if (!sent) {
 				if (local) this.transcript?.dropLocal(local);
+				if (isExtensionCommand && failure) {
+					this.notify({
+						variant: "error",
+						title: t("chat.executeExtensionFailed"),
+						description: failure,
+					});
+				}
 				this.restoreDraft(target.sessionKey, {
 					value,
 					images,
-					status: failure,
+					status: isExtensionCommand && this.onNotice ? undefined : failure,
 				});
 			}
-			if (this.activeSubmit === submit) this.activeSubmit = null;
-			this.stateSignal.update((s) => ({ ...s, sending: false }));
+			this.activeSubmits.delete(target.sessionKey);
+			if (this.targetSignal()?.sessionKey === target.sessionKey) {
+				this.stateSignal.update((s) => ({ ...s, sending: false }));
+			}
 		}
 	}
 
@@ -817,8 +1126,8 @@ export class ComposerStore {
 	async stop() {
 		const target = this.targetSignal();
 		if (!target) return;
-		const submit = this.activeSubmit;
-		if (submit?.sessionKey === target.sessionKey) {
+		const submit = this.activeSubmits.get(target.sessionKey);
+		if (submit) {
 			submit.stopped = true;
 			// Nothing has reached Pi yet: the send ends at its next step.
 			if (!submit.dispatched && !this.running()) return;
@@ -828,7 +1137,10 @@ export class ComposerStore {
 				type: "abort",
 			});
 		} catch (error) {
-			this.setStatus(`${t("chat.stopPiFailed")}: ${errorMessage(error)}`);
+			this.setStatus(
+				`${t("chat.stopPiFailed")}: ${errorMessage(error)}`,
+				target.sessionKey,
+			);
 		}
 	}
 }

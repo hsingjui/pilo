@@ -12,6 +12,7 @@ import { TerminalStore } from "../state/terminal-store";
 import { WorkspaceStore } from "../state/workspace-store";
 import manifest from "../nsh.json";
 import { AppShell, type AppShellProps, StartupFrame } from "./AppShell";
+import { AppToasts } from "./app-toasts";
 import { showStartupTheme } from "./appearance";
 import {
 	defaultDesktopNotifications,
@@ -175,9 +176,13 @@ export async function launch(
 		notify = connectSessionNotifications(client, store, desktop, notifications);
 	const catalog = new ModelCatalogStore(client);
 	const runConfig = new ChatRunConfigStore(client, catalog.state);
+	const toasts = new AppToasts();
+	const workspace = new WorkspaceStore();
+	const terminals = new TerminalStore(client);
 	const composer: ComposerStore = new ComposerStore({
 		client,
 		app: store.state,
+		catalog,
 		beforeSend: (sessionKey) => runConfig.prepareToSend(sessionKey),
 		transcript: chat,
 		onPromptStarted: createSessionAutoTitle(client, (target, error) =>
@@ -188,6 +193,17 @@ export async function launch(
 				target.sessionKey,
 			),
 		),
+		onNewChat: () => {
+			const projectId =
+				composer.target()?.projectId ?? store.state().navigation.projectId;
+			terminals.select(null);
+			workspace.selectChat(projectId ?? undefined);
+			if (projectId) store.selectProject(projectId);
+		},
+		onCompacted: () => {
+			void runConfig.refresh();
+		},
+		onNotice: (notice) => toasts.show(notice),
 	});
 	const forker = new SessionForker(client, {
 		target: () => openChatTarget(store.state()),
@@ -234,8 +250,9 @@ export async function launch(
 		desktop,
 		notifications,
 		sidebarSettings,
-		workspace: new WorkspaceStore(),
-		terminals: new TerminalStore(client),
+		toasts,
+		workspace,
+		terminals,
 		openProjectInApp: (projectId, app, path) =>
 			client.openProjectInApp(projectId, app, path),
 		openFileLink: (projectId, url, preview) =>

@@ -154,6 +154,8 @@ export interface AppShellProps {
 	) => Promise<void>;
 	/** The sidebar's stored settings, when the launch has already loaded them. */
 	sidebarSettings?: SidebarSettingsStore;
+	/** Shared app toast queue; a private one is created if omitted. */
+	toasts?: AppToasts;
 }
 
 export function AppShell(props: AppShellProps) {
@@ -162,7 +164,7 @@ export function AppShell(props: AppShellProps) {
 	const project = computed(() => activeProject(store.state()));
 	const hasProject = computed(() => project() !== null);
 	const sessionOpen = computed(() => store.state().navigation.session !== null);
-	const toasts = new AppToasts();
+	const toasts = props.toasts ?? new AppToasts();
 	const workspace =
 		props.workspace ??
 		(props.openFileLink || props.git ? new WorkspaceStore() : undefined);

@@ -22,10 +22,10 @@ import { userErrorMessage } from "@shared/app-error";
 import { writeChatMentionDraft } from "@shared/chat/chat-mentions";
 import { formatChatImageSize } from "@shared/chat/chat-submission";
 import {
-	DEFAULT_SUGGESTIONS,
 	FILE_SUGGESTION_LIMIT,
 	TRIGGER_META,
 	activeSuggestionQuery,
+	piSessionSuggestions,
 	type ComposerSuggestion,
 	type MentionTab,
 } from "@shared/chat/composer-suggestions";
@@ -278,7 +278,7 @@ export function ChatComposer(props: ChatComposerProps) {
 				part?.toLowerCase().includes(needle),
 			);
 		if (active.trigger === "/") {
-			return [...DEFAULT_SUGGESTIONS, ...(store.commands() ?? [])]
+			return [...piSessionSuggestions(t), ...store.commands()]
 				.filter(matches)
 				.slice(0, 9);
 		}

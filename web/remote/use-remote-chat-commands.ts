@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import type { ChatSubmission } from "@shared/chat/chat-submission";
+import { parseSlashCommand } from "@shared/chat/pi-command-suggestions";
 import type { PiCompactionResult } from "@/lib/api/pi-runtime";
 import type { RemoteSessionRpc } from "./use-remote-chat-transport";
 import type { WebPiloClient } from "./web-pilo-client";
@@ -38,9 +39,9 @@ export function useRemoteChatCommands({
 
 	const tryHandleComposerCommand = useCallback(
 		async (submission: ChatSubmission) => {
-			if (!submission.text.startsWith("/")) return false;
-			const command = submission.text.trim();
-			const commandName = command.slice(1).split(/\s+/, 1)[0];
+			const parsed = parseSlashCommand(submission.text);
+			if (!parsed) return false;
+			const { name: commandName, args, raw: command } = parsed;
 			if (commandName === "new") {
 				clearComposer();
 				startDraft(activeProjectId || undefined);
@@ -51,7 +52,6 @@ export function useRemoteChatCommands({
 			const isActiveSession = () =>
 				activeSessionKeyRef.current === targetSessionKey;
 			if (commandName === "compact") {
-				const customInstructions = command.slice("/compact".length).trim();
 				clearComposer();
 				try {
 					await ensureDraftRuntime();
@@ -59,7 +59,7 @@ export function useRemoteChatCommands({
 						targetSessionKey,
 						{
 							type: "compact",
-							...(customInstructions ? { customInstructions } : {}),
+							...(args ? { customInstructions: args } : {}),
 						},
 						120_000,
 					);
