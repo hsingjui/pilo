@@ -4,8 +4,10 @@ import {
 	effect,
 	signal,
 	Text,
+	token,
 	untracked,
 	View,
+	windowSize,
 } from "nsh";
 import type { CommandItem } from "nsh/base";
 
@@ -35,12 +37,16 @@ export interface CommandPaletteProps {
 /** A match in a saved session's messages. */
 type ContentResult = SessionSearchMatch & { projectId: string; title: string };
 
-/** What an item's row draws: an icon, the label, and a dimmer second line. */
+/** What an item's row draws: an icon, the label, inline metadata, and optional second line. */
 type Row = {
 	icon: IconName;
-	/** A project path, or a session's project and first message. */
+	/** Inline muted metadata: action context, project path, or session project. */
+	meta?: string;
+	/** Align inline metadata to the trailing edge (e.g. session project label). */
+	metaAlign?: "inline" | "end";
+	/** A secondary line beneath the title (session preview). */
 	detail?: string;
-	/** A message match's text (the row's second line is its title). */
+	/** A message match's excerpt beneath its session title. */
 	snippet?: string;
 	role?: "user" | "assistant";
 	running?: boolean;
@@ -168,10 +174,11 @@ export function CommandPalette(props: CommandPaletteProps) {
 				},
 				{
 					icon: action.id === "action:settings" ? "Settings" : "SquarePen",
-					detail:
+					meta:
 						action.id === "action:settings"
 							? undefined
 							: newSessionProject()?.name,
+					metaAlign: "inline",
 				},
 			);
 		}
@@ -182,7 +189,11 @@ export function CommandPalette(props: CommandPaletteProps) {
 					label: project.name,
 					group: t("commandPalette.projectGroup"),
 				},
-				{ icon: "Folder", detail: displayProjectPath(project.path) },
+				{
+					icon: "Folder",
+					meta: displayProjectPath(project.path),
+					metaAlign: "inline",
+				},
 			);
 		}
 		const sessionGroup = q
@@ -200,12 +211,15 @@ export function CommandPalette(props: CommandPaletteProps) {
 				},
 				{
 					icon: "MessagesSquare",
-					detail: `${projectName}${session.preview ? ` · ${session.preview}` : ""}`,
+					meta: projectName,
+					metaAlign: "end",
+					detail: session.preview || undefined,
 					running: session.active,
 				},
 			);
 		}
 		content().forEach((match, index) => {
+			const projectName = projectById().get(match.projectId)?.name;
 			add(
 				{
 					id: `content:${index}`,
@@ -214,7 +228,8 @@ export function CommandPalette(props: CommandPaletteProps) {
 				},
 				{
 					icon: "MessageSquareText",
-					detail: match.title,
+					meta: projectName,
+					metaAlign: "end",
 					snippet: match.snippet,
 					role: match.role,
 				},
@@ -295,6 +310,8 @@ export function CommandPalette(props: CommandPaletteProps) {
 		props.onClose();
 	};
 
+	const narrow = computed(() => windowSize().width < 520);
+
 	return (
 		<CommandDialog
 			open
@@ -311,50 +328,92 @@ export function CommandPalette(props: CommandPaletteProps) {
 				placeholder={t("commandPalette.placeholder")}
 				accessibilityLabel={t("commandPalette.title")}
 				searchAccessibilityLabel={t("commandPalette.placeholder")}
-				listClass="min-h-0 flex-1 p-1"
+				searchBarClass="gap-2.5 border-b border-border/80 px-3.5"
+				searchBarStyle={{ height: 48 }}
+				searchClass="h-full flex-1 bg-transparent text-[14px] leading-5 outline-hidden placeholder:text-muted-foreground"
+				searchSuffix={
+					searching() ? (
+						<Spinner size={14} color={token("muted-foreground")} />
+					) : undefined
+				}
+				listClass="min-h-0 flex-1 px-2 pt-0.5 pb-2"
+				groupClass="px-2.5 pt-2.5 pb-1 text-[11px] leading-4 font-medium text-muted-foreground"
+				itemClass="group flex-col items-stretch justify-center rounded-(--pilo-radius-md) px-2.5 py-2 text-[13px] leading-[18px] text-foreground outline-hidden hover:bg-hover focus:bg-hover hover:text-hover-foreground focus:text-hover-foreground disabled:opacity-50"
+				itemStyle={{ marginBottom: 2 }}
 				renderItem={(entry) => {
 					const row = results().rows.get(entry.id);
 					if (!row) return <Text class="font-sans">{entry.label}</Text>;
+					const stackInlineMeta =
+						narrow() && row.metaAlign === "inline" && Boolean(row.meta);
+					const secondaryLine =
+						row.detail ?? (stackInlineMeta ? row.meta : undefined);
+					const showInlineMeta = Boolean(row.meta) && !stackInlineMeta;
+					const hasTwoLines = Boolean(secondaryLine || row.snippet);
 					return (
-						<View class="w-full flex-row items-center gap-3">
-							<Icon name={row.icon} size={16} class="shrink-0 opacity-60" />
-							<View class="min-w-0 flex-1">
+						<View
+							class={`w-full flex-row gap-2.5 ${
+								hasTwoLines ? "items-start" : "items-center"
+							}`}
+						>
+							<View
+								class={`shrink-0 items-center justify-center ${
+									hasTwoLines ? "mt-0.5" : ""
+								}`}
+							>
+								<Icon
+									name={row.icon}
+									size={15}
+									color={token("muted-foreground")}
+								/>
+							</View>
+							<View class="min-w-0 flex-1 gap-0.5">
 								<View class="flex-row items-center gap-2">
 									<Text
-										class={`font-sans min-w-0 flex-1 truncate ${
-											row.snippet
-												? "text-xs font-medium text-foreground/90"
-												: "text-sm"
+										class={`font-sans truncate text-[13px] font-medium text-foreground ${
+											showInlineMeta && row.metaAlign === "inline"
+												? "max-w-[48%] shrink-0"
+												: "min-w-0 flex-1"
 										}`}
 									>
 										{entry.label}
 									</Text>
-									{row.role ? (
-										<Text class="font-sans text-xs text-muted-foreground">
-											{row.role === "user"
-												? t("commandPalette.user")
-												: t("common.agent")}
-										</Text>
-									) : null}
 									{row.running ? (
 										<View class="size-1.5 shrink-0 rounded-full bg-status-success" />
 									) : null}
+									{row.role ? (
+										<View class="shrink-0 rounded-sm bg-muted/80 px-1.5 py-0.5">
+											<Text class="font-sans text-[10px] leading-3 font-medium text-muted-foreground">
+												{row.role === "user"
+													? t("commandPalette.user")
+													: t("common.agent")}
+											</Text>
+										</View>
+									) : null}
+									{showInlineMeta ? (
+										<Text
+											class={`font-sans truncate text-xs text-muted-foreground ${
+												row.metaAlign === "end"
+													? "max-w-[36%] shrink-0"
+													: "min-w-0 flex-1"
+											}`}
+										>
+											{row.meta}
+										</Text>
+									) : null}
 								</View>
-								{row.detail ? (
-									<Text class="font-sans truncate text-[11px] text-muted-foreground">
-										{row.detail}
+								{secondaryLine ? (
+									<Text class="font-sans truncate text-[11px] leading-4 text-muted-foreground">
+										{secondaryLine}
 									</Text>
 								) : null}
 								{row.snippet ? (
-									<Text class="font-sans mt-0.5 line-clamp-2 text-[11px] leading-[1.45] text-muted-foreground">
+									<Text class="font-sans line-clamp-2 text-[11px] leading-[1.45] text-muted-foreground">
 										{row.snippet}
 									</Text>
 								) : null}
 							</View>
 							{entry.shortcutLabel ? (
-								<Text class="font-sans text-xs tracking-widest text-muted-foreground">
-									{entry.shortcutLabel}
-								</Text>
+								<KeyCap keys={entry.shortcutLabel} />
 							) : null}
 						</View>
 					);
@@ -363,21 +422,24 @@ export function CommandPalette(props: CommandPaletteProps) {
 				onSelect={({ id }) => select(id)}
 				onCancel={() => props.onClose()}
 				empty={
-					<Text class="font-sans text-muted-foreground">
-						{t("commandPalette.noResults")}
-					</Text>
+					<View class="items-center gap-2 py-8">
+						<Icon name="Search" size={18} color={token("muted-foreground")} />
+						<Text class="font-sans text-xs text-muted-foreground">
+							{t("commandPalette.noResults")}
+						</Text>
+					</View>
 				}
 				footer={
-					<View class="shrink-0 flex-row items-center justify-between gap-2 border-t border-border px-4 py-2.5">
+					<View class="shrink-0 flex-row items-center justify-between gap-2 border-t border-border/80 bg-muted/35 px-3.5 py-2">
 						{searching() ? (
 							<View class="flex-row items-center gap-1.5">
-								<Spinner size={12} />
+								<Spinner size={12} color={token("muted-foreground")} />
 								<Text class="font-sans text-[11px] text-muted-foreground">
 									{t("commandPalette.searchingHistory")}
 								</Text>
 							</View>
 						) : (
-							<View class="flex-row items-center gap-3">
+							<View class="flex-row items-center gap-3.5">
 								<Hint keys="↑↓" label={() => t("commandPalette.toggle")} />
 								<Hint keys="↵" label={() => t("commandPalette.select")} />
 							</View>
@@ -390,15 +452,22 @@ export function CommandPalette(props: CommandPaletteProps) {
 	);
 }
 
+/** A key cap for keyboard shortcuts and footer hints. */
+function KeyCap(props: { keys: string }) {
+	return (
+		<View class="h-[19px] min-w-[19px] shrink-0 items-center justify-center rounded-[4px] border border-border/80 bg-background/80 px-1.5">
+			<Text class="font-sans text-[10px] leading-3 font-medium text-muted-foreground">
+				{props.keys}
+			</Text>
+		</View>
+	);
+}
+
 /** A key cap and what it does, as in the WebUI palette's footer. */
 function Hint(props: { keys: string; label: () => string }) {
 	return (
-		<View class="flex-row items-center gap-1">
-			<View class="h-5 min-w-5 items-center justify-center rounded-sm bg-muted px-1">
-				<Text class="font-sans text-[11px] font-medium text-muted-foreground">
-					{props.keys}
-				</Text>
-			</View>
+		<View class="flex-row items-center gap-1.5">
+			<KeyCap keys={props.keys} />
 			<Text class="font-sans text-[11px] text-muted-foreground">
 				{props.label()}
 			</Text>

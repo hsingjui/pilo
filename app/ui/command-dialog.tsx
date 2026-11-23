@@ -31,7 +31,7 @@ export function CommandDialog(props: DialogProps) {
 				},
 				local.style,
 			]}
-			backdropClass={classNames("bg-black/40", local.backdropClass)}
+			backdropClass={classNames("bg-black/30", local.backdropClass)}
 			backdropStyle={[
 				{ zIndex: token("z-dialog-overlay") },
 				local.backdropStyle,

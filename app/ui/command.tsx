@@ -61,7 +61,7 @@ export function Command(props: CommandProps) {
 					"h-full flex-1 bg-transparent text-sm leading-5 outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
 					local.searchClass,
 				)}
-				listClass={classNames("max-h-[300px] p-1", local.listClass)}
+				listClass={local.listClass ?? "max-h-[300px] p-1"}
 				itemClass={classNames(
 					"group flex-col items-stretch justify-center min-h-(--pilo-command-item-height) rounded-(--pilo-radius-md) px-2.5 py-2 text-sm leading-5 text-foreground outline-hidden hover:bg-hover focus:bg-hover hover:text-hover-foreground focus:text-hover-foreground disabled:opacity-50",
 					local.itemClass,
@@ -77,7 +77,7 @@ export function Command(props: CommandProps) {
 				separator={local.separator ?? false}
 				searchPrefix={
 					local.searchPrefix ?? (
-						<Icon name="Search" size={16} class="opacity-50" />
+						<Icon name="Search" size={16} color={token("muted-foreground")} />
 					)
 				}
 				renderItem={local.renderItem ?? renderItem}
