@@ -18,7 +18,7 @@ use pilo_runtime::{
     web_assets::{WebAsset, WebAssets},
 };
 use serde_json::json;
-use tokio::runtime::Runtime as Executor;
+use tokio::{io::AsyncReadExt, runtime::Runtime as Executor};
 
 /// No-op host event sink: desktop events use `EventStream` and `TerminalEventStream`.
 pub(super) struct ShellEvents;
@@ -143,6 +143,53 @@ pub(super) async fn save_file_bytes(suggested_name: &str, bytes: &[u8]) -> Resul
         .await
         .map_err(|error| format!("failed to save file: {error}"))?;
     Ok(true)
+}
+
+/// The most bytes [`read_local_file`] reads; the composer applies its own, smaller limits.
+const LOCAL_FILE_READ_LIMIT: u64 = 64 * 1024 * 1024;
+
+/// Reads a local file the user pasted or dropped, given as its `file:` URL
+/// (nsh's `fetch` does not read `file:` URLs).
+pub(super) async fn read_local_file(uri: &str) -> Result<Vec<u8>, String> {
+    let path = url::Url::parse(uri)
+        .ok()
+        .filter(|url| url.scheme() == "file")
+        .and_then(|url| url.to_file_path().ok())
+        .ok_or_else(|| format!("not a local file URL: {uri}"))?;
+    let read_error = |error| format!("reading {path:?} failed: {error}");
+    if !tokio::fs::metadata(&path)
+        .await
+        .map_err(read_error)?
+        .is_file()
+    {
+        return Err(format!("{path:?} is not a file"));
+    }
+    let mut options = tokio::fs::OpenOptions::new();
+    options.read(true);
+    // A FIFO can replace the path after the initial metadata check.
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NONBLOCK);
+    let file = options.open(&path).await.map_err(read_error)?;
+    let metadata = file.metadata().await.map_err(read_error)?;
+    if !metadata.is_file() {
+        return Err(format!("{path:?} is not a file"));
+    }
+    if metadata.len() > LOCAL_FILE_READ_LIMIT {
+        return Err(format!(
+            "{path:?} is larger than {LOCAL_FILE_READ_LIMIT} bytes"
+        ));
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.take(LOCAL_FILE_READ_LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .await
+        .map_err(read_error)?;
+    if bytes.len() as u64 > LOCAL_FILE_READ_LIMIT {
+        return Err(format!(
+            "{path:?} is larger than {LOCAL_FILE_READ_LIMIT} bytes"
+        ));
+    }
+    Ok(bytes)
 }
 
 /// The app's log directory, keeping the existing platform log location.

@@ -74,8 +74,8 @@ use objects::{
 };
 use shell::{
     NshHostShell, ShellEvents, ShellWebAssets, data_identifier, default_data_dir, executor,
-    init_file_logger, open_path, resolve_log_directory, save_file_bytes, server_resource_name,
-    workspace,
+    init_file_logger, open_path, read_local_file, resolve_log_directory, save_file_bytes,
+    server_resource_name, workspace,
 };
 
 const EVENT_QUEUE_LIMITS: EventQueueLimits = EventQueueLimits {
@@ -950,6 +950,16 @@ impl Pilo {
         });
         task.await
             .map_err(|error| format!("failed to save image: {error}"))?
+    }
+
+    /// Reads a local file the user pasted or dropped, given as its `file:` URL.
+    pub async fn read_local_file(this: Instance<Self>, uri: String) -> Result<Vec<u8>, String> {
+        let task = this.with(|pilo| {
+            pilo.executor
+                .spawn(async move { read_local_file(&uri).await })
+        });
+        task.await
+            .map_err(|error| format!("failed to read file: {error}"))?
     }
 
     /// Starts or resumes a Pi chat and returns its ready process snapshot.

@@ -1835,6 +1835,7 @@ name = "pilo-desktop"
 version = "0.4.1"
 dependencies = [
  "base64",
+ "libc",
  "log",
  "mac-notification-sys",
  "mime_guess",
@@ -1846,6 +1847,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "url",
 ]
 
 [[package]]

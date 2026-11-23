@@ -6,6 +6,7 @@ import {
 	fileMentionValue,
 	readChatMentionDraft,
 	readChatMentionParts,
+	removeChatMention,
 	writeChatMentionDraft,
 	type ChatMention,
 } from "../../shared/chat/chat-mentions.ts";
@@ -231,6 +232,32 @@ test("reference shelf deduplicates mixed inline and trailing references", () => 
 		),
 		draft,
 	);
+});
+
+test("removeChatMention drops only the target mention and preserves remaining inline positions", () => {
+	const fileA: ChatMention = { kind: "file", path: "src/a.tsx" };
+	const fileB: ChatMention = { kind: "file", path: "src/b.rs" };
+	const inline = `请看 ${fileMentionValue(fileA.path)} 和 ${fileMentionValue(fileB.path)} 再参考 ${sessionMentionValue(session.path)}`;
+
+	const afterRemoveA = removeChatMention(inline, fileA, sessions);
+	assert.equal(
+		afterRemoveA,
+		`请看 和 ${fileMentionValue(fileB.path)} 再参考 ${sessionMentionValue(session.path)}`,
+	);
+
+	const afterRemoveSession = removeChatMention(
+		afterRemoveA,
+		sessionReference,
+		sessions,
+	);
+	assert.equal(
+		afterRemoveSession,
+		`请看 和 ${fileMentionValue(fileB.path)} 再参考`,
+	);
+
+	// 独占一行的引用被移除时整行清理，不影响正文
+	const multiline = `第一行\n${fileMentionValue(fileA.path)}\n第二行`;
+	assert.equal(removeChatMention(multiline, fileA, sessions), "第一行\n第二行");
 });
 
 test("classifyFileType maps common extensions and special names with fallback", () => {

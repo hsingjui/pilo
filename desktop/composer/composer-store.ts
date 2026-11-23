@@ -2,6 +2,7 @@ import { type Accessor, batch, computed, signal } from "nsh";
 import { Storage } from "nsh";
 
 import type { ChatSessionRuntimeState } from "@shared/api/chat-session-types";
+import { bytesToBase64 } from "@shared/base64";
 import type {
 	PiCommand,
 	PiCompactionResult,
@@ -15,7 +16,7 @@ import {
 import {
 	fileMentionValue,
 	readChatMentionDraft,
-	writeChatMentionDraft,
+	removeChatMention,
 } from "@shared/chat/chat-mentions";
 import {
 	CHAT_INPUT_HISTORY_LIMIT,
@@ -81,7 +82,9 @@ export type ComposerClient = Pick<
 	| "searchProjectFiles"
 	| "uploadChatFile"
 	| "removeChatFile"
->;
+> &
+	// Optional so test stand-ins without native file reads still fit.
+	Partial<Pick<NshPiloClient, "readLocalFile">>;
 
 export type ComposerViewState = {
 	value: string;
@@ -118,15 +121,6 @@ const INPUT_HISTORY_KEY = "pilo.chatInputHistory.v1";
 const ATTACHMENT_NAME_LIMIT = 80;
 
 let attachmentSequence = 0;
-
-function bytesToBase64(bytes: Uint8Array): string {
-	let binary = "";
-	const step = 0x8000;
-	for (let i = 0; i < bytes.length; i += step) {
-		binary += String.fromCharCode(...bytes.subarray(i, i + step));
-	}
-	return btoa(binary);
-}
 
 function attachmentName(uri: string): string {
 	try {
@@ -182,7 +176,9 @@ export class ComposerStore {
 		readonly ComposerSuggestion[]
 	>([]);
 	private draftVersion = 0;
-	private histories: HistoryStore | null = null;
+	private readonly histories: HistoryStore = {};
+	private historiesLoad: Promise<void> | undefined;
+	private readonly removedFilePaths = new Set<string>();
 	private historyCursor: number | null = null;
 	/**
 	 * The send in flight, so Stop can end it at any stage: before the prompt
@@ -192,7 +188,7 @@ export class ComposerStore {
 		string,
 		{ dispatched: boolean; stopped: boolean }
 	>();
-	private fileQuery: { query: string; request: number } | null = null;
+	private fileQueryRequest = 0;
 	private commandsRequest = 0;
 	private sessionCommandsInFlight: string | null = null;
 
@@ -337,10 +333,27 @@ export class ComposerStore {
 		});
 	}
 
-	setValue(value: string, caret = value.length) {
+	setValue(value: string, caret?: number) {
+		// Native undo can restore a reference whose uploaded file has been removed.
+		if (this.removedFilePaths.size && value.includes("@")) {
+			const sessions = this.sessionsByValue();
+			for (const reference of readChatMentionDraft(value, sessions)
+				.references) {
+				if (
+					reference.kind === "file" &&
+					this.removedFilePaths.has(reference.path)
+				) {
+					value = removeChatMention(value, reference, sessions);
+				}
+			}
+		}
 		const previous = this.stateSignal().value;
 		if (previous !== value) discardRemovedChatFiles(previous, value);
-		this.updateDraft((s) => ({ ...s, value, caret }));
+		this.updateDraft((s) => ({
+			...s,
+			value,
+			caret: Math.min(caret ?? value.length, value.length),
+		}));
 	}
 
 	setCaret(caret: number) {
@@ -422,9 +435,8 @@ export class ComposerStore {
 		const entry = text.trim();
 		if (!entry) return;
 		await this.loadHistories();
-		const current = this.histories?.[projectId] ?? [];
+		const current = this.histories[projectId] ?? [];
 		if (current[current.length - 1] === entry) return;
-		this.histories ??= {};
 		this.histories[projectId] = [...current, entry].slice(
 			-CHAT_INPUT_HISTORY_LIMIT,
 		);
@@ -434,29 +446,38 @@ export class ComposerStore {
 		).catch(() => {});
 	}
 
-	async loadHistories() {
-		if (this.histories) return;
-		this.histories = {};
-		try {
-			const raw = await Storage.getItem(INPUT_HISTORY_KEY);
-			if (raw) {
+	loadHistories(): Promise<void> {
+		return (this.historiesLoad ??= Storage.getItem(INPUT_HISTORY_KEY)
+			.then((raw) => {
+				if (!raw) return;
 				const parsed: unknown = JSON.parse(raw);
-				if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-					for (const [projectId, entries] of Object.entries(
-						parsed as Record<string, unknown>,
-					)) {
-						if (Array.isArray(entries))
-							this.histories[projectId] = entries
-								.filter((entry): entry is string => typeof entry === "string")
-								.map((entry) => entry.trim())
-								.filter(Boolean)
-								.slice(-CHAT_INPUT_HISTORY_LIMIT);
+				if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+					return;
+				for (const [projectId, entries] of Object.entries(parsed)) {
+					if (Array.isArray(entries)) {
+						this.histories[projectId] = entries
+							.filter((entry): entry is string => typeof entry === "string")
+							.map((entry) => entry.trim())
+							.filter(Boolean)
+							.slice(-CHAT_INPUT_HISTORY_LIMIT);
 					}
 				}
-			}
-		} catch {
-			// History is a convenience; a corrupt store starts empty.
-		}
+			})
+			.catch(() => {
+				// History is a convenience; a corrupt store starts empty.
+			}));
+	}
+
+	/** 当前是否允许通过上下方向键翻阅历史（草稿为空且无图片，或正处于有效历史条目上）。 */
+	canNavigateHistory(): boolean {
+		const target = this.targetSignal();
+		if (!target) return false;
+		const { value, images } = this.stateSignal();
+		if (images.length > 0) return false;
+		if (value.length === 0) return true;
+		if (this.historyCursor === null) return false;
+		const entries = this.histories[target.projectId] ?? [];
+		return isChatInputHistoryCursorValid(entries, this.historyCursor, value);
 	}
 
 	/**
@@ -469,9 +490,11 @@ export class ComposerStore {
 	}> {
 		const target = this.targetSignal();
 		if (!target) return { handled: false };
-		const { value } = this.stateSignal();
+		const { value, images } = this.stateSignal();
+		if (images.length) return { handled: false };
+		const version = this.draftVersion;
 		if (this.historyCursor !== null) {
-			const entries = this.histories?.[target.projectId] ?? [];
+			const entries = this.histories[target.projectId] ?? [];
 			if (!isChatInputHistoryCursorValid(entries, this.historyCursor, value)) {
 				this.historyCursor = null;
 				return { handled: false };
@@ -480,7 +503,8 @@ export class ComposerStore {
 			return { handled: false };
 		}
 		await this.loadHistories();
-		const entries = this.histories?.[target.projectId] ?? [];
+		if (this.draftVersion !== version) return { handled: false };
+		const entries = this.histories[target.projectId] ?? [];
 		const result = moveChatInputHistory(entries, this.historyCursor, direction);
 		if (!result.handled) {
 			this.historyCursor = null;
@@ -498,14 +522,14 @@ export class ComposerStore {
 	/** File paths matching the query for the `@` menu (debounced by the caller). */
 	async searchFileSuggestions(query: string) {
 		const target = this.targetSignal();
-		const request = ++(this.fileQuery ??= { query: "", request: 0 }).request;
-		this.fileQuery.query = query;
+		if (!target) return;
+		const request = ++this.fileQueryRequest;
 		try {
 			const paths = await this.client.searchProjectFiles(
-				target?.projectId ?? "",
+				target.projectId,
 				query,
 			);
-			if (this.fileQuery.request !== request) return;
+			if (this.fileQueryRequest !== request) return;
 			this.fileSuggestionsSignal.set(
 				paths.slice(0, 5).map((path) => {
 					const slash = path.lastIndexOf("/");
@@ -518,12 +542,12 @@ export class ComposerStore {
 				}),
 			);
 		} catch {
-			if (this.fileQuery.request === request)
-				this.fileSuggestionsSignal.set([]);
+			if (this.fileQueryRequest === request) this.fileSuggestionsSignal.set([]);
 		}
 	}
 
 	clearFileSuggestions() {
+		this.fileQueryRequest++;
 		this.fileSuggestionsSignal.set([]);
 	}
 
@@ -646,8 +670,37 @@ export class ComposerStore {
 	async addFiles(files: readonly File[], target = this.targetSignal()) {
 		if (!target) return;
 		const { sessionKey, projectId } = target;
-		for (const file of files) {
+		if (files.length > MAX_CHAT_IMAGE_COUNT) {
+			this.setStatus(
+				t("chat.maxFiles", { count: MAX_CHAT_IMAGE_COUNT }),
+				sessionKey,
+			);
+		}
+		let batchBytes = 0;
+		for (const file of files.slice(0, MAX_CHAT_IMAGE_COUNT)) {
 			const mime = resolveChatImageMimeType(file);
+			if (file.size > MAX_CHAT_IMAGE_BYTES) {
+				this.setStatus(
+					mime
+						? t("chat.imageTooLarge", { name: file.name || "image" })
+						: t("chat.fileTooLarge", {
+								name: file.name || "file",
+								size: formatChatImageSize(MAX_CHAT_IMAGE_BYTES),
+							}),
+					sessionKey,
+				);
+				continue;
+			}
+			batchBytes += file.size;
+			if (batchBytes > MAX_CHAT_IMAGE_TOTAL_BYTES) {
+				this.setStatus(
+					t("chat.filesTooLarge", {
+						size: formatChatImageSize(MAX_CHAT_IMAGE_TOTAL_BYTES),
+					}),
+					sessionKey,
+				);
+				break;
+			}
 			try {
 				const bytes = new Uint8Array(await file.arrayBuffer());
 				if (mime) {
@@ -655,15 +708,13 @@ export class ComposerStore {
 					const limit =
 						images.length >= MAX_CHAT_IMAGE_COUNT
 							? t("chat.maxImages", { count: MAX_CHAT_IMAGE_COUNT })
-							: bytes.length > MAX_CHAT_IMAGE_BYTES
-								? t("chat.imageTooLarge", { name: file.name || "image" })
-								: images.reduce((total, image) => total + image.size, 0) +
-											bytes.length >
-									  MAX_CHAT_IMAGE_TOTAL_BYTES
-									? t("chat.imagesTotalLimit", {
-											size: formatChatImageSize(MAX_CHAT_IMAGE_TOTAL_BYTES),
-										})
-									: null;
+							: images.reduce((total, image) => total + image.size, 0) +
+										bytes.length >
+								  MAX_CHAT_IMAGE_TOTAL_BYTES
+								? t("chat.imagesTotalLimit", {
+										size: formatChatImageSize(MAX_CHAT_IMAGE_TOTAL_BYTES),
+									})
+								: null;
 					if (limit) {
 						this.setStatus(limit, sessionKey);
 						continue;
@@ -682,44 +733,68 @@ export class ComposerStore {
 						file.name || "file",
 						bytes,
 					);
-					registerChatFile(path, () =>
-						this.client.removeChatFile(projectId, path),
-					);
+					this.removedFilePaths.delete(path);
+					registerChatFile(path, () => {
+						this.removedFilePaths.add(path);
+						return this.client.removeChatFile(projectId, path);
+					});
 					const { value, images } = this.draftFor(sessionKey);
-					const draft = readChatMentionDraft(value, this.sessionsByValue());
+					const tokenText = fileMentionValue(path);
+					const separator = value.length === 0 || /\s$/.test(value) ? "" : " ";
 					this.writeDraft(sessionKey, {
-						value: writeChatMentionDraft(
-							[...draft.references, { kind: "file", path }],
-							draft.text,
-						),
+						value: `${value}${separator}${tokenText} `,
 						images,
 					});
 				}
-			} catch {
+			} catch (error) {
 				this.setStatus(
-					t("chat.uploadFileFailed", { name: file.name || "file" }),
+					`${t("chat.uploadFileFailed", { name: file.name || "file" })}: ${errorMessage(error)}`,
 					sessionKey,
 				);
 			}
 		}
 	}
 
-	/** Dropped `file:` URIs, read as bytes and attached like picked files. */
+	/** Pasted or dropped `file:` URIs, read natively and attached like picked files. */
 	async addUris(uris: readonly string[]) {
 		const target = this.targetSignal();
 		if (!target) return;
-		for (const uri of uris) {
+		if (uris.length > MAX_CHAT_IMAGE_COUNT) {
+			this.setStatus(
+				t("chat.maxFiles", { count: MAX_CHAT_IMAGE_COUNT }),
+				target.sessionKey,
+			);
+		}
+		let batchBytes = 0;
+		for (const uri of uris.slice(0, MAX_CHAT_IMAGE_COUNT)) {
 			try {
-				const response = await fetch(uri);
-				const bytes = await response.arrayBuffer();
+				if (!this.client.readLocalFile) throw new Error("no local file reads");
+				const bytes = await this.client.readLocalFile(uri);
+				if (bytes.length <= MAX_CHAT_IMAGE_BYTES) {
+					batchBytes += bytes.length;
+					if (batchBytes > MAX_CHAT_IMAGE_TOTAL_BYTES) {
+						this.setStatus(
+							t("chat.filesTooLarge", {
+								size: formatChatImageSize(MAX_CHAT_IMAGE_TOTAL_BYTES),
+							}),
+							target.sessionKey,
+						);
+						break;
+					}
+				}
 				const name = attachmentName(uri);
+				const mime = resolveChatImageMimeType({ name, type: "" });
 				await this.addFiles(
-					[new File([bytes], name.slice(0, ATTACHMENT_NAME_LIMIT))],
+					[
+						new File([bytes], name.slice(0, ATTACHMENT_NAME_LIMIT), {
+							type: mime ?? "",
+						}),
+					],
 					target,
 				);
-			} catch {
+			} catch (error) {
 				this.setStatus(
-					t("chat.uploadFileFailed", { name: attachmentName(uri) }),
+					`${t("chat.uploadFileFailed", { name: attachmentName(uri) })}: ${errorMessage(error)}`,
 					target.sessionKey,
 				);
 			}
@@ -733,14 +808,14 @@ export class ComposerStore {
 		}));
 	}
 
-	/** Drops a mention line from the draft's reference block. */
+	/** 从草稿中精确移除指定引用，并保留其余内联引用的原始位置。 */
 	removeReference(index: number) {
-		const draft = this.mentionDraft();
+		const sessions = this.sessionsByValue();
+		const draft = readChatMentionDraft(this.stateSignal().value, sessions);
+		const target = draft.references[index];
+		if (!target) return;
 		this.setValue(
-			writeChatMentionDraft(
-				draft.references.filter((_, i) => i !== index),
-				draft.text,
-			),
+			removeChatMention(this.stateSignal().value, target, sessions),
 		);
 	}
 
@@ -752,16 +827,14 @@ export class ComposerStore {
 			submission.images.length > 0
 				? { images: toPiImageContents(submission.images) }
 				: {};
+		const message = submission.text;
 		switch (mode) {
 			case "steer":
-				return [{ type: "steer", message: submission.text, ...images }];
+				return [{ type: "steer", message, ...images }];
 			case "follow_up":
-				return [{ type: "follow_up", message: submission.text, ...images }];
+				return [{ type: "follow_up", message, ...images }];
 			case "send_now":
-				return [
-					{ type: "abort" },
-					{ type: "prompt", message: submission.text, ...images },
-				];
+				return [{ type: "abort" }, { type: "prompt", message, ...images }];
 		}
 	}
 

@@ -1,6 +1,8 @@
 import {
-	type InputRef,
+	Image,
+	type JSX,
 	Overlay,
+	Picker,
 	platform,
 	Scroll,
 	type ScrollRef,
@@ -10,21 +12,22 @@ import {
 	cleanup,
 	computed,
 	effect,
-	keymap,
 	signal,
 	token,
 	windowSize,
 } from "nsh";
-import { Picker } from "nsh";
-import { Button as BaseButton, Input as BaseInput } from "nsh/base";
+import { Button as BaseButton } from "nsh/base";
 
 import { userErrorMessage } from "@shared/app-error";
-import { writeChatMentionDraft } from "@shared/chat/chat-mentions";
+import {
+	fileMentionName,
+	fileMentionPath,
+	writeChatMentionDraft,
+} from "@shared/chat/chat-mentions";
 import { formatChatImageSize } from "@shared/chat/chat-submission";
 import {
 	FILE_SUGGESTION_LIMIT,
 	TRIGGER_META,
-	activeSuggestionQuery,
 	piSessionSuggestions,
 	type ComposerSuggestion,
 	type MentionTab,
@@ -39,8 +42,9 @@ import { AppToaster, showToast } from "../app/app-toasts";
 import { t } from "../app/i18n";
 import { ChatReadingFont } from "../chat/chat-reading-font";
 import { chatMetadataText, chatPx } from "../chat/layout";
-import { APP_SHORTCUTS, bindAppShortcut } from "../shortcuts";
+import { bindAppShortcut } from "../shortcuts";
 import { Button } from "../ui/button";
+import { FileTypeIcon } from "../ui/file-type-icon";
 import { focusRingStyle } from "../ui/focus-ring-style";
 import { createHover } from "../ui/hover";
 import { Icon, type IconName } from "../ui/icon";
@@ -65,6 +69,11 @@ import {
 	ComposerRunConfig,
 	type ComposerRunConfigProps,
 } from "./composer-run-config";
+import type { RichSuggestionMatch } from "./composer-rich-doc";
+import {
+	ComposerRichInput,
+	type ComposerRichInputHandle,
+} from "./composer-rich-input";
 import type { ComposerStore } from "./composer-store";
 
 /** The React composer grows to 12 lines, then scrolls. */
@@ -113,7 +122,7 @@ function toolbarStyle() {
 const inputMinHeight = () => chatPx(token("pilo-composer-input-height"));
 
 function inputLineHeight(fontSize: number) {
-	return Math.max(chatPx(20), fontSize * 1.25);
+	return Math.max(chatPx(20), Math.round(fontSize * 1.35));
 }
 
 function inputHeight(contentHeight: number, leading: number, padding: number) {
@@ -190,9 +199,10 @@ export interface ChatComposerProps {
 }
 
 /**
- * The prompt bar under a chat: a growing multiline input with `@` file and
- * session mentions, `/` commands, picked, pasted and dropped attachments,
- * per-session drafts and per-project input history, and send or stop.
+ * The prompt bar under a chat: a growing multiline inline-mention editor with
+ * `@` file and session mentions, `/` commands, picked, pasted and dropped
+ * attachments in one unified compact row, per-session drafts and per-project
+ * input history, and send or stop.
  */
 export function ChatComposer(props: ChatComposerProps) {
 	const store = props.store;
@@ -202,38 +212,31 @@ export function ChatComposer(props: ChatComposerProps) {
 	const index = signal(0);
 	const dismissedQuery = signal<string | null>(null);
 	const contentHeight = signal(0);
-	const emptyLine = signal<{ font: ChatReadingFont; height: number } | null>(
-		null,
-	);
-	const inputLeading = () => {
-		const line = emptyLine();
-		return line?.font === readingFont()
-			? line.height
-			: readingFont().fontSize * 1.25;
-	};
-	const inputPadding = () =>
-		Math.max(0, (inputLineHeight(readingFont().fontSize) - inputLeading()) / 2);
 	const focused = signal(false);
 	const focusShortcutLabels = signal<string[]>([]);
 	const surface = signal<ViewRef | undefined>(undefined);
-	let input: InputRef | undefined;
+	const activeSuggestion = signal<RichSuggestionMatch | null>(null);
+	let inputHandle: ComposerRichInputHandle | undefined;
 
 	const state = () => store.state();
 	const running = () => store.running();
 	const modEnter = () => (props.sendShortcut?.() ?? "enter") === "mod-enter";
 	const hasContent = () =>
 		state().value.trim().length > 0 || state().images.length > 0;
+	const sessionsByValue = () => store.sessionsByValue();
 
-	const query = computed(
-		() => activeSuggestionQuery(state().value, state().caret),
-		{
-			equals: (previous, next) =>
-				previous?.trigger === next?.trigger &&
-				previous?.start === next?.start &&
-				previous?.end === next?.end &&
-				previous?.query === next?.query,
-		},
-	);
+	const inputLeading = () => inputLineHeight(readingFont().fontSize);
+	const inputPadding = () => chatPx(2);
+
+	const query = computed<RichSuggestionMatch | null>(() => activeSuggestion(), {
+		equals: (previous, next) =>
+			previous?.trigger === next?.trigger &&
+			previous?.start === next?.start &&
+			previous?.end === next?.end &&
+			previous?.query === next?.query &&
+			previous?.docRange.from === next?.docRange.from &&
+			previous?.docRange.to === next?.docRange.to,
+	});
 	const queryKey = () => {
 		const active = query();
 		return active
@@ -299,7 +302,7 @@ export function ChatComposer(props: ChatComposerProps) {
 		if (active?.trigger !== "@") return;
 		mentionNavigation.set({ start: active.start, tab, categoryFocused: true });
 		index.set(0);
-		input?.focus();
+		inputHandle?.focus();
 	};
 	const enterCandidates = () => {
 		const active = query();
@@ -317,60 +320,26 @@ export function ChatComposer(props: ChatComposerProps) {
 		const key = queryKey();
 		return focused() && key !== null && key !== dismissedQuery();
 	};
+	const canPickSuggestion = () => menuOpen() && items().length > 0;
 
-	// While the menu shows, its keys are bound over the input's own
-	// (`when: "always"`): a native input keeps its arrows from `onKeyPress`.
-	// A new list highlights its first row.
 	effect(() => {
 		items();
 		index.set(0);
 	});
 	effect(() => {
-		if (!focused()) return;
-		const active = query();
-		if (!active) {
+		if (!query()) {
 			dismissedQuery.set(null);
 			mentionNavigation.set(null);
-			return;
 		}
-		if (!menuOpen()) return;
-		const count = items().length;
-		const onTabs = categoryFocused();
-		const bindings: Record<string, () => void> = {
-			escape: dismissSuggestions,
-		};
-		// Tab switches the `@` tabs while they have the keys, else picks.
-		if (onTabs) {
-			bindings.tab = () =>
-				changeMentionTab(mentionTab() === "file" ? "session" : "file");
-		}
-		// Up from the first row goes back to the tabs.
-		if (active.trigger === "@" && !onTabs) {
-			bindings.up = () => {
-				if (index() === 0) changeMentionTab(mentionTab());
-				else index.update((i) => i - 1);
-			};
-		}
-		if (count) {
-			if (!onTabs) bindings.tab = () => pick(items()[index()]);
-			bindings.enter = () => pick(items()[onTabs ? 0 : index()]);
-			bindings.down = () => {
-				enterCandidates();
-				index.update((i) => (onTabs ? 0 : (i + 1) % count));
-			};
-			bindings.up ??= () => {
-				enterCandidates();
-				index.update((i) => (onTabs ? count - 1 : (i - 1 + count) % count));
-			};
-		}
-		cleanup(keymap.bind(bindings, { when: "always", repeat: true }));
 	});
 
 	effect(() => {
 		const shortcut = props.shortcuts?.()?.["focus-composer"];
 		const binding =
 			shortcut && store.target()
-				? bindAppShortcut("focus-composer", shortcut, () => input?.focus())
+				? bindAppShortcut("focus-composer", shortcut, () =>
+						inputHandle?.focus(),
+					)
 				: undefined;
 		const isMac = platform.os === "macos";
 		const normalized = binding && normalizeKeyboardShortcut(shortcut, isMac);
@@ -388,16 +357,6 @@ export function ChatComposer(props: ChatComposerProps) {
 			() => void store.submit("follow_up"),
 		);
 		if (binding) cleanup(binding.dispose);
-	});
-
-	// "mod+enter" submits when the preference says so; Return stays a newline.
-	effect(() => {
-		if (!focused() || !modEnter()) return;
-		cleanup(
-			keymap.bind(APP_SHORTCUTS.sendMessage, () => submit(), {
-				when: "always",
-			}),
-		);
 	});
 
 	// File suggestions follow the `@` query, debounced.
@@ -420,20 +379,69 @@ export function ChatComposer(props: ChatComposerProps) {
 
 	const pick = (suggestion: ComposerSuggestion | undefined) => {
 		const active = query();
-		if (!suggestion || !active || !input) return;
-		const inserted = `${suggestion.value} `;
-		const value = state().value;
-		const next =
-			value.slice(0, active.start) + inserted + value.slice(state().caret);
-		store.setValue(next, active.start + inserted.length);
-		// `insertText` is not carried out on macOS in nsh 0.6.0, so the pick
-		// writes the controlled value and restores the caret itself.
-		input.setSelection(active.start + inserted.length);
-		input.focus();
+		if (!suggestion || !active || !inputHandle) return;
+		if (suggestion.kind === "file") {
+			const path = fileMentionPath(suggestion.value);
+			if (path) {
+				inputHandle.insertMentionAt(active.docRange, { kind: "file", path });
+				return;
+			}
+		}
+		if (suggestion.kind === "session") {
+			const session = sessionsByValue().get(suggestion.value);
+			if (session) {
+				inputHandle.insertMentionAt(active.docRange, {
+					kind: "session",
+					path: session.path,
+					session,
+				});
+				return;
+			}
+		}
+		inputHandle.insertTextAt(active.docRange, `${suggestion.value} `);
+	};
+
+	const handleMenuKey = (
+		key: "ArrowUp" | "ArrowDown" | "Tab" | "Enter" | "Escape",
+	) => {
+		const active = query();
+		if (!active || !menuOpen()) return;
+		if (key === "Escape") {
+			dismissSuggestions();
+			return;
+		}
+		const list = items();
+		const count = list.length;
+		const onTabs = categoryFocused();
+		if (key === "Tab") {
+			if (onTabs) {
+				changeMentionTab(mentionTab() === "file" ? "session" : "file");
+			} else if (count) {
+				pick(list[index()]);
+			}
+			return;
+		}
+		if (key === "Enter") {
+			if (count) pick(list[onTabs ? 0 : index()]);
+			return;
+		}
+		if (key === "ArrowDown" && count) {
+			enterCandidates();
+			index.update((i) => (onTabs ? 0 : (i + 1) % count));
+			return;
+		}
+		if (key === "ArrowUp") {
+			if (active.trigger === "@" && !onTabs && index() === 0) {
+				changeMentionTab(mentionTab());
+			} else if (count) {
+				enterCandidates();
+				index.update((i) => (onTabs ? count - 1 : (i - 1 + count) % count));
+			}
+		}
 	};
 
 	const submit = () => {
-		if (menuOpen() && items().length > 0) return;
+		if (canPickSuggestion()) return;
 		if (hasContent() && !state().composing) props.assistance?.dismiss();
 		void store.submit();
 	};
@@ -456,30 +464,11 @@ export function ChatComposer(props: ChatComposerProps) {
 			);
 	};
 
-	const arrowKeys = (direction: "older" | "newer") => {
-		void store.navigateHistory(direction);
-	};
-
-	effect(() => {
-		if (!focused() || menuOpen()) return;
-		cleanup(
-			keymap.bind(
-				{
-					up: () => arrowKeys("older"),
-					down: () => arrowKeys("newer"),
-				},
-				{ when: "always" },
-			),
-		);
-	});
-
-	const attachments = () => {
-		const draft = store.mentionDraft();
-		return {
-			images: state().images,
-			references: draft.references,
-		};
-	};
+	const images = computed(() => state().images);
+	const references = computed(() => store.mentionDraft().references);
+	const hasAttachments = computed(
+		() => images().length > 0 || references().length > 0,
+	);
 
 	const showFocusHint = () =>
 		platform.desktop &&
@@ -487,8 +476,7 @@ export function ChatComposer(props: ChatComposerProps) {
 		!ghostText() &&
 		!readOnly() &&
 		!state().value &&
-		!attachments().images.length &&
-		!attachments().references.length &&
+		!hasAttachments() &&
 		focusShortcutLabels().length > 0;
 	const readOnly = () => store.readOnly();
 	const disabled = () => store.target() === null || readOnly();
@@ -510,29 +498,12 @@ export function ChatComposer(props: ChatComposerProps) {
 		if (!text || menuOpen()) return;
 		assistance?.dismiss();
 		store.setValue(text);
-		input?.setSelection(text.length);
-		input?.focus();
+		inputHandle?.focusEnd();
 	};
-	effect(() => {
-		if (
-			!assistance ||
-			!focused() ||
-			menuOpen() ||
-			state().composing ||
-			props.shortcuts?.() === null
-		)
-			return;
-		cleanup(
-			keymap.bind("escape", assistance.dismiss, {
-				when: "always",
-				passThrough: true,
-			}),
-		);
-		if (canAdoptWithTab())
-			cleanup(
-				keymap.bind("tab", adoptSuggestion, { when: "always", forFocus: true }),
-			);
-	});
+	const handleGhostKey = (key: "Tab" | "Escape") => {
+		if (key === "Tab") adoptSuggestion();
+		else assistance?.dismiss();
+	};
 
 	const toasts = AppToaster();
 	const enhancing = signal(false);
@@ -565,8 +536,7 @@ export function ChatComposer(props: ChatComposerProps) {
 			if (!text || !stillCurrent()) return;
 			const value = writeChatMentionDraft(draft.references, text);
 			store.setValue(value);
-			input?.setSelection(value.length);
-			input?.focus();
+			inputHandle?.focusEnd();
 		} catch (error: unknown) {
 			if (stillCurrent())
 				showToast(toasts, {
@@ -583,6 +553,12 @@ export function ChatComposer(props: ChatComposerProps) {
 			if (!disposed) enhancing.set(false);
 		}
 	};
+
+	const placeholder = () =>
+		readOnly()
+			? t("chat.externalReadOnly")
+			: (ghostText() ??
+				(!hasAttachments() ? t("chat.composerPlaceholder") : undefined));
 
 	return (
 		<View
@@ -648,9 +624,9 @@ export function ChatComposer(props: ChatComposerProps) {
 				style={surfaceStyle(focused(), readOnly())}
 			>
 				{() =>
-					attachments().images.length > 0 ||
-					attachments().references.length > 0 ? (
+					hasAttachments() ? (
 						<View
+							testID="chat-composer-attachments"
 							class="min-w-0 flex-row flex-wrap items-center"
 							style={{
 								marginBottom: chatPx(4),
@@ -658,89 +634,126 @@ export function ChatComposer(props: ChatComposerProps) {
 								padding: chatPx(4),
 							}}
 						>
-							{attachments().images.map((image) => (
-								<AttachmentChip
-									label={`${image.name} (${formatChatImageSize(image.size)})`}
-									removeLabel={t("chat.removeAttachment", { name: image.name })}
-									icon="File"
-									onRemove={() => store.removeImage(image.id)}
-								/>
-							))}
-							{attachments().references.map((reference, i) => {
-								const name = reference.path.split("/").pop() ?? reference.path;
-								return (
+							<Each of={images()} key={(image) => image.id}>
+								{(image) => (
 									<AttachmentChip
-										label={name}
-										removeLabel={t("chat.removeAttachment", { name })}
-										icon={
-											reference.kind === "session" ? "MessageSquare" : "File"
+										testID="chat-composer-image"
+										label={image().name}
+										tooltip={`${image().name} · ${formatChatImageSize(image().size)}`}
+										removeLabel={t("chat.removeAttachment", {
+											name: image().name,
+										})}
+										leading={
+											<Image
+												src={`data:${image().mimeType};base64,${image().data}`}
+												class="shrink-0 overflow-hidden rounded-[3px] border border-foreground/10"
+												style={{
+													width: chatPx(16),
+													height: chatPx(16),
+													objectFit: "cover",
+												}}
+											/>
 										}
-										onRemove={() => store.removeReference(i)}
+										disabled={disabled()}
+										onRemove={() => {
+											if (!disabled()) store.removeImage(image().id);
+										}}
 									/>
-								);
-							})}
+								)}
+							</Each>
+							<Each of={references()} key={(ref) => `${ref.kind}:${ref.path}`}>
+								{(reference, index) => {
+									const name = () => {
+										const ref = reference();
+										return ref.kind === "session"
+											? ref.session.title
+											: fileMentionName(ref.path);
+									};
+									const tooltip = () => {
+										const ref = reference();
+										return ref.kind === "session" && ref.session.projectName
+											? `${ref.session.projectName}\n${ref.path}`
+											: ref.path;
+									};
+									return (
+										<AttachmentChip
+											testID={`chat-composer-attachment:${reference().kind}`}
+											label={name()}
+											tooltip={tooltip()}
+											removeLabel={t("chat.removeAttachment", { name: name() })}
+											leading={
+												reference().kind === "session" ? (
+													<Icon
+														name="MessageSquare"
+														size={chatPx(13)}
+														color={token("muted-foreground")}
+													/>
+												) : (
+													<FileTypeIcon
+														path={reference().path}
+														size={chatPx(13)}
+													/>
+												)
+											}
+											disabled={disabled()}
+											onRemove={() => {
+												if (!disabled()) store.removeReference(index());
+											}}
+										/>
+									);
+								}}
+							</Each>
 						</View>
 					) : null
 				}
 				<View class="relative min-w-0 flex-row items-start">
-					<BaseInput
-						ref={(ref) => {
-							input = ref;
-						}}
+					<ComposerRichInput
 						testID="chat-composer-input"
-						multiline
-						autoCorrect={false}
-						autoCapitalize="none"
-						disabled={disabled()}
-						readonly={disabled()}
-						submitBehavior={modEnter() ? "newline" : "submit"}
-						pasteBehavior="insert"
-						// A read-only chat keeps its draft for later and shows why it is locked.
-						value={readOnly() ? "" : state().value}
-						accessibilityLabel={t("chat.composerPlaceholder")}
-						placeholder={
-							readOnly()
-								? t("chat.externalReadOnly")
-								: (ghostText() ??
-									(attachments().images.length === 0 &&
-									attachments().references.length === 0
-										? t("chat.composerPlaceholder")
-										: undefined))
-						}
-						// The size goes in the class: an inline `fontSize` reaches the typed
-						// text but not the placeholder, which then sits larger and lower.
-						class={`min-w-0 flex-1 border-0 bg-transparent text-[${readingFont().fontSize}px] text-input-foreground placeholder:text-input-placeholder`}
-						style={{
-							fontFamily: readingFont().fontFamily,
-							height: inputHeight(
-								state().value && !readOnly() ? contentHeight() : 0,
+						sessionKey={() => store.target()?.sessionKey ?? null}
+						value={() => (readOnly() ? "" : state().value)}
+						images={() => (readOnly() ? [] : images())}
+						sessionsByValue={sessionsByValue}
+						readingFont={readingFont}
+						disabled={disabled}
+						placeholder={placeholder}
+						accessibilityLabel={() => t("chat.composerPlaceholder")}
+						height={() =>
+							inputHeight(
+								(state().value || state().images.length > 0) && !readOnly()
+									? contentHeight()
+									: 0,
 								inputLeading(),
 								inputPadding(),
-							),
-							minHeight: 0,
-							paddingVertical: inputPadding(),
-							paddingLeft: chatPx(4),
-							paddingRight: chatPx(inputRightPadding()),
-						}}
-						onContentSizeChange={({ size }) => {
-							contentHeight.set(size.height);
-							// nsh reports one native line for an empty value, regardless of the placeholder.
-							if ((!state().value || readOnly()) && size.height > 0)
-								emptyLine.set({ font: readingFont(), height: size.height });
-						}}
-						onFocus={() => focused.set(true)}
-						onBlur={() => focused.set(false)}
-						onChange={({ value }) => {
-							if (!readOnly()) store.setValue(value);
-						}}
-						onSelectionChange={({ end }) => {
-							if (!readOnly()) store.setCaret(end);
-						}}
-						onCompositionChange={({ composing }) =>
-							store.setComposing(composing)
+							)
 						}
-						onSubmit={() => submit()}
-						onPaste={({ files, uris }) => {
+						paddingVertical={inputPadding}
+						paddingRight={inputRightPadding}
+						modEnter={modEnter}
+						menuOpen={menuOpen}
+						canPickSuggestion={canPickSuggestion}
+						canAdoptGhost={canAdoptWithTab}
+						canNavigateHistory={() => store.canNavigateHistory()}
+						onHandle={(handle) => {
+							inputHandle = handle;
+						}}
+						onValueChange={(nextValue) => {
+							if (!readOnly()) store.setValue(nextValue);
+						}}
+						onRemoveImage={(id) => {
+							if (!readOnly()) store.removeImage(id);
+						}}
+						onSuggestionChange={(match) => activeSuggestion.set(match)}
+						onContentHeightChange={(height) => contentHeight.set(height)}
+						onFocusChange={(isFocused) => focused.set(isFocused)}
+						onCompositionChange={(composing) => store.setComposing(composing)}
+						onSubmit={submit}
+						onMenuKey={handleMenuKey}
+						onHistoryKey={(direction) => {
+							void store.navigateHistory(direction);
+						}}
+						onGhostKey={handleGhostKey}
+						onPasteFiles={(files, uris) => {
+							if (readOnly()) return;
 							if (files.length) void store.addFiles(files);
 							if (uris.length) void store.addUris(uris);
 						}}
@@ -913,7 +926,7 @@ export function ChatComposer(props: ChatComposerProps) {
 					<Overlay
 						anchor={surface()}
 						style={{ width: 0, height: 0, pointerEvents: "box-none" }}
-						onPressOutside={() => input?.blur()}
+						onPressOutside={() => inputHandle?.blur()}
 					>
 						{() =>
 							menuOpen() ? (
@@ -1038,6 +1051,10 @@ function SuggestionMenu(props: {
 					}
 					return entries.map((suggestion, i) => {
 						const highlighted = () => i === props.index();
+						const filePath =
+							suggestion.kind === "file"
+								? (fileMentionPath(suggestion.value) ?? suggestion.label)
+								: null;
 						return (
 							<View
 								ref={(ref) => {
@@ -1053,15 +1070,19 @@ function SuggestionMenu(props: {
 								onPress={() => props.onPick(suggestion)}
 							>
 								<View class="size-3.5 shrink-0 items-center justify-center">
-									<Icon
-										name={
-											suggestion.skill
-												? "Sparkles"
-												: SUGGESTION_ICONS[suggestion.kind]
-										}
-										size={12}
-										color={token("muted-foreground")}
-									/>
+									{filePath ? (
+										<FileTypeIcon path={filePath} size={12} />
+									) : (
+										<Icon
+											name={
+												suggestion.skill
+													? "Sparkles"
+													: SUGGESTION_ICONS[suggestion.kind]
+											}
+											size={12}
+											color={token("muted-foreground")}
+										/>
+									)}
 								</View>
 								<Text
 									class={`min-w-0 flex-1 truncate text-xs ${
@@ -1163,50 +1184,72 @@ function MentionTabs(props: {
 	);
 }
 
+/** 统一单行附件芯片：上传图片、上传文件、`@文件` 与 `@会话` 共用同一套外观与交互。 */
 function AttachmentChip(props: {
+	testID?: string;
 	label: string;
+	tooltip?: string;
 	removeLabel: string;
-	icon: "File" | "MessageSquare";
+	leading: JSX.Element;
+	onPress?: () => void;
+	disabled?: boolean;
 	onRemove: () => void;
 }) {
-	const hover = createHover();
+	const removeHover = createHover();
 	const readingFont = ChatReadingFont();
 	return (
 		<View
+			testID={props.testID}
 			class="min-w-0 flex-row items-center rounded-md bg-muted/60"
 			style={{
 				height: Math.max(chatPx(28), inputLineHeight(readingFont().fontSize)),
-				maxWidth: chatPx(192),
+				maxWidth: chatPx(216),
 			}}
 		>
-			<View
-				class="h-full min-w-0 flex-1 flex-row items-center"
-				style={{ gap: chatPx(6), paddingHorizontal: chatPx(8) }}
+			<BaseButton
+				class="h-full min-w-0 flex-1 flex-row items-center rounded-l-md transition-colors hover:bg-hover focus-visible:outline-hidden"
+				style={{
+					gap: chatPx(6),
+					paddingLeft: chatPx(8),
+					paddingRight: chatPx(6),
+					cursor: "pointer",
+				}}
+				focusVisibleStyle={focusRingStyle(token("ring"))}
+				accessibilityLabel={props.label}
+				tooltip={
+					props.tooltip ? (
+						<Tooltip class="max-w-96" delay={250} margin={12}>
+							<Text class="font-mono text-xs">{props.tooltip}</Text>
+						</Tooltip>
+					) : undefined
+				}
+				onPress={() => {
+					props.onPress?.();
+				}}
 			>
-				<Icon
-					name={props.icon}
-					size={chatPx(12)}
-					color={token("muted-foreground")}
-				/>
+				{props.leading}
 				<Text
 					class="min-w-0 shrink truncate font-sans text-foreground"
 					style={{ fontSize: chatPx(12) }}
 				>
 					{() => props.label}
 				</Text>
-			</View>
+			</BaseButton>
 			<BaseButton
-				class="h-full shrink-0 items-center justify-center rounded-r-md transition-colors hover:bg-hover"
-				style={{ width: chatPx(24) }}
+				class="h-full shrink-0 items-center justify-center rounded-r-md transition-colors hover:bg-hover focus-visible:outline-hidden"
+				style={{ width: chatPx(24), cursor: "pointer" }}
 				focusVisibleStyle={focusRingStyle(token("ring"))}
 				accessibilityLabel={props.removeLabel}
-				{...hover.props}
+				disabled={props.disabled}
+				{...removeHover.props}
 				onPress={props.onRemove}
 			>
 				<Icon
 					name="X"
 					size={chatPx(12)}
-					color={token(hover.hovered() ? "foreground" : "muted-foreground")}
+					color={token(
+						removeHover.hovered() ? "foreground" : "muted-foreground",
+					)}
 				/>
 			</BaseButton>
 		</View>

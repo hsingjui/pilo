@@ -160,6 +160,7 @@ export type PiloNative = Pick<
 			| "projectGitStatus"
 			| "projectGitDiff"
 			| "saveImage"
+			| "readLocalFile"
 			| "openTerminal"
 			| "writeTerminal"
 			| "resizeTerminal"
@@ -562,6 +563,12 @@ export class NshPiloClient implements PiloClient {
 	async saveImage(suggestedName: string, bytes: Uint8Array): Promise<boolean> {
 		if (!this.pilo.saveImage) throw unavailable("saveImage");
 		return await this.pilo.saveImage(suggestedName, bytes);
+	}
+
+	/** The bytes of a local file the user pasted or dropped, by its `file:` URL. */
+	async readLocalFile(uri: string): Promise<Uint8Array<ArrayBuffer>> {
+		if (!this.pilo.readLocalFile) throw unavailable("readLocalFile");
+		return (await this.pilo.readLocalFile(uri)) as Uint8Array<ArrayBuffer>;
 	}
 
 	/** Pi's current user-level model catalog for the connection. */

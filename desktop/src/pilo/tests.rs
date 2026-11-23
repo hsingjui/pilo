@@ -57,6 +57,35 @@ fn bootstrap_surfaces_database_errors() {
 }
 
 #[test]
+fn read_local_file_reads_regular_files_and_rejects_invalid_targets() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = dir.path().join("hello world.txt");
+    std::fs::write(&file_path, b"hello pilo").unwrap();
+    let file_uri = url::Url::from_file_path(&file_path).unwrap().to_string();
+    let dir_uri = url::Url::from_directory_path(dir.path())
+        .unwrap()
+        .to_string();
+    let missing_uri = url::Url::from_file_path(dir.path().join("missing.txt"))
+        .unwrap()
+        .to_string();
+
+    let rt = shell::executor().unwrap();
+    rt.block_on(async {
+        assert_eq!(
+            shell::read_local_file(&file_uri).await.unwrap(),
+            b"hello pilo"
+        );
+        assert!(
+            shell::read_local_file("https://example.com/a.txt")
+                .await
+                .is_err()
+        );
+        assert!(shell::read_local_file(&dir_uri).await.is_err());
+        assert!(shell::read_local_file(&missing_uri).await.is_err());
+    });
+}
+
+#[test]
 fn runtime_operation_does_not_block_shutdown() {
     let data = tempfile::tempdir().unwrap();
     let pilo = Pilo::new(Some(data.path().to_str().unwrap().into()), None).unwrap();

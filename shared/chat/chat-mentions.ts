@@ -126,3 +126,54 @@ export function writeChatMentionDraft(
 		? `${text ? `${text}\n` : ""}${values.join("\n")}`
 		: text;
 }
+
+/**
+ * 从草稿中精确移除指定的文件或会话引用，同时保持其余内联引用在正文中的原始位置。
+ * 如果引用独占一行，连同该行一并清除；如果处于行内，顺带折叠紧邻的一格多余空格。
+ */
+export function removeChatMention(
+	value: string,
+	target: Pick<ChatMention, "kind" | "path">,
+	sessions: ReadonlyMap<string, SessionMention>,
+): string {
+	const lines = value.split("\n");
+	const nextLines: string[] = [];
+	for (const line of lines) {
+		const parts = readChatMentionParts(line, sessions);
+		let removedAny = false;
+		const kept: ChatMentionPart[] = [];
+		for (const part of parts) {
+			if (
+				part.mention &&
+				part.mention.kind === target.kind &&
+				part.mention.path === target.path
+			) {
+				removedAny = true;
+				continue;
+			}
+			kept.push(part);
+		}
+		if (!removedAny) {
+			nextLines.push(line);
+			continue;
+		}
+		let rebuilt = "";
+		for (const part of kept) {
+			if (
+				!part.mention &&
+				rebuilt.endsWith(" ") &&
+				part.value.startsWith(" ")
+			) {
+				rebuilt += part.value.slice(1);
+			} else {
+				rebuilt += part.value;
+			}
+		}
+		// 移除行首或行尾因删除内联引用而残留的单个空格；若整行原本只有该引用则整行移除。
+		const hadNonTarget = kept.some((part) => part.mention || part.value.trim());
+		if (!hadNonTarget) continue;
+		const trimmed = rebuilt.replace(/^ (?=\S)/, "").replace(/(?<=\S) $/, "");
+		nextLines.push(trimmed);
+	}
+	return nextLines.join("\n");
+}
