@@ -79,7 +79,7 @@ dev 构建默认使用一个 Cargo job，并关闭调试符号，降低 WSL 内�
 
 开发二进制直接使用 Cargo 标准输出目录，例如 `target/x86_64-unknown-linux-gnu/debug/pilo-server`，不再额外复制一份；`resources/` 中的正式资源保持不变。启动或连接时，Pilo 将匹配的 server 部署到 dev 运行目录，server 自动将内嵌插件释放到 `extensions/`。修改插件后重新构建并重启 Pilo/Pi 即可加载。运行时和插件缓存使用 `pilo-dev/server`，而非正式版的 `pilo/server`（WSL/SSH 为 `~/.cache/pilo-dev/server`）；Pi 设置和会话文件仍然共享。
 
-nsh 桌面端的发版流程和更新源尚未建立。独立的 server 运行时流水线构建四个随包分发的目标。手动准备正式资源时，Windows 使用 `pnpm server:build:win`，macOS/Linux 使用 `bash scripts/build-pilo-server.sh`。
+在 GitHub **Actions → Release → Run workflow** 选择分支，可以手动构建 nsh 发布包；匹配版本的 tag 才会创建 Release 草稿。见[桌面端打包说明](desktop/README.md#release-builds)。独立的 server 运行时流水线构建四个随包分发的目标。手动准备正式资源时，Windows 使用 `pnpm server:build:win`，macOS/Linux 使用 `bash scripts/build-pilo-server.sh`。
 
 支持的服务端运行时目标为 Linux x64/arm64、Windows x64/arm64 和 macOS x64/arm64。也可以显式构建指定目标：
 

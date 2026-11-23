@@ -79,7 +79,7 @@ The dev build defaults to one Cargo job and no debug symbols to reduce WSL memor
 
 Development binaries stay in Cargo’s standard output directory, for example `target/x86_64-unknown-linux-gnu/debug/pilo-server`, without a second staging copy. Release resources in `resources/` remain unchanged. On startup/connection, Pilo deploys the matching server into its dev runtime directory; the server writes its embedded plugins into `extensions/`. Rebuild after plugin changes and restart Pilo/Pi to load them. Runtime/extension caches use `pilo-dev/server` instead of `pilo/server` (WSL/SSH: `~/.cache/pilo-dev/server`). Pi settings and session files remain shared.
 
-The nsh desktop release pipeline and update feed are not set up yet. The separate server-runtime workflow builds the four bundled server targets. To stage a runtime manually, use `pnpm server:build:win` on Windows or `bash scripts/build-pilo-server.sh` on macOS/Linux.
+See [desktop release builds](desktop/README.md#release-builds) for manual GitHub Actions packages and tag-based release drafts. The separate server-runtime workflow builds the four bundled server targets. To stage a runtime manually, use `pnpm server:build:win` on Windows or `bash scripts/build-pilo-server.sh` on macOS/Linux.
 
 Supported server runtime targets are Linux x64/arm64, Windows x64/arm64, and macOS x64/arm64. An explicit runtime can be built with:
 

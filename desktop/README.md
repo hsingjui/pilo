@@ -2,9 +2,10 @@
 
 ## Native runtime
 
-`new Pilo()` keeps the earlier Tauri releases' data directory: `app.hsingjui.pilo` under
-`%APPDATA%` on Windows or `~/Library/Application Support` on macOS, with
-`.dev` appended for debug builds. Tests can pass a separate absolute path.
+`new Pilo()` uses `app.hsingjui.pilo` under `%APPDATA%` on Windows,
+`~/Library/Application Support` on macOS, or `$XDG_DATA_HOME` (default
+`~/.local/share`) on Linux. Debug builds append `.dev` to the directory
+name, and tests can pass a separate absolute path.
 Call `bootstrap()` for saved projects, live chat snapshots, Host preferences
 and `eventSequence`. The sequence is captured before reading the snapshot
 state; it is not a transcript watermark. Await `shutdown()` before quitting
@@ -223,9 +224,26 @@ Build the local development server with `cargo build -p pilo-server` from
 the repo root. The app prefers `target/debug/pilo-server` and falls back to
 `target/<arch>-apple-darwin/debug/pilo-server`; `PILO_SERVER_BINARY` can override
 both with an absolute path. Development WebUI assets come from the same repo
-root's `dist/`, even when nsh generates its own manifest. A packaged app will
-stage WebUI assets under `Contents/Resources/webui` and the server under
-`Contents/Resources/runtime`.
+root's `dist/`, even when nsh generates its own manifest.
+
+## Release builds
+
+Once the workflow is on the default branch, open **Actions → Release → Run workflow**
+in GitHub and select the branch to build. Download the packages from that run's
+**Artifacts**: a Windows x64
+installer and portable ZIP, an Apple Silicon DMG, and a Linux x64 tarball
+(GTK 4.14 or later). Manual runs never create a GitHub Release.
+
+For a release, make sure the root `Cargo.toml` workspace version matches
+`nsh.json`, the desktop `Cargo.toml`, and the local package entries in both
+Cargo lockfiles. Push the matching `v<version>` tag. The workflow creates a
+draft only after all three builds succeed; review the packages before
+publishing. The macOS bundle is ad hoc signed, not notarized. There is no
+Tauri updater feed or automatic upgrade from Tauri.
+
+Each package includes the built WebUI in `webui/` and all four server
+runtimes in `runtime/`. These directories live in `Contents/Resources/` on
+macOS and next to the app executable on Windows and Linux.
 
 ## Chat transcripts
 

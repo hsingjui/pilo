@@ -2,15 +2,21 @@
 
 ## 迁移协作规则
 
-- 当前只做 macOS；Tauri 壳已从仓库移除，桌面端只有 nsh 版本，WebUI 保留 React（`web/`）。nsh 版发版流程尚未建立。范围见[迁移 PRD](../../tasks/11-19-nsh-desktop-migration/prd.md)和[功能对齐清单](../../tasks/11-19-nsh-desktop-migration/feature-parity.md)；清单里的「Tauri 基线」链接指向删除前的提交，需要时用 git 历史查看。
+- 迁移功能验证以 macOS 为主；发布构建覆盖的平台见 [nsh 发版说明](../../../desktop/README.md#release-builds)。Tauri 壳已从仓库移除，桌面端只有 nsh 版本，WebUI 保留 React（`web/`）。范围见[迁移 PRD](../../tasks/11-19-nsh-desktop-migration/prd.md)和[功能对齐清单](../../tasks/11-19-nsh-desktop-migration/feature-parity.md)；清单里的「Tauri 基线」链接指向删除前的提交，需要时用 git 历史查看。
 - 用户可见的功能改动两端都做：桌面端写在 `desktop/`，WebUI 写在 `web/`，与界面无关的逻辑放进 `shared/`。
 - 运行时位于 `crates/pilo-runtime`（数据模型在 `crates/pilo-domain`），壳只做适配，见[目录与边界](./directory-structure.md#原生模块边界)。
 - 每个功能完成后立即充分测试并提交，不攒文件合并成一次提交；测试覆盖实际正常、空态和失败行为。
 - nsh 交付分别运行 headless 与 macOS 原生测试；浏览器回归单独验证，结果按功能记录提交、测试、证据。验收项目见[功能对齐清单](../../tasks/11-19-nsh-desktop-migration/feature-parity.md)，测试分层见[迁移设计](../../tasks/11-19-nsh-desktop-migration/design.md#10-测试)。
 
-## macOS 打包待办
+## nsh 发布打包
 
-建立 nsh 发版流程时，在最终 `.app` 的 `Info.plist` 加入 `NSLocalNetworkUsageDescription`，并确认完整包签名使用约定的 `app.hsingjui.pilo` 标识。仅有 Rust 链接器临时签名时，签名标识可能不匹配 macOS 本地网络授权记录，表现为终端能连而桌面 SSH 报 `No route to host`。验收应检查最终产物签名，并从安装后的应用验证局域网连接，而不只在终端验证 TCP。
+- **触发**：`.github/workflows/release.yml` 支持手动构建与 `v*` tag 推送。手动操作只上传 Artifacts；版本匹配的 tag 在三个构建全部成功后创建草稿。
+- **入口**：`cd desktop && nsh package --target <macos|windows|linux> --out .nsh/release`。该命令只生成 nsh 应用；发布包还需要 `pnpm build` 的 `dist/` 和同次 run 的 `pilo-server-runtimes` artifact。
+- **资源布局**：macOS 在 `Pilo.app/Contents/Resources/`，Windows/Linux 在 `Pilo/` 内与可执行文件同级。WebUI 放 `webui/`，四个运行时放 `runtime/`，Unix 打包保留可执行权限。
+- **失败条件**：版本文件不一致、tag 不匹配、`dist/index.html` 或任一运行时文件缺失时，不产出 Release 草稿。
+- **预期结果**：手动构建可以下载各平台包但不创建 Release；tag 构建的草稿包含和 Artifacts 相同的包，不包含 Tauri 更新文件。
+- **验收**：检查安装或解压后的应用能启动 Local、发布 Remote WebUI，并从安装版验证局域网 SSH。macOS 确认最终 `Info.plist` 含 `NSLocalNetworkUsageDescription`，签名标识为 `app.hsingjui.pilo`；只有 Rust 链接器临时签名时，局域网授权记录可能无法匹配，表现为终端能连而应用报 `No route to host`。
+- **打包顺序**：先把资源放入应用目录，再重新归档，并在 macOS 上对修改后的 `.app` 重新签名。直接上传 nsh 初次生成的 ZIP、安装器或 tarball 会遗漏资源。
 
 ## 测试组织
 

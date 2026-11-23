@@ -146,6 +146,14 @@ impl Pilo {
         let default_launch = data_dir.is_none();
         let data_dir = match data_dir {
             Some(path) => PathBuf::from(path),
+            None if cfg!(target_os = "linux") => {
+                let base = std::env::var_os("XDG_DATA_HOME")
+                    .map(PathBuf::from)
+                    .filter(|path| path.is_absolute())
+                    .or_else(|| std::env::home_dir().map(|home| home.join(".local/share")))
+                    .ok_or("could not find the Pilo data directory on Linux")?;
+                base.join(data_identifier(cfg!(debug_assertions)))
+            }
             None => {
                 let variable = if cfg!(windows) { "APPDATA" } else { "HOME" };
                 let base = std::env::var_os(variable)
@@ -172,7 +180,15 @@ impl Pilo {
 
         let resources = std::env::current_exe()
             .ok()
-            .and_then(|path| path.parent().map(|dir| dir.join("../Resources")))
+            .and_then(|path| {
+                path.parent().map(|dir| {
+                    if cfg!(target_os = "macos") {
+                        dir.join("../Resources")
+                    } else {
+                        dir.to_path_buf()
+                    }
+                })
+            })
             .ok_or("could not locate Pilo application resources")?;
         let paths = HostPaths::new(data_dir.clone(), resources.clone())?;
         let executor = executor()?;

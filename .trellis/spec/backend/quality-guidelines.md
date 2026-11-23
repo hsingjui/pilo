@@ -216,7 +216,8 @@ startup only deploys an already built server and its embedded plugins.
 #### 1. Scope / Trigger
 
 `server-runtimes.yml` runs on `main`, can be dispatched manually, and can be
-called by another workflow. There is no desktop release job yet.
+called by another workflow. The desktop `release.yml` calls it after version
+validation and downloads its artifact from the same run.
 Check the complete binary set on Ubuntu before scheduling native build runners;
 Cargo dependency caches alone cannot avoid macOS runner queue time.
 

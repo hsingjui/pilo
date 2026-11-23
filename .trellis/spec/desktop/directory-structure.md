@@ -31,7 +31,7 @@ nsh TSX 使用 `signal`、`computed`、`mount`；组件约定集中在[基础组
 - `bootstrap()` 返回 projects、chatSessions、preferences 和 `eventSequence`，见 `desktop/src/pilo/objects.rs` 的 Bootstrap 与 `desktop/src/pilo/mod.rs` 的 load_bootstrap，以及 `desktop/tests/bootstrap-fixture.tsx`。事件序列在读取快照状态前截取，不是 transcript watermark。
 - `Pilo` 构造时通过 `runtime.subscribe_events` 与 `runtime.subscribe_terminal_events` 订阅事件流，早于首次 bootstrap。`nextEvents(max)` 返回 events/gap/closed 批次，`nextTerminalEvents(max)` 返回终端强类型事件批次（shutdown 后返回空列表）；`ShellEvents.emit` 为空实现。见 `desktop/tests/runtime-events-fixture.tsx`、`desktop/tests/runtime-events.test.ts`。
 - 轮询协议依 `desktop/README.md`：每次只发起一个 nextEvents，max 为正安全整数；gap 后在同一 Pilo 实例重新 bootstrap 并继续轮询；在 transcript 自带序列前不按 eventSequence 丢弃聊天增量，transcript 重载延后到 turn idle。
-- 壳维护 Tokio executor、数据路径和资源解析。默认数据路径沿用旧 Tauri 标识，不以 nsh 应用 ID 替换；测试使用隔离路径，见[数据与兼容](../../tasks/11-19-nsh-desktop-migration/design.md#8-数据与兼容)及[数据迁移验收](../../tasks/11-19-nsh-desktop-migration/feature-parity.md#数据迁移验收)。退出前等待 `shutdown()`，见 `desktop/README.md`。偏好、项目/会话列表及已读状态接口也以该 README 和原生实现为准。
+- 壳维护 Tokio executor、数据路径和资源解析。数据目录与 nsh 默认布局一致，debug 版另加 `.dev` 后缀；测试使用隔离路径，见[数据与兼容](../../tasks/11-19-nsh-desktop-migration/design.md#8-数据与兼容)及[数据迁移验收](../../tasks/11-19-nsh-desktop-migration/feature-parity.md#数据迁移验收)。退出前等待 `shutdown()`，见 `desktop/README.md`。偏好、项目/会话列表及已读状态接口也以该 README 和原生实现为准。
 
 ### SSH 密码认证入口
 

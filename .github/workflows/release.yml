@@ -1,0 +1,268 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  NSH_VERSION: "0.6.1"
+
+jobs:
+  preflight:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check version metadata and tag
+        id: version
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          def toml(path):
+              return tomllib.loads(Path(path).read_text(encoding="utf-8"))
+
+          workspace = toml("Cargo.toml")["workspace"]
+          version = workspace["package"]["version"]
+          if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?", version):
+              raise SystemExit(f"Unsupported release version: {version!r}")
+
+          def check(label, actual, expected=version):
+              if actual != expected:
+                  raise SystemExit(f"{label}: expected {expected!r}, got {actual!r}")
+
+          desktop = toml("desktop/Cargo.toml")["package"]
+          check("desktop/Cargo.toml", desktop["version"])
+          check("desktop/nsh.json", json.loads(Path("desktop/nsh.json").read_text(encoding="utf-8"))["version"])
+          members = [toml(f"{path}/Cargo.toml")["package"]["name"] for path in workspace["members"]]
+          for path, names in [("Cargo.lock", members), ("desktop/Cargo.lock", [*members, desktop["name"]])]:
+              local_packages = {pkg["name"]: pkg["version"] for pkg in toml(path)["package"] if "source" not in pkg}
+              for name in names:
+                  check(f"{path} ({name})", local_packages.get(name))
+
+          if os.environ["GITHUB_REF_TYPE"] == "tag":
+              check("Release tag", os.environ["GITHUB_REF_NAME"], f"v{version}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print(f"version={version}", file=output)
+          print(f"Building Pilo {version}")
+          PY
+
+  runtimes:
+    name: Build server runtimes
+    needs: preflight
+    uses: ./.github/workflows/server-runtimes.yml
+
+  build:
+    name: Package ${{ matrix.platform }}-${{ matrix.arch }}
+    needs: [preflight, runtimes]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-2022
+            arch: x64
+            nsh_asset: nsh-windows-x86_64.zip
+          - platform: macos
+            runner: macos-15
+            arch: arm64
+            nsh_asset: nsh-macos-arm64.tar.gz
+          - platform: linux
+            runner: ubuntu-24.04
+            arch: x64
+            nsh_asset: nsh-linux-x86_64.tar.gz
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.preflight.outputs.version }}
+      ASSET: Pilo-v${{ needs.preflight.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "8"
+      CARGO_PROFILE_RELEASE_LTO: thin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.12.3
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential libgtk-4-dev libssl-dev libwayland-dev pkg-config
+
+      - name: Setup nsh
+        shell: bash
+        env:
+          NSH_ASSET: ${{ matrix.nsh_asset }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          gh release download "v$NSH_VERSION" --repo longbridge/nsh \
+            --pattern "$NSH_ASSET" --pattern "$NSH_ASSET.sha256"
+          if command -v sha256sum >/dev/null; then
+            sha256sum -c "$NSH_ASSET.sha256"
+          else
+            shasum -a 256 -c "$NSH_ASSET.sha256"
+          fi
+          case "$NSH_ASSET" in
+            *.zip) unzip -q "$NSH_ASSET" ;;
+            *.tar.gz) tar -xzf "$NSH_ASSET" ;;
+          esac
+          ./nsh/bin/nsh --version
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cygpath -w "$PWD/nsh/bin" >> "$GITHUB_PATH"
+          else
+            echo "$PWD/nsh/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Download server runtimes
+        uses: actions/download-artifact@v8
+        with:
+          name: pilo-server-runtimes
+          path: resources
+
+      - name: Build WebUI
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Package desktop
+        working-directory: desktop
+        shell: bash
+        env:
+          TARGET: ${{ matrix.platform }}
+        run: nsh package --target "$TARGET" --app-version "$VERSION" --out .nsh/release
+
+      - name: Stage app resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/verify-pilo-server-resources.sh
+          test -s dist/index.html
+          out=desktop/.nsh/release
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            test -d "$out/Pilo.app"
+            app_resources="$out/Pilo.app/Contents/Resources"
+          else
+            test -d "$out/Pilo"
+            app_resources="$out/Pilo"
+          fi
+          mkdir -p "$app_resources/runtime" release-assets
+          cp -R dist "$app_resources/webui"
+          cp resources/pilo-server-* "$app_resources/runtime/"
+          if [[ "$RUNNER_OS" != "Windows" ]]; then
+            chmod +x "$app_resources"/runtime/pilo-server-*
+          fi
+
+      - name: Archive Windows portable app and compile installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $out = Join-Path $PWD 'desktop/.nsh/release'
+          $release = Join-Path $PWD 'release-assets'
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (!(Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          # Rebuild both artifacts after adding Pilo's resources to the nsh output.
+          [IO.Compression.ZipFile]::CreateFromDirectory(
+            (Join-Path $out 'Pilo'), (Join-Path $release "$env:ASSET-portable.zip"),
+            [IO.Compression.CompressionLevel]::Optimal, $true)
+          & $iscc /Q "/O$release" "/F$env:ASSET-setup" (Join-Path $out 'Pilo.iss')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Sign and archive macOS app
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=desktop/.nsh/release
+          app="$out/Pilo.app"
+          codesign --force --sign - --timestamp=none --preserve-metadata=entitlements "$app"
+          codesign --verify --deep --strict "$app"
+          codesign -d --verbose=2 "$app" 2>&1 | grep -Fx 'Identifier=app.hsingjui.pilo'
+          /usr/libexec/PlistBuddy -c 'Print :NSLocalNetworkUsageDescription' "$app/Contents/Info.plist"
+          mkdir "$out/dmg"
+          mv "$app" "$out/dmg/"
+          hdiutil create -format UDZO -volname Pilo -srcfolder "$out/dmg" "release-assets/$ASSET.dmg"
+
+      - name: Archive Linux app
+        if: runner.os == 'Linux'
+        shell: bash
+        run: tar -czf "release-assets/$ASSET.tar.gz" -C desktop/.nsh/release Pilo
+
+      - name: Upload desktop packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ASSET }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Create GitHub Release draft
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download desktop packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: Pilo-v*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          flags=(--draft --verify-tag --title "Pilo $GITHUB_REF_NAME")
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" release-assets/* --repo "$GITHUB_REPOSITORY" "${flags[@]}"

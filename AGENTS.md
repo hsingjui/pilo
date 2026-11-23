@@ -183,7 +183,7 @@ nsh test
 
 ## Release
 
-nsh 版发版流程尚未建立（原 Tauri release workflow 已删除）。发布新版本前，必须先向用户确认目标版本号；`Cargo.toml` 的 `[workspace.package].version`、`Cargo.lock` 中 workspace 包版本与 tag 必须一致。
+发布新版本前，必须先向用户确认目标版本号。手动打包、版本一致性与 tag 发版见 [nsh 发版说明](desktop/README.md#release-builds)。
 
 <!-- TRELLIS:START -->
 

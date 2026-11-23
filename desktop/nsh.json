@@ -2,7 +2,16 @@
 	"name": "Pilo",
 	"id": "app.hsingjui.pilo",
 	"version": "0.4.1",
-	"icon": { "macos": "assets/app-icon-macos.png" },
+	"icon": {
+		"macos": "assets/app-icon-macos.png",
+		"windows": "assets/app-icon.png",
+		"linux": "assets/app-icon.png"
+	},
+	"macos": {
+		"infoPlist": {
+			"NSLocalNetworkUsageDescription": "Pilo uses the local network to connect to SSH hosts and serve the Remote WebUI."
+		}
+	},
 	"theme": "theme.json",
 	"singleInstance": true,
 	"window": {
