@@ -931,6 +931,7 @@ const zhCN = {
 		readingDiff: "正在读取 diff…",
 		diffReadFailed: "无法读取 diff",
 		workspaceTabs: "工作区标签页",
+		moreTabs: "更多标签页（{{count}}）",
 		workspaceUnavailable: "此视图暂不支持文件预览。",
 		loading: "加载中…",
 		reading: "正在读取文件…",

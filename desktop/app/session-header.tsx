@@ -1,8 +1,14 @@
-import { Clipboard, type JSX, signal, Text, token, View } from "nsh";
+import { Clipboard, computed, type JSX, signal, Text, token, View } from "nsh";
 import { Button as BaseButton } from "nsh/base";
 
 import { fileBasename } from "@shared/chat/chat-tool-result";
 import type { WorkspaceFile } from "@shared/project-workspace";
+import {
+	computeMaxVisibleAuxTabs,
+	partitionHeaderTabs,
+	workspaceFileIconKind,
+	type WorkspaceFileIconKind,
+} from "@shared/project-workspace-tabs";
 import type { TerminalTab } from "../state/terminal-store";
 
 import { AppToaster, showToast } from "./app-toasts";
@@ -15,7 +21,8 @@ import { DialogFooter } from "../ui/dialog-footer";
 import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
 import { focusRingStyle } from "../ui/focus-ring-style";
-import { Icon } from "../ui/icon";
+import { createHover } from "../ui/hover";
+import { Icon, type IconName } from "../ui/icon";
 import { Input } from "../ui/input";
 import { Menu } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
@@ -60,24 +67,97 @@ export interface SessionHeaderProps {
 	actions?: JSX.Element;
 }
 
+const FILE_ICON_MAP: Record<WorkspaceFileIconKind, IconName> = {
+	text: "FileText",
+	json: "FileJson2",
+	config: "FileCog",
+	terminal: "SquareTerminal",
+	style: "Palette",
+	file: "File",
+	code: "FileCode2",
+};
+
+interface AuxTabItem {
+	id: string;
+	testID: string;
+	closeTestID: string;
+	icon: IconName;
+	label: () => string;
+	tooltip: () => string;
+	tooltipMono?: boolean;
+	closeLabel: () => string;
+	onSelect: () => void;
+	onClose: () => void;
+}
+
 /**
  * The open session's part of the main title bar: its title tab, the
  * project's file and terminal tabs, the actions and the menu. It fills the bar
  * beside the window controls, as the React header does on its draggable top row.
  */
 export function SessionHeader(props: SessionHeaderProps) {
+	const stripWidth = signal(0);
 	const fileTabs = () => props.files?.tabs() ?? [];
 	const terminalTabs = () => props.terminals?.tabs() ?? [];
-	const hasTabs = () => fileTabs().length > 0 || terminalTabs().length > 0;
-	const chatSelected = () =>
-		(props.files?.activePath() ?? null) === null &&
-		(props.terminals?.activeId() ?? null) === null;
+	const auxTabs = computed<AuxTabItem[]>(() => {
+		const items: AuxTabItem[] = [];
+		for (const file of fileTabs()) {
+			const name = fileBasename(file.path) || file.path;
+			items.push({
+				id: `file:${file.path}`,
+				testID: `file-tab:${file.path}`,
+				closeTestID: `file-tab-close:${file.path}`,
+				icon: FILE_ICON_MAP[workspaceFileIconKind(file.path)],
+				label: () => name,
+				tooltip: () => file.path,
+				tooltipMono: true,
+				closeLabel: () => t("file.closeFile", { name }),
+				onSelect: () => props.files?.onSelect(file.path),
+				onClose: () => props.files?.onClose(file.path),
+			});
+		}
+		for (const tab of terminalTabs()) {
+			const label = () =>
+				`${tab.title} ${tab.number}${tab.exited ? " · exited" : ""}`;
+			items.push({
+				id: `terminal:${tab.id}`,
+				testID: `terminal-tab:${tab.id}`,
+				closeTestID: `terminal-tab-close:${tab.id}`,
+				icon: "SquareTerminal",
+				label,
+				tooltip: label,
+				closeLabel: () => t("terminal.close"),
+				onSelect: () => props.terminals?.onSelect(tab.id),
+				onClose: () => props.terminals?.onClose(tab.id),
+			});
+		}
+		return items;
+	});
+	const hasTabs = computed(() => auxTabs().length > 0);
+	const activeAuxId = computed<string | null>(() => {
+		const activeFile = props.files?.activePath() ?? null;
+		if (activeFile !== null) return `file:${activeFile}`;
+		const activeTerminal = props.terminals?.activeId() ?? null;
+		if (activeTerminal !== null) return `terminal:${activeTerminal}`;
+		return null;
+	});
+	const chatSelected = computed(() => activeAuxId() === null);
+	const maxVisible = computed(() =>
+		computeMaxVisibleAuxTabs(stripWidth(), props.showTitle() || hasTabs()),
+	);
+	const partitioned = computed(() =>
+		partitionHeaderTabs(auxTabs(), activeAuxId(), maxVisible()),
+	);
+	const hasOverflow = computed(() => partitioned().overflow.length > 0);
 	return (
 		<View
 			testID="main-header"
-			class="h-full min-w-0 flex-1 flex-row items-center"
+			class="h-full min-w-0 flex-1 flex-row items-center gap-2"
 		>
-			<View class="min-w-0 flex-1 flex-row items-center gap-1">
+			<View
+				class="min-w-0 flex-1 flex-row items-center gap-1"
+				onLayout={({ bounds }) => stripWidth.set(bounds.size.width)}
+			>
 				{() => {
 					if (!props.showTitle() && !hasTabs()) return null;
 					const tooltip = (
@@ -89,13 +169,25 @@ export function SessionHeader(props: SessionHeaderProps) {
 						<>
 							{() =>
 								props.temporary() ? (
-									<Icon name="MessageSquareDashed" size={16} />
+									<Icon
+										name="MessageSquareDashed"
+										size={14}
+										color={token(
+											chatSelected() ? "foreground" : "muted-foreground",
+										)}
+									/>
 								) : (
 									<View
 										class="transition-opacity duration-200"
-										style={{ opacity: props.logoHidden?.() ? 0 : 0.6 }}
+										style={{
+											opacity: props.logoHidden?.()
+												? 0
+												: chatSelected()
+													? 0.75
+													: 0.45,
+										}}
 									>
-										<PiLogo size={16} />
+										<PiLogo size={15} />
 									</View>
 								)
 							}
@@ -103,7 +195,11 @@ export function SessionHeader(props: SessionHeaderProps) {
 								testID="session-header-title"
 								class={classNames(
 									"min-w-0 shrink truncate font-sans text-sm",
-									chatSelected() ? "text-foreground" : "text-muted-foreground",
+									chatSelected()
+										? hasTabs()
+											? "font-medium text-foreground"
+											: "text-foreground"
+										: "text-muted-foreground",
 								)}
 							>
 								{() => props.title()}
@@ -112,20 +208,23 @@ export function SessionHeader(props: SessionHeaderProps) {
 					);
 					const tabClass = (extra: string | false) =>
 						classNames(
-							"min-h-8 min-w-0 flex-row items-center gap-1.5 rounded-(--pilo-radius-md) border px-2",
-							props.temporary()
-								? "border-dashed border-border"
-								: "border-transparent",
+							"h-7 min-w-0 flex-row items-center gap-1.5 rounded-(--pilo-radius-md) border px-2 transition-colors",
 							extra,
 						);
-					// Beside terminal tabs the title is a tab that brings the chat back.
+					// Beside auxiliary tabs the title becomes a matching ghost tab.
 					return hasTabs() ? (
 						<BaseButton
 							testID="session-header"
 							class={tabClass(
 								classNames(
-									"min-w-24 max-w-56 focus-visible:outline-hidden",
-									chatSelected() ? "bg-muted/60" : "hover:bg-hover",
+									"min-w-20 max-w-48 focus-visible:outline-hidden",
+									props.temporary()
+										? chatSelected()
+											? "border-dashed border-border bg-secondary"
+											: "border-dashed border-border/70 hover:bg-hover/70"
+										: chatSelected()
+											? "border-border/70 bg-secondary"
+											: "border-transparent hover:bg-hover/70",
 								),
 							)}
 							focusVisibleStyle={focusRingStyle(token("ring"))}
@@ -143,7 +242,14 @@ export function SessionHeader(props: SessionHeaderProps) {
 					) : (
 						<View
 							testID="session-header"
-							class={tabClass("max-w-[66.666667%]")}
+							class={tabClass(
+								classNames(
+									"max-w-[66.666667%]",
+									props.temporary()
+										? "border-dashed border-border"
+										: "border-transparent",
+								),
+							)}
 							tooltip={tooltip}
 						>
 							{content}
@@ -151,24 +257,25 @@ export function SessionHeader(props: SessionHeaderProps) {
 					);
 				}}
 				{() =>
-					fileTabs().map((file) => (
-						<FileHeaderTab
-							file={file}
-							selected={() => props.files?.activePath() === file.path}
-							onSelect={() => props.files?.onSelect(file.path)}
-							onClose={() => props.files?.onClose(file.path)}
+					hasTabs() ? (
+						<View
+							testID="workspace-tabs-divider"
+							class="mx-0.5 h-3.5 w-px shrink-0 bg-border/80"
 						/>
-					))
+					) : null
 				}
-				{() =>
-					terminalTabs().map((tab) => (
-						<TerminalHeaderTab
-							tab={tab}
-							selected={() => props.terminals?.activeId() === tab.id}
-							onSelect={() => props.terminals?.onSelect(tab.id)}
-							onClose={() => props.terminals?.onClose(tab.id)}
+				<Each of={partitioned().visible} key={(tab) => tab.id}>
+					{(tab) => (
+						<WorkspaceHeaderTab
+							tab={tab()}
+							selected={() => activeAuxId() === tab().id}
 						/>
-					))
+					)}
+				</Each>
+				{() =>
+					hasOverflow() ? (
+						<OverflowTabsMenu items={() => partitioned().overflow} />
+					) : null
 				}
 			</View>
 			<View class="shrink-0 flex-row items-center gap-1 pr-2">
@@ -188,152 +295,128 @@ export function SessionHeader(props: SessionHeaderProps) {
 	);
 }
 
-type FileIconName =
-	| "FileText"
-	| "FileJson2"
-	| "FileCog"
-	| "SquareTerminal"
-	| "Palette"
-	| "File"
-	| "FileCode2";
-
-function workspaceFileIconName(path: string): FileIconName {
-	const name = fileBasename(path).toLowerCase();
-	if (
-		/\.(?:md|markdown|txt|log)$/.test(name) ||
-		/^(?:readme|license)$/.test(name)
-	)
-		return "FileText";
-	if (/\.(?:json|jsonc|json5)$/.test(name)) return "FileJson2";
-	if (
-		/\.(?:ya?ml|toml|ini|conf|cfg)$/.test(name) ||
-		/^\.env(?:\.|$)/.test(name) ||
-		/^(?:\.gitignore|\.dockerignore)$/.test(name)
-	)
-		return "FileCog";
-	if (
-		/\.(?:sh|bash|zsh|fish|ps1|psm1|bat|cmd)$/.test(name) ||
-		/^(?:dockerfile|makefile)$/.test(name)
-	)
-		return "SquareTerminal";
-	if (/\.(?:css|scss|sass|less)$/.test(name)) return "Palette";
-	if (!name.includes(".")) return "File";
-	return "FileCode2";
-}
-
-/** A file preview's tab: its type icon, filename, path tooltip and close button. */
-function FileHeaderTab(props: {
-	file: WorkspaceFile;
+/** A ghost workspace tab (Git, file preview or terminal) with hover-revealed close. */
+function WorkspaceHeaderTab(props: {
+	tab: AuxTabItem;
 	selected: () => boolean;
-	onSelect: () => void;
-	onClose: () => void;
 }) {
-	const name = fileBasename(props.file.path) || props.file.path;
-	const iconName = workspaceFileIconName(props.file.path);
+	const hover = createHover();
+	const active = () => props.selected();
+	const showClose = () => active() || hover.hovered();
 	return (
 		<View
-			testID={`file-tab:${props.file.path}`}
+			testID={props.tab.testID}
+			{...hover.props}
 			class={classNames(
-				"min-w-28 max-w-56 flex-row items-center rounded-(--pilo-radius-md) border hover:bg-hover",
-				props.selected() ? "border-border bg-muted/60" : "border-border/60",
+				"h-7 max-w-44 shrink-0 flex-row items-center rounded-(--pilo-radius-md) border transition-colors",
+				active()
+					? "border-border/70 bg-secondary"
+					: "border-transparent hover:bg-hover/70",
 			)}
 		>
 			<BaseButton
-				class="min-h-8 min-w-0 flex-1 flex-row items-center gap-1.5 pl-2.5 pr-1 focus-visible:outline-hidden"
+				class="h-full min-w-0 flex-1 flex-row items-center gap-1.5 pl-2 pr-0.5 focus-visible:outline-hidden"
 				focusVisibleStyle={focusRingStyle(token("ring"))}
 				role="tab"
-				selected={props.selected()}
-				accessibilityLabel={name}
+				selected={active()}
+				accessibilityLabel={props.tab.label()}
 				tooltip={
 					<Tooltip>
-						<Text class="font-mono text-xs">{props.file.path}</Text>
+						<Text
+							class={props.tab.tooltipMono ? "font-mono text-xs" : "font-sans"}
+						>
+							{props.tab.tooltip}
+						</Text>
 					</Tooltip>
 				}
-				onPress={props.onSelect}
+				onPress={props.tab.onSelect}
 			>
 				<Icon
-					name={iconName}
-					size={16}
-					color={token(props.selected() ? "foreground" : "muted-foreground")}
+					name={props.tab.icon}
+					size={14}
+					color={token(
+						active() || hover.hovered() ? "foreground" : "muted-foreground",
+					)}
 				/>
 				<Text
 					class={classNames(
 						"min-w-0 shrink truncate font-sans text-sm",
-						props.selected() ? "text-foreground" : "text-muted-foreground",
+						active()
+							? "font-medium text-foreground"
+							: hover.hovered()
+								? "text-foreground"
+								: "text-muted-foreground",
 					)}
 				>
-					{name}
+					{props.tab.label}
 				</Text>
 			</BaseButton>
 			<Button
-				testID={`file-tab-close:${props.file.path}`}
+				testID={props.tab.closeTestID}
 				variant="ghost"
 				size="icon"
-				class="mr-1 size-6"
-				accessibilityLabel={t("file.closeFile", { name })}
-				onPress={props.onClose}
+				class={classNames(
+					"mr-0.5 size-5 shrink-0 rounded-sm transition-opacity",
+					showClose() ? "opacity-100" : "opacity-0",
+				)}
+				accessibilityLabel={props.tab.closeLabel()}
+				onPress={props.tab.onClose}
 			>
-				<Icon name="X" size={14} color={token("muted-foreground")} />
+				<Icon name="X" size={12} color={token("muted-foreground")} />
 			</Button>
 		</View>
 	);
 }
 
-/** A terminal's tab: its shell's title, and a button that closes it. */
-function TerminalHeaderTab(props: {
-	tab: TerminalTab;
-	selected: () => boolean;
-	onSelect: () => void;
-	onClose: () => void;
-}) {
-	const label = () =>
-		`${props.tab.title} ${props.tab.number}${props.tab.exited ? " · exited" : ""}`;
+/** Collapses auxiliary tabs that exceed the title bar's inline budget into a compact menu. */
+function OverflowTabsMenu(props: { items: () => readonly AuxTabItem[] }) {
+	const count = () => props.items().length;
+	const label = () => t("file.moreTabs", { count: count() });
 	return (
-		<View
-			testID={`terminal-tab:${props.tab.id}`}
-			class={classNames(
-				"min-w-28 max-w-56 flex-row items-center rounded-(--pilo-radius-md) border hover:bg-hover",
-				props.selected() ? "border-border bg-muted/60" : "border-border/60",
-			)}
-		>
-			<BaseButton
-				class="min-h-8 min-w-0 flex-1 flex-row items-center gap-1.5 pl-2.5 pr-1 focus-visible:outline-hidden"
-				focusVisibleStyle={focusRingStyle(token("ring"))}
-				role="tab"
-				selected={props.selected()}
-				accessibilityLabel={label()}
-				tooltip={
-					<Tooltip>
-						<Text class="font-sans">{label}</Text>
-					</Tooltip>
-				}
-				onPress={props.onSelect}
-			>
-				<Icon
-					name="SquareTerminal"
-					size={16}
-					color={token(props.selected() ? "foreground" : "muted-foreground")}
-				/>
-				<Text
-					class={classNames(
-						"min-w-0 shrink truncate font-sans text-sm",
-						props.selected() ? "text-foreground" : "text-muted-foreground",
-					)}
+		<Menu
+			align="start"
+			popupClass="w-60"
+			trigger={
+				<Button
+					testID="workspace-tabs-overflow"
+					variant="ghost"
+					size="sm"
+					class="h-7 shrink-0 gap-1 rounded-(--pilo-radius-md) border border-border/60 px-2 text-xs text-muted-foreground hover:bg-hover/70 hover:text-foreground"
+					accessibilityLabel={label()}
+					tooltip={
+						<Tooltip>
+							<Text class="font-sans">{label}</Text>
+						</Tooltip>
+					}
 				>
-					{label}
-				</Text>
-			</BaseButton>
-			<Button
-				testID={`terminal-tab-close:${props.tab.id}`}
-				variant="ghost"
-				size="icon"
-				class="mr-1 size-6"
-				accessibilityLabel={t("terminal.close")}
-				onPress={props.onClose}
-			>
-				<Icon name="X" size={14} color={token("muted-foreground")} />
-			</Button>
-		</View>
+					<Text class="font-mono text-xs text-muted-foreground">
+						{() => `+${count()}`}
+					</Text>
+					<Icon
+						name="ChevronDown"
+						size={12}
+						color={token("muted-foreground")}
+					/>
+				</Button>
+			}
+		>
+			<View class="gap-0.5">
+				<Each of={props.items()} key={(item) => item.id}>
+					{(item) => (
+						<MenuItem
+							testID={`overflow-tab:${item().id}`}
+							indicatorClass="hidden"
+							icon={<Icon name={item().icon} size={14} />}
+							onSelect={() => item().onSelect()}
+						>
+							<Text class="min-w-0 flex-1 truncate font-sans text-sm">
+								{() => item().label()}
+							</Text>
+						</MenuItem>
+					)}
+				</Each>
+			</View>
+		</Menu>
 	);
 }
 

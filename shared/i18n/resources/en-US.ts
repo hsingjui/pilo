@@ -967,6 +967,7 @@ const enUS = {
 		readingDiff: "Reading diff…",
 		diffReadFailed: "Unable to read diff",
 		workspaceTabs: "Workspace tabs",
+		moreTabs: "More tabs ({{count}})",
 		workspaceUnavailable: "File previews are unavailable in this view.",
 		loading: "Loading…",
 		reading: "Reading files…",
