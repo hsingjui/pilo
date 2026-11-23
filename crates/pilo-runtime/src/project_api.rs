@@ -7,7 +7,7 @@ use super::{
 };
 use std::sync::Arc;
 
-use pilo_domain::{DiscoveredProject, Project, ProjectModelCache};
+use pilo_domain::{Project, ProjectModelCache};
 
 use super::{Runtime, project, storage};
 
@@ -23,27 +23,6 @@ pub async fn project_open_in_app(
 ) -> Result<(), String> {
     let project = project::ready(runtime, &runtime.servers, &id).await?;
     super::project_opener::open(runtime, &project, app, path.as_deref()).await
-}
-
-pub async fn project_open_in_zed_wsl(
-    runtime: &Runtime,
-    id: String,
-    path: Option<String>,
-) -> Result<(), String> {
-    let project = project::ready(runtime, &runtime.servers, &id).await?;
-    let pilo_domain::ConnectionKind::Wsl { distro } = &project.connection.kind else {
-        return Err("opening Zed in WSL requires a WSL project".to_owned());
-    };
-    super::wsl::open_in_zed(distro, path.as_deref().unwrap_or(&project.path)).await
-}
-
-pub async fn project_html_report_open(
-    runtime: &Runtime,
-    project_id: String,
-    url: String,
-) -> Result<(), String> {
-    let project = project::ready(runtime, &runtime.servers, &project_id).await?;
-    super::file_links::open(runtime, &project, &url).await
 }
 
 pub async fn project_file_link_open(
@@ -106,10 +85,6 @@ pub async fn project_add(
     let project = project::add(runtime, &runtime.servers, connection_id, path).await?;
     runtime.chat_sessions.open_project(&project.id).await?;
     Ok(project)
-}
-
-pub async fn project_refresh(runtime: &Runtime, id: String) -> Result<Project, String> {
-    project::refresh(runtime, &runtime.servers, &id).await
 }
 
 pub fn project_touch(runtime: &Runtime, id: String) -> Result<Project, String> {
@@ -287,15 +262,6 @@ pub async fn project_preview_close(runtime: &Runtime, preview_id: String) -> Res
     runtime.previews.lock().await.close(&preview_id).await
 }
 
-pub async fn project_fs_read_dir(
-    runtime: &Runtime,
-    id: String,
-    path: String,
-) -> Result<Vec<FsEntry>, String> {
-    let project = project::ready(runtime, &runtime.servers, &id).await?;
-    remote_fs::read_dir(&runtime.servers, &project, &path).await
-}
-
 pub fn local_pick_project_directory(runtime: &Runtime) -> Result<Option<String>, String> {
     Ok(runtime.shell()?.pick_directory())
 }
@@ -310,15 +276,6 @@ pub async fn connection_fs_read_dir(
         return Err("local connection should use the native directory picker".to_owned());
     }
     remote_fs::read_connection_dir(&runtime.servers, &connection, &path).await
-}
-
-pub async fn project_fs_read_file(
-    runtime: &Runtime,
-    id: String,
-    path: String,
-) -> Result<Vec<u8>, String> {
-    let project = project::ready(runtime, &runtime.servers, &id).await?;
-    remote_fs::read_viewer_file(&runtime.servers, &project, &path).await
 }
 
 pub async fn project_fs_read_image(
@@ -349,45 +306,6 @@ pub async fn project_chat_file_remove(
     remote_fs::remove_chat_file(&runtime.servers, &project, &path).await
 }
 
-pub async fn project_fs_write_file(
-    runtime: &Runtime,
-    id: String,
-    path: String,
-    data: Vec<u8>,
-) -> Result<(), String> {
-    let project = project::ready(runtime, &runtime.servers, &id).await?;
-    remote_fs::write_file(&runtime.servers, &project, &path, &data).await
-}
-
-pub async fn project_fs_stat(
-    runtime: &Runtime,
-    id: String,
-    path: String,
-) -> Result<FsEntry, String> {
-    let project = project::ready(runtime, &runtime.servers, &id).await?;
-    remote_fs::stat(&runtime.servers, &project, &path).await
-}
-
-pub async fn project_fs_mkdir(runtime: &Runtime, id: String, path: String) -> Result<(), String> {
-    let project = project::ready(runtime, &runtime.servers, &id).await?;
-    remote_fs::mkdir(&runtime.servers, &project, &path).await
-}
-
-pub async fn project_fs_rename(
-    runtime: &Runtime,
-    id: String,
-    from: String,
-    to: String,
-) -> Result<(), String> {
-    let project = project::ready(runtime, &runtime.servers, &id).await?;
-    remote_fs::rename(&runtime.servers, &project, &from, &to).await
-}
-
-pub async fn project_fs_remove(runtime: &Runtime, id: String, path: String) -> Result<(), String> {
-    let project = project::ready(runtime, &runtime.servers, &id).await?;
-    remote_fs::remove(&runtime.servers, &project, &path).await
-}
-
 pub async fn project_fs_search(
     runtime: &Runtime,
     id: String,
@@ -395,13 +313,6 @@ pub async fn project_fs_search(
 ) -> Result<Vec<String>, String> {
     let project = project::ready(runtime, &runtime.servers, &id).await?;
     remote_fs::search(&runtime.servers, &project, &query).await
-}
-
-pub async fn project_discover(
-    runtime: &Runtime,
-    connection_id: String,
-) -> Result<Vec<DiscoveredProject>, String> {
-    project::discover(runtime, &runtime.servers, connection_id).await
 }
 
 #[cfg(test)]

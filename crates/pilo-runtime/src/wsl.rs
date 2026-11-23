@@ -63,41 +63,6 @@ pub async fn list_wsl_distributions() -> Result<Vec<WslDistribution>, WslConnect
     Ok(parse_wsl_distribution_list(&output.stdout))
 }
 
-pub(crate) async fn open_in_zed(distro: &str, path: &str) -> Result<(), String> {
-    #[cfg(not(windows))]
-    {
-        let _ = (distro, path);
-        Err("opening Zed in WSL is only supported on Windows".to_owned())
-    }
-    #[cfg(windows)]
-    {
-        let executable = std::env::var_os("LOCALAPPDATA")
-            .map(std::path::PathBuf::from)
-            .map(|dir| dir.join("Programs/Zed/bin/zed.exe"))
-            .filter(|path| path.is_file())
-            .unwrap_or_else(|| "zed.exe".into());
-        // A UNC file URL opens locally; WSL remote requires the CLI's --wsl flag.
-        let mut command = Command::new(executable);
-        command.args(["--wsl", distro, "--", path]);
-        command.kill_on_drop(true);
-        super::hide_console_window(&mut command);
-        let output = timeout(Duration::from_secs(30), command.output())
-            .await
-            .map_err(|_| "timed out while opening Zed in WSL".to_owned())?
-            .map_err(|error| {
-                format!("failed to run Zed CLI; ensure zed.exe is installed and in PATH: {error}")
-            })?;
-        if !output.status.success() {
-            return Err(format_command_failure(
-                "Zed WSL launcher",
-                output.status.to_string(),
-                &String::from_utf8_lossy(&output.stderr),
-            ));
-        }
-        Ok(())
-    }
-}
-
 fn parse_wsl_distribution_list(bytes: &[u8]) -> Vec<WslDistribution> {
     let text = decode_wsl_text(bytes);
     let mut seen = HashSet::new();

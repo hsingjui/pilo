@@ -1,11 +1,7 @@
-use std::collections::BTreeSet;
-
 use super::Runtime;
 use pilo_protocol::EnvironmentInfo;
-use serde::Deserialize;
-use serde_json::Value;
 
-use pilo_domain::{Connection, DiscoveredProject, Project, ProjectMetadata};
+use pilo_domain::{Connection, Project, ProjectMetadata};
 
 use super::{
     events::{RuntimeEvent, RuntimeEventBus, RuntimeEventEnvelope},
@@ -13,8 +9,6 @@ use super::{
 };
 
 use super::{pi_workspace, server_client::ServerManager};
-
-const MAX_DISCOVERED_PROJECTS: usize = 200;
 
 pub(crate) fn load_model_scope(
     runtime: &Runtime,
@@ -156,32 +150,6 @@ pub(crate) async fn add(
     Ok(project)
 }
 
-pub(crate) async fn refresh(
-    runtime: &Runtime,
-    servers: &ServerManager,
-    id: &str,
-) -> Result<Project, String> {
-    let current = ready(runtime, servers, id).await?;
-    let default_workspace = current.is_default_workspace();
-    let (connection, metadata) = inspect(servers, current.connection, current.path).await?;
-    let normalized_path = metadata.cwd.clone();
-    let project = Project {
-        id: current.id,
-        name: if default_workspace {
-            current.name
-        } else {
-            Project::name_from_path(&normalized_path)
-        },
-        path: normalized_path,
-        connection,
-        metadata,
-        created_at_ms: current.created_at_ms,
-        last_opened_at_ms: current.last_opened_at_ms,
-    };
-    storage::upsert_project(&storage::open(&runtime.paths)?, &project)?;
-    Ok(project)
-}
-
 pub(crate) fn touch(runtime: &Runtime, id: &str) -> Result<Project, String> {
     get(runtime, id)?;
     storage::touch_project(&storage::open(&runtime.paths)?, id, storage::now_ms())?;
@@ -215,35 +183,6 @@ pub(crate) fn reorder(
     }
     storage::reorder_projects(&mut db, connection_id, &ordered)?;
     storage::list_projects(&db)
-}
-
-pub(crate) async fn discover(
-    runtime: &Runtime,
-    servers: &ServerManager,
-    connection_id: String,
-) -> Result<Vec<DiscoveredProject>, String> {
-    let connection = resolve_connection(runtime, &connection_id)?;
-    let headers: Vec<Value> = servers
-        .request_typed(&connection, "session.discover", Value::Null)
-        .await?;
-    let existing = list(runtime)?;
-    let added_ids = existing
-        .iter()
-        .map(|project| project.id.as_str())
-        .collect::<BTreeSet<_>>();
-    let mut paths = parse_session_headers(&headers);
-    paths.truncate(MAX_DISCOVERED_PROJECTS);
-    Ok(paths
-        .into_iter()
-        .map(|path| {
-            let id = Project::stable_id(&connection.id, &path);
-            DiscoveredProject {
-                name: Project::name_from_path(&path),
-                path,
-                already_added: added_ids.contains(id.as_str()),
-            }
-        })
-        .collect())
 }
 
 pub(crate) fn resolve_connection(
@@ -283,26 +222,6 @@ async fn inspect(
             refreshed_at_ms: storage::now_ms(),
         },
     ))
-}
-
-#[derive(Deserialize)]
-struct SessionHeader {
-    #[serde(rename = "type")]
-    kind: String,
-    cwd: String,
-}
-
-fn parse_session_headers(headers: &[Value]) -> Vec<String> {
-    let mut paths = BTreeSet::new();
-    for value in headers {
-        let Ok(header) = serde_json::from_value::<SessionHeader>(value.clone()) else {
-            continue;
-        };
-        if header.kind == "session" && !header.cwd.trim().is_empty() {
-            paths.insert(header.cwd);
-        }
-    }
-    paths.into_iter().collect()
 }
 
 #[cfg(test)]
@@ -354,19 +273,5 @@ mod tests {
         );
         assert!(runtime.shell().is_err());
         std::fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn parses_unique_project_paths_from_session_headers() {
-        let headers = vec![
-            serde_json::json!({"type":"session","version":3,"cwd":"/root/code/pilo"}),
-            serde_json::json!({"type":"session","version":3,"cwd":"/root/code/pi"}),
-            serde_json::json!({"type":"session","version":3,"cwd":"/root/code/pilo"}),
-            serde_json::json!({"type":"message","cwd":"/ignore"}),
-        ];
-        assert_eq!(
-            parse_session_headers(&headers),
-            vec!["/root/code/pi".to_owned(), "/root/code/pilo".to_owned()]
-        );
     }
 }

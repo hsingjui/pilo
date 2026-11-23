@@ -66,14 +66,6 @@ pub struct ProjectModelScope {
     pub updated_at_ms: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiscoveredProject {
-    pub name: String,
-    pub path: String,
-    pub already_added: bool,
-}
-
 impl Project {
     pub fn default_workspace_id(connection_id: &str) -> String {
         format!("default-workspace:{connection_id}")

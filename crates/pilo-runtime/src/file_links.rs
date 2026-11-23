@@ -332,20 +332,6 @@ pub(crate) async fn open_file_link(
 }
 
 // Retain the original HTML-only command contract for existing callers.
-pub(crate) async fn open(runtime: &Runtime, project: &Project, url: &str) -> Result<(), String> {
-    if !matches!(project.connection.kind, ConnectionKind::Local) {
-        return open_remote_file_link(runtime, project, url, false, true)
-            .await
-            .map(|_| ());
-    }
-    if !is_html(&file_path(url)?) || !is_html(&checked_file_path(url).await?) {
-        return Err("HTML report must resolve to an HTML file".to_owned());
-    }
-    open_file_link(runtime, project, url, false)
-        .await
-        .map(|_| ())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

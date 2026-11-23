@@ -1,25 +1,11 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 pub use pilo_protocol::FsEntry;
-use pilo_protocol::{FsEntryKind, MAX_BINARY_PAYLOAD_BYTES};
+use pilo_protocol::FsEntryKind;
 use serde_json::json;
 
 use pilo_domain::{Connection, Project};
 
 use super::server_client::ServerManager;
-
-pub async fn read_dir(
-    servers: &ServerManager,
-    project: &Project,
-    path: &str,
-) -> Result<Vec<FsEntry>, String> {
-    servers
-        .request_typed(
-            &project.connection,
-            "fs.read_dir",
-            json!({ "project": project.path, "path": path }),
-        )
-        .await
-}
 
 pub async fn read_connection_dir(
     servers: &ServerManager,
@@ -56,27 +42,6 @@ pub async fn read_file(
         ));
     }
     Ok(binary.into_iter().next().expect("binary length checked"))
-}
-
-/// Viewer-only absolute reads stay on the project's connection; other FS operations remain scoped.
-pub async fn read_viewer_file(
-    servers: &ServerManager,
-    project: &Project,
-    path: &str,
-) -> Result<Vec<u8>, String> {
-    let path = path.replace('\\', "/");
-    let absolute = path.starts_with('/')
-        || (path.as_bytes().get(1) == Some(&b':') && path.as_bytes().get(2) == Some(&b'/'));
-    if !absolute {
-        return read_file(servers, project, &path).await;
-    }
-    let (parent, name) = path
-        .rsplit_once('/')
-        .ok_or_else(|| "file path has no parent directory".to_owned())?;
-    // Let the server canonicalize and validate the selected parent, including remote paths.
-    let mut scope = project.clone();
-    scope.path = format!("{parent}/");
-    read_file(servers, &scope, name).await
 }
 
 pub(crate) use pilo_protocol::MAX_CHAT_FILE_BYTES;
@@ -190,33 +155,6 @@ pub async fn read_image(
     Ok(bytes)
 }
 
-pub async fn write_file(
-    servers: &ServerManager,
-    project: &Project,
-    path: &str,
-    data: &[u8],
-) -> Result<(), String> {
-    if data.len() > MAX_BINARY_PAYLOAD_BYTES {
-        return Err(format!(
-            "file write is {} bytes; pilo-server limit is {} bytes",
-            data.len(),
-            MAX_BINARY_PAYLOAD_BYTES
-        ));
-    }
-    servers
-        .request_with_binary(
-            &project.connection,
-            "fs.write_file",
-            json!({
-                "project": project.path,
-                "path": path,
-            }),
-            vec![data.to_vec()],
-        )
-        .await
-        .map(|_| ())
-}
-
 pub async fn stat(
     servers: &ServerManager,
     project: &Project,
@@ -229,44 +167,6 @@ pub async fn stat(
             json!({ "project": project.path, "path": path }),
         )
         .await
-}
-
-pub async fn mkdir(servers: &ServerManager, project: &Project, path: &str) -> Result<(), String> {
-    servers
-        .request(
-            &project.connection,
-            "fs.mkdir",
-            json!({ "project": project.path, "path": path }),
-        )
-        .await
-        .map(|_| ())
-}
-
-pub async fn rename(
-    servers: &ServerManager,
-    project: &Project,
-    from: &str,
-    to: &str,
-) -> Result<(), String> {
-    servers
-        .request(
-            &project.connection,
-            "fs.rename",
-            json!({ "project": project.path, "from": from, "to": to }),
-        )
-        .await
-        .map(|_| ())
-}
-
-pub async fn remove(servers: &ServerManager, project: &Project, path: &str) -> Result<(), String> {
-    servers
-        .request(
-            &project.connection,
-            "fs.remove",
-            json!({ "project": project.path, "path": path }),
-        )
-        .await
-        .map(|_| ())
 }
 
 pub async fn search(

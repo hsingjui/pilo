@@ -20,8 +20,7 @@ pub use connection::{
     WslDistribution,
 };
 pub use project::{
-    DiscoveredProject, Project, ProjectMetadata, ProjectModelCache, ProjectModelScope,
-    ProjectScopedModel,
+    Project, ProjectMetadata, ProjectModelCache, ProjectModelScope, ProjectScopedModel,
 };
 pub use remote::{
     RemoteAccessAddress, RemoteAccessConfig, RemoteDevice, RemoteHostConfig, random_remote_port,
