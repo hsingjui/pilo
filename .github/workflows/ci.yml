@@ -68,6 +68,7 @@ jobs:
             curl \
             file \
             libssl-dev \
+            libwayland-dev \
             pkg-config \
             wget
 
