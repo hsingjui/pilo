@@ -505,7 +505,9 @@ async fn assert_invalidated_tail(change: &str) {
     if change == "identity" {
         let replacement = fixture.directory.join("replacement");
         std::fs::write(&replacement, &bytes).unwrap();
-        std::fs::File::open(&replacement)
+        std::fs::File::options()
+            .write(true)
+            .open(&replacement)
             .unwrap()
             .set_times(std::fs::FileTimes::new().set_modified(mtime))
             .unwrap();
@@ -561,7 +563,9 @@ async fn bounded_tail_seal_cannot_detect_earlier_rewrites_with_append_or_restore
         }
         std::fs::write(&fixture.path, &bytes).unwrap();
         if !append {
-            std::fs::File::open(&fixture.path)
+            std::fs::File::options()
+                .write(true)
+                .open(&fixture.path)
                 .unwrap()
                 .set_times(std::fs::FileTimes::new().set_modified(mtime))
                 .unwrap();
@@ -581,7 +585,9 @@ async fn mtime_change_without_append_is_conservatively_truncated() {
         .unwrap()
         .modified()
         .unwrap();
-    std::fs::File::open(&fixture.path)
+    std::fs::File::options()
+        .write(true)
+        .open(&fixture.path)
         .unwrap()
         .set_times(std::fs::FileTimes::new().set_modified(mtime + Duration::from_secs(1)))
         .unwrap();

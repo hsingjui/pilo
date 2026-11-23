@@ -85,19 +85,21 @@ pub(crate) async fn attach(
         source_project: source.id,
         source_connection: source.connection.id,
     };
-    // Debug Local servers are GUI executables. Use the console runtime for ctl.
+    // On Windows, ctl needs the console runtime, not the GUI host executable.
     let executable = if local && cfg!(windows) {
         let path = if cfg!(debug_assertions) {
-            std::env::current_exe()
-                .map_err(|_| "failed to locate Windows ctl runtime".to_owned())?
-                .with_file_name("pilo-server.exe")
+            if let Some(binary) = super::server_deploy::local_server_binary() {
+                binary.to_path_buf()
+            } else {
+                std::env::current_exe()
+                    .map_err(|_| "failed to locate Windows ctl runtime".to_owned())?
+                    .with_file_name("pilo-server.exe")
+            }
         } else {
             super::server_deploy::server_binary(super::server_deploy::ServerTarget::current()?)?
         };
         if !path.is_file() {
-            return Err(
-                "Windows ctl runtime is unavailable; start development with pnpm dev".to_owned(),
-            );
+            return Err("Windows ctl runtime is unavailable; build pilo-server first".to_owned());
         }
         Some(path.to_string_lossy().into_owned())
     } else {

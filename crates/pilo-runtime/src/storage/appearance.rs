@@ -165,8 +165,11 @@ mod tests {
 
     struct TestDb {
         db: Connection,
-        root: std::path::PathBuf,
+        // Drop the SQLite connection before removing its files (required on Windows).
+        _root: TestDbDir,
     }
+
+    struct TestDbDir(std::path::PathBuf);
 
     impl TestDb {
         fn new() -> Self {
@@ -181,7 +184,7 @@ mod tests {
             let paths = HostPaths::new(root.clone(), root.clone()).unwrap();
             Self {
                 db: crate::storage::open(&paths).unwrap(),
-                root,
+                _root: TestDbDir(root),
             }
         }
 
@@ -210,9 +213,9 @@ mod tests {
         }
     }
 
-    impl Drop for TestDb {
+    impl Drop for TestDbDir {
         fn drop(&mut self) {
-            std::fs::remove_dir_all(&self.root).unwrap();
+            std::fs::remove_dir_all(&self.0).unwrap();
         }
     }
 
