@@ -7,6 +7,8 @@
 		"desktop:generate:icons": "node scripts/generate-desktop-icons.mjs",
 		"desktop:generate:themes": "node scripts/generate-desktop-themes.mjs",
 		"build": "tsc -p shared && tsc && vite build",
+		"build:nsh-web": "node scripts/build-nsh-web.mjs",
+		"dev:nsh-web": "nsh dev --target web desktop/mobile",
 		"preview": "vite preview",
 		"server:build": "node scripts/build-server.mjs",
 		"server:build:win": "scripts\\build-pilo-server.cmd",

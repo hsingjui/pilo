@@ -58,6 +58,7 @@ self.addEventListener("fetch", (event) => {
 	const url = new URL(request.url);
 	if (url.origin !== self.location.origin) return;
 	if (url.pathname.startsWith("/api/v1/")) return;
+	if (url.pathname === "/nsh" || url.pathname.startsWith("/nsh/")) return;
 
 	// Chrome's WebAPK updater must not read an outdated launch theme from precache.
 	if (url.pathname === "/manifest.webmanifest") {
