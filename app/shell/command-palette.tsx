@@ -336,7 +336,7 @@ export function CommandPalette(props: CommandPaletteProps) {
 						<Spinner size={14} color={token("muted-foreground")} />
 					) : undefined
 				}
-				listClass="min-h-0 flex-1 px-2 pt-0.5 pb-2"
+				listClass="min-h-0 flex-1 mx-2 mt-0.5 mb-2"
 				groupClass="px-2.5 pt-2.5 pb-1 text-[11px] leading-4 font-medium text-muted-foreground"
 				itemClass="group flex-col items-stretch justify-center rounded-(--pilo-radius-md) px-2.5 py-2 text-[13px] leading-[18px] text-foreground outline-hidden hover:bg-hover focus:bg-hover hover:text-hover-foreground focus:text-hover-foreground disabled:opacity-50"
 				itemStyle={{ marginBottom: 2 }}

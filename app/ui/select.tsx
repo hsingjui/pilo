@@ -1,4 +1,4 @@
-import { signal, split, token, Text, View } from "nsh";
+import { signal, split, token, Text, View, windowSize } from "nsh";
 import {
 	Select as BaseSelect,
 	type SelectProps as BaseSelectProps,
@@ -10,6 +10,21 @@ import { SelectTrigger } from "./select-trigger";
 import { styleVar } from "./theme-style";
 
 export type { SelectItem } from "nsh/base";
+
+/** Default maximum height of a dropdown list (~8-9 compact rows) before scrolling. */
+export const SELECT_LIST_MAX_HEIGHT = 288;
+
+/**
+ * Suitable maximum list height for dropdown pickers: caps long lists around
+ * 8-9 compact rows on desktop while shrinking on short viewports (e.g. mobile
+ * soft keyboard) so the popup stays usable.
+ */
+export function selectListMaxHeight(): number {
+	return Math.min(
+		SELECT_LIST_MAX_HEIGHT,
+		Math.max(160, Math.round(windowSize().height * 0.45)),
+	);
+}
 
 export interface SelectProps extends BaseSelectProps {
 	/** The default trigger's height, as Input's: `sm` for compact rows such as settings. */
@@ -31,6 +46,7 @@ export function Select(props: SelectProps) {
 		"popupClass",
 		"popupStyle",
 		"listClass",
+		"listStyle",
 		"itemClass",
 		"itemStyle",
 		"groupClass",
@@ -64,7 +80,10 @@ export function Select(props: SelectProps) {
 				)
 			}
 			popupClass={classNames(
-				"rounded-(--pilo-floating-radius) border border-border bg-popover text-popover-foreground text-sm font-sans",
+				"overflow-hidden rounded-(--pilo-floating-radius) border border-border bg-popover text-popover-foreground text-sm text-(length:--pilo-ui-text-sm) font-sans",
+				// Keep padding off the inner Scroll: nsh Scroll adds padding to its
+				// content size, causing a scrollbar even when all items fit.
+				!props.searchable && "p-(--pilo-select-padding)",
 				local.popupClass,
 			)}
 			popupStyle={[
@@ -74,29 +93,33 @@ export function Select(props: SelectProps) {
 				},
 				local.popupStyle,
 			]}
-			listClass={classNames("p-(--pilo-select-padding)", local.listClass)}
+			listClass={classNames(
+				props.searchable && "m-(--pilo-select-padding)",
+				local.listClass,
+			)}
+			listStyle={[{ maxHeight: selectListMaxHeight() }, local.listStyle]}
 			itemClass={classNames(
-				"group flex-row min-w-0 min-h-(--pilo-select-item-height) rounded-(--pilo-select-item-radius) px-2 py-1.5 text-sm font-sans focus:bg-hover focus:text-hover-foreground selected:bg-(--pilo-select-checked-background) disabled:opacity-50",
+				"group flex-col items-stretch justify-center min-w-0 min-h-(--pilo-select-item-height) rounded-(--pilo-select-item-radius) px-2 py-1.5 text-sm text-(length:--pilo-ui-text-sm) font-sans focus:bg-hover focus:text-hover-foreground selected:bg-(--pilo-select-checked-background) disabled:opacity-50",
 				local.itemClass,
 			)}
 			itemStyle={[selectItemSpacing(), local.itemStyle]}
 			groupClass={classNames(
-				"px-2 py-1.5 text-xs font-medium text-muted-foreground",
+				"px-2 py-1.5 text-xs text-(length:--pilo-ui-text-xs) font-medium text-muted-foreground",
 				local.groupClass,
 			)}
 			searchClass={classNames(
-				"h-8 flex-1 bg-transparent px-3 text-sm outline-hidden placeholder:text-muted-foreground border-b border-border",
+				"h-8 flex-1 bg-transparent px-3 text-sm text-(length:--pilo-ui-text-sm) outline-hidden placeholder:text-muted-foreground border-b border-border",
 				local.searchClass,
 			)}
 			renderItem={
 				local.renderItem ??
 				((item) => (
-					<View class="min-w-0 flex-1 flex-row items-center gap-2">
+					<View class="w-full min-w-0 flex-row items-center gap-2">
 						<Text class="font-sans min-w-0 flex-1 truncate">{item.title}</Text>
 						<Icon
 							name="Check"
 							size={14}
-							class="opacity-0 group-selected:opacity-100"
+							class="shrink-0 opacity-0 group-selected:opacity-100"
 							color={token("popover-foreground")}
 						/>
 					</View>

@@ -22,7 +22,7 @@ function renderItem(item: CommandEntry) {
 			<Text class="font-sans">{item.label}</Text>
 			{item.shortcutLabel ? (
 				<View class="ml-auto">
-					<Text class="font-sans text-xs tracking-widest text-muted-foreground">
+					<Text class="font-sans text-xs text-(length:--pilo-ui-text-xs) tracking-widest text-muted-foreground">
 						{item.shortcutLabel}
 					</Text>
 				</View>
@@ -58,22 +58,21 @@ export function Command(props: CommandProps) {
 					local.searchBarClass,
 				)}
 				searchClass={classNames(
-					"h-full flex-1 bg-transparent text-sm leading-5 outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+					"h-full flex-1 bg-transparent text-sm text-(length:--pilo-ui-text-sm) outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
 					local.searchClass,
 				)}
-				listClass={local.listClass ?? "max-h-[300px] p-1"}
+				// Margin instead of padding on the inner Scroll avoids inflating its
+				// scroll content size and showing a scrollbar when all rows fit.
+				listClass={local.listClass ?? "max-h-72 m-1"}
 				itemClass={classNames(
-					"group flex-col items-stretch justify-center min-h-(--pilo-command-item-height) rounded-(--pilo-radius-md) px-2.5 py-2 text-sm leading-5 text-foreground outline-hidden hover:bg-hover focus:bg-hover hover:text-hover-foreground focus:text-hover-foreground disabled:opacity-50",
+					"group flex-col items-stretch justify-center min-h-(--pilo-command-item-height) rounded-(--pilo-radius-md) px-2.5 py-2 text-sm text-(length:--pilo-ui-text-sm) text-foreground outline-hidden hover:bg-hover focus:bg-hover hover:text-hover-foreground focus:text-hover-foreground disabled:opacity-50",
 					local.itemClass,
 				)}
 				groupClass={classNames(
-					"px-2 py-1.5 text-xs leading-4 font-medium text-muted-foreground",
+					"px-2 py-1.5 text-xs text-(length:--pilo-ui-text-xs) font-medium text-muted-foreground",
 					local.groupClass,
 				)}
-				separatorClass={classNames(
-					"-mx-1 h-px bg-border",
-					local.separatorClass,
-				)}
+				separatorClass={classNames("h-px bg-border", local.separatorClass)}
 				separator={local.separator ?? false}
 				searchPrefix={
 					local.searchPrefix ?? (
@@ -83,7 +82,9 @@ export function Command(props: CommandProps) {
 				renderItem={local.renderItem ?? renderItem}
 				empty={
 					local.empty ? (
-						<View class="items-center py-6 text-sm">{local.empty}</View>
+						<View class="items-center py-6 text-sm text-(length:--pilo-ui-text-sm)">
+							{local.empty}
+						</View>
 					) : undefined
 				}
 			/>

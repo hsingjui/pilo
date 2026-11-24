@@ -36,3 +36,33 @@ test("Select supports uncontrolled defaults, disabled triggers and empty items",
 	await app.keyboard.press("escape");
 	await app.waitFor("text:No options", { state: "gone" });
 });
+
+test("Select caps long lists to a bounded height and scrolls to the last option", async () => {
+	const app = await open("./ui-select-fixture.tsx", {
+		platform: "macos",
+		width: 800,
+		height: 750,
+	});
+	await app.press("id:long-select");
+	await app.waitFor("text:Option 1");
+	// With 24 items capped at 288pt, the last option starts scrolled out of view.
+	expect(app.shows("text:Option 24")).toBe(false);
+	await app.scroll("text:Option 1", 2000);
+	await app.waitFor("text:Option 24");
+	await app.press("text:Option 24");
+	await app.waitFor("text:Long: option-24");
+});
+
+test("Searchable Select filters options without overflowing short lists", async () => {
+	const app = await open("./ui-select-fixture.tsx", {
+		platform: "macos",
+		width: 800,
+		height: 750,
+	});
+	await app.press("id:searchable-select");
+	await app.waitFor("label:Filter options");
+	await app.type("label:Filter options", "qual");
+	await app.waitFor("text:Unavailable", { state: "gone" });
+	await app.press("text:Quality");
+	await app.waitFor("text:Searchable: quality");
+});

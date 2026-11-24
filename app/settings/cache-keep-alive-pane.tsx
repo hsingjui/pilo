@@ -12,6 +12,7 @@ import { Command } from "../ui/command";
 import { Icon } from "../ui/icon";
 import { NumberInput } from "../ui/number-input";
 import { Popover } from "../ui/popover";
+import { selectItemSpacing, selectListMaxHeight } from "../ui/select";
 import { Switch } from "../ui/switch";
 import {
 	ConnectionModelLists,
@@ -299,6 +300,7 @@ export function CacheKeepAlivePane(props: {
 										})
 									}
 									align="end"
+									offset={4}
 									popupClass="w-80 p-0 overflow-hidden"
 									trigger={
 										<SettingsActionButton
@@ -323,6 +325,10 @@ export function CacheKeepAlivePane(props: {
 											),
 											disabled: adding()[connectionId],
 										}))}
+										searchBarClass="h-9 gap-2 px-2.5"
+										listClass="m-(--pilo-select-padding)"
+										listStyle={{ maxHeight: selectListMaxHeight() }}
+										itemStyle={selectItemSpacing()}
 										autoFocus
 										placeholder={String(t("chat.searchModels"))}
 										searchAccessibilityLabel={String(t("chat.searchModels"))}

@@ -26,8 +26,9 @@
 
 ## 下拉选择
 
-- 普通单选用 `desktop/ui/select.tsx`。字体选择需要搜索、自定义名称和预览，保留 `Popover` + `Command`，触发器复用 `desktop/ui/select-trigger.tsx`。
-- `Select` 和 `Command` 的 `listClass` 作用在外层滚动容器，而不是内部虚拟列表的行容器。用 `selectItemSpacing()` 给 `itemStyle` 加行间距；不要在 `listClass` 上加 `gap` 来隔开高亮背景。
+- 普通单选用 `app/ui/select.tsx`。字体选择需要搜索、自定义名称和预览，保留 `Popover` + `Command`，触发器复用 `app/ui/select-trigger.tsx`。
+- `Select` 和 `Command` 的 `listClass` 作用在外层 `Scroll` 滚动容器，而不是内部虚拟列表的行容器。用 `selectItemSpacing()` 给 `itemStyle` 加行间距；不要在 `listClass` 上加 `gap` 来隔开高亮背景，也**不要在 `listClass` 上加 `p-*` 内边距**（nsh 的 `Scroll` 会把内边距计入 `ScrollContent` 尺寸，导致即使选项全部渲染完也会出现滚动条）。外框留白放到 `popupClass`（无搜索框时）或 `listClass` 的 `m-*` 外边距上。
+- 下拉列表统一通过 `selectListMaxHeight()`（默认上限 `SELECT_LIST_MAX_HEIGHT = 288`，窄高视口按视口 45% 收缩且不低于 160）限定最大高度：选项较少时自然贴合内容高度且无滚动条，选项较多时在限定高度内滚动。
 - 普通 `Select` 的原生弹层跟随触发器宽度，默认从下方展开，空间不足时可向上翻转，不覆盖触发器。字体弹层通过 `onLayout` 读取触发器宽度。先约束触发器宽度，给箭头或勾选标记留空间，长标签采用单行截断。
 
 ## 控件高度与复用

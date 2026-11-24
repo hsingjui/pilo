@@ -6,7 +6,7 @@ import type { FontOption } from "@shared/font-settings";
 import { Command } from "../ui/command";
 import { Icon } from "../ui/icon";
 import { Popover } from "../ui/popover";
-import { selectItemSpacing } from "../ui/select";
+import { selectItemSpacing, selectListMaxHeight } from "../ui/select";
 import { SelectTrigger } from "../ui/select-trigger";
 
 export type FontSelectGroup = {
@@ -104,6 +104,9 @@ export function FontSelect(props: {
 		>
 			<Command
 				items={items()}
+				searchBarClass="h-9 gap-2 px-2.5"
+				listClass="m-(--pilo-select-padding)"
+				listStyle={{ maxHeight: selectListMaxHeight() }}
 				itemStyle={selectItemSpacing()}
 				autoFocus
 				placeholder={String(t("settings.searchFonts"))}
