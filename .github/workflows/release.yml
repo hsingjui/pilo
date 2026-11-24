@@ -248,9 +248,10 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :NSLocalNetworkUsageDescription' "$app/Contents/Info.plist"
           # The updater needs the final signed .app, not a DMG or nsh's initial archive.
           COPYFILE_DISABLE=1 tar -czf "release-assets/Pilo-$VERSION-macos-aarch64.tar.gz" -C "$out" Pilo.app
-          mkdir "$out/dmg"
-          mv "$app" "$out/dmg/"
-          hdiutil create -format UDZO -volname Pilo -srcfolder "$out/dmg" "release-assets/$ASSET.dmg"
+          python3 -m venv .nsh/dmgbuild
+          .nsh/dmgbuild/bin/python -m pip install 'dmgbuild==2.0.0'
+          .nsh/dmgbuild/bin/dmgbuild -s scripts/macos-dmg-settings.py -D app="$app" \
+            Pilo "release-assets/$ASSET.dmg"
 
       - name: Archive Linux app
         if: runner.os == 'Linux'
