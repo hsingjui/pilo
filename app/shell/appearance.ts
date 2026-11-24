@@ -38,6 +38,14 @@ import lody from "../../theme/theme.json";
 import { setStyleTheme, type StyleVariables } from "../ui/theme-style";
 import { appLocale, setAppLocale } from "./i18n";
 
+// nsh omits system-ui fonts from the generated tokens, but themes can set them at runtime.
+declare module "nsh" {
+	interface Tokens {
+		"font-sans"?: string;
+		"font-display"?: string;
+	}
+}
+
 export type GeneratedTheme = {
 	cssVars: ThemeCssVars;
 	styleVars: StyleVariables;
