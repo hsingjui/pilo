@@ -21,6 +21,8 @@ import { Input } from "../ui/input";
 import { Menu, menuPopupClass, menuPopupStyle } from "../ui/menu";
 import { MenuItem } from "../ui/menu-item";
 import { createHover } from "../ui/hover";
+import { AppToaster } from "./app-toasts";
+import { deleteSessionWithToast } from "./delete-session";
 import { t } from "./i18n";
 import { sessionRowKey } from "./sidebar-projects";
 import {
@@ -123,6 +125,7 @@ export function SessionRow(props: {
 }) {
 	const { store } = props;
 	const session = props.session;
+	const toasts = AppToaster();
 	const glide = SessionGlideContext();
 	let bounds: Bounds | null = null;
 	const menuOpen = signal(false);
@@ -181,7 +184,12 @@ export function SessionRow(props: {
 	};
 
 	const deleteSession = () =>
-		void store.deleteSession(session().projectId, session().sessionPath);
+		void deleteSessionWithToast(
+			store,
+			toasts,
+			session().projectId,
+			session().sessionPath,
+		);
 
 	/** The menu's delete is a two-step confirm: the item stays open once. */
 	const confirmDelete = () => {

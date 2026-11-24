@@ -19,6 +19,8 @@ import { Button as BaseButton } from "nsh/base";
 import { isDefaultWorkspace, type Project } from "@shared/api/projects-types";
 import type { SidebarSession } from "@shared/sidebar/sidebar-types";
 
+import { AppToaster } from "../app/shell/app-toasts";
+import { deleteSessionWithToast } from "../app/shell/delete-session";
 import { t } from "../app/shell/i18n";
 import {
 	recentSessions,
@@ -93,6 +95,7 @@ function connectionStatusLabel(state: WebRemoteConnectionState): string {
  */
 export function MobileDrawer(props: MobileDrawerProps) {
 	const { store } = props;
+	const toasts = AppToaster();
 	const mode = signal<DrawerTab>("projects");
 	const sectionOverrides = signal<Record<string, boolean>>({});
 	const projectLimits = signal<Record<string, number>>({});
@@ -322,7 +325,9 @@ export function MobileDrawer(props: MobileDrawerProps) {
 							accessibilityLabel={`${t("common.delete")}: ${session.title}`}
 							onPress={() => {
 								confirmingDeleteKey.set(null);
-								void store.deleteSession(
+								void deleteSessionWithToast(
+									store,
+									toasts,
 									session.projectId,
 									session.sessionPath,
 								);

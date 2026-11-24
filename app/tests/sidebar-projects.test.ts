@@ -233,6 +233,7 @@ test("a session row's delete asks again, then removes and closes it", async () =
 
 	await app.keyboard.press("enter");
 	await app.waitFor("id:session:s4", { state: "gone" });
+	await app.waitFor("text:Session moved to trash");
 	expect(clientCalls(app)).toContainEqual({
 		call: "deleteSession",
 		projectId: "pilo",
@@ -240,6 +241,36 @@ test("a session row's delete asks again, then removes and closes it", async () =
 	});
 	// Deleting the open session closes it.
 	await app.waitFor("id:session-header", { state: "gone" });
+});
+
+test("deleting a session notifies on permanent delete and failure", async () => {
+	const app = await openSidebar({
+		"pilo.collapsedSections": JSON.stringify({ "ws:pilo": false }),
+	});
+	await app.waitFor("id:session:s3");
+
+	// Permanent unlink shows "Session deleted".
+	await app.hover("id:session:s3");
+	await app.press("id:session:s3:menu");
+	await app.waitFor("id:session:s3:delete");
+	await app.keyboard.press("end");
+	await app.keyboard.press("enter");
+	await app.waitFor("text:Confirm delete");
+	await app.keyboard.press("enter");
+	await app.waitFor("id:session:s3", { state: "gone" });
+	await app.waitFor("text:Session deleted");
+
+	// Failure shows an error toast with the reason and keeps the session row.
+	await app.hover("id:session:s6");
+	await app.press("id:session:s6:menu");
+	await app.waitFor("id:session:s6:delete");
+	await app.keyboard.press("end");
+	await app.keyboard.press("enter");
+	await app.waitFor("text:Confirm delete");
+	await app.keyboard.press("enter");
+	await app.waitFor("text:Failed to delete session");
+	expect(app.shows("text:Permission denied")).toBe(true);
+	expect(app.shows("id:session:s6")).toBe(true);
 });
 
 test("a connection's projects hide when it is collapsed, and stay hidden next launch", async () => {

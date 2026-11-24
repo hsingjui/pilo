@@ -6,6 +6,7 @@ import type {
 	PiloClientEventMessage,
 } from "@shared/api/pilo-client";
 import type { Project } from "@shared/api/projects-types";
+import type { SessionDeleteResult } from "@shared/api/sessions-types";
 import type { NshPiloClient } from "../client/nsh-pilo-client";
 import {
 	type AppAction,
@@ -354,14 +355,13 @@ export class AppStore {
 	}
 
 	/** Deletes a saved session; the one open in the chat pane closes. */
-	async deleteSession(projectId: string, sessionPath: string) {
-		try {
-			await this.client.deleteSession(projectId, sessionPath);
-		} catch (error) {
-			console.error("Deleting the session failed", error);
-			return;
-		}
+	async deleteSession(
+		projectId: string,
+		sessionPath: string,
+	): Promise<SessionDeleteResult> {
+		const result = await this.client.deleteSession(projectId, sessionPath);
 		this.apply({ type: "session_deleted", projectId, sessionPath });
+		return result;
 	}
 
 	/**

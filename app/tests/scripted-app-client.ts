@@ -236,7 +236,7 @@ export type AppScript = {
 	onDeleteSession?: (
 		projectId: string,
 		sessionPath: string,
-	) => SessionDeleteResult;
+	) => SessionDeleteResult | Promise<SessionDeleteResult>;
 	/** The Remote Host state `remoteHostState` answers; stopped when left out. */
 	remoteHost?: RemoteHostState;
 	/** What `remoteHostState` rejects with when set. */
@@ -431,13 +431,15 @@ export function scriptedClient(script: AppScript = {}) {
 		},
 		searchSessions: (projectId, query, limit) =>
 			Promise.resolve(script.onSearchSessions?.(projectId, query, limit) ?? []),
-		deleteSession(projectId, sessionPath) {
+		async deleteSession(projectId, sessionPath) {
+			const result = (await script.onDeleteSession?.(
+				projectId,
+				sessionPath,
+			)) ?? {
+				method: "trash" as const,
+			};
 			deleted.add(sessionPath);
-			return Promise.resolve(
-				script.onDeleteSession?.(projectId, sessionPath) ?? {
-					method: "trash" as const,
-				},
-			);
+			return result;
 		},
 		loadHistory: async (_projectId, sessionPath) =>
 			({

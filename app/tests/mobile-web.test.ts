@@ -224,3 +224,41 @@ test("mobile shell shows auth expiry reminder and clears it on renew", async () 
 	await app.press("id:mobile-auth-renew-button");
 	expect(app.shows("id:mobile-auth-expiry-banner")).toBe(false);
 });
+
+test("mobile drawer notifies when deleting a session succeeds or fails", async () => {
+	const app = await open("./mobile-web-fixture.tsx", {
+		locale: "en-US",
+		width: 390,
+		height: 844,
+	});
+
+	await app.press("id:mobile-menu-button");
+	await app.waitFor("id:mobile-session-menu:s1");
+	await app.press("id:mobile-session-menu:s1");
+	await app.waitFor("id:mobile-session-delete:s1");
+	await app.press("id:mobile-session-delete:s1");
+	await app.waitFor("id:mobile-session-confirm-delete:s1");
+	await app.press("id:mobile-session-confirm-delete:s1");
+
+	await app.waitFor("id:mobile-session:s1", { state: "gone" });
+	await app.waitFor("text:Session moved to trash");
+
+	const failed = await open("./mobile-web-fixture.tsx", {
+		locale: "en-US",
+		width: 390,
+		height: 844,
+		storage: { "fixture.scenario": "delete-failed" },
+	});
+
+	await failed.press("id:mobile-menu-button");
+	await failed.waitFor("id:mobile-session-menu:s1");
+	await failed.press("id:mobile-session-menu:s1");
+	await failed.waitFor("id:mobile-session-delete:s1");
+	await failed.press("id:mobile-session-delete:s1");
+	await failed.waitFor("id:mobile-session-confirm-delete:s1");
+	await failed.press("id:mobile-session-confirm-delete:s1");
+
+	await failed.waitFor("text:Failed to delete session");
+	expect(failed.shows("text:Disk is read-only")).toBe(true);
+	expect(failed.shows("id:mobile-session:s1")).toBe(true);
+});

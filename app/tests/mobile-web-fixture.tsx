@@ -208,6 +208,12 @@ async function run() {
 	const runtime = scriptedClient({
 		projects: [project],
 		sessions: async (projectId) => (projectId === "p1" ? sessions : []),
+		onDeleteSession: async () => {
+			if (scenario === "delete-failed") {
+				throw new Error("Disk is read-only");
+			}
+			return { method: "trash" };
+		},
 		themeSettings,
 		history: async (sessionPath) =>
 			sessionPath === "/sessions/s1.jsonl"

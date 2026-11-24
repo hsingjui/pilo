@@ -173,8 +173,16 @@ async function run() {
 		},
 		onDeleteSession(projectId, sessionPath) {
 			record({ call: "deleteSession", projectId, sessionPath });
+			if (sessionPath === "/sessions/s6.jsonl") {
+				return Promise.reject(new Error("Permission denied"));
+			}
 			runtime.emit({ type: "sessions_indexed", projectId });
-			return { method: "trash" as const };
+			return {
+				method:
+					sessionPath === "/sessions/s3.jsonl"
+						? ("unlink" as const)
+						: ("trash" as const),
+			};
 		},
 		history: (sessionPath) => histories[sessionPath]?.() ?? Promise.resolve([]),
 		chatSessions: [

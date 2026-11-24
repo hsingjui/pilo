@@ -66,6 +66,9 @@ function fakeClient() {
 		themeSettings: theme(1) as ThemeSettings | Error,
 		readStates: [] as SessionReadState[],
 		markFails: false,
+		deleteResult: { method: "trash" as const } as
+			| { method: "trash" | "unlink" }
+			| Error,
 	};
 	const marked: { projectId: string; sessionPath: string; revision: number }[] =
 		[];
@@ -96,7 +99,10 @@ function fakeClient() {
 				: Promise.resolve(read(sessionPath, revision, revision));
 		},
 		updateSessionUiState: () => Promise.reject(new Error("unused")),
-		deleteSession: () => Promise.reject(new Error("unused")),
+		deleteSession: () =>
+			answers.deleteResult instanceof Error
+				? Promise.reject(answers.deleteResult)
+				: Promise.resolve(answers.deleteResult),
 		loadThemeSettings: () =>
 			answers.themeSettings instanceof Error
 				? Promise.reject(answers.themeSettings)
@@ -780,6 +786,31 @@ test("a chat state read that fails keeps the state shown and the next event read
 	chatStates[2]?.resolve(chat("k1", true));
 	await settle();
 	expect(store.state().chatSessions).toEqual([chat("k1", true)]);
+});
+
+test("deleteSession returns the deletion method and propagates errors", async () => {
+	const { store, answers, sessionLists } = await startedStore();
+	const load = store.loadSessions("p1");
+	sessionLists[0]?.resolve([session("p1", "a"), session("p1", "b")]);
+	await load;
+
+	answers.deleteResult = { method: "trash" };
+	expect(await store.deleteSession("p1", "a")).toEqual({
+		method: "trash",
+	});
+	expect(
+		store.state().sessionIndexes.p1?.sessions.map((s) => s.sessionPath),
+	).toEqual(["b"]);
+
+	answers.deleteResult = new Error("file is busy");
+	let failed: unknown;
+	await store.deleteSession("p1", "b").catch((error: unknown) => {
+		failed = error;
+	});
+	expect(failed instanceof Error ? failed.message : null).toBe("file is busy");
+	expect(
+		store.state().sessionIndexes.p1?.sessions.map((s) => s.sessionPath),
+	).toEqual(["b"]);
 });
 
 test("the store keeps the chat states current through the native module", async () => {
