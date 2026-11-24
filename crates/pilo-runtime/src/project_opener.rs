@@ -74,6 +74,10 @@ async fn powershell_windows_executable() -> Result<PathBuf, String> {
     {
         return Ok(pwsh);
     }
+    windows_powershell_executable()
+}
+
+fn windows_powershell_executable() -> Result<PathBuf, String> {
     let windows = std::env::var_os("SystemRoot")
         .map(PathBuf::from)
         .ok_or_else(|| "Windows system directory is unavailable".to_owned())?;
@@ -201,17 +205,20 @@ pub(crate) async fn open(
             .map_err(|error| format!("failed to launch app: {error}"))?;
         }
         ProjectApp::Powershell => {
-            let mut command = Command::new(powershell_windows_executable().await?);
-            // Keep paths out of PowerShell source, including quotes and wildcard characters.
-            command.env("PILO_OPEN_DIRECTORY", &directory).args([
-                "-NoLogo",
-                "-NoExit",
-                "-Command",
-                "Set-Location -LiteralPath $env:PILO_OPEN_DIRECTORY; Remove-Item Env:\\PILO_OPEN_DIRECTORY",
-            ]);
-            command.current_dir(&directory);
-            #[cfg(windows)]
-            command.creation_flags(0x0000_0010); // CREATE_NEW_CONSOLE
+            // Start-Process lets Windows give the interactive shell its own console I/O.
+            // Pass paths as data, and restore the location after the user's profile runs.
+            let mut command = Command::new(windows_powershell_executable()?);
+            command
+                .env("PILO_OPEN_POWERSHELL", powershell_windows_executable().await?)
+                .env("PILO_OPEN_DIRECTORY", &directory)
+                .args([
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    r#"$ErrorActionPreference = 'Stop'
+Start-Process -FilePath $env:PILO_OPEN_POWERSHELL -WorkingDirectory $env:PILO_OPEN_DIRECTORY -ArgumentList '-NoLogo -NoExit -Command "Set-Location -LiteralPath $env:PILO_OPEN_DIRECTORY; Remove-Item Env:\PILO_OPEN_DIRECTORY, Env:\PILO_OPEN_POWERSHELL"'"#,
+                ]);
+            super::hide_console_window(&mut command);
             command
         }
         ProjectApp::Finder => {
@@ -230,9 +237,7 @@ pub(crate) async fn open(
         }
     };
 
-    if matches!(app, ProjectApp::Powershell)
-        || (matches!(app, ProjectApp::Winc) && !cfg!(target_os = "macos"))
-    {
+    if matches!(app, ProjectApp::Winc) && !cfg!(target_os = "macos") {
         let mut child = command
             .spawn()
             .map_err(|error| format!("failed to launch app: {error}"))?;

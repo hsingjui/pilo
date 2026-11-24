@@ -195,13 +195,8 @@ export function MobileDrawer(props: MobileDrawerProps) {
 		() => store.state().preferences?.values.defaultWorkspaceVisibility ?? {},
 	);
 	const groups = computed(() => {
-		const state = store.state();
-		const homeProjects = state.projects.filter(
-			(project) => project.connection.shownInHome,
-		);
-		const visible = homeProjects.length > 0 ? homeProjects : state.projects;
 		const shown = defaultWorkspaceShown();
-		return sidebarGroups(visible).map((group) => ({
+		return sidebarGroups(store.state().projects).map((group) => ({
 			...group,
 			projects: group.projects.filter(
 				(project) =>

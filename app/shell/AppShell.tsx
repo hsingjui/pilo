@@ -482,7 +482,7 @@ export function AppShell(props: AppShellProps) {
 		untracked(() => showChat(currentProjectId));
 	});
 	const openAddProject = (connectionId: string | null) => {
-		addProjectConnection.set(connectionId);
+		addProjectConnection.set(connectionId ?? project()?.connection.id ?? null);
 		addProjectOpen.set(true);
 	};
 	const cycleModel = (scoped: boolean) => {
@@ -1066,7 +1066,7 @@ export function AppShell(props: AppShellProps) {
 							<AddProjectDialog
 								open={addProjectOpen}
 								api={props.projectClient}
-								initialConnectionId={addProjectConnection}
+								connectionId={addProjectConnection}
 								onAdd={(connectionId, path) =>
 									store.addProject(connectionId, path)
 								}

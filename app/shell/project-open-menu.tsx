@@ -116,7 +116,10 @@ export function ProjectOpenMenu(props: {
 				}
 				onPress={() => open(selected())}
 			>
-				{() => <OpenerIcon opener={selected().id} />}
+				{() => {
+					const opener = selected().id;
+					return <OpenerIcon opener={opener} />;
+				}}
 			</Button>
 			<Menu
 				align="end"

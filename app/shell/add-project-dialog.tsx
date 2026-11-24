@@ -1,4 +1,14 @@
-import { computed, type Signal, signal, Text, token, View } from "nsh";
+import {
+	computed,
+	effect,
+	Scroll,
+	type Signal,
+	signal,
+	Text,
+	token,
+	untracked,
+	View,
+} from "nsh";
 
 import type { FsEntry } from "@shared/api/files-types";
 import type { Connection } from "@shared/api/pi-runtime-types";
@@ -12,7 +22,7 @@ import { DialogHeader } from "../ui/dialog-header";
 import { DialogTitle } from "../ui/dialog-title";
 import { Icon } from "../ui/icon";
 import { Input } from "../ui/input";
-import { Select } from "../ui/select";
+import { scrollbarLook } from "../ui/scrollbar";
 import { Spinner } from "../ui/spinner";
 import { t } from "./i18n";
 
@@ -53,11 +63,10 @@ export function AddProjectDialog(props: {
 	open: Signal<boolean>;
 	api: AddProjectApi;
 	onAdd: (connectionId: string, path: string) => Promise<Project>;
-	/** The connection the dialog opens on (a connection row's +). */
-	initialConnectionId?: () => string | null;
+	/** The target set by the opener; null uses the local connection. */
+	connectionId: () => string | null;
 }) {
-	const connections = signal<Connection[]>([]);
-	const connectionId = signal<string | null>(null);
+	const connection = signal<Connection | null>(null);
 	const path = signal("");
 	const busy = signal(false);
 	const picking = signal(false);
@@ -68,11 +77,9 @@ export function AddProjectDialog(props: {
 	const loadingEntries = signal(false);
 	const error = signal<string | null>(null);
 
-	const connection = () =>
-		connections().find((entry) => entry.id === connectionId()) ??
-		connections()[0] ??
-		null;
 	const isLocal = () => connection()?.kind.type === "local";
+	// A late response must not update a reopened dialog for another connection.
+	let openVersion = 0;
 	const directories = computed(() => {
 		const query = filter().trim().toLocaleLowerCase();
 		return entries().filter(
@@ -82,7 +89,11 @@ export function AddProjectDialog(props: {
 		);
 	});
 
-	const reset = async () => {
+	effect(() => {
+		if (!props.open()) return;
+		const connectionId = untracked(props.connectionId);
+		const version = openVersion;
+		connection.set(null);
 		path.set("");
 		busy.set(false);
 		picking.set(false);
@@ -90,66 +101,83 @@ export function AddProjectDialog(props: {
 		browserPath.set("/");
 		entries.set([]);
 		filter.set("");
+		loadingEntries.set(false);
 		error.set(null);
-		try {
-			const listed = await props.api.listConnections();
-			connections.set(listed);
-			const preferred = props.initialConnectionId?.() ?? null;
-			connectionId.update((current) => {
-				const wanted = preferred ?? current;
-				return wanted !== null && listed.some((entry) => entry.id === wanted)
-					? wanted
-					: (listed[0]?.id ?? null);
-			});
-		} catch (caught) {
-			error.set(errorMessage(caught));
-		}
-	};
+		void props.api.listConnections().then(
+			(listed) => {
+				if (version !== openVersion) return;
+				const target = listed.find((entry) =>
+					connectionId === null
+						? entry.kind.type === "local"
+						: entry.id === connectionId,
+				);
+				if (target) connection.set(target);
+				else error.set(t("errors.connectionUnavailable"));
+			},
+			(caught: unknown) => {
+				if (version === openVersion) error.set(errorMessage(caught));
+			},
+		);
+		return () => {
+			openVersion += 1;
+		};
+	});
 
 	const add = async () => {
 		const target = connection();
 		const trimmed = path().trim();
 		if (!target || !trimmed || busy() || picking()) return;
+		const version = openVersion;
 		busy.set(true);
 		error.set(null);
 		try {
 			await props.onAdd(target.id, trimmed);
-			props.open.set(false);
+			if (version === openVersion) props.open.set(false);
 		} catch (caught) {
-			error.set(errorMessage(caught));
+			if (version === openVersion) error.set(errorMessage(caught));
 		} finally {
-			busy.set(false);
+			if (version === openVersion) busy.set(false);
 		}
 	};
 
 	const loadDirectory = async (nextPath: string) => {
 		const target = connection();
-		if (!target || isLocal()) return;
+		if (!target || target.kind.type === "local") return;
+		const version = openVersion;
 		const normalized = absoluteRemotePath(nextPath);
 		loadingEntries.set(true);
 		error.set(null);
 		try {
-			entries.set(await props.api.readConnectionDir(target.id, normalized));
+			const listed = await props.api.readConnectionDir(target.id, normalized);
+			if (version !== openVersion) return;
+			entries.set(listed);
 			browserPath.set(normalized);
 			filter.set("");
 		} catch (caught) {
-			error.set(`${t("project.readDirectoryFailed")}: ${errorMessage(caught)}`);
+			if (version === openVersion) {
+				error.set(
+					`${t("project.readDirectoryFailed")}: ${errorMessage(caught)}`,
+				);
+			}
 		} finally {
-			loadingEntries.set(false);
+			if (version === openVersion) loadingEntries.set(false);
 		}
 	};
 
 	const browse = async () => {
-		if (isLocal()) {
+		const target = connection();
+		if (!target) return;
+		if (target.kind.type === "local") {
+			const version = openVersion;
 			picking.set(true);
 			error.set(null);
 			try {
 				const picked = await props.api.pickLocalProjectDirectory();
-				if (picked) path.set(picked);
+				if (picked && version === openVersion) path.set(picked);
 			} catch (caught) {
-				error.set(errorMessage(caught));
+				if (version === openVersion) error.set(errorMessage(caught));
 			} finally {
-				picking.set(false);
+				if (version === openVersion) picking.set(false);
 			}
 			return;
 		}
@@ -167,36 +195,22 @@ export function AddProjectDialog(props: {
 			open={props.open()}
 			accessibilityLabel={t("project.addTitle")}
 			onOpenChange={({ open }) => props.open.set(open)}
-			onOpen={() => void reset()}
 		>
 			<DialogHeader>
 				<DialogTitle>{() => t("project.addTitle")}</DialogTitle>
 				<DialogDescription>
-					{() =>
-						t(
-							isLocal() ? "project.localDirectory" : "project.remoteDirectory",
-							{
-								connection: connection() ? connectionLabel(connection()!) : "",
-							},
-						)
-					}
+					{() => {
+						const target = connection();
+						if (!target) return "";
+						return t(
+							target.kind.type === "local"
+								? "project.localDirectory"
+								: "project.remoteDirectory",
+							{ connection: connectionLabel(target) },
+						);
+					}}
 				</DialogDescription>
 			</DialogHeader>
-			<View class="gap-1.5">
-				<Text class="font-sans text-xs font-medium text-muted-foreground">
-					{() => t("project.addTitle")}
-				</Text>
-				<Select
-					testID="add-project-connection"
-					items={connections().map((entry) => ({
-						value: entry.id,
-						title: `${entry.name} · ${connectionLabel(entry)}`,
-					}))}
-					value={connectionId()}
-					disabled={busy()}
-					onChange={(event) => connectionId.set(event.value)}
-				/>
-			</View>
 			<View class="gap-1.5">
 				<Text class="font-sans text-xs font-medium text-muted-foreground">
 					{() => t("project.projectDirectory")}
@@ -218,7 +232,7 @@ export function AddProjectDialog(props: {
 						accessibilityLabel={t(
 							isLocal() ? "project.browseLocal" : "project.browseRemote",
 						)}
-						disabled={busy() || picking()}
+						disabled={!connection() || busy() || picking()}
 						onPress={() => void browse()}
 					>
 						<Icon name="FolderOpen" color={token("foreground")} />
@@ -269,7 +283,12 @@ export function AddProjectDialog(props: {
 								onChange={(event) => filter.set(event.value)}
 							/>
 						</View>
-						<View class="max-h-72 p-1">
+						<Scroll
+							class="max-h-72"
+							contentClass="p-1"
+							bounces={false}
+							scrollbar={{ mode: "always", vertical: scrollbarLook() }}
+						>
 							{() =>
 								loadingEntries() ? (
 									<View class="items-center px-3 py-6">
@@ -304,7 +323,7 @@ export function AddProjectDialog(props: {
 									</Each>
 								)
 							}
-						</View>
+						</Scroll>
 					</View>
 				) : null
 			}
@@ -324,7 +343,7 @@ export function AddProjectDialog(props: {
 				</Button>
 				<Button
 					testID="add-project-confirm"
-					disabled={busy() || picking() || !path().trim()}
+					disabled={!connection() || busy() || picking() || !path().trim()}
 					onPress={() => void add()}
 				>
 					<Text class="font-sans">
