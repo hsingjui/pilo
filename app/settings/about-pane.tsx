@@ -1,5 +1,4 @@
 import { appInfo, cleanup, Image, openUrl, Text, View } from "nsh";
-import { shellInfo } from "nsh/updater";
 
 import appIcon from "../assets/app-icon.png";
 import {
@@ -21,7 +20,7 @@ import {
 import type { SettingsClient } from "./settings-dialog";
 
 /**
- * Version, build and updater, matching the Tauri `AboutSettings` pane.
+ * Application version and updater.
  * When `update` is passed from `AppShell`, state is shared with the sidebar
  * update button and top-level `UpdateDialog`; otherwise a local controller
  * backs standalone mounts.
@@ -30,8 +29,7 @@ export function AboutPane(props: {
 	client: SettingsClient;
 	update?: DesktopUpdate;
 }) {
-	const info = appInfo();
-	const shell = shellInfo();
+	const { version } = appInfo();
 	const ownedUpdate = props.update
 		? null
 		: createDesktopUpdate({ autoCheck: false });
@@ -79,12 +77,9 @@ export function AboutPane(props: {
 						/>
 					</View>
 					<View class="min-w-0 gap-1">
-						<View class="flex-row items-center gap-2">
-							<Text class="font-sans text-lg font-semibold tracking-tight text-foreground">
-								Pilo
-							</Text>
-							<SettingsStatus>v{info.version}</SettingsStatus>
-						</View>
+						<Text class="font-sans text-lg font-semibold tracking-tight text-foreground">
+							Pilo
+						</Text>
 						<Text class="font-sans text-xs leading-relaxed text-muted-foreground">
 							{() => t("about.description")}
 						</Text>
@@ -94,7 +89,7 @@ export function AboutPane(props: {
 			<SettingsSection title={t("settings.application")}>
 				<SettingsRow label={t("settings.version")}>
 					<Text class="font-mono text-xs text-muted-foreground">
-						{`${info.version} · build ${info.build} · nsh ${shell.nshVersion}`}
+						{version}
 					</Text>
 				</SettingsRow>
 				<SettingsRow label={t("settings.repository")} ghostEdge="both">
