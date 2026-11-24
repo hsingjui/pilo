@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="320" viewBox="0 0 640 320">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F2F5F9" />
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#1E293B" stroke-opacity="0.065" stroke-width="1" />
+    </pattern>
+    <radialGradient id="grid-fade" cx="50%" cy="48%" r="58%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1" />
+      <stop offset="70%" stop-color="#FFFFFF" stop-opacity="0.55" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+    </radialGradient>
+    <mask id="grid-mask">
+      <rect width="640" height="320" fill="url(#grid-fade)" />
+    </mask>
+    <linearGradient id="arrow-shaft" x1="260" y1="150" x2="378" y2="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#94A3B8" stop-opacity="0.18" />
+      <stop offset="40%" stop-color="#64748B" stop-opacity="0.82" />
+      <stop offset="100%" stop-color="#334155" stop-opacity="0.96" />
+    </linearGradient>
+  </defs>
+  <rect width="640" height="320" fill="url(#bg)" />
+  <rect width="640" height="320" fill="url(#grid)" mask="url(#grid-mask)" />
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="260" y1="150" x2="376" y2="150" stroke="url(#arrow-shaft)" stroke-width="2.6" />
+    <path d="M 362 136 L 378 150 L 362 164" stroke="#334155" stroke-opacity="0.96" stroke-width="2.6" />
+  </g>
+</svg>
