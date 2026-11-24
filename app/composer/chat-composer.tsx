@@ -224,6 +224,7 @@ export function ChatComposer(props: ChatComposerProps) {
 	const focusShortcutLabels = signal<string[]>([]);
 	const focusShortcutBinding = signal<AppShortcutBinding>();
 	const queueShortcutBinding = signal<AppShortcutBinding>();
+	const adoptBinding = signal<AppShortcutBinding>();
 	const surface = signal<ViewRef | undefined>(undefined);
 	const activeSuggestion = signal<RichSuggestionMatch | null>(null);
 	let inputHandle: ComposerRichInputHandle | undefined;
@@ -517,8 +518,12 @@ export function ChatComposer(props: ChatComposerProps) {
 	const assistance = props.assistance;
 	const ghostText = () =>
 		state().composing ? null : (assistance?.result()?.text ?? null);
+	/**
+	 * Whether Tab adopts the suggestion wherever the keyboard focus is: in the
+	 * editor (its ghost plugin) and, from the chat beside it, as an app binding.
+	 */
 	const canAdoptWithTab = () =>
-		focused() && !menuOpen() && props.shortcuts?.() !== null && !!ghostText();
+		!menuOpen() && props.shortcuts?.() !== null && !!ghostText();
 	const inputRightPadding = () => {
 		if (ghostText()) return canAdoptWithTab() ? 80 : 112;
 		return showFocusHint() ? 64 : 4;
@@ -534,6 +539,16 @@ export function ChatComposer(props: ChatComposerProps) {
 		if (key === "Tab") adoptSuggestion();
 		else assistance?.dismiss();
 	};
+	// A focused text input keeps Tab for itself, so the editor adopts through its
+	// plugin; the rest of the window goes through an app binding.
+	effect(() => {
+		const binding =
+			!focused() && canAdoptWithTab()
+				? bindAppShortcut("focus-composer", "tab", adoptSuggestion)
+				: undefined;
+		adoptBinding.set(binding);
+		if (binding) cleanup(binding.dispose);
+	});
 
 	const toasts = AppToaster();
 	const enhancing = signal(false);
@@ -773,6 +788,7 @@ export function ChatComposer(props: ChatComposerProps) {
 						shortcuts={() => [
 							...(props.appShortcuts?.() ?? []),
 							focusShortcutBinding(),
+							adoptBinding(),
 							queueShortcutBinding(),
 						]}
 						menuOpen={menuOpen}
