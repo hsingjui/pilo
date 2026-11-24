@@ -415,7 +415,11 @@ export function AppShell(props: AppShellProps) {
 		const state = store.state();
 		if (state.status.type !== "ready" || state.navigation.session) return;
 		const project = activeProject(state);
-		if (project) untracked(() => store.selectProject(project.id));
+		if (project) {
+			untracked(() =>
+				store.selectProject(project.id, { focusComposer: false }),
+			);
+		}
 	});
 	/** Keep the mounted header when a reply streams or the sidebar index changes. */
 	const showSessionHeader = computed(() => {
@@ -505,6 +509,21 @@ export function AppShell(props: AppShellProps) {
 		const currentProjectId = untracked(project)?.id;
 		untracked(() => showChat(currentProjectId));
 	});
+	// A new-chat action can also reuse the current draft without navigating.
+	effect(() => {
+		if (store.newChatFocus()) untracked(() => showChat(project()?.id));
+	});
+	const focusRequest = {
+		sessionKey: () =>
+			modalOpen() ||
+			paletteOpen() ||
+			shownTerminal() ||
+			shownGitProjectId() ||
+			shownFile()
+				? null
+				: store.newChatFocus(),
+		handled: () => store.clearNewChatFocus(),
+	};
 	const openAddProject = (connectionId: string | null) => {
 		addProjectConnection.set(connectionId ?? project()?.connection.id ?? null);
 		addProjectOpen.set(true);
@@ -951,6 +970,7 @@ export function AppShell(props: AppShellProps) {
 													assistance={assistance}
 													shortcuts={sessionShortcuts}
 													appShortcuts={composerAppShortcuts}
+													focusRequest={focusRequest}
 													sendShortcut={() =>
 														store.state().preferences?.values
 															.sendMessageShortcut

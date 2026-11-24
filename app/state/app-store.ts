@@ -11,6 +11,7 @@ import type { NshPiloClient } from "../client/nsh-pilo-client";
 import {
 	type AppAction,
 	type AppState,
+	type SessionSelection,
 	changesChatSession,
 	changesSessionIndex,
 	createAppState,
@@ -78,6 +79,15 @@ function sameDraft(a: StartedDraft | null, b: StartedDraft | null) {
 export class AppStore {
 	private readonly current = signal(createAppState());
 	readonly state: Accessor<AppState> = this.current;
+
+	private readonly pendingNewChatFocus = signal<SessionSelection | null>(null);
+	/** A one-shot focus request for the draft the user just opened. */
+	readonly newChatFocus = computed(() => {
+		const open = this.current().navigation.session;
+		return open?.sessionId && open === this.pendingNewChatFocus()
+			? chatSessionKey(open.projectId, open.sessionId)
+			: null;
+	});
 
 	private readonly liveListeners = new Set<
 		(event: PiloClientEvent | null) => void
@@ -274,13 +284,8 @@ export class AppStore {
 	}
 
 	/** Opens a new chat in the project, or keeps its already open draft. */
-	selectProject(projectId: string) {
-		if (this.keepsOpenDraft(projectId, false)) return;
-		this.apply({
-			type: "project_selected",
-			projectId,
-			sessionId: createDraftSessionId(),
-		});
+	selectProject(projectId: string, { focusComposer = true } = {}) {
+		this.selectNewChat(projectId, { temporary: false, focusComposer });
 	}
 
 	/**
@@ -288,12 +293,33 @@ export class AppStore {
 	 * the empty one already open there.
 	 */
 	selectTemporary(projectId: string) {
-		if (this.keepsOpenDraft(projectId, true)) return;
-		this.apply({
-			type: "project_selected",
-			projectId,
-			sessionId: createTemporarySessionId(),
-		});
+		this.selectNewChat(projectId, { temporary: true, focusComposer: true });
+	}
+
+	clearNewChatFocus() {
+		this.pendingNewChatFocus.set(null);
+	}
+
+	private selectNewChat(
+		projectId: string,
+		{
+			temporary,
+			focusComposer,
+		}: { temporary: boolean; focusComposer: boolean },
+	) {
+		if (!this.keepsOpenDraft(projectId, temporary)) {
+			this.apply({
+				type: "project_selected",
+				projectId,
+				sessionId: temporary
+					? createTemporarySessionId()
+					: createDraftSessionId(),
+			});
+		}
+		const open = this.current().navigation.session;
+		if (focusComposer && open?.projectId === projectId) {
+			this.pendingNewChatFocus.set(open);
+		}
 	}
 
 	/** Whether the open chat is an unused new one of that kind in the project. */

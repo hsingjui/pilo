@@ -197,6 +197,8 @@ export interface ChatComposerProps {
 	/** Null suspends session shortcuts while a dialog or command palette is open. */
 	shortcuts?: () => KeyboardShortcutMap | null;
 	appShortcuts?: () => readonly AppShortcutBinding[];
+	/** Focus the matching editor once, when its chat is visible. */
+	focusRequest?: { sessionKey: () => string | null; handled: () => void };
 	/** The configured submit shortcut; Enter submits by default. */
 	sendShortcut?: () => SendMessageShortcut | undefined;
 	/** The model · thinking control; the toolbar leaves it out without one. */
@@ -490,6 +492,24 @@ export function ChatComposer(props: ChatComposerProps) {
 		focusShortcutLabels().length > 0;
 	const readOnly = () => store.readOnly();
 	const disabled = () => store.target() === null || readOnly();
+	const focusRequest = props.focusRequest;
+	if (focusRequest) {
+		const readyFocusRequest = () => {
+			const key = focusRequest.sessionKey();
+			return key === store.target()?.sessionKey && !disabled() ? key : null;
+		};
+		effect(() => {
+			const key = readyFocusRequest();
+			if (!key) return;
+			// The editor is keyed by session; wait for the new native view to mount.
+			const frame = requestAnimationFrame(() => {
+				if (readyFocusRequest() !== key || !inputHandle) return;
+				inputHandle.focus();
+				focusRequest.handled();
+			});
+			return () => cancelAnimationFrame(frame);
+		});
+	}
 	const blocked = () =>
 		disabled() || state().sending || (running() && store.compacting());
 	const config = () => props.runConfig?.config() ?? null;
