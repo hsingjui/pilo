@@ -278,59 +278,6 @@ pub(super) async fn ssh_command_with_options(
     Ok(command)
 }
 
-pub(crate) async fn ssh_tunnel_command(
-    connection: &Connection,
-    local_port: u16,
-    remote_port: u16,
-) -> Result<Command, String> {
-    let ConnectionKind::Ssh { target } = &connection.kind else {
-        return Err("SSH tunnel requires an SSH connection".to_owned());
-    };
-    let args = ssh_tunnel_args(target, local_port, remote_port)?;
-    check_agent_key_config(target, &args).await?;
-    let mut command = Command::new("ssh");
-    command.args(args);
-    if matches!(target.auth_method(), SshAuthMethod::Password) {
-        super::credentials::get_ssh_password(&connection.id)?;
-        let executable = std::env::current_exe().map_err(|error| {
-            format!("failed to locate Pilo executable for SSH askpass: {error}")
-        })?;
-        command.env("SSH_ASKPASS", executable);
-        command.env("SSH_ASKPASS_REQUIRE", "force");
-        command.env(ASKPASS_CONNECTION_ENV, &connection.id);
-        if std::env::var_os("DISPLAY").is_none() {
-            command.env("DISPLAY", "pilo:0");
-        }
-        command.stdin(Stdio::null());
-    }
-    super::hide_console_window(&mut command);
-    Ok(command)
-}
-
-pub(crate) fn ssh_tunnel_args(
-    target: &SshTarget,
-    local_port: u16,
-    remote_port: u16,
-) -> Result<Vec<String>, String> {
-    if local_port == 0 || remote_port == 0 {
-        return Err("SSH tunnel ports must be between 1 and 65535".to_owned());
-    }
-
-    let mut args = ssh_base_args(target)?;
-    let destination = args
-        .pop()
-        .ok_or_else(|| "SSH target is missing".to_owned())?;
-    args.splice(1..1, ["-N".to_owned()]);
-    args.extend([
-        "-o".to_owned(),
-        "ExitOnForwardFailure=yes".to_owned(),
-        "-L".to_owned(),
-        format!("127.0.0.1:{local_port}:127.0.0.1:{remote_port}"),
-        destination,
-    ]);
-    Ok(args)
-}
-
 pub(crate) fn ssh_child_environment(
     connection: &Connection,
 ) -> Result<BTreeMap<String, String>, String> {

@@ -100,13 +100,7 @@ pub(super) async fn preferences_patch(
 }
 
 pub(super) async fn theme_settings(state: RemoteHttpState) -> Response {
-    match crate::appearance::load(
-        state.runtime.paths.clone(),
-        state.runtime.events.clone(),
-        None,
-    )
-    .await
-    {
+    match crate::appearance::load(state.runtime.paths.clone()).await {
         Ok(settings) => Json(settings).into_response(),
         Err(error) => api_error(StatusCode::INTERNAL_SERVER_ERROR, &error),
     }

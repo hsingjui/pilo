@@ -74,7 +74,6 @@ export type SettingsClient = Pick<
 	| "remoteLanAddresses"
 	| "remoteSetEnabled"
 	| "remoteSetPort"
-	| "remoteSetPublicBaseUrl"
 	| "remoteSetAddresses"
 	| "remotePairingRegenerate"
 	| "remoteDeviceRevoke"

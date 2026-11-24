@@ -1,31 +1,4 @@
-use pilo_domain::AutostartMode;
 use rusqlite::{Connection, OptionalExtension, params};
-
-pub fn get_autostart_mode(db: &Connection) -> Result<AutostartMode, String> {
-    let value: Option<String> = db
-        .query_row(
-            "SELECT autostart_mode FROM desktop_settings WHERE id = 1",
-            [],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|error| error.to_string())?;
-    value
-        .map(|value| serde_json::from_str(&value).map_err(|error| error.to_string()))
-        .transpose()
-        .map(|mode| mode.unwrap_or_default())
-}
-
-pub fn set_autostart_mode(db: &Connection, mode: AutostartMode) -> Result<(), String> {
-    let value = serde_json::to_string(&mode).map_err(|error| error.to_string())?;
-    db.execute(
-        "INSERT INTO desktop_settings(id, autostart_mode) VALUES(1, ?1)
-         ON CONFLICT(id) DO UPDATE SET autostart_mode = excluded.autostart_mode",
-        params![value],
-    )
-    .map_err(|error| error.to_string())?;
-    Ok(())
-}
 
 pub fn get_show_shortcut(db: &Connection) -> Result<String, String> {
     let value: Option<String> = db
@@ -93,38 +66,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn shortcut_migration_and_writes_preserve_startup_settings() {
+    fn shortcut_migration_and_writes_preserve_existing_desktop_settings_row() {
         let db = Connection::open_in_memory().unwrap();
         db.execute_batch(
-            "CREATE TABLE desktop_settings(id INTEGER PRIMARY KEY, autostart_mode TEXT NOT NULL);",
+            "CREATE TABLE desktop_settings(id INTEGER PRIMARY KEY, autostart_mode TEXT NOT NULL);
+             INSERT INTO desktop_settings(id, autostart_mode) VALUES(1, '\"tray\"');",
         )
         .unwrap();
-        set_autostart_mode(&db, AutostartMode::Tray).unwrap();
         super::super::initialize_schema(&db).unwrap();
         super::super::initialize_schema(&db).unwrap();
         assert_eq!(get_show_shortcut(&db).unwrap(), "mod+alt+p");
         set_show_shortcut(&db, "ctrl+shift+o").unwrap();
-        assert_eq!(get_autostart_mode(&db).unwrap(), AutostartMode::Tray);
-        set_autostart_mode(&db, AutostartMode::Window).unwrap();
+        set_exit_on_close(&db, true).unwrap();
         assert_eq!(get_show_shortcut(&db).unwrap(), "ctrl+shift+o");
+        assert!(get_exit_on_close(&db).unwrap());
+        let stored_autostart: String = db
+            .query_row(
+                "SELECT autostart_mode FROM desktop_settings WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored_autostart, "\"tray\"");
         db.execute("DELETE FROM desktop_settings", []).unwrap();
         set_show_shortcut(&db, "alt+f2").unwrap();
-        assert_eq!(get_autostart_mode(&db).unwrap(), AutostartMode::Disabled);
         assert_eq!(get_show_shortcut(&db).unwrap(), "alt+f2");
-    }
-
-    #[test]
-    fn autostart_defaults_disabled_and_round_trips() {
-        let db = Connection::open_in_memory().unwrap();
-        super::super::initialize_schema(&db).unwrap();
-        assert_eq!(get_autostart_mode(&db).unwrap(), AutostartMode::Disabled);
-        for mode in [
-            AutostartMode::Window,
-            AutostartMode::Tray,
-            AutostartMode::Disabled,
-        ] {
-            set_autostart_mode(&db, mode).unwrap();
-            assert_eq!(get_autostart_mode(&db).unwrap(), mode);
-        }
+        assert!(!get_exit_on_close(&db).unwrap());
     }
 }

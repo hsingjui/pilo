@@ -34,18 +34,7 @@ struct SessionCompletion {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host_events::HostEvents;
-
-    struct Completed(std::sync::mpsc::Sender<()>);
-
-    impl HostEvents for Completed {
-        fn emit(&self, _name: &str, payload: serde_json::Value) -> Result<(), String> {
-            if payload["type"] == "session_read_state_changed" {
-                self.0.send(()).map_err(|error| error.to_string())?;
-            }
-            Ok(())
-        }
-    }
+    use crate::events::{EventBatch, EventQueueLimits};
 
     #[test]
     fn completion_worker_runs_without_a_current_or_initialized_runtime() {
@@ -64,14 +53,33 @@ mod tests {
              VALUES('project','local','test','/test','{\"cwd\":\"/test\",\"gitBranch\":null,\"piVersion\":\"test\",\"refreshedAtMs\":0}',0,0);",
         ).unwrap();
         drop(db);
-        let (send, receive) = std::sync::mpsc::channel();
-        runtime
-            .events
-            .subscribe("test", 1, Arc::new(Completed(send)));
+        let mut stream = runtime.subscribe_events(EventQueueLimits {
+            max_events: 16,
+            max_bytes: 64 * 1024,
+        });
         runtime
             .events
             .record_session_completion("project".into(), "session".into());
-        receive.recv_timeout(Duration::from_secs(5)).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut completed = false;
+        while std::time::Instant::now() < deadline {
+            if let Some(EventBatch::Events(events)) = stream.try_next_batch(16)
+                && events.iter().any(|event| {
+                    matches!(
+                        event.event.event,
+                        RuntimeEvent::SessionReadStateChanged { .. }
+                    )
+                })
+            {
+                completed = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            completed,
+            "timed out waiting for session_read_state_changed"
+        );
         let states = runtime.events.session_read_states().unwrap();
         assert_eq!(states.len(), 1);
         assert_eq!(states[0].completed_revision, 1);

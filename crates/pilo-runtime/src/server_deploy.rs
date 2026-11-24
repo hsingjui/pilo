@@ -92,25 +92,6 @@ pub(super) async fn spawn_server(
                     diagnostics,
                 ));
             }
-            // Debug builds embed the current server, so prefer it over the staged
-            // resource binary. A stale resource would otherwise shadow the freshly
-            // built code and break protocol compatibility in `nsh dev`.
-            if cfg!(debug_assertions) {
-                let executable = std::env::current_exe()
-                    .map_err(|error| format!("failed to locate Pilo executable: {error}"))?;
-                let mut command = Command::new(executable);
-                command.arg("--pilo-server");
-                command.env(
-                    "PILO_SERVER_RUNTIME_DIR",
-                    pilo_server::runtime_directory().map_err(|error| error.to_string())?,
-                );
-                return diagnostics.stage("spawn").finish(spawn_piped_server(
-                    command,
-                    &connection.name,
-                    false,
-                    diagnostics,
-                ));
-            }
             let target = ServerTarget::current()?;
             let mut command = Command::new(server_binary(target)?);
             command.env(

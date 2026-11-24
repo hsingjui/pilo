@@ -52,8 +52,7 @@ pub(super) async fn settings(runtime: &Runtime, command: ControlCommand) -> Resu
         }
         let defaults = encode(pilo_domain::ThemeSettings::default())?;
         if get {
-            let settings =
-                crate::appearance::load(runtime.paths.clone(), events.clone(), None).await?;
+            let settings = crate::appearance::load(runtime.paths.clone()).await?;
             let settings = encode(settings)?;
             return settings
                 .get(name)

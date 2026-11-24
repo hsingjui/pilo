@@ -1,4 +1,6 @@
-use std::{fmt, fs, path::PathBuf, sync::Arc};
+#[cfg(test)]
+use std::sync::Arc;
+use std::{fmt, fs, path::PathBuf};
 
 const DB_FILE_NAME: &str = "pilo.sqlite3";
 
@@ -11,6 +13,7 @@ pub struct HostPaths {
 #[derive(Clone)]
 enum DataDirectory {
     Fixed(PathBuf),
+    #[cfg(test)]
     Resolved(Arc<dyn Fn() -> Result<PathBuf, String> + Send + Sync>),
 }
 
@@ -18,6 +21,7 @@ impl fmt::Debug for DataDirectory {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Fixed(path) => path.fmt(formatter),
+            #[cfg(test)]
             Self::Resolved(_) => formatter.write_str("<host-resolved>"),
         }
     }
@@ -42,7 +46,8 @@ impl HostPaths {
         Ok(paths)
     }
 
-    pub fn with_data_dir_resolver(
+    #[cfg(test)]
+    pub(crate) fn with_data_dir_resolver(
         resource_dir: PathBuf,
         resolver: impl Fn() -> Result<PathBuf, String> + Send + Sync + 'static,
     ) -> Self {
@@ -55,6 +60,7 @@ impl HostPaths {
     fn ensure_app_data_dir(&self) -> Result<PathBuf, String> {
         let app_data_dir = match &self.app_data_dir {
             DataDirectory::Fixed(path) => path.clone(),
+            #[cfg(test)]
             DataDirectory::Resolved(resolve) => resolve()?,
         };
         fs::create_dir_all(&app_data_dir).map_err(|error| {

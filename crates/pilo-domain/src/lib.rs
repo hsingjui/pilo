@@ -6,7 +6,7 @@ mod cache_keep_alive;
 pub use cache_keep_alive::{CacheKeepAliveSettings, CacheKeepAliveStatus};
 mod connection;
 mod desktop;
-pub use desktop::{AutostartMode, DEFAULT_SHOW_SHORTCUT};
+pub use desktop::DEFAULT_SHOW_SHORTCUT;
 mod next_prompt;
 mod project;
 mod prompt_enhancement;

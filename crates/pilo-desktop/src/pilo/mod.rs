@@ -47,7 +47,6 @@ use pilo_runtime::{
     remote::{
         remote_device_rename, remote_device_revoke, remote_host_state, remote_lan_addresses,
         remote_pairing_regenerate, remote_set_addresses, remote_set_enabled, remote_set_port,
-        remote_set_public_base_url,
     },
     runtime_api::{
         chat_session_send_rpc, chat_session_start, chat_session_state, chat_session_stop,
@@ -1063,18 +1062,6 @@ impl Pilo {
         .await
     }
 
-    /// Sets the Remote Host's public base URL.
-    pub async fn remote_set_public_base_url(
-        this: Instance<Self>,
-        public_base_url: String,
-    ) -> Result<JsonValue, String> {
-        Self::with_runtime(this, move |runtime| async move {
-            let state = remote_set_public_base_url(&runtime, public_base_url).await?;
-            serde_json::to_value(state).map_err(|error| error.to_string())
-        })
-        .await
-    }
-
     /// Replaces the Remote Host's access addresses and entry selection.
     pub async fn remote_set_addresses(
         this: Instance<Self>,
@@ -1282,7 +1269,7 @@ impl Pilo {
     /// Reads the complete Host appearance settings, including tokens and conversion reports.
     pub async fn load_theme_settings(this: Instance<Self>) -> Result<JsonValue, String> {
         Self::with_runtime(this, |runtime| async move {
-            let settings = theme_settings_get(&runtime, None).await?;
+            let settings = theme_settings_get(&runtime).await?;
             serde_json::to_value(settings).map_err(|error| error.to_string())
         })
         .await

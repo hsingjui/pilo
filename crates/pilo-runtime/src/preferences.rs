@@ -160,18 +160,21 @@ pub fn preferences_patch(
 mod runtime_tests {
     use super::*;
     use crate::{
-        appearance, cache_keep_alive, host_events::RecordingEvents, host_paths::HostPaths,
+        appearance, cache_keep_alive,
+        events::{EventBatch, EventQueueLimits},
+        host_paths::HostPaths,
         next_prompt, prompt_enhancement,
     };
-    use std::sync::Arc;
 
     #[tokio::test]
     async fn runtime_settings_functions_persist_and_validate_without_a_shell() {
         let root =
             std::env::temp_dir().join(format!("pilo-runtime-settings-{}", std::process::id()));
-        let host = Arc::new(RecordingEvents::default());
         let runtime = Runtime::new(HostPaths::new(root.clone(), root.join("resources")).unwrap());
-        runtime.events.subscribe("test", 1, host.clone());
+        let mut stream = runtime.subscribe_events(EventQueueLimits {
+            max_events: 32,
+            max_bytes: 256 * 1024,
+        });
         let initial = preferences_get(&runtime).unwrap();
         assert_eq!(initial.values["pageFontFamily"], "system-sans");
         assert_eq!(initial.values["readingFontFamily"], "system-sans");
@@ -249,24 +252,21 @@ mod runtime_tests {
                 .model,
             None
         );
-        let before = appearance::theme_settings_get(&runtime, None)
-            .await
-            .unwrap();
+        let before = appearance::theme_settings_get(&runtime).await.unwrap();
         let update = serde_json::from_value(json!({"theme":"dark"})).unwrap();
         let theme = appearance::theme_settings_set(&runtime, update)
             .await
             .unwrap();
         assert!(theme.revision > before.revision);
         assert_eq!(
-            serde_json::to_value(
-                appearance::theme_settings_get(&runtime, None)
-                    .await
-                    .unwrap()
-            )
-            .unwrap()["theme"],
+            serde_json::to_value(appearance::theme_settings_get(&runtime).await.unwrap()).unwrap()
+                ["theme"],
             "dark"
         );
-        assert!(!host.events.lock().unwrap().is_empty());
+        let Some(EventBatch::Events(events)) = stream.try_next_batch(32) else {
+            panic!("expected settings runtime events");
+        };
+        assert!(!events.is_empty());
         std::fs::remove_dir_all(root).unwrap();
     }
 }

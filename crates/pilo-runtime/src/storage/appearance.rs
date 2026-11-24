@@ -73,20 +73,6 @@ pub(crate) fn get_theme_settings(db: &Connection) -> Result<ThemeSettings, Strin
         .map(Option::unwrap_or_default)
 }
 
-pub(crate) fn initialize_theme_settings(
-    db: &Connection,
-    mut initial: ThemeSettings,
-) -> Result<ThemeSettings, String> {
-    initial.revision = 1;
-    let json = serialize_theme_settings(&initial)?;
-    db.execute(
-        "INSERT INTO theme_settings(id, settings_json) VALUES(1, ?1) ON CONFLICT(id) DO NOTHING",
-        [json],
-    )
-    .map_err(|error| error.to_string())?;
-    get_theme_settings(db)
-}
-
 pub(crate) fn update_theme_settings(
     db: &mut Connection,
     update: ThemeSettingsUpdate,
@@ -276,15 +262,6 @@ mod tests {
             response["themeCustomConversion"],
             json!({"current":[],"savedThemes":[]})
         );
-
-        let initialized = TestDb::new();
-        let result = initialize_theme_settings(&initialized.db, settings).unwrap();
-        assert!(!result.theme_custom_conversion.current.is_empty());
-        assert_eq!(result.theme_custom_conversion.saved_themes.len(), 1);
-        let stored: Value = serde_json::from_str(&initialized.stored_json()).unwrap();
-        assert!(stored.get("themeCustomConversion").is_none());
-        assert!(stored.get("themeCustomTokens").is_none());
-        assert!(stored["savedCustomThemes"][0].get("tokens").is_none());
     }
 
     #[test]

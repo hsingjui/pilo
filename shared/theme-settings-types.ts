@@ -1,5 +1,10 @@
-import type { SavedCustomTheme } from "./theme-custom";
 import type { CustomThemeTokens } from "./theme-tokens";
+
+export type SavedCustomTheme = {
+	name: string;
+	css: string;
+	tokens?: CustomThemeTokens;
+};
 
 export type Theme = "dark" | "light" | "system";
 export type ThemeFamily = "lody" | "claude" | "custom";

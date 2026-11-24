@@ -203,7 +203,6 @@ mod tests {
     use crate::{
         Runtime,
         events::{RuntimeEvent, RuntimeEventBus, RuntimeEventEnvelope},
-        host_events::RecordingEvents,
         host_paths::HostPaths,
     };
 
@@ -519,13 +518,12 @@ mod tests {
     }
 
     #[test]
-    fn streams_do_not_change_host_channel_envelopes_or_web_delivery() {
+    fn overflowing_stream_does_not_affect_healthy_streams_or_web_delivery() {
         let runtime = runtime();
-        let host = Arc::new(RecordingEvents::default());
-        runtime.events.subscribe("main", 1, host.clone());
+        let mut healthy = runtime.subscribe_events(limits(4));
         runtime.events.set_web_events_enabled(true);
         let mut web = runtime.events.subscribe_web();
-        let mut stream = runtime.subscribe_events(limits(0));
+        let mut overflowing = runtime.subscribe_events(limits(0));
         let envelope = RuntimeEventEnvelope::session(
             "s".into(),
             "p".into(),
@@ -536,16 +534,15 @@ mod tests {
         );
         runtime.events.send(envelope.clone());
         assert!(matches!(
-            stream.try_next_batch(1),
+            overflowing.try_next_batch(1),
             Some(EventBatch::Gap { .. })
         ));
-        assert_eq!(
-            *host.events.lock().unwrap(),
-            vec![(
-                super::super::RUNTIME_EVENT_NAME.into(),
-                serde_json::to_value(&envelope).unwrap()
-            )]
-        );
+        let Some(EventBatch::Events(events)) = healthy.try_next_batch(1) else {
+            panic!("expected event on healthy stream");
+        };
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].sequence, 1);
+        assert_eq!(events[0].event, envelope);
         let received = web.try_recv().unwrap();
         assert_eq!(received.sequence, 1);
         assert_eq!(received.event, envelope);

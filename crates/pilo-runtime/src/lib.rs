@@ -15,18 +15,14 @@ pub mod events;
 pub mod file_links;
 mod git;
 pub mod handle;
-#[cfg(test)]
-mod host_events;
 pub mod host_paths;
 pub use handle::Runtime;
 pub mod next_prompt;
-mod parallel;
 mod pi_event_adapters;
 mod pi_events;
 mod pi_oneshot;
 mod pi_workspace;
 pub mod preferences;
-mod preview;
 pub mod project;
 pub mod project_api;
 pub mod project_opener;

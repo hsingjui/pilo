@@ -166,43 +166,11 @@ function readCss(name) {
 	);
 }
 
-export function generateWebThemeMap(css) {
-	const [light, dark] = readScopes(css, [":root", ".dark"], "lody-theme.css");
-	const resolved = resolveTokens({ ...light, ...dark });
-	const { cssVars } = splitTokens(light, { ...light, ...dark });
-	const names = new Set(Object.values(cssVars).flatMap(Object.keys));
-	return Object.fromEntries(
-		Object.keys(resolved)
-			.toSorted()
-			.flatMap((cssVar) => {
-				const token = FONT_NAMES[cssVar] ?? cssVar;
-				return names.has(token)
-					? [
-							[
-								token,
-								{
-									cssVar,
-									format: HSL_CHANNELS.test(resolved[cssVar])
-										? "hsl-channels"
-										: "value",
-								},
-							],
-						]
-					: [];
-			}),
-	);
-}
-
 if (
 	process.argv[1] &&
 	pathToFileURL(process.argv[1]).href === import.meta.url
 ) {
 	const { lody, claude } = generateThemes(readCss("lody"), readCss("claude"));
-	writeGenerated(
-		new URL("../shared/theme-web-map.json", import.meta.url),
-		generateWebThemeMap(readCss("lody")),
-		"pnpm generate:themes",
-	);
 	writeGenerated(
 		new URL("../theme/theme.json", import.meta.url),
 		lody,

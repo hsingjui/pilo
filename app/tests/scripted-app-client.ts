@@ -55,10 +55,10 @@ import type {
 } from "@shared/host-preferences-types";
 import type { SessionReadState } from "@shared/session-read-state";
 import type {
+	SavedCustomTheme,
 	ThemeSettings,
 	ThemeSettingsUpdate,
 } from "@shared/theme-settings-types";
-import type { SavedCustomTheme } from "@shared/theme-custom";
 import type { PiCommandClient } from "../client/chat-rpc";
 import type {
 	NshPiloClient,
@@ -139,7 +139,6 @@ export type ScriptedSettingsClient = Pick<
 	| "remoteLanAddresses"
 	| "remoteSetEnabled"
 	| "remoteSetPort"
-	| "remoteSetPublicBaseUrl"
 	| "remoteSetAddresses"
 	| "remotePairingRegenerate"
 	| "remoteDeviceRevoke"
@@ -739,11 +738,6 @@ export function scriptedClient(script: AppScript = {}) {
 		},
 		remoteSetPort(port: number) {
 			remoteHost = { ...remoteHost, port };
-			emit({ type: "configuration_changed" });
-			return Promise.resolve(remoteHost);
-		},
-		remoteSetPublicBaseUrl(url: string) {
-			remoteHost = { ...remoteHost, publicBaseUrl: url };
 			emit({ type: "configuration_changed" });
 			return Promise.resolve(remoteHost);
 		},

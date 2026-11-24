@@ -1,7 +1,5 @@
 use super::{
     git::{self, GitStatus},
-    parallel::ParallelAgentInfo,
-    preview::{self, PreviewInfo},
     remote_fs::{self, FsEntry},
     terminal::TerminalInfo,
 };
@@ -179,87 +177,6 @@ pub async fn terminal_resize(
 
 pub async fn terminal_close(runtime: &Runtime, terminal_id: String) -> Result<(), String> {
     runtime.terminals.close(&terminal_id).await
-}
-
-pub async fn parallel_agent_list(
-    runtime: &Runtime,
-    project_id: String,
-) -> Result<Vec<ParallelAgentInfo>, String> {
-    Ok(runtime.parallel_agents.lock().await.list(&project_id))
-}
-
-pub async fn parallel_agent_create(
-    runtime: &Runtime,
-    project_id: String,
-    name: String,
-    prompt: Option<String>,
-) -> Result<ParallelAgentInfo, String> {
-    let _policy = runtime.pi_resource_policy.read().await;
-    let project = project::ready(runtime, &runtime.servers, &project_id).await?;
-    runtime
-        .parallel_agents
-        .lock()
-        .await
-        .create(
-            Arc::clone(&runtime.servers),
-            runtime,
-            &project,
-            name,
-            prompt,
-        )
-        .await
-}
-
-pub async fn parallel_agent_send(
-    runtime: &Runtime,
-    agent_id: String,
-    message: String,
-) -> Result<(), String> {
-    runtime
-        .parallel_agents
-        .lock()
-        .await
-        .send(&agent_id, message)
-        .await
-}
-
-pub async fn parallel_agent_stop(runtime: &Runtime, agent_id: String) -> Result<(), String> {
-    runtime.parallel_agents.lock().await.stop(&agent_id).await
-}
-
-pub async fn parallel_agent_remove(
-    runtime: &Runtime,
-    project_id: String,
-    agent_id: String,
-) -> Result<(), String> {
-    let project = project::ready(runtime, &runtime.servers, &project_id).await?;
-    runtime
-        .parallel_agents
-        .lock()
-        .await
-        .remove(&runtime.servers, &project, &agent_id)
-        .await
-}
-
-pub async fn project_preview_ports(
-    runtime: &Runtime,
-    project_id: String,
-) -> Result<Vec<u16>, String> {
-    let project = project::ready(runtime, &runtime.servers, &project_id).await?;
-    preview::detect_ports(&runtime.servers, &project).await
-}
-
-pub async fn project_preview_open(
-    runtime: &Runtime,
-    project_id: String,
-    port: u16,
-) -> Result<PreviewInfo, String> {
-    let project = project::ready(runtime, &runtime.servers, &project_id).await?;
-    runtime.previews.lock().await.open(&project, port).await
-}
-
-pub async fn project_preview_close(runtime: &Runtime, preview_id: String) -> Result<(), String> {
-    runtime.previews.lock().await.close(&preview_id).await
 }
 
 pub async fn connection_fs_read_dir(

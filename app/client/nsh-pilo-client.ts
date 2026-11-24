@@ -143,7 +143,6 @@ export type PiloNative = Pick<
 	| "remoteLanAddresses"
 	| "remoteSetEnabled"
 	| "remoteSetPort"
-	| "remoteSetPublicBaseUrl"
 	| "remoteSetAddresses"
 	| "remotePairingRegenerate"
 	| "remoteDeviceRevoke"
@@ -837,11 +836,6 @@ export class NshPiloClient implements PiloClient {
 	/** Sets the Remote Host's listen port; resolves with the live state. */
 	async remoteSetPort(port: number): Promise<RemoteHostState> {
 		return (await this.pilo.remoteSetPort(port)) as RemoteHostState;
-	}
-
-	/** Sets the Remote Host's public base URL; resolves with the live state. */
-	async remoteSetPublicBaseUrl(url: string): Promise<RemoteHostState> {
-		return (await this.pilo.remoteSetPublicBaseUrl(url)) as RemoteHostState;
 	}
 
 	/** Replaces the access addresses and entry selection; resolves with the live state. */

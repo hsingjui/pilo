@@ -9,31 +9,10 @@ use super::{
     storage,
 };
 
-pub(crate) async fn load(
-    paths: HostPaths,
-    events: RuntimeEventBus,
-    initial: Option<ThemeSettings>,
-) -> Result<ThemeSettings, String> {
-    tokio::task::spawn_blocking(move || {
-        let db = storage::open(&paths)?;
-        if let Some(initial) = initial {
-            let current = storage::get_theme_settings(&db)?;
-            if current.revision > 0 {
-                return Ok(current);
-            }
-            let settings = storage::initialize_theme_settings(&db, initial)?;
-            events.send(RuntimeEventEnvelope::global(
-                RuntimeEvent::ThemeSettingsChanged {
-                    settings: settings.clone(),
-                },
-            ));
-            Ok(settings)
-        } else {
-            storage::get_theme_settings(&db)
-        }
-    })
-    .await
-    .map_err(|error| format!("failed to load theme settings: {error}"))?
+pub(crate) async fn load(paths: HostPaths) -> Result<ThemeSettings, String> {
+    tokio::task::spawn_blocking(move || storage::get_theme_settings(&storage::open(&paths)?))
+        .await
+        .map_err(|error| format!("failed to load theme settings: {error}"))?
 }
 
 pub(crate) async fn save(
@@ -154,11 +133,8 @@ fn enumerate_system_font_families() -> Result<Vec<SystemFontFamily>, String> {
     }
 }
 
-pub async fn theme_settings_get(
-    runtime: &Runtime,
-    initial: Option<ThemeSettings>,
-) -> Result<ThemeSettings, String> {
-    load(runtime.paths.clone(), runtime.events.clone(), initial).await
+pub async fn theme_settings_get(runtime: &Runtime) -> Result<ThemeSettings, String> {
+    load(runtime.paths.clone()).await
 }
 
 pub async fn theme_settings_set(

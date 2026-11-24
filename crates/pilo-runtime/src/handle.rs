@@ -196,16 +196,6 @@ pub async fn session_read_states(
         .map_err(|error| format!("failed to load session read states: {error}"))?
 }
 
-#[cfg(test)]
-fn runtime_subscribe_events(
-    runtime: &Runtime,
-    window_label: &str,
-    channel_id: u32,
-    events: Arc<dyn super::host_events::HostEvents>,
-) {
-    runtime.events.subscribe(window_label, channel_id, events);
-}
-
 pub async fn session_mark_read(
     runtime: &Runtime,
     project_id: String,
@@ -222,7 +212,6 @@ pub async fn session_mark_read(
 
 #[cfg(test)]
 mod tests {
-    use super::super::host_events::RecordingEvents;
     use super::*;
 
     #[tokio::test]
@@ -270,7 +259,6 @@ mod tests {
     async fn cloned_runtime_shares_state_and_read_storage_without_a_shell() {
         let root = std::env::temp_dir().join(format!("pilo-runtime-handle-{}", std::process::id()));
         let paths = HostPaths::new(root.clone(), root.join("resources")).unwrap();
-        let host = Arc::new(RecordingEvents::default());
         let runtime = Runtime::new(paths);
         let cloned = runtime.clone();
         assert!(Arc::ptr_eq(&runtime.0, &cloned.0));
@@ -312,7 +300,10 @@ mod tests {
                 .await
                 .is_err()
         );
-        runtime_subscribe_events(&runtime, "main", 1, host.clone());
+        let mut stream = runtime.subscribe_events(super::super::events::EventQueueLimits {
+            max_events: 16,
+            max_bytes: 64 * 1024,
+        });
         runtime
             .events
             .send(super::super::events::RuntimeEventEnvelope::global(
@@ -320,10 +311,15 @@ mod tests {
                     settings: super::super::preferences::preferences_get(&runtime).unwrap(),
                 },
             ));
-        let recorded = host.events.lock().unwrap();
-        assert_eq!(recorded.len(), 1);
-        assert_eq!(recorded[0].0, super::super::events::RUNTIME_EVENT_NAME);
-        drop(recorded);
+        let Some(super::super::events::EventBatch::Events(events)) = stream.try_next_batch(16)
+        else {
+            panic!("expected runtime event batch");
+        };
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0].event.event,
+            super::super::events::RuntimeEvent::PreferencesChanged { .. }
+        ));
         drop(db);
         std::fs::remove_dir_all(root).unwrap();
     }

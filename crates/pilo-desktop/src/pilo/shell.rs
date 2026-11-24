@@ -341,10 +341,6 @@ pub(super) fn server_resource_name() -> &'static str {
     {
         "pilo-server-darwin-aarch64"
     }
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    {
-        "pilo-server-darwin-x86_64"
-    }
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
         "pilo-server-linux-x86_64"
@@ -359,7 +355,6 @@ pub(super) fn server_resource_name() -> &'static str {
     }
     #[cfg(not(any(
         all(target_os = "macos", target_arch = "aarch64"),
-        all(target_os = "macos", target_arch = "x86_64"),
         all(target_os = "linux", target_arch = "x86_64"),
         all(target_os = "linux", target_arch = "aarch64"),
         all(target_os = "windows", target_arch = "x86_64"),

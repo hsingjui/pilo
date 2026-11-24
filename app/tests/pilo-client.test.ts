@@ -183,7 +183,6 @@ function fakeNative(overrides: Partial<PiloNative> = {}) {
 		remoteLanAddresses: answer("remoteLanAddresses", []),
 		remoteSetEnabled: answer("remoteSetEnabled", {}),
 		remoteSetPort: answer("remoteSetPort", {}),
-		remoteSetPublicBaseUrl: answer("remoteSetPublicBaseUrl", {}),
 		remoteSetAddresses: answer("remoteSetAddresses", {}),
 		remotePairingRegenerate: answer("remotePairingRegenerate", {}),
 		remoteDeviceRevoke: answer("remoteDeviceRevoke", {}),

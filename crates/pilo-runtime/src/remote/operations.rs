@@ -22,16 +22,6 @@ pub async fn remote_set_port(runtime: &Runtime, port: u16) -> Result<RemoteHostS
     runtime.remote.set_port(runtime, port).await
 }
 
-pub async fn remote_set_public_base_url(
-    runtime: &Runtime,
-    public_base_url: String,
-) -> Result<RemoteHostState, String> {
-    runtime
-        .remote
-        .set_public_base_url(runtime, &public_base_url)
-        .await
-}
-
 pub async fn remote_set_addresses(
     runtime: &Runtime,
     addresses: Vec<RemoteAccessAddress>,
@@ -84,15 +74,6 @@ mod tests {
         let initial = remote_host_state(&runtime).await.unwrap();
         assert!(!initial.running);
         assert!(initial.devices.is_empty());
-        let state = remote_set_public_base_url(&runtime, "https://example.com/".into())
-            .await
-            .unwrap();
-        assert_eq!(state.public_base_url, "https://example.com");
-        assert!(
-            remote_set_public_base_url(&runtime, "invalid".into())
-                .await
-                .is_err()
-        );
         assert!(
             remote_device_revoke(&runtime, "missing".into())
                 .await

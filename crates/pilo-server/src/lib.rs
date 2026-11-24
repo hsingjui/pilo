@@ -562,6 +562,7 @@ async fn dispatch(
         "session.watch_stop" => session_watch_stop(state, from_params(params)?)
             .await
             .map(ServerReply::json),
+        // Older Hosts still require and call this capability.
         "preview.ports" => preview_ports().await.map(ServerReply::json),
         "terminal.open" => terminal_open(state, from_params(params)?)
             .await

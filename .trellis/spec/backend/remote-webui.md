@@ -274,7 +274,6 @@ remote_host_state()                       -> RemoteHostState
 remote_lan_addresses()                    -> string[] // host IPv4 literals, no port
 remote_set_enabled(enabled: bool)         -> RemoteHostState
 remote_set_port(port: u16)                -> RemoteHostState
-remote_set_public_base_url(publicBaseUrl: String) -> RemoteHostState // compatibility
 remote_set_addresses(addresses: Vec<RemoteAccessAddress>, entryAddressId: String) -> RemoteHostState
 remote_pairing_regenerate()               -> RemoteHostState
 remote_device_revoke(deviceId: String)    -> RemoteHostState
@@ -394,8 +393,10 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   excluded from pairing targets. Editing targets invalidates the old batch and
   generates a new one without clearing devices. The desktop pins the entry to the
   `lan` address when one exists and no longer exposes entry or name editing;
-  legacy `name` values stay in storage but are neither edited nor shown. The
-  legacy command edits only the `public` entry.
+  legacy `name` values stay in storage but are neither edited nor shown. Desktop
+  writes through `remote_set_addresses`. The separate `pilo ctl` setting
+  `remote.publicBaseUrl` still reads the legacy field and edits only the `public`
+  entry; it is not an `app/native` operation.
   The saved-address editor and WebUI pairing choices share
   `sortRemoteAddresses` from `shared/remote-addresses.ts`: RFC1918 IPv4 origins
   appear before public/custom origins, preserving order within each group.

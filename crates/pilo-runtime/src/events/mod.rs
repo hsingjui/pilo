@@ -8,8 +8,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-#[cfg(test)]
-use super::host_events::HostEvents;
 use serde::Serialize;
 use serde_json::json;
 use tokio::sync::{broadcast, watch};
@@ -27,9 +25,6 @@ pub mod turn_projection;
 pub use model::*;
 pub use stream::{EventBatch, EventQueueLimits, EventStream};
 use trace::traceable_runtime_event;
-
-#[cfg(test)]
-pub(crate) const RUNTIME_EVENT_NAME: &str = "pilo://runtime";
 
 const WEB_EVENT_CHANNEL_CAPACITY: usize = 512;
 const WEB_EVENT_CHANNEL_MAX_BYTES: usize = 64 * 1024 * 1024;
@@ -139,9 +134,6 @@ pub struct SequencedRuntimeEvent {
 #[derive(Clone)]
 pub struct RuntimeEventBus {
     streams: Arc<StdMutex<stream::StreamRegistry>>,
-    // Tests observe per-subscriber envelopes here; production delivers through sequenced queues.
-    #[cfg(test)]
-    test_channels: Arc<StdMutex<HashMap<String, Arc<dyn HostEvents>>>>,
     web_sender: watch::Sender<()>,
     web_queue: Arc<StdMutex<WebEventQueue>>,
     replay: Arc<StdMutex<EventReplay>>,
@@ -157,8 +149,6 @@ impl Default for RuntimeEventBus {
         let (web_sender, _) = watch::channel(());
         Self {
             streams: Arc::new(StdMutex::new(stream::StreamRegistry::default())),
-            #[cfg(test)]
-            test_channels: Arc::default(),
             web_sender,
             web_queue: Arc::new(StdMutex::new(WebEventQueue {
                 enabled: true,
@@ -234,27 +224,6 @@ impl RuntimeEventBus {
             replay.clear();
             queue.buffer.clear();
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn subscribe(
-        &self,
-        window_label: &str,
-        _channel_id: u32,
-        events: Arc<dyn HostEvents>,
-    ) {
-        self.test_channels
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(window_label.to_owned(), events);
-    }
-
-    #[cfg(test)]
-    fn unsubscribe(&self, window_label: &str) {
-        self.test_channels
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(window_label);
     }
 
     pub(crate) fn subscribe_web(&self) -> WebEventReceiver {
@@ -395,18 +364,6 @@ impl RuntimeEventBus {
                 }),
             );
         }
-
-        #[cfg(test)]
-        {
-            let channels = self
-                .test_channels
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone();
-            for channel in channels.into_values() {
-                let _ = channel.emit_serialized(RUNTIME_EVENT_NAME, &sequenced.event);
-            }
-        }
     }
 }
 
@@ -422,48 +379,6 @@ pub trait RuntimeEventSink: Clone + Send + Sync + 'static {
 mod tests {
     use super::*;
     use crate::token_usage::TokenUsage;
-
-    #[test]
-    fn host_subscribers_receive_envelopes_and_isolate_delivery_failures() {
-        use crate::host_events::RecordingEvents;
-        let bus = RuntimeEventBus::default();
-        let first = Arc::new(RecordingEvents::default());
-        let second = Arc::new(RecordingEvents::default());
-        bus.send(RuntimeEventEnvelope::global(
-            RuntimeEvent::ConfigurationChanged,
-        ));
-        assert!(first.events.lock().unwrap().is_empty());
-        bus.subscribe("first", 1, first.clone());
-        bus.subscribe("second", 2, second.clone());
-        first.fail.store(true, Ordering::Relaxed);
-        let envelope = RuntimeEventEnvelope::session(
-            "chat".into(),
-            "project".into(),
-            RuntimeEvent::AssistantTextDelta {
-                generation: 7,
-                delta: String::new(),
-            },
-        );
-        bus.send(envelope.clone());
-        assert!(first.events.lock().unwrap().is_empty());
-        assert_eq!(
-            *second.events.lock().unwrap(),
-            vec![(
-                RUNTIME_EVENT_NAME.into(),
-                serde_json::to_value(&envelope).unwrap()
-            )]
-        );
-        assert_eq!(bus.replay_after(0).unwrap().len(), 2);
-        bus.unsubscribe("second");
-        first.fail.store(false, Ordering::Relaxed);
-        bus.send(envelope.clone());
-        assert_eq!(first.events.lock().unwrap().len(), 1);
-        assert_eq!(second.events.lock().unwrap().len(), 1);
-        bus.subscribe("first", 3, second.clone());
-        bus.send(envelope);
-        assert_eq!(first.events.lock().unwrap().len(), 1);
-        assert_eq!(second.events.lock().unwrap().len(), 2);
-    }
 
     #[test]
     fn runtime_event_has_stable_chat_shape() {
