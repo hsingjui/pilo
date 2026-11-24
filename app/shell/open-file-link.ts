@@ -1,15 +1,16 @@
 import type { Project } from "@shared/api/projects-types";
 import { bytesToBase64 } from "@shared/base64";
-import { resolveMarkdownImageSource } from "@shared/chat/chat-markdown-images";
+import { projectImageForFilePath } from "@shared/chat/chat-markdown-images";
 import {
 	fileLinkPreviewKind,
+	resolveLiteralFileLink,
 	resolveMarkdownFileLink,
 } from "@shared/chat/chat-markdown-links";
 import { MAX_CHAT_IMAGE_BYTES } from "@shared/chat/chat-submission";
 import { fileBasename } from "@shared/chat/chat-tool-result";
-import {
-	workspaceFileKey,
-	type WorkspaceFile,
+import type {
+	WorkspaceFile,
+	WorkspaceLineRange,
 } from "@shared/project-workspace";
 
 import type { ChatMarkdownFileLink } from "../chat/chat-markdown";
@@ -31,22 +32,9 @@ function decodeFileUrlPath(url: string): string {
 	);
 }
 
-export function resolveProjectImageCandidate(
-	projectPath: string,
-	candidate: string,
-) {
-	const root = workspaceFileKey(projectPath).replace(/\/+$/, "");
-	const path = workspaceFileKey(candidate.trim());
-	const relative = path.startsWith(`${root}/`)
-		? path.slice(root.length + 1)
-		: path;
-	// Tool paths are literal filesystem names, not URL-encoded Markdown sources.
-	return resolveMarkdownImageSource(encodeURIComponent(relative));
-}
-
 export interface FileLinkOpenContext {
 	project: () => Pick<Project, "id" | "path"> | null;
-	workspace: WorkspaceStore;
+	workspace?: WorkspaceStore;
 	openFileLink?: OpenFileLinkClient;
 	readProjectImage?: (projectId: string, path: string) => Promise<Uint8Array>;
 	openImage?: (image: ChatImagePreview) => void;
@@ -54,7 +42,7 @@ export interface FileLinkOpenContext {
 	onFileActivated?: () => void;
 }
 
-/** Opens a resolved Markdown file link in a workspace preview tab or the system app. */
+/** Opens a resolved file link in the image lightbox, a workspace tab or the system app. */
 export function openMarkdownFileLink(
 	ctx: FileLinkOpenContext,
 	link: ChatMarkdownFileLink,
@@ -71,123 +59,111 @@ export function openMarkdownFileLink(
 		ctx.toasts.show({ variant: "error", title: t("chat.fileLinkInvalid") });
 		return;
 	}
-	const preview = fileLinkPreviewKind(decodedPath) !== null;
-	if (preview) {
-		const existing = ctx.workspace.findFile(project.id, decodedPath);
-		if (existing) {
-			ctx.workspace.selectFile(project.id, existing.path, link.lineRange);
-			ctx.onFileActivated?.();
-			return;
-		}
-	}
-	if (!ctx.openFileLink) {
+	const { openFileLink, workspace } = ctx;
+	const showOpenError = (error: unknown) => {
 		ctx.toasts.show({
 			variant: "error",
-			title: t("file.workspaceUnavailable"),
+			title: t("chat.fileLinkOpenFailed"),
+			description:
+				error instanceof Error ? error.message : t("chat.fileLinkCheckPath"),
+		});
+	};
+	const imageSource = projectImageForFilePath(project.path, decodedPath);
+	if (imageSource.type === "project" && ctx.readProjectImage && ctx.openImage) {
+		const { path, mimeType } = imageSource;
+		void ctx
+			.readProjectImage(project.id, path)
+			.then((bytes) => {
+				if (ctx.project()?.id !== project.id) return;
+				if (bytes.length > MAX_CHAT_IMAGE_BYTES) {
+					throw new Error("image exceeds chat size limit");
+				}
+				ctx.openImage?.({
+					url: `data:${mimeType};base64,${bytesToBase64(bytes)}`,
+					name: fileBasename(path) || path,
+					size: bytes.length,
+				});
+			})
+			.catch((error: unknown) => {
+				if (ctx.project()?.id !== project.id) return;
+				ctx.toasts.show({
+					variant: "error",
+					title: t("chat.imageUnavailable"),
+					description: error instanceof Error ? error.message : String(error),
+					...(openFileLink && {
+						timeout: 10_000,
+						action: {
+							label: t("chat.fileLinkOpenInSystem"),
+							onPress: () => {
+								if (ctx.project()?.id !== project.id) return;
+								void openFileLink(project.id, link.url, false).catch(
+									showOpenError,
+								);
+							},
+						},
+					}),
+				});
+			});
+		return;
+	}
+	if (!openFileLink || !workspace) {
+		ctx.toasts.show({
+			variant: "error",
+			title: t(
+				workspace ? "file.workspaceUnavailable" : "chat.fileLinkWebUnsupported",
+			),
 		});
 		return;
 	}
-	void ctx
-		.openFileLink(project.id, link.url, preview)
+	const preview = fileLinkPreviewKind(decodedPath) !== null;
+	const existing = preview && workspace.findFile(project.id, decodedPath);
+	if (existing) {
+		workspace.selectFile(project.id, existing.path, link.lineRange);
+		ctx.onFileActivated?.();
+		return;
+	}
+	void openFileLink(project.id, link.url, preview)
 		.then((file) => {
 			if (!file) return;
-			ctx.workspace.openFile(project.id, file, link.lineRange);
+			workspace.openFile(project.id, file, link.lineRange);
 			if (ctx.project()?.id === project.id) ctx.onFileActivated?.();
 		})
-		.catch((error: unknown) => {
-			ctx.toasts.show({
-				variant: "error",
-				title: t("chat.fileLinkOpenFailed"),
-				description:
-					error instanceof Error ? error.message : t("chat.fileLinkCheckPath"),
-			});
-		});
+		.catch(showOpenError);
 }
 
-function toToolFileLinkInput(candidate: string): string {
-	const trimmed = candidate.trim();
-	if (!trimmed || /^file:/i.test(trimmed)) return trimmed;
-	const normalized = trimmed.replaceAll("\\", "/");
-	if (normalized.startsWith("/")) {
-		const encoded = normalized
-			.split("/")
-			.map((segment) => encodeURIComponent(segment))
-			.join("/");
-		return `file://${encoded}`;
-	}
-	if (/^[a-z]:\//i.test(normalized)) {
-		const [drive, ...rest] = normalized.split("/");
-		const encoded = rest
-			.map((segment) => encodeURIComponent(segment))
-			.join("/");
-		return `file:///${drive}/${encoded}`;
-	}
-	return normalized
-		.split("/")
-		.map((segment) => encodeURIComponent(segment))
-		.join("/");
+function resolveReportedFilePath(candidate: string, projectPath: string) {
+	return /^file:/i.test(candidate)
+		? resolveMarkdownFileLink(candidate, projectPath)
+		: resolveLiteralFileLink(candidate, projectPath);
 }
 
-/** Whether a tool-reported path can open as a project image or a workspace file link. */
+/** Whether a reported path is a valid file target on the active connection. */
 export function canOpenToolFilePath(
 	ctx: FileLinkOpenContext,
 	candidate: string,
 ): boolean {
 	const project = ctx.project();
-	if (!project) return false;
-	if (
-		ctx.readProjectImage &&
-		ctx.openImage &&
-		resolveProjectImageCandidate(project.path, candidate).type === "project"
-	) {
-		return true;
-	}
-	return Boolean(
-		ctx.openFileLink &&
-		resolveMarkdownFileLink(toToolFileLinkInput(candidate), project.path),
-	);
+	return Boolean(project && resolveReportedFilePath(candidate, project.path));
 }
 
-/** Opens a tool-reported file path: project images open the lightbox, other files open workspace tabs. */
+/** Opens a literal file path from a mention, tool or the Git workspace. */
 export function openToolFilePath(
 	ctx: FileLinkOpenContext,
 	candidate: string,
+	lineRange?: WorkspaceLineRange,
 ): void {
 	const project = ctx.project();
 	if (!project) {
 		ctx.toasts.show({ variant: "error", title: t("chat.fileLinkNoProject") });
 		return;
 	}
-	const imageSource = resolveProjectImageCandidate(project.path, candidate);
-	if (imageSource.type === "project" && ctx.readProjectImage && ctx.openImage) {
-		void ctx
-			.readProjectImage(project.id, imageSource.path)
-			.then((bytes) => {
-				if (bytes.length > MAX_CHAT_IMAGE_BYTES) {
-					throw new Error("image exceeds chat size limit");
-				}
-				ctx.openImage?.({
-					url: `data:${imageSource.mimeType};base64,${bytesToBase64(bytes)}`,
-					name: fileBasename(imageSource.path) || imageSource.path,
-					size: bytes.length,
-				});
-			})
-			.catch((error: unknown) => {
-				ctx.toasts.show({
-					variant: "error",
-					title: t("chat.loadImageFailed"),
-					description: error instanceof Error ? error.message : String(error),
-				});
-			});
-		return;
-	}
-	const link = resolveMarkdownFileLink(
-		toToolFileLinkInput(candidate),
-		project.path,
-	);
+	const link = resolveReportedFilePath(candidate, project.path);
 	if (!link) {
 		ctx.toasts.show({ variant: "error", title: t("chat.fileLinkInvalid") });
 		return;
 	}
-	openMarkdownFileLink(ctx, link);
+	openMarkdownFileLink(ctx, {
+		...link,
+		lineRange: link.lineRange ?? lineRange,
+	});
 }

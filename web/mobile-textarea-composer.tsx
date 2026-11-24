@@ -32,7 +32,10 @@ import { sessionMentionValue } from "@shared/chat/session-mentions";
 import type { SendMessageShortcut } from "@shared/host-preferences-types";
 
 import { t } from "../app/shell/i18n";
-import { ChatMediaActions } from "../app/chat/chat-media-actions";
+import {
+	ChatMediaActions,
+	chatAttachmentImage,
+} from "../app/chat/chat-media-actions";
 import { ChatReadingFont } from "../app/chat/chat-reading-font";
 import { ComposerActions } from "../app/composer/composer-actions";
 import { ComposerContextUsage } from "../app/composer/composer-context-usage";
@@ -373,11 +376,7 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 											class="min-w-0 flex-row items-center gap-1.5 py-1"
 											accessibilityLabel={image().name}
 											onPress={() =>
-												media.openImage?.({
-													url: `data:${image().mimeType};base64,${image().data}`,
-													name: image().name,
-													size: image().size,
-												})
+												media.openImage?.(chatAttachmentImage(image()))
 											}
 										>
 											<Image
@@ -420,18 +419,27 @@ export function MobileTextareaComposer(props: MobileTextareaComposerProps) {
 									};
 									return (
 										<View class="min-h-8 max-w-full flex-row items-center gap-1.5 rounded-md border border-border/70 bg-muted/70 pl-2 pr-1">
-											{reference().kind === "session" ? (
-												<Icon
-													name="MessageSquare"
-													size={13}
-													color={token("muted-foreground")}
-												/>
-											) : (
-												<FileTypeIcon path={reference().path} size={13} />
-											)}
-											<Text class="max-w-36 truncate font-sans text-xs text-foreground">
-												{label}
-											</Text>
+											<BaseButton
+												class="min-h-8 min-w-0 flex-row items-center gap-1.5"
+												onPress={
+													reference().kind === "file" && media.openFile
+														? () => media.openFile?.(reference().path)
+														: undefined
+												}
+											>
+												{reference().kind === "session" ? (
+													<Icon
+														name="MessageSquare"
+														size={13}
+														color={token("muted-foreground")}
+													/>
+												) : (
+													<FileTypeIcon path={reference().path} size={13} />
+												)}
+												<Text class="max-w-36 truncate font-sans text-xs text-foreground">
+													{label}
+												</Text>
+											</BaseButton>
 											<Button
 												variant="ghost"
 												size="icon"

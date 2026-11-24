@@ -231,6 +231,10 @@ function FilePreviewPanel(props: {
 						language={fileName}
 						readOnly
 						lineNumbers
+						classes={{
+							gutter: "bg-muted/50",
+							lineNumber: "text-muted-foreground",
+						}}
 						folding={false}
 						activeLine={false}
 						scrollBeyondLastLine={false}

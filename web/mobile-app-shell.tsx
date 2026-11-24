@@ -27,10 +27,17 @@ import { CommandPalette } from "../app/shell/command-palette";
 import { t } from "../app/shell/i18n";
 import { SessionLanding } from "../app/shell/landing";
 import { openChatTarget } from "../app/shell/open-chat";
+import {
+	openMarkdownFileLink,
+	openToolFilePath,
+} from "../app/shell/open-file-link";
 import type { SessionForker } from "../app/shell/session-fork";
 import { ChatAgentActivityIndicator } from "../app/chat/chat-agent-activity";
 import { ChatImageLightbox } from "../app/chat/chat-image-lightbox";
-import { ChatMarkdown } from "../app/chat/chat-markdown";
+import {
+	ChatMarkdown,
+	type ChatMarkdownFileLink,
+} from "../app/chat/chat-markdown";
 import {
 	ChatMediaActions,
 	type ChatImagePreview,
@@ -253,8 +260,17 @@ export function MobileAppShell(props: MobileAppShellProps) {
 			);
 	};
 
-	const mediaActions = {
+	const fileOpenContext = {
+		project,
+		readProjectImage: props.readProjectImage,
 		openImage: (image: ChatImagePreview) => previewImage.set(image),
+		toasts,
+	};
+	const handleFileLink = (link: ChatMarkdownFileLink) =>
+		openMarkdownFileLink(fileOpenContext, link);
+	const mediaActions = {
+		openImage: fileOpenContext.openImage,
+		openFile: (path: string) => openToolFilePath(fileOpenContext, path),
 		sessionMentions: () => composer.sessionsByValue(),
 		readUserImage: (image: ChatConversationImage) => {
 			const session = store.state().navigation.session;
@@ -721,6 +737,7 @@ export function MobileAppShell(props: MobileAppShellProps) {
 																textKey={textKey}
 																project={project}
 																readProjectImage={props.readProjectImage}
+																onFileLink={handleFileLink}
 															/>
 														)}
 														preferences={() =>

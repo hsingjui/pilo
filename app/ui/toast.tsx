@@ -23,6 +23,7 @@ const variants = {
 export interface ToastProps extends BaseToastProps {
 	variant?: keyof typeof variants;
 	description?: string;
+	action?: JSX.Element;
 	icon?: JSX.Element;
 	closeButton?: boolean;
 	closeLabel?: string;
@@ -35,6 +36,7 @@ export function Toast(props: ToastProps) {
 		"children",
 		"variant",
 		"description",
+		"action",
 		"icon",
 		"closeButton",
 		"closeLabel",
@@ -70,6 +72,7 @@ export function Toast(props: ToastProps) {
 						</Text>
 					) : null
 				}
+				{local.action}
 			</View>
 			{() =>
 				local.closeButton !== false && local.onDismissRequest ? (

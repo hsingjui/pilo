@@ -1,5 +1,6 @@
 import { cleanup, context, Overlay, signal, Text, token } from "nsh";
 
+import { Button } from "../ui/button";
 import { Toast } from "../ui/toast";
 import { type ToastEntry, ToastManager, ToastStack } from "../ui/toast-stack";
 import { t } from "./i18n";
@@ -8,6 +9,7 @@ export interface AppToast {
 	variant?: "default" | "success" | "info" | "warning" | "error";
 	title: string;
 	description?: string;
+	action?: { label: string; onPress: () => void };
 	/** Milliseconds it shows; Sonner's 4s without it. */
 	timeout?: number;
 }
@@ -23,23 +25,36 @@ let sequence = 0;
  */
 export class AppToasts {
 	private readonly manager = new ToastManager();
+	// ToastManager stores JSON, so callbacks must stay on the JS side.
+	private readonly actions = new Map<string, () => void>();
 	private readonly current = signal<ToastEntry[]>([]);
 	private readonly expanded = signal(false);
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private disposed = false;
 
-	show(toast: AppToast): void {
+	show({ action, ...toast }: AppToast): void {
 		// A settings request can finish after its dialog closes.
 		if (this.disposed) return;
-		this.manager.push(`toast-${++sequence}`, toast, {
+		const id = `toast-${++sequence}`;
+		if (action) this.actions.set(id, action.onPress);
+		const value = action ? { ...toast, actionLabel: action.label } : toast;
+		this.manager.push(id, value, {
 			timeout: toast.timeout ?? DEFAULT_TIMEOUT_MS,
 		});
 		this.tick();
 	}
 
 	dismiss(id: string): void {
+		this.actions.delete(id);
 		this.manager.dismiss(id);
 		this.tick();
+	}
+
+	performAction(id: string): void {
+		const action = this.actions.get(id);
+		if (!action) return;
+		this.dismiss(id);
+		action();
 	}
 
 	/** The newest toasts and the ones leaving, oldest first. */
@@ -55,19 +70,26 @@ export class AppToasts {
 		this.disposed = true;
 		if (this.timer !== null) clearInterval(this.timer);
 		this.timer = null;
+		this.actions.clear();
 		this.manager.dispose();
+	}
+
+	private advance(): boolean {
+		const { changed, ending } = this.manager.advance(this.expanded());
+		for (const id of ending) this.actions.delete(id);
+		return changed;
 	}
 
 	// The lifecycle advances on a timer only while a toast is mounted.
 	private tick(): void {
-		this.manager.advance(this.expanded());
+		this.advance();
 		this.current.set(this.manager.visible(VISIBLE_TOASTS));
 		if (this.manager.isEmpty()) {
 			if (this.timer !== null) clearInterval(this.timer);
 			this.timer = null;
 		} else if (this.timer === null) {
 			this.timer = setInterval(() => {
-				if (this.manager.advance(this.expanded()).changed) {
+				if (this.advance()) {
 					this.current.set(this.manager.visible(VISIBLE_TOASTS));
 				}
 				if (this.manager.isEmpty() && this.timer !== null) {
@@ -109,13 +131,29 @@ export function AppToastStack(props: { toasts: AppToasts }) {
 						>
 							<Each of={toasts.entries()} key={(entry) => entry.id}>
 								{(entry) => {
-									const toast = entry().value as AppToast;
+									const toast = entry().value as Omit<AppToast, "action"> & {
+										actionLabel?: string;
+									};
 									return (
 										<Toast
 											testID={`app-toast-${entry().id}`}
 											transitionStatus={entry().status}
 											variant={toast.variant}
 											description={toast.description}
+											action={
+												toast.actionLabel && (
+													<Button
+														class="mt-1 self-start"
+														size="sm"
+														variant="secondary"
+														disabled={entry().status === "ending"}
+														accessibilityLabel={toast.actionLabel}
+														onPress={() => toasts.performAction(entry().id)}
+													>
+														<Text class="font-sans">{toast.actionLabel}</Text>
+													</Button>
+												)
+											}
 											accessibilityLabel={toast.title}
 											closeLabel={t("common.close")}
 											onDismissRequest={() => toasts.dismiss(entry().id)}

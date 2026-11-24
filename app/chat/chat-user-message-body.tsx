@@ -2,7 +2,6 @@ import { computed, Text, token, View } from "nsh";
 import { Button as BaseButton } from "nsh/base";
 
 import {
-	canPreviewFileMention,
 	fileMentionName,
 	readChatMentionParts,
 	type ChatMention,
@@ -142,7 +141,7 @@ function InlineMessageMention(props: {
 	}
 	const { path } = mention;
 	const openable = () =>
-		canPreviewFileMention(path) && (media.canOpenFile?.(path) ?? false);
+		Boolean(media.openFile && (media.canOpenFile?.(path) ?? true));
 	return (
 		<ChatMentionInline
 			testID="chat-user-mention:file"

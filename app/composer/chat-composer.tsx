@@ -40,6 +40,10 @@ import type { KeyboardShortcutMap } from "@shared/keyboard-shortcuts-types";
 
 import { AppToaster, showToast } from "../shell/app-toasts";
 import { t } from "../shell/i18n";
+import {
+	ChatMediaActions,
+	chatAttachmentImage,
+} from "../chat/chat-media-actions";
 import { ChatReadingFont } from "../chat/chat-reading-font";
 import { chatMetadataText, chatPx } from "../chat/layout";
 import { bindAppShortcut } from "../shortcuts";
@@ -206,6 +210,7 @@ export interface ChatComposerProps {
  */
 export function ChatComposer(props: ChatComposerProps) {
 	const store = props.store;
+	const media = ChatMediaActions();
 	const readingFont = ChatReadingFont();
 	const surfaceWidth = signal(0);
 	const toolbarWidth = signal(0);
@@ -655,6 +660,11 @@ export function ChatComposer(props: ChatComposerProps) {
 											/>
 										}
 										disabled={disabled()}
+										onPress={
+											media.openImage
+												? () => media.openImage?.(chatAttachmentImage(image()))
+												: undefined
+										}
 										onRemove={() => {
 											if (!disabled()) store.removeImage(image().id);
 										}}
@@ -696,6 +706,11 @@ export function ChatComposer(props: ChatComposerProps) {
 												)
 											}
 											disabled={disabled()}
+											onPress={
+												reference().kind === "file" && media.openFile
+													? () => media.openFile?.(reference().path)
+													: undefined
+											}
 											onRemove={() => {
 												if (!disabled()) store.removeReference(index());
 											}}
@@ -1221,12 +1236,12 @@ function AttachmentChip(props: {
 			<BaseButton
 				ref={openBlur.ref}
 				onMouseUp={openBlur.onMouseUp}
-				class="h-full min-w-0 flex-1 flex-row items-center rounded-l-md transition-colors hover:bg-hover focus-visible:outline-hidden"
+				class={`h-full min-w-0 flex-1 flex-row items-center rounded-l-md transition-colors focus-visible:outline-hidden ${props.onPress ? "hover:bg-hover" : ""}`}
 				style={{
 					gap: chatPx(6),
 					paddingLeft: chatPx(8),
 					paddingRight: chatPx(6),
-					cursor: "pointer",
+					cursor: props.onPress ? "pointer" : "default",
 				}}
 				focusVisibleStyle={focusRingStyle(token("ring"))}
 				accessibilityLabel={props.label}
@@ -1237,9 +1252,7 @@ function AttachmentChip(props: {
 						</Tooltip>
 					) : undefined
 				}
-				onPress={() => {
-					props.onPress?.();
-				}}
+				onPress={props.onPress}
 			>
 				{props.leading}
 				<Text

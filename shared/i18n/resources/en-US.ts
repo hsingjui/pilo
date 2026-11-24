@@ -671,13 +671,13 @@ const enUS = {
 			"Image preview was released; reopen the session to load it",
 		loadImageFailed: "Failed to load; click to retry",
 		imageUnavailable: "Image unavailable",
-		fileLinkInvalid:
-			"Only local file links without query strings or fragments are supported.",
+		fileLinkInvalid: "Invalid file path or line number.",
 		fileLinkOpenFailed: "Could not open file",
+		fileLinkOpenInSystem: "Open with system app",
 		fileLinkCheckPath:
 			"Check that the file exists, is accessible, and is not an executable or shortcut.",
 		fileLinkWebUnsupported:
-			"File links are not supported in WebUI yet. Open a Local project in the desktop app, or ask the agent to provide an HTTP(S) link.",
+			"WebUI only previews images inside the project. Open this file in the desktop app.",
 		fileLinkRemoteUnsupported:
 			"File links in WSL and SSH projects are not supported yet. Ask the agent to provide an HTTP(S) link.",
 		fileLinkNoProject:

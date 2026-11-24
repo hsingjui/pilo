@@ -73,6 +73,49 @@ function markdownFileLocation(value: string): {
 	};
 }
 
+/** Resolve a literal path from a file picker, mention or tool without treating its name as URL syntax. */
+export function resolveLiteralFileLink(
+	path: string,
+	projectPath?: string,
+): ReturnType<typeof resolveMarkdownFileLink> {
+	const normalized = path
+		.replaceAll("\\", "/")
+		.replace(/^\/\/\?\/([a-z]:\/)/i, "$1");
+	if (
+		!normalized ||
+		normalized.length > 4096 ||
+		normalized.startsWith("~") ||
+		normalized.startsWith("//")
+	)
+		return null;
+	try {
+		const encoded = normalized.split("/").map(encodeURIComponent).join("/");
+		const href = normalized.startsWith("/")
+			? `file://${encoded}`
+			: /^[a-z]:\//i.test(normalized)
+				? `file:///${encoded.replace(/^([a-z])%3A\//i, "$1:/")}`
+				: encoded;
+		return resolveMarkdownFileLink(href, projectPath);
+	} catch {
+		return null;
+	}
+}
+
+/** The assistant may write an absolute path directly instead of a file URL. */
+export function resolveChatFileLink(
+	value: string,
+	projectPath?: string,
+): ReturnType<typeof resolveMarkdownFileLink> {
+	if (value.startsWith("~/")) return null;
+	if (value.startsWith("/") && !value.startsWith("//")) {
+		return resolveMarkdownFileLink(`file://${value}`);
+	}
+	if (/^[a-z]:[\\/]/i.test(value)) {
+		return resolveMarkdownFileLink(`file:///${value.replaceAll("\\", "/")}`);
+	}
+	return resolveMarkdownFileLink(value, projectPath);
+}
+
 function relativeMarkdownFilePath(value: string): string | null {
 	// A root-level filename with a line suffix is not a URL scheme.
 	if (

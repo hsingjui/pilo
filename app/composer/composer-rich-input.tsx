@@ -34,6 +34,10 @@ import {
 import type { SessionMention } from "@shared/chat/session-mentions";
 import { t } from "../shell/i18n";
 import {
+	ChatMediaActions,
+	chatAttachmentImage,
+} from "../chat/chat-media-actions";
+import {
 	ChatMentionInline,
 	type InlineMentionKind,
 } from "../chat/chat-mention-inline";
@@ -139,6 +143,7 @@ function SessionRichInput(session: {
 	imageLayouts: Map<string | null, ImageLayout>;
 }) {
 	const props = session.input;
+	const media = ChatMediaActions();
 	const { sessionKey, projectId, imageLayouts } = session;
 	const isCurrent = () => props.sessionKey() === sessionKey;
 	const focused = signal(false);
@@ -235,20 +240,40 @@ function SessionRichInput(session: {
 					const attrs = nodeProps.node.attrs;
 					const kind = resolveMentionKind(attrs.kind);
 					const path = String(attrs.path ?? "");
+					const label = String(attrs.label ?? "");
 					return (
 						<ChatMentionInline
 							testID={`chat-composer-mention:${kind}`}
 							kind={kind}
-							label={String(attrs.label ?? "")}
+							label={label}
 							path={path}
 							detail={String(attrs.detail ?? "") || undefined}
 							imageUrl={kind === "image" ? imageUrlById().get(path) : undefined}
 							fontSize={props.readingFont().fontSize}
 							fontFamily={props.readingFont().fontFamily}
 							selected={nodeProps.selected}
-							onPress={() => {
-								// 按当前需求保留可点击交互态，暂不执行点击后动作。
-							}}
+							accessibilityLabel={
+								kind === "image"
+									? t("chat.viewImage", { name: label })
+									: kind === "file"
+										? t("chat.openFile", { path })
+										: undefined
+							}
+							onPress={
+								kind === "session"
+									? undefined
+									: () => {
+											if (!isCurrent()) return;
+											if (kind === "file") {
+												media.openFile?.(path);
+											} else if (media.openImage) {
+												const image = props
+													.images()
+													.find((entry) => entry.id === path);
+												if (image) media.openImage(chatAttachmentImage(image));
+											}
+										}
+							}
 						/>
 					);
 				}}

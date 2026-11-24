@@ -1,6 +1,9 @@
 import type { Project } from "@shared/api/projects-types";
 import { resolveChatImageMimeType } from "@shared/chat/chat-submission";
-import { workspaceFileKey } from "@shared/project-workspace";
+import {
+	normalizeWorkspaceFilePath,
+	workspaceFileKey,
+} from "@shared/project-workspace";
 
 /** The project a Markdown document belongs to: how its images are read. */
 export type ChatProjectImageScope = {
@@ -14,21 +17,39 @@ export type ChatProjectImageScope = {
 	) => Promise<Uint8Array<ArrayBuffer>>;
 };
 
+function projectRelativeImagePath(projectPath: string, filePath: string) {
+	const root = workspaceFileKey(projectPath).replace(/\/+$/, "");
+	if (!workspaceFileKey(filePath).startsWith(`${root}/`)) return null;
+	// Case folding is for comparison only and can change a segment's length.
+	const segments = normalizeWorkspaceFilePath(filePath)
+		.split("/")
+		.slice(root.split("/").length);
+	return segments.includes("..") ? null : segments.join("/");
+}
+
 /** Outside-project documents never gain access to their neighbouring system files. */
 export function projectMarkdownImageScope(
 	project: Pick<Project, "id" | "path">,
 	filePath: string,
 ): ChatProjectImageScope | null {
-	const root = workspaceFileKey(project.path).replace(/\/+$/, "");
-	const path = workspaceFileKey(filePath);
-	if (!path.startsWith(`${root}/`)) return null;
-	const relative = path.slice(root.length + 1);
-	if (!relative || relative.split("/").includes("..")) return null;
+	const relative = projectRelativeImagePath(project.path, filePath);
+	if (!relative) return null;
 	return {
 		projectId: project.id,
 		sessionKey: filePath,
 		baseDirectory: relative.split("/").slice(0, -1).join("/"),
 	};
+}
+
+/** A resolved file link can use the image API only when its path is inside the project. */
+export function projectImageForFilePath(
+	projectPath: string,
+	filePath: string,
+): MarkdownImageSource {
+	const relative = projectRelativeImagePath(projectPath, filePath);
+	return relative
+		? resolveMarkdownImageSource(encodeURIComponent(relative))
+		: { type: "invalid" };
 }
 
 export type MarkdownImageSource =

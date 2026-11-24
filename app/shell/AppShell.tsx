@@ -14,6 +14,8 @@ import { currentWindow } from "nsh/desktop";
 
 import type { Project } from "@shared/api/projects-types";
 import type { ChatConversationImage } from "@shared/chat/conversation-types";
+import type { WorkspaceLineRange } from "@shared/project-workspace";
+
 import { CacheKeepAliveNotice } from "../chat/cache-keep-alive-notice";
 import { ChatAgentActivityIndicator } from "../chat/chat-agent-activity";
 import { ChatImageLightbox } from "../chat/chat-image-lightbox";
@@ -215,13 +217,10 @@ export function AppShell(props: AppShellProps) {
 					: null,
 			);
 		},
-		...(fileOpenContext
-			? {
-					canOpenFile: (path: string) =>
-						canOpenToolFilePath(fileOpenContext, path),
-					openFile: (path: string) => openToolFilePath(fileOpenContext, path),
-				}
-			: {}),
+		openFile: fileOpenContext
+			? (path: string, lineRange?: WorkspaceLineRange) =>
+					openToolFilePath(fileOpenContext, path, lineRange)
+			: undefined,
 	};
 	/** The open session's index entry, for its title and Pi session id. */
 	const openSessionEntry = computed(() => {

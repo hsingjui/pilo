@@ -44,11 +44,13 @@ export const EMPTY_PROJECT_WORKSPACE: ProjectWorkspace = {
 	activeTab: { kind: "chat" },
 };
 
-export function workspaceFileKey(path: string): string {
+export function normalizeWorkspaceFilePath(path: string): string {
 	// Windows canonicalize returns a verbatim drive path (\\\\?\\C:\\...), while links/sidebar use C:/....
-	const normalized = path
-		.replace(/\\/g, "/")
-		.replace(/^\/\/\?\/([a-z]:\/)/i, "$1");
+	return path.replace(/\\/g, "/").replace(/^\/\/\?\/([a-z]:\/)/i, "$1");
+}
+
+export function workspaceFileKey(path: string): string {
+	const normalized = normalizeWorkspaceFilePath(path);
 	return /^[a-z]:\//i.test(normalized) ? normalized.toLowerCase() : normalized;
 }
 

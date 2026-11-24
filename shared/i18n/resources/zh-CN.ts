@@ -637,12 +637,13 @@ const zhCN = {
 		imagePreviewReleased: "图片预览已释放，重新打开会话即可加载",
 		loadImageFailed: "加载失败，点击重试",
 		imageUnavailable: "图片不可用",
-		fileLinkInvalid: "仅支持不含查询参数或片段的本地文件链接。",
+		fileLinkInvalid: "文件路径或行号无效。",
 		fileLinkOpenFailed: "打开文件失败",
+		fileLinkOpenInSystem: "用系统应用打开",
 		fileLinkCheckPath:
 			"请检查文件是否存在、可访问，且不是可执行文件或快捷方式。",
 		fileLinkWebUnsupported:
-			"WebUI 暂不支持文件链接。请在桌面端打开 Local 项目，或让 Agent 提供 HTTP(S) 链接。",
+			"WebUI 仅支持预览项目内的图片。请在桌面端打开此文件。",
 		fileLinkRemoteUnsupported:
 			"暂不支持 WSL 和 SSH 项目的文件链接，请让 Agent 提供 HTTP(S) 链接。",
 		fileLinkNoProject: "请在此对话所属的项目中打开文件。",

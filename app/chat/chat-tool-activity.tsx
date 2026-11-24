@@ -52,20 +52,21 @@ export function ChatToolActivity(props: {
 	const preview = computed(() => toolPreview(activity()));
 	const filePath = computed(() => toolFilePath(activity()));
 	const toolName = computed(() => activity().toolName.toLowerCase());
-	const readImage = computed(() =>
-		toolName() === "read" && !running() && !failed() && filePath()
+	const showsFile = () => {
+		const name = toolName();
+		return name === "read" || name === "view" || name === "view_image";
+	};
+	const resultImage = () =>
+		showsFile() && !running() && !failed()
 			? singleToolResultImage(activity().result)
-			: null,
-	);
+			: null;
 	const openablePath = computed(() => {
 		const path = filePath();
 		const name = toolName();
-		if ((name !== "read" && name !== "write" && name !== "edit") || !path) {
+		if (!path || (!showsFile() && name !== "write" && name !== "edit"))
 			return null;
-		}
-		if (readImage() && media.openImage) return path;
 		if (media.openFile && (media.canOpenFile?.(path) ?? true)) return path;
-		return null;
+		return media.openImage && resultImage() ? path : null;
 	});
 	const skillName = computed(() => toolSkillName(activity(), filePath()));
 	// A failed call's list did not take effect: its details show the error.
@@ -119,7 +120,7 @@ export function ChatToolActivity(props: {
 	const openPath = () => {
 		const path = openablePath();
 		if (!path) return;
-		const image = readImage();
+		const image = media.openImage ? resultImage() : null;
 		if (image && media.openImage) {
 			media.openImage({
 				url: toolResultImageUrl(image),
@@ -127,7 +128,13 @@ export function ChatToolActivity(props: {
 			});
 			return;
 		}
-		media.openFile?.(path);
+		const { args } = activity();
+		const offset = toolName() === "read" && isRecord(args) ? args.offset : null;
+		const lineRange =
+			typeof offset === "number" && Number.isSafeInteger(offset) && offset > 0
+				? { start: offset, end: offset }
+				: undefined;
+		media.openFile?.(path, lineRange);
 	};
 	const rowColor = () => token(failed() ? "destructive" : "muted-foreground");
 	return (

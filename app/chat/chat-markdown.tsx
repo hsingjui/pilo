@@ -18,9 +18,12 @@ import type {
 
 import type { Project } from "@shared/api/projects-types";
 import { resolveMarkdownImageSource } from "@shared/chat/chat-markdown-images";
-import { resolveMarkdownFileLink } from "@shared/chat/chat-markdown-links";
+import { resolveChatFileLink } from "@shared/chat/chat-markdown-links";
 import { bytesToBase64 } from "@shared/base64";
-import { MAX_CHAT_IMAGE_BYTES } from "@shared/chat/chat-submission";
+import {
+	MAX_CHAT_IMAGE_BYTES,
+	resolveChatImageMimeType,
+} from "@shared/chat/chat-submission";
 import { fileBasename } from "@shared/chat/chat-tool-result";
 import type { WorkspaceLineRange } from "@shared/project-workspace";
 
@@ -29,7 +32,7 @@ import { t } from "../shell/i18n";
 import { ChatMediaActions, type ChatImagePreview } from "./chat-media-actions";
 import { ChatReadingFont } from "./chat-reading-font";
 
-/** What a project file link resolved to (`resolveMarkdownFileLink`). */
+/** What a project file link resolved to. */
 export interface ChatMarkdownFileLink {
 	url: string;
 	lineRange?: WorkspaceLineRange;
@@ -269,7 +272,7 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 			void openUrl(url);
 			return;
 		}
-		const link = resolveMarkdownFileLink(url, props.project?.()?.path);
+		const link = resolveChatFileLink(url, props.project?.()?.path);
 		if (link) props.onFileLink?.(link);
 	};
 
@@ -290,7 +293,19 @@ export function ChatMarkdown(props: ChatMarkdownProps) {
 			});
 			return;
 		}
-		if (source.type !== "project") return;
+		if (source.type !== "project") {
+			// Absolute image references reuse the file opener on click, not during streaming.
+			const src = image.src;
+			if (
+				src &&
+				/^(?:file:|\/(?!\/)|[a-z]:[\\/])/i.test(src) &&
+				resolveChatImageMimeType({ name: src, type: "" })
+			) {
+				const link = resolveChatFileLink(src);
+				if (link) props.onFileLink?.(link);
+			}
+			return;
+		}
 		const current = projectImage(source.path, source.mimeType)();
 		if (current.type === "ready") {
 			openImagePreview({
