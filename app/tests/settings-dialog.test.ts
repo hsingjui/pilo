@@ -70,6 +70,14 @@ test("a preferences switch saves through the client", async () => {
 	await app.press("id:settings-collapse-long");
 	await app.waitFor("text:true");
 	expect(app.shows("id:settings-collapse-long")).toBe(true);
+	expect(app.shows("id:settings-compact-output")).toBe(true);
+	await app.press("id:settings-compact-output");
+	await app.host.send("fixture", "probe-shortcuts");
+	await app.waitUntil(() =>
+		Boolean(
+			app.storage()["shortcut-patches"]?.includes('"compactOutput":true'),
+		),
+	);
 });
 
 test("the nav moves between panes", async () => {

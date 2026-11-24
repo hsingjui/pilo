@@ -4,7 +4,7 @@ import { Button } from "../ui/button";
 import { Foreground } from "../ui/foreground";
 import { createHover } from "../ui/hover";
 import { Tooltip } from "../ui/tooltip";
-import { chatPx } from "./layout";
+import { chatFooterHeight } from "./layout";
 
 /** The React message footer's ghost action, shared by Copy and Fork. */
 export function ChatMessageAction(props: {
@@ -17,7 +17,7 @@ export function ChatMessageAction(props: {
 	children?: JSX.Element;
 }) {
 	const hover = createHover();
-	const size = platform.desktop ? chatPx(28) : 44;
+	const size = chatFooterHeight(platform.desktop);
 	const width =
 		props.compact && platform.os === "web" ? Math.min(size, 32) : size;
 	return (

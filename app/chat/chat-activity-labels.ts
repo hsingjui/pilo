@@ -69,6 +69,40 @@ export function toolLabel(toolName: string): string {
 	}
 }
 
+export function runningToolLabel(toolName: string, isSkill = false): string {
+	if (isSkill) return t("chat.loadingSkill");
+	const mcpTool = toolName.match(/^mcp__(.+?)__(.+)$/);
+	if (mcpTool) {
+		return t("chat.runningToolAction", {
+			tool: `${mcpTool[1]}/${mcpTool[2]}`,
+		});
+	}
+	if (isChatTodoTool(toolName)) return t("chat.updatingTodos");
+	switch (toolName.toLowerCase()) {
+		case "tool_search":
+			return t("chat.findingTools");
+		case "list_mcp_resources":
+			return t("chat.listingMcpResources");
+		case "read_mcp_resource":
+			return t("chat.readingMcpResource");
+		case "bash":
+		case "execute":
+			return t("chat.running");
+		case "read":
+			return t("chat.reading");
+		case "write":
+			return t("chat.writing");
+		case "edit":
+			return t("chat.editing");
+		case "search":
+		case "grep":
+		case "find":
+			return t("chat.searching");
+		default:
+			return t("chat.runningToolAction", { tool: toolName });
+	}
+}
+
 /** A skill a `read` of its `SKILL.md` loads, by its directory's name. */
 export function toolSkillName(
 	activity: ToolCallActivity,

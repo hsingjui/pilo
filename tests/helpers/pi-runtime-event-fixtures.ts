@@ -22,6 +22,7 @@ export const runtimeEvents = [
 				},
 				collapseCompletedActivity: true,
 				collapseLongMessages: true,
+				compactOutput: false,
 				showWorkDuration: false,
 				showPluginNotifications: true,
 				desktopNotifications: true,

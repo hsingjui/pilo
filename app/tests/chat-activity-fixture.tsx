@@ -21,9 +21,34 @@ import { context, startedAt } from "./chat-conversation-fixture";
  * - `thinking`: a turn still thinking.
  * - `answered`: a turn that only answered, in 5 seconds.
  * - `untimed`: `answered` with `showWorkDuration` turned off.
+ * - `compactRunning`: `running` with `compactOutput` turned on and a live
+ *   timestamp 62 seconds before mount so the elapsed timer starts at `1m 02s`.
+ * - `compactThinking`: a turn still thinking with `compactOutput` turned on.
+ * - `compactUntimed`: `compactRunning` with `showWorkDuration` turned off.
+ * - `compactSettled`: `settled` with `compactOutput` turned on.
+ * - `compactExpanded`: `settled` with `compactOutput` turned on and
+ *   `collapseCompletedActivity` turned off.
+ * - `compactStreamingText`: tools finished and trailing text streaming, with
+ *   `compactOutput` turned on.
+ * - `compactAborted`: an aborted turn with `compactOutput` turned on.
+ * - `compactedContinuation`: a work-only turn split by a compaction marker.
+ * - `whitespaceOnlyText`: a tool call followed only by whitespace text.
  */
 
 const at = (seconds: number) => startedAt + seconds * 1000;
+
+function shiftEvents(
+	events: readonly ConversationEvent[],
+	originMs: number,
+): ConversationEvent[] {
+	return events.map((event) => ({
+		...event,
+		timestampMs:
+			event.timestampMs !== undefined
+				? originMs + (event.timestampMs - startedAt)
+				: undefined,
+	}));
+}
 
 const prompt: ConversationEvent[] = [
 	{ type: "user_message_start", text: "Bump x.", timestampMs: at(0) },
@@ -139,6 +164,76 @@ const answer: ConversationEvent[] = [
 	{ type: "assistant_turn_end", stopReason: "stop", timestampMs: at(5) },
 ];
 
+const compactStreamingText: ConversationEvent[] = [
+	...prompt,
+	...work,
+	{
+		type: "tool_execution_end",
+		toolCallId: "bash-1",
+		toolName: "bash",
+		result: { content: [{ type: "text", text: "all passed" }] },
+		isError: false,
+		timestampMs: at(12),
+	},
+	{
+		type: "assistant_text_delta",
+		delta: "Streaming final answer...",
+		timestampMs: at(13),
+	},
+];
+
+const compactAborted: ConversationEvent[] = [
+	...prompt,
+	...work.slice(0, 6),
+	{ type: "assistant_turn_end", stopReason: "aborted", timestampMs: at(8) },
+];
+
+const compactedContinuation: ConversationEvent[] = [
+	...prompt,
+	{
+		type: "tool_execution_start",
+		toolCallId: "cmd-1",
+		toolName: "codemode",
+		args: {},
+		timestampMs: at(1),
+	},
+	{
+		type: "tool_execution_end",
+		toolCallId: "cmd-1",
+		toolName: "codemode",
+		result: { content: [{ type: "text", text: "ok" }] },
+		isError: false,
+		timestampMs: at(2),
+	},
+	{
+		type: "compaction_marker",
+		summary: "Compacted earlier context.",
+		tokensBefore: 2575,
+		timestampMs: at(3),
+	},
+];
+
+const whitespaceOnlyText: ConversationEvent[] = [
+	...prompt,
+	{
+		type: "tool_execution_start",
+		toolCallId: "cmd-1",
+		toolName: "codemode",
+		args: {},
+		timestampMs: at(1),
+	},
+	{
+		type: "tool_execution_end",
+		toolCallId: "cmd-1",
+		toolName: "codemode",
+		result: { content: [{ type: "text", text: "ok" }] },
+		isError: false,
+		timestampMs: at(2),
+	},
+	{ type: "assistant_text_delta", delta: "\n\n  \n", timestampMs: at(3) },
+	{ type: "assistant_turn_end", stopReason: "stop", timestampMs: at(4) },
+];
+
 const scenarios: Record<string, ConversationEvent[]> = {
 	settled: [...prompt, ...work, ...commandEnd],
 	expanded: [...prompt, ...work, ...commandEnd],
@@ -148,7 +243,29 @@ const scenarios: Record<string, ConversationEvent[]> = {
 	thinking: [...prompt, ...work.slice(0, 2)],
 	answered: [...prompt, ...answer],
 	untimed: [...prompt, ...answer],
+	compactRunning: [...prompt, ...work],
+	compactSettled: [...prompt, ...work, ...commandEnd],
+	compactExpanded: [...prompt, ...work, ...commandEnd],
+	compactStreamingText,
+	compactAborted,
+	compactedContinuation,
+	whitespaceOnlyText,
 };
+
+function buildScenario(scenario: string): ConversationEvent[] {
+	const liveOrigin = Date.now() - 62_000;
+	switch (scenario) {
+		case "compactRunning":
+		case "compactUntimed":
+			return shiftEvents([...prompt, ...work], liveOrigin);
+		case "compactThinking":
+			return shiftEvents([...prompt, ...work.slice(0, 2)], liveOrigin);
+		case "compactStreamingText":
+			return shiftEvents(compactStreamingText, liveOrigin);
+		default:
+			return scenarios[scenario] ?? scenarios.settled;
+	}
+}
 
 async function run() {
 	await initializeI18n();
@@ -156,15 +273,16 @@ async function run() {
 	const state: ChatTranscriptState = {
 		sessionKey: "chat-activity-fixture",
 		status: "ready",
-		conversation: replayConversationEvents(
-			scenarios[scenario] ?? scenarios.settled,
-			context(),
-		),
+		conversation: replayConversationEvents(buildScenario(scenario), context()),
 		historyPrefix: [],
 		source: "history",
 	};
-	const expanded = scenario === "expanded";
-	const untimed = expanded || scenario === "untimed";
+	const expanded = scenario === "expanded" || scenario === "compactExpanded";
+	const untimed =
+		scenario === "expanded" ||
+		scenario === "untimed" ||
+		scenario === "compactUntimed";
+	const compactOutput = scenario.startsWith("compact");
 	mount(() => (
 		<View class="flex-1">
 			<ChatMessageList
@@ -172,6 +290,7 @@ async function run() {
 				messages={() => state.conversation?.messages ?? []}
 				preferences={() => ({
 					collapseCompletedActivity: !expanded,
+					compactOutput,
 					showWorkDuration: !untimed,
 				})}
 			/>

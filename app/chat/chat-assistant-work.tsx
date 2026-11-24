@@ -1,8 +1,10 @@
 import { computed, Text, untracked, View } from "nsh";
 
-import type {
-	AssistantContentDisplaySections,
-	AssistantContentItem,
+import {
+	type AssistantContentDisplaySections,
+	type AssistantContentItem,
+	getAssistantActivities,
+	splitActiveCompactContent,
 } from "@shared/chat/chat-activity-state";
 import type { AssistantActivity } from "@shared/chat/chat-activity-types";
 
@@ -10,6 +12,7 @@ import { t } from "../shell/i18n";
 import { Icon } from "../ui/icon";
 import { workDurationText } from "./chat-activity-labels";
 import { ChatActivityGroup } from "./chat-activity-group";
+import { ChatCompactWork } from "./chat-compact-activity";
 import { ChatDisclosureRow } from "./chat-disclosure-row";
 import type { ChatExpansion } from "./chat-expansion";
 import type {
@@ -38,30 +41,32 @@ function workSegments(
 	content: readonly AssistantContentItem[],
 	followedByTextAfterContent: boolean,
 ): WorkSegment[] {
+	const visible = content.filter(
+		(item) => item.type !== "text" || item.text.trim().length > 0,
+	);
 	const segments: WorkSegment[] = [];
 	let first = true;
-	for (let index = 0; index < content.length; index += 1) {
-		const item = content[index];
+	for (let index = 0; index < visible.length; index += 1) {
+		const item = visible[index];
 		if (item.type === "text") {
-			if (item.text)
-				segments.push({ type: "text", id: item.id, text: item.text });
+			segments.push({ type: "text", id: item.id, text: item.text });
 			continue;
 		}
 		const items: AssistantActivity[] = [];
 		const start = index;
-		while (index < content.length && content[index].type !== "text") {
-			items.push(content[index] as AssistantActivity);
+		while (index < visible.length && visible[index].type !== "text") {
+			items.push(visible[index] as AssistantActivity);
 			index += 1;
 		}
 		index -= 1;
-		const next = content[index + 1];
+		const next = visible[index + 1];
 		segments.push({
 			type: "activity",
 			id: items[0]?.id ?? `activity-${start}`,
 			items,
 			followedByText:
-				(next?.type === "text" && next.text.length > 0) ||
-				(index === content.length - 1 && followedByTextAfterContent),
+				next?.type === "text" ||
+				(index === visible.length - 1 && followedByTextAfterContent),
 			first,
 		});
 		first = false;
@@ -224,15 +229,90 @@ export function ChatAssistantWork(
 ) {
 	const { message, sections } = props;
 	const finalContent = () => sections().final;
-	const layout = computed(() =>
-		props.workActive()
+	const hasAnyActivity = computed(
+		() =>
+			getAssistantActivities(sections().work).length > 0 ||
+			getAssistantActivities(finalContent()).length > 0,
+	);
+	// A stopped turn is no longer live, but the answer it already showed stays
+	// below the folded work instead of going inside it.
+	const streaming = computed(() => message().streaming === true);
+	const activeCompact = computed(() =>
+		splitActiveCompactContent(finalContent(), streaming()),
+	);
+	const hasVisibleFinalText = computed(() =>
+		finalContent().some(
+			(item) => item.type === "text" && item.text.trim().length > 0,
+		),
+	);
+	const keepsTrailingText = computed(
+		() => activeCompact().trailingText.length > 0,
+	);
+	const layout = computed(() => {
+		if (props.preferences().compactOutput && hasAnyActivity()) {
+			if (streaming()) return "compactActive";
+			if (keepsTrailingText()) return "compactTrailing";
+			return sections().hasCollapsedWork ? "compactFolded" : "compactOnly";
+		}
+		return props.workActive()
 			? "active"
 			: sections().hasCollapsedWork
 				? "folded"
-				: "plain",
-	);
+				: "plain";
+	});
 	return () => {
 		switch (layout()) {
+			case "compactActive":
+				return (
+					<View class="w-full">
+						<ChatCompactWork
+							{...props}
+							workContent={() => activeCompact().work}
+							hasTrailingText={() => activeCompact().trailingText.length > 0}
+						/>
+						{() =>
+							activeCompact().trailingText.length > 0 ? (
+								<WorkSegments
+									{...props}
+									content={() => activeCompact().trailingText}
+								/>
+							) : null
+						}
+					</View>
+				);
+			case "compactTrailing":
+				return (
+					<View class="w-full">
+						<ChatCompactWork
+							{...props}
+							workContent={() => activeCompact().work}
+							hasTrailingText={hasVisibleFinalText}
+						/>
+						<WorkSegments
+							{...props}
+							content={() => activeCompact().trailingText}
+						/>
+					</View>
+				);
+			case "compactFolded":
+				return (
+					<View class="w-full">
+						<ChatCompactWork
+							{...props}
+							workContent={() => sections().work}
+							hasTrailingText={hasVisibleFinalText}
+						/>
+						<WorkSegments {...props} content={finalContent} />
+					</View>
+				);
+			case "compactOnly":
+				return (
+					<ChatCompactWork
+						{...props}
+						workContent={finalContent}
+						hasTrailingText={() => false}
+					/>
+				);
 			case "active":
 				return <WorkedRegion {...props} content={finalContent} active />;
 			case "folded":
@@ -242,11 +322,7 @@ export function ChatAssistantWork(
 							{...props}
 							content={() => sections().work}
 							active={false}
-							followedByTextAfterContent={() =>
-								finalContent().some(
-									(item) => item.type === "text" && item.text.length > 0,
-								)
-							}
+							followedByTextAfterContent={hasVisibleFinalText}
 						/>
 						<WorkSegments {...props} content={finalContent} />
 					</View>

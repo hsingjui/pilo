@@ -25,7 +25,8 @@ pub(crate) fn defaults() -> Map<String, Value> {
             "open-command-palette": "mod+k", "cycle-model": "mod+shift+m",
             "cycle-scoped-model": "ctrl+p", "focus-composer": "mod+l", "queue-message": "alt+enter"
         },
-        "collapseCompletedActivity": true, "collapseLongMessages": true, "showWorkDuration": true,
+        "collapseCompletedActivity": true, "collapseLongMessages": true, "compactOutput": false,
+        "showWorkDuration": true,
         "showPluginNotifications": false, "desktopNotifications": false, "developerMode": false,
         "pageFontFamily": "system-sans", "uiFontSize": 15, "readingFontFamily": "system-sans", "readingFontSize": 16,
         "codeFontFamily": "system-mono", "codeFontSize": 14,
@@ -176,6 +177,7 @@ mod runtime_tests {
             max_bytes: 256 * 1024,
         });
         let initial = preferences_get(&runtime).unwrap();
+        assert_eq!(initial.values["compactOutput"], false);
         assert_eq!(initial.values["pageFontFamily"], "system-sans");
         assert_eq!(initial.values["readingFontFamily"], "system-sans");
         assert_eq!(initial.values["codeFontFamily"], "system-mono");
@@ -199,7 +201,7 @@ mod runtime_tests {
         assert_eq!(preferences_get(&runtime).unwrap(), fonts);
         let settings = preferences_patch(
             &runtime,
-            json!({"desktopNotifications": false})
+            json!({"desktopNotifications": false, "compactOutput": true})
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -207,10 +209,9 @@ mod runtime_tests {
         )
         .unwrap();
         assert!(settings.revision > initial.revision);
-        assert_eq!(
-            preferences_get(&runtime).unwrap().values["desktopNotifications"],
-            false
-        );
+        let reloaded = preferences_get(&runtime).unwrap();
+        assert_eq!(reloaded.values["desktopNotifications"], false);
+        assert_eq!(reloaded.values["compactOutput"], true);
         assert!(
             preferences_patch(
                 &runtime,

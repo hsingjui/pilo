@@ -3,7 +3,7 @@ import { platform, signal, Text } from "nsh";
 import { Button } from "../ui/button";
 import { Popover } from "../ui/popover";
 import { textTooltip } from "../ui/tooltip";
-import { chatMetadataText, chatPx } from "./layout";
+import { chatFooterHeight, chatMetadataText, chatPx } from "./layout";
 
 function formatDetail(timestampMs: number | undefined) {
 	if (timestampMs === undefined) return "";
@@ -45,7 +45,7 @@ export function ChatReplyTime(props: { time: string; endedAtMs?: number }) {
 						variant="ghost"
 						class="shrink-0 p-0"
 						style={{
-							height: platform.desktop ? chatPx(28) : 44,
+							height: chatFooterHeight(platform.desktop),
 							minWidth: platform.desktop ? undefined : 44,
 						}}
 						accessibilityLabel={detail()}

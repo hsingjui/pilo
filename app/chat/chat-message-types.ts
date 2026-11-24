@@ -27,6 +27,8 @@ export type ChatTextBody = (
 export interface ChatWorkPreferences {
 	/** Finished work folds behind its summary. */
 	collapseCompletedActivity: boolean;
+	/** Cycles running tool calls in place on a single compact row. */
+	compactOutput?: boolean;
 	/** Summaries say how long the work took. */
 	showWorkDuration: boolean;
 }

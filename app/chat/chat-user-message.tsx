@@ -23,8 +23,15 @@ export function ChatUserMessage(props: {
 	const showBubble = computed(
 		() => Boolean(props.body) || hasText() || !hasImages(),
 	);
+	const showFooter = computed(() => hasText() || Boolean(message().time));
 	return (
-		<ConversationColumn class="items-end py-3">
+		<ConversationColumn
+			class={
+				platform.desktop && showFooter()
+					? "items-end pt-3 pb-0"
+					: "items-end py-3"
+			}
+		>
 			<View class="max-w-[70%] items-end gap-1.5" {...hover.props}>
 				{() =>
 					message().queued ? (

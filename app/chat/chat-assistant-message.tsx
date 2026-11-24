@@ -28,13 +28,14 @@ import type {
 } from "./chat-message-types";
 import { ChatTurnUsage } from "./chat-turn-usage";
 import { ConversationColumn } from "./conversation-column";
-import { chatMetadataText, chatPx } from "./layout";
+import { chatFooterHeight, chatMetadataText, chatPx } from "./layout";
 
 const stalled = "PILO_STREAM_STALLED:";
 
 /** The Host's defaults, while its preferences are not loaded. */
 export const defaultChatWorkPreferences: ChatWorkPreferences = {
 	collapseCompletedActivity: true,
+	compactOutput: false,
 	showWorkDuration: true,
 };
 
@@ -123,8 +124,18 @@ export function ChatAssistantMessage(props: {
 			message().stopReason !== "aborted",
 	);
 	// What a running reply is doing, in words; nothing once it settles.
+	// In compact output mode, the live compact header already shows the elapsed
+	// timer and spinner while any activity exists, so avoid duplicating the
+	// footer indicator.
 	const streamingLabel = computed(() => {
 		const { text, streaming, pendingStatus } = message();
+		if (
+			preferences().compactOutput &&
+			streaming === true &&
+			activity().length > 0
+		) {
+			return "";
+		}
 		const state = getAssistantStreamingState({
 			text,
 			activity: activity(),
@@ -144,8 +155,28 @@ export function ChatAssistantMessage(props: {
 			? workDurationText(durationMs)
 			: "";
 	});
+	const showFooter = computed(() => {
+		if (streamingLabel() || stopped() || message().streaming === true) {
+			return false;
+		}
+		// A pre-compaction / split work segment with no reply text or usage does
+		// not need a reserved footer row just for a timestamp.
+		if (
+			message().completion === "continued" &&
+			!hasCopyText() &&
+			!turnUsage()
+		) {
+			return false;
+		}
+		return Boolean(
+			hasCopyText() || time() || duration() || turnUsage() || canFork(),
+		);
+	});
 	return (
-		<ConversationColumn class="py-3" {...hover.props}>
+		<ConversationColumn
+			class={platform.desktop && showFooter() ? "pt-3 pb-0" : "py-3"}
+			{...hover.props}
+		>
 			{props.body ? (
 				<View selectable>{props.body(message)}</View>
 			) : (
@@ -185,19 +216,14 @@ export function ChatAssistantMessage(props: {
 							{t("chat.stopped")}
 						</Text>
 					</View>
-				) : message().streaming !== true &&
-				  (hasCopyText() ||
-						time() ||
-						duration() ||
-						turnUsage() ||
-						canFork()) ? (
+				) : showFooter() ? (
 					<View
 						testID="chat-reply-footer"
 						class="flex-row flex-wrap items-center transition-opacity duration-150"
 						style={{
 							gap: chatPx(8),
-							marginTop: chatPx(2),
-							minHeight: chatPx(28),
+							marginTop: platform.desktop ? 0 : chatPx(2),
+							minHeight: chatFooterHeight(platform.desktop),
 							opacity: !platform.desktop || hover.hovered() ? 1 : 0,
 						}}
 						focusWithinStyle={{ opacity: 1 }}

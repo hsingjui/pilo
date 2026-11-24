@@ -1,5 +1,6 @@
 import { computed, effect, signal, Text, untracked, View } from "nsh";
 
+import { lastThinkingLine } from "@shared/chat/chat-activity-state";
 import type { ThinkingActivity } from "@shared/chat/chat-activity-types";
 
 import { t } from "../shell/i18n";
@@ -19,18 +20,6 @@ import {
 // How much thinking renders at first, and how much more each press shows.
 const THINKING_REVEAL_CHARS = 8_000;
 
-/** The last line of thinking that has text, scanned from the end. */
-function lastThinkingLine(text: string): string {
-	let end = text.length;
-	while (end > 0) {
-		const start = text.lastIndexOf("\n", end - 1) + 1;
-		const line = text.slice(start, end).trim();
-		if (line) return line.slice(0, THINKING_REVEAL_CHARS);
-		end = start - 1;
-	}
-	return "";
-}
-
 /**
  * One block of thinking: a row with its last line, opening to the whole
  * text. It starts closed, as a tool does, and keeps the user's choice by
@@ -49,7 +38,9 @@ export function ChatThinkingActivity(props: {
 	const open = computed(() =>
 		props.expansion.isOpen(props.expansionKey(), false),
 	);
-	const preview = computed(() => lastThinkingLine(activity().text));
+	const preview = computed(() =>
+		lastThinkingLine(activity().text, THINKING_REVEAL_CHARS),
+	);
 	const hasDetails = computed(() => preview().length > 0);
 	const showDetails = computed(() => hasDetails() && open());
 	const showPreview = computed(() => hasDetails() && !open());

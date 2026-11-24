@@ -127,8 +127,132 @@ export function getAssistantMessageContent(
 	return content;
 }
 
+/** The last non-empty line of a thinking trace, scanned from the end. */
+export function lastThinkingLine(text: string, maxChars = 8_000): string {
+	let end = text.length;
+	while (end > 0) {
+		const start = text.lastIndexOf("\n", end - 1) + 1;
+		const line = text.slice(start, end).trim();
+		if (line) return line.slice(0, maxChars);
+		end = start - 1;
+	}
+	return "";
+}
+
+/**
+ * Picks the single activity to show in the compact live ticker row:
+ * the latest running item if any, otherwise the most recent activity item.
+ */
+export function pickCompactLiveActivity(
+	activities: readonly AssistantActivity[],
+): AssistantActivity | null {
+	for (let index = activities.length - 1; index >= 0; index -= 1) {
+		if (activities[index]?.status === "running") return activities[index];
+	}
+	return activities[activities.length - 1] ?? null;
+}
+
+export type CompactLivePreview = {
+	/** Latest thinking block with non-empty text, omitted when identical to `liveActivity`. */
+	latestThought: Extract<AssistantActivity, { type: "thinking" }> | null;
+	/** Current live activity shown underneath: latest running item, or most recent activity. */
+	liveActivity: AssistantActivity | null;
+};
+
+/**
+ * Picks the two live preview slots for compact output: the latest non-empty
+ * thinking line on top and the live activity (tool call or thinking) below.
+ * Deduplicates when the live activity itself is that latest thinking block.
+ */
+export function pickCompactLivePreview(
+	activities: readonly AssistantActivity[],
+): CompactLivePreview {
+	const liveActivity = pickCompactLiveActivity(activities);
+	let latestThought: Extract<AssistantActivity, { type: "thinking" }> | null =
+		null;
+	for (let index = activities.length - 1; index >= 0; index -= 1) {
+		const item = activities[index];
+		if (item?.type === "thinking" && lastThinkingLine(item.text).length > 0) {
+			latestThought = item;
+			break;
+		}
+	}
+	if (
+		latestThought &&
+		liveActivity?.type === "thinking" &&
+		latestThought.id === liveActivity.id
+	) {
+		latestThought = null;
+	}
+	return { latestThought, liveActivity };
+}
+
+export type ActiveCompactSections = {
+	work: AssistantContentItem[];
+	/** The answer shown under the header, its settled work following it. */
+	trailingText: AssistantContentItem[];
+};
+
+/**
+ * Splits a streaming turn's content for compact output: while any activity is
+ * running everything stays inside the compact work region; once activities
+ * settle and trailing answer text begins streaming, that trailing text renders
+ * directly underneath the compact work header. A stopped turn keeps the
+ * answer it had shown outside the folded work, its settled work trailing it.
+ */
+export function splitActiveCompactContent(
+	content: readonly AssistantContentItem[] | undefined,
+	live = true,
+): ActiveCompactSections {
+	const items = content ?? [];
+	if (items.length === 0) return { work: [], trailingText: [] };
+
+	const hasRunningActivity = items.some(
+		(item) => item.type !== "text" && item.status === "running",
+	);
+	if (hasRunningActivity) {
+		return { work: [...items], trailingText: [] };
+	}
+
+	let trailingStart = items.length;
+	for (let index = items.length - 1; index >= 0; index -= 1) {
+		if (items[index]?.type !== "text") break;
+		trailingStart = index;
+	}
+	if (trailingStart === 0 || trailingStart === items.length) {
+		return { work: [...items], trailingText: [] };
+	}
+
+	const trailingText = items.slice(trailingStart) as AssistantTextContent[];
+	const hasVisibleTrailingText = trailingText.some(
+		(item) => item.text.trim().length > 0,
+	);
+	if (!hasVisibleTrailingText) {
+		return { work: [...items], trailingText: [] };
+	}
+
+	// A stopped turn keeps its answer text, and any settled work after it,
+	// below the header: the work before the answer is what folds.
+	if (!live) {
+		let answerStart = trailingStart;
+		while (answerStart > 0 && items[answerStart - 1]?.type !== "text") {
+			answerStart -= 1;
+		}
+		if (answerStart === 0) return { work: [...items], trailingText: [] };
+		return {
+			work: items.slice(0, answerStart),
+			trailingText: items.slice(answerStart),
+		};
+	}
+
+	return {
+		work: items.slice(0, trailingStart),
+		trailingText,
+	};
+}
+
 export function getAssistantActivities(
-	content: AssistantContentItem[] | undefined,
+	content: readonly AssistantContentItem[] | undefined,
 ): AssistantActivity[] {
 	return (content ?? []).filter(
 		(item): item is AssistantActivity => item.type !== "text",

@@ -69,6 +69,13 @@ export function PreferencesPane(props: {
 						}
 					/>
 				</SettingsRow>
+				<SettingsRow label={t("settings.compactOutput")}>
+					<Switch
+						testID="settings-compact-output"
+						checked={values()?.compactOutput ?? false}
+						onChange={(event) => save({ compactOutput: event.checked })}
+					/>
+				</SettingsRow>
 				<SettingsRow label={t("settings.pluginNotifications")}>
 					<Switch
 						testID="settings-plugin-notifications"

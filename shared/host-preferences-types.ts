@@ -17,6 +17,7 @@ export type PiloPreferences = {
 	keyboardShortcuts: KeyboardShortcutMap;
 	collapseCompletedActivity: boolean;
 	collapseLongMessages: boolean;
+	compactOutput: boolean;
 	showWorkDuration: boolean;
 	showPluginNotifications: boolean;
 	desktopNotifications: boolean;

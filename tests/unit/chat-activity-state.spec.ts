@@ -6,9 +6,13 @@ import {
 	appendAssistantThinkingContent,
 	finishAssistantThinkingContent,
 	getAssistantStreamingState,
+	lastThinkingLine,
+	pickCompactLiveActivity,
+	pickCompactLivePreview,
 	reconcileAssistantTextContent,
 	shouldAutoCollapseAssistantActivity,
 	shouldInitiallyOpenAssistantActivity,
+	splitActiveCompactContent,
 	splitAssistantContentForDisplay,
 	startAssistantThinkingContent,
 	summarizeAssistantActivity,
@@ -513,4 +517,127 @@ test("a thinking delta without a start still records when it began", () => {
 		content[0]?.type === "thinking" ? content[0].startedAtMs : null,
 		700,
 	);
+});
+
+test("lastThinkingLine extracts the final non-empty line", () => {
+	assert.equal(
+		lastThinkingLine("first line\n  second line  \n\n"),
+		"second line",
+	);
+	assert.equal(lastThinkingLine("   \n\t\n"), "");
+	assert.equal(lastThinkingLine("abcdef", 3), "abc");
+});
+
+test("pickCompactLiveActivity prefers the latest running item and falls back to the last item", () => {
+	assert.equal(pickCompactLiveActivity([]), null);
+
+	const runningPick = pickCompactLiveActivity([
+		{ id: "t-1", type: "tool", toolName: "read", status: "running" },
+		{ id: "t-2", type: "tool", toolName: "edit", status: "running" },
+		{ id: "t-3", type: "tool", toolName: "bash", status: "complete" },
+	]);
+	assert.equal(runningPick?.id, "t-2");
+
+	const fallbackPick = pickCompactLiveActivity([
+		{ id: "t-1", type: "tool", toolName: "read", status: "complete" },
+		{ id: "t-2", type: "tool", toolName: "bash", status: "complete" },
+	]);
+	assert.equal(fallbackPick?.id, "t-2");
+});
+
+test("pickCompactLivePreview pairs the latest thinking line with the live activity and deduplicates identical thinking", () => {
+	assert.deepEqual(pickCompactLivePreview([]), {
+		latestThought: null,
+		liveActivity: null,
+	});
+
+	const thoughtAndTool = pickCompactLivePreview([
+		{
+			id: "th-1",
+			type: "thinking",
+			text: "First thought.\nExamining files.",
+			status: "complete",
+		},
+		{ id: "t-1", type: "tool", toolName: "bash", status: "running" },
+	]);
+	assert.equal(thoughtAndTool.latestThought?.id, "th-1");
+	assert.equal(thoughtAndTool.liveActivity?.id, "t-1");
+
+	// When the live activity itself is the latest non-empty thinking block,
+	// do not duplicate it on the top row.
+	const liveThinkingWithText = pickCompactLivePreview([
+		{
+			id: "th-1",
+			type: "thinking",
+			text: "Earlier thought.",
+			status: "complete",
+		},
+		{
+			id: "th-2",
+			type: "thinking",
+			text: "Now thinking...",
+			status: "running",
+		},
+	]);
+	assert.equal(liveThinkingWithText.latestThought, null);
+	assert.equal(liveThinkingWithText.liveActivity?.id, "th-2");
+
+	// When a new thinking block has started without text yet, keep the prior
+	// non-empty thought on top and the active thinking block below.
+	const emptyNewThinking = pickCompactLivePreview([
+		{
+			id: "th-1",
+			type: "thinking",
+			text: "Earlier thought.",
+			status: "complete",
+		},
+		{ id: "th-2", type: "thinking", text: "   ", status: "running" },
+	]);
+	assert.equal(emptyNewThinking.latestThought?.id, "th-1");
+	assert.equal(emptyNewThinking.liveActivity?.id, "th-2");
+
+	// Tool-only activity has no thinking row.
+	const toolOnly = pickCompactLivePreview([
+		{ id: "t-1", type: "tool", toolName: "read", status: "running" },
+	]);
+	assert.equal(toolOnly.latestThought, null);
+	assert.equal(toolOnly.liveActivity?.id, "t-1");
+});
+
+test("splitActiveCompactContent keeps everything in work while tools run and exposes trailing streaming text once settled", () => {
+	const runningContent: AssistantContentItem[] = [
+		{ id: "th-1", type: "thinking", text: "Plan", status: "complete" },
+		{ id: "txt-1", type: "text", text: "Checking file." },
+		{ id: "t-1", type: "tool", toolName: "bash", status: "running" },
+	];
+	assert.deepEqual(splitActiveCompactContent(runningContent), {
+		work: runningContent,
+		trailingText: [],
+	});
+
+	const trailingContent: AssistantContentItem[] = [
+		{ id: "th-1", type: "thinking", text: "Plan", status: "complete" },
+		{ id: "txt-1", type: "text", text: "Checking file." },
+		{ id: "t-1", type: "tool", toolName: "bash", status: "complete" },
+		{ id: "txt-2", type: "text", text: "Streaming answer..." },
+	];
+	const split = splitActiveCompactContent(trailingContent);
+	assert.deepEqual(
+		split.work.map((item) => item.id),
+		["th-1", "txt-1", "t-1"],
+	);
+	assert.deepEqual(
+		split.trailingText.map((item) => item.id),
+		["txt-2"],
+	);
+
+	// Whitespace-only trailing text stays inside work until visible text arrives.
+	const whitespaceTrailing: AssistantContentItem[] = [
+		{ id: "t-1", type: "tool", toolName: "bash", status: "complete" },
+		{ id: "txt-blank", type: "text", text: "  \n" },
+	];
+	assert.deepEqual(splitActiveCompactContent(whitespaceTrailing), {
+		work: whitespaceTrailing,
+		trailingText: [],
+	});
 });
