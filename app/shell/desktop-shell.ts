@@ -17,6 +17,93 @@ export type DesktopSettingsClient = {
 	saveShowShortcut(shortcut: string): Promise<void>;
 };
 
+export type DesktopDockApi = {
+	setVisible(visible: boolean): Promise<boolean>;
+	activate?(): void;
+};
+
+export type WindowVisibilityTarget = Pick<
+	WindowRef,
+	"focus" | "hide" | "state"
+> & {
+	on(
+		event: "focusChange",
+		listener: (event: { focused: boolean }) => void,
+	): () => void;
+};
+
+export function createWindowVisibilityController(
+	main: WindowVisibilityTarget,
+	dock: DesktopDockApi | undefined,
+	isQuitting: () => boolean,
+) {
+	let visibilitySeq = 0;
+	// External window reopens can arrive long after the hide request settles.
+	let requestedDockVisible = true;
+
+	const syncDockVisible = async (visible: boolean) => {
+		if (!dock) return;
+		requestedDockVisible = visible;
+		try {
+			await dock.setVisible(visible);
+		} catch (error) {
+			console.warn("Failed to update Pilo Dock visibility", error);
+		}
+	};
+
+	const restoreDock = () => {
+		if (isQuitting() || requestedDockVisible) return;
+		++visibilitySeq;
+		void syncDockVisible(true);
+	};
+
+	const show = (fromShortcut: boolean) => {
+		if (isQuitting()) return;
+		const seq = ++visibilitySeq;
+		if (!dock) {
+			main.focus();
+			return;
+		}
+		// This only runs once the Dock request landed; a later request must not
+		// take the focus or activation it asked for.
+		void syncDockVisible(true).then(() => {
+			if (isQuitting() || seq !== visibilitySeq) return;
+			main.focus();
+			if (fromShortcut) dock.activate?.();
+		});
+	};
+
+	const hide = () => {
+		if (isQuitting()) return;
+		++visibilitySeq;
+		main.hide();
+		void syncDockVisible(false);
+	};
+
+	let disposed = false;
+	const stopFocusListener = main.on("focusChange", ({ focused }) => {
+		if (!disposed && focused) restoreDock();
+	});
+
+	let wasVisible: boolean | null = null;
+	effect(() => {
+		if (disposed) return;
+		const visible = main.state()?.visible ?? null;
+		if (visible === true && wasVisible === false) restoreDock();
+		wasVisible = visible;
+	});
+
+	return {
+		show: () => show(false),
+		showFromShortcut: () => show(true),
+		hide,
+		dispose: () => {
+			disposed = true;
+			stopFocusListener();
+		},
+	};
+}
+
 function globalShortcutLabel(shortcut: string) {
 	const label = keymap.label(shortcut);
 	if (Object.values(APP_SHORTCUTS).some((key) => keymap.label(key) === label)) {
@@ -29,6 +116,7 @@ export function connectDesktopShell(
 	main: WindowRef,
 	client: DesktopSettingsClient,
 	shutdown: () => Promise<void>,
+	dock?: DesktopDockApi,
 ) {
 	const settings = signal<Awaited<
 		ReturnType<DesktopSettingsClient["loadDesktopSettings"]>
@@ -40,12 +128,11 @@ export function connectDesktopShell(
 	let traySeen = false;
 	let quitting = false;
 
-	const show = () => {
-		if (!quitting) main.focus();
-	};
-	const hide = () => {
-		if (!quitting) main.hide();
-	};
+	const { show, showFromShortcut, hide } = createWindowVisibilityController(
+		main,
+		dock,
+		() => quitting,
+	);
 	const exit = async (restart: boolean) => {
 		if (quitting) return;
 		quitting = true;
@@ -116,7 +203,9 @@ export function connectDesktopShell(
 				savingShortcut.set(true);
 				settings.set(saved);
 				globalShortcutLabel(saved.showShortcut);
-				if (await GlobalShortcut.register(saved.showShortcut, show)) {
+				if (
+					await GlobalShortcut.register(saved.showShortcut, showFromShortcut)
+				) {
 					registered.set(saved.showShortcut);
 				} else {
 					console.warn("Pilo global shortcut is unavailable");
@@ -150,7 +239,7 @@ export function connectDesktopShell(
 		if (previous && keymap.label(previous) === label) return;
 		savingShortcut.set(true);
 		try {
-			if (!(await GlobalShortcut.register(shortcut, show))) {
+			if (!(await GlobalShortcut.register(shortcut, showFromShortcut))) {
 				throw new Error("Global shortcut is unavailable");
 			}
 			try {

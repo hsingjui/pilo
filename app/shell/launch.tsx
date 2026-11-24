@@ -20,6 +20,7 @@ import {
 } from "./desktop-notifications";
 import {
 	connectDesktopShell,
+	type DesktopDockApi,
 	type DesktopSettingsClient,
 } from "./desktop-shell";
 import { appLocale, t } from "./i18n";
@@ -148,6 +149,7 @@ export async function launch(
 	pilo: PiloNative,
 	desktopSettings?: DesktopSettingsClient,
 	notifications: DesktopNotificationsApi = defaultDesktopNotifications(),
+	desktopDock?: DesktopDockApi,
 ) {
 	const client = new NshPiloClient(pilo);
 	const chat = new ChatTranscriptStore(client, conversationContext());
@@ -167,10 +169,15 @@ export async function launch(
 	if (main && !(await sizeMainWindowOnFirstLaunch(main))) fitMainWindow(main);
 	desktop =
 		main && desktopSettings
-			? connectDesktopShell(main, desktopSettings, async () => {
-					store.stop();
-					await client.shutdown();
-				})
+			? connectDesktopShell(
+					main,
+					desktopSettings,
+					async () => {
+						store.stop();
+						await client.shutdown();
+					},
+					desktopDock,
+				)
 			: undefined;
 	if (desktop)
 		notify = connectSessionNotifications(client, store, desktop, notifications);

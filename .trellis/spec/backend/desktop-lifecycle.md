@@ -13,6 +13,13 @@ owns tray, focus, shortcut registration, and quit handling.
 - `Pilo.loadDesktopSettings()` returns `{ showShortcut, exitOnClose }`;
   `saveShowShortcut(shortcut)` and `saveExitOnClose(enabled)` persist desktop settings.
   `crates/pilo-runtime/src/storage/desktop.rs` owns the SQLite defaults and migrations.
+- `DesktopDock.setVisible(visible)` in `crates/pilo-desktop/src/dock.rs` switches
+  macOS `NSApplicationActivationPolicy` between `Regular` (`true`) and
+  `Accessory` (`false`) on the main queue, and is a no-op returning `false` on
+  non-macOS platforms or when `NSApp` is not running. `DesktopDock.activate()`
+  requests that Launch Services bring the current, inactive macOS app bundle
+  forward. Unbundled development hosts and other platforms keep native window
+  focus alone.
 
 ## 3. Contracts
 
@@ -22,6 +29,11 @@ owns tray, focus, shortcut registration, and quit handling.
   window. An ordinary close hides it only when `exitOnClose` is false and the
   tray has been used or the global show shortcut registered successfully. A
   system close or an explicit quit awaits Host shutdown before `Application.quit()`.
+- On macOS, hiding the main window to the tray switches activation policy to
+  `Accessory` so the Dock icon is cleared while the menu-bar tray icon stays
+  active. Showing the window restores `Regular` before calling `main.focus()`,
+  and external window reopen/focus transitions also restore `Regular`; Dock
+  bridge errors never block focusing the main window.
 - Keep transparent tray marks in `assets/branding/tray*.svg`: macOS uses the
   monochrome template `app/assets/tray-template.svg` with transparent eyes;
   Windows/Linux use the 32px RGBA colored bitmap `app/assets/tray.png`
@@ -29,7 +41,9 @@ owns tray, focus, shortcut registration, and quit handling.
 - Register a replacement global shortcut before saving it. If saving fails,
   unregister the replacement and keep the previous key. Show the key hint in
   the tray only when registered. Keep global registration separate from the
-  AppShell's focused-window keymap.
+  AppShell's focused-window keymap. On macOS, after restoring the Dock and
+  requesting window focus, a global shortcut press also requests foreground
+  activation. Registration success alone does not prove foreground activation.
 
 ## 4. Validation & Error Matrix
 
@@ -50,7 +64,8 @@ owns tray, focus, shortcut registration, and quit handling.
 ## 6. Required Native Verification
 
 Verify login opt-in/out, second launch, tray Show/Hide/Quit, default close versus
-explicit exit, and global activation from another app. Check occupied-key
+explicit exit, and global activation from another app using a physical keypress
+with Pilo visible, minimized, and hidden to the tray. Check occupied-key
 fallback and that shutdown releases sessions and the WebUI listener. Packaged
 login and Dock behavior cannot be inferred from headless tests.
 

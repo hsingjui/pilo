@@ -4,6 +4,7 @@
 
 use nsh_core::prelude::*;
 
+mod dock;
 mod notifications;
 mod pilo;
 #[cfg(debug_assertions)]
@@ -16,6 +17,7 @@ fn native(registry: &mut Registry) {
         std::process::exit(status);
     }
     registry.module::<AppInfo>();
+    registry.module::<dock::DesktopDock>();
     registry.module::<notifications::DesktopNotifications>();
     registry.class::<pilo::Pilo>();
     #[cfg(debug_assertions)]
