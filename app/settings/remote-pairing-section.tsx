@@ -1,4 +1,14 @@
-import { type Accessor, Canvas, computed, Path2D, Text, View } from "nsh";
+import {
+	type Accessor,
+	Canvas,
+	computed,
+	OffscreenCanvas,
+	Path2D,
+	signal,
+	Text,
+	token,
+	View,
+} from "nsh";
 
 import { t } from "../shell/i18n";
 import { qrMatrix } from "../lib/qr-matrix";
@@ -37,6 +47,48 @@ function PairingQr(props: { url: string; size: number }) {
 	);
 }
 
+const PAIRING_URL_FONT_SIZE = 10;
+
+function PairingUrl(props: { url: Accessor<string | null> }) {
+	const width = signal<number | undefined>(undefined);
+	const measure = new OffscreenCanvas(1, 1).getContext("2d");
+	const displayUrl = computed(() => {
+		const url = props.url() ?? "";
+		const available = width();
+		if (available === undefined || !url) return url;
+
+		measure.font = `${PAIRING_URL_FONT_SIZE}px ${token("font-mono") ?? "monospace"}`;
+		if (measure.measureText(url).width <= available) return url;
+
+		// Fit the longest URL prefix, rather than breaking at a word boundary.
+		let low = 0;
+		let high = url.length - 1;
+		while (low < high) {
+			const mid = Math.ceil((low + high) / 2);
+			if (measure.measureText(`${url.slice(0, mid)}…`).width <= available)
+				low = mid;
+			else high = mid - 1;
+		}
+		return `${url.slice(0, low)}…`;
+	});
+
+	return (
+		<View
+			testID="remote-pairing-url"
+			class="flex-row overflow-hidden rounded-md border border-border bg-muted/30 px-2.5 py-1.5"
+		>
+			<Text
+				class="min-w-0 flex-1 whitespace-nowrap font-mono leading-5"
+				style={{ fontSize: PAIRING_URL_FONT_SIZE }}
+				accessibilityLabel={props.url() ?? undefined}
+				onLayout={({ bounds }) => width.set(bounds.size.width)}
+			>
+				{displayUrl}
+			</Text>
+		</View>
+	);
+}
+
 export function RemotePairingSection(props: {
 	hasLink: Accessor<boolean>;
 	url: Accessor<string | null>;
@@ -60,14 +112,7 @@ export function RemotePairingSection(props: {
 							<Text class="font-sans text-sm font-medium">
 								{t("settings.remoteOpenLink")}
 							</Text>
-							<View
-								testID="remote-pairing-url"
-								class="truncate rounded-md border border-border bg-muted/30 px-2.5 py-1.5"
-							>
-								<Text class="truncate font-mono text-[10px] leading-5">
-									{() => props.url()}
-								</Text>
-							</View>
+							<PairingUrl url={props.url} />
 							<View class="flex-row flex-wrap gap-1.5">
 								<SettingsActionButton
 									variant="outline"

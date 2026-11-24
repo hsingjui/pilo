@@ -93,9 +93,9 @@ type BrowserStorage = {
 type BrowserGlobal = {
 	localStorage?: BrowserStorage;
 	sessionStorage?: BrowserStorage;
+	parent?: Pick<BrowserGlobal, "location">;
 	location?: {
 		href?: string;
-		origin?: string;
 		assign?: (url: string) => void;
 		replace?: (url: string) => void;
 	};
@@ -107,6 +107,18 @@ type BrowserGlobal = {
 
 function browserGlobal(): BrowserGlobal {
 	return globalThis as unknown as BrowserGlobal;
+}
+
+function browserPageLocation(): BrowserGlobal["location"] {
+	const browser = browserGlobal();
+	try {
+		// nsh runs app code in a hidden iframe; use the hosting page's address.
+		const parentLocation = browser.parent?.location;
+		if (parentLocation?.href) return parentLocation;
+	} catch {
+		// A cross-origin parent does not expose its address.
+	}
+	return browser.location;
 }
 
 function readBrowserLocalStorage(key: string): string | null {
@@ -138,28 +150,24 @@ function removeBrowserLocalStorage(key: string): void {
  * `localStorage` (shared with the React WebUI), or nsh's own `Storage`.
  */
 export async function loadRemoteDeviceToken(): Promise<string | null> {
-	const currentUrl = UrlScheme.url();
-	if (currentUrl) {
-		try {
-			const parsed = new URL(currentUrl);
-			const hash = parsed.hash.replace(/^#/, "");
-			const params = new URLSearchParams(hash);
-			const hashToken = params.get("token")?.trim();
-			if (hashToken) {
-				params.delete("token");
-				const remaining = params.toString();
-				parsed.hash = remaining ? `#${remaining}` : "";
-				try {
-					UrlScheme.setUrl(parsed.href, { history: "replace" });
-				} catch {
-					// Ignore if the host rejects URL mutation.
-				}
-				await saveRemoteDeviceToken(hashToken);
-				return hashToken;
+	try {
+		const parsed = resolvePageAddress();
+		const params = new URLSearchParams(parsed.hash.slice(1));
+		const hashToken = params.get("token")?.trim();
+		if (hashToken) {
+			params.delete("token");
+			const remaining = params.toString();
+			parsed.hash = remaining ? `#${remaining}` : "";
+			try {
+				UrlScheme.setUrl(parsed.href, { history: "replace" });
+			} catch {
+				// Ignore if the host rejects URL mutation.
 			}
-		} catch {
-			// Ignore malformed page URLs.
+			await saveRemoteDeviceToken(hashToken);
+			return hashToken;
 		}
+	} catch {
+		// Fall back to stored credentials if URL token handling fails.
 	}
 
 	const shared = readBrowserLocalStorage(REMOTE_TOKEN_KEY)?.trim();
@@ -201,31 +209,40 @@ export async function clearRemoteDeviceToken(
 	}
 }
 
+function parseHttpPageUrl(value: string | null | undefined): URL | undefined {
+	if (!value) return undefined;
+	try {
+		const url = new URL(value);
+		if (url.protocol === "http:" || url.protocol === "https:") return url;
+	} catch {
+		// Ignore invalid addresses.
+	}
+	return undefined;
+}
+
+function resolvePageAddress(): URL {
+	const browserUrl = parseHttpPageUrl(browserPageLocation()?.href);
+	const appUrl = parseHttpPageUrl(UrlScheme.url());
+	// setUrl updates the app address before the browser history catches up.
+	if (appUrl && (!browserUrl || appUrl.origin === browserUrl.origin)) {
+		return appUrl;
+	}
+	return browserUrl ?? new URL("http://127.0.0.1:47653/");
+}
+
 export function resolveCurrentPageUrl(): string {
-	return (
-		UrlScheme.url() ??
-		browserGlobal().location?.href ??
-		"http://127.0.0.1:47653/"
-	);
+	return resolvePageAddress().href;
 }
 
 export function resolvePageOrigin(): string {
-	const pageUrl = UrlScheme.url() ?? browserGlobal().location?.href;
-	if (pageUrl) {
-		try {
-			return new URL(pageUrl).origin;
-		} catch {
-			// Fall through to location.origin.
-		}
-	}
-	return browserGlobal().location?.origin ?? "http://127.0.0.1:47653";
+	return resolvePageAddress().origin;
 }
 
 export function navigateToUrl(
 	url: string,
 	options?: { replace?: boolean },
 ): void {
-	const location = browserGlobal().location;
+	const location = browserPageLocation();
 	if (options?.replace && location?.replace) {
 		location.replace(url);
 		return;
