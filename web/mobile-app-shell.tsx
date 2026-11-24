@@ -102,6 +102,7 @@ export interface MobileAppShellProps {
 		"state" | "messages" | "refresh" | "loadRange"
 	>;
 	composer: ComposerStore;
+	initialProjectId?: string | null;
 	queue?: RemoteChatQueue;
 	extensionUi?: RemoteExtensionUi;
 	forker?: Pick<SessionForker, "state" | "forkAssistant">;
@@ -188,11 +189,15 @@ export function MobileAppShell(props: MobileAppShellProps) {
 		untracked(() => composer.setTarget(target));
 	});
 
-	// Always open a draft in the active project when ready without an open session.
+	// After a refresh, reopen the project (not the previous session) for its draft.
+	let initialProjectId = props.initialProjectId;
 	effect(() => {
 		const state = store.state();
-		if (state.status.type !== "ready" || state.navigation.session) return;
-		const current = activeProject(state);
+		if (state.status.type !== "ready") return;
+		const restored = state.projects.find(({ id }) => id === initialProjectId);
+		initialProjectId = null;
+		if (state.navigation.session) return;
+		const current = restored ?? activeProject(state);
 		if (current) untracked(() => store.selectProject(current.id));
 	});
 

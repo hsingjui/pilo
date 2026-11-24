@@ -113,6 +113,11 @@ export type ComposerQueue = {
 
 type ComposerDraft = Pick<ComposerViewState, "value" | "images">;
 
+type ComposerDraftTextStorage = {
+	read: (projectId: string) => string | null;
+	write: (projectId: string, value: string) => void;
+};
+
 const EMPTY_DRAFT: ComposerDraft = { value: "", images: [] };
 
 /** Toast-like feedback emitted by slash commands (e.g. `/compact`). */
@@ -152,8 +157,8 @@ function errorMessage(error: unknown): string {
 type HistoryStore = Record<string, string[]>;
 
 /**
- * Desktop draft text and images are shared by all chats of a project. Send
- * feedback stays with its session. History and send mode persist in `Storage`.
+ * Draft text and images are shared by all chats of a project. Send feedback
+ * stays with its session. History and send mode persist in `Storage`.
  */
 export class ComposerStore {
 	private readonly client: ComposerClient;
@@ -172,7 +177,7 @@ export class ComposerStore {
 	private readonly onNewChat?: () => void;
 	private readonly onCompacted?: (result: PiCompactionResult) => void;
 	private readonly onNotice?: (notice: ComposerNotice) => void;
-	private readonly draftScope: "project" | "session";
+	private readonly draftTextStorage?: ComposerDraftTextStorage;
 	private readonly drafts = new Map<string, ComposerDraft>();
 	private readonly sessionStatuses = new Map<string, string>();
 	private readonly stateSignal = signal<ComposerViewState>({
@@ -227,7 +232,7 @@ export class ComposerStore {
 	constructor(deps: {
 		client: ComposerClient;
 		app: Accessor<AppState>;
-		draftScope?: "project" | "session";
+		draftTextStorage?: ComposerDraftTextStorage;
 		/** The active project's model and command catalog, for `/` suggestions. */
 		catalog?: Pick<ModelCatalogStore, "state" | "refresh">;
 		beforeSend?: (sessionKey: string) => Promise<boolean>;
@@ -246,7 +251,7 @@ export class ComposerStore {
 	}) {
 		this.client = deps.client;
 		this.app = deps.app;
-		this.draftScope = deps.draftScope ?? "project";
+		this.draftTextStorage = deps.draftTextStorage;
 		this.catalog = deps.catalog;
 		this.beforeSend = deps.beforeSend;
 		this.waitForStartupApproval = deps.waitForStartupApproval;
@@ -329,11 +334,7 @@ export class ComposerStore {
 			this.commandsRequest++;
 			this.sessionCommandsSignal.set(null);
 			this.sessionCommandsInFlight = null;
-			if (
-				!previous ||
-				!target ||
-				this.draftKey(previous) !== this.draftKey(target)
-			) {
+			if (previous?.projectId !== target?.projectId) {
 				this.historyCursor = null;
 			}
 			this.draftVersion++;
@@ -363,7 +364,7 @@ export class ComposerStore {
 			if (next.value !== current.value || next.images !== current.images) {
 				this.draftVersion++;
 				const target = this.targetSignal();
-				if (target) this.cacheDraft(this.draftKey(target), next);
+				if (target) this.cacheDraft(target.projectId, next);
 			}
 			return next;
 		});
@@ -683,27 +684,31 @@ export class ComposerStore {
 		}
 	}
 
-	private draftKey(target: ComposerTarget): string {
-		return this.draftScope === "project" ? target.projectId : target.sessionKey;
+	private draftFor({ projectId }: ComposerTarget): ComposerDraft {
+		const cached = this.drafts.get(projectId);
+		if (cached) return cached;
+		const value = this.draftTextStorage?.read(projectId);
+		if (!value) return EMPTY_DRAFT;
+		const restored = { ...EMPTY_DRAFT, value };
+		this.drafts.set(projectId, restored);
+		return restored;
 	}
 
-	private draftFor(target: ComposerTarget): ComposerDraft {
-		return this.drafts.get(this.draftKey(target)) ?? EMPTY_DRAFT;
-	}
-
-	private cacheDraft(key: string, { value, images }: ComposerDraft) {
-		if (value || images.length) this.drafts.set(key, { value, images });
-		else this.drafts.delete(key);
+	private cacheDraft(projectId: string, { value, images }: ComposerDraft) {
+		const previous = this.drafts.get(projectId)?.value ?? "";
+		// Keep empty drafts in memory when a failed storage write could leave stale text.
+		if (value || images.length || this.draftTextStorage)
+			this.drafts.set(projectId, { value, images });
+		else this.drafts.delete(projectId);
+		if (value !== previous) this.draftTextStorage?.write(projectId, value);
 	}
 
 	private writeDraft(target: ComposerTarget, draft: ComposerDraft) {
-		const key = this.draftKey(target);
 		const previous = this.draftFor(target).value;
 		if (previous !== draft.value)
 			discardRemovedChatFiles(previous, draft.value);
-		const current = this.targetSignal();
-		if (!current || this.draftKey(current) !== key) {
-			this.cacheDraft(key, draft);
+		if (this.targetSignal()?.projectId !== target.projectId) {
+			this.cacheDraft(target.projectId, draft);
 			return;
 		}
 		if (previous !== draft.value) this.historyCursor = null;
@@ -1054,7 +1059,6 @@ export class ComposerStore {
 				...s,
 				value: "",
 				caret: 0,
-				images: this.draftScope === "project" ? s.images : [],
 				status: null,
 			}));
 			this.onNewChat?.();

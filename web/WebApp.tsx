@@ -40,6 +40,7 @@ import { RemotePairingPage } from "./pairing-page";
 import { RemoteChatQueue } from "./remote-chat-queue";
 import { RemoteExtensionUi } from "./remote-extension-ui";
 import {
+	browserSessionStorage,
 	loadRemoteDeviceToken,
 	resolveCurrentPageUrl,
 	saveRemoteDeviceToken,
@@ -48,6 +49,9 @@ import {
 
 /** Show a renewal reminder when device authorization expires within 7 days. */
 const RENEW_REMINDER_WINDOW_MS = 7 * 24 * 60 * 60 * 1_000;
+
+const ACTIVE_PROJECT_KEY = "pilo.web.activeProject.v1";
+const DRAFT_TEXT_KEY_PREFIX = "pilo.web.draftText.v1:";
 
 function formatExpiryDate(ms: number, language: string): string {
 	return new Date(ms).toLocaleString(language, {
@@ -72,10 +76,36 @@ function MobileRemoteWorkspace(props: {
 	const toasts = new AppToasts();
 	const queue = new RemoteChatQueue(client);
 	const extensionUi = new RemoteExtensionUi(client, toasts);
+	const tabStorage = browserSessionStorage();
+	const readTabValue = (key: string) => {
+		try {
+			return tabStorage?.getItem(key) ?? null;
+		} catch {
+			return null;
+		}
+	};
+	const writeTabValue = (key: string, value: string) => {
+		try {
+			if (value) tabStorage?.setItem(key, value);
+			else tabStorage?.removeItem(key);
+		} catch {
+			// Browser storage may be disabled or full; keep the live draft usable.
+		}
+	};
+	const initialProjectId = readTabValue(ACTIVE_PROJECT_KEY);
+	const activeProjectId = computed(() => store.state().navigation.projectId);
+	effect(() => {
+		const projectId = activeProjectId();
+		if (projectId) writeTabValue(ACTIVE_PROJECT_KEY, projectId);
+	});
 	const composer = new ComposerStore({
 		client,
 		app: store.state,
-		draftScope: "session",
+		draftTextStorage: tabStorage && {
+			read: (projectId) => readTabValue(DRAFT_TEXT_KEY_PREFIX + projectId),
+			write: (projectId, value) =>
+				writeTabValue(DRAFT_TEXT_KEY_PREFIX + projectId, value),
+		},
 		queue,
 		waitForStartupApproval: (sessionKey) =>
 			extensionUi.waitForStartupApproval(sessionKey),
@@ -235,6 +265,7 @@ function MobileRemoteWorkspace(props: {
 			store={store}
 			chat={chat}
 			composer={composer}
+			initialProjectId={initialProjectId}
 			queue={queue}
 			extensionUi={extensionUi}
 			forker={forker}
