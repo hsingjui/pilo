@@ -1,14 +1,15 @@
-import { appInfo, Image, openUrl, signal, Text, View } from "nsh";
-import {
-	checkForUpdate,
-	downloadUpdate,
-	installAndRestart,
-	shellInfo,
-} from "nsh/updater";
+import { appInfo, cleanup, Image, openUrl, Text, View } from "nsh";
+import { shellInfo } from "nsh/updater";
 
-import { userErrorMessage } from "@shared/app-error";
-import { t } from "../shell/i18n";
 import appIcon from "../assets/app-icon.png";
+import {
+	createDesktopUpdate,
+	type DesktopUpdate,
+	RELEASES_URL,
+	REPOSITORY_URL,
+} from "../shell/desktop-update";
+import { t } from "../shell/i18n";
+import { UpdateDialog } from "../shell/update-dialog";
 import { Icon } from "../ui/icon";
 import { Spinner } from "../ui/spinner";
 import {
@@ -19,76 +20,26 @@ import {
 } from "./layout";
 import type { SettingsClient } from "./settings-dialog";
 
-const REPOSITORY_URL = "https://github.com/hsingjui/pilo";
-const RELEASES_URL = `${REPOSITORY_URL}/releases`;
-
-type UpdateStatus =
-	| "idle"
-	| "checking"
-	| "latest"
-	| "available"
-	| "downloading"
-	| "installing"
-	| "error";
-
-/** The updater's error as a friendly key, like React's `formatUpdateError`. */
-function updateErrorMessage(caught: unknown): string {
-	const message = userErrorMessage(caught);
-	if (/public key|signature/i.test(message))
-		return t("about.updateConfigUnavailable");
-	if (/network|fetch/i.test(message))
-		return t("about.updateServiceUnavailable");
-	return `${t("about.updateFailed")} · ${message}`;
-}
-
 /**
- * Version, build and updater, as the WebUI `AboutSettings` pane. nsh has no
- * update dialog: an available update downloads and restarts from the same
- * button. The dev-only preview action is a React-debug control and stays out.
+ * Version, build and updater, matching the Tauri `AboutSettings` pane.
+ * When `update` is passed from `AppShell`, state is shared with the sidebar
+ * update button and top-level `UpdateDialog`; otherwise a local controller
+ * backs standalone mounts.
  */
-export function AboutPane(props: { client: SettingsClient }) {
+export function AboutPane(props: {
+	client: SettingsClient;
+	update?: DesktopUpdate;
+}) {
 	const info = appInfo();
 	const shell = shellInfo();
-	const status = signal<UpdateStatus>("idle");
-	const updateError = signal<string | null>(null);
-	const progress = signal<number | null>(null);
-	const availableVersion = signal<string | null>(null);
+	const ownedUpdate = props.update
+		? null
+		: createDesktopUpdate({ autoCheck: false });
+	if (ownedUpdate) cleanup(() => ownedUpdate.dispose());
+	const update = props.update ?? ownedUpdate!;
 
-	const check = async () => {
-		if (
-			status() === "checking" ||
-			status() === "downloading" ||
-			status() === "installing"
-		)
-			return;
-		status.set("checking");
-		updateError.set(null);
-		try {
-			const update = await checkForUpdate();
-			if (!update) {
-				status.set("latest");
-				return;
-			}
-			availableVersion.set(update.version);
-			status.set("available");
-			if (!update.canInstall) {
-				void openUrl(update.url);
-				return;
-			}
-			status.set("downloading");
-			progress.set(null);
-			await downloadUpdate((event) => {
-				progress.set(
-					event.total ? Math.round((event.received / event.total) * 100) : null,
-				);
-			});
-			status.set("installing");
-			await installAndRestart();
-		} catch (caught) {
-			updateError.set(updateErrorMessage(caught));
-			status.set("error");
-		}
-	};
+	const status = () => update.status();
+	const progress = () => update.downloadProgress();
 
 	const buttonLabel = () => {
 		switch (status()) {
@@ -105,6 +56,14 @@ export function AboutPane(props: { client: SettingsClient }) {
 			default:
 				return t("settings.updateCheck");
 		}
+	};
+
+	const handleUpdateAction = () => {
+		if (status() === "downloading" || status() === "installing") {
+			update.setDialogOpen(true);
+			return;
+		}
+		void update.checkForUpdates({ openDialog: true });
 	};
 
 	return (
@@ -174,26 +133,26 @@ export function AboutPane(props: { client: SettingsClient }) {
 			<SettingsSection title={t("settings.update")}>
 				<SettingsRow
 					label={t("settings.updateCheck")}
-					helper={updateError() ?? undefined}
+					helper={
+						status() === "error" ? (update.error() ?? undefined) : undefined
+					}
 					ghostEdge="end"
 				>
-					<View class="flex-row items-center gap-2">
-						{status() === "latest" ? (
-							<SettingsStatus muted icon="CheckCircle2">
-								{t("settings.latest")}
-							</SettingsStatus>
-						) : status() === "available" && availableVersion() ? (
-							<SettingsStatus>v{availableVersion()}</SettingsStatus>
-						) : null}
+					<View class="flex-row flex-wrap items-center gap-2">
+						{() =>
+							status() === "latest" ? (
+								<SettingsStatus muted icon="CheckCircle2">
+									{t("settings.latest")}
+								</SettingsStatus>
+							) : status() === "available" && update.availableVersion() ? (
+								<SettingsStatus>v{update.availableVersion()}</SettingsStatus>
+							) : null
+						}
 						{() => (
 							<SettingsActionButton
 								testID="settings-update-check"
-								disabled={
-									status() === "checking" ||
-									status() === "downloading" ||
-									status() === "installing"
-								}
-								onPress={() => void check()}
+								disabled={status() === "checking"}
+								onPress={handleUpdateAction}
 							>
 								{status() === "checking" ? (
 									<Spinner class="size-3.5" />
@@ -203,6 +162,16 @@ export function AboutPane(props: { client: SettingsClient }) {
 								<Text class="font-sans text-xs">{buttonLabel()}</Text>
 							</SettingsActionButton>
 						)}
+						{update.isDev ? (
+							<SettingsActionButton
+								testID="settings-update-preview"
+								onPress={() => update.previewUpdate()}
+							>
+								<Text class="font-sans text-xs">
+									{() => t("settings.updatePreview")}
+								</Text>
+							</SettingsActionButton>
+						) : null}
 					</View>
 				</SettingsRow>
 				<SettingsRow label={t("settings.releaseNotes")} ghostEdge="both">
@@ -219,6 +188,12 @@ export function AboutPane(props: { client: SettingsClient }) {
 					</SettingsActionButton>
 				</SettingsRow>
 			</SettingsSection>
+			{ownedUpdate
+				? () =>
+						ownedUpdate.hasUpdate() ? (
+							<UpdateDialog update={ownedUpdate} />
+						) : null
+				: null}
 		</View>
 	);
 }

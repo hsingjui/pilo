@@ -46,17 +46,22 @@ export function connectDesktopShell(
 	const hide = () => {
 		if (!quitting) main.hide();
 	};
-	const quit = async () => {
+	const exit = async (restart: boolean) => {
 		if (quitting) return;
 		quitting = true;
 		try {
 			await shutdown();
 		} catch (error) {
+			if (restart) {
+				quitting = false;
+				throw error;
+			}
 			console.error("Failed to shut down Pilo", error);
-		} finally {
-			Application.quit();
 		}
+		if (restart) Application.restart();
+		else Application.quit();
 	};
+	const quit = () => exit(false);
 	Application.on("quitRequest", quit);
 	Application.setQuitRequestOptions({ system: true });
 	Application.on("secondInstance", show);
@@ -185,6 +190,7 @@ export function connectDesktopShell(
 		load,
 		refreshExitOnClose,
 		show,
+		restart: () => exit(true),
 		isQuitting: () => quitting,
 		saveShortcut,
 		async saveExitOnClose(enabled: boolean) {

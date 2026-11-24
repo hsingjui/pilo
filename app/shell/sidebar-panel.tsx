@@ -18,8 +18,10 @@ import { blurOnPointerPress } from "../ui/focus-ring-style";
 import { Foreground } from "../ui/foreground";
 import { Icon, type IconName } from "../ui/icon";
 import { Skeleton } from "../ui/skeleton";
+import { Spinner } from "../ui/spinner";
 import { styleVar } from "../ui/theme-style";
 import { Tooltip } from "../ui/tooltip";
+import type { DesktopUpdate } from "./desktop-update";
 import { t } from "./i18n";
 import { Sidebar, type SidebarProps } from "./Sidebar";
 import type { SidebarLayout } from "./sidebar-layout";
@@ -50,6 +52,8 @@ export interface SidebarPanelProps extends Omit<
 	onSearch: () => void;
 	onNewChat: () => void;
 	onOpenSettings?: () => void;
+	/** Desktop updater state; renders the footer update trigger when an update is available. */
+	update?: DesktopUpdate;
 	/** Opens the Remote WebUI dialog; its button glows while the Host runs. */
 	remote?: { running: Accessor<boolean>; onOpen: () => void };
 	/** The saved theme mode, which the footer's button cycles. */
@@ -280,6 +284,11 @@ export function SidebarPanel(props: SidebarPanelProps) {
 								<Icon name="Settings" />
 							</Button>
 						) : null}
+						{() =>
+							props.update?.hasUpdate() ? (
+								<UpdateButton update={props.update} />
+							) : null
+						}
 						<View class="ml-auto flex-row items-center gap-1">
 							{props.remote ? <RemoteButton {...props.remote} /> : null}
 							{props.onTheme ? (
@@ -483,6 +492,75 @@ function ProjectSessionsToolbar(props: {
 				<Icon name="SquarePen" size={16} />
 			</SidebarAction>
 		</View>
+	);
+}
+
+/**
+ * Footer update trigger beside the settings gear, matching Tauri's
+ * `SidebarFooter` update button: opens the update dialog to view release notes
+ * or active download progress without taking extra vertical space.
+ */
+function UpdateButton(props: { update: DesktopUpdate }) {
+	const { update } = props;
+	const status = () => update.status();
+	const busy = () => status() === "downloading" || status() === "installing";
+	const failed = () => status() === "error";
+	const progress = () => update.downloadProgress();
+
+	const label = () => {
+		if (failed()) return t("settings.updateDetails");
+		if (status() === "installing") return t("settings.installing");
+		if (status() === "downloading") {
+			const pct = progress();
+			return pct === null ? t("settings.downloading") : `${pct}%`;
+		}
+		return t("settings.updateAvailable");
+	};
+
+	const detail = () => {
+		if (failed()) return update.error() ?? t("about.updateFailed");
+		if (status() === "installing") return t("settings.installing");
+		if (status() === "downloading") {
+			const pct = progress();
+			return pct === null
+				? t("settings.downloading")
+				: `${t("settings.downloading")} ${pct}%`;
+		}
+		return t("settings.updateDialogDescription", {
+			version: update.availableVersion() ?? "",
+		});
+	};
+
+	const colorToken = () =>
+		failed() ? "status-danger" : busy() ? "muted-foreground" : "primary";
+
+	return (
+		<Button
+			testID="sidebar-update"
+			variant="ghost"
+			size="sm"
+			class="h-(--pilo-button-icon-size) gap-1.5 px-2.5 text-xs tabular-nums"
+			accessibilityLabel={detail()}
+			tooltip={
+				<Tooltip>
+					<Text class="font-sans">{detail}</Text>
+				</Tooltip>
+			}
+			onPress={() => update.setDialogOpen(true)}
+		>
+			{() => {
+				const color = token(colorToken());
+				if (failed()) return <Icon name="RefreshCw" size={14} color={color} />;
+				if (busy()) return <Spinner size={14} color={color} />;
+				return <Icon name="Download" size={14} color={color} />;
+			}}
+			<Text
+				class="font-sans text-xs font-medium tabular-nums"
+				style={{ color: token(colorToken()) }}
+			>
+				{label}
+			</Text>
+		</Button>
 	);
 }
 

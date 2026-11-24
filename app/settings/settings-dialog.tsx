@@ -23,6 +23,7 @@ import { scrollbarLook } from "../ui/scrollbar";
 import { styleVar } from "../ui/theme-style";
 import type { DesktopNotificationsApi } from "../shell/desktop-notifications";
 import type { DesktopShell } from "../shell/desktop-shell";
+import type { DesktopUpdate } from "../shell/desktop-update";
 import { t } from "../shell/i18n";
 import { AboutPane } from "./about-pane";
 import { CacheKeepAlivePane } from "./cache-keep-alive-pane";
@@ -91,6 +92,7 @@ export interface SettingsDialogProps {
 	client: SettingsClient;
 	desktop?: DesktopShell;
 	notifications?: DesktopNotificationsApi;
+	update?: DesktopUpdate;
 }
 
 export type SettingsTabId =
@@ -432,7 +434,12 @@ export function SettingsDialog(props: SettingsDialogProps) {
 														/>
 													);
 												case "about":
-													return <AboutPane client={props.client} />;
+													return (
+														<AboutPane
+															client={props.client}
+															update={props.update}
+														/>
+													);
 											}
 										}}
 									</View>

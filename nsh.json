@@ -33,6 +33,16 @@
 		"picker": true,
 		"notifications": true,
 		"statusBar": true,
+		"network": {
+			"http": [
+				{
+					"host": "api.github.com",
+					"schemes": ["https"],
+					"methods": ["GET"],
+					"pathPrefix": "/repos/hsingjui/pilo/releases/tags/"
+				}
+			]
+		},
 		"openUrl": { "schemes": ["https", "zed", "vscode", "cursor"] }
 	},
 	"rust": "crates/pilo-desktop",

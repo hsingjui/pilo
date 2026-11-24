@@ -65,7 +65,9 @@ import { followSavedAppearance } from "./appearance";
 import { CommandPalette } from "./command-palette";
 import type { DesktopNotificationsApi } from "./desktop-notifications";
 import type { DesktopShell } from "./desktop-shell";
+import { createDesktopUpdate, type DesktopUpdate } from "./desktop-update";
 import { t } from "./i18n";
+import { UpdateDialog } from "./update-dialog";
 import { AddProjectDialog, type AddProjectApi } from "./add-project-dialog";
 import { FilePreviewLayer } from "./file-preview-view";
 import {
@@ -154,6 +156,8 @@ export interface AppShellProps {
 	projectClient?: AddProjectApi;
 	desktop?: DesktopShell;
 	notifications?: DesktopNotificationsApi;
+	/** Desktop updater state shared by the sidebar button, About pane, and update dialog. */
+	update?: DesktopUpdate;
 	/** The project terminals the title bar opens in tabs; none without it. */
 	terminals?: TerminalStore;
 	/** Opens a project in Finder, Ghostty and the like, for quick open. */
@@ -268,10 +272,17 @@ export function AppShell(props: AppShellProps) {
 	const addProjectOpen = signal(false);
 	const addProjectConnection = signal<string | null>(null);
 	const remoteOpen = signal(false);
+	const ownedUpdate =
+		props.update || !props.settings
+			? null
+			: createDesktopUpdate({ restart: props.desktop?.restart });
+	if (ownedUpdate) cleanup(() => ownedUpdate.dispose());
+	const update = props.update ?? ownedUpdate ?? undefined;
 	const modalOpen = () =>
 		settingsOpen() ||
 		addProjectOpen() ||
 		remoteOpen() ||
+		Boolean(update?.dialogOpen()) ||
 		previewImage() !== null;
 	const defaults = defaultKeyboardShortcuts(platform.os === "macos");
 	const shortcuts = computed(
@@ -602,6 +613,7 @@ export function AppShell(props: AppShellProps) {
 				onNewChat={newChat}
 				onSelectChat={showChat}
 				onOpenSettings={client ? () => settingsOpen.set(true) : undefined}
+				update={update}
 				remote={
 					remoteStatus
 						? {
@@ -1058,8 +1070,12 @@ export function AppShell(props: AppShellProps) {
 								client={props.settings}
 								desktop={props.desktop}
 								notifications={props.notifications}
+								update={update}
 							/>
 						) : null
+					}
+					{() =>
+						update?.hasUpdate() ? <UpdateDialog update={update} /> : null
 					}
 					{() =>
 						props.projectClient ? (
