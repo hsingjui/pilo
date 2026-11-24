@@ -175,11 +175,39 @@ test("the shortcuts pane records, resets rows and resets all", async () => {
 	await app.waitFor("id:settings-dialog");
 	await app.press("id:settings-nav-shortcuts");
 	await app.waitFor("text:New session");
-	// Headless cannot send raw recorder keys. Check that recording moves to
-	// the pressed row, then exercise the per-row and bulk preference patches.
+	// The headless engine does not route keyboard.press to a focused modal view
+	// as raw keys; exercise real key capture and Escape cancellation on native
+	// targets (where screenshots are available), and row switching everywhere.
+	const native = await app.screenshot().then(
+		() => true,
+		() => false,
+	);
 	await app.press("id:shortcut-box-new-chat");
 	await app.waitFor("id:shortcut-recorder");
 	expect(app.shows("id:shortcut-box-new-chat")).toBe(false);
+	if (native) {
+		await app.keyboard.press("escape");
+		await app.waitFor("id:shortcut-box-new-chat");
+		expect(app.shows("id:settings-dialog")).toBe(true);
+		await app.press("id:shortcut-box-new-chat");
+		await app.waitFor("id:shortcut-recorder");
+		await app.keyboard.press("mod+shift+y");
+		await app.waitFor("id:shortcut-box-new-chat");
+		await app.host.send("fixture", "probe-shortcuts");
+		await app.waitUntil(() =>
+			app.storage()["shortcut-patches"]?.includes('"new-chat":"mod+shift+y"'),
+		);
+		await app.press("id:shortcut-box-new-chat");
+		await app.waitFor("id:shortcut-recorder");
+		await app.keyboard.press("alt+j");
+		await app.waitFor("id:shortcut-box-new-chat");
+		await app.host.send("fixture", "probe-shortcuts");
+		await app.waitUntil(() =>
+			app.storage()["shortcut-patches"]?.includes('"new-chat":"alt+j"'),
+		);
+		await app.press("id:shortcut-box-new-chat");
+		await app.waitFor("id:shortcut-recorder");
+	}
 	await app.press("id:shortcut-box-toggle-sidebar");
 	await app.waitFor("id:shortcut-recorder");
 	expect(app.shows("id:shortcut-box-new-chat")).toBe(true);

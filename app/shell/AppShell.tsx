@@ -51,7 +51,7 @@ import type {
 	ShortcutCommandId,
 } from "@shared/keyboard-shortcuts-types";
 import { getNextPiModel } from "@shared/pi-model-selection";
-import { bindAppShortcut } from "../shortcuts";
+import { bindAppShortcut, type AppShortcutBinding } from "../shortcuts";
 import {
 	SettingsDialog,
 	type SettingsClient,
@@ -268,7 +268,20 @@ export function AppShell(props: AppShellProps) {
 	);
 	const paletteOpen = signal(false);
 	const settingsOpen = signal(false);
-	const registeredShortcuts = signal<Partial<KeyboardShortcutMap>>({});
+	const appShortcutBindings = signal<
+		Partial<Record<ShortcutCommandId, AppShortcutBinding>>
+	>({});
+	const composerAppShortcuts = computed(() =>
+		Object.values(appShortcutBindings()),
+	);
+	const registeredShortcuts = computed<Partial<KeyboardShortcutMap>>(() =>
+		Object.fromEntries(
+			Object.entries(appShortcutBindings()).map(([id, binding]) => [
+				id,
+				binding.shortcut,
+			]),
+		),
+	);
 	const addProjectOpen = signal(false);
 	const addProjectConnection = signal<string | null>(null);
 	const remoteOpen = signal(false);
@@ -530,14 +543,17 @@ export function AppShell(props: AppShellProps) {
 	};
 	// Native keymaps run before a focused view's key capture, including the recorder.
 	effect(() => {
-		if (modalOpen()) return;
+		if (modalOpen()) {
+			appShortcutBindings.set({});
+			return;
+		}
 		const map = shortcuts();
-		const bound: Partial<KeyboardShortcutMap> = {};
+		const bound: Partial<Record<ShortcutCommandId, AppShortcutBinding>> = {};
 		const bind = (id: ShortcutCommandId, handler: () => void) => {
 			const binding = bindAppShortcut(id, map[id] ?? defaults[id], handler);
 			if (!binding) return;
 			cleanup(binding.dispose);
-			bound[id] = binding.shortcut;
+			bound[id] = binding;
 		};
 		bind("open-command-palette", () => paletteOpen.update((open) => !open));
 		bind("new-chat", () => {
@@ -560,7 +576,7 @@ export function AppShell(props: AppShellProps) {
 			bind("cycle-model", () => cycleModel(false));
 			bind("cycle-scoped-model", () => cycleModel(true));
 		}
-		registeredShortcuts.set(bound);
+		appShortcutBindings.set(bound);
 	});
 	const client = props.settings;
 	const remoteStatus = client ? createRemoteStatus(client, remoteOpen) : null;
@@ -934,6 +950,7 @@ export function AppShell(props: AppShellProps) {
 													store={composer}
 													assistance={assistance}
 													shortcuts={sessionShortcuts}
+													appShortcuts={composerAppShortcuts}
 													sendShortcut={() =>
 														store.state().preferences?.values
 															.sendMessageShortcut

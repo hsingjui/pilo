@@ -46,7 +46,7 @@ import {
 } from "../chat/chat-media-actions";
 import { ChatReadingFont } from "../chat/chat-reading-font";
 import { chatMetadataText, chatPx } from "../chat/layout";
-import { bindAppShortcut } from "../shortcuts";
+import { bindAppShortcut, type AppShortcutBinding } from "../shortcuts";
 import { Button } from "../ui/button";
 import { FileTypeIcon } from "../ui/file-type-icon";
 import { blurOnPointerPress, focusRingStyle } from "../ui/focus-ring-style";
@@ -196,6 +196,7 @@ export interface ChatComposerProps {
 	assistance?: ComposerAssistance;
 	/** Null suspends session shortcuts while a dialog or command palette is open. */
 	shortcuts?: () => KeyboardShortcutMap | null;
+	appShortcuts?: () => readonly AppShortcutBinding[];
 	/** The configured submit shortcut; Enter submits by default. */
 	sendShortcut?: () => SendMessageShortcut | undefined;
 	/** The model · thinking control; the toolbar leaves it out without one. */
@@ -219,6 +220,8 @@ export function ChatComposer(props: ChatComposerProps) {
 	const contentHeight = signal(0);
 	const focused = signal(false);
 	const focusShortcutLabels = signal<string[]>([]);
+	const focusShortcutBinding = signal<AppShortcutBinding>();
+	const queueShortcutBinding = signal<AppShortcutBinding>();
 	const surface = signal<ViewRef | undefined>(undefined);
 	const activeSuggestion = signal<RichSuggestionMatch | null>(null);
 	let inputHandle: ComposerRichInputHandle | undefined;
@@ -349,16 +352,20 @@ export function ChatComposer(props: ChatComposerProps) {
 		focusShortcutLabels.set(
 			normalized ? formatKeyboardShortcutLabels(normalized, isMac) : [],
 		);
+		focusShortcutBinding.set(binding);
 		if (binding) cleanup(binding.dispose);
 	});
 	effect(() => {
 		const map = props.shortcuts?.();
-		if (!map || !focused() || !running() || store.compacting()) return;
-		const binding = bindAppShortcut(
-			"queue-message",
-			map["queue-message"],
-			() => void store.submit("follow_up", inputHandle?.submissionText()),
-		);
+		const binding =
+			map && focused() && running() && !store.compacting()
+				? bindAppShortcut(
+						"queue-message",
+						map["queue-message"],
+						() => void store.submit("follow_up", inputHandle?.submissionText()),
+					)
+				: undefined;
+		queueShortcutBinding.set(binding);
 		if (binding) cleanup(binding.dispose);
 	});
 
@@ -743,6 +750,11 @@ export function ChatComposer(props: ChatComposerProps) {
 						paddingVertical={inputPadding}
 						paddingRight={inputRightPadding}
 						modEnter={modEnter}
+						shortcuts={() => [
+							...(props.appShortcuts?.() ?? []),
+							focusShortcutBinding(),
+							queueShortcutBinding(),
+						]}
 						menuOpen={menuOpen}
 						canPickSuggestion={canPickSuggestion}
 						canAdoptGhost={canAdoptWithTab}

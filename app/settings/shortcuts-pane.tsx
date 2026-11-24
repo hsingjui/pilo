@@ -1,11 +1,13 @@
 import {
 	type Accessor,
+	effect,
 	type JSX,
 	keymap,
 	platform,
 	signal,
 	Text,
 	View,
+	type ViewRef,
 } from "nsh";
 
 import {
@@ -55,6 +57,21 @@ const SHORTCUT_BOX_RECORDING_CLASS = "border-ring bg-accent/60";
 
 const IS_MAC = platform.os === "macos";
 
+/**
+ * The US-layout character a DOM `KeyboardEvent.code` names (`"KeyJ"` a `j`),
+ * for the keys whose logical key an Option or Shift combination changes
+ * (`Option+J` reports `"∆"` on macOS). Named keys and other layouts keep the
+ * reported key, as `shortcutFromKeyEvent` reads it.
+ */
+function codeKey(code: unknown): string | null {
+	if (typeof code !== "string") return null;
+	const letter = /^Key([A-Z])$/.exec(code);
+	if (letter?.[1]) return letter[1].toLowerCase();
+	const digit = /^(?:Digit|Numpad)([0-9])$/.exec(code);
+	if (digit?.[1]) return digit[1];
+	return null;
+}
+
 /** One keystroke as the WebUI pane's kbd chips: `⌘ + ⇧ + M` for `mod+shift+m`. */
 function ShortcutKeys(props: { shortcut: string }) {
 	const labels = formatKeyboardShortcutLabels(props.shortcut, IS_MAC);
@@ -80,6 +97,7 @@ function ShortcutKeys(props: { shortcut: string }) {
 /** A nsh key event as the DOM-shaped parts the shared normalizer expects. */
 function keyEventParts(event: {
 	key: string;
+	code?: string;
 	modifiers: {
 		alt: boolean;
 		control: boolean;
@@ -88,7 +106,7 @@ function keyEventParts(event: {
 	};
 }): ShortcutKeyEvent {
 	return {
-		key: event.key,
+		key: codeKey(event.code) ?? event.key,
 		metaKey: IS_MAC ? event.modifiers.platform : false,
 		ctrlKey: IS_MAC
 			? event.modifiers.control
@@ -125,10 +143,15 @@ function ShortcutRecorder(props: {
 	onCancel: () => void;
 	children: JSX.Element;
 }) {
-	return (
+	let view: ViewRef | undefined;
+	const node = (
 		<View
+			ref={(el) => {
+				view = el;
+			}}
 			testID={props.recording() ? "shortcut-recorder" : props.testID}
 			role="button"
+			focusable
 			disabled={!props.recording() && props.disabled}
 			captureKeys={props.recording() ? "all" : "none"}
 			class={`${SHORTCUT_BOX_CLASS} ${
@@ -171,6 +194,10 @@ function ShortcutRecorder(props: {
 			}
 		</View>
 	);
+	effect(() => {
+		if (props.recording()) view?.focus();
+	});
+	return node;
 }
 
 export function ShortcutsPane(props: {

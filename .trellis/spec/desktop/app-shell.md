@@ -37,7 +37,8 @@
 
 ## 应用内快捷键
 
-- 桌面跟随 Host 的 `keyboardShortcuts`；空字符串不绑定。`AppShell` 绑定导航与模型动作，`ChatComposer` 绑定输入框聚焦和排队。应用内绑定使用 `when: "always"`，让快捷键在原生输入框有焦点时也能生效；设置、添加项目和 Remote 弹窗打开时暂停这些绑定，避免在录制时触发动作。
+- 桌面跟随 Host 的 `keyboardShortcuts`；空字符串不绑定。`AppShell` 绑定导航与模型动作，`ChatComposer` 绑定输入框聚焦和排队。应用内绑定使用 `when: "always"`，允许在普通文本框聚焦时触发；设置、添加项目和 Remote 弹窗打开时暂停这些绑定，避免在录制时触发动作。
+- nsh 0.6.1 的 `RichEditor` 聚焦时，其原生键表优先于 JS `keymap.bind`，`when: "always"` 不能改变优先级。`ComposerRichInput` 用 `RichEditorPlugin.captureKeys` 转发已成功注册且仍启用的快捷键，直接复用注册时的动作；发送、补全、历史和输入建议优先，输入法组合期间不转发。新增应用内快捷键时，验收应覆盖焦点在聊天输入框内的场景。
 - 模型切换只作用于当前已就绪的空闲会话。切换全部模型使用项目目录；切换常用模型只在项目的有效 Scope 内循环，并沿用该模型的推理级别，不回退到全部模型。排队键仅在输入框聚焦且正在生成时发送 `follow_up`，不改变常驻发送模式。
 - WebUI 读取同一份 Host 键位；只处理浏览器实际发给页面的按键。浏览器保留 `Cmd/Ctrl+L` 等组合时，可在桌面设置里改用不冲突的键位。
 
