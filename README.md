@@ -62,10 +62,12 @@ The desktop app is built with [nsh](https://github.com/longbridge/nsh). The same
 
 ```bash
 pnpm install
-pnpm dev          # starts both the nsh desktop app and WebUI dev services
+pnpm dev          # starts the nsh desktop app and watches the Host-served WebUI
 ```
 
-The WebUI dev services start Vite (`http://localhost:1420`) and keep the Host-served `dist/` up to date. Use `pnpm dev --frontend` for WebUI only, or run `nsh dev` from `desktop/` for desktop only.
+`pnpm dev` builds `dist/` before starting the desktop app. Desktop UI changes use nsh hot reload. Changes in `web/`, `app/`, `shared/`, or `theme/` rebuild the WebUI and refresh open tabs after a successful build. Open the WebUI from Pilo's Remote WebUI settings to use the same Host for pairing, HTTP, and WebSocket requests. WebUI updates reload the whole page, not individual modules.
+
+Use `nsh dev` from the repo root for desktop only, or `pnpm dev:web` for the standalone nsh browser dev server. The standalone server does not serve the Pilo Host API.
 
 Local uses `target/debug/pilo-server` (`cargo build -p pilo-server`). For WSL/SSH, build a development server for the remote target, then start or restart Pilo:
 
@@ -89,7 +91,7 @@ bash scripts/build-pilo-server.sh <target>
 
 ## Quick Start
 
-1. Run `pnpm dev` from the repo root to start Pilo and the WebUI dev services.
+1. Run `pnpm dev` from the repo root to start Pilo and watch the WebUI.
 2. Use the default Local connection, or add a WSL or SSH connection.
 3. If Pi is not available as `pi` on `PATH`, set its executable path for that connection in Settings and run the Pi probe.
 4. Add a project directory and open a session.

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -8,7 +9,8 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const webDir = path.join(root, "web");
 const outDir = path.join(root, "dist");
-const stagingDir = path.join(root, ".nsh", "web-out");
+const dev = process.argv.includes("--dev");
+const stagingDir = path.join(root, ".nsh", dev ? "web-dev-out" : "web-out");
 
 fs.rmSync(stagingDir, { recursive: true, force: true });
 fs.mkdirSync(stagingDir, { recursive: true });
@@ -50,7 +52,31 @@ if (!sourceDir) {
 	process.exit(1);
 }
 
-fs.rmSync(outDir, { recursive: true, force: true });
-fs.mkdirSync(path.dirname(outDir), { recursive: true });
-fs.cpSync(sourceDir, outDir, { recursive: true });
+if (dev) {
+	const reloadFile = "pilo-dev-reload.js";
+	const html = fs.readFileSync(path.join(sourceDir, "index.html"), "utf8");
+	const reloadTag = `<script src="/${reloadFile}?build=${randomUUID()}" defer></script>`;
+	const indexFiles = new Set(["index.html", "index.html.br", "index.html.gz"]);
+
+	// Keep old hashed assets available and publish the new entry only after its assets.
+	fs.cpSync(sourceDir, outDir, {
+		recursive: true,
+		filter: (source) =>
+			path.dirname(source) !== sourceDir ||
+			!indexFiles.has(path.basename(source)),
+	});
+	fs.copyFileSync(
+		path.join(root, "scripts", reloadFile),
+		path.join(outDir, reloadFile),
+	);
+	for (const file of ["index.html.br", "index.html.gz"]) {
+		fs.rmSync(path.join(outDir, file), { force: true });
+	}
+	const nextIndex = path.join(outDir, "index.html.tmp");
+	fs.writeFileSync(nextIndex, html.replace("</body>", `${reloadTag}\n</body>`));
+	fs.renameSync(nextIndex, path.join(outDir, "index.html"));
+} else {
+	fs.rmSync(outDir, { recursive: true, force: true });
+	fs.cpSync(sourceDir, outDir, { recursive: true });
+}
 console.log(`[build-web] Built nsh Web bundle into ${outDir}`);
