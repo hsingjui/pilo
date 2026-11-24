@@ -1,0 +1,247 @@
+/* Built-in Iris: refined violet-indigo palette inspired by T3 Code Iris. */
+@layer base {
+	:root[data-theme-family="iris"] {
+		--background: 258 28% 97.8%;
+		--foreground: 258 24% 13%;
+		--card: 0 0% 100%;
+		--card-foreground: 256 13% 34%;
+		--popover: 0 0% 100%;
+		--popover-foreground: 258 24% 13%;
+		--tooltip-background: 258 24% 15%;
+		--tooltip-foreground: 258 28% 96%;
+		--primary: 256 54% 48%;
+		--primary-foreground: 0 0% 100%;
+		--secondary: 258 22% 93%;
+		--secondary-foreground: 258 24% 13%;
+		--muted: 258 22% 93%;
+		--muted-foreground: 256 12% 40%;
+		--hover: 258 24% 94.5%;
+		--hover-foreground: 258 24% 13%;
+		--destructive: 354 72% 46%;
+		--destructive-foreground: 0 0% 100%;
+		--border: 258 18% 87%;
+		--input: 258 22% 93%;
+		--input-foreground: 258 24% 13%;
+		--input-placeholder: var(--muted-foreground);
+		--input-border: 258 16% 80.5%;
+		--input-field: 0 0% 100%;
+		--switch-track: 258 16% 80.5%;
+		--ring: 256 64% 60%;
+		--sidebar-background: 258 26% 95%;
+		--sidebar-foreground: 256 18% 26%;
+		--sidebar-foreground-muted: 256 12% 38.5%;
+		--sidebar-primary: 256 54% 48%;
+		--sidebar-hover: 258 22% 90.8%;
+		--sidebar-hover-foreground: 258 24% 13%;
+		--sidebar-selection: 258 26% 87.2%;
+		--sidebar-selection-foreground: 258 28% 13%;
+		--sidebar-border: 258 18% 84.5%;
+		--sidebar-ring: 256 64% 60%;
+		--button-hover: 256 56% 41%;
+		--button-secondary: 258 22% 93%;
+		--button-secondary-foreground: 258 24% 13%;
+		--button-secondary-hover: 258 22% 89.2%;
+		--status-success: 150 60% 29%;
+		--status-warning: 30 72% 36%;
+		--status-danger: 354 72% 46%;
+		--scrollbar-thumb: 258 14% 76.5%;
+		--scrollbar-thumb-hover: 258 13% 64.5%;
+		--scrollbar-thumb-active: 258 13% 52.5%;
+		--code-background: 258 24% 95%;
+		--code-foreground: 258 24% 13%;
+		--code-border: 258 18% 85.5%;
+		--code-added: 150 60% 29%;
+		--code-removed: 354 72% 46%;
+		--skeleton-line: 258 18% 90%;
+		--skeleton-line-strong: 258 18% 86%;
+		--syntax-keyword: 258 58% 48%;
+		--syntax-string: 162 56% 29%;
+		--syntax-number: 24 64% 38%;
+		--syntax-comment: 256 11% 40.5%;
+		--syntax-function: 214 68% 40%;
+		--syntax-variable: 326 48% 42%;
+		--syntax-title: 274 52% 44%;
+		--syntax-attr: 30 58% 36%;
+		--syntax-builtin: 186 64% 31%;
+
+		/* T3-inspired docked sidebar and softer rounded geometry */
+		--pilo-radius-sm: 0.375rem;
+		--pilo-radius-md: 0.5rem;
+		--pilo-radius-lg: 0.75rem;
+		--pilo-radius-xl: 1rem;
+		--pilo-bubble-radius: 0.875rem;
+		--pilo-composer-radius: 1rem;
+		--pilo-floating-radius: 0.875rem;
+		--pilo-tooltip-border: transparent;
+		--pilo-tooltip-shadow: var(--pilo-shadow-floating);
+		--pilo-button-primary-shadow: 0 0 #0000;
+		--pilo-button-secondary-shadow: 0 0 #0000;
+		--pilo-field-shadow: 0 0 #0000;
+		--pilo-field-hover-border: hsl(var(--muted-foreground) / 0.45);
+		--pilo-field-focus-border: hsl(var(--ring));
+		--pilo-field-touch-height: 2.75rem;
+		--pilo-menu-radius: 0.875rem;
+		--pilo-menu-padding: 0.375rem;
+		--pilo-menu-item-height: 2.125rem;
+		--pilo-menu-item-gap: 0.125rem;
+		--pilo-menu-checked-background: hsl(var(--muted));
+		--pilo-menu-touch-height: 2.75rem;
+		--pilo-select-padding: 0.375rem;
+		--pilo-select-gap: 0.125rem;
+		--pilo-select-item-height: 2.125rem;
+		--pilo-select-item-radius: max(
+			0px,
+			calc(var(--pilo-floating-radius) - var(--pilo-select-padding) - 1px)
+		);
+		--pilo-select-checked-background: hsl(var(--muted));
+		--pilo-select-checked-foreground: hsl(var(--foreground));
+		--pilo-command-touch-height: 2.75rem;
+		--pilo-sidebar-margin: 0;
+		--pilo-sidebar-height: 100%;
+		--pilo-sidebar-width: 100%;
+		--pilo-sidebar-border-width: 0 1px 0 0;
+		--pilo-sidebar-border-color: hsl(var(--sidebar-border) / 0.7);
+		--pilo-sidebar-radius: 0;
+		--pilo-sidebar-padding: 0.5rem;
+		--pilo-sidebar-header-top-inset: 0.5rem;
+		--pilo-sidebar-shadow: 0 0 #0000;
+		--pilo-mobile-sidebar-radius: 0;
+		--pilo-mobile-radius-sm: 0.375rem;
+		--pilo-mobile-radius-md: 0.5rem;
+		--pilo-mobile-radius-lg: 0.75rem;
+		--pilo-mobile-radius-xl: 1rem;
+		--pilo-mobile-bubble-radius: 0.875rem;
+		--pilo-mobile-composer-radius: 1rem;
+		--pilo-mobile-floating-radius: 0.875rem;
+		--pilo-mobile-menu-radius: 0.875rem;
+		--pilo-mobile-menu-padding: 0.375rem;
+		--pilo-mobile-menu-item-gap: 0.125rem;
+		--pilo-mobile-select-padding: 0.375rem;
+		--pilo-mobile-select-gap: 0.125rem;
+		--pilo-mobile-select-item-radius: max(
+			0px,
+			calc(
+				var(--pilo-mobile-floating-radius) - var(--pilo-mobile-select-padding) -
+					1px
+			)
+		);
+		--pilo-sidebar-selected-border: transparent;
+		--pilo-sidebar-selected-background: hsl(var(--sidebar-selection));
+		--pilo-sidebar-selected-foreground: hsl(
+			var(--sidebar-selection-foreground)
+		);
+		--pilo-project-selected-foreground: hsl(
+			var(--sidebar-selection-foreground)
+		);
+		--pilo-mobile-selected-background: hsl(var(--sidebar-selection));
+		--pilo-mobile-confirm-selected-background: hsl(var(--sidebar-selection));
+		--pilo-mobile-selected-ring-width: 0px;
+		--pilo-composer-background: hsl(var(--card));
+		--pilo-composer-border: hsl(var(--border));
+		--pilo-composer-focus-border: hsl(var(--ring));
+		--pilo-shadow-composer: 0 2px 10px rgb(0 0 0 / 0.05);
+		--pilo-shadow-composer-focus: 0 4px 24px rgb(0 0 0 / 0.1);
+		--pilo-user-bubble-bg: hsl(258 26% 91.5%);
+		--pilo-user-bubble-border: hsl(258 20% 84.5%);
+		--pilo-shadow-panel:
+			0 1px 2px rgb(0 0 0 / 0.05), 0 4px 12px rgb(0 0 0 / 0.08);
+		--pilo-shadow-floating:
+			0 2px 8px rgb(0 0 0 / 0.08), 0 10px 28px rgb(0 0 0 / 0.12);
+		--pilo-shadow-popover: var(--pilo-shadow-floating);
+		--pilo-menu-background: hsl(var(--popover));
+		--pilo-menu-edge: hsl(var(--border));
+		--pilo-menu-shadow:
+			0 0 0 1px var(--pilo-menu-edge), var(--pilo-shadow-floating);
+	}
+
+	.dark:root[data-theme-family="iris"] {
+		--background: 256 24% 12%;
+		--foreground: 258 24% 94%;
+		--card: 256 23% 15.2%;
+		--card-foreground: 256 14% 69%;
+		--popover: 256 22% 18.5%;
+		--popover-foreground: 258 24% 94%;
+		--tooltip-background: 256 20% 24%;
+		--tooltip-foreground: 258 24% 95%;
+		--primary: 256 76% 74%;
+		--primary-foreground: 258 34% 10%;
+		--secondary: 256 19% 21%;
+		--secondary-foreground: 258 24% 92%;
+		--muted: 256 19% 20.5%;
+		--muted-foreground: 256 14% 67%;
+		--hover: 256 20% 23.5%;
+		--hover-foreground: 258 24% 96%;
+		--destructive: 0 84% 72%;
+		--destructive-foreground: 0 30% 10%;
+		--border: 256 18% 22.5%;
+		--input: 256 23% 15.2%;
+		--input-foreground: var(--foreground);
+		--input-placeholder: var(--muted-foreground);
+		--input-border: 256 17% 29.5%;
+		--input-field: 256 22% 17.5%;
+		--switch-track: 256 17% 27.5%;
+		--ring: 256 76% 74%;
+		--sidebar-background: 256 26% 9%;
+		--sidebar-foreground: 258 24% 93%;
+		--sidebar-foreground-muted: 256 14% 67%;
+		--sidebar-primary: 256 76% 74%;
+		--sidebar-hover: 256 22% 14.8%;
+		--sidebar-hover-foreground: 258 24% 95%;
+		--sidebar-selection: 256 24% 19.5%;
+		--sidebar-selection-foreground: 256 84% 84%;
+		--sidebar-border: 256 20% 18%;
+		--sidebar-ring: 256 76% 74%;
+		--button-hover: 256 80% 79%;
+		--button-secondary: 256 22% 16.5%;
+		--button-secondary-foreground: 258 24% 94%;
+		--button-secondary-hover: 256 20% 23.5%;
+		--status-success: 154 62% 58%;
+		--status-warning: 46 92% 68%;
+		--status-danger: 0 84% 72%;
+		--scrollbar-thumb: 256 18% 22.5%;
+		--scrollbar-thumb-hover: 256 18% 30.5%;
+		--scrollbar-thumb-active: 256 18% 36.5%;
+		--code-background: 256 27% 8.5%;
+		--code-foreground: 258 24% 94%;
+		--code-border: 256 20% 18.5%;
+		--code-added: 160 68% 66%;
+		--code-removed: 0 84% 72%;
+		--skeleton-line: 256 19% 19%;
+		--skeleton-line-strong: 256 19% 23.5%;
+		--syntax-keyword: 262 82% 76%;
+		--syntax-string: 164 58% 66%;
+		--syntax-number: 34 86% 72%;
+		--syntax-comment: 256 14% 58%;
+		--syntax-function: 204 82% 74%;
+		--syntax-variable: 258 24% 92%;
+		--syntax-title: 288 74% 78%;
+		--syntax-attr: 44 82% 74%;
+		--syntax-builtin: 186 68% 70%;
+
+		--pilo-sidebar-selected-border: transparent;
+		--pilo-sidebar-selected-background: hsl(var(--sidebar-selection));
+		--pilo-sidebar-selected-foreground: hsl(
+			var(--sidebar-selection-foreground)
+		);
+		--pilo-project-selected-foreground: hsl(
+			var(--sidebar-selection-foreground)
+		);
+		--pilo-mobile-selected-background: hsl(var(--sidebar-selection));
+		--pilo-mobile-confirm-selected-background: hsl(var(--sidebar-selection));
+		--pilo-composer-background: hsl(var(--card));
+		--pilo-composer-border: hsl(var(--input-border) / 0.8);
+		--pilo-composer-focus-border: hsl(var(--ring) / 0.75);
+		--pilo-shadow-composer: 0 2px 12px rgb(0 0 0 / 0.28);
+		--pilo-shadow-composer-focus: 0 4px 28px rgb(0 0 0 / 0.48);
+		--pilo-user-bubble-bg: hsl(256 22% 20.5%);
+		--pilo-user-bubble-border: hsl(256 20% 27.5%);
+		--pilo-shadow-panel:
+			0 1px 2px rgb(0 0 0 / 0.4), 0 4px 14px rgb(0 0 0 / 0.45);
+		--pilo-shadow-floating:
+			0 2px 10px rgb(0 0 0 / 0.48), 0 10px 30px rgb(0 0 0 / 0.65);
+		--pilo-menu-background: hsl(var(--popover));
+		--pilo-menu-edge: hsl(var(--border));
+		--pilo-menu-shadow:
+			inset 0 0 0 1px hsl(258 40% 90% / 0.09), var(--pilo-shadow-floating);
+	}
+}

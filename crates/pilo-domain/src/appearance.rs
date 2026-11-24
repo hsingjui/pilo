@@ -41,6 +41,10 @@ pub enum ThemeFamily {
     #[default]
     Lody,
     Claude,
+    Grove,
+    Ocean,
+    Ember,
+    Iris,
     Custom,
 }
 
@@ -170,5 +174,22 @@ mod tests {
         assert_eq!(old.theme_custom_css, "rollback");
         assert_eq!(old.saved_custom_themes[0].name, "Saved");
         assert_eq!(old.saved_custom_themes[0].css, "saved rollback");
+    }
+
+    #[test]
+    fn built_in_theme_families_round_trip_in_lowercase() {
+        for (raw, expected) in [
+            ("lody", ThemeFamily::Lody),
+            ("claude", ThemeFamily::Claude),
+            ("grove", ThemeFamily::Grove),
+            ("ocean", ThemeFamily::Ocean),
+            ("ember", ThemeFamily::Ember),
+            ("iris", ThemeFamily::Iris),
+            ("custom", ThemeFamily::Custom),
+        ] {
+            let parsed: ThemeFamily = serde_json::from_value(json!(raw)).unwrap();
+            assert_eq!(parsed, expected);
+            assert_eq!(serde_json::to_value(parsed).unwrap(), json!(raw));
+        }
     }
 }

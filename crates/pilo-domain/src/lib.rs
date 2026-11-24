@@ -1,7 +1,9 @@
 mod appearance;
 pub mod theme_css_convert;
 pub mod theme_tokens;
-pub use appearance::{SavedCustomTheme, SavedThemeConversion, ThemeSettings, ThemeSettingsUpdate};
+pub use appearance::{
+    SavedCustomTheme, SavedThemeConversion, ThemeFamily, ThemeSettings, ThemeSettingsUpdate,
+};
 mod cache_keep_alive;
 pub use cache_keep_alive::{CacheKeepAliveSettings, CacheKeepAliveStatus};
 mod connection;

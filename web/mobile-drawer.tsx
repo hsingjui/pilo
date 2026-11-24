@@ -107,8 +107,8 @@ export function MobileDrawer(props: MobileDrawerProps) {
 		return width > 8 ? (width - 8) / 2 : 0;
 	});
 
-	const claudeTheme = computed(
-		() => store.state().themeSettings?.themeFamily === "claude",
+	const dockedSidebar = computed(
+		() => token("pilo-mobile-selected-ring-width") === 0,
 	);
 
 	const drawerWidth = computed(() => mobileDrawerWidth(windowSize().width));
@@ -258,7 +258,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 		close();
 	};
 
-	const selectedRingStyle = () => mobileSelectedRingStyle(claudeTheme());
+	const selectedRingStyle = () => mobileSelectedRingStyle(dockedSidebar());
 
 	const renderSessionRow = (
 		session: SidebarSession,
@@ -468,8 +468,8 @@ export function MobileDrawer(props: MobileDrawerProps) {
 								class="absolute inset-y-0 left-0 flex-col overflow-hidden border-r border-sidebar-border/60 bg-sidebar"
 								style={{
 									width: drawerWidth(),
-									borderTopRightRadius: claudeTheme() ? 0 : 12,
-									borderBottomRightRadius: claudeTheme() ? 0 : 12,
+									borderTopRightRadius: dockedSidebar() ? 0 : 12,
+									borderBottomRightRadius: dockedSidebar() ? 0 : 12,
 									boxShadow: styleVar("pilo-shadow-popover"),
 									paddingTop: safeArea().top,
 									paddingBottom: Math.max(8, safeArea().bottom),

@@ -136,27 +136,37 @@ function splitTokens(lightRaw, darkRaw) {
 	return { cssVars, styleVars };
 }
 
-export function generateThemes(lodyCss, claudeCss) {
+export const EXTRA_BUILTIN_THEMES = ["grove", "ocean", "ember", "iris"];
+
+function generateFamilyTheme(lody, lodyDark, name, css) {
+	const [light, dark] = readScopes(
+		css,
+		[
+			`:root[data-theme-family="${name}"]`,
+			`.dark:root[data-theme-family="${name}"]`,
+		],
+		`${name}-theme.css`,
+	);
+	return splitTokens(
+		{ ...lody, ...light },
+		{ ...lody, ...lodyDark, ...light, ...dark },
+	);
+}
+
+export function generateThemes(lodyCss, claudeCss, extraCssByFamily = {}) {
 	const [lody, lodyDark] = readScopes(
 		lodyCss,
 		[":root", ".dark"],
 		"lody-theme.css",
 	);
-	const [claude, claudeDark] = readScopes(
-		claudeCss,
-		[
-			':root[data-theme-family="claude"]',
-			'.dark:root[data-theme-family="claude"]',
-		],
-		"claude-theme.css",
-	);
-	return {
+	const themes = {
 		lody: splitTokens(lody, { ...lody, ...lodyDark }),
-		claude: splitTokens(
-			{ ...lody, ...claude },
-			{ ...lody, ...lodyDark, ...claude, ...claudeDark },
-		),
+		claude: generateFamilyTheme(lody, lodyDark, "claude", claudeCss),
 	};
+	for (const [name, css] of Object.entries(extraCssByFamily)) {
+		themes[name] = generateFamilyTheme(lody, lodyDark, name, css);
+	}
+	return themes;
 }
 
 function readCss(name) {
@@ -170,15 +180,20 @@ if (
 	process.argv[1] &&
 	pathToFileURL(process.argv[1]).href === import.meta.url
 ) {
-	const { lody, claude } = generateThemes(readCss("lody"), readCss("claude"));
+	const extraCss = Object.fromEntries(
+		EXTRA_BUILTIN_THEMES.map((name) => [name, readCss(name)]),
+	);
+	const themes = generateThemes(readCss("lody"), readCss("claude"), extraCss);
 	writeGenerated(
 		new URL("../theme/theme.json", import.meta.url),
-		lody,
+		themes.lody,
 		"pnpm generate:themes",
 	);
-	writeGenerated(
-		new URL("../theme/claude-theme.json", import.meta.url),
-		claude,
-		"pnpm generate:themes",
-	);
+	for (const name of ["claude", ...EXTRA_BUILTIN_THEMES]) {
+		writeGenerated(
+			new URL(`../theme/${name}-theme.json`, import.meta.url),
+			themes[name],
+			"pnpm generate:themes",
+		);
+	}
 }

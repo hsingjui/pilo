@@ -26,7 +26,7 @@ pub(super) fn catalog() -> Value {
         (
             "theme.themeFamily",
             "host",
-            json!({ "enum": ["lody", "claude", "custom"] }),
+            json!({ "enum": ["lody", "claude", "grove", "ocean", "ember", "iris", "custom"] }),
             json!("lody"),
         ),
         (

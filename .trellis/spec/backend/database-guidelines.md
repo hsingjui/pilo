@@ -488,8 +488,9 @@ Host-owned appearance shared by desktop windows and authenticated WebUI.
 - Global `theme_settings_changed { settings }` uses the existing runtime bus.
 - Settings: `{ revision, theme, themeFamily, themeCustomCss, themeCustomName,
   savedCustomThemes: [{ name, css }] }`. Mode is light/dark/system; family is
-  lody/claude/custom. Updates contain optional mode/family/CSS/name fields plus
-  `saveCustomTheme: { name, css }` or `deleteCustomTheme: string`.
+  lody/claude/grove/ocean/ember/iris/custom. Updates contain optional
+  mode/family/CSS/name fields plus `saveCustomTheme: { name, css }` or
+  `deleteCustomTheme: string`.
 
 ### 3. Contracts
 
@@ -498,9 +499,15 @@ insert revision 1 with `ON CONFLICT DO NOTHING`, never replace an existing row.
 A Web read before initialization returns defaults at revision 0 without inserting.
 Patches read/merge/write in an immediate transaction, increment revision and
 broadcast only after commit. Save/delete actions merge against the persisted
-custom-theme list, not a stale window snapshot. Saving trims/requires a name,
-replaces an exact-name saved theme and sets active CSS/name. Deleting preserves
-active CSS, matching existing behavior. SQLite runs in blocking workers.
+custom-theme list, not a stale window snapshot. In SQLite only, Grove, Ocean,
+Ember and Iris store `themeFamily: "lody"` plus `extendedThemeFamily` with the
+selected family. The current Host uses a recognized extension value; an older
+Host ignores the extension and loads Lody. Legacy families store only
+`themeFamily`. Keep the selected family in `themeFamily` on IPC, HTTP and events.
+
+Saving trims/requires a name, replaces an exact-name saved theme and sets active
+CSS/name. Deleting preserves active CSS, matching existing behavior. SQLite runs
+in blocking workers.
 Clients discard equal/older revisions; startup caches are never authoritative.
 Desktop serializes its writes and applies responses only after persistence
 succeeds. Selecting a saved theme patches family, CSS and name in one request,
@@ -514,7 +521,8 @@ remain local.
 
 ### 4. Validation & Error Matrix
 
-- Unknown mode/family/update fields: reject at serde decoding.
+- Unknown mode/family/update fields: reject at serde decoding. An unrecognized
+  optional `extendedThemeFamily` in SQLite falls back to the stored `themeFamily`.
 - Blank saved-theme name: error, transaction rolls back.
 - Load failure: IPC error or HTTP 500. Save failure: IPC error or HTTP 400
   (the existing remote settings-write convention); no change event for a failed write.
@@ -524,15 +532,17 @@ remain local.
 
 - Good: desktop switches a built-in/custom theme; other desktop windows and
   connected wide/mobile WebUI clients follow without WebUI editing controls.
-- Base: restart/refresh reads SQLite; legacy desktop themes migrate once.
+- Base: restart/refresh reads SQLite; legacy desktop themes migrate once. A
+  rollback after saving Grove loads Lody without blocking workspace startup.
+- Bad: persist `themeFamily: "grove"` in SQLite, which older Hosts cannot read.
 - Bad: stale browser settings overwrite an existing row, or an old HTTP/event
   snapshot reverts a newer revision.
 
 ### 6. Tests Required
 
 Pending explicit authorization (no tests added/run): migration idempotency and
-legacy theme retention; restart persistence; concurrent field patches and
-save/delete merges; unknown enums and blank-name rollback; failed commit emits
+legacy theme retention; restart persistence and rollback after saving an extended
+built-in family; concurrent field patches and save/delete merges; unknown enums and blank-name rollback; failed commit emits
 nothing; snapshot/replay reordering; reconnect/foreground recovery; custom CSS
 removal on family change; desktop edits synchronizing to other desktop windows,
 wide WebUI and mobile WebUI; no WebUI theme editing/switching controls;

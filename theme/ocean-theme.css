@@ -1,0 +1,247 @@
+/* Built-in Ocean: deep slate-blue marine palette inspired by T3 Code Ocean. */
+@layer base {
+	:root[data-theme-family="ocean"] {
+		--background: 206 28% 97.6%;
+		--foreground: 212 34% 13%;
+		--card: 0 0% 100%;
+		--card-foreground: 210 16% 34%;
+		--popover: 0 0% 100%;
+		--popover-foreground: 212 34% 13%;
+		--tooltip-background: 212 34% 15%;
+		--tooltip-foreground: 208 30% 96%;
+		--primary: 203 74% 35%;
+		--primary-foreground: 0 0% 100%;
+		--secondary: 206 24% 92.5%;
+		--secondary-foreground: 212 34% 13%;
+		--muted: 206 24% 92.5%;
+		--muted-foreground: 210 15% 40%;
+		--hover: 206 26% 94%;
+		--hover-foreground: 212 34% 13%;
+		--destructive: 355 72% 46%;
+		--destructive-foreground: 0 0% 100%;
+		--border: 208 20% 86.5%;
+		--input: 206 24% 92.5%;
+		--input-foreground: 212 34% 13%;
+		--input-placeholder: var(--muted-foreground);
+		--input-border: 208 18% 80%;
+		--input-field: 0 0% 100%;
+		--switch-track: 208 18% 80%;
+		--ring: 203 72% 45%;
+		--sidebar-background: 207 28% 94.8%;
+		--sidebar-foreground: 210 22% 26%;
+		--sidebar-foreground-muted: 210 15% 38.5%;
+		--sidebar-primary: 203 74% 35%;
+		--sidebar-hover: 207 24% 90.5%;
+		--sidebar-hover-foreground: 212 34% 13%;
+		--sidebar-selection: 206 30% 87%;
+		--sidebar-selection-foreground: 212 36% 13%;
+		--sidebar-border: 208 20% 84%;
+		--sidebar-ring: 203 72% 45%;
+		--button-hover: 203 76% 29%;
+		--button-secondary: 206 24% 92.5%;
+		--button-secondary-foreground: 212 34% 13%;
+		--button-secondary-hover: 206 24% 89%;
+		--status-success: 152 62% 29%;
+		--status-warning: 30 70% 37%;
+		--status-danger: 355 72% 46%;
+		--scrollbar-thumb: 208 16% 76%;
+		--scrollbar-thumb-hover: 208 15% 64%;
+		--scrollbar-thumb-active: 208 15% 52%;
+		--code-background: 207 26% 94.8%;
+		--code-foreground: 212 34% 13%;
+		--code-border: 208 20% 85%;
+		--code-added: 152 62% 29%;
+		--code-removed: 355 72% 46%;
+		--skeleton-line: 208 20% 89.5%;
+		--skeleton-line-strong: 208 20% 85.5%;
+		--syntax-keyword: 224 58% 45%;
+		--syntax-string: 168 62% 28%;
+		--syntax-number: 24 66% 38%;
+		--syntax-comment: 210 14% 40%;
+		--syntax-function: 202 74% 34%;
+		--syntax-variable: 262 42% 44%;
+		--syntax-title: 192 72% 30%;
+		--syntax-attr: 28 58% 37%;
+		--syntax-builtin: 332 52% 42%;
+
+		/* T3-inspired docked sidebar and softer rounded geometry */
+		--pilo-radius-sm: 0.375rem;
+		--pilo-radius-md: 0.5rem;
+		--pilo-radius-lg: 0.75rem;
+		--pilo-radius-xl: 1rem;
+		--pilo-bubble-radius: 0.875rem;
+		--pilo-composer-radius: 1rem;
+		--pilo-floating-radius: 0.875rem;
+		--pilo-tooltip-border: transparent;
+		--pilo-tooltip-shadow: var(--pilo-shadow-floating);
+		--pilo-button-primary-shadow: 0 0 #0000;
+		--pilo-button-secondary-shadow: 0 0 #0000;
+		--pilo-field-shadow: 0 0 #0000;
+		--pilo-field-hover-border: hsl(var(--muted-foreground) / 0.45);
+		--pilo-field-focus-border: hsl(var(--ring));
+		--pilo-field-touch-height: 2.75rem;
+		--pilo-menu-radius: 0.875rem;
+		--pilo-menu-padding: 0.375rem;
+		--pilo-menu-item-height: 2.125rem;
+		--pilo-menu-item-gap: 0.125rem;
+		--pilo-menu-checked-background: hsl(var(--muted));
+		--pilo-menu-touch-height: 2.75rem;
+		--pilo-select-padding: 0.375rem;
+		--pilo-select-gap: 0.125rem;
+		--pilo-select-item-height: 2.125rem;
+		--pilo-select-item-radius: max(
+			0px,
+			calc(var(--pilo-floating-radius) - var(--pilo-select-padding) - 1px)
+		);
+		--pilo-select-checked-background: hsl(var(--muted));
+		--pilo-select-checked-foreground: hsl(var(--foreground));
+		--pilo-command-touch-height: 2.75rem;
+		--pilo-sidebar-margin: 0;
+		--pilo-sidebar-height: 100%;
+		--pilo-sidebar-width: 100%;
+		--pilo-sidebar-border-width: 0 1px 0 0;
+		--pilo-sidebar-border-color: hsl(var(--sidebar-border) / 0.7);
+		--pilo-sidebar-radius: 0;
+		--pilo-sidebar-padding: 0.5rem;
+		--pilo-sidebar-header-top-inset: 0.5rem;
+		--pilo-sidebar-shadow: 0 0 #0000;
+		--pilo-mobile-sidebar-radius: 0;
+		--pilo-mobile-radius-sm: 0.375rem;
+		--pilo-mobile-radius-md: 0.5rem;
+		--pilo-mobile-radius-lg: 0.75rem;
+		--pilo-mobile-radius-xl: 1rem;
+		--pilo-mobile-bubble-radius: 0.875rem;
+		--pilo-mobile-composer-radius: 1rem;
+		--pilo-mobile-floating-radius: 0.875rem;
+		--pilo-mobile-menu-radius: 0.875rem;
+		--pilo-mobile-menu-padding: 0.375rem;
+		--pilo-mobile-menu-item-gap: 0.125rem;
+		--pilo-mobile-select-padding: 0.375rem;
+		--pilo-mobile-select-gap: 0.125rem;
+		--pilo-mobile-select-item-radius: max(
+			0px,
+			calc(
+				var(--pilo-mobile-floating-radius) - var(--pilo-mobile-select-padding) -
+					1px
+			)
+		);
+		--pilo-sidebar-selected-border: transparent;
+		--pilo-sidebar-selected-background: hsl(var(--sidebar-selection));
+		--pilo-sidebar-selected-foreground: hsl(
+			var(--sidebar-selection-foreground)
+		);
+		--pilo-project-selected-foreground: hsl(
+			var(--sidebar-selection-foreground)
+		);
+		--pilo-mobile-selected-background: hsl(var(--sidebar-selection));
+		--pilo-mobile-confirm-selected-background: hsl(var(--sidebar-selection));
+		--pilo-mobile-selected-ring-width: 0px;
+		--pilo-composer-background: hsl(var(--card));
+		--pilo-composer-border: hsl(var(--border));
+		--pilo-composer-focus-border: hsl(var(--ring));
+		--pilo-shadow-composer: 0 2px 10px rgb(0 0 0 / 0.05);
+		--pilo-shadow-composer-focus: 0 4px 24px rgb(0 0 0 / 0.1);
+		--pilo-user-bubble-bg: hsl(206 30% 91.5%);
+		--pilo-user-bubble-border: hsl(208 22% 84%);
+		--pilo-shadow-panel:
+			0 1px 2px rgb(0 0 0 / 0.05), 0 4px 12px rgb(0 0 0 / 0.08);
+		--pilo-shadow-floating:
+			0 2px 8px rgb(0 0 0 / 0.08), 0 10px 28px rgb(0 0 0 / 0.12);
+		--pilo-shadow-popover: var(--pilo-shadow-floating);
+		--pilo-menu-background: hsl(var(--popover));
+		--pilo-menu-edge: hsl(var(--border));
+		--pilo-menu-shadow:
+			0 0 0 1px var(--pilo-menu-edge), var(--pilo-shadow-floating);
+	}
+
+	.dark:root[data-theme-family="ocean"] {
+		--background: 210 29% 12%;
+		--foreground: 208 28% 94%;
+		--card: 210 28% 15.2%;
+		--card-foreground: 208 16% 69%;
+		--popover: 210 27% 18.2%;
+		--popover-foreground: 208 28% 94%;
+		--tooltip-background: 210 24% 23%;
+		--tooltip-foreground: 208 28% 95%;
+		--primary: 201 76% 62%;
+		--primary-foreground: 212 42% 9%;
+		--secondary: 210 22% 20.5%;
+		--secondary-foreground: 208 28% 92%;
+		--muted: 210 22% 20%;
+		--muted-foreground: 208 15% 67%;
+		--hover: 210 22% 23%;
+		--hover-foreground: 208 28% 96%;
+		--destructive: 0 84% 72%;
+		--destructive-foreground: 0 30% 10%;
+		--border: 210 22% 22%;
+		--input: 210 28% 15.2%;
+		--input-foreground: var(--foreground);
+		--input-placeholder: var(--muted-foreground);
+		--input-border: 210 20% 29%;
+		--input-field: 210 26% 17.5%;
+		--switch-track: 210 20% 27%;
+		--ring: 201 76% 62%;
+		--sidebar-background: 211 32% 8.8%;
+		--sidebar-foreground: 208 28% 93%;
+		--sidebar-foreground-muted: 208 15% 67%;
+		--sidebar-primary: 201 76% 62%;
+		--sidebar-hover: 210 26% 14.5%;
+		--sidebar-hover-foreground: 208 28% 95%;
+		--sidebar-selection: 210 28% 19%;
+		--sidebar-selection-foreground: 201 80% 82%;
+		--sidebar-border: 210 24% 17.5%;
+		--sidebar-ring: 201 76% 62%;
+		--button-hover: 201 80% 69%;
+		--button-secondary: 210 26% 16.5%;
+		--button-secondary-foreground: 208 28% 94%;
+		--button-secondary-hover: 210 22% 23%;
+		--status-success: 154 62% 58%;
+		--status-warning: 46 92% 68%;
+		--status-danger: 0 84% 72%;
+		--scrollbar-thumb: 210 20% 22%;
+		--scrollbar-thumb-hover: 210 20% 30%;
+		--scrollbar-thumb-active: 210 20% 36%;
+		--code-background: 211 33% 8.5%;
+		--code-foreground: 208 28% 94%;
+		--code-border: 210 24% 18.5%;
+		--code-added: 162 72% 66%;
+		--code-removed: 0 84% 72%;
+		--skeleton-line: 210 22% 18.5%;
+		--skeleton-line-strong: 210 22% 23%;
+		--syntax-keyword: 212 78% 74%;
+		--syntax-string: 168 62% 66%;
+		--syntax-number: 34 86% 72%;
+		--syntax-comment: 210 16% 58%;
+		--syntax-function: 196 84% 72%;
+		--syntax-variable: 208 28% 92%;
+		--syntax-title: 184 68% 68%;
+		--syntax-attr: 44 82% 74%;
+		--syntax-builtin: 266 72% 78%;
+
+		--pilo-sidebar-selected-border: transparent;
+		--pilo-sidebar-selected-background: hsl(var(--sidebar-selection));
+		--pilo-sidebar-selected-foreground: hsl(
+			var(--sidebar-selection-foreground)
+		);
+		--pilo-project-selected-foreground: hsl(
+			var(--sidebar-selection-foreground)
+		);
+		--pilo-mobile-selected-background: hsl(var(--sidebar-selection));
+		--pilo-mobile-confirm-selected-background: hsl(var(--sidebar-selection));
+		--pilo-composer-background: hsl(var(--card));
+		--pilo-composer-border: hsl(var(--input-border) / 0.8);
+		--pilo-composer-focus-border: hsl(var(--ring) / 0.75);
+		--pilo-shadow-composer: 0 2px 12px rgb(0 0 0 / 0.28);
+		--pilo-shadow-composer-focus: 0 4px 28px rgb(0 0 0 / 0.48);
+		--pilo-user-bubble-bg: hsl(210 26% 20%);
+		--pilo-user-bubble-border: hsl(210 22% 27%);
+		--pilo-shadow-panel:
+			0 1px 2px rgb(0 0 0 / 0.4), 0 4px 14px rgb(0 0 0 / 0.45);
+		--pilo-shadow-floating:
+			0 2px 10px rgb(0 0 0 / 0.48), 0 10px 30px rgb(0 0 0 / 0.65);
+		--pilo-menu-background: hsl(var(--popover));
+		--pilo-menu-edge: hsl(var(--border));
+		--pilo-menu-shadow:
+			inset 0 0 0 1px hsl(208 40% 90% / 0.09), var(--pilo-shadow-floating);
+	}
+}

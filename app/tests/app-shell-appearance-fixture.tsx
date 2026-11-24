@@ -94,6 +94,22 @@ async function run() {
 					theme: "system",
 					themeFamily: "claude",
 				})}
+				{themeChange("Save Grove system", {
+					theme: "system",
+					themeFamily: "grove",
+				})}
+				{themeChange("Save Ocean dark", {
+					theme: "dark",
+					themeFamily: "ocean",
+				})}
+				{themeChange("Save Ember light", {
+					theme: "light",
+					themeFamily: "ember",
+				})}
+				{themeChange("Save Iris dark", {
+					theme: "dark",
+					themeFamily: "iris",
+				})}
 				{themeChange("Save custom", {
 					theme: "light",
 					themeFamily: "custom",
@@ -123,6 +139,16 @@ async function run() {
 						`page ${token("font-sans") ?? "system"}`,
 						`code ${token("font-mono")} ${token("pilo-code-font-size")}`,
 						`display ${token("font-display") ?? "system"}`,
+					].join(", ")
+				}
+			</Text>
+			<Text testID="geometry">
+				{() =>
+					[
+						`sidebar ${token("pilo-sidebar-radius")}`,
+						`composer ${token("pilo-composer-radius")}`,
+						`md ${token("pilo-radius-md")}`,
+						`mobileRing ${token("pilo-mobile-selected-ring-width")}`,
 					].join(", ")
 				}
 			</Text>

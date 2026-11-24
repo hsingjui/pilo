@@ -1,0 +1,247 @@
+/* Built-in Grove: moss-green forest palette inspired by T3 Code Grove. */
+@layer base {
+	:root[data-theme-family="grove"] {
+		--background: 144 20% 97.6%;
+		--foreground: 152 24% 12%;
+		--card: 0 0% 100%;
+		--card-foreground: 150 12% 33%;
+		--popover: 0 0% 100%;
+		--popover-foreground: 152 24% 12%;
+		--tooltip-background: 152 24% 14%;
+		--tooltip-foreground: 144 25% 96%;
+		--primary: 152 54% 31%;
+		--primary-foreground: 0 0% 100%;
+		--secondary: 144 16% 92.5%;
+		--secondary-foreground: 152 24% 12%;
+		--muted: 144 16% 92.5%;
+		--muted-foreground: 150 11% 39%;
+		--hover: 144 18% 94%;
+		--hover-foreground: 152 24% 12%;
+		--destructive: 356 70% 46%;
+		--destructive-foreground: 0 0% 100%;
+		--border: 144 14% 86.5%;
+		--input: 144 16% 92.5%;
+		--input-foreground: 152 24% 12%;
+		--input-placeholder: var(--muted-foreground);
+		--input-border: 144 13% 80%;
+		--input-field: 0 0% 100%;
+		--switch-track: 144 13% 80%;
+		--ring: 152 52% 40%;
+		--sidebar-background: 144 22% 94.8%;
+		--sidebar-foreground: 150 16% 26%;
+		--sidebar-foreground-muted: 150 12% 36%;
+		--sidebar-primary: 152 54% 31%;
+		--sidebar-hover: 144 18% 90.5%;
+		--sidebar-hover-foreground: 152 24% 12%;
+		--sidebar-selection: 146 22% 87%;
+		--sidebar-selection-foreground: 152 28% 12%;
+		--sidebar-border: 144 15% 84%;
+		--sidebar-ring: 152 52% 40%;
+		--button-hover: 152 56% 25%;
+		--button-secondary: 144 16% 92.5%;
+		--button-secondary-foreground: 152 24% 12%;
+		--button-secondary-hover: 144 18% 89%;
+		--status-success: 162 64% 28%;
+		--status-warning: 32 72% 36%;
+		--status-danger: 356 70% 46%;
+		--scrollbar-thumb: 144 12% 76%;
+		--scrollbar-thumb-hover: 144 11% 64%;
+		--scrollbar-thumb-active: 144 11% 52%;
+		--code-background: 144 20% 94.8%;
+		--code-foreground: 152 24% 12%;
+		--code-border: 144 14% 85%;
+		--code-added: 152 58% 29%;
+		--code-removed: 356 70% 46%;
+		--skeleton-line: 144 14% 89.5%;
+		--skeleton-line-strong: 144 14% 85.5%;
+		--syntax-keyword: 222 52% 44%;
+		--syntax-string: 148 52% 30%;
+		--syntax-number: 24 62% 38%;
+		--syntax-comment: 148 10% 40%;
+		--syntax-function: 186 64% 31%;
+		--syntax-variable: 34 52% 36%;
+		--syntax-title: 166 56% 29%;
+		--syntax-attr: 28 54% 37%;
+		--syntax-builtin: 268 42% 44%;
+
+		/* T3-inspired docked sidebar and softer rounded geometry */
+		--pilo-radius-sm: 0.375rem;
+		--pilo-radius-md: 0.5rem;
+		--pilo-radius-lg: 0.75rem;
+		--pilo-radius-xl: 1rem;
+		--pilo-bubble-radius: 0.875rem;
+		--pilo-composer-radius: 1rem;
+		--pilo-floating-radius: 0.875rem;
+		--pilo-tooltip-border: transparent;
+		--pilo-tooltip-shadow: var(--pilo-shadow-floating);
+		--pilo-button-primary-shadow: 0 0 #0000;
+		--pilo-button-secondary-shadow: 0 0 #0000;
+		--pilo-field-shadow: 0 0 #0000;
+		--pilo-field-hover-border: hsl(var(--muted-foreground) / 0.45);
+		--pilo-field-focus-border: hsl(var(--ring));
+		--pilo-field-touch-height: 2.75rem;
+		--pilo-menu-radius: 0.875rem;
+		--pilo-menu-padding: 0.375rem;
+		--pilo-menu-item-height: 2.125rem;
+		--pilo-menu-item-gap: 0.125rem;
+		--pilo-menu-checked-background: hsl(var(--muted));
+		--pilo-menu-touch-height: 2.75rem;
+		--pilo-select-padding: 0.375rem;
+		--pilo-select-gap: 0.125rem;
+		--pilo-select-item-height: 2.125rem;
+		--pilo-select-item-radius: max(
+			0px,
+			calc(var(--pilo-floating-radius) - var(--pilo-select-padding) - 1px)
+		);
+		--pilo-select-checked-background: hsl(var(--muted));
+		--pilo-select-checked-foreground: hsl(var(--foreground));
+		--pilo-command-touch-height: 2.75rem;
+		--pilo-sidebar-margin: 0;
+		--pilo-sidebar-height: 100%;
+		--pilo-sidebar-width: 100%;
+		--pilo-sidebar-border-width: 0 1px 0 0;
+		--pilo-sidebar-border-color: hsl(var(--sidebar-border) / 0.7);
+		--pilo-sidebar-radius: 0;
+		--pilo-sidebar-padding: 0.5rem;
+		--pilo-sidebar-header-top-inset: 0.5rem;
+		--pilo-sidebar-shadow: 0 0 #0000;
+		--pilo-mobile-sidebar-radius: 0;
+		--pilo-mobile-radius-sm: 0.375rem;
+		--pilo-mobile-radius-md: 0.5rem;
+		--pilo-mobile-radius-lg: 0.75rem;
+		--pilo-mobile-radius-xl: 1rem;
+		--pilo-mobile-bubble-radius: 0.875rem;
+		--pilo-mobile-composer-radius: 1rem;
+		--pilo-mobile-floating-radius: 0.875rem;
+		--pilo-mobile-menu-radius: 0.875rem;
+		--pilo-mobile-menu-padding: 0.375rem;
+		--pilo-mobile-menu-item-gap: 0.125rem;
+		--pilo-mobile-select-padding: 0.375rem;
+		--pilo-mobile-select-gap: 0.125rem;
+		--pilo-mobile-select-item-radius: max(
+			0px,
+			calc(
+				var(--pilo-mobile-floating-radius) - var(--pilo-mobile-select-padding) -
+					1px
+			)
+		);
+		--pilo-sidebar-selected-border: transparent;
+		--pilo-sidebar-selected-background: hsl(var(--sidebar-selection));
+		--pilo-sidebar-selected-foreground: hsl(
+			var(--sidebar-selection-foreground)
+		);
+		--pilo-project-selected-foreground: hsl(
+			var(--sidebar-selection-foreground)
+		);
+		--pilo-mobile-selected-background: hsl(var(--sidebar-selection));
+		--pilo-mobile-confirm-selected-background: hsl(var(--sidebar-selection));
+		--pilo-mobile-selected-ring-width: 0px;
+		--pilo-composer-background: hsl(var(--card));
+		--pilo-composer-border: hsl(var(--border));
+		--pilo-composer-focus-border: hsl(var(--ring));
+		--pilo-shadow-composer: 0 2px 10px rgb(0 0 0 / 0.05);
+		--pilo-shadow-composer-focus: 0 4px 24px rgb(0 0 0 / 0.1);
+		--pilo-user-bubble-bg: hsl(146 22% 91.5%);
+		--pilo-user-bubble-border: hsl(146 18% 84%);
+		--pilo-shadow-panel:
+			0 1px 2px rgb(0 0 0 / 0.05), 0 4px 12px rgb(0 0 0 / 0.08);
+		--pilo-shadow-floating:
+			0 2px 8px rgb(0 0 0 / 0.08), 0 10px 28px rgb(0 0 0 / 0.12);
+		--pilo-shadow-popover: var(--pilo-shadow-floating);
+		--pilo-menu-background: hsl(var(--popover));
+		--pilo-menu-edge: hsl(var(--border));
+		--pilo-menu-shadow:
+			0 0 0 1px var(--pilo-menu-edge), var(--pilo-shadow-floating);
+	}
+
+	.dark:root[data-theme-family="grove"] {
+		--background: 148 19% 11.5%;
+		--foreground: 144 20% 94%;
+		--card: 148 19% 14.5%;
+		--card-foreground: 146 12% 68%;
+		--popover: 148 19% 17.5%;
+		--popover-foreground: 144 20% 94%;
+		--tooltip-background: 148 18% 22%;
+		--tooltip-foreground: 144 20% 95%;
+		--primary: 152 50% 56%;
+		--primary-foreground: 152 32% 9%;
+		--secondary: 148 15% 20%;
+		--secondary-foreground: 144 20% 92%;
+		--muted: 148 15% 19.5%;
+		--muted-foreground: 146 11% 66%;
+		--hover: 148 16% 22%;
+		--hover-foreground: 144 20% 96%;
+		--destructive: 0 84% 72%;
+		--destructive-foreground: 0 30% 10%;
+		--border: 148 15% 21%;
+		--input: 148 19% 14.5%;
+		--input-foreground: var(--foreground);
+		--input-placeholder: var(--muted-foreground);
+		--input-border: 148 14% 28%;
+		--input-field: 148 18% 16.5%;
+		--switch-track: 148 14% 26%;
+		--ring: 152 50% 56%;
+		--sidebar-background: 148 22% 8.5%;
+		--sidebar-foreground: 144 20% 93%;
+		--sidebar-foreground-muted: 146 11% 66%;
+		--sidebar-primary: 152 50% 56%;
+		--sidebar-hover: 148 17% 14%;
+		--sidebar-hover-foreground: 144 20% 95%;
+		--sidebar-selection: 148 20% 18.5%;
+		--sidebar-selection-foreground: 152 60% 80%;
+		--sidebar-border: 148 16% 17%;
+		--sidebar-ring: 152 50% 56%;
+		--button-hover: 152 54% 63%;
+		--button-secondary: 148 18% 16%;
+		--button-secondary-foreground: 144 20% 94%;
+		--button-secondary-hover: 148 16% 22%;
+		--status-success: 154 62% 58%;
+		--status-warning: 46 92% 68%;
+		--status-danger: 0 84% 72%;
+		--scrollbar-thumb: 148 14% 21%;
+		--scrollbar-thumb-hover: 148 14% 29%;
+		--scrollbar-thumb-active: 148 14% 35%;
+		--code-background: 148 23% 8.2%;
+		--code-foreground: 144 20% 94%;
+		--code-border: 148 16% 18%;
+		--code-added: 154 68% 66%;
+		--code-removed: 0 84% 72%;
+		--skeleton-line: 148 15% 18%;
+		--skeleton-line-strong: 148 15% 22.5%;
+		--syntax-keyword: 154 54% 68%;
+		--syntax-string: 92 52% 72%;
+		--syntax-number: 38 82% 72%;
+		--syntax-comment: 148 12% 56%;
+		--syntax-function: 184 62% 70%;
+		--syntax-variable: 144 20% 92%;
+		--syntax-title: 154 58% 72%;
+		--syntax-attr: 44 76% 74%;
+		--syntax-builtin: 170 54% 68%;
+
+		--pilo-sidebar-selected-border: transparent;
+		--pilo-sidebar-selected-background: hsl(var(--sidebar-selection));
+		--pilo-sidebar-selected-foreground: hsl(
+			var(--sidebar-selection-foreground)
+		);
+		--pilo-project-selected-foreground: hsl(
+			var(--sidebar-selection-foreground)
+		);
+		--pilo-mobile-selected-background: hsl(var(--sidebar-selection));
+		--pilo-mobile-confirm-selected-background: hsl(var(--sidebar-selection));
+		--pilo-composer-background: hsl(var(--card));
+		--pilo-composer-border: hsl(var(--input-border) / 0.8);
+		--pilo-composer-focus-border: hsl(var(--ring) / 0.75);
+		--pilo-shadow-composer: 0 2px 12px rgb(0 0 0 / 0.28);
+		--pilo-shadow-composer-focus: 0 4px 28px rgb(0 0 0 / 0.48);
+		--pilo-user-bubble-bg: hsl(148 18% 19.5%);
+		--pilo-user-bubble-border: hsl(148 16% 26%);
+		--pilo-shadow-panel:
+			0 1px 2px rgb(0 0 0 / 0.4), 0 4px 14px rgb(0 0 0 / 0.45);
+		--pilo-shadow-floating:
+			0 2px 10px rgb(0 0 0 / 0.48), 0 10px 30px rgb(0 0 0 / 0.65);
+		--pilo-menu-background: hsl(var(--popover));
+		--pilo-menu-edge: hsl(var(--border));
+		--pilo-menu-shadow:
+			inset 0 0 0 1px hsl(146 28% 88% / 0.09), var(--pilo-shadow-floating);
+	}
+}

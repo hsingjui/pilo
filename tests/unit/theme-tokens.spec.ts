@@ -131,29 +131,43 @@ test("HSL channel colors take no alpha, full --pilo-* colors do", () => {
 
 test("opaque colors are exactly the tokens the WebUI CSS holds as HSL channels", () => {
 	const channels = /^-?[\d.]+(?:deg)?\s+[\d.]+%\s+[\d.]+%$/;
+	const lodySource = readFileSync(
+		new URL("../../theme/lody-theme.css", import.meta.url),
+		"utf8",
+	).replace(/\/\*[\s\S]*?\*\//g, "");
 	for (const [css, json] of [
 		["lody-theme.css", "theme.json"],
 		["claude-theme.css", "claude-theme.json"],
+		["grove-theme.css", "grove-theme.json"],
+		["ocean-theme.css", "ocean-theme.json"],
+		["ember-theme.css", "ember-theme.json"],
+		["iris-theme.css", "iris-theme.json"],
 	]) {
-		const source = readFileSync(
-			new URL(`../../theme/${css}`, import.meta.url),
-			"utf8",
-		).replace(/\/\*[\s\S]*?\*\//g, "");
+		const ownSource =
+			css === "lody-theme.css"
+				? lodySource
+				: `${lodySource}\n${readFileSync(
+						new URL(`../../theme/${css}`, import.meta.url),
+						"utf8",
+					).replace(/\/\*[\s\S]*?\*\//g, "")}`;
 		const raw = new Map<string, string[]>();
-		for (const [, name, value] of source.matchAll(
+		for (const [, name, value] of ownSource.matchAll(
 			/--([a-z\d-]+)\s*:\s*([^;]+);/g,
 		))
 			raw.set(name, [
 				...(raw.get(name) ?? []),
 				value.trim().replace(/\s+/g, " "),
 			]);
-		const isChannels = (name: string, seen: string[] = []): boolean =>
-			(raw.get(name) ?? []).every((value) => {
+		const isChannels = (name: string, seen: string[] = []): boolean => {
+			const values = raw.get(name);
+			if (!values || values.length === 0) return false;
+			return values.every((value) => {
 				const alias = /^var\(--([a-z\d-]+)\)$/.exec(value)?.[1];
 				return alias && !seen.includes(alias)
 					? isChannels(alias, [...seen, name])
 					: channels.test(value);
 			});
+		};
 		const themeCatalog = createThemeTokenCatalog(
 			readJson(`../../theme/${json}`).cssVars,
 		);
@@ -320,4 +334,81 @@ test("custom tokens override the base the way the WebUI cascade does", () => {
 		light: base.light,
 		dark: base.dark,
 	});
+});
+
+function relativeLuminance(color: string): number {
+	const hex = parseThemeColor(color);
+	assert.ok(hex, `Expected parseable color, got ${color}`);
+	const [r, g, b] = [0, 2, 4].map((offset) => {
+		const channel =
+			Number.parseInt(hex.slice(1 + offset, 3 + offset), 16) / 255;
+		return channel <= 0.03928
+			? channel / 12.92
+			: ((channel + 0.055) / 1.055) ** 2.4;
+	});
+	return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrastRatio(foreground: string, background: string): number {
+	const fg = relativeLuminance(foreground);
+	const bg = relativeLuminance(background);
+	return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+}
+
+test("built-in Grove, Ocean, Ember, and Iris themes meet WCAG AA contrast", () => {
+	const pairs: readonly [string, string, number][] = [
+		["foreground", "background", 7],
+		["foreground", "card", 7],
+		["foreground", "popover", 7],
+		["foreground", "muted", 4.5],
+		["foreground", "hover", 4.5],
+		["card-foreground", "card", 4.5],
+		["muted-foreground", "background", 4.5],
+		["muted-foreground", "card", 4.5],
+		["muted-foreground", "muted", 4.5],
+		["muted-foreground", "hover", 4.5],
+		["primary-foreground", "primary", 4.5],
+		["primary-foreground", "button-hover", 4.5],
+		["destructive-foreground", "destructive", 4.5],
+		["tooltip-foreground", "tooltip-background", 7],
+		["sidebar-foreground", "sidebar-background", 4.5],
+		["sidebar-foreground-muted", "sidebar-background", 4.5],
+		["sidebar-foreground-muted", "sidebar-selection", 4.5],
+		["sidebar-selection-foreground", "sidebar-selection", 4.5],
+		["code-foreground", "code-background", 7],
+		["syntax-keyword", "code-background", 4.5],
+		["syntax-string", "code-background", 4.5],
+		["syntax-number", "code-background", 4.5],
+		["syntax-comment", "code-background", 4.5],
+		["syntax-function", "code-background", 4.5],
+		["syntax-variable", "code-background", 4.5],
+		["syntax-title", "code-background", 4.5],
+		["syntax-attr", "code-background", 4.5],
+		["syntax-builtin", "code-background", 4.5],
+		["ring", "background", 3],
+		["ring", "card", 3],
+		["status-success", "background", 4.5],
+		["status-warning", "background", 4.5],
+		["status-danger", "background", 4.5],
+	];
+
+	for (const family of ["grove", "ocean", "ember", "iris"]) {
+		const theme = readJson(`../../theme/${family}-theme.json`).cssVars;
+		for (const mode of ["light", "dark"] as const) {
+			const vars: Record<string, string | number> = {
+				...theme.theme,
+				...theme.light,
+				...(mode === "dark" ? theme.dark : {}),
+			};
+			for (const [fg, bg, min] of pairs) {
+				const fgValue = String(vars[fg]);
+				const bgValue = String(vars[bg]);
+				const ratio = contrastRatio(fgValue, bgValue);
+				assert.ok(
+					ratio >= min,
+					`${family} (${mode}): ${fg} (${fgValue}) on ${bg} (${bgValue}) contrast ${ratio.toFixed(2)} < ${min}`,
+				);
+			}
+		}
+	}
 });

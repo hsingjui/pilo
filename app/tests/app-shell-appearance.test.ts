@@ -5,6 +5,10 @@ import type { ThemeSettings } from "@shared/theme-settings-types";
 
 const LODY = { light: "#ffffffff", dark: "#101010ff" };
 const CLAUDE = { light: "#fcfcfcff", dark: "#151515ff" };
+const GROVE = { light: "#f8faf9ff", dark: "#18231dff" };
+const OCEAN = { dark: "#161f27ff" };
+const EMBER = { light: "#fbf9f7ff" };
+const IRIS = { dark: "#1b1726ff" };
 
 async function openSaved(
 	locale: string,
@@ -35,6 +39,9 @@ const background = (app: App) => app.viewStyle("id:app")?.backgroundColor;
 /** The fonts the theme holds, as the fixture's line under the shell names them. */
 const fonts = (app: App) =>
 	app.texts().find((text) => text.startsWith("page "));
+
+const geometry = (app: App) =>
+	app.texts().find((text) => text.startsWith("sidebar "));
 
 /**
  * Checks what a saved change leads to. The change reaches the shell as a
@@ -167,4 +174,43 @@ test("saved fonts replace a custom theme's, and its display font stays", async (
 	);
 	await app.press("Save invalid custom");
 	await becomes(app, fonts, "page Georgia, code Menlo 16, display Georgia");
+});
+
+test("Grove, Ocean, Ember, and Iris themes apply light/dark palettes and follow saved fonts", async () => {
+	const app = await openSaved(
+		"en-US",
+		{ theme: "light", themeFamily: "lody" },
+		"dark",
+		{ pageFontFamily: "Georgia" },
+	);
+
+	const dockedGeometry = "sidebar 0, composer 16, md 8, mobileRing 0";
+	const lodyGeometry = "sidebar 12, composer 12, md 6, mobileRing 1";
+
+	await app.press("Save Grove system");
+	await becomes(app, background, GROVE.dark);
+	await becomes(
+		app,
+		fonts,
+		"page Georgia, code ui-monospace 14, display Georgia",
+	);
+	await becomes(app, geometry, dockedGeometry);
+	await app.setColorScheme("light");
+	await becomes(app, background, GROVE.light);
+
+	await app.press("Save Ocean dark");
+	await becomes(app, background, OCEAN.dark);
+	await becomes(app, geometry, dockedGeometry);
+
+	await app.press("Save Ember light");
+	await becomes(app, background, EMBER.light);
+	await becomes(app, geometry, dockedGeometry);
+
+	await app.press("Save Iris dark");
+	await becomes(app, background, IRIS.dark);
+	await becomes(app, geometry, dockedGeometry);
+
+	await app.press("Save Lody light");
+	await becomes(app, background, LODY.light);
+	await becomes(app, geometry, lodyGeometry);
 });

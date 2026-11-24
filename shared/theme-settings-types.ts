@@ -6,8 +6,32 @@ export type SavedCustomTheme = {
 	tokens?: CustomThemeTokens;
 };
 
+export const BUILTIN_THEME_FAMILIES = [
+	"lody",
+	"claude",
+	"grove",
+	"ocean",
+	"ember",
+	"iris",
+] as const;
+
+export type BuiltinThemeFamily = (typeof BUILTIN_THEME_FAMILIES)[number];
+
 export type Theme = "dark" | "light" | "system";
-export type ThemeFamily = "lody" | "claude" | "custom";
+export type ThemeFamily = BuiltinThemeFamily | "custom";
+
+export function isBuiltinThemeFamily(
+	value: unknown,
+): value is BuiltinThemeFamily {
+	return (
+		typeof value === "string" &&
+		(BUILTIN_THEME_FAMILIES as readonly string[]).includes(value)
+	);
+}
+
+export function isThemeFamily(value: unknown): value is ThemeFamily {
+	return value === "custom" || isBuiltinThemeFamily(value);
+}
 
 export type ThemeConversionIssue = {
 	kind: "rule" | "declaration";

@@ -4,11 +4,19 @@ use serde_json::Value;
 
 use pilo_domain::theme_css_convert::convert_legacy_theme_css;
 use pilo_domain::theme_tokens::theme_token_catalog;
-use pilo_domain::{SavedCustomTheme, SavedThemeConversion, ThemeSettings, ThemeSettingsUpdate};
+use pilo_domain::{
+    SavedCustomTheme, SavedThemeConversion, ThemeFamily, ThemeSettings, ThemeSettingsUpdate,
+};
 
 fn deserialize_theme_settings(json: &str) -> Result<ThemeSettings, String> {
     let value: Value = serde_json::from_str(json).map_err(|error| error.to_string())?;
     let mut settings = ThemeSettings::deserialize(&value).map_err(|error| error.to_string())?;
+    if let Some(family) = value
+        .get("extendedThemeFamily")
+        .and_then(|family| ThemeFamily::deserialize(family).ok())
+    {
+        settings.theme_family = family;
+    }
     let catalog = theme_token_catalog();
     if value.get("themeCustomTokens").is_none() {
         (
@@ -39,6 +47,14 @@ fn deserialize_theme_settings(json: &str) -> Result<ThemeSettings, String> {
 fn serialize_theme_settings(settings: &ThemeSettings) -> Result<String, String> {
     let mut value = serde_json::to_value(settings).map_err(|error| error.to_string())?;
     if let Some(object) = value.as_object_mut() {
+        // Older Hosts only accept these three values in the stored themeFamily.
+        if !matches!(
+            settings.theme_family,
+            ThemeFamily::Lody | ThemeFamily::Claude | ThemeFamily::Custom
+        ) && let Some(family) = object.insert("themeFamily".into(), Value::String("lody".into()))
+        {
+            object.insert("extendedThemeFamily".into(), family);
+        }
         object.remove("themeCustomConversion");
         if settings.theme_custom_tokens_pending_conversion {
             object.remove("themeCustomTokens");

@@ -301,9 +301,10 @@ back to it) during its second or a later turn.
 ## Built-in themes
 
 From the repository root, run `pnpm generate:themes` after editing
-`theme/lody-theme.css` or `theme/claude-theme.css`. The checked-in
-`theme/theme.json` (Lody) and `theme/claude-theme.json` are complete themes; use
-`pnpm generate:themes --check` to detect stale output.
+`theme/lody-theme.css`, `theme/claude-theme.css`, `theme/grove-theme.css`,
+`theme/ocean-theme.css`, `theme/ember-theme.css`, or `theme/iris-theme.css`.
+The checked-in `theme/theme.json` (Lody) and `theme/<family>-theme.json` files
+are complete themes; use `pnpm generate:themes --check` to detect stale output.
 
 - `cssVars` contains the tokens understood by nsh 0.6.0: colors, shared
   numbers/lengths and font families. Pass `{ cssVars }` to `setTheme`.
@@ -330,9 +331,10 @@ to a 2-unit stroke and round caps/joins. The source data is covered by
 
 ## Custom themes
 
-The nsh settings only offer the built-in themes (Lody, Claude); they no longer
-create, edit or delete custom themes. A custom theme already saved on the Host
-(for example from the Tauri app) still renders as described below.
+The nsh settings only offer the built-in themes (Lody, Claude, Grove, Ocean,
+Ember, Iris); they no longer create, edit or delete custom themes. A custom
+theme already saved on the Host (for example from the Tauri app) still renders
+as described below.
 
 A custom theme is a token table shared by the desktop and the WebUI, checked by
 `shared/theme-tokens.ts` before it is applied:

@@ -16,7 +16,12 @@ import {
 	getMonospaceFontFamilyStack,
 	getPageFontFamilyStack,
 } from "@shared/font-settings";
-import type { ThemeSettings } from "@shared/theme-settings-types";
+import {
+	type BuiltinThemeFamily,
+	isBuiltinThemeFamily,
+	isThemeFamily,
+	type ThemeSettings,
+} from "@shared/theme-settings-types";
 import {
 	createThemeTokenCatalog,
 	resolveCustomTheme,
@@ -24,10 +29,52 @@ import {
 	validateCustomThemeTokens,
 } from "@shared/theme-tokens";
 import claude from "../../theme/claude-theme.json";
+import ember from "../../theme/ember-theme.json";
+import grove from "../../theme/grove-theme.json";
+import iris from "../../theme/iris-theme.json";
+import ocean from "../../theme/ocean-theme.json";
 import type { AppState } from "../state/app-state";
 import lody from "../../theme/theme.json";
-import { setStyleTheme } from "../ui/theme-style";
+import { setStyleTheme, type StyleVariables } from "../ui/theme-style";
 import { appLocale, setAppLocale } from "./i18n";
+
+export type GeneratedTheme = {
+	cssVars: ThemeCssVars;
+	styleVars: StyleVariables;
+};
+
+export const BUILTIN_THEMES: Record<BuiltinThemeFamily, GeneratedTheme> = {
+	lody,
+	claude,
+	grove,
+	ocean,
+	ember,
+	iris,
+};
+
+function readThemeColor(
+	cssVars: ThemeCssVars,
+	scheme: "light" | "dark",
+	tokenName: string,
+): string {
+	const value =
+		(scheme === "dark" ? cssVars.dark?.[tokenName] : undefined) ??
+		cssVars.light?.[tokenName] ??
+		cssVars.theme?.[tokenName];
+	return typeof value === "string" ? value : "";
+}
+
+/** Preview colors for the appearance picker, derived from the theme JSON. */
+export function themePreviewColors(
+	family: BuiltinThemeFamily,
+	scheme: "light" | "dark",
+): { canvas: string; accent: string } {
+	const { cssVars } = BUILTIN_THEMES[family];
+	return {
+		canvas: readThemeColor(cssVars, scheme, "background"),
+		accent: readThemeColor(cssVars, scheme, "primary"),
+	};
+}
 
 const catalog = createThemeTokenCatalog(lody.cssVars);
 export const MIN_UI_FONT_SIZE = 14;
@@ -95,11 +142,7 @@ function parseStartupTheme(stored: string | null): StartupTheme | null {
 	if (theme !== "dark" && theme !== "light" && theme !== "system") {
 		return null;
 	}
-	if (
-		themeFamily !== "lody" &&
-		themeFamily !== "claude" &&
-		themeFamily !== "custom"
-	) {
+	if (!isThemeFamily(themeFamily)) {
 		return null;
 	}
 	// showTheme validates custom tokens before using them.
@@ -172,9 +215,12 @@ function showTheme(
 	uiSize: number,
 ) {
 	setColorScheme(settings?.theme ?? "system");
-	const isClaude = settings?.themeFamily === "claude";
-	setStyleTheme(isClaude ? claude.styleVars : null);
-	const vars = isClaude ? claude.cssVars : lodyTheme(settings, pageSans);
+	const family = settings?.themeFamily ?? "lody";
+	const builtIn = isBuiltinThemeFamily(family) ? BUILTIN_THEMES[family] : null;
+	setStyleTheme(builtIn && family !== "lody" ? builtIn.styleVars : null);
+	const vars = builtIn
+		? builtinTheme(builtIn, pageSans)
+		: lodyTheme(settings, pageSans);
 	const display = vars.theme?.["font-display"];
 	displayFontFamily.set(typeof display === "string" ? display : pageSans);
 	setTheme({
@@ -191,6 +237,17 @@ function showTheme(
 			},
 		},
 	});
+}
+
+function builtinTheme(theme: GeneratedTheme, pageSans: string): ThemeCssVars {
+	const hasCustomDisplay =
+		typeof theme.cssVars.theme?.["font-display"] === "string" &&
+		theme.cssVars.theme["font-display"] !== theme.cssVars.theme["font-sans"];
+	if (hasCustomDisplay) return theme.cssVars;
+	return {
+		...theme.cssVars,
+		theme: { ...theme.cssVars.theme, "font-display": pageSans },
+	};
 }
 
 /** Lody uses the page font for display unless a custom theme overrides it. */
