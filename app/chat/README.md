@@ -45,7 +45,7 @@ would shift when the loaded window moves.
 A message the store has not read yet is a `historyPlaceholder`: its row
 (`ChatHistoryPlaceholder`) is a quiet box at the height the message's
 length estimates, shared with the WebUI's placeholder
-(`src/lib/chat/history-placeholder-height.ts`), so the rows around it
+(`shared/chat/history-placeholder-height.ts`), so the rows around it
 hold about their final places. The list reports the first and last places
 on screen as `onVisibleRangeChange`; the shell gives it the store's
 `loadRange`, which reads the pages holding them, and the loaded messages
@@ -58,7 +58,7 @@ Scrolled up by more than a few points it leaves the rows in view where they
 are, whatever is added below, and shows a button that returns to the latest
 message. Both come from the native list (`maintainVisibleContentPosition`);
 the button appears by the rule the WebUI uses
-(`src/lib/chat/chat-scroll-to-latest.ts`).
+(`shared/chat/chat-scroll-to-latest.ts`).
 
 ## Where a chat was read to
 

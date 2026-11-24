@@ -13,6 +13,7 @@ dist-ssr
 *.local
 resources/pilo-server-*
 /target/
+/app/native/target/
 crates/pilo-desktop/target/
 .nsh/
 web/.nsh/

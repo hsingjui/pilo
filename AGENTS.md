@@ -35,7 +35,7 @@ crates/pilo-domain/     纯数据模型与校验
 crates/pilo-runtime/    Host 运行时：连接、项目、会话、Pi RPC、Remote WebUI 服务
 crates/pilo-desktop/    桌面端 Rust 原生模块（app/native，独立 workspace）
 app/                    桌面端外壳（shell/、settings/）与两端共用 nsh UI（chat/、composer/、state/、ui/、tests/）
-web/                    Remote WebUI（nsh Web 入口、配对页、远程客户端、移动端壳、共用字体）
+web/                    Remote WebUI（nsh Web 入口、配对页、远程客户端、移动端壳）
 shared/                 纯 TypeScript 领域逻辑与协议（`@shared/*`，无 nsh/DOM）
 theme/                  内置主题源 CSS 与生成的 theme.json / claude-theme.json
 scripts/                构建、代码生成与开发脚本

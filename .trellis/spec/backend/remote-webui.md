@@ -267,7 +267,7 @@ with that match. No non-session append/counter event currently needs conversion.
 
 ### Host operations (desktop transport)
 
-`desktop/src/pilo/mod.rs` exposes these operations through `app/native`:
+`crates/pilo-desktop/src/pilo/mod.rs` exposes these operations through `app/native`:
 
 ```rust
 remote_host_state()                       -> RemoteHostState
@@ -428,6 +428,10 @@ remote_devices(id, name, pair_ip, token_hash, created_at_ms, last_seen_at_ms, ex
   Quick-added entries use `lan-<IPv4 with dots replaced by hyphens>-<32 hex UUID>`
   IDs, including when filling an empty row. The IP records the original direct
   host; the UUID prevents ID collisions if an older entry was manually edited.
+- **LAN access**: the WebUI master switch is the only listener toggle. When
+  enabled, the Host binds `0.0.0.0:<port>` and accepts both LAN and loopback
+  connections; when disabled, it does not listen. Saved access addresses control
+  pairing destinations, not the listener bind address.
 - **Port edits**: `remote_set_port` follows a saved `lan` entry only when its
   URL exactly matches the previous runtime LAN URL (or the current LAN IP with
   the old port while stopped). It also updates every quick-added LAN entry whose

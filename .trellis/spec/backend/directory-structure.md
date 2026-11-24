@@ -11,12 +11,12 @@ crates/pilo-domain/    # Serde data models and validation; no runtime dependency
 crates/pilo-runtime/   # Host runtime: all business logic, storage, Pi RPC, Remote WebUI
 crates/pilo-protocol/  # Shared wire types between the Host and pilo-server
 crates/pilo-server/    # Long-running transport server for WSL/SSH remotes
-desktop/               # nsh shell crate (desktop/Cargo.toml, own [workspace]); nsh builds it
+crates/pilo-desktop/   # nsh shell crate (crates/pilo-desktop/Cargo.toml, own [workspace]); nsh builds it
 ```
 
-Dependency direction: `desktop` → `pilo-runtime` → `pilo-domain`, `pilo-server` → `pilo-protocol`.
+Dependency direction: `pilo-desktop` → `pilo-runtime` → `pilo-domain`, `pilo-server` → `pilo-protocol`.
 `pilo-runtime` stays shell-agnostic: the shell implements its ports (`HostPaths`, `HostShell`,
-`WebAssets`, `HostEvents`) in `desktop/src/pilo/shell.rs`.
+`WebAssets`) in `crates/pilo-desktop/src/pilo/shell.rs`.
 
 ## `crates/pilo-domain/src/`
 
@@ -32,9 +32,9 @@ Serde data types shared across the backend (`Connection`, `Project`, `SessionInd
 | `session_history/`            | Pi JSONL parsing and reading (`parser`, `reader`, `cache`, `types`, `tests`).                                                                          |
 | `server_client/`              | Client side of the `pilo-server` stdio protocol (`manager`, `transport`).                                                                              |
 | `remote/`                     | Remote WebUI host: HTTP/WS API, pairing, devices.                                                                                                      |
-| `*.rs`                        | One module per capability: `pi_workspace`, `pi_events`, `terminal`, `preview`, `git`, `ssh`, `wsl`, `parallel`, `remote_fs`, `credentials`, `events`. |
+| `*.rs`                        | One module per capability: `pi_workspace`, `pi_events`, `terminal`, `git`, `ssh`, `wsl`, `remote_fs`, `credentials`, `events`. |
 
-## `desktop/src/` (nsh shell)
+## `crates/pilo-desktop/src/` (nsh shell)
 
 - `lib.rs` — `#[native_module("app/native")]` registration.
 - `pilo/mod.rs` — the `Pilo` class TSX calls; nsh allows one `#[class] impl` block per class, so every exported method lives here and stays a thin call into `pilo-runtime`.
@@ -50,12 +50,12 @@ Serde data types shared across the backend (`Connection`, `Project`, `SessionInd
 - `main.rs` — binary entry (`--version`, fingerprint, or serve stdio).
 - `lib.rs` — stdio request loop and dispatch to handlers.
 - `command.rs`, `environment.rs`, `fs_ops.rs` — leaf capabilities.
-- `runtime_streams/` — long-lived streams (`pi`, `preview`, `terminal`).
+- `runtime_streams/` — long-lived streams (`pi`, `terminal`).
 - `session/` — remote session index/parse/search/watch (`index`, `io`, `search`, `watch`, `activity`).
 
 ## Rules
 
-- **Shell methods stay thin.** `desktop/src/pilo` validates inputs and delegates to `pilo-runtime`; no multi-step logic in the shell.
+- **Shell methods stay thin.** `crates/pilo-desktop/src/pilo` validates inputs and delegates to `pilo-runtime`; no multi-step logic in the shell.
 - **One module per capability file.** Don't create a `utils.rs` dumping ground; put helpers next to the code that owns them.
 - **Domain types are serde-only.** No DB or process logic in `pilo-domain`.
 - **Rust 2024 edition.** Every crate declares `edition = "2024"`.

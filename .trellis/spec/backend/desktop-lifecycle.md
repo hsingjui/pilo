@@ -2,14 +2,14 @@
 
 ## 1. Scope / Trigger
 
-These are nsh desktop-only controls, not Remote WebUI endpoints. `desktop/nsh.json`
-configures single-instance behavior and window bounds; `desktop/app/desktop-shell.ts`
+These are nsh desktop-only controls, not Remote WebUI endpoints. `nsh.json`
+configures single-instance behavior and window bounds; `app/shell/desktop-shell.ts`
 owns tray, focus, shortcut registration, and quit handling.
 
 ## 2. Signatures
 
 - `Application.launchAtLogin()` / `setLaunchAtLogin(enabled)` are used by
-  `desktop/settings/desktop-pane.tsx`. nsh exposes a boolean, not a hidden-at-login mode.
+  `app/settings/desktop-startup-section.tsx`. nsh exposes a boolean, not a hidden-at-login mode.
 - `Pilo.loadDesktopSettings()` returns `{ showShortcut, exitOnClose }`;
   `saveShowShortcut(shortcut)` and `saveExitOnClose(enabled)` persist desktop settings.
   `crates/pilo-runtime/src/storage/desktop.rs` owns the SQLite defaults and migrations.
@@ -23,8 +23,8 @@ owns tray, focus, shortcut registration, and quit handling.
   tray has been used or the global show shortcut registered successfully. A
   system close or an explicit quit awaits Host shutdown before `Application.quit()`.
 - Keep transparent tray marks in `assets/branding/tray*.svg`: macOS uses the
-  monochrome template `desktop/assets/tray-template.svg` with transparent eyes;
-  Windows/Linux use the 32px RGBA colored bitmap `desktop/assets/tray.png`
+  monochrome template `app/assets/tray-template.svg` with transparent eyes;
+  Windows/Linux use the 32px RGBA colored bitmap `app/assets/tray.png`
   (because nsh 0.6.1 tints SVG tray icons as monochrome templates on Windows too).
 - Register a replacement global shortcut before saving it. If saving fails,
   unregister the replacement and keep the previous key. Show the key hint in
